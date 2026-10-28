@@ -39,27 +39,27 @@ GALLERY_PIXELS = 400
 
 
 # --- math -----------------------------------------------------------------------------
-def sweep(flake: core.Flake, masses: np.ndarray):
+def sweep(flake: core.Flake, masses: np.ndarray) -> tuple[core.Scalar, core.Scalar]:
     """The spin-up levels nearest zero for each mass, and how much of each lies on the rim."""
     spectra = [core.levels(core.hamiltonian(flake, SPIN_ORBIT, mass), core.Up, N_LEVELS) for mass in masses]
-    energies = stack([energy for energy, _ in spectra])                         # [masses, levels] Scalar
-    shares = stack([core.rim_share(flake, states) for _, states in spectra])    # [masses, levels] Scalar
+    energies = stack([energy for energy, _ in spectra])                        # [masses, levels] Scalar+
+    shares = stack([core.rim_share(flake, states) for _, states in spectra])   # [masses, levels] Scalar+
     return energies, shares
 
 
-def nearest(flake: core.Flake, masses: np.ndarray):
+def nearest(flake: core.Flake, masses: np.ndarray) -> core.Scalar:
     """The density of the spin-up state nearest zero for each mass."""
     states = [core.levels(core.hamiltonian(flake, SPIN_ORBIT, mass), core.Up, 2)[1][0] for mass in masses]
-    densities = stack(states).scalar_norm_squared()                            # [masses] Scalar[atoms]
+    densities = stack(states).scalar_norm_squared()                            # [masses] Scalar+[atoms]
     return densities
 
 
-def helical(flake: core.Flake):
+def helical(flake: core.Flake) -> tuple[core.Scalar, core.Even, core.Spin]:
     """The levels inside the gap without a mass and their states, and an electron started at the middle of the
     edge facing x, spin along x, keeping its part in those states: its spin density at each frame over one lap."""
-    energies, states = core.levels(core.hamiltonian(flake, SPIN_ORBIT, 0.0), core.Even, N_IN_GAP)   # [states] Scalar, [states] Even[atoms]
+    energies, states = core.levels(core.hamiltonian(flake, SPIN_ORBIT, 0.0), core.Even, N_IN_GAP)   # [states] Scalar+, [states] Even+[atoms]
     times = np.linspace(0.0, LAP, N_FRAMES + 1)
-    spins = stack(list(core.spread(states, energies, flake.start, SPINOR, times)))   # [frames + 1] Spin[atoms]
+    spins = stack(list(core.spread(states, energies, flake.start, SPINOR, times)))   # [frames + 1] Spin-[atoms]
     return energies, states, spins
 
 
@@ -74,9 +74,9 @@ def main() -> None:
     in_gap, states, spins = helical(flake)
     save_figure(render.draw_levels(MASSES, energies, shares, 3 * 3**0.5 * SPIN_ORBIT), "kane_mele_levels")
     save_figure(render.draw_states(flake, densities), "kane_mele_states")
-    save_animation(render.animate_spin(flake, spins), "kane_mele_helical", DURATION_MS)
+    save_animation(render.animate_spin(flake, spins, render.PIXELS), "kane_mele_helical", DURATION_MS)
     # README and gallery picture: this makes plots/kane_mele.gif for the README and docs/extensors.md, tuned as a visual for both. Don't change it; to experiment, copy it.
-    save_animation(render.animate_spin_sized(flake, spins, GALLERY_PIXELS), "kane_mele", DURATION_MS)
+    save_animation(render.animate_spin(flake, spins, GALLERY_PIXELS), "kane_mele", DURATION_MS)
 
     # checks
     # The Hamiltonian is its own reverse: every coupling's reverse couples the other way.
@@ -102,17 +102,17 @@ def main() -> None:
     np.testing.assert_allclose(ordered[::4], ordered[3::4], atol=1e-8)
     assert core.rim_share(flake, states).to_array().min() > 0.9
     # The density keeps its total, and the electron stays on the rim.
-    density = spins.norm()                                                     # [frames + 1] Scalar[atoms]
+    density = spins.norm()                                                     # [frames + 1] Scalar+[atoms]
     totals = density.sites.sum().to_array()
     np.testing.assert_allclose(totals, totals[0], rtol=1e-9)
     np.testing.assert_array_less(0.9 * totals, (density * flake.rim).sites.sum().to_array())
     # A quarter lap on, the spin-up half has turned counterclockwise around the flake and the spin-down
     # half clockwise: the sine of each half's turn from the start, by its centre.
-    along = spins[N_FRAMES // 4] | mv.z                                          # Scalar[atoms]
+    along = mv.xy & spins[N_FRAMES // 4]                                       # Scalar+[atoms]
     up, down = (density[N_FRAMES // 4] + along) * 0.5, (density[N_FRAMES // 4] - along) * 0.5
-    start = flake.positions.batch()[flake.start].normalized()                 # [] Point
+    start = flake.positions.batch()[flake.start].normalized()                  # [] Point-
     centres = [((half * flake.positions).sites.sum() / half.sites.sum()).normalized() for half in (up, down)]
-    sines = [(mv.xy | start.commutator(centre)).to_array().item() for centre in centres]
+    sines = [(mv.xy & (start & centre)).to_array().item() for centre in centres]
     assert sines[0] > 0.5 and sines[1] < -0.5
 
 

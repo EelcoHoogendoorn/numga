@@ -19,39 +19,39 @@ def test_scenarios_pass_their_checks_and_draw():
     # The exchange keeps the state normalized; halfway the spins are fully entangled, and at the end they
     # have swapped.
     n_frames = 21
-    angles, first, second, _, bells, states = scenarios.swap(n_frames)
+    angles, first, second, bells, states = scenarios.swap(n_frames)
     np.testing.assert_allclose(core.expectation(core.ONE, states).to_array(), 1.0, atol=1e-7)
     middle = n_frames // 2
     np.testing.assert_allclose(first[middle].kernel, 0.0, atol=1e-7)
     np.testing.assert_allclose(bells.to_array()[[0, middle, -1]], [2.0, 2 * np.sqrt(2), 2.0], atol=1e-7)
-    np.testing.assert_allclose((first[-1] + mv.z).kernel, 0.0, atol=1e-7)
-    np.testing.assert_allclose((second[-1] - mv.Z).kernel, 0.0, atol=1e-7)
-    for figure in (render.draw_state(first[0], second[0]), render.draw_exchange(angles, bells, first)):
+    np.testing.assert_allclose((first[-1] + mv.xy).kernel, 0.0, atol=1e-7)
+    np.testing.assert_allclose((second[-1] - mv.XY).kernel, 0.0, atol=1e-7)
+    for figure in (render.draw_state(first[0], second[0], render.SPIN_PLANES), render.draw_exchange(angles, bells, first, render.SPIN_PLANES)):
         assert isinstance(figure, plt.Figure)
         plt.close(figure)
 
 
 def test_steering_passes_its_checks_and_draws():
-    directions, probability, steered, states = scenarios.steering(5, 6, 3)
-    # The probability is set by the first spin's Bloch vector alone, and the second spin's Bloch vector
-    # after the measurement is the correlation map read backwards.
-    first, second = core.bloch(states[:, None, None])
+    planes, probability, steered, states = scenarios.steering(5, 6, 3)
+    # The probability is set by the first spin's plane alone, and the second spin's plane after the
+    # measurement is the correlation map read backwards.
+    first, second = core.spin_planes(states[:, None, None])
     correlations = core.correlation(states[:, None, None])
-    np.testing.assert_allclose((probability - 0.5 * (1 + (directions | first))).kernel, 0.0, atol=1e-11)
-    backwards = (second + correlations.adjoint()(directions)) / (1 + (directions | first))
+    np.testing.assert_allclose((probability - 0.5 * (1 + planes.dot(first))).kernel, 0.0, atol=1e-11)
+    backwards = (second + correlations.adjoint()(planes)) / (1 + planes.dot(first))
     np.testing.assert_allclose((steered - backwards).kernel, 0.0, atol=1e-9)
-    assert len(list(render.animate_steering(directions, probability, steered))) == 5
+    assert len(list(render.animate_steering(planes, probability, steered, render.SPIN_PLANES))) == 5
 
 
 def test_field_and_qubit_scenes_pass_their_checks_and_draw():
     fields = np.linspace(0.0, 4.0, 9)
-    first, second = core.bloch(scenarios.FOUR)
+    first, second = core.spin_planes(scenarios.FOUR)
     energies = scenarios.field_sweep(fields, 1.0)
     # The singlet sits below the triplet of zero spin by twice the exchange rate, and the field moves the
-    # triplets with both spins along it or against it.
+    # triplets with both spins in its plane or against it.
     expected = np.stack([-1.0 + 0 * fields, 1.0 + 0 * fields, 1.0 - fields, 1.0 + fields], axis=-1)
     np.testing.assert_allclose(energies.to_array(), expected, atol=1e-12)
-    plt.close(render.draw_levels(fields, energies, (first | core.mv.z) + (second | core.mv.Z)))
+    plt.close(render.draw_levels(fields, energies, core.FIELD_PLANE.dot(first + second)))
     times = np.linspace(0.0, np.pi, 5)
     rates = np.array([0.0, 1.0])
     states, probability = scenarios.singlet_return(times, rates, 1.0)

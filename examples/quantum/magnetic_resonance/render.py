@@ -9,8 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import NumpyContext, stack
-from numga.algebras import STA
+from numga import stack
 from examples.util.animation import capture
 from examples.quantum.magnetic_resonance import core
 from examples.util.wgsl import labels, show, solids, strokes
@@ -23,33 +22,31 @@ CIRCLE_COLOUR, CIRCLE_OPACITY = np.full(3, 0.75), 0.55
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the half width of the square view
 # about the centre, and the pixels across it.
 ELEVATION, AZIMUTH = np.radians(18.0), np.radians(40.0)
-REACH, N_PIXELS = 1.3, 700
-# The widths of the great circles, the paths and the arrows, the arrowheads' length and the dots' radius, in pixels;
-# how far the axes' arrows and their names reach, in radii of the ball.
-CIRCLE_WIDTH, PATH_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH, DOT_RADIUS = 2.4, 3.0, 2.0, 16.0, 9.0, 6.0
+REACH, N_PIXELS = 1.3, 300
+# The widths of the great circles, the paths and the arrows, the arrowheads' length and the dots' radius, in pixels,
+# and the size of the axes' names in points; how far the axes' arrows and their names reach, in radii of the ball.
+CIRCLE_WIDTH, PATH_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH, DOT_RADIUS = 1.0, 1.4, 1.0, 7.0, 4.0, 2.6
+LABEL_SIZE = 8
 AXIS_LENGTH, LABEL_DISTANCE = 1.18, 1.26
+# The quantity plots' size in inches and their resolution.
+LINES_INCHES, SIGNAL_INCHES, DPI = (6.4, 2.6), (4.5, 2.5), 90
 # The time the echo's signal is followed for, in µs from the first pulse.
 ECHO_SPAN = 8.0
-# In space the spin is the vector part of the state; in spacetime it is the patch of the plane it turns in, read by
-# pairing with the spacelike planes yz, zx and xy as the directions x, y and z.
-BLOCH_AXES = core.ga.subspace("x y z")
-sta = NumpyContext(STA).multivector
-SPIN_PLANES = stack((sta.yz, sta.zx, sta.xy))                    # [3] Bivector+
 
 
 def components(rho: core.State) -> np.ndarray:
-    """The Bloch vector's x, y and z components: twice the state's vector part, or in spacetime twice the pairings
-    of its spin part with the spin planes."""
-    if rho.algebra is STA:
-        return 2 * (SPIN_PLANES & rho.select[2][..., None]).to_array()
-    return 2 * rho.cast(BLOCH_AXES).kernel
+    """The Bloch vector's x, y and z components: twice the pairings of the state's spin part, its antibivector part,
+    with the planes yz, zx and xy, in the algebra of spacetime as in that of space."""
+    mv = rho.context.multivector
+    spin_planes = stack((mv.yz, mv.zx, mv.xy))                           # [3] Bivector+
+    return 2 * (spin_planes & rho.select.antibivector()[..., None]).to_array()
 
 
-def draw_nutation(states: Iterable[core.State], settled: core.State) -> plt.Figure:
+def draw_nutation(states: Iterable[core.State], steady_states: core.State) -> plt.Figure:
     """Each spin's Bloch vector from equilibrium, nutating about the drive and spiralling into its
     steady state, marked with a dot; the states are consumed as they are yielded. The Bloch ball is
     translucent, with its equator and two meridians, in the frame of its axes, named at their tips."""
-    paths, ends = components(stack(list(states))), components(settled)  # [times, detunings, 3], [detunings, 3]
+    paths, ends = components(stack(list(states))), components(steady_states)  # [times, detunings, 3], [detunings, 3]
     colours = np.array([to_rgb(colour) for colour in COLOURS[: paths.shape[1]]])
     view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, REACH), N_PIXELS)
     tracks = strokes.polylines(list(zip(sm.point(np.moveaxis(paths, 1, 0)), colours)), PATH_WIDTH, view)
@@ -66,16 +63,16 @@ def draw_nutation(states: Iterable[core.State], settled: core.State) -> plt.Figu
     ax = figure.add_axes((0, 0, 1, 1))
     show(ax, solids.draw(parts, view, np.ones(3), [great_circles], translucent=ball, meshes=[(tracks, 1.0)]), view)
     # Each axis named just past its arrow's tip, where the camera sees it.
-    labels(ax, view, sm.point(LABEL_DISTANCE * np.eye(3)), list("xyz"), ha="center", va="center", fontsize=13,
+    labels(ax, view, sm.point(LABEL_DISTANCE * np.eye(3)), list("xyz"), ha="center", va="center", fontsize=LABEL_SIZE,
            color=AXIS_COLOUR)
     return figure
 
 
-def draw_lines(detunings: np.ndarray, drives: np.ndarray, settled: core.State) -> plt.Figure:
+def draw_lines(detunings: np.ndarray, drives: np.ndarray, steady_states: core.State) -> plt.Figure:
     """Absorption and dispersion against detuning, one curve per drive strength, each divided by
     the drive so weak drives stay visible: a stronger drive broadens and flattens the line."""
-    r = components(settled)                                              # [detunings, drives, 3]
-    figure, (absorbing, dispersing) = plt.subplots(1, 2, figsize=(11, 4.2))
+    r = components(steady_states)                                        # [detunings, drives, 3]
+    figure, (absorbing, dispersing) = plt.subplots(1, 2, figsize=LINES_INCHES, dpi=DPI)
     for index, (drive, colour) in enumerate(zip(drives, COLOURS)):
         absorbing.plot(detunings, -r[:, index, 1] / drive, color=colour, label=f"drive {drive:g} rad/µs")
         dispersing.plot(detunings, r[:, index, 0] / drive, color=colour)
@@ -88,7 +85,7 @@ def draw_lines(detunings: np.ndarray, drives: np.ndarray, settled: core.State) -
         ax.axvline(0, color="0.85", linewidth=0.7, zorder=0)
         ax.set(xticks=[], yticks=[], xlabel="detuning")
         ax.spines[["top", "right"]].set_visible(False)
-    absorbing.legend()
+    absorbing.legend(fontsize=7, frameon=False)
     figure.tight_layout()
     return figure
 
@@ -103,18 +100,18 @@ def draw_echo(states: Iterable[core.State], dt: float, delay: float, t2: float) 
     """The signal after the first pulse, for an ensemble recorded every dt: it vanishes as the spins
     fan out, and returns at twice the delay after the second pulse, reduced only by the true
     dephasing."""
-    ensemble = stack(list(states))                                       # [times, spins] State
+    ensemble = stack(list(states))                                       # [times, spins] State-
     times = np.arange(ensemble.shape[0]) * dt
-    figure, ax = plt.subplots(figsize=(8, 3.8))
+    figure, ax = plt.subplots(figsize=SIGNAL_INCHES, dpi=DPI)
     ax.plot(times, signal(ensemble), color="#2e86c1", label="mean transverse spin")
     ax.plot(times, np.exp(-times / t2), "--", color="0.5", label="exp(-t / T2)")
     for when, name in ((delay, "π pulse"), (2 * delay, "echo")):
         ax.axvline(when, color="0.7", linewidth=0.8)
-        ax.annotate(name, (when, 0.95), textcoords="offset points", xytext=(4, 0))
+        ax.annotate(name, (when, 0.95), textcoords="offset points", xytext=(4, 0), fontsize=8)
     ax.set(xlabel="time", ylabel="mean transverse spin", xlim=(times[0], times[-1]), ylim=(0, 1.05), xticks=[],
            yticks=[])
     ax.spines[["top", "right"]].set_visible(False)
-    ax.legend(loc="upper right")
+    ax.legend(loc="center right", fontsize=8, frameon=False)
     figure.tight_layout()
     return figure
 
@@ -130,13 +127,13 @@ def draw_decays(times: np.ndarray, echoed: core.State, faded: core.State, t2: fl
     pulse halfway, the echo, which fades only at the rate `1 / t2`; without it, the free decay, which
     the uneven field ends within about a microsecond."""
     fine = np.geomspace(times[0], times[-1], 200)
-    figure, ax = plt.subplots(figsize=(8, 3.8))
+    figure, ax = plt.subplots(figsize=SIGNAL_INCHES, dpi=DPI)
     ax.semilogx(times, transverse(echoed), "o-", color="#2e86c1", label="echo")
     ax.semilogx(times, transverse(faded), "o-", color="#c0392b", label="free decay")
     ax.semilogx(fine, np.exp(-fine / t2), "--", color="0.5", label="exp(-t / T2)")
     ax.set(xlabel="time after the first pulse (µs)", ylabel="transverse spin", ylim=(0, 1.05), yticks=[])
     ax.spines[["top", "right"]].set_visible(False)
-    ax.legend(loc="lower left")
+    ax.legend(loc="lower left", fontsize=8, frameon=False)
     figure.tight_layout()
     return figure
 

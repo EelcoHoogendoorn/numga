@@ -10,18 +10,20 @@ from examples.quantum.kane_mele import core, render, scenarios
 
 
 def test_spin_up_levels_are_those_of_the_complex_hamiltonian():
-    """With the spin-orbit hop i times the sense of the turn, read against the xy plane, on each pair
-    of second neighbours, the complex Hamiltonian of the spin-up amplitudes has the levels of the
-    spin-up spinors."""
+    """With the spin-orbit hop i times the sense of the turn on each pair of second neighbours, the
+    sign of the patch its path's two steps span, read by the xy plane, the complex Hamiltonian of the
+    spin-up amplitudes has the levels of the spin-up spinors."""
     flake = core.flake(8, scenarios.RIM)
-    spin_orbit, mass, count = 0.1, 0.3, 12
+    spin_orbit, mass, n_levels = 0.1, 0.3, 12
     complex_form = np.diag(mass * flake.sublattice).astype(complex)
     complex_form[tuple(flake.first.T)] = -1.0
-    senses = -(flake.turns | core.mv.xy).to_array()
+    near = flake.positions.batch()[flake.second[:, 0]]
+    far = flake.positions.batch()[flake.second[:, 1]]
+    senses = np.sign((core.mv.xy & ((flake.between - far) & (near - flake.between))).to_array())
     complex_form[tuple(flake.second.T)] += 1j * spin_orbit * senses
     expected = np.linalg.eigvalsh(complex_form)
-    energies, _ = core.levels(core.hamiltonian(flake, spin_orbit, mass), core.Up, 2 * count)
-    nearest = np.sort(expected[np.argsort(np.abs(expected))[:count]])
+    energies, _ = core.levels(core.hamiltonian(flake, spin_orbit, mass), core.Up, 2 * n_levels)
+    nearest = np.sort(expected[np.argsort(np.abs(expected))[:n_levels]])
     np.testing.assert_allclose(np.sort(energies.to_array())[::2], nearest, atol=1e-10)
 
 
@@ -37,7 +39,7 @@ def test_edge_states_lie_on_the_rim_and_the_spins_circle_oppositely():
     sines = []
     for half in ((density + along) * 0.5, (density - along) * 0.5):
         centre = ((half * flake.positions).sites.sum() / half.sites.sum()).normalized()
-        sines.append((core.mv.xy | start.commutator(centre)).to_array().item())
+        sines.append((core.mv.xy & (start & centre)).to_array().item())
     assert sines[0] > 0.5 and sines[1] < -0.5
 
 
@@ -48,4 +50,4 @@ def test_scenes_draw():
                    render.draw_states(flake, scenarios.nearest(flake, scenarios.CASES))):
         assert isinstance(figure, plt.Figure)
         plt.close(figure)
-    assert len(list(render.animate_spin(flake, spins[:2]))) == 2
+    assert len(list(render.animate_spin(flake, spins[:2], render.PIXELS))) == 2

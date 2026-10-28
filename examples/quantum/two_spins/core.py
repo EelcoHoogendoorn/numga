@@ -6,7 +6,8 @@ two, taken in the ideal of the correlator `CORRELATOR = 0.5 * (1 - xy * XY)`. In
 multiplying on the right by either spin's xy plane is the same: it is the reference spin,
 `REFERENCE_SPIN = CORRELATOR * xy`, which the state with both spins up carries to `xy + XY` and every
 state to its own spin. The two spins' planes act on the pair from the left, and planes of
-different spins commute. A state is normalized to `2 * (state >> ONE)` of one in its scalar part.
+different spins commute. A state is normalized to one in the scalar part of its density,
+`2 * state.symmetric_reverse_product()`.
 
 The exchange interaction couples each plane of one spin to the same plane of the other:
 `COUPLING = yz * YZ + zx * ZX + xy * XY`. Since `COUPLING * COUPLING == 3 + 2 * COUPLING`, the
@@ -15,36 +16,37 @@ every state into its singlet part, on which the coupling is 3, and its triplet p
 -1. Over time each part turns by its own rotor in the xy plane, multiplied on the right.
 
 What one spin shows by itself is the part of its spin, `2 * (state >> REFERENCE_SPIN)`, in its own
-planes, read as a vector of its space: its Bloch vector, of length one when the spin is in a state
-of its own and shorter when the pair is entangled. What the two spins show together are their
-correlations along a direction of each: a map from the second spin's directions to the first's,
-read off the part of the density `2 * (state >> ONE)` that spans a plane of each spin.
+planes: the plane it turns in, of size one when the spin is in a state of its own and smaller when the
+pair is entangled. A spin stays a plane here rather than the patch of its plane: the dual acts on the
+whole algebra, so the patch of one spin's plane, `mv.xy.dual()`, spans the other spin's copy too. What
+the two spins show together are their correlations in a plane of each: a map from the second spin's
+planes to the first's, read off the part of the density that spans a plane of each spin, with
+`a.dot(correlation(b))` the expected product of the two spins' values in the planes a and b.
 
-In a field along z the singlet and the three triplets keep their shapes, and the field lowers the
-triplet with both spins along it until it crosses the singlet. A field that differs between the spins
-instead mixes the singlet with the triplet of zero spin along z: on those two the generator of time
-applied twice is a number, so the pair turns between them by a cosine and a sine.
+In a field in the xy planes the singlet and the three triplets keep their shapes, and the field lowers
+the triplet with both spins turning in its plane until it crosses the singlet. A field that differs
+between the spins instead mixes the singlet with the triplet of zero spin in that plane: on those two
+the generator of time applied twice is a number, so the pair turns between them by a cosine and a sine.
 
-Measuring the first spin along a direction leaves the second in a new state: its Bloch vector after
-finding +1 along a unit direction n is `(second + correlations.adjoint()(n)) / (1 + (n | first))`, so
-the correlation map, read backwards, steers. Turning each spin by a rotor of its own space acts on the
-correlation map from either side, which leaves its singular values alone: for every state of the pair
-they are one and twice the concurrence C, and each Bloch vector has length `sqrt(1 - C**2)`.
+Measuring the first spin in a plane leaves the second in a new state: its plane after finding +1 in a
+unit plane n is `(second + correlations.adjoint()(n)) / (1 + n.dot(first))`, so the correlation map,
+read backwards, steers. Turning each spin by a rotor of its own space acts on the correlation map from
+either side, which leaves its singular values alone: for every state of the pair they are one and
+twice the concurrence C, and each spin's plane has size `sqrt(1 - C**2)`.
 
-The Bell combination of four correlations, along two directions of each spin, stays within 2 in any
-account in which each spin carries its own answers. For a given state its largest value over all
-directions is `2 * sqrt(s1**2 + s2**2)`, from the two largest singular values of the correlation map.
-For given directions the combination is the expectation of a multivector acting on states from the
-left, the Bell element, whose square is 4 minus four times the product of the plane spanned by the
-first spin's directions and the plane spanned by the second's. Neither plane is larger than one, so
-no state takes the combination past `2 * sqrt(2)`.
+The Bell combination of four correlations, in two planes of each spin, stays within 2 in any account
+in which each spin carries its own answers. For a given state its largest value over all planes is
+`2 * sqrt(s1**2 + s2**2)`, from the two largest singular values of the correlation map. For given
+planes the combination is the expectation of a multivector acting on states from the left, the Bell
+element, whose square is 4 minus four times the product of the commutator of the first spin's two
+planes and that of the second's. Neither commutator is larger than one, so no state takes the
+combination past `2 * sqrt(2)`.
 
-In bra-ket notation the state reads as a ket of two qubits, `-(pseudoscalar * direction) * state *
-REFERENCE_SPIN` as the Pauli operator along a direction of one spin, right multiplication by
-`REFERENCE_SPIN` as multiplication by i, `-COUPLING` as the Hamiltonian
-sigma_1 . sigma_2, the Bloch vector of one spin as the trace of its reduced density matrix against
-the Pauli matrices, the correlation map as the correlation tensor, and the Bell element as the CHSH
-operator.
+In bra-ket notation the state reads as a ket of two qubits, `-plane * state * REFERENCE_SPIN` as the
+Pauli operator along the normal of a unit plane of one spin, right multiplication by `REFERENCE_SPIN`
+as multiplication by i, `-COUPLING` as the Hamiltonian sigma_1 . sigma_2, the plane of one spin as the
+Bloch vector, the trace of its reduced density matrix against the Pauli matrices, the correlation map
+as the correlation tensor, and the Bell element as the CHSH operator.
 """
 
 from __future__ import annotations
@@ -57,108 +59,106 @@ ga = Algebra("x+y+z+X+Y+Z+")
 context = NumpyContext(ga)
 mv = context.multivector
 ONE = mv.scalar([1.0])
-Scalar = ga.gatype.scalar()
-# The directions and the planes of each spin, and each spin's pseudoscalar.
-First = ga.gatype.vector().derive.within("x y z")
-Second = ga.gatype.vector().derive.within("X Y Z")
-FirstPlanes = ga.gatype.bivector().derive.within("x y z")
-SecondPlanes = ga.gatype.bivector().derive.within("X Y Z")
-I_FIRST = mv.xyz                                                               # [] Trivector
-I_SECOND = mv.XYZ                                                              # [] Trivector
+Scalar = ga.gatype.scalar()                                                    # Scalar+
+# The planes of each spin.
+FirstPlanes = ga.gatype.bivector().derive.within("x y z")                      # Bivector+
+SecondPlanes = ga.gatype.bivector().derive.within("X Y Z")                     # Bivector+
 # The state of one spin, and of the pair: a product of the two spins' states.
-FirstSpinor = ga.gatype.even().derive.within("x y z")
-SecondSpinor = ga.gatype.even().derive.within("X Y Z")
-Spinor = (FirstSpinor * SecondSpinor).output_gatype
-Correlation = ga.gatype((First, Second))                                       # First <- Second
+FirstSpinor = ga.gatype.even().derive.within("x y z")                          # Even+
+SecondSpinor = ga.gatype.even().derive.within("X Y Z")                         # Even+
+Spinor = (FirstSpinor * SecondSpinor).output_gatype                            # Even+
+Correlation = ga.gatype((FirstPlanes, SecondPlanes))                           # FirstPlanes+ <- SecondPlanes+
 # The correlator, and the reference spin, which every state carries to its own spin.
-CORRELATOR = 0.5 * (ONE - mv.xy * mv.XY)                                       # [] Spinor
-REFERENCE_SPIN = CORRELATOR * mv.xy                                            # [] Spinor
+CORRELATOR = 0.5 * (ONE - mv.xy * mv.XY)                                       # [] Spinor+
+REFERENCE_SPIN = CORRELATOR * mv.xy                                            # [] Spinor+
 # The coupling of the exchange, and the singlet and triplet parts it splits the states into.
-COUPLING = mv.yz * mv.YZ + mv.zx * mv.ZX + mv.xy * mv.XY                       # [] Spinor
-SINGLET = 0.25 * (ONE + COUPLING)                                              # [] Spinor
-TRIPLET = 0.25 * (3 - COUPLING)                                                # [] Spinor
+COUPLING = mv.yz * mv.YZ + mv.zx * mv.ZX + mv.xy * mv.XY                       # [] Spinor+
+SINGLET = 0.25 * (ONE + COUPLING)                                              # [] Spinor+
+TRIPLET = 0.25 * (3 - COUPLING)                                                # [] Spinor+
+# The plane of a field that turns both spins in their xy planes.
+FIELD_PLANE = mv.xy + mv.XY                                                    # [] Bivector+
 
 
 # --- math -----------------------------------------------------------------------------
 def exchange(state: Spinor, angle: np.ndarray) -> Spinor:
     """The state after the exchange interaction has acted for the given angle, the coupling strength
     times time: its singlet part turned by three times the angle, its triplet part back by the angle."""
-    return SINGLET * state * (mv.xy * (3 * angle)).exp() + TRIPLET * state * (mv.xy * -angle).exp()   # [...] Spinor
+    singlet_turn = (mv.xy * (3 * angle)).exp()                                 # [...] Rotor+
+    triplet_turn = (mv.xy * -angle).exp()                                      # [...] Rotor+
+    return SINGLET * state * singlet_turn + TRIPLET * state * triplet_turn     # [...] Spinor+
 
 
 def energy(state: Spinor, exchange_rate: np.ndarray, field: np.ndarray) -> Scalar:
     """The expected energy of a state under the exchange, shifted to minus the exchange rate on the
-    singlet and plus it on the triplet, and a field along z that lowers each spin along it."""
-    first, second = bloch(state)                                               # [...] First, Second
-    return exchange_rate * expectation(0.5 * (ONE - COUPLING), state) - 0.5 * field * ((first | mv.z) + (second | mv.Z))   # [...] Scalar
+    singlet and plus it on the triplet, and a field in the xy planes that lowers each spin turning in
+    its plane."""
+    first, second = spin_planes(state)                                         # [...] FirstPlanes+, SecondPlanes+
+    return exchange_rate * expectation(0.5 * (ONE - COUPLING), state) - 0.5 * field * FIELD_PLANE.dot(first + second)   # [...] Scalar+
 
 
 def qubit_turn(state: Spinor, exchange_rate: np.ndarray, difference: np.ndarray, times: np.ndarray) -> Spinor:
-    """A state of zero spin along z after the given times under the exchange and a field along z that
-    differs between the spins. Such a state is a combination of the singlet and the triplet of zero spin
-    along z, on which the generator applied twice is minus the rate squared: its exponential is a cosine
-    and a sine, as for a rotor."""
+    """A state of zero spin in the xy planes after the given times under the exchange and a field in
+    those planes that differs between the spins. Such a state is a combination of the singlet and the
+    triplet of zero spin in the xy planes, on which the generator applied twice is minus the rate
+    squared: its exponential is a cosine and a sine, as for a rotor."""
     # The exchange, minus one on the singlet and one on the triplet, turned about the reference spin; and
     # the field difference, turning the first spin's xy plane against the second's.
-    generator = -exchange_rate * (0.5 * (ONE - COUPLING) * state) * REFERENCE_SPIN - difference * 0.5 * (mv.xy - mv.XY) * state   # [...] Spinor
+    generator = -exchange_rate * (0.5 * (ONE - COUPLING) * state) * REFERENCE_SPIN - difference * 0.5 * (mv.xy - mv.XY) * state   # [...] Spinor+
     rate = np.sqrt(exchange_rate**2 + difference**2)
-    return np.cos(rate * times) * state + np.sin(rate * times) / rate * generator   # [...] Spinor
+    return np.cos(rate * times) * state + np.sin(rate * times) / rate * generator   # [...] Spinor+
 
 
 def qubit(state: Spinor) -> tuple[Scalar, Scalar, Scalar]:
-    """The pair's place on the sphere of the qubit made of the singlet and the triplet of zero spin along
-    z: how far it leans to up-down against down-up, half the difference of the two spins' parts along z;
-    the turn between them, the expectation of a product of the shifted exchange and the difference of the
-    two xy planes; and the balance of singlet against triplet."""
-    first, second = bloch(state)                                               # [...] First, Second
-    across = 0.5 * ((first | mv.z) - (second | mv.Z))                          # [...] Scalar
-    turned = expectation(-0.25 * (ONE - COUPLING) * (mv.xy - mv.XY), state)    # [...] Scalar
-    balance = expectation(0.5 * (COUPLING - ONE), state)                       # [...] Scalar
+    """The pair's place on the sphere of the qubit made of the singlet and the triplet of zero spin in
+    the xy planes: how far it leans to up-down against down-up, half the difference of the two spins'
+    parts in their xy planes; the turn between them, the expectation of a product of the shifted exchange
+    and the difference of the two xy planes; and the balance of singlet against triplet."""
+    first, second = spin_planes(state)                                         # [...] FirstPlanes+, SecondPlanes+
+    across = 0.5 * (mv.xy.dot(first) - mv.XY.dot(second))                      # [...] Scalar+
+    turned = expectation(-0.25 * (ONE - COUPLING) * (mv.xy - mv.XY), state)    # [...] Scalar+
+    balance = expectation(0.5 * (COUPLING - ONE), state)                       # [...] Scalar+
     return across, turned, balance
 
 
-def bloch(state: Spinor) -> tuple[First, Second]:
-    """Each spin's Bloch vector: the part of the spin in its own planes, read as a vector of its space."""
-    spin = 2 * (state >> REFERENCE_SPIN)                                       # [...] Bivector
-    first = I_FIRST.inverse() * spin.cast(FirstPlanes)                         # [...] First
-    second = I_SECOND.inverse() * spin.cast(SecondPlanes)                      # [...] Second
-    return first, second
+def spin_planes(state: Spinor) -> tuple[FirstPlanes, SecondPlanes]:
+    """The plane each spin turns in: the part of the pair's spin in that spin's own planes."""
+    spin = 2 * (state >> REFERENCE_SPIN)                                       # [...] Bivector+
+    return spin.cast(FirstPlanes), spin.cast(SecondPlanes)
 
 
 def correlation(state: Spinor) -> Correlation:
-    """The correlations of the two spins, as a map from the second spin's directions to the first's:
-    `a | correlation(b)` is the expected product of the two spins' values along a and b."""
-    density = 2 * (state >> ONE)                                               # [...] Spinor
-    return (I_FIRST.inverse() * (density * (I_SECOND * Second)).cast(FirstPlanes)).cast(Correlation)
+    """The correlations of the two spins, as a map from the second spin's planes to the first's:
+    `a.dot(correlation(b))` is the expected product of the two spins' values in the planes a and b."""
+    density = 2 * state.symmetric_reverse_product()                            # [...] Spinor+
+    return (density * SecondPlanes).cast(FirstPlanes)                          # [...] FirstPlanes+ <- SecondPlanes+
 
 
-def steer(state: Spinor, direction: First) -> tuple[Scalar, Second]:
-    """Measuring the first spin along a unit direction and finding +1: how likely that is, and the
-    second spin's Bloch vector after. The first spin's value along the direction acts on the pair
-    from the left as `-(I_FIRST * direction) * state * REFERENCE_SPIN`, and the measurement keeps the part
-    of the state on which it is +1."""
-    measured = 0.5 * (state - (I_FIRST * direction) * state * REFERENCE_SPIN) # [...] Spinor
-    probability = expectation(ONE, measured)                                   # [...] Scalar
-    _, steered = bloch(measured / probability.square_root())                   # [...] Second
+def steer(state: Spinor, plane: FirstPlanes) -> tuple[Scalar, SecondPlanes]:
+    """Measuring the first spin in a unit plane and finding +1: how likely that is, and the second
+    spin's plane after. The first spin's value in the plane acts on the pair from the left as
+    `-plane * state * REFERENCE_SPIN`, and the measurement keeps the part of the state on which it
+    is +1."""
+    measured = 0.5 * (state - plane * state * REFERENCE_SPIN)                  # [...] Spinor+
+    probability = expectation(ONE, measured)                                   # [...] Scalar+
+    _, steered = spin_planes(measured / probability.square_root())             # [...] SecondPlanes+
     return probability, steered
 
 
 def bell(correlations: Correlation) -> Scalar:
-    """The largest Bell combination over all directions, from the two largest singular values of the
+    """The largest Bell combination over all planes, from the two largest singular values of the
     correlation map."""
-    values = correlations.svdvals()                                            # [..., 3] Scalar
-    return 2 * (values[..., 0] ** 2 + values[..., 1] ** 2).square_root()      # [...] Scalar
+    values = correlations.svdvals()                                            # [..., 3] Scalar+
+    return 2 * (values[..., 0] ** 2 + values[..., 1] ** 2).square_root()       # [...] Scalar+
 
 
-def bell_element(first: First, first_other: First, second: Second, second_other: Second) -> Spinor:
-    """The Bell combination along two directions of each spin, as a multivector acting on states from
-    the left: the product of a plane of one spin with a plane of the other, `(I_FIRST * a) * (I_SECOND
-    * b)`, is minus the product of the two spins' values along a and b."""
-    return -((I_FIRST * first) * (I_SECOND * (second + second_other))
-             + (I_FIRST * first_other) * (I_SECOND * (second - second_other)))   # [...] Spinor
+def bell_element(first: FirstPlanes, first_other: FirstPlanes, second: SecondPlanes, second_other: SecondPlanes) -> Spinor:
+    """The Bell combination in two planes of each spin, as a multivector acting on states from the
+    left: the product of a plane of one spin with a plane of the other, `a * b`, is minus the product
+    of the two spins' values in a and b."""
+    return -(first * (second + second_other) + first_other * (second - second_other))   # [...] Spinor+
 
 
 def expectation(element: Spinor, state: Spinor) -> Scalar:
     """The expectation of a multivector acting on states from the left: the sandwich from the other
     side, `state.reverse() * element * state`."""
-    return 2 * (state << element).select[0]                                    # [...] Scalar
+    return 2 * (state << element).select[0]                                    # [...] Scalar+
