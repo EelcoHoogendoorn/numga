@@ -26,7 +26,7 @@ def energies(points: Point, masses: np.ndarray, rate: Rate, mirror: Plane) -> Sc
     inertia rebuilt from the reflected masses, and of the plain sandwich that reflects every element alike, in that
     order."""
     # Inertia maps the body's rate of motion to its momentum.
-    inertia = (points & points.commutator(Rate) * masses).sum(axis=0)           # [] Momentum- <- Rate+
+    inertia = points.regressive(points.commutator(Rate) * masses).sum(axis=0)   # [] Momentum- <- Rate+
     energy = (inertia(rate) & rate) / 2                                         # [] Scalar+
 
     # Reflect the map on its input and its output, along with the actual motion rate.
@@ -36,7 +36,7 @@ def energies(points: Point, masses: np.ndarray, rate: Rate, mirror: Plane) -> Sc
 
     # Constructing from reflected masses gives the same inertia and energy.
     reflected_points = mirror >> points                                         # [masses] Point-
-    rebuilt_inertia = (reflected_points & reflected_points.commutator(Rate) * masses).sum(axis=0)  # [] Momentum- <- Rate+
+    rebuilt_inertia = reflected_points.regressive(reflected_points.commutator(Rate) * masses).sum(axis=0)  # [] Momentum- <- Rate+
     rebuilt_energy = (rebuilt_inertia(reflected_rate) & reflected_rate) / 2     # [] Scalar+
 
     # Uniform grade-involuted conjugation gives momentum the wrong sign.

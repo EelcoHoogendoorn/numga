@@ -22,8 +22,8 @@ SECOND_TURN = np.radians(-35)
 CONTACT_NORMAL = np.radians(22)
 OFFSETS = np.array([0.8, 0.0, -0.6])
 # The offsets the second ellipsoid slides through, from apart into the first, and the duration of a frame.
-SLIDE = np.linspace(0.8, -0.6, 57)
-DURATION_MS = 60
+SLIDE = np.linspace(0.8, -0.6, 85)
+DURATION_MS = 40
 # The shares at which the blend's determinant, a cubic, is sampled to fix it, and the shares it is drawn at.
 SAMPLES = [[0.0], [1.0], [2.0], [-1.0]]
 N_SHARES = 500

@@ -16,6 +16,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import Extensor, stack
+from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import fitted, labels, meshes, show, solids, strokes
 from examples.util.wgsl.scene import Scene
@@ -77,8 +78,8 @@ def plain_axes(ax: plt.Axes, across: str, up: str) -> None:
 def bell_bounds(ax: plt.Axes, angles: np.ndarray) -> None:
     """The largest Bell combination over the exchange against its two bounds, the only values marked: 2 for spins
     that carry their own answers, dashed, and 2 sqrt 2 for any pair, dotted."""
-    ax.axhline(2.0, color="0.5", linestyle="--", linewidth=0.8)
-    ax.axhline(2 * np.sqrt(2), color="0.5", linestyle=":", linewidth=0.8)
+    ax.axhline(2.0, color="0.5", linestyle="--", linewidth=charts.FRAME_WIDTH)
+    ax.axhline(2 * np.sqrt(2), color="0.5", linestyle=":", linewidth=charts.FRAME_WIDTH)
     ax.set(xlim=(angles[0], angles[-1]), ylim=(0.0, 3.0))
     plain_axes(ax, "exchange angle", "largest Bell combination")
     ax.set(yticks=[2.0, 2 * np.sqrt(2)], yticklabels=["2", r"$2\sqrt{2}$"])
@@ -132,14 +133,16 @@ def draw_state(first: Extensor, second: Extensor, reading: Reading) -> plt.Figur
     return draw_pair([(coordinates(first, reading.first), FIRST), (coordinates(second, reading.second), SECOND)])
 
 
+@charts.style()
 def draw_exchange(angles: np.ndarray, bells: Extensor, first: Extensor, reading: Reading) -> plt.Figure:
     """Over the exchange: the size of each spin, and the largest Bell combination against the bound for
     spins that carry their own answers and the bound for any pair."""
-    figure, (size, bell) = plt.subplots(1, 2, figsize=(6.4, 2.8), layout="constrained")
-    size.plot(angles, sizes(first, reading.first), color=FIRST, linewidth=1.2)
+    # A smooth curve in each of two panels, wide enough for their long labels.
+    figure, (size, bell) = charts.subplots(640, 260, ncols=2, layout="constrained")
+    size.plot(angles, sizes(first, reading.first), color=FIRST)
     size.set(xlim=(angles[0], angles[-1]), ylim=(0.0, 1.05))
     plain_axes(size, "exchange angle", reading.size)
-    bell.plot(angles, bells.to_array(), color=TOGETHER, linewidth=1.2)
+    bell.plot(angles, bells.to_array(), color=TOGETHER)
     bell_bounds(bell, angles)
     return figure
 
@@ -179,37 +182,43 @@ def animate_steering(measured: Extensor, probability: Extensor, steered: Extenso
     return steering_frames(points, targets, weights)
 
 
+@charts.style()
 def draw_entanglement(angles: np.ndarray, singular_values: Extensor, first: Extensor, reading: Reading) -> plt.Figure:
     """The correlation map's singular values over the exchange, and the size of the first spin."""
     values = singular_values.to_array()                                        # [angles, 3]
-    figure, ax = plt.subplots(figsize=(6.4, 2.8), layout="constrained")
-    ax.plot(angles, values[:, 0], color=TOGETHER, linewidth=1.2, label="largest singular value")
-    ax.plot(angles, values[:, 1], color=TOGETHER, linewidth=1.2, linestyle="--", label="the other two: the concurrence")
-    ax.plot(angles, sizes(first, reading.first), color=FIRST, linewidth=1.2, label=reading.size)
+    # Three smooth curves under a legend of their long names, two to a row.
+    figure, ax = charts.subplots(480, 300, layout="constrained")
+    ax.plot(angles, values[:, 0], color=TOGETHER, label="largest singular value")
+    ax.plot(angles, values[:, 1], color=TOGETHER, linestyle="--", label="the other two: the concurrence")
+    ax.plot(angles, sizes(first, reading.first), color=FIRST, label=reading.size)
     ax.set(xlim=(angles[0], angles[-1]), ylim=(0.0, 1.05))
-    ax.legend(frameon=False, fontsize=8, loc="lower center", bbox_to_anchor=(0.5, 1), ncol=3)
+    ax.legend(frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1), ncol=2)
     plain_axes(ax, "exchange angle", "")
     return figure
 
 
+@charts.style()
 def draw_levels(fields: np.ndarray, energies: Extensor, spins: Extensor) -> plt.Figure:
     """The energies of the four states of definite spin in the field's plane as the field rises, the
     lowest traced over them, and the total spin in the field's plane of the lowest."""
     values = energies.to_array()                                               # [fields, states]
     lowest = np.argmin(values, axis=-1)                                        # [fields]
-    figure, (levels, spin) = plt.subplots(1, 2, figsize=(6.4, 3.0), layout="constrained")
+    # Four straight levels and a step, side by side, over the levels' legend in one row.
+    figure, (levels, spin) = charts.subplots(680, 320, ncols=2, layout="constrained")
     for column, (name, colour) in enumerate(zip(FOUR_NAMES, (TOGETHER, "0.55", FIRST, SECOND))):
-        levels.plot(fields, values[:, column], color=colour, linewidth=1.2, label=name)
-    levels.plot(fields, values.min(axis=-1), color="0.1", linewidth=3.0, alpha=0.25)
+        levels.plot(fields, values[:, column], color=colour, label=name)
+    # The lowest level traced over them as a broad faint band, three curves wide.
+    levels.plot(fields, values.min(axis=-1), color="0.1", linewidth=charts.points(3 * charts.LINE_PX), alpha=0.25)
     levels.set(xlim=(fields[0], fields[-1]))
-    levels.legend(frameon=False, fontsize=7, loc="upper left")
+    figure.legend(*levels.get_legend_handles_labels(), frameon=False, loc="outside lower center", ncol=len(FOUR_NAMES))
     plain_axes(levels, "field", "energy")
-    spin.plot(fields, spins.to_array()[lowest], color="0.2", linewidth=1.2)
+    spin.plot(fields, spins.to_array()[lowest], color="0.2")
     spin.set(xlim=(fields[0], fields[-1]), ylim=(-0.1, 2.1))
     plain_axes(spin, "field", "total spin, lowest state")
     return figure
 
 
+@charts.style()
 def draw_qubit(across: Extensor, turned: Extensor, balance: Extensor, times: np.ndarray,
                back_in_singlet: Extensor, exchange_rates: np.ndarray) -> plt.Figure:
     """The pair on the singlet-triplet qubit's sphere over time, one path per exchange rate: singlet at
@@ -217,7 +226,8 @@ def draw_qubit(across: Extensor, turned: Extensor, balance: Extensor, times: np.
     the front. Beside it, how likely the pair is found back in the singlet."""
     paths = np.stack([across.to_array(), turned.to_array(), balance.to_array()], axis=-1)   # [rates, times, 3]
     shades = (TOGETHER, FIRST, SECOND)
-    figure = plt.figure(figsize=(6.6, 3.0))
+    # The sphere beside the curves, the column's width but the room the legend needs past them.
+    figure = plt.figure(figsize=(760 / charts.DPI, 320 / charts.DPI))
     ax = figure.add_axes((0.0, 0.0, 0.45, 1.0))
     view = ball(ax)
     tracks = strokes.polylines([(sm.point(path), np.array(to_rgb(colour))) for path, colour in zip(paths, shades)],
@@ -227,11 +237,12 @@ def draw_qubit(across: Extensor, turned: Extensor, balance: Extensor, times: np.
     # Each pole named just past the sphere, where the camera sees it.
     places = np.array([(0, 0, 1.15), (0, 0, -1.2), (1.25, 0, 0), (-1.25, 0, 0)])
     labels(ax, view, sm.point(places), ["singlet", "triplet", "down-up", "up-down"], ha="center", va="center",
-           fontsize=7, color=LABEL_COLOUR)
+           color=LABEL_COLOUR)
     curves = figure.add_axes((0.53, 0.18, 0.44, 0.7))
     for rate, curve, colour in zip(exchange_rates, back_in_singlet.to_array(), shades):
-        curves.plot(times, curve, color=colour, linewidth=1.2, label=f"exchange rate {rate:g}")
+        curves.plot(times, curve, color=colour, label=f"exchange rate {rate:g}")
     curves.set(xlim=(times[0], times[-1]), ylim=(-0.05, 1.05))
-    curves.legend(frameon=False, fontsize=7, loc="lower center", bbox_to_anchor=(0.5, 1), ncol=3)
+    # The legend in one row above the curves, flush with their right edge, wider than they are.
+    curves.legend(frameon=False, loc="lower right", bbox_to_anchor=(1, 1), ncol=3)
     plain_axes(curves, "time", "back in the singlet")
     return figure

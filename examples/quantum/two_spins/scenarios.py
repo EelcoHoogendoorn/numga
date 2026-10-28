@@ -18,10 +18,10 @@ four = stack([np.sqrt(2) * core.singlet * up_down, np.sqrt(2) * core.triplet * u
 # The stages of the exchange, and of the steering animation; the planes the first spin is measured in,
 # around and down its sphere of unit planes, the duration of a frame of the steering animation in
 # milliseconds, and the seed of the random planes and turns the checks run on.
-N_FRAMES = 121
+N_FRAMES = 181
 N_AROUND = 24
 N_DOWN = 12
-DURATION_MS = 60
+DURATION_MS = 40
 SEED = 0
 # The exchange rate while a field in the xy planes rises, the number of fields, and the largest field.
 EXCHANGE_RATE = 1.0

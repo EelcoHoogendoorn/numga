@@ -8,7 +8,7 @@ from examples.orientation.mirror_energy import core
 from examples.orientation.mirror_energy.core import Point, Scalar, mv
 
 # The duration of each animation frame in milliseconds.
-frame_duration_ms = 90
+frame_duration_ms = 40
 
 
 def rotating_masses() -> tuple[Point, Point, np.ndarray, Scalar]:
@@ -19,7 +19,7 @@ def rotating_masses() -> tuple[Point, Point, np.ndarray, Scalar]:
     masses = np.array([1, 1.5, 0.5])
     rate = mv.xy                                                                # [] Rate+
     mirror = mv.x                                                               # [] Plane+
-    n_frames = 36
+    n_frames = 81
     times = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)
     positions, velocities = core.motion(points, rate, mirror, times)
     return positions, velocities, masses, core.energies(points, masses, rate, mirror)

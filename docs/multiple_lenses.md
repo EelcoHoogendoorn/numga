@@ -53,7 +53,7 @@ Nor do they need to be. The motor already has a geometric meaning, and it has it
 
 ```python
 motor = second_plane * first_plane                             # Motor
-inertia = point & point.commutator(Line)                       # Line <- Line
+inertia = point.regressive(point.commutator(Line))             # Line <- Line
 ```
 
 A motion preserves every product of the algebra, so building commutes with moving: building from moved ingredients gives the same map as building first and then composing the result with the motion. That is the tensor transformation law, reappearing as a consequence. A thin lens from the [`scenegraph` example](../examples/geometry/scenegraph/scenegraph.ipynb) is built from its centre, its plane and its focal length. Moving it as a map keeps its relationship with the rays: if the lens and an incoming ray move together, the outgoing ray moves with them, so the motion is undone on the incoming ray, the lens applied, and the outgoing ray carried forward again. That moved lens is the lens built anew from its moved centre and plane:

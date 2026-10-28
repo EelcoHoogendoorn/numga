@@ -24,7 +24,7 @@ BLOCH_LENGTHS = np.array([1.0, 0.7, 0.3, 1.0, 0.7, 0.0])
 N_LATITUDES = 12
 N_LONGITUDES = 2 * N_LATITUDES
 N_USES = 48
-FRAME_DURATION = 80
+FRAME_DURATION = 40
 
 
 # --- math -----------------------------------------------------------------------------
@@ -79,11 +79,10 @@ def main() -> None:
     save_animation(render.animate(surface, prepared, frames, LABELS, reading, render.PANEL), "process_tomography",
                    FRAME_DURATION)
     # Gallery picture: this makes plots/tomography.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-    # Every second use, each frame showing twice as long.
     frames = ((combined[:, None, None](surface), combined[:, None](prepared))
-              for combined in core.powers(learned(learned), N_USES // 2))
+              for combined in core.powers(learned, N_USES))
     save_animation(render.animate(surface, prepared, frames, LABELS, reading, render.GALLERY_PANEL), "tomography",
-                   2 * FRAME_DURATION)
+                   FRAME_DURATION)
 
 
 if __name__ == "__main__":

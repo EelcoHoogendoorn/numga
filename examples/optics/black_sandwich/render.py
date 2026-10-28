@@ -88,7 +88,7 @@ def frames(fields: core.Field, plate_axes: core.Direction, input_axis: core.Dire
            output_axis: core.Direction) -> Iterator[np.ndarray]:
     """The plates' axes turn together while the second stack's outgoing beam stays dark; above the beam,
     the field between components."""
-    return sized_frames(fields, plate_axes, input_axis, output_axis, 50)
+    return sized_frames(fields, plate_axes, input_axis, output_axis, 100)
 
 
 def sized_frames(fields: core.Field, plate_axes: core.Direction, input_axis: core.Direction,

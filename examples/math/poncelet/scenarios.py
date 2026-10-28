@@ -26,10 +26,10 @@ shrink = 0.97
 n_sides = 5
 # The frames of the turn, the angle of the first start, the frame shown as a still, the duration of a
 # frame in milliseconds, and the colours of the animation's palette.
-n_frames = 120
+n_frames = 180
 first_start = 0.05
-still = 10
-frame_duration = 60
+still = n_frames // 12
+frame_duration = 40
 n_colours = 32
 # The ellipsoid turned about the origin by the tilt and carried to its centre.
 shift_to_centre = ((core.mv.xw * centre[0] + core.mv.yw * centre[1]) * 0.5).exp()   # [] Motor+

@@ -40,8 +40,8 @@ sensor_tilt = np.radians(25)
 rear_middle, rear_swing = 1.6, 0.2
 focus_middle, focus_swing = 2.4, 0.8
 aperture_middle, aperture_swing = 0.3, 0.1
-n_frames = 72
-frame_duration_ms = 60
+n_frames = 108
+frame_duration_ms = 40
 # The samples traced around each blur section in the checks.
 n_section_samples = 48
 

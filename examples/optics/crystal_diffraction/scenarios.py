@@ -20,9 +20,9 @@ shears = np.array([0.0, 0.0, max_shear])
 angles = np.array([0.0, 0.0, max_angle])
 half_width = 10.0
 n_pixels = 101
-n_frames = 20
-n_movie_pixels = 141
-frame_duration = 120
+n_frames = 60
+n_movie_pixels = 211
+frame_duration = 40
 # Light running along z: its phase stays put along `time + mv.z.dual()`. Its electric field lies along x.
 wavevector = core.mv.t - core.mv.z                                          # [] Vector+
 incident = wavevector ^ core.mv.x                                           # [] Bivector+

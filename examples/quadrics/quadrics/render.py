@@ -17,11 +17,11 @@ background = np.ones(3)
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin around the ellipsoids as a
 # share of the larger side, and the pixels across each panel.
 ELEVATION, AZIMUTH = np.radians(23.0), np.radians(128.0)
-MARGIN, N_PIXELS = 0.25, 700
+MARGIN, N_PIXELS = 0.25, 300
 # The opacities of each surface of the ellipsoid and the tangent patch, front and back alike; the thickness of the
 # patch, and the radii of the centre and the contact point, in pixels.
 ELLIPSOID_OPACITY, PATCH_OPACITY = 0.19, 0.22
-PATCH_THICKNESS, CENTRE_RADIUS, CONTACT_RADIUS = 1.0, 6.0, 8.0
+PATCH_THICKNESS, CENTRE_RADIUS, CONTACT_RADIUS = 1.0, 3.0, 4.0
 
 
 # --- plumbing -------------------------------------------------------------------------

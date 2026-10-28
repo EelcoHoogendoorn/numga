@@ -43,9 +43,9 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.math.e8 import render
 
-    n_substeps = 6
+    n_substeps = 9
     n_frames = core.coxeter_order * n_substeps
-    duration_ms = 60
+    duration_ms = 40
     roots, plane_x, plane_y, planes, rates, coxeter, seeds = root_system()
     save_figure(render.draw_roots(roots, plane_x[0], plane_y[0]), "e8_roots")
 

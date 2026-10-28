@@ -19,7 +19,7 @@ from numga import stack
 from examples.util.wgsl import Shader, image_figure, supersampled
 from examples.math.spherical_synchronization.core import Cut, Point, Rotor, ga, mv
 
-size = 500
+size = 300
 # The view, elevation and azimuth in radians, azimuth zero looking along +y, facing the side the population
 # gathers on; and the half width it shows.
 elevation, azimuth = np.radians([20.0, -45.0])
@@ -29,10 +29,10 @@ particle_colours = np.array([
     [0.32, 0.43, 0.68], [0.62, 0.39, 0.61],
 ])
 # The circles' width, the dots' radius on the near side and their white rim, and the sphere's outline, in pixels.
-line_width = 1.45
-dot_radius = 3.2
-rim_width = 0.5
-outline_width = 1.0
+line_width = 1.0
+dot_radius = 2.0
+rim_width = 0.4
+outline_width = 0.8
 
 source = """
 // A camera turned to look along its own -z at the sphere's centre; the image half as high as this.

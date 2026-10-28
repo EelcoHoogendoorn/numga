@@ -63,8 +63,9 @@ def animate_planes(turning_roots: Iterable[Vector], roots: Vector, horizontal: V
     ])
     n_frames, n_planes, n_orbits = positions.shape[:3]
     radius = np.linalg.norm(projected, axis=-1).max() * 1.08
-    n_trail = 7
-    history = np.arange(1 - n_trail, 1)
+    # The points each trail runs through, over the share of the loop it covers: one Coxeter step of thirty.
+    n_trail, trail_share = 7, 1 / 30
+    history = np.round(np.linspace(-trail_share * n_frames, 0, n_trail)).astype(int)
     trail_alpha = np.linspace(0.12, 0.85, n_trail - 1)
 
     figure, axes = plt.subplots(1, n_planes, figsize=(4.4, 1.14), facecolor=background)

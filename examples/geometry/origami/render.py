@@ -19,7 +19,7 @@ front_colour = np.array([0.90, 0.46, 0.30])
 back_colour = np.array([0.98, 0.88, 0.65])
 edge_colour = np.array([0.37, 0.24, 0.17])
 background = np.ones(3)
-n_pixels = 600
+n_pixels = 300
 # The view, elevation and azimuth in radians, azimuth zero looking along +y; the margin around the paper as a
 # share of its larger side.
 elevation, azimuth = np.radians([35.0, 200.0])
@@ -28,7 +28,7 @@ margin = 0.136
 view_room = 1.0
 # The separation of one layer from the next, and the creases' width in pixels.
 layer_spacing = 1e-4
-edge_width = 1.8
+edge_width = 0.9
 
 
 colour = meshes.Colour("""
@@ -75,7 +75,7 @@ def picture(paper: core.Paper, view: solids.View) -> np.ndarray:
 
 def draw(paper: core.Paper) -> plt.Figure:
     """Render a single paper state in a figure."""
-    figure, ax = plt.subplots(figsize=(6, 6), layout="constrained")
+    figure, ax = plt.subplots(figsize=(3, 3), layout="constrained")
     # The axes as bare as the picture leaves them, for the layout to give them their room.
     ax.set_axis_off()
     view = fitted(viewport(paper.points), ax)

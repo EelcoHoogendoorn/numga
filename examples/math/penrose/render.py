@@ -16,6 +16,9 @@ thick_colour = "#f59e0b"
 thin_colour = "#38bdf8"
 edge_colour = "#1e293b"
 
+# The sides of the still and of the animation, in inches at 100 dpi.
+still_side, animation_side = 7.0, 3.5
+
 
 # --- plumbing -------------------------------------------------------------------------
 def flat(reading: core.Plane, points: core.Antivector) -> np.ndarray:
@@ -24,8 +27,8 @@ def flat(reading: core.Plane, points: core.Antivector) -> np.ndarray:
     return (reading & points[..., None]).to_array()
 
 
-def canvas(extent: float) -> tuple[plt.Figure, plt.Axes]:
-    figure = plt.figure(figsize=(7.0, 7.0), dpi=100)
+def canvas(extent: float, side: float) -> tuple[plt.Figure, plt.Axes]:
+    figure = plt.figure(figsize=(side, side), dpi=100)
     ax = figure.add_axes((0, 0, 1, 1))
     ax.set_xlim(-extent, extent)
     ax.set_ylim(-extent, extent)
@@ -50,7 +53,7 @@ def draw_tiling(reading: core.Plane, corners: core.Antivector, areas: core.Scala
                 extent: float) -> plt.Figure:
     """The tiles the cut selects among the faces with these corners `[points, faces, 4]`."""
     colours = np.where(areas > areas.mean(), thick_colour, thin_colour)      # [faces]
-    figure, ax = canvas(extent)
+    figure, ax = canvas(extent, still_side)
     tiles(ax, flat(reading, corners), colours, margins)
     return figure
 
@@ -60,8 +63,8 @@ def animate_flips(reading: core.Plane, corners: core.Antivector, areas: core.Sca
     """The tiles each frame's margins select, on a canvas laid out once."""
     colours = np.where(areas > areas.mean(), thick_colour, thin_colour)      # [faces]
     polygons = flat(reading, corners)                                        # [points, faces, 4, 2]
-    figure, ax = canvas(extent)
-    shown = ax.add_collection(PolyCollection([], edgecolors=edge_colour, linewidths=0.6))
+    figure, ax = canvas(extent, animation_side)
+    shown = ax.add_collection(PolyCollection([], edgecolors=edge_colour, linewidths=0.4))
     for margins in frames:
         faces, shades = selected(polygons, colours, margins)
         shown.set_verts(faces)

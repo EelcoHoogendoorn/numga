@@ -44,7 +44,7 @@ PLANE_ARROW_LENGTH, SPHERE_ARROW_LENGTH = 0.85, 0.45
 # gathered into one point, as a parallel at a pole, spans none.
 SPANNED = 1e-12
 # The pixels across each panel of the motions, and the dots per inch their line widths are given at.
-MOTION_PIXELS, MOTION_DPI = 300, 90
+MOTION_PIXELS, MOTION_DPI = 150, 45
 
 
 # --- plumbing -------------------------------------------------------------------------

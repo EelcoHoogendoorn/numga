@@ -107,7 +107,7 @@ def project_velocity_constraint(
     """The rates of body pairs, `[2, ...]`, with the relative velocity of their anchors cancelled by an impulse along
     it."""
     # Relative anchor velocity in world coordinates:
-    anchors_map = anchors & anchors.commutator(Rate)
+    anchors_map = anchors.regressive(anchors.commutator(Rate))
     velocities = motors >> anchors_map(rates)
     forque = velocities[1] - velocities[0]
     magnitude = forque.norm().select[0]

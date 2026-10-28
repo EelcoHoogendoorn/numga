@@ -37,8 +37,8 @@ drag_speed_range = (0.05, 1.2)
 n_drag_speeds = 1151
 n_curve = 200
 # The frames of one period of the waves, and the duration of each in milliseconds.
-n_frames = 24
-frame_duration = 50
+n_frames = 30
+frame_duration = 40
 
 
 # --- math -----------------------------------------------------------------------------

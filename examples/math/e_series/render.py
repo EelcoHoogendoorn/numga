@@ -6,10 +6,12 @@ from matplotlib.collections import LineCollection
 
 from examples.math.e8.core import Vector
 from examples.math.e8.render import background, orbit_colours, coordinates
+from examples.util import charts
 
 family_colours = orbit_colours[[5, 0, 3]]
 
 
+@charts.style()
 def draw_diagram(simple_roots: Vector, ranks: np.ndarray, names: tuple[str, ...]) -> plt.Figure:
     """The E8 diagram, coloured by the stage at which each simple root enters."""
     inner_products = (simple_roots[:, None] | simple_roots[None, :]).to_array()
@@ -19,14 +21,18 @@ def draw_diagram(simple_roots: Vector, ranks: np.ndarray, names: tuple[str, ...]
     segments = np.stack([positions[first], positions[second]], axis=1)
     edge_colours = family_colours[np.maximum(stages[first], stages[second])]
 
-    figure, ax = plt.subplots(figsize=(8, 2.4), facecolor=background)
-    ax.add_collection(LineCollection(segments, colors=edge_colours, alpha=0.7, linewidths=1.5))
-    ax.scatter(*positions.T, c=family_colours[stages], s=120, edgecolors=background, linewidths=1, zorder=3)
+    # Over half the column: eight nodes in a row, a numeral in each, and the three names under them.
+    figure, ax = charts.subplots(460, 145, facecolor=background)
+    ax.add_collection(LineCollection(segments, colors=edge_colours, alpha=0.7))
+    # Each node wide enough for its numeral, at the size of a tick label, and rimmed a frame's width.
+    ax.scatter(*positions.T, c=family_colours[stages], s=charts.points(16) ** 2, edgecolors=background,
+               linewidths=charts.FRAME_WIDTH, zorder=3)
     for index, position in enumerate(positions):
-        ax.text(*position, str(index + 1), color=background, fontsize=8, ha="center", va="center", zorder=4)
-    ax.plot([0, 0, 4, 4], [-0.3, -0.4, -0.4, -0.3], color=family_colours[0], linewidth=0.8)
+        ax.text(*position, str(index + 1), color=background, fontsize=charts.points(charts.TICK_PX), ha="center",
+                va="center", zorder=4)
+    ax.plot([0, 0, 4, 4], [-0.3, -0.4, -0.4, -0.3], color=family_colours[0], linewidth=charts.FRAME_WIDTH)
     for name, colour, horizontal in zip(names, family_colours, (2, 5, 6)):
-        ax.text(horizontal, -0.6, name, color=colour, fontsize=12, ha="center", va="center")
+        ax.text(horizontal, -0.6, name, color=colour, ha="center", va="center")
     ax.set(xlim=(-0.35, 6.35), ylim=(-0.8, 1.2), aspect="equal")
     ax.set_axis_off()
     figure.subplots_adjust(0.025, 0.025, 0.975, 0.975)
@@ -34,6 +40,7 @@ def draw_diagram(simple_roots: Vector, ranks: np.ndarray, names: tuple[str, ...]
     return figure
 
 
+@charts.style()
 def draw_nested_roots(root_systems: tuple[Vector, ...], horizontal: Vector, vertical: Vector,
                       names: tuple[str, ...]) -> plt.Figure:
     """E6 inside E7 inside E8, all projected onto E8's Coxeter plane."""
@@ -53,17 +60,19 @@ def draw_nested_roots(root_systems: tuple[Vector, ...], horizontal: Vector, vert
     first, second = np.nonzero(np.triu(np.isclose(distances, nearest), k=1))
     segments = np.stack([projected[first], projected[second]], axis=1)
     edge_stages = np.maximum(stages[first], stages[second])
-    edge_colours = np.column_stack([family_colours[edge_stages], np.full(len(first), 0.13)])
+    edge_colours = np.column_stack([family_colours[edge_stages], np.full(len(first), 0.065)])
 
-    figure, ax = plt.subplots(figsize=(7, 7.3), facecolor=background)
-    ax.add_collection(LineCollection(segments, colors=edge_colours, linewidths=0.35))
-    ax.scatter(*projected.T, c=colours, s=18, edgecolors=background, linewidths=0.4, zorder=3)
+    # Most of the column, for the dense lattice of roots under the haze of their edges.
+    figure, ax = charts.subplots(680, 710, facecolor=background)
+    # The edges a faint haze, a frame's width.
+    ax.add_collection(LineCollection(segments, colors=edge_colours, linewidths=charts.FRAME_WIDTH))
+    ax.scatter(*projected.T, c=colours, edgecolors="none", zorder=3)
     radius = np.linalg.norm(projected, axis=-1).max() * 1.045
     ax.set(xlim=(-radius, radius), ylim=(-radius, radius), aspect="equal")
     ax.set_axis_off()
     labels = (f"{names[0]}: {counts[0]}", *(f"{name}: +{count}" for name, count in zip(names[1:], counts[1:])))
     for name, colour, position in zip(labels, family_colours, (0.23, 0.5, 0.77)):
-        figure.text(position, 0.028, name, color=colour, fontsize=11, ha="center", va="center")
+        figure.text(position, 0.028, name, color=colour, ha="center", va="center")
     figure.subplots_adjust(0.01, 0.06, 0.99, 0.995)
     plt.close(figure)
     return figure

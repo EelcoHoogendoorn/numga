@@ -20,7 +20,7 @@ FILTER_RGB = np.array(mcolors.to_rgb(FILTER_COLOUR))
 # of its larger side, the figure's width in inches, and pixels per point at 100 dpi.
 OUTLINE = [[0.32, 0.0], [-0.18, 0.16], [-0.18, -0.16]]
 MARGIN = 0.12
-WIDTH = 6.4
+WIDTH = 3.2
 POINT = 100 / 72
 
 
@@ -53,10 +53,10 @@ def animate_tracking(truth: Motor, dead: Motor, estimates: Motor, positions: Poi
     view = filling(np.array([low[0], high[0]]), np.array([low[1], high[1]]), room(ax))
     image = pinned(ax, np.full(view.shape + (3,), 255, dtype=np.uint8), view.extent)
     # Lay the figure out once; only the trails, the readings, the quadric image, and the vehicles move between frames.
-    true_trail, = ax.plot([], [], color=TRUE_COLOUR, linewidth=1.6)
-    dead_trail, = ax.plot([], [], color=DEAD_COLOUR, linestyle="--", linewidth=1.2)
-    est_trail, = ax.plot([], [], color=FILTER_COLOUR, linewidth=1.2)
-    reading_marks, = ax.plot([], [], marker="x", color=READING_COLOUR, linestyle="none", markersize=7, markeredgewidth=1.8)
+    true_trail, = ax.plot([], [], color=TRUE_COLOUR, linewidth=1.3)
+    dead_trail, = ax.plot([], [], color=DEAD_COLOUR, linestyle="--", linewidth=1.0)
+    est_trail, = ax.plot([], [], color=FILTER_COLOUR, linewidth=1.0)
+    reading_marks, = ax.plot([], [], marker="x", color=READING_COLOUR, linestyle="none", markersize=5, markeredgewidth=1.4)
     vehicles = {colour: ax.fill(*shape[0].T, color=colour, alpha=0.9, linewidth=0)[0]
                 for colour, shape in shapes.items()}
     for step in range(len(true_xy)):

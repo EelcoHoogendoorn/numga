@@ -24,8 +24,8 @@ n_steps = 400
 # the frames along it, and the duration of each frame.
 spiral_polars = np.pi * np.array([0.95, 0.45])
 n_turns = 4
-n_frames = 90
-duration_ms = 60
+n_frames = 68
+duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------

@@ -23,7 +23,7 @@ surface_colour = np.array([0.36, 0.60, 0.80])
 # The heat-flow ellipsoid's share of what lies behind it hidden, so that the flow within it shows; the arrows' shaft
 # widths, head lengths and head widths in pixels, the driving field's and the flow's.
 surface_opacity = 0.45
-driving_arrow, flow_arrow = (3.0, 14.0, 9.0), (4.0, 16.0, 11.0)
+driving_arrow, flow_arrow = (1.6, 7.0, 5.0), (2.0, 8.0, 6.0)
 stiffness_colour = np.array([0.88, 0.52, 0.30])
 site_colours = {"centre": [0.20, 0.22, 0.26], "axial": [0.88, 0.45, 0.22], "diagonal": [0.30, 0.56, 0.75], "corner": [0.78, 0.78, 0.80]}
 background = np.array([1.0, 1.0, 1.0])
@@ -122,7 +122,7 @@ def draw_conduction(conductivities: Conductivity, driving: Field, fluxes: Direct
     driving_tip, flows = placed(driving.dual() * largest), placed(fluxes)
     ellipsoids = [image_of_sphere(conductivity) for conductivity in conductivities]
     view = solids.view([framed for _, framed in ellipsoids] + [driving_tip, flows], 0.0, elevation, azimuth, margin, 1)
-    fig, axes = figure([view.half] * conductivities.shape[0], 2.2)
+    fig, axes = figure([view.half] * conductivities.shape[0], 1.1)
     # The panels' rooms alike, one view fitted to the first holds them all.
     view = fitted(view, axes[0])
     for ax, (ellipsoid, _), flow in zip(axes, ellipsoids, flows):

@@ -138,7 +138,7 @@ def wave_frames(
     tracked, = ax.plot([], [], "o", color=TRACK, markersize=7, markeredgecolor=ANCHOR,
                        markeredgewidth=0.7, zorder=5)
 
-    n_trail_frames = 18
+    n_trail_frames = 33
     history = []
     for positions, extensions in states:
         position = rest + displacement_scale * (_coordinates(positions) - rest)

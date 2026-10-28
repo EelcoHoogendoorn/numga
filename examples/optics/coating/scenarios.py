@@ -48,12 +48,12 @@ slab_start = 18000.0
 pulse_start = 10000.0
 pulse_width = 1000.0
 light_travel = 27000.0
-n_frames = 120
+n_frames = 168
 # The pulse's carriers turning with and against the helix.
 hand_signs = np.array([1.0, -1.0])
 # Field samples across each slice, and an animation frame's duration.
 n_samples_per_layer = 5
-frame_duration_ms = 50
+frame_duration_ms = 40
 n_axion_jumps = 241
 axion_jumps = np.linspace(-3, 3, n_axion_jumps)
 axion_names = ("Parallel to incident", "Perpendicular to incident", "Total reflection")

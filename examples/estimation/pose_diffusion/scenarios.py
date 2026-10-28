@@ -25,11 +25,11 @@ SECONDS = 8.0
 DT = 0.01
 N_BODIES = 3000
 # The steps between frames of the animation, and the seed of the disturbances.
-N_STEPS_PER_FRAME = 5
+N_STEPS_PER_FRAME = 4
 SEED = 0
 # The half-width of the square each cloud is drawn in, and the frame duration in milliseconds.
 EXTENT = 1.6
-DURATION_MS = 50
+DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------

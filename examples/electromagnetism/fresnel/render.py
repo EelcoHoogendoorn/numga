@@ -14,13 +14,14 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 
+from examples.util import charts
 from examples.util.animation import capture
 from examples.electromagnetism.fresnel import core
 from examples.util.wgsl import fitted, labels, meshes, show, solids
 from examples.util.wgsl.scene import Scene
 
 sheet_colours = ("#2563eb", "#ea580c")
-view_limit = 2.05
+view_limit = 2.4
 latitude_stride = 4
 longitude_stride = 8
 sm = solids.mv
@@ -35,10 +36,9 @@ half_width = 2.3
 # axes reach and their names lie, in units of k.
 grid_width, arrow_width, head_length, head_width = 1.0, 1.0, 5.0, 3.5
 axis_length, label_distance = 1.95, 2.12
-# The size of the axes' names in points, and the width of the sections' curves and of their axes, in points.
-label_size, curve_width, cross_width = 7, 1.0, 0.5
-# The figures' sizes in inches, and the animation's dots per inch.
-comparison_size, animation_size, animation_dpi = (5.4, 3.5), (6.0, 3.0), 85
+# The figures' sizes in pixels: the comparison, each medium's sheets above their sections, three quarters of the
+# column; the animation, the sheets beside their sections, about two thirds of it.
+comparison_size, animation_size = (600, 400), (520, 260)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -117,19 +117,19 @@ def surface(ax: Axes, picture: np.ndarray, view: solids.View) -> AxesImage:
     """A picture of k-space, its axes named at their tips; the image, for an animation to set its data."""
     shown = show(ax, picture, view)
     labels(ax, view, sm.point(label_distance * np.eye(3)), ["$k_x$", "$k_y$", "$k_z$"], ha="center", va="center",
-           fontsize=label_size, color=axis_colour)
+           color=axis_colour)
     return shown
 
 
 def section_axes(ax: Axes) -> list[Line2D]:
     """Axes for the sheets' sections, and each sheet's curve, empty, for its points to be set."""
-    curves = [ax.plot([], [], color=colour, linestyle=style, linewidth=curve_width)[0]
+    curves = [ax.plot([], [], color=colour, linestyle=style)[0]
               for colour, style in zip(sheet_colours, ("-", "--"))]
-    ax.axhline(0, color="#cbd5e1", linewidth=cross_width)
-    ax.axvline(0, color="#cbd5e1", linewidth=cross_width)
+    ax.axhline(0, color="#cbd5e1", linewidth=charts.FRAME_WIDTH)
+    ax.axvline(0, color="#cbd5e1", linewidth=charts.FRAME_WIDTH)
     # The axes named at their ends, without scales: the sheets' shapes against each other are the point.
-    ax.text(view_limit, 0, "$k_x$", ha="right", va="bottom", fontsize=label_size, color=axis_colour)
-    ax.text(0, view_limit, "$k_z$", ha="left", va="top", fontsize=label_size, color=axis_colour)
+    ax.text(view_limit, 0, "$k_x$", ha="right", va="bottom", color=axis_colour)
+    ax.text(0, view_limit, "$k_z$", ha="left", va="top", color=axis_colour)
     ax.set(xlim=(-view_limit, view_limit), ylim=(-view_limit, view_limit))
     ax.set_aspect("equal")
     ax.set_axis_off()
@@ -143,14 +143,14 @@ def trace_sections(curves: list[Line2D], sections: core.Vector) -> None:
         curve.set_data(points[:, mode, 0], points[:, mode, 2])
 
 
+@charts.style()
 def comparison(sheets: core.Vector, sections: core.Vector) -> plt.Figure:
     """Each medium's sheets above their sections, one medium to a column."""
-    figure = plt.figure(figsize=comparison_size, layout="constrained")
     count = len(sheets)
-    surface_axes = [figure.add_subplot(2, count, i + 1) for i in range(count)]
-    for i in range(count):
+    figure, (surface_axes, sections_axes) = charts.subplots(*comparison_size, nrows=2, ncols=count, squeeze=False,
+                                                            layout="constrained")
+    for i, ax in enumerate(sections_axes):
         surface_axes[i].set_axis_off()
-        ax = figure.add_subplot(2, count, count + i + 1)
         trace_sections(section_axes(ax), sections[i])
     # The sheets traced once every axes is laid out, the sheets' as bare as their pictures leave them, each at the
     # size of its room.
@@ -163,19 +163,20 @@ def comparison(sheets: core.Vector, sections: core.Vector) -> plt.Figure:
 
 def animate(frames: Iterable[tuple[core.Vector, core.Vector]]) -> Iterator[np.ndarray]:
     """The sheets beside their sections, frame by frame, the frame of k-space and the sections' axes set up once."""
-    figure = plt.figure(figsize=animation_size, dpi=animation_dpi, layout="constrained")
-    surface_axes = figure.add_subplot(1, 2, 1)
-    # The sheets' axes as bare as their picture leaves them, for the layout to give them their room.
-    surface_axes.set_axis_off()
-    curves = section_axes(figure.add_subplot(1, 2, 2))
-    view = k_space(surface_axes)
-    scene = Scene(view, np.ones(3), k_axes(view), [], inks=[], translucent=[])
-    image = surface(surface_axes, np.full((*view.shape, 3), 255, dtype=np.uint8), view)
-    # Laid out once, so that nothing moves between frames.
-    figure.canvas.draw()
-    figure.set_layout_engine("none")
-    for sheets, sections in frames:
-        image.set_data(scene.draw([], inks=[], translucent=[], meshes=sheet_sides(sheets, view)))
-        trace_sections(curves, sections)
-        yield capture(figure)
-    plt.close(figure)
+    # The charts' style held while the frames are drawn, for the artists that drawing makes.
+    with charts.style():
+        figure, (surface_axes, sections_axes) = charts.subplots(*animation_size, ncols=2, layout="constrained")
+        # The sheets' axes as bare as their picture leaves them, for the layout to give them their room.
+        surface_axes.set_axis_off()
+        curves = section_axes(sections_axes)
+        view = k_space(surface_axes)
+        scene = Scene(view, np.ones(3), k_axes(view), [], inks=[], translucent=[])
+        image = surface(surface_axes, np.full((*view.shape, 3), 255, dtype=np.uint8), view)
+        # Laid out once, so that nothing moves between frames.
+        figure.canvas.draw()
+        figure.set_layout_engine("none")
+        for sheets, sections in frames:
+            image.set_data(scene.draw([], inks=[], translucent=[], meshes=sheet_sides(sheets, view)))
+            trace_sections(curves, sections)
+            yield capture(figure)
+        plt.close(figure)

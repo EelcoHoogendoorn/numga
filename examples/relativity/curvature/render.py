@@ -17,6 +17,7 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 
+from examples.util import charts
 from examples.util.animation import capture
 from examples.relativity.curvature import core
 from examples.relativity.curvature.core import Antivector, Curvature, Scalar, mv
@@ -26,9 +27,15 @@ INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
 light_colour = "#c3ccd4"
 tracking_colours = ("#d15a67", "#b48616", "#168676", "#8759a6")
 polarization_names = ("Plus", "Cross", "Circular")
-# The animated ring: the circular packet, alone, at the dots per inch its detail needs.
+# The animated ring: the circular packet, alone, in a square of so many pixels a side; the still's three rings, in so
+# many pixels across and up.
 animated_polarization = polarization_names.index("Circular")
-animation_dpi = 64
+ANIMATION_PX = 330
+DETECTOR_PX = (780, 260)
+# The tracked beads, half again as large as the others.
+TRACKED_SCALE = 1.6
+# Frames of the animated ring per unit time: at 40 ms a frame, a unit of time takes a second.
+frames_per_unit_time = 25
 # The spacetime diagrams, drawn on the GPU with t up: the view's elevation and azimuth in radians, azimuth zero
 # looking along +z, the margin as a share of the larger side, and the pixels across; the share of the figure's
 # width each diagram takes.
@@ -134,33 +141,36 @@ def draw_curvature_map(
 
 
 # --- the strain packet and the Doppler check ------------------------------------------
+@charts.style()
 def draw_packet(time: np.ndarray, strains: np.ndarray, curvatures: np.ndarray) -> plt.Figure:
     """The plus and cross strain profiles and the curvature's weights `[times, 2]`, plus in blue and cross in orange,
     each named beside its highest crest."""
-    fig, (top, bottom) = plt.subplots(2, 1, figsize=(5.0, 2.6), dpi=90, sharex=True, facecolor="white",
-                                      layout="constrained")
+    # About half the column: two short strips of two smooth packets each.
+    fig, (top, bottom) = charts.subplots(440, 260, nrows=2, sharex=True, facecolor="white", layout="constrained")
     for ax, values, name, across in ((top, strains, "strain", ""), (bottom, curvatures, "curvature", "time")):
-        ax.plot(time, values[:, 0], color=BLUE, lw=1.6)
-        ax.plot(time, values[:, 1], color=ORANGE, lw=1.6)
+        ax.plot(time, values[:, 0], color=BLUE)
+        ax.plot(time, values[:, 1], color=ORANGE)
         plain_axes(ax, across, name)
     crests = strains.argmax(axis=0)                                            # [2]
     for crest, values, name, colour, side in ((crests[0], strains[:, 0], "plus", BLUE, -1),
                                               (crests[1], strains[:, 1], "cross", ORANGE, 1)):
         top.annotate(name, (time[crest], values[crest]), xytext=(side * 10, 0), textcoords="offset points",
-                     ha="right" if side < 0 else "left", va="center", color=colour, fontsize=10)
+                     ha="right" if side < 0 else "left", va="center", color=colour)
     return fig
 
 
+@charts.style()
 def draw_doppler(rapidities: np.ndarray, amplitudes: Scalar) -> plt.Figure:
     """Tidal amplitude measured by observers boosted along the wave, against `np.exp(-2 * rapidities)`."""
     measured = amplitudes.to_array()                                     # [n]
     fine = np.linspace(rapidities.min(), rapidities.max(), 200)
-    fig, ax = plt.subplots(figsize=(4.4, 2.6), dpi=90, facecolor="white", layout="constrained")
+    # Under half the column: one falling curve and its dots.
+    fig, ax = charts.subplots(380, 240, facecolor="white", layout="constrained")
     # The Doppler factor squared as a line, the tidal map's largest singular value as dots.
-    ax.plot(fine, np.exp(-2 * fine), color=INK, lw=1.5)
-    ax.scatter(rapidities, measured, color=BLUE, s=16, zorder=5)
+    ax.plot(fine, np.exp(-2 * fine), color=INK)
+    ax.scatter(rapidities, measured, color=BLUE, zorder=5)
     # The observer at rest, faint.
-    ax.axvline(0, color=light_colour, lw=0.8, zorder=0)
+    ax.axvline(0, color=light_colour, linewidth=charts.FRAME_WIDTH, zorder=0)
     ax.set(ylim=(0, None))
     plain_axes(ax, "rapidity", "tidal amplitude")
     return fig
@@ -208,21 +218,21 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
     arrows_at = np.arange(0, len(reference), max(1, len(reference) // 8))
     angles = np.linspace(0, 2 * np.pi, 200)
     radius = np.linalg.norm(reference, axis=-1).mean()
-    ax.plot(radius * np.cos(angles), radius * np.sin(angles), color=light_colour, ls=":", lw=1.5)
-    ax.scatter([0], [0], s=22, color=ORANGE, zorder=8)
+    ax.plot(radius * np.cos(angles), radius * np.sin(angles), color=light_colour, ls=":")
+    ax.scatter([0], [0], color=ORANGE, zorder=8)
     # The cross through the centre, across the whole view but for room for its names at its ends.
     half_span = 0.9 * ax.get_xlim()[1]
-    ax.plot([-half_span, half_span], [0, 0], color="#edf0f3", lw=0.8, zorder=0)
-    ax.plot([0, 0], [-half_span, half_span], color="#edf0f3", lw=0.8, zorder=0)
+    ax.plot([-half_span, half_span], [0, 0], color="#edf0f3", lw=charts.FRAME_WIDTH, zorder=0)
+    ax.plot([0, 0], [-half_span, half_span], color="#edf0f3", lw=charts.FRAME_WIDTH, zorder=0)
     ax.annotate("x", (half_span, 0), xytext=(4, 0), textcoords="offset points", ha="left", va="center",
                 color=CROSS_LABEL_COLOUR)
     ax.annotate("y", (0, half_span), xytext=(0, 4), textcoords="offset points", ha="center", va="bottom",
                 color=CROSS_LABEL_COLOUR)
-    outline, = ax.plot([], [], color=BLUE, lw=1.1, alpha=0.42, zorder=2)
-    beads = ax.scatter([], [], s=19, color=BLUE, edgecolors="white", linewidths=0.4, zorder=5)
-    markers = ax.scatter(*reference[selected].T, s=47, c=tracking_colours[:len(selected)],
-                         edgecolors="white", linewidths=0.8, zorder=7)
-    trails = [ax.plot([], [], color=colour, lw=1.6, alpha=0.60, zorder=4)[0]
+    outline, = ax.plot([], [], color=BLUE, alpha=0.42, zorder=2)
+    beads = ax.scatter([], [], color=BLUE, edgecolors="white", linewidths=charts.FRAME_WIDTH, zorder=5)
+    markers = ax.scatter(*reference[selected].T, s=charts.points(TRACKED_SCALE * charts.MARKER_PX) ** 2,
+                         c=tracking_colours[:len(selected)], edgecolors="white", linewidths=charts.FRAME_WIDTH, zorder=7)
+    trails = [ax.plot([], [], color=colour, alpha=0.60, zorder=4)[0]
               for colour in tracking_colours[:len(selected)]]
     maximum = float(np.linalg.norm(data.accelerations, axis=-1).max())
     quiver = ax.quiver(*reference[arrows_at].T, np.zeros(len(arrows_at)), np.zeros(len(arrows_at)),
@@ -231,7 +241,7 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
     if static:
         for index in selected:
             ax.plot(*data.positions[polarization, :, index].T,
-                    color=tracking_colours[list(selected).index(index)], lw=1.0, alpha=0.22)
+                    color=tracking_colours[list(selected).index(index)], lw=charts.FRAME_WIDTH, alpha=0.22)
 
     def update(frame: int):
         positions = data.positions[polarization, frame]
@@ -248,14 +258,17 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
     return update
 
 
+@charts.style()
 def draw_detector(
     time: np.ndarray, reference: Antivector, displacement: Antivector, acceleration: Antivector,
     amplification: float,
 ) -> plt.Figure:
     """The three polarizations at one shared instant of largest deformation, with faint full trails."""
     data = _detector(time, reference, displacement, acceleration, amplification)
-    fig = plt.figure(figsize=(14, 5.6), dpi=60, facecolor="white")
+    fig = plt.figure(figsize=(DETECTOR_PX[0] / charts.DPI, DETECTOR_PX[1] / charts.DPI), facecolor="white")
     axes = _ring_axes(fig, data)
+    # The rings filling the figure side by side, each a square of its height.
+    fig.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0.02)
     offsets = data.positions - data.reference
     frame = int(np.argmax(np.sum(offsets * offsets, axis=(0, 2, 3))))
     for polarization, ax in enumerate(axes):
@@ -266,16 +279,17 @@ def draw_detector(
 def animate_detector(
     time: np.ndarray, reference: Antivector, displacement: Antivector, acceleration: Antivector, amplification: float,
 ) -> Iterator[np.ndarray]:
-    """The bead ring through the circular packet, as frames at 20 per unit time."""
+    """The bead ring through the circular packet, as frames at `frames_per_unit_time`."""
     data = _detector(time, reference, displacement, acceleration, amplification)
-    fig = plt.figure(figsize=(5.2, 5.2), dpi=animation_dpi, facecolor="white")
-    limit = max(1.35, float(np.abs(data.positions).max()) + 0.31)
-    ax = fig.add_axes((0, 0, 1, 1))
-    ax.set(xlim=(-limit, limit), ylim=(-limit, limit), aspect="equal")
-    ax.set_axis_off()
-    update = _ring(ax, data, animated_polarization, static=False)
-    count = min(len(data.time), max(2, round((data.time[-1] - data.time[0]) * 20) + 1))
-    for index in np.linspace(0, len(data.time) - 1, count, dtype=int):
-        update(index)
-        yield capture(fig)
-    plt.close(fig)
+    with charts.style():
+        fig = plt.figure(figsize=(ANIMATION_PX / charts.DPI, ANIMATION_PX / charts.DPI), facecolor="white")
+        limit = max(1.35, float(np.abs(data.positions).max()) + 0.31)
+        ax = fig.add_axes((0, 0, 1, 1))
+        ax.set(xlim=(-limit, limit), ylim=(-limit, limit), aspect="equal")
+        ax.set_axis_off()
+        update = _ring(ax, data, animated_polarization, static=False)
+        count = min(len(data.time), max(2, round((data.time[-1] - data.time[0]) * frames_per_unit_time) + 1))
+        for index in np.linspace(0, len(data.time) - 1, count, dtype=int):
+            update(index)
+            yield capture(fig)
+        plt.close(fig)

@@ -22,14 +22,17 @@ field_width = 0.02                                 # m, Gaussian standard deviat
 magnet_offset = 0.055                              # m, along x
 n_divisions = 16
 inertia = 0.005                                    # kg m², disc and attached rotor
-initial_speed = 2.0                                # rad/s
+initial_speed = 1.2                                # rad/s
 initial_angle = 0.0                                # rad, straight fibres initially along x
 along_conductivity = bulk_conductivity * 1.9
 across_conductivity = bulk_conductivity * 0.1
-elapsed = 12.0                                     # s
+# Conducting poorly across its fibres, the straight-fibre disc takes a stronger magnet to brake as fast as the
+# isotropic disc.
+straight_field_strength = 0.35                     # T
+elapsed = 6.0                                      # s
 n_steps = 120
 time_step = elapsed / n_steps
-duration_ms = 80
+duration_ms = 40
 # The colours of the animations' palettes.
 n_animation_colours = 64
 n_fibre_lines = 12
@@ -41,16 +44,20 @@ permeability = 4 * np.pi * 1e-7                    # H/m, nonmagnetic conductor 
 n_modes = 63
 n_harmonics = 16
 inductive_field_strength = 1.0                     # T
+# A thicker disc conducts more and keeps its currents longer, so that they lag even a slow turn.
+inductive_thickness = 0.004                        # m
 inductive_initial_speed = 0.0                      # rad/s
-inductive_target_speed = 600.0                     # rad/s, unloaded motor pulse
-spinup_time = 0.012                                # s
-inductive_elapsed = 0.1                            # s
-n_inductive_steps = 120
+inductive_target_speed = 160.0                     # rad/s, unloaded motor pulse
+spinup_time = 0.008                                # s
+inductive_elapsed = 0.07                           # s
+n_inductive_steps = 105
 inductive_time_step = inductive_elapsed / n_inductive_steps
-n_substeps = 8
-# The magnet's centre, and its field there in the runs without and with induction.
+n_substeps = 4
+# The magnet's centre, and its field there in the runs without induction, on the straight-fibre disc, and with
+# induction.
 centre = (core.mv.x * magnet_offset).dual()                                # [] Point-
 magnet_field = core.mv.xy * field_strength                                 # [] Bivector+
+straight_magnet_field = core.mv.xy * straight_field_strength               # [] Bivector+
 inductive_magnet_field = core.mv.xy * inductive_field_strength             # [] Bivector+
 
 
@@ -81,7 +88,7 @@ def spin_down() -> tuple[core.Disc, Iterator[core.Motion]]:
     orientation = (core.mv.xy * (-initial_angle / 2)).exp()[None]             # [cases] Rotor+
     spin = (core.mv.xy * initial_speed)[None]                                # [cases] Bivector+
     heat = (disc.triangle_areas * 0)[None]                                  # [cases] Scalar+[faces]
-    frames = core.braking(disc, centre, core.mv.xy, field_strength, field_width,
+    frames = core.braking(disc, centre, core.mv.xy, straight_field_strength, field_width,
                           conductivity, inertia, orientation, spin, heat, time_step, n_steps)
     return disc, frames
 
@@ -129,7 +136,7 @@ def main() -> None:
     straight, frames = spin_down()
     parallel = (render.parallel_fibres(radius, n_fibre_lines, n_fibre_samples),)
     save_animation(render.animate(straight.mesh, straight.vertices, straight.triangle_areas, frames, centre, field_width,
-                                  magnet_field, parallel, np.ones((1, 1))),
+                                  straight_magnet_field, parallel, np.ones((1, 1))),
                    "eddy_brake_spin_down", duration_ms, n_animation_colours)
     fibres = (render.radial_fibres(fibre_inner_radius, fibre_outer_radius, n_fibre_lines, n_fibre_samples),
               render.circular_fibres(fibre_inner_radius, fibre_outer_radius, n_fibre_lines, n_fibre_samples))
@@ -143,7 +150,9 @@ def main() -> None:
     save_animation(render.animate_heat(disc.mesh, disc.vertices, disc.triangle_areas, braked, centre, field_width,
                                        magnet_field, fibres, shown),
                    "eddy_brake_materials_heat", duration_ms, n_animation_colours)
-    inductive = list(inductive_materials(disc, conductivity))
+    # The thicker disc's sheets conduct more, in proportion.
+    inductive_conductivity = inductive_thickness / thickness * conductivity   # [cases] (Current- <- Field+)[faces]
+    inductive = list(inductive_materials(disc, inductive_conductivity))
     save_animation(render.animate_induction(disc.mesh, disc.vertices, disc.triangle_areas, inductive, centre,
                                             field_width, inductive_magnet_field, fibres, shown),
                    "eddy_brake_inductive_currents", duration_ms, n_animation_colours)

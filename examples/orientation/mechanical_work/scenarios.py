@@ -9,9 +9,9 @@ from examples.orientation.mechanical_work import core
 from examples.orientation.mechanical_work.core import Point, Scalar, mv
 
 # The frame drawn as the still figure.
-still_frame = 4
+still_frame = 8
 # The duration of each animation frame in milliseconds.
-duration_ms = 85
+duration_ms = 40
 
 
 def mirrored_cranks() -> tuple[Point, Point, Point, Point, Scalar]:
@@ -20,7 +20,7 @@ def mirrored_cranks() -> tuple[Point, Point, Point, Point, Scalar]:
     radius = 0.9
     speed = 1
     force_strength = 1.5
-    n_steps = 36
+    n_steps = 72
     times = np.linspace(0, 2 * np.pi / speed, n_steps, endpoint=False)
     mirror = mv.x                                                               # [] Plane+
     pivot = mv.point([-separation, 0])                                          # [] Point-

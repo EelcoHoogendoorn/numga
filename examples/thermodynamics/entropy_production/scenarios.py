@@ -39,7 +39,7 @@ if __name__ == "__main__":
     from examples.util.animation import save_animation, save_figure
     from examples.thermodynamics.entropy_production import render
 
-    n_frames, n_relaxation_times, frame_duration_ms = 72, 5, 75
+    n_frames, n_relaxation_times, frame_duration_ms = 135, 5, 40
     capacities = np.array([capacity_a, capacity_b])
     first_state, first_flow, _ = next(exchange(n_frames, n_relaxation_times))
     save_figure(render.draw(entropy_of, temperatures_of, core.transfer, capacities, first_state, first_flow),

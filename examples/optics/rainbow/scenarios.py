@@ -22,9 +22,9 @@ drawn_index = 1.333
 # Offsets of the light from the drop's centre, as fractions of its radius: for the sky, for the light
 # swept across the drop, and for the bundle drawn behind it; the duration of a frame of the sweep.
 n_rays = 4000
-n_frames = 72
+n_frames = 144
 n_bundle = 48
-duration_ms = 80
+duration_ms = 40
 # Reflections inside the drop: once for the primary bow, twice for the secondary.
 n_reflections = 2
 # The sun's height above the horizon, and the width of its disc, in degrees.

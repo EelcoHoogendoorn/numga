@@ -19,8 +19,8 @@ SHEAR_MODULUS = 1.0
 STRETCHES = np.array([0.05, -0.05, 0.08])
 SHEAR = 0.30
 # The frames of the turning view, over half a turn, and the duration of each.
-N_FRAMES = 60
-DURATION_MS = 50
+N_FRAMES = 75
+DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------

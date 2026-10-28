@@ -10,6 +10,7 @@ from matplotlib.collections import LineCollection
 
 from numga import stack
 
+from examples.util import charts
 from examples.util.animation import capture
 from examples.electromagnetism.electrostriction.core import Field, Point, Scalar
 
@@ -108,21 +109,22 @@ def animate_lattice(rest: Point, bonds: np.ndarray, positions: Point, dipoles: P
     plt.close(view.figure)
 
 
+@charts.style()
 def draw_loading(strengths: np.ndarray, parallel: Scalar, transverse: Scalar) -> plt.Figure:
-    figure, ax = plt.subplots(figsize=(3.4, 2.15), dpi=90)
+    # Half the column: two smooth curves, named axes and no numbers.
+    figure, ax = charts.subplots(400, 260)
     along = np.asarray(parallel.to_array()) * 100
     across = np.asarray(transverse.to_array()) * 100
-    ax.plot(strengths, along, color=bond_colour, linewidth=1.3, label="along the field")
-    ax.plot(strengths, across, color=transverse_colour, linewidth=1.3, label="across the field")
+    ax.plot(strengths, along, color=bond_colour, label="along the field")
+    ax.plot(strengths, across, color=transverse_colour, label="across the field")
     # Axes through no field and no change, without tick marks or numbers, each named along itself: the field's above
     # its line, where the curves are not.
     ax.spines[["top", "right"]].set_visible(False)
     ax.spines[["left", "bottom"]].set_position(("data", 0))
-    ax.spines[["left", "bottom"]].set_linewidth(0.5)
     ax.set(xticks=[], yticks=[])
-    ax.set_ylabel("change in rms extent", color=label_colour, fontsize=7)
+    ax.set_ylabel("change in rms extent", color=label_colour)
     ax.text(0.5, 0, "applied field strength", transform=ax.get_yaxis_transform(), ha="center", va="bottom",
-            color=label_colour, fontsize=7)
-    ax.legend(loc="lower center", frameon=False, fontsize=7)
+            color=label_colour)
+    ax.legend(loc="lower center", frameon=False)
     figure.tight_layout()
     return figure

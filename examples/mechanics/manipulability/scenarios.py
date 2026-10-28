@@ -22,12 +22,13 @@ LOOP_CENTRES = np.array([0.35, 0.35, 1.25, 0.4])
 LOOP_AMPLITUDES = np.array([0.9, 0.35, 0.75, 0.8])
 LOOP_FREQUENCIES = np.array([1, 1, 1, 2])
 LOOP_PHASES = np.array([0.0, 1.5, 0.3, 0.0])
-# A fixed view of the whole workspace: (elevation, azimuth) in degrees, the centre and half-width.
+# The view, (elevation, azimuth) in degrees; and the animation's fixed frame of the whole workspace, its centre and
+# half-width.
 VIEW, CENTRE, EXTENT = (18, -60), np.array([-0.9, 0.25, 1.3]), 2.2
 # Pixels across each panel of the animation, the frames of the loop, and the duration of a frame in milliseconds.
 FRAME_PIXELS = 300
-N_FRAMES = 96
-FRAME_DURATION = 60
+N_FRAMES = 144
+FRAME_DURATION = 40
 # Unit tip forces checked against the joint torques they produce.
 CHECKED_FORCES = np.array([[0.3, -0.2, 0.5], [1.0, 0.4, -0.7]])
 
@@ -59,7 +60,7 @@ def main() -> None:
     from examples.mechanics.manipulability import render
 
     poses = [ellipsoids(angles, VELOCITY_SCALE, FORCE_SCALE) for angles in (REACHING, NEARLY_STRAIGHT)]
-    save_figure(render.draw_ellipsoids(poses, VIEW, CENTRE, EXTENT), "manipulability")
+    save_figure(render.draw_ellipsoids(poses, VIEW), "manipulability")
     frames = (render.frame(pose, VIEW, CENTRE, EXTENT, FRAME_PIXELS) for pose in sweep(N_FRAMES))
     save_animation(frames, "manipulability_sweep", FRAME_DURATION)
 

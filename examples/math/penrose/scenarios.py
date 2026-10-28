@@ -17,8 +17,8 @@ lattice_radius = 3
 shift = (axes * np.array([0.12, 0.29, -0.11, 0.33, -0.63])).sum()            # [] Antivector-
 # How far the cut is shifted around its loop, the frames around it, and the duration of a frame.
 phason = 0.35
-n_frames = 90
-duration_ms = 60
+n_frames = 135
+duration_ms = 40
 # Half the width of the view, in units of the tiles' edges.
 extent = 2.6
 

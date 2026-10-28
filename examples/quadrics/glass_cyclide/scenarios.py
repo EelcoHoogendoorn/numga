@@ -42,8 +42,8 @@ elevation = np.radians(20.0)
 half_view = 0.31
 image_shape = (450, 720)
 animation_shape = (330, 528)
-n_frames = 48
-duration_ms = 80
+n_frames = 96
+duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------

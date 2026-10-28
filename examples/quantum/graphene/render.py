@@ -3,31 +3,46 @@ Berry phase. The bands are drawn on the GPU, the rest by matplotlib."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib import patheffects
 
 from numga import stack
 from examples.quantum.graphene import core
-from examples.util.wgsl import fitted, meshes, show, solids
+from examples.util import charts
+from examples.util.wgsl import fitted, meshes, pinned, room, show, solids
 
 sm = solids.mv
 COLOURS = ("#2e86c1", "#7d3c98", "#c0392b", "#d68910")
-# The size of names and tick labels, in points.
+# The size of the names on the bands' chart, in points.
 FONT_SIZE = 7
 # One arrow for every few samples of the field.
 ARROW_STRIDE = 10
+# The pseudospin about the valleys: the side of each valley's panel and the gap between them, in pixels; the arrows
+# each way, the longest arrow's share of their spacing, their shafts' width as a share of the panel's, and their
+# colour; the diverging map of the part along z, from -1 to 1.
+TEXTURE_SIDE, TEXTURE_GAP = 280, 16
+N_TEXTURE_ARROWS = 7
+ARROW_REACH, ARROW_WIDTH = 0.85, 0.012
+ARROW_COLOUR = "0.15"
+TEXTURE_MAP = plt.get_cmap("RdBu_r")
 # The bands' chart: the height of one electronvolt against one unit of momentum, and how far past the bands the
 # frame's arrows reach, in units of momentum; the frame's colour.
 ENERGY_SCALE, AXIS_OVERHANG = 0.3, 0.8
 AXIS_COLOUR = np.full(3, 0.45)
 # The colour of the faint cross through the origin of the momentum plane, and of its names.
 CROSS_COLOUR = "0.6"
+# The colour of the names at the cross's ends over the pseudospin about the valleys, and the width of their white
+# halo, in points.
+NAME_COLOUR, HALO_WIDTH = "0.25", 2.0
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin around the chart as a share
 # of the larger side, and the pixels across it, until the view is fitted to its axes.
 ELEVATION, AZIMUTH = np.radians(22.0), np.radians(-15.0)
 MARGIN, N_PIXELS = 0.1, 400
 # The widths of the frame's shafts, and their heads' length and width, in pixels.
-AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 0.8, 6.0, 3.4
+AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 1.6, 12.0, 6.8
 
 
 def momentum_coordinates(momenta: core.Wavevector) -> np.ndarray:
@@ -59,15 +74,28 @@ def phase(rotors: core.Rotor, starts: core.Pseudospin) -> np.ndarray:
 def cross(ax, across: str, up: str) -> None:
     """No scales: a faint cross through the origin over the picture, its lines named at their ends, each along
     itself."""
-    ax.axhline(0, color=CROSS_COLOUR, linewidth=0.5, zorder=1.5)
-    ax.axvline(0, color=CROSS_COLOUR, linewidth=0.5, zorder=1.5)
+    ax.axhline(0, color=CROSS_COLOUR, linewidth=charts.FRAME_WIDTH, zorder=1.5)
+    ax.axvline(0, color=CROSS_COLOUR, linewidth=charts.FRAME_WIDTH, zorder=1.5)
     ax.annotate(across, (1, 0), xycoords=("axes fraction", "data"), xytext=(3, 0), textcoords="offset points",
-                ha="left", va="center", fontsize=FONT_SIZE, color=CROSS_COLOUR)
+                ha="left", va="center", color=CROSS_COLOUR)
     ax.annotate(up, (0, 1), xycoords=("data", "axes fraction"), xytext=(-3, 0), textcoords="offset points",
-                ha="right", va="bottom", fontsize=FONT_SIZE, color=CROSS_COLOUR, rotation=90, rotation_mode="anchor")
+                ha="right", va="bottom", color=CROSS_COLOUR, rotation=90, rotation_mode="anchor")
     ax.set_axis_off()
 
 
+def haloed_cross(ax, across: str, up: str) -> None:
+    """No scales: a faint cross through the origin over the picture, its lines named inside the picture near their
+    ends, each name on a thin white halo that keeps it legible over the colours and the arrows."""
+    ax.axhline(0, color=CROSS_COLOUR, linewidth=charts.FRAME_WIDTH, zorder=1.5)
+    ax.axvline(0, color=CROSS_COLOUR, linewidth=charts.FRAME_WIDTH, zorder=1.5)
+    halo = [patheffects.withStroke(linewidth=HALO_WIDTH, foreground="white")]
+    ax.annotate(across, (1, 0), xycoords=("axes fraction", "data"), xytext=(-3, -3), textcoords="offset points",
+                ha="right", va="top", color=NAME_COLOUR, path_effects=halo, zorder=3)
+    ax.annotate(up, (0, 1), xycoords=("data", "axes fraction"), xytext=(-3, -3), textcoords="offset points",
+                ha="right", va="top", color=NAME_COLOUR, path_effects=halo, zorder=3)
+
+
+@charts.style()
 def draw_field(momenta: core.Wavevector, field: core.Field) -> plt.Figure:
     """The pseudospin field over the momentum plane: its length as shade, vanishing at the six
     corners of the zone, and its direction in the plane as arrows, which turn once around each
@@ -75,7 +103,8 @@ def draw_field(momenta: core.Wavevector, field: core.Field) -> plt.Figure:
     k, d = momentum_coordinates(momenta), plane_components(field)                 # [samples, samples, 2], [samples, samples, 3]
     length = np.linalg.norm(d, axis=-1)
     sparse = (slice(None, None, ARROW_STRIDE),) * 2
-    figure, ax = plt.subplots(figsize=(3.6, 3.6), layout="constrained")
+    # The zone and its six corners, with an arrow every few samples, and room for the cross's names.
+    figure, ax = charts.subplots(340, 340, layout="constrained")
     ax.pcolormesh(k[..., 0], k[..., 1], length, cmap="viridis", shading="auto")
     ax.quiver(k[sparse][..., 0], k[sparse][..., 1], (d[..., 0] / length)[sparse], (d[..., 1] / length)[sparse],
               color="white", pivot="mid", scale=20, zorder=2)
@@ -113,7 +142,7 @@ def draw_bands(momenta: core.Wavevector, values: core.Scalar) -> plt.Figure:
     tips = corner + np.diag([2 * half_width, 2 * half_width, ceiling - floor + 2 * half_width * np.tan(ELEVATION)])   # [3, 3]
     view = solids.view([places for places, _ in sheets] + [sm.point(corner), sm.point(tips)], 0.0, ELEVATION, AZIMUTH,
                        MARGIN, N_PIXELS)
-    figure = plt.figure(figsize=(3.0, 3.0 * view.half[1] / view.half[0]))
+    figure = plt.figure(figsize=(3.0, 3.0 * view.half[1] / view.half[0]), dpi=200)
     ax = figure.add_axes((0, 0, 1, 1))
     view = fitted(view, ax)
     shafts, heads = solids.arrows(sm.point(np.broadcast_to(corner, (3, 3))), sm.point(tips), AXIS_WIDTH / 2 * view.pixel,
@@ -131,35 +160,47 @@ def draw_bands(momenta: core.Wavevector, values: core.Scalar) -> plt.Figure:
     return figure
 
 
-def draw_textures(offsets: core.Wavevector, directions: core.Pseudospin) -> plt.Figure:
-    """The pseudospin of the upper band about each valley: its in-plane part as arrows, its part
-    along z as colour. It winds once around each valley, in opposite senses."""
-    k, s = momentum_coordinates(offsets), pseudospin_coordinates(directions)       # [samples, samples, 2], [valleys, samples, samples, 3]
-    figure, panels = plt.subplots(1, 2, figsize=(5.6, 2.6), layout="constrained")
-    for ax, spin in zip(panels, s):
-        ax.quiver(k[..., 0], k[..., 1], spin[..., 0], spin[..., 1], spin[..., 2], cmap="coolwarm", clim=(-1, 1),
-                  pivot="mid", scale=13, zorder=2)
-        ax.set_aspect("equal")
-        cross(ax, "momentum x", "momentum y")
+@charts.style()
+def draw_textures(pseudospins_at: Callable[[core.Wavevector], core.Pseudospin], extent: float) -> plt.Figure:
+    """The pseudospin of the upper band about each valley, over a square of momenta of half width `extent`: its part
+    along z as the colour of every pixel, and its part in the plane as arrows on a coarser grid. It winds once around
+    each valley, in opposite senses."""
+    width = 2 * TEXTURE_SIDE + TEXTURE_GAP
+    figure = plt.figure(figsize=(width / charts.DPI, TEXTURE_SIDE / charts.DPI))
+    panels = [figure.add_axes((left / width, 0, TEXTURE_SIDE / width, 1)) for left in (0, TEXTURE_SIDE + TEXTURE_GAP)]
+    side = min(room(panels[0]))
+    # One momentum at the middle of each pixel, rows down from the top, and one at the middle of each cell of the
+    # arrows' grid.
+    across = -extent + (np.arange(side) + 0.5) * 2 * extent / side
+    pixels = core.mv.x * across + core.mv.y * across[::-1, None]                      # [rows, columns] Wavevector+
+    centres = -extent + (np.arange(N_TEXTURE_ARROWS) + 0.5) * 2 * extent / N_TEXTURE_ARROWS
+    arrows = core.mv.x * centres + core.mv.y * centres[:, None]                       # [arrows, arrows] Wavevector+
+    along_z = pseudospin_coordinates(pseudospins_at(pixels))[..., 2]                # [valleys, rows, columns]
+    k, s = momentum_coordinates(arrows), pseudospin_coordinates(pseudospins_at(arrows))   # [arrows, arrows, 2], [valleys, arrows, arrows, 3]
+    for ax, shade, spin in zip(panels, along_z, s):
+        colours = TEXTURE_MAP((shade + 1) / 2)[..., :3]
+        pinned(ax, np.round(colours * 255).astype(np.uint8), (-extent, extent, -extent, extent))
+        ax.quiver(k[..., 0], k[..., 1], spin[..., 0], spin[..., 1], color=ARROW_COLOUR, pivot="mid",
+                  scale=N_TEXTURE_ARROWS / ARROW_REACH, width=ARROW_WIDTH, zorder=2)
+        ax.set(xlim=(-extent, extent), ylim=(-extent, extent))
+        haloed_cross(ax, "momentum x", "momentum y")
     return figure
 
 
+@charts.style()
 def draw_berry(radii: np.ndarray, gaps: np.ndarray, rotors: core.Rotor, starts: core.Pseudospin) -> plt.Figure:
     """The Berry phase of a loop against its radius, per gap, for both valleys: pi for every loop
     without a gap, rising from zero toward pi with one, with opposite signs in the two valleys."""
     phases = phase(rotors, starts) / np.pi                                         # [gaps, valleys, radii]
-    figure, ax = plt.subplots(figsize=(4, 2.3))
+    # About half the column: a few curves each way, and their legend beside them.
+    figure, ax = charts.subplots(440, 240)
     for gap, pair, colour in zip(gaps, phases, COLOURS):
-        ax.plot(radii, pair[0], color=colour, linewidth=1, label=f"gap {gap:g} eV")
-        ax.plot(radii, pair[1], "--", color=colour, linewidth=1)
-    ax.axhline(0, color="black", linewidth=0.5)
+        ax.plot(radii, pair[0], color=colour, label=f"gap {gap:g} eV")
+        ax.plot(radii, pair[1], "--", color=colour)
+    ax.axhline(0, color="black", linewidth=charts.FRAME_WIDTH)
     # The phase read off at none, and at a half turn either way.
-    ax.set(xticks=[], yticks=[-1, 0, 1], yticklabels=["−π", "0", "π"])
-    ax.set_xlabel("loop radius", fontsize=FONT_SIZE)
-    ax.set_ylabel("Berry phase", fontsize=FONT_SIZE)
-    ax.tick_params(labelsize=FONT_SIZE, width=0.5, length=2)
+    ax.set(xticks=[], yticks=[-1, 0, 1], yticklabels=["−π", "0", "π"], xlabel="loop radius", ylabel="Berry phase")
     ax.spines[["top", "right"]].set_visible(False)
-    ax.spines[["left", "bottom"]].set_linewidth(0.5)
-    ax.legend(loc="center left", bbox_to_anchor=(1.0, 0.5), frameon=False, fontsize=FONT_SIZE)
+    ax.legend(loc="center left", bbox_to_anchor=(1.0, 0.5), frameon=False)
     figure.tight_layout()
     return figure

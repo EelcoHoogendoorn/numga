@@ -27,7 +27,7 @@ VORTICITY_COLOURS = LinearSegmentedColormap.from_list(
     "dec_vorticity", ("#286580", "#f5f4ef", "#df6435"))
 N_STREAMLINES = 19
 N_TRAIL_SAMPLES = 9
-FIGURE_WIDTH, FIGURE_HEIGHT, DPI = 10.0, 3.5, 100
+FIGURE_WIDTH, FIGURE_HEIGHT, DPI = 5.0, 1.75, 100
 
 
 def coordinates(points: core.Point) -> np.ndarray:
@@ -50,14 +50,14 @@ def channel_axes(mesh: core.Mesh, vertices: core.Point, n_rows: int):
         ax.set(xlim=(low[0] - margin, high[0] + margin),
                ylim=(low[1] - margin, high[1] + margin), aspect="equal")
         ax.set_axis_off()
-        ax.add_collection(LineCollection(walls, colors=WALL_COLOUR, linewidths=1.1, zorder=5))
+        ax.add_collection(LineCollection(walls, colors=WALL_COLOUR, linewidths=0.55, zorder=5))
     return figure, axes[:, 0], triangulation
 
 
 def draw_mesh(mesh: core.Mesh, vertices: core.Point) -> plt.Figure:
     """The channel and its obstacle, with the triangles resolving their boundaries."""
     figure, axes, triangulation = channel_axes(mesh, vertices, 1)
-    axes[0].triplot(triangulation, color=MESH_COLOUR, linewidth=0.45)
+    axes[0].triplot(triangulation, color=MESH_COLOUR, linewidth=0.25)
     return figure
 
 
@@ -89,27 +89,27 @@ def draw_complex(mesh: core.Mesh, vertices: core.Point, circumcentres: core.Poin
         second = centres[incident[1]] if len(incident) == 2 else places[mesh.edges[edge]].mean(axis=0)
         dual_segments.append([first, second])
 
-    figure, ax = plt.subplots(figsize=(4.6, 4.6), dpi=DPI)
+    figure, ax = plt.subplots(figsize=(3.1, 3.1), dpi=DPI)
     figure.subplots_adjust(0.02, 0.02, 0.98, 0.98)
     ax.set(xlim=places[vertex, 0] + np.array([-radius, radius]),
            ylim=places[vertex, 1] + np.array([-radius, radius]), aspect="equal")
     ax.set_axis_off()
     ax.add_collection(LineCollection(places[mesh.edges[edges]], colors=PRIMAL_COLOUR,
-                                     linewidths=0.85, alpha=0.6))
+                                     linewidths=0.57, alpha=0.6))
     ax.add_collection(LineCollection(dual_segments, colors=DUAL_COLOUR,
-                                     linewidths=0.9, alpha=0.75))
+                                     linewidths=0.6, alpha=0.75))
     dual_vertices = centres[star]
     order = np.argsort(np.arctan2(*(dual_vertices - places[vertex])[:, ::-1].T))
     ax.add_patch(Polygon(dual_vertices[order], facecolor=DUAL_COLOUR, edgecolor=DUAL_COLOUR,
-                         linewidth=1.8, alpha=0.17))
+                         linewidth=1.2, alpha=0.17))
     face = star[np.argmin(np.linalg.norm(centres[star] - places[vertex], axis=1))]
     ax.add_patch(Polygon(places[mesh.faces[face]], facecolor=PRIMAL_COLOUR,
-                         edgecolor=PRIMAL_COLOUR, linewidth=1.7, alpha=0.13))
-    ax.scatter(*places[visible].T, s=9, color=PRIMAL_COLOUR, zorder=3)
+                         edgecolor=PRIMAL_COLOUR, linewidth=1.15, alpha=0.13))
+    ax.scatter(*places[visible].T, s=4, color=PRIMAL_COLOUR, zorder=3)
     ax.scatter(*centres[np.linalg.norm(centres - places[vertex], axis=1) < 1.5 * radius].T,
-               s=9, color=DUAL_COLOUR, zorder=3)
-    ax.scatter(*places[vertex], s=44, color=PRIMAL_COLOUR, edgecolor="white", linewidth=0.8, zorder=5)
-    ax.scatter(*centres[face], s=35, color=DUAL_COLOUR, edgecolor="white", linewidth=0.7, zorder=5)
+               s=4, color=DUAL_COLOUR, zorder=3)
+    ax.scatter(*places[vertex], s=20, color=PRIMAL_COLOUR, edgecolor="white", linewidth=0.55, zorder=5)
+    ax.scatter(*centres[face], s=16, color=DUAL_COLOUR, edgecolor="white", linewidth=0.47, zorder=5)
 
     # The arrows carry the actual orientation of the two crossing geometric elements.
     boundary = mesh.face_edges[face]
@@ -121,7 +121,7 @@ def draw_complex(mesh: core.Mesh, vertices: core.Point, circumcentres: core.Poin
     for middle, direction, colour in ((ends.mean(axis=0), ends[1] - ends[0], PRIMAL_COLOUR),
                                        (dual_middle, dual_directions[edge], DUAL_COLOUR)):
         ax.annotate("", xy=middle + 0.35 * direction, xytext=middle - 0.35 * direction,
-                    arrowprops=dict(arrowstyle="-|>", mutation_scale=12, color=colour, linewidth=2),
+                    arrowprops=dict(arrowstyle="-|>", mutation_scale=8, color=colour, linewidth=1.35),
                     zorder=6)
     return figure
 
@@ -142,7 +142,7 @@ def draw_fields(mesh: core.Mesh, vertices: core.Point, pressure: core.Scalar, vo
                       norm=Normalize(-extent, extent), zorder=1)
     for ax in axes:
         ax.tricontour(triangulation, potential, levels=levels, linestyles="solid",
-                      colors=FLOW_COLOUR, linewidths=0.65, alpha=0.65, zorder=3)
+                      colors=FLOW_COLOUR, linewidths=0.33, alpha=0.65, zorder=3)
     return figure
 
 
@@ -159,7 +159,7 @@ def animate_flow(mesh: core.Mesh, vertices: core.Point, pressure: core.Scalar, s
     ax.tripcolor(triangulation, facecolors=values, shading="flat", cmap=PRESSURE_COLOURS,
                   norm=Normalize(values.min(), values.max()), zorder=1)
     contours = ax.tricontour(triangulation, potential, levels=levels, linestyles="solid",
-                            colors=FLOW_COLOUR, linewidths=0.45, alpha=0.22, zorder=2)
+                            colors=FLOW_COLOUR, linewidths=0.23, alpha=0.22, zorder=2)
     finder = triangulation.get_trifinder()
     paths, clocks = [], []
     for segments in contours.allsegs:
@@ -178,9 +178,9 @@ def animate_flow(mesh: core.Mesh, vertices: core.Point, pressure: core.Scalar, s
             clocks.append(np.concatenate(([0], np.cumsum(durations))))
     period = np.median([clock[-1] for clock in clocks]) / 6
     trail_time = 0.2 * period
-    trails = LineCollection([], colors=FLOW_COLOUR, linewidths=1.8, capstyle="round", zorder=4)
+    trails = LineCollection([], colors=FLOW_COLOUR, linewidths=0.9, capstyle="round", zorder=4)
     ax.add_collection(trails)
-    heads = ax.scatter([], [], s=7, color=FLOW_COLOUR, zorder=4)
+    heads = ax.scatter([], [], s=1.75, color=FLOW_COLOUR, zorder=4)
     for frame in range(n_frames):
         elapsed = frame * period / n_frames
         segments, tips = [], []

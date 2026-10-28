@@ -11,6 +11,7 @@ from matplotlib.ticker import MaxNLocator
 
 from numga import stack
 
+from examples.util import charts
 from examples.util.animation import capture
 from examples.electromagnetism.second_harmonic import core
 from examples.util.wgsl import fitted, labels, show, solids
@@ -24,9 +25,11 @@ cases = ("matched", "mismatched", "mismatched, flipped every half turn of slip")
 sm = solids.mv
 bond_colour, centre_colour, axis_colour = np.full(3, 0.45), np.full(3, 0.3), np.array([0.68, 0.70, 0.75])
 label_colour = np.array([0.4, 0.42, 0.47])
-# The resolution of the figures and of the animation's frames, in pixels per inch, and the size of the names along
-# the plane across the beam, in points.
-figure_dpi, animation_dpi, axis_label_size = 75, 73, 11
+# The charts' sizes in pixels: the response, the crystal beside the response and its power, all of the column; the
+# waveform, two curves over two periods; the mixing, a panel to a pump above the legend; the phase matching, the
+# phase plane beside the power along the crystals.
+response_size, waveform_size, growth_size = (800, 280), (460, 220), (640, 300)
+mixing_panel_size = (260, 290)
 # The crystal's view: elevation and azimuth in radians, azimuth zero looking along +y, and the half width of the
 # square view about the bonds' centre.
 elevation, azimuth = np.radians(23.0), np.radians(34.0)
@@ -63,12 +66,11 @@ def coordinates(directions: core.Direction) -> np.ndarray:
 
 def cross(axes: plt.Axes, extents: np.ndarray, across: str, up: str) -> None:
     """A plane within extents `[2, 2]`, lowest and highest across and up, without scales: a faint cross through the
-    origin, its lines named at their ends, each along itself."""
-    axes.axhline(0, color="0.85", linewidth=0.7, zorder=0)
-    axes.axvline(0, color="0.85", linewidth=0.7, zorder=0)
-    axes.text(extents[0, 1], 0, across, ha="right", va="top", fontsize=axis_label_size, color=label_colour)
-    axes.text(0, extents[1, 1], f"{up} ", ha="right", va="bottom", fontsize=axis_label_size, color=label_colour,
-              rotation=90, rotation_mode="anchor")
+    origin, its lines named just past their ends, clear of what the plane holds."""
+    axes.axhline(0, color="0.85", linewidth=charts.FRAME_WIDTH, zorder=0)
+    axes.axvline(0, color="0.85", linewidth=charts.FRAME_WIDTH, zorder=0)
+    axes.text(extents[0, 1], 0, f" {across}", ha="left", va="center", color=label_colour)
+    axes.text(0, extents[1, 1], up, ha="center", va="bottom", color=label_colour)
     axes.set(xlim=extents[0], ylim=extents[1], aspect="equal")
     axes.set_axis_off()
 
@@ -109,15 +111,15 @@ class ResponseView:
         self.angles = np.arctan2(pumps[:, 1], pumps[:, 0])                  # [angles]
         self.selected_angle = np.arctan2(pump[1], pump[0])
 
-        self.figure = plt.figure(figsize=(12.5, 4.1), dpi=animation_dpi, layout="constrained")
+        width, height = response_size
+        self.figure = plt.figure(figsize=(width / charts.DPI, height / charts.DPI), dpi=charts.DPI,
+                                 layout="constrained")
         crystal_axes = self.figure.add_subplot(1, 3, 1)
         response_axes = self.figure.add_subplot(1, 3, 2)
         self.intensity_axes = self.figure.add_subplot(1, 3, 3, projection="polar")
 
-        response_axes.plot(pumps[:, 0], pumps[:, 1], color=pump_colour,
-                           linewidth=1, alpha=0.3)
-        self.harmonic_curve, = response_axes.plot([], [], color=generated_colour,
-                                                  linewidth=2, alpha=0.65)
+        response_axes.plot(pumps[:, 0], pumps[:, 1], color=pump_colour, alpha=0.3)
+        self.harmonic_curve, = response_axes.plot([], [], color=generated_colour, alpha=0.65)
         response_axes.quiver(0, 0, pump[0], pump[1], color=pump_colour,
                              angles="xy", scale_units="xy", scale=1, width=0.012,
                              label="Pump")
@@ -125,16 +127,15 @@ class ResponseView:
                                                     angles="xy", scale_units="xy", scale=1, width=0.012,
                                                     label="Second harmonic")
         screen_axes(response_axes, 1.15)
-        response_axes.legend(loc="upper center", bbox_to_anchor=(0.5, 0.02), ncol=2, fontsize=10, frameon=False)
+        response_axes.legend(loc="upper center", bbox_to_anchor=(0.5, 0.02), ncol=2, frameon=False)
 
-        self.intensity_curve, = self.intensity_axes.plot([], [], color=generated_colour, linewidth=2)
+        self.intensity_curve, = self.intensity_axes.plot([], [], color=generated_colour)
         self.intensity_fill, = self.intensity_axes.fill([], [], color=generated_colour, alpha=0.08)
-        self.selected_power, = self.intensity_axes.plot([], [], "o", color=pump_colour, markersize=7)
+        self.selected_power, = self.intensity_axes.plot([], [], "o", color=pump_colour)
         self.intensity_axes.yaxis.set_major_locator(MaxNLocator(4))
         self.intensity_axes.set_yticklabels([])
         self.intensity_axes.set_thetagrids([0, 45, 90, 135, 180, 225, 270, 315])
         self.intensity_axes.set_rlabel_position(22.5)
-        self.intensity_axes.tick_params(labelsize=10)
 
         # The figure laid out once, the crystal's axes as bare as its image leaves them, and kept so: at every
         # resolution it is drawn at, the panels stay put and the crystal's image fills its room.
@@ -148,7 +149,7 @@ class ResponseView:
         self.crystal = show(crystal_axes, np.full((*self.view.shape, 3), 255, dtype=np.uint8), self.view)
         self.scene = space_scene(self.view)
         labels(crystal_axes, self.view, sm.point(np.concatenate([label_distance * np.eye(3), [beam_reach * 1.12 * beam]])),
-               ["x", "y", "z", "beam"], ha="center", va="center", fontsize=11, color=label_colour)
+               ["x", "y", "z", "beam"], ha="center", va="center", color=label_colour)
 
     def update(self, bonds: core.Direction, harmonic: core.Polarization) -> plt.Figure:
         bonds = coordinates(bonds)                                           # [bonds, 3]
@@ -164,63 +165,63 @@ class ResponseView:
         return self.figure
 
 
+@charts.style()
 def draw_response(pumps: core.Field, bonds: core.Direction, harmonic: core.Polarization) -> plt.Figure:
     """Crystal bonds, the doubled-frequency polarization over pump polarizations and its power; the
     first pump, horizontal, marked."""
     return ResponseView(pumps).update(bonds, harmonic)
 
 
+@charts.style()
 def draw_waveform(phase: np.ndarray, pump: core.Field, harmonic: core.Polarization) -> plt.Figure:
     """Signed pump and doubled-frequency field components over two pump periods."""
     cycles = phase / (2 * np.pi)                                               # [times]
     pump_field = transverse(pump)[..., 0]                                     # [times]
     harmonic_field = transverse_polarization(harmonic)[..., 1]                # [times]
-    figure, axes = plt.subplots(figsize=(8, 3.3), dpi=figure_dpi, layout="constrained")
-    axes.axhline(0, color="0.85", linewidth=0.7, zorder=0)
-    axes.plot(cycles, pump_field, color=pump_colour, linewidth=2, label="Pump field")
-    axes.plot(cycles, harmonic_field, color=generated_colour, linewidth=2,
-              label="Second-harmonic polarization")
+    figure, axes = charts.subplots(*waveform_size, layout="constrained")
+    axes.axhline(0, color="0.85", linewidth=charts.FRAME_WIDTH, zorder=0)
+    axes.plot(cycles, pump_field, color=pump_colour, label="Pump field")
+    axes.plot(cycles, harmonic_field, color=generated_colour, label="Second-harmonic polarization")
     axes.set(xlabel="Pump periods", ylabel="Field component", xlim=(0, 2), xticks=[0, 1, 2], yticks=[])
     axes.spines[["top", "right"]].set_visible(False)
-    axes.legend(loc="lower center", bbox_to_anchor=(0.5, 1.02), ncol=2,
-                fontsize=10, frameon=False)
+    axes.legend(loc="lower center", bbox_to_anchor=(0.5, 1.02), ncol=2, frameon=False)
     return figure
 
 
+@charts.style()
 def draw_mixing(pumps: core.Field, probes: core.Field, generated: core.Polarization) -> plt.Figure:
     """A probe circle and its image with each fixed pump, at a shared display scale."""
     pumps = transverse(pumps)                                                # [cases, 2]
     probes = transverse(probes)                                              # [angles, 2]
     generated = transverse_polarization(generated)                           # [cases, angles, 2]
     limit = 1.25 * max(float(np.max(np.abs(probes))), float(np.max(np.abs(generated))))
-    figure, grid = plt.subplots(1, len(pumps), figsize=(4 * len(pumps), 4),
-                                dpi=figure_dpi, squeeze=False, layout="constrained")
+    figure, grid = charts.subplots(len(pumps) * mixing_panel_size[0], mixing_panel_size[1], ncols=len(pumps),
+                                   squeeze=False, layout="constrained")
     for axes, pump, response in zip(grid[0], pumps, generated):
         # The pale arrow indicates the fixed pump direction at a display-only length.
         axes.quiver(0, 0, 0.85 * limit * pump[0], 0.85 * limit * pump[1],
                     angles="xy", scale_units="xy", scale=1, color="0.55",
                     alpha=0.4, width=0.009, label="Fixed pump")
-        axes.plot(probes[:, 0], probes[:, 1], color=pump_colour, linewidth=1.8,
-                  linestyle="--", zorder=3, label="Probe")
-        axes.plot(response[:, 0], response[:, 1], color=generated_colour,
-                  linewidth=2, label="Mixed response")
+        axes.plot(probes[:, 0], probes[:, 1], color=pump_colour, linestyle="--", zorder=3, label="Probe")
+        axes.plot(response[:, 0], response[:, 1], color=generated_colour, label="Mixed response")
         screen_axes(axes, limit)
     figure.legend(*grid[0, 0].get_legend_handles_labels(), loc="outside lower center",
-                  ncol=3, fontsize=10, frameon=False)
+                  ncol=3, frameon=False)
     return figure
 
 
+@charts.style()
 def draw_growth(depths: np.ndarray, amplitude: core.Polarization) -> plt.Figure:
     """The amplitude's vertical path in the phase plane and the power along each crystal."""
     components = transverse_polarization(amplitude)                          # [cases, slices, quadratures, 2]
     power = (components ** 2).sum(axis=(-2, -1))                            # [cases, slices]
     amplitude = components[..., 1]                                          # [cases, slices, quadratures]
-    figure, axes = plt.subplots(1, 2, figsize=(9.5, 4), dpi=figure_dpi, layout="constrained")
+    figure, axes = charts.subplots(*growth_size, ncols=2, layout="constrained")
     quadrature_axes, power_axes = axes
     for label, path, intensity, colour in zip(cases, amplitude, power, case_colours):
-        quadrature_axes.plot(path[:, 0], path[:, 1], color=colour, linewidth=2, label=label)
-        quadrature_axes.plot(path[-1, 0], path[-1, 1], "o", color=colour, markersize=5)
-        power_axes.plot(depths, intensity, color=colour, linewidth=2, label=label)
+        quadrature_axes.plot(path[:, 0], path[:, 1], color=colour, label=label)
+        quadrature_axes.plot(path[-1, 0], path[-1, 1], "o", color=colour)
+        power_axes.plot(depths, intensity, color=colour, label=label)
     # The plane about the paths and the origin they start from, with a margin.
     lowest = np.minimum(amplitude.min(axis=(0, 1)), 0)                       # [2]
     highest = np.maximum(amplitude.max(axis=(0, 1)), 0)
@@ -228,13 +229,17 @@ def draw_growth(depths: np.ndarray, amplitude: core.Polarization) -> plt.Figure:
     cross(quadrature_axes, np.stack([lowest - margin, highest + margin], axis=-1), "in phase", "in quadrature")
     power_axes.set(xlabel="depth in the crystal", ylabel="generated power", xlim=(0, 1), xticks=[], yticks=[])
     power_axes.spines[["top", "right"]].set_visible(False)
-    power_axes.legend(loc="upper left", frameon=False, fontsize=10)
+    # The cases named under both panels, whose colours they share.
+    figure.legend(*power_axes.get_legend_handles_labels(), loc="outside lower center", ncol=len(cases),
+                  frameon=False)
     return figure
 
 
 def animate(pumps: core.Field, frames: Iterable[tuple[core.Direction, core.Polarization]]) -> Iterator[np.ndarray]:
     """The response while the crystal turns about the beam, one frame per turn."""
-    view = ResponseView(pumps)
-    for bonds, harmonic in frames:
-        yield capture(view.update(bonds, harmonic))
-    plt.close(view.figure)
+    # The charts' style held while the frames are drawn, for the artists that drawing makes.
+    with charts.style():
+        view = ResponseView(pumps)
+        for bonds, harmonic in frames:
+            yield capture(view.update(bonds, harmonic))
+        plt.close(view.figure)

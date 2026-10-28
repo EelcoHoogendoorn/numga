@@ -19,15 +19,14 @@ AZIMUTHS = [[324, 234], [252, 162]]
 N_SKY_SAMPLES = 61
 # The polarization's half turn in frames, the free masses on the ring, and the strain drawn on the
 # ring, far beyond any real one so that it shows.
-N_FRAMES = 48
+N_FRAMES = 96
 N_MASSES = 24
 STRAIN_SHOWN = 0.3
-DURATION_MS = 80
-# The polarization animation's size, in inches.
-POLARIZATION_SIZE = (6, 2)
+DURATION_MS = 40
+# The polarization animation's size, in pixels.
+POLARIZATION_SIZE = (600, 200)
 # Gallery picture: this makes plots/ligo.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-GALLERY_SIZE = (7.2, 2.4)
-GALLERY_FRAMES = 32
+GALLERY_SIZE = (720, 240)
 
 
 # --- math -----------------------------------------------------------------------------
@@ -86,30 +85,27 @@ def main() -> None:
     save_figure(render.draw_network(directions, network, alike, zeniths, NAMES), "ligo_network")
     save_animation(render.animate_polarization(directions, responses, sites[0], arms[0], rings, NAMES[0], POLARIZATION_SIZE),
                    "ligo_polarization", DURATION_MS)
-    gallery_angles = np.linspace(0, np.pi, GALLERY_FRAMES, endpoint=False)
-    gallery_responses, gallery_rings = polarization(sites[0], arms[0], frames, gallery_angles)
     # Gallery picture: this makes plots/ligo.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-    save_animation(render.animate_polarization(directions, gallery_responses, sites[0], arms[0], gallery_rings,
-                                                     NAMES[0], GALLERY_SIZE),
-                   "ligo", DURATION_MS * N_FRAMES // GALLERY_FRAMES)
+    save_animation(render.animate_polarization(directions, responses, sites[0], arms[0], rings, NAMES[0], GALLERY_SIZE),
+                   "ligo", DURATION_MS)
 
     # checks
     # Straight overhead each detector the sensitivity is one, the arms lying across the wave, and nowhere
     # is it more.
     overhead = core.sensitivity(*(core.response(arms, strain) for strain in core.strains(sites)))
-    assert np.abs(render.scalars(overhead) - 1).max() < 1e-12
-    assert render.scalars(sensitivities).max() <= 1 + 1e-12
+    assert np.abs(overhead.to_array() - 1).max() < 1e-12
+    assert sensitivities.to_array().max() <= 1 + 1e-12
     # A wave along the line halfway between the arms, in their plane, is not seen at all; any frame with
     # its first axis along that line will do.
     halfway = (arms[:, 0] + arms[:, 1]).normalized()                         # [detectors] Point-
     blind = core.sensitivity(*(core.response(arms, strain) for strain in core.strains((1 + halfway * ~core.mv.x.dual()).normalized())))
-    assert np.abs(render.scalars(blind)).max() < 1e-12
+    assert np.abs(blind.to_array()).max() < 1e-12
     # Spin two: turning the axes across the wave by an angle mixes plus and cross by twice that angle.
     mixed = to_plus[0] * np.cos(2 * angles)[:, None, None] + to_cross[0] * np.sin(2 * angles)[:, None, None]
-    assert np.abs(render.scalars(responses - mixed)).max() < 1e-12
+    assert np.abs((responses - mixed).to_array()).max() < 1e-12
     # The two detectors are built nearly opposite: over most of the sky they read a wave with opposite
     # signs.
-    assert np.mean(render.scalars(alike) < -0.5) > 0.9
+    assert np.mean(alike < -0.5) > 0.9
 
 
 if __name__ == "__main__":

@@ -212,7 +212,7 @@ Operate directly on linear transformations while preserving input/output GATypes
   ```
 * **`.lstsq(rhs)`**: Least-squares solve for over- or under-determined linear systems. On a construction with several inputs it unbinds every input the right-hand side does not match, all at once, and returns the unknown map on them:
   ```python
-  moment = (Point & Plane.dual().commutator(Bivector)).lstsq(inertia)   # Point <- Plane, from Forque <- (Point, Plane, Twist)
+  moment = Point.regressive(Plane.dual().commutator(Bivector)).lstsq(inertia)   # Point <- Plane, from Forque <- (Point, Plane, Twist)
   ```
 * **`.lstsq(rhs, metric)`**: On a symmetric form, least squares in a metric form on its space: of all solutions it returns the one smallest in the metric, and `rcond` cuts modes by their curvature per unit metric. Without a metric, sizes are sums of squared coefficients.
   ```python

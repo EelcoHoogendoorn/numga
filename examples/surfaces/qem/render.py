@@ -33,12 +33,12 @@ background = np.ones(3)
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; how far the ellipsoids reach past the
 # vertices, the margin as a share of the larger side, and the pixels across each panel.
 ELEVATION, AZIMUTH = np.radians(24.0), np.radians(138.0)
-REACH, MARGIN, N_PIXELS = 0.1, 0.1, 600
+REACH, MARGIN, N_PIXELS = 0.1, 0.1, 300
 # Widths of the edges and of the collapsing edge, the dashes along it, the radii of the vertices and the
 # optimum, and the triangles' thickness, in pixels.
-EDGE_WIDTH, COLLAPSE_WIDTH, N_DASHES = 2.6, 4.0, 5
-VERTEX_RADIUS, OPTIMUM_RADIUS = 6.0, 9.0
-TRIANGLE_THICKNESS = 0.5
+EDGE_WIDTH, COLLAPSE_WIDTH, N_DASHES = 1.3, 2.0, 5
+VERTEX_RADIUS, OPTIMUM_RADIUS = 3.0, 4.5
+TRIANGLE_THICKNESS = 0.25
 # A fixed three-quarter view of the whole surface, with each surviving triangle lit separately.
 MESH_ELEVATION, MESH_AZIMUTH = np.radians(24.0), np.radians(54.0)
 MESH_MARGIN, MESH_PIXELS, MESH_GLOSS = 0.05, 300, 0.18

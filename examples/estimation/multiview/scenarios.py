@@ -30,13 +30,13 @@ TURNS = np.radians([18.0, -18.0, 0.0])
 N_STEPS = 10
 N_FREE_STEPS = 30
 FRAME_DURATION = 333
-FREE_FRAME_DURATION = 120
+FREE_FRAME_DURATION = 40
 # The three cameras' alignment shown at an even pace: its frames, the frames the aligned rig is held, and the depth
 # at which a camera's turn counts as much as its move, about where the landmarks are. This animation is the README's
 # (plots/multiview_convergence.gif): its misplacements in `three_cameras`, its damping and these frames are tuned as a
 # picture, a rig that visibly starts far off and settles near the end, not as a demonstration of the alignment's
 # speed; keep them, and check the picture after any change.
-N_EVEN_FRAMES, N_HOLD = 36, 6
+N_EVEN_FRAMES, N_HOLD = 108, 18
 LEVER = 1.5
 
 
@@ -157,14 +157,16 @@ def main() -> None:
 
     pair = aligned_pair()
     save_figure(render.draw_reconstruction(*pair), "multiview_aligned_pair")
-    save_animation(render.animate_convergence(islice(one_camera(), N_STEPS + 1)), "multiview_one_camera", FRAME_DURATION)
-    save_animation(render.animate_convergence(islice(two_cameras(), N_STEPS + 1)), "multiview_two_cameras", FRAME_DURATION)
+    save_animation(render.animate_convergence(islice(one_camera(), N_STEPS + 1)), "multiview_one_camera", FRAME_DURATION,
+                   stepped=True)
+    save_animation(render.animate_convergence(islice(two_cameras(), N_STEPS + 1)), "multiview_two_cameras", FRAME_DURATION,
+                   stepped=True)
     # README picture: this makes plots/multiview_convergence.gif, tuned as a visual for the README. Don't change it; to
     # experiment, copy it.
     save_animation(render.animate_convergence(evenly(list(islice(three_cameras(), N_FREE_STEPS + 1)), N_EVEN_FRAMES, N_HOLD)),
                    "multiview_three_cameras", FREE_FRAME_DURATION)
     save_animation(render.animate_convergence(state[:4] for state in islice(jointly(), N_STEPS + 1)), "multiview_jointly",
-                   FRAME_DURATION)
+                   FRAME_DURATION, stepped=True)
 
     # checks
     # The aligned pair explains every pixel: every landmark's cones vanish at it. Two cameras with one held

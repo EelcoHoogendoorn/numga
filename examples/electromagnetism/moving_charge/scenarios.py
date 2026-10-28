@@ -18,8 +18,8 @@ half_width = 0.45
 half_height = 0.9
 n_columns = 150
 n_rows = 300
-n_frames = 90
-duration_ms = 60
+n_frames = 136
+duration_ms = 40
 
 orbit_charge = 1.0
 orbit_radius = 1.0
@@ -32,7 +32,7 @@ orbit_half_width = 10.0
 n_orbit_pixels = 240
 samples_per_pixel = 2
 n_orbit_colours = 32
-n_orbit_frames = 60
+n_orbit_frames = 90
 # The coarser window the checks sample.
 n_check_columns = 30
 n_check_rows = 20

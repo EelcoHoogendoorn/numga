@@ -31,10 +31,9 @@ curvature_levels = np.array([1.0, 2.0, 4.0, 8.0, 16.0, 32.0])
 # The lattice of states whose ellipses are drawn, and the cost the ellipses are drawn at.
 lattice_volumes, lattice_temperatures = np.arange(0.5, 2.9, 0.4), np.arange(0.95, 2.0, 0.2)
 cost_level = 0.0036
-# The isotherms' temperatures; the half span of the tangent in volume; line widths.
+# The isotherms' temperatures; the half span of the tangent in volume.
 isotherms = np.array([0.9, 1.0, 1.1, 1.25, 1.4, 1.6, 1.8, 2.0])
 tangent_span = 0.35
-thin_width, bold_width = 1.0, 2.2
 
 
 def coefficients(metric_of: Function, states: Extensor) -> np.ndarray:
@@ -70,10 +69,10 @@ class Charts:
                                 art.level_lines(grid_volumes, grid_temperatures, curvature, curvature_levels)]
         self.lattice = (x.reshape(-1)[kept], y.reshape(-1)[kept])
         self.plane_layers = (unstable
-                             + art.polylines(self.plane, self.curvature_lines, thin_width, art.FAMILIES["level"], 1.0,
+                             + art.polylines(self.plane, self.curvature_lines, art.THIN, art.FAMILIES["level"], 1.0,
                                              art.SOLID)
-                             + [planar.Curves(conics, 1.0, art.FAMILIES["entropy"], 1.0)]
-                             + art.polylines(self.plane, [(line[:, 0], line[:, 1]) for line in spinodal], 1.6,
+                             + [planar.Curves(conics, art.THIN, art.FAMILIES["entropy"], 1.0)]
+                             + art.polylines(self.plane, [(line[:, 0], line[:, 1]) for line in spinodal], art.LINE,
                                              art.BOUNDARY, 1.0, art.SOLID)
                              + art.dots(self.plane, 1.0, 1.0, art.BOUNDARY))
         volumes = np.linspace(0.38, volume_range[1], 240)
@@ -81,7 +80,7 @@ class Charts:
         pressures = pressure_of(family).to_array()
         shades = np.where((isotherms == 1.0)[:, None], art.BOUNDARY, art.FAMILIES["temperature"])
         self.isotherm_layers = art.within(self.isotherm, np.broadcast_to(volumes, pressures.shape), pressures,
-                                          thin_width, shades, 1.0)
+                                          art.THIN, shades, 1.0)
         self.volumes = volumes
         self.isotherm_lines = [(volumes, line) for line in pressures]
 
@@ -91,25 +90,25 @@ class Charts:
         form = coefficients(self.metric_of, state[None])
         conic = art.ellipses(self.plane, np.array([volume]), np.array([temperature]), form, cost_level)
         plane = (self.plane_layers
-                 + art.polylines(self.plane, [(path[:, 0], path[:, 1])], bold_width, art.ORANGE, 0.6, art.SOLID)
-                 + [planar.Regions(conic, art.ORANGE, 0.25), planar.Curves(conic, 1.8, art.ORANGE, 1.0)]
+                 + art.polylines(self.plane, [(path[:, 0], path[:, 1])], art.BOLD, art.ORANGE, 0.6, art.SOLID)
+                 + [planar.Regions(conic, art.ORANGE, 0.25), planar.Curves(conic, art.LINE, art.ORANGE, 1.0)]
                  + art.dots(self.plane, volume, temperature, art.ORANGE))
         own = self.pressure_of(mv.v.dual() * self.volumes + mv.t.dual() * temperature).to_array()
         pressure = float(self.pressure_of(state).to_array())
         slope = float(np.interp(volume, self.volumes, np.gradient(own, self.volumes)))
         span = np.array([volume - tangent_span, volume + tangent_span])
         isotherm = (self.isotherm_layers
-                    + art.polylines(self.isotherm, [(self.volumes, own)], bold_width, art.INK, 1.0, art.SOLID)
-                    + art.polylines(self.isotherm, [(span, pressure + slope * (span - volume))], 1.6, art.ORANGE, 1.0,
+                    + art.polylines(self.isotherm, [(self.volumes, own)], art.BOLD, art.INK, 1.0, art.SOLID)
+                    + art.polylines(self.isotherm, [(span, pressure + slope * (span - volume))], art.LINE, art.ORANGE, 1.0,
                                     art.SOLID)
                     + art.dots(self.isotherm, volume, pressure, art.ORANGE))
-        labels = [art.Label(1.0, 1.0, "critical point", art.BOUNDARY, art.LABEL_SIZE, "lt", (6, -4)),
-                  art.Label(0.45, 0.75, "unstable", art.INK, art.LABEL_SIZE, "lb", (0, 2))]
-        names = [art.Floating(*art.along(self.curvature_lines, 6), "R = const", art.FAMILIES["level"], art.LABEL_SIZE,
+        labels = [art.Label(1.0, 1.0, "critical point", art.BOUNDARY, art.TEXT_SIZE, "lt", (6, -4)),
+                  art.Label(0.45, 0.75, "unstable", art.INK, art.TEXT_SIZE, "lb", (0, 2))]
+        names = [art.Floating(*art.along(self.curvature_lines, 6), "R = const", art.FAMILIES["level"], art.TEXT_SIZE,
                               "lb"),
-                 art.Floating(*self.lattice, "equal cost", art.FAMILIES["entropy"], art.LABEL_SIZE, "lt")]
+                 art.Floating(*self.lattice, "equal cost", art.FAMILIES["entropy"], art.TEXT_SIZE, "lt")]
         isotherm_names = [art.Floating(*art.along(self.isotherm_lines, 8), "T = const", art.FAMILIES["temperature"],
-                                       art.LABEL_SIZE, "lb")]
+                                       art.TEXT_SIZE, "lb")]
         return [art.floated(self.plane, art.picture(self.plane, plane, labels), names),
                 art.floated(self.isotherm, art.picture(self.isotherm, isotherm, []), isotherm_names)]
 
@@ -142,8 +141,8 @@ def scaling(states: Extensor, curvature_of: Function):
     diagram = art.Diagram((-3.0, 0.0), (-0.5, 5.5), (-3.0, -0.5), n_rows, n_columns, ("log(T - 1)", "log R"))
     across = np.linspace(-3.0, 0.0, 60)
     reference = curvature[0] - 2 * (across - distance[0]) + 0.4
-    layers = (art.polylines(diagram, [(across, reference)], 1.2, art.GREY, 1.0, (4.0, 3.0))
-              + art.polylines(diagram, [(distance, curvature)], bold_width, art.BLUE, 1.0, art.SOLID))
-    labels = [art.Label(-1.0, float(np.interp(-1.0, across, reference)), "slope -2", art.GREY, art.LABEL_SIZE, "lb",
+    layers = (art.polylines(diagram, [(across, reference)], art.LINE, art.GREY, 1.0, (4.0, 3.0))
+              + art.polylines(diagram, [(distance, curvature)], art.BOLD, art.BLUE, 1.0, art.SOLID))
+    labels = [art.Label(-1.0, float(np.interp(-1.0, across, reference)), "slope -2", art.GREY, art.TEXT_SIZE, "lb",
                         (6, 2))]
     return art.figure(art.picture(diagram, layers, labels))

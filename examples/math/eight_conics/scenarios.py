@@ -13,7 +13,7 @@ from examples.math.eight_conics import core
 def cube() -> tuple[core.Quadric, core.Plane, core.Point, np.ndarray]:
     """Seven compatible ellipsoids and their eighth `[frames, 8]`, the three face couplings swept around a loop
     a third of a turn apart."""
-    n_frames = 96
+    n_frames = 216
     mean_couplings = np.array([0.30, -0.24, 0.27])
     coupling_amplitude = 0.25
     phases = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)
@@ -40,7 +40,7 @@ def main() -> None:
     from examples.util.animation import save_animation
     from examples.math.eight_conics import render
 
-    duration_ms = 90
+    duration_ms = 40
     # The edges joining the eighth quadric to its three neighbours.
     closing_edges = np.array([9, 10, 11])
     cube_quadrics, contact_planes, cube_contacts, edges = cube()

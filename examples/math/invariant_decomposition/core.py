@@ -15,7 +15,7 @@ From the acceleration of a direction turned by the rotation, the linear map
 `Antivector.commutator(bivector).commutator(bivector)`: its eigenvalues are the same squares, each twice,
 and each pair of eigenvectors spans one plane. A unit direction `u` in a plane moves with velocity
 `u.commutator(bivector)` within that plane alone, so the two span the plane's patch,
-`u & u.commutator(bivector)`, and the plane itself is that patch's dual.
+`u.regressive(u.commutator(bivector))`, and the plane itself is that patch's dual.
 
 The same holds for rigid motions, in the projective algebra of six-dimensional space, with a seventh
 direction t that squares to zero: a motion's bivector is three commuting planes, now placed in space.
@@ -101,7 +101,7 @@ def from_spectrum(bivector: Extensor, Direction: GAType) -> tuple[Extensor, Exte
     # The eigenvalues come in equal pairs, in ascending order: one direction of each pair.
     spanning = directions[..., ::2]                                            # [..., 3] Antivector-
     # A unit direction and its velocity span the patch of its plane, whose dual is the plane.
-    patches = spanning & spanning.commutator(bivector[..., None])              # [..., 3] Antibivector-
+    patches = spanning.regressive(spanning.commutator(bivector[..., None]))    # [..., 3] Antibivector-
     return values[..., ::2], patches.dual_inverse()                            # [..., 3] Scalar+, [..., 3] Bivector+
 
 

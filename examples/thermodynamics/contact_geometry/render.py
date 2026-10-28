@@ -19,9 +19,8 @@ from examples.thermodynamics import rendering as art
 n_rows, n_columns = 300, 330
 entropy_range, energy_range = (-0.8, 1.25), (0.0, 3.4)
 temperature_range, free_energy_range = (0.0, 2.2), (0.0, 3.4)
-# Every so many samples of the section, a faint tangent; the samples along each tangent line; line widths.
+# Every so many samples of the section, a faint tangent; the samples along each tangent line.
 tangent_every, n_line_samples = 3, 60
-thin_width, bold_width, tangent_width = 1.0, 2.2, 1.6
 
 
 def readings(points: Extensor) -> np.ndarray:
@@ -48,10 +47,10 @@ class Chart:
         slopes = steps[:, 1] / steps[:, 0]
         self.layers = (art.polylines(diagram, tangent_lines(self.section[::tangent_every], slopes[::tangent_every],
                                                             diagram.across),
-                                     thin_width, art.FAMILIES["level"], 0.6, art.SOLID)
-                       + art.polylines(diagram, [(curve[:, 0], curve[:, 1]) for curve in self.family], thin_width,
+                                     art.THIN, art.FAMILIES["level"], 0.6, art.SOLID)
+                       + art.polylines(diagram, [(curve[:, 0], curve[:, 1]) for curve in self.family], art.THIN,
                                        art.FAMILIES["volume"], 1.0, art.SOLID)
-                       + art.polylines(diagram, [(self.section[:, 0], self.section[:, 1])], thin_width, art.INK, 1.0,
+                       + art.polylines(diagram, [(self.section[:, 0], self.section[:, 1])], art.THIN, art.INK, 1.0,
                                        art.SOLID))
 
     def picture(self, point: Extensor, tangent: Extensor, trace: np.ndarray) -> np.ndarray:
@@ -60,14 +59,14 @@ class Chart:
         slope = step[1] / step[0]
         intercept = position[1] - slope * position[0]
         layers = (self.layers
-                  + art.polylines(self.diagram, [(trace[:, 0], trace[:, 1])], bold_width, art.INK, 1.0, art.SOLID)
+                  + art.polylines(self.diagram, [(trace[:, 0], trace[:, 1])], art.BOLD, art.INK, 1.0, art.SOLID)
                   + art.polylines(self.diagram, tangent_lines(position[None], np.array([slope]), self.diagram.across),
-                                  tangent_width, art.ORANGE, 1.0, art.SOLID)
+                                  art.LINE, art.ORANGE, 1.0, art.SOLID)
                   + art.dots(self.diagram, 0.0, intercept, art.GREEN)
                   + art.dots(self.diagram, position[0], position[1], art.ORANGE))
-        labels = [art.Label(0.0, intercept, self.intercept_name, art.GREEN, art.NAME_SIZE, "rm", (-8, 0))]
+        labels = [art.Label(0.0, intercept, self.intercept_name, art.GREEN, art.TEXT_SIZE, "rm", (-8, 0))]
         names = [art.Floating(*art.along([(curve[:, 0], curve[:, 1]) for curve in self.family], 4), "V = const",
-                              art.FAMILIES["volume"], art.LABEL_SIZE, "lb")]
+                              art.FAMILIES["volume"], art.TEXT_SIZE, "lb")]
         return art.floated(self.diagram, art.picture(self.diagram, layers, labels), names)
 
 

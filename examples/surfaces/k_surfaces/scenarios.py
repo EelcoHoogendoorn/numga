@@ -55,14 +55,13 @@ def main() -> None:
 
     n_half = 12
     extent = 0.8
-    n_frames = 48
-    duration_ms = 70
+    n_frames = 84
+    duration_ms = 40
     neutral_angle = np.pi / 2
     bend_amplitude = np.pi / 6
     seed_azimuth = 1.6
     seed_turn = 0.65
-    n_orbit_frames = 72
-    orbit_duration_ms = 100
+    n_orbit_frames = 180
     orbit_elevation = 26
     orbit_azimuth_centre = -70
     orbit_azimuth_amplitude = 50
@@ -89,7 +88,7 @@ def main() -> None:
     partner_normals = core.partner(normals, starting_normal, core.complete)  # [vertices, vertices] Vector+
     partner_points = points + radius * partner_normals.commutator(normals)  # [vertices, vertices] Antivector-
     save_animation(render.partner_orbit(partner_points, points, orbit_azimuths, orbit_elevation),
-                   "k_surfaces_backlund", orbit_duration_ms, forward_then_back=True)
+                   "k_surfaces_backlund", duration_ms, forward_then_back=True)
 
     # checks
     # Bending keeps every grid edge's length, and the segments to the partner all have one length and lie

@@ -32,12 +32,11 @@ temperature_ticks, water_ticks = np.array([10, 20, 30]), np.array([5, 10, 15, 20
 grid_temperatures, grid_water = np.linspace(5.0, 35.0, 150), np.linspace(0.0, 0.025, 150)
 humidity_levels = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
 enthalpy_levels = np.arange(20.0, 110.0, 10.0)
-# Grams per kilogram; how far a direction's arrow reaches in pixels; line widths.
+# Grams per kilogram; how far a direction's arrow reaches in pixels.
 grams_per_kilogram = 1000.0
 arrow_pixels = 25.0
 # Where the saturation curve's name is written, in degrees and grams per kg.
 saturation_label = (27.5, 22.5)
-thin_width, bold_width = 1.0, 2.0
 # The apparatus's picture, pixels across.
 apparatus_pixels = 240
 
@@ -79,21 +78,21 @@ class Chart:
                for line in saturation]
         tick_layers, self.tick_labels = art.ticks(self.diagram, temperature_ticks, water_ticks)
         self.layers = ([art.areas(self.diagram, x, np.clip(y, *water_range), art.GREY, 0.18) for x, y in top]
-                       + art.polylines(self.diagram, scaled(humidities), thin_width, art.FAMILIES["humidity"], 1.0,
+                       + art.polylines(self.diagram, scaled(humidities), art.THIN, art.FAMILIES["humidity"], 1.0,
                                        art.SOLID)
                        + art.polylines(self.diagram, [line for lines in enthalpies for line in scaled(lines)],
-                                       thin_width, art.FAMILIES["enthalpy"], 1.0, art.SOLID)
-                       + art.polylines(self.diagram, scaled(saturation), 1.8, art.BOUNDARY, 1.0, art.SOLID)
+                                       art.THIN, art.FAMILIES["enthalpy"], 1.0, art.SOLID)
+                       + art.polylines(self.diagram, scaled(saturation), art.LINE, art.BOUNDARY, 1.0, art.SOLID)
                        + tick_layers)
         # Each enthalpy line's value at its upper end, where it meets the saturation curve; each humidity line's at its
         # right end.
-        self.labels = [art.Label(saturation_label[0], saturation_label[1], "saturation", art.BOUNDARY, art.LABEL_SIZE,
+        self.labels = [art.Label(saturation_label[0], saturation_label[1], "saturation", art.BOUNDARY, art.TEXT_SIZE,
                                  "lb", (0, 2))]
         for level, lines in zip(enthalpy_levels, enthalpies):
             for x, y in scaled(lines):
                 top = np.argmax(y)
                 if temperature_range[0] < x[top] and y[top] < water_range[1] - 1:
-                    self.labels.append(art.Label(x[top], y[top], f"{level:g}", art.FAMILIES["enthalpy"], art.LABEL_SIZE,
+                    self.labels.append(art.Label(x[top], y[top], f"{level:g}", art.FAMILIES["enthalpy"], art.TICK_SIZE,
                                                  "rb", (-2, 2)))
         for level in humidity_levels:
             for x, y in scaled([line for _, line in art.level_lines(grid_temperatures, grid_water, relative,
@@ -101,7 +100,7 @@ class Chart:
                 right = np.argmax(x)
                 if y[right] < water_range[1] - 1:
                     self.labels.append(art.Label(x[right], y[right], f"{level:.0%}", art.FAMILIES["humidity"],
-                                                 art.LABEL_SIZE, "rm", (-2, 0)))
+                                                 art.TICK_SIZE, "rm", (-2, 0)))
 
     @staticmethod
     def values(states: Extensor) -> np.ndarray:
@@ -111,10 +110,10 @@ class Chart:
 
     def picture(self, path: np.ndarray, travelled: int, states: np.ndarray, toward: np.ndarray) -> np.ndarray:
         layers = (self.layers
-                  + art.polylines(self.diagram, [(path[:, 0], path[:, 1])], thin_width, art.ORANGE, 0.6, art.SOLID)
-                  + art.polylines(self.diagram, [(path[:travelled + 1, 0], path[:travelled + 1, 1])], bold_width,
+                  + art.polylines(self.diagram, [(path[:, 0], path[:, 1])], art.THIN, art.ORANGE, 0.6, art.SOLID)
+                  + art.polylines(self.diagram, [(path[:travelled + 1, 0], path[:travelled + 1, 1])], art.BOLD,
                                   art.ORANGE, 1.0, art.SOLID)
-                  + art.arrows(self.diagram, states[:, 0], states[:, 1], toward[:, 0], toward[:, 1], arrow_pixels, 1.6,
+                  + art.arrows(self.diagram, states[:, 0], states[:, 1], toward[:, 0], toward[:, 1], arrow_pixels, art.LINE,
                                art.GREEN)
                   + art.dots(self.diagram, path[travelled, 0], path[travelled, 1], art.ORANGE))
         return art.picture(self.diagram, layers, self.labels + self.tick_labels)

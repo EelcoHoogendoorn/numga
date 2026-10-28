@@ -12,6 +12,7 @@ import numpy as np
 
 from numga import stack
 from examples.fluids.smoke_rings import core
+from examples.util import charts
 from examples.util.wgsl import image_figure, meshes, solids, strokes
 
 # The surface's colour from the first time to the last, and the colours of the rings' swept tubes, one per ring; the
@@ -145,13 +146,14 @@ def animate_trail(curves: core.Point, speeds: core.Scalar) -> Iterator[np.ndarra
         yield solids.draw([], view, background, inks=[], translucent=[], meshes=shown)
 
 
+@charts.style()
 def draw_turns(turns: core.Rotor) -> plt.Figure:
     """The turning angle at every inner vertex of a curve through time `[times, n]`: vertices across,
     times down, the angle as darkness."""
     # The angle of each turn: the size of its logarithm.
     angles = turns.log().norm().to_array()                                     # [times, n]
-    figure = plt.figure(figsize=(3.6, 2.4), dpi=90)
-    ax = figure.add_axes((0.1, 0.12, 0.86, 0.84))
+    # Half the column: a field of cells with two names and no numbers.
+    figure, ax = charts.subplots(400, 270, layout="constrained")
     # Each vertex and time a cell of its own, drawn as the cell it is.
     ax.pcolormesh(np.arange(angles.shape[1] + 1) + 0.5, np.arange(angles.shape[0] + 1) - 0.5, angles, cmap="Greys")
     ax.invert_yaxis()

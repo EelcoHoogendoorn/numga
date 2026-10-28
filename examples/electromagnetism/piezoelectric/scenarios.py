@@ -20,7 +20,7 @@ charge_unit = force_unit * length_unit / voltage_unit
 length, thickness, width = 30, 1, 5
 n_length, n_thickness = 180, 12
 applied_voltage, applied_force = 100 / voltage_unit, 0.06 / force_unit
-n_frames, duration_ms = 48, 75
+n_frames, duration_ms = 90, 40
 displacement_scale, strain_scale = 100, 2e-5
 
 

@@ -15,11 +15,11 @@ LENGTH = 6.0
 STIFFNESS = 1e3
 BEND_ANGLE = np.pi / 2
 MARGIN = 1e-6
-N_FRAMES = 24
+N_FRAMES = 48
 N_ITERATIONS = 6
 # Checkerboard cell dimensions matching one square of the bar at rest, and frame duration in milliseconds.
 CELL = np.array([LENGTH, 2.0, 2.0]) / N_DIVISIONS
-DURATION_MS = 80
+DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------

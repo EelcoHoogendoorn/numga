@@ -18,13 +18,13 @@ SEED = 1
 START = [-3.0, 0.5, 0.0]
 START_VELOCITY = [0.5, 0.0, 0.0]
 DT = 0.005
-N_SUBSTEPS = 10
+N_SUBSTEPS = 8
 # The field's half extents and its sample counts in the plane z = 0.
 HALF_WIDTH, HALF_HEIGHT = 3.6, 2.4
 N_COLUMNS, N_ROWS = 360, 240
 # The flyby's frames, ending while the stream is still in the picture, and a frame's duration in milliseconds.
-N_FRAMES = 120
-FRAME_DURATION = 50
+N_FRAMES = 150
+FRAME_DURATION = 40
 
 
 # --- math -----------------------------------------------------------------------------

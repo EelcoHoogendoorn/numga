@@ -7,6 +7,7 @@ import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 
+from examples.util import charts
 from examples.util.wgsl import pinned
 from examples.util.wgsl import planar
 from examples.util.wgsl.planar import Curves, Flats, Marker, Marks, window
@@ -16,7 +17,8 @@ from examples.quadrics.cayley_klein.core import Line, Plane, Point, Polarity, Sc
 BOX = (-1.2, 1.9, -1.2, 1.6)
 # The rows of pixels down the view.
 ROWS = 340
-# Pixels a point, at the figure's 120 dots per inch; the width of the marks' outlines.
+# The pixels of a point the marks' areas and the strokes' widths below are given in, a point at 120 dots per inch;
+# the width of the marks' outlines.
 POINT = 120 / 72
 OUTLINE = 1.0
 
@@ -45,6 +47,7 @@ def flats(flats: Plane, colour: str, width: float) -> Flats:
     return Flats(flats.reshape(-1), width * POINT, rgb(colour), 1.0)
 
 
+@charts.style()
 def draw_hyperbolic_space(
     absolute: Polarity, vertices: Point, sides: Plane, angles: Scalar, probe: Point, foot: Point,
     normal: Line, reflected: Point, pole: Point, spheres: Polarity, centres: Point,
@@ -53,7 +56,8 @@ def draw_hyperbolic_space(
     the point, red, to its foot, dark red square, the point's reflection, orange, and the side's pole,
     purple diamond. Right, the spheres about the two centres, blue and orange."""
     view = window(BOX[:2], BOX[2:], ROWS)
-    fig, (left, right) = plt.subplots(1, 2, figsize=(6.5, 3), dpi=120)
+    # Two panels, each the room of its picture, and the angles' labels over the first.
+    fig, (left, right) = charts.subplots(780, 360, ncols=2)
     for ax in (left, right):
         ax.set_axis_off()
     fig.tight_layout()
@@ -67,7 +71,7 @@ def draw_hyperbolic_space(
                   marks(pole[None], "#a855f7", 16, Marker.DIAMOND)]
     pinned(left, planar.draw(view, hyperbolic, np.ones(3)), view.extent)
     for xy, theta in zip(euclidean(vertices), angles.to_array()):
-        left.annotate(f"{np.degrees(theta):.1f}°", xy, textcoords="offset points", xytext=(3, 3), fontsize=7)
+        left.annotate(f"{np.degrees(theta):.1f}°", xy, textcoords="offset points", xytext=(3, 3))
 
     rings = [level_sets(absolute[None], "black", 1.2)] + [level_sets(family, colour, 0.8)
                                                     for family, colour in zip(spheres, ("#3b82f6", "#f97316"))]

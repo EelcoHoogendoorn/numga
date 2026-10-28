@@ -71,7 +71,7 @@ if __name__ == "__main__":
     from examples.thermodynamics.phase_change import render
 
     boiling_temperature, coldest, hottest = 0.85, 0.7, 0.98
-    n_frames, frame_duration_ms = 60, 70
+    n_frames, frame_duration_ms = 105, 40
     save_figure(render.draw_charts(pressure_at, enthalpy_at, coexistence_at, isobar_at, boiling_temperature),
                 "phase_change_charts")
     save_animation(render.heating(pressure_at, enthalpy_at, coexistence_at, isobar_at, boiling_temperature,

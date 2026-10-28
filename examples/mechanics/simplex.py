@@ -41,7 +41,7 @@ def simplex_inertia(weights: np.ndarray, corners: Extensor) -> Extensor:
     """
     samples = barycentric_samples(weights, corners)
     Bivector = corners.algebra.gatype.bivector()
-    return (samples & samples.commutator(Bivector)).sum(axis=-1)
+    return samples.regressive(samples.commutator(Bivector)).sum(axis=-1)
 
 
 def simplex_second_moment(weights: np.ndarray, corners: Extensor) -> Extensor:
@@ -108,7 +108,7 @@ def run_simplex_demo() -> None:
     # 1. The inertia maps, Antibivector- <- Bivector+, by lumped masses, a grid and random samples.
     Bivector = PGA3D.gatype.bivector()
     samples = barycentric_samples(simplex_inertia_weights(corners.shape[0]), corners)
-    lumped_inertia = (samples & samples.commutator(Bivector)).sum(axis=0)
+    lumped_inertia = samples.regressive(samples.commutator(Bivector)).sum(axis=0)
     brute_inertia = simplex_inertia_brute(corners, n_steps)
     random_inertia = simplex_inertia_random(corners, n_samples, np.random.default_rng(0))
 
@@ -134,7 +134,7 @@ def run_simplex_demo() -> None:
     print("Recovered Rate via I.solve():", np.around(recovered_rate.kernel, 4))
 
     # 4. The kinetic energy, the rate paired with its momentum.
-    kinetic_energy = 0.5 * (rate & momentum)
+    kinetic_energy = 0.5 * rate.regressive(momentum)
     print("Kinetic Energy:", float(kinetic_energy.kernel.item()))
 
 

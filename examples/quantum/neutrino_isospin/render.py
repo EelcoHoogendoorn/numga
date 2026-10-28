@@ -14,6 +14,7 @@ from matplotlib.colors import to_rgb
 from numga import stack
 from examples.util.animation import capture
 from examples.quantum.neutrino_isospin import core
+from examples.util import charts
 from examples.util.wgsl import fitted, meshes, show, solids, strokes
 from examples.util.wgsl.meshes import Samples
 from examples.util.wgsl.scene import Scene
@@ -37,8 +38,8 @@ GRID_WIDTH, PATH_WIDTH, PLANE_WIDTH = 0.0093, 0.0195, 0.0167
 AXIS_DOT_RADIUS, CIRCLE_DOT_RADIUS, FLAVOR_RADIUS, END_RADIUS = 0.0074, 0.0102, 0.0232, 0.0302
 N_AXIS_DOTS, N_CIRCLE_DOTS = 41, 90
 AXIS_REACH, LABEL_DISTANCE = 1.2, 1.3
-# The figure's resolution, and the size of the probabilities' axis labels, in points.
-DPI, LABEL_SIZE = 60, 13
+# The figure's size in pixels: the whole column, the sphere's panel beside the probabilities.
+PANELS_PX = (charts.DESIGN_WIDTH, 360)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -105,7 +106,7 @@ def name_flavors(ax, view: solids.View) -> None:
     """The flavors named just past the poles, where the camera sees them."""
     for (x, y), name, colour in zip(view.across(sm.point(LABEL_DISTANCE * isospin_coordinates(flavors))),
                                     (r"$\nu_e$", r"$\nu_\mu$"), flavor_colours):
-        ax.text(x, y, name, ha="center", va="center", fontsize=16, fontweight="bold", color=colour)
+        ax.text(x, y, name, ha="center", va="center", fontweight="bold", color=colour)
 
 
 def draw_sphere(ax, sphere: tuple[list, list, list, solids.View], trajectory: core.Isospin) -> None:
@@ -122,25 +123,25 @@ def draw_sphere(ax, sphere: tuple[list, list, list, solids.View], trajectory: co
 def draw_probabilities(ax, distances: np.ndarray, electron: np.ndarray) -> tuple[plt.Line2D, plt.Line2D]:
     """The electron and muon flavors' probabilities along the distance, each in its flavor's colour, against zero, a
     half and one: their two lines."""
-    electron_line, = ax.plot(distances, electron, color=flavor_colours[0], linewidth=2.0)
-    muon_line, = ax.plot(distances, 1 - electron, color=flavor_colours[1], linewidth=1.8, linestyle="--")
+    electron_line, = ax.plot(distances, electron, color=flavor_colours[0])
+    muon_line, = ax.plot(distances, 1 - electron, color=flavor_colours[1], linestyle="--")
     for level, style in ((0.5, ":"), (1.0, "-")):
-        ax.axhline(level, color="#cbd5e1", linestyle=style, linewidth=0.8)
+        ax.axhline(level, color="#cbd5e1", linestyle=style, linewidth=charts.FRAME_WIDTH)
     ax.spines[["top", "right"]].set_visible(False)
-    ax.set(xticks=[], yticks=[], ylim=(0, 1.05), xlim=(distances[0], distances[-1]))
-    ax.set_xlabel("distance", fontsize=LABEL_SIZE)
-    ax.set_ylabel("probability", fontsize=LABEL_SIZE)
+    ax.set(xticks=[], yticks=[], ylim=(0, 1.05), xlim=(distances[0], distances[-1]), xlabel="distance",
+           ylabel="probability")
     return electron_line, muon_line
 
 
 def panels() -> tuple[plt.Figure, plt.Axes, plt.Axes]:
     """The figure, the sphere's axes, bare, and the probabilities' axes."""
-    figure = plt.figure(figsize=(10, 4.5), dpi=DPI)
+    figure = plt.figure(figsize=(PANELS_PX[0] / charts.DPI, PANELS_PX[1] / charts.DPI))
     sphere = figure.add_subplot(1, 2, 1)
     sphere.set_axis_off()
     return figure, sphere, figure.add_subplot(1, 2, 2)
 
 
+@charts.style()
 def draw_precession(states: Iterable[core.Isospin], plane: core.Bivector, distances: np.ndarray) -> plt.Figure:
     """The isospin turning in one plane, and the flavor probabilities oscillating."""
     trajectory = stack(list(states), axis=0)                                 # [steps] Isospin
@@ -151,17 +152,19 @@ def draw_precession(states: Iterable[core.Isospin], plane: core.Bivector, distan
     return figure
 
 
+@charts.style()
 def draw_decoherence(states: Iterable[core.Isospin], plane: core.Bivector, distances: np.ndarray, settled: float) -> plt.Figure:
     """The isospin spiralling inward, and the flavor probabilities settling where the dashed line says."""
     trajectory = stack(list(states), axis=0)                                 # [steps] Isospin
     figure, sphere, probabilities = panels()
     draw_probabilities(probabilities, distances, electron_probability(trajectory))
-    probabilities.axhline(settled, color="#64748b", linestyle="--", linewidth=1.2)
+    probabilities.axhline(settled, color="#64748b", linestyle="--")
     figure.tight_layout()
     draw_sphere(sphere, flavor_sphere(plane, plane, sphere), trajectory)
     return figure
 
 
+@charts.style()
 def draw_adiabatic(steps: Iterable[tuple[core.Isospin, core.Bivector]], distances: np.ndarray, potentials: np.ndarray) -> plt.Figure:
     """The isospin following the plane as it tilts, and the flavor converting as the potential, dotted,
     falls away."""
@@ -169,7 +172,7 @@ def draw_adiabatic(steps: Iterable[tuple[core.Isospin, core.Bivector]], distance
     trajectory = stack([state for state, _ in pairs], axis=0)               # [steps] Isospin
     figure, sphere, probabilities = panels()
     draw_probabilities(probabilities, distances, electron_probability(trajectory))
-    probabilities.plot(distances, potentials / potentials.max(), color="#94a3b8", linestyle=":", linewidth=1.2)
+    probabilities.plot(distances, potentials / potentials.max(), color="#94a3b8", linestyle=":")
     figure.tight_layout()
     draw_sphere(sphere, flavor_sphere(pairs[0][1], pairs[-1][1], sphere), trajectory)
     return figure
@@ -179,23 +182,26 @@ def animate_precession(states: Iterable[core.Isospin], plane: core.Bivector, dis
     """The isospin's path and the flavor probabilities growing along the distance, frame by frame, each drawn
     as its states come: the sphere, the flavors' names and the probabilities' axes set up once, and each frame the
     path so far and its ends drawn among them."""
-    figure, sphere, probabilities = panels()
-    parts, ball, circles, view = flavor_sphere(plane, plane, sphere)
-    # The path's ends, the one moving part, come after the still opaque parts.
-    scene = Scene(view, np.ones(3), parts, [], inks=inked(circles, len(parts) + 1), translucent=ball)
-    image = show(sphere, np.full((*view.shape, 3), 255, dtype=np.uint8), view)
-    name_flavors(sphere, view)
-    # The probabilities' axes laid out over the whole distance, their lines filled in as the states come.
-    electron_line, muon_line = draw_probabilities(probabilities, distances, np.full(len(distances), np.nan))
-    states = iter(states)
-    path, electron = [], []                                                  # [steps, 3], [steps] so far
-    for end in np.linspace(2, len(distances), n_frames, dtype=int):
-        for state in islice(states, end - len(path)):
-            path.append(isospin_coordinates(state))
-            electron.append(electron_probability(state))
-        stroke, ends = path_marks(np.array(path), view)
-        image.set_data(scene.draw([ends], inks=[], translucent=[], meshes=[(stroke, 1.0)]))
-        electron_line.set_data(distances[:end], electron)
-        muon_line.set_data(distances[:end], 1 - np.array(electron))
-        yield capture(figure)
-    plt.close(figure)
+    with charts.style():
+        figure, sphere, probabilities = panels()
+        # The probabilities' axes laid out over the whole distance, their lines filled in as the states come; the
+        # figure laid out about them as the stills are, before the sphere is fitted to its room.
+        electron_line, muon_line = draw_probabilities(probabilities, distances, np.full(len(distances), np.nan))
+        figure.tight_layout()
+        parts, ball, circles, view = flavor_sphere(plane, plane, sphere)
+        # The path's ends, the one moving part, come after the still opaque parts.
+        scene = Scene(view, np.ones(3), parts, [], inks=inked(circles, len(parts) + 1), translucent=ball)
+        image = show(sphere, np.full((*view.shape, 3), 255, dtype=np.uint8), view)
+        name_flavors(sphere, view)
+        states = iter(states)
+        path, electron = [], []                                                  # [steps, 3], [steps] so far
+        for end in np.linspace(2, len(distances), n_frames, dtype=int):
+            for state in islice(states, end - len(path)):
+                path.append(isospin_coordinates(state))
+                electron.append(electron_probability(state))
+            stroke, ends = path_marks(np.array(path), view)
+            image.set_data(scene.draw([ends], inks=[], translucent=[], meshes=[(stroke, 1.0)]))
+            electron_line.set_data(distances[:end], electron)
+            muon_line.set_data(distances[:end], 1 - np.array(electron))
+            yield capture(figure)
+        plt.close(figure)

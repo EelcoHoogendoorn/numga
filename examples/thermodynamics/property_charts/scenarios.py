@@ -49,8 +49,8 @@ if __name__ == '__main__':
     from examples.util.animation import save_animation, save_figure
     from examples.thermodynamics.property_charts import render
 
-    n_steps = 32
+    n_steps, frame_duration_ms = 52, 40
     path, states, directions, _ = conditioning(n_steps)
     save_figure(render.draw_chart(relative_humidity_of, core.enthalpy, states, directions), 'air_conditioning_chart')
     save_animation(render.conditioning(relative_humidity_of, core.enthalpy, path, states, directions, passing(path)),
-                   'air_conditioning', 65)
+                   'air_conditioning', frame_duration_ms)

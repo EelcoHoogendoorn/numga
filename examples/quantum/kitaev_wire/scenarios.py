@@ -20,12 +20,12 @@ RIGHT = 82.0
 DESTINATION = 48.0
 DURATIONS = np.array([180.0, 12.0])
 N_STEPS = 720
-STEPS_PER_FRAME = 6
-DURATION_MS = 80
-N_SPECTRAL_SAMPLES = 100
+STEPS_PER_FRAME = 3
+DURATION_MS = 40
+N_SPECTRAL_SAMPLES = 200
 N_ENERGIES = 8
 # The separations of the segment's two ends, closing from far apart to nearly touching.
-N_SEPARATIONS = 100
+N_SEPARATIONS = 200
 SEPARATIONS = np.linspace(32.0, 4.0, N_SEPARATIONS)
 wire = core.Wire.chain(N_SITES, HOPPING, PAIRING)
 

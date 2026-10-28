@@ -48,9 +48,9 @@ current_room = 1.0
 # The tops of the fixed colour scales of the runs that start without current or heat, the most the notebook's runs
 # reach: the current of the discs spun up from rest, in A/m, and the heat per area, in J/m², of the braking discs and of
 # the discs spun up.
-induction_current_peak = 8.39e5
-braking_heat_peak = 3.28
-induction_heat_peak = 1.235e5
+induction_current_peak = 8.55e5
+braking_heat_peak = 1.61
+induction_heat_peak = 1.94e4
 
 
 # --- plumbing -------------------------------------------------------------------------

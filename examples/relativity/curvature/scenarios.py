@@ -26,7 +26,7 @@ amplification = 4000
 max_rapidity = 0.7
 n_observers = 15
 # The animation's frame duration in milliseconds.
-frame_duration = 50
+frame_duration = 40
 
 
 # --- math -----------------------------------------------------------------------------

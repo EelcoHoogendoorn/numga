@@ -16,7 +16,7 @@ gallery_dpi = 720 / 9.2
 def rotating_plate() -> tuple[Field, Direction, Direction, Direction, OpticalMap]:
     """The field through both stacks, the plates' fast axes, the crossed polarizers' axes, and one
     stack's map, over a swing of the plates from the entrance axis to 90 degrees."""
-    n_frames = 48
+    n_frames = 108
     # The plates' swing out; the animation plays it forward and back.
     cycle = np.linspace(0, np.pi, n_frames // 2 + 1)
     plate_angles = (1 - np.cos(cycle)) * np.pi / 4
@@ -40,7 +40,7 @@ def main() -> None:
     from examples.util.animation import save_animation
     from examples.optics.black_sandwich import render
 
-    duration_ms = 90
+    duration_ms = 40
     fields, plate_axes, input_axis, output_axis, sandwich = rotating_plate()
     save_animation(render.frames(fields, plate_axes, input_axis, output_axis), "black_sandwich", duration_ms,
                    forward_then_back=True)

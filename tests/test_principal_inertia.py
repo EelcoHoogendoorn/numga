@@ -34,6 +34,6 @@ def test_principal_inertia_matches_six_unit_masses():
     """Unit masses at the six unit axis points: mass 6, moment 4 about each axis."""
     mv = NumpyContext(PGA3D).multivector
     points = mv.antivector([[1, 0, 0, 1], [-1, 0, 0, 1], [0, 1, 0, 1], [0, -1, 0, 1], [0, 0, 1, 1], [0, 0, -1, 1]])
-    cloud = (points & points.commutator(PGA3D.gatype.bivector())).sum(axis=0)
+    cloud = points.regressive(points.commutator(PGA3D.gatype.bivector())).sum(axis=0)
     inertia = principal_inertia_pga3(mv.scalar([6.0]), mv(PGA3D.gatype(PGA3D.subspace("yz zx xy"), orientation=Orientation.extrinsic), [4.0, 4.0, 4.0]))
     np.testing.assert_allclose(inertia.kernel, cloud.kernel)

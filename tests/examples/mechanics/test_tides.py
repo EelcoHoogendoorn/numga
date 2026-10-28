@@ -19,7 +19,7 @@ def test_the_geometric_derivative_of_gravity_is_minus_four_pi_times_the_density(
 
 def test_the_tidal_map_predicts_the_cluster_through_the_core_and_a_frame_draws():
     planes = (core.mv.xy * (-np.pi * np.arange(8) / 8)).exp() >> core.mv.x   # [planes] Plane
-    for stars, shape in scenarios.flyby(75):
+    for stars, shape in scenarios.flyby(94):
         measured = (planes & stars.moment()(planes)).to_array()
         predicted = (planes & (shape.spread(scenarios.CLUSTER_RADIUS) / 4)(planes)).to_array()
         np.testing.assert_allclose(measured, predicted, rtol=0, atol=0.3 * predicted.max())

@@ -72,7 +72,7 @@ def main() -> None:
     save_figure(render.draw_qem(*scene), "qem_mesh_simplification")
     vertices, faces = bunny()
     save_animation(render.animate_mesh(simplify(vertices, faces, FACE_TARGETS), vertices),
-                   "qem_bunny", DURATION_MS)
+                   "qem_bunny", DURATION_MS, stepped=True)
 
     # checks
     # The optimum's polar plane is the plane at infinity: it has no Euclidean part; and its joint error

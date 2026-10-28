@@ -19,8 +19,8 @@ upright = (mv.yz * (-np.pi / 4)).exp()
 # kept states, and the duration of a frame.
 STEP = 0.3
 N_STEPS = 600
-STRIDE = 10
-DURATION_MS = 80
+STRIDE = 5
+DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------

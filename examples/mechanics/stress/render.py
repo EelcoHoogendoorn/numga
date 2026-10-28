@@ -15,6 +15,7 @@ import numpy as np
 from numga import stack
 from matplotlib.colors import to_rgb
 
+from examples.util import charts
 from examples.util.animation import capture
 from examples.mechanics.stress import core
 from examples.util.wgsl import fitted, show, solids
@@ -120,22 +121,23 @@ def draw_circles(ax, values: core.Scalar) -> None:
     angle = np.linspace(0, 2 * np.pi, 200)
     for low, high, style in [(0, 2, "-"), (0, 1, ":"), (1, 2, ":")]:
         centre, radius = (stresses[low] + stresses[high]) / 2, (stresses[high] - stresses[low]) / 2
+        # The outer circle at a chart's line width, the inner two as thin as its frame.
         ax.plot(centre + radius * np.cos(angle), radius * np.sin(angle), color="#1e293b" if style == "-" else "#94a3b8",
-                linestyle=style, linewidth=0.9 if style == "-" else 0.6)
-    ax.scatter(stresses, np.zeros(3), color="#1e293b", s=6, zorder=3)
+                linestyle=style, linewidth=charts.LINE_WIDTH if style == "-" else charts.FRAME_WIDTH)
+    ax.scatter(stresses, np.zeros(3), color="#1e293b", zorder=3)
     # The outer two outside the circle that passes through them, the middle one below its dot.
     for stress, name, shift, align in zip(stresses, ["$\\sigma_1$", "$\\sigma_2$", "$\\sigma_3$"], (-5, 0, 5),
                                           ("right", "center", "left")):
         ax.annotate(name, (stress, 0), xytext=(shift / 2, -2), textcoords="offset points", ha=align, va="top",
-                    fontsize=5, color="#1e293b")
+                    color="#1e293b")
     centre, radius = (stresses[0] + stresses[2]) / 2, (stresses[2] - stresses[0]) / 2
     margin = 1.3 * radius
     ax.set_xlim(centre - margin, centre + margin)
     ax.set_ylim(-margin, margin)
-    ax.axhline(0, color="#94a3b8", linewidth=0.5, zorder=2)
-    ax.axvline(0, color="#94a3b8", linewidth=0.5, zorder=2)
-    ax.text(centre + 0.95 * margin, 0.04, "$\\sigma$", ha="right", va="bottom", fontsize=6, color="#64748b")
-    ax.text(0.04, 0.95 * margin, "$\\tau$", ha="left", va="top", fontsize=6, color="#64748b")
+    ax.axhline(0, color="#94a3b8", linewidth=charts.FRAME_WIDTH, zorder=2)
+    ax.axvline(0, color="#94a3b8", linewidth=charts.FRAME_WIDTH, zorder=2)
+    ax.text(centre + 0.95 * margin, 0.04, "$\\sigma$", ha="right", va="bottom", color="#64748b")
+    ax.text(0.04, 0.95 * margin, "$\\tau$", ha="left", va="top", color="#64748b")
     for spine in ax.spines.values():
         spine.set_visible(False)
     ax.set_xticks([])
@@ -152,9 +154,9 @@ def diameter(normal: np.ndarray, shear: np.ndarray) -> np.ndarray:
 def draw_diameter(ax, ends: np.ndarray, colour: str) -> tuple:
     """A frame's diameter between its ends `[2, 2]`, the face facing x filled and the face facing y open: the line
     and the two markers, for an animation to move."""
-    line, = ax.plot(*ends.T, color=colour, linewidth=0.8, zorder=4)
-    filled = ax.scatter(*ends[0], color=colour, s=12, zorder=5)
-    hollow = ax.scatter(*ends[1], s=12, zorder=5, facecolors="none", edgecolors=colour, linewidth=0.8)
+    line, = ax.plot(*ends.T, color=colour, zorder=4)
+    filled = ax.scatter(*ends[0], color=colour, zorder=5)
+    hollow = ax.scatter(*ends[1], zorder=5, facecolors="none", edgecolors=colour)
     return line, filled, hollow
 
 
@@ -167,15 +169,17 @@ def draw_mohr(ax, values: core.Scalar, normal: core.Point, shear: core.Point) ->
         draw_diameter(ax, diameter(normal[frame], shear[frame]), colour)
 
 
+@charts.style()
 def draw_frames(views: tuple[core.Point, core.Point, core.Point, core.Point, core.Point],
                 values: core.Scalar) -> plt.Figure:
     """The cube seen from each frame `[frames]`, all from one camera, and Mohr's circles with each frame's
     diameter."""
     corners, centres, normal, shear, principal = views
     count = corners.shape[0]
-    figure = plt.figure(figsize=(1.5 * (count + 1), 1.5), dpi=120)
-    cubes = [figure.add_subplot(1, count + 1, frame + 1) for frame in range(count)]
-    draw_mohr(figure.add_subplot(1, count + 1, count + 1), values, normal, shear)
+    # Nearly the whole column: a square panel a frame's cube, and Mohr's circles beside them.
+    figure, panels = charts.subplots(190 * (count + 1), 190, ncols=count + 1)
+    cubes = panels[:count]
+    draw_mohr(panels[count], values, normal, shear)
     # The figure laid out with the cubes' axes bare, as their pictures show them; their rooms alike, one view fitted
     # to the first holds them all.
     for ax in cubes:
@@ -193,13 +197,15 @@ def animate_turning(values: core.Scalar, frames: Iterable[tuple[core.Point, core
     and its diameter on Mohr's circles; the undeformed cube and the circles set up once."""
     frames = iter(frames)
     first = next(frames)
-    figure = plt.figure(figsize=(4.75, 2.25), dpi=100)
-    cube_ax, circles = figure.add_subplot(1, 2, 1), figure.add_subplot(1, 2, 2)
-    seen = fitted(view(*first, TURNING_ROOM), cube_ax)
-    scene = Scene(seen, background, ghost(seen, turning_thickness), [], inks=[], translucent=[])
-    picture = show(cube_ax, np.zeros((*seen.shape, 3), dtype=np.uint8), seen)
-    draw_circles(circles, values)
-    line, filled, hollow = draw_diameter(circles, np.zeros((2, 2)), COLOURS[0])
+    # Three fifths of the column: the cube beside Mohr's circles, which are drawn once under the charts' style; only
+    # the cube's picture and the diameter change between frames.
+    with charts.style():
+        figure, (cube_ax, circles) = charts.subplots(480, 230, ncols=2)
+        seen = fitted(view(*first, TURNING_ROOM), cube_ax)
+        scene = Scene(seen, background, ghost(seen, turning_thickness), [], inks=[], translucent=[])
+        picture = show(cube_ax, np.zeros((*seen.shape, 3), dtype=np.uint8), seen)
+        draw_circles(circles, values)
+        line, filled, hollow = draw_diameter(circles, np.zeros((2, 2)), COLOURS[0])
     for corners, centres, normal, shear, principal in chain([first], frames):
         parts, translucent = cube(corners, centres, normal, shear, principal, seen, turning_thickness)
         picture.set_data(scene.draw(parts, inks=[], translucent=translucent, meshes=[]))

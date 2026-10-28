@@ -154,7 +154,7 @@ def test_annular_fibres_lose_mesh_orientation_bias_under_uniform_refinement():
         # Pull the stationary laboratory magnet into each orientation's material frame.
         centres = turns << (core.mv.x * offset).dual()
         magnetic = (core.mv.xy * strength * (-(disc.face_centers - centres).squared() / (2 * width ** 2)).exp())
-        electric = (disc.face_centers.commutator(core.mv.xy) & magnetic) ^ core.mv.t
+        electric = disc.face_centers.commutator(core.mv.xy).regressive(magnetic) ^ core.mv.t
         drive = swept.adjugate()(disc.triangle_areas * electric)
         streamfunction = embedder(resistance.solve(drive[:, None]))
 
@@ -396,7 +396,7 @@ def test_inductive_currents_exchange_energy_with_rotation_and_remain_closed():
     conductivity = core.fibre_conductivity(disc, principal, 0, radius, conductance)
     modes = core.current_modes(disc, conductivity, permeability, count)
     magnetic = (core.mv.xy * strength * (-(disc.face_centers - (core.mv.x * offset).dual()).squared() / (2 * width ** 2)).exp())
-    electric = (disc.face_centers.commutator(core.mv.xy) & magnetic) ^ core.mv.t
+    electric = disc.face_centers.commutator(core.mv.xy).regressive(magnetic) ^ core.mv.t
     face_ones = core.as_scalar(np.ones(len(disc.mesh.faces))).field()
     swept = core.spdiag(face_ones * (core.Current & core.time))(modes.current)
     amplitudes = -preparation_time * modes.reading(swept.adjugate()(disc.triangle_areas * electric)) * stored_current
@@ -453,7 +453,7 @@ def test_inductive_currents_exchange_energy_with_rotation_and_remain_closed():
     turns = (core.mv.xy * (-sample_angles[:, None] / 2)).exp() * orientation
     positions = turns >> disc.face_centers
     magnetic = turns << (core.mv.xy * strength * (-(positions - (core.mv.x * offset).dual()).squared() / (2 * width ** 2)).exp())
-    electric = (disc.face_centers.commutator(core.mv.xy) & magnetic) ^ core.mv.t
+    electric = disc.face_centers.commutator(core.mv.xy).regressive(magnetic) ^ core.mv.t
     projected = modes.reading(swept.adjugate()(disc.triangle_areas * electric))
     periodic = forcing(core.mv.scalar(sample_angles[:, None, None]))
     assert np.linalg.norm((periodic - projected).kernel) < 1e-3 * np.linalg.norm(projected.kernel)

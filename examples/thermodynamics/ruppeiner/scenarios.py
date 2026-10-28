@@ -34,7 +34,7 @@ if __name__ == "__main__":
     from examples.util.animation import save_animation, save_figure
     from examples.thermodynamics.ruppeiner import render
 
-    n_frames, frame_duration_ms, n_samples = 48, 80, 100
+    n_frames, frame_duration_ms, n_samples = 96, 40, 100
     warm = core.mv.t.dual() * 1.8 + core.mv.v.dual()                                  # [] State-
     temperatures = np.linspace(1.8, 1.02, n_frames)
     # Distances above the critical temperature, along the critical volume.

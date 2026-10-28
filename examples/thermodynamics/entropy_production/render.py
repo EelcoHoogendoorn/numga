@@ -30,11 +30,10 @@ n_line = 240
 # How far an arrow reaches in pixels for a unit of flow, and the tangent's half length in units of energy.
 arrow_pixels_per_flow, tangent_half_length = 40.0, 0.8
 # The bodies' picture, pixels across, and the decades of the gap to the common temperature their colours span; the
-# third chart's ranges, time and temperature; line widths.
+# third chart's ranges, time and temperature.
 block_pixels = 240
 colour_decades = 2.5
 time_range, temperature_range = (0.0, 5.8), (0.0, 3.0)
-thin_width, bold_width = 1.0, 2.2
 
 
 def bodies(temperatures: np.ndarray, capacities: np.ndarray, widest: float) -> np.ndarray:
@@ -77,32 +76,32 @@ class Charts:
                                    np.array([self.line_entropy.max()]))
         self.level_lines = [(line[:, 0], line[:, 1]) for _, line in levels]
         self.energy_layers = (art.family(self.energies, [(level, line[:, 0], line[:, 1]) for level, line in levels],
-                                         "entropy", thin_width)
-                              + art.polylines(self.energies, [(line[:, 0], line[:, 1]) for _, line in touching], 1.4,
+                                         "entropy", art.THIN)
+                              + art.polylines(self.energies, [(line[:, 0], line[:, 1]) for _, line in touching], art.LINE,
                                               art.BOUNDARY, 1.0, art.SOLID)
-                              + art.polylines(self.energies, [(self.line[:, 0], self.line[:, 1])], 1.4, art.INK, 1.0,
+                              + art.polylines(self.energies, [(self.line[:, 0], self.line[:, 1])], art.LINE, art.INK, 1.0,
                                               art.SOLID)
                               + art.dots(self.energies, self.top[0][0], self.top[0][1], art.GREEN))
-        self.hill_layers = (art.polylines(self.hill, [(self.line[:, 0], self.line_entropy)], 1.4, art.INK, 1.0, art.SOLID)
+        self.hill_layers = (art.polylines(self.hill, [(self.line[:, 0], self.line_entropy)], art.LINE, art.INK, 1.0, art.SOLID)
                             + art.dots(self.hill, self.top[0][0], self.top[1], art.GREEN))
 
     def pictures(self, path: np.ndarray, path_entropy: np.ndarray, flow: np.ndarray) -> list[np.ndarray]:
         now, now_entropy = path[-1], path_entropy[-1]
         energy = (self.energy_layers
-                  + art.polylines(self.energies, [(path[:, 0], path[:, 1])], bold_width, art.ORANGE, 1.0, art.SOLID)
+                  + art.polylines(self.energies, [(path[:, 0], path[:, 1])], art.BOLD, art.ORANGE, 1.0, art.SOLID)
                   + (art.arrows(self.energies, now[:1], now[1:], now[:1] + flow[0], now[1:] + flow[1],
-                                arrow_pixels_per_flow * np.linalg.norm(flow), 1.6, art.INK)
+                                arrow_pixels_per_flow * np.linalg.norm(flow), art.LINE, art.INK)
                      if np.linalg.norm(flow) > 1e-3 else [])
                   + art.dots(self.energies, now[0], now[1], art.ORANGE))
         # The hill's slope at the state, from its samples on either side.
         slope = np.interp(now[0], self.line[:, 0], np.gradient(self.line_entropy, self.line[:, 0]))
         tangent = np.array([now[0] - tangent_half_length, now[0] + tangent_half_length])
         hill = (self.hill_layers
-                + art.polylines(self.hill, [(path[:, 0], path_entropy)], bold_width, art.ORANGE, 1.0, art.SOLID)
-                + art.polylines(self.hill, [(tangent, now_entropy + slope * (tangent - now[0]))], 1.4, art.ORANGE, 1.0,
+                + art.polylines(self.hill, [(path[:, 0], path_entropy)], art.BOLD, art.ORANGE, 1.0, art.SOLID)
+                + art.polylines(self.hill, [(tangent, now_entropy + slope * (tangent - now[0]))], art.LINE, art.ORANGE, 1.0,
                                 art.SOLID)
                 + art.dots(self.hill, now[0], now_entropy, art.ORANGE))
-        names = [art.Floating(*art.along(self.level_lines, 8), "S = const", art.FAMILIES["entropy"], art.LABEL_SIZE, "lb")]
+        names = [art.Floating(*art.along(self.level_lines, 8), "S = const", art.FAMILIES["entropy"], art.TEXT_SIZE, "lb")]
         return [art.floated(self.energies, art.picture(self.energies, energy, []), names), art.picture(self.hill, hill, [])]
 
     def temperatures(self, times: np.ndarray, temperatures: np.ndarray, common: float) -> np.ndarray:
@@ -110,12 +109,12 @@ class Charts:
         the common temperature, dashed."""
         diagram = self.cooling
         colours = [art.thermal_colour(1.0), art.thermal_colour(0.0)]
-        layers = [art.dashed(diagram, np.array(time_range), np.full(2, common), 1.2, art.INK, (4.0, 3.0))]
+        layers = [art.dashed(diagram, np.array(time_range), np.full(2, common), art.LINE, art.INK, (4.0, 3.0))]
         for body in range(2):
-            layers += art.polylines(diagram, [(times, temperatures[:, body])], bold_width, colours[body], 1.0,
+            layers += art.polylines(diagram, [(times, temperatures[:, body])], art.BOLD, colours[body], 1.0,
                                     art.SOLID)
             layers += art.dots(diagram, times[-1], temperatures[-1, body], colours[body])
-        labels = [art.Label(time_range[1], common, "common", art.INK, art.LABEL_SIZE, "rb", (0, 3))]
+        labels = [art.Label(time_range[1], common, "common", art.INK, art.TEXT_SIZE, "rb", (0, 3))]
         return art.picture(diagram, layers, labels)
 
 

@@ -103,7 +103,7 @@ def test_rays_conserve_their_invariants_and_spin_reversal_mirrors_the_paths():
     hamiltonian = -(momenta & momenta.dual()) / 2 + geometry.profile * (momenta & geometry.null).squared()
     energy = momenta & T
     # The momentum along the direction the spin turns each event in.
-    angular_momentum = momenta & spin.dual_inverse().commutator(positions)
+    angular_momentum = momenta.regressive(spin.dual_inverse().commutator(positions))
     horizon = mass + (mass**2 - spin.squared()).square_root()
 
     # Null propagation and axial angular momentum constrain the integrated dynamics.
@@ -176,7 +176,7 @@ def test_backward_camera_rays_resolve_the_schwarzschild_capture_boundary():
 
     def angular(position, momentum):
         """The momentum along the direction a turn in the xy plane moves each event."""
-        return momentum & mv.xy.commutator(position)
+        return momentum.regressive(mv.xy.commutator(position))
 
     energy = momentum & T
     angular_momentum = angular(position, momentum)

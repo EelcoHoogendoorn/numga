@@ -19,6 +19,7 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack
 from examples.fluids.jeffery import core
+from examples.util import charts
 from examples.util.wgsl import labels, show, solids, strokes
 from examples.util.wgsl.scene import Scene
 
@@ -40,13 +41,13 @@ PATH_WIDTH, MARK_WIDTH = 2.0, 3.0
 # The sphere of directions, drawn on the GPU: its colour and how much each of its surfaces hides, and its grid's
 # width in pixels and opacity; the frame's arrows' length in radii of the sphere, the flow's arrows' width and heads
 # in pixels, and how far the frame's names reach; the frame's arrows' width and heads in pixels; the orbits' width in
-# pixels, the margin around the names' reach, the pixels across a sphere, and the names' size in points.
+# pixels, the margin around the names' reach, and the pixels across a sphere.
 SPHERE, SPHERE_OPACITY = np.array(to_rgb("#cbd5e1")), 0.15
 GRID_WIDTH, GRID_OPACITY = 1.5, 0.3
 FLOW_RGB = np.array(to_rgb(FLOW))
 ARROW_LENGTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH, LABEL_DISTANCE = 1.35, 3.0, 16.0, 10.0, 1.47
 SPHERE_ARROW_WIDTH, SPHERE_HEAD_LENGTH, SPHERE_HEAD_WIDTH = 1.5, 8.0, 5.0
-ORBIT_WIDTH, ORBIT_MARGIN, ORBIT_PIXELS, LABEL_SIZE = 1.5, 0.05, 260, 7
+ORBIT_WIDTH, ORBIT_MARGIN, ORBIT_PIXELS = 1.5, 0.05, 260
 
 
 def coordinates(points: core.Point) -> np.ndarray:
@@ -76,6 +77,7 @@ def sphere(view: solids.View) -> tuple[list, list, list]:
     return parts, ball, [grid]
 
 
+@charts.style()
 def draw_orbits(trails: core.Point) -> plt.Figure:
     """The path of each body's long axis from each start `[steps + 1, bodies, starts]`, on the sphere of
     directions, both ends of the axis drawn, among the sphere's own surfaces sample by sample."""
@@ -92,7 +94,7 @@ def draw_orbits(trails: core.Point) -> plt.Figure:
         show(ax, solids.draw(parts, view, np.ones(3), inks, translucent=ball, meshes=[(orbits, 1.0)]), view)
         # Each arrow named just past its tip by the direction it runs along: the normal z, the flow x, the gradient y.
         labels(ax, view, solids.mv.point(LABEL_DISTANCE * np.eye(3)), ["$z$", "$x$", "$y$"], ha="center",
-               va="center", fontsize=LABEL_SIZE, color=NAMES)
+               va="center", color=NAMES)
     return figure
 
 

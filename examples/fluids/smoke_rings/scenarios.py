@@ -29,34 +29,34 @@ N_KNOT = 240
 SURFACE_STEP = 0.4
 N_SURFACE_STEPS = 750
 SURFACE_STRIDE = 10
-KNOT_STEP = 0.05
-N_KNOT_STEPS = 2400
+KNOT_STEP = 1 / 30
+N_KNOT_STEPS = 3600
 KNOT_STRIDE = 40
-DURATION_MS = 60
+DURATION_MS = 40
 # The discrete-time flow: its rings' vertices, the Bäcklund parameter, and the steps, each a time of about
 # half the parameter along the flow.
 N_DISCRETE = 40
 PARAMETER = 0.5
 N_DISCRETE_STEPS = 100
 # The leapfrogging rings: their radius, vertices, heights along the axis, circulations and core radius;
-# the flow's step and number of steps, through two cycles of leapfrogging.
+# the flow's step and number of steps, through two cycles of leapfrogging, and the steps between frames.
 FROG_RADIUS = 5.0
 N_FROG = 48
 FROG_HEIGHTS = np.array([0.0, 2.5])
 frog_circulations = mv(core.Circulation, [[10.0], [10.0]])
 FROG_CORE = 0.4
-FROG_STEP = 0.4
-N_FROG_STEPS = 50
+FROG_STEP = 0.4 / 3
+N_FROG_STEPS = 150
+FROG_STRIDE = 2
 # The soliton's straight line of unit edges; the length of the offsets that make the loop, their
 # transformation's parameter, and how far the first offset leans off the line; the parameter of the
-# transformations that carry it, their number, and the steps between frames.
+# transformations that carry it, and their number, one a frame.
 N_SOLITON = 75
 SOLITON_OFFSET_LENGTH = 4.0
 SOLITON_PARAMETER = 2.0
 SOLITON_LEAN = 1e-5
 CARRY_PARAMETER = 1.0
 N_SOLITON_STEPS = 90
-SOLITON_STRIDE = 2
 # The smoke ring flow's own circulation, one in its rescaled time.
 circulation = mv(core.Circulation, [1.0])
 
@@ -159,14 +159,15 @@ def main() -> None:
     stepped = discrete()
     save_figure(render.draw_surface(core.closed(stepped[:, 1])), "smoke_rings_discrete")
     solitons = soliton()
-    save_animation(render.animate_trail(solitons[::SOLITON_STRIDE], line_speeds(solitons[::SOLITON_STRIDE])),
+    save_animation(render.animate_trail(solitons, line_speeds(solitons)),
                    "smoke_rings_soliton", DURATION_MS)
     save_figure(render.draw_turns(core.turns(solitons)), "smoke_rings_turns")
     frogs = leapfrog()
     save_figure(render.draw_swept(core.closed(frogs)), "smoke_rings_swept")
     # Each time's rings pushed by both: the induced flow couples every vertex of a time, and times are a batch.
     frog_speeds = stack([pushed(rings) for rings in frogs]).norm()               # [times, rings, n] Scalar+
-    save_animation(render.animate_curves(core.closed(frogs), core.closed(frog_speeds)), "smoke_rings_leapfrog", DURATION_MS)
+    save_animation(render.animate_curves(core.closed(frogs[::FROG_STRIDE]), core.closed(frog_speeds[::FROG_STRIDE])),
+                   "smoke_rings_leapfrog", DURATION_MS)
 
     # checks
     # The ring flies rigidly along its axis at twice the tangent of half its turn per vertex.

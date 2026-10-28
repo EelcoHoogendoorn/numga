@@ -1,6 +1,6 @@
 """A Koebe polyhedron and its dual about the sphere they both touch, and their circles on the sphere, drawn on the
-GPU: the sphere traced, the edges rods, the circles inked on its surface where their planes cut it. The sphere all but
-hides what lies behind it."""
+GPU: the sphere traced, the edges rods, the circles inked on its surface where their planes cut it. The sphere is
+opaque and hides what lies behind it."""
 
 from __future__ import annotations
 
@@ -17,15 +17,14 @@ from examples.util.wgsl import show, solids
 sm = solids.mv
 PRIMAL_COLOUR = np.array(to_rgb("#287fa0"))
 DUAL_COLOUR = np.array(to_rgb("#d06c36"))
-# The sphere's colour and how much each of its surfaces hides; the touching points'
-# colour.
-SPHERE_COLOUR, SPHERE_OPACITY, TOUCH_COLOUR = np.full(3, 0.97), 0.75, np.full(3, 0.25)
+# The sphere's colour, and the touching points' colour.
+SPHERE_COLOUR, TOUCH_COLOUR = np.full(3, 0.97), np.full(3, 0.25)
 background = np.ones(3)
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin around the polyhedra as a
-# share of the larger side, and the pixels across each panel.
+# share of the larger side, and the pixels across each panel of the figure and of the animation.
 ELEVATION, AZIMUTH = np.radians(20.0), np.radians(30.0)
-MARGIN, N_PIXELS = 0.25, 500
-# The widths of the edges and the circles and the touching points' radius, in pixels.
+MARGIN, N_PIXELS, N_ANIMATION_PIXELS = 0.25, 500, 250
+# The widths of the edges and the circles and the touching points' radius, in pixels of a panel N_PIXELS across.
 EDGE_WIDTH, CIRCLE_WIDTH, TOUCH_RADIUS = 2.6, 2.4, 3.5
 
 
@@ -48,21 +47,22 @@ def circle_planes(circles: core.Vector) -> solids.Plane:
     return -sm.direction(along).dual() - sm.w * offset
 
 
-def view(apexes: core.Point) -> solids.View:
-    """A view framing the polyhedra of apexes, of any batch, and the sphere inside them."""
-    return solids.view([sm.point(coordinates(apexes))], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
+def view(apexes: core.Point, n_pixels: int) -> solids.View:
+    """A view framing the polyhedra of apexes, of any batch, and the sphere inside them, `n_pixels` across."""
+    return solids.view([sm.point(coordinates(apexes))], 0.0, ELEVATION, AZIMUTH, MARGIN, n_pixels)
 
 
 def panels(circles: core.Vector, faces: np.ndarray, edges: np.ndarray, frame: solids.View) -> tuple[np.ndarray, np.ndarray]:
     """Two images: the polyhedron of the circles' apexes and its dual, the polyhedron of the face circles' apexes,
     every edge of both touching the sphere where the two circles of its ends touch; and the vertex circles and the
-    face circles on the sphere."""
-    pixel = frame.pixel
+    face circles on the sphere; the widths scale with the panel."""
+    scale = frame.pixels / N_PIXELS
+    pixel = frame.pixel * scale
     duals = core.face_circles(circles, faces)                                  # [faces] Vector-
     apexes, dual_apexes = sm.point(coordinates(core.apexes(circles))), sm.point(coordinates(core.apexes(duals)))
     sides = core.Mesh(circles.shape[-1], faces).edge_faces                     # [edges, 2]
-    sphere = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR, SPHERE_OPACITY)]
-    marks = [(solids.rods(apexes[edges[:, 0]], apexes[edges[:, 1]], EDGE_WIDTH / 2 * pixel), PRIMAL_COLOUR),
+    sphere = (solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR)
+    marks = [sphere, (solids.rods(apexes[edges[:, 0]], apexes[edges[:, 1]], EDGE_WIDTH / 2 * pixel), PRIMAL_COLOUR),
              (solids.rods(dual_apexes[sides[:, 0]], dual_apexes[sides[:, 1]], EDGE_WIDTH / 2 * pixel), DUAL_COLOUR),
              (solids.ball(sm.point(coordinates(core.touching(circles, edges))),
                           TOUCH_RADIUS * pixel)[:, None], TOUCH_COLOUR)]
@@ -70,14 +70,14 @@ def panels(circles: core.Vector, faces: np.ndarray, edges: np.ndarray, frame: so
     planes = concatenate([circle_planes(circles), circle_planes(duals)])      # [circles] Plane+
     kinds = np.repeat(np.stack([PRIMAL_COLOUR, DUAL_COLOUR]), [circles.shape[-1], duals.shape[-1]], axis=0)   # [circles, 3]
     loops = solids.Ink(0, solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape), kinds,
-                       CIRCLE_WIDTH, 1.0)
-    return (solids.draw(marks, frame, background, inks=[], translucent=sphere, meshes=[]),
-            solids.draw([], frame, background, [loops], translucent=sphere, meshes=[]))
+                       CIRCLE_WIDTH * scale, 1.0)
+    return (solids.draw(marks, frame, background, inks=[], translucent=[], meshes=[]),
+            solids.draw([sphere], frame, background, [loops], translucent=[], meshes=[]))
 
 
 def draw(circles: core.Vector, faces: np.ndarray, edges: np.ndarray) -> plt.Figure:
     """Left, the polyhedron and its dual about the sphere; right, the vertex circles and the face circles on it."""
-    frame = view(core.apexes(circles))
+    frame = view(core.apexes(circles), N_PIXELS)
     figure = plt.figure(figsize=(2 * N_PIXELS / 100, frame.shape[0] / 100), dpi=100)
     for place, image in zip(((0.0, 0.0, 0.5, 1.0), (0.5, 0.0, 0.5, 1.0)), panels(circles, faces, edges, frame)):
         show(figure.add_axes(place), image, frame)
@@ -86,6 +86,6 @@ def draw(circles: core.Vector, faces: np.ndarray, edges: np.ndarray) -> plt.Figu
 
 def animate(circles: core.Vector, faces: np.ndarray, edges: np.ndarray) -> Iterator[np.ndarray]:
     """The two panels side by side at every frame of a batch of circles, seen by one camera framing them all."""
-    frame = view(core.apexes(circles))
+    frame = view(core.apexes(circles), N_ANIMATION_PIXELS)
     for index in range(circles.shape[0]):
         yield np.concatenate(panels(circles[index], faces, edges, frame), axis=1)

@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
+from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import pinned, planar, room
 from examples.util.wgsl.planar import Curves, Regions, filling
@@ -66,16 +67,18 @@ def draw_cloud(ax, poses: Motor, predicted: Covariance, limit: Covariance, exten
     quiver = ax.quiver(positions[:, 0], positions[:, 1], headings[:, 0], headings[:, 1], angles="xy",
                        scale_units="xy", scale=1, pivot="mid", width=0.002, color="#4a6fa5", alpha=0.35)
     # A faint cross through the set point with its directions named at their ends.
-    ax.axhline(0, color="0.85", linewidth=0.7, zorder=0)
-    ax.axvline(0, color="0.85", linewidth=0.7, zorder=0)
-    ax.text(extent, 0, "forward", ha="right", va="top", fontsize=9, color="0.4")
-    ax.text(0, extent, "sideways ", ha="right", va="bottom", fontsize=9, color="0.4", rotation=90, rotation_mode="anchor")
+    ax.axhline(0, color="0.85", linewidth=charts.FRAME_WIDTH, zorder=0)
+    ax.axvline(0, color="0.85", linewidth=charts.FRAME_WIDTH, zorder=0)
+    ax.text(extent, 0, "forward", ha="right", va="top", color="0.4")
+    ax.text(0, extent, "sideways ", ha="right", va="bottom", color="0.4", rotation=90, rotation_mode="anchor")
     return quiver, image, view
 
 
+@charts.style()
 def clouds(states: dict, extent: float) -> tuple[plt.Figure, list]:
     """The figure of fleet clouds over their predicted and settled quadrics, together with its animated artists."""
-    figure, row = plt.subplots(1, len(states), figsize=(5.5 * len(states), 5.5), dpi=100, layout="constrained")
+    # Half the column a cloud: thousands of arrows over the quadrics, two clouds filling the column.
+    figure, row = charts.subplots(400 * len(states), 400, ncols=len(states), layout="constrained")
     figure.canvas.draw()
     artists = [draw_cloud(ax, poses, predicted, limit, extent)
                for ax, (poses, predicted, limit) in zip(np.atleast_1d(row), states.values())]
@@ -105,17 +108,19 @@ def animate_clouds(runs: dict, extent: float) -> Iterator[np.ndarray]:
     plt.close(figure)
 
 
+@charts.style()
 def draw_envelope(gains: np.ndarray, spreads: Spread, tolerance: float) -> plt.Figure:
     """Plot the two-standard-deviation half-widths of the position ellipsoid along its long and short axes against the controller gain."""
     variances = spreads.eigvalsh().to_array()                                   # [gains, modes]
     half_widths = 2.0 * np.sqrt(np.sort(variances, axis=-1)[:, ::-1])
-    figure, ax = plt.subplots(figsize=(7, 4.5))
+    # Half the column: two smooth curves, the tolerance and the gain that meets it.
+    figure, ax = charts.subplots(420, 280)
     ax.plot(gains, half_widths[:, 0], color="#c0392b")
     ax.plot(gains, half_widths[:, 1], color="#4a6fa5")
-    ax.axhline(tolerance, color="0.4", linestyle="--", linewidth=1)
+    ax.axhline(tolerance, color="0.4", linestyle="--", linewidth=charts.FRAME_WIDTH)
     # The gains are ascending, so the first gain meeting the tolerance is the smallest.
     min_gain = float(gains[half_widths[:, 0] <= tolerance][0])
-    ax.axvline(min_gain, color="0.4", linestyle=":", linewidth=1)
+    ax.axvline(min_gain, color="0.4", linestyle=":", linewidth=charts.FRAME_WIDTH)
     ax.spines[["top", "right"]].set_visible(False)
     ax.set_xlim(0, gains[-1])
     ax.set_ylim(0, half_widths[:, 0].max() * 1.05)

@@ -27,7 +27,7 @@ receiver_halfwidth = 1
 # One ray in each cell of a grid over the water, and a coarser grid for the map's derivative.
 n_rays = 640
 n_derivative = 192
-n_frames = 72
+n_frames = 126
 seed = 17
 # A single ripple across x, for a side view of three paths to one receiver point.
 ripple_wavenumber = np.array([4])
@@ -103,7 +103,7 @@ def main() -> None:
     blur_pixels = 0.95
     exposure = 0.3
     incident_height = 0.6
-    duration_ms = 70
+    duration_ms = 40
     n_colours = 16
 
     positions, ray_area, wavevectors = water()

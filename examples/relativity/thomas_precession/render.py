@@ -11,6 +11,7 @@ import numpy as np
 
 from numga import stack
 
+from examples.util import charts
 from examples.util.animation import capture
 from examples.relativity.thomas_precession import core
 
@@ -170,13 +171,15 @@ def animate_ring(ring: core.Antivector, states: Iterable[tuple[core.Antivector, 
     plt.close(figure)
 
 
+@charts.style()
 def draw_magic(electric: np.ndarray, ratios: core.Scalar) -> plt.Figure:
     """The anomalous precession rate over the anomaly times the magnetic field `[gammas, fields]`,
     against the electric field's strength."""
-    figure, ax = plt.subplots(figsize=(4.5, 2.7), dpi=90, layout="constrained")
+    # Half the column: two lines of dots, and the height the long vertical label needs.
+    figure, ax = charts.subplots(420, 300, layout="constrained")
     for values, colour in zip(ratios.to_array(), line_colours):
-        ax.plot(electric, values, "o-", color=colour, linewidth=1.5, markersize=3)
-    ax.axhline(1.0, color=FAINT, linewidth=1.0, zorder=0)
+        ax.plot(electric, values, "o-", color=colour)
+    ax.axhline(1.0, color=FAINT, linewidth=charts.FRAME_WIDTH, zorder=0)
     # The rate from zero, and one, where the magic Lorentz factor holds it, the only value marked.
     ax.set(ylim=(0, None), xticks=[], yticks=[1.0], xlabel="electric field over magnetic field",
            ylabel="anomalous rate over anomaly × field")

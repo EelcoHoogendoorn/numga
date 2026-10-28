@@ -31,10 +31,9 @@ mechanical_range = (0.0, 8.6)
 # The entropies of the level lines, and the grid of the phase plane they are found on.
 entropy_levels = np.array([0.0, 1.0, 1.8, 2.3, 2.7, 3.0, 3.15])
 grid_positions, grid_momenta = np.linspace(-2.6, 2.6, 121), np.linspace(-4.6, 4.6, 121)
-# How far ahead the rates' arrows look, in seconds, at most in pixels, and their colours; line widths.
+# How far ahead the rates' arrows look, in seconds, at most in pixels, and their colours.
 look_ahead, arrow_most = 0.25, 44.0
 reversible_colour, irreversible_colour = art.rgb("#5b6fd6"), art.rgb("#d0402f")
-thin, bold = 1.0, 2.2
 # The oscillator's picture, pixels across, and the decades of the damper's remaining warming its colour spans.
 apparatus_pixels = 230
 decades = 2.0
@@ -78,7 +77,7 @@ class Charts:
         levels = art.level_lines(grid_positions, grid_momenta, np.where(np.isfinite(entropy), entropy, -10.0),
                                  entropy_levels)
         self.levels = art.family(self.phase, [(level, line[:, 0], line[:, 1]) for level, line in levels], "entropy",
-                                 thin)
+                                 art.THIN)
         self.level_lines = [(line[:, 0], line[:, 1]) for _, line in levels]
         # Each level's entropy written at its upper right, where it crosses the diagonal of the chart.
         self.level_labels = []
@@ -86,7 +85,7 @@ class Charts:
             corner = line[np.argmax(line[:, 0] / np.ptp(position_range) + line[:, 1] / np.ptp(momentum_range))]
             if corner[1] < momentum_range[1] - 0.3:
                 self.level_labels.append(art.Label(corner[0], corner[1], f"{level:g}", art.FAMILIES["entropy"],
-                                                   art.LABEL_SIZE, "lb", (2, 2)))
+                                                   art.TICK_SIZE, "lb", (2, 2)))
         # The entropy at fixed energy against the mechanical energy, along the positions at rest.
         rest = mv.q.dual() * np.linspace(0, 2.0, 200)
         kinetic, spring, _ = energies_of(rest)
@@ -103,22 +102,22 @@ class Charts:
             arrow_length = np.linalg.norm(rate * look_ahead / pixel)
             if arrow_length > 3:
                 arrows += art.arrows(self.phase, now[:1], now[1:], now[:1] + rate[0], now[1:] + rate[1],
-                                     min(arrow_length, arrow_most), 1.8, colour)
-        phase = (self.levels + art.polylines(self.phase, [(path[:, 0], path[:, 1])], bold, art.ORANGE, 1.0, art.SOLID)
+                                     min(arrow_length, arrow_most), art.LINE, colour)
+        phase = (self.levels + art.polylines(self.phase, [(path[:, 0], path[:, 1])], art.BOLD, art.ORANGE, 1.0, art.SOLID)
                  + arrows + art.dots(self.phase, now[0], now[1], art.ORANGE))
         phase_labels = self.level_labels + [
-            art.Label(position_range[0], momentum_range[1], "reversible", reversible_colour, art.LABEL_SIZE, "lt",
+            art.Label(position_range[0], momentum_range[1], "reversible", reversible_colour, art.TEXT_SIZE, "lt",
                       (4, 0)),
-            art.Label(position_range[0], momentum_range[1] - 0.8, "dissipative", irreversible_colour, art.LABEL_SIZE,
+            art.Label(position_range[0], momentum_range[1] - 0.8, "dissipative", irreversible_colour, art.TEXT_SIZE,
                       "lt", (4, 0))]
-        rising = (art.polylines(self.rising, [(times, entropies)], bold, art.ORANGE, 1.0, art.SOLID)
+        rising = (art.polylines(self.rising, [(times, entropies)], art.BOLD, art.ORANGE, 1.0, art.SOLID)
                   + art.dots(self.rising, times[-1], entropies[-1], art.ORANGE))
-        hill = (art.polylines(self.hill, [self.curve], 1.6, art.FAMILIES["entropy"], 1.0, art.SOLID)
-                + art.polylines(self.hill, [(mechanical, entropies)], bold, art.ORANGE, 1.0, art.SOLID)
+        hill = (art.polylines(self.hill, [self.curve], art.LINE, art.FAMILIES["entropy"], 1.0, art.SOLID)
+                + art.polylines(self.hill, [(mechanical, entropies)], art.BOLD, art.ORANGE, 1.0, art.SOLID)
                 + art.dots(self.hill, mechanical[-1], entropies[-1], art.ORANGE))
         hill_labels = [art.Label(mechanical_range[1], self.curve[1][-1], "E = const", art.FAMILIES["entropy"],
-                                 art.LABEL_SIZE, "rb", (0, 4))]
-        names = [art.Floating(*art.along(self.level_lines, 6), "S = const", art.FAMILIES["entropy"], art.LABEL_SIZE,
+                                 art.TEXT_SIZE, "rb", (0, 4))]
+        names = [art.Floating(*art.along(self.level_lines, 6), "S = const", art.FAMILIES["entropy"], art.TEXT_SIZE,
                               "lt")]
         return [art.floated(self.phase, art.picture(self.phase, phase, phase_labels), names),
                 art.picture(self.rising, rising, []),

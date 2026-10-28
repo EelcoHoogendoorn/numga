@@ -19,15 +19,15 @@ N_POINTS = 32
 JITTER = 0.03
 DIRECTION_SEED, PHASE_SEED = 0, 3
 AMPLITUDE = 0.06
-N_FRAMES = 48
-DURATION_MS = 80
+N_FRAMES = 96
+DURATION_MS = 40
 # The spread and seed of the random distances whose hull gives the mesh the rescue starts from, every point
 # on the hull; the bounds on the weights, the share of the widest margin of its conditions the rescue keeps, and the
 # frames from the start to the rescue.
 MESH_SPREAD, MESH_SEED = 0.06, 57
 WEIGHT_BOUNDS = (0.5, 2.0)
 MARGIN_SHARE = 0.3
-N_SETTLE_FRAMES = 48
+N_SETTLE_FRAMES = 96
 
 
 # --- math -----------------------------------------------------------------------------

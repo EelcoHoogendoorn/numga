@@ -15,9 +15,9 @@ N_SPIN_STATES = 16
 HEISENBERG_LEVELS = np.array([1.0, 2.0, 3.0])
 # The walk: repulsions, one cycle of the exchange phase, and each frame's duration.
 REPULSIONS = HOPPING * np.array([4.0, 8.0, 20.0])
-N_FRAMES = 151
+N_FRAMES = 189
 PHASE = np.linspace(0.0, 2 * np.pi, N_FRAMES)
-FRAME_MS = 50
+FRAME_MS = 40
 # Spin up on the first three sites, spin down on the last.
 start = core.mv.a ^ core.mv.c ^ core.mv.e ^ core.mv.h
 

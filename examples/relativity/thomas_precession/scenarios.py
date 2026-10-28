@@ -12,22 +12,22 @@ from numga import concatenate, stack
 from examples.relativity.thomas_precession import core
 
 mv = core.mv
-duration_ms = 50
+duration_ms = 40
 # The rocket's two equal boosts, their rapidity swelling and shrinking between two values over the
 # loop, and the samples along each side of the triangle of velocities.
-n_boost_frames = 96
+n_boost_frames = 120
 MIN_RAPIDITY, MAX_RAPIDITY = 0.8, 2.0
 n_edge_samples = 32
 # Lorentz factors of the circular orbits, their steps around, and the steps between frames.
 orbit_gammas = np.array([1.25, 1.5, 1.75])
-n_orbit_steps = 180
-orbit_stride = 2
+n_orbit_steps = 450
+orbit_stride = 4
 # The box's half width, the gyroscope's momentum per unit mass along each axis, the frames of each
 # flight and the steps of each bounce, and the round trips shown.
 box_half_width = 1.0
 box_momentum = 0.8
-n_flight_frames = 10
-n_bounce_steps = 10
+n_flight_frames = 13
+n_bounce_steps = 12
 n_loops = 3
 # The gyroscope's spin: the patch of the plane it turns in, yz.
 gyroscope_spin = mv.yz.dual()                                                   # [] Spin-
@@ -37,8 +37,8 @@ muon_anomaly = 0.1
 ring_magnetic = 1.0
 ring_electric = 0.0
 n_ring_turns = 3
-n_ring_turn_steps = 120
-ring_stride = 3
+n_ring_turn_steps = 300
+ring_stride = 6
 n_ring_samples = 128
 # The muon's spin, turning in zx, across its first momentum along y.
 muon_spin = mv.zx.dual()                                                        # [] Spin-

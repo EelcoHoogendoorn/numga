@@ -25,8 +25,8 @@ launch_offsets = np.linspace(0, 0.6, 10)
 # The step in the particles' own time, the steps, and the steps between the frames drawn.
 proper_step = 0.1
 n_steps = 1000
-n_steps_per_frame = 12
-duration_ms = 60
+n_steps_per_frame = 8
+duration_ms = 40
 # The half widths of the view along the axis and across it, and the points across it the field's
 # strength is drawn at.
 view_half_length = 3.0

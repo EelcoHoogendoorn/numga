@@ -5,8 +5,8 @@ from numga import stack
 
 from examples.geometry.origami import core
 
-N_HALF_STEPS = 8
-DURATION_MS = 65
+N_HALF_STEPS = 13
+DURATION_MS = 40
 SIDE = 2.0
 sheet = core.mv.z                                                               # [] Plane+
 CREASE_TOLERANCE = SIDE * 1e-10

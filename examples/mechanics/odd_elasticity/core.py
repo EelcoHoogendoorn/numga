@@ -98,11 +98,13 @@ def rk4_step(generator: SparseExtensor, displacement: Displacement, dt: float) -
 
 def wave_states(
     reference: Displacement, incidence: SparseExtensor, bond_directions: Displacement, generator: SparseExtensor,
-    initial: Displacement, n_frames: int, dt: float,
+    initial: Displacement, n_frames: int, n_steps_per_frame: int, dt: float,
 ) -> Iterator[tuple[Displacement, Scalar]]:
-    """The moving lattice and bond extensions during its free overdamped response."""
+    """The moving lattice and bond extensions during its free overdamped response, `n_steps_per_frame` steps per
+    frame."""
     displacement = initial                                                   # Displacement-[sites]
     for _ in range(n_frames):
         extensions = bond_directions.dual_inverse() & (incidence * displacement)   # Scalar+[bonds]
         yield reference + displacement, extensions
-        displacement = rk4_step(generator, displacement, dt)                 # Displacement-[sites]
+        for _ in range(n_steps_per_frame):
+            displacement = rk4_step(generator, displacement, dt)             # Displacement-[sites]

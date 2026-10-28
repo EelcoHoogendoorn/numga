@@ -9,8 +9,8 @@ from examples.mechanics.area_transport import core
 SIDE = 1.0
 # The crush's frames, from the unit cube to the flat sheet, played forward and back, and the duration of each; the
 # slide along x at the flat sheet.
-N_FRAMES = 21
-DURATION_MS = 70
+N_FRAMES = 36
+DURATION_MS = 40
 MAX_SHEAR = 0.70
 # The thickness eased from the unit cube's down to the flat sheet, each layer sliding along x as the cube thins.
 THICKNESSES = (1 + np.cos(np.linspace(0, np.pi, N_FRAMES))) / 2

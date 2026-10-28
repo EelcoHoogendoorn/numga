@@ -32,8 +32,8 @@ N_IN_GAP = 32
 spinor = (1 - mv.zx) * 0.5**0.5
 # The time for the edge states to run once around the flake, and the frames over it.
 LAP = 50.0
-N_FRAMES = 50
-DURATION_MS = 120
+N_FRAMES = 150
+DURATION_MS = 40
 # README and gallery picture: this makes plots/kane_mele.gif for the README and docs/extensors.md, tuned as a visual for both. Don't change it; to experiment, copy it.
 GALLERY_PIXELS = 400
 

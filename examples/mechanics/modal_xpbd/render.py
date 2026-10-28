@@ -9,6 +9,7 @@ from matplotlib.collections import LineCollection
 
 from numga import stack
 from numga.algebras import PGA2D as ga
+from examples.util import charts
 from examples.util.animation import capture
 
 Point = ga.gatype.antivector()  # Antivector-
@@ -46,18 +47,21 @@ def mode_shapes(rest: Point, deformed: Point, edges: np.ndarray) -> plt.Figure:
     return figure
 
 
+@charts.style()
 def history(points: Point, damping: np.ndarray, frame_dt: float) -> plt.Figure:
     vertices = points.batch()
     tips = (vertices[..., -1, -2] + vertices[..., -1, -1]) / 2
     positions = coordinates(tips)
     time = np.arange(len(positions)) * frame_dt
-    figure, axes = plt.subplots(figsize=(6.5, 3), layout="constrained")
+    # Three fifths of the column: a few decaying curves, and their legend beside them.
+    figure, axes = charts.subplots(480, 260, layout="constrained")
     for i, ratio in enumerate(damping):
         axes.plot(time, positions[:, i, 1], color=COLOURS[i % len(COLOURS)], label=rf"$\zeta={ratio:g}$")
-    axes.axhline(0, color="#cbd5e1", linewidth=0.8)
+    axes.axhline(0, color="#cbd5e1", linewidth=charts.FRAME_WIDTH)
     axes.set(xlabel="Time", ylabel="Tip displacement")
     axes.spines[["top", "right"]].set_visible(False)
-    axes.legend(frameon=False, title="Local modal damping")
+    figure.legend(*axes.get_legend_handles_labels(), frameon=False, title="Local modal damping",
+                  loc="outside right upper")
     return figure
 
 
@@ -134,21 +138,22 @@ def beam(frames: Iterable[Point], edges: np.ndarray) -> Iterator[np.ndarray]:
     plt.close(figure)
 
 
+@charts.style()
 def buckling(displacements: np.ndarray, midspans: Point, critical: float) -> plt.Figure:
     """Midspan deflection against end displacement, the first case, with the critical value."""
     deflection = np.abs(coordinates(midspans[:, 0])[:, 1])
-    figure, axes = plt.subplots(figsize=(6.5, 3), layout="constrained")
+    # Half the column: one curve, its cross and the critical value named.
+    figure, axes = charts.subplots(400, 220, layout="constrained")
     axes.plot(displacements, deflection, color="#0f172a")
     # A faint cross through the origin, without scales, its lines named at their ends, each along itself; the
     # critical value named at the top of its line.
-    axes.axhline(0, color=CROSS_COLOUR, linewidth=0.7, zorder=0)
-    axes.axvline(0, color=CROSS_COLOUR, linewidth=0.7, zorder=0)
-    axes.text(1, 0, "end displacement", transform=axes.get_yaxis_transform(), ha="right", va="top", fontsize=9,
-              color=LABEL_COLOUR)
-    axes.text(0, 1, "midspan deflection ", transform=axes.get_xaxis_transform(), ha="right", va="bottom", fontsize=9,
+    axes.axhline(0, color=CROSS_COLOUR, linewidth=charts.FRAME_WIDTH, zorder=0)
+    axes.axvline(0, color=CROSS_COLOUR, linewidth=charts.FRAME_WIDTH, zorder=0)
+    axes.text(1, 0, "end displacement", transform=axes.get_yaxis_transform(), ha="right", va="top", color=LABEL_COLOUR)
+    axes.text(0, 1, "midspan deflection ", transform=axes.get_xaxis_transform(), ha="right", va="bottom",
               color=LABEL_COLOUR, rotation=90, rotation_mode="anchor")
     axes.axvline(critical, linestyle=":", color=CRITICAL_COLOUR)
-    axes.text(critical, 1, " critical", transform=axes.get_xaxis_transform(), ha="left", va="top", fontsize=9,
+    axes.text(critical, 1, " critical", transform=axes.get_xaxis_transform(), ha="left", va="top",
               color=CRITICAL_COLOUR)
     axes.set_axis_off()
     return figure

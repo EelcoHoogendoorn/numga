@@ -43,15 +43,13 @@ SAMPLE_SPACING = 0.15
 TILTS = np.deg2rad([15, 0])
 SPINS = np.array([0, -1.5])
 PITCH_RATES = np.array([0, 0.1])
-# The time step and the steps, the steps between frames drawn, and the time the rocking animation runs.
+# The time step and the steps, each step a frame drawn, and the time the rocking animation runs.
 TIME_STEP = 0.04
 N_STEPS = 250
-FRAME_STRIDE = 2
 ROCKING_DURATION = 8
 # Gallery picture: this makes plots/rattleback.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-# The gallery's reversal: its pixels across and the steps between frames drawn.
+# The gallery's reversal: its pixels across.
 GALLERY_PIXELS = 260
-GALLERY_STRIDE = 3
 
 
 # --- math -----------------------------------------------------------------------------
@@ -70,7 +68,7 @@ def distribution(wood: core.Quadric, steel: core.Quadric) -> tuple[core.Point, c
     centre = (samples * weights).sum(axis=0)                                 # [] Point-
     # Each sample joined with its own motion under a rate is its momentum; the inertia is their weighted sum.
     relative = core.origin + (samples - centre)                              # [samples] Point-
-    inertia = (relative & relative.commutator(core.Rate) * weights).sum(axis=0) * MASS   # Forque- <- Rate+
+    inertia = relative.regressive(relative.commutator(core.Rate) * weights).sum(axis=0) * MASS  # Forque- <- Rate+
     return samples, centre, inertia
 
 
@@ -145,16 +143,14 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.mechanics.rattleback import render
 
-    duration_ms = round(TIME_STEP * FRAME_STRIDE * 1000)
+    duration_ms = round(TIME_STEP * 1000)
     built, samples, placements, spins, energies = launches(TIME_STEP, N_STEPS)
-    rocking_frames = slice(0, round(ROCKING_DURATION / TIME_STEP) + 1, FRAME_STRIDE)
-    reversal_frames = slice(None, None, FRAME_STRIDE)
+    n_rocking_steps = round(ROCKING_DURATION / TIME_STEP)
     save_figure(render.draw_setup(built, samples, placements[0, 1]), "rattleback_body")
-    save_animation(render.frames(placements[rocking_frames, 0], built, samples), "rattleback_rocking", duration_ms)
-    save_animation(render.frames(placements[reversal_frames, 1], built, samples), "rattleback_reversal", duration_ms)
+    save_animation(render.frames(placements[:n_rocking_steps + 1, 0], built, samples), "rattleback_rocking", duration_ms)
+    save_animation(render.frames(placements[:, 1], built, samples), "rattleback_reversal", duration_ms)
     # Gallery picture: this makes plots/rattleback.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-    save_animation(render.sized_frames(placements[::GALLERY_STRIDE, 1], built, samples, GALLERY_PIXELS), "rattleback",
-                   round(TIME_STEP * GALLERY_STRIDE * 1000))
+    save_animation(render.sized_frames(placements[:, 1], built, samples, GALLERY_PIXELS), "rattleback", duration_ms)
 
     # checks
     # The tipped body spins up from rest, the spinning one reverses, and the energy is kept.

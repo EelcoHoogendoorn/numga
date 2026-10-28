@@ -70,14 +70,14 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.relativity.twistors import render
 
-    frames, frame_ms = 48, 80
+    n_frames, duration_ms = 96, 40
     twistors, events, rays = incidence()
     save_figure(render.draw_incidence(events, rays), "twistor_incidence")
     save_figure(render.draw_congruence(congruence()), "twistor_robinson")
     save_figure(render.draw_fields(electric_lines()), "twistor_hopfion")
     # README picture: this makes plots/twistor_hopfion.gif, tuned as a visual for the README. Don't change it; to
     # experiment, copy it.
-    save_animation(render.animate_fields(propagation(np.linspace(-1.25, 1.25, frames))), "twistor_hopfion", frame_ms)
+    save_animation(render.animate_fields(propagation(np.linspace(-1.25, 1.25, n_frames))), "twistor_hopfion", duration_ms)
 
     # --- checks
     # The recovered ray meets the events it came from, at rest and boosted.

@@ -30,8 +30,8 @@ stations = np.array([1.0, 1.9, 2.2, 3.2])
 slide, lens_tilt, rock = 0.3, 0.3, 0.1
 mirror_tilt = np.pi / 4
 # The frames of the train's loop, and the duration of a frame in milliseconds.
-n_frames = 72
-frame_duration = 60
+n_frames = 108
+frame_duration = 40
 
 
 # --- math -----------------------------------------------------------------------------

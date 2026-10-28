@@ -57,9 +57,7 @@ class Shape:
     # Centred on its centre of mass.
     rest: Point                                                             # Point-[vertices]
     modes: Displacement                                                        # [modes] Displacement-[vertices]
-    # Angular frequencies.
-    frequencies: Scalar                                                     # [modes] Scalar+
-    # Inverse squared frequencies.
+    # Inverse squared angular frequencies.
     compliance: Scalar                                                      # [modes] Scalar+
     masses: Scalar                                                          # Scalar+[vertices]
     edges: np.ndarray                                                       # [edges, ends]
@@ -74,8 +72,8 @@ class Bodies:
     rate: Twist                                                             # [...] Twist+[bodies]
     amplitudes: Scalar                                                      # [..., modes] Scalar+[bodies]
     rates: Scalar                                                           # [..., modes] Scalar+[bodies]
+    # Zero for a rigid body.
     compliance: Scalar                                                      # [..., modes] Scalar+[bodies]
-    frequencies: Scalar                                                     # [..., modes] Scalar+[bodies]
     # Damping ratios.
     damping: Scalar                                                         # [..., modes] Scalar+[bodies]
     masses: Scalar                                                          # [...] Scalar+[bodies]
@@ -142,11 +140,10 @@ def girder(cells: int, length: float, height: float, stiffness: float, density: 
     values, modes = values[3:], modes[3:]                                   # [modes] Scalar+, [modes] Displacement-[vertices]
     centre = (positions * masses).sites.sum() / masses.sites.sum()          # [] Point-
     rest = positions - centre + mv.w.dual()                                 # Point-[vertices]
-    inertia = ((rest & rest.commutator(Twist)) * masses).sites.sum()        # [] Forque- <- Twist+
-    # The modes' angular frequencies and their compliances.
-    frequencies = values.square_root()                                      # [modes] Scalar+
+    inertia = (rest.regressive(rest.commutator(Twist)) * masses).sites.sum()  # [] Forque- <- Twist+
+    # The modes' compliances, the inverses of their squared angular frequencies.
     compliance = 1 / values                                                 # [modes] Scalar+
-    return Shape(rest=rest, modes=modes, frequencies=frequencies, compliance=compliance, masses=masses, edges=edges, inertia=inertia)
+    return Shape(rest=rest, modes=modes, compliance=compliance, masses=masses, edges=edges, inertia=inertia)
 
 
 def points(bodies: Bodies, shape: Shape) -> Point:
@@ -159,8 +156,9 @@ def points(bodies: Bodies, shape: Shape) -> Point:
 def modal_terms(bodies: Bodies, previous_amplitudes: Scalar, dt: float) -> tuple[Scalar, Scalar, Scalar]:
     """Each mode's compliance, residual and response to a unit load over the step."""
     # The implicit dashpot relative to the spring: twice the damping ratio times the frequency, times the
-    # spring's compliance, over the step.
-    damping = 2 * bodies.damping * bodies.frequencies * bodies.compliance / dt  # [..., modes] Scalar+[bodies]
+    # spring's compliance, over the step. A mode has unit mass, so its frequency times its compliance is the
+    # square root of the compliance, zero for a rigid body.
+    damping = 2 * bodies.damping * bodies.compliance.square_root() / dt    # [..., modes] Scalar+[bodies]
     # The spring's compliance over the step squared, softened by the dashpot.
     compliance = bodies.compliance / dt**2 / (1 + damping)                 # [..., modes] Scalar+[bodies]
     # The mode's amplitude, with its change over the step weighted in by the dashpot.

@@ -26,8 +26,9 @@ CURLS = [0.0, 0.25, 0.5, 0.75, 1.0, 2.0]
 # Euler's elastica: the angle at which the rod leaves its first pin, in degrees, for the plate and for the
 # frames of the sweep, and the duration of a frame.
 END_ANGLES = [20.0, 60.0, 90.0, 110.0, 130.7, 150.0, 165.0, 175.0]
-SWEEP = np.linspace(2.0, 176.0, 60)
-DURATION_MS = 60
+N_SWEEP_FRAMES = 90
+SWEEP = np.linspace(2.0, 176.0, N_SWEEP_FRAMES)
+DURATION_MS = 40
 # Kirchhoff's helices: the tilt of the rod's start from the couple, upward, in degrees, the whole turns the
 # couple coils the rod through, and the width of the ribbon drawn along the rod.
 TILTS = [80.0, 60.0, 40.0, 20.0]
@@ -36,9 +37,9 @@ RIBBON = 0.015
 # The uncoiling wire: the whole turns its couple coils it through, its tilt from the couple swept from square to
 # along and back over the frames, the width of its ribbon, and the duration of a frame.
 UNCOIL_TURNS = 1.5
-N_UNCOIL_FRAMES = 90
+N_UNCOIL_FRAMES = 135
 UNCOIL_RIBBON = 0.035
-UNCOIL_MS = 60
+UNCOIL_MS = 40
 # The telephone cord: its length in metres, its coils, the segments per coil, and the angle of its wire to the
 # plane of a coil; its rigidities against turning about the cross-section's axes, bending across and up and
 # twisting, in newton square metres, and against shifting along them, shearing across and stretching along, in

@@ -15,18 +15,20 @@ from matplotlib.colors import LogNorm
 from matplotlib.image import AxesImage
 
 from numga import Extensor, stack
+from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import pinned
 
 position_limit = 7.8
 brightness_floor = 1e-4
-# The figure's resolution, and the room between panels and around them, in pixels.
-resolution = 100
+# The room between panels and around them, in pixels.
 gap = 6
+# The atoms' and the rings' sizes, in square points, and the rings' width, thin so as not to hide the peaks they ring;
+# the animation's panels, about twice as many pixels across, draw them half as large again.
 atom_size = 5
 ring_size = 50
-ring_width = 0.7
-label_size = 6
+ring_width = charts.points(1.0)
+movie_scale = 1.5
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -47,7 +49,7 @@ def panels(rows: int, columns: int, pixels: int) -> tuple[plt.Figure, list[list[
     """A figure of square panels, each `pixels` across, on whole pixels and a gap apart."""
     span = pixels + gap
     width, height = columns * span + gap, rows * span + gap
-    figure = plt.figure(figsize=(width / resolution, height / resolution), dpi=resolution)
+    figure = plt.figure(figsize=(width / charts.DPI, height / charts.DPI), dpi=charts.DPI)
     axes = [[figure.add_axes(((gap + column * span) / width, (gap + (rows - 1 - row) * span) / height,
                               pixels / width, pixels / height))
              for column in range(columns)] for row in range(rows)]
@@ -56,10 +58,10 @@ def panels(rows: int, columns: int, pixels: int) -> tuple[plt.Figure, list[list[
 
 def cross(ax: Axes) -> None:
     """A faint cross through the origin, its lines named x and y at their ends, framing the atoms."""
-    ax.axhline(0, color="#cbd5e1", linewidth=0.5, zorder=0)
-    ax.axvline(0, color="#cbd5e1", linewidth=0.5, zorder=0)
-    ax.text(position_limit, 0, "$x$", ha="right", va="bottom", color="#94a3b8", fontsize=label_size)
-    ax.text(0, position_limit, " $y$", ha="left", va="top", color="#94a3b8", fontsize=label_size)
+    ax.axhline(0, color="#cbd5e1", linewidth=charts.FRAME_WIDTH, zorder=0)
+    ax.axvline(0, color="#cbd5e1", linewidth=charts.FRAME_WIDTH, zorder=0)
+    ax.text(position_limit, 0, "$x$", ha="right", va="bottom", color="#94a3b8")
+    ax.text(0, position_limit, " $y$", ha="left", va="top", color="#94a3b8")
     ax.set(xlim=(-position_limit, position_limit), ylim=(-position_limit, position_limit))
     ax.set_axis_off()
 
@@ -88,6 +90,7 @@ def diffraction(ax: Axes, reciprocal: Extensor, transfers: Extensor,
     return image, rings
 
 
+@charts.style()
 def comparison(positions: Extensor, reciprocal: Extensor, transfers: Extensor, brightness: Extensor) -> plt.Figure:
     """For each case `[cases]`, its atoms above and the brightness of its diffraction pattern below, with the carried
     reciprocal lattice ringed."""
@@ -103,14 +106,19 @@ def animate(frames: Iterable[tuple[Extensor, Extensor, Extensor]], transfers: Ex
     """Per frame, the atoms beside the brightness of their diffraction pattern: the first frame drawn, and each one
     after it moving the atoms, the pattern and the rings."""
     frames = iter(frames)
-    figure, ((left, right),) = panels(1, 2, transfers.shape[-1])
-    positions, reciprocal, brightness = next(frames)
-    dots = atoms(left, positions)
-    image, rings = diffraction(right, reciprocal, transfers, brightness)
-    yield capture(figure)
-    for positions, reciprocal, brightness in frames:
-        dots.set_offsets(places(positions))
-        image.set_data(brightness.to_array()[::-1])
-        rings.set_offsets(readings(reciprocal))
+    # The charts' style held while the frames are drawn, for the artists that drawing makes.
+    with charts.style():
+        figure, ((left, right),) = panels(1, 2, transfers.shape[-1])
+        positions, reciprocal, brightness = next(frames)
+        dots = atoms(left, positions)
+        image, rings = diffraction(right, reciprocal, transfers, brightness)
+        dots.set_sizes([movie_scale**2 * atom_size])
+        rings.set_sizes([movie_scale**2 * ring_size])
+        rings.set_linewidths(movie_scale * ring_width)
         yield capture(figure)
-    plt.close(figure)
+        for positions, reciprocal, brightness in frames:
+            dots.set_offsets(places(positions))
+            image.set_data(brightness.to_array()[::-1])
+            rings.set_offsets(readings(reciprocal))
+            yield capture(figure)
+        plt.close(figure)

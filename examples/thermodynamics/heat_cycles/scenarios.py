@@ -58,7 +58,7 @@ if __name__ == "__main__":
     from examples.util.animation import save_animation, save_figure
     from examples.thermodynamics.heat_cycles import render
 
-    n_steps, frame_duration_ms = 16, 70
+    n_steps, frame_duration_ms = 28, 40
     states, _, _ = cycle(n_steps)
     save_figure(render.draw_cycle(temperature_of, pressure_of, states), "thermodynamics_heat_cycle")
     save_animation(render.animate_cycle(temperature_of, pressure_of, states, running(states)),

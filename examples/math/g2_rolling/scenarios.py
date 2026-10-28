@@ -16,9 +16,9 @@ attitude_angle = -2.4
 # frame; the radii of the sphere and the ball; the view's elevation and azimuth in degrees and the image
 # sizes; and how far the symmetry moves the route.
 n_samples = 120
-n_steps = 36
-n_hold_frames = 12
-duration_ms = 45
+n_steps = 41
+n_hold_frames = 13
+duration_ms = 40
 sphere_radius = 3
 ball_radius = 1
 elevation = 35

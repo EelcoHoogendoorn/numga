@@ -19,9 +19,9 @@ seed = 0
 n_azimuths = 12
 heights = np.array([0.25, 0.6, 1.0])
 n_steps = 240
-# The frames of the animation, and the time per frame.
-n_frames = 80
-frame_duration_ms = 60
+# The frames of the animation, one per two steps along the turn, and the time per frame.
+n_frames = n_steps // 2
+frame_duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------

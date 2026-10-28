@@ -93,7 +93,7 @@ def test_notebook_executes_and_renders(monkeypatch):
         if cell["cell_type"] != "code":
             continue
         source = "".join(cell["source"])
-        source = re.sub(r"(?m)^n_frames, duration_ms = .*", "n_frames, duration_ms = 3, 55", source)
+        source = re.sub(r"(?m)^n_frames, duration_ms = .*", "n_frames, duration_ms = 3, 40", source)
         source = re.sub(r"(?m)^([ \t]*)%.*", r"\1pass", source)
         exec(compile(source, f"{notebook_path.name}:{cell['id']}", "exec"), namespace)
 

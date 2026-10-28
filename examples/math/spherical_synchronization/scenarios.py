@@ -17,14 +17,15 @@ from examples.math.spherical_synchronization.core import Cut, Point, mv, time
 n_particles = 192
 n_meridians = 4
 n_parallels = 5
-# The steps and their size, the strength of the attraction, the shared rotation's speed, the boost of the
-# starting transformation, and the duration of a frame.
-n_steps = 100
-dt = 0.05
+# The time the motion runs for, the steps over it, a frame each, and their size; the strength of the attraction, the
+# shared rotation's speed, the boost of the starting transformation, and the duration of a frame.
+span = 5.0
+n_steps = 150
+dt = span / n_steps
 coupling = 1.2
 rotation_speed = 0.25
 initial_bias = 0.24
-duration_ms = 60
+duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------

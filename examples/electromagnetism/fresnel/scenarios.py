@@ -19,10 +19,10 @@ frequency = 1.0
 n_latitudes = 33
 n_longitudes = 2 * (n_latitudes - 1) + 1
 n_section_samples = 4 * (n_latitudes - 1) + 1
-n_frames = 32
+n_frames = 72
 n_movie_latitudes = 19
 n_movie_longitudes = 2 * (n_movie_latitudes - 1) + 1
-frame_duration = 90
+frame_duration = 40
 
 
 # --- math -----------------------------------------------------------------------------

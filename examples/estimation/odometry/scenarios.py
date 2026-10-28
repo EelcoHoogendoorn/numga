@@ -34,10 +34,10 @@ VAGUE_STD = (100.0, 30.0)
 # The full Gauss-Newton steps, the share of each correction a damped step takes and their count, the seed of
 # the readings' errors, and the duration of a frame in milliseconds.
 N_FULL_STEPS = 3
-DAMPING = 0.2
-N_DAMPED_STEPS = 20
+DAMPING = 0.3
+N_DAMPED_STEPS = 10
 SEED = 9
-FRAME_DURATION = 80
+FRAME_DURATION = 333
 # How far out the uncertainty ellipsoids lie, in standard deviations.
 SIGMAS = 2.0
 
@@ -121,11 +121,11 @@ def main() -> None:
     truth, dead_reckoning, reckoned_uncertainty, poses, uncertainty = closing(lap_in_plane(), N_FULL_STEPS, SEED)
     reckoned_ellipsoids = plane.ellipsoids(dead_reckoning, reckoned_uncertainty, SIGMAS)  # [poses] Plane+ <- Point-
     save_figure(render.draw(truth, dead_reckoning, reckoned_ellipsoids, poses, plane.ellipsoids(poses, uncertainty, SIGMAS)), "odometry")
-    # Closing the lap a fifth of the way at a time.
+    # Closing the lap three tenths of the way at a time.
     *_, iterates = damped(lap_in_plane(), DAMPING, N_DAMPED_STEPS, SEED)
     save_animation(render.animate(truth, dead_reckoning, reckoned_ellipsoids,
                                   ((poses, plane.ellipsoids(poses, uncertainty, SIGMAS)) for poses, uncertainty in iterates)),
-                   "odometry", FRAME_DURATION)
+                   "odometry", FRAME_DURATION, stepped=True)
 
     # checks
     # The gradient falls a millionfold from dead reckoning to the most likely poses, in the plane and, with

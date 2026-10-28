@@ -48,8 +48,6 @@ height_per_volume, cylinder_pixels = 0.55, 150
 # The colours of the liquid and of the vapour, and how much of what lies behind it the vapour hides; the dome's.
 liquid_colour, vapour_colour, vapour_opacity = art.BLUE, art.rgb("#9ccfe0"), 0.35
 dome_colour = art.BOUNDARY
-# Line widths, in pixels: the families' lines; the boundaries and the boiling temperature's own lines; the path.
-thin_width, strong_width, bold_width = 1.0, 1.8, 2.2
 
 
 def numbers(value: core.Scalar) -> np.ndarray:
@@ -80,16 +78,16 @@ def isobar(isobar_at: IsobarAt, enthalpy_at: EnthalpyAt, coexisting: core.State,
 def region_labels(liquid: tuple[float, float], mixed: tuple[float, float], vapour: tuple[float, float]
                   ) -> list[art.Label]:
     """The names of the three regions a chart of the fluid falls into."""
-    return [art.Label(*liquid, "liquid", art.INK, art.NAME_SIZE, "mm", (0, 0)),
-            art.Label(*mixed, "liquid + vapour", art.INK, art.NAME_SIZE, "mm", (0, 0)),
-            art.Label(*vapour, "vapour", art.INK, art.NAME_SIZE, "mm", (0, 0))]
+    return [art.Label(*liquid, "liquid", art.INK, art.TEXT_SIZE, "mm", (0, 0)),
+            art.Label(*mixed, "liquid + vapour", art.INK, art.TEXT_SIZE, "mm", (0, 0)),
+            art.Label(*vapour, "vapour", art.INK, art.TEXT_SIZE, "mm", (0, 0))]
 
 
 def marked(diagram: art.Diagram, path: tuple[np.ndarray, np.ndarray]) -> list:
     """The path so far, bold, and a dot at its end; nothing for a path not yet begun."""
     if len(path[0]) == 0:
         return []
-    return (art.within(diagram, path[0][None], path[1][None], bold_width, art.ORANGE[None], 1.0)
+    return (art.within(diagram, path[0][None], path[1][None], art.BOLD, art.ORANGE[None], 1.0)
             + art.dots(diagram, path[0][-1], path[1][-1], art.ORANGE))
 
 
@@ -156,47 +154,47 @@ class Charts:
         family = self.isotherm_pressures
         isotherm = art.FAMILIES["temperature"]
         layers = ([art.areas(diagram, x, y, colour, 0.28) for x, y, colour in self.lobes]
-                  + art.within(diagram, self.isotherm_volumes[~self.own], family[~self.own], thin_width,
+                  + art.within(diagram, self.isotherm_volumes[~self.own], family[~self.own], art.THIN,
                                np.broadcast_to(isotherm, (int((~self.own).sum()), 3)), 1.0)
-                  + art.within(diagram, self.isotherm_volumes[self.own], family[self.own], strong_width, isotherm[None],
+                  + art.within(diagram, self.isotherm_volumes[self.own], family[self.own], art.LINE, isotherm[None],
                                1.0)
-                  + art.within(diagram, self.dome_volumes[None], self.dome_pressures[None], strong_width,
+                  + art.within(diagram, self.dome_volumes[None], self.dome_pressures[None], art.LINE,
                                dome_colour[None], 1.0)
                   + marked(diagram, path))
         labels = region_labels((0.2, 0.06), (2.0, 0.12), (3.3, 0.33)) + [
-            art.Label(critical_volume, critical_pressure, "critical point", dome_colour, art.LABEL_SIZE, "lb", (6, 3))]
+            art.Label(critical_volume, critical_pressure, "critical point", dome_colour, art.TEXT_SIZE, "lb", (6, 3))]
         others = list(zip(self.isotherm_volumes[~self.own], family[~self.own]))
         names = [art.Floating(*art.along(list(zip(self.isotherm_volumes[self.own], family[self.own])), 6),
-                              f"T = {self.temperature:g}", isotherm, art.LABEL_SIZE, "lb"),
-                 art.Floating(*art.along(others, 6), "T = const", isotherm, art.LABEL_SIZE, "lb"),
+                              f"T = {self.temperature:g}", isotherm, art.TEXT_SIZE, "lb"),
+                 art.Floating(*art.along(others, 6), "T = const", isotherm, art.TEXT_SIZE, "lb"),
                  art.Floating(*art.along([(self.dome_volumes, self.dome_pressures)], 3), "coexistence", dome_colour,
-                              art.LABEL_SIZE, "lt")]
+                              art.TEXT_SIZE, "lt")]
         return art.floated(diagram, art.picture(diagram, layers, labels), names)
 
     def temperature_enthalpy_chart(self, path: tuple[np.ndarray, np.ndarray]) -> np.ndarray:
         diagram = self.temperature_enthalpy
         isobar = art.FAMILIES["pressure"]
-        lines = [art.within(diagram, enthalpies[None], temperatures[None], strong_width if own else thin_width,
+        lines = [art.within(diagram, enthalpies[None], temperatures[None], art.LINE if own else art.THIN,
                             isobar[None], 1.0)
                  for (enthalpies, temperatures), own in zip(self.isobars, self.own_isobar)]
-        layers = (art.polylines(diagram, list(zip(*self.fractions)), thin_width, art.FAMILIES["level"], 1.0, art.SOLID)
+        layers = (art.polylines(diagram, list(zip(*self.fractions)), art.THIN, art.FAMILIES["level"], 1.0, art.SOLID)
                   + [stroke for strokes in lines for stroke in strokes]
-                  + art.within(diagram, self.dome_enthalpies[None], self.dome_temperatures[None], strong_width,
+                  + art.within(diagram, self.dome_enthalpies[None], self.dome_temperatures[None], art.LINE,
                                dome_colour[None], 1.0)
                   + marked(diagram, path))
         bottom = np.argmin(np.abs(dome_sample_temperatures - temperature_range[0] - 0.03))
         labels = region_labels((-1.15, 1.02), (0.45, 0.665), (2.0, 0.8)) + [
             art.Label(self.dome_enthalpies[len(dome_sample_temperatures)], critical_temperature, "critical point",
-                      dome_colour, art.LABEL_SIZE, "lb", (6, 3))] + [
+                      dome_colour, art.TEXT_SIZE, "lb", (6, 3))] + [
             art.Label(enthalpy, dome_sample_temperatures[bottom], f"{fraction:g}", art.FAMILIES["level"],
-                      art.LABEL_SIZE, "mt", (0, -2))
+                      art.TICK_SIZE, "mt", (0, -2))
             for enthalpy, fraction in zip(self.fractions[0][:, bottom], vapour_fractions)]
         own = [isobar_line for isobar_line, flag in zip(self.isobars, self.own_isobar) if flag]
         others = [isobar_line for isobar_line, flag in zip(self.isobars, self.own_isobar) if not flag]
-        names = [art.Floating(*art.along(own, 8), f"p = {self.saturation:.2f}", isobar, art.LABEL_SIZE, "lb"),
-                 art.Floating(*art.along(others, 8), "p = const", isobar, art.LABEL_SIZE, "lb"),
+        names = [art.Floating(*art.along(own, 8), f"p = {self.saturation:.2f}", isobar, art.TEXT_SIZE, "lb"),
+                 art.Floating(*art.along(others, 8), "p = const", isobar, art.TEXT_SIZE, "lb"),
                  art.Floating(*art.along(list(zip(*self.fractions)), 4), "x = const", art.FAMILIES["level"],
-                              art.LABEL_SIZE, "lb")]
+                              art.TEXT_SIZE, "lb")]
         return art.floated(diagram, art.picture(diagram, layers, labels), names)
 
     def pressure_temperature_chart(self, path: tuple[np.ndarray, np.ndarray]) -> np.ndarray:
@@ -204,19 +202,19 @@ class Charts:
         of equal volume, and the heated fluid's path across the saturation curve at its fixed pressure."""
         diagram = self.pressure_temperature
         layers = (art.polylines(diagram, [(self.isochore_temperatures, line) for line in self.isochore_pressures],
-                                thin_width, art.FAMILIES["volume"], 1.0, art.SOLID)
-                  + art.polylines(diagram, [(self.saturation_temperatures, self.saturation_pressures)], strong_width,
+                                art.THIN, art.FAMILIES["volume"], 1.0, art.SOLID)
+                  + art.polylines(diagram, [(self.saturation_temperatures, self.saturation_pressures)], art.LINE,
                                   dome_colour, 1.0, art.SOLID)
                   + art.dots(diagram, critical_temperature, critical_pressure, dome_colour)
                   + marked(diagram, path))
-        labels = [art.Label(0.68, 0.33, "liquid", art.INK, art.NAME_SIZE, "mm", (0, 0)),
-                  art.Label(0.98, 0.1, "vapour", art.INK, art.NAME_SIZE, "mm", (0, 0)),
-                  art.Label(critical_temperature, critical_pressure, "critical point", dome_colour, art.LABEL_SIZE,
+        labels = [art.Label(0.68, 0.33, "liquid", art.INK, art.TEXT_SIZE, "mm", (0, 0)),
+                  art.Label(0.98, 0.1, "vapour", art.INK, art.TEXT_SIZE, "mm", (0, 0)),
+                  art.Label(critical_temperature, critical_pressure, "critical point", dome_colour, art.TEXT_SIZE,
                             "rb", (-6, 3))]
         names = [art.Floating(*art.along([(self.isochore_temperatures, line) for line in self.isochore_pressures], 4),
-                              "V = const", art.FAMILIES["volume"], art.LABEL_SIZE, "lb"),
+                              "V = const", art.FAMILIES["volume"], art.TEXT_SIZE, "lb"),
                  art.Floating(*art.along([(self.saturation_temperatures, self.saturation_pressures)], 3), "saturation",
-                              dome_colour, art.LABEL_SIZE, "lt")]
+                              dome_colour, art.TEXT_SIZE, "lt")]
         return art.floated(diagram, art.picture(diagram, layers, labels), names)
 
 

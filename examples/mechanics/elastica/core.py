@@ -97,7 +97,7 @@ def segment_inertia(mass: float, length: float, radius: float) -> Inertia:
     given radius around its middle, each point's momentum its join with its own motion under the rate."""
     spread = mv.point([[radius, 0, 0], [-radius, 0, 0], [0, radius, 0], [0, -radius, 0],
                        [0, 0, length / 2], [0, 0, -length / 2]])          # [6] Point-
-    return (spread & spread.commutator(Twist)).sum(axis=0) * (mass / spread.shape[0])   # [] Forque- <- Twist+
+    return spread.regressive(spread.commutator(Twist)).sum(axis=0) * (mass / spread.shape[0])  # [] Forque- <- Twist+
 
 
 def joint_loads(frames: Motor, rest: Motor, stiff: Stiffness, step: float) -> Forque:

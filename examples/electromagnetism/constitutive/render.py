@@ -12,6 +12,7 @@ from matplotlib.image import AxesImage
 
 from numga import stack
 
+from examples.util import charts
 from examples.util.animation import capture
 from examples.electromagnetism.constitutive import core
 from examples.util.wgsl import fitted, show, solids, strokes
@@ -64,10 +65,10 @@ def _zero_axes(ax: plt.Axes, across: str, up: str) -> None:
 
 def _cross(ax: plt.Axes, across: str, up: str) -> None:
     """A plane without scales: a faint cross through the origin, its lines named at their ends."""
-    ax.axhline(0, color=cross_colour, linewidth=0.7, zorder=0)
-    ax.axvline(0, color=cross_colour, linewidth=0.7, zorder=0)
-    ax.text(1, 0, across, transform=ax.get_yaxis_transform(), ha="right", va="top", fontsize=9, color=label_colour)
-    ax.text(0, 1, f" {up}", transform=ax.get_xaxis_transform(), ha="left", va="top", fontsize=9, color=label_colour)
+    ax.axhline(0, color=cross_colour, linewidth=charts.FRAME_WIDTH, zorder=0)
+    ax.axvline(0, color=cross_colour, linewidth=charts.FRAME_WIDTH, zorder=0)
+    ax.text(1, 0, across, transform=ax.get_yaxis_transform(), ha="right", va="top", color=label_colour)
+    ax.text(0, 1, f" {up}", transform=ax.get_xaxis_transform(), ha="left", va="top", color=label_colour)
     ax.set_axis_off()
 
 
@@ -197,10 +198,10 @@ def animate_wave_comparison(glass_modes: Modes, crystal_modes: Modes, n_frames: 
 def draw_dispersion(ax: plt.Axes, speeds: np.ndarray, residual: core.Scalar, expected: np.ndarray) -> None:
     """Each medium's residual against the trial speeds `[speeds, media]`, falling to zero at its expected
     speeds `[media, 2]`, marked in its colour."""
-    lines = ax.plot(speeds, residual.to_array(), linewidth=1.2)
+    lines = ax.plot(speeds, residual.to_array())
     for line, marks in zip(lines, expected):
         for speed in marks:
-            ax.axvline(speed, color=line.get_color(), linestyle=":", linewidth=1.0, alpha=0.8)
+            ax.axvline(speed, color=line.get_color(), linestyle=":", alpha=0.8)
 
     _zero_axes(ax, "speed along $z$", "residual")
 
@@ -244,7 +245,7 @@ def draw_fresnel_surface_polar(
         sheets = np.cumsum(dips, axis=0) * dips                                # [speeds - 2, headings]
         for sheet in range(1, sheets.max() + 1):
             heading_idx, speed_idx = np.nonzero((sheets == sheet).T)
-            ax.plot(angles[heading_idx], speeds[1:-1][speed_idx], color=color, linewidth=1.3)
+            ax.plot(angles[heading_idx], speeds[1:-1][speed_idx], color=color)
 
     # Zero radians along +z (North), angles clockwise: +x along East.
     ax.set_theta_zero_location("N")
@@ -256,10 +257,10 @@ def draw_fresnel_surface_polar(
     # they run along.
     radius = cross_reach * ax.get_rmax()
     for heading in np.arange(4) * np.pi / 2:
-        ax.plot([heading, heading], [0, radius], color=cross_colour, linewidth=0.7, zorder=0)
+        ax.plot([heading, heading], [0, radius], color=cross_colour, linewidth=charts.FRAME_WIDTH, zorder=0)
     ax.set_rmax(radius)
-    ax.text(0, radius, "$z$", ha="left", va="top", fontsize=9, color=label_colour)
-    ax.text(np.pi / 2, radius, "$x$", ha="right", va="bottom", fontsize=9, color=label_colour)
+    ax.text(0, radius, "$z$", ha="left", va="top", color=label_colour)
+    ax.text(np.pi / 2, radius, "$x$", ha="right", va="bottom", color=label_colour)
 
 
 def draw_fresnel_drag_curves(
@@ -273,38 +274,45 @@ def draw_fresnel_drag_curves(
     """The speeds of light found in the moving glass, with it in red and against it in blue `[2, drags]`,
     over the relativistic sum, solid, and Fresnel's first-order drag, dashed `[2, curve]`."""
     for speeds, exact, approximate, color, marker in zip(found, relativistic, first_order, "rb", "os"):
-        ax.plot(fractions, speeds, color=color, marker=marker, linestyle="none", markersize=3.5)
-        ax.plot(curve, exact, color=color, linewidth=1.2)
-        ax.plot(curve, approximate, color=color, linestyle="--", linewidth=0.9, alpha=0.7)
+        ax.plot(fractions, speeds, color=color, marker=marker, linestyle="none")
+        ax.plot(curve, exact, color=color)
+        ax.plot(curve, approximate, color=color, linestyle="--", alpha=0.7)
 
     _zero_axes(ax, "speed of the glass", "speed of light")
 
 
+@charts.style()
 def draw_dispersion_figure(speeds: np.ndarray, residual: core.Scalar, expected: np.ndarray) -> plt.Figure:
     """Each medium's residual against the trial speeds."""
-    fig, ax = plt.subplots(figsize=(3.4, 2.4), dpi=100)
+    # Half the column: a few smooth curves, named axes and no numbers.
+    fig, ax = charts.subplots(400, 280)
     draw_dispersion(ax, speeds, residual, expected)
-    plt.tight_layout()
+    fig.tight_layout()
     return fig
 
 
+@charts.style()
 def draw_polarizations_figure(modes: Modes) -> plt.Figure:
     """The electric fields of the crystal's two modes, as arrows in the xy plane."""
-    fig, ax = plt.subplots(figsize=(3, 3), dpi=100)
+    # Two arrows on a cross: a third of the column.
+    fig, ax = charts.subplots(260, 260)
     draw_polarizations(ax, modes)
-    plt.tight_layout()
+    fig.tight_layout()
     return fig
 
 
+@charts.style()
 def draw_fresnel_surface_figure(angles: np.ndarray, residual: core.Scalar, speeds: np.ndarray,
                                 threshold: float) -> plt.Figure:
     """The speeds of the waves against their heading, on polar axes."""
-    fig, ax = plt.subplots(figsize=(3, 3), dpi=100, subplot_kw={"projection": "polar"})
+    # A few closed sheets on a cross: a third of the column.
+    fig, ax = charts.subplots(300, 300, subplot_kw={"projection": "polar"})
     draw_fresnel_surface_polar(ax, angles, residual, speeds, threshold)
-    plt.tight_layout()
+    fig.tight_layout()
     return fig
 
 
+@charts.style()
 def draw_fresnel_drag_figure(
     fractions: np.ndarray,
     found: np.ndarray,
@@ -313,7 +321,8 @@ def draw_fresnel_drag_figure(
     first_order: np.ndarray,
 ) -> plt.Figure:
     """The speeds of light in the moving glass, against the speed of the glass."""
-    fig, ax = plt.subplots(figsize=(3.4, 2.4), dpi=100)
+    # Half the column: two curve pairs with their samples, named axes and no numbers.
+    fig, ax = charts.subplots(400, 280)
     draw_fresnel_drag_curves(ax, fractions, found, curve, relativistic, first_order)
-    plt.tight_layout()
+    fig.tight_layout()
     return fig

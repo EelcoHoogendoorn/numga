@@ -12,6 +12,7 @@ from matplotlib.colors import to_rgb
 from numga import stack
 from examples.util.animation import capture
 from examples.quantum.magnetic_resonance import core
+from examples.util import charts
 from examples.util.wgsl import labels, show, solids, strokes
 
 sm = solids.mv
@@ -28,8 +29,10 @@ REACH, N_PIXELS = 1.3, 300
 CIRCLE_WIDTH, PATH_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH, DOT_RADIUS = 1.0, 1.4, 1.0, 7.0, 4.0, 2.6
 LABEL_SIZE = 8
 AXIS_LENGTH, LABEL_DISTANCE = 1.18, 1.26
-# The quantity plots' size in inches and their resolution.
-LINES_INCHES, SIGNAL_INCHES, DPI = (6.4, 2.6), (4.5, 2.5), 90
+# The quantity plots' sizes in pixels: the two lines side by side, and a signal over time.
+LINES_PX, SIGNAL_PX = (640, 280), (440, 250)
+# The echo's animation, in pixels: the docs' picture, kept at its size.
+ECHO_PX = (603, 281)
 # The time the echo's signal is followed for, in µs from the first pulse.
 ECHO_SPAN = 8.0
 
@@ -68,11 +71,12 @@ def draw_nutation(states: Iterable[core.State], steady_states: core.State) -> pl
     return figure
 
 
+@charts.style()
 def draw_lines(detunings: np.ndarray, drives: np.ndarray, steady_states: core.State) -> plt.Figure:
     """Absorption and dispersion against detuning, one curve per drive strength, each divided by
     the drive so weak drives stay visible: a stronger drive broadens and flattens the line."""
     r = components(steady_states)                                        # [detunings, drives, 3]
-    figure, (absorbing, dispersing) = plt.subplots(1, 2, figsize=LINES_INCHES, dpi=DPI)
+    figure, (absorbing, dispersing) = charts.subplots(*LINES_PX, ncols=2, layout="constrained")
     for index, (drive, colour) in enumerate(zip(drives, COLOURS)):
         absorbing.plot(detunings, -r[:, index, 1] / drive, color=colour, label=f"drive {drive:g} rad/µs")
         dispersing.plot(detunings, r[:, index, 0] / drive, color=colour)
@@ -81,12 +85,12 @@ def draw_lines(detunings: np.ndarray, drives: np.ndarray, steady_states: core.St
     # Each line against its zero, with resonance marked faintly.
     absorbing.set_ylim(bottom=0)
     for ax in (absorbing, dispersing):
-        ax.axhline(0, color="black", linewidth=0.8, zorder=0)
-        ax.axvline(0, color="0.85", linewidth=0.7, zorder=0)
+        ax.axhline(0, color="black", linewidth=charts.FRAME_WIDTH, zorder=0)
+        ax.axvline(0, color="0.85", linewidth=charts.FRAME_WIDTH, zorder=0)
         ax.set(xticks=[], yticks=[], xlabel="detuning")
         ax.spines[["top", "right"]].set_visible(False)
-    absorbing.legend(fontsize=7, frameon=False)
-    figure.tight_layout()
+    # The drives named under both panels, clear of the lines.
+    figure.legend(*absorbing.get_legend_handles_labels(), loc="outside lower center", ncol=len(drives), frameon=False)
     return figure
 
 
@@ -96,22 +100,23 @@ def signal(ensemble: core.State) -> np.ndarray:
     return np.hypot(r[..., 0].mean(axis=-1), r[..., 1].mean(axis=-1))
 
 
+@charts.style()
 def draw_echo(states: Iterable[core.State], dt: float, delay: float, t2: float) -> plt.Figure:
     """The signal after the first pulse, for an ensemble recorded every dt: it vanishes as the spins
     fan out, and returns at twice the delay after the second pulse, reduced only by the true
     dephasing."""
     ensemble = stack(list(states))                                       # [times, spins] State-
     times = np.arange(ensemble.shape[0]) * dt
-    figure, ax = plt.subplots(figsize=SIGNAL_INCHES, dpi=DPI)
+    figure, ax = charts.subplots(*SIGNAL_PX)
     ax.plot(times, signal(ensemble), color="#2e86c1", label="mean transverse spin")
     ax.plot(times, np.exp(-times / t2), "--", color="0.5", label="exp(-t / T2)")
     for when, name in ((delay, "π pulse"), (2 * delay, "echo")):
-        ax.axvline(when, color="0.7", linewidth=0.8)
-        ax.annotate(name, (when, 0.95), textcoords="offset points", xytext=(4, 0), fontsize=8)
+        ax.axvline(when, color="0.7", linewidth=charts.FRAME_WIDTH)
+        ax.annotate(name, (when, 0.95), textcoords="offset points", xytext=(4, 0))
     ax.set(xlabel="time", ylabel="mean transverse spin", xlim=(times[0], times[-1]), ylim=(0, 1.05), xticks=[],
            yticks=[])
     ax.spines[["top", "right"]].set_visible(False)
-    ax.legend(loc="center right", fontsize=8, frameon=False)
+    ax.legend(loc="center right", frameon=False)
     figure.tight_layout()
     return figure
 
@@ -122,18 +127,19 @@ def transverse(states: core.State) -> np.ndarray:
     return np.hypot(r[..., 0], r[..., 1])
 
 
+@charts.style()
 def draw_decays(times: np.ndarray, echoed: core.State, faded: core.State, t2: float) -> plt.Figure:
     """The signal at each time after the first pulse, on a logarithmic time axis: with a half-turn
     pulse halfway, the echo, which fades only at the rate `1 / t2`; without it, the free decay, which
     the uneven field ends within about a microsecond."""
     fine = np.geomspace(times[0], times[-1], 200)
-    figure, ax = plt.subplots(figsize=SIGNAL_INCHES, dpi=DPI)
+    figure, ax = charts.subplots(*SIGNAL_PX)
     ax.semilogx(times, transverse(echoed), "o-", color="#2e86c1", label="echo")
     ax.semilogx(times, transverse(faded), "o-", color="#c0392b", label="free decay")
     ax.semilogx(fine, np.exp(-fine / t2), "--", color="0.5", label="exp(-t / T2)")
     ax.set(xlabel="time after the first pulse (µs)", ylabel="transverse spin", ylim=(0, 1.05), yticks=[])
     ax.spines[["top", "right"]].set_visible(False)
-    ax.legend(loc="lower left", fontsize=8, frameon=False)
+    ax.legend(loc="lower left", frameon=False)
     figure.tight_layout()
     return figure
 
@@ -144,27 +150,28 @@ def animate_echo(detunings: np.ndarray, states: Iterable[core.State], dt: float,
     one frame for every few recorded states, each drawn as its state comes."""
     order = np.argsort(detunings)
     span = np.linspace(0.0, ECHO_SPAN)
-    figure, (top, trace) = plt.subplots(1, 2, figsize=(9, 4.2), dpi=67, gridspec_kw={"width_ratios": (1, 1.4)})
-    top.add_patch(plt.Circle((0, 0), 1.0, fill=False, color="0.8"))
-    spins = top.scatter(np.zeros(len(order)), np.zeros(len(order)), c=detunings[order], cmap="coolwarm", s=6)
-    top.set_xlim(-1.1, 1.1)
-    top.set_ylim(-1.1, 1.1)
-    top.set_aspect("equal")
-    top.set_axis_off()
-    so_far, = trace.plot([], [], color="#2e86c1")
-    trace.plot(span, np.exp(-span / t2), "--", color="0.8")
-    trace.axvline(delay, color="0.85", linewidth=0.8)
-    trace.annotate("π pulse", (delay, 0.95), textcoords="offset points", xytext=(4, 0))
-    trace.set_xlim(0.0, ECHO_SPAN)
-    trace.set(ylim=(0, 1.05), xticks=[], yticks=[], xlabel="time", ylabel="mean transverse spin")
-    trace.spines[["top", "right"]].set_visible(False)
-    figure.tight_layout()
-    times, strength = [], []
-    for index, rho in enumerate(states):
-        times.append(index * dt)
-        strength.append(signal(rho))
-        if index % every == 0:
-            spins.set_offsets(components(rho)[order, :2])
-            so_far.set_data(times, strength)
-            yield capture(figure)
-    plt.close(figure)
+    with charts.style():
+        figure, (top, trace) = charts.subplots(*ECHO_PX, ncols=2, width_ratios=(1, 1.4))
+        top.add_patch(plt.Circle((0, 0), 1.0, fill=False, color="0.8"))
+        spins = top.scatter(np.zeros(len(order)), np.zeros(len(order)), c=detunings[order], cmap="coolwarm")
+        top.set_xlim(-1.1, 1.1)
+        top.set_ylim(-1.1, 1.1)
+        top.set_aspect("equal")
+        top.set_axis_off()
+        so_far, = trace.plot([], [], color="#2e86c1")
+        trace.plot(span, np.exp(-span / t2), "--", color="0.8")
+        trace.axvline(delay, color="0.85", linewidth=charts.FRAME_WIDTH)
+        trace.annotate("π pulse", (delay, 0.95), textcoords="offset points", xytext=(4, 0))
+        trace.set_xlim(0.0, ECHO_SPAN)
+        trace.set(ylim=(0, 1.05), xticks=[], yticks=[], xlabel="time", ylabel="mean transverse spin")
+        trace.spines[["top", "right"]].set_visible(False)
+        figure.tight_layout()
+        times, strength = [], []
+        for index, rho in enumerate(states):
+            times.append(index * dt)
+            strength.append(signal(rho))
+            if index % every == 0:
+                spins.set_offsets(components(rho)[order, :2])
+                so_far.set_data(times, strength)
+                yield capture(figure)
+        plt.close(figure)

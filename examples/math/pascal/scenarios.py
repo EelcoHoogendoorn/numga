@@ -20,9 +20,9 @@ five_angles = np.array([0.4, 1.44, 4.12, 4.77, 6.08])
 # The next corner of each corner of a hexagon.
 next_corner = np.array([1, 2, 3, 4, 5, 0])
 # The frames of the turn, the frame shown as a still, and the duration of a frame in milliseconds.
-n_frames = 120
-still = 72
-frame_duration = 60
+n_frames = 180
+still = 3 * n_frames // 5
+frame_duration = 40
 # Points off the quadric at which Pascal's condition is compared with the quadric, and their seed.
 n_probes = 8
 seed = 0

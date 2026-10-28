@@ -41,7 +41,7 @@ def test_velocity_projection_cancels_relative_anchor_velocity():
     motors = chain.motor[joints.bodies]
     rates = chain.rate[joints.bodies] + (mv.xw * 0.5 + mv.yz * 0.3) * np.array([[0.0], [1.0]])
 
-    anchor_velocity = joints.anchors & joints.anchors.commutator(core.Rate)
+    anchor_velocity = joints.anchors.regressive(joints.anchors.commutator(core.Rate))
 
     def relative(rates):
         velocities = motors >> anchor_velocity(rates)

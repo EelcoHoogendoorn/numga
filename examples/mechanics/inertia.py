@@ -39,7 +39,7 @@ def second_moment(inertia: Extensor) -> Extensor:
     Bivector = ga.gatype.bivector()
     # This construction has type (AntiBivector <- Point, Plane, Bivector).
     # Duality turns the second input into a point while keeping its plane input.
-    construction = Point & Plane.dual().commutator(Bivector)
+    construction = Point.regressive(Plane.dual().commutator(Bivector))
     # The supplied inertia matches AntiBivector <- Bivector, leaving Point <- Plane
     # as the unknown second-moment map: lstsq unbinds both unmatched inputs at once,
     # inferring them from the types. The inertia has more entries than the second
@@ -99,14 +99,14 @@ def main(signature: str, seed: int) -> tuple[Extensor, Extensor]:
     placement = mv.bivector(rng.normal(size=len(Bivector.output_subspace)) * 0.2).exp()
 
     # --- math: 1. Construct and diagonalize inertia from arbitrary mass points.
-    cloud_inertia = (points & points.commutator(Bivector) * masses).sum(axis=0)
+    cloud_inertia = points.regressive(points.commutator(Bivector) * masses).sum(axis=0)
     cloud_moment = second_moment(cloud_inertia)
     cloud_motor = diagonalizing_motor(cloud_moment, reference)
     cloud_diagonal = cloud_motor >> cloud_inertia(cloud_motor << Bivector)
 
     # 2. Diagonal second moments induce a diagonal energy form on bivectors.
     # Move that inertia, then find a diagonalizing motor from the moved tensor.
-    diagonal = (point_basis & point_basis.commutator(Bivector) * second_moments).sum(axis=0)
+    diagonal = point_basis.regressive(point_basis.commutator(Bivector) * second_moments).sum(axis=0)
     placed_inertia = placement >> diagonal(placement << Bivector)
     moment = second_moment(placed_inertia)
     motor = diagonalizing_motor(moment, reference)

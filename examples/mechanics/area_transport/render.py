@@ -14,6 +14,7 @@ from matplotlib.colors import to_rgb
 from matplotlib.container import BarContainer
 
 from numga import stack
+from examples.util import charts
 from examples.util.animation import capture
 from examples.mechanics.area_transport import core
 from examples.util.wgsl import fitted, show, solids
@@ -91,7 +92,7 @@ def measures(ax: Axes, patches: core.Patch, volume: core.Scalar) -> BarContainer
     """The bars of the areas and the volume, for an animation to set their heights."""
     values = heights(patches, volume)
     bars = ax.bar(np.arange(len(values)), values, color=(*COLOURS, EDGE_COLOUR), width=0.58)
-    ax.axhline(1, color="#94a3b8", linestyle=":", linewidth=1)
+    ax.axhline(1, color="#94a3b8", linestyle=":")
     # The unit cube's measures, the one value read off; each column named by what it measures.
     ax.set(xticks=np.arange(len(values)), xticklabels=["face $x$", "face $y$", "face $z$", "volume"], yticks=[1],
            ylim=(0, 1.35))
@@ -107,9 +108,11 @@ def animate(frames: Iterable[tuple[core.Point, core.Point, core.Patch, core.Scal
     states = iter(frames)
     first = next(states)
     framed = view(*first[:3])
-    figure = plt.figure(figsize=(9, 4.3), dpi=67, layout="constrained")
-    cube, measured = figure.add_subplot(1, 2, 1), figure.add_subplot(1, 2, 2)
-    bars = measures(measured, *first[2:])
+    # Three quarters of the column: the cube's picture and four bars, side by side. The bars and their labels are
+    # made under the charts' style; the frames only change their heights.
+    with charts.style():
+        figure, (cube, measured) = charts.subplots(600, 288, ncols=2, layout="constrained")
+        bars = measures(measured, *first[2:])
     # The view fitted to the room the layout gives the cube's axes bare, as its picture shows them.
     cube.set_axis_off()
     seen = fitted(framed._replace(half=framed.half * room), cube)

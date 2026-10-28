@@ -11,8 +11,8 @@ from examples.math.invariant_decomposition import core
 # animation shows, and the duration of each in milliseconds.
 SEED = 0
 N_TIMES = 600
-N_FRAMES = 120
-DURATION_MS = 50
+N_FRAMES = 150
+DURATION_MS = 40
 
 
 # --- plumbing -------------------------------------------------------------------------

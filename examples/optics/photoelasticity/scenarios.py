@@ -20,8 +20,8 @@ wavelength = 550e-6
 stress_optic = 5.5e-5
 delay_per_stress = 2 * np.pi * stress_optic * thickness / wavelength
 polarizer_angles = np.deg2rad([0, 22.5])
-n_frames = 80
-duration_ms = 90
+n_frames = 180
+duration_ms = 40
 # Fringes are bands, not shades: a few grey levels draw them.
 n_colors = 12
 # A smooth rise from zero to the full tension; the animation plays it forward and back.

@@ -17,9 +17,9 @@ SECOND_TILT, SECOND_RADIUS = 0.40, np.radians(52.0)
 # The shapes carried, by name in `shapes`; the frames of one turn, the pixels across, and a frame's duration in
 # milliseconds.
 shape_names = ["trio"]
-n_animation_frames = 60
+n_animation_frames = 50
 resolution = 300
-frame_duration = 33
+frame_duration = 40
 
 
 # The two circles, each the vector of its plane with the cosine of its radius on w, meet in a 2-blade: its

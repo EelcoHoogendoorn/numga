@@ -38,7 +38,7 @@ if __name__ == "__main__":
     from examples.util.animation import save_animation, save_figure
     from examples.thermodynamics.state_space import render
 
-    total_heat, n_steps, frame_duration_ms = 2.4, 48, 80
+    total_heat, n_steps, frame_duration_ms = 2.4, 97, 40
     first, directions, _ = next(equal_heating(total_heat, n_steps))
     save_figure(render.draw_directions(temperature_of, pressure_of, first, directions), "thermodynamics_heating_charts")
     save_animation(render.heating(temperature_of, pressure_of, equal_heating(total_heat, n_steps)),

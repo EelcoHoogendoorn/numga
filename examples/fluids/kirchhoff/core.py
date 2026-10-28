@@ -64,7 +64,7 @@ directions = axes.dual()                                   # [3] Direction-
 # The velocity of the centre under a rate, and the couple of a turn: half the sum, over the axes, of
 # each direction joined with its own velocity. A shift moves no direction, so it has no couple.
 centre_velocity = centre.commutator(Twist)                 # Direction- <- Twist+
-turn_couple = (directions & directions.commutator(Twist)).sum(axis=-1) / 2   # Couple <- Twist+
+turn_couple = directions.regressive(directions.commutator(Twist)).sum(axis=-1) / 2  # Couple <- Twist+
 
 
 # --- math -----------------------------------------------------------------------------

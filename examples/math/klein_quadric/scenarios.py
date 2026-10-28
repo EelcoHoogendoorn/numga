@@ -25,10 +25,10 @@ swing_amplitude = 1.5
 n_rulings = 12
 # The frames of the swing; the points it is sampled at to pace it, and the share of the line's own motion in the
 # pace; the frame shown as a still, and the duration of a frame in milliseconds.
-n_frames = 96
+n_frames = 168
 n_path, line_share = 960, 0.6
-still_frame = 8
-frame_duration_ms = 70
+still_frame = n_frames // 12
+frame_duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------

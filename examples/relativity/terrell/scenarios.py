@@ -16,7 +16,7 @@ travel, line_of_sight, up = core.space
 # centre of the pair as it passes, as angles from the motion.
 track_distance = 4.5
 body_speeds = np.array([0.0, 0.6, 0.9])
-n_frames = 72
+n_frames = 108
 sightings = np.linspace(3 * np.pi / 4, np.pi / 4, n_frames)
 # The sphere's radius and the cube's half-width, and how far above and below the centre of the pair
 # their centres are.
@@ -29,7 +29,7 @@ meridian_spacing = np.pi / 4
 parallel_spacing = np.pi / 6
 parallel_reach = np.pi / 3
 n_outline = 96
-duration_ms = 60
+duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------

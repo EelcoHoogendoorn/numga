@@ -4,8 +4,8 @@ import numpy as np
 
 from examples.geometry.three_point_pose import core
 
-N_STEPS = 24
-DURATION_MS = 65
+N_STEPS = 39
+DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------

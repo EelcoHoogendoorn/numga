@@ -39,8 +39,8 @@ mixed_modes = np.array([0, 2, 5])
 mix_amplitudes = np.array([0.30, 0.22, 0.26])
 exposure = 0.45
 target_tile = 0
-n_frames = 48
-duration_ms = 60
+n_frames = 72
+duration_ms = 40
 # The animation's palette: the smooth field takes coarse banding.
 n_colours = 32
 

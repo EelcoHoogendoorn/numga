@@ -64,7 +64,7 @@ if __name__ == "__main__":
     from examples.util.animation import save_animation, save_figure
     from examples.thermodynamics.contact_geometry import render
 
-    n_entropies, section_volume, frame_duration_ms = 41, 1.0, 90
+    n_entropies, section_volume, frame_duration_ms = 93, 1.0, 40
     entropies, volumes = np.linspace(-0.8, 1.2, n_entropies), np.array([0.6, 0.8, 1.0, 1.3, 1.7])
     family, changed_family = surfaces(entropies, volumes)
     points, tangents, changed_points, changed_tangents = section(entropies, section_volume)

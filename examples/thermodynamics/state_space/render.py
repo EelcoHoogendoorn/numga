@@ -38,9 +38,8 @@ state_volumes = np.geomspace(0.2, 4.0, 120)
 # The two cylinders' colours on the charts; the cylinders' pictures, pixels across, and the height of a unit of volume.
 case_colours = np.stack([art.BLUE, art.ORANGE])
 cylinder_pixels, height_per_volume = 130, 0.9
-# How far along a heating direction its arrow looks, in the state's units, and its length in pixels; line widths.
+# How far along a heating direction its arrow looks, in the state's units, and its length in pixels.
 arrow_step, arrow_pixels = 0.05, 26.0
-thin_width, bold_width = 1.0, 2.2
 # The heat taken in, across the third chart.
 heat_range = (0.0, 2.6)
 
@@ -56,10 +55,10 @@ class Charts:
         lines = art.gas_lines(temperature_of, pressure_of, mv, state_entropies, state_volumes,
                               art.GasLines(isochores, isobars, isotherms, adiabats))
         self.lines = lines
-        self.temperature_lines = (art.drawn(self.entropy_temperature, lines.isochores, 0, 1, thin_width, "volume")
-                                  + art.drawn(self.entropy_temperature, lines.isobars, 0, 1, thin_width, "pressure"))
-        self.pressure_lines = (art.drawn(self.volume_pressure, lines.isotherms, 2, 3, thin_width, "temperature")
-                               + art.drawn(self.volume_pressure, lines.adiabats, 2, 3, thin_width, "entropy"))
+        self.temperature_lines = (art.drawn(self.entropy_temperature, lines.isochores, 0, 1, art.THIN, "volume")
+                                  + art.drawn(self.entropy_temperature, lines.isobars, 0, 1, art.THIN, "pressure"))
+        self.pressure_lines = (art.drawn(self.volume_pressure, lines.isotherms, 2, 3, art.THIN, "temperature")
+                               + art.drawn(self.volume_pressure, lines.adiabats, 2, 3, art.THIN, "entropy"))
         self.heat_temperature = art.Diagram(heat_range, temperature_range, (0.0, 0.0), n_rows, n_columns, ("Q", "T"))
 
     def values(self, states: Extensor) -> np.ndarray:
@@ -78,22 +77,22 @@ class Charts:
                                 np.concatenate([path[:, case, y], [0.0, 0.0]]), case_colours[case], 0.16)
                       for case in range(2) if len(path) > 1]
             paths = [stroke for case in range(2) for stroke in
-                     art.polylines(diagram, [(path[:, case, x], path[:, case, y])], bold_width, case_colours[case],
+                     art.polylines(diagram, [(path[:, case, x], path[:, case, y])], art.BOLD, case_colours[case],
                                    1.0, art.SOLID)]
             layers.append(shaded + lines + paths
-                          + (art.arrows(diagram, now[:, x], now[:, y], toward[:, x], toward[:, y], arrow_pixels, 1.6,
+                          + (art.arrows(diagram, now[:, x], now[:, y], toward[:, x], toward[:, y], arrow_pixels, art.LINE,
                                         art.INK)
                              if pointed else [])
                           + art.dots(diagram, now[:, x], now[:, y], case_colours))
         lines = self.lines
         temperature_names = [art.Floating(*art.gas_along(lines.isochores, 0, 1, 8), "V = const", art.FAMILIES["volume"],
-                                          art.LABEL_SIZE, "lb"),
+                                          art.TEXT_SIZE, "lb"),
                              art.Floating(*art.gas_along(lines.isobars, 0, 1, 8), "p = const", art.FAMILIES["pressure"],
-                                          art.LABEL_SIZE, "lb")]
+                                          art.TEXT_SIZE, "lb")]
         pressure_names = [art.Floating(*art.gas_along(lines.isotherms, 2, 3, 8), "T = const",
-                                       art.FAMILIES["temperature"], art.LABEL_SIZE, "lb"),
+                                       art.FAMILIES["temperature"], art.TEXT_SIZE, "lb"),
                           art.Floating(*art.gas_along(lines.adiabats, 2, 3, 8), "S = const", art.FAMILIES["entropy"],
-                                       art.LABEL_SIZE, "lb")]
+                                       art.TEXT_SIZE, "lb")]
         return [art.floated(self.entropy_temperature, art.picture(self.entropy_temperature, layers[0], []),
                             temperature_names),
                 art.floated(self.volume_pressure, art.picture(self.volume_pressure, layers[1], []), pressure_names)]
@@ -103,11 +102,11 @@ class Charts:
         diagram, now = self.heat_temperature, path[-1]
         layers = []
         for case in range(2):
-            layers += art.polylines(diagram, [(heats, path[:, case, 1])], bold_width, case_colours[case], 1.0,
+            layers += art.polylines(diagram, [(heats, path[:, case, 1])], art.BOLD, case_colours[case], 1.0,
                                     art.SOLID)
         layers += art.dots(diagram, np.full(2, heats[-1]), now[:, 1], case_colours)
-        labels = [art.Label(heats[-1], now[0, 1], "fixed volume", case_colours[0], art.LABEL_SIZE, "rb", (-6, 6)),
-                  art.Label(heats[-1], now[1, 1], "fixed pressure", case_colours[1], art.LABEL_SIZE, "rt", (-6, -8))]
+        labels = [art.Label(heats[-1], now[0, 1], "fixed volume", case_colours[0], art.TEXT_SIZE, "rb", (-6, 6)),
+                  art.Label(heats[-1], now[1, 1], "fixed pressure", case_colours[1], art.TEXT_SIZE, "rt", (-6, -8))]
         return art.picture(diagram, layers, labels)
 
 

@@ -11,10 +11,10 @@ from numga import stack
 from examples.surfaces.dirac_waves import core
 
 mv = core.mv
-# The sphere's subdivisions, the time step, and the steps between frames.
+# The sphere's subdivisions, the time step, a frame each, and the duration of a frame.
 SUBDIVISIONS = 3
 INTERVAL = 0.04
-STRIDE = 2
+DURATION_MS = 40
 # The pulse: its width, and the steps it runs, a little past the time to reach the far pole.
 WIDTH = 0.25
 N_STEPS = 84
@@ -22,7 +22,7 @@ N_STEPS = 84
 # fields of frequency zero; and the frames over each period.
 N_LEVELS = 5
 N_CONSTANT = 4
-N_PHASES = 20
+N_PHASES = 25
 
 
 # --- math -----------------------------------------------------------------------------
@@ -55,11 +55,10 @@ def main() -> None:
     from examples.surfaces.dirac_waves import render
 
     sphere, points, states = pulse()
-    frames = states[::STRIDE]
-    vertices, faces = stack([state[0] for state in frames]), stack([state[1] for state in frames])   # [frames] Even+[vertices], [frames] Even-[faces]
-    save_animation(render.animate_pulse(sphere, points, vertices, faces), "dirac_waves_pulse", 80)
+    vertices, faces = stack([state[0] for state in states]), stack([state[1] for state in states])   # [steps] Even+[vertices], [steps] Even-[faces]
+    save_animation(render.animate_pulse(sphere, points, vertices, faces), "dirac_waves_pulse", DURATION_MS)
     _, _, squared, mode_vertices, mode_faces = modes()
-    save_animation(render.animate_modes(sphere, points, mode_vertices, mode_faces), "dirac_waves_modes", 50)
+    save_animation(render.animate_modes(sphere, points, mode_vertices, mode_faces), "dirac_waves_modes", DURATION_MS)
 
     # checks
     # The leapfrog keeps the energy: the vertex field's area-weighted norm, and the face field's paired

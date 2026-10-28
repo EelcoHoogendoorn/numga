@@ -15,9 +15,9 @@ from examples.electromagnetism.second_harmonic import core
 n_periods = 2
 n_waveform_samples = 401
 # Turns of the crystal about the beam, pump headings across it, and the duration of a frame in milliseconds.
-n_turns = 72
+n_turns = 144
 n_headings = 241
-frame_duration = 80
+frame_duration = 40
 # The strength of the weak probes, as a share of the pump's.
 probe_amplitude = 0.2
 # Slices through a crystal of unit length, and the phase slip over the whole of the mismatched crystals.

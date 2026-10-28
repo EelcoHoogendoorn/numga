@@ -20,8 +20,8 @@ BEAD_RADIUS = 0.14
 AMPLITUDE = 1.05
 N_CYCLES = 3
 N_STEPS_PER_CYCLE = 60
-N_STEPS_PER_FRAME = 3
-DURATION_MS = 60
+N_STEPS_PER_FRAME = 2
+DURATION_MS = 40
 # Sample grid for the fluid velocity field around the swimmer.
 GRID_X = np.linspace(-2.8, 2.8, 25)
 GRID_Y = np.linspace(-1.9, 1.9, 17)

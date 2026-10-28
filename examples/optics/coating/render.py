@@ -11,23 +11,22 @@ from matplotlib.colors import hsv_to_rgb, to_rgb
 
 from numga import stack
 from examples.optics.coating import core
+from examples.util import charts
 from examples.util.wgsl import solids, strokes
 from examples.util.wgsl.scene import Scene
 
 case_colours = ("#2563eb", "#ea580c", "#0d9488", "#7c3aed")
-# The quantity plots: one panel and two panels side by side, in inches at 100 dpi, their text size in points
-# and their curves' width.
-single_size, double_size = (3.6, 2.4), (5.6, 2.4)
-font_size, curve_width = 7, 1.2
+# The quantity plots' sizes in pixels: one panel, about half the column, and two panels side by side.
+single_size, double_size = (420, 280), (640, 280)
 sm = solids.mv
 # The pulse's view: elevation and azimuth in radians, its margin and the pixels across it. The field drawn
 # `field_length` nm across the line per unit; the stretch of line framed, as shares of its length cut from its
 # start and its end; the widths of the field's path, its spokes, the optic axes and the line, in pixels.
 pulse_elevation, pulse_azimuth = np.radians(6.0), np.radians(30.0)
-pulse_margin, n_pulse_pixels = 0.02, 400
+pulse_margin, n_pulse_pixels = 0.02, 600
 field_length = 3000.0
 framed_start, framed_end = 0.08, 0.12
-path_width, spoke_width, optic_width, line_width = 1.5, 0.75, 1.0, 1.0
+path_width, spoke_width, optic_width, line_width = 2.25, 1.1, 1.5, 1.5
 # The spokes' share of the path's strength, and the least strength a spoke is drawn at; the optic axes' half length, the slab's half width across the line, both in field units, and the slab's colour
 # and opacity; the line's colour and the optic axes'.
 spoke_opacity, spoke_floor = 0.5, 0.02
@@ -41,10 +40,7 @@ upright = ((sm.yz + sm.xy) * (np.pi / (2 * np.sqrt(2)))).exp()
 
 # --- plumbing -------------------------------------------------------------------------
 def quantity_axes(ax: plt.Axes) -> None:
-    """Axes of a quantity plot at the plots' text size, without the frame's top and right."""
-    ax.tick_params(labelsize=font_size)
-    ax.xaxis.label.set_size(font_size)
-    ax.yaxis.label.set_size(font_size)
+    """Axes of a quantity plot, without the frame's top and right."""
     ax.spines[["top", "right"]].set_visible(False)
 
 
@@ -56,33 +52,36 @@ def electric_along_x(fields: core.Bivector) -> np.ndarray:
     return np.stack([(fields.real() & along_x).to_array(), ((-1j * fields).real() & along_x).to_array()])
 
 
+@charts.style()
 def spectra(wavelengths: np.ndarray, reflectance: core.Scalar, names: tuple[str, ...]) -> plt.Figure:
     """Reflected power as a percentage of the incident power for each coating."""
-    figure, ax = plt.subplots(figsize=single_size, layout="constrained")
+    figure, ax = charts.subplots(*single_size, layout="constrained")
     ax.set_prop_cycle(color=case_colours)
     for spectrum, name in zip(reflectance.real().to_array(), names):
-        ax.plot(wavelengths, spectrum * 100, linewidth=curve_width, label=name)
+        ax.plot(wavelengths, spectrum * 100, label=name)
     ax.set(xlim=(wavelengths[0], wavelengths[-1]), ylim=(0, None),
            xlabel="wavelength (nm)", ylabel="reflectance (%)")
     quantity_axes(ax)
-    ax.legend(fontsize=font_size, frameon=False)
+    ax.legend(frameon=False)
     return figure
 
 
+@charts.style()
 def angular(wavelengths: np.ndarray, angles: np.ndarray, reflectance: core.Scalar) -> plt.Figure:
     """The two polarizations over wavelength and incidence angle, on one reflectance scale from none, black,
     to all, white."""
-    figure, panels = plt.subplots(1, 2, figsize=double_size, sharex=True, sharey=True,
+    figure, panels = charts.subplots(*double_size, ncols=2, sharex=True, sharey=True,
                                  layout="constrained")
     for ax, spectrum in zip(panels, reflectance.real().to_array()):
         ax.pcolormesh(wavelengths, np.degrees(angles), spectrum,
                       shading="nearest", cmap="magma", vmin=0, vmax=1, rasterized=True)
         ax.set(xlabel="wavelength (nm)")
         quantity_axes(ax)
-    panels[0].set_ylabel("incidence angle (degrees)", fontsize=font_size)
+    panels[0].set_ylabel("incidence angle (degrees)")
     return figure
 
 
+@charts.style()
 def field(depths: np.ndarray, fields: core.Bivector) -> plt.Figure:
     """The signed electric field along x of the fields `[cases, layers, samples]` at the depths
     `[layers, samples]`, over two optical cycles."""
@@ -96,7 +95,7 @@ def field(depths: np.ndarray, fields: core.Bivector) -> plt.Figure:
     waves = (in_phase[:, None, :] * np.cos(phase)[None, :, None]
              - quadrature[:, None, :] * np.sin(phase)[None, :, None])
     limit = np.max(np.abs(waves))
-    figure, panels = plt.subplots(1, 2, figsize=double_size, sharex=True, sharey=True,
+    figure, panels = charts.subplots(*double_size, ncols=2, sharex=True, sharey=True,
                                  layout="constrained")
     for ax, wave in zip(panels, waves):
         ax.pcolormesh(depths, times, wave, shading="nearest", cmap="RdBu_r", vmin=-limit, vmax=limit,
@@ -105,39 +104,41 @@ def field(depths: np.ndarray, fields: core.Bivector) -> plt.Figure:
         quantity_axes(ax)
     # Whole optical cycles only; the colour is the field's sign and relative strength.
     panels[0].set(yticks=np.arange(n_cycles + 1))
-    panels[0].set_ylabel("optical cycles", fontsize=font_size)
+    panels[0].set_ylabel("optical cycles")
     return figure
 
 
+@charts.style()
 def handedness(wavelengths: np.ndarray, reflectance: core.Scalar, polarizations: tuple[str, ...]) -> plt.Figure:
     """Opposite material twists side by side, `[polarizations, twists, wavelengths]`, with the same
     colours for the incident polarizations."""
-    figure, axes = plt.subplots(1, 2, figsize=double_size, sharex=True, sharey=True,
+    figure, axes = charts.subplots(*double_size, ncols=2, sharex=True, sharey=True,
                                layout="constrained")
     values = reflectance.real().to_array()
     for helix, ax in enumerate(axes):
         ax.set_prop_cycle(color=case_colours)
         for spectrum, polarization in zip(values[:, helix], polarizations):
-            ax.plot(wavelengths, spectrum * 100, linewidth=curve_width, label=polarization)
+            ax.plot(wavelengths, spectrum * 100, label=polarization)
         ax.set(xlim=(wavelengths[0], wavelengths[-1]), ylim=(0, 100),
                xlabel="wavelength (nm)")
         quantity_axes(ax)
-    axes[0].set_ylabel("reflectance (%)", fontsize=font_size)
-    axes[1].legend(fontsize=font_size, frameon=False)
+    axes[0].set_ylabel("reflectance (%)")
+    axes[1].legend(frameon=False)
     return figure
 
 
+@charts.style()
 def axion(jumps: np.ndarray, reflectance: core.Scalar, names: tuple[str, ...]) -> plt.Figure:
     """Reflected power in each polarization channel across an axion discontinuity."""
-    figure, ax = plt.subplots(figsize=single_size, layout="constrained")
+    figure, ax = charts.subplots(*single_size, layout="constrained")
     ax.set_prop_cycle(color=case_colours)
     for channel, name in zip(reflectance.real().to_array(), names):
-        ax.plot(jumps, channel * 100, linewidth=curve_width, label=name)
+        ax.plot(jumps, channel * 100, label=name)
     # The jump is marked only where it vanishes, and with it the reflection.
     ax.set(xlim=(jumps[0], jumps[-1]), ylim=(0, None), xticks=[0],
            xlabel="axion jump", ylabel="reflectance (%)")
     quantity_axes(ax)
-    ax.legend(fontsize=font_size, frameon=False)
+    ax.legend(frameon=False)
     return figure
 
 
