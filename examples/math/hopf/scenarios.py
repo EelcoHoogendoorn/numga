@@ -76,7 +76,7 @@ def main() -> None:
     # checks
     # Every spinor on a fibre has the fibre's spin, and any two fibres are linked once.
     fibres = core.fibre(core.fibre_start(spins), np.linspace(0.0, 2 * np.pi, N_SAMPLES + 1))
-    np.testing.assert_allclose((core.HOPF(fibres, fibres) - spins[..., None]).kernel, 0.0, atol=1e-9)
+    np.testing.assert_allclose((core.hopf(fibres, fibres) - spins[..., None]).kernel, 0.0, atol=1e-9)
     np.testing.assert_allclose(core.linking(projected[0, 0], projected[-1, N_PER_CIRCLE // 3]).to_array(), 1.0, atol=1e-2)
     # The carried spinor comes back on its own fibre, turned along it by half the solid angle the loop encloses.
     half_solid_angle = np.pi * (1 - np.cos(LOOP_POLAR))

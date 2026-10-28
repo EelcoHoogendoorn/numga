@@ -10,5 +10,5 @@ from examples.optics.lens_camera import render, scenarios
 def test_figure_and_animation_draw():
     """The figure and a short animation draw."""
     assert isinstance(render.draw_stills(scenarios.stills()), plt.Figure)
-    frames = list(render.animate_camera(scenarios.motion(2), scenarios.SCENE))
+    frames = list(render.animate_camera(scenarios.motion(2), scenarios.scene))
     assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)

@@ -8,7 +8,7 @@ closed loop of spins, a spinor comes back onto its own fibre, turned along it by
 encloses.
 
 Spinors are modelled as the even multivectors, and the sandwich `Even >> mv.xy` is a bivector-valued form on
-pairs of spinors whose value on one spinor twice is that spinor's spin. Paired with a spin, `spin.dot(HOPF)` is
+pairs of spinors whose value on one spinor twice is that spinor's spin. Paired with a spin, `spin.dot(hopf)` is
 a scalar form on pairs of spinors, with eigenvalues minus one twice and plus one twice; its top eigenspace is
 the plane of the fibre over that spin. A phase is a turn on the right, `psi * (mv.xy * angle).exp()`, which
 the spin cannot see because xy commutes with itself. Stereographic projection takes a spinor to its bivector
@@ -35,14 +35,14 @@ Bivector = ga.gatype.bivector()
 Even = ga.gatype.even()
 Rotor = ga.gatype.rotor()
 # A spinor's spin, as a form on pairs of spinors.
-HOPF = Even >> mv.xy                               # [] Bivector <- (Even, Even)
+hopf = Even >> mv.xy                               # [] Bivector <- (Even, Even)
 
 
 # --- math -----------------------------------------------------------------------------
 def fibre_start(spin: Bivector) -> Even:
-    """A unit spinor with each spin: the top eigenvector of the form `spin.dot(HOPF)`, whose eigenvalues are
+    """A unit spinor with each spin: the top eigenvector of the form `spin.dot(hopf)`, whose eigenvalues are
     minus one twice and plus one twice."""
-    _, spinors = spin.dot(HOPF).eigh()                                         # [..., 4] Even
+    _, spinors = spin.dot(hopf).eigh()                                         # [..., 4] Even
     return spinors[..., -1]                                                    # [...] Even
 
 

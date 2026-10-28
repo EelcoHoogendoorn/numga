@@ -42,7 +42,7 @@ S3_DURATION_MS = 50
 
 # --- S² -------------------------------------------------------------------------------
 # The camera rotor, folded into the initial orientation of every body.
-CAMERA = (S2.mv.yz * 0.2714904022294391 + S2.mv.zx * 0.6097774271693677 + S2.mv.xy * 1.0148400517968847).exp()
+camera = (S2.mv.yz * 0.2714904022294391 + S2.mv.zx * 0.6097774271693677 + S2.mv.xy * 1.0148400517968847).exp()
 
 
 def ellipse_mesh(half_angles: np.ndarray, mass: np.ndarray, n_phi: int, n_r: int) -> tuple[S2.Point, S2.Scalar]:
@@ -73,7 +73,7 @@ def ellipses(half_angles: np.ndarray, mass: np.ndarray, placement: S2.Motor, rat
     rates (bodies, 3) on yz, zx and xy."""
     half_angles = np.radians(half_angles)
     rates = S2.mv.yz * rate[:, 0] + S2.mv.zx * rate[:, 1] + S2.mv.xy * rate[:, 2]
-    return S2.body(render.rgb(colors), S2.ellipsoid(np.tan(half_angles)), CAMERA * placement, rates,
+    return S2.body(render.rgb(colors), S2.ellipsoid(np.tan(half_angles)), camera * placement, rates,
                    *ellipse_mesh(half_angles, mass, n_phi, 10))
 
 

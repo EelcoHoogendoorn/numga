@@ -15,7 +15,7 @@ from examples.geometry.scenegraph.core import (
 # The camera: where it stands and what it looks at; the objective's and relay's focal lengths and the
 # relay's place behind the objective; the pupil point's offset from the optical centre, which bends the
 # rays; the sensor's distance behind the objective; and the sensor's size and pixels.
-EYE, TARGET = mv.point([0.0, -3.6, 1.3]), mv.point([0.0, 0.0, 1.18])
+eye, target = mv.point([0.0, -3.6, 1.3]), mv.point([0.0, 0.0, 1.18])
 FRONT_FOCAL, REAR_FOCAL, REAR_GAP = 1.0, 0.8, -0.3
 PUPIL_OFFSET = 0.02
 SENSOR_DISTANCE = 1.25
@@ -34,7 +34,7 @@ FRAME_DURATION = 60
 # --- math -----------------------------------------------------------------------------
 def camera_rig():
     """The compound camera rig consists of its pose, objective and relay lenses, pupil, sensor plane, and world-to-pixel map."""
-    pose = look_at(EYE, TARGET)
+    pose = look_at(eye, target)
     front_lens, rear_lens, rear_plane = lens_train(FRONT_FOCAL, REAR_FOCAL, REAR_GAP)
     pupil = (mv.xw * PUPIL_OFFSET).exp() >> origin
     sensor_plane = mv.z + SENSOR_DISTANCE * mv.w

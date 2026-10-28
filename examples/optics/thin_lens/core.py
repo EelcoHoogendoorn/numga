@@ -52,7 +52,7 @@ def thin_lens(plane: Plane, focal: float) -> LineMap:
 # a thin lens shears a line by its incidence with the centre, a thin prism by its incidence
 # with an ideal point (the same slope change for every height), and a flat mirror is the
 # sandwich by the home plane.
-ELEMENTS = (                                                                    # tuple[LineMap, ...]
+elements = (                                                                    # tuple[LineMap, ...]
     # A thin lens of focal length 1.
     Line - (Line & origin) * (home / 1.0),
     # A thin prism, slope change 0.15.

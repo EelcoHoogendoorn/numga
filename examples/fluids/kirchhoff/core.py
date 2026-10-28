@@ -58,13 +58,13 @@ Shape = ga.gatype((Direction, Direction))                  # Direction- <- Direc
 Inertia = ga.gatype((Forque, Twist))                       # Forque- <- Twist+
 
 # The body's centre, the planes through it square to its axes, and the directions along those axes.
-CENTRE = mv.point([0, 0, 0])                               # [] Point-
+centre = mv.point([0, 0, 0])                               # [] Point-
 axes = stack([mv.x, mv.y, mv.z])                           # [3] Plane+
 directions = axes.dual()                                   # [3] Direction-
 # The velocity of the centre under a rate, and the couple of a turn: half the sum, over the axes, of
 # each direction joined with its own velocity. A shift moves no direction, so it has no couple.
-CENTRE_VELOCITY = CENTRE.commutator(Twist)                 # Direction- <- Twist+
-TURN_COUPLE = (directions & directions.commutator(Twist)).sum(axis=-1) / 2   # Couple <- Twist+
+centre_velocity = centre.commutator(Twist)                 # Direction- <- Twist+
+turn_couple = (directions & directions.commutator(Twist)).sum(axis=-1) / 2   # Couple <- Twist+
 
 
 # --- math -----------------------------------------------------------------------------
@@ -105,7 +105,7 @@ def inertia(shape: Shape, density: np.ndarray, fluid_density: np.ndarray, n_wide
     masses = (volume * density) * Direction + (volume * fluid_density) * shift_mass   # [...] Direction- <- Direction-
     turns = (volume * density / 5) * spread + (volume * fluid_density) * turn_mass   # [...] Couple <- Couple
     # A shift's momentum is a line through the centre, a turn's a couple.
-    return (CENTRE & masses(CENTRE_VELOCITY)) + turns(TURN_COUPLE)   # [...] Forque- <- Twist+
+    return (centre & masses(centre_velocity)) + turns(turn_couple)   # [...] Forque- <- Twist+
 
 
 def glide(motor: Motor, impulse: Forque, inertia: Inertia, dt: float, n_steps: int) -> Iterator[Motor]:

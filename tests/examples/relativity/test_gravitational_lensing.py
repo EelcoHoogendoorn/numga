@@ -69,21 +69,21 @@ def test_scenes_pass_their_checks_and_draw():
     # The reflections have no trace, so the trace is two; the local map is the derivative of the deflection.
     np.testing.assert_allclose(local.trace().to_array(), 2.0, atol=1e-11)
     probe, step = directions[::24, ::24], 1e-6 * mv.x.dual()
-    difference = (core.deflected(probe + step, scenarios.POSITIONS, scenarios.MASSES)
-                  - core.deflected(probe - step, scenarios.POSITIONS, scenarios.MASSES)) / 2e-6
+    difference = (core.deflected(probe + step, scenarios.positions, scenarios.MASSES)
+                  - core.deflected(probe - step, scenarios.positions, scenarios.MASSES)) / 2e-6
     np.testing.assert_allclose((difference - local[::24, ::24](mv.x.dual())).kernel, 0.0, atol=1e-7)
     steps = [scenarios.light(centre, 0.035) for centre in mv.x.dual() * np.array([-0.3, 0.0, 0.3])]
-    figure = render.draw(directions, area, scenarios.deflected, scenarios.POSITIONS, steps[0])
+    figure = render.draw(directions, area, scenarios.deflected, scenarios.positions, steps[0])
     assert isinstance(figure, plt.Figure)
     plt.close(figure)
-    assert len(list(render.animate(directions, area, scenarios.deflected, scenarios.POSITIONS, steps))) == 3
+    assert len(list(render.animate(directions, area, scenarios.deflected, scenarios.positions, steps))) == 3
 
 
 def test_the_local_map_is_undone_by_its_trace_two_inverse():
     """A map of the plane with trace two is undone by `(2 * Point - local) / area`."""
     spread = np.linspace(-1.25, 1.25, 5)
     centres = (core.mv.x * spread[None, :] + core.mv.y * spread[:, None]).dual()   # [rows, columns] Point
-    local = core.local_map(centres, scenarios.POSITIONS, scenarios.MASSES)     # [rows, columns] Point <- Point
+    local = core.local_map(centres, scenarios.positions, scenarios.MASSES)     # [rows, columns] Point <- Point
     area = local.det()                                                         # [rows, columns] Scalar
     offsets = core.mv.vector([[0.3, -0.2], [-0.1, 0.4]]).dual()               # [offsets] Point
     np.testing.assert_allclose((local[..., None].solve(offsets) - ((2 * core.Point - local) / area)[..., None](offsets)).kernel,

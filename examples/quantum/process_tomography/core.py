@@ -27,7 +27,7 @@ Bivector = ga.gatype.bivector()
 Rotor = ga.gatype.rotor()
 State = ga.gatype.self_reverse()                     # 1 x y z
 Channel = ga.gatype((State, State))                  # State <- State
-ONE = mv.scalar([1.0])                              # [] Scalar
+one = mv.scalar([1.0])                              # [] Scalar
 
 
 # --- math -----------------------------------------------------------------------------
@@ -36,11 +36,11 @@ def noisy_gate(
 ) -> Channel:
     """A coherent turn after independent phase noise and relaxation towards the north pole."""
     # These alternatives are not observed: their output states add, rather than their amplitudes.
-    phase_paths = stack((ONE * np.sqrt(1 - phase_flip), mv.xy * np.sqrt(phase_flip)), axis=-1)  # [channels, paths] Rotor
+    phase_paths = stack((one * np.sqrt(1 - phase_flip), mv.xy * np.sqrt(phase_flip)), axis=-1)  # [channels, paths] Rotor
     dephasing = (phase_paths >> State).sum(axis=-1)   # [channels] State <- State
 
-    north = (ONE + mv.z) / 2                        # [] State
-    south = (ONE - mv.z) / 2                        # [] State
+    north = (one + mv.z) / 2                        # [] State
+    south = (one - mv.z) / 2                        # [] State
     # The first path preserves north and attenuates south; the second transfers south to north.
     # The square roots are amplitudes, whose squares give the loss probability.
     loss_paths = stack((north + south * np.sqrt(1 - loss),
@@ -91,4 +91,4 @@ def sphere(latitudes: int, longitudes: int) -> State:
     tilts = ((mv.z ^ mv.x) * (-inclinations / 2)).exp()  # [latitudes + 1] Rotor
     turns = (mv.xy * (-azimuths / 2)).exp()          # [longitudes + 1] Rotor
     directions = turns[None, :] >> (tilts[:, None] >> mv.z)  # [latitudes + 1, longitudes + 1] Vector
-    return (ONE + directions) / 2                  # [latitudes + 1, longitudes + 1] State
+    return (one + directions) / 2                  # [latitudes + 1, longitudes + 1] State

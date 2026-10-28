@@ -14,12 +14,12 @@ from examples.estimation.pose_diffusion.core import Covariance, Gusts, Line, Mot
 
 # The controller relaxation gain (1/s), and the body's rotation rate in each scene.
 RELAXATION = 0.6
-RATES = {"still": mv.xy * 0.0, "turning": mv.xy * 2.0}
+rates = {"still": mv.xy * 0.0, "turning": mv.xy * 2.0}
 # The body-frame push directions (sideways, forward, and in yaw) and their standard deviations per square
 # root of a second, mostly sideways.
-PUSHES = stack([mv.yw, mv.wx, mv.xy])                                           # [pushes] Twist+
+pushes = stack([mv.yw, mv.wx, mv.xy])                                           # [pushes] Twist+
 STRENGTHS = np.array([0.35, 0.08, 0.15])
-GUSTS = (PUSHES * STRENGTHS * (PUSHES & Line)).sum(axis=-1)                     # [] Twist+ <- Line-
+gusts = (pushes * STRENGTHS * (pushes & Line)).sum(axis=-1)                     # [] Twist+ <- Line-
 # The length of a run and its time step in seconds, and the number of simulated bodies.
 SECONDS = 8.0
 DT = 0.01
@@ -61,7 +61,7 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.estimation.pose_diffusion import render
 
-    runs = {name: list(diffuse(rate, GUSTS, SECONDS, DT, N_BODIES, N_STEPS_PER_FRAME, SEED)) for name, rate in RATES.items()}
+    runs = {name: list(diffuse(rate, gusts, SECONDS, DT, N_BODIES, N_STEPS_PER_FRAME, SEED)) for name, rate in rates.items()}
     save_animation(render.animate_clouds(runs, EXTENT), "pose_diffusion", DURATION_MS)
     save_figure(render.draw_settled({name: states[-1] for name, states in runs.items()}, EXTENT), "pose_diffusion")
 

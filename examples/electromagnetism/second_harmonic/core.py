@@ -29,20 +29,20 @@ Rotor = ga.gatype.rotor()
 Response = ga.gatype((Polarization, Field, Field))      # Polarization <- (Field, Field)
 
 # The observer's direction in time.
-VELOCITY = mv.t.dual()
+velocity = mv.t.dual()
 # Electric planes across a beam along a face diagonal of the crystal, and the planes the directions they
 # push along sweep in time: the polarizations along them, each paired to one with its field.
-HORIZONTAL_FIELD = (mv.ty - mv.tx) / np.sqrt(2)
-VERTICAL_FIELD = mv.tz
-HORIZONTAL_POLARIZATION = ((mv.y - mv.x) / np.sqrt(2)).dual() & VELOCITY
-VERTICAL_POLARIZATION = mv.z.dual() & VELOCITY
+horizontal_field = (mv.ty - mv.tx) / np.sqrt(2)
+vertical_field = mv.tz
+horizontal_polarization = ((mv.y - mv.x) / np.sqrt(2)).dual() & velocity
+vertical_polarization = mv.z.dual() & velocity
 # The polarization across the beam, which light carries: each transverse polarization, weighted by the
 # pairing of its field with a polarization.
-TRANSVERSE = (stack((HORIZONTAL_POLARIZATION, VERTICAL_POLARIZATION))
-              * (stack((HORIZONTAL_FIELD, VERTICAL_FIELD)) & Polarization)).sum(axis=0)   # Polarization <- Polarization
+transverse = (stack((horizontal_polarization, vertical_polarization))
+              * (stack((horizontal_field, vertical_field)) & Polarization)).sum(axis=0)   # Polarization <- Polarization
 # The four bonds' directions, and the planes they sweep in time, with unit response coefficients.
-BOND_DIRECTIONS = mv(Spatial, [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]).dual() / np.sqrt(3)
-BONDS = BOND_DIRECTIONS & VELOCITY
+bond_directions = mv(Spatial, [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]).dual() / np.sqrt(3)
+bonds = bond_directions & velocity
 BOND_STRENGTH = 3 * np.sqrt(3) / 4
 
 
@@ -59,7 +59,7 @@ def turned_response(crystal: Response, rotation: Rotor) -> Response:
 
 def second_harmonic(crystal: Response, pump: Field) -> Polarization:
     """The transverse polarization source at twice the pump frequency."""
-    return 0.5 * TRANSVERSE(crystal(pump, pump))
+    return 0.5 * transverse(crystal(pump, pump))
 
 
 def growth(source: Polarization, bond_orientation: np.ndarray, mismatch: np.ndarray, depths: np.ndarray) -> Field:

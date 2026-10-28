@@ -13,8 +13,8 @@ from examples.relativity.twistors import core
 mv = core.mv
 # The boosts that carry the incidence along, the first at rest, and the turn from the flow lines to the electric lines.
 RAPIDITIES = np.array([0.0, 0.8])
-BOOST = ((mv.x.dual() & core.TIME).dual() * (RAPIDITIES / 2)).exp()           # [cases] Rotor+
-ELECTRIC_TURN = (mv.xy * (np.pi / 4)).exp()
+boost = ((mv.x.dual() & core.time).dual() * (RAPIDITIES / 2)).exp()           # [cases] Rotor+
+electric_turn = (mv.xy * (np.pi / 4)).exp()
 
 
 # --- math -----------------------------------------------------------------------------
@@ -22,7 +22,7 @@ def incidence() -> tuple[core.Twistor, core.Event, core.Event]:
     """The twistor of the light ray through two null-separated events, the events and the reconstructed
     ray, once per boost."""
     emission = mv.x.dual() * -0.6 + mv.z.dual() * 0.3                         # [] Event-
-    light_direction = core.TIME + (mv.x.dual() + mv.z.dual()) / np.sqrt(2)    # [] Event-
+    light_direction = core.time + (mv.x.dual() + mv.z.dual()) / np.sqrt(2)    # [] Event-
     separation = 1.4
     margin, n_ray_samples = 0.6, 120
     events = stack([emission, emission + light_direction * separation])       # [events] Event-
@@ -30,10 +30,10 @@ def incidence() -> tuple[core.Twistor, core.Event, core.Event]:
     twistor = core.through(points[0], points[1])                              # [] Twistor-
 
     # Transform the twistor with the spinor action and the events with the sandwich.
-    twistors = core.REPRESENTATIONS(BOOST, twistor)                           # [cases] Twistor-
-    light_rays = core.RAY(twistors, twistors)                                 # [cases] Ray-
-    moved_points = BOOST[:, None] >> points                                   # [cases, events] Point-
-    moved_events = moved_points.cast(core.Event) / (core.HORIZON & moved_points)   # [cases, events] Event-
+    twistors = core.representations(boost, twistor)                           # [cases] Twistor-
+    light_rays = core.ray_readout(twistors, twistors)                                 # [cases] Ray-
+    moved_points = boost[:, None] >> points                                   # [cases, events] Point-
+    moved_events = moved_points.cast(core.Event) / (core.horizon & moved_points)   # [cases, events] Event-
     fractions = np.linspace(-margin, 1 + margin, n_ray_samples)
     event_times = mv.t & moved_events                                         # [cases, events] Scalar+
     ray_times = event_times[:, :1] + (event_times[:, 1:] - event_times[:, :1]) * fractions
@@ -50,7 +50,7 @@ def congruence() -> core.Spatial:
 def electric_lines() -> core.Spatial:
     """The Hopfion's electric field lines at time zero: the flow lines, a quarter turn in the xy plane.
     Its magnetic lines are the flow lines a quarter turn in the yz plane, and look alike."""
-    return ELECTRIC_TURN >> congruence()
+    return electric_turn >> congruence()
 
 
 # README picture: this makes plots/twistor_hopfion.gif, tuned as a visual for the README. Don't change it; to
@@ -81,14 +81,14 @@ def main() -> None:
 
     # --- checks
     # The recovered ray meets the events it came from, at rest and boosted.
-    light_rays = core.RAY(twistors, twistors)                                 # [cases] Ray-
+    light_rays = core.ray_readout(twistors, twistors)                                 # [cases] Ray-
     np.testing.assert_allclose((core.at_time(light_rays[:, None], mv.t & events) - events).kernel, 0.0, atol=1e-11)
-    np.testing.assert_allclose(core.INCIDENCE(core.point(rays), twistors[:, None]).kernel, 0.0, atol=1e-11)
+    np.testing.assert_allclose(core.incidence(core.point(rays), twistors[:, None]).kernel, 0.0, atol=1e-11)
     # The field is null, and its energy flows along the Robinson ray through each point of its lines: the field's
-    # flux along the observer's time, its sandwich of `core.TIME`, taken at unit time.
+    # flux along the observer's time, its sandwich of `core.time`, taken at unit time.
     lines = electric_lines()
     field = core.hopfion(lines)
-    flux = field >> core.TIME
+    flux = field >> core.time
     np.testing.assert_allclose(field.squared().kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose((flux / (mv.t & flux) - core.robinson(lines)).kernel, 0.0, atol=1e-10)
 

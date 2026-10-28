@@ -23,7 +23,7 @@ ASPECT = SHAPES[1, 0] / SHAPES[1, 1]
 # The flow: its velocity along the first axis, per offset along the second; simple shear, the velocity along the
 # flow growing with the offset along the gradient.
 SHEAR_RATE = 1.0
-FLOW = SHEAR_RATE * x.dual() * (y & Point)                                   # [] Point- <- Point-
+flow = SHEAR_RATE * x.dual() * (y & Point)                                   # [] Point- <- Point-
 # The time a rod of the aspect takes to come back to where it started, Jeffery's period.
 PERIOD = 2 * np.pi * (ASPECT + 1 / ASPECT) / SHEAR_RATE
 # The angles of each body's long axis from the normal of the vortex plane at the start, in the plane of the flow
@@ -48,7 +48,7 @@ def tumbling() -> core.Rotor:
     # Each start turns the long axis from the flow towards the normal of the vortex plane, to its tilt from it.
     starts = ((x ^ z) * (-(np.pi / 2 - TILTS) / 2)).exp()                    # [starts] Rotor+
     starts = starts[None].broadcast_to((len(SEMI_AXES), len(TILTS)))         # [bodies, starts] Rotor+
-    return stack(list(core.tumble(starts, stretches[:, None], FLOW, PERIOD / N_STEPS_PER_PERIOD,
+    return stack(list(core.tumble(starts, stretches[:, None], flow, PERIOD / N_STEPS_PER_PERIOD,
                                   N_PERIODS * N_STEPS_PER_PERIOD)))          # [steps + 1, bodies, starts] Rotor+
 
 
@@ -69,7 +69,7 @@ def main() -> None:
     heights = y.dual() * HEIGHTS                                             # [heights] Point-
     save_figure(render.draw_orbits(trails), "jeffery_orbits")
     # Gallery picture: this makes plots/jeffery.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-    save_animation(render.animate_tumbling(core.stretch(SEMI_AXES), heights, FLOW(heights), frames(rotors),
+    save_animation(render.animate_tumbling(core.stretch(SEMI_AXES), heights, flow(heights), frames(rotors),
                                            GALLERY_PIXELS), "jeffery", DURATION_MS)
 
     # checks
@@ -77,7 +77,7 @@ def main() -> None:
     np.testing.assert_allclose(rotors.scalar_norm_squared().to_array(), 1.0, atol=1e-11)
     # A sphere spins at the fluid's own rate, half the curl of the gradient.
     sphere = core.placed(core.stretch(SEMI_AXES)[0], rotors[-1, 0])          # [starts] Point- <- Plane+
-    np.testing.assert_allclose((core.spin(sphere, FLOW) - core.curl(FLOW) / 2).norm().to_array(), 0.0, atol=1e-14)
+    np.testing.assert_allclose((core.spin(sphere, flow) - core.curl(flow) / 2).norm().to_array(), 0.0, atol=1e-14)
     # The rod's axis is back where it started after one period, on a closed orbit along which
     # Jeffery's orbit constant holds; the tolerances test the step.
     rod = trails[:, 1]                                                       # [steps + 1, starts] Point-

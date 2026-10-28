@@ -22,7 +22,7 @@ COST_GRID_COUNT = 101
 COST_LEVEL = 0.15
 COST_HORIZONS = 3
 # The point each pose carries: the origin, dual to the weight direction w.
-ORIGIN = core.mv.w.dual()
+origin = core.mv.w.dual()
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -78,7 +78,7 @@ def draw_setup(
 def draw_approaches(hull: core.Point, poses: core.Motor, labels: tuple[str, ...]) -> plt.Figure:
     """The center paths and a few hull positions, with the target pose shown dashed."""
     carried = poses[..., None] >> hull                                   # [times, cases, vertices] Point-
-    centers = poses >> ORIGIN                                            # [times, cases] Point-
+    centers = poses >> origin                                            # [times, cases] Point-
     bodies = xy(carried)                                                 # [times, cases, vertices, 2] float
     paths = xy(centers)                                                  # [times, cases, 2] float
     target = xy(hull)                                                    # [vertices, 2] float
@@ -108,7 +108,7 @@ def draw_costs(values: core.StateCost, labels: tuple[str, ...]) -> plt.Figure:
     offsets = np.linspace(-COST_GRID_EXTENT, COST_GRID_EXTENT, COST_GRID_COUNT)
     samples = -core.mv.yw * offsets[:, None] - core.mv.xw * offsets[None, :]  # [samples_y, samples_x] Twist+
     costs = values[remaining - 1, :, None, None](samples, samples)        # [remaining, cases, samples_y, samples_x] Scalar+
-    points = (samples * -0.5).exp() >> ORIGIN                             # [samples_y, samples_x] Point-
+    points = (samples * -0.5).exp() >> origin                             # [samples_y, samples_x] Point-
     coordinates = xy(points)                                             # [samples_y, samples_x, 2] float
     cost_values = costs.to_array()                                       # [remaining, cases, samples_y, samples_x] float
     colours = plt.get_cmap("viridis")(np.linspace(0.15, 0.8, len(remaining)))  # [remaining, 4] float
@@ -157,7 +157,7 @@ def animate(
     bases = xy(carried_mounts)                                           # [times, cases, thrusters, 2] float
     arrows = ends - bases                                                # [times, cases, thrusters, 2] float
     bodies = xy(carried)                                                 # [times, cases, vertices, 2] float
-    trajectories = xy(poses >> ORIGIN)                                   # [times, cases, 2] float
+    trajectories = xy(poses >> origin)                                   # [times, cases, 2] float
     target = xy(hull)                                                    # [vertices, 2] float
     limits = _limits(np.concatenate([bodies.reshape(-1, 2), bases.reshape(-1, 2),
                                      ends.reshape(-1, 2), trajectories.reshape(-1, 2), target]))

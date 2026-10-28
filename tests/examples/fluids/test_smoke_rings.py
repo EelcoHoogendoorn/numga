@@ -16,7 +16,7 @@ def test_each_vertex_moves_across_both_its_edges():
     points = core.torus_knot(*scenarios.KNOT_WINDINGS, *scenarios.KNOT_RADII, scenarios.N_KNOT)
     outgoing = core.edges(points)
     incoming = concatenate([outgoing[-1:], outgoing[:-1]])
-    velocities = core.velocity(points, scenarios.CIRCULATION)
+    velocities = core.velocity(points, scenarios.circulation)
     np.testing.assert_allclose((velocities | outgoing).to_array(), 0.0, atol=1e-13)
     np.testing.assert_allclose((velocities | incoming).to_array(), 0.0, atol=1e-13)
 
@@ -28,7 +28,7 @@ def test_a_backlund_transformation_is_a_step_of_the_flow():
     for parameter in (0.02, 0.01):
         moved = core.advance(points, core.mv(core.Parameter, [parameter]))
         np.testing.assert_allclose(core.edges(moved).norm().to_array(), 1.0, atol=1e-13)
-        step = moved - (points + core.velocity(points, scenarios.CIRCULATION) * (parameter / 2))
+        step = moved - (points + core.velocity(points, scenarios.circulation) * (parameter / 2))
         # The tolerance tests the first order: the remainder shrinks with the square of the parameter.
         assert step.norm().to_array().max() < 2 * parameter**2
 

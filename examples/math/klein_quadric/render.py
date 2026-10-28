@@ -28,7 +28,7 @@ RULING_OPACITY = 0.3
 RULING_COLOURS = [np.array(to_rgb(colour)) for colour in ("#9ecae1", "#c7c7c7")]
 LINE_COLOUR, FOURTH_COLOUR, TRANSVERSAL_COLOUR = (np.array(to_rgb(colour)) for colour in ("#08306b", "#e67e22", "#c0392b"))
 BACKGROUND = np.ones(3)
-AXES = mv(core.Plane.derive.nondegenerate, np.eye(3))                          # [3] Plane
+axes = mv(core.Plane.derive.nondegenerate, np.eye(3))                          # [3] Plane
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -41,14 +41,14 @@ def real(extensors: Extensor) -> np.ndarray:
 def coordinates(points: core.Point) -> np.ndarray:
     """Euclidean coordinates of finite points: their pairings with the coordinate planes, at unit
     weight."""
-    return ((AXES & points[..., None]) / (mv.w & points[..., None])).to_array().real
+    return ((axes & points[..., None]) / (mv.w & points[..., None])).to_array().real
 
 
 def chords(lines: core.Bivector) -> np.ndarray:
     """The two ends of each line's chord of the ball, NaN for a line that misses it."""
     unit = lines.normalized()
-    nearest = coordinates((core.ORIGIN | unit) ^ unit)                        # [..., 3]
-    heading = (AXES & (unit ^ core.HORIZON)[..., None]).to_array().real       # [..., 3]
+    nearest = coordinates((core.origin | unit) ^ unit)                        # [..., 3]
+    heading = (axes & (unit ^ core.horizon)[..., None]).to_array().real       # [..., 3]
     heading = heading / np.linalg.norm(heading, axis=-1, keepdims=True)
     with np.errstate(invalid="ignore"):
         half = np.sqrt(RADIUS**2 - (nearest**2).sum(axis=-1, keepdims=True))

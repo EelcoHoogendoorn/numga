@@ -12,7 +12,7 @@ from examples.mechanics import lie_integrators as lie
 from examples.mechanics.spinning_top import core
 
 mv = core.mv
-UP = core.mv(core.Direction, np.array([0.0, 0.0, 1.0]))
+up = core.mv(core.Direction, np.array([0.0, 0.0, 1.0]))
 GRAVITY = 9.81
 STATIC_FRICTION = 0.4
 # The top's stem and tip: the stem's semi-axes, how far its centre sits above the disc's, its mass, the
@@ -55,7 +55,7 @@ VARIATIONS = {
     "heavy_disc": replace(BASE, disc_mass=2.0),
     "slippery": replace(BASE, dynamic_friction=0.1),
 }
-VIEW, CENTRE, EXTENT = (30, -60), mv.w.dual() + UP * 0.15, 0.55
+VIEW, centre, EXTENT = (30, -60), mv.w.dual() + up * 0.15, 0.55
 
 
 # --- math -----------------------------------------------------------------------------
@@ -113,7 +113,7 @@ def spin(setup: Setup, seconds: float, dt: float, n_steps_per_frame: int
 
 def lean(motor: core.Motor) -> core.Scalar:
     """The angle of the top's axis from vertical."""
-    return ((motor >> UP).dual() | UP.dual()).abs().arccos()
+    return ((motor >> up).dual() | up.dual()).abs().arccos()
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -124,7 +124,7 @@ def main() -> None:
     runs = {}
     for name, setup in VARIATIONS.items():
         states = list(spin(setup, RUNTIME, STEP, N_STEPS_PER_FRAME))
-        frames = (render.frame(motor, parts, ground, VIEW, CENTRE, EXTENT, PIXELS) for motor, _, parts, ground in states)
+        frames = (render.frame(motor, parts, ground, VIEW, centre, EXTENT, PIXELS) for motor, _, parts, ground in states)
         save_animation(frames, f"spinning_top_{name}", FRAME_DURATION)
         runs[name] = states
 

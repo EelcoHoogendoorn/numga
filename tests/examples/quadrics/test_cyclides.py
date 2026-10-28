@@ -40,7 +40,7 @@ def test_the_cylinder_polynomial_is_palindromic_and_a_dupin_cyclide_breaks_it():
     aim = (mv.zx * (-0.7 / 2)).exp() >> mv.z.dual()
     dilation = ((mv.e.dual() & aim).dual() * (1.5 / 2)).exp()
     lopsided = dilation >> cylinder(0.25)(dilation << Point)
-    sample = scenarios.PIXELS[::20000]
+    sample = scenarios.pixels[::20000]
     gaps = []
     for surface in (cylinder(0.3), lopsided):
         form = Point & surface

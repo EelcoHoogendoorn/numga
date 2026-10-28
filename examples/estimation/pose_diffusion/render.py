@@ -12,7 +12,7 @@ from numga import stack
 from examples.util.animation import capture
 from examples.util.wgsl import pinned, planar, room
 from examples.util.wgsl.planar import Curves, Regions, filling
-from examples.estimation.pose_diffusion.core import ORIGIN, Covariance, Motor, Point, Spread, Twist, ga, mv
+from examples.estimation.pose_diffusion.core import Covariance, Motor, Point, Spread, Twist, ga, mv, origin
 
 ELLIPSE_RGB = np.array(mcolors.to_rgb("#c0392b"))
 HEADING_FRACTION = 0.08
@@ -30,9 +30,9 @@ def coordinates(points: Point) -> np.ndarray:
 
 def position_ellipse(covariance: Covariance, sigmas: float) -> Quadric:
     """The confidence quadric `sigmas` standard deviations out around the set point."""
-    shift = Twist.commutator(ORIGIN)                                            # [] Point- <- Twist+
+    shift = Twist.commutator(origin)                                            # [] Point- <- Twist+
     readout = shift.adjugate()                                                  # [] Line- <- Line+
-    moment = ORIGIN * (Line & ORIGIN) + shift(covariance(readout))              # [...] Point- <- Line+
+    moment = origin * (Line & origin) + shift(covariance(readout))              # [...] Point- <- Line+
     return moment.inverse() - (1 + sigmas**2) * mv.w * (mv.w & Point)           # [...] Line+ <- Point-
 
 
@@ -50,8 +50,8 @@ def quadric_layers(predicted: Covariance, limit: Covariance) -> list:
 def arrows(poses: Motor, extent: float) -> tuple[np.ndarray, np.ndarray]:
     """The bodies' positions and heading displacement vectors `[bodies, 2]`."""
     # A point a short way ahead of the set point along the bow.
-    bow = ORIGIN + mv.direction([HEADING_FRACTION * extent, 0.0])               # [] Point-
-    positions = coordinates(poses >> ORIGIN)                                    # [bodies, 2]
+    bow = origin + mv.direction([HEADING_FRACTION * extent, 0.0])               # [] Point-
+    positions = coordinates(poses >> origin)                                    # [bodies, 2]
     return positions, coordinates(poses >> bow) - positions
 
 

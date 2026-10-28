@@ -13,14 +13,14 @@ def test_scenarios_pass_their_checks_and_draw():
     mv = core.mv
     # The singlet is normalized, the coupling acts on it as three, and it reaches the Bell bound.
     state, reached = scenarios.singlet()
-    np.testing.assert_allclose(core.expectation(core.ONE, state).to_array(), 1.0, atol=1e-12)
-    np.testing.assert_allclose((core.COUPLING * state - 3 * state).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose(core.expectation(core.one, state).to_array(), 1.0, atol=1e-12)
+    np.testing.assert_allclose((core.coupling * state - 3 * state).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose(reached.to_array(), 2 * np.sqrt(2), atol=1e-12)
     # The exchange keeps the state normalized; halfway the spins are fully entangled, and at the end they
     # have swapped.
     n_frames = 21
     angles, first, second, bells, states = scenarios.swap(n_frames)
-    np.testing.assert_allclose(core.expectation(core.ONE, states).to_array(), 1.0, atol=1e-7)
+    np.testing.assert_allclose(core.expectation(core.one, states).to_array(), 1.0, atol=1e-7)
     middle = n_frames // 2
     np.testing.assert_allclose(first[middle].kernel, 0.0, atol=1e-7)
     np.testing.assert_allclose(bells.to_array()[[0, middle, -1]], [2.0, 2 * np.sqrt(2), 2.0], atol=1e-7)
@@ -45,13 +45,13 @@ def test_steering_passes_its_checks_and_draws():
 
 def test_field_and_qubit_scenes_pass_their_checks_and_draw():
     fields = np.linspace(0.0, 4.0, 9)
-    first, second = core.spin_planes(scenarios.FOUR)
+    first, second = core.spin_planes(scenarios.four)
     energies = scenarios.field_sweep(fields, 1.0)
     # The singlet sits below the triplet of zero spin by twice the exchange rate, and the field moves the
     # triplets with both spins in its plane or against it.
     expected = np.stack([-1.0 + 0 * fields, 1.0 + 0 * fields, 1.0 - fields, 1.0 + fields], axis=-1)
     np.testing.assert_allclose(energies.to_array(), expected, atol=1e-12)
-    plt.close(render.draw_levels(fields, energies, core.FIELD_PLANE.dot(first + second)))
+    plt.close(render.draw_levels(fields, energies, core.field_plane.dot(first + second)))
     times = np.linspace(0.0, np.pi, 5)
     rates = np.array([0.0, 1.0])
     states, probability = scenarios.singlet_return(times, rates, 1.0)

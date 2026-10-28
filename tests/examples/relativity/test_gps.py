@@ -14,7 +14,7 @@ SIGMA = 3 / scenarios.EARTH_RADIUS_METRES
 @pytest.mark.parametrize("phase_degrees", [5, 20, 50])
 def test_light_cones_recover_the_future_reception_event(phase_degrees):
     phases = core.mv.scalar((scenarios.PHASE_OFFSETS + np.deg2rad(phase_degrees))[..., None])
-    planes, radius, angular_speed, receiver = scenarios.PLANES, scenarios.ORBIT_RADIUS, scenarios.ANGULAR_SPEED, scenarios.RECEIVER
+    planes, radius, angular_speed, receiver = scenarios.planes, scenarios.ORBIT_RADIUS, scenarios.ANGULAR_SPEED, scenarios.receiver
     emitted = core.emitted_events(receiver, planes, phases, radius, angular_speed, 3)
     cones = core.light_cones(emitted)
 
@@ -33,7 +33,7 @@ def test_light_cones_recover_the_future_reception_event(phase_degrees):
 
 def test_light_cones_and_their_intersections_follow_a_common_frame_change():
     phases = core.mv.scalar((scenarios.PHASE_OFFSETS + np.deg2rad(20))[..., None])
-    planes, radius, angular_speed, receiver = scenarios.PLANES, scenarios.ORBIT_RADIUS, scenarios.ANGULAR_SPEED, scenarios.RECEIVER
+    planes, radius, angular_speed, receiver = scenarios.planes, scenarios.ORBIT_RADIUS, scenarios.ANGULAR_SPEED, scenarios.receiver
     emitted = core.emitted_events(receiver, planes, phases, radius, angular_speed, 3)
     cones = core.light_cones(emitted)
     transform = (core.mv.xw * 0.3 - core.mv.tw * 0.15).exp() * (
@@ -59,7 +59,7 @@ def test_light_cones_and_their_intersections_follow_a_common_frame_change():
 @pytest.mark.parametrize("phase_degrees,reception_time", [(5, -3), (20, 0), (50, 4)])
 def test_noiseless_fit_recovers_position_and_receiver_clock_error(phase_degrees, reception_time):
     phases = core.mv.scalar((scenarios.PHASE_OFFSETS + np.deg2rad(phase_degrees))[..., None])
-    planes, radius, angular_speed, receiver, sigma, clock_error = scenarios.PLANES, scenarios.ORBIT_RADIUS, scenarios.ANGULAR_SPEED, scenarios.RECEIVER, SIGMA, scenarios.CLOCK_READING
+    planes, radius, angular_speed, receiver, sigma, clock_error = scenarios.planes, scenarios.ORBIT_RADIUS, scenarios.ANGULAR_SPEED, scenarios.receiver, SIGMA, scenarios.clock_reading
     receiver = receiver + core.time * reception_time
     clock_reading = (core.mv.t & receiver) + clock_error
     emitted = core.emitted_events(receiver, planes, phases, radius, angular_speed, 3)
@@ -83,7 +83,7 @@ def test_noiseless_fit_recovers_position_and_receiver_clock_error(phase_degrees,
 
 def test_cone_readouts_predict_changes_of_the_intervals_under_event_displacements():
     phases = core.mv.scalar((scenarios.PHASE_OFFSETS + np.deg2rad(20))[..., None])
-    planes, radius, angular_speed, receiver = scenarios.PLANES, scenarios.ORBIT_RADIUS, scenarios.ANGULAR_SPEED, scenarios.RECEIVER
+    planes, radius, angular_speed, receiver = scenarios.planes, scenarios.ORBIT_RADIUS, scenarios.ANGULAR_SPEED, scenarios.receiver
     emitted = core.emitted_events(receiver, planes, phases, radius, angular_speed, 3)
     cones = core.light_cones(emitted)
     trial = receiver + core.mv.z.dual() * 0.12 + core.time * 0.03
@@ -99,7 +99,7 @@ def test_cone_readouts_predict_changes_of_the_intervals_under_event_displacement
 
 def test_timestamp_noise_matches_the_predicted_event_covariance():
     phases = core.mv.scalar((scenarios.PHASE_OFFSETS + np.deg2rad(20))[..., None])
-    planes, radius, angular_speed, receiver, sigma, clock_reading = scenarios.PLANES, scenarios.ORBIT_RADIUS, scenarios.ANGULAR_SPEED, scenarios.RECEIVER, SIGMA, scenarios.CLOCK_READING
+    planes, radius, angular_speed, receiver, sigma, clock_reading = scenarios.planes, scenarios.ORBIT_RADIUS, scenarios.ANGULAR_SPEED, scenarios.receiver, SIGMA, scenarios.clock_reading
     emitted = core.emitted_events(receiver, planes, phases, radius, angular_speed, 3)
     n_trials, n_satellites = 512, emitted.shape[-1]
     noise = core.mv.scalar(np.random.default_rng(2026).normal(size=(n_trials, n_satellites, 1)) * sigma)

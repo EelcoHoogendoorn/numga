@@ -6,12 +6,12 @@ An electron in graphene hops between neighbouring carbon atoms. Its state has tw
 each of the honeycomb's two sublattices, and the hopping mixes them through a field that depends
 on the momentum, the pseudospin field `pseudospin_field(momentum, gap)`, an extrinsic bivector like
 everything that turns a spin. Each of the three bonds contributes the plane yz turned in the plane xy
-by the phase `momentum & BONDS` across that bond, the pairing of the momentum, a wavevector and so a
+by the phase `momentum & bonds` across that bond, the pairing of the momentum, a wavevector and so a
 plane, with the bond, a displacement and so an antivector; a difference between the sublattices, as in
 boron nitride, adds a gap in the plane xy. The Hamiltonian is a map on spinors, the even multivectors,
-`HAMILTONIAN(field)` taking psi to `-(field * psi * mv.xy)`. Its eigenvalues are plus and minus the
+`hamiltonian(field)` taking psi to `-(field * psi * mv.xy)`. Its eigenvalues are plus and minus the
 length of the field. The pseudospin of a state, intrinsic like every spin, is its sandwich of the
-pseudospin wholly on the first sublattice, `psi >> FIRST_SUBLATTICE`, the patch of the plane xy; it
+pseudospin wholly on the first sublattice, `psi >> first_sublattice`, the patch of the plane xy; it
 lies along the field, `field.dual()`, for the upper band and against it for the lower. At the corners
 of the Brillouin zone the field vanishes and the two bands meet in cones.
 
@@ -47,21 +47,21 @@ HOPPING = 2.8
 # The bonds from an atom to its three neighbours, a third of a turn apart, in carbon-carbon distances of 0.142 nm:
 # displacements, antivectors with intrinsic orientation.
 BOND_ANGLES = np.array([1, 3, 5]) * np.pi / 3
-BONDS = (mv.xy * (-BOND_ANGLES / 2)).exp() >> mv.x.dual()                      # [bonds] Displacement-
+bonds = (mv.xy * (-BOND_ANGLES / 2)).exp() >> mv.x.dual()                      # [bonds] Displacement-
 # The two inequivalent corners of the Brillouin zone, where the cones sit.
-VALLEYS = mv.vector([[2 * np.pi / 3, 2 * np.pi / (3 * np.sqrt(3)), 0],
+valleys = mv.vector([[2 * np.pi / 3, 2 * np.pi / (3 * np.sqrt(3)), 0],
                      [2 * np.pi / 3, -2 * np.pi / (3 * np.sqrt(3)), 0]])        # [valleys] Wavevector+
 # The pseudospin of a state wholly on the first sublattice: the patch of the plane xy.
-FIRST_SUBLATTICE = mv.xy.dual()                                                 # [] Pseudospin-
+first_sublattice = mv.xy.dual()                                                 # [] Pseudospin-
 # The Hamiltonian, for a given field a map on spinors: minus the field on the left, the plane xy on the right.
-HAMILTONIAN = -(Field * Spinor * mv.xy)                                         # [] Spinor+ <- (Field+, Spinor+)
+hamiltonian = -(Field * Spinor * mv.xy)                                         # [] Spinor+ <- (Field+, Spinor+)
 
 
 # --- math -----------------------------------------------------------------------------
 def pseudospin_field(momentum: Wavevector, gap: np.ndarray) -> Field:
     """The pseudospin field: minus the hopping times the sum over the bonds of the plane yz turned in the
-    plane xy by the phase `momentum & BONDS` across each bond, plus the gap in the plane xy."""
-    phases = momentum[..., None] & BONDS                                        # [..., bonds] Scalar+
+    plane xy by the phase `momentum & bonds` across each bond, plus the gap in the plane xy."""
+    phases = momentum[..., None] & bonds                                        # [..., bonds] Scalar+
     return -HOPPING * ((mv.xy * phases).exp() * mv.yz).sum(axis=-1) + gap * mv.xy   # [...] Field+
 
 

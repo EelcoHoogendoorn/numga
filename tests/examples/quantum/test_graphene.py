@@ -13,7 +13,7 @@ def test_the_hamiltonian_squares_to_the_fields_length():
     """H(H(psi)) is the field's squared length times psi, so the eigenvalues are plus and minus the field's length."""
     field = core.mv(core.Field, np.array([0.3, -1.1, 0.7]))
     psi = core.mv(core.Spinor, np.array([0.4, -0.2, 1.3, 0.5]))
-    H = core.HAMILTONIAN(field)
+    H = core.hamiltonian(field)
     np.testing.assert_allclose((H(H(psi)) - field.scalar_norm_squared() * psi).kernel, 0.0, atol=1e-12)
 
 

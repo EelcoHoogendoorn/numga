@@ -21,7 +21,7 @@ WEIGHTS = np.array([[1.0, 1.0, 1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0, 4.0, 1.
 # axis plane z = 0, and unit strength.
 STRETCH = np.array([1.0, 1.0, 1.5])
 OFFSET = np.array([0.0, 0.0, 1.6])
-CENTRE, AXIS, STRENGTH = core.mv.w.dual(), core.mv.z, 1.0
+centre, axis, STRENGTH = core.mv.w.dual(), core.mv.z, 1.0
 # Bounds, frame count, and frame duration for sweeping the top vertex weight from light to heavy and back.
 WEIGHT_BOUNDS = (0.25, 4.0)
 N_SWEEP_FRAMES = 48
@@ -30,14 +30,14 @@ DURATION_MS = 60
 # Three Loop steps of the octahedron, none of its vertices pinned, composed into one map from its vertex sites to
 # those of the refined mesh.
 REFINED_MESH = core.Mesh(len(OCTAHEDRON), FACES).loop_subdivided(np.zeros(len(OCTAHEDRON), dtype=bool), N_LOOP_STEPS)
-SUBDIVISION = REFINED_MESH.subdivision
+subdivision = REFINED_MESH.subdivision
 
 
 # --- math -----------------------------------------------------------------------------
 def weighted() -> tuple[core.Point, core.Point, np.ndarray]:
     """The octahedron's control meshes, subdivided surfaces, and refined face indices across the three vertex-weight cases."""
     controls = (core.mv.point(OCTAHEDRON) * WEIGHTS).field()                   # [cases] Point-[vertices]
-    surfaces = SUBDIVISION * controls                                          # [cases] Point-[refined]
+    surfaces = subdivision * controls                                          # [cases] Point-[refined]
     return controls, surfaces, REFINED_MESH.faces
 
 
@@ -48,7 +48,7 @@ def sweep() -> tuple[Iterator[tuple[core.Point, core.Point]], np.ndarray]:
     top_weights = np.exp(np.log(WEIGHT_BOUNDS).mean() - np.log(WEIGHT_BOUNDS[1] / WEIGHT_BOUNDS[0]) / 2 * np.cos(phase))  # [frames]
     weights = np.where(np.arange(len(OCTAHEDRON)) == TOP_VERTEX, top_weights[:, None], 1.0)  # [frames, vertices]
     controls = ((core.mv.point(OCTAHEDRON) * weight).field() for weight in weights)
-    return ((control, SUBDIVISION * control) for control in controls), REFINED_MESH.faces
+    return ((control, subdivision * control) for control in controls), REFINED_MESH.faces
 
 
 def perspective() -> tuple[core.Point, core.Point, core.Point, np.ndarray]:
@@ -56,12 +56,12 @@ def perspective() -> tuple[core.Point, core.Point, core.Point, np.ndarray]:
     rest_control = core.mv.point(OCTAHEDRON * STRETCH + OFFSET).field()        # [] Point-[vertices]
     # The central collineation shifts each point along its line through the centre in proportion to its
     # signed distance from the axis plane.
-    collineation = core.Point + CENTRE * (AXIS & core.Point) * STRENGTH        # [] Point- <- Point-
+    collineation = core.Point + centre * (axis & core.Point) * STRENGTH        # [] Point- <- Point-
     perspective_control = collineation(rest_control)                           # [] Point-[vertices]
-    weighted_orders = stack([SUBDIVISION * perspective_control, collineation(SUBDIVISION * rest_control)])  # [orders] Point-[refined]
+    weighted_orders = stack([subdivision * perspective_control, collineation(subdivision * rest_control)])  # [orders] Point-[refined]
     rest_positions = rest_control.normalized()                                  # [] Point-[vertices]
     perspective_positions = perspective_control.normalized()                    # [] Point-[vertices]
-    positional_orders = stack([SUBDIVISION * perspective_positions, collineation(SUBDIVISION * rest_positions)])  # [orders] Point-[refined]
+    positional_orders = stack([subdivision * perspective_positions, collineation(subdivision * rest_positions)])  # [orders] Point-[refined]
     return perspective_control, weighted_orders, positional_orders, REFINED_MESH.faces
 
 

@@ -7,7 +7,7 @@ from examples.fluids.wing import core, scenarios
 
 def test_the_velocity_has_no_derivative_and_the_wing_lifts_by_its_circulation():
     pitched = scenarios.wing(scenarios.HIGHEST_ATTACK)
-    stream = scenarios.STREAM
+    stream = scenarios.stream
     plane = core.rings(pitched, 20, scenarios.N_ANGLES, scenarios.OUTER_DISTANCE)
     edge = scenarios.trailing_edge(pitched)
     _, velocity, _, _ = core.flow(pitched, stream, plane, edge)

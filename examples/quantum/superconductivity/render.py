@@ -17,8 +17,8 @@ from examples.util.wgsl.scene import Scene
 
 sm = solids.mv
 # The patches a field's planes xy and yz are read across: the joins of the two directions in each plane.
-XY_PATCH = core.mv.xy.dual()
-YZ_PATCH = core.mv.yz.dual()
+xy_patch = core.mv.xy.dual()
+yz_patch = core.mv.yz.dual()
 INK = "#263b51"
 PAIR = "#198b87"
 FIXED = "#d17c24"
@@ -67,7 +67,7 @@ def readings(fields: core.Field, patch: core.Spin) -> np.ndarray:
 
 
 def draw_equilibrium(dispersion: core.Field, spins: core.Spin) -> Figure:
-    energies = readings(dispersion, XY_PATCH)
+    energies = readings(dispersion, xy_patch)
     coherence = coherences(spins, (core.mv.yz, core.mv.zx, core.mv.xy))
     figure, axes = plt.subplots(1, 2, figsize=(8.0, 2.7), layout="constrained")
     axes[0].plot(energies, coherence[:, 2] + 0.5, color=INK, linewidth=2)
@@ -112,7 +112,7 @@ def animate_quench(
 ) -> Iterator[np.ndarray]:
     """Arrows in each energy level's pairing plane, beside their collective gap; the chart's axes and circles set
     up once."""
-    energies = readings(dispersion, XY_PATCH)
+    energies = readings(dispersion, xy_patch)
     transverse = coherences(spins, (core.mv.yz, core.mv.zx))
     amplitudes = gaps.norm().to_array()
     visible = np.flatnonzero(np.abs(energies) < DISPLAY_CUTOFF)
@@ -170,8 +170,8 @@ def draw_gap(times: np.ndarray, gaps: core.Field, equilibrium_gap: core.Field) -
 def draw_response(
     times: np.ndarray, exact: core.Field, predicted: core.Field, names: tuple[str, str],
 ) -> Figure:
-    exact_amplitude = readings(exact, YZ_PATCH)
-    predicted_amplitude = readings(predicted, YZ_PATCH)
+    exact_amplitude = readings(exact, yz_patch)
+    predicted_amplitude = readings(predicted, yz_patch)
     figure, axis = plt.subplots(figsize=(7.5, 3.0), layout="constrained")
     axis.plot(times, exact_amplitude, color=INK, linewidth=3, alpha=0.5, label="nonlinear evolution")
     for values, name, colour in zip(predicted_amplitude.T, names, (PAIR, FIXED)):

@@ -15,7 +15,7 @@ def test_face_planes_pair_to_one_with_their_vertices_on_a_fixed_mesh():
 
 
 def test_points_on_the_sphere_give_its_delaunay_mesh_with_poles_as_circumcentres():
-    points = scenarios.DIRECTIONS                          # [points] Point-
+    points = scenarios.directions                          # [points] Point-
     faces = core.hull(points)
     duals = core.poles(points, faces)
     corners = points[faces]                                                    # [faces, 3] Point-
@@ -36,7 +36,7 @@ def test_the_nearest_rescue_unfolds_the_mesh_steadily():
     mesh = core.Mesh(scenarios.N_POINTS, settled[0][1])
     # The crossed dual edges are exactly the folded ones.
     assert np.array_equal(core.dual_lengths(settled[0][0], mesh) < 0,
-                          core.folds(scenarios.DIRECTIONS, np.ones(scenarios.N_POINTS), mesh) < 0)
+                          core.folds(scenarios.directions, np.ones(scenarios.N_POINTS), mesh) < 0)
     crossed = [(core.dual_lengths(points, mesh) < 0).sum() for points, _, _ in settled]
     assert crossed[0] > 0 and crossed[-1] == 0 and (np.diff(crossed) <= 0).all()
     # Every image on the sphere is held.

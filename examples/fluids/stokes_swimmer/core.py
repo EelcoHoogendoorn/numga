@@ -45,7 +45,7 @@ Force = ga.gatype.vector().derive.nondegenerate                                 
 Direction = Force.dual().output_gatype                                          # Antivector-
 Mobility = ga.gatype((Direction, Force))                                        # Direction- <- Force+
 
-ORIGIN = mv.w.dual()                                                            # [] Point-
+origin = mv.w.dual()                                                            # [] Point-
 
 
 # --- math -----------------------------------------------------------------------------
@@ -119,7 +119,7 @@ def three_link_shape(
     for a three-link Purcell swimmer with hinge angles `angles` `[..., 2]` and angular rates `rates` `[..., 2]`."""
     # The beads lie along the swimmer's axis, the line y = 0, at their offsets from the origin.
     along = mv.direction([1.0, 0.0])                                            # [] Point-
-    centre_beads = ORIGIN + along * centre_offsets                              # [centre] Point-
+    centre_beads = origin + along * centre_offsets                              # [centre] Point-
     # In PGA2D a hinge is the meet of two lines through it, the swimmer's axis and the line across it, a
     # bivector generating turns about itself.
     left_hinge = (mv.x + hinge_half_span * mv.w) ^ mv.y                         # [] Twist+
@@ -127,8 +127,8 @@ def three_link_shape(
     left_turn = (left_hinge * (angles[..., 0, None] / 2.0)).exp()               # [..., 1] Motor+
     right_turn = (right_hinge * (-angles[..., 1, None] / 2.0)).exp()            # [..., 1] Motor+
 
-    left_rest = ORIGIN - along * (hinge_half_span + arm_offsets[::-1])          # [arm] Point-
-    right_rest = ORIGIN + along * (hinge_half_span + arm_offsets)               # [arm] Point-
+    left_rest = origin - along * (hinge_half_span + arm_offsets[::-1])          # [arm] Point-
+    right_rest = origin + along * (hinge_half_span + arm_offsets)               # [arm] Point-
     left_beads = left_turn >> left_rest                                         # [..., arm] Point-
     right_beads = right_turn >> right_rest                                      # [..., arm] Point-
 

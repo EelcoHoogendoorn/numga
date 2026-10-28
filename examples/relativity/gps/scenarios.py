@@ -33,14 +33,14 @@ N_FRAMES, DURATION_MS = 60, 65
 # Six circular orbits sharing the polar axis, their distinct phases giving different elevations, which separates
 # radial position error from clock error; their radius and angular speed; the receiver on Earth's surface; a
 # timestamp's error; the receiver clock's reading off; and the noise on each satellite's timestamp.
-PLANES = (mv.yz * (-np.arange(N_SATELLITES) * (2 * np.pi / N_SATELLITES) / 2)).exp() >> mv.xy   # [satellites] Orbit+
+planes = (mv.yz * (-np.arange(N_SATELLITES) * (2 * np.pi / N_SATELLITES) / 2)).exp() >> mv.xy   # [satellites] Orbit+
 ORBIT_RADIUS = (EARTH_RADIUS_METRES + ORBIT_ALTITUDE_METRES) / EARTH_RADIUS_METRES
 ANGULAR_SPEED = (np.sqrt(GRAVITATIONAL_PARAMETER / (EARTH_RADIUS_METRES + ORBIT_ALTITUDE_METRES) ** 3)
                  * EARTH_RADIUS_METRES / LIGHT_SPEED)
-RECEIVER = origin + across                                                   # [] Event-
+receiver = origin + across                                                   # [] Event-
 SIGMA = RANGE_ERROR_METRES / EARTH_RADIUS_METRES
-CLOCK_READING = mv.scalar([CLOCK_ERROR_SECONDS * LIGHT_SPEED / EARTH_RADIUS_METRES])   # [] Scalar+
-NOISE = mv.scalar(np.random.default_rng(NOISE_SEED).normal(size=(N_SATELLITES, 1)) * SIGMA)   # [satellites] Scalar+
+clock_reading = mv.scalar([CLOCK_ERROR_SECONDS * LIGHT_SPEED / EARTH_RADIUS_METRES])   # [] Scalar+
+noise = mv.scalar(np.random.default_rng(NOISE_SEED).normal(size=(N_SATELLITES, 1)) * SIGMA)   # [satellites] Scalar+
 
 
 # --- math -----------------------------------------------------------------------------
@@ -48,10 +48,10 @@ def positioning(phase: float) -> tuple[core.Event, core.Event, core.Covariance]:
     """The transmissions at the scene's phase, and the reception event recovered from their six noisy timestamps,
     with its covariance."""
     phases = mv.scalar((PHASE_OFFSETS + phase)[..., None])                   # [satellites] Scalar+
-    emitted = emitted_events(RECEIVER, PLANES, phases, ORBIT_RADIUS, ANGULAR_SPEED, N_EMISSION_STEPS)
-    observed = emitted + time * NOISE
+    emitted = emitted_events(receiver, planes, phases, ORBIT_RADIUS, ANGULAR_SPEED, N_EMISSION_STEPS)
+    observed = emitted + time * noise
     # The starting event uses the receiver's clock and an approximate location.
-    initial = RECEIVER + mv.y.dual() * INITIAL_Y + mv.z.dual() * INITIAL_Z + time * CLOCK_READING
+    initial = receiver + mv.y.dual() * INITIAL_Y + mv.z.dual() * INITIAL_Z + time * clock_reading
     estimate, _, covariance = locate(observed, initial, SIGMA, N_POSITION_STEPS)
     return emitted, estimate, covariance
 
@@ -61,7 +61,7 @@ def uncertainty(n_frames: int) -> Iterator[tuple[core.Event, core.Event, core.Ev
     spread."""
     for phase in np.linspace(FIRST_PHASE, LAST_PHASE, n_frames):
         emitted, estimate, covariance = positioning(phase)
-        yield emitted, RECEIVER, estimate, covariance, core.position_spread(covariance)
+        yield emitted, receiver, estimate, covariance, core.position_spread(covariance)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -70,8 +70,8 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
 
     emitted, estimate, covariance = positioning(PHASE)
-    save_figure(render.draw_constellation(emitted, RECEIVER, ORBIT_RADIUS), "gps_constellation")
-    save_figure(render.draw_solution(emitted, RECEIVER, estimate, covariance, core.position_spread(covariance),
+    save_figure(render.draw_constellation(emitted, receiver, ORBIT_RADIUS), "gps_constellation")
+    save_figure(render.draw_solution(emitted, receiver, estimate, covariance, core.position_spread(covariance),
                                      ORBIT_RADIUS), "gps_positioning")
     save_animation(render.animate_geometry(uncertainty(N_FRAMES), ORBIT_RADIUS),
                    "gps_uncertainty", DURATION_MS, forward_then_back=True)

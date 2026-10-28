@@ -29,35 +29,35 @@ SLIP = 4 * np.pi
 def waveform(samples: int) -> tuple[np.ndarray, core.Field, core.Polarization]:
     """The pump over its periods, and the doubled-frequency polarization it drives across the beam,
     its static half removed."""
-    crystal = core.bond_response(core.BONDS)
+    crystal = core.bond_response(core.bonds)
     phase = np.linspace(0, 2 * np.pi * N_PERIODS, samples)
-    pump = core.HORIZONTAL_FIELD * np.cos(phase)
+    pump = core.horizontal_field * np.cos(phase)
     # The square of the cosine is half static and half at twice the frequency.
-    harmonic = core.TRANSVERSE(crystal(pump, pump)) - core.second_harmonic(crystal, core.HORIZONTAL_FIELD)
+    harmonic = core.transverse(crystal(pump, pump)) - core.second_harmonic(crystal, core.horizontal_field)
     return phase, pump, harmonic
 
 
 def turning(frames: int, samples: int) -> tuple[core.Field, Iterator[tuple[core.Direction, core.Polarization]]]:
     """Pump fields all around the beam, and per turn of the crystal about the beam its bonds'
     directions and the doubled-frequency polarization each pump drives."""
-    crystal = core.bond_response(core.BONDS)
+    crystal = core.bond_response(core.bonds)
     headings = np.linspace(0, 2 * np.pi, samples)
-    turn_plane = core.HORIZONTAL_FIELD.commutator(core.VERTICAL_FIELD)
-    pumps = (turn_plane * (-headings / 2)).exp() >> core.HORIZONTAL_FIELD
+    turn_plane = core.horizontal_field.commutator(core.vertical_field)
+    pumps = (turn_plane * (-headings / 2)).exp() >> core.horizontal_field
     turns = np.linspace(0, 2 * np.pi, frames, endpoint=False)
     rotations = (turn_plane * (-turns / 2)).exp()
-    return pumps, ((rotation >> core.BOND_DIRECTIONS, core.second_harmonic(core.turned_response(crystal, rotation), pumps)) for rotation in rotations)
+    return pumps, ((rotation >> core.bond_directions, core.second_harmonic(core.turned_response(crystal, rotation), pumps)) for rotation in rotations)
 
 
 def mixing(samples: int) -> tuple[core.Field, core.Field, core.Polarization]:
     """Two fixed pumps, a circle of weak probe fields, and the doubled-frequency polarization that
     the linear map each pump leaves makes of the probes."""
-    crystal = core.bond_response(core.BONDS)
-    pumps = stack((core.HORIZONTAL_FIELD, (core.HORIZONTAL_FIELD + core.VERTICAL_FIELD) / np.sqrt(2)))
+    crystal = core.bond_response(core.bonds)
+    pumps = stack((core.horizontal_field, (core.horizontal_field + core.vertical_field) / np.sqrt(2)))
     headings = np.linspace(0, 2 * np.pi, samples)
-    probes = PROBE_AMPLITUDE * ((core.HORIZONTAL_FIELD.commutator(core.VERTICAL_FIELD) * (-headings / 2)).exp() >> core.HORIZONTAL_FIELD)
+    probes = PROBE_AMPLITUDE * ((core.horizontal_field.commutator(core.vertical_field) * (-headings / 2)).exp() >> core.horizontal_field)
     # Binding a pump into one input leaves a linear map on the other.
-    probe_map = core.TRANSVERSE(crystal(pumps[:, None], core.Field))
+    probe_map = core.transverse(crystal(pumps[:, None], core.Field))
     return pumps, probes, probe_map(probes)
 
 
@@ -71,7 +71,7 @@ def phase_matching(n_slices: int) -> tuple[np.ndarray, core.Polarization]:
     # flips come every half turn of slip.
     flips = (-1.0) ** np.floor(depths * SLIP / np.pi)
     bond_orientation = np.stack([np.ones(n_slices), np.ones(n_slices), flips])
-    amplitude = core.growth(core.VERTICAL_POLARIZATION, bond_orientation, mismatch, depths)
+    amplitude = core.growth(core.vertical_polarization, bond_orientation, mismatch, depths)
     return depths, amplitude
 
 
@@ -93,14 +93,14 @@ def main() -> None:
     # the doubled field of pump and probe together; the matched crystal's light grows in step, the
     # mismatched crystal's cancels after whole turns of slip, and the flipped crystal keeps the share
     # (2 / pi) ** 2 of the matched power.
-    crystal = core.bond_response(core.BONDS)
-    np.testing.assert_allclose((core.second_harmonic(crystal, core.HORIZONTAL_FIELD) + core.VERTICAL_POLARIZATION / 2).kernel,
+    crystal = core.bond_response(core.bonds)
+    np.testing.assert_allclose((core.second_harmonic(crystal, core.horizontal_field) + core.vertical_polarization / 2).kernel,
                                0, atol=1e-12)
     mixed = (core.second_harmonic(crystal, pump_fields[:, None] + probes)
              - core.second_harmonic(crystal, pump_fields[:, None]) - core.second_harmonic(crystal, probes))
     np.testing.assert_allclose((mixed - generated).kernel, 0, atol=1e-12)
     # The power: the squared pairings of the fields across the beam with both quadratures.
-    fields = stack((core.HORIZONTAL_FIELD, core.VERTICAL_FIELD))
+    fields = stack((core.horizontal_field, core.vertical_field))
     power = (fields & amplitude[..., None]).squared().sum(axis=(-2, -1))
     np.testing.assert_allclose(power[:, -1].to_array(), [1.0, 0.0, (2 / np.pi) ** 2], atol=1e-4)
 

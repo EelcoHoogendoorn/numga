@@ -51,7 +51,7 @@ Motor = ga.gatype.rotor()
 # Both roots of a quadratic, one per sign.
 SIGNS = np.array([1.0, -1.0])
 # The points at infinity along x and along y.
-HEADINGS = stack([mv.x.dual(), mv.y.dual()])                                   # [2] Point
+headings = stack([mv.x.dual(), mv.y.dual()])                                   # [2] Point
 
 
 # --- math -----------------------------------------------------------------------------
@@ -88,7 +88,7 @@ def touching(inner: Envelope, vertex: Point, first: Point, second: Point) -> Sca
 def tangents(inner: Envelope, points: Point) -> Point:
     """The directions of the two tangents of an envelope through each point, on the last axis: the
     roots of its quadratic along the directions, by a square root."""
-    along_x, along_y = HEADINGS[0], HEADINGS[1]
+    along_x, along_y = headings[0], headings[1]
     a = touching(inner, points, along_x, along_x)                              # [...] Scalar
     b = touching(inner, points, along_x, along_y)                              # [...] Scalar
     c = touching(inner, points, along_y, along_y)                              # [...] Scalar
@@ -100,7 +100,7 @@ def tangents(inner: Envelope, points: Point) -> Point:
 def discriminant(inner: Envelope, points: Point) -> Scalar:
     """The discriminant of the envelope's quadratic along the directions through each point: positive
     where two tangents pass, outside the inner conic, and zero on it, where they coincide."""
-    along_x, along_y = HEADINGS[0], HEADINGS[1]
+    along_x, along_y = headings[0], headings[1]
     b = touching(inner, points, along_x, along_y)                              # [...] Scalar
     return b * b - touching(inner, points, along_x, along_x) * touching(inner, points, along_y, along_y)   # [...] Scalar
 

@@ -17,8 +17,8 @@ def conformal_rotors(rng: np.random.Generator) -> core.Full:
     return (
         (mv.xy * rng.normal(size=SAMPLES) * 0.2).exp()
         * (mv.xt * rng.normal(size=SAMPLES) * 0.2).exp()
-        * ((core.INFINITY & translations).dual() * 0.5).exp()
-        * ((core.ORIGIN & special).dual() * 0.5).exp()
+        * ((core.infinity & translations).dual() * 0.5).exp()
+        * ((core.origin & special).dual() * 0.5).exp()
     )
 
 
@@ -30,29 +30,29 @@ def test_clifford_action_and_hermitian_pairing_follow_conformal_rotors():
     states = mv(core.Twistor, rng.normal(size=(SAMPLES, 8)))
     partners = mv(core.ExtrinsicTwistor, rng.normal(size=(SAMPLES, 8)))
     # The same left multiplication on twistors of the other orientation.
-    extrinsic = (8 * core.Full).cast(core.ExtrinsicTwistor)(core.Full * (core.ExtrinsicTwistor * core.PROJECTOR))
+    extrinsic = (8 * core.Full).cast(core.ExtrinsicTwistor)(core.Full * (core.ExtrinsicTwistor * core.projector))
     rotors = conformal_rotors(rng)
-    moved = core.REPRESENTATIONS(rotors, states)
+    moved = core.representations(rotors, states)
     moved_partners = extrinsic(rotors, partners)
 
     # Clifford multiplication acts by composition; even actions commute with the
     # volume and preserve both pairings.
-    composition = core.REPRESENTATIONS(first)(core.REPRESENTATIONS(second))
-    product = core.REPRESENTATIONS(first * second)
+    composition = core.representations(first)(core.representations(second))
+    product = core.representations(first * second)
     np.testing.assert_allclose((composition - product).kernel, 0, atol=TOLERANCE)
-    np.testing.assert_allclose((core.VOLUME(core.VOLUME(states)) + states).kernel,
+    np.testing.assert_allclose((core.volume(core.volume(states)) + states).kernel,
                                0, atol=TOLERANCE)
     np.testing.assert_allclose(
-        (core.VOLUME(moved) - core.REPRESENTATIONS(rotors, core.VOLUME(states))).kernel,
+        (core.volume(moved) - core.representations(rotors, core.volume(states))).kernel,
         0, atol=TOLERANCE,
     )
     np.testing.assert_allclose(
-        (core.PAIRING(moved, moved_partners) - core.PAIRING(states, partners)).kernel,
+        (core.pairing(moved, moved_partners) - core.pairing(states, partners)).kernel,
         0, atol=TOLERANCE,
     )
     np.testing.assert_allclose(
-        (core.PAIRING(core.VOLUME(moved), moved_partners)
-         - core.PAIRING(core.VOLUME(states), partners)).kernel,
+        (core.pairing(core.volume(moved), moved_partners)
+         - core.pairing(core.volume(states), partners)).kernel,
         0, atol=TOLERANCE,
     )
 
@@ -62,46 +62,46 @@ def test_shared_twistor_recovers_a_null_ray_and_transforms_with_its_events():
     mv = core.mv
     events = mv(core.Event, rng.normal(size=(SAMPLES, 4)))
     spatial = mv(core.Spatial, rng.normal(size=(SAMPLES, 3)))
-    directions = core.TIME + spatial / spatial.squared().square_root()
+    directions = core.time + spatial / spatial.squared().square_root()
     separation = rng.uniform(0.2, 1.5, size=SAMPLES)
     first = core.point(events)
     second = core.point(events + directions * separation)
     twistors = core.through(first, second)
-    rays = core.RAY(twistors, twistors)
+    rays = core.ray_readout(twistors, twistors)
     phases = (mv.xyztuv * rng.normal(size=SAMPLES)).exp()
     rotors = conformal_rotors(rng)
-    moved = core.REPRESENTATIONS(rotors, twistors)
+    moved = core.representations(rotors, twistors)
 
     # The two events have a shared null twistor. Its bilinear ray is the join
     # of the two, and turning it by the volume leaves its direction alone.
     np.testing.assert_allclose(first.squared().kernel, 0, atol=TOLERANCE)
     np.testing.assert_allclose(second.squared().kernel, 0, atol=TOLERANCE)
-    np.testing.assert_allclose(core.INCIDENCE(first, twistors).kernel, 0, atol=TOLERANCE)
-    np.testing.assert_allclose(core.INCIDENCE(second, twistors).kernel, 0, atol=TOLERANCE)
+    np.testing.assert_allclose(core.incidence(first, twistors).kernel, 0, atol=TOLERANCE)
+    np.testing.assert_allclose(core.incidence(second, twistors).kernel, 0, atol=TOLERANCE)
     np.testing.assert_allclose((first & rays).kernel, 0, atol=TOLERANCE)
     np.testing.assert_allclose((second & rays).kernel, 0, atol=TOLERANCE)
     np.testing.assert_allclose(rays.squared().kernel, 0, atol=TOLERANCE)
     np.testing.assert_allclose((core.direction(twistors) - directions).kernel,
                                0, atol=TOLERANCE)
     np.testing.assert_allclose(
-        (core.direction(core.REPRESENTATIONS(phases, twistors)) - directions).kernel,
+        (core.direction(core.representations(phases, twistors)) - directions).kernel,
         0, atol=TOLERANCE,
     )
-    np.testing.assert_allclose(core.INCIDENCE(rotors >> first, moved).kernel,
+    np.testing.assert_allclose(core.incidence(rotors >> first, moved).kernel,
                                0, atol=TOLERANCE)
-    np.testing.assert_allclose(core.INCIDENCE(rotors >> second, moved).kernel,
+    np.testing.assert_allclose(core.incidence(rotors >> second, moved).kernel,
                                0, atol=TOLERANCE)
     np.testing.assert_allclose(
-        (core.RAY(moved, moved) - (rotors >> rays)).kernel, 0, atol=TOLERANCE,
+        (core.ray_readout(moved, moved) - (rotors >> rays)).kernel, 0, atol=TOLERANCE,
     )
 
 
 def test_robinson_twistors_stay_orthogonal_along_straight_future_null_rays():
     rng = np.random.default_rng(823)
     events = core.mv(core.Event, rng.normal(size=(SAMPLES, 4)))
-    twistors = core.SELECTION(core.point(events), core.ROBINSON)
+    twistors = core.selection(core.point(events), core.robinson_twistor)
     extrinsic_volume = (8 * core.Full).cast(core.ExtrinsicTwistor)(
-        core.Full * (core.ExtrinsicTwistor * core.PROJECTOR))(core.exact.xyztuv)
+        core.Full * (core.ExtrinsicTwistor * core.projector))(core.exact.xyztuv)
     directions = core.robinson(events)
     times = np.linspace(-1.0, 1.0, 9)
     along_rays = events[:, None] + directions[:, None] * times
@@ -109,15 +109,15 @@ def test_robinson_twistors_stay_orthogonal_along_straight_future_null_rays():
     # The event's selected twistor pairs to zero with the fixed twistor and with
     # its turn by the volume. Every event along its straight light ray selects the
     # same propagation direction and remains incident with the initial twistor.
-    np.testing.assert_allclose(core.PAIRING(twistors, core.ROBINSON).kernel,
+    np.testing.assert_allclose(core.pairing(twistors, core.robinson_twistor).kernel,
                                0, atol=TOLERANCE)
-    np.testing.assert_allclose(core.PAIRING(twistors, extrinsic_volume(core.ROBINSON)).kernel,
+    np.testing.assert_allclose(core.pairing(twistors, extrinsic_volume(core.robinson_twistor)).kernel,
                                0, atol=TOLERANCE)
     np.testing.assert_allclose(directions.squared().kernel, 0, atol=TOLERANCE)
     np.testing.assert_allclose(((core.mv.t & directions) - 1).kernel, 0, atol=TOLERANCE)
     np.testing.assert_allclose((core.robinson(along_rays) - directions[:, None]).kernel,
                                0, atol=TOLERANCE)
-    np.testing.assert_allclose(core.INCIDENCE(core.point(along_rays), twistors[:, None]).kernel,
+    np.testing.assert_allclose(core.incidence(core.point(along_rays), twistors[:, None]).kernel,
                                0, atol=TOLERANCE)
 
 
@@ -143,7 +143,7 @@ def test_field_lines_follow_their_fields_along_the_energy_flow_rays():
     from examples.relativity.twistors import scenarios
 
     curves = core.fibres(POLARS, PER_CIRCLE, FIBRE_SAMPLES)
-    electric = scenarios.ELECTRIC_TURN >> curves
+    electric = scenarios.electric_turn >> curves
     magnetic = (core.mv.yz * (np.pi / 4)).exp() >> curves
     times = TIMES[:, None, None, None]
     electric_events = electric + core.robinson(electric) * times
@@ -151,12 +151,12 @@ def test_field_lines_follow_their_fields_along_the_energy_flow_rays():
     # The fields' parts through time; the magnetic part turned into time by the spacetime volume.
     temporal = core.Bivector.derive.containing("t")
     electric_field = core.hopfion(electric_events).cast(temporal)[..., 1:-1]
-    magnetic_field = (core.SPACETIME_VOLUME * core.hopfion(magnetic_events)).cast(temporal)[..., 1:-1]
+    magnetic_field = (core.spacetime_volume * core.hopfion(magnetic_events)).cast(temporal)[..., 1:-1]
     electric_steps = electric_events[..., 2:] - electric_events[..., :-2]
     magnetic_steps = magnetic_events[..., 2:] - magnetic_events[..., :-2]
     # The planes the lines' unit steps sweep through time.
-    electric_sweeps = ((electric_steps / electric_steps.squared().square_root()) & core.TIME).dual()
-    magnetic_sweeps = ((magnetic_steps / magnetic_steps.squared().square_root()) & core.TIME).dual()
+    electric_sweeps = ((electric_steps / electric_steps.squared().square_root()) & core.time).dual()
+    magnetic_sweeps = ((magnetic_steps / magnetic_steps.squared().square_root()) & core.time).dual()
 
     # checks: after their material points have followed the straight energy-flow rays, the electric
     # and the magnetic lines still run along their fields.
@@ -188,13 +188,13 @@ def test_incidence_rays_meet_their_events_at_rest_and_boosted():
     from examples.relativity.twistors import scenarios
 
     twistors, events, rays = scenarios.incidence()
-    rays_of_twistors = core.RAY(twistors, twistors)
+    rays_of_twistors = core.ray_readout(twistors, twistors)
     recovered = core.at_time(rays_of_twistors[:, None], core.mv.t & events)
 
     # checks: a ray's intersection with a time slice reconstructs the incident events, including
     # when a boost changes their time coordinates, and every sampled ray event sends its twistor to zero.
     np.testing.assert_allclose((recovered - events).kernel, 0, atol=TOLERANCE)
-    np.testing.assert_allclose(core.INCIDENCE(core.point(rays), twistors[:, None]).kernel,
+    np.testing.assert_allclose(core.incidence(core.point(rays), twistors[:, None]).kernel,
                                0, atol=TOLERANCE)
 
 

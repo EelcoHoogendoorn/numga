@@ -36,71 +36,71 @@ Twistor = ExtrinsicTwistor.derive.flipped_orientation                        # F
 Helicity = Scalar.derive.flipped_orientation                                 # Scalar-
 
 # The three commuting factors each halve the state space, leaving eight real components.
-PROJECTOR = (1 + exact.x) * (1 + exact.yt) * (1 + exact.zv) / 8
+projector = (1 + exact.x) * (1 + exact.yt) * (1 + exact.zv) / 8
 # Multiplied by a twistor type, the projector embeds those twistors in the full algebra; scaled back, the full
 # algebra reads them out.
-EMBEDDING = Twistor * PROJECTOR                                              # [] Full- <- Twistor-
-EXTRINSIC_EMBEDDING = ExtrinsicTwistor * PROJECTOR                           # [] Full+ <- ExtrinsicTwistor+
-READOUT = (8 * Intrinsic).cast(Twistor)                                      # [] Twistor- <- Full-
-EXTRINSIC_READOUT = (8 * Full).cast(ExtrinsicTwistor)                        # [] ExtrinsicTwistor+ <- Full+
+embedding = Twistor * projector                                              # [] Full- <- Twistor-
+extrinsic_embedding = ExtrinsicTwistor * projector                           # [] Full+ <- ExtrinsicTwistor+
+readout = (8 * Intrinsic).cast(Twistor)                                      # [] Twistor- <- Full-
+extrinsic_readout = (8 * Full).cast(ExtrinsicTwistor)                        # [] ExtrinsicTwistor+ <- Full+
 # Embedding, multiplying on the left and reading out gives every multivector's action on twistors. An intrinsic
 # multivector, such as an event, turns the twistor's orientation, so the actions are typed by the orientations
 # they map between: a ray's twistor is intrinsic, and an event's action on an extrinsic twistor selects one.
-REPRESENTATIONS = READOUT(Full * EMBEDDING)                                  # [] Twistor- <- (Full+, Twistor-)
-INCIDENCE = EXTRINSIC_READOUT(Intrinsic * EMBEDDING)                         # [] ExtrinsicTwistor+ <- (Full-, Twistor-)
-SELECTION = READOUT(Intrinsic * EXTRINSIC_EMBEDDING)                         # [] Twistor- <- (Full-, ExtrinsicTwistor+)
+representations = readout(Full * embedding)                                  # [] Twistor- <- (Full+, Twistor-)
+incidence = extrinsic_readout(Intrinsic * embedding)                         # [] ExtrinsicTwistor+ <- (Full-, Twistor-)
+selection = readout(Intrinsic * extrinsic_embedding)                         # [] Twistor- <- (Full-, ExtrinsicTwistor+)
 # The conformal volume squares to minus one and commutes with every even multivector.
-VOLUME = REPRESENTATIONS(exact.xyztuv)                                       # [] Twistor- <- Twistor-
+volume = representations(exact.xyztuv)                                       # [] Twistor- <- Twistor-
 
 # A pairing of two twistors that conformal rotors preserve, across the unit intrinsic volume.
-PAIRING = 8 * exact.yz.scalar_product(EMBEDDING.reverse() * exact.antiscalar([1]) * EXTRINSIC_EMBEDDING)   # [] Scalar+ <- (Twistor-, ExtrinsicTwistor+)
+pairing = 8 * exact.yz.scalar_product(embedding.reverse() * exact.antiscalar([1]) * extrinsic_embedding)   # [] Scalar+ <- (Twistor-, ExtrinsicTwistor+)
 # A twistor paired with each ray's action is a form on rays; contracting turns it into the ray itself.
 # On a null twistor the result is its light ray, the join of its events.
-RAY = (Ray * PAIRING(Twistor, INCIDENCE(Ray.reverse(), Twistor))).contract(1, 3)   # [] Ray- <- (Twistor-, Twistor-)
-ROBINSON = 1 + exact.y - exact.zu + exact.yzu                                # [] ExtrinsicTwistor+
+ray_readout = (Ray * pairing(Twistor, incidence(Ray.reverse(), Twistor))).contract(1, 3)   # [] Ray- <- (Twistor-, Twistor-)
+robinson_twistor = 1 + exact.y - exact.zu + exact.yzu                        # [] ExtrinsicTwistor+
 # The origin and the point at infinity; the plane at infinity, which reads a point's weight; one unit along time.
-ORIGIN = (mv.v.dual() - mv.u.dual()) / 2                                     # [] Point-
-INFINITY = mv.v.dual() + mv.u.dual()                                         # [] Point-
-HORIZON = -(mv.v + mv.u)                                                     # [] Vector+
-TIME = -mv.t.dual()                                                          # [] Event-
+origin = (mv.v.dual() - mv.u.dual()) / 2                                     # [] Point-
+infinity = mv.v.dual() + mv.u.dual()                                         # [] Point-
+horizon = -(mv.v + mv.u)                                                     # [] Vector+
+time = -mv.t.dual()                                                          # [] Event-
 # Time and the conformal pair: a patch of space joined across them is a direction in space.
-ACROSS = mv.tuv
+across = mv.tuv
 # y as a patch of space, the plane the pulse and its fibres turn in.
-SYMMETRY = ACROSS.inverse() | mv.y.dual()                                    # [] Bivector-
-HELICITY = mv(Helicity, [1.0])                                               # [] Helicity-
-SPACETIME_VOLUME = exact.xyzt
+symmetry = across.inverse() | mv.y.dual()                                    # [] Bivector-
+helicity = mv(Helicity, [1.0])                                               # [] Helicity-
+spacetime_volume = exact.xyzt
 
 
 # --- math -----------------------------------------------------------------------------
 def point(event: Event) -> Point:
     """A spacetime event embedded as a null conformal antivector of weight one."""
-    return ORIGIN + event + event.squared() * INFINITY / 2
+    return origin + event + event.squared() * infinity / 2
 
 
 def through(first: Point, second: Point) -> Twistor:
     """A twistor of the light ray through two distinct null-separated conformal events."""
-    family = REPRESENTATIONS(first * second)                                 # [...] Twistor- <- Twistor-
+    family = representations(first * second)                                 # [...] Twistor- <- Twistor-
     states, _, _ = family.svd()
     return states[..., 0]
 
 
 def at_time(ray: Ray, times: Scalar) -> Event:
     """The events where a conformal light ray meets the given constant-time slices."""
-    crossing = (mv.t - HORIZON * times) ^ ray
-    return crossing.cast(Event) / (HORIZON & crossing)
+    crossing = (mv.t - horizon * times) ^ ray
+    return crossing.cast(Event) / (horizon & crossing)
 
 
 def direction(twistor: Twistor) -> Event:
     """The future null direction of a ray, with its time component normalized to one."""
-    ray = RAY(twistor, twistor)                                              # [...] Ray-
+    ray = ray_readout(twistor, twistor)                                              # [...] Ray-
     # The ray meets the plane at infinity in its direction.
-    tangent = (HORIZON ^ ray).cast(Event)                                    # [...] Event-
+    tangent = (horizon ^ ray).cast(Event)                                    # [...] Event-
     return tangent / (mv.t & tangent)
 
 
 def robinson(event: Event) -> Event:
-    """The light ray selected at each event by the fixed non-null twistor ROBINSON."""
-    ray_twistor = SELECTION(point(event), ROBINSON)                          # [...] Twistor-
+    """The light ray selected at each event by the fixed non-null twistor robinson_twistor."""
+    ray_twistor = selection(point(event), robinson_twistor)                  # [...] Twistor-
     return direction(ray_twistor)
 
 
@@ -109,14 +109,14 @@ def hopfion(event: Event) -> Faraday:
     elapsed = mv.t & event
     # The event's place in space relative to a flash of light running along y, as a patch of space: its
     # extent across time and the conformal pair undone.
-    position = ACROSS.inverse() | (event - elapsed * (TIME + mv.y.dual()))      # [...] Bivector-
+    position = across.inverse() | (event - elapsed * (time + mv.y.dual()))      # [...] Bivector-
     # The spinor turns the polarization and its propagation direction together; the helicity turns the
     # patch into the plane it turns in.
-    spinor = 1 + position * HELICITY
+    spinor = 1 + position * helicity
     polarization = (mv.t + mv.y) ^ mv.x
     # The spacetime volume rotates electric into magnetic polarization. Its inverse
     # supplies both the decaying amplitude and the local polarization angle.
-    weight = (1 + event.squared() + 2 * SPACETIME_VOLUME * elapsed).inverse()
+    weight = (1 + event.squared() + 2 * spacetime_volume * elapsed).inverse()
     return (spinor >> polarization) * weight.squared() * weight
 
 
@@ -127,6 +127,6 @@ def fibres(polars: np.ndarray, n_per_circle: int, n_fibre_samples: int) -> Spati
     phases = np.linspace(-np.pi, np.pi, n_fibre_samples + 1)
     starts = ((mv.zx * (-azimuths[None, :] / 2)).exp()
               * (mv.xy * (polars[:, None] / 2)).exp())                       # [polars, per circle] Even+
-    orbit = starts[..., None] * (SYMMETRY * HELICITY * phases).exp()         # [polars, per circle, fibre samples + 1] Even+
+    orbit = starts[..., None] * (symmetry * helicity * phases).exp()         # [polars, per circle, fibre samples + 1] Even+
     # Stereographic projection: the turn's plane, by the helicity a patch of space, joined across time.
-    return (orbit.restrict[2] * HELICITY / (1 + orbit.select[0])) ^ ACROSS
+    return (orbit.restrict[2] * helicity / (1 + orbit.select[0])) ^ across

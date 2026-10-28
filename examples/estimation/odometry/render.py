@@ -20,7 +20,7 @@ core = instantiate("examples.estimation.odometry.core", PGA2D)
 mv = core.mv
 Point = PGA2D.gatype.antivector()                   # Antivector-
 # The point each pose carries: the origin, dual to the weight direction w.
-ORIGIN = mv.w.dual()                                # [] Point-
+origin = mv.w.dual()                                # [] Point-
 # The colours of dead reckoning, the most likely poses, the true path, the closing reading, and the known start.
 DEAD, LIKELY = "#d9822b", "#2c5d9e"
 TRUTH, CLOSING, START = "0.75", "#2a9d4a", "0.2"
@@ -44,7 +44,7 @@ def coordinates(points: Point) -> np.ndarray:
 
 def extent(truth: core.Motor, dead: core.Motor) -> np.ndarray:
     """Compute the lower and upper corners `[2, 2]` of a bounding box around the true and dead-reckoned positions."""
-    corners = coordinates(concatenate([truth, dead]) >> ORIGIN)
+    corners = coordinates(concatenate([truth, dead]) >> origin)
     low, high = corners.min(axis=0), corners.max(axis=0)
     margin = 0.15 * (high - low).max()
     return np.stack([low - margin, high + margin])
@@ -54,20 +54,20 @@ def base_layers(truth: core.Motor, dead: core.Motor, reckoned_ellipses) -> list:
     """Build the planar layers for the true path, the dashed dead-reckoned path, and its uncertainty ellipses."""
     dash_pattern = (DASHED[0] * DEAD_WIDTH * POINT, DASHED[1] * DEAD_WIDTH * POINT)
     return [
-        Strokes((truth >> ORIGIN)[None], TRUTH_WIDTH * POINT, TRUTH_RGB, 1.0, SOLID, Cap.PROJECTING),
-        Strokes((dead >> ORIGIN)[None], DEAD_WIDTH * POINT, DEAD_RGB, 1.0, dash_pattern, Cap.BUTT),
+        Strokes((truth >> origin)[None], TRUTH_WIDTH * POINT, TRUTH_RGB, 1.0, SOLID, Cap.PROJECTING),
+        Strokes((dead >> origin)[None], DEAD_WIDTH * POINT, DEAD_RGB, 1.0, dash_pattern, Cap.BUTT),
         Curves(reckoned_ellipses, ELLIPSE_WIDTH * POINT, DEAD_RGB, 0.35),
     ]
 
 
 def likely_layers(truth: core.Motor, poses: core.Motor, ellipses) -> list:
     """Build the planar layers for the estimated poses, their uncertainty ellipses, and the start marker."""
-    positions = poses >> ORIGIN                                                 # [poses] Point-
+    positions = poses >> origin                                                 # [poses] Point-
     return [
         Curves(ellipses, ELLIPSE_WIDTH * POINT, LIKELY_RGB, 0.7),
         Strokes(positions[None], LIKELY_WIDTH * POINT, LIKELY_RGB, 1.0, SOLID, Cap.PROJECTING),
         Marks(positions, Marker.DISC, 0.0, (LIKELY_MARK + 1.0) / 2 * POINT, LIKELY_RGB, 1.0),
-        Marks(truth[:1] >> ORIGIN, Marker.DISC, 0.0, (START_MARK + 1.0) / 2 * POINT, START_RGB, 1.0),
+        Marks(truth[:1] >> origin, Marker.DISC, 0.0, (START_MARK + 1.0) / 2 * POINT, START_RGB, 1.0),
     ]
 
 
@@ -83,11 +83,11 @@ def framed(box: np.ndarray) -> tuple[plt.Figure, plt.Axes, Window]:
 def draw_lap(truth: core.Motor, dead: core.Motor, reckoned_ellipses, linked_poses: core.Motor) -> plt.Figure:
     """Render the true lap, the dead-reckoned trajectory with its uncertainty ellipses, and the loop-closing link."""
     figure, ax, view = framed(extent(truth, dead))
-    linked_positions = linked_poses >> ORIGIN                                   # [endpoints] Point-
+    linked_positions = linked_poses >> origin                                   # [endpoints] Point-
     layers = base_layers(truth, dead, reckoned_ellipses) + [
         Strokes(linked_positions[None], CLOSING_WIDTH * POINT, CLOSING_RGB, 1.0, SOLID, Cap.PROJECTING),
         Marks(linked_positions, Marker.DISC, 0.0, (CLOSING_MARK + 1.0) / 2 * POINT, CLOSING_RGB, 1.0),
-        Marks(truth[:1] >> ORIGIN, Marker.DISC, 0.0, (START_MARK + 1.0) / 2 * POINT, START_RGB, 1.0),
+        Marks(truth[:1] >> origin, Marker.DISC, 0.0, (START_MARK + 1.0) / 2 * POINT, START_RGB, 1.0),
     ]
     pinned(ax, planar.draw(view, layers, np.ones(3)), view.extent)
     return figure

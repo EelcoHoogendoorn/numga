@@ -33,7 +33,7 @@ Even = ga.gatype.even()
 # Spot the cow, from the shared models, and the two quarter turns that stand her up facing along x: her y
 # axis, up in the file, turned onto z, and then x onto y.
 SPOT = MODEL_DIR / "spot.obj"
-UPRIGHT = (context.multivector.xy * (-np.pi / 4)).exp() * (context.multivector.yz * (-np.pi / 4)).exp()   # [] Rotor+
+upright = (context.multivector.xy * (-np.pi / 4)).exp() * (context.multivector.yz * (-np.pi / 4)).exp()   # [] Rotor+
 
 
 # --- math -----------------------------------------------------------------------------
@@ -181,4 +181,4 @@ def spot() -> tuple[Mesh, Point]:
     https://www.cs.cmu.edu/~kmcrane/Projects/ModelRepository/: her mesh, and her vertices upright with z up,
     centred, and scaled to reach one at her furthest."""
     mesh, vertices = Mesh.read(SPOT, 2.0)
-    return mesh, UPRIGHT >> vertices
+    return mesh, upright >> vertices

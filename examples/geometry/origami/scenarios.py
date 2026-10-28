@@ -8,7 +8,7 @@ from examples.geometry.origami import core
 N_HALF_STEPS = 8
 DURATION_MS = 65
 SIDE = 2.0
-SHEET = core.mv.z                                                               # [] Plane+
+sheet = core.mv.z                                                               # [] Plane+
 CREASE_TOLERANCE = SIDE * 1e-10
 # Each corner flap carries both layers joined along the folded edge. The horns
 # turn those paired layers together; the two brim folds use the front sheet.
@@ -50,7 +50,7 @@ def kabuto() -> tuple[core.Paper, core.Plane]:
         core.point_bisector(centre, upper_left),
     ])
     offsets = core.mv(core.Direction, [[0, 0, 0]])                              # [faces] Direction-
-    return core.Paper(corners, np.array([len(corners)]), offsets, SHEET), creases
+    return core.Paper(corners, np.array([len(corners)]), offsets, sheet), creases
 
 
 # --- plumbing -------------------------------------------------------------------------

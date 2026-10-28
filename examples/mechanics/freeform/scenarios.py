@@ -27,9 +27,9 @@ DENSITY = 1
 CLAMP_DEPTH = 0.12
 CLAMP_STIFFNESS = 500
 # The pull near one ear's tip: where, how wide, the total force, and how long it lasts.
-PULL_CENTER = mv.vector([-0.25, 0.34, 1.92]).dual()          # Antivector-
+pull_center = mv.vector([-0.25, 0.34, 1.92]).dual()          # Antivector-
 PULL_WIDTH = 0.23
-PULL_FORCE = (mv.x + 0.7 * mv.y) * 0.6                       # Vector+
+pull_force = (mv.x + 0.7 * mv.y) * 0.6                       # Vector+
 PULL_DURATION = 0.4
 # The time step and the steps, and the minimizer's iterations and tolerance per step.
 TIME_STEP = 0.05
@@ -55,9 +55,9 @@ def bunny() -> tuple[Iterator[Antivector], np.ndarray]:
 
     # A compliant support holds the base; the pull is localized near one ear tip.
     clamp = (-(mv.z & samples).squared() / CLAMP_DEPTH**2).exp() * CLAMP_STIFFNESS   # [samples] Scalar+
-    profile = (-(samples - PULL_CENTER).scalar_norm_squared() / PULL_WIDTH**2).exp()   # [samples] Scalar+
+    profile = (-(samples - pull_center).scalar_norm_squared() / PULL_WIDTH**2).exp()   # [samples] Scalar+
     # Normalized over the solid, so that the profile distributes the stated total force.
-    load = profile * PULL_FORCE / (profile * sample_volumes).sum(axis=0)   # [samples] Vector+
+    load = profile * pull_force / (profile * sample_volumes).sum(axis=0)   # [samples] Vector+
     loading = np.sin(np.pi * np.minimum(np.arange(N_STEPS) * TIME_STEP / PULL_DURATION, 1))**2
 
     def trajectory() -> Iterator[Antivector]:
@@ -96,7 +96,7 @@ def main() -> None:
     # checks
     # The ear follows the pull and springs back after release, while the base moves a tenth as far.
     displacement = surfaces - surfaces[0]                         # [steps + 1, vertices] Antivector-
-    pulled = (PULL_FORCE & displacement).to_array()               # [steps + 1, vertices]
+    pulled = (pull_force & displacement).to_array()               # [steps + 1, vertices]
     distances = displacement.scalar_norm_squared().to_array() ** 0.5   # [steps + 1, vertices]
     base = (mv.z & surfaces[0]) < 0.05                 # [vertices]
     assert pulled.max() > 0.3 and pulled[-1].max() < 0.05 * pulled.max()

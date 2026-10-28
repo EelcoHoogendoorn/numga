@@ -23,10 +23,10 @@ FRONT_AT = 1.0
 DEPTHS = np.array([-3.2, -2.2, -1.6])
 N_HEIGHTS, N_WIDTHS = 5, 4
 HALF_HEIGHT, HALF_WIDTH = 0.8, 0.5
-SCENE = point(np.stack(np.meshgrid(                                             # Point
+scene = point(np.stack(np.meshgrid(                                             # Point
     DEPTHS, np.linspace(-HALF_HEIGHT, HALF_HEIGHT, N_HEIGHTS), np.linspace(-HALF_WIDTH, HALF_WIDTH, N_WIDTHS), indexing="ij",
 ), axis=-1))                                                                   # [depth, height, width] Point
-SUBJECT = point(np.array([-3.2, 0.0, -1.0 / 6.0]))                              # Point
+subject = point(np.array([-3.2, 0.0, -1.0 / 6.0]))                              # Point
 # The stills: the rear lens wide and tele, the focus distance, the aperture radius, and the sensor's tilt.
 WIDE, TELE = 1.4, 1.8
 FOCUS = 2.2
@@ -51,7 +51,7 @@ def setting(rear_at: float, focus_at: float, tilt: float, radius: float):
     focus = point(np.array([focus_at, 0.0, 0.0]))                               # Point
     turn = (mv.xy * (tilt / 2)).exp()                                           # Motor
     rim = point(np.array([[0.0, radius, 0.0], [0.0, 0.0, 0.0], [0.0, -radius, 0.0]]))  # Point
-    return expose(SCENE, SUBJECT, FOCAL, placements, focus, turn, radius, rim)
+    return expose(scene, subject, FOCAL, placements, focus, turn, radius, rim)
 
 
 def stills():
@@ -81,7 +81,7 @@ def main() -> None:
 
     wide, tele, tilted = stills()
     save_figure(render.draw_stills((wide, tele, tilted)), "lens_camera")
-    save_animation(render.animate_camera(motion(N_FRAMES), SCENE), "lens_camera", FRAME_DURATION)
+    save_animation(render.animate_camera(motion(N_FRAMES), scene), "lens_camera", FRAME_DURATION)
 
     # checks
     # The train on lines is the join of the collineation's images: the lens is a collineation. The image
@@ -96,19 +96,19 @@ def main() -> None:
     unit_disc = across_y * (across_y & Plane) + across_z * (across_z & Plane) - origin * (origin & Plane)
     pupil = place_front >> (unit_disc * APERTURE**2 - origin * (origin & Plane) * (1.0 - APERTURE**2))(place_front << Plane)
     other = point(np.array([[-1.0, 0.3, 0.1], [-1.5, 0.2, -0.4], [-2.0, -0.5, 0.6]]))
-    np.testing.assert_allclose(camera(Point, other)(SCENE[0, 0, 0]).kernel,
-                               ((collineation(SCENE[0, 0, 0]) & collineation(other)) ^ sensor).kernel, atol=1e-12)
-    np.testing.assert_allclose((collineation(SCENE) & cones(collineation(SCENE))).kernel, 0.0, atol=1e-9)
+    np.testing.assert_allclose(camera(Point, other)(scene[0, 0, 0]).kernel,
+                               ((collineation(scene[0, 0, 0]) & collineation(other)) ^ sensor).kernel, atol=1e-12)
+    np.testing.assert_allclose((collineation(scene) & cones(collineation(scene))).kernel, 0.0, atol=1e-9)
     for index in ((0, 0, 0), (2, 4, 3)):
-        start = (collineation(SCENE[index]) & collineation(centre)) ^ sensor
+        start = (collineation(scene[index]) & collineation(centre)) ^ sensor
         boundary = section(cones[index], start, frame, N_SECTION)
-        to_sensor = camera(SCENE[index])
+        to_sensor = camera(scene[index])
         pushed = to_sensor(pupil(to_sensor.adjugate()))
         section_dual = (frame << pushed(frame >> SensorPlane)).cast(SensorPoint.output_subspace)
         hits = (frame << boundary).cast(SensorPoint.output_subspace)
         np.testing.assert_allclose((hits & section_dual.solve(hits)).kernel, 0.0, atol=1e-10)
     collineation, camera, frame, cones, planes, _ = wide
-    start = (collineation(SCENE[1, 2, 1]) & collineation(centre)) ^ (frame >> home)
+    start = (collineation(scene[1, 2, 1]) & collineation(centre)) ^ (frame >> home)
     np.testing.assert_allclose(unit(section(cones[1, 2, 1], start, frame, N_SECTION)).kernel,
                                unit(start).broadcast_to((N_SECTION,)).kernel, atol=1e-6)
 

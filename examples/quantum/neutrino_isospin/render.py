@@ -20,7 +20,7 @@ from examples.util.wgsl.scene import Scene
 
 mv, sm = core.mv, solids.mv
 # The flavors at the poles, the electron's and the muon's, and their colours.
-FLAVORS = stack((core.flavor_e, core.flavor_mu))                             # [2] Isospin
+flavors = stack((core.flavor_e, core.flavor_mu))                             # [2] Isospin
 flavor_colours = np.array([to_rgb("#0284c7"), to_rgb("#e11d48")])
 path_colour, start_colour, end_colour = np.array(to_rgb("#6366f1")), np.array(to_rgb("#10b981")), np.array(to_rgb("#f59e0b"))
 plane_colour, axis_colour = np.array(to_rgb("#1e293b")), np.array(to_rgb("#94a3b8"))
@@ -70,7 +70,7 @@ def flavor_sphere(start_plane: core.Bivector, end_plane: core.Bivector, ax: plt.
     parts = [(solids.ball(points, radius)[:, None], colour)
              for points, radius, colour in ((sm.point(along.reshape(-1, 3)), AXIS_DOT_RADIUS, axis_colour),
                                             (dotted, CIRCLE_DOT_RADIUS, plane_colour),
-                                            (sm.point(coordinates(FLAVORS)), FLAVOR_RADIUS, flavor_colours))]
+                                            (sm.point(coordinates(flavors)), FLAVOR_RADIUS, flavor_colours))]
     ball = [(solids.ball(solids.origin, 1.0)[None, None], sphere_colour, sphere_opacity)]
     # The equator and two meridians, where the planes x, y and z cut the sphere; the plane the isospin turns in at the
     # end, through the centre square to its dual.
@@ -95,7 +95,7 @@ def path_marks(path: np.ndarray, view: solids.View) -> tuple[Samples, tuple[soli
 
 def name_flavors(ax, view: solids.View) -> None:
     """The flavors named just past the poles, where the camera sees them."""
-    for (x, y), name, colour in zip(view.across(sm.point(LABEL_DISTANCE * coordinates(FLAVORS))),
+    for (x, y), name, colour in zip(view.across(sm.point(LABEL_DISTANCE * coordinates(flavors))),
                                     (r"$\nu_e$", r"$\nu_\mu$"), flavor_colours):
         ax.text(x, y, name, ha="center", va="center", fontsize=13, fontweight="bold", color=colour)
 

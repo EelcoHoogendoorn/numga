@@ -46,7 +46,7 @@ up = water.dual()                                                       # [] Poi
 heave = mv.w ^ water                                                    # [] Twist+
 heel_axis = mv.yz                                                       # [] Twist+
 # The origin, from which the hull's enclosed volume is summed.
-ORIGIN = mv.point([0.0, 0.0, 0.0])                                      # [] Point-
+origin = mv.point([0.0, 0.0, 0.0])                                      # [] Point-
 # Per triangle, the points halfway between each corner and the centroid: they integrate anything quadratic
 # over the triangle exactly, each standing for a third of its area.
 RULE = 3 * simplex_inertia_weights(3)
@@ -62,7 +62,7 @@ def pressing(triangles: Point, surface: Plane) -> tuple[Point, Forque]:
     # The plane through a part's corners, wound as its triangle, has twice the part's area as its weight.
     # The hull's enclosed volume, signed by the same winding, is positive exactly when those planes face
     # outward: times its sign, every plane faces outward, whichever way the hull is wound.
-    volume = (ORIGIN & triangles[..., 0] & triangles[..., 1] & triangles[..., 2]).sum(axis=-1)   # [] Scalar+
+    volume = (origin & triangles[..., 0] & triangles[..., 1] & triangles[..., 2]).sum(axis=-1)   # [] Scalar+
     planes = (parts[..., 0] & parts[..., 1] & parts[..., 2]) * (volume / volume.norm())   # [..., triangles, parts] Plane+
     return samples, -(samples | planes[..., None]) / 6
 

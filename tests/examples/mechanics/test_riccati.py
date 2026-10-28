@@ -79,7 +79,7 @@ def test_riccati_matches_a_single_dense_optimization_with_general_dynamics_and_a
 
 def test_docking_realizes_its_bellman_cost_in_tracking_displacements_and_commands():
     values, feedbacks, errors, commands = scenarios.docking()
-    lines = scenarios.TRACKING_POINTS[:, None] & scenarios.AXES[None, :]
+    lines = scenarios.tracking_points[:, None] & scenarios.axes[None, :]
     displacements = lines & errors[..., None, None]
     tracking = (displacements.squared() * scenarios.TRACKING_WEIGHTS).sum(axis=(-2, -1)) * scenarios.DT
     command_effort = (commands.squared() * scenarios.THRUSTER_WEIGHTS).sum(axis=-1)
@@ -99,7 +99,7 @@ def test_docking_realizes_its_bellman_cost_in_tracking_displacements_and_command
 
 def test_thruster_commands_reproduce_the_feedback_forque_and_geometric_work():
     _, feedbacks, errors, commands = scenarios.docking()
-    thrusters = scenarios.MOUNTS & scenarios.DIRECTIONS
+    thrusters = scenarios.mounts & scenarios.directions
     supplied = (commands * thrusters).sum(axis=-1)
     requested = feedbacks(errors[:-1])
     np.testing.assert_allclose((supplied - requested).kernel, 0, atol=1e-10)
@@ -107,8 +107,8 @@ def test_thruster_commands_reproduce_the_feedback_forque_and_geometric_work():
     # A thruster's work on a twist is its force dotted into the velocity the twist gives its mount;
     # this pins the sign of the motor convention against the physical thrust arrows.
     trials = core.mv.bivector([[0.2, -0.3, 0.15], [-0.1, 0.25, -0.12]])[:, None]
-    velocities = scenarios.MOUNTS.commutator(trials)
-    power = scenarios.DIRECTIONS.dual() | velocities.dual()
+    velocities = scenarios.mounts.commutator(trials)
+    power = scenarios.directions.dual() | velocities.dual()
     np.testing.assert_allclose((power - (thrusters & trials)).kernel, 0, atol=1e-10)
 
 
@@ -120,15 +120,15 @@ def test_docking_figures_and_animation_draw_without_saving():
     values, _, errors, commands = scenarios.docking()
     poses = (errors * -0.5).exp()
     figures = (
-        render.draw_setup(scenarios.HULL, scenarios.MOUNTS, scenarios.DIRECTIONS,
-                          scenarios.TRACKING_POINTS),
-        render.draw_approaches(scenarios.HULL, poses, scenarios.LABELS),
+        render.draw_setup(scenarios.hull, scenarios.mounts, scenarios.directions,
+                          scenarios.tracking_points),
+        render.draw_approaches(scenarios.hull, poses, scenarios.LABELS),
         render.draw_costs(values, scenarios.LABELS),
     )
     for figure in figures:
         figure.canvas.draw()
         plt.close(figure)
-    frames = list(render.animate(scenarios.HULL, scenarios.MOUNTS, scenarios.DIRECTIONS, poses[:2],
+    frames = list(render.animate(scenarios.hull, scenarios.mounts, scenarios.directions, poses[:2],
                                  commands[:2], scenarios.LABELS, scenarios.ARROW_SCALE))
     assert frames[0].ndim == 3 and frames[0].shape == frames[1].shape
     assert not np.array_equal(frames[0], frames[1])

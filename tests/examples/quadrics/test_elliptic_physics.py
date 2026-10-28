@@ -63,7 +63,7 @@ def test_collision_conserves_energy_and_momentum():
     placement = (S2.mv.yz * (-np.radians([0.0, 28.0]) / 2.0)).exp()
     bodies = scenarios.ellipses(np.array([[25.0, 15.0], [25.0, 15.0]]), np.array([1.0, 1.0]), placement,
                             np.array([[-2.5, 0.0, 0.0], [2.0, 0.0, 0.0]]), ["#38bdf8", "#f43f5e"], 96)
-    bodies = replace(bodies, motor=scenarios.CAMERA.inverse() * bodies.motor)
+    bodies = replace(bodies, motor=scenarios.camera.inverse() * bodies.motor)
     after, applied = S2.collide(bodies, np.array([0]), np.array([1]), 0.001)
     assert applied == 1
     np.testing.assert_allclose(after.kinetic_energy().to_array(), bodies.kinetic_energy().to_array(), rtol=1e-12)

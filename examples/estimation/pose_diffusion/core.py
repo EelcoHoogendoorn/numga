@@ -25,7 +25,7 @@ Dynamics = ga.gatype((Twist, Twist))
 Spread = ga.gatype((Scalar, Line, Line))
 Gusts = ga.gatype((Twist, Line))
 # The commanded set point at the origin.
-ORIGIN = mv.w.dual()                                # [] Point-
+origin = mv.w.dual()                                # [] Point-
 
 
 # --- math -----------------------------------------------------------------------------
@@ -47,6 +47,6 @@ def settled(dynamics: Dynamics, noise: Covariance) -> Covariance:
 def position_spread(covariance: Covariance) -> Spread:
     """The symmetric covariance form on lines measuring displacements of the set point, pulled back from the twist covariance."""
     # An error moves the set point by their commutator; its adjugate pulls a displacement-measuring line back to a twist measurement.
-    shift = Twist.commutator(ORIGIN)                                                # [] Point- <- Twist+
+    shift = Twist.commutator(origin)                                                # [] Point- <- Twist+
     readout = shift.adjugate()                                                      # [] Line- <- Line+
     return readout & covariance(readout)                                            # [...] Scalar+ <- (Line+, Line+)

@@ -12,7 +12,7 @@ from examples.geometry.fitting.core import (
 )
 from examples.geometry.fitting.render import euclidean
 
-POSE = scenarios.POSE
+pose = scenarios.pose
 
 
 def same_element(a, b, atol: float) -> bool:
@@ -31,13 +31,13 @@ def test_unit_forms_are_degenerate_on_the_free_coefficients():
 
 
 def test_exact_samples_recover_line_and_plane_exactly():
-    assert same_element(fit(Line, POSE >> segment(50, 2.0)), POSE >> mv.xz, atol=1e-10)
-    assert same_element(fit(Plane, POSE >> patch(50, 2.0, np.random.default_rng(1))), POSE >> mv.z, atol=1e-10)
+    assert same_element(fit(Line, pose >> segment(50, 2.0)), pose >> mv.xz, atol=1e-10)
+    assert same_element(fit(Plane, pose >> patch(50, 2.0, np.random.default_rng(1))), pose >> mv.z, atol=1e-10)
 
 
 def test_point_fit_is_the_centroid():
     rng = np.random.default_rng(2)
-    points = jitter(POSE >> cloud(300, 0.5, rng), 0.05, rng)
+    points = jitter(pose >> cloud(300, 0.5, rng), 0.05, rng)
     centroid = fit(Point, points)
     np.testing.assert_allclose(euclidean(centroid), euclidean(points).mean(axis=0), atol=1e-10)
     assert same_element(centroid, points.sum(), atol=1e-10)
@@ -45,14 +45,14 @@ def test_point_fit_is_the_centroid():
 
 def test_line_fit_matches_principal_axis_and_is_a_line():
     rng = np.random.default_rng(3)
-    points = jitter(POSE >> segment(200, 2.0), 0.05, rng)
+    points = jitter(pose >> segment(200, 2.0), 0.05, rng)
     line = fit(Line, points)
     scale = float(np.abs(line.kernel).max()) ** 2
     np.testing.assert_allclose((line ^ line).kernel / scale, 0.0, atol=1e-13)
 
     xyz = euclidean(points)
     _, _, vt = np.linalg.svd(xyz - xyz.mean(axis=0))
-    ends = euclidean(line ^ (POSE >> end_planes(2.0)))
+    ends = euclidean(line ^ (pose >> end_planes(2.0)))
     d = ends[1] - ends[0]
     d = d / np.linalg.norm(d)
     assert np.isclose(abs(d @ vt[0]), 1.0, atol=1e-6)
@@ -60,7 +60,7 @@ def test_line_fit_matches_principal_axis_and_is_a_line():
 
 def test_plane_fit_matches_svd_normal_through_centroid():
     rng = np.random.default_rng(4)
-    points = jitter(POSE >> patch(300, 2.0, rng), 0.05, rng)
+    points = jitter(pose >> patch(300, 2.0, rng), 0.05, rng)
     plane = fit(Plane, points)
     xyz = euclidean(points)
     _, _, vt = np.linalg.svd(xyz - xyz.mean(axis=0))
@@ -72,10 +72,10 @@ def test_plane_fit_matches_svd_normal_through_centroid():
 
 def test_point_fitted_to_a_bundle_is_the_point_of_closest_approach():
     rng = np.random.default_rng(5)
-    exact = POSE >> bundle(20, 0.0, rng)
-    assert same_element(fit(Point, exact), POSE >> mv.w.dual(), atol=1e-10)
+    exact = pose >> bundle(20, 0.0, rng)
+    assert same_element(fit(Point, exact), pose >> mv.w.dual(), atol=1e-10)
 
-    rays = POSE >> bundle(40, 0.05, rng)
+    rays = pose >> bundle(40, 0.05, rng)
     meet = fit(Point, rays)
     # Compare with the classical closed form: the least-squares intersection of lines.
     directions = (stack((mv.x, mv.y, mv.z)) & (rays ^ mv.w)[..., None]).to_array()

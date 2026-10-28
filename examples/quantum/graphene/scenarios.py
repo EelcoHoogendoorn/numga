@@ -36,7 +36,7 @@ def bands(extent: float, n_samples: int, gap: float) -> tuple[core.Wavevector, c
     kx, ky = np.meshgrid(along, along)
     momenta = mv.x * kx + mv.y * ky                                             # [samples, samples] Wavevector+
     field = core.pseudospin_field(momenta, gap)                                 # [samples, samples] Field+
-    energies, _ = core.HAMILTONIAN(field).eigh()                                # [samples, samples, modes] Scalar+
+    energies, _ = core.hamiltonian(field).eigh()                                # [samples, samples, modes] Scalar+
     return momenta, field, energies
 
 
@@ -45,18 +45,18 @@ def textures(extent: float, n_samples: int, gap: float) -> tuple[core.Wavevector
     along = np.linspace(-extent, extent, n_samples)
     kx, ky = np.meshgrid(along, along)
     offsets = mv.x * kx + mv.y * ky                                             # [samples, samples] Wavevector+
-    field = core.pseudospin_field(core.VALLEYS[:, None, None] + offsets, gap)   # [valleys, samples, samples] Field+
-    _, states = core.HAMILTONIAN(field).eigh()                                  # [valleys, samples, samples, modes] Spinor+
+    field = core.pseudospin_field(core.valleys[:, None, None] + offsets, gap)   # [valleys, samples, samples] Field+
+    _, states = core.hamiltonian(field).eigh()                                  # [valleys, samples, samples, modes] Spinor+
     upper = states[..., -1]                                                     # [valleys, samples, samples] Spinor+
     # The pseudospin of a state: its sandwich of the first sublattice's pseudospin, over its norm.
-    pseudospins = (upper >> core.FIRST_SUBLATTICE) / upper.symmetric_reverse_product()   # [valleys, samples, samples] Pseudospin-
+    pseudospins = (upper >> core.first_sublattice) / upper.symmetric_reverse_product()   # [valleys, samples, samples] Pseudospin-
     return offsets, pseudospins
 
 
 def berry(radii: np.ndarray, gaps: np.ndarray, n_steps: int) -> tuple[core.Rotor, core.Pseudospin]:
     """The holonomy of loops of the given radii about each valley, for each gap, with the
     pseudospin direction each loop starts from."""
-    loops = core.VALLEYS[:, None] + core.circle(n_steps)[:, None, None] * radii   # [steps + 1, valleys, radii] Wavevector+
+    loops = core.valleys[:, None] + core.circle(n_steps)[:, None, None] * radii   # [steps + 1, valleys, radii] Wavevector+
     field = core.pseudospin_field(loops[:, None], gaps[:, None, None])  # [steps + 1, gaps, valleys, radii] Field+
     # The upper band's pseudospin, along the field.
     directions = field.normalized().dual()                              # [steps + 1, gaps, valleys, radii] Pseudospin-
@@ -81,9 +81,9 @@ def main() -> None:
     # vanishes at the valleys, where the cones meet.
     length = field.norm().to_array()[..., None]
     np.testing.assert_allclose(energies.to_array(), np.concatenate([-length, -length, length, length], -1), atol=1e-9)
-    np.testing.assert_allclose(core.pseudospin_field(core.VALLEYS, 0.0).kernel, 0.0, atol=1e-6)
+    np.testing.assert_allclose(core.pseudospin_field(core.valleys, 0.0).kernel, 0.0, atol=1e-6)
     # The upper band's pseudospin points along the field.
-    valley_field = core.pseudospin_field(core.VALLEYS[:, None, None] + offsets, TEXTURE_GAP)   # [valleys, samples, samples] Field+
+    valley_field = core.pseudospin_field(core.valleys[:, None, None] + offsets, TEXTURE_GAP)   # [valleys, samples, samples] Field+
     np.testing.assert_allclose(directions.kernel, valley_field.normalized().dual().kernel, atol=1e-10)
     # Without a gap every loop comes back turned by a full turn: the rotor is -1, a Berry phase of pi.
     # With one, a small loop's phase is that of a cone, pi times one less the gap over the field's length

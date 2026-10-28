@@ -17,7 +17,7 @@ from examples.quantum.magnetic_resonance import core
 mv = core.mv
 T1, T2 = 10.0, 4.0
 # All spins along the field, turning in the magnet's plane.
-EQUILIBRIUM = core.state(core.MAGNET_PLANE.dual())  # [] State-
+equilibrium = core.state(core.magnet_plane.dual())  # [] State-
 # Nutation: the detunings, the drive, the duration and time step, and the steps between states kept.
 NUTATION_DETUNINGS = np.array([0.0, 0.5, 1.0])
 NUTATION_DRIVE, NUTATION_SECONDS, NUTATION_DT, NUTATION_EVERY = 1.0, 40.0, 0.02, 5
@@ -38,7 +38,7 @@ def nutation(detunings: np.ndarray, drive: float, seconds: float, dt: float, eve
     """Spins switched on to a steady drive at the given detunings, from equilibrium: their states
     every few steps, the steady states they settle into, and the last state reached."""
     driven_rates = core.generator(detunings, drive, T1, T2)                              # [detunings] State- <- State-
-    start = EQUILIBRIUM.broadcast_to(detunings.shape)                                    # [detunings] State-
+    start = equilibrium.broadcast_to(detunings.shape)                                    # [detunings] State-
     states = list(core.evolve(core.evolution(driven_rates, dt), start, int(seconds / dt) + 1))
     return stack(states[::every]), core.steady(driven_rates), states[-1]                 # [times, detunings] State-, [detunings] State-, [detunings] State-
 
@@ -58,7 +58,7 @@ def echo(n_spins: int, spread: float, delay: float, seconds: float, dt: float, e
     detunings = np.random.default_rng(seed).normal(0.0, spread, n_spins)
     # No drive between the pulses; the spins start along the field.
     free_rates = core.generator(detunings, 0.0, T1, T2)                                  # [spins] State- <- State-
-    start = EQUILIBRIUM.broadcast_to(detunings.shape)                                    # [spins] State-
+    start = equilibrium.broadcast_to(detunings.shape)                                    # [spins] State-
     n_delay_steps = round(delay / dt)
     states = core.echo(core.evolution(free_rates, dt), start, n_delay_steps, int(seconds / dt) - n_delay_steps)
     return detunings, stack(list(states)[::every])                                       # [spins], [times, spins] State-
@@ -77,7 +77,7 @@ def echo_decay(n_spins: int, spread: float, dt: float, n_doublings: int, seed: i
     echo_map = waiting(turn(waiting(tip))).mean(axis=-1)                                 # [delays] State- <- State-
     decay_map = waiting(waiting(tip)).mean(axis=-1)                                      # [delays] State- <- State-
     times = 2 * dt * 2.0 ** np.arange(n_doublings)
-    return times, echo_map(EQUILIBRIUM), decay_map(EQUILIBRIUM)                          # [delays], [delays] State-, [delays] State-
+    return times, echo_map(equilibrium), decay_map(equilibrium)                          # [delays], [delays] State-, [delays] State-
 
 
 # --- plumbing -------------------------------------------------------------------------

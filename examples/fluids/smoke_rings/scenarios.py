@@ -43,7 +43,7 @@ N_DISCRETE_STEPS = 100
 FROG_RADIUS = 5.0
 N_FROG = 48
 FROG_HEIGHTS = np.array([0.0, 2.5])
-FROG_CIRCULATIONS = mv(core.Circulation, [[10.0], [10.0]])
+frog_circulations = mv(core.Circulation, [[10.0], [10.0]])
 FROG_CORE = 0.4
 FROG_STEP = 0.4
 N_FROG_STEPS = 50
@@ -58,13 +58,13 @@ CARRY_PARAMETER = 1.0
 N_SOLITON_STEPS = 90
 SOLITON_STRIDE = 2
 # The smoke ring flow's own circulation, one in its rescaled time.
-CIRCULATION = mv(core.Circulation, [1.0])
+circulation = mv(core.Circulation, [1.0])
 
 
 # --- math -----------------------------------------------------------------------------
 def flying(points: core.Point) -> core.Point:
     """The smoke ring flow's velocity at every vertex."""
-    return core.velocity(points, CIRCULATION)
+    return core.velocity(points, circulation)
 
 
 def line_speeds(curves: core.Point) -> core.Scalar:
@@ -76,7 +76,7 @@ def line_speeds(curves: core.Point) -> core.Scalar:
 
 def pushed(points: core.Point) -> core.Point:
     """The velocity the leapfrogging rings induce at every vertex of both `[rings, n]`."""
-    return core.induced(points, FROG_CIRCULATIONS, FROG_CORE)
+    return core.induced(points, frog_circulations, FROG_CORE)
 
 
 def sweep(points: core.Point, step: float, n_steps: int, stride: int) -> core.Point:
@@ -204,9 +204,9 @@ def main() -> None:
     # A ring alone flies along its axis without changing shape, and the leapfrogging rings keep their
     # impulse, each ring's vector area times its circulation; the tolerance tests the steps along the
     # filaments and in time.
-    alone = core.induced(frogs[0, :1], FROG_CIRCULATIONS[:1], FROG_CORE)         # [1, n] Point-
+    alone = core.induced(frogs[0, :1], frog_circulations[:1], FROG_CORE)         # [1, n] Point-
     np.testing.assert_allclose((alone - alone[:, :1]).norm().to_array(), 0.0, atol=1e-12)
-    impulse = (core.impulse(frogs) * FROG_CIRCULATIONS).sum(axis=-1).kernel      # [times, 3]
+    impulse = (core.impulse(frogs) * frog_circulations).sum(axis=-1).kernel      # [times, 3]
     np.testing.assert_allclose(impulse, np.broadcast_to(impulse[0], impulse.shape), atol=3e-3 * np.abs(impulse[0]).max())
     # The rings take turns, each passing through the other twice in each cycle, the narrower one passing.
     heights, radii, crossings = passes(frogs)

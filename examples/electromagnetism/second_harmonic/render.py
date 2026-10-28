@@ -41,14 +41,14 @@ BEAM, BEAM_REACH = np.array([1.0, 1.0, 0.0]) / np.sqrt(2), 1.25
 def transverse(fields: core.Field) -> np.ndarray:
     """Horizontal and vertical components of fields across the beam, for the observer's screen: their
     pairings with the polarizations along those directions."""
-    polarizations = stack((core.HORIZONTAL_POLARIZATION, core.VERTICAL_POLARIZATION))
+    polarizations = stack((core.horizontal_polarization, core.vertical_polarization))
     return (fields[..., None] & polarizations).to_array()                     # [..., 2]
 
 
 def transverse_polarization(polarizations: core.Polarization) -> np.ndarray:
     """Horizontal and vertical components of polarizations across the beam: the pairings of the
     horizontal and vertical fields with them."""
-    fields = stack((core.HORIZONTAL_FIELD, core.VERTICAL_FIELD))
+    fields = stack((core.horizontal_field, core.vertical_field))
     return (fields & polarizations[..., None]).to_array()                     # [..., 2]
 
 

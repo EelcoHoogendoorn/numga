@@ -33,7 +33,7 @@ N_MORPH_FRAMES = 60
 MORPH_ATTACK = np.deg2rad(8.0)
 DURATION_MS = 60
 # The stream, along the wing's chord when level.
-STREAM = SPEED * core.mv.x.dual()                                            # [] Point-
+stream = SPEED * core.mv.x.dual()                                            # [] Point-
 
 
 # --- math -----------------------------------------------------------------------------
@@ -61,8 +61,8 @@ def morph() -> Iterator[tuple[core.Point, core.Point, core.Bivector, core.Force,
     for fraction in spread:
         critical = fraction * trailing_edge(pitched)                         # [] Point-
         images = 2 * stack([critical, -critical])                            # [2] Point-
-        points, velocity, _, flux = core.flow(pitched, STREAM, plane, critical)
-        yield points, velocity, flux, core.lift(pitched, STREAM, DENSITY), images, pitched.centre
+        points, velocity, _, flux = core.flow(pitched, stream, plane, critical)
+        yield points, velocity, flux, core.lift(pitched, stream, DENSITY), images, pitched.centre
 
 
 # README picture: this makes plots/wing.gif, tuned as a visual for the README. Don't change it; to
@@ -73,8 +73,8 @@ def sweep() -> Iterator[tuple[core.Point, core.Point, core.Bivector, core.Force]
     for attack in LOWEST_ATTACK + (HIGHEST_ATTACK - LOWEST_ATTACK) * phase:
         pitched = wing(attack)
         plane = core.rings(pitched, N_DRAWN_RINGS, N_DRAWN_ANGLES, OUTER_DISTANCE)   # [rings, angles] Point-
-        points, velocity, _, flux = core.flow(pitched, STREAM, plane, trailing_edge(pitched))
-        yield points, velocity, flux, core.lift(pitched, STREAM, DENSITY)
+        points, velocity, _, flux = core.flow(pitched, stream, plane, trailing_edge(pitched))
+        yield points, velocity, flux, core.lift(pitched, stream, DENSITY)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -90,9 +90,9 @@ def main() -> None:
     # checks
     pitched = wing(HIGHEST_ATTACK)
     plane = core.rings(pitched, N_RINGS, N_ANGLES, OUTER_DISTANCE)           # [rings, angles] Point-
-    points, velocity, _, _ = core.flow(pitched, STREAM, plane, trailing_edge(pitched))
+    points, velocity, _, _ = core.flow(pitched, stream, plane, trailing_edge(pitched))
     # The velocity's derivative vanishes everywhere past the cylinder.
-    _, gradient, _ = core.cylinder(pitched, STREAM, plane)
+    _, gradient, _ = core.cylinder(pitched, stream, plane)
     np.testing.assert_allclose(core.derivative(gradient).kernel, 0.0, atol=1e-12)
     # Around every ring about the wing the velocity times each step adds up to the circulation, with
     # no flux: the derivative between any two rings vanishes too.
@@ -101,17 +101,17 @@ def main() -> None:
     np.testing.assert_allclose(loops.kernel - loops.kernel[:1], 0.0, atol=1e-11)
     # Each ring's own oriented area sets the sense its sum is read in.
     areas = (points ^ points[:, next_idx]).sum(axis=-1)                      # [rings] Bivector+
-    np.testing.assert_allclose((loops * (areas / areas.norm()) - core.circulation(pitched, STREAM)).kernel, 0.0, atol=1e-3)
+    np.testing.assert_allclose((loops * (areas / areas.norm()) - core.circulation(pitched, stream)).kernel, 0.0, atol=1e-3)
     # The pressure on the surface, low where the flow is fast, pushes on every step: on a displacement of
     # the wing it does the pressure times the area the step sweeps, `steps & Point`, in the sense the surface
     # winds. Summed around the wing it is the Kutta–Joukowski lift, across the stream, with no drag.
-    surface, surface_velocity, _, _ = core.flow(pitched, STREAM, core.rings(pitched, 1, N_ANGLES, 1.0)[0], trailing_edge(pitched))
+    surface, surface_velocity, _, _ = core.flow(pitched, stream, core.rings(pitched, 1, N_ANGLES, 1.0)[0], trailing_edge(pitched))
     steps = surface[next_idx] - surface                                      # [angles] Point-
     speed_squared = surface_velocity.dot(surface_velocity)                   # [angles] Scalar+
     pressure = -0.5 * DENSITY * (speed_squared + speed_squared[next_idx]) / 2   # [angles] Scalar+
     winding = (surface & surface[next_idx]).sum(axis=-1)                     # [] Scalar-
     force = (pressure * (steps & core.Point)).sum(axis=-1) * (winding / winding.norm())   # [] Scalar+ <- Point-
-    np.testing.assert_allclose((force - (core.lift(pitched, STREAM, DENSITY) & core.Point)).kernel, 0.0, atol=1e-3)
+    np.testing.assert_allclose((force - (core.lift(pitched, stream, DENSITY) & core.Point)).kernel, 0.0, atol=1e-3)
 
 
 if __name__ == "__main__":

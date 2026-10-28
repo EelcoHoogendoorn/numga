@@ -77,7 +77,7 @@ time = -mv.t.dual()
 # Allow for the library's approximate bivector exp().
 GEOMETRY_ATOL = 1e-9
 # The rod's two ends, in units of its proper length.
-ENDS: Scalar = mv.scalar([[0.0], [1.0]])  # [end] Scalar
+ends: Scalar = mv.scalar([[0.0], [1.0]])  # [end] Scalar
 
 
 def boost(rapidity: np.ndarray) -> PointMap:
@@ -98,7 +98,7 @@ def strain_preserving_kinks(before: Point, after: Point) -> Point:
     at the origin. This construction is specific to the plane of `mv.t` and `mv.x`.
     """
     separation: Point = ((before + after) * mv.tx) / (1 + (-before.dual_inverse() & after))
-    return ENDS * separation
+    return ends * separation
 
 
 def velocity_step(before_rapidity: float, after_rapidity: float) -> tuple[Point, Point]:

@@ -12,7 +12,7 @@ from examples.geometry.fitting.core import (
 # The pose every scene is placed by: a shift, after turns in the yz and xy planes.
 SHIFT = np.array([0.4, -0.3, 0.6])
 TILT, SPIN = 0.3, 0.5
-POSE = ((stack((mv.xw, mv.yw, mv.zw)) * SHIFT).sum(axis=0)).exp() * (mv.yz * TILT).exp() * (mv.xy * SPIN).exp()
+pose = ((stack((mv.xw, mv.yw, mv.zw)) * SHIFT).sum(axis=0)).exp() * (mv.yz * TILT).exp() * (mv.xy * SPIN).exp()
 # The seed of every scene's samples, and the size of the noise that moves each sample point.
 SEED = 0
 NOISE = 0.05
@@ -30,34 +30,34 @@ N_RAYS, RAY_SPREAD, RAY_HALF_LENGTH = 30, 0.05, 2.0
 def point_to_points():
     """A point fitted to a noisy cloud recovers its centroid."""
     rng = np.random.default_rng(SEED)
-    points = jitter(POSE >> cloud(N_CLOUD, CLOUD_SPREAD, rng), NOISE, rng)     # [samples] Point-
+    points = jitter(pose >> cloud(N_CLOUD, CLOUD_SPREAD, rng), NOISE, rng)     # [samples] Point-
     centroid = fit(Point, points)                                               # [] Point-
-    return points, POSE >> mv.w.dual(), centroid
+    return points, pose >> mv.w.dual(), centroid
 
 
 def line_to_points():
     """A line fitted to a noisy segment recovers its principal axis, clipped with the true line by two end planes."""
     rng = np.random.default_rng(SEED)
-    points = jitter(POSE >> segment(N_SEGMENT, HALF_LENGTH), NOISE, rng)        # [samples] Point-
+    points = jitter(pose >> segment(N_SEGMENT, HALF_LENGTH), NOISE, rng)        # [samples] Point-
     line = fit(Line, points)                                                    # [] Line-
-    truth = POSE >> (mv.w.dual() & mv.direction([0, 1, 0]))                     # [] Line-
-    ends = POSE >> end_planes(DRAWN_HALF_LENGTH)                                # [2] Plane+
+    truth = pose >> (mv.w.dual() & mv.direction([0, 1, 0]))                     # [] Line-
+    ends = pose >> end_planes(DRAWN_HALF_LENGTH)                                # [2] Plane+
     return points, truth ^ ends, line ^ ends
 
 
 def plane_to_points():
     """A plane fitted to a noisy patch recovers the patch plane, cut with the true plane into a quad by four edge lines."""
     rng = np.random.default_rng(SEED)
-    points = jitter(POSE >> patch(N_PATCH, HALF_WIDTH, rng), NOISE, rng)        # [samples] Point-
+    points = jitter(pose >> patch(N_PATCH, HALF_WIDTH, rng), NOISE, rng)        # [samples] Point-
     plane = fit(Plane, points)                                                  # [] Plane+
-    edges = POSE >> patch_edges(HALF_WIDTH)                                     # [4] Line-
-    return points, (POSE >> mv.z) ^ edges, plane ^ edges
+    edges = pose >> patch_edges(HALF_WIDTH)                                     # [4] Line-
+    return points, (pose >> mv.z) ^ edges, plane ^ edges
 
 
 def point_to_lines():
     """A point fitted to a bundle of lines triangulates their point of closest approach."""
     rng = np.random.default_rng(SEED)
-    rays = POSE >> bundle(N_RAYS, RAY_SPREAD, rng)                              # [rays] Line-
+    rays = pose >> bundle(N_RAYS, RAY_SPREAD, rng)                              # [rays] Line-
     intersection = fit(Point, rays).normalized()                                # [] Point-
 
     # Each line's point at infinity is its direction. An ideal point has no weight to
@@ -65,7 +65,7 @@ def point_to_lines():
     directions = rays ^ mv.w                                                    # [rays] Point-
     unit_directions = directions / directions.dual().norm()
     ends = intersection + unit_directions * np.array([[-RAY_HALF_LENGTH], [RAY_HALF_LENGTH]])   # [2, rays] Point-
-    return ends, POSE >> mv.w.dual(), intersection
+    return ends, pose >> mv.w.dual(), intersection
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -86,9 +86,9 @@ def main() -> None:
     _, truth, centroid = cloud_fit
     assert (centroid.normalized() & truth.normalized()).norm() < 0.1
     _, _, fit_ends = line_fit
-    assert (fit_ends.normalized() & (POSE >> (mv.w.dual() & mv.direction([0, 1, 0]))).normalized()).norm().to_array().max() < 0.05
+    assert (fit_ends.normalized() & (pose >> (mv.w.dual() & mv.direction([0, 1, 0]))).normalized()).norm().to_array().max() < 0.05
     _, _, fit_quad = plane_fit
-    assert (fit_quad.normalized() & (POSE >> mv.z).normalized()).norm().to_array().max() < 0.05
+    assert (fit_quad.normalized() & (pose >> mv.z).normalized()).norm().to_array().max() < 0.05
     _, truth, intersection = bundle_fit
     assert (intersection.normalized() & truth.normalized()).norm() < 0.05
 

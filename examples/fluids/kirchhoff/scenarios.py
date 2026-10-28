@@ -53,7 +53,7 @@ def launch() -> tuple[core.Inertia, core.Forque, core.Motor]:
     body's centre, and the body's placement at the start, its long axis turned from the blow."""
     stretch = core.stretch(SEMI_AXES)                                         # [] Direction- <- Direction-
     inertia = core.inertia(stretch(stretch), DENSITY, FLUID_DENSITIES, N_WIDENINGS)   # [cases] Forque- <- Twist+
-    impulse = BLOW * (core.CENTRE & long_axis)                                # [] Forque-
+    impulse = BLOW * (core.centre & long_axis)                                # [] Forque-
     starts = (mv.xy * (-HEADINGS / 2)).exp()                                  # [cases] Motor+
     return inertia, impulse, starts
 
@@ -69,17 +69,17 @@ def outline() -> core.Point:
     circle turned out by rotors, stretched onto the body."""
     angles = np.linspace(0, 2 * np.pi, N_OUTLINE + 1)
     circle = (mv.xy * (-angles / 2)).exp() >> long_axis                       # [outline + 1] Direction-
-    return core.CENTRE + core.stretch(SEMI_AXES)(circle)                      # [outline + 1] Point-
+    return core.centre + core.stretch(SEMI_AXES)(circle)                      # [outline + 1] Point-
 
 
 def frames(motors: core.Motor) -> Iterator[tuple[core.Point, core.Point, core.Point]]:
     """Per frame, every case's outline `[cases, outline + 1]`, centre `[cases]` and nose, the tip of
     its long axis `[cases]`."""
     shape = outline()                                                         # [outline + 1] Point-
-    nose = core.CENTRE + core.stretch(SEMI_AXES)(long_axis)                   # [] Point-
+    nose = core.centre + core.stretch(SEMI_AXES)(long_axis)                   # [] Point-
     for index in range(0, motors.shape[0], N_STEPS_PER_FRAME):
         placed = motors[index]                                                # [cases] Motor+
-        yield placed[:, None] >> shape, placed >> core.CENTRE, placed >> nose
+        yield placed[:, None] >> shape, placed >> core.centre, placed >> nose
 
 
 # --- plumbing -------------------------------------------------------------------------

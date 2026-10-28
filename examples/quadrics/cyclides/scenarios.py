@@ -18,7 +18,7 @@ from examples.quadrics.cyclides.core import (
 
 # The image's rows and columns, and the linked vortex's, larger.
 SHAPE, LINKED_SHAPE = (180, 240), (315, 420)
-PIXELS = sensor(SHAPE, np.radians(90))
+pixels = sensor(SHAPE, np.radians(90))
 # Frames in each turning animation.
 N_FRAMES = 36
 DURATION_MS = 60
@@ -60,7 +60,7 @@ def tori() -> tuple[Scalar, np.ndarray]:
     # Dilations towards z: their exponentials keep z and its antipode, and seen from z they scale uniformly.
     dilations = (mv.ze * (np.array([1.55, 2.0, 2.4]) / 2)).exp()
     place = placement(mv.z.dual(), 1.1, 0.8) * dilations
-    return trace(place >> cylinder(np.array([0.15, 0.5, 0.9]))(place << Point), PIXELS)
+    return trace(place >> cylinder(np.array([0.15, 0.5, 0.9]))(place << Point), pixels)
 
 
 def vortex(frames: int) -> Iterator[tuple[Scalar, np.ndarray]]:
@@ -74,7 +74,7 @@ def vortex(frames: int) -> Iterator[tuple[Scalar, np.ndarray]]:
     circle = (place * (mv.yw * 0.2).exp()) >> mv.zw
     flow = (circle * (np.linspace(0.0, 2 * np.pi, frames, endpoint=False) / 2)).exp()
     for surface in flow >> torus(flow << Point):
-        yield trace(surface.reshape(1), PIXELS)
+        yield trace(surface.reshape(1), pixels)
 
 
 # --- the flat tracer's scenes -----------------------------------------------------------
@@ -268,7 +268,7 @@ def dupin() -> tuple[Scalar, np.ndarray]:
     dilations = ((mv.e.dual() & aims).dual() * (np.array([1.5, 1.2, 1.8]) / 2)).exp()
     bent = dilations >> cylinder(np.array([0.25, 0.3, 0.2]))(dilations << Point)
     views = placement(aims, np.array([1.2, 1.3, 1.1]), np.array([-0.7, 0.6, 1.0]))
-    return trace(views >> bent(views << Point), PIXELS)
+    return trace(views >> bent(views << Point), pixels)
 
 
 def spindles() -> tuple[Scalar, np.ndarray]:
@@ -295,7 +295,7 @@ def spindles() -> tuple[Scalar, np.ndarray]:
     ]
     views = stack([view(midpoints[i], angles, ahead, yaw, pitch) for i, angles, ahead, yaw, pitch in shots])
     surfaces = stack([bent[i] for i, *_ in shots])
-    facing, angle = trace(views >> surfaces(views << Point), PIXELS)
+    facing, angle = trace(views >> surfaces(views << Point), pixels)
     return facing.abs(), angle
 
 

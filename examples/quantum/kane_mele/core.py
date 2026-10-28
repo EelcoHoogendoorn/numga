@@ -45,7 +45,7 @@ Even = ga.gatype.even()                                                        #
 # The spinors with spin up along z.
 Up = Even.derive.within("x y")                                                 # Even+
 # The spin of the spinor one, spin up: the patch of the plane xy.
-UP_SPIN = mv.xy.dual()                                                         # [] Spin-
+up_spin = mv.xy.dual()                                                         # [] Spin-
 
 
 # --- math -----------------------------------------------------------------------------
@@ -80,13 +80,13 @@ def rim_share(flake: Flake, states: Even) -> Scalar:
 
 def spread(states: Even, energies: Scalar, start: int, spinor: Even, times: np.ndarray) -> Iterator[Spin]:
     """An electron started on one atom with the given spinor, keeping only its part in the given
-    states, at each time: its spin density `psi >> UP_SPIN`, as long as the electron's density and
+    states, at each time: its spin density `psi >> up_spin`, as long as the electron's density and
     pointing along its spin."""
     weights = states.batch()[:, start].reverse().scalar_product(spinor)        # [states] Scalar+
     for time in times:
         # Each state turns on its right at the rate of its energy.
         amplitudes = weights * (mv.xy * (-energies * time)).exp()              # [states] Even+
-        yield (states * amplitudes).sum(axis=0) >> UP_SPIN                     # Spin-[atoms]
+        yield (states * amplitudes).sum(axis=0) >> up_spin                     # Spin-[atoms]
 
 
 # --- plumbing -------------------------------------------------------------------------

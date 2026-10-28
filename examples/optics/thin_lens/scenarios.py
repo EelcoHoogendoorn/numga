@@ -7,7 +7,7 @@ from collections.abc import Iterator
 import numpy as np
 
 from examples.optics.thin_lens.core import (
-    ELEMENTS, Crossing, Line, LineMap, Motor, Plane, Point, mv, origin, thin_lens, trace,
+    elements, Crossing, Line, LineMap, Motor, Plane, Point, mv, origin, thin_lens, trace,
 )
 
 # The two lenses: where each stands along x, and its focal length.
@@ -98,7 +98,7 @@ def train(n_frames: int) -> Iterator[tuple]:
             # The mirror rocks about its pivot.
             (mv.wx * (-STATIONS[3] / 2)).exp() * (mv.xy * ((MIRROR_TILT + ROCK * np.cos(t)) / 2)).exp(),
         )
-        planes, legs, composed = trace(fan, motors, ELEMENTS)
+        planes, legs, composed = trace(fan, motors, elements)
         back = composed(fan)                                                    # Line
         yield subject, planes, legs, composed, back[0] ^ back[-1]
 

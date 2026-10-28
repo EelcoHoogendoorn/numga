@@ -24,7 +24,7 @@ Line = ga.gatype.antibivector()                     # Antibivector-
 Motor = ga.gatype.rotor()                           # Rotor+
 Twist = ga.gatype.bivector()                        # Bivector+
 # Camera 2 as a rigid body, by which a step is measured: unit masses a unit from its centre along each axis.
-BODY = mv.point(np.concatenate([np.eye(3), -np.eye(3)]))                 # [masses] Point-
+body = mv.point(np.concatenate([np.eye(3), -np.eye(3)]))                 # [masses] Point-
 
 
 # --- math ------------------------------------------------------------------
@@ -35,7 +35,7 @@ def refine(rays_1: Line, rays_2: Line, motor: Motor) -> Motor:
     baseline; the baseline's length is not observable and stays close to the given one.
     """
     # Camera 2's kinetic energy on twists in its own frame, to measure the step by.
-    kinetic = Twist & (BODY & BODY.commutator(Twist)).sum(axis=0)        # [] Scalar+ <- (Twist+, Twist+)
+    kinetic = Twist & (body & body.commutator(Twist)).sum(axis=0)        # [] Scalar+ <- (Twist+, Twist+)
     # Two lines meet (are coplanar) iff their regressive product vanishes. For two lines
     # it is a number, one residual per ray pair.
     residuals = rays_1 & (motor >> rays_2)                               # [rays] Scalar-

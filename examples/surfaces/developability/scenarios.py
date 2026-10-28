@@ -14,7 +14,7 @@ mv = core.mv
 # up in the file, turned onto z.
 BUNNY = MODEL_DIR / "bunny.obj"
 SIZE = 2.0
-UPRIGHT = (mv.yz * (-np.pi / 4)).exp()
+upright = (mv.yz * (-np.pi / 4)).exp()
 # The flow's step, as a share of what each vertex's faces can take, its number of steps, the steps between
 # kept states, and the duration of a frame.
 STEP = 0.3
@@ -34,7 +34,7 @@ def flowed() -> tuple[core.Mesh, list[tuple[core.Point, core.Scalar]]]:
 def bunny() -> tuple[core.Mesh, core.Point]:
     """The bunny's mesh, and its vertices upright, centred in a box of the given size."""
     mesh, vertices = core.Mesh.read(BUNNY, SIZE)
-    return mesh, UPRIGHT >> vertices
+    return mesh, upright >> vertices
 
 
 def main() -> None:

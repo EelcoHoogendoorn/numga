@@ -48,4 +48,4 @@ def test_scenes_draw():
     plt.close(figure)
     heights = y.dual() * scenarios.HEIGHTS
     first = islice(scenarios.frames(rotors), 2)
-    assert len(list(render.animate_tumbling(core.stretch(scenarios.SEMI_AXES), heights, scenarios.FLOW(heights), first, scenarios.GALLERY_PIXELS))) == 2
+    assert len(list(render.animate_tumbling(core.stretch(scenarios.SEMI_AXES), heights, scenarios.flow(heights), first, scenarios.GALLERY_PIXELS))) == 2

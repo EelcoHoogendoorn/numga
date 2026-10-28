@@ -29,7 +29,7 @@ CASES = np.array([0.0, 0.8])
 # The states inside the gap without a mass, each energy four times, and the electron's spinor, spin
 # along x, half up and half down.
 N_IN_GAP = 32
-SPINOR = (1 - mv.zx) * 0.5**0.5
+spinor = (1 - mv.zx) * 0.5**0.5
 # The time for the edge states to run once around the flake, and the frames over it.
 LAP = 50.0
 N_FRAMES = 50
@@ -59,7 +59,7 @@ def helical(flake: core.Flake) -> tuple[core.Scalar, core.Even, core.Spin]:
     edge facing x, spin along x, keeping its part in those states: its spin density at each frame over one lap."""
     energies, states = core.levels(core.hamiltonian(flake, SPIN_ORBIT, 0.0), core.Even, N_IN_GAP)   # [states] Scalar+, [states] Even+[atoms]
     times = np.linspace(0.0, LAP, N_FRAMES + 1)
-    spins = stack(list(core.spread(states, energies, flake.start, SPINOR, times)))   # [frames + 1] Spin-[atoms]
+    spins = stack(list(core.spread(states, energies, flake.start, spinor, times)))   # [frames + 1] Spin-[atoms]
     return energies, states, spins
 
 
