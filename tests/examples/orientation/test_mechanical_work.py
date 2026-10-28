@@ -8,7 +8,7 @@ from examples.orientation.mechanical_work import core, render, scenarios
 from examples.orientation.mechanical_work.core import mv
 
 
-def test_reflected_work_agrees_with_rebuilding_the_load():
+def test_reflected_work_agrees_with_rebuilding_the_forque():
     handle = mv.point([1, 0])
     force = mv.direction([0, 2])
     rate = mv.xy
@@ -21,9 +21,9 @@ def test_reflected_work_agrees_with_rebuilding_the_load():
         times,
     )
 
-    # Reflecting each ingredient gives the reflection of the constructed load.
-    loads = handles & forces
-    np.testing.assert_allclose(loads[:, 1].kernel, (mirror >> loads[:, 0]).kernel, atol=1e-12)
+    # Reflecting each ingredient gives the reflection of the constructed forque.
+    forques = handles & forces
+    np.testing.assert_allclose(forques[:, 1].kernel, (mirror >> forques[:, 0]).kernel, atol=1e-12)
     np.testing.assert_allclose(velocities[:, 1].kernel, (mirror >> velocities[:, 0]).kernel, atol=1e-12)
     np.testing.assert_allclose(powers.kernel, 2, atol=1e-12)
     np.testing.assert_allclose((mirror >> powers[:, 0]).kernel, powers[:, 1].kernel, atol=1e-12)
