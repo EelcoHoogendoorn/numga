@@ -1,4 +1,4 @@
-"""The lens camera stills, with their checks, and a short zoom animation."""
+"""The lens camera's stills and a short zoom animation draw."""
 
 from __future__ import annotations
 
