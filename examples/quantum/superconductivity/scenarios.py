@@ -27,7 +27,7 @@ def quench(ratio: float) -> tuple[core.Condensate, core.Spin, core.Spin, np.ndar
     dispersion = core.energy_levels(N_LEVELS, CUTOFF)
     # The coherence, read by pairing with the planes yz and zx, gives the gap in those planes; the occupation does
     # not contribute to pairing.
-    coherence = core.mv.yz * (core.mv.yz & core.Spin) + core.mv.zx * (core.mv.zx & core.Spin)   # Field <- Spin
+    coherence = core.mv.yz * (core.mv.yz & core.Spin) + core.mv.zx * (core.mv.zx & core.Spin)   # [] Field+ <- Spin-
     before = core.Condensate(dispersion, COUPLING * coherence)
     after = core.Condensate(dispersion, ratio * before.pairing)
     initial = before.equilibrium(core.mv.yz, N_EQUILIBRIUM_ITERATIONS)

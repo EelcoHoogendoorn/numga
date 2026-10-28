@@ -183,18 +183,18 @@ strains = stiffness.solve(-loads_at_stations(loads, stations))                  
 
 ## 9. Quantum Process Tomography in the Projective Bloch Ball
 
-**Notebook**: [`examples/quantum/process_tomography/process_tomography_projective.ipynb`](../examples/quantum/process_tomography/process_tomography_projective.ipynb)
+**Notebook**: [`examples/quantum/process_tomography/process_tomography.ipynb`](../examples/quantum/process_tomography/process_tomography.ipynb)
 
 ![Noisy quantum channels squashing and turning the ball of states, and the channels recovered from measurements](../plots/tomography.gif)
 
 ```python
-effects = (mv.w + analyzers) / 4                                                                      # [outcomes] Vector
-dephasing = Point + phase_flip * ((mv.xy >> Point) - Point)                                           # [channels] Point <- Point
-device = rotations >> damping(dephasing)                                                              # [channels] Point <- Point
-probabilities = effects & outputs[..., None]                                                          # [channels, preparations, outcomes] Scalar
-meets = effects[other_idx[:, 0]] ^ effects[other_idx[:, 1]] ^ effects[other_idx[:, 2]]                # [outcomes] Antivector
-joins = preparations[other_idx[:, 0]] & preparations[other_idx[:, 1]] & preparations[other_idx[:, 2]]   # [preparations] Vector
-learned_channel = (recovered_outputs * (preparation_dual & Point)).sum(axis=-1)                       # [channels] Point <- Point
+effects = (mv.w + analyzers) / 4                                                                      # [outcomes] Effect+
+dephasing = Point + phase_flip * ((mv.xy >> Point) - Point)                                           # [channels] Point- <- Point-
+device = rotations >> damping(dephasing)                                                              # [channels] Point- <- Point-
+probabilities = effects & outputs[..., None]                                                          # [channels, preparations, outcomes] Scalar+
+meets = effects[other_idx[:, 0]] ^ effects[other_idx[:, 1]] ^ effects[other_idx[:, 2]]                # [outcomes] Antivector+
+joins = preparations[other_idx[:, 0]] & preparations[other_idx[:, 1]] & preparations[other_idx[:, 2]]   # [preparations] Vector-
+learned_channel = (recovered_outputs * (preparation_dual & Point)).sum(axis=-1)                       # [channels] Point- <- Point-
 ```
 
 * A qubit's state is a point of the Bloch ball, a detector outcome a plane, and a probability their pairing, `effect & state`.

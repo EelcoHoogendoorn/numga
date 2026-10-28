@@ -3,7 +3,6 @@
 import numpy as np
 import pytest
 
-from numga import stack
 from examples.quantum.superconductivity import core, scenarios
 
 ROUND_OFF = 1e-11

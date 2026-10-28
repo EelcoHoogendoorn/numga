@@ -34,10 +34,11 @@ DURATION_MS = 50
 def vacuum_oscillations(theta_degrees: float, omega: float, n_steps: int) -> tuple[Iterator[Isospin], Bivector, np.ndarray]:
     """Coherent oscillation in vacuum over two wavelengths: the isospin at each step, the plane it turns
     in, and the distances."""
-    plane = core.vacuum_hamiltonian(omega, np.radians(theta_degrees))           # [] Bivector
+    plane = core.vacuum_hamiltonian(omega, np.radians(theta_degrees))           # [] Bivector+
     wavelength = 4.0 * np.pi / omega
     distances, dx = np.linspace(0.0, 2.0 * wavelength, n_steps, retstep=True)
-    transfer = core.evolution(core.coherent_generator(plane), dx)               # [] State <- State
+    rates = core.coherent_generator(plane)                                      # [] State- <- State-
+    transfer = core.evolution(rates, dx)                                        # [] State- <- State-
     return core.evolve_channel(core.state(core.flavor_e), transfer, n_steps), plane, distances
 
 
@@ -46,12 +47,17 @@ def wavepacket_decoherence(theta_degrees: float, omega: float, gamma: float, dis
     """The oscillation fading as the mass states' wavepackets drift apart: the isospin at each step, the
     plane it turns in, the distances, and the electron flavor's probability it settles at."""
     theta = np.radians(theta_degrees)
-    plane = core.vacuum_hamiltonian(omega, theta)                                # [] Bivector
-    mass_plane = core.mixing_rotor(theta) >> core.phase_plane                    # [] Bivector
+    plane = core.vacuum_hamiltonian(omega, theta)                                # [] Bivector+
+    # The mass states' plane, the phase plane turned by the mixing.
+    mixing = (core.mixing_plane * (-theta)).exp()                                # [] Rotor+
+    mass_plane = mixing >> core.phase_plane                                      # [] Bivector+
     distances, dx = np.linspace(0.0, distance, n_steps, retstep=True)
-    rates = core.coherent_generator(plane) + core.dephasing_generator(mass_plane, gamma)   # [] State <- State
+    turning = core.coherent_generator(plane)                                     # [] State- <- State-
+    dephasing = gamma * core.relaxation(mass_plane)                              # [] State- <- State-
+    transfer = core.evolution(turning + dephasing, dx)                           # [] State- <- State-
+    # The mixture it settles at: the electron flavor's average over the oscillation.
     settled = float(1.0 - 0.5 * np.sin(2.0 * theta) ** 2)
-    return core.evolve_channel(core.state(core.flavor_e), core.evolution(rates, dx), n_steps), plane, distances, settled
+    return core.evolve_channel(core.state(core.flavor_e), transfer, n_steps), plane, distances, settled
 
 
 def solar_adiabatic(theta_degrees: float, omega: float, distance: float, n_steps: int
@@ -59,11 +65,15 @@ def solar_adiabatic(theta_degrees: float, omega: float, distance: float, n_steps
     """An electron neutrino leaving the Sun through a density that falls off slowly: the isospin and the
     plane at each step, the distances, and the matter potential along the way."""
     theta = np.radians(theta_degrees)
-    vacuum = core.vacuum_hamiltonian(omega, theta)                               # [] Bivector
+    vacuum = core.vacuum_hamiltonian(omega, theta)                               # [] Bivector+
+    # The resonance: the potential at which the matter's plane stands halfway between the phase plane and the vacuum's.
+    resonance = omega * np.cos(2.0 * theta)
     distances, dx = np.linspace(0.0, distance, n_steps, retstep=True)
-    potentials = CORE_OVER_RESONANCE * core.resonance_potential(omega, theta) * np.exp(-distances / DENSITY_SCALE)   # [steps]
-    planes = core.matter_hamiltonian(vacuum, potentials)                         # [steps] Bivector
-    return core.adiabatic_channel(core.state(core.flavor_e), core.coherent_generator(planes), planes, dx), distances, potentials
+    potentials = CORE_OVER_RESONANCE * resonance * np.exp(-distances / DENSITY_SCALE)   # [steps]
+    # The electrons' potential shifts the vacuum's plane along the phase plane.
+    planes = vacuum + potentials * core.phase_plane                              # [steps] Bivector+
+    rates = core.coherent_generator(planes)                                      # [steps] State- <- State-
+    return core.adiabatic_channel(core.state(core.flavor_e), rates, planes, dx), distances, potentials
 
 
 # --- plumbing -------------------------------------------------------------------------

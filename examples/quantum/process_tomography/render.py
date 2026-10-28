@@ -1,17 +1,17 @@
-"""Probe probabilities, reconstructed channels and predictions drawn from quantum states, given either as states
-of the Pauli algebra or as points of the projective Bloch ball. The Bloch balls are drawn on the GPU, the rest by
-matplotlib."""
+"""Probe probabilities, reconstructed channels and predictions drawn from quantum states, read either as points of
+the projective Bloch ball or, for the conventional twin notebook, as states of the Pauli algebra; each drawing is
+handed its reading. The Bloch balls are drawn on the GPU, the rest by matplotlib."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LogNorm, to_rgb
 from matplotlib.lines import Line2D
 
-from numga import concatenate
+from numga import Extensor, concatenate, stack
 from examples.util.animation import capture
 from examples.quantum.process_tomography import core
 from examples.util.wgsl import fitted, labels, meshes, show, solids, strokes
@@ -32,8 +32,10 @@ IMAGE_OPACITY, PREPARED_OPACITY = 0.2, 0.2
 # pixels across a view, until it is fitted to its axes.
 ELEVATION, AZIMUTH = np.radians(24.0), np.radians(-54.0 + 90.0)
 REACH, MARGIN, N_PIXELS = 1.45, 0.2, 700
-# The width and height in inches of each channel's panel, its title and its share of the legend.
-PANEL = (3.6, 4.2)
+# The width and height in inches of each channel's panel, its title and its share of the legend; the width and height
+# of the figure of the experiment, and of the predictions, and the font size of their tables and axes.
+PANEL = (2.6, 3.05)
+EXPERIMENT, PREDICTIONS, FONT_SIZE = (9.6, 2.75), (3.1, 3.0), 8
 # Gallery picture: this makes plots/tomography.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
 GALLERY_PANEL = (2.4, 2.85)
 # The grid lines drawn, every few of the sampled latitudes and longitudes; the widths of the sphere's grid lines and
@@ -47,16 +49,22 @@ AXIS_LENGTH, LABEL_DISTANCE = 1.3, 1.4
 
 
 # --- plumbing -------------------------------------------------------------------------
-def bloch(states: core.State) -> np.ndarray:
-    """The Bloch vectors of normalized states, in an explicit spatial blade layout."""
-    return 2 * states.cast(core.ga.subspace("x y z")).kernel                  # [..., 3]
+def ball_positions(points: core.Point) -> np.ndarray:
+    """The Bloch vectors `[..., 3]` of points of the projective Bloch ball: their pairings with the planes x, y and z
+    through the centre, at unit weight."""
+    mv = points.context.multivector
+    return (stack((mv.x, mv.y, mv.z)) & points.normalized()[..., None]).to_array()
 
 
-def positions(points: solids.Point) -> np.ndarray:
-    """The Bloch vectors of points of the projective Bloch ball: their pairings with the planes x, y and z through
-    the centre, over their pairing with the plane at infinity, their weight."""
-    readings = (concatenate([sm.x[None], sm.y[None], sm.z[None]]) & points[..., None]).to_array()   # [..., 3]
-    return readings / (sm.w & points).to_array()[..., None]
+def bloch_vectors(states: Extensor) -> np.ndarray:
+    """The Bloch vectors `[..., 3]` of states of the Pauli algebra, a half plus half the Bloch vector: twice their
+    scalar products with x, y and z."""
+    mv = states.context.multivector
+    return 2 * stack((mv.x, mv.y, mv.z)).scalar_product(states[..., None]).to_array()
+
+
+# How states are read as Bloch vectors: `ball_positions` or `bloch_vectors`.
+Reading = Callable[[Extensor], np.ndarray]
 
 
 def bloch_view(axes) -> solids.View:
@@ -117,42 +125,38 @@ def grid_planes(points: np.ndarray) -> solids.Plane:
     planes = []
     for lines in grid_lines(points):
         count = lines.shape[1]
-        first, second, third = (sm.point(lines[:, index]) for index in (0, count // 3, 2 * count // 3))   # [lines] Point each
+        first, second, third = (sm.point(lines[:, index]) for index in (0, count // 3, 2 * count // 3))   # [lines] Point-, Point-, Point-
         planes.append((first & second & third) * solids.flip)
     return concatenate(planes)
 
 
-def draw_experiment(prepared: core.State, probabilities: core.Scalar,
-                    labels: tuple[str, ...]) -> plt.Figure:
+def draw_experiment(prepared: Extensor, probabilities: Extensor, labels: tuple[str, ...],
+                    reading: Reading) -> plt.Figure:
     """Four tetrahedral preparations and each channel's measured outcome probabilities."""
-    return experiment(bloch(prepared), probabilities, labels)
-
-
-def draw_projective_experiment(prepared: solids.Point, probabilities: core.Scalar,
-                               labels: tuple[str, ...]) -> plt.Figure:
-    """As `draw_experiment`, for preparations as points of the projective Bloch ball."""
-    return experiment(positions(prepared), probabilities, labels)
-
-
-def experiment(probes: np.ndarray, probabilities: core.Scalar, labels: tuple[str, ...]) -> plt.Figure:
-    """Preparations at their Bloch vectors `[preparations, 3]` and each channel's measured outcome probabilities."""
+    probes = reading(prepared)                                               # [preparations, 3]
     measured = probabilities.to_array()                                      # [channels, preparations, outcomes]
-    figure = plt.figure(figsize=(13, 3.7), layout="constrained")
+    figure = plt.figure(figsize=EXPERIMENT, layout="constrained")
     figure.get_layout_engine().set(wspace=0.12)
     probe_axes = figure.add_subplot(1, len(labels) + 1, 1)
-    probe_axes.set_title("Prepared states")
+    probe_axes.set_title("Prepared states", fontsize=FONT_SIZE + 1)
     probe_axes.set_axis_off()
     probability_scale = LogNorm(vmin=measured[measured > 0].min(), vmax=0.5)
     table_axes = []
+    # Each table's cells as patches, the first preparation at the top.
+    centres = np.arange(len(PROBE_NAMES)) + 0.5
     for index, (label, table) in enumerate(zip(labels, measured)):
         axes = figure.add_subplot(1, len(labels) + 1, index + 2)
         table_axes.append(axes)
-        heatmap = axes.imshow(table, origin="upper", norm=probability_scale, cmap="turbo")
-        axes.set(xticks=np.arange(len(PROBE_NAMES)), xticklabels=PROBE_NAMES,
-                 yticks=np.arange(len(PROBE_NAMES)), yticklabels=PROBE_NAMES,
-                 xlabel="Measurement outcome", ylabel="Prepared state", title=label)
-        axes.tick_params(length=0)
-    figure.colorbar(heatmap, ax=table_axes, label="Probability (log scale)", shrink=0.72, pad=0.02)
+        heatmap = axes.pcolormesh(table, norm=probability_scale, cmap="turbo")
+        axes.set(xticks=centres, xticklabels=PROBE_NAMES, yticks=centres, yticklabels=PROBE_NAMES, aspect="equal")
+        axes.invert_yaxis()
+        axes.set_xlabel("Measurement outcome", fontsize=FONT_SIZE)
+        axes.set_ylabel("Prepared state", fontsize=FONT_SIZE)
+        axes.set_title(label, fontsize=FONT_SIZE + 1)
+        axes.tick_params(length=0, labelsize=FONT_SIZE)
+    colour_bar = figure.colorbar(heatmap, ax=table_axes, shrink=0.72, pad=0.02)
+    colour_bar.set_label("Probability (log scale)", fontsize=FONT_SIZE)
+    colour_bar.ax.tick_params(which="both", labelsize=FONT_SIZE - 1)
 
     view = bloch_view(probe_axes)
     colours = np.array([to_rgb(colour) for colour in PROBE_COLOURS])
@@ -164,7 +168,7 @@ def experiment(probes: np.ndarray, probabilities: core.Scalar, labels: tuple[str
                          translucent=[], meshes=[])
     show_ball(probe_axes, scene, view)
     for (x, y), name, colour in zip(view.across(sm.point(probes * 1.12)), PROBE_NAMES, PROBE_COLOURS):
-        probe_axes.text(x, y, name, color=colour, fontsize=10)
+        probe_axes.text(x, y, name, color=colour, fontsize=FONT_SIZE + 1)
     return figure
 
 
@@ -176,7 +180,7 @@ def channel_scene(sphere: np.ndarray, probes: np.ndarray, view: solids.View) -> 
     colours = np.array([to_rgb(colour) for colour in PROBE_COLOURS])
     translucent = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR, SPHERE_OPACITY),
                    (solids.ball(sm.point(probes), PREPARED_RADIUS)[:, None], colours, PREPARED_OPACITY)]
-    planes = grid_planes(sphere)                                               # [lines] Plane
+    planes = grid_planes(sphere)                                               # [lines] Plane+
     axes = bloch_axes()
     reference = solids.Ink(len(axes) + 1, solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape),
                            GRID_COLOUR, GRID_WIDTH / view.pixel, GRID_OPACITY)
@@ -190,7 +194,7 @@ def channel_picture(scene: Scene, faces: np.ndarray, image: np.ndarray, points: 
     view = scene.view
     colours = np.array([to_rgb(colour) for colour in PROBE_COLOURS])
     # The reference grid and the channel's image use the same sampled directions.
-    places = sm.point(image[:, :-1].reshape(-1, 3))                          # [(latitudes + 1) * longitudes] Point
+    places = sm.point(image[:, :-1].reshape(-1, 3))                          # [(latitudes + 1) * longitudes] Point-
     shell = meshes.samples(places, faces, np.array(to_rgb(colour)), meshes.smooth(places, faces), view,
                            face_values=np.zeros(4), colour=meshes.plain, gloss=0.1)
     lines = grid(image, np.array(to_rgb(colour)), IMAGE_WIDTH, view)
@@ -216,24 +220,14 @@ def channels_figure(labels: tuple[str, ...], panel: tuple[float, float]) -> tupl
     return figure, axes
 
 
-def draw_channels(surface: core.State, outputs: core.State, prepared: core.State,
-                  transformed: core.State, labels: tuple[str, ...]) -> plt.Figure:
+def draw_channels(surface: Extensor, outputs: Extensor, prepared: Extensor, transformed: Extensor,
+                  labels: tuple[str, ...], reading: Reading) -> plt.Figure:
     """The sphere of pure inputs and its reconstructed images, with matching probe points: each image a translucent
     surface over the same grid as the sphere, the probes as prepared translucent and after the channel solid."""
-    return channels(bloch(surface), bloch(outputs), bloch(prepared), bloch(transformed), labels)
-
-
-def draw_projective_channels(surface: solids.Point, outputs: solids.Point, prepared: solids.Point,
-                             transformed: solids.Point, labels: tuple[str, ...]) -> plt.Figure:
-    """As `draw_channels`, for states as points of the projective Bloch ball."""
-    return channels(positions(surface), positions(outputs), positions(prepared), positions(transformed), labels)
-
-
-def channels(sphere: np.ndarray, images: np.ndarray, probes: np.ndarray, mapped: np.ndarray,
-             labels: tuple[str, ...]) -> plt.Figure:
-    """As `draw_channels`, from Bloch vectors: the sphere `[latitudes + 1, longitudes + 1, 3]`, its images
-    `[channels, latitudes + 1, longitudes + 1, 3]`, the probes `[preparations, 3]` and their images
-    `[channels, preparations, 3]`."""
+    sphere = reading(surface)                                                # [latitudes + 1, longitudes + 1, 3]
+    images = reading(outputs)                                                # [channels, latitudes + 1, longitudes + 1, 3]
+    probes = reading(prepared)                                               # [preparations, 3]
+    mapped = reading(transformed)                                            # [channels, preparations, 3]
     figure, axes = channels_figure(labels, PANEL)
     view = channel_view(sphere, axes[0])
     scene = channel_scene(sphere, probes, view)
@@ -243,65 +237,43 @@ def channels(sphere: np.ndarray, images: np.ndarray, probes: np.ndarray, mapped:
     return figure
 
 
-def draw_predictions(observed: core.Scalar, predicted: core.Scalar,
+def draw_predictions(observed: Extensor, predicted: Extensor,
                      labels: tuple[str, ...]) -> plt.Figure:
     """Predicted and measured probabilities for preparations absent from the reconstruction."""
     measured = observed.to_array()                                             # [channels, heldout, outcomes]
     inferred = predicted.to_array()                                            # [channels, heldout, outcomes]
     limit = 1.05 * max(float(measured.max()), float(inferred.max()))
-    figure, axes = plt.subplots(figsize=(4.7, 4.5), layout="constrained")
-    axes.plot([0, limit], [0, limit], color="0.7", linewidth=1, zorder=0)
+    figure, axes = plt.subplots(figsize=PREDICTIONS, layout="constrained")
+    axes.plot([0, limit], [0, limit], color="0.7", linewidth=0.7, zorder=0)
     for label, actual, estimate, colour in zip(labels, measured, inferred, CHANNEL_COLOURS):
-        axes.scatter(actual, estimate, s=22, color=colour, alpha=0.75,
+        axes.scatter(actual, estimate, s=10, color=colour, alpha=0.75,
                      linewidths=0, label=label)
-    axes.set(xlim=(0, limit), ylim=(0, limit), aspect="equal", xticks=[], yticks=[],
-             xlabel="Observed probability", ylabel="Predicted probability",
-             title="Unseen preparations")
+    axes.set(xlim=(0, limit), ylim=(0, limit), aspect="equal", xticks=[], yticks=[])
+    axes.set_xlabel("Observed probability", fontsize=FONT_SIZE)
+    axes.set_ylabel("Predicted probability", fontsize=FONT_SIZE)
+    axes.set_title("Unseen preparations", fontsize=FONT_SIZE + 1)
     axes.spines[["top", "right"]].set_visible(False)
-    axes.legend(loc="upper left", frameon=False, fontsize=9)
+    axes.legend(loc="upper left", frameon=False, fontsize=FONT_SIZE - 1)
     return figure
 
 
-def animate(surface: core.State, prepared: core.State,
-            frames: Iterator[tuple[core.State, core.State]],
-            labels: tuple[str, ...]) -> Iterator[np.ndarray]:
-    """Successive applications of each reconstructed channel to the same input sphere, as `draw_channels` draws
-    them."""
-    return animate_panels(surface, prepared, frames, labels, PANEL)
-
-
-def animate_panels(surface: core.State, prepared: core.State, frames: Iterator[tuple[core.State, core.State]],
-                   labels: tuple[str, ...], panel: tuple[float, float]) -> Iterator[np.ndarray]:
-    """As `animate`, each channel a panel of a width and height in inches."""
-    return film(bloch(surface), bloch(prepared), ((bloch(output), bloch(transformed)) for output, transformed in frames),
-                labels, panel)
-
-
-def animate_projective(surface: solids.Point, prepared: solids.Point,
-                       frames: Iterator[tuple[solids.Point, solids.Point]],
-                       labels: tuple[str, ...]) -> Iterator[np.ndarray]:
-    """As `animate`, for states as points of the projective Bloch ball."""
-    return film(positions(surface), positions(prepared),
-                ((positions(output), positions(transformed)) for output, transformed in frames), labels, PANEL)
-
-
-def film(sphere: np.ndarray, probes: np.ndarray, frames: Iterator[tuple[np.ndarray, np.ndarray]],
-         labels: tuple[str, ...], panel: tuple[float, float]) -> Iterator[np.ndarray]:
-    """Successive images of the sphere of pure inputs `[latitudes + 1, longitudes + 1, 3]` and of the probes
-    `[preparations, 3]`, as Bloch vectors, each frame's `[channels, latitudes + 1, longitudes + 1, 3]` and
-    `[channels, preparations, 3]`, each channel a panel of a width and height in inches: the figure, the axes, the
-    sphere, its grid and the probes as prepared set up once, and each frame's images drawn among them."""
+def animate(surface: Extensor, prepared: Extensor, frames: Iterator[tuple[Extensor, Extensor]],
+            labels: tuple[str, ...], reading: Reading, panel: tuple[float, float]) -> Iterator[np.ndarray]:
+    """Successive applications of each reconstructed channel to the same input sphere, as `draw_channels` draws them,
+    each channel a panel of a width and height in inches: the figure, the axes, the sphere, its grid and the probes as
+    prepared set up once, and each frame's images drawn among them."""
+    sphere = reading(surface)                                                # [latitudes + 1, longitudes + 1, 3]
     figure, axes = channels_figure(labels, panel)
     view = channel_view(sphere, axes[0])
-    scene = channel_scene(sphere, probes, view)
+    scene = channel_scene(sphere, reading(prepared), view)
     faces = surface_faces(sphere.shape[0], sphere.shape[1] - 1)
     blank = np.full((*view.shape, 3), 255, dtype=np.uint8)
     shown = [show_ball(ax, blank, view) for ax in axes]
     # The layout settled once, so that only the pictures change between frames.
     figure.canvas.draw()
     figure.set_layout_engine("none")
-    for output, transformed in frames:
-        for image, picture, points, colour in zip(shown, output, transformed, CHANNEL_COLOURS):
+    for outputs, transformed in frames:
+        for image, picture, points, colour in zip(shown, reading(outputs), reading(transformed), CHANNEL_COLOURS):
             image.set_data(channel_picture(scene, faces, picture, points, colour))
         yield capture(figure)
     plt.close(figure)

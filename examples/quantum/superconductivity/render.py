@@ -34,13 +34,15 @@ ENERGY_SCALE, ENERGY_START, ENERGY_END, COHERENCE_REACH = 0.4, -3.4, 3.7, 0.68
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin around the chart as a share
 # of the larger side, and the pixels across it, until the view is fitted to its axes.
 ELEVATION, AZIMUTH = np.radians(24.0), np.radians(-58.0 + 90.0)
-MARGIN, N_PIXELS = 0.08, 700
+MARGIN, N_PIXELS = 0.08, 470
 # The points around a circle; the widths of the axes' shafts, the circles, the path and the arrows' shafts, the
 # arrowheads' lengths and widths, and the radius of the tips, in pixels.
 N_CIRCLE = 100
-AXIS_WIDTH, CIRCLE_WIDTH, PATH_WIDTH, STEM_WIDTH = 1.2, 0.96, 1.2, 2.15
-AXIS_HEAD_LENGTH, AXIS_HEAD_WIDTH, STEM_HEAD_LENGTH, STEM_HEAD_WIDTH = 8.4, 4.8, 7.8, 6.0
-TIP_RADIUS = 2.4
+AXIS_WIDTH, CIRCLE_WIDTH, PATH_WIDTH, STEM_WIDTH = 0.8, 0.64, 0.8, 1.43
+AXIS_HEAD_LENGTH, AXIS_HEAD_WIDTH, STEM_HEAD_LENGTH, STEM_HEAD_WIDTH = 5.6, 3.2, 5.2, 4.0
+TIP_RADIUS = 1.6
+# The resolution of the quantity plots and of the animation, in pixels per inch.
+DPI, ANIMATION_DPI = 75, 60
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -69,7 +71,7 @@ def readings(fields: core.Field, patch: core.Spin) -> np.ndarray:
 def draw_equilibrium(dispersion: core.Field, spins: core.Spin) -> Figure:
     energies = readings(dispersion, xy_patch)
     coherence = coherences(spins, (core.mv.yz, core.mv.zx, core.mv.xy))
-    figure, axes = plt.subplots(1, 2, figsize=(8.0, 2.7), layout="constrained")
+    figure, axes = plt.subplots(1, 2, figsize=(8.0, 2.7), dpi=DPI, layout="constrained")
     axes[0].plot(energies, coherence[:, 2] + 0.5, color=INK, linewidth=2)
     axes[0].set(ylim=(0, 1.04))
     axes[1].plot(energies, coherence[:, 0], color=PAIR, linewidth=2)
@@ -90,8 +92,8 @@ def chart(energies: np.ndarray, axis: plt.Axes
     starts = np.full((3, 3), [start, 0, 0])
     ends = np.array([[end, 0, 0], [start, COHERENCE_REACH, 0], [start, 0, COHERENCE_REACH]])
     # The circles about the energy axis, x, at every few levels, each through the point the largest coherence above it.
-    levels = solids.origin + sm.x.dual() * (ENERGY_SCALE * energies[::CIRCLE_EVERY])        # [circles] Point
-    circles = meshes.circles(levels + sm.z.dual() * CIRCLE_RADIUS, sm.y ^ sm.z, N_CIRCLE)  # [circles, circle + 1] Point
+    levels = solids.origin + sm.x.dual() * (ENERGY_SCALE * energies[::CIRCLE_EVERY])        # [circles] Point-
+    circles = meshes.circles(levels + sm.z.dual() * CIRCLE_RADIUS, sm.yz, N_CIRCLE)        # [circles, circle + 1] Point-
     view = fitted(solids.view([circles, sm.point(starts), sm.point(ends)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS),
                   axis)
     shafts, heads = solids.arrows(sm.point(starts), sm.point(ends), AXIS_WIDTH / 2 * view.pixel,
@@ -121,7 +123,7 @@ def animate_quench(
     origins = np.stack([ENERGY_SCALE * energies, np.zeros_like(energies), np.zeros_like(energies)], axis=-1)
     colours = plt.colormaps["coolwarm"](np.linspace(0.08, 0.92, len(energies)))[:, :3]
 
-    figure = plt.figure(figsize=(9.0, 3.7), dpi=90)
+    figure = plt.figure(figsize=(9.0, 3.7), dpi=ANIMATION_DPI)
     axis = figure.add_axes((0.01, 0.08, 0.57, 0.85))
     curve = figure.add_axes((0.68, 0.22, 0.29, 0.64))
     view, axes, circles = chart(energies, axis)
@@ -158,7 +160,7 @@ def animate_quench(
 def draw_gap(times: np.ndarray, gaps: core.Field, equilibrium_gap: core.Field) -> Figure:
     amplitudes = gaps.norm().to_array()
     equilibrium = equilibrium_gap.norm().to_array()
-    figure, axis = plt.subplots(figsize=(7.5, 2.8), layout="constrained")
+    figure, axis = plt.subplots(figsize=(7.5, 2.8), dpi=DPI, layout="constrained")
     axis.plot(times, amplitudes, color=PAIR, linewidth=2, label="isolated condensate")
     axis.axhline(equilibrium, color=INK, linestyle="--", linewidth=1, label="final ground-state gap")
     axis.set(xlim=(times[0], times[-1]), ylim=(0, amplitudes.max() * 1.05))
@@ -172,7 +174,7 @@ def draw_response(
 ) -> Figure:
     exact_amplitude = readings(exact, yz_patch)
     predicted_amplitude = readings(predicted, yz_patch)
-    figure, axis = plt.subplots(figsize=(7.5, 3.0), layout="constrained")
+    figure, axis = plt.subplots(figsize=(7.5, 3.0), dpi=DPI, layout="constrained")
     axis.plot(times, exact_amplitude, color=INK, linewidth=3, alpha=0.5, label="nonlinear evolution")
     for values, name, colour in zip(predicted_amplitude.T, names, (PAIR, FIXED)):
         axis.plot(times, values, color=colour, linewidth=1.5, linestyle="--", label=name)

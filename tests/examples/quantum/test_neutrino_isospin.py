@@ -43,8 +43,9 @@ def test_the_sun_converts_electron_neutrinos():
 
 def test_the_trace_is_kept():
     theta = np.radians(30.0)
-    mass_plane = core.mixing_rotor(theta) >> core.phase_plane
-    rates = core.coherent_generator(core.vacuum_hamiltonian(1.0, theta)) + core.dephasing_generator(mass_plane, 0.1)
+    mass_plane = (core.mixing_plane * (-theta)).exp() >> core.phase_plane
+    turning = core.coherent_generator(core.vacuum_hamiltonian(1.0, theta))
+    rates = turning + 0.1 * core.relaxation(mass_plane)
     step = core.evolution(rates, 0.05)
     rho = core.state(core.flavor_e)
     for _ in range(50):

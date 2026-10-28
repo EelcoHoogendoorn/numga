@@ -33,24 +33,24 @@ def test_sparse_generator_is_the_clifford_bivector_action():
 
 
 def test_decoupled_majoranas_and_normal_chain_spectrum():
-    sites = 12
+    n_sites = 12
     hopping = 1.0
-    count = 8
-    index = np.arange(sites)
-    sweet = core.Wire.chain(sites, hopping, hopping)
-    generator = sweet.generator(core.mv.scalar(np.zeros((sites, 1))).field())
-    left, right = (core.mv.x * (index == 0)).field(), (core.mv.y * (index == sites - 1)).field()
+    n_modes = 8
+    index = np.arange(n_sites)
+    sweet = core.Wire.chain(n_sites, hopping, hopping)
+    generator = sweet.generator(core.mv.scalar(np.zeros((n_sites, 1))).field())
+    left, right = (core.mv.x * (index == 0)).field(), (core.mv.y * (index == n_sites - 1)).field()
     np.testing.assert_allclose(generator(stack([left, right])).kernel, 0, atol=ROUND_OFF, rtol=0)
-    energies, _ = sweet.modes(generator, count)
-    expected = np.concatenate([np.zeros(2), np.full(count - 2, 2 * hopping)])
+    energies, _ = sweet.modes(generator, n_modes)
+    expected = np.concatenate([np.zeros(2), np.full(n_modes - 2, 2 * hopping)])
     np.testing.assert_allclose(energies.kernel[:, 0], expected, atol=ROUND_OFF, rtol=0)
 
     chemical_potential = 0.6
-    normal = core.Wire.chain(sites, hopping, 0.0)
-    generator = normal.generator(core.mv.scalar(np.full((sites, 1), chemical_potential)).field())
-    energies, _ = normal.modes(generator, count)
-    excitation = np.abs(-chemical_potential - 2 * hopping * np.cos(np.pi * (index + 1) / (sites + 1)))
-    expected = np.repeat(np.sort(excitation), 2)[:count]
+    normal = core.Wire.chain(n_sites, hopping, 0.0)
+    generator = normal.generator(core.mv.scalar(np.full((n_sites, 1), chemical_potential)).field())
+    energies, _ = normal.modes(generator, n_modes)
+    excitation = np.abs(-chemical_potential - 2 * hopping * np.cos(np.pi * (index + 1) / (n_sites + 1)))
+    expected = np.repeat(np.sort(excitation), 2)[:n_modes]
     np.testing.assert_allclose(energies.kernel[:, 0], expected, atol=ROUND_OFF, rtol=0)
 
 
@@ -74,18 +74,18 @@ def test_cayley_evolution_converges_to_the_rotor():
 
 
 def test_localization_does_not_depend_on_the_eigensolver_basis():
-    wire = core.Wire.chain(scenarios.SITES, scenarios.HOPPING, scenarios.PAIRING)
-    potential = core.gate(np.arange(scenarios.SITES), scenarios.LEFT, scenarios.RIGHT,
+    wire = scenarios.wire
+    potential = core.gate(scenarios.SITES, scenarios.LEFT, scenarios.RIGHT,
                           scenarios.INSIDE, scenarios.OUTSIDE, scenarios.WIDTH)
     _, modes = wire.modes(wire.generator(potential), 2)
     localized = wire.localized(modes)
     # An orthogonal mixing of the two modes spans the same space.
-    mixing = core.mv.scalar([[[0.6], [-0.8]], [[0.8], [0.6]]])        # [modes, modes] Scalar
+    mixing = core.mv.scalar([[[0.6], [-0.8]], [[0.8], [0.6]]])        # [modes, modes] Scalar+
     mixed = (mixing * modes[None, :]).sum(axis=-1)
     recovered = wire.localized(mixed)
     np.testing.assert_allclose((localized.scalar_norm_squared() - recovered.scalar_norm_squared()).kernel,
                                0, atol=ROUND_OFF, rtol=0)
-    index = core.mv.scalar(np.arange(scenarios.SITES)[:, None]).field()
+    index = core.mv.scalar(scenarios.SITES[:, None]).field()
     centres = (localized.scalar_norm_squared() * index).sites.sum()
     assert centres.kernel[1, 0] - centres.kernel[0, 0] > 50
 
