@@ -12,6 +12,8 @@ from matplotlib.lines import Line2D
 
 from matplotlib.colors import to_rgb
 
+from numga import stack
+
 from examples.util.animation import capture
 from examples.electromagnetism.fresnel import core
 from examples.util.wgsl import fitted, labels, meshes, show, solids
@@ -31,11 +33,21 @@ elevation, azimuth = np.radians(22.0), np.radians(37.0)
 half_width = 2.3
 # The widths of the grid lines and the axes' arrows, and the arrowheads' length and width, in pixels; how far the
 # axes reach and their names lie, in units of k.
-grid_width, arrow_width, head_length, head_width = 2.0, 2.0, 10.0, 7.0
+grid_width, arrow_width, head_length, head_width = 1.0, 1.0, 5.0, 3.5
 axis_length, label_distance = 1.95, 2.12
+# The size of the axes' names in points, and the width of the sections' curves and of their axes, in points.
+label_size, curve_width, cross_width = 7, 1.0, 0.5
+# The figures' sizes in inches, and the animation's dots per inch.
+comparison_size, animation_size, animation_dpi = (5.4, 3.5), (6.0, 3.0), 85
 
 
 # --- plumbing -------------------------------------------------------------------------
+def coordinates(wavevectors: core.Vector) -> np.ndarray:
+    """The coordinates of spatial wavevectors, read along the axes of space `[..., 3]`."""
+    mv = wavevectors.context.multivector
+    return (wavevectors[..., None] & stack((mv.x, mv.y, mv.z)).dual()).to_array()
+
+
 def sheet_faces(n_latitudes: int, n_longitudes: int) -> np.ndarray:
     """Triangles over a grid of points from pole to pole, `[latitudes, longitudes]`: two to each cell, but one in the
     cells at either pole, whose two corners on the pole coincide."""
@@ -84,7 +96,7 @@ def k_space(ax: Axes) -> solids.View:
 
 def sheet_sides(sheets: core.Vector, view: solids.View) -> list[tuple[meshes.Samples, float]]:
     """Both sheets, translucent, with grid lines along every few latitudes and longitudes."""
-    points = sheets.cast(core.ga.subspace("x y z")).kernel                       # [latitudes, longitudes, 2, 3]
+    points = coordinates(sheets)                                                 # [latitudes, longitudes, sheets, 3]
     n_latitudes, n_longitudes = points.shape[:2]
     faces = sheet_faces(n_latitudes, n_longitudes)
     # Each vertex's place on the grid, latitude and longitude, for the grid lines inked on the sheet.
@@ -105,19 +117,19 @@ def surface(ax: Axes, picture: np.ndarray, view: solids.View) -> AxesImage:
     """A picture of k-space, its axes named at their tips; the image, for an animation to set its data."""
     shown = show(ax, picture, view)
     labels(ax, view, sm.point(label_distance * np.eye(3)), ["$k_x$", "$k_y$", "$k_z$"], ha="center", va="center",
-           fontsize=11, color=axis_colour)
+           fontsize=label_size, color=axis_colour)
     return shown
 
 
 def section_axes(ax: Axes) -> list[Line2D]:
     """Axes for the sheets' sections, and each sheet's curve, empty, for its points to be set."""
-    curves = [ax.plot([], [], color=colour, linestyle=style, linewidth=2, label=label)[0]
-              for colour, style, label in zip(sheet_colours, ("-", "--"), ("inner sheet", "outer sheet"))]
-    ax.axhline(0, color="#cbd5e1", linewidth=0.7)
-    ax.axvline(0, color="#cbd5e1", linewidth=0.7)
+    curves = [ax.plot([], [], color=colour, linestyle=style, linewidth=curve_width)[0]
+              for colour, style in zip(sheet_colours, ("-", "--"))]
+    ax.axhline(0, color="#cbd5e1", linewidth=cross_width)
+    ax.axvline(0, color="#cbd5e1", linewidth=cross_width)
     # The axes named at their ends, without scales: the sheets' shapes against each other are the point.
-    ax.text(view_limit, 0, "$k_x$", ha="right", va="bottom", fontsize=11, color=axis_colour)
-    ax.text(0, view_limit, "$k_z$", ha="left", va="top", fontsize=11, color=axis_colour)
+    ax.text(view_limit, 0, "$k_x$", ha="right", va="bottom", fontsize=label_size, color=axis_colour)
+    ax.text(0, view_limit, "$k_z$", ha="left", va="top", fontsize=label_size, color=axis_colour)
     ax.set(xlim=(-view_limit, view_limit), ylim=(-view_limit, view_limit))
     ax.set_aspect("equal")
     ax.set_axis_off()
@@ -126,21 +138,20 @@ def section_axes(ax: Axes) -> list[Line2D]:
 
 def trace_sections(curves: list[Line2D], sections: core.Vector) -> None:
     """Each sheet's section in the xz plane along its curve."""
-    points = sections.cast(core.ga.subspace("x y z")).kernel
+    points = coordinates(sections)                                               # [section_samples, sheets, 3]
     for mode, curve in enumerate(curves):
         curve.set_data(points[:, mode, 0], points[:, mode, 2])
 
 
-def comparison(sheets: core.Vector, sections: core.Vector, names: tuple[str, ...]) -> plt.Figure:
-    figure = plt.figure(figsize=(12, 7.8), layout="constrained")
-    count = len(names)
+def comparison(sheets: core.Vector, sections: core.Vector) -> plt.Figure:
+    """Each medium's sheets above their sections, one medium to a column."""
+    figure = plt.figure(figsize=comparison_size, layout="constrained")
+    count = len(sheets)
     surface_axes = [figure.add_subplot(2, count, i + 1) for i in range(count)]
-    for i, name in enumerate(names):
-        surface_axes[i].set_title(name, fontsize=11)
+    for i in range(count):
         surface_axes[i].set_axis_off()
         ax = figure.add_subplot(2, count, count + i + 1)
         trace_sections(section_axes(ax), sections[i])
-    ax.legend(loc="lower right", fontsize=9, frameon=False)
     # The sheets traced once every axes is laid out, the sheets' as bare as their pictures leave them, each at the
     # size of its room.
     for i, ax in enumerate(surface_axes):
@@ -152,7 +163,7 @@ def comparison(sheets: core.Vector, sections: core.Vector, names: tuple[str, ...
 
 def animate(frames: Iterable[tuple[core.Vector, core.Vector]]) -> Iterator[np.ndarray]:
     """The sheets beside their sections, frame by frame, the frame of k-space and the sections' axes set up once."""
-    figure = plt.figure(figsize=(9, 4.5), dpi=85, layout="constrained")
+    figure = plt.figure(figsize=animation_size, dpi=animation_dpi, layout="constrained")
     surface_axes = figure.add_subplot(1, 2, 1)
     # The sheets' axes as bare as their picture leaves them, for the layout to give them their room.
     surface_axes.set_axis_off()
