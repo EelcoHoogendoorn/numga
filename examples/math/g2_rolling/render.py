@@ -26,9 +26,9 @@ dot_radius = 4
 margin = 0.07
 # The planes whose pairings with a place are how far across and up the camera's own frame it lies; the place so far
 # along each is `(axes.dual() * across).sum()`.
-axes = stack((mv.x, mv.y))                                                    # [2] Vector
+axes = stack((mv.x, mv.y))                                                    # [2] Plane+
 # The direction toward the lamp, in the camera's frame: up and to the left, and toward the camera.
-lamp = (mv.x * -0.40 + mv.y * 0.48 + mv.z * 0.78).dual()                      # [] Point
+lamp = (mv.x * -0.40 + mv.y * 0.48 + mv.z * 0.78).dual()                      # [] Point-
 
 source = """
 // A camera turned to look along its own -z at the middle of the view, its rays parallel, starting `back` behind
@@ -159,27 +159,27 @@ class SphereScene:
                  sphere_radius: float, ball_radius: float,
                  elevation: float, azimuth: float, size: int) -> None:
         elevation, azimuth = np.radians(elevation), np.radians(azimuth + 90)
-        self.camera = (mv.xy * (-azimuth / 2)).exp() * (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()   # [] Rotor
+        self.camera = (mv.xy * (-azimuth / 2)).exp() * (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()   # [] Rotor+
         # The ball's centres along every fitted route, across and up the view, and the sphere's outline about
         # the middle.
-        centres = concatenate(fit_paths) * (sphere_radius + ball_radius)                      # [samples] Point
+        centres = concatenate(fit_paths) * (sphere_radius + ball_radius)                      # [samples] Point-
         right, up = (((self.camera >> axis) & centres).to_array() for axis in axes)
         low = np.minimum([right.min() - ball_radius, up.min() - ball_radius], -sphere_radius)
         high = np.maximum([right.max() + ball_radius, up.max() + ball_radius], sphere_radius)
         middle = (low + high) / 2
-        self.middle = self.camera >> (axes.dual() * middle).sum()                              # [] Point
+        self.middle = self.camera >> (axes.dual() * middle).sum()                              # [] Point-
         self.half = np.max(high - low) / 2 * (1 + margin)
         self.size = size
         self.sphere_radius, self.ball_radius = sphere_radius, ball_radius
         # The routes on the sphere: each leg's samples joined in segments, their colours by leg.
-        places = [path * sphere_radius for path in paths]                                      # [legs][samples] Point
+        places = [path * sphere_radius for path in paths]                                      # [legs][samples] Point-
         self.segments = dict(start=concatenate([place[:-1] for place in places]),
                              end=concatenate([place[1:] for place in places]),
                              colour=np.concatenate([np.repeat(route_colours[[index]], len(place) - 1, axis=0)
                                                     for index, place in enumerate(places)]))
         self.ends = dict(place=concatenate([place[[0, -1]] for place in places]),
                          colour=np.repeat(route_colours[:len(places)], 2, axis=0))
-        self.lamp = self.camera >> lamp                                                        # [] Point
+        self.lamp = self.camera >> lamp                                                        # [] Point-
 
     def draw(self, contact: Point, attitude: Rotor) -> np.ndarray:
         """The ball touching the sphere at a contact point, turned by its attitude."""
@@ -195,7 +195,7 @@ class SphereScene:
 def frames(paths: tuple[Point, ...], rolling: Iterable[tuple[Point, Rotor]],
            sphere_radius: float, ball_radius: float, elevation: float, azimuth: float,
            size: int) -> Iterator[np.ndarray]:
-    """Render successive contact directions and ball attitudes with one fixed camera."""
+    """Frames of successive contact directions and ball attitudes, seen by one fixed camera."""
     scene = SphereScene(paths, paths, sphere_radius, ball_radius, elevation, azimuth, size)
     for contact, attitude in rolling:
         yield scene.draw(contact, attitude)

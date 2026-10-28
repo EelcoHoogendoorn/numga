@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Circle, FancyArrowPatch
 
-from examples.math.e8.render import BACKGROUND, COLOURS, coordinates, draw_roots
+from examples.math.e8.render import background, orbit_colours, coordinates, draw_roots
 from examples.quantum.affine_toda.core import Root
 
 
@@ -16,17 +16,17 @@ def draw_triangles(paths: Root, roots: Root, species: np.ndarray,
     selected_orbits = orbits[:, species]
     limit = max(np.abs(vertices).max(), np.abs(selected_orbits).max()) * 1.16
     n_cases = len(species)
-    figure, axes = plt.subplots(1, n_cases, figsize=(9, 3), facecolor=BACKGROUND)
+    figure, axes = plt.subplots(1, n_cases, figsize=(9, 3), facecolor=background)
     for index, ax in enumerate(axes):
         for particle in np.unique(species[index]):
             points = orbits[:, particle]
             radius = np.linalg.norm(points[0])
-            colour = COLOURS[particle]
+            colour = orbit_colours[particle]
             ax.add_patch(Circle((0, 0), radius, fill=False, color=colour, alpha=0.22, linewidth=0.55))
             ax.scatter(*points.T, color=colour, s=4, alpha=0.4, linewidths=0)
         for start, end, particle in zip(vertices[index, :-1], vertices[index, 1:], species[index]):
             ax.add_patch(FancyArrowPatch(start, end, arrowstyle="-|>", mutation_scale=13,
-                                        linewidth=2, color=COLOURS[particle], shrinkA=0, shrinkB=0))
+                                        linewidth=2, color=orbit_colours[particle], shrinkA=0, shrinkB=0))
         # A closed path has a zero-length dashed segment.
         ax.plot(*vertices[index, [0, -1]].T, color="white", linestyle=(0, (3, 3)), linewidth=1.3)
         ax.scatter(*vertices[index, 0], color="white", s=12, zorder=4)

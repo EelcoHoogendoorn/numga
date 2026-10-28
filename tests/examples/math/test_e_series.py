@@ -8,6 +8,7 @@ import pytest
 
 from numga import stack
 
+from examples.math.e8.core import mv
 from examples.math.e_series import core, scenarios
 
 
@@ -16,20 +17,20 @@ from examples.math.e_series import core, scenarios
     [(0, 72, [1, 4, 5]), (1, 126, [1, 5, 7]), (2, 240, [1, 7, 11, 13])],
 )
 def test_root_closure_and_rotation_planes(case_index: int, n_roots: int, rates: list[int]):
-    n_rank = scenarios.RANKS[case_index]
-    n_steps = scenarios.PERIODS[case_index]
-    action, roots, horizontal, vertical, angles = scenarios.family()[case_index]
+    n_rank = scenarios.ranks[case_index]
+    n_steps = scenarios.periods[case_index]
+    action, roots, plane_x, plane_y, angles = scenarios.family()[case_index]
     simple = core.simple_roots()[:n_rank]
     tolerance = 1e-10
 
     span = (roots * (roots | core.Vector)).sum(axis=(0, 1)) / (2 * n_steps)
-    plane_span = (horizontal * (horizontal | core.Vector)
-                  + vertical * (vertical | core.Vector)).sum(axis=0)
+    plane_span = (plane_x * (plane_x | core.Vector)
+                  + plane_y * (plane_y | core.Vector)).sum(axis=0)
     remaining = span - plane_span
-    frame = stack((horizontal, vertical), axis=1).reshape(-1)
+    frame = stack((plane_x, plane_y), axis=1).reshape(-1)
 
     # Independent planar turns reconstruct the motion; E7 also reverses one direction.
-    factors = (-(horizontal ^ vertical) * angles / 2).exp()
+    factors = (-(plane_x ^ plane_y) * angles / 2).exp()
     turning = reduce(mul, factors)
     reconstructed = (turning >> core.Vector)(core.Vector - 2 * remaining)
 
@@ -56,10 +57,10 @@ def test_root_closure_and_rotation_planes(case_index: int, n_roots: int, rates: 
     np.testing.assert_allclose((frame[:, None] | frame[None]).to_array(),
                                np.eye(len(frame)), atol=tolerance)
     np.testing.assert_allclose(angles.to_array() * n_steps / (2 * np.pi), rates, atol=tolerance)
-    np.testing.assert_allclose((action(horizontal) - horizontal * angles.cos()
-                               - vertical * angles.sin()).kernel, 0, atol=tolerance)
-    np.testing.assert_allclose((action(vertical) + horizontal * angles.sin()
-                               - vertical * angles.cos()).kernel, 0, atol=tolerance)
+    np.testing.assert_allclose((action(plane_x) - plane_x * angles.cos()
+                               - plane_y * angles.sin()).kernel, 0, atol=tolerance)
+    np.testing.assert_allclose((action(plane_y) + plane_x * angles.sin()
+                               - plane_y * angles.cos()).kernel, 0, atol=tolerance)
     np.testing.assert_allclose(remaining.trace().to_array(), n_rank % 2, atol=tolerance)
     np.testing.assert_allclose((remaining(remaining) - remaining).kernel, 0, atol=tolerance)
     np.testing.assert_allclose((action(remaining) + remaining).kernel, 0, atol=tolerance)
@@ -68,9 +69,9 @@ def test_root_closure_and_rotation_planes(case_index: int, n_roots: int, rates: 
 
 def test_nested_root_systems_and_mirror_covariance():
     family = scenarios.family()
-    mirror = (core.mv.a + 2 * core.mv.b - 3 * core.mv.c + core.mv.h).normalized()
+    mirror = (mv.a + 2 * mv.b - 3 * mv.c + mv.h).normalized()
     spans = tuple((roots * (roots | core.Vector)).sum(axis=(0, 1)) / (2 * n_steps)
-                  for (_, roots, _, _, _), n_steps in zip(family, scenarios.PERIODS))
+                  for (_, roots, _, _, _), n_steps in zip(family, scenarios.periods))
     tolerance = 1e-10
 
     # checks
@@ -82,7 +83,7 @@ def test_nested_root_systems_and_mirror_covariance():
         np.testing.assert_allclose((outer_span(inner_span) - inner_span).kernel, 0, atol=tolerance)
         np.testing.assert_allclose((inner_span(outer_span) - inner_span).kernel, 0, atol=tolerance)
 
-    for n_rank, n_steps, case, span in zip(scenarios.RANKS, scenarios.PERIODS, family, spans):
+    for n_rank, n_steps, case, span in zip(scenarios.ranks, scenarios.periods, family, spans):
         action, roots, _, _, _ = case
         reflected_action, reflected_roots = core.root_system(mirror >> core.simple_roots()[:n_rank], n_steps)
         reflected_span = (reflected_roots * (reflected_roots | core.Vector)).sum(axis=(0, 1)) / (2 * n_steps)

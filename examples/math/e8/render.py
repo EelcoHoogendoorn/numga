@@ -12,8 +12,8 @@ from numga.extensor import stack
 from examples.util.animation import capture
 from examples.math.e8.core import Vector
 
-BACKGROUND = "#101219"
-COLOURS = np.array([
+background = "#101219"
+orbit_colours = np.array([
     [0.98, 0.72, 0.27],
     [0.96, 0.39, 0.32],
     [0.83, 0.40, 0.72],
@@ -38,13 +38,13 @@ def draw_roots(roots: Vector, horizontal: Vector, vertical: Vector) -> plt.Figur
     nearest = distances[distances > 1e-8].min()
     first, second = np.nonzero(np.triu(np.isclose(distances, nearest), k=1))
     projected = points.reshape((-1, 2))
-    colours = np.tile(COLOURS, (roots.shape[0], 1))
+    colours = np.tile(orbit_colours, (roots.shape[0], 1))
     edge_colours = (colours[first] + colours[second]) / 2
     segments = np.stack([projected[first], projected[second]], axis=1)
 
-    figure, ax = plt.subplots(figsize=(7, 7), facecolor=BACKGROUND)
+    figure, ax = plt.subplots(figsize=(7, 7), facecolor=background)
     ax.add_collection(LineCollection(segments, colors=edge_colours, alpha=0.17, linewidths=0.33))
-    ax.scatter(*projected.T, c=colours, s=12, edgecolors=BACKGROUND, linewidths=0.35, zorder=3)
+    ax.scatter(*projected.T, c=colours, s=12, edgecolors=background, linewidths=0.35, zorder=3)
     radius = np.linalg.norm(points, axis=-1).max() * 1.05
     ax.set(xlim=(-radius, radius), ylim=(-radius, radius), aspect="equal")
     ax.set_axis_off()
@@ -67,11 +67,11 @@ def animate_planes(turning_roots: Iterable[Vector], roots: Vector, horizontal: V
     history = np.arange(1 - n_trail, 1)
     trail_alpha = np.linspace(0.12, 0.85, n_trail - 1)
 
-    figure, axes = plt.subplots(1, n_planes, figsize=(4.4, 1.14), facecolor=BACKGROUND)
+    figure, axes = plt.subplots(1, n_planes, figsize=(4.4, 1.14), facecolor=background)
     riders, trails = [], []
     for index, ax in enumerate(axes):
         arcs = []
-        for orbit, colour in enumerate(COLOURS):
+        for orbit, colour in enumerate(orbit_colours):
             orbit_radius = np.linalg.norm(projected[0, index, orbit])
             ax.add_patch(Circle((0, 0), orbit_radius, fill=False, color=colour, alpha=0.26, linewidth=0.29))
             for alpha in trail_alpha:
@@ -80,8 +80,8 @@ def animate_planes(turning_roots: Iterable[Vector], roots: Vector, horizontal: V
                 arcs.append(arc)
         trails.append(arcs)
         dots = projected[:, index].reshape((-1, 2))
-        ax.scatter(*dots.T, c=np.tile(COLOURS, (roots.shape[0], 1)), s=0.58, alpha=0.35, linewidths=0)
-        riders.append(ax.scatter(*positions[0, index].T, c=COLOURS, s=4.5, edgecolors="white", linewidths=0.2, zorder=4))
+        ax.scatter(*dots.T, c=np.tile(orbit_colours, (roots.shape[0], 1)), s=0.58, alpha=0.35, linewidths=0)
+        riders.append(ax.scatter(*positions[0, index].T, c=orbit_colours, s=4.5, edgecolors="white", linewidths=0.2, zorder=4))
         ax.set(xlim=(-radius, radius), ylim=(-radius, radius), aspect="equal")
         ax.set_axis_off()
     figure.subplots_adjust(0, 0, 1, 1, wspace=0.025)

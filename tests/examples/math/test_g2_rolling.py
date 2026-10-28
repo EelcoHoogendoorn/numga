@@ -35,7 +35,7 @@ def test_product_finds_the_two_roll_waypoint() -> None:
 def test_kernel_and_product_find_three_rolls_for_independent_endpoints() -> None:
     start = core.encode(core.mv.z.dual(), core.mv.rotor())
     finish = core.encode(core.mv.z.dual(), (core.mv.xy * 0.6).exp())
-    first, second = core.three_rolls(start, finish, core.mv.x * core.volume)
+    first, second = core.three_rolls(start, finish, core.mv.x.dual())
     reachable = core.annihilator(start)
 
     assert abs(core.pairing(start, finish).kernel.item()) > 0.1
@@ -52,7 +52,7 @@ def test_kernel_and_product_find_three_rolls_for_independent_endpoints() -> None
 def test_split_g2_deformation_preserves_products_and_physical_rolling() -> None:
     start = core.encode(core.mv.z.dual(), core.mv.rotor())
     finish = core.encode(core.mv.z.dual(), (core.mv.xy * 0.6).exp())
-    first, second = core.three_rolls(start, finish, core.mv.x * core.volume)
+    first, second = core.three_rolls(start, finish, core.mv.x.dual())
     generator = core.derivation(start, core.mv.x)
     amount = 0.12
     symmetry = core.State + amount * generator + amount**2 / 2 * generator(generator)
@@ -100,7 +100,7 @@ def test_physical_route_lifts_commute_with_mirroring() -> None:
     two_roll_finish = core.encode(two_roll_contact, finish_attitude)
     three_roll_finish = core.encode(start_contact, finish_attitude)
     middle = core.lift(core.multiply(start, two_roll_finish).cast(core.State), hemisphere)
-    first, second = core.three_rolls(start, three_roll_finish, hemisphere * core.volume)
+    first, second = core.three_rolls(start, three_roll_finish, hemisphere.dual())
     second = core.lift(second, hemisphere)
 
     mirror_start = core.encode(mirror >> start_contact, mirror >> start_attitude)
@@ -110,7 +110,7 @@ def test_physical_route_lifts_commute_with_mirroring() -> None:
         core.multiply(mirror_start, mirror_two_finish).cast(core.State), mirror >> hemisphere,
     )
     mirror_first, mirror_second = core.three_rolls(
-        mirror_start, mirror_three_finish, (mirror >> hemisphere) * core.volume,
+        mirror_start, mirror_three_finish, mirror >> hemisphere.dual(),
     )
     mirror_second = core.lift(mirror_second, mirror >> hemisphere)
 

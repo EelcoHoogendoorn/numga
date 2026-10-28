@@ -4,7 +4,7 @@ import numpy as np
 
 from examples.math.eight_conics import core, scenarios
 
-ROUND_OFF = 1e-12
+round_off = 1e-12
 
 
 def test_deforming_cube_preserves_double_contact_and_face_concurrence():
@@ -21,12 +21,12 @@ def test_deforming_cube_preserves_double_contact_and_face_concurrence():
     assert np.all(np.linalg.norm((contacts[..., 0] & contacts[..., 1]).kernel, axis=-1) > 0.1)
     assert np.all(np.linalg.norm(first_tangents.kernel, axis=-1) > 0.1)
     assert np.all(np.abs((core.mv.w & face_centers).kernel) > 0.01)
-    np.testing.assert_allclose((first_tangents & contacts).kernel, 0, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose((second_tangents & contacts).kernel, 0, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose((contact_planes[..., None] & contacts).kernel, 0, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose((first_tangents ^ second_tangents).kernel, 0, atol=ROUND_OFF, rtol=0)
+    np.testing.assert_allclose((first_tangents & contacts).kernel, 0, atol=round_off, rtol=0)
+    np.testing.assert_allclose((second_tangents & contacts).kernel, 0, atol=round_off, rtol=0)
+    np.testing.assert_allclose((contact_planes[..., None] & contacts).kernel, 0, atol=round_off, rtol=0)
+    np.testing.assert_allclose((first_tangents ^ second_tangents).kernel, 0, atol=round_off, rtol=0)
     np.testing.assert_allclose((face_planes[..., 2:] ^ face_centers[..., None]).kernel,
-                               0, atol=ROUND_OFF, rtol=0)
+                               0, atol=round_off, rtol=0)
 
 
 def test_three_completions_agree_and_reflect_with_their_inputs():
@@ -43,10 +43,10 @@ def test_three_completions_agree_and_reflect_with_their_inputs():
 
     # checks
     np.testing.assert_allclose((completions - completions[..., :1]).kernel,
-                               0, atol=ROUND_OFF, rtol=0)
+                               0, atol=round_off, rtol=0)
     np.testing.assert_allclose((mirror_completions - mirror_completions[..., :1]).kernel,
-                               0, atol=ROUND_OFF, rtol=0)
+                               0, atol=round_off, rtol=0)
     np.testing.assert_allclose((mirror_quadrics - (wall >> quadrics(wall << core.Point))).kernel,
-                               0, atol=ROUND_OFF, rtol=0)
+                               0, atol=round_off, rtol=0)
     np.testing.assert_allclose((mirror_planes - (wall >> contact_planes)).kernel,
-                               0, atol=ROUND_OFF, rtol=0)
+                               0, atol=round_off, rtol=0)
