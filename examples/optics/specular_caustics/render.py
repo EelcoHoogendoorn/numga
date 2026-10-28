@@ -14,8 +14,8 @@ from scipy.ndimage import gaussian_filter, map_coordinates
 from numga import stack
 from examples.optics.specular_caustics import core
 
-DPI = 100
-COLOURS = LinearSegmentedColormap.from_list(
+dpi = 100
+colours = LinearSegmentedColormap.from_list(
     "caustics", ["#03101e", "#07334b", "#176b81", "#71bbbf", "#fff4d8"], N=1024,
 )
 
@@ -47,9 +47,9 @@ def irradiance(
 
 
 def pixels(density: np.ndarray, exposure: float) -> np.ndarray:
-    """Compress bright folds with one exposure shared by the whole sequence."""
+    """The colours of a density, its bright folds compressed by one exposure shared by the whole sequence."""
     brightness = -np.expm1(-exposure * density)
-    return COLOURS(brightness, bytes=True)[..., :3]
+    return colours(brightness, bytes=True)[..., :3]
 
 
 def draw(
@@ -58,7 +58,7 @@ def draw(
 ) -> plt.Figure:
     """Irradiance on a square receiver, from dark water blue to warm bright folds."""
     density = irradiance(landings, halfwidth, ray_area, n_pixels, blur_pixels)
-    figure = plt.figure(figsize=(n_pixels / DPI,) * 2, dpi=DPI, facecolor=COLOURS(0))
+    figure = plt.figure(figsize=(n_pixels / dpi,) * 2, dpi=dpi, facecolor=colours(0))
     axes = figure.add_axes((0, 0, 1, 1))
     axes.imshow(pixels(density, exposure), origin="lower", interpolation="nearest",
                 extent=(-halfwidth, halfwidth, -halfwidth, halfwidth))
@@ -81,7 +81,7 @@ def draw_critical(
                   for axis in range(2)], axis=-1)
         for curve in source_curves
     ]
-    figure.axes[0].add_collection(LineCollection(receiver_curves, colors="#ff907a", linewidths=0.65))
+    figure.axes[0].add_collection(LineCollection(receiver_curves, colors="#ff907a", linewidths=0.45))
     return figure
 
 
@@ -89,7 +89,7 @@ def animate(
     landings: Iterable[core.Horizontal], halfwidth: float, ray_area: float,
     n_pixels: int, blur_pixels: float, exposure: float,
 ) -> Iterator[np.ndarray]:
-    """Read and colour one ray map at a time, keeping the receiver and exposure fixed."""
+    """Yields the coloured irradiance of one ray map at a time, on a fixed receiver at a fixed exposure."""
     for frame in landings:
         density = irradiance(frame, halfwidth, ray_area, n_pixels, blur_pixels)
         yield np.ascontiguousarray(pixels(density, exposure)[::-1])
@@ -112,14 +112,14 @@ def draw_paths(
     lower = landings[:, 1].min()
     left, right = curve[:, 0].min(), curve[:, 0].max()
     vertical_span = incident_height - lower
-    figure = plt.figure(figsize=(5.5 * (right - left) / vertical_span, 5.5), facecolor="white")
+    figure = plt.figure(figsize=(3 * (right - left) / vertical_span, 3), dpi=dpi, facecolor="white")
     axes = figure.add_axes((0, 0, 1, 1))
     axes.fill_between(curve[:, 0], lower, curve[:, 1], color="#e4f2f6")
-    axes.add_collection(LineCollection(paths, colors="#7798a6", linewidths=0.65, alpha=0.35))
-    axes.plot(curve[:, 0], curve[:, 1], color="#428698", linewidth=1.3)
-    axes.add_collection(LineCollection(solved_paths, colors="#df8a35", linewidths=1.65))
-    axes.plot((left, right), (lower, lower), color="#578390", linewidth=1.2)
-    axes.scatter(destination[0], destination[1], s=20, color="#b25422", zorder=3, clip_on=False)
+    axes.add_collection(LineCollection(paths, colors="#7798a6", linewidths=0.35, alpha=0.35))
+    axes.plot(curve[:, 0], curve[:, 1], color="#428698", linewidth=0.7)
+    axes.add_collection(LineCollection(solved_paths, colors="#df8a35", linewidths=0.9))
+    axes.plot((left, right), (lower, lower), color="#578390", linewidth=0.65)
+    axes.scatter(destination[0], destination[1], s=6, color="#b25422", zorder=3, clip_on=False)
     axes.set(xlim=(left, right), ylim=(lower, incident_height), aspect="equal")
     axes.set_axis_off()
     return figure

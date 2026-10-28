@@ -24,10 +24,10 @@ sm = solids.mv
 # `field_length` nm across the line per unit; the stretch of line framed, as shares of its length cut from its
 # start and its end; the widths of the field's path, its spokes, the optic axes and the line, in pixels.
 pulse_elevation, pulse_azimuth = np.radians(6.0), np.radians(30.0)
-pulse_margin, n_pulse_pixels = 0.02, 300
+pulse_margin, n_pulse_pixels = 0.02, 400
 field_length = 3000.0
 framed_start, framed_end = 0.08, 0.12
-path_width, spoke_width, optic_width, line_width = 1.25, 0.5, 0.75, 0.75
+path_width, spoke_width, optic_width, line_width = 1.5, 0.75, 1.0, 1.0
 # The spokes' share of the path's strength, and the least strength a spoke is drawn at; the optic axes' half length, the slab's half width across the line, both in field units, and the slab's colour
 # and opacity; the line's colour and the optic axes'.
 spoke_opacity, spoke_floor = 0.5, 0.02

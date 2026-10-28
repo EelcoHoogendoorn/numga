@@ -49,8 +49,8 @@ def water() -> tuple[Horizontal, float, Wavevector]:
     # A fixed jitter within each cell hides the sampling lattice.
     x_offsets = rng.uniform(-0.5, 0.5, (n_rays, n_rays)) * spacing
     y_offsets = rng.uniform(-0.5, 0.5, (n_rays, n_rays)) * spacing
-    positions = x * (samples[None, :] + x_offsets) + y * (samples[:, None] + y_offsets)   # [rows, columns] Horizontal
-    wavevectors = ((-mv.xy * wave_angles / 2).exp() >> mv.x) * wavenumbers   # [waves] Wavevector
+    positions = x * (samples[None, :] + x_offsets) + y * (samples[:, None] + y_offsets)   # [rows, columns] Horizontal-
+    wavevectors = ((-mv.xy * wave_angles / 2).exp() >> mv.x) * wavenumbers   # [waves] Wavevector+
     return positions, spacing**2, wavevectors
 
 
@@ -63,34 +63,34 @@ def caustics(positions: Horizontal, wavevectors: Wavevector) -> Iterator[Horizon
 def folds(wavevectors: Wavevector) -> tuple[Horizontal, Scalar]:
     """The landings of a grid over the water, and the area the ray map gives each patch of it."""
     chart_samples = np.linspace(-source_halfwidth, source_halfwidth, n_derivative)
-    chart = x * chart_samples[None, :] + y * chart_samples[:, None]           # [rows, columns] Horizontal
+    chart = x * chart_samples[None, :] + y * chart_samples[:, None]           # [rows, columns] Horizontal-
     landing = partial(receiver, wavevectors=wavevectors, amplitudes=amplitudes, phases=phases,
                       depth=depth, index_ratio=index_ratio)
-    return landing(chart), derivative(landing)(chart).det()                  # [rows, columns] Horizontal, Scalar
+    return landing(chart), derivative(landing)(chart).det()                  # [rows, columns] Horizontal-, Scalar+
 
 
 def three_paths() -> tuple[Direction, Direction, Direction, Direction, Direction]:
     """Under a single ripple, the paths from three surface points to one receiver point, found by
     Newton's method on the ray map, with a fan of rays and the surface along the section."""
-    wavevector = mv.x * ripple_wavenumber                                     # [waves] Wavevector
+    wavevector = mv.x * ripple_wavenumber                                     # [waves] Wavevector+
     ripple = partial(rays, wavevectors=wavevector, amplitudes=ripple_amplitude, phases=ripple_phase,
                      index_ratio=index_ratio)
     landing = partial(receiver, wavevectors=wavevector, amplitudes=ripple_amplitude, phases=ripple_phase,
                       depth=depth, index_ratio=index_ratio)
-    target = 0 * x                                                            # Horizontal
+    target = 0 * x                                                            # [] Horizontal-
     # Trial points start on the section, but may move anywhere on the water.
-    trial = (x * seed_offsets).cast(Horizontal)                               # [paths] Horizontal
+    trial = (x * seed_offsets).cast(Horizontal)                               # [paths] Horizontal-
     for _ in range(n_iterations):
         # The local ray map turns the miss at the receiver into a correction on the water.
-        trial = trial - derivative(landing)(trial).solve(landing(trial) - target)   # [paths] Horizontal
+        trial = trial - derivative(landing)(trial).solve(landing(trial) - target)   # [paths] Horizontal-
 
-    section = x * np.linspace(-section_halfwidth, section_halfwidth, n_section)   # [samples] Horizontal
-    fan = x * np.linspace(-section_halfwidth, section_halfwidth, n_fan)           # [rays] Horizontal
-    surface, _, _ = ripple(section)                                           # [samples] Direction
-    fan_surface, _, _ = ripple(fan)                                           # [rays] Direction
-    path_surface, _, _ = ripple(trial)                                        # [paths] Direction
-    fan_landing = landing(fan) - up * depth                                   # [rays] Direction
-    receiver_target = target - up * depth                                     # Direction
+    section = x * np.linspace(-section_halfwidth, section_halfwidth, n_section)   # [samples] Horizontal-
+    fan = x * np.linspace(-section_halfwidth, section_halfwidth, n_fan)           # [rays] Horizontal-
+    surface, _, _ = ripple(section)                                           # [samples] Direction-
+    fan_surface, _, _ = ripple(fan)                                           # [rays] Direction-
+    path_surface, _, _ = ripple(trial)                                        # [paths] Direction-
+    fan_landing = landing(fan) - up * depth                                   # [rays] Direction-
+    receiver_target = target - up * depth                                     # [] Direction-
     return surface, fan_surface, fan_landing, path_surface, receiver_target
 
 
@@ -99,16 +99,17 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.optics.specular_caustics import render
 
-    n_pixels = 440
-    blur_pixels = 1.4
+    n_pixels = 300
+    blur_pixels = 0.95
     exposure = 0.3
     incident_height = 0.6
     duration_ms = 70
+    n_colours = 16
 
     positions, ray_area, wavevectors = water()
     save_animation(render.animate(caustics(positions, wavevectors), receiver_halfwidth, ray_area, n_pixels,
-                                  blur_pixels, exposure), "specular_caustics", duration_ms)
-    landings = receiver(positions, wavevectors, amplitudes, phases, depth, index_ratio)   # [rows, columns] Horizontal
+                                  blur_pixels, exposure), "specular_caustics", duration_ms, n_colours)
+    landings = receiver(positions, wavevectors, amplitudes, phases, depth, index_ratio)   # [rows, columns] Horizontal-
     chart_landings, area = folds(wavevectors)
     save_figure(render.draw_critical(landings, chart_landings, area, receiver_halfwidth, ray_area, n_pixels,
                                      blur_pixels, exposure), "specular_caustics_folds")

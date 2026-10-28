@@ -46,7 +46,7 @@ n_nodes = 1000
 courant = 1.0
 slab_start = 18000.0
 pulse_start = 10000.0
-pulse_width = 2000.0
+pulse_width = 1000.0
 light_travel = 27000.0
 n_frames = 120
 # The pulse's carriers turning with and against the helix.
@@ -225,9 +225,10 @@ def main() -> None:
     # Lossless layers conserve power: what is not reflected is transmitted.
     np.testing.assert_allclose((reflection + transmission).kernel, 1, atol=1e-10)
     np.testing.assert_allclose((twisted_reflection + twisted_transmission).kernel, 1, atol=1e-10)
-    # The leapfrog keeps the pulse's energy, and the helix returns the hand that turns with it.
-    np.testing.assert_allclose(((pulse_reflected + pulse_transmitted) / before).kernel, 1, atol=1e-3)
-    assert (pulse_reflected / before)[0] > 0.98 and (pulse_reflected / before)[1] < 0.01
+    # The leapfrog keeps the pulse's energy, to its grid's dispersion of a pulse this short, and the helix returns
+    # the hand that turns with it, all but the part of the pulse's spectrum outside the reflectance band.
+    np.testing.assert_allclose(((pulse_reflected + pulse_transmitted) / before).kernel, 1, atol=5e-3)
+    assert (pulse_reflected / before)[0] > 0.95 and (pulse_reflected / before)[1] < 0.01
 
 
 if __name__ == "__main__":

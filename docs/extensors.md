@@ -231,16 +231,16 @@ load = load - deviation.commutator(load) / 2 + deviation.commutator(deviation.co
 ![Light through two identical stacks of a turning wave plate between crossed polarizers: the first stack passes light, the second stays dark](../plots/sandwich.gif)
 
 ```python
-def polarizer(axis: Direction) -> OpticalMap:
-    return field_along(axis) * (Field & (axis & time))           # [...] Field <- Field
+field_along = (Direction & time).dual()                          # [] Field <- Direction
+polarizer = field_along * ((Direction & time) & Field)           # [] Field <- (Direction, Direction, Field)
 
-plate = 2 * polarizer(plate_axes) - Field                        # [frames] Field <- Field
+plate = 2 * polarizer(plate_axes, plate_axes) - Field            # [frames] Field <- Field
 sandwich = exit(plate(entrance))                                 # [frames] Field <- Field
 double_stack = sandwich(sandwich)                                # [frames] Field <- Field
 ```
 
 * A polarizer reads the field by pairing it with the plane its axis sweeps in time, `Field & (axis & time)`.
-* A half-wave plate is built from a polarizer, `2 * polarizer(axis) - Field`.
+* A half-wave plate is built from a polarizer, `2 * polarizer(axis, axis) - Field`.
 * One stack passes light, yet `sandwich(sandwich)` is zero for every plate: the stack is a square root of zero.
 
 ---
