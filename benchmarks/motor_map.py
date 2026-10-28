@@ -1,7 +1,6 @@
 """Motor sandwich benchmarks. Run a scenario below; no command-line configuration."""
 
 from collections.abc import Callable
-from functools import partial
 from itertools import product
 from math import ceil
 import platform
@@ -11,84 +10,61 @@ from timeit import Timer
 
 import numpy as np
 
-from numga import Extensor, GAType, NumpyContext
+from numga import Extensor, NumpyContext
+
+
+n_passengers = 16384
+seed = 0
 
 
 def jax_map_amortization() -> None:
     """Does building a shared motor map pay for itself in one application?
 
-    Compare one CGA trivector with 16,384 using compiled dense execution.
-    Include construction in the total: comparing application alone hides the
-    work moved out of the passenger loop. The single-item case exposes the
-    cost of splitting a compiled expression into two dispatched calls.
-
-    M4 Pro, JAX 0.6.0: one item took 7.9 us direct versus 14.6 us
-    build+map; 16,384 took 524 versus 223 us (2.35x faster including build).
-    Precomputation wins by amortizing motor work across passengers, not by
-    making the single-passenger expression intrinsically cheaper.
+    One CGA trivector is compared with a batch of `n_passengers` under compiled
+    dense execution. The total includes construction: comparing application
+    alone hides the work moved out of the passenger loop. The single-item case
+    exposes the cost of splitting a compiled expression into two dispatched calls.
     """
-    print_environment("jax", 0)
+    print_environment("jax", seed)
     print_map_header("jax")
-    for batch in (1, 16384):
-        compare("x+y+z+p+n-", 3, "jax", batch, "dense", 0)
+    for n_batch in (1, n_passengers):
+        compare("x+y+z+p+n-", 3, "jax", n_batch, "dense", seed)
 
 
 def jax_unrolling_crossover() -> None:
     """Does unrolling help equally for 4D vectors and CGA trivectors?
 
-    Hold the batch at 16,384 and compare dense contractions with stacked
-    nonzero expressions. The larger sandwich has many more scalar terms;
-    unrolling trades contraction structure for explicit arithmetic. Report
-    compilation as well as execution to expose both costs of that expansion.
+    With the batch held at `n_passengers`, dense contractions are compared with
+    stacked nonzero expressions. The larger sandwich has many more scalar terms;
+    unrolling trades contraction structure for explicit arithmetic. Compilation
+    is reported as well as execution, exposing both costs of that expansion.
     Computed map application is dense under either policy.
-
-    M4 Pro, JAX 0.6.0: stacked sparse beat dense for 4D vectors, 75 versus
-    265 us. For CGA trivectors it lost, 794 versus 648 us, and compilation
-    grew to 905 versus 23 ms. Unrolling is useful for the smaller expression;
-    it is not a universal optimization. In the 4D case the direct unrolled
-    sandwich even beat the precomputed map's application (146 us).
     """
-    print_environment("jax", 0)
+    print_environment("jax", seed)
     print_map_header("jax")
     for (signature, grade), execution in product(
         (("x+y+z+w+", 1), ("x+y+z+p+n-", 3)),
         ("dense", "sparse"),
     ):
-        compare(signature, grade, "jax", 16384, execution, 0)
+        compare(signature, grade, "jax", n_passengers, execution, seed)
 
 
 def numpy_unrolling_cost() -> None:
-    """Show why skipping zeros is insufficient in an eager array backend.
+    """Does skipping zeros pay in an eager array backend?
 
-    Use 16,384 CGA trivectors: NumPy executes each unrolled term as a separate
-    array operation. Dense contractions and a precomputed map avoid those
-    repeated traversals. Unlike JAX, there is no compiler to fuse the terms.
-    Include map construction to measure the cost of the complete alternative.
-
-    M4 Pro, NumPy 2.2.5: sparse direct took 97.3 ms versus 1.69 ms dense.
-    Building and applying the map took 2.55 ms sparse versus 0.48 ms dense;
-    both applied the computed map in 0.44 ms. Unrolling hurts construction
-    too, but paying that once is far cheaper than carrying it over the batch.
+    For a batch of `n_passengers` CGA trivectors, NumPy executes each unrolled
+    term as a separate array operation. Dense contractions and a precomputed
+    map avoid those repeated traversals. Unlike JAX, there is no compiler to
+    fuse the terms. Map construction is included, measuring the cost of the
+    complete alternative.
     """
-    print_environment("numpy", 0)
+    print_environment("numpy", seed)
     print_map_header("numpy")
     for execution in ("dense", "sparse"):
-        compare("x+y+z+p+n-", 3, "numpy", 16384, execution, 0)
+        compare("x+y+z+p+n-", 3, "numpy", n_passengers, execution, seed)
 
 
-def sandwich(motor: Extensor, values: Extensor) -> Extensor:
-    return motor >> values
-
-
-def build(motor: Extensor, Passenger: GAType) -> Extensor:
-    return motor >> Passenger
-
-
-def apply(transform: Extensor, values: Extensor) -> Extensor:
-    return transform(values)
-
-
-def inputs(signature, grade, backend, batch, execution, seed):
+def inputs(signature: str, grade: int, backend: str, n_batch: int, execution: str, seed: int) -> tuple[Extensor, Extensor]:
     dtype = np.float64
     if backend == "numpy":
         context = NumpyContext(signature, dtype=dtype, execution=execution)
@@ -102,17 +78,17 @@ def inputs(signature, grade, backend, batch, execution, seed):
     rng = np.random.default_rng(seed)
     generator = context.multivector.bivector(
         rng.normal(size=len(context.subspace.bivector())) * 0.15,
-    )
-    motor = generator.exp()
+    )                                                                       # [] Bivector+
+    motor = generator.exp()                                                 # [] Motor+
     Passenger = context.gatype.k_vector(grade)
-    values = context.multivector(
-        Passenger, rng.normal(size=(batch, len(Passenger.output_subspace))),
-    )
-    return motor, values
+    passengers = context.multivector(
+        Passenger, rng.normal(size=(n_batch, len(Passenger.output_subspace))),
+    )                                                                       # [passengers] Passenger+
+    return motor, passengers
 
 
 def measure(operation: Callable, arguments: tuple, backend: str) -> tuple[float, float]:
-    """Return XLA compilation and synchronized warm-call times in seconds."""
+    """The XLA compilation time and the synchronized warm-call time of an operation, in seconds."""
     compilation = 0.0
     if backend == "jax":
         import jax
@@ -137,18 +113,19 @@ def measure(operation: Callable, arguments: tuple, backend: str) -> tuple[float,
     return compilation, median(timer.repeat(repeat=3, number=number)) / number
 
 
-def compare(signature, grade, backend, batch, execution, seed) -> None:
-    motor, values = inputs(signature, grade, backend, batch, execution, seed)
-    build_for_grade = partial(build, Passenger=values.gatype)
-    transform = build_for_grade(motor)
-    _, construction = measure(build_for_grade, (motor,), backend)
-    direct_jit, direct = measure(sandwich, (motor, values), backend)
-    _, mapped = measure(apply, (transform, values), backend)
-    total = construction + mapped
-    print(f"{signature:12} {grade:5} {batch:7} {execution:>6} "
-          f"{direct * 1e6:10.1f} {construction * 1e6:9.1f} {mapped * 1e6:9.1f} "
+def compare(signature: str, grade: int, backend: str, n_batch: int, execution: str, seed: int) -> None:
+    motor, passengers = inputs(signature, grade, backend, n_batch, execution, seed)
+    Passenger = passengers.gatype
+    motor_map = motor >> Passenger                                          # [] Passenger+ <- Passenger+
+    # Each timed operation takes its extensors as arguments, so JAX traces them as inputs.
+    _, construction = measure(lambda motor: motor >> Passenger, (motor,), backend)
+    direct_compilation, direct = measure(lambda motor, passengers: motor >> passengers, (motor, passengers), backend)
+    _, application = measure(lambda motor_map, passengers: motor_map(passengers), (motor_map, passengers), backend)
+    total = construction + application
+    print(f"{signature:12} {grade:5} {n_batch:7} {execution:>6} "
+          f"{direct * 1e6:10.1f} {construction * 1e6:9.1f} {application * 1e6:9.1f} "
           f"{total * 1e6:12.1f} {direct / total:7.2f}x"
-          + (f" {direct_jit * 1e3:13.1f}" if backend == "jax" else ""), flush=True)
+          + (f" {direct_compilation * 1e3:13.1f}" if backend == "jax" else ""), flush=True)
 
 
 def print_environment(backend: str, seed: int) -> None:

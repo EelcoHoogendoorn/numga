@@ -9,7 +9,7 @@ dots about their places on the screen. The far side shows faintly through the ne
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from functools import cache
 
 import matplotlib.pyplot as plt
@@ -54,12 +54,12 @@ struct Particle {
 }
 
 const time = -mv.t.dual();
-const circle_colour = vec3<f32>(0.12, 0.42, 0.46);
+const cut_colour = vec3<f32>(0.12, 0.42, 0.46);
 const outline_colour = vec3<f32>(0.76, 0.78, 0.78);
 const white = vec3<f32>(1.0);
 // How deep a point must lie toward the viewer to show at full strength, and the strength of the far side.
 const fade_depth = 1.0 / 12;
-const far_circles = 0.18;
+const far_cuts = 0.18;
 const far_particles = 0.25;
 
 // The point of the sphere at a place across the view and a depth toward the viewer.
@@ -81,7 +81,7 @@ fn faded(colour: vec3<f32>, strength: f32) -> vec3<f32> {
 // The colour of the circles at a point of the sphere, a place across the view and a depth toward the viewer,
 // over a colour beneath: a cut's pairing with the point, over how fast it changes across the view, is how far
 // across the view the point lies from that cut's circle.
-fn circles(beneath: vec3<f32>, across: vec2<f32>, depth: f32) -> vec3<f32> {
+fn inked_cuts(beneath: vec3<f32>, across: vec2<f32>, depth: f32) -> vec3<f32> {
     let right = camera >> mv.x.dual();
     let up = camera >> mv.y.dual();
     let toward = camera >> mv.z.dual();
@@ -94,7 +94,7 @@ fn circles(beneath: vec3<f32>, across: vec2<f32>, depth: f32) -> vec3<f32> {
         let cut = cuts[index];
         let change = vec2<f32>(cut & rightward, cut & upward);
         if (abs(cut & point) < line_half_width * length(change)) {
-            colour = faded(circle_colour, showing(depth, far_circles));
+            colour = faded(cut_colour, showing(depth, far_cuts));
         }
     }
     return colour;
@@ -120,15 +120,15 @@ fn dots(beneath: vec3<f32>, across: vec2<f32>, near_side: bool) -> vec3<f32> {
 
 fn sample(place: vec2<f32>) -> Sample {
     let across = screen(place) * half_height;
-    let reach = length(across);
-    let depth = sqrt(max(1 - reach * reach, 0.0));
+    let distance = length(across);
+    let depth = sqrt(max(1 - distance * distance, 0.0));
     // The sphere, softly lit by the lamp, white beyond it, its outline drawn.
     let shade = 0.92 + 0.07 * clamp(lamp & on_sphere(across, depth), 0.0, 1.0);
-    var colour = select(white, shade * vec3<f32>(1.0, 1.005, 1.01), reach <= 1);
-    colour = select(colour, outline_colour, abs(reach - 1) < outline_half_width);
+    var colour = select(white, shade * vec3<f32>(1.0, 1.005, 1.01), distance <= 1);
+    colour = select(colour, outline_colour, abs(distance - 1) < outline_half_width);
     colour = dots(colour, across, false);
-    if (reach < 1) {
-        colour = circles(circles(colour, across, -depth), across, depth);
+    if (distance < 1) {
+        colour = inked_cuts(inked_cuts(colour, across, -depth), across, depth);
     }
     return dots(colour, across, true);
 }
@@ -141,35 +141,38 @@ def shader() -> Shader:
     return Shader(supersampled() + source, ga, dict(Point=Point, Cut=Cut, Rotor=Rotor), dict(lamp=lamp))
 
 
-camera = (mv.xy * (-azimuth / 2)).exp() * (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()     # [] Rotor
+azimuth_turn = (mv.xy * (-azimuth / 2)).exp()                               # [] Rotor+
+elevation_tilt = (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()             # [] Rotor+
+camera = azimuth_turn * elevation_tilt                                       # [] Rotor+
 # The lamp, up and to the left of the viewer and in front, a cut through the centre: its pairing with a point of the
 # sphere's near side is how squarely the point faces it.
-lamp = camera >> (mv.y * 0.35 + mv.z * 0.9 - mv.x * 0.25)                    # [] Cut
+lamp = camera >> (mv.y * 0.35 + mv.z * 0.9 - mv.x * 0.25)                    # [] Cut+
 
 
 def coordinates(points: Point) -> np.ndarray:
     """Positions of directions on the last axis: each paired with the planes across x, y and z."""
+    mv = points.context.multivector
     return (stack((mv.x, mv.y, mv.z), axis=-1) & points[..., None]).to_array()
 
 
-def picture(population: Point, circles: Cut) -> np.ndarray:
+def picture(population: Point, cuts: Cut) -> np.ndarray:
     """One population and its circles, `[size, size, 3]` bytes."""
     pixels = size
     pixel = 2 * half_width / pixels
     colours = particle_colours[np.arange(population.shape[-1]) % len(particle_colours)]
     traced = shader()((pixels, pixels), camera=camera, half_height=half_width,
-                      particles=dict(place=population, colour=colours), cuts=circles,
+                      particles=dict(place=population, colour=colours), cuts=cuts,
                       line_half_width=line_width / 2 * pixel, dot_radius=dot_radius * pixel,
                       rim_width=rim_width * pixel, outline_half_width=outline_width / 2 * pixel)["image"]
     return np.round(np.clip(traced, 0, 1) * 255).astype(np.uint8)
 
 
-def draw(population: Point, circles: Cut) -> plt.Figure:
+def draw(population: Point, cuts: Cut) -> plt.Figure:
     """Draw one population and the circles carried alongside it."""
-    return image_figure(picture(population, circles))
+    return image_figure(picture(population, cuts))
 
 
-def frames(population: Point, circles: Cut) -> Iterator[np.ndarray]:
+def frames(states: Iterable[tuple[Point, Cut]]) -> Iterator[np.ndarray]:
     """Animate a fixed camera while the common motion gathers the population."""
-    for frame_population, frame_circles in zip(population, circles):
-        yield picture(frame_population, frame_circles)
+    for population, cuts in states:
+        yield picture(population, cuts)

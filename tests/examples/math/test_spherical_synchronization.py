@@ -69,8 +69,10 @@ def test_common_map_preserves_null_rays_cross_ratios_and_circle_angles():
     def intersection_angle(point, cuts):
         """The Euclidean angle between two circles at a point on both, from their cut planes' normals."""
         position = render.coordinates(point)
-        coefficients = cuts.cast(core.ga.subspace("x y z t")).kernel
-        tangent_normals = coefficients[:, :3] + position * coefficients[:, 3:]
+        # Each cut's parts across x, y and z, and along time, read by pairing with the points on those axes.
+        spatial = (cuts[:, None] & stack((mv.x.dual(), mv.y.dual(), mv.z.dual()))).to_array()
+        temporal = (cuts[:, None] & core.time).to_array()
+        tangent_normals = spatial + position * temporal
         tangent_normals /= np.linalg.norm(tangent_normals, axis=-1, keepdims=True)
         return tangent_normals[0] @ tangent_normals[1]
 
