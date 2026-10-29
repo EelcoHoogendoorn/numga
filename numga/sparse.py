@@ -269,10 +269,13 @@ def _reads(value: SparseExtensor) -> np.ndarray | None:
     """The input site each output site of each map reads, `[..., rows]`, where the map only reads: scalar cells, each
     zero or exactly one, every output site of every map coupled by a one to exactly one input site, as a selection
     and an incidence's batches are. A product with such a map is an indexing of the field, and keeps the field's
-    type, which a product with scalar cells would widen. None for any other map, and for cells that are not concrete
-    NumPy values."""
-    kernel = value.cells.kernel
-    if not (value.cells.gatype.is_scalar and isinstance(kernel, np.ndarray)):
+    type, which a product with scalar cells would widen, on every backend. None for any other map, and for cells traced
+    by JAX, whose values cannot be read: such a map multiplies."""
+    if not value.cells.gatype.is_scalar:
+        return None
+    try:
+        kernel = np.asarray(value.cells.kernel)
+    except TypeError:
         return None
     ones = kernel[..., 0] == 1                                                # [..., couplings]
     if not np.all(ones | (kernel[..., 0] == 0)):
