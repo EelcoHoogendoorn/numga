@@ -9,6 +9,7 @@ import numpy as np
 
 from numga import Extensor, stack
 from examples import instantiate
+from examples.util import charts
 from numga.algebras import VGA3D
 from examples.util.wgsl import image_figure, meshes, solids, strokes
 
@@ -97,7 +98,7 @@ def draw_planar(points: Extensor, faces: np.ndarray, potential: Extensor, curren
     planes = stack((mv.x, mv.y))
     xy = read_points(points.normalized(), planes)
     flow = read_points(current, planes)
-    figure, axis = plt.subplots(figsize=(3, 3), dpi=100)
+    figure, axis = charts.subplots(300, 300)
     axis.tripcolor(xy[:, 0], xy[:, 1], faces, potential.to_array(), shading="gouraud", cmap="viridis", vmin=0, vmax=1)
     chosen = np.arange(0, len(xy), 4)
     axis.quiver(xy[chosen, 0], xy[chosen, 1], flow[chosen, 0], flow[chosen, 1], color="white", width=0.005)

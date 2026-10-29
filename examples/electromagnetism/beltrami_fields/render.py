@@ -9,11 +9,18 @@ import numpy as np
 
 from numga import stack
 from examples.electromagnetism.beltrami_fields import core
+from examples.util import charts
 from examples.util.wgsl import image_figure, meshes, show_pixels, solids, strokes
 
 n_tet_pixels = 300
 n_torus_pixels = 320
 n_anim_pixels = 270
+# The spectrum's width beside the two torus panels, in pixels: what the column leaves them.
+n_spectrum_pixels = charts.DESIGN_WIDTH - 2 * n_torus_pixels
+# The spectrum's margins, left, bottom, right and top, in pixels: room for its tick labels.
+spectrum_margins = np.array([44, 26, 8, 14])
+# The two shown modes, twice the size of the others, as a scatter's area in points squared.
+shown_mode_size = charts.points(2 * charts.MARKER_PX) ** 2
 background = np.ones(3)
 sapphire = np.array([0.20, 0.48, 0.86])
 teal = np.array([0.08, 0.68, 0.56])
@@ -266,6 +273,7 @@ def render_torus_field(mesh: core.Mesh, vertices: core.Point, centres: core.Poin
                        meshes=[(shell, 0.16), (tubes, 1.0)])
 
 
+@charts.style()
 def draw_beltrami_eigenmodes(mesh: core.Mesh, vertices: core.Point, centres: core.Point,
                              volumes: core.Volume, inverse_eigenvalues: core.Scalar, mode_magnetic: core.Field,
                              shown_indices: np.ndarray) -> plt.Figure:
@@ -278,20 +286,22 @@ def draw_beltrami_eigenmodes(mesh: core.Mesh, vertices: core.Point, centres: cor
     taylor_img = render_torus_field(mesh, vertices, centres, volumes, mode_magnetic[0], view)
     excited_img = render_torus_field(mesh, vertices, centres, volumes, mode_magnetic[1], view)
 
-    dpi = 100
-    figure = plt.figure(figsize=(3 * n_torus_pixels / dpi, n_torus_pixels / dpi), dpi=dpi)
-    ax_spec = figure.add_axes([0.055, 0.14, 0.255, 0.78])
-    ax_taylor = figure.add_axes([0.335, 0.0, 0.33, 1.0])
-    ax_excited = figure.add_axes([0.67, 0.0, 0.33, 1.0])
+    width, height = charts.DESIGN_WIDTH, n_torus_pixels
+    figure = plt.figure(figsize=(width / charts.DPI, height / charts.DPI))
+    left, bottom, right, top = spectrum_margins
+    ax_spec = figure.add_axes([left / width, bottom / height,
+                               (n_spectrum_pixels - left - right) / width, (height - bottom - top) / height])
+    ax_taylor = figure.add_axes([n_spectrum_pixels / width, 0.0, n_torus_pixels / width, 1.0])
+    ax_excited = figure.add_axes([(n_spectrum_pixels + n_torus_pixels) / width, 0.0, n_torus_pixels / width, 1.0])
 
-    ax_spec.axhline(0.0, color="#6c7a82", linewidth=0.9, zorder=1)
+    # The zero line as thin as the chart's frame.
+    ax_spec.axhline(0.0, color="#6c7a82", linewidth=charts.FRAME_WIDTH, zorder=1)
     negative = mu < 0
     positive = mu > 0
-    ax_spec.scatter(indices[negative], mu[negative], s=14, color=sapphire, alpha=0.82, zorder=2)
-    ax_spec.scatter(indices[positive], mu[positive], s=14, color=vermilion, alpha=0.82, zorder=2)
+    ax_spec.scatter(indices[negative], mu[negative], color=sapphire, alpha=0.82, zorder=2)
+    ax_spec.scatter(indices[positive], mu[positive], color=vermilion, alpha=0.82, zorder=2)
     resolved = shown_indices % n_modes
-    ax_spec.scatter(resolved, mu[resolved], s=52, color=[vermilion, teal],
-                    edgecolor="white", linewidth=1.0, zorder=4)
+    ax_spec.scatter(resolved, mu[resolved], s=shown_mode_size, color=[vermilion, teal], edgecolor="white", zorder=4)
     mu_max = float(np.abs(mu).max())
     ax_spec.set_xlim(-4, n_modes + 3)
     ax_spec.set_ylim(-1.15 * mu_max, 1.15 * mu_max)
@@ -301,7 +311,7 @@ def draw_beltrami_eigenmodes(mesh: core.Mesh, vertices: core.Point, centres: cor
     ax_spec.spines["right"].set_visible(False)
     ax_spec.spines["left"].set_color("#52616a")
     ax_spec.spines["bottom"].set_color("#52616a")
-    ax_spec.tick_params(colors="#52616a", labelsize=8)
+    ax_spec.tick_params(colors="#52616a")
 
     for ax, img in ((ax_taylor, taylor_img), (ax_excited, excited_img)):
         show_pixels(ax, img)

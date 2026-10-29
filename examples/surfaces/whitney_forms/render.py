@@ -10,6 +10,7 @@ from matplotlib.patches import Polygon
 from matplotlib.tri import Triangulation
 
 from numga import stack
+from examples.util import charts
 from examples.surfaces.whitney_forms import core
 
 primal_colour = "#286580"
@@ -24,8 +25,8 @@ potential_colours = LinearSegmentedColormap.from_list(
     "whitney_potential", ("#286580", "#f5f2eb", "#d77542"))
 n_contours = 7
 n_streamlines = 15
-row_width, row_height, dpi = 11.2, 2.8, 100
-flow_width, flow_height = 8.8, 4.2
+# The pixel sizes of a row of four triangles and of the two disks side by side.
+row_size, flow_size = (780, 195), (600, 290)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -55,7 +56,7 @@ def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
     centroid = corner_xy.mean(axis=0)
     levels = np.linspace(0.0, 1.0, n_contours + 2)[1:-1]
 
-    figure, axes = plt.subplots(1, 4, figsize=(row_width, row_height), dpi=dpi)
+    figure, axes = charts.subplots(*row_size, ncols=4)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.04)
 
     for index in range(3):
@@ -108,7 +109,7 @@ def draw_edge_1forms(corners: core.Point, points: core.Point, edge_forms: core.P
     field_xy = coordinates(edge_forms.dual())
     max_norm = np.linalg.norm(field_xy, axis=-1).max()
 
-    figure, axes = plt.subplots(1, 4, figsize=(row_width, row_height), dpi=dpi)
+    figure, axes = charts.subplots(*row_size, ncols=4)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.04)
 
     for index in range(3):
@@ -172,7 +173,7 @@ def draw_anisotropic_flow(mesh: core.Mesh, vertices: core.Point, centres: core.P
         ):
             arrow_faces.append(face)
 
-    figure, axes = plt.subplots(1, 2, figsize=(flow_width, flow_height), dpi=dpi)
+    figure, axes = charts.subplots(*flow_size, ncols=2)
     figure.subplots_adjust(left=0.015, right=0.985, bottom=0.02, top=0.98, wspace=0.05)
 
     for index, ax in enumerate(axes):

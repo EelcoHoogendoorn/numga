@@ -36,10 +36,10 @@ lobe_centres = stack((-0.36 * horizontal - 0.06 * vertical,
 lobe_strengths = np.array([1.0, -0.65])                                      # [lobes]
 lobe_radius = 0.28
 resistivities = np.array([0.0, 0.015])                                       # [cases]
-dt = 0.003
-n_steps = 320
-n_steps_per_frame = 5
-frame_duration_ms = 55
+dt = 0.0027
+n_steps = 356
+n_steps_per_frame = 4
+frame_duration_ms = 40
 
 
 # --- plumbing -------------------------------------------------------------------------

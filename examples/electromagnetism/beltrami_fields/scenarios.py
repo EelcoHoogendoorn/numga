@@ -22,9 +22,9 @@ n_minor = 8
 shown_indices = np.array([-1, -4])
 selected_indices = np.array([-1, -2, -4, -8, 3])
 initial_weights = np.array([0.45, 0.70, 0.85, 0.85, 0.45])                    # [selected]
-n_frames = 28
+n_frames = 46
 relaxation_time = 0.025
-frame_duration_ms = 65
+frame_duration_ms = 40
 
 
 # --- plumbing -------------------------------------------------------------------------

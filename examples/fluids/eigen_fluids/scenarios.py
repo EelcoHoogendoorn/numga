@@ -38,9 +38,9 @@ eigenvalue_cutoff = 140.0
 # Fourth-order Runge–Kutta step size, total step count, frame stride, kinematic viscosity, and frame duration.
 dt = 0.007
 n_steps = 800
-stride = 10
+stride = 8
 viscosity = 0.0009
-frame_duration_ms = 50
+frame_duration_ms = 40
 
 
 # Complete spherical harmonic bands through degree eight, on a finer geometric mesh.
@@ -52,7 +52,7 @@ sphere_strength = 9.0
 sphere_wave_amplitude = 0.065
 sphere_dt = 0.025
 n_sphere_steps = 400
-sphere_stride = 5
+sphere_stride = 4
 sphere_viscosity = 0.001
 
 
@@ -86,18 +86,20 @@ def sphere_demo() -> None:
     normals = patches / areas                                                    # Patch-[faces]
     corner_gradients = (sides | patches.inverse()) / 2                           # [corners] Plane+[faces]
     gradient = (core.spdiag(corner_gradients * core.Scalar) * mesh.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
-    thirds = mesh.incidence[2, 0].mean(axis=0)                                   # Scalar+[faces <- vertices]
+    # Each face's mean over its corners; its reverse hands each corner a third of every face around it.
+    corner_mean = mesh.incidence[2, 0].mean(axis=0)                              # Scalar+[faces <- vertices]
+    dual_areas = ~corner_mean * areas                                            # Scalar+[vertices]
 
     # The stiffness and vertex mass determine the surface's spatial modes.
     stiffness = gradient.adjugate()(core.spdiag(areas * core.Plane.dual())(gradient))   # (Amount- <- Scalar+)[vertices <- vertices]
-    mass = core.spdiag((~thirds * areas) * core.Scalar.dual())                   # (Amount- <- Scalar+)[vertices <- vertices]
+    mass = core.spdiag(dual_areas * core.Scalar.dual())                          # (Amount- <- Scalar+)[vertices <- vertices]
     eigenvalues, eigenfields = stiffness.eigh(mass, n_sphere_modes + 1)          # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
     # The eigenvalues and the amplitudes of the modes are fields over the modes, which the structure constants couple.
     eigenvalues, modes = eigenvalues[1:].field(), eigenfields[1:]                # Scalar+[modes], [modes] Scalar+[vertices]
     superposition = (modes * core.Scalar).batch().field(0, 1).adjoint()         # (Scalar+ <- Scalar+)[vertices <- modes]
 
     structure = core.structure_constants(mesh, patches, gradient, modes)         # (Scalar+ <- (Scalar+, Scalar+))[modes <- (modes, modes)]
-    initial_field = core.shear_layers(vertices, ~thirds * areas, sphere_latitude, sphere_width,
+    initial_field = core.shear_layers(vertices, dual_areas, sphere_latitude, sphere_width,
                                      sphere_strength, sphere_wave_amplitude)     # Scalar+[vertices]
     start = (modes & mass(initial_field)).sites.sum().field()                    # Scalar+[modes]
     states = islice(core.advect(start, structure, eigenvalues, sphere_viscosity, sphere_dt, n_sphere_steps),
@@ -119,11 +121,13 @@ def main() -> None:
     normals = patches / areas                                                    # Patch-[faces]
     corner_gradients = (sides | patches.inverse()) / 2                           # [corners] Plane+[faces]
     gradient = (core.spdiag(corner_gradients * core.Scalar) * mesh.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
-    thirds = mesh.incidence[2, 0].mean(axis=0)                                   # Scalar+[faces <- vertices]
+    # Each face's mean over its corners; its reverse hands each corner a third of every face around it.
+    corner_mean = mesh.incidence[2, 0].mean(axis=0)                              # Scalar+[faces <- vertices]
+    dual_areas = ~corner_mean * areas                                            # Scalar+[vertices]
 
     # The stiffness and vertex mass determine the surface's spatial modes.
     stiffness = gradient.adjugate()(core.spdiag(areas * core.Plane.dual())(gradient))   # (Amount- <- Scalar+)[vertices <- vertices]
-    mass = core.spdiag((~thirds * areas) * core.Scalar.dual())                   # (Amount- <- Scalar+)[vertices <- vertices]
+    mass = core.spdiag(dual_areas * core.Scalar.dual())                          # (Amount- <- Scalar+)[vertices <- vertices]
     eigenvalues, eigenfields = stiffness.eigh(mass, n_modes + 1)                 # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
     # The eigenvalues and the amplitudes of the modes are fields over the modes, which the structure constants couple.
     eigenvalues, modes = eigenvalues[1:].field(), eigenfields[1:]                # Scalar+[modes], [modes] Scalar+[vertices]

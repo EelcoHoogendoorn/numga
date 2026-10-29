@@ -24,10 +24,10 @@ n_annulus_rings = 15
 circulation_strength = 0.65
 pulse_centre = -0.58 * horizontal + 0.18 * vertical                          # [] Point-
 pulse_width = 0.15
-dt = 0.005
-n_steps = 320
-stride = 8
-frame_duration_ms = 60
+dt = 0.00533
+n_steps = 300
+stride = 5
+frame_duration_ms = 40
 
 
 # --- plumbing -------------------------------------------------------------------------

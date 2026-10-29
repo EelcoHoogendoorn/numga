@@ -10,6 +10,7 @@ from matplotlib.patches import Polygon
 from matplotlib.tri import Triangulation
 
 from numga import stack
+from examples.util import charts
 from examples.surfaces.regge_calculus import core
 
 primal_colour = "#286580"
@@ -28,8 +29,8 @@ indicatrix_colours = LinearSegmentedColormap.from_list(
 n_contours = 7
 n_streamlines = 15
 n_ellipse_grid = 25
-row_width, row_height, dpi = 11.2, 2.8, 100
-disk_row_width, disk_row_height = 11.2, 3.6
+# The pixel sizes of a row of four triangles and of a row of three disks.
+row_size, disk_row_size = (780, 195), (780, 260)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -75,7 +76,7 @@ def draw_metric_basis(corners: core.Point, points: core.Point,
     basis_bound = np.abs(basis_forms).max()
     nonzero_levels = np.linspace(-0.75 * basis_bound, 0.75 * basis_bound, 6)
 
-    figure, axes = plt.subplots(1, 4, figsize=(row_width, row_height), dpi=dpi)
+    figure, axes = charts.subplots(*row_size, ncols=4)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.04)
 
     for index in range(3):
@@ -146,7 +147,7 @@ def draw_curvature_defects(mesh: core.Mesh, vertices: core.Point, centres: core.
     anisotropy_bound = max(float(np.abs(anisotropy).max()), 1e-6)
     indicatrix_norm = Normalize(-anisotropy_bound, anisotropy_bound)
 
-    figure, axes = plt.subplots(1, 3, figsize=(disk_row_width, disk_row_height), dpi=dpi)
+    figure, axes = charts.subplots(*disk_row_size, ncols=3)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.04)
 
     for case_index, ax in enumerate(axes):
@@ -183,7 +184,7 @@ def draw_intrinsic_flow(mesh: core.Mesh, vertices: core.Point, centres: core.Poi
     potential_levels = np.linspace(-0.85, 0.85, n_contours + 2)[1:-1]
     arrow_faces = spaced_faces(centre_xy, 0.88, 0.18)
 
-    figure, axes = plt.subplots(1, 3, figsize=(disk_row_width, disk_row_height), dpi=dpi)
+    figure, axes = charts.subplots(*disk_row_size, ncols=3)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.04)
 
     for index, ax in enumerate(axes):

@@ -28,8 +28,8 @@ pulse_width = 0.085
 wavelength = 0.17
 before_row = 72
 after_row = 310
-n_frames = 48
-frame_duration_ms = 55
+n_frames = 66
+frame_duration_ms = 40
 
 
 # --- plumbing -------------------------------------------------------------------------

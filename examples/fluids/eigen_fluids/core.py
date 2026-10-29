@@ -39,14 +39,15 @@ def structure_constants(mesh: Mesh, patches: Patch, gradient: GradientMap, modes
     """Each modal Lie–Poisson structure constant is the surface integral of a mode against the Jacobian of two
     others, the wedge of their gradients read on the surface. Bound to a streamfunction and a vorticity, the
     constants give the advection rate of every mode."""
-    thirds = mesh.incidence[2, 0].mean(axis=0)                                   # Scalar+[faces <- vertices]
+    # Each face's mean over its corners.
+    corner_mean = mesh.incidence[2, 0].mean(axis=0)                              # Scalar+[faces <- vertices]
     face_gradients = gradient(modes)                                             # [modes] Plane+[faces]
     # Meeting each mode's gradient with the triangle's area patch gives its area-weighted tangent velocity,
     # which pairs against another gradient to give the Jacobian integrated over the triangle.
     flows = face_gradients ^ patches                                             # [modes] Point-[faces]
     jacobians = face_gradients[:, None] & flows[None, :]                         # [modes, modes] Scalar+[faces]
     # Against a Jacobian constant on each triangle, a mode integrates through its mean over the triangle's corners.
-    face_means = thirds * modes                                                  # [modes] Scalar+[faces]
+    face_means = corner_mean * modes                                             # [modes] Scalar+[faces]
     integral = (face_means * Scalar).batch().field(0, 1)                         # (Scalar+ <- Scalar+)[modes <- faces]
     # Totally antisymmetric, the constants are unchanged by a cyclic shift of their three modes: the mode the
     # Jacobians are integrated against may stand last, as the mode of the vorticity.

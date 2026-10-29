@@ -12,6 +12,7 @@ from matplotlib.tri import LinearTriInterpolator, Triangulation
 
 from numga import stack
 from examples.surfaces.dirac_kahler import core
+from examples.util import charts
 from examples.util.wgsl import meshes, solids, strokes
 
 n_panel_pixels = 300
@@ -121,9 +122,7 @@ def contours(ax: plt.Axes, mesh: core.Mesh, places: np.ndarray,
 
 def panel_figure() -> tuple[plt.Figure, np.ndarray]:
     """Four distinct fields are compared in a compact square of equally sized viewports."""
-    dpi = 100
-    size = 2 * n_panel_pixels / dpi
-    figure, axes = plt.subplots(2, 2, figsize=(size, size), dpi=dpi)
+    figure, axes = charts.subplots(2 * n_panel_pixels, 2 * n_panel_pixels, nrows=2, ncols=2)
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0, hspace=0)
     return figure, axes.reshape(-1)
 

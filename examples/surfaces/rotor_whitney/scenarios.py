@@ -23,9 +23,9 @@ skyrmion_twist = np.pi
 saddle_height = 0.28
 boundary_tilt_rates = np.array([0.35, 0.85, -0.75])                          # [cases]
 boundary_twist_rates = np.array([0.0, 1.15, -1.15])                          # [cases]
-relaxation_step_size = 0.18
-n_relaxation_steps = 20
-frame_duration_ms = 90
+relaxation_step_size = 0.08
+n_relaxation_steps = 45
+frame_duration_ms = 40
 
 
 # --- plumbing -------------------------------------------------------------------------
