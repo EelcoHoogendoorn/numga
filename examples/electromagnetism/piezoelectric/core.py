@@ -10,15 +10,15 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import NumpyContext
 from numga.algebras import STA2D as ga
 from numga.sparse import SparseExtensor
 
+from examples import instantiate
 from examples.electromagnetism.piezoelectric.numerical import solve_coupled
 
 # The spacetime of the strip's plane, x+y+t-: two positive spatial directions, one negative time direction.
-ctx = NumpyContext(ga)
-mv = ctx.multivector
+mesh_module = instantiate("examples.util.mesh", ga)
+Mesh, ctx, mv = mesh_module.Mesh, mesh_module.ctx, mesh_module.mv
 Scalar = ga.gatype.scalar()
 # Spatial planes read positions, displacements and polarization, their intrinsic complements.
 Plane = ga.gatype.from_blades("x y")
@@ -36,24 +36,25 @@ pole = mv.y.dual()
 
 
 # --- math -----------------------------------------------------------------------------
-def triangles(vertices: Point, faces: np.ndarray) -> tuple[Scalar, Plane]:
-    """Each triangle's area, and each of its corners' shape-function gradients `[faces, corners]`."""
-    corners = vertices.batch()[faces]
-    # Each corner's opposite edge, from the next corner to the one after it.
-    edges = corners[:, [1, 2, 0]] - corners[:, [2, 0, 1]]
-    # Twice a triangle's signed area: its two edges joined, read against time, intrinsic as a winding is.
-    double_area = (edges[:, 0] & edges[:, 1]) & time
-    # A corner's shape function rises from zero along the opposite edge to one at the corner: its gradient is the
-    # plane through that edge and time, over twice the signed area.
-    gradients = (edges & time) / double_area[:, None]
+def triangles(mesh: Mesh, vertices: Point) -> tuple[Scalar, Plane]:
+    """Each triangle's area, `Scalar+[faces]`, and each of its corners' shape-function gradients,
+    `[corners] Plane+[faces]`."""
+    # The side facing each corner, signed as the triangle's winding runs along it.
+    sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                         # [corners] Point-[faces]
+    # Twice a triangle's signed area: its two sides joined, read against time, intrinsic as a winding is.
+    double_area = (sides[0] & sides[1]) & time                                    # Scalar-[faces]
+    # A corner's shape function rises from zero along the facing side to one at the corner: its gradient is the
+    # plane through that side and time, over twice the signed area.
+    gradients = (time & sides) / double_area                                      # [corners] Plane+[faces]
     # The integrals weight by the area's size, an ordinary number.
     return double_area.norm() / 2, gradients
 
 
-def strain(displacement: Point, gradients: Plane, faces: np.ndarray) -> Strain:
-    """The symmetric displacement gradient on each triangle, as a map from directions to stretch readings."""
-    movement = displacement.batch()[..., faces]
-    gradient = (movement.dual_inverse() * (gradients & Point)).sum(axis=-1)
+def strain(mesh: Mesh, displacement: Point, gradients: Plane) -> Strain:
+    """The symmetric displacement gradient on each triangle, `[faces]`, as a map from directions to stretch readings:
+    a map per triangle, so read on the batch of triangles, where the adjugate acts on each map."""
+    movement = (mesh.incidence[2, 0] * displacement).batch()                      # [..., corners, faces] Point-
+    gradient = (movement.dual_inverse() * (gradients.batch() & Point)).sum(axis=-2)
     return (gradient + gradient.adjugate()) / 2
 
 
@@ -99,22 +100,24 @@ def assemble(mesh: Mesh, areas: Scalar, gradients: Plane, elastic: Elastic, pola
              permittivity: Permittivity, poling: Scalar, width: float
              ) -> tuple[SparseExtensor, SparseExtensor, SparseExtensor]:
     """The three blocks of electric enthalpy, as maps to the work-duals of the nodal fields."""
-    # Binding each shape gradient turns the continuum laws into nodal work and polarization maps.
-    work = elastic(Point, gradients[:, None, :], Point, gradients[:, :, None])
-    polarized = polarization(Point, gradients) * poling[:, None]
+    # Binding each shape gradient turns the continuum laws into nodal work and polarization maps, test corners
+    # first and trial corners second.
+    gradients = gradients.batch()                                                 # [corners, faces] Plane+
+    work = elastic(Point, gradients[None], Point, gradients[:, None])
+    polarized = polarization(Point, gradients) * poling.batch()
     electric = -(gradients ^ mv.t) * Scalar
 
     # Read the work form as the force paired with a test displacement.
     elastic_cells = (Plane & Point).solve(work)
     # Polarization sweeps a plane through time, the electric field's work-dual.
     # Reading this map backwards supplies the converse effect from the same coupling.
-    mixed_cells = -(polarized[:, :, None] & time).adjugate()(electric[:, None, :])
-    electric_cells = -electric[:, :, None].adjugate()(permittivity(electric[:, None, :]) & time)
+    mixed_cells = -(polarized[:, None] & time).adjugate()(electric[None])
+    electric_cells = -electric[:, None].adjugate()(permittivity(electric[None]) & time)
 
     # Local test/trial pairs become couplings between global nodes at assembly.
-    weights = width * areas[..., None, None]
-    return tuple(SparseExtensor.from_indices(cells * weights, mesh.faces[:, :, None], mesh.faces[:, None, :],
-                                             (mesh.n_nodes, mesh.n_nodes))
+    weights = width * areas.batch()
+    return tuple(SparseExtensor.from_indices(cells * weights, mesh.faces.T[:, None, :], mesh.faces.T[None, :, :],
+                                             (mesh.n_vertices, mesh.n_vertices))
                  for cells in (elastic_cells, mixed_cells, electric_cells))
 
 
@@ -133,20 +136,20 @@ def equilibrium(mechanical: SparseExtensor, coupling: SparseExtensor, dielectric
 
 
 # --- plumbing -------------------------------------------------------------------------
-class Mesh:
-    """A triangulated strip's topology: its faces, by corner nodes, and the nodes of its clamped edge, its tip, its
-    bottom and top electrodes and its bonded interface."""
+class Strip(Mesh):
+    """A triangulated strip's mesh, with the vertices of its clamped edge, its tip, its bottom and top electrodes and
+    its bonded interface."""
 
-    def __init__(self, n_nodes: int, faces: np.ndarray, clamped: np.ndarray, tip: np.ndarray,
+    def __init__(self, n_vertices: int, faces: np.ndarray, clamped: np.ndarray, tip: np.ndarray,
                  bottom: np.ndarray, top: np.ndarray, interface: np.ndarray) -> None:
-        self.n_nodes, self.faces = n_nodes, faces
+        super().__init__(n_vertices, faces)
         self.clamped, self.tip = clamped, tip
         self.bottom, self.top, self.interface = bottom, top, interface
 
 
-def strip(length: float, thickness: float, n_length: int, n_thickness: int) -> tuple[Mesh, Point, Scalar]:
-    """A rectangular grid split into alternating triangles, with a material interface halfway up: its topology, its
-    vertices, and each triangle's poling sign."""
+def strip(length: float, thickness: float, n_length: int, n_thickness: int) -> tuple[Strip, Point, Scalar]:
+    """A rectangular grid split into alternating triangles, with a material interface halfway up: its mesh, its
+    vertices, and each triangle's poling sign, `Scalar+[faces]`."""
     horizontal = np.linspace(0, length, n_length + 1)
     vertical = np.linspace(-thickness / 2, thickness / 2, n_thickness + 1)
     vertices = (axis * horizontal[:, None] + pole * vertical[None, :]).reshape(-1).field()
@@ -158,35 +161,35 @@ def strip(length: float, thickness: float, n_length: int, n_thickness: int) -> t
     second = np.stack((np.where(parity, lower_right, lower_left), upper_right, upper_left), axis=-1)
     faces = np.stack((first, second), axis=-2).reshape(-1, 3)
     layer = np.broadcast_to(np.where(np.arange(n_thickness) < n_thickness // 2, -1, 1), lower_left.shape)
-    poling = mv.scalar(np.repeat(layer.reshape(-1), 2)[:, None])
-    mesh = Mesh(nodes.size, faces, nodes[0], nodes[-1], nodes[:, 0], nodes[:, -1], nodes[:, n_thickness // 2])
+    poling = mv.scalar(np.repeat(layer.reshape(-1), 2)[:, None]).field()
+    mesh = Strip(nodes.size, faces, nodes[0], nodes[-1], nodes[:, 0], nodes[:, -1], nodes[:, n_thickness // 2])
     return mesh, vertices, poling
 
 
-def boundary_maps(mesh: Mesh, floating: np.ndarray) -> tuple[SparseExtensor, SparseExtensor]:
+def boundary_maps(mesh: Strip, floating: np.ndarray) -> tuple[SparseExtensor, SparseExtensor]:
     """Free displacement nodes and potential groups; the named electrode shares one free voltage."""
-    n_nodes = mesh.n_nodes
-    free_movement = np.setdiff1d(np.arange(n_nodes), mesh.clamped)
+    n_vertices = mesh.n_vertices
+    free_movement = np.setdiff1d(np.arange(n_vertices), mesh.clamped)
     movement = SparseExtensor.from_indices(
         mv.scalar(np.ones((len(free_movement), 1))) * Point,
-        free_movement, np.arange(len(free_movement)), (n_nodes, len(free_movement)))
-    interior = np.setdiff1d(np.arange(n_nodes), np.concatenate((mesh.top, mesh.bottom)))
+        free_movement, np.arange(len(free_movement)), (n_vertices, len(free_movement)))
+    interior = np.setdiff1d(np.arange(n_vertices), np.concatenate((mesh.top, mesh.bottom)))
     rows = np.concatenate((interior, floating))
     columns = np.concatenate((np.arange(len(interior)), np.full(len(floating), len(interior))))
     n_voltages = len(interior) + int(len(floating) > 0)
     voltage = SparseExtensor.from_indices(mv.scalar(np.ones((len(rows), 1))) * Scalar,
-                                        rows, columns, (n_nodes, n_voltages))
+                                        rows, columns, (n_vertices, n_voltages))
     return movement, voltage
 
 
-def electrode_potential(mesh: Mesh, voltage: float) -> Scalar:
-    values = np.zeros(mesh.n_nodes)
+def electrode_potential(mesh: Strip, voltage: float) -> Scalar:
+    values = np.zeros(mesh.n_vertices)
     values[mesh.top] = voltage
     return mv.scalar(values[:, None]).field()
 
 
-def tip_load(mesh: Mesh, force: float) -> Plane:
-    weights = np.zeros(mesh.n_nodes)
+def tip_load(mesh: Strip, force: float) -> Plane:
+    weights = np.zeros(mesh.n_vertices)
     weights[mesh.tip] = 1
     weights[mesh.tip[[0, -1]]] = 0.5
     return (mv.y * (force * weights / weights.sum())).field()

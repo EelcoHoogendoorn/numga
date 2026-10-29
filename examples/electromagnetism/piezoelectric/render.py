@@ -40,7 +40,7 @@ def scalars(values: core.Scalar) -> np.ndarray:
 class DeviceView:
     """The strip's moving artists, with fixed deformation and colour scales across frames."""
 
-    def __init__(self, mesh: core.Mesh, vertices: core.Point, areas: core.Scalar, displacement_scale: float,
+    def __init__(self, mesh: core.Strip, vertices: core.Point, areas: core.Scalar, displacement_scale: float,
                  voltage_scale: float, strain_scale: float) -> None:
         self.mesh = mesh
         self.rest = coordinates(vertices)
@@ -119,7 +119,7 @@ class DeviceView:
         return self.figure
 
 
-def draw_mesh(mesh: core.Mesh, vertices: core.Point) -> plt.Figure:
+def draw_mesh(mesh: core.Strip, vertices: core.Point) -> plt.Figure:
     """The clamped end of the strip's mesh: its triangles, the electrodes along its top and bottom, the bonded
     interface between its layers, and the clamp holding its first column of nodes."""
     rest = coordinates(vertices)
@@ -143,7 +143,7 @@ def draw_mesh(mesh: core.Mesh, vertices: core.Point) -> plt.Figure:
     return figure
 
 
-def draw_device(mesh: core.Mesh, vertices: core.Point, areas: core.Scalar, displacement: core.Point, potential: core.Scalar,
+def draw_device(mesh: core.Strip, vertices: core.Point, areas: core.Scalar, displacement: core.Point, potential: core.Scalar,
                 axial_strain: core.Scalar, displacement_scale: float,
                 voltage_scale: float, strain_scale: float) -> plt.Figure:
     """The clamped strip, with signed axial strain on its layers and signed voltage on its electrodes."""
@@ -151,7 +151,7 @@ def draw_device(mesh: core.Mesh, vertices: core.Point, areas: core.Scalar, displ
     return view.update(displacement, potential, axial_strain)
 
 
-def animate(mesh: core.Mesh, vertices: core.Point, areas: core.Scalar, states: Iterator[tuple[core.Point, core.Scalar, core.Scalar]],
+def animate(mesh: core.Strip, vertices: core.Point, areas: core.Scalar, states: Iterator[tuple[core.Point, core.Scalar, core.Scalar]],
             displacement_scale: float, voltage_scale: float, strain_scale: float) -> Iterator[np.ndarray]:
     """Successive equilibria, with the camera and all three scales held fixed."""
     view = DeviceView(mesh, vertices, areas, displacement_scale, voltage_scale, strain_scale)

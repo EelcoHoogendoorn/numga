@@ -21,7 +21,7 @@ def material():
 @pytest.fixture(scope="module")
 def device(material):
     mesh, vertices, poling = core.strip(10, 1, 40, 6)
-    areas, gradients = core.triangles(vertices, mesh.faces)
+    areas, gradients = core.triangles(mesh, vertices)
     return mesh, vertices, gradients, poling, core.assemble(mesh, areas, gradients, *material, poling, WIDTH)
 
 
@@ -86,20 +86,20 @@ def test_affine_fields_and_rigid_motion_are_reproduced(device):
     translation = vertices * 0 + core.axis * .3 + core.pole * .7
     turning = vertices.commutator(core.mv.xy * .2)
     for displacement in (translation, turning):
-        np.testing.assert_allclose(core.strain(displacement, gradients, mesh.faces).kernel, 0, atol=1e-12)
+        np.testing.assert_allclose(core.strain(mesh, displacement, gradients).kernel, 0, atol=1e-12)
         np.testing.assert_allclose(mechanical(displacement).kernel, 0, atol=1e-10)
         np.testing.assert_allclose(coupling.adjugate()(displacement).kernel, 0, atol=1e-10)
 
     displacement = (core.axis * (.2 * horizontal + .07 * vertical)
                     + core.pole * (.07 * horizontal - .3 * vertical))
-    strain = core.strain(displacement, gradients, mesh.faces)
+    strain = core.strain(mesh, displacement, gradients)
     np.testing.assert_allclose((core.axis & strain(core.axis)).kernel, .2, atol=1e-12, rtol=0)
     np.testing.assert_allclose((core.pole & strain(core.pole)).kernel, -.3, atol=1e-12, rtol=0)
     np.testing.assert_allclose((core.axis & strain(core.pole)).kernel, .07, atol=1e-12, rtol=0)
 
     potential = 2 * horizontal - 3 * vertical + .7
     expected = -(2 * core.mv.x - 3 * core.mv.y) ^ core.mv.t
-    electric = -(potential.batch()[..., mesh.faces] * (gradients ^ core.mv.t)).sum(axis=-1)
+    electric = -((mesh.incidence[2, 0] * potential).batch() * (gradients.batch() ^ core.mv.t)).sum(axis=-2)
     np.testing.assert_allclose((electric - expected).kernel, 0, atol=1e-11)
     constant = core.electrode_potential(mesh, 0) + 1
     np.testing.assert_allclose(coupling(constant).kernel, 0, atol=1e-11)
@@ -111,8 +111,8 @@ def test_actuation_and_short_circuit_sensing_are_reciprocal(device):
     fixed = np.array([], dtype=int)
     actuator, _, _ = solve(mesh, blocks, VOLTAGE, 0, fixed)
     _, _, sensor_charge = solve(mesh, blocks, 0, FORCE, fixed)
-    tip = SparseExtensor.selection(core.ctx, mesh.tip, mesh.n_nodes)
-    top = SparseExtensor.selection(core.ctx, mesh.top, mesh.n_nodes)
+    tip = SparseExtensor.selection(core.ctx, mesh.tip, mesh.n_vertices)
+    top = SparseExtensor.selection(core.ctx, mesh.top, mesh.n_vertices)
     weights = np.ones(len(mesh.tip))
     weights[[0, -1]] = 0.5
     tip_motion = ((core.mv.y & (tip * actuator)) * core.mv.scalar(weights[:, None]).field()).sites.sum() / weights.sum()
@@ -126,10 +126,10 @@ def test_actuation_and_short_circuit_sensing_are_reciprocal(device):
 def test_floating_electrode_is_equipotential_and_conserves_charge(device):
     mesh, _, _, _, (mechanical, coupling, dielectric) = device
     displacement, potential, charges = solve(mesh, (mechanical, coupling, dielectric), 0, FORCE, mesh.top)
-    n_nodes = mesh.n_nodes
-    interior = np.setdiff1d(np.arange(n_nodes), np.concatenate((mesh.bottom, mesh.top)))
-    free = np.setdiff1d(np.arange(n_nodes), mesh.clamped)
-    top = SparseExtensor.selection(core.ctx, mesh.top, mesh.n_nodes)
+    n_vertices = mesh.n_vertices
+    interior = np.setdiff1d(np.arange(n_vertices), np.concatenate((mesh.bottom, mesh.top)))
+    free = np.setdiff1d(np.arange(n_vertices), mesh.clamped)
+    top = SparseExtensor.selection(core.ctx, mesh.top, mesh.n_vertices)
     voltage = (top * potential).sites.mean()
 
     assert np.abs(voltage.kernel).max() > 1e-6
@@ -149,7 +149,7 @@ def test_floating_electrode_is_equipotential_and_conserves_charge(device):
 
 def test_reversing_poling_reverses_the_coupled_responses(device, material):
     mesh, vertices, gradients, poling, blocks = device
-    areas, _ = core.triangles(vertices, mesh.faces)
+    areas, _ = core.triangles(mesh, vertices)
     reversed_blocks = core.assemble(mesh, areas, gradients, *material, -poling, WIDTH)
     fixed = np.array([], dtype=int)
     displacement, potential, charges = solve(mesh, blocks, VOLTAGE, 0, fixed)
@@ -166,7 +166,7 @@ def test_reversing_poling_reverses_the_coupled_responses(device, material):
 
 def test_assembled_loads_are_the_variation_of_material_enthalpy(material):
     mesh, vertices, poling = core.strip(10, 1, 16, 4)
-    areas, gradients = core.triangles(vertices, mesh.faces)
+    areas, gradients = core.triangles(mesh, vertices)
     mechanical, coupling, dielectric = core.assemble(mesh, areas, gradients, *material, poling, WIDTH)
     horizontal, vertical = core.mv.x & vertices, core.mv.y & vertices
     displacement = (core.axis * (.001 * horizontal.squared() + .002 * horizontal * vertical)
@@ -176,9 +176,9 @@ def test_assembled_loads_are_the_variation_of_material_enthalpy(material):
     voltage = .3 * horizontal.squared() - .7 * horizontal * vertical + .2 * vertical.squared()
 
     def enthalpy(displacement, potential):
-        density = core.enthalpy(core.strain(displacement, gradients, mesh.faces),
-                                -(potential.batch()[..., mesh.faces] * (gradients ^ core.mv.t)).sum(axis=-1), *material, poling)
-        return (WIDTH * areas * density).sum()
+        density = core.enthalpy(core.strain(mesh, displacement, gradients),
+                                -((mesh.incidence[2, 0] * potential).batch() * (gradients.batch() ^ core.mv.t)).sum(axis=-2), *material, poling.batch())
+        return (WIDTH * areas.batch() * density).sum()
 
     step = 1e-4
     difference = (enthalpy(displacement + step * movement, potential + step * voltage)
@@ -202,10 +202,10 @@ def test_refinement_approaches_the_slender_bimorph_response(material):
     errors = []
     for n_length, n_thickness in ((20, 4), (40, 8), (80, 16)):
         mesh, vertices, poling = core.strip(length, thickness, n_length, n_thickness)
-        areas, gradients = core.triangles(vertices, mesh.faces)
+        areas, gradients = core.triangles(mesh, vertices)
         blocks = core.assemble(mesh, areas, gradients, *material, poling, WIDTH)
         displacement, _, _ = solve(mesh, blocks, VOLTAGE, 0, np.array([], dtype=int))
-        tip = SparseExtensor.selection(core.ctx, mesh.tip, mesh.n_nodes)
+        tip = SparseExtensor.selection(core.ctx, mesh.tip, mesh.n_vertices)
         weights = np.ones(len(mesh.tip))
         weights[[0, -1]] = 0.5
         tip_motion = ((core.mv.y & (tip * displacement)) * core.mv.scalar(weights[:, None]).field()).sites.sum() / weights.sum()

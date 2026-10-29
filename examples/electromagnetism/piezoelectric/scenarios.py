@@ -44,25 +44,25 @@ def pzt5a(directions: core.Plane) -> tuple[core.Elastic, core.Polarization, core
 
 def device():
     mesh, vertices, poling = core.strip(length, thickness, n_length, n_thickness)
-    areas, gradients = core.triangles(vertices, mesh.faces)
+    areas, gradients = core.triangles(mesh, vertices)
     material = pzt5a(stack((core.mv.x, core.mv.y)))
     blocks = core.assemble(mesh, areas, gradients, *material, poling, width)
     return mesh, vertices, areas, gradients, poling, material, blocks
 
 
-def actuation(mesh: core.Mesh, gradients: core.Plane, blocks):
+def actuation(mesh: core.Strip, gradients: core.Plane, blocks):
     movement, voltage = core.boundary_maps(mesh, np.array([], dtype=int))
     displacement, potential = core.equilibrium(*blocks, movement, voltage,
                                              core.electrode_potential(mesh, applied_voltage), core.tip_load(mesh, 0))
-    axial_strain = core.axis & core.strain(displacement, gradients, mesh.faces)(core.axis)
+    axial_strain = core.axis & core.strain(mesh, displacement, gradients)(core.axis)
     return displacement, potential, axial_strain
 
 
-def sensing(mesh: core.Mesh, gradients: core.Plane, blocks):
+def sensing(mesh: core.Strip, gradients: core.Plane, blocks):
     movement, voltage = core.boundary_maps(mesh, mesh.top)
     displacement, potential = core.equilibrium(*blocks, movement, voltage,
                                              core.electrode_potential(mesh, 0), core.tip_load(mesh, applied_force))
-    axial_strain = core.axis & core.strain(displacement, gradients, mesh.faces)(core.axis)
+    axial_strain = core.axis & core.strain(mesh, displacement, gradients)(core.axis)
     return displacement, potential, axial_strain
 
 
