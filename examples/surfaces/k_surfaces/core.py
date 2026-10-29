@@ -18,7 +18,7 @@ from numga.algebras import VGA3D as ga
 mv = NumpyContext(ga).multivector
 Normal = ga.gatype.vector()                         # Vector+
 Point = ga.gatype.antivector()                      # Antivector-
-Antipseudoscalar = ga.gatype.scalar().derive.flipped_orientation   # Scalar-
+Antipseudoscalar = ga.gatype.antipseudoscalar()   # Antipseudoscalar-
 
 
 # --- math -----------------------------------------------------------------------------

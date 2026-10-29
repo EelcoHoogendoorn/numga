@@ -34,7 +34,7 @@ Antivector = ga.gatype.antivector()                             # Antivector-
 Constitutive = ga.gatype((Antibivector, Bivector))              # Antibivector- <- Bivector+
 WaveMap = ga.gatype((Antivector, Vector))                       # Antivector- <- Vector+
 # A coupling of the excitation to the field itself, with a sense of its own: an intrinsic scalar.
-AxionCoupling = Scalar.derive.flipped_orientation               # Scalar-
+AxionCoupling = ga.gatype.antipseudoscalar()               # Antipseudoscalar-
 
 # The observer's direction in time and its axes of space, and the planes of space across each axis.
 time = -mv.t.dual()                                             # [] Antivector-

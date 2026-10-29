@@ -33,7 +33,7 @@ Faraday = Bivector.derive.within("x y z t")                                  # B
 ExtrinsicTwistor = Full.derive.within("y z u")                               # Full+
 Twistor = ExtrinsicTwistor.derive.flipped_orientation                        # Full-
 # The handedness of the pulse and of the fibres it is carried along.
-Helicity = Scalar.derive.flipped_orientation                                 # Scalar-
+Helicity = ga.gatype.antipseudoscalar()                                 # Antipseudoscalar-
 
 # The three commuting factors each halve the state space, leaving eight real components.
 projector = (1 + exact.x) * (1 + exact.yt) * (1 + exact.zv) / 8

@@ -18,7 +18,7 @@ Evaluation = ga.gatype((Scalar, Scalar))
 Gradient = ga.gatype((Vector, Scalar))
 planes = stack((mv.x, mv.y, mv.z))                           # [3] Vector+
 directions = planes.dual()                                   # [3] Antivector-
-one = mv(Scalar.derive.flipped_orientation, [1.0])          # [] intrinsic Scalar
+one = mv.antipseudoscalar([1.0])          # [] Antipseudoscalar-
 
 
 # --- math

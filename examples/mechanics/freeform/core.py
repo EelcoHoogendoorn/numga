@@ -41,7 +41,7 @@ directions = planes.dual()                                   # [3] Antivector-
 unit_volume = directions[0] & directions[1] & directions[2]
 # Planes as the joins of the two directions that span them: vectors, oriented within themselves.
 Span = ga.gatype.vector().derive.flipped_orientation
-one = mv(Scalar.derive.flipped_orientation, [1.0])          # [] intrinsic Scalar
+one = mv.antipseudoscalar([1.0])          # [] Antipseudoscalar-
 
 
 # --- math -----------------------------------------------------------------------------

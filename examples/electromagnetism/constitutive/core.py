@@ -28,7 +28,7 @@ Antibivector = STA.gatype.antibivector()                    # Antibivector-
 Antivector = STA.gatype.antivector()                        # Antivector-
 Constitutive = STA.gatype((Antibivector, Bivector))         # Antibivector- <- Bivector+
 # An axion coupling is handed: an intrinsic scalar, with the orientation flipped.
-AxionCoupling = Scalar.derive.flipped_orientation           # Scalar-
+AxionCoupling = STA.gatype.antipseudoscalar()               # Antipseudoscalar-
 StressEnergy = STA.gatype((Antivector, Antivector))         # Antivector- <- Antivector-
 WaveMap = STA.gatype((STA.gatype.odd(), Bivector))          # Odd+ <- Bivector+
 

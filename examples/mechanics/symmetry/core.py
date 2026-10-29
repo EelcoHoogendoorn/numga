@@ -29,7 +29,7 @@ Field = ga.gatype.vector()                                                      
 Plane = ga.gatype.vector()                                                      # Vector+
 Direction = ga.gatype.antivector()                                              # Antivector-
 # A turn per distance with a sense of its own: an intrinsic scalar.
-RotaryPower = Scalar.derive.flipped_orientation                                 # Scalar-
+RotaryPower = ga.gatype.antipseudoscalar()                                 # Antipseudoscalar-
 Conductivity = ga.gatype((Direction, Field))                                    # Direction- <- Field+
 Elasticity = ga.gatype((Scalar, Plane, Plane, Plane, Plane))                    # Scalar+ <- (Plane+, Plane+, Plane+, Plane+)
 Gyration = ga.gatype((RotaryPower, Direction, Direction))                       # RotaryPower- <- (Direction-, Direction-)

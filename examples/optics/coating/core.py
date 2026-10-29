@@ -45,7 +45,7 @@ WaveMap = ga.gatype((Bivector, Polarization))                   # Bivector+ <- P
 Outgoing = ga.gatype((Boundary, Polarization))                  # Boundary+ <- Polarization+
 Readout = ga.gatype((Polarization, Boundary))                   # Polarization+ <- Boundary+
 # An axion coupling is handed: an intrinsic scalar, with the orientation flipped.
-AxionCoupling = Scalar.derive.flipped_orientation               # Scalar-
+AxionCoupling = ga.gatype.antipseudoscalar()               # Antipseudoscalar-
 # The observer's direction in time and its axes of space, and the planes of space across each axis.
 time = -mv.t.dual()                                             # [] Direction-
 axes = stack((mv.x.dual(), mv.y.dual(), mv.z.dual()))           # [3] Direction-

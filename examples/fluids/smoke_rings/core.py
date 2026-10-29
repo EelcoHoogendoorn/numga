@@ -89,9 +89,9 @@ Rotor = ga.gatype.rotor()                                                       
 # Points, and their differences, the edges and offsets: antivectors, intrinsic.
 Point = ga.gatype.antivector()                                                   # Antivector-
 # The filament's circulation changes sign under a mirror: an intrinsic scalar.
-Circulation = Scalar.derive.flipped_orientation                                  # Scalar-
+Circulation = ga.gatype.antipseudoscalar()                                  # Antipseudoscalar-
 # The Bäcklund transformation's parameter, added to the quad's diagonal, a point: an intrinsic scalar too.
-Parameter = Scalar.derive.flipped_orientation                                    # Scalar-
+Parameter = ga.gatype.antipseudoscalar()                                    # Antipseudoscalar-
 # A polygon's vector area, the join of its points: an intrinsic vector, a patch.
 Patch = Vector.derive.flipped_orientation                                        # Vector-
 

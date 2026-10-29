@@ -19,7 +19,7 @@ from numga.algebras import VGA3D as ga
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                          # Scalar+
 # The sense of turning that identifies a direction with the plane square to it, as a plane to turn in.
-Handedness = Scalar.derive.flipped_orientation                       # Scalar-
+Handedness = ga.gatype.antipseudoscalar()                       # Antipseudoscalar-
 Plane = ga.gatype.vector()                                           # Vector+
 # Contact points are antivectors with intrinsic orientation.
 Point = ga.gatype.antivector()                                       # Antivector-

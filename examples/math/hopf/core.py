@@ -35,7 +35,7 @@ Scalar = ga.gatype.scalar()                        # Scalar+
 # A spinor's spin, a point of the unit sphere, and a point of the space spinors project into.
 Antivector = ga.gatype.antivector()                # Antivector-
 # A number with a sense of its own: a handedness, or a number measured against one.
-HandedScalar = Scalar.derive.flipped_orientation   # Scalar-
+HandedScalar = ga.gatype.antipseudoscalar()   # Antipseudoscalar-
 Even = ga.gatype.even()                            # Even+
 Rotor = ga.gatype.rotor()                          # Rotor+
 # The north pole of the unit sphere.

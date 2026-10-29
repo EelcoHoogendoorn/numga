@@ -31,7 +31,7 @@ TurnRate = ga.gatype.bivector()                                                 
 # The beam's cross-section: the patch two directions across the path span, intrinsic.
 CrossSection = Field.derive.flipped_orientation                                   # Bivector-
 # A turn per distance with a sense of its own: measured against a handedness.
-RotaryPower = Scalar.derive.flipped_orientation                                   # Scalar-
+RotaryPower = ga.gatype.antipseudoscalar()                                   # Antipseudoscalar-
 
 # The direction of time of an observer at rest with the media, which pairs to one with `mv.t`; the dual
 # carries the minus of t's square.

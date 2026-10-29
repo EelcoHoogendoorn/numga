@@ -38,6 +38,7 @@ class SubSpaceFactory(FlyweightFactory[SubSpace]):
         "antiscalar",
         "antivector",
         "antibivector",
+        "antipseudoscalar",
         "full",
         "even",
         "multivector",
@@ -64,7 +65,8 @@ class SubSpaceFactory(FlyweightFactory[SubSpace]):
     )
     # The constructors that build points and their joins, from the top grade down: GATypeFactory gives
     # their types intrinsic orientation, every other constructor's extrinsic.
-    intrinsic_constructor_names = ("antiscalar", "antivector", "antibivector", "antitrivector", "antiquadvector")
+    intrinsic_constructor_names = ("antiscalar", "antivector", "antibivector", "antitrivector", "antiquadvector",
+                                   "antipseudoscalar")
 
     def __init__(self, algebra: Algebra, default: str | None = None) -> None:
         dimension = algebra.dimension
@@ -165,6 +167,11 @@ class SubSpaceFactory(FlyweightFactory[SubSpace]):
 
     def antibivector(self) -> SubSpace:
         return self.k_vector(self.algebra.dimension - 2)
+
+    def antipseudoscalar(self) -> SubSpace:
+        """The complement of the pseudoscalar, grade zero: as a type, intrinsic, the type of a volume, the join of as
+        many points as the space has dimensions."""
+        return self.k_vector(0)
 
     @lru_cache(maxsize=None)
     def full(self) -> SubSpace:

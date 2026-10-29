@@ -31,8 +31,7 @@ as_scalar, context = mesh_module.as_scalar, mesh_module.ctx
 
 Even = ga.gatype.even()
 # A volume, the join of three points, is an intrinsic scalar, and its unit gives an ordinary number that orientation.
-Volume = Scalar.derive.flipped_orientation                                     # Scalar-
-unit_volume = context.multivector(Volume, [1])                                 # [] Scalar-
+unit_volume = context.multivector.antipseudoscalar([1])                        # [] Antipseudoscalar-
 # Spot the cow, from the shared models, and the two quarter turns that stand her up facing along x: her y
 # axis, up in the file, turned onto z, and then x onto y.
 SPOT = MODEL_DIR / "spot.obj"

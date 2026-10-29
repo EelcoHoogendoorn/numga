@@ -29,12 +29,12 @@ Scalar = ga.gatype.scalar()                                # Scalar+
 IntrinsicScalar = Scalar.derive.flipped_orientation        # Scalar-
 ```
 
-The `anti` constructors select both complementary grade and intrinsic orientation. In particular, `antiscalar()` is an intrinsic pseudoscalar; `IntrinsicScalar` above is an intrinsic scalar.
+The `anti` constructors select both complementary grade and intrinsic orientation. In particular, `antiscalar()` is an intrinsic pseudoscalar, and `antipseudoscalar()` an intrinsic scalar, the type of `IntrinsicScalar` above.
 
 | Type constructor | Orientation |
 | --- | --- |
 | `scalar`, `vector`, `bivector`, `trivector`, `pseudoscalar`, `even`, `odd`, `rotor`, `motor`, `multivector` | extrinsic |
-| `antiscalar`, `antivector`, `antibivector`, `antitrivector`, `antiquadvector` | intrinsic |
+| `antiscalar`, `antivector`, `antibivector`, `antitrivector`, `antiquadvector`, `antipseudoscalar` | intrinsic |
 | `point`, in `Spherical3D` | intrinsic |
 
 | Value construction | Orientation |

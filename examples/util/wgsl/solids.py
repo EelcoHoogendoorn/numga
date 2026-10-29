@@ -18,7 +18,7 @@ import numpy as np
 from numga import Extensor, NumpyContext, concatenate, stack
 from numga.algebras import PGA3D as ga
 from examples.util.wgsl import Shader, supersampled
-from examples.util.wgsl.library import intrinsic_one, samples_per_side
+from examples.util.wgsl.library import samples_per_side
 from examples.util.wgsl.runner import Resident
 
 if TYPE_CHECKING:
@@ -36,7 +36,7 @@ Quadric = ga.gatype((Plane, Point))                                          # P
 axes = stack((mv.x, mv.y, mv.z))                                             # [3] Plane
 origin = mv.w.dual()                                                         # [] Point
 # The intrinsic scalar one: the join of points, intrinsic, times it is the plane or line through them, extrinsic.
-flip = intrinsic_one(mv)                                                     # [] Scalar
+flip = mv.antipseudoscalar([1.0])                                            # [] Antipseudoscalar-
 # The direction square to each plane through the origin: a form on directions read through it is measured as the
 # scene's lengths are.
 normal_direction = Plane.derive.nondegenerate.dual()                         # Point <- Plane
