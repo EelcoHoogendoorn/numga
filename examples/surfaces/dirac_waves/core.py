@@ -33,7 +33,6 @@ from examples import instantiate
 
 mesh_module = instantiate("examples.util.mesh", ga)
 Mesh, context = mesh_module.Mesh, mesh_module.ctx
-as_ga_sparse, as_scalar = mesh_module.as_ga_sparse, mesh_module.as_scalar
 mv = context.multivector
 Scalar = ga.gatype.scalar()                         # Scalar+
 Point = mesh_module.Point                           # Antivector-
@@ -46,17 +45,17 @@ def spread(mesh: Mesh, points: Point, start: Even, interval: float) -> Iterator[
     half a step after it."""
     # The edge facing each corner, from the corner after it to the corner after that: one of the edges, signed as
     # the face runs along it.
-    edges = ((mesh.d0 * points).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point-[faces]
+    edges = mesh.boundary[2, 1] * (mesh.d[0] * points)                     # [3] Point-[faces]
     # A face's area is half the size of its plane, the commutator of two of its edges; a vertex's is a third
     # of the area of each face at it.
     triangle_areas = edges[1].commutator(edges[0]).norm() / 2              # Scalar+[faces]
-    thirds = as_ga_sparse(mesh.faces, as_scalar(np.ones_like(mesh.faces) / 3))   # Scalar+[faces <- vertices]
+    thirds = mesh.incidence[2, 0].mean(axis=0)                             # Scalar+[faces <- vertices]
     dual_areas = ~thirds * triangle_areas                                  # Scalar+[vertices]
 
     face_areas = spdiag(triangle_areas)                                    # Scalar+[faces <- faces]
     inverse_face_areas = spdiag(1 / triangle_areas)                        # Scalar+[faces <- faces]
     inverse_vertex_areas = spdiag(1 / dual_areas)                          # Scalar+[vertices <- vertices]
-    dirac = inverse_face_areas * mesh.at_corners(edges) * 0.5              # Point-[faces <- vertices]
+    dirac = inverse_face_areas * (spdiag(edges) * mesh.incidence[2, 0]).sum(axis=0) * 0.5   # Point-[faces <- vertices]
 
     vertices, faces = start, dirac * start * 0.0                           # Even+[vertices], Even-[faces]
     while True:
@@ -72,15 +71,15 @@ def modes(mesh: Mesh, points: Point, sizes: np.ndarray, probe: Even, frequencies
     """The standing waves of the first few frequencies, one of each, swing over their periods: the frequencies
     squared of all the waves found, and the vertex and face fields `[frequencies, phases] Even+[vertices]` and
     `[frequencies, phases] Even-[faces]`."""
-    edges = ((mesh.d0 * points).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point-[faces]
+    edges = mesh.boundary[2, 1] * (mesh.d[0] * points)                     # [3] Point-[faces]
     triangle_areas = edges[1].commutator(edges[0]).norm() / 2              # Scalar+[faces]
-    thirds = as_ga_sparse(mesh.faces, as_scalar(np.ones_like(mesh.faces) / 3))   # Scalar+[faces <- vertices]
+    thirds = mesh.incidence[2, 0].mean(axis=0)                             # Scalar+[faces <- vertices]
     dual_areas = ~thirds * triangle_areas                                  # Scalar+[vertices]
 
     face_areas = spdiag(triangle_areas)                                    # Scalar+[faces <- faces]
     inverse_face_areas = spdiag(1 / triangle_areas)                        # Scalar+[faces <- faces]
     vertex_areas = spdiag(dual_areas)                                      # Scalar+[vertices <- vertices]
-    dirac = inverse_face_areas * mesh.at_corners(edges) * 0.5              # Point-[faces <- vertices]
+    dirac = inverse_face_areas * (spdiag(edges) * mesh.incidence[2, 0]).sum(axis=0) * 0.5   # Point-[faces <- vertices]
 
     dirac_squared = ~dirac * face_areas * dirac                            # Even+[vertices <- vertices]
     squared, waves = (dirac_squared * Even).eigh(vertex_areas * Even, int(sizes[-1]))   # [modes] Scalar+, [modes] Even+[vertices]

@@ -59,7 +59,7 @@ def girders(core: ModuleType, shape, fixed: np.ndarray, damping: np.ndarray, fle
 def constrained(core: ModuleType, shape, bodies: int, body_idx: np.ndarray, corner_idx: np.ndarray):
     """Constraints between the given bodies, of so many, at the given vertices."""
     compliance = core.mv.scalar([SPLICE]).broadcast_to(body_idx.shape[-1:]).field()  # Scalar+[constraints]
-    ends = SparseExtensor.selection(core.ctx, body_idx, bodies)              # [sides] [constraints, bodies] Scalar+
+    ends = core.Mesh(bodies, body_idx.T).incidence[1, 0]                     # [sides] [constraints, bodies] Scalar+
     corners = SparseExtensor.selection(core.ctx, corner_idx, len(shape.rest.batch()))   # [sides] [constraints, vertices] Scalar+
     return core.Constraints(body_idx, ends, corners * shape.rest, corners * shape.modes[:, None], compliance)
 

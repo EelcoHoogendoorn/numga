@@ -26,7 +26,7 @@ def dipole() -> tuple[core.Mesh, core.Point, core.Scalar, core.Point]:
     """The sphere and its vertices, the change in mean curvature on each face, growing along y, and the
     vertices after the spin transformation that makes it."""
     mesh, vertices = core.Mesh.icosphere(N_SUBDIVISIONS)
-    centroids = core.as_ga_sparse(mesh.faces, core.as_scalar(np.ones_like(mesh.faces) / 3)) * vertices
+    centroids = mesh.incidence[2, 0].mean(axis=0) * vertices
     # Each centroid paired with the direction y: its height along y.
     curvature_change = (centroids & core.context.multivector.y) * DIPOLE        # Scalar+[faces]
     return mesh, vertices, curvature_change, core.spin_transform_deform(mesh, vertices, curvature_change)
@@ -50,8 +50,8 @@ def dirac() -> tuple[core.Mesh, core.Point, dict[int, core.Point], np.ndarray]:
 def roundness(mesh: core.Mesh, vertices: core.Point) -> float:
     """The spread of the vertices' distances from the surface's centre, its area-weighted centroid, over
     their mean: nothing on a sphere, however its vertices crowd."""
-    centroids = core.as_ga_sparse(mesh.faces, core.as_scalar(np.ones_like(mesh.faces) / 3)) * vertices   # Point-[faces]
-    sides = ((mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point-[faces]
+    centroids = mesh.incidence[2, 0].mean(axis=0) * vertices                    # Point-[faces]
+    sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                        # [3] Point-[faces]
     areas = sides[1].commutator(sides[0]).norm() / 2                            # Scalar+[faces]
     middle = (centroids * areas).sites.sum() / areas.sites.sum()
     distances = (vertices - middle).norm().to_array()

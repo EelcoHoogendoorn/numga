@@ -37,6 +37,10 @@
 - [Surface connections](surfaces/connections/) — Parallel transport constructs tangent fields, their singularities and stripe patterns on curved surfaces.
 - [Developable surfaces](surfaces/developability/) — A mesh flows towards patches that can be flattened without stretching.
 - [Discrete K-surfaces](surfaces/k_surfaces/) — Compatible reflections grow saddle surfaces and their Bäcklund partners.
+- [Whitney forms](surfaces/whitney_forms/) — Corner hat functions and edge one-forms interpolate vertex and edge cochains across triangles and pull material conductivity back to the mesh.
+- [Regge calculus](surfaces/regge_calculus/) — Edge-length readings define triangle correlations, corner turns reveal intrinsic curvature, and an adjugate assembles the conduction response.
+- [Dirac–Kähler mixed-grade fields](surfaces/dirac_kahler/) — A geometric derivative couples wave components on an annulus; coloured reliefs show their propagation and conversion at the boundary.
+- [Rotor Whitney forms](surfaces/rotor_whitney/) — Interpolated rotors split turning from chord stretch; a disk wraps a director sphere, and coloured ribbons reveal a relaxing frame field.
 
 ## Quadrics
 
@@ -81,6 +85,7 @@
 - [Composite strip](mechanics/composite_strip/) — Fibre directions couple axial extension to twist in a laminated strip.
 - [Piezoelectric bimorph](electromagnetism/piezoelectric/piezoelectric.ipynb) — One constitutive coupling bends a layered continuum under voltage and generates an electrical signal under load.
 - [Crystal waves](mechanics/crystal_waves/) — Crystal stiffness determines elastic wave speeds, polarizations and energy focusing.
+- [Seismic waves in a small planet](mechanics/whitney_elasticity/) — Constant-strain triangles carry P, S and surface waves through a solid shell around a liquid core, which casts a shadow for the S waves.
 - [Beam bending](mechanics/bending/) — Loads on thin-walled cantilevers produce bending and torsion according to the cross-section's geometry.
 - [Elastica](mechanics/elastica/) — End loads bend elastic rods into buckled shapes, curls and helices.
 - [Crystal slip](mechanics/slip_systems/) — Applied tension selects slip systems and turns a metal crystal as it yields.
@@ -100,6 +105,8 @@
 - [Vortices on the sphere](fluids/sphere_vortices/) — Point vortices carry circulation and induce motion on a spherical surface.
 - [Swimming without inertia](fluids/stokes_swimmer/) — Cyclic shape changes propel a swimmer while fluid forces and torques balance at every instant.
 - [Stokes flow on a mesh](fluids/dec_stokes/) — Incidence and diagonal Hodge maps determine pressure and flux through a channel around an obstacle.
+- [Projective Whitney fields](fluids/projective_sphere_flow/) — Homogeneous corner weights vary rational interpolation and the polar dual while diffusion stays on a fixed sphere; the same quotient works in the affine plane.
+- [Laplacian eigenfunction fluids](fluids/eigen_fluids/) — Whitney gradients and precomputed mode interactions evolve vortices on the Stanford bunny and shear layers on a sphere.
 
 ## Relativity
 
@@ -116,6 +123,7 @@
 - [Twistors and linked light](relativity/twistors/) — Twistors describe light rays and a twisting family of rays filling spacetime.
 - [Terrell rotation](relativity/terrell/) — Light travel times determine photographs of bodies passing a camera near the speed of light.
 - [Thomas precession](relativity/thomas_precession/) — Successive boosts turn a particle's frame and contribute to the spin motion measured in muon experiments.
+- [Spacetime Whitney waves](relativity/spacetime_whitney/) — Whitney interpolation on a spacetime mesh follows a scalar pulse reflecting from an advancing mirror.
 
 ## Quantum
 
@@ -144,6 +152,8 @@
 - [Eddy-current braking](electromagnetism/eddy_brake/) — Directional conductivity determines currents and braking torque in a rotating disc.
 - [Second-harmonic generation](electromagnetism/second_harmonic/) — A crystal's quadratic field response generates light at twice the driving frequency.
 - [Magnetic bottle](electromagnetism/magnetic_bottle/) — Charged particles spiral, bounce or escape in the field between two coils.
+- [Magnetic flux advection](electromagnetism/lie_advection/) — Swept edge patches and Cartan's decomposition transport magnetic circulation and conserve total flux across a swirling conductor.
+- [Force-free Beltrami fields](electromagnetism/beltrami_fields/) — Tetrahedral Whitney forms carry magnetic energy and helicity; selective modal decay at fixed helicity reveals a force-free state inside a torus.
 
 ## Optics
 

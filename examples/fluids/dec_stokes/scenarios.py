@@ -109,11 +109,11 @@ def main() -> None:
     ordinate = mv.y & vertices                                               # Scalar+[vertices]
     streamfunction = 1.5 * MEAN_SPEED * (ordinate - 4 * ordinate.squared() * ordinate / (3 * HEIGHT**2))  # Scalar+[vertices]
     ends = SparseExtensor.selection(mesh_module.ctx, np.concatenate((inlet, outlet)), len(mesh.edges))
-    prescribed_flux = ~ends * (ends * (mesh.d0 * streamfunction))            # Scalar+[edges]
+    prescribed_flux = ~ends * (ends * (mesh.d[0] * streamfunction))          # Scalar+[edges]
     boundary_circulation = operators.dual_patches * 0                        # Patch-[vertices]
     flux, pressure, vorticity, velocity = stokes(operators, VISCOSITY, prescribed_flux,
                                                  mesh.boundary_edges, boundary_circulation)
-    streamfunction = (mesh.d0 * Scalar).lstsq(flux)                          # Scalar+[vertices]
+    streamfunction = (mesh.d[0] * Scalar).lstsq(flux)                        # Scalar+[vertices]
 
     save_figure(render.draw_mesh(mesh, vertices), "dec_stokes_mesh")
     save_figure(render.draw_complex(mesh, vertices, operators.circumcentres, operators.dual_edges), "dec_stokes_complex")

@@ -160,6 +160,8 @@ def test_a_selection_reads_the_sites_an_index_names():
     index = rng.integers(0, 5, size=(3, 4))                                     # [corners, sites]
     selected = SparseExtensor.selection(context, index, 5)                      # [3] [4, 5] Scalar
     np.testing.assert_allclose((selected * values[:, None]).batch().kernel, values.batch()[:, index].kernel, atol=0.0)
+    np.testing.assert_allclose((selected.sum(axis=0) * values).batch().kernel, values.batch()[:, index].sum(axis=1).kernel, atol=1e-12)
+    np.testing.assert_allclose((selected.mean(axis=0) * values).batch().kernel, values.batch()[:, index].mean(axis=1).kernel, atol=1e-12)
 
 
 def test_leading_axes_index_and_a_map_without_sites_adds_on_the_diagonal():

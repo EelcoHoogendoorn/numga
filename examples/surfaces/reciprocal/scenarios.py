@@ -59,7 +59,7 @@ def main() -> None:
     assert np.array_equal(stresses > 0, folds > 0) and (stresses < 0).any()
     # Every reciprocal edge is perpendicular to its bar, and every interior vertex is in equilibrium.
     duals = (core.slopes(mesh, points, breaths) ^ core.mv.z) * core.mv.z                             # [frames, faces] Plane+
-    bars = (mesh.d0 * points).batch()[inner]                                   # [inner] Point-
+    bars = (mesh.d[0] * points).batch()[inner]                                 # [inner] Point-
     # The jump in slope pairs to nothing with its bar: both planes agree along it.
     assert np.abs(((duals[:, left] - duals[:, right]) & bars).to_array()).max() < 1e-10
     # The bars meeting at a vertex each pull it along themselves by their stress.
@@ -69,13 +69,13 @@ def main() -> None:
     interior = np.setdiff1d(np.arange(mesh.n_vertices), mesh.edges[mesh.boundary_edges])
     assert (net[:, interior].norm() < 1e-10).all()
     # On the paraboloid the stresses are the cotangent weights and the reciprocal vertices the circumcentres.
-    edges = ((mesh.d0 * points).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point-[faces]
+    edges = mesh.boundary[2, 1] * (mesh.d[0] * points)                         # [3] Point-[faces]
     after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]                         # [3] Point-[faces], Point-[faces]
     cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()   # [3] Scalar+[faces]
-    weights = ~mesh.by_corner(cotangents / 2) * core.mesh_module.as_scalar(np.ones(len(mesh.faces))).field()   # Scalar+[edges]
+    weights = (~mesh.incidence[2, 1] * (cotangents / 2)).sum(axis=0)           # Scalar+[edges]
     assert np.abs(core.stresses(mesh, points, heights).to_array() - weights.to_array()[inner]).max() < 1e-10
     centres = (core.slopes(mesh, points, heights) ^ core.mv.z) * core.mv.z                           # [faces] Plane+
-    corners = points.batch()[mesh.faces.T]                                     # [3, faces] Point-
+    corners = (mesh.incidence[2, 0] * points).batch()                          # [3, faces] Point-
     # The slopes, read as points by the metric, lie as far from each of their face's corners.
     squared_distances = [(centres.dual() - corner).scalar_norm_squared().to_array() for corner in corners]
     assert np.abs(squared_distances[0] - squared_distances[1]).max() < 1e-10 and np.abs(squared_distances[0] - squared_distances[2]).max() < 1e-10

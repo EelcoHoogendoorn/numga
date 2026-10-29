@@ -26,7 +26,7 @@ def cylinder(rings: int, sectors: int) -> tuple[core.Mesh, core.Point]:
 
 
 def energy(mesh: core.Mesh, vertices: core.Point) -> float:
-    edges = (mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T
+    edges = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
     after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]
     angles = (-(after.dual_inverse() & before) / (after.norm() * before.norm())).arccos()
     _, spreads = core.spread(mesh, edges, angles)
@@ -37,7 +37,7 @@ def energy(mesh: core.Mesh, vertices: core.Point) -> float:
 def test_a_cylinder_is_developable():
     """Around every vertex of a cylinder the face normals lie on one great circle."""
     mesh, vertices = cylinder(6, 24)
-    edges = (mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T
+    edges = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
     after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]
     angles = (-(after.dual_inverse() & before) / (after.norm() * before.norm())).arccos()
     _, spreads = core.spread(mesh, edges, angles)
@@ -47,12 +47,12 @@ def test_a_cylinder_is_developable():
 
 def test_the_gradient_is_the_energys_derivative():
     mesh, vertices = scenarios.bunny()
-    edges = (mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T
+    edges = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
     after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]
     angles = (-(after.dual_inverse() & before) / (after.norm() * before.norm())).arccos()
     normals, spreads = core.spread(mesh, edges, angles)
     _, directions = spreads.batch().eigh()
-    gradient = core.gradient(mesh, edges, angles, normals, directions[:, 0]).batch()     # [vertices] Vector+
+    gradient = core.gradient(mesh, edges, angles, normals, directions[:, 0].field()).batch()     # [vertices] Vector+
     points = render.coordinates(vertices)                                         # [V, 3]
     epsilon = 1e-6
     rng = np.random.default_rng(0)

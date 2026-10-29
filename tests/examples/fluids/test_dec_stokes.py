@@ -11,7 +11,7 @@ def flow(mesh, vertices, inlet, outlet):
     ordinate = core.mv.y & vertices
     streamfunction = 1.5 * (ordinate - 4 * ordinate.squared() * ordinate / (3 * scenarios.HEIGHT**2))
     ends = SparseExtensor.selection(core.mv.context, np.concatenate((inlet, outlet)), len(mesh.edges))
-    prescribed = ~ends * (ends * (mesh.d0 * streamfunction))
+    prescribed = ~ends * (ends * (mesh.d[0] * streamfunction))
     boundary_circulation = operators.dual_patches * 0
     result = core.stokes(operators, scenarios.VISCOSITY, prescribed, mesh.boundary_edges, boundary_circulation)
     return operators, prescribed, result
@@ -41,7 +41,7 @@ def test_incidence_is_topological_and_hodges_supply_geometry_and_duality():
     assert np.max(np.abs(stretched.edge_ratios.kernel - operators.edge_ratios.kernel)) > 0.01
 
     # Circumcentres are equidistant from each triangle's corners; dual weights are length ratios.
-    corners = vertices.batch()[mesh.faces.T].field()
+    corners = mesh.incidence[2, 0] * vertices
     radii_squared = (corners - operators.circumcentres).norm_squared()
     np.testing.assert_allclose((radii_squared - radii_squared[0]).kernel, 0, atol=1e-11)
     ratio = operators.dual_edges.norm() / operators.edges.norm()
@@ -114,14 +114,14 @@ def test_straight_channel_converges_to_poiseuille_velocity_pressure_and_vorticit
 def test_obstacle_flow_balances_every_cell_and_preserves_boundary_flux():
     mesh, vertices, inlet, outlet, walls = scenarios.channel(12)
     operators, prescribed, (flux, pressure, vorticity, velocity) = flow(mesh, vertices, inlet, outlet)
-    np.testing.assert_allclose((mesh.d1 * flux).kernel, 0, atol=1e-10)
+    np.testing.assert_allclose((mesh.d[1] * flux).kernel, 0, atol=1e-10)
     np.testing.assert_allclose(flux.batch()[mesh.boundary_edges].kernel,
                                prescribed.batch()[mesh.boundary_edges].kernel, atol=1e-11)
     np.testing.assert_allclose(flux.batch()[walls].kernel, 0, atol=1e-11)
 
     # Summing oriented face boundaries cancels every interior edge and reads the net throughflow.
     one = core.mv.scalar(np.ones((len(mesh.faces), 1))).field()
-    boundary = ~mesh.d1 * one
+    boundary = ~mesh.d[1] * one
     outgoing = (boundary * flux).batch().to_array()
     np.testing.assert_allclose(outgoing[inlet].sum(), -scenarios.HEIGHT, atol=1e-11)
     np.testing.assert_allclose(outgoing[outlet].sum(), scenarios.HEIGHT, atol=1e-11)
@@ -139,7 +139,8 @@ def test_reversing_mesh_edges_changes_readings_and_preserves_physical_flow():
     reversed_mesh = core.Mesh(mesh.n_vertices, mesh.faces.copy())
     reversed_edges = np.arange(len(mesh.edges)) % 3 == 0
     reversed_mesh.edges[reversed_edges] = reversed_mesh.edges[reversed_edges, ::-1]
-    reversed_mesh.face_edge_orientation *= np.where(reversed_edges[reversed_mesh.face_edges], -1, 1)
+    reversed_mesh.boundary_indices[0][reversed_edges] = reversed_mesh.boundary_indices[0][reversed_edges, ::-1]
+    reversed_mesh.face_edge_orientation[...] *= np.where(reversed_edges[reversed_mesh.face_edges], -1, 1)
     _, _, changed = flow(reversed_mesh, vertices, inlet, outlet)
 
     signs = core.mv.scalar(np.where(reversed_edges, -1, 1)[:, None]).field()

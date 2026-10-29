@@ -198,6 +198,10 @@ class SparseExtensor:
         """The sum of the separate maps along one of the leading axes: a map of the same pattern."""
         return SparseExtensor(self.cells.sum(axis=axis - 1 if axis < 0 else axis), self.rows, self.columns, self.shape)
 
+    def mean(self, axis: int) -> SparseExtensor:
+        """The mean of the separate maps along one of the leading axes: a map of the same pattern."""
+        return self.sum(axis) / self.cells.shape[axis - 1 if axis < 0 else axis]
+
     def __neg__(self) -> SparseExtensor:
         return SparseExtensor(-self.cells, self.rows, self.columns, self.shape)
 

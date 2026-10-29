@@ -38,16 +38,16 @@ class Operators:
         self.mesh, self.vertices = mesh, vertices
         # Integrated cochains carry one value per cell. These derivatives contain
         # only the incidence signs; their composition is zero before any geometry.
-        self.d0 = mesh.d0 * Scalar                                           # (Scalar+ <- Scalar+)[edges <- vertices]
-        self.d1 = mesh.d1 * Scalar                                           # (Scalar+ <- Scalar+)[faces <- edges]
-        self.d0_vorticity = mesh.d0 * Bivector                               # (Bivector+ <- Bivector+)[edges <- vertices]
-        self.edges = mesh.d0 * vertices                                      # Point-[edges]
-        corners = vertices.batch()[mesh.faces.T].field()                     # [corners] Point-[faces]
-        a, b, c = corners
+        self.d0 = mesh.d[0] * Scalar                                         # (Scalar+ <- Scalar+)[edges <- vertices]
+        self.d1 = mesh.d[1] * Scalar                                         # (Scalar+ <- Scalar+)[faces <- edges]
+        self.d0_vorticity = mesh.d[0] * Bivector                             # (Bivector+ <- Bivector+)[edges <- vertices]
+        self.edges = mesh.d[0] * vertices                                    # Point-[edges]
+        self.corners = mesh.incidence[2, 0] * vertices                       # [corners] Point-[faces]
+        a, b, c = self.corners
         u, v = b - a, c - a
         self.face_patches = (u & v) / 2                                      # Patch-[faces]
         self.areas = self.face_patches.norm()                                # Scalar+[faces]
-        self.face_centres = corners.sum(axis=0) / 3                          # Point-[faces]
+        self.face_centres = self.corners.sum(axis=0) / 3                     # Point-[faces]
 
         # The triangle's signed area patch turns the squared-length-weighted edge difference
         # into the offset equidistant from all three corners.
@@ -55,18 +55,17 @@ class Operators:
         self.circumcentres = a + weighted.commutator(self.face_patches.inverse().dual()) / 4  # Point-[faces]
 
         one_face = mv.scalar(np.ones((len(mesh.faces), 1))).field()          # Scalar+[faces]
-        tail, head = mesh.edge_ends
-        midpoints = (tail * vertices + head * vertices) / 2                  # Point-[edges]
-        boundary = ~mesh.d1 * one_face                                       # Scalar+[edges]
+        midpoints = mesh.incidence[1, 0].mean(axis=0) * vertices             # Point-[edges]
+        boundary = ~mesh.d[1] * one_face                                     # Scalar+[edges]
         # Interior dual edges join adjacent circumcentres. At the boundary they
         # finish at the primal edge's midpoint, closing the truncated dual cells.
         # The dual edge crosses to the primal edge's right, matching positive flux.
-        self.dual_edges = boundary * midpoints - ~mesh.d1 * self.circumcentres  # Point-[edges]
+        self.dual_edges = boundary * midpoints - ~mesh.d[1] * self.circumcentres  # Point-[edges]
 
         # Oriented dual/primal edge ratios and dual cell patches from the quarter-kites
         # incident to each vertex.
         self.edge_ratios = (self.dual_edges & self.edges) / self.edges.norm_squared()  # Patch-[edges]
-        self.dual_patches = (~tail + ~head) * ((self.dual_edges & self.edges) / 4)     # Patch-[vertices]
+        self.dual_patches = ~mesh.incidence[1, 0].sum(axis=0) * ((self.dual_edges & self.edges) / 4)  # Patch-[vertices]
         self.dual_areas = self.dual_patches.norm()                           # Scalar+[vertices]
 
         # Each Hodge map scales by the oriented patch of the complementary dual cell
@@ -107,7 +106,6 @@ def stokes(operators: Operators, viscosity: float, prescribed_flux: Scalar,
     pressure = pressure - (pressure * operators.areas).sites.sum() / operators.areas.sites.sum()  # Scalar+[faces]
     vorticity = operators.curl(flux) + boundary_vorticity                    # Bivector+[vertices]
     # The first moment of the outward flux gives the face's mean velocity.
-    corners = operators.vertices.batch()[mesh.faces.T].field()               # [corners] Point-[faces]
-    outward_flux = (flux.batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()  # [corners] Scalar+[faces]
-    velocity = -((corners - operators.face_centres) * outward_flux).sum(axis=0) / (2 * operators.areas)  # Point-[faces]
+    outward_flux = mesh.boundary[2, 1] * flux                                # [corners] Scalar+[faces]
+    velocity = -((operators.corners - operators.face_centres) * outward_flux).sum(axis=0) / (2 * operators.areas)  # Point-[faces]
     return flux, pressure, vorticity, velocity

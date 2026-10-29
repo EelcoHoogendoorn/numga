@@ -37,8 +37,7 @@ def slopes(mesh: Mesh, points: Point, heights: np.ndarray) -> Plane:
     the origin. It is the corners' heights times the reciprocal frame of the corners lifted to unit height, the
     three planes pairing to one with their own corner and to nothing with the other two, so it is linear in the
     heights, which lie on the last axis."""
-    lifted = points.batch() + up                                               # [vertices] Point-
-    a, b, c = (lifted[mesh.faces[:, corner]] for corner in range(3))          # [faces] Point-, Point-, Point-
+    a, b, c = (mesh.incidence[2, 0] * (points + up)).batch()                   # [faces] Point-, Point-, Point-
     # Two corners meet in a vector that pairs to nothing with either; over the meet of all three, it pairs
     # to one with the third.
     volume = a & b & c                                                         # [faces] Scalar-

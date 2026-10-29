@@ -57,11 +57,11 @@ Curvature = ga.gatype((Scalar, Line, Line))                                     
 @dataclass(frozen=True)
 class Sheet:
     """A shell's rest state on a mesh: the maps reading every hinge's two ends and the corners across it
-    `Scalar+[hinges <- vertices]`, every edge's rest length `Scalar+[edges]` and every hinge's rest angle
+    `[4] Scalar+[hinges <- vertices]`, every edge's rest length `Scalar+[edges]` and every hinge's rest angle
     `Scalar+[hinges]`, the stiffness of both, and the mass at every vertex `Scalar+[vertices]`."""
 
     mesh: Mesh
-    corners: tuple[SparseExtensor, SparseExtensor, SparseExtensor, SparseExtensor]
+    corners: SparseExtensor
     lengths: Scalar
     angles: Scalar
     stretching: float
@@ -72,9 +72,9 @@ class Sheet:
 # --- math -----------------------------------------------------------------------------
 def energy(sheet: Sheet, points: Point) -> Scalar:
     """The elastic energy of the sheet at the given points `Point-[vertices]`."""
-    tails, heads = (end * points for end in sheet.mesh.edge_ends)
+    tails, heads = sheet.mesh.incidence[1, 0] * points
     stretched = (tails & heads).norm() - sheet.lengths                           # Scalar+[edges]
-    ends, tips, across, opposite = (corner * points for corner in sheet.corners)   # Point-[hinges], Point-[hinges], Point-[hinges], Point-[hinges]
+    ends, tips, across, opposite = sheet.corners * points                        # Point-[hinges], Point-[hinges], Point-[hinges], Point-[hinges]
     line = ends & tips                                                           # Line-[hinges]
     # Both planes wound as the first face, so that a flat hinge folds by nothing.
     first, second = line & across, -(line & opposite)                            # Plane+[hinges], Plane+[hinges]
@@ -90,11 +90,11 @@ def energy(sheet: Sheet, points: Point) -> Scalar:
 def forces(sheet: Sheet, points: Point) -> Direction:
     """The force at every vertex `Direction-[vertices]`, the energy's downhill direction: the edges' springs
     pulling their ends together or apart, and the hinges twisting their faces back towards their rest angles."""
-    tails, heads = (end * points for end in sheet.mesh.edge_ends)
+    tails, heads = sheet.mesh.incidence[1, 0] * points
     lengths = (tails & heads).norm()                                             # Scalar+[edges]
     pull = (heads - tails) * (sheet.stretching * (lengths - sheet.lengths) / (sheet.lengths * lengths))   # Direction-[edges]
 
-    ends, tips, across, opposite = (corner * points for corner in sheet.corners)   # Point-[hinges], Point-[hinges], Point-[hinges], Point-[hinges]
+    ends, tips, across, opposite = sheet.corners * points                        # Point-[hinges], Point-[hinges], Point-[hinges], Point-[hinges]
     line = ends & tips                                                           # Line-[hinges]
     first, second = line & across, -(line & opposite)                            # Plane+[hinges], Plane+[hinges]
     motor = (second.normalized() * first.normalized()).square_root()             # Motor+[hinges]
@@ -109,9 +109,7 @@ def forces(sheet: Sheet, points: Point) -> Direction:
 
     # The incidence's reverse sums every edge's pull at its two ends, and each reading map's reverse sums
     # the hinges' pushes at their corners.
-    at_ends_map, at_tips_map, across_map, opposite_map = sheet.corners
-    return (-(~sheet.mesh.d0 * pull) + ~at_ends_map * at_ends + ~at_tips_map * at_tips
-            + ~across_map * pushes[0] + ~opposite_map * pushes[1])
+    return -(~sheet.mesh.d[0] * pull) + (~sheet.corners * stack([at_ends, at_tips, *pushes])).sum(axis=0)
 
 
 def relax(sheet: Sheet, points: Point, step: float, damping: float, n_frames: int, n_steps_per_frame: int
@@ -144,8 +142,8 @@ def sheet(mesh: Mesh, points: Point, lengths: Scalar, curvature: Curvature, top:
     # Every hinge's two ends, as the face on its left winds them, then the corner across it in that face and in
     # the other.
     hinge_vertices = np.concatenate([mesh.edges[mesh.interior_edges], mesh.edge_opposites], axis=-1)   # [hinges, 4]
-    corners = tuple(mesh.reading(index) for index in hinge_vertices.T)
-    ends, tips, across, opposite = (corner * points for corner in corners)       # Point-[hinges], Point-[hinges], Point-[hinges], Point-[hinges]
+    corners = mesh.reading(hinge_vertices.T)                                     # [4] Scalar+[hinges <- vertices]
+    ends, tips, across, opposite = corners * points                              # Point-[hinges], Point-[hinges], Point-[hinges], Point-[hinges]
     line = ends & tips                                                           # Line-[hinges]
     first, second = line & across, -(line & opposite)                            # Plane+[hinges], Plane+[hinges]
     # The curvature across each hinge, times the distance between its faces' centres, a third of the sum of
@@ -154,12 +152,12 @@ def sheet(mesh: Mesh, points: Point, lengths: Scalar, curvature: Curvature, top:
     angles = curvature(unit, unit) * (first.norm() + second.norm()) / (3 * line.norm())   # Scalar+[hinges]
     # The plane through each face's corners, wound as the face, has twice the face's area as its norm; read
     # against the top side, it says which way the bending angles count.
-    a, b, c = (corner * points for corner in mesh.face_corners)                  # Point-[faces], Point-[faces], Point-[faces]
+    a, b, c = mesh.incidence[2, 0] * points                                      # Point-[faces], Point-[faces], Point-[faces]
     planes = a & b & c                                                           # Plane+[faces]
     facing = (planes | top).sites.sum()                                          # [] Scalar+
     # Each vertex carries a third of the mass of every face at it.
     double_areas = planes.norm()                                                 # Scalar+[faces]
-    masses = ~mesh.at_corners(stack([double_areas] * 3)) * as_scalar(np.ones(len(mesh.faces))).field() * (thickness / 6)
+    masses = ~mesh.incidence[2, 0].sum(axis=0) * double_areas * (thickness / 6)
     return Sheet(
         mesh=mesh,
         corners=corners,

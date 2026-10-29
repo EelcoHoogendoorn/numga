@@ -39,7 +39,7 @@ def disc() -> tuple[core.Sheet, list[core.Point]]:
     flat = core.lattice(DISC_SPACING, DISC_RADIUS)
     flat = flat[np.linalg.norm(flat, axis=-1) <= DISC_RADIUS + 1e-9]
     mesh, points = core.flat_mesh(flat, DISC_SPACING)
-    tails, heads = (end * points for end in mesh.edge_ends)                     # Point-[edges], Point-[edges]
+    tails, heads = mesh.incidence[1, 0] * points                                # Point-[edges], Point-[edges]
     # Each edge grows with the square of its middle's distance from the centre, in disc radii.
     distance = (mv.w.dual() & ((tails + heads) / 2)).norm() / DISC_RADIUS       # Scalar+[edges]
     lengths = (tails & heads).norm() * (1 + GROWTH * distance * distance)       # Scalar+[edges]
@@ -56,7 +56,7 @@ def strip() -> tuple[core.Sheet, list[core.Point]]:
     flat = core.lattice(STRIP_SPACING, STRIP_LENGTH)
     flat = flat[(np.abs(flat[:, 0]) <= STRIP_LENGTH / 2) & (np.abs(flat[:, 1]) <= STRIP_WIDTH / 2)]
     mesh, points = core.flat_mesh(flat, STRIP_SPACING)
-    tails, heads = (end * points for end in mesh.edge_ends)                     # Point-[edges], Point-[edges]
+    tails, heads = mesh.incidence[1, 0] * points                                # Point-[edges], Point-[edges]
     lengths = (tails & heads).norm()                                            # Scalar+[edges]
     # The two layers curve along lines through the centre, turned either way from the strip's axis.
     axis = mv.wx.dual()                                                         # [] Line-
@@ -91,7 +91,7 @@ def main() -> None:
         total = (settled & core.forces(sheet, settled)).sites.sum()
         assert (-(total | total) - (total.dual() | total.dual())) < 1e-30
         assert np.ptp((settled & mv.z).batch().to_array()) > rise
-    tails, heads = (end * disc_frames[-1] for end in disc_sheet.mesh.edge_ends)
+    tails, heads = disc_sheet.mesh.incidence[1, 0] * disc_frames[-1]
     strain = ((tails & heads).norm() / disc_sheet.lengths - 1).batch().to_array()
     assert np.median(np.abs(strain)) < 0.02
 

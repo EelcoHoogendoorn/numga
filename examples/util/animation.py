@@ -23,7 +23,8 @@ from examples import PLOT_DIR, auto_increment_path
 # How many times the figure's resolution a frame is drawn at, per axis, before each block is averaged.
 SUPERSAMPLE = 2
 PALETTE_FRAMES = 128
-PALETTE_SIZE = 96
+# The colours of each sampled frame's own palette, from which the animation's palette is drawn.
+FRAME_COLOURS = 64
 # The shortest time in seconds between the frames an animation shows as they come.
 UPDATE_INTERVAL = 0.1
 
@@ -59,26 +60,42 @@ def indexed(image: Image.Image, lookup: np.ndarray, palette: Image.Image) -> Ima
     return fixed
 
 
+def commonest(pixels: np.ndarray, chosen: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """For each palette entry some of the RGB `pixels` `[n, 3]` were `chosen` for `[n]`, the commonest of those pixels'
+    colours `[entries, 3]` and how many pixels the entry stands for `[entries]`."""
+    keys = (chosen.astype(np.int64) << 24) | codes(pixels)
+    unique, counts = np.unique(keys, return_counts=True)
+    entries = unique >> 24
+    # Within each entry the colour of the most pixels, then the entry's total.
+    first = np.lexsort((-counts, entries))
+    leading = first[np.r_[True, entries[first][1:] != entries[first][:-1]]]
+    code = unique[leading] & 0xFFFFFF
+    colours = np.stack(((code >> 16) & 255, (code >> 8) & 255, code & 255), axis=-1).astype(np.uint8)
+    return colours, np.bincount(np.searchsorted(entries[leading], entries), weights=counts)
+
+
 def save_gif(frames: Iterable[np.ndarray], path: str, duration_ms: int, colors: int) -> str:
     """Write RGB frames as a looping palette GIF, at their own pixels."""
     frames = list(frames)
 
-    # Bound the palette population: very large repeated colour counts overflow Pillow's
-    # quantizer accumulators. Sample the whole timeline while retaining source colours.
+    # The palette is drawn from the sampled frames' own palettes, so that a colour that fills part of a few frames,
+    # the brightest of a short flash, counts as much as one spread over many, which a palette of all their pixels
+    # outweighs. Each entry is the commonest of the colours it stands for, rather than their mean, so that flat
+    # colours, a white background above all, stay exact.
     indices = np.linspace(0, len(frames) - 1, min(len(frames), PALETTE_FRAMES), dtype=int)
-    samples = [Image.fromarray(frames[index]).resize((PALETTE_SIZE, PALETTE_SIZE), Image.Resampling.NEAREST)
-               for index in indices]
-    sampled = np.concatenate([np.asarray(sample) for sample in samples], axis=0)
+    colours, weights = zip(*(commonest(frames[index].reshape(-1, 3),
+                                       np.asarray(Image.fromarray(frames[index]).quantize(colors=FRAME_COLOURS)).reshape(-1))
+                             for index in indices))
+    colours, merged = np.unique(np.concatenate(colours), axis=0, return_inverse=True)
+    weights = np.bincount(merged.reshape(-1), weights=np.concatenate(weights))
     # One entry of the 256 left free, which Pillow takes for the pixels a frame leaves as they were, drawn transparent
     # over the frame before, so that what does not move costs next to nothing.
-    palette = Image.fromarray(sampled).quantize(colors=min(colors, 255))
-    # Each entry snapped to the commonest colour among the pixels it stands for, rather than their mean, so that flat
-    # colours, a white background above all, stay exact.
+    palette = Image.fromarray(colours[None]).quantize(colors=min(colors, 255))
+    chosen = np.asarray(palette).reshape(-1)
     entries = np.array(palette.getpalette(), dtype=np.uint8).reshape(-1, 3)
-    pixels, chosen = sampled.reshape(-1, 3), np.asarray(palette).reshape(-1)
     for entry in np.unique(chosen):
-        members, counts = np.unique(pixels[chosen == entry], axis=0, return_counts=True)
-        entries[entry] = members[counts.argmax()]
+        members = np.flatnonzero(chosen == entry)
+        entries[entry] = colours[members[weights[members].argmax()]]
     palette.putpalette(entries.reshape(-1).tolist())
     # Every colour's entry where it is one exactly, the first of equal entries, and -1 elsewhere.
     lookup = np.full(1 << 24, -1, dtype=np.int16)

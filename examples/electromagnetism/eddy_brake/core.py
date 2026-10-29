@@ -74,20 +74,19 @@ def disc(mesh: Mesh, vertices: Point) -> Disc:
     midpoint; each face's corners, the edge facing each corner, counter-clockwise, the face's area, half the size of
     the plane two of its edges span, and its centre; and Whitney's reconstruction of a field from its edge
     circulations at the face centres."""
-    edges = mesh.d0 * vertices                                             # Point[E]
-    ends = vertices.batch()[mesh.edges.T]                                  # [2, E] Point
-    corners = vertices.batch()[mesh.faces.T].field()                       # [3] Point[F]
+    edges = mesh.d[0] * vertices                                           # Point[E]
+    ends = mesh.incidence[1, 0] * vertices                                 # [2] Point[E]
+    corners = mesh.incidence[2, 0] * vertices                              # [3] Point[F]
     # The edge facing each corner is one of the edges, signed as the face runs along it.
-    sides = (edges.batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point[F]
+    sides = mesh.boundary[2, 1] * edges                                    # [3] Point[F]
     areas = sides[1].commutator(sides[0]).norm() / 2                       # Scalar[F]
     # Each corner's hat function has its gradient across the edge facing it, that edge read through the face's
     # normal over twice the area; all three hats are a third at the centroid, and the difference of two gradients
     # reconstructs an edge's circulation, signed as the mesh edge runs.
     normals = (sides[0] & sides[1]) / (2 * areas)                          # Vector[F]
     gradients = (sides | normals.inverse()) / (2 * areas)                  # [3] Vector[F]
-    signs = as_scalar(mesh.face_edge_orientation.T).field()                # [3] Scalar[F]
-    reconstruction = mesh.by_corner((gradients[[2, 0, 1]] - gradients[[1, 2, 0]]) / 3 * signs * Scalar)
-    return Disc(mesh, vertices, edges, ((ends[0] + ends[1]) / 2).field(), corners, sides, areas,
+    reconstruction = (spdiag((gradients[[2, 0, 1]] - gradients[[1, 2, 0]]) / 3 * Scalar) * mesh.boundary[2, 1]).sum(axis=0)
+    return Disc(mesh, vertices, edges, ends.sum(axis=0) / 2, corners, sides, areas,
                 corners.sum(axis=0) / 3, reconstruction)
 
 
@@ -195,7 +194,7 @@ def closed_currents(disc: Disc) -> tuple[SparseExtensor, SparseExtensor]:
     interior = np.setdiff1d(np.arange(n_vertices), boundary)
     embedder = ~SparseExtensor.selection(context, interior, n_vertices) * Scalar  # [V] Scalar <- [interior] Scalar
     edges = disc.triangle_edges.cast(Current)                              # [3] Current[F]
-    current = disc.mesh.at_corners(edges / (2 * disc.triangle_areas) * Scalar)(embedder)   # [F] Current <- [interior] Scalar
+    current = (spdiag(edges / (2 * disc.triangle_areas) * Scalar) * disc.mesh.incidence[2, 0]).sum(axis=0)(embedder)  # [F] Current <- [interior] Scalar
     return embedder, current
 
 
@@ -293,7 +292,7 @@ def solve(disc: Disc, magnetic: Bivector, spin: Bivector,
     # Face-averaged Whitney vectors reconstruct edge circulations at each triangle's centroid; swept
     # through time they are the field there, on which the conductivity map acts.
     reconstruction = spdiag(face_ones * (Vector ^ mv.t))(disc.reconstruction)   # [F] Field <- [E] Scalar
-    derivative = disc.mesh.d0 * Scalar                                          # [E] Scalar <- [V] Scalar
+    derivative = disc.mesh.d[0] * Scalar                                   # [E] Scalar <- [V] Scalar
     gradient = reconstruction(derivative)                                  # [F] Field <- [V] Scalar
     drive = reconstruction(emf)                                            # Field[F]
     material = spdiag(disc.triangle_areas * conductivity)                   # [F, F] Current <- Field

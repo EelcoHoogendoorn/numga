@@ -29,6 +29,7 @@ import numpy as np
 from numga import Algebra
 from numga.backend.context import Context
 from numga.sparse import SparseExtensor, spdiag
+from examples import instantiate
 from examples.mechanics import lie_integrators as lie
 
 
@@ -36,6 +37,8 @@ from examples.mechanics import lie_integrators as lie
 ga: Algebra
 ctx: Context
 mv = ctx.multivector
+# A girder's bars and the constraints joining bodies are bond graphs, one-dimensional meshes in the same context.
+Mesh = instantiate("examples.util.mesh", ga, type(ctx)).Mesh
 Scalar = ga.gatype.scalar()
 Point = ga.gatype.antivector()
 Twist = ga.gatype.bivector()
@@ -120,7 +123,7 @@ def girder(cells: int, length: float, height: float, stiffness: float, density: 
     positions, edges = truss(cells, length, height)                         # Point-[vertices], [edges, ends]
     vertices = positions.batch().shape[-1]
     # Each bar's tail taken from its head: the bar as a displacement, its two points' weights cancelling.
-    ends = SparseExtensor.from_columns(edges, mv.scalar((np.ones_like(edges) * [-1, 1])[..., None]), vertices)  # Scalar+[edges <- vertices]
+    ends = Mesh(vertices, edges).d[0]                                       # Scalar+[edges <- vertices]
     difference = (ends * positions).cast(Displacement)                      # Displacement-[edges]
     # The metric enters once, turning each bar into the force along it; that force paired with the bar is its
     # squared length.

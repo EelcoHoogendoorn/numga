@@ -18,7 +18,7 @@ from numga.extensor import Extensor
 from examples.util.animation import capture
 from examples.electromagnetism.eddy_brake import core
 
-Mesh, as_ga_sparse, as_scalar = core.Mesh, core.mesh_module.as_ga_sparse, core.as_scalar
+Mesh, as_scalar = core.Mesh, core.as_scalar
 
 image_samples = 256
 animation_dpi = 90
@@ -98,7 +98,7 @@ def rotation_marker(ax: plt.Axes) -> PathCollection:
 def at_vertices(mesh: Mesh, areas: core.Scalar, field: Extensor) -> Extensor:
     """Face fields averaged at each vertex, weighted by the faces' areas `Scalar[F]`, for drawing `[...] X[F]` as
     `[...] X[V]`."""
-    third = as_ga_sparse(mesh.faces, as_scalar(np.full(mesh.faces.shape, 1 / 3)))
+    third = mesh.incidence[2, 0].mean(axis=0)
     return (~third * (areas * field)) / (~third * areas)
 
 

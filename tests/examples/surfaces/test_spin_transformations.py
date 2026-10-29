@@ -17,7 +17,7 @@ def test_conformal_error_falls_with_refinement():
     errors = []
     for levels in (2, 3):
         mesh, vertices = core.Mesh.icosphere(levels)
-        centroids = core.as_ga_sparse(mesh.faces, core.as_scalar(np.ones_like(mesh.faces) / 3)) * vertices
+        centroids = mesh.incidence[2, 0].mean(axis=0) * vertices
         deformed = core.spin_transform_deform(mesh, vertices, (centroids & core.context.multivector.y) * 0.5)
         errors.append(np.abs((core.corner_cosines(mesh, deformed) - core.corner_cosines(mesh, vertices)).to_array()).max())
     assert errors[1] < 0.6 * errors[0]
@@ -32,9 +32,9 @@ def test_a_dipole_change_keeps_angles_and_raises_curvature_where_asked():
 
 
 def test_the_dirac_spheres_have_fields_of_zero_energy():
-    sphere, vertices, gallery, energies = scenarios.dirac()
+    mesh, vertices, gallery, energies = scenarios.dirac()
     assert np.all(np.abs(energies) < 0.05)
-    plt.close(render.draw_dirac(sphere, gallery, vertices))
+    plt.close(render.draw_dirac(mesh, gallery, vertices))
 
 
 def test_the_rounding_animation_draws():
@@ -48,12 +48,9 @@ def test_the_dirac_operator_is_the_geometric_derivative_times_the_face_normals()
     derivative with each face's unit normal on the right, where it anticommutes with the in-plane
     gradients; and the geometric derivative of position is twice the volume element on every face."""
     mesh, vertices = core.Mesh.icosphere(3)
-    boundary = core.as_ga_sparse(mesh.edges, core.as_scalar(np.ones_like(mesh.edges) * [-1, 1]))
-    edges = boundary * vertices                                               # Point-[edges]
-    orientation = core.as_scalar(mesh.face_edge_orientation.T).field()        # [3] Scalar+[faces]
-    facing = SparseExtensor.selection(core.context, mesh.face_edges.T, len(mesh.edges))   # [3] [F, E] Scalar
-    corners = mesh.at_corners(facing * edges * orientation)
-    sides = (edges.batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point-[faces]
+    edges = mesh.d[0] * vertices                                              # Point-[edges]
+    sides = mesh.boundary[2, 1] * edges                                       # [3] Point-[faces]
+    corners = (spdiag(sides) * mesh.incidence[2, 0]).sum(axis=0)
     areas = sides[1].commutator(sides[0]).norm() / 2                          # Scalar+[faces]
     dirac = spdiag(1 / areas) * corners * 0.5
     derivative = core.geometric_derivative(mesh, vertices)

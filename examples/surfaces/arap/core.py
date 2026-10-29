@@ -19,7 +19,7 @@ from examples.surfaces.spin_transformations.core import corner_cosines, cube
 
 ga = VGA3D
 mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, as_ga_sparse, as_scalar = mesh_module.Mesh, mesh_module.as_ga_sparse, mesh_module.as_scalar
+Mesh, as_scalar = mesh_module.Mesh, mesh_module.as_scalar
 mv = mesh_module.ctx.multivector
 Scalar = ga.gatype.scalar()                         # Scalar+
 Point = ga.gatype.antivector()                      # Antivector-
@@ -38,17 +38,16 @@ def deform(
     """For each handle pose, the as-rigid-as-possible vertices after `n_iterations` alternating steps
     warm-started from the previous pose, the Laplacian-edited vertices, and the energy at each iteration."""
     # Incidence operators: oriented edge differences from tail to head, and midpoint averages across each edge.
-    I10 = mesh.edges
-    T10 = as_ga_sparse(I10, as_scalar(np.ones_like(I10) * [-1, 1]))                 # Scalar+[edges <- vertices]
-    A10 = as_ga_sparse(I10, as_scalar(np.ones_like(I10) / 2))                       # Scalar+[edges <- vertices]
+    T10 = mesh.d[0]                                                                 # Scalar+[edges <- vertices]
+    A10 = mesh.incidence[1, 0].mean(axis=0)                                         # Scalar+[edges <- vertices]
 
     rest_edges = T10 * rest_vertices                                                # Point-[edges]
     # The directed edge opposite each corner of each face, its corner cotangent from the inner product
     # over the spanned plane norm, and each edge's cotangent weight summed from its opposite corners.
-    triangle_edges = (rest_edges.batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()  # [corners] Point-[faces]
+    triangle_edges = mesh.boundary[2, 1] * rest_edges                               # [corners] Point-[faces]
     next_edges, prev_edges = triangle_edges[[1, 2, 0]], triangle_edges[[2, 0, 1]]   # [corners] Point-[faces], Point-[faces]
     cotangents = -(next_edges.dual_inverse() & prev_edges) / next_edges.commutator(prev_edges).norm()  # [corners] Scalar+[faces]
-    cotangent_weights = ~mesh.by_corner(cotangents / 2) * as_scalar(np.ones(len(mesh.faces))).field()  # Scalar+[edges]
+    cotangent_weights = (~mesh.incidence[2, 1] * (cotangents / 2)).sum(axis=0)     # Scalar+[edges]
 
     # Diagonal weights for the edge cotangents and the handle penalty stiffness.
     H1 = spdiag(cotangent_weights)                                                  # Scalar+[edges <- edges]

@@ -11,14 +11,9 @@ mesh_module = instantiate("examples.util.mesh", VGA3D)
 Mesh, as_scalar, mv = mesh_module.Mesh, mesh_module.as_scalar, mesh_module.mv
 
 
-def sides(mesh: Mesh, vertices):
-    """The edge facing each corner of each face `[3] Point[F]`, one of the edges signed as the face runs along it."""
-    return ((mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()
-
-
 def corner_angles(mesh: Mesh, vertices) -> np.ndarray:
     """Each corner's angle in degrees `[3, F]`: one edge's slice read along the other, over both lengths."""
-    edges = sides(mesh, vertices)
+    edges = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
     after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]
     return np.rad2deg(np.arccos(np.clip((-(after.dual_inverse() & before) / (after.norm() * before.norm())).to_array(), -1, 1)))
 
@@ -32,13 +27,13 @@ def test_boundary_integral_matches_oriented_face_area(built):
     vertices = turn >> vertices + mv.x.dual()
 
     # Circulation around a face of a difference vanishes.
-    np.testing.assert_allclose((mesh.d1 * mesh.d0).cells.kernel, 0.0, atol=0.0)
+    np.testing.assert_allclose((mesh.d[1] * mesh.d[0]).cells.kernel, 0.0, atol=0.0)
     # Interior edges cancel in the sum of face boundaries. The surviving edge pairs
     # enclose exactly the same oriented area as the sum of triangular faces.
-    boundary = ~mesh.d1 * as_scalar(np.ones(len(mesh.faces))).field()
-    tail, head = vertices.batch()[mesh.edges.T]                               # [E] Point each
+    boundary = ~mesh.d[1] * as_scalar(np.ones(len(mesh.faces))).field()
+    tail, head = (mesh.incidence[1, 0] * vertices).batch()                          # [E] Point-
     boundary_area = (boundary.batch() * (tail & head)).sum() / 2
-    edges = sides(mesh, vertices)
+    edges = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
     face_area = (edges[0] & edges[1]).sites.sum() / 2
     np.testing.assert_allclose((boundary_area - face_area).kernel, 0.0, atol=1e-11)
     np.testing.assert_array_equal(np.flatnonzero(boundary.kernel[:, 0]), mesh.boundary_edges)
@@ -51,11 +46,11 @@ def test_triangular_disk_has_regular_interior_and_resolved_circular_boundary(div
     boundary = np.unique(mesh.edges[mesh.boundary_edges])
     degrees = np.bincount(mesh.edges.ravel(), minlength=mesh.n_vertices)
     interior = np.setdiff1d(np.arange(mesh.n_vertices), boundary)
-    lengths = (mesh.d0 * vertices).norm().kernel[:, 0]
-    edges = sides(mesh, vertices)
-    planes = (edges[1].commutator(edges[0])).normalized()                     # Bivector[F]
+    lengths = (mesh.d[0] * vertices).norm().kernel[:, 0]
+    edges = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
+    planes = (edges[1].commutator(edges[0])).normalized()                     # Bivector+[F]
     areas = (edges[0] & edges[1]).norm().kernel[:, 0] / 2
-    centres = vertices.batch()[mesh.faces.T].sum(axis=0) / 3                 # [F] Point
+    centres = mesh.incidence[2, 0].mean(axis=0) * vertices                   # Point-[F]
     rim_areas = areas[centres.norm().kernel[:, 0] > 0.75 * radius]
     angles = corner_angles(mesh, vertices)
 
@@ -77,7 +72,7 @@ def test_concentric_disk_follows_material_interfaces_without_thin_cells(division
     mesh, vertices = Mesh.concentric_disk(boundaries, divisions)
     radii = vertices.norm().kernel[:, 0]
     edge_radii = radii[mesh.edges]
-    edges = sides(mesh, vertices)
+    edges = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
     planes = (edges[1].commutator(edges[0])).normalized()                     # Bivector[F]
     areas = (edges[0] & edges[1]).norm().kernel[:, 0] / 2
     angles = corner_angles(mesh, vertices)
@@ -96,3 +91,25 @@ def test_concentric_disk_follows_material_interfaces_without_thin_cells(division
     assert angles.min() > 30
     assert angles.max() < 105
     assert areas.std() < 0.2 * areas.mean()
+
+
+def test_boundaries_of_boundaries_vanish_in_every_dimension():
+    # A cube of six tetrahedra around its diagonal, and a path of edges, oriented each its own way.
+    solid = Mesh(8, np.array([[0, 1, 3, 7], [0, 1, 5, 7], [0, 2, 3, 7], [0, 2, 6, 7], [0, 4, 5, 7], [0, 4, 6, 7]]))
+    path = Mesh(4, np.array([[0, 1], [2, 1], [3, 2]]))
+
+    np.testing.assert_allclose((solid.d[1] * solid.d[0]).cells.kernel, 0.0, atol=0.0)
+    np.testing.assert_allclose((solid.d[2] * solid.d[1]).cells.kernel, 0.0, atol=0.0)
+    # The cube's boundary: its six squares, each two triangles, their twelve edges and the six diagonals, every corner.
+    assert [len(solid.exterior(k)) for k in (2, 1, 0)] == [12, 18, 8]
+    # A tet's edges are signed by whether they run the way its own vertex order runs them, and its faces by their
+    # order in it, which is their outward orientation up to the sign of the corner they face.
+    tails, heads = np.array([0, 0, 0, 1, 1, 2]), np.array([1, 2, 3, 2, 3, 3])
+    ones = as_scalar(np.ones(solid.n_elements[1])).field()
+    np.testing.assert_array_equal((solid.oriented[3, 1] * ones).kernel[..., 0],
+                                  np.where(solid.tets[:, tails] < solid.tets[:, heads], 1.0, -1.0).T)
+    facing = (-1.0) ** np.arange(4)[:, None, None]
+    np.testing.assert_array_equal(solid.oriented[3, 2].cells.kernel, facing * solid.boundary[3, 2].cells.kernel)
+    # Each edge's derivative is its head less its tail.
+    heights = as_scalar(np.arange(4.0)).field()
+    np.testing.assert_array_equal((path.d[0] * heights).kernel[:, 0], [1.0, -1.0, -1.0])

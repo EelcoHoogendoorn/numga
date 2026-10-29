@@ -17,10 +17,12 @@ import numpy as np
 from numga import NumpyContext, stack
 from numga.algebras import VGA2D
 from numga.sparse import SparseExtensor, spdiag
+from examples import instantiate
 
 ga = VGA2D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
+Mesh = instantiate("examples.util.mesh", ga).Mesh
 Scalar = ga.gatype.scalar()                                                  # Scalar+
 # Positions and displacements are antivectors; a force is a vector, read by its pairing with a displacement.
 Displacement = ga.gatype.antivector()                                        # Antivector-
@@ -52,9 +54,7 @@ def triangular_patch(n_columns: int, n_rows: int, spacing: float) -> tuple[Displ
     upper = indices[1:, :-1] + (np.arange(n_rows - 1) % 2)[:, None]
     diagonal = np.stack((lower, upper), axis=-1).reshape(-1, 2)
     edges = np.concatenate((horizontal, vertical, diagonal))
-    incidence = SparseExtensor.from_columns(
-        edges, mv.scalar((np.ones_like(edges) * [-1, 1])[..., None]), n_columns * n_rows,
-    )                                                                        # Scalar+[bonds <- sites]
+    incidence = Mesh(n_columns * n_rows, edges).d[0]                         # Scalar+[bonds <- sites]
     return positions, edges, incidence
 
 

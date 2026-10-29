@@ -53,7 +53,7 @@ carrying one vector out from anywhere gives a field with no turning at all along
 surface's own transport is not trivial, because the surface is curved. Each edge gets an extra turn
 `angle` in the head's tangent plane, `(n_head.dual() * (-angle / 2)).exp()`, and since every turn in a
 tangent plane commutes with the transport into that plane, a loop's holonomy grows by exactly the sum
-of the extra turns along it, signed by direction: around the faces, the circulation `d1(angles)`.
+of the extra turns along it, signed by direction: around the faces, the circulation `mesh.d[1] * angles`.
 Asking every face to turn by `2 pi` times its chosen index and every non-contractible loop, a
 generator of the surface's handles, by nothing is a linear system for the edge turns, solved with the
 smallest turns, which also turn the field the least. The system can be met only when the indices
@@ -119,16 +119,15 @@ Rotor = ga.gatype.rotor()                           # Rotor+
 def vertex_normals(mesh: Mesh, vertices: Point) -> Vector:
     """The unit normal at each vertex, `Vector-[vertices]`, is the sum of its faces' normals, each the join of two
     of the face's edges, twice the face's area large."""
-    edges = ((mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point-[faces]
-    spread = as_ga_sparse(mesh.faces, as_scalar(np.ones_like(mesh.faces, dtype=float)))   # Scalar+[faces <- vertices]
-    return (~spread * (edges[0] & edges[1])).normalized()
+    edges = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                        # [3] Point-[faces]
+    return (~mesh.incidence[2, 0].sum(axis=0) * (edges[0] & edges[1])).normalized()
 
 
 def vertex_areas(mesh: Mesh, vertices: Point) -> Scalar:
     """Each vertex's area, `Scalar+[vertices]`, is a third of the area of each face at it, a face's area half the
     size of its plane."""
-    edges = ((mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point-[faces]
-    thirds = as_ga_sparse(mesh.faces, as_scalar(np.ones_like(mesh.faces) / 3))   # Scalar+[faces <- vertices]
+    edges = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                        # [3] Point-[faces]
+    thirds = mesh.incidence[2, 0].mean(axis=0)                                  # Scalar+[faces <- vertices]
     return ~thirds * (edges[1].commutator(edges[0]).norm() / 2)
 
 
@@ -136,10 +135,10 @@ def cotangent_weights(mesh: Mesh, vertices: Point, face_weights: Scalar) -> Scal
     """Each edge's weight, `Scalar+[edges]`, is half the cotangents of the angles facing it, each face's share
     weighted by `Scalar+[faces]`: the cotangent at a corner is one edge's slice read along the other, over the size
     of the plane they span; head to tail, the corner's own edges point the other way."""
-    edges = ((mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point-[faces]
+    edges = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                        # [3] Point-[faces]
     after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]                          # [3] Point-[faces], Point-[faces]
     cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()   # [3] Scalar+[faces]
-    return ~mesh.by_corner(cotangents / 2) * face_weights
+    return (~mesh.incidence[2, 1] * (face_weights * cotangents / 2)).sum(axis=0)
 
 
 def transported(normals: Vector, start: Point) -> Iterator[Point]:
@@ -165,9 +164,8 @@ def adjusted_transport(mesh: Mesh, normals: Vector, angles: Scalar) -> Rotor:
     """The rotors from each end of each edge to its head, `[edges, 2]`, are the surface's own transport from the
     tail followed by the edge's extra turn, `Scalar+[edges]`, in the head's tangent plane, and none at the head.
     With no extra turns, this is the surface's own parallel transport."""
-    unit_normals = normals.batch()                                               # [vertices] Vector-
-    tails, heads = unit_normals[mesh.edges[:, 0]], unit_normals[mesh.edges[:, 1]]   # [edges] Vector-, [edges] Vector-
-    extra = (heads.dual() * (-angles.batch() / 2)).exp()                         # [edges] Rotor+
+    tails, heads = normals.batch()[mesh.edges.T]                                # [edges] Vector-, [edges] Vector-
+    extra = (heads.dual() * (-angles.batch() / 2)).exp()                        # [edges] Rotor+
     return stack([extra * (heads * tails).square_root(), mv.rotor().broadcast_to(extra.shape)], axis=-1)
 
 
@@ -230,7 +228,7 @@ def carried_out(mesh: Mesh, vertices: Point, normals: Vector, angles: Scalar) ->
     first = SparseExtensor.from_indices(as_scalar([1.0]), np.array([0]), np.array([0]), (count, count)) * Point
     # The direction across the first edge, in the tangent plane: the plane through the normal and the edge's
     # direction, which is that direction as an antivector.
-    seed = (normals.batch()[0] ^ (mesh.d0 * vertices).batch()[0].dual_inverse()).normalized()   # [] Point-
+    seed = (normals.batch()[0] ^ (mesh.d[0] * vertices).batch()[0].dual_inverse()).normalized()   # [] Point-
     return (along_tree + first).solve((seed * as_scalar(np.arange(count) == 0)).field())
 
 
@@ -258,7 +256,7 @@ def cross_stripes(mesh: Mesh, vertices: Point, normals: Vector, areas: Scalar, a
     match = ahead[:, :, None].dot((forward[:, None] >> lines[tails])[:, None, :])   # [edges, 2, 2] Scalar+
     behind = (match * lines[tails][:, None, :]).sum(axis=-1)                     # [edges, 2] Point-
     # The field read along each edge, by the metric: the paper's inner product of the field with the edge.
-    advance = ((ahead + behind) / 2).dot((mesh.d0 * vertices).batch()[:, None]) * frequency   # [edges, 2] Scalar+
+    advance = ((ahead + behind) / 2).dot((mesh.d[0] * vertices).batch()[:, None]) * frequency   # [edges, 2] Scalar+
     turn = (unit_normals[heads][:, None].dual() * (-advance / 2)).exp()          # [edges, 2] Rotor+
     # Carried, then mirrored onto the head's line where it lands against it.
     moved = forward[:, None, None] >> Point                                      # [edges, 1, 1] Point- <- Point-

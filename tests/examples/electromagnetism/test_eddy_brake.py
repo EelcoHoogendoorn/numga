@@ -53,7 +53,7 @@ def test_localized_field_conserves_charge_and_turns_mechanical_power_into_heat()
     conductivity = core.fibre_conductivity(disc, principal, 0, radius, conductance)
     response = core.solve(disc, magnetic, spin, conductivity)
 
-    charge_balance = ~disc.mesh.d0 * response.flux
+    charge_balance = ~disc.mesh.d[0] * response.flux
     heat = response.heating.sites.sum()
     # The moment paired with the spin: minus the power it takes out of the turning.
     mechanical_loss = -(spin & response.torque)
@@ -181,7 +181,7 @@ def test_isotropic_material_recovers_the_cotangent_stiffness():
     radius, rings, sectors, conductance = 0.1, 6, 36, 2.5
     disc = core.disc(*core.Mesh.disk(radius, rings, sectors))
     face_ones = core.as_scalar(np.ones(len(disc.mesh.faces))).field()
-    gradient = core.spdiag(face_ones * (core.Vector ^ core.mv.t))(disc.reconstruction)(disc.mesh.d0 * core.Scalar)
+    gradient = core.spdiag(face_ones * (core.Vector ^ core.mv.t))(disc.reconstruction)(disc.mesh.d[0] * core.Scalar)
     outflow = gradient.adjugate()(core.spdiag(face_ones * (core.Current & core.time)))
     material = core.spdiag(disc.triangle_areas * conducting(conductance * SCALE))
     balance = outflow(material(gradient))
@@ -189,8 +189,8 @@ def test_isotropic_material_recovers_the_cotangent_stiffness():
     # read along the other, over the size of the plane they span.
     after, before = disc.triangle_edges[[1, 2, 0]], disc.triangle_edges[[2, 0, 1]]
     cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()
-    weights = ~disc.mesh.by_corner(cotangents / 2) * core.as_scalar(np.ones(len(disc.mesh.faces))).field()
-    cotangent = (~disc.mesh.d0 * core.spdiag(conductance * weights) * disc.mesh.d0) * core.Scalar
+    weights = (~disc.mesh.incidence[2, 1] * (cotangents / 2)).sum(axis=0)
+    cotangent = (~disc.mesh.d[0] * core.spdiag(conductance * weights) * disc.mesh.d[0]) * core.Scalar
     potentials = core.as_scalar(np.random.default_rng(3).normal(size=disc.mesh.n_vertices)).field()
     # The face gradient is constant, so integrating its material pairing at the centroid is exact.
     np.testing.assert_allclose(balance(potentials).kernel, cotangent(potentials).kernel, atol=1e-10)
@@ -216,7 +216,7 @@ def test_free_rotation_converts_kinetic_energy_into_heat_with_closed_currents():
     swept_currents = core.spdiag(face_ones * (core.Current & core.time))
     flux = stack([reconstruction.adjugate()(swept_currents(disc.triangle_areas * state.current)) for state in states])
     np.testing.assert_allclose((energy - energy[0]).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose((~disc.mesh.d0 * flux).kernel, 0, atol=1e-9)
+    np.testing.assert_allclose((~disc.mesh.d[0] * flux).kernel, 0, atol=1e-9)
     assert np.all(speed.kernel > 0)
     assert np.all(np.diff(speed.kernel, axis=0) < 0)
     assert np.all(states[-1].heat.sites.sum().kernel > 0)
@@ -320,8 +320,9 @@ def test_coasting_transports_nonuniform_heat_with_the_material():
                                0, atol=1e-12)
 
     # The heat-weighted position turns in world space while each face keeps its own heat.
-    first_centers = (states[0].vertices.batch()[..., disc.mesh.faces.T].sum(axis=-2) / 3).field()   # [cases] Point[F]
-    last_centers = (states[-1].vertices.batch()[..., disc.mesh.faces.T].sum(axis=-2) / 3).field()   # [cases] Point[F]
+    third = disc.mesh.incidence[2, 0].mean(axis=0)
+    first_centers = third * states[0].vertices                              # [cases] Point[F]
+    last_centers = third * states[-1].vertices                              # [cases] Point[F]
     first = (first_centers * heat).sites.sum() / heat.sites.sum()
     last = (last_centers * heat).sites.sum() / heat.sites.sum()
     np.testing.assert_allclose((last - (turn >> first)).kernel, 0, atol=1e-12)
@@ -441,10 +442,8 @@ def test_inductive_currents_exchange_energy_with_rotation_and_remain_closed():
     # gives no leakage.
     face_sense = (disc.triangle_edges[0] & disc.triangle_edges[1] & core.time) / (2 * disc.triangle_areas)
     normal_flux = (currents[..., None] & (disc.triangle_edges & core.time)) / face_sense
-    differences = disc.mesh.d0 * streams
-    orientation_by_corner = core.as_scalar(disc.mesh.face_edge_orientation.T).field()
-    facing = SparseExtensor.selection(core.context, disc.mesh.face_edges.T, len(disc.mesh.edges))   # [3] [F, E] Scalar
-    expected_flux = facing * differences[..., None] * orientation_by_corner
+    differences = disc.mesh.d[0] * streams
+    expected_flux = disc.mesh.boundary[2, 1] * differences[..., None]
     np.testing.assert_allclose((normal_flux - expected_flux).kernel, 0, atol=1e-9)
     np.testing.assert_allclose(differences.batch()[..., disc.mesh.boundary_edges].kernel, 0, atol=1e-12)
 

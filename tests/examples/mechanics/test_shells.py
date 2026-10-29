@@ -17,7 +17,7 @@ def test_forces_are_the_energy_gradient_and_balance():
     flat = core.lattice(0.3, 0.7)
     flat = flat[np.linalg.norm(flat, axis=-1) <= 0.7]
     mesh, points = core.flat_mesh(flat, 0.3)
-    tails, heads = (end * points for end in mesh.edge_ends)
+    tails, heads = mesh.incidence[1, 0] * points
     lengths = (tails & heads).norm() * 1.1
     origin = core.mv.w.dual()
     along, across = origin & core.mv.x.dual(), origin & core.mv.y.dual()
