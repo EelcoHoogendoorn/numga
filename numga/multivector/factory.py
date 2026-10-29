@@ -63,6 +63,30 @@ class MultivectorFactory:
         """The unit basis vectors, as a batch along the first axis: x, y, z = mv.basis()."""
         return self.vector(np.eye(len(self.algebra.subspace.vector())))
 
+    def from_subalgebra(self, value: Extensor) -> Extensor:
+        """The value in this algebra of an element of a subalgebra, one whose generators are all among this
+        algebra's, by name and with the same square, as the algebra of space `x+y+z+` lies in its projective
+        algebra `w0x+y+z+`. With `space` and `mv` the two algebras' value constructors:
+
+        An extrinsic element keeps its blades: `mv.from_subalgebra(space.x) == mv.x`, the plane through the
+        origin. The inclusion preserves the geometric product, so a rotor of space is the projective rotor about
+        the origin and keeps its facts. An intrinsic element keeps its complement, the element that completes it
+        to the unit volume: `mv.from_subalgebra(space.x.dual()) == mv.x.dual()`. A point of space, an offset
+        from its origin, is therefore the projective point at infinity of that offset, `origin +
+        mv.from_subalgebra(offset)` the point at it, and the unit volume of space the projective unit volume.
+
+        Joins of intrinsic elements carry over, and so do an extrinsic element's products and pairings with an
+        element on its right, `plane & point`, `rotor >> point`; with an intrinsic element on the left a product
+        may differ in sign, or vanish, as the product of two directions does where the degenerate generator
+        meets itself.
+
+        A map carries each axis by its own kind, its inputs read back through the inclusion of theirs, so that
+        `mv.from_subalgebra(f)(mv.from_subalgebra(x)) == mv.from_subalgebra(f(x))`; it takes the included
+        elements of its inputs' types. The coefficients are reordered and signed, in this factory's context."""
+        from .subalgebra import from_subalgebra
+
+        return from_subalgebra(self.context, value)
+
     def __call__(
         self,
         gatype: GAType,

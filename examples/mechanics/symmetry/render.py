@@ -14,7 +14,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import stack
 from examples.mechanics.symmetry.core import Conductivity, Direction, Field, Gyration, Point, Rotor, ga, mv
 from examples.util.wgsl import Shader, fitted, meshes, show, solids, supersampled
 
@@ -73,17 +72,6 @@ fn sample(place: vec2<f32>) -> Sample {
 
 
 # --- plumbing -------------------------------------------------------------------------
-def along(directions: Direction) -> np.ndarray:
-    """The components of directions along x, y and z: their pairings with the planes x, y and z."""
-    return (stack((mv.x, mv.y, mv.z)) & directions[..., None]).to_array()
-
-
-def placed(directions: Direction) -> Point:
-    """The points the directions reach from the origin, carried into the scene as `solids.lift_vga3d_dual_quadric_to_pga3d` carries shapes:
-    read by the planes x, y and z here, and moved as far along x, y and z there."""
-    return solids.origin + (solids.axes.dual() * along(directions)).sum(axis=-1)
-
-
 def spiral(count: int) -> Rotor:
     """Turns that carry x to `count` directions spread evenly over the sphere, on a golden spiral: up toward z to
     heights evenly apart, then about z by the golden angle from one to the next."""
@@ -100,8 +88,9 @@ def image_of_sphere(conductivity: Conductivity) -> tuple[solids.Quadric, Point]:
     # The unit ball's dual quadric, carried by the conductivity: the ball's metric, the dual, between the
     # conductivity and its adjugate.
     image = conductivity(conductivity.adjugate().dual())                      # [] Direction- <- Field+
-    quadric = solids.lift_vga3d_dual_quadric_to_pga3d(image, stack((mv.x, mv.y, mv.z)))
-    return quadric, placed(conductivity(spiral(n_framing) >> mv.x))
+    quadric = solids.solid_of_dual_quadric(solids.mv.from_subalgebra(image))   # [] Plane+ <- Point-
+    # The flows of unit fields, the scene's points they reach from its origin.
+    return quadric, solids.origin + solids.mv.from_subalgebra(conductivity(spiral(n_framing) >> mv.x))
 
 
 def figure(halves: list[np.ndarray], height: float) -> tuple[plt.Figure, list[plt.Axes]]:
@@ -119,7 +108,9 @@ def draw_conduction(conductivities: Conductivity, driving: Field, fluxes: Direct
     # The unit driving field is drawn along its direction at the largest gain of any panel's conductivity, the scale
     # the flows are drawn at.
     largest = conductivities.svdvals().to_array().max()
-    driving_tip, flows = placed(driving.dual() * largest), placed(fluxes)
+    # The arrows' tips, the scene's points the field's direction and the flows reach from its origin.
+    driving_tip = solids.origin + solids.mv.from_subalgebra(driving.dual() * largest)   # [] Point-
+    flows = solids.origin + solids.mv.from_subalgebra(fluxes)                 # [panels] Point-
     ellipsoids = [image_of_sphere(conductivity) for conductivity in conductivities]
     view = solids.view([framed for _, framed in ellipsoids] + [driving_tip, flows], 0.0, elevation, azimuth, margin, 1)
     fig, axes = figure([view.half] * conductivities.shape[0], 1.1)
@@ -149,7 +140,7 @@ def lattice(centre: Point, axial: Point, diagonal: Point, corners: Point) -> lis
 
 def stiffness_mesh(stiffness: Direction) -> tuple[Point, np.ndarray]:
     """The stiffness along every direction as a radius, sampled on a latitude-longitude grid, as a mesh."""
-    vertices = placed(stiffness)                                              # [latitudes, longitudes] Point-
+    vertices = solids.origin + solids.mv.from_subalgebra(stiffness)           # [latitudes, longitudes] Point-
     rows, columns = vertices.shape
     index = np.arange(rows * columns).reshape(rows, columns)
     corner = index[:-1, :-1].ravel(), index[:-1, 1:].ravel(), index[1:, 1:].ravel(), index[1:, :-1].ravel()

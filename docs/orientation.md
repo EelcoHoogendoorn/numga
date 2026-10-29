@@ -44,6 +44,7 @@ The `anti` constructors select both complementary grade and intrinsic orientatio
 | plain numbers in an expression | extrinsic scalars |
 | `mv.point(coordinates)`, `mv.direction(coordinates)`, in `PGA2D` and `PGA3D` | intrinsic |
 | `mv(gatype, values)` | the orientation of `gatype` |
+| `mv.from_subalgebra(value)`, a value of an algebra whose generators are among `mv`'s | the orientation of `value`, axis by axis |
 
 A type taken from an expression carries the orientation its construction produces. Narrowing a type with `.within`, `.containing`, `.degenerate` or `.nondegenerate` keeps its orientation. Constructing one directly from a subspace requires an explicit orientation:
 

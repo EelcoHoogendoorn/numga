@@ -85,6 +85,18 @@ T(a ^ b) == T(a) & T(b)    # vectors to antivectors
 
 **Spectra of forms.** For symmetric forms `F` and `G`, `F.eigh(G)` solves `F(v) == eigenvalue * G(v)`; without a partner, `G` is the dot form of `F`'s space.
 
+## Between algebras
+
+**Values of a subalgebra.** Where every generator of an algebra is among those of `mv`'s algebra, by name and with the same square, as the algebra of space `x+y+z+` lies in its projective algebra `w0x+y+z+`, `mv.from_subalgebra` takes its values by kind. With `small` the smaller algebra's value constructors and `x` any blade of it, it is the linear map defined by
+
+```python
+mv.from_subalgebra(small.x) == mv.x                  # extrinsic: the same blade
+mv.from_subalgebra(small.x.dual()) == mv.x.dual()    # intrinsic: the same complement
+mv.from_subalgebra(f)(mv.from_subalgebra(a)) == mv.from_subalgebra(f(a))    # a map, each axis by its kind
+```
+
+Products of extrinsic elements carry over, as do joins of intrinsic ones and an extrinsic element's products and pairings with an element on its right, `plane & point` and `rotor >> point`. A point of space, an offset from its origin, is the projective direction of that offset, and `origin + mv.from_subalgebra(offset)` the point at it, with `origin = mv.w.dual()`.
+
 ## Norms
 
 **Norm.** `x.norm()` and `x.normalized()` are defined by

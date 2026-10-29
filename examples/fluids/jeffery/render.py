@@ -50,12 +50,10 @@ SPHERE_ARROW_WIDTH, SPHERE_HEAD_LENGTH, SPHERE_HEAD_WIDTH = 1.5, 8.0, 5.0
 ORBIT_WIDTH, ORBIT_MARGIN, ORBIT_PIXELS = 1.5, 0.05, 260
 
 
-def coordinates(points: core.Point) -> np.ndarray:
-    """Points for the sphere of directions: along the normal of the vortex plane, along the flow, and along the
-    gradient, so that the gradient points up and the order stays right-handed; their pairings with the planes across
-    those directions."""
-    mv = core.mv
-    return (stack((mv.z, mv.x, mv.y)) & points[..., None]).to_array()
+# The core's frame turned into the scene's, so that the gradient points up and the order stays right-handed: the
+# flow x to y, the gradient y to z and the normal of the vortex plane z to x, by the mirrors swapping y with z, then
+# x with y.
+to_scene = ((solids.mv.x - solids.mv.y) * (solids.mv.y - solids.mv.z)).normalized()   # [] Rotor+
 
 
 def sphere(view: solids.View) -> tuple[list, list, list]:
@@ -66,11 +64,13 @@ def sphere(view: solids.View) -> tuple[list, list, list]:
                                  SPHERE_HEAD_WIDTH / 2 * view.pixel)
     parts = [(shafts, FLOW_RGB), (heads, FLOW_RGB)]
     ball = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE, SPHERE_OPACITY)]
-    # The parallels: the planes across the vertical at the height of each polar angle; the meridians: the plane x
-    # turned about the vertical by each azimuth.
-    heights = np.cos(np.radians(np.arange(30, 180, 30)))
+    # The parallels: the planes across the vertical through the points the pole turns to at each polar angle; the
+    # meridians: the plane x turned about the vertical by each azimuth.
+    polar_turns = (solids.mv.zx * (-np.radians(np.arange(30, 180, 30)) / 2)).exp()   # [parallels] Rotor+
+    on_parallels = polar_turns >> (solids.origin + solids.mv.z.dual())        # [parallels] Point-
+    parallels = solids.mv.z - solids.mv.w * (solids.mv.z & on_parallels)      # [parallels] Plane+
     meridians = (solids.mv.xy * (-np.radians(np.arange(0, 180, 30)) / 2)).exp() >> solids.mv.x   # [meridians] Plane+
-    planes = concatenate([solids.mv.z - solids.mv.w * heights, meridians])          # [circles] Plane+
+    planes = concatenate([parallels, meridians])                              # [circles] Plane+
     # The ball is the first translucent part, after the opaque ones.
     grid = solids.Ink(len(parts), solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape), SPHERE,
                       GRID_WIDTH, GRID_OPACITY)
@@ -81,19 +81,21 @@ def sphere(view: solids.View) -> tuple[list, list, list]:
 def draw_orbits(trails: core.Point) -> plt.Figure:
     """The path of each body's long axis from each start `[steps + 1, bodies, starts]`, on the sphere of
     directions, both ends of the axis drawn, among the sphere's own surfaces sample by sample."""
-    paths = coordinates(trails)                                              # [steps + 1, bodies, starts, 3]
-    count = paths.shape[1]
+    # Both ends of every long axis, the scene's points the axis reaches from its origin.
+    axis_ends = trails * np.array([1.0, -1.0])[:, None, None, None]          # [ends, steps + 1, bodies, starts] Point-
+    ends = solids.origin + (to_scene >> solids.mv.from_subalgebra(axis_ends))   # [ends, steps + 1, bodies, starts]
+    count = trails.shape[1]
     view = solids.View(solids.aim(solids.origin, np.radians(VIEW[0]), np.radians(VIEW[1] + 90)),
                        np.full(2, LABEL_DISTANCE * (1 + ORBIT_MARGIN)), ORBIT_PIXELS)
     figure = plt.figure(figsize=(count * ORBIT_PIXELS / 100, ORBIT_PIXELS / 100), dpi=100)
     parts, ball, inks = sphere(view)
     for body in range(count):
-        orbits = strokes.polylines([(solids.mv.point(end * paths[:, body, start]), colour[:3])
-                                    for start, colour in enumerate(STARTS) for end in (1, -1)], ORBIT_WIDTH, view)
+        orbits = strokes.polylines([(ends[end, :, body, start], colour[:3])
+                                    for start, colour in enumerate(STARTS) for end in range(2)], ORBIT_WIDTH, view)
         ax = figure.add_axes((body / count, 0, 1 / count, 1))
         show(ax, solids.draw(parts, view, np.ones(3), inks, translucent=ball, meshes=[(orbits, 1.0)]), view)
         # Each arrow named just past its tip by the direction it runs along: the normal z, the flow x, the gradient y.
-        labels(ax, view, solids.mv.point(LABEL_DISTANCE * np.eye(3)), ["$z$", "$x$", "$y$"], ha="center",
+        labels(ax, view, solids.origin + solids.axes.dual() * LABEL_DISTANCE, ["$z$", "$x$", "$y$"], ha="center",
                va="center", color=NAMES)
     return figure
 
@@ -101,11 +103,11 @@ def draw_orbits(trails: core.Point) -> plt.Figure:
 def bodies(stretches: core.Stretch, orientations: core.Rotor) -> solids.Quadric:
     """Each body as traced solids about the origin, `[..., octants, 4]`: its ellipsoid, the offsets its inverse shape
     takes into the unit ball, cut by its own planes into eight octants."""
-    # The body's shape, its dual quadric, lifted about the origin of the scene's axes.
-    scene_planes = stack((core.mv.z, core.mv.x, core.mv.y))                   # [3] Plane+
-    ellipsoids = solids.lift_vga3d_dual_quadric_to_pga3d(core.placed(stretches, orientations), scene_planes)   # [...] Quadric
-    # Each octant on the side of each of the body's own planes its signs pick: its normals are the body's axes.
-    normals = -solids.mv.direction(coordinates(orientations[..., None] >> core.axes.dual())).dual()   # [..., 3] Plane+
+    # The body's shape, its dual quadric, the solid about the origin, turned into the scene's frame.
+    shapes = solids.mv.from_subalgebra(core.placed(stretches, orientations))   # [...] Point- <- Plane+
+    ellipsoids = solids.placed(solids.solid_of_dual_quadric(shapes), to_scene)   # [...] Plane+ <- Point-
+    # Each octant on the side of each of the body's own planes its signs pick: the planes across the body's axes.
+    normals = to_scene >> solids.mv.from_subalgebra(orientations[..., None] >> core.axes)   # [..., 3] Plane+
     sides = solids.half_space(normals[..., None, :] * -OCTANTS)               # [..., octants, 3] Quadric
     return concatenate([ellipsoids[..., None, None].broadcast_to(sides.shape[:-1] + (1,)), sides], axis=-1)
 
@@ -129,15 +131,16 @@ def animate_tumbling(stretches: core.Stretch, heights: core.Point, velocities: c
     placed_bodies = solids.placed(bodies(stretches, orientations), shifts[:, None, None])
     colours = np.tile(OCTANT_COLOURS, (count, 1))                             # [bodies * octants, 3]
     # The shear flow's velocity at each height, centred on it, about every body.
-    starts, ends = (shifts[:, None] >> solids.mv.point(coordinates(heights + velocities * side / 2))
-                    for side in (-1, 1))                                      # [bodies, heights] Point-, Point-
+    starts, ends = (shifts[:, None] >> (solids.origin + (to_scene >> solids.mv.from_subalgebra(offsets)))
+                    for offsets in (heights - velocities / 2, heights + velocities / 2))   # [bodies, heights] Point-, Point-
     shafts, heads = solids.arrows(starts, ends, ARROW_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel,
                                   HEAD_WIDTH / 2 * view.pixel)
     flow = [(shafts.reshape(-1, 3), FLOW_RGB), (heads.reshape(-1, 3), FLOW_RGB)]
     # Both ends of every long axis, in its panel, over the frames, and the flow, which stays put.
-    tip_places = np.array([1.0, -1.0])[:, None, None, None] * coordinates(tips)   # [ends, frames, bodies, 3]
-    axis_ends = shifts >> solids.mv.point(tip_places)                         # [ends, frames, bodies] Point-
-    mark_ends = shifts >> solids.mv.point(MARK_END * tip_places)             # [ends, frames, bodies] Point-
+    tip_ends = tips * np.array([1.0, -1.0])[:, None, None]                    # [ends, frames, bodies] Point-
+    tip_offsets = to_scene >> solids.mv.from_subalgebra(tip_ends)             # [ends, frames, bodies] Point-
+    axis_ends = shifts >> (solids.origin + tip_offsets)                       # [ends, frames, bodies] Point-
+    mark_ends = shifts >> (solids.origin + tip_offsets * MARK_END)            # [ends, frames, bodies] Point-
     scene = Scene(view, np.ones(3), flow, [], inks=[], translucent=[])
     for index in range(len(tips)):
         # The paths of the tips so far, and the marks from each end out past it.
