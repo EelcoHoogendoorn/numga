@@ -24,6 +24,9 @@ initial_weights = np.array([0.45, 0.70, 0.85, 0.85, 0.45])                    # 
 n_frames = 46
 relaxation_time = 0.025
 frame_duration_ms = 40
+# Gallery picture: this makes plots/beltrami.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+# The gallery's palette: the colours its frames share.
+n_gallery_colours = 64
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -110,10 +113,10 @@ def main() -> None:
     times = np.linspace(0.0, relaxation_time, n_frames)
     states = selective_decay(initial_amplitudes, selected_eigenvalues, times)
     magnetic_frames = reconstruct(states, selected_modes, operators.curl)
-    save_animation(
-        render.animate_relaxation(mesh, vertices, operators.centres, operators.volumes, magnetic_frames),
-        "beltrami_relaxation", frame_duration_ms,
-    )
+    relaxation = list(render.animate_relaxation(mesh, vertices, operators.centres, operators.volumes, magnetic_frames))
+    save_animation(relaxation, "beltrami_relaxation", frame_duration_ms)
+    # Gallery picture: this makes plots/beltrami.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+    save_animation(relaxation, "beltrami", frame_duration_ms, colors=n_gallery_colours)
 
     # checks
     amplitude_frames = stack(list(selective_decay(initial_amplitudes, selected_eigenvalues, times)))

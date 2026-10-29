@@ -41,6 +41,11 @@ n_steps = 800
 stride = 8
 viscosity = 0.0009
 frame_duration_ms = 40
+# Gallery picture: this makes plots/eigen_fluids.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+# The gallery's cut of the vortices: its pixels across, the steps it spans, and the colours of its palette.
+n_gallery_pixels = 300
+n_gallery_steps = 640
+n_gallery_colours = 64
 
 
 # Complete spherical harmonic bands through degree eight, on a finer geometric mesh.
@@ -143,6 +148,10 @@ def main() -> None:
     inviscid = stack(tuple(core.advect(start, structure, eigenvalues, 0.0, dt, n_steps)))   # [steps + 1] Scalar+[modes]
     frames = core.reconstruct(inviscid[::stride], superposition, eigenvalues, gradient, normals)
     save_animation(render.animate_flow(mesh, vertices, frames), "eigen_fluids_bunny", frame_duration_ms)
+    # Gallery picture: this makes plots/eigen_fluids.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+    gallery_frames = core.reconstruct(inviscid[:n_gallery_steps + 1:stride], superposition, eigenvalues, gradient, normals)
+    save_animation(render.animate_flow(mesh, vertices, gallery_frames, n_gallery_pixels), "eigen_fluids",
+                   frame_duration_ms, n_gallery_colours)
 
     # The inviscid run of the animation, against the same start under viscosity.
     viscous = stack(tuple(core.advect(start, structure, eigenvalues, viscosity, dt, n_steps)))   # [steps + 1] Scalar+[modes]

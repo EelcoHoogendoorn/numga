@@ -150,16 +150,17 @@ def draw_conservation(times: np.ndarray, inviscid_energy: core.Scalar, viscous_e
     return figure
 
 
-def animate_flow(mesh: core.Mesh, vertices: core.Point,
-                 states: Iterable[tuple[core.Scalar, core.Scalar, core.Point]]) -> Iterator[np.ndarray]:
-    """Yields a frame for each arriving surface state, with colour and contour scales fixed by the first."""
+def animate_flow(mesh: core.Mesh, vertices: core.Point, states: Iterable[tuple[core.Scalar, core.Scalar, core.Point]],
+                 n_pixels: int = n_flow_pixels) -> Iterator[np.ndarray]:
+    """Yields a frame `n_pixels` across for each arriving surface state, with colour and contour scales fixed by
+    the first."""
     states = iter(states)
     first = next(states)
     field_scale = float(np.percentile(np.abs(first[0].to_array()), vorticity_exposure))
     stream_scale = float(np.percentile(np.abs(first[1].to_array()), stream_exposure))
     points = solids.mv.point(coordinates(vertices))
     smooth_normals = meshes.smooth(points, mesh.faces)
-    frame = camera_view(points, n_flow_pixels)
+    frame = camera_view(points, n_pixels)
     for vorticity, stream, velocity in chain((first,), states):
         yield surface_panel(mesh, points, smooth_normals, frame, vorticity, stream, velocity,
                           field_scale, stream_scale, n_flow_contours)

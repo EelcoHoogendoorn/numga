@@ -98,7 +98,6 @@ potential_gradient = (velocity | Point)(jacobian.inverse())                     
 ```
 
 * The geometric derivative `(Point * gradient(Point)).contract(1, 2)` holds divergence and vorticity in one even multivector, and ideal flow makes it vanish.
-* The velocity's gradient is written out as a map, `change = -(inverse * Point * inverse)`.
 * Summed around a loop, `velocity * step` gives circulation and flux in one even multivector.
 
 ---
@@ -110,15 +109,16 @@ potential_gradient = (velocity | Point)(jacobian.inverse())                     
 <p align="center"><img src="../plots/kane_mele.gif" alt="An electron's two spins running round the edge of a honeycomb flake in opposite directions" width="400" /></p>
 
 ```python
-energy = hamiltonian(flake, spin_orbit, 0.0)                      # [atoms, atoms] Up
-values, states = (energy * sector).eigh(unit * sector, count)     # [count] Scalar, [count] sector[atoms]
-turned = weights * (mv.xy * (-energies * time)).exp()             # [states] Even
-spin = (states * turned).sum(axis=0) >> mv.z                      # Vector[atoms]
+turns = (near - flake.between).commutator(flake.between - far).normalized()   # [pairs] Bivector+
+energy = hamiltonian(flake, spin_orbit, 0.0)                                  # Up+[atoms <- atoms]
+values, states = (energy * sector).eigh(unit * sector, count)                 # [count] Scalar+, [count] Even+[atoms]
+amplitudes = weights * (mv.xy * (-energies * time)).exp()                     # [states] Even+
+spins = (states * amplitudes).sum(axis=0) >> up_spin                          # Spin-[atoms]
 ```
 
 * Spin conservation is a type: `energy * Up` is the Hamiltonian on one spin sector.
-* Each sector is solved on its own, `(energy * sector).eigh(unit * sector, count)`.
-* A state's spin density is a sandwich, `state >> mv.z`.
+* The spin-orbit hop couples by a bivector, the plane a second-neighbour path turns in, the commutator of its two steps.
+* A state evolves by a turn on its right at the rate of its energy, `(mv.xy * (-energies * time)).exp()`, with no imaginary unit.
 
 ---
 
@@ -136,12 +136,32 @@ planes = ray_readout(twistors, twistors)                    # [cases] Bivector
 ```
 
 * One extensor, `Twistor <- (Full, Twistor)`, holds the action of every multivector on twistors.
-* The twistors two events both annihilate come from one SVD of `representations(points[0] * points[1])`.
 * A twistor paired with itself, `ray_readout(twistor, twistor)`, is its light ray.
 
 ---
 
-## 7. The Rattleback
+## 7. Beltrami Fields
+
+**Notebook**: [`examples/electromagnetism/beltrami_fields/beltrami_fields.ipynb`](../examples/electromagnetism/beltrami_fields/beltrami_fields.ipynb)
+
+![Tangled magnetic field lines in a torus, seen from the side and from above, settling into evenly twisted windings](../plots/beltrami.gif)
+
+```python
+curls = 2 * (corner_gradients[tails] ^ corner_gradients[heads])     # [tet_edges] Field+[tets]
+curl = (spdiag(curls * Scalar) * mesh.oriented[3, 1]).sum(axis=0)   # (Field+ <- Scalar+)[tets <- edges]
+vacuum = spdiag(prisms.norm() * Field.dual())                       # (Patch- <- Field+)[tets <- tets]
+stiffness = curl.adjugate()(vacuum(curl))                           # (Amount- <- Scalar+)[edges <- edges]
+volume_weights = spdiag(Plane ^ volumes)                            # (Patch- <- Plane+)[tets <- tets]
+raw_helicity = curl.adjugate()(volume_weights(whitney1))            # (Amount- <- Scalar+)[edges <- edges]
+helicity = (raw_helicity + raw_helicity.adjugate()) / 2             # (Amount- <- Scalar+)[edges <- edges]
+```
+
+* The curl of an edge field is a wedge of two corner gradients, `2 * (corner_gradients[tails] ^ corner_gradients[heads])`, with no cross product.
+* Energy and helicity are both pulled back through the curl's adjugate; the energy alone uses the metric, `Field.dual()`, the helicity only a wedge and a signed volume.
+
+---
+
+## 8. The Rattleback
 
 **Notebook**: [`examples/mechanics/rattleback/rattleback.ipynb`](../examples/mechanics/rattleback/rattleback.ipynb)
 
@@ -161,7 +181,7 @@ effective = pullback(inertia(rolling))                                 # Angular
 
 ---
 
-## 8. Bending and Twisting of Thin-Walled Beams
+## 9. Bending and Twisting of Thin-Walled Beams
 
 **Notebook**: [`examples/mechanics/bending/bending.ipynb`](../examples/mechanics/bending/bending.ipynb)
 
@@ -175,13 +195,33 @@ stiffness = pulling + twisted + sliding                                         
 strains = stiffness.solve(-loads_at_stations(loads, stations))                                          # [..., pieces] Twist
 ```
 
-* In a projective algebra a section's stretch and curvatures are one twist, its force and moments one forque.
+* A section's stretch and curvatures are one twist, its force and moments one forque.
 * The stiffness is one map `Forque <- Twist`, a sum of fibre dyads `modulus * fibres * (Twist & fibres)`.
-* Bending sideways under an off-axis load comes out of that map.
 
 ---
 
-## 9. Quantum Process Tomography in the Projective Bloch Ball
+## 10. Laplacian Eigenfunction Fluids
+
+**Notebook**: [`examples/fluids/eigen_fluids/eigen_fluids.ipynb`](../examples/fluids/eigen_fluids/eigen_fluids.ipynb)
+
+![Vortices of opposite sense carrying one another across the surface of the Stanford bunny, with the streamlines of their flow](../plots/eigen_fluids.gif)
+
+```python
+gradient = (spdiag(corner_gradients * Scalar) * mesh.incidence[2, 0]).sum(axis=0)   # (Plane+ <- Scalar+)[faces <- vertices]
+stiffness = gradient.adjugate()(spdiag(areas * Plane.dual())(gradient))            # (Amount- <- Scalar+)[vertices <- vertices]
+eigenvalues, eigenfields = stiffness.eigh(mass, n_modes + 1)                       # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
+flows = face_gradients ^ patches                                                   # [modes] Point-[faces]
+jacobians = face_gradients[:, None] & flows[None, :]                               # [modes, modes] Scalar+[faces]
+structure = structure_constants(mesh, patches, gradient, modes)                    # (Scalar+ <- (Scalar+, Scalar+))[modes <- (modes, modes)]
+advection = structure(stream, vorticity)                                           # Scalar+[modes]
+```
+
+* The flow along a stream function's level lines is its gradient joined with the tangent patch, `gradient ^ patch`, with no normal vector and no quarter turn.
+* The Jacobian of two fields is `gradient & (gradient ^ patch)`, with no metric, so all of advection is one map of two arguments over the modes, `structure(stream, vorticity)`.
+
+---
+
+## 11. Quantum Process Tomography in the Projective Bloch Ball
 
 **Notebook**: [`examples/quantum/process_tomography/process_tomography.ipynb`](../examples/quantum/process_tomography/process_tomography.ipynb)
 
@@ -198,12 +238,12 @@ learned_channel = (recovered_outputs * (preparation_dual & Point)).sum(axis=-1) 
 ```
 
 * A qubit's state is a point of the Bloch ball, a detector outcome a plane, and a probability their pairing, `effect & state`.
-* A channel is a map from points to points; dephasing mixes a state with its half turn, `Point + phase_flip * ((mv.xy >> Point) - Point)`.
+* A channel is a map from points to points, `Point- <- Point-`.
 * The reciprocal frames are meets and joins: an outcome's dual is where the other three planes meet, a preparation's dual the plane through the other three. No scalar product enters.
 
 ---
 
-## 10. Euler Elastica
+## 12. Euler Elastica
 
 **Notebook**: [`examples/mechanics/elastica/elastica.ipynb`](../examples/mechanics/elastica/elastica.ipynb)
 
@@ -224,7 +264,26 @@ load = load - deviation.commutator(load) / 2 + deviation.commutator(deviation.co
 
 ---
 
-## 11. Black Polarization Sandwiches
+## 13. Piezoelectric Bimorph
+
+**Notebook**: [`examples/electromagnetism/piezoelectric/piezoelectric.ipynb`](../examples/electromagnetism/piezoelectric/piezoelectric.ipynb)
+
+![A clamped strip of two bonded piezoelectric layers bending up and down as the voltage across its electrodes swings, one layer stretching while the other shortens](../plots/piezoelectric.gif)
+
+```python
+stretches = (directions & Point) * (Plane & directions.dual())          # [2] Scalar+ <- (Point-, Plane+)
+polarized = polarization(Point, gradients) * poling.batch()            # [corners, faces] Point- <- Point-
+mixed_cells = -(polarized[:, None] & time).adjugate()(electric[None])  # [corners, corners, faces] Plane+ <- Scalar+
+elastic = movement.adjugate()(mechanical(movement))                    # (Plane+ <- Point-)[free <- free]
+mixed = movement.adjugate()(coupling(voltage))                         # (Plane+ <- Scalar+)[free <- voltages]
+```
+
+* The material is built from its planes' readings of stretch on a displacement and its gradient, `(directions & Point) * (Plane & directions.dual())`, with no six-by-six table.
+* The converse effect is the adjugate of the same coupling map, `coupling.adjugate()(motion)`: there is no second constant to keep consistent with the first.
+
+---
+
+## 14. Black Polarization Sandwiches
 
 **Notebook**: [`examples/optics/black_sandwich/black_sandwich.ipynb`](../examples/optics/black_sandwich/black_sandwich.ipynb)
 
@@ -245,25 +304,25 @@ double_stack = sandwich(sandwich)                                # [frames] Fiel
 
 ---
 
-## 12. Gravitational-Wave Antenna Patterns
+## 15. Gravitational-Wave Antenna Patterns
 
 **Notebook**: [`examples/relativity/ligo/ligo.ipynb`](../examples/relativity/ligo/ligo.ipynb)
 
 ![Each detector's sensitivity over the sky, turning as the wave's polarization turns](../plots/ligo.gif)
 
 ```python
-plus = east * (east & Point) - north * (north & Point)    # [...] Plane <- Point
-cross = east * (north & Point) + north * (east & Point)   # [...] Plane <- Point
-stretches = (strain[..., None](arms) & arms) / 2          # [..., 2] Scalar
+plus = east * (east & Point) - north * (north & Point)                       # [...] Plane+ <- Point-
+cross = east * (north & Point) + north * (east & Point)                      # [...] Plane+ <- Point-
+stretches = (strain[..., None](arms) & arms) / 2                             # [..., 2] Scalar+
+rings = ring + strain_shown * overhead[:, None](ring).dual()                 # [frames, masses] Point-
 ```
 
 * A wave's strain is a map from points to planes, `east * (east & Point) - north * (north & Point)`.
-* An arm reads it as `strain(arm) & arm`.
-* Turning the polarization turns every antenna pattern twice as fast: spin two.
+* An arm reads its stretch by pairing, `strain(arm) & arm`, with no metric; the metric enters only to turn the plane a strain hands a mass into its motion, `.dual()`.
 
 ---
 
-## 13. Moving Charges
+## 16. Moving Charges
 
 **Notebook**: [`examples/electromagnetism/moving_charge/moving_charge.ipynb`](../examples/electromagnetism/moving_charge/moving_charge.ipynb)
 
@@ -276,12 +335,11 @@ field = (Vector ^ gradients(Antivector)).trace(1, 2)                  # [...] Bi
 ```
 
 * A moving charge is its gradient at rest, moved by its boost: `boost >> at_rest(boost << Antivector)`.
-* The field is the summed gradients wedged with `Vector` and traced.
 * The metric enters only through the vacuum, the map from field to excitation.
 
 ---
 
-## 14. Magnetic Resonance
+## 17. Magnetic Resonance
 
 **Notebook**: [`examples/quantum/magnetic_resonance/magnetic_resonance_space.ipynb`](../examples/quantum/magnetic_resonance/magnetic_resonance_space.ipynb)
 
@@ -296,11 +354,10 @@ sample_echo = echo.mean(axis=-1)                               # [delays] State 
 
 * Relaxation is a map on states written as its formula, a sandwich minus an anticommutator.
 * A pulse sequence is a composition: `waiting(turn(waiting(tip)))` is the spin echo.
-* Averaged over spins, `echo.mean(axis=-1)`, the sample's echo is one map.
 
 ---
 
-## 15. As Rigid As Possible
+## 18. As Rigid As Possible
 
 **Notebook**: [`examples/surfaces/arap/arap.ipynb`](../examples/surfaces/arap/arap.ipynb)
 
@@ -316,11 +373,10 @@ vertices = handle_laplacian.solve(~T10 * H1 * turned_rest + P * targets)       #
 
 * How well a rotor fits a vertex's edges is a form on rotors; the best rotor is its top eigenvector.
 * `rotors >> Point` turns rotors into maps, which carry the rest edges.
-* `~T10 * H1 * T10` is the cotangent Laplacian, a map between fields.
 
 ---
 
-## 16. Jeffery Orbits
+## 19. Jeffery Orbits
 
 **Notebook**: [`examples/fluids/jeffery/jeffery.ipynb`](../examples/fluids/jeffery/jeffery.ipynb)
 
@@ -336,11 +392,10 @@ spin = (Point & turning_rate(Plane)).trace(1, 2).solve((Point & flow_rate(Plane)
 
 * A body is its shape, a map from planes to points, `stretch(sphere(stretch.adjugate()))`.
 * The flow acts on the shape from both sides, `gradient(shape) - shape(gradient.adjugate())`.
-* The body's spin is one solve, matching turning rate to flow rate.
 
 ---
 
-## 17. Slip in Metal Crystals
+## 20. Slip in Metal Crystals
 
 **Notebook**: [`examples/mechanics/slip_systems/slip_systems.ipynb`](../examples/mechanics/slip_systems/slip_systems.ipynb)
 
@@ -356,11 +411,31 @@ axis = (axis.commutator(move) / 2).exp() >> axis                              # 
 
 * A pull is a stress, a map from planes to tractions, `axis * (Plane & axis)`.
 * Slip directions are where dense planes meet, `plane ^ other`.
-* Slip turns the pulled axis by a rotor, `(axis.commutator(move) / 2).exp() >> axis`.
 
 ---
 
-## 18. Vibration Modes of a Suspended Plate
+## 21. Boiling at Fixed Pressure
+
+**Notebook**: [`examples/thermodynamics/phase_change/phase_change.ipynb`](../examples/thermodynamics/phase_change/phase_change.ipynb)
+
+![A fluid heated at fixed pressure, its path drawn across the dome of coexistence on the pressure–volume chart and along the flat stretch of boiling on the temperature–enthalpy chart](../plots/boiling.gif)
+
+```python
+liquid_volume = mv.l & State                                                                       # [] Scalar+ <- State-
+vapour_volume = mv.g & State                                                                       # [] Scalar+ <- State-
+liquid, vapour = liquid_volume(state), vapour_volume(state)                                        # [...] Scalar+, Scalar+
+pressure_gap = pressure(liquid, temperature) - pressure(vapour, temperature)                       # [...] Scalar+
+chemical_gap = chemical_potential(liquid, temperature) - chemical_potential(vapour, temperature)   # [...] Scalar+
+state = state - derivative(gap)(state).solve(gap(state))                                           # [...] State-
+```
+
+* The state space is an exterior algebra with no metric, and the volumes are read by the regressive product alone, `mv.l & State`.
+* The derivative of the mismatch is a map `State- <- State-`, and a Newton step solves it.
+* Coexistence is a common tangent of the Helmholtz energy, and a chemical potential is that tangent's intercept at zero volume.
+
+---
+
+## 22. Vibration Modes of a Suspended Plate
 
 **Notebook**: [`examples/mechanics/modes/modes.ipynb`](../examples/mechanics/modes/modes.ipynb)
 
@@ -379,7 +454,7 @@ values, modes = (Twist & stiffness).eigh(Twist & inertia)        # [modes] Scala
 
 ---
 
-## 19. The Most Likely Trajectory from Odometry
+## 23. The Most Likely Trajectory from Odometry
 
 **Notebook**: [`examples/estimation/odometry/odometry.ipynb`](../examples/estimation/odometry/odometry.ipynb)
 
@@ -397,7 +472,7 @@ residual = residual - pushed * step                                   # [..., po
 
 ---
 
-## 20. Area Transport through a Collapse
+## 24. Area Transport through a Collapse
 
 **Notebook**: [`examples/mechanics/area_transport/area_transport.ipynb`](../examples/mechanics/area_transport/area_transport.ipynb)
 
@@ -414,7 +489,7 @@ adjugate = areas.adjugate()                # [frames] Flux <- Flux
 
 ---
 
-## 21. Radar Ranging in Projective Spacetime
+## 25. Radar Ranging in Projective Spacetime
 
 **Notebook**: [`examples/relativity/radar/radar.ipynb`](../examples/relativity/radar/radar.ipynb)
 
@@ -430,7 +505,6 @@ received = echo(emitted)                                     # [pulses] Event
 ```
 
 * Joining an emission to a light direction and intersecting the target gives its reflection event.
-* One constant fixes each map's homogeneous scale, so the two linear maps compose into the echo, `returning(reflection)`.
 * A motor carries events and their clock together through boosts and translations; `clock & event` keeps its reading.
 
 # References
