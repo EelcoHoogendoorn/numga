@@ -3,7 +3,7 @@
 import numpy as np
 
 from numga import stack
-from numga.sparse import SparseExtensor, spdiag
+from numga.sparse import spdiag
 from examples.surfaces.whitney_forms import core, scenarios
 
 
@@ -40,14 +40,21 @@ def test_barycentric_hats_and_edge_whitney_forms_on_single_triangle_and_diamond(
         np.testing.assert_allclose(readings.kernel, np.eye(3)[..., None], atol=1e-14)
 
     # Across the shared edge of a two-triangle diamond, tangential readings match while normal readings jump.
-    left_corners, _, right_corners, _ = scenarios.edge_diamond(6)
-    shared_edge = left_corners[1] - left_corners[0]
+    mesh, vertices, _ = scenarios.edge_diamond(6)
+    diamond = core.Operators(mesh, vertices)
+    tails, heads = mesh.incidence[1, 0] * vertices
+    shared_tail, = tails.batch()[mesh.interior_edges]
+    shared_head, = heads.batch()[mesh.interior_edges]
+    shared_edge = shared_head - shared_tail
     fractions = np.linspace(0.1, 0.9, 7)
-    seam_points = left_corners[0] * (1 - fractions) + left_corners[1] * fractions
-    left_seam = core.edge_whitney_forms(left_corners, seam_points)[2]
-    right_seam = -core.edge_whitney_forms(right_corners, seam_points)[2]
-    np.testing.assert_allclose((left_seam & shared_edge).kernel, 1.0, atol=1e-14)
-    np.testing.assert_allclose((right_seam & shared_edge).kernel, 1.0, atol=1e-14)
+    seam_points = shared_tail * (1 - fractions) + shared_head * fractions
+    # The forms of the shared edge on each face, signed by the sense in which the face runs along it.
+    seam_forms = (seam_points[:, None] - diamond.corners[None, :]) / (2 * diamond.patches)
+    seam_whitney1 = (spdiag(seam_forms) * mesh.boundary[2, 1]).sum(axis=1) * core.Scalar
+    shared_circulation = core.as_scalar(np.isin(np.arange(len(mesh.edges)), mesh.interior_edges)).field()
+    seams = seam_whitney1(shared_circulation)
+    np.testing.assert_allclose((seams & shared_edge).kernel, 1.0, atol=1e-14)
+    left_seam, right_seam = seams.batch()[:, 0], seams.batch()[:, 1]
     normal_jump = (left_seam - right_seam) & core.mv.x.dual()
     assert np.max(np.abs(normal_jump.kernel)) > 0.5
 
@@ -128,10 +135,10 @@ def test_isotropic_and_anisotropic_conduction_patch_test_and_flux_balance():
     conductivity = (directions * (core.Plane & directions) * scenarios.principal_conductivities).sum(axis=-1)
 
     # Linear patch test: prescribing a linear potential on the entire boundary recovers it everywhere for any conductivity.
-    boundary = np.unique(mesh.edges[mesh.boundary_edges])
+    boundary = mesh.exterior(0)
     applied_field = 1.25 * core.mv.x - 0.6 * core.mv.y
     exact_potential = applied_field & vertices
-    rim = SparseExtensor.selection(core.mv.context, boundary, mesh.n_vertices)
+    rim = mesh.reading(boundary)
     prescribed_rim = ~rim * (rim * exact_potential)
     potential, current, _ = core.conduction(operators, conductivity, boundary, prescribed_rim)
     np.testing.assert_allclose(potential.batch()[0].kernel, exact_potential.kernel, atol=1e-13)
@@ -143,13 +150,13 @@ def test_isotropic_and_anisotropic_conduction_patch_test_and_flux_balance():
     # Electrode solve balances flux at every free vertex and conserves total current between the two electrodes.
     abscissa = (core.mv.x & vertices).batch()
     electrodes = boundary[abscissa[boundary].norm() > scenarios.electrode_threshold]
-    pinned = SparseExtensor.selection(core.mv.context, electrodes, mesh.n_vertices)
+    pinned = mesh.reading(electrodes)
     prescribed = ~pinned * (pinned * (core.mv.x & vertices))
     potential, current, streamfunction = core.conduction(operators, conductivity, electrodes, prescribed)
 
     conductance = operators.gradient.adjugate()(spdiag(operators.areas * conductivity)(operators.gradient))
     free_vertices = np.setdiff1d(np.arange(mesh.n_vertices), electrodes)
-    free = ~SparseExtensor.selection(core.mv.context, free_vertices, mesh.n_vertices) * core.Scalar
+    free = ~mesh.reading(free_vertices) * core.Scalar
     nodal_source = conductance(potential)
     np.testing.assert_allclose(free.adjugate()(nodal_source).kernel, 0.0, atol=1e-11)
     np.testing.assert_allclose(nodal_source.sites.sum().kernel, 0.0, atol=1e-11)

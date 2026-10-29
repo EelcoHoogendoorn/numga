@@ -40,9 +40,9 @@ TOLERANCE = 1e-7
 
 
 # --- math -----------------------------------------------------------------------------
-def bunny() -> tuple[Iterator[Antivector], np.ndarray]:
-    """The surface's vertices over the steps, from rest, and the surface's triangles."""
-    vertices, faces, samples, sample_volumes, centers = geometry.load(
+def bunny() -> tuple[Iterator[Antivector], geometry.Mesh]:
+    """The surface's vertices over the steps, from rest, and the surface's mesh."""
+    mesh, vertices, samples, sample_volumes, centers = geometry.load(
         MESH_PATH, HEIGHT, N_QUADRATURE, N_CENTERS
     )
     evaluation, gradient = weights.kernels(samples, centers, RADIUS)
@@ -81,7 +81,7 @@ def bunny() -> tuple[Iterator[Antivector], np.ndarray]:
             state = following                                    # Antivector-[controls]
             yield vertices + surface(state)
 
-    return trajectory(), faces
+    return trajectory(), mesh
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -90,9 +90,9 @@ def main() -> None:
     from examples.mechanics.freeform import render
 
     duration_ms = round(TIME_STEP * N_STEPS_PER_FRAME * 1000)
-    states, faces = bunny()
+    states, mesh = bunny()
     surfaces = stack(list(states))                                # [steps + 1, vertices] Antivector-
-    save_animation(render.frames(surfaces[::N_STEPS_PER_FRAME], faces), "freeform_bunny", duration_ms)
+    save_animation(render.frames(surfaces[::N_STEPS_PER_FRAME], mesh), "freeform_bunny", duration_ms)
 
     # checks
     # The ear follows the pull and springs back after release, while the base moves a tenth as far.

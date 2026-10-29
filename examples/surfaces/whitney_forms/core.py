@@ -73,7 +73,7 @@ class Operators:
 
         # Evaluating the linear Whitney 1-forms at the three edge midpoints integrates
         # quadratic products over every triangle exactly.
-        midpoints = (self.corners[[1, 2, 0]] + self.corners[[2, 0, 1]]) / 2  # [midpoints] Point-[faces]
+        midpoints = mesh.incidence[2, 1] * (mesh.incidence[1, 0].mean(axis=0) * vertices)  # [midpoints] Point-[faces]
         midpoint_forms = (midpoints[:, None] - self.corners[None, :]) / (2 * self.patches)  # [midpoints, corners] Plane+[faces]
         self.midpoint_whitney1 = (spdiag(midpoint_forms) * mesh.boundary[2, 1]).sum(axis=1) * Scalar  # [midpoints] (Plane+ <- Scalar+)[faces <- edges]
 
@@ -94,7 +94,7 @@ def conduction(operators: Operators, conductivity: Conductivity,
     # Pulling the area-weighted conductivity back through the face gradient gives the vertex conductance.
     conductance = operators.gradient.adjugate()(spdiag(operators.areas * conductivity)(operators.gradient))  # [cases] (Amount- <- Scalar+)[vertices <- vertices]
     free_vertices = np.setdiff1d(np.arange(mesh.n_vertices), electrodes)
-    free = ~SparseExtensor.selection(mv.context, free_vertices, mesh.n_vertices) * Scalar  # (Scalar+ <- Scalar+)[vertices <- free]
+    free = ~mesh.reading(free_vertices) * Scalar                             # (Scalar+ <- Scalar+)[vertices <- free]
     rhs = -free.adjugate()(conductance(prescribed))                          # [cases] Amount-[free]
     potential = prescribed + free(free.adjugate()(conductance(free)).solve(rhs))  # [cases] Scalar+[vertices]
     current = -conductivity(operators.gradient(potential))                   # [cases] Point-[faces]
@@ -103,7 +103,7 @@ def conduction(operators: Operators, conductivity: Conductivity,
     # the target gradient of the streamfunction whose level curves follow the current paths.
     quarter_turn = (mv.xy * (-np.pi / 4)).exp()                              # [] Rotor+
     laplacian = operators.gradient.adjugate()(spdiag(operators.areas * Plane.dual())(operators.gradient))  # (Amount- <- Scalar+)[vertices <- vertices]
-    unpinned = ~SparseExtensor.selection(mv.context, np.arange(1, mesh.n_vertices), mesh.n_vertices) * Scalar  # (Scalar+ <- Scalar+)[vertices <- unpinned]
+    unpinned = ~mesh.reading(np.arange(1, mesh.n_vertices)) * Scalar         # (Scalar+ <- Scalar+)[vertices <- unpinned]
     stream_rhs = unpinned.adjugate()(operators.gradient.adjugate()(operators.areas * (quarter_turn >> current)))  # [cases] Amount-[unpinned]
     streamfunction = unpinned(unpinned.adjugate()(laplacian(unpinned)).solve(stream_rhs))  # [cases] Scalar+[vertices]
     return potential, current, streamfunction

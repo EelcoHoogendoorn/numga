@@ -53,7 +53,7 @@ def draw_mesh(mesh: core.Mesh, vertices: core.Point) -> plt.Figure:
                                     meshes=[(surface, 1.0), (lines, 1.0)]))
 
 
-def animate_sphere(mesh: core.Mesh, display_faces: np.ndarray,
+def animate_sphere(mesh: core.Mesh, display: core.Mesh,
                    frames: Iterable[tuple[core.Point, core.Point, core.Point, core.Scalar]]) -> Iterator[np.ndarray]:
     """The moving representatives and dual beside the physical solution on its fixed spherical domain."""
     space_view = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, 1.85), n_pixels)
@@ -65,7 +65,7 @@ def animate_sphere(mesh: core.Mesh, display_faces: np.ndarray,
         poles = read_points(duals, planes)
         physical = read_points(samples, planes).transpose(1, 0, 2)
         n_samples = physical.shape[1]
-        faces = (display_faces[None] + n_samples * np.arange(len(mesh.faces))[:, None, None]).reshape(-1, 3)
+        faces = (display.faces[None] + n_samples * np.arange(len(mesh.faces))[:, None, None]).reshape(-1, 3)
         points = solids.mv.point(physical.reshape(-1, 3))
         field = values.to_array().T.reshape(-1)
         normals = meshes.smooth(points, faces)
@@ -92,14 +92,14 @@ def animate_sphere(mesh: core.Mesh, display_faces: np.ndarray,
         yield np.concatenate((space, sphere), axis=1)
 
 
-def draw_planar(points: Extensor, faces: np.ndarray, potential: Extensor, current: Extensor) -> plt.Figure:
+def draw_planar(points: Extensor, display: core.Mesh, potential: Extensor, current: Extensor) -> plt.Figure:
     """Finite points and spatial current in x,y,w, with no readout of the null coordinate as distance."""
     mv = points.context.multivector
     planes = stack((mv.x, mv.y))
     xy = read_points(points.normalized(), planes)
     flow = read_points(current, planes)
     figure, axis = charts.subplots(300, 300)
-    axis.tripcolor(xy[:, 0], xy[:, 1], faces, potential.to_array(), shading="gouraud", cmap="viridis", vmin=0, vmax=1)
+    axis.tripcolor(xy[:, 0], xy[:, 1], display.faces, potential.to_array(), shading="gouraud", cmap="viridis", vmin=0, vmax=1)
     chosen = np.arange(0, len(xy), 4)
     axis.quiver(xy[chosen, 0], xy[chosen, 1], flow[chosen, 0], flow[chosen, 1], color="white", width=0.005)
     axis.set_aspect("equal")

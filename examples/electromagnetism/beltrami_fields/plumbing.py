@@ -6,10 +6,11 @@ import numpy as np
 
 from numga import NumpyContext, concatenate
 from numga.algebras import STA as ga
-from numga.sparse import SparseExtensor
+from numga.sparse import SparseExtensor, spdiag
 from examples import instantiate
 
-Mesh = instantiate("examples.util.mesh", ga).Mesh
+mesh_module = instantiate("examples.util.mesh", ga)
+Mesh, simplex_parity = mesh_module.Mesh, mesh_module.simplex_parity
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 Scalar = ga.gatype.scalar()  # Scalar+
@@ -18,15 +19,16 @@ Embedding = ga.gatype((Scalar, Scalar))
 # The direction in time of an observer at rest with the torus, which pairs to one with `mv.t`.
 time = -mv.t.dual()  # [] Point-
 
-# Local corner indices of the six edges (0,1), (0,2), (0,3), (1,2), (1,3), (2,3),
-# their positively oriented opposite edges, and the four outward opposite faces.
-edge_tails = np.array([0, 0, 0, 1, 1, 2])
-edge_heads = np.array([1, 2, 3, 2, 3, 3])
-opposite_tails = np.array([2, 3, 1, 0, 2, 0])
-opposite_heads = np.array([3, 1, 2, 3, 0, 1])
-face_first = np.array([1, 0, 0, 0])
-face_second = np.array([2, 3, 1, 2])
-face_third = np.array([3, 2, 3, 1])
+
+def complements(mesh: Mesh, m: int) -> np.ndarray:
+    """`[k, 3 - m]`: the corners each of a tet's m-simplices leaves out, in the order of `mesh.corners(3, m)`, run so
+    that the m-simplex followed by them runs the tet's own sense: facing each corner, its face, outward; across each
+    edge, the opposite edge."""
+    simplices = mesh.corners(3, m)                                           # [k, m + 1]
+    tet = mesh.corners(3, 0)[:, 0]                                           # [corners]
+    left_out = np.stack([np.setdiff1d(tet, simplex) for simplex in simplices])   # [k, 3 - m]
+    sense = simplex_parity(np.concatenate([simplices, left_out], axis=-1))   # [k]
+    return np.where(sense[:, None] > 0, left_out, left_out[:, ::-1])
 
 
 def as_scalar(values: np.ndarray) -> Scalar:
@@ -65,9 +67,11 @@ def solid_torus(major_radius: float, minor_radius: float, n_major: int, n_minor:
         np.stack([a0, b0, d1, b1], axis=-1).reshape(-1, 4),
         np.stack([a0, b1, d1, a1], axis=-1).reshape(-1, 4),
     ], axis=0)
-    corners_raw = vertices.batch()[raw_tets.T]
-    vols_raw = ((corners_raw[1] - corners_raw[0]) & (corners_raw[2] - corners_raw[0]) & (corners_raw[3] - corners_raw[0])) / 6
-    flip = (vols_raw & time) < 0
+    raw_mesh = Mesh(len(vertices.batch()), raw_tets)
+    # Each tetrahedron's three edges from its first corner, joined, span six times its signed volume; where that
+    # volume is negative, the tetrahedron's last two corners swap.
+    raw_edges = raw_mesh.oriented[3, 1] * (raw_mesh.d[0] * vertices)        # [tet_edges] Point-[tets]
+    flip = ((raw_edges[0] & raw_edges[1] & raw_edges[2]) & time) < 0
     tets = raw_tets.copy()
     tets[flip, 2], tets[flip, 3] = raw_tets[flip, 3], raw_tets[flip, 2]
     return Mesh(len(vertices.batch()), tets), vertices
@@ -82,7 +86,10 @@ def flux_preserving(mesh: Mesh, n_major: int, n_minor: int) -> Embedding:
     pol_edges = mesh.boundary_edges[d_pol != 0]
     pol_weights = d_pol[d_pol != 0].astype(float) / np.sqrt(np.sum(d_pol != 0))
     n_int = len(mesh.interior_edges)
-    rows = np.concatenate([mesh.interior_edges, pol_edges])
-    cols = np.concatenate([np.arange(n_int), np.full(len(pol_edges), n_int)])
-    vals = np.concatenate([np.ones(n_int), pol_weights])
-    return SparseExtensor.from_indices(as_scalar(vals), rows, cols, (len(mesh.edges), n_int + 1)) * Scalar  # (Scalar+ <- Scalar+)[edges <- free]
+    # The free values are one per interior edge, then the poloidal form's amplitude.
+    first_values = SparseExtensor.selection(ctx, np.arange(n_int), n_int + 1)           # Scalar+[interior <- free]
+    last_value = SparseExtensor.selection(ctx, np.full(len(pol_edges), n_int), n_int + 1)   # Scalar+[poloidal <- free]
+    interior = ~mesh.reading(mesh.interior_edges, 1) * first_values   # Scalar+[edges <- free]
+    # The amplitude is weighted onto each boundary edge that steps around the tube.
+    poloidal = ~mesh.reading(pol_edges, 1) * spdiag(as_scalar(pol_weights).field()) * last_value   # Scalar+[edges <- free]
+    return (interior + poloidal) * Scalar                                    # (Scalar+ <- Scalar+)[edges <- free]

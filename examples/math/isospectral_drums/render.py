@@ -41,12 +41,11 @@ def amplitudes(field: Scalar) -> np.ndarray:
     return np.asarray(field.batch().to_array())
 
 
-def boundary_corners(points: np.ndarray, triangles: np.ndarray) -> np.ndarray:
-    """The edge opposite each triangle corner, marked when it belongs to the perimeter."""
-    # Separate tiles may carry separate copies of a shared edge's vertices.
-    _, vertices = np.unique(np.round(points, 12), axis=0, return_inverse=True)
-    mesh = Mesh(vertices.max() + 1, vertices[triangles])
-    return np.isin(mesh.face_edges, mesh.boundary_edges)
+def welded(points: np.ndarray, triangles: np.ndarray) -> tuple[Mesh, np.ndarray]:
+    """The mesh of triangles on points `[points, 2]` where separate tiles carry separate copies of a shared edge's
+    vertices, each set of copies welded into one vertex, and the places of the welded vertices `[vertices, 2]`."""
+    places, vertices = np.unique(np.round(points, 12), axis=0, return_inverse=True)
+    return Mesh(len(places), vertices.reshape(-1)[triangles]), places
 
 
 def draw_tiles(tiles: Point) -> plt.Figure:
@@ -57,10 +56,8 @@ def draw_tiles(tiles: Point) -> plt.Figure:
     for ax, corners in zip(axes, points):
         ax.add_collection(PolyCollection(corners, facecolors=tile_colours,
                                         edgecolors="white", linewidths=1.5))
-        faces = np.arange(corners.shape[0] * 3).reshape(-1, 3)
-        boundary = boundary_corners(corners.reshape(-1, 2), faces)
-        edges = corners[:, [[1, 2], [2, 0], [0, 1]]][boundary]
-        ax.add_collection(LineCollection(edges, colors="#27313a", linewidths=1.5))
+        mesh, places = welded(corners.reshape(-1, 2), np.arange(corners.shape[0] * 3).reshape(-1, 3))
+        ax.add_collection(LineCollection(places[mesh.edges[mesh.boundary_edges]], colors="#27313a", linewidths=1.5))
         centre = (corners.min(axis=(0, 1)) + corners.max(axis=(0, 1))) / 2
         ax.set(xlim=centre[0] + np.array([-0.5, 0.5]) * span,
                ylim=centre[1] + np.array([-0.5, 0.5]) * span, aspect="equal")
@@ -149,7 +146,8 @@ class Membrane:
         self.centre = (stack((mv.x, mv.y)).dual() * ((places.min(axis=0) + places.max(axis=0)) / 2)).sum()
         # The outline is whole on the drum's perimeter, and half on each side of a seam between two tiles.
         n_tiles = corners.shape[0]
-        perimeter = boundary_corners(coordinates(corners).reshape(-1, 2), np.arange(3 * n_tiles).reshape(-1, 3))
+        tiling, _ = welded(coordinates(corners).reshape(-1, 2), np.arange(3 * n_tiles).reshape(-1, 3))
+        perimeter = np.isin(tiling.face_edges, tiling.boundary_edges)                      # [tiles, corners]
         self.rims = np.where(perimeter, outline_width, outline_width / 2)               # [tiles, corners]
         self.owners = np.repeat(np.arange(n_tiles), len(triangles) // n_tiles).astype(np.uint32)
 
@@ -165,32 +163,31 @@ class Membrane:
 
 
 def frames(
-    vertices: tuple[Point, Point], triangles: tuple[np.ndarray, np.ndarray], tiles: Point,
+    vertices: tuple[Point, Point], meshes: tuple[Mesh, Mesh], tiles: Point,
     fields: Iterable[tuple[Scalar, Scalar]], exposure: float,
 ) -> Iterator[np.ndarray]:
     """Two flat displacement maps sharing a fixed scale and colour range, each with the outlines of its
     seven triangles `tiles [drums, tiles, corners]`."""
     scale = 0.91 * pixels / max(np.ptp(coordinates(value), axis=0).max() for value in vertices)
-    membranes = tuple(Membrane(value, faces, drum, scale) for value, faces, drum in zip(vertices, triangles, tiles))
+    membranes = tuple(Membrane(value, mesh.faces, drum, scale) for value, mesh, drum in zip(vertices, meshes, tiles))
     for pair in fields:
         yield np.concatenate([membrane.draw(amplitudes(field), exposure) for membrane, field in zip(membranes, pair)],
                              axis=1)
 
 
-def draw_pieces(vertices: Point, triangles: np.ndarray, pieces: Scalar, exposure: float) -> plt.Figure:
+def draw_pieces(vertices: Point, mesh: Mesh, pieces: Scalar, exposure: float) -> plt.Figure:
     """Signed source contributions and their sum on the same reference triangle."""
     points = coordinates(vertices)
     values = amplitudes(pieces)
-    perimeter = boundary_corners(points, triangles)
-    edges = points[triangles[:, [[1, 2], [2, 0], [0, 1]]]][perimeter]
+    edges = points[mesh.edges[mesh.boundary_edges]]
     centre = (points.min(axis=0) + points.max(axis=0)) / 2
     span = np.ptp(points, axis=0).max() * 1.05
     figure, axes = plt.subplots(1, len(values), figsize=(10, 2.5), facecolor="white")
     for ax, field in zip(axes, values):
-        ax.tripcolor(points[:, 0], points[:, 1], triangles, field, shading="gouraud",
+        ax.tripcolor(points[:, 0], points[:, 1], mesh.faces, field, shading="gouraud",
                      cmap=colours, vmin=-exposure, vmax=exposure)
         contour_field = np.where(np.abs(field) < np.max(np.abs(field)) * 1e-10, 0, field)
-        ax.tricontour(points[:, 0], points[:, 1], triangles, contour_field, levels=[0],
+        ax.tricontour(points[:, 0], points[:, 1], mesh.faces, contour_field, levels=[0],
                       colors="#394b59", linewidths=0.65, alpha=0.7)
         ax.add_collection(LineCollection(edges, colors="#27313a", linewidths=1.0))
         ax.set(xlim=centre[0] + np.array([-0.5, 0.5]) * span,

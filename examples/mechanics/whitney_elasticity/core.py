@@ -15,7 +15,7 @@ from collections.abc import Iterable, Iterator
 import numpy as np
 
 from numga.algebras import VGA2D as ga
-from numga.sparse import SparseExtensor, spdiag
+from numga.sparse import spdiag
 from examples import instantiate
 
 mesh_module = instantiate("examples.util.mesh", ga)
@@ -76,9 +76,11 @@ class Operators:
         corner motions, summed over the triangles."""
         gradients = self.corner_gradients.batch()               # [corners, faces] Plane+
         work = material[None, None](gradients[:, None], gradients[None, :], Point, Point)
-        local = (Force & Point).solve(work) * self.areas.batch()
-        return SparseExtensor.from_indices(local, self.mesh.faces.T[:, None, :], self.mesh.faces.T[None, :, :],
-                                           (self.mesh.n_vertices, self.mesh.n_vertices))
+        local = (Force & Point).solve(work) * self.areas.batch()   # [corners, corners, faces] Force+ <- Point-
+        corners = self.mesh.incidence[2, 0]                     # [corners] Scalar+[faces <- vertices]
+        # The pullback: each test corner's incidence run back, the triangles' blocks, each trial corner's incidence,
+        # summed over both corners of the pair.
+        return (~corners[:, None] * spdiag(local.field()) * corners[None, :]).sum(axis=0).sum(axis=0)
 
 
 def evolve(operators: Operators, displacement: Point, velocity: Point, damping_time: float,

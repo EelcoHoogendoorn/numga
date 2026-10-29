@@ -3,8 +3,9 @@ differentiation.
 
 `core.py` builds by hand how each constraint's gap changes as its two bodies move and deform: each
 anchor's commutator with the space of twists, each mode's shape at each anchor, signed for the two sides and
-gathered by index into sparse maps. Here the gaps are written once, as a function of the coordinates of
-the step, how far each body moves and how far each mode deforms, and the couplings are its derivative:
+read off the bodies through the incidence of the constraint graph into sparse maps. Here the gaps are written
+once, as a function of the coordinates of the step, how far each body moves and how far each mode deforms, and
+the couplings are its derivative:
 dense field maps from the bodies to the constraints, one for the twists and one for each mode's
 amplitudes. The rest of the step is the core's, run on JAX: the same system for all constraints, solved
 once per step, here a dense field map over the constraints.

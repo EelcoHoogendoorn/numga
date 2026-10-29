@@ -11,16 +11,18 @@ def test_bars_are_in_tension_at_convex_creases_and_every_interior_vertex_balance
     stresses = core.stresses(mesh, points, heights)                            # [frames] Scalar+[inner]
     assert np.array_equal(stresses > 0, core.folds(mesh, points, heights) > 0)
     assert (stresses < 0).any()
-    inner, (left, right) = mesh.interior_edges, mesh.edge_faces.T
-    # The bars meeting at a vertex each pull it along themselves by their stress.
+    inner = mesh.interior_edges
+    # The bars meeting at a vertex each pull it along themselves by their stress, summed back onto their ends
+    # against the way each bar runs.
     bars = (mesh.d[0] * points).batch()[inner]                                 # [inner] Point-
     pulls = (bars * stresses).field()                                          # [frames] Point-[inner]
-    tails, heads = (mesh.reading(mesh.edges[inner, end]) for end in range(2))  # Scalar+[inner <- vertices], Scalar+[inner <- vertices]
-    net = (~tails * pulls - ~heads * pulls).batch()                            # [frames, vertices] Point-
-    interior = np.setdiff1d(np.arange(mesh.n_vertices), mesh.edges[mesh.boundary_edges])
+    bar_ends = mesh.reading(inner, 1) * mesh.d[0]                              # Scalar+[inner <- vertices]
+    net = -(~bar_ends * pulls).batch()                                         # [frames, vertices] Point-
+    interior = mesh.interior(0)
     assert (net[:, interior].norm() < 1e-10).all()
-    duals = (core.slopes(mesh, points, heights) ^ core.mv.z) * core.mv.z                             # [frames, faces] Plane+
-    assert np.abs(((duals[:, left] - duals[:, right]) & bars).to_array()).max() < 1e-10
+    # The jump in slope across each bar, the faces' planes summed back onto their edges, pairs to nothing with it.
+    duals = (core.slopes(mesh, points, heights) ^ core.mv.z) * core.mv.z                             # [frames] Plane+[faces]
+    assert np.abs(((~mesh.d[1] * duals).batch()[:, inner] & bars).to_array()).max() < 1e-10
 
 
 def test_on_the_paraboloid_the_reciprocal_is_the_voronoi_diagram_and_the_stresses_the_cotangent_weights():
@@ -31,8 +33,8 @@ def test_on_the_paraboloid_the_reciprocal_is_the_voronoi_diagram_and_the_stresse
     cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()   # [3] Scalar+[faces]
     weights = (~mesh.incidence[2, 1] * (cotangents / 2)).sum(axis=0)           # Scalar+[edges]
     assert np.abs(core.stresses(mesh, points, heights).to_array() - weights.to_array()[inner]).max() < 1e-10
-    centres = (core.slopes(mesh, points, heights) ^ core.mv.z) * core.mv.z                           # [faces] Plane+
-    squared_distances = [(centres.dual() - corner).scalar_norm_squared().to_array() for corner in (mesh.incidence[2, 0] * points).batch()]
+    centres = (core.slopes(mesh, points, heights) ^ core.mv.z) * core.mv.z                           # Plane+[faces]
+    squared_distances = [(centres.dual() - corner).scalar_norm_squared().to_array() for corner in mesh.incidence[2, 0] * points]
     assert np.abs(squared_distances[0] - squared_distances[1]).max() < 1e-10 and np.abs(squared_distances[0] - squared_distances[2]).max() < 1e-10
     assert len(list(render.animate(mesh, points, [(heights, core.stresses(mesh, points, heights),
                                                     (core.slopes(mesh, points, heights) ^ core.mv.z) * core.mv.z)]))) == 1

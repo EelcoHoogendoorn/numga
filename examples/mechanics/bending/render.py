@@ -110,17 +110,16 @@ def line_through(ax, line: core.Strain, centre: core.Point, half: float, **style
 
 def wall_stress(stress: core.Scalar) -> np.ndarray:
     """The stress along the beam at the middle of each piece of each wall `[walls * pieces]`, linear along each wall
-    between its ends."""
-    values = stress.to_array()                                               # [walls, 2]
+    between its ends, from the stress at the ends `[ends] Scalar+[walls]`."""
+    tails, heads = stress.to_array()                                         # [walls], [walls]
     fractions = np.linspace(0, 1, WALL_PIECES + 1)
     middles = (fractions[:-1] + fractions[1:]) / 2
-    return (values[:, None, 0] * (1 - middles) + values[:, None, 1] * middles).reshape(-1)
+    return (tails[:, None] * (1 - middles) + heads[:, None] * middles).reshape(-1)
 
 
-def draw_stress(ax, walls: core.Point, stress: core.Scalar, largest: float) -> LineCollection:
-    """The walls as thick lines coloured by the stress along the beam, linear along each wall between
-    its ends, for an animation to set the stress of."""
-    ends = flat(walls)                                                       # [walls, 2, 2]
+def draw_stress(ax, ends: np.ndarray, stress: core.Scalar, largest: float) -> LineCollection:
+    """The walls, their ends in the section view `[walls, 2, 2]`, as thick lines coloured by the stress along the
+    beam, linear along each wall between its ends, for an animation to set the stress of."""
     fractions = np.linspace(0, 1, WALL_PIECES + 1)[:, None]                  # [pieces + 1, 1]
     along = ends[:, None, 0] * (1 - fractions) + ends[:, None, 1] * fractions   # [walls, pieces + 1, 2]
     pieces = np.stack([along[:, :-1], along[:, 1:]], axis=-2).reshape(-1, 2, 2)
@@ -143,17 +142,18 @@ def mark_centres(ax, centre: core.Point, shear: core.Point) -> None:
     ax.plot(*flat(shear), "o", markerfacecolor="none", markeredgecolor="#0f172a", markersize=7, markeredgewidth=1.4)
 
 
-def draw_sections(sections: list[tuple[core.Point, np.ndarray, np.ndarray]]) -> plt.Figure:
+def draw_sections(sections: list[tuple[core.Mesh, core.Point, core.Scalar]]) -> plt.Figure:
     """The sections' walls along their midlines."""
     figure, axes = plt.subplots(1, len(sections), figsize=(4 * len(sections), 3.8), dpi=50)
-    for ax, (nodes, ends, _) in zip(axes, sections):
-        ax.add_collection(LineCollection(flat(nodes[ends]), colors=STRAIGHT, linewidths=WALL_WIDTH, capstyle="round"))
+    for ax, (mesh, nodes, _) in zip(axes, sections):
+        ax.add_collection(LineCollection(flat(nodes)[mesh.edges], colors=STRAIGHT, linewidths=WALL_WIDTH,
+                                         capstyle="round"))
         frame_section(ax, SECTION_LIMIT)
     figure.tight_layout()
     return figure
 
 
-def draw_walls(sections: list[tuple[core.Point, np.ndarray, np.ndarray]], centres: list[core.Point],
+def draw_walls(sections: list[tuple[core.Mesh, core.Point, core.Scalar]], centres: list[core.Point],
                shears: list[core.Point]) -> plt.Figure:
     """The sections' walls along their midlines, each with its centroid and its shear centre."""
     figure = draw_sections(sections)
@@ -162,21 +162,21 @@ def draw_walls(sections: list[tuple[core.Point, np.ndarray, np.ndarray]], centre
     return figure
 
 
-def section_limit(tips: core.Point) -> float:
-    """Half the width of section views that hold the clamp's section and every moved tip's walls `[..., walls, 2]`
-    with a load's arrow beside them."""
-    return max(SECTION_LIMIT, np.abs(flat(tips)).max() + ARROW)
+def section_limit(tips: np.ndarray) -> float:
+    """Half the width of section views that hold the clamp's section and the ends of every moved tip's walls in the
+    section view `[..., walls, 2, 2]` with a load's arrow beside them."""
+    return max(SECTION_LIMIT, np.abs(tips).max() + ARROW)
 
 
-def draw_section(ax, walls: core.Point, stress: core.Scalar, principal: core.Strain, centre: core.Point,
-                 shear: core.Point, through: core.Point, load: core.Point, tip: core.Point, strain: core.Twist,
+def draw_section(ax, ends: np.ndarray, stress: core.Scalar, principal: core.Strain, centre: core.Point,
+                 shear: core.Point, through: core.Point, load: core.Point, tip: np.ndarray, strain: core.Twist,
                  largest: float, limit: float) -> tuple[LineCollection, LineCollection, Line2D, Annotation]:
-    """One section: the stress along the beam over its walls at the clamp, the walls at the tip as the
-    tip has moved, its principal axes dashed through the centroid, the neutral axis, and the load's
-    direction where it acts on the moved tip. The stress, the tip's walls, the neutral axis and the load's arrow,
-    for an animation to move."""
-    stresses = draw_stress(ax, walls, stress, largest)
-    tip_walls = ax.add_collection(LineCollection(flat(tip), colors=BEAM, linewidths=WALL_WIDTH, capstyle="round"))
+    """One section: the stress along the beam over its walls at the clamp, their ends in the section view
+    `[walls, 2, 2]`, the walls at the tip as the tip has moved, `tip` alike, its principal axes dashed through the
+    centroid, the neutral axis, and the load's direction where it acts on the moved tip. The stress, the tip's
+    walls, the neutral axis and the load's arrow, for an animation to move."""
+    stresses = draw_stress(ax, ends, stress, largest)
+    tip_walls = ax.add_collection(LineCollection(tip, colors=BEAM, linewidths=WALL_WIDTH, capstyle="round"))
     for axis in principal:
         line_through(ax, axis, centre, 2 * limit, color=PRINCIPAL, linestyle="--", linewidth=1.0)
     neutral = line_through(ax, strain, centre, 2 * limit, color=NEUTRAL, linewidth=1.8)
@@ -239,12 +239,11 @@ def clamped(through: core.Point, load: core.Point, length: float, radii: tuple[f
     return [(clamp_rods, clamp_colour), (clamp_joints, clamp_colour), (shaft[None], load_colour), (head[None], load_colour)]
 
 
-def draw_beam(walls: core.Point, shears: core.Point, through: core.Point, load: core.Point,
+def draw_beam(bent: np.ndarray, shears: core.Point, through: core.Point, load: core.Point,
               view: solids.View) -> np.ndarray:
-    """One cantilever: each wall swept along the beam as lit strips; the straight beam a faint ghost, each wall a
-    translucent plate; the line of shear centres the beam twists about, dashed; the clamp; and the tip load where it
-    acts."""
-    bent = space(walls)                                                      # [pieces + 1, walls, 2, 3]
+    """One cantilever, the ends of its walls at every cross-section `[pieces + 1, walls, 2, 3]`: each wall swept
+    along the beam as lit strips; the straight beam a faint ghost, each wall a translucent plate; the line of shear
+    centres the beam twists about, dashed; the clamp; and the tip load where it acts."""
     # The line of shear centres in dashes, every other piece of it.
     line = solids.mv.point(space(shears))                                    # [pieces + 1] Point-
     dashes = solids.rods(line[:-1:2], line[1::2], DASH_RADIUS * view.pixel)  # [dashes, 3] Plane+ <- Point-
@@ -255,7 +254,7 @@ def draw_beam(walls: core.Point, shears: core.Point, through: core.Point, load: 
                        meshes=[(swept(bent, BEAM, view), 1.0)])
 
 
-def draw_beams(sections: list[tuple[core.Point, np.ndarray, np.ndarray]], centres: list[core.Point],
+def draw_beams(sections: list[tuple[core.Mesh, core.Point, core.Scalar]], centres: list[core.Point],
                shears: list[core.Point], load: core.Point,
                beams: list[tuple[core.Twist, core.Motor, core.Strain, core.Scalar]]) -> plt.Figure:
     """Top, each section with its stress at the clamp; below, each cantilever bent under the load
@@ -266,39 +265,46 @@ def draw_beams(sections: list[tuple[core.Point, np.ndarray, np.ndarray]], centre
     beam_axes = [figure.add_subplot(2, count, count + case + 1) for case in range(count)]
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.0, top=0.97, hspace=0.0, wspace=0.05)
     largest = max(np.abs(stress.to_array()).max() for _, _, _, stress in beams)
-    walls = [frames[..., None, None] >> nodes[ends] for (nodes, ends, _), (_, frames, _, _) in zip(sections, beams)]
+    # Each beam's nodes at every cross-section, and the ends of its walls there, in space and at the tip in the
+    # section view.
+    placed = [frames[..., None] >> nodes.batch() for (_, nodes, _), (_, frames, _, _) in zip(sections, beams)]
+    bent = [space(moved)[..., mesh.edges, :] for (mesh, _, _), moved in zip(sections, placed)]
+    tip_ends = [flat(moved[-1])[mesh.edges] for (mesh, _, _), moved in zip(sections, placed)]
     tips = [load_tip(frames[-1] >> centre, load, TIP_ARROW) for centre, (_, frames, _, _) in zip(centres, beams)]
     # The beams' rooms alike, one view fitted to the first holds them all.
-    seen = fitted(view([space(beam) for beam in walls], tips, ELEVATION, AZIMUTH), beam_axes[0])
-    limit = max(section_limit(beam[-1]) for beam in walls)
-    for section_ax, beam_ax, (nodes, ends, _), centre, shear, (strains, frames, principal, stress), beam in zip(
-            section_axes, beam_axes, sections, centres, shears, beams, walls):
-        draw_section(section_ax, nodes[ends], stress, principal, centre, shear, frames[-1] >> centre, load,
-                     frames[-1] >> nodes[ends], strains[0], largest, limit)
+    seen = fitted(view(bent, tips, ELEVATION, AZIMUTH), beam_axes[0])
+    limit = max(section_limit(tip) for tip in tip_ends)
+    for section_ax, beam_ax, (mesh, nodes, _), centre, shear, (strains, frames, principal, stress), beam, tip in zip(
+            section_axes, beam_axes, sections, centres, shears, beams, bent, tip_ends):
+        draw_section(section_ax, flat(nodes)[mesh.edges], stress, principal, centre, shear, frames[-1] >> centre,
+                     load, tip, strains[0], largest, limit)
         show(beam_ax, draw_beam(beam, frames >> shear, frames[-1] >> centre, load, seen), seen)
     return figure
 
 
-def animate_loads(section: tuple[core.Point, np.ndarray, np.ndarray], centre: core.Point, shear: core.Point,
+def animate_loads(section: tuple[core.Mesh, core.Point, core.Scalar], centre: core.Point, shear: core.Point,
                   through: core.Point, loads: core.Point,
                   beam: tuple[core.Twist, core.Motor, core.Strain, core.Scalar]) -> Iterator[np.ndarray]:
     """Each frame of a changing tip load, as `sized_loads` draws it at 50 pixels to the inch."""
     return sized_loads(section, centre, shear, through, loads, beam, 50)
 
 
-def sized_loads(section: tuple[core.Point, np.ndarray, np.ndarray], centre: core.Point, shear: core.Point,
+def sized_loads(section: tuple[core.Mesh, core.Point, core.Scalar], centre: core.Point, shear: core.Point,
                 through: core.Point, loads: core.Point, beam: tuple[core.Twist, core.Motor, core.Strain, core.Scalar],
                 dpi: int) -> Iterator[np.ndarray]:
     """Each frame of a changing tip load, through points `through` in directions `loads`, either batched
     over the frames, at `dpi` pixels to the inch: the bent beam, and its section's stress at the clamp with the tip's
     cross-section."""
-    nodes, ends, _ = section
+    mesh, nodes, _ = section
     strains, frames, principal, stress = beam
     count = frames.shape[0]
     through, loads = through.broadcast_to((count,)), loads.broadcast_to((count,))
-    walls = frames[..., None, None] >> nodes[ends]                           # [frames, pieces + 1, walls, 2] Point-
+    placed = frames[..., None] >> nodes.batch()                              # [frames, pieces + 1, nodes] Point-
+    # The ends of the walls at every cross-section in space, and at the tip in the section view.
+    bent = space(placed)[..., mesh.edges, :]                                 # [frames, pieces + 1, walls, 2, 3]
+    tip_ends = flat(placed[:, -1])[:, mesh.edges]                            # [frames, walls, 2, 2]
     largest = np.abs(stress.to_array()).max()
-    limit = section_limit(walls[:, -1])
+    limit = section_limit(tip_ends)
     moved = frames[:, -1] >> through                                         # [frames] Point-
     # The figure and the section's still parts drawn once; the beam's picture, the stress, the tip's walls, the
     # neutral axis and the load's arrow set for each frame.
@@ -306,16 +312,16 @@ def sized_loads(section: tuple[core.Point, np.ndarray, np.ndarray], centre: core
     beam_ax, section_ax = figure.add_subplot(1, 2, 1), figure.add_subplot(1, 2, 2)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.05)
     # One camera framing every frame's beam.
-    seen = fitted(view([space(walls)], [load_tip(frames[:, -1] >> through, loads, TIP_ARROW)], ELEVATION, AZIMUTH),
+    seen = fitted(view([bent], [load_tip(frames[:, -1] >> through, loads, TIP_ARROW)], ELEVATION, AZIMUTH),
                   beam_ax)
     image = show(beam_ax, np.ones((*seen.shape, 3)), seen)
-    stresses, tip_walls, neutral, pointer = draw_section(section_ax, nodes[ends], stress[0], principal, centre, shear,
-                                                         moved[0], loads[0], walls[0, -1], strains[0, 0], largest,
-                                                         limit)
+    stresses, tip_walls, neutral, pointer = draw_section(section_ax, flat(nodes)[mesh.edges], stress[0], principal,
+                                                         centre, shear, moved[0], loads[0], tip_ends[0], strains[0, 0],
+                                                         largest, limit)
     for frame in range(count):
-        image.set_data(draw_beam(walls[frame], frames[frame] >> shear, moved[frame], loads[frame], seen))
+        image.set_data(draw_beam(bent[frame], frames[frame] >> shear, moved[frame], loads[frame], seen))
         stresses.set_array(wall_stress(stress[frame]))
-        tip_walls.set_segments(flat(walls[frame, -1]))
+        tip_walls.set_segments(tip_ends[frame])
         neutral.set_data(*line_ends(strains[frame, 0], centre, 2 * limit).T)
         aim(pointer, flat(moved[frame]), heading(loads[frame]), ARROW)
         yield capture(figure)
@@ -343,11 +349,11 @@ def kern(polars: core.Strain, centre: core.Point) -> np.ndarray:
     return polygon
 
 
-def draw_push(ax, walls: core.Point, point: core.Point, strain: core.Strain, stress: core.Scalar,
+def draw_push(ax, ends: np.ndarray, point: core.Point, strain: core.Strain, stress: core.Scalar,
               polars: core.Strain, centre: core.Point, largest: float) -> None:
-    """One section pushed through one point: the stress over its walls, the kern, and the neutral axis,
-    the push point's polar."""
-    draw_stress(ax, walls, stress, largest)
+    """One section pushed through one point: the stress over its walls, their ends in the section view
+    `[walls, 2, 2]`, the kern, and the neutral axis, the push point's polar."""
+    draw_stress(ax, ends, stress, largest)
     ax.fill(*kern(polars, centre).T, facecolor=to_rgba(KERN, 0.3), edgecolor=KERN, linewidth=1.4, zorder=3)
     line_through(ax, strain, centre, 4 * SECTION_LIMIT, color=NEUTRAL, linewidth=1.8)
     ax.plot(*flat(point), "X", color=LOAD, markersize=9, markeredgecolor="white", zorder=4)
@@ -355,15 +361,15 @@ def draw_push(ax, walls: core.Point, point: core.Point, strain: core.Strain, str
     frame_section(ax, SECTION_LIMIT)
 
 
-def draw_pushes(sections: list[tuple[core.Point, np.ndarray, np.ndarray]], centres: list[core.Point],
+def draw_pushes(sections: list[tuple[core.Mesh, core.Point, core.Scalar]], centres: list[core.Point],
                 points: core.Point, pushes: list[tuple[core.Strain, core.Scalar, core.Strain]]) -> plt.Figure:
     """A row per push point and a column per section: the section pushed along the beam through the
     point, with its kern."""
     figure = plt.figure(figsize=(4.0 * len(sections), 8.4), dpi=55)
     largest = max(np.abs(stress.to_array()).max() for _, stress, _ in pushes)
     for push in range(points.shape[0]):
-        for case, ((nodes, ends, _), centre, (strains, stress, polars)) in enumerate(zip(sections, centres, pushes)):
+        for case, ((mesh, nodes, _), centre, (strains, stress, polars)) in enumerate(zip(sections, centres, pushes)):
             ax = figure.add_subplot(points.shape[0], len(sections), push * len(sections) + case + 1)
-            draw_push(ax, nodes[ends], points[push], strains[push], stress[push], polars, centre, largest)
+            draw_push(ax, flat(nodes)[mesh.edges], points[push], strains[push], stress[push], polars, centre, largest)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.01, top=0.99, hspace=0.05, wspace=0.05)
     return figure

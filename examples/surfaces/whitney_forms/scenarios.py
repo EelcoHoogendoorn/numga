@@ -6,7 +6,7 @@ import numpy as np
 
 from numga import concatenate, stack
 from numga.algebras import VGA2D as ga
-from numga.sparse import SparseExtensor, spdiag
+from numga.sparse import spdiag
 from examples import instantiate
 
 mesh_module = instantiate("examples.util.mesh", ga)
@@ -44,16 +44,15 @@ def single_triangle(n_subdivisions: int) -> tuple[Point, Point]:
     return corners, triangle_samples(corners, n_subdivisions)
 
 
-def edge_diamond(n_subdivisions: int) -> tuple[Point, Point, Point, Point]:
-    """Two triangles sharing a vertical interior edge, with their interior sample points."""
+def edge_diamond(n_subdivisions: int) -> tuple[Mesh, Point, Point]:
+    """Two triangles sharing a vertical interior edge, and the interior sample points of each."""
     horizontal, vertical = mv.x.dual(), mv.y.dual()                          # [] Point-, [] Point-
     bottom, top = -vertical * 0.72, vertical * 0.72                          # [] Point-, [] Point-
     left_apex = -horizontal * 0.95 + vertical * 0.14                         # [] Point-
     right_apex = horizontal * 0.92 - vertical * 0.12                         # [] Point-
-    left_corners = stack((bottom, top, left_apex))                           # [corners] Point-
-    right_corners = stack((top, bottom, right_apex))                         # [corners] Point-
-    return (left_corners, triangle_samples(left_corners, n_subdivisions),
-            right_corners, triangle_samples(right_corners, n_subdivisions))
+    vertices = stack((bottom, top, left_apex, right_apex)).field()           # Point-[vertices]
+    mesh = Mesh(4, np.array([[0, 1, 2], [1, 0, 3]]))
+    return mesh, vertices, triangle_samples(mesh.incidence[2, 0] * vertices, n_subdivisions)  # ..., [samples] Point-[faces]
 
 
 def disk(radius: float, n_divisions: int) -> tuple[Mesh, Point]:
@@ -104,13 +103,17 @@ def main() -> None:
 
     # 2. Edge Whitney 1-forms and tangential continuity across a shared edge.
     edge_forms = edge_whitney_forms(corners, points)                         # [corners, samples] Plane+
-    left_corners, left_points, right_corners, right_points = edge_diamond(n_triangle_subdivisions)
-    left_shared = edge_whitney_forms(left_corners, left_points)[2]           # [samples] Plane+
-    right_shared = -edge_whitney_forms(right_corners, right_points)[2]       # [samples] Plane+
+    diamond_mesh, diamond_vertices, diamond_points = edge_diamond(n_triangle_subdivisions)
+    diamond = Operators(diamond_mesh, diamond_vertices)
+    # Unit circulation on the one interior edge, read on both faces through their edge forms,
+    # each signed by the sense in which its face runs along the edge.
+    shared_circulation = as_scalar(np.isin(np.arange(len(diamond_mesh.edges)), diamond_mesh.interior_edges)).field()  # Scalar+[edges]
+    sample_forms = (diamond_points[:, None] - diamond.corners[None, :]) / (2 * diamond.patches)  # [samples, corners] Plane+[faces]
+    sample_whitney1 = (spdiag(sample_forms) * diamond_mesh.boundary[2, 1]).sum(axis=1) * Scalar  # [samples] (Plane+ <- Scalar+)[faces <- edges]
+    shared_forms = sample_whitney1(shared_circulation)                       # [samples] Plane+[faces]
     save_figure(
         render.draw_edge_1forms(corners, points, edge_forms,
-                                left_corners, left_points, left_shared,
-                                right_corners, right_points, right_shared),
+                                diamond_mesh, diamond_vertices, diamond_points, shared_forms),
         "whitney_edge_1form",
     )
 
@@ -122,10 +125,10 @@ def main() -> None:
     directions = stack((fibre, quarter_turn >> fibre))                       # [axes] Point-
     conductivity = (directions * (Plane & directions) * principal_conductivities).sum(axis=-1)  # [cases] Point- <- Plane+
 
-    boundary = np.unique(mesh.edges[mesh.boundary_edges])
+    boundary = mesh.exterior(0)
     abscissa = (mv.x & vertices).batch()                                     # [vertices] Scalar+
     electrodes = boundary[abscissa[boundary].norm() > electrode_threshold]
-    pinned = SparseExtensor.selection(mv.context, electrodes, mesh.n_vertices)
+    pinned = mesh.reading(electrodes)
     prescribed = ~pinned * (pinned * (mv.x & vertices))                      # Scalar+[vertices]
     potential, current, streamfunction = conduction(
         operators, conductivity, electrodes, prescribed,
@@ -149,12 +152,13 @@ def main() -> None:
     midpoint_readings = edge_whitney_forms(corners, midpoints) & sides[None, :]
     np.testing.assert_allclose(midpoint_readings.kernel, np.eye(3)[..., None], atol=1e-14)
 
-    shared_edge = left_corners[1] - left_corners[0]
-    seam_points = left_corners[0] * 0.35 + left_corners[1] * 0.65
-    seam_left = edge_whitney_forms(left_corners, seam_points[None])[2]
-    seam_right = -edge_whitney_forms(right_corners, seam_points[None])[2]
-    np.testing.assert_allclose((seam_left & shared_edge).kernel, 1.0, atol=1e-14)
-    np.testing.assert_allclose((seam_right & shared_edge).kernel, 1.0, atol=1e-14)
+    tails, heads = diamond_mesh.incidence[1, 0] * diamond_vertices
+    shared = diamond_mesh.reading(diamond_mesh.interior_edges, 1)                 # Scalar+[shared <- edges]
+    shared_edge, = (shared * (diamond_mesh.d[0] * diamond_vertices)).batch()
+    seam_point, = (shared * (tails * 0.35 + heads * 0.65)).batch()
+    seam_forms = (seam_point - diamond.corners) / (2 * diamond.patches)
+    seam_whitney1 = (spdiag(seam_forms) * diamond_mesh.boundary[2, 1]).sum(axis=0) * Scalar
+    np.testing.assert_allclose((seam_whitney1(shared_circulation) & shared_edge).kernel, 1.0, atol=1e-14)
 
     linear_potential = (mv.x & vertices) * 0.7 - (mv.y & vertices) * 1.1
     np.testing.assert_allclose(operators.d1(operators.d0(linear_potential)).kernel, 0.0, atol=1e-14)
@@ -174,11 +178,11 @@ def main() -> None:
     obtuse_mesh, obtuse_vertices = obtuse_diamond()
     obtuse_ops = Operators(obtuse_mesh, obtuse_vertices)
     obtuse_edge_conductance = edge_conductance(obtuse_ops, Plane.dual())
-    shared_cochain = as_scalar(np.arange(len(obtuse_mesh.edges)) == 0).field()
+    shared_cochain = as_scalar(np.isin(np.arange(len(obtuse_mesh.edges)), obtuse_mesh.interior_edges)).field()
     assert -(obtuse_edge_conductance(shared_cochain) & shared_cochain).sites.sum() > 0
 
     free_vertices = np.setdiff1d(np.arange(mesh.n_vertices), electrodes)
-    free = ~SparseExtensor.selection(mv.context, free_vertices, mesh.n_vertices) * Scalar
+    free = ~mesh.reading(free_vertices) * Scalar
     np.testing.assert_allclose(free.adjugate()(conductance(potential)).kernel, 0.0, atol=1e-11)
 
 

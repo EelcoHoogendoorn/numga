@@ -18,8 +18,8 @@ from __future__ import annotations
 import numpy as np
 from scipy.spatial import ConvexHull
 
-from numga import Algebra, NumpyContext, concatenate, stack
-from numga.sparse import SparseExtensor
+from numga import Algebra, NumpyContext, stack
+from numga.sparse import SparseExtensor, spdiag
 from examples import instantiate
 
 ga = Algebra("x+y+z+w-")
@@ -35,17 +35,18 @@ origin = mv.w.dual()                                # [] Point-
 
 
 # --- math -----------------------------------------------------------------------------
-def touching(circles: Vector, edges: np.ndarray) -> Point:
+def touching(mesh: Mesh, circles: Vector) -> Point:
     """The point where the circles at the ends of each edge touch is the sum of their poles, the null point on
     the line between the apexes."""
-    poles = circles.dual()                                                     # [...] Point-
-    return poles[..., edges[:, 0]] + poles[..., edges[:, 1]]                   # [..., edges] Point-
+    return mesh.incidence[1, 0].sum(axis=0) * circles.dual()                   # [...] Point-[edges]
 
 
-def face_circles(circles: Vector, faces: np.ndarray) -> Vector:
+def face_circles(mesh: Mesh, circles: Vector) -> Vector:
     """The circle of each face, through the points where its vertices' circles touch, is orthogonal to all three:
     the dual of their wedge."""
-    return (circles[..., faces[:, 0]] ^ circles[..., faces[:, 1]] ^ circles[..., faces[:, 2]]).dual()   # [..., faces] Vector+
+    # The circles at each face's corners, on the last axis.
+    corners = mesh.incidence[2, 0] * circles[..., None]                        # [..., corners] Vector+[faces]
+    return (corners[..., 0] ^ corners[..., 1] ^ corners[..., 2]).dual()       # [...] Vector+[faces]
 
 
 def apexes(circles: Vector) -> Point:
@@ -54,24 +55,26 @@ def apexes(circles: Vector) -> Point:
     return poles / (mv.w & poles)                                              # [...] Point-
 
 
-def koebe(start: Vector, edges: np.ndarray, n_steps: int) -> Vector:
+def koebe(mesh: Mesh, start: Vector, n_steps: int) -> Vector:
     """The circles that square to one and touch from outside along every edge, inner product minus one, follow
     by Gauss-Newton from the start; the steps leave the maps that keep the sphere, along which nothing changes,
     where they were."""
-    tails, heads = edges[:, 0], edges[:, 1]
-    n_vertices, n_edges = start.shape[-1], len(edges)
-    # Each vertex's residual depends on its own circle, each edge's on the circles at its two ends.
-    rows = np.concatenate([np.arange(n_vertices), n_vertices + np.arange(n_edges), n_vertices + np.arange(n_edges)])
-    columns = np.concatenate([np.arange(n_vertices), tails, heads])
-    circles = start                                                            # [vertices] Vector+
+    n_vertices, n_edges = mesh.n_vertices, len(mesh.edges)
+    # The residuals are the vertices' followed by the edges'.
+    vertex_rows = ~SparseExtensor.selection(mv.context, np.arange(n_vertices), n_vertices + n_edges)            # Scalar+[vertices + edges <- vertices]
+    edge_rows = ~SparseExtensor.selection(mv.context, n_vertices + np.arange(n_edges), n_vertices + n_edges)   # Scalar+[vertices + edges <- edges]
+    circles = start                                                            # Vector+[vertices]
     for _ in range(n_steps):
-        residual = concatenate([circles.squared() - 1, (circles[tails] | circles[heads]) + 1]).field()   # Scalar+[vertices + edges]
-        jacobian = SparseExtensor.from_indices(
-            concatenate([2 * circles | Vector, circles[heads] | Vector, circles[tails] | Vector]),
-            rows, columns, (n_vertices + n_edges, n_vertices))                 # (Scalar+ <- Vector+)[vertices + edges <- vertices]
+        tails, heads = mesh.incidence[1, 0] * circles                          # Vector+[edges], Vector+[edges]
+        residual = vertex_rows * (circles.squared() - 1) + edge_rows * ((tails | heads) + 1)   # Scalar+[vertices + edges]
+        # Each vertex's residual depends on its own circle, each edge's on the circle at either end, as the circle at
+        # the other end reads it.
+        own = spdiag(2 * circles | Vector)                                     # (Scalar+ <- Vector+)[vertices <- vertices]
+        across = (spdiag(stack([heads, tails]) | Vector) * mesh.incidence[1, 0]).sum(axis=0)   # (Scalar+ <- Vector+)[edges <- vertices]
+        jacobian = vertex_rows * own + edge_rows * across                      # (Scalar+ <- Vector+)[vertices + edges <- vertices]
         # The change that zeroes the linearised residuals, along the circles' own metric: the step commutes with
         # the maps that keep the sphere, so a boosted start gives the boosted circles.
-        circles = circles - jacobian.adjoint()(jacobian(jacobian.adjoint()).solve(residual)).batch()
+        circles = circles - jacobian.adjoint()(jacobian(jacobian.adjoint()).solve(residual))
     return circles
 
 
@@ -82,7 +85,7 @@ def centre(points: Point, n_iterations: int) -> Point:
     # the centre itself: the centre is the fixed point of that weighted sum, normalized.
     centre = origin                                                            # [] Point-
     for _ in range(n_iterations):
-        weighted_sum = (points * (-1 / (centre | points))).sum()               # [] Point-
+        weighted_sum = (points * (-1 / (centre | points))).sites.sum()         # [] Point-
         centre = weighted_sum.normalized()
     return centre
 
@@ -98,10 +101,8 @@ def spiral(n_points: int) -> Point:
 
 
 # --- the step outside the algebra -------------------------------------------------------
-def hull(offsets: Point) -> np.ndarray:
-    """The convex hull of points at offsets from the centre has faces `[faces, 3]`, counter-clockwise seen from
+def hull(offsets: Point) -> Mesh:
+    """The convex hull of points at offsets from the centre has triangle faces, counter-clockwise seen from
     outside, found from the offsets' pairings with the planes x, y and z."""
-    coordinates = (stack((mv.x, mv.y, mv.z)) & offsets[..., None]).to_array()  # [points, 3]
-    faces = ConvexHull(coordinates).simplices                                  # [faces, 3]
-    # Each face turned to run counter-clockwise seen from outside: its corners' volume about the centre positive.
-    return np.where((np.linalg.det(coordinates[faces]) > 0)[:, None], faces, faces[:, ::-1])
+    coordinates = (stack((mv.x, mv.y, mv.z)) & offsets.batch()[..., None]).to_array()   # [points, 3]
+    return Mesh.closed(ConvexHull(coordinates).simplices, coordinates)

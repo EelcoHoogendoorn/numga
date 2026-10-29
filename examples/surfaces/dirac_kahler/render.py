@@ -11,6 +11,7 @@ from matplotlib.collections import LineCollection, PolyCollection
 from matplotlib.tri import LinearTriInterpolator, Triangulation
 
 from numga import stack
+from numga.extensor import Extensor
 from examples.surfaces.dirac_kahler import core
 from examples.util import charts
 from examples.util.wgsl import meshes, solids, strokes
@@ -63,6 +64,13 @@ def coordinates(points: core.Point) -> np.ndarray:
     return np.asarray((stack((mv.x, mv.y)) & points.batch()[..., None]).to_array())
 
 
+def at_vertices(mesh: core.Mesh, field: Extensor) -> Extensor:
+    """Face fields averaged at each vertex over the faces at it, for drawing `X[faces]` as `X[vertices]`."""
+    corners = ~mesh.incidence[2, 0].sum(axis=0)                                # Scalar+[vertices <- faces]
+    ones = field.context.multivector.scalar(np.ones((len(mesh.faces), 1))).field()   # Scalar+[faces]
+    return (corners * field) / (corners * ones)
+
+
 def domain_panel(ax: plt.Axes, mesh: core.Mesh, places: np.ndarray) -> Triangulation:
     """A quiet domain boundary leaves the flow paths as the main drawing."""
     triangulation = Triangulation(*places.T, triangles=mesh.faces)
@@ -82,11 +90,8 @@ def flow_panel(ax: plt.Axes, mesh: core.Mesh, places: np.ndarray,
                flow: core.Point, colour: str) -> None:
     """Streamlines show the connected geometry of a face velocity without direction glyphs."""
     triangulation = domain_panel(ax, mesh, places)
-    field = coordinates(flow)
     # Face readouts are averaged only for the continuous drawing; the solver keeps its face field.
-    vertex_field = np.zeros_like(places)
-    np.add.at(vertex_field, mesh.faces.reshape(-1), np.repeat(field, 3, axis=0))
-    vertex_field /= np.bincount(mesh.faces.reshape(-1))[:, None]
+    vertex_field = coordinates(at_vertices(mesh, flow))
     low, high = places.min(axis=0), places.max(axis=0)
     sample_x = np.linspace(low[0], high[0], n_grid_samples)
     sample_y = np.linspace(low[1], high[1], n_grid_samples)
@@ -189,10 +194,7 @@ def animate_dirac_waves(mesh: core.Mesh, vertices: core.Point,
     for even_state, face_field in chain(((first_even, first_face_field),), frames):
         scalar = np.asarray(even_state.select[0].batch().to_array()) / amplitude_scale
         bivector = np.asarray((even_state.select[2].batch() & mv.xy.dual()).to_array()) / amplitude_scale
-        face_speed = np.sqrt(np.asarray(face_field.scalar_norm_squared().batch().to_array())) / amplitude_scale
-        vertex_speed = np.zeros(len(places))
-        np.add.at(vertex_speed, mesh.faces.reshape(-1), np.repeat(face_speed, 3))
-        vertex_speed /= np.bincount(mesh.faces.reshape(-1))
+        vertex_speed = np.asarray(at_vertices(mesh, face_field.norm()).batch().to_array()) / amplitude_scale
         components = np.column_stack((scalar, vertex_speed, bivector))
         amplitude = np.linalg.norm(components, axis=-1)
         mixed_values = np.column_stack((components, amplitude))

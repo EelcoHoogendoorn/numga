@@ -53,13 +53,14 @@ def heeled(degrees: np.ndarray) -> core.Motor:
     return (mv.yz * (-np.radians(degrees) / 2)).exp()
 
 
-def ship() -> tuple[core.Point, core.Scalar, core.Point]:
-    """The hull; its weight, the water it displaces upright at its waterline; and its centre of gravity at
-    each height `[loads]`."""
-    hull = core.wigley(LENGTH, BEAM, DRAFT, FREEBOARD, N_CELLS)              # [triangles, 3] Point-
+def ship() -> tuple[core.Mesh, core.Point, core.Scalar, core.Point]:
+    """The hull, its mesh and its vertices; its weight, the water it displaces upright at its waterline; and its
+    centre of gravity at each height `[loads]`."""
+    mesh, vertices = core.wigley(LENGTH, BEAM, DRAFT, FREEBOARD, N_CELLS)    # Point-[vertices]
+    hull = mesh.incidence[2, 0] * vertices                                   # [corners] Point-[triangles]
     upright, _ = core.buoyancy(hull, core.water, FLUID_WEIGHT)               # [] Forque-
     centres = mv.point([[0, 0, height] for height in CENTRE_HEIGHTS])        # [loads] Point-
-    return hull, upright & core.heave, centres
+    return mesh, vertices, upright & core.heave, centres
 
 
 def shown_ship(hull: core.Point, weight: core.Scalar) -> tuple[core.Motor, core.Forque]:
@@ -82,16 +83,17 @@ def righting_curves(hull: core.Point, weight: core.Scalar, centres: core.Point) 
     return push + weighing, core.stiffness(hull, mv.scalar([0.0]), weight, centres, FLUID_WEIGHT)
 
 
-def cubes() -> tuple[core.Point, core.Scalar, core.Forque]:
-    """The unit cube, the weights of the densities `[densities, 1]`, and its righting couple at each density
-    and heel `[densities, heels]`, its centre of gravity at its middle."""
-    cube = core.box(np.ones(3))                                              # [triangles, 3] Point-
+def cubes() -> tuple[core.Mesh, core.Point, core.Scalar, core.Forque]:
+    """The unit cube, its mesh and its vertices, the weights of the densities `[densities, 1]`, and its righting
+    couple at each density and heel `[densities, heels]`, its centre of gravity at its middle."""
+    mesh, vertices = core.box(np.ones(3))                                    # Point-[vertices]
+    cube = mesh.incidence[2, 0] * vertices                                   # [corners] Point-[triangles]
     weights = mv.scalar((FLUID_WEIGHT * DENSITIES)[:, None, None])           # [densities, 1] Scalar+
     turns = heeled(CUBE_HEELS)                                               # [heels] Motor+
     start = mv.scalar(np.zeros((len(DENSITIES), len(CUBE_HEELS), 1)))
     heights = core.afloat(cube, turns, weights, start, FLUID_WEIGHT, N_NEWTON_STEPS)   # [densities, heels] Scalar+
     push, weighing = core.forces(cube, turns, heights, weights, mv.w.dual(), FLUID_WEIGHT)   # [densities, heels] Forque-, Forque-
-    return cube, weights, push + weighing
+    return mesh, vertices, weights, push + weighing
 
 
 def resting(cube: core.Point, densities: list[float], heels: np.ndarray) -> core.Motor:
@@ -143,18 +145,19 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.fluids.floating import render
 
-    hull, weight, centres = ship()
+    mesh, vertices, weight, centres = ship()
+    hull = mesh.incidence[2, 0] * vertices                                   # [corners] Point-[triangles]
     couples, stiffness = righting_curves(hull, weight, centres)
     placed, push = shown_ship(hull, weight)
-    save_figure(render.draw_ship(hull, placed, push, centres[SHOWN_LOAD]), "floating_ship")
+    save_figure(render.draw_ship(mesh, vertices, placed, push, centres[SHOWN_LOAD]), "floating_ship")
     save_figure(render.draw_curves(HEELS, couples, weight, stiffness), "floating_righting")
-    cube, weights, cube_couples = cubes()
+    cube_mesh, cube_vertices, weights, cube_couples = cubes()
     rests = stable_heels(cube_couples[np.searchsorted(DENSITIES, SHOWN_DENSITIES)])
-    shown = resting(cube, SHOWN_DENSITIES, rests)
-    save_figure(render.draw_cubes(DENSITIES, CUBE_HEELS, cube_couples, FLUID_WEIGHT, cube, shown, SHOWN_DENSITIES, rests),
-                "floating_cubes")
+    shown = resting(cube_mesh.incidence[2, 0] * cube_vertices, SHOWN_DENSITIES, rests)
+    save_figure(render.draw_cubes(DENSITIES, CUBE_HEELS, cube_couples, FLUID_WEIGHT, cube_mesh, cube_vertices, shown,
+                                  SHOWN_DENSITIES, rests), "floating_cubes")
     frames = list(released(hull, weight, centres[RELEASED]))
-    save_animation(render.animate_release(hull, centres[RELEASED], frames, HEELS, couples[:, RELEASED], weight),
+    save_animation(render.animate_release(mesh, vertices, centres[RELEASED], frames, HEELS, couples[:, RELEASED], weight),
                    "floating_release", DURATION_MS, N_COLOURS)
 
     # checks

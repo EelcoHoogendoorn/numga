@@ -77,17 +77,17 @@ class DiskDrawing:
         self.view = solids.View(solids.aim(solids.origin, view_elevation, view_azimuth),
                                 np.full(2, 1.12 * radius), n_pixels)
         # The outline: the free surface, and the edges between a liquid and a solid triangle around the core.
-        liquid_sides = np.bincount(mesh.face_edges[regions == 0].reshape(-1), minlength=len(mesh.edges))
-        solid_sides = np.bincount(mesh.face_edges[regions == 1].reshape(-1), minlength=len(mesh.edges))
-        interface = np.flatnonzero((liquid_sides > 0) & (solid_sides > 0))
+        sides = regions[mesh.edge_faces]                                          # [interior edges, 2]
+        interface = mesh.interior_edges[sides[:, 0] != sides[:, 1]]
         self.rim = mesh.edges[np.concatenate((mesh.boundary_edges, interface))]
-        surface_vertices = np.unique(mesh.edges[mesh.boundary_edges])
+        surface_vertices = mesh.exterior(0)
         angles = np.linspace(0, 2 * np.pi, n_markers, endpoint=False) + np.pi / 2
         targets = radius * np.stack((np.cos(angles), np.sin(angles)), axis=-1)
         surface_points = self.reference[surface_vertices]
         nearest = ((surface_points[:, None] - targets[None])**2).sum(axis=-1).argmin(axis=0)
         self.markers = surface_vertices[nearest]
-        self.vertex_populations = np.bincount(mesh.faces.reshape(-1), minlength=mesh.n_vertices)
+        self.corner_mean = mesh.incidence[2, 0].mean(axis=0)                      # Scalar+[faces <- vertices]
+        self.vertex_shares = ~self.corner_mean * core.as_scalar(np.ones(len(mesh.faces))).field()   # Scalar+[vertices]
         # The motion stays in the plane, so the top keeps the normals of its reference.
         elevated = np.column_stack((self.reference, np.full(mesh.n_vertices, surface_height)))
         self.top_normals = meshes.flat(solids.mv.point(elevated), mesh.faces)
@@ -118,11 +118,9 @@ class DiskDrawing:
                             meshes=[(wall, 1.0), (top, 1.0), (rim, 1.0)] + [(trail, 1.0) for trail in motion])
                 for top in tops]
 
-    def vertex_values(self, faces: np.ndarray) -> np.ndarray:
-        """Average face readings only for smooth colour interpolation in the drawing."""
-        values = np.zeros(self.mesh.n_vertices)
-        np.add.at(values, self.mesh.faces.reshape(-1), np.repeat(faces, 3))
-        return (values / self.vertex_populations)[:, None]
+    def vertex_values(self, readings: core.Scalar) -> np.ndarray:
+        """Face readings `Scalar+[faces]` averaged at each vertex, only for smooth colour interpolation in the drawing."""
+        return ((~self.corner_mean * readings) / self.vertex_shares).batch().to_array()[:, None]
 
 
 def draw_materials(mesh: core.Mesh, vertices: core.Point, regions: np.ndarray) -> plt.Figure:
@@ -153,8 +151,8 @@ def animate_waves(mesh: core.Mesh, vertices: core.Point, regions: np.ndarray,
                                  trail_colours.reshape(-1, 3), 1.0, drawing.view)
         beads = solids.ball(trajectory[-1], 0.012)[:, None]
         moon_ball = solids.ball(solids.mv.point([[*moon_place, 0.0]]), moon_radius)[:, None]
-        panels = [(drawing.vertex_values(dilation_rate.batch().to_array() / dilation_scale), dilation_surface),
-                  (drawing.vertex_values(vorticity.batch().to_array() / vorticity_scale), rotation_surface)]
+        panels = [(drawing.vertex_values(dilation_rate / dilation_scale), dilation_surface),
+                  (drawing.vertex_values(vorticity / vorticity_scale), rotation_surface)]
         yield panel_image(drawing.draw(places, panels, [tails], [(beads, outline_colour), (moon_ball, moon_colour)]))
 
 
@@ -169,6 +167,6 @@ def animate_modes(mesh: core.Mesh, vertices: core.Point, regions: np.ndarray,
         places = drawing.reference + displacement_scale * coordinates(displacement)
         dilations, rotations = dilation.batch().to_array(), rotation.batch().to_array()   # [faces], [faces]
         scale = max(np.abs(dilations).max(), np.abs(rotations).max())
-        panels = [(drawing.vertex_values(dilations / scale), dilation_surface),
-                  (drawing.vertex_values(rotations / scale), rotation_surface)]
+        panels = [(drawing.vertex_values(dilation / scale), dilation_surface),
+                  (drawing.vertex_values(rotation / scale), rotation_surface)]
         yield panel_image(drawing.draw(places, panels, [], []))

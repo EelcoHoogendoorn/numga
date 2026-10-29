@@ -32,7 +32,7 @@
 - [Weighted dual meshes](surfaces/weighted_dual/) — A convex polyhedron and its polar dual produce paired meshes on the sphere.
 - [Koebe polyhedra](surfaces/koebe/) — Circle tangencies construct polyhedra whose edges all touch the unit sphere.
 - [Lifts and reciprocal diagrams](surfaces/reciprocal/) — Heights on a planar mesh determine crease stresses and a reciprocal diagram.
-- [Spin transformations](surfaces/spin_transformations/) — A quaternion field deforms a surface to change its mean curvature while preserving angles.
+- [Spin transformations](surfaces/spin_transformations/) — A field of scaled rotors deforms a surface to change its mean curvature while preserving angles.
 - [Spinor waves](surfaces/dirac_waves/) — A sparse Dirac map propagates a spinor field over a triangulated sphere.
 - [Surface connections](surfaces/connections/) — Parallel transport constructs tangent fields, their singularities and stripe patterns on curved surfaces.
 - [Developable surfaces](surfaces/developability/) — A mesh flows towards patches that can be flattened without stretching.

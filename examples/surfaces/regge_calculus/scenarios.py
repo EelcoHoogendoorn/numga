@@ -6,7 +6,7 @@ import numpy as np
 
 from numga import concatenate, stack
 from numga.algebras import VGA2D as ga
-from numga.sparse import SparseExtensor, spdiag
+from numga.sparse import spdiag
 from examples import instantiate
 
 mesh_module = instantiate("examples.util.mesh", ga)
@@ -98,10 +98,10 @@ def main() -> None:
     )
 
     # 3. Steady conduction across flat, radially stretched, and circumferentially stretched geometry.
-    boundary = np.unique(mesh.edges[mesh.boundary_edges])
+    boundary = mesh.exterior(0)
     abscissa = (mv.x & vertices).batch()                                     # [vertices] Scalar+
     electrodes = boundary[abscissa[boundary].norm() > electrode_threshold]
-    pinned = SparseExtensor.selection(mv.context, electrodes, mesh.n_vertices)
+    pinned = mesh.reading(electrodes)
     prescribed = ~pinned * (pinned * (mv.x & vertices))                      # Scalar+[vertices]
     potential, current, streamfunction = intrinsic_conduction(
         mesh, vertices, conductivities, electrodes, prescribed,
@@ -129,8 +129,7 @@ def main() -> None:
     np.testing.assert_allclose((corner_rotors[0] * corner_rotors[1] * corner_rotors[2]).kernel, [-1.0, 0.0], atol=1e-14)
 
     np.testing.assert_allclose((defects.sites.sum() - 2 * np.pi * mv.xy).kernel, 0.0, atol=1e-12)
-    is_boundary = np.isin(np.arange(mesh.n_vertices), boundary)
-    np.testing.assert_allclose(defects.batch()[0, ~is_boundary].kernel, 0.0, atol=1e-13)
+    np.testing.assert_allclose(defects.batch()[0, mesh.interior(0)].kernel, 0.0, atol=1e-13)
     assert (curvatures.batch()[1, 0] & mv.xy.dual()) > 0
     assert (curvatures.batch()[2, 0] & mv.xy.dual()) < 0
 
@@ -142,7 +141,7 @@ def main() -> None:
     gradient = (spdiag(face_sides / (2 * face_patches)) * mesh.incidence[2, 0]).sum(axis=0) * Scalar
     conductance = gradient.adjugate()(spdiag(conductivities)(gradient))
     free_vertices = np.setdiff1d(np.arange(mesh.n_vertices), electrodes)
-    free = ~SparseExtensor.selection(mv.context, free_vertices, mesh.n_vertices) * Scalar
+    free = ~mesh.reading(free_vertices) * Scalar
     np.testing.assert_allclose(free.adjugate()(conductance(potential)).kernel, 0.0, atol=1e-11)
 
 

@@ -38,7 +38,7 @@ EDGE_WIDTH, RAY_WIDTH, ARC_WIDTH, VERTEX_RADIUS = 1.3, 1.0, 1.4, 3.0
 # --- plumbing -------------------------------------------------------------------------
 def coordinates(points: core.Point) -> np.ndarray:
     """x, y and z of each point, on the last axis."""
-    return points.cast(core.ga.subspace("yz zx xy")).kernel
+    return points.batch().cast(core.ga.subspace("yz zx xy")).kernel
 
 
 def arcs(ends: solids.Point) -> tuple[solids.Quadric, solids.Quadric]:
@@ -52,26 +52,25 @@ def arcs(ends: solids.Point) -> tuple[solids.Quadric, solids.Quadric]:
     return solids.half_space((solids.origin & start & end) * solids.flip), solids.half_space(across)
 
 
-def draw_complex(points: core.Point, faces: np.ndarray, duals: core.Point) -> plt.Figure:
+def draw_complex(mesh: core.Mesh, points: core.Point, duals: core.Point) -> plt.Figure:
     """In space, the polyhedron of the points and its polar dual; on the sphere, both projected from the
     centre."""
-    return image_figure(picture(points, faces, duals))
+    return image_figure(picture(mesh, points, duals))
 
 
-def picture(points: core.Point, faces: np.ndarray, duals: core.Point) -> np.ndarray:
+def picture(mesh: core.Mesh, points: core.Point, duals: core.Point) -> np.ndarray:
     """The two panels side by side: in space, the hull, opaque, with its edges, the dual's edges between the poles
     where a face of the dual bounding them faces the viewer, and each vertex on a stretch of its ray from the centre;
     on the sphere, the arcs of both."""
     view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, HALF), N_PIXELS)
     pixel = view.pixel
     xyz, poles = coordinates(points), coordinates(duals)                       # [points, 3], [faces, 3]
-    mesh = core.Mesh(len(xyz), faces)
     edges, beside = mesh.edges, mesh.edge_faces                                # [edges, 2], [edges, 2]
     vertices, dual_vertices = sm.point(xyz), sm.point(poles)                   # [points], [faces] Point
     sphere = solids.ball(solids.origin, 1.0)[None, None]                       # [1, 1] Plane+ <- Point-
     # The hull, folded or not, as one cone from the centre over each face, so that it is solid wherever its faces
     # are.
-    corners = np.concatenate([np.zeros((len(faces), 1, 3)), xyz[faces]], axis=1)   # [faces, 4, 3]
+    corners = np.concatenate([np.zeros((len(mesh.faces), 1, 3)), xyz[mesh.faces]], axis=1)   # [faces, 4, 3]
     hull = solids.polyhedra(sm.point(corners), CONE_FACES)                     # [faces, 4] Plane+
     # Each vertex coloured by its distance from the sphere, blue inside, grey on it, red outside, on a stretch of
     # the ray from the centre it moves along.
@@ -100,7 +99,7 @@ def picture(points: core.Point, faces: np.ndarray, duals: core.Point) -> np.ndar
     return np.concatenate([space, image], axis=1)
 
 
-def animate(frames: Iterable[tuple[core.Point, np.ndarray, core.Point]]) -> Iterator[np.ndarray]:
+def animate(frames: Iterable[tuple[core.Mesh, core.Point, core.Point]]) -> Iterator[np.ndarray]:
     """The complex at every frame, from one view."""
     for geometry in frames:
         yield picture(*geometry)

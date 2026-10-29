@@ -33,7 +33,6 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.spatial import Delaunay
 
 from numga import stack
 from numga.algebras import PGA3D as ga
@@ -171,15 +170,14 @@ def sheet(mesh: Mesh, points: Point, lengths: Scalar, curvature: Curvature, top:
 
 # --- plumbing -------------------------------------------------------------------------
 def flat_mesh(coords: np.ndarray, spacing: float) -> tuple[Mesh, Point]:
-    """The Delaunay triangulation of points in the xy plane `[vertices, 2]`, every face wound as the largest,
-    without the slivers along straight rows of the boundary, and its vertices. Which way that is the sheet reads off its
-    top side."""
-    faces = Delaunay(coords).simplices
-    first, second = coords[faces[:, 1]] - coords[faces[:, 0]], coords[faces[:, 2]] - coords[faces[:, 0]]
-    turning = first[:, 0] * second[:, 1] - first[:, 1] * second[:, 0]
-    faces = np.where((turning * turning[np.argmax(np.abs(turning))] < 0)[:, None], faces[:, [0, 2, 1]], faces)
+    """The Delaunay triangulation of points in the xy plane `[vertices, 2]`, its faces counter-clockwise, without the
+    slivers along straight rows of the boundary, and its vertices."""
     points = mv.point(np.concatenate([coords, np.zeros((len(coords), 1))], axis=-1)).field()   # Point-[vertices]
-    return Mesh(len(coords), faces[np.abs(turning) > 1e-6 * spacing ** 2]), points
+    delaunay = Mesh.triangulate(points)
+    # The plane through a face's corners has twice the face's area as its norm, all but nothing for a sliver.
+    a, b, c = delaunay.incidence[2, 0] * points                                  # Point-[faces], Point-[faces], Point-[faces]
+    kept = (a & b & c).norm().batch() > 1e-6 * spacing ** 2
+    return Mesh(len(coords), delaunay.faces[kept]), points
 
 
 def lattice(spacing: float, radius: float) -> np.ndarray:

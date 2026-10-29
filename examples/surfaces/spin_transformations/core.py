@@ -3,13 +3,13 @@
 https://www.cs.cmu.edu/~kmcrane/Projects/SpinTransformations/paper.pdf
 
 A spin transformation changes a surface's mean curvature by a prescribed amount while keeping every
-angle: a quaternion at each vertex turns and scales the edges around it. The quaternions are the field
-of least energy, the area-weighted squared residual of the Dirac operator less the curvature change, and
-the new vertices are those whose edges best match the turned ones. In the algebra of space the
-quaternions are the even multivectors, and the vertices and edges are points, antivectors, intrinsic,
-which in three dimensions are bivectors. The Dirac operator's couplings are bivectors, the curvature
-change a scalar against the sense the surface turns, and the operators are sparse linear maps between
-fields on the vertices, edges and faces, coupling their elements through multivectors.
+angle: a scaled rotor at each vertex, an even multivector, turns and scales the edges around it. The
+rotors are the field of least energy, the area-weighted squared residual of the Dirac operator less the
+curvature change, and the new vertices are those whose edges best match the turned ones. The vertices
+and edges are points, antivectors, intrinsic, which in three dimensions are bivectors. The Dirac
+operator's couplings are bivectors, the curvature change a scalar in the intrinsic unit of volume, so
+that the two share their orientation, and the operators are sparse linear maps between fields on the
+vertices, edges and faces, coupling their elements through multivectors.
 """
 
 from __future__ import annotations
@@ -30,6 +30,9 @@ Vector, Bivector = ga.gatype.vector(), ga.gatype.bivector()
 as_scalar, context = mesh_module.as_scalar, mesh_module.ctx
 
 Even = ga.gatype.even()
+# A volume, the join of three points, is an intrinsic scalar, and its unit gives an ordinary number that orientation.
+Volume = Scalar.derive.flipped_orientation                                     # Scalar-
+unit_volume = context.multivector(Volume, [1])                                 # [] Scalar-
 # Spot the cow, from the shared models, and the two quarter turns that stand her up facing along x: her y
 # axis, up in the file, turned onto z, and then x onto y.
 SPOT = MODEL_DIR / "spot.obj"
@@ -44,14 +47,6 @@ def cotangent_weights(mesh: Mesh, sides: Point) -> Scalar:
     after, before = sides[[1, 2, 0]], sides[[2, 0, 1]]                         # [3] Point-[faces], Point-[faces]
     cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()   # [3] Scalar+[faces]
     return (~mesh.incidence[2, 1] * (cotangents / 2)).sum(axis=0)
-
-
-def sense_of_space(mesh: Mesh, vertices: Point) -> Scalar:
-    """The sense the counter-clockwise faces give space is plus or minus one: the faces' corners meeting about the
-    origin, summed over the solid, over its size."""
-    a, b, c = mesh.incidence[2, 0] * vertices                                  # Point-[faces], Point-[faces], Point-[faces]
-    volume = (a & b & c).sites.sum()                                           # [] Scalar-
-    return volume / volume.norm()
 
 
 def corner_cosines(mesh: Mesh, vertices: Point) -> Scalar:
@@ -75,11 +70,11 @@ def spin_transform_deform(mesh: Mesh, vertices: Point, curvature_change: Scalar)
     edge_weights = spdiag(cotangent_weights(mesh, sides))                      # Scalar+[edges <- edges]
     laplacian = ~mesh.d[0] * edge_weights * mesh.d[0]                          # Scalar+[vertices <- vertices]
 
-    residual = (spdiag(sides / (2 * areas) - curvature_change * sense_of_space(mesh, vertices) / 3) * mesh.incidence[2, 0]).sum(axis=0)   # Even-[faces <- vertices]
+    residual = (spdiag(sides / (2 * areas) - curvature_change * unit_volume / 3) * mesh.incidence[2, 0]).sum(axis=0)   # Even-[faces <- vertices]
     _, (field,) = ((~residual * face_areas * residual) * Even).eigh(vertex_areas * Even, 1)   # Even+[vertices]
-    quaternions = field / ((vertex_areas * field).sites.sum() / areas.sites.sum())   # Even+[vertices]
-    moved = ((edge_means * (quaternions << Point))(edges) + 2 * ((edge_means * quaternions) << edges)) / 3   # Point-[edges]
-    return (laplacian * Point).lstsq(~mesh.d[0] * edge_weights * moved)
+    rotors = field / ((vertex_areas * field).sites.sum() / areas.sites.sum())   # Even+[vertices]
+    turned_edges = ((edge_means * (rotors << Point))(edges) + 2 * ((edge_means * rotors) << edges)) / 3   # Point-[edges]
+    return (laplacian * Point).lstsq(~mesh.d[0] * edge_weights * turned_edges)
 
 
 def dirac_spheres(mesh: Mesh, vertices: Point, eigenvalues: np.ndarray, count: int) -> tuple[Scalar, Point]:
@@ -100,11 +95,11 @@ def dirac_spheres(mesh: Mesh, vertices: Point, eigenvalues: np.ndarray, count: i
     edge_weights = spdiag(cotangent_weights(mesh, sides))                      # Scalar+[edges <- edges]
     laplacian = ~mesh.d[0] * edge_weights * mesh.d[0]                          # Scalar+[vertices <- vertices]
 
-    constant = as_scalar(eigenvalues[:, None]) * sense_of_space(mesh, vertices) / 3   # [eigenvalues, 1] Scalar-
+    constant = as_scalar(eigenvalues[:, None]) * unit_volume / 3   # [eigenvalues, 1] Scalar-
     residual = (spdiag(sides / (2 * areas) - constant) * mesh.incidence[2, 0]).sum(axis=-1)   # [eigenvalues] Even-[faces <- vertices]
-    energies, fields = ((~residual * face_areas * residual) * Even).eigh(vertex_areas * Even, count)   # [eigenvalues, count] Even+[vertices]
-    moved = ((edge_means * (fields << Point))(edges) + 2 * ((edge_means * fields) << edges)) / 3   # [eigenvalues, count] Point-[edges]
-    return energies, (laplacian * Point).lstsq(~mesh.d[0] * edge_weights * moved)
+    energies, eigenfields = ((~residual * face_areas * residual) * Even).eigh(vertex_areas * Even, count)   # [eigenvalues, count] Even+[vertices]
+    turned_edges = ((edge_means * (eigenfields << Point))(edges) + 2 * ((edge_means * eigenfields) << edges)) / 3   # [eigenvalues, count] Point-[edges]
+    return energies, (laplacian * Point).lstsq(~mesh.d[0] * edge_weights * turned_edges)
 
 
 def geometric_derivative(mesh: Mesh, vertices: Point) -> SparseExtensor:
@@ -128,9 +123,9 @@ def mean_curvature(mesh: Mesh, vertices: Point) -> Scalar:
     # Each vertex's normal: its faces' normals, each twice the face's area long, summed and made unit.
     normals = (~face_means * (sides[0] & sides[1])).normalized()               # Vector-[vertices]
     # The integrated mean-curvature normal, a displacement at each vertex, met with the vertex's normal: its
-    # signed size, read against the sense the faces give space.
-    integrated = ((laplacian * vertices) & normals) * sense_of_space(mesh, vertices)   # Scalar+[vertices]
-    return face_means * (integrated / (2 * (~face_means * areas)))             # Scalar+[faces]
+    # signed size, an intrinsic scalar, read as an ordinary one in the unit of volume.
+    integrated_curvature = ((laplacian * vertices) & normals) * unit_volume    # Scalar+[vertices]
+    return face_means * (integrated_curvature / (2 * (~face_means * areas)))             # Scalar+[faces]
 
 
 def recentred(vertices: Point) -> Point:

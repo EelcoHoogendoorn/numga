@@ -8,7 +8,7 @@ from __future__ import annotations
 import numpy as np
 
 from numga.algebras import VGA2D as ga
-from numga.sparse import SparseExtensor, spdiag
+from numga.sparse import spdiag
 from examples import instantiate
 
 mesh_module = instantiate("examples.util.mesh", ga)
@@ -73,9 +73,10 @@ def mesh_geometry(mesh: Mesh, vertices: Point, edge_squared_lengths: Scalar
     # the faces back to their vertices and summed, fall short of the flat turn by the defect.
     corner_mean = mesh.incidence[2, 0].mean(axis=0)                          # Scalar+[faces <- vertices]
     vertex_areas = ~corner_mean * intrinsic_areas                            # [...] Scalar+[vertices]
-    boundary = np.unique(mesh.edges[mesh.boundary_edges])
-    is_boundary = np.isin(np.arange(mesh.n_vertices), boundary)
-    target_turns = as_scalar(np.where(is_boundary, np.pi, 2 * np.pi)).field() * mv.xy  # Bivector+[vertices]
+    # A flat surface turns through a full turn around an interior vertex, and through half of one at the rim.
+    rim = mesh.reading(mesh.exterior(0))                                     # Scalar+[rim <- vertices]
+    full_turns = as_scalar(np.full(mesh.n_vertices, 2 * np.pi)).field() * mv.xy   # Bivector+[vertices]
+    target_turns = full_turns - ~rim * (rim * full_turns) / 2               # Bivector+[vertices]
     defects = target_turns - (~mesh.incidence[2, 0] * corner_turns).sum(axis=-1)  # [...] Bivector+[vertices]
     curvatures = defects / vertex_areas                                      # [...] Bivector+[vertices]
 
@@ -100,7 +101,7 @@ def intrinsic_conduction(mesh: Mesh, vertices: Point, conductivities: Conductivi
     # The adjugate carries each triangle's current response back to its vertex potentials.
     conductance = gradient.adjugate()(spdiag(conductivities)(gradient))      # [cases] (Amount- <- Scalar+)[vertices <- vertices]
     free_vertices = np.setdiff1d(np.arange(mesh.n_vertices), electrodes)
-    free = ~SparseExtensor.selection(mv.context, free_vertices, mesh.n_vertices) * Scalar  # (Scalar+ <- Scalar+)[vertices <- free]
+    free = ~mesh.reading(free_vertices) * Scalar                             # (Scalar+ <- Scalar+)[vertices <- free]
     rhs = -free.adjugate()(conductance(prescribed))                          # [cases] Amount-[free]
     potential = prescribed + free(free.adjugate()(conductance(free)).solve(rhs))  # [cases] Scalar+[vertices]
     integrated_flux = -conductivities(gradient(potential))                   # [cases] Point-[faces]
@@ -110,7 +111,7 @@ def intrinsic_conduction(mesh: Mesh, vertices: Point, conductivities: Conductivi
     # gives the area-weighted reference gradient of the streamfunction whose level curves follow the intrinsic flow.
     quarter_turn = (mv.xy * (-np.pi / 4)).exp()                              # [] Rotor+
     laplacian = gradient.adjugate()(spdiag(areas * Plane.dual())(gradient))  # (Amount- <- Scalar+)[vertices <- vertices]
-    unpinned = ~SparseExtensor.selection(mv.context, np.arange(1, mesh.n_vertices), mesh.n_vertices) * Scalar  # (Scalar+ <- Scalar+)[vertices <- unpinned]
+    unpinned = ~mesh.reading(np.arange(1, mesh.n_vertices)) * Scalar         # (Scalar+ <- Scalar+)[vertices <- unpinned]
     stream_rhs = unpinned.adjugate()(gradient.adjugate()(quarter_turn >> integrated_flux))  # [cases] Amount-[unpinned]
     streamfunction = unpinned(unpinned.adjugate()(laplacian(unpinned)).solve(stream_rhs))  # [cases] Scalar+[vertices]
     return potential, current, streamfunction

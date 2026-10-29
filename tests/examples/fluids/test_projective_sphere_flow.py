@@ -51,13 +51,13 @@ def test_projective_readings_and_quotient_derivative(ga):
 def test_fixed_sphere_diffusion_with_unequal_vertex_scales():
     core = scenarios.core
     mesh, vertices = core.Mesh.icosphere(scenarios.n_levels)
-    barycentric, triangles = scenarios.triangle_grid(scenarios.n_quadrature_divisions)
-    quadrature = barycentric[triangles].mean(axis=1)
+    grid, barycentric = scenarios.triangle_grid(scenarios.n_quadrature_divisions)
+    quadrature = (grid.incidence[2, 0].mean(axis=0) * core.as_scalar(barycentric).field()).batch()
     corners = mesh.incidence[2, 0] * vertices
     first, second, third = corners
-    chords = (corners[None, :] * quadrature).sum(axis=1)
+    chords = (corners[:, None] * quadrature).sum(axis=0)
     samples = chords.normalized()
-    measures = (first & second & third).norm() / (2 * len(quadrature) * chords.norm() ** 3)
+    measures = (first & second & third).norm() / (2 * quadrature.shape[-1] * chords.norm() ** 3)
     source = 2 * (core.mv.z & samples)
     reference, _ = core.diffusion(mesh, corners, samples, measures, source, core.Plane.dual())
     common_scale, _ = core.diffusion(mesh, 3.2 * corners, samples, measures, source, core.Plane.dual())

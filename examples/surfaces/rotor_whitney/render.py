@@ -97,8 +97,7 @@ def draw_darboux_whitney(
     fine_xyz = coordinates(fine_vertices)
     normal = np.cross(corner_xyz[1] - corner_xyz[0], corner_xyz[2] - corner_xyz[0])
     normal /= np.linalg.norm(normal)
-    edges = np.array([[0, 1], [1, 2], [2, 0]])
-    outline = boundary_lines(corner_xyz, edges, view)
+    outline = boundary_lines(fine_xyz, fine_mesh.edges[fine_mesh.boundary_edges], view)
     base = sheet(fine_xyz, fine_mesh.faces, surface_colour, view)
 
     n_inner_patches = 4
@@ -162,7 +161,7 @@ def draw_skyrmion(mesh: core.Mesh, vertices: core.Point, directors: core.Point) 
     sphere_frame = square_view(np.array([0.0, -42.0]), directors, 0.04)
     triangulation = Triangulation(places[:, 0], places[:, 1], mesh.faces)
     rings = concentric_paths(places)
-    boundary = np.unique(mesh.edges[mesh.boundary_edges])
+    boundary = mesh.exterior(0)
     angles = np.arctan2(places[boundary, 1], places[boundary, 0])
     ends = [boundary[np.argmin(np.abs(np.angle(np.exp(1j * (angles - angle)))))]
             for angle in np.linspace(-np.pi, np.pi, n_meridians, endpoint=False)]

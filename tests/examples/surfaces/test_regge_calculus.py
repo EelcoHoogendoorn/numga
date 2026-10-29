@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from numga.sparse import SparseExtensor, spdiag
+from numga.sparse import spdiag
 from examples.surfaces.regge_calculus import core, scenarios
 
 
@@ -75,10 +75,8 @@ def test_gauss_bonnet_curvature_defects_and_cotangent_inverse_metric():
     # Discrete Gauss-Bonnet holds to machine precision across flat, positively curved, and negatively curved metrics.
     np.testing.assert_allclose((defects.sites.sum() - 2 * np.pi * core.mv.xy).kernel, 0.0, atol=1e-12)
 
-    boundary = np.unique(mesh.edges[mesh.boundary_edges])
-    is_boundary = np.isin(np.arange(mesh.n_vertices), boundary)
-    np.testing.assert_allclose(defects.batch()[0, ~is_boundary].kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose(curvatures.batch()[0, ~is_boundary].kernel, 0.0, atol=1e-11)
+    np.testing.assert_allclose(defects.batch()[0, mesh.interior(0)].kernel, 0.0, atol=1e-13)
+    np.testing.assert_allclose(curvatures.batch()[0, mesh.interior(0)].kernel, 0.0, atol=1e-11)
 
     # Scaling squared radial and circumferential distances by one plus `radial_rates` and `hoop_rates` times the squared
     # radius gives the continuum surface a Gaussian curvature of `radial_rates - 3 * hoop_rates` at its centre.
@@ -133,17 +131,17 @@ def test_intrinsic_laplace_beltrami_cotangent_equivalence_and_flow():
     )
 
     # Steady electrode conduction balances intrinsic flux at every free vertex and bends flow by curvature.
-    boundary = np.unique(mesh.edges[mesh.boundary_edges])
+    boundary = mesh.exterior(0)
     abscissa = (core.mv.x & vertices).batch()
     electrodes = boundary[abscissa[boundary].norm() > scenarios.electrode_threshold]
-    pinned = SparseExtensor.selection(core.mv.context, electrodes, mesh.n_vertices)
+    pinned = mesh.reading(electrodes)
     prescribed = ~pinned * (pinned * (core.mv.x & vertices))
     potential, current, streamfunction = core.intrinsic_conduction(
         mesh, vertices, conductivities, electrodes, prescribed,
     )
 
     free_vertices = np.setdiff1d(np.arange(mesh.n_vertices), electrodes)
-    free = ~SparseExtensor.selection(core.mv.context, free_vertices, mesh.n_vertices) * core.Scalar
+    free = ~mesh.reading(free_vertices) * core.Scalar
     nodal_source = conductance(potential)
     np.testing.assert_allclose(free.adjugate()(nodal_source).kernel, 0.0, atol=1e-11)
     np.testing.assert_allclose(nodal_source.sites.sum().kernel, 0.0, atol=1e-11)

@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
-from examples.mechanics.freeform.geometry import Antivector
+from examples.mechanics.freeform.geometry import Antivector, Mesh
 from examples.util.wgsl import image_figure, meshes, solids
 
 n_pixels = 230
@@ -37,15 +37,15 @@ def picture(points: solids.Point, faces: np.ndarray, view: solids.View) -> np.nd
                        colour=meshes.plain, gloss=solids.gloss)
 
 
-def frames(vertices: Iterable[Antivector], faces: np.ndarray) -> Iterator[np.ndarray]:
-    """Draw a sequence of surfaces with a camera fixed by the first frame."""
+def frames(vertices: Iterable[Antivector], mesh: Mesh) -> Iterator[np.ndarray]:
+    """Draw a sequence of surfaces of the mesh's triangles with a camera fixed by the first frame."""
     states = [solids.mv.point(coordinates(state)) for state in vertices]
     view = viewport(states[0])
     for state in states:
-        yield picture(state, faces, view)
+        yield picture(state, mesh.faces, view)
 
 
-def draw(vertices: Antivector, faces: np.ndarray) -> plt.Figure:
-    """One surface without axes or margins."""
+def draw(vertices: Antivector, mesh: Mesh) -> plt.Figure:
+    """One surface of the mesh's triangles without axes or margins."""
     points = solids.mv.point(coordinates(vertices))
-    return image_figure(picture(points, faces, viewport(points)))
+    return image_figure(picture(points, mesh.faces, viewport(points)))

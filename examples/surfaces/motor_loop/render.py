@@ -8,7 +8,7 @@ import numpy as np
 
 from numga import stack
 from examples.surfaces.motor_loop import core
-from examples.surfaces.projective_loop.render import SURFACE_COLOUR, edges
+from examples.surfaces.projective_loop.render import SURFACE_COLOUR
 from examples.util.wgsl import meshes, solids
 
 sm = solids.mv
@@ -32,15 +32,16 @@ def coordinates(points: core.Point) -> np.ndarray:
     return ((stack((core.mv.x, core.mv.y, core.mv.z)) & batch[..., None]) / (core.mv.w & batch)[..., None]).to_array()
 
 
-def panel(frames: np.ndarray, surface: np.ndarray, control_faces: np.ndarray, faces: np.ndarray,
+def panel(frames: np.ndarray, surface: np.ndarray, control_mesh: core.Mesh, refined_mesh: core.Mesh,
           view: solids.View) -> np.ndarray:
     """Render a smooth-shaded surface `[refined, 3]` with its dashed control net and control-frame arrows `[axes + 1, vertices, 3]`."""
     pixel = view.pixel
     places = sm.point(surface)
+    faces = refined_mesh.faces
     sheet = meshes.samples(places, faces, SURFACE_COLOUR, meshes.smooth(places, faces), view, face_values=np.zeros(4),
                            colour=meshes.plain, gloss=solids.gloss)
     # Cut each edge of the control net into equal pieces, one fewer than twice the dash count, so every other piece is a dash.
-    ends = frames[0][edges(control_faces)]                                     # [edges, ends, 3]
+    ends = frames[0][control_mesh.edges]                                       # [edges, ends, 3]
     share = np.linspace(0, 1, 2 * N_DASHES).reshape(N_DASHES, 2)[..., None]    # [dashes, ends, 1]
     dashes = ends[:, None, None, 0] * (1 - share) + ends[:, None, None, 1] * share  # [edges, dashes, ends, 3]
     shafts, heads = solids.arrows(sm.point(np.broadcast_to(frames[0], frames[1:].shape)), sm.point(frames[1:]),
@@ -51,11 +52,11 @@ def panel(frames: np.ndarray, surface: np.ndarray, control_faces: np.ndarray, fa
     return solids.draw(marks, view, background, inks=[], translucent=[], meshes=[(sheet, 1.0)])
 
 
-def animate(control_frames: core.Point, surfaces: core.Point, control_faces: np.ndarray, faces: np.ndarray
+def animate(control_frames: core.Point, surfaces: core.Point, control_mesh: core.Mesh, refined_mesh: core.Mesh
             ) -> Iterator[np.ndarray]:
     """Yield side-by-side panels of the point-subdivided and motor-subdivided surfaces with their control net and frames for each animation frame."""
     frames, surfaces = coordinates(control_frames), coordinates(surfaces)      # [frames, axes + 1, vertices, 3], [frames, schemes, refined, 3]
     view = solids.view([sm.point(frames), sm.point(surfaces)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
     for index in range(len(frames)):
-        yield np.concatenate([panel(frames[index], surface, control_faces, faces, view) for surface in surfaces[index]],
+        yield np.concatenate([panel(frames[index], surface, control_mesh, refined_mesh, view) for surface in surfaces[index]],
                              axis=1)

@@ -64,9 +64,9 @@ def bond_cycle(n_steps: int) -> tuple[Displacement, Displacement, Displacement, 
     return anchor, reference, reference + cycle, states
 
 
-def shear_cycle(n_steps: int) -> tuple[Displacement, np.ndarray, Iterator[tuple[Displacement, Force, Scalar]]]:
+def shear_cycle(n_steps: int) -> tuple[Displacement, core.Mesh, Iterator[tuple[Displacement, Force, Scalar]]]:
     """Two shear deformations drive a patch around a closed cycle; work is per lattice cell."""
-    reference, edges, incidence = core.triangular_patch(N_PATCH_COLUMNS, N_PATCH_ROWS, SPACING)
+    mesh, reference = core.triangular_patch(N_PATCH_COLUMNS, N_PATCH_ROWS, SPACING)
 
     # The two shear amplitudes stretch along the axes, or along the diagonals between them.
     horizontal_shear = x * (mv.x & Displacement) - y * (mv.y & Displacement)  # Displacement- <- Displacement-
@@ -81,7 +81,7 @@ def shear_cycle(n_steps: int) -> tuple[Displacement, np.ndarray, Iterator[tuple[
     shear_response = bond_motion.adjugate()(response(bond_motion)).sum(axis=0)   # Force+ <- Shear-
 
     # Summing the same bond forces over the finite patch reveals its boundary loads.
-    gradient = incidence * Displacement                                       # (Displacement- <- Displacement-)[bonds <- sites]
+    gradient = mesh.d[0] * Displacement                                       # (Displacement- <- Displacement-)[bonds <- sites]
     edge_response = core.bond_response(gradient(reference).normalized(), actuation_plane, STIFFNESS, ACTIVITY)   # (Force+ <- Displacement-)[bonds]
     patch_response = gradient.adjugate()(spdiag(edge_response)(gradient))     # (Force+ <- Displacement-)[sites <- sites]
     patch_motion = strain(Shear, reference)                                   # (Displacement- <- Shear-)[sites]
@@ -89,19 +89,19 @@ def shear_cycle(n_steps: int) -> tuple[Displacement, np.ndarray, Iterator[tuple[
     cycle = SHEAR_AMPLITUDE * turns(n_steps)                                  # [steps + 1] Shear-
     states = ((reference + patch_motion(shear), patch_forces(shear), work)
               for shear, _, work in core.integrate_cycle(shear_response, cycle))
-    return reference, edges, states
+    return reference, mesh, states
 
 
-def lattice_wave(n_frames: int, n_steps_per_frame: int, dt: float) -> tuple[Displacement, np.ndarray, Iterator[tuple[Displacement, Scalar]]]:
+def lattice_wave(n_frames: int, n_steps_per_frame: int, dt: float) -> tuple[Displacement, core.Mesh, Iterator[tuple[Displacement, Scalar]]]:
     """A localized displacement excites damped waves in a free triangular patch."""
-    reference, edges, incidence = core.triangular_patch(N_WAVE_COLUMNS, N_WAVE_ROWS, SPACING)
-    bond_directions = (incidence * reference).normalized()                    # Displacement-[bonds]
+    mesh, reference = core.triangular_patch(N_WAVE_COLUMNS, N_WAVE_ROWS, SPACING)
+    bond_directions = (mesh.d[0] * reference).normalized()                    # Displacement-[bonds]
     response = core.bond_response(bond_directions, actuation_plane, WAVE_STIFFNESS, WAVE_ACTIVITY)   # (Force+ <- Displacement-)[bonds]
     drags = mv.scalar([[DRAG]] * N_WAVE_COLUMNS * N_WAVE_ROWS).field()        # Scalar+[sites]
-    evolution = core.evolution(incidence, response, drags)                    # (Velocity- <- Displacement-)[sites <- sites]
+    evolution = core.evolution(mesh.d[0], response, drags)                    # (Velocity- <- Displacement-)[sites <- sites]
     envelope = (-reference.scalar_norm_squared() / (2 * WAVE_WIDTH**2)).exp()   # Scalar+[sites]
     displacement = WAVE_AMPLITUDE * x * envelope * (WAVE_NUMBER * (mv.x & reference)).cos()   # Displacement-[sites]
-    return reference, edges, core.wave_states(reference, incidence, bond_directions, evolution, displacement, n_frames, n_steps_per_frame, dt)
+    return reference, mesh, core.wave_states(reference, mesh.d[0], bond_directions, evolution, displacement, n_frames, n_steps_per_frame, dt)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -120,9 +120,9 @@ def main() -> None:
     bond_states = list(bond_states)
     save_animation(render.bond_frames(anchor, reference, loop, [state[:2] for state in bond_states], force_scale),
                    "odd_elasticity_bond", duration_ms)
-    patch, edges, shear_states = shear_cycle(N_CYCLE_STEPS)
+    patch, mesh, shear_states = shear_cycle(N_CYCLE_STEPS)
     shear_states = list(shear_states)
-    save_animation(render.patch_frames(patch, edges, [state[:2] for state in shear_states], patch_force_scale),
+    save_animation(render.patch_frames(patch, mesh, [state[:2] for state in shear_states], patch_force_scale),
                    "odd_elasticity_shear", duration_ms)
     save_animation(render.wave_frames(*lattice_wave(N_WAVE_FRAMES, N_WAVE_STEPS_PER_FRAME, TIME_STEP), displacement_scale,
                                       extension_scale, tracked_index), "odd_elasticity_wave", duration_ms)

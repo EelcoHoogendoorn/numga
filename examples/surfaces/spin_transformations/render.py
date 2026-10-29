@@ -9,7 +9,9 @@ from itertools import chain
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.surfaces.spin_transformations.core import Mesh, Point, Scalar, ga
+from numga import stack
+
+from examples.surfaces.spin_transformations.core import Mesh, Point, Scalar
 from examples.util import charts
 from examples.util.wgsl import fitted, meshes, show, solids
 
@@ -38,9 +40,10 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 """, dict(outside_light=outside_light, outside_dark=outside_dark, inside_light=inside_light, inside_dark=inside_dark))
 
 
-def euclidean(points) -> np.ndarray:
-    """x, y and z of points, antivectors, on the last axis."""
-    return points.cast(ga.subspace("yz zx xy")).kernel
+def euclidean(points: Point) -> np.ndarray:
+    """x, y and z of points, antivectors, on the last axis: each point met with the planes x, y and z."""
+    mv = points.context.multivector
+    return (stack((mv.x, mv.y, mv.z)) & points.batch()[..., None]).to_array()
 
 
 def projective(vertices: Point) -> solids.Point:
@@ -79,8 +82,8 @@ def render_surface(mesh: Mesh, vertices: Point, reference: Point, view: solids.V
     solid checkerboard of cubes sampled on the reference vertices of the same mesh: straight squares on its flat
     faces, circles on a sphere."""
     points = projective(vertices)
-    original = euclidean(reference)
-    cells = original / np.abs(original).max() * squares / 2
+    reference_places = euclidean(reference)
+    cells = reference_places / np.abs(reference_places).max() * squares / 2
     return meshes.draw(points, mesh.faces, cells[mesh.faces], meshes.smooth(points, mesh.faces), view, background,
                        face_values=np.zeros(4), colour=checkerboard, gloss=solids.gloss)
 
@@ -95,16 +98,16 @@ def draw_surface(mesh: Mesh, vertices: Point, values: Scalar) -> plt.Figure:
     return figure
 
 
-def draw_dipole(mesh: Mesh, vertices: Point, curvature: Scalar, deformed: Point) -> plt.Figure:
-    """The sphere coloured by the curvature change it is given, and the surface that has it, at the deformed
+def draw_dipole(mesh: Mesh, vertices: Point, curvature: Scalar, transformed_vertices: Point) -> plt.Figure:
+    """The sphere coloured by the curvature change it is given, and the surface that has it, at the transformed
     vertices, textured with the sphere's checkerboard."""
     limit = np.abs(curvature.to_array()).max()
     figure, axes = plt.subplots(1, 2, figsize=(7, 3.5))
     bare(figure, axes)
     sphere_view = fitted(square_view(vertices, pixels), axes[0])
-    deformed_view = fitted(square_view(deformed, pixels), axes[1])
+    transformed_view = fitted(square_view(transformed_vertices, pixels), axes[1])
     show(axes[0], coloured(mesh, vertices, curvature, limit, sphere_view), sphere_view)
-    show(axes[1], render_surface(mesh, deformed, vertices, deformed_view), deformed_view)
+    show(axes[1], render_surface(mesh, transformed_vertices, vertices, transformed_view), transformed_view)
     return figure
 
 

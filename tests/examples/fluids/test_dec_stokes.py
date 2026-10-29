@@ -115,16 +115,19 @@ def test_obstacle_flow_balances_every_cell_and_preserves_boundary_flux():
     mesh, vertices, inlet, outlet, walls = scenarios.channel(12)
     operators, prescribed, (flux, pressure, vorticity, velocity) = flow(mesh, vertices, inlet, outlet)
     np.testing.assert_allclose((mesh.d[1] * flux).kernel, 0, atol=1e-10)
-    np.testing.assert_allclose(flux.batch()[mesh.boundary_edges].kernel,
-                               prescribed.batch()[mesh.boundary_edges].kernel, atol=1e-11)
-    np.testing.assert_allclose(flux.batch()[walls].kernel, 0, atol=1e-11)
+    on_boundary = SparseExtensor.selection(core.mv.context, mesh.boundary_edges, len(mesh.edges))
+    on_walls = SparseExtensor.selection(core.mv.context, walls, len(mesh.edges))
+    np.testing.assert_allclose((on_boundary * flux).kernel, (on_boundary * prescribed).kernel, atol=1e-11)
+    np.testing.assert_allclose((on_walls * flux).kernel, 0, atol=1e-11)
 
     # Summing oriented face boundaries cancels every interior edge and reads the net throughflow.
     one = core.mv.scalar(np.ones((len(mesh.faces), 1))).field()
     boundary = ~mesh.d[1] * one
-    outgoing = (boundary * flux).batch().to_array()
-    np.testing.assert_allclose(outgoing[inlet].sum(), -scenarios.HEIGHT, atol=1e-11)
-    np.testing.assert_allclose(outgoing[outlet].sum(), scenarios.HEIGHT, atol=1e-11)
+    outgoing = boundary * flux
+    on_inlet = SparseExtensor.selection(core.mv.context, inlet, len(mesh.edges))
+    on_outlet = SparseExtensor.selection(core.mv.context, outlet, len(mesh.edges))
+    np.testing.assert_allclose((on_inlet * outgoing).sites.sum().to_array(), -scenarios.HEIGHT, atol=1e-11)
+    np.testing.assert_allclose((on_outlet * outgoing).sites.sum().to_array(), scenarios.HEIGHT, atol=1e-11)
 
     abscissa = (core.mv.x & operators.face_centres).to_array()
     pressure_values = pressure.to_array()

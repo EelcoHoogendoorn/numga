@@ -12,7 +12,7 @@ from numga.sparse import SparseExtensor, spdiag
 from examples import instantiate
 
 mesh_module = instantiate("examples.util.mesh", Algebra("x+t-"))
-ga, Mesh, as_scalar, mv = mesh_module.ga, mesh_module.Mesh, mesh_module.as_scalar, mesh_module.mv
+ga, Mesh, mv = mesh_module.ga, mesh_module.Mesh, mesh_module.mv
 Scalar = ga.gatype.scalar()                                                  # Scalar+
 Plane = ga.gatype.vector()                                                   # Vector+
 Point = ga.gatype.antivector()                                               # Antivector-
@@ -110,10 +110,9 @@ def moving_mirror_wave(operators: Operators, n_space: int, n_time: int, dt: floa
     # Reflecting the Lorentzian dual across the observer's slice mv.t flips the temporal sign,
     # turning the Lagrangian density into the positive-definite Hamiltonian wave energy density.
     energy_density = -(field & (mv.t >> Plane.dual()(field))) / 2            # Scalar+[faces]
-    slab_indices = mesh.faces.min(axis=-1) // n_space
-    to_slabs = SparseExtensor.from_indices(
-        as_scalar(np.ones(len(mesh.faces)) / dt),
-        slab_indices, np.arange(len(mesh.faces)), (n_time - 1, len(mesh.faces)),
-    )                                                                        # Scalar+[layers <- faces]
-    slice_energies = (to_slabs * (operators.areas * energy_density)).batch() # [layers] Scalar+
+    # Each face lies in the time slab of its earliest corner; the reverse of reading each
+    # face's slab sums the faces into the slabs.
+    slab_indices = mesh.faces.min(axis=-1) // n_space                        # [faces]
+    to_slabs = ~SparseExtensor.selection(mv.context, slab_indices, n_time - 1)   # Scalar+[layers <- faces]
+    slice_energies = (to_slabs * (operators.areas * energy_density)).batch() / dt   # [layers] Scalar+
     return potential, field, wave_rate, slice_energies

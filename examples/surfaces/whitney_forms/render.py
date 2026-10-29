@@ -82,7 +82,7 @@ def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
     star_tri = Triangulation(*star_xy.T, triangles=star_mesh.faces)
     hat_values = np.asarray(vertex_hat.batch().to_array())
     star_grad_xy = coordinates(star_gradients.dual())
-    star_centres = star_xy[star_mesh.faces].mean(axis=1)
+    star_centres = coordinates(star_mesh.incidence[2, 0].mean(axis=0) * star_vertices)
     frame_panel(ax, star_xy, 0.14)
     ax.tripcolor(star_tri, hat_values, shading="gouraud", cmap=hat_colours,
                  norm=Normalize(0.0, 1.0), zorder=1)
@@ -101,9 +101,10 @@ def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
 
 
 def draw_edge_1forms(corners: core.Point, points: core.Point, edge_forms: core.Plane,
-                     left_corners: core.Point, left_points: core.Point, left_shared: core.Plane,
-                     right_corners: core.Point, right_points: core.Point, right_shared: core.Plane) -> plt.Figure:
-    """The three edge Whitney 1-forms on a single triangle and the shared-edge basis field across two faces."""
+                     diamond: core.Mesh, diamond_vertices: core.Point, diamond_points: core.Point,
+                     shared_forms: core.Plane) -> plt.Figure:
+    """The three edge Whitney 1-forms on a single triangle, and the shared edge's basis field `[samples] Plane+[faces]`
+    at the samples `[samples] Point-[faces]` of the two faces of the diamond."""
     corner_xy = coordinates(corners)
     sample_xy = coordinates(points)
     field_xy = coordinates(edge_forms.dual())
@@ -128,26 +129,27 @@ def draw_edge_1forms(corners: core.Point, points: core.Point, edge_forms: core.P
         ax.scatter(*corner_xy[index], s=42, color=primal_colour, edgecolor="white", linewidth=0.9, zorder=6)
 
     ax = axes[3]
-    left_xy, right_xy = coordinates(left_corners), coordinates(right_corners)
-    both_corners = np.vstack((left_xy, right_xy))
-    frame_panel(ax, both_corners, 0.16)
-    for tri_xy in (left_xy, right_xy):
+    places = coordinates(diamond_vertices)
+    frame_panel(ax, places, 0.16)
+    for tri_xy in places[diamond.faces]:
         ax.add_patch(Polygon(tri_xy, facecolor="#f6f4ee", edgecolor=wall_colour, linewidth=1.1, zorder=1))
-    diamond_samples = np.vstack((coordinates(left_points), coordinates(right_points)))
-    diamond_vectors = np.vstack((coordinates(left_shared.dual()), coordinates(right_shared.dual())))
+    # Face by face, the samples and the field at them.
+    diamond_samples = coordinates(diamond_points).transpose(1, 0, 2).reshape(-1, 2)
+    diamond_vectors = coordinates(shared_forms.dual()).transpose(1, 0, 2).reshape(-1, 2)
     diamond_max = np.linalg.norm(diamond_vectors, axis=-1).max()
     ax.quiver(diamond_samples[:, 0], diamond_samples[:, 1],
               diamond_vectors[:, 0], diamond_vectors[:, 1],
               color=primal_colour, angles="xy", scale_units="xy", scale=5.5 * diamond_max,
               width=0.0085, headwidth=3.8, headlength=4.5, pivot="mid", zorder=3)
-    start, end = left_xy[0], left_xy[1]
+    start, end = places[diamond.edges[diamond.interior_edges[0]]]
     ax.plot([start[0], end[0]], [start[1], end[1]], color=accent_colour, linewidth=2.4, zorder=4)
     middle, edge_vec = (start + end) / 2, end - start
     ax.annotate("", xy=middle + 0.2 * edge_vec, xytext=middle - 0.2 * edge_vec,
                 arrowprops=dict(arrowstyle="-|>", mutation_scale=12, color=accent_colour, linewidth=2.0),
                 zorder=5)
-    ax.scatter(*left_xy[2], s=38, color=primal_colour, edgecolor="white", linewidth=0.9, zorder=6)
-    ax.scatter(*right_xy[2], s=38, color=primal_colour, edgecolor="white", linewidth=0.9, zorder=6)
+    # The corners across the shared edge, in the face on its left and in the face on its right.
+    for apex in places[diamond.edge_opposites[0]]:
+        ax.scatter(*apex, s=38, color=primal_colour, edgecolor="white", linewidth=0.9, zorder=6)
     return figure
 
 

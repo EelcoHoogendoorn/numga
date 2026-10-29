@@ -30,13 +30,13 @@ def test_edge_collapse_minimizes_joint_error():
     """Verify that edge collapse combines incident quadrics and finds the joint minimum."""
     from examples.surfaces.qem import scenarios
 
-    vertices, faces, _, _, quadric_a, quadric_b, edge_quadric, optimum, _, _ = scenarios.qem()
-    face_planes = (vertices[faces[:, 0]] & vertices[faces[:, 1]] & vertices[faces[:, 2]]).normalized()
+    ridge, vertices, _, _, quadric_a, quadric_b, edge_quadric, optimum, _, _ = scenarios.qem()
+    corners = ridge.incidence[2, 0] * vertices
+    face_planes = (corners[0] & corners[1] & corners[2]).normalized().batch()
 
     # Flanking planes pass through both edge endpoints a and b:
     flank_planes = face_planes[[0, 1]]
-    vertex_a = vertices[0]
-    vertex_b = vertices[1]
+    vertex_a, vertex_b = (ridge.reading(scenarios.RIDGE_EDGE) * vertices).batch()
     np.testing.assert_allclose((flank_planes & vertex_a).to_array(), 0.0, atol=1e-12)
     np.testing.assert_allclose((flank_planes & vertex_b).to_array(), 0.0, atol=1e-12)
 
@@ -94,29 +94,31 @@ def icosahedron():
         [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
         [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
     ])
-    return mv.point(positions), faces
+    return core.Mesh(len(positions), faces), mv.point(positions).field()
 
 
 def test_repeated_collapses_preserve_closed_mesh_and_original_plane_error():
-    vertices, faces = icosahedron()
-    initial_faces = faces.copy()
-    initial_planes = (vertices[faces[:, 0]] & vertices[faces[:, 1]] & vertices[faces[:, 2]]).normalized()
-    clusters = [{index} for index in range(len(vertices))]
+    mesh, vertices = icosahedron()
+    initial_corners = mesh.incidence[2, 0] * vertices
+    initial_planes = (initial_corners[0] & initial_corners[1] & initial_corners[2]).normalized()
+    clusters = [{index} for index in range(mesh.n_vertices)]
     targets = (18, 16, 14, 12)
-    snapshots = list(core.simplify(vertices, faces, targets))
-    assert [len(faces) for _, faces in snapshots] == [20, *targets]
+    snapshots = list(core.simplify(mesh, vertices, targets))
+    assert [len(mesh.faces) for mesh, _ in snapshots] == [20, *targets]
 
-    for (old_vertices, old_faces), (new_vertices, new_faces) in zip(snapshots, snapshots[1:]):
+    for (old_mesh, old_vertices), (new_mesh, new_vertices) in zip(snapshots, snapshots[1:]):
+        old_faces, new_faces = old_mesh.faces, new_mesh.faces
+        old_vertices, new_vertices = old_vertices.batch(), new_vertices.batch()
         np.testing.assert_allclose((mv.w & new_vertices).to_array(), 1, atol=1e-12)
         assert np.isfinite(new_vertices.kernel).all()
         assert new_faces.min() == 0 and new_faces.max() == len(new_vertices) - 1
         assert len(np.unique(new_faces)) == len(new_vertices)
         assert len(np.unique(np.sort(new_faces, axis=1), axis=0)) == len(new_faces)
         assert np.all(np.diff(np.sort(new_faces, axis=1), axis=1) > 0)
-        edges, incidence = np.unique(np.sort(np.stack((new_faces, np.roll(new_faces, -1, axis=1)), axis=-1)
-                                             .reshape(-1, 2), axis=1), axis=0, return_counts=True)
-        np.testing.assert_array_equal(incidence, 2)
-        assert len(new_vertices) - len(edges) + len(new_faces) == 2
+        # Every edge lies between two faces, and the surface is a sphere.
+        faces_at_edges = ~new_mesh.incidence[2, 1].sum(axis=0) * core.as_scalar(np.ones(len(new_faces))).field()
+        np.testing.assert_array_equal(faces_at_edges.to_array(), 2)
+        assert new_mesh.n_vertices - len(new_mesh.edges) + len(new_faces) == 2
 
         # Unmoved vertices identify the two merged clusters even after compact renumbering.
         equal = np.all(old_vertices.kernel[:, None, :] == new_vertices.kernel[None, :, :], axis=-1)
@@ -136,19 +138,22 @@ def test_repeated_collapses_preserve_closed_mesh_and_original_plane_error():
         mapped_faces = old_to_new[old_faces]
         surviving_mask = np.all(np.diff(np.sort(mapped_faces, axis=1), axis=1) > 0, axis=1)
         assert set(map(tuple, np.sort(mapped_faces[surviving_mask], axis=1))) == set(map(tuple, np.sort(new_faces, axis=1)))
-        old_planes = old_vertices[old_faces[surviving_mask, 0]] & old_vertices[old_faces[surviving_mask, 1]] & old_vertices[old_faces[surviving_mask, 2]]
-        new_planes = new_vertices[mapped_faces[surviving_mask, 0]] & new_vertices[mapped_faces[surviving_mask, 1]] & new_vertices[mapped_faces[surviving_mask, 2]]
+        old_corners = core.Mesh(old_mesh.n_vertices, old_faces[surviving_mask]).incidence[2, 0] * old_vertices.field()
+        new_corners = core.Mesh(new_mesh.n_vertices, mapped_faces[surviving_mask]).incidence[2, 0] * new_vertices.field()
+        old_planes = old_corners[0] & old_corners[1] & old_corners[2]
+        new_planes = new_corners[0] & new_corners[1] & new_corners[2]
         assert np.all((old_planes | new_planes) > 0)
 
         # The replacement vertex minimizes all initial planes inherited by its cluster, including
-        # multiplicities. Rebuilding quadrics from the current triangles loses this condition.
-        inherited_faces = np.concatenate([np.flatnonzero(np.any(initial_faces == vertex, axis=1)) for vertex in merged_cluster])
-        planes = initial_planes[inherited_faces]
+        # multiplicities: each initial face counts once for each of its corners in the cluster.
+        # Rebuilding quadrics from the current triangles loses this condition.
+        in_cluster = core.as_scalar(np.isin(np.arange(mesh.n_vertices), list(merged_cluster))).field()
+        multiplicities = mesh.incidence[2, 0].sum(axis=0) * in_cluster                  # Scalar+[faces]
         optimum = new_vertices[added_indices[0]]
         step = 1e-4
         directions = mv.point(np.eye(3)) - mv.point([0, 0, 0])
-        forward = ((planes[:, None] & (optimum + step * directions)).squared()).sum(axis=0)
-        backward = ((planes[:, None] & (optimum - step * directions)).squared()).sum(axis=0)
+        forward = (multiplicities.batch()[:, None] * (initial_planes.batch()[:, None] & (optimum + step * directions)).squared()).sum(axis=0)
+        backward = (multiplicities.batch()[:, None] * (initial_planes.batch()[:, None] & (optimum - step * directions)).squared()).sum(axis=0)
         np.testing.assert_allclose(((forward - backward) / (2 * step)).to_array(), 0, atol=1e-9)
         clusters = next_clusters
 

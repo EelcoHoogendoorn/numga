@@ -7,21 +7,28 @@ from pathlib import Path
 import numpy as np
 from scipy.stats import qmc
 
-from numga import NumpyContext
+from numga import stack
 from numga.algebras import VGA3D
+from examples import instantiate
 
-mv = NumpyContext(VGA3D).multivector
+mesh_module = instantiate("examples.util.mesh", VGA3D)
+Mesh, mv = mesh_module.Mesh, mesh_module.mv
 # Points are antivectors.
 Antivector = VGA3D.gatype.antivector()
 n_ray_batch = 256
 
 
-def interior(points: np.ndarray, vertices: np.ndarray, faces: np.ndarray) -> np.ndarray:
-    """Classify points by the parity of their crossings with a closed triangle mesh."""
-    triangles = vertices[faces]
-    origin = triangles[:, 0]
-    first = triangles[:, 1] - origin
-    second = triangles[:, 2] - origin
+def coordinates(points: Antivector) -> np.ndarray:
+    """Cartesian positions `[..., 3]` for the samplers, read by pairing with the planes across the axes."""
+    return (stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array()
+
+
+def interior(points: np.ndarray, triangles: np.ndarray) -> np.ndarray:
+    """Classify points by the parity of their crossings with a closed surface of triangles, their corners
+    `[3, triangles, 3]`."""
+    origin = triangles[0]
+    first = triangles[1] - origin
+    second = triangles[2] - origin
     determinant = first[:, 1] * second[:, 2] - first[:, 2] * second[:, 1]
     transverse = determinant != 0
     origin, first, second = origin[transverse], first[transverse], second[transverse]
@@ -39,13 +46,15 @@ def interior(points: np.ndarray, vertices: np.ndarray, faces: np.ndarray) -> np.
     return inside
 
 
-def volume_samples(vertices: np.ndarray, faces: np.ndarray,
-                   n_samples: int) -> tuple[np.ndarray, np.ndarray]:
+def volume_samples(mesh: Mesh, vertices: Antivector, n_samples: int) -> tuple[Antivector, np.ndarray]:
     """Equal-volume quadrature from low-discrepancy samples inside a closed mesh."""
-    lower, upper = vertices.min(axis=0), vertices.max(axis=0)
-    triangles = vertices[faces]
-    volume = abs(np.einsum("ij,ij->i", triangles[:, 0],
-                          np.cross(triangles[:, 1], triangles[:, 2])).sum()) / 6
+    corners = mesh.incidence[2, 0] * vertices                    # [corners] Antivector-[faces]
+    first, second, third = corners
+    # The enclosed volume: the cones the faces span from the origin, each the join of its corners, summed.
+    volume = abs((first & second & third).sites.sum().to_array()) / 6
+    places = coordinates(vertices.batch())                       # [vertices, 3]
+    lower, upper = places.min(axis=0), places.max(axis=0)
+    triangles = coordinates(corners.batch())                     # [3, faces, 3]
     occupancy = volume / np.prod(upper - lower)
     n_candidates = 2 ** int(np.ceil(np.log2(1.2 * n_samples / occupancy)))
     sequence = qmc.Sobol(3, scramble=True, seed=0)
@@ -53,11 +62,11 @@ def volume_samples(vertices: np.ndarray, faces: np.ndarray,
     n_inside = 0
     while n_inside < n_samples:
         candidates = lower + sequence.random(n_candidates) * (upper - lower)
-        accepted = candidates[interior(candidates, vertices, faces)]
+        accepted = candidates[interior(candidates, triangles)]
         samples.append(accepted)
         n_inside += len(accepted)
     positions = np.concatenate(samples)[:n_samples]
-    return positions, np.full(n_samples, volume / n_samples)
+    return mv.vector(positions).dual(), np.full(n_samples, volume / n_samples)
 
 
 def center_indices(points: np.ndarray, n_centers: int) -> np.ndarray:
@@ -72,19 +81,16 @@ def center_indices(points: np.ndarray, n_centers: int) -> np.ndarray:
 
 
 def load(path: Path, height: float, n_quadrature: int,
-         n_centers: int) -> tuple[Antivector, np.ndarray, Antivector, np.ndarray, Antivector]:
-    """A y-up triangular OBJ, upright on z=0, with volume samples and kernel centers."""
-    records = path.read_text().splitlines()
-    vertices = np.array([[float(value) for value in line.split()[1:4]]
-                         for line in records if line.startswith("v ")])
-    faces = np.array([[int(value.split("/")[0]) - 1 for value in line.split()[1:4]]
-                      for line in records if line.startswith("f ")])
-    lower, upper = vertices.min(axis=0), vertices.max(axis=0)
-    center = (lower + upper) / 2
-    center[1] = lower[1]
-    vertices = (vertices - center) * (height / (upper[1] - lower[1]))
-    quadrature, weights = volume_samples(vertices, faces, n_quadrature)
-    centers = quadrature[center_indices(quadrature, n_centers)]
+         n_centers: int) -> tuple[Mesh, Antivector, Antivector, np.ndarray, Antivector]:
+    """A y-up triangular OBJ, upright on z=0 and `height` tall, its vertices a batch of points for the
+    deformation to move, with volume samples and kernel centers."""
+    mesh, vertices = Mesh.read(path, height)                     # Antivector-[vertices]
+    # Each vertex's height, its pairing with the plane y = 0, and the extent of the heights.
+    heights = mv.y & vertices.batch()                            # [vertices] Scalar+
+    extent = heights[heights.argmax()] - heights[heights.argmin()]   # [] Scalar+
+    # As tall as `height` along y, its lowest point lifted onto the plane y = 0.
+    vertices = vertices * (height / extent) + mv.y.dual() * (height / 2)   # Antivector-[vertices]
+    samples, weights = volume_samples(mesh, vertices, n_quadrature)   # [samples] Antivector-, [samples]
+    centers = samples[center_indices(coordinates(samples), n_centers)]   # [centers] Antivector-
     upright = (-mv.yz * (np.pi / 4)).exp()
-    return (upright >> mv.vector(vertices).dual(), faces, upright >> mv.vector(quadrature).dual(),
-            weights, upright >> mv.vector(centers).dual())
+    return mesh, upright >> vertices.batch(), upright >> samples, weights, upright >> centers

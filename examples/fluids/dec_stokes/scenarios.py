@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import concatenate, stack
+from numga import concatenate
 from numga.algebras import VGA2D as ga
 from examples import instantiate
 
@@ -55,14 +55,10 @@ def channel_vertices(n_divisions: int) -> tuple[Point, Point, np.ndarray, np.nda
 def triangulate(vertices: Point, hole: np.ndarray, inlet: np.ndarray, outlet: np.ndarray
                 ) -> tuple[Mesh, Point, np.ndarray, np.ndarray, np.ndarray]:
     """Delaunay connectivity with a polygonal hole and the three sets of boundary edges."""
-    from scipy.spatial import Delaunay
-
-    coordinates = (stack((mv.x, mv.y)) & vertices.batch()[..., None]).to_array()
-    faces = Delaunay(coordinates).simplices
+    delaunay = Mesh.triangulate(vertices)
     # The obstacle's boundary edges are present in the triangulation; its interior consists
     # exactly of triangles with all three corners on that boundary.
-    faces = faces[~np.isin(faces, hole).all(axis=1)]
-    mesh = Mesh(len(coordinates), faces)
+    mesh = Mesh(delaunay.n_vertices, delaunay.faces[~np.isin(delaunay.faces, hole).all(axis=1)])
     boundary = mesh.boundary_edges
     inlet_edges = boundary[np.isin(mesh.edges[boundary], inlet).all(axis=1)]
     outlet_edges = boundary[np.isin(mesh.edges[boundary], outlet).all(axis=1)]

@@ -111,8 +111,8 @@ def test_actuation_and_short_circuit_sensing_are_reciprocal(device):
     fixed = np.array([], dtype=int)
     actuator, _, _ = solve(mesh, blocks, VOLTAGE, 0, fixed)
     _, _, sensor_charge = solve(mesh, blocks, 0, FORCE, fixed)
-    tip = SparseExtensor.selection(core.ctx, mesh.tip, mesh.n_vertices)
-    top = SparseExtensor.selection(core.ctx, mesh.top, mesh.n_vertices)
+    tip = mesh.reading(mesh.tip)
+    top = mesh.reading(mesh.top)
     weights = np.ones(len(mesh.tip))
     weights[[0, -1]] = 0.5
     tip_motion = ((core.mv.y & (tip * actuator)) * core.mv.scalar(weights[:, None]).field()).sites.sum() / weights.sum()
@@ -129,7 +129,7 @@ def test_floating_electrode_is_equipotential_and_conserves_charge(device):
     n_vertices = mesh.n_vertices
     interior = np.setdiff1d(np.arange(n_vertices), np.concatenate((mesh.bottom, mesh.top)))
     free = np.setdiff1d(np.arange(n_vertices), mesh.clamped)
-    top = SparseExtensor.selection(core.ctx, mesh.top, mesh.n_vertices)
+    top = mesh.reading(mesh.top)
     voltage = (top * potential).sites.mean()
 
     assert np.abs(voltage.kernel).max() > 1e-6
@@ -205,7 +205,7 @@ def test_refinement_approaches_the_slender_bimorph_response(material):
         areas, gradients = core.triangles(mesh, vertices)
         blocks = core.assemble(mesh, areas, gradients, *material, poling, WIDTH)
         displacement, _, _ = solve(mesh, blocks, VOLTAGE, 0, np.array([], dtype=int))
-        tip = SparseExtensor.selection(core.ctx, mesh.tip, mesh.n_vertices)
+        tip = mesh.reading(mesh.tip)
         weights = np.ones(len(mesh.tip))
         weights[[0, -1]] = 0.5
         tip_motion = ((core.mv.y & (tip * displacement)) * core.mv.scalar(weights[:, None]).field()).sites.sum() / weights.sum()

@@ -47,8 +47,9 @@ class DeviceView:
         self.displacement_scale = displacement_scale
         self.voltage_norm = Normalize(-voltage_scale / 2, voltage_scale / 2)
         self.strain_norm = Normalize(-strain_scale, strain_scale)
-        self.corner_weights = np.repeat(scalars(areas), 3)
-        self.vertex_weights = np.bincount(mesh.faces.ravel(), weights=self.corner_weights)
+        # Each face's area shared among its corners, for area-weighted readings of face values at the vertices.
+        self.corner_shares = ~mesh.incidence[2, 0].mean(axis=0)                 # Scalar+[vertices <- faces]
+        self.areas, self.vertex_areas = areas, self.corner_shares * areas
         left, lower = self.rest.min(axis=0)
         right, upper = self.rest.max(axis=0)
         length, self.thickness = right - left, upper - lower
@@ -94,10 +95,10 @@ class DeviceView:
                axial_strain: core.Scalar) -> plt.Figure:
         points = self.rest + self.displacement_scale * coordinates(displacement)
         # Area-weighted nodal readings give a continuous display of the piecewise-constant element strain.
-        strain = np.bincount(self.mesh.faces.ravel(),
-                             weights=self.corner_weights * np.repeat(scalars(axial_strain), 3))
+        # The strain comes per triangle, a batch over the faces; as a field over them it reaches the vertices.
+        strain = scalars(self.corner_shares * (self.areas * axial_strain.field()) / self.vertex_areas)
         self.triangulation.x, self.triangulation.y = points.T
-        self.body.set_array(strain / self.vertex_weights)
+        self.body.set_array(strain)
         self.bond.set_data(*points[self.interface].T)
         self.end.set_data(*points[self.tip].T)
 

@@ -42,17 +42,17 @@ def tip(points: core.Point, length: float) -> core.Point:
     return (core.shift_along_beam * (length / 2)).exp() >> points
 
 
-def cantilever(nodes: core.Point, ends: np.ndarray, thickness: np.ndarray, loads: core.Forque, length: float,
+def cantilever(mesh: core.Mesh, nodes: core.Point, thickness: core.Scalar, loads: core.Forque, length: float,
                shear_modulus: float) -> tuple[core.Twist, core.Motor, core.Strain, core.Scalar]:
     """A cantilever of a length, under load lines at its tip, batched over loads: the strain of each piece
     `[..., pieces]`, the frame of each cross-section `[..., pieces + 1]`, the principal bending axes `[2]`,
-    and the stress at the clamp at the ends of the section's walls `[..., walls, 2]`."""
+    and the stress at the clamp at the ends of the section's walls `[..., ends] Scalar+[walls]`."""
     step = length / N_PIECES
     # The middle of each piece.
     stations = (np.arange(N_PIECES) + 0.5) * step                             # [pieces]
-    walls = nodes[ends]                                                     # [walls, 2] Point-
+    walls = mesh.incidence[1, 0] * nodes                                    # [ends] Point-[walls]
     rigidity = core.bending(walls, thickness, MODULUS)                      # [] Resultant <- Strain
-    whole = core.stiffness(nodes, ends, thickness, MODULUS, shear_modulus)  # [] Forque- <- Twist+
+    whole = core.stiffness(mesh, nodes, thickness, MODULUS, shear_modulus)  # [] Forque- <- Twist+
     # Lever arms are measured on the straight reference beam. A strain moves the frames by
     # `exp(strain * step / 2)`, against its own sense, so it is solved against the load turned in sign.
     strains = whole.solve(-core.loads_at_stations(loads, stations))         # [..., pieces] Twist+
@@ -60,7 +60,7 @@ def cantilever(nodes: core.Point, ends: np.ndarray, thickness: np.ndarray, loads
     # Principal bending axes pass through the centroid; the metric does not see the shift along the
     # beam. Weakest first, then the shift.
     _, axes = (Strain | Strain).eigh(Strain & rigidity)                    # [3] Strain+
-    stress = core.stress(strains[..., 0, None, None], MODULUS, walls)      # [..., walls, 2] Scalar+
+    stress = core.stress(strains[..., 0, None], MODULUS, walls)            # [..., ends] Scalar+[walls]
     return strains, frames, axes[:2], stress
 
 
@@ -77,17 +77,17 @@ def across_points() -> core.Point:
     return start * (1 - fractions) + end * fractions                        # [frames] Point-
 
 
-def push_section(nodes: core.Point, ends: np.ndarray, thickness: np.ndarray, points: core.Point
+def push_section(mesh: core.Mesh, nodes: core.Point, thickness: core.Scalar, points: core.Point
                  ) -> tuple[core.Strain, core.Scalar, core.Strain]:
     """Pushes along the beam through points of a section: their strains `[pushes]` and stresses at the
-    ends of the section's walls `[pushes, walls, 2]`; and the polar of every node `[nodes]`, the neutral
+    ends of the section's walls `[pushes, ends] Scalar+[walls]`; and the polar of every node `[nodes]`, the neutral
     axis of a pull through it. By reciprocity a pull through a point on a node's polar leaves that node's
     fibre unstretched, so the polars bound the kern, the points whose push squeezes every fibre."""
-    walls = nodes[ends]                                                     # [walls, 2] Point-
+    walls = mesh.incidence[1, 0] * nodes                                    # [ends] Point-[walls]
     rigidity = core.bending(walls, thickness, MODULUS)                      # [] Resultant <- Strain
     strains = -PUSH * core.pulls(rigidity, points)                          # [pushes] Strain+
-    stress = core.stress(strains[..., None, None], MODULUS, walls)           # [pushes, walls, 2] Scalar+
-    return strains, stress, core.pulls(rigidity, nodes)
+    stress = core.stress(strains[..., None], MODULUS, walls)                # [pushes, ends] Scalar+[walls]
+    return strains, stress, core.pulls(rigidity, nodes.batch())
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -97,7 +97,7 @@ def main() -> None:
 
     sections = section_walls()
     down = LOAD * -up_direction                                              # [] Point-
-    centres = [core.centroid(nodes[ends], thickness) for nodes, ends, thickness in sections]
+    centres = [core.centroid(mesh.incidence[1, 0] * nodes, thickness) for mesh, nodes, thickness in sections]
     beams = [cantilever(*section, tip(centre, LENGTH) & down, LENGTH, SHEAR_MODULUS) for section, centre in zip(sections, centres)]
     zed = sections[NAMES.index("Z-section")]
     turning = turning_loads()
@@ -135,12 +135,12 @@ def main() -> None:
     assert twist_rates[0] * twist_rates[-1] < 0
     passing = np.argmin(np.abs(render.flat(across)[:, 0] - render.flat(shear_centres[-1])[0]))
     assert np.abs(twist_rates[passing]) < 0.1 * np.abs(twist_rates).max()
-    for (nodes, ends, thickness), (strains, stress, polars) in zip(sections, pushes):
+    for (mesh, nodes, thickness), (strains, stress, polars) in zip(sections, pushes):
         # The push inside the kern squeezes every fibre; the one outside stretches some.
-        squeezed = stress.to_array()                                         # [pushes, walls, 2]
+        squeezed = stress.to_array()                                         # [pushes, ends, walls]
         assert squeezed[0].max() < 0 and squeezed[1].max() > 0
         # A pull through one point stretches the fibre through another as much as the exchanged pull.
-        rigidity = core.bending(nodes[ends], thickness, MODULUS)
+        rigidity = core.bending(mesh.incidence[1, 0] * nodes, thickness, MODULUS)
         first, second = core.pulls(rigidity, points[0]), core.pulls(rigidity, points[1])
         exchanged = (first & (core.beam_direction & points[1])) - (second & (core.beam_direction & points[0]))
         assert np.abs(exchanged.to_array()).max() < 1e-12

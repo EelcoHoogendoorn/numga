@@ -6,7 +6,7 @@ import sys
 import numpy as np
 
 from numga import stack
-from numga.sparse import SparseExtensor, spdiag
+from numga.sparse import spdiag
 from examples.surfaces.rotor_whitney import core, scenarios
 
 
@@ -88,7 +88,7 @@ def test_skyrmion_topological_charge_and_cotangent_trace():
         (scalar_parts.squared() + bivector_norms.squared()).kernel, 1.0, atol=1e-14,
     )
     np.testing.assert_allclose(scalar_parts.batch()[0].kernel, 1.0, atol=1e-14)
-    boundary = np.unique(mesh.edges[mesh.boundary_edges])
+    boundary = mesh.exterior(0)
     np.testing.assert_allclose(scalar_parts.batch()[boundary].kernel, 0.0, atol=1e-13)
     np.testing.assert_allclose((core.mv.z & directors.batch()[0]).kernel, 1.0, atol=1e-14)
     np.testing.assert_allclose((core.mv.z & directors.batch()[boundary]).kernel, -1.0, atol=1e-13)
@@ -143,8 +143,8 @@ def test_harmonic_rotor_frames_and_projected_relaxation():
     assert harmonic_rotors.batch().gatype == core.Rotor
 
     # The chord field satisfies the linear Laplace equation; normalized frames preserve boundary values.
-    free_vertices = np.setdiff1d(np.arange(mesh.n_vertices), boundary)
-    free = ~SparseExtensor.selection(core.mv.context, free_vertices, mesh.n_vertices) * core.Rotor
+    free_vertices = mesh.interior(0)
+    free = ~mesh.reading(free_vertices) * core.Rotor
     np.testing.assert_allclose(free.adjoint()(rotor_laplacian(harmonic_chords)).kernel, 0.0, atol=1e-11)
     np.testing.assert_allclose(
         (harmonic_rotors.batch()[:, boundary] - prescribed_rotors.batch()[:, boundary]).kernel,

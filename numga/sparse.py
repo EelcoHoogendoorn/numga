@@ -254,7 +254,38 @@ def _right_number(other: Number, value: SparseExtensor, product) -> SparseExtens
 
 @_right.register
 def _right_field(other: Extensor, value: SparseExtensor, product) -> Extensor:
+    reads = _reads(value) if product is expression.geometric_product else None
+    if reads is not None:
+        # A map that only reads indexes the field: its elements at the sites read, each kept with its type.
+        sites = _sites(other)
+        batch = np.broadcast_shapes(reads.shape[:-1], sites.shape[:-1])
+        reads = np.broadcast_to(reads, batch + reads.shape[-1:])
+        sites = sites.broadcast_to(batch + sites.shape[-1:])
+        return sites[np.indices(reads.shape, sparse=True)[:-1] + (reads,)].field()
     return _scatter(product(value.cells, _sites(other)[..., value.columns]), value.rows, value.shape[0]).field()
+
+
+def _reads(value: SparseExtensor) -> np.ndarray | None:
+    """The input site each output site of each map reads, `[..., rows]`, where the map only reads: scalar cells, each
+    zero or exactly one, every output site of every map coupled by a one to exactly one input site, as a selection
+    and an incidence's batches are. A product with such a map is an indexing of the field, and keeps the field's
+    type, which a product with scalar cells would widen. None for any other map, and for cells that are not concrete
+    NumPy values."""
+    kernel = value.cells.kernel
+    if not (value.cells.gatype.is_scalar and isinstance(kernel, np.ndarray)):
+        return None
+    ones = kernel[..., 0] == 1                                                # [..., couplings]
+    if not np.all(ones | (kernel[..., 0] == 0)):
+        return None
+    *maps, couplings = np.nonzero(ones)
+    rows = value.rows[couplings]
+    counts = np.zeros(ones.shape[:-1] + (value.shape[0],), dtype=int)
+    np.add.at(counts, (*maps, rows), 1)
+    if not np.all(counts == 1):
+        return None
+    reads = np.empty(counts.shape, dtype=int)
+    reads[(*maps, rows)] = value.columns[couplings]
+    return reads
 
 
 @_right.register

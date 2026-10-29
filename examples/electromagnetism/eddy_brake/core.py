@@ -197,10 +197,8 @@ def closed_currents(disc: Disc) -> tuple[SparseExtensor, SparseExtensor]:
     corner it faces, over twice the face's area: closed currents, with continuous flux across every
     interior edge.
     """
-    boundary = np.unique(disc.mesh.edges[disc.mesh.boundary_edges])
-    n_vertices = disc.mesh.n_vertices
-    interior = np.setdiff1d(np.arange(n_vertices), boundary)
-    embedder = ~SparseExtensor.selection(context, interior, n_vertices) * Scalar  # Scalar+[vertices <- interior]
+    interior = np.setdiff1d(np.arange(disc.mesh.n_vertices), disc.mesh.exterior(0))
+    embedder = ~disc.mesh.reading(interior) * Scalar                     # Scalar+[vertices <- interior]
     edges = disc.triangle_edges.cast(Current)                              # [3] Current-[faces]
     current = (spdiag(edges / (2 * disc.triangle_areas) * Scalar) * disc.mesh.incidence[2, 0]).sum(axis=0)(embedder)   # (Current- <- Scalar+)[faces <- interior]
     return embedder, current
@@ -246,7 +244,7 @@ def current_modes(disc: Disc, conductivity: Conductivity,
     swept = spdiag(face_ones * (Current & time))(current)                 # (Vector- <- Scalar+)[faces <- interior]
     resistance = swept.adjugate()(spdiag(disc.triangle_areas * resistivity)(current))  # [cases] (Amount- <- Scalar+)[interior <- interior]
     # Pull each face block back immediately, keeping only the smaller streamfunction map.
-    blocks = magnetic_coupling_blocks(disc.corners, permeability, n_magnetic_block_faces)
+    blocks = magnetic_coupling_blocks(disc.corners, disc.triangle_edges, permeability, n_magnetic_block_faces)
     # Each current's vector potential, read along every current through the current map's pairing transpose.
     pairing = current.adjugate()                                         # (Amount- <- Vector+)[interior <- faces]
     inductance = pairing(next(blocks)(current))                          # (Amount- <- Scalar+)[interior <- interior]
@@ -426,7 +424,7 @@ def inductive_braking(disc: Disc, modes: CurrentModes, forcing: PeriodicDrive, p
 
 
 # --- plumbing -------------------------------------------------------------------------
-def magnetic_coupling(corners: Point, permeability: float) -> SparseExtensor:
+def magnetic_coupling(corners: Point, sides: Point, permeability: float) -> SparseExtensor:
     """Integrated magnetic coupling between face currents on a planar thin sheet.
 
     Each source triangle's Coulomb potential is integrated analytically; three positive
@@ -434,24 +432,23 @@ def magnetic_coupling(corners: Point, permeability: float) -> SparseExtensor:
     and the finite self interaction is integrated exactly. Thickness enters the sheet
     conductivity, not a numerical cutoff in the magnetic kernel.
     """
-    coupling = next(magnetic_coupling_blocks(corners, permeability, corners.batch().shape[-1]))
+    coupling = next(magnetic_coupling_blocks(corners, sides, permeability, corners.batch().shape[-1]))
     return (coupling + coupling.adjugate()) / 2
 
 
-def magnetic_coupling_blocks(corners: Point, permeability: float,
+def magnetic_coupling_blocks(corners: Point, sides: Point, permeability: float,
                              block_faces: int) -> Iterator[SparseExtensor]:
     """Target-face blocks of the planar Coulomb integral between the faces of the given corners `[3] Point-[faces]`,
-    before reciprocal symmetrization.
+    with the side facing each corner `[3] Point-[faces]`, before reciprocal symmetrization.
 
     Summing their pullbacks and then taking the symmetric part gives the same inductance
     as the full face coupling, without keeping all face-pair vector maps in memory.
     """
-    edges = corners[[1, 2, 0]] - corners                                   # [edges] Point-[faces]
-    lengths = edges.squared().square_root()                               # [edges] Scalar+[faces]
-    # Each face's area, half the size of the plane two of its edges span, and its sense, the two edges swept
+    lengths = sides.squared().square_root()                               # [sides] Scalar+[faces]
+    # Each face's area, half the size of the plane two of its sides span, and its sense, the two sides swept
     # through time over twice the area, plus or minus one, intrinsic.
-    triangle_areas = edges[0].commutator(edges[1]).norm() / 2             # Scalar+[faces]
-    sense = (edges[1] & edges[2] & time) / (2 * triangle_areas)           # Scalar-[faces]
+    triangle_areas = sides[0].commutator(sides[1]).norm() / 2             # Scalar+[faces]
+    sense = (sides[0] & sides[1] & time) / (2 * triangle_areas)           # Scalar-[faces]
     # A triangle's double integral stays finite despite the point kernel's singularity.
     semiperimeter = lengths.sum(axis=0) / 2                                # Scalar+[faces]
     logarithms = (semiperimeter / (semiperimeter - lengths)).log()
@@ -464,14 +461,15 @@ def magnetic_coupling_blocks(corners: Point, permeability: float,
         # one-sixth; their equal weights integrate a quadratic exactly.
         targets = (corners.batch()[:, rows] + centres[rows]) / 2           # [samples, block] Point-
         # Target points are a batch against the source faces' field: every pair of the two.
-        relative = corners - targets[..., None]                           # [samples, block, edges] Point-[faces]
-        distances = relative.squared().square_root()                     # [samples, block, edges] Scalar+[faces]
-        endpoint_sum = distances + distances[..., [1, 2, 0]]               # [samples, block, edges] Scalar+[faces]
-        edge_potential = ((endpoint_sum + lengths) / (endpoint_sum - lengths)).log()
-        # Each quadrature point's height above each edge's line, in the face's own sense: the area the
-        # corner's offset spans with the edge's unit direction, swept through time.
-        heights = (relative & (edges / lengths) & time) / sense          # [samples, block, edges] Scalar+[faces]
-        source_potential = (heights * edge_potential).sum(axis=-1)         # [samples, block] Scalar+[faces]
+        relative = corners - targets[..., None]                           # [samples, block, corners] Point-[faces]
+        distances = relative.squared().square_root()                     # [samples, block, corners] Scalar+[faces]
+        # The side facing a corner runs from the next corner to the one after it.
+        endpoint_sum = distances[..., [1, 2, 0]] + distances[..., [2, 0, 1]]   # [samples, block, sides] Scalar+[faces]
+        side_potential = ((endpoint_sum + lengths) / (endpoint_sum - lengths)).log()
+        # Each quadrature point's height above each side's line, in the face's own sense: the area the offset of
+        # the side's first corner spans with the side's unit direction, swept through time.
+        heights = (relative[..., [1, 2, 0]] & (sides / lengths) & time) / sense   # [samples, block, sides] Scalar+[faces]
+        source_potential = (heights * side_potential).sum(axis=-1)         # [samples, block] Scalar+[faces]
         integral = (areas[rows] * source_potential.mean(axis=0)).batch()   # [block, faces] Scalar+
         integral = integral.at[np.arange(len(rows)), rows].set(self_integral.batch()[rows])
         yield SparseExtensor.from_indices(

@@ -64,7 +64,7 @@ def saddle_surface(
     vertical = mv.z.dual()                                                   # [] Point-
     x_coord, y_coord = mv.x & flat_vertices, mv.y & flat_vertices            # Scalar+[vertices], Scalar+[vertices]
     vertices = flat_vertices + arch_height * (x_coord.squared() - y_coord.squared()) * vertical  # Point-[vertices]
-    boundary = np.unique(mesh.edges[mesh.boundary_edges])
+    boundary = mesh.exterior(0)
 
     prescribed_rotors = (
         (-boundary_tilt_rates / 2) * flat_vertices.commutator(vertical)
@@ -157,8 +157,8 @@ def main() -> None:
     )
 
     _, rotor_laplacian, _, _, _ = rotor_laplacian_operators(saddle_mesh, saddle_vertices)
-    free_vertices = np.setdiff1d(np.arange(saddle_mesh.n_vertices), boundary)
-    free = ~mesh_module.SparseExtensor.selection(mv.context, free_vertices, saddle_mesh.n_vertices) * Rotor
+    free_vertices = saddle_mesh.interior(0)
+    free = ~saddle_mesh.reading(free_vertices) * Rotor
     np.testing.assert_allclose(free.adjoint()(rotor_laplacian(harmonic_chords)).kernel, 0.0, atol=1e-11)
 
     relaxation_energies = stack([

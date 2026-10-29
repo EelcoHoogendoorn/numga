@@ -69,25 +69,26 @@ def draw_complex(mesh: core.Mesh, vertices: core.Point, circumcentres: core.Poin
     dual_directions = coordinates(dual_edges)
     low, high = places.min(axis=0), places.max(axis=0)
     target = low + np.array([0.65, 0.5]) * (high - low)
-    interior = np.setdiff1d(np.arange(len(places)), mesh.edges[mesh.boundary_edges])
+    interior = np.setdiff1d(np.arange(len(places)), mesh.exterior(0))
     vertex = interior[np.argmin(np.linalg.norm(places[interior] - target, axis=1))]
-    star = np.flatnonzero(np.any(mesh.faces == vertex, axis=1))
-    neighbours = np.unique(mesh.faces[star])
+    # The faces at the vertex, and their corners: what the corner incidence and its reverse reach from a field that
+    # is one at the vertex alone.
+    mv = vertices.context.multivector
+    corners = mesh.incidence[2, 0].sum(axis=0)                                   # Scalar+[faces <- vertices]
+    marked = ~mesh.reading(np.array([vertex])) * mv.scalar([[1]]).field()        # Scalar+[vertices]
+    at_vertex = corners * marked                                                 # Scalar+[faces]
+    star = np.flatnonzero(at_vertex.batch() > 0)
+    neighbours = np.flatnonzero((~corners * at_vertex).batch() > 0)
     radius = 1.8 * np.linalg.norm(places[neighbours] - places[vertex], axis=1).max()
     visible = np.linalg.norm(places - places[vertex], axis=1) < 1.6 * radius
     edges = np.flatnonzero(np.all(visible[mesh.edges], axis=1))
 
-    # A dual segment joins adjacent face centres; on the boundary it ends at the edge midpoint.
-    edge_faces = [[] for _ in mesh.edges]
-    for face, boundary in enumerate(mesh.face_edges):
-        for edge in boundary:
-            edge_faces[edge].append(face)
-    dual_segments = []
-    for edge in edges:
-        incident = edge_faces[edge]
-        first = centres[incident[0]]
-        second = centres[incident[1]] if len(incident) == 2 else places[mesh.edges[edge]].mean(axis=0)
-        dual_segments.append([first, second])
+    # A dual segment joins adjacent face centres; on the boundary it ends at the edge midpoint. Summed onto the edges
+    # through the face-edge incidence, the centres give a boundary edge its one face's.
+    beside = coordinates((~mesh.incidence[2, 1] * circumcentres).sum(axis=0))   # [E, 2]
+    midpoints = coordinates(mesh.incidence[1, 0].mean(axis=0) * vertices)       # [E, 2]
+    dual_segments = np.stack((beside, midpoints), axis=1)                        # [E, 2, 2]
+    dual_segments[mesh.interior_edges] = centres[mesh.edge_faces]
 
     figure, ax = plt.subplots(figsize=(3.1, 3.1), dpi=DPI)
     figure.subplots_adjust(0.02, 0.02, 0.98, 0.98)
@@ -96,7 +97,7 @@ def draw_complex(mesh: core.Mesh, vertices: core.Point, circumcentres: core.Poin
     ax.set_axis_off()
     ax.add_collection(LineCollection(places[mesh.edges[edges]], colors=PRIMAL_COLOUR,
                                      linewidths=0.57, alpha=0.6))
-    ax.add_collection(LineCollection(dual_segments, colors=DUAL_COLOUR,
+    ax.add_collection(LineCollection(dual_segments[edges], colors=DUAL_COLOUR,
                                      linewidths=0.6, alpha=0.75))
     dual_vertices = centres[star]
     order = np.argsort(np.arctan2(*(dual_vertices - places[vertex])[:, ::-1].T))
@@ -112,14 +113,11 @@ def draw_complex(mesh: core.Mesh, vertices: core.Point, circumcentres: core.Poin
     ax.scatter(*centres[face], s=16, color=DUAL_COLOUR, edgecolor="white", linewidth=0.47, zorder=5)
 
     # The arrows carry the actual orientation of the two crossing geometric elements.
-    boundary = mesh.face_edges[face]
-    face_edges = places[mesh.edges[boundary]]
-    edge = boundary[np.argmax(np.linalg.norm(face_edges[:, 1] - face_edges[:, 0], axis=1))]
-    ends = places[mesh.edges[edge]]
-    incident = edge_faces[edge]
-    dual_middle = centres[incident].mean(axis=0)
-    for middle, direction, colour in ((ends.mean(axis=0), ends[1] - ends[0], PRIMAL_COLOUR),
-                                       (dual_middle, dual_directions[edge], DUAL_COLOUR)):
+    primal_directions = coordinates(mesh.d[0] * vertices)                       # [E, 2]
+    sides = mesh.face_edges[face]
+    edge = sides[np.argmax(np.linalg.norm(primal_directions[sides], axis=1))]
+    for middle, direction, colour in ((midpoints[edge], primal_directions[edge], PRIMAL_COLOUR),
+                                       (dual_segments[edge].mean(axis=0), dual_directions[edge], DUAL_COLOUR)):
         ax.annotate("", xy=middle + 0.35 * direction, xytext=middle - 0.35 * direction,
                     arrowprops=dict(arrowstyle="-|>", mutation_scale=8, color=colour, linewidth=1.35),
                     zorder=6)

@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 
 from numga.algebras import STA2D as ga
-from numga.sparse import SparseExtensor
+from numga.sparse import SparseExtensor, spdiag
 
 from examples import instantiate
 from examples.electromagnetism.piezoelectric.numerical import solve_coupled
@@ -114,10 +114,11 @@ def assemble(mesh: Mesh, areas: Scalar, gradients: Plane, elastic: Elastic, pola
     mixed_cells = -(polarized[:, None] & time).adjugate()(electric[None])
     electric_cells = -electric[:, None].adjugate()(permittivity(electric[None]) & time)
 
-    # Local test/trial pairs become couplings between global nodes at assembly.
     weights = width * areas.batch()
-    return tuple(SparseExtensor.from_indices(cells * weights, mesh.faces.T[:, None, :], mesh.faces.T[None, :, :],
-                                             (mesh.n_vertices, mesh.n_vertices))
+    corners = mesh.incidence[2, 0]                                                # [corners] Scalar+[faces <- vertices]
+    # The pullback onto the nodes: each test corner's incidence run back, the triangles' blocks, each trial corner's
+    # incidence, summed over both corners of the pair.
+    return tuple((~corners[:, None] * spdiag((cells * weights).field()) * corners[None, :]).sum(axis=0).sum(axis=0)
                  for cells in (elastic_cells, mixed_cells, electric_cells))
 
 
@@ -168,17 +169,15 @@ def strip(length: float, thickness: float, n_length: int, n_thickness: int) -> t
 
 def boundary_maps(mesh: Strip, floating: np.ndarray) -> tuple[SparseExtensor, SparseExtensor]:
     """Free displacement nodes and potential groups; the named electrode shares one free voltage."""
-    n_vertices = mesh.n_vertices
-    free_movement = np.setdiff1d(np.arange(n_vertices), mesh.clamped)
-    movement = SparseExtensor.from_indices(
-        mv.scalar(np.ones((len(free_movement), 1))) * Point,
-        free_movement, np.arange(len(free_movement)), (n_vertices, len(free_movement)))
-    interior = np.setdiff1d(np.arange(n_vertices), np.concatenate((mesh.top, mesh.bottom)))
-    rows = np.concatenate((interior, floating))
-    columns = np.concatenate((np.arange(len(interior)), np.full(len(floating), len(interior))))
+    free_movement = np.setdiff1d(np.arange(mesh.n_vertices), mesh.clamped)
+    # Each free displacement is put back at its vertex.
+    movement = ~mesh.reading(free_movement) * Point
+    interior = np.setdiff1d(np.arange(mesh.n_vertices), np.concatenate((mesh.top, mesh.bottom)))
+    potential_nodes = np.concatenate((interior, floating))
+    # Each interior node reads a voltage of its own, and the floating electrode's nodes all read the one after them.
+    groups = np.concatenate((np.arange(len(interior)), np.full(len(floating), len(interior))))
     n_voltages = len(interior) + int(len(floating) > 0)
-    voltage = SparseExtensor.from_indices(mv.scalar(np.ones((len(rows), 1))) * Scalar,
-                                        rows, columns, (n_vertices, n_voltages))
+    voltage = ~mesh.reading(potential_nodes) * SparseExtensor.selection(ctx, groups, n_voltages) * Scalar
     return movement, voltage
 
 

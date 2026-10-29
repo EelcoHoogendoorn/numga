@@ -433,7 +433,7 @@ def test_inductive_currents_exchange_energy_with_rotation_and_remain_closed():
     assert (states[-1].spin[2].scalar_norm_squared() < states[motor_steps].spin[2].scalar_norm_squared())
 
     # The stored magnetic energy agrees with the integrated interaction of the actual currents.
-    coupling = core.magnetic_coupling(disc.corners, permeability)
+    coupling = core.magnetic_coupling(disc.corners, disc.triangle_edges, permeability)
     integrated = (coupling(currents) & currents).sites.sum() / 2
     np.testing.assert_allclose((integrated - magnetic_energy).kernel, 0, atol=1e-11)
 

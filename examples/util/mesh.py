@@ -48,6 +48,8 @@ mv = ctx.multivector
 Scalar = ga.gatype.scalar()
 # A position: an antivector, intrinsic.
 Point = ga.gatype.antivector()
+# Coordinates placed as points: projective points where the algebra has a direction of weight, antivectors otherwise.
+place = getattr(mv, "point", mv.antivector)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -73,6 +75,39 @@ def simplex_parity(simplices: np.ndarray) -> np.ndarray:
     inversions = sum((simplices[..., i] > simplices[..., j] for i, j in combinations(range(simplices.shape[-1]), 2)),
                      np.zeros(simplices.shape[:-1], dtype=int))
     return np.where(inversions % 2 == 0, 1.0, -1.0)
+
+
+def turned(simplices: np.ndarray) -> np.ndarray:
+    """`[N, k + 1]`: the simplices run in the other sense, their first two vertices swapped."""
+    return simplices[:, [1, 0, *range(2, simplices.shape[-1])]]
+
+
+def coherent(simplices: np.ndarray) -> np.ndarray:
+    """`[N, k + 1]`: the top simplices of a manifold, some turned, so that the two simplices sharing a facet run it in
+    opposite senses, as the simplices of an oriented manifold do; each connected piece keeps the sense of its first
+    simplex."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import breadth_first_order, connected_components
+    mesh = Mesh(int(simplices.max()) + 1, simplices)
+    top = mesh.n_dim - 1
+    facets, signs = mesh.boundary_indices[top].reshape(-1), mesh.orientation[top].reshape(-1)
+    owners = np.repeat(np.arange(len(simplices)), simplices.shape[-1])
+    order = np.argsort(facets, kind="stable")
+    shared = facets[order][1:] == facets[order][:-1]
+    first, second = order[:-1][shared], order[1:][shared]
+    # Two simplices that run their shared facet in the same sense disagree, and one of them is to be turned: weight 2
+    # marks a disagreeing pair, weight 1 an agreeing one.
+    weights = np.where(signs[first] == signs[second], 2.0, 1.0)
+    neighbours = coo_matrix((weights, (owners[first], owners[second])), shape=(len(simplices),) * 2).tocsr()
+    neighbours = neighbours + neighbours.T
+    _, pieces = connected_components(neighbours, directed=False)
+    flips = np.zeros(len(simplices), dtype=bool)
+    for root in np.unique(pieces, return_index=True)[1]:
+        reached, parents = breadth_first_order(neighbours, root, directed=False)
+        disagree = np.asarray(neighbours[parents[reached[1:]], reached[1:]]).reshape(-1) == 2
+        for simplex, disagreeing in zip(reached[1:], disagree):
+            flips[simplex] = flips[parents[simplex]] ^ disagreeing
+    return np.where(flips[:, None], turned(simplices), simplices)
 
 
 def lookup_simplices(table: np.ndarray, query: np.ndarray) -> np.ndarray:
@@ -161,7 +196,7 @@ class Mesh:
         a simplex's own vertex order, such as a Whitney form on a tet's edge from its local tail to its local head,
         reaches the stored m-simplices through these signs. A facet's sign here differs from its sign in `boundary`
         by `(-1)**i` for the facet facing corner `i`. Each map is built on first use."""
-        return Operators(self.n_dim, lambda n, m: self._signed(n, m, simplex_parity(self.elements[n][:, self._corners(n, m)])))
+        return Operators(self.n_dim, lambda n, m: self._signed(n, m, simplex_parity(self.elements[n][:, self.corners(n, m)])))
 
     @cached_property
     def d(self) -> tuple[SparseExtensor, ...]:
@@ -170,8 +205,13 @@ class Mesh:
         each its head less its tail, and `d[k + 1] * d[k]` vanishes."""
         return tuple(self.boundary[k + 1, k].sum(axis=0) for k in range(self.n_dim))
 
-    def _corners(self, n: int, m: int) -> np.ndarray:
-        """`[k, m + 1]`: the local corners of each m-simplex of an n-simplex, in the order of `incidence[n, m]`."""
+    def corners(self, n: int, m: int) -> np.ndarray:
+        """`[k, m + 1]`: the local corners of each m-simplex of an n-simplex, in the order of `incidence[n, m]`: which
+        entries of an n-simplex's own corners each of its m-simplices has, the same for every n-simplex. A quantity per
+        corner, a `[n + 1]` batch of fields over the n-simplices such as corner gradients, is read at each m-simplex's
+        corners through it: on a tet's edges, `tails, heads = mesh.corners(3, 1).T`, and `gradients[heads] -
+        gradients[tails]` runs along each edge from its local tail to its local head, the sense `oriented[3, 1]`
+        relates to the stored edge."""
         if m == 0:
             return np.arange(n + 1)[:, None]
         if m == n - 1:
@@ -185,7 +225,7 @@ class Mesh:
             return self.elements[n]
         if m == n - 1:
             return self.boundary_indices[m]
-        return lookup_simplices(self.elements[m], np.sort(self.elements[n][:, self._corners(n, m)], axis=-1))
+        return lookup_simplices(self.elements[m], np.sort(self.elements[n][:, self.corners(n, m)], axis=-1))
 
     def _signed(self, n: int, m: int, signs: np.ndarray) -> SparseExtensor:
         """`[k] Scalar+[n-simplices <- m-simplices]`: the batches of `incidence[n, m]`, each entry signed by
@@ -227,6 +267,10 @@ class Mesh:
         for j in range(top, k, -1):
             on_boundary = np.unique(self.boundary_indices[j - 1][on_boundary])
         return on_boundary
+
+    def interior(self, k: int) -> np.ndarray:
+        """Indices of the k-simplices off the boundary: all but those of `exterior(k)`."""
+        return np.setdiff1d(np.arange(self.n_elements[k]), self.exterior(k))
 
     @classmethod
     def disk(cls, radius: float, rings: int, sectors: int) -> tuple[Mesh, Point]:
@@ -328,14 +372,26 @@ class Mesh:
         return mesh, vertices
 
     @classmethod
+    def closed(cls, simplices: np.ndarray, coordinates: np.ndarray) -> Mesh:
+        """A closed mesh of the top simplices `[N, k + 1]` on vertices at the coordinates `[V, k + 1]`, whatever sense
+        the simplices come in: wound coherently, and counter-clockwise seen from outside, so that the volume they
+        enclose is positive. The winding is settled on the coordinates, at construction, before they become points."""
+        wound = coherent(simplices)
+        # The enclosed volume: the cone each simplex spans from the origin, its corners' determinant, summed.
+        volume = np.linalg.det(coordinates[wound]).sum()
+        return cls(len(coordinates), np.where(volume < 0, turned(wound), wound))
+
+    @classmethod
     def read(cls, path: Path, size: float) -> tuple[Mesh, Point]:
-        """A mesh from a Wavefront OBJ file, its vertices and triangles only, centred on its bounding box
-        and scaled so that the box's longest side is `size`."""
+        """A closed mesh from a Wavefront OBJ file, its vertices and triangles only, centred on its bounding box
+        and scaled so that the box's longest side is `size`; its faces wound counter-clockwise seen from outside,
+        whatever winding the file gives them."""
         rows = [line.split() for line in path.read_text().splitlines()]
         places = np.array([[float(word) for word in row[1:4]] for row in rows if row[:1] == ["v"]])
         faces = np.array([[int(word.split("/")[0]) - 1 for word in row[1:4]] for row in rows if row[:1] == ["f"]])
         middle, extent = (places.max(axis=0) + places.min(axis=0)) / 2, np.ptp(places, axis=0).max()
-        return cls(len(places), faces), mv.antivector(((places - middle) * size / extent).tolist()).field()
+        coordinates = (places - middle) * size / extent
+        return cls.closed(faces, coordinates), place(coordinates.tolist()).field()
 
     @classmethod
     def torus(cls, major_radius: float, minor_radius: float, major_count: int, minor_count: int) -> tuple[Mesh, Point]:
@@ -369,10 +425,11 @@ class Mesh:
         coordinates = (stack((mv.x, mv.y)) & vertices.batch()[..., None]).to_array()
         return cls(len(coordinates), Delaunay(coordinates).simplices)
 
-    def reading(self, vertices: np.ndarray) -> SparseExtensor:
-        """[..., n, V] Scalar: the map reading the field at each of the given vertices `[..., n]`; its reverse adds
-        values at them back onto the vertices."""
-        return SparseExtensor.selection(ctx, vertices, self.n_vertices)
+    def reading(self, indices: np.ndarray, k: int = 0) -> SparseExtensor:
+        """`Scalar+[..., n <- k-simplices]`: the map reading a field on the k-simplices, the vertices unless asked
+        otherwise, at each of the given ones `[..., n]`; its reverse adds values at them back onto the simplices. On
+        the interior edges, `mesh.reading(mesh.interior_edges, 1)`."""
+        return SparseExtensor.selection(ctx, indices, self.n_elements[k])
 
     def loop(self, pinned: np.ndarray) -> SparseExtensor:
         """Scalar[V + E <- V]: one Loop step, from the vertices to those of the finer mesh, its vertices
@@ -439,7 +496,7 @@ class Mesh:
     @cached_property
     def interior_edges(self) -> np.ndarray:
         """Indices of the edges off the boundary."""
-        return np.setdiff1d(np.arange(len(self.edges)), self.boundary_edges)
+        return self.interior(1)
 
     @cached_property
     def edge_faces(self) -> np.ndarray:

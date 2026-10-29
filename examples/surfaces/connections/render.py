@@ -86,8 +86,7 @@ def square_view(view_degrees: np.ndarray, vertices: core.Point, spare: float) ->
 
 def needle_length(mesh: core.Mesh, vertices: core.Point) -> float:
     """The length of the designed fields' needles on a surface: a share of its mean edge length."""
-    places = coordinates(vertices)
-    return field_needle * float(np.linalg.norm(places[mesh.edges[:, 1]] - places[mesh.edges[:, 0]], axis=-1).mean())
+    return field_needle * float(np.linalg.norm(coordinates(mesh.d[0] * vertices), axis=-1).mean())
 
 
 def facing(view_degrees: np.ndarray) -> np.ndarray:
@@ -189,7 +188,7 @@ def animate_diffusion(torus: core.Mesh, vertices: core.Point, diffused: Iterable
 def field_marks(mesh: core.Mesh, vertices: core.Point, singular: np.ndarray, indices: list[int], frame: solids.View
                 ) -> list[tuple[solids.Quadric, np.ndarray]]:
     """Balls on a surface's singular faces `[S]`, at the mean of their corners, larger for larger indices."""
-    centres = solids.mv.point(coordinates(vertices)[mesh.faces[singular]].mean(axis=1))   # [S] Point-
+    centres = solids.mv.point(coordinates(mesh.incidence[2, 0].mean(axis=0) * vertices)[singular])   # [S] Point-
     return [(solids.ball(centres[index:index + 1], singular_radius * abs(value) * frame.pixel)[:, None],
              positive if value > 0 else negative) for index, value in enumerate(indices)]
 
@@ -246,29 +245,26 @@ def animate_turning(mesh: core.Mesh, vertices: core.Point, fields: Iterable[core
 # --- stripes --------------------------------------------------------------------------
 def corner_phases(mesh: core.Mesh, vertices: core.Point, lines: core.Point, stripes: core.Point, advance: core.Scalar) -> tuple[np.ndarray, np.ndarray]:
     """The phase of each family at each corner of each face `[F, 3, n]`, and the whole turns it winds around
-    the face `[F, n]`, for the lines of the families at every vertex `[V, n]`, their stripe fields `[V, n]`
-    and the targets across every edge for each line at its head `[E, n]`. Each corner's lines are matched
-    to the face's first corner's, by the line nearest each and the sense it points in; walking around the
-    face along the edges' targets, each corner's phase is taken nearest the one before it plus the target;
-    a face around which the walk comes back off by whole turns holds a fork, and the mismatch is spread
+    the face `[F, n]`, for the lines of the families at every vertex `[n] Point-[V]`, their stripe fields
+    `[n] Point-[V]` and the targets across every edge for each line at its head `[n] Scalar+[E]`. Each corner's
+    lines are matched to the face's first corner's, by the line nearest each and the sense it points in; walking
+    around the face along the edges' targets, each corner's phase is taken nearest the one before it plus the
+    target; a face around which the walk comes back off by whole turns holds a fork, and the mismatch is spread
     evenly over its three edges, as in the reference implementation of the stripe patterns paper."""
-    stripe, directions = stripes.batch(), lines.batch()                        # [V, n] Point-, [V, n] Point-
     # The sine of the angle from the stripe field to its line: the plane their commutator turns in, read across the
     # tangent plane; the cosine is their inner product.
-    sines = (directions.commutator(stripe) | core.vertex_normals(mesh, vertices).batch()[:, None].dual()).to_array()
-    phase = np.arctan2(sines, stripe.dot(directions).to_array())               # [V, n]
-    steps = advance.batch().to_array()                                         # [E, n]
-    along = coordinates(lines)[mesh.faces]                                     # [F, 3, n, 3]
+    sines = (lines.commutator(stripes) | core.vertex_normals(mesh, vertices).dual()).batch().to_array().T
+    phase = np.arctan2(sines, stripes.dot(lines).batch().to_array().T)         # [V, n]
+    steps = advance.batch().to_array().T                                       # [E, n]
+    along = np.moveaxis(coordinates(lines), 0, 1)[mesh.faces]                  # [F, 3, n, 3]
     dots = np.einsum("fnd,fcmd->fcnm", along[:, 0], along)                     # [F, 3, n, n]
     picked = np.argmax(np.abs(dots), axis=-1)                                  # [F, 3, n]
     sense = np.sign(np.take_along_axis(dots, picked[..., None], axis=-1)[..., 0])
     local = sense * np.take_along_axis(phase[mesh.faces], picked, axis=-1)     # [F, 3, n]
-    # The target from each corner to the next, read at the edge's head, the higher vertex.
-    count = len(phase)
-    tails, heads = mesh.faces, np.roll(mesh.faces, -1, axis=1)                 # [F, 3] each
-    keys = mesh.edges[:, 0] * count + mesh.edges[:, 1]
-    edge = np.searchsorted(keys, np.minimum(tails, heads) * count + np.maximum(tails, heads))
-    forward = tails < heads                                                    # [F, 3]
+    # The target from each corner to the next, read at the edge's head, the higher vertex. The side from a corner to
+    # the next faces the corner after them, and runs along its edge where the face runs along it.
+    edge = mesh.face_edges[:, [2, 0, 1]]                                       # [F, 3]
+    forward = mesh.face_edge_orientation[:, [2, 0, 1]] > 0                     # [F, 3]
     head = np.where(forward, np.roll(np.arange(3), -1), np.arange(3))          # [F, 3]: the corner at the edge's head
     at_head = np.take_along_axis(picked, head[..., None], axis=1)              # [F, 3, n]
     sense_head = np.take_along_axis(sense, head[..., None], axis=1)
@@ -326,8 +322,8 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 
 
 def bands_image(mesh: core.Mesh, vertices: core.Point, pattern: tuple[core.Point, core.Point, core.Scalar], frame: solids.View) -> np.ndarray:
-    """The surface shaded with the stripes of every family of a pattern of lines `[V, n]`, stripe fields `[V, n]`
-    and edge targets `[E, n]`, the given share of each stripe dark."""
+    """The surface shaded with the stripes of every family of a pattern of lines `[n] Point-[V]`, stripe fields
+    `[n] Point-[V]` and edge targets `[n] Scalar+[E]`, the given share of each stripe dark."""
     corners, turns = corner_phases(mesh, vertices, *pattern)                   # [F, 3, n], [F, n]
     stripes = meshes.Colour(striped, dict(n_families=corners.shape[-1], sharpness=sharpness, bands=bands,
                                           dark_stripe=dark, light_stripe=light))
@@ -384,7 +380,7 @@ def draw_lines(mesh: core.Mesh, vertices: core.Point, patterns: list[tuple[core.
 
 def animate_flow(mesh: core.Mesh, vertices: core.Point, lines: core.Point, stripe_fields: Iterable[core.Point], advance: core.Scalar
                  ) -> Iterator[np.ndarray]:
-    """Frames of the stripes as the stripe field `[V, 1]` turns about every normal, one frame each."""
+    """Frames of the stripes as the stripe field `[1] Point-[V]` turns about every normal, one frame each."""
     frame = square_view(view, vertices, 0.0)
     for stripe_field in stripe_fields:
         yield bands_image(mesh, vertices, (lines, stripe_field, advance), frame)

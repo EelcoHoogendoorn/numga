@@ -88,7 +88,6 @@ class Bodies:
 @dataclass(frozen=True)
 class Constraints:
     """Point constraints between anchor points of two bodies."""
-    body_idx: np.ndarray                                                    # [sides, constraints]
     # The body at each side.
     ends: SparseExtensor                                                    # [sides] Scalar+[constraints <- bodies]
     anchors: Point                                                          # [sides] Point-[constraints]
@@ -173,7 +172,6 @@ def modal_terms(bodies: Bodies, previous_amplitudes: Scalar, dt: float) -> tuple
 
 def coupling(bodies: Bodies, constraints: Constraints) -> tuple[SparseExtensor, SparseExtensor, SparseExtensor, Displacement]:
     """The sparse maps from the bodies' rigid motion and modes to the constraint gaps, and the gaps."""
-    body_count, constraint_count = bodies.motor.batch().shape[-1], constraints.body_idx.shape[-1]
     # The motors of the two bodies each constraint joins.
     motor = constraints.ends * bodies.motor[..., None]                     # [..., sides] Motor+[constraints]
     # The constraint's anchor on each of the two bodies, in that body's frame, moved by its modes.
@@ -188,15 +186,15 @@ def coupling(bodies: Bodies, constraints: Constraints) -> tuple[SparseExtensor, 
     anchor_modes = (motor[..., None, :] >> constraints.modes) * signs      # [..., modes, sides] Displacement-[constraints]
     # Each constraint's gap in the world frame, the second anchor's position minus the first's.
     gap = ((motor >> local_anchors) * signs).sum(axis=-1)                  # [...] Displacement-[constraints]
-    # Each constraint is a row; each of its two bodies a column.
-    constraint_idx = np.arange(constraint_count)                           # [constraints]
-    # The change in each gap for the bodies' twists.
-    rigid = SparseExtensor.from_indices(anchor_motion.batch(), constraint_idx, constraints.body_idx, (constraint_count, body_count))  # [...] (Displacement- <- Twist+)[constraints <- bodies]
+    # The change in each gap for the bodies' twists: each side's anchor motion, read off the body at that side,
+    # summed over the two sides.
+    rigid = (spdiag(anchor_motion) * constraints.ends).sum(axis=-1)       # [...] (Displacement- <- Twist+)[constraints <- bodies]
     # The change in each gap for the bodies' amplitudes of each mode, one map per mode.
-    modal = SparseExtensor.from_indices(anchor_modes.batch(), constraint_idx, constraints.body_idx, (constraint_count, body_count))  # [..., modes] Displacement-[constraints <- bodies]
+    modal = (spdiag(anchor_modes) * constraints.ends).sum(axis=-1)        # [..., modes] Displacement-[constraints <- bodies]
     # The load on each mode of each body for forces at the constraints, one map per mode: each force paired with
-    # the mode's displacement at its anchor, `force & displacement`, the work it does per unit of amplitude.
-    modal_load = SparseExtensor.from_indices((Force & anchor_modes).batch(), constraints.body_idx, constraint_idx, (body_count, constraint_count))  # [..., modes] (Scalar+ <- Force+)[bodies <- constraints]
+    # the mode's displacement at its anchor, `force & displacement`, the work it does per unit of amplitude, carried
+    # back to the body at each side by the incidence run back.
+    modal_load = (~constraints.ends * spdiag(Force & anchor_modes)).sum(axis=-1)   # [..., modes] (Scalar+ <- Force+)[bodies <- constraints]
     return rigid, modal, modal_load, gap
 
 

@@ -198,3 +198,13 @@ def test_a_pencil_of_forms_has_the_eigenpairs_of_its_numbers():
     # checks
     np.testing.assert_allclose(values.to_array(), numbers.to_array(), atol=1e-10)
     np.testing.assert_allclose((stiffness(modes) - values * mass(modes)).kernel, 0.0, atol=1e-10)
+
+
+def test_reading_a_field_indexes_it_and_keeps_its_type():
+    # A selection only reads: the elements at the chosen sites, unit rotors still unit rotors.
+    context = NumpyContext(Algebra("x+y+z+"))
+    rotors = (context.multivector.xy * np.linspace(0.1, 1.0, 5)).exp().field()            # Rotor+[sites]
+    reading = SparseExtensor.selection(context, np.array([[3, 0], [1, 1]]), 5)          # [2] Scalar+[2 <- sites]
+    read = reading * rotors
+    assert read.gatype.traits == rotors.gatype.traits
+    np.testing.assert_array_equal(read.batch().kernel, rotors.batch()[np.array([[3, 0], [1, 1]])].kernel)

@@ -40,8 +40,8 @@ def second_moments() -> np.ndarray:
 
 def test_stiffness_holds_the_area_and_the_second_moments():
     area = (2 * FLANGE + HEIGHT) * THICKNESS
-    for (nodes, ends, thickness), spread in zip(section_walls(), second_moments()):
-        walls = nodes[ends]
+    for (mesh, nodes, thickness), spread in zip(section_walls(), second_moments()):
+        walls = mesh.incidence[1, 0] * nodes
         rigidity = core.bending(walls, thickness, scenarios.MODULUS)
         np.testing.assert_allclose((core.shift_along_beam & rigidity(core.shift_along_beam)).to_array(),
                                    scenarios.MODULUS * area, rtol=1e-12)
@@ -60,9 +60,9 @@ def test_small_tip_load_deflects_by_the_cantilever_formula():
     load = 1e-3 * scenarios.LOAD
     stubby_length = 2.0
     for length in (scenarios.LENGTH, stubby_length):
-        for (nodes, ends, thickness), spread, shear in zip(section_walls(), second_moments(), shear_areas()):
-            centre = core.centroid(nodes[ends], thickness)
-            _, frames, _, _ = scenarios.cantilever(nodes, ends, thickness,
+        for (mesh, nodes, thickness), spread, shear in zip(section_walls(), second_moments(), shear_areas()):
+            centre = core.centroid(mesh.incidence[1, 0] * nodes, thickness)
+            _, frames, _, _ = scenarios.cantilever(mesh, nodes, thickness,
                                                    scenarios.tip(centre, length) & (load * -scenarios.up_direction),
                                                    length, scenarios.SHEAR_MODULUS)
             across = render.flat(frames[-1] >> centre) - render.flat(centre)
@@ -73,8 +73,9 @@ def test_small_tip_load_deflects_by_the_cantilever_formula():
 
 
 def test_slotted_tube_matches_a_thin_circular_arc():
-    nodes, ends, thickness = section_walls()[-1]
-    walls = nodes[ends]
+    mesh, nodes, thickness = section_walls()[-1]
+    walls = mesh.incidence[1, 0] * nodes
+    tail, head = walls
     sweep = 2 * np.pi - SLOT_ANGLE
     half = sweep / 2
     area = sweep * TUBE_RADIUS * TUBE_WALL
@@ -88,48 +89,48 @@ def test_slotted_tube_matches_a_thin_circular_arc():
     square = stack([core.mv.y, core.mv.x])                                  # [2] Plane
     turns = (square - (square & centre) * core.mv.w) ^ core.section_plane   # [2] Line
     # The tolerances measure the polygonal approximation to the arc.
-    np.testing.assert_allclose(((walls[..., 0] & walls[..., 1]).norm() * thickness).sum(axis=0).to_array(), area, rtol=1e-2)
+    np.testing.assert_allclose(((tail & head).norm() * thickness).sites.sum().to_array(), area, rtol=1e-2)
     np.testing.assert_allclose(render.flat(centre), [centre_x, 0.0], rtol=1e-2, atol=1e-12)
     np.testing.assert_allclose((turns & rigidity(turns)).to_array(),
                                scenarios.MODULUS * np.array([up, across]), rtol=1e-2)
-    np.testing.assert_allclose(render.flat(core.shear_centre(nodes, ends, thickness)),
+    np.testing.assert_allclose(render.flat(core.shear_centre(mesh, nodes, thickness)),
                                [shear_x, 0.0], rtol=1e-2, atol=1e-12)
 
 
 def test_warping_from_the_shear_centre_is_invisible_to_bending():
-    for nodes, ends, thickness in section_walls():
-        walls = nodes[ends]
-        shear = core.shear_centre(nodes, ends, thickness)
-        couples = core.warping(nodes, ends, thickness, shear).cast(core.Couples)
+    for mesh, nodes, thickness in section_walls():
+        shear = core.shear_centre(mesh, nodes, thickness)
+        couples = core.warping(mesh, nodes, thickness, shear).cast(core.Couples)
         np.testing.assert_allclose(couples.kernel, 0.0, atol=1e-12)
-    for nodes, ends, thickness in section_walls()[:-1]:
+    for mesh, nodes, thickness in section_walls()[:-1]:
         # Mirror or point symmetry puts the shear centre on the centroid.
-        shear = core.shear_centre(nodes, ends, thickness)
-        np.testing.assert_allclose(render.flat(shear), render.flat(core.centroid(nodes[ends], thickness)), atol=1e-12)
+        shear = core.shear_centre(mesh, nodes, thickness)
+        np.testing.assert_allclose(render.flat(shear), render.flat(core.centroid(mesh.incidence[1, 0] * nodes, thickness)),
+                                   atol=1e-12)
 
 
 def test_torque_twists_about_the_shear_centre():
     torque = 1e-5
-    for nodes, ends, thickness in section_walls():
-        walls = nodes[ends]
-        shear = core.shear_centre(nodes, ends, thickness)
+    for mesh, nodes, thickness in section_walls():
+        walls = mesh.incidence[1, 0] * nodes
+        shear = core.shear_centre(mesh, nodes, thickness)
         stiffness = core.twisting(walls, thickness, scenarios.SHEAR_MODULUS).to_array()
-        _, frames, _, _ = scenarios.cantilever(nodes, ends, thickness, torque * core.couple_about_beam, scenarios.LENGTH,
+        _, frames, _, _ = scenarios.cantilever(mesh, nodes, thickness, torque * core.couple_about_beam, scenarios.LENGTH,
                                                scenarios.SHEAR_MODULUS)
         np.testing.assert_allclose(render.twist(frames[-1]), torque * scenarios.LENGTH / stiffness, rtol=1e-12)
         np.testing.assert_allclose(render.flat(frames[-1] >> shear), render.flat(shear), atol=1e-12)
         # A load through the shear centre bends the beam without turning it about the beam.
-        strains, _, _, _ = scenarios.cantilever(nodes, ends, thickness,
+        strains, _, _, _ = scenarios.cantilever(mesh, nodes, thickness,
                                                 scenarios.tip(shear, scenarios.LENGTH) & (scenarios.LOAD * -scenarios.up_direction),
                                                 scenarios.LENGTH, scenarios.SHEAR_MODULUS)
         np.testing.assert_allclose((strains & core.shift_along_beam).to_array(), 0.0, atol=1e-12)
 
 
 def test_neutral_axes_and_principal_bending_directions():
-    for nodes, ends, thickness in section_walls():
-        centre = core.centroid(nodes[ends], thickness)
+    for mesh, nodes, thickness in section_walls():
+        centre = core.centroid(mesh.incidence[1, 0] * nodes, thickness)
         strains, frames, principal, stress = scenarios.cantilever(
-            nodes, ends, thickness, scenarios.tip(centre, scenarios.LENGTH) & (scenarios.LOAD * -scenarios.up_direction),
+            mesh, nodes, thickness, scenarios.tip(centre, scenarios.LENGTH) & (scenarios.LOAD * -scenarios.up_direction),
             scenarios.LENGTH, scenarios.SHEAR_MODULUS)
         # The bending part of the strain, without the twist about the shear centre.
         np.testing.assert_allclose((centre & strains[0].cast(core.Strain)).kernel, 0.0, atol=1e-12)
@@ -138,27 +139,28 @@ def test_neutral_axes_and_principal_bending_directions():
 
 def test_kern_and_reciprocity():
     points = core.point(scenarios.PUSH_POINTS)
-    for nodes, ends, thickness in section_walls():
-        rigidity = core.bending(nodes[ends], thickness, scenarios.MODULUS)
-        centre = core.centroid(nodes[ends], thickness)
+    for mesh, nodes, thickness in section_walls():
+        walls = mesh.incidence[1, 0] * nodes
+        rigidity = core.bending(walls, thickness, scenarios.MODULUS)
+        centre = core.centroid(walls, thickness)
         np.testing.assert_allclose(core.pulls(rigidity, centre).norm().to_array(), 0.0, atol=1e-12)
-        strains, stress, polars = scenarios.push_section(nodes, ends, thickness, points)
+        strains, stress, polars = scenarios.push_section(mesh, nodes, thickness, points)
         squeezed = stress.to_array()
         assert np.all(squeezed[0] < 0) and squeezed[1].max() > 0
         # Each node's polar stretches the fibre through a point as much as a pull through the point
         # stretches the node's fibre.
-        direct = core.pulls(rigidity, points[:, None]) & (core.beam_direction & nodes)
+        direct = core.pulls(rigidity, points[:, None]) & (core.beam_direction & nodes.batch())
         np.testing.assert_allclose((polars & (core.beam_direction & points[:, None])).to_array(), direct.to_array(), atol=1e-12)
         # A push through a corner of the kern leaves some fibre unstretched and squeezes the rest.
         corners = core.point(render.kern(polars, centre))                   # [corners] Point
-        least = (core.pulls(rigidity, corners[:, None]) & (core.beam_direction & nodes)).to_array().min(axis=-1)
+        least = (core.pulls(rigidity, corners[:, None]) & (core.beam_direction & nodes.batch())).to_array().min(axis=-1)
         np.testing.assert_allclose(least, 0.0, atol=1e-9)
 
 
 def test_scenes_draw():
     sections = section_walls()
     down = scenarios.LOAD * -scenarios.up_direction
-    centres = [core.centroid(nodes[ends], thickness) for nodes, ends, thickness in sections]
+    centres = [core.centroid(mesh.incidence[1, 0] * nodes, thickness) for mesh, nodes, thickness in sections]
     shears = [core.shear_centre(*section) for section in sections]
     beams = [scenarios.cantilever(*section, scenarios.tip(centre, scenarios.LENGTH) & down, scenarios.LENGTH,
                                   scenarios.SHEAR_MODULUS) for section, centre in zip(sections, centres)]

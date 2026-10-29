@@ -1,8 +1,10 @@
-"""Mesh topology: the incidences compose to nothing, the boundary encloses the faces, and the disk constructors give
-regular triangles."""
+"""Mesh topology: the incidences compose to nothing, the boundary encloses the faces, the disk constructors give
+regular triangles, and a closed mesh is wound outward."""
 
 import numpy as np
 import pytest
+
+from numga import stack
 
 from numga.algebras import VGA3D
 from examples import instantiate
@@ -113,3 +115,17 @@ def test_boundaries_of_boundaries_vanish_in_every_dimension():
     # Each edge's derivative is its head less its tail.
     heights = as_scalar(np.arange(4.0)).field()
     np.testing.assert_array_equal((path.d[0] * heights).kernel[:, 0], [1.0, -1.0, -1.0])
+
+
+@pytest.mark.parametrize("built", (Mesh.icosphere(2), Mesh.torus(2.0, 0.5, 16, 8)), ids=("sphere", "torus"))
+def test_closed_mesh_is_wound_outward_whatever_the_given_winding(built):
+    mesh, vertices = built
+    faces = mesh.faces
+    coordinates = (stack((mv.x, mv.y, mv.z)) & vertices.batch()[..., None]).to_array()
+    # Turn a scattered half of the faces, then all of them: either way the closed mesh recovers the outward winding.
+    scattered = np.where((np.arange(len(faces)) % 3 == 0)[:, None], faces[:, [1, 0, 2]], faces)
+    for given in (scattered, faces[:, [1, 0, 2]]):
+        wound = Mesh.closed(given, coordinates).faces
+        same_corners = np.sort(wound, axis=-1) == np.sort(faces, axis=-1)
+        same_sense = np.any([np.all(np.roll(faces, shift, axis=-1) == wound, axis=-1) for shift in range(3)], axis=0)
+        assert same_corners.all() and same_sense.all()

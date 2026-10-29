@@ -113,9 +113,9 @@ def harmonic_rotor_frames(
 ) -> tuple[Even, Rotor]:
     """Pinned boundary rotors determine a linear harmonic chord field in the 4D even subalgebra, and its normalized unit rotor field."""
     _, rotor_laplacian, _, _, _ = rotor_laplacian_operators(mesh, vertices)
-    free_vertices = np.setdiff1d(np.arange(mesh.n_vertices), boundary)
-    free = ~SparseExtensor.selection(mv.context, free_vertices, mesh.n_vertices) * Rotor   # (Even+ <- Even+)[vertices <- free]
-    pinned = ~SparseExtensor.selection(mv.context, boundary, mesh.n_vertices) * Rotor      # (Even+ <- Even+)[vertices <- boundary]
+    free_vertices = mesh.interior(0)
+    free = ~mesh.reading(free_vertices) * Rotor                              # (Even+ <- Even+)[vertices <- free]
+    pinned = ~mesh.reading(boundary) * Rotor                                 # (Even+ <- Even+)[vertices <- boundary]
 
     # The chord field minimizes edge energy in the even subalgebra.
     # Normalization gives unit frames, changing the variational problem in the process.
@@ -132,8 +132,8 @@ def relax_rotor_frames(
 ) -> Iterator[tuple[Rotor, Scalar]]:
     """Projected cotangent steps smooth a frame field with fixed boundary frames and unit rotors at every vertex."""
     rotor_d0, rotor_laplacian, edge_weights, _, _ = rotor_laplacian_operators(mesh, vertices)
-    free_vertices = np.setdiff1d(np.arange(mesh.n_vertices), boundary)
-    free = ~SparseExtensor.selection(mv.context, free_vertices, mesh.n_vertices) * Rotor   # (Even+ <- Even+)[vertices <- free]
+    free_vertices = mesh.interior(0)
+    free = ~mesh.reading(free_vertices) * Rotor                              # (Even+ <- Even+)[vertices <- free]
     current = initial_rotors                                                 # Rotor+[vertices]
     for _ in range(n_steps + 1):
         edge_differences = rotor_d0(current)                                 # Even+[edges]

@@ -14,8 +14,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
+from examples import instantiate
 from examples.surfaces.k_surfaces import core
 from examples.util.wgsl import compose, image_figure, meshes, solids
+
+Mesh = instantiate("examples.util.mesh", core.ga).Mesh
 
 # The pictures' pixels across and up; the bending saddle's at a share of them per side, its widths in pixels scaled
 # with it, and drawn with every so many of the grid's lines.
@@ -76,11 +79,9 @@ def mesh(n_rows: int, n_columns: int, spacing: int) -> tuple[np.ndarray, np.ndar
     indices = np.arange(n_rows * n_columns).reshape(n_rows, n_columns)
     quads = np.stack([indices[:-1, :-1], indices[1:, :-1],
                      indices[1:, 1:], indices[:-1, 1:]], axis=-1).reshape(-1, 4)
-    faces = quads[:, [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
-    edge_vertices = np.sort(faces[:, [[1, 2], [2, 0], [0, 1]]], axis=-1)
-    _, inverse, counts = np.unique(edge_vertices.reshape(-1, 2), axis=0,
-                                  return_inverse=True, return_counts=True)
-    boundary = counts[inverse].reshape(-1, 3) == 1
+    grid = Mesh(n_rows * n_columns, quads[:, [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3))
+    # Of each face, whether the edge opposite each corner lies on the grid's boundary.
+    boundary = np.isin(grid.face_edges, grid.boundary_edges)                    # [faces, corners]
     # Of each quad's two triangles, the edges opposite their corners: the next row and this column, then the next
     # column and this row, each drawn where its line is.
     rows, columns = np.meshgrid(np.arange(n_rows - 1), np.arange(n_columns - 1), indexing="ij")
@@ -90,7 +91,7 @@ def mesh(n_rows: int, n_columns: int, spacing: int) -> tuple[np.ndarray, np.ndar
                       np.stack([drawn_columns[columns + 1], drawn_rows[rows], zero], axis=-1)], axis=-2).reshape(-1, 3)
     grid_edges = np.tile([[1, 0, 1], [1, 1, 0]], (len(quads), 1))
     ink = np.where(boundary, boundary_darkness * grid_edges, edge_darkness * lines)
-    return faces, ink
+    return grid.faces, ink
 
 
 def projective(points: np.ndarray) -> solids.Point:

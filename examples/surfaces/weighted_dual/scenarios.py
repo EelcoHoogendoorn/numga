@@ -41,20 +41,20 @@ def spiral_directions(count: int) -> core.Point:
     around = (core.mv.xy * (-azimuth / 2)).exp()                               # [points] Rotor+
     spiral = (around * down) >> core.mv.z.dual()                               # [points] Point-
     nudges = core.mv.vector(np.random.default_rng(DIRECTION_SEED).normal(size=(count, 3))).dual()   # [points] Point-
-    return (spiral + JITTER * nudges).normalized()                             # [points] Point-
+    return (spiral + JITTER * nudges).normalized().field()                     # Point-[points]
 
 
 directions = spiral_directions(N_POINTS)
 
 
-def breath() -> Iterator[tuple[core.Point, np.ndarray, core.Point]]:
-    """The breath yields, at each frame, the points along their fixed directions at their own distances, the
-    faces of the mesh they had on the sphere, held throughout, and the poles of those faces."""
-    faces = core.hull(directions)                                              # [faces, 3]
+def breath() -> Iterator[tuple[core.Mesh, core.Point, core.Point]]:
+    """The breath yields, at each frame, the mesh the points had on the sphere, held throughout, the points along
+    their fixed directions at their own distances, and the poles of the mesh's faces."""
+    mesh = core.hull(directions)
     phases = np.random.default_rng(PHASE_SEED).uniform(0, 2 * np.pi, N_POINTS)
     radii = 1 + AMPLITUDE * np.sin(np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)[:, None] + phases)   # [frames, points]
-    for points in directions * radii:                                          # [points] Point-
-        yield points, faces, core.poles(points, faces)
+    for points in (directions.batch() * radii).field():                        # Point-[points]
+        yield mesh, points, core.poles(mesh, points)
 
 
 def widest(conditions: core.Scalar) -> tuple[np.ndarray, float]:
@@ -85,22 +85,23 @@ def nearest(conditions: core.Scalar, margin: float, start: np.ndarray) -> np.nda
     return result.x
 
 
-def settle() -> Iterator[tuple[core.Point, np.ndarray, core.Point]]:
-    """The settling yields, at every frame, the points, faces and poles on the straight line in the weights from
+def settle() -> Iterator[tuple[core.Mesh, core.Point, core.Point]]:
+    """The settling yields, at every frame, the mesh, points and poles on the straight line in the weights from
     the hull of points at random distances along their rays, held with the points back on the sphere, where
     some of its dual edges cross over, to the nearest weights that unfold it with every pole inside its face,
     closing in on them at the end."""
     radii = np.exp(MESH_SPREAD * np.random.default_rng(MESH_SEED).normal(size=N_POINTS))   # [points]
-    faces = core.hull(directions * radii)                                      # [faces, 3]
+    mesh = core.hull((directions.batch() * radii).field())
     start = np.ones(N_POINTS)                                                  # [points]
     # Every fold outward and every pole inside its face, each linear in the weights: at one unit weighting per
     # point, all as one batch, they give the columns of the map from weights to conditions.
-    unit_weights = np.eye(N_POINTS)                                            # [points, points]
-    conditions = concatenate([core.folds(directions, unit_weights, core.Mesh(N_POINTS, faces)),
-                              core.insides(directions, unit_weights, faces).reshape(N_POINTS, -1)], axis=-1)   # [points, conditions] Scalar+
+    unit_weights = core.mv.scalar(np.eye(N_POINTS)[..., None]).field()         # [points] Scalar+[points]
+    conditions = concatenate([core.folds(mesh, directions, unit_weights),
+                              core.insides(mesh, directions, unit_weights).batch().reshape(N_POINTS, -1)], axis=-1)   # [points, conditions] Scalar+
     rescue = nearest(conditions, MARGIN_SHARE * widest(conditions)[1], start)  # [points]
-    for points in directions / (start + core.timing(N_SETTLE_FRAMES)[:, None] * (rescue - start)):   # [points] Point-
-        yield points, faces, core.poles(points, faces)
+    paths = start + core.timing(N_SETTLE_FRAMES)[:, None] * (rescue - start)   # [frames, points]
+    for points in (directions.batch() / paths).field():                        # Point-[points]
+        yield mesh, points, core.poles(mesh, points)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -115,15 +116,16 @@ def main() -> None:
     save_animation(render.animate(settled), "weighted_dual_rescue", DURATION_MS)
 
     # checks
-    for points, faces, duals in frames:
+    for mesh, points, duals in frames:
         # Every face's plane, the dual of its pole, pairs to one with each of the face's vertices.
-        assert np.abs((duals.dual_inverse()[:, None] & points[faces]).to_array() - 1).max() < 1e-10
+        assert np.abs((duals.dual_inverse() & (mesh.incidence[2, 0] * points)).to_array() - 1).max() < 1e-10
 
     # On the sphere some dual edges cross over, exactly where the polyhedron folds; along the straight line
     # to the rescue they only ever uncross, and at the rescue none is left.
-    mesh = core.Mesh(N_POINTS, settled[0][1])
-    crossed = [(core.dual_lengths(points, mesh) < 0).sum() for points, _, _ in settled]
-    assert np.array_equal(core.dual_lengths(settled[0][0], mesh) < 0, core.folds(directions, np.ones(N_POINTS), mesh) < 0)
+    mesh = settled[0][0]
+    even_weights = core.mv.scalar(np.ones((N_POINTS, 1))).field()              # Scalar+[points]
+    crossed = [(core.dual_lengths(mesh, points) < 0).sum() for _, points, _ in settled]
+    assert np.array_equal(core.dual_lengths(mesh, settled[0][1]) < 0, core.folds(mesh, directions, even_weights) < 0)
     assert crossed[0] > 0 and crossed[-1] == 0 and (np.diff(crossed) <= 0).all()
     # At the rescue every pole lies inside its face.
     assert (core.sides(*settled[-1]) > 0).all()

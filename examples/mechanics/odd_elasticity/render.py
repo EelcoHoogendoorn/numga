@@ -91,12 +91,12 @@ def bond_frames(
 
 
 def patch_frames(
-    reference: core.Displacement, edges: np.ndarray,
+    reference: core.Displacement, mesh: core.Mesh,
     states: Iterable[tuple[core.Displacement, core.Force]], force_scale: float,
 ) -> Iterator[np.ndarray]:
     """A deforming patch pushes on its boundary around its closed cycle."""
     rest = _coordinates(reference)
-    boundary = np.bincount(edges.reshape(-1), minlength=len(rest)) < 6
+    boundary = mesh.exterior(0)
     positions, forces = (np.stack(values) for values in zip(*((_coordinates(position), _arrows(force))
                                                                for position, force in states)))
     arrow_tips = positions[:, boundary] + force_scale * forces[:, boundary]
@@ -104,7 +104,7 @@ def patch_frames(
 
     figure = plt.figure(figsize=(5.2, 3.6), dpi=50, facecolor=BACKGROUND)
     ax = _scene(figure, bounds, (0.02, 0.02, 0.96, 0.96))
-    ax.add_collection(LineCollection(rest[edges], colors=REFERENCE, linewidths=1))
+    ax.add_collection(LineCollection(rest[mesh.edges], colors=REFERENCE, linewidths=1))
     bonds = LineCollection([], colors=BOND, linewidths=1.7)
     ax.add_collection(bonds)
     nodes = ax.scatter(*rest.T, s=13, c=ANCHOR, linewidths=0, zorder=3)
@@ -113,7 +113,7 @@ def patch_frames(
                        width=0.005, headwidth=3.8, headlength=4.8, zorder=4)
 
     for position, force in zip(positions, forces):
-        bonds.set_segments(position[edges])
+        bonds.set_segments(position[mesh.edges])
         nodes.set_offsets(position)
         arrows.set_offsets(position[boundary])
         arrows.set_UVC(*(force_scale * force[boundary]).T)
@@ -122,7 +122,7 @@ def patch_frames(
 
 
 def wave_frames(
-    reference: core.Displacement, edges: np.ndarray,
+    reference: core.Displacement, mesh: core.Mesh,
     states: Iterable[tuple[core.Displacement, core.Scalar]],
     displacement_scale: float, extension_scale: float, tracked_index: int,
 ) -> Iterator[np.ndarray]:
@@ -130,7 +130,7 @@ def wave_frames(
     rest = _coordinates(reference)
     figure = plt.figure(figsize=(6.5, 3.7), dpi=50, facecolor=BACKGROUND)
     ax = _scene(figure, _bounds(rest, 0.035), (0.015, 0.015, 0.97, 0.97))
-    ax.add_collection(LineCollection(rest[edges], colors=REFERENCE, linewidths=0.65))
+    ax.add_collection(LineCollection(rest[mesh.edges], colors=REFERENCE, linewidths=0.65))
     bonds = LineCollection([], linewidths=1.15, cmap=STRAIN, norm=Normalize(-extension_scale, extension_scale))
     ax.add_collection(bonds)
     nodes = ax.scatter(*rest.T, s=3, c=ANCHOR, linewidths=0, zorder=3)
@@ -142,7 +142,7 @@ def wave_frames(
     history = []
     for positions, extensions in states:
         position = rest + displacement_scale * (_coordinates(positions) - rest)
-        bonds.set_segments(position[edges])
+        bonds.set_segments(position[mesh.edges])
         bonds.set_array(extensions.batch().to_array())
         nodes.set_offsets(position)
         history.append(position[tracked_index])

@@ -23,8 +23,10 @@ Plane = ga.gatype.vector()                          # Vector+
 Point = ga.gatype.antivector()                      # Antivector-
 # Oriented triangle area elements and unit tangent patches are joins of two edges.
 Patch = ga.gatype.antibivector()                    # Antibivector-
+# A field integrated over each vertex's share of the surface is an amount, an intrinsic antiscalar.
+Amount = ga.gatype.antiscalar()                     # Antiscalar-
 GradientMap = ga.gatype((Plane, Scalar))
-Mass = ga.gatype((ga.gatype.antiscalar(), Scalar))
+Mass = ga.gatype((Amount, Scalar))
 Superposition = ga.gatype((Scalar, Scalar))
 Bracket = ga.gatype((Scalar, Scalar, Scalar))
 

@@ -160,9 +160,9 @@ def turning(mesh: core.Mesh, vertices: core.Point, field: core.Point) -> core.Po
 def pattern(mesh: core.Mesh, vertices: core.Point, normals: core.Vector, areas: core.Scalar, weights: core.Scalar,
             index: np.ndarray, generators: list[np.ndarray], frequency: float) -> tuple[Pattern, core.Scalar]:
     """The stripes run along the unit direction field of the trivial connection with every face turning by its
-    index `[faces]`, and along the field turned a quarter turn: the two lines `[vertices, 2]`, the unit stripe
-    field of each `[vertices, 2]`, and the edges' targets for each `[edges, 2]`; with the energies of each line's
-    two smoothest stripe fields `[2, 2]`."""
+    index `[faces]`, and along the field turned a quarter turn: the two lines `[2] Point-[vertices]`, the unit
+    stripe field of each `[2] Point-[vertices]`, and the edges' targets for each `[2] Scalar+[edges]`; with the
+    energies of each line's two smoothest stripe fields `[2, 2]`."""
     angles, field, _, _ = design(mesh, normals, areas, weights, index, generators)
     # Every face is regular except the singular ones.
     regular = core.as_scalar(np.where(index == 0, 1.0, 0.0)).field()           # Scalar+[faces]
@@ -171,7 +171,7 @@ def pattern(mesh: core.Mesh, vertices: core.Point, normals: core.Vector, areas: 
     layers = [along(mesh, vertices, normals, areas, angles, direction, regular, frequency)
               for direction in (field, quarter_turned)]
     *families, energies = zip(*layers)
-    return tuple(stack([layer.batch() for layer in family], axis=-1) for family in families), stack(energies)
+    return tuple(stack(family) for family in families), stack(energies)
 
 
 def along(mesh: core.Mesh, vertices: core.Point, normals: core.Vector, areas: core.Scalar, angles: core.Scalar,
@@ -230,11 +230,12 @@ def crosses() -> tuple[core.Mesh, core.Point, list[Pattern], list[core.Scalar]]:
 
 
 def sliding(mesh: core.Mesh, vertices: core.Point, stripes: core.Point) -> core.Point:
-    """The stripe fields `[vertices, n]` turned about every normal through a whole turn, `[frames, vertices, n]`,
-    are stripe fields at every turn, their stripes slid along their lines by the turn's share of one stripe."""
+    """The stripe fields `[n] Point-[vertices]` turned about every normal through a whole turn,
+    `[frames, n] Point-[vertices]`, are stripe fields at every turn, their stripes slid along their lines by the
+    turn's share of one stripe."""
     angles = np.linspace(0, 2 * np.pi, N_SLIDING_FRAMES, endpoint=False)         # [frames]
-    planes = core.vertex_normals(mesh, vertices).batch()[:, None].dual()         # [vertices, 1] Bivector+
-    return (planes * (-angles[:, None, None] / 2)).exp() >> stripes              # [frames, vertices, n] Point-
+    planes = core.vertex_normals(mesh, vertices).dual()                          # Bivector+[vertices]
+    return (planes * (-angles[:, None] / 2)).exp() >> stripes                    # [frames, n] Point-[vertices]
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -253,14 +254,14 @@ def nearest_faces(mesh: core.Mesh, vertices: core.Point, directions: core.Vector
 
 
 def stripe_mismatch(mesh: core.Mesh, vertices: core.Point, lines: core.Point, stripes: core.Point, advance: core.Scalar) -> np.ndarray:
-    """The stripe phase across every edge misses its target by an angle `[edges, n]`; the phase is the angle from
+    """The stripe phase across every edge misses its target by an angle `[n, edges]`; the phase is the angle from
     the stripe field to its line, about each vertex normal."""
-    normals = core.vertex_normals(mesh, vertices).batch()[:, None]               # [vertices, 1] Vector-
+    normals = core.vertex_normals(mesh, vertices)                                # Vector-[vertices]
     # The sine of the angle from the stripe field to its line: the plane their commutator turns in, read across the
     # tangent plane; the cosine is their inner product.
-    sines = (lines.commutator(stripes) | normals.dual()).to_array()              # [vertices, n]
-    phase = np.arctan2(sines, stripes.dot(lines).to_array())
-    steps = phase[mesh.edges[:, 1]] - phase[mesh.edges[:, 0]] - advance.to_array()
+    sines = (lines.commutator(stripes) | normals.dual()).batch().to_array()      # [n, vertices]
+    phase = core.as_scalar(np.arctan2(sines, stripes.dot(lines).batch().to_array())).field()   # [n] Scalar+[vertices]
+    steps = (mesh.d[0] * phase - advance).batch().to_array()                     # [n, edges]
     return np.abs(np.angle(np.exp(1j * steps)))
 
 
@@ -284,16 +285,16 @@ def main() -> None:
                                           indices), "connections_turning", DURATION_MS)
 
     fine_mesh, fine_vertices, sphere_patterns, stripe_energies = stripe_spheres()
-    bands = [tuple(family[..., :1] for family in pattern) for pattern in sphere_patterns]
+    bands = [tuple(family[:1] for family in pattern) for pattern in sphere_patterns]
     save_figure(render.draw_bands(fine_mesh, fine_vertices, bands), "connections_stripes_spheres")
     save_figure(render.draw_lines(fine_mesh, fine_vertices, sphere_patterns, 1.0), "connections_stripes_sphere_grids")
     stripe_torus, stripe_torus_vertices, torus_patterns, torus_stripe_energies = stripe_tori()
-    bands = [tuple(family[..., :1] for family in pattern) for pattern in torus_patterns]
+    bands = [tuple(family[:1] for family in pattern) for pattern in torus_patterns]
     save_figure(render.draw_bands(stripe_torus, stripe_torus_vertices, bands), "connections_stripes_tori")
     save_figure(render.draw_lines(stripe_torus, stripe_torus_vertices, torus_patterns, 1.0), "connections_stripes_torus_grids")
     _, _, cross_patterns, cross_angles = crosses()
     save_figure(render.draw_lines(fine_mesh, fine_vertices, cross_patterns, CROSS_SCALE), "connections_stripes_crosses")
-    lines, stripe_fields, advance = (family[..., :1] for family in sphere_patterns[2])
+    lines, stripe_fields, advance = (family[:1] for family in sphere_patterns[2])
     save_animation(render.animate_flow(fine_mesh, fine_vertices, lines, sliding(fine_mesh, fine_vertices, stripe_fields), advance),
                    "connections_stripes_sliding", DURATION_MS)
 
@@ -327,7 +328,8 @@ def main() -> None:
     np.testing.assert_allclose(np.concatenate([(field & sphere_normals).to_array() for field, _, _ in sphere_scenes]), 0.0, atol=1e-12)
     # The face curvatures add up to two whole turns, and indices one short of the Euler characteristic
     # leave the missing turn spread over all faces.
-    curvature = core.loop_turn(sphere_normals.batch()[sphere_mesh.faces])             # [faces] Scalar+
+    corner_normals = (sphere_mesh.incidence[2, 0] * sphere_normals).batch()   # [corners, faces] Vector-
+    curvature = core.loop_turn(corner_normals)                                        # [faces] Scalar+
     np.testing.assert_allclose(curvature.sum(axis=0).to_array(), 4 * np.pi, rtol=1e-12)
     angles, circulation, target = core.trivial_connection(sphere_mesh, sphere_normals, face_indices(sphere_mesh, np.array([0]), [1]), [])
     np.testing.assert_allclose((circulation(angles) - target).to_array(), 2 * np.pi / len(sphere_mesh.faces), rtol=1e-9)
@@ -338,17 +340,17 @@ def main() -> None:
                                                (stripe_torus, stripe_torus_vertices, torus_patterns, torus_stripe_energies)):
         for (lines, stripes, advance), pair in zip(patterns, energies):
             np.testing.assert_allclose(pair.to_array()[:, 1], pair.to_array()[:, 0], rtol=1e-6)
-            assert np.median(stripe_mismatch(mesh, vertices, lines, stripes, advance), axis=0).max() < 0.25
+            assert np.median(stripe_mismatch(mesh, vertices, lines, stripes, advance), axis=-1).max() < 0.25
     # Carried across every edge, each of the tail's lines lands along or against one of the head's
     # lines, and some edges trade the two lines or reverse them: around a singularity the cross turns
     # by a quarter or a half, not by a whole turn.
     fine_normals = core.vertex_normals(fine_mesh, fine_vertices)                      # Vector-[vertices]
     for (lines, _, _), angles in zip(cross_patterns, cross_angles):
-        forward = core.adjusted_transport(fine_mesh, fine_normals, angles)[:, 0]      # [edges] Rotor+
-        tails, heads = lines[fine_mesh.edges[:, 0]], lines[fine_mesh.edges[:, 1]]          # [edges, 2] Point-, [edges, 2] Point-
-        match = heads[:, :, None].dot((forward[:, None] >> tails)[:, None, :]).to_array()   # [edges, 2, 2]
+        forward = core.adjusted_transport(fine_mesh, fine_normals, angles)[0]         # Rotor+[edges]
+        tails, heads = fine_mesh.incidence[1, 0][:, None] * lines                     # [2] Point-[edges], [2] Point-[edges]
+        match = heads[:, None].dot((forward >> tails)[None, :]).batch().to_array()    # [2, 2, edges]
         np.testing.assert_allclose(np.abs(match) * (1 - np.abs(match)), 0, atol=1e-8)
-        assert (match[:, 0, 0] < 0.5).any()
+        assert (match[0, 0] < 0.5).any()
 
 
 if __name__ == "__main__":

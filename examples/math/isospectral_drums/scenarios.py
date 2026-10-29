@@ -9,7 +9,7 @@ import numpy as np
 from numga import concatenate, stack
 from numga.sparse import SparseExtensor
 from examples.math.isospectral_drums.core import Point, Scalar, context, mv, tile_mixing
-from examples.math.isospectral_drums.numerics import drum, triangle
+from examples.math.isospectral_drums.numerics import Mesh, drum, triangle
 
 n_lattice = 4
 source_indices = np.array([
@@ -46,17 +46,17 @@ n_colours = 32
 
 
 # --- math -----------------------------------------------------------------------------
-def drums() -> tuple[Point, tuple[Point, Point], tuple[np.ndarray, np.ndarray], Scalar, Scalar, SparseExtensor,
+def drums() -> tuple[Point, tuple[Point, Point], tuple[Mesh, Mesh], Scalar, Scalar, SparseExtensor,
                      SparseExtensor, SparseExtensor, SparseExtensor, SparseExtensor, SparseExtensor]:
-    """The two drums' tiles `[drums, tiles, corners]`, vertices and faces, the source drum's standing waves and their
+    """The two drums' tiles `[drums, tiles, corners]`, vertices and meshes, the source drum's standing waves and their
     squared frequencies `[modes]`, the two wave operators, the transplantation, the restriction of the source field
     to its tiles, and the maps that put the fixed boundary back."""
     offsets = np.arange(n_lattice)
     lattice = (mv.x.dual() * offsets[None, :] + mv.y.dual() * offsets[:, None]).reshape((-1,))  # [lattice vertices] Point-
     tiles = stack((lattice[source_indices], lattice[target_indices]))   # [drums, tiles, corners] Point-
-    source_vertices, source_faces, source_neighbors, source_restriction, _, source_lift = drum(
+    source_vertices, source_mesh, source_neighbors, source_restriction, _, source_lift = drum(
         source_indices, n_lattice, n_subdivisions)
-    target_vertices, target_faces, target_neighbors, _, target_assembly, target_lift = drum(
+    target_vertices, target_mesh, target_neighbors, _, target_assembly, target_lift = drum(
         target_indices, n_lattice, n_subdivisions)
     spacing = 1 / n_subdivisions
     source_laplacian = (4 * Scalar - source_neighbors) / spacing**2    # (Scalar+ <- Scalar+)[source sites <- source sites]
@@ -70,7 +70,7 @@ def drums() -> tuple[Point, tuple[Point, Point], tuple[np.ndarray, np.ndarray], 
     # Inserting a zero boundary preserves the interior field's inner product.
     measure = source_lift.adjoint()(source_lift)                     # (Scalar+ <- Scalar+)[source sites <- source sites]
     eigenvalues, modes = source_laplacian.eigh(measure, n_modes)       # [modes] Scalar+, [modes] Scalar+[source sites]
-    return (tiles, (source_vertices, target_vertices), (source_faces, target_faces), modes / spacing, eigenvalues,
+    return (tiles, (source_vertices, target_vertices), (source_mesh, target_mesh), modes / spacing, eigenvalues,
             source_laplacian, target_laplacian, transplant, source_restriction, source_lift, target_lift)
 
 
@@ -92,7 +92,7 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.math.isospectral_drums import render
 
-    (tiles, vertices, faces, modes, eigenvalues, source_laplacian, target_laplacian, transplant, source_restriction,
+    (tiles, vertices, meshes, modes, eigenvalues, source_laplacian, target_laplacian, transplant, source_restriction,
      source_lift, target_lift) = drums()
     save_figure(render.draw_tiles(tiles), "isospectral_drums_tiles")
 
@@ -104,10 +104,10 @@ def main() -> None:
     source_pieces = read_tile(source_restriction(modes[mixed_modes[-1]] * mix_amplitudes[-1]))   # [tiles] Scalar+[samples]
     contributions = source_pieces[contributors[target_tile]] * signs[target_tile]  # [terms] Scalar+[samples]
     pieces = concatenate((contributions, contributions.sum(axis=0)[None]), axis=0)  # [terms + 1] Scalar+[samples]
-    local_vertices, local_faces = triangle(n_subdivisions)
-    save_figure(render.draw_pieces(local_vertices, local_faces, pieces, exposure), "isospectral_drums_pieces")
+    local_vertices, local_mesh = triangle(n_subdivisions)
+    save_figure(render.draw_pieces(local_vertices, local_mesh, pieces, exposure), "isospectral_drums_pieces")
 
-    save_animation(render.frames(vertices, faces, tiles, vibration(modes, eigenvalues, transplant, source_lift, target_lift),
+    save_animation(render.frames(vertices, meshes, tiles, vibration(modes, eigenvalues, transplant, source_lift, target_lift),
                                  exposure), "isospectral_drums", duration_ms, colors=n_colours)
 
     # checks

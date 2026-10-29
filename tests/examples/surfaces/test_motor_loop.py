@@ -7,7 +7,7 @@ from examples.surfaces.motor_loop import core, render, scenarios
 
 
 def test_motors_keep_the_twisted_ribbon_wide_where_points_wring_it_thin():
-    control_frames, surfaces, control_faces, faces = scenarios.winding()
+    control_frames, surfaces, control_mesh, refined_mesh = scenarios.winding()
     # Measure how far each surface reaches from the z axis on average, at rest and at peak twist.
     centre_line = core.mv.w.dual() & core.mv.point([0.0, 0.0, 1.0])            # [] Line-
     distance = (centre_line & surfaces[[0, scenarios.N_FRAMES // 2]].batch()).norm().mean(axis=-1)  # [cases, schemes] Scalar+
@@ -15,7 +15,7 @@ def test_motors_keep_the_twisted_ribbon_wide_where_points_wring_it_thin():
     # Untwisted, the two schemes agree; wound up, point subdivision wrings the ribbon toward its axis while motor subdivision does not.
     assert (points_rest - motors_rest).abs() < 1e-12
     assert points_peak < 0.7 * points_rest and motors_peak >= motors_rest
-    assert len(list(render.animate(control_frames[:1], surfaces[:1], control_faces, faces))) == 1
+    assert len(list(render.animate(control_frames[:1], surfaces[:1], control_mesh, refined_mesh))) == 1
 
 
 def test_only_the_turns_between_frames_bend_the_motor_surface():

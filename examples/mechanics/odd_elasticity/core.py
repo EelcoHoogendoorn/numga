@@ -38,8 +38,8 @@ directions = stack((mv.x, mv.y)).dual()                                      # [
 
 
 # --- plumbing -------------------------------------------------------------------------
-def triangular_patch(n_columns: int, n_rows: int, spacing: float) -> tuple[Displacement, np.ndarray, SparseExtensor]:
-    """A triangular lattice with free edges, its positions and oriented bond incidence."""
+def triangular_patch(n_columns: int, n_rows: int, spacing: float) -> tuple[Mesh, Displacement]:
+    """A triangular lattice with free edges: its triangles, whose edges are the bonds, and its positions."""
     columns, rows = np.meshgrid(np.arange(n_columns), np.arange(n_rows))
     positions = spacing * (
         directions[0] * (columns + (rows % 2) / 2 - (n_columns - 1) / 2)
@@ -47,15 +47,16 @@ def triangular_patch(n_columns: int, n_rows: int, spacing: float) -> tuple[Displ
     )                                                                        # [rows, columns] Displacement-
     positions = positions.reshape(-1).field()                                # Displacement-[sites]
 
+    # Between two rows each cell holds two triangles, counter-clockwise; the rows alternate in being shifted half a
+    # spacing to the right, which decides the diagonal the two triangles share.
     indices = np.arange(n_columns * n_rows).reshape(n_rows, n_columns)
-    horizontal = np.stack((indices[:, :-1], indices[:, 1:]), axis=-1).reshape(-1, 2)
-    vertical = np.stack((indices[:-1], indices[1:]), axis=-1).reshape(-1, 2)
-    lower = indices[:-1, :-1] + ((np.arange(n_rows - 1) + 1) % 2)[:, None]
-    upper = indices[1:, :-1] + (np.arange(n_rows - 1) % 2)[:, None]
-    diagonal = np.stack((lower, upper), axis=-1).reshape(-1, 2)
-    edges = np.concatenate((horizontal, vertical, diagonal))
-    incidence = Mesh(n_columns * n_rows, edges).d[0]                         # Scalar+[bonds <- sites]
-    return positions, edges, incidence
+    lower_left, lower_right = indices[:-1, :-1], indices[:-1, 1:]
+    upper_left, upper_right = indices[1:, :-1], indices[1:, 1:]
+    over_shifted_row = np.stack((lower_left, upper_right, upper_left, lower_left, lower_right, upper_right), axis=-1)
+    over_plain_row = np.stack((lower_left, lower_right, upper_left, lower_right, upper_right, upper_left), axis=-1)
+    shifted = (np.arange(n_rows - 1) % 2 == 1)[:, None, None]
+    triangles = np.where(shifted, over_shifted_row, over_plain_row).reshape(-1, 3)
+    return Mesh(n_columns * n_rows, triangles), positions
 
 
 # --- math -----------------------------------------------------------------------------

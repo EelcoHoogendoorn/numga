@@ -122,7 +122,7 @@ def draw_curvature_defects(mesh: core.Mesh, vertices: core.Point, centres: core.
     curvature_values = np.asarray((curvatures.batch() & mv.xy.dual()).to_array())
     triangulation = Triangulation(*places.T, triangles=mesh.faces)
     walls = places[mesh.edges[mesh.boundary_edges]]
-    boundary = np.unique(mesh.edges[mesh.boundary_edges])
+    boundary = mesh.exterior(0)
     interior = ~np.isin(np.arange(mesh.n_vertices), boundary)
     bound = np.abs(curvature_values[:, interior]).max()
 

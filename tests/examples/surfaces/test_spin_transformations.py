@@ -18,17 +18,17 @@ def test_conformal_error_falls_with_refinement():
     for levels in (2, 3):
         mesh, vertices = core.Mesh.icosphere(levels)
         centroids = mesh.incidence[2, 0].mean(axis=0) * vertices
-        deformed = core.spin_transform_deform(mesh, vertices, (centroids & core.context.multivector.y) * 0.5)
-        errors.append(np.abs((core.corner_cosines(mesh, deformed) - core.corner_cosines(mesh, vertices)).to_array()).max())
+        transformed_vertices = core.spin_transform_deform(mesh, vertices, (centroids & core.context.multivector.y) * 0.5)
+        errors.append(np.abs((core.corner_cosines(mesh, transformed_vertices) - core.corner_cosines(mesh, vertices)).to_array()).max())
     assert errors[1] < 0.6 * errors[0]
 
 
 def test_a_dipole_change_keeps_angles_and_raises_curvature_where_asked():
-    mesh, vertices, curvature_change, deformed = scenarios.dipole()
-    np.testing.assert_allclose((core.corner_cosines(mesh, deformed) - core.corner_cosines(mesh, vertices)).to_array(), 0.0, atol=0.05)
-    risen = core.mean_curvature(mesh, core.recentred(deformed)) - core.mean_curvature(mesh, vertices)
-    assert np.corrcoef(risen.to_array().ravel(), curvature_change.to_array().ravel())[0, 1] > 0.5
-    plt.close(render.draw_dipole(mesh, vertices, curvature_change, deformed))
+    mesh, vertices, curvature_change, transformed_vertices = scenarios.dipole()
+    np.testing.assert_allclose((core.corner_cosines(mesh, transformed_vertices) - core.corner_cosines(mesh, vertices)).to_array(), 0.0, atol=0.05)
+    curvature_rise = core.mean_curvature(mesh, core.recentred(transformed_vertices)) - core.mean_curvature(mesh, vertices)
+    assert np.corrcoef(curvature_rise.to_array().ravel(), curvature_change.to_array().ravel())[0, 1] > 0.5
+    plt.close(render.draw_dipole(mesh, vertices, curvature_change, transformed_vertices))
 
 
 def test_the_dirac_spheres_have_fields_of_zero_energy():

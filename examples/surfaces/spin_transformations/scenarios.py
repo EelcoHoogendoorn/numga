@@ -42,8 +42,8 @@ def dirac() -> tuple[core.Mesh, core.Point, dict[int, core.Point], np.ndarray]:
     """The sphere and its vertices; a few of the Dirac spheres for each of the eigenvalues, the vertices
     of the surfaces spun by the Dirac operator's eigenfields; and the energies of their fields."""
     mesh, vertices = core.Mesh.icosphere(N_DIRAC_SUBDIVISIONS)
-    energies, spun = core.dirac_spheres(mesh, vertices, np.array(EIGENVALUES, dtype=float), N_STATES)   # [eigenvalues, states]
-    return mesh, vertices, {eigenvalue: spheres for eigenvalue, spheres in zip(EIGENVALUES, spun)}, energies.to_array().ravel()
+    energies, dirac_vertices = core.dirac_spheres(mesh, vertices, np.array(EIGENVALUES, dtype=float), N_STATES)   # [eigenvalues, states]
+    return mesh, vertices, {eigenvalue: spheres for eigenvalue, spheres in zip(EIGENVALUES, dirac_vertices)}, energies.to_array().ravel()
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -62,8 +62,8 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.surfaces.spin_transformations import render
 
-    mesh, vertices, curvature_change, deformed = dipole()
-    save_figure(render.draw_dipole(mesh, vertices, curvature_change, deformed), "spin_transformation")
+    mesh, vertices, curvature_change, transformed_vertices = dipole()
+    save_figure(render.draw_dipole(mesh, vertices, curvature_change, transformed_vertices), "spin_transformation")
     sphere, sphere_vertices, gallery, energies = dirac()
     save_figure(render.draw_dirac(sphere, gallery, sphere_vertices), "dirac_spheres")
     spot, frames = rounding()
@@ -72,13 +72,13 @@ def main() -> None:
     # checks
     cosines = core.corner_cosines
     # No change in curvature leaves the sphere as it is, centred.
-    unchanged = core.spin_transform_deform(mesh, vertices, curvature_change * 0.0) - (vertices - vertices.sites.mean())
-    np.testing.assert_allclose(unchanged.kernel, 0.0, atol=1e-11)
+    offset_without_change = core.spin_transform_deform(mesh, vertices, curvature_change * 0.0) - (vertices - vertices.sites.mean())
+    np.testing.assert_allclose(offset_without_change.kernel, 0.0, atol=1e-11)
     # The deformation keeps every corner's angle, up to the mesh's resolution, and mean curvature rises
     # where it was asked to rise.
-    np.testing.assert_allclose((cosines(mesh, deformed) - cosines(mesh, vertices)).to_array(), 0.0, atol=0.05)
-    risen = core.mean_curvature(mesh, core.recentred(deformed)) - core.mean_curvature(mesh, vertices)
-    assert np.corrcoef(risen.to_array().ravel(), curvature_change.to_array().ravel())[0, 1] > 0.5
+    np.testing.assert_allclose((cosines(mesh, transformed_vertices) - cosines(mesh, vertices)).to_array(), 0.0, atol=0.05)
+    curvature_rise = core.mean_curvature(mesh, core.recentred(transformed_vertices)) - core.mean_curvature(mesh, vertices)
+    assert np.corrcoef(curvature_rise.to_array().ravel(), curvature_change.to_array().ravel())[0, 1] > 0.5
     # Spot rounds: the spread of the vertices' distances from her centre falls tenfold, while the angles
     # hold up to the mesh's resolution, in the median.
     assert roundness(spot, frames[-1]) < 0.1 * roundness(spot, frames[0])
@@ -88,8 +88,8 @@ def main() -> None:
     # resolution away from where its field vanishes.
     assert np.all(np.abs(energies) < 0.05)
     for spheres in gallery.values():
-        for spun in spheres:
-            assert np.median(np.abs((cosines(sphere, spun) - cosines(sphere, sphere_vertices)).to_array())) < 0.1
+        for dirac_sphere in spheres:
+            assert np.median(np.abs((cosines(sphere, dirac_sphere) - cosines(sphere, sphere_vertices)).to_array())) < 0.1
 
 
 if __name__ == "__main__":

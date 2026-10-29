@@ -16,7 +16,8 @@ GRAVITY_HEIGHT = 0.3
 
 
 def test_box_buoyancy_metacentric_heights_and_righting_arm_are_the_closed_forms():
-    box = core.box(SIZES)
+    mesh, vertices = core.box(SIZES)
+    box = mesh.incidence[2, 0] * vertices
     length, beam, depth = SIZES
     surface = core.water - (DRAFT - depth / 2) * mv.w
     push, growth = core.buoyancy(box, surface, 1.0)
@@ -41,7 +42,8 @@ def test_box_buoyancy_metacentric_heights_and_righting_arm_are_the_closed_forms(
 
 
 def test_cube_floats_face_up_outside_the_band_of_densities():
-    cube = core.box(np.ones(3))
+    mesh, vertices = core.box(np.ones(3))
+    cube = mesh.incidence[2, 0] * vertices
     edges = np.array([(3 - np.sqrt(3)) / 6, (3 + np.sqrt(3)) / 6])
     densities = (edges[:, None] + np.array([-1e-3, 1e-3])).reshape(-1)       # [densities]
     stiffness = core.stiffness(cube, mv.scalar((densities - 0.5)[:, None]), mv.scalar(densities[:, None]),
@@ -51,18 +53,19 @@ def test_cube_floats_face_up_outside_the_band_of_densities():
 
 
 def test_figures_draw():
-    hull, weight, centres = scenarios.ship()
+    mesh, vertices, weight, centres = scenarios.ship()
+    hull = mesh.incidence[2, 0] * vertices
     couples, stiffness = scenarios.righting_curves(hull, weight, centres)
     placed, push = scenarios.shown_ship(hull, weight)
-    cube, weights, cube_couples = scenarios.cubes()
+    cube_mesh, cube_vertices, weights, cube_couples = scenarios.cubes()
     rests = scenarios.stable_heels(cube_couples[np.searchsorted(scenarios.DENSITIES, scenarios.SHOWN_DENSITIES)])
-    shown = scenarios.resting(cube, scenarios.SHOWN_DENSITIES, rests)
-    for figure in (render.draw_ship(hull, placed, push, centres[scenarios.SHOWN_LOAD]),
+    shown = scenarios.resting(cube_mesh.incidence[2, 0] * cube_vertices, scenarios.SHOWN_DENSITIES, rests)
+    for figure in (render.draw_ship(mesh, vertices, placed, push, centres[scenarios.SHOWN_LOAD]),
                    render.draw_curves(scenarios.HEELS, couples, weight, stiffness),
                    render.draw_cubes(scenarios.DENSITIES, scenarios.CUBE_HEELS, cube_couples, scenarios.FLUID_WEIGHT,
-                                     cube, shown, scenarios.SHOWN_DENSITIES, rests)):
+                                     cube_mesh, cube_vertices, shown, scenarios.SHOWN_DENSITIES, rests)):
         plt.close(figure)
     frames = scenarios.released(hull, weight, centres[scenarios.RELEASED])
     first = [next(frames)]
-    assert len(list(render.animate_release(hull, centres[scenarios.RELEASED], first, scenarios.HEELS,
+    assert len(list(render.animate_release(mesh, vertices, centres[scenarios.RELEASED], first, scenarios.HEELS,
                                            couples[:, scenarios.RELEASED], weight))) == 1

@@ -8,7 +8,7 @@ from itertools import islice
 
 import matplotlib.pyplot as plt
 import numpy as np
-from numga import stack
+from numga import stack, where
 
 from examples.surfaces.connections import core, render, scenarios
 
@@ -19,16 +19,17 @@ def test_extra_turns_add_to_every_face_holonomy():
     mesh, vertices = core.Mesh.icosphere(2)
     unit_normals = core.vertex_normals(mesh, vertices)                          # Vector-[vertices]
     angles = core.as_scalar(np.random.default_rng(0).normal(size=len(mesh.edges)) * 0.3).field()   # Scalar+[edges]
-    forward = core.adjusted_transport(mesh, unit_normals, angles)[:, 0]         # [edges] Rotor+
-    both = stack([forward, forward.reverse()], axis=-1)                           # [edges, 2] Rotor+
-    # Around each face, counter-clockwise from its first corner: the edges facing the third, first and
-    # second corners, each taken forward where it runs that way and backward where it does not.
-    around = [both[mesh.face_edges[:, corner], (mesh.face_edge_orientation[:, corner] < 0).astype(int)]
-              for corner in (2, 0, 1)]
-    loop = around[2] * around[1] * around[0]                                      # [faces] Rotor+
-    normals = unit_normals.batch()                                                # [vertices] Vector-
-    turned = ((loop * loop).log() | normals[mesh.faces[:, 0]].dual()).to_array()   # [faces]
-    expected = (core.loop_turn(normals[mesh.faces]) + mesh.circulation([])(angles).batch()).to_array()
+    forward = core.adjusted_transport(mesh, unit_normals, angles)[0]            # Rotor+[edges]
+    # The side facing each corner of a face, taken forward where the face runs along its edge and backward where it
+    # does not, as the signed face-edge incidence reads it.
+    runs_along = (mesh.boundary[2, 1] * core.as_scalar(np.ones(len(mesh.edges))).field()).batch() > 0   # [corners, faces]
+    sides = where(runs_along, (mesh.incidence[2, 1] * forward).batch(),
+                  (mesh.incidence[2, 1] * forward.reverse()).batch())             # [corners, faces] Rotor+
+    # Around each face, counter-clockwise from its first corner: the sides facing the third, first and second corners.
+    loop = sides[1] * sides[0] * sides[2]                                         # [faces] Rotor+
+    corner_normals = (mesh.incidence[2, 0] * unit_normals).batch()   # [corners, faces] Vector-
+    turned = (loop * loop).log().scalar_product(corner_normals[0].dual()).to_array()   # [faces]
+    expected = (core.loop_turn(corner_normals) + mesh.circulation([])(angles).batch()).to_array()
     np.testing.assert_allclose(np.angle(np.exp(1j * (turned - expected))), 0.0, atol=1e-12)
 
 
@@ -71,15 +72,16 @@ def test_stripes_follow_their_targets_and_crosses_land_on_their_lines():
     mesh, vertices, patterns, energies = scenarios.stripe_spheres()
     for (lines, stripes, advance), pair in zip(patterns, energies):
         np.testing.assert_allclose(pair.to_array()[:, 1], pair.to_array()[:, 0], rtol=1e-6)
-        assert np.median(scenarios.stripe_mismatch(mesh, vertices, lines, stripes, advance), axis=0).max() < 0.25
+        assert np.median(scenarios.stripe_mismatch(mesh, vertices, lines, stripes, advance), axis=-1).max() < 0.25
     _, _, crosses, cross_angles = scenarios.crosses()
     normals = core.vertex_normals(mesh, vertices)
     for (lines, _, _), angles in zip(crosses, cross_angles):
-        forward = core.adjusted_transport(mesh, normals, angles)[:, 0]
-        match = lines[mesh.edges[:, 1]][:, :, None].dot((forward[:, None] >> lines[mesh.edges[:, 0]])[:, None, :]).to_array()
+        forward = core.adjusted_transport(mesh, normals, angles)[0]
+        tails, heads = mesh.incidence[1, 0][:, None] * lines
+        match = heads[:, None].dot((forward >> tails)[None, :]).batch().to_array()
         np.testing.assert_allclose(np.abs(match) * (1 - np.abs(match)), 0, atol=1e-8)
-    bands = [tuple(family[..., :1] for family in pattern) for pattern in patterns]
+    bands = [tuple(family[:1] for family in pattern) for pattern in patterns]
     plt.close(render.draw_bands(mesh, vertices, bands))
     plt.close(render.draw_lines(mesh, vertices, crosses, scenarios.CROSS_SCALE))
-    lines, stripes, advance = (family[..., :1] for family in patterns[0])
+    lines, stripes, advance = (family[:1] for family in patterns[0])
     assert len(list(render.animate_flow(mesh, vertices, lines, scenarios.sliding(mesh, vertices, stripes)[:1], advance))) == 1

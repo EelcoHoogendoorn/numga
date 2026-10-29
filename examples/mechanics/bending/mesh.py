@@ -1,9 +1,9 @@
-"""The thin-walled sections of the bending scenes: the nodes of each section's midline, the pairs of
-nodes its walls run between, and the walls' thickness."""
+"""The thin-walled sections of the bending scenes: each section's walls as a one-dimensional mesh, its edges the
+walls and its vertices the nodes of the section's midline, the nodes' places, and the walls' thickness."""
 
 import numpy as np
 
-from examples.mechanics.bending.core import Point, mv, point
+from examples.mechanics.bending.core import Mesh, Point, Scalar, mv, point
 
 NAMES = ["I-section", "turned I-section", "Z-section", "slotted tube"]
 # The turn of each I- and Z-section in its plane, in degrees.
@@ -23,8 +23,14 @@ def slotted_tube(radius: float, opening: float, segments: int) -> tuple[Point, n
     return nodes, np.stack([np.arange(segments), np.arange(1, segments + 1)], axis=-1)
 
 
-def section_walls() -> list[tuple[Point, np.ndarray, np.ndarray]]:
-    """The nodes, the walls as pairs of nodes, and the thickness of each wall, for every section."""
+def section(nodes: Point, ends: np.ndarray, thickness: float) -> tuple[Mesh, Point, Scalar]:
+    """The walls between the nodes `[nodes]` that each pair of `ends` names, as a one-dimensional mesh, the nodes
+    as its vertices, `Point-[nodes]`, and every wall's thickness, `Scalar+[walls]`."""
+    return Mesh(nodes.shape[0], ends), nodes.field(), mv.scalar(np.full((len(ends), 1), thickness)).field()
+
+
+def section_walls() -> list[tuple[Mesh, Point, Scalar]]:
+    """The walls, the nodes and the thickness of each wall, for every section."""
     rise, half = HEIGHT / 2, FLANGE / 2
     # An I-section: the web between the flanges' middles, and each flange out to both sides.
     i_nodes = [[-half, -rise], [0.0, -rise], [half, -rise], [-half, rise], [0.0, rise], [half, rise]]
@@ -35,5 +41,5 @@ def section_walls() -> list[tuple[Point, np.ndarray, np.ndarray]]:
     turns = (mv.xy * (-np.deg2rad(TURNS) / 2)).exp()
     shapes = [(i_nodes, i_ends), (i_nodes, i_ends), (z_nodes, z_ends)]
     nodes, ends = slotted_tube(TUBE_RADIUS, SLOT_ANGLE, ARC_SEGMENTS)
-    return [(turn >> point(np.array(coordinates)), joined, np.full(len(joined), THICKNESS))
-            for (coordinates, joined), turn in zip(shapes, turns)] + [(nodes, ends, np.full(len(ends), TUBE_WALL))]
+    return [section(turn >> point(np.array(coordinates)), joined, THICKNESS)
+            for (coordinates, joined), turn in zip(shapes, turns)] + [section(nodes, ends, TUBE_WALL)]
