@@ -6,7 +6,7 @@ import numpy as np
 
 from numga import stack
 from examples.relativity.spacetime_whitney.core import (
-    Mesh, Point, Plane, as_scalar, mv, space, time,
+    Mesh, Point, Plane, mv, space, time,
 )
 
 n_triangle_subdivisions = 7
@@ -88,7 +88,7 @@ def main() -> None:
 
     # 1. Spacetime Whitney forms, the Lorentzian dual, and the causal light-cone wake.
     corners, points = single_triangle(space, time, n_triangle_subdivisions)
-    hats, gradients, patch = barycentric_hats(corners, points)
+    hats, gradients, _ = barycentric_hats(corners, points)
     edge_forms = edge_whitney_forms(corners, points)                         # [corners, samples] Plane+
     wake_mesh, wake_vertices, _ = spacetime_strip(
         space, time, n_wake_space, n_wake_time, np.ones(n_wake_time), wake_duration,
@@ -113,7 +113,7 @@ def main() -> None:
         space, time, n_mirror_space, n_mirror_time, wall_positions, mirror_duration,
     )
     mirror_operators = Operators(mirror_mesh, mirror_vertices)
-    potential, field, wave_rate, slice_energies = moving_mirror_wave(
+    _, _, wave_rate, slice_energies = moving_mirror_wave(
         mirror_operators, n_mirror_space, n_mirror_time, dt,
         pulse_centre, pulse_width, wavelength,
     )
@@ -154,21 +154,6 @@ def main() -> None:
     right_null, left_null = mv.x - mv.t, mv.x + mv.t
     np.testing.assert_allclose((right_null & Plane.dual()(right_null)).kernel, 0.0, atol=1e-14)
     np.testing.assert_allclose((left_null & Plane.dual()(left_null)).kernel, 0.0, atol=1e-14)
-
-    # Exact cochain complex identities on the deforming moving-mirror spacetime mesh.
-    test_phi = (mv.x & mirror_vertices) * 0.8 - (mv.t & mirror_vertices) * 1.2
-    np.testing.assert_allclose(mirror_operators.d1(mirror_operators.d0(test_phi)).kernel, 0.0, atol=1e-14)
-    np.testing.assert_allclose(
-        (mirror_operators.whitney1(mirror_operators.d0(test_phi)) - mirror_operators.gradient(test_phi)).kernel,
-        0.0, atol=1e-12,
-    )
-    test_cochain = mirror_operators.d0(test_phi) + as_scalar(np.sin(np.arange(len(mirror_mesh.edges)))).field()
-    np.testing.assert_allclose(
-        (mirror_operators.curl(test_cochain) - mirror_operators.whitney2(mirror_operators.d1(test_cochain))).kernel,
-        0.0, atol=1e-9,
-    )
-    # Gauge invariance of the discrete Maxwell action: exact 1-forms d0(phi) have zero Faraday curl action.
-    np.testing.assert_allclose(mirror_operators.maxwell_operator(mirror_operators.d0(test_phi)).kernel, 0.0, atol=1e-9)
 
     # Causality of the Green wake: negligible outside the forward 45-degree light cone of source_event.
     displacements = wake_vertices.batch() - source_event

@@ -138,7 +138,7 @@ def test_intrinsic_laplace_beltrami_cotangent_equivalence_and_flow():
     electrodes = boundary[abscissa[boundary].norm() > scenarios.electrode_threshold]
     pinned = SparseExtensor.selection(core.mv.context, electrodes, mesh.n_vertices)
     prescribed = ~pinned * (pinned * (core.mv.x & vertices))
-    potential, current, edge_flux, streamfunction = core.intrinsic_conduction(
+    potential, current, streamfunction = core.intrinsic_conduction(
         mesh, vertices, conductivities, electrodes, prescribed,
     )
 
@@ -153,5 +153,4 @@ def test_intrinsic_laplace_beltrami_cotangent_equivalence_and_flow():
     origin_face = centres.norm().batch().argmin()
     centre_speeds = current.batch()[:, origin_face].norm().to_array()
     assert centre_speeds[1] < centre_speeds[0] < centre_speeds[2]
-    assert np.isfinite(edge_flux.kernel).all()
     assert np.isfinite(streamfunction.kernel).all()

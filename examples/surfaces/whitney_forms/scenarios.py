@@ -67,7 +67,7 @@ def disk(radius: float, n_divisions: int) -> tuple[Mesh, Point]:
     unit = mv.x.dual()                                                       # [] Point-
     axes = stack((unit, (mv.xy * (-np.pi / 6)).exp() >> unit))               # [axes] Point-
     positions = (axes * lattice).sum(axis=-1)                                # [nodes] Point-
-    positions = spacing * layers[inside] * positions / positions.norm()      # [nodes] Point-
+    positions = spacing * layers[inside] * positions.normalized()            # [nodes] Point-
     vertices = concatenate((unit[None] * 0, positions)).field()              # Point-[vertices]
     return Mesh.triangulate(vertices), vertices
 
@@ -92,7 +92,7 @@ def main() -> None:
 
     # 1. Barycentric hat functions and piecewise-constant face gradients.
     corners, points = single_triangle(n_triangle_subdivisions)
-    hats, gradients, _ = barycentric_hats(corners, points)
+    hats, gradients = barycentric_hats(corners, points)
     star_mesh, star_vertices = disk(disk_radius, n_star_divisions)
     star_operators = Operators(star_mesh, star_vertices)
     vertex_hat = as_scalar(np.arange(star_mesh.n_vertices) == 0).field()     # Scalar+[vertices]
@@ -127,7 +127,7 @@ def main() -> None:
     electrodes = boundary[abscissa[boundary].norm() > electrode_threshold]
     pinned = SparseExtensor.selection(mv.context, electrodes, mesh.n_vertices)
     prescribed = ~pinned * (pinned * (mv.x & vertices))                      # Scalar+[vertices]
-    potential, current, edge_flux, streamfunction = conduction(
+    potential, current, streamfunction = conduction(
         operators, conductivity, electrodes, prescribed,
     )
     save_figure(
@@ -136,7 +136,7 @@ def main() -> None:
     )
 
     # checks
-    corner_hats, _, _ = barycentric_hats(corners, corners)
+    corner_hats, _ = barycentric_hats(corners, corners)
     np.testing.assert_allclose(corner_hats.kernel, np.eye(3)[..., None], atol=1e-14)
     np.testing.assert_allclose(hats.sum(axis=0).kernel, 1.0, atol=1e-14)
     np.testing.assert_allclose(gradients.sum(axis=0).kernel, 0.0, atol=1e-14)
@@ -180,7 +180,6 @@ def main() -> None:
     free_vertices = np.setdiff1d(np.arange(mesh.n_vertices), electrodes)
     free = ~SparseExtensor.selection(mv.context, free_vertices, mesh.n_vertices) * Scalar
     np.testing.assert_allclose(free.adjugate()(conductance(potential)).kernel, 0.0, atol=1e-11)
-    assert edge_flux.batch().shape == (2, len(mesh.edges))
 
 
 if __name__ == "__main__":

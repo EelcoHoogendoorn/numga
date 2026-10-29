@@ -273,43 +273,53 @@ def animate_moving_mirror(mesh: core.Mesh, vertices: core.Point,
     duration = float(xt_grid[-1, 0, 1])
 
     with charts.style():
+        # The figure, its layout and everything that stays put are drawn once; each frame moves the slice, the mirror
+        # and the waveform.
+        figure = plt.figure(figsize=(animation_width_px / charts.DPI, animation_height_px / charts.DPI))
+        world_ax = figure.add_axes((0.07, 0.17, 0.36, 0.79))
+        cavity_ax = figure.add_axes((0.54, 0.17, 0.44, 0.79))
+
+        # Left: the spacetime worldsheet, with the horizontal slice of simultaneity sweeping up it.
+        world_ax.tripcolor(triangulation, wave_rate_vals, shading="gouraud", cmap=wave_colours,
+                           norm=Normalize(-field_limit, field_limit), zorder=1)
+        world_ax.add_collection(LineCollection(coarse_lines, colors=wall_colour,
+                                               linewidths=charts.FRAME_WIDTH, alpha=0.1, zorder=2))
+        world_ax.plot(xt_grid[:, 0, 0], xt_grid[:, 0, 1], color=wall_colour, zorder=4)
+        world_ax.plot(xt_grid[:, -1, 0], xt_grid[:, -1, 1], color=ink_colour, linewidth=bold_width, zorder=5)
+        slice_line, = world_ax.plot([], [], color=accent_colour, zorder=6)
+        slice_end = world_ax.scatter([], [], color=accent_colour, edgecolor="white", linewidth=charts.FRAME_WIDTH,
+                                     zorder=7)
+        world_ax.set(xlim=(0.0, 1.02), ylim=(0.0, duration), aspect="equal",
+                     xticks=[0.0, 1.0], yticks=[0.0, round(duration, 2)],
+                     xlabel="space $x$", ylabel="time $t$")
+        plain_axes(world_ax)
+
+        # Right: the cavity at that moment, the advancing mirror and the Doppler-compressed waveform.
+        cavity_ax.axhline(0.0, color="0.82", linewidth=charts.FRAME_WIDTH, zorder=1)
+        beyond = cavity_ax.add_patch(Rectangle((1.02, -y_limit), 0.0, 2 * y_limit,
+                                               facecolor="#e8e5dd", edgecolor="none", zorder=2))
+        cavity_ax.axvline(0.0, color=wall_colour, linewidth=bold_width, zorder=4)
+        mirror = cavity_ax.axvline(1.02, color=ink_colour, linewidth=bold_width, zorder=5)
+        waveform_line, = cavity_ax.plot([], [], color=ink_colour, zorder=4)
+        cavity_ax.set(xlim=(0.0, 1.02), ylim=(-y_limit, y_limit),
+                      xticks=[0.0, round(float(xt_grid[-1, -1, 0]), 2), 1.0],
+                      yticks=[-2.0, -1.0, 0.0, 1.0, 2.0],
+                      xlabel="space $x$", ylabel=r"wave rate $\partial_t\phi\,/\,r_0$")
+        plain_axes(cavity_ax)
+        figure.canvas.draw()
+
+        fill = None
         for row in frame_rows:
-            figure = plt.figure(figsize=(animation_width_px / charts.DPI, animation_height_px / charts.DPI))
-            world_ax = figure.add_axes((0.07, 0.17, 0.36, 0.79))
-            cavity_ax = figure.add_axes((0.54, 0.17, 0.44, 0.79))
-
-            # Left: Spacetime worldsheet with sweeping horizontal simultaneity slice.
-            world_ax.tripcolor(triangulation, wave_rate_vals, shading="gouraud", cmap=wave_colours,
-                               norm=Normalize(-field_limit, field_limit), zorder=1)
-            world_ax.add_collection(LineCollection(coarse_lines, colors=wall_colour,
-                                                   linewidths=charts.FRAME_WIDTH, alpha=0.1, zorder=2))
-            world_ax.plot(xt_grid[:, 0, 0], xt_grid[:, 0, 1], color=wall_colour, zorder=4)
-            world_ax.plot(xt_grid[:, -1, 0], xt_grid[:, -1, 1], color=ink_colour, linewidth=bold_width, zorder=5)
-            world_ax.plot(xt_grid[row, :, 0], xt_grid[row, :, 1], color=accent_colour, zorder=6)
-            world_ax.scatter(xt_grid[row, -1, 0], xt_grid[row, -1, 1],
-                             color=accent_colour, edgecolor="white", linewidth=charts.FRAME_WIDTH, zorder=7)
-            world_ax.set(xlim=(0.0, 1.02), ylim=(0.0, duration), aspect="equal",
-                         xticks=[0.0, 1.0], yticks=[0.0, round(duration, 2)],
-                         xlabel="space $x$", ylabel="time $t$")
-            plain_axes(world_ax)
-
-            # Right: Live 1D cavity with advancing mirror piston and Doppler-compressed waveform.
-            x_slice = xt_grid[row, :, 0]
+            x_slice, waveform = xt_grid[row, :, 0], normalized_grid[row]
             wall_x = float(x_slice[-1])
-            waveform = normalized_grid[row]
-            cavity_ax.axhline(0.0, color="0.82", linewidth=charts.FRAME_WIDTH, zorder=1)
-            cavity_ax.add_patch(Rectangle((wall_x, -y_limit), 1.02 - wall_x, 2 * y_limit,
-                                          facecolor="#e8e5dd", edgecolor="none", zorder=2))
-            cavity_ax.axvline(0.0, color=wall_colour, linewidth=bold_width, zorder=4)
-            cavity_ax.axvline(wall_x, color=ink_colour, linewidth=bold_width, zorder=5)
-            cavity_ax.fill_between(x_slice, 0.0, waveform, color=primal_colour, alpha=0.18, zorder=3)
-            cavity_ax.plot(x_slice, waveform, color=ink_colour, zorder=4)
-            cavity_ax.set(xlim=(0.0, 1.02), ylim=(-y_limit, y_limit),
-                          xticks=[0.0, round(float(xt_grid[-1, -1, 0]), 2), 1.0],
-                          yticks=[-2.0, -1.0, 0.0, 1.0, 2.0],
-                          xlabel="space $x$", ylabel=r"wave rate $\partial_t\phi\,/\,r_0$")
-            plain_axes(cavity_ax)
-
-            image = capture(figure)
-            plt.close(figure)
-            yield image
+            slice_line.set_data(xt_grid[row, :, 0], xt_grid[row, :, 1])
+            slice_end.set_offsets(xt_grid[row, -1][None])
+            beyond.set_x(wall_x)
+            beyond.set_width(1.02 - wall_x)
+            mirror.set_xdata([wall_x, wall_x])
+            waveform_line.set_data(x_slice, waveform)
+            if fill is not None:
+                fill.remove()
+            fill = cavity_ax.fill_between(x_slice, 0.0, waveform, color=primal_colour, alpha=0.18, zorder=3)
+            yield capture(figure)
+        plt.close(figure)

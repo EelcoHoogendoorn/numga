@@ -57,7 +57,6 @@ class Operators:
 
     def __init__(self, mesh: Mesh, vertices: Point):
         self.mesh, self.vertices = mesh, vertices
-        self.d0 = mesh.d[0] * Scalar                                         # (Scalar+ <- Scalar+)[edges <- vertices]
         self.d1 = mesh.d[1] * Scalar                                         # (Scalar+ <- Scalar+)[faces <- edges]
         self.edges = mesh.d[0] * vertices                                    # Point-[edges]
         self.edge_midpoints = mesh.incidence[1, 0].mean(axis=0) * vertices   # Point-[edges]

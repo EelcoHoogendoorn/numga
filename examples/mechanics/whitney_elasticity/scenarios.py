@@ -7,11 +7,9 @@ from itertools import chain, repeat
 import numpy as np
 
 from numga import where
-from numga.algebras import VGA2D as ga
-from examples import instantiate
+from examples.mechanics.whitney_elasticity import core
 
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, as_scalar, mv = mesh_module.Mesh, mesh_module.as_scalar, mesh_module.mv
+mv = core.mv
 
 core_radius = 0.55
 surface_radius = 1.0
@@ -47,10 +45,9 @@ n_frames = 100
 n_substeps = 8
 frame_duration_ms = 40
 # The normal modes, of a uniform ball of cork, which does not spread sideways when squeezed, so that its P waves run
-# only the square root of two faster than its S waves: its Lame parameters and density, its rigid motions, the modes
-# found, how close two
-# frequencies are when their modes differ by a turn of the ball, the travelling waves such pairs make that are shown,
-# the frames of each one's cycle, and the largest displacement they are shown at.
+# only the square root of two faster than its S waves: its Lamé parameters and density, its rigid motions, the modes
+# found, how close two frequencies are when their modes differ by a turn of the ball, the travelling waves such pairs
+# make that are shown, the frames of each one's cycle, and the largest displacement they are shown at.
 ball_lambda, ball_mu, ball_density = 0.0, 1.0, 1.0
 n_rigid_motions = 3
 n_modes = 40
@@ -64,19 +61,19 @@ vorticity_scale = 0.3
 
 
 def main() -> None:
-    from examples.mechanics.whitney_elasticity import core, render
+    from examples.mechanics.whitney_elasticity import render
     from examples.util.animation import save_animation, save_figure
 
-    mesh, vertices = Mesh.concentric_disk(radial_boundaries, n_radial_divisions)
+    mesh, vertices = core.Mesh.concentric_disk(radial_boundaries, n_radial_divisions)
     centres = (mesh.incidence[2, 0].mean(axis=0) * vertices).batch()   # [faces] Point-
     # The liquid core is region zero, the solid shell region one.
     regions = (centres.norm() > core_radius).astype(int)
 
-    density = as_scalar(layer_densities[regions]).field()         # Scalar+[faces]
-    lame_lambda = as_scalar(layer_lambdas[regions])               # [faces] Scalar+
-    lame_mu = as_scalar(layer_mus[regions])                       # [faces] Scalar+
+    density = core.as_scalar(layer_densities[regions]).field()    # Scalar+[faces]
+    lame_lambda = core.as_scalar(layer_lambdas[regions])          # [faces] Scalar+
+    lame_mu = core.as_scalar(layer_mus[regions])                  # [faces] Scalar+
     material = core.constitutive(lame_lambda, lame_mu)
-    viscosity = core.viscous(as_scalar(layer_viscosities[regions]))
+    viscosity = core.viscous(core.as_scalar(layer_viscosities[regions]))
     operators = core.Operators(mesh, vertices, material, viscosity, density)
     save_figure(render.draw_materials(mesh, vertices, regions), "whitney_elasticity_materials")
 
@@ -108,15 +105,16 @@ def main() -> None:
                    "whitney_elasticity_waves", frame_duration_ms)
 
     # The modes of a uniform ball of cork, where only their shapes tell them apart.
-    solid = np.ones_like(regions)                               # [faces]
-    ball = core.Operators(mesh, vertices, core.constitutive(as_scalar(ball_lambda), as_scalar(ball_mu)),
-                          core.viscous(as_scalar(0.0)), as_scalar(ball_density))
-    squared, shapes = core.normal_modes(ball, n_rigid_motions + n_modes)
-    squared, shapes = squared[n_rigid_motions:], shapes[n_rigid_motions:]
+    ball_regions = np.ones_like(regions)                        # [faces]
+    ball = core.Operators(mesh, vertices, core.constitutive(core.as_scalar(ball_lambda), core.as_scalar(ball_mu)),
+                          core.viscous(core.as_scalar(0.0)), core.as_scalar(ball_density))
+    squared_frequencies, shapes = core.normal_modes(ball, n_rigid_motions + n_modes)
+    squared_frequencies, shapes = squared_frequencies[n_rigid_motions:], shapes[n_rigid_motions:]
     # Two modes that differ by a turn of the ball share their frequency; together they make a wave that travels round it.
-    paired = np.flatnonzero((squared[1:] - squared[:-1]) < pair_tolerance * squared[1:])[:n_travelling_waves]
-    waves = core.travelling(ball, shapes[paired], shapes[paired + 1], mode_peak, n_cycle_frames)
-    save_animation(render.animate_modes(mesh, vertices, solid, waves, displacement_scale),
+    frequency_gaps = squared_frequencies[1:] - squared_frequencies[:-1]
+    pair_idx = np.flatnonzero(frequency_gaps < pair_tolerance * squared_frequencies[1:])[:n_travelling_waves]
+    waves = core.travelling(ball, shapes[pair_idx], shapes[pair_idx + 1], mode_peak, n_cycle_frames)
+    save_animation(render.animate_modes(mesh, vertices, ball_regions, waves, displacement_scale),
                    "whitney_elasticity_modes", frame_duration_ms)
 
 

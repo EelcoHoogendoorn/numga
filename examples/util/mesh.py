@@ -412,6 +412,17 @@ class Mesh:
         corners = np.stack([self.faces, np.roll(middle, 1, axis=1), np.roll(middle, -1, axis=1)], axis=-1)   # [F, 3, 3]
         return np.concatenate([middle, corners.reshape(-1, 3)])
 
+    def midpoint_split(self, vertices: Point, n_levels: int) -> tuple[Mesh, Point]:
+        """The mesh with every face split in four at the midpoints of its edges, `n_levels` times over, and its
+        vertices: the coarse vertices followed, level by level, by the midpoints, halfway along each edge, so that
+        the refined mesh lies exactly on the coarse one."""
+        mesh = self
+        for _ in range(n_levels):
+            midpoints = mesh.incidence[1, 0].mean(axis=0) * vertices               # Point-[E]
+            vertices = concatenate([vertices.batch(), midpoints.batch()]).field()  # Point-[V + E]
+            mesh = Mesh(len(vertices.batch()), mesh.split_faces)
+        return mesh, vertices
+
     def loop_subdivided(self, pinned: np.ndarray, n_steps: int) -> SubdividedMesh:
         """The mesh after `n_steps` Loop steps of this one, the vertices pinned `[V]` staying where they are.
         Each finer mesh holds the one before it and the map from its vertices, so the steps compose."""

@@ -18,7 +18,6 @@ Plane = ga.gatype.vector()                                                   # V
 Bivector = ga.gatype.bivector()                                              # Bivector+
 Point = ga.gatype.antivector()                                               # Antivector-
 Patch = ga.gatype.antibivector()                                             # Antibivector-
-Amount = ga.gatype.antiscalar()                                              # Antiscalar-
 Rotor = ga.gatype.rotor()                                                    # Rotor+
 Metric = ga.gatype((Plane, Point))                                           # Vector+ <- Antivector-
 Conductivity = ga.gatype((Point, Plane))                                     # Antivector- <- Vector+
@@ -70,15 +69,14 @@ def mesh_geometry(mesh: Mesh, vertices: Point, edge_squared_lengths: Scalar
     corner_rotors = (dots + 2 * intrinsic_areas[..., None] * mv.xy).normalized()  # [..., corners] Rotor+[faces]
     corner_turns = corner_rotors.log()                                       # [..., corners] Bivector+[faces]
 
-    # Reversing the corner-to-vertex incidence map both sums over the corners around each vertex and reverses
-    # each corner's bivector turn, subtracting the incident corner turns from the flat target turn.
-    unit_faces = as_scalar(np.ones(len(mesh.faces))).field()                 # Scalar+[faces]
+    # Each vertex holds a third of the intrinsic area of the triangles around it. The corner turns, carried from
+    # the faces back to their vertices and summed, fall short of the flat turn by the defect.
     corner_mean = mesh.incidence[2, 0].mean(axis=0)                          # Scalar+[faces <- vertices]
     vertex_areas = ~corner_mean * intrinsic_areas                            # [...] Scalar+[vertices]
     boundary = np.unique(mesh.edges[mesh.boundary_edges])
     is_boundary = np.isin(np.arange(mesh.n_vertices), boundary)
     target_turns = as_scalar(np.where(is_boundary, np.pi, 2 * np.pi)).field() * mv.xy  # Bivector+[vertices]
-    defects = target_turns + ~(spdiag(corner_turns) * mesh.incidence[2, 0]).sum(axis=-1) * unit_faces  # [...] Bivector+[vertices]
+    defects = target_turns - (~mesh.incidence[2, 0] * corner_turns).sum(axis=-1)  # [...] Bivector+[vertices]
     curvatures = defects / vertex_areas                                      # [...] Bivector+[vertices]
 
     # Each side dyad turns a gradient reading into flow along that side;
@@ -90,16 +88,14 @@ def mesh_geometry(mesh: Mesh, vertices: Point, edge_squared_lengths: Scalar
 
 def intrinsic_conduction(mesh: Mesh, vertices: Point, conductivities: Conductivity,
                          electrodes: np.ndarray, prescribed: Scalar
-                         ) -> tuple[Scalar, Point, Amount, Scalar]:
-    """Prescribed electrode potentials determine a steady potential, reference-frame flux density, integrated edge flux, and streamfunction."""
+                         ) -> tuple[Scalar, Point, Scalar]:
+    """Prescribed electrode potentials determine a steady potential, reference-frame flux density, and streamfunction."""
     edges = mesh.d[0] * vertices                                             # Point-[edges]
     sides = mesh.boundary[2, 1] * edges                                      # [corners] Point-[faces]
     patches = (sides[0] & sides[1]) / 2                                      # Patch-[faces]
     areas = patches.norm()                                                   # Scalar+[faces]
     corner_gradients = sides / (2 * patches)                                 # [corners] Plane+[faces]
     gradient = (spdiag(corner_gradients) * mesh.incidence[2, 0]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- vertices]
-    centroid_forms = (corner_gradients[[2, 0, 1]] - corner_gradients[[1, 2, 0]]) / 3  # [corners] Plane+[faces]
-    whitney1 = (spdiag(centroid_forms) * mesh.boundary[2, 1]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- edges]
 
     # The adjugate carries each triangle's current response back to its vertex potentials.
     conductance = gradient.adjugate()(spdiag(conductivities)(gradient))      # [cases] (Amount- <- Scalar+)[vertices <- vertices]
@@ -109,7 +105,6 @@ def intrinsic_conduction(mesh: Mesh, vertices: Point, conductivities: Conductivi
     potential = prescribed + free(free.adjugate()(conductance(free)).solve(rhs))  # [cases] Scalar+[vertices]
     integrated_flux = -conductivities(gradient(potential))                   # [cases] Point-[faces]
     current = integrated_flux / areas                                        # [cases] Point-[faces]
-    edge_flux = whitney1.adjugate()(integrated_flux)                         # [cases] Amount-[edges]
 
     # Because the area-integrated flux is divergence-free on the reference mesh, turning it by a quarter turn
     # gives the area-weighted reference gradient of the streamfunction whose level curves follow the intrinsic flow.
@@ -118,4 +113,4 @@ def intrinsic_conduction(mesh: Mesh, vertices: Point, conductivities: Conductivi
     unpinned = ~SparseExtensor.selection(mv.context, np.arange(1, mesh.n_vertices), mesh.n_vertices) * Scalar  # (Scalar+ <- Scalar+)[vertices <- unpinned]
     stream_rhs = unpinned.adjugate()(gradient.adjugate()(quarter_turn >> integrated_flux))  # [cases] Amount-[unpinned]
     streamfunction = unpinned(unpinned.adjugate()(laplacian(unpinned)).solve(stream_rhs))  # [cases] Scalar+[vertices]
-    return potential, current, edge_flux, streamfunction
+    return potential, current, streamfunction

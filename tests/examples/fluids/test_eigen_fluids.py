@@ -18,6 +18,7 @@ def test_whitney_gradients_and_spherical_harmonic_spectrum():
     """On the unit sphere, the Whitney gradient of a linear height field equals the tangential part of its
     plane, the induced velocity is tangent to every face, and the first three non-constant Laplace–Beltrami
     eigenvalues form the l = 1 dipole triplet near l(l + 1) = 2."""
+    n_modes = 8
     sphere, vertices = core.Mesh.icosphere(2)
     # Each opposite edge and its face patch determine the corner hat gradient.
     edges = sphere.d[0] * vertices                                               # Point-[edges]
@@ -32,7 +33,7 @@ def test_whitney_gradients_and_spherical_harmonic_spectrum():
     # The stiffness and vertex mass determine the surface's spatial modes.
     stiffness = gradient.adjugate()(core.spdiag(areas * core.Plane.dual())(gradient))  # (Amount- <- Scalar+)[vertices <- vertices]
     mass = core.spdiag((~corner_mean * areas) * core.Scalar.dual())           # (Amount- <- Scalar+)[vertices <- vertices]
-    eigenvalues, eigenfields = stiffness.eigh(mass, 8 + 1)                # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
+    eigenvalues, eigenfields = stiffness.eigh(mass, n_modes + 1)          # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
     eigenvalues, modes = eigenvalues[1:], eigenfields[1:]                          # [modes] Scalar+, [modes] Scalar+[vertices]
 
     height = core.mv.z & vertices                                                # Scalar+[vertices]
@@ -43,9 +44,9 @@ def test_whitney_gradients_and_spherical_harmonic_spectrum():
 
     values = eigenvalues.to_array()
     np.testing.assert_allclose(values[:3], 2.0, rtol=2e-2)
-    np.testing.assert_allclose(values[3:8], 6.0, rtol=4e-2)
+    np.testing.assert_allclose(values[3:n_modes], 6.0, rtol=4e-2)
     gram = (modes[:, None] & mass(modes[None, :])).sites.sum().to_array()
-    np.testing.assert_allclose(gram, np.eye(8), atol=1e-12)
+    np.testing.assert_allclose(gram, np.eye(n_modes), atol=1e-12)
 
 
 def test_bunny_structure_antisymmetry_conservation_and_rendering():

@@ -11,7 +11,7 @@ from numga.algebras import VGA2D as ga
 from examples import instantiate
 
 mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, as_scalar, mv = mesh_module.Mesh, mesh_module.as_scalar, mesh_module.mv
+Mesh, mv = mesh_module.Mesh, mesh_module.mv
 Even = ga.gatype.even()                                                      # Even+
 Point = ga.gatype.antivector()                                               # Antivector-
 
@@ -128,14 +128,6 @@ def main() -> None:
     envelope = (-(vertices - pulse_centre).norm_squared() / (2 * pulse_width**2)).exp()  # Scalar+[vertices]
     initial_even = envelope.cast(Even)                                       # Even+[vertices]
     initial_face_field = operators.even_gradient(initial_even * 0.0)         # Plane+[faces]
-
-    energy_trace = []
-    for even_state, face_field in propagate(operators, initial_even, initial_face_field, dt, n_steps):
-        even_energy = (operators.vertex_areas * even_state.scalar_norm_squared()).sites.sum()
-        field_energy = (operators.areas * face_field.scalar_norm_squared()).sites.sum()
-        energy_trace.append((even_energy + field_energy) / 2)
-    energies = stack(energy_trace)                                           # [steps + 1] Scalar+
-
     sampled_frames = islice(propagate(operators, initial_even, initial_face_field, dt, n_steps), 0, None, stride)
     save_animation(
         render.animate_dirac_waves(mesh, vertices, sampled_frames),
@@ -168,6 +160,11 @@ def main() -> None:
     np.testing.assert_allclose((operators.isotropic_resistance(stream_flow) & harmonic_flow).sites.sum().kernel, 0.0, atol=1e-12)
 
     # Skew-adjoint power balance and RK4 wave energy conservation.
+    energies = stack([
+        ((operators.vertex_areas * even_state.scalar_norm_squared()).sites.sum()
+         + (operators.areas * face_field.scalar_norm_squared()).sites.sum()) / 2
+        for even_state, face_field in propagate(operators, initial_even, initial_face_field, dt, n_steps)
+    ])                                                                       # [steps + 1] Scalar+
     np.testing.assert_allclose((energies / energies[0]).kernel, 1.0, rtol=1e-4)
 
 

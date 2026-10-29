@@ -17,21 +17,19 @@ Scalar = ga.gatype.scalar()                                                  # S
 Plane = ga.gatype.vector()                                                   # Vector+
 Bivector = ga.gatype.bivector()                                              # Bivector+
 Point = ga.gatype.antivector()                                               # Antivector-
-Patch = ga.gatype.antibivector()                                             # Antibivector-
-Amount = ga.gatype.antiscalar()                                              # Antiscalar-
 Conductivity = ga.gatype((Point, Plane))
 
 
 # --- math -----------------------------------------------------------------------------
-def barycentric_hats(corners: Point, points: Point) -> tuple[Scalar, Plane, Patch]:
-    """The barycentric hat values at `points`, the constant corner gradients, and the triangle's signed area patch."""
+def barycentric_hats(corners: Point, points: Point) -> tuple[Scalar, Plane]:
+    """The barycentric hat values at `points` and the constant corner gradients."""
     sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]                          # [corners] Point-
     patch = (sides[0] & sides[1]) / 2                                        # [] Patch-
     # Dividing each opposite edge by twice the signed area patch gives the gradient
     # that falls by one from its corner to the opposite edge.
     gradients = sides / (2 * patch)                                          # [corners] Plane+
     hats = 1 + (gradients[:, None] & (points[None, :] - corners[:, None]))   # [corners, samples] Scalar+
-    return hats, gradients, patch
+    return hats, gradients
 
 
 def edge_whitney_forms(corners: Point, points: Point) -> Plane:
@@ -47,7 +45,7 @@ class Operators:
     """Topological exterior derivatives and Whitney reconstruction maps on an oriented triangle mesh."""
 
     def __init__(self, mesh: Mesh, vertices: Point):
-        self.mesh, self.vertices = mesh, vertices
+        self.mesh = mesh
         self.d0 = mesh.d[0] * Scalar                                         # (Scalar+ <- Scalar+)[edges <- vertices]
         self.d1 = mesh.d[1] * Scalar                                         # (Scalar+ <- Scalar+)[faces <- edges]
         edges = mesh.d[0] * vertices                                         # Point-[edges]
@@ -90,8 +88,8 @@ def edge_conductance(operators: Operators, conductivity: Conductivity) -> Sparse
 
 def conduction(operators: Operators, conductivity: Conductivity,
                electrodes: np.ndarray, prescribed: Scalar
-               ) -> tuple[Scalar, Point, Amount, Scalar]:
-    """Steady potential, face current, integrated edge flux, and streamfunction for prescribed electrode potentials."""
+               ) -> tuple[Scalar, Point, Scalar]:
+    """Steady potential, face current, and streamfunction for prescribed electrode potentials."""
     mesh = operators.mesh
     # Pulling the area-weighted conductivity back through the face gradient gives the vertex conductance.
     conductance = operators.gradient.adjugate()(spdiag(operators.areas * conductivity)(operators.gradient))  # [cases] (Amount- <- Scalar+)[vertices <- vertices]
@@ -100,7 +98,6 @@ def conduction(operators: Operators, conductivity: Conductivity,
     rhs = -free.adjugate()(conductance(prescribed))                          # [cases] Amount-[free]
     potential = prescribed + free(free.adjugate()(conductance(free)).solve(rhs))  # [cases] Scalar+[vertices]
     current = -conductivity(operators.gradient(potential))                   # [cases] Point-[faces]
-    edge_flux = operators.whitney1.adjugate()(operators.areas * current)     # [cases] Amount-[edges]
 
     # Turning the face current by a quarter turn gives, through the unit isotropic conductivity `Plane.dual()`,
     # the target gradient of the streamfunction whose level curves follow the current paths.
@@ -109,4 +106,4 @@ def conduction(operators: Operators, conductivity: Conductivity,
     unpinned = ~SparseExtensor.selection(mv.context, np.arange(1, mesh.n_vertices), mesh.n_vertices) * Scalar  # (Scalar+ <- Scalar+)[vertices <- unpinned]
     stream_rhs = unpinned.adjugate()(operators.gradient.adjugate()(operators.areas * (quarter_turn >> current)))  # [cases] Amount-[unpinned]
     streamfunction = unpinned(unpinned.adjugate()(laplacian(unpinned)).solve(stream_rhs))  # [cases] Scalar+[vertices]
-    return potential, current, edge_flux, streamfunction
+    return potential, current, streamfunction

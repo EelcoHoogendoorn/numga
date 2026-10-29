@@ -11,12 +11,12 @@ from numga import stack
 from examples.fluids.eigen_fluids import core
 
 mv = core.mv
-# Bounding-box size of the Stanford bunny, count of non-constant Laplace–Beltrami modes, and the four modes
+# Bounding-box size of the Stanford bunny, count of non-constant Laplace–Beltrami modes, and the modes
 # shown in the gallery (from a global dipole up to a fine-scale standing wave).
 bunny_size = 2.0
 n_modes = 128
 shown_modes = np.array([0, 7, 31, 119])
-# Six opposing vortex dipoles distributed across the bunny's shoulder, chest, flank, haunch, neck, and back,
+# Opposing vortex dipoles distributed across the bunny's shoulder, chest, flank, haunch, neck, and back,
 # spectrally tapered so they collide, exchange partners, and swirl across the whole surface without Gibbs ringing.
 vortex_centres = mv.antivector([
     [0.35, -0.54, -0.03],
@@ -32,7 +32,7 @@ vortex_centres = mv.antivector([
     [-0.48, 0.26, -0.14],
     [0.06, 0.47, -0.30],
 ])                                                  # [vortices] Point-
-vortex_strengths = np.array([75.0, -75.0, -75.0, 75.0, 70.0, -70.0, -65.0, 65.0, 72.0, -72.0, 68.0, -68.0])
+vortex_strengths = np.array([75, -75, -75, 75, 70, -70, -65, 65, 72, -72, 68, -68])
 vortex_radius = 0.12
 eigenvalue_cutoff = 140.0
 # Fourth-order Runge–Kutta step size, total step count, frame stride, kinematic viscosity, and frame duration.

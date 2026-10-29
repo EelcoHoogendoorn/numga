@@ -18,7 +18,7 @@ from examples.util import charts
 from examples.util.wgsl import image_figure, meshes, solids
 
 # Surface and diverging field palette, contour colour, curve colours, camera elevation and azimuth in degrees
-# from x, viewport margin and pixel dimensions, and contour density and width.
+# from x, the reach framed around each vertex, viewport margin and pixel dimensions, and contour density and width.
 surface_colour = np.array([0.94, 0.92, 0.88])
 positive_colour = np.array(to_rgb("#c84b31"))
 negative_colour = np.array(to_rgb("#2d6a9f"))
@@ -27,6 +27,7 @@ ink_colour = "#263b51"
 energy_colour = "#148d88"
 enstrophy_colour = "#c84b31"
 view_degrees = np.array([18.0, -42.0])
+surface_reach = 0.04
 margin = 0.04
 n_mode_pixels = 380
 n_flow_pixels = 440
@@ -74,17 +75,16 @@ def plain_axes(axis: plt.Axes) -> None:
 def camera_view(points: solids.Point, n_pixels: int) -> solids.View:
     """A square camera view framing the surface vertices at `n_pixels` across."""
     elevation, azimuth = np.radians(view_degrees[0]), np.radians(view_degrees[1] + 90.0)
-    return solids.view([points], 0.04, elevation, azimuth, margin, n_pixels).squared()
+    return solids.view([points], surface_reach, elevation, azimuth, margin, n_pixels).squared()
 
 
 def surface_panel(mesh: core.Mesh, points: solids.Point, smooth_normals: dict, frame: solids.View,
                 field: core.Scalar, stream: core.Scalar, velocity: core.Point,
                 field_scale: float, stream_scale: float, n_contours: float) -> np.ndarray:
     """One GPU-rendered panel of the surface coloured by `field` with uniform-width streamline contours of `stream`."""
-    scale = max(stream_scale, 1e-12)
-    scaled_field = field.to_array() / max(field_scale, 1e-12)                    # [vertices]
-    scaled_stream = (stream.to_array() / scale) * n_contours                     # [vertices]
-    face_speed = ((velocity.norm().to_array() / scale) * n_contours)[:, None]    # [faces, 1]
+    scaled_field = field.to_array() / field_scale                                # [vertices]
+    scaled_stream = (stream.to_array() / stream_scale) * n_contours              # [vertices]
+    face_speed = ((velocity.norm().to_array() / stream_scale) * n_contours)[:, None]   # [faces, 1]
     corner_values = np.stack([scaled_field, scaled_stream], axis=-1)[mesh.faces] # [faces, 3, 2]
     surface = meshes.samples(points, mesh.faces, corner_values, smooth_normals, frame,
                              face_values=face_speed, colour=streamline_shader, gloss=solids.gloss)
@@ -152,7 +152,7 @@ def draw_conservation(times: np.ndarray, inviscid_energy: core.Scalar, viscous_e
 
 def animate_flow(mesh: core.Mesh, vertices: core.Point,
                  states: Iterable[tuple[core.Scalar, core.Scalar, core.Point]]) -> Iterator[np.ndarray]:
-    """Draw each arriving surface state with colour and contour scales fixed by its first frame."""
+    """Yields a frame for each arriving surface state, with colour and contour scales fixed by the first."""
     states = iter(states)
     first = next(states)
     field_scale = float(np.percentile(np.abs(first[0].to_array()), vorticity_exposure))

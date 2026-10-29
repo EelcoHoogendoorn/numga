@@ -22,8 +22,7 @@ def test_rotor_whitney_math_does_not_import_plotting():
 def test_darboux_whitney_grade_decomposition_and_maurer_cartan():
     corners, points, _, _, corner_rotors = scenarios.single_triangle(8, 8)
     (
-        chord_rotors, unit_rotors, darboux, whitney_rates, chord_stretch,
-        angular_velocity, edge_bivectors, edge_sagittas, whitney_forms,
+        chord_rotors, unit_rotors, darboux, whitney_rates, chord_stretch, angular_velocity, whitney_forms,
     ) = core.triangle_darboux(corners, points, corner_rotors)
 
     assert chord_rotors.gatype == core.Even
@@ -32,8 +31,6 @@ def test_darboux_whitney_grade_decomposition_and_maurer_cartan():
     assert whitney_rates.gatype == core.RateMap
     assert chord_stretch.gatype == core.StretchMap
     assert angular_velocity.gatype == core.RateMap
-    assert edge_bivectors.gatype == core.Bivector
-    assert edge_sagittas.gatype == core.Scalar
 
     # Grade-2 and Grade-0 parts of 2 * ~R(x) * dR match the Whitney 1-forms and Regge symmetric differentials.
     np.testing.assert_allclose((darboux.select[2] - whitney_rates).kernel, 0.0, atol=1e-14)
@@ -41,7 +38,7 @@ def test_darboux_whitney_grade_decomposition_and_maurer_cartan():
     np.testing.assert_allclose(unit_rotors.scalar_norm_squared().kernel, 1.0, atol=1e-14)
 
     # At the three triangle corners, the chord rotor is unit and matches the prescribed corner rotors.
-    corner_chords, _, corner_darboux, corner_rates, corner_stretch, _, _, _, _ = core.triangle_darboux(
+    corner_chords, _, corner_darboux, corner_rates, corner_stretch, _, _ = core.triangle_darboux(
         corners, corners, corner_rotors,
     )
     np.testing.assert_allclose((corner_chords - corner_rotors).kernel, 0.0, atol=1e-14)
@@ -60,14 +57,14 @@ def test_darboux_whitney_grade_decomposition_and_maurer_cartan():
 
     # Dividing the grade-2 Whitney rate by |R(x)|^2 gives the exact Maurer-Cartan 1-form 2 * ~R_unit * dR_unit.
     step = 1e-7 * (0.6 * sides[0] - 0.35 * sides[1])
-    _, shifted_units, _, _, _, _, _, _, _ = core.triangle_darboux(corners, points + step, corner_rotors)
+    _, shifted_units, _, _, _, _, _ = core.triangle_darboux(corners, points + step, corner_rotors)
     finite_diff_mc = 2 * (unit_rotors.reverse() * (shifted_units - unit_rotors)).select[2]
     exact_mc = angular_velocity(step)
     np.testing.assert_allclose((finite_diff_mc - exact_mc).kernel, 0.0, atol=1e-12)
 
     # Constant corner rotors yield zero Whitney rate, zero chord stretch, and unit norm everywhere.
     constant_rotors = stack((corner_rotors[0], corner_rotors[0], corner_rotors[0]))
-    const_chords, _, _, const_rates, const_stretch, _, _, _, _ = core.triangle_darboux(
+    const_chords, _, _, const_rates, const_stretch, _, _ = core.triangle_darboux(
         corners, points, constant_rotors,
     )
     np.testing.assert_allclose(const_chords.scalar_norm_squared().kernel, 1.0, atol=1e-14)
@@ -78,15 +75,13 @@ def test_darboux_whitney_grade_decomposition_and_maurer_cartan():
 def test_skyrmion_topological_charge_and_cotangent_trace():
     mesh, vertices = core.Mesh.triangular_disk(1.0, 6)
     (
-        rotors, directors, scalar_parts, bivector_norms,
-        energy_density, winding_density, solid_angles,
+        rotors, directors, scalar_parts, bivector_norms, energy_density, solid_angles,
     ) = core.skyrmion_winding(mesh, vertices, np.pi)
 
     assert rotors.batch().gatype == core.Rotor
     assert directors.batch().gatype == core.Point
     assert scalar_parts.batch().gatype == core.Scalar
     assert energy_density.batch().gatype == core.Scalar
-    assert winding_density.batch().gatype == core.Scalar
 
     # Unit norm decomposition <R>_0^2 + |<R>_2|^2 = 1 at every vertex, +1 at core, 0 scalar at rim.
     np.testing.assert_allclose(
@@ -106,21 +101,21 @@ def test_skyrmion_topological_charge_and_cotangent_trace():
     face_rotors = mesh.incidence[2, 0] * rotors
     chord_rotors = face_rotors.sum(axis=0) / 3
     face_differential = (face_rotors * (corner_gradients & core.Point)).sum(axis=0)
-    face_omega = (2 * chord_rotors.reverse() * face_differential).select[2] / chord_rotors.scalar_norm_squared()
+    face_rates = (2 * chord_rotors.reverse() * face_differential).select[2] / chord_rotors.scalar_norm_squared()
     basis_points = stack((core.mv.x.dual(), core.mv.y.dual(), core.mv.z.dual()))
-    orthonormal_trace = face_omega(basis_points).scalar_norm_squared().sum(axis=0)
+    orthonormal_trace = face_rates(basis_points).scalar_norm_squared().sum(axis=0)
     np.testing.assert_allclose((energy_density - orthonormal_trace).kernel, 0.0, atol=1e-13)
 
     # Topological Skyrmion charge integrates to Q = 1 and refines with mesh resolution.
     coarse_mesh, coarse_vertices = core.Mesh.triangular_disk(1.0, 4)
-    _, _, _, _, _, _, coarse_solid_angles = core.skyrmion_winding(coarse_mesh, coarse_vertices, np.pi)
+    _, _, _, _, _, coarse_solid_angles = core.skyrmion_winding(coarse_mesh, coarse_vertices, np.pi)
     coarse_charge = float((coarse_solid_angles.sites.sum() / (4 * np.pi)).to_array())
     fine_charge = float((solid_angles.sites.sum() / (4 * np.pi)).to_array())
     assert abs(fine_charge - 1.0) < abs(coarse_charge - 1.0)
     np.testing.assert_allclose(fine_charge, 1.0, rtol=1.5e-2)
 
     # A full turn reaches the opposite rotor sign at the rim while returning the director to the north pole.
-    rotors_2pi, directors_2pi, scalars_2pi, _, _, _, _ = core.skyrmion_winding(mesh, vertices, 2 * np.pi)
+    rotors_2pi, directors_2pi, scalars_2pi, _, _, _ = core.skyrmion_winding(mesh, vertices, 2 * np.pi)
     np.testing.assert_allclose(scalars_2pi.batch()[boundary].kernel, -1.0, atol=1e-13)
     np.testing.assert_allclose((core.mv.z & directors_2pi.batch()[boundary]).kernel, 1.0, atol=1e-13)
 
@@ -141,12 +136,11 @@ def test_harmonic_rotor_frames_and_projected_relaxation():
         0.0, atol=1e-14,
     )
 
-    harmonic_chords, harmonic_rotors, energy_densities = core.harmonic_rotor_frames(
+    harmonic_chords, harmonic_rotors = core.harmonic_rotor_frames(
         mesh, vertices, boundary, prescribed_rotors,
     )
     assert harmonic_chords.batch().shape == (len(scenarios.boundary_tilt_rates), mesh.n_vertices)
     assert harmonic_rotors.batch().gatype == core.Rotor
-    assert energy_densities.batch().gatype == core.Scalar
 
     # The chord field satisfies the linear Laplace equation; normalized frames preserve boundary values.
     free_vertices = np.setdiff1d(np.arange(mesh.n_vertices), boundary)

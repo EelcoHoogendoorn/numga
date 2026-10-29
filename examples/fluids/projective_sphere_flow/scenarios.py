@@ -27,16 +27,17 @@ planar_corners = planar.mv.point([[-0.9, -0.65], [0.9, -0.5], [-0.1, 0.95]])
 # --- plumbing -------------------------------------------------------------------------
 def triangle_grid(n_divisions: int) -> tuple[np.ndarray, np.ndarray]:
     """Barycentric samples and triangle connectivity, independent of any geometric realization."""
-    indices = [(i, j) for i in range(n_divisions + 1) for j in range(n_divisions + 1 - i)]
-    lookup = {pair: index for index, pair in enumerate(indices)}
-    barycentric = np.array([(n_divisions - i - j, i, j) for i, j in indices]) / n_divisions
-    faces = []
-    for i in range(n_divisions):
-        for j in range(n_divisions - i):
-            faces.append([lookup[i, j], lookup[i + 1, j], lookup[i, j + 1]])
-            if i + j < n_divisions - 1:
-                faces.append([lookup[i + 1, j], lookup[i + 1, j + 1], lookup[i, j + 1]])
-    return barycentric, np.array(faces)
+    steps = np.arange(n_divisions + 1)
+    first, second = np.meshgrid(steps, steps, indexing="ij")
+    inside = first + second <= n_divisions
+    barycentric = np.stack((n_divisions - first - second, first, second), axis=-1)[inside] / n_divisions
+    # The index of each lattice node among the samples, and the lattice cells' upward and downward triangles.
+    lookup = np.cumsum(inside).reshape(inside.shape) - 1
+    corner, along_first, along_second, opposite = lookup[:-1, :-1], lookup[1:, :-1], lookup[:-1, 1:], lookup[1:, 1:]
+    layers = first[:-1, :-1] + second[:-1, :-1]
+    upward = np.stack((corner, along_first, along_second), axis=-1)[layers < n_divisions]
+    downward = np.stack((along_first, opposite, along_second), axis=-1)[layers < n_divisions - 1]
+    return barycentric, np.concatenate((upward, downward))
 
 
 # --- math -----------------------------------------------------------------------------

@@ -14,12 +14,11 @@ from examples import instantiate
 mesh_module = instantiate("examples.util.mesh", ga)
 Mesh, as_scalar, mv = mesh_module.Mesh, mesh_module.as_scalar, mesh_module.mv
 Scalar = ga.gatype.scalar()                                                  # Scalar+
-Plane = ga.gatype.vector()                                                   # Vector+
 Bivector = ga.gatype.bivector()                                              # Bivector+
 Magnetic = Bivector.derive.within("x y")                                     # Bivector+
 Point = ga.gatype.antivector()                                               # Antivector-
 
-horizontal, vertical = mv.x.dual(), mv.y.dual()                              # [] Point-, [] Point-
+horizontal, vertical = mv.x.dual(), mv.y.dual()                              # [] Point-, Point-
 n_triangle_subdivisions = 7
 ribbon_step = 0.55
 corner_forms = mv.vector([[0.45, -0.65, 0.0], [1.35, 0.25, 0.0], [-0.55, 1.15, 0.0]])  # [corners] Plane+
@@ -92,7 +91,7 @@ def main() -> None:
     gradients = (time & sides) / (2 * (time & patch))                        # [corners] Plane+
     hats = 1 + (gradients[:, None] & (points[None, :] - corners[:, None]))   # [corners, samples] Scalar+
     sample_forms = (hats * corner_forms[:, None]).sum(axis=0)                # [samples] Plane+
-    endpoint_differences, swept_fluxes, world_sheets, face_bivector = cartan_decomposition(
+    endpoint_differences, swept_fluxes, _, face_bivector = cartan_decomposition(
         corners, corner_forms, corner_velocities,
     )
     save_figure(
@@ -162,7 +161,8 @@ def main() -> None:
     np.testing.assert_allclose(((endpoint_differences + swept_fluxes) - material_rates).kernel, 0.0, atol=1e-13)
 
     # Across every mesh edge, the swept patch area equals minus the streamfunction difference.
-    np.testing.assert_allclose(((mv.xy & mesh_swept_patches) + operators.d0(stream)).kernel, 0.0, atol=1e-12)
+    d0 = mesh.d[0] * Scalar
+    np.testing.assert_allclose(((mv.xy & mesh_swept_patches) + d0(stream)).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose((operators.gradient(stream) & face_velocity).kernel, 0.0, atol=1e-12)
 
     # Ideal advection has zero instantaneous magnetic energy production and conserves energy and flux over RK4.

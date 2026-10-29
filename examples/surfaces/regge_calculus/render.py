@@ -143,8 +143,8 @@ def draw_curvature_defects(mesh: core.Mesh, vertices: core.Point, centres: core.
     hoop_dirs = quarter_turn >> radial_dirs
     radial_stretch = np.asarray((sampled_metrics(radial_dirs[None, :]) & radial_dirs[None, :]).to_array())
     hoop_stretch = np.asarray((sampled_metrics(hoop_dirs[None, :]) & hoop_dirs[None, :]).to_array())
-    anisotropy = np.log(np.maximum(radial_stretch, 1e-12) / np.maximum(hoop_stretch, 1e-12))
-    anisotropy_bound = max(float(np.abs(anisotropy).max()), 1e-6)
+    anisotropy = np.log(radial_stretch / hoop_stretch)
+    anisotropy_bound = np.abs(anisotropy).max()
     indicatrix_norm = Normalize(-anisotropy_bound, anisotropy_bound)
 
     figure, axes = charts.subplots(*disk_row_size, ncols=3)

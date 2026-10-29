@@ -9,13 +9,12 @@ from numga.algebras import VGA3D as ga
 from examples import instantiate
 
 mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, as_scalar, mv = mesh_module.Mesh, mesh_module.as_scalar, mesh_module.mv
-Scalar = ga.gatype.scalar()                                                  # Scalar+
+Mesh, mv = mesh_module.Mesh, mesh_module.mv
 Rotor = ga.gatype.rotor()                                                    # Rotor+
 Point = ga.gatype.antivector()                                               # Antivector-
 
 n_triangle_subdivisions = 6
-n_fine_subdivisions = 18
+n_fine_levels = 4
 n_skyrmion_divisions = 12
 n_saddle_divisions = 6
 disk_radius = 1.0
@@ -39,31 +38,7 @@ def triangle_samples(corners: Point, n_subdivisions: int) -> Point:
     return (corners * weights).sum(axis=-1)                                  # [samples] Point-
 
 
-def subdivided_triangle(corners: Point, n_subdivisions: int) -> tuple[Mesh, Point]:
-    """A regular triangular submesh of a 3D triangle for smooth surface rendering."""
-    steps = np.arange(n_subdivisions + 1)
-    first, second = np.meshgrid(steps, steps, indexing="ij")
-    inside = first + second <= n_subdivisions
-    vertex_index = np.full((n_subdivisions + 1, n_subdivisions + 1), -1, dtype=int)
-    vertex_index[inside] = np.arange(int(inside.sum()))
-    weights = np.stack((n_subdivisions - first[inside] - second[inside],
-                        first[inside], second[inside]), axis=-1) / n_subdivisions
-    vertices = (corners * weights).sum(axis=-1).field()                      # Point-[vertices]
-
-    faces = []
-    for i in range(n_subdivisions):
-        for j in range(n_subdivisions - i):
-            v00 = vertex_index[i, j]
-            v10 = vertex_index[i + 1, j]
-            v01 = vertex_index[i, j + 1]
-            faces.append([v00, v10, v01])
-            if i + j + 1 < n_subdivisions:
-                v11 = vertex_index[i + 1, j + 1]
-                faces.append([v10, v11, v01])
-    return Mesh(len(vertices.batch()), np.array(faces)), vertices
-
-
-def single_triangle(n_subdivisions: int, n_fine: int) -> tuple[Point, Point, Mesh, Point, Rotor]:
+def single_triangle(n_subdivisions: int, n_fine_levels: int) -> tuple[Point, Point, Mesh, Point, Rotor]:
     """A tilted 3D triangle, its interior sample lattice, a fine surface mesh, and three corner rotors."""
     ex, ey, ez = mv.x.dual(), mv.y.dual(), mv.z.dual()                       # [] Point-, [] Point-, [] Point-
     corners = stack((
@@ -76,7 +51,8 @@ def single_triangle(n_subdivisions: int, n_fine: int) -> tuple[Point, Point, Mes
         (mv.yz * (-1.25 / 2) + mv.zx * (0.55 / 2)).exp(),
         (mv.zx * (-1.35 / 2) - mv.xy * (0.65 / 2)).exp(),
     ))                                                                       # [corners] Rotor+
-    fine_mesh, fine_vertices = subdivided_triangle(corners, n_fine)
+    # The triangle split at its edges' midpoints, for drawing the field smoothly across it.
+    fine_mesh, fine_vertices = Mesh(3, np.array([[0, 1, 2]])).midpoint_split(corners.field(), n_fine_levels)
     return corners, triangle_samples(corners, n_subdivisions), fine_mesh, fine_vertices, corner_rotors
 
 
@@ -117,15 +93,12 @@ def main() -> None:
 
     # 1. Mixed-grade rotor interpolation and the Darboux-Whitney identity on a 3D triangle.
     corners, points, fine_mesh, fine_vertices, corner_rotors = single_triangle(
-        n_triangle_subdivisions, n_fine_subdivisions,
+        n_triangle_subdivisions, n_fine_levels,
     )
-    (
-        chord_rotors, unit_rotors, darboux, whitney_rates, chord_stretch,
-        angular_velocity, edge_bivectors, edge_sagittas, whitney_forms,
-    ) = triangle_darboux(corners, points, corner_rotors)
-    fine_chords, _, _, _, _, _, _, _, _ = triangle_darboux(
-        corners, fine_vertices.batch(), corner_rotors,
+    _, unit_rotors, darboux, whitney_rates, chord_stretch, _, whitney_forms = triangle_darboux(
+        corners, points, corner_rotors,
     )
+    fine_chords, _, _, _, _, _, _ = triangle_darboux(corners, fine_vertices.batch(), corner_rotors)
     save_figure(
         render.draw_darboux_whitney(
             corners, points, fine_mesh, fine_vertices, fine_chords.scalar_norm_squared().field(),
@@ -136,10 +109,9 @@ def main() -> None:
 
     # 2. A disk wraps the sphere of directors once.
     skyrmion_mesh, skyrmion_vertices = Mesh.triangular_disk(disk_radius, n_skyrmion_divisions)
-    (
-        skyrmion_rotors, directors, scalar_parts, bivector_norms,
-        skyrmion_energy, winding_density, solid_angles,
-    ) = skyrmion_winding(skyrmion_mesh, skyrmion_vertices, skyrmion_twist)
+    _, directors, scalar_parts, bivector_norms, _, solid_angles = skyrmion_winding(
+        skyrmion_mesh, skyrmion_vertices, skyrmion_twist,
+    )
     save_figure(
         render.draw_skyrmion(skyrmion_mesh, skyrmion_vertices, directors),
         "rotor_whitney_skyrmion",
@@ -149,7 +121,7 @@ def main() -> None:
     saddle_mesh, saddle_vertices, boundary, prescribed_rotors, initial_rotors = saddle_surface(
         disk_radius, n_saddle_divisions, saddle_height,
     )
-    harmonic_chords, harmonic_rotors, _ = harmonic_rotor_frames(
+    harmonic_chords, harmonic_rotors = harmonic_rotor_frames(
         saddle_mesh, saddle_vertices, boundary, prescribed_rotors,
     )
     save_figure(
@@ -167,13 +139,6 @@ def main() -> None:
         frame_duration_ms,
         forward_then_back=True,
     )
-
-    relaxation_energies = stack([
-        energy for _, energy in relax_rotor_frames(
-            saddle_mesh, saddle_vertices, initial_rotors, boundary,
-            relaxation_step_size, n_relaxation_steps,
-        )
-    ])                                                                      # [steps + 1] Scalar+
 
     # checks
     np.testing.assert_allclose((darboux.select[2] - whitney_rates).kernel, 0.0, atol=1e-14)
@@ -196,6 +161,12 @@ def main() -> None:
     free = ~mesh_module.SparseExtensor.selection(mv.context, free_vertices, saddle_mesh.n_vertices) * Rotor
     np.testing.assert_allclose(free.adjoint()(rotor_laplacian(harmonic_chords)).kernel, 0.0, atol=1e-11)
 
+    relaxation_energies = stack([
+        energy for _, energy in relax_rotor_frames(
+            saddle_mesh, saddle_vertices, initial_rotors, boundary,
+            relaxation_step_size, n_relaxation_steps,
+        )
+    ])                                                                      # [steps + 1] Scalar+
     assert np.all(relaxation_energies[1:] < relaxation_energies[:-1])
 
 

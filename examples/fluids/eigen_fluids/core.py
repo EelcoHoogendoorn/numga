@@ -9,13 +9,12 @@ from collections.abc import Iterable, Iterator
 
 import numpy as np
 
-from numga import stack
 from numga.algebras import VGA3D as ga
 from numga.sparse import spdiag
 from examples import MODEL_DIR, instantiate
 
 mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, as_scalar, context = mesh_module.Mesh, mesh_module.as_scalar, mesh_module.ctx
+Mesh, context = mesh_module.Mesh, mesh_module.ctx
 mv = context.multivector
 Scalar = ga.gatype.scalar()                         # Scalar+
 # Streamfunction gradients on triangles are extrinsic planes across the gradient direction.

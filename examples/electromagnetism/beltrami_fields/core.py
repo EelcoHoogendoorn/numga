@@ -12,7 +12,7 @@ import numpy as np
 from numga.algebras import STA as ga
 from numga.sparse import spdiag
 from examples.electromagnetism.beltrami_fields.plumbing import (
-    Embedding, Mesh, as_scalar, mv, time, edge_tails, edge_heads,
+    Mesh, as_scalar, mv, time, edge_tails, edge_heads,
     opposite_tails, opposite_heads, face_first, face_second, face_third,
 )
 
@@ -78,13 +78,11 @@ def tetrahedral_helicity(corners: Point) -> tuple[Scalar, Trivector]:
 
 
 class Operators:
-    """Topological exterior derivatives, Whitney reconstruction maps, curl energy, and helicity on a tetrahedral mesh."""
+    """The Whitney reconstructions of potentials, edge amplitudes and fluxes, the curl, and the magnetic energy and
+    helicity on a tetrahedral mesh."""
 
     def __init__(self, mesh: Mesh, vertices: Point):
         self.mesh, self.vertices = mesh, vertices
-        self.d0 = mesh.d[0] * Scalar                                         # (Scalar+ <- Scalar+)[edges <- vertices]
-        self.d1 = mesh.d[1] * Scalar                                         # (Scalar+ <- Scalar+)[faces <- edges]
-        self.d2 = mesh.d[2] * Scalar                                         # (Scalar+ <- Scalar+)[tets <- faces]
         self.corners = mesh.incidence[3, 0] * vertices                       # [corners] Point-[tets]
         self.centres = self.corners.sum(axis=0) / 4                          # Point-[tets]
         self.volumes = ((self.corners[1] - self.corners[0]) & (self.corners[2] - self.corners[0]) & (self.corners[3] - self.corners[0])) / 6  # Volume-[tets]
@@ -92,7 +90,7 @@ class Operators:
         self.prisms = self.volumes & time                                    # Scalar-[tets]
         self.face_patches = ((self.corners[face_second] - self.corners[face_first]) & (self.corners[face_third] - self.corners[face_first])) / 2  # [corners] Patch-[tets]
 
-        # Each corner hat's gradient is constant across its tetrahedron; assembling by corner maps
+        # Each corner hat's gradient is constant across its tetrahedron; assembled by corner, the gradients map
         # vertex potentials to piecewise-constant tetrahedral gradients without any metric.
         self.corner_gradients = (self.face_patches & time) / (3 * self.prisms)  # [corners] Plane+[tets]
         self.gradient = (spdiag(self.corner_gradients * Scalar) * mesh.incidence[3, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[tets <- vertices]
@@ -104,8 +102,8 @@ class Operators:
         # higher: `mesh.oriented[3, 1]` reads each mesh edge with the sign of their agreement.
         self.whitney1 = (spdiag(centroid_1forms * Scalar) * mesh.oriented[3, 1]).sum(axis=0)  # (Plane+ <- Scalar+)[tets <- edges]
 
-        # The exterior derivative of each edge's Whitney 1-form is twice the wedge of its endpoints'
-        # gradients, matching the face Whitney 2-form evaluated at the centroid on `d1(cochain)`.
+        # The exterior derivative of each edge's Whitney 1-form is twice the wedge of its endpoints' gradients,
+        # matching the face Whitney 2-form evaluated at the centroid on the edges' circulations around each face.
         curls = 2 * (self.corner_gradients[edge_tails] ^ self.corner_gradients[edge_heads])  # [tet_edges] Field+[tets]
         self.curl = (spdiag(curls * Scalar) * mesh.oriented[3, 1]).sum(axis=0)  # (Field+ <- Scalar+)[tets <- edges]
         centroid_2forms = ((self.centres - self.corners) & time) / (3 * self.prisms)  # [tet_faces] Field+[tets]
@@ -121,24 +119,12 @@ class Operators:
         self.helicity = (raw_helicity + raw_helicity.adjugate()) / 2         # (Amount- <- Scalar+)[edges <- edges]
 
 
-def mode_fields(operators: Operators, free: Embedding, cochains: Scalar, eigenvalues: Scalar
-                ) -> tuple[Field, Scalar, Scalar, Amount]:
-    """Each mode carries a flux field, energy, helicity, and stationary-action residual."""
-    magnetic = operators.curl(cochains)                                      # [..., modes] Field+[tets]
-    energies = (operators.stiffness(cochains) & cochains).sites.sum() / 2    # [..., modes] Scalar+
-    helicities = (operators.helicity(cochains) & cochains).sites.sum()        # [..., modes] Scalar+
-    residuals = free.adjugate()(
-        operators.stiffness(cochains) - eigenvalues * operators.helicity(cochains)
-    )                                                                       # [..., modes] Amount-[free]
-    return magnetic, energies, helicities, residuals
-
-
 def selective_decay(initial: Scalar, eigenvalues: Scalar, times: np.ndarray) -> Iterator[Scalar]:
     """Yield selectively damped modal amplitudes rescaled to preserve their initial helicity."""
     initial_helicity = (initial.squared() / eigenvalues).sum(axis=0)          # [] Scalar+
-    for time in times:
+    for elapsed in times:
         # Finer modes decay faster; the shared scale fixes the linkage of the whole field.
-        damped = initial * (-eigenvalues.squared() * time).exp()              # [selected] Scalar+
+        damped = initial * (-eigenvalues.squared() * elapsed).exp()           # [selected] Scalar+
         helicity = (damped.squared() / eigenvalues).sum(axis=0)               # [] Scalar+
         yield damped * (initial_helicity / helicity).square_root()           # [selected] Scalar+
 

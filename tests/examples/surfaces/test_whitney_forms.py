@@ -9,12 +9,11 @@ from examples.surfaces.whitney_forms import core, scenarios
 
 def test_barycentric_hats_and_edge_whitney_forms_on_single_triangle_and_diamond():
     corners, points = scenarios.single_triangle(8)
-    hats, gradients, patch = core.barycentric_hats(corners, points)
-    corner_hats, _, _ = core.barycentric_hats(corners, corners)
+    hats, gradients = core.barycentric_hats(corners, points)
+    corner_hats, _ = core.barycentric_hats(corners, corners)
 
     assert hats.gatype == core.Scalar
     assert gradients.gatype == core.Plane
-    assert patch.gatype == core.Patch
     np.testing.assert_allclose(corner_hats.kernel, np.eye(3)[..., None], atol=1e-14)
     np.testing.assert_allclose(hats.sum(axis=0).kernel, 1.0, atol=1e-14)
     np.testing.assert_allclose(gradients.sum(axis=0).kernel, 0.0, atol=1e-14)
@@ -134,7 +133,7 @@ def test_isotropic_and_anisotropic_conduction_patch_test_and_flux_balance():
     exact_potential = applied_field & vertices
     rim = SparseExtensor.selection(core.mv.context, boundary, mesh.n_vertices)
     prescribed_rim = ~rim * (rim * exact_potential)
-    potential, current, edge_flux, _ = core.conduction(operators, conductivity, boundary, prescribed_rim)
+    potential, current, _ = core.conduction(operators, conductivity, boundary, prescribed_rim)
     np.testing.assert_allclose(potential.batch()[0].kernel, exact_potential.kernel, atol=1e-13)
     np.testing.assert_allclose(potential.batch()[1].kernel, exact_potential.kernel, atol=1e-13)
     expected_current = -conductivity(applied_field)
@@ -146,7 +145,7 @@ def test_isotropic_and_anisotropic_conduction_patch_test_and_flux_balance():
     electrodes = boundary[abscissa[boundary].norm() > scenarios.electrode_threshold]
     pinned = SparseExtensor.selection(core.mv.context, electrodes, mesh.n_vertices)
     prescribed = ~pinned * (pinned * (core.mv.x & vertices))
-    potential, current, edge_flux, streamfunction = core.conduction(operators, conductivity, electrodes, prescribed)
+    potential, current, streamfunction = core.conduction(operators, conductivity, electrodes, prescribed)
 
     conductance = operators.gradient.adjugate()(spdiag(operators.areas * conductivity)(operators.gradient))
     free_vertices = np.setdiff1d(np.arange(mesh.n_vertices), electrodes)
@@ -154,5 +153,4 @@ def test_isotropic_and_anisotropic_conduction_patch_test_and_flux_balance():
     nodal_source = conductance(potential)
     np.testing.assert_allclose(free.adjugate()(nodal_source).kernel, 0.0, atol=1e-11)
     np.testing.assert_allclose(nodal_source.sites.sum().kernel, 0.0, atol=1e-11)
-    assert np.isfinite(edge_flux.kernel).all()
     assert np.isfinite(streamfunction.kernel).all()

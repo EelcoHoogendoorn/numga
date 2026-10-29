@@ -45,8 +45,6 @@ class Operators:
         # reduces to one third of the difference of its endpoints' corner gradients.
         centroid_forms = (self.corner_gradients[[2, 0, 1]] - self.corner_gradients[[1, 2, 0]]) / 3  # [corners] Plane+[faces]
         self.whitney1 = (spdiag(centroid_forms) * mesh.boundary[2, 1]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- edges]
-        first, second = self.corner_gradients[[1, 2, 0]], self.corner_gradients[[2, 0, 1]]  # [corners] Plane+[faces], [corners] Plane+[faces]
-        self.curl = (spdiag(2 * (first ^ second)) * mesh.boundary[2, 1]).sum(axis=0) * Scalar  # (Bivector+ <- Scalar+)[faces <- edges]
         self.whitney2 = spdiag(mv.xy / (mv.xy & self.patches) * Scalar)      # (Bivector+ <- Scalar+)[faces <- faces]
 
         # Multiplying the corner gradients by a full multivector unites divergence in grade 0,
@@ -73,9 +71,9 @@ class Operators:
         self.potential_velocity = self.isotropic_medium(self.gradient)       # (Point- <- Scalar+)[faces <- vertices]
         self.stream_velocity = spdiag(Plane ^ self.patches)(self.gradient)   # (Point- <- Scalar+)[faces <- vertices]
         self.even_velocity = self.isotropic_medium(self.even_gradient)       # (Point- <- Even+)[faces <- vertices]
-        self.potential_laplacian = self.gradient.adjugate()(self.potential_velocity)  # (Antiscalar- <- Scalar+)[vertices <- vertices]
         self.stream_laplacian = self.stream_velocity.adjugate()(self.isotropic_resistance(self.stream_velocity))  # (Antiscalar- <- Scalar+)[vertices <- vertices]
         self.even_laplacian = self.even_gradient.adjugate()(self.even_velocity)  # (Even- <- Even+)[vertices <- vertices]
+
 
 def harmonic_circulation(operators: Operators, inner_ring: np.ndarray,
                          interior: np.ndarray) -> tuple[Scalar, Point]:

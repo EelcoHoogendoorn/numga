@@ -6,9 +6,9 @@ import numpy as np
 
 from numga import stack
 from examples.electromagnetism.beltrami_fields.core import (
-    Operators, Point, as_scalar,
+    Operators, Point, Scalar, as_scalar,
     edge_heads, edge_tails, edge_whitney_forms, face_first, face_second,
-    face_third, face_whitney_forms, mode_fields, mv, reconstruct, selective_decay, tetrahedral_hats, tetrahedral_helicity,
+    face_third, face_whitney_forms, mv, reconstruct, selective_decay, tetrahedral_hats, tetrahedral_helicity,
 )
 
 from examples.electromagnetism.beltrami_fields.plumbing import Embedding, Mesh, flux_preserving, solid_torus
@@ -44,7 +44,7 @@ def tetrahedron_samples(corners: Point, n_subdivisions: int) -> Point:
 
 def single_tetrahedron(n_subdivisions: int) -> tuple[Point, Point]:
     """A positively oriented scalene tetrahedron and its interior sample points."""
-    ex, ey, ez = mv.x.dual(), mv.y.dual(), mv.z.dual()                       # [] Point-, [] Point-, [] Point-
+    ex, ey, ez = mv.x.dual(), mv.y.dual(), mv.z.dual()                       # [] Point-, Point-, Point-
     corners = stack((
         -ex * 0.56 - ey * 0.38 - ez * 0.34,
         ex * 0.62 - ey * 0.28 - ez * 0.34,
@@ -56,7 +56,7 @@ def single_tetrahedron(n_subdivisions: int) -> tuple[Point, Point]:
 
 def deformed_tetrahedron() -> Point:
     """A strongly sheared, stretched, and translated tetrahedron with the same orientation."""
-    ex, ey, ez = mv.x.dual(), mv.y.dual(), mv.z.dual()                       # [] Point-, [] Point-, [] Point-
+    ex, ey, ez = mv.x.dual(), mv.y.dual(), mv.z.dual()                       # [] Point-, Point-, Point-
     return stack((
         ex * 0.40 - ey * 1.10 + ez * 0.25,
         ex * 2.30 - ey * 0.35 - ez * 0.15,
@@ -80,7 +80,6 @@ def main() -> None:
     hats, gradients, face_patches, volume = tetrahedral_hats(corners, points)
     edge_forms, edge_curls = edge_whitney_forms(corners, points)
     face_forms = face_whitney_forms(corners, points)
-    tet_helicity, _ = tetrahedral_helicity(corners)
     save_figure(
         render.draw_tet_whitney(corners, points, edge_forms, face_forms, volume),
         "beltrami_tet_whitney",
@@ -94,10 +93,7 @@ def main() -> None:
     inverse_eigenvalues, free_modes, n_null = coexact_helicity_eigh(free_energy, free_helicity)
     modes = free(free_modes)
     shown_modes = modes[shown_indices]                                       # [shown] Scalar+[edges]
-    shown_eigenvalues = 1 / inverse_eigenvalues[shown_indices]               # [shown] Scalar+
-    shown_magnetic, shown_energies, shown_helicities, shown_residuals = mode_fields(
-        operators, free, shown_modes, shown_eigenvalues,
-    )
+    shown_magnetic = operators.curl(shown_modes)                             # [shown] Field+[tets]
     save_figure(
         render.draw_beltrami_eigenmodes(
             mesh, vertices, operators.centres, operators.volumes, inverse_eigenvalues, shown_magnetic, shown_indices,
@@ -145,21 +141,26 @@ def main() -> None:
     np.testing.assert_allclose((face_whitney_forms(corners, face_centres) & face_patches[None, :]).kernel,
                                np.eye(4)[..., None], atol=1e-14)
 
+    tet_helicity, _ = tetrahedral_helicity(corners)
     deformed_helicity, _ = tetrahedral_helicity(deformed_tetrahedron())
     np.testing.assert_allclose((tet_helicity - deformed_helicity).kernel, 0.0, atol=1e-14)
     expected_linking = np.zeros((6, 6))
     expected_linking[np.arange(6), 5 - np.arange(6)] = np.array([1, -1, 1, 1, -1, 1]) / 6
     np.testing.assert_allclose(tet_helicity.kernel[..., 0], expected_linking, atol=1e-14)
 
+    # Whitney reconstruction commutes with the exterior derivative: the edge forms of a potential's differences are
+    # its gradient, and the curl of an edge field is the face forms of its circulations.
+    d0, d1 = mesh.d[0] * Scalar, mesh.d[1] * Scalar
     test_phi = (mv.x & vertices) * 0.6 - (mv.y & vertices) * 0.9 + (mv.z & vertices) * 0.4
-    np.testing.assert_allclose(operators.d1(operators.d0(test_phi)).kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose(operators.d2(operators.d1(shown_modes[0])).kernel, 0.0, atol=1e-14)
-    np.testing.assert_allclose((operators.whitney1(operators.d0(test_phi)) - operators.gradient(test_phi)).kernel,
-                               0.0, atol=1e-12)
-    np.testing.assert_allclose((operators.curl(shown_modes[0]) - operators.whitney2(operators.d1(shown_modes[0]))).kernel,
+    np.testing.assert_allclose((operators.whitney1(d0(test_phi)) - operators.gradient(test_phi)).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose((operators.curl(shown_modes[0]) - operators.whitney2(d1(shown_modes[0]))).kernel,
                                0.0, atol=1e-12)
 
     assert n_null == n_major
+    shown_eigenvalues = 1 / inverse_eigenvalues[shown_indices]
+    shown_energies = (operators.stiffness(shown_modes) & shown_modes).sites.sum() / 2
+    shown_helicities = (operators.helicity(shown_modes) & shown_modes).sites.sum()
+    shown_residuals = free.adjugate()(operators.stiffness(shown_modes) - shown_eigenvalues * operators.helicity(shown_modes))
     np.testing.assert_allclose((inverse_eigenvalues + inverse_eigenvalues[::-1]).kernel, 0.0, atol=1e-13)
     np.testing.assert_allclose(shown_energies.kernel[..., 0], 0.5, atol=1e-12)
     np.testing.assert_allclose((shown_helicities - inverse_eigenvalues[shown_indices]).kernel, 0.0, atol=1e-12)

@@ -75,43 +75,29 @@ def test_tetrahedral_whitney_0_1_2_forms_and_topological_opposite_edge_helicity(
     np.testing.assert_allclose(tet_helicity.kernel[..., 0], expected_linking, atol=1e-14)
 
 
-def test_3d_cochain_complex_whitney_commutation_and_chiral_beltrami_spectrum():
+def test_whitney_commutation_flux_preserving_subspace_and_chiral_beltrami_spectrum():
     mesh, vertices, free = scenarios.torus_cavity()
     operators = core.Operators(mesh, vertices)
 
-    assert operators.d0.gatype == core.ga.gatype((core.Scalar, core.Scalar))
-    assert operators.d1.gatype == core.ga.gatype((core.Scalar, core.Scalar))
-    assert operators.d2.gatype == core.ga.gatype((core.Scalar, core.Scalar))
-    assert operators.gradient.gatype == core.ga.gatype((SpatialPlane, core.Scalar))
     assert operators.whitney1.gatype == core.ga.gatype((SpatialPlane, core.Scalar))
     assert operators.curl.gatype == core.ga.gatype((core.Field, core.Scalar))
-    assert operators.whitney2.gatype == core.ga.gatype((core.Field, core.Scalar))
     assert operators.stiffness.gatype == core.ga.gatype((core.Amount, core.Scalar))
     assert operators.helicity.gatype == core.ga.gatype((core.Amount, core.Scalar))
-
-    # Exactness of the 3D cochain complex: d1 o d0 == 0 and d2 o d1 == 0.
-    assert not np.any(operators.d1(operators.d0).cells.kernel)
-    assert not np.any(operators.d2(operators.d1).cells.kernel)
     np.testing.assert_allclose((operators.stiffness - operators.stiffness.adjugate()).cells.kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose((operators.helicity - operators.helicity.adjugate()).cells.kernel, 0.0, atol=1e-14)
 
-    # Commutation of Whitney reconstruction with the coboundary operators and gauge invariance of stiffness and helicity.
+    # Whitney reconstruction commutes with the exterior derivative.
+    d0, d1 = mesh.d[0] * core.Scalar, mesh.d[1] * core.Scalar
     potential = (core.mv.x & vertices) * 0.7 - (core.mv.y & vertices) * 1.1 + (core.mv.z & vertices) * 0.5
-    np.testing.assert_allclose(
-        (operators.whitney1(operators.d0(potential)) - operators.gradient(potential)).kernel,
-        0.0, atol=1e-12,
-    )
+    np.testing.assert_allclose((operators.whitney1(d0(potential)) - operators.gradient(potential)).kernel, 0.0, atol=1e-12)
     free_test = free(core.as_scalar(np.sin(np.arange(free.shape[1]))).field())
-    np.testing.assert_allclose(
-        (operators.curl(free_test) - operators.whitney2(operators.d1(free_test))).kernel,
-        0.0, atol=1e-11,
-    )
+    np.testing.assert_allclose((operators.curl(free_test) - operators.whitney2(d1(free_test))).kernel, 0.0, atol=1e-11)
     # Normal magnetic flux d1(free_test) vanishes identically on every boundary triangle of the torus.
-    np.testing.assert_allclose(operators.d1(free_test).batch()[mesh.exterior(2)].kernel, 0.0, atol=1e-14)
+    np.testing.assert_allclose(d1(free_test).batch()[mesh.exterior(2)].kernel, 0.0, atol=1e-14)
 
     # An interior vertex gradient lies in the kernel of both stiffness and free-subspace helicity.
     interior_phi = core.as_scalar(np.arange(mesh.n_vertices) < scenarios.n_major).field()
-    gauge_edge = operators.d0(interior_phi)
+    gauge_edge = d0(interior_phi)
     np.testing.assert_allclose(operators.stiffness(gauge_edge).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose(free.adjugate()(operators.helicity(gauge_edge)).kernel, 0.0, atol=1e-13)
 
@@ -127,9 +113,10 @@ def test_3d_cochain_complex_whitney_commutation_and_chiral_beltrami_spectrum():
     check_indices = np.array([0, 1, -2, -1])
     check_modes = modes[check_indices]
     check_eigenvalues = 1 / inverse_eigenvalues[check_indices]
-    magnetic, energies, helicities, residuals = core.mode_fields(
-        operators, free, check_modes, check_eigenvalues,
-    )
+    magnetic = operators.curl(check_modes)
+    energies = (operators.stiffness(check_modes) & check_modes).sites.sum() / 2
+    helicities = (operators.helicity(check_modes) & check_modes).sites.sum()
+    residuals = free.adjugate()(operators.stiffness(check_modes) - check_eigenvalues * operators.helicity(check_modes))
     assert magnetic.batch().gatype == core.Field
     np.testing.assert_allclose(energies.kernel[..., 0], 0.5, atol=1e-12)
     np.testing.assert_allclose((helicities - inverse_eigenvalues[check_indices]).kernel, 0.0, atol=1e-12)

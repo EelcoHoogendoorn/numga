@@ -10,7 +10,7 @@ from numga.sparse import SparseExtensor, spdiag
 from examples import instantiate
 
 mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, as_scalar, mv = mesh_module.Mesh, mesh_module.as_scalar, mesh_module.mv
+Mesh, mv = mesh_module.Mesh, mesh_module.mv
 Scalar = ga.gatype.scalar()                                                  # Scalar+
 Point = ga.gatype.antivector()                                               # Antivector-
 
@@ -37,7 +37,7 @@ def triangle_samples(corners: Point, n_subdivisions: int) -> Point:
 def single_triangle(n_subdivisions: int) -> tuple[Point, Point]:
     """The reference triangle is scalene, with its sample points across it."""
     horizontal, vertical = mv.x.dual(), mv.y.dual()                          # [] Point-, [] Point-
-    corners = stack((horizontal * 0.0 + vertical * 0.0,
+    corners = stack((horizontal * 0 + vertical * 0,
                      horizontal * 1.2 + vertical * 0.12,
                      horizontal * 0.38 + vertical * 0.96))                   # [corners] Point-
     return corners, triangle_samples(corners, n_subdivisions)
@@ -103,7 +103,7 @@ def main() -> None:
     electrodes = boundary[abscissa[boundary].norm() > electrode_threshold]
     pinned = SparseExtensor.selection(mv.context, electrodes, mesh.n_vertices)
     prescribed = ~pinned * (pinned * (mv.x & vertices))                      # Scalar+[vertices]
-    potential, current, edge_flux, streamfunction = intrinsic_conduction(
+    potential, current, streamfunction = intrinsic_conduction(
         mesh, vertices, conductivities, electrodes, prescribed,
     )
     save_figure(
@@ -144,7 +144,6 @@ def main() -> None:
     free_vertices = np.setdiff1d(np.arange(mesh.n_vertices), electrodes)
     free = ~SparseExtensor.selection(mv.context, free_vertices, mesh.n_vertices) * Scalar
     np.testing.assert_allclose(free.adjugate()(conductance(potential)).kernel, 0.0, atol=1e-11)
-    assert edge_flux.batch().shape == (len(radial_rates), len(mesh.edges))
 
 
 if __name__ == "__main__":

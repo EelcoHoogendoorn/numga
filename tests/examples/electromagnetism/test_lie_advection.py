@@ -55,7 +55,6 @@ def test_world_sheets_uniform_field_preservation_and_gauge_invariance():
     mesh, vertices = scenarios.disk(1.0, 6)
     operators = core.Operators(mesh, vertices)
 
-    assert operators.d0.gatype == core.ga.gatype((core.Scalar, core.Scalar))
     assert operators.d1.gatype == core.ga.gatype((core.Scalar, core.Scalar))
     assert operators.gradient.gatype == core.ga.gatype((core.Plane.derive.within("x y"), core.Scalar))
     assert operators.curl.gatype == core.ga.gatype((core.Magnetic, core.Scalar))
@@ -64,11 +63,12 @@ def test_world_sheets_uniform_field_preservation_and_gauge_invariance():
     assert operators.curl_stiffness.gatype == core.ga.gatype((core.Amount, core.Scalar))
     assert operators.curl_laplacian.gatype == core.ga.gatype((core.Scalar, core.Scalar))
 
+    d0 = mesh.d[0] * core.Scalar
     stream = core.vortex_streamfunction(vertices, scenarios.swirl_rate, scenarios.ellipticity)
     face_velocity, fixed_sheets, comoving_sheets = core.edge_world_sheets(operators, stream)
     swept_patches = fixed_sheets - comoving_sheets
     np.testing.assert_allclose((operators.gradient(stream) & face_velocity).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose(((core.mv.xy & swept_patches) + operators.d0(stream)).kernel, 0.0, atol=1e-13)
+    np.testing.assert_allclose(((core.mv.xy & swept_patches) + d0(stream)).kernel, 0.0, atol=1e-13)
     np.testing.assert_allclose(operators.d1(core.mv.xy & swept_patches).kernel, 0.0, atol=1e-13)
 
     # A uniform magnetic 2-form produces an exact gradient edge rate -B0 * d0(stream), so its face flux is stationary.
@@ -81,7 +81,7 @@ def test_world_sheets_uniform_field_preservation_and_gauge_invariance():
     advection = spdiag(core.Magnetic & swept_patches)(operators.edge_curl)
     uniform_rate = advection(uniform_cochain)
     np.testing.assert_allclose(
-        (uniform_rate + uniform_strength * operators.d0(stream)).kernel,
+        (uniform_rate + uniform_strength * d0(stream)).kernel,
         0.0, atol=1e-12,
     )
     np.testing.assert_allclose(operators.d1(uniform_rate).kernel, 0.0, atol=1e-12)
@@ -89,7 +89,7 @@ def test_world_sheets_uniform_field_preservation_and_gauge_invariance():
     # Adding any exact 0-form gradient d0(phi) leaves curl, curl stiffness, curl Laplacian, and the evolution map invariant.
     cochain = core.initial_cochain(operators, scenarios.lobe_centres, scenarios.lobe_strengths, scenarios.lobe_radius)
     gauge = 0.8 * (core.mv.x & vertices).squared() - 0.55 * (core.mv.y & vertices)
-    gauged_cochain = cochain + operators.d0(gauge)
+    gauged_cochain = cochain + d0(gauge)
     np.testing.assert_allclose((operators.d1(gauged_cochain) - operators.d1(cochain)).kernel, 0.0, atol=1e-14)
     np.testing.assert_allclose((operators.curl(gauged_cochain) - operators.curl(cochain)).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose(

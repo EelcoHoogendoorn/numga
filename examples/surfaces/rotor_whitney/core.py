@@ -21,7 +21,6 @@ Bivector = ga.gatype.bivector()                                              # B
 Even = ga.gatype.even()                                                      # Even+
 Rotor = ga.gatype.rotor()                                                    # Rotor+
 Point = ga.gatype.antivector()                                               # Antivector-
-Patch = ga.gatype.antibivector()                                             # Antibivector-
 EvenMap = ga.gatype((Even, Point))
 RateMap = ga.gatype((Bivector, Point))
 StretchMap = ga.gatype((Scalar, Point))
@@ -30,7 +29,7 @@ StretchMap = ga.gatype((Scalar, Point))
 # --- math -----------------------------------------------------------------------------
 def triangle_darboux(
     corners: Point, points: Point, corner_rotors: Rotor,
-) -> tuple[Even, Rotor, EvenMap, RateMap, StretchMap, RateMap, Bivector, Scalar, Plane]:
+) -> tuple[Even, Rotor, EvenMap, RateMap, StretchMap, RateMap, Plane]:
     """Linearly blended corner rotors on a triangle decompose their Darboux derivative into edge Whitney 1-forms in grade two and symmetric Regge differentials in grade zero."""
     sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]                          # [corners] Point-
     patch = (sides[0] & sides[1]) / 2                                        # [] Patch-
@@ -54,15 +53,12 @@ def triangle_darboux(
     whitney_rates = (edge_bivectors * (whitney_forms & Point)).sum(axis=-1)  # [samples] Bivector+ <- Point-
     chord_stretch = (edge_sagittas * (symmetric_forms & Point)).sum(axis=-1) # [samples] Scalar+ <- Point-
     angular_velocity = whitney_rates / chord_rotors.scalar_norm_squared()    # [samples] Bivector+ <- Point-
-    return (
-        chord_rotors, unit_rotors, darboux, whitney_rates, chord_stretch,
-        angular_velocity, edge_bivectors, edge_sagittas, whitney_forms,
-    )
+    return chord_rotors, unit_rotors, darboux, whitney_rates, chord_stretch, angular_velocity, whitney_forms
 
 
 def skyrmion_winding(
     mesh: Mesh, vertices: Point, twist_angle: float,
-) -> tuple[Rotor, Point, Scalar, Scalar, Scalar, Scalar, Scalar]:
+) -> tuple[Rotor, Point, Scalar, Scalar, Scalar, Scalar]:
     """A radial rotor texture wraps the sphere of directors; its frame derivative reads the energy and swept-area density on each face."""
     vertical = mv.z.dual()                                                   # [] Point-
     # The radial position and vertical direction span the plane of turning.
@@ -82,19 +78,18 @@ def skyrmion_winding(
     chord_rotors = face_rotors.sum(axis=0) / 3                               # Even+[faces]
     face_differential = (face_rotors * (corner_gradients & Point)).sum(axis=0)  # (Even+ <- Point-)[faces]
     face_darboux = 2 * chord_rotors.reverse() * face_differential            # (Even+ <- Point-)[faces]
-    face_omega = face_darboux.select[2] / chord_rotors.scalar_norm_squared() # (Bivector+ <- Point-)[faces]
+    face_rates = face_darboux.select[2] / chord_rotors.scalar_norm_squared() # (Bivector+ <- Point-)[faces]
 
     # The cotangent weights turn edge readings into the direction-independent frame energy.
     dots = -sides[[1, 2, 0]].dot(sides[[2, 0, 1]])                           # [corners] Scalar+[faces]
     cotangents = dots / (2 * areas)                                          # [corners] Scalar+[faces]
-    energy_density = ((cotangents / (2 * areas)) * face_omega(sides).scalar_norm_squared()).sum(axis=0)  # Scalar+[faces]
+    energy_density = ((cotangents / (2 * areas)) * face_rates(sides).scalar_norm_squared()).sum(axis=0)  # Scalar+[faces]
 
     # Reading the two turning rates against the director's equatorial patch gives its swept area.
     # The full frame connection is flat: its derivative cancels this commutator term.
-    swept_turns = face_omega(sides[1]).commutator(face_omega(sides[0])) / 2    # Bivector+[faces]
+    swept_turns = face_rates(sides[1]).commutator(face_rates(sides[0])) / 2    # Bivector+[faces]
     solid_angles = swept_turns & mv.xy.dual()                                # Scalar+[faces]
-    winding_density = solid_angles / areas                                   # Scalar+[faces]
-    return rotors, directors, scalar_parts, bivector_norms, energy_density, winding_density, solid_angles
+    return rotors, directors, scalar_parts, bivector_norms, energy_density, solid_angles
 
 
 def rotor_laplacian_operators(
@@ -115,9 +110,9 @@ def rotor_laplacian_operators(
 
 def harmonic_rotor_frames(
     mesh: Mesh, vertices: Point, boundary: np.ndarray, prescribed_rotors: Rotor,
-) -> tuple[Even, Rotor, Scalar]:
-    """Pinned boundary rotors determine a linear harmonic chord field in the 4D even subalgebra, its normalized unit rotor field, and face Dirichlet energy densities."""
-    rotor_d0, rotor_laplacian, _, areas, sides = rotor_laplacian_operators(mesh, vertices)
+) -> tuple[Even, Rotor]:
+    """Pinned boundary rotors determine a linear harmonic chord field in the 4D even subalgebra, and its normalized unit rotor field."""
+    _, rotor_laplacian, _, _, _ = rotor_laplacian_operators(mesh, vertices)
     free_vertices = np.setdiff1d(np.arange(mesh.n_vertices), boundary)
     free = ~SparseExtensor.selection(mv.context, free_vertices, mesh.n_vertices) * Rotor   # (Even+ <- Even+)[vertices <- free]
     pinned = ~SparseExtensor.selection(mv.context, boundary, mesh.n_vertices) * Rotor      # (Even+ <- Even+)[vertices <- boundary]
@@ -128,12 +123,7 @@ def harmonic_rotor_frames(
     rhs = -free.adjoint()(rotor_laplacian(boundary_values))                  # [...] Even+[free]
     harmonic_chords = boundary_values + free(free.adjoint()(rotor_laplacian(free)).solve(rhs))  # [...] Even+[vertices]
     harmonic_rotors = harmonic_chords.normalized()                           # [...] Rotor+[vertices]
-
-    dots = -sides[[1, 2, 0]].dot(sides[[2, 0, 1]])                           # [corners] Scalar+[faces]
-    cotangents = dots / (2 * areas)                                          # [corners] Scalar+[faces]
-    face_energy = (spdiag(cotangents / (2 * areas)) * mesh.incidence[2, 1]).sum(axis=0) * Scalar  # (Scalar+ <- Scalar+)[faces <- edges]
-    energy_density = face_energy(rotor_d0(harmonic_rotors).scalar_norm_squared())  # [...] Scalar+[faces]
-    return harmonic_chords, harmonic_rotors, energy_density
+    return harmonic_chords, harmonic_rotors
 
 
 def relax_rotor_frames(

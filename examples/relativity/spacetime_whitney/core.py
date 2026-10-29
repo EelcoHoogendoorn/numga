@@ -15,7 +15,6 @@ mesh_module = instantiate("examples.util.mesh", Algebra("x+t-"))
 ga, Mesh, as_scalar, mv = mesh_module.ga, mesh_module.Mesh, mesh_module.as_scalar, mesh_module.mv
 Scalar = ga.gatype.scalar()                                                  # Scalar+
 Plane = ga.gatype.vector()                                                   # Vector+
-Bivector = ga.gatype.bivector()                                              # Bivector+
 Point = ga.gatype.antivector()                                               # Antivector-
 Patch = ga.gatype.antibivector()                                             # Antibivector-
 Amount = ga.gatype.antiscalar()                                              # Antiscalar-
@@ -46,39 +45,23 @@ def edge_whitney_forms(corners: Point, points: Point) -> Plane:
 
 
 class Operators:
-    """Topological exterior derivatives, Whitney reconstruction maps, and Lorentzian wave operators on a spacetime mesh."""
+    """The gradient, the Lorentzian wave operator, and the face-to-vertex averaging on a spacetime mesh."""
 
     def __init__(self, mesh: Mesh, vertices: Point):
         self.mesh, self.vertices = mesh, vertices
-        self.d0 = mesh.d[0] * Scalar                                         # (Scalar+ <- Scalar+)[edges <- vertices]
-        self.d1 = mesh.d[1] * Scalar                                         # (Scalar+ <- Scalar+)[faces <- edges]
         edges = mesh.d[0] * vertices                                         # Point-[edges]
-        self.corners = mesh.incidence[2, 0] * vertices                       # [corners] Point-[faces]
-        self.sides = mesh.boundary[2, 1] * edges                             # [corners] Point-[faces]
-        self.patches = (self.sides[0] & self.sides[1]) / 2                   # Patch-[faces]
-        self.areas = self.patches.norm()                                     # Scalar+[faces]
-        self.centres = self.corners.sum(axis=0) / 3                          # Point-[faces]
+        sides = mesh.boundary[2, 1] * edges                                  # [corners] Point-[faces]
+        patches = (sides[0] & sides[1]) / 2                                  # Patch-[faces]
+        self.areas = patches.norm()                                          # Scalar+[faces]
 
         # Each corner hat's gradient is constant across its spacetime triangle; assembling by corner
         # maps vertex potentials to piecewise-constant face 1-forms without any metric.
-        self.corner_gradients = self.sides / (2 * self.patches)              # [corners] Plane+[faces]
-        self.gradient = (spdiag(self.corner_gradients) * mesh.incidence[2, 0]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- vertices]
-
-        # At each triangle centroid the three barycentric hats equal 1/3, so the edge 1-form
-        # reduces to one third of the difference of its endpoints' corner gradients.
-        centroid_forms = (self.corner_gradients[[2, 0, 1]] - self.corner_gradients[[1, 2, 0]]) / 3   # [corners] Plane+[faces]
-        self.whitney1 = (spdiag(centroid_forms) * mesh.boundary[2, 1]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- edges]
-
-        # The exterior derivative of each edge's Whitney 1-form is twice the wedge of its endpoints'
-        # gradients, matching a constant 2-form of unit integral over the spacetime patch.
-        first, second = self.corner_gradients[[1, 2, 0]], self.corner_gradients[[2, 0, 1]]   # [corners] Plane+[faces], [corners] Plane+[faces]
-        self.curl = (spdiag(2 * (first ^ second)) * mesh.boundary[2, 1]).sum(axis=0) * Scalar  # (Bivector+ <- Scalar+)[faces <- edges]
-        self.whitney2 = spdiag(self.patches.inverse().dual() * Scalar)       # (Bivector+ <- Scalar+)[faces <- faces]
+        corner_gradients = sides / (2 * patches)                             # [corners] Plane+[faces]
+        self.gradient = (spdiag(corner_gradients) * mesh.incidence[2, 0]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- vertices]
 
         # The Lorentzian dual supplies the timelike minus sign; pulling it back through
         # the gradient gives a wave operator with null characteristic directions.
         self.wave_operator = self.gradient.adjugate()(spdiag(self.areas * Plane.dual())(self.gradient))   # (Amount- <- Scalar+)[vertices <- vertices]
-        self.maxwell_operator = self.curl.adjugate()(spdiag(self.areas * Bivector.dual())(self.curl))   # (Amount- <- Scalar+)[edges <- edges]
 
         # Area-weighted averaging from faces to vertices reconstructs smooth nodal fields for slicing.
         self.to_vertices = ~mesh.incidence[2, 0].sum(axis=0)                 # Scalar+[vertices <- faces]
@@ -120,7 +103,7 @@ def moving_mirror_wave(operators: Operators, n_space: int, n_time: int, dt: floa
     rhs = -interior.adjugate()(operators.wave_operator(initial))             # Amount-[interior]
     potential = initial + future(interior.adjugate()(operators.wave_operator(future)).solve(rhs))   # Scalar+[vertices]
 
-    field = operators.whitney1(operators.d0(potential))                      # Plane+[faces]
+    field = operators.gradient(potential)                                    # Plane+[faces]
     face_rate = field & time                                                 # Scalar+[faces]
     wave_rate = (operators.to_vertices * (operators.areas * face_rate)) / (operators.to_vertices * operators.areas)   # Scalar+[vertices]
 

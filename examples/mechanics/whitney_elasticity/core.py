@@ -24,7 +24,6 @@ Scalar = ga.gatype.scalar()                                      # Scalar+
 Point = ga.gatype.antivector()                                   # Antivector-
 Plane = ga.gatype.vector()                                       # Vector+
 Force = ga.gatype.vector()                                       # Vector+
-Patch = ga.gatype.antibivector()                                 # Antibivector-
 Elastic = ga.gatype((Scalar, Plane, Plane, Point, Point))
 Stiffness = ga.gatype((Force, Point))
 
@@ -43,9 +42,10 @@ def constitutive(lame_lambda: Scalar, lame_mu: Scalar) -> Elastic:
 
 
 def viscous(viscosity: Scalar) -> Elastic:
-    """A shear viscosity as a work form on pairs of velocity gradients: the elastic form's shear part less its
-    dilation, so that it resists the rate of shear and not the rate of swelling."""
-    return (viscosity * (shear_traction - dilation_traction)) & Point   # [...] Scalar+ <- (Plane+, Plane+, Point-, Point-)
+    """A shear viscosity as a work form on pairs of velocity gradients: the elastic form's shear part less two thirds
+    of its dilation, the stress of a liquid with no bulk viscosity in a plane-strain slice of three-dimensional space,
+    so that it resists the rate of shear and not the rate of swelling."""
+    return (viscosity * (shear_traction - 2 * dilation_traction / 3)) & Point   # [...] Scalar+ <- (Plane+, Plane+, Point-, Point-)
 
 
 class Operators:

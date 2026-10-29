@@ -21,10 +21,7 @@ Mesh, as_scalar = mesh_module.Mesh, mesh_module.as_scalar
 Scalar = ga.gatype.scalar()                         # Scalar+
 Plane = ga.gatype.vector()                          # Vector+
 Point = ga.gatype.antivector()                      # Antivector-
-Patch = ga.gatype.antibivector()                    # Antibivector-
-Volume = ga.gatype.antitrivector()                  # Antitrivector-
-Amount = ga.gatype.antiscalar()                     # Antiscalar-
-Conductivity = ga.gatype((Point, Plane))
+Conductivity = ga.gatype((Point, Plane))            # Antivector- <- Vector+
 
 
 # --- math -----------------------------------------------------------------------------
@@ -45,7 +42,7 @@ def diffusion(mesh: Mesh, corners: Point, samples: Point, measures: Scalar,
     interpolation = (spdiag(hats * Scalar) * mesh.incidence[2, 0]).sum(axis=1)  # [samples] (Scalar+ <- Scalar+)[faces <- vertices]
     gradient = (spdiag(gradients * Scalar) * mesh.incidence[2, 0]).sum(axis=1)  # [samples] (Plane+ <- Scalar+)[faces <- vertices]
 
-    # Pull the physical material response back to vertex potentials, integrating on the surface.
+    # The gradient's adjugate pulls the physical material response back to the vertex potentials, integrated on the surface.
     response = spdiag(measures * conductivity)                       # [samples] (Point- <- Plane+)[faces <- faces]
     stiffness = gradient.adjugate()(response(gradient)).sum(axis=0)  # (Amount- <- Scalar+)[vertices <- vertices]
     load = interpolation.adjugate()((measures * source).dual()).sum(axis=0)  # Amount-[vertices]

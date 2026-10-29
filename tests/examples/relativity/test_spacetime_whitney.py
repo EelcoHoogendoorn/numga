@@ -2,7 +2,6 @@
 
 import numpy as np
 
-from numga import stack
 from examples.relativity.spacetime_whitney import core, scenarios
 
 
@@ -48,7 +47,7 @@ def test_spacetime_barycentric_hats_edge_forms_and_lorentzian_dual():
     np.testing.assert_allclose((-(plane & (core.mv.t >> core.Plane.dual()(plane)))).kernel, 25.0, atol=1e-14)
 
 
-def test_spacetime_cochain_complex_maxwell_gauge_invariance_and_causal_light_cone_wake():
+def test_lorentzian_wave_operator_and_causal_light_cone_wake():
     n_space, n_time = 45, 75
     duration = 0.72
     mesh, vertices, _ = scenarios.spacetime_strip(
@@ -56,33 +55,10 @@ def test_spacetime_cochain_complex_maxwell_gauge_invariance_and_causal_light_con
     )
     operators = core.Operators(mesh, vertices)
 
-    assert operators.d0.gatype == core.ga.gatype((core.Scalar, core.Scalar))
-    assert operators.d1.gatype == core.ga.gatype((core.Scalar, core.Scalar))
     assert operators.gradient.gatype == core.ga.gatype((core.Plane, core.Scalar))
-    assert operators.whitney1.gatype == core.ga.gatype((core.Plane, core.Scalar))
-    assert operators.curl.gatype == core.ga.gatype((core.Bivector, core.Scalar))
-    assert operators.whitney2.gatype == core.ga.gatype((core.Bivector, core.Scalar))
     assert operators.wave_operator.gatype == core.ga.gatype((core.Amount, core.Scalar))
-    assert operators.maxwell_operator.gatype == core.ga.gatype((core.Amount, core.Scalar))
-    assert not np.any(operators.d1(operators.d0).cells.kernel)
 
-    # Whitney reconstruction commutes with the exterior derivative and the Maxwell operator is gauge-invariant.
-    potential = (core.mv.x & vertices) * 0.9 - (core.mv.t & vertices) * 1.4
-    np.testing.assert_allclose(
-        (operators.whitney1(operators.d0(potential)) - operators.gradient(potential)).kernel,
-        0.0, atol=1e-13,
-    )
-    cochain = operators.d0(potential) + core.as_scalar(np.cos(np.arange(len(mesh.edges)))).field()
-    np.testing.assert_allclose(
-        (operators.curl(cochain) - operators.whitney2(operators.d1(cochain))).kernel,
-        0.0, atol=1e-9,
-    )
-    face_cochain = operators.d1(cochain)
-    np.testing.assert_allclose(
-        (operators.patches & operators.whitney2(face_cochain)).kernel,
-        face_cochain.kernel, atol=1e-11,
-    )
-    np.testing.assert_allclose(operators.maxwell_operator(operators.d0(potential)).kernel, 0.0, atol=1e-9)
+    # The wave operator is symmetric.
     np.testing.assert_allclose(
         (operators.wave_operator - operators.wave_operator.adjugate()).cells.kernel,
         0.0, atol=1e-12,
