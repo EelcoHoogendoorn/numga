@@ -1,13 +1,15 @@
 """Whitney forms interpolate vertex and edge data across triangle meshes.
 
 The triangle's signed patch defines both corner gradients and edge forms. Their reconstruction maps let a material conductivity act on local fields, with the adjugate carrying its response back to the mesh.
+
+One dimension up, in the algebra of space, a tetrahedron's signed volume does the same for its corner gradients, its edge forms and its face forms; pairing each edge form with each curl through that volume links only opposite edges.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from numga.algebras import VGA2D as ga
+from numga.algebras import VGA2D as ga, VGA3D as space
 from numga.sparse import SparseExtensor, spdiag
 from examples import instantiate
 
@@ -18,6 +20,28 @@ Plane = ga.gatype.vector()                                                   # V
 Bivector = ga.gatype.bivector()                                              # Bivector+
 Point = ga.gatype.antivector()                                               # Antivector-
 Conductivity = ga.gatype((Point, Plane))
+
+# The tetrahedron, in the algebra of space.
+space_mesh_module = instantiate("examples.util.mesh", space)
+SpaceMesh, space_mv, simplex_parity = space_mesh_module.Mesh, space_mesh_module.mv, space_mesh_module.simplex_parity
+SpaceScalar = space.gatype.scalar()                                          # Scalar+
+SpacePlane = space.gatype.vector()                                           # Vector+
+SpaceBivector = space.gatype.bivector()                                      # Bivector+
+SpacePoint = space.gatype.antivector()                                       # Antivector-
+SpacePatch = space.gatype.antibivector()                                     # Antibivector-
+Volume = space.gatype.antitrivector()                                        # Antitrivector-
+
+
+# --- plumbing -------------------------------------------------------------------------
+def complements(mesh: SpaceMesh, m: int) -> np.ndarray:
+    """`[k, 3 - m]`: the corners each of a tet's m-simplices leaves out, in the order of `mesh.corners(3, m)`, run so
+    that the m-simplex followed by them runs the tet's own sense: facing each corner, its face, outward; across each
+    edge, the opposite edge."""
+    simplices = mesh.corners(3, m)                                           # [k, m + 1]
+    tet = mesh.corners(3, 0)[:, 0]                                           # [corners]
+    left_out = np.stack([np.setdiff1d(tet, simplex) for simplex in simplices])   # [k, 3 - m]
+    sense = simplex_parity(np.concatenate([simplices, left_out], axis=-1))   # [k]
+    return np.where(sense[:, None] > 0, left_out, left_out[:, ::-1])
 
 
 # --- math -----------------------------------------------------------------------------
@@ -39,6 +63,66 @@ def edge_whitney_forms(corners: Point, points: Point) -> Plane:
     # Along the two edges meeting at a corner, the radial displacement from that corner is parallel
     # to the edge, while along the opposite edge its join with the edge equals twice the triangle patch.
     return (points[None, :] - corners[:, None]) / (2 * patch)                # [corners, samples] Plane+
+
+
+def tetrahedral_hats(mesh: SpaceMesh, vertices: SpacePoint, points: SpacePoint
+                     ) -> tuple[SpaceScalar, SpacePlane, SpacePatch, Volume]:
+    """The barycentric hat values at `points` `[samples] Point-[tets]`, the constant corner gradients, the outward face
+    patches, and the signed volume of each tetrahedron."""
+    corners = mesh.incidence[3, 0] * vertices                                # [corners] Point-[tets]
+    # Each tetrahedron's edges in its own vertex order; the first three run from its first corner.
+    edges = mesh.oriented[3, 1] * (mesh.d[0] * vertices)                     # [tet_edges] Point-[tets]
+    volume = (edges[0] & edges[1] & edges[2]) / 6                            # Volume-[tets]
+    # Each face's patch, half the join of two of its sides, read as the face facing each corner, outward.
+    sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                     # [face_corners] Point-[faces]
+    face_patches = mesh.boundary[3, 2] * ((sides[0] & sides[1]) / 2)         # [corners] Patch-[tets]
+    # The outward patch reads a step from a corner across to its face as three times the volume, and the hat falls
+    # by one along that step: its gradient is the patch turned inward, over three times the volume.
+    gradients = -face_patches / (3 * volume)                                 # [corners] Plane+[tets]
+    hats = 1 + (gradients[:, None] & (points[None, :] - corners[:, None]))   # [corners, samples] Scalar+[tets]
+    return hats, gradients, face_patches, volume
+
+
+def tetrahedral_edge_forms(mesh: SpaceMesh, vertices: SpacePoint, points: SpacePoint
+                           ) -> tuple[SpacePlane, SpaceBivector]:
+    """The six edge Whitney 1-forms at `points` `[samples] Point-[tets]`, circulating around each edge's opposite
+    edge, and their constant curls."""
+    corners = mesh.incidence[3, 0] * vertices                                # [corners] Point-[tets]
+    edges = mesh.oriented[3, 1] * (mesh.d[0] * vertices)                     # [tet_edges] Point-[tets]
+    volume = (edges[0] & edges[1] & edges[2]) / 6                            # Volume-[tets]
+    # The edge across each edge, run so that the two together run the tetrahedron's own sense.
+    opposite_tails, opposite_heads = complements(mesh, 1).T
+    opposite_edges = corners[opposite_heads] - corners[opposite_tails]       # [tet_edges] Point-[tets]
+    # The patch the opposite edge sweeps to a point vanishes along that edge and, over six times the volume, reads
+    # one along the edge itself; its curl is the opposite edge over three times the volume, a plane of space.
+    forms = (opposite_edges[:, None] & (points[None, :] - corners[opposite_tails, None])) / (6 * volume)  # [tet_edges, samples] Plane+[tets]
+    curls = opposite_edges / (3 * volume)                                    # [tet_edges] Bivector+[tets]
+    return forms, curls
+
+
+def tetrahedral_face_forms(mesh: SpaceMesh, vertices: SpacePoint, points: SpacePoint) -> SpaceBivector:
+    """The four face Whitney 2-forms at `points` `[samples] Point-[tets]`, radiating from each face's opposite
+    corner."""
+    corners = mesh.incidence[3, 0] * vertices                                # [corners] Point-[tets]
+    edges = mesh.oriented[3, 1] * (mesh.d[0] * vertices)                     # [tet_edges] Point-[tets]
+    volume = (edges[0] & edges[1] & edges[2]) / 6                            # Volume-[tets]
+    # Along the three faces at a corner the displacement from that corner lies in the face, while across the face
+    # facing it, it joins the face's outward patch to three times the volume.
+    return (points[None, :] - corners[:, None]) / (3 * volume)               # [corners, samples] Bivector+[tets]
+
+
+def tetrahedral_helicity(mesh: SpaceMesh, vertices: SpacePoint) -> SpaceScalar:
+    """The signed-volume pairing of each edge's Whitney 1-form with each edge's curl, made symmetric: it links only
+    opposite edges, the same for every tetrahedron of the same sense, `[tet_edges, tet_edges] Scalar+[tets]`."""
+    corners = mesh.incidence[3, 0] * vertices                                # [corners] Point-[tets]
+    _, gradients, _, volume = tetrahedral_hats(mesh, vertices, corners)      # [corners, corners] Scalar+[tets], [corners] Plane+[tets], [corners] Patch-[tets], Volume-[tets]
+    _, curls = tetrahedral_edge_forms(mesh, vertices, corners)               # [tet_edges, corners] Plane+[tets], [tet_edges] Bivector+[tets]
+    # At the centroid every hat is a quarter, so each edge form is a quarter of the difference of its ends'
+    # gradients; a linear form against a constant curl integrates exactly there.
+    tails, heads = mesh.corners(3, 1).T
+    centroid_forms = (gradients[heads] - gradients[tails]) / 4               # [tet_edges] Plane+[tets]
+    densities = ((centroid_forms[:, None] ^ curls[None, :]) + (centroid_forms[None, :] ^ curls[:, None])) / 2  # [tet_edges, tet_edges] Trivector+[tets]
+    return densities & volume                                                # [tet_edges, tet_edges] Scalar+[tets]
 
 
 class Operators:

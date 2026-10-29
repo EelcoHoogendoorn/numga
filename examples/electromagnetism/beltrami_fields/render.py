@@ -10,7 +10,7 @@ import numpy as np
 from numga import stack
 from examples.electromagnetism.beltrami_fields import core
 from examples.util import charts
-from examples.util.wgsl import image_figure, meshes, show_pixels, solids, strokes
+from examples.util.wgsl import meshes, show_pixels, solids, strokes
 
 n_tet_pixels = 300
 n_torus_pixels = 320
@@ -49,102 +49,6 @@ def outward_wall(mesh: core.Mesh) -> tuple[np.ndarray, np.ndarray]:
     wall = mesh.exterior(2)
     sense = (~mesh.d[2] * core.as_scalar(np.ones(mesh.n_elements[3])).field()).to_array()[wall]
     return wall, np.where(sense[:, None] > 0, mesh.faces[wall], mesh.faces[wall][:, ::-1])
-
-
-def draw_tet_whitney(mesh: core.Mesh, vertices: core.Point, points: core.Point, edge_forms: core.Plane,
-                     face_forms: core.Field, volume: core.Volume) -> plt.Figure:
-    """Three 3D views of a mesh of one tetrahedron: edge 1-form, face 2-form, and opposite-edge helicity linkage."""
-    corner_xyz = coordinates(vertices)
-    centre_xyz = corner_xyz.mean(axis=0)
-    corner_xyz = corner_xyz - centre_xyz
-    # Spread the glyphs around the centroid so their directions remain legible.
-    sample_xyz = (coordinates(points).reshape(-1, 3) - centre_xyz) * 1.22
-
-    edge_field_xyz = coordinates(core.Plane.dual()(edge_forms[0])).reshape(-1, 3)
-    unit_volume = volume / (volume & core.time).norm()
-    face_field_xyz = coordinates(face_forms[0] * unit_volume).reshape(-1, 3)
-
-    # The tetrahedron's first edge, the edge across it, the corner the first face form radiates from, and the face
-    # facing that corner, as vertices.
-    tet = mesh.tets[0]
-    edge, across = tet[mesh.corners(3, 1)[0]], tet[core.complements(mesh, 1)[0]]
-    apex, face = tet[0], tet[mesh.corners(3, 2)[0]]
-    wall, wall_faces = outward_wall(mesh)
-
-    tet_pts = solids.mv.point(corner_xyz)
-    view = solids.View(solids.aim(solids.origin, tet_elevation, tet_azimuth), np.full(2, 0.86), n_tet_pixels)
-
-    shell_colours = np.broadcast_to(cream, wall_faces.shape + (3,))
-    shell = meshes.samples(tet_pts, wall_faces, shell_colours, meshes.flat(tet_pts, wall_faces), view,
-                           face_values=np.zeros(len(wall)), colour=meshes.plain, gloss=solids.gloss)
-    wire = strokes.segments(tet_pts[mesh.edges[:, 0]], tet_pts[mesh.edges[:, 1]], light_slate, 1.5, view)
-
-    # Panel 1: the Whitney 1-form of edge (0, 1), circulating around the opposite edge (2, 3).
-    edge_scale = 0.30 / np.linalg.norm(edge_field_xyz, axis=-1).max()
-    e_starts = solids.mv.point(sample_xyz - 0.45 * edge_scale * edge_field_xyz)
-    e_ends = solids.mv.point(sample_xyz + 0.55 * edge_scale * edge_field_xyz)
-    e_shafts, e_heads = solids.arrows(e_starts, e_ends, 0.017, 0.065, 0.038)
-    active_rod, active_balls = solids.edges(tet_pts[edge[:1]], tet_pts[edge[1:]], 0.024)
-    opp_rod, opp_balls = solids.edges(tet_pts[across[:1]], tet_pts[across[1:]], 0.020)
-    mid_01 = corner_xyz[edge].mean(axis=0)
-    dir_01 = corner_xyz[edge[1]] - corner_xyz[edge[0]]
-    edge_arrow_s, edge_arrow_h = solids.arrows(
-        solids.mv.point((mid_01 - 0.18 * dir_01)[None]),
-        solids.mv.point((mid_01 + 0.22 * dir_01)[None]),
-        0.025, 0.090, 0.054,
-    )
-    panel_edge = solids.draw(
-        [(e_shafts, vermilion), (e_heads, vermilion), (active_rod, vermilion), (active_balls, vermilion),
-         (edge_arrow_s, vermilion), (edge_arrow_h, vermilion), (opp_rod, sapphire), (opp_balls, sapphire)],
-        view, background, inks=[], translucent=[], meshes=[(shell, 0.24), (wire, 1.0)],
-    )
-
-    # Panel 2: the Whitney 2-form of face (1, 2, 3), radiating from the opposite corner 0 through that face.
-    face_scale = 0.30 / np.linalg.norm(face_field_xyz, axis=-1).max()
-    f_starts = solids.mv.point(sample_xyz - 0.45 * face_scale * face_field_xyz)
-    f_ends = solids.mv.point(sample_xyz + 0.55 * face_scale * face_field_xyz)
-    f_shafts, f_heads = solids.arrows(f_starts, f_ends, 0.017, 0.065, 0.038)
-    face_colours = np.broadcast_to(cream, wall_faces.shape + (3,)).copy()
-    face_colours[wall == mesh.boundary_indices[2][0, 0]] = warm_tint
-    face_mesh = meshes.samples(tet_pts, wall_faces, face_colours, meshes.flat(tet_pts, wall_faces), view,
-                               face_values=np.zeros(len(wall)), colour=meshes.plain, gloss=solids.gloss)
-    apex_ball = solids.ball(tet_pts[[apex]], 0.046)[:, None]
-    face_rim = strokes.segments(tet_pts[face], tet_pts[np.roll(face, -1)], vermilion, 2.8, view)
-    panel_face = solids.draw(
-        [(f_shafts, sapphire), (f_heads, sapphire), (apex_ball, vermilion)],
-        view, background, inks=[], translucent=[], meshes=[(face_mesh, 0.30), (wire, 1.0), (face_rim, 1.0)],
-    )
-
-    # Panel 3: Topological helicity linkage between opposite edges (0, 1) and (2, 3).
-    mid_23 = corner_xyz[across].mean(axis=0)
-    dir_23 = corner_xyz[across[1]] - corner_xyz[across[0]]
-    axis_23 = dir_23 / np.linalg.norm(dir_23)
-    opp_arrow_s, opp_arrow_h = solids.arrows(
-        solids.mv.point((mid_23 - 0.18 * dir_23)[None]),
-        solids.mv.point((mid_23 + 0.22 * dir_23)[None]),
-        0.025, 0.090, 0.054,
-    )
-    radial_1 = mid_01 - mid_23
-    radial_1 = radial_1 - np.dot(radial_1, axis_23) * axis_23
-    radial_1 = radial_1 / np.linalg.norm(radial_1)
-    radial_2 = np.cross(axis_23, radial_1)
-    ring_angles = np.linspace(0.0, 2 * np.pi, 65)
-    curves = []
-    for radius, colour in ((0.20, gold), (0.31, vermilion), (0.42, teal)):
-        ring_xyz = (mid_23[None, :] * 0.62
-                    + radius * (np.cos(ring_angles)[:, None] * radial_1[None, :]
-                                + np.sin(ring_angles)[:, None] * radial_2[None, :]))
-        curves.append((solids.mv.point(ring_xyz), colour))
-    rings = strokes.polylines(curves, 3.2, view)
-    panel_link = solids.draw(
-        [(active_rod, vermilion), (active_balls, vermilion), (edge_arrow_s, vermilion), (edge_arrow_h, vermilion),
-         (opp_rod, sapphire), (opp_balls, sapphire), (opp_arrow_s, sapphire), (opp_arrow_h, sapphire)],
-        view, background, inks=[], translucent=[], meshes=[(shell, 0.22), (wire, 1.0), (rings, 1.0)],
-    )
-
-    separator = np.full((n_tet_pixels, 10, 3), 255, dtype=np.uint8)
-    combined = np.concatenate((panel_edge, separator, panel_face, separator, panel_link), axis=1)
-    return image_figure(combined)
 
 
 def trace_torus_streamlines(centre_xyz: np.ndarray, field_xyz: np.ndarray,

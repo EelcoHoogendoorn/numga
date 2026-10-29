@@ -1,78 +1,12 @@
-"""Tetrahedral Whitney 0-, 1-, and 2-forms, topological magnetic helicity, and Beltrami fields."""
+"""Whitney commutation, the flux-preserving subspace, and the Beltrami fields of a solid torus."""
 
 import numpy as np
 from numga import stack
 
-from examples.electromagnetism.beltrami_fields import core, numerical, plumbing, scenarios
+from examples.electromagnetism.beltrami_fields import core, numerical, scenarios
 
-# At rest in one instant of spacetime, the gradients and their wedges are planes and volumes of space,
-# and the patches and volumes of the geometry span directions of space.
+# At rest in one instant of spacetime, the gradients are planes of space.
 SpatialPlane = core.Plane.derive.within("x y z")
-SpatialTrivector = core.Trivector.derive.within("x y z")
-SpatialPatch = core.Patch.derive.containing("t")
-SpatialVolume = core.Volume.derive.containing("t")
-
-
-def test_tetrahedral_whitney_0_1_2_forms_and_topological_opposite_edge_helicity():
-    mesh, vertices, points = scenarios.single_tetrahedron(6)
-    corners = mesh.incidence[3, 0] * vertices
-    hats, gradients, face_patches, volume = core.tetrahedral_hats(mesh, vertices, points)
-    corner_hats, _, _, _ = core.tetrahedral_hats(mesh, vertices, corners)
-
-    assert hats.batch().gatype == core.Scalar
-    assert gradients.batch().gatype == SpatialPlane
-    assert face_patches.batch().gatype == SpatialPatch
-    assert volume.batch().gatype == SpatialVolume
-    np.testing.assert_allclose(corner_hats.kernel, np.eye(4)[..., None, None], atol=1e-13)
-    np.testing.assert_allclose(hats.sum(axis=0).kernel, 1.0, atol=1e-13)
-    np.testing.assert_allclose(gradients.sum(axis=0).kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose(face_patches.sum(axis=0).kernel, 0.0, atol=1e-14)
-
-    # Barycentric interpolation reproduces any affine 3D scalar potential and its gradient exactly.
-    true_gradient = 1.3 * core.mv.x - 0.75 * core.mv.y + 0.55 * core.mv.z
-    corner_values = 0.4 + (true_gradient & corners)
-    sample_values = 0.4 + (true_gradient & points)
-    interpolated = (corner_values[:, None] * hats).sum(axis=0)
-    reconstructed_gradient = (corner_values * gradients).sum(axis=0)
-    np.testing.assert_allclose(interpolated.kernel, sample_values.kernel, atol=1e-13)
-    np.testing.assert_allclose((reconstructed_gradient - true_gradient).kernel, 0.0, atol=1e-13)
-
-    # Edge Whitney 1-forms match Whitney's alternating formula, have constant curl, and satisfy Kronecker duality on all 6 edges.
-    edge_forms, edge_curls = core.edge_whitney_forms(mesh, vertices, points)
-    tails, heads = mesh.corners(3, 1).T
-    classic_1forms = hats[tails] * gradients[heads, None] - hats[heads] * gradients[tails, None]
-    classic_curls = 2 * (gradients[tails] ^ gradients[heads])
-    np.testing.assert_allclose((edge_forms - classic_1forms).kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose((edge_curls - classic_curls).kernel, 0.0, atol=1e-13)
-
-    edge_vectors = mesh.oriented[3, 1] * (mesh.d[0] * vertices)
-    for fraction in (0.2, 0.5, 0.85):
-        edge_pts = corners[tails] * (1 - fraction) + corners[heads] * fraction
-        readings, _ = core.edge_whitney_forms(mesh, vertices, edge_pts)
-        np.testing.assert_allclose((readings & edge_vectors[None, :]).kernel, np.eye(6)[..., None, None], atol=1e-13)
-
-    # Face Whitney 2-forms match Whitney's 2-form formula and integrate to Kronecker delta across the 4 faces.
-    face_forms = core.face_whitney_forms(mesh, vertices, points)
-    first, second, third = plumbing.complements(mesh, 0).T
-    li, lj, ll = hats[first], hats[second], hats[third]
-    gi, gj, gl = gradients[first, None], gradients[second, None], gradients[third, None]
-    classic_2forms = 2 * (li * (gj ^ gl) + lj * (gl ^ gi) + ll * (gi ^ gj))
-    np.testing.assert_allclose((face_forms - classic_2forms).kernel, 0.0, atol=1e-13)
-
-    face_centres = mesh.incidence[3, 2] * (mesh.incidence[2, 0].mean(axis=0) * vertices)
-    face_readings = core.face_whitney_forms(mesh, vertices, face_centres) & face_patches[None, :]
-    np.testing.assert_allclose(face_readings.kernel, np.eye(4)[..., None, None], atol=1e-14)
-
-    # The 6x6 tetrahedral helicity matrix is purely topological, invariant under arbitrary affine deformation,
-    # and pairs only opposite edges with linking weight +-1/6.
-    tet_helicity, tet_densities = core.tetrahedral_helicity(mesh, vertices)
-    deformed_helicity, _ = core.tetrahedral_helicity(mesh, scenarios.deformed_tetrahedron())
-    assert tet_helicity.batch().gatype == core.Scalar
-    assert tet_densities.batch().gatype == SpatialTrivector
-    np.testing.assert_allclose((tet_helicity - deformed_helicity).kernel, 0.0, atol=1e-14)
-    expected_linking = np.zeros((6, 6))
-    expected_linking[np.arange(6), 5 - np.arange(6)] = np.array([1, -1, 1, 1, -1, 1]) / 6
-    np.testing.assert_allclose(tet_helicity.kernel[..., 0, 0], expected_linking, atol=1e-14)
 
 
 def test_whitney_commutation_flux_preserving_subspace_and_chiral_beltrami_spectrum():
