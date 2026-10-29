@@ -262,7 +262,7 @@ def _right_field(other: Extensor, value: SparseExtensor, product) -> Extensor:
         reads = np.broadcast_to(reads, batch + reads.shape[-1:])
         sites = sites.broadcast_to(batch + sites.shape[-1:])
         return sites[np.indices(reads.shape, sparse=True)[:-1] + (reads,)].field()
-    return _scatter(product(value.cells, _sites(other)[..., value.columns]), value.rows, value.shape[0]).field()
+    return _scatter(_cell_product(product, value.cells, _sites(other)[..., value.columns]), value.rows, value.shape[0]).field()
 
 
 def _reads(value: SparseExtensor) -> np.ndarray | None:
@@ -292,7 +292,7 @@ def _reads(value: SparseExtensor) -> np.ndarray | None:
 def _right_sparse(other: SparseExtensor, value: SparseExtensor, product) -> SparseExtensor:
     left, right = _chain(value, other)
     return SparseExtensor(
-        product(value.cells[..., left], other.cells[..., right]), value.rows[left], other.columns[right],
+        _cell_product(product, value.cells[..., left], other.cells[..., right]), value.rows[left], other.columns[right],
         (value.shape[0], other.shape[1]),
     )
 
@@ -311,7 +311,7 @@ def _left_number(other: Number, value: SparseExtensor, product) -> SparseExtenso
 
 @_left.register
 def _left_field(other: Extensor, value: SparseExtensor, product) -> Extensor:
-    return _scatter(product(_sites(other)[..., value.rows], value.cells), value.columns, value.shape[1]).field()
+    return _scatter(_cell_product(product, _sites(other)[..., value.rows], value.cells), value.columns, value.shape[1]).field()
 
 
 @SparseExtensor.apply.register(lambda cell_type: cell_type.arity == 1)
@@ -488,10 +488,34 @@ def _matching_pairs(left: np.ndarray, right: np.ndarray) -> tuple[np.ndarray, np
     return np.repeat(np.arange(len(left)), counts), order[np.repeat(start - first, counts) + np.arange(counts.sum())]
 
 
+def _cell_product(product, left: Extensor, right: Extensor) -> Extensor:
+    """The cells' product, pair by pair. A geometric product with scalar cells on either side scales the other's
+    cells, with no contraction, into the type the product gives one pair."""
+    for scalars, cells in ((left, right), (right, left)):
+        if product is expression.geometric_product and scalars.gatype.is_scalar and cells.shape[-1]:
+            typed = product(left[..., :1], right[..., :1])
+            if typed.gatype.subspaces == cells.gatype.subspaces:
+                factors = scalars.kernel[..., 0]
+                factors = factors.reshape(factors.shape + (1,) * len(cells.structural_shape))
+                return cells.context.extensor(typed.gatype, cells.kernel * factors)
+    return product(left, right)
+
+
 def _scatter(cells: Extensor, index: np.ndarray, size: int) -> Extensor:
-    """Cells `[..., n]` summed by their index into `[..., size]`."""
-    zeros = cells.context.xp.zeros(cells.shape[:-1] + (size,) + cells.structural_shape, dtype=cells.dtype)
-    return cells.context.extensor(cells.gatype, zeros).at[..., index].add(cells)
+    """Cells `[..., n]` summed by their index into `[..., size]`, as a sum's type, without the traits a sum need not
+    keep, as an indexed add gives it. On NumPy the cells are sorted by index and each run summed by `reduceat`,
+    pairwise and so accurate on long runs; another backend adds them in place by index."""
+    kernel = cells.kernel
+    if not isinstance(kernel, np.ndarray) or len(index) == 0:
+        zeros = cells.context.xp.zeros(cells.shape[:-1] + (size,) + cells.structural_shape, dtype=cells.dtype)
+        return cells.context.extensor(cells.gatype, zeros).at[..., index].add(cells)
+    axis = cells.ndim - 1
+    order = np.argsort(index, kind="stable")
+    ordered = index[order]
+    starts = np.flatnonzero(np.concatenate(([True], ordered[1:] != ordered[:-1])))
+    summed = np.zeros(kernel.shape[:axis] + (size,) + kernel.shape[axis + 1:], dtype=kernel.dtype)
+    summed[(slice(None),) * axis + (ordered[starts],)] = np.add.reduceat(np.take(kernel, order, axis=axis), starts, axis=axis)
+    return cells.context.extensor(cells.gatype.derive.structural, summed)
 
 
 def _sites(field: Extensor) -> Extensor:
