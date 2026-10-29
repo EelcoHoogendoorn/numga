@@ -17,7 +17,7 @@ from itertools import chain
 
 import numpy as np
 
-from numga import Extensor, stack
+from numga import Extensor, concatenate, where
 from examples.thermodynamics import rendering as art
 from examples.util.wgsl import solids
 
@@ -43,18 +43,27 @@ apparatus_pixels = 240
 
 def apparatus(fraction: float, warmth: float, liquid: float) -> np.ndarray:
     """The duct: the cooling coil, its tray of collected water, the reheater, and the parcel of air passing them."""
-    tray = art.box(np.array([0, 0, 0.1]), np.array([2.35, 0.6, 0.08]))
-    coil_centres = np.array([[-0.8 + offset, 0, 0.8] for offset in (-0.25, 0, 0.25)])
-    coils = solids.boxes(solids.translator(solids.mv.point(coil_centres) - solids.origin), np.array([0.045, 0.5, 0.55]))
-    reheater = art.box(np.array([1.1, 0, 0.8]), np.array([0.12, 0.45, 0.45]))
-    parcel = solids.ball(solids.mv.point([-2 + 4 * fraction, -0.65, 0.82]), 0.23)[None, None]
+    mv = solids.mv
+    tray = art.box(mv.point([0, 0, 0.1]), np.array([2.35, 0.6, 0.08]))
+    coil_centres = mv.point([[-0.8 + offset, 0, 0.8] for offset in (-0.25, 0, 0.25)])
+    coils = solids.boxes(solids.translator(coil_centres - solids.origin), np.array([0.045, 0.5, 0.55]))
+    reheater = art.box(mv.point([1.1, 0, 0.8]), np.array([0.12, 0.45, 0.45]))
+    # The parcel a fraction of the way along the duct, from its entry to its exit.
+    entry, far_end = mv.point([-2, -0.65, 0.82]), mv.point([2, -0.65, 0.82])
+    parcel = solids.ball(entry + (far_end - entry) * fraction, 0.23)[None, None]
+    # The collected water, resting on the tray's floor and as deep as it has filled.
     depth = 0.01 + 0.2 * liquid
-    collected = art.box(np.array([-0.8, -0.72, 0.15 + depth / 2]), np.array([0.45, 0.2, depth / 2]))
-    corners = solids.mv.point(np.array([[x, y, z] for x in (-2.5, 2.5) for y in (-1.0, 0.65) for z in (0, 1.5)]))
+    collected = art.box(mv.point([-0.8, -0.72, 0.15]) + art.rise * (depth / 2), np.array([0.45, 0.2, depth / 2]))
+    corners = mv.point(np.array([[x, y, z] for x in (-2.5, 2.5) for y in (-1.0, 0.65) for z in (0, 1.5)]))
     view = solids.view([corners], 0.0, np.radians(18), np.radians(-10), 0.04, apparatus_pixels)
-    return solids.draw([(tray, art.GREY), (coils, art.BLUE), (reheater, art.ORANGE),
-                        (parcel, art.thermal_colour(warmth)), (collected, art.BLUE)], view, art.WHITE, inks=[],
+    return solids.draw([(tray, art.grey), (coils, art.blue), (reheater, art.orange),
+                        (parcel, art.thermal_colour(warmth)), (collected, art.blue)], view, art.white, inks=[],
                        translucent=[], meshes=[])
+
+
+def chart_points(temperatures: np.ndarray, water: np.ndarray) -> art.Point:
+    """Places on the chart of temperatures and water contents in kg per kg of dry air `[...]`, the water in grams."""
+    return art.chart_points(temperatures, grams_per_kilogram * np.asarray(water))
 
 
 class Chart:
@@ -67,55 +76,55 @@ class Chart:
         relative = relative_humidity_of(grid).to_array()
         # The enthalpy only where the air holds its water as vapour.
         heat = np.where(relative <= 1, enthalpy_of(grid).to_array(), np.nan)
-        scaled = lambda lines: [(line[:, 0], grams_per_kilogram * line[:, 1]) for line in lines]
-        humidities = [line for _, line in art.level_lines(grid_temperatures, grid_water, relative, humidity_levels)]
-        saturation = [line for _, line in art.level_lines(grid_temperatures, grid_water, relative, np.ones(1))]
-        enthalpies = [[line for _, line in art.level_lines(grid_temperatures, grid_water, heat, np.array([level]))]
+        charted = lambda levels: [chart_points(*line.T) for _, line in levels]
+        humidities = [charted(art.level_lines(grid_temperatures, grid_water, relative, np.array([level])))
+                      for level in humidity_levels]
+        saturation = charted(art.level_lines(grid_temperatures, grid_water, relative, np.ones(1)))
+        enthalpies = [charted(art.level_lines(grid_temperatures, grid_water, heat, np.array([level])))
                       for level in enthalpy_levels]
-        # Above the saturation curve: the region up to the chart's top left corner.
-        top = [(np.concatenate([line[:, 0], [temperature_range[1], temperature_range[0]]]),
-                np.concatenate([grams_per_kilogram * line[:, 1], [water_range[1], water_range[1]]]))
-               for line in saturation]
+        # Above the saturation curve: the region up to the chart's top left corner, the curve's samples past the top
+        # dropped onto it, along the water content.
+        top_edge = art.mv.y - art.mv.w * water_range[1]                                       # [] Plane+
+        corners = art.chart_points(np.array(temperature_range[::-1]), water_range[1])            # [2] Point-
+        tops = [concatenate([where((top_edge & curve) > 0, art.planar.unit((curve & art.mv.y.dual()) ^ top_edge),
+                                   curve), corners]) for curve in saturation]
         tick_layers, self.tick_labels = art.ticks(self.diagram, temperature_ticks, water_ticks)
-        self.layers = ([art.areas(self.diagram, x, np.clip(y, *water_range), art.GREY, 0.18) for x, y in top]
-                       + art.polylines(self.diagram, scaled(humidities), art.THIN, art.FAMILIES["humidity"], 1.0,
-                                       art.SOLID)
-                       + art.polylines(self.diagram, [line for lines in enthalpies for line in scaled(lines)],
-                                       art.THIN, art.FAMILIES["enthalpy"], 1.0, art.SOLID)
-                       + art.polylines(self.diagram, scaled(saturation), art.LINE, art.BOUNDARY, 1.0, art.SOLID)
+        self.layers = ([art.areas(self.diagram, top, art.grey, 0.18) for top in tops]
+                       + art.polylines(self.diagram, [curve for curves in humidities for curve in curves], art.thin,
+                                       art.families["humidity"], 1.0, art.SOLID)
+                       + art.polylines(self.diagram, [curve for curves in enthalpies for curve in curves], art.thin,
+                                       art.families["enthalpy"], 1.0, art.SOLID)
+                       + art.polylines(self.diagram, saturation, art.medium, art.boundary, 1.0, art.SOLID)
                        + tick_layers)
         # Each enthalpy line's value at its upper end, where it meets the saturation curve; each humidity line's at its
-        # right end.
-        self.labels = [art.Label(saturation_label[0], saturation_label[1], "saturation", art.BOUNDARY, art.TEXT_SIZE,
+        # right end; each only well inside the chart.
+        self.labels = [art.Label(art.chart_points(*saturation_label), "saturation", art.boundary, art.text_size,
                                  "lb", (0, 2))]
-        for level, lines in zip(enthalpy_levels, enthalpies):
-            for x, y in scaled(lines):
-                top = np.argmax(y)
-                if temperature_range[0] < x[top] and y[top] < water_range[1] - 1:
-                    self.labels.append(art.Label(x[top], y[top], f"{level:g}", art.FAMILIES["enthalpy"], art.TICK_SIZE,
-                                                 "rb", (-2, 2)))
-        for level in humidity_levels:
-            for x, y in scaled([line for _, line in art.level_lines(grid_temperatures, grid_water, relative,
-                                                                     np.array([level]))]):
-                right = np.argmax(x)
-                if y[right] < water_range[1] - 1:
-                    self.labels.append(art.Label(x[right], y[right], f"{level:.0%}", art.FAMILIES["humidity"],
-                                                 art.TICK_SIZE, "rm", (-2, 0)))
+        for level, curves in zip(enthalpy_levels, enthalpies):
+            for curve in curves:
+                top = curve[(art.mv.y & curve).argmax()]                                      # [] Point-
+                if temperature_range[0] < (art.mv.x & top) and (art.mv.y & top) < water_range[1] - 1:
+                    self.labels.append(art.Label(top, f"{level:g}", art.families["enthalpy"], art.tick_size, "rb",
+                                                 (-2, 2)))
+        for level, curves in zip(humidity_levels, humidities):
+            for curve in curves:
+                right = curve[(art.mv.x & curve).argmax()]                                    # [] Point-
+                if (art.mv.y & right) < water_range[1] - 1:
+                    self.labels.append(art.Label(right, f"{level:.0%}", art.families["humidity"], art.tick_size, "rm",
+                                                 (-2, 0)))
 
     @staticmethod
-    def values(states: Extensor) -> np.ndarray:
-        """The states' temperatures and water contents in grams per kg `[..., 2]`, read by pairing."""
+    def points(states: Extensor) -> art.Point:
+        """The states on the chart, their temperatures and water contents read by pairing `[...]`."""
         mv = states.context.multivector
-        return np.asarray((stack((mv.t, mv.w)) & states[..., None]).to_array()) * np.array([1, grams_per_kilogram])
+        return chart_points((mv.t & states).to_array(), (mv.w & states).to_array())
 
-    def picture(self, path: np.ndarray, travelled: int, states: np.ndarray, toward: np.ndarray) -> np.ndarray:
+    def picture(self, path: art.Point, travelled: int, states: art.Point, toward: art.Point) -> np.ndarray:
         layers = (self.layers
-                  + art.polylines(self.diagram, [(path[:, 0], path[:, 1])], art.THIN, art.ORANGE, 0.6, art.SOLID)
-                  + art.polylines(self.diagram, [(path[:travelled + 1, 0], path[:travelled + 1, 1])], art.BOLD,
-                                  art.ORANGE, 1.0, art.SOLID)
-                  + art.arrows(self.diagram, states[:, 0], states[:, 1], toward[:, 0], toward[:, 1], arrow_pixels, art.LINE,
-                               art.GREEN)
-                  + art.dots(self.diagram, path[travelled, 0], path[travelled, 1], art.ORANGE))
+                  + art.polylines(self.diagram, [path], art.thin, art.orange, 0.6, art.SOLID)
+                  + art.polylines(self.diagram, [path[:travelled + 1]], art.bold, art.orange, 1.0, art.SOLID)
+                  + art.arrows(self.diagram, states, toward, arrow_pixels, art.medium, art.green)
+                  + art.dots(self.diagram, path[travelled][None], art.orange))
         return art.picture(self.diagram, layers, self.labels + self.tick_labels)
 
 
@@ -123,18 +132,19 @@ def conditioning(relative_humidity_of: Function, enthalpy_of: Function, path: Ex
                  directions: Extensor, passing: Iterator[Extensor]) -> Iterator[np.ndarray]:
     """The apparatus and the chart at each state of the air along its path."""
     first = next(passing)
-    chart = Chart(relative_humidity_of, enthalpy_of, first.context.multivector)
-    traced, places, toward = chart.values(path), chart.values(states), chart.values(states + directions)
+    mv = first.context.multivector
+    chart = Chart(relative_humidity_of, enthalpy_of, mv)
+    traced, places, toward = chart.points(path), chart.points(states), chart.points(states + directions)
+    temperatures, water = np.asarray((mv.t & path).to_array()), np.asarray((mv.w & path).to_array())
     for travelled, state in enumerate(chain([first], passing)):
-        now = chart.values(state)
-        warmth = (now[0] - traced[:, 0].min()) / np.ptp(traced[:, 0])
-        liquid = (traced[0, 1] - now[1]) / (traced[0, 1] - traced[-1, 1])
-        yield art.beside([apparatus(travelled / (len(traced) - 1), warmth, liquid),
+        warmth = (float((mv.t & state).to_array()) - temperatures.min()) / np.ptp(temperatures)
+        liquid = (water[0] - float((mv.w & state).to_array())) / (water[0] - water[-1])
+        yield art.beside([apparatus(travelled / (len(temperatures) - 1), warmth, liquid),
                           chart.picture(traced, travelled, places, toward)])
 
 
 def draw_chart(relative_humidity_of: Function, enthalpy_of: Function, states: Extensor, directions: Extensor):
     """The chart with the directions the air moves in at the inlet and at the coil's outlet."""
     chart = Chart(relative_humidity_of, enthalpy_of, states.context.multivector)
-    places = chart.values(states)
-    return art.figure(chart.picture(places[:1], 0, places, chart.values(states + directions)))
+    places = chart.points(states)
+    return art.figure(chart.picture(places[:1], 0, places, chart.points(states + directions)))

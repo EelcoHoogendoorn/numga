@@ -9,7 +9,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 from matplotlib.ticker import MaxNLocator
 
-from numga import stack
+from numga import concatenate, stack
 
 from examples.util import charts
 from examples.util.animation import capture
@@ -40,7 +40,9 @@ bond_width, arrow_width, head_length, head_width, end_radius, centre_radius = 3.
 axis_length, label_distance = 1.15, 1.27
 # The beam along the crystal's face diagonal, x + y, coming towards the screen's viewer, across which the screen's
 # directions are y - x, to the right, and z, up; how far the beam reaches either side of the crystal, in bond lengths.
-beam, beam_reach = np.array([1.0, 1.0, 0.0]) / np.sqrt(2), 1.25
+beam_step = core.mv.x.dual() + core.mv.y.dual()                              # [] Direction-
+beam = beam_step / beam_step.squared().square_root()                         # [] Direction-
+beam_reach = 1.25
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -58,10 +60,11 @@ def transverse_polarization(polarizations: core.Polarization) -> np.ndarray:
     return (fields & polarizations[..., None]).to_array()                     # [..., 2]
 
 
-def coordinates(directions: core.Direction) -> np.ndarray:
-    """x, y and z of directions in space: their pairings with the planes x, y and z."""
+def gpu_points(directions: core.Direction) -> solids.Point:
+    """The renderer's points at the tips of directions in space from the crystal's centre: their coordinates, read by
+    pairing with the planes x, y and z, are the hand-off from the spacetime algebra to the renderer's."""
     mv = directions.context.multivector
-    return (stack((mv.x, mv.y, mv.z)) & directions[..., None]).to_array()   # [..., 3]
+    return sm.point((stack((mv.x, mv.y, mv.z)) & directions[..., None]).to_array())
 
 
 def cross(axes: plt.Axes, extents: np.ndarray, across: str, up: str) -> None:
@@ -84,7 +87,7 @@ def space_scene(view: solids.View) -> Scene:
     """The frame of space, its centre and the beam through it, for the bonds to be drawn among."""
     shafts, heads = solids.frame(axis_length, arrow_width / 2 * view.pixel, head_length * view.pixel,
                                  head_width / 2 * view.pixel)
-    beam_shaft, beam_head = solids.arrows(sm.point(-beam_reach * beam), sm.point(beam_reach * beam),
+    beam_shaft, beam_head = solids.arrows(gpu_points(-beam_reach * beam), gpu_points(beam_reach * beam),
                                           arrow_width / 2 * view.pixel, head_length * view.pixel, head_width / 2 * view.pixel)
     beam_colour = np.array(to_rgb(pump_colour))
     parts = [(shafts, axis_colour), (heads, axis_colour), (beam_shaft[None], beam_colour), (beam_head[None], beam_colour),
@@ -92,10 +95,10 @@ def space_scene(view: solids.View) -> Scene:
     return Scene(view, np.ones(3), parts, [], inks=[], translucent=[])
 
 
-def crystal_image(bonds: np.ndarray, scene: Scene) -> np.ndarray:
-    """The bonds `[bonds, 3]` as rods from their shared centre to their ends, the tetrahedral geometry, among the
-    scene's frame of space and beam."""
-    ends = sm.point(bonds)                                                   # [bonds] Point-
+def crystal_image(bonds: core.Direction, scene: Scene) -> np.ndarray:
+    """The bonds `[bonds] Direction-` as rods from their shared centre to their ends, the tetrahedral geometry,
+    among the scene's frame of space and beam."""
+    ends = gpu_points(bonds)                                                 # [bonds] Point-
     view = scene.view
     return scene.draw([(solids.rods(solids.origin, ends, bond_width / 2 * view.pixel), bond_colour),
                        (solids.ball(ends, end_radius * view.pixel)[:, None], np.array(to_rgb(generated_colour)))],
@@ -108,6 +111,8 @@ class ResponseView:
     def __init__(self, pumps: core.Field) -> None:
         pumps = transverse(pumps)                                            # [angles, 2]
         pump = pumps[0]
+        # The polar chart's angle of each pump, its heading across the beam read from its two components: a turn's
+        # logarithm would give it too, but has no plane at the half turn.
         self.angles = np.arctan2(pumps[:, 1], pumps[:, 0])                  # [angles]
         self.selected_angle = np.arctan2(pump[1], pump[0])
 
@@ -148,16 +153,19 @@ class ResponseView:
                            crystal_axes)
         self.crystal = show(crystal_axes, np.full((*self.view.shape, 3), 255, dtype=np.uint8), self.view)
         self.scene = space_scene(self.view)
-        labels(crystal_axes, self.view, sm.point(np.concatenate([label_distance * np.eye(3), [beam_reach * 1.12 * beam]])),
-               ["x", "y", "z", "beam"], ha="center", va="center", color=label_colour)
+        # Each axis named just past its arrow's tip, and the beam past its head.
+        label_reaches = concatenate((label_distance * core.axes, beam_reach * 1.12 * beam[None]))   # [labels] Direction-
+        label_places = gpu_points(label_reaches)                             # [labels] Point-
+        labels(crystal_axes, self.view, label_places, ["x", "y", "z", "beam"], ha="center", va="center",
+               color=label_colour)
 
     def update(self, bonds: core.Direction, harmonic: core.Polarization) -> plt.Figure:
-        bonds = coordinates(bonds)                                           # [bonds, 3]
-        harmonic = transverse_polarization(harmonic)                         # [angles, 2]
-        intensity = (harmonic ** 2).sum(axis=-1)                             # [angles]
+        # The doubled light's power, the squared size of its polarization across the beam.
+        intensity = harmonic.norm_squared().to_array()                       # [angles]
+        components = transverse_polarization(harmonic)                       # [angles, 2]
         self.crystal.set_data(crystal_image(bonds, self.scene))
-        self.harmonic_curve.set_data(harmonic[:, 0], harmonic[:, 1])
-        self.generated_arrow.set_UVC(*harmonic[0])
+        self.harmonic_curve.set_data(components[:, 0], components[:, 1])
+        self.generated_arrow.set_UVC(*components[0])
         self.intensity_curve.set_data(self.angles, intensity)
         self.intensity_fill.set_xy(np.stack((self.angles, intensity), axis=-1))
         self.selected_power.set_data([self.selected_angle], [intensity[0]])
@@ -191,18 +199,19 @@ def draw_waveform(phase: np.ndarray, pump: core.Field, harmonic: core.Polarizati
 @charts.style()
 def draw_mixing(pumps: core.Field, probes: core.Field, generated: core.Polarization) -> plt.Figure:
     """A probe circle and its image with each fixed pump, at a shared display scale."""
-    pumps = transverse(pumps)                                                # [cases, 2]
-    probes = transverse(probes)                                              # [angles, 2]
+    probe_components = transverse(probes)                                    # [angles, 2]
     generated = transverse_polarization(generated)                           # [cases, angles, 2]
-    limit = 1.25 * max(float(np.max(np.abs(probes))), float(np.max(np.abs(generated))))
-    figure, grid = charts.subplots(len(pumps) * mixing_panel_size[0], mixing_panel_size[1], ncols=len(pumps),
-                                   squeeze=False, layout="constrained")
-    for axes, pump, response in zip(grid[0], pumps, generated):
-        # The pale arrow indicates the fixed pump direction at a display-only length.
-        axes.quiver(0, 0, 0.85 * limit * pump[0], 0.85 * limit * pump[1],
+    limit = 1.25 * max(float(np.max(np.abs(probe_components))), float(np.max(np.abs(generated))))
+    # The pale arrows show the fixed pumps' directions at a display-only length.
+    pump_arrows = transverse(0.85 * limit * pumps)                           # [cases, 2]
+    figure, grid = charts.subplots(len(pump_arrows) * mixing_panel_size[0], mixing_panel_size[1],
+                                   ncols=len(pump_arrows), squeeze=False, layout="constrained")
+    for axes, pump, response in zip(grid[0], pump_arrows, generated):
+        axes.quiver(0, 0, pump[0], pump[1],
                     angles="xy", scale_units="xy", scale=1, color="0.55",
                     alpha=0.4, width=0.009, label="Fixed pump")
-        axes.plot(probes[:, 0], probes[:, 1], color=pump_colour, linestyle="--", zorder=3, label="Probe")
+        axes.plot(probe_components[:, 0], probe_components[:, 1], color=pump_colour, linestyle="--", zorder=3,
+                  label="Probe")
         axes.plot(response[:, 0], response[:, 1], color=generated_colour, label="Mixed response")
         screen_axes(axes, limit)
     figure.legend(*grid[0, 0].get_legend_handles_labels(), loc="outside lower center",
@@ -213,9 +222,10 @@ def draw_mixing(pumps: core.Field, probes: core.Field, generated: core.Polarizat
 @charts.style()
 def draw_growth(depths: np.ndarray, amplitude: core.Polarization) -> plt.Figure:
     """The amplitude's vertical path in the phase plane and the power along each crystal."""
-    components = transverse_polarization(amplitude)                          # [cases, slices, quadratures, 2]
-    power = (components ** 2).sum(axis=(-2, -1))                            # [cases, slices]
-    amplitude = components[..., 1]                                          # [cases, slices, quadratures]
+    # The power, the squared sizes of both quadratures' polarizations across the beam; and the vertical component
+    # of each, which the paths in the phase plane trace.
+    power = amplitude.norm_squared().sum(axis=-1).to_array()                 # [cases, slices]
+    amplitude = (core.vertical_field & amplitude).to_array()                 # [cases, slices, quadratures]
     figure, axes = charts.subplots(*growth_size, ncols=2, layout="constrained")
     quadrature_axes, power_axes = axes
     for label, path, intensity, colour in zip(cases, amplitude, power, case_colours):

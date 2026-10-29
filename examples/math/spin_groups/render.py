@@ -35,6 +35,12 @@ def coordinates(points: core.Euclidean) -> np.ndarray:
     return (stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array()
 
 
+def gpu_points(points: core.Euclidean) -> solids.Point:
+    """The GPU library's own points at the places of points in space: their coordinates, read by pairing, are the one
+    hand-off from this algebra to the renderer's."""
+    return sm.point(coordinates(points))
+
+
 def colours(shape: tuple[int, int]) -> np.ndarray:
     """A colour per orbit: the start's position around the xy plane as the hue, its height as the value."""
     hue = np.broadcast_to(np.linspace(0.0, 1.0, shape[1], endpoint=False), shape)
@@ -42,28 +48,28 @@ def colours(shape: tuple[int, int]) -> np.ndarray:
     return hsv_to_rgb(np.stack([hue, np.full(shape, 0.75), value], axis=-1))
 
 
-def view(pixels: int, drawn: list[np.ndarray]) -> solids.View:
-    """One view for every panel, `pixels` across, framing everything drawn `[..., 3]`."""
-    return solids.view([sm.point(points) for points in drawn], 0.0, elevation, azimuth, margin, pixels)
+def view(pixels: int, drawn: list[core.Euclidean]) -> solids.View:
+    """One view for every panel, `pixels` across, framing everything drawn."""
+    return solids.view([gpu_points(points) for points in drawn], 0.0, elevation, azimuth, margin, pixels)
 
 
-def orbit_samples(orbits: np.ndarray, width: float, view: solids.View) -> meshes.Samples:
-    """Each orbit `[heights, azimuths, steps + 1, 3]` as a stroke of a width in pixels, in the colour of its start, at
+def orbit_samples(orbits: core.Euclidean, width: float, view: solids.View) -> meshes.Samples:
+    """Each orbit `[heights, azimuths, steps + 1]` as a stroke of a width in pixels, in the colour of its start, at
     every sample."""
-    curves = zip(sm.point(orbits.reshape(-1, *orbits.shape[-2:])), colours(orbits.shape[:2]).reshape(-1, 3))
+    curves = zip(gpu_points(orbits.reshape((-1, orbits.shape[-1]))), colours(orbits.shape[:2]).reshape(-1, 3))
     return strokes.polylines(list(curves), width, view)
 
 
-def dots(positions: np.ndarray, rgb: np.ndarray, view: solids.View) -> tuple[solids.Quadric, np.ndarray]:
-    """A dot at each position `[n, 3]`, in its colour `[n, 3]`, as an opaque part."""
-    return solids.ball(sm.point(positions), rider_radius * view.pixel)[:, None], rgb
+def dots(positions: core.Euclidean, rgb: np.ndarray, view: solids.View) -> tuple[solids.Quadric, np.ndarray]:
+    """A dot at each position `[n]`, in its colour `[n, 3]`, as an opaque part."""
+    return solids.ball(gpu_points(positions), rider_radius * view.pixel)[:, None], rgb
 
 
 def draw_flows(left: core.Euclidean, right: core.Euclidean, knotted: core.Euclidean) -> plt.Figure:
     """The orbits of the two isoclinic flows, each a family of circles filling nested tori and linked
     in opposite senses, beside the orbits of a rotation combining them at different rates: trefoil
     knots, one on each torus."""
-    drawn = [coordinates(orbits) for orbits in (left, right, knotted)]
+    drawn = [left, right, knotted]
     figure = plt.figure(figsize=(9, 3.1))
     axes = [figure.add_axes((index / len(drawn), 0.0, 1 / len(drawn), 1.0)) for index in range(len(drawn))]
     # The panels' rooms alike, one view fitted to the first holds them all.
@@ -78,7 +84,7 @@ def animate_flows(left: core.Euclidean, right: core.Euclidean, knotted: core.Euc
                   n_frames: int) -> Iterator[np.ndarray]:
     """The points of the three-sphere carried along every flow at once, their orbits drawn faintly;
     a few points ride along each knot. The three panels side by side, seen by one camera."""
-    drawn = [coordinates(orbits) for orbits in (left, right, knotted)]
+    drawn = [left, right, knotted]
     frame = view(frame_pixels, drawn)
     # Each panel's faint orbits, set up once.
     panels = [Scene(frame, background, [], [(orbit_samples(orbits, faint_width, frame), faint_opacity)], inks=[],
@@ -90,8 +96,8 @@ def animate_flows(left: core.Euclidean, right: core.Euclidean, knotted: core.Euc
     knots = drawn[2]
     for step in steps:
         # Every start carried along the two flows, and the riders along each knot.
-        riding = [(orbits[:, :, step].reshape(-1, 3), colours(orbits.shape[:2]).reshape(-1, 3)) for orbits in drawn[:2]]
-        riding.append((knots[:, :, (step + riders) % length].reshape(-1, 3),
+        riding = [(orbits[:, :, step].reshape(-1), colours(orbits.shape[:2]).reshape(-1, 3)) for orbits in drawn[:2]]
+        riding.append((knots[:, :, (step + riders) % length].reshape(-1),
                        np.repeat(colours(knots.shape[:2]).reshape(-1, 3), len(riders), axis=0)))
         yield np.concatenate([panel.draw([dots(*points, frame)], inks=[], translucent=[],
                                          meshes=[]) for panel, points in zip(panels, riding)], axis=1)

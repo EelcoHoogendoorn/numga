@@ -19,16 +19,16 @@ surface = np.array([0.25, 0.61, 0.68])
 background = np.ones(3)
 
 
-def coordinates(vertices: Antivector) -> np.ndarray:
-    """Cartesian positions at the drawing boundary, read by pairing with the planes across the axes."""
+def gpu_points(vertices: Antivector) -> solids.Point:
+    """The GPU library's own points at the places of the solid's: their coordinates, read by pairing with the planes
+    across the axes, are the one hand-off from this algebra to the renderer's."""
     mv = vertices.context.multivector
-    return (stack((mv.x, mv.y, mv.z)) & vertices[..., None]).to_array()
+    return solids.mv.point((stack((mv.x, mv.y, mv.z)) & vertices[..., None]).to_array())
 
 
 def viewport(points: solids.Point) -> solids.View:
     """A fixed three-quarter view of a surface, square, with room for it to flex."""
-    framed = solids.view([points], 0.0, elevation, azimuth, margin, n_pixels)
-    return solids.View(framed.camera, np.full(2, framed.half.max()), n_pixels)
+    return solids.view([points], 0.0, elevation, azimuth, margin, n_pixels).squared()
 
 
 def picture(points: solids.Point, faces: np.ndarray, view: solids.View) -> np.ndarray:
@@ -39,7 +39,7 @@ def picture(points: solids.Point, faces: np.ndarray, view: solids.View) -> np.nd
 
 def frames(vertices: Iterable[Antivector], mesh: Mesh) -> Iterator[np.ndarray]:
     """Draw a sequence of surfaces of the mesh's triangles with a camera fixed by the first frame."""
-    states = [solids.mv.point(coordinates(state)) for state in vertices]
+    states = [gpu_points(state) for state in vertices]
     view = viewport(states[0])
     for state in states:
         yield picture(state, mesh.faces, view)
@@ -47,5 +47,5 @@ def frames(vertices: Iterable[Antivector], mesh: Mesh) -> Iterator[np.ndarray]:
 
 def draw(vertices: Antivector, mesh: Mesh) -> plt.Figure:
     """One surface of the mesh's triangles without axes or margins."""
-    points = solids.mv.point(coordinates(vertices))
+    points = gpu_points(vertices)
     return image_figure(picture(points, mesh.faces, viewport(points)))

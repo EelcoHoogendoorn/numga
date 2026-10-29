@@ -5,13 +5,19 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
 from examples.geometry.projection import core, render, scenarios
 from examples.geometry.projection.core import Correspondence, Line, Plane, Point, cube, ga, mv
-from examples.geometry.projection.render import euclidean, screen_coordinates
+from examples.geometry.projection.render import screen_coordinates
 
 origin = mv.w.dual()
 Camera = ga.gatype((Point, Point))
 SCREEN = mv.z - mv.w
+
+
+def euclidean(points: Point) -> np.ndarray:
+    """The Euclidean coordinates of points are their pairings with the coordinate planes divided by their weights."""
+    return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
 def test_pinhole_image_is_perspective_division():

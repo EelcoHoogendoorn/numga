@@ -122,7 +122,7 @@ def test_figures_and_composed_channel_animation_draw_without_saving():
     surface = core.sphere(8, 16)
     # The display surface consists of pure states, of weight one on the unit sphere, before any channel acts.
     np.testing.assert_allclose((core.mv.w & surface).to_array(), 1, atol=1e-8)
-    np.testing.assert_allclose(np.linalg.norm(render.ball_positions(surface), axis=-1), 1, atol=1e-8)
+    np.testing.assert_allclose((core.centre & render.ball_positions(surface)).norm().to_array(), 1, atol=1e-8)
     figures = (
         render.draw_experiment(prepared, measured, scenarios.LABELS, render.ball_positions),
         render.draw_predictions(observed, predicted, scenarios.LABELS),

@@ -13,6 +13,9 @@ def draw_triangles(paths: Root, roots: Root, species: np.ndarray,
     """Each case is drawn as its three roots joined head to tail, with any closure gap dashed."""
     vertices = coordinates(paths, horizontal, vertical)
     orbits = coordinates(roots, horizontal, vertical)
+    # Each orbit's radius in the Coxeter plane: the size of a root's part in it.
+    coxeter_plane = horizontal ^ vertical                                       # [] Bivector+
+    radii = (roots[0] | coxeter_plane).scalar_norm_squared().square_root().to_array()   # [species]
     selected_orbits = orbits[:, species]
     limit = max(np.abs(vertices).max(), np.abs(selected_orbits).max()) * 1.16
     n_cases = len(species)
@@ -20,9 +23,8 @@ def draw_triangles(paths: Root, roots: Root, species: np.ndarray,
     for index, ax in enumerate(axes):
         for particle in np.unique(species[index]):
             points = orbits[:, particle]
-            radius = np.linalg.norm(points[0])
             colour = orbit_colours[particle]
-            ax.add_patch(Circle((0, 0), radius, fill=False, color=colour, alpha=0.22, linewidth=0.55))
+            ax.add_patch(Circle((0, 0), radii[particle], fill=False, color=colour, alpha=0.22, linewidth=0.55))
             ax.scatter(*points.T, color=colour, s=4, alpha=0.4, linewidths=0)
         for start, end, particle in zip(vertices[index, :-1], vertices[index, 1:], species[index]):
             ax.add_patch(FancyArrowPatch(start, end, arrowstyle="-|>", mutation_scale=13,

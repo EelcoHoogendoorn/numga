@@ -41,39 +41,41 @@ edge_radius = 0.87
 shaft_radius = 1.42
 head_share = 0.25
 head_width = 0.4
+# A volume, the join of three points, is an intrinsic scalar; its unit carries an intrinsic patch to the plane square
+# to it, whose dual is the direction square to the patch.
+unit_volume = core.mv.antipseudoscalar([1])                                  # [] Antipseudoscalar-
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(points: core.Point) -> np.ndarray:
-    """The x, y and z coordinates of points, antivectors, `[..., 3]`: their pairings with the planes x, y and z."""
-    return (stack((core.mv.x, core.mv.y, core.mv.z)) & points[..., None]).to_array()
+def gpu_points(points: core.Point) -> solids.Point:
+    """The GPU library's own points at the places of the cube's: their coordinates, read by pairing with the planes
+    x, y and z, are the one hand-off from this algebra to the renderer's."""
+    return solids.mv.point((stack((core.mv.x, core.mv.y, core.mv.z)) & points[..., None]).to_array())
 
 
-def arrow_ends(centres: core.Point, patches: core.Patch) -> np.ndarray:
-    """Where each patch's arrow ends, `[..., 3]`: its face's centre, moved along the patch's normal as far as its
-    area."""
-    # A patch's normal, read against the coordinate planes' bivectors yz, zx and xy.
-    normals = (stack((core.mv.yz, core.mv.zx, core.mv.xy)) & patches[..., None]).to_array()
-    return coordinates(centres) + normals * ARROW_SCALE
+def arrow_offsets(patches: core.Patch) -> core.Point:
+    """How far each patch's arrow reaches from its face's centre: along the direction square to the patch, as far as
+    its area."""
+    return (patches * unit_volume).dual() * ARROW_SCALE
 
 
 def view(vertices: core.Point, centres: core.Point, patches: core.Patch) -> solids.View:
     """A view framing every cube and arrow given."""
-    points = [solids.mv.point(coordinates(vertices)), solids.mv.point(arrow_ends(centres, patches))]
-    return solids.view(points, 0.0, elevation, azimuth, margin, 1)
+    return solids.view([gpu_points(vertices), gpu_points(centres + arrow_offsets(patches))], 0.0, elevation, azimuth,
+                       margin, 1)
 
 
 def picture(vertices: core.Point, centres: core.Point, patches: core.Patch, view: solids.View) -> np.ndarray:
     """The cube as the view sees it: its faces translucent, its edges and arrows opaque."""
-    corners = coordinates(vertices)                                            # [vertices, 3]
-    places = solids.mv.point(corners)
-    starts, ends = coordinates(centres), arrow_ends(centres, patches)           # [faces, 3]
+    places = gpu_points(vertices)                                              # [vertices] Point-
+    offsets = arrow_offsets(patches)                                           # [faces] Point-
     # A crushed face has no area: nothing to draw, and no arrow.
-    lengths = np.linalg.norm(ends - starts, axis=-1)
+    lengths = offsets.norm()                                                   # [faces] Scalar+
     shown = lengths > view.pixel
     colours = np.array([to_rgb(colour) for colour in COLOURS * 2])            # [faces, 3]
-    shafts, heads = solids.arrows(solids.mv.point(starts[shown]), solids.mv.point(ends[shown]),
-                                  shaft_radius * view.pixel, head_share * lengths[shown], head_width * head_share * lengths[shown])
+    head_lengths = head_share * lengths[shown].to_array()
+    shafts, heads = solids.arrows(gpu_points(centres[shown]), gpu_points(centres[shown] + offsets[shown]),
+                                  shaft_radius * view.pixel, head_lengths, head_width * head_lengths)
     edges, joints = solids.edges(places[EDGES[:, 0]], places[EDGES[:, 1]], edge_radius * view.pixel)
     edge_colour = np.array(to_rgb(EDGE_COLOUR))
     opaque = [(shafts, colours[shown]), (heads, colours[shown]), (edges, edge_colour), (joints, edge_colour)]

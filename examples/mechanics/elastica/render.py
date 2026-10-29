@@ -11,11 +11,12 @@ import numpy as np
 from matplotlib.colors import to_rgb
 from matplotlib.lines import Line2D
 
+from numga import stack
 from examples.util.animation import capture
 from examples.mechanics.elastica import core
 from examples.util.wgsl import image_figure, meshes, solids, strokes
 
-ga = core.ga
+mv = core.mv
 # The colours of the rods by case, of the line of thrust and the pins, and of the ribbon; the margin around
 # the drawn rods, the spacing of the helices as a share of the widest, and their view as (elevation, azimuth), in
 # radians, azimuth zero looking along +y.
@@ -35,13 +36,15 @@ CLAMP = np.full(3, 0.2)
 N_HELIX_PIXELS, N_UNCOIL_PIXELS, N_CORD_PIXELS = 330, 160, 675
 ROD_WIDTH, CLAMP_RADIUS = 3.0, 5.0
 BACKGROUND = np.ones(3)
+# The points around each rim of the cylinder that frames the uncoiling wire: a multiple of four, so that the rims'
+# points across and along every view lie among them.
+N_FRAMING_RIM = 4
 
 
 # --- plumbing -------------------------------------------------------------------------
 def coordinates(points: core.Point) -> np.ndarray:
-    """x, y and z of points, on the last axis."""
-    kernel = points.cast(ga.subspace("ywz wxz xwy xyz")).kernel
-    return kernel[..., :3] / kernel[..., 3:]
+    """x, y and z of points, on the last axis: their pairings with the planes x, y and z over their weight."""
+    return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
 def plane(points: core.Point) -> np.ndarray:
@@ -98,31 +101,32 @@ def animate_sweep(centres: core.Point) -> Iterator[np.ndarray]:
 def draw_helices(centres: core.Point, edges: core.Point) -> plt.Figure:
     """The wires coiled by their couples `[tilts, pieces + 1]`, side by side in one view of space, each with a
     ribbon across its cross-sections `[tilts, pieces + 1, 2]` showing how they twist."""
-    curves, ribbons = coordinates(centres), coordinates(edges)               # [tilts, pieces + 1, 3], [..., 2, 3]
     # The wires set side by side across, each a little more than the widest wire apart.
-    spacing = SPACING * np.ptp(ribbons[..., :2], axis=(1, 2)).max()
-    across = spacing * np.arange(len(curves))[:, None, None] * [1, 0, 0]       # [tilts, 1, 3]
-    curves, ribbons = curves + across, ribbons + across[:, :, None]
-    view = solids.view([solids.mv.point(ribbons)], 0.0, *VIEW, MARGIN, N_HELIX_PIXELS)
+    spacing = SPACING * np.ptp(coordinates(edges)[..., :2], axis=(1, 2)).max()
+    across = mv.x.dual() * (spacing * np.arange(centres.shape[0]))           # [tilts] Point-
+    curves, ribbons = centres + across[:, None], edges + across[:, None, None]
+    view = solids.view([ribbons], 0.0, *VIEW, MARGIN, N_HELIX_PIXELS)
     return image_figure(scene(curves, ribbons, view))
 
 
 def animate_uncoiling(centres: core.Point, edges: core.Point) -> Iterator[np.ndarray]:
     """The wire through the sweep of its tilt `[frames, pieces + 1]`, with its ribbon `[frames, pieces + 1, 2]`,
     the camera turning slowly around it, all to one scale."""
-    curves, ribbons = coordinates(centres), coordinates(edges)               # [frames, pieces + 1, 3], [..., 2, 3]
-    points = ribbons.reshape(-1, 3)
-    low, high = points.min(axis=0), points.max(axis=0)
-    # The upright cylinder about the coil's axis holding every frame, seen alike from every azimuth: its radius
-    # across, and up its height foreshortened by the elevation plus its round top and bottom tilted into view.
-    middle = (low + high) / 2
-    radius = np.linalg.norm(points[:, :2] - middle[:2], axis=-1).max()
-    half = np.array([radius, (high[2] - low[2]) / 2 * np.cos(UNCOIL_ELEVATION) + radius * np.sin(UNCOIL_ELEVATION)])
-    half = half + MARGIN * half.max()
-    azimuths = np.linspace(*UNCOIL_AZIMUTHS, len(curves), endpoint=False)
-    for curve, ribbon, azimuth in zip(curves, ribbons, azimuths):
-        yield scene(curve[None], ribbon[None], solids.View(solids.aim(solids.mv.point(middle), UNCOIL_ELEVATION, azimuth),
-                                                           half, N_UNCOIL_PIXELS))
+    places = coordinates(edges.reshape(-1))                                  # [points, 3]
+    low, high = places.min(axis=0), places.max(axis=0)
+    # The upright cylinder about the coil's axis holding every frame, seen alike from every azimuth: its axis the
+    # vertical line through the middle of every frame's extent, its radius the farthest any point lies from that
+    # line, the size of the plane through the two, and its rims at the bottom and the top of the extent.
+    middle = mv.point((low + high) / 2)                                      # [] Point-
+    axis = (middle & mv.z.dual()).normalized()                               # [] Line-
+    radius = (axis & edges).norm().to_array().max()
+    half_height = (high - low)[2] / 2
+    rims = middle + mv.z.dual() * (half_height * np.array([-1.0, 1.0]))      # [2] Point-
+    circles = meshes.circles(rims + mv.x.dual() * radius, axis * solids.flip, N_FRAMING_RIM)   # [2, rim + 1] Point-
+    framing = solids.view([circles], 0.0, UNCOIL_ELEVATION, 0.0, MARGIN, N_UNCOIL_PIXELS)
+    azimuths = np.linspace(*UNCOIL_AZIMUTHS, centres.shape[0], endpoint=False)
+    for curve, ribbon, azimuth in zip(centres, edges, azimuths):
+        yield scene(curve[None], ribbon[None], framing._replace(camera=solids.aim(middle, UNCOIL_ELEVATION, azimuth)))
 
 
 def animate_cord(centres: core.Point, edges: core.Point) -> Iterator[np.ndarray]:
@@ -133,28 +137,27 @@ def animate_cord(centres: core.Point, edges: core.Point) -> Iterator[np.ndarray]
 def sized_cord(centres: core.Point, edges: core.Point, pixels: int) -> Iterator[np.ndarray]:
     """The telephone cord at each frame `[frames, drawn]`, as a ribbon `[frames, drawn, 2]` with its base and its
     handset, `pixels` across, all from one fixed view and to one scale."""
-    curves, ribbons = coordinates(centres), coordinates(edges)               # [frames, drawn, 3], [..., 2, 3]
-    view = solids.view([solids.mv.point(ribbons)], 0.0, *CORD_VIEW, MARGIN, pixels)
+    view = solids.view([edges], 0.0, *CORD_VIEW, MARGIN, pixels)
     # The clamps at the base and the handset: small balls at the cord's two ends.
-    clamps = solids.ball(solids.mv.point(curves[:, [0, -1]]), CLAMP_RADIUS * view.pixel)[..., None]   # [frames, 2, 1] Plane+ <- Point-
-    for curve, ribbon, ends in zip(curves, ribbons, clamps):
+    clamps = solids.ball(centres[:, [0, -1]], CLAMP_RADIUS * view.pixel)[..., None]   # [frames, 2, 1] Plane+ <- Point-
+    for curve, ribbon, ends in zip(centres, edges, clamps):
         yield solids.draw([(ends, CLAMP)], view, BACKGROUND, inks=[], translucent=[],
                           meshes=wires(curve[None], ribbon[None], view))
 
 
-def wires(curves: np.ndarray, ribbons: np.ndarray, view: solids.View) -> list[tuple[meshes.Samples, float]]:
-    """Rods along curves `[rods, n, 3]` as strokes, through their ribbons `[rods, n, 2, 3]`: strips between the
-    edges, two triangles to each piece of rod; each opaque, sample by sample."""
-    index = np.arange(ribbons.size // 3).reshape(ribbons.shape[:3])         # [rods, n, 2]
+def wires(curves: core.Point, ribbons: core.Point, view: solids.View) -> list[tuple[meshes.Samples, float]]:
+    """Rods along curves `[rods, n]` as strokes, through their ribbons `[rods, n, 2]`: strips between the edges, two
+    triangles to each piece of rod; each opaque, sample by sample."""
+    index = np.arange(np.prod(ribbons.shape)).reshape(ribbons.shape)         # [rods, n, 2]
     corners = np.stack([index[:, :-1, 0], index[:, 1:, 0], index[:, 1:, 1], index[:, :-1, 1]], axis=-1)
     faces = corners[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
-    edges = solids.mv.point(ribbons.reshape(-1, 3))
+    edges = ribbons.reshape(-1)                                              # [vertices] Point-
     strips = meshes.samples(edges, faces, RIBBON, meshes.smooth(edges, faces), view, face_values=np.zeros(4),
                             colour=meshes.plain, gloss=solids.gloss)
-    rods = strokes.polylines([(curve, ROD) for curve in solids.mv.point(curves)], ROD_WIDTH, view)
+    rods = strokes.polylines([(curve, ROD) for curve in curves], ROD_WIDTH, view)
     return [(strips, 1.0), (rods, 1.0)]
 
 
-def scene(curves: np.ndarray, ribbons: np.ndarray, view: solids.View) -> np.ndarray:
+def scene(curves: core.Point, ribbons: core.Point, view: solids.View) -> np.ndarray:
     """Rods and their ribbons, as `wires`, on the background, `[rows, columns, 3]` bytes."""
     return solids.draw([], view, BACKGROUND, inks=[], translucent=[], meshes=wires(curves, ribbons, view))

@@ -28,6 +28,11 @@ def coordinates(points: Point) -> np.ndarray:
     return (stack((mv.x, mv.y)) & points.normalized()[..., None]).to_array()
 
 
+def components(directions: Point) -> np.ndarray:
+    """The x and y components of each direction, a point at infinity, from its pairings with the coordinate planes."""
+    return (stack((mv.x, mv.y)) & directions[..., None]).to_array()
+
+
 def position_ellipsoid(covariance: Covariance, sigmas: float) -> Quadric:
     """The confidence quadric `sigmas` standard deviations out around the set point."""
     shift = Twist.commutator(origin)                                            # [] Point- <- Twist+
@@ -51,8 +56,9 @@ def arrows(poses: Motor, extent: float) -> tuple[np.ndarray, np.ndarray]:
     """The bodies' positions and heading displacement vectors `[bodies, 2]`."""
     # A point a short way ahead of the set point along the bow.
     bow = origin + mv.direction([HEADING_FRACTION * extent, 0.0])               # [] Point-
-    positions = coordinates(poses >> origin)                                    # [bodies, 2]
-    return positions, coordinates(poses >> bow) - positions
+    positions = (poses >> origin).normalized()                                  # [bodies] Point-
+    headings = (poses >> bow).normalized() - positions                          # [bodies] Point-
+    return coordinates(positions), components(headings)
 
 
 def draw_cloud(ax, poses: Motor, predicted: Covariance, limit: Covariance, extent: float) -> tuple:
@@ -111,8 +117,8 @@ def animate_clouds(runs: dict, extent: float) -> Iterator[np.ndarray]:
 @charts.style()
 def draw_envelope(gains: np.ndarray, spreads: Spread, tolerance: float) -> plt.Figure:
     """Plot the two-standard-deviation half-widths of the position ellipsoid along its long and short axes against the controller gain."""
-    variances = spreads.eigvalsh().to_array()                                   # [gains, modes]
-    half_widths = 2.0 * np.sqrt(np.sort(variances, axis=-1)[:, ::-1])
+    # The half-widths of the drawn quadrics, SIGMAS standard deviations out, the widest first.
+    half_widths = np.sort((SIGMAS * spreads.eigvalsh().square_root()).to_array(), axis=-1)[:, ::-1]   # [gains, modes]
     # Half the column: two smooth curves, the tolerance and the gain that meets it.
     figure, ax = charts.subplots(420, 280)
     ax.plot(gains, half_widths[:, 0], color="#c0392b")

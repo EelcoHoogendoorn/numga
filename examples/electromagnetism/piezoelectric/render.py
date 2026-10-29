@@ -11,7 +11,7 @@ from matplotlib.colors import LinearSegmentedColormap, Normalize
 from matplotlib.patches import Rectangle
 from matplotlib.tri import Triangulation
 
-from numga import stack
+from numga import concatenate, stack
 from examples.electromagnetism.piezoelectric import core
 from examples.util.animation import capture
 
@@ -42,7 +42,7 @@ class DeviceView:
 
     def __init__(self, mesh: core.Strip, vertices: core.Point, areas: core.Scalar, displacement_scale: float,
                  voltage_scale: float, strain_scale: float) -> None:
-        self.mesh = mesh
+        self.mesh, self.vertices = mesh, vertices
         self.rest = coordinates(vertices)
         self.displacement_scale = displacement_scale
         self.voltage_norm = Normalize(-voltage_scale / 2, voltage_scale / 2)
@@ -55,11 +55,8 @@ class DeviceView:
         length, self.thickness = right - left, upper - lower
         middle = (upper + lower) / 2
 
-        self.top = mesh.top[np.argsort(self.rest[mesh.top, 0])]
-        self.bottom = mesh.bottom[np.argsort(self.rest[mesh.bottom, 0])]
-        self.tip = mesh.tip[np.argsort(self.rest[mesh.tip, 1])]
-        self.interface = mesh.interface[np.argsort(self.rest[mesh.interface, 0])]
-        self.poles = np.linspace(0, len(self.top) - 1, 9, dtype=int)[1:-1]
+        # The strip's electrodes and interface run in order along it, and its tip from the bottom up.
+        self.poles = np.linspace(0, len(mesh.top) - 1, 9, dtype=int)[1:-1]
 
         self.figure, ax = plt.subplots(figsize=(5.25, 1.4), dpi=100)
         self.figure.subplots_adjust(0.015, 0.025, 0.995, 0.975)
@@ -74,7 +71,7 @@ class DeviceView:
         ax.plot([left, left], [middle - self.thickness, middle + self.thickness],
                 color=interface_colour, linewidth=0.8, zorder=5)
 
-        rest_outline = np.concatenate((self.bottom, self.tip, self.top[::-1]))
+        rest_outline = np.concatenate((mesh.bottom, mesh.tip, mesh.top[::-1]))
         ax.plot(*self.rest[rest_outline].T, color=rest_colour, linewidth=0.9,
                 linestyle=(0, (4, 4)), zorder=0)
         self.triangulation = Triangulation(self.rest[:, 0], self.rest[:, 1], mesh.faces)
@@ -93,30 +90,33 @@ class DeviceView:
 
     def update(self, displacement: core.Point, potential: core.Scalar,
                axial_strain: core.Scalar) -> plt.Figure:
-        points = self.rest + self.displacement_scale * coordinates(displacement)
+        deformed = self.vertices + self.displacement_scale * displacement           # Point-[vertices]
+        points = coordinates(deformed)
         # Area-weighted nodal readings give a continuous display of the piecewise-constant element strain.
         # The strain comes per triangle, a batch over the faces; as a field over them it reaches the vertices.
         strain = scalars(self.corner_shares * (self.areas * axial_strain.field()) / self.vertex_areas)
         self.triangulation.x, self.triangulation.y = points.T
         self.body.set_array(strain)
-        self.bond.set_data(*points[self.interface].T)
-        self.end.set_data(*points[self.tip].T)
+        self.bond.set_data(*points[self.mesh.interface].T)
+        self.end.set_data(*points[self.mesh.tip].T)
 
         potential = scalars(potential)
-        electrode_potential = np.array([potential[self.top].mean(), potential[self.bottom].mean()])
+        electrode_potential = np.array([potential[self.mesh.top].mean(), potential[self.mesh.bottom].mean()])
         # The two electrode colours read their voltage difference, independent of the potential's zero.
         electrode_potential -= electrode_potential.mean()
-        self.electrodes.set_segments([points[self.top], points[self.bottom]])
+        self.electrodes.set_segments([points[self.mesh.top], points[self.mesh.bottom]])
         self.electrodes.set_colors(electrode_colours(self.voltage_norm(electrode_potential)))
 
-        upper = points[self.top[self.poles]]
-        lower = points[self.bottom[self.poles]]
-        separation = upper - lower
-        direction = separation / np.linalg.norm(separation, axis=-1, keepdims=True)
-        centres = np.concatenate((0.75 * upper + 0.25 * lower, 0.25 * upper + 0.75 * lower))
-        arrows = 0.32 * self.thickness * np.concatenate((direction, -direction))
-        self.poling.set_offsets(centres)
-        self.poling.set_UVC(*arrows.T)
+        # The poling arrows, across the strip from electrode to electrode: up in the upper layer, a quarter of the way
+        # down from the top, and down in the lower layer, a quarter of the way up from the bottom.
+        upper = deformed.batch()[self.mesh.top[self.poles]]                         # [poles] Point-
+        lower = deformed.batch()[self.mesh.bottom[self.poles]]                      # [poles] Point-
+        separation = upper - lower                                                  # [poles] Point-
+        across = separation / separation.squared().square_root()                    # [poles] Point-
+        centres = concatenate((0.75 * upper + 0.25 * lower, 0.25 * upper + 0.75 * lower))   # [arrows] Point-
+        arrows = 0.32 * self.thickness * concatenate((across, -across))             # [arrows] Point-
+        self.poling.set_offsets(coordinates(centres))
+        self.poling.set_UVC(*coordinates(arrows).T)
         return self.figure
 
 
@@ -136,10 +136,10 @@ def draw_mesh(mesh: core.Strip, vertices: core.Point) -> plt.Figure:
     ax.add_patch(Rectangle((left - 0.12 * thickness, lower - 0.12 * thickness), 0.12 * thickness, 1.24 * thickness,
                            facecolor="#edf0f0", edgecolor="#a0aaaf", linewidth=0.8, hatch="////", zorder=1))
     ax.triplot(Triangulation(rest[:, 0], rest[:, 1], mesh.faces), color=rest_colour, linewidth=0.5, zorder=2)
+    # The electrodes and the interface run in order along the strip.
     for nodes, colour, width in ((mesh.top, extension_colour, 2.5), (mesh.bottom, compression_colour, 2.5),
                                  (mesh.interface, interface_colour, 1.2)):
-        ordered = nodes[np.argsort(rest[nodes, 0])]
-        ax.plot(*rest[ordered].T, color=colour, linewidth=width, solid_capstyle="butt", zorder=3)
+        ax.plot(*rest[nodes].T, color=colour, linewidth=width, solid_capstyle="butt", zorder=3)
     ax.plot(*rest[mesh.clamped].T, "o", color=interface_colour, markersize=2.2, zorder=4)
     return figure
 

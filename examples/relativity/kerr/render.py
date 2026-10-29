@@ -122,12 +122,15 @@ def star_texture(width: int, height: int, seed: int) -> np.ndarray:
 
 def sky_colour(direction: core.Antivector, texture: np.ndarray) -> np.ndarray:
     """Look up the celestial image using the escaped ray's spatial direction."""
+    # The direction's part in the observer's space, at unit length: a spatial direction squares to its squared length.
+    spatial = core.space(direction)                                                         # [...] Antivector-
+    unit = spatial / spatial.squared().square_root()                                        # [...] Antivector-
     horizontal_x, horizontal_y, vertical = np.moveaxis(
-        coordinates(direction, (core.mv.x, core.mv.y, core.mv.z)), -1, 0)
-    length = np.sqrt(horizontal_x ** 2 + horizontal_y ** 2 + vertical ** 2)
+        coordinates(unit, (core.mv.x, core.mv.y, core.mv.z)), -1, 0)
     height, width = texture.shape[:2]
+    # The image's texture coordinates: longitude and latitude.
     longitude = np.arctan2(horizontal_y, horizontal_x)
-    latitude = np.arcsin(np.clip(vertical / length, -1, 1))
+    latitude = np.arcsin(np.clip(vertical, -1, 1))
     column = (longitude / (2 * np.pi) + 0.5) * width - 0.5
     row = np.clip((0.5 - latitude / np.pi) * height - 0.5, 0, height - 1)
     left = np.floor(column).astype(int)
@@ -145,9 +148,11 @@ def clump_waves(points: core.Antivector, radius: core.Scalar) -> np.ndarray:
     """Random waves around and across the disk at each point, summed to unit variance, `[...]`; whole
     turns keep each continuous in angle."""
     horizontal_x, horizontal_y = np.moveaxis(coordinates(points, (core.mv.x, core.mv.y)), -1, 0)
+    # The texture's coordinate around the disk, the angle from x, read where the pattern is drawn.
     angle = np.arctan2(horizontal_y, horizontal_x)
     modes = wave_modes()
-    waves = np.sin(modes["turns"] * angle[..., None] + modes["wavenumber"] * radius.kernel + modes["phase"])  # [..., modes]
+    waves = np.sin(modes["turns"] * angle[..., None] + modes["wavenumber"] * radius.to_array()[..., None]
+                   + modes["phase"])                                                         # [..., modes]
     return waves.sum(axis=-1) / np.sqrt(clump_modes / 2)
 
 
@@ -188,7 +193,7 @@ def develop(disk: np.ndarray, sky: np.ndarray, reference: float) -> np.ndarray:
 def disk_emissivity(radius: core.Scalar, waves: np.ndarray) -> np.ndarray:
     """An illustrative texture on the disk's emission, `[crossings]`: fine rings, which the orbital
     flow leaves in place, and clumps from `waves`."""
-    radius = radius.kernel[..., 0]
+    radius = radius.to_array()
     rings = 0.90 + 0.045 * np.sin(11 * radius) + 0.025 * np.sin(19 * radius)
     return rings * np.exp(clump_contrast * waves)
 
@@ -232,8 +237,8 @@ def disk_glow(image: core.Image, temperature: core.Scalar) -> np.ndarray:
     """Each disk crossing's linear light before its texture, `[crossings, 3]`: a blackbody at its
     observed temperature, white-balanced, and weighted by the share of its pixel the crossing gives."""
     white = blackbody(np.array(white_temperature))
-    balanced = blackbody(temperature.kernel[..., 0]) * (white @ luminance_weights) / white
-    return balanced * image.disk_weights.kernel
+    balanced = blackbody(temperature.to_array()) * (white @ luminance_weights) / white
+    return balanced * image.disk_weights.to_array()[..., None]
 
 
 def disk_light(image: core.Image, temperature: core.Scalar, waves: np.ndarray) -> np.ndarray:
@@ -253,7 +258,7 @@ def camera_colours(image: core.Image, temperature: core.Scalar, image_shape: tup
     """The disk's linear light and the sky's colours, each summed into its pixels, `[pixels, 3]` each."""
     height, width = image_shape
     light = disk_light(image, temperature, clump_waves(image.disk[0], image.disk_radii))
-    sky = sky_colour(image.sky_directions, sky_texture) * image.sky_weights.kernel
+    sky = sky_colour(image.sky_directions, sky_texture) * image.sky_weights.to_array()[..., None]
     return (scattered(light, image.disk_pixels, height * width),
             scattered(sky, image.sky_pixels, height * width))
 
@@ -288,7 +293,7 @@ def animate_polarizer(image: core.Image, temperature: core.Scalar, reference: fl
     height, width = image_shape
     light = disk_light(image, temperature, clump_waves(image.disk[0], image.disk_radii))
     _, sky = camera_colours(image, temperature, image_shape, sky_texture)
-    for passed in transmission.kernel[..., 0]:
+    for passed in transmission.to_array():
         disk = scattered(2 * light * passed[:, None], image.disk_pixels, height * width)
         yield np.round(np.clip(exposed(disk, reference) + sky, 0, 1) * 255).astype(np.uint8).reshape(height, width, 3)
 
@@ -305,10 +310,18 @@ def animate_polarizer_comparison(images: tuple[core.Image, core.Image], temperat
 
 def comparison_readout(position: core.Antivector, momentum: core.Vector, screen: core.ScreenFrame,
                        metric_residual: core.Vector) -> dict[str, float]:
-    """Largest absolute coefficient differences between the two descriptions and the metric inverse residual."""
-    return {name: float(np.max(np.abs(value.kernel))) for name, value in (
-        ("position", position), ("momentum", momentum), ("screen", screen), ("metric inverse", metric_residual))}
-
+    """The largest absolute differences between the two descriptions, and the metric inverse's residual, read by
+    pairing: events with the planes x, y, z and t, momenta with the directions along them, and the screen on the
+    camera's two screen directions."""
+    mv = core.mv
+    planes = stack((mv.x, mv.y, mv.z, mv.t))                                    # [4] Vector+
+    directions = planes.dual()                                                  # [4] Antivector-
+    screen_directions = stack((core.camera_right, core.camera_up))              # [2] Antivector-
+    readings = (("position", planes & position[..., None]),
+                ("momentum", momentum[..., None] & directions),
+                ("screen", planes & screen[..., None](screen_directions)[..., None]),
+                ("metric inverse", metric_residual[..., None] & directions))
+    return {name: float(np.abs(value.to_array()).max()) for name, value in readings}
 
 
 def animate_disk(image: core.Image, temperature: core.Scalar, reference: float, flows: Iterable[core.Antivector],

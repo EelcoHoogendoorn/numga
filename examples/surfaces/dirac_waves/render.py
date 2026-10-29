@@ -8,6 +8,7 @@ from collections.abc import Iterator
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
 from examples.surfaces.dirac_waves import core
 from examples.util.wgsl import meshes, show_pixels, solids
 
@@ -32,28 +33,33 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 """, dict(base=base))
 
 
-def coordinates(points: core.Point) -> np.ndarray:
-    """The x, y and z coordinates of points, antivectors."""
-    return points.cast(core.ga.subspace("yz zx xy")).kernel
+# --- plumbing -------------------------------------------------------------------------
+def gpu_points(points: core.Point) -> solids.Point:
+    """The GPU library's own points at the places of the example's: their coordinates, read by pairing the intrinsic
+    points with the drawing frame, are the one hand-off from this algebra to the renderer's."""
+    mv = core.mv
+    return solids.mv.point((stack((mv.x, mv.y, mv.z)) & points.batch()[..., None]).to_array())
 
 
 def planes(fields: core.Even) -> np.ndarray:
-    """The absolute amplitudes of fields' planes yz, zx and xy `[..., sites, 3]`."""
-    return np.abs(fields.cast(core.ga.subspace("yz zx xy")).kernel)
+    """The absolute amplitudes of fields' planes yz, zx and xy `[..., sites, 3]`: their pairings with the planes x, y
+    and z, which meet the scalar part in nothing."""
+    mv = core.mv
+    return np.abs((stack((mv.x, mv.y, mv.z)) & fields.batch()[..., None]).to_array())
 
 
 def image(mesh: Mesh, seen: tuple, corners: np.ndarray, sides: np.ndarray) -> np.ndarray:
-    """The surface as an RGB image, `[pixels, pixels, 3]`: its vertices' colours spread over the faces between
-    them, joined with each face's own, and lit."""
+    """The surface as an RGB image, `[pixels, pixels, 3]`: its vertices' colours at the corners of each face,
+    `[corners, faces, 3]`, spread over the faces between them, joined with each face's own, and lit."""
     points, normals, frame = seen
-    return meshes.draw(points, mesh.faces, corners[mesh.faces], normals, frame, background, face_values=sides,
+    return meshes.draw(points, mesh.faces, corners.transpose(1, 0, 2), normals, frame, background, face_values=sides,
                        colour=colour, gloss=solids.gloss) / 255
 
 
 def view(mesh: Mesh, positions: core.Point) -> tuple:
     """The surface at the positions of its vertices as the camera sees it, the same for every field on it: its
     points carried into projective space, their smooth normals, and the camera framing them."""
-    points = solids.mv.point(coordinates(positions))
+    points = gpu_points(positions)
     frame = solids.view([points], 0.0, elevation, azimuth, margin, pixels)
     return points, meshes.smooth(points, mesh.faces), frame.squared()
 
@@ -62,10 +68,12 @@ def animate(mesh: Mesh, positions: core.Point, vertices: core.Even, faces: core.
             room: float = 1.0) -> Iterator[np.ndarray]:
     """Frames of vertex and face fields `[tiles, frames] Even+[vertices]` and `[tiles, frames] Even-[faces]` on the mesh at the
     positions `Point-[vertices]`, the tiles in rows of the given count, each exposed by its first frame, `room` times over."""
-    corners, sides = planes(vertices), planes(faces)                          # [tiles, frames, V, 3], [tiles, frames, F, 3]
-    first = np.concatenate([corners[:, :1], sides[:, :1]], axis=2)            # [tiles, 1, V + F, 3]
+    amplitudes, sides = planes(vertices), planes(faces)                       # [tiles, frames, V, 3], [tiles, frames, F, 3]
+    # The vertex field at the corners of each face, read through the mesh.
+    corners = planes(mesh.incidence[2, 0] * vertices[..., None])              # [tiles, frames, corners, F, 3]
+    first = np.concatenate([amplitudes[:, :1], sides[:, :1]], axis=2)         # [tiles, 1, V + F, 3]
     level = room * np.percentile(first, exposure, axis=(1, 2, 3), keepdims=True)
-    corners, sides = corners / level, sides / level
+    corners, sides = corners / level[..., None], sides / level
     tiles, frames = corners.shape[:2]
     seen = view(mesh, positions)
     for frame in range(frames):

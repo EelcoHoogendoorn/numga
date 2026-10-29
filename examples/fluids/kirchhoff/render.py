@@ -16,13 +16,13 @@ from examples.fluids.kirchhoff import core
 mv = core.mv
 # The colours of the three coefficients: shifting along the axis of symmetry, shifting across it, and
 # turning it. The colours of each case's body, its outline and its path, and of the impulse.
-COEFFICIENTS = ["#0369a1", "#f97316", "#16a34a"]
-BODIES = ["#cbd5e1", "#7dd3fc", "#fdba74"]
-EDGES = ["#64748b", "#0369a1", "#c2410c"]
-PATHS = ["#94a3b8", "#0284c7", "#ea580c"]
-IMPULSE = "#475569"
+coefficient_colours = ["#0369a1", "#f97316", "#16a34a"]
+body_colours = ["#cbd5e1", "#7dd3fc", "#fdba74"]
+edge_colours = ["#64748b", "#0369a1", "#c2410c"]
+path_colours = ["#94a3b8", "#0284c7", "#ea580c"]
+impulse_colour = "#475569"
 # The free space between the lanes, and around the bodies at the ends of the view.
-GAP = 1.0
+gap = 1.0
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -39,7 +39,7 @@ def draw_coefficients(aspects: np.ndarray, ratios: core.Scalar) -> plt.Figure:
     values = ratios.to_array()                                                # [aspects, 3]
     # Half the column: three smooth curves, and room for the two long axis names.
     figure, ax = charts.subplots(420, 280)
-    for column, colour in enumerate(COEFFICIENTS):
+    for column, colour in enumerate(coefficient_colours):
         ax.plot(aspects, values[:, column], color=colour)
     ax.axvline(1, color="#cbd5e1", linewidth=charts.FRAME_WIDTH, zorder=0)
     ax.set_xscale("log")
@@ -55,45 +55,46 @@ def draw_coefficients(aspects: np.ndarray, ratios: core.Scalar) -> plt.Figure:
     return figure
 
 
-def impulse_line(impulse: core.Forque, extent: tuple[float, float]) -> np.ndarray:
-    """The ends of the impulse's line within the given extent along the first axis `[2, 2]`: where it
-    meets the planes square to that axis there."""
-    ends = impulse ^ (mv.x - np.array(extent) * mv.w)                         # [2] Point-
-    return coordinates(ends)
-
-
 def animate_gliding(impulse: core.Forque,
                     frames: Iterable[tuple[core.Point, core.Point, core.Point]]) -> Iterator[np.ndarray]:
     """Each frame of every case's outline `[cases, outline + 1]`, centre `[cases]` and nose `[cases]`: the
     bodies seen from above, each in its own lane, with its path so far and its impulse."""
-    frames = [tuple(coordinates(points) for points in frame) for frame in frames]
-    shapes = np.stack([outlines for outlines, _, _ in frames])               # [frames, cases, outline + 1, 2]
-    paths = np.stack([centres for _, centres, _ in frames])                  # [frames, cases, 2]
-    count = paths.shape[1]
+    frames = [tuple(points.normalized() for points in frame) for frame in frames]
+    outlines = stack([outline for outline, _, _ in frames])                  # [frames, cases, outline + 1] Point-
+    centres = stack([middle for _, middle, _ in frames])                     # [frames, cases] Point-
+    noses = stack([nose for _, _, nose in frames])                           # [frames, cases] Point-
+    count = centres.shape[1]
     # Each lane as wide as the bodies ever reach across it, and the view as long as they reach along it.
-    lane = 2 * np.abs(shapes[..., 1]).max() + GAP
-    lanes = lane * (count - 1 - np.arange(count))[:, None] * np.array([0.0, 1.0])   # [cases, 2]
-    extent = (shapes[..., 0].min() - GAP / 2, shapes[..., 0].max() + GAP / 2)
-    line = impulse_line(impulse, extent)                                     # [2, 2]
+    lane = 2 * np.abs((mv.y & outlines).to_array()).max() + gap
+    reach = (mv.x & outlines).to_array()
+    extent = (reach.min() - gap / 2, reach.max() + gap / 2)
+    # Each case moved across into its own lane, the first furthest.
+    lanes = core.directions[1] * (lane * (count - 1 - np.arange(count)))     # [cases] Direction-
+    # The ends of the impulse's line within the extent: where it meets the planes square to x there.
+    ends = (impulse ^ (mv.x - np.array(extent) * mv.w)).normalized()         # [2] Point-
+    line = coordinates(ends + lanes[:, None])                                # [cases, 2, 2]
+    shapes = coordinates(outlines + lanes[:, None])                          # [frames, cases, outline + 1, 2]
+    paths = coordinates(centres + lanes)                                     # [frames, cases, 2]
+    tips = coordinates(noses + lanes)                                        # [frames, cases, 2]
     height = lane * count
     # The lanes and their impulses set up once; each body, its path so far and its nose move.
     figure = plt.figure(figsize=(4.0, 4.0 * height / (extent[1] - extent[0])), dpi=100)
     ax = figure.add_axes((0, 0, 1, 1))
     trails, bodies, dots = [], [], []
     for case in range(count):
-        ax.plot(*(line + lanes[case]).T, color=IMPULSE, linewidth=0.8, linestyle=(0, (6, 4)), zorder=0)
-        trails += ax.plot([], [], color=PATHS[case], linewidth=1.4, zorder=1)
-        bodies += ax.fill(*(shapes[0, case] + lanes[case]).T, facecolor=BODIES[case], edgecolor=EDGES[case],
+        ax.plot(*line[case].T, color=impulse_colour, linewidth=0.8, linestyle=(0, (6, 4)), zorder=0)
+        trails += ax.plot([], [], color=path_colours[case], linewidth=1.4, zorder=1)
+        bodies += ax.fill(*shapes[0, case].T, facecolor=body_colours[case], edgecolor=edge_colours[case],
                           linewidth=1.4, zorder=2)
-        dots += ax.plot([], [], "o", color=EDGES[case], markersize=5, zorder=3)
+        dots += ax.plot([], [], "o", color=edge_colours[case], markersize=5, zorder=3)
     ax.set_xlim(*extent)
     ax.set_ylim(-lane / 2, height - lane / 2)
     ax.set_aspect("equal")
     ax.set_axis_off()
-    for index, (outlines, _, noses) in enumerate(frames):
+    for index in range(len(frames)):
         for case in range(count):
-            trails[case].set_data(*(paths[:index + 1, case] + lanes[case]).T)
-            bodies[case].set_xy(outlines[case] + lanes[case])
-            dots[case].set_data(*(noses[case] + lanes[case])[:, None])
+            trails[case].set_data(*paths[:index + 1, case].T)
+            bodies[case].set_xy(shapes[index, case])
+            dots[case].set_data(*tips[index, case, :, None])
         yield capture(figure)
     plt.close(figure)

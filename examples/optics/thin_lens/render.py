@@ -1,7 +1,7 @@
 """Ray diagrams of the thin-lens example: drawing only.
 
 Coordinates leave the algebra here: a point is read by its pairings with the planes x = 0 and y = 0 over its
-weight, and a ray's direction of travel by where it meets the plane at infinity.
+weight.
 """
 
 from __future__ import annotations
@@ -22,6 +22,8 @@ from examples.optics.thin_lens.core import Crossing, Line, LineMap, Plane, Point
 # first lens, and how far past its meet each bundle is drawn.
 leg_colours = ("tab:orange", "tab:green", "tab:blue")
 lead, past = 1.0, 0.5
+# How far the train's last leg runs on past its last element.
+onward = 2.5
 # The figures' sizes in inches at their dots per inch; the widths of the rays and the elements' planes, in points;
 # the area of the subject's and the image's dots, in square points.
 lenses_size, train_size, dpi = (4.2, 3.3), (3.2, 2.5), 100
@@ -35,13 +37,6 @@ def xy(points: Point) -> np.ndarray:
     over their weights."""
     mv = points.context.multivector
     return ((stack((mv.x, mv.y)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
-
-
-def travel(rays: Line, handedness: np.ndarray) -> np.ndarray:
-    """Unit direction of travel along each ray: where it meets the plane at infinity, times the handedness."""
-    mv = rays.context.multivector
-    direction = (stack((mv.x, mv.y)) & (rays ^ mv.w)[..., None]).to_array()
-    return handedness[:, None] * direction / np.linalg.norm(direction, axis=-1, keepdims=True)
 
 
 def segments(ax, start: np.ndarray, stop: np.ndarray, color: str) -> list[Line2D]:
@@ -91,24 +86,27 @@ def draw_lenses(subject: Point, imaging: Line, image: Crossing, focusing: Line, 
     return fig
 
 
-def bundle_legs(subject: Point, planes: Plane, legs: Line, train: LineMap) -> list[tuple[np.ndarray, np.ndarray]]:
+def bundle_legs(subject: Point, planes: Plane, legs: Line, train: LineMap) -> list[tuple[Crossing, Crossing]]:
     """The bundle leg by leg between the element planes, then onward along its direction of travel: each leg's starts
-    and stops `[rays, 2]`.
+    and stops `[rays]`, at unit weight.
 
     A line has no direction of travel, so the last leg follows a handedness that flips once per
     orientation-reversing element, which is what a mirror is: the sign of the train's determinant.
     """
     mv = subject.context.multivector
     count = planes.shape[0]
-    start = xy(legs[0] ^ (subject & mv.wx))
-    ends = []
-    for stage in range(count):
-        ends.append((start, xy(legs[stage] ^ planes[stage])))
-        start = xy(legs[stage + 1] ^ planes[stage])
-    first = xy(legs[0] ^ planes[0]) - xy(legs[0] ^ (subject & mv.wx))
-    heading = np.sign(np.einsum("ij,ij->i", first, travel(legs[0], np.ones(len(first)))))
-    handedness = heading * np.sign(train.det().to_array())
-    return ends + [(start, start + 2.5 * travel(legs[-1], handedness))]
+    starts = [legs[0] ^ (subject & mv.wx)] + [legs[stage + 1] ^ planes[stage] for stage in range(count)]
+    stops = [legs[stage] ^ planes[stage] for stage in range(count)]
+    # Each crossing at unit weight, its sign divided out too, so that joins run from start to stop; `.normalized()`
+    # would keep the sign.
+    starts, stops = ([crossing / (mv.w & crossing) for crossing in crossings] for crossings in (starts, stops))
+    # The first leg's line runs the way the ray travels, from its start to the first element, where the two lines'
+    # scalar product is positive.
+    heading = np.sign((starts[0] & stops[0]).scalar_product(legs[0]).to_array())   # [rays]
+    handedness = heading * np.sign(train.det().to_array())                   # [rays]
+    # The last leg runs on along its line's meet with the line at infinity, a unit direction for a unit line.
+    travel = legs[-1].normalized() ^ mv.w                                    # [rays] Crossing-
+    return list(zip(starts, stops + [starts[-1] + travel * (onward * handedness)]))
 
 
 def draw_scene(ax, subject: Point, planes: Plane, legs: Line, train: LineMap,
@@ -118,7 +116,7 @@ def draw_scene(ax, subject: Point, planes: Plane, legs: Line, train: LineMap,
     count = planes.shape[0]
     rays, elements = [], []
     for stage, (start, stop) in enumerate(bundle_legs(subject, planes, legs, train)):
-        rays.append(segments(ax, start, stop, f"C{stage}"))
+        rays.append(segments(ax, xy(start), xy(stop), f"C{stage}"))
         if stage < count:
             elements.append(draw_plane(ax, planes[stage], 0.8))
     marks = [ax.scatter(*xy(subject), s=dot_area, color="C0", zorder=3),
@@ -132,7 +130,7 @@ def place_scene(rays: list[list[Line2D]], elements: list[Line2D], marks: list[Pa
                 planes: Plane, legs: Line, train: LineMap, picture: Crossing) -> None:
     """Move the lines and points `draw_scene` drew to another state of the train."""
     for lines, (start, stop) in zip(rays, bundle_legs(subject, planes, legs, train)):
-        for line, a, b in zip(lines, start, stop):
+        for line, a, b in zip(lines, xy(start), xy(stop)):
             line.set_data([a[0], b[0]], [a[1], b[1]])
     for line, a, b in zip(elements, *plane_ends(planes, 0.8)):
         line.set_data([a[0], b[0]], [a[1], b[1]])

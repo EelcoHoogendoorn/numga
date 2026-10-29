@@ -34,8 +34,9 @@ row_size, disk_row_size = (780, 195), (780, 260)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(points: core.Point) -> np.ndarray:
-    """Drawing coordinates of intrinsic positions and directions."""
+def plane_places(points: core.Point) -> np.ndarray:
+    """x and y of intrinsic positions and directions `[...]` on the last axis, for matplotlib's artists: their
+    pairings with the planes x and y."""
     mv = points.context.multivector
     return np.asarray((stack((mv.x, mv.y)) & points.batch()[..., None]).to_array())
 
@@ -50,13 +51,15 @@ def frame_panel(ax: plt.Axes, places: np.ndarray, margin_ratio: float) -> None:
     ax.set_axis_off()
 
 
-def spaced_faces(centre_xy: np.ndarray, max_radius: float, min_separation: float) -> list[int]:
-    """Well-spaced interior face indices ordered from the origin outward."""
+def spaced_faces(centres: core.Point, max_radius: float, min_separation: float) -> list[int]:
+    """Well-spaced interior face indices ordered from the origin outward: each face's centre `Point-[faces]` within
+    `max_radius` of the origin and further than `min_separation` from those of the faces chosen before it."""
+    centres = centres.batch()                                                  # [faces] Point-
+    reach = centres.norm().to_array()                                          # [faces]
+    separations = (centres[:, None] - centres[None, :]).norm().to_array()     # [faces, faces]
     chosen: list[int] = []
-    for face in np.argsort(np.linalg.norm(centre_xy, axis=-1)):
-        if np.linalg.norm(centre_xy[face]) < max_radius and all(
-            np.linalg.norm(centre_xy[face] - centre_xy[other]) > min_separation for other in chosen
-        ):
+    for face in np.argsort(reach):
+        if reach[face] < max_radius and all(separations[face, other] > min_separation for other in chosen):
             chosen.append(int(face))
     return chosen
 
@@ -64,10 +67,11 @@ def spaced_faces(centre_xy: np.ndarray, max_radius: float, min_separation: float
 def draw_metric_basis(corners: core.Point, points: core.Point,
                       basis: core.Metric, metric: core.Metric) -> plt.Figure:
     """The three hyperbolic Regge edge metric basis forms and their sum into a positive-definite metric ellipse."""
-    sample_xy = coordinates(points)
-    corner_xy = coordinates(corners)
-    triangulation = Triangulation(sample_xy[:, 0], sample_xy[:, 1])
-    centroid = corners.mean()
+    sample_xy = plane_places(points)
+    corner_xy = plane_places(corners)
+    # The samples triangulated, for the artists that shade and contour across them.
+    triangulation = Triangulation(*sample_xy.T, triangles=core.Mesh.triangulate(points).faces)
+    centroid = corners.mean()                                                  # [] Point-
     offsets = points - centroid
 
     basis_forms = np.asarray((basis[:, None](offsets[None, :]) & offsets[None, :]).to_array())
@@ -109,7 +113,7 @@ def draw_metric_basis(corners: core.Point, points: core.Point,
                   linestyles="solid", linewidths=1.35, zorder=3)
     ax.add_patch(Polygon(corner_xy, fill=False, edgecolor=wall_colour, linewidth=1.2, zorder=4))
     ax.scatter(*corner_xy.T, s=36, color=accent_colour, edgecolor="white", linewidth=0.9, zorder=6)
-    ax.scatter(*corner_xy.mean(axis=0), s=22, color=wall_colour, zorder=6)
+    ax.scatter(*plane_places(centroid), s=22, color=wall_colour, zorder=6)
     return figure
 
 
@@ -117,28 +121,29 @@ def draw_curvature_defects(mesh: core.Mesh, vertices: core.Point, centres: core.
                            metrics: core.Metric, curvatures: core.Bivector) -> plt.Figure:
     """Vertex curvature shades the fixed reference disks, with equal-length displacement contours at sampled faces."""
     mv = vertices.context.multivector
-    places = coordinates(vertices)
-    centre_xy = coordinates(centres)
+    places = plane_places(vertices)
     curvature_values = np.asarray((curvatures.batch() & mv.xy.dual()).to_array())
     triangulation = Triangulation(*places.T, triangles=mesh.faces)
-    walls = places[mesh.edges[mesh.boundary_edges]]
+    walls = plane_places(mesh.reading(mesh.boundary_edges, 1) * (mesh.incidence[1, 0] * vertices)).transpose(1, 0, 2)
     boundary = mesh.exterior(0)
     interior = ~np.isin(np.arange(mesh.n_vertices), boundary)
     bound = np.abs(curvature_values[:, interior]).max()
 
-    ellipse_faces = spaced_faces(centre_xy, 0.84, 0.24)
+    ellipse_faces = spaced_faces(centres, 0.84, 0.24)
     radius = 0.082
     span = np.linspace(-1.6 * radius, 1.6 * radius, n_ellipse_grid)
     grid_x, grid_y = np.meshgrid(span, span, indexing="ij")
-    grid_offsets = mv.x.dual() * grid_x + mv.y.dual() * grid_y
+    grid_offsets = mv.x.dual() * grid_x + mv.y.dual() * grid_y                 # [grid, grid] Point-
     sampled_metrics = metrics.batch()[:, ellipse_faces]
     # Implicit evaluation of each face's Regge metric quadratic form on the local displacement grid.
     quadrics = np.asarray((sampled_metrics[:, :, None, None](grid_offsets) & grid_offsets).to_array())
-    reference_quadric = grid_x**2 + grid_y**2
+    reference_quadric = grid_offsets.norm_squared().to_array()                # [grid, grid]
+    sampled_centres = centres.batch()[ellipse_faces]                          # [samples] Point-
+    # Each local grid placed at its face's centre, where its ellipses are drawn.
+    grid_places = plane_places(sampled_centres[:, None, None] + grid_offsets)  # [samples, grid, grid, 2]
 
     # Log-ratio of radial to circumferential metric stretch at each sampled face centroid for indicatrix colouring.
-    sampled_centres = centres.batch()[ellipse_faces]
-    radial_dirs = sampled_centres / sampled_centres.norm()
+    radial_dirs = sampled_centres.normalized()                                # [samples] Point-
     quarter_turn = (mv.xy * (-np.pi / 4)).exp()
     hoop_dirs = quarter_turn >> radial_dirs
     radial_stretch = np.asarray((sampled_metrics(radial_dirs[None, :]) & radial_dirs[None, :]).to_array())
@@ -157,14 +162,13 @@ def draw_curvature_defects(mesh: core.Mesh, vertices: core.Point, centres: core.
         ax.tripcolor(triangulation, field, shading="gouraud", cmap=diverging_colours,
                      norm=Normalize(-bound, bound), zorder=1)
         ax.triplot(triangulation, color=mesh_colour, linewidth=0.35, alpha=0.38, zorder=2)
-        for sample_index, face in enumerate(ellipse_faces):
-            cx, cy = centre_xy[face]
+        for sample_index, (grid_x, grid_y) in enumerate(np.moveaxis(grid_places, -1, 1)):
             colour = indicatrix_colours(indicatrix_norm(anisotropy[case_index, sample_index]))
-            ax.contourf(cx + grid_x, cy + grid_y, quadrics[case_index, sample_index],
+            ax.contourf(grid_x, grid_y, quadrics[case_index, sample_index],
                         levels=[0.0, radius**2], colors=[colour], alpha=0.22, zorder=3)
-            ax.contour(cx + grid_x, cy + grid_y, reference_quadric, levels=[radius**2],
+            ax.contour(grid_x, grid_y, reference_quadric, levels=[radius**2],
                        colors=wall_colour, linestyles="dashed", linewidths=0.75, alpha=0.65, zorder=4)
-            ax.contour(cx + grid_x, cy + grid_y, quadrics[case_index, sample_index], levels=[radius**2],
+            ax.contour(grid_x, grid_y, quadrics[case_index, sample_index], levels=[radius**2],
                        colors=[colour], linestyles="solid", linewidths=1.5, zorder=5)
         ax.add_collection(LineCollection(walls, colors=wall_colour, linewidths=1.3, zorder=6))
     return figure
@@ -174,15 +178,17 @@ def draw_intrinsic_flow(mesh: core.Mesh, vertices: core.Point, centres: core.Poi
                         potential: core.Scalar, streamfunction: core.Scalar,
                         current: core.Point) -> plt.Figure:
     """Steady potential contours, intrinsic flux streamlines, and current vectors across the three Regge metrics."""
-    places = coordinates(vertices)
-    centre_xy = coordinates(centres)
+    places = plane_places(vertices)
     potentials = np.asarray(potential.batch().to_array())
     streams = np.asarray(streamfunction.batch().to_array())
-    currents = coordinates(current)
     triangulation = Triangulation(*places.T, triangles=mesh.faces)
-    walls = places[mesh.edges[mesh.boundary_edges]]
+    walls = plane_places(mesh.reading(mesh.boundary_edges, 1) * (mesh.incidence[1, 0] * vertices)).transpose(1, 0, 2)
     potential_levels = np.linspace(-0.85, 0.85, n_contours + 2)[1:-1]
-    arrow_faces = spaced_faces(centre_xy, 0.88, 0.18)
+    arrow_faces = spaced_faces(centres, 0.88, 0.18)
+    # The arrows at the chosen faces' centres, and how fast the current runs on every face.
+    arrow_places = plane_places(centres.batch()[arrow_faces])                 # [arrows, 2]
+    arrows = plane_places(current.batch()[:, arrow_faces])                    # [cases, arrows, 2]
+    speeds = current.norm().batch().to_array()                                # [cases, faces]
 
     figure, axes = charts.subplots(*disk_row_size, ncols=3)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.04)
@@ -199,9 +205,8 @@ def draw_intrinsic_flow(mesh: core.Mesh, vertices: core.Point, centres: core.Poi
         stream_levels = np.linspace(stream.min() + margin, stream.max() - margin, n_streamlines)
         ax.tricontour(triangulation, stream, levels=stream_levels,
                       colors=flow_colour, linestyles="solid", linewidths=0.85, alpha=0.78, zorder=4)
-        panel_speed = np.quantile(np.linalg.norm(currents[index], axis=-1), 0.92)
-        ax.quiver(centre_xy[arrow_faces, 0], centre_xy[arrow_faces, 1],
-                  currents[index, arrow_faces, 0], currents[index, arrow_faces, 1],
+        panel_speed = np.quantile(speeds[index], 0.92)
+        ax.quiver(arrow_places[:, 0], arrow_places[:, 1], arrows[index, :, 0], arrows[index, :, 1],
                   color=flow_colour, angles="xy", scale_units="xy", scale=7.2 * panel_speed,
                   width=0.0055, headwidth=3.4, headlength=4.2, pivot="mid", zorder=5)
         ax.add_collection(LineCollection(walls, colors=wall_colour, linewidths=1.3, zorder=6))

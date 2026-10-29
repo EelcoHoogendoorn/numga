@@ -19,14 +19,14 @@ rim_width = 0.7
 
 
 # --- plumbing -------------------------------------------------------------------------
-def window(positions: core.Planar) -> tuple[np.ndarray, tuple[float, float, float, float]]:
-    """Pixel-centre coordinates `[rows, columns, 2]` of an image grid, and its extent on the pixels' outer edges."""
+def window(positions: core.Planar) -> tuple[float, float, float, float]:
+    """The extent of an image grid of pixel centres `[rows, columns]`, on the pixels' outer edges."""
     # Positions read by pairing with the planes across x and y, in the positions' own algebra.
     mv = positions.context.multivector
     coordinates = (stack((mv.x, mv.y)) & positions[..., None]).to_array().real
     horizontal, vertical = coordinates[0, :, 0], coordinates[:, 0, 1]
     half_x, half_y = (horizontal[1] - horizontal[0]) / 2, (vertical[1] - vertical[0]) / 2
-    return coordinates, (horizontal[0] - half_x, horizontal[-1] + half_x, vertical[0] - half_y, vertical[-1] + half_y)
+    return horizontal[0] - half_x, horizontal[-1] + half_x, vertical[0] - half_y, vertical[-1] + half_y
 
 
 def panels(n_panels: int, pixels: tuple[int, ...]) -> tuple[plt.Figure, list[plt.Axes]]:
@@ -53,10 +53,11 @@ def draw_stress(
     positions: core.Planar, difference: core.Scalar, hole_radius: float, far_stress: float,
 ) -> plt.Figure:
     """Principal stress difference over the applied stress, on the `[rows, columns]` pixel grid."""
-    coordinates, extent = window(positions)
+    extent = window(positions)
     values = difference.to_array().real / far_stress
-    # The colour scale spans the plate only, not the pixels the hole covers.
-    plate_pixels = np.linalg.norm(coordinates, axis=-1) >= hole_radius
+    # The colour scale spans the plate only, not the pixels the hole covers: those within the hole's radius of its
+    # middle, by the size of their place's square, whichever sign the square has in the algebra.
+    plate_pixels = positions.squared().norm() >= hole_radius**2
 
     figure, (ax,) = panels(1, values.shape)
     plate(ax, values, extent, hole_radius, "cividis", 0, values[plate_pixels].max())
@@ -65,7 +66,7 @@ def draw_stress(
 
 def draw_polariscope(positions: core.Planar, intensities: core.Scalar, hole_radius: float) -> plt.Figure:
     """Transmitted intensities `[views, rows, columns]` side by side, on a shared physical scale."""
-    _, extent = window(positions)
+    extent = window(positions)
     values = intensities.to_array().real
 
     figure, axes = panels(len(values), values.shape[1:])
@@ -78,7 +79,7 @@ def draw_polariscope(positions: core.Planar, intensities: core.Scalar, hole_radi
 def animate_polariscope(positions: core.Planar, frames: Iterable[core.Scalar],
                         hole_radius: float) -> Iterator[np.ndarray]:
     """One polariscope's transmitted intensity, `[rows, columns]` per frame, as the load changes."""
-    _, extent = window(positions)
+    extent = window(positions)
     figure, (ax,) = panels(1, positions.shape)
     image = plate(ax, np.zeros(positions.shape), extent, hole_radius, "gray", 0, 1)
     for intensity in frames:

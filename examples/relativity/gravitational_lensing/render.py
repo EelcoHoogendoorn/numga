@@ -7,9 +7,11 @@ from collections.abc import Callable, Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.collections import LineCollection
 from matplotlib.colors import LinearSegmentedColormap, PowerNorm
 from matplotlib.image import AxesImage
 
+from numga import stack
 from examples.util.animation import capture
 from examples.util.wgsl import pinned, room
 from examples.relativity.gravitational_lensing import core
@@ -29,12 +31,15 @@ MARGIN = 0.1
 # The still's resolution, and the animation's, below it: the blurred source needs no more.
 STILL_DPI = 60
 ANIMATION_DPI = 50
+# The corners of a grid cell, as offsets in rows and columns, that each of its sides runs from and to, around it.
+side_starts = np.array([[0, 0], [0, 1], [1, 1], [1, 0]])
+side_ends = np.roll(side_starts, -1, axis=0)
 
 
 def xy(directions: core.Point) -> np.ndarray:
     """The x and y components of directions, their pairings with the planes x and y."""
     mv = directions.context.multivector
-    return np.stack([(plane & directions).to_array() for plane in (mv.x, mv.y)], axis=-1)
+    return (stack((mv.x, mv.y)) & directions[..., None]).to_array()
 
 
 def pixels(ax: plt.Axes, mv) -> core.Point:
@@ -44,11 +49,35 @@ def pixels(ax: plt.Axes, mv) -> core.Point:
     return (mv.x * angles[None, :] + mv.y * angles[::-1, None]).dual()           # [rows, columns] Point-
 
 
-def critical_curve(ax: plt.Axes, directions: core.Point, area: core.Scalar, colour: str) -> list[core.Point]:
-    """The critical curve, drawn as the zero level of the area ratio; returned as its pieces."""
-    x, y = np.moveaxis(xy(directions), -1, 0)
-    level = ax.contour(x, y, area.to_array(), levels=[0.0], colors=colour, linewidths=0.9)
-    return [directions.context.multivector.vector(piece).dual() for piece in level.allsegs[0]]
+def zero_along(directions: core.Point, area: core.Scalar, rows: np.ndarray, columns: np.ndarray,
+               sides: np.ndarray) -> core.Point:
+    """The direction on each given side of the given cells of the grid where the area ratio, linear along the side,
+    vanishes: the side's two ends weighted by the ratio at the other end."""
+    tails = rows + side_starts[sides, 0], columns + side_starts[sides, 1]
+    heads = rows + side_ends[sides, 0], columns + side_ends[sides, 1]
+    return (area[heads] * directions[tails] - area[tails] * directions[heads]) / (area[heads] - area[tails])
+
+
+def critical_curve(directions: core.Point, area: core.Scalar) -> tuple[core.Point, core.Point]:
+    """The critical curve as straight pieces across the cells of the grid of directions, their two ends: the zeros of
+    the area ratio on the sides of each cell it crosses, joined in pairs."""
+    # The row and column indices of the corners each side of each cell runs from and to, [sides, rows - 1, columns - 1].
+    cells = np.indices(np.array(area.shape) - 1)[:, None]                      # [2, 1, rows - 1, columns - 1]
+    tails = tuple(cells + side_starts.T[..., None, None])
+    heads = tuple(cells + side_ends.T[..., None, None])
+    positive = area > 0
+    crossed = positive[tails] != positive[heads]                               # [sides, rows - 1, columns - 1]
+    # The crossed sides of each cell first, in their order around it. A cell holds one piece where the curve crosses
+    # two of its sides, and two at a saddle, where it crosses all four.
+    order = np.argsort(~crossed, axis=0, kind="stable")                        # [sides, rows - 1, columns - 1]
+    pieces, rows, columns = np.nonzero(crossed.sum(axis=0) > 2 * np.arange(2)[:, None, None])
+    return (zero_along(directions, area, rows, columns, order[2 * pieces, rows, columns]),
+            zero_along(directions, area, rows, columns, order[2 * pieces + 1, rows, columns]))
+
+
+def strokes(ax: plt.Axes, tails: core.Point, heads: core.Point, colour: str) -> None:
+    """Straight pieces from tails to heads."""
+    ax.add_collection(LineCollection(np.stack((xy(tails), xy(heads)), axis=-2), colors=colour, linewidths=0.9))
 
 
 def figure_at(directions: core.Point, area: core.Scalar, lens: Callable[[core.Point], core.Point],
@@ -67,8 +96,9 @@ def figure_at(directions: core.Point, area: core.Scalar, lens: Callable[[core.Po
         image = pinned(ax, light(shown).to_array(), (-HALF, HALF, -HALF, HALF))
         image.set(cmap=BRIGHTNESS, norm=norm)
         images.append(image)
-    for piece in critical_curve(sky_ax, directions, area, CRITICAL):
-        source_ax.plot(*xy(lens(piece)).T, color=CAUSTIC, linewidth=0.9)
+    tails, heads = critical_curve(directions, area)                            # [pieces] Point-, Point-
+    strokes(sky_ax, tails, heads, CRITICAL)
+    strokes(source_ax, lens(tails), lens(heads), CAUSTIC)
     sky_ax.scatter(*xy(positions).T, s=40, facecolors="none", edgecolors="0.65", linewidths=0.8)
     for ax in (source_ax, sky_ax):
         ax.set(xlim=(-HALF, HALF), ylim=(-HALF, HALF))

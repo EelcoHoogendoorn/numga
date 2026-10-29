@@ -10,6 +10,7 @@ from matplotlib.axes import Axes
 from matplotlib.colors import LogNorm
 from matplotlib.contour import ContourSet
 
+from numga import stack
 from examples.util.animation import capture
 from examples.mechanics.tides import core
 
@@ -22,14 +23,19 @@ DENSITY_FLOOR = 1e-4
 
 
 # --- plumbing -------------------------------------------------------------------------
+def coordinates(points: core.Point) -> np.ndarray:
+    """Points in the plane z = 0 `[..., 2]`: their pairings with the planes x and y."""
+    return (stack((core.mv.x, core.mv.y)) & points[..., None]).to_array()
+
+
 def density(ax: Axes, points: core.Point, mass_density: core.Scalar) -> None:
     """The density on a log scale, as an image over the grid's cells."""
-    coordinates = points.cast(core.ga.subspace("yz zx")).kernel
+    places = coordinates(points)                                             # [rows, columns, 2]
     # The grid samples cell centres; the image extends half a cell beyond them.
-    half_cell = (coordinates[1, 1] - coordinates[0, 0]) / 2
-    box = (coordinates[0, 0, 0] - half_cell[0], coordinates[0, -1, 0] + half_cell[0],
-           coordinates[0, 0, 1] - half_cell[1], coordinates[-1, 0, 1] + half_cell[1])
-    values = mass_density.cast(core.ga.subspace.scalar()).kernel[..., 0]
+    half_cell = (places[1, 1] - places[0, 0]) / 2
+    box = (places[0, 0, 0] - half_cell[0], places[0, -1, 0] + half_cell[0],
+           places[0, 0, 1] - half_cell[1], places[-1, 0, 1] + half_cell[1])
+    values = mass_density.to_array()
     ax.imshow(values, extent=box, origin="lower", cmap="Blues", norm=LogNorm(values.max() * DENSITY_FLOOR, values.max()),
               interpolation="bilinear")
     ax.set(xlim=box[:2], ylim=box[2:], xticks=[], yticks=[])
@@ -40,8 +46,8 @@ def rim_at(ax: Axes, centre: core.Point, rim: core.Form, half_size: float) -> Co
     """The rim as the level set of its form, evaluated on a grid of offsets around the centre: its contour, for an
     animation to replace."""
     offsets = core.grid(half_size, half_size, RIM_PIXELS, RIM_PIXELS)
-    level = rim(offsets, offsets).kernel[..., 0]
-    xy = (centre + offsets).cast(core.ga.subspace("yz zx")).kernel
+    level = rim(offsets, offsets).to_array()
+    xy = coordinates(centre + offsets)                                       # [rows, columns, 2]
     return ax.contour(xy[..., 0], xy[..., 1], level, levels=[1.0], colors=[PREDICTION], linewidths=1.4)
 
 
@@ -63,12 +69,12 @@ def animate(points: core.Point, mass_density: core.Scalar,
     # The rim drawn for the frame before, which each frame replaces.
     rims = []
     for stars, centre, rim in states:
-        positions = stars.positions.cast(core.ga.subspace("yz zx")).kernel
+        positions = coordinates(stars.positions)                             # [stars, 2]
         wide.set_offsets(positions)
         close.set_offsets(positions)
-        # Around the cluster, scaled to its extent.
-        middle = centre.cast(core.ga.subspace("yz zx")).kernel
-        half_size = np.abs(positions - middle).max() * ZOOM
+        # Around the cluster, scaled to its extent: the stars' largest offset from the centre across or up.
+        middle = coordinates(centre)                                         # [2]
+        half_size = np.abs(coordinates(stars.positions - centre)).max() * ZOOM
         while rims:
             rims.pop().remove()
         rims.append(rim_at(near, centre, rim, half_size))

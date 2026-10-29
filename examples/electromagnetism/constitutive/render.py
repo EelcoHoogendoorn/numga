@@ -19,7 +19,10 @@ from examples.util.wgsl import fitted, show, solids, strokes
 from examples.util.wgsl.scene import Scene
 
 Modes = tuple[np.ndarray, core.Bivector]
-sm = solids.mv
+mv, sm = core.mv, solids.mv
+# The planes across the drawing's axes, and the direction of the waves' travel along the first, z.
+drawing_planes = stack((mv.z, mv.x, mv.y))                                      # [3] Vector+
+travel = mv.z.dual()                                                            # [] Antivector-
 electric_colour, magnetic_colour = np.array(to_rgb("crimson")), np.array(to_rgb("dodgerblue"))
 axis_colour = np.full(3, 0.5)
 # How much of what lies behind it each surface of the axis hides, its near side and its far side.
@@ -52,6 +55,7 @@ arc_start, arc_span, arc_head = np.radians(30.0), np.radians(240.0), np.radians(
 n_arc = 16
 
 
+# --- plumbing -------------------------------------------------------------------------
 def _zero_axes(ax: plt.Axes, across: str, up: str) -> None:
     """Axes of a quantity without tick marks or numbers: the quantity from its zero, the axis across at that zero,
     both named by what runs along them."""
@@ -72,61 +76,74 @@ def _cross(ax: plt.Axes, across: str, up: str) -> None:
     ax.set_axis_off()
 
 
-def field_readings(modes: Modes, taus: np.ndarray, distance: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """The electric field an observer at rest reads, as arrows, and the magnetic field, as its weights on the planes
-    of space across each axis, at each distance along z and each time `[..., samples, 3]`, for times `[...]`: in the
-    drawing's frame, the wave's z across it, x into it and y up, each mode's electric field of unit length."""
-    speeds, fields = modes
-    mv = fields.context.multivector
-    time = -mv.t.dual()                                                         # [] Antivector-
-    # The drawing's axes, a cyclic order of the axes, so turned, not mirrored; and the patch of the plane of space
-    # across each.
-    axes = stack((mv.z, mv.x, mv.y)).dual()                                     # [3] Antivector-
+def gpu_points(points: core.Antivector) -> solids.Point:
+    """The renderer's points at places in the observer's space, `[...] Antivector-`, read by pairing with the planes
+    across the drawing's axes: a cyclic order of the axes of space, so turned, not mirrored, with the wave's z across
+    the picture, x into it and y up."""
+    return sm.point((drawing_planes & points[..., None]).to_array())
+
+
+def gpu_arrows(fields: core.Bivector) -> solids.Point:
+    """The renderer's directions of the electric fields an observer at rest reads, `[...] Bivector+`: each field read
+    through the planes the drawing's axes sweep in time."""
+    return sm.direction((fields[..., None] & (drawing_planes.dual() & core.time)).to_array())
+
+
+def gpu_planes(fields: core.Bivector) -> solids.Plane:
+    """The renderer's planes through the origin that hold the magnetic fields, `[...] Bivector+`: each field's reading
+    on the patch of the plane of space across each drawing axis weights the renderer's plane across that axis."""
     patches = stack((mv.xy, mv.yz, mv.zx)).dual()                               # [3] Antibivector-
-    electric = (fields[:, None] & (axes & time)).to_array()                     # [modes, 3]
-    magnetic = (fields[:, None] & patches).to_array()                           # [modes, 3]
-    lengths = np.linalg.norm(electric, axis=-1, keepdims=True)                  # [modes, 1]
-    wave = np.cos(omega * (distance[:, None] / speeds - taus[..., None, None]))  # [..., samples, modes]
-    return wave @ (electric / lengths), wave @ (magnetic / lengths)
+    return (solids.axes * (fields[..., None] & patches).to_array()).sum(axis=-1)
+
+
+def waves(modes: Modes, taus: np.ndarray, distance: np.ndarray) -> core.Bivector:
+    """The field of the modes' travelling waves at each distance along z and each time, `[..., samples] Bivector+`,
+    for times `[...]`, each mode's electric field of unit strength."""
+    speeds, fields = modes
+    # Each mode scaled to unit strength of the electric field an observer at rest reads, the field met with its time.
+    units = fields / (fields & core.time).norm()                                # [modes] Bivector+
+    phases = np.cos(omega * (distance[:, None] / speeds - taus[..., None, None]))  # [..., samples, modes]
+    return (units * phases).sum(axis=-1)
 
 
 def wave_scene(ax: plt.Axes, modes: Modes) -> Scene:
     """The axis, seen by a camera that frames every time of a period alike, as many pixels across as the axes' room
     holds, for the fields at any time to be drawn along it."""
     distance = np.linspace(0, z_max, n_samples)
-    axis = distance[:, None] * np.eye(3)[0]                                     # [samples, 3]
-    reached, _ = field_readings(modes, np.linspace(0, 2 * np.pi / omega, n_framing, endpoint=False), distance)
-    view = fitted(solids.view([sm.point(axis + arrows) for arrows in reached], 0.0, elevation, azimuth, margin, 1), ax)
+    axis = gpu_points(travel * distance)                                        # [samples] Point-
+    taus = np.linspace(0, 2 * np.pi / omega, n_framing, endpoint=False)
+    framed = waves(modes, taus, distance)                                       # [framing, samples] Bivector+
+    view = fitted(solids.view([axis + arrows for arrows in gpu_arrows(framed)], 0.0, elevation, azimuth, margin, 1), ax)
     radius = axis_width / 2 * view.pixel
-    line = solids.rods(sm.point(axis[0]), sm.point(axis[-1]), radius)[None]   # [1, 3] Plane+ <- Point-
+    line = solids.rods(axis[0], axis[-1], radius)[None]                         # [1, 3] Plane+ <- Point-
     return Scene(view, np.ones(3), [], [], inks=[], translucent=[(line, axis_colour, axis_opacity)])
 
 
-def magnetic_discs(stations: np.ndarray, weights: np.ndarray,
+def magnetic_discs(stations: solids.Point, fields: core.Bivector,
                    radius: float) -> tuple[solids.Quadric, solids.Point, solids.Quadric, solids.Quadric]:
-    """The magnetic field at stations `[stations, 3]`, from its weights on the planes across the drawing's axes
-    `[stations, 3]`, as a flat disc in its own plane, its area growing with the field's strength, `[stations, 1]`;
-    and the sense it turns in, as an arc around the rim `[stations, arc]` ending in an arrow along the rim, its shaft
-    of a radius and its head nearly all of it `[stations, 3]` each."""
-    strengths = np.linalg.norm(weights, axis=-1)                                # [stations]
-    radii = disc_scale * np.sqrt(strengths)                                     # [stations]
-    # The plane of the drawing the field lies in, through the origin: the planes across the drawing's axes, each
-    # weighted by the field's reading on the patch of that plane of space.
-    planes = (solids.axes * (weights / strengths[:, None])).sum(axis=-1)        # [stations] Plane+
-    centres = solids.translator(sm.point(stations) - solids.origin)            # [stations] Motor+
+    """The magnetic fields `[stations] Bivector+` at stations `[stations] Point-`, each as a flat disc in its own
+    plane, its area growing with the field's strength, `[stations, 1]`; and the sense it turns in, as an arc around
+    the rim `[stations, arc]` ending in an arrow along the rim, its shaft of a radius and its head nearly all of it
+    `[stations]` each."""
+    # The plane of the drawing the field lies in, through the origin, its size the field's strength.
+    planes = gpu_planes(fields)                                                 # [stations] Plane+
+    radii = disc_scale * planes.norm().square_root()                            # [stations] Scalar+
+    centres = solids.translator(stations - solids.origin)                       # [stations] Motor+
     # A ball flattened across each plane, scaled by its radius squared, so that a field of no strength is a point.
-    flattening = (1 / disc_flatness**2 - 1) * planes * (planes & solids.Point)  # [stations] Plane+ <- Point-
+    unit_planes = planes.normalized()                                           # [stations] Plane+
+    flattening = (1 / disc_flatness**2 - 1) * unit_planes * (unit_planes & solids.Point)   # [stations] Plane+ <- Point-
     rounded = (solids.axes * (solids.axes & solids.Point)).sum(axis=-1)          # [] Plane+ <- Point-
     lenses = rounded + flattening - radii**2 * sm.w * (sm.w & solids.Point)     # [stations] Plane+ <- Point-
     # The line through the origin square to each plane, about which its rim turns in the field's sense.
-    pivots = (solids.origin & solids.normal_direction(planes)) * solids.flip    # [stations] Line+
+    pivots = (solids.origin & solids.normal_direction(unit_planes)) * solids.flip   # [stations] Line+
     angles = arc_start + np.append(np.linspace(0, arc_span, n_arc), arc_span + arc_head)   # [arc + 1]
     turns = (pivots[:, None] * (-angles / 2)).exp()                             # [stations, arc + 1] Motor+
     # Each arc from where the plane holds the direction of travel, as every magnetic plane of the wave does.
-    rim_starts = sm.point(arc_reach * radii[:, None] * np.eye(3)[0])            # [stations] Point-
+    heading = gpu_points(travel) - solids.origin                                 # [] Direction-
+    rim_starts = solids.origin + heading * (arc_reach * radii)                  # [stations] Point-
     rims = (centres[:, None] * turns) >> rim_starts[:, None]                    # [stations, arc + 1] Point-
     # The head spans the chord from the arc's end to the last point, so it shrinks with the disc.
-    chords = 2 * arc_reach * radii * np.sin(arc_head / 2)                       # [stations]
+    chords = (rims[:, -2] & rims[:, -1]).norm().to_array()                      # [stations]
     shafts, heads = solids.arrows(rims[:, -2], rims[:, -1], radius, 0.95 * chords, head_spread * chords)
     return solids.placed(lenses, centres)[:, None], rims[:, :-1], shafts, heads
 
@@ -137,20 +154,20 @@ def wave_image(scene: Scene, modes: Modes, tau: float) -> np.ndarray:
     own plane, with an arc around its rim for the sense it turns in."""
     view = scene.view
     distance = np.linspace(0, z_max, n_samples)
-    axis = distance[:, None] * np.eye(3)[0]                                     # [samples, 3]
-    electric, magnetic = field_readings(modes, np.array(tau), distance)
+    axis = gpu_points(travel * distance)                                        # [samples] Point-
+    field = waves(modes, np.array(tau), distance)                               # [samples] Bivector+
+    electric = gpu_arrows(field)                                                # [samples] Direction-
 
     # Arrows from the axis at evenly spaced stations, their heads a share of their length, so weak fields stay slender.
     station_idx = np.linspace(0, n_samples - 1, n_stations, dtype=int)
-    stations = axis[station_idx]
-    tips = electric[station_idx]
-    head_lengths = head_share * np.linalg.norm(tips, axis=-1)
-    shafts, heads = solids.arrows(sm.point(stations), sm.point(stations + tips), arrow_width / 2 * view.pixel,
+    stations = axis[station_idx]                                                # [stations] Point-
+    head_lengths = head_share * (field[station_idx] & core.time).norm().to_array()
+    shafts, heads = solids.arrows(stations, stations + electric[station_idx], arrow_width / 2 * view.pixel,
                                   head_lengths, head_spread * head_lengths)
-    discs, arcs, turning_shafts, turning_heads = magnetic_discs(stations[::2], magnetic[station_idx[::2]],
+    discs, arcs, turning_shafts, turning_heads = magnetic_discs(stations[::2], field[station_idx[::2]],
                                                                 arrow_width / 2 * view.pixel)
 
-    curves = strokes.polylines([(sm.point(axis + electric), electric_colour)]
+    curves = strokes.polylines([(axis + electric, electric_colour)]
                                + [(arc, magnetic_colour) for arc in arcs], curve_width, view)
     parts = [(shafts, electric_colour), (heads, electric_colour), (turning_shafts, magnetic_colour),
              (turning_heads, magnetic_colour)]
@@ -213,11 +230,10 @@ def draw_polarizations(
     """Draw the electric field of the slow and the fast mode of the birefringent crystal as arrows in the xy plane,
     each of unit length."""
     _, fields = modes
-    mv = fields.context.multivector
-    # The field read through the planes x and y sweep in time.
-    readers = stack((mv.x, mv.y)).dual() & -mv.t.dual()                        # [2] Antibivector-
-    electric = (fields[:, None] & readers).to_array()                           # [modes, 2]
-    arrows = electric / np.linalg.norm(electric, axis=-1, keepdims=True)        # [modes, 2]
+    # Each mode's field at unit strength of its electric field, read through the planes x and y sweep in time.
+    units = fields / (fields & core.time).norm()                                # [modes] Bivector+
+    readers = stack((mv.x, mv.y)).dual() & core.time                            # [2] Antibivector-
+    arrows = (units[:, None] & readers).to_array()                              # [modes, 2]
     colors = ("crimson", "dodgerblue")
     ax.quiver(np.zeros(len(arrows)), np.zeros(len(arrows)), *arrows.T,
               angles="xy", scale_units="xy", scale=1, color=colors, width=0.015)

@@ -29,38 +29,35 @@ SPIN_LENGTH = 0.4
 PATH_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 1.5, 1.5, 9.0, 5.0
 
 
-def spatial(directions: core.Antivector) -> np.ndarray:
-    """Directions as the observer sees them: read by pairing with the slices x, y and z, on the last axis."""
-    mv = directions.context.multivector
-    return (stack((mv.x, mv.y, mv.z)) & directions[..., None]).to_array()
+def gpu_points(points: core.Antivector) -> solids.Point:
+    """The GPU library's points at the places of the example's: as the observer sees them, read by pairing with the
+    slices x, y and z, the one hand-off from spacetime to the renderer's space."""
+    mv = points.context.multivector
+    return sm.point((stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array())
+
+
+def spin_arrow(psi: core.Spinor) -> core.Antivector:
+    """The spin's axis as the observer sees it, drawn as an arrow of the given length: the line where the spin's
+    patch crosses the observer's slice of space, at unit length, which a direction within the slice squares to."""
+    axis = core.spin(psi) ^ core.mv.t                                           # [...] Antivector-
+    return SPIN_LENGTH * axis / axis.squared().square_root()                    # [...] Antivector-
 
 
 def framing(ax, spinors: list, paths: list) -> solids.View:
     """One view for every frame, framing the whole of each path and every spin arrow along it, as many pixels across
     as the axes' room holds."""
-    ends = [spatial(trace) + SPIN_LENGTH * unit(spatial(axis(psi))) for psi, trace in zip(spinors, paths)]
-    return fitted(solids.view([sm.point(spatial(trace)) for trace in paths] + [sm.point(tips) for tips in ends], 0.0,
-                              ELEVATION, AZIMUTH, MARGIN, 1), ax)
-
-
-def axis(psi: core.Spinor) -> core.Antivector:
-    """The spin's axis as the observer sees it, drawn as an arrow: the line where the spin's patch crosses the
-    observer's slice of space."""
-    return core.spin(psi) ^ core.mv.t
-
-
-def unit(directions: np.ndarray) -> np.ndarray:
-    return directions / np.linalg.norm(directions, axis=-1, keepdims=True)
+    tips = [trace + spin_arrow(psi) for psi, trace in zip(spinors, paths)]      # [mixtures] Antivector-[times]
+    return fitted(solids.view([gpu_points(trace) for trace in [*paths, *tips]], 0.0, ELEVATION, AZIMUTH, MARGIN, 1), ax)
 
 
 def picture(spinors: list, paths: list, upto: int, view: solids.View) -> np.ndarray:
     """The paths traced up to a time, each with its spin as an arrow at its end, `[rows, columns, 3]`."""
     rgb = np.array([to_rgb(colour) for colour in colours[: len(paths)]])
-    traced = [spatial(trace)[:upto] for trace in paths]                         # [times, 3] each
-    here = np.stack([xyz[-1] for xyz in traced])                                # [mixtures, 3]
-    spins = unit(np.stack([spatial(axis(psi[upto - 1])) for psi in spinors]))   # [mixtures, 3]
-    lines = strokes.polylines([(sm.point(xyz), colour) for xyz, colour in zip(traced, rgb)], PATH_WIDTH, view)
-    shafts, heads = solids.arrows(sm.point(here), sm.point(here + SPIN_LENGTH * spins), ARROW_WIDTH / 2 * view.pixel,
+    here = stack([trace[upto - 1] for trace in paths])                          # [mixtures] Antivector-
+    tips = here + spin_arrow(stack([psi[upto - 1] for psi in spinors]))         # [mixtures] Antivector-
+    lines = strokes.polylines([(gpu_points(trace[:upto]), colour) for trace, colour in zip(paths, rgb)], PATH_WIDTH,
+                              view)
+    shafts, heads = solids.arrows(gpu_points(here), gpu_points(tips), ARROW_WIDTH / 2 * view.pixel,
                                   HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
     return solids.draw([(shafts, rgb), (heads, rgb)], view, BACKGROUND, inks=[], translucent=[], meshes=[(lines, 1.0)])
 

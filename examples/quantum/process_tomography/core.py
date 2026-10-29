@@ -20,8 +20,11 @@ import numpy as np
 
 from numga import NumpyContext
 from numga.algebras import PGA3D as ga
+from examples import instantiate
 
 mv = NumpyContext(ga).multivector
+# Meshes over the algebra's points, such as the tetrahedron the four preparations span.
+Mesh = instantiate("examples.util.mesh", ga).Mesh
 Scalar = ga.gatype.scalar()                                                  # Scalar+
 Bivector = ga.gatype.bivector()                                              # Bivector+
 # A state is a point of the Bloch ball, of weight one; an effect is a plane, which reads states.

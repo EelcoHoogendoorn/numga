@@ -11,6 +11,7 @@ from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.patches import Circle
 
 from numga import stack
 from matplotlib.colors import to_rgb
@@ -54,34 +55,34 @@ head_share = 0.28
 head_width = 0.4
 
 
-def coordinates(points: core.Point) -> np.ndarray:
-    """The x, y and z coordinates of points: their pairings with the planes x, y and z."""
-    return (stack((core.mv.x, core.mv.y, core.mv.z)) & points[..., None]).to_array()
+def gpu_points(points: core.Point) -> solids.Point:
+    """The GPU library's own points at the places of the cube's: their coordinates, read by pairing with the planes
+    x, y and z, are the one hand-off from this algebra to the renderer's."""
+    return solids.mv.point((stack((core.mv.x, core.mv.y, core.mv.z)) & points[..., None]).to_array())
 
 
 def view(corners: core.Point, centres: core.Point, normal: core.Point, shear: core.Point,
          principal: core.Point, room: float) -> solids.View:
     """A view framing every cube, arrow and principal direction given, with `room` to spare around each."""
-    centres = coordinates(centres)
-    points = [coordinates(core.corners), coordinates(corners), centres + coordinates(normal) * NORMAL_SCALE,
-              centres + coordinates(shear) * SHEAR_SCALE, REACH * coordinates(principal)]
-    return solids.view([solids.mv.point(batch) for batch in points], room, elevation, azimuth, margin, 1)
+    points = [core.corners, corners, centres + normal * NORMAL_SCALE, centres + shear * SHEAR_SCALE,
+              REACH * principal]
+    return solids.view([gpu_points(batch) for batch in points], room, elevation, azimuth, margin, 1)
 
 
-def arrows(starts: np.ndarray, offsets: np.ndarray, pixel: float,
+def arrows(starts: core.Point, offsets: core.Point, pixel: float,
            thickness: float) -> tuple[solids.Quadric, solids.Quadric]:
-    """Arrows from points along offsets `[arrows, 3]`, their heads in proportion to them, their shafts' radius a
-    share `thickness` of the one set above; those shorter than a pixel, a traction that vanishes, left out."""
-    lengths = np.linalg.norm(offsets, axis=-1)
+    """Arrows from points along offsets `[arrows]`, their heads in proportion to them, their shafts' radius a share
+    `thickness` of the one set above; those shorter than a pixel, a traction that vanishes, left out."""
+    lengths = offsets.norm()                                                   # [arrows] Scalar+
     shown = lengths > pixel
-    return solids.arrows(solids.mv.point(starts[shown]), solids.mv.point(starts[shown] + offsets[shown]),
-                         thickness * shaft_radius * pixel, head_share * lengths[shown],
-                         head_width * head_share * lengths[shown])
+    heads = head_share * lengths[shown].to_array()
+    return solids.arrows(gpu_points(starts[shown]), gpu_points(starts[shown] + offsets[shown]),
+                         thickness * shaft_radius * pixel, heads, head_width * heads)
 
 
 def ghost(view: solids.View, thickness: float) -> list[tuple[solids.Quadric, np.ndarray]]:
     """The undeformed cube, a ghost of thin pale rods, their radius a share `thickness` of the one set above."""
-    corners = solids.mv.point(coordinates(core.corners))                      # [8] Point-
+    corners = gpu_points(core.corners)                                         # [8] Point-
     edges, joints = solids.edges(corners[EDGES[:, 0]], corners[EDGES[:, 1]], thickness * ghost_radius * view.pixel)
     return [(edges, ghost_tint), (joints, ghost_tint)]
 
@@ -92,14 +93,13 @@ def cube(corners: core.Point, centres: core.Point, normal: core.Point, shear: co
     """The deformed cube seen from one frame, its edges solid and its faces translucent, the normal traction on each
     face in blue and the shear in red, and the principal directions in green; the radii a share `thickness` of those
     set above."""
-    places = solids.mv.point(coordinates(corners))                             # [8] Point-
-    centres = coordinates(centres)                                             # [6, 3]
-    directions = REACH * coordinates(principal)                                # [3, 3]
-    normal_shafts, normal_heads = arrows(centres, coordinates(normal) * NORMAL_SCALE, view.pixel, thickness)
-    shear_shafts, shear_heads = arrows(centres, coordinates(shear) * SHEAR_SCALE, view.pixel, thickness)
+    places = gpu_points(corners)                                               # [8] Point-
+    directions = REACH * principal                                             # [3] Point-
+    normal_shafts, normal_heads = arrows(centres, normal * NORMAL_SCALE, view.pixel, thickness)
+    shear_shafts, shear_heads = arrows(centres, shear * SHEAR_SCALE, view.pixel, thickness)
     edges, joints = solids.edges(places[EDGES[:, 0]], places[EDGES[:, 1]], thickness * edge_radius * view.pixel)
     # Each principal direction a rod through the centre, both ways.
-    principal_rods = solids.rods(solids.mv.point(-directions), solids.mv.point(directions),
+    principal_rods = solids.rods(gpu_points(-directions), gpu_points(directions),
                                  thickness * principal_radius * view.pixel)
     parts = [(edges, edge_colour), (joints, edge_colour), (normal_shafts, normal_colour), (normal_heads, normal_colour),
              (shear_shafts, shear_colour), (shear_heads, shear_colour), (principal_rods, principal_tint)]
@@ -118,12 +118,11 @@ def draw_cube(corners: core.Point, centres: core.Point, normal: core.Point, shea
 def draw_circles(ax, values: core.Scalar) -> None:
     """Mohr's circles of the principal stresses, on axes framing the largest."""
     stresses = np.sort(values.to_array())
-    angle = np.linspace(0, 2 * np.pi, 200)
     for low, high, style in [(0, 2, "-"), (0, 1, ":"), (1, 2, ":")]:
         centre, radius = (stresses[low] + stresses[high]) / 2, (stresses[high] - stresses[low]) / 2
         # The outer circle at a chart's line width, the inner two as thin as its frame.
-        ax.plot(centre + radius * np.cos(angle), radius * np.sin(angle), color="#1e293b" if style == "-" else "#94a3b8",
-                linestyle=style, linewidth=charts.LINE_WIDTH if style == "-" else charts.FRAME_WIDTH)
+        ax.add_patch(Circle((centre, 0), radius, fill=False, edgecolor="#1e293b" if style == "-" else "#94a3b8",
+                            linestyle=style, linewidth=charts.LINE_WIDTH if style == "-" else charts.FRAME_WIDTH))
     ax.scatter(stresses, np.zeros(3), color="#1e293b", zorder=3)
     # The outer two outside the circle that passes through them, the middle one below its dot.
     for stress, name, shift, align in zip(stresses, ["$\\sigma_1$", "$\\sigma_2$", "$\\sigma_3$"], (-5, 0, 5),
@@ -145,10 +144,14 @@ def draw_circles(ax, values: core.Scalar) -> None:
     ax.set_aspect("equal")
 
 
-def diameter(normal: np.ndarray, shear: np.ndarray) -> np.ndarray:
-    """The ends of a frame's diameter, from the normal and shear traction on its faces `[6, 3]`: the face facing x,
-    its normal traction along x and its shear along y, and the face facing y, with the opposite shear, `[2, 2]`."""
-    return np.array([(normal[0, 0], shear[0, 1]), (normal[1, 1], -shear[0, 1])])
+def diameter(normal: core.Point, shear: core.Point) -> np.ndarray:
+    """The ends of a frame's diameter, from the normal and shear traction on its faces `[6]`, read by pairing: the
+    face facing x, its normal traction along x and its shear along y, and the face facing y, with the opposite shear,
+    `[2, 2]`."""
+    x, y, _ = core.axes
+    along_x, along_y, sliding = ((x & normal[0]).to_array(), (y & normal[1]).to_array(),
+                                 (y & shear[0]).to_array())
+    return np.array([(along_x, sliding), (along_y, -sliding)])
 
 
 def draw_diameter(ax, ends: np.ndarray, colour: str) -> tuple:
@@ -164,8 +167,7 @@ def draw_mohr(ax, values: core.Scalar, normal: core.Point, shear: core.Point) ->
     """Mohr's circles of the principal stresses, and for each frame `[frames]` the diameter joining the
     normal and shear traction on the faces facing x, filled, and y, open, in the frame's colour."""
     draw_circles(ax, values)
-    normal, shear = coordinates(normal), coordinates(shear)                  # [frames, 6, 3]
-    for frame, colour in zip(range(len(normal)), COLOURS * len(normal)):
+    for frame, colour in zip(range(normal.shape[0]), COLOURS * normal.shape[0]):
         draw_diameter(ax, diameter(normal[frame], shear[frame]), colour)
 
 
@@ -209,7 +211,7 @@ def animate_turning(values: core.Scalar, frames: Iterable[tuple[core.Point, core
     for corners, centres, normal, shear, principal in chain([first], frames):
         parts, translucent = cube(corners, centres, normal, shear, principal, seen, turning_thickness)
         picture.set_data(scene.draw(parts, inks=[], translucent=translucent, meshes=[]))
-        ends = diameter(coordinates(normal), coordinates(shear))
+        ends = diameter(normal, shear)
         line.set_data(*ends.T)
         filled.set_offsets(ends[:1])
         hollow.set_offsets(ends[1:])

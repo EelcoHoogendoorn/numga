@@ -22,11 +22,11 @@ FAINT, FULL = 0.25, 0.5
 PATH_COLOUR = "0.1"
 NORMAL_COLOUR = "0.15"
 EDGE_COLOUR = "0.3"
-# The corners of the standard triangle, the samples of its edges, and the window that frames it.
-CORNERS = np.array([[0, 0, 1], [0, 1, 1], [1, 1, 1]])
+# The corners of the standard triangle and their names.
 NAMES = ("[001]", "[011]", "[111]")
+corners = core.mv.vector([[0, 0, 1], [0, 1, 1], [1, 1, 1]]).normalized().dual()   # [corners] Direction-
 # The directions a pull's axis heads for: the leading slip direction, and the corner where two systems share.
-GOALS = np.array([[1, 0, 1], [1, 1, 2]])
+goals = core.mv.vector([[1, 0, 1], [1, 1, 2]]).normalized().dual()              # [goals] Direction-
 GOAL_NAMES = ("[101]", "[112]")
 # How much darker than its systems' colours a path is drawn.
 PATH_SHADE = 0.55
@@ -46,22 +46,14 @@ def scalars(values: core.Scalar) -> np.ndarray:
     return values.to_array()
 
 
-def coordinates(directions: core.Direction) -> np.ndarray:
-    """x, y and z of each direction, on the last axis: its pairings with the planes x, y and z."""
-    return (stack((core.mv.x, core.mv.y, core.mv.z)) & directions[..., None]).to_array()
-
-
-def normals(planes: core.Plane) -> np.ndarray:
-    """x, y and z of each plane's normal, on the last axis: its pairings with the directions x, y and z."""
-    return (planes[..., None] & stack((core.mv.x, core.mv.y, core.mv.z)).dual()).to_array()
-
-
-def projected(xyz: np.ndarray) -> np.ndarray:
-    """Directions on the stereographic disk of the upper half of the sphere: a direction and its opposite are
-    the same pull, so each is taken on its upper side."""
-    unit = xyz / np.linalg.norm(xyz, axis=-1, keepdims=True)
-    upper = unit * np.where(unit[..., 2:] < 0, -1, 1)
-    return upper[..., :2] / (1 + upper[..., 2:])
+def projected(directions: core.Direction) -> np.ndarray:
+    """Directions on the stereographic disk of the upper half of the sphere `[..., 2]`: a direction and its opposite
+    are the same pull, so each is taken on its upper side; its bisector with [001], read across [001] at unit
+    reading along it, is the point of the plane across [001] that `lifted` lifts to it."""
+    unit = directions.normalized()                                            # [...] Direction-
+    upper = unit * np.where((core.mv.z & unit) < 0, -1, 1)                    # [...] Direction-
+    bisector = core.mv.z.dual() + upper                                       # [...] Direction-
+    return ((stack((core.mv.x, core.mv.y)) & bisector[..., None]) / (core.mv.z & bisector)[..., None]).to_array()
 
 
 def lifted(window: tuple[float, float], pixels: int) -> core.Direction:
@@ -96,9 +88,11 @@ def picture(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], wind
 
 def draw_triangle(ax: plt.Axes) -> None:
     """The standard triangle, between [001], [011] and [111], its edges arcs of great circles."""
-    share = np.linspace(0, 1, EDGE_SAMPLES)[:, None]
-    for start, end in zip(CORNERS, CORNERS[[1, 2, 0]]):
-        ax.plot(*projected(start * (1 - share) + end * share).T, color=EDGE_COLOUR)
+    shares = np.linspace(0, 1, EDGE_SAMPLES)
+    # Each edge from a corner towards the next, by shares of the turn between them.
+    turns = ((corners[[1, 2, 0]] * corners.inverse()).log()[:, None] * (shares / 2)).exp()   # [edges, samples] Rotor+
+    for arc in projected(turns >> corners[:, None]):
+        ax.plot(*arc.T, color=EDGE_COLOUR)
 
 
 def draw_disk(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], planes: core.Plane,
@@ -108,9 +102,10 @@ def draw_disk(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], pl
     image = picture(ax, factors, DISK)
     image.set_clip_path(ax.add_patch(plt.Circle((0, 0), 1, fill=False, color=EDGE_COLOUR)))
     # The planes' normals a little larger than the directions, so that the two kinds of mark read apart.
-    ax.scatter(*projected(normals(planes)).T, marker="^", s=charts.points(1.5 * charts.MARKER_PX) ** 2,
+    # A plane's normal, the direction square to it, is its dual.
+    ax.scatter(*projected(planes.dual()).T, marker="^", s=charts.points(1.5 * charts.MARKER_PX) ** 2,
                color=NORMAL_COLOUR, zorder=3)
-    ax.scatter(*projected(coordinates(slips).reshape(-1, 3)).T, marker="o", color=NORMAL_COLOUR, zorder=3)
+    ax.scatter(*projected(slips.reshape(-1)).T, marker="o", color=NORMAL_COLOUR, zorder=3)
     draw_triangle(ax)
     ax.set(xlim=DISK, ylim=DISK)
 
@@ -119,10 +114,10 @@ def draw_close(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar]) -
     """The standard triangle close up, in the colours of its systems, with the directions the axes head for."""
     picture(ax, factors, WINDOW)
     draw_triangle(ax)
-    for corner, name, lift in zip(projected(CORNERS), NAMES, LIFTS):
+    for corner, name, lift in zip(projected(corners), NAMES, LIFTS):
         ax.annotate(name, corner, xytext=(0, lift), textcoords="offset points", ha="center", va="center",
                     color=EDGE_COLOUR)
-    for goal, name in zip(projected(GOALS), GOAL_NAMES):
+    for goal, name in zip(projected(goals), GOAL_NAMES):
         ax.scatter(*goal, marker="D", color=EDGE_COLOUR, zorder=3)
         ax.annotate(name, goal, xytext=(0, 9), textcoords="offset points", ha="center", va="center",
                     color=EDGE_COLOUR)
@@ -133,7 +128,7 @@ def steps(axes: core.Direction, amounts: core.Scalar) -> tuple[np.ndarray, np.nd
     """Each pull's axis's places on the disk `[steps + 1, starts, 2]`, the steps between them
     `[starts, steps, ends, 2]`, and each step's colour `[starts, steps, 3]`: the colours of the systems that slipped
     in it, mixed by how much, darkened."""
-    tracks = projected(coordinates(axes))                                     # [steps + 1, starts, 2]
+    tracks = projected(axes)                                                  # [steps + 1, starts, 2]
     weights = np.abs(scalars(amounts)).reshape(amounts.shape[:2] + (-1,))      # [steps, starts, systems]
     mixed = weights @ system_colours(weights.shape[-1]) / weights.sum(axis=-1, keepdims=True)   # [steps, starts, 3]
     segments = np.stack([tracks[:-1], tracks[1:]], axis=2)                    # [steps, starts, ends, 2]

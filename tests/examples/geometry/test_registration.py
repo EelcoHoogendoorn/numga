@@ -4,11 +4,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
+from numga import stack
 from examples.geometry.registration import render, scenarios
-from examples.geometry.registration.render import coordinates
 
 
 SPREAD = scenarios.CLOUD_SPREAD
+
+
+def coordinates(points) -> np.ndarray:
+    """Coordinates of normalized points along the planes x, y and z."""
+    mv = points.context.multivector
+    return (stack((mv.x, mv.y, mv.z)) & points.normalized()[..., None]).to_array()
 
 
 @pytest.mark.parametrize("core", scenarios.SCENES.values(), ids=scenarios.SCENES.keys())

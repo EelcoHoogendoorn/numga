@@ -6,10 +6,15 @@ from itertools import islice
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
 from examples.geometry.scenegraph import core, render, scenarios
-from examples.geometry.scenegraph.render import euclidean
 
 mv = core.mv
+
+
+def euclidean(points: core.Point) -> np.ndarray:
+    """The Euclidean coordinates of points are their pairings with the coordinate planes divided by their weights."""
+    return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
 def test_anisotropic_scale_extensor():

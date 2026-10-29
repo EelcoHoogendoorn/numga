@@ -21,25 +21,29 @@ gap = 6
 # The colours of a shader's tiles, and the width of their sides, as a share of a point's pairings with the three
 # mirrors, and their darkness, as the shader's constants.
 tiling_colours = dict(even=even, odd=odd, line=line, background=background, side_width=0.02, side_strength=0.5)
-# Beads tumbling in the kaleidoscope, scattered over the disk: centre radius, angle, speed and size of
-# each, and its colour, drawn from a short palette.
+# Beads tumbling in the kaleidoscope, scattered over the disk: the distance of each centre from the middle, its
+# angle, speed and size, and its colour, drawn from a short palette.
 n_beads = 40
 _sampler = np.random.default_rng(7)
-beads = np.stack([
-    np.sqrt(_sampler.uniform(0.0, 1.0, n_beads)), _sampler.uniform(0.0, 2 * np.pi, n_beads),
-    _sampler.choice([-2, -1, 1, 2], n_beads), _sampler.uniform(0.04, 0.13, n_beads),
-], axis=-1)
+bead_distances = np.sqrt(_sampler.uniform(0.0, 1.0, n_beads))
+bead_angles = _sampler.uniform(0.0, 2 * np.pi, n_beads)
+bead_speeds = _sampler.choice([-2, -1, 1, 2], n_beads)
+bead_sizes = _sampler.uniform(0.04, 0.13, n_beads)
 palette = np.array([
     [0.91, 0.30, 0.24], [0.98, 0.77, 0.19], [0.18, 0.62, 0.48], [0.56, 0.27, 0.68],
     [0.20, 0.47, 0.85], [0.95, 0.55, 0.65], [0.99, 0.97, 0.90],
 ])
 bead_colours = palette[np.arange(n_beads) % len(palette)]
+# The lamp lighting the sphere from the viewer's upper left, as the gradient of its light over the sphere's points.
+lamp = np.array([-0.4, 0.5, 0.77])
 # The 600-cell: its vertices' colour; its edges' width and its vertices' radius in pixels; the pixels across its
-# picture, half the picture's width about the middle, in the projected space, and the tilt of the view.
+# picture, half the picture's width about the middle, in the projected space, and the tilt of the view; the eye on
+# the scalar axis, beyond the three-sphere, that the spinors are seen from.
 vertex_colour = odd
 edge_width, vertex_radius = 0.8, 1.6
 n_pixels, half_width = 300, 0.6
 tilt = 0.45
+eye_distance = 2.4
 
 
 def disk(resolution: int) -> tuple[np.ndarray, np.ndarray]:
@@ -64,14 +68,12 @@ def side_by_side(images: np.ndarray) -> np.ndarray:
 def kaleidoscope(folded, time: float) -> np.ndarray:
     """The beads at the given time, painted at every folded point: [..., rows, columns, 3] pixels."""
     mv = folded.context.multivector
-    xy = (stack((mv.x, mv.y)) & folded[..., None]).to_array().astype(np.float32)   # [..., rows, columns, 2]
-    # The beads from the top down: each is painted over the ones listed before it.
-    radius, angle, speed, size = beads[::-1].T.astype(np.float32)
-    centres = radius[:, None] * np.stack([np.cos(angle + speed * time), np.sin(angle + speed * time)], axis=-1)
-    # Squared distances to the bead centres through one matrix product over all pixels.
-    squared = (xy ** 2).sum(axis=-1, keepdims=True) - 2 * xy @ centres.T + (centres ** 2).sum(axis=-1)
-    distance = np.sqrt(np.maximum(squared, 0.0))                               # [..., rows, columns, beads]
-    cover = np.clip((size - distance) / 0.02, 0.0, 1.0)
+    # The beads from the top down: each is painted over the ones listed before it, its centre a point on the x-axis
+    # turned about the middle to its angle at the time.
+    turns = (mv.xy * (-(bead_angles + bead_speeds * time)[::-1] / 2)).exp()   # [beads] Rotor+
+    centres = bead_distances[::-1] * (turns >> mv.x.dual())                  # [beads] Antivector-
+    distance = (folded[..., None] - centres).norm().to_array()               # [..., rows, columns, beads]
+    cover = np.clip((bead_sizes[::-1] - distance) / 0.02, 0.0, 1.0)
     # What shows of a bead is its cover times what the beads above it leave uncovered, and the background
     # shows where all of them leave it uncovered.
     uncovered = np.cumprod(1 - cover, axis=-1)                                 # [..., rows, columns, beads]
@@ -98,13 +100,14 @@ def sphere(screen, folded, flips, mirrors, outline) -> np.ndarray:
     """The visible half of a sphere tiled by reflections, lit from the viewer's upper left, with the
     tiles' sides drawn thin and the sides on the outlining mirror, one of the mirrors, drawn bold."""
     mv = screen.context.multivector
-    view = (stack((mv.x, mv.y, mv.z)) & screen[..., None]).to_array()          # [rows, columns, 3]
-    lit = 0.35 + 0.65 * np.clip(view @ np.array([-0.4, 0.5, 0.77]), 0.0, 1.0)
+    # The light on each point of the sphere, by the lamp's gradient paired with it.
+    lit = 0.35 + 0.65 * np.clip((mv.vector(lamp) & screen).to_array(), 0.0, 1.0)
     sides = np.abs((mirrors & folded[..., None]).to_array())                  # [rows, columns, mirrors]
     thin = np.clip(1 - sides.min(axis=-1) / 0.012, 0.0, 1.0)
     bold = np.clip(1 - np.abs((outline & folded).to_array()) / 0.03, 0.0, 1.0)
     colours = tiles(flips, np.maximum(0.6 * thin, bold)) * lit[..., None]
-    inside = (view[..., :2] ** 2).sum(axis=-1) < 1
+    # The sphere covers the pixels whose points stand out towards the viewer.
+    inside = (mv.z & screen) > 0
     return to_image(np.where(inside[..., None], colours, background))
 
 
@@ -134,36 +137,45 @@ def animate_tilings(moving) -> Iterator[np.ndarray]:
 
 
 # --- the 600-cell -----------------------------------------------------------------------
-def distinct(points: np.ndarray) -> np.ndarray:
-    """The distinct rows of an array of points, up to round-off: one of each set of rows equal to six
-    decimals, in sorted order."""
-    rounded = np.round(points * 1e6).astype(np.int64)                          # [points, coordinates]
+def gpu_points(points) -> solids.Point:
+    """The GPU library's own points at the places of the spinors' plane parts: their coefficients on the planes, read
+    by the scalar product with the planes' reverses, are the one hand-off from this algebra to the renderer's."""
+    mv = points.context.multivector
+    planes = stack((mv.yz, mv.zx, mv.xy)).reverse()
+    return solids.mv.point(planes.scalar_product(points[..., None]).to_array())
+
+
+def distinct(spinors):
+    """The distinct spinors, up to round-off: one of each set whose coefficients are equal to six decimals, in sorted
+    order. The comparison is a numeric step on the coefficients, read by the scalar product with the blades'
+    reverses."""
+    mv = spinors.context.multivector
+    blades = stack((mv.scalar([1]), mv.yz, mv.zx, mv.xy)).reverse()
+    rounded = np.round(blades.scalar_product(spinors[..., None]).to_array() * 1e6).astype(np.int64)   # [spinors, 4]
     # Equal rows sort next to each other, the first of them first; a row starts a new set where it differs
     # from the one before.
     order = np.lexsort(rounded.T[::-1])
     first = order[np.concatenate([[True], (np.diff(rounded[order], axis=0) != 0).any(axis=-1)])]
-    return points[np.sort(first)]
+    return spinors[np.sort(first)]
 
 
 def polytope(spinors) -> np.ndarray:
     """The distinct unit spinors as points of the three-sphere, in perspective from beyond the scalar
     axis into three dimensions and from there seen from slightly above, `[pixels, pixels, 3]` bytes:
     the points traced as balls, and edges joining nearest neighbours drawn as strokes, lit on the GPU."""
-    mv = spinors.context.multivector
-    # A spinor's coefficients on one and on the planes, read by its scalar product with their reverses.
-    blades = stack((mv.scalar([1]), mv.yz, mv.zx, mv.xy)).reverse()
-    points = distinct(blades.scalar_product(spinors[..., None]).to_array())   # [vertices, 4]
-    gaps = np.linalg.norm(points[:, None] - points[None], axis=-1)
-    nearest = gaps[gaps > 1e-9].min()
-    first, second = np.nonzero(np.triu(np.abs(gaps - nearest) < 1e-6))
-    # From beyond the scalar axis, each chord of the three-sphere projects to a straight segment.
-    space = points[:, 1:] / (2.4 - points[:, :1])                              # [vertices, 3]
+    vertices = distinct(spinors)                                               # [vertices] Even+
+    gaps = (vertices[:, None] - vertices[None]).norm()                         # [vertices, vertices] Scalar+
+    nearest = gaps.to_array()[gaps > 1e-9].min()
+    first, second = np.nonzero(np.triu((gaps - nearest).abs() < 1e-6))
+    # From the eye beyond the scalar axis, each chord of the three-sphere projects to a straight segment: the plane
+    # part, scaled down by the distance from the eye along the scalar axis.
+    space = vertices.select_grade(2) / (eye_distance - vertices.select_grade(0))   # [vertices] Bivector+
     # Seen from slightly above: the camera turned about x by the tilt, looking along its own -z.
     view = solids.View((solids.mv.yz * (tilt / 2)).exp(), np.full(2, half_width), n_pixels)
-    places = solids.mv.point(space)                                            # [vertices] Point-
+    places = gpu_points(space)                                                 # [vertices] Point-
     edges = strokes.segments(places[first], places[second], even, edge_width, view)
-    vertices = solids.ball(places, vertex_radius * view.pixel)[:, None]       # [vertices, 1] Plane+ <- Point-
-    return solids.draw([(vertices, vertex_colour)], view, background, inks=[], translucent=[], meshes=[(edges, 1.0)])
+    balls = solids.ball(places, vertex_radius * view.pixel)[:, None]           # [vertices, 1] Plane+ <- Point-
+    return solids.draw([(balls, vertex_colour)], view, background, inks=[], translucent=[], meshes=[(edges, 1.0)])
 
 
 def animate_polytope(turning) -> Iterator[np.ndarray]:

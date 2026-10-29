@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import stack
+from numga import Extensor, stack
 from examples.util.wgsl import image_figure, solids
 
 source_colour, target_colour, aligned_colour = (np.array(to_rgb(colour)) for colour in ("#94a3b8", "#0284c7", "#f43f5e"))
@@ -22,15 +22,18 @@ point_radius, target_radius, tie_radius = 2.5, 4.5, 1.0
 target_opacity = 0.16
 
 
-def coordinates(points) -> np.ndarray:
-    """Coordinates of normalized points along the planes x, y and z."""
+# --- plumbing -------------------------------------------------------------------------
+def gpu_points(points: Extensor) -> solids.Point:
+    """The GPU library's own points at the places of the example's, in whichever algebra they live: their pairings,
+    at unit size, with the planes x, y and z are the one hand-off from that algebra to the renderer's. In flat space
+    these are the points themselves; on the three-sphere, its points seen along w."""
     mv = points.context.multivector
-    return (stack((mv.x, mv.y, mv.z)) & points.normalized()[..., None]).to_array()
+    return solids.mv.point((stack((mv.x, mv.y, mv.z)) & points.normalized()[..., None]).to_array())
 
 
-def draw_registration(source, target, aligned) -> plt.Figure:
+def draw_registration(source: Extensor, target: Extensor, aligned: Extensor) -> plt.Figure:
     """The source, grey, the target, blue shells, and the aligned source, red, each aligned point tied to its target."""
-    source, target, aligned = (solids.mv.point(coordinates(points)) for points in (source, target, aligned))
+    source, target, aligned = (gpu_points(points) for points in (source, target, aligned))
     view = solids.view([source, target, aligned], 0.0, elevation, azimuth, margin, n_pixels)
     pixel = view.pixel
     opaque = [(solids.ball(source, point_radius * pixel)[:, None], source_colour),

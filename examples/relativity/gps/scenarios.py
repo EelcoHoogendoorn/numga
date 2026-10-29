@@ -56,12 +56,12 @@ def positioning(phase: float) -> tuple[core.Event, core.Event, core.Covariance]:
     return emitted, estimate, covariance
 
 
-def uncertainty(n_frames: int) -> Iterator[tuple[core.Event, core.Event, core.Event, core.Covariance, core.Event]]:
+def uncertainty(n_frames: int) -> Iterator[tuple[core.Event, core.Event, core.Event, core.Event]]:
     """The satellites moving from a narrow sky patch to a wider spread of directions, per frame, with the position's
     spread."""
     for phase in np.linspace(FIRST_PHASE, LAST_PHASE, n_frames):
         emitted, estimate, covariance = positioning(phase)
-        yield emitted, receiver, estimate, covariance, core.position_spread(covariance)
+        yield emitted, receiver, estimate, core.position_spread(covariance)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -71,8 +71,8 @@ def main() -> None:
 
     emitted, estimate, covariance = positioning(PHASE)
     save_figure(render.draw_constellation(emitted, receiver, ORBIT_RADIUS), "gps_constellation")
-    save_figure(render.draw_solution(emitted, receiver, estimate, covariance, core.position_spread(covariance),
-                                     ORBIT_RADIUS), "gps_positioning")
+    save_figure(render.draw_solution(emitted, receiver, estimate, core.position_spread(covariance), ORBIT_RADIUS),
+                "gps_positioning")
     save_animation(render.animate_geometry(uncertainty(N_FRAMES), ORBIT_RADIUS),
                    "gps_uncertainty", DURATION_MS, forward_then_back=True)
 

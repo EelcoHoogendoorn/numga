@@ -10,6 +10,7 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Polygon
 import numpy as np
 
+from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.mechanics.riccati import core
@@ -28,9 +29,13 @@ origin = core.mv.w.dual()
 
 # --- plumbing -------------------------------------------------------------------------
 def xy(points: core.Point) -> np.ndarray:
-    """Coordinates of finite points, by their pairings with the coordinate planes."""
-    return np.stack([((plane & points) / (core.mv.w & points)).to_array()
-                     for plane in (core.mv.x, core.mv.y)], axis=-1)         # [..., 2] float
+    """Coordinates of finite points, by their pairings with the coordinate planes over their weight."""
+    return ((stack((core.mv.x, core.mv.y)) & points[..., None]) / (core.mv.w & points)[..., None]).to_array()   # [..., 2] float
+
+
+def along(directions: core.Point) -> np.ndarray:
+    """Components of directions, points at infinity, by their pairings with the coordinate planes."""
+    return (stack((core.mv.x, core.mv.y)) & directions[..., None]).to_array()   # [..., 2] float
 
 
 def _limits(points: np.ndarray) -> np.ndarray:
@@ -63,7 +68,7 @@ def draw_setup(
     # These arrows show direction; their common display length is tied to the hull's size.
     display_length = np.ptp(body, axis=0).max() * 0.3
     ends = xy(mounts + directions * display_length)                       # [thrusters, 2] float
-    arrows = ends - bases                                                # [thrusters, 2] float
+    arrows = along(directions * display_length)                          # [thrusters, 2] float
     limits = _limits(np.concatenate([body, sites, bases, ends]))          # [corners, 2] float
     # A third of the column: one hull, five marks and three arrows, under a title and a legend.
     figure, axes = charts.subplots(280, 270, layout="constrained")
@@ -92,9 +97,10 @@ def draw_approaches(hull: core.Point, poses: core.Motor, labels: tuple[str, ...]
     for case, (axes, label) in enumerate(zip(panels[0], labels)):
         _target(axes, target)
         axes.plot(*paths[:, case].T, color=BODY_COLOUR)
-        # Equal distances along the path keep the ghost hulls apart near the final pose.
-        distance = np.concatenate([[0], np.cumsum(np.linalg.norm(
-            np.diff(paths[:, case], axis=0), axis=-1))])                  # [times] float
+        # Equal distances along the path keep the ghost hulls apart near the final pose: each step's length, the
+        # size of the line through the centres before and after it.
+        steps = (centers[:-1, case] & centers[1:, case]).norm().to_array()   # [times - 1] float
+        distance = np.concatenate([[0], np.cumsum(steps)])                 # [times] float
         selected = np.unique(np.searchsorted(distance, np.linspace(0, distance[-1], GHOST_COUNT)))  # [ghosts] int
         ghosts = bodies[selected, case]                                 # [ghosts, vertices, 2] float
         outlines = np.concatenate([ghosts, ghosts[:, :1]], axis=1)       # [ghosts, vertices + 1, 2] float
@@ -158,7 +164,7 @@ def animate(
     forces = poses[..., None] >> (directions * commands * arrow_scale)   # [times, cases, thrusters] Point-
     ends = xy(carried_mounts + forces)                                   # [times, cases, thrusters, 2] float
     bases = xy(carried_mounts)                                           # [times, cases, thrusters, 2] float
-    arrows = ends - bases                                                # [times, cases, thrusters, 2] float
+    arrows = along(forces)                                               # [times, cases, thrusters, 2] float
     bodies = xy(carried)                                                 # [times, cases, vertices, 2] float
     trajectories = xy(poses >> origin)                                   # [times, cases, 2] float
     target = xy(hull)                                                    # [vertices, 2] float

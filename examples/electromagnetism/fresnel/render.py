@@ -48,6 +48,12 @@ def coordinates(wavevectors: core.Vector) -> np.ndarray:
     return (wavevectors[..., None] & stack((mv.x, mv.y, mv.z)).dual()).to_array()
 
 
+def gpu_points(wavevectors: core.Vector) -> solids.Point:
+    """The renderer's points at the tips of spatial wavevectors in k-space: the one hand-off from the spacetime
+    algebra to the renderer's."""
+    return sm.point(coordinates(wavevectors))
+
+
 def sheet_faces(n_latitudes: int, n_longitudes: int) -> np.ndarray:
     """Triangles over a grid of points from pole to pole, `[latitudes, longitudes]`: two to each cell, but one in the
     cells at either pole, whose two corners on the pole coincide."""
@@ -96,16 +102,15 @@ def k_space(ax: Axes) -> solids.View:
 
 def sheet_sides(sheets: core.Vector, view: solids.View) -> list[tuple[meshes.Samples, float]]:
     """Both sheets, translucent, with grid lines along every few latitudes and longitudes."""
-    points = coordinates(sheets)                                                 # [latitudes, longitudes, sheets, 3]
-    n_latitudes, n_longitudes = points.shape[:2]
+    n_latitudes, n_longitudes, n_sheets = sheets.shape
     faces = sheet_faces(n_latitudes, n_longitudes)
     # Each vertex's place on the grid, latitude and longitude, for the grid lines inked on the sheet.
     indices = np.stack(np.meshgrid(np.arange(n_latitudes), np.arange(n_longitudes), indexing="ij"), axis=-1)
     grid = indices.reshape(-1, 2)[faces]                                         # [faces, 3, 2]
     # Each sheet's near side and far side a mesh of its own, so that the far side shows through the near.
     sides = []
-    for sheet, colour in zip(np.moveaxis(points, 2, 0), map(to_rgb, sheet_colours)):
-        places = sm.point(sheet.reshape(-1, 3))
+    for index, colour in zip(range(n_sheets), map(to_rgb, sheet_colours)):
+        places = gpu_points(sheets[:, :, index].reshape(-1))                     # [vertices] Point-
         normals = meshes.smooth(places, faces)
         sides += [(meshes.samples(places, faces, grid, normals, view, face_values=np.zeros(4),
                                   colour=side_colour(np.array(colour), n_latitudes, near),
@@ -116,8 +121,9 @@ def sheet_sides(sheets: core.Vector, view: solids.View) -> list[tuple[meshes.Sam
 def surface(ax: Axes, picture: np.ndarray, view: solids.View) -> AxesImage:
     """A picture of k-space, its axes named at their tips; the image, for an animation to set its data."""
     shown = show(ax, picture, view)
-    labels(ax, view, sm.point(label_distance * np.eye(3)), ["$k_x$", "$k_y$", "$k_z$"], ha="center", va="center",
-           color=axis_colour)
+    # Each axis named past its tip, along the direction square to the plane across it.
+    label_places = solids.origin + label_distance * solids.normal_direction(solids.axes)   # [axes] Point-
+    labels(ax, view, label_places, ["$k_x$", "$k_y$", "$k_z$"], ha="center", va="center", color=axis_colour)
     return shown
 
 

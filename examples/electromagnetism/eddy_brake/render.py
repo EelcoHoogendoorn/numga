@@ -7,14 +7,16 @@ from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.artist import Artist
 from matplotlib.collections import LineCollection, PathCollection
 from matplotlib.colors import LinearSegmentedColormap, PowerNorm
 from matplotlib.patches import Circle, FancyArrowPatch
 from matplotlib.path import Path
-from matplotlib.tri import LinearTriInterpolator, Triangulation, TriContourSet
+from matplotlib.tri import Triangulation
 
 from numga import concatenate, stack
 from numga.extensor import Extensor
+from numga.sparse import SparseExtensor, spdiag
 from examples.util.animation import capture
 from examples.electromagnetism.eddy_brake import core
 
@@ -64,15 +66,17 @@ def scalars(values: core.Scalar) -> np.ndarray:
     return values.batch().to_array()
 
 
-def magnet(ax: plt.Axes, field_centre: np.ndarray, width: float, field: core.Bivector) -> None:
+def magnet(ax: plt.Axes, centre: core.Point, width: float, field: core.Bivector) -> None:
     """The magnet's field, a plane of space, as a patch in that plane: its width dashed, and an arc around it with an
     arrowhead for the sense the field turns in, read by pairing the field with the patch of the disc's plane."""
-    ax.add_patch(Circle(field_centre, width, facecolor="none", edgecolor=magnet_colour,
+    ax.add_patch(Circle(planar(centre), width, facecolor="none", edgecolor=magnet_colour,
                         linewidth=0.75, linestyle=(0, (3, 3)), zorder=4))
     sense = np.sign((field & core.mv.xy.dual()).to_array())
     angles = field_arc_start + sense * np.linspace(0, field_arc_span, n_field_arc)
-    arc = field_centre + field_arc_reach * width * np.stack((np.cos(angles), np.sin(angles)), axis=-1)
-    ax.add_patch(FancyArrowPatch(path=Path(arc), arrowstyle="-|>", mutation_scale=8, shrinkA=0, shrinkB=0,
+    # The arc: a point on the rim along x, turned about the magnet's centre through the angles.
+    turns = (core.mv.xy * (-angles / 2)).exp()                               # [arc] Rotor+
+    arc = centre + (turns >> (core.mv.x.dual() * (field_arc_reach * width)))  # [arc] Point-
+    ax.add_patch(FancyArrowPatch(path=Path(planar(arc)), arrowstyle="-|>", mutation_scale=8, shrinkA=0, shrinkB=0,
                                  linewidth=0.75, color=magnet_colour, zorder=4))
 
 
@@ -128,7 +132,7 @@ def fibre_colours(fibres: tuple[core.Point, ...], shown: np.ndarray) -> np.ndarr
                            (fibre_colour[3] * shown[:, family])[..., None]), axis=-1)
 
 
-def disc_panel(figure: plt.Figure, index: int, count: int, extent: float, field_centre: np.ndarray,
+def disc_panel(figure: plt.Figure, index: int, count: int, extent: float, centre: core.Point,
                width: float, field: core.Bivector,
                colours: np.ndarray) -> tuple[plt.Axes, LineCollection, PathCollection, LineCollection]:
     """One panel of a row of rotating discs: fibre guides, rim knob, rim outline and the magnet."""
@@ -138,67 +142,140 @@ def disc_panel(figure: plt.Figure, index: int, count: int, extent: float, field_
     marker = rotation_marker(ax)
     outline = LineCollection([], colors="#746b60", linewidths=0.8, zorder=3)
     ax.add_collection(outline)
-    magnet(ax, field_centre, width, field)
+    magnet(ax, centre, width, field)
     ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
     ax.set_axis_off()
     return ax, threads, marker, outline
 
 
-def smooth_contour(curve: np.ndarray, passes: int) -> np.ndarray:
-    """Chaikin corner cutting on a closed `[points, 2]` display curve."""
-    points = curve[:-1]
+def rim(mesh: Mesh, vertices: core.Point) -> np.ndarray:
+    """The rim's edges as segments to draw, `[rim, 2, 2]`: each edge's tail and head."""
+    tails, heads = mesh.reading(mesh.boundary_edges, 1) * (mesh.incidence[1, 0] * vertices)   # Point-[rim], Point-[rim]
+    return np.stack((planar(tails.batch()), planar(heads.batch())), axis=-2)
+
+
+def corner_gradients(mesh: Mesh, vertices: core.Point) -> core.Vector:
+    """The gradients of each face's corner hats, `[corners] Vector+[faces]`: a hat rises from zero along the edge facing
+    its corner to one at the corner, so its gradient is the plane through that edge and time, over twice the face's
+    signed area."""
+    sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                    # [corners] Point-[faces]
+    double_areas = (sides[0] & sides[1]) & core.time                        # Scalar-[faces]
+    return (core.time & sides) / double_areas                               # [corners] Vector+[faces]
+
+
+def sampling(mesh: Mesh, vertices: core.Point, samples: core.Point, holding: np.ndarray) -> SparseExtensor:
+    """The map carrying a field on the vertices to samples `[samples] Point-`, linear across each face: a sample's hats
+    in the face that holds it, `holding` `[samples]`, weight that face's corners."""
+    corners = mesh.incidence[2, 0]                                          # [corners] Scalar+[faces <- vertices]
+    reading = mesh.reading(holding, 2)                                      # Scalar+[samples <- faces]
+    hats = 1 + ((reading * corner_gradients(mesh, vertices))
+                & (samples.field() - reading * (corners * vertices)))       # [corners] Scalar+[samples]
+    return (spdiag(hats) * (reading * corners)).sum(axis=0)                 # Scalar+[samples <- vertices]
+
+
+def level_loops(mesh: Mesh, vertices: core.Point, stream: core.Scalar,
+                levels: np.ndarray) -> list[tuple[int, core.Point, np.ndarray]]:
+    """The level lines of a streamfunction `Scalar+[vertices]` that vanishes on the rim, at the levels `[levels]`:
+    closed loops, each with its level's index, its points where it crosses the mesh's edges, `[crossings] Point-`, in
+    order with the higher values on its left, and the face its segment from each crossing to the next runs through,
+    `[crossings]`."""
+    tails, heads = (mesh.incidence[1, 0] * stream).batch()                  # [edges] Scalar+, [edges] Scalar+
+    starts = (mesh.incidence[1, 0] * vertices)[0].batch()                   # [edges] Point-
+    edges = (mesh.d[0] * vertices).batch()                                  # [edges] Point-
+    # A level crosses the edges whose ends lie on either side of it, the share of the edge's rise it takes along it.
+    above = stream.batch() > levels[:, None]                                # [levels, vertices]
+    crossed = above[:, mesh.edges[:, 0]] != above[:, mesh.edges[:, 1]]     # [levels, edges]
+    crossing_levels, crossed_edges = np.nonzero(crossed)                    # [crossings], [crossings]
+    shares = (tails[crossed_edges] - levels[crossing_levels]) / (tails - heads)[crossed_edges]   # [crossings] Scalar+
+    crossings = starts[crossed_edges] + shares * edges[crossed_edges]       # [crossings] Point-
+
+    # A level parts one corner of a face it crosses from the other two, and runs between the edges at that corner,
+    # with the higher values on its left: in a face wound counter-clockwise, from the edge before the corner to the
+    # edge after it where the corner lies above, and the other way where it lies below.
+    corner_above = above[:, mesh.faces]                                     # [levels, faces, corners]
+    lonely = (corner_above != np.roll(corner_above, 1, axis=-1)) & (corner_above != np.roll(corner_above, -1, axis=-1))
+    level_idx, face_idx, corner_idx = np.nonzero(lonely)
+    after = mesh.face_edges[face_idx, (corner_idx + 1) % 3]
+    before = mesh.face_edges[face_idx, (corner_idx + 2) % 3]
+    high = corner_above[level_idx, face_idx, corner_idx]
+    crossing_idx = np.full(crossed.shape, -1)
+    crossing_idx[crossed] = np.arange(crossed.sum())
+    entries = crossing_idx[level_idx, np.where(high, before, after)]
+    following, faces = np.empty_like(entries), np.empty_like(entries)
+    following[entries] = crossing_idx[level_idx, np.where(high, after, before)]
+    faces[entries] = face_idx
+
+    # Each loop walked from its first crossing until it closes.
+    loops, unvisited = [], np.ones(len(following), dtype=bool)
+    for first in range(len(following)):
+        if unvisited[first]:
+            loop = [first]
+            while following[loop[-1]] != first:
+                loop.append(following[loop[-1]])
+            unvisited[loop] = False
+            loops.append((crossing_levels[first], crossings[np.array(loop)], faces[loop]))
+    return loops
+
+
+def smoothed(loop: core.Point, passes: int) -> core.Point:
+    """A closed loop `[points] Point-` with its corners cut the given number of times by Chaikin's rule: each side
+    replaced by its points a quarter of the way in from either end."""
     for _ in range(passes):
-        following = np.roll(points, -1, axis=0)
-        points = np.stack((0.75 * points + 0.25 * following,
-                           0.25 * points + 0.75 * following), axis=1).reshape(-1, 2)
-    return np.concatenate((points, points[:1]))
+        following = loop[np.roll(np.arange(loop.shape[0]), -1)]             # [points] Point-
+        loop = stack((0.75 * loop + 0.25 * following, 0.25 * loop + 0.75 * following), axis=-1).reshape(-1)
+    return loop
 
 
-def current_contours(ax: plt.Axes, triangles: Triangulation, streamfunction: np.ndarray,
-                     current: np.ndarray, levels: np.ndarray, arrow_length: float,
-                     colour: tuple[float, float, float, float]) -> TriContourSet:
-    """Closed current paths at prescribed levels, with geometrically anchored direction arrows."""
-    contours = ax.tricontour(triangles, streamfunction, levels=levels, colors=[colour],
-                             linewidths=0.8, linestyles="solid", zorder=3)
-    locate = triangles.get_trifinder()
-    paths = []
-    for level, pieces in enumerate(contours.allsegs):
-        display_paths = []
-        for raw in (curve for curve in pieces if len(curve) > 2):
-            # Read the solved current's direction on the unsmoothed contour's longest segment.
-            segments = raw[1:] - raw[:-1]
-            longest = np.linalg.norm(segments, axis=-1).argmax()
-            midpoint = (raw[longest] + raw[longest + 1]) / 2
-            direction = np.sign(segments[longest] @ current[locate(*midpoint)])
-            curve = smooth_contour(raw, contour_passes)
-            display_paths.append(Path(curve, closed=True))
-            starts, ends = curve[:-1], curve[1:]
-            lengths = np.linalg.norm(ends - starts, axis=-1)
-            distance = np.concatenate(([0], np.cumsum(lengths)))
-            perimeter = distance[-1]
-            # Anchor at a horizontal crossing, independent of the contour tracer's start vertex.
-            height = (curve[:, 1].min() + curve[:, 1].max()) / 2
-            crossings = np.flatnonzero((starts[:, 1] > height) != (ends[:, 1] > height))
-            fractions = (height - starts[crossings, 1]) / (ends[crossings, 1] - starts[crossings, 1])
-            horizontal = starts[crossings, 0] + fractions * (ends[crossings, 0] - starts[crossings, 0])
-            rightmost = horizontal.argmax()
-            anchor = distance[crossings[rightmost]] + fractions[rightmost] * lengths[crossings[rightmost]]
-            half_length = min(arrow_length, perimeter / 8) / 2
-            # Stagger arrows between levels, retaining their phase as each path evolves.
-            samples = (anchor + direction * ((level * arrow_phase % 1) * perimeter
-                       + np.array([-half_length, half_length]))) % perimeter
-            points = np.stack((np.interp(samples, distance, curve[:, 0]),
-                               np.interp(samples, distance, curve[:, 1])), axis=-1)
-            # Follow the smoothed curve itself, so arrows stay on the displayed current path.
-            offsets = direction * (distance[:-1] - samples[0]) % perimeter
-            inside = np.flatnonzero((offsets > 0) & (offsets < 2 * half_length))
-            inside = inside[np.argsort(offsets[inside])]
-            points = np.concatenate((points[:1], curve[inside], points[1:]))
-            ax.add_artist(FancyArrowPatch(path=Path(points), arrowstyle="-|>", mutation_scale=7,
-                                         shrinkA=0, shrinkB=0, linewidth=0.8, color=colour, zorder=3))
-        paths.append(Path.make_compound_path(*display_paths))
-    contours.set_paths(paths)
-    return contours
+def arrow_along(curve: core.Point, direction: float, phase: float, arrow_length: float) -> core.Point:
+    """An arrow along a closed curve `[samples] Point-`, in the sense `direction` against the curve's own, as its points
+    from tail to tip, `[arrow] Point-`: anchored at the rightmost place the curve crosses its middle height, wherever
+    the curve starts, and moved on from there by the share `phase` of the curve's length."""
+    following = np.roll(np.arange(curve.shape[0]), -1)
+    sides = curve[following] - curve                                        # [samples] Point-
+    lengths = sides.squared().square_root().to_array()                      # [samples]
+    distance = np.concatenate(([0], np.cumsum(lengths)))
+    perimeter = distance[-1]
+    heights = (core.mv.y & curve).to_array()                                # [samples]
+    middle = (heights.min() + heights.max()) / 2
+    crossing = np.flatnonzero((heights > middle) != (heights[following] > middle))
+    shares = (middle - heights[crossing]) / (heights[following][crossing] - heights[crossing])
+    middle_crossings = curve[crossing] + shares * sides[crossing]           # [crossing] Point-
+    rightmost = (core.mv.x & middle_crossings).argmax()
+    anchor = distance[crossing[rightmost]] + shares[rightmost] * lengths[crossing[rightmost]]
+    half_length = min(arrow_length, perimeter / 8) / 2
+    samples = (anchor + direction * (phase * perimeter + np.array([-half_length, half_length]))) % perimeter
+    # The arrow's ends on the curve, and between them the curve's own points, so that it stays on the drawn path.
+    side_idx = np.searchsorted(distance, samples, side="right") - 1
+    ends = curve[side_idx] + (samples - distance[side_idx]) / lengths[side_idx] * sides[side_idx]   # [2] Point-
+    offsets = direction * (distance[:-1] - samples[0]) % perimeter
+    inside = np.flatnonzero((offsets > 0) & (offsets < 2 * half_length))
+    return concatenate((ends[:1], curve[inside[np.argsort(offsets[inside])]], ends[1:]))
+
+
+def current_paths(ax: plt.Axes, mesh: Mesh, vertices: core.Point, stream: core.Scalar, gradients: core.Vector,
+                  current: core.Current, levels: np.ndarray, arrow_length: float,
+                  colour: tuple[float, float, float, float]) -> list[Artist]:
+    """Closed current paths, the smoothed level lines at the levels `[levels]` of the streamfunction `Scalar+[vertices]`
+    at the vertices where they are drawn, each with an arrow along it in the sense of the current `Current-[faces]`,
+    the streamfunction's hats' gradients `[corners] Vector+[faces]` and the current taken in the material's frame; the
+    artists drawn."""
+    # The current runs with a loop where the streamfunction rises on the current's left, as it does on the loop's.
+    stream_gradients = (gradients * (mesh.incidence[2, 0] * stream)).sum(axis=0)   # Vector+[faces]
+    senses = np.sign((stream_gradients & (core.quarter_turn >> current)).batch().to_array())   # [faces]
+    paths, arrows = [], []
+    for level, crossings, faces in level_loops(mesh, vertices, stream, levels):
+        # The loop's sense against the current's, read on its longest segment.
+        steps = crossings[np.roll(np.arange(len(faces)), -1)] - crossings    # [crossings] Point-
+        direction = senses[faces[steps.squared().square_root().argmax()]]
+        curve = smoothed(crossings, contour_passes)                         # [samples] Point-
+        paths.append(Path(np.concatenate((planar(curve), planar(curve[:1]))), closed=True))
+        # Arrows staggered between levels, keeping their phase as each path evolves.
+        arrow = arrow_along(curve, direction, level * arrow_phase % 1, arrow_length)   # [arrow] Point-
+        arrows.append(ax.add_artist(FancyArrowPatch(path=Path(planar(arrow)), arrowstyle="-|>", mutation_scale=7,
+                                                    shrinkA=0, shrinkB=0, linewidth=0.8, color=colour, zorder=3)))
+    loops = ax.add_collection(PathCollection(paths, facecolors="none", edgecolors=[colour], linewidths=0.8,
+                                             linestyles="solid", zorder=3))
+    return [loops] + arrows
 
 
 def draw(mesh: Mesh, points: core.Point, areas: core.Scalar, response: core.Response, centre: core.Point,
@@ -206,30 +283,34 @@ def draw(mesh: Mesh, points: core.Point, areas: core.Scalar, response: core.Resp
     """The materials' solved currents on the mesh at its points, with magnitude on one colour scale, and the magnet's
     field, `field` at its centre, as its patch."""
     positions = planar(points.batch())
-    field_centre = planar(centre)
     triangles = Triangulation(positions[:, 0], positions[:, 1], mesh.faces)
 
     # Average the face currents at shared vertices solely to draw a continuous field.
     # The streamlines follow this interpolated solution; they are not prescribed paths.
-    vertex_current = planar(at_vertices(mesh, areas, response.current).batch())   # [cases, vertices, 2]
+    vertex_current = at_vertices(mesh, areas, response.current)            # [cases] Current-[vertices]
     extent = np.abs(positions).max()
     sample_axis = np.linspace(-extent, extent, image_samples)
     horizontal, vertical = np.meshgrid(sample_axis, sample_axis)
-    magnitude = np.linalg.norm(vertex_current, axis=-1)
+    # The face holding each sample of the picture's grid, found by matplotlib's point location over the drawn
+    # triangles, and the current carried to the samples inside the disc, linear across each face.
+    holding = triangles.get_trifinder()(horizontal, vertical)               # [rows, columns]
+    inside = holding >= 0
+    samples = core.mv.x.dual() * horizontal[inside] + core.mv.y.dual() * vertical[inside]   # [inside] Point-
+    sampled = sampling(mesh, points, samples, holding[inside]) * vertex_current   # [cases] Current-[inside]
+    flows = np.full(vertex_current.shape + horizontal.shape + (2,), np.nan)   # [cases, rows, columns, 2]
+    flows[:, inside] = planar(sampled.batch())
+    magnitude = scalars(vertex_current.squared().square_root())            # [cases, vertices]
     current_scale = PowerNorm(current_gamma, vmin=0, vmax=magnitude.max())
-    boundary = mesh.edges[mesh.boundary_edges]
 
-    figure, panels = plt.subplots(1, len(vertex_current), figsize=(3 * len(vertex_current), 3.15),
+    figure, panels = plt.subplots(1, len(flows), figsize=(3 * len(flows), 3.15),
                                   squeeze=False, layout="constrained")
-    for ax, vectors, speed in zip(panels[0], vertex_current, magnitude):
-        along = LinearTriInterpolator(triangles, vectors[:, 0])(horizontal, vertical)
-        across = LinearTriInterpolator(triangles, vectors[:, 1])(horizontal, vertical)
+    for ax, flow, speed in zip(panels[0], flows, magnitude):
         ax.tripcolor(triangles, speed, shading="gouraud", cmap=current_colours,
                      norm=current_scale, rasterized=True)
-        ax.streamplot(sample_axis, sample_axis, along, across, color="#493c32",
+        ax.streamplot(sample_axis, sample_axis, flow[..., 0], flow[..., 1], color="#493c32",
                        density=1.0, linewidth=0.6, arrowsize=0.6)
-        ax.add_collection(LineCollection(positions[boundary], colors="#746b60", linewidths=0.6))
-        magnet(ax, field_centre, width, field)
+        ax.add_collection(LineCollection(rim(mesh, points), colors="#746b60", linewidths=0.6))
+        magnet(ax, centre, width, field)
         ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
         ax.set_axis_off()
     return figure
@@ -241,8 +322,8 @@ def draw_modes(mesh: Mesh, points: core.Point, streamfunctions: core.Scalar) -> 
     values = scalars(streamfunctions)                                      # [cases, patterns, vertices]
     positions = planar(points.batch())
     triangles = Triangulation(positions[:, 0], positions[:, 1], mesh.faces)
-    extent = np.linalg.norm(positions, axis=-1).max()
-    boundary = mesh.edges[mesh.boundary_edges]
+    extent = scalars(points.squared().square_root()).max()
+    outline = rim(mesh, points)
     rows, columns = values.shape[:2]
     figure, panels = plt.subplots(rows, columns, figsize=(2 * columns, 2 * rows),
                                   squeeze=False, layout="constrained")
@@ -253,7 +334,7 @@ def draw_modes(mesh: Mesh, points: core.Point, streamfunctions: core.Scalar) -> 
                          vmin=-largest, vmax=largest, rasterized=True)
             ax.tricontour(triangles, stream, levels=np.linspace(-largest, largest, mode_levels + 2)[1:-1],
                           colors="#493c32", linewidths=0.6, linestyles="solid")
-            ax.add_collection(LineCollection(positions[boundary], colors="#746b60", linewidths=0.8))
+            ax.add_collection(LineCollection(outline, colors="#746b60", linewidths=0.8))
             ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
             ax.set_axis_off()
     return figure
@@ -290,21 +371,18 @@ def currents(mesh: Mesh, points: core.Point, areas: core.Scalar, states: Iterabl
     widened where a state's current exceeds it."""
     # Separate contour ranges keep the weak material cases legible; colours share one magnitude scale.
     fractions = (np.arange(-current_levels, current_levels) + 0.5) / current_levels
-    reference = planar(points.batch())
-    extent = np.linalg.norm(reference, axis=-1).max()
-    field_centre = planar(centre)
-    boundary = mesh.edges[mesh.boundary_edges]
+    extent = scalars(points.squared().square_root()).max()
+    # The streamfunction's hats on the material's faces, which turn with them.
+    gradients = corner_gradients(mesh, points)                                # [corners] Vector+[faces]
     guides = concatenate(fibres)                                              # [curves, samples] Point-
 
     figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=animation_dpi)
-    panels = [disc_panel(figure, i, len(shown), extent, field_centre, width, field, colours)
+    panels = [disc_panel(figure, i, len(shown), extent, centre, width, field, colours)
               for i, colours in enumerate(fibre_colours(fibres, shown))]
-    fixed_patches = len(panels[0][0].patches)
     for state in states:
-        # The current belongs to material faces; turn its direction into the laboratory frame.
-        turned_current = state.orientation >> state.current                   # [cases] Current-[faces]
-        magnitude = scalars(turned_current.squared().square_root())           # [cases, faces]
-        vectors = planar(turned_current.batch())                              # [cases, faces, 2]
+        # The current belongs to material faces; turning it into the laboratory frame keeps its strength.
+        strength = state.current.squared().square_root()                      # [cases] Scalar+[faces]
+        magnitude = scalars(strength)                                         # [cases, faces]
         stream = scalars(state.streamfunction)                                # [cases, vertices]
         # The scales widened where this state's current exceeds them.
         peak, stream_top = max(peak, magnitude.max()), np.maximum(stream_top, np.abs(stream).max(axis=-1))
@@ -312,28 +390,24 @@ def currents(mesh: Mesh, points: core.Point, areas: core.Scalar, states: Iterabl
         alpha = np.divide(magnitude.max(axis=-1), peak, out=np.zeros(len(magnitude)),
                           where=peak > 0) ** streamline_gamma
         current_scale = PowerNorm(current_gamma, vmin=0, vmax=peak)
-        speed = scalars(at_vertices(mesh, areas, turned_current.squared().square_root()))   # [cases, vertices]
+        speed = scalars(at_vertices(mesh, areas, strength))                   # [cases, vertices]
         positions = planar(state.vertices.batch())
         threads_at = planar(state.orientation[:, None, None] >> guides)
         marks = rotation_marks(state.orientation, extent)                     # [cases, 2]
-        paths, surfaces = [], []
+        drawn = []
         for i, (ax, threads, marker, outline) in enumerate(panels):
-            outline.set_segments(positions[i, boundary])
+            outline.set_segments(rim(mesh, state.vertices[i]))
             threads.set_segments(threads_at[i])
             marker.set_offsets(marks[i:i + 1])
             triangles = Triangulation(positions[i, :, 0], positions[i, :, 1], mesh.faces)
-            surfaces.append(ax.tripcolor(triangles, speed[i], shading="gouraud",
-                                          cmap=current_colours, norm=current_scale, rasterized=True, zorder=1))
+            drawn.append(ax.tripcolor(triangles, speed[i], shading="gouraud",
+                                      cmap=current_colours, norm=current_scale, rasterized=True, zorder=1))
             colour = (0.29, 0.24, 0.20, alpha[i])
-            paths.append(current_contours(ax, triangles, stream[i], vectors[i], levels[i, levels[i] != 0],
-                                           current_arrow_length * extent, colour))
+            drawn += current_paths(ax, mesh, state.vertices[i], state.streamfunction[i], gradients, state.current[i],
+                                   levels[i, levels[i] != 0], current_arrow_length * extent, colour)
         yield capture(figure)
-        for surface in surfaces:
-            surface.remove()
-        for path, (ax, threads, marker, outline) in zip(paths, panels):
-            path.remove()
-            for arrow in tuple(ax.patches)[fixed_patches:]:
-                arrow.remove()
+        for artist in drawn:
+            artist.remove()
     plt.close(figure)
 
 
@@ -342,14 +416,11 @@ def animate_heat(mesh: Mesh, points: core.Point, areas: core.Scalar, frames: Ite
                  peak: float = braking_heat_peak) -> Iterator[np.ndarray]:
     """Accumulated heat per area, carried by the moving material faces on one fixed scale up to `peak`."""
     heat_scale = PowerNorm(heat_gamma, vmin=0, vmax=peak)
-    reference = planar(points.batch())
-    extent = np.linalg.norm(reference, axis=-1).max()
-    field_centre = planar(centre)
-    boundary = mesh.edges[mesh.boundary_edges]
+    extent = scalars(points.squared().square_root()).max()
     guides = concatenate(fibres)                                              # [curves, samples] Point-
 
     figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=animation_dpi)
-    panels = [disc_panel(figure, i, len(shown), extent, field_centre, width, field, colours)
+    panels = [disc_panel(figure, i, len(shown), extent, centre, width, field, colours)
               for i, colours in enumerate(fibre_colours(fibres, shown))]
     for state in frames:
         # Face heat is energy. Dividing by each material face's area gives the density to colour.
@@ -363,7 +434,7 @@ def animate_heat(mesh: Mesh, points: core.Point, areas: core.Scalar, frames: Ite
             triangles = Triangulation(positions[i, :, 0], positions[i, :, 1], mesh.faces)
             surfaces.append(ax.tripcolor(triangles, densities[i], shading="gouraud",
                                           cmap=heat_colours, norm=heat_scale, rasterized=True, zorder=1))
-            outline.set_segments(positions[i, boundary])
+            outline.set_segments(rim(mesh, state.vertices[i]))
             threads.set_segments(threads_at[i])
             marker.set_offsets(marks[i:i + 1])
         yield capture(figure)

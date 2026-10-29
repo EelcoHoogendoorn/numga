@@ -36,6 +36,10 @@ ENERGY_SCALE, ENERGY_START, ENERGY_END, COHERENCE_REACH = 0.4, -3.4, 3.7, 0.68
 # of the larger side, and the pixels across it, until the view is fitted to its axes.
 ELEVATION, AZIMUTH = np.radians(24.0), np.radians(-58.0 + 90.0)
 MARGIN, N_PIXELS = 0.08, 470
+# Where the energy axis starts, and how far the chart's axes reach from there along x, y and z: to the energy axis's
+# end, and the reach of the pair coherence.
+energy_start = solids.origin + sm.x.dual() * (ENERGY_SCALE * ENERGY_START)                # [] Point-
+reaches = np.array([ENERGY_SCALE * (ENERGY_END - ENERGY_START), COHERENCE_REACH, COHERENCE_REACH])
 # The points around a circle; the widths of the axes' shafts, the circles, the path and the arrows' shafts, the
 # arrowheads' lengths and widths, and the radius of the tips, in pixels.
 N_CIRCLE = 100
@@ -91,24 +95,20 @@ def chart(energies: np.ndarray, axis: plt.Axes
     """The view of the chart, fitted to the matplotlib axes it is shown in, its axes as arrows from the start of the
     energy axis, the energy along +x and the pair coherence in yz and zx along +y and +z, and the circles of the
     largest coherence about the energy axis at every few levels `[circles, circle + 1]`."""
-    start, end = ENERGY_SCALE * ENERGY_START, ENERGY_SCALE * ENERGY_END
-    starts = np.full((3, 3), [start, 0, 0])
-    ends = np.array([[end, 0, 0], [start, COHERENCE_REACH, 0], [start, 0, COHERENCE_REACH]])
+    ends = energy_start + solids.axes.dual() * reaches                                      # [3] Point-
     # The circles about the energy axis, x, at every few levels, each through the point the largest coherence above it.
     levels = solids.origin + sm.x.dual() * (ENERGY_SCALE * energies[::CIRCLE_EVERY])        # [circles] Point-
     circles = meshes.circles(levels + sm.z.dual() * CIRCLE_RADIUS, sm.yz, N_CIRCLE)        # [circles, circle + 1] Point-
-    view = fitted(solids.view([circles, sm.point(starts), sm.point(ends)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS),
-                  axis)
-    shafts, heads = solids.arrows(sm.point(starts), sm.point(ends), AXIS_WIDTH / 2 * view.pixel,
+    view = fitted(solids.view([circles, energy_start, ends], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS), axis)
+    shafts, heads = solids.arrows(energy_start, ends, AXIS_WIDTH / 2 * view.pixel,
                                   AXIS_HEAD_LENGTH * view.pixel, AXIS_HEAD_WIDTH / 2 * view.pixel)
     return view, [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR)], circles
 
 
 def label_chart(axis: plt.Axes, view: solids.View) -> None:
     """The chart's axes named past their tips."""
-    start, end = ENERGY_SCALE * ENERGY_START, ENERGY_SCALE * ENERGY_END
-    names = np.array([[end + 0.12, 0, 0], [start, COHERENCE_REACH + 0.1, 0], [start, 0, COHERENCE_REACH + 0.1]])
-    labels(axis, view, sm.point(names), [r"$\xi$", r"$s_{yz}$", r"$s_{zx}$"], ha="center", va="center",
+    names = energy_start + solids.axes.dual() * (reaches + [0.12, 0.1, 0.1])                # [3] Point-
+    labels(axis, view, names, [r"$\xi$", r"$s_{yz}$", r"$s_{zx}$"], ha="center", va="center",
            color=AXIS_COLOUR)
 
 
@@ -123,7 +123,8 @@ def animate_quench(
     visible = np.flatnonzero(np.abs(energies) < DISPLAY_CUTOFF)
     indices = visible[np.linspace(0, len(visible) - 1, DISPLAY_LEVELS, dtype=int)]
     energies, transverse = energies[indices], transverse[:, indices]
-    origins = np.stack([ENERGY_SCALE * energies, np.zeros_like(energies), np.zeros_like(energies)], axis=-1)
+    # Each level's place on the energy axis.
+    origins = solids.origin + sm.x.dual() * (ENERGY_SCALE * energies)                       # [levels] Point-
     colours = plt.colormaps["coolwarm"](np.linspace(0.08, 0.92, len(energies)))[:, :3]
 
     with charts.style():
@@ -137,12 +138,13 @@ def animate_quench(
         def arrows(coherence: np.ndarray) -> np.ndarray:
             """Each level's arrow from the energy axis to its pair coherence, and its tip, over the path through the
             tips."""
-            tips = origins + np.concatenate([np.zeros((len(coherence), 1)), coherence], axis=-1)
-            shafts, heads = solids.arrows(sm.point(origins), sm.point(tips), STEM_WIDTH / 2 * view.pixel,
+            # The pair coherence in yz up the chart's y, and in zx along its z.
+            tips = origins + sm.y.dual() * coherence[:, 0] + sm.z.dual() * coherence[:, 1]   # [levels] Point-
+            shafts, heads = solids.arrows(origins, tips, STEM_WIDTH / 2 * view.pixel,
                                           STEM_HEAD_LENGTH * view.pixel, STEM_HEAD_WIDTH / 2 * view.pixel)
             stems = [(shafts, colours), (heads, colours),
-                     (solids.ball(sm.point(tips), TIP_RADIUS * view.pixel)[:, None], np.array(to_rgb(PAIR)))]
-            path = strokes.polylines([(sm.point(tips), np.array(to_rgb(INK)))], PATH_WIDTH, view)
+                     (solids.ball(tips, TIP_RADIUS * view.pixel)[:, None], np.array(to_rgb(PAIR)))]
+            path = strokes.polylines([(tips, np.array(to_rgb(INK)))], PATH_WIDTH, view)
             return scene.draw(stems, inks=[], translucent=[], meshes=[(path, PATH_OPACITY)])
 
         image = show(axis, arrows(transverse[0]), view)

@@ -14,104 +14,128 @@ from matplotlib.colors import to_rgb
 
 from examples.util.animation import capture
 from numga import concatenate, stack
-from examples.orientation.conformal_circle.core import Point, Sphere
+from examples.orientation.conformal_circle.core import Point, Sphere, mv
 from examples.util.wgsl import show, solids, strokes
 
 sm = solids.mv
-PLANE = "#218c9d"
-SPHERE = "#ce713f"
-CURVE = "#3d354a"
-MARKERS = ("#9861ba", "#dd9650", "#4f9b85")
+plane_ink, sphere_ink, curve_ink = "#218c9d", "#ce713f", "#3d354a"
+marker_inks = ("#9861ba", "#dd9650", "#4f9b85")
 background = np.ones(3)
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin around the scene as a share
 # of the larger side, and the pixels across each panel.
-ELEVATION, AZIMUTH = np.radians(26.0), np.radians(32.0)
-MARGIN, N_PIXELS = 0.25, 300
-# The plane's sheet, a square about the origin; the opacities of each face of the sheet, its rim, each face of the
-# ball and the sphere's wireframe, front and back alike.
-SHEET = 1.23 * np.array([[-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0]])
-SHEET_OPACITY, RIM_OPACITY, BALL_OPACITY, WIREFRAME_OPACITY = 0.073, 0.45, 0.062, 0.26
+elevation, azimuth = np.radians(26.0), np.radians(32.0)
+margin, n_pixels = 0.25, 300
+# The plane's sheet, a square about the origin, in the renderer's points; the opacities of each face of the sheet,
+# its rim, each face of the ball and the sphere's wireframe, front and back alike.
+sheet_corners = sm.point(1.23 * np.array([[-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0]]))   # [corners] Point-
+sheet_opacity, rim_opacity, ball_opacity, wireframe_opacity = 0.073, 0.45, 0.062, 0.26
 # The widths of the circle, the sheet's rim, the wireframe and the chord arrows, the plane's and the sphere's
 # arrows, in pixels, the arrowheads' lengths and widths, and the points' radius, in pixels; the sheet's thickness,
 # in pixels.
-CIRCLE_WIDTH, RIM_WIDTH, WIREFRAME_WIDTH, SHEET_THICKNESS = 2.4, 1.8, 1.8, 0.6
-CHORD_WIDTH, PLANE_ARROW_WIDTH, SPHERE_ARROW_WIDTH = 2.1, 3.0, 2.7
-CHORD_HEAD, ARROW_HEAD, HEAD_WIDTH = 13.0, 13.0, 9.6
-DOT_RADIUS = 4.8
+circle_width, rim_width, wireframe_width, sheet_thickness = 2.4, 1.8, 1.8, 0.6
+chord_width, plane_arrow_width, sphere_arrow_width = 2.1, 3.0, 2.7
+chord_head, arrow_head, head_width = 13.0, 13.0, 9.6
+dot_radius = 4.8
 # The lengths of the plane's and the sphere's arrows per unit of their normals.
-PLANE_ARROW_LENGTH, SPHERE_ARROW_LENGTH = 0.85, 0.45
+plane_arrow_length, sphere_arrow_length = 0.85, 0.45
 # How small against the largest the plane a sampled circle's points span may be and still count as one: a circle
 # gathered into one point, as a parallel at a pole, spans none.
-SPANNED = 1e-12
+spanned = 1e-12
 # The pixels across each panel of the motions, and the dots per inch their line widths are given at.
-MOTION_PIXELS, MOTION_DPI = 150, 45
+motion_pixels, motion_dpi = 150, 45
+# The point at infinity, the origin, and the sphere at infinity.
+infinity = mv.e.dual() + mv.w.dual()                                            # [] Point-
+origin = (mv.e.dual() - mv.w.dual()) / 2                                        # [] Point-
+horizon = mv.e + mv.w                                                           # [] Sphere+
 
 
 # --- plumbing -------------------------------------------------------------------------
 def coordinates(points: Point) -> np.ndarray:
     """x, y and z of points, on the last axis: their pairings with the planes x, y and z, over their weights, which
     the sphere at infinity reads."""
-    mv = points.context.multivector
-    weights = -(mv.e + mv.w) & points
+    weights = -horizon & points
     return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / weights[..., None]).to_array()
 
 
-def arrows(starts: np.ndarray, ends: np.ndarray, width: float, head: float, view: solids.View
+def gpu_points(points: Point) -> solids.Point:
+    """The GPU library's own points at the places of the conformal points: their coordinates, read by pairing, are the
+    one hand-off from this algebra to the renderer's."""
+    return sm.point(coordinates(points))
+
+
+def plane_coordinates(points: Point) -> np.ndarray:
+    """x and y of points, on the last axis, for matplotlib: their pairings with the planes x and y, over their
+    weights."""
+    weights = -horizon & points
+    return ((stack((mv.x, mv.y)) & points[..., None]) / weights[..., None]).to_array()
+
+
+def downhill(surface: Sphere, anchor: Point, length: float) -> Point:
+    """The anchor carried down the surface's pairing with points, by the length times the pairing's rate of change.
+    The plane tangent there to the level set of the pairing is the combination of the surface with the anchor as a
+    sphere of radius zero that passes through infinity; its normal, wedged with the sphere at infinity, generates the
+    translation along it."""
+    point_sphere = anchor.dual()                                                # [...] Sphere+
+    tangent = surface - (surface & infinity) / (point_sphere & infinity) * point_sphere   # [...] Sphere+
+    return ((tangent ^ horizon) * (length / 2)).exp() >> anchor
+
+
+def arrows(starts: Point, ends: Point, width: float, head: float, view: solids.View
            ) -> tuple[solids.Quadric, solids.Quadric]:
-    """Arrows between places `[..., 3]`, their shafts `width` and their heads `head` pixels long."""
-    return solids.arrows(sm.point(starts), sm.point(ends), width / 2 * view.pixel, head * view.pixel,
-                         HEAD_WIDTH / 2 * view.pixel)
+    """Arrows between points, their shafts `width` and their heads `head` pixels long."""
+    return solids.arrows(gpu_points(starts), gpu_points(ends), width / 2 * view.pixel, head * view.pixel,
+                         head_width / 2 * view.pixel)
 
 
-def circle_planes(lines: np.ndarray) -> solids.Plane:
-    """The planes of circles sampled along lines `[lines, n, 3]`, each through its first sample and those a third and
-    two thirds along it: the join of the three, made extrinsic by the intrinsic scalar one."""
-    count = lines.shape[1]
-    first, second, third = (sm.point(lines[:, index]) for index in (0, count // 3, 2 * count // 3))
-    return (first & second & third) * solids.flip
+def circle_planes(first: Point, second: Point, third: Point) -> solids.Plane:
+    """The planes of circles through three of their sampled points each: the join of the three, made extrinsic by
+    the intrinsic scalar one."""
+    return (gpu_points(first) & gpu_points(second) & gpu_points(third)) * solids.flip
 
 
-def panel(vertices: np.ndarray, circle: np.ndarray, globe: np.ndarray, plane_normal: np.ndarray,
-          sphere_normal: np.ndarray, sphere_weight: float, centre: np.ndarray, radius: float,
+def panel(vertices: Point, circle: Point, globe: Point, plane: Sphere, sphere: Sphere,
           view: solids.View) -> np.ndarray:
-    """One side of the mirror: the circle through its ordered points, on the plane's sheet and in the sphere's ball
-    `centre` and `radius`, with arrows into the negative sides of the plane and the sphere, whose pairings with the
-    point at a place grow along `normal + weight * place`."""
-    plane_colour, sphere_colour, curve_colour = (np.array(to_rgb(colour)) for colour in (PLANE, SPHERE, CURVE))
-    sheet = solids.plates(sm.point(SHEET)[None], SHEET_THICKNESS * view.pixel)  # [1, corners + 2] Plane+
+    """One side of the mirror: the circle through its ordered points, on the plane's sheet and in the sphere's ball,
+    with arrows down the plane's and the sphere's pairings with points: into their negative sides."""
+    plane_colour, sphere_colour, curve_colour = (np.array(to_rgb(ink)) for ink in (plane_ink, sphere_ink, curve_ink))
+    sheet = solids.plates(sheet_corners[None], sheet_thickness * view.pixel)  # [1, corners + 2] Plane+
     # The sheet's rim: its edges, where the half-spaces along them pair to zero; only the inner half of each line lies
     # on the sheet.
     edges = solids.half_space(sheet[0, 2:])                                     # [corners] Plane+ <- Point-
-    # The ball the sphere's parallels and meridians lie on; the circles inked on it where their planes cut it.
-    ball = solids.ball(sm.point(centre), radius)[None, None]
-    planes = concatenate([circle_planes(globe), circle_planes(globe.transpose(1, 0, 2))])   # [circles] Plane+
+    # The ball the sphere's parallels and meridians lie on, about the centre a sphere's reflection sends infinity to;
+    # the circles inked on it where their planes cut it.
+    radius = (sphere.squared() / (sphere & infinity).squared()).square_root()   # [] Scalar+
+    ball = solids.ball(gpu_points(sphere >> infinity), radius.to_array())[None, None]
+    n_parallels, n_meridians = globe.shape
+    parallels = circle_planes(globe[:, 0], globe[:, n_meridians // 3], globe[:, 2 * n_meridians // 3])
+    meridians = circle_planes(globe[0], globe[n_parallels // 3], globe[2 * n_parallels // 3])
+    planes = concatenate([parallels, meridians])                                # [circles] Plane+
     spans = (planes | planes).to_array()
-    planes = planes[spans > SPANNED * spans.max()]
-    curve = strokes.polylines([(sm.point(circle), curve_colour)], CIRCLE_WIDTH, view)
+    planes = planes[spans > spanned * spans.max()]
+    curve = strokes.polylines([(gpu_points(circle), curve_colour)], circle_width, view)
 
     # Short arrows follow the point order around the circle in both views.
     count = len(circle) - 1
     starts = np.arange(3) * count // 3 + count // 12
-    chords = arrows(circle[starts], circle[starts + count // 18], CHORD_WIDTH, CHORD_HEAD, view)
-    # The arrows point down the surfaces' pairings with places: below the plane and into the sphere.
-    plane_arrow = arrows(np.zeros((1, 3)), -plane_normal[None] * PLANE_ARROW_LENGTH, PLANE_ARROW_WIDTH, ARROW_HEAD,
-                         view)
+    chords = arrows(circle[starts], circle[starts + count // 18], chord_width, chord_head, view)
+    # The arrows point down the surfaces' pairings with points: below the plane and into the sphere.
+    plane_arrow = arrows(origin[None], downhill(plane, origin, plane_arrow_length)[None], plane_arrow_width,
+                         arrow_head, view)
     sphere_anchor = circle[None, count // 3]
-    sphere_direction = -(sphere_normal + sphere_weight * sphere_anchor)
-    sphere_arrow = arrows(sphere_anchor, sphere_anchor + sphere_direction * SPHERE_ARROW_LENGTH, SPHERE_ARROW_WIDTH,
-                          ARROW_HEAD, view)
+    sphere_arrow = arrows(sphere_anchor, downhill(sphere, sphere_anchor, sphere_arrow_length), sphere_arrow_width,
+                          arrow_head, view)
     marks = [(chords[0], curve_colour), (chords[1], curve_colour),
              (plane_arrow[0], plane_colour), (plane_arrow[1], plane_colour),
              (sphere_arrow[0], sphere_colour), (sphere_arrow[1], sphere_colour),
-             (solids.ball(sm.point(vertices), DOT_RADIUS * view.pixel)[:, None],
-              np.array([to_rgb(colour) for colour in MARKERS]))]
+             (solids.ball(gpu_points(vertices), dot_radius * view.pixel)[:, None],
+              np.array([to_rgb(colour) for colour in marker_inks]))]
     # The sheet and the ball are the first and the second translucent parts, after the opaque marks.
     rim = solids.Ink(len(marks), edges, solids.everywhere[None].broadcast_to(edges.shape),
-                     plane_colour, 2 * RIM_WIDTH, RIM_OPACITY)
+                     plane_colour, 2 * rim_width, rim_opacity)
     wireframe = solids.Ink(len(marks) + 1, solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape),
-                           sphere_colour, WIREFRAME_WIDTH, WIREFRAME_OPACITY)
+                           sphere_colour, wireframe_width, wireframe_opacity)
     return solids.draw(marks, view, background, [rim, wireframe],
-                       translucent=[(sheet, plane_colour, SHEET_OPACITY), (ball, sphere_colour, BALL_OPACITY)],
+                       translucent=[(sheet, plane_colour, sheet_opacity), (ball, sphere_colour, ball_opacity)],
                        meshes=[(curve, 1.0)])
 
 
@@ -119,27 +143,11 @@ def draw_circle(points: Point, curve: Point, surface: Point, planes: Sphere,
                 spheres: Sphere) -> plt.Figure:
     """Both sides of the mirror, side by side, from the points, the circle, the sphere's samples, the planes and the
     spheres of each side."""
-    mv = points.context.multivector
-    infinity = mv.e.dual() + mv.w.dual()
-    directions = stack((mv.x.dual(), mv.y.dual(), mv.z.dual()))
-    vertices = coordinates(points)
-    curves = coordinates(curve)
-    surfaces = coordinates(surface)
-    # A surface's pairing with the point at a place grows along its normal, its pairing with the directions, plus its
-    # weight, its pairing with infinity, times the place.
-    plane_normals = (directions & planes[..., None]).to_array()                 # [sides, 3]
-    sphere_normals = (directions & spheres[..., None]).to_array()               # [sides, 3]
-    sphere_weights = (spheres & infinity).to_array()                            # [sides]
-    # A sphere's reflection sends infinity to its centre.
-    centres = coordinates(spheres >> infinity)                                  # [sides, 3]
-    radii = np.sqrt((spheres.squared() / (spheres & infinity).squared()).to_array())   # [sides]
-
     # One view for both sides, framing the sheet and the sphere.
-    view = solids.view([sm.point(SHEET), sm.point(surfaces)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
-    figure = plt.figure(figsize=(2 * N_PIXELS / 100, view.shape[0] / 100), dpi=100)
-    for index in range(len(vertices)):
-        image = panel(vertices[index], curves[index], surfaces[index], plane_normals[index], sphere_normals[index],
-                      sphere_weights[index], centres[index], radii[index], view)
+    view = solids.view([sheet_corners, gpu_points(surface)], 0.0, elevation, azimuth, margin, n_pixels)
+    figure = plt.figure(figsize=(2 * n_pixels / 100, view.shape[0] / 100), dpi=100)
+    for index in range(len(points)):
+        image = panel(points[index], curve[index], surface[index], planes[index], spheres[index], view)
         show(figure.add_axes((index / 2, 0.0, 0.5, 1.0)), image, view)
     return figure
 
@@ -148,21 +156,21 @@ def animate_circle_motions(frames: Iterable[Point], fixed_points: Point) -> Iter
     """A coloured disk turns rigidly beside its reflected, conformally distorted image, from frames of the two disks
     with radius and angle axes."""
     frames = iter(frames)
-    first = coordinates(next(frames))[..., :2]                                  # [sides, radii, angles, 2]
-    fixed = coordinates(fixed_points)[..., :2]
+    first = plane_coordinates(next(frames))                                     # [sides, radii, angles, 2]
+    fixed = plane_coordinates(fixed_points)
     ring_indices = np.linspace(0, first.shape[1] - 1, 6, dtype=int)[1:-1]
     spoke_indices = np.linspace(0, first.shape[2] - 1, 13, dtype=int)[:-1]
     colours = plt.get_cmap("twilight_shifted")(np.linspace(0, 1, len(spoke_indices), endpoint=False))
 
-    figure, axes = plt.subplots(1, 2, figsize=(2 * MOTION_PIXELS / MOTION_DPI, MOTION_PIXELS / MOTION_DPI),
-                                dpi=MOTION_DPI)
+    figure, axes = plt.subplots(1, 2, figsize=(2 * motion_pixels / motion_dpi, motion_pixels / motion_dpi),
+                                dpi=motion_dpi)
     figure.subplots_adjust(left=0.015, right=0.985, bottom=0.025, top=0.975, wspace=0.06)
     artists = []
     for ax, disk in zip(axes, first):
         ax.set(xlim=(-1.12, 1.12), ylim=(-1.12, 1.12), aspect="equal")
         ax.set_axis_off()
         ax.fill(*disk[-1].T, color="#f5f6f8", zorder=0)
-        ax.plot(*disk[-1].T, color=CURVE, linewidth=1.5, zorder=2)
+        ax.plot(*disk[-1].T, color=curve_ink, linewidth=1.5, zorder=2)
         rings = LineCollection(disk[ring_indices], colors="#b8c1cc", linewidths=0.85)
         spokes = LineCollection(disk[:, spoke_indices].transpose(1, 0, 2),
                                 colors=colours, linewidths=1.15, alpha=0.85)
@@ -171,10 +179,10 @@ def animate_circle_motions(frames: Iterable[Point], fixed_points: Point) -> Iter
         dots = ax.scatter(*disk[-1, spoke_indices].T, c=colours, s=33,
                           edgecolors="white", linewidths=0.85, zorder=4)
         artists.append((rings, spokes, dots))
-    axes[1].scatter(*fixed.T, s=94, facecolors="none", edgecolors=CURVE,
+    axes[1].scatter(*fixed.T, s=94, facecolors="none", edgecolors=curve_ink,
                     linewidths=1.35, zorder=5)
 
-    for pair in chain([first], (coordinates(frame)[..., :2] for frame in frames)):
+    for pair in chain([first], (plane_coordinates(frame) for frame in frames)):
         for disk, (rings, spokes, dots) in zip(pair, artists):
             rings.set_segments(disk[ring_indices])
             spokes.set_segments(disk[:, spoke_indices].transpose(1, 0, 2))

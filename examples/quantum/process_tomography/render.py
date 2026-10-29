@@ -51,22 +51,24 @@ AXIS_LENGTH, LABEL_DISTANCE = 1.3, 1.4
 
 
 # --- plumbing -------------------------------------------------------------------------
-def ball_positions(points: core.Point) -> np.ndarray:
-    """The Bloch vectors `[..., 3]` of points of the projective Bloch ball: their pairings with the planes x, y and z
-    through the centre, at unit weight."""
-    mv = points.context.multivector
-    return (stack((mv.x, mv.y, mv.z)) & points.normalized()[..., None]).to_array()
+def ball_positions(points: core.Point) -> solids.Point:
+    """The points of the projective Bloch ball at unit weight, the renderer's points as they are: the ball is drawn in
+    the algebra it lives in."""
+    return points.normalized()
 
 
-def bloch_vectors(states: Extensor) -> np.ndarray:
-    """The Bloch vectors `[..., 3]` of states of the Pauli algebra, a half plus half the Bloch vector: twice their
-    scalar products with x, y and z."""
+def bloch_positions(states: Extensor) -> solids.Point:
+    """The GPU library's own points at the tips of the Bloch vectors of states of the Pauli algebra, a half plus half
+    the Bloch vector: their coordinates, twice the states' scalar products with x, y and z, are the one hand-off from
+    that algebra to the renderer's."""
     mv = states.context.multivector
-    return 2 * stack((mv.x, mv.y, mv.z)).scalar_product(states[..., None]).to_array()
+    return sm.point(2 * stack((mv.x, mv.y, mv.z)).scalar_product(states[..., None]).to_array())
 
 
-# How states are read as Bloch vectors: `ball_positions` or `bloch_vectors`.
-Reading = Callable[[Extensor], np.ndarray]
+# How states are placed in the Bloch ball: `ball_positions` or `bloch_positions`.
+Reading = Callable[[Extensor], solids.Point]
+# Where the axes are named, just past their tips.
+axis_names = solids.origin + solids.axes.dual() * LABEL_DISTANCE                  # [3] Point-
 
 
 def bloch_view(axes) -> solids.View:
@@ -74,11 +76,10 @@ def bloch_view(axes) -> solids.View:
     return fitted(solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, REACH), N_PIXELS), axes)
 
 
-def channel_view(sphere: np.ndarray, axes) -> solids.View:
-    """The view of a channel's pictures, framing the sphere of pure inputs `[latitudes + 1, longitudes + 1, 3]` and
-    the axes' names with a margin, fitted to the matplotlib axes it is shown in."""
-    framed = solids.view([sm.point(sphere.reshape(-1, 3)), sm.point(LABEL_DISTANCE * np.eye(3))], 0.0, ELEVATION,
-                         AZIMUTH, MARGIN, N_PIXELS)
+def channel_view(sphere: solids.Point, axes) -> solids.View:
+    """The view of a channel's pictures, framing the sphere of pure inputs `[latitudes + 1, longitudes + 1]` and the
+    axes' names with a margin, fitted to the matplotlib axes it is shown in."""
+    framed = solids.view([sphere, axis_names], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
     return fitted(framed, axes)
 
 
@@ -92,7 +93,7 @@ def show_ball(axes, image: np.ndarray, view: solids.View):
     """A traced picture in an axes, with the axes named past their tips. The image, for an animation to set its
     data."""
     shown = show(axes, image, view)
-    labels(axes, view, sm.point(LABEL_DISTANCE * np.eye(3)), list("xyz"), ha="center", va="center", color=AXIS_COLOUR)
+    labels(axes, view, axis_names, list("xyz"), ha="center", va="center", color=AXIS_COLOUR)
     return shown
 
 
@@ -106,27 +107,30 @@ def surface_faces(rows: int, columns: int) -> np.ndarray:
                            np.stack([a, c, d], axis=-1)[1:].reshape(-1, 3)])
 
 
-def grid_lines(points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Every few latitudes, but the poles, `[lines, longitudes + 1, 3]`, and every few longitudes, `[lines,
-    latitudes + 1, 3]`, of a grid of points `[latitudes + 1, longitudes + 1, 3]`."""
-    return points[LATITUDE_STEP:-1:LATITUDE_STEP], np.moveaxis(points[:, :-1:LONGITUDE_STEP], 1, 0)
+def grid_lines(points: solids.Point) -> tuple[solids.Point, solids.Point]:
+    """Every few latitudes, but the poles, `[lines, longitudes + 1]`, and every few longitudes, `[lines, latitudes +
+    1]`, of a grid of points `[latitudes + 1, longitudes + 1]`."""
+    # Each longitude drawn runs through every latitude, a row of the grid each.
+    rows = np.arange(points.shape[0])
+    columns = np.arange(0, points.shape[1] - 1, LONGITUDE_STEP)
+    return points[LATITUDE_STEP:-1:LATITUDE_STEP], points[rows[None, :], columns[:, None]]
 
 
-def grid(points: np.ndarray, colour: np.ndarray, width: float, view: solids.View) -> meshes.Samples:
-    """The grid lines of a grid of points `[latitudes + 1, longitudes + 1, 3]`, as strokes `width` across in a
-    colour, at every sample."""
-    lines = [line for batch in grid_lines(points) for line in solids.mv.point(batch)]
+def grid(points: solids.Point, colour: np.ndarray, width: float, view: solids.View) -> meshes.Samples:
+    """The grid lines of a grid of points `[latitudes + 1, longitudes + 1]`, as strokes `width` across in a colour,
+    at every sample."""
+    lines = [line for batch in grid_lines(points) for line in batch]
     return strokes.polylines([(line, colour) for line in lines], width / view.pixel, view)
 
 
-def grid_planes(points: np.ndarray) -> solids.Plane:
-    """The planes of the grid lines of a grid of points on a sphere `[latitudes + 1, longitudes + 1, 3]`, each
-    through its line's first point and those a third and two thirds along it: the join of the three, made extrinsic
-    by the intrinsic scalar one."""
+def grid_planes(points: solids.Point) -> solids.Plane:
+    """The planes of the grid lines of a grid of points on a sphere `[latitudes + 1, longitudes + 1]`, each through
+    its line's first point and those a third and two thirds along it: the join of the three, made extrinsic by the
+    intrinsic scalar one."""
     planes = []
     for lines in grid_lines(points):
         count = lines.shape[1]
-        first, second, third = (sm.point(lines[:, index]) for index in (0, count // 3, 2 * count // 3))   # [lines] Point-, Point-, Point-
+        first, second, third = (lines[:, index] for index in (0, count // 3, 2 * count // 3))   # [lines] Point-, Point-, Point-
         planes.append((first & second & third) * solids.flip)
     return concatenate(planes)
 
@@ -135,7 +139,7 @@ def grid_planes(points: np.ndarray) -> solids.Plane:
 def draw_experiment(prepared: Extensor, probabilities: Extensor, labels: tuple[str, ...],
                     reading: Reading) -> plt.Figure:
     """Four tetrahedral preparations and each channel's measured outcome probabilities."""
-    probes = reading(prepared)                                               # [preparations, 3]
+    probes = reading(prepared)                                               # [preparations] Point-
     measured = probabilities.to_array()                                      # [channels, preparations, outcomes]
     figure = plt.figure(figsize=(EXPERIMENT[0] / charts.DPI, EXPERIMENT[1] / charts.DPI), layout="constrained")
     figure.get_layout_engine().set(wspace=0.12)
@@ -159,26 +163,29 @@ def draw_experiment(prepared: Extensor, probabilities: Extensor, labels: tuple[s
 
     view = bloch_view(probe_axes)
     colours = np.array([to_rgb(colour) for colour in PROBE_COLOURS])
-    # Joining the four probes makes their coverage of space visible.
-    first, second = np.triu_indices(len(probes), k=1)
-    edges = solids.rods(sm.point(probes[first]), sm.point(probes[second]), EDGE_WIDTH / 2)
+    # Joining the four probes along the edges of the tetrahedron they span makes their coverage of space visible.
+    tetrahedron = core.Mesh(len(probes), np.arange(len(probes))[None])
+    tails, heads = (tetrahedron.incidence[1, 0] * probes.field()).batch()     # [edges] Point-, [edges] Point-
+    edges = solids.rods(tails, heads, EDGE_WIDTH / 2)
     scene = solids.draw([*bloch_axes(), (edges, EDGE_COLOUR),
-                         (solids.ball(sm.point(probes), PROBE_RADIUS)[:, None], colours)], view, np.ones(3), inks=[],
+                         (solids.ball(probes, PROBE_RADIUS)[:, None], colours)], view, np.ones(3), inks=[],
                          translucent=[], meshes=[])
     show_ball(probe_axes, scene, view)
-    for (x, y), name, colour in zip(view.across(sm.point(probes * 1.12)), PROBE_NAMES, PROBE_COLOURS):
+    # Each probe named a little further out from the centre than the probe itself.
+    names = solids.origin + (probes - solids.origin) * 1.12                   # [preparations] Point-
+    for (x, y), name, colour in zip(view.across(names), PROBE_NAMES, PROBE_COLOURS):
         probe_axes.text(x, y, name, color=colour)
     return figure
 
 
-def channel_scene(sphere: np.ndarray, probes: np.ndarray, view: solids.View) -> Scene:
-    """What every picture of a channel shares, from the sphere of pure inputs `[latitudes + 1, longitudes + 1, 3]`
-    and the probes as prepared `[preparations, 3]`: the axes; the sphere and the probes, translucent; and the sphere's
+def channel_scene(sphere: solids.Point, probes: solids.Point, view: solids.View) -> Scene:
+    """What every picture of a channel shares, from the sphere of pure inputs `[latitudes + 1, longitudes + 1]` and
+    the probes as prepared `[preparations]`: the axes; the sphere and the probes, translucent; and the sphere's
     grid inked where the planes of its lines cut it, the sphere the first part after the axes and the probes after
     the channel, which each picture adds."""
     colours = np.array([to_rgb(colour) for colour in PROBE_COLOURS])
     translucent = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR, SPHERE_OPACITY),
-                   (solids.ball(sm.point(probes), PREPARED_RADIUS)[:, None], colours, PREPARED_OPACITY)]
+                   (solids.ball(probes, PREPARED_RADIUS)[:, None], colours, PREPARED_OPACITY)]
     planes = grid_planes(sphere)                                               # [lines] Plane+
     axes = bloch_axes()
     reference = solids.Ink(len(axes) + 1, solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape),
@@ -186,18 +193,19 @@ def channel_scene(sphere: np.ndarray, probes: np.ndarray, view: solids.View) -> 
     return Scene(view, np.ones(3), axes, [], inks=[reference], translucent=translucent)
 
 
-def channel_picture(scene: Scene, faces: np.ndarray, image: np.ndarray, points: np.ndarray, colour: str) -> np.ndarray:
-    """A channel's picture among the scene's shared parts: its image of the sphere `[latitudes + 1, longitudes + 1,
-    3]`, a translucent surface over the same grid as the sphere, with its grid lines, and the probes after the
-    channel `[preparations, 3]`, solid."""
+def channel_picture(scene: Scene, faces: np.ndarray, image: solids.Point, points: solids.Point, colour: str
+                    ) -> np.ndarray:
+    """A channel's picture among the scene's shared parts: its image of the sphere `[latitudes + 1, longitudes + 1]`,
+    a translucent surface over the same grid as the sphere, with its grid lines, and the probes after the channel
+    `[preparations]`, solid."""
     view = scene.view
     colours = np.array([to_rgb(colour) for colour in PROBE_COLOURS])
     # The reference grid and the channel's image use the same sampled directions.
-    places = sm.point(image[:, :-1].reshape(-1, 3))                          # [(latitudes + 1) * longitudes] Point-
+    places = image[:, :-1].reshape(-1)                                       # [(latitudes + 1) * longitudes] Point-
     shell = meshes.samples(places, faces, np.array(to_rgb(colour)), meshes.smooth(places, faces), view,
                            face_values=np.zeros(4), colour=meshes.plain, gloss=0.1)
     lines = grid(image, np.array(to_rgb(colour)), IMAGE_WIDTH, view)
-    after = solids.ball(sm.point(points), AFTER_RADIUS)[:, None]
+    after = solids.ball(points, AFTER_RADIUS)[:, None]
     return scene.draw([(after, colours)], inks=[], translucent=[], meshes=[(shell, IMAGE_OPACITY), (lines, 1.0)])
 
 
@@ -225,10 +233,10 @@ def draw_channels(surface: Extensor, outputs: Extensor, prepared: Extensor, tran
                   labels: tuple[str, ...], reading: Reading) -> plt.Figure:
     """The sphere of pure inputs and its reconstructed images, with matching probe points: each image a translucent
     surface over the same grid as the sphere, the probes as prepared translucent and after the channel solid."""
-    sphere = reading(surface)                                                # [latitudes + 1, longitudes + 1, 3]
-    images = reading(outputs)                                                # [channels, latitudes + 1, longitudes + 1, 3]
-    probes = reading(prepared)                                               # [preparations, 3]
-    mapped = reading(transformed)                                            # [channels, preparations, 3]
+    sphere = reading(surface)                                                # [latitudes + 1, longitudes + 1] Point-
+    images = reading(outputs)                                                # [channels, latitudes + 1, longitudes + 1] Point-
+    probes = reading(prepared)                                               # [preparations] Point-
+    mapped = reading(transformed)                                            # [channels, preparations] Point-
     figure, axes = channels_figure(labels, PANEL)
     view = channel_view(sphere, axes[0])
     scene = channel_scene(sphere, probes, view)
@@ -262,7 +270,7 @@ def animate(surface: Extensor, prepared: Extensor, frames: Iterator[tuple[Extens
     each channel a panel of a width and height in pixels: the figure, the axes, the sphere, its grid and the probes as
     prepared set up once, and each frame's images drawn among them."""
     with charts.style():
-        sphere = reading(surface)                                                # [latitudes + 1, longitudes + 1, 3]
+        sphere = reading(surface)                                                # [latitudes + 1, longitudes + 1] Point-
         figure, axes = channels_figure(labels, panel)
         view = channel_view(sphere, axes[0])
         scene = channel_scene(sphere, reading(prepared), view)

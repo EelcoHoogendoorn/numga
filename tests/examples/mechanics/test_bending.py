@@ -109,6 +109,13 @@ def test_warping_from_the_shear_centre_is_invisible_to_bending():
                                    atol=1e-12)
 
 
+def twist(frames: core.Motor) -> np.ndarray:
+    """How far each frame turns a cross-section about the beam, in radians: the turn of the direction
+    across the section, read by its pairings with the planes x and y."""
+    turned = frames >> core.mv.x.dual()
+    return np.arctan2((core.mv.y & turned).to_array(), (core.mv.x & turned).to_array())
+
+
 def test_torque_twists_about_the_shear_centre():
     torque = 1e-5
     for mesh, nodes, thickness in section_walls():
@@ -117,7 +124,7 @@ def test_torque_twists_about_the_shear_centre():
         stiffness = core.twisting(walls, thickness, scenarios.SHEAR_MODULUS).to_array()
         _, frames, _, _ = scenarios.cantilever(mesh, nodes, thickness, torque * core.couple_about_beam, scenarios.LENGTH,
                                                scenarios.SHEAR_MODULUS)
-        np.testing.assert_allclose(render.twist(frames[-1]), torque * scenarios.LENGTH / stiffness, rtol=1e-12)
+        np.testing.assert_allclose(twist(frames[-1]), torque * scenarios.LENGTH / stiffness, rtol=1e-12)
         np.testing.assert_allclose(render.flat(frames[-1] >> shear), render.flat(shear), atol=1e-12)
         # A load through the shear centre bends the beam without turning it about the beam.
         strains, _, _, _ = scenarios.cantilever(mesh, nodes, thickness,

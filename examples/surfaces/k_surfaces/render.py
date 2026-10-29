@@ -13,7 +13,7 @@ from collections.abc import Iterable, Iterator
 import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import stack
+from numga import concatenate, stack
 from examples import instantiate
 from examples.surfaces.k_surfaces import core
 from examples.util.wgsl import compose, image_figure, meshes, solids
@@ -67,10 +67,11 @@ def grid_colour(front: np.ndarray, back: np.ndarray, width: float) -> meshes.Col
 
 
 # --- plumbing
-def coordinates(points: core.Point) -> np.ndarray:
-    """Positions read by pairing with the planes across the axes."""
+def gpu_points(points: core.Point) -> solids.Point:
+    """The GPU library's own points at the places of the example's, flattened: their coordinates, read by pairing the
+    intrinsic points with the drawing frame, are the one hand-off from this algebra to the renderer's."""
     mv = points.context.multivector
-    return (stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array()
+    return solids.mv.point((stack((mv.x, mv.y, mv.z)) & points.reshape(-1)[..., None]).to_array())
 
 
 def mesh(n_rows: int, n_columns: int, spacing: int) -> tuple[np.ndarray, np.ndarray]:
@@ -94,43 +95,39 @@ def mesh(n_rows: int, n_columns: int, spacing: int) -> tuple[np.ndarray, np.ndar
     return grid.faces, ink
 
 
-def projective(points: np.ndarray) -> solids.Point:
-    return solids.mv.point(points.reshape(-1, 3))
-
-
 def landscape(half: np.ndarray) -> np.ndarray:
     """Half extents grown to the canvas's proportions."""
     aspect = n_width / n_height
     return np.array([max(half[0], half[1] * aspect), max(half[1], half[0] / aspect)])
 
 
-def viewport(points: np.ndarray, view_elevation: float, view_azimuth: float, n_pixels: int) -> solids.View:
+def viewport(points: core.Point, view_elevation: float, view_azimuth: float, n_pixels: int) -> solids.View:
     """One orthographic view for an entire deformation, `n_pixels` across."""
-    view = solids.view([projective(points)], 0.0, view_elevation, view_azimuth, margin, n_pixels)
+    view = solids.view([gpu_points(points)], 0.0, view_elevation, view_azimuth, margin, n_pixels)
     return view._replace(half=landscape(view.half))
 
 
-def sheet(points: np.ndarray, faces: np.ndarray, ink: np.ndarray, colour: meshes.Colour,
+def sheet(points: core.Point, faces: np.ndarray, ink: np.ndarray, colour: meshes.Colour,
           view: solids.View) -> meshes.Samples:
-    """One sheet, lit on both sides, at every sample, as `meshes.samples`."""
-    places = projective(points)
+    """One sheet `[rows, columns] Point-`, lit on both sides, at every sample, as `meshes.samples`."""
+    places = gpu_points(points)
     return meshes.samples(places, faces, np.zeros(3), meshes.smooth(places, faces), view, face_values=ink,
                           colour=colour, gloss=solids.gloss)
 
 
-def picture(points: np.ndarray, faces: np.ndarray, ink: np.ndarray, view: solids.View, scale: float) -> np.ndarray:
+def picture(points: core.Point, faces: np.ndarray, ink: np.ndarray, view: solids.View, scale: float) -> np.ndarray:
     """One gridded sheet, its lines' width in pixels scaled by `scale`."""
     return solids.draw([], view, background, inks=[], translucent=[],
                        meshes=[(sheet(points, faces, ink, grid_colour(front_colour, back_colour, scale * edge_width), view), 1.0)])
 
 
-def partner_picture(partner: np.ndarray, source: np.ndarray, faces: np.ndarray, ink: np.ndarray, view: solids.View) -> np.ndarray:
+def partner_picture(partner: core.Point, source: core.Point, faces: np.ndarray, ink: np.ndarray, view: solids.View) -> np.ndarray:
     """Two translucent sheets with common tangents and marked corresponding points."""
-    n_rows, n_columns = source.shape[:2]
+    n_rows, n_columns = source.shape
     row_margin, column_margin = n_rows // 6, n_columns // 6
     rows = np.linspace(row_margin, n_rows - row_margin - 1, n_connector_rows, dtype=int)
     columns = np.linspace(column_margin, n_columns - column_margin - 1, n_connector_columns, dtype=int)
-    starts, ends = projective(source[rows[:, None], columns]), projective(partner[rows[:, None], columns])
+    starts, ends = gpu_points(source[rows[:, None], columns]), gpu_points(partner[rows[:, None], columns])
     # Widths in pixels, as lengths in the scene.
     connectors = [(solids.rods(starts, ends, connector_width / 2 * view.pixel), connector_colour),
                   (solids.ball(starts, endpoint_radius * view.pixel)[:, None], connector_colour),
@@ -147,28 +144,25 @@ def partner_picture(partner: np.ndarray, source: np.ndarray, faces: np.ndarray, 
 def frames(states: Iterable[core.Point], reference: core.Point) -> Iterator[np.ndarray]:
     """Draw each point grid with the camera fixed by a reference grid of the same rows and columns, at the saddle's
     share of the pixels and of its grid's lines."""
-    places = coordinates(reference)                                           # [..., rows, columns, 3]
-    faces, ink = mesh(*places.shape[-3:-1], saddle_line_spacing)
-    view = viewport(places, elevation, azimuth, round(saddle_scale * n_width))
+    faces, ink = mesh(*reference.shape[-2:], saddle_line_spacing)
+    view = viewport(reference, elevation, azimuth, round(saddle_scale * n_width))
     for state in states:
-        yield picture(coordinates(state), faces, ink, view, saddle_scale)
+        yield picture(state, faces, ink, view, saddle_scale)
 
 
 def partner_frames(states: Iterable[core.Point], source: core.Point, reference: core.Point) -> list[np.ndarray]:
     """Draw a partner family against one source net and one fixed camera."""
-    source = coordinates(source)
-    faces, ink = mesh(*source.shape[:2], 1)
-    view = viewport(coordinates(reference), elevation, azimuth, n_width)
-    return [partner_picture(coordinates(state), source, faces, ink, view) for state in states]
+    faces, ink = mesh(*source.shape, 1)
+    view = viewport(reference, elevation, azimuth, n_width)
+    return [partner_picture(state, source, faces, ink, view) for state in states]
 
 
 def partner_orbit(partner: core.Point, source: core.Point, azimuths: np.ndarray, orbit_elevation: float
                   ) -> Iterator[np.ndarray]:
     """Orbit a fixed pair, framed with one scale fitted to every view; azimuths and elevation in degrees, the
     azimuth measured from x."""
-    source, partner = coordinates(source), coordinates(partner)
-    faces, ink = mesh(*source.shape[:2], 1)
-    points = np.concatenate([source.reshape(-1, 3), partner.reshape(-1, 3)])
+    faces, ink = mesh(*source.shape, 1)
+    points = concatenate([source.reshape(-1), partner.reshape(-1)])            # [vertices] Point-
     view_elevation, view_azimuths = np.radians(orbit_elevation), np.radians(azimuths + 90)
     views = [viewport(points, view_elevation, view_azimuth, n_width) for view_azimuth in view_azimuths]
     half = np.max([view.half for view in views], axis=0)

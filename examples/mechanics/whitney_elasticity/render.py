@@ -53,10 +53,15 @@ dilation_surface = wave_surface(dilation_colour, compression_colour)
 rotation_surface = wave_surface(counter_clockwise_colour, clockwise_colour)
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(points: core.Point) -> np.ndarray:
-    """The in-plane display coordinates, read at the rendering boundary."""
-    mv = points.context.multivector
-    return (stack((mv.x, mv.y)) & points.batch()[..., None]).to_array()
+# Up from the section's plane, in space.
+up = solids.mv.z.dual()                                                      # [] Point-
+
+
+def gpu_points(points: core.Point) -> solids.Point:
+    """The GPU library's own points at the places of the section's, in the plane z = 0 of space: their coordinates,
+    read by pairing with the planes x and y, are the one hand-off from this algebra to the renderer's."""
+    across = (stack((core.mv.x, core.mv.y)) & points.batch()[..., None]).to_array()   # [..., 2]
+    return solids.mv.point(np.concatenate((across, np.zeros(across.shape[:-1] + (1,))), axis=-1))
 
 
 def panel_image(images: list[np.ndarray]) -> np.ndarray:
@@ -72,45 +77,40 @@ class DiskDrawing:
     def __init__(self, mesh: core.Mesh, vertices: core.Point, regions: np.ndarray):
         self.mesh = mesh
         self.regions = regions
-        self.reference = coordinates(vertices)
-        radius = np.linalg.norm(self.reference, axis=1).max()
+        self.reference = vertices
+        radius = vertices.batch().norm().to_array().max()
         self.view = solids.View(solids.aim(solids.origin, view_elevation, view_azimuth),
                                 np.full(2, 1.12 * radius), n_pixels)
         # The outline: the free surface, and the edges between a liquid and a solid triangle around the core.
         sides = regions[mesh.edge_faces]                                          # [interior edges, 2]
         interface = mesh.interior_edges[sides[:, 0] != sides[:, 1]]
         self.rim = mesh.edges[np.concatenate((mesh.boundary_edges, interface))]
+        # The markers: the vertices of the free surface nearest points turned evenly around it, from the top.
         surface_vertices = mesh.exterior(0)
         angles = np.linspace(0, 2 * np.pi, n_markers, endpoint=False) + np.pi / 2
-        targets = radius * np.stack((np.cos(angles), np.sin(angles)), axis=-1)
-        surface_points = self.reference[surface_vertices]
-        nearest = ((surface_points[:, None] - targets[None])**2).sum(axis=-1).argmin(axis=0)
+        targets = (core.mv.xy * (-angles / 2)).exp() >> (core.mv.x.dual() * radius)   # [markers] Point-
+        surface_points = vertices.batch()[surface_vertices]                       # [surface] Point-
+        nearest = (surface_points[:, None] - targets[None]).norm_squared().argmin(axis=0)
         self.markers = surface_vertices[nearest]
         self.corner_mean = mesh.incidence[2, 0].mean(axis=0)                      # Scalar+[faces <- vertices]
         self.vertex_shares = ~self.corner_mean * core.as_scalar(np.ones(len(mesh.faces))).field()   # Scalar+[vertices]
         # The motion stays in the plane, so the top keeps the normals of its reference.
-        elevated = np.column_stack((self.reference, np.full(mesh.n_vertices, surface_height)))
-        self.top_normals = meshes.flat(solids.mv.point(elevated), mesh.faces)
+        self.top_normals = meshes.flat(gpu_points(vertices) + up * surface_height, mesh.faces)
 
-    def draw(self, places: np.ndarray, panels: list[tuple[np.ndarray, meshes.Colour]],
+    def draw(self, places: core.Point, panels: list[tuple[np.ndarray, meshes.Colour]],
              motion: list[meshes.Samples], markers: list[tuple[solids.Quadric, np.ndarray]]) -> list[np.ndarray]:
         """One image per panel of values and colouring on the same deformed section: the top carries the field
         readings; the shallow side wall only gives the section a visible edge."""
-        elevated = np.column_stack((places, np.full(len(places), surface_height)))
-        points = solids.mv.point(elevated)
-        start, end = places[self.rim[:, 0]], places[self.rim[:, 1]]
-        n_edges = len(self.rim)
-        top_start = np.column_stack((start, np.full(n_edges, surface_height)))
-        top_end = np.column_stack((end, np.full(n_edges, surface_height)))
-        bottom_start = top_start - [0, 0, display_thickness]
-        bottom_end = top_end - [0, 0, display_thickness]
-        wall_points = solids.mv.point(np.stack((top_start, top_end, bottom_start, bottom_end), axis=1).reshape(-1, 3))
+        points = gpu_points(places) + up * surface_height                         # [vertices] Point-
+        top_start, top_end = points[self.rim[:, 0]], points[self.rim[:, 1]]       # [rim] Point-, Point-
+        bottom_start, bottom_end = top_start - up * display_thickness, top_end - up * display_thickness
+        wall_points = stack((top_start, top_end, bottom_start, bottom_end), axis=1).reshape(-1)   # [rim * 4] Point-
         wall_faces = (np.array([[0, 2, 1], [1, 2, 3]])[None]
-                      + 4 * np.arange(n_edges)[:, None, None]).reshape(-1, 3)
+                      + 4 * np.arange(len(self.rim))[:, None, None]).reshape(-1, 3)
         wall = meshes.samples(wall_points, wall_faces, wall_colour,
                               meshes.smooth(wall_points, wall_faces), self.view,
                               face_values=np.zeros(1), colour=meshes.plain, gloss=0.06)
-        rim = strokes.segments(points[self.rim[:, 0]], points[self.rim[:, 1]], outline_colour, 1.0, self.view)
+        rim = strokes.segments(top_start, top_end, outline_colour, 1.0, self.view)
         tops = [meshes.samples(points, self.mesh.faces, values[self.mesh.faces], self.top_normals, self.view,
                                face_values=self.regions[:, None], colour=surface, gloss=0.0)
                 for values, surface in panels]
@@ -126,7 +126,7 @@ class DiskDrawing:
 def draw_materials(mesh: core.Mesh, vertices: core.Point, regions: np.ndarray) -> plt.Figure:
     """The mesh, the liquid core and the solid shell around it, before anything moves."""
     drawing = DiskDrawing(mesh, vertices, regions)
-    image, = drawing.draw(drawing.reference, [(np.zeros((mesh.n_vertices, 1)), material_surface)], [], [])
+    image, = drawing.draw(vertices, [(np.zeros((mesh.n_vertices, 1)), material_surface)], [], [])
     return image_figure(image)
 
 
@@ -137,20 +137,17 @@ def animate_waves(mesh: core.Mesh, vertices: core.Point, regions: np.ndarray,
     moon `[frames]` that strikes the planet."""
     drawing = DiskDrawing(mesh, vertices, regions)
     history = deque(maxlen=n_trail_frames)
-    moon_places = coordinates(moon)                                              # [frames, 2]
-    for (displacement, dilation_rate, vorticity), moon_place in zip(frames, moon_places):
-        places = drawing.reference + displacement_scale * coordinates(displacement)
-        history.append(places[drawing.markers])
-        trail = np.stack(history)
+    for (displacement, dilation_rate, vorticity), moon_place in zip(frames, moon):
+        places = vertices + displacement_scale * displacement                      # Point-[vertices]
+        history.append(places.batch()[drawing.markers])
         # The beads follow material points of the free surface; their short tails trace its motion.
-        height = np.full(trail.shape[:-1] + (1,), surface_height + 0.009)
-        trajectory = solids.mv.point(np.concatenate((trail, height), axis=-1))
-        age = np.linspace(0.72, 0.12, len(trail) - 1)
+        trajectory = gpu_points(stack(list(history))) + up * (surface_height + 0.009)   # [trail, markers] Point-
+        age = np.linspace(0.72, 0.12, len(history) - 1)
         trail_colours = np.broadcast_to(age[:, None, None], (len(age), n_markers, 3))
         tails = strokes.segments(trajectory[:-1].reshape(-1), trajectory[1:].reshape(-1),
                                  trail_colours.reshape(-1, 3), 1.0, drawing.view)
         beads = solids.ball(trajectory[-1], 0.012)[:, None]
-        moon_ball = solids.ball(solids.mv.point([[*moon_place, 0.0]]), moon_radius)[:, None]
+        moon_ball = solids.ball(gpu_points(moon_place[None]), moon_radius)[:, None]
         panels = [(drawing.vertex_values(dilation_rate / dilation_scale), dilation_surface),
                   (drawing.vertex_values(vorticity / vorticity_scale), rotation_surface)]
         yield panel_image(drawing.draw(places, panels, [tails], [(beads, outline_colour), (moon_ball, moon_colour)]))
@@ -164,7 +161,7 @@ def animate_modes(mesh: core.Mesh, vertices: core.Point, regions: np.ndarray,
     of the larger of the two in the frame, so that a wave of either kind shows at full strength and in its proportion."""
     drawing = DiskDrawing(mesh, vertices, regions)
     for displacement, dilation, rotation in frames:
-        places = drawing.reference + displacement_scale * coordinates(displacement)
+        places = vertices + displacement_scale * displacement                      # Point-[vertices]
         dilations, rotations = dilation.batch().to_array(), rotation.batch().to_array()   # [faces], [faces]
         scale = max(np.abs(dilations).max(), np.abs(rotations).max())
         panels = [(drawing.vertex_values(dilation / scale), dilation_surface),

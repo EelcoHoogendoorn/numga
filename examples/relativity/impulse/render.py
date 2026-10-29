@@ -34,6 +34,17 @@ def ct_x(events: Point) -> np.ndarray:
     return (stack((mv.t, mv.x)) & events[..., None]).to_array()
 
 
+def lengths(cuts: Point) -> np.ndarray:
+    """The lengths of equal-time cuts across a body `[..., end]`: the step from one end to the other, read by the
+    slice x."""
+    return (mv.x & (cuts[..., 1] - cuts[..., 0])).to_array()
+
+
+def middles(cuts: Point) -> np.ndarray:
+    """(..., 2) the ct and x coordinates of the events halfway along cuts `[..., end]`, where their labels go."""
+    return ct_x((cuts[..., 0] + cuts[..., 1]) / 2)
+
+
 def header(fig: plt.Figure, lines: list[tuple[str, str]], handles: list[Line2D]) -> None:
     """The figure's title lines, each in its colour, and the legend of `handles` in one row under them, from the top
     in pixels; the panels laid out in the room left below."""
@@ -65,16 +76,16 @@ def draw_impulse(
         "Symmetric frame: −0.5c → +0.5c", "Boosted frame: 0 → 0.8c",
     ))):
         lines, events, cuts = ct_x(worldlines[index]), ct_x(kinks[index]), ct_x(slices[index])
+        cut_lengths, cut_middles = lengths(slices[index]), middles(slices[index])
         for end, label in enumerate(("Left end", "Right end")):
             ax.plot(lines[:, end, 1], lines[:, end, 0], color=(REAR, FRONT)[end], lw=WORLDLINE, label=label)
         ax.plot(events[:, 1], events[:, 0], "--", color=IMPULSE, lw=WORLDLINE, label="Velocity-step surface")
         ax.scatter(events[:, 1], events[:, 0], color=IMPULSE, zorder=4)
 
-        for cut, prefix in zip(cuts, ("Before", "After")):
-            t, (a, b) = cut[0, 0], cut[:, 1]
-            ax.plot([a, b], [t, t], color="#333333", lw=BAR, alpha=0.35)
-            ax.text((a+b)/2, t+(-0.14 if t<0 else 0.12),
-                    f"{prefix}: {b-a:.3f} L₀", ha="center", bbox=LABEL_BOX)
+        for cut, length, (t, middle), prefix in zip(cuts, cut_lengths, cut_middles, ("Before", "After")):
+            ax.plot(cut[:, 1], cut[:, 0], color="#333333", lw=BAR, alpha=0.35)
+            ax.text(middle, t+(-0.14 if t<0 else 0.12),
+                    f"{prefix}: {length:.3f} L₀", ha="center", bbox=LABEL_BOX)
         if index == 0:
             ax.text(events[1, 1]/2, 0.12, "Simultaneous reversal", ha="center", color=IMPULSE, bbox=LABEL_BOX)
         else:
@@ -97,9 +108,9 @@ def draw_impulse(
         ax.plot(step[:, 1], step[:, 0], "--", color=IMPULSE, alpha=0.75)
         ax.scatter(step[:, 1], step[:, 0], color=IMPULSE, zorder=4)
 
-    sample_time, (a, b) = cut[0, 0], cut[:, 1]
-    ax.plot([a, b], [sample_time, sample_time], color="#333333", lw=BAR, alpha=0.35)
-    ax.text((a+b)/2, sample_time+0.12, f"After: {b-a:.3f} L₀", ha="center", bbox=LABEL_BOX)
+    sample_time, middle = middles(train_slice)
+    ax.plot(cut[:, 1], cut[:, 0], color="#333333", lw=BAR, alpha=0.35)
+    ax.text(middle, sample_time+0.12, f"After: {lengths(train_slice):.3f} L₀", ha="center", bbox=LABEL_BOX)
     # The note between the title and the panel, clear of the worldlines.
     ax.text(0, 1.02, "Repeat one fixed map\nEqual ticks on the left clock", transform=ax.transAxes, va="bottom")
     ax.set_title("10 impulses: 0 → 0.8c", loc="left", pad=NOTE_PAD)
@@ -142,10 +153,10 @@ def barn_background(ax, doors: Point, closure: Point) -> None:
 def length_bar(ax, ends: Point, label, offset, color):
     """A bar across the equal-time events at both ends, labelled above or below."""
     events = ct_x(ends)
-    positions, time = events[:, 1], events[0, 0]
-    ax.plot(positions, [time, time], lw=BAR, color=color, alpha=0.28,
+    time, middle = middles(ends)
+    ax.plot(events[:, 1], events[:, 0], lw=BAR, color=color, alpha=0.28,
             solid_capstyle="butt")
-    ax.text(np.mean(positions), time + offset, label, ha="center",
+    ax.text(middle, time + offset, label, ha="center",
             color=color, va="bottom" if offset > 0 else "top",
             bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.75, "pad": 1.5})
 
@@ -273,11 +284,12 @@ def draw_spaceships(tracks: Point, schedules: Point, slices: Point, final_events
             ax.plot(step[:, 1], step[:, 0], "--", color=color, alpha=0.8)
             ax.scatter(step[:, 1], step[:, 0], color=color, zorder=4)
 
-        for cut, label in zip(ct_x(slices[index]), ("Initially: {:.2f} L₀", "Final lab gap: {:.2f} L₀")):
-            time, endpoints = cut[0, 0], cut[:, 1]
-            ax.plot(endpoints, [time, time], color="#333333", lw=BAR, alpha=0.27)
-            ax.text(np.mean(endpoints), time + (0.09 if time > 0 else -0.09),
-                    label.format(endpoints[1] - endpoints[0]), ha="center", va="bottom" if time > 0 else "top",
+        cuts = slices[index]                                                     # [slice, end] Point-
+        for cut, length, (time, middle), label in zip(ct_x(cuts), lengths(cuts), middles(cuts),
+                                                      ("Initially: {:.2f} L₀", "Final lab gap: {:.2f} L₀")):
+            ax.plot(cut[:, 1], cut[:, 0], color="#333333", lw=BAR, alpha=0.27)
+            ax.text(middle, time + (0.09 if time > 0 else -0.09),
+                    label.format(length), ha="center", va="bottom" if time > 0 else "top",
                     bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.8, "pad": 1})
         # Each note in two lines between its title and its panel.
         note = ("Front impulses follow\nthe bisectors"
@@ -291,9 +303,9 @@ def draw_spaceships(tracks: Point, schedules: Point, slices: Point, final_events
         ax.grid(alpha=0.13)
         ax.spines[["top", "right"]].set_visible(False)
 
-    # The rear's final kink sits at the origin of the final frame, so the front's position in that
-    # frame is the gap.
-    gaps = ct_x(final_events)[:, 1, 1]
+    # In the final rest frame both ships stand still, so the step along x from the rear's final kink to the front's is
+    # the gap, whether or not the kinks are simultaneous there.
+    gaps = lengths(final_events)
     ax = axes[2]
     ax.set_title("In the final shared rest frame", pad=NOTE_PAD)
     rope_comparison(ax, gaps[0], 2.05, IMPULSE, "Strain-preserving timing",

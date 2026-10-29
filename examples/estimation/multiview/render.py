@@ -14,7 +14,7 @@ import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import stack
+from numga import concatenate, stack
 from numga.algebras import PGA2D
 
 from examples import instantiate
@@ -55,6 +55,7 @@ N_CURVE_SEGMENTS = 96
 # --- plumbing -------------------------------------------------------------------------
 def coordinates(points: Point) -> np.ndarray:
     """The Cartesian (x, y) coordinates of points from their pairings with the coordinate planes."""
+    # Divided by the weight rather than normalized, which keeps its sign: a point of negative weight reads true too.
     return (stack((mv.x, mv.y)) & (points / (mv.w & points))[..., None]).to_array()
 
 
@@ -77,8 +78,15 @@ def splats(motors: Motor, fused_splats: Quadric, points: Point) -> list[Quadrics
 
 def cameras(motors: Motor) -> list:
     """The field-of-view wedge, bounding sight lines, sensor, and dashed optical axis for each camera."""
-    reach = WEDGE_DEPTH * np.tan(HALF_FIELD)
-    local_marks = mv.point([[0.0, 0.0], [reach, WEDGE_DEPTH], [-reach, WEDGE_DEPTH], [0.0, WEDGE_DEPTH * AXIS_REACH]])
+    # In the camera's frame: the pinhole, the sensor's ends, where the sight lines turned the half field either way
+    # from the axis meet the sensor in front of the pinhole, and the axis's end past the sensor.
+    pinhole, axis = mv.point([0, 0]), mv.direction([0, 1])                       # [] Point-, Direction-
+    sensor = mv.y - WEDGE_DEPTH * mv.w                                           # [] Plane+
+    half_fields = np.array([-HALF_FIELD, HALF_FIELD])
+    sight_turns = (mv.xy * (-half_fields / 2)).exp()                             # [ends] Motor+
+    sensor_ends = (sensor ^ (pinhole & (sight_turns >> axis))).normalized()      # [ends] Point-
+    axis_end = pinhole + axis * (WEDGE_DEPTH * AXIS_REACH)                       # [] Point-
+    local_marks = concatenate((pinhole[None], sensor_ends, axis_end[None]))      # [marks] Point-
     marks = motors[:, None] >> local_marks                                       # [cameras, marks] Point-
     camera_colours = CAMERA_COLORS[:motors.shape[0]]
     wedges = [[Polygons(marks[camera:camera + 1, :3], colour, 0.18),
@@ -96,19 +104,21 @@ def pose_covariances(motors: Motor, ellipsoids: Quadric, spreads: Scalar) -> lis
     # The outline: from each ellipsoid's centre, the pole of the plane at infinity, out along each direction to where the
     # ellipsoid vanishes.
     centres = ellipsoids.solve(mv.w)                                             # [cameras] Point-
+    # Divided by its weight rather than normalized, which keeps the weight's sign: the outline runs out from a centre
+    # of unit weight.
     centres = centres / (mv.w & centres)                                         # [cameras] Point-
-    turns = np.linspace(0.0, 2 * np.pi, N_CURVE_SEGMENTS + 1)
-    headings = mv.direction(np.stack([np.cos(turns), np.sin(turns)], axis=-1))[:, None]   # [segments + 1, cameras] Direction-
+    turns = (mv.xy * (-np.linspace(0.0, 2 * np.pi, N_CURVE_SEGMENTS + 1) / 2)).exp()   # [segments + 1] Motor+
+    headings = (turns >> mv.direction([1, 0]))[:, None]                         # [segments + 1, cameras] Direction-
     reach = (-(ellipsoids(centres) & centres) / (ellipsoids(headings) & headings)).square_root()   # [segments + 1, cameras] Scalar+
     outlines = centres + headings * reach                                        # [segments + 1, cameras] Point-
     layers = []
     for camera, colour in enumerate(CAMERA_COLORS[:motors.shape[0]]):
         # The fan in the camera's frame, about its pinhole from its axis, carried out by its pose.
-        spread = spreads[camera].to_array()
-        turns = np.linspace(-spread, spread, N_CURVE_SEGMENTS + 1)
-        arc_points = ARC_RADIUS * np.stack([-np.sin(turns), np.cos(turns)], axis=-1)
-        fan = motors[camera] >> mv.point(arc_points)                             # [segments + 1] Point-
-        spokes = motors[camera] >> mv.point(np.stack([np.zeros((2, 2)), arc_points[[0, -1]]], axis=1))   # [spokes, ends] Point-
+        fan_angles = spreads[camera] * np.linspace(-1, 1, N_CURVE_SEGMENTS + 1)    # [segments + 1] Scalar+
+        fan_turns = (mv.xy * (-fan_angles / 2)).exp()                            # [segments + 1] Motor+
+        fan = motors[camera] >> (fan_turns >> mv.point([0, ARC_RADIUS]))         # [segments + 1] Point-
+        pinhole = motors[camera] >> mv.point([0, 0])                             # [] Point-
+        spokes = stack((pinhole.broadcast_to((2,)), fan[[0, -1]]), axis=1)       # [spokes, ends] Point-
         layers += [Regions(ellipsoids[camera:camera + 1], colour, 0.28),
                    Strokes(outlines[:, camera][None], OUTLINE_WIDTH, colour, 0.28, OUTLINE_WIDTH * DASHED, Cap.BUTT),
                    Strokes(fan[None], ARC_WIDTH, colour, 1.0, ARC_WIDTH * DOTTED, Cap.BUTT),

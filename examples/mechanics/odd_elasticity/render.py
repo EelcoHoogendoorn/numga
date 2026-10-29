@@ -31,9 +31,6 @@ def _coordinates(points: core.Displacement) -> np.ndarray:
     return (lines & points.batch()[..., None]).to_array()
 
 
-def _arrows(forces: core.Force) -> np.ndarray:
-    """Forces drawn along their metric directions."""
-    return _coordinates(forces.dual())
 
 
 def _bounds(coordinates: np.ndarray, margin: float) -> tuple[np.ndarray, np.ndarray]:
@@ -60,10 +57,11 @@ def bond_frames(
     fixed = _coordinates(anchor)
     rest = _coordinates(reference)
     loop = _coordinates(path)
-    endpoints, forces = (np.stack(values) for values in zip(*((_coordinates(endpoint), _arrows(force))
-                                                               for endpoint, force in states)))
-    arrow_tips = endpoints + force_scale * forces
-    bounds = _bounds(np.concatenate((fixed[None], rest[None], loop, arrow_tips)), 0.08)
+    # Each force drawn along its metric direction, its dual, from the bond's moving end.
+    positions, forces = (stack([value.batch() for value in values]) for values in zip(*states))   # [steps] Displacement-, Force+
+    arrows = force_scale * forces.dual()                                     # [steps] Displacement-
+    endpoints, offsets = _coordinates(positions), _coordinates(arrows)       # [steps, 2], [steps, 2]
+    bounds = _bounds(np.concatenate((fixed[None], rest[None], loop, _coordinates(positions + arrows))), 0.08)
 
     figure = plt.figure(figsize=(6.2, 2.9), dpi=50, facecolor=BACKGROUND)
     ax = _scene(figure, bounds, (0.02, 0.02, 0.96, 0.96))
@@ -79,13 +77,13 @@ def bond_frames(
     arrow = ax.quiver(*endpoints[0], 0, 0, angles="xy", scale_units="xy", scale=1,
                       color=FORCE, width=0.011, headwidth=4, headlength=5, zorder=5)
 
-    for i, (position, force) in enumerate(zip(endpoints, forces)):
+    for i, (position, offset) in enumerate(zip(endpoints, offsets)):
         swept.set_xy(np.concatenate((rest[None], endpoints[:i + 1])))
         bond.set_data(*np.stack((fixed, position)).T)
         endpoint.set_data([position[0]], [position[1]])
         trail.set_data(*endpoints[:i + 1].T)
         arrow.set_offsets(position)
-        arrow.set_UVC(*(force_scale * force))
+        arrow.set_UVC(*offset)
         yield capture(figure)
     plt.close(figure)
 
@@ -97,10 +95,12 @@ def patch_frames(
     """A deforming patch pushes on its boundary around its closed cycle."""
     rest = _coordinates(reference)
     boundary = mesh.exterior(0)
-    positions, forces = (np.stack(values) for values in zip(*((_coordinates(position), _arrows(force))
-                                                               for position, force in states)))
-    arrow_tips = positions[:, boundary] + force_scale * forces[:, boundary]
-    bounds = _bounds(np.concatenate((rest, positions.reshape(-1, 2), arrow_tips.reshape(-1, 2))), 0.055)
+    # Each force on the boundary drawn along its metric direction, its dual, from its particle.
+    places, forces = (stack([value.batch() for value in values]) for values in zip(*states))   # [steps, vertices] Displacement-, Force+
+    arrows = force_scale * forces[:, boundary].dual()                        # [steps, boundary] Displacement-
+    positions, offsets = _coordinates(places), _coordinates(arrows)          # [steps, vertices, 2], [steps, boundary, 2]
+    tips = _coordinates(places[:, boundary] + arrows)                        # [steps, boundary, 2]
+    bounds = _bounds(np.concatenate((rest, positions.reshape(-1, 2), tips.reshape(-1, 2))), 0.055)
 
     figure = plt.figure(figsize=(5.2, 3.6), dpi=50, facecolor=BACKGROUND)
     ax = _scene(figure, bounds, (0.02, 0.02, 0.96, 0.96))
@@ -108,15 +108,15 @@ def patch_frames(
     bonds = LineCollection([], colors=BOND, linewidths=1.7)
     ax.add_collection(bonds)
     nodes = ax.scatter(*rest.T, s=13, c=ANCHOR, linewidths=0, zorder=3)
-    arrows = ax.quiver(*rest[boundary].T, *np.zeros_like(rest[boundary]).T,
-                       angles="xy", scale_units="xy", scale=1, color=FORCE,
-                       width=0.005, headwidth=3.8, headlength=4.8, zorder=4)
+    quivers = ax.quiver(*rest[boundary].T, *np.zeros_like(rest[boundary]).T,
+                        angles="xy", scale_units="xy", scale=1, color=FORCE,
+                        width=0.005, headwidth=3.8, headlength=4.8, zorder=4)
 
-    for position, force in zip(positions, forces):
+    for position, offset in zip(positions, offsets):
         bonds.set_segments(position[mesh.edges])
         nodes.set_offsets(position)
-        arrows.set_offsets(position[boundary])
-        arrows.set_UVC(*(force_scale * force[boundary]).T)
+        quivers.set_offsets(position[boundary])
+        quivers.set_UVC(*offset.T)
         yield capture(figure)
     plt.close(figure)
 
@@ -141,7 +141,8 @@ def wave_frames(
     n_trail_frames = 33
     history = []
     for positions, extensions in states:
-        position = rest + displacement_scale * (_coordinates(positions) - rest)
+        # The motion from the rest positions, exaggerated.
+        position = _coordinates(reference + displacement_scale * (positions - reference))
         bonds.set_segments(position[mesh.edges])
         bonds.set_array(extensions.batch().to_array())
         nodes.set_offsets(position)

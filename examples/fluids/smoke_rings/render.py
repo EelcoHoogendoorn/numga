@@ -35,43 +35,42 @@ curve_width = 6.0
 # the trail's opacity, so that the curve shows through it.
 moving_share = 0.01
 trail_opacity = 0.6
+sm = solids.mv
+# The planes x = 0, y = 0 and z = 0 of the example's space, the drawing frame.
+axes = stack((core.mv.x, core.mv.y, core.mv.z))                              # [3] Vector+
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(points: core.Point) -> np.ndarray:
-    """The x, y and z coordinates of points, antivectors: their pairings with the planes x, y and z."""
-    mv = core.mv
-    return (stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array()
+def gpu_points(points: core.Point) -> solids.Point:
+    """The GPU library's own points at the places of the example's: their coordinates, read by pairing the intrinsic
+    points with the drawing frame, are the one hand-off from this algebra to the renderer's."""
+    return sm.point((axes & points[..., None]).to_array())
 
 
-def places(points: np.ndarray) -> solids.Point:
-    """Coordinates `[..., 3]` as the drawing's points."""
-    return solids.mv.point(points)
+def grid(points: solids.Point) -> np.ndarray:
+    """The index of each of a batch of points, `[..., times, n]`, among them all, in their own order."""
+    return np.arange(np.prod(points.shape)).reshape(points.shape)
 
 
-def strips(points: np.ndarray) -> np.ndarray:
-    """The triangles between successive curves `[times, n]`: two to each quad between an edge at one time and the
-    same edge at the next, `[times - 1, n - 1, 2, 3]` indices into the curves' vertices, flattened."""
-    index = np.arange(points.shape[0] * points.shape[1]).reshape(points.shape[:2])
-    corners = np.stack([index[:-1, :-1], index[1:, :-1], index[1:, 1:], index[:-1, 1:]], axis=-1)   # [times - 1, n - 1, 4]
-    return corners[..., [[0, 1, 2], [0, 2, 3]]]
+def strips(index: np.ndarray) -> np.ndarray:
+    """The triangles between successive curves, their vertices' indices `[..., times, n]`: two to each quad between an
+    edge at one time and the same edge at the next, `[..., times - 1, n - 1, 2, 3]` indices."""
+    corners = np.stack([index[..., :-1, :-1], index[..., 1:, :-1], index[..., 1:, 1:], index[..., :-1, 1:]], axis=-1)
+    return corners[..., [[0, 1, 2], [0, 2, 3]]]                                 # [..., times - 1, n - 1, 2, 3]
 
 
-def framed(points: np.ndarray, pixels: int) -> tuple[solids.View, np.ndarray]:
-    """A view framing points `[..., 3]`, `pixels` across, its height fitted to whole rows, and the direction toward
-    the viewer `[3]`."""
-    camera, half, _ = solids.view([places(points.reshape(-1, 3))], 0.0, elevation, azimuth, margin, pixels)
+def framed(points: solids.Point, pixels: int) -> tuple[solids.View, solids.Point]:
+    """A view framing points, `pixels` across, its height fitted to whole rows, and the direction toward the
+    viewer."""
+    camera, half, _ = solids.view([points.reshape(-1)], 0.0, elevation, azimuth, margin, pixels)
     half = half * np.array([1, round(pixels * half[1] / half[0]) / pixels * half[0] / half[1]])
-    toward = (stack((solids.mv.x, solids.mv.y, solids.mv.z)) & (camera >> solids.mv.z.dual())).to_array()
-    return solids.View(camera, half, pixels), toward
+    return solids.View(camera, half, pixels), camera >> sm.z.dual()
 
 
-def sheet(points: np.ndarray, faces: np.ndarray, colours: np.ndarray,
+def sheet(points: solids.Point, faces: np.ndarray, colours: np.ndarray,
           view: solids.View) -> meshes.Samples:
-    """Triangles over vertices `[vertices, 3]`, coloured at each corner `[faces, 3, 3]`, smoothly lit, at every sample
-    of the view."""
-    corners = places(points)
-    return meshes.samples(corners, faces, colours, meshes.smooth(corners, faces), view, face_values=np.zeros(4),
+    """Triangles over vertices, coloured at each corner `[faces, 3, 3]`, smoothly lit, at every sample of the view."""
+    return meshes.samples(points, faces, colours, meshes.smooth(points, faces), view, face_values=np.zeros(4),
                           colour=meshes.plain, gloss=surface_gloss)
 
 
@@ -86,38 +85,42 @@ def curve_strokes(points: solids.Point, speeds: np.ndarray, fastest: float, view
 
 def draw_surface(curves: core.Point) -> plt.Figure:
     """The surface swept by a curve through time `[times, n]`, coloured from early to late."""
-    points = coordinates(curves)                                               # [times, n, 3]
-    faces = strips(points).reshape(-1, 3)
-    share = np.linspace(0, 1, len(points))[:, None, None] * np.ones(points.shape[:2] + (1,))
+    points = gpu_points(curves)                                                # [times, n] Point-
+    n_times, n_vertices = points.shape
+    faces = strips(grid(points)).reshape(-1, 3)
+    share = np.linspace(0, 1, n_times)[:, None, None] * np.ones((n_times, n_vertices, 1))
     colours = ((1 - share) * early + share * late).reshape(-1, 3)[faces]       # [faces, 3, 3]
     view, _ = framed(points, n_picture_pixels)
-    surface = sheet(points.reshape(-1, 3), faces, colours, view)
+    surface = sheet(points.reshape(-1), faces, colours, view)
     return image_figure(solids.draw([], view, background, inks=[], translucent=[], meshes=[(surface, 1.0)]))
 
 
 def draw_swept(curves: core.Point) -> plt.Figure:
     """The tubes swept by closed curves through time `[times, rings, n]`, each in its own colour, with the half of
     every tube nearer the viewer cut away, so that the tubes inside show."""
-    points = coordinates(curves)                                               # [times, rings, n, 3]
+    points = gpu_points(curves)                                                # [times, rings, n] Point-
     view, toward = framed(points, n_picture_pixels)
-    rings = np.moveaxis(points, 1, 0)                                          # [rings, times, n, 3]
-    # Cut by the plane through the axis facing the viewer: keep the far half of each tube.
-    centres = (rings[:, :-1, :-1] + rings[:, 1:, 1:]) / 2                      # [rings, times - 1, n - 1, 3]
-    kept = (centres[..., :2] @ toward[:2] < 0)                                 # [rings, times - 1, n - 1]
-    offsets = np.arange(len(rings))[:, None, None, None, None] * np.prod(rings.shape[1:3])
-    faces = (strips(rings[0]) + offsets)[kept].reshape(-1, 3)                  # [faces, 3]
+    # The middle of each quad, between an edge's start at one time and its end at the next.
+    middles = gpu_points((curves[:-1, :, :-1] + curves[1:, :, 1:]) / 2)        # [times - 1, rings, n - 1] Point-
+    # Cut by the upright plane through the axis facing the viewer: keep the far half of each tube.
+    level_toward = toward - sm.z.dual() * (sm.z & toward)                      # [] Point-
+    cut = -level_toward.dual()                                                 # [] Plane+
+    kept = np.moveaxis((cut & middles) < 0, 1, 0)                              # [rings, times - 1, n - 1]
+    # Each ring's strips, ring after ring, its vertices among all the points.
+    faces = strips(np.moveaxis(grid(points), 1, 0))[kept].reshape(-1, 3)       # [faces, 3]
     colours = np.broadcast_to(tubes[:, None, None, None, None, :], kept.shape + (2, 3, 3))[kept].reshape(-1, 3, 3)
-    swept = sheet(rings.reshape(-1, 3), faces, colours, view)
+    swept = sheet(points.reshape(-1), faces, colours, view)
     return image_figure(solids.draw([], view, background, inks=[], translucent=[], meshes=[(swept, 1.0)]))
 
 
 def animate_curves(curves: core.Point, speeds: core.Scalar) -> Iterator[np.ndarray]:
     """Frames of curves flowing `[times, ..., n]`, coloured by their speeds `[times, ..., n]`, all from one view and to
     one scale."""
-    points, rates = coordinates(curves), speeds.to_array()                     # [times, ..., n, 3], [times, ..., n]
+    points, rates = gpu_points(curves), speeds.to_array()                      # [times, ..., n] Point-, [times, ..., n]
     view, _ = framed(points, n_frame_pixels)
-    for curve, rate in zip(points, rates):
-        flowing = curve_strokes(places(curve.reshape(-1, *points.shape[-2:])), rate.reshape(-1, points.shape[-2]),
+    n_vertices = points.shape[-1]
+    for time in range(len(rates)):
+        flowing = curve_strokes(points[time].reshape(-1, n_vertices), rates[time].reshape(-1, n_vertices),
                                 rates.max(), view)
         yield solids.draw([], view, background, inks=[], translucent=[], meshes=[(flowing, 1.0)])
 
@@ -125,24 +128,29 @@ def animate_curves(curves: core.Point, speeds: core.Scalar) -> Iterator[np.ndarr
 def animate_trail(curves: core.Point, speeds: core.Scalar) -> Iterator[np.ndarray]:
     """Frames of a curve flowing `[times, n]`, coloured by its speeds `[times, n]`, each over the surface the curve has
     swept so far, coloured from early to late, and framed on the part of space where the curve moves."""
-    points, rates = coordinates(curves), speeds.to_array()                     # [times, n, 3], [times, n]
-    # The vertices that move, and the box around their paths, with the margin; what lies outside is left out.
-    travel = np.linalg.norm(points - points[0], axis=-1).max(axis=0)          # [n]
-    moving = points[:, travel > moving_share * travel.max()]                   # [times, moving, 3]
-    low, high = moving.reshape(-1, 3).min(axis=0), moving.reshape(-1, 3).max(axis=0)
-    inside = np.all((points >= low - margin * (high - low)) & (points <= high + margin * (high - low)), axis=-1)
+    points, rates = gpu_points(curves), speeds.to_array()                      # [times, n] Point-, [times, n]
+    # The vertices that move: how far each travels from where it starts, at the most.
+    travel = (curves - curves[0]).norm().to_array().max(axis=0)               # [n]
+    moving = points[:, travel > moving_share * travel.max()]                   # [times, moving] Point-
+    # The box around their paths, with the margin, as the planes of its faces; what lies outside is left out.
+    extent = (solids.axes & moving.reshape(-1)[:, None]).to_array()            # [moving points, 3]
+    low, high = extent.min(axis=0), extent.max(axis=0)
+    middle = solids.origin + (solids.axes.dual() * ((low + high) / 2)).sum()    # [] Point-
+    box = solids.boxes(solids.translator(middle - solids.origin), (0.5 + margin) * (high - low))   # [6] Plane+
+    inside = ((box & points[..., None]) <= 0).all(axis=-1)                     # [times, n]
     view, _ = framed(moving, n_frame_pixels)
-    faces = strips(points)                                                     # [times - 1, n - 1, 2, 3]
+    faces = strips(grid(points))                                               # [times - 1, n - 1, 2, 3]
     flat = inside.reshape(-1)
     kept = flat[faces].all(axis=-1)                                            # [times - 1, n - 1, 2]
-    share = np.linspace(0, 1, len(points))[:, None, None] * np.ones(points.shape[:2] + (1,))
+    n_times = len(rates)
+    share = np.linspace(0, 1, n_times)[:, None, None] * np.ones(rates.shape + (1,))
     colours = ((1 - share) * early + share * late).reshape(-1, 3)
-    for time in range(len(points)):
+    for time in range(n_times):
         swept = faces[:time][kept[:time]]                                      # [faces, 3]
-        shown = [(curve_strokes(places(points[time][inside[time]][None]), rates[time][inside[time]][None], rates.max(),
+        shown = [(curve_strokes(points[time][inside[time]][None], rates[time][inside[time]][None], rates.max(),
                                 view), 1.0)]
         if len(swept):
-            shown.append((sheet(points.reshape(-1, 3), swept, colours[swept], view), trail_opacity))
+            shown.append((sheet(points.reshape(-1), swept, colours[swept], view), trail_opacity))
         yield solids.draw([], view, background, inks=[], translucent=[], meshes=shown)
 
 

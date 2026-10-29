@@ -11,53 +11,62 @@ from matplotlib.colors import LinearSegmentedColormap, Normalize
 from matplotlib.patches import Polygon
 from matplotlib.tri import Triangulation
 
-from numga import stack
+from numga import concatenate, stack
 from examples.fluids.dec_stokes import core
 from examples.util.animation import capture
 
 
-PRIMAL_COLOUR = "#286580"
-DUAL_COLOUR = "#d77542"
-MESH_COLOUR = "#c2ccd0"
-WALL_COLOUR = "#52616a"
-FLOW_COLOUR = "#173c4b"
-PRESSURE_COLOURS = LinearSegmentedColormap.from_list(
+primal_colour = "#286580"
+dual_colour = "#d77542"
+mesh_colour = "#c2ccd0"
+wall_colour = "#52616a"
+flow_colour = "#173c4b"
+pressure_colours = LinearSegmentedColormap.from_list(
     "dec_pressure", ("#8fb8c9", "#f5f2eb", "#df9b79"))
-VORTICITY_COLOURS = LinearSegmentedColormap.from_list(
+vorticity_colours = LinearSegmentedColormap.from_list(
     "dec_vorticity", ("#286580", "#f5f4ef", "#df6435"))
-N_STREAMLINES = 19
-N_TRAIL_SAMPLES = 9
-FIGURE_WIDTH, FIGURE_HEIGHT, DPI = 5.0, 1.75, 100
+n_streamlines = 19
+n_trail_samples = 9
+figure_width, figure_height, dpi = 5.0, 1.75, 100
+mv = core.mv
+# The planes x = 0 and y = 0: a point's pairings with them are its places across the picture, and a place so far along
+# each is their duals so weighted.
+axes = stack((mv.x, mv.y))                                                   # [2] Vector+
+# Where the complex's vertex lies, as shares of the channel's extent along x and y; how far its arrows reach either
+# way of their middles, in lengths of the edges they show.
+target_shares = np.array([0.65, 0.5])
+arrow_reach = 0.35
 
 
 def coordinates(points: core.Point) -> np.ndarray:
     """Drawing coordinates of intrinsic positions and velocities."""
-    mv = points.context.multivector
-    return np.asarray((stack((mv.x, mv.y)) & points.batch()[..., None]).to_array())
+    return np.asarray((axes & points.batch()[..., None]).to_array())
 
 
 def channel_axes(mesh: core.Mesh, vertices: core.Point, n_rows: int):
     """Equal-aspect channel panels, with the wall geometry framing each panel."""
     places = coordinates(vertices)
     triangulation = Triangulation(*places.T, triangles=mesh.faces)
-    figure, axes = plt.subplots(n_rows, 1, figsize=(FIGURE_WIDTH, FIGURE_HEIGHT * n_rows),
-                                dpi=DPI, squeeze=False)
+    figure, panels = plt.subplots(n_rows, 1, figsize=(figure_width, figure_height * n_rows),
+                                  dpi=dpi, squeeze=False)
     figure.subplots_adjust(left=0.015, right=0.985, bottom=0.025, top=0.975, hspace=0.07)
     low, high = places.min(axis=0), places.max(axis=0)
     margin = 0.025 * (high[1] - low[1])
-    walls = places[mesh.edges[mesh.boundary_edges]]
-    for ax in axes[:, 0]:
+    # The walls are the boundary edges, each from its tail to its head.
+    tails, heads = mesh.reading(mesh.exterior(1), 1) * (mesh.incidence[1, 0] * vertices)   # Point-[walls], Point-[walls]
+    walls = np.stack((coordinates(tails), coordinates(heads)), axis=1)
+    for ax in panels[:, 0]:
         ax.set(xlim=(low[0] - margin, high[0] + margin),
                ylim=(low[1] - margin, high[1] + margin), aspect="equal")
         ax.set_axis_off()
-        ax.add_collection(LineCollection(walls, colors=WALL_COLOUR, linewidths=0.55, zorder=5))
-    return figure, axes[:, 0], triangulation
+        ax.add_collection(LineCollection(walls, colors=wall_colour, linewidths=0.55, zorder=5))
+    return figure, panels[:, 0], triangulation
 
 
 def draw_mesh(mesh: core.Mesh, vertices: core.Point) -> plt.Figure:
     """The channel and its obstacle, with the triangles resolving their boundaries."""
-    figure, axes, triangulation = channel_axes(mesh, vertices, 1)
-    axes[0].triplot(triangulation, color=MESH_COLOUR, linewidth=0.25)
+    figure, panels, triangulation = channel_axes(mesh, vertices, 1)
+    panels[0].triplot(triangulation, color=mesh_colour, linewidth=0.25)
     return figure
 
 
@@ -65,60 +74,78 @@ def draw_complex(mesh: core.Mesh, vertices: core.Point, circumcentres: core.Poin
                  dual_edges: core.Point) -> plt.Figure:
     """An interior vertex and its dual polygon, with a crossing primal and dual edge."""
     places = coordinates(vertices)
-    centres = coordinates(circumcentres)
-    dual_directions = coordinates(dual_edges)
     low, high = places.min(axis=0), places.max(axis=0)
-    target = low + np.array([0.65, 0.5]) * (high - low)
-    interior = np.setdiff1d(np.arange(len(places)), mesh.exterior(0))
-    vertex = interior[np.argmin(np.linalg.norm(places[interior] - target, axis=1))]
+    target = (axes.dual() * (low + target_shares * (high - low))).sum()      # [] Point-
+    interior = mesh.interior(0)
+    interior_points = (mesh.reading(interior) * vertices).batch()          # [interior] Point-
+    vertex = interior[(interior_points - target).norm().argmin()]
+    centre = (mesh.reading(np.array([vertex])) * vertices).batch()[0]       # [] Point-
     # The faces at the vertex, and their corners: what the corner incidence and its reverse reach from a field that
     # is one at the vertex alone.
-    mv = vertices.context.multivector
     corners = mesh.incidence[2, 0].sum(axis=0)                                   # Scalar+[faces <- vertices]
     marked = ~mesh.reading(np.array([vertex])) * mv.scalar([[1]]).field()        # Scalar+[vertices]
     at_vertex = corners * marked                                                 # Scalar+[faces]
     star = np.flatnonzero(at_vertex.batch() > 0)
     neighbours = np.flatnonzero((~corners * at_vertex).batch() > 0)
-    radius = 1.8 * np.linalg.norm(places[neighbours] - places[vertex], axis=1).max()
-    visible = np.linalg.norm(places - places[vertex], axis=1) < 1.6 * radius
-    edges = np.flatnonzero(np.all(visible[mesh.edges], axis=1))
+    reach = ((mesh.reading(neighbours) * vertices).batch() - centre).norm()     # [neighbours] Scalar+
+    radius = 1.8 * float(reach.to_array().max())
+    visible = (vertices.batch() - centre).norm() < 1.6 * radius
+    # The edges with both ends visible: the edge-vertex incidence counts an edge's visible ends.
+    visible_ends = mesh.incidence[1, 0].sum(axis=0) * mv.scalar(visible[:, None] * 1.0).field()   # Scalar+[edges]
+    shown = mesh.reading(np.flatnonzero(visible_ends.batch() > 1.5), 1)          # Scalar+[shown <- edges]
 
-    # A dual segment joins adjacent face centres; on the boundary it ends at the edge midpoint. Summed onto the edges
-    # through the face-edge incidence, the centres give a boundary edge its one face's.
-    beside = coordinates((~mesh.incidence[2, 1] * circumcentres).sum(axis=0))   # [E, 2]
-    midpoints = coordinates(mesh.incidence[1, 0].mean(axis=0) * vertices)       # [E, 2]
-    dual_segments = np.stack((beside, midpoints), axis=1)                        # [E, 2, 2]
-    dual_segments[mesh.interior_edges] = centres[mesh.edge_faces]
+    # A dual segment joins the circumcentres of the faces either side of an interior edge; on the boundary it runs
+    # from the one face's circumcentre to the edge's midpoint. Summed onto the edges through the face-edge incidence,
+    # the circumcentres give a boundary edge its one face's.
+    inside, rim = mesh.reading(mesh.interior_edges, 1), mesh.reading(mesh.exterior(1), 1)
+    on_left, on_right = mesh.reading(mesh.edge_faces.T, 2) * circumcentres     # Point-[interior edges], Point-[interior edges]
+    beside = (~mesh.incidence[2, 1] * circumcentres).sum(axis=0)                # Point-[edges]
+    midpoints = mesh.incidence[1, 0].mean(axis=0) * vertices                    # Point-[edges]
+    dual_starts = ~inside * on_left + ~rim * (rim * beside)                      # Point-[edges]
+    dual_ends = ~inside * on_right + ~rim * (rim * midpoints)                    # Point-[edges]
 
-    figure, ax = plt.subplots(figsize=(3.1, 3.1), dpi=DPI)
+    figure, ax = plt.subplots(figsize=(3.1, 3.1), dpi=dpi)
     figure.subplots_adjust(0.02, 0.02, 0.98, 0.98)
-    ax.set(xlim=places[vertex, 0] + np.array([-radius, radius]),
-           ylim=places[vertex, 1] + np.array([-radius, radius]), aspect="equal")
+    middle = coordinates(centre)
+    ax.set(xlim=middle[0] + np.array([-radius, radius]),
+           ylim=middle[1] + np.array([-radius, radius]), aspect="equal")
     ax.set_axis_off()
-    ax.add_collection(LineCollection(places[mesh.edges[edges]], colors=PRIMAL_COLOUR,
-                                     linewidths=0.57, alpha=0.6))
-    ax.add_collection(LineCollection(dual_segments[edges], colors=DUAL_COLOUR,
-                                     linewidths=0.6, alpha=0.75))
-    dual_vertices = centres[star]
-    order = np.argsort(np.arctan2(*(dual_vertices - places[vertex])[:, ::-1].T))
-    ax.add_patch(Polygon(dual_vertices[order], facecolor=DUAL_COLOUR, edgecolor=DUAL_COLOUR,
+    primal_tails, primal_heads = shown * (mesh.incidence[1, 0] * vertices)       # Point-[shown], Point-[shown]
+    ax.add_collection(LineCollection(np.stack((coordinates(primal_tails), coordinates(primal_heads)), axis=1),
+                                     colors=primal_colour, linewidths=0.57, alpha=0.6))
+    ax.add_collection(LineCollection(np.stack((coordinates(shown * dual_starts), coordinates(shown * dual_ends)), axis=1),
+                                     colors=dual_colour, linewidths=0.6, alpha=0.75))
+    star_centres = (mesh.reading(star, 2) * circumcentres).batch()             # [star] Point-
+    spokes = star_centres - centre                                             # [star] Point-
+    # Each spoke's turn from the first, read from the log of their product, orders the dual cell's corners around the
+    # vertex.
+    turns = (spokes[0] * spokes).normalized().log()                            # [star] Bivector+
+    order = (mv.xy.dual() & turns).argsort()
+    ax.add_patch(Polygon(coordinates(star_centres[order]), facecolor=dual_colour, edgecolor=dual_colour,
                          linewidth=1.2, alpha=0.17))
-    face = star[np.argmin(np.linalg.norm(centres[star] - places[vertex], axis=1))]
-    ax.add_patch(Polygon(places[mesh.faces[face]], facecolor=PRIMAL_COLOUR,
-                         edgecolor=PRIMAL_COLOUR, linewidth=1.15, alpha=0.13))
-    ax.scatter(*places[visible].T, s=4, color=PRIMAL_COLOUR, zorder=3)
-    ax.scatter(*centres[np.linalg.norm(centres - places[vertex], axis=1) < 1.5 * radius].T,
-               s=4, color=DUAL_COLOUR, zorder=3)
-    ax.scatter(*places[vertex], s=20, color=PRIMAL_COLOUR, edgecolor="white", linewidth=0.55, zorder=5)
-    ax.scatter(*centres[face], s=16, color=DUAL_COLOUR, edgecolor="white", linewidth=0.47, zorder=5)
+    nearest = spokes.norm().argmin()
+    face = star[nearest]
+    face_corners = mesh.reading(np.array([face]), 2) * (mesh.incidence[2, 0] * vertices)   # [3] Point-[1]
+    ax.add_patch(Polygon(coordinates(face_corners)[:, 0], facecolor=primal_colour,
+                         edgecolor=primal_colour, linewidth=1.15, alpha=0.13))
+    ax.scatter(*places[visible].T, s=4, color=primal_colour, zorder=3)
+    centres = circumcentres.batch()                                            # [faces] Point-
+    ax.scatter(*coordinates(centres[(centres - centre).norm() < 1.5 * radius]).T,
+               s=4, color=dual_colour, zorder=3)
+    ax.scatter(*middle, s=20, color=primal_colour, edgecolor="white", linewidth=0.55, zorder=5)
+    ax.scatter(*coordinates(star_centres[nearest]), s=16, color=dual_colour, edgecolor="white", linewidth=0.47,
+               zorder=5)
 
-    # The arrows carry the actual orientation of the two crossing geometric elements.
-    primal_directions = coordinates(mesh.d[0] * vertices)                       # [E, 2]
+    # The arrows carry the actual orientation of the two crossing geometric elements: the face's longest edge from
+    # its midpoint, and its dual edge from the middle of its segment.
+    edges = mesh.d[0] * vertices                                               # Point-[edges]
     sides = mesh.face_edges[face]
-    edge = sides[np.argmax(np.linalg.norm(primal_directions[sides], axis=1))]
-    for middle, direction, colour in ((midpoints[edge], primal_directions[edge], PRIMAL_COLOUR),
-                                       (dual_segments[edge].mean(axis=0), dual_directions[edge], DUAL_COLOUR)):
-        ax.annotate("", xy=middle + 0.35 * direction, xytext=middle - 0.35 * direction,
+    longest = sides[(mesh.reading(sides, 1) * edges).batch().norm().argmax()]
+    edge = mesh.reading(np.array([longest]), 1)                                # Scalar+[1 <- edges]
+    for middle, direction, colour in ((edge * midpoints, edge * edges, primal_colour),
+                                       (edge * (dual_starts + dual_ends) / 2, edge * dual_edges, dual_colour)):
+        tail, head = middle - arrow_reach * direction, middle + arrow_reach * direction   # Point-[1], Point-[1]
+        ax.annotate("", xy=coordinates(head)[0], xytext=coordinates(tail)[0],
                     arrowprops=dict(arrowstyle="-|>", mutation_scale=8, color=colour, linewidth=1.35),
                     zorder=6)
     return figure
@@ -127,70 +154,77 @@ def draw_complex(mesh: core.Mesh, vertices: core.Point, circumcentres: core.Poin
 def draw_fields(mesh: core.Mesh, vertices: core.Point, pressure: core.Scalar, vorticity: core.Bivector,
                 streamfunction: core.Scalar) -> plt.Figure:
     """Pressure above and signed vorticity below, with the same flow paths on both."""
-    figure, axes, triangulation = channel_axes(mesh, vertices, 2)
+    figure, panels, triangulation = channel_axes(mesh, vertices, 2)
     values = np.asarray(pressure.batch().to_array())
-    mv = vorticity.context.multivector
     rotation = np.asarray((mv.xy.dual() & vorticity).batch().to_array())
     potential = np.asarray(streamfunction.batch().to_array())
-    levels = np.linspace(potential.min(), potential.max(), N_STREAMLINES + 2)[1:-1]
+    levels = np.linspace(potential.min(), potential.max(), n_streamlines + 2)[1:-1]
     extent = np.quantile(np.abs(rotation), 0.97)
-    axes[0].tripcolor(triangulation, facecolors=values, shading="flat", cmap=PRESSURE_COLOURS,
-                      norm=Normalize(values.min(), values.max()), zorder=1)
-    axes[1].tripcolor(triangulation, rotation, shading="gouraud", cmap=VORTICITY_COLOURS,
-                      norm=Normalize(-extent, extent), zorder=1)
-    for ax in axes:
+    panels[0].tripcolor(triangulation, facecolors=values, shading="flat", cmap=pressure_colours,
+                        norm=Normalize(values.min(), values.max()), zorder=1)
+    panels[1].tripcolor(triangulation, rotation, shading="gouraud", cmap=vorticity_colours,
+                        norm=Normalize(-extent, extent), zorder=1)
+    for ax in panels:
         ax.tricontour(triangulation, potential, levels=levels, linestyles="solid",
-                      colors=FLOW_COLOUR, linewidths=0.33, alpha=0.65, zorder=3)
+                      colors=flow_colour, linewidths=0.33, alpha=0.65, zorder=3)
     return figure
 
 
 def animate_flow(mesh: core.Mesh, vertices: core.Point, pressure: core.Scalar, streamfunction: core.Scalar,
                  velocity: core.Point, n_frames: int) -> Iterator[np.ndarray]:
     """Tracers travelling along the conserved flux's streamlines over the steady pressure field."""
-    figure, axes, triangulation = channel_axes(mesh, vertices, 1)
-    ax = axes[0]
+    figure, panels, triangulation = channel_axes(mesh, vertices, 1)
+    ax = panels[0]
     values = np.asarray(pressure.batch().to_array())
     potential = np.asarray(streamfunction.batch().to_array())
-    velocity_xy = coordinates(velocity)
-    speeds = np.linalg.norm(velocity_xy, axis=-1)
-    levels = np.linspace(potential.min(), potential.max(), N_STREAMLINES + 2)[1:-1]
-    ax.tripcolor(triangulation, facecolors=values, shading="flat", cmap=PRESSURE_COLOURS,
-                  norm=Normalize(values.min(), values.max()), zorder=1)
+    levels = np.linspace(potential.min(), potential.max(), n_streamlines + 2)[1:-1]
+    ax.tripcolor(triangulation, facecolors=values, shading="flat", cmap=pressure_colours,
+                 norm=Normalize(values.min(), values.max()), zorder=1)
     contours = ax.tricontour(triangulation, potential, levels=levels, linestyles="solid",
-                            colors=FLOW_COLOUR, linewidths=0.23, alpha=0.22, zorder=2)
+                             colors=flow_colour, linewidths=0.23, alpha=0.22, zorder=2)
     finder = triangulation.get_trifinder()
-    paths, clocks = [], []
+    lines, clocks = [], []
     for segments in contours.allsegs:
         for path in segments:
             if len(path) < 2:
                 continue
-            differences = np.diff(path, axis=0)
-            midpoints = (path[1:] + path[:-1]) / 2
-            faces = finder(*midpoints.T)
-            # Contours may be listed in either sense; the velocity determines travel direction.
-            if np.sum(differences * velocity_xy[faces]) < 0:
-                path = path[::-1]
-                differences, faces = -differences[::-1], faces[::-1]
-            durations = np.linalg.norm(differences, axis=1) / speeds[faces]
-            paths.append(path)
+            # The streamline's corners as points of the plane, its steps between them, and the face each step's
+            # middle lies in.
+            line = (axes.dual() * path).sum(axis=-1)                           # [corners] Point-
+            steps = line[1:] - line[:-1]                                       # [steps] Point-
+            faces = finder(*coordinates((line[1:] + line[:-1]) / 2).T)
+            flow = (mesh.reading(faces, 2) * velocity).batch()                 # [steps] Point-
+            # Contours may be listed in either sense; the velocity along the steps determines travel direction.
+            if steps.dot(flow).sum(axis=0) < 0:
+                line, steps, flow = line[::-1], -steps[::-1], flow[::-1]
+            # Each step takes its length over the speed of the flow through its face.
+            durations = (steps.norm() / flow.norm()).to_array()
+            lines.append(line)
             clocks.append(np.concatenate(([0], np.cumsum(durations))))
+    # All streamlines' corners in one batch, each line's first corner at its offset.
+    offsets = np.cumsum([0] + [len(clock) for clock in clocks])[:-1]
+    corners = concatenate(lines)                                               # [corners] Point-
     period = np.median([clock[-1] for clock in clocks]) / 6
     trail_time = 0.2 * period
-    trails = LineCollection([], colors=FLOW_COLOUR, linewidths=0.9, capstyle="round", zorder=4)
+    trails = LineCollection([], colors=flow_colour, linewidths=0.9, capstyle="round", zorder=4)
     ax.add_collection(trails)
-    heads = ax.scatter([], [], s=1.75, color=FLOW_COLOUR, zorder=4)
+    heads = ax.scatter([], [], s=1.75, color=flow_colour, zorder=4)
     for frame in range(n_frames):
         elapsed = frame * period / n_frames
-        segments, tips = [], []
-        for index, (path, clock) in enumerate(zip(paths, clocks)):
+        stroke_steps, stroke_shares = [], []
+        for index, (offset, clock) in enumerate(zip(offsets, clocks)):
             arrivals = np.arange(-1, int(np.ceil(clock[-1] / period)) + 1) * period
             arrivals += elapsed + period * ((index * 0.61803398875) % 1)
             arrivals = arrivals[(arrivals >= 0) & (arrivals <= clock[-1])]
-            samples = np.maximum(0, arrivals[:, None] - np.linspace(trail_time, 0, N_TRAIL_SAMPLES))
-            strokes = np.stack([np.interp(samples, clock, path[:, axis]) for axis in range(2)], axis=-1)
-            segments.extend(strokes)
-            tips.extend(strokes[:, -1])
-        trails.set_segments(segments)
-        heads.set_offsets(tips)
+            samples = np.maximum(0, arrivals[:, None] - np.linspace(trail_time, 0, n_trail_samples))
+            # The step of the streamline each sample's time falls in, and how far along it.
+            step = np.clip(np.searchsorted(clock, samples, side="right") - 1, 0, len(clock) - 2)
+            stroke_steps.append(offset + step)
+            stroke_shares.append((samples - clock[step]) / (clock[step + 1] - clock[step]))
+        step, share = np.concatenate(stroke_steps), np.concatenate(stroke_shares)   # [strokes, trail]
+        # Each tracer's trail: points along the streamline's steps, at the shares their times reach.
+        strokes = coordinates(corners[step] + (corners[step + 1] - corners[step]) * share)
+        trails.set_segments(strokes)
+        heads.set_offsets(strokes[:, -1])
         yield capture(figure)
     plt.close(figure)

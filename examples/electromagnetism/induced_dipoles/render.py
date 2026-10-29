@@ -29,16 +29,17 @@ def coordinates(directions) -> np.ndarray:
 def clusters(positions, dipoles, isolated) -> plt.Figure:
     """One panel per cluster, all to one scale: each atom with its dipole as an arrow centred on it,
     over the dipole of an isolated atom in light grey."""
+    # Every dipole to the scale that draws the isolated atom's at the arrow's length.
+    scale = arrow_length / isolated.squared().square_root()
     sites = coordinates(positions)
-    arrows = coordinates(dipoles.batch())
-    reference = coordinates(isolated)
-    scale = arrow_length / np.linalg.norm(reference)
+    arrows = coordinates(dipoles.batch() * scale)
+    reference = coordinates(isolated * scale)
     half_width = np.abs(sites).max() + margin
     figure, axes = plt.subplots(1, len(sites), figsize=(panel_size * len(sites), panel_size), dpi=figure_dpi)
     for ax, site, arrow in zip(axes, sites, arrows):
-        ax.quiver(*site.T, *np.broadcast_to(reference * scale, site.shape).T, color=isolated_colour, pivot="middle",
+        ax.quiver(*site.T, *np.broadcast_to(reference, site.shape).T, color=isolated_colour, pivot="middle",
                   angles="xy", scale_units="xy", scale=1, width=0.016, headwidth=2.5, zorder=1)
-        ax.quiver(*site.T, *(arrow * scale).T, color=dipole_colour, pivot="middle",
+        ax.quiver(*site.T, *arrow.T, color=dipole_colour, pivot="middle",
                   angles="xy", scale_units="xy", scale=1, width=0.008, zorder=2)
         ax.scatter(*site.T, s=10, color=atom_colour, zorder=3)
         ax.set(xlim=(-half_width, half_width), ylim=(-half_width, half_width), aspect="equal")

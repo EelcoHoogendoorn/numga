@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import patheffects
 
-from numga import stack
+from numga import concatenate, stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.relativity.ligo import core
@@ -90,17 +90,18 @@ def draw_network(directions: core.Point, network: core.Scalar, alike: core.Scala
 def draw_ring(ax: plt.Axes, site: core.Rotor, arms: core.Point, ring: core.Point) -> None:
     """The ring of free masses across a wave from overhead, at rest and stretched, with the detector's
     arms, seen from above: east to the right, north up."""
-    def level(vectors: core.Point) -> np.ndarray:
-        """East and north of vectors at the site, on the last axis: their coordinates in the site's frame."""
-        return coordinates(site.reverse() >> vectors)[..., 1:]
-
-    rest = np.linspace(0, 2 * np.pi, REST_SAMPLES)
-    ax.plot(np.cos(rest), np.sin(rest), color=REST)
-    for arm in level(arms):
-        ax.plot([0, ARM_REACH * arm[0]], [0, ARM_REACH * arm[1]], color=ARM, linewidth=ARM_WIDTH, solid_capstyle="round")
-    masses = level(ring)                                                     # [masses, 2]
-    ax.plot(*np.concatenate([masses, masses[:1]]).T, color=RING, alpha=0.6)
-    ax.plot(*masses.T, "o", color=RING)
+    mv = core.mv
+    # East and north at the site: the site's frame carries the planes y and z there.
+    level = stack((site >> mv.y, site >> mv.z))                              # [2] Plane+
+    # The ring at rest: the unit direction east turned all the way round through north.
+    turns = (mv.yz * (-np.linspace(0, 2 * np.pi, REST_SAMPLES) / 2)).exp()   # [samples] Rotor+
+    rest = site >> (turns >> mv.y.dual())                                    # [samples] Point-
+    ax.plot(*(level & rest[..., None]).to_array().T, color=REST)
+    for tip in (level & (ARM_REACH * arms)[..., None]).to_array():
+        ax.plot([0, tip[0]], [0, tip[1]], color=ARM, linewidth=ARM_WIDTH, solid_capstyle="round")
+    masses = (level & concatenate((ring, ring[:1]))[..., None]).to_array()  # [masses + 1, 2]
+    ax.plot(*masses.T, color=RING, alpha=0.6)
+    ax.plot(*masses[:-1].T, "o", color=RING)
     ax.set(xlim=(-RING_LIMIT, RING_LIMIT), ylim=(-RING_LIMIT, RING_LIMIT), aspect="equal")
     ax.set_axis_off()
 

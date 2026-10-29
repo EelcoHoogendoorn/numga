@@ -40,20 +40,17 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 """, dict(outside_light=outside_light, outside_dark=outside_dark, inside_light=inside_light, inside_dark=inside_dark))
 
 
-def euclidean(points: Point) -> np.ndarray:
-    """x, y and z of points, antivectors, on the last axis: each point met with the planes x, y and z."""
+# --- plumbing -------------------------------------------------------------------------
+def gpu_points(points: Point) -> solids.Point:
+    """The GPU library's own points at the places of the example's: their coordinates, read by pairing the intrinsic
+    points with the drawing frame, are the one hand-off from this algebra to the renderer's."""
     mv = points.context.multivector
-    return (stack((mv.x, mv.y, mv.z)) & points.batch()[..., None]).to_array()
-
-
-def projective(vertices: Point) -> solids.Point:
-    """A mesh's vertices as points of projective space, for drawing."""
-    return solids.mv.point(euclidean(vertices))
+    return solids.mv.point((stack((mv.x, mv.y, mv.z)) & points.batch()[..., None]).to_array())
 
 
 def square_view(vertices: Point, side: int) -> solids.View:
     """A square view framing a mesh's vertices, `side` pixels across."""
-    view = solids.view([projective(vertices)], 0.0, elevation, azimuth, margin, side)
+    view = solids.view([gpu_points(vertices)], 0.0, elevation, azimuth, margin, side)
     return view.squared()
 
 
@@ -72,7 +69,7 @@ def face_colours(values: Scalar, limit: float) -> np.ndarray:
 
 def coloured(mesh: Mesh, vertices: Point, values: Scalar, limit: float, view: solids.View) -> np.ndarray:
     """The mesh at its vertices, each face flat in its colour by a field in [-limit, limit], as the view sees it."""
-    points = projective(vertices)
+    points = gpu_points(vertices)
     return meshes.draw(points, mesh.faces, np.zeros(3), meshes.flat(points, mesh.faces), view, background,
                        face_values=face_colours(values, limit), colour=meshes.by_face, gloss=solids.gloss)
 
@@ -81,10 +78,16 @@ def render_surface(mesh: Mesh, vertices: Point, reference: Point, view: solids.V
     """The surface at its vertices as an RGB image, as the view sees it, smoothly lit on both sides, its texture a
     solid checkerboard of cubes sampled on the reference vertices of the same mesh: straight squares on its flat
     faces, circles on a sphere."""
-    points = projective(vertices)
-    reference_places = euclidean(reference)
-    cells = reference_places / np.abs(reference_places).max() * squares / 2
-    return meshes.draw(points, mesh.faces, cells[mesh.faces], meshes.smooth(points, mesh.faces), view, background,
+    mv = reference.context.multivector
+    frame_planes = stack((mv.x, mv.y, mv.z))                                  # [3] Vector+
+    # The reference surface's reach, the largest of its pairings with the frame's planes; scaled by it, the cubes of
+    # the checkerboard are unit.
+    reach = np.abs((frame_planes & reference.batch()[..., None]).to_array()).max()
+    cell_corners = mesh.incidence[2, 0] * (reference * (squares / 2 / reach))  # [corners] Point-[faces]
+    # The texture's place at each corner of each face, read by pairing, faces first, for the shader.
+    cells = (frame_planes & cell_corners.batch()[..., None]).to_array().transpose(1, 0, 2)   # [faces, corners, 3]
+    points = gpu_points(vertices)
+    return meshes.draw(points, mesh.faces, cells, meshes.smooth(points, mesh.faces), view, background,
                        face_values=np.zeros(4), colour=checkerboard, gloss=solids.gloss)
 
 

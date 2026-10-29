@@ -16,17 +16,19 @@ from examples.quadrics.quadric_collision.core import (
 )
 
 # The height of the view over its width, and the margin around what the view frames, over its extent.
-ASPECT = 0.75
-MARGIN = 1.15
+aspect = 0.75
+margin = 1.15
 # The area of an ellipsoid's centre's dot in square points: four pixels across, smaller than the contact points'.
-CENTRE_SIZE = charts.points(4) ** 2
+centre_size = charts.points(4) ** 2
 # The grid the ellipsoids and the blend at the peak are evaluated on, per side.
-RESOLUTION = 250
-FIRST_COLOURS, SECOND_COLOURS = ("#3b82f6", "#1d4ed8"), ("#f97316", "#ea580c")
+resolution = 250
+first_colours, second_colours = ("#3b82f6", "#1d4ed8"), ("#f97316", "#ea580c")
 # While the pair is apart and once it overlaps: the midplane, determinant curve and peak; the blend's edge; its fill
 # and the fill's opacity.
-APART_COLOURS = ("#16a34a", "#059669", "#10b981", 0.10)
-OVERLAP_COLOURS = ("#9333ea", "#7c3aed", "#a855f7", 0.22)
+apart_colours = ("#16a34a", "#059669", "#10b981", 0.10)
+overlap_colours = ("#9333ea", "#7c3aed", "#a855f7", 0.22)
+# A volume, the join of three points, is an intrinsic scalar, and its unit carries the extrinsic to the intrinsic.
+unit_volume = mv.antipseudoscalar([1])                                         # [] Antipseudoscalar-
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -57,10 +59,11 @@ def draw_ellipsoid(ax, dual: Quadric, grid: Point, colours: tuple[str, str]) -> 
 
 def plane_ends(plane: Plane) -> tuple[np.ndarray, np.ndarray]:
     """Two points of the plane, to draw it through: its foot from the origin, where it meets its perpendicular through
-    the origin, and one step along it, its direction where it meets the plane at infinity."""
-    foot = xy(plane ^ (plane | origin))
-    step = (stack((mv.x, mv.y)) & (plane ^ infinity)).to_array()
-    return foot, foot + step / np.linalg.norm(step)
+    the origin, and that foot moved along the plane by its direction, where it meets the plane at infinity."""
+    foot = plane ^ (plane | origin)                                            # [] Point-
+    # The meet of two planes is extrinsic; the intrinsic scalar one makes the direction a point like the foot.
+    direction = (plane ^ infinity) * unit_volume                              # [] Point-
+    return xy(foot), xy(foot + direction)
 
 
 def animate_collision(
@@ -71,7 +74,7 @@ def animate_collision(
     their contact points and the blend at the determinant's peak: a hyperboloid parting the pair while apart, an
     ellipsoid bridging it once it overlaps; beside it, the blend's determinant against its share, with its peak.
 
-    The view frames both ellipsoids of the first moment, and the determinant axis its curve and zero, `MARGIN` over
+    The view frames both ellipsoids of the first moment, and the determinant axis its curve and zero, `margin` over
     their extent."""
     states = iter(states)
     first_state = next(states)
@@ -79,30 +82,30 @@ def animate_collision(
     extent = np.concatenate([bounds(first_ellipsoid), bounds(placed_second)])
     low, high = extent.min(axis=0), extent.max(axis=0)
     centre, size = (low + high) / 2, high - low
-    half_width = MARGIN * max(size[0], size[1] / ASPECT) / 2
+    half_width = margin * max(size[0], size[1] / aspect) / 2
     xlim = (centre[0] - half_width, centre[0] + half_width)
-    ylim = (centre[1] - half_width * ASPECT, centre[1] + half_width * ASPECT)
-    xs, ys = np.meshgrid(np.linspace(*xlim, RESOLUTION), np.linspace(*ylim, RESOLUTION))
+    ylim = (centre[1] - half_width * aspect, centre[1] + half_width * aspect)
+    xs, ys = np.meshgrid(np.linspace(*xlim, resolution), np.linspace(*ylim, resolution))
     grid = mv.point(np.stack([xs, ys], axis=-1))
     bottom, top = min(determinants.min(), 0.0), max(determinants.max(), 0.0)
-    middle, half_height = (bottom + top) / 2, MARGIN * (top - bottom) / 2
+    middle, half_height = (bottom + top) / 2, margin * (top - bottom) / 2
 
     # Three quarters of the column: the pair beside the determinant's curve and its two labels. The frames draw new
     # contours, so the charts' style holds while they are drawn.
     with charts.style():
         figure, (ax_pair, ax_det) = charts.subplots(600, 260, ncols=2, gridspec_kw={"width_ratios": [1.45, 1]})
-        draw_ellipsoid(ax_pair, first_ellipsoid, grid, FIRST_COLOURS)
-        ax_pair.scatter(*xy(first_ellipsoid(infinity)), color=FIRST_COLOURS[1], s=CENTRE_SIZE, zorder=5)
-        second_centre = ax_pair.scatter([], [], color=SECOND_COLOURS[1], s=CENTRE_SIZE, zorder=5)
+        draw_ellipsoid(ax_pair, first_ellipsoid, grid, first_colours)
+        ax_pair.scatter(*xy(first_ellipsoid(infinity)), color=first_colours[1], s=centre_size, zorder=5)
+        second_centre = ax_pair.scatter([], [], color=second_colours[1], s=centre_size, zorder=5)
         near = xy(first_ellipsoid(first_tangent))
         # The tangent planes thin guides, a frame's width, under the midplane.
-        ax_pair.axline(*plane_ends(first_tangent), color=FIRST_COLOURS[1], linestyle="--", linewidth=charts.FRAME_WIDTH,
+        ax_pair.axline(*plane_ends(first_tangent), color=first_colours[1], linestyle="--", linewidth=charts.FRAME_WIDTH,
                        zorder=4)
-        second_tangent_stroke = ax_pair.axline((0, 0), (1, 0), color=SECOND_COLOURS[1], linestyle="--",
+        second_tangent_stroke = ax_pair.axline((0, 0), (1, 0), color=second_colours[1], linestyle="--",
                                                linewidth=charts.FRAME_WIDTH, zorder=4)
         midplane_stroke = ax_pair.axline((0, 0), (1, 0), linestyle="-", zorder=4)
-        ax_pair.scatter(*near, color=FIRST_COLOURS[1], zorder=6)
-        far_point = ax_pair.scatter([], [], color=SECOND_COLOURS[1], zorder=6)
+        ax_pair.scatter(*near, color=first_colours[1], zorder=6)
+        far_point = ax_pair.scatter([], [], color=second_colours[1], zorder=6)
         witness, = ax_pair.plot([], [], "k:", zorder=5)
         ax_pair.set(xlim=xlim, ylim=ylim, aspect="equal")
         ax_pair.set_axis_off()
@@ -123,7 +126,7 @@ def animate_collision(
         changing = []
         for (placed_second, second_tangent, midplane, peak, determinants, parameter,
              maximum) in chain([first_state], states):
-            line_colour, edge_colour, fill_colour, fill_alpha = APART_COLOURS if maximum > 0 else OVERLAP_COLOURS
+            line_colour, edge_colour, fill_colour, fill_alpha = apart_colours if maximum > 0 else overlap_colours
             second_centre.set_offsets(xy(placed_second(infinity))[None])
             for artist, plane in ((second_tangent_stroke, second_tangent), (midplane_stroke, midplane)):
                 start, end = plane_ends(plane)
@@ -139,7 +142,7 @@ def animate_collision(
                 artist.remove()
             field = (grid & peak(grid)).to_array()
             side = field * np.sign(maximum.to_array())
-            changing = draw_ellipsoid(ax_pair, placed_second, grid, SECOND_COLOURS) + [
+            changing = draw_ellipsoid(ax_pair, placed_second, grid, second_colours) + [
                 ax_pair.contour(xs, ys, field, levels=[0.0], colors=[edge_colour], linestyles=["-."]),
                 ax_pair.contourf(xs, ys, side, levels=[0.0, np.abs(side).max()], colors=[fill_colour],
                                  alpha=fill_alpha),

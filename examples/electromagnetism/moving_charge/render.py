@@ -55,12 +55,20 @@ def extent(events: core.Antivector) -> tuple[float, float, float, float]:
 
 
 def electric_strength(field: core.Bivector) -> np.ndarray:
-    """The lab's electric field by its length: the field read through the planes the lab's time sweeps along each
-    direction of space."""
+    """The strength of the electric field the lab reads: the size of the field met with the lab's time, the part of
+    the field that the planes swept along the lab's time read."""
     mv = field.context.multivector
     time = -mv.t.dual()                                                         # [] Antivector-
-    swept_planes = stack((mv.x, mv.y, mv.z)).dual() & time                      # [3] Antibivector-
-    return np.linalg.norm((field[..., None] & swept_planes).to_array(), axis=-1)
+    return (field & time).norm().to_array()
+
+
+def distances(events: core.Antivector) -> np.ndarray:
+    """Each event's distance from the orbit's centre in the lab's space: the size of its place, the event less the
+    lab's time as far as the lab's slice reads it."""
+    mv = events.context.multivector
+    time = -mv.t.dual()                                                         # [] Antivector-
+    places = events - time * (mv.t & events)                                    # [...] Antivector-
+    return places.squared().square_root().to_array()
 
 
 def magnetic_across(field: core.Bivector) -> np.ndarray:
@@ -146,7 +154,7 @@ def animate(frames: Iterable[tuple[core.Antivector, core.Bivector, core.Antivect
 def wave_limit(events: core.Antivector, field: core.Bivector) -> np.ndarray:
     """One colour scale per case for a whole turn: the magnetic field times the distance from the
     orbit's centre, far from the orbit; the sharpest crests of a fast charge's beam saturate."""
-    distance = np.linalg.norm(coordinates(events), axis=-1)      # [..., rows, columns]
+    distance = distances(events)                                                 # [..., rows, columns]
     far = np.where(distance > wave_zone, np.abs(magnetic_across(field) * distance), np.nan)
     return np.nanpercentile(far, wave_percentile, axis=(-2, -1))                       # [...]
 
@@ -155,8 +163,7 @@ def compressed_waves(events: core.Antivector, field: core.Bivector, limit: np.nd
     """The magnetic field across the orbit's plane times the distance from the orbit's centre, so that
     the outgoing waves keep their strength across the picture; a power below one on the magnitude keeps
     a fast charge's narrow pulses and the field between them."""
-    xy = coordinates(events)
-    scaled = magnetic_across(field) * np.linalg.norm(xy, axis=-1) / limit[..., None, None]
+    scaled = magnetic_across(field) * distances(events) / limit[..., None, None]
     return np.sign(scaled) * np.abs(scaled) ** wave_power
 
 

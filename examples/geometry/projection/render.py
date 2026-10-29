@@ -19,11 +19,11 @@ from examples.geometry.projection.core import Line, Motor, Point, mv
 from examples.util.wgsl import fitted, show, solids
 
 # The image panels' margin around both images, as a fraction of their larger side.
-MARGIN = 0.08
+image_margin = 0.08
 # The shadow scene: the colours of the body, of its shadows under the point light and the sun, and of the sun's
 # direction, drawn as an arrow of unit length from a place above the scene.
-BODY_COLOUR, LIGHT_COLOUR, SUN_COLOUR = (np.array(to_rgb(colour)) for colour in ("#38bdf8", "#fbbf24", "#a855f7"))
-SUN_ARROW_START = np.array([-2.0, 2.0, 4.0])
+body_colour, light_colour, sun_colour = (np.array(to_rgb(colour)) for colour in ("#38bdf8", "#fbbf24", "#a855f7"))
+sun_arrow_start = mv.point([-2, 2, 4])                                         # [] Point-
 background = np.ones(3)
 # The shadow scene's view, elevation and azimuth in radians, azimuth zero looking along +y, and its margin as a share
 # of the larger side.
@@ -35,14 +35,11 @@ body_radius, shadow_radius, bead_radius, light_radius = 1.6, 1.2, 2.4, 6.5
 shaft_radius, head_radius, head_length = 2.4, 6.5, 19.5
 
 
-def euclidean(points: Point) -> np.ndarray:
-    """The Euclidean coordinates of points are their pairings with the coordinate planes divided by their weights."""
-    return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
-
-
 def screen_coordinates(motor: Motor, image: Point) -> np.ndarray:
-    """The (x, y) screen coordinates of image points in the frame of a posed camera rig."""
-    return euclidean(motor << image)[..., :2]
+    """The (x, y) screen coordinates of image points in the frame of a posed camera rig: their pairings with the
+    rig's planes x and y, at unit weight."""
+    seen = motor << image                                                      # [...] Point-
+    return ((stack((mv.x, mv.y)) & seen[..., None]) / (mv.w & seen)[..., None]).to_array()
 
 
 def draw_edges(ax, coords: np.ndarray, edges, color: str, **kwargs) -> None:
@@ -60,26 +57,24 @@ def render_shadow_scene(
     sun: Point,
 ) -> None:
     """Render the lit cube, its shadows under the point light and the sun, the lights, and the corner's shadow trail."""
-    point_shadow, sun_shadow, shadow_trail = shadows
+    light_corners, sun_corners, trail = shadows                               # [corners] Point-, [corners] Point-, [trail] Point-
     ends = np.array(edges)                                                     # [edges, 2]
-    # The sun's direction, its pairings with the planes x, y and z.
-    sun_dir = (stack((mv.x, mv.y, mv.z)) & sun).to_array()
-    sun_end = SUN_ARROW_START + sun_dir / np.linalg.norm(sun_dir)
-    corners, light_corners, sun_corners, trail, light = (
-        solids.mv.point(euclidean(points)) for points in (body, point_shadow, sun_shadow, shadow_trail, point_light))
-    arrow_start, arrow_end = solids.mv.point(SUN_ARROW_START), solids.mv.point(sun_end)
+    # The arrow along the sun's direction at unit length: a direction's length is the size of its dual, the plane
+    # through the origin square to it.
+    arrow_end = sun_arrow_start + sun / sun.dual().norm()                      # [] Point-
     # Framed by everything drawn, as many pixels across as the axes' room holds.
-    view = fitted(solids.view([corners, light_corners, sun_corners, trail, light, arrow_start, arrow_end], 0.0,
-                              elevation, azimuth, scene_margin, 1), ax)
+    view = fitted(solids.view([body, light_corners, sun_corners, trail, point_light, sun_arrow_start, arrow_end],
+                              0.0, elevation, azimuth, scene_margin, 1), ax)
     pixel = view.pixel
-    shaft, head = solids.arrows(arrow_start, arrow_end, shaft_radius * pixel, head_length * pixel, head_radius * pixel)
-    rods, joints = solids.edges(corners[ends[:, 0]], corners[ends[:, 1]], body_radius * pixel)
-    parts = [(rods, BODY_COLOUR), (joints, BODY_COLOUR),
-             (solids.rods(light_corners[ends[:, 0]], light_corners[ends[:, 1]], shadow_radius * pixel), LIGHT_COLOUR),
-             (solids.rods(sun_corners[ends[:, 0]], sun_corners[ends[:, 1]], shadow_radius * pixel), SUN_COLOUR),
-             (solids.ball(trail, bead_radius * pixel)[:, None], LIGHT_COLOUR),
-             (solids.ball(light, light_radius * pixel)[None, None], LIGHT_COLOUR),
-             (shaft[None], SUN_COLOUR), (head[None], SUN_COLOUR)]
+    shaft, head = solids.arrows(sun_arrow_start, arrow_end, shaft_radius * pixel, head_length * pixel,
+                                head_radius * pixel)
+    rods, joints = solids.edges(body[ends[:, 0]], body[ends[:, 1]], body_radius * pixel)
+    parts = [(rods, body_colour), (joints, body_colour),
+             (solids.rods(light_corners[ends[:, 0]], light_corners[ends[:, 1]], shadow_radius * pixel), light_colour),
+             (solids.rods(sun_corners[ends[:, 0]], sun_corners[ends[:, 1]], shadow_radius * pixel), sun_colour),
+             (solids.ball(trail, bead_radius * pixel)[:, None], light_colour),
+             (solids.ball(point_light, light_radius * pixel)[None, None], light_colour),
+             (shaft[None], sun_colour), (head[None], sun_colour)]
     show(ax, solids.draw(parts, view, background, inks=[], translucent=[], meshes=[]), view)
 
 
@@ -125,7 +120,7 @@ def draw_projection(
     """Lay out the shadow scene and both camera views."""
     fig = plt.figure(figsize=(16, 5), dpi=120)
     scene_axes, camera_1_axes, camera_2_axes = (fig.add_subplot(1, 3, i + 1) for i in range(3))
-    render_stereo_scene(camera_1_axes, camera_2_axes, edges, stereo, rig_1, rig_2, MARGIN)
+    render_stereo_scene(camera_1_axes, camera_2_axes, edges, stereo, rig_1, rig_2, image_margin)
     # The figure laid out, the scene's axes as bare as its picture leaves them, before the picture is traced at the
     # size of their room.
     scene_axes.set_axis_off()

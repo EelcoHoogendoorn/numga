@@ -56,6 +56,12 @@ def plain_axes(ax: plt.Axes) -> None:
     ax.tick_params(color="0.78")
 
 
+def rim_segments(mesh: core.Mesh, vertices: core.Point) -> np.ndarray:
+    """The rim's edges as segments to draw, `[rim, 2, 2]`: each edge's tail and head."""
+    tails, heads = mesh.reading(mesh.boundary_edges, 1) * (mesh.incidence[1, 0] * vertices)   # Point-[rim], Point-[rim]
+    return np.stack((coordinates(tails), coordinates(heads)), axis=-2)
+
+
 def vertex_averages(mesh: core.Mesh, areas: core.Scalar, face_field: core.Scalar) -> np.ndarray:
     """Area-weighted vertex average of a scalar face field for smooth Gouraud shading."""
     corner_mean = mesh.incidence[2, 0].mean(axis=0)
@@ -68,8 +74,16 @@ def draw_cartan_ribbon(corners: core.Point, points: core.Point, sample_forms: co
                        corner_velocities: core.Point, ribbon_step: float,
                        endpoint_differences: core.Scalar, swept_fluxes: core.Scalar) -> plt.Figure:
     """Swept edge parallelogram ribbons on a moving triangle beside the Cartan rate decomposition."""
+    displaced = corners + ribbon_step * corner_velocities                       # [corners] Point-
+    # The edge facing each corner runs from the corner after it to the one before it; the ribbon it sweeps in the
+    # step is the parallelogram between it and its displaced copy.
+    firsts, seconds = corners[[1, 2, 0]], corners[[2, 0, 1]]                    # [corners] Point-, [corners] Point-
+    ribbons = stack((firsts, seconds, displaced[[2, 0, 1]], displaced[[1, 2, 0]]), axis=-1)   # [corners, 4] Point-
+    middles, edges = (firsts + seconds) / 2, seconds - firsts                   # [corners] Point-, [corners] Point-
     corner_xy = coordinates(corners)
-    displaced_xy = coordinates(corners + ribbon_step * corner_velocities)
+    displaced_xy = coordinates(displaced)
+    ribbon_xy = coordinates(ribbons)                                            # [corners, 4, 2]
+    tails_xy, heads_xy = coordinates(middles - 0.16 * edges), coordinates(middles + 0.16 * edges)
     sample_xy = coordinates(points)
     field_xy = coordinates(sample_forms.dual())
     endpoint_vals = np.asarray(endpoint_differences.to_array())
@@ -83,25 +97,19 @@ def draw_cartan_ribbon(corners: core.Point, points: core.Point, sample_forms: co
     frame_panel(geom_ax, all_places, 0.16)
     flux_scale = max(np.abs(swept_vals).max(), 1e-8)
     for index in range(3):
-        first, second = (index + 1) % 3, (index + 2) % 3
-        ribbon_xy = np.array([corner_xy[first], corner_xy[second],
-                              displaced_xy[second], displaced_xy[first]])
         colour = flux_colours(0.5 + 0.42 * swept_vals[index] / flux_scale)
-        geom_ax.add_patch(Polygon(ribbon_xy, facecolor=colour, edgecolor=wall_colour,
+        geom_ax.add_patch(Polygon(ribbon_xy[index], facecolor=colour, edgecolor=wall_colour,
                                   linewidth=charts.FRAME_WIDTH, linestyle=":", alpha=0.72, zorder=1))
 
     geom_ax.add_patch(Polygon(corner_xy, facecolor="#f6f4ee", edgecolor=wall_colour, alpha=0.88, zorder=2))
     geom_ax.add_patch(Polygon(displaced_xy, fill=False, edgecolor=ink_colour, linestyle="--", zorder=4))
-    max_norm = np.linalg.norm(field_xy, axis=-1).max()
+    max_norm = sample_forms.norm().to_array().max()
     geom_ax.quiver(sample_xy[:, 0], sample_xy[:, 1], field_xy[:, 0], field_xy[:, 1],
                    color=primal_colour, angles="xy", scale_units="xy", scale=6.2 * max_norm,
                    width=0.0085, headwidth=3.6, headlength=4.3, pivot="mid", zorder=3)
 
     for index in range(3):
-        first, second = (index + 1) % 3, (index + 2) % 3
-        middle = (corner_xy[first] + corner_xy[second]) / 2
-        edge_vec = corner_xy[second] - corner_xy[first]
-        geom_ax.annotate("", xy=middle + 0.16 * edge_vec, xytext=middle - 0.16 * edge_vec,
+        geom_ax.annotate("", xy=heads_xy[index], xytext=tails_xy[index],
                          arrowprops=dict(arrowstyle="-|>", mutation_scale=10, color=wall_colour),
                          zorder=5)
         geom_ax.annotate("", xy=displaced_xy[index], xytext=corner_xy[index],
@@ -152,7 +160,7 @@ def draw_advection_comparison(mesh: core.Mesh, vertices: core.Point,
     """Ideal versus resistive magnetic flux advection alongside magnetic energy and total flux traces."""
     places = coordinates(vertices)
     triangulation = Triangulation(*places.T, triangles=mesh.faces)
-    walls = places[mesh.edges[mesh.boundary_edges]]
+    walls = rim_segments(mesh, vertices)
 
     sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
     areas = (core.time & (sides[0] & sides[1]) / 2).norm()
@@ -192,7 +200,7 @@ def animate_advection(mesh: core.Mesh, vertices: core.Point,
     first = next(frames)
     places = coordinates(vertices)
     triangulation = Triangulation(*places.T, triangles=mesh.faces)
-    walls = places[mesh.edges[mesh.boundary_edges]]
+    walls = rim_segments(mesh, vertices)
 
     sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
     areas = (core.time & (sides[0] & sides[1]) / 2).norm()

@@ -14,14 +14,14 @@ from examples.quadrics.cga_spherical_quadrics.core import (
     make_pinched_horn,
     point,
 )
-from examples.quadrics.elliptic_physics.render import hemisphere
+from examples.quadrics.elliptic_physics.render import axes, hemisphere
 
 
 def test_null_cone_pixels():
     """Hemisphere pixels are null, their weight on the unit sphere minus one, the square of w."""
-    coordinates, inside, rim = hemisphere(60)
+    points, inside, rim = hemisphere(60)
     assert inside.sum() > 0
-    pixels = point(coordinates)
+    pixels = point((axes & points[..., None]).to_array())
     np.testing.assert_allclose((pixels | pixels).to_array(), 0.0, atol=1e-12)
     np.testing.assert_allclose((mv.w & pixels).to_array(), -1.0, atol=1e-12)
 

@@ -39,16 +39,22 @@ def space(points: core.Antivector) -> np.ndarray:
     return (stack((mv.z, mv.x, mv.y)) & points[..., None]).to_array()
 
 
+def gpu_points(points: core.Antivector) -> solids.Point:
+    """The renderer's points at the example's, placed in the view's space: the one hand-off from the spacetime
+    algebra to the renderer's."""
+    return solids.mv.point(space(points))
+
+
 def sheet(points: core.Antivector, strength: core.Scalar, view: solids.View) -> meshes.Samples:
     """The field's strength over its grid in the plane through the axis `[across, along]`, coloured by its logarithm,
     as a mesh of the grid's squares, as `meshes.samples`."""
-    grid = space(points)                                                      # [across, along, 3]
     logarithm = np.log(strength.to_array())
     shades = strength_colours(0.15 + 0.75 * (logarithm - logarithm.min()) / np.ptp(logarithm))[..., :3]
-    index = np.arange(grid[..., 0].size).reshape(grid.shape[:2])
+    # The grid's squares, each two triangles, by the indices of its points in rows.
+    index = np.arange(points.shape[0] * points.shape[1]).reshape(points.shape[:2])
     quads = np.stack([index[:-1, :-1], index[:-1, 1:], index[1:, 1:], index[1:, :-1]], axis=-1)
     triangles = quads[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
-    places = solids.mv.point(grid.reshape(-1, 3))
+    places = gpu_points(points.reshape(-1))                                   # [grid] Point-
     return meshes.samples(places, triangles, shades.reshape(-1, 3)[triangles], meshes.flat(places, triangles), view,
                           face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
 
@@ -58,11 +64,10 @@ def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.A
     """The particles' tracks `[steps, particles]`, coloured by their angle to the axis, each trailing behind its
     particle, through the field's strength at the points of a grid in the plane through the axis `[across, along]`,
     between the coils of a radius at their heights."""
-    tracks = solids.mv.point(space(events))                                   # [steps, particles] Point-
-    grid = space(points)                                                      # [across, along, 3]
+    tracks = gpu_points(events)                                               # [steps, particles] Point-
     colours = particle_colours(0.15 + 0.7 * (pitches - pitches.min()) / np.ptp(pitches))[:, :3]
     # The box of the grid, as deep across the axis as it is wide.
-    half_extent = np.abs(grid).max(axis=(0, 1))
+    half_extent = np.abs(space(points)).max(axis=(0, 1))
     box = np.stack(np.meshgrid(*[[-1, 1]] * 3, indexing="ij"), axis=-1).reshape(-1, 3) * half_extent[[0, 1, 1]]
     view = solids.view([solids.mv.point(box)], 0.0, elevation, azimuth, margin, n_pixels)
     # What stays put, set up once: the sheet and the coils' wire, each coil a ring about the axis, x, through the point

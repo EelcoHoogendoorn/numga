@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import Extensor, stack
+from numga import stack
 from examples.math.klein_quadric import core
 from examples.util.wgsl import image_figure, solids, strokes
 
@@ -38,41 +38,26 @@ darkest = np.concatenate([np.ones(1 + len(hues)), np.full(len(hues), 0.3)])
 
 
 # --- plumbing -------------------------------------------------------------------------
-def real(extensors: Extensor) -> np.ndarray:
-    """Which extensors are real up to round-off, by their coefficients."""
-    kernel = extensors.kernel
-    return np.abs(kernel.imag).max(axis=-1) <= 1e-6 * np.abs(kernel).max(axis=-1)
-
-
-def coordinates(points: core.Point) -> np.ndarray:
-    """Euclidean coordinates of finite points: their pairings with the coordinate planes, at unit
-    weight."""
+def real(points: core.Point) -> np.ndarray:
+    """Which points are real up to round-off: their coordinates, read by pairing with the coordinate planes, have no
+    imaginary part to speak of."""
     mv = points.context.multivector
-    return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points[..., None])).to_array().real
+    coordinates = (stack((mv.x, mv.y, mv.z, mv.w)) & points[..., None]).to_array()   # [..., 4]
+    return np.abs(coordinates.imag).max(axis=-1) <= 1e-6 * np.abs(coordinates).max(axis=-1)
 
 
-def chords(lines: core.Bivector, radius: float) -> np.ndarray:
-    """The two ends of each line's chord of a ball about the origin, NaN for a line that misses it."""
-    mv = lines.context.multivector
-    unit = lines.normalized()
-    nearest = coordinates((core.origin | unit) ^ unit)                        # [..., 3]
-    heading = (stack((mv.x, mv.y, mv.z)) & (unit ^ core.horizon)[..., None]).to_array().real   # [..., 3]
-    heading = heading / np.linalg.norm(heading, axis=-1, keepdims=True)
-    with np.errstate(invalid="ignore"):
-        half = np.sqrt(radius**2 - (nearest**2).sum(axis=-1, keepdims=True))
-    return np.stack([nearest - half * heading, nearest + half * heading], axis=-2)
+def chords(lines: core.Bivector, radius: float) -> core.Point:
+    """The two ends of each line's chord of a ball about the origin, `[chords, 2]`, as the renderer's real points: where
+    the line crosses the ball's quadric, the chords of lines that miss the ball, or are not real, left out, as their
+    crossings are not real."""
+    ends = core.crossings_of(solids.ball(solids.origin, radius), lines)       # [..., 2] Point-
+    return ends[real(ends).all(axis=-1)].real()                               # [chords, 2] Point-
 
 
-def finite(ends: np.ndarray) -> np.ndarray:
-    """Chords, `[..., 2, 3]`, flattened to `[chords, 2, 3]`, the chords of lines that miss the ball left out."""
-    ends = ends.reshape(-1, 2, 3)
-    return ends[np.isfinite(ends).all(axis=(-1, -2))]
-
-
-def rods(ends: np.ndarray, radius: float) -> solids.Quadric:
-    """Chords, `[..., 2, 3]`, as rods of a radius, `[chords, 3]`, the chords of lines that miss the ball left out."""
-    ends = finite(ends)
-    return solids.rods(solids.mv.point(ends[:, 0]), solids.mv.point(ends[:, 1]), radius)
+def rods(lines: core.Bivector, radius: float, rod_radius: float) -> solids.Quadric:
+    """The lines as rods of a radius along their chords of a ball about the origin, `[chords]`."""
+    ends = chords(lines, radius)                                              # [chords, 2] Point-
+    return solids.rods(ends[:, 0], ends[:, 1], rod_radius)
 
 
 def picture(lines: core.Bivector, rulings: core.Bivector, transversals: core.Bivector,
@@ -80,16 +65,16 @@ def picture(lines: core.Bivector, rulings: core.Bivector, transversals: core.Biv
     """The scene ray traced from an azimuth, framed on the ball: `[pixels, pixels, 3]` bytes."""
     view = solids.View(solids.aim(solids.origin, elevation, view_azimuth), np.full(2, ball_radius * (1 + margin)),
                        n_pixels)
-    points = solids.mv.point(coordinates(crossings)[real(crossings)])         # [crossings] Point-
+    points = crossings[real(crossings)].real()                                # [crossings] Point-
     # The hyperboloid's two families of lines, faint: strokes, which the tracer composites sample by sample, where
     # traced rods would each be searched through every layer of the translucent crowd.
-    ruling_ends = [solids.mv.point(finite(chords(family, hyperboloid_radius))) for family in rulings]
+    ruling_ends = [chords(family, hyperboloid_radius) for family in rulings]
     hyperboloid = [(strokes.segments(ends[:, 0], ends[:, 1], colour, 2 * ruling_radius, view),
                     # A traced rod is crossed twice, a stroke once: its nearest surface hides what both would.
                     1 - (1 - ruling_opacity) ** 2) for ends, colour in zip(ruling_ends, ruling_colours)]
-    four = [(rods(chords(lines[:3], ball_radius), line_radius * view.pixel), line_colour),
-            (rods(chords(lines[3:], ball_radius), line_radius * view.pixel), fourth_colour),
-            (rods(chords(transversals, ball_radius)[real(transversals)], line_radius * view.pixel), transversal_colour),
+    four = [(rods(lines[:3], ball_radius, line_radius * view.pixel), line_colour),
+            (rods(lines[3:], ball_radius, line_radius * view.pixel), fourth_colour),
+            (rods(transversals, ball_radius, line_radius * view.pixel), transversal_colour),
             (solids.ball(points, crossing_radius * view.pixel)[:, None], transversal_colour)]
     return solids.draw(four, view, background, inks=[], translucent=[], meshes=hyperboloid)
 

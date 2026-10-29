@@ -56,6 +56,12 @@ def coordinates(points: core.Antivector) -> np.ndarray:
     return (stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array()
 
 
+def gpu_points(points: core.Antivector) -> solids.Point:
+    """The GPU library's own points at the places of the spins or of the projected fibres: their coordinates, read by
+    pairing, are the one hand-off from this algebra to the renderer's."""
+    return sm.point(coordinates(points))
+
+
 def colour(spins: core.Antivector) -> np.ndarray:
     """An RGB colour for each spin: its azimuth as the hue, darker towards the south pole."""
     x, y, z = np.moveaxis(coordinates(spins), -1, 0)
@@ -63,15 +69,15 @@ def colour(spins: core.Antivector) -> np.ndarray:
     return hsv_to_rgb(np.stack([hue, np.full_like(hue, 0.75), 0.55 + 0.4 * (1 + z) / 2], axis=-1))
 
 
-def visible(curves: np.ndarray, colours: np.ndarray) -> list[tuple[solids.Point, np.ndarray]]:
-    """Polylines `[curves, n, 3]`, each with its colour `[curves, 3]`, cut where they pass beyond the drawing limit:
+def visible(curves: core.Antivector, colours: np.ndarray) -> list[tuple[solids.Point, np.ndarray]]:
+    """Polylines `[curves, n]`, each with its colour `[curves, 3]`, cut where they pass beyond the drawing limit:
     the runs of two or more points inside it `[run]`, each with its curve's colour."""
     runs = []
     for curve, rgb in zip(curves, colours):
-        inside = np.linalg.norm(curve, axis=-1) <= limit
-        cuts = np.flatnonzero(np.diff(inside)) + 1
-        runs += [(sm.point(run), rgb) for run, kept in zip(np.split(curve, cuts), np.split(inside, cuts))
-                 if kept[0] and len(run) > 1]
+        inside = curve.norm() <= limit                                         # [n]
+        bounds = np.concatenate([[0], np.flatnonzero(np.diff(inside)) + 1, [len(inside)]])
+        runs += [(gpu_points(curve[start:stop]), rgb) for start, stop in zip(bounds[:-1], bounds[1:])
+                 if inside[start] and stop - start > 1]
     return runs
 
 
@@ -95,10 +101,12 @@ def sphere_surface(n_parts: int,
     """The sphere of spins, a translucent ball after `n_parts` opaque parts, with its parallels and meridians inked
     on it where their planes cut it, a width in pixels: its inks and its translucent part."""
     ball = [(solids.ball(solids.origin, 1.0)[None, None], sphere_colour, sphere_opacity)]
-    # The parallels: the planes across z at the height of each polar angle; the meridians: the plane x turned about
-    # z by each azimuth.
+    # The parallels: the planes through the pole turned down by each polar angle, along the directions x and y; the
+    # meridians: the plane x turned about z by each azimuth.
+    rims = (sm.zx * (-parallel_polars / 2)).exp() >> sm.point([0, 0, 1])     # [parallels] Point-
+    parallels = (rims & sm.direction([1, 0, 0]) & sm.direction([0, 1, 0])) * solids.flip   # [parallels] Plane+
     meridians = (sm.xy * (-meridian_azimuths / 2)).exp() >> sm.x             # [meridians] Plane+
-    planes = concatenate([sm.z - sm.w * np.cos(parallel_polars), meridians])  # [circles] Plane+
+    planes = concatenate([parallels, meridians])                             # [circles] Plane+
     # The ball is the first translucent part, after the opaque ones.
     circles = solids.Ink(n_parts, solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape),
                          circle_colour, width, circle_opacity)
@@ -113,10 +121,10 @@ def sphere_image(parts: list[tuple[solids.Quadric, np.ndarray]], lines: list[tup
     return solids.draw(parts, view, background, inks, translucent=ball, meshes=lines)
 
 
-def dots(points: np.ndarray, colours: np.ndarray, radius: float,
+def dots(points: core.Antivector, colours: np.ndarray, radius: float,
          view: solids.View) -> tuple[solids.Quadric, np.ndarray]:
-    """A dot at each spin on the sphere `[n, 3]`, in its colour `[n, 3]`, of a radius in pixels, as an opaque part."""
-    return solids.ball(sm.point(points), radius * view.pixel)[:, None], colours
+    """A dot at each spin on the sphere `[n]`, in its colour `[n, 3]`, of a radius in pixels, as an opaque part."""
+    return solids.ball(gpu_points(points), radius * view.pixel)[:, None], colours
 
 
 def segments(runs: list[tuple[solids.Point, np.ndarray]]) -> tuple[solids.Point, solids.Point, np.ndarray]:
@@ -145,8 +153,9 @@ def shown(axes: list[plt.Axes], space_image: np.ndarray, sphere_image: np.ndarra
 def draw_tori(spins: core.Antivector, projected: core.Antivector) -> plt.Figure:
     """The fibres over circles of spins: each circle's fibres fill a torus, the tori nested, and any two
     fibres linked once."""
-    points, curves, colours = coordinates(spins), coordinates(projected), colour(spins)
-    points, curves, colours = points.reshape(-1, 3), curves.reshape(-1, curves.shape[-2], 3), colours.reshape(-1, 3)
+    points = spins.reshape(-1)                                                 # [spins] Antivector-
+    curves = projected.reshape((-1, projected.shape[-1]))                      # [spins, n] Antivector-
+    colours = colour(points)
     runs = visible(curves, colours)
     figure, axes, (space, sphere) = panels(space_view(runs), figure_pixels)
     fibres = strokes.polylines(runs, torus_width, space)
@@ -158,14 +167,13 @@ def draw_tori(spins: core.Antivector, projected: core.Antivector) -> plt.Figure:
 def draw_lift(loop: core.Antivector, path: core.Antivector, fibre: core.Antivector) -> plt.Figure:
     """A loop of spins on the sphere, and in space the spinor carried around it: it leaves its
     fibre, drawn grey, and comes back onto it further along."""
-    track, circle = coordinates(path), coordinates(fibre)
-    tracks, circles = visible(track[None], loop_colour[None]), visible(circle[None], fibre_colour[None])
+    tracks, circles = visible(path[None], loop_colour[None]), visible(fibre[None], fibre_colour[None])
     figure, axes, (space, sphere) = panels(space_view(tracks + circles), figure_pixels)
     lines = [(strokes.polylines(runs, width, space), 1.0)
              for runs, width in ((circles, lift_fibre_width), (tracks, track_width))]
     # The track's start in blue, its end in its own colour.
-    ends = (solids.ball(sm.point(track[[0, -1]]), end_radius * space.pixel)[:, None], np.stack([start_colour, loop_colour]))
-    on_sphere = strokes.polylines([(sm.point(coordinates(loop)), loop_colour)], track_width, sphere)
+    ends = (solids.ball(gpu_points(path[[0, -1]]), end_radius * space.pixel)[:, None], np.stack([start_colour, loop_colour]))
+    on_sphere = strokes.polylines([(gpu_points(loop), loop_colour)], track_width, sphere)
     shown(axes, solids.draw([ends], space, background, inks=[], translucent=[],
                             meshes=lines), sphere_image([], [(on_sphere, 1.0)], sphere),
           (space, sphere))
@@ -185,14 +193,14 @@ def animate_sweep(stream: Iterable[tuple[core.Antivector, core.Antivector]]) -> 
     # The spins so far, their colours, and each one's fibre as segments of its runs inside the drawing limit.
     points, colours, fibres = [], [], []
     for spin, projected in stream:
-        points.append(coordinates(spin))                                        # [3]
+        points.append(spin)                                                    # [] Antivector-
         colours.append(colour(spin))                                           # [3]
-        fibres.append(segments(visible(coordinates(projected)[None], colours[-1][None])))
+        fibres.append(segments(visible(projected[None], colours[-1][None])))
         # Every fibre so far thin, and the newest thick around its thin self.
         starts, ends, shades = zip(*fibres)
         thin = strokes.segments(concatenate(starts), concatenate(ends), np.concatenate(shades), swept_width, space)
         thick = strokes.segments(*fibres[-1], newest_width, space)
-        sphere_shown.set_data(sphere_scene.draw([dots(np.stack(points), np.stack(colours), sweep_dot_radius, sphere)],
+        sphere_shown.set_data(sphere_scene.draw([dots(stack(points), np.stack(colours), sweep_dot_radius, sphere)],
                                                 inks=[], translucent=[], meshes=[]))
         space_shown.set_data(space_scene.draw([], inks=[], translucent=[], meshes=[(thin, 1.0), (thick, 1.0)]))
         yield capture(figure)

@@ -8,32 +8,37 @@ import numpy as np
 from examples.quadrics.conformal_elliptical.core import Plane, Point, mv
 from examples.util.wgsl import image_figure
 
-# Samples across the hemisphere, BIN by BIN of them averaged into each pixel of the picture.
-RESOLUTION = 512
+# Samples across the hemisphere, `samples_per_side` by `samples_per_side` of them averaged into each pixel of the
+# picture.
+n_samples = 512
 # The tanh gain, which sets the antialiased width of a circle.
-SHARPNESS = 512.0
-# The samples along each side of a pixel.
-BIN = 2
+sharpness = 512.0
+samples_per_side = 2
+# The direction toward the viewer, who looks along -z.
+toward_viewer = mv.z.dual()                                                  # [] Point-
 
 
 # --- plumbing -------------------------------------------------------------------------
 def hemisphere(n: int) -> tuple[Point, np.ndarray]:
-    """Points of the front hemisphere seen along z, and the mask of pixels outside the disk."""
-    x = np.linspace(-1.0, +1.0, n)[:, None] * np.ones((n, n))
-    y = np.linspace(-1.0, +1.0, n)[None, :] * np.ones((n, n))
-    z = np.sqrt(np.maximum(1.0 - x**2 - y**2, 0.0))
-    return mv.vector(np.stack([x, y, z], axis=-1)).dual(), (x**2 + y**2) > 1.0
+    """The points of the front hemisphere under an n by n grid of samples across the unit disk seen along z, and which
+    of the samples lie inside the disk: each sample's place across the disk lifted toward the viewer onto the
+    sphere."""
+    steps = np.linspace(-1.0, +1.0, n)
+    across = mv.x.dual() * steps[:, None] + mv.y.dual() * steps[None, :]     # [rows, columns] Point-
+    inside = across.norm() <= 1.0                                            # [rows, columns]
+    disk = across[inside]                                                    # [samples] Point-
+    return disk + toward_viewer * (1 - disk.scalar_norm_squared()).square_root(), inside
 
 
 def draw_planes(planes: Plane) -> plt.Figure:
     """The planes' great circles on the front hemisphere, the cells between them in two shades by the
     parity of the planes a point lies above."""
-    points, outside = hemisphere(RESOLUTION)
+    points, inside = hemisphere(n_samples)
     # Each point's height above each plane, by their pairing.
-    heights = (planes & points[:, :, None]).to_array()                                 # [rows, columns, planes]
-    shade = (np.prod(np.tanh(heights * SHARPNESS), axis=-1) + 1.0) / 2.0
-    image = (shade + 1.0) * (1.0 - outside)
-    size = RESOLUTION // BIN
-    frame = image.reshape(size, BIN, size, BIN).mean(axis=(1, 3))
+    heights = (planes & points[:, None]).to_array()                          # [samples, planes]
+    image = np.zeros(inside.shape)
+    image[inside] = (np.prod(np.tanh(heights * sharpness), axis=-1) + 1.0) / 2.0 + 1.0
+    size = n_samples // samples_per_side
+    frame = image.reshape(size, samples_per_side, size, samples_per_side).mean(axis=(1, 3))
     grey = plt.get_cmap("gray")((frame - frame.min()) / (frame.max() - frame.min()))
     return image_figure(np.round(grey[..., :3] * 255).astype(np.uint8))

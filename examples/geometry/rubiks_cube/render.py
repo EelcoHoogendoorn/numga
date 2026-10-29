@@ -8,63 +8,68 @@ from itertools import chain
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import stack
+from numga import concatenate, stack
 from examples.geometry.rubiks_cube import core
 from examples.util.wgsl import meshes, solids
 
 # The six face colours by side and axis (+x red, +y blue, +z white, -x orange, -y green, -z yellow),
 # together with the inner cut colour and the background colour.
-COLOURS = np.array([to_rgb(colour) for colour in ("#c41e3a", "#0051ba", "#ffffff", "#ff5800", "#009e60", "#ffd500")])
-CUT = np.array(to_rgb("#111111"))
-BACKGROUND = np.ones(3)
+colours_by_face = np.array([to_rgb(colour) for colour in ("#c41e3a", "#0051ba", "#ffffff", "#ff5800", "#009e60", "#ffd500")])
+cut_colour = np.array(to_rgb("#111111"))
+background = np.ones(3)
 # The camera elevation and azimuth in radians (azimuth zero looking along +y), the viewport margin,
 # and the image size in pixels.
-ELEVATION, AZIMUTH = np.radians([28.0, 32.0])
-MARGIN = 0.08
-N_PIXELS = 300
+elevation, azimuth = np.radians([28.0, 32.0])
+margin = 0.08
+n_pixels = 300
 # The factor by which the viewport widens around the initial cube so turning corners stay in frame.
-VIEW_ROOM = 1.25
+view_room = 1.25
 # The width in pixels and darkness of the border inked along each sticker square's outer edges.
-EDGE_WIDTH = 1.0
-EDGE_DARKNESS = 0.9
-# Darken each sticker toward its outer square edges within `EDGE_WIDTH` pixels using the per-triangle edge mask in `face_values`.
-EDGE_SHADER = meshes.Colour("""
+edge_width = 1.0
+edge_darkness = 0.9
+# Each square splits into two outward-facing triangles of its corners, which ink only the square's perimeter edges,
+# not its diagonal.
+square_triangles = np.array([[0, 2, 1], [0, 3, 2]])
+perimeter = np.array([[1, 1, 0], [1, 0, 1]])
+# Darken each sticker toward its outer square edges within `edge_width` pixels using the per-triangle edge mask in `face_values`.
+edge_shader = meshes.Colour("""
 fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {
     let edges = clamp(1 - corner / (edge_width * oversampling * fwidth(corner)), vec3<f32>(0.0), vec3<f32>(1.0)) * face_values.xyz;
     return vec4<f32>(values.rgb * (1 - max(edges.x, max(edges.y, edges.z))), 1.0);
 }
-""", dict(edge_width=EDGE_WIDTH))
+""", dict(edge_width=edge_width))
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(points: core.Point) -> np.ndarray:
-    """The Euclidean x, y, and z coordinates of `points`."""
+def gpu_points(points: core.Point) -> solids.Point:
+    """The GPU library's own points at the places of the example's: their pairings with the planes x, y and z are the
+    one hand-off from this algebra to the renderer's."""
     mv = core.mv
-    return (stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array()
+    return solids.mv.point((stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array())
 
 
 def picture(corners: core.Point, colours: np.ndarray, cut: core.Point, view: solids.View) -> np.ndarray:
     """Render the cube's stickers as coloured squares with dark edges together with the dark inner cut beneath the turning layer."""
-    squares = np.concatenate([coordinates(corners), coordinates(cut).reshape(-1, 4, 3)])                # [squares, corners, 3]
-    fills = np.concatenate([COLOURS[colours], np.broadcast_to(CUT, (cut.shape[0] * cut.shape[1], 3))])  # [squares, 3]
-    places = solids.mv.point(squares.reshape(-1, 3))
-    # Split each square into two outward-facing triangles that ink only the square's perimeter edges, not its diagonal.
-    faces = (4 * np.arange(len(squares))[:, None, None] + np.array([[0, 2, 1], [0, 3, 2]])).reshape(-1, 3)
-    ink = np.tile([[1, 1, 0], [1, 0, 1]], (len(squares), 1)) * EDGE_DARKNESS                            # [faces, 3]
-    values = np.repeat(fills, 2, axis=0)[:, None]                                                       # [faces, 1, 3]
+    squares = concatenate([corners, cut.reshape(-1, cut.shape[-1])])                                  # [squares, corners] Point-
+    fills = np.concatenate([colours_by_face[colours], np.broadcast_to(cut_colour, (cut.shape[0] * cut.shape[1], 3))])  # [squares, 3]
+    places = gpu_points(squares.reshape(-1))                                                          # [squares * corners] Point-
+    # The places of each square's corners, and its two triangles through them.
+    square_corners = np.arange(len(places)).reshape(squares.shape)                                    # [squares, corners]
+    faces = square_corners[:, square_triangles].reshape(-1, 3)                                        # [squares * 2, 3]
+    ink = np.tile(perimeter, (len(squares), 1)) * edge_darkness                                       # [faces, 3]
+    values = np.repeat(fills, 2, axis=0)[:, None]                                                     # [faces, 1, 3]
     normals = meshes.flat(places, faces)
-    return meshes.draw(places, faces, values, normals, view, BACKGROUND, face_values=ink, colour=EDGE_SHADER,
+    return meshes.draw(places, faces, values, normals, view, background, face_values=ink, colour=edge_shader,
                        gloss=solids.gloss)
 
 
 def animate(states: Iterable[tuple[core.Point, core.Point]], colours: np.ndarray,
-            room: float = VIEW_ROOM) -> Iterator[np.ndarray]:
+            room: float = view_room) -> Iterator[np.ndarray]:
     """Render each frame of the cube's sticker corners and inner cut from a fixed camera framed on the initial cube."""
     states = iter(states)
     first_state = next(states)
     corners, _ = first_state
-    initial_view = solids.view([solids.mv.point(coordinates(corners).reshape(-1, 3))], 0.0, ELEVATION, AZIMUTH, MARGIN,
-                               N_PIXELS)
+    initial_view = solids.view([gpu_points(corners.reshape(-1))], 0.0, elevation, azimuth, margin, n_pixels)
     view = initial_view._replace(half=initial_view.half * room)
     for corners, cut in chain([first_state], states):
         yield picture(corners, colours, cut, view)

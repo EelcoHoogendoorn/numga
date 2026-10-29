@@ -50,11 +50,12 @@ def draw_focusing(velocities: core.Vector, names: list[str]) -> plt.Figure:
             ax.set_axis_off()
     figure.tight_layout()
     for row, velocity in zip(np.atleast_2d(grid), velocities):
-        flow = components(velocity)                                    # [count, waves, 3]
-        for ax, wave in zip(row, np.moveaxis(flow, 1, 0)):
-            ahead = wave[:, 2] > 0
-            # Where each ray meets the face one unit along z.
-            face = wave[ahead, :2] / wave[ahead, 2:]
+        for ax, wave in zip(row, (velocity[:, mode] for mode in range(len(MODES)))):
+            # The rays that head for the face one unit along z, and where each meets it: the ray's direction scaled
+            # to unit reading along z, read across the face.
+            ahead = wave[(core.axes[2] & wave) > 0]                    # [rays] Antivector-
+            landing = ahead / (core.axes[2] & ahead)                   # [rays] Antivector-
+            face = (core.axes[:2] & landing[:, None]).to_array()       # [rays, 2]
             bins = min(room(ax))
             density, _, _ = np.histogram2d(face[:, 0], face[:, 1], bins=bins, range=[FACE, FACE])
             pinned(ax, np.log1p(density.T[::-1]), (*FACE, *FACE)).set_cmap("inferno")

@@ -48,9 +48,10 @@ def isospin_coordinates(isospins: core.Isospin) -> np.ndarray:
     return (stack((mv.yz, mv.zx, mv.xy)) & isospins[..., None]).to_array()
 
 
-def patch_coordinates(planes: core.Bivector) -> np.ndarray:
-    """The x, y and z parts of the patches of planes: the planes' pairings with the patches of yz, zx and xy."""
-    return (planes[..., None] & stack((mv.yz.dual(), mv.zx.dual(), mv.xy.dual()))).to_array()
+def gpu_directions(isospins: core.Isospin) -> solids.Point:
+    """The GPU library's own directions along isospins, from the centre of the flavor sphere: their x, y and z parts,
+    read by pairing, are the one hand-off from this algebra to the renderer's."""
+    return sm.direction(isospin_coordinates(isospins))
 
 
 def electron_probability(trajectory: core.Isospin) -> np.ndarray:
@@ -66,24 +67,26 @@ def flavor_sphere(start_plane: core.Bivector, end_plane: core.Bivector, ax: plt.
     the isospin turns in at the end, as great circles to ink on it, each the planes cutting it, their colour, width and
     opacity; and the view, fitted to the matplotlib axes it is shown in."""
     view = fitted(solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, LIMIT), N_PIXELS), ax)
-    axis_dots = np.linspace(-AXIS_REACH, AXIS_REACH, N_AXIS_DOTS)[:, None, None] * np.eye(3)    # [dots, 3, 3]
-    # The great circle in the plane the isospin turns in at the start, about its patch, from the circle's point
-    # nearest the electron flavor's pole: the pole's direction less its part along the patch, read by the plane through
-    # the centre square to it. Every point of the circle but the last, which closes it onto the first.
-    patch = sm.direction(patch_coordinates(start_plane))                       # [] Point-
-    square = -patch.dual()                                                     # [] Plane+
-    pole = sm.direction(isospin_coordinates(core.flavor_e))                    # [] Point-
-    in_plane = pole - patch * ((square & pole) / (square & patch))             # [] Point-
-    rim = solids.origin + in_plane / in_plane.dual().norm()                    # [] Point-
-    circle_dots = meshes.circles(rim, (solids.origin & patch) * solids.flip, N_CIRCLE_DOTS)[:-1]   # [dots] Point-
+    # Each axis dotted from end to end.
+    reaches = np.linspace(-AXIS_REACH, AXIS_REACH, N_AXIS_DOTS)[:, None]
+    axis_dots = solids.origin + solids.axes.dual() * reaches                   # [dots, 3] Point-
+    # The great circle in the plane the isospin turns in at the start, from the circle's point nearest the electron
+    # flavor's pole: the pole less its part along the plane's patch, at unit length, turned about in the plane. Every
+    # point of the circle but the last, which would close it onto the first.
+    start_unit = start_plane.normalized()                                       # [] Bivector+
+    in_plane = core.flavor_e - start_unit.dual() * (start_unit & core.flavor_e)   # [] Isospin-
+    angles = np.linspace(0, 2 * np.pi, N_CIRCLE_DOTS, endpoint=False)
+    turns = (start_unit * (-angles / 2)).exp()                                  # [dots] Rotor+
+    circle_dots = turns >> in_plane.normalized()                                # [dots] Isospin-
     parts = [(solids.ball(points, radius)[:, None], colour)
-             for points, radius, colour in ((sm.point(axis_dots.reshape(-1, 3)), AXIS_DOT_RADIUS, axis_colour),
-                                            (circle_dots, CIRCLE_DOT_RADIUS, plane_colour),
-                                            (sm.point(isospin_coordinates(flavors)), FLAVOR_RADIUS, flavor_colours))]
+             for points, radius, colour in ((axis_dots.reshape(-1), AXIS_DOT_RADIUS, axis_colour),
+                                            (solids.origin + gpu_directions(circle_dots), CIRCLE_DOT_RADIUS,
+                                             plane_colour),
+                                            (solids.origin + gpu_directions(flavors), FLAVOR_RADIUS, flavor_colours))]
     ball = [(solids.ball(solids.origin, 1.0)[None, None], sphere_colour, sphere_opacity)]
     # The equator and two meridians, where the planes x, y and z cut the sphere; the plane the isospin turns in at the
     # end, through the centre square to its patch.
-    end_circle = -sm.direction(patch_coordinates(end_plane)[None]).dual()      # [1] Plane+
+    end_circle = -gpu_directions(end_plane.dual()[None]).dual()                # [1] Plane+
     circles = [(solids.axes, grid_colour, GRID_WIDTH / view.pixel, grid_opacity),
                (end_circle, plane_colour, PLANE_WIDTH / view.pixel, 1.0)]
     return parts, ball, circles, view
@@ -95,16 +98,18 @@ def inked(circles: list, n_opaque: int) -> list[solids.Ink]:
                        colour, width, opacity) for planes, colour, width, opacity in circles]
 
 
-def path_marks(path: np.ndarray, view: solids.View) -> tuple[Samples, tuple[solids.Quadric, np.ndarray]]:
-    """A path over the sphere `[steps, 3]` as a stroke, and its ends as balls, its start green and its end orange."""
-    stroke = strokes.polylines([(sm.point(path), path_colour)], PATH_WIDTH / view.pixel, view)
-    ends = (solids.ball(sm.point(path[[0, -1]]), END_RADIUS)[:, None], np.stack([start_colour, end_colour]))
+def path_marks(path: core.Isospin, view: solids.View) -> tuple[Samples, tuple[solids.Quadric, np.ndarray]]:
+    """A path of isospins over the sphere `[steps]` as a stroke, and its ends as balls, its start green and its end
+    orange."""
+    places = solids.origin + gpu_directions(path)                               # [steps] Point-
+    stroke = strokes.polylines([(places, path_colour)], PATH_WIDTH / view.pixel, view)
+    ends = (solids.ball(places[np.array([0, -1])], END_RADIUS)[:, None], np.stack([start_colour, end_colour]))
     return stroke, ends
 
 
 def name_flavors(ax, view: solids.View) -> None:
     """The flavors named just past the poles, where the camera sees them."""
-    for (x, y), name, colour in zip(view.across(sm.point(LABEL_DISTANCE * isospin_coordinates(flavors))),
+    for (x, y), name, colour in zip(view.across(solids.origin + gpu_directions(flavors) * LABEL_DISTANCE),
                                     (r"$\nu_e$", r"$\nu_\mu$"), flavor_colours):
         ax.text(x, y, name, ha="center", va="center", fontweight="bold", color=colour)
 
@@ -113,7 +118,7 @@ def draw_sphere(ax, sphere: tuple[list, list, list, solids.View], trajectory: co
     """The flavor sphere and the isospin's path over it, from its start, green, to its end, orange, with
     the flavors named at the poles."""
     parts, ball, circles, view = sphere
-    stroke, ends = path_marks(isospin_coordinates(trajectory), view)
+    stroke, ends = path_marks(trajectory, view)
     opaque = parts + [ends]
     show(ax, solids.draw(opaque, view, np.ones(3), inked(circles, len(opaque)), translucent=ball,
                          meshes=[(stroke, 1.0)]), view)
@@ -194,12 +199,12 @@ def animate_precession(states: Iterable[core.Isospin], plane: core.Bivector, dis
         image = show(sphere, np.full((*view.shape, 3), 255, dtype=np.uint8), view)
         name_flavors(sphere, view)
         states = iter(states)
-        path, electron = [], []                                                  # [steps, 3], [steps] so far
+        path, electron = [], []                                                  # [steps] Isospin-, [steps] so far
         for end in np.linspace(2, len(distances), n_frames, dtype=int):
             for state in islice(states, end - len(path)):
-                path.append(isospin_coordinates(state))
+                path.append(state)
                 electron.append(electron_probability(state))
-            stroke, ends = path_marks(np.array(path), view)
+            stroke, ends = path_marks(stack(path), view)
             image.set_data(scene.draw([ends], inks=[], translucent=[], meshes=[(stroke, 1.0)]))
             electron_line.set_data(distances[:end], electron)
             muon_line.set_data(distances[:end], 1 - np.array(electron))

@@ -45,18 +45,24 @@ def components(rho: core.State) -> np.ndarray:
     return 2 * (spin_planes & rho.select.antibivector()[..., None]).to_array()
 
 
+def gpu_points(states: core.State) -> solids.Point:
+    """The GPU library's own points at the tips of the states' Bloch vectors: their components, read by pairing, are
+    the one hand-off from this algebra to the renderer's."""
+    return sm.point(components(states))
+
+
 def draw_nutation(states: Iterable[core.State], steady_states: core.State) -> plt.Figure:
     """Each spin's Bloch vector from equilibrium, nutating about the drive and spiralling into its
     steady state, marked with a dot; the states are consumed as they are yielded. The Bloch ball is
     translucent, with its equator and two meridians, in the frame of its axes, named at their tips."""
-    paths, ends = components(stack(list(states))), components(steady_states)  # [times, detunings, 3], [detunings, 3]
-    colours = np.array([to_rgb(colour) for colour in COLOURS[: paths.shape[1]]])
+    paths = gpu_points(stack(list(states), axis=-1))                     # [detunings, times] Point-
+    colours = np.array([to_rgb(colour) for colour in COLOURS[: paths.shape[0]]])
     view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, REACH), N_PIXELS)
-    tracks = strokes.polylines(list(zip(sm.point(np.moveaxis(paths, 1, 0)), colours)), PATH_WIDTH, view)
+    tracks = strokes.polylines(list(zip(paths, colours)), PATH_WIDTH, view)
     shafts, heads = solids.frame(AXIS_LENGTH, ARROW_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel,
                                  HEAD_WIDTH / 2 * view.pixel)
     parts = [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR),
-             (solids.ball(sm.point(ends), DOT_RADIUS * view.pixel)[:, None], colours)]
+             (solids.ball(gpu_points(steady_states), DOT_RADIUS * view.pixel)[:, None], colours)]
     # The ball, translucent, the first part after the opaque ones; its equator and two meridians inked where the
     # planes x, y and z cut it.
     ball = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR, SPHERE_OPACITY)]
@@ -66,7 +72,7 @@ def draw_nutation(states: Iterable[core.State], steady_states: core.State) -> pl
     ax = figure.add_axes((0, 0, 1, 1))
     show(ax, solids.draw(parts, view, np.ones(3), [great_circles], translucent=ball, meshes=[(tracks, 1.0)]), view)
     # Each axis named just past its arrow's tip, where the camera sees it.
-    labels(ax, view, sm.point(LABEL_DISTANCE * np.eye(3)), list("xyz"), ha="center", va="center", fontsize=LABEL_SIZE,
+    labels(ax, view, solids.origin + solids.axes.dual() * LABEL_DISTANCE, list("xyz"), ha="center", va="center", fontsize=LABEL_SIZE,
            color=AXIS_COLOUR)
     return figure
 
@@ -94,10 +100,19 @@ def draw_lines(detunings: np.ndarray, drives: np.ndarray, steady_states: core.St
     return figure
 
 
+def transverse_length(states: core.State) -> np.ndarray:
+    """The length of each state's transverse Bloch vector, what a pick-up coil sees of it: its spin part less that
+    part turned a half turn in the magnet's plane xy, which keeps the part along the field and reverses the rest,
+    in the algebra of spacetime as in that of space; its size whichever sign its square has in the algebra."""
+    mv = states.context.multivector
+    spins = states.select.antibivector()                                 # [...] Spin-
+    transverse = spins - (mv.xy >> spins)                                # [...] Spin-
+    return transverse.scalar_norm_squared().abs().square_root().to_array()
+
+
 def signal(ensemble: core.State) -> np.ndarray:
     """The ensemble's mean transverse Bloch vector, its length at each time: what a pick-up coil sees."""
-    r = components(ensemble)                                             # [times, spins, 3]
-    return np.hypot(r[..., 0].mean(axis=-1), r[..., 1].mean(axis=-1))
+    return transverse_length(ensemble.mean(axis=-1))
 
 
 @charts.style()
@@ -121,12 +136,6 @@ def draw_echo(states: Iterable[core.State], dt: float, delay: float, t2: float) 
     return figure
 
 
-def transverse(states: core.State) -> np.ndarray:
-    """The length of each state's transverse Bloch vector: what a pick-up coil sees of it."""
-    r = components(states)
-    return np.hypot(r[..., 0], r[..., 1])
-
-
 @charts.style()
 def draw_decays(times: np.ndarray, echoed: core.State, faded: core.State, t2: float) -> plt.Figure:
     """The signal at each time after the first pulse, on a logarithmic time axis: with a half-turn
@@ -134,8 +143,8 @@ def draw_decays(times: np.ndarray, echoed: core.State, faded: core.State, t2: fl
     the uneven field ends within about a microsecond."""
     fine = np.geomspace(times[0], times[-1], 200)
     figure, ax = charts.subplots(*SIGNAL_PX)
-    ax.semilogx(times, transverse(echoed), "o-", color="#2e86c1", label="echo")
-    ax.semilogx(times, transverse(faded), "o-", color="#c0392b", label="free decay")
+    ax.semilogx(times, transverse_length(echoed), "o-", color="#2e86c1", label="echo")
+    ax.semilogx(times, transverse_length(faded), "o-", color="#c0392b", label="free decay")
     ax.semilogx(fine, np.exp(-fine / t2), "--", color="0.5", label="exp(-t / T2)")
     ax.set(xlabel="time after the first pulse (µs)", ylabel="transverse spin", ylim=(0, 1.05), yticks=[])
     ax.spines[["top", "right"]].set_visible(False)

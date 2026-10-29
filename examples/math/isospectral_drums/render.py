@@ -41,11 +41,14 @@ def amplitudes(field: Scalar) -> np.ndarray:
     return np.asarray(field.batch().to_array())
 
 
-def welded(points: np.ndarray, triangles: np.ndarray) -> tuple[Mesh, np.ndarray]:
-    """The mesh of triangles on points `[points, 2]` where separate tiles carry separate copies of a shared edge's
-    vertices, each set of copies welded into one vertex, and the places of the welded vertices `[vertices, 2]`."""
-    places, vertices = np.unique(np.round(points, 12), axis=0, return_inverse=True)
-    return Mesh(len(places), vertices.reshape(-1)[triangles]), places
+def welded(corners: Point) -> tuple[Mesh, Point]:
+    """The mesh of tiles `[tiles, corners]` whose separate tiles carry separate copies of a shared corner, each set of
+    copies, at no distance from each other, welded into one vertex, and the welded vertices `[vertices]`."""
+    copies = corners.reshape(-1)                                               # [copies] Point-
+    together = (copies[:, None] - copies[None]).norm() < 1e-9                  # [copies, copies]
+    # Each copy welded into the first copy at its place.
+    welds, firsts, vertices = np.unique(together.argmax(axis=0), return_index=True, return_inverse=True)
+    return Mesh(len(welds), vertices.reshape(corners.shape)), copies[firsts]
 
 
 def draw_tiles(tiles: Point) -> plt.Figure:
@@ -53,11 +56,12 @@ def draw_tiles(tiles: Point) -> plt.Figure:
     points = coordinates(tiles)
     figure, axes = plt.subplots(1, len(points), figsize=(8, 3.7), facecolor="white")
     span = np.ptp(points, axis=(1, 2)).max() * 1.08
-    for ax, corners in zip(axes, points):
+    for ax, drum, corners in zip(axes, tiles, points):
         ax.add_collection(PolyCollection(corners, facecolors=tile_colours,
                                         edgecolors="white", linewidths=1.5))
-        mesh, places = welded(corners.reshape(-1, 2), np.arange(corners.shape[0] * 3).reshape(-1, 3))
-        ax.add_collection(LineCollection(places[mesh.edges[mesh.boundary_edges]], colors="#27313a", linewidths=1.5))
+        mesh, welds = welded(drum)
+        ax.add_collection(LineCollection(coordinates(welds[mesh.edges[mesh.boundary_edges]]), colors="#27313a",
+                                         linewidths=1.5))
         centre = (corners.min(axis=(0, 1)) + corners.max(axis=(0, 1))) / 2
         ax.set(xlim=centre[0] + np.array([-0.5, 0.5]) * span,
                ylim=centre[1] + np.array([-0.5, 0.5]) * span, aspect="equal")
@@ -146,7 +150,7 @@ class Membrane:
         self.centre = (stack((mv.x, mv.y)).dual() * ((places.min(axis=0) + places.max(axis=0)) / 2)).sum()
         # The outline is whole on the drum's perimeter, and half on each side of a seam between two tiles.
         n_tiles = corners.shape[0]
-        tiling, _ = welded(coordinates(corners).reshape(-1, 2), np.arange(3 * n_tiles).reshape(-1, 3))
+        tiling, _ = welded(corners)
         perimeter = np.isin(tiling.face_edges, tiling.boundary_edges)                      # [tiles, corners]
         self.rims = np.where(perimeter, outline_width, outline_width / 2)               # [tiles, corners]
         self.owners = np.repeat(np.arange(n_tiles), len(triangles) // n_tiles).astype(np.uint32)

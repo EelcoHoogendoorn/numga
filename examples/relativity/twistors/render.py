@@ -35,16 +35,23 @@ AXIS_REACH, LABEL_DISTANCE = 1.12, 1.24
 
 
 # --- plumbing -----------------------------------------------------------------------
-def spatial(events: core.Event) -> np.ndarray:
-    """The x, y and z components of events: their pairings with the slices x, y and z."""
+def gpu_points(events: core.Event) -> solids.Point:
+    """The GPU library's points at the places of events in space: their x, y and z, read by pairing with the slices
+    x, y and z, are the one hand-off from the conformal algebra of spacetime to the renderer's space."""
     mv = events.context.multivector
-    return (stack((mv.x, mv.y, mv.z)) & events[..., None]).to_array()
+    return sm.point((stack((mv.x, mv.y, mv.z)) & events[..., None]).to_array())
 
 
 def spacetime(events: core.Event) -> np.ndarray:
     """The x, z and t components of events: their pairings with the slices x, z and t."""
     mv = events.context.multivector
     return (stack((mv.x, mv.z, mv.t)) & events[..., None]).to_array()
+
+
+def diagram_points(events: core.Event) -> solids.Point:
+    """The GPU library's points at the places of events in the spacetime diagram, x, z and t drawn along the scene's
+    x, y and z: the diagram's hand-off from spacetime to the renderer's space."""
+    return sm.point(spacetime(events))
 
 
 def colours(count: int) -> np.ndarray:
@@ -55,12 +62,12 @@ def colours(count: int) -> np.ndarray:
 
 def space_view(pixels: int, *curves: core.Event) -> solids.View:
     """A view framing every spatial curve, `pixels` across."""
-    return solids.view([sm.point(spatial(batch)) for batch in curves], 0.0, ELEVATION, AZIMUTH, MARGIN, pixels)
+    return solids.view([gpu_points(batch) for batch in curves], 0.0, ELEVATION, AZIMUTH, MARGIN, pixels)
 
 
 def draw_curves(curves: core.Event, width: float, view: solids.View) -> np.ndarray:
     """Each spatial curve as a stroke of a width in pixels, in its own colour."""
-    points = sm.point(spatial(curves))
+    points = gpu_points(curves)
     points = points.reshape((-1, points.shape[-1]))                           # [curves, samples] Point-
     lines = strokes.polylines(list(zip(points, colours(len(points)))), width, view)
     return solids.draw([], view, BACKGROUND, inks=[], translucent=[], meshes=[(lines, 1.0)])
@@ -69,21 +76,22 @@ def draw_curves(curves: core.Event, width: float, view: solids.View) -> np.ndarr
 def draw_incidence(events: core.Event, rays: core.Event) -> plt.Figure:
     """Events on a light ray, one panel per case: [cases, events] and [cases, ray_samples] Event. Each panel is a
     spacetime diagram, x, z and t drawn along the scene's x, y and z, its axes arrows named at their tips."""
-    positions, lines = spacetime(events), spacetime(rays)
-    extent = AXIS_REACH * max(np.max(np.abs(positions)), np.max(np.abs(lines)))
-    names = sm.point(LABEL_DISTANCE / AXIS_REACH * extent * np.eye(3))        # [3] Point-
+    positions, lines = diagram_points(events), diagram_points(rays)           # [cases, events] Point-, [cases, ray_samples] Point-
+    # The axes reach a little past the farthest coordinate drawn, and their names a little past their tips.
+    extent = AXIS_REACH * max(np.abs(spacetime(events)).max(), np.abs(spacetime(rays)).max())
+    names = solids.origin + solids.axes.dual() * (LABEL_DISTANCE / AXIS_REACH * extent)   # [3] Point-
     figure = plt.figure(figsize=(5, 2.5), facecolor="white")
     panels = [figure.add_axes((column / len(positions), 0.0, 1 / len(positions), 1.0))
               for column in range(len(positions))]
     # One view for both panels, framing the axes, their names and every ray, as many pixels across as a panel holds.
-    view = fitted(solids.view([solids.origin[None], names, sm.point(lines)], 0.0, DIAGRAM_ELEVATION, DIAGRAM_AZIMUTH,
+    view = fitted(solids.view([solids.origin[None], names, lines], 0.0, DIAGRAM_ELEVATION, DIAGRAM_AZIMUTH,
                               DIAGRAM_MARGIN, 1), panels[0])
     shafts, heads = solids.frame(extent, AXIS_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
     for ax, points, line in zip(panels, positions, lines):
         # The ray, straight, as a rod from its first sample to its last.
-        ray = solids.rods(sm.point(line[:1]), sm.point(line[-1:]), RAY_WIDTH / 2 * view.pixel)   # [1, 3] Plane+ <- Point-
+        ray = solids.rods(line[:1], line[-1:], RAY_WIDTH / 2 * view.pixel)   # [1, 3] Plane+ <- Point-
         marks = [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR), (ray, to_rgb(BLUE)),
-                 (solids.ball(sm.point(points), EVENT_RADIUS * view.pixel)[:, None], to_rgb(ORANGE))]
+                 (solids.ball(points, EVENT_RADIUS * view.pixel)[:, None], to_rgb(ORANGE))]
         show(ax, solids.draw(marks, view, BACKGROUND, inks=[], translucent=[], meshes=[]), view)
         # Each axis named just past its arrow's tip.
         labels(ax, view, names, list("xzt"), ha="center", va="center", fontsize=8, color=AXIS_COLOUR)

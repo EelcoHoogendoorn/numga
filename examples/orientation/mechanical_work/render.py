@@ -44,9 +44,11 @@ class WorkView:
     set for each state."""
 
     def __init__(self, pivots: Point, paths: Point) -> None:
+        self.pivots = pivots.normalized()                                       # [cranks] Point-
         self.centres = coordinates(pivots)
         trails = coordinates(paths)
-        radius = np.linalg.norm(trails - self.centres, axis=-1).max()
+        # The longest crank: the distance from a pivot to its handle is the norm of their join.
+        radius = (self.pivots & paths.normalized()).norm().to_array().max()
         margin = radius * 0.95
         lower = trails.min(axis=(0, 1)) - margin
         upper = trails.max(axis=(0, 1)) + margin
@@ -69,19 +71,21 @@ class WorkView:
                        for colour, side in ((velocity_colour, -1), (force_colour, 1))]
 
     def update(self, handles: Point, velocities: Point, forces: Point) -> plt.Figure:
-        points = coordinates(handles)
-        velocity = components(velocities)
-        force = components(forces)
-        radius = np.linalg.norm(points - self.centres, axis=-1).max()
-        radial = (points - self.centres) / radius
-        arrow_scale = radius * 0.55 / np.linalg.norm(velocity, axis=-1).max()
+        handles = handles.normalized()                                          # [cranks] Point-
+        radius = (self.pivots & handles).norm().to_array().max()
+        # The direction out from each pivot to its handle, per length of the longest crank.
+        radial = (handles - self.pivots) / radius                               # [cranks] Direction-
+        # The fastest handle's velocity reaches over half a crank: a direction's size is the norm of its join with a
+        # unit point.
+        arrow_scale = radius * 0.55 / (handles & velocities).norm().to_array().max()
         offset = radius * 0.055
+        points = coordinates(handles)
         self.cranks.set_segments(np.stack([self.centres, points], axis=1))
         self.handles.set_offsets(points)
         # Separate the glyphs slightly so equal directions remain visible.
-        for (arrows, side), vectors in zip(self.arrows, (velocity, force)):
-            arrows.set_offsets(points + side * offset * radial)
-            arrows.set_UVC(*(vectors * arrow_scale).T)
+        for (arrows, side), directions in zip(self.arrows, (velocities, forces)):
+            arrows.set_offsets(coordinates(handles + side * offset * radial))
+            arrows.set_UVC(*components(directions * arrow_scale).T)
         return self.figure
 
 

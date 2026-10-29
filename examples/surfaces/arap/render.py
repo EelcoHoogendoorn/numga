@@ -23,16 +23,20 @@ background = np.ones(3)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(points: core.Point) -> np.ndarray:
-    """The Cartesian coordinates of a point field."""
+def gpu_points(points: core.Point) -> solids.Point:
+    """The GPU library's own points at the places of the example's: their coordinates, read by pairing the intrinsic
+    points with the drawing frame, are the one hand-off from this algebra to the renderer's."""
     mv = core.mv
-    return (stack((mv.x, mv.y, mv.z)) & points.batch()[..., None]).to_array()
+    return solids.mv.point((stack((mv.x, mv.y, mv.z)) & points.batch()[..., None]).to_array())
 
 
-def checker(rest_vertices: core.Point, faces: np.ndarray, cell: np.ndarray) -> np.ndarray:
+def checker(bar_mesh: core.Mesh, rest_vertices: core.Point, cell: np.ndarray) -> np.ndarray:
     """Per-face checkerboard colours from the parity of the grid cell containing each triangle's centroid at rest."""
-    centroids = coordinates(rest_vertices)[faces].mean(axis=1)                      # [faces, 3]
-    parity = np.floor(centroids / cell).astype(int).sum(axis=-1) % 2
+    mv = core.mv
+    centroids = bar_mesh.incidence[2, 0].mean(axis=0) * rest_vertices                # Point-[faces]
+    # The planes of the checkerboard's grid, one cell apart: a point's pairings with them count the cells it lies across.
+    cell_planes = stack((mv.x, mv.y, mv.z)) / cell                                  # [3] Vector+
+    parity = np.floor((cell_planes & centroids.batch()[..., None]).to_array()).astype(int).sum(axis=-1) % 2
     return np.where(parity[:, None] == 1, dark, light)
 
 
@@ -44,7 +48,7 @@ def box_view(n_pixels: int) -> solids.View:
 
 def picture(vertices: core.Point, faces: np.ndarray, colours: np.ndarray, view: solids.View) -> np.ndarray:
     """Render the bar's flat-shaded triangles with per-face checkerboard colours from the given view."""
-    places = solids.mv.point(coordinates(vertices))
+    places = gpu_points(vertices)
     return meshes.draw(places, faces, np.zeros(3), meshes.flat(places, faces), view, background, face_values=colours,
                        colour=meshes.by_face, gloss=solids.gloss)
 
@@ -52,7 +56,7 @@ def picture(vertices: core.Point, faces: np.ndarray, colours: np.ndarray, view: 
 def side_by_side(bar_mesh: core.Mesh, rest_vertices: core.Point, shapes: list[core.Point],
                  cell: np.ndarray) -> plt.Figure:
     """Render the bar in each of the given shapes side by side, checkered by where each triangle sat at rest."""
-    colours = checker(rest_vertices, bar_mesh.faces, cell)
+    colours = checker(bar_mesh, rest_vertices, cell)
     view = box_view(n_pixels)
     return image_figure(np.concatenate([picture(shape, bar_mesh.faces, colours, view) for shape in shapes], axis=1))
 
@@ -60,7 +64,7 @@ def side_by_side(bar_mesh: core.Mesh, rest_vertices: core.Point, shapes: list[co
 def animate(bar_mesh: core.Mesh, rest_vertices: core.Point, shapes: Iterable[core.Point],
             cell: np.ndarray) -> Iterator[np.ndarray]:
     """Yield one rendered frame per shape of the bar, checkered by where each triangle sat at rest."""
-    colours = checker(rest_vertices, bar_mesh.faces, cell)
+    colours = checker(bar_mesh, rest_vertices, cell)
     view = box_view(n_pixels)
     for shape in shapes:
         yield picture(shape, bar_mesh.faces, colours, view)

@@ -36,6 +36,8 @@ line_colour, optic_colour = np.array([0.75, 0.76, 0.78]), np.array([0.62, 0.63, 
 # The beam's frame turned into the scene's, whose z is up: a half turn about the line along x + z through the origin
 # carries the line, along z, onto x, across the picture, and the field's x onto z, up.
 upright = ((sm.yz + sm.xy) * (np.pi / (2 * np.sqrt(2)))).exp()
+# The four corners of a square across the line, as steps along its two directions.
+square_corners = np.array([[-1, -1], [-1, 1], [1, -1], [1, 1]])            # [corners, 2]
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -44,12 +46,12 @@ def quantity_axes(ax: plt.Axes) -> None:
     ax.spines[["top", "right"]].set_visible(False)
 
 
-def electric_along_x(fields: core.Bivector) -> np.ndarray:
-    """The electric field along x of complex fields, read by the plane x sweeps through time, in phase and a
-    quarter cycle on `[2, ...]`."""
-    mv = fields.real().context.multivector
-    along_x = mv.x.dual() & -mv.t.dual()
-    return np.stack([(fields.real() & along_x).to_array(), ((-1j * fields).real() & along_x).to_array()])
+def gpu_points(points: core.Direction) -> solids.Point:
+    """The GPU library's own points at the places of the example's, in the beam's frame turned upright into the scene:
+    their pairings with the planes x, y and z, the observer's slice of spacetime, are the one hand-off from this
+    algebra to the renderer's."""
+    mv = points.context.multivector
+    return upright >> sm.point((stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array())
 
 
 @charts.style()
@@ -90,10 +92,12 @@ def field(depths: np.ndarray, fields: core.Bivector) -> plt.Figure:
     times = np.linspace(0, n_cycles, n_cycles * n_samples_per_cycle + 1)
     phase = 2 * np.pi * times
     depths = depths.reshape(-1)
-    in_phase, quadrature = electric_along_x(fields).reshape(2, fields.shape[0], -1)
+    mv = fields.real().context.multivector
+    # The plane x sweeps through time reads the electric field along x.
+    along_x = mv.x.dual() & -mv.t.dual()                                     # [] Bivector-
     # The real field a phase later: the complex field's real part once its positive imaginary phase has grown.
-    waves = (in_phase[:, None, :] * np.cos(phase)[None, :, None]
-             - quadrature[:, None, :] * np.sin(phase)[None, :, None])
+    later = (fields.reshape(fields.shape[0], -1)[:, None] * np.exp(1j * phase)[:, None]).real()   # [cases, times, samples] Bivector+
+    waves = (later & along_x).to_array()                                     # [cases, times, samples]
     limit = np.max(np.abs(waves))
     figure, panels = charts.subplots(*double_size, ncols=2, sharex=True, sharey=True,
                                  layout="constrained")
@@ -142,12 +146,6 @@ def axion(jumps: np.ndarray, reflectance: core.Scalar, names: tuple[str, ...]) -
     return figure
 
 
-def scene(places: np.ndarray) -> solids.Point:
-    """Places in the beam's frame, across the line along x and y and along it by depth `[..., 3]`, as points turned
-    upright into the scene `[...]`."""
-    return upright >> sm.point(places)
-
-
 def faded(colours: np.ndarray, strength: np.ndarray) -> np.ndarray:
     """Colours `[..., 3]` faded towards the white page as their strength `[...]` falls to zero."""
     return 1 - strength[..., None] * (1 - colours)
@@ -160,43 +158,45 @@ def pulse(nodes: core.Direction, slab: core.Direction, directors: core.Direction
     A field that turns traces loops; one that does not stays in its plane. The slab is a translucent box, its optic
     axes grey rods."""
     mv = nodes.context.multivector
-    # The plane z reads the depth along the line; x and y read the optic axes across it, and the planes x and y
-    # sweep through time read the electric field along them.
-    across = stack((mv.x, mv.y))
-    swept = stack((mv.x.dual(), mv.y.dual())) & -mv.t.dual()
-    depths = (mv.z & nodes).to_array()                                                # [nodes]
-    slab_depths = (mv.z & slab).to_array()                                            # [slab nodes]
-    optic_axes = optic_half_length * field_length * (across & directors[::3, None]).to_array()   # [rods, 2]
-    rod_depths = slab_depths[::3, None]                                              # [rods, 1]
+    # The directions across the line, and the planes they sweep through time, which read the electric field along them.
+    across = stack((mv.x.dual(), mv.y.dual()))                                        # [2] Direction-
+    swept = across & -mv.t.dual()                                                     # [2] Bivector-
+    # The optic axes at every third node of the slab, reaching out across the line on either side.
+    rod_middles = slab[::3]                                                           # [rods] Direction-
+    rod_reach = directors[::3] * (optic_half_length * field_length)                   # [rods] Direction-
 
     # The stretch of line framed, the box of the slab's reach across it.
-    first, last = depths[0] + framed_start * np.ptp(depths), depths[-1] - framed_end * np.ptp(depths)
+    length = nodes[-1] - nodes[0]                                                     # [] Direction-
+    framed = stack((nodes[0] + length * framed_start, nodes[-1] - length * framed_end))   # [ends] Direction-
     half_width = slab_half_width * field_length
-    corners = np.stack(np.meshgrid([-half_width, half_width], [-half_width, half_width], [first, last], indexing="ij"), axis=-1)
-    view = solids.view([upright >> sm.point(corners.reshape(-1, 3))], 0.0, pulse_elevation, pulse_azimuth,
-                       pulse_margin, n_pulse_pixels)
-    line = solids.rods(upright >> sm.point([0, 0, depths[0]]), upright >> sm.point([0, 0, depths[-1]]),
-                       line_width / 2 * view.pixel)[None]
-    # The slab: a box about its middle on the line, turned upright with everything else.
-    middle = sm.point([0, 0, (slab_depths[0] + slab_depths[-1]) / 2])
-    box = solids.boxes(upright * solids.translator(middle - solids.origin),
-                       np.array([half_width, half_width, np.ptp(slab_depths) / 2]))[None]
-    optics = solids.rods(upright >> sm.point(np.concatenate([-optic_axes, rod_depths], axis=-1)),
-                         upright >> sm.point(np.concatenate([optic_axes, rod_depths], axis=-1)),
+    corners = framed[:, None] + (across * (half_width * square_corners)).sum(axis=-1)   # [ends, corners] Direction-
+    view = solids.view([gpu_points(corners)], 0.0, pulse_elevation, pulse_azimuth, pulse_margin, n_pulse_pixels)
+    line = solids.rods(gpu_points(nodes[0]), gpu_points(nodes[-1]), line_width / 2 * view.pixel)[None]
+    # The slab: a box about its middle on the line, as long as the slab's stretch of it, turned upright with
+    # everything else.
+    middle = gpu_points((slab[0] + slab[-1]) / 2)                                     # [] Point-
+    slab_length = (mv.z & (slab[-1] - slab[0])).to_array()
+    box = solids.boxes(solids.translator(middle - solids.origin) * upright,
+                       np.array([half_width, half_width, slab_length / 2]))[None]
+    optics = solids.rods(gpu_points(rod_middles - rod_reach), gpu_points(rod_middles + rod_reach),
                          optic_width / 2 * view.pixel)
 
     # The line, the optic axes and the slab stay put.
     picture = Scene(view, np.ones(3), [(line, line_colour), (optics, optic_colour)], [],
                     inks=[], translucent=[(box, slab_colour, slab_opacity)])
     for planes in electric:
-        field = (planes[:, None] & swept).to_array()                                 # [nodes, 2]
-        tips = scene(np.concatenate([field_length * field, depths[:, None]], axis=-1))   # [nodes] Point-
+        readings = planes[:, None] & swept                                            # [nodes, 2] Scalar+
+        # The field across the line, a direction from its readings along x and y, drawn out from each node.
+        transverse = (across * readings).sum(axis=-1)                                 # [nodes] Direction-
+        tips = gpu_points(nodes + transverse * field_length)                          # [nodes] Point-
+        # The field's direction around the line sets its hue, and its strength how far its colour shows.
+        field = readings.to_array()                                                   # [nodes, 2]
         hue = (np.arctan2(field[:, 1], field[:, 0]) / (2 * np.pi)) % 1
         strength = np.clip(np.hypot(*field.T) * 4, 0, 1)
         colours = hsv_to_rgb(np.column_stack([hue, np.full_like(hue, 0.85), np.ones_like(hue)]))
         # Every other node's spoke, where the field shows.
         spoked = np.flatnonzero(strength > spoke_floor)[::2]
-        spokes = strokes.segments(scene(np.column_stack([np.zeros((len(spoked), 2)), depths[spoked]])), tips[spoked],
+        spokes = strokes.segments(gpu_points(nodes[spoked]), tips[spoked],
                                   faded(colours, spoke_opacity * strength)[spoked], spoke_width, view)
         # Each piece of the path in the colour and strength halfway along it.
         shades = faded(colours, strength)

@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import stack
+from numga import concatenate, stack
 
 from examples.util import charts
 from examples.util.animation import capture
@@ -78,35 +78,40 @@ def spacetime(value: Antivector) -> np.ndarray:
 
 
 # --- the curvature map at one event ---------------------------------------------------
-def patch(first: Antivector, second: Antivector) -> np.ndarray:
-    """(4, 3) corners of the area element spanned by two directions, in x, z, t."""
-    first, second = spacetime(first), spacetime(second)
-    return np.stack([sign_first * 0.5 * first + sign_second * 0.6 * second
-                     for sign_first, sign_second in ((-1, -1), (1, -1), (1, 1), (-1, 1))])
+def diagram_points(directions: Antivector) -> solids.Point:
+    """The GPU library's points at the tips of directions in the spacetime diagrams, x, z and t drawn along the
+    scene's x, y and z: the one hand-off from spacetime to the renderer's space."""
+    return solids.mv.point(spacetime(directions))
 
 
-def arrows(ends: np.ndarray, colour: np.ndarray, width: float, view: solids.View) -> list[tuple[solids.Quadric, np.ndarray]]:
-    """Arrows from the origin to ends `[arrows, 3]` in x, z, t, drawn with t up, `width` pixels across: their
+def patch(first: Antivector, second: Antivector) -> Antivector:
+    """The corners of the area element spanned by two directions, around it."""
+    return (first * (0.5 * np.array([-1, 1, 1, -1]))
+            + second * (0.6 * np.array([-1, -1, 1, 1])))                           # [corners] Antivector-
+
+
+def arrows(ends: solids.Point, colour: np.ndarray, width: float, view: solids.View) -> list[tuple[solids.Quadric, np.ndarray]]:
+    """Arrows from the origin to the diagram's points `[arrows]`, drawn with t up, `width` pixels across: their
     shafts and heads, in one colour."""
-    shafts, heads = solids.arrows(solids.mv.point(np.zeros_like(ends)), solids.mv.point(ends), width / 2 * view.pixel,
+    shafts, heads = solids.arrows(solids.origin.broadcast_to(ends.shape), ends, width / 2 * view.pixel,
                                   HEAD_LENGTH * width * view.pixel, HEAD_WIDTH * width / 2 * view.pixel)
     return [(shafts, colour), (heads, colour)]
 
 
-def panel(ax: plt.Axes, corners: np.ndarray, ends: list[tuple[np.ndarray, np.ndarray, float]], extent: float,
+def panel(ax: plt.Axes, corners: Antivector, ends: list[tuple[Antivector, np.ndarray, float]], extent: float,
           view: solids.View) -> None:
     """One spacetime diagram in its axes: horizontal x, depth z and vertical t as light arrows named at their tips,
-    the area element `[4, 3]` as a translucent plate a pixel thick with its outline, rods joined round at the
-    corners, and arrows `[arrows, 3]` each with its colour and width in pixels."""
-    axis_ends = np.eye(3) * extent * AXIS_LENGTH
-    places = solids.mv.point(corners)                                          # [4] Point-
+    the area element `[4]` as a translucent plate a pixel thick with its outline, rods joined round at the
+    corners, and arrows to directions `[arrows]` each with its colour and width in pixels."""
+    places = diagram_points(corners)                                           # [corners] Point-
     rims, joints = solids.edges(places, places[np.roll(np.arange(4), -1)], OUTLINE_WIDTH / 2 * view.pixel)
-    parts = (arrows(axis_ends, LIGHT, AXIS_WIDTH, view) + [(rims, PATCH), (joints, PATCH)]
-             + [part for points, colour, width in ends for part in arrows(points, colour, width, view)])
+    parts = (arrows(solids.origin + solids.axes.dual() * (extent * AXIS_LENGTH), LIGHT, AXIS_WIDTH, view)
+             + [(rims, PATCH), (joints, PATCH)]
+             + [part for tips, colour, width in ends for part in arrows(diagram_points(tips), colour, width, view)])
     area = [(solids.plates(places[None], view.pixel), PATCH, PATCH_OPACITY)]
     show(ax, solids.draw(parts, view, np.ones(3), inks=[], translucent=area, meshes=[]), view)
-    labels(ax, view, solids.mv.point(np.eye(3) * extent * LABEL_DISTANCE), ["x", "z", "ct"], ha="center", va="center",
-           fontsize=12, color=INK)
+    labels(ax, view, solids.origin + solids.axes.dual() * (extent * LABEL_DISTANCE), ["x", "z", "ct"], ha="center",
+           va="center", fontsize=12, color=INK)
 
 
 def draw_curvature_map(
@@ -119,20 +124,20 @@ def draw_curvature_map(
     into an acceleration. The image is drawn as the plane of the wave's direction and that acceleration.
     """
     readout = -(observer & curvature(observer & edge)).dual()           # [] Antivector-
-    across = readout / np.sqrt(readout.squared().to_array())             # [] Antivector-
-    patches = (patch(observer, edge), patch(wave, across))
-    observer_end, wave_end, readout_end = spacetime(observer)[None], spacetime(wave)[None], spacetime(readout)[None]
-    extent = max(1.0, float(np.abs(np.concatenate((*patches, observer_end, wave_end, readout_end))).max())) * 1.22
-    # One view for both diagrams, framing the axes and everything drawn on them.
-    view = solids.view([solids.mv.point(np.concatenate((*patches, observer_end, wave_end, readout_end,
-                                                        np.eye(3) * extent * LABEL_DISTANCE)))], 0.0,
-                       ELEVATION, AZIMUTH, MARGIN, N_MAP_PIXELS)
+    # The acceleration at unit length: a direction within the observer's slice squares to its squared length.
+    across = readout / readout.squared().square_root()                   # [] Antivector-
+    patches = (patch(observer, edge), patch(wave, across))               # [corners] Antivector-, Antivector-
+    drawn = concatenate((*patches, observer[None], wave[None], readout[None]))   # [drawn] Antivector-
+    extent = max(1.0, float(np.abs(spacetime(drawn)).max())) * 1.22
+    # One view for both diagrams, framing the axes' names and everything drawn on them.
+    names = solids.origin + solids.axes.dual() * (extent * LABEL_DISTANCE)   # [3] Point-
+    view = solids.view([concatenate((diagram_points(drawn), names))], 0.0, ELEVATION, AZIMUTH, MARGIN, N_MAP_PIXELS)
     rows, columns = view.shape
     fig = plt.figure(figsize=(9.5, 9.5 * PANEL_WIDTH * rows / columns), dpi=60, facecolor="white")
     before, after = fig.add_axes((0, 0, PANEL_WIDTH, 1)), fig.add_axes((1 - PANEL_WIDTH, 0, PANEL_WIDTH, 1))
-    panel(before, patches[0], [(observer_end, ORANGE_RGB, 2.0)], extent, view)
-    panel(after, patches[1], [(wave_end, BLUE_RGB, 2.2), (observer_end, ORANGE_RGB, 2.0), (readout_end, ORANGE_RGB, 2.5)],
-          extent, view)
+    panel(before, patches[0], [(observer[None], ORANGE_RGB, 2.0)], extent, view)
+    panel(after, patches[1], [(wave[None], BLUE_RGB, 2.2), (observer[None], ORANGE_RGB, 2.0),
+                              (readout[None], ORANGE_RGB, 2.5)], extent, view)
     # The map from the ribbon to its image, an arrow across the gap between the diagrams.
     before.annotate("", xy=(1 - PANEL_WIDTH + 0.01, 0.5), xytext=(PANEL_WIDTH - 0.01, 0.5),
                     xycoords=fig.transFigure, textcoords=fig.transFigure,
@@ -181,23 +186,30 @@ def draw_doppler(rapidities: np.ndarray, amplitudes: Scalar) -> plt.Figure:
 class _Detector:
     time: np.ndarray            # [n_time]
     reference: np.ndarray       # [n_beads, 2] in initial-radius units
+    rest: np.ndarray            # [n_rest_samples, 2] the ring at rest, of unit radius
     positions: np.ndarray       # [n_polarizations, n_time, n_beads, 2]
     accelerations: np.ndarray   # [n_polarizations, n_time, n_beads, 2]
-    amplification: float
+    largest_acceleration: float
+    most_deformed: int          # the time of largest deformation, over every polarization
 
 
 def _detector(
     time: np.ndarray, reference: Antivector, displacement: Antivector, acceleration: Antivector, amplification: float,
 ) -> _Detector:
-    """Read the beads out in initial-radius units, with displacements magnified for display."""
-    positions = reference + amplification * displacement                # [n_time, n_polarizations, n_beads] Antivector-
-    radius = float(np.linalg.norm(transverse(reference), axis=-1).mean())
+    """The beads in initial-radius units, with displacements magnified for display, read out."""
+    # The ring's radius: a separation within the slice of space squares to its squared length.
+    radius = reference.squared().square_root().mean()                    # [] Scalar+
+    positions = (reference + amplification * displacement) / radius     # [n_time, n_polarizations, n_beads] Antivector-
+    accelerations = amplification * acceleration / radius                # [n_time, n_polarizations, n_beads] Antivector-
+    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, 200) / 2)).exp()        # [n_rest_samples] Rotor+
     return _Detector(
         time=np.asarray(time),
-        reference=transverse(reference) / radius,
-        positions=np.swapaxes(transverse(positions), 0, 1) / radius,
-        accelerations=np.swapaxes(transverse(acceleration) * amplification, 0, 1) / radius,
-        amplification=amplification,
+        reference=transverse(reference / radius),
+        rest=transverse(turns >> mv.x.dual()),
+        positions=np.swapaxes(transverse(positions), 0, 1),
+        accelerations=np.swapaxes(transverse(accelerations), 0, 1),
+        largest_acceleration=float(accelerations.squared().square_root().to_array().max()),
+        most_deformed=int(displacement.squared().sum(axis=(1, 2)).argmax()),
     )
 
 
@@ -216,9 +228,7 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
     reference = data.reference
     selected = np.arange(0, len(reference), max(1, len(reference) // 4))[:4]
     arrows_at = np.arange(0, len(reference), max(1, len(reference) // 8))
-    angles = np.linspace(0, 2 * np.pi, 200)
-    radius = np.linalg.norm(reference, axis=-1).mean()
-    ax.plot(radius * np.cos(angles), radius * np.sin(angles), color=light_colour, ls=":")
+    ax.plot(*data.rest.T, color=light_colour, ls=":")
     ax.scatter([0], [0], color=ORANGE, zorder=8)
     # The cross through the centre, across the whole view but for room for its names at its ends.
     half_span = 0.9 * ax.get_xlim()[1]
@@ -234,10 +244,9 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
                          c=tracking_colours[:len(selected)], edgecolors="white", linewidths=charts.FRAME_WIDTH, zorder=7)
     trails = [ax.plot([], [], color=colour, alpha=0.60, zorder=4)[0]
               for colour in tracking_colours[:len(selected)]]
-    maximum = float(np.linalg.norm(data.accelerations, axis=-1).max())
     quiver = ax.quiver(*reference[arrows_at].T, np.zeros(len(arrows_at)), np.zeros(len(arrows_at)),
                        color=BLUE, alpha=0.85, angles="xy", scale_units="xy",
-                       scale=max(maximum, 1e-15) / 0.31, width=0.006, headwidth=3.5, headlength=4, zorder=6)
+                       scale=max(data.largest_acceleration, 1e-15) / 0.31, width=0.006, headwidth=3.5, headlength=4, zorder=6)
     if static:
         for index in selected:
             ax.plot(*data.positions[polarization, :, index].T,
@@ -269,10 +278,8 @@ def draw_detector(
     axes = _ring_axes(fig, data)
     # The rings filling the figure side by side, each a square of its height.
     fig.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0.02)
-    offsets = data.positions - data.reference
-    frame = int(np.argmax(np.sum(offsets * offsets, axis=(0, 2, 3))))
     for polarization, ax in enumerate(axes):
-        _ring(ax, data, polarization, static=True)(frame)
+        _ring(ax, data, polarization, static=True)(data.most_deformed)
     return fig
 
 

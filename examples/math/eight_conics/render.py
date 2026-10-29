@@ -42,12 +42,28 @@ def curves(shapes: core.Quadric) -> list[list[np.ndarray]]:
 
 
 def plane_segments(planes: core.Plane, bounds: np.ndarray) -> list[list[np.ndarray]]:
-    """The parts of a batch of planes inside the view, as the segments they are drawn as."""
-    horizontal, vertical = bounds.T
-    grid_x, grid_y = np.meshgrid(horizontal, vertical)
-    grid = planes.context.multivector.point(np.stack((grid_x, grid_y), axis=-1))
-    values = (planes[:, None, None] & grid).to_array()
-    return [contourpy.contour_generator(horizontal, vertical, value).lines(0) for value in values]
+    """The parts of a batch of planes inside the view, as the segments they are drawn as: each plane meets the four
+    planes along the view's edges, and the two meets on the view's rim end the part inside it, which runs along the
+    plane's orientation. Each plane holds two points of contact in the view, so it crosses the view."""
+    mv = planes.context.multivector
+    (left, bottom), (right, top) = bounds
+    rim = stack((mv.x - left * mv.w, mv.x - right * mv.w, mv.y - bottom * mv.w, mv.y - top * mv.w))   # [edges] Plane+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        meets = planes[:, None] ^ rim                                         # [planes, edges] Point+
+        crossings = xy(meets)                                                 # [planes, edges, 2]
+    # A meet lies on the rim where it falls within the view, up to round-off; a plane along an edge meets the edge's
+    # opposite at infinity.
+    reach = 1e-9 * (bounds[1] - bounds[0])
+    on_rim = (np.isfinite(crossings) & (crossings >= bounds[0] - reach) & (crossings <= bounds[1] + reach)).all(axis=-1)
+    segments = []
+    for plane, plane_meets, ends, kept in zip(planes, meets, crossings, on_rim):
+        # Ordered along the plane, the outermost meets end its part in the view, where it runs through a corner too.
+        order = np.flatnonzero(kept)[np.lexsort(ends[kept].T[::-1])]
+        first, last = (plane_meets[index] / (mv.w & plane_meets[index]) for index in order[[0, -1]])
+        # The part runs the way the plane is oriented: the join of its ends pairs positively with it.
+        forward = ((first & last) | plane).to_array() > 0
+        segments.append([ends[order[[0, -1]] if forward else order[[-1, 0]]]])
+    return segments
 
 
 def framing(paths: list[list[np.ndarray]]) -> np.ndarray:

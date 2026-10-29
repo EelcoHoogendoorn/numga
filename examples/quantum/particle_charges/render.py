@@ -5,13 +5,20 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
-from matplotlib.transforms import Affine2D
 
+from numga import NumpyContext, stack
+from numga.algebras import VGA2D
 from examples.quantum.particle_charges.core import Scalar
 
 background = "#fbfaf7"
 particle_colours = np.array(["#d6453d", "#3a9a5b", "#2f6fc0", "#d9a227"])
 connection_colours = ("#4a9ea3", "#8a6fc4", "#db663d")
+# The plane of the weight diagrams, its places antivectors, intrinsic: the two weak charges across and up, four
+# apart for each unit, and the colour weights about them, turned a little clockwise and drawn in at a share.
+diagram = NumpyContext(VGA2D).multivector
+across, up = diagram.x.dual(), diagram.y.dual()                            # [] Antivector-, Antivector-
+weak_spacing, colour_share = 4, 0.85
+colour_tilt = (diagram.xy * (np.radians(12) / 2)).exp()                    # [] Rotor+
 
 
 # --- plumbing
@@ -30,9 +37,10 @@ def draw_connections(
     n_panels = responses.shape[0]
 
     # The two weak charges separate the four multiplets; colour weights separate their states.
-    centres = 4 * np.stack((left, right), axis=-1)
-    offsets = Affine2D().rotate_deg(-12).scale(0.85).transform(weights)
-    positions = centres + offsets
+    centres = weak_spacing * (left * across + right * up)                  # [sectors] Antivector-
+    offsets = colour_share * (colour_tilt >> (weights[:, 0] * across + weights[:, 1] * up))   # [sectors] Antivector-
+    # The places read by pairing with the diagram's planes x and y.
+    positions = (stack((diagram.x, diagram.y)) & (centres + offsets)[..., None]).to_array()   # [sectors, 2]
     colour_counts = occupations[:, :3].sum(axis=-1)
     occupied_colour = np.argmax(occupations[:, :3], axis=-1)
     missing_colour = np.argmin(occupations[:, :3], axis=-1)

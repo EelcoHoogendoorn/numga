@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle, FancyArrowPatch
 import numpy as np
 
+from numga import NumpyContext, stack
+from numga.algebras import VGA2D
 from examples.math.octonions import core
 from examples.util import charts
 
@@ -16,15 +18,16 @@ point_colour = "0.15"
 figure_size = (300, 275)
 point_side = 20
 arrow_side = 16
-# Where each basis vector is drawn: the corners of a triangle at b, d and g, the midpoints of its sides at f,
-# c and e, and its centre at a, so that every triple lies on a side, a median, or the circle through the
-# midpoints.
+# The page the diagram is drawn on, its points antivectors about the middle.
+page = NumpyContext(VGA2D).multivector
+Antivector = VGA2D.gatype.antivector()                                         # Antivector-
+# Where each basis vector is drawn: the corners of a triangle at b, d and g, the top turned by thirds of a turn, the
+# midpoints of its sides at f, c and e, and its centre at a, so that every triple lies on a side, a median, or the
+# circle through the midpoints.
 corner = 1.0
-places_by_name = {
-    "a": (0.0, 0.0),
-    "b": (0.0, corner), "d": (-corner * np.sqrt(3) / 2, -corner / 2), "g": (corner * np.sqrt(3) / 2, -corner / 2),
-    "f": (-corner * np.sqrt(3) / 4, corner / 4), "e": (corner * np.sqrt(3) / 4, corner / 4), "c": (0.0, -corner / 2),
-}
+thirds = (page.xy * (-np.array([0, 2, 4]) * np.pi / 3 / 2)).exp()                # [corners] Rotor+
+b, d, g = thirds >> (corner * page.y.dual())                                    # [] Antivector-, Antivector-, Antivector-
+places_by_name = {"a": 0 * b, "b": b, "d": d, "g": g, "f": (b + d) / 2, "e": (b + g) / 2, "c": (d + g) / 2}
 arrow_style = dict(arrowstyle="-|>", mutation_scale=charts.points(arrow_side), color=line_colour, linewidth=0)
 # How far along each segment, and along each arc of the circle, its arrowhead sits: off the middle, where the
 # medians cross the circle.
@@ -32,19 +35,27 @@ segment_fraction, arc_fraction = 0.65, 0.3
 
 
 # --- plumbing -------------------------------------------------------------------------
+def xy(points: Antivector) -> np.ndarray:
+    """x and y of points of the page `[..., 2]`: their pairings with the planes x and y."""
+    return (stack((page.x, page.y)) & points[..., None]).to_array()
+
+
 def triples(cycles: core.Trivector) -> list[str]:
     """The three basis vectors of each cycle, in the order its product runs: `a` times `b` is `c` for abc."""
     names = cycles.gatype.output_subspace.blade_names
-    kernel = cycles.kernel                                                      # [cycles, blades]
-    blade = np.abs(kernel).argmax(axis=-1)
-    return [names[k] if kernel[row, k] > 0 else names[k][0] + names[k][2] + names[k][1] for row, k in enumerate(blade)]
+    mv = cycles.context.multivector
+    blades = stack([getattr(mv, name) for name in names])                      # [blades] Trivector+
+    # A cycle's coefficient on each basis trivector, by its scalar product with the blade's reverse.
+    coefficients = (cycles[:, None].scalar_product(blades.reverse()) / blades.scalar_norm_squared()).to_array()
+    blade = np.abs(coefficients).argmax(axis=-1)
+    return [names[k] if coefficients[row, k] > 0 else names[k][0] + names[k][2] + names[k][1]
+            for row, k in enumerate(blade)]
 
 
-def arrow(ax: plt.Axes, start: np.ndarray, end: np.ndarray) -> None:
-    """An arrowhead part of the way from start to end, pointing towards end."""
-    place = start + segment_fraction * (end - start)
-    step = (end - start) / np.linalg.norm(end - start) * 0.02
-    ax.add_patch(FancyArrowPatch(place - step, place + step, **arrow_style))
+def arrow(ax: plt.Axes, place: Antivector, heading: Antivector) -> None:
+    """An arrowhead at a place, pointing along a heading."""
+    step = heading.normalized() * 0.02                                          # [] Antivector-
+    ax.add_patch(FancyArrowPatch(*xy(stack([place - step, place + step])), **arrow_style))
 
 
 @charts.style()
@@ -55,30 +66,28 @@ def draw_fano(cycles: core.Trivector) -> plt.Figure:
     radius = corner / 2
     ax.add_patch(Circle((0, 0), radius, fill=False, color=line_colour))
     for triple in triples(cycles):
-        places = np.array([places_by_name[name] for name in triple])           # [3, 2]
-        if np.allclose(np.linalg.norm(places, axis=-1), radius):
-            # On the circle: an arrowhead on each arc, running from each point to the next.
-            angles = np.arctan2(places[:, 1], places[:, 0])
-            following = angles[[1, 2, 0]]
-            for start, turn in zip(angles, (following - angles) % (2 * np.pi)):
-                # The shorter way round from each point to the next, and part of the way along it.
-                way = turn if turn < np.pi else turn - 2 * np.pi
-                angle = start + arc_fraction * way
-                tangent = np.array([-np.sin(angle), np.cos(angle)]) * np.sign(way)
-                point = radius * np.array([np.cos(angle), np.sin(angle)])
-                ax.add_patch(FancyArrowPatch(point - tangent * 0.02, point + tangent * 0.02, **arrow_style))
+        places = stack([places_by_name[name] for name in triple])              # [3] Antivector-
+        following = places[[1, 2, 0]]                                          # [3] Antivector-
+        if np.allclose(places.norm().to_array(), radius):
+            # On the circle: an arrowhead on each arc, part of the way along the shorter turn from each point to the
+            # next, pointing the way the turn runs.
+            turns = (1 + following * places.inverse()).normalized()            # [3] Rotor+
+            generators = turns.log()                                            # [3] Bivector+
+            heads = (generators * arc_fraction).exp() >> places                # [3] Antivector-
+            for head, heading in zip(heads, generators.commutator(heads)):
+                arrow(ax, head, heading)
             continue
         # On a straight line: the two points furthest apart are its ends.
-        span = places[:, None] - places[None, :]
-        first, last = np.unravel_index(np.linalg.norm(span, axis=-1).argmax(), (3, 3))
-        ax.plot(*places[[first, last]].T, color=line_colour)
-        for start, end in zip(places, places[[1, 2, 0]]):
+        spans = (places[:, None] - places[None, :]).norm().to_array()          # [3, 3]
+        first, last = np.unravel_index(spans.argmax(), (3, 3))
+        ax.plot(*xy(places[[first, last]]).T, color=line_colour)
+        for start, end in zip(places, following):
             # Arrowheads on the segments the cycle runs along without passing through the third point.
-            if np.linalg.norm(end - start) < np.linalg.norm(places[first] - places[last]) - 1e-9:
-                arrow(ax, start, end)
+            if (end - start).norm().to_array() < spans.max() - 1e-9:
+                arrow(ax, start + segment_fraction * (end - start), end - start)
     for name, place in places_by_name.items():
-        ax.scatter(*place, s=charts.points(point_side) ** 2, color="white", edgecolors=point_colour, zorder=3)
-        ax.text(*place, name, ha="center", va="center", color=point_colour, zorder=4)
+        ax.scatter(*xy(place), s=charts.points(point_side) ** 2, color="white", edgecolors=point_colour, zorder=3)
+        ax.text(*xy(place), name, ha="center", va="center", color=point_colour, zorder=4)
     ax.set(xlim=(-1.05, 1.05), ylim=(-0.75, 1.15), aspect="equal")
     ax.set_axis_off()
     return figure

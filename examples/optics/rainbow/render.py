@@ -9,13 +9,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
 
-from numga import stack
+from numga import concatenate, stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import pinned, room
 from examples.optics.rainbow import core
 
 mv = core.mv
+# The cross-section's directions along the sunlight and up, as the drawing shows them, across and up the page.
+sunlight = mv.x.dual()                                                        # [] Direction-
 # The colours of the background, the drop, the sunlight, light reflected once and twice inside the drop, the sky
 # and the ground; the colours of the angles' axes and tick labels.
 background = "#0b1020"
@@ -100,9 +102,11 @@ def draw_sky(sight_cosines: core.Scalar, flux: core.Scalar, wavelengths: np.ndar
     figure = plt.figure(figsize=(sky_width, sky_width * (view[3] - view[2]) / (view[1] - view[0])), dpi=100,
                         facecolor=background)
     ax = figure.add_axes((0, 0, 1, 1))
-    # Each pixel the figure shows at its angle from the point opposite the sun.
+    # Each pixel the figure shows at its angle from the point opposite the sun: the sky drawn as a chart about that
+    # point, at the chart's middle, in which the angle from it is the distance from it.
     across, height, extent = pixel_grid(view, *room(ax))
-    distance = np.hypot(*np.meshgrid(across, height))
+    chart = mv.x.dual() * across[None, :] + mv.y.dual() * height[:, None]     # [rows, columns] Direction-
+    distance = chart.norm().to_array()                                        # [rows, columns]
     image = np.stack([np.interp(distance, angles, colour[:, channel], right=0) for channel in range(3)], axis=-1)
     pinned(ax, np.clip(sky_colour + image ** tone_exponent, 0, 1), extent)
     ax.fill_between(extent[:2], extent[2], sun_elevation, color=ground_colour)
@@ -118,10 +122,11 @@ def animate_sweep(swept_light: tuple[core.Direction, core.Direction, core.Direct
     reflections; beside it, the angle each colour is seen at against the offset of the light."""
     def rays(entry: core.Direction, vertices: core.Direction, exits: core.Direction) -> list[np.ndarray]:
         """Per order drawn, the path of each ray from the sun to past the drop `[orders, rays, points, 2]`."""
-        start, inside, ahead = flat(entry), flat(vertices), flat(vertices + ray_length * exits)
-        sunward = start - np.array([ray_length, 0])
-        return [np.concatenate([np.stack([sunward, start], axis=-2), np.moveaxis(inside[:order + 1], 0, -2),
-                                ahead[order][..., None, :]], axis=-2) for order in (1, 2)]
+        sunward = entry - sunlight * ray_length                               # [rays] Direction-
+        ahead = vertices + exits * ray_length                                 # [orders + 1, rays] Direction-
+        paths = [concatenate([stack([sunward, entry]), vertices[:order + 1], ahead[order][None]])
+                 for order in (1, 2)]                                         # [orders][points, rays] Direction-
+        return [np.moveaxis(flat(path), 0, -2) for path in paths]
 
     swept_rays, bundle_rays = rays(*swept_light[:3]), rays(*bundle[:3])
     heights = (mv.y & offsets).to_array()                                     # [rays]

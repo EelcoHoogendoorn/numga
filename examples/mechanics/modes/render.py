@@ -18,6 +18,11 @@ from examples.mechanics.modes.core import ModeCase, Point, mv
 
 
 BODY, GHOST, SUPPORT, SPRING = "#254e70", "#929ba7", "#3a414b", "#5b6470"
+# A spring's coil: its places along the spring as shares of its length, straight leads at both ends, and how far
+# each zigzags across it, to either side in turn.
+n_coil_turns = 15
+coil_along = np.r_[0.0, 0.16, np.linspace(0.20, 0.80, n_coil_turns), 0.84, 1.0]
+coil_across = np.r_[0.0, 0.0, 0.035 * (-1.0) ** np.arange(n_coil_turns), 0.0, 0.0]
 
 
 def coordinates(points: Point) -> np.ndarray:
@@ -28,15 +33,11 @@ def coordinates(points: Point) -> np.ndarray:
 
 def spring_path(start: Point, end: Point) -> np.ndarray:
     """A coil with straight leads, oriented between two endpoints."""
-    p0 = coordinates(start)
-    p1 = coordinates(end)
-    axis = p1 - p0
-    normal = np.array([-axis[1], axis[0]]) / np.linalg.norm(axis)
-    turns = 15
-    along = np.r_[0.0, 0.16, np.linspace(0.20, 0.80, turns), 0.84, 1.0]
-    across = np.zeros_like(along)
-    across[2:-2] = 0.035 * (-1.0) ** np.arange(turns)
-    return p0 + along[:, None] * axis + across[:, None] * normal
+    along = end - start                                                      # [] Point-
+    # Across the spring: its step turned a quarter turn in the plane, over its length, the size of the line through
+    # its ends.
+    across = along.commutator(mv.xy) / (start & end).norm()                  # [] Point-
+    return coordinates(start + along * coil_along + across * coil_across)
 
 
 def fixed_support(ax: plt.Axes, anchor: Point) -> None:
@@ -71,8 +72,9 @@ def _draw_mode(ax: plt.Axes, case: ModeCase, mode: int):
                         lw=1.0, linestyle=":", zorder=1)
     ax.add_patch(reference)
 
-    offsets = coordinates(case.body_offsets[mode])
-    scale = 0.20 / np.linalg.norm(offsets, axis=-1).max()
+    # The largest offset of a corner drawn a fifth of a unit long; a direction's length is the size of the line
+    # through the origin square to it, its dual.
+    scale = 0.20 / case.body_offsets[mode].dual().norm().to_array().max()
 
     displaced_body = case.body + case.body_offsets[mode] * scale
     body = Polygon(coordinates(displaced_body), closed=True,

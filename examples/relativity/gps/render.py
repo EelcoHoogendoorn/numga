@@ -20,25 +20,20 @@ N_PIXELS = 320
 ELEVATION, AZIMUTH = np.radians([22, 32])
 
 
-def coordinates(events: core.Event) -> np.ndarray:
-    """Spatial event coordinates, read by the three spatial planes at the drawing boundary."""
+def gpu_points(events: core.Event) -> solids.Point:
+    """The GPU library's points at the places of events of unit weight: their spatial coordinates, read by pairing
+    with the three spatial planes, are the one hand-off from spacetime to the renderer's space."""
     mv = events.context.multivector
-    return (stack((mv.x, mv.y, mv.z)) & events[..., None]).to_array()
-
-
-def spatial_covariance(covariance: core.Covariance) -> np.ndarray:
-    """The marginal position covariance, with the clock coordinate integrated out: the covariance between the
-    position readouts, read by pairing."""
-    mv = covariance.context.multivector
-    readouts = stack((mv.x, mv.y, mv.z))
-    return (readouts[:, None] & covariance[None](readouts)[None, :]).to_array()
+    return solids.mv.point((stack((mv.x, mv.y, mv.z)) & events[..., None]).to_array())
 
 
 def earth_grid() -> solids.Ink:
-    """Latitude and longitude curves on the unit Earth."""
-    latitudes = np.sin(np.radians([-60, -30, 0, 30, 60]))
-    meridians = (solids.mv.yz * (-np.radians([0, 30, 60, 90, 120, 150]) / 2)).exp() >> solids.mv.y
-    planes = concatenate((solids.mv.x - solids.mv.w * latitudes, meridians))
+    """Latitude and longitude curves on the unit Earth, its axis along x: a latitude's plane lies across the axis,
+    through a point of the equator turned towards the pole, and a meridian's plane through the axis."""
+    sm = solids.mv
+    latitudes = (sm.xy * (np.radians([-60, -30, 0, 30, 60]) / 2)).exp() >> (solids.origin + sm.y.dual())   # [latitudes] Point-
+    meridians = (sm.yz * (-np.radians([0, 30, 60, 90, 120, 150]) / 2)).exp() >> sm.y      # [meridians] Plane+
+    planes = concatenate((sm.x - sm.w * (sm.x & latitudes), meridians))          # [curves] Plane+
     return solids.Ink(0, solids.half_space(planes),
                       solids.everywhere[None].broadcast_to(planes.shape), GRID, 0.9, 0.65)
 
@@ -46,8 +41,8 @@ def earth_grid() -> solids.Ink:
 def constellation(emitted: core.Event, receiver: core.Event, orbit_radius: float) -> tuple[solids.View, list, list]:
     """The view at a fixed orbital scale, the solids of Earth, the transmitting satellites and the receiver, and the
     signals' paths to it."""
-    satellite_points = solids.mv.point(coordinates(emitted))
-    receiver_point = solids.mv.point(coordinates(receiver))
+    satellite_points = gpu_points(emitted)
+    receiver_point = gpu_points(receiver)
     centre = solids.origin + (receiver_point - solids.origin) * (orbit_radius * 0.3)
     camera = solids.aim(centre, ELEVATION, AZIMUTH)
     view = solids.View(camera, np.full(2, orbit_radius * 0.95), N_PIXELS)
@@ -71,19 +66,18 @@ def constellation_image(emitted: core.Event, receiver: core.Event, orbit_radius:
     return solids.draw(parts, view, WHITE, inks=[earth_grid()], translucent=[], meshes=rays)
 
 
-def solution_image(emitted: core.Event, receiver: core.Event, estimate: core.Event, covariance: core.Covariance,
-                   semi_axes: core.Event, orbit_radius: float) -> np.ndarray:
+def solution_image(emitted: core.Event, receiver: core.Event, estimate: core.Event, semi_axes: core.Event,
+                   orbit_radius: float) -> np.ndarray:
     """The constellation with the fitted reception, its position's one-standard-deviation ellipsoid about it, and the
     ellipsoid's semi-axes `[3]` as diameters through it."""
     view, parts, rays = constellation(emitted, receiver, orbit_radius)
-    centre = solids.mv.point(coordinates(estimate))
-    # The inverse of the spatial covariance bounds the ellipsoid; its centre is the fitted position.
-    directions = solids.axes.dual()
-    dual = ((directions[:, None] * spatial_covariance(covariance) * (solids.Plane & directions)[None, :]).sum(axis=(-1, -2))
-            - solids.origin * (solids.Plane & solids.origin))
+    centre = gpu_points(estimate)
+    reach = gpu_points(estimate + semi_axes) - centre                            # [3] Point-
+    # The semi-axes' dyads sum to the spatial covariance, the dual quadric of the ellipsoid about the origin; its
+    # inverse bounds the ellipsoid, moved to the fitted position.
+    dual = (reach * (solids.Plane & reach)).sum(axis=0) - solids.origin * (solids.Plane & solids.origin)   # [] Point- <- Plane+
     ellipsoid = solids.placed(dual.inverse(), solids.translator(centre - solids.origin))
-    diameters = solids.mv.direction(coordinates(semi_axes))
-    principal = strokes.segments(centre - diameters, centre + diameters, BLUE, 0.9, view)
+    principal = strokes.segments(centre - reach, centre + reach, BLUE, 0.9, view)
     parts = parts + [(solids.ball(centre, 2.0 * view.pixel)[None, None], BLUE)]
     return solids.draw(parts, view, WHITE, inks=[earth_grid()], translucent=[(ellipsoid[None, None], BLUE, 0.3)],
                        meshes=rays + [(principal, 0.8)])
@@ -94,13 +88,14 @@ def draw_constellation(emitted: core.Event, receiver: core.Event, orbit_radius: 
     return image_figure(constellation_image(emitted, receiver, orbit_radius))
 
 
-def draw_solution(emitted: core.Event, receiver: core.Event, estimate: core.Event, covariance: core.Covariance,
-                  semi_axes: core.Event, orbit_radius: float) -> plt.Figure:
-    """The satellite geometry with the estimated position and its uncertainty."""
-    return image_figure(solution_image(emitted, receiver, estimate, covariance, semi_axes, orbit_radius))
+def draw_solution(emitted: core.Event, receiver: core.Event, estimate: core.Event, semi_axes: core.Event,
+                  orbit_radius: float) -> plt.Figure:
+    """The satellite geometry with the estimated position and its uncertainty, given by the semi-axes of its
+    ellipsoid."""
+    return image_figure(solution_image(emitted, receiver, estimate, semi_axes, orbit_radius))
 
 
 def animate_geometry(states: Iterable, orbit_radius: float) -> Iterator[np.ndarray]:
     """A stream of satellite arrangements and their fitted position uncertainty, the view held fixed."""
-    for emitted, receiver, estimate, covariance, semi_axes in states:
-        yield solution_image(emitted, receiver, estimate, covariance, semi_axes, orbit_radius)
+    for emitted, receiver, estimate, semi_axes in states:
+        yield solution_image(emitted, receiver, estimate, semi_axes, orbit_radius)
