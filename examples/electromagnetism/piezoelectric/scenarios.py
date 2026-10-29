@@ -22,6 +22,9 @@ n_length, n_thickness = 180, 12
 applied_voltage, applied_force = 100 / voltage_unit, 0.06 / force_unit
 n_frames, duration_ms = 90, 40
 displacement_scale, strain_scale = 100, 2e-5
+# Gallery picture: this makes plots/piezoelectric.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+# The gallery's actuator: the colours of its palette.
+gallery_colours = 64
 
 
 def pzt5a(directions: core.Plane) -> tuple[core.Elastic, core.Polarization, core.Permittivity]:
@@ -89,3 +92,6 @@ if __name__ == "__main__":
                                   strain_scale), "piezoelectric_actuator", duration_ms)
     save_animation(render.animate(mesh, vertices, areas, cycle(*sensor, n_frames), displacement_scale, 10 / voltage_unit,
                                   strain_scale), "piezoelectric_sensor", duration_ms)
+    # Gallery picture: this makes plots/piezoelectric.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+    save_animation(render.animate(mesh, vertices, areas, cycle(*actuator, n_frames), displacement_scale, applied_voltage,
+                                  strain_scale), "piezoelectric", duration_ms, colors=gallery_colours)

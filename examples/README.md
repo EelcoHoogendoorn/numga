@@ -37,10 +37,11 @@
 - [Surface connections](surfaces/connections/) — Parallel transport constructs tangent fields, their singularities and stripe patterns on curved surfaces.
 - [Developable surfaces](surfaces/developability/) — A mesh flows towards patches that can be flattened without stretching.
 - [Discrete K-surfaces](surfaces/k_surfaces/) — Compatible reflections grow saddle surfaces and their Bäcklund partners.
-- [Whitney forms](surfaces/whitney_forms/) — Corner hat functions and edge one-forms interpolate vertex and edge cochains across triangles and pull material conductivity back to the mesh.
+- [Whitney forms](surfaces/whitney_forms/) — Corner hat functions and edge one-forms interpolate vertex and edge cochains across triangles and tetrahedra and pull material conductivity back to the mesh.
 - [Regge calculus](surfaces/regge_calculus/) — Edge-length readings define triangle correlations, corner turns reveal intrinsic curvature, and an adjugate assembles the conduction response.
 - [Dirac–Kähler mixed-grade fields](surfaces/dirac_kahler/) — A geometric derivative couples wave components on an annulus; coloured reliefs show their propagation and conversion at the boundary.
 - [Rotor Whitney forms](surfaces/rotor_whitney/) — Interpolated rotors split turning from chord stretch; a disk wraps a director sphere, and coloured ribbons reveal a relaxing frame field.
+- [Minimal surfaces and conjugates](surfaces/minimal_surfaces/) — Quarter-turned triangle sides relax a domed disk onto a soap film, boundary side sums recover harmonic conjugate minimal surfaces, and Bonnet's circle uncurls a catenoid into a helicoid.
 
 ## Quadrics
 

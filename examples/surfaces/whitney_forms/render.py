@@ -1,16 +1,17 @@
-"""Barycentric hat ramps, edge Whitney 1-forms, and anisotropic conduction fields."""
+"""Barycentric hat ramps, edge Whitney 1-forms, the forms on a tetrahedron, and anisotropic conduction fields."""
 
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
-from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 from matplotlib.patches import Polygon
 from matplotlib.tri import Triangulation
 
 from numga import stack
 from examples.util import charts
+from examples.util.wgsl import image_figure, meshes, solids, strokes
 from examples.surfaces.whitney_forms import core
 
 primal_colour = "#286580"
@@ -27,6 +28,16 @@ n_contours = 7
 n_streamlines = 15
 # The pixel sizes of a row of four triangles and of the two disks side by side.
 row_size, flow_size = (780, 195), (600, 290)
+# The tetrahedron's three views, each square, and the gap between them, in pixels.
+n_tet_pixels, n_tet_gap = 300, 10
+tet_elevation, tet_azimuth = np.radians(23), np.radians(38)
+background = np.ones(3)
+cream = np.array([0.93, 0.94, 0.96])
+light_slate = np.array([0.58, 0.65, 0.70])
+warm_tint = np.array([0.96, 0.78, 0.64])
+gold = np.array([0.95, 0.68, 0.16])
+teal = np.array([0.08, 0.68, 0.56])
+primal_rgb, accent_rgb = np.array(to_rgb(primal_colour)), np.array(to_rgb(accent_colour))
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -34,6 +45,22 @@ def coordinates(points: core.Point) -> np.ndarray:
     """Drawing coordinates of intrinsic positions and directions."""
     mv = points.context.multivector
     return np.asarray((stack((mv.x, mv.y)) & points.batch()[..., None]).to_array())
+
+
+def space_coordinates(points: core.SpacePoint) -> np.ndarray:
+    """Drawing coordinates of intrinsic positions and directions in space."""
+    mv = points.context.multivector
+    return np.asarray((stack((mv.x, mv.y, mv.z)) & points.batch()[..., None]).to_array())
+
+
+def outward_wall(mesh: core.SpaceMesh) -> tuple[np.ndarray, np.ndarray]:
+    """The faces on the wall of a solid mesh, `[wall]`, and their corners `[wall, 3]`, wound outward. The wall is the
+    boundary of the solid, the sum of its tetrahedra's outward faces: one on a wall face that runs outward as stored,
+    minus one on a wall face that runs inward, nothing inside."""
+    wall = mesh.exterior(2)
+    solid = core.space_mesh_module.as_scalar(np.ones(mesh.n_elements[3])).field()
+    sense = (~mesh.d[2] * solid).to_array()[wall]
+    return wall, np.where(sense[:, None] > 0, mesh.faces[wall], mesh.faces[wall][:, ::-1])
 
 
 def frame_panel(ax: plt.Axes, places: np.ndarray, margin_ratio: float) -> None:
@@ -151,6 +178,102 @@ def draw_edge_1forms(corners: core.Point, points: core.Point, edge_forms: core.P
     for apex in places[diamond.edge_opposites[0]]:
         ax.scatter(*apex, s=38, color=primal_colour, edgecolor="white", linewidth=0.9, zorder=6)
     return figure
+
+
+def draw_tet_whitney(mesh: core.SpaceMesh, vertices: core.SpacePoint, points: core.SpacePoint,
+                     edge_forms: core.SpacePlane, face_forms: core.SpaceBivector, volume: core.Volume) -> plt.Figure:
+    """Three views of a mesh of one tetrahedron: the Whitney 1-form of its first edge, the 2-form of its first face, and
+    the linkage of that edge with the edge across it."""
+    corner_xyz = space_coordinates(vertices)
+    centre_xyz = corner_xyz.mean(axis=0)
+    corner_xyz = corner_xyz - centre_xyz
+    # Spread the glyphs around the centroid so their directions remain legible.
+    sample_xyz = (space_coordinates(points).reshape(-1, 3) - centre_xyz) * 1.22
+
+    edge_field_xyz = space_coordinates(edge_forms[0].dual()).reshape(-1, 3)
+    # A face form times the volume's sense is the direction its flux crosses.
+    face_field_xyz = space_coordinates(face_forms[0] * (volume / volume.norm())).reshape(-1, 3)
+
+    # The tetrahedron's first edge, the edge across it, the corner the first face form radiates from, and the face
+    # facing that corner, as vertices.
+    tet = mesh.tets[0]
+    edge, across = tet[mesh.corners(3, 1)[0]], tet[core.complements(mesh, 1)[0]]
+    apex, face = tet[0], tet[mesh.corners(3, 2)[0]]
+    wall, wall_faces = outward_wall(mesh)
+
+    tet_pts = solids.mv.point(corner_xyz)
+    view = solids.View(solids.aim(solids.origin, tet_elevation, tet_azimuth), np.full(2, 0.86), n_tet_pixels)
+
+    shell_colours = np.broadcast_to(cream, wall_faces.shape + (3,))
+    shell = meshes.samples(tet_pts, wall_faces, shell_colours, meshes.flat(tet_pts, wall_faces), view,
+                           face_values=np.zeros(len(wall)), colour=meshes.plain, gloss=solids.gloss)
+    wire = strokes.segments(tet_pts[mesh.edges[:, 0]], tet_pts[mesh.edges[:, 1]], light_slate, 1.5, view)
+
+    # The Whitney 1-form of the first edge, circulating around the edge across it.
+    edge_scale = 0.30 / np.linalg.norm(edge_field_xyz, axis=-1).max()
+    e_starts = solids.mv.point(sample_xyz - 0.45 * edge_scale * edge_field_xyz)
+    e_ends = solids.mv.point(sample_xyz + 0.55 * edge_scale * edge_field_xyz)
+    e_shafts, e_heads = solids.arrows(e_starts, e_ends, 0.017, 0.065, 0.038)
+    active_rod, active_balls = solids.edges(tet_pts[edge[:1]], tet_pts[edge[1:]], 0.024)
+    opp_rod, opp_balls = solids.edges(tet_pts[across[:1]], tet_pts[across[1:]], 0.020)
+    edge_middle = corner_xyz[edge].mean(axis=0)
+    edge_direction = corner_xyz[edge[1]] - corner_xyz[edge[0]]
+    edge_arrow_s, edge_arrow_h = solids.arrows(
+        solids.mv.point((edge_middle - 0.18 * edge_direction)[None]),
+        solids.mv.point((edge_middle + 0.22 * edge_direction)[None]),
+        0.025, 0.090, 0.054,
+    )
+    panel_edge = solids.draw(
+        [(e_shafts, accent_rgb), (e_heads, accent_rgb), (active_rod, accent_rgb), (active_balls, accent_rgb),
+         (edge_arrow_s, accent_rgb), (edge_arrow_h, accent_rgb), (opp_rod, primal_rgb), (opp_balls, primal_rgb)],
+        view, background, inks=[], translucent=[], meshes=[(shell, 0.24), (wire, 1.0)],
+    )
+
+    # The Whitney 2-form of the first face, radiating from the corner it faces through that face.
+    face_scale = 0.30 / np.linalg.norm(face_field_xyz, axis=-1).max()
+    f_starts = solids.mv.point(sample_xyz - 0.45 * face_scale * face_field_xyz)
+    f_ends = solids.mv.point(sample_xyz + 0.55 * face_scale * face_field_xyz)
+    f_shafts, f_heads = solids.arrows(f_starts, f_ends, 0.017, 0.065, 0.038)
+    face_colours = np.broadcast_to(cream, wall_faces.shape + (3,)).copy()
+    face_colours[wall == mesh.boundary_indices[2][0, 0]] = warm_tint
+    face_mesh = meshes.samples(tet_pts, wall_faces, face_colours, meshes.flat(tet_pts, wall_faces), view,
+                               face_values=np.zeros(len(wall)), colour=meshes.plain, gloss=solids.gloss)
+    apex_ball = solids.ball(tet_pts[[apex]], 0.046)[:, None]
+    face_rim = strokes.segments(tet_pts[face], tet_pts[np.roll(face, -1)], accent_rgb, 2.8, view)
+    panel_face = solids.draw(
+        [(f_shafts, primal_rgb), (f_heads, primal_rgb), (apex_ball, accent_rgb)],
+        view, background, inks=[], translucent=[], meshes=[(face_mesh, 0.30), (wire, 1.0), (face_rim, 1.0)],
+    )
+
+    # Rings around the edge across the first edge, which the first edge threads.
+    across_middle = corner_xyz[across].mean(axis=0)
+    across_direction = corner_xyz[across[1]] - corner_xyz[across[0]]
+    across_axis = across_direction / np.linalg.norm(across_direction)
+    opp_arrow_s, opp_arrow_h = solids.arrows(
+        solids.mv.point((across_middle - 0.18 * across_direction)[None]),
+        solids.mv.point((across_middle + 0.22 * across_direction)[None]),
+        0.025, 0.090, 0.054,
+    )
+    radial_1 = edge_middle - across_middle
+    radial_1 = radial_1 - np.dot(radial_1, across_axis) * across_axis
+    radial_1 = radial_1 / np.linalg.norm(radial_1)
+    radial_2 = np.cross(across_axis, radial_1)
+    ring_angles = np.linspace(0.0, 2 * np.pi, 65)
+    curves = []
+    for radius, colour in ((0.20, gold), (0.31, accent_rgb), (0.42, teal)):
+        ring_xyz = (across_middle[None, :] * 0.62
+                    + radius * (np.cos(ring_angles)[:, None] * radial_1[None, :]
+                                + np.sin(ring_angles)[:, None] * radial_2[None, :]))
+        curves.append((solids.mv.point(ring_xyz), colour))
+    rings = strokes.polylines(curves, 3.2, view)
+    panel_link = solids.draw(
+        [(active_rod, accent_rgb), (active_balls, accent_rgb), (edge_arrow_s, accent_rgb), (edge_arrow_h, accent_rgb),
+         (opp_rod, primal_rgb), (opp_balls, primal_rgb), (opp_arrow_s, primal_rgb), (opp_arrow_h, primal_rgb)],
+        view, background, inks=[], translucent=[], meshes=[(shell, 0.22), (wire, 1.0), (rings, 1.0)],
+    )
+
+    gap = np.full((n_tet_pixels, n_tet_gap, 3), 255, dtype=np.uint8)
+    return image_figure(np.concatenate((panel_edge, gap, panel_face, gap, panel_link), axis=1))
 
 
 def draw_anisotropic_flow(mesh: core.Mesh, vertices: core.Point, centres: core.Point,

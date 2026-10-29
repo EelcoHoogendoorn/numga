@@ -1,4 +1,5 @@
-"""Barycentric hats, edge Whitney 1-forms, exact midpoint quadrature, and anisotropic conduction."""
+"""Barycentric hats, edge Whitney 1-forms, the forms on a tetrahedron, exact midpoint quadrature, and anisotropic
+conduction."""
 
 import numpy as np
 
@@ -57,6 +58,69 @@ def test_barycentric_hats_and_edge_whitney_forms_on_single_triangle_and_diamond(
     left_seam, right_seam = seams.batch()[:, 0], seams.batch()[:, 1]
     normal_jump = (left_seam - right_seam) & core.mv.x.dual()
     assert np.max(np.abs(normal_jump.kernel)) > 0.5
+
+
+def test_tetrahedral_whitney_0_1_2_forms_and_opposite_edge_helicity():
+    mesh, vertices, points = scenarios.single_tetrahedron(6)
+    corners = mesh.incidence[3, 0] * vertices
+    hats, gradients, face_patches, volume = core.tetrahedral_hats(mesh, vertices, points)
+    corner_hats, _, _, _ = core.tetrahedral_hats(mesh, vertices, corners)
+
+    assert hats.batch().gatype == core.SpaceScalar
+    assert gradients.batch().gatype == core.SpacePlane
+    assert face_patches.batch().gatype == core.SpacePatch
+    assert volume.batch().gatype == core.Volume
+    np.testing.assert_allclose(corner_hats.kernel, np.eye(4)[..., None, None], atol=1e-13)
+    np.testing.assert_allclose(hats.sum(axis=0).kernel, 1.0, atol=1e-13)
+    np.testing.assert_allclose(gradients.sum(axis=0).kernel, 0.0, atol=1e-13)
+    np.testing.assert_allclose(face_patches.sum(axis=0).kernel, 0.0, atol=1e-13)
+
+    # Barycentric interpolation reproduces any affine potential in space and its gradient exactly.
+    true_gradient = 1.3 * core.space_mv.x - 0.75 * core.space_mv.y + 0.55 * core.space_mv.z
+    corner_values = 0.4 + (true_gradient & corners)
+    sample_values = 0.4 + (true_gradient & points)
+    interpolated = (corner_values[:, None] * hats).sum(axis=0)
+    reconstructed_gradient = (corner_values * gradients).sum(axis=0)
+    np.testing.assert_allclose(interpolated.kernel, sample_values.kernel, atol=1e-13)
+    np.testing.assert_allclose((reconstructed_gradient - true_gradient).kernel, 0.0, atol=1e-13)
+
+    # Edge 1-forms match Whitney's alternating formula, have constant curl, and read one along their own edge only.
+    edge_forms, edge_curls = core.tetrahedral_edge_forms(mesh, vertices, points)
+    tails, heads = mesh.corners(3, 1).T
+    alternating_edge_forms = hats[tails] * gradients[heads, None] - hats[heads] * gradients[tails, None]
+    alternating_curls = 2 * (gradients[tails] ^ gradients[heads])
+    np.testing.assert_allclose((edge_forms - alternating_edge_forms).kernel, 0.0, atol=1e-13)
+    np.testing.assert_allclose((edge_curls - alternating_curls).kernel, 0.0, atol=1e-13)
+
+    edges = mesh.oriented[3, 1] * (mesh.d[0] * vertices)
+    for fraction in (0.2, 0.5, 0.85):
+        edge_points = corners[tails] * (1 - fraction) + corners[heads] * fraction
+        readings, _ = core.tetrahedral_edge_forms(mesh, vertices, edge_points)
+        np.testing.assert_allclose((readings & edges[None, :]).kernel, np.eye(6)[..., None, None], atol=1e-13)
+
+    # Face 2-forms match Whitney's formula one grade up and read the flux through their own face only.
+    face_forms = core.tetrahedral_face_forms(mesh, vertices, points)
+    first, second, third = core.complements(mesh, 0).T
+    alternating_face_forms = 2 * (hats[first] * (gradients[second, None] ^ gradients[third, None])
+                                  + hats[second] * (gradients[third, None] ^ gradients[first, None])
+                                  + hats[third] * (gradients[first, None] ^ gradients[second, None]))
+    np.testing.assert_allclose((face_forms - alternating_face_forms).kernel, 0.0, atol=1e-13)
+
+    face_centres = mesh.incidence[3, 2] * (mesh.incidence[2, 0].mean(axis=0) * vertices)
+    face_readings = core.tetrahedral_face_forms(mesh, vertices, face_centres) & face_patches[None, :]
+    np.testing.assert_allclose(face_readings.kernel, np.eye(4)[..., None, None], atol=1e-13)
+
+    # The volume pairing of edge forms with curls is the same for a sheared, stretched tetrahedron, and links only
+    # opposite edges, with the sense of the tetrahedron's corners in the order the two edges list them, over six.
+    tet_helicity = core.tetrahedral_helicity(mesh, vertices)
+    deformed_helicity = core.tetrahedral_helicity(mesh, scenarios.deformed_tetrahedron())
+    assert tet_helicity.batch().gatype == core.SpaceScalar
+    np.testing.assert_allclose((tet_helicity - deformed_helicity).kernel, 0.0, atol=1e-13)
+    edge_corners = mesh.corners(3, 1)
+    edge_pairs = np.concatenate(np.broadcast_arrays(edge_corners[:, None], edge_corners[None, :]), axis=-1)
+    disjoint = (edge_corners[:, None, :, None] != edge_corners[None, :, None, :]).all(axis=(-1, -2))
+    linking = np.where(disjoint, core.simplex_parity(edge_pairs), 0) / 6
+    np.testing.assert_allclose(tet_helicity.kernel[..., 0, 0], linking, atol=1e-13)
 
 
 def test_cochain_complex_and_exact_midpoint_quadrature_including_obtuse_triangles():

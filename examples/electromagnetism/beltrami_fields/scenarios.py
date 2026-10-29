@@ -1,19 +1,15 @@
-"""Reference tetrahedra and solid toroidal cavities for 3D Whitney forms and Beltrami fields."""
+"""Solid toroidal cavities and the Beltrami fields they hold."""
 
 from __future__ import annotations
 
 import numpy as np
 
 from numga import stack
-from examples.electromagnetism.beltrami_fields.core import (
-    Operators, Point, Scalar, as_scalar, edge_whitney_forms, face_whitney_forms, mv, reconstruct, selective_decay,
-    tetrahedral_hats, tetrahedral_helicity,
-)
+from examples.electromagnetism.beltrami_fields.core import Operators, Point, Scalar, as_scalar, mv, reconstruct, selective_decay
 
-from examples.electromagnetism.beltrami_fields.plumbing import Embedding, Mesh, complements, flux_preserving, solid_torus
+from examples.electromagnetism.beltrami_fields.plumbing import Embedding, Mesh, flux_preserving, solid_torus
 from examples.electromagnetism.beltrami_fields.numerical import coexact_helicity_eigh
 
-n_tet_subdivisions = 6
 major_radius = 1.0
 minor_radius = 0.42
 n_major = 16
@@ -24,49 +20,12 @@ initial_weights = np.array([0.45, 0.70, 0.85, 0.85, 0.45])                    # 
 n_frames = 46
 relaxation_time = 0.025
 frame_duration_ms = 40
+# Gallery picture: this makes plots/beltrami.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+# The gallery's palette: the colours its frames share.
+n_gallery_colours = 64
 
 
 # --- plumbing -------------------------------------------------------------------------
-def tetrahedron_samples(corners: Point, n_subdivisions: int) -> Point:
-    """Interior barycentric lattice points inside each tetrahedron of corners `[corners] Point-[tets]`,
-    `[samples] Point-[tets]`."""
-    steps = np.arange(1, n_subdivisions)
-    first, second, third = np.meshgrid(steps, steps, steps, indexing="ij")
-    inside = first + second + third < n_subdivisions
-    weights = np.stack((
-        n_subdivisions - first[inside] - second[inside] - third[inside],
-        first[inside],
-        second[inside],
-        third[inside],
-    ), axis=-1) / n_subdivisions                                             # [samples, corners]
-    return (corners * weights).sum(axis=-1)                                  # [samples] Point-[tets]
-
-
-def single_tetrahedron(n_subdivisions: int) -> tuple[Mesh, Point, Point]:
-    """A mesh of one positively oriented scalene tetrahedron, its vertices, and its interior sample points."""
-    mesh = Mesh(4, [[0, 1, 2, 3]])
-    ex, ey, ez = mv.x.dual(), mv.y.dual(), mv.z.dual()                       # [] Point-, Point-, Point-
-    vertices = stack((
-        -ex * 0.56 - ey * 0.38 - ez * 0.34,
-        ex * 0.62 - ey * 0.28 - ez * 0.34,
-        -ex * 0.05 + ey * 0.68 - ez * 0.34,
-        ex * 0.03 + ey * 0.02 + ez * 0.66,
-    )).field()                                                               # Point-[vertices]
-    return mesh, vertices, tetrahedron_samples(mesh.incidence[3, 0] * vertices, n_subdivisions)
-
-
-def deformed_tetrahedron() -> Point:
-    """The vertices of a strongly sheared, stretched, and translated tetrahedron with the same orientation,
-    `Point-[vertices]`."""
-    ex, ey, ez = mv.x.dual(), mv.y.dual(), mv.z.dual()                       # [] Point-, Point-, Point-
-    return stack((
-        ex * 0.40 - ey * 1.10 + ez * 0.25,
-        ex * 2.30 - ey * 0.35 - ez * 0.15,
-        ex * 0.85 + ey * 1.65 + ez * 0.55,
-        ex * 1.15 + ey * 0.20 + ez * 2.45,
-    )).field()                                                               # Point-[vertices]
-
-
 def torus_cavity() -> tuple[Mesh, Point, Embedding]:
     """A reflection-symmetric solid tetrahedral torus around the z axis and its flux-preserving edge subspace."""
     mesh, vertices = solid_torus(major_radius, minor_radius, n_major, n_minor)
@@ -77,17 +36,7 @@ def main() -> None:
     from examples.electromagnetism.beltrami_fields import render
     from examples.util.animation import save_animation, save_figure
 
-    # 1. Tetrahedral Whitney 0-, 1-, and 2-forms and topological opposite-edge helicity.
-    tetrahedron, corner_vertices, points = single_tetrahedron(n_tet_subdivisions)
-    hats, gradients, face_patches, volume = tetrahedral_hats(tetrahedron, corner_vertices, points)
-    edge_forms, edge_curls = edge_whitney_forms(tetrahedron, corner_vertices, points)
-    face_forms = face_whitney_forms(tetrahedron, corner_vertices, points)
-    save_figure(
-        render.draw_tet_whitney(tetrahedron, corner_vertices, points, edge_forms, face_forms, volume),
-        "beltrami_tet_whitney",
-    )
-
-    # 2. Curl-curl energy, metric-free helicity, and chiral Beltrami eigenmodes on a torus.
+    # Curl-curl energy, metric-free helicity, and chiral Beltrami eigenmodes on a torus.
     mesh, vertices, free = torus_cavity()
     operators = Operators(mesh, vertices)
     free_energy = free.adjugate()(operators.stiffness(free))
@@ -103,55 +52,22 @@ def main() -> None:
         "beltrami_eigenmodes",
     )
 
-    # 3. Selective modal decay with the total helicity held fixed.
+    # Selective modal decay with the total helicity held fixed.
     selected_modes = modes[selected_indices]                                 # [selected] Scalar+[edges]
     selected_eigenvalues = 1 / inverse_eigenvalues[selected_indices]         # [selected] Scalar+
     initial_amplitudes = as_scalar(initial_weights)                          # [selected] Scalar+
     times = np.linspace(0.0, relaxation_time, n_frames)
     states = selective_decay(initial_amplitudes, selected_eigenvalues, times)
     magnetic_frames = reconstruct(states, selected_modes, operators.curl)
-    save_animation(
-        render.animate_relaxation(mesh, vertices, operators.centres, operators.volumes, magnetic_frames),
-        "beltrami_relaxation", frame_duration_ms,
-    )
+    relaxation = list(render.animate_relaxation(mesh, vertices, operators.centres, operators.volumes, magnetic_frames))
+    save_animation(relaxation, "beltrami_relaxation", frame_duration_ms)
+    # Gallery picture: this makes plots/beltrami.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+    save_animation(relaxation, "beltrami", frame_duration_ms, colors=n_gallery_colours)
 
     # checks
     amplitude_frames = stack(list(selective_decay(initial_amplitudes, selected_eigenvalues, times)))
     energy_frames = amplitude_frames.squared().sum(axis=1) / 2
     helicity_frames = (amplitude_frames.squared() / selected_eigenvalues).sum(axis=1)
-    corners = tetrahedron.incidence[3, 0] * corner_vertices
-    corner_hats, _, _, _ = tetrahedral_hats(tetrahedron, corner_vertices, corners)
-    np.testing.assert_allclose(corner_hats.kernel, np.eye(4)[..., None, None], atol=1e-13)
-    np.testing.assert_allclose(hats.sum(axis=0).kernel, 1.0, atol=1e-13)
-    np.testing.assert_allclose(gradients.sum(axis=0).kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose(face_patches.sum(axis=0).kernel, 0.0, atol=1e-14)
-
-    tails, heads = tetrahedron.corners(3, 1).T
-    classic_1forms = hats[tails] * gradients[heads, None] - hats[heads] * gradients[tails, None]
-    classic_curls = 2 * (gradients[tails] ^ gradients[heads])
-    np.testing.assert_allclose((edge_forms - classic_1forms).kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose((edge_curls - classic_curls).kernel, 0.0, atol=1e-13)
-
-    edge_vectors = tetrahedron.oriented[3, 1] * (tetrahedron.d[0] * corner_vertices)
-    edge_midpoints = tetrahedron.incidence[3, 1] * (tetrahedron.incidence[1, 0].mean(axis=0) * corner_vertices)
-    midpoint_1forms, _ = edge_whitney_forms(tetrahedron, corner_vertices, edge_midpoints)
-    np.testing.assert_allclose((midpoint_1forms & edge_vectors[None, :]).kernel, np.eye(6)[..., None, None], atol=1e-13)
-
-    first, second, third = complements(tetrahedron, 0).T
-    li, lj, ll = hats[first], hats[second], hats[third]
-    gi, gj, gl = gradients[first, None], gradients[second, None], gradients[third, None]
-    classic_2forms = 2 * (li * (gj ^ gl) + lj * (gl ^ gi) + ll * (gi ^ gj))
-    np.testing.assert_allclose((face_forms - classic_2forms).kernel, 0.0, atol=1e-13)
-    face_centres = tetrahedron.incidence[3, 2] * (tetrahedron.incidence[2, 0].mean(axis=0) * corner_vertices)
-    np.testing.assert_allclose((face_whitney_forms(tetrahedron, corner_vertices, face_centres) & face_patches[None, :]).kernel,
-                               np.eye(4)[..., None, None], atol=1e-14)
-
-    tet_helicity, _ = tetrahedral_helicity(tetrahedron, corner_vertices)
-    deformed_helicity, _ = tetrahedral_helicity(tetrahedron, deformed_tetrahedron())
-    np.testing.assert_allclose((tet_helicity - deformed_helicity).kernel, 0.0, atol=1e-14)
-    expected_linking = np.zeros((6, 6))
-    expected_linking[np.arange(6), 5 - np.arange(6)] = np.array([1, -1, 1, 1, -1, 1]) / 6
-    np.testing.assert_allclose(tet_helicity.kernel[..., 0, 0], expected_linking, atol=1e-14)
 
     # Whitney reconstruction commutes with the exterior derivative: the edge forms of a potential's differences are
     # its gradient, and the curl of an edge field is the face forms of its circulations.

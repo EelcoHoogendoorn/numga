@@ -10,7 +10,7 @@ from numga.sparse import SparseExtensor, spdiag
 from examples import instantiate
 
 mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, simplex_parity = mesh_module.Mesh, mesh_module.simplex_parity
+Mesh = mesh_module.Mesh
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 Scalar = ga.gatype.scalar()  # Scalar+
@@ -18,17 +18,6 @@ Point = ga.gatype.antivector()  # Antivector-
 Embedding = ga.gatype((Scalar, Scalar))
 # The direction in time of an observer at rest with the torus, which pairs to one with `mv.t`.
 time = -mv.t.dual()  # [] Point-
-
-
-def complements(mesh: Mesh, m: int) -> np.ndarray:
-    """`[k, 3 - m]`: the corners each of a tet's m-simplices leaves out, in the order of `mesh.corners(3, m)`, run so
-    that the m-simplex followed by them runs the tet's own sense: facing each corner, its face, outward; across each
-    edge, the opposite edge."""
-    simplices = mesh.corners(3, m)                                           # [k, m + 1]
-    tet = mesh.corners(3, 0)[:, 0]                                           # [corners]
-    left_out = np.stack([np.setdiff1d(tet, simplex) for simplex in simplices])   # [k, 3 - m]
-    sense = simplex_parity(np.concatenate([simplices, left_out], axis=-1))   # [k]
-    return np.where(sense[:, None] > 0, left_out, left_out[:, ::-1])
 
 
 def as_scalar(values: np.ndarray) -> Scalar:

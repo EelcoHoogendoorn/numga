@@ -33,6 +33,10 @@ dist/
 !/plots/tomography.gif
 !/plots/sandwich.gif
 !/plots/radar_frames.gif
+!/plots/beltrami.gif
+!/plots/eigen_fluids.gif
+!/plots/piezoelectric.gif
+!/plots/boiling.gif
 
 # The style guide for examples and notebooks is kept locally, out of the repository.
 /examples/STYLE.md
