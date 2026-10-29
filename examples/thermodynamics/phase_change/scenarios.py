@@ -77,3 +77,12 @@ if __name__ == "__main__":
     save_animation(render.heating(pressure_at, enthalpy_at, coexistence_at, isobar_at, boiling_temperature,
                                   heating(boiling_temperature, coldest, hottest, n_frames)),
                    "phase_change", frame_duration_ms)
+    # Gallery picture: this makes plots/boiling.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+    # The gallery's cut: the pressure–volume chart and the temperature–enthalpy chart beside it, whose flat stretch is
+    # the heat that boiling takes.
+    gallery_columns = slice(render.cylinder_pixels, render.cylinder_pixels + 2 * render.n_columns)
+    save_animation((frame[:, gallery_columns]
+                    for frame in render.heating(pressure_at, enthalpy_at, coexistence_at, isobar_at,
+                                                boiling_temperature,
+                                                heating(boiling_temperature, coldest, hottest, n_frames))),
+                   "boiling", frame_duration_ms)
