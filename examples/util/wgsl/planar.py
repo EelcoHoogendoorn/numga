@@ -34,7 +34,7 @@ from typing import NamedTuple
 
 import numpy as np
 
-from numga import Extensor, NumpyContext, concatenate
+from numga import Extensor, NumpyContext, concatenate, stack
 from numga.algebras import PGA2D as ga
 from numga.gatype import GAType
 from examples.util.wgsl import Shader
@@ -353,6 +353,19 @@ def filling(x_range: tuple[float, float], y_range: tuple[float, float], room: tu
     pixel = max((x_range[1] - x_range[0]) / room[0], (y_range[1] - y_range[0]) / room[1])
     rows, columns = round((y_range[1] - y_range[0]) / pixel), round((x_range[1] - x_range[0]) / pixel)
     return Window(sum(x_range) / 2 - columns * pixel / 2, sum(y_range) / 2 + rows * pixel / 2, pixel, (rows, columns))
+
+
+def view(points: list[Extensor], margin: float, room: tuple[int, int]) -> Window:
+    """The window, as `filling` makes it for a room of columns and rows, that holds batches of points of either
+    orientation and any weight, with a margin as a share of their larger extent: framed by the support lines square
+    to x and y, the lines along the axes that touch the points on either side."""
+    seen = concatenate([unit(batch).reshape(-1) for batch in points])        # [points] Point
+    across = stack((mv.x, mv.y))                                              # [2] Plane
+    heights = across[:, None] & seen                                          # [2, points] Scalar
+    lowest, highest = seen[heights.argmin(axis=-1)], seen[heights.argmax(axis=-1)]   # [2] Point, Point
+    low, high = (across & lowest).to_array(), (across & highest).to_array()
+    spread = margin * (high - low).max()
+    return filling((low[0] - spread, high[0] + spread), (low[1] - spread, high[1] + spread), room)
 
 
 def oriented(value: Extensor, kind: GAType) -> Extensor:

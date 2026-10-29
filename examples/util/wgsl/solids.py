@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 
-from numga import Extensor, NumpyContext, concatenate, stack
+from numga import NumpyContext, concatenate, stack
 from numga.algebras import PGA3D as ga
 from examples.util.wgsl import Shader, supersampled
 from examples.util.wgsl.library import samples_per_side
@@ -30,6 +30,7 @@ Plane = ga.gatype.vector()
 Motor = ga.gatype.rotor()
 Line = ga.gatype.bivector()
 Quadric = ga.gatype((Plane, Point))                                          # Plane <- Point
+DualQuadric = ga.gatype((Point, Plane))                                      # Point <- Plane
 # The planes of the frame, and of every camera's in its own: a point's pairings with them are how far it lies across
 # to the right, up, and toward the viewer, the camera looking along its own -z; a place so far along each is the
 # origin moved by their duals, `origin + (axes.dual() * place).sum()`.
@@ -454,20 +455,12 @@ def ellipsoid(semi_axes: np.ndarray) -> Quadric:
     return (axes * (axes & Point) / semi_axes**2).sum(axis=-1) - mv.w * (mv.w & Point)
 
 
-def lift_vga3d_dual_quadric_to_pga3d(shape: Extensor, frame: Extensor) -> Quadric:
-    """The solids about the origin whose dual quadrics are maps from planes to points in VGA3D, `shape`, the planes of
-    `frame` `[3]` there along x, y and z here: each frame plane's offset under the shape paired with each frame plane,
-    rebuilt as a sum of dyads of the directions along x, y and z, less the origin's own dyad, and inverted into the
-    quadric that pairs points to at most zero inside."""
-    readings = (frame[:, None] & shape[..., None](frame)[..., None, :]).to_array()   # [..., 3, 3]
-    directions = axes.dual()                                                         # [3] Point
-    dual_quadric = ((directions[:, None] * readings * (Plane & directions)[None, :]).sum(axis=(-1, -2))
-                    - origin * (Plane & origin))                                     # [...] Point <- Plane
-    return dual_quadric.inverse()                                                    # [...] Quadric
-
-
-
-
+def solid_of_dual_quadric(shape: DualQuadric) -> Quadric:
+    """The solids about the origin whose dual quadrics are `shape`, each plane through the origin to the direction of
+    the point its tangent plane touches, as `mv.from_subalgebra` carries the dual quadrics of the algebra of space:
+    with the origin's own dyad taken away, the dual quadric of a closed surface, inverted into the quadric that pairs
+    points to at most zero inside."""
+    return (shape - origin * (Plane & origin)).inverse()
 
 
 def ball(centres: Point, radius: float) -> Quadric:
@@ -759,15 +752,22 @@ class View(NamedTuple):
 
 def view(points: list[Point], reach: float, elevation: float, azimuth: float, margin: float, pixels: int) -> View:
     """A view framing batches of points, of any weight, and `reach` around each, from an elevation and azimuth, in
-    radians, z up and azimuth zero looking along +y, with a margin as a share of the larger side, `pixels` across."""
+    radians, z up and azimuth zero looking along +y, with a margin as a share of the larger side, `pixels` across:
+    framed by the support planes square to the image's right and up, the planes that touch the points on either
+    side."""
     turn = (mv.xy * (-azimuth / 2)).exp() * (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()     # [] Motor
-    # Across and up the image: the pairings with the camera's planes through the origin, at unit weight.
+    # The planes through the origin square to the image's right and up, and the one across the view.
+    screen = turn >> axes                                                     # [3] Plane
     seen = concatenate([(batch / (mv.w & batch)).reshape(-1) for batch in points])   # [points] Point
-    right, up = ((turn >> axes[:2]) & seen[:, None]).to_array().T
-    middle = np.array([right.max() + right.min(), up.max() + up.min()]) / 2
-    half = np.array([np.ptp(right), np.ptp(up)]) / 2 + reach
+    # The outermost points across and up the image, where each support plane touches them, on either side.
+    heights = screen[:2, None] & seen                                         # [2, points] Scalar
+    lowest, highest = seen[heights.argmin(axis=-1)], seen[heights.argmax(axis=-1)]   # [2] Point, Point
+    # The planes halfway between the support planes, met with the plane across the view through the origin.
+    middles = screen[:2] - mv.w * ((screen[:2] & lowest) + (screen[:2] & highest)) / 2   # [2] Plane
+    centre = (middles[0] ^ middles[1] ^ screen[2]) * flip                    # [] Point
+    half = ((screen[:2] & highest) - (screen[:2] & lowest)).to_array() / 2 + reach
     half = half + margin * half.max()
-    return View(aim(turn >> (origin + (axes[:2].dual() * middle).sum()), elevation, azimuth), half, pixels)
+    return View(aim(centre, elevation, azimuth), half, pixels)
 
 
 def aim(centre: Point, elevation: float, azimuth: float) -> Motor:
