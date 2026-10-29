@@ -24,10 +24,10 @@ N_DECLINATIONS = 25
 DAY_HOURS = np.arange(3, 21.01, 0.05)
 DAY_ANGLES = (DAY_HOURS - NOON) * TURN_PER_HOUR
 # The frames of one year, the hours of a day each frame's rays are drawn at, and the duration of a frame.
-N_FRAMES = 48
+N_FRAMES = 108
 RAY_HOURS = np.arange(4, 21, 0.25)
 RAY_ANGLES = (RAY_HOURS - NOON) * TURN_PER_HOUR
-DURATION_MS = 90
+DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------

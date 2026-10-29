@@ -14,6 +14,7 @@ from numga.algebras import Spherical3D
 from examples import instantiate
 from examples.quadrics.s3_raytracer import core as raytracer
 from examples.quadrics.s3_raytracer.render import picture as trace
+from examples.util import charts
 from examples.util.wgsl import Shader, image_figure, show_pixels, supersampled
 
 S2 = instantiate("examples.quadrics.elliptic_physics.core", Spherical3D)
@@ -138,17 +139,19 @@ def hemisphere_image(bodies: S2.Quadric, colors: np.ndarray) -> np.ndarray:
     return next(hemisphere_frames(bodies[None], colors, PAINTED))
 
 
+@charts.style()
 def draw_tumbling(trajectory: S2.Trajectory, dt: float) -> plt.Figure:
     """The tumbling oval's rate in each of its body's planes against time: the spin in the intermediate plane flips
     over and back, periodically, while the others swing through zero."""
     rate = trajectory.rate[:, 0].cast(S2.ga.subspace("yz zx xy")).kernel     # [steps, 3]
     time = np.arange(rate.shape[0]) * dt
-    figure, ax = plt.subplots(figsize=(9, 3.6), layout="constrained")
+    # Over half the column: three curves along the run, for the flips to stand apart, under a legend of three.
+    figure, ax = charts.subplots(520, 220, layout="constrained")
     for spin, colour, name in zip(rate.T, ("#0284c7", "#e11d48", "#d97706"),
                                   ("in yz, the intermediate plane", "in zx", "in xy")):
-        ax.plot(time, spin, color=colour, linewidth=1.8, label=name)
+        ax.plot(time, spin, color=colour, label=name)
     # The rates against their zero, without numbers; the legend above, clear of the curves.
-    ax.axhline(0, color="0.3", linewidth=0.8)
+    ax.axhline(0, color="0.3", linewidth=charts.FRAME_WIDTH)
     ax.spines[["top", "right"]].set_visible(False)
     ax.set(xlim=(time[0], time[-1]), xticks=[], yticks=[], xlabel="time", ylabel="body rate")
     ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3, frameon=False)

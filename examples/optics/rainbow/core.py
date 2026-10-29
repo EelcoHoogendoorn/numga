@@ -35,11 +35,11 @@ from numga import NumpyContext
 from numga.algebras import VGA3D as ga
 
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()
+Scalar = ga.gatype.scalar()                                                   # Scalar+
 # Directions, and the points of the drop's surface as directions from its centre, are antivectors,
 # intrinsic; unit ones square to minus one.
-Direction = ga.gatype.antivector()
-Rotor = ga.gatype.rotor()
+Direction = ga.gatype.antivector()                                            # Antivector-
+Rotor = ga.gatype.rotor()                                                     # Rotor+
 
 
 # --- math -----------------------------------------------------------------------------
@@ -48,50 +48,50 @@ def refract(direction: Direction, normal: Direction, ratio: np.ndarray) -> Direc
     enters, which is `ratio` times as refractive as the one it leaves."""
     # Half a turn about the normal reverses the part of the direction along the surface; Snell's law
     # keeps that part times the refractive index.
-    along = (direction - (normal >> direction)) / (2 * ratio)                 # [...] Direction
+    surface_part = (direction - (normal >> direction)) / (2 * ratio)          # [...] Direction-
     # Unit length fixes the part along the normal.
-    return along + normal * (1 - along.scalar_norm_squared()).square_root()   # [...] Direction
+    return surface_part + normal * (1 - surface_part.scalar_norm_squared()).square_root()   # [...] Direction-
 
 
 def entry(sunlight: Direction, offsets: Direction) -> Direction:
     """Where light along `sunlight`, passing the centre of the unit drop at each offset square to it,
     meets the drop: the point on its sunlit side, as a direction from the centre."""
-    return offsets - sunlight * (1 - offsets.scalar_norm_squared()).square_root()   # [...] Direction
+    return offsets - sunlight * (1 - offsets.scalar_norm_squared()).square_root()   # [...] Direction-
 
 
 def bounce(vertex: Direction, chord: Direction) -> Rotor:
     """The turn about the drop's centre carrying a point where light meets the surface from inside, and
     the chord arriving there, to the next point and the next chord."""
     # The next point is this one reflected across the plane through the centre square to the chord.
-    following = -(chord >> vertex)                                            # [...] Direction
+    next_vertex = -(chord >> vertex)                                          # [...] Direction-
     # The rotor taking one unit direction to another, in their plane.
-    return (-(following * vertex)).square_root()                              # [...] Rotor
+    return (-(next_vertex * vertex)).square_root()                            # [...] Rotor+
 
 
 def reflectances(offsets: Direction, index: np.ndarray) -> tuple[Scalar, Scalar]:
     """The fraction of light the surface reflects, polarized across and along the plane of incidence:
     Fresnel's coefficients, the same where the light enters as wherever it meets the surface again."""
     # The cosines of the angles of incidence and refraction; the offset is the sine of incidence.
-    incidence = (1 - offsets.scalar_norm_squared()).square_root()             # [...] Scalar
-    refraction = (1 - offsets.scalar_norm_squared() / index**2).square_root() # [...] Scalar
-    across = ((incidence - index * refraction) / (incidence + index * refraction)).squared()
-    along = ((refraction - index * incidence) / (refraction + index * incidence)).squared()
-    return across, along
+    incidence = (1 - offsets.scalar_norm_squared()).square_root()             # [...] Scalar+
+    refraction = (1 - offsets.scalar_norm_squared() / index**2).square_root() # [...] Scalar+
+    reflectance_across = ((incidence - index * refraction) / (incidence + index * refraction)).squared()   # [...] Scalar+
+    reflectance_along = ((refraction - index * incidence) / (refraction + index * incidence)).squared()   # [...] Scalar+
+    return reflectance_across, reflectance_along
 
 
 def paths(sunlight: Direction, offsets: Direction, index: np.ndarray, n_reflections: int) -> Iterator[tuple[Direction, Direction, Scalar]]:
     """Per number of reflections inside the drop, from none up to `n_reflections`: the point where the
     light leaves, the direction it leaves in, and the fraction of unpolarized sunlight leaving there."""
-    vertex = entry(sunlight, offsets)                                         # [...] Direction
-    chord = refract(sunlight, -vertex, index)                                 # [...] Direction
+    vertex = entry(sunlight, offsets)                                         # [...] Direction-
+    chord = refract(sunlight, -vertex, index)                                 # [...] Direction-
     # Every chord of a sphere meets it at the same angle at both ends: each point and chord inside is
     # the last one turned by the same rotor.
-    turn = bounce(vertex, chord)                                              # [...] Rotor
-    across, along = reflectances(offsets, index)
+    turn = bounce(vertex, chord)                                              # [...] Rotor+
+    reflectance_across, reflectance_along = reflectances(offsets, index)      # [...] Scalar+, Scalar+
     # The light transmitted into the drop and out of it again, in each polarization.
-    passed_across, passed_along = (1 - across).squared(), (1 - along).squared()
+    passed_across, passed_along = (1 - reflectance_across).squared(), (1 - reflectance_along).squared()
     for _ in range(n_reflections + 1):
-        vertex = turn >> vertex                                               # [...] Direction
+        vertex = turn >> vertex                                               # [...] Direction-
         yield vertex, refract(chord, vertex, 1 / index), (passed_across + passed_along) / 2
-        chord = turn >> chord                                                 # [...] Direction
-        passed_across, passed_along = passed_across * across, passed_along * along
+        chord = turn >> chord                                                 # [...] Direction-
+        passed_across, passed_along = passed_across * reflectance_across, passed_along * reflectance_along

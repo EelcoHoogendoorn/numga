@@ -4,9 +4,9 @@ import numpy as np
 
 from examples.relativity.spinors import core
 
-n_rotation_frames = 96
+n_rotation_frames = 192
 rotation_angles = np.linspace(0, 4 * np.pi, n_rotation_frames, endpoint=False)
-frame_duration = 80
+frame_duration = 40
 rapidity = 0.7
 n_phase_samples = 129
 phase_angles = np.linspace(0, 2 * np.pi, n_phase_samples)

@@ -41,8 +41,8 @@ GAS_SEED = 3
 # around the whole trip.
 WALKABOUT_SPANS = np.array([1.0, -1.0, 0.35, -0.35])
 WALKABOUT_NUDGES = np.array([0.0, 0.0, 0.015, 0.0])
-WALKABOUT_DT = 0.2
-N_WALKABOUT_FRAMES, N_WALKABOUT_SUBSTEPS = 135, 5
+WALKABOUT_DT = 1 / 6
+N_WALKABOUT_FRAMES, N_WALKABOUT_SUBSTEPS = 203, 4
 WALKABOUT_ALONG, WALKABOUT_ACROSS = 10.0, 1.4
 WALKABOUT_HALF_WIDTH, WALKABOUT_HALF_HEIGHT = 10.6, 2.9
 WALKABOUT_PIXELS_PER_UNIT = 20
@@ -60,7 +60,7 @@ N_RING_STEPS, N_LEAPFROG_STEPS = 150, 75
 BRAID_HEIGHT = 2.5
 
 # The walkabout's frame duration, and the animations' palette, enough colours for the fields' smooth depths.
-DURATION_MS = 60
+DURATION_MS = 40
 N_COLOURS = 64
 
 
@@ -122,7 +122,7 @@ def leapfrog() -> Scene:
     centres = (core.mv.y * LEAPFROG_SPANS).dual().cast(core.Point)           # [vortices] Point-
     vortices = core.Vortices(centres, core.mv.xy * LEAPFROG_CIRCULATIONS, LEAPFROG_CORE, core.mv.vector([[0.0, 0.0]]).dual())
     return Scene(name="vortices_leapfrog", vortices=vortices, half_width=2.4, half_height=1.6, n_columns=300, n_rows=200,
-                 dt=0.1, n_substeps=2, n_frames=100, duration_ms=60, vorticity_scale=14.0)
+                 dt=1 / 15, n_substeps=2, n_frames=150, duration_ms=40, vorticity_scale=14.0)
 
 
 def shear_layer() -> Scene:
@@ -135,7 +135,7 @@ def shear_layer() -> Scene:
     copies = core.mv.x.dual() * (np.arange(-N_LAYER_COPIES, N_LAYER_COPIES + 1) * LAYER_PERIOD)   # [copies] Point-
     vortices = core.Vortices(centres, core.mv.xy * circulations, LAYER_CORE, copies)
     return Scene(name="vortices_shear_layer", vortices=vortices, half_width=LAYER_PERIOD, half_height=0.4, n_columns=300,
-                 n_rows=120, dt=0.025, n_substeps=8, n_frames=40, duration_ms=120, vorticity_scale=10.0)
+                 n_rows=120, dt=1 / 60, n_substeps=2, n_frames=240, duration_ms=40, vorticity_scale=10.0)
 
 
 def gas() -> Scene:
@@ -148,7 +148,7 @@ def gas() -> Scene:
     circulations = rng.permutation(np.repeat([1.0, -1.0], [N_GAS_TURNING, N_GAS_COUNTER]))
     vortices = core.Vortices(centres, core.mv.xy * circulations, GAS_CORE, core.mv.vector([[0.0, 0.0]]).dual())
     return Scene(name="vortices_gas", vortices=vortices, half_width=3.6, half_height=3.0, n_columns=300, n_rows=250,
-                 dt=0.01, n_substeps=25, n_frames=60, duration_ms=100, vorticity_scale=50.0)
+                 dt=1 / 120, n_substeps=8, n_frames=225, duration_ms=40, vorticity_scale=50.0)
 
 
 # --- plumbing -------------------------------------------------------------------------

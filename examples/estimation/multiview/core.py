@@ -1,6 +1,6 @@
 r"""Multi-view reconstruction and camera alignment recover the positions of observed landmarks and the poses of the cameras that see them from image pixels alone. Several cameras view the same landmarks from different places; each image records only the direction toward a landmark, not its depth, and where the sight cones from different cameras cross fixes the landmark while any mismatch between them guides each misplaced camera back into alignment.
 
-A quadric is its polarity map taking a point to its polar plane, with its value at a point given by the regressive product `quadric(point) & point` (the plane comes first because the regressive product of a plane and a point changes sign with the dimension). A pixel's uncertainty on the sensor is a quadric disc, and feeding the camera into that disc and pulling its polar planes back through `camera.adjugate()` lifts it into a sight cone on scene points, `camera.adjugate()(disc(camera))`, which exists even though the camera loses a dimension and moves between frames as `pose >> cone(pose << Point)`. Summing a landmark's cones across the cameras forms its splat, whose polar vanishes at the landmark so `(splats + w * (w & Point)).solve(w)` recovers its centre in closed form, while Gauss-Newton alignment evaluates the cones' curvature and slope directly on the motion of the points under a camera twist. The algebra `ga` is supplied per instance by `examples.instantiate("examples.estimation.multiview.core", PGA2D)` or `PGA3D`, and the same module serves both.
+A quadric is its polarity map taking a point to its polar plane, with its value at a point given by the regressive product `quadric(point) & point` (the plane comes first because the regressive product of a plane and a point changes sign with the dimension). A pixel's uncertainty on the sensor is a quadric ball, and feeding the camera into that ball and pulling its polar planes back through `camera.adjugate()` lifts it into a sight cone on scene points, `camera.adjugate()(ball(camera))`, which exists even though the camera loses a dimension and moves between frames as `pose >> cone(pose << Point)`. Summing a landmark's cones across the cameras forms its splat, whose polar vanishes at the landmark so `(splats + w * (w & Point)).solve(w)` recovers its centre in closed form, while Gauss-Newton alignment evaluates the cones' curvature and slope directly on the motion of the points under a camera twist. The algebra `ga` is supplied per instance by `examples.instantiate("examples.estimation.multiview.core", PGA2D)` or `PGA3D`, and the same module serves both.
 
 In the matrix notation of projective vision, with a camera matrix $P$ acting on homogeneous points, planes pull back through $P^{\mathsf T}$, a rank-one sensor precision $\mathbf n\, \mathbf n^{\mathsf T}$ lifts to the sight-cone matrix $P^{\mathsf T} \mathbf n\, \mathbf n^{\mathsf T} P$, and the joint camera-and-landmark Gauss-Newton step forms the reduced camera system via the Schur complement $H_{cc} - H_{cp} H_{pp}^{-1} H_{pc}$.
 """
@@ -37,16 +37,16 @@ N_REWEIGHTS = 3
 
 
 # --- math -----------------------------------------------------------------------------
-def sensor_disc(pixels: Point) -> Quadric:
-    """The sensor quadric of each pixel on a planar camera's sensor line: the squared distance from the line through the pixel across the sensor."""
+def sensor_ball(pixels: Point) -> Quadric:
+    """The sensor quadric of each pixel on a planar camera's sensor plane: the squared distance from the plane through the pixel across the sensor."""
     pixel_planes = mv.x - mv.w * (mv.x & pixels)                         # [...] Plane+
     return pixel_planes * (pixel_planes & Point)                         # [...] Plane+ <- Point-
 
 
-def sensor_disc_at(pixels: Point, principal_point: Point, disc: Quadric) -> Quadric:
+def sensor_ball_at(pixels: Point, principal_point: Point, ball: Quadric) -> Quadric:
     """A sensor quadric moved from the principal point to each pixel by the translation motor between them, the square root of their ratio."""
     shift = (pixels / principal_point).square_root()                     # [...] Motor+
-    return shift >> disc(shift << Point)                                 # [...] Plane+ <- Point-
+    return shift >> ball(shift << Point)                                 # [...] Plane+ <- Point-
 
 
 def triangulate(poses: Motor, cones: Quadric) -> tuple[Point, Quadric]:
@@ -167,8 +167,8 @@ def align_rays_to_splats(
         # The polar of each sight line, the meet of its points' polar planes, and how it moves; the polar
         # paired with the line over the stiffness along it is the belief's least value on the line.
         polar_pinhole, polar_heading = other_splats(pinhole), other_splats(heading)  # [landmarks, cameras] Plane+, Plane+
-        polar = polar_pinhole ^ polar_heading                            # [landmarks, cameras] Line+
-        polar_motion = (other_splats(pinhole_motion) ^ polar_heading) + (polar_pinhole ^ other_splats(heading_motion))  # [landmarks, cameras] Line+ <- Twist+
+        polar = polar_pinhole ^ polar_heading                            # [landmarks, cameras] Bivector+
+        polar_motion = (other_splats(pinhole_motion) ^ polar_heading) + (polar_pinhole ^ other_splats(heading_motion))  # [landmarks, cameras] Bivector+ <- Twist+
         stiffness = polar_heading & heading                              # [landmarks, cameras] Scalar+
 
         # The polar joined with the line's motion is the slope, the polar's motion joined with the line's

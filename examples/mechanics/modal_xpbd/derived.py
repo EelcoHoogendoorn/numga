@@ -28,7 +28,7 @@ Bodies, Constraints, Displacement, Force, Forque, Motor, Scalar, Twist = (
 )
 # A load on a mode is the complement of its amplitude, as a forque is the complement of a twist; a mode
 # of unit mass takes it back to an amplitude.
-Load = Scalar.dual().output_gatype
+Load = Scalar.dual().output_gatype                                          # Antiscalar-
 # A gap is the second anchor's position less the first's.
 SIDES = np.array([-1, 1])
 
@@ -119,15 +119,16 @@ def step(bodies: Bodies, constraints: Constraints, dt: float, gravity: Displacem
     )
 
 
-def swing(bodies: Bodies, constraints: Constraints, gravity: Displacement, dt: float, frames: int) -> Iterator[Bodies]:
-    """The bodies at every frame, under gravity, one compiled step per frame."""
+def swing(bodies: Bodies, constraints: Constraints, gravity: Displacement, dt: float, substeps: int, frames: int) -> Iterator[Bodies]:
+    """The bodies at every frame, under gravity, `substeps` compiled steps per frame."""
     @jax.jit
     def advance(bodies: Bodies) -> Bodies:
         return step(bodies, constraints, dt, gravity)
 
     for _ in range(frames):
         yield bodies
-        bodies = advance(bodies)
+        for _ in range(substeps):
+            bodies = advance(bodies)
 
 
 def main():
@@ -135,10 +136,10 @@ def main():
     from . import render, scenarios
 
     shape = core.girder(scenarios.N_CELLS, scenarios.LENGTH, scenarios.HEIGHT, scenarios.STIFFNESS, scenarios.DENSITY, scenarios.N_MODES)
-    bodies, constraints = scenarios.hinged_chain(core, shape, scenarios.N_LINKS, scenarios.DAMPING)
+    bodies, constraints = scenarios.hinged_chain(core, shape, scenarios.DAMPING, scenarios.FLEXIBILITY)
     gravity = mv.direction([0, -scenarios.GRAVITY])                         # [] Displacement-
     points = jax.jit(lambda moment: core.points(moment, shape))
-    frames = (points(moment) for moment in swing(bodies, constraints, gravity, scenarios.INTERVAL, scenarios.N_FRAMES))
+    frames = (points(moment) for moment in swing(bodies, constraints, gravity, scenarios.INTERVAL, scenarios.N_STEPS_PER_FRAME, scenarios.N_FRAMES))
     save_animation(render.swinging_chain(frames, shape.edges, core.points(bodies, shape)), "modal_xpbd_derived_swing", scenarios.DURATION_MS)
 
 

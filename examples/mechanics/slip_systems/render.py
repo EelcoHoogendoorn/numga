@@ -11,6 +11,7 @@ import numpy as np
 
 from numga import stack
 
+from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import pinned, room
 from examples.mechanics.slip_systems import core
@@ -35,9 +36,8 @@ EDGE_SAMPLES = 60
 # The windows of the stereographic disk the whole disk and the close-up show, left to right and bottom to top alike.
 DISK = (-1.02, 1.02)
 WINDOW = (-0.04, 0.46)
-# The animation's side in inches, and in pixels.
-SIDE = 4.6
-PIXELS = 230
+# The animation's side in pixels.
+PIXELS = 300
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -98,7 +98,7 @@ def draw_triangle(ax: plt.Axes) -> None:
     """The standard triangle, between [001], [011] and [111], its edges arcs of great circles."""
     share = np.linspace(0, 1, EDGE_SAMPLES)[:, None]
     for start, end in zip(CORNERS, CORNERS[[1, 2, 0]]):
-        ax.plot(*projected(start * (1 - share) + end * share).T, color=EDGE_COLOUR, linewidth=0.9)
+        ax.plot(*projected(start * (1 - share) + end * share).T, color=EDGE_COLOUR)
 
 
 def draw_disk(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], planes: core.Plane,
@@ -106,9 +106,11 @@ def draw_disk(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], pl
     """The whole disk: each region in the colour of its first system, white outside the rim, the slip planes'
     normals as triangles and the slip directions as dots, and the standard triangle."""
     image = picture(ax, factors, DISK)
-    image.set_clip_path(ax.add_patch(plt.Circle((0, 0), 1, fill=False, color=EDGE_COLOUR, linewidth=0.9)))
-    ax.scatter(*projected(normals(planes)).T, marker="^", s=40, color=NORMAL_COLOUR, zorder=3)
-    ax.scatter(*projected(coordinates(slips).reshape(-1, 3)).T, marker="o", s=16, color=NORMAL_COLOUR, zorder=3)
+    image.set_clip_path(ax.add_patch(plt.Circle((0, 0), 1, fill=False, color=EDGE_COLOUR)))
+    # The planes' normals a little larger than the directions, so that the two kinds of mark read apart.
+    ax.scatter(*projected(normals(planes)).T, marker="^", s=charts.points(1.5 * charts.MARKER_PX) ** 2,
+               color=NORMAL_COLOUR, zorder=3)
+    ax.scatter(*projected(coordinates(slips).reshape(-1, 3)).T, marker="o", color=NORMAL_COLOUR, zorder=3)
     draw_triangle(ax)
     ax.set(xlim=DISK, ylim=DISK)
 
@@ -119,10 +121,10 @@ def draw_close(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar]) -
     draw_triangle(ax)
     for corner, name, lift in zip(projected(CORNERS), NAMES, LIFTS):
         ax.annotate(name, corner, xytext=(0, lift), textcoords="offset points", ha="center", va="center",
-                    fontsize=9, color=EDGE_COLOUR)
+                    color=EDGE_COLOUR)
     for goal, name in zip(projected(GOALS), GOAL_NAMES):
-        ax.scatter(*goal, marker="D", s=22, color=EDGE_COLOUR, zorder=3)
-        ax.annotate(name, goal, xytext=(0, 9), textcoords="offset points", ha="center", va="center", fontsize=9,
+        ax.scatter(*goal, marker="D", color=EDGE_COLOUR, zorder=3)
+        ax.annotate(name, goal, xytext=(0, 9), textcoords="offset points", ha="center", va="center",
                     color=EDGE_COLOUR)
     ax.set(xlim=WINDOW, ylim=WINDOW)
 
@@ -146,15 +148,17 @@ def draw_paths(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], a
     draw_close(ax, factors)
     tracks, segments, colours = steps(axes, amounts)
     for track, shade in zip(segments, colours):
-        ax.add_collection(LineCollection(track, colors=shade, linewidths=1.6))
-    ax.scatter(*tracks[-1].T, s=14, color=PATH_COLOUR, zorder=3)
+        ax.add_collection(LineCollection(track, colors=shade))
+    ax.scatter(*tracks[-1].T, color=PATH_COLOUR, zorder=3)
 
 
+@charts.style()
 def draw_chart(factors: Callable[[core.Direction], core.Scalar], planes: core.Plane, slips: core.Direction,
                axes: core.Direction, amounts: core.Scalar) -> plt.Figure:
     """The whole disk, and the standard triangle with the paths, coloured by each system's Schmid factors for a
     pull direction, `factors`."""
-    figure, (disk, close) = plt.subplots(1, 2, figsize=(9.0, 4.5), dpi=55, layout="constrained")
+    # Nearly the whole column: two square panels, each an image of fine regions, one with the names of its corners.
+    figure, (disk, close) = charts.subplots(760, 380, ncols=2, layout="constrained")
     # Both panels without axes before either takes its room.
     disk.set_axis_off()
     close.set_axis_off()
@@ -175,15 +179,15 @@ def animate_paths_sized(factors: Callable[[core.Direction], core.Scalar], axes: 
     so many pixels across."""
     reached = np.linspace(2, axes.shape[0], frames).round().astype(int)
     tracks, segments, colours = steps(axes, amounts)
-    figure, ax = plt.subplots(figsize=(SIDE, SIDE), layout="constrained")
-    figure.set_dpi(pixels / SIDE)
-    ax.set_axis_off()
-    draw_close(ax, factors)
-    paths = [ax.add_collection(LineCollection([], linewidths=1.6)) for _ in segments]
-    places = ax.scatter(*tracks[0].T, s=14, color=PATH_COLOUR, zorder=3)
-    # Lay the figure out once; only the paths and the places move between frames.
-    figure.canvas.draw()
-    figure.set_layout_engine("none")
+    # Laid out once under the charts' style; only the paths and the places move between frames.
+    with charts.style():
+        figure, ax = charts.subplots(pixels, pixels, layout="constrained")
+        ax.set_axis_off()
+        draw_close(ax, factors)
+        paths = [ax.add_collection(LineCollection([])) for _ in segments]
+        places = ax.scatter(*tracks[0].T, color=PATH_COLOUR, zorder=3)
+        figure.canvas.draw()
+        figure.set_layout_engine("none")
     for count in reached:
         for path, track, shade in zip(paths, segments, colours):
             path.set_segments(track[:count - 1])

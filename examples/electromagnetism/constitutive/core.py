@@ -1,14 +1,16 @@
 """Constitutive maps: a material's response to the electromagnetic field, a map from the field, a
 bivector, to the excitation it causes, an antibivector, `excitation = medium(field)`.
 
-A medium at rest weights each of the observer's electric planes, a spatial axis against the time
-direction, by its permittivity, and each magnetic plane, the dual of an electric one, by its inverse
-permeability: glass weights all three alike, a crystal its electric planes apart, a ferrite its magnetic
-ones. Seen moving, a medium is its rest map carried by the boost, `boost >> medium(boost << Bivector)`,
-and an axion response adds a term proportional to the field itself. Pairing the excitation with a second
-field gives the constitutive form, a form on pairs of fields, and the field and excitation together give
-the stress-energy map, from directions to currents. A plane wave is a field that both source-free Maxwell
-equations along its wavevector send to nothing.
+A medium at rest responds to each part of the field an observer tells apart with a dyad: the patch that
+reads that part, times its reading of the field, weighted by the material constant. The planes each axis of
+space sweeps through time read the electric field and carry the permittivities; the patches of the planes of
+space read the magnetic field and carry the inverse permeabilities. Glass weights all three of each kind
+alike, a crystal its electric dyads apart, a ferrite its magnetic ones; the metric enters only as the
+material map itself. Seen moving, a medium is its rest map carried by the boost,
+`boost >> medium(boost << Bivector)`, and an axion response adds a term proportional to the field itself.
+Pairing the excitation with a second field gives the constitutive form, a form on pairs of fields, and the
+field and excitation together give the stress-energy map, from directions to currents. A plane wave is a
+field that both source-free Maxwell equations along its wavevector send to nothing.
 """
 
 from __future__ import annotations
@@ -19,33 +21,37 @@ from numga import NumpyContext, stack
 from numga.algebras import STA
 
 mv = NumpyContext(STA).multivector
-Scalar = STA.gatype.scalar()
-Vector = STA.gatype.vector()
-Bivector = STA.gatype.bivector()
-Antibivector = STA.gatype.antibivector()
-Antivector = STA.gatype.antivector()
-Constitutive = STA.gatype((Antibivector, Bivector))          # Antibivector <- Bivector
-# An axion coupling is a pseudoscalar: a scalar with the orientation of the dual.
-AxionCoupling = Scalar.derive.flipped_orientation
-StressEnergy = STA.gatype((Antivector, Antivector))          # Antivector <- Antivector
-WaveMap = STA.gatype((STA.gatype.odd(), Bivector))           # Odd <- Bivector
+Scalar = STA.gatype.scalar()                                # Scalar+
+Vector = STA.gatype.vector()                                # Vector+
+Bivector = STA.gatype.bivector()                            # Bivector+
+Antibivector = STA.gatype.antibivector()                    # Antibivector-
+Antivector = STA.gatype.antivector()                        # Antivector-
+Constitutive = STA.gatype((Antibivector, Bivector))         # Antibivector- <- Bivector+
+# An axion coupling is handed: an intrinsic scalar, with the orientation flipped.
+AxionCoupling = Scalar.derive.flipped_orientation           # Scalar-
+StressEnergy = STA.gatype((Antivector, Antivector))         # Antivector- <- Antivector-
+WaveMap = STA.gatype((STA.gatype.odd(), Bivector))          # Odd+ <- Bivector+
 
-t, x, y, z = mv.t, mv.x, mv.y, mv.z
-# The observer's electric planes, each spatial axis against its time direction, and its magnetic planes,
-# their duals.
-electric_planes = stack((x, y, z)) ^ t                       # [3] Bivector
-magnetic_planes = electric_planes.dual()                     # [3] Bivector
+t, z = mv.t, mv.z
+# The observer's direction in time and its axes of space, and the planes of space across each axis.
+time = -mv.t.dual()                                         # [] Antivector-
+axes = stack((mv.x.dual(), mv.y.dual(), mv.z.dual()))       # [3] Antivector-
+magnetic_planes = stack((mv.yz, mv.zx, mv.xy))              # [3] Bivector+
+# The planes each axis sweeps through time, which read the electric field, and the patches of the planes of
+# space, which read the magnetic field: intrinsic, both.
+swept_planes = axes & time                                  # [3] Antibivector-
+patches = magnetic_planes.dual()                            # [3] Antibivector-
 
 
 # --- math -----------------------------------------------------------------------------
 def medium(permittivities: np.ndarray, inverse_permeabilities: np.ndarray) -> Constitutive:
     """A medium at rest, from its permittivity along each axis and its inverse permeability across each
-    `[..., 3]`: every electric plane weighted by its permittivity, every magnetic plane by its inverse
-    permeability, and the dual of the sum."""
-    # Electric planes square to one and magnetic planes to minus one: each dyad is a projector.
-    electric = (permittivities * electric_planes * (electric_planes | Bivector)).sum(axis=-1)
-    magnetic = -(inverse_permeabilities * magnetic_planes * (magnetic_planes | Bivector)).sum(axis=-1)
-    return (electric + magnetic).dual()                                       # [...] Constitutive
+    `[..., 3]`: the dyads of the patches that read the field, each weighted by its material constant."""
+    # Each dyad is a patch times its reading of the field. Time squares to minus one, so the electric dyads
+    # enter with a minus: the sign that makes the Lagrangian the electric field squared less the magnetic.
+    electric = -(permittivities * swept_planes * (Bivector & swept_planes)).sum(axis=-1)
+    magnetic = (inverse_permeabilities * patches * (Bivector & patches)).sum(axis=-1)
+    return electric + magnetic                                                # [...] Antibivector- <- Bivector+
 
 
 def stress_energy(field: Bivector, excitation: Antibivector) -> StressEnergy:
@@ -81,15 +87,14 @@ def field_modes(wavevectors: Vector, media: Constitutive) -> Bivector:
     return fields[..., -1]
 
 
-# --- the step outside the algebra -------------------------------------------------------
-def dips(speeds: np.ndarray, residual: Scalar, threshold: float) -> np.ndarray:
-    """Where the residuals along the speeds, the first axis, fall to a local minimum under the threshold:
-    the speeds at which waves travel, as a mask over the interior speeds `[speeds - 2, ...]`."""
-    values = residual.to_array()
-    left, middle, right = values[:-2], values[1:-1], values[2:]
+# --- plumbing -------------------------------------------------------------------------
+def dips(residual: Scalar, threshold: float) -> np.ndarray:
+    """Where the residuals along the trial speeds, the first axis, fall to a local minimum under the
+    threshold: the speeds at which waves travel, as a mask over the interior speeds `[speeds - 2, ...]`."""
+    left, middle, right = residual[:-2], residual[1:-1], residual[2:]
     return (middle <= left) & (middle <= right) & (middle < threshold)
 
 
 def deepest(speeds: np.ndarray, residual: Scalar) -> np.ndarray:
     """The speed at which the residual along the speeds, the first axis, is smallest `[...]`."""
-    return speeds[residual.to_array().argmin(axis=0)]
+    return speeds[residual.argmin(axis=0)]

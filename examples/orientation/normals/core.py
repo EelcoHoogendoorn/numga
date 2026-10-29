@@ -11,42 +11,15 @@ minus the original.
 
 from __future__ import annotations
 
-from numga import NumpyContext, stack
+from numga import NumpyContext
 from numga.algebras import PGA3D
 
 ga = PGA3D
 mv = NumpyContext(ga).multivector
-Point = ga.gatype.antivector()
-Plane = ga.gatype.vector()
-Surface = Plane.derive.flipped_orientation
-Spear = (Point & Point).output_gatype
-Axis = (Plane ^ Plane).output_gatype
-
-
-# --- math -----------------------------------------------------------------------------
-def reflect_normals(triangle: Point, side: Plane, mirror: Plane) -> tuple[Point, Plane, Surface]:
-    """The triangle and its two plane orientations, before and after reflection."""
-    # Joining the vertices in order gives the plane its winding orientation.
-    winding = (triangle[0] & triangle[1] & triangle[2]).normalized()            # Surface
-
-    # The same reflection acts on both planes, respecting their different orientations.
-    vertices = stack([triangle, mirror >> triangle])                            # Point
-    sides = stack([side, mirror >> side])                                       # Plane
-    windings = stack([winding, mirror >> winding])                              # Surface
-    return vertices, sides, windings
-
-
-def reflect_line(ends: Point, mirror: Plane) -> Spear:
-    """The line through two points, then reflected by `>>`, then by the plain sandwich."""
-    line = ends[0] & ends[1]                                                    # Spear
-    return stack([line, mirror >> line, mirror * line * mirror.inverse()])
-
-
-def reflect_crossing(planes: Plane, ends: Point, mirror: Plane) -> tuple[Plane, Point, Axis, Spear]:
-    """Two planes crossing in a line, and two points on it: each pair before and after the mirror,
-    with the meet of the planes and the join of the points built again from each pair."""
-    reflected_planes = mirror >> planes                                         # Plane
-    reflected_ends = mirror >> ends                                             # Point
-    meets = stack([planes[0] ^ planes[1], reflected_planes[0] ^ reflected_planes[1]])  # Axis
-    joins = stack([ends[0] & ends[1], reflected_ends[0] & reflected_ends[1]])   # Spear
-    return stack([planes, reflected_planes]), stack([ends, reflected_ends]), meets, joins
+Point = ga.gatype.antivector()                                                  # Antivector-
+Plane = ga.gatype.vector()                                                      # Vector+
+Surface = Plane.derive.flipped_orientation                                      # Vector-
+# A line oriented along itself, as the join of two points is, and one oriented around itself, as the meet of two
+# planes is: a spear and an axis, in Dorst's names.
+Spear = (Point & Point).output_gatype                                           # Antibivector-
+Axis = (Plane ^ Plane).output_gatype                                            # Bivector+

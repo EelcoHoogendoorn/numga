@@ -51,19 +51,19 @@ def test_the_lap_closes_in_the_plane_and_draws():
     steps = scenarios.lap_in_plane()
     truth, dead_reckoning, reckoned_uncertainty, poses, uncertainty = scenarios.closing(steps, 3, 0)
     plane = instantiate(scenarios.CORE, PGA2D)
-    reckoned_ellipses = plane.ellipses(dead_reckoning, reckoned_uncertainty, scenarios.SIGMAS)
-    quadric = plane.ellipses(poses, uncertainty, scenarios.SIGMAS)
-    for figure in (render.draw_lap(truth, dead_reckoning, reckoned_ellipses, dead_reckoning[[0, -1]]),
-                   render.draw(truth, dead_reckoning, reckoned_ellipses, poses, quadric)):
+    reckoned_ellipsoids = plane.ellipsoids(dead_reckoning, reckoned_uncertainty, scenarios.SIGMAS)
+    quadric = plane.ellipsoids(poses, uncertainty, scenarios.SIGMAS)
+    for figure in (render.draw_lap(truth, dead_reckoning, reckoned_ellipsoids, dead_reckoning[[0, -1]]),
+                   render.draw(truth, dead_reckoning, reckoned_ellipsoids, poses, quadric)):
         assert isinstance(figure, plt.Figure)
         plt.close(figure)
-    # Every pose's ellipse lies SIGMAS standard deviations out from the point it carries.
+    # Every pose's ellipsoid lies SIGMAS standard deviations out from the point it carries.
     positions = poses >> plane.origin
     np.testing.assert_allclose((quadric(positions) & positions).to_array(), -scenarios.SIGMAS**2, atol=1e-6)
     # A frame for each damped iteration.
     *_, iterates = scenarios.damped(steps, 0.2, 2, 0)
-    frames = render.animate(truth, dead_reckoning, reckoned_ellipses,
-                            ((poses, plane.ellipses(poses, uncertainty, scenarios.SIGMAS)) for poses, uncertainty in iterates))
+    frames = render.animate(truth, dead_reckoning, reckoned_ellipsoids,
+                            ((poses, plane.ellipsoids(poses, uncertainty, scenarios.SIGMAS)) for poses, uncertainty in iterates))
     assert len(list(frames)) == 2
 
 

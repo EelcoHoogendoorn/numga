@@ -13,8 +13,8 @@ PARIS = 2
 # The steps a direction is carried around a latitude circle in.
 N_STEPS = 720
 # The frames of the day in Paris, and the duration of each.
-N_FRAMES = 72
-DURATION_MS = 80
+N_FRAMES = 144
+DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------

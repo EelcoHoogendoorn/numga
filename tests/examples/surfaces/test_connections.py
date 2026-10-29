@@ -80,6 +80,6 @@ def test_stripes_follow_their_targets_and_crosses_land_on_their_lines():
         np.testing.assert_allclose(np.abs(match) * (1 - np.abs(match)), 0, atol=1e-8)
     bands = [tuple(family[..., :1] for family in pattern) for pattern in patterns]
     plt.close(render.draw_bands(mesh, vertices, bands))
-    plt.close(render.draw_lines(mesh, vertices, crosses))
+    plt.close(render.draw_lines(mesh, vertices, crosses, scenarios.CROSS_SCALE))
     lines, stripes, advance = (family[..., :1] for family in patterns[0])
     assert len(list(render.animate_flow(mesh, vertices, lines, scenarios.sliding(mesh, vertices, stripes)[:1], advance))) == 1

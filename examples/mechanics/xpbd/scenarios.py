@@ -23,11 +23,13 @@ CURL = 0.3
 COMPLIANCE = 1e-9
 DAMPING = 1e-3
 GRAVITY = 0.5
-# The run: its steps, the substeps per step and the time step; and the duration of a frame in milliseconds.
-N_STEPS = 100
+# The run: its length in seconds, its steps, the substeps per step and the time step; and the duration of a frame
+# in milliseconds.
+RUNTIME = 4.0
+N_STEPS = 150
 N_SUBSTEPS = 4
-STEP = 0.04
-FRAME_DURATION = 60
+STEP = RUNTIME / N_STEPS
+FRAME_DURATION = 40
 
 
 # --- math -----------------------------------------------------------------------------

@@ -7,7 +7,7 @@ from examples.quantum.particle_charges import core, scenarios
 
 def test_spinor_sectors_and_standard_model_charges():
     occupations, projectors, charge, hypercharge, left_isospin, right_isospin, baryon_minus_lepton, _ = scenarios.sectors()
-    phase_action = core.action(core.phase)
+    pseudoscalar_action = core.action(core.pseudoscalar)
     dimension = projectors.trace()
     intersections = projectors[:, None](projectors[None, :])
     tolerance = 1e-12
@@ -15,11 +15,11 @@ def test_spinor_sectors_and_standard_model_charges():
                                  -1 / 3, 2 / 3, -2 / 3, 1 / 3, -2 / 3, 1 / 3, -1, 0])
 
     # checks
-    np.testing.assert_allclose((phase_action(phase_action) + core.State).kernel, 0, atol=tolerance)
+    np.testing.assert_allclose((pseudoscalar_action(pseudoscalar_action) + core.State).kernel, 0, atol=tolerance)
     np.testing.assert_allclose((projectors.sum(axis=0) - core.State).kernel, 0, atol=tolerance)
     np.testing.assert_allclose(dimension.to_array(), 2, atol=tolerance)
     np.testing.assert_allclose((intersections - projectors[:, None] * np.eye(len(projectors))).kernel, 0, atol=tolerance)
-    np.testing.assert_allclose((phase_action(projectors) - projectors(phase_action)).kernel, 0, atol=tolerance)
+    np.testing.assert_allclose((pseudoscalar_action(projectors) - projectors(pseudoscalar_action)).kernel, 0, atol=tolerance)
     np.testing.assert_allclose(charge.to_array(), expected_charges, atol=tolerance)
     np.testing.assert_allclose((charge - hypercharge - left_isospin).to_array(), 0, atol=tolerance)
     np.testing.assert_allclose((hypercharge - right_isospin - baryon_minus_lepton / 2).to_array(), 0, atol=tolerance)
@@ -48,7 +48,7 @@ def test_gauge_actions_and_additional_unified_connections():
     np.testing.assert_allclose((pairing(colour, core.State) + pairing(core.State, colour)).kernel, 0, atol=tolerance)
     np.testing.assert_allclose((pairing(weak, core.State) + pairing(core.State, weak)).kernel, 0, atol=tolerance)
     np.testing.assert_allclose((weak[0](weak[1]) - weak[1](weak[0]) - weak[2]).kernel, 0, atol=tolerance)
-    np.testing.assert_allclose((core.action(core.phase)(weak[2])(projectors) - left_isospin * projectors).kernel, 0, atol=tolerance)
+    np.testing.assert_allclose((core.action(core.pseudoscalar)(weak[2])(projectors) - left_isospin * projectors).kernel, 0, atol=tolerance)
     np.testing.assert_allclose((colour[:, None](projectors[None, ~is_coloured])).kernel, 0, atol=tolerance)
     np.testing.assert_allclose((weak[:, None](projectors[None, ~is_doublet])).kernel, 0, atol=tolerance)
     assert np.count_nonzero(np.triu(colour_strength.to_array(), 1) > tolerance) == 12

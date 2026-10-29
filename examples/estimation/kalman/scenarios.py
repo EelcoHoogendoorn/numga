@@ -1,4 +1,4 @@
-"""The tracking scene for the Kalman filter simulates a meandering drive in the plane with sparse pose readings."""
+"""The tracking scene for the Kalman filter simulates a meandering drive in space with sparse pose readings."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from collections.abc import Iterator
 import numpy as np
 
 from numga import stack
-from examples.estimation.kalman.core import Covariance, Line, Motor, Twist, covariance, mv, position_ellipse, sample, update
+from examples.estimation.kalman.core import Covariance, Line, Motor, Twist, covariance, mv, position_ellipsoid, sample, update
 
 # The time step, the pose readings and the commanded steps between them, and the seed of the noise.
 DT = 0.1
@@ -21,7 +21,7 @@ TURN_FREQUENCY = 0.2
 # pose reading.
 MOTION_NOISE = (0.05, 0.12)
 MEASUREMENT_NOISE = (0.3, 0.1)
-# The duration of an animation frame in milliseconds, and the standard-deviation level of the ellipse.
+# The duration of an animation frame in milliseconds, and the standard-deviation level of the ellipsoid.
 FRAME_DURATION = 40
 SIGMAS = 2.0
 
@@ -70,8 +70,8 @@ def main() -> None:
     origin = mv.w.dual()                                                        # [] Point-
     truth, dead, estimates, covariances, readings = tracking()
     positions = estimates >> origin                                             # [states] Point-
-    ellipses = position_ellipse(estimates, covariances, positions, SIGMAS)      # [states] Plane+ <- Point-
-    save_animation(render.animate_tracking(truth, dead, estimates, positions, ellipses, readings), "kalman", FRAME_DURATION)
+    ellipsoids = position_ellipsoid(estimates, covariances, positions, SIGMAS)  # [states] Plane+ <- Point-
+    save_animation(render.animate_tracking(truth, dead, estimates, positions, ellipsoids, readings), "kalman", FRAME_DURATION)
 
     # checks
     # Sparse noisy pose readings keep the filtered path far closer to the truth than the dead-reckoned one,

@@ -16,17 +16,17 @@ from numga.extensor import stack
 ga = Algebra("a+b+c+d+e+f+g+h+")
 context = NumpyContext(ga)
 mv = context.multivector
-Scalar = ga.gatype.scalar()
-Vector = ga.gatype.vector()
-Bivector = ga.gatype.bivector()
-Rotor = ga.gatype.rotor()
+Scalar = ga.gatype.scalar()                                                   # Scalar+
+Vector = ga.gatype.vector()                                                   # Vector+
+Bivector = ga.gatype.bivector()                                               # Bivector+
+Rotor = ga.gatype.rotor()                                                     # Rotor+
 VectorMap = ga.gatype((Vector, Vector))
-COXETER_ORDER = 30
+coxeter_order = 30
 
 
 # --- plumbing -------------------------------------------------------------------------
 def simple_roots() -> Vector:
-    """Eight length-squared-two normals whose reflections generate E8's root system."""
+    """Eight mirrors of squared length two whose reflections generate E8's root system."""
     return stack([
         (mv.a + mv.h - mv.b - mv.c - mv.d - mv.e - mv.f - mv.g) / 2,
         mv.a + mv.b,
@@ -41,15 +41,15 @@ def simple_roots() -> Vector:
 
 # --- math -----------------------------------------------------------------------------
 def reflection_seeds(roots: Vector) -> Iterator[Vector]:
-    """One root from each Coxeter orbit, reflected by the normals preceding it."""
-    prefix = Vector                                                           # [] Vector <- Vector
+    """One root from each Coxeter orbit, reflected in the mirrors preceding it."""
+    prefix = Vector                                                           # [] Vector+ <- Vector+
     for root in roots:
-        yield prefix(root)                                                    # [] Vector
-        prefix = prefix(root.normalized() >> Vector)                           # [] Vector <- Vector
+        yield prefix(root)                                                    # [] Vector+
+        prefix = prefix(root.normalized() >> Vector)                          # [] Vector+ <- Vector+
 
 
 def orbit(action: VectorMap, seeds: Vector, n_steps: int) -> Iterator[Vector]:
     """Successive images of a batch of seeds under one motion."""
     for _ in range(n_steps):
-        yield seeds                                                           # [orbits] Vector
-        seeds = action(seeds)                                                 # [orbits] Vector
+        yield seeds                                                           # [orbits] Vector+
+        seeds = action(seeds)                                                 # [orbits] Vector+

@@ -22,7 +22,7 @@ margin = 0.1
 room = 0.08
 n_pixels = 240
 background = np.ones(3)
-DURATION_MS = 50
+DURATION_MS = 40
 
 
 def centre(points: core.Point) -> core.Point:

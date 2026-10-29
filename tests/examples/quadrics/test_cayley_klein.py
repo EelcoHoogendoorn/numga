@@ -17,7 +17,7 @@ def invariant(C, A: Point, B: Point):
     return A.regressive(C(B)) / (A.regressive(C(A)) * B.regressive(C(B))).square_root()
 
 
-def test_absolute_from_line_dyads_is_the_diagonal_polarity():
+def test_absolute_from_plane_dyads_is_the_diagonal_polarity():
     assert HYPERBOLIC.gatype == Polarity
     np.testing.assert_allclose(HYPERBOLIC.kernel, np.diag([1.0, 1.0, -1.0]))
     Q = HYPERBOLIC.inverse()
@@ -43,7 +43,7 @@ def test_perpendicular_through_the_pole_and_reflection_in_both_geometries():
     for C in (HYPERBOLIC, ELLIPTIC):
         Q = C.inverse()
         A, B, P = mv.point(np.array([0.65, 0.0])), mv.point(np.array([0.2, 0.55])), mv.point(np.array([-0.15, 0.15]))
-        # The line through A and B, given a side by the winding of A, B and P.
+        # The side through A and B: their join, given a side by the winding of A, B and P, a plane.
         side = A.regressive(B) * A.regressive(B).regressive(P)
         pole = Q(side)
         perpendicular = P.regressive(pole)
@@ -68,19 +68,19 @@ def test_triangle_angle_sum_is_below_pi_hyperbolic_and_above_pi_elliptic():
     assert sums["hyperbolic"] < np.pi < sums["elliptic"]
 
 
-def test_circle_quadric_contains_the_points_at_its_radius():
+def test_sphere_quadric_contains_the_points_at_its_radius():
     C = HYPERBOLIC
     centre, R = mv.point(np.array([0.45, 0.25])), 0.9
     polar = C(centre)
-    circle = polar * polar.regressive(Point) - centre.regressive(C(centre)) * (np.cosh(R) ** 2) * C
+    sphere = polar * polar.regressive(Point) - centre.regressive(C(centre)) * (np.cosh(R) ** 2) * C
     lo, hi = 0.45, 0.999
     for _ in range(60):
         mid = 0.5 * (lo + hi)
         lo, hi = (mid, hi) if (-invariant(C, centre, mv.point(np.array([mid, 0.25])))).clip(1.0, np.inf).arccosh() < R else (lo, mid)
-    on_circle = mv.point(np.array([lo, 0.25]))
-    np.testing.assert_allclose(on_circle.regressive(circle(on_circle)).kernel, 0.0, atol=1e-12)
+    on_sphere = mv.point(np.array([lo, 0.25]))
+    np.testing.assert_allclose(on_sphere.regressive(sphere(on_sphere)).kernel, 0.0, atol=1e-12)
 
 
 def test_scenario_renders():
-    figure = render.draw_hyperbolic_plane(*scenarios.hyperbolic_plane())
+    figure = render.draw_hyperbolic_space(*scenarios.hyperbolic_space())
     assert isinstance(figure, plt.Figure)

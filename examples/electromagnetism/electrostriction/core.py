@@ -4,9 +4,10 @@ Particles and dipoles are confined to a plane; their interaction is the three-di
 electrostatic dipole field restricted to that plane. Units set four pi times permittivity to one.
 The particles' positions and their dipoles, a charge times a displacement, are antivectors,
 intrinsic like all geometry. The electric field is a bivector of spacetime, extrinsic, through the
-observer's time: the field along a direction is the dual of the plane the direction sweeps through
-time, `(direction & time).dual()`, and a dipole meets the field in the plane it sweeps, an energy
-`field & (dipole & time)`.
+observer's time, and a dipole meets the field in the plane it sweeps through time, an energy
+`field & (dipole & time)`. The field along a direction is a map from directions to fields, the dual
+of the plane a direction sweeps through time, `(Point & time).dual()`: the vacuum's identification of a
+direction with the field along it. The polarizability and the dipole law both act through it.
 Central springs join neighbours, and weak tethers to the reference sites support the lattice.
 The energy at fixed applied field includes the work exchanged with the source of that field.
 """
@@ -25,23 +26,27 @@ from examples import instantiate
 
 mv = JaxContext(ga).multivector
 Mesh = instantiate("examples.util.mesh", ga, JaxContext).Mesh
-Scalar = ga.gatype.scalar()
-Vector = ga.gatype.vector()
+Scalar = ga.gatype.scalar()                                # Scalar+
+Vector = ga.gatype.vector()                                # Vector+
 # Positions, displacements and dipoles are directions in the plane, antivectors; the electric field
 # there is a bivector through time, its planes xt and yt.
-Point = ga.gatype.antivector().derive.containing("z t")
-Field = ga.gatype.bivector().derive.within("x y t").derive.containing("t")
-Response = ga.gatype((Field, Point))                       # Field <- Point
+Point = ga.gatype.antivector().derive.containing("z t")    # Antivector-
+Field = ga.gatype.bivector().derive.within("x y t").derive.containing("t")    # Bivector+
+Response = ga.gatype((Field, Point))                       # Field+ <- Point-
 
 # The direction in time of an observer at rest with the lattice, which pairs to one with `mv.t`; the
 # dual carries the minus of t's square.
-time = -mv.t.dual()                                        # [] Antivector
+time = -mv.t.dual()                                        # [] Antivector-
+# The field along a direction, as strong as the direction is long: the dual of the plane the direction sweeps
+# through time, one map with the direction left open. The metric enters here, as the vacuum's identification of a
+# direction with the field along it.
+field_along = (Point & time).dual()                         # [] Field+ <- Point-
 
 
 # --- math -----------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Lattice:
-    rest: Point                          # Point[particles]
+    rest: Point                          # Point-[particles]
     bonds: np.ndarray                    # [bonds, ends] site indices
     polarizability: float
     stiffness: float
@@ -53,13 +58,9 @@ class Lattice:
         n_particles = self.rest.gatype.site_shape[0]
         return Mesh(n_particles, self.bonds).d[0]
 
-    def links(self, positions: Point) -> Point:
-        """Each elastic bond, directed from its first particle to its second."""
-        return self.bond_ends * positions                                      # Point[bonds]
-
     @property
     def lengths(self) -> Scalar:
-        return self.links(self.rest).squared().square_root()
+        return (self.bond_ends * self.rest).squared().square_root()           # Scalar+[bonds]
 
     def response(self, positions: Point) -> Response:
         """The field each dipole needs, its own restoring field less the field supplied by the
@@ -71,14 +72,17 @@ class Lattice:
         # added on the diagonal is arbitrary; it keeps the denominator finite.
         n_particles = self.rest.gatype.site_shape[0]
         distance = (squared_distance + np.eye(n_particles)).square_root()
-        # A dipole's field at a separation: the field along the direction its law gives.
-        coupling = (field_along(3 * separation * (separation | Point) - squared_distance * Point)
-                    / distance**5).field(0, 1)                         # Field[particles] <- Point[particles]
-        return field_along(Point) / self.polarizability - coupling
+        # A dipole's field at a separation: three times the field along the separation, weighted by
+        # its pairing with the plane the dipole sweeps, less the separation's square times the field
+        # along the dipole.
+        along = field_along(separation)                                        # [particles, particles] Field+
+        dipole_law = 3 * along * (along & (Point & time)) - squared_distance * field_along
+        coupling = (dipole_law / distance**5).field(0, 1)                      # (Field+ <- Point-)[particles <- particles]
+        return field_along / self.polarizability - coupling
 
     def elastic_energy(self, positions: Point) -> Scalar:
         """Stretching energy of the bonds and displacement energy of the supporting tethers."""
-        extension = self.links(positions).squared().square_root() - self.lengths
+        extension = (self.bond_ends * positions).squared().square_root() - self.lengths
         bonds = self.stiffness / 2 * extension.squared().sites.sum()
         tethers = self.tether / 2 * (positions - self.rest).squared().sites.sum()
         return bonds + tethers
@@ -98,8 +102,8 @@ class Lattice:
 
         @jax.jit
         def newton(positions: Point) -> Point:
-            gradient = derivative(energy)(positions)                   # Scalar <- Point[particles]
-            curvature = derivative(derivative(energy))(positions)      # Scalar <- (Point[particles], Point[particles])
+            gradient = derivative(energy)(positions)                   # (Scalar+ <- Point-)[particles]
+            curvature = derivative(derivative(energy))(positions)      # (Scalar+ <- (Point-, Point-))[particles, particles]
             # The polarization solve is inside the energy: its response to motion contributes
             # to the mechanical curvature as well as the first derivative.
             return positions - curvature.solve(gradient)
@@ -110,22 +114,16 @@ class Lattice:
         return positions
 
 
-def field_along(direction: Point) -> Field:
-    """The field along a direction in the plane, as strong as the direction is long: the dual of the
-    plane the direction sweeps through time."""
-    return (direction & time).dual()                                          # [...] Field
-
-
-def extent(positions: Point, direction: Vector) -> Scalar:
-    """Root mean square distance along a direction, measured from the field's centre: the pairing of
-    each centred position with the line through the centre across the direction."""
+def extent(positions: Point, reference: Vector) -> Scalar:
+    """Root mean square distance of the sites from a reference slice through their centre: the pairing
+    of each centred position with the slice."""
     centred = positions - positions.sites.mean()
-    return (direction & centred).squared().sites.mean().square_root()
+    return (reference & centred).squared().sites.mean().square_root()
 
 
-def strain(positions: Point, rest: Point, direction: Vector) -> Scalar:
-    """The relative change of the root mean square extent along a direction, from the rest sites."""
-    return extent(positions, direction) / extent(rest, direction) - 1
+def strain(positions: Point, rest: Point, reference: Vector) -> Scalar:
+    """The relative change of the root mean square distance from a reference slice, from the rest sites."""
+    return extent(positions, reference) / extent(rest, reference) - 1
 
 
 # --- plumbing -------------------------------------------------------------------------

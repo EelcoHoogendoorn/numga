@@ -1,4 +1,4 @@
-"""A finite crystal and its scattering pattern under stretch, shear and rotation."""
+"""A finite crystal and the light it scatters under stretch, shear and rotation."""
 
 from __future__ import annotations
 
@@ -8,41 +8,47 @@ import numpy as np
 
 from examples.optics.crystal_diffraction import core
 
-N_SHELLS = 3
-N_ORDERS = 3
-SPACING = 1.0
-MAX_STRETCH = 1.7
-MAX_SHEAR = 0.6
-MAX_ANGLE = np.pi / 9
+n_shells = 3
+n_orders = 3
+spacing = 1.0
+max_stretch = 1.7
+max_shear = 0.6
+max_angle = np.pi / 9
 # The cases: the square layer, stretched, and stretched, sheared and turned.
-STRETCHES = np.array([1.0, MAX_STRETCH, MAX_STRETCH])
-SHEARS = np.array([0.0, 0.0, MAX_SHEAR])
-ANGLES = np.array([0.0, 0.0, MAX_ANGLE])
-HALF_WIDTH = 10.0
-N_PIXELS = 161
-N_FRAMES = 20
-N_MOVIE_PIXELS = 81
-FRAME_DURATION = 120
+stretches = np.array([1.0, max_stretch, max_stretch])
+shears = np.array([0.0, 0.0, max_shear])
+angles = np.array([0.0, 0.0, max_angle])
+half_width = 10.0
+n_pixels = 101
+n_frames = 60
+n_movie_pixels = 211
+frame_duration = 40
+# Light running along z: its phase stays put along `time + mv.z.dual()`. Its electric field lies along x.
+wavevector = core.mv.t - core.mv.z                                          # [] Vector+
+incident = wavevector ^ core.mv.x                                           # [] Bivector+
 
 
 # --- math -----------------------------------------------------------------------------
-def comparison() -> tuple[core.Crystal, core.Crystal, core.Plane, core.Scalar]:
-    """The square layer at rest, the three crystals carried from it, the transfer grid, and their coherent
-    scattering intensities."""
-    reference = core.square(N_SHELLS, N_ORDERS, SPACING)
-    crystals = reference.carried(core.deformation(STRETCHES, SHEARS, ANGLES))
-    grid = core.transfer_grid(HALF_WIDTH, N_PIXELS)
-    return reference, crystals, grid, crystals.intensity(grid)
+def comparison() -> tuple[core.Crystal, core.Crystal, core.Vector, core.Scalar]:
+    """The square layer at rest, the three crystals carried from it, the transfer grid, and the energy density of the
+    light each crystal scatters to it."""
+    reference = core.square(n_shells, n_orders, spacing)
+    crystals = reference.carried(core.deformation(stretches, shears, angles))
+    grid = core.transfer_grid(half_width, n_pixels)
+    field = crystals.scattered(grid, incident)                             # [cases, rows, columns] Bivector+
+    return reference, crystals, grid, core.energy_density(field, field)
 
 
-def deformation(grid: core.Plane) -> Iterator[tuple[core.Point, core.Plane, core.Scalar]]:
-    """Per frame of a stretch, shear and turn, the atoms, the reciprocal lattice and the intensity; the animation
-    plays them forward and back."""
-    reference = core.square(N_SHELLS, N_ORDERS, SPACING)
-    for phase in np.linspace(0, np.pi, N_FRAMES // 2 + 1):
+def deformation(grid: core.Vector) -> Iterator[tuple[core.Antivector, core.Vector, core.Scalar]]:
+    """Per frame of a stretch, shear and turn, the atoms, the reciprocal lattice and the energy density of the
+    scattered light; the animation plays them forward and back."""
+    reference = core.square(n_shells, n_orders, spacing)
+    for phase in np.linspace(0, np.pi, n_frames // 2 + 1):
         weight = np.array((1 - np.cos(phase)) / 2)
-        crystal = reference.carried(core.deformation(1 + (MAX_STRETCH - 1) * weight, MAX_SHEAR * weight, MAX_ANGLE * weight))
-        yield crystal.positions, crystal.reciprocal, crystal.intensity(grid)
+        crystal = reference.carried(core.deformation(1 + (max_stretch - 1) * weight, max_shear * weight,
+                                                     max_angle * weight))
+        field = crystal.scattered(grid, incident)                          # [rows, columns] Bivector+
+        yield crystal.positions, crystal.reciprocal, core.energy_density(field, field)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -50,10 +56,11 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.optics.crystal_diffraction import render
 
-    reference, crystals, grid, intensity = comparison()
-    movie_grid = core.transfer_grid(HALF_WIDTH, N_MOVIE_PIXELS)
-    save_figure(render.comparison(crystals.positions, crystals.reciprocal, grid, intensity), "crystal_diffraction")
-    save_animation(render.animate(deformation(movie_grid), movie_grid), "crystal_diffraction", FRAME_DURATION,
+    reference, crystals, grid, energy_density = comparison()
+    movie_grid = core.transfer_grid(half_width, n_movie_pixels)
+    save_figure(render.comparison(crystals.positions, crystals.reciprocal, grid, energy_density),
+                "crystal_diffraction")
+    save_animation(render.animate(deformation(movie_grid), movie_grid), "crystal_diffraction", frame_duration,
                    forward_then_back=True)
 
     # checks

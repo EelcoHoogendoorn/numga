@@ -10,6 +10,7 @@ import numpy as np
 
 from numga import stack
 
+from examples.util import charts
 from examples.util.animation import capture
 from examples.mechanics.kepler import core
 
@@ -20,6 +21,8 @@ BODY_COLOUR = "#ff00b7"
 CROSS_COLOUR, LABEL_COLOUR = "0.85", "0.4"
 # The margin around a lifted path, as a share of its extent.
 LABEL_ROOM = 0.12
+# The centre of attraction's marker, twice a chart's marker across, as a scatter's area in points squared.
+CENTRE_SIZE = charts.points(2 * charts.MARKER_PX) ** 2
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -37,24 +40,26 @@ def spinor_coordinates(spinors: core.Spinor) -> np.ndarray:
 def cross(ax: plt.Axes, across: str, up: str) -> None:
     """A plane without scales: a faint cross through the origin, its lines named at their ends where they are in
     view."""
-    ax.axhline(0, color=CROSS_COLOUR, linewidth=0.7, zorder=0)
-    ax.axvline(0, color=CROSS_COLOUR, linewidth=0.7, zorder=0)
-    ax.text(1, 0, across, transform=ax.get_yaxis_transform(), ha="right", va="top", fontsize=6, color=LABEL_COLOUR,
-            clip_on=True)
-    ax.text(0, 1, f" {up}", transform=ax.get_xaxis_transform(), ha="left", va="top", fontsize=6, color=LABEL_COLOUR,
-            clip_on=True)
+    # The cross as thin as a chart's frame, which it stands in for.
+    ax.axhline(0, color=CROSS_COLOUR, linewidth=charts.FRAME_WIDTH, zorder=0)
+    ax.axvline(0, color=CROSS_COLOUR, linewidth=charts.FRAME_WIDTH, zorder=0)
+    ax.text(1, 0, across, transform=ax.get_yaxis_transform(), ha="right", va="top", color=LABEL_COLOUR, clip_on=True)
+    ax.text(0, 1, f" {up}", transform=ax.get_xaxis_transform(), ha="left", va="top", color=LABEL_COLOUR, clip_on=True)
     ax.set_axis_off()
 
 
+@charts.style()
 def draw_lift(positions: core.Point, spinors: core.Spinor) -> plt.Figure:
     """A planar orbital passage and the half-turn of its position spinor."""
     points = plane_coordinates(positions)
     lifted = spinor_coordinates(spinors)
-    figure, panels = plt.subplots(1, 2, figsize=(4.5, 1.9), layout="constrained")
+    # Three fifths of the column: two paths side by side, room enough for their samples' dots to stand apart.
+    figure, panels = charts.subplots(480, 200, ncols=2, layout="constrained")
     for ax, path, (across, up) in zip(panels, (points, lifted), (("x", "y"), ("scalar", "xy"))):
-        ax.plot(*path.T, color=REGULARIZED_COLOUR, linewidth=1.0)
-        ax.scatter(*path.T, c=np.linspace(0, 1, len(path)), cmap="viridis", s=5, zorder=3)
-        ax.scatter(0, 0, s=25, color="#e5ab32", edgecolors="white", zorder=4)
+        ax.plot(*path.T, color=REGULARIZED_COLOUR)
+        ax.scatter(*path.T, c=np.linspace(0, 1, len(path)), cmap="viridis", zorder=3)
+        # The centre of attraction twice the size of the samples.
+        ax.scatter(0, 0, s=CENTRE_SIZE, color="#e5ab32", edgecolors="white", zorder=4)
         # Room beyond the path for the names of the cross.
         ax.margins(LABEL_ROOM)
         ax.set_aspect("equal", adjustable="datalim")
@@ -62,20 +67,23 @@ def draw_lift(positions: core.Point, spinors: core.Spinor) -> plt.Figure:
     return figure
 
 
+@charts.style()
 def draw_comparison(reference: core.State, physical: core.State, regularized: core.State) -> plt.Figure:
     """One orbit at equal step counts, with a periapsis detail below each full path."""
     exact = plane_coordinates(reference.position)
     direct = plane_coordinates(physical.position)
     lifted = plane_coordinates(regularized.position)
     cases = exact.shape[1]
-    figure, panels = plt.subplots(2, cases, figsize=(5.25, 3), squeeze=False, layout="constrained")
+    # Three quarters of the column: a full path and its periapsis a case, over one legend.
+    figure, panels = charts.subplots(600, 400, nrows=2, ncols=cases, squeeze=False, layout="constrained")
     for case in range(cases):
         for row in range(2):
             ax = panels[row, case]
-            ax.plot(*exact[:, case].T, color=EXACT_COLOUR, linewidth=1.6, alpha=0.5, label="Exact")
-            ax.plot(*direct[:, case].T, color=PHYSICAL_COLOUR, linewidth=0.8, label="Physical clock")
-            ax.plot(*lifted[:, case].T, color=REGULARIZED_COLOUR, linewidth=0.9, label="Spinor clock")
-            ax.scatter(0, 0, s=12, color="#e5ab32", edgecolors="white", zorder=4)
+            # The exact orbit wide and faint, under the two integrated ones.
+            ax.plot(*exact[:, case].T, color=EXACT_COLOUR, linewidth=2 * charts.LINE_WIDTH, alpha=0.5, label="Exact")
+            ax.plot(*direct[:, case].T, color=PHYSICAL_COLOUR, label="Physical clock")
+            ax.plot(*lifted[:, case].T, color=REGULARIZED_COLOUR, label="Spinor clock")
+            ax.scatter(0, 0, s=CENTRE_SIZE, color="#e5ab32", edgecolors="white", zorder=4)
             low, high = exact[:, case].min(axis=0), exact[:, case].max(axis=0)
             span = np.max(high - low)
             if row == 0:
@@ -93,27 +101,28 @@ def draw_comparison(reference: core.State, physical: core.State, regularized: co
                 ax.set(xticks=[], yticks=[])
                 ax.spines[:].set_color(CROSS_COLOUR)
     figure.get_layout_engine().set(hspace=0.08)
-    figure.legend(*panels[0, 0].get_legend_handles_labels(), loc="outside lower center", ncol=3, frameon=False,
-                  fontsize=6)
+    figure.legend(*panels[0, 0].get_legend_handles_labels(), loc="outside lower center", ncol=3, frameon=False)
     return figure
 
 
+@charts.style()
 def draw_errors(counts: np.ndarray, physical: core.Scalar, regularized: core.Scalar) -> plt.Figure:
     """Physical-time-weighted RMS position errors against the exact orbit."""
     direct = physical.to_array()
     lifted = regularized.to_array()
-    figure, panels = plt.subplots(1, direct.shape[1], figsize=(5.25, 1.6), squeeze=False,
-                                  layout="constrained")
+    # Three quarters of the column for the cases' panels: a few points each on straight lines, and the height the
+    # error's axis label needs above the legend.
+    figure, panels = charts.subplots(600, 280, ncols=direct.shape[1], squeeze=False, layout="constrained")
     for case, ax in enumerate(panels[0]):
-        ax.loglog(counts, direct[:, case], "o-", color=PHYSICAL_COLOUR, label="Physical clock", markersize=3, linewidth=1)
-        ax.loglog(counts, lifted[:, case], "o-", color=REGULARIZED_COLOUR, label="Spinor clock", markersize=3, linewidth=1)
-        ax.set_xlabel("Steps per orbit", fontsize=6)
-        ax.tick_params(labelsize=6)
+        ax.loglog(counts, direct[:, case], "o-", color=PHYSICAL_COLOUR, label="Physical clock")
+        ax.loglog(counts, lifted[:, case], "o-", color=REGULARIZED_COLOUR, label="Spinor clock")
+        ax.set_xlabel("Steps per orbit")
         ax.set_xticks(counts, labels=[str(count) for count in counts])
         ax.xaxis.set_minor_locator(NullLocator())
         ax.spines[["top", "right"]].set_visible(False)
-    panels[0, 0].set_ylabel("RMS error / semimajor axis", fontsize=6)
-    panels[0, 0].legend(frameon=False, fontsize=6)
+    panels[0, 0].set_ylabel("RMS error / semimajor axis")
+    # The legend under the panels, clear of the falling lines.
+    figure.legend(*panels[0, 0].get_legend_handles_labels(), loc="outside lower center", ncol=2, frameon=False)
     return figure
 
 

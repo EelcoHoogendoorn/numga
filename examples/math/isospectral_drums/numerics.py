@@ -5,9 +5,13 @@ from __future__ import annotations
 import numpy as np
 
 from numga.sparse import SparseExtensor
-from examples.math.isospectral_drums.core import Point, Scalar, mv
+from examples import instantiate
+from examples.math.isospectral_drums.core import Point, Scalar, ga, mv
+
+Mesh = instantiate("examples.util.mesh", ga).Mesh
 
 
+# --- plumbing -------------------------------------------------------------------------
 def _samples(n_subdivisions: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Integer coordinates and triangulation of one reference tile."""
     row, column = np.indices((n_subdivisions + 1, n_subdivisions + 1))
@@ -32,7 +36,7 @@ def triangle(n_subdivisions: int) -> tuple[Point, np.ndarray]:
     """The reference triangle in the sample order used by restriction maps."""
     column, row, faces = _samples(n_subdivisions)
     vertices = (mv.x.dual() * (column / n_subdivisions)
-                + mv.y.dual() * (row / n_subdivisions)).field()           # Point[samples]
+                + mv.y.dual() * (row / n_subdivisions)).field()           # Point-[samples]
     return vertices, faces
 
 
@@ -53,25 +57,16 @@ def drum(tile_vertices: np.ndarray, n_lattice: int, n_subdivisions: int) -> tupl
     tile_nodes = tile_nodes.reshape(n_tiles, n_samples)
     n_vertices = len(nodes)
     vertices = (mv.x.dual() * (nodes[:, 0] / n_subdivisions)
-                + mv.y.dual() * (nodes[:, 1] / n_subdivisions)).field()     # Point[vertices]
+                + mv.y.dual() * (nodes[:, 1] / n_subdivisions)).field()     # Point-[vertices]
 
     faces = tile_nodes[:, local_faces]
     frame = corners[:, 1:] - corners[:, :1]
     winding = frame[:, 0, 0] * frame[:, 1, 1] - frame[:, 0, 1] * frame[:, 1, 0]
     faces = np.where(winding[:, None, None] > 0, faces, faces[..., [0, 2, 1]]).reshape(-1, 3)
 
-    # Only edges belonging to one large triangle are fixed drum boundaries.
-    corner_nodes, corner_ids = np.unique(corners.reshape(-1, 2), axis=0, return_inverse=True)
-    corner_ids = corner_ids.reshape(n_tiles, 3)
-    edges = np.concatenate((corner_ids[:, [0, 1]], corner_ids[:, [1, 2]], corner_ids[:, [2, 0]]))
-    edges, counts = np.unique(np.sort(edges, axis=-1), axis=0, return_counts=True)
-    boundary_edges = corner_nodes[edges[counts == 1]] * n_subdivisions
-    edge_direction = boundary_edges[:, 1] - boundary_edges[:, 0]
-    relative = nodes[:, None] - boundary_edges[None, :, 0]
-    cross = relative[..., 0] * edge_direction[:, 1] - relative[..., 1] * edge_direction[:, 0]
-    along = np.sum(relative * edge_direction, axis=-1)
-    length_squared = np.sum(edge_direction ** 2, axis=-1)
-    boundary = np.any((cross == 0) & (along >= 0) & (along <= length_squared), axis=-1)
+    # The fixed boundary: the vertices of the edges that border a single face.
+    mesh = Mesh(n_vertices, faces)
+    boundary = np.isin(np.arange(n_vertices), mesh.edges[mesh.boundary_edges])
     interior = np.flatnonzero(~boundary)
     n_interior = len(interior)
     interior_ids = np.full(n_vertices, -1)
@@ -80,7 +75,7 @@ def drum(tile_vertices: np.ndarray, n_lattice: int, n_subdivisions: int) -> tupl
     tile_interior = interior_ids[tile_nodes].reshape(-1)
     tile_rows = np.flatnonzero(tile_interior >= 0)
     tile_columns = tile_interior[tile_rows]
-    unit_cells = mv.scalar(np.ones((len(tile_rows), 1))) * Scalar           # [couplings] Scalar <- Scalar
+    unit_cells = mv.scalar(np.ones((len(tile_rows), 1))) * Scalar           # [couplings] Scalar+ <- Scalar+
     restriction = SparseExtensor.from_indices(unit_cells, tile_rows, tile_columns,
                                               (n_tiles * n_samples, n_interior))
     multiplicity = np.bincount(tile_columns, minlength=n_interior)
@@ -89,15 +84,11 @@ def drum(tile_vertices: np.ndarray, n_lattice: int, n_subdivisions: int) -> tupl
     lift = SparseExtensor.from_indices(mv.scalar(np.ones((n_interior, 1))) * Scalar,
                                         interior, np.arange(n_interior), (n_vertices, n_interior))
 
-    # A one-cell border makes every nearest-neighbour lookup an ordinary index.
-    offset = 1 - nodes.min(axis=0)
-    lookup = np.full(tuple(nodes.max(axis=0) + offset + 2), -1)
-    shifted = nodes[interior] + offset
-    lookup[shifted[:, 0], shifted[:, 1]] = np.arange(n_interior)
-    steps = np.array([[1, 0], [-1, 0], [0, 1], [0, -1]])
-    adjacent_nodes = shifted[:, None] + steps
-    adjacent = lookup[adjacent_nodes[..., 0], adjacent_nodes[..., 1]]
-    tails, directions = np.nonzero(adjacent >= 0)
+    # Lattice neighbours are the edges of the triangulation one step along a row or a column, not across a diagonal,
+    # between interior sites, coupled both ways.
+    steps = np.abs(nodes[mesh.edges[:, 1]] - nodes[mesh.edges[:, 0]]).sum(axis=-1)
+    ends = interior_ids[mesh.edges[(steps == 1) & np.all(interior_ids[mesh.edges] >= 0, axis=-1)]]
+    tails, heads = np.concatenate((ends, ends[:, ::-1])).T
     neighbors = SparseExtensor.from_indices(mv.scalar(np.ones((len(tails), 1))) * Scalar,
-                                             tails, adjacent[tails, directions], (n_interior, n_interior))
+                                             tails, heads, (n_interior, n_interior))
     return vertices, faces, neighbors, restriction, assembly, lift

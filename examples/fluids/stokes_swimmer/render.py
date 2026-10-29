@@ -10,6 +10,7 @@ import numpy as np
 from matplotlib.artist import Artist
 
 from numga import stack
+from examples.util import charts
 from examples.util.animation import capture
 from examples.fluids.stokes_swimmer import core
 
@@ -25,26 +26,25 @@ HINGE_MARGIN, HINGE_ROOM = 0.12, 0.5
 
 
 def point_coords(points: core.Point) -> np.ndarray:
-    """The `(x, y)` coordinates of planar points at unit weight, or of ideal displacements: their pairings with the
-    lines x and y."""
+    """The `(x, y)` coordinates of points at unit weight, or of ideal displacements: their pairings with the
+    planes x = 0 and y = 0."""
     mv = core.mv
     return (stack((mv.x, mv.y)) & points[..., None]).to_array()
 
 
 def force_coords(forces: core.Force) -> np.ndarray:
-    """The `(x, y)` components of planar forces: their pairings with the unit displacements along x and y."""
+    """The `(x, y)` components of forces: their pairings with the unit displacements along x and y."""
     mv = core.mv
     return (forces[..., None] & stack((mv.direction([1.0, 0.0]), mv.direction([0.0, 1.0])))).to_array()
 
 
 def _cross(ax, across: str, up: str) -> None:
-    """A plane without scales: a faint cross through the origin, its lines named at their ends, each along itself,
+    """No scales: a faint cross through the origin, its lines named at their ends, each along itself,
     the line across named just past its end."""
-    ax.axhline(0.0, color=CROSS_COLOUR, linewidth=0.8, zorder=0)
-    ax.axvline(0.0, color=CROSS_COLOUR, linewidth=0.8, zorder=0)
-    ax.text(1, 0, f" {across}", transform=ax.get_yaxis_transform(), ha="left", va="center", fontsize=9,
-            color=LABEL_COLOUR)
-    ax.text(0, 1, f"{up} ", transform=ax.get_xaxis_transform(), ha="right", va="bottom", fontsize=9, color=LABEL_COLOUR,
+    ax.axhline(0.0, color=CROSS_COLOUR, linewidth=charts.FRAME_WIDTH, zorder=0)
+    ax.axvline(0.0, color=CROSS_COLOUR, linewidth=charts.FRAME_WIDTH, zorder=0)
+    ax.text(1, 0, f" {across}", transform=ax.get_yaxis_transform(), ha="left", va="center", color=LABEL_COLOUR)
+    ax.text(0, 1, f"{up} ", transform=ax.get_xaxis_transform(), ha="right", va="bottom", color=LABEL_COLOUR,
             rotation=90, rotation_mode="anchor")
     ax.set_axis_off()
 
@@ -55,9 +55,8 @@ def _zero_axes(ax, across: str, up: str) -> None:
     ax.spines[["top", "right"]].set_visible(False)
     ax.spines[["left", "bottom"]].set_position(("data", 0))
     ax.set(xticks=[], yticks=[])
-    ax.text(1, 0, f" {across}", transform=ax.get_yaxis_transform(), ha="left", va="center", fontsize=9,
-            color=LABEL_COLOUR)
-    ax.text(0, 1, f"{up} ", transform=ax.get_xaxis_transform(), ha="right", va="bottom", fontsize=9, color=LABEL_COLOUR,
+    ax.text(1, 0, f" {across}", transform=ax.get_yaxis_transform(), ha="left", va="center", color=LABEL_COLOUR)
+    ax.text(0, 1, f"{up} ", transform=ax.get_xaxis_transform(), ha="right", va="bottom", color=LABEL_COLOUR,
             rotation=90, rotation_mode="anchor")
 
 
@@ -99,6 +98,7 @@ def _move_swimmer(parts: list[Artist], beads_xy: np.ndarray) -> None:
     joints.set_offsets(hinges)
 
 
+@charts.style()
 def draw_summary(
     angles: np.ndarray,
     positions: core.Point,
@@ -110,7 +110,8 @@ def draw_summary(
     """Left: instantaneous Stokes flow around Purcell's swimmer with bead forces and centre trail;
     middle: centre displacement along x over the three cycles for both strokes; right: the two strokes
     in hinge-angle space."""
-    figure, (ax_flow, ax_path, ax_hinge) = plt.subplots(1, 3, figsize=(8.2, 2.6), dpi=75)
+    # The whole column: three panels side by side, the flow's arrows dense.
+    figure, (ax_flow, ax_path, ax_hinge) = charts.subplots(800, 260, ncols=3)
 
     grid_xy = point_coords(grid)                                                # [gy, gx, 2]
     flow_xy = point_coords(flow)                                                # [gy, gx, 2]
@@ -128,19 +129,19 @@ def draw_summary(
         forces_xy[0, 0, :, 0], forces_xy[0, 0, :, 1],
         color=FORCE_COLOUR, scale=1.4, width=0.007, zorder=6,
     )
-    ax_flow.plot(pos_xy[:, 0, 0], pos_xy[:, 0, 1], color=TRAIL_COLOUR, linewidth=1.6, zorder=2)
+    ax_flow.plot(pos_xy[:, 0, 0], pos_xy[:, 0, 1], color=TRAIL_COLOUR, zorder=2)
     ax_flow.set_xlim(grid_xy[0, 0, 0], grid_xy[0, -1, 0])
     ax_flow.set_ylim(grid_xy[0, 0, 1], grid_xy[-1, 0, 1])
     ax_flow.set_aspect("equal")
     ax_flow.set_axis_off()
 
     t = np.linspace(0.0, 1.0, len(pos_xy))
-    ax_path.plot(t, pos_xy[:, 0, 0], color=PURCELL_COLOUR, linewidth=2.2)
-    ax_path.plot(t, pos_xy[:, 1, 0], color=SCALLOP_COLOUR, linewidth=2.0, linestyle="--")
+    ax_path.plot(t, pos_xy[:, 0, 0], color=PURCELL_COLOUR)
+    ax_path.plot(t, pos_xy[:, 1, 0], color=SCALLOP_COLOUR, linestyle="--")
     _zero_axes(ax_path, "time", "$x$")
 
-    ax_hinge.plot(angles[:, 0, 0], angles[:, 0, 1], color=PURCELL_COLOUR, linewidth=2.2)
-    ax_hinge.plot(angles[:, 1, 0], angles[:, 1, 1], color=SCALLOP_COLOUR, linewidth=2.0, linestyle="--")
+    ax_hinge.plot(angles[:, 0, 0], angles[:, 0, 1], color=PURCELL_COLOUR)
+    ax_hinge.plot(angles[:, 1, 0], angles[:, 1, 1], color=SCALLOP_COLOUR, linestyle="--")
     ax_hinge.set_aspect("equal")
     # Room above the loop for the name of the line up.
     ax_hinge.margins(x=HINGE_MARGIN, y=HINGE_ROOM)

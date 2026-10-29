@@ -134,8 +134,8 @@ def uncertainties(iterates: Iterator[Motor], uncertainty: Covariance, damping: f
         yield poses, uncertainty
 
 
-def ellipses(poses: Motor, uncertainty: Covariance, sigmas: float) -> Quadric:
-    """The quadric of each pose's position vanishes on its confidence ellipse, `sigmas` standard deviations out."""
+def ellipsoids(poses: Motor, uncertainty: Covariance, sigmas: float) -> Quadric:
+    """The quadric of each pose's position vanishes on its confidence ellipsoid, `sigmas` standard deviations out."""
     positions = poses >> origin                                                # [...] Point-
     # A twist moves the position by its commutator with it: a map from twists to displacements.
     shift = Twist.commutator(positions)(poses >> Twist)                        # [...] Point- <- Twist+

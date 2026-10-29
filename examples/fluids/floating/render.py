@@ -12,6 +12,7 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 
+from examples.util import charts
 from examples.util.animation import capture
 from examples.fluids.floating import core
 from examples.util.wgsl import image_figure, meshes, solids
@@ -53,10 +54,6 @@ DASH = 3.0
 LINE_RADIUS, SHAFT_RADIUS, HEAD_RADIUS, ARM_RADIUS, WATERLINE_RADIUS, CENTRE_RADIUS, MARKER_RADIUS = (
     0.4, 0.8, 3.0, 0.8, 0.4, 2.0, 2.5)
 HEAD_LENGTH = 7.0
-# The resolution of the plots beside the end views, in dots per inch, and the size of the text of the one beside the
-# rolling hull, in points.
-DPI = 90
-PLOT_TEXT = 7
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -181,18 +178,20 @@ def draw_ship(hull: core.Point, placed: core.Motor, push: core.Forque, centre: c
     return image_figure(side_by_side([in_space, end_on(triangles, view, forces)]))
 
 
+@charts.style()
 def draw_curves(heels: np.ndarray, couples: core.Forque, weight: core.Scalar, stiffness: core.Stiffness) -> plt.Figure:
     """The righting arm of each load over the heels `[heels, loads]`, with the tangent at upright that the
     stiffness gives, and the line of no righting."""
     righting = arms(couples, weight)                                         # [heels, loads]
     slopes = (stiffness(mv.yz, mv.yz) / weight).to_array()                       # [loads]
     colours = plt.get_cmap(LOAD_MAP)(np.linspace(0.05, 0.85, righting.shape[1]))
-    figure, ax = plt.subplots(figsize=(4.4, 2.6), dpi=DPI)
-    ax.axhline(0, color="0.6", lw=0.8)
+    # Half the column: a few smooth curves and their tangents at upright.
+    figure, ax = charts.subplots(420, 260)
+    ax.axhline(0, color="0.6", linewidth=charts.FRAME_WIDTH)
     near = heels[heels <= TANGENT]
     for curve, slope, colour in zip(righting.T, slopes, colours):
-        ax.plot(heels, curve, color=colour, lw=2)
-        ax.plot(near, slope * np.radians(near), color=colour, lw=1, linestyle=(0, (4, 3)))
+        ax.plot(heels, curve, color=colour)
+        ax.plot(near, slope * np.radians(near), color=colour, linestyle=(0, (4, 3)))
     ax.set_xticks([0, 45, 90, 135, 180])
     ax.set_xlim(heels[0], heels[-1])
     ax.set(xlabel="heel (degrees)", ylabel="righting arm (m)")
@@ -202,6 +201,7 @@ def draw_curves(heels: np.ndarray, couples: core.Forque, weight: core.Scalar, st
     return figure
 
 
+@charts.style()
 def draw_cubes(densities: np.ndarray, heels: np.ndarray, couples: core.Forque, fluid_weight: float, cube: core.Point,
                shown: core.Motor, shown_densities: list[float], rests: np.ndarray) -> plt.Figure:
     """Above, cubes of a few densities at rest; below, the cube's righting couple over density and heel, blue
@@ -212,13 +212,15 @@ def draw_cubes(densities: np.ndarray, heels: np.ndarray, couples: core.Forque, f
     rising = np.gradient(moments, heels, axis=1) > 0
     cube_view = end_view(((-CUBE_VIEW, CUBE_VIEW), (-CUBE_VIEW, CUBE_VIEW)), N_CUBE_PIXELS)
     cubes = side_by_side([end_on(coordinates(placed >> cube), cube_view, []) for placed in shown])
-    figure, ax = plt.subplots(figsize=(cubes.shape[1] / DPI, 0.6 * cubes.shape[1] / DPI), dpi=DPI)
+    # The map as wide as the cubes above it.
+    figure, ax = charts.subplots(cubes.shape[1], round(0.6 * cubes.shape[1]))
     largest = np.abs(moments).max()
     ax.contourf(densities, heels, moments.T, levels=np.linspace(-largest, largest, 41), cmap=ARM_MAP)
-    for stable, width in ((True, 3), (False, 0.8)):
+    # The stable rests twice as wide as a curve, the balances the other way as thin as the frame.
+    for stable, width in ((True, charts.points(2 * charts.LINE_PX)), (False, charts.FRAME_WIDTH)):
         ax.contour(densities, heels, np.where(rising == stable, moments, np.nan).T, levels=[0], colors="0.1",
                    linewidths=width)
-    ax.plot(shown_densities, rests, "o", color="white", markeredgecolor="0.1", markersize=4)
+    ax.plot(shown_densities, rests, "o", color="white", markeredgecolor="0.1")
     ax.set(xlim=(densities[0], densities[-1]), ylim=(-3, 93), yticks=[0, 45, 90])
     ax.set(xlabel="density over the water's", ylabel="heel (degrees)")
     figure.subplots_adjust(left=0.1, right=0.98, bottom=0.12, top=0.98)
@@ -240,22 +242,25 @@ def animate_release(hull: core.Point, centres: core.Point, frames: Iterable[tupl
     view = end_view(END, N_END_PIXELS)
     rows = view.shape[0]
     marker = np.array([0.9 * END[0][0], 0.85 * END[1][1]])
-    # The curves set up once; each load's heel so far and its heel now move.
-    figure, ax = plt.subplots(figsize=(1.6 * rows / DPI, rows / DPI), dpi=DPI)
-    ax.axhline(0, color="0.6", lw=0.8)
-    so_far, now = [], []
-    for case, colour in enumerate(colours):
-        ax.plot(extended, extended_curves[:, case], color=colour, lw=1.2, alpha=0.5)
-        so_far += ax.plot([], [], color=colour, lw=1.5)
-        now += ax.plot([], [], "o", color=colour, markersize=4)
-    ax.set_xticks([0, 90, 180])
-    ax.set_xlim(-30, 215)
-    ax.tick_params(labelsize=PLOT_TEXT)
-    ax.set_xlabel("heel (degrees)", fontsize=PLOT_TEXT)
-    ax.set_ylabel("righting arm (m)", fontsize=PLOT_TEXT)
-    for side in ("top", "right"):
-        ax.spines[side].set_visible(False)
-    figure.subplots_adjust(left=0.24, right=0.97, bottom=0.25, top=0.97)
+    # The curves set up once, as tall as the end views beside them, under the charts' style; each load's heel so far
+    # and its heel now move.
+    with charts.style():
+        figure, ax = charts.subplots(round(1.6 * rows), rows, layout="constrained")
+        ax.axhline(0, color="0.6", linewidth=charts.FRAME_WIDTH)
+        so_far, now = [], []
+        for case, colour in enumerate(colours):
+            ax.plot(extended, extended_curves[:, case], color=colour, alpha=0.5)
+            so_far += ax.plot([], [], color=colour)
+            now += ax.plot([], [], "o", color=colour)
+        ax.set_xticks([0, 90, 180])
+        ax.set_xlim(-30, 215)
+        ax.set_xlabel("heel (degrees)")
+        ax.set_ylabel("righting arm (m)")
+        for side in ("top", "right"):
+            ax.spines[side].set_visible(False)
+        # Laid out once; only the heels move between frames.
+        figure.canvas.draw()
+        figure.set_layout_engine("none")
     states = []
     for roll, placed, push, weighing in frames:
         states.append([degrees(roll), arms(push + weighing, weight)])

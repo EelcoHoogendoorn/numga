@@ -28,7 +28,7 @@ INITIAL_Y, INITIAL_Z = 0.02, 0.01
 # The scene's phase, and the phases the satellites move between; the frames and the duration of a frame.
 PHASE = np.deg2rad(20)
 FIRST_PHASE, LAST_PHASE = np.deg2rad([5, 50])
-N_FRAMES, DURATION_MS = 60, 65
+N_FRAMES, DURATION_MS = 98, 40
 
 # Six circular orbits sharing the polar axis, their distinct phases giving different elevations, which separates
 # radial position error from clock error; their radius and angular speed; the receiver on Earth's surface; a

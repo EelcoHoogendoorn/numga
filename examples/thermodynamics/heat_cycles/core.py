@@ -21,13 +21,12 @@ from numga.backend.jax import JaxContext, derivative
 
 ga = Algebra("s0v0")
 mv = JaxContext(ga, np.float64).multivector
-Scalar = ga.gatype.scalar()
-State = ga.gatype.antivector()
-Reading = ga.gatype((Scalar, State))
-AreaReading = ga.gatype((Scalar, State, State))
+Scalar = ga.gatype.scalar()                                # Scalar+
+State = ga.gatype.antivector()                             # Antivector-
+AreaReading = ga.gatype((Scalar, State, State))            # Scalar+ <- (State-, State-)
 
-entropy: Reading = mv.s & State                            # Scalar <- State
-volume: Reading = mv.v & State                             # Scalar <- State
+entropy = mv.s & State                                     # [] Scalar+ <- State-
+volume = mv.v & State                                      # [] Scalar+ <- State-
 
 
 # --- math -----------------------------------------------------------------------------
@@ -52,18 +51,18 @@ def strokes(fraction: Scalar, corners_entropy: Scalar, corners_temperature: Scal
 
 def exchanges(states: State, tangents: State, capacity: float) -> tuple[Scalar, Scalar]:
     """The heat a change of state along each tangent takes in and the work it does."""
-    differential = derivative(lambda state: energy(state, capacity))(states)        # [...] Scalar <- State
-    heat = differential(mv.s.dual()) * entropy                                     # [...] Scalar <- State
-    work = -differential(mv.v.dual()) * volume                                     # [...] Scalar <- State
+    differential = derivative(lambda state: energy(state, capacity))(states)        # [...] Scalar+ <- State-
+    heat = differential(mv.s.dual()) * entropy                                     # [...] Scalar+ <- State-
+    work = -differential(mv.v.dual()) * volume                                     # [...] Scalar+ <- State-
     return heat(tangents), work(tangents)
 
 
 def circulations(state: State, capacity: float) -> tuple[AreaReading, AreaReading]:
     """The heat and the work circulated around small oriented areas of states, as forms on the pairs of changes that
     span them."""
-    differential = derivative(lambda point: energy(point, capacity))
-    temperature_change = derivative(lambda value: differential(value)(mv.s.dual()))(state)   # [...] Scalar <- State
-    pressure_change = derivative(lambda value: -differential(value)(mv.v.dual()))(state)     # [...] Scalar <- State
-    heat_area = temperature_change * entropy - entropy * temperature_change        # [...] Scalar <- (State, State)
-    work_area = pressure_change * volume - volume * pressure_change                # [...] Scalar <- (State, State)
+    differential = derivative(lambda value: energy(value, capacity))
+    temperature_change = derivative(lambda value: differential(value)(mv.s.dual()))(state)   # [...] Scalar+ <- State-
+    pressure_change = derivative(lambda value: -differential(value)(mv.v.dual()))(state)     # [...] Scalar+ <- State-
+    heat_area = temperature_change * entropy - entropy * temperature_change        # [...] Scalar+ <- (State-, State-)
+    work_area = pressure_change * volume - volume * pressure_change                # [...] Scalar+ <- (State-, State-)
     return heat_area, work_area

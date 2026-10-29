@@ -31,7 +31,7 @@ def body(seed: int):
     rng = np.random.default_rng(seed)
     points = point(rng.normal(size=(5, 3)))
     masses = rng.uniform(0.5, 1.5, 5)
-    return points, masses, (points & points.commutator(Line) * masses).sum()
+    return points, masses, points.regressive(points.commutator(Line) * masses).sum()
 
 
 # A wall in general position, the plane n.x + d = 0.
@@ -82,7 +82,7 @@ def test_the_momentum_of_the_mirrored_body_is_the_mirrored_momentum():
     points, masses, inertia = body(3)
     rate = mv.bivector(np.random.default_rng(4).normal(size=6))
     mirrored_points = wall >> points
-    mirrored_inertia = (mirrored_points & mirrored_points.commutator(Line) * masses).sum()
+    mirrored_inertia = mirrored_points.regressive(mirrored_points.commutator(Line) * masses).sum()
     np.testing.assert_allclose(mirrored_inertia(wall >> rate).kernel, (wall >> inertia(rate)).kernel, atol=1e-12)
     # The mirrored rate moves every mirrored point with its mirrored velocity.
     np.testing.assert_allclose(
@@ -143,7 +143,7 @@ def test_orientations_combine_like_signs():
     assert place.commutator(rate).gatype.orientation is intrinsic  # a point's velocity
     assert plane.dual().gatype.orientation is intrinsic
     assert (rate & rate).gatype.orientation is intrinsic            # pitch, a chirality
-    momentum = place & place.commutator(rate)
+    momentum = place.regressive(place.commutator(rate))
     assert momentum.gatype.orientation is intrinsic
     assert (momentum & rate).gatype.orientation is extrinsic        # power, an ordinary number
 

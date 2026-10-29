@@ -19,12 +19,12 @@ LOAD_AT, LOAD = [1.0, 0.0, 3.0], [0.0, 2.0, -1.0]
 # The loop the tip follows: its centre, its radii along x and y and its height's swing, one target per frame.
 LOOP_CENTRE = np.array([1.0, 1.0, 1.2])
 LOOP_RADII = np.array([0.5, 0.5, 0.3])
-N_FRAMES = 72
+N_FRAMES = 90
 # The solver's steps when homing and per target when tracking; the links' half-width and half-depth; and
 # the duration of a frame in milliseconds.
 N_HOMING_STEPS, N_TRACKING_STEPS = 8, 2
 LINK_WIDTH, LINK_DEPTH = 0.15, 0.06
-FRAME_DURATION = 50
+FRAME_DURATION = 40
 # The step of the finite difference the tip velocity is checked against.
 DIFFERENCE = 1e-6
 

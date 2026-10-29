@@ -5,11 +5,18 @@ overwrites an earlier result. Each save prints the path it wrote and returns it.
 
 Frames are written at exactly their own pixels, never enlarged and never shrunk (hard rule): a smaller picture is a
 picture rendered with fewer pixels. The one averaging is `capture`'s, supersampling within a frame's own pixels.
+
+In a notebook, every picture, figure or animation, is shown at its pixel width's share of a column DESIGN_WIDTH
+pixels wide, so that pictures keep their sizes relative to one another and to the column on any screen. Importing
+this module in a notebook kernel shows matplotlib figures so; anywhere else it changes nothing.
 """
 
 from __future__ import annotations
 
+import base64
 import gc
+import io
+import sys
 import time
 from collections.abc import Iterable
 from pathlib import Path
@@ -19,7 +26,10 @@ import numpy as np
 from PIL import Image
 
 from examples import PLOT_DIR, auto_increment_path
+from examples.util.charts import DESIGN_WIDTH
 
+# How a figure is cropped to what it draws, saved and shown alike.
+CROP = dict(bbox_inches="tight", pad_inches=0.02)
 # How many times the figure's resolution a frame is drawn at, per axis, before each block is averaged.
 SUPERSAMPLE = 2
 PALETTE_FRAMES = 128
@@ -27,6 +37,22 @@ PALETTE_FRAMES = 128
 FRAME_COLOURS = 64
 # The shortest time in seconds between the frames an animation shows as they come.
 UPDATE_INTERVAL = 0.1
+# The shortest frame duration GIF players keep: delays are stored in centiseconds and browsers draw shorter ones at
+# about a tenth of a second. A smooth process is shown at 25 frames a second.
+SHORTEST_DURATION_MS = 20
+SMOOTH_DURATION_MS = 40
+
+
+def check_frame_duration(duration_ms: int, stepped: bool) -> None:
+    """Refuse a frame duration that does not fit its animation: a smooth process runs at SMOOTH_DURATION_MS, and a
+    sequence of discrete steps, declared by `stepped`, at that or slower."""
+    if duration_ms < SHORTEST_DURATION_MS:
+        raise ValueError(f"a frame of {duration_ms} ms is shown at about 100 ms; {SHORTEST_DURATION_MS} ms is the shortest")
+    if stepped and duration_ms < SMOOTH_DURATION_MS:
+        raise ValueError(f"discrete steps are shown at {SMOOTH_DURATION_MS} ms a frame or slower, not {duration_ms} ms")
+    if not stepped and duration_ms != SMOOTH_DURATION_MS:
+        raise ValueError(f"a smooth process runs at {SMOOTH_DURATION_MS} ms a frame, not {duration_ms} ms: sample its "
+                         f"frames over the same span at that rate, or pass stepped=True for a sequence of discrete steps")
 
 
 def capture(fig: plt.Figure) -> np.ndarray:
@@ -113,9 +139,17 @@ def save_gif(frames: Iterable[np.ndarray], path: str, duration_ms: int, colors: 
 def save_figure(figure: plt.Figure, name: str) -> Path:
     """Save a figure as PLOT_DIR/<name>.png, or the next free <name>_NN.png."""
     path = auto_increment_path(PLOT_DIR / f"{name}.png")
-    figure.savefig(path, bbox_inches="tight", pad_inches=0.02)
+    figure.savefig(path, **CROP)
     print(f"Saved {path}")
     return path
+
+
+def scaled_image(encoded: bytes, kind: str, width_px: int) -> str:
+    """An image element for an encoded image `width_px` wide, shown at that width's share of a DESIGN_WIDTH column
+    and never wider than the column."""
+    source = base64.b64encode(encoded).decode()
+    return (f'<img src="data:image/{kind};base64,{source}" '
+            f'style="width: {100 * width_px / DESIGN_WIDTH:.1f}%; max-width: 100%">')
 
 
 def forward_and_back(frames: list) -> list:
@@ -124,9 +158,12 @@ def forward_and_back(frames: list) -> list:
 
 
 def save_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, colors: int = 256,
-                   forward_then_back: bool = False) -> Path:
+                   forward_then_back: bool = False, stepped: bool = False) -> Path:
     """Save RGB frames as PLOT_DIR/<name>.gif, or the next free <name>_NN.gif, in a palette of `colors`, at their own
-    pixels; with `forward_then_back`, looping forward and then back."""
+    pixels; with `forward_then_back`, looping forward and then back. A smooth process is shown at
+    SMOOTH_DURATION_MS a frame; `stepped` declares the frames a sequence of discrete steps (solver iterations, edge
+    collapses, accumulating measurements), which may each be shown longer."""
+    check_frame_duration(duration_ms, stepped)
     path = auto_increment_path(PLOT_DIR / f"{name}.gif")
     frames = list(frames)
     save_gif(forward_and_back(frames) if forward_then_back else frames, str(path), duration_ms, colors)
@@ -135,14 +172,14 @@ def save_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, co
 
 
 def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, n_frames: int = 0,
-                   forward_then_back: bool = False) -> None:
+                   forward_then_back: bool = False, stepped: bool = False) -> None:
     """Show RGB frames in a notebook as they come, each in place of the one before with how many have come, then the
     whole animation looping, as the GIF it is saved as: PLOT_DIR/<name>.gif, or the next free <name>_NN.gif, as
     `save_animation` writes it, at their own pixels. The count under each frame says how many are
-    expected where `n_frames` is given. With `forward_then_back`, the loop plays the frames forward and then back."""
-    import base64
-    import io
-
+    expected where `n_frames` is given. With `forward_then_back`, the loop plays the frames forward and then back.
+    A smooth process is shown at SMOOTH_DURATION_MS a frame; `stepped` declares the frames a sequence of discrete
+    steps, which may each be shown longer."""
+    check_frame_duration(duration_ms, stepped)
     from IPython.display import HTML, display
 
     def embedded(image: Image.Image, kind: str, caption: str, **options) -> HTML:
@@ -150,8 +187,7 @@ def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, n_
         knows, with a line of text under it."""
         encoded = io.BytesIO()
         image.save(encoded, kind, **options)
-        source = base64.b64encode(encoded.getvalue()).decode()
-        return HTML(f'<img src="data:image/{kind.lower()};base64,{source}"><div>{caption}</div>')
+        return HTML(f'{scaled_image(encoded.getvalue(), kind.lower(), image.width)}<div>{caption}</div>')
 
     shown = display(HTML(""), display_id=True)
     images = []
@@ -168,5 +204,28 @@ def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, n_
         images = forward_and_back(images)
     path = auto_increment_path(PLOT_DIR / f"{name}.gif")
     save_gif([np.asarray(image) for image in images], str(path), duration_ms, 256)
-    shown.update(HTML(f'<img src="data:image/gif;base64,{base64.b64encode(path.read_bytes()).decode()}">'))
+    shown.update(HTML(scaled_image(path.read_bytes(), "gif", images[0].width)))
     print(f"Saved {path}")
+
+
+def show_figure(figure: plt.Figure) -> None:
+    """Show a figure in a notebook as the PNG `save_figure` writes, at its width's share of the column."""
+    from IPython.display import HTML, display
+
+    encoded = io.BytesIO()
+    figure.savefig(encoded, format="png", **CROP)
+    display(HTML(scaled_image(encoded.getvalue(), "png", Image.open(encoded).width)))
+
+
+def show_figures_scaled() -> None:
+    """In a notebook kernel, show every matplotlib figure with `show_figure`, in place of the PNG at its own pixels
+    that the kernel shows otherwise: the figures the inline backend shows after a cell, and a figure that is a cell's
+    value. Outside a kernel, in a script, a test or a terminal, nothing changes."""
+    shell = sys.modules["IPython"].get_ipython() if "IPython" in sys.modules else None
+    # Only a kernel's shell has a kernel. The formatter that displays an object itself is the one that the inline
+    # backend leaves alone when it sets up its own image formatters for figures, whenever that happens.
+    if getattr(shell, "kernel", None) is not None:
+        shell.display_formatter.ipython_display_formatter.for_type(plt.Figure, show_figure)
+
+
+show_figures_scaled()

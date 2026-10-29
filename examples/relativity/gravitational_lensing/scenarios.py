@@ -17,11 +17,11 @@ MASSES = np.array([0.5, 0.5])
 N_PIXELS = 480
 # The source's path, across the caustic 0.12 Einstein angles off the masses' axis, the step the still
 # shows, the source's width, and the duration of a frame in milliseconds.
-N_PATH_STEPS = 65
+N_PATH_STEPS = 145
 path = (core.mv.x * np.linspace(-0.6, 0.6, N_PATH_STEPS) + core.mv.y * 0.12).dual()   # [steps] Point-
-SHOWN_STEP = 21
+SHOWN_STEP = 47
 SOURCE_WIDTH = 0.035
-DURATION_MS = 90
+DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------

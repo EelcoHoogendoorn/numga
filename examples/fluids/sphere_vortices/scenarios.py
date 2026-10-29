@@ -37,10 +37,10 @@ SEED = 0
 # steps between their frames, the steps compared between the two time steps, and the duration of a frame.
 DT = 0.05
 N_SWEEPS = 3
-RING_STEPS, RING_STEPS_PER_FRAME = 320, 2
-TRAVEL_STEPS, TRAVEL_STEPS_PER_FRAME = 640, 4
+RING_STEPS, RING_STEPS_PER_FRAME = 320, 1
+TRAVEL_STEPS, TRAVEL_STEPS_PER_FRAME = 640, 2
 N_COMPARED_STEPS = 100
-DURATION_MS = 80
+DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------

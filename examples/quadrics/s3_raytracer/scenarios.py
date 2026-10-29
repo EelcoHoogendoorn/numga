@@ -22,9 +22,9 @@ FIELD_OF_VIEW = np.radians(80.0)
 WALK = 1.2
 # The frames of the walk, the image's pixels, and the duration of a frame in
 # milliseconds; the coarser chart the checks run on, and every how many covered pixels a hit is checked.
-N_FRAMES = 48
+N_FRAMES = 96
 SHAPE = (360, 480)
-FRAME_DURATION = 80
+FRAME_DURATION = 40
 CHECK_SHAPE = (90, 120)
 CHECK_STRIDE = 10
 

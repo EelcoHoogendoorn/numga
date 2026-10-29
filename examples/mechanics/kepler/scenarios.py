@@ -15,8 +15,8 @@ N_REFERENCE_SAMPLES = 1024
 N_LIFT_SAMPLES = 64
 STEP_COUNTS = np.array([64, 128, 256, 512])
 N_CLOCK_ITERATIONS = 44
-N_FRAMES = 120
-DURATION_MS = 60
+N_FRAMES = 180
+DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------

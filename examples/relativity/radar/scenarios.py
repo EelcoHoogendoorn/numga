@@ -19,7 +19,7 @@ END_MARGIN = 0.5
 # The moving frames: the rapidity of the last frame's boost and its shifts in space and time.
 FINAL_RAPIDITY, SPATIAL_SHIFT, TIME_SHIFT = -0.65, 0.3, 0.2
 # The frames of the animations, and the duration of a frame.
-N_FRAMES, DURATION_MS = 72, 55
+N_FRAMES, DURATION_MS = 99, 40
 
 
 # --- math -----------------------------------------------------------------------------

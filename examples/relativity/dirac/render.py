@@ -11,6 +11,7 @@ from matplotlib.image import AxesImage
 from matplotlib.lines import Line2D
 
 from numga import stack
+from examples.util import charts
 from examples.util.animation import capture
 from examples.relativity.dirac import core
 from examples.util.wgsl import fitted, show, solids, strokes
@@ -70,13 +71,14 @@ def draw_scene(ax, spinors: list, paths: list, mixtures: tuple, upto: int, view:
     shown = show(ax, picture(spinors, paths, upto, view), view)
     # The tall image in the middle of the figure, the legend in the figure's corner beside it.
     ax.figure.legend(handles=[Line2D([], [], color=colour, label=f"{share:.0%} negative energy")
-                              for share, colour in zip(mixtures, colours)], loc="upper left", fontsize=6)
+                              for share, colour in zip(mixtures, colours)], loc="upper left")
     return shown
 
 
+@charts.style()
 def draw_paths(times: np.ndarray, spinors: list, paths: list, mixtures: tuple) -> plt.Figure:
     """The paths the currents trace, one per share of negative energy, with the spin at the end."""
-    figure = plt.figure(figsize=(3.5, 3.5))
+    figure = plt.figure(figsize=(440 / charts.DPI, 350 / charts.DPI))
     ax = figure.add_axes((0, 0, 1, 1))
     draw_scene(ax, spinors, paths, mixtures, len(times), framing(ax, spinors, paths))
     return figure
@@ -84,13 +86,14 @@ def draw_paths(times: np.ndarray, spinors: list, paths: list, mixtures: tuple) -
 
 def animate_paths(times: np.ndarray, spinors: list, paths: list, mixtures: tuple, every: int) -> Iterator[np.ndarray]:
     """The paths drawn as they are traced, with each electron's spin at its current position."""
-    figure = plt.figure(figsize=(2.5, 3))
-    ax = figure.add_axes((0, 0, 1, 1))
-    view = framing(ax, spinors, paths)
-    # The figure and its legend set up once; only the picture changes between frames.
-    shown = draw_scene(ax, spinors, paths, mixtures, every, view)
-    yield capture(figure)
-    for upto in range(2 * every, len(times) + 1, every):
-        shown.set_data(picture(spinors, paths, upto, view))
+    with charts.style():
+        figure = plt.figure(figsize=(420 / charts.DPI, 300 / charts.DPI))
+        ax = figure.add_axes((0, 0, 1, 1))
+        view = framing(ax, spinors, paths)
+        # The figure and its legend set up once; only the picture changes between frames.
+        shown = draw_scene(ax, spinors, paths, mixtures, every, view)
         yield capture(figure)
-    plt.close(figure)
+        for upto in range(2 * every, len(times) + 1, every):
+            shown.set_data(picture(spinors, paths, upto, view))
+            yield capture(figure)
+        plt.close(figure)

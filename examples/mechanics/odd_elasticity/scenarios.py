@@ -18,7 +18,7 @@ x, y = core.directions
 STIFFNESS = 1
 ACTIVITY = 3
 actuation_plane = mv.xy                                                       # Bivector+
-N_CYCLE_STEPS = 72
+N_CYCLE_STEPS = 126
 # One bond: its rest length, and the radii of the ellipse its free end follows, along and across it.
 REST_LENGTH = 1
 PARALLEL_RADIUS = 0.25
@@ -28,7 +28,7 @@ SPACING = 1
 SHEAR_AMPLITUDE = 0.14
 N_PATCH_COLUMNS, N_PATCH_ROWS = 7, 7
 # A wider lattice, released from a localized displacement: its bonds, the drag on every particle, the
-# displacement's amplitude, width and wavenumber, and the time step.
+# displacement's amplitude, width and wavenumber, and the frames, the steps per frame and the time step.
 WAVE_STIFFNESS = 0.2
 WAVE_ACTIVITY = 4
 DRAG = 1
@@ -36,8 +36,9 @@ WAVE_AMPLITUDE = 0.15
 WAVE_WIDTH = 2.5
 WAVE_NUMBER = 1.2
 N_WAVE_COLUMNS, N_WAVE_ROWS = 21, 11
-N_WAVE_FRAMES = 100
-TIME_STEP = 0.06
+N_WAVE_FRAMES = 180
+N_WAVE_STEPS_PER_FRAME = 2
+TIME_STEP = 1 / 60
 
 
 # --- math -----------------------------------------------------------------------------
@@ -91,7 +92,7 @@ def shear_cycle(n_steps: int) -> tuple[Displacement, np.ndarray, Iterator[tuple[
     return reference, edges, states
 
 
-def lattice_wave(n_frames: int, dt: float) -> tuple[Displacement, np.ndarray, Iterator[tuple[Displacement, Scalar]]]:
+def lattice_wave(n_frames: int, n_steps_per_frame: int, dt: float) -> tuple[Displacement, np.ndarray, Iterator[tuple[Displacement, Scalar]]]:
     """A localized displacement excites damped waves in a free triangular patch."""
     reference, edges, incidence = core.triangular_patch(N_WAVE_COLUMNS, N_WAVE_ROWS, SPACING)
     bond_directions = (incidence * reference).normalized()                    # Displacement-[bonds]
@@ -100,7 +101,7 @@ def lattice_wave(n_frames: int, dt: float) -> tuple[Displacement, np.ndarray, It
     evolution = core.evolution(incidence, response, drags)                    # (Velocity- <- Displacement-)[sites <- sites]
     envelope = (-reference.scalar_norm_squared() / (2 * WAVE_WIDTH**2)).exp()   # Scalar+[sites]
     displacement = WAVE_AMPLITUDE * x * envelope * (WAVE_NUMBER * (mv.x & reference)).cos()   # Displacement-[sites]
-    return reference, edges, core.wave_states(reference, incidence, bond_directions, evolution, displacement, n_frames, dt)
+    return reference, edges, core.wave_states(reference, incidence, bond_directions, evolution, displacement, n_frames, n_steps_per_frame, dt)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -108,7 +109,7 @@ def main() -> None:
     from examples.util.animation import save_animation
     from examples.mechanics.odd_elasticity import render
 
-    duration_ms = 70
+    duration_ms = 40
     force_scale = 0.55
     patch_force_scale = 1.3
     displacement_scale = 4
@@ -123,7 +124,7 @@ def main() -> None:
     shear_states = list(shear_states)
     save_animation(render.patch_frames(patch, edges, [state[:2] for state in shear_states], patch_force_scale),
                    "odd_elasticity_shear", duration_ms)
-    save_animation(render.wave_frames(*lattice_wave(N_WAVE_FRAMES, TIME_STEP), displacement_scale,
+    save_animation(render.wave_frames(*lattice_wave(N_WAVE_FRAMES, N_WAVE_STEPS_PER_FRAME, TIME_STEP), displacement_scale,
                                       extension_scale, tracked_index), "odd_elasticity_wave", duration_ms)
 
     # checks

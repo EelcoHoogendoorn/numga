@@ -10,10 +10,12 @@ from matplotlib.patches import Circle
 
 from numga import stack
 from examples.util.animation import capture
+from examples.util.wgsl import pinned
 from examples.optics.photoelasticity import core
 
-animation_dpi = 85
-animation_pixels = 200
+figure_dpi = 100
+panel_gap = 4
+rim_width = 0.7
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -27,12 +29,23 @@ def window(positions: core.Planar) -> tuple[np.ndarray, tuple[float, float, floa
     return coordinates, (horizontal[0] - half_x, horizontal[-1] + half_x, vertical[0] - half_y, vertical[-1] + half_y)
 
 
+def panels(n_panels: int, pixels: tuple[int, ...]) -> tuple[plt.Figure, list[plt.Axes]]:
+    """A figure of panels side by side, each the image's own pixels, a few pixels apart."""
+    rows, columns = pixels
+    width = n_panels * columns + (n_panels - 1) * panel_gap
+    figure = plt.figure(figsize=(width / figure_dpi, rows / figure_dpi), dpi=figure_dpi)
+    axes = figure.subplots(1, n_panels, squeeze=False)[0]
+    figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=panel_gap / columns)
+    return figure, list(axes)
+
+
 def plate(ax: plt.Axes, values: np.ndarray, extent: tuple[float, float, float, float], hole_radius: float,
-          **style) -> plt.AxesImage:
-    """An image over the plate's window, with the hole drawn over it."""
-    image = ax.imshow(values, origin="lower", extent=extent, interpolation="bilinear", **style)
-    ax.add_patch(Circle((0, 0), hole_radius, facecolor="white", edgecolor="0.6", linewidth=0.7))
-    ax.set_axis_off()
+          cmap: str, vmin: float, vmax: float) -> plt.AxesImage:
+    """An image over the plate's window, rows up from the bottom, pixel for pixel, with the hole drawn over it."""
+    image = pinned(ax, values[::-1], extent)
+    image.set_cmap(cmap)
+    image.set_clim(vmin, vmax)
+    ax.add_patch(Circle((0, 0), hole_radius, facecolor="white", edgecolor="0.6", linewidth=rim_width))
     return image
 
 
@@ -45,9 +58,8 @@ def draw_stress(
     # The colour scale spans the plate only, not the pixels the hole covers.
     plate_pixels = np.linalg.norm(coordinates, axis=-1) >= hole_radius
 
-    figure, ax = plt.subplots(figsize=(5.1, 4.3), layout="constrained")
-    image = plate(ax, values, extent, hole_radius, cmap="cividis", vmin=0, vmax=values[plate_pixels].max())
-    figure.colorbar(image, ax=ax, shrink=0.88)
+    figure, (ax,) = panels(1, values.shape)
+    plate(ax, values, extent, hole_radius, "cividis", 0, values[plate_pixels].max())
     return figure
 
 
@@ -56,10 +68,10 @@ def draw_polariscope(positions: core.Planar, intensities: core.Scalar, hole_radi
     _, extent = window(positions)
     values = intensities.to_array().real
 
-    figure, panels = plt.subplots(1, len(values), figsize=(10.8, 3.7), layout="constrained")
-    for ax, intensity in zip(panels, values):
+    figure, axes = panels(len(values), values.shape[1:])
+    for ax, intensity in zip(axes, values):
         # The pixel brightness is the light intensity, on the same scale in every view.
-        plate(ax, intensity, extent, hole_radius, cmap="gray", vmin=0, vmax=1)
+        plate(ax, intensity, extent, hole_radius, "gray", 0, 1)
     return figure
 
 
@@ -67,10 +79,9 @@ def animate_polariscope(positions: core.Planar, frames: Iterable[core.Scalar],
                         hole_radius: float) -> Iterator[np.ndarray]:
     """One polariscope's transmitted intensity, `[rows, columns]` per frame, as the load changes."""
     _, extent = window(positions)
-    figure = plt.figure(figsize=(animation_pixels / animation_dpi,) * 2, dpi=animation_dpi)
-    ax = figure.add_axes((0, 0, 1, 1))
-    image = plate(ax, np.zeros(positions.shape), extent, hole_radius, cmap="gray", vmin=0, vmax=1)
+    figure, (ax,) = panels(1, positions.shape)
+    image = plate(ax, np.zeros(positions.shape), extent, hole_radius, "gray", 0, 1)
     for intensity in frames:
-        image.set_data(intensity.to_array().real)
+        image.set_data(intensity.to_array().real[::-1])
         yield capture(figure)
     plt.close(figure)

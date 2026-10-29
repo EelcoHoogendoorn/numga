@@ -12,21 +12,27 @@ from examples.electromagnetism.moving_charge import core
 strength = 1.0
 core_radius = 0.08
 top_rapidity = 2.0
-half_width = 1.5
-half_height = 1.0
-n_columns = 300
-n_rows = 200
-n_frames = 90
-duration_ms = 60
+# The lab at time zero, an upright window about the charge, which runs across it, so that its field gathers into an
+# upright band; an event for each pixel.
+half_width = 0.45
+half_height = 0.9
+n_columns = 150
+n_rows = 300
+n_frames = 136
+duration_ms = 40
 
 orbit_charge = 1.0
 orbit_radius = 1.0
-# A slow and a fast orbit, as fractions of the speed of light, with the names of their animations.
+# A slow and a fast orbit, as fractions of the speed of light, with the names of their animations; their pictures'
+# pixels a side, each pixel sampled twice along each side and averaged back, the colours of their palettes, and the
+# frames of a turn.
 orbit_speeds = np.array([0.5, 0.9])
 orbit_names = ("slow", "fast")
 orbit_half_width = 10.0
-n_orbit_pixels = 300
-n_orbit_frames = 60
+n_orbit_pixels = 240
+samples_per_pixel = 2
+n_orbit_colours = 32
+n_orbit_frames = 90
 # The coarser window the checks sample.
 n_check_columns = 30
 n_check_rows = 20
@@ -40,25 +46,25 @@ def charge(rapidity: float) -> core.Charge:
 
 def speed_up() -> Iterator[tuple[core.Antivector, core.Bivector, core.Antivector]]:
     """The lab's view at time zero as the charge speeds up: the events, the field, and the current."""
-    events = core.grid(half_width, half_height, n_columns, n_rows)               # [rows, columns] Antivector
+    events = core.grid(half_width, half_height, n_columns, n_rows)               # [rows, columns] Antivector-
     # Slowing down retraces speeding up: the rise alone is half the frames.
     rapidities = top_rapidity * (1 - np.cos(2 * np.pi * np.arange(n_frames // 2 + 1) / n_frames)) / 2
     for rapidity in rapidities:
         moving = charge(rapidity)
-        field = core.field(core.potential_gradient(moving, events))           # [rows, columns] Bivector
-        current = core.current(core.field_gradient(moving, events))            # [rows, columns] Antivector
+        field = core.field(core.potential_gradient(moving, events))           # [rows, columns] Bivector+
+        current = core.current(core.field_gradient(moving, events))            # [rows, columns] Antivector-
         yield events, field, current
 
 
-def circling(orbit: core.Orbit) -> Iterator[tuple[core.Antivector, core.Bivector, core.Antivector]]:
+def circling(orbit: core.Orbit, n_samples: int) -> Iterator[tuple[core.Antivector, core.Bivector, core.Antivector]]:
     """Over one turn: the events in the orbit's plane at each lab time, the field there, and the
     charge."""
-    plane = core.grid(orbit_half_width, orbit_half_width, n_orbit_pixels, n_orbit_pixels)   # [rows, columns] Antivector
+    plane = core.grid(orbit_half_width, orbit_half_width, n_samples, n_samples)   # [rows, columns] Antivector-
     period = 2 * np.pi * orbit.radius / orbit.speed
     for time in period * np.arange(n_orbit_frames) / n_orbit_frames:
-        events = plane + core.time * time                                    # [rows, columns] Antivector
-        field = core.field(core.orbit_potential_gradient(orbit, events))     # [rows, columns] Bivector
-        position, _, _ = core.worldline(orbit, core.mv.scalar([time]))       # [1] Antivector
+        events = plane + core.time * time                                    # [rows, columns] Antivector-
+        field = core.field(core.orbit_potential_gradient(orbit, events))     # [rows, columns] Bivector+
+        position, _, _ = core.worldline(orbit, core.mv.scalar([time]))       # [1] Antivector-
         yield events, field, position
 
 
@@ -71,13 +77,14 @@ def main() -> None:
     save_animation(render.animate(speed_up()), "moving_charge", duration_ms, forward_then_back=True)
     for name, speed in zip(orbit_names, orbit_speeds):
         orbit = core.Orbit(orbit_charge, orbit_radius, speed)
-        save_animation(render.animate_waves(circling(orbit)), f"radiating_charge_{name}", duration_ms)
+        frames = render.animate_waves(circling(orbit, n_orbit_pixels * samples_per_pixel), samples_per_pixel)
+        save_animation(frames, f"radiating_charge_{name}", duration_ms, colors=n_orbit_colours)
 
     # checks
     # At the top speed the field's derivative vanishes, and the current is the softened density carried
     # along the charge's own time.
     moving = charge(top_rapidity)
-    events = core.grid(half_width, half_height, n_check_columns, n_check_rows)  # [rows, columns] Antivector
+    events = core.grid(half_width, half_height, n_check_columns, n_check_rows)  # [rows, columns] Antivector-
     gradients = core.field_gradient(moving, events)
     np.testing.assert_allclose((core.Vector ^ gradients(core.Antivector)).trace(1, 2).kernel, 0.0, atol=1e-12)
     at_rest = moving.boost << events

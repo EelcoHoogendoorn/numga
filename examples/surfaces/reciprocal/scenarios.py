@@ -15,8 +15,8 @@ GRID_SEED = 11
 # the duration of each.
 AMPLITUDE = 0.02
 PHASE_SEED = 3
-N_FRAMES = 48
-DURATION_MS = 80
+N_FRAMES = 96
+DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------

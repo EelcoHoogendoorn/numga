@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 from contourpy import contour_generator
 
 from numga import Extensor
+from examples.util import charts
 from examples.util.wgsl import image_figure, planar, solids
 from examples.util.wgsl.planar import SOLID, Cap, Marker, Marks, Polygons, Strokes
 
@@ -40,12 +41,16 @@ BOUNDARY = rgb("#1c2326")
 # Pixels around a diagram's plot: room for the name of the quantity up on the left, of the one across below, and a
 # little on the other two sides.
 LEFT, BOTTOM, RIGHT, TOP = 30, 24, 12, 16
-# The axes' width and arrowheads, and the size of the names, in pixels.
-AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 1.2, 7.0, 5.0
-# The size of the quantities' names, and of the labels on curves and regions.
-NAME_SIZE, LABEL_SIZE = 14, 11
+# The axes' width and arrowheads, in pixels: the axes as wide as a chart's frame.
+AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH = charts.FRAME_PX, 7.0, 5.0
+# The widths of the strokes, in pixels, those of the charts: the lines a diagram is read against as thin as a chart's
+# frame, a curve as wide as a chart's, and the path the diagram follows half as wide again.
+THIN, LINE, BOLD = charts.FRAME_PX, charts.LINE_PX, 1.5 * charts.LINE_PX
+# The size of the text, the quantities' names and the labels on curves and regions, and of the numbers at the ticks
+# and the subscripts, in pixels: the charts' text and tick labels.
+TEXT_SIZE, TICK_SIZE = charts.TEXT_PX, charts.TICK_PX
 FONTS = {size: ImageFont.truetype(findfont(FontProperties(family="DejaVu Sans", style="italic")), size)
-         for size in (NAME_SIZE, LABEL_SIZE)}
+         for size in (TEXT_SIZE, TICK_SIZE)}
 # The width of the white halo around written text, in pixels.
 HALO = 2
 # The radius of a dot marking a state, and of the white ring around it, in pixels.
@@ -195,8 +200,8 @@ def ticks(diagram: Diagram, across: np.ndarray, up: np.ndarray) -> tuple[list, l
     x0, y0 = diagram.crossing
     marks = np.concatenate([np.stack([diagram.places(across, y0), diagram.places(across, y0) + [0, -4]], axis=-2),
                             np.stack([diagram.places(x0, up), diagram.places(x0, up) + [-4, 0]], axis=-2)])
-    labels = ([Label(value, y0, f"{value:g}", INK, LABEL_SIZE, "mt", (0, -6)) for value in across]
-              + [Label(x0, value, f"{value:g}", INK, LABEL_SIZE, "rm", (-6, 0)) for value in up])
+    labels = ([Label(value, y0, f"{value:g}", INK, TICK_SIZE, "mt", (0, -6)) for value in across]
+              + [Label(x0, value, f"{value:g}", INK, TICK_SIZE, "rm", (-6, 0)) for value in up])
     return [Strokes(planar.mv.point(marks), AXIS_WIDTH, INK, 1.0, SOLID, Cap.BUTT)], labels
 
 
@@ -217,8 +222,8 @@ def picture(diagram: Diagram, layers: list, labels: list[Label]) -> np.ndarray:
     the ends of the axes and the labels written over them: RGB bytes `[rows, columns, 3]`."""
     image = planar.draw(diagram.window, axes(diagram) + layers, WHITE)
     x0, y0 = diagram.crossing
-    names = [Label(diagram.across[1], y0, diagram.names[0], INK, NAME_SIZE, "rt", (0, -4)),
-             Label(x0, diagram.up[1], diagram.names[1], INK, NAME_SIZE, "lt", (8, 6))]
+    names = [Label(diagram.across[1], y0, diagram.names[0], INK, TEXT_SIZE, "rt", (0, -4)),
+             Label(x0, diagram.up[1], diagram.names[1], INK, TEXT_SIZE, "lt", (8, 6))]
     return written(diagram, image, names + labels)
 
 
@@ -229,10 +234,10 @@ def written(diagram: Diagram, image: np.ndarray, labels: list[Label]) -> np.ndar
     for label in labels:
         right, up = diagram.places(label.x, label.y) + np.array(label.shift)
         colour = tuple(int(round(255 * channel)) for channel in label.colour)
-        # A name with a subscript after an underscore: the subscript smaller and lower, after the rest, the two placed
-        # together by the anchor.
+        # A name with a subscript after an underscore: the subscript at the size of the ticks' numbers and lower, after
+        # the rest, the two placed together by the anchor.
         base, _, subscript = label.text.partition("_")
-        font, small = FONTS[label.size], FONTS[LABEL_SIZE if label.size == NAME_SIZE else label.size]
+        font, small = FONTS[label.size], FONTS[TICK_SIZE]
         whole = pen.textbbox((right, diagram.rows - up), base, font=font, anchor=label.anchor)
         shift = small.getlength(subscript) if subscript else 0.0
         horizontal = {"l": 0.0, "m": shift / 2, "r": shift}[label.anchor[0]]

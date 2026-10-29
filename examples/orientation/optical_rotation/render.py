@@ -7,45 +7,50 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import stack
-from examples.orientation.optical_rotation.core import Polarization, mv
+from examples.orientation.optical_rotation.core import Field
 from examples.util.wgsl import show, solids
 
 sm = solids.mv
 leg_colours = np.array([to_rgb("#df7246"), to_rgb("#238c9b")])
 entering_colour, beam_colour = np.array(to_rgb("#262b32")), np.array(to_rgb("#75808a"))
 reflector_colour = np.array(to_rgb("#dfe5ec"))
-line_half_width = 0.45                                     # drawn half-length of a polarization line, mm
+# The drawn half-length of a polarization line, in mm.
+line_half_width = 0.45
 # The entering polarization's reach and the reflector's, in polarization half-lengths; the dashes along each entering
 # line and the share of its place each fills; the reflector's thickness in mm and its opacity.
 entering_reach, reflector_reach = 1.3, 1.4
 n_dashes, dash_fill = 7, 0.6
 reflector_thickness, reflector_opacity = 0.03, 0.3
 # The widths of the polarization lines, the dashes and the beam, in pixels.
-line_width, dash_width, beam_width = 4.0, 2.0, 1.5
+line_width, dash_width, beam_width = 2.2, 1.1, 0.85
 # Each panel's view: elevation and azimuth in radians, azimuth zero looking along +y; its margin, a share of the
 # larger side, and the pixels across it.
 elevation, azimuth = np.radians(12.0), np.radians(35.0)
-margin, n_pixels = 0.04, 540
+margin, n_pixels = 0.04, 300
 # The beam's frame turned into the scene's, whose z is up: a half turn about the line along x + z through the origin
 # carries the beam, along z, onto x, across the picture, and the polarizations' x onto z, up.
 upright = ((sm.yz + sm.xy) * (np.pi / (2 * np.sqrt(2)))).exp()
 
 
-def draw_isolator(polarizations: Polarization, depths: np.ndarray) -> plt.Figure:
-    """`[media, setups, legs, depths]` polarizations: one panel per medium and setup, the beam running
-    left to right, out to the reflector and back, with the entering polarization dashed at both ends; seen
-    from aside and a little above, x up."""
-    # Each polarization read by pairing it with the planes across x, y and z.
-    vectors = (stack((mv.x, mv.y, mv.z), axis=-1) & polarizations[..., None]).to_array()   # [media, setups, legs, depths, 3]
+def draw_isolator(fields: Field, depths: np.ndarray) -> plt.Figure:
+    """`[media, setups, legs, depths]` electric fields: one panel per medium and setup, the beam running
+    left to right, out to the reflector and back, each field drawn as its polarization line, with the
+    entering polarization dashed at both ends; seen from aside and a little above, x up."""
+    mv = fields.context.multivector
+    time = -mv.t.dual()
+    # Each field read by pairing it with the planes the directions x, y and z sweep through time.
+    swept_planes = stack((mv.x.dual(), mv.y.dual(), mv.z.dual())) & time
+    vectors = (fields[..., None] & swept_planes).to_array()               # [media, setups, legs, depths, 3]
     length = depths[-1]
     # The places along the beam, out and back, and its two ends, where the light enters and leaves.
-    along = np.stack([depths, length + depths])[..., None] * np.eye(3)[2]                # [legs, depths, 3]
+    beam_places = np.stack([depths, length + depths])[..., None] * np.eye(3)[2]            # [legs, depths, 3]
     ends = np.array([0.0, 2 * length])[:, None] * np.eye(3)[2]                            # [2, 3]
     media, setups = vectors.shape[:2]
 
     # The reflector: a square across the beam at its far end, and the box it and the beam span, framed.
-    reach = reflector_reach * line_half_width
-    square = np.array([[-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0]]) * reach + length * np.eye(3)[2]   # [4, 3]
+    reflector_half_width = reflector_reach * line_half_width
+    square_corners = np.array([[-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0]])                  # [4, 3]
+    square = square_corners * reflector_half_width + length * np.eye(3)[2]                # [4, 3]
     corners = np.concatenate([square - length * np.eye(3)[2], square + length * np.eye(3)[2]])          # [8, 3]
     view = solids.view([upright >> sm.point(corners)], 0.0, elevation, azimuth, margin, n_pixels)
     reflector = solids.plates((upright >> sm.point(square))[None], reflector_thickness)
@@ -59,12 +64,13 @@ def draw_isolator(polarizations: Polarization, depths: np.ndarray) -> plt.Figure
     figure = plt.figure(figsize=(media * columns / 100, setups * rows / 100), dpi=100)
     for medium in range(media):
         for setup in range(setups):
-            across = line_half_width * vectors[medium, setup]                              # [legs, depths, 3]
-            lines = solids.rods(upright >> sm.point(along - across), upright >> sm.point(along + across),
+            half_lines = line_half_width * vectors[medium, setup]                          # [legs, depths, 3]
+            lines = solids.rods(upright >> sm.point(beam_places - half_lines),
+                                upright >> sm.point(beam_places + half_lines),
                                 line_width / 2 * view.pixel)                               # [legs, depths, 3]
-            entering = entering_reach * line_half_width * vectors[medium, setup, 0, 0]
-            dashes = solids.rods(upright >> sm.point(ends[:, None] + dash_starts[:, None] * entering),
-                                 upright >> sm.point(ends[:, None] + dash_ends[:, None] * entering),
+            entering_half_line = entering_reach * line_half_width * vectors[medium, setup, 0, 0]
+            dashes = solids.rods(upright >> sm.point(ends[:, None] + dash_starts[:, None] * entering_half_line),
+                                 upright >> sm.point(ends[:, None] + dash_ends[:, None] * entering_half_line),
                                  dash_width / 2 * view.pixel)                              # [2, dashes, 3]
             parts = [(beam, beam_colour), (dashes.reshape(-1, 3), entering_colour),
                      *((lines[leg], colour) for leg, colour in enumerate(leg_colours))]

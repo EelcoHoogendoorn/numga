@@ -1,5 +1,7 @@
 """Modal extended position-based dynamics of girders constrained at their corners: a spliced cantilever, a hinged chain under gravity, and a spliced
-beam fixed at both ends and compressed until it buckles. Each scene is built in the core it is given, an
+beam fixed at both ends and compressed until it buckles. The chain spans the range of stiffness the method handles in
+one code path: its first link is exactly rigid at the pin, of zero compliance, and each link after it four times
+softer, toward the tip, where the whip flexes it most. Each scene is built in the core it is given, an
 instance of `core.py` for a context."""
 
 from dataclasses import replace
@@ -20,21 +22,25 @@ STIFFNESS, DENSITY, N_MODES = 300.0, 1.0, 8
 N_LINKS = 4
 DAMPING = np.array([0.02])
 GRAVITY = 4.0
+# Each moving girder's compliance in units of the girder's: exactly rigid at the pin, then four times softer per
+# link toward the tip.
+FLEXIBILITY = np.concatenate([[0.0], 4.0 ** np.arange(N_LINKS - 1)])[None]   # [cases, links]
 # A constraint's compliance, rigid to round-off; it keeps the two constraints of a rigid splice solvable.
 SPLICE = 1e-14
-# The swing's time step, one per frame, its frames, and the frame duration.
-INTERVAL, N_FRAMES = 0.03, 200
-DURATION_MS = 30
+# The swing's time step, the steps per frame, its frames, and the frame duration.
+INTERVAL, N_STEPS_PER_FRAME, N_FRAMES = 0.02, 2, 150
+DURATION_MS = 40
 # The beam: its moving girders, their cells of unit length, their height, the bars' stiffness, the
 # modes' damping ratio, the final end displacement, its frames and the steps between them.
 N_BEAM_GIRDERS, N_BEAM_CELLS, BEAM_HEIGHT = 8, 32, 1.0
 BEAM_STIFFNESS, BEAM_DAMPING = 1e11, np.array([3.0])
-END_DISPLACEMENT, N_BEAM_FRAMES, N_BEAM_SUBSTEPS, BEAM_INTERVAL = 0.15, 120, 2, 0.02
+END_DISPLACEMENT, N_BEAM_FRAMES, N_BEAM_SUBSTEPS, BEAM_INTERVAL = 0.15, 90, 4, 0.02
 
 
 # --- plumbing -------------------------------------------------------------------------
 def girders(core: ModuleType, shape, fixed: np.ndarray, damping: np.ndarray, flexibility: np.ndarray):
-    """Girders end to end along x, some fixed."""
+    """Girders end to end along x, some fixed, each of its own flexibility `[cases, bodies]`: its modes' compliance
+    in units of the shape's, zero for a rigid girder."""
     mv = core.mv
     count, modes, cases = len(fixed), shape.modes.shape[0], len(damping)
     rest = shape.rest.batch()                                              # [vertices] Point-
@@ -47,8 +53,7 @@ def girders(core: ModuleType, shape, fixed: np.ndarray, damping: np.ndarray, fle
         rate=mv.bivector(np.zeros((cases, count, 3))).field(),
         amplitudes=amplitudes,
         rates=amplitudes,
-        compliance=(shape.compliance[:, None] * flexibility[:, None, None] * moving).field(),
-        frequencies=shape.frequencies[:, None].broadcast_to((cases, modes, count)).field(),
+        compliance=(shape.compliance[:, None] * flexibility[:, None, :] * moving).field(),
         damping=mv.scalar(damping[:, None, None, None]).broadcast_to((cases, modes, count)).field(),
         masses=shape.masses.sites.sum().broadcast_to((cases, count)).field(),
         inertia=shape.inertia.broadcast_to((cases, count)).field(),
@@ -80,30 +85,35 @@ def hinges(core: ModuleType, shape, count: int):
     return constrained(core, shape, count, np.stack([joints, joints + 1]), np.tile([[vertices - 1], [1]], (1, count - 1)))
 
 
-def cantilever(core: ModuleType, shape, count: int, damping: np.ndarray, flexibility: np.ndarray) -> tuple:
-    """A fixed girder followed by spliced moving girders."""
+def cantilever(core: ModuleType, shape, damping: np.ndarray, flexibility: np.ndarray) -> tuple:
+    """A fixed girder followed by spliced moving girders, of the given flexibility `[cases, links]`."""
+    count = flexibility.shape[-1]
     fixed = np.arange(count + 1) == 0
-    return girders(core, shape, fixed, damping, flexibility), splices(core, shape, count + 1)
+    # The fixed girder in front, rigid.
+    return girders(core, shape, fixed, damping, np.pad(flexibility, ((0, 0), (1, 0)))), splices(core, shape, count + 1)
 
 
-def hinged_chain(core: ModuleType, shape, count: int, damping: np.ndarray) -> tuple:
-    """A fixed girder followed by hinged moving girders."""
+def hinged_chain(core: ModuleType, shape, damping: np.ndarray, flexibility: np.ndarray) -> tuple:
+    """A fixed girder followed by hinged moving girders, of the given flexibility `[cases, links]`."""
+    count = flexibility.shape[-1]
     fixed = np.arange(count + 1) == 0
-    return girders(core, shape, fixed, damping, np.ones_like(damping)), hinges(core, shape, count + 1)
+    # The fixed girder in front, rigid.
+    return girders(core, shape, fixed, damping, np.pad(flexibility, ((0, 0), (1, 0)))), hinges(core, shape, count + 1)
 
 
 def clamped_beam(core: ModuleType, shape, count: int, damping: np.ndarray) -> tuple:
-    """Spliced moving girders between two fixed ones."""
+    """Spliced moving girders between two fixed ones, all of the shape's flexibility."""
     fixed = (np.arange(count + 2) == 0) | (np.arange(count + 2) == count + 1)
-    return girders(core, shape, fixed, damping, np.ones_like(damping)), splices(core, shape, count + 2)
+    return girders(core, shape, fixed, damping, np.ones((len(damping), count + 2))), splices(core, shape, count + 2)
 
 
 # --- math -----------------------------------------------------------------------------
-def swing(core: ModuleType, shape, bodies, constraints, gravity, dt: float, frames: int) -> Iterator:
-    """The bodies' points at every frame, under gravity, one step per frame."""
+def swing(core: ModuleType, shape, bodies, constraints, gravity, dt: float, substeps: int, frames: int) -> Iterator:
+    """The bodies' points at every frame, under gravity, `substeps` steps per frame."""
     for _ in range(frames):
         yield core.points(bodies, shape)                                   # [cases, bodies] Point-[vertices]
-        bodies = core.step(bodies, constraints, dt, gravity)
+        for _ in range(substeps):
+            bodies = core.step(bodies, constraints, dt, gravity)
 
 
 def displaced(core: ModuleType, bodies, rest, displacement: float):
@@ -135,9 +145,9 @@ def main():
 
     core = instantiate("examples.mechanics.modal_xpbd.core", PGA2D)
     shape = core.girder(N_CELLS, LENGTH, HEIGHT, STIFFNESS, DENSITY, N_MODES)
-    bodies, constraints = hinged_chain(core, shape, N_LINKS, DAMPING)
+    bodies, constraints = hinged_chain(core, shape, DAMPING, FLEXIBILITY)
     gravity = core.mv.direction([0, -GRAVITY])                             # [] Displacement-
-    geometry = swing(core, shape, bodies, constraints, gravity, INTERVAL, N_FRAMES)
+    geometry = swing(core, shape, bodies, constraints, gravity, INTERVAL, N_STEPS_PER_FRAME, N_FRAMES)
     save_animation(render.swinging_chain(geometry, shape.edges, core.points(bodies, shape)), "modal_xpbd_swing", DURATION_MS)
 
     beam = core.girder(N_BEAM_CELLS, float(N_BEAM_CELLS), BEAM_HEIGHT, BEAM_STIFFNESS, DENSITY, N_MODES)

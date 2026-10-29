@@ -30,9 +30,9 @@ CLEARANCE = 0.002
 # in milliseconds.
 RUNTIME = 5.0
 STEP = 4e-3
-N_STEPS_PER_FRAME = 10
+N_STEPS_PER_FRAME = 12
 PIXELS = 260
-FRAME_DURATION = 33
+FRAME_DURATION = 40
 
 
 @dataclass(frozen=True)

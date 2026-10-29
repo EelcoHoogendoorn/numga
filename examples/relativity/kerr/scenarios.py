@@ -7,11 +7,11 @@ import numpy as np
 from examples.relativity.kerr import core
 
 mass = 1.0
-n_frames = 80
+n_frames = 160
 max_spin = 0.8 * mass
 # One sweep of the spin from one sense to the other; the animation plays it forward and back.
 spins = -max_spin * np.cos(np.linspace(0, np.pi, n_frames // 2 + 1))
-duration_ms = 80
+duration_ms = 40
 extent = 12.0 * mass
 n_rays = 31
 offsets = np.linspace(-8, 8, n_rays) * mass
@@ -40,16 +40,16 @@ capture_radius = 1.05 * (mass + np.sqrt(mass**2 - camera_spin**2))
 sky_width = 2048
 sky_height = sky_width // 2
 sky_seed = 8
-n_polarizer_frames = 80
+n_polarizer_frames = n_frames
 polarizer_angles = np.linspace(0, np.pi, n_polarizer_frames, endpoint=False)
 polarization_degree = 0.8
-n_flow_frames = 80
+n_flow_frames = n_frames
 flow_time = 50.0 * mass                                         # coordinate time the disk turns through in one loop
 # README and gallery picture: this makes plots/kerr.gif for the README and docs/extensors.md, tuned as a visual for both. Don't change it; to experiment, copy it.
 gallery_width = 400
 gallery_height = gallery_width * 2 // 3
 gallery_half_view = np.tan(np.deg2rad(21.3))
-gallery_frames = 40
+n_gallery_frames = n_flow_frames
 
 
 # --- math -----------------------------------------------------------------------------
@@ -128,9 +128,9 @@ def main() -> None:
     gallery_image, gallery_temperature, _ = camera(gallery_width, gallery_height, gallery_half_view)
     # README and gallery picture: this makes plots/kerr.gif for the README and docs/extensors.md, tuned as a visual for both. Don't change it; to experiment, copy it.
     save_animation(render.animate_disk(gallery_image, gallery_temperature, exposure_temperature,
-                                       disk_flow(gallery_image, gallery_frames), gallery_frames,
+                                       disk_flow(gallery_image, n_gallery_frames), n_gallery_frames,
                                        (gallery_height, gallery_width), sky),
-                   "kerr", duration_ms * n_flow_frames // gallery_frames)
+                   "kerr", duration_ms)
 
     # --- checks
     # Each pixel's light is shared at most once between the disk and the sky, all of it when its ray

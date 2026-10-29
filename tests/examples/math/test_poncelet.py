@@ -1,5 +1,5 @@
-"""Poncelet's porism: paths of five sides about the conic touching an inscribed pentagon close from
-every start on the ellipse, and about the conic of a shrunk pentagon they miss."""
+"""Poncelet's porism: paths of five sides about the quadric touching an inscribed pentagon close from
+every start on the ellipsoid, and about the quadric of a shrunk pentagon they miss."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import numpy as np
 from examples.math.poncelet import render, scenarios
 
 
-def test_paths_close_about_the_inscribed_pentagons_conic_and_miss_about_the_shrunk_ones():
+def test_paths_close_about_the_inscribed_pentagons_quadric_and_miss_about_the_shrunk_ones():
     outer, inner, vertices = scenarios.run(np.linspace(0.3, 5.9, 7), 5)
     np.testing.assert_allclose((outer(vertices) & vertices).to_array(), 0.0, atol=1e-12)
     gap = np.abs((vertices[5] - vertices[0]).kernel).max(axis=-1)

@@ -1,6 +1,6 @@
 """A tricycle steered by its front wheel, in the plane and in space, by the same code.
 
-Each axle is a hyperplane of the algebra: a line in the plane, a vertical plane in space. The rear axle
+Each axle is a plane of the algebra, a hyperplane, which stands vertical in space. The rear axle
 lies along y at the origin; the front axle, at rest, a wheelbase further along x. Steering turns the front
 axle about the steering axis, the meet of the front axle at rest with the hyperplane y = 0 down the middle
 of the frame: a point in the plane, a vertical line in space.

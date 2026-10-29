@@ -33,8 +33,8 @@ SEED = 42
 # The Gauss-Newton steps; the animation's frames from one step to the next and held at the end, and the
 # duration of a frame in milliseconds.
 N_ITERATIONS = 4
-N_EASING, N_HOLD = 10, 16
-FRAME_DURATION = 50
+N_EASING, N_HOLD = 12, 22
+FRAME_DURATION = 40
 
 
 # --- plumbing --------------------------------------------------------------

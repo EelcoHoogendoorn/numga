@@ -1,4 +1,4 @@
-"""Matplotlib views of planar rigid-body normal modes and spring suspensions.
+"""Matplotlib views of rigid-body normal modes and spring suspensions.
 
 The mechanics supplies infinitesimal mode displacements. Outlines and springs
 are displaced linearly and exaggerated for readability.
@@ -21,7 +21,7 @@ BODY, GHOST, SUPPORT, SPRING = "#254e70", "#929ba7", "#3a414b", "#5b6470"
 
 
 def coordinates(points: Point) -> np.ndarray:
-    """Coordinates of points of unit weight, and of directions, `[..., 2]`: their pairings with the lines x = 0 and
+    """Coordinates of points of unit weight, and of directions, `[..., 2]`: their pairings with the planes x = 0 and
     y = 0."""
     return (stack((mv.x, mv.y)) & points[..., None]).to_array()
 

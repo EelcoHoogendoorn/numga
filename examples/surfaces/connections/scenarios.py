@@ -19,7 +19,7 @@ mv = core.mv
 # The sphere and its three latitude circles: 30, 60 and 90 degrees from the north pole.
 SPHERE_LEVELS = 3
 COLATITUDES = np.array([np.pi / 6, np.pi / 3, np.pi / 2])
-N_RING_STEPS = 120
+N_RING_STEPS = 210
 # The steps between frames of the transport around the circles.
 RING_STRIDE = 2
 # The torus of every scene.
@@ -30,8 +30,8 @@ MINOR_RADIUS = 0.75
 N_HEAT_MAJOR = 28
 N_HEAT_MINOR = 14
 SOURCE_WIDTH = 0.55
-STEP_TIME = 0.18
-N_HEAT_STEPS = 20
+STEP_TIME = 0.1
+N_HEAT_STEPS = 36
 N_MODES = 4
 # For each scene on the sphere, the icosahedron's vertices whose faces carry a singularity and the index
 # of each; vertices 9 and 10 are opposite each other.
@@ -57,12 +57,14 @@ CUBE = [[1, 1, 1], [1, 1, -1], [1, -1, 1], [1, -1, -1], [-1, 1, 1], [-1, 1, -1],
 CROSS_CORNERS = [CUBE, [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]]
 CROSS_INDICES = [0.25, 0.5]
 CROSS_FREQUENCY = 20.0
+# The cross fields' figure at a share of the other patterns' panel side.
+CROSS_SCALE = 0.5
 # The weight keeping fields out of the normal bundle.
 NORMAL_STIFFNESS = 100.0
 # The frames of a whole turn of the field, of the stripes sliding by one stripe, and the duration of a frame.
-N_TURNING_FRAMES = 48
-N_SLIDING_FRAMES = 36
-DURATION_MS = 70
+N_TURNING_FRAMES = 84
+N_SLIDING_FRAMES = 63
+DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------
@@ -284,13 +286,13 @@ def main() -> None:
     fine_mesh, fine_vertices, sphere_patterns, stripe_energies = stripe_spheres()
     bands = [tuple(family[..., :1] for family in pattern) for pattern in sphere_patterns]
     save_figure(render.draw_bands(fine_mesh, fine_vertices, bands), "connections_stripes_spheres")
-    save_figure(render.draw_lines(fine_mesh, fine_vertices, sphere_patterns), "connections_stripes_sphere_grids")
+    save_figure(render.draw_lines(fine_mesh, fine_vertices, sphere_patterns, 1.0), "connections_stripes_sphere_grids")
     stripe_torus, stripe_torus_vertices, torus_patterns, torus_stripe_energies = stripe_tori()
     bands = [tuple(family[..., :1] for family in pattern) for pattern in torus_patterns]
     save_figure(render.draw_bands(stripe_torus, stripe_torus_vertices, bands), "connections_stripes_tori")
-    save_figure(render.draw_lines(stripe_torus, stripe_torus_vertices, torus_patterns), "connections_stripes_torus_grids")
+    save_figure(render.draw_lines(stripe_torus, stripe_torus_vertices, torus_patterns, 1.0), "connections_stripes_torus_grids")
     _, _, cross_patterns, cross_angles = crosses()
-    save_figure(render.draw_lines(fine_mesh, fine_vertices, cross_patterns), "connections_stripes_crosses")
+    save_figure(render.draw_lines(fine_mesh, fine_vertices, cross_patterns, CROSS_SCALE), "connections_stripes_crosses")
     lines, stripe_fields, advance = (family[..., :1] for family in sphere_patterns[2])
     save_animation(render.animate_flow(fine_mesh, fine_vertices, lines, sliding(fine_mesh, fine_vertices, stripe_fields), advance),
                    "connections_stripes_sliding", DURATION_MS)

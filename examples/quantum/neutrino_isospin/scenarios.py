@@ -26,8 +26,8 @@ N_SOLAR_STEPS = 600
 CORE_OVER_RESONANCE = 3.0
 DENSITY_SCALE = 25.0
 # The animation's frames, and the duration of each.
-N_FRAMES = 50
-DURATION_MS = 50
+N_FRAMES = 63
+DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------

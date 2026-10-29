@@ -8,7 +8,7 @@ contact reading, `mv.u - temperature * mv.s + pressure * mv.v` paired with a cha
 the heat less the work. The Legendre change to the Helmholtz energy is a map of the whole space, exchanging entropy and
 temperature and the energy for the energy less temperature times entropy; its derivative carries changes, and the
 contact reading pulled back through it is the contact reading again, so the transformed surface is an equilibrium
-surface too. The contact reading's own derivative, `-(mv.t ^ mv.s) + (mv.p ^ mv.v)`, wedged twice with it, fills the
+surface too. The contact reading's own derivative, `mv.pv - mv.ts`, wedged twice with it, fills the
 space: the contact planes twist everywhere, and no surface but such a lifted one lies in them.
 
 Entropy is in nR, volume and temperature in reference values, energy in nRT₀.
@@ -22,15 +22,15 @@ from numga.backend.jax import JaxContext, derivative
 
 ga = Algebra("u0s0v0t0p0")
 mv = JaxContext(ga, dtype=np.float64).multivector
-Scalar = ga.gatype.scalar()
-Ambient = ga.gatype.antivector()
-State = (mv.s.dual() + mv.v.dual()).gatype.derive.output
-ContactElement = ga.gatype.vector()
-Reading = ga.gatype((Scalar, Ambient))
+Scalar = ga.gatype.scalar()                                         # Scalar+
+Ambient = ga.gatype.antivector()                                    # Antivector-
+# The states of entropy and volume, a subspace of the five quantities.
+State = (mv.s.dual() + mv.v.dual()).gatype.derive.output            # Antivector-
+ContactElement = ga.gatype.vector()                                 # Vector+
 
 # The contact reading's derivative: the temperature's change wedged with the entropy's, against the pressure's with the
 # volume's.
-contact_derivative = -(mv.t ^ mv.s) + (mv.p ^ mv.v)
+contact_derivative = mv.pv - mv.ts                                    # [] Bivector+
 
 
 # --- math -----------------------------------------------------------------------------
@@ -43,18 +43,14 @@ def equilibrium(state: State, heat_capacity: float) -> Ambient:
     """Each state of entropy and volume lifted to its five quantities: the energy, and its slopes along the entropy and
     the volume, the temperature and minus the pressure."""
     potential = lambda state: internal_energy(state, heat_capacity)
-    differential = derivative(potential)(state)                                       # [...] Scalar <- State
+    differential = derivative(potential)(state)                                       # [...] Scalar+ <- State-
     return (state + mv.u.dual() * potential(state) + mv.t.dual() * differential(mv.s.dual())
             - mv.p.dual() * differential(mv.v.dual()))
 
 
 def contact_element(point: Ambient) -> ContactElement:
-    """The covector whose pairing with a change vanishes when the change of energy is the heat less the work."""
+    """The vector whose pairing with a change vanishes when the change of energy is the heat less the work."""
     return mv.u - (mv.t & point) * mv.s + (mv.p & point) * mv.v
-
-
-def contact_form(point: Ambient) -> Reading:
-    return contact_element(point) & Ambient
 
 
 def helmholtz(point: Ambient) -> Ambient:

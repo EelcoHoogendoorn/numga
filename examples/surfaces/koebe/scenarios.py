@@ -20,8 +20,8 @@ N_CENTRE_ITERATIONS = 8
 # through w is tilted from x towards the z axis it turns about, the frames of one turn, and the duration of each.
 RAPIDITY = 0.6
 TILT = 0.4
-N_FRAMES = 48
-FRAME_DURATION = 80
+N_FRAMES = 96
+FRAME_DURATION = 40
 
 
 # --- math -----------------------------------------------------------------------------

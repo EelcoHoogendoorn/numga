@@ -3,6 +3,7 @@ and a grid of circles carried by the same motion."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from itertools import islice
 
 import numpy as np
@@ -16,33 +17,34 @@ from examples.math.spherical_synchronization.core import Cut, Point, mv, time
 n_particles = 192
 n_meridians = 4
 n_parallels = 5
-# The steps and their size, the strength of the attraction, the shared rotation's speed, the boost of the
-# starting transformation, and the duration of a frame.
-n_steps = 100
-dt = 0.05
+# The time the motion runs for, the steps over it, a frame each, and their size; the strength of the attraction, the
+# shared rotation's speed, the boost of the starting transformation, and the duration of a frame.
+span = 5.0
+n_steps = 150
+dt = span / n_steps
 coupling = 1.2
 rotation_speed = 0.25
 initial_bias = 0.24
-duration_ms = 60
+duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------
-def synchronization() -> tuple[Point, Cut]:
-    """The population's directions and the grid's cuts at every step `[steps + 1, ...]`, both carried by
+def synchronization() -> Iterator[tuple[Point, Cut]]:
+    """The population's directions and the grid's cuts at the start and after each step, both carried by
     the one transformation the population's own attraction drives."""
     golden_angle = np.pi * (3 - np.sqrt(5))
     longitudes = golden_angle * np.arange(n_particles) % (2 * np.pi)
     latitudes = np.arcsin(np.linspace(-1 + 1 / n_particles, 1 - 1 / n_particles, n_particles))
-    seeds = core.sphere_points(longitudes, latitudes) + time           # [particles] Point
+    seeds = core.sphere_points(longitudes, latitudes) + time           # [particles] Point-
     # Great circles through the poles, and parallels: the cuts their points pair to nothing with.
-    meridians = (-mv.xy * np.linspace(0, np.pi, n_meridians, endpoint=False) / 2).exp() >> mv.y   # [meridians] Cut
-    parallels = mv.z + mv.t * np.sin(np.linspace(-np.pi / 3, np.pi / 3, n_parallels))             # [parallels] Cut
-    grid = concatenate((meridians, parallels), axis=0)               # [circles] Cut
-    rotation = -mv.xy * rotation_speed                              # [] Bivector
-    initial = (-mv.xt * initial_bias).exp()                         # [] Rotor
-    rotors = stack(list(islice(core.motion(initial, seeds, rotation, coupling, dt), n_steps + 1)))   # [steps + 1] Rotor
-    # One rotor carries the population and the grid alike.
-    return core.directions(rotors[:, None] >> seeds), rotors[:, None] >> grid
+    meridians = (-mv.xy * np.linspace(0, np.pi, n_meridians, endpoint=False) / 2).exp() >> mv.y   # [meridians] Cut+
+    parallels = mv.z + mv.t * np.sin(np.linspace(-np.pi / 3, np.pi / 3, n_parallels))             # [parallels] Cut+
+    grid = concatenate((meridians, parallels), axis=0)               # [cuts] Cut+
+    rotation = -mv.xy * rotation_speed                              # [] Bivector+
+    initial = (-mv.xt * initial_bias).exp()                         # [] Rotor+
+    for rotor in islice(core.motion(initial, seeds, rotation, coupling, dt), n_steps + 1):
+        # One rotor carries the population and the grid alike.
+        yield core.directions(rotor >> seeds), rotor >> grid
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -50,11 +52,11 @@ def main() -> None:
     from examples.util.animation import save_animation
     from examples.math.spherical_synchronization import render
 
-    population, circles = synchronization()
-    save_animation(render.frames(population, circles), "spherical_synchronization", duration_ms)
+    save_animation(render.frames(synchronization()), "spherical_synchronization", duration_ms)
 
     # checks
     # Every direction stays a unit direction on the sphere, and the population gathers.
+    population = stack([directions for directions, _ in synchronization()])   # [steps + 1, particles] Point-
     np.testing.assert_allclose((population + time).squared().to_array(), 0, atol=1e-10)
     spread = (population - population.mean(axis=-1)[:, None]).squared().mean(axis=-1).to_array()   # [steps + 1]
     assert abs(spread[-1]) < 0.05 * abs(spread[0])

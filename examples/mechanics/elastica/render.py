@@ -32,7 +32,7 @@ CORD_VIEW = np.radians([20.0, 26.0])
 CLAMP = np.full(3, 0.2)
 # The pixels across the helices, the uncoiling wire and the cord; the width of a rod in pixels, the radius of a
 # clamp, and the background.
-N_HELIX_PIXELS, N_UNCOIL_PIXELS, N_CORD_PIXELS = 330, 160, 450
+N_HELIX_PIXELS, N_UNCOIL_PIXELS, N_CORD_PIXELS = 330, 160, 675
 ROD_WIDTH, CLAMP_RADIUS = 3.0, 5.0
 BACKGROUND = np.ones(3)
 

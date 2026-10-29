@@ -6,33 +6,35 @@ from collections.abc import Iterator
 import numpy as np
 
 from numga import stack
+from numga.backend.jax import derivative
 from examples.thermodynamics.contact_geometry import core
 
-HEAT_CAPACITY = 1.5
+# The gas's heat capacity at fixed volume, in nR.
+heat_capacity = 1.5
 
 
 # --- math -----------------------------------------------------------------------------
 def surfaces(entropies: np.ndarray, volumes: np.ndarray) -> tuple[core.Ambient, core.Ambient]:
     """The equilibrium surface over entropies and volumes `[volumes, entropies]`, and its Legendre change."""
     states = core.mv.s.dual() * entropies[None, :] + core.mv.v.dual() * volumes[:, None]
-    lifted = core.equilibrium(states, HEAT_CAPACITY)
+    lifted = core.equilibrium(states, heat_capacity)
     return lifted, core.helmholtz(lifted)
 
 
 def section(entropies: np.ndarray, volume: float) -> tuple[core.Ambient, core.Ambient, core.Ambient, core.Ambient]:
     """The equilibrium points at a fixed volume, their changes along the entropy, and both after the Legendre change."""
     states = core.mv.s.dual() * entropies + core.mv.v.dual() * volume
-    embedding = lambda state: core.equilibrium(state, HEAT_CAPACITY)
+    embedding = lambda state: core.equilibrium(state, heat_capacity)
     points = embedding(states)
-    tangents = core.derivative(embedding)(states)(core.mv.s.dual())                  # [samples] Ambient
-    return points, tangents, core.helmholtz(points), core.derivative(core.helmholtz)(points)(tangents)
+    tangents = derivative(embedding)(states)(core.mv.s.dual())                       # [samples] Ambient-
+    return points, tangents, core.helmholtz(points), derivative(core.helmholtz)(points)(tangents)
 
 
-def moving(points: core.Ambient, tangents: core.Ambient, changed: core.Ambient,
+def moving(points: core.Ambient, tangents: core.Ambient, changed_points: core.Ambient,
            changed_tangents: core.Ambient) -> Iterator[tuple[core.Ambient, core.Ambient, core.Ambient, core.Ambient]]:
     """The point of tangency moving along the section, before and after the change."""
     for index in range(points.shape[0]):
-        yield points[index], tangents[index], changed[index], changed_tangents[index]
+        yield points[index], tangents[index], changed_points[index], changed_tangents[index]
 
 
 def horizontal_lift() -> tuple[core.Ambient, core.Ambient]:
@@ -62,10 +64,12 @@ if __name__ == "__main__":
     from examples.util.animation import save_animation, save_figure
     from examples.thermodynamics.contact_geometry import render
 
-    entropies, volumes = np.linspace(-0.8, 1.2, 41), np.array([0.6, 0.8, 1.0, 1.3, 1.7])
+    n_entropies, section_volume, frame_duration_ms = 93, 1.0, 40
+    entropies, volumes = np.linspace(-0.8, 1.2, n_entropies), np.array([0.6, 0.8, 1.0, 1.3, 1.7])
     family, changed_family = surfaces(entropies, volumes)
-    points, tangents, changed, changed_tangents = section(entropies, 1.0)
-    save_figure(render.draw(family, changed_family, points, tangents, changed, changed_tangents),
+    points, tangents, changed_points, changed_tangents = section(entropies, section_volume)
+    save_figure(render.draw(family, changed_family, points, tangents, changed_points, changed_tangents),
                 "thermodynamics_legendre")
-    save_animation(render.legendre(family, changed_family, points, tangents, changed, changed_tangents,
-                                   moving(points, tangents, changed, changed_tangents)), "thermodynamics_legendre", 90)
+    save_animation(render.legendre(family, changed_family, points, tangents, changed_points, changed_tangents,
+                                   moving(points, tangents, changed_points, changed_tangents)),
+                   "thermodynamics_legendre", frame_duration_ms)

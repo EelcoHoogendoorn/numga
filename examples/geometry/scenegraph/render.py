@@ -45,12 +45,13 @@ N_RIM = 72
 # The view's elevation and azimuth, in radians, azimuth zero looking along +y; the margin as a share of the larger
 # side, and the pixels across the scene on its own.
 ELEVATION, AZIMUTH = np.radians(18.0), np.radians(-55.0 + 90.0)
-MARGIN, N_PIXELS = 0.1, 900
+MARGIN, N_PIXELS = 0.1, 450
 # The widths of the floor grid, the lens rims, and the rays and the sensor's edge, and the radius of a ray's hit on
 # the sensor, in pixels.
 FLOOR_WIDTH, RIM_WIDTH, RAY_WIDTH, HIT_RADIUS = 3.0, 4.5, 3.5, 5.0
-# The animation's widths and radii as a share of those above, its scene that much narrower than the still's.
-ANIMATION_THICKNESS = 0.37
+# The widths and radii of the scene drawn on its own, and of the animation's, as a share of those above, each scene
+# that much narrower than the side-by-side figure's.
+SCENE_THICKNESS, ANIMATION_THICKNESS = 0.5, 0.37
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -117,10 +118,11 @@ def arm_and_rays(world_vertices: Point, rays: tuple, view: solids.View,
             (hits, ray_colours)]
 
 
-def scene_3d(world_vertices: Point, camera_pose: Motor, rays: tuple, view: solids.View) -> np.ndarray:
+def scene_3d(world_vertices: Point, camera_pose: Motor, rays: tuple, view: solids.View,
+             thickness: float) -> np.ndarray:
     """Render the 3D world scene with the articulated robot arm, camera lenses, sensor, and traced rays."""
-    parts, translucent, lenses = camera_and_floor(camera_pose, view, 1.0)
-    return solids.draw(parts + arm_and_rays(world_vertices, rays, view, 1.0), view, np.ones(3), inks=[],
+    parts, translucent, lenses = camera_and_floor(camera_pose, view, thickness)
+    return solids.draw(parts + arm_and_rays(world_vertices, rays, view, thickness), view, np.ones(3), inks=[],
                        translucent=translucent,
                        meshes=lenses)
 
@@ -171,12 +173,13 @@ def plot_camera_image(ax: plt.Axes, world_vertices: Point, projected_pixels: Poi
 # --- figures ----------------------------------------------------------------------------
 def draw_scene_3d(world_vertices: Point, camera_pose: Motor, rays: tuple) -> plt.Figure:
     """Draw the 3D scene on its own."""
-    return image_figure(scene_3d(world_vertices, camera_pose, rays, framing([(world_vertices, camera_pose, rays)])))
+    return image_figure(scene_3d(world_vertices, camera_pose, rays, framing([(world_vertices, camera_pose, rays)]),
+                                 SCENE_THICKNESS))
 
 
 def draw_camera_image(world_vertices: Point, projected_pixels: Point, camera_pose: Motor) -> plt.Figure:
     """Draw the sensor photograph on its own."""
-    fig, ax = plt.subplots(figsize=(6.4, 4.8), dpi=140, layout="constrained")
+    fig, ax = plt.subplots(figsize=(6.4, 4.8), dpi=70, layout="constrained")
     plot_camera_image(ax, world_vertices, projected_pixels, camera_pose, sensor_view(ax))
     return fig
 
@@ -193,7 +196,7 @@ def draw_scenegraph(world_vertices: Point, projected_pixels: Point, camera_pose:
     """Draw the 3D scene with its optics beside the photograph on the sensor."""
     fig, ax_3d, ax_2d = scenegraph_axes(140)
     view = fitted(framing([(world_vertices, camera_pose, rays)]), ax_3d)
-    show(ax_3d, scene_3d(world_vertices, camera_pose, rays, view), view)
+    show(ax_3d, scene_3d(world_vertices, camera_pose, rays, view, 1.0), view)
     plot_camera_image(ax_2d, world_vertices, projected_pixels, camera_pose, sensor_view(ax_2d))
     return fig
 

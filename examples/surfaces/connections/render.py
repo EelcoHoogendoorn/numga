@@ -38,7 +38,7 @@ view = np.array([24.0, -36.0])
 # The needle lengths of the holonomy sphere and the transport torus, the stride between needles along the rings,
 # the designed fields' needle length as a share of their surface's mean edge length, and the widest a panel of them
 # gets, as a share of its height.
-holonomy_stride = 3
+holonomy_stride = 5
 holonomy_needle = 0.25
 transport_needle = 0.32
 field_needle = 0.6
@@ -56,6 +56,9 @@ sharpness = 12.0
 line_width, standoff = 1.4, 0.0066
 pixels = 420
 margin = 0.04
+# A pattern panel's side in inches and its dots per inch, at which the stripes' middle lines are `line_width` pixels
+# wide, and narrower in proportion on a smaller panel.
+panel_inches, panel_dpi = 4.2, 110
 background = np.ones(3)
 
 
@@ -345,17 +348,19 @@ def lines_image(mesh: core.Mesh, vertices: core.Point, pattern: tuple[core.Point
     segments = np.concatenate([crossings(lifted, corners[..., family] / (2 * np.pi))[turns[:, family] == 0].reshape(-1, 2, 3)
                                for family in range(corners.shape[-1])])         # [S, 2, 3]
     drawn = solids.mv.point(segments[np.linalg.norm(segments[:, 1] - segments[:, 0], axis=-1) > 0])   # [S, 2] Point-
-    lines = strokes.segments(drawn[:, 0], drawn[:, 1], dark, line_width, frame)
+    lines = strokes.segments(drawn[:, 0], drawn[:, 1], dark, line_width * frame.pixels / (panel_inches * panel_dpi), frame)
     return solids.draw([], frame, background, inks=[], translucent=[],
                        meshes=[(surface(mesh, vertices, light, frame, face_values=np.zeros(4), colour=meshes.plain), 1.0),
                                (lines, 1.0)])
 
 
 def pattern_figure(mesh: core.Mesh, vertices: core.Point, patterns: list[tuple[core.Point, core.Point, core.Scalar]],
-                   image: Callable[[core.Mesh, core.Point, tuple[core.Point, core.Point, core.Scalar], solids.View], np.ndarray]
-                   ) -> plt.Figure:
-    """The surface side by side for each pattern, as `image` draws it in the square view fitted to a panel."""
-    figure, axes = plt.subplots(1, len(patterns), figsize=(4.2 * len(patterns), 4.2), dpi=110)
+                   image: Callable[[core.Mesh, core.Point, tuple[core.Point, core.Point, core.Scalar], solids.View], np.ndarray],
+                   scale: float) -> plt.Figure:
+    """The surface side by side for each pattern, as `image` draws it in the square view fitted to a panel, the panels
+    `scale` times the side of the full size."""
+    side = scale * panel_inches
+    figure, axes = plt.subplots(1, len(patterns), figsize=(side * len(patterns), side), dpi=panel_dpi)
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0)
     axes = np.atleast_1d(axes)
     frame = fitted(square_view(view, vertices, 0.0), axes[0])
@@ -367,13 +372,14 @@ def pattern_figure(mesh: core.Mesh, vertices: core.Point, patterns: list[tuple[c
 def draw_bands(mesh: core.Mesh, vertices: core.Point, patterns: list[tuple[core.Point, core.Point, core.Scalar]]) -> plt.Figure:
     """The surface side by side for each pattern of lines, stripe fields and edge targets, shaded with its
     stripes."""
-    return pattern_figure(mesh, vertices, patterns, bands_image)
+    return pattern_figure(mesh, vertices, patterns, bands_image, 1.0)
 
 
-def draw_lines(mesh: core.Mesh, vertices: core.Point, patterns: list[tuple[core.Point, core.Point, core.Scalar]]) -> plt.Figure:
+def draw_lines(mesh: core.Mesh, vertices: core.Point, patterns: list[tuple[core.Point, core.Point, core.Scalar]],
+               scale: float) -> plt.Figure:
     """The surface side by side for each pattern of lines, stripe fields and edge targets, with the middle lines
-    of its stripes drawn on it."""
-    return pattern_figure(mesh, vertices, patterns, lines_image)
+    of its stripes drawn on it, the panels `scale` times the side of the full size."""
+    return pattern_figure(mesh, vertices, patterns, lines_image, scale)
 
 
 def animate_flow(mesh: core.Mesh, vertices: core.Point, lines: core.Point, stripe_fields: Iterable[core.Point], advance: core.Scalar

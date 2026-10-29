@@ -1,7 +1,8 @@
 """Refraction through a rippled interface and its map to a flat receiver.
 
-Positions and ray directions are antivectors; the wavevectors of the ripples and the plane of the water
-surface are covectors, vectors, read against a position or a direction by pairing, `wavevector & position`.
+Positions and ray directions are modelled as intrinsic antivectors, and the wavevectors of the ripples and the
+plane of the water surface as extrinsic vectors, read against a position or a direction by pairing,
+`wavevector & position`.
 The surface is the level set of its height above the ripples, so its plane at a point is
 `mv.z - gradient`, and a ray refracts across that plane by Snell's law. Horizontal positions, on the
 water and on the receiver, are the antivectors that contain `z`.
@@ -15,12 +16,12 @@ from numga.algebras import VGA3D as ga
 from numga.backend.jax import JaxContext
 
 mv = JaxContext(ga).multivector
-Scalar = ga.gatype.scalar()
-# Positions and directions are antivectors; wavevectors and planes are covectors, vectors.
-Direction = ga.gatype.antivector()
-Plane = ga.gatype.vector()
-Horizontal = Direction.derive.containing("z")
-Wavevector = Plane.derive.within("x y")
+Scalar = ga.gatype.scalar()                                     # Scalar+
+# Positions and directions are intrinsic antivectors; wavevectors and planes are extrinsic vectors.
+Direction = ga.gatype.antivector()                              # Antivector-
+Plane = ga.gatype.vector()                                      # Vector+
+Horizontal = Direction.derive.containing("z")                   # Antivector-
+Wavevector = Plane.derive.within("x y")                         # Vector+
 
 # The direction straight up.
 up = mv.z.dual()
@@ -32,18 +33,18 @@ def rays(
     phases: np.ndarray, index_ratio: float,
 ) -> tuple[Direction, Plane, Direction]:
     """Surface positions, unit surface planes and transmitted directions for vertical illumination."""
-    phase = (wavevectors & position[..., None]) - phases        # [..., waves] Scalar
-    height = (amplitudes * phase.cos()).sum(axis=-1)            # [...] Scalar
-    gradient = -(wavevectors * (amplitudes * phase.sin())).sum(axis=-1)   # [...] Wavevector
+    phase = (wavevectors & position[..., None]) - phases        # [..., waves] Scalar+
+    height = (amplitudes * phase.cos()).sum(axis=-1)            # [...] Scalar+
+    gradient = -(wavevectors * (amplitudes * phase.sin())).sum(axis=-1)   # [...] Wavevector+
     # The plane of the surface, `z - height == 0`, and the unit direction across it.
-    plane = (mv.z - gradient).normalized()                      # [...] Plane
-    normal = plane.dual()                                       # [...] Direction
+    plane = (mv.z - gradient).normalized()                      # [...] Plane+
+    normal = plane.dual()                                       # [...] Direction-
 
     # Snell's law scales the part of the ray along the surface; unit length fixes the part across it.
-    incoming = -up                                              # Direction
-    tangent = index_ratio * (incoming - normal * (plane & incoming))   # [...] Direction
-    outgoing = tangent - normal * (1 - tangent.scalar_norm_squared()).square_root()   # [...] Direction
-    surface = position + up * height                            # [...] Direction
+    incoming = -up                                              # [] Direction-
+    tangent = index_ratio * (incoming - normal * (plane & incoming))   # [...] Direction-
+    outgoing = tangent - normal * (1 - tangent.scalar_norm_squared()).square_root()   # [...] Direction-
+    surface = position + up * height                            # [...] Direction-
     return surface, plane, outgoing
 
 
@@ -54,6 +55,6 @@ def receiver(
     """Horizontal landing positions on the receiver below the refracting surface."""
     surface, _, outgoing = rays(position, wavevectors, amplitudes, phases, index_ratio)
     # The distance along the ray down to the receiver, at height minus the depth.
-    distance = (-depth - (mv.z & surface)) / (mv.z & outgoing)  # [...] Scalar
-    landing = surface + distance * outgoing                     # [...] Direction
+    distance = (-depth - (mv.z & surface)) / (mv.z & outgoing)  # [...] Scalar+
+    landing = surface + distance * outgoing                     # [...] Direction-
     return landing.cast(Horizontal)

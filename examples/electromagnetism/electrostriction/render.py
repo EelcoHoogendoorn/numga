@@ -10,8 +10,9 @@ from matplotlib.collections import LineCollection
 
 from numga import stack
 
+from examples.util import charts
 from examples.util.animation import capture
-from examples.electromagnetism.electrostriction.core import Field, Point, Scalar, mv, time
+from examples.electromagnetism.electrostriction.core import Field, Point, Scalar
 
 rest_colour = "#c4cbd0"
 bond_colour = "#286580"
@@ -21,35 +22,44 @@ transverse_colour = "#8271a6"
 label_colour = "0.4"
 margin = 0.55
 field_gap = 0.8
+# Line widths and marker sizes, in points, for a lattice picture about 300 pixels a side.
+bond_width = 1.1
+rest_width = 0.7
+particle_size = 11
+rest_size = 7
 
 
 def coordinates(value: Field) -> np.ndarray:
     """Components of fields along x and y: their pairings with the planes those directions sweep in time."""
-    sweeps = stack((mv.x.dual(), mv.y.dual())) & time                                   # [2] Antibivector
+    mv = value.context.multivector
+    time = -mv.t.dual()                                                                  # [] Antivector-
+    sweeps = stack((mv.x.dual(), mv.y.dual())) & time                                   # [2] Antibivector-
     return np.asarray((value[..., None] & sweeps).to_array())                            # [..., 2]
 
 
 def point_coordinates(value: Point) -> np.ndarray:
     """Coordinates of positions and dipoles at every particle: their pairings with the lines x and y."""
+    mv = value.context.multivector
     return np.asarray((stack((mv.x, mv.y)) & value.batch()[..., None]).to_array())   # [..., particles, 2]
 
 
 def lattice_axes(sites: np.ndarray) -> tuple[plt.Figure, plt.Axes, np.ndarray]:
     """A figure framing the reference sites, with room below them for the applied field."""
-    figure, ax = plt.subplots(figsize=(6, 6), dpi=90)
-    reach = np.abs(sites).max(axis=0) + margin
-    ax.set(xlim=(-reach[0], reach[0]), ylim=(-reach[1] - field_gap - 0.35, reach[1]), aspect="equal")
+    figure, ax = plt.subplots(figsize=(3.4, 3.4), dpi=90)
+    half_size = np.abs(sites).max(axis=0) + margin
+    ax.set(xlim=(-half_size[0], half_size[0]), ylim=(-half_size[1] - field_gap - 0.35, half_size[1]),
+           aspect="equal")
     ax.axis("off")
     figure.subplots_adjust(0.02, 0.03, 0.98, 0.98)
-    return figure, ax, reach
+    return figure, ax, half_size
 
 
 def draw_rest(rest: Point, bonds: np.ndarray) -> plt.Figure:
     """The reference lattice: its particles and the bonds between them."""
     sites = point_coordinates(rest)
     figure, ax, _ = lattice_axes(sites)
-    ax.add_collection(LineCollection(sites[bonds], colors=bond_colour, linewidths=2, zorder=2))
-    ax.scatter(*sites.T, s=34, color=bond_colour, zorder=4)
+    ax.add_collection(LineCollection(sites[bonds], colors=bond_colour, linewidths=bond_width, zorder=2))
+    ax.scatter(*sites.T, s=particle_size, color=bond_colour, zorder=4)
     return figure
 
 
@@ -59,17 +69,18 @@ class LatticeView:
     def __init__(self, rest: Point, bonds: np.ndarray, dipole_scale: float, field_scale: float) -> None:
         self.bonds, self.dipole_scale, self.field_scale = bonds, dipole_scale, field_scale
         sites = point_coordinates(rest)
-        self.figure, ax, reach = lattice_axes(sites)
-        ax.add_collection(LineCollection(sites[bonds], colors=rest_colour, linewidths=1.2,
+        self.figure, ax, half_size = lattice_axes(sites)
+        ax.add_collection(LineCollection(sites[bonds], colors=rest_colour, linewidths=rest_width,
                                         linestyles="dashed", zorder=0))
-        ax.scatter(*sites.T, s=22, facecolors="white", edgecolors=rest_colour, linewidths=1, zorder=1)
-        self.links = LineCollection(sites[bonds], colors=bond_colour, linewidths=2, zorder=2)
+        ax.scatter(*sites.T, s=rest_size, facecolors="white", edgecolors=rest_colour, linewidths=rest_width,
+                   zorder=1)
+        self.links = LineCollection(sites[bonds], colors=bond_colour, linewidths=bond_width, zorder=2)
         ax.add_collection(self.links)
-        self.particles = ax.scatter(*sites.T, s=34, color=bond_colour, zorder=4)
+        self.particles = ax.scatter(*sites.T, s=particle_size, color=bond_colour, zorder=4)
         self.dipoles = ax.quiver(*sites.T, np.zeros(len(sites)), np.zeros(len(sites)),
                                  color=dipole_colour, angles="xy", scale_units="xy", scale=1,
                                  pivot="middle", width=0.009, headwidth=3, headlength=4, zorder=5)
-        field_y = -reach[1] - field_gap / 2
+        field_y = -half_size[1] - field_gap / 2
         self.field = ax.quiver([0], [field_y], [0], [0], color=applied_colour, angles="xy",
                                scale_units="xy", scale=1, pivot="middle", width=0.012,
                                headwidth=3, headlength=4)
@@ -98,12 +109,14 @@ def animate_lattice(rest: Point, bonds: np.ndarray, positions: Point, dipoles: P
     plt.close(view.figure)
 
 
+@charts.style()
 def draw_loading(strengths: np.ndarray, parallel: Scalar, transverse: Scalar) -> plt.Figure:
-    figure, ax = plt.subplots(figsize=(6, 3.8))
+    # Half the column: two smooth curves, named axes and no numbers.
+    figure, ax = charts.subplots(400, 260)
     along = np.asarray(parallel.to_array()) * 100
     across = np.asarray(transverse.to_array()) * 100
-    ax.plot(strengths, along, color=bond_colour, linewidth=2.3, label="along the field")
-    ax.plot(strengths, across, color=transverse_colour, linewidth=2.3, label="across the field")
+    ax.plot(strengths, along, color=bond_colour, label="along the field")
+    ax.plot(strengths, across, color=transverse_colour, label="across the field")
     # Axes through no field and no change, without tick marks or numbers, each named along itself: the field's above
     # its line, where the curves are not.
     ax.spines[["top", "right"]].set_visible(False)

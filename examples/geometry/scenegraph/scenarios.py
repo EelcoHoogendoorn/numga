@@ -27,8 +27,8 @@ TRACED_CORNERS = [7, 6, 2]
 # duration in milliseconds.
 SWEEP_MIDDLES = np.array([0.0, -0.40, 0.85, -0.45])
 SWEEP_SWINGS = np.array([0.45, 0.25, 0.35, 0.25])
-N_FRAMES = 36
-FRAME_DURATION = 60
+N_FRAMES = 54
+FRAME_DURATION = 40
 
 
 # --- math -----------------------------------------------------------------------------

@@ -12,9 +12,9 @@ N_SUBDIVISIONS = 3
 DIPOLE = 0.5
 # The share of each face's curvature departure each step of Spot's flow removes, the number of steps,
 # and the duration of a frame.
-RATE = 0.2
-N_STEPS = 15
-DURATION_MS = 160
+RATE = 0.05
+N_STEPS = 60
+DURATION_MS = 40
 # The finer sphere the Dirac spheres are spun from, the eigenvalues shown, and the states shown of each.
 N_DIRAC_SUBDIVISIONS = 4
 EIGENVALUES = (1, 2, 3, -2, -3)

@@ -14,6 +14,7 @@ from matplotlib.lines import Line2D
 from numga import Extensor, concatenate, stack
 from examples.util.animation import capture
 from examples.quantum.process_tomography import core
+from examples.util import charts
 from examples.util.wgsl import fitted, labels, meshes, show, solids, strokes
 from examples.util.wgsl.scene import Scene
 
@@ -32,12 +33,13 @@ IMAGE_OPACITY, PREPARED_OPACITY = 0.2, 0.2
 # pixels across a view, until it is fitted to its axes.
 ELEVATION, AZIMUTH = np.radians(24.0), np.radians(-54.0 + 90.0)
 REACH, MARGIN, N_PIXELS = 1.45, 0.2, 700
-# The width and height in inches of each channel's panel, its title and its share of the legend; the width and height
-# of the figure of the experiment, and of the predictions, and the font size of their tables and axes.
-PANEL = (2.6, 3.05)
-EXPERIMENT, PREDICTIONS, FONT_SIZE = (9.6, 2.75), (3.1, 3.0), 8
+# The width and height in pixels of each channel's panel, its title and its share of the legend; the width and height
+# of the figure of the experiment, the whole column for the prepared states beside the three tables and their bar,
+# and of the predictions, a few dozen points about a diagonal.
+PANEL = (260, 305)
+EXPERIMENT, PREDICTIONS = (charts.DESIGN_WIDTH, 250), (300, 300)
 # Gallery picture: this makes plots/tomography.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-GALLERY_PANEL = (2.4, 2.85)
+GALLERY_PANEL = (240, 285)
 # The grid lines drawn, every few of the sampled latitudes and longitudes; the widths of the sphere's grid lines and
 # an image's, the edges and the axes' shafts, the arrowheads' length and width, and the radii of the probes alone,
 # after a channel and as prepared, in radii of the ball; how far the axes reach and where they are named.
@@ -90,8 +92,7 @@ def show_ball(axes, image: np.ndarray, view: solids.View):
     """A traced picture in an axes, with the axes named past their tips. The image, for an animation to set its
     data."""
     shown = show(axes, image, view)
-    labels(axes, view, sm.point(LABEL_DISTANCE * np.eye(3)), list("xyz"), ha="center", va="center", fontsize=11,
-           color=AXIS_COLOUR)
+    labels(axes, view, sm.point(LABEL_DISTANCE * np.eye(3)), list("xyz"), ha="center", va="center", color=AXIS_COLOUR)
     return shown
 
 
@@ -130,15 +131,16 @@ def grid_planes(points: np.ndarray) -> solids.Plane:
     return concatenate(planes)
 
 
+@charts.style()
 def draw_experiment(prepared: Extensor, probabilities: Extensor, labels: tuple[str, ...],
                     reading: Reading) -> plt.Figure:
     """Four tetrahedral preparations and each channel's measured outcome probabilities."""
     probes = reading(prepared)                                               # [preparations, 3]
     measured = probabilities.to_array()                                      # [channels, preparations, outcomes]
-    figure = plt.figure(figsize=EXPERIMENT, layout="constrained")
+    figure = plt.figure(figsize=(EXPERIMENT[0] / charts.DPI, EXPERIMENT[1] / charts.DPI), layout="constrained")
     figure.get_layout_engine().set(wspace=0.12)
     probe_axes = figure.add_subplot(1, len(labels) + 1, 1)
-    probe_axes.set_title("Prepared states", fontsize=FONT_SIZE + 1)
+    probe_axes.set_title("Prepared states")
     probe_axes.set_axis_off()
     probability_scale = LogNorm(vmin=measured[measured > 0].min(), vmax=0.5)
     table_axes = []
@@ -150,13 +152,10 @@ def draw_experiment(prepared: Extensor, probabilities: Extensor, labels: tuple[s
         heatmap = axes.pcolormesh(table, norm=probability_scale, cmap="turbo")
         axes.set(xticks=centres, xticklabels=PROBE_NAMES, yticks=centres, yticklabels=PROBE_NAMES, aspect="equal")
         axes.invert_yaxis()
-        axes.set_xlabel("Measurement outcome", fontsize=FONT_SIZE)
-        axes.set_ylabel("Prepared state", fontsize=FONT_SIZE)
-        axes.set_title(label, fontsize=FONT_SIZE + 1)
-        axes.tick_params(length=0, labelsize=FONT_SIZE)
+        axes.set(xlabel="Measurement outcome", ylabel="Prepared state", title=label)
+        axes.tick_params(length=0)
     colour_bar = figure.colorbar(heatmap, ax=table_axes, shrink=0.72, pad=0.02)
-    colour_bar.set_label("Probability (log scale)", fontsize=FONT_SIZE)
-    colour_bar.ax.tick_params(which="both", labelsize=FONT_SIZE - 1)
+    colour_bar.set_label("Probability (log scale)")
 
     view = bloch_view(probe_axes)
     colours = np.array([to_rgb(colour) for colour in PROBE_COLOURS])
@@ -168,7 +167,7 @@ def draw_experiment(prepared: Extensor, probabilities: Extensor, labels: tuple[s
                          translucent=[], meshes=[])
     show_ball(probe_axes, scene, view)
     for (x, y), name, colour in zip(view.across(sm.point(probes * 1.12)), PROBE_NAMES, PROBE_COLOURS):
-        probe_axes.text(x, y, name, color=colour, fontsize=FONT_SIZE + 1)
+        probe_axes.text(x, y, name, color=colour)
     return figure
 
 
@@ -204,22 +203,24 @@ def channel_picture(scene: Scene, faces: np.ndarray, image: np.ndarray, points: 
 
 def channels_figure(labels: tuple[str, ...], panel: tuple[float, float]) -> tuple[plt.Figure, list]:
     """The channels' axes side by side, each named, over the legend of the probes, each channel a panel of a width
-    and height in inches: the figure, and the axes."""
-    figure = plt.figure(figsize=(panel[0] * len(labels), panel[1]), layout="constrained")
+    and height in pixels: the figure, and the axes."""
+    figure = plt.figure(figsize=(panel[0] * len(labels) / charts.DPI, panel[1] / charts.DPI), layout="constrained")
     axes = [figure.add_subplot(1, len(labels), index + 1) for index in range(len(labels))]
     for ax, label in zip(axes, labels):
         ax.set_title(label)
         ax.set_axis_off()
-    # A prepared probe shows through both its surfaces.
+    # A prepared probe shows through both its surfaces, and is as much larger than a probe after the channel as on the
+    # balls.
     markers = (
-        Line2D([], [], linestyle="none", marker="o", markersize=10, color="0.4", alpha=1 - (1 - PREPARED_OPACITY) ** 2,
-               label="Prepared"),
+        Line2D([], [], linestyle="none", marker="o", markersize=charts.MARKER_SIZE * PREPARED_RADIUS / AFTER_RADIUS,
+               color="0.4", alpha=1 - (1 - PREPARED_OPACITY) ** 2, label="Prepared"),
         Line2D([], [], linestyle="none", marker="o", color="0.4", label="After channel"),
     )
     figure.legend(handles=markers, loc="outside lower center", ncol=2, frameon=False)
     return figure, axes
 
 
+@charts.style()
 def draw_channels(surface: Extensor, outputs: Extensor, prepared: Extensor, transformed: Extensor,
                   labels: tuple[str, ...], reading: Reading) -> plt.Figure:
     """The sphere of pure inputs and its reconstructed images, with matching probe points: each image a translucent
@@ -237,43 +238,42 @@ def draw_channels(surface: Extensor, outputs: Extensor, prepared: Extensor, tran
     return figure
 
 
+@charts.style()
 def draw_predictions(observed: Extensor, predicted: Extensor,
                      labels: tuple[str, ...]) -> plt.Figure:
     """Predicted and measured probabilities for preparations absent from the reconstruction."""
     measured = observed.to_array()                                             # [channels, heldout, outcomes]
     inferred = predicted.to_array()                                            # [channels, heldout, outcomes]
     limit = 1.05 * max(float(measured.max()), float(inferred.max()))
-    figure, axes = plt.subplots(figsize=PREDICTIONS, layout="constrained")
-    axes.plot([0, limit], [0, limit], color="0.7", linewidth=0.7, zorder=0)
+    figure, axes = charts.subplots(*PREDICTIONS, layout="constrained")
+    axes.plot([0, limit], [0, limit], color="0.7", linewidth=charts.FRAME_WIDTH, zorder=0)
     for label, actual, estimate, colour in zip(labels, measured, inferred, CHANNEL_COLOURS):
-        axes.scatter(actual, estimate, s=10, color=colour, alpha=0.75,
-                     linewidths=0, label=label)
-    axes.set(xlim=(0, limit), ylim=(0, limit), aspect="equal", xticks=[], yticks=[])
-    axes.set_xlabel("Observed probability", fontsize=FONT_SIZE)
-    axes.set_ylabel("Predicted probability", fontsize=FONT_SIZE)
-    axes.set_title("Unseen preparations", fontsize=FONT_SIZE + 1)
+        axes.scatter(actual, estimate, color=colour, alpha=0.75, linewidths=0, label=label)
+    axes.set(xlim=(0, limit), ylim=(0, limit), aspect="equal", xticks=[], yticks=[], xlabel="Observed probability",
+             ylabel="Predicted probability", title="Unseen preparations")
     axes.spines[["top", "right"]].set_visible(False)
-    axes.legend(loc="upper left", frameon=False, fontsize=FONT_SIZE - 1)
+    axes.legend(loc="upper left", frameon=False)
     return figure
 
 
 def animate(surface: Extensor, prepared: Extensor, frames: Iterator[tuple[Extensor, Extensor]],
             labels: tuple[str, ...], reading: Reading, panel: tuple[float, float]) -> Iterator[np.ndarray]:
     """Successive applications of each reconstructed channel to the same input sphere, as `draw_channels` draws them,
-    each channel a panel of a width and height in inches: the figure, the axes, the sphere, its grid and the probes as
+    each channel a panel of a width and height in pixels: the figure, the axes, the sphere, its grid and the probes as
     prepared set up once, and each frame's images drawn among them."""
-    sphere = reading(surface)                                                # [latitudes + 1, longitudes + 1, 3]
-    figure, axes = channels_figure(labels, panel)
-    view = channel_view(sphere, axes[0])
-    scene = channel_scene(sphere, reading(prepared), view)
-    faces = surface_faces(sphere.shape[0], sphere.shape[1] - 1)
-    blank = np.full((*view.shape, 3), 255, dtype=np.uint8)
-    shown = [show_ball(ax, blank, view) for ax in axes]
-    # The layout settled once, so that only the pictures change between frames.
-    figure.canvas.draw()
-    figure.set_layout_engine("none")
-    for outputs, transformed in frames:
-        for image, picture, points, colour in zip(shown, reading(outputs), reading(transformed), CHANNEL_COLOURS):
-            image.set_data(channel_picture(scene, faces, picture, points, colour))
-        yield capture(figure)
-    plt.close(figure)
+    with charts.style():
+        sphere = reading(surface)                                                # [latitudes + 1, longitudes + 1, 3]
+        figure, axes = channels_figure(labels, panel)
+        view = channel_view(sphere, axes[0])
+        scene = channel_scene(sphere, reading(prepared), view)
+        faces = surface_faces(sphere.shape[0], sphere.shape[1] - 1)
+        blank = np.full((*view.shape, 3), 255, dtype=np.uint8)
+        shown = [show_ball(ax, blank, view) for ax in axes]
+        # The layout settled once, so that only the pictures change between frames.
+        figure.canvas.draw()
+        figure.set_layout_engine("none")
+        for outputs, transformed in frames:
+            for image, picture, points, colour in zip(shown, reading(outputs), reading(transformed), CHANNEL_COLOURS):
+                image.set_data(channel_picture(scene, faces, picture, points, colour))
+            yield capture(figure)
+        plt.close(figure)

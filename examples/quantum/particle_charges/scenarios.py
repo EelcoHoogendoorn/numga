@@ -10,7 +10,7 @@ import numpy as np
 
 from numga import stack
 from examples.quantum.particle_charges.core import (
-    Scalar, State, StateMap, action, mv, phase, sector_value, transition_strength,
+    Scalar, State, StateMap, action, mv, pseudoscalar, sector_value, transition_strength,
 )
 
 
@@ -20,24 +20,26 @@ def sectors() -> tuple[np.ndarray, StateMap, Scalar, Scalar, Scalar, Scalar, Sca
     # Four signs choose the fifth: this chirality has an even occupation count.
     occupations = np.array([pattern + (sum(pattern) % 2,) for pattern in product((0, 1), repeat=4)])
     hypercharge_weights = np.array([-1 / 3, -1 / 3, -1 / 3, 1 / 2, 1 / 2])
-    planes = stack((mv.ab, mv.cd, mv.ef, mv.gh, mv.ij))                       # [planes] Bivector
-    signs = -phase * planes                                                # [planes] Even
-    occupation = (State - action(signs)) / 2                               # [planes] State <- State
+    planes = stack((mv.ab, mv.cd, mv.ef, mv.gh, mv.ij))                    # [planes] Bivector+
+    # Each plane and the pseudoscalar act on the spinor as commuting quarter turns, so their product is a sign:
+    # plus one on the states the plane turns with the pseudoscalar, minus one on those it turns against.
+    signs = -pseudoscalar * planes                                         # [planes] Even+
+    occupation = (State - action(signs)) / 2                               # [planes] State+ <- State+
 
-    # Each factor halves the spinor; four leave one sector with two phase directions.
-    factors = (1 + signs[None, :4] * (1 - 2 * occupations[:, :4])) / 2
-    selectors = reduce(mul, (factors[:, i] for i in range(4)))               # [sectors] Even
-    projectors = action(selectors)                                         # [sectors] State <- State
+    # Each factor halves the spinor; four leave one sector, a single pair of coefficients.
+    factors = (1 + signs[None, :4] * (1 - 2 * occupations[:, :4])) / 2     # [sectors, signs] Even+
+    selectors = reduce(mul, (factors[:, i] for i in range(4)))             # [sectors] Even+
+    projectors = action(selectors)                                         # [sectors] State+ <- State+
 
-    hypercharge = (hypercharge_weights * occupation).sum(axis=0)            # [] State <- State
-    left_isospin = (occupation[3] - occupation[4]) / 2                       # [] State <- State
-    right_isospin = (occupation[3] + occupation[4] - State) / 2              # [] State <- State
-    charge = hypercharge + left_isospin                                    # [] State <- State
-    baryon_minus_lepton = State - 2 * occupation[:3].sum(axis=0) / 3         # [] State <- State
+    hypercharge = (hypercharge_weights * occupation).sum(axis=0)           # [] State+ <- State+
+    left_isospin = (occupation[3] - occupation[4]) / 2                     # [] State+ <- State+
+    right_isospin = (occupation[3] + occupation[4] - State) / 2            # [] State+ <- State+
+    charge = hypercharge + left_isospin                                    # [] State+ <- State+
+    baryon_minus_lepton = State - 2 * occupation[:3].sum(axis=0) / 3       # [] State+ <- State+
     colour = stack((
         (occupation[0] - occupation[1]) / 2,
         (occupation[0] + occupation[1] - 2 * occupation[2]) / (2 * np.sqrt(3)),
-    ))                                                                    # [colour weights] State <- State
+    ))                                                                     # [colour weights] State+ <- State+
     return (
         occupations, projectors,
         sector_value(charge, projectors),
@@ -58,12 +60,12 @@ def interactions(projectors: StateMap) -> tuple[StateMap, StateMap, StateMap, Sc
         mv.ce + mv.df, mv.cf - mv.de,
         mv.ab - mv.cd,
         (mv.ab + mv.cd - 2 * mv.ef) / np.sqrt(3),
-    )) / 4                                                                # [colour generators] Bivector
-    weak = stack((mv.gi + mv.hj, mv.gj - mv.hi, mv.gh - mv.ij)) / 4           # [weak generators] Bivector
-    colour_generators = action(colour)                                     # [colour generators] State <- State
-    weak_generators = action(weak)                                         # [weak generators] State <- State
+    )) / 4                                                                 # [colour generators] Bivector+
+    weak = stack((mv.gi + mv.hj, mv.gj - mv.hi, mv.gh - mv.ij)) / 4        # [weak generators] Bivector+
+    colour_generators = action(colour)                                     # [colour generators] State+ <- State+
+    weak_generators = action(weak)                                         # [weak generators] State+ <- State+
     # This additional Spin(10) turn exchanges a colour occupation with a weak one.
-    mixing_generator = action((mv.ag + mv.bh) / 4)[None]                    # [mixing generators] State <- State
+    mixing_generator = action((mv.ag + mv.bh) / 4)[None]                   # [mixing generators] State+ <- State+
     return (
         colour_generators, weak_generators, mixing_generator,
         transition_strength(colour_generators, projectors),

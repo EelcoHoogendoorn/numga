@@ -14,22 +14,22 @@ ga = PGA2D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 Point = ga.gatype.antivector()                      # Antivector-
-Line = ga.gatype.vector()                           # Vector+
+Plane = ga.gatype.vector()                          # Vector+
 Scalar = ga.gatype.scalar()                         # Scalar+
-# A map from points to lines: a precision, or a conic.
-Polarity = ga.gatype((Line, Point))
+# A map from points to planes: a precision, or a quadric.
+Polarity = ga.gatype((Plane, Point))
 
 
 # --- math -----------------------------------------------------------------------------
 def fit_gaussian(points: Point) -> tuple[Polarity, Polarity]:
-    """The precision of unit-weight points comes with their 1σ ellipse, a conic: both maps from points to lines."""
-    # Each point contributes its dyad, a rank-one map from lines to points; their mean holds both the cloud's
+    """The precision of unit-weight points comes with their 1σ ellipsoid, a quadric: both maps from points to planes."""
+    # Each point contributes its dyad, a rank-one map from planes to points; their mean holds both the cloud's
     # location and its spread, without centring.
-    moment = (points * (Line & points)).mean(axis=0)                           # [] Point- <- Line+
-    precision = moment.inverse()                                               # [] Line+ <- Point-
-    # The line of unit weight, recovered from the data: weight & point == 1 for every unit-weight point. Its dyad
+    moment = (points * (Plane & points)).mean(axis=0)                          # [] Point- <- Plane+
+    precision = moment.inverse()                                               # [] Plane+ <- Point-
+    # The plane of unit weight, recovered from the data: weight & point == 1 for every unit-weight point. Its dyad
     # evaluates to that constant squared; subtracted twice, it makes Mahalanobis distance one the zero locus.
-    weight = precision(points.mean(axis=0))                                    # [] Line+
+    weight = precision(points.mean(axis=0))                                    # [] Plane+
     return precision, precision - 2 * weight * (weight & Point)
 
 

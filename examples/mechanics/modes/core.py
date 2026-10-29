@@ -4,9 +4,9 @@ A spring is the line from its anchor to its attachment; paired with a twist, `Tw
 how far the motion stretches the spring, and the spring's stiffness is the dyad
 `line * (Twist & line) * k`, a map from twists to forques. The plate's stiffness is the sum over its
 springs, and its inertia the sum over its mass points, each joined with its own motion under a twist,
-`points & points.commutator(Twist)`. Paired back with a twist, both maps are energies, symmetric forms
-on twists, and the natural modes are the twists where the two energies are proportional: one
-eigenproblem of one form against the other.
+`points.regressive(points.commutator(Twist))`. Paired back with a twist, both maps are energies,
+symmetric forms on twists, and the natural modes are the twists where the two energies are
+proportional: one eigenproblem of one form against the other.
 
 Two vertical springs let the plate slide sideways freely, bounce and rock; an angled spring removes the
 free slide and mixes the three. The model is linear about an unstressed equilibrium, so the slide is
@@ -37,7 +37,7 @@ Inertia = PGA2D.gatype((Forque, Twist))
 
 @dataclass(frozen=True)
 class Suspension:
-    """Geometry and masses prepared for one planar suspension."""
+    """Geometry and masses prepared for one suspension."""
 
     body: Point                     # [corners] Point-
     attachments: Point              # [springs] Point-

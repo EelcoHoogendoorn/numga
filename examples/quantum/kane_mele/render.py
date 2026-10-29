@@ -12,6 +12,7 @@ from matplotlib.collections import LineCollection
 from numga import stack
 from examples.util.animation import capture
 from examples.quantum.kane_mele import core
+from examples.util import charts
 
 # The bonds' shade, the sublattices' shades, and the largest dot, in points squared on a flake drawn six
 # inches across, at the densest atom.
@@ -47,16 +48,18 @@ def draw_flake(flake: core.Flake) -> plt.Figure:
     return figure
 
 
+@charts.style()
 def draw_levels(masses: np.ndarray, energies: core.Scalar, shares: core.Scalar, transition: float) -> plt.Figure:
     """The levels nearest zero against the mass, shaded by how much of each lies on the rim, with the
     mass where the bulk gap closes."""
     values, rims = energies.to_array(), shares.to_array()       # [masses, levels]
-    figure, ax = plt.subplots(figsize=(4, 3.3), dpi=PIXELS / 4, layout="constrained")
+    # Half the column: the levels as rows of dots over the masses, tall enough for them to stand apart.
+    figure, ax = charts.subplots(420, 340, layout="constrained")
     ax.scatter(np.repeat(masses, values.shape[1]), values.ravel(), c=rims.ravel(), cmap="plasma", vmin=0, vmax=1,
-               s=5, clip_on=False)
-    ax.axvline(transition, color="0.4", linestyle="--", linewidth=1)
+               clip_on=False)
+    ax.axvline(transition, color="0.4", linestyle="--")
     # The energy's zero, which the levels on the rim cross until the gap reopens.
-    ax.axhline(0, color="black", linewidth=0.8, zorder=0)
+    ax.axhline(0, color="black", linewidth=charts.FRAME_WIDTH, zorder=0)
     ax.set(xlim=(masses[0], masses[-1]), xticks=[], yticks=[], xlabel="mass / hop", ylabel="energy / hop")
     ax.spines[["top", "right"]].set_visible(False)
     return figure

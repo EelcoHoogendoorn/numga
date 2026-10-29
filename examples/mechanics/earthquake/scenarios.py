@@ -18,8 +18,8 @@ RAKES = np.array([0.0, -90.0, 90.0, 45.0])
 MOMENT = 1.0
 # The sweep: one fault's strike and dip, the frames of its rake's turn, and the duration of each.
 SWEEP_STRIKE, SWEEP_DIP = 30.0, 50.0
-N_FRAMES = 72
-DURATION_MS = 80
+N_FRAMES = 144
+DURATION_MS = 40
 # The grid of directions: rings from straight down, spokes around the vertical.
 N_RINGS = 60
 N_SPOKES = 120

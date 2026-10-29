@@ -16,8 +16,8 @@ tether = 0.15 * stiffness
 field_strength = 3.05
 n_newton_steps = 4
 n_load_samples = 25
-n_frames = 72
-duration_ms = 70
+n_frames = 126
+duration_ms = 40
 dipole_scale = 4.0
 field_scale = 0.65 / field_strength
 
@@ -26,9 +26,9 @@ field_scale = 0.65 / field_strength
 def lattice() -> core.Lattice:
     indices, bonds = core.hexagonal_indices(n_rings)
     # The points one spacing along the two lattice directions, which meet at sixty degrees.
-    along_x = core.mv.x.dual()                                                     # [] Point
-    axes = stack((along_x, (core.mv.xy * (-np.pi / 6)).exp() >> along_x))        # [axes] Point
-    rest = (lattice_spacing * (axes * indices).sum(axis=-1)).field()                  # Point[particles]
+    first_axis = core.mv.x.dual()                                                  # [] Point-
+    axes = stack((first_axis, (core.mv.xy * (-np.pi / 6)).exp() >> first_axis))  # [axes] Point-
+    rest = (lattice_spacing * (axes * indices).sum(axis=-1)).field()               # Point-[particles]
     return core.Lattice(rest, bonds, polarizability, stiffness, tether)
 
 
@@ -41,10 +41,11 @@ def loading(model: core.Lattice) -> tuple[np.ndarray, core.Field, core.Point, co
 
 
 def turning(model: core.Lattice) -> tuple[core.Field, core.Point, core.Point]:
-    phases = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)
+    angles = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)
     # The field at full strength turns once around at an even rate, so the loop runs at an even pace. Every frame is
-    # an independent static equilibrium; the phase is a control setting rather than time.
-    applied = core.field_along((core.mv.xy * (-phases / 2)).exp() >> core.mv.x.dual()) * field_strength
+    # an independent static equilibrium; the angle is a control setting rather than time.
+    turns = (core.mv.xy * (-angles / 2)).exp()                                     # [frames] Rotor+
+    applied = core.field_along(turns >> core.mv.x.dual()) * field_strength          # [frames] Field+
     positions = model.equilibrium(applied, n_newton_steps)
     dipoles = model.response(positions).solve(applied)
     return applied, positions, dipoles
@@ -76,7 +77,7 @@ def main() -> None:
     gradient = derivative(lambda value: model.energy(value, applied[-1]))(positions[-1])
     np.testing.assert_allclose(gradient.kernel, 0, atol=1e-3)
     np.testing.assert_allclose((positions[0] - model.rest).kernel, 0, atol=1e-12)
-    assert parallel[-1].to_array() < 0
+    assert parallel[-1] < 0
 
 
 if __name__ == "__main__":

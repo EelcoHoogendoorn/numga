@@ -19,12 +19,12 @@ TURN = 0.3
 
 # --- math -----------------------------------------------------------------------------
 def gaussian():
-    """A Gaussian fits a stretched cloud, moved as a batch: the cloud, its precision and its 1σ ellipse."""
+    """A Gaussian fits a stretched cloud, moved as a batch: the cloud, its precision and its 1σ ellipsoid."""
     rng = np.random.default_rng(SEED)
     placement = (mv.xw * SHIFT[0] - mv.yw * SHIFT[1]).exp() * (mv.xy * TURN).exp()   # [] Motor+
     points = placement >> mv.point(rng.normal(size=(N_POINTS, 2)) * SPREAD)    # [points] Point-
-    precision, ellipse = fit_gaussian(points)                                  # [] Line+ <- Point-, Line+ <- Point-
-    return points, precision, ellipse
+    precision, ellipsoid = fit_gaussian(points)                                # [] Plane+ <- Point-, Plane+ <- Point-
+    return points, precision, ellipsoid
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -32,14 +32,14 @@ def main() -> None:
     from examples.util.animation import save_figure
     from examples.quadrics.gaussian import render
 
-    points, precision, ellipse = gaussian()
-    save_figure(render.draw_gaussian(points, partial(density, precision), ellipse), "gaussian")
+    points, precision, ellipsoid = gaussian()
+    save_figure(render.draw_gaussian(points, partial(density, precision), ellipsoid), "gaussian")
 
     # checks
     # On unit-weight points the level is the squared Mahalanobis distance less one and the density
     # `(-0.5 * squared_distance).exp()`: the 1σ quadric is exactly the contour where the density falls to
     # `np.exp(-0.5)`.
-    level = ellipse(points) & points                                           # [points] Scalar+
+    level = ellipsoid(points) & points                                         # [points] Scalar+
     np.testing.assert_allclose(level.to_array(), -2.0 * np.log(density(precision, points).to_array()) - 1.0, atol=1e-8)
 
 

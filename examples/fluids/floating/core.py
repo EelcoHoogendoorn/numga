@@ -113,7 +113,7 @@ def stiffness(triangles: Point, heights: Scalar, weight: Scalar, centre: Point, 
     # the change of the surface, and turns the direction of the weight with it.
     tilted = surface[..., None, None, None].commutator(Tilt)            # [..., 1, 1, 1] Plane+ <- Tilt+
     pushing = (fluid_weight * -(tilted & samples) * lines).sum(axis=(-3, -2, -1))   # [...] Forque- <- Tilt+
-    weighing = weight * (centre & (-up).commutator(Tilt))               # [...] Forque- <- Tilt+
+    weighing = weight * centre.regressive((-up).commutator(Tilt))       # [...] Forque- <- Tilt+
     return Tilt & (pushing + weighing)                                  # [...] Scalar+ <- (Tilt+, Tilt+)
 
 

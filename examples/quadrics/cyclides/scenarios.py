@@ -20,8 +20,8 @@ from examples.quadrics.cyclides.core import (
 SHAPE, LINKED_SHAPE = (180, 240), (315, 420)
 pixels = sensor(SHAPE, np.radians(90))
 # Frames in each turning animation.
-N_FRAMES = 36
-DURATION_MS = 60
+N_FRAMES = 54
+DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------

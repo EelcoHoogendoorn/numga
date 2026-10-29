@@ -14,8 +14,8 @@ N_SCRAMBLE = 10
 SEED = 4
 DEPTH = 5
 # The animation's frames per quarter turn, and each frame's duration in milliseconds.
-N_STEPS = 6
-FRAME_DURATION = 60
+N_STEPS = 9
+FRAME_DURATION = 40
 
 
 # --- math -----------------------------------------------------------------------------

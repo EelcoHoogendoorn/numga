@@ -32,12 +32,11 @@ S2_TIME_STEP = 0.015
 # of each frame on S³.
 N_S2_FRAMES = 160
 N_TUMBLING_FRAMES = 240
-N_S3_FRAMES = 120
-S3_TIME_STEP = 0.04
-S2_DURATION_MS = 15
-# Pixels of the image traced on S³.
-S3_SHAPE = (360, 480)
-S3_DURATION_MS = 50
+N_S3_FRAMES = 160
+S3_TIME_STEP = 0.03
+# Pixels of the image traced on S³, and the duration of a frame of every animation.
+S3_SHAPE = (180, 240)
+DURATION_MS = 40
 
 
 # --- S² -------------------------------------------------------------------------------
@@ -183,7 +182,7 @@ def crowd(frames: int):
     # With bodies all over the 3-sphere, whatever drifts behind the eye reappears ahead near the
     # antipode, which is what the sphere looks like.
     light = raytracer.unit(((S3.mv.xw * -0.34 + S3.mv.zw * 0.94) * (0.8 / 2)).exp() >> raytracer.origin)
-    trajectory = S3.simulate(bodies, frames, S3_TIME_STEP, 8)
+    trajectory = S3.simulate(bodies, frames, S3_TIME_STEP, 6)
     return trajectory, bodies.color, S3.mv.rotor(), light
 
 
@@ -197,7 +196,7 @@ def gap(frames: int):
     # it thins; the light behind the eye and a little across the belt.
     eye = (S3.mv.xw * (np.pi / 2) * 0.5).exp() * (-S3.mv.xy * (np.pi / 2) * 0.5).exp()
     light = eye * ((S3.mv.xw * -0.3 + S3.mv.yw * 0.25 + S3.mv.zw * 0.2) * 0.5).exp() >> raytracer.origin
-    trajectory = S3.simulate(bodies, frames, S3_TIME_STEP, 8)
+    trajectory = S3.simulate(bodies, frames, S3_TIME_STEP, 6)
     return trajectory, bodies.color, eye, light
 
 
@@ -211,7 +210,7 @@ def needle(frames: int):
     # back down at the gap; the light behind and above the eye.
     eye = (S3.mv.xw * (np.pi / 2) * 0.5).exp() * (S3.mv.zw * np.radians(35.0) * 0.5).exp() * (S3.mv.zx * (-np.pi / 2) * 0.5).exp()
     light = eye * ((S3.mv.xw * -0.3 + S3.mv.yw * 0.2 + S3.mv.zw * 0.3) * 0.5).exp() >> raytracer.origin
-    trajectory = S3.simulate(bodies, frames, S3_TIME_STEP, 8)
+    trajectory = S3.simulate(bodies, frames, S3_TIME_STEP, 6)
     return trajectory, bodies.color, eye, light
 
 
@@ -233,7 +232,7 @@ def tunnel(frames: int):
     conic, polar = raytracer.project(eye, wall_surface)
     wall_hit = (camera * raytracer.reproject(conic, polar, side_up) + (eye >> side_up)).normalized()
     light = (camera + wall_hit).normalized()
-    trajectory = S3.simulate(bodies, frames, S3_TIME_STEP, 8)
+    trajectory = S3.simulate(bodies, frames, S3_TIME_STEP, 6)
     return trajectory, bodies.color, eye, light
 
 
@@ -245,7 +244,7 @@ def main() -> None:
     def on_s2(scene, name: str, frames: int) -> tuple[S2.Trajectory, np.ndarray]:
         """Simulate a scene on S², save its hemisphere animation."""
         trajectory, colors = scene(frames)
-        save_animation(render.hemisphere_frames(trajectory.surfaces, colors, render.PAINTED), name, S2_DURATION_MS)
+        save_animation(render.hemisphere_frames(trajectory.surfaces, colors, render.PAINTED), name, DURATION_MS)
         return trajectory, colors
 
     def on_s3(scene, name: str, frames: int) -> tuple:
@@ -253,7 +252,7 @@ def main() -> None:
         trajectory, colors, eye, light, *_ = geometry = scene(frames)
         images = list(render.s3_frames(trajectory, colors, eye, light, S3_SHAPE))
         save_figure(render.draw_last_frame(images), name)
-        save_animation(images, name, S3_DURATION_MS)
+        save_animation(images, name, DURATION_MS)
         return geometry
 
     SCENES = {

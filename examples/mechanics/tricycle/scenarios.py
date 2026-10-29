@@ -13,15 +13,15 @@ from examples import instantiate
 WHEELBASE = 1.2
 TRACK = 0.8
 # The distance the front wheel rolls per step, over the wheelbase, and the number of steps.
-STEP = 0.04
-N_STEPS = 600
+STEP = 0.016
+N_STEPS = 1500
 # The steering angle held, how far it swings about that, and how many times it swings over the drive.
 BIAS = 0.35
 SWING = 0.3
 N_SWINGS = 3
 # The frames of each animation, and the duration of each in milliseconds.
-N_FRAMES = 150
-FRAME_DURATION = 50
+N_FRAMES = 188
+FRAME_DURATION = 40
 # The same module, instantiated for the plane and for space.
 SCENES = {name: instantiate("examples.mechanics.tricycle.core", ga) for name, ga in (("tricycle_plane", PGA2D), ("tricycle_space", PGA3D))}
 

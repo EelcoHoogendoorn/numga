@@ -6,8 +6,8 @@ from examples.mechanics.modes import core
 from examples.mechanics.modes.core import ModeCase
 
 # The frames of the animation, and the time per frame.
-N_FRAMES = 120
-DURATION_MS = 50
+N_FRAMES = 150
+DURATION_MS = 40
 
 
 def suspensions() -> list[ModeCase]:

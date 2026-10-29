@@ -1,4 +1,4 @@
-"""Independent mechanical checks of the planar normal modes and stiffness example."""
+"""Independent mechanical checks of the normal modes and stiffness example."""
 
 from __future__ import annotations
 

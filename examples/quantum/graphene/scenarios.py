@@ -6,6 +6,8 @@ Momenta are in inverse carbon-carbon distances, 1 / 0.142 nm, and energies in eV
 
 from __future__ import annotations
 
+from functools import partial
+
 import numpy as np
 
 from examples.quantum.graphene import core
@@ -40,17 +42,21 @@ def bands(extent: float, n_samples: int, gap: float) -> tuple[core.Wavevector, c
     return momenta, field, energies
 
 
+def upper_pseudospins(offsets: core.Wavevector, gap: float) -> core.Pseudospin:
+    """The pseudospin of the upper band at momenta offset from each valley."""
+    field = core.pseudospin_field(core.valleys[:, None, None] + offsets, gap)   # [valleys, samples, samples] Field+
+    _, states = core.hamiltonian(field).eigh()                                  # [valleys, samples, samples, modes] Spinor+
+    upper = states[..., -1]                                                     # [valleys, samples, samples] Spinor+
+    # The pseudospin of a state: its sandwich of the first sublattice's pseudospin, over its norm.
+    return (upper >> core.first_sublattice) / upper.symmetric_reverse_product()   # [valleys, samples, samples] Pseudospin-
+
+
 def textures(extent: float, n_samples: int, gap: float) -> tuple[core.Wavevector, core.Pseudospin]:
     """The pseudospin of the upper band on a small square of momenta about each valley."""
     along = np.linspace(-extent, extent, n_samples)
     kx, ky = np.meshgrid(along, along)
     offsets = mv.x * kx + mv.y * ky                                             # [samples, samples] Wavevector+
-    field = core.pseudospin_field(core.valleys[:, None, None] + offsets, gap)   # [valleys, samples, samples] Field+
-    _, states = core.hamiltonian(field).eigh()                                  # [valleys, samples, samples, modes] Spinor+
-    upper = states[..., -1]                                                     # [valleys, samples, samples] Spinor+
-    # The pseudospin of a state: its sandwich of the first sublattice's pseudospin, over its norm.
-    pseudospins = (upper >> core.first_sublattice) / upper.symmetric_reverse_product()   # [valleys, samples, samples] Pseudospin-
-    return offsets, pseudospins
+    return offsets, upper_pseudospins(offsets, gap)
 
 
 def berry(radii: np.ndarray, gaps: np.ndarray, n_steps: int) -> tuple[core.Rotor, core.Pseudospin]:
@@ -73,7 +79,7 @@ def main() -> None:
     holonomies, starts = berry(RADII, GAPS, N_LOOP_STEPS)
     save_figure(render.draw_field(momenta, field), "graphene_field")
     save_figure(render.draw_bands(momenta, energies), "graphene_bands")
-    save_figure(render.draw_textures(offsets, directions), "graphene_pseudospin")
+    save_figure(render.draw_textures(partial(upper_pseudospins, gap=TEXTURE_GAP), VALLEY_EXTENT), "graphene_pseudospin")
     save_figure(render.draw_berry(RADII, GAPS, holonomies, starts), "graphene_berry")
 
     # checks

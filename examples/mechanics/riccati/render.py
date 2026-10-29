@@ -10,6 +10,7 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Polygon
 import numpy as np
 
+from examples.util import charts
 from examples.util.animation import capture
 from examples.mechanics.riccati import core
 
@@ -42,15 +43,16 @@ def _limits(points: np.ndarray) -> np.ndarray:
 
 def _axes(axes: plt.Axes, limits: np.ndarray, title: str) -> None:
     axes.set(xlim=limits[:, 0], ylim=limits[:, 1], aspect="equal")
-    axes.set_title(title, fontsize=8)
+    axes.set_title(title)
     axes.set_axis_off()
 
 
 def _target(axes: plt.Axes, hull: np.ndarray) -> None:
     axes.add_patch(Polygon(hull, closed=True, fill=False, edgecolor="0.5",
-                           linestyle="--", linewidth=1.1, zorder=1))
+                           linestyle="--", zorder=1))
 
 
+@charts.style()
 def draw_setup(
     hull: core.Point, mounts: core.Point, directions: core.Point, tracking_points: core.Point,
 ) -> plt.Figure:
@@ -63,18 +65,20 @@ def draw_setup(
     ends = xy(mounts + directions * display_length)                       # [thrusters, 2] float
     arrows = ends - bases                                                # [thrusters, 2] float
     limits = _limits(np.concatenate([body, sites, bases, ends]))          # [corners, 2] float
-    figure, axes = plt.subplots(figsize=(4.5 / 2, 4 / 2), layout="constrained")
-    axes.add_patch(Polygon(body, closed=True, facecolor=BODY_COLOUR,
-                           edgecolor=BODY_COLOUR, alpha=0.16, linewidth=1.3))
-    axes.scatter(*bases.T, marker="s", s=25, color="0.25", label="Thrusters", zorder=4)
-    axes.scatter(*sites.T, s=26, color=SITE_COLOUR, label="Tracking points", zorder=5)
+    # A third of the column: one hull, five marks and three arrows, under a title and a legend.
+    figure, axes = charts.subplots(280, 270, layout="constrained")
+    axes.add_patch(Polygon(body, closed=True, facecolor=BODY_COLOUR, edgecolor=BODY_COLOUR, alpha=0.16))
+    axes.scatter(*bases.T, marker="s", color="0.25", label="Thrusters", zorder=4)
+    axes.scatter(*sites.T, color=SITE_COLOUR, label="Tracking points", zorder=5)
     axes.quiver(*bases.T, *arrows.T, angles="xy", scale_units="xy", scale=1,
                 color=FORCE_COLOUR, width=0.007, zorder=3)
-    _axes(axes, limits, "Docking geometry")
-    axes.legend(loc="upper right", frameon=False, fontsize=6)
+    axes.set(xlim=limits[:, 0], ylim=limits[:, 1], aspect="equal", title="Docking geometry")
+    axes.set_axis_off()
+    axes.legend(loc="upper right", frameon=False)
     return figure
 
 
+@charts.style()
 def draw_approaches(hull: core.Point, poses: core.Motor, labels: tuple[str, ...]) -> plt.Figure:
     """The center paths and a few hull positions, with the target pose shown dashed."""
     carried = poses[..., None] >> hull                                   # [times, cases, vertices] Point-
@@ -83,25 +87,25 @@ def draw_approaches(hull: core.Point, poses: core.Motor, labels: tuple[str, ...]
     paths = xy(centers)                                                  # [times, cases, 2] float
     target = xy(hull)                                                    # [vertices, 2] float
     limits = _limits(np.concatenate([bodies.reshape(-1, 2), target]))     # [corners, 2] float
-    figure = plt.figure(figsize=(4.6 * len(labels) / 2, 4.3 / 2), layout="constrained")
-    for case, label in enumerate(labels):
-        axes = figure.add_subplot(1, len(labels), case + 1)
+    # A panel a case as large as the docking geometry's, under its title.
+    figure, panels = charts.subplots(280 * len(labels), 260, ncols=len(labels), squeeze=False, layout="constrained")
+    for case, (axes, label) in enumerate(zip(panels[0], labels)):
         _target(axes, target)
-        axes.plot(*paths[:, case].T, color=BODY_COLOUR, linewidth=1.6)
+        axes.plot(*paths[:, case].T, color=BODY_COLOUR)
         # Equal distances along the path keep the ghost hulls apart near the final pose.
         distance = np.concatenate([[0], np.cumsum(np.linalg.norm(
             np.diff(paths[:, case], axis=0), axis=-1))])                  # [times] float
         selected = np.unique(np.searchsorted(distance, np.linspace(0, distance[-1], GHOST_COUNT)))  # [ghosts] int
         ghosts = bodies[selected, case]                                 # [ghosts, vertices, 2] float
         outlines = np.concatenate([ghosts, ghosts[:, :1]], axis=1)       # [ghosts, vertices + 1, 2] float
-        axes.add_collection(LineCollection(outlines, colors=BODY_COLOUR, linewidths=1, alpha=0.35))
-        axes.add_patch(Polygon(bodies[-1, case], closed=True, facecolor=BODY_COLOUR,
-                               edgecolor=BODY_COLOUR, alpha=0.25, linewidth=1.2))
-        axes.plot(*paths[0, case], "o", color=BODY_COLOUR, markersize=3)
+        axes.add_collection(LineCollection(outlines, colors=BODY_COLOUR, alpha=0.35))
+        axes.add_patch(Polygon(bodies[-1, case], closed=True, facecolor=BODY_COLOUR, edgecolor=BODY_COLOUR, alpha=0.25))
+        axes.plot(*paths[0, case], "o", color=BODY_COLOUR)
         _axes(axes, limits, label)
     return figure
 
 
+@charts.style()
 def draw_costs(values: core.StateCost, labels: tuple[str, ...]) -> plt.Figure:
     """One shared cost contour at several horizons, in the zero-heading translation slice."""
     remaining = np.geomspace(1, len(values), COST_HORIZONS).astype(int)   # [remaining] int
@@ -113,18 +117,17 @@ def draw_costs(values: core.StateCost, labels: tuple[str, ...]) -> plt.Figure:
     cost_values = costs.to_array()                                       # [remaining, cases, samples_y, samples_x] float
     colours = plt.get_cmap("viridis")(np.linspace(0.15, 0.8, len(remaining)))  # [remaining, 4] float
     limits = np.stack([coordinates.min(axis=(0, 1)), coordinates.max(axis=(0, 1))])  # [corners, 2] float
-    figure = plt.figure(figsize=(4.6 * len(labels) / 2, 4.3 / 2), layout="constrained")
-    for case, label in enumerate(labels):
-        axes = figure.add_subplot(1, len(labels), case + 1)
+    # A panel a case as large as the docking geometry's, under its title, over one legend.
+    figure, panels = charts.subplots(280 * len(labels), 310, ncols=len(labels), squeeze=False, layout="constrained")
+    for case, (axes, label) in enumerate(zip(panels[0], labels)):
         # The same contour value makes the accumulated cost comparable at different horizons.
         for index, colour in enumerate(colours):
             axes.contour(coordinates[..., 0], coordinates[..., 1], cost_values[index, case],
-                         levels=[COST_LEVEL], colors=[colour], linewidths=1.6)
+                         levels=[COST_LEVEL], colors=[colour])
         _axes(axes, limits, label)
-    handles = [Line2D([], [], color=colour, linewidth=1.6, label=str(steps))
-               for colour, steps in zip(colours, remaining)]
-    figure.legend(handles=handles, loc="outside lower center", ncol=len(remaining),
-                  frameon=False, fontsize=6, title="Steps remaining", title_fontsize=7)
+    handles = [Line2D([], [], color=colour, label=str(steps)) for colour, steps in zip(colours, remaining)]
+    figure.legend(handles=handles, loc="outside lower center", ncol=len(remaining), frameon=False,
+                  title="Steps remaining")
     return figure
 
 
@@ -161,23 +164,24 @@ def animate(
     target = xy(hull)                                                    # [vertices, 2] float
     limits = _limits(np.concatenate([bodies.reshape(-1, 2), bases.reshape(-1, 2),
                                      ends.reshape(-1, 2), trajectories.reshape(-1, 2), target]))
-    figure = plt.figure(figsize=(4.6 * len(labels) / 2, 4.3 / 2), dpi=100, layout="constrained")
-    patches, quivers = [], []
-    for case, label in enumerate(labels):
-        axes = figure.add_subplot(1, len(labels), case + 1)
-        _target(axes, target)
-        axes.plot(*trajectories[:, case].T, color=BODY_COLOUR, linewidth=1, alpha=0.3)
-        body = Polygon(bodies[0, case], closed=True, facecolor=BODY_COLOUR,
-                       edgecolor=BODY_COLOUR, alpha=0.25, linewidth=1.3)
-        axes.add_patch(body)
-        thrust = axes.quiver(*bases[0, case].T, *arrows[0, case].T, angles="xy",
-                             scale_units="xy", scale=1, color=FORCE_COLOUR, width=0.007, minlength=0)
-        patches.append(body)
-        quivers.append(thrust)
-        _axes(axes, limits, label)
-
-    figure.canvas.draw()
-    figure.set_layout_engine("none")
+    # A panel a case as large as the docking geometry's, under its title; the figure laid out once under the charts'
+    # style, and only the bodies and the arrows moved between frames.
+    with charts.style():
+        figure, panels = charts.subplots(280 * len(labels), 260, ncols=len(labels), squeeze=False,
+                                         layout="constrained")
+        patches, quivers = [], []
+        for case, (axes, label) in enumerate(zip(panels[0], labels)):
+            _target(axes, target)
+            axes.plot(*trajectories[:, case].T, color=BODY_COLOUR, alpha=0.3)
+            body = Polygon(bodies[0, case], closed=True, facecolor=BODY_COLOUR, edgecolor=BODY_COLOUR, alpha=0.25)
+            axes.add_patch(body)
+            thrust = axes.quiver(*bases[0, case].T, *arrows[0, case].T, angles="xy",
+                                 scale_units="xy", scale=1, color=FORCE_COLOUR, width=0.007, minlength=0)
+            patches.append(body)
+            quivers.append(thrust)
+            _axes(axes, limits, label)
+        figure.canvas.draw()
+        figure.set_layout_engine("none")
     for index in range(len(poses)):
         for case, (body, thrust) in enumerate(zip(patches, quivers)):
             body.set_xy(bodies[index, case])

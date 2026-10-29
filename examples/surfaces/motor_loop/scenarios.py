@@ -15,8 +15,8 @@ CORNERS = [0, N_ACROSS - 1, N_ALONG * N_ACROSS - N_ACROSS, N_ALONG * N_ACROSS - 
 # The twist angle of the far end at the peak of the wind-up while the near end is held fixed,
 # together with the frame count and frame duration of the animation.
 TWIST_ANGLE = 3 * np.pi
-N_FRAMES = 48
-DURATION_MS = 60
+N_FRAMES = 72
+DURATION_MS = 40
 # The amplitude and random seed for turning each vertex frame in place about its own axis.
 TURN_AMPLITUDE = np.pi / 3
 TURN_SEED = 2

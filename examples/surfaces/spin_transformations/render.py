@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.surfaces.spin_transformations.core import Mesh, Point, Scalar, ga
+from examples.util import charts
 from examples.util.wgsl import fitted, meshes, show, solids
 
 # The camera's elevation and azimuth, its margin as a share of the larger side, and the image's side in pixels, until
@@ -116,11 +117,13 @@ def draw_textured(mesh: Mesh, vertices: Point, reference: Point) -> plt.Figure:
     return figure
 
 
+@charts.style()
 def draw_dirac(mesh: Mesh, gallery: dict[int, Point], reference: Point) -> plt.Figure:
     """A row of Dirac spheres for each eigenvalue, the vertices of each `[spheres] Point-[vertices]` on the sphere's mesh,
     textured with the sphere's checkerboard."""
     rows, columns = len(gallery), max(len(spheres) for spheres in gallery.values())
-    figure, axes = plt.subplots(rows, columns, figsize=(2 * columns, 2 * rows), squeeze=False)
+    # A panel of 200 pixels a side for each sphere, under its row's label.
+    figure, axes = charts.subplots(200 * columns, 200 * rows, nrows=rows, ncols=columns, squeeze=False)
     for row, eigenvalue in enumerate(gallery):
         axes[row, 0].set_title(f"n = {eigenvalue}", loc="left")
     bare(figure, axes)

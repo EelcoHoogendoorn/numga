@@ -14,8 +14,8 @@ QUADRATIC_POINTS = np.array([[-1.0, 0.0], [0.0, 1.5], [1.0, 0.0]])
 # The middle weight swept from an ellipse through a parabola to a hyperbola and back, the frames of the
 # sweep, and the duration of each.
 SWEEP = (0.3, 2.0)
-N_FRAMES = 48
-DURATION_MS = 80
+N_FRAMES = 96
+DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------

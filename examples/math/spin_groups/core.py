@@ -15,12 +15,13 @@ to minus one and generate rotations; the planes it negates square to plus one an
 second, and a group is compact when every plane is a rotation.
 
 In an even number of dimensions the pseudoscalar of the chosen directions commutes with every
-spinor. When it squares to plus one, `0.5 * (1 + I)` and `0.5 * (1 - I)` split the spinors into two
-halves; when it squares to minus one, it acts on the spinors as the complex unit. In four dimensions
-it also maps bivectors to bivectors, so the Lie algebra itself splits in two, or becomes complex. In
-four Euclidean dimensions each generator is the sum of two commuting halves, and the rotor the
-product of their exponentials; each factor turns every plane through one angle, and their orbits on
-the three-sphere are the fibres of the Hopf fibration and of its mirror image.
+spinor. When it squares to plus one, `0.5 * (1 + pseudoscalar)` and `0.5 * (1 - pseudoscalar)` split
+the spinors into two halves; when it squares to minus one, it acts on the spinors as a quarter turn of
+every pair of their coefficients alike. In four dimensions it also maps bivectors to bivectors, so the
+Lie algebra itself splits in two, or pairs each rotation with the boost it turns into. In four
+Euclidean dimensions each generator is the sum of two commuting halves, and the rotor the product of
+their exponentials; each factor turns every plane through one angle, and their orbits on the
+three-sphere are the fibres of the Hopf fibration and of its mirror image.
 
 In the notation of Lie groups the signatures read as Spin(3) = SU(2), Spin(2,1) = SL(2,R),
 Spin(4) = SU(2) x SU(2), Spin(3,1) = SL(2,C), Spin(2,2) = SL(2,R) x SL(2,R), Spin(5) = Sp(2),
@@ -31,8 +32,6 @@ involution.
 
 from __future__ import annotations
 
-from functools import reduce
-
 import numpy as np
 
 from numga import Algebra, NumpyContext
@@ -42,62 +41,49 @@ from numga.gatype import GAType
 ga = Algebra("x+y+z+w+v+u+t-s-r-")
 context = NumpyContext(ga)
 mv = context.multivector
-POSITIVE, NEGATIVE = "xyzwvu", "tsr"
-Scalar = ga.gatype.scalar()
-Vector = ga.gatype.vector()
-# The four Euclidean directions of the isoclinic rotations.
-Euclidean = Vector.derive.within("x y z w")
+positive_names, negative_names = "xyzwvu", "tsr"
+# The points of the four Euclidean directions x y z w: the antivectors that contain all five others.
+Euclidean = ga.gatype.antivector().derive.containing("v u t s r")   # Antivector-
+Antitrivector = ga.gatype.antitrivector()                           # Antitrivector-
+
+# The pseudoscalar of the four Euclidean directions commutes with their bivectors and squares to one:
+# its two halves split every generator into two commuting generators, one turning each plane along
+# with its dual plane, the other against it.
+euclidean_pseudoscalar = mv.xyzw                                                     # [] Quadvector+
+plus, minus = 0.5 * (1 + euclidean_pseudoscalar), 0.5 * (1 - euclidean_pseudoscalar)  # [] Even+, Even+
 
 
 # --- math -----------------------------------------------------------------------------
-def invariant_form(Bivector: GAType) -> Extensor:
-    """The invariant form of the Lie algebra: the trace of the double commutator, a form on
-    pairs of bivectors, exact in integers."""
-    return Bivector.commutator(Bivector.commutator(Bivector)).trace(0, 3)   # [] Scalar <- (Bivector, Bivector)
+def stereographic(points: Euclidean) -> Euclidean:
+    """Points of the three-sphere projected from the pole at -w into the space of x y z."""
+    w_coordinate = mv.w & points                                                # [...] Scalar+
+    return (points - mv.w.dual() * w_coordinate) / (1 + w_coordinate)           # [...] Antivector-
 
 
-def involution(Bivector: GAType, positives: Extensor) -> Extensor:
-    """The bivectors sandwiched with the product of the positive directions: plus one on the planes of
-    rotations, minus one on the planes of boosts."""
-    return positives >> Bivector                                              # [] Bivector <- Bivector
-
-
-def isoclinic(generator: Extensor, pseudoscalar: Extensor) -> tuple[Extensor, Extensor]:
-    """A four-dimensional generator as the sum of two commuting generators, `0.5 * (1 + I)` and
-    `0.5 * (1 - I)` times it: bivectors again, one turning each plane along with its dual plane,
-    the other against it. Their exponentials multiply to the generator's rotor."""
-    plus, minus = 0.5 * (1 + pseudoscalar), 0.5 * (1 - pseudoscalar)          # [] Even each
-    return plus * generator, minus * generator                                # [...] Bivector each
-
-
-def stereographic(points: Extensor) -> Extensor:
-    """Unit vectors of the four Euclidean directions, projected from -w into the space of x y z."""
-    return (points - mv.w * (points | mv.w)) / (1 + (points | mv.w))   # [...] Euclidean
-
-
-def linking(first: Extensor, second: Extensor) -> Extensor:
+def linking(first: Euclidean, second: Euclidean) -> Antitrivector:
     """Gauss's linking number of two closed polygons in the space of x y z, as a volume: the volume
     each pair of segments spans with the line between them, over the cube of its length, summed and
     divided by four pi. It is a whole number of unit volumes, oriented by the sense in which the
     polygons link; their mirror images link the other way."""
-    step_first = first[1:] - first[:-1]                                          # [n] Euclidean
-    step_second = second[1:] - second[:-1]                                       # [m] Euclidean
-    middle_first = 0.5 * (first[1:] + first[:-1])                                # [n] Euclidean
-    middle_second = 0.5 * (second[1:] + second[:-1])                             # [m] Euclidean
-    separation = middle_first[:, None] - middle_second[None, :]                  # [n, m] Euclidean
-    # The trivector the separation spans with the two segments.
-    volume = separation ^ step_first[:, None] ^ step_second[None, :]             # [n, m] Trivector
-    return (volume / (separation | separation).square_root() ** 3).sum() / (4 * np.pi)   # [] Trivector
+    step_first = first[1:] - first[:-1]                                          # [segments] Antivector-
+    step_second = second[1:] - second[:-1]                                       # [segments] Antivector-
+    middle_first = 0.5 * (first[1:] + first[:-1])                                # [segments] Antivector-
+    middle_second = 0.5 * (second[1:] + second[:-1])                             # [segments] Antivector-
+    separation = middle_first[:, None] - middle_second[None, :]                  # [segments, segments] Antivector-
+    # The volume the separation spans with the two segments, their join.
+    volume = separation & step_first[:, None] & step_second[None, :]             # [segments, segments] Antitrivector-
+    # In this algebra an antivector squares to minus its length squared.
+    length = separation.scalar_norm_squared().abs().square_root()                # [segments, segments] Scalar+
+    return (volume / length ** 3).sum() / (4 * np.pi)                            # [] Antitrivector-
 
 
 # --- plumbing -------------------------------------------------------------------------
 def signature(p: int, q: int) -> tuple[GAType, GAType, Extensor, Extensor]:
     """The first p positive and q negative directions: their bivectors and even multivectors as
     types, the product of the positive ones, and their pseudoscalar."""
-    names = POSITIVE[:p] + NEGATIVE[:q]
+    names = positive_names[:p] + negative_names[:q]
     Bivector = ga.gatype.bivector().derive.within(" ".join(names))
     Even = ga.gatype.even().derive.within(" ".join(names))
-    one = mv.scalar([1.0])
-    positives = reduce(lambda product, name: product * getattr(mv, name), POSITIVE[:p], one)
-    pseudoscalar = reduce(lambda product, name: product * getattr(mv, name), names, one)
+    positives = getattr(mv, positive_names[:p])
+    pseudoscalar = getattr(mv, names)
     return Bivector, Even, positives, pseudoscalar

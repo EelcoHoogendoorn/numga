@@ -24,8 +24,8 @@ STARTS = [[0.05, 0.3, 1], [0.15, 0.32, 1], [0.03, 0.5, 1], [0.2, 0.5, 1], [0.05,
 AMOUNT = 0.01
 STEEPNESS = 30
 N_STEPS = 500
-N_FRAMES = 50
-DURATION_MS = 70
+N_FRAMES = 88
+DURATION_MS = 40
 # Gallery picture: this makes plots/slip_systems.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
 GALLERY_PIXELS = 420
 

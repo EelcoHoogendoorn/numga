@@ -21,11 +21,11 @@ SPHERE_COLOUR, SPHERE_OPACITY, FAN_OPACITY = np.full(3, 0.85), 0.11, 0.22
 # The direction homogeneous space is viewed from, in degrees; the margin as a share of the larger side, and the
 # pixels across a frame.
 ELEVATION, AZIMUTH = 18.0, -62.0
-MARGIN, N_PIXELS = 0.06, 600
+MARGIN, N_PIXELS = 0.06, 300
 # The widths of the equator, the cone's loops and the control rays, of the curves and of the curves on the sphere;
 # the spacing and radius of the dots along a control polygon, and the radius of a control point; all in pixels.
-LINE_WIDTH, CURVE_WIDTH, SPHERE_CURVE_WIDTH = 3.0, 3.5, 6.0
-DOT_SPACING, DOT_RADIUS, POINT_RADIUS = 7.0, 1.4, 3.5
+LINE_WIDTH, CURVE_WIDTH, SPHERE_CURVE_WIDTH = 1.8, 2.2, 3.5
+DOT_SPACING, DOT_RADIUS, POINT_RADIUS = 4.0, 1.0, 2.2
 
 
 # --- plumbing -------------------------------------------------------------------------

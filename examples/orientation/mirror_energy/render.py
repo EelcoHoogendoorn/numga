@@ -10,45 +10,48 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from examples.orientation.mirror_energy.core import Point, ga
+from numga import stack
+
+from examples.orientation.mirror_energy.core import Point
 from examples.util.wgsl import image_figure, solids, strokes
 from examples.util.wgsl.scene import Scene
 
-COLOURS = np.array([to_rgb(colour) for colour in ("#df7246", "#238c9b", "#7662a1")])
-SPHERE, CIRCLE, SHAPE = np.array(to_rgb("#e6ebf0")), np.array(to_rgb("#aab4bf")), np.array(to_rgb("#75808a"))
+mass_colours = np.array([to_rgb(colour) for colour in ("#df7246", "#238c9b", "#7662a1")])
+sphere_colour, circle_colour, shape_colour = (np.array(to_rgb(colour)) for colour in ("#e6ebf0", "#aab4bf", "#75808a"))
 # The view, elevation and azimuth in radians, azimuth zero looking along +y; its margin as a share of its larger
 # side, and the pixels across each case; how much of what lies behind them the sphere's surfaces and the paths hide;
 # in pixels, the widths of the great circles and the paths, the radius of the shape's edges, a unit mass's radius,
 # and the arrows' shafts, heads' length and heads' radius; and the drawn length of a unit velocity.
-ELEVATION, AZIMUTH = np.radians([23.0, -63.0 + 90.0])
-MARGIN, N_PIXELS = 0.04, 300
-SPHERE_OPACITY, PATH_OPACITY = 0.12, 0.5
-CIRCLE_WIDTH, PATH_WIDTH, SHAPE_RADIUS, MASS_RADIUS = 1.0, 1.67, 0.67, 5.0
-SHAFT_RADIUS, HEAD_LENGTH, HEAD_RADIUS = 1.17, 8.3, 3.3
-VELOCITY = 0.35
+elevation, azimuth = np.radians([23.0, -63.0 + 90.0])
+margin, n_pixels = 0.04, 300
+sphere_opacity, path_opacity = 0.12, 0.5
+circle_width, path_width, shape_radius, mass_radius = 1.0, 1.67, 0.67, 5.0
+shaft_radius, head_length, head_radius = 1.17, 8.3, 3.3
+velocity_length = 0.35
 
 
 # --- plumbing -------------------------------------------------------------------------
 def coordinates(points: Point) -> np.ndarray:
-    """x, y and z of points, on the last axis."""
-    return points.cast(ga.subspace("yz zx xy")).kernel
+    """x, y and z of points, on the last axis, read by pairing with the planes x, y and z."""
+    mv = points.context.multivector
+    return (stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array()
 
 
 def scenes(paths: np.ndarray) -> list[Scene]:
     """Each case's unit sphere with its great circles, and the paths of its masses `[times, cases, masses, 3]`, closed,
     as faint strokes, set up once for the masses to be drawn among, all in one view."""
     corners = np.stack(np.meshgrid(*[[-1.0, 1.0]] * 3, indexing="ij"), axis=-1).reshape(-1, 3)
-    view = solids.view([solids.mv.point(corners)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
-    closed = solids.mv.point(np.concatenate([paths, paths[:1]], axis=0))      # [times + 1, cases, masses] Point
+    view = solids.view([solids.mv.point(corners)], 0.0, elevation, azimuth, margin, n_pixels)
+    closed = solids.mv.point(np.concatenate([paths, paths[:1]], axis=0))      # [times + 1, cases, masses] Point-
     sphere = solids.ball(solids.origin, 1.0)[None, None]
     # The great circles where the planes x, y and z through the centre cut the sphere, the first translucent part,
     # after the shape, each mass's ball, and the arrows' shafts and heads.
     circles = solids.Ink(paths.shape[2] + 3, solids.half_space(solids.axes), solids.everywhere[None],
-                         CIRCLE, CIRCLE_WIDTH, 1.0)
+                         circle_colour, circle_width, 1.0)
     return [Scene(view, np.ones(3), [],
-                  [(strokes.polylines([(closed[:, case, mass], colour) for mass, colour in enumerate(COLOURS)],
-                                      PATH_WIDTH, view), PATH_OPACITY)],
-                  inks=[circles], translucent=[(sphere, SPHERE, SPHERE_OPACITY)])
+                  [(strokes.polylines([(closed[:, case, mass], colour) for mass, colour in enumerate(mass_colours)],
+                                      path_width, view), path_opacity)],
+                  inks=[circles], translucent=[(sphere, sphere_colour, sphere_opacity)])
             for case in range(paths.shape[1])]
 
 
@@ -56,22 +59,24 @@ def case_image(scene: Scene, positions: np.ndarray, velocities: np.ndarray, mass
     """One case at one moment: the masses at their positions `[masses, 3]`, joined into their shape, with their
     velocities `[masses, 3]`, among the scene's sphere and paths."""
     view = scene.view
-    places = solids.mv.point(positions)                                        # [masses] Point
+    places = solids.mv.point(positions)                                        # [masses] Point-
     # Joining the masses makes the reflected shape visible throughout the turn.
-    shape = solids.rods(places, places[np.roll(np.arange(len(positions)), -1)], SHAPE_RADIUS * view.pixel)
+    shape = solids.rods(places, places[np.roll(np.arange(len(positions)), -1)], shape_radius * view.pixel)
     # Each mass a ball whose area goes with its mass.
-    balls = [solids.ball(places[mass:mass + 1], MASS_RADIUS * np.sqrt(masses[mass]) * view.pixel)
+    balls = [solids.ball(places[mass:mass + 1], mass_radius * np.sqrt(masses[mass]) * view.pixel)
              for mass in range(len(positions))]
-    shafts, heads = solids.arrows(places, solids.mv.point(positions + VELOCITY * velocities), SHAFT_RADIUS * view.pixel,
-                                  HEAD_LENGTH * view.pixel, HEAD_RADIUS * view.pixel)
-    parts = ([(shape, SHAPE)] + [(ball[:, None], colour) for ball, colour in zip(balls, COLOURS)]
-             + [(shafts, COLOURS), (heads, COLOURS)])
+    tips = solids.mv.point(positions + velocity_length * velocities)          # [masses] Point-
+    shafts, heads = solids.arrows(places, tips, shaft_radius * view.pixel, head_length * view.pixel,
+                                  head_radius * view.pixel)
+    parts = ([(shape, shape_colour)] + [(ball[:, None], colour) for ball, colour in zip(balls, mass_colours)]
+             + [(shafts, mass_colours), (heads, mass_colours)])
     return scene.draw(parts, inks=[], translucent=[], meshes=[])
 
 
 def frames(positions: Point, velocities: Point, masses: np.ndarray, moments: range) -> Iterator[np.ndarray]:
     """The motion and its mirror side by side, at each of the moments."""
-    paths, tangents = coordinates(positions), coordinates(velocities)         # [times, cases, masses, 3] each
+    paths = coordinates(positions)                                             # [times, cases, masses, 3]
+    tangents = coordinates(velocities)                                         # [times, cases, masses, 3]
     cases = scenes(paths)
     for time in moments:
         yield np.concatenate([case_image(scene, paths[time, case], tangents[time, case], masses)

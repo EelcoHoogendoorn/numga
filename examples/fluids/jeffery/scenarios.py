@@ -33,10 +33,10 @@ SHOWN = 2
 # The time span in periods of the rod's orbit, the steps per period, and the steps per frame.
 N_PERIODS = 2
 N_STEPS_PER_PERIOD = 120
-N_STEPS_PER_FRAME = 3
+N_STEPS_PER_FRAME = 2
 # The heights at which the flow is drawn, all where it moves, and the duration of a frame.
 HEIGHTS = np.array([-3.0, -2.0, -1.0, 1.0, 2.0, 3.0])
-DURATION_MS = 60
+DURATION_MS = 40
 # Gallery picture: this makes plots/jeffery.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
 GALLERY_PIXELS = 240
 

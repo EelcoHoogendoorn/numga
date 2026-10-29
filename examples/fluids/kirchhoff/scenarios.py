@@ -28,11 +28,11 @@ BLOW = 12
 HEADINGS = np.array([0.1, 0.1, np.pi / 2 - 0.1])
 # The time step, the steps, the steps per frame, the samples around the body's outline, and the
 # duration of a frame.
-DT = 0.2
-N_STEPS = 200
+DT = 0.16
+N_STEPS = 250
 N_STEPS_PER_FRAME = 2
 N_OUTLINE = 48
-DURATION_MS = 50
+DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------

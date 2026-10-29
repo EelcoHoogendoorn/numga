@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from functools import partial
 
+import jax
 import numpy as np
 
 from numga import Algebra, stack
@@ -21,13 +22,12 @@ from numga.backend.jax import JaxContext, derivative
 
 ga = Algebra("s0v0")
 mv = JaxContext(ga, np.float64).multivector
-Scalar = ga.gatype.scalar()
-State = ga.gatype.antivector()
-Reading = ga.gatype((Scalar, State))
-Hessian = ga.gatype((Scalar, State, State))
+Scalar = ga.gatype.scalar()                                # Scalar+
+State = ga.gatype.antivector()                             # Antivector-
+Reading = ga.gatype((Scalar, State))                       # Scalar+ <- State-
 
-entropy: Reading = mv.s & State                            # Scalar <- State
-volume: Reading = mv.v & State                             # Scalar <- State
+entropy = mv.s & State                                     # [] Scalar+ <- State-
+volume = mv.v & State                                      # [] Scalar+ <- State-
 
 
 # --- math -----------------------------------------------------------------------------
@@ -36,30 +36,34 @@ def energy(state: State, thermal_capacity: float) -> Scalar:
     return thermal_capacity * ((entropy(state) - volume(state).log()) / thermal_capacity).exp()
 
 
+@jax.jit
 def response(state: State, thermal_capacity: float) -> tuple[Scalar, Scalar, Reading, Reading]:
     """Temperature and pressure, and the readings of how they change, all differentiated from the energy."""
     potential = partial(energy, thermal_capacity=thermal_capacity)
-    differential: Reading = derivative(potential)(state)              # [...] Scalar <- State
-    hessian: Hessian = derivative(derivative(potential))(state)       # [...] Scalar <- (State, State)
+    differential = derivative(potential)(state)                       # [...] Scalar+ <- State-
+    hessian = derivative(derivative(potential))(state)                # [...] Scalar+ <- (State-, State-)
     return differential(mv.s.dual()), -differential(mv.v.dual()), hessian(mv.s.dual()), -hessian(mv.v.dual())
 
 
+@jax.jit
 def heating_direction(state: State, constraint: Reading, thermal_capacity: float) -> tuple[State, Scalar]:
     """The change of state per degree warmer with the constraint's reading held, and the heat it takes in."""
     temperature, _, temperature_change, _ = response(state, thermal_capacity)
     # The two readings of one unknown change: the temperature's rises by one, the constraint's stays put.
-    changes = stack((temperature_change.broadcast_to(constraint.shape), constraint), axis=-1).field(0)
-    requested = mv.scalar([[1], [0]]).field(0)                         # Scalar[readings]
-    direction: State = changes.solve(requested)                        # [...] State
+    changes = stack((temperature_change.broadcast_to(constraint.shape), constraint),
+                    axis=-1).field(0)                                  # [...] (Scalar+ <- State-)[readings]
+    requested = mv.scalar([[1], [0]]).field(0)                         # Scalar+[readings]
+    direction = changes.solve(requested)                               # [...] State-
     return direction, temperature * entropy(direction)
 
 
 def held(states: State, thermal_capacity: float) -> Reading:
-    """What each of the two cylinders holds `[2]`: the latched one its volume, the loaded one its pressure."""
+    """What each of the two cylinders holds `[cylinders]`: the latched one its volume, the loaded one its pressure."""
     _, _, _, pressure_change = response(states, thermal_capacity)
     return stack((volume, pressure_change[1]))
 
 
+@jax.jit
 def heated(states: State, heat: float, thermal_capacity: float) -> State:
     """The cylinders' states after taking in a little heat each, along their heating directions, by the midpoint rule."""
     direction, capacity = heating_direction(states, held(states, thermal_capacity), thermal_capacity)

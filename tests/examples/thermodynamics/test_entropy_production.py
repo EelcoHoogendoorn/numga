@@ -8,7 +8,7 @@ from numga import stack
 from numga.backend.jax import derivative
 from examples.thermodynamics.entropy_production import core, render, scenarios
 
-ROUND_OFF = 1e-11
+round_off = 1e-11
 
 
 def test_differential_and_mobility_generate_physical_heat_flow():
@@ -18,24 +18,24 @@ def test_differential_and_mobility_generate_physical_heat_flow():
     temperatures_a = np.array([0.4, 1, 4])
     temperatures_b = np.array([3, 1, 0.6])
     states = core.mv.a.dual() * (capacity_a * temperatures_a) + core.mv.b.dual() * (capacity_b * temperatures_b)
-    covector = core.entropy_covector(states, capacity_a, capacity_b)
+    gradient = core.entropy_gradient(states, capacity_a, capacity_b)
     differential = derivative(lambda state: core.entropy(state, capacity_a, capacity_b))(states)
     mobility = core.mobility(states, capacity_a, capacity_b, conductance)
-    flow = mobility(covector)
+    flow = mobility(gradient)
     expected_flow = core.transfer * conductance * (temperatures_a - temperatures_b)
     expected_production = conductance * (temperatures_a - temperatures_b) ** 2 / (temperatures_a * temperatures_b)
     probe_a = core.mv.a * np.array([-3, 0, 4]) + core.mv.b * np.array([2, 7, -1])
     probe_b = core.mv.a * np.array([1, -1, 2]) + core.mv.b * np.array([4, 2, 3])
 
     # checks
-    np.testing.assert_allclose(((covector & core.State) - differential).kernel, 0, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose((flow - expected_flow).kernel, 0, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose(mobility(core.energy_covector).kernel, 0, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose(core.total_energy(flow).kernel, 0, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose(((covector & flow) - expected_production).kernel, 0, atol=ROUND_OFF, rtol=0)
+    np.testing.assert_allclose(((gradient & core.State) - differential).kernel, 0, atol=round_off, rtol=0)
+    np.testing.assert_allclose((flow - expected_flow).kernel, 0, atol=round_off, rtol=0)
+    np.testing.assert_allclose(mobility(core.energy_gradient).kernel, 0, atol=round_off, rtol=0)
+    np.testing.assert_allclose(core.total_energy(flow).kernel, 0, atol=round_off, rtol=0)
+    np.testing.assert_allclose(((gradient & flow) - expected_production).kernel, 0, atol=round_off, rtol=0)
     np.testing.assert_allclose(((probe_b & mobility(probe_a)) - (probe_a & mobility(probe_b))).kernel,
-                               0, atol=ROUND_OFF, rtol=0)
-    assert np.all((probe_a & mobility(probe_a)).kernel >= -ROUND_OFF)
+                               0, atol=round_off, rtol=0)
+    assert np.all((probe_a & mobility(probe_a)).kernel >= -round_off)
 
 
 def test_finite_steps_conserve_energy_increase_entropy_and_reach_equilibrium():
@@ -66,18 +66,18 @@ def test_finite_steps_conserve_energy_increase_entropy_and_reach_equilibrium():
 
     # checks
     np.testing.assert_allclose((core.total_energy(states) - core.total_energy(initial)).kernel,
-                               0, atol=ROUND_OFF, rtol=0)
-    assert np.all((entropies[1:] - entropies[:-1]).kernel >= -ROUND_OFF)
+                               0, atol=round_off, rtol=0)
+    assert np.all((entropies[1:] - entropies[:-1]).kernel >= -round_off)
     assert np.all(core.energy_a(states).kernel > 0)
     assert np.all(core.energy_b(states).kernel > 0)
     np.testing.assert_allclose((temperatures[0][-1] - temperatures[1][-1] - expected_difference).kernel,
-                               0, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose((relaxed - equilibrium).kernel, 0, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose((no_transfer - initial).kernel, 0, atol=ROUND_OFF, rtol=0)
+                               0, atol=round_off, rtol=0)
+    np.testing.assert_allclose((relaxed - equilibrium).kernel, 0, atol=round_off, rtol=0)
+    np.testing.assert_allclose((no_transfer - initial).kernel, 0, atol=round_off, rtol=0)
 
 
 def test_exchange_frames_are_drawn():
     frames = render.exchange(scenarios.entropy_of, scenarios.temperatures_of, core.transfer,
-                             np.array([scenarios.CAPACITY_A, scenarios.CAPACITY_B]), scenarios.exchange(6, 5))
+                             np.array([scenarios.capacity_a, scenarios.capacity_b]), scenarios.exchange(6, 5))
     frame = next(itertools.islice(frames, 3, None))
     assert frame.ndim == 3 and frame.dtype == np.uint8

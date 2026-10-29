@@ -21,7 +21,7 @@ RECIPROCAL_COLOUR = "0.2"
 # tension, so each side saturates at its own end. The widths of the bars.
 STRESS_MAP = "coolwarm_r"
 COMPRESSION, TENSION = -0.3, 1.5
-BAR_WIDTH = 2.2
+BAR_WIDTH = 1.6
 REACH = 1.25
 # The terrain's view, elevation and azimuth in radians, azimuth zero looking along +y, the margin around it as a
 # share of its larger side, and the pixels across its picture, until the view is fitted to its axes; how much each
@@ -31,7 +31,7 @@ ELEVATION, AZIMUTH = np.radians([28.0, 30.0])
 MARGIN = 0.08
 N_PIXELS = 1000
 TERRAIN_OPACITY = 0.16
-CREASE_WIDTH, BOUNDARY_WIDTH = 3.5, 1.75
+CREASE_WIDTH, BOUNDARY_WIDTH = 2.2, 1.5
 # The room an animation's view leaves above and below the terrain of its first frame, for the heights to move in.
 SWING = 0.02
 BACKGROUND = np.ones(3)
@@ -92,7 +92,7 @@ def panels(mesh: core.Mesh, points: core.Point, framing: solids.View
     it, an edge across every bar."""
     inner, (left, right) = mesh.interior_edges, mesh.edge_faces.T
     xy = positions(points.batch())[:, :2]                               # [vertices, 2]
-    figure = plt.figure(figsize=(10.0, 5.0))
+    figure = plt.figure(figsize=(6.0, 3.0))
     terrain_axes = figure.add_axes((0.0, 0.0, 0.5, 1.0))
     framing = fitted(framing, terrain_axes)
     picture = show(terrain_axes, np.zeros(framing.shape + (3,), dtype=np.uint8), framing)
@@ -100,7 +100,7 @@ def panels(mesh: core.Mesh, points: core.Point, framing: solids.View
     bars = plane.add_collection(LineCollection(xy[mesh.edges[inner]], linewidths=BAR_WIDTH))
     plane.add_collection(LineCollection(xy[mesh.edges[mesh.boundary_edges]], colors="0.5", linewidths=1.0))
     diagram = plane.add_collection(LineCollection([], colors=RECIPROCAL_COLOUR, linewidths=1.0))
-    vertices = plane.scatter(np.zeros(0), np.zeros(0), color=RECIPROCAL_COLOUR, s=8, zorder=3)
+    vertices = plane.scatter(np.zeros(0), np.zeros(0), color=RECIPROCAL_COLOUR, s=5, zorder=3)
     plane.set(xlim=(-REACH, REACH), ylim=(-REACH, REACH), aspect="equal")
     plane.set_axis_off()
 

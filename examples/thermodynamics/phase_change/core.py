@@ -12,6 +12,10 @@ of the fluid.
 """
 from __future__ import annotations
 
+from functools import partial
+
+import jax
+import jax.numpy as jnp
 import numpy as np
 
 from numga import Algebra
@@ -19,8 +23,11 @@ from numga.backend.jax import JaxContext, derivative
 
 ga = Algebra("l0g0")
 mv = JaxContext(ga, np.float64).multivector
-Scalar = ga.gatype.scalar()
-State = ga.gatype.antivector()
+Scalar = ga.gatype.scalar()                                # Scalar+
+State = ga.gatype.antivector()                             # Antivector-
+
+liquid_volume = mv.l & State                               # [] Scalar+ <- State-
+vapour_volume = mv.g & State                               # [] Scalar+ <- State-
 
 
 # --- math -----------------------------------------------------------------------------
@@ -32,7 +39,8 @@ def pressure(volume: Scalar, temperature: np.ndarray, attraction: float, exclusi
 def helmholtz_energy(volume: Scalar, temperature: np.ndarray, capacity: float, attraction: float,
                      exclusion: float) -> Scalar:
     """The Helmholtz energy whose slope along the volume is minus the pressure."""
-    return -capacity * temperature * np.log(temperature) - temperature * (volume - exclusion).log() - attraction / volume
+    return (-capacity * temperature * jnp.log(temperature) - temperature * (volume - exclusion).log()
+            - attraction / volume)
 
 
 def chemical_potential(volume: Scalar, temperature: np.ndarray, capacity: float, attraction: float,
@@ -50,32 +58,35 @@ def enthalpy(volume: Scalar, temperature: np.ndarray, capacity: float, attractio
             + pressure(volume, temperature, attraction, exclusion) * volume)
 
 
-def isobar_temperature(volume: Scalar, level: float, attraction: float, exclusion: float) -> Scalar:
-    """The equation of state solved for the temperature: where the isobar at a pressure level passes each volume."""
-    return (level + attraction / volume.squared()) * (volume - exclusion)
+def isobar_temperature(volume: Scalar, isobar_pressure: Scalar, attraction: float, exclusion: float) -> Scalar:
+    """The equation of state solved for the temperature: where the isobar at a pressure passes each volume."""
+    return (isobar_pressure + attraction / volume.squared()) * (volume - exclusion)
 
 
-def volume_at(temperature: np.ndarray, level: float, guess: Scalar, attraction: float, exclusion: float,
+@partial(jax.jit, static_argnames="n_steps")
+def volume_at(temperature: np.ndarray, isobar_pressure: Scalar, guess: Scalar, attraction: float, exclusion: float,
               n_steps: int) -> Scalar:
-    """The volume where the isobar at a pressure level reaches each temperature, by Newton's method from a guess on
-    the liquid's or the vapour's side."""
-    gap = lambda volume: isobar_temperature(volume, level, attraction, exclusion) - temperature
+    """The volume where the isobar at a pressure reaches each temperature, by Newton's method from a guess on the
+    liquid's or the vapour's side."""
+    gap = lambda volume: isobar_temperature(volume, isobar_pressure, attraction, exclusion) - temperature
     volume = guess
     for _ in range(n_steps):
-        volume = volume - derivative(gap)(volume).solve(gap(volume))
+        volume = volume - derivative(gap)(volume).solve(gap(volume))                     # [...] Scalar+
     return volume
 
 
 def mismatch(state: State, temperature: np.ndarray, capacity: float, attraction: float, exclusion: float) -> State:
     """How far the phases at the state's two volumes are from coexisting: their difference in pressure along the
     liquid's volume, in chemical potential along the vapour's."""
-    liquid, vapour = mv.l & state, mv.g & state
-    pressure_gap = pressure(liquid, temperature, attraction, exclusion) - pressure(vapour, temperature, attraction, exclusion)
+    liquid, vapour = liquid_volume(state), vapour_volume(state)
+    pressure_gap = (pressure(liquid, temperature, attraction, exclusion)
+                    - pressure(vapour, temperature, attraction, exclusion))
     chemical_gap = (chemical_potential(liquid, temperature, capacity, attraction, exclusion)
                     - chemical_potential(vapour, temperature, capacity, attraction, exclusion))
     return mv.l.dual() * pressure_gap + mv.g.dual() * chemical_gap
 
 
+@partial(jax.jit, static_argnames="n_steps")
 def coexistence(temperature: np.ndarray, capacity: float, attraction: float, exclusion: float,
                 n_steps: int) -> State:
     """The coexisting volumes at each temperature `[...]`, by Newton's method: each step solves the mismatch's
@@ -83,19 +94,19 @@ def coexistence(temperature: np.ndarray, capacity: float, attraction: float, exc
     the mismatch."""
     # Below the critical point the two volumes part as the square root of the distance from it, the liquid's
     # slowly, the vapour's fast; this starts each on its own side.
-    below = np.sqrt(1 - temperature)
-    state = mv.l.dual() / (1 + 2 * below) + mv.g.dual() / (1 - below) ** 3                 # [...] State
+    below = jnp.sqrt(1 - temperature)
+    state = mv.l.dual() / (1 + 2 * below) + mv.g.dual() / (1 - below) ** 3                 # [...] State-
     gap = lambda state: mismatch(state, temperature, capacity, attraction, exclusion)
     for _ in range(n_steps):
-        state = state - derivative(gap)(state).solve(gap(state))                          # [...] State
+        state = state - derivative(gap)(state).solve(gap(state))                          # [...] State-
     return state
 
 
 def mixture(coexisting: State, vapour_fraction: float, temperature: float, capacity: float, attraction: float,
             exclusion: float) -> tuple[Scalar, Scalar, Scalar]:
-    """A mixture with a fraction of its amount as vapour: its volume and its enthalpy, each shared out between the
+    """The volume and the enthalpy of a mixture with a fraction of its amount as vapour, each shared out between the
     phases by that fraction, and the volume its liquid takes up."""
-    liquid, vapour = mv.l & coexisting, mv.g & coexisting
+    liquid, vapour = liquid_volume(coexisting), vapour_volume(coexisting)
     heat_content = lambda volume: enthalpy(volume, temperature, capacity, attraction, exclusion)
     volume = (1 - vapour_fraction) * liquid + vapour_fraction * vapour
     shared_enthalpy = (1 - vapour_fraction) * heat_content(liquid) + vapour_fraction * heat_content(vapour)

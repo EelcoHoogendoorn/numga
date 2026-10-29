@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
+from examples.util import charts
 from examples.util.animation import capture
 from examples.fluids.kirchhoff import core
 
@@ -31,14 +32,16 @@ def coordinates(points: core.Point) -> np.ndarray:
     return (stack((mv.x, mv.y), axis=-1) & points.normalized()[..., None]).to_array()
 
 
+@charts.style()
 def draw_coefficients(aspects: np.ndarray, ratios: core.Scalar) -> plt.Figure:
     """The fluid's kinetic energy over the solid's for spheroids of each aspect `[aspects, 3]`, against
     the aspect: discs on the left, rods on the right."""
     values = ratios.to_array()                                                # [aspects, 3]
-    figure, ax = plt.subplots(figsize=(4.4, 2.6), dpi=90)
+    # Half the column: three smooth curves, and room for the two long axis names.
+    figure, ax = charts.subplots(420, 280)
     for column, colour in enumerate(COEFFICIENTS):
-        ax.plot(aspects, values[:, column], color=colour, linewidth=1.8)
-    ax.axvline(1, color="#cbd5e1", linewidth=0.8, zorder=0)
+        ax.plot(aspects, values[:, column], color=colour)
+    ax.axvline(1, color="#cbd5e1", linewidth=charts.FRAME_WIDTH, zorder=0)
     ax.set_xscale("log")
     # The ratios from their zero, read off at the ticks; the aspect without numbers: discs on the left, rods on the
     # right, the sphere at the grey line.

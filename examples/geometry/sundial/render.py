@@ -9,6 +9,7 @@ from matplotlib.collections import LineCollection
 from matplotlib.colors import to_rgb
 import numpy as np
 
+from examples.util import charts
 from examples.util.animation import capture
 from examples.geometry.sundial import core
 from numga import concatenate, stack
@@ -34,7 +35,7 @@ SUNWARD = 2.0
 ELEVATION, AZIMUTH = np.radians(16.0), np.radians(-125.0 + 90.0)
 MARGIN = 0.04
 # The widths of the rays and of the day's shadow path, in pixels; the thickness of the dial's plate and of the gnomon.
-RAY_WIDTH, PATH_WIDTH = 2.3, 3.9
+RAY_WIDTH, PATH_WIDTH = 1.8, 3.1
 PLATE_THICKNESS, GNOMON_THICKNESS = 0.25, 0.08
 # The dial's corners, east, north and up.
 DIAL = np.array([[EAST[0], NORTH[0], 0], [EAST[1], NORTH[0], 0], [EAST[1], NORTH[1], 0], [EAST[0], NORTH[1], 0]])
@@ -63,26 +64,30 @@ def draw_face(ax: plt.Axes, nodus: core.Point, foot: core.Point, seasons: np.nda
               suns: core.Point, hours: np.ndarray, faint: bool) -> None:
     """Draw the dial face with each season's shadow path, the numbered hour lines from solstice to solstice, and the gnomon's base along the noon line."""
     paths = shadows(nodus, days)                                               # [seasons, samples, 2]
-    ax.add_collection(LineCollection(paths, colors=season_colours(seasons), linewidths=1.6, alpha=0.35 if faint else 1.0))
+    ax.add_collection(LineCollection(paths, colors=season_colours(seasons), alpha=0.35 if faint else 1.0))
     lines = shadows(nodus, suns)                                               # [hours, declinations, 2]
-    ax.add_collection(LineCollection(lines, colors=HOUR_COLOUR, linewidths=0.8))
+    # The hour lines thin, a frame's width, under the seasons' paths.
+    ax.add_collection(LineCollection(lines, colors=HOUR_COLOUR, linewidths=charts.FRAME_WIDTH))
     for hour, line in zip(hours, lines):
         segment = line[~np.isnan(line[:, 0])]
         outward = segment[0] - segment[-1]
         place = segment[0] - INSET * outward / np.linalg.norm(outward)
-        ax.text(*place, f"{hour}", fontsize=8, color=HOUR_COLOUR, ha="center", va="center",
+        ax.text(*place, f"{hour}", color=HOUR_COLOUR, ha="center", va="center",
                 bbox=dict(facecolor="white", edgecolor="none", pad=0.5))
     # The gnomon's edge seen from above: from the foot of the style to the point below the nodus.
     base = np.stack([coordinates(foot), coordinates(nodus) * [1, 1, 0]])[:, :2]
-    ax.plot(*base.T, color=GNOMON_COLOUR, linewidth=3, solid_capstyle="butt")
+    # The gnomon's base bold, three lines wide.
+    ax.plot(*base.T, color=GNOMON_COLOUR, linewidth=3 * charts.LINE_WIDTH, solid_capstyle="butt")
     ax.set(xlim=EAST, ylim=NORTH, aspect="equal")
     ax.set_axis_off()
 
 
+@charts.style()
 def draw_dial(nodus: core.Point, foot: core.Point, seasons: np.ndarray, days: core.Point, suns: core.Point,
               hours: np.ndarray) -> plt.Figure:
     """Render the static dial face figure."""
-    figure, ax = plt.subplots(figsize=(6.0, 4.6), layout="constrained")
+    # Over half the column: the hour lines, their numerals and the seasons' paths across the dial.
+    figure, ax = charts.subplots(460, 345, layout="constrained")
     draw_face(ax, nodus, foot, seasons, days, suns, hours, faint=False)
     return figure
 
@@ -153,14 +158,17 @@ def animate_year(declinations: np.ndarray, rays: core.Point, days: core.Point, n
                  seasons: np.ndarray, season_days: core.Point, suns: core.Point, hours: np.ndarray) -> Iterator[np.ndarray]:
     """Yield each frame of the year with the day's rays past the nodus in space on the left and the day's shadow path across the dial face on the right."""
     dial = dial_in_space(nodus, foot)
-    # Lay the figure out once; only the sky and the day's shadow path change between frames.
-    figure = plt.figure(figsize=(10.0, 4.6))
-    sky_axes = figure.add_axes((0.0, 0.0, 0.5, 1.0))
+    # Lay the figure out once; only the sky and the day's shadow path change between frames. The whole column: the
+    # sky's picture beside the dial, whose lines and numerals are made under the charts' style.
+    with charts.style():
+        figure = plt.figure(figsize=(800 / charts.DPI, 370 / charts.DPI), dpi=charts.DPI)
+        sky_axes = figure.add_axes((0.0, 0.0, 0.5, 1.0))
+        face = figure.add_axes((0.52, 0.04, 0.46, 0.92))
+        draw_face(face, nodus, foot, seasons, season_days, suns, hours, faint=True)
+        # The day's shadow path bold, twice a line's width.
+        path = face.add_collection(LineCollection([], colors=DAY_COLOUR, linewidths=2 * charts.LINE_WIDTH))
     view = sky_view(sky_axes, nodus, rays)
     sky = show(sky_axes, np.ones((*view.shape, 3)), view)
-    face = figure.add_axes((0.52, 0.04, 0.46, 0.92))
-    draw_face(face, nodus, foot, seasons, season_days, suns, hours, faint=True)
-    path = face.add_collection(LineCollection([], colors=DAY_COLOUR, linewidths=2.2))
     for index in range(len(declinations)):
         beams, inks = sunlight(nodus, rays[index], days[index], view)
         sky.set_data(solids.draw(dial + beams, view, np.ones(3), inks, translucent=[], meshes=[]))

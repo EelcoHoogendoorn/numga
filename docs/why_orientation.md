@@ -166,7 +166,7 @@ Here the body's rate of turning is represented by an extrinsic line, oriented ar
 Line = ga.gatype.bivector()                                   # Bivector+
 points = mv.point([[1.0, 0.0, 0.0], [0.0, 1.0, 0.5], [-0.5, 0.0, 1.0]])  # [points] Antivector-
 masses = np.array([1.0, 1.5, 0.5])
-inertia = (points & points.commutator(Line) * masses).sum()    # Antibivector- <- Bivector+
+inertia = points.regressive(points.commutator(Line) * masses).sum()  # Antibivector- <- Bivector+
 # Turning about z, and a little about x.
 rate = (mv.x ^ mv.y) + 0.3 * (mv.y ^ mv.z)                    # Bivector+
 momentum = inertia(rate)                                     # Antibivector-

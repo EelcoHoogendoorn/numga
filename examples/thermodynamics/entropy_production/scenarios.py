@@ -5,44 +5,44 @@ from collections.abc import Iterator
 
 import numpy as np
 
+from numga import stack
 from examples.thermodynamics.entropy_production import core
 
-CAPACITY_A, CAPACITY_B, CONDUCTANCE = 1.0, 2.0, 0.6
-TEMPERATURE_A, TEMPERATURE_B = 2.8, 0.6
+capacity_a, capacity_b, conductance = 1.0, 2.0, 0.6
+initial_temperature_a, initial_temperature_b = 2.8, 0.6
+
+initial_state = (core.mv.a.dual() * (capacity_a * initial_temperature_a)
+                 + core.mv.b.dual() * (capacity_b * initial_temperature_b))          # [] State-
+relaxation_time = 1 / (conductance * (1 / capacity_a + 1 / capacity_b))
 
 
 # --- math -----------------------------------------------------------------------------
-def initial() -> core.State:
-    return core.mv.a.dual() * (CAPACITY_A * TEMPERATURE_A) + core.mv.b.dual() * (CAPACITY_B * TEMPERATURE_B)
-
-
 def entropy_of(states: core.State) -> core.Scalar:
-    return core.entropy(states, CAPACITY_A, CAPACITY_B)
+    return core.entropy(states, capacity_a, capacity_b)
 
 
-def temperatures_of(states: core.State) -> tuple[core.Scalar, core.Scalar]:
-    return core.temperatures(states, CAPACITY_A, CAPACITY_B)
-
-
-def relaxation_time() -> float:
-    return 1 / (CONDUCTANCE * (1 / CAPACITY_A + 1 / CAPACITY_B))
+def temperatures_of(states: core.State) -> core.Scalar:
+    """The two bodies' temperatures `[..., bodies]`."""
+    return stack(core.temperatures(states, capacity_a, capacity_b), axis=-1)
 
 
 def exchange(n_frames: int, n_relaxation_times: float) -> Iterator[tuple[core.State, core.State, float]]:
     """The two bodies' state, its heat flow and the time at each frame, over a number of relaxation times."""
-    dt = n_relaxation_times * relaxation_time() / (n_frames - 1)
-    state = initial()
+    dt = n_relaxation_times * relaxation_time / (n_frames - 1)
+    state = initial_state
     for frame in range(n_frames):
-        yield state, core.heat_flow(state, CAPACITY_A, CAPACITY_B, CONDUCTANCE), frame * dt
-        state = core.advance(state, CAPACITY_A, CAPACITY_B, CONDUCTANCE, dt)
+        yield state, core.heat_flow(state, capacity_a, capacity_b, conductance), frame * dt
+        state = core.advance(state, capacity_a, capacity_b, conductance, dt)
 
 
 if __name__ == "__main__":
     from examples.util.animation import save_animation, save_figure
     from examples.thermodynamics.entropy_production import render
 
-    capacities = np.array([CAPACITY_A, CAPACITY_B])
-    save_figure(render.draw(entropy_of, temperatures_of, core.transfer, capacities, *next(exchange(2, 5))[:2]),
+    n_frames, n_relaxation_times, frame_duration_ms = 135, 5, 40
+    capacities = np.array([capacity_a, capacity_b])
+    first_state, first_flow, _ = next(exchange(n_frames, n_relaxation_times))
+    save_figure(render.draw(entropy_of, temperatures_of, core.transfer, capacities, first_state, first_flow),
                 "entropy_production")
-    save_animation(render.exchange(entropy_of, temperatures_of, core.transfer, capacities, exchange(72, 5)),
-                   "entropy_production", 75)
+    save_animation(render.exchange(entropy_of, temperatures_of, core.transfer, capacities,
+                                   exchange(n_frames, n_relaxation_times)), "entropy_production", frame_duration_ms)

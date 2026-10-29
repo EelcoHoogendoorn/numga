@@ -113,7 +113,7 @@ def ellipsoid(half_widths: np.ndarray) -> DualQuadric:
 
 def pointcloud_inertia(points: Point, masses: Scalar) -> Inertia:
     """The inertia of the cloud, a map from rates to momenta: each point's join with its own motion, mass-weighted."""
-    return ((points & points.commutator(Bivector)) * masses).sum(axis=-1)
+    return (points.regressive(points.commutator(Bivector)) * masses).sum(axis=-1)
 
 
 def body(color: np.ndarray, dual: DualQuadric, motor: Motor, rate: Bivector, points: Point, masses: Scalar) -> Bodies:
@@ -231,8 +231,8 @@ def collide(bodies: Bodies, i: np.ndarray, j: np.ndarray, dt: float) -> tuple[Bo
     momentum = bodies.momentum
     for a, b, one, other in zip(i[touching], j[touching], forque_one[touching], forque_other[touching]):
         response_one, response_other = bodies.inverse_inertia[a](one), bodies.inverse_inertia[b](other)
-        closing = (response_one & momentum[a]) - (response_other & momentum[b])
-        compliance = (one & response_one) + (other & response_other)
+        closing = response_one.regressive(momentum[a]) - response_other.regressive(momentum[b])
+        compliance = one.regressive(response_one) + other.regressive(response_other)
         # Elastic: the closing rate reverses.
         impulse = -2.0 * closing / compliance
         momentum = momentum.at[a].set(momentum[a] + one * impulse).at[b].set(momentum[b] - other * impulse)

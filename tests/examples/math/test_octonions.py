@@ -11,7 +11,7 @@ def test_norm_composition_alternativity_and_nonassociativity():
     rng = np.random.default_rng(0)
     first, second, third = core.mv(core.Octonion, rng.normal(size=(3, 12, 8)))
     product = core.multiply(first, second)
-    error = core.norm_squared(product) - core.norm_squared(first) * core.norm_squared(second)
+    error = product.symmetric_conjugate_product() - first.symmetric_conjugate_product() * second.symmetric_conjugate_product()
     np.testing.assert_allclose(error.kernel, 0, atol=1e-10)
     np.testing.assert_allclose(core.associator(first, first, third).kernel, 0, atol=1e-10)
     np.testing.assert_allclose(core.associator(first, second, second).kernel, 0, atol=1e-10)
@@ -29,18 +29,19 @@ def test_left_multiplications_satisfy_all_clifford_relations():
 
 
 def test_fourteen_generators_obey_the_product_rule_and_exponentiate_to_automorphisms():
-    generators = core.symmetry_generators(scenarios.TOLERANCE)
+    generators = core.symmetry_generators(scenarios.tolerance)
     assert len(generators) == 14
-    basis = core.mv(core.Octonion, np.eye(8))
-    first, second = basis[:, None], basis[None, :]
-    defect = core.derivation_defect(generators[:, None, None], first, second)
-    np.testing.assert_allclose(defect.kernel, 0, atol=1e-12)
+    Octonion, multiply = core.Octonion, core.multiply
+    # Acting on a product equals acting on each factor in turn: the binary maps vanish.
+    derivations = generators.commutator(Octonion)
+    product_rule = derivations(multiply) - multiply(derivations, Octonion) - multiply(Octonion, derivations)
+    np.testing.assert_allclose(product_rule.kernel, 0, atol=1e-12)
 
     # The infinitesimal symmetries close under commutators, and finite turns preserve the product.
     brackets = generators[:, None].commutator(generators[None, :])
     np.testing.assert_allclose(brackets.commutator(core.orientation).kernel, 0, atol=1e-12)
-    rotors = (generators * (scenarios.ANGLE / 2)).exp()
-    finite = core.multiplication_defect(rotors[:, None, None], first, second)
+    rotors = (generators * (scenarios.angle / 2)).exp()
+    finite = (rotors >> multiply) - multiply(rotors >> Octonion, rotors >> Octonion)
     np.testing.assert_allclose(finite.kernel, 0, atol=1e-12)
 
 

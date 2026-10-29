@@ -122,7 +122,7 @@ Each axis of a map carries its own orientation. The inertia of three unit masses
 Inertia = ga.gatype((Antibivector, Bivector))                   # Antibivector- <- Bivector+
 
 points: Point = mv.point([[1, 0, 0], [0, 1, 0], [0, 0, 1]])    # [points] Antivector-
-inertia: Inertia = (points & points.commutator(Bivector)).sum(axis=0)  # Antibivector- <- Bivector+
+inertia: Inertia = points.regressive(points.commutator(Bivector)).sum(axis=0)  # Antibivector- <- Bivector+
 rate: Bivector = mv.xy                                       # Bivector+
 momentum: Antibivector = inertia(rate)                        # Antibivector-
 ```

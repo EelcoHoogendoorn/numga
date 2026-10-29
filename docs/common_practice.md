@@ -113,7 +113,7 @@ Three-dimensional vector mechanics describes a rotation by an arrow along its ax
 The [spinning top](../examples/mechanics/spinning_top/core.py) builds inertia from each mass point and the velocity induced there by a rate:
 
 ```python
-inertia = (points & points.commutator(Rate) * masses).sum()  # Forque <- Rate
+inertia = points.regressive(points.commutator(Rate) * masses).sum()  # Forque <- Rate
 ```
 
 The same construction applies to rotational and translational motion in projective geometry. Changing dimension changes the types and their coefficient counts while preserving the construction. In vector-mechanics notation the rotational part reads $I_{ij}=\sum m(r^2\delta_{ij}-r_i r_j)$; the terms arise when the action on rotation planes is expressed through axis vectors.

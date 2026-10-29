@@ -23,8 +23,8 @@ LENGTH = 10.0
 N_PIECES = 40
 LOAD = 1e-5
 # The frames of the load's turn and of its move across, and the duration of each.
-N_FRAMES = 48
-DURATION_MS = 60
+N_FRAMES = 72
+DURATION_MS = 40
 # The ends of the slotted tube's load's move across, across and up.
 ACROSS = [[0.4, 0.0], [-1.15, 0.0]]
 # The pushes along the beam: their size, and the points they go through, across and up, one inside

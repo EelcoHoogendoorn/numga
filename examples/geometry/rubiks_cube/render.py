@@ -21,7 +21,7 @@ BACKGROUND = np.ones(3)
 # and the image size in pixels.
 ELEVATION, AZIMUTH = np.radians([28.0, 32.0])
 MARGIN = 0.08
-N_PIXELS = 420
+N_PIXELS = 300
 # The factor by which the viewport widens around the initial cube so turning corners stay in frame.
 VIEW_ROOM = 1.25
 # The width in pixels and darkness of the border inked along each sticker square's outer edges.

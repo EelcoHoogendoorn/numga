@@ -3,6 +3,7 @@ import itertools
 
 import numpy as np
 
+from numga.backend.jax import derivative
 from examples.thermodynamics.property_charts import core, render, scenarios
 
 
@@ -24,15 +25,15 @@ def test_coil_and_reheater_close_mass_and_energy_balances():
     path, states, directions, (cooling, condensate, reheating, relative) = scenarios.conditioning(32)
     initial, cooled = states
     np.testing.assert_allclose((core.humidity(initial) - core.humidity(path[-1]) - condensate).to_array(), 0, atol=1e-11)
-    liquid_heat = condensate * core.LIQUID_HEAT * core.temperature(cooled)
-    np.testing.assert_allclose((core.enthalpy(initial) - core.enthalpy(path[-1]) - cooling - liquid_heat + reheating).to_array(),
+    condensate_heat = condensate * core.liquid_heat * core.temperature(cooled)
+    np.testing.assert_allclose((core.enthalpy(initial) - core.enthalpy(path[-1]) - cooling - condensate_heat + reheating).to_array(),
                                0, atol=1e-10)
     assert 40 < float(cooling.to_array()) < 50
     assert 0.009 < float(condensate.to_array()) < 0.011
     assert 0.5 < float(relative.to_array()) < 0.6
     np.testing.assert_allclose(core.temperature(directions).to_array(), 1, atol=1e-10)
     np.testing.assert_allclose(core.humidity(directions[0]).to_array(), 0, atol=1e-10)
-    constraint = core.derivative(scenarios.relative_humidity_of)(cooled)
+    constraint = derivative(scenarios.relative_humidity_of)(cooled)
     np.testing.assert_allclose(constraint(directions[1]).to_array(), 0, atol=1e-10)
 
 

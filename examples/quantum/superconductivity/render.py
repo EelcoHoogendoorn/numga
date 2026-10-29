@@ -12,6 +12,7 @@ from matplotlib.figure import Figure
 
 from examples.util.animation import capture
 from examples.quantum.superconductivity import core
+from examples.util import charts
 from examples.util.wgsl import fitted, labels, meshes, show, solids, strokes
 from examples.util.wgsl.scene import Scene
 
@@ -41,8 +42,8 @@ N_CIRCLE = 100
 AXIS_WIDTH, CIRCLE_WIDTH, PATH_WIDTH, STEM_WIDTH = 0.8, 0.64, 0.8, 1.43
 AXIS_HEAD_LENGTH, AXIS_HEAD_WIDTH, STEM_HEAD_LENGTH, STEM_HEAD_WIDTH = 5.6, 3.2, 5.2, 4.0
 TIP_RADIUS = 1.6
-# The resolution of the quantity plots and of the animation, in pixels per inch.
-DPI, ANIMATION_DPI = 75, 60
+# The animation's size in pixels: the chart of the arrows beside the gap's curve.
+QUENCH_PX = (640, 270)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -68,17 +69,19 @@ def readings(fields: core.Field, patch: core.Spin) -> np.ndarray:
     return (fields & patch).to_array()
 
 
+@charts.style()
 def draw_equilibrium(dispersion: core.Field, spins: core.Spin) -> Figure:
     energies = readings(dispersion, xy_patch)
     coherence = coherences(spins, (core.mv.yz, core.mv.zx, core.mv.xy))
-    figure, axes = plt.subplots(1, 2, figsize=(8.0, 2.7), dpi=DPI, layout="constrained")
-    axes[0].plot(energies, coherence[:, 2] + 0.5, color=INK, linewidth=2)
+    # A single smooth curve in each of two panels, wide enough for their long labels.
+    figure, axes = charts.subplots(640, 250, ncols=2, layout="constrained")
+    axes[0].plot(energies, coherence[:, 2] + 0.5, color=INK)
     axes[0].set(ylim=(0, 1.04))
-    axes[1].plot(energies, coherence[:, 0], color=PAIR, linewidth=2)
+    axes[1].plot(energies, coherence[:, 0], color=PAIR)
     axes[1].set(ylim=(0, 0.54))
     for axis, up in zip(axes, ("occupation per electron state", r"pair coherence in yz, $s_{yz}$")):
         axis.set(xlim=(energies[0], energies[-1]))
-        axis.axvline(0, color="0.85", linewidth=0.8, zorder=0)
+        axis.axvline(0, color="0.85", linewidth=charts.FRAME_WIDTH, zorder=0)
         plain_axes(axis, r"energy from chemical potential, $\xi$", up)
     return figure
 
@@ -105,7 +108,7 @@ def label_chart(axis: plt.Axes, view: solids.View) -> None:
     """The chart's axes named past their tips."""
     start, end = ENERGY_SCALE * ENERGY_START, ENERGY_SCALE * ENERGY_END
     names = np.array([[end + 0.12, 0, 0], [start, COHERENCE_REACH + 0.1, 0], [start, 0, COHERENCE_REACH + 0.1]])
-    labels(axis, view, sm.point(names), [r"$\xi$", r"$s_{yz}$", r"$s_{zx}$"], ha="center", va="center", fontsize=11,
+    labels(axis, view, sm.point(names), [r"$\xi$", r"$s_{yz}$", r"$s_{zx}$"], ha="center", va="center",
            color=AXIS_COLOUR)
 
 
@@ -123,62 +126,69 @@ def animate_quench(
     origins = np.stack([ENERGY_SCALE * energies, np.zeros_like(energies), np.zeros_like(energies)], axis=-1)
     colours = plt.colormaps["coolwarm"](np.linspace(0.08, 0.92, len(energies)))[:, :3]
 
-    figure = plt.figure(figsize=(9.0, 3.7), dpi=ANIMATION_DPI)
-    axis = figure.add_axes((0.01, 0.08, 0.57, 0.85))
-    curve = figure.add_axes((0.68, 0.22, 0.29, 0.64))
-    view, axes, circles = chart(energies, axis)
-    rings = (strokes.polylines([(circle, CIRCLE_COLOUR) for circle in circles], CIRCLE_WIDTH, view), CIRCLE_OPACITY)
-    scene = Scene(view, np.ones(3), axes, [rings], inks=[], translucent=[])
+    with charts.style():
+        figure = plt.figure(figsize=(QUENCH_PX[0] / charts.DPI, QUENCH_PX[1] / charts.DPI))
+        axis = figure.add_axes((0.01, 0.08, 0.57, 0.85))
+        curve = figure.add_axes((0.68, 0.22, 0.29, 0.64))
+        view, axes, circles = chart(energies, axis)
+        rings = (strokes.polylines([(circle, CIRCLE_COLOUR) for circle in circles], CIRCLE_WIDTH, view), CIRCLE_OPACITY)
+        scene = Scene(view, np.ones(3), axes, [rings], inks=[], translucent=[])
 
-    def arrows(coherence: np.ndarray) -> np.ndarray:
-        """Each level's arrow from the energy axis to its pair coherence, and its tip, over the path through the
-        tips."""
-        tips = origins + np.concatenate([np.zeros((len(coherence), 1)), coherence], axis=-1)
-        shafts, heads = solids.arrows(sm.point(origins), sm.point(tips), STEM_WIDTH / 2 * view.pixel,
-                                      STEM_HEAD_LENGTH * view.pixel, STEM_HEAD_WIDTH / 2 * view.pixel)
-        stems = [(shafts, colours), (heads, colours),
-                 (solids.ball(sm.point(tips), TIP_RADIUS * view.pixel)[:, None], np.array(to_rgb(PAIR)))]
-        path = strokes.polylines([(sm.point(tips), np.array(to_rgb(INK)))], PATH_WIDTH, view)
-        return scene.draw(stems, inks=[], translucent=[], meshes=[(path, PATH_OPACITY)])
+        def arrows(coherence: np.ndarray) -> np.ndarray:
+            """Each level's arrow from the energy axis to its pair coherence, and its tip, over the path through the
+            tips."""
+            tips = origins + np.concatenate([np.zeros((len(coherence), 1)), coherence], axis=-1)
+            shafts, heads = solids.arrows(sm.point(origins), sm.point(tips), STEM_WIDTH / 2 * view.pixel,
+                                          STEM_HEAD_LENGTH * view.pixel, STEM_HEAD_WIDTH / 2 * view.pixel)
+            stems = [(shafts, colours), (heads, colours),
+                     (solids.ball(sm.point(tips), TIP_RADIUS * view.pixel)[:, None], np.array(to_rgb(PAIR)))]
+            path = strokes.polylines([(sm.point(tips), np.array(to_rgb(INK)))], PATH_WIDTH, view)
+            return scene.draw(stems, inks=[], translucent=[], meshes=[(path, PATH_OPACITY)])
 
-    image = show(axis, arrows(transverse[0]), view)
-    label_chart(axis, view)
-    gap_line, = curve.plot([], [], color=PAIR, linewidth=2)
-    gap_tip, = curve.plot([], [], "o", color=PAIR, markersize=6)
-    # The gap's axis reaches past its value right after the quench, which it falls from.
-    curve.set(xlim=(times[0], times[-1]), ylim=(0, amplitudes[0] * 1.12))
-    plain_axes(curve, "time", r"$|\Delta|$")
+        image = show(axis, arrows(transverse[0]), view)
+        label_chart(axis, view)
+        gap_line, = curve.plot([], [], color=PAIR)
+        gap_tip, = curve.plot([], [], "o", color=PAIR)
+        # The gap's axis reaches past its value right after the quench, which it falls from.
+        curve.set(xlim=(times[0], times[-1]), ylim=(0, amplitudes[0] * 1.12))
+        plain_axes(curve, "time", r"$|\Delta|$")
 
-    for index, coherence in enumerate(transverse):
-        image.set_data(arrows(coherence))
-        gap_line.set_data(times[:index + 1], amplitudes[:index + 1])
-        gap_tip.set_data([times[index]], [amplitudes[index]])
-        yield capture(figure)
-    plt.close(figure)
+        for index, coherence in enumerate(transverse):
+            image.set_data(arrows(coherence))
+            gap_line.set_data(times[:index + 1], amplitudes[:index + 1])
+            gap_tip.set_data([times[index]], [amplitudes[index]])
+            yield capture(figure)
+        plt.close(figure)
 
 
+@charts.style()
 def draw_gap(times: np.ndarray, gaps: core.Field, equilibrium_gap: core.Field) -> Figure:
     amplitudes = gaps.norm().to_array()
     equilibrium = equilibrium_gap.norm().to_array()
-    figure, axis = plt.subplots(figsize=(7.5, 2.8), dpi=DPI, layout="constrained")
-    axis.plot(times, amplitudes, color=PAIR, linewidth=2, label="isolated condensate")
-    axis.axhline(equilibrium, color=INK, linestyle="--", linewidth=1, label="final ground-state gap")
+    # Two thirds of the column: the gap ringing down over time, under a legend of two names.
+    figure, axis = charts.subplots(540, 240, layout="constrained")
+    axis.plot(times, amplitudes, color=PAIR, label="isolated condensate")
+    axis.axhline(equilibrium, color=INK, linestyle="--", label="final ground-state gap")
     axis.set(xlim=(times[0], times[-1]), ylim=(0, amplitudes.max() * 1.05))
     axis.legend(frameon=False, ncol=2, loc="lower center")
     plain_axes(axis, "time", r"$|\Delta|$")
     return figure
 
 
+@charts.style()
 def draw_response(
     times: np.ndarray, exact: core.Field, predicted: core.Field, names: tuple[str, str],
 ) -> Figure:
     exact_amplitude = readings(exact, yz_patch)
     predicted_amplitude = readings(predicted, yz_patch)
-    figure, axis = plt.subplots(figsize=(7.5, 3.0), dpi=DPI, layout="constrained")
-    axis.plot(times, exact_amplitude, color=INK, linewidth=3, alpha=0.5, label="nonlinear evolution")
+    # Three quarters of the column: an oscillation and its two predictions, under a legend of three long names.
+    figure, axis = charts.subplots(600, 260, layout="constrained")
+    # The nonlinear evolution a broad faint band, three curves wide, for the dashed predictions to run over.
+    axis.plot(times, exact_amplitude, color=INK, linewidth=charts.points(3 * charts.LINE_PX), alpha=0.5,
+              label="nonlinear evolution")
     for values, name, colour in zip(predicted_amplitude.T, names, (PAIR, FIXED)):
-        axis.plot(times, values, color=colour, linewidth=1.5, linestyle="--", label=name)
+        axis.plot(times, values, color=colour, linestyle="--", label=name)
     axis.set(xlim=(times[0], times[-1]))
-    axis.legend(frameon=False, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 1), fontsize=9)
+    axis.legend(frameon=False, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 1))
     plain_axes(axis, "time", r"$\delta\Delta_{yz}$")
     return figure

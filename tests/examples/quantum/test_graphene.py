@@ -3,6 +3,8 @@ by the solid angle it encloses, and the scenarios draw."""
 
 from __future__ import annotations
 
+from functools import partial
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -35,7 +37,7 @@ def test_scenarios_draw():
     momenta, field, energies = scenarios.bands(4.5, 21, 0.0)
     for figure in (render.draw_field(momenta, field),
                    render.draw_bands(momenta, energies),
-                   render.draw_textures(*scenarios.textures(0.5, 7, 0.3)),
+                   render.draw_textures(partial(scenarios.upper_pseudospins, gap=0.3), 0.5),
                    render.draw_berry(radii, gaps, *scenarios.berry(radii, gaps, 200))):
         assert isinstance(figure, plt.Figure)
         plt.close(figure)

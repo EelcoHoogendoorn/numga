@@ -35,14 +35,14 @@ def refine(rays_1: Line, rays_2: Line, motor: Motor) -> Motor:
     baseline; the baseline's length is not observable and stays close to the given one.
     """
     # Camera 2's kinetic energy on twists in its own frame, to measure the step by.
-    kinetic = Twist & (body & body.commutator(Twist)).sum(axis=0)        # [] Scalar+ <- (Twist+, Twist+)
+    kinetic = Twist.regressive(body.regressive(body.commutator(Twist)).sum(axis=0))  # [] Scalar+ <- (Twist+, Twist+)
     # Two lines meet (are coplanar) iff their regressive product vanishes. For two lines
     # it is a number, one residual per ray pair.
     residuals = rays_1 & (motor >> rays_2)                               # [rays] Scalar-
 
     # A twist moves a line by their commutator, so the residual's rate of change under a
     # twist is a linear form on twists, its Jacobian.
-    jacobian = rays_1 & Twist.commutator(motor >> rays_2)                # [rays] Scalar- <- Twist+
+    jacobian = rays_1.regressive(Twist.commutator(motor >> rays_2))      # [rays] Scalar- <- Twist+
 
     # Gauss-Newton normal equations as forms on twists, summed over ray pairs. The residual
     # is already a number, so squaring it needs no metric: the curvature is the Jacobian

@@ -24,8 +24,8 @@ OFFSET = np.array([0.0, 0.0, 1.6])
 centre, axis, STRENGTH = core.mv.w.dual(), core.mv.z, 1.0
 # Bounds, frame count, and frame duration for sweeping the top vertex weight from light to heavy and back.
 WEIGHT_BOUNDS = (0.25, 4.0)
-N_SWEEP_FRAMES = 48
-DURATION_MS = 60
+N_SWEEP_FRAMES = 72
+DURATION_MS = 40
 
 # Three Loop steps of the octahedron, none of its vertices pinned, composed into one map from its vertex sites to
 # those of the refined mesh.

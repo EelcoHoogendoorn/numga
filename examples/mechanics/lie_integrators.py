@@ -67,10 +67,10 @@ def inertia_from_points(points: Extensor) -> tuple[Extensor, Extensor]:
     """The inertia of a point cloud of unit masses, and its inverse.
 
     Each point contributes the rate-to-momentum extensor:
-        points & points.commutator(points.algebra.gatype.bivector())
+        points.regressive(points.commutator(points.algebra.gatype.bivector()))
     the map from motion rates to the point joined with its velocity.
     """
-    inertia = (points & points.commutator(points.algebra.gatype.bivector())).sum(axis=-1)
+    inertia = points.regressive(points.commutator(points.algebra.gatype.bivector())).sum(axis=-1)
     return inertia, inertia.inverse()
 
 

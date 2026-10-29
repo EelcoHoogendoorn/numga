@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
+from numga import stack
 from examples.electromagnetism.magnetic_bottle import core
 from examples.util.wgsl import meshes, solids, strokes
 from examples.util.wgsl.scene import Scene
@@ -25,9 +26,9 @@ n_trail = 60
 # strength hides; in pixels, the widths of the tracks and of the wire and the radius of the particles; and the points
 # around a coil.
 elevation, azimuth = np.radians([22.0, -28.0])
-margin, n_pixels = 0.03, 760
+margin, n_pixels = 0.03, 320
 sheet_opacity = 0.55
-track_width, wire_width, particle_radius = 2.5, 6.0, 4.5
+track_width, wire_width, particle_radius = 1.2, 2.6, 2.2
 n_around_coil = 96
 
 
@@ -35,7 +36,7 @@ n_around_coil = 96
 def space(points: core.Antivector) -> np.ndarray:
     """Points in the view's space, on the last axis: along the bottle's axis, then across it twice, turned on from z,
     x and y, so that the tracks keep the sense they turn in."""
-    return np.stack([(mv.z & points).to_array(), (mv.x & points).to_array(), (mv.y & points).to_array()], axis=-1)
+    return (stack((mv.z, mv.x, mv.y)) & points[..., None]).to_array()
 
 
 def sheet(points: core.Antivector, strength: core.Scalar, view: solids.View) -> meshes.Samples:
@@ -57,23 +58,23 @@ def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.A
     """The particles' tracks `[steps, particles]`, coloured by their angle to the axis, each trailing behind its
     particle, through the field's strength at the points of a grid in the plane through the axis `[across, along]`,
     between the coils of a radius at their heights."""
-    tracks = solids.mv.point(space(events))                                   # [steps, particles] Point
+    tracks = solids.mv.point(space(events))                                   # [steps, particles] Point-
     grid = space(points)                                                      # [across, along, 3]
     colours = particle_colours(0.15 + 0.7 * (pitches - pitches.min()) / np.ptp(pitches))[:, :3]
     # The box of the grid, as deep across the axis as it is wide.
-    reach = np.abs(grid).max(axis=(0, 1))
-    box = np.stack(np.meshgrid(*[[-1, 1]] * 3, indexing="ij"), axis=-1).reshape(-1, 3) * [reach[0], reach[1], reach[1]]
+    half_extent = np.abs(grid).max(axis=(0, 1))
+    box = np.stack(np.meshgrid(*[[-1, 1]] * 3, indexing="ij"), axis=-1).reshape(-1, 3) * half_extent[[0, 1, 1]]
     view = solids.view([solids.mv.point(box)], 0.0, elevation, azimuth, margin, n_pixels)
     # What stays put, set up once: the sheet and the coils' wire, each coil a ring about the axis, x, through the point
     # a radius above the axis at its height.
-    rims = solids.origin + solids.mv.x.dual() * heights + solids.mv.z.dual() * radius   # [coils] Point
-    rings = meshes.circles(rims, solids.mv.y ^ solids.mv.z, n_around_coil)   # [coils, around + 1] Point
+    rims = solids.origin + solids.mv.x.dual() * heights + solids.mv.z.dual() * radius   # [coils] Point-
+    rings = meshes.circles(rims, solids.mv.yz, n_around_coil)                 # [coils, around + 1] Point-
     wire = strokes.polylines([(ring, to_rgb(wire_colour)) for ring in rings], wire_width, view)
     scene = Scene(view, np.ones(3), [], [(sheet(points, strength, view), sheet_opacity), (wire, 1.0)], inks=[],
                   translucent=[])
     # What moves, frame by frame: the particles and their trails.
     for end in range(n_steps_per_frame, len(tracks) + 1, n_steps_per_frame):
-        trail = tracks[max(0, end - n_trail):end]                             # [trail, particles] Point
+        trail = tracks[max(0, end - n_trail):end]                             # [trail, particles] Point-
         trails = strokes.polylines([(trail[:, particle], colour) for particle, colour in enumerate(colours)],
                                    track_width, view)
         particles = solids.ball(tracks[end - 1], particle_radius * view.pixel)[:, None]

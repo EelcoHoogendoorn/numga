@@ -31,9 +31,10 @@ pull_center = mv.vector([-0.25, 0.34, 1.92]).dual()          # Antivector-
 PULL_WIDTH = 0.23
 pull_force = (mv.x + 0.7 * mv.y) * 0.6                       # Vector+
 PULL_DURATION = 0.4
-# The time step and the steps, and the minimizer's iterations and tolerance per step.
-TIME_STEP = 0.05
-N_STEPS = 80
+# The time step, the steps and the steps per frame drawn, and the minimizer's iterations and tolerance per step.
+TIME_STEP = 0.02
+N_STEPS = 200
+N_STEPS_PER_FRAME = 2
 N_ITERATIONS = 30
 TOLERANCE = 1e-7
 
@@ -88,10 +89,10 @@ def main() -> None:
     from examples.util.animation import save_animation
     from examples.mechanics.freeform import render
 
-    duration_ms = round(TIME_STEP * 1000)
+    duration_ms = round(TIME_STEP * N_STEPS_PER_FRAME * 1000)
     states, faces = bunny()
     surfaces = stack(list(states))                                # [steps + 1, vertices] Antivector-
-    save_animation(render.frames(surfaces, faces), "freeform_bunny", duration_ms)
+    save_animation(render.frames(surfaces[::N_STEPS_PER_FRAME], faces), "freeform_bunny", duration_ms)
 
     # checks
     # The ear follows the pull and springs back after release, while the base moves a tenth as far.

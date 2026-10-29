@@ -18,8 +18,8 @@ N_WIDTH_SAMPLES = 13
 MAGNIFICATION = 5.0
 FIBRE_SPACING = 5.0                                           # mm between drawn fibre lines, across the fibres
 SEPARATION = 1.6 * WIDTH                                      # mm between the strips' centres
-N_FRAMES = 60
-DURATION_MS = 60
+N_FRAMES = 90
+DURATION_MS = 40
 # The pull grows from nothing to its full value; the animation plays it forward and back, once per loop.
 LOADS = (1 - np.cos(np.linspace(0, np.pi, N_FRAMES // 2 + 1))) / 2
 

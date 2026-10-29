@@ -26,7 +26,7 @@ def test_the_ellipsoids_are_reciprocal_and_the_force_ellipsoid_holds_unit_torque
 def test_figure_renders():
     poses = [scenarios.ellipsoids(angles, scenarios.VELOCITY_SCALE, scenarios.FORCE_SCALE)
              for angles in (scenarios.REACHING, scenarios.NEARLY_STRAIGHT)]
-    figure = render.draw_ellipsoids(poses, scenarios.VIEW, scenarios.CENTRE, scenarios.EXTENT)
+    figure = render.draw_ellipsoids(poses, scenarios.VIEW)
     assert isinstance(figure, plt.Figure)
     plt.close(figure)
 

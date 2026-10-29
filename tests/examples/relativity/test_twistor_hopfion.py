@@ -9,16 +9,17 @@ def test_hopfion_is_null_and_its_energy_follows_the_robinson_congruence():
     rng = np.random.default_rng(41)
     events = core.mv(core.Event, rng.uniform(-2, 2, (128, 4)))
     field = core.hopfion(events)
-    electric = field | core.mv.t
-    magnetic = (core.mv.xyzt * field) | core.mv.t
-    energy = (electric.squared() + magnetic.squared()) / 2
-    flow = -core.SPATIAL_VOLUME * (electric ^ magnetic)
+    # The field's flux along the observer's time: its energy along time, its flow across space.
+    flux = field >> core.time
+    energy = core.mv.t & flux
     direction = core.robinson(events)
 
-    np.testing.assert_allclose(field.squared().kernel, 0, atol=1e-12)
-    np.testing.assert_allclose((flow / energy + core.mv.t - direction).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose((field | direction).kernel, 0, atol=1e-12)
-    assert np.all(energy.kernel > 0)
+    # The field is null, its energy flows along the Robinson ray at unit time, and the ray's
+    # direction is left alone by the field's action.
+    np.testing.assert_allclose(field.squared().kernel, 0, atol=1e-14)
+    np.testing.assert_allclose((flux / energy - direction).kernel, 0, atol=1e-13)
+    np.testing.assert_allclose(field.commutator(direction).kernel, 0, atol=1e-14)
+    assert np.all(energy > 0)
 
 
 def test_hopfion_satisfies_vacuum_maxwell_equations():

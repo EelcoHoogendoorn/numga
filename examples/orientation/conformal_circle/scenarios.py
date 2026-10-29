@@ -12,7 +12,7 @@ from examples.orientation.conformal_circle import core
 from examples.orientation.conformal_circle.core import Point, Sphere, mv
 
 # The duration of each animation frame in milliseconds.
-DURATION_MS = 70
+DURATION_MS = 40
 
 
 def circle() -> tuple[Point, Point, Point, Sphere, Sphere]:
@@ -49,7 +49,7 @@ def circle_motions() -> tuple[Iterator[Point], Point]:
     # The sphere at infinity.
     horizon = mv.e + mv.w                                                       # [] Sphere+
     reflector = mv.x                                                            # [] Sphere+
-    n_frames, n_radii, n_angles = 64, 40, 96
+    n_frames, n_radii, n_angles = 112, 40, 96
     glide_amplitude = 0.9
     phases = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)
     radii = np.linspace(0, 1, n_radii + 1)

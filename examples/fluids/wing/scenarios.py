@@ -25,13 +25,13 @@ N_ANGLES = 360
 N_DRAWN_RINGS = 35
 N_DRAWN_ANGLES = 90
 OUTER_DISTANCE = 6.0
-# README picture: the sweep's frames and their duration make plots/wing.gif, 400 pixels across and under 1.5 MB,
+# README picture: the sweep's frames and their duration make plots/wing.gif, 400 pixels across,
 # tuned as a visual for the README. Don't change them; to experiment, copy them.
-N_FRAMES = 48
-SWEEP_DURATION_MS = 100
-N_MORPH_FRAMES = 60
+N_FRAMES = 120
+SWEEP_DURATION_MS = 40
+N_MORPH_FRAMES = 90
 MORPH_ATTACK = np.deg2rad(8.0)
-DURATION_MS = 60
+DURATION_MS = 40
 # The stream, along the wing's chord when level.
 stream = SPEED * core.mv.x.dual()                                            # [] Point-
 
