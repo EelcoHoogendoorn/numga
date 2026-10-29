@@ -58,8 +58,8 @@ def plain_axes(ax: plt.Axes) -> None:
 
 def vertex_averages(mesh: core.Mesh, areas: core.Scalar, face_field: core.Scalar) -> np.ndarray:
     """Area-weighted vertex average of a scalar face field for smooth Gouraud shading."""
-    thirds = mesh.incidence[2, 0].mean(axis=0)
-    vertex_field = (~thirds * (areas * face_field)) / (~thirds * areas)
+    corner_mean = mesh.incidence[2, 0].mean(axis=0)
+    vertex_field = (~corner_mean * (areas * face_field)) / (~corner_mean * areas)
     return np.asarray(vertex_field.batch().to_array())
 
 

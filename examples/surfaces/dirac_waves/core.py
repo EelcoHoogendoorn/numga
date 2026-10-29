@@ -49,8 +49,8 @@ def spread(mesh: Mesh, points: Point, start: Even, interval: float) -> Iterator[
     # A face's area is half the size of its plane, the commutator of two of its edges; a vertex's is a third
     # of the area of each face at it.
     triangle_areas = edges[1].commutator(edges[0]).norm() / 2              # Scalar+[faces]
-    thirds = mesh.incidence[2, 0].mean(axis=0)                             # Scalar+[faces <- vertices]
-    dual_areas = ~thirds * triangle_areas                                  # Scalar+[vertices]
+    corner_mean = mesh.incidence[2, 0].mean(axis=0)                        # Scalar+[faces <- vertices]
+    dual_areas = ~corner_mean * triangle_areas                             # Scalar+[vertices]
 
     face_areas = spdiag(triangle_areas)                                    # Scalar+[faces <- faces]
     inverse_face_areas = spdiag(1 / triangle_areas)                        # Scalar+[faces <- faces]
@@ -73,8 +73,8 @@ def modes(mesh: Mesh, points: Point, sizes: np.ndarray, probe: Even, frequencies
     `[frequencies, phases] Even-[faces]`."""
     edges = mesh.boundary[2, 1] * (mesh.d[0] * points)                     # [3] Point-[faces]
     triangle_areas = edges[1].commutator(edges[0]).norm() / 2              # Scalar+[faces]
-    thirds = mesh.incidence[2, 0].mean(axis=0)                             # Scalar+[faces <- vertices]
-    dual_areas = ~thirds * triangle_areas                                  # Scalar+[vertices]
+    corner_mean = mesh.incidence[2, 0].mean(axis=0)                        # Scalar+[faces <- vertices]
+    dual_areas = ~corner_mean * triangle_areas                             # Scalar+[vertices]
 
     face_areas = spdiag(triangle_areas)                                    # Scalar+[faces <- faces]
     inverse_face_areas = spdiag(1 / triangle_areas)                        # Scalar+[faces <- faces]

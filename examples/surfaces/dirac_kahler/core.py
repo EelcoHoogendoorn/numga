@@ -37,8 +37,8 @@ class Operators:
 
         # Dividing each opposite edge by twice the signed triangle patch gives the three constant corner gradients.
         self.corner_gradients = self.sides / (2 * self.patches)              # [corners] Plane+[faces]
-        thirds = mesh.incidence[2, 0].mean(axis=0)                           # Scalar+[faces <- vertices]
-        self.whitney0 = thirds * Scalar                                      # (Scalar+ <- Scalar+)[faces <- vertices]
+        corner_mean = mesh.incidence[2, 0].mean(axis=0)                      # Scalar+[faces <- vertices]
+        self.whitney0 = corner_mean * Scalar                                 # (Scalar+ <- Scalar+)[faces <- vertices]
         self.gradient = (spdiag(self.corner_gradients) * mesh.incidence[2, 0]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- vertices]
 
         # At each face centroid the three barycentric hats equal 1/3, so each edge 1-form
@@ -61,7 +61,7 @@ class Operators:
         # Restricting the right factor to the even subalgebra maps scalar potentials and stream bivectors
         # together into a pure grade-1 face 1-form.
         self.even_gradient = (spdiag(self.corner_gradients) * mesh.incidence[2, 0]).sum(axis=0) * Even  # (Plane+ <- Even+)[faces <- vertices]
-        self.vertex_areas = ~thirds * self.areas                             # Scalar+[vertices]
+        self.vertex_areas = ~corner_mean * self.areas                        # Scalar+[vertices]
         inverse_vertex_mass = spdiag((1 / self.vertex_areas) * Even.dual().inverse())  # (Even+ <- Even-)[vertices <- vertices]
         # Because the 2D regressive pairing flips sign on odd grades and keeps it on even grades,
         # the adjugate of the even gradient is already the skew-adjoint partner that conserves wave energy.

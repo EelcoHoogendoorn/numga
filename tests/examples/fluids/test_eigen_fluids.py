@@ -27,11 +27,11 @@ def test_whitney_gradients_and_spherical_harmonic_spectrum():
     normals = patches / areas                                                   # Patch-[faces]
     corner_gradients = (sides | patches.inverse()) / 2                           # [corners] Plane+[faces]
     gradient = (core.spdiag(corner_gradients * core.Scalar) * sphere.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
-    thirds = sphere.incidence[2, 0].mean(axis=0)                                 # Scalar+[faces <- vertices]
+    corner_mean = sphere.incidence[2, 0].mean(axis=0)                            # Scalar+[faces <- vertices]
 
     # The stiffness and vertex mass determine the surface's spatial modes.
     stiffness = gradient.adjugate()(core.spdiag(areas * core.Plane.dual())(gradient))  # (Amount- <- Scalar+)[vertices <- vertices]
-    mass = core.spdiag((~thirds * areas) * core.Scalar.dual())                # (Amount- <- Scalar+)[vertices <- vertices]
+    mass = core.spdiag((~corner_mean * areas) * core.Scalar.dual())           # (Amount- <- Scalar+)[vertices <- vertices]
     eigenvalues, eigenfields = stiffness.eigh(mass, 8 + 1)                # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
     eigenvalues, modes = eigenvalues[1:], eigenfields[1:]                          # [modes] Scalar+, [modes] Scalar+[vertices]
 
@@ -61,11 +61,11 @@ def test_bunny_structure_antisymmetry_conservation_and_rendering():
     normals = patches / areas                                                   # Patch-[faces]
     corner_gradients = (sides | patches.inverse()) / 2                           # [corners] Plane+[faces]
     gradient = (core.spdiag(corner_gradients * core.Scalar) * mesh.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
-    thirds = mesh.incidence[2, 0].mean(axis=0)                                   # Scalar+[faces <- vertices]
+    corner_mean = mesh.incidence[2, 0].mean(axis=0)                              # Scalar+[faces <- vertices]
 
     # The stiffness and vertex mass determine the surface's spatial modes.
     stiffness = gradient.adjugate()(core.spdiag(areas * core.Plane.dual())(gradient))  # (Amount- <- Scalar+)[vertices <- vertices]
-    mass = core.spdiag((~thirds * areas) * core.Scalar.dual())                # (Amount- <- Scalar+)[vertices <- vertices]
+    mass = core.spdiag((~corner_mean * areas) * core.Scalar.dual())           # (Amount- <- Scalar+)[vertices <- vertices]
     eigenvalues, eigenfields = stiffness.eigh(mass, scenarios.n_modes + 1)                # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
     eigenvalues, modes = eigenvalues[1:].field(), eigenfields[1:]                  # Scalar+[modes], [modes] Scalar+[vertices]
     superposition = (modes * core.Scalar).batch().field(0, 1).adjoint()          # (Scalar+ <- Scalar+)[vertices <- modes]

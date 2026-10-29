@@ -65,8 +65,8 @@ def main() -> None:
     # across each step.
     edges = mesh.boundary[2, 1] * (mesh.d[0] * points)
     triangle_areas = edges[1].commutator(edges[0]).norm() / 2
-    thirds = mesh.incidence[2, 0].mean(axis=0)
-    face_areas, vertex_areas = core.spdiag(triangle_areas), core.spdiag(~thirds * triangle_areas)
+    corner_mean = mesh.incidence[2, 0].mean(axis=0)
+    face_areas, vertex_areas = core.spdiag(triangle_areas), core.spdiag(~corner_mean * triangle_areas)
     energies = stack([(vertex_areas * vertices.scalar_norm_squared()).sites.sum()
                       + (face_areas * before.reverse().scalar_product(after)).sites.sum()
                       for (vertices, after), (_, before) in zip(states[1:], states)]).to_array()

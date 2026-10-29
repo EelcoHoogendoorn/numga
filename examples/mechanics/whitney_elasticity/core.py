@@ -61,8 +61,8 @@ class Operators:
         self.damping = self.assemble(viscosity)                 # [...] (Force+ <- Point-)[vertices <- vertices]
 
         # Each affine corner hat owns one third of its triangle's mass.
-        thirds = mesh.incidence[2, 0].mean(axis=0)              # Scalar+[faces <- vertices]
-        self.masses = ~thirds * (density * self.areas)          # [...] Scalar+[vertices]
+        corner_mean = mesh.incidence[2, 0].mean(axis=0)         # Scalar+[faces <- vertices]
+        self.masses = ~corner_mean * (density * self.areas)     # [...] Scalar+[vertices]
         inverse_inertia = spdiag((1 / self.masses) * Force.dual())
         self.acceleration = -inverse_inertia(self.stiffness)    # [...] (Point- <- Point-)[vertices <- vertices]
         self.drag = -inverse_inertia(self.damping)              # [...] (Point- <- Point-)[vertices <- vertices]

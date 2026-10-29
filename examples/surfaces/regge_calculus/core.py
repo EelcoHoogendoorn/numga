@@ -73,8 +73,8 @@ def mesh_geometry(mesh: Mesh, vertices: Point, edge_squared_lengths: Scalar
     # Reversing the corner-to-vertex incidence map both sums over the corners around each vertex and reverses
     # each corner's bivector turn, subtracting the incident corner turns from the flat target turn.
     unit_faces = as_scalar(np.ones(len(mesh.faces))).field()                 # Scalar+[faces]
-    thirds = mesh.incidence[2, 0].mean(axis=0)                               # Scalar+[faces <- vertices]
-    vertex_areas = ~thirds * intrinsic_areas                                 # [...] Scalar+[vertices]
+    corner_mean = mesh.incidence[2, 0].mean(axis=0)                          # Scalar+[faces <- vertices]
+    vertex_areas = ~corner_mean * intrinsic_areas                            # [...] Scalar+[vertices]
     boundary = np.unique(mesh.edges[mesh.boundary_edges])
     is_boundary = np.isin(np.arange(mesh.n_vertices), boundary)
     target_turns = as_scalar(np.where(is_boundary, np.pi, 2 * np.pi)).field() * mv.xy  # Bivector+[vertices]

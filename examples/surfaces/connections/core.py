@@ -127,8 +127,8 @@ def vertex_areas(mesh: Mesh, vertices: Point) -> Scalar:
     """Each vertex's area, `Scalar+[vertices]`, is a third of the area of each face at it, a face's area half the
     size of its plane."""
     edges = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                        # [3] Point-[faces]
-    thirds = mesh.incidence[2, 0].mean(axis=0)                                  # Scalar+[faces <- vertices]
-    return ~thirds * (edges[1].commutator(edges[0]).norm() / 2)
+    corner_mean = mesh.incidence[2, 0].mean(axis=0)                             # Scalar+[faces <- vertices]
+    return ~corner_mean * (edges[1].commutator(edges[0]).norm() / 2)
 
 
 def cotangent_weights(mesh: Mesh, vertices: Point, face_weights: Scalar) -> Scalar:
