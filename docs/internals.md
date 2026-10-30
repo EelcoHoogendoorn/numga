@@ -237,6 +237,8 @@ conventions. A torch Extensor is a tensor with a type, so autograd, `torch.vmap`
 per dtype. Generalized eigenproblems whose metric is singular, as for forms on PGA points,
 need a QZ solver and so run only in NumPy with SciPy.
 
+A context also takes a value of another algebra into its own, `context.include_from_algebra(value)`, matching generators by name and square: extrinsic blades keep their names, intrinsic ones their complements, and a value whose type needs a generator the context lacks is refused. The inclusion is a signed reordering of coefficients, worked out once per pair of types and cached; the GPU renderers use it to take an example's values into their projective algebra.
+
 ## 5. Binding plans and types
 
 `bind` is the one primitive. A call binds its operands to the leading arguments. A GAType is its identity map; a subtype restricts the corresponding argument's domain. A full call runs on the compiled path. The operators on types and values are binds of operation tables:
