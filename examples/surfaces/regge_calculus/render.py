@@ -5,12 +5,13 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
-from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 from matplotlib.patches import Polygon
 from matplotlib.tri import Triangulation
 
 from numga import stack
 from examples.util import charts
+from examples.util.wgsl import flow, solids
 from examples.surfaces.regge_calculus import core
 
 primal_colour = "#286580"
@@ -27,7 +28,6 @@ diverging_colours = LinearSegmentedColormap.from_list(
 indicatrix_colours = LinearSegmentedColormap.from_list(
     "regge_indicatrix", (hoop_ellipse_colour, wall_colour, radial_ellipse_colour))
 n_contours = 7
-n_streamlines = 15
 n_ellipse_grid = 25
 # The pixel sizes of a row of four triangles and of a row of three disks.
 row_size, disk_row_size = (780, 195), (780, 260)
@@ -174,21 +174,23 @@ def draw_curvature_defects(mesh: core.Mesh, vertices: core.Point, centres: core.
     return figure
 
 
-def draw_intrinsic_flow(mesh: core.Mesh, vertices: core.Point, centres: core.Point,
-                        potential: core.Scalar, streamfunction: core.Scalar,
+def draw_intrinsic_flow(mesh: core.Mesh, vertices: core.Point,
+                        potential: core.Scalar,
                         current: core.Point) -> plt.Figure:
-    """Steady potential contours, intrinsic flux streamlines, and current vectors across the three Regge metrics."""
+    """Potential colours and current streaks on one shared magnitude scale across the Regge metrics."""
     places = plane_places(vertices)
     potentials = np.asarray(potential.batch().to_array())
-    streams = np.asarray(streamfunction.batch().to_array())
     triangulation = Triangulation(*places.T, triangles=mesh.faces)
     walls = plane_places(mesh.reading(mesh.boundary_edges, 1) * (mesh.incidence[1, 0] * vertices)).transpose(1, 0, 2)
     potential_levels = np.linspace(-0.85, 0.85, n_contours + 2)[1:-1]
-    arrow_faces = spaced_faces(centres, 0.88, 0.18)
-    # The arrows at the chosen faces' centres, and how fast the current runs on every face.
-    arrow_places = plane_places(centres.batch()[arrow_faces])                 # [arrows, 2]
-    arrows = plane_places(current.batch()[:, arrow_faces])                    # [cases, arrows, 2]
-    speeds = current.norm().batch().to_array()                                # [cases, faces]
+    # Area-weighted vertex currents give a continuous drawing of the facewise solution.
+    sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
+    areas = ((sides[0] & sides[1]) / 2).norm()                              # Scalar+[faces]
+    corners = ~mesh.incidence[2, 0].mean(axis=0)
+    vertex_current = (corners * (areas * current)) / (corners * areas)       # [cases] Point-[vertices]
+    reference_speed = float(np.percentile(vertex_current.norm().batch().to_array(), 95))
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())   # [vertices] Point-
+    directions = solids.context.include_from_algebra(vertex_current.batch())        # [cases, vertices] Point-
 
     figure, axes = charts.subplots(*disk_row_size, ncols=3)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.04)
@@ -200,14 +202,6 @@ def draw_intrinsic_flow(mesh: core.Mesh, vertices: core.Point, centres: core.Poi
         ax.triplot(triangulation, color=mesh_colour, linewidth=0.35, alpha=0.45, zorder=2)
         ax.tricontour(triangulation, potentials[index], levels=potential_levels,
                       colors=wall_colour, linestyles="dashed", linewidths=0.75, alpha=0.65, zorder=3)
-        stream = streams[index]
-        margin = 0.07 * (stream.max() - stream.min())
-        stream_levels = np.linspace(stream.min() + margin, stream.max() - margin, n_streamlines)
-        ax.tricontour(triangulation, stream, levels=stream_levels,
-                      colors=flow_colour, linestyles="solid", linewidths=0.85, alpha=0.78, zorder=4)
-        panel_speed = np.quantile(speeds[index], 0.92)
-        ax.quiver(arrow_places[:, 0], arrow_places[:, 1], arrows[index, :, 0], arrows[index, :, 1],
-                  color=flow_colour, angles="xy", scale_units="xy", scale=7.2 * panel_speed,
-                  width=0.0055, headwidth=3.4, headlength=4.2, pivot="mid", zorder=5)
+        flow.overlay(ax, points, mesh, directions[index], reference_speed, np.array(to_rgb(flow_colour)))
         ax.add_collection(LineCollection(walls, colors=wall_colour, linewidths=1.3, zorder=6))
     return figure

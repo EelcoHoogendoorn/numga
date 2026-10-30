@@ -2,25 +2,24 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgb
 from matplotlib.collections import LineCollection, PolyCollection
 from matplotlib.tri import Triangulation
 
 from numga import stack
 from numga.extensor import Extensor
-from numga.sparse import SparseExtensor, spdiag
 from examples.surfaces.dirac_kahler import core
 from examples.util import charts
-from examples.util.wgsl import meshes, solids, strokes
+from examples.util.wgsl import flow, meshes, solids, strokes
 
 sm = solids.mv
 
 n_panel_pixels = 300
-n_grid_samples = 120
 n_contours = 6
 panel_gap = 12
 background = np.ones(3)
@@ -74,50 +73,6 @@ def at_vertices(mesh: core.Mesh, field: Extensor) -> Extensor:
     return (corners * field) / (corners * ones)
 
 
-def lifting(mesh: core.Mesh, vertices: core.Point, samples: core.Point) -> tuple[SparseExtensor, np.ndarray]:
-    """The map carrying a vertex field over the mesh onto samples `[rows, columns]`, linear across each triangle: a
-    sample's hats in the triangle that holds it weight that triangle's corners; and the samples no triangle holds,
-    `[rows, columns]`."""
-    corners = mesh.incidence[2, 0]                                             # [corners] Scalar+[faces <- vertices]
-    domain_corners = corners * vertices                                        # [corners] Point-[faces]
-    sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                       # [corners] Point-[faces]
-    patches = (sides[0] & sides[1]) / 2                                        # Patch-[faces]
-    # Each corner's hat rises from zero along the facing side to one at the corner.
-    corner_gradients = sides / (2 * patches)                                   # [corners] Plane+[faces]
-    gradients, corner_points = corner_gradients.batch()[:, None], domain_corners.batch()[:, None]   # [corners, 1, faces] Plane+, Point-
-    # A sample's three hats in any triangle sum to one, and their sizes do too only in a triangle that holds it;
-    # found a row of samples at a time, so that the hats of every sample in every triangle are never held at once.
-    nearest = np.stack([(1 + (gradients & (row[:, None] - corner_points))).abs().sum(axis=0).argmin(axis=-1)
-                        for row in samples])                                   # [rows, columns]
-    holding = mesh.reading(nearest, 2)                                         # [rows] Scalar+[columns <- faces]
-    hats = 1 + ((holding[None] * corner_gradients[:, None])
-                & (samples.field() - holding[None] * domain_corners[:, None]))   # [corners, rows] Scalar+[columns]
-    outside = hats.abs().sum(axis=0).batch() > 1 + 1e-9                         # [rows, columns]
-    return (spdiag(hats) * (holding[None] * corners[:, None])).sum(axis=0), outside   # [rows] Scalar+[columns <- vertices]
-
-
-def streamlines(mesh: core.Mesh, vertices: core.Point) -> Callable[[plt.Axes, core.Point, str], None]:
-    """What draws the streamlines of a face velocity `Point-[faces]` on an axes: the velocity averaged to the
-    vertices for the continuous drawing, the solver keeping its face field, and carried across the triangles onto a
-    grid of samples over the mesh, where no triangle holding a sample leaves it without flow."""
-    mv = vertices.context.multivector
-    readings = stack((mv.x, mv.y))[:, None] & vertices.batch()
-    low = readings.min(axis=-1)
-    high = readings.max(axis=-1)
-    grid = low[:, None] + (high - low)[:, None] * np.linspace(0, 1, n_grid_samples)
-    sample_x, sample_y = grid
-    samples = mv.x.dual() * sample_x[None, :] + mv.y.dual() * sample_y[:, None]   # [rows, columns] Point-
-    lift, outside = lifting(mesh, vertices, samples)                           # [rows] Scalar+[columns <- vertices], [rows, columns]
-
-    def drawn(ax: plt.Axes, flow: core.Point, colour: str) -> None:
-        velocities = np.ma.masked_array(plane_places(lift * at_vertices(mesh, flow)),
-                                        np.broadcast_to(outside[..., None], outside.shape + (2,)))   # [rows, columns, 2]
-        ax.streamplot(sample_x.to_array(), sample_y.to_array(), velocities[..., 0], velocities[..., 1], color=colour, linewidth=1.3,
-                      density=0.65, arrowstyle="-", maxlength=4, broken_streamlines=False, zorder=3)
-
-    return drawn
-
-
 def domain_panel(ax: plt.Axes, mesh: core.Mesh, vertices: core.Point) -> Triangulation:
     """A quiet domain boundary leaves the flow paths as the main drawing."""
     places = plane_places(vertices)                                            # [vertices, 2]
@@ -133,24 +88,6 @@ def domain_panel(ax: plt.Axes, mesh: core.Mesh, vertices: core.Point) -> Triangu
            ylim=(centre[1] - half_span, centre[1] + half_span), aspect="equal")
     ax.set_axis_off()
     return triangulation
-
-
-def flow_panel(ax: plt.Axes, mesh: core.Mesh, vertices: core.Point, flow: core.Point, colour: str,
-               drawn: Callable[[plt.Axes, core.Point, str], None]) -> None:
-    """Streamlines show the connected geometry of a face velocity without direction glyphs."""
-    domain_panel(ax, mesh, vertices)
-    drawn(ax, flow, colour)
-
-
-def stream_panel(ax: plt.Axes, mesh: core.Mesh, vertices: core.Point,
-                 potential: core.Scalar, colour: str) -> None:
-    """Stream-potential contours close into eddies or wind around the missing region."""
-    triangulation = domain_panel(ax, mesh, vertices)
-    values = np.asarray(potential.batch().to_array())
-    n_levels = 11
-    levels = np.linspace(values.min(), values.max(), n_levels + 2)[1:-1]
-    ax.tricontour(triangulation, values, levels=levels, colors=colour,
-                  linewidths=1.3, linestyles="solid", zorder=3)
 
 
 def contours(ax: plt.Axes, mesh: core.Mesh, vertices: core.Point,
@@ -175,29 +112,33 @@ def panel_figure() -> tuple[plt.Figure, np.ndarray]:
 def draw_dirac_grades(mesh: core.Mesh, vertices: core.Point,
                       vertex_multivector: core.Full, scalar_gradient: core.Plane, face_dirac: core.Full,
                       whitney_multivector: core.Full) -> plt.Figure:
-    """Scalar and stream gradients, their sum, and a separate Whitney edge reconstruction appear as flowlines."""
-    mv = vertices.context.multivector
-    figure, axes = panel_figure()
-    drawn = streamlines(mesh, vertices)
-    # The metric dual draws each face 1-form along the direction it grows fastest.
-    flow_panel(axes[0], mesh, vertices, scalar_gradient.dual(), flow_colours[1], drawn)
-    stream_panel(axes[1], mesh, vertices, vertex_multivector.select[2] & mv.xy.dual(), flow_colours[2])
-    flow_panel(axes[2], mesh, vertices, face_dirac.select[1].dual(), flow_colours[0], drawn)
-    flow_panel(axes[3], mesh, vertices, whitney_multivector.select[1].dual(), flow_colours[3], drawn)
+    """The scalar and circulating parts, their sum, and a Whitney reconstruction share a streak-length scale."""
+    fields = stack((scalar_gradient.dual(), (face_dirac.select[1] - scalar_gradient).dual(),
+                    face_dirac.select[1].dual(), whitney_multivector.select[1].dual()))
+    figure, axes = field_panels(mesh, vertices, fields, (flow_colours[1], flow_colours[2], flow_colours[0], flow_colours[3]))
     contours(axes[0], mesh, vertices, vertex_multivector.select[0], "dashed")
     return figure
 
 
-def draw_hodge_decomposition(mesh: core.Mesh, vertices: core.Point,
-                             total_flow: core.Point, potential: core.Scalar, stream: core.Scalar,
-                             potential_flow: core.Point, harmonic_stream: core.Scalar) -> plt.Figure:
-    """The total velocity separates into source-to-sink paths, local eddies, and loops winding around the hole."""
+def field_panels(mesh: core.Mesh, vertices: core.Point, fields: core.Point,
+                 colours: tuple[str, ...]) -> tuple[plt.Figure, np.ndarray]:
+    """Face fields interpolated for drawing on identical panels with one magnitude scale."""
+    directions = solids.context.include_from_algebra(at_vertices(mesh, fields).batch())
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())
+    reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
     figure, axes = panel_figure()
-    drawn = streamlines(mesh, vertices)
-    flow_panel(axes[0], mesh, vertices, total_flow, flow_colours[0], drawn)
-    flow_panel(axes[1], mesh, vertices, potential_flow, flow_colours[1], drawn)
-    stream_panel(axes[2], mesh, vertices, stream, flow_colours[2])
-    stream_panel(axes[3], mesh, vertices, harmonic_stream, flow_colours[3])
+    for ax, field, colour in zip(axes, directions, colours):
+        domain_panel(ax, mesh, vertices)
+        flow.overlay(ax, points, mesh, field, reference_speed, np.array(to_rgb(colour)))
+    return figure, axes
+
+
+def draw_hodge_decomposition(mesh: core.Mesh, vertices: core.Point,
+                             total_flow: core.Point, potential: core.Scalar, potential_flow: core.Point,
+                             stream_flow: core.Point, harmonic_flow: core.Point) -> plt.Figure:
+    """The total velocity separates into source-to-sink paths, local eddies, and circulation around the hole."""
+    fields = stack((total_flow, potential_flow, stream_flow, harmonic_flow))
+    figure, axes = field_panels(mesh, vertices, fields, flow_colours)
     contours(axes[1], mesh, vertices, potential, "dashed")
     return figure
 

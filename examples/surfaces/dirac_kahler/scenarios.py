@@ -119,7 +119,7 @@ def main() -> None:
     )
     save_figure(
         render.draw_hodge_decomposition(
-            mesh, vertices, total_flow, potential, stream, potential_flow, harmonic_stream,
+            mesh, vertices, total_flow, potential, potential_flow, stream_flow, harmonic_flow,
         ),
         "dirac_kahler_hodge",
     )

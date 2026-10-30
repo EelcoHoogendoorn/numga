@@ -11,7 +11,7 @@ from matplotlib.tri import Triangulation
 
 from numga import where, stack
 from examples.util import charts
-from examples.util.wgsl import image_figure, meshes, solids, strokes
+from examples.util.wgsl import flow, image_figure, meshes, solids, strokes
 from examples.surfaces.whitney_forms import core
 
 primal_colour = "#286580"
@@ -25,7 +25,6 @@ hat_colours = LinearSegmentedColormap.from_list(
 potential_colours = LinearSegmentedColormap.from_list(
     "whitney_potential", ("#286580", "#f5f2eb", "#d77542"))
 n_contours = 7
-n_streamlines = 15
 # The pixel sizes of a row of four triangles and of the two disks side by side.
 row_size, flow_size = (780, 195), (600, 290)
 # The tetrahedron's three views, each square, and the gap between them, in pixels.
@@ -160,17 +159,14 @@ def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
     return figure
 
 
-def draw_edge_1forms(corners: core.Point, points: core.Point, edge_forms: core.Plane,
-                     diamond: core.Mesh, diamond_vertices: core.Point, diamond_points: core.Point,
-                     shared_forms: core.Plane) -> plt.Figure:
-    """The three edge Whitney 1-forms on a single triangle, and the shared edge's basis field `[samples] Plane+[faces]`
-    at the samples `[samples] Point-[faces]` of the two faces of the diamond."""
+def draw_edge_1forms(corners: core.Point, corner_forms: core.Plane,
+                     diamond: core.Mesh, diamond_vertices: core.Point, shared_corner_forms: core.Plane) -> plt.Figure:
+    """Whitney edge forms as feathered streaks, with each face's corner values kept separate across the seam."""
     corner_xy = coordinates(corners)
-    sample_xy = coordinates(points)
-    fields = edge_forms.dual()                                                # [corners, samples] Point-
-    field_xy = coordinates(fields)
-    lengths = fields.norm().reshape(-1)
-    max_norm = lengths.max()
+    triangle = meshes.Mesh(3, [[0, 1, 2]])
+    positions = solids.origin + solids.context.include_from_algebra(corners)
+    directions = solids.context.include_from_algebra(corner_forms.dual())
+    reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
     # Each side, from the corner after its own to the one after that, with an arrow about its middle along it.
     side_starts, side_ends = corners[[1, 2, 0]], corners[[2, 0, 1]]           # [corners] Point-, Point-
     side_middles, alongs = (side_starts + side_ends) / 2, side_ends - side_starts   # [corners] Point-, Point-
@@ -184,9 +180,7 @@ def draw_edge_1forms(corners: core.Point, points: core.Point, edge_forms: core.P
         ax = axes[index]
         frame_panel(ax, corners, 0.22)
         ax.add_patch(Polygon(corner_xy, facecolor="#f6f4ee", edgecolor=wall_colour, linewidth=1.1, zorder=1))
-        ax.quiver(sample_xy[:, 0], sample_xy[:, 1], field_xy[index, :, 0], field_xy[index, :, 1],
-                  color=primal_colour, angles="xy", scale_units="xy", scale=float((6.2 * max_norm).to_array()),
-                  width=0.009, headwidth=3.8, headlength=4.5, pivot="mid", zorder=3)
+        flow.overlay(ax, positions, triangle, directions[index], reference_speed, primal_rgb)
         ax.plot(*np.stack([start_xy[index], end_xy[index]]).T, color=accent_colour, linewidth=2.4, zorder=4)
         ax.annotate("", xy=along_tips[index], xytext=along_tails[index],
                     arrowprops=dict(arrowstyle="-|>", mutation_scale=12, color=accent_colour, linewidth=2.0),
@@ -198,16 +192,14 @@ def draw_edge_1forms(corners: core.Point, points: core.Point, edge_forms: core.P
     frame_panel(ax, diamond_vertices, 0.16)
     for tri_xy in coordinates(diamond.incidence[2, 0] * diamond_vertices).transpose(1, 0, 2):
         ax.add_patch(Polygon(tri_xy, facecolor="#f6f4ee", edgecolor=wall_colour, linewidth=1.1, zorder=1))
-    # Face by face, the samples and the field at them.
-    diamond_fields = shared_forms.dual()                                      # [samples] Point-[faces]
-    diamond_samples = coordinates(diamond_points).transpose(1, 0, 2).reshape(-1, 2)
-    diamond_vectors = coordinates(diamond_fields).transpose(1, 0, 2).reshape(-1, 2)
-    diamond_lengths = diamond_fields.batch().norm().reshape(-1)
-    diamond_max = diamond_lengths.max()
-    ax.quiver(diamond_samples[:, 0], diamond_samples[:, 1],
-              diamond_vectors[:, 0], diamond_vectors[:, 1],
-              color=primal_colour, angles="xy", scale_units="xy", scale=float((5.5 * diamond_max).to_array()),
-              width=0.0085, headwidth=3.8, headlength=4.5, pivot="mid", zorder=3)
+    # Separate corners retain the two faces' different normal components along their shared edge.
+    diamond_corners = (diamond.incidence[2, 0] * diamond_vertices).batch()
+    positions = solids.origin + solids.context.include_from_algebra(diamond_corners.reshape(-1))
+    directions = solids.context.include_from_algebra(shared_corner_forms.dual().batch().reshape(-1))
+    n_faces = len(diamond.faces)
+    split_mesh = meshes.Mesh(3 * n_faces, np.arange(3 * n_faces).reshape(3, n_faces).T)
+    reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
+    flow.overlay(ax, positions, split_mesh, directions, reference_speed, primal_rgb)
     # The shared edge, from its tail to its head, with an arrow about its middle along it.
     shared = diamond.reading(diamond.interior_edges[:1], 1)                   # Scalar+[shared <- edges]
     tail, head = (shared * (diamond.incidence[1, 0] * diamond_vertices)).batch()[:, 0]   # [] Point-, Point-
@@ -316,29 +308,24 @@ def draw_tet_whitney(mesh: core.SpaceMesh, vertices: core.SpacePoint, points: co
     return image_figure(np.concatenate((panel_edge, gap, panel_face, gap, panel_link), axis=1))
 
 
-def draw_anisotropic_flow(mesh: core.Mesh, vertices: core.Point, centres: core.Point,
-                          potential: core.Scalar, streamfunction: core.Scalar,
+def draw_anisotropic_flow(mesh: core.Mesh, vertices: core.Point,
+                          potential: core.Scalar,
                           current: core.Point, fibre: core.Point) -> plt.Figure:
-    """Isotropic versus tilted-anisotropic potential contours, streamlines, and current vectors."""
+    """Isotropic and tilted-anisotropic conduction share one potential palette and current-length scale."""
     places = coordinates(vertices)
-    centre_xy = coordinates(centres)
     potentials = np.asarray(potential.batch().to_array())
-    streams = np.asarray(streamfunction.batch().to_array())
-    currents = coordinates(current)
-    speeds = current.batch().norm().to_array()                                 # [cases, faces]
     triangulation = Triangulation(*places.T, triangles=mesh.faces)
     walls = coordinates(mesh.reading(mesh.boundary_edges, 1) * (mesh.incidence[1, 0] * vertices)).transpose(1, 0, 2)
     potential_levels = np.linspace(-0.85, 0.85, n_contours + 2)[1:-1]
 
-    # Select well-spaced interior face centroids so current arrows neither clump nor cross the rim: their distances
-    # from the disk's centre and from each other.
-    faces = centres.batch()                                                   # [faces] Point-
-    reach = faces.norm()                                           # [faces]
-    gaps = (faces[:, None] - faces[None, :]).norm()                # [faces, faces]
-    arrow_faces = []
-    for face in reach.argsort():
-        if reach[face] < 0.88 and all(gaps[face, chosen] > 0.18 for chosen in arrow_faces):
-            arrow_faces.append(face)
+    # Area-weighted vertex currents give a continuous drawing of the facewise solution.
+    sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
+    areas = ((sides[0] & sides[1]) / 2).norm()                              # Scalar+[faces]
+    corners = ~mesh.incidence[2, 0].mean(axis=0)
+    vertex_current = (corners * (areas * current)) / (corners * areas)       # [cases] Point-[vertices]
+    reference_speed = float(np.percentile(vertex_current.norm().batch().to_array(), 95))
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())   # [vertices] Point-
+    directions = solids.context.include_from_algebra(vertex_current.batch())        # [cases, vertices] Point-
 
     # Faint chords of the unit disk along the fibre, across it at even offsets: each reaches the disk's edge the
     # half-chord of its offset either way.
@@ -358,16 +345,7 @@ def draw_anisotropic_flow(mesh: core.Mesh, vertices: core.Point, centres: core.P
         ax.triplot(triangulation, color=mesh_colour, linewidth=0.35, alpha=0.45, zorder=2)
         ax.tricontour(triangulation, potentials[index], levels=potential_levels,
                       colors=wall_colour, linestyles="dashed", linewidths=0.75, alpha=0.65, zorder=3)
-        stream = streams[index]
-        margin = 0.07 * (stream.max() - stream.min())
-        stream_levels = np.linspace(stream.min() + margin, stream.max() - margin, n_streamlines)
-        ax.tricontour(triangulation, stream, levels=stream_levels,
-                      colors=flow_colour, linestyles="solid", linewidths=0.85, alpha=0.78, zorder=4)
-        panel_speed = np.quantile(speeds[index], 0.92)
-        ax.quiver(centre_xy[arrow_faces, 0], centre_xy[arrow_faces, 1],
-                  currents[index, arrow_faces, 0], currents[index, arrow_faces, 1],
-                  color=flow_colour, angles="xy", scale_units="xy", scale=7.2 * panel_speed,
-                  width=0.0055, headwidth=3.4, headlength=4.2, pivot="mid", zorder=5)
+        flow.overlay(ax, points, mesh, directions[index], reference_speed, np.array(to_rgb(flow_colour)))
         ax.add_collection(LineCollection(walls, colors=wall_colour, linewidths=1.3, zorder=6))
         if index == 1:
             # Faint background chords indicate the tilted high-conductivity fibre orientation.

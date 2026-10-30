@@ -39,6 +39,9 @@ eigenvalue_cutoff = 140.0
 dt = 0.007
 n_steps = 800
 stride = 8
+playback_rate = 0.5
+playback_stride = int(stride * playback_rate)
+n_flow_steps = int(n_steps * playback_rate)
 viscosity = 0.0009
 frame_duration_ms = 40
 # Gallery picture: this makes plots/eigen_fluids.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
@@ -146,10 +149,10 @@ def main() -> None:
     structure = core.structure_constants(mesh, patches, gradient, modes)         # (Scalar+ <- (Scalar+, Scalar+))[modes <- (modes, modes)]
     start = initial_vorticity(vertices, modes, eigenvalues, mass)                # Scalar+[modes]
     inviscid = stack(tuple(core.advect(start, structure, eigenvalues, 0.0, dt, n_steps)))   # [steps + 1] Scalar+[modes]
-    frames = core.reconstruct(inviscid[::stride], superposition, eigenvalues, gradient, normals)
+    frames = core.reconstruct(inviscid[:n_flow_steps + 1:playback_stride], superposition, eigenvalues, gradient, normals)
     save_animation(render.animate_flow(mesh, vertices, frames), "eigen_fluids_bunny", frame_duration_ms)
     # Gallery picture: this makes plots/eigen_fluids.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-    gallery_frames = core.reconstruct(inviscid[:n_gallery_steps + 1:stride], superposition, eigenvalues, gradient, normals)
+    gallery_frames = core.reconstruct(inviscid[:int(n_gallery_steps * playback_rate) + 1:playback_stride], superposition, eigenvalues, gradient, normals)
     save_animation(render.animate_flow(mesh, vertices, gallery_frames, n_gallery_pixels), "eigen_fluids",
                    frame_duration_ms, n_gallery_colours)
 

@@ -63,7 +63,7 @@ def test_designed_fields_are_parallel_and_their_indices_add_up():
     plt.close(render.draw_fields(torus_mesh, torus_vertices, torus_scenes))
     field, singular, indices = sphere_scenes[0]
     turned = scenarios.turning(sphere_mesh, sphere_vertices, field)[:1]
-    assert len(list(render.animate_turning(sphere_mesh, sphere_vertices, turned, singular, indices))) == 1
+    assert len(list(render.animate_turning(sphere_mesh, sphere_vertices, turned))) == 1
 
 
 def test_stripes_follow_their_targets_and_crosses_land_on_their_lines():

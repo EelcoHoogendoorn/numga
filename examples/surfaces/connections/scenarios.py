@@ -280,9 +280,9 @@ def main() -> None:
     save_figure(render.draw_fields(sphere_mesh, sphere_vertices, sphere_scenes), "connections_fields_spheres")
     ring_mesh, ring_vertices, torus_scenes, torus_residuals, torus_energies = field_tori()
     save_figure(render.draw_fields(ring_mesh, ring_vertices, torus_scenes), "connections_fields_tori")
-    field, singular, indices = sphere_scenes[0]
-    save_animation(render.animate_turning(sphere_mesh, sphere_vertices, turning(sphere_mesh, sphere_vertices, field), singular,
-                                          indices), "connections_turning", DURATION_MS)
+    field, _, _ = sphere_scenes[0]
+    save_animation(render.animate_turning(sphere_mesh, sphere_vertices, turning(sphere_mesh, sphere_vertices, field)),
+                   "connections_turning", DURATION_MS)
 
     fine_mesh, fine_vertices, sphere_patterns, stripe_energies = stripe_spheres()
     bands = [tuple(family[:1] for family in pattern) for pattern in sphere_patterns]

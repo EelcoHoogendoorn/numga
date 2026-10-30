@@ -1,5 +1,5 @@
 """Drawing for Laplacian eigenfunction fluids on the Stanford bunny: GPU-shaded Laplace–Beltrami streamfunction
-modes and evolving vorticity fields with uniform-width streamline contours normalized by the face velocity norm,
+modes and evolving vorticity fields with feathered velocity streaks,
 alongside kinetic energy and enstrophy conservation curves."""
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from matplotlib.figure import Figure
 
 from examples.fluids.eigen_fluids import core
 from examples.util import charts
-from examples.util.wgsl import image_figure, meshes, solids
+from examples.util.wgsl import flow, image_figure, meshes, solids
 
 # Surface and diverging field palette, contour colour, curve colours, camera elevation and azimuth in degrees
 # from x, the reach framed around each vertex, viewport margin and pixel dimensions, and contour density and width.
@@ -31,7 +31,6 @@ margin = 0.04
 n_mode_pixels = 380
 n_flow_pixels = 440
 n_mode_contours = 5.5
-n_flow_contours = 7.5
 contour_half_width = 0.011
 contour_feather = 0.004
 vorticity_exposure = 95.5
@@ -145,15 +144,28 @@ def draw_conservation(times: np.ndarray, inviscid_energy: core.Scalar, viscous_e
 
 def animate_flow(mesh: core.Mesh, vertices: core.Point, states: Iterable[tuple[core.Scalar, core.Scalar, core.Point]],
                  n_pixels: int = n_flow_pixels) -> Iterator[np.ndarray]:
-    """Yields a frame `n_pixels` across for each arriving surface state, with colour and contour scales fixed by
-    the first."""
+    """Vorticity colours and velocity streaks use fixed scales from the initial state."""
     states = iter(states)
     first = next(states)
     field_scale = float(np.percentile(np.abs(first[0].to_array()), vorticity_exposure))
-    stream_scale = float(np.percentile(np.abs(first[1].to_array()), stream_exposure))
-    points = solids.origin + solids.context.include_from_algebra(vertices.batch())       # [vertices] Point-
-    smooth_normals = meshes.smooth(points, mesh)
+    # The face velocities reach vertices by an area-weighted mean, then lose their normal part.
+    sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
+    patches = (sides[0] & sides[1]) / 2                                         # Patch-[faces]
+    areas = patches.norm()                                                     # Scalar+[faces]
+    corners = ~mesh.incidence[2, 0].mean(axis=0)
+    dual_areas = corners * areas                                                # Scalar+[vertices]
+    normals = (corners * patches).normalized()                                  # Patch-[vertices]
+    at_vertices = core.spdiag(1 / dual_areas) * corners * core.spdiag(areas)
+    tangential = core.Point - normals.dual() * (normals & core.Point)            # (Point- <- Point-)[vertices]
+    initial_velocity = tangential(at_vertices * first[2])                       # Point-[vertices]
+    reference_speed = float(np.percentile(initial_velocity.norm().batch().to_array(), 95))
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())   # [vertices] Point-
     frame = camera_view(points, n_pixels)
     for vorticity, stream, velocity in chain((first,), states):
-        yield surface_panel(mesh, points, smooth_normals, frame, vorticity, stream, velocity,
-                          field_scale, stream_scale, n_flow_contours)
+        tangent = tangential(at_vertices * velocity)                            # Point-[vertices]
+        directions = solids.context.include_from_algebra(tangent.batch())       # [vertices] Point-
+        level = np.clip(vorticity.to_array() / field_scale, -1, 1)
+        tone = np.where(level[:, None] >= 0, positive_colour, negative_colour)
+        weight = (np.abs(level)**0.72 * 0.88)[:, None]
+        colours = surface_colour * (1 - weight) + tone * weight
+        yield flow.draw(points, mesh, directions, frame, colours, reference_speed)

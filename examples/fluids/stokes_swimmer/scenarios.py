@@ -23,8 +23,9 @@ N_STEPS_PER_CYCLE = 60
 N_STEPS_PER_FRAME = 2
 DURATION_MS = 40
 # Sample grid for the fluid velocity field around the swimmer.
-GRID_X = np.linspace(-2.8, 2.8, 25)
-GRID_Y = np.linspace(-1.9, 1.9, 17)
+n_grid_columns, n_grid_rows = 81, 55
+GRID_X = np.linspace(-2.8, 2.8, n_grid_columns)
+GRID_Y = np.linspace(-1.9, 1.9, n_grid_rows)
 
 
 # --- math -----------------------------------------------------------------------------
@@ -59,9 +60,9 @@ def strokes() -> tuple[np.ndarray, core.Point, core.Twist, core.Force, core.Moto
 
 
 def flows(world_sites: core.Point, world_forces: core.Force, grid: core.Point) -> Iterator[core.Direction]:
-    """Per frame, the flow Purcell's swimmer drives at the points of the grid `[grid_y, grid_x] Direction`."""
+    """Per frame, both swimmers' flows at the grid points `[swimmers, grid_y, grid_x] Direction-`."""
     for step in range(0, world_sites.shape[0], N_STEPS_PER_FRAME):
-        yield core.flow_field(grid, world_sites[step, 0, None, None], world_forces[step, 0, None, None], BEAD_RADIUS)
+        yield core.flow_field(grid, world_sites[step, :, None, None], world_forces[step, :, None, None], BEAD_RADIUS)
 
 
 # --- plumbing -------------------------------------------------------------------------

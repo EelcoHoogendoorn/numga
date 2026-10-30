@@ -417,6 +417,13 @@ class Mesh:
         return cls(major_count * minor_count, faces), vertices
 
     @classmethod
+    def grid(cls, n_rows: int, n_columns: int) -> Mesh:
+        """Two triangles to each cell of a rectangular grid of vertices numbered row by row, wound alike."""
+        vertices = np.arange(n_rows * n_columns).reshape(n_rows, n_columns)
+        cells = np.stack((vertices[:-1, :-1], vertices[:-1, 1:], vertices[1:, 1:], vertices[1:, :-1]), axis=-1)
+        return cls(n_rows * n_columns, cells[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3))
+
+    @classmethod
     def triangulate(cls, vertices: Point) -> Mesh:
         """Delaunay topology for vertices in the xy plane, with counter-clockwise faces."""
         from scipy.spatial import Delaunay

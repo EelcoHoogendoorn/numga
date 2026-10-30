@@ -4,13 +4,16 @@ flow field beside the reciprocal flapper and their paths in hinge-angle space.""
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
+from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.artist import Artist
+from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack
 from examples.util import charts
+from examples.util.wgsl import flow as ink, pinned, solids
 from examples.util.animation import capture
 from examples.fluids.stokes_swimmer import core
 
@@ -23,6 +26,8 @@ cross_colour, label_colour = "#cbd5e1", "0.4"
 # The margin around the strokes in hinge-angle space, as a share of their extent, across and up: up, the room for the
 # name running down the line.
 hinge_margin, hinge_room = 0.12, 0.5
+# Half the height of the water each animated panel shows.
+water_half_height = 1.55
 
 
 def point_coords(points: core.Point) -> np.ndarray:
@@ -112,20 +117,15 @@ def draw_summary(
     """Left: instantaneous Stokes flow around Purcell's swimmer with bead forces and centre trail;
     middle: centre displacement along x over the three cycles for both strokes; right: the two strokes
     in hinge-angle space."""
-    # The whole column: three panels side by side, the flow's arrows dense.
+    # The whole column: the surrounding flow and two trajectory plots.
     figure, (ax_flow, ax_path, ax_hinge) = charts.subplots(800, 260, ncols=3)
 
     grid_xy = point_coords(grid)                                                # [gy, gx, 2]
-    flow_xy = point_coords(flow)                                                # [gy, gx, 2]
     beads = world_sites.batch()                                                 # [steps, swimmers, beads] Point-
     beads_xy = point_coords(beads)                                              # [steps, swimmers, beads, 2]
     forces_xy = force_coords(world_forces.batch())                              # [steps, swimmers, beads, 2]
     pos_xy = point_coords(positions)                                            # [steps + 1, swimmers, 2]
 
-    ax_flow.quiver(
-        grid_xy[..., 0], grid_xy[..., 1], flow_xy[..., 0], flow_xy[..., 1],
-        color=flow_colour, pivot="mid", width=0.004, zorder=1,
-    )
     _draw_swimmer(ax_flow, beads[0, 0], purcell_colour, 1.0)
     ax_flow.quiver(
         beads_xy[0, 0, :, 0], beads_xy[0, 0, :, 1],
@@ -151,6 +151,12 @@ def draw_summary(
     _cross(ax_hinge, "left hinge", "right hinge")
 
     figure.tight_layout()
+    mesh = ink.Mesh.grid(*grid.shape)
+    points = solids.context.include_from_algebra(grid.reshape(-1))
+    directions = solids.context.include_from_algebra(flow[0].reshape(-1))
+    reference_speed = float(directions.dual().norm().max().to_array())
+    texture = ink.overlay(ax_flow, points, mesh, directions, reference_speed, np.array(to_rgb(flow_colour)))
+    texture.set_zorder(1)
     return figure
 
 
@@ -161,37 +167,39 @@ def animate_swimmers(
     flows: Iterable[core.Direction],
     every: int,
 ) -> Iterator[np.ndarray]:
-    """Frames of Purcell's non-reciprocal swimmer (top), with the flow it drives at each frame
-    `[grid_y, grid_x] Direction`, and the reciprocal flapper (bottom)."""
+    """Both swimmers' instantaneous velocities share fixed seeds and a fixed magnitude scale."""
     beads = world_sites.batch()[::every]                                        # [frames, swimmers, beads] Point-
-    all_pos_xy = point_coords(positions)                                        # [steps + 1, swimmers, 2]
-    grid_xy = point_coords(grid)                                                # [gy, gx, 2]
-
-    x_min = min(float(all_pos_xy[:, 0, 0].min()), 0.0) - 2.3
-    x_max = max(float(all_pos_xy[:, 0, 0].max()), 0.0) + 2.3
-    # The figure set up once; the flow, the trails and the swimmers move.
-    figure, axes = plt.subplots(2, 1, figsize=(6.2, 4.6), dpi=55)
-    arrows = axes[0].quiver(
-        grid_xy[..., 0], grid_xy[..., 1],
-        np.zeros(grid_xy.shape[:-1]), np.zeros(grid_xy.shape[:-1]),
-        color=flow_colour, scale=3.2, width=0.003, zorder=1,
-    )
+    tracks = point_coords(positions)                                           # [steps + 1, swimmers, 2]
+    mesh = ink.Mesh.grid(*grid.shape)
+    points = solids.context.include_from_algebra(grid.reshape(-1))              # [samples] Point-
+    flows = iter(flows)
+    first = next(flows)
+    directions = solids.context.include_from_algebra(first.reshape(first.shape[0], -1))
+    reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
+    left = min(float(tracks[:, 0, 0].min()), 0.0) - 2.3
+    right = max(float(tracks[:, 0, 0].max()), 0.0) + 2.3
+    # As wide as the stretch of water each panel shows, at the height the two panels share.
+    figure_height = 4.6
+    figure_width = figure_height / 2 * (right - left) / (2 * water_half_height)
+    figure, axes = plt.subplots(2, 1, figsize=(figure_width, figure_height), dpi=55)
+    figure.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98, hspace=0.06)
     trails, swimmers = [], []
     for swimmer, (ax, colour) in enumerate(zip(axes, (purcell_colour, scallop_colour))):
-        trails += ax.plot([], [], color=trail_colour, linewidth=1.6, zorder=2)
+        trail, = ax.plot([], [], color=trail_colour, linewidth=1.6, zorder=2)
+        trails.append(trail)
         swimmers.append(_draw_swimmer(ax, beads[0, swimmer], colour, 1.0))
-        ax.set_xlim(x_min, x_max)
-        ax.set_ylim(-1.55, 1.55)
-        ax.set_aspect("equal")
+        ax.set(xlim=(left, right), ylim=(-water_half_height, water_half_height), aspect="equal")
         ax.set_axis_off()
-    figure.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98, hspace=0.06)
-
-    for frame, flow in enumerate(flows):
-        flow_xy = point_coords(flow)                                            # [gy, gx, 2]
+    views = [ink.axes_view(ax) for ax in axes]
+    textures = [pinned(ax, np.zeros(view.shape + (4,)), (left, right, -water_half_height, water_half_height))
+                for ax, view in zip(axes, views)]
+    for frame, fields in enumerate(chain((first,), flows)):
+        directions = solids.context.include_from_algebra(fields.reshape(fields.shape[0], -1))
+        for texture, view, field in zip(textures, views, directions):
+            texture.set_data(ink.layer(points, mesh, field, view, reference_speed, np.array(to_rgb(flow_colour))))
         step_end = frame * every + 1
-        arrows.set_UVC(flow_xy[..., 0], flow_xy[..., 1])
         for swimmer, (trail, parts) in enumerate(zip(trails, swimmers)):
-            trail.set_data(all_pos_xy[:step_end, swimmer, 0], all_pos_xy[:step_end, swimmer, 1])
+            trail.set_data(tracks[:step_end, swimmer, 0], tracks[:step_end, swimmer, 1])
             _move_swimmer(parts, beads[frame, swimmer])
         yield capture(figure)
     plt.close(figure)

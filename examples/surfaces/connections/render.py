@@ -1,7 +1,5 @@
-"""Drawing for connections on curved surfaces, on the GPU: latitude holonomy on the unit sphere; tangent vector
-fields and vector heat diffusion on the torus; unit tangent fields as needles over shaded surfaces, with the
-singular faces marked by balls, warm for positive indices and cool for negative, larger for larger indices; and
-stripe patterns.
+"""Drawing for connections on curved surfaces, on the GPU: latitude holonomy on the unit sphere, tangent fields
+and vector heat diffusion as flowing grain in shaded surfaces, and stripe patterns.
 
 The holonomy sphere is a translucent ball traced by `solids`; the other surfaces are meshes drawn by `meshes`;
 needles, rings and stripe middles are strokes, all composited by depth sample by sample. Stripe patterns are drawn in the surface's own shader: every pixel interpolates the phase from the
@@ -21,27 +19,18 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack, where
 from examples.surfaces.connections import core
-from examples.util.wgsl import fitted, meshes, show, solids, strokes
+from examples.util.wgsl import fitted, flow, meshes, show, solids, strokes
 from examples.util.wgsl.scene import Scene
 
-# Surface base colours, ring palette, needle colour, the colours of positive and negative singularities and their
-# balls' radius per unit index, in pixels, and the views as (elevation, azimuth) in degrees, the azimuth measured
-# from x: of the transport figures, and of the designed fields and stripes.
+# Surface colours, the ring palette, and views as elevation and azimuth in degrees from x.
 surface_colour = np.array([0.92, 0.91, 0.88])
-warm_colour = np.array([0.85, 0.36, 0.18])
 ring_colours = ("#c84b31", "#2d6a9f", "#2a8c6a")
-needle_colour = to_rgb("#1d3557")
-positive, negative = to_rgb("#c84b31"), to_rgb("#2d6a9f")
-singular_radius = 3.0
 transport_view = np.array([28.0, -36.0])
 view = np.array([24.0, -36.0])
-# The needle lengths of the holonomy sphere and the transport torus, the stride between needles along the rings,
-# the designed fields' needle length as a share of their surface's mean edge length, and the widest a panel of them
-# gets, as a share of its height.
+# The holonomy markers, the transport figures' framing allowance, and the widest panel's aspect.
 holonomy_stride = 5
 holonomy_needle = 0.25
-transport_needle = 0.32
-field_needle = 0.6
+transport_margin = 0.32
 widest_panel = 1.6
 # How much each surface of the holonomy sphere hides, and each surface of the trail of carried vectors.
 sphere_opacity = 0.12
@@ -60,6 +49,7 @@ margin = 0.04
 # wide, and narrower in proportion on a smaller panel.
 panel_inches, panel_dpi = 4.2, 110
 background = np.ones(3)
+flow_colour = np.array([0.88, 0.83, 0.72])
 
 
 # The unit volume, an intrinsic scalar: a normal's dual, the plane its tangent vectors turn in, times it is the unit
@@ -74,22 +64,6 @@ def square_view(view_degrees: np.ndarray, vertices: core.Point, spare: float) ->
     elevation, azimuth = np.radians(view_degrees[0]), np.radians(view_degrees[1] + 90)
     frame = solids.view([solids.origin + solids.context.include_from_algebra(vertices.batch())], spare, elevation, azimuth, margin, pixels)
     return frame.squared()
-
-
-def needle_length(mesh: core.Mesh, vertices: core.Point) -> core.Scalar:
-    """The length of the designed fields' needles on a surface: a share of its mean edge length."""
-    lengths = (mesh.d[0] * vertices).norm()                                     # Scalar+[edges]
-    return field_needle * lengths.batch().mean()
-
-
-def facing(view_degrees: np.ndarray) -> core.Point:
-    """The unit direction toward the viewer, for a view as (elevation, azimuth) in degrees from x: x raised toward z
-    by the elevation and turned about z by the azimuth."""
-    mv = core.mv
-    elevation, azimuth = np.radians(view_degrees)
-    rise = (mv.zx * (elevation / 2)).exp()                                      # [] Rotor+
-    spin = (mv.xy * (-azimuth / 2)).exp()                                       # [] Rotor+
-    return (spin * rise) >> mv.x.dual()                                         # [] Point-
 
 
 def needles(origins: core.Point, directions: core.Point, normals: core.Vector,
@@ -142,27 +116,12 @@ def animate_holonomy(sphere: core.Mesh, vertices: core.Point, rings: core.Vector
         yield scene.draw([], inks=[], translucent=[], meshes=[(now, 1.0), (trail, trail_opacity)])
 
 
-def torus_panel(torus: core.Mesh, vertices: core.Point, field: core.Point, amplitudes: core.Scalar,
+def torus_panel(torus: core.Mesh, vertices: core.Point, field: core.Point,
                 frame: solids.View) -> np.ndarray:
-    """One shaded torus with face colours weighted by `amplitudes` `Scalar+[vertices]` and front-facing tangent
-    needles."""
-    places = vertices.batch()                                                   # [vertices] Point-
-    normals = core.vertex_normals(torus, vertices).batch()                      # [vertices] Vector-
-    units = field.batch().normalized()                                          # [vertices] Point-
-    # Each face weighted by the mean of its corners' amplitudes, read through the mesh.
-    face_amplitudes = torus.incidence[2, 0].mean(axis=0) * amplitudes           # Scalar+[faces]
-    face_weight = np.clip(face_amplitudes.batch().to_array(), 0.0, 1.0)[:, None]
-    face_colours = (1.0 - 0.58 * face_weight) * surface_colour + (0.58 * face_weight) * warm_colour
-    visible = (normals & facing(transport_view)) > 0.05
-    scale = 0.25 + 0.75 * np.clip(amplitudes.batch().to_array()[visible], 0.0, 1.0)
-    # The needles stand just off the surface, along each vertex's normal.
-    lifted = places + normals.dual() * (0.03 * unit_volume)                     # [vertices] Point-
-    arrows = strokes.segments(*needles(lifted[visible], units[visible] * scale, normals[visible], transport_needle),
-                              needle_colour, 2 * line_width, frame)
-    return solids.draw([], frame, background,
-                       inks=[], translucent=[],
-                       meshes=[(surface(torus, vertices, np.zeros(3), frame, face_values=face_colours, colour=meshes.by_face), 1.0),
-                               (arrows, 1.0)])
+    """Symmetric streaks show the transported orientation, independent of heat amplitude."""
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())  # [vertices] Point-
+    directions = solids.context.include_from_algebra(field.batch().normalized())   # [vertices] Point-
+    return flow.draw(points, torus, directions, frame, flow_colour, 1.0, downstream_fraction=0.5)
 
 
 def draw_torus_fields(torus: core.Mesh, vertices: core.Point, fields: list[core.Point]) -> plt.Figure:
@@ -170,57 +129,25 @@ def draw_torus_fields(torus: core.Mesh, vertices: core.Point, fields: list[core.
     figure, axes = plt.subplots(1, len(fields), figsize=(3.8 * len(fields), 3.6), dpi=100)
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0)
     axes = np.atleast_1d(axes)
-    frame = fitted(square_view(transport_view, vertices, transport_needle), axes[0])
+    frame = fitted(square_view(transport_view, vertices, transport_margin), axes[0])
     for axis, field in zip(axes, fields):
-        lengths = field.norm()                                                 # Scalar+[vertices]
-        peak = max(float(np.percentile(lengths.batch().to_array(), 95.0)), 1e-12)
-        show(axis, torus_panel(torus, vertices, field, lengths / peak, frame), frame)
+        show(axis, torus_panel(torus, vertices, field, frame), frame)
     return figure
 
 
 def animate_diffusion(torus: core.Mesh, vertices: core.Point, diffused: Iterable[core.Point]) -> Iterator[np.ndarray]:
-    """Frames of a vector heat pulse spreading across the torus, a `Point-[vertices]` each, each scaled by its own
-    lengths."""
-    frame = square_view(transport_view, vertices, transport_needle)
+    """The direction of a vector heat pulse spreads across the torus as symmetric surface grain."""
+    frame = square_view(transport_view, vertices, transport_margin)
     for field in diffused:
-        lengths = field.norm().batch().to_array()                              # [vertices]
-        peak = np.percentile(lengths, 92.0)
-        scaled = np.pow(np.clip(lengths / np.maximum(peak, 1e-12), 0.0, 1.0), 0.45)
-        # The amplitudes, brightened, at the vertices, as a field the mesh carries to its faces.
-        amplitudes = core.mv.scalar(scaled[:, None]).field()                   # Scalar+[vertices]
-        yield torus_panel(torus, vertices, field, amplitudes, frame)
+        yield torus_panel(torus, vertices, field, frame)
 
 
 # --- designed fields ------------------------------------------------------------------
-def field_marks(mesh: core.Mesh, vertices: core.Point, singular: np.ndarray, indices: list[int], frame: solids.View
-                ) -> list[tuple[solids.Quadric, np.ndarray]]:
-    """Balls on a surface's singular faces `[S]`, at the mean of their corners, larger for larger indices."""
-    middles = (mesh.incidence[2, 0].mean(axis=0) * vertices).batch()[singular]   # [S] Point-
-    centres = solids.origin + solids.context.include_from_algebra(middles)                       # [S] Point-
-    return [(solids.ball(centres[index:index + 1], singular_radius * abs(value) * frame.pixel)[:, None],
-             positive if value > 0 else negative) for index, value in enumerate(indices)]
-
-
-def field_arrows(mesh: core.Mesh, vertices: core.Point, field: core.Point, needle: float, frame: solids.View
-                 ) -> meshes.Samples:
-    """A unit tangent field on the vertices of a surface facing the viewer, as strokes."""
-    places, normals = vertices.batch(), core.vertex_normals(mesh, vertices).batch()   # [vertices] Point-, Vector-
-    seen = (normals & facing(view)) > 0.1
-    # The needles stand just off the surface, along each vertex's normal.
-    lifted = places + normals.dual() * (0.01 * unit_volume)                     # [vertices] Point-
-    return strokes.segments(*needles(lifted[seen], field.batch()[seen], normals[seen], needle),
-                            needle_colour, 2 * line_width, frame)
-
-
-def field_panel(mesh: core.Mesh, vertices: core.Point, field: core.Point, singular: np.ndarray, indices: list[int], needle: float,
-                frame: solids.View) -> np.ndarray:
-    """One surface with its unit tangent field on the vertices facing the viewer, and balls on its singular faces
-    `[S]`, larger for larger indices."""
-    arrows = field_arrows(mesh, vertices, field, needle, frame)
-    return solids.draw(field_marks(mesh, vertices, singular, indices, frame), frame, background,
-                       inks=[], translucent=[],
-                       meshes=[(surface(mesh, vertices, surface_colour, frame, face_values=np.zeros(4), colour=meshes.plain), 1.0),
-                               (arrows, 1.0)])
+def field_panel(mesh: core.Mesh, vertices: core.Point, field: core.Point, frame: solids.View) -> np.ndarray:
+    """A unit tangent field is the grain of an opaque shaded surface."""
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())  # [vertices] Point-
+    directions = solids.context.include_from_algebra(field.batch())              # [vertices] Point-
+    return flow.draw(points, mesh, directions, frame, flow_colour, 1.0)
 
 
 def draw_fields(mesh: core.Mesh, vertices: core.Point, scenes: list[tuple[core.Point, np.ndarray, list[int]]]) -> plt.Figure:
@@ -230,27 +157,20 @@ def draw_fields(mesh: core.Mesh, vertices: core.Point, scenes: list[tuple[core.P
     # The surface's extent across x and up z, read by pairing its vertices with those planes, sets the panels' shape.
     across, up = np.ptp((stack((mv.x, mv.z)) & vertices.batch()[..., None]).to_array(), axis=0)
     width = min(across / up, widest_panel)
-    needle = needle_length(mesh, vertices)
     figure, axes = plt.subplots(1, len(scenes), figsize=(3.6 * len(scenes) * width, 3.6), dpi=110)
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0)
     axes = np.atleast_1d(axes)
-    frame = fitted(square_view(view, vertices, solids.context.include_from_algebra(needle)), axes[0])
-    for axis, (field, singular, indices) in zip(axes, scenes):
-        show(axis, field_panel(mesh, vertices, field, singular, indices, needle, frame), frame)
+    frame = fitted(square_view(view, vertices, 0.0), axes[0])
+    for axis, (field, _, _) in zip(axes, scenes):
+        show(axis, field_panel(mesh, vertices, field, frame), frame)
     return figure
 
 
-def animate_turning(mesh: core.Mesh, vertices: core.Point, fields: Iterable[core.Point], singular: np.ndarray, indices: list[int]
-                    ) -> Iterator[np.ndarray]:
-    """Frames of a parallel field on the sphere turned about every normal, a `Point-[vertices]` each, among the surface
-    and the balls on its singular faces, which stay put."""
-    needle = needle_length(mesh, vertices)
-    frame = square_view(view, vertices, solids.context.include_from_algebra(needle))
-    scene = Scene(frame, background, field_marks(mesh, vertices, singular, indices, frame),
-                  [(surface(mesh, vertices, surface_colour, frame, face_values=np.zeros(4), colour=meshes.plain), 1.0)],
-                  inks=[], translucent=[])
+def animate_turning(mesh: core.Mesh, vertices: core.Point, fields: Iterable[core.Point]) -> Iterator[np.ndarray]:
+    """The surface grain turns with the tangent field about every surface normal."""
+    frame = square_view(view, vertices, 0.0)
     for field in fields:
-        yield scene.draw([], inks=[], translucent=[], meshes=[(field_arrows(mesh, vertices, field, needle, frame), 1.0)])
+        yield field_panel(mesh, vertices, field, frame)
 
 
 # --- stripes --------------------------------------------------------------------------

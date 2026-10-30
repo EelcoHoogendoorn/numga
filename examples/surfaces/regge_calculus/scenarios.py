@@ -107,7 +107,7 @@ def main() -> None:
         mesh, vertices, conductivities, electrodes, prescribed,
     )
     save_figure(
-        render.draw_intrinsic_flow(mesh, vertices, centres, potential, streamfunction, current),
+        render.draw_intrinsic_flow(mesh, vertices, potential, current),
         "regge_intrinsic_laplacian",
     )
 

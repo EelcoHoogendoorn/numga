@@ -137,17 +137,17 @@ def main() -> None:
 
     # 2. Edge Whitney 1-forms and tangential continuity across a shared edge.
     edge_forms = edge_whitney_forms(corners, points)                         # [corners, samples] Plane+
-    diamond_mesh, diamond_vertices, diamond_points = edge_diamond(n_triangle_subdivisions)
+    diamond_mesh, diamond_vertices, _ = edge_diamond(n_triangle_subdivisions)
     diamond = Operators(diamond_mesh, diamond_vertices)
     # Unit circulation on the one interior edge, read on both faces through their edge forms,
     # each signed by the sense in which its face runs along the edge.
     shared_circulation = as_scalar(np.isin(np.arange(len(diamond_mesh.edges)), diamond_mesh.interior_edges)).field()  # Scalar+[edges]
-    sample_forms = (diamond_points[:, None] - diamond.corners[None, :]) / (2 * diamond.patches)  # [samples, corners] Plane+[faces]
-    sample_whitney1 = (spdiag(sample_forms) * diamond_mesh.boundary[2, 1]).sum(axis=1) * Scalar  # [samples] (Plane+ <- Scalar+)[faces <- edges]
-    shared_forms = sample_whitney1(shared_circulation)                       # [samples] Plane+[faces]
+    corner_forms = edge_whitney_forms(corners, corners)                      # [edges, corners] Plane+
+    corner_offsets = (diamond.corners[:, None] - diamond.corners[None, :]) / (2 * diamond.patches)
+    corner_whitney1 = (spdiag(corner_offsets) * diamond_mesh.boundary[2, 1]).sum(axis=1) * Scalar
+    shared_corner_forms = corner_whitney1(shared_circulation)                 # [corners] Plane+[faces]
     save_figure(
-        render.draw_edge_1forms(corners, points, edge_forms,
-                                diamond_mesh, diamond_vertices, diamond_points, shared_forms),
+        render.draw_edge_1forms(corners, corner_forms, diamond_mesh, diamond_vertices, shared_corner_forms),
         "whitney_edge_1form",
     )
 
@@ -178,7 +178,7 @@ def main() -> None:
         operators, conductivity, electrodes, prescribed,
     )
     save_figure(
-        render.draw_anisotropic_flow(mesh, vertices, operators.centres, potential, streamfunction, current, fibre),
+        render.draw_anisotropic_flow(mesh, vertices, potential, current, fibre),
         "whitney_anisotropic_flow",
     )
 
