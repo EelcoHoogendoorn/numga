@@ -127,8 +127,9 @@ def project_contacts(before: Motor, motor: Motor, inverse_inertia: InverseInerti
     parts = parts.materialize(motor.context)                                # [parts] Plane+ <- Point-
 
     def touching(motor: Motor, part: Quadric) -> tuple[Point, Direction, Scalar]:
-        # One part, as a set of one, so that the contact helpers apply as they are.
-        placed_part = motor >> part[None](motor << Point)                         # [1] Plane+ <- Point-
+        # One part, as a set of one along a leading axis ahead of any launches, so that the contact helpers sum over
+        # the parts and never across launches.
+        placed_part = motor[None] >> part[None](motor[None] << Point)             # [1, ...] Plane+ <- Point-
         centre = placed_part.solve(w)                                             # [1] Point-
         contact = lowest_point(placed_part, ground_normal(ground, centre / (w & centre)))
         # The ground's form at the contact over its gradient's length: how far the point lies below the
