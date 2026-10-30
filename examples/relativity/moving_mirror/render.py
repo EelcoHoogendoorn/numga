@@ -1,4 +1,4 @@
-"""Spacetime Whitney basis fields, causal light-cone wakes, and relativistic moving-mirror Doppler figures."""
+"""Corner hats and edge forms on spacetime, causal light-cone wakes, and relativistic moving-mirror Doppler figures."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from matplotlib.patches import Polygon, Rectangle
 from matplotlib.tri import Triangulation
 
 from numga import concatenate, stack
-from examples.relativity.spacetime_whitney import core
+from examples.relativity.moving_mirror import core
 from examples.util import charts
 from examples.util.animation import capture
 

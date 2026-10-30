@@ -75,6 +75,8 @@ import examples.mechanics.spinning_top.scenarios
 import examples.mechanics.symmetry.core
 import examples.mechanics.tides.core
 import examples.mechanics.tides.scenarios
+import examples.mechanics.tippe_top.core
+import examples.mechanics.tippe_top.scenarios
 import examples.fluids.vortices.core
 import examples.fluids.vortices.scenarios
 import examples.fluids.wing.core

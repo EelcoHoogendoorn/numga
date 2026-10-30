@@ -7,12 +7,12 @@ import numpy as np
 
 from numga import stack
 from numga.sparse import spdiag
-from examples.surfaces.rotor_whitney import core, scenarios
+from examples.surfaces.frame_fields import core, scenarios
 
 
-def test_rotor_whitney_math_does_not_import_plotting():
+def test_frame_fields_math_does_not_import_plotting():
     probe = (
-        "import sys, examples.surfaces.rotor_whitney.core, examples.surfaces.rotor_whitney.scenarios; "
+        "import sys, examples.surfaces.frame_fields.core, examples.surfaces.frame_fields.scenarios; "
         "print([m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')])"
     )
     out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True)

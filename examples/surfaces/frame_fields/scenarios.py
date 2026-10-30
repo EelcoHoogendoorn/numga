@@ -1,4 +1,4 @@
-"""Reference 3D triangle, Skyrmion disk, and curved saddle surface for mixed-grade rotor Whitney forms."""
+"""Reference 3D triangle, Skyrmion disk, and curved saddle surface for smooth frame fields of interpolated rotors."""
 
 from __future__ import annotations
 
@@ -84,11 +84,11 @@ def saddle_surface(
 
 
 def main() -> None:
-    from examples.surfaces.rotor_whitney.core import (
+    from examples.surfaces.frame_fields.core import (
         harmonic_rotor_frames, relax_rotor_frames, rotor_laplacian_operators,
         skyrmion_winding, triangle_darboux,
     )
-    from examples.surfaces.rotor_whitney import render
+    from examples.surfaces.frame_fields import render
     from examples.util.animation import save_animation, save_figure
 
     # 1. Mixed-grade rotor interpolation and the Darboux-Whitney identity on a 3D triangle.
@@ -104,7 +104,7 @@ def main() -> None:
             corners, points, fine_mesh, fine_vertices, fine_chords.scalar_norm_squared().field(),
             corner_rotors, unit_rotors, whitney_rates,
         ),
-        "rotor_whitney_darboux",
+        "frame_fields_darboux",
     )
 
     # 2. A disk wraps the sphere of directors once.
@@ -114,7 +114,7 @@ def main() -> None:
     )
     save_figure(
         render.draw_skyrmion(skyrmion_mesh, skyrmion_vertices, directors),
-        "rotor_whitney_skyrmion",
+        "frame_fields_skyrmion",
     )
 
     # 3. Normalize harmonic chords, then smooth a separate field under the unit-rotor constraint.
@@ -126,7 +126,7 @@ def main() -> None:
     )
     save_figure(
         render.draw_rotor_frames(saddle_mesh, saddle_vertices, harmonic_rotors),
-        "rotor_whitney_frames",
+        "frame_fields_frames",
     )
 
     relaxation_states = relax_rotor_frames(
@@ -135,7 +135,7 @@ def main() -> None:
     )
     save_animation(
         render.animate_relaxation(saddle_mesh, saddle_vertices, relaxation_states),
-        "rotor_whitney_relaxation",
+        "frame_fields_relaxation",
         frame_duration_ms,
         forward_then_back=True,
     )

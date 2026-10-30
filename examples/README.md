@@ -40,7 +40,7 @@
 - [Whitney forms](surfaces/whitney_forms/) — Corner hat functions and edge one-forms interpolate vertex and edge cochains across triangles and tetrahedra and pull material conductivity back to the mesh.
 - [Regge calculus](surfaces/regge_calculus/) — Edge-length readings define triangle correlations, corner turns reveal intrinsic curvature, and an adjugate assembles the conduction response.
 - [Dirac–Kähler mixed-grade fields](surfaces/dirac_kahler/) — A geometric derivative couples wave components on an annulus; coloured reliefs show their propagation and conversion at the boundary.
-- [Rotor Whitney forms](surfaces/rotor_whitney/) — Interpolated rotors split turning from chord stretch; a disk wraps a director sphere, and coloured ribbons reveal a relaxing frame field.
+- [Smooth frame fields](surfaces/frame_fields/) — Interpolated rotors split turning from chord stretch; a disk wraps a director sphere, and coloured ribbons reveal a relaxing frame field.
 - [Minimal surfaces and conjugates](surfaces/minimal_surfaces/) — Quarter-turned triangle sides relax a domed disk onto a soap film, boundary side sums recover harmonic conjugate minimal surfaces, and Bonnet's circle uncurls a catenoid into a helicoid.
 
 ## Quadrics
@@ -70,6 +70,7 @@
 - [Robot arm kinematics](mechanics/robot_arm/) — Joint motors and carried axes determine gripper motion, joint torques and target tracking.
 - [Arm manipulability](mechanics/manipulability/) — Joint axes determine the gripper's velocity and force ellipsoids as the arm changes pose.
 - [Spinning top](mechanics/spinning_top/) — A top built from ellipsoids moves in contact with a concave bowl.
+- [Chiral tippe top](mechanics/tippe_top/tippe_top.ipynb) — A hollow ellipsoid rises onto its tip for one spin direction while the opposite spin stays upright.
 - [Riccati feedback](mechanics/riccati/riccati.ipynb) — Optimal feedback docks a vessel with three thrusters while balancing accuracy and effort.
 - [Rolling ball](mechanics/rolling_ball/) — A ball's orientation changes as it rolls around a closed path on a table.
 - [Tricycle](mechanics/tricycle/) — Wheel constraints determine steering motion in the plane and in space.
@@ -86,7 +87,7 @@
 - [Composite strip](mechanics/composite_strip/) — Fibre directions couple axial extension to twist in a laminated strip.
 - [Piezoelectric bimorph](electromagnetism/piezoelectric/piezoelectric.ipynb) — One constitutive coupling bends a layered continuum under voltage and generates an electrical signal under load.
 - [Crystal waves](mechanics/crystal_waves/) — Crystal stiffness determines elastic wave speeds, polarizations and energy focusing.
-- [Seismic waves in a small planet](mechanics/whitney_elasticity/) — Constant-strain triangles carry P, S and surface waves through a solid shell around a liquid core, which casts a shadow for the S waves.
+- [Seismic waves](mechanics/seismic_waves/) — Constant-strain triangles carry P, S and surface waves through a solid shell around a liquid core, which casts a shadow for the S waves.
 - [Beam bending](mechanics/bending/) — Loads on thin-walled cantilevers produce bending and torsion according to the cross-section's geometry.
 - [Elastica](mechanics/elastica/) — End loads bend elastic rods into buckled shapes, curls and helices.
 - [Crystal slip](mechanics/slip_systems/) — Applied tension selects slip systems and turns a metal crystal as it yields.
@@ -106,7 +107,7 @@
 - [Vortices on the sphere](fluids/sphere_vortices/) — Point vortices carry circulation and induce motion on a spherical surface.
 - [Swimming without inertia](fluids/stokes_swimmer/) — Cyclic shape changes propel a swimmer while fluid forces and torques balance at every instant.
 - [Stokes flow on a mesh](fluids/dec_stokes/) — Incidence and diagonal Hodge maps determine pressure and flux through a channel around an obstacle.
-- [Projective Whitney fields](fluids/projective_sphere_flow/) — Homogeneous corner weights vary rational interpolation and the polar dual while diffusion stays on a fixed sphere; the same quotient works in the affine plane.
+- [Diffusion on a sphere of rays](fluids/projective_sphere_flow/) — Homogeneous corner weights vary rational interpolation and the polar dual while diffusion stays on a fixed sphere; the same quotient works in the affine plane.
 - [Laplacian eigenfunction fluids](fluids/eigen_fluids/) — Whitney gradients and precomputed mode interactions evolve vortices on the Stanford bunny and shear layers on a sphere.
 
 ## Relativity
@@ -124,7 +125,7 @@
 - [Twistors and linked light](relativity/twistors/) — Twistors describe light rays and a twisting family of rays filling spacetime.
 - [Terrell rotation](relativity/terrell/) — Light travel times determine photographs of bodies passing a camera near the speed of light.
 - [Thomas precession](relativity/thomas_precession/) — Successive boosts turn a particle's frame and contribute to the spin motion measured in muon experiments.
-- [Spacetime Whitney waves](relativity/spacetime_whitney/) — Whitney interpolation on a spacetime mesh follows a scalar pulse reflecting from an advancing mirror.
+- [Waves off a moving mirror](relativity/moving_mirror/) — A mesh of spacetime, solved over the whole history at once, follows a scalar pulse reflecting from an advancing mirror.
 
 ## Quantum
 
