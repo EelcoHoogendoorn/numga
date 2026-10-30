@@ -6,7 +6,7 @@ import pytest
 from numga import stack
 from numga.algebras import VGA2D, VGA3D
 from examples import instantiate
-from examples.mechanics.whitney_elasticity import core
+from examples.mechanics.seismic_waves import core
 
 
 @pytest.fixture(scope="module")

@@ -1,4 +1,4 @@
-"""Weighted Whitney fields carry steady diffusion on a fixed physical surface.
+"""Steady diffusion on a fixed physical surface, carried by weighted corner hats and edge forms.
 
 Positive vertex scales choose a rational interpolation on the same projective triangles. The surface measure and conductivity specify the physics independently of those scales.
 """

@@ -1,4 +1,4 @@
-"""Whitney displacement fields carry elastic waves through a planet with a liquid core and a free surface.
+"""Elastic waves through a planet with a liquid core and a free surface.
 
 Corner hats give a constant strain on each triangle. The material reads that strain,
 and its response pulls back to nodal forces; a lumped mass map turns them into motion.

@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
-from examples.mechanics.whitney_elasticity import core
+from examples.mechanics.seismic_waves import core
 from examples.util.wgsl import image_figure, meshes, solids, strokes
 
 n_pixels = 300

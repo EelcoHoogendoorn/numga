@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from numga import stack
-from examples.relativity.spacetime_whitney.core import (
+from examples.relativity.moving_mirror.core import (
     Mesh, Point, Plane, mv, space, time,
 )
 
@@ -80,13 +80,13 @@ def spacetime_strip(space_axis: Point, time_axis: Point, n_space: int, n_time: i
 
 
 def main() -> None:
-    from examples.relativity.spacetime_whitney.core import (
+    from examples.relativity.moving_mirror.core import (
         Operators, barycentric_hats, causal_wake, edge_whitney_forms, moving_mirror_wave,
     )
-    from examples.relativity.spacetime_whitney import render
+    from examples.relativity.moving_mirror import render
     from examples.util.animation import save_animation, save_figure
 
-    # 1. Spacetime Whitney forms, the Lorentzian dual, and the causal light-cone wake.
+    # 1. Corner hats and edge forms on spacetime, the Lorentzian dual, and the causal light-cone wake.
     corners, points = single_triangle(space, time, n_triangle_subdivisions)
     hats, gradients, _ = barycentric_hats(corners, points)
     edge_forms = edge_whitney_forms(corners, points)                         # [corners, samples] Plane+
@@ -101,7 +101,7 @@ def main() -> None:
             corners, points, gradients, edge_forms,
             wake_mesh, wake_vertices, wake, source_event,
         ),
-        "spacetime_whitney_cone",
+        "moving_mirror_light_cone",
     )
 
     # 2. Relativistic moving-mirror cavity and Einstein Doppler frequency compression.
@@ -122,7 +122,7 @@ def main() -> None:
             mirror_mesh, mirror_vertices, n_mirror_space, n_mirror_time,
             wave_rate, slice_energies, before_row, after_row,
         ),
-        "spacetime_whitney_doppler",
+        "moving_mirror_doppler",
     )
 
     # 3. Animated spacetime worldsheet slice and live 1D moving-mirror cavity.
@@ -132,7 +132,7 @@ def main() -> None:
             mirror_mesh, mirror_vertices, n_mirror_space, n_mirror_time,
             wave_rate, frame_rows,
         ),
-        "spacetime_whitney_mirror",
+        "moving_mirror_cavity",
         frame_duration_ms,
     )
 

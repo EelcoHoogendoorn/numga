@@ -9,7 +9,7 @@ import numpy as np
 
 from numga import concatenate, stack
 from numga.sparse import SparseExtensor, spdiag
-from examples.surfaces.rotor_whitney import core
+from examples.surfaces.frame_fields import core
 from examples.util.wgsl import image_figure, meshes, solids, strokes
 
 background = np.ones(3)

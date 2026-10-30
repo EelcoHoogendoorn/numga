@@ -1,4 +1,4 @@
-"""A little planet with a liquid core and a solid shell rings after a blow just below its free surface."""
+"""A planet with a liquid core and a solid shell rings after a blow just below its free surface."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from itertools import chain, repeat
 import numpy as np
 
 from numga import where
-from examples.mechanics.whitney_elasticity import core
+from examples.mechanics.seismic_waves import core
 
 mv = core.mv
 
@@ -61,7 +61,7 @@ vorticity_scale = 0.3
 
 
 def main() -> None:
-    from examples.mechanics.whitney_elasticity import render
+    from examples.mechanics.seismic_waves import render
     from examples.util.animation import save_animation, save_figure
 
     mesh, vertices = core.Mesh.concentric_disk(radial_boundaries, n_radial_divisions)
@@ -75,7 +75,7 @@ def main() -> None:
     material = core.constitutive(lame_lambda, lame_mu)
     viscosity = core.viscous(core.as_scalar(layer_viscosities[regions]))
     operators = core.Operators(mesh, vertices, material, viscosity, density)
-    save_figure(render.draw_materials(mesh, vertices, regions), "whitney_elasticity_materials")
+    save_figure(render.draw_materials(mesh, vertices, regions), "seismic_waves_materials")
 
     # The moon comes in at an angle to the normal of the surface where it strikes, and rebounds with part of its normal
     # speed reversed and part of its tangential speed kept; the planet's blow is the momentum the moon gives up.
@@ -102,7 +102,7 @@ def main() -> None:
     frames = core.reconstruct(operators, states)
     save_animation(render.animate_waves(mesh, vertices, regions, frames, moon, moon_radius, displacement_scale,
                                        dilation_scale, vorticity_scale),
-                   "whitney_elasticity_waves", frame_duration_ms)
+                   "seismic_waves_waves", frame_duration_ms)
 
     # The modes of a uniform ball of cork, where only their shapes tell them apart.
     ball_regions = np.ones_like(regions)                        # [faces]
@@ -115,7 +115,7 @@ def main() -> None:
     pair_idx = np.flatnonzero(frequency_gaps < pair_tolerance * squared_frequencies[1:])[:n_travelling_waves]
     waves = core.travelling(ball, shapes[pair_idx], shapes[pair_idx + 1], mode_peak, n_cycle_frames)
     save_animation(render.animate_modes(mesh, vertices, ball_regions, waves, displacement_scale),
-                   "whitney_elasticity_modes", frame_duration_ms)
+                   "seismic_waves_modes", frame_duration_ms)
 
 
 if __name__ == "__main__":

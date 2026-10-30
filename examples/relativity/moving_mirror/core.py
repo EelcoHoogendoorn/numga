@@ -1,6 +1,6 @@
-"""Spacetime Whitney waves propagate a scalar pulse through a triangulated worldsheet with a moving boundary. An advancing mirror compresses the reflected pulse and supplies its extra energy.
+"""A scalar pulse through a triangulated worldsheet with a moving boundary: an advancing mirror compresses the reflected pulse and supplies its extra energy.
 
-The signed triangle patch defines Whitney interpolation independently of the metric. The signature enters through `Plane.dual()`, and its pullback by the gradient gives the wave operator. Initial data and boundary values select the causal solution; the Lorentzian metric alone does not select a direction of time.
+The signed triangle patch defines the interpolation by corner hats and edge forms independently of the metric. The signature enters through `Plane.dual()`, and its pullback by the gradient gives the wave operator. Initial data and boundary values select the causal solution; the Lorentzian metric alone does not select a direction of time.
 """
 
 from __future__ import annotations

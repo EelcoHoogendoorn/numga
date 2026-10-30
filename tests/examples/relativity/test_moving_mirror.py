@@ -1,8 +1,8 @@
-"""Spacetime Whitney forms, the Lorentzian dual, causal light-cone wakes, and relativistic moving-mirror Doppler shift."""
+"""Corner hats and edge forms on spacetime, the Lorentzian dual, causal light-cone wakes, and relativistic moving-mirror Doppler shift."""
 
 import numpy as np
 
-from examples.relativity.spacetime_whitney import core, scenarios
+from examples.relativity.moving_mirror import core, scenarios
 
 
 def test_spacetime_barycentric_hats_edge_forms_and_lorentzian_dual():
