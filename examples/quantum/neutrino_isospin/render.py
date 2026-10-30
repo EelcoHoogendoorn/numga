@@ -19,9 +19,14 @@ from examples.util.wgsl import fitted, meshes, show, solids, strokes
 from examples.util.wgsl.meshes import Samples
 from examples.util.wgsl.scene import Scene
 
-mv, sm = core.mv, solids.mv
-# The flavors at the poles, the electron's and the muon's, and their colours.
+mv = core.mv
+# The intrinsic unit volume: an isospin, the patch of the plane it turns in, times it is that plane, extrinsic, and
+# the plane's dual the direction square to it, where the isospin points on the flavor sphere.
+unit_volume = mv.antipseudoscalar([1])                                       # [] Antipseudoscalar-
+direction_of_isospin = (core.Isospin * unit_volume).dual()                   # [] Direction- <- Isospin-
+# The flavors at the poles, the electron's and the muon's, the directions they point along, and their colours.
 flavors = stack((core.flavor_e, core.flavor_mu))                             # [flavors] Isospin-
+flavor_directions = solids.context.include_from_algebra(direction_of_isospin(flavors))        # [flavors] Direction-
 flavor_colours = np.array([to_rgb("#0284c7"), to_rgb("#e11d48")])
 path_colour, start_colour, end_colour = np.array(to_rgb("#6366f1")), np.array(to_rgb("#10b981")), np.array(to_rgb("#f59e0b"))
 plane_colour, axis_colour = np.array(to_rgb("#1e293b")), np.array(to_rgb("#94a3b8"))
@@ -43,17 +48,6 @@ PANELS_PX = (charts.DESIGN_WIDTH, 360)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def isospin_coordinates(isospins: core.Isospin) -> np.ndarray:
-    """The x, y and z parts of isospins: their pairings with the planes yz, zx and xy."""
-    return (stack((mv.yz, mv.zx, mv.xy)) & isospins[..., None]).to_array()
-
-
-def gpu_directions(isospins: core.Isospin) -> solids.Point:
-    """The GPU library's own directions along isospins, from the centre of the flavor sphere: their x, y and z parts,
-    read by pairing, are the one hand-off from this algebra to the renderer's."""
-    return sm.direction(isospin_coordinates(isospins))
-
-
 def electron_probability(trajectory: core.Isospin) -> np.ndarray:
     """The electron flavor's probability along a path of isospins."""
     electron, _ = core.flavor_probabilities(trajectory)
@@ -78,15 +72,15 @@ def flavor_sphere(start_plane: core.Bivector, end_plane: core.Bivector, ax: plt.
     angles = np.linspace(0, 2 * np.pi, N_CIRCLE_DOTS, endpoint=False)
     turns = (start_unit * (-angles / 2)).exp()                                  # [dots] Rotor+
     circle_dots = turns >> in_plane.normalized()                                # [dots] Isospin-
+    circle_places = solids.origin + solids.context.include_from_algebra(direction_of_isospin(circle_dots))   # [dots] Point-
     parts = [(solids.ball(points, radius)[:, None], colour)
              for points, radius, colour in ((axis_dots.reshape(-1), AXIS_DOT_RADIUS, axis_colour),
-                                            (solids.origin + gpu_directions(circle_dots), CIRCLE_DOT_RADIUS,
-                                             plane_colour),
-                                            (solids.origin + gpu_directions(flavors), FLAVOR_RADIUS, flavor_colours))]
+                                            (circle_places, CIRCLE_DOT_RADIUS, plane_colour),
+                                            (solids.origin + flavor_directions, FLAVOR_RADIUS, flavor_colours))]
     ball = [(solids.ball(solids.origin, 1.0)[None, None], sphere_colour, sphere_opacity)]
     # The equator and two meridians, where the planes x, y and z cut the sphere; the plane the isospin turns in at the
     # end, through the centre square to its patch.
-    end_circle = -gpu_directions(end_plane.dual()[None]).dual()                # [1] Plane+
+    end_circle = solids.context.include_from_algebra(end_plane.dual()[None] * unit_volume)       # [1] Plane+
     circles = [(solids.axes, grid_colour, GRID_WIDTH / view.pixel, grid_opacity),
                (end_circle, plane_colour, PLANE_WIDTH / view.pixel, 1.0)]
     return parts, ball, circles, view
@@ -101,7 +95,7 @@ def inked(circles: list, n_opaque: int) -> list[solids.Ink]:
 def path_marks(path: core.Isospin, view: solids.View) -> tuple[Samples, tuple[solids.Quadric, np.ndarray]]:
     """A path of isospins over the sphere `[steps]` as a stroke, and its ends as balls, its start green and its end
     orange."""
-    places = solids.origin + gpu_directions(path)                               # [steps] Point-
+    places = solids.origin + solids.context.include_from_algebra(direction_of_isospin(path))     # [steps] Point-
     stroke = strokes.polylines([(places, path_colour)], PATH_WIDTH / view.pixel, view)
     ends = (solids.ball(places[np.array([0, -1])], END_RADIUS)[:, None], np.stack([start_colour, end_colour]))
     return stroke, ends
@@ -109,7 +103,7 @@ def path_marks(path: core.Isospin, view: solids.View) -> tuple[Samples, tuple[so
 
 def name_flavors(ax, view: solids.View) -> None:
     """The flavors named just past the poles, where the camera sees them."""
-    for (x, y), name, colour in zip(view.across(solids.origin + gpu_directions(flavors) * LABEL_DISTANCE),
+    for (x, y), name, colour in zip(view.across(solids.origin + flavor_directions * LABEL_DISTANCE),
                                     (r"$\nu_e$", r"$\nu_\mu$"), flavor_colours):
         ax.text(x, y, name, ha="center", va="center", fontweight="bold", color=colour)
 

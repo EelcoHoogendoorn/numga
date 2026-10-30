@@ -12,6 +12,7 @@ from collections.abc import Iterable, Iterator
 from functools import cache
 
 import numpy as np
+from numga import stack
 
 from examples.surfaces.developability import core
 from examples.util.wgsl import Shader
@@ -81,8 +82,8 @@ def shader() -> Shader:
 
 
 def coordinates(points: core.Point) -> np.ndarray:
-    """The x, y and z coordinates of points, antivectors."""
-    return points.cast(core.ga.subspace("yz zx xy")).kernel
+    """Read points for the numerical geometry checks through their coordinate planes."""
+    return (stack((core.mv.x, core.mv.y, core.mv.z)) & points[..., None]).to_array()
 
 
 def camera() -> tuple[core.Extensor, core.Point]:

@@ -137,14 +137,6 @@ def animate_tilings(moving) -> Iterator[np.ndarray]:
 
 
 # --- the 600-cell -----------------------------------------------------------------------
-def gpu_points(points) -> solids.Point:
-    """The GPU library's own points at the places of the spinors' plane parts: their coefficients on the planes, read
-    by the scalar product with the planes' reverses, are the one hand-off from this algebra to the renderer's."""
-    mv = points.context.multivector
-    planes = stack((mv.yz, mv.zx, mv.xy)).reverse()
-    return solids.mv.point(planes.scalar_product(points[..., None]).to_array())
-
-
 def distinct(spinors):
     """The distinct spinors, up to round-off: one of each set whose coefficients are equal to six decimals, in sorted
     order. The comparison is a numeric step on the coefficients, read by the scalar product with the blades'
@@ -165,14 +157,18 @@ def polytope(spinors) -> np.ndarray:
     the points traced as balls, and edges joining nearest neighbours drawn as strokes, lit on the GPU."""
     vertices = distinct(spinors)                                               # [vertices] Even+
     gaps = (vertices[:, None] - vertices[None]).norm()                         # [vertices, vertices] Scalar+
-    nearest = gaps.to_array()[gaps > 1e-9].min()
+    distinct_gaps = gaps[gaps > 1e-9]
+    nearest = distinct_gaps.min()
     first, second = np.nonzero(np.triu((gaps - nearest).abs() < 1e-6))
     # From the eye beyond the scalar axis, each chord of the three-sphere projects to a straight segment: the plane
     # part, scaled down by the distance from the eye along the scalar axis.
     space = vertices.select_grade(2) / (eye_distance - vertices.select_grade(0))   # [vertices] Bivector+
+    # Each plane part times the intrinsic scalar one, every coefficient kept: the patch of its plane, the point of
+    # space square to the plane.
+    patches = space * vertices.context.multivector.antipseudoscalar([1])      # [vertices] Antivector-
     # Seen from slightly above: the camera turned about x by the tilt, looking along its own -z.
     view = solids.View((solids.mv.yz * (tilt / 2)).exp(), np.full(2, half_width), n_pixels)
-    places = gpu_points(space)                                                 # [vertices] Point-
+    places = solids.origin + solids.context.include_from_algebra(patches)                # [vertices] Point-
     edges = strokes.segments(places[first], places[second], even, edge_width, view)
     balls = solids.ball(places, vertex_radius * view.pixel)[:, None]           # [vertices, 1] Plane+ <- Point-
     return solids.draw([(balls, vertex_colour)], view, background, inks=[], translucent=[], meshes=[(edges, 1.0)])

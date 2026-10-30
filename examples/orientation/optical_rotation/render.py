@@ -10,6 +10,9 @@ from numga import concatenate, stack
 from examples.orientation.optical_rotation.core import Direction, Field, mv
 from examples.util.wgsl import show, solids
 
+# The observer sees the point where its time line meets the spatial slice.
+space_slice = mv.t ^ (Direction & -mv.t.dual())
+
 sm = solids.mv
 leg_colours = np.array([to_rgb("#df7246"), to_rgb("#238c9b")])
 entering_colour, beam_colour = np.array(to_rgb("#262b32")), np.array(to_rgb("#75808a"))
@@ -33,13 +36,6 @@ upright = ((sm.yz + sm.xy) * (np.pi / (2 * np.sqrt(2)))).exp()
 
 
 # --- plumbing -------------------------------------------------------------------------
-def gpu_points(places: Direction) -> solids.Point:
-    """The GPU library's own points at the places in the observer's space, turned upright: their coordinates, read by
-    pairing the directions with the planes x, y and z, are the one hand-off from spacetime to the renderer's
-    algebra."""
-    return upright >> sm.point((stack((mv.x, mv.y, mv.z)) & places[..., None]).to_array())
-
-
 def draw_isolator(fields: Field, depths: np.ndarray) -> plt.Figure:
     """`[media, setups, legs, depths]` electric fields: one panel per medium and setup, the beam running
     left to right, out to the reflector and back, each field drawn as its polarization line, with the
@@ -59,9 +55,14 @@ def draw_isolator(fields: Field, depths: np.ndarray) -> plt.Figure:
     square = (reflector_half_width * (mv.x.dual() * np.array([-1, 1, 1, -1]) + mv.y.dual() * np.array([-1, -1, 1, 1]))
               + length * beam)                                                # [corners] Direction-
     corners = concatenate([square - length * beam, square + length * beam])   # [2 * corners] Direction-
-    view = solids.view([gpu_points(corners)], 0.0, elevation, azimuth, margin, n_pixels)
-    reflector = solids.plates(gpu_points(square)[None], reflector_thickness)
-    beam_rod = solids.rods(gpu_points(ends[0]), gpu_points(ends[1]), beam_width / 2 * view.pixel)[None]
+    scene_corners = solids.origin + (upright >> solids.context.include_from_algebra(space_slice(corners)))
+    scene_square = solids.origin + (upright >> solids.context.include_from_algebra(space_slice(square)))
+    beam_ends = solids.origin + (upright >> solids.context.include_from_algebra(space_slice(ends)))
+    stations = solids.origin + (upright >> solids.context.include_from_algebra(space_slice(beam_places)))
+    directions = upright >> solids.context.include_from_algebra(space_slice(polarizations))
+    view = solids.view([scene_corners], 0.0, elevation, azimuth, margin, n_pixels)
+    reflector = solids.plates(scene_square[None], reflector_thickness)
+    beam_rod = solids.rods(beam_ends[0], beam_ends[1], beam_width / 2 * view.pixel)[None]
     # Each dash's start and end along its line, as shares of the line's half-length from its middle.
     cells = np.linspace(-1, 1, n_dashes + 1)
     gap = (1 - dash_fill) * (cells[1] - cells[0]) / 2
@@ -71,12 +72,12 @@ def draw_isolator(fields: Field, depths: np.ndarray) -> plt.Figure:
     figure = plt.figure(figsize=(media * columns / 100, setups * rows / 100), dpi=100)
     for medium in range(media):
         for setup in range(setups):
-            half_lines = line_half_width * polarizations[medium, setup]       # [legs, depths] Direction-
-            lines = solids.rods(gpu_points(beam_places - half_lines), gpu_points(beam_places + half_lines),
+            half_lines = line_half_width * directions[medium, setup]         # [legs, depths] Point-
+            lines = solids.rods(stations - half_lines, stations + half_lines,
                                 line_width / 2 * view.pixel)                               # [legs, depths, 3]
-            entering_half_line = entering_reach * line_half_width * polarizations[medium, setup, 0, 0]   # [] Direction-
-            dashes = solids.rods(gpu_points(ends[:, None] + dash_starts * entering_half_line),
-                                 gpu_points(ends[:, None] + dash_ends * entering_half_line),
+            entering_half_line = entering_reach * line_half_width * directions[medium, setup, 0, 0]   # [] Point-
+            dashes = solids.rods(beam_ends[:, None] + dash_starts * entering_half_line,
+                                 beam_ends[:, None] + dash_ends * entering_half_line,
                                  dash_width / 2 * view.pixel)                              # [2, dashes, 3]
             parts = [(beam_rod, beam_colour), (dashes.reshape(-1, 3), entering_colour),
                      *((lines[leg], colour) for leg, colour in enumerate(leg_colours))]

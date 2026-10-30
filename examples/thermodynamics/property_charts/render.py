@@ -17,7 +17,7 @@ from itertools import chain
 
 import numpy as np
 
-from numga import Extensor, concatenate, where
+from numga import Extensor, concatenate, stack, where
 from examples.thermodynamics import rendering as art
 from examples.util.wgsl import solids
 
@@ -41,7 +41,7 @@ saturation_label = (27.5, 22.5)
 apparatus_pixels = 240
 
 
-def apparatus(fraction: float, warmth: float, liquid: float) -> np.ndarray:
+def apparatus(fraction: float, warmth: float, liquid: solids.Scalar) -> np.ndarray:
     """The duct: the cooling coil, its tray of collected water, the reheater, and the parcel of air passing them."""
     mv = solids.mv
     tray = art.box(mv.point([0, 0, 0.1]), np.array([2.35, 0.6, 0.08]))
@@ -53,7 +53,7 @@ def apparatus(fraction: float, warmth: float, liquid: float) -> np.ndarray:
     parcel = solids.ball(entry + (far_end - entry) * fraction, 0.23)[None, None]
     # The collected water, resting on the tray's floor and as deep as it has filled.
     depth = 0.01 + 0.2 * liquid
-    collected = art.box(mv.point([-0.8, -0.72, 0.15]) + art.rise * (depth / 2), np.array([0.45, 0.2, depth / 2]))
+    collected = art.box(mv.point([-0.8, -0.72, 0.15]) + art.rise * (depth / 2), stack((mv.scalar([0.45]), mv.scalar([0.2]), depth / 2)))
     corners = mv.point(np.array([[x, y, z] for x in (-2.5, 2.5) for y in (-1.0, 0.65) for z in (0, 1.5)]))
     view = solids.view([corners], 0.0, np.radians(18), np.radians(-10), 0.04, apparatus_pixels)
     return solids.draw([(tray, art.grey), (coils, art.blue), (reheater, art.orange),
@@ -61,9 +61,9 @@ def apparatus(fraction: float, warmth: float, liquid: float) -> np.ndarray:
                        translucent=[], meshes=[])
 
 
-def chart_points(temperatures: np.ndarray, water: np.ndarray) -> art.Point:
+def chart_points(temperatures: art.Scalar, water: art.Scalar) -> art.Point:
     """Places on the chart of temperatures and water contents in kg per kg of dry air `[...]`, the water in grams."""
-    return art.chart_points(temperatures, grams_per_kilogram * np.asarray(water))
+    return art.chart_points(temperatures, grams_per_kilogram * water)
 
 
 class Chart:
@@ -117,7 +117,7 @@ class Chart:
     def points(states: Extensor) -> art.Point:
         """The states on the chart, their temperatures and water contents read by pairing `[...]`."""
         mv = states.context.multivector
-        return chart_points((mv.t & states).to_array(), (mv.w & states).to_array())
+        return chart_points(art.context.include_from_algebra(mv.t & states), art.context.include_from_algebra(mv.w & states))
 
     def picture(self, path: art.Point, travelled: int, states: art.Point, toward: art.Point) -> np.ndarray:
         layers = (self.layers
@@ -135,10 +135,11 @@ def conditioning(relative_humidity_of: Function, enthalpy_of: Function, path: Ex
     mv = first.context.multivector
     chart = Chart(relative_humidity_of, enthalpy_of, mv)
     traced, places, toward = chart.points(path), chart.points(states), chart.points(states + directions)
-    temperatures, water = np.asarray((mv.t & path).to_array()), np.asarray((mv.w & path).to_array())
+    temperatures, water = mv.t & path, mv.w & path
+    cold, hot = temperatures.min(), temperatures.max()
     for travelled, state in enumerate(chain([first], passing)):
-        warmth = (float((mv.t & state).to_array()) - temperatures.min()) / np.ptp(temperatures)
-        liquid = (water[0] - float((mv.w & state).to_array())) / (water[0] - water[-1])
+        warmth = float((((mv.t & state) - cold) / (hot - cold)).to_array())
+        liquid = solids.context.include_from_algebra((water[0] - (mv.w & state)) / (water[0] - water[-1]))
         yield art.beside([apparatus(travelled / (len(temperatures) - 1), warmth, liquid),
                           chart.picture(traced, travelled, places, toward)])
 

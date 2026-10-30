@@ -12,7 +12,6 @@ import numpy as np
 from matplotlib.colors import to_rgb
 from matplotlib.figure import Figure
 
-from numga import stack
 from examples.fluids.eigen_fluids import core
 from examples.util import charts
 from examples.util.wgsl import image_figure, meshes, solids
@@ -59,12 +58,6 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(elements: core.Point) -> np.ndarray:
-    """The Cartesian coordinates of points, antivectors, read by their pairings with the coordinate planes."""
-    mv = core.mv
-    return (stack((mv.x, mv.y, mv.z)) & elements.batch()[..., None]).to_array()
-
-
 def plain_axes(axis: plt.Axes) -> None:
     """A quantity plot with faint left and bottom spines only."""
     axis.spines[["top", "right"]].set_visible(False)
@@ -93,9 +86,9 @@ def surface_panel(mesh: core.Mesh, points: solids.Point, smooth_normals: dict, f
 
 def draw_surface(mesh: core.Mesh, vertices: core.Point) -> Figure:
     """The bare surface, plainly lit, from the camera of the modes."""
-    points = solids.mv.point(coordinates(vertices))
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())       # [vertices] Point-
     frame = camera_view(points, n_mode_pixels)
-    surface = meshes.samples(points, mesh.faces, surface_colour, meshes.smooth(points, mesh.faces), frame,
+    surface = meshes.samples(points, mesh.faces, surface_colour, meshes.smooth(points, mesh), frame,
                              face_values=np.zeros(1), colour=meshes.plain, gloss=solids.gloss)
     return image_figure(solids.draw([], frame, background, inks=[], translucent=[], meshes=[(surface, 1.0)]))
 
@@ -103,8 +96,8 @@ def draw_surface(mesh: core.Mesh, vertices: core.Point) -> Figure:
 def draw_modes(mesh: core.Mesh, vertices: core.Point, modes: core.Scalar,
                mode_velocities: core.Point) -> Figure:
     """The Stanford bunny side by side for each selected Laplace–Beltrami streamfunction mode and its streamlines."""
-    points = solids.mv.point(coordinates(vertices))
-    smooth_normals = meshes.smooth(points, mesh.faces)
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())       # [vertices] Point-
+    smooth_normals = meshes.smooth(points, mesh)
     frame = camera_view(points, n_mode_pixels)
     panels = []
     for mode, velocity in zip(modes, mode_velocities):
@@ -158,8 +151,8 @@ def animate_flow(mesh: core.Mesh, vertices: core.Point, states: Iterable[tuple[c
     first = next(states)
     field_scale = float(np.percentile(np.abs(first[0].to_array()), vorticity_exposure))
     stream_scale = float(np.percentile(np.abs(first[1].to_array()), stream_exposure))
-    points = solids.mv.point(coordinates(vertices))
-    smooth_normals = meshes.smooth(points, mesh.faces)
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())       # [vertices] Point-
+    smooth_normals = meshes.smooth(points, mesh)
     frame = camera_view(points, n_pixels)
     for vorticity, stream, velocity in chain((first,), states):
         yield surface_panel(mesh, points, smooth_normals, frame, vorticity, stream, velocity,

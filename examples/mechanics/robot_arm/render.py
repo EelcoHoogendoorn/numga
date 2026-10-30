@@ -38,9 +38,10 @@ def solid_boxes(corners: Point) -> solids.Plane:
     negative side."""
     faces = corners[:, BOX_FACES]                                              # [boxes, 6, 3] Point-
     planes = (faces[..., 0] & faces[..., 1] & faces[..., 2]) * solids.flip     # [boxes, 6] Plane+
-    planes = planes / (planes | planes).square_root()
+    planes = planes.normalized()
     middles = corners.sum(axis=-1)[:, None]                                    # [boxes, 1] Point-
-    return planes * -np.sign((planes & middles).to_array())
+    side = planes & middles
+    return planes * (np.asarray(side < 0, dtype=int) - np.asarray(side > 0, dtype=int))
 
 
 def animate_tracking(states: Iterable, room: float = VIEW_ROOM) -> Iterator[np.ndarray]:

@@ -39,9 +39,11 @@ from numga.algebras import PGA2D as ga
 from numga.gatype import GAType
 from examples.util.wgsl import Shader
 
-mv = NumpyContext(ga).multivector
+context = NumpyContext(ga)
+mv = context.multivector
 Point = ga.gatype.antivector()                                               # Antivector-
 Plane = ga.gatype.vector()                                                   # Vector+
+Scalar = ga.gatype.scalar()                                                  # Scalar+
 Quadric = ga.gatype((Plane, Point))                                          # Plane+ <- Point-
 Envelope = ga.gatype((Point, Plane))                                         # Point- <- Plane+
 origin = mv.w.dual()                                                         # [] Point-
@@ -328,10 +330,17 @@ def shader() -> Shader:
 
 class Window(NamedTuple):
     """A rectangle of space: its top left corner, a pixel's width, and its rows and columns of square pixels."""
-    left: float
-    top: float
+    corner: Point
     pixel: float
     shape: tuple[int, int]
+
+    @property
+    def left(self) -> float:
+        return float((mv.x & self.corner).to_array())
+
+    @property
+    def top(self) -> float:
+        return float((mv.y & self.corner).to_array())
 
     @property
     def extent(self) -> tuple[float, float, float, float]:
@@ -344,7 +353,8 @@ def window(x_range: tuple[float, float], y_range: tuple[float, float], rows: int
     """The window `rows` pixels down `y_range`, as many square pixels across `x_range`, about its middle, as fit."""
     pixel = (y_range[1] - y_range[0]) / rows
     columns = round((x_range[1] - x_range[0]) / pixel)
-    return Window(sum(x_range) / 2 - columns * pixel / 2, y_range[1], pixel, (rows, columns))
+    corner = origin + mv.x.dual() * (sum(x_range) / 2 - columns * pixel / 2) + mv.y.dual() * y_range[1]
+    return Window(corner, pixel, (rows, columns))
 
 
 def filling(x_range: tuple[float, float], y_range: tuple[float, float], room: tuple[int, int]) -> Window:
@@ -352,7 +362,9 @@ def filling(x_range: tuple[float, float], y_range: tuple[float, float], room: tu
     columns and rows, the other way as many pixels as they span."""
     pixel = max((x_range[1] - x_range[0]) / room[0], (y_range[1] - y_range[0]) / room[1])
     rows, columns = round((y_range[1] - y_range[0]) / pixel), round((x_range[1] - x_range[0]) / pixel)
-    return Window(sum(x_range) / 2 - columns * pixel / 2, sum(y_range) / 2 + rows * pixel / 2, pixel, (rows, columns))
+    centre = origin + mv.x.dual() * (sum(x_range) / 2) + mv.y.dual() * (sum(y_range) / 2)
+    corner = centre - mv.x.dual() * (columns * pixel / 2) + mv.y.dual() * (rows * pixel / 2)
+    return Window(corner, pixel, (rows, columns))
 
 
 def view(points: list[Extensor], margin: float, room: tuple[int, int]) -> Window:
@@ -362,10 +374,17 @@ def view(points: list[Extensor], margin: float, room: tuple[int, int]) -> Window
     seen = concatenate([unit(batch).reshape(-1) for batch in points])        # [points] Point
     across = stack((mv.x, mv.y))                                              # [2] Plane
     heights = across[:, None] & seen                                          # [2, points] Scalar
-    lowest, highest = seen[heights.argmin(axis=-1)], seen[heights.argmax(axis=-1)]   # [2] Point, Point
-    low, high = (across & lowest).to_array(), (across & highest).to_array()
-    spread = margin * (high - low).max()
-    return filling((low[0] - spread, high[0] + spread), (low[1] - spread, high[1] + spread), room)
+    low, high = heights.min(axis=-1), heights.max(axis=-1)                    # [2] Scalar+, Scalar+
+    spans = high - low                                                       # [2] Scalar+
+    spread = margin * spans.max()
+    middles = across - mv.w * ((low + high) / 2)                              # [2] Plane+
+    centre = (middles[0] ^ middles[1]) * flip                                 # [] Point-
+    spans = spans + 2 * spread                                               # [2] Scalar+
+    pixels = spans / np.asarray(room)                                        # [2] Scalar+
+    pixel = pixels.max()                                         # [] Scalar+
+    columns, rows = np.rint((spans / pixel).to_array()).astype(int)
+    corner = centre - mv.x.dual() * (columns * pixel / 2) + mv.y.dual() * (rows * pixel / 2)
+    return Window(corner, float(pixel.to_array()), (rows, columns))
 
 
 def oriented(value: Extensor, kind: GAType) -> Extensor:
@@ -399,7 +418,7 @@ class Parts:
         held.append(values)
         return first
 
-    def add_points(self, points: Point, phases: np.ndarray) -> int:
+    def add_points(self, points: Point, phases: Scalar) -> int:
         """Where points `[m]` at unit weight, with their phases `[m]`, start among the points."""
         self.phases.append(phases)
         return self.add(self.points, points)
@@ -459,9 +478,10 @@ class Curves(NamedTuple):
     opacity: float
 
     def primitives(self, parts: Parts, pixel: float) -> dict:
-        # Each quadric at its largest coefficient one, which draws the same curve.
+        # A unit largest gain keeps the same curve while giving its form a common scale.
         quadrics = point_quadrics(self.quadrics)
-        first = parts.add(parts.quadrics, quadrics / np.abs(quadrics.kernel).max(axis=(-1, -2))) + np.arange(quadrics.shape[0])
+        quadrics = quadrics / quadrics.svdvals()[..., 0]
+        first = parts.add(parts.quadrics, quadrics) + np.arange(quadrics.shape[0])
         return fields(Kind.CURVE, first, self.colour, self.opacity, width=self.width * pixel)
 
 
@@ -499,7 +519,7 @@ class Polygons(NamedTuple):
 
     def primitives(self, parts: Parts, pixel: float) -> dict:
         size, n_corners = self.corners.shape
-        first = parts.add_points(unit(self.corners).reshape(size * n_corners), np.zeros(size * n_corners))
+        first = parts.add_points(unit(self.corners).reshape(size * n_corners), mv.scalar(np.zeros((size * n_corners, 1))))
         firsts = first + n_corners * np.arange(size)
         return fields(Kind.POLYGON, firsts, self.colour, self.opacity, end=firsts + n_corners)
 
@@ -519,8 +539,8 @@ class Strokes(NamedTuple):
         # Where each point lies along its polyline: the lengths of the segments before it.
         size, n_points = self.points.shape
         points = unit(self.points)
-        lengths = (points[:, 1:] - points[:, :-1]).dual().norm().to_array()    # [n, k - 1]
-        phases = np.concatenate([np.zeros((size, 1)), np.cumsum(lengths, axis=1)], axis=1)   # [n, k]
+        lengths = (points[:, 1:] - points[:, :-1]).dual().norm()              # [n, k - 1] Scalar+
+        phases = concatenate([mv.scalar(np.zeros((size, 1, 1))), lengths.cumsum(axis=1)], axis=1)   # [n, k] Scalar+
         first = parts.add_points(points.reshape(size * n_points), phases.reshape(-1))
         firsts = first + n_points * np.arange(size)
         return fields(Kind.STROKE, firsts, self.colour, self.opacity, end=firsts + n_points, shape=int(self.cap),
@@ -539,7 +559,7 @@ class Marks(NamedTuple):
 
     def primitives(self, parts: Parts, pixel: float) -> dict:
         size = self.points.shape[0]
-        first = parts.add_points(unit(self.points), np.zeros(size)) + np.arange(size)
+        first = parts.add_points(unit(self.points), mv.scalar(np.zeros((size, 1)))) + np.arange(size)
         return fields(Kind.MARK, first, self.colour, self.opacity, shape=int(self.marker), inner=self.inner * pixel,
                       outer=self.outer * pixel)
 
@@ -559,7 +579,7 @@ def draw(window: Window, layers: list, background: np.ndarray) -> np.ndarray:
     fillers = dict(quadrics=nothing, planes=everywhere, points=origin)
     arrays = {name: concatenate(getattr(parts, name)) if getattr(parts, name) else fillers[name].broadcast_to((1,))
               for name in fillers}
-    image = shader()(window.shape, **arrays, phases=np.concatenate(parts.phases or [np.zeros(1)]),
-                     primitives=primitives, corner=mv.point([window.left, window.top]), pixel=window.pixel,
+    image = shader()(window.shape, **arrays, phases=concatenate(parts.phases or [mv.scalar([[0]])]),
+                     primitives=primitives, corner=window.corner, pixel=window.pixel,
                      background=np.broadcast_to(np.asarray(background, dtype=float), window.shape + (3,)))["image"]
     return np.round(np.clip(image, 0, 1) * 255).astype(np.uint8)

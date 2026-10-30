@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 
-from numga import NumpyContext, concatenate, stack
+from numga import NumpyContext, concatenate, stack, where
 from numga.algebras import PGA3D as ga
 from examples.util.wgsl import Shader, supersampled
 from examples.util.wgsl.library import samples_per_side
@@ -24,8 +24,10 @@ from examples.util.wgsl.runner import Resident
 if TYPE_CHECKING:
     from examples.util.wgsl.meshes import Samples
 
-mv = NumpyContext(ga).multivector
+context = NumpyContext(ga)
+mv = context.multivector
 Point = ga.gatype.antivector()
+Scalar = ga.gatype.scalar()
 Plane = ga.gatype.vector()
 Motor = ga.gatype.rotor()
 Line = ga.gatype.bivector()
@@ -132,11 +134,56 @@ fn entry(along: Quadratic) -> f32 {
 """
 
 
+def quadric_regions() -> str:
+    """WGSL intersecting a ray with an intersection of quadrics: its first surface between two distances,
+    and the test that a point lies inside all the other quadrics. Scene traversal and surface ordering stay with
+    the caller; both use the same crossings and containment test."""
+    return quadric_crossings() + """
+var<storage, read> quadrics: array<Quadric>;
+
+struct SurfaceHit {
+    distance: f32,
+    quadric: u32,
+    tangent: Plane,
+}
+
+fn inside_quadrics(first: u32, end: u32, own: u32, point: Point, tolerance: f32) -> bool {
+    for (var index = first; index < end; index++) {
+        if (index != own && (quadrics[index](point) & point) > tolerance) {
+            return false;
+        }
+    }
+    return true;
+}
+
+fn region_hit(first: u32, end: u32, start: Point, direction: Point, nearest: f32, farthest: f32,
+              tolerance: f32) -> SurfaceHit {
+    var hit = SurfaceHit(farthest, 0u, mv.z);
+    for (var own = first; own < end; own++) {
+        let quadric = quadrics[own];
+        let along = along_ray(quadric, start, direction);
+        if (along.b * along.b - along.a * along.c < 0) {
+            continue;
+        }
+        let roots = crossings(along);
+        for (var which = 0u; which < 2u; which++) {
+            let distance = roots[which];
+            let point = start + direction * distance;
+            if (distance > nearest && distance < hit.distance && inside_quadrics(first, end, own, point, tolerance)) {
+                hit = SurfaceHit(distance, own, quadric(point));
+            }
+        }
+    }
+    return hit;
+}
+"""
+
+
 def quadric_tracing() -> str:
     """WGSL tracing rays through solids bounded by quadrics, as `scene` and `tiles` lay them out: `first_hit`, the
     first point a ray meets on a solid's surface after the last surface seen, by `crossings`, where it crosses each
     quadric, and `inside_others`."""
-    return quadric_crossings() + """
+    return quadric_regions() + """
 // A solid: the intersection of its quadrics, `quadrics[first]` up to `quadrics[end]`, and whether they are all
 // half-spaces, bounded by planes alone.
 struct Solid {
@@ -146,7 +193,6 @@ struct Solid {
 }
 
 var<storage, read> solids: array<Solid>;
-var<storage, read> quadrics: array<Quadric>;
 // The solids each tile of the picture, `tile` pixels a side, may see: the solids `tile_solids[tile_starts[tile]]` up to
 // `tile_solids[tile_starts[tile + 1]]`, in their order; the tiles across the picture.
 var<storage, read> tile_starts: array<u32>;
@@ -167,15 +213,6 @@ struct Hit {
     distance: f32,
     tangent: Plane,
     solid: u32,
-}
-
-fn inside_others(solid: Solid, own: u32, point: Point) -> bool {
-    for (var index = solid.first; index < solid.end; index++) {
-        if (index != own && (quadrics[index](point) & point) > tolerance) {
-            return false;
-        }
-    }
-    return true;
 }
 
 // Whether a surface, by its distance along a ray and its place in the order of surfaces, comes after another.
@@ -261,7 +298,7 @@ fn first_hit(start: Point, direction: Point, last_distance: f32, last_order: u32
                 let distance = roots[which];
                 let point = start + direction * distance;
                 if (after(distance, index, last_distance, last_order) && before(distance, index, hit.distance, hit.solid)
-                    && inside_others(solid, own, point)) {
+                    && inside_quadrics(solid.first, solid.end, own, point, tolerance)) {
                     // The quadric's plane at a point of its surface is the tangent plane there.
                     hit = Hit(distance, quadric(point), index);
                 }
@@ -457,15 +494,16 @@ def ellipsoid(semi_axes: np.ndarray) -> Quadric:
 
 def solid_of_dual_quadric(shape: DualQuadric) -> Quadric:
     """The solids about the origin whose dual quadrics are `shape`, each plane through the origin to the direction of
-    the point its tangent plane touches, as `mv.from_subalgebra` carries the dual quadrics of the algebra of space:
+    the point its tangent plane touches, as `context.include_from_algebra` carries the dual quadrics of the algebra of space:
     with the origin's own dyad taken away, the dual quadric of a closed surface, inverted into the quadric that pairs
     points to at most zero inside."""
     return (shape - origin * (Plane & origin)).inverse()
 
 
-def ball(centres: Point, radius: float) -> Quadric:
+def ball(centres: Point, radius: Scalar) -> Quadric:
     """Solid balls about points, of any weight."""
-    return placed(ellipsoid(np.full(3, radius)), translator(centres / (mv.w & centres) - origin))
+    round_form = (axes * (axes & Point)).sum(axis=-1) / radius**2 - mv.w * (mv.w & Point)
+    return placed(round_form, translator(centres / (mv.w & centres) - origin))
 
 
 # All of space: the quadric pairing every point of unit weight to minus one.
@@ -483,7 +521,7 @@ def aligned(starts: Point, ends: Point) -> tuple[Plane, np.ndarray, Motor]:
     along it, `1` or `-1`, and the turn carrying z onto that, whichever way along the segment lies nearer z, so the
     turn never reverses z."""
     across = (-(ends - starts).dual()).normalized()                           # [...] Plane
-    sense = np.where((across & mv.z.dual()).to_array() >= 0, 1.0, -1.0)
+    sense = np.where((across & mv.z.dual()) >= 0, 1.0, -1.0)
     return across, sense, (1 + across * sense * mv.z).normalized()
 
 
@@ -532,7 +570,8 @@ def boxes(motors: Motor, half_extents: np.ndarray) -> Plane:
 
 def outward(planes: Plane, middles: Point) -> Plane:
     """Planes turned so that points of unit weight lie on their negative sides."""
-    return planes * -np.sign((planes & middles).to_array())
+    side = planes & middles
+    return planes * (np.asarray(side < 0, dtype=int) - np.asarray(side > 0, dtype=int))
 
 
 def plates(corners: Point, thickness: float) -> Plane:
@@ -590,7 +629,7 @@ class Ink(NamedTuple):
     opacity: float
 
 
-def spheres(solids: Quadric) -> tuple[Point, np.ndarray]:
+def spheres(solids: Quadric) -> tuple[Point, Scalar]:
     """A ball holding each of a batch of solids `[solids, quadrics]`: its centre `[solids]` and radius `[solids]`,
     infinite where no quadric bounds it. How a quadric grows along the directions, its form on them, `quadric(direction)
     & direction`, says what it bounds: one growing along all three, an ellipsoid, is held by a ball about its centre,
@@ -599,53 +638,58 @@ def spheres(solids: Quadric) -> tuple[Point, np.ndarray]:
     # The form on directions: its rates of growth, slowest first, and the directions it grows along at those rates.
     rates, normals = (solids(normal_direction) & normal_direction).eigh()   # [solids, quadrics, 3] Scalar, Plane
     directions = normals.dual()                                               # [solids, quadrics, 3] Point
-    rates = rates.to_array()
+    zero, one, infinity = mv.scalar([0]), mv.scalar([1]), mv.scalar([np.inf])
     # A rate is a growth where it exceeds round-off of the quadric's size, the largest gain of its map.
-    size = solids.svdvals().to_array()[..., :1]                               # [solids, quadrics, 1]
-    growing = rates > 1e-9 * size
-    slowest = np.where(growing, rates, np.inf).min(axis=-1)                   # [solids, quadrics]
+    size = solids.svdvals()[..., 0]                                          # [solids, quadrics] Scalar+
+    growing = rates > 1e-9 * size[..., None]
+    positive_rates = where(growing, rates, infinity)
+    slowest = positive_rates.min(axis=-1)
     count = growing.sum(axis=-1)
     # The centre: the origin moved along each direction the quadric grows along, to where its pairing with the point
     # stops changing along it; the pole of the plane at infinity, `quadric.solve(mv.w)`, of an ellipsoid.
-    slopes = ((solids(origin)[..., None] & directions) + (solids[..., None](directions) & origin)).to_array() / 2
-    steps = np.where(growing, -slopes / np.where(growing, rates, 1), 0)       # [solids, quadrics, 3]
+    slopes = ((solids(origin)[..., None] & directions) + (solids[..., None](directions) & origin)) / 2
+    steps = where(growing, -slopes / where(growing, rates, one), zero)       # [solids, quadrics, 3] Scalar+
     centres = origin + (directions * steps).sum(axis=-1)                      # [solids, quadrics] Point
 
-    def reach(points: Point) -> np.ndarray:
+    def reach(points: Point) -> Scalar:
         """How far a quadric's solid reaches from points of unit weight across its slowest growth: its pairing
         with each, against that rate."""
-        return np.sqrt(np.maximum(-(solids(points) & points).to_array(), 0) / slowest)
+        return (-(solids(points) & points).clip(-np.inf, 0) / slowest).square_root()
 
     # A cylinder's or a cone's axis, the direction it grows slowest along, through the centre, and where the other
     # quadrics of its solid that the axis runs straight through, linearly along it, b t + c, cut it.
     axis = directions[..., 0]                                                 # [solids, quadrics] Point
     others = solids[..., None, :]                                             # [solids, 1, quadrics] Quadric
     along = (others(centres[..., None]) & axis[..., None]) + (others(axis[..., None]) & centres[..., None])
-    rate, offset = along.to_array(), (others(centres[..., None]) & centres[..., None]).to_array()   # [solids, quadrics, quadrics]
-    straight = np.abs((others(axis[..., None]) & axis[..., None]).to_array()) <= 1e-9 * size[:, None, :, 0]
-    cuts = straight & (rate != 0) & ~np.eye(solids.shape[-1], dtype=bool)
-    crossing = -offset / np.where(cuts, rate, 1)
-    upper = np.where(cuts & (rate > 0), crossing, np.inf).min(axis=-1)        # [solids, quadrics]
-    lower = np.where(cuts & (rate < 0), crossing, -np.inf).max(axis=-1)
-    cylinder = (count == 2) & np.isfinite(upper) & np.isfinite(lower)
-    upper, lower = np.where(cylinder, upper, 0), np.where(cylinder, lower, 0)
+    offset = others(centres[..., None]) & centres[..., None]                  # [solids, quadrics, quadrics] Scalar+
+    straight = (others(axis[..., None]) & axis[..., None]).abs() <= 1e-9 * size[:, None, :]
+    cuts = straight & ((along > 0) | (along < 0)) & ~np.eye(solids.shape[-1], dtype=bool)
+    crossing = -offset / where(cuts, along, one)
+    upper_cuts = where(cuts & (along > 0), crossing, infinity)
+    lower_cuts = where(cuts & (along < 0), crossing, -infinity)
+    upper = upper_cuts.min(axis=-1)
+    lower = lower_cuts.max(axis=-1)
+    cylinder = (count == 2) & upper.isfinite() & lower.isfinite()
+    upper, lower = where(cylinder, upper, zero), where(cylinder, lower, zero)
     # Held across the widest of its two ends, from the middle between them.
-    widest = np.maximum(reach(centres + axis * lower), reach(centres + axis * upper))
-    radius = np.where(count == 3, reach(centres), np.where(cylinder, np.hypot((upper - lower) / 2, widest), np.inf))
+    lower_reach, upper_reach = reach(centres + axis * lower), reach(centres + axis * upper)
+    widest = where(lower_reach > upper_reach, lower_reach, upper_reach)
+    capped_radius = (((upper - lower) / 2).squared() + widest.squared()).square_root()
+    radius = where(count == 3, reach(centres), where(cylinder, capped_radius, infinity))
     centres = centres + axis * ((upper + lower) / 2)
     # The smallest ball any of its quadrics gives.
-    chosen = np.argmin(radius, axis=-1)                                       # [solids]
+    chosen = radius.argmin(axis=-1)                                          # [solids]
     picked = np.arange(len(chosen))
     return centres[picked, chosen], radius[picked, chosen]
 
 
-def tiles(centres: Point, radii: np.ndarray, view: View) -> dict:
+def tiles(centres: Point, radii: Scalar, view: View) -> dict:
     """The solids each tile of the picture may see, from the balls holding them, their centres and radii `[solids]`:
     each tile's range in a list of solids, the list, and the tiles across; a solid without a ball in every tile."""
     rows, columns = view.shape
     across, down = -(-columns // TILE), -(-rows // TILE)
     seen = view.across(centres)                                                # [solids, 2]
-    reach = radii / view.pixel + 1                                             # [solids] pixels
+    reach = (radii / view.pixel + 1).to_array()                                # [solids] pixels
     column = (seen[:, 0] + view.half[0]) / view.pixel
     row = (view.half[1] - seen[:, 1]) / view.pixel
     bounded = np.isfinite(reach)
@@ -665,7 +709,7 @@ def tiles(centres: Point, radii: np.ndarray, view: View) -> dict:
 
 
 def scene(parts: list[tuple[Quadric, np.ndarray]], translucent: list[tuple[Quadric, np.ndarray, float]],
-          inks: list[Ink]) -> tuple[Quadric, dict, dict, Quadric, Quadric, dict, tuple[Point, np.ndarray]]:
+          inks: list[Ink]) -> tuple[Quadric, dict, dict, Quadric, Quadric, dict, tuple[Point, Scalar]]:
     """Every solid's quadrics, solid after solid, each solid's range of them and whether they are all half-spaces, and
     its colour and opacity, from parts: each a batch of solids, `[solids, quadrics]` Quadric, all of one kind, or
     `[solids, planes]` Plane for solids bounded by planes alone, on their negative sides, their colours, `[solids, 3]`
@@ -677,7 +721,8 @@ def scene(parts: list[tuple[Quadric, np.ndarray]], translucent: list[tuple[Quadr
         # Planes, values rather than maps, bound their solids as half-spaces, solids no ball holds.
         flat = solids.arity == 0
         if flat:
-            centre, radius = origin[None].broadcast_to(solids.shape[:1]), np.full(solids.shape[0], np.inf)
+            centre = origin[None].broadcast_to(solids.shape[:1])
+            radius = mv.scalar(np.full((solids.shape[0], 1), np.inf))
             solids = half_space(solids)
         else:
             centre, radius = spheres(solids)
@@ -696,7 +741,7 @@ def scene(parts: list[tuple[Quadric, np.ndarray]], translucent: list[tuple[Quadr
     flats.append(np.zeros(1, dtype=bool))
     # It lies in no tile: a ball of no size, out of every picture.
     centres.append(origin[None])
-    radii.append(np.full(1, -np.inf))
+    radii.append(mv.scalar([[-np.inf]]))
     ends = np.cumsum(np.concatenate(counts))
     # The solids each part spans, part after part.
     part_ends = np.cumsum([solids.shape[0] for solids, _, _ in parts])
@@ -713,7 +758,7 @@ def scene(parts: list[tuple[Quadric, np.ndarray]], translucent: list[tuple[Quadr
     return (concatenate(quadrics),
             dict(first=ends - np.concatenate(counts), end=ends, flat=np.concatenate(flats).astype(np.uint32)),
             dict(colour=np.concatenate(colours), opacity=np.concatenate(opacities)),
-            ink_quadrics, ink_regions, marked, (concatenate(centres), np.concatenate(radii)))
+            ink_quadrics, ink_regions, marked, (concatenate(centres), concatenate(radii)))
 
 
 class View(NamedTuple):
@@ -761,13 +806,13 @@ def view(points: list[Point], reach: float, elevation: float, azimuth: float, ma
     seen = concatenate([(batch / (mv.w & batch)).reshape(-1) for batch in points])   # [points] Point
     # The outermost points across and up the image, where each support plane touches them, on either side.
     heights = screen[:2, None] & seen                                         # [2, points] Scalar
-    lowest, highest = seen[heights.argmin(axis=-1)], seen[heights.argmax(axis=-1)]   # [2] Point, Point
+    low, high = heights.min(axis=-1), heights.max(axis=-1)                    # [2] Scalar+, Scalar+
     # The planes halfway between the support planes, met with the plane across the view through the origin.
-    middles = screen[:2] - mv.w * ((screen[:2] & lowest) + (screen[:2] & highest)) / 2   # [2] Plane
+    middles = screen[:2] - mv.w * (low + high) / 2                             # [2] Plane
     centre = (middles[0] ^ middles[1] ^ screen[2]) * flip                    # [] Point
-    half = ((screen[:2] & highest) - (screen[:2] & lowest)).to_array() / 2 + reach
+    half = (high - low) / 2 + reach
     half = half + margin * half.max()
-    return View(aim(centre, elevation, azimuth), half, pixels)
+    return View(aim(centre, elevation, azimuth), half.to_array(), pixels)
 
 
 def aim(centre: Point, elevation: float, azimuth: float) -> Motor:

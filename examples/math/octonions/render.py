@@ -68,7 +68,7 @@ def draw_fano(cycles: core.Trivector) -> plt.Figure:
     for triple in triples(cycles):
         places = stack([places_by_name[name] for name in triple])              # [3] Antivector-
         following = places[[1, 2, 0]]                                          # [3] Antivector-
-        if np.allclose(places.norm().to_array(), radius):
+        if np.all((places.norm() - radius).abs() <= 1e-8 + 1e-5 * radius):
             # On the circle: an arrowhead on each arc, part of the way along the shorter turn from each point to the
             # next, pointing the way the turn runs.
             turns = (1 + following * places.inverse()).normalized()            # [3] Rotor+
@@ -78,12 +78,12 @@ def draw_fano(cycles: core.Trivector) -> plt.Figure:
                 arrow(ax, head, heading)
             continue
         # On a straight line: the two points furthest apart are its ends.
-        spans = (places[:, None] - places[None, :]).norm().to_array()          # [3, 3]
-        first, last = np.unravel_index(spans.argmax(), (3, 3))
+        spans = (places[:, None] - places[None, :]).norm()                    # [3, 3] Scalar+
+        first, last = np.unravel_index(spans.reshape(-1).argmax(), (3, 3))
         ax.plot(*xy(places[[first, last]]).T, color=line_colour)
         for start, end in zip(places, following):
             # Arrowheads on the segments the cycle runs along without passing through the third point.
-            if (end - start).norm().to_array() < spans.max() - 1e-9:
+            if (end - start).norm() < spans[first, last] - 1e-9:
                 arrow(ax, start + segment_fraction * (end - start), end - start)
     for name, place in places_by_name.items():
         ax.scatter(*xy(place), s=charts.points(point_side) ** 2, color="white", edgecolors=point_colour, zorder=3)

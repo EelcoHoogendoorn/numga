@@ -1,8 +1,9 @@
 """A page that traces the black hole in the browser, on the reader's own GPU: the GPU notebook's shader, compiled once
 here, with the data it reads, the sky, the blackbody colours and the disk's waves, written into one HTML file. The page
-drives the shader with the spin and the camera's orientation and distance; nothing is computed on a server, and no
-picture is sent. The sky is drawn on the GPU when the page loads, so that the file holds only the shader and a few
-tables, and the image traces at fewer pixels when frames come slower than the GPU can keep up with.
+drives the shader with the spin and the camera's azimuth, inclination and distance, from which the shader forms the
+camera's orientation; nothing is computed on a server, and no picture is sent. The sky is drawn on the GPU when the
+page loads, so that the file holds only the shader and a few tables, and the image traces at fewer pixels when frames
+come slower than the GPU can keep up with.
 
 Drag to fly the camera around the hole, scroll to move it in or out, `[` and `]` to halve or double the step, space to
 stop or restart the disk, `s` the spin's sweep, and `e` the exposure's following of the brightest light, as in the
@@ -99,16 +100,6 @@ fn draw(@builtin(global_invocation_id) id: vec3<u32>) {
 PAGE = Path(__file__).parent / "kerr_webgpu.html"
 
 
-# --- math -----------------------------------------------------------------------------
-def rotor_terms(kind) -> list[list[float]]:
-    """The camera's orientation, `(mv.xy * (-azimuth / 2)).exp() * (mv.zx * (-inclination / 2)).exp()`, as four
-    coefficient arrays the page weights by the products of the half angles' cosines and sines: `cos * cos`,
-    `cos * sin`, `sin * cos` and `sin * sin` of the azimuth and the inclination."""
-    one = mv.scalar([1.0])
-    return [np.frombuffer(coefficients(term, kind), np.float32).tolist()
-            for term in (one * one, one * -mv.zx, -mv.xy * one, -mv.xy * -mv.zx)]
-
-
 # --- plumbing -------------------------------------------------------------------------
 def packed(tracer, values: dict) -> tuple[bytes, dict]:
     """The uniform block as the runner packs it, and where each uniform begins in it."""
@@ -151,7 +142,6 @@ def contents() -> dict:
                        writable=binding.kind == "storage" and binding.access == "read_write") for binding in program.bindings],
         uniforms=encoded(uniforms), offsets=offsets,
         spin=np.frombuffer(coefficients(mv.xy.dual(), kinds["spin"]), np.float32).tolist(),
-        rotor=rotor_terms(kinds["orientation"]),
         modes=encoded(tracer.layout.array(mode, values["modes"])),
         blackbodies=half_floats(values["blackbodies"] * unit),
         sky=dict(code=SKY_SHADER, width=SKY[0], height=SKY[1]),

@@ -163,12 +163,13 @@ class SphereScene:
         # The ball's centres along every fitted route, across and up the view, and the sphere's outline about
         # the middle.
         centres = concatenate(fit_paths) * (sphere_radius + ball_radius)                      # [samples] Point-
-        right, up = (((self.camera >> axis) & centres).to_array() for axis in axes)
-        low = np.minimum([right.min() - ball_radius, up.min() - ball_radius], -sphere_radius)
-        high = np.maximum([right.max() + ball_radius, up.max() + ball_radius], sphere_radius)
-        middle = (low + high) / 2
-        self.middle = self.camera >> (axes.dual() * middle).sum()                              # [] Point-
-        self.half = np.max(high - low) / 2 * (1 + margin)
+        screen_axes = self.camera >> axes
+        readings = screen_axes[:, None] & centres
+        low = ((screen_axes & centres[readings.argmin(axis=-1)]) - ball_radius).clip(-np.inf, -sphere_radius)
+        high = ((screen_axes & centres[readings.argmax(axis=-1)]) + ball_radius).clip(sphere_radius, np.inf)
+        self.middle = (screen_axes.dual() * ((low + high) / 2)).sum()              # [] Point-
+        spans = high - low
+        self.half = float((spans.max() / 2 * (1 + margin)).to_array())
         self.size = size
         self.sphere_radius, self.ball_radius = sphere_radius, ball_radius
         # The routes on the sphere: each leg's samples joined in segments, their colours by leg.

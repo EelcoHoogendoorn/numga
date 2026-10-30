@@ -29,7 +29,7 @@ def picture(control: core.Point, control_mesh: core.Mesh, surface: core.Point, r
     """Render a smooth-shaded surface `Point-[refined]` in the given face colours `[faces, 3]` inside its dotted
     control mesh `Point-[vertices]`."""
     points = surface.normalized().batch()                                      # [refined] Point-
-    sheet = meshes.samples(points, refined_mesh.faces, np.zeros(3), meshes.smooth(points, refined_mesh.faces), frame,
+    sheet = meshes.samples(points, refined_mesh.faces, np.zeros(3), meshes.smooth(points, refined_mesh), frame,
                            face_values=colours, colour=meshes.by_face, gloss=solids.gloss)
     # Beads at even shares along each edge of the control mesh, between its ends at unit weight.
     tails, heads = (control_mesh.incidence[1, 0] * control.normalized()).batch()   # [edges] Point-, Point-

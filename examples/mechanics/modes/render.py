@@ -74,7 +74,8 @@ def _draw_mode(ax: plt.Axes, case: ModeCase, mode: int):
 
     # The largest offset of a corner drawn a fifth of a unit long; a direction's length is the size of the line
     # through the origin square to it, its dual.
-    scale = 0.20 / case.body_offsets[mode].dual().norm().to_array().max()
+    lengths = case.body_offsets[mode].dual().norm().reshape(-1)
+    scale = 0.20 / lengths.max()
 
     displaced_body = case.body + case.body_offsets[mode] * scale
     body = Polygon(coordinates(displaced_body), closed=True,

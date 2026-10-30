@@ -65,20 +65,22 @@ def animate_gliding(impulse: core.Forque,
     noses = stack([nose for _, _, nose in frames])                           # [frames, cases] Point-
     count = centres.shape[1]
     # Each lane as wide as the bodies ever reach across it, and the view as long as they reach along it.
-    lane = 2 * np.abs((mv.y & outlines).to_array()).max() + gap
-    reach = (mv.x & outlines).to_array()
-    extent = (reach.min() - gap / 2, reach.max() + gap / 2)
+    widths = (mv.y & outlines).abs().reshape(-1)
+    lane = 2 * widths.max() + gap
+    reach = (mv.x & outlines).reshape(-1)
+    extent = stack((reach.min() - gap / 2, reach.max() + gap / 2))
     # Each case moved across into its own lane, the first furthest.
     lanes = core.directions[1] * (lane * (count - 1 - np.arange(count)))     # [cases] Direction-
     # The ends of the impulse's line within the extent: where it meets the planes square to x there.
-    ends = (impulse ^ (mv.x - np.array(extent) * mv.w)).normalized()         # [2] Point-
+    ends = (impulse ^ (mv.x - extent * mv.w)).normalized()                    # [2] Point-
     line = coordinates(ends + lanes[:, None])                                # [cases, 2, 2]
     shapes = coordinates(outlines + lanes[:, None])                          # [frames, cases, outline + 1, 2]
     paths = coordinates(centres + lanes)                                     # [frames, cases, 2]
     tips = coordinates(noses + lanes)                                        # [frames, cases, 2]
     height = lane * count
     # The lanes and their impulses set up once; each body, its path so far and its nose move.
-    figure = plt.figure(figsize=(4.0, 4.0 * height / (extent[1] - extent[0])), dpi=100)
+    aspect = float((height / (extent[1] - extent[0])).to_array())
+    figure = plt.figure(figsize=(4.0, 4.0 * aspect), dpi=100)
     ax = figure.add_axes((0, 0, 1, 1))
     trails, bodies, dots = [], [], []
     for case in range(count):
@@ -87,8 +89,8 @@ def animate_gliding(impulse: core.Forque,
         bodies += ax.fill(*shapes[0, case].T, facecolor=body_colours[case], edgecolor=edge_colours[case],
                           linewidth=1.4, zorder=2)
         dots += ax.plot([], [], "o", color=edge_colours[case], markersize=5, zorder=3)
-    ax.set_xlim(*extent)
-    ax.set_ylim(-lane / 2, height - lane / 2)
+    ax.set_xlim(*extent.to_array())
+    ax.set_ylim(*stack((-lane / 2, height - lane / 2)).to_array())
     ax.set_aspect("equal")
     ax.set_axis_off()
     for index in range(len(frames)):

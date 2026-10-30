@@ -22,9 +22,6 @@ blue = np.array([0.16, 0.43, 0.62])
 orange = np.array([0.80, 0.34, 0.15])
 cream = np.array([0.94, 0.93, 0.89])
 elevation, azimuth = np.radians(22), np.radians(55)
-sm = solids.mv
-# The planes x = 0, y = 0 and z = 0 of the example's space, the drawing frame.
-axes = stack((core.mv.x, core.mv.y, core.mv.z))                              # [3] Plane+
 
 field_shader = meshes.Colour("""
 fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {
@@ -43,21 +40,16 @@ def read_points(points: Extensor, planes: Extensor) -> np.ndarray:
     return (planes & points.batch()[..., None]).to_array()
 
 
-def gpu_points(points: core.Point) -> solids.Point:
-    """The GPU library's own points at the places of the example's: their coordinates, read by pairing the intrinsic
-    points with the drawing frame, are the one hand-off from this algebra to the renderer's."""
-    return sm.point(read_points(points, axes))
-
-
 def draw_mesh(mesh: core.Mesh, vertices: core.Point) -> plt.Figure:
     """The physical spherical mesh before any choice of lifted representatives."""
-    points = gpu_points(vertices)
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())             # [vertices] Point-
     frame = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, 1.15), n_pixels)
     colours = np.broadcast_to(cream, mesh.faces.shape + (3,))
-    surface = meshes.samples(points, mesh.faces, colours, meshes.smooth(points, mesh.faces), frame,
+    surface = meshes.samples(points, mesh.faces, colours, meshes.smooth(points, mesh), frame,
                              face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
     tails, heads = mesh.incidence[1, 0] * vertices                           # Point-[edges], Point-[edges]
-    lines = strokes.segments(gpu_points(tails), gpu_points(heads), blue, 1.0, frame)
+    lines = strokes.segments(solids.origin + solids.context.include_from_algebra(tails.batch()),
+                             solids.origin + solids.context.include_from_algebra(heads.batch()), blue, 1.0, frame)
     return image_figure(solids.draw([], frame, background, inks=[], translucent=[],
                                     meshes=[(surface, 1.0), (lines, 1.0)]))
 
@@ -73,23 +65,26 @@ def animate_sphere(mesh: core.Mesh, display: core.Mesh,
         # The display samples of every face, sample after sample, and the display triangles of each face among them.
         n_faces = len(mesh.faces)
         faces = (n_faces * display.faces[None] + np.arange(n_faces)[:, None, None]).reshape(-1, 3)
-        points = gpu_points(samples.batch().reshape(-1))
+        points = solids.origin + solids.context.include_from_algebra(samples.batch().reshape(-1))   # [samples] Point-
         field = values.to_array().reshape(-1)
-        normals = meshes.smooth(points, faces)
+        normals = meshes.smooth(points, meshes.Mesh(len(points), faces))
         surface = meshes.samples(points, faces, field[faces, None], normals, sphere_view,
                                  face_values=np.zeros(4), colour=field_shader, gloss=solids.gloss)
         sphere = solids.draw([], sphere_view, background, inks=[], translucent=[], meshes=[(surface, 1.0)])
 
-        vertices = gpu_points(lifted)
+        vertices = solids.origin + solids.context.include_from_algebra(lifted.batch())         # [vertices] Point-
         tails, heads = mesh.incidence[1, 0] * lifted                         # Point-[edges], Point-[edges]
-        mesh_lines = strokes.segments(gpu_points(tails), gpu_points(heads), blue, 1.25, space_view)
+        mesh_lines = strokes.segments(solids.origin + solids.context.include_from_algebra(tails.batch()),
+                                      solids.origin + solids.context.include_from_algebra(heads.batch()), blue, 1.25, space_view)
         # Great-circle arcs draw the projected dual on the same unit sphere: the chord between the poles of the faces
         # either side of each edge, pushed out onto it.
         left, right = (mesh.reading(mesh.edge_faces.T, 2) * duals).batch()   # [edges] Point-, [edges] Point-
         arcs = (left[:, None] * (1 - fractions) + right[:, None] * fractions).normalized()   # [edges, arc points] Point-
-        dual_lines = strokes.segments(gpu_points(arcs[:, :-1].reshape(-1)), gpu_points(arcs[:, 1:].reshape(-1)),
-                                      orange, 1.1, space_view)
-        rays = strokes.segments(gpu_points(lifted.normalized()), vertices, np.full(3, 0.45), 1.0, space_view)
+        arc_places = solids.origin + solids.context.include_from_algebra(arcs)                # [edges, arc points] Point-
+        dual_lines = strokes.segments(arc_places[:, :-1].reshape(-1), arc_places[:, 1:].reshape(-1), orange, 1.1,
+                                      space_view)
+        on_sphere = solids.origin + solids.context.include_from_algebra(lifted.normalized().batch())   # [vertices] Point-
+        rays = strokes.segments(on_sphere, vertices, np.full(3, 0.45), 1.0, space_view)
         shell = solids.ball(solids.origin, 1.0)[None, None]
         markers = solids.ball(vertices, 2.0 * space_view.pixel)[:, None]
         space = solids.draw([(markers, blue)], space_view, background, inks=[],

@@ -29,6 +29,20 @@ def argmin(value: Extensor, *args: Any, **kwargs: Any) -> Any:
     return value.context.xp.argmin(value.to_array(), *args, **kwargs)
 
 
+def _reduction(name):
+    def apply(value: Extensor, axis: int | tuple[int, ...] | None = None, *, keepdims: bool = False) -> Extensor:
+        value = value.cast(value.algebra.subspace.scalar())
+        reduced = getattr(value.context.xp, name)(value.to_array(), axis=axis, keepdims=keepdims)
+        return Extensor._from_prepared_kernel(value.context, value.gatype.derive.structural, reduced[..., None])
+    apply.__name__ = name
+    apply.__doc__ = f"Return the {name}imum over batch axes as a scalar extensor."
+    return apply
+
+
+for _name in ("min", "max"):
+    getattr(Extensor, _name).register(lambda g: g.is_scalar)(_reduction(_name))
+
+
 def _function(name):
     def apply(value: Extensor) -> Extensor:
         value = value.cast(value.algebra.subspace.scalar())

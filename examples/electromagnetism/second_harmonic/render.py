@@ -17,12 +17,14 @@ from examples.electromagnetism.second_harmonic import core
 from examples.util.wgsl import fitted, labels, show, solids
 from examples.util.wgsl.scene import Scene
 
+# The observer sees the point where its time line meets the spatial slice.
+space_slice = core.mv.t ^ (core.Direction & core.time)
+
 pump_colour = "#3275a8"
 generated_colour = "#d16a30"
 case_colours = ("#3275a8", "#d16a30", "#7b62a3")
 # The crystals of the phase-matching scene, in its order.
 cases = ("matched", "mismatched", "mismatched, flipped every half turn of slip")
-sm = solids.mv
 bond_colour, centre_colour, axis_colour = np.full(3, 0.45), np.full(3, 0.3), np.array([0.68, 0.70, 0.75])
 label_colour = np.array([0.4, 0.42, 0.47])
 # The charts' sizes in pixels: the response, the crystal beside the response and its power, all of the column; the
@@ -60,13 +62,6 @@ def transverse_polarization(polarizations: core.Polarization) -> np.ndarray:
     return (fields & polarizations[..., None]).to_array()                     # [..., 2]
 
 
-def gpu_points(directions: core.Direction) -> solids.Point:
-    """The renderer's points at the tips of directions in space from the crystal's centre: their coordinates, read by
-    pairing with the planes x, y and z, are the hand-off from the spacetime algebra to the renderer's."""
-    mv = directions.context.multivector
-    return sm.point((stack((mv.x, mv.y, mv.z)) & directions[..., None]).to_array())
-
-
 def cross(axes: plt.Axes, extents: np.ndarray, across: str, up: str) -> None:
     """A plane within extents `[2, 2]`, lowest and highest across and up, without scales: a faint cross through the
     origin, its lines named just past their ends, clear of what the plane holds."""
@@ -87,8 +82,9 @@ def space_scene(view: solids.View) -> Scene:
     """The frame of space, its centre and the beam through it, for the bonds to be drawn among."""
     shafts, heads = solids.frame(axis_length, arrow_width / 2 * view.pixel, head_length * view.pixel,
                                  head_width / 2 * view.pixel)
-    beam_shaft, beam_head = solids.arrows(gpu_points(-beam_reach * beam), gpu_points(beam_reach * beam),
-                                          arrow_width / 2 * view.pixel, head_length * view.pixel, head_width / 2 * view.pixel)
+    reach = solids.context.include_from_algebra(space_slice(beam_reach * beam))                 # [] Point-
+    beam_shaft, beam_head = solids.arrows(solids.origin - reach, solids.origin + reach,
+                                         arrow_width / 2 * view.pixel, head_length * view.pixel, head_width / 2 * view.pixel)
     beam_colour = np.array(to_rgb(pump_colour))
     parts = [(shafts, axis_colour), (heads, axis_colour), (beam_shaft[None], beam_colour), (beam_head[None], beam_colour),
              (solids.ball(solids.origin, centre_radius * view.pixel)[None, None], centre_colour)]
@@ -98,7 +94,7 @@ def space_scene(view: solids.View) -> Scene:
 def crystal_image(bonds: core.Direction, scene: Scene) -> np.ndarray:
     """The bonds `[bonds] Direction-` as rods from their shared centre to their ends, the tetrahedral geometry,
     among the scene's frame of space and beam."""
-    ends = gpu_points(bonds)                                                 # [bonds] Point-
+    ends = solids.origin + solids.context.include_from_algebra(space_slice(bonds))              # [bonds] Point-
     view = scene.view
     return scene.draw([(solids.rods(solids.origin, ends, bond_width / 2 * view.pixel), bond_colour),
                        (solids.ball(ends, end_radius * view.pixel)[:, None], np.array(to_rgb(generated_colour)))],
@@ -155,7 +151,7 @@ class ResponseView:
         self.scene = space_scene(self.view)
         # Each axis named just past its arrow's tip, and the beam past its head.
         label_reaches = concatenate((label_distance * core.axes, beam_reach * 1.12 * beam[None]))   # [labels] Direction-
-        label_places = gpu_points(label_reaches)                             # [labels] Point-
+        label_places = (solids.origin + solids.context.include_from_algebra(space_slice(label_reaches)))                             # [labels] Point-
         labels(crystal_axes, self.view, label_places, ["x", "y", "z", "beam"], ha="center", va="center",
                color=label_colour)
 

@@ -102,8 +102,10 @@ def bundle_legs(subject: Point, planes: Plane, legs: Line, train: LineMap) -> li
     starts, stops = ([crossing / (mv.w & crossing) for crossing in crossings] for crossings in (starts, stops))
     # The first leg's line runs the way the ray travels, from its start to the first element, where the two lines'
     # scalar product is positive.
-    heading = np.sign((starts[0] & stops[0]).scalar_product(legs[0]).to_array())   # [rays]
-    handedness = heading * np.sign(train.det().to_array())                   # [rays]
+    agreement = (starts[0] & stops[0]).scalar_product(legs[0])
+    heading = np.asarray(agreement > 0, dtype=int) - np.asarray(agreement < 0, dtype=int)
+    determinant = train.det()
+    handedness = heading * (np.asarray(determinant > 0, dtype=int) - np.asarray(determinant < 0, dtype=int))
     # The last leg runs on along its line's meet with the line at infinity, a unit direction for a unit line.
     travel = legs[-1].normalized() ^ mv.w                                    # [rays] Crossing-
     return list(zip(starts, stops + [starts[-1] + travel * (onward * handedness)]))

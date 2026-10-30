@@ -83,7 +83,7 @@ struct Seen {
 }
 
 fn on_sphere(across: vec2<f32>, depth: f32) -> Seen {
-    return Seen(right * across.x + up * across.y + toward * depth, right - toward * (across.x / depth),
+    return Seen((directions * vec3<f32>(across, depth)).sum(), right - toward * (across.x / depth),
                 up - toward * (across.y / depth));
 }
 
@@ -95,23 +95,23 @@ fn cover(distance: f32) -> f32 {
 // The share of a pixel a line `width` across the view covers about where a value vanishes, from the value at a point
 // and its change as the point steps right and up across the view: the value over that change is how far across the
 // view the point lies from the line.
-fn ink(value: f32, change: vec2<f32>, width: f32) -> f32 {
-    return cover(width / 2 - abs(value) / length(change));
+fn ink(value: f32, change: Plane, width: f32) -> f32 {
+    return cover(width / 2 - abs(value) / change.norm());
 }
 
 // The oval's ink at a seen point: where the form `point & conic(point)` vanishes, its gradient twice the polar, on
 // the oval's side of the centre.
 fn oval(seen: Seen) -> f32 {
     let polar = conic(seen.point);
-    let change = 2 * vec2<f32>(polar & seen.rightward, polar & seen.upward);
-    return select(0.0, ink(seen.point & polar, change, oval_width), -(seen.point | centre) > 0);
+    let change = 2 * (right.dual_inverse() * (polar & seen.rightward) + up.dual_inverse() * (polar & seen.upward));
+    return select(0.0, ink(seen.point & polar, change, oval_width), seen.point.dot(centre) > 0);
 }
 
 // The share of a pixel a disc about a place covers at a point of the sphere, round on the screen: by their offset
 // across the view, where both lie on the same side of the plane of the screen through the centre.
 fn disc(place: Point, point: Point, radius: f32) -> f32 {
     let near = (depth_axis & place) * (depth_axis & point) > 0;
-    return select(0.0, cover(radius - length(across_axes & (place - point))), near);
+    return select(0.0, cover(radius - screen_plane(place - point).norm()), near);
 }
 
 // How brightly the lamp lights a point of the sphere: how squarely the point faces it, over an ambient floor.
@@ -121,7 +121,8 @@ fn lit(point: Point) -> f32 {
 
 // The colour at a place on the screen: within the sphere's outline, its far side seen through its near side.
 fn sphere(across: vec2<f32>) -> vec3<f32> {
-    let depth = sqrt(1 - dot(across, across));
+    let foot = (across_axes.dual() * across).sum();
+    let depth = sqrt(1 - foot.scalar_norm_squared());
     return select(background, side(side(background, on_sphere(across, -depth)), on_sphere(across, depth)), depth > 0);
 }
 """
@@ -151,7 +152,7 @@ fn side(beneath: vec3<f32>, seen: Seen) -> vec3<f32> {
     let point = seen.point;
     let polar = conic(point);
     let form = point & polar;
-    let change = 2 * vec2<f32>(polar & seen.rightward, polar & seen.upward);
+    let change = 2 * (right.dual_inverse() * (polar & seen.rightward) + up.dual_inverse() * (polar & seen.upward));
     // The form's sign colours the sphere's near side, from the neutral colour at zero toward `below` or `above`.
     let shade = mix(neutral, select(below, above, form > 0), abs(form) / extent) * lit(point);
     var colour = mix(beneath, shade, select(0.0, form_opacity, (depth_axis & point) > 0));
@@ -161,7 +162,7 @@ fn side(beneath: vec3<f32>, seen: Seen) -> vec3<f32> {
         let arc = arcs[index];
         let circle = arc.start & arc.end;
         let between = ((arc.start & point) | circle) > 0 && ((point & arc.end) | circle) > 0;
-        let line = ink(circle & point, vec2<f32>(circle & seen.rightward, circle & seen.upward), geodesic_width);
+        let line = ink(circle & point, right.dual_inverse() * (circle & seen.rightward) + up.dual_inverse() * (circle & seen.upward), geodesic_width);
         colour = mix(colour, arc.colour, select(0.0, line, between));
     }
     // Where the form vanishes: the oval on the centre's side, and across it the antipodal loop in dashes, by the
@@ -170,7 +171,7 @@ fn side(beneath: vec3<f32>, seen: Seen) -> vec3<f32> {
     let reference = centre & toward;
     let dash = fract(atan2((spoke ^ reference) | centre, spoke | reference) * dashes_per_turn) < 0.5;
     let twin = select(0.0, antipode_opacity * ink(form, change, antipode_width), dash);
-    colour = mix(colour, oval_colour, select(twin, ink(form, change, oval_width), -(point | centre) > 0));
+    colour = mix(colour, oval_colour, select(twin, ink(form, change, oval_width), point.dot(centre) > 0));
     // The marks, each over a darker rim.
     for (var index = 0u; index < arrayLength(&marks); index++) {
         let mark = marks[index];
@@ -223,7 +224,7 @@ fn side(beneath: vec3<f32>, seen: Seen) -> vec3<f32> {
     // Each great circle where its plane pairs to nothing with the point; then the oval, the arrows and the dots.
     for (var index = 0u; index < arrayLength(&circles); index++) {
         let circle = circles[index];
-        let change = vec2<f32>(circle.plane & seen.rightward, circle.plane & seen.upward);
+        let change = right.dual_inverse() * (circle.plane & seen.rightward) + up.dual_inverse() * (circle.plane & seen.upward);
         colour = mix(colour, circle.colour, circle.opacity * ink(circle.plane & point, change, circle_width));
     }
     colour = mix(colour, oval_colour, oval(seen));
@@ -253,7 +254,7 @@ var<storage, read> levels: array<Level>;
 fn side(beneath: vec3<f32>, seen: Seen) -> vec3<f32> {
     let point = seen.point;
     let polar = conic(point);
-    let change = 2 * vec2<f32>(polar & seen.rightward, polar & seen.upward);
+    let change = 2 * (right.dual_inverse() * (polar & seen.rightward) + up.dual_inverse() * (polar & seen.upward));
     var colour = mix(beneath, sheet_colour * lit(point), sheet_opacity);
     for (var index = 0u; index < arrayLength(&levels); index++) {
         let level = levels[index];
@@ -277,7 +278,7 @@ fn cone(beneath: vec3<f32>, across: vec2<f32>, low: f32, high: f32) -> vec3<f32>
     for (var which = -1.0; which <= 1.0; which += 2.0) {
         let depth = (which * root - b) / a;
         let point = start + toward * depth;
-        let crossed = b * b > a * c && depth > low && depth <= high && -(point | centre) > 0 && point.norm() < reach;
+        let crossed = b * b > a * c && depth > low && depth <= high && point.dot(centre) > 0 && point.norm() < reach;
         colour = mix(colour, cone_colour, select(0.0, cone_opacity, crossed));
     }
     return colour;
@@ -287,7 +288,8 @@ fn cone(beneath: vec3<f32>, across: vec2<f32>, low: f32, high: f32) -> vec3<f32>
 // sphere's near side, and the cone in front of it.
 fn sample(place: vec2<f32>) -> Sample {
     let across = screen(place) * half_height;
-    let depth = sqrt(max(1 - dot(across, across), 0.0));
+    let foot = (across_axes.dual() * across).sum();
+    let depth = sqrt(max(1 - foot.scalar_norm_squared(), 0.0));
     // The sphere's parts are kept by selection rather than a branch: Mesa's software Vulkan driver crashes on a loop
     // of runtime length, like the one over the levels, within a branch.
     let inside = depth > 0;
@@ -302,6 +304,7 @@ fn sample(place: vec2<f32>) -> Sample {
 
 # --- plumbing -------------------------------------------------------------------------
 constants = dict(
+    directions=stack((right, up, toward)), screen_plane=Point - toward * (depth_axis & Point),
     right=right, up=up, toward=toward, across_axes=across_axes, depth_axis=depth_axis, lamp=lamp,
     half_height=HALF_HEIGHT, pixel=PIXEL, ambient=AMBIENT, background=BACKGROUND, below=BELOW, neutral=NEUTRAL,
     above=ABOVE, oval_colour=OVAL, rim_colour=RIM, sphere_colour=SPHERE, dual_colour=DUAL, sheet_colour=SHEET, cone_colour=CONE, form_opacity=FORM_OPACITY,

@@ -15,7 +15,6 @@ from examples.quantum.magnetic_resonance import core
 from examples.util import charts
 from examples.util.wgsl import labels, show, solids, strokes
 
-sm = solids.mv
 COLOURS = ("#c0392b", "#7d3c98", "#2e86c1")
 SPHERE_COLOUR, SPHERE_OPACITY = np.array([0.70, 0.76, 0.86]), 0.09
 AXIS_COLOUR = np.array([0.45, 0.47, 0.52])
@@ -46,9 +45,12 @@ def components(rho: core.State) -> np.ndarray:
 
 
 def gpu_points(states: core.State) -> solids.Point:
-    """The GPU library's own points at the tips of the states' Bloch vectors: their components, read by pairing, are
-    the one hand-off from this algebra to the renderer's."""
-    return sm.point(components(states))
+    """The spin's three plane readings set its Bloch-ball position, for either source representation."""
+    mv = states.context.multivector
+    spin_planes = stack((mv.yz, mv.zx, mv.xy))
+    readings = 2 * (spin_planes & states.select.antibivector()[..., None])
+    return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
+
 
 
 def draw_nutation(states: Iterable[core.State], steady_states: core.State) -> plt.Figure:

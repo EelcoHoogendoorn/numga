@@ -7,13 +7,12 @@ from collections.abc import Iterable, Iterator
 import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import concatenate, stack
+from numga import concatenate
 from numga.sparse import SparseExtensor, spdiag
 from examples.surfaces.minimal_surfaces import core
 from examples.util.wgsl import image_figure, meshes, solids, strokes
 
 mv = core.mv
-sm = solids.mv
 background = np.ones(3)
 surface_colour = np.array([0.90, 0.93, 0.96])
 ink = np.array([0.16, 0.23, 0.30])
@@ -39,30 +38,25 @@ bonnet_view = np.array([24.0, -36.0])
 
 
 # --- plumbing -------------------------------------------------------------------------
-def gpu_points(points: core.Point) -> solids.Point:
-    """The GPU library's own points at the places of the example's: their coordinates, read by pairing the intrinsic
-    points with the drawing frame, are the one hand-off from this algebra to the renderer's."""
-    return sm.point((stack((mv.x, mv.y, mv.z)) & points.batch()[..., None]).to_array())
-
-
 def square_view(view_degrees: np.ndarray, surfaces: list[core.Point], spare: float) -> solids.View:
     """A square orthographic view frames the supplied surfaces."""
     elevation, azimuth = np.radians(view_degrees + [0, 90])
-    return solids.view([gpu_points(surface) for surface in surfaces], spare, elevation, azimuth, 0.06,
-                       pixels).squared()
+    places = [solids.origin + solids.context.include_from_algebra(surface.batch()) for surface in surfaces]   # [surfaces] Point-[vertices]
+    return solids.view(places, spare, elevation, azimuth, 0.06, pixels).squared()
 
 
 def sheet(mesh: core.Mesh, surface: core.Point, corner_colours: np.ndarray, view: solids.View) -> meshes.Samples:
     """A lit sheet carries its colours at the corners of its faces at the image's own pixel size."""
-    points = gpu_points(surface)
-    return meshes.samples(points, mesh.faces, corner_colours, meshes.smooth(points, mesh.faces), view,
+    points = solids.origin + solids.context.include_from_algebra(surface.batch())               # [vertices] Point-
+    return meshes.samples(points, mesh.faces, corner_colours, meshes.smooth(points, mesh), view,
                           face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
 
 
 def boundary_lines(mesh: core.Mesh, surface: core.Point, width: float, view: solids.View) -> meshes.Samples:
     """Crisp outlines mark the boundary wire of a surface."""
     tails, heads = mesh.reading(mesh.exterior(1), 1) * (mesh.incidence[1, 0] * surface)   # Point-[rim], Point-[rim]
-    return strokes.segments(gpu_points(tails), gpu_points(heads), ink, width, view)
+    return strokes.segments(solids.origin + solids.context.include_from_algebra(tails.batch()),
+                            solids.origin + solids.context.include_from_algebra(heads.batch()), ink, width, view)
 
 
 def disk_paths(rim: core.Point) -> core.Point:
@@ -105,7 +99,7 @@ def surface_with_curves(
     mesh: core.Mesh, lift: SparseExtensor, surface: core.Point, corner_colours: np.ndarray, view: solids.View,
 ) -> np.ndarray:
     """A lit surface sheet overlaid with its boundary wire and its lifted domain curves."""
-    curves = gpu_points(lift * surface)                                      # [curves, samples] Point-
+    curves = solids.origin + solids.context.include_from_algebra((lift * surface).batch())    # [curves, samples] Point-
     colours = np.concatenate((np.broadcast_to(teal, (n_rings, 3)), meridian_colours))
     curve_strokes = strokes.polylines(list(zip(curves, colours)), 2.0, view)
     base = sheet(mesh, surface, corner_colours, view)
@@ -175,8 +169,9 @@ def animate_bonnet(
     pin_reading = mesh.reading(pin_rings[:, np.linspace(5, n_azimuths - 6, 4, dtype=int)].reshape(-1))   # Scalar+[pins <- vertices]
 
     for surface, normals in frames:
-        curves = ([(points, teal) for points in gpu_points(ring_reading * surface)]
-                  + [(points, coral) for points in gpu_points(meridian_reading * surface)])
+        ring_curves = solids.origin + solids.context.include_from_algebra((ring_reading * surface).batch())   # [rings, azimuths] Point-
+        meridian_curves = solids.origin + solids.context.include_from_algebra((meridian_reading * surface).batch())   # [meridians, heights] Point-
+        curves = [(points, teal) for points in ring_curves] + [(points, coral) for points in meridian_curves]
         curve_strokes = strokes.polylines(curves, 2.0, view)
         base = sheet(mesh, surface, surface_colour, view)
         rim = boundary_lines(mesh, surface, 1.8, view)
@@ -184,8 +179,8 @@ def animate_bonnet(
         # Outward normal pins at the crossings show that the Gauss normals stay fixed in space.
         pin_points = pin_reading * surface                                   # Point-[pins]
         normal_directions = (pin_reading * normals * unit_volume).dual()     # Point-[pins]
-        roots = gpu_points(pin_points - pin_depth * normal_directions)
-        tips = gpu_points(pin_points + pin_reach * normal_directions)
+        roots = solids.origin + solids.context.include_from_algebra((pin_points - pin_depth * normal_directions).batch())   # [pins] Point-
+        tips = solids.origin + solids.context.include_from_algebra((pin_points + pin_reach * normal_directions).batch())    # [pins] Point-
         stems = strokes.segments(roots, tips, gold, 2.2, view)
         heads = solids.ball(tips, pin_head_radius)[:, None]
         yield solids.draw([(heads, gold)], view, background, inks=[], translucent=[],

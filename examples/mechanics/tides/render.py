@@ -42,10 +42,11 @@ def density(ax: Axes, points: core.Point, mass_density: core.Scalar) -> None:
     ax.set_aspect("equal")
 
 
-def rim_at(ax: Axes, centre: core.Point, rim: core.Form, half_size: float) -> ContourSet:
+def rim_at(ax: Axes, centre: core.Point, rim: core.Form, half_size: core.Scalar) -> ContourSet:
     """The rim as the level set of its form, evaluated on a grid of offsets around the centre: its contour, for an
     animation to replace."""
-    offsets = core.grid(half_size, half_size, RIM_PIXELS, RIM_PIXELS)
+    samples = half_size * np.linspace(-1, 1, RIM_PIXELS)
+    offsets = core.mv.x.dual() * samples[None, :] + core.mv.y.dual() * samples[:, None]
     level = rim(offsets, offsets).to_array()
     xy = coordinates(centre + offsets)                                       # [rows, columns, 2]
     return ax.contour(xy[..., 0], xy[..., 1], level, levels=[1.0], colors=[PREDICTION], linewidths=1.4)
@@ -74,11 +75,13 @@ def animate(points: core.Point, mass_density: core.Scalar,
         close.set_offsets(positions)
         # Around the cluster, scaled to its extent: the stars' largest offset from the centre across or up.
         middle = coordinates(centre)                                         # [2]
-        half_size = np.abs(coordinates(stars.positions - centre)).max() * ZOOM
+        spans = (stack((core.mv.x, core.mv.y)) & (stars.positions - centre)[..., None]).abs().reshape(-1)
+        half_size = spans.max() * ZOOM
         while rims:
             rims.pop().remove()
         rims.append(rim_at(near, centre, rim, half_size))
-        near.set(xlim=(middle[0] - half_size, middle[0] + half_size),
-                 ylim=(middle[1] - half_size, middle[1] + half_size))
+        frame_size = float(half_size.to_array())
+        near.set(xlim=(middle[0] - frame_size, middle[0] + frame_size),
+                 ylim=(middle[1] - frame_size, middle[1] + frame_size))
         yield capture(figure)
     plt.close(figure)

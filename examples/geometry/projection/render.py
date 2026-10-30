@@ -14,7 +14,7 @@ import numpy as np
 
 from matplotlib.colors import to_rgb
 
-from numga import stack
+from numga import concatenate, stack
 from examples.geometry.projection.core import Line, Motor, Point, mv
 from examples.util.wgsl import fitted, show, solids
 
@@ -94,16 +94,22 @@ def render_stereo_scene(
     image_1, image_2, _epipole_2, epipolar_lines_2, _correspondence = stereo
     px_1 = screen_coordinates(rig_1, image_1)
     px_2 = screen_coordinates(rig_2, image_2)
-    both = np.concatenate([px_1, px_2])
-    low, high = both.min(axis=0), both.max(axis=0)
-    low, high = low - margin * (high - low).max(), high + margin * (high - low).max()
+    both = concatenate(((rig_1 << image_1).normalized(), (rig_2 << image_2).normalized()))
+    readings = stack((mv.x, mv.y))[:, None] & both
+    low = readings.min(axis=-1)
+    high = readings.max(axis=-1)
+    spans = high - low
+    padding = margin * spans.max()
+    low, high = low - padding, high + padding
+    widths = stack((low[0], high[0])).abs()
     draw_edges(ax_1, px_1, edges, "#38bdf8", linewidth=2.0)
     draw_edges(ax_2, px_2, edges, "#38bdf8", linewidth=2.0)
-    for (a, b) in screen_line_endpoints(rig_2, epipolar_lines_2, np.abs([low[0], high[0]]).max()):
+    for (a, b) in screen_line_endpoints(rig_2, epipolar_lines_2, widths.max()):
         ax_2.plot([a[0], b[0]], [a[1], b[1]], color="#f43f5e", linewidth=0.8, alpha=0.8)
     ax_2.scatter(px_2[:, 0], px_2[:, 1], color="#f43f5e", s=18, zorder=3)
+    limits = stack((low, high), axis=-1).to_array()
     for ax in (ax_1, ax_2):
-        ax.set(xlim=(low[0], high[0]), ylim=(low[1], high[1]), aspect="equal")
+        ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
         ax.set_axis_off()
 
 

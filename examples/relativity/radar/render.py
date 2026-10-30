@@ -28,9 +28,12 @@ def coordinates(events: Event) -> np.ndarray:
 
 
 def gpu_points(events: Event) -> planar.Point:
-    """The renderer's points at the events' places: their position and coordinate time, read by pairing, are the
-    one hand-off from spacetime to the picture's plane."""
-    return planar.mv.point(coordinates(events))
+    """Draw position across and coordinate time up, keeping the readings typed through the diagram mapping."""
+    mv = events.context.multivector
+    readings = stack((mv.x, mv.t)) & events[..., None]
+    frame = stack((planar.mv.x, planar.mv.y)).dual()
+    return planar.origin + (frame * planar.context.include_from_algebra(readings)).sum(axis=-1)
+
 
 
 def strokes(events: Event, width: float, colour: np.ndarray, opacity: float,

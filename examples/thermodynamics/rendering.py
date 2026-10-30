@@ -25,9 +25,11 @@ from examples.util import charts
 from examples.util.wgsl import image_figure, planar, solids
 from examples.util.wgsl.planar import SOLID, Cap, Marker, Marks, Polygons, Strokes
 
+context = planar.context
 mv = planar.mv
 Point = planar.Point                                                         # Antivector-
 Plane = planar.Plane                                                         # Vector+
+Scalar = planar.Scalar                                                       # Scalar+
 Quadric = planar.Quadric                                                     # Plane+ <- Point-
 Placement = planar.ga.gatype((Point, Point))                                 # Point- <- Point-
 
@@ -69,15 +71,15 @@ dot, ring = 4.0, 5.5
 
 
 # --- diagrams --------------------------------------------------------------------------
-def chart_points(across: np.ndarray, up: np.ndarray) -> Point:
+def chart_points(across: Scalar, up: Scalar) -> Point:
     """The points of a chart's plane at values of its two quantities `[...]`: the origin moved by each value along its
     quantity's direction. Every value a chart shows enters its plane here."""
-    return planar.origin + mv.x.dual() * np.asarray(across) + mv.y.dual() * np.asarray(up)
+    return planar.origin + mv.x.dual() * across + mv.y.dual() * up
 
 
-def chart_directions(across: np.ndarray, up: np.ndarray) -> Point:
+def chart_directions(across: Scalar, up: Scalar) -> Point:
     """The directions of a chart's plane, points at infinity, along changes of its two quantities `[...]`."""
-    return mv.x.dual() * np.asarray(across) + mv.y.dual() * np.asarray(up)
+    return mv.x.dual() * across + mv.y.dual() * up
 
 
 @dataclass(frozen=True)
@@ -115,7 +117,9 @@ class Diagram:
 
     @cached_property
     def window(self) -> planar.Window:
-        return planar.window((0, self.columns), (0, self.rows), self.rows)
+        """The picture's window onto its plane, from the bottom left corner to the top right, a pixel to a unit."""
+        offsets = mv.x.dual() * np.array([0, self.columns]) + mv.y.dual() * np.array([0, self.rows])  # [corners] Point-
+        return planar.view([planar.origin + offsets], 0.0, (self.columns, self.rows))
 
 
 def pixel_places(points: Point) -> np.ndarray:
@@ -184,12 +188,12 @@ def family(diagram: Diagram, lines: list[Point], name: str, width: float) -> lis
     return polylines(diagram, lines, width, families[name], 1.0, SOLID)
 
 
-def tangent_lines(points: Point, directions: Point, across: np.ndarray) -> Point:
+def tangent_lines(points: Point, directions: Point, across: Scalar) -> Point:
     """Lines of a chart's plane through points along directions `[...]`, sampled where they cross the planes of the
     across quantity's values `[samples]`, `[..., samples]`: each line, the join of its point and its direction, met
     with each of those."""
     lines = points & directions                                              # [...] Line-
-    crossings = mv.x - mv.w * np.asarray(across)                             # [samples] Plane+
+    crossings = mv.x - mv.w * across                                         # [samples] Plane+
     return planar.unit(lines[..., None] ^ crossings)
 
 
@@ -379,8 +383,8 @@ def gas_points(temperature_of: Callable[[Extensor], Extensor], pressure_of: Call
     """A gas's states, antivectors of the plane of entropy and volume `[...]`, on its two charts: entropy and volume
     read by pairing, temperature and pressure by the gas's functions."""
     blades = states.context.multivector
-    return GasPoints(chart_points((blades.s & states).to_array(), temperature_of(states).to_array()),
-                     chart_points((blades.v & states).to_array(), pressure_of(states).to_array()))
+    return GasPoints(chart_points(context.include_from_algebra(blades.s & states), context.include_from_algebra(temperature_of(states))),
+                     chart_points(context.include_from_algebra(blades.v & states), context.include_from_algebra(pressure_of(states))))
 
 
 def gas_lines(temperature_of: Callable[[Extensor], Extensor], pressure_of: Callable[[Extensor], Extensor], blades,
@@ -407,9 +411,9 @@ def gas_lines(temperature_of: Callable[[Extensor], Extensor], pressure_of: Calla
 rise = solids.mv.direction([0, 0, 1])                                        # [] Point-
 
 
-def box(centre: solids.Point, half: np.ndarray) -> solids.Plane:
+def box(centre: solids.Point, half: solids.Scalar) -> solids.Plane:
     """A box about a centre, of half extents along x, y and z, as the six planes bounding it `[1, 6]`."""
-    return solids.boxes(solids.translator(centre - solids.origin), np.asarray(half))[None]
+    return solids.boxes(solids.translator(centre - solids.origin), half)[None]
 
 
 # The thermal ramp, from icy blue for the coldest shown, through a pale middle, to red heat for the hottest.
@@ -442,41 +446,42 @@ resting_weight = box(solids.mv.point([0, 0, plate + 0.14]), np.array([0.31, 0.32
 resting_latch = box(solids.mv.point([bore + 0.12, 0, plate / 2]), np.array([0.14, bore_depth + 0.13, 0.05]))
 
 
-def cylinder(height: float, maximum: float) -> list:
+def cylinder(height: solids.Scalar, maximum: solids.Scalar) -> list:
     """A cylinder's base and walls, tall enough for a fill of `maximum`, and its piston resting on a fill of
     `height`, as parts with their colours."""
-    centres = solids.mv.point([[-bore - wall, 0, maximum / 2], [bore + wall, 0, maximum / 2]])
-    walls = solids.boxes(solids.translator(centres - solids.origin), np.array([wall, bore_depth + 0.07, maximum / 2]))
+    centres = solids.mv.point([[-bore - wall, 0, 0], [bore + wall, 0, 0]]) + rise * (maximum / 2)
+    half = stack((solids.mv.scalar([wall]), solids.mv.scalar([bore_depth + 0.07]), maximum / 2))
+    walls = solids.boxes(solids.translator(centres - solids.origin), half)
     base = box(solids.mv.point([0, 0, -0.08]), np.array([bore + 2 * wall + 0.06, bore_depth + 0.17, 0.08]))
     return [(base, grey), (walls, grey), (solids.translator(rise * height) >> resting_piston, grey * 0.65)]
 
 
-def load(height: float) -> list:
+def load(height: solids.Scalar) -> list:
     """A weight on a piston resting on a fill of `height`: it holds the pressure under the piston fixed."""
     return [(solids.translator(rise * height) >> resting_weight, ink)]
 
 
-def latch(height: float) -> list:
+def latch(height: solids.Scalar) -> list:
     """A latch across the piston resting on a fill of `height`: it holds the volume under the piston fixed."""
     return [(solids.translator(rise * height) >> resting_latch, orange)]
 
 
-def fill(bottom: float, top: float) -> solids.Plane:
+def fill(bottom: solids.Scalar, top: solids.Scalar) -> solids.Plane:
     """The contents of the cylinder between two heights, the six planes bounding them `[1, 6]`: the bore's four
     walls, and the planes at the two heights, at least a sliver apart."""
     x, y, z, w = solids.mv.x, solids.mv.y, solids.mv.z, solids.mv.w
     return stack((x - w * bore, -x - w * bore, y - w * bore_depth, -y - w * bore_depth,
-                  z - w * max(top, bottom + 1e-6), w * bottom - z))[None]
+                  z - w * (bottom + (top - bottom).clip(1e-6, np.inf)), w * bottom - z))[None]
 
 
-def cylinder_view(maximum: float, pixels: int) -> solids.View:
+def cylinder_view(maximum: solids.Scalar, pixels: int) -> solids.View:
     """The view of a cylinder tall enough for a fill of `maximum`, its piston and a weight on it, `pixels` across."""
-    corners = solids.mv.point(np.array([[x, y, z] for x in (-0.75, 0.75) for y in (-0.6, 0.6)
-                                        for z in (-0.16, maximum + 0.45)]))
+    base = solids.mv.point([[x, y, -0.16] for x in (-0.75, 0.75) for y in (-0.6, 0.6)])
+    corners = stack((base, base + rise * (maximum + 0.61))).reshape(-1)
     return solids.view([corners], 0.0, np.radians(18), np.radians(-25), 0.08, pixels)
 
 
-def gas_cylinder(height: float, warmth: float, latched: bool, maximum: float, pixels: int) -> np.ndarray:
+def gas_cylinder(height: solids.Scalar, warmth: float, latched: bool, maximum: solids.Scalar, pixels: int) -> np.ndarray:
     """A cylinder of gas filled to a height, its colour by how warm it is, a share of the way from cold to hot, under
     a piston either latched or loaded with a weight; framed for a fill of `maximum`, `pixels` across."""
     holder = latch(height) if latched else load(height)

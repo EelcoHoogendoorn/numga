@@ -41,16 +41,9 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 
 
 # --- plumbing -------------------------------------------------------------------------
-def gpu_points(points: Point) -> solids.Point:
-    """The GPU library's own points at the places of the example's: their coordinates, read by pairing the intrinsic
-    points with the drawing frame, are the one hand-off from this algebra to the renderer's."""
-    mv = points.context.multivector
-    return solids.mv.point((stack((mv.x, mv.y, mv.z)) & points.batch()[..., None]).to_array())
-
-
 def square_view(vertices: Point, side: int) -> solids.View:
     """A square view framing a mesh's vertices, `side` pixels across."""
-    view = solids.view([gpu_points(vertices)], 0.0, elevation, azimuth, margin, side)
+    view = solids.view([solids.origin + solids.context.include_from_algebra(vertices.batch())], 0.0, elevation, azimuth, margin, side)
     return view.squared()
 
 
@@ -69,7 +62,7 @@ def face_colours(values: Scalar, limit: float) -> np.ndarray:
 
 def coloured(mesh: Mesh, vertices: Point, values: Scalar, limit: float, view: solids.View) -> np.ndarray:
     """The mesh at its vertices, each face flat in its colour by a field in [-limit, limit], as the view sees it."""
-    points = gpu_points(vertices)
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())        # [vertices] Point-
     return meshes.draw(points, mesh.faces, np.zeros(3), meshes.flat(points, mesh.faces), view, background,
                        face_values=face_colours(values, limit), colour=meshes.by_face, gloss=solids.gloss)
 
@@ -86,8 +79,8 @@ def render_surface(mesh: Mesh, vertices: Point, reference: Point, view: solids.V
     cell_corners = mesh.incidence[2, 0] * (reference * (squares / 2 / reach))  # [corners] Point-[faces]
     # The texture's place at each corner of each face, read by pairing, faces first, for the shader.
     cells = (frame_planes & cell_corners.batch()[..., None]).to_array().transpose(1, 0, 2)   # [faces, corners, 3]
-    points = gpu_points(vertices)
-    return meshes.draw(points, mesh.faces, cells, meshes.smooth(points, mesh.faces), view, background,
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())        # [vertices] Point-
+    return meshes.draw(points, mesh.faces, cells, meshes.smooth(points, mesh), view, background,
                        face_values=np.zeros(4), colour=checkerboard, gloss=solids.gloss)
 
 

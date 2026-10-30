@@ -102,7 +102,9 @@ def draw_helices(centres: core.Point, edges: core.Point) -> plt.Figure:
     """The wires coiled by their couples `[tilts, pieces + 1]`, side by side in one view of space, each with a
     ribbon across its cross-sections `[tilts, pieces + 1, 2]` showing how they twist."""
     # The wires set side by side across, each a little more than the widest wire apart.
-    spacing = SPACING * np.ptp(coordinates(edges)[..., :2], axis=(1, 2)).max()
+    readings = stack((mv.x, mv.y))[None, :, None] & edges.reshape(centres.shape[0], -1)[:, None]
+    spans = readings.max(axis=-1) - readings.min(axis=-1)
+    spacing = SPACING * spans.max()
     across = mv.x.dual() * (spacing * np.arange(centres.shape[0]))           # [tilts] Point-
     curves, ribbons = centres + across[:, None], edges + across[:, None, None]
     view = solids.view([ribbons], 0.0, *VIEW, MARGIN, N_HELIX_PIXELS)
@@ -112,14 +114,18 @@ def draw_helices(centres: core.Point, edges: core.Point) -> plt.Figure:
 def animate_uncoiling(centres: core.Point, edges: core.Point) -> Iterator[np.ndarray]:
     """The wire through the sweep of its tilt `[frames, pieces + 1]`, with its ribbon `[frames, pieces + 1, 2]`,
     the camera turning slowly around it, all to one scale."""
-    places = coordinates(edges.reshape(-1))                                  # [points, 3]
-    low, high = places.min(axis=0), places.max(axis=0)
+    places = edges.reshape(-1)                                               # [points] Point-
+    frame = stack((mv.x, mv.y, mv.z))
+    readings = frame[:, None] & places
+    low = frame & places[readings.argmin(axis=-1)]
+    high = frame & places[readings.argmax(axis=-1)]
     # The upright cylinder about the coil's axis holding every frame, seen alike from every azimuth: its axis the
     # vertical line through the middle of every frame's extent, its radius the farthest any point lies from that
     # line, the size of the plane through the two, and its rims at the bottom and the top of the extent.
-    middle = mv.point((low + high) / 2)                                      # [] Point-
+    middle = mv.w.dual() + (frame.dual() * ((low + high) / 2)).sum()           # [] Point-
     axis = (middle & mv.z.dual()).normalized()                               # [] Line-
-    radius = (axis & edges).norm().to_array().max()
+    radii = (axis & edges).norm().reshape(-1)
+    radius = radii.max()
     half_height = (high - low)[2] / 2
     rims = middle + mv.z.dual() * (half_height * np.array([-1.0, 1.0]))      # [2] Point-
     circles = meshes.circles(rims + mv.x.dual() * radius, axis * solids.flip, N_FRAMING_RIM)   # [2, rim + 1] Point-
@@ -152,7 +158,7 @@ def wires(curves: core.Point, ribbons: core.Point, view: solids.View) -> list[tu
     corners = np.stack([index[:, :-1, 0], index[:, 1:, 0], index[:, 1:, 1], index[:, :-1, 1]], axis=-1)
     faces = corners[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
     edges = ribbons.reshape(-1)                                              # [vertices] Point-
-    strips = meshes.samples(edges, faces, RIBBON, meshes.smooth(edges, faces), view, face_values=np.zeros(4),
+    strips = meshes.samples(edges, faces, RIBBON, meshes.smooth(edges, meshes.Mesh(len(edges), faces)), view, face_values=np.zeros(4),
                             colour=meshes.plain, gloss=solids.gloss)
     rods = strokes.polylines([(curve, ROD) for curve in curves], ROD_WIDTH, view)
     return [(strips, 1.0), (rods, 1.0)]

@@ -163,9 +163,10 @@ def animate_ring(ring: core.Antivector, states: Iterable[tuple[core.Antivector, 
     """The ring `[samples]`, and each frame's position, velocity and spin as the observer at rest reads
     it: the momentum's direction faint, the spin solid."""
     # The ring's radius: its points lie in the lab's slice, where they square to their squared distance from the axis.
-    radius = ring.squared().square_root().to_array().max()
+    radii = ring.squared().square_root()
+    radius = radii.max()
     # The ring set up once; the momentum, the spin and the particle moved for each frame.
-    figure, ax = canvas((0, 0), 1.3 * radius)
+    figure, ax = canvas((0, 0), float((1.3 * radius).to_array()))
     ax.plot(*planar(ring).T, color=FAINT, linewidth=1.3, zorder=1)
     momentum_arrow = arrows(ax, np.zeros(2), np.zeros(2), line_colours[0], 0.010)
     spin_arrow = arrows(ax, np.zeros(2), np.zeros(2), SPIN, 0.012)

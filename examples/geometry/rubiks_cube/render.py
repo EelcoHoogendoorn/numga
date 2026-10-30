@@ -8,7 +8,7 @@ from itertools import chain
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import concatenate, stack
+from numga import concatenate
 from examples.geometry.rubiks_cube import core
 from examples.util.wgsl import meshes, solids
 
@@ -41,18 +41,11 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 
 
 # --- plumbing -------------------------------------------------------------------------
-def gpu_points(points: core.Point) -> solids.Point:
-    """The GPU library's own points at the places of the example's: their pairings with the planes x, y and z are the
-    one hand-off from this algebra to the renderer's."""
-    mv = core.mv
-    return solids.mv.point((stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array())
-
-
 def picture(corners: core.Point, colours: np.ndarray, cut: core.Point, view: solids.View) -> np.ndarray:
     """Render the cube's stickers as coloured squares with dark edges together with the dark inner cut beneath the turning layer."""
     squares = concatenate([corners, cut.reshape(-1, cut.shape[-1])])                                  # [squares, corners] Point-
     fills = np.concatenate([colours_by_face[colours], np.broadcast_to(cut_colour, (cut.shape[0] * cut.shape[1], 3))])  # [squares, 3]
-    places = gpu_points(squares.reshape(-1))                                                          # [squares * corners] Point-
+    places = solids.origin + solids.context.include_from_algebra(squares.reshape(-1))                           # [squares * corners] Point-
     # The places of each square's corners, and its two triangles through them.
     square_corners = np.arange(len(places)).reshape(squares.shape)                                    # [squares, corners]
     faces = square_corners[:, square_triangles].reshape(-1, 3)                                        # [squares * 2, 3]
@@ -69,7 +62,8 @@ def animate(states: Iterable[tuple[core.Point, core.Point]], colours: np.ndarray
     states = iter(states)
     first_state = next(states)
     corners, _ = first_state
-    initial_view = solids.view([gpu_points(corners.reshape(-1))], 0.0, elevation, azimuth, margin, n_pixels)
+    initial_view = solids.view([solids.origin + solids.context.include_from_algebra(corners)], 0.0, elevation, azimuth, margin,
+                               n_pixels)
     view = initial_view._replace(half=initial_view.half * room)
     for corners, cut in chain([first_state], states):
         yield picture(corners, colours, cut, view)

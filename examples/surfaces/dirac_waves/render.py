@@ -34,13 +34,6 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 
 
 # --- plumbing -------------------------------------------------------------------------
-def gpu_points(points: core.Point) -> solids.Point:
-    """The GPU library's own points at the places of the example's: their coordinates, read by pairing the intrinsic
-    points with the drawing frame, are the one hand-off from this algebra to the renderer's."""
-    mv = core.mv
-    return solids.mv.point((stack((mv.x, mv.y, mv.z)) & points.batch()[..., None]).to_array())
-
-
 def planes(fields: core.Even) -> np.ndarray:
     """The absolute amplitudes of fields' planes yz, zx and xy `[..., sites, 3]`: their pairings with the planes x, y
     and z, which meet the scalar part in nothing."""
@@ -59,9 +52,9 @@ def image(mesh: Mesh, seen: tuple, corners: np.ndarray, sides: np.ndarray) -> np
 def view(mesh: Mesh, positions: core.Point) -> tuple:
     """The surface at the positions of its vertices as the camera sees it, the same for every field on it: its
     points carried into projective space, their smooth normals, and the camera framing them."""
-    points = gpu_points(positions)
+    points = solids.origin + solids.context.include_from_algebra(positions.batch())       # [vertices] Point-
     frame = solids.view([points], 0.0, elevation, azimuth, margin, pixels)
-    return points, meshes.smooth(points, mesh.faces), frame.squared()
+    return points, meshes.smooth(points, mesh), frame.squared()
 
 
 def animate(mesh: Mesh, positions: core.Point, vertices: core.Even, faces: core.Even, columns: int,

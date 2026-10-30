@@ -82,7 +82,8 @@ def draw_normals(vertices: Point, side: Plane, winding: Surface, mirror: Plane) 
     # The scene's middle and its span: the centroid of the vertices, and the largest distance between two of them.
     places = vertices.reshape(-1)                                              # [scenes * vertices] Point-
     centre = places.mean(axis=0)                                               # [] Point-
-    span = (places[:, None] & places[None, :]).norm().to_array().max()
+    distances = (places[:, None] & places[None, :]).norm().reshape(-1)
+    span = distances.max()
     arrow_length = span * 0.22
     corners = mirror_sheet(mirror, centre, span * 0.32)                        # [corners] Point-
     tips = centres + normals * arrow_length                                    # [panels, scenes] Point-

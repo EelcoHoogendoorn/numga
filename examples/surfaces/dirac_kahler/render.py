@@ -67,13 +67,6 @@ def plane_places(points: core.Point) -> np.ndarray:
     return np.asarray((stack((mv.x, mv.y)) & points.batch()[..., None]).to_array())
 
 
-def gpu_points(points: core.Point) -> solids.Point:
-    """The GPU library's own points at the places of the example's, in the drawing plane z = 0: their coordinates,
-    read by pairing the intrinsic points with the planes x and y, are the one hand-off from this algebra to the
-    renderer's."""
-    return solids.origin + (solids.axes[:2].dual() * plane_places(points)).sum(axis=-1)
-
-
 def at_vertices(mesh: core.Mesh, field: Extensor) -> Extensor:
     """Face fields averaged at each vertex over the faces at it, for drawing `X[faces]` as `X[vertices]`."""
     corners = ~mesh.incidence[2, 0].sum(axis=0)                                # Scalar+[vertices <- faces]
@@ -107,18 +100,19 @@ def streamlines(mesh: core.Mesh, vertices: core.Point) -> Callable[[plt.Axes, co
     """What draws the streamlines of a face velocity `Point-[faces]` on an axes: the velocity averaged to the
     vertices for the continuous drawing, the solver keeping its face field, and carried across the triangles onto a
     grid of samples over the mesh, where no triangle holding a sample leaves it without flow."""
-    places = plane_places(vertices)                                            # [vertices, 2]
-    low, high = places.min(axis=0), places.max(axis=0)
-    sample_x = np.linspace(low[0], high[0], n_grid_samples)
-    sample_y = np.linspace(low[1], high[1], n_grid_samples)
     mv = vertices.context.multivector
+    readings = stack((mv.x, mv.y))[:, None] & vertices.batch()
+    low = readings.min(axis=-1)
+    high = readings.max(axis=-1)
+    grid = low[:, None] + (high - low)[:, None] * np.linspace(0, 1, n_grid_samples)
+    sample_x, sample_y = grid
     samples = mv.x.dual() * sample_x[None, :] + mv.y.dual() * sample_y[:, None]   # [rows, columns] Point-
     lift, outside = lifting(mesh, vertices, samples)                           # [rows] Scalar+[columns <- vertices], [rows, columns]
 
     def drawn(ax: plt.Axes, flow: core.Point, colour: str) -> None:
         velocities = np.ma.masked_array(plane_places(lift * at_vertices(mesh, flow)),
                                         np.broadcast_to(outside[..., None], outside.shape + (2,)))   # [rows, columns, 2]
-        ax.streamplot(sample_x, sample_y, velocities[..., 0], velocities[..., 1], color=colour, linewidth=1.3,
+        ax.streamplot(sample_x.to_array(), sample_y.to_array(), velocities[..., 0], velocities[..., 1], color=colour, linewidth=1.3,
                       density=0.65, arrowstyle="-", maxlength=4, broken_streamlines=False, zorder=3)
 
     return drawn
@@ -214,8 +208,8 @@ def wave_relief(mesh: core.Mesh, vertices: core.Point, heights: core.Scalar, cha
     channels `Scalar+[vertices]` at the corners of its faces; both grade panels share its height and contour
     spacing."""
     # The annulus raised along z by its heights, and its rim's edges, raised and at rest.
-    rest = gpu_points(vertices)                                                # [vertices] Point-
-    elevated = rest + sm.z.dual() * (relief_height * heights).batch().to_array()   # [vertices] Point-
+    rest = solids.origin + solids.context.include_from_algebra(vertices.batch())                # [vertices] Point-
+    elevated = rest + sm.z.dual() * solids.context.include_from_algebra((relief_height * heights).batch())   # [vertices] Point-
     rim = mesh.reading(mesh.boundary_edges, 1) * mesh.incidence[1, 0]          # [ends] Scalar+[rim <- vertices]
     rim_tails, rim_heads = rim * elevated.field()                              # Point-[rim], Point-[rim]
     rest_tails, rest_heads = rim * rest.field()                                # Point-[rim], Point-[rim]
@@ -223,7 +217,7 @@ def wave_relief(mesh: core.Mesh, vertices: core.Point, heights: core.Scalar, cha
     corner_values = np.stack([(mesh.incidence[2, 0] * channel).batch().to_array() for channel in channels],
                              axis=-1).transpose(1, 0, 2)                       # [faces, corners, channels]
     surface = meshes.samples(elevated, mesh.faces, corner_values,
-                              meshes.smooth(elevated, mesh.faces), view,
+                              meshes.smooth(elevated, mesh), view,
                               face_values=np.zeros(1), colour=colour, gloss=0.14)
     edge = strokes.segments(rim_tails.batch(), rim_heads.batch(), np.array([0.24, 0.32, 0.35]), 1.25, view)
     # A faint undisturbed rim gives height a fixed reference through crests and troughs.
@@ -238,7 +232,8 @@ def animate_dirac_waves(mesh: core.Mesh, vertices: core.Point,
     mv = vertices.context.multivector
     frames = iter(frames)
     first_even, first_face_field = next(frames)
-    amplitude_scale = float(np.asarray(first_even.scalar_norm_squared().batch().to_array()).max() ** 0.5)
+    amplitudes = first_even.scalar_norm_squared().batch().square_root()
+    amplitude_scale = amplitudes.max()
     view = solids.View(solids.aim(solids.origin, relief_elevation, relief_azimuth),
                        np.full(2, 1.12), n_panel_pixels)
     separator = np.full((n_panel_pixels, panel_gap, 3), 255, dtype=np.uint8)

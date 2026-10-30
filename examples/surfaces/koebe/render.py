@@ -30,21 +30,22 @@ EDGE_WIDTH, CIRCLE_WIDTH, TOUCH_RADIUS = 2.6, 2.4, 3.5
 
 # --- plumbing -------------------------------------------------------------------------
 def gpu_points(points: core.Point) -> solids.Point:
-    """The GPU library's own points at the places of the example's, a field's sites read as a batch: their pairings
-    with the planes x, y and z over their weight, the one hand-off of points from this algebra to the renderer's. A
-    point here is the dual of a plane, and w squares to minus one, so its weight is its pairing with -w."""
+    """View the rays in the projective slice read by -w; the spatial slices become the scene's frame."""
     mv = core.mv
     points = points.batch()
-    return sm.point(((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (-mv.w & points)[..., None]).to_array())
+    readings = (stack((mv.x, mv.y, mv.z)) & points[..., None]) / (-mv.w & points)[..., None]
+    return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
+
 
 
 def gpu_planes(circles: core.Vector) -> solids.Plane:
-    """The GPU library's own planes cutting the unit sphere in the circles, a field's sites read as a batch: each
-    circle's pairings with the points at infinity along x, y and z and with the centre, the one hand-off of planes
-    from this algebra to the renderer's."""
+    """Carry each circle's linear form into the scene, including its offset from the sphere's centre."""
     mv = core.mv
-    frame_points = stack((mv.x, mv.y, mv.z, mv.w)).dual()                     # [4] Point-
-    return sm.vector((circles.batch()[..., None] & frame_points).to_array())
+    frame_points = stack((mv.x, mv.y, mv.z, mv.w)).dual()
+    readings = circles.batch()[..., None] & frame_points
+    frame = stack((sm.x, sm.y, sm.z, sm.w))
+    return (frame * solids.context.include_from_algebra(readings)).sum(axis=-1)
+
 
 
 def view(apexes: core.Point, n_pixels: int) -> solids.View:
@@ -58,7 +59,7 @@ def panels(mesh: core.Mesh, circles: core.Vector, frame: solids.View) -> tuple[n
     face circles on the sphere; the widths scale with the panel."""
     scale = frame.pixels / N_PIXELS
     pixel = frame.pixel * scale
-    duals = core.face_circles(mesh, circles)                                   # Vector+[faces]
+    duals = core.face_circles(mesh, circles)                                   # Vector-[faces]
     # Each edge between the apexes of the circles at its ends, and each dual edge between the apexes of the face
     # circles on either side of it.
     tails, heads = mesh.incidence[1, 0] * core.apexes(circles)                 # Point-[edges], Point-[edges]
@@ -68,7 +69,9 @@ def panels(mesh: core.Mesh, circles: core.Vector, frame: solids.View) -> tuple[n
              (solids.rods(gpu_points(left), gpu_points(right), EDGE_WIDTH / 2 * pixel), DUAL_COLOUR),
              (solids.ball(gpu_points(core.touching(mesh, circles)), TOUCH_RADIUS * pixel)[:, None], TOUCH_COLOUR)]
     # The circles inked on the sphere, the only part of the second image, each coloured by its kind.
-    planes = concatenate([gpu_planes(circles), gpu_planes(duals)])      # [circles] Plane+
+    # The face windings become forms for the ink; multiplication by the intrinsic unit changes their orientation.
+    dual_forms = duals * core.mv.antipseudoscalar([1])                        # Vector+[faces]
+    planes = concatenate([gpu_planes(circles), gpu_planes(dual_forms)])       # [circles] Plane+
     kinds = np.repeat(np.stack([PRIMAL_COLOUR, DUAL_COLOUR]), [mesh.n_vertices, len(mesh.faces)], axis=0)   # [circles, 3]
     loops = solids.Ink(0, solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape), kinds,
                        CIRCLE_WIDTH * scale, 1.0)

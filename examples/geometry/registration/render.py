@@ -24,11 +24,11 @@ target_opacity = 0.16
 
 # --- plumbing -------------------------------------------------------------------------
 def gpu_points(points: Extensor) -> solids.Point:
-    """The GPU library's own points at the places of the example's, in whichever algebra they live: their pairings,
-    at unit size, with the planes x, y and z are the one hand-off from that algebra to the renderer's. In flat space
-    these are the points themselves; on the three-sphere, its points seen along w."""
+    """View the source along its remaining directions, with its x, y and z slices along the scene's axes."""
     mv = points.context.multivector
-    return solids.mv.point((stack((mv.x, mv.y, mv.z)) & points.normalized()[..., None]).to_array())
+    readings = stack((mv.x, mv.y, mv.z)) & points.normalized()[..., None]
+    return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
+
 
 
 def draw_registration(source: Extensor, target: Extensor, aligned: Extensor) -> plt.Figure:

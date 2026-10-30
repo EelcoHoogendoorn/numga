@@ -55,10 +55,10 @@ def spaced_faces(centres: core.Point, max_radius: float, min_separation: float) 
     """Well-spaced interior face indices ordered from the origin outward: each face's centre `Point-[faces]` within
     `max_radius` of the origin and further than `min_separation` from those of the faces chosen before it."""
     centres = centres.batch()                                                  # [faces] Point-
-    reach = centres.norm().to_array()                                          # [faces]
-    separations = (centres[:, None] - centres[None, :]).norm().to_array()     # [faces, faces]
+    reach = centres.norm()                                                   # [faces] Scalar+
+    separations = (centres[:, None] - centres[None, :]).norm()                 # [faces, faces] Scalar+
     chosen: list[int] = []
-    for face in np.argsort(reach):
+    for face in reach.argsort():
         if reach[face] < max_radius and all(separations[face, other] > min_separation for other in chosen):
             chosen.append(int(face))
     return chosen

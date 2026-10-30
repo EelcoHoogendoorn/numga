@@ -48,10 +48,12 @@ class WorkView:
         self.centres = coordinates(pivots)
         trails = coordinates(paths)
         # The longest crank: the distance from a pivot to its handle is the norm of their join.
-        radius = (self.pivots & paths.normalized()).norm().to_array().max()
-        margin = radius * 0.95
-        lower = trails.min(axis=(0, 1)) - margin
-        upper = trails.max(axis=(0, 1)) + margin
+        radii = (self.pivots & paths.normalized()).norm().reshape(-1)
+        margin = radii.max() * 0.95
+        mv = paths.context.multivector
+        readings = stack((mv.x, mv.y))[:, None] & paths.normalized().reshape(-1)
+        lower = (readings.min(axis=-1) - margin).to_array()
+        upper = (readings.max(axis=-1) + margin).to_array()
 
         self.figure, ax = plt.subplots(figsize=np.array(figure_pixels) / dpi, dpi=dpi, layout="constrained")
         ax.set(xlim=(lower[0], upper[0]), ylim=(lower[1], upper[1]), aspect="equal")
@@ -72,12 +74,14 @@ class WorkView:
 
     def update(self, handles: Point, velocities: Point, forces: Point) -> plt.Figure:
         handles = handles.normalized()                                          # [cranks] Point-
-        radius = (self.pivots & handles).norm().to_array().max()
+        radii = (self.pivots & handles).norm()
+        radius = radii.max()
         # The direction out from each pivot to its handle, per length of the longest crank.
         radial = (handles - self.pivots) / radius                               # [cranks] Direction-
         # The fastest handle's velocity reaches over half a crank: a direction's size is the norm of its join with a
         # unit point.
-        arrow_scale = radius * 0.55 / (handles & velocities).norm().to_array().max()
+        speeds = (handles & velocities).norm()
+        arrow_scale = radius * 0.55 / speeds.max()
         offset = radius * 0.055
         points = coordinates(handles)
         self.cranks.set_segments(np.stack([self.centres, points], axis=1))

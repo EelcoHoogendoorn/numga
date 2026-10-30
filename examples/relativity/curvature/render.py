@@ -72,16 +72,13 @@ def transverse(value: Antivector) -> np.ndarray:
     return (stack((mv.x, mv.y)) & value[..., None]).to_array()
 
 
-def spacetime(value: Antivector) -> np.ndarray:
-    """(..., 3) x, z and t of directions for the spacetime panels."""
-    return (stack((mv.x, mv.z, mv.t)) & value[..., None]).to_array()
-
-
 # --- the curvature map at one event ---------------------------------------------------
 def diagram_points(directions: Antivector) -> solids.Point:
-    """The GPU library's points at the tips of directions in the spacetime diagrams, x, z and t drawn along the
-    scene's x, y and z: the one hand-off from spacetime to the renderer's space."""
-    return solids.mv.point(spacetime(directions))
+    """Draw x, z and time along the scene's x, y and z: an explicit diagram, with Euclidean picture distances."""
+    mv = directions.context.multivector
+    readings = stack((mv.x, mv.z, mv.t)) & directions[..., None]
+    return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
+
 
 
 def patch(first: Antivector, second: Antivector) -> Antivector:
@@ -128,7 +125,8 @@ def draw_curvature_map(
     across = readout / readout.squared().square_root()                   # [] Antivector-
     patches = (patch(observer, edge), patch(wave, across))               # [corners] Antivector-, Antivector-
     drawn = concatenate((*patches, observer[None], wave[None], readout[None]))   # [drawn] Antivector-
-    extent = max(1.0, float(np.abs(spacetime(drawn)).max())) * 1.22
+    widths = (solids.axes & diagram_points(drawn)[..., None]).abs().reshape(-1)
+    extent = widths.max().clip(1, np.inf) * 1.22
     # One view for both diagrams, framing the axes' names and everything drawn on them.
     names = solids.origin + solids.axes.dual() * (extent * LABEL_DISTANCE)   # [3] Point-
     view = solids.view([concatenate((diagram_points(drawn), names))], 0.0, ELEVATION, AZIMUTH, MARGIN, N_MAP_PIXELS)

@@ -1,9 +1,10 @@
 """The values of a subalgebra in an algebra that contains its generators.
 
 An algebra contains another when every generator of the smaller one is among its own, by name and with the same
-square: the algebra of space `x+y+z+` lies in its projective algebra `w0x+y+z+`. Its elements then have a place in
-the larger algebra, and which place follows from their kind. An extrinsic element, built from planes by products and
-meets, keeps its blades: a plane through the origin stays that plane, a rotor that rotor. An intrinsic element, built
+square: the algebra of space `x+y+z+` lies in its projective algebra `w0x+y+z+`. A value may also occupy that
+subalgebra inside a larger ambient algebra: a spatial rotation in spacetime uses only x, y and z. Its elements then
+have a place in the target algebra, and which place follows from their kind. An extrinsic element, built from planes
+by products and meets, keeps its blades: a plane through the origin stays that plane, a rotor that rotor. An intrinsic element, built
 from points by joins, is measured against the volume: it keeps its complement, the extrinsic element that completes
 it to the unit volume, so a point of the algebra of space, an offset from its origin, becomes the projective point at
 infinity of that offset, a direction, and the unit volume of space the unit volume of the projective algebra.
@@ -60,8 +61,16 @@ def _image(source: Algebra, target: Algebra, mask: int, orientation: Orientation
 def inclusion(source: GAType, target: GATypeFactory) -> Inclusion:
     """How the values of a source type sit in the target algebra, cached per pair."""
     algebra, larger = source.algebra, target.algebra
-    for name, square in zip(algebra.basis_names, algebra.signature):
-        if name not in larger.basis_names or larger.signature[larger.basis_names.index(name)] != square:
+    # Intrinsic axes occupy a subalgebra by their complements, just as they carry into it by their complements.
+    generators = 0
+    for space, orientation in zip(source.subspaces, source.orientations):
+        for mask in space.masks:
+            if orientation is Orientation.intrinsic:
+                mask, _ = algebra.operator._volume_complement_inverse(mask)
+            generators |= mask
+    for generator, (name, square) in enumerate(zip(algebra.basis_names, algebra.signature)):
+        if generators >> generator & 1 and (
+                name not in larger.basis_names or larger.signature[larger.basis_names.index(name)] != square):
             raise GATypeError(f"{algebra} is no subalgebra of {larger}: its generator {name} is not one of {larger}'s "
                               f"with the same square")
     axes, sources, signs = [], [], []
@@ -80,8 +89,8 @@ def inclusion(source: GAType, target: GATypeFactory) -> Inclusion:
     return Inclusion(gatype, tuple(sources), tuple(signs))
 
 
-def from_subalgebra(context: Context, value: Extensor) -> Extensor:
-    """The value of a subalgebra's element in the algebra of `context`, as `MultivectorFactory.from_subalgebra`."""
+def include_from_algebra(context: Context, value: Extensor) -> Extensor:
+    """The value of a subalgebra's element in the algebra of `context`, as `Context.include_from_algebra`."""
     from numga.extensor import Extensor
 
     plan = inclusion(value.gatype, context.algebra.gatype)

@@ -45,12 +45,6 @@ face_planes = stack((core.mv.x, core.mv.y))                                    #
 
 
 # --- plumbing -------------------------------------------------------------------------
-def gpu_points(points: core.Point) -> solids.Point:
-    """The GPU library's own points at the places of the example's: their pairings with the planes x, y and z, east,
-    north and up, are the one hand-off from this algebra to the renderer's."""
-    return solids.mv.point((stack((core.mv.x, core.mv.y, core.mv.z)) & points[..., None]).to_array())
-
-
 def shadows(nodus: core.Point, suns: core.Point) -> np.ndarray:
     """The shadows of the nodus on the dial, east and north `[..., 2]`, masked where the sun is below the horizon or
     the shadow falls outside the dial face."""
@@ -109,29 +103,25 @@ def daylight(nodus: core.Point, rays: core.Point) -> tuple[core.Point, core.Poin
 def sky_view(ax: plt.Axes, nodus: core.Point, rays: core.Point) -> solids.View:
     """Frame a view of the dial plate and all daytime rays across the year to fit the axes."""
     sunward_points = concatenate([daylight(nodus, day)[0] for day in rays])    # [rays] Point-
-    return fitted(solids.view([dial_corners, gpu_points(sunward_points)], 0.0, elevation, azimuth, margin, 1), ax)
+    return fitted(solids.view([dial_corners, solids.origin + solids.context.include_from_algebra(sunward_points)], 0.0, elevation, azimuth,
+                              margin, 1), ax)
 
 
-def day_path(nodus: core.Point, day: core.Point) -> solids.Ink:
-    """Build the ink for a day's shadow path by intersecting the dial plate with the cone swept by the day's sun rays about the pole."""
-    suns = gpu_points(day)                                                     # [samples] Point-
-    apex = gpu_points(nodus)                                                   # [] Point-
-    # The day's suns lie on a circle about the pole, so the pole is square to the plane through them; the cone takes
-    # the axial plane squared, so its sense does not matter.
-    circle = ((suns[0] & suns[1] & suns[2]) * solids.flip).normalized()        # [] Plane+
-    equator = circle - solids.mv.w * (circle & solids.origin)                  # [] Plane+
-    sun = suns[0] - solids.origin                                              # [] Point-
-    # The sine of the declination: the sun's height along the pole over its length, the size of its dual.
-    height = (equator & sun) / sun.dual().norm()                               # [] Scalar+
-    # The planes through the nodus: square to the pole, and across x, y and z.
-    axial = equator - solids.mv.w * (equator & apex)                           # [] Plane+
-    across = solids.axes - solids.mv.w * (solids.axes & apex)                  # [3] Plane+
-    # Zero on a ray from the nodus at the sun's angle to the pole: its part along the pole squared, less the sine of the
-    # declination squared times its length squared.
-    cone = axial * (axial & solids.Point) - height.squared() * (across * (across & solids.Point)).sum(axis=0)  # [] Plane+ <- Point-
-    # The shadow lies away from the sun: along the pole, opposite to the sun.
-    shadow_side = solids.half_space(axial * height)
-    return solids.Ink(0, cone[None], shadow_side[None], np.array(to_rgb(day_colour)), path_width, 1.0)
+def day_path(nodus: core.Point, foot: core.Point, day: core.Point) -> solids.Ink:
+    """The ink of a day's shadow path, where the dial plate cuts the cone of the day's rays about the pole, the cone
+    carried from the origin to its apex at the nodus."""
+    # The style runs from its foot to the nodus, towards the pole.
+    pole = (nodus - foot).normalized()                                         # [] Point-
+    to_nodus = solids.translator(solids.context.include_from_algebra(nodus))                    # [] Motor+
+    # The cone of space about the origin reads each point of the renderer's space by its offset from the origin, its
+    # part along the degenerate blades.
+    about_origin = solids.context.include_from_algebra(core.cone(pole, day[0]))(solids.Point.restrict.degenerate())   # [] Plane+ <- Point-
+    # The shadow lies away from the sun, on the negative side of the plane through the nodus across the pole, weighted
+    # by the sun's height along the pole, the sine of its declination.
+    across = pole.dual_inverse()                                               # [] Plane+
+    shadow_side = solids.half_space(to_nodus >> solids.context.include_from_algebra(across * (across & day[0])))
+    return solids.Ink(0, solids.placed(about_origin, to_nodus)[None], shadow_side[None], np.array(to_rgb(day_colour)),
+                      path_width, 1.0)
 
 
 def dial_in_space(nodus: core.Point, foot: core.Point) -> list[tuple[solids.Quadric, np.ndarray]]:
@@ -142,11 +132,12 @@ def dial_in_space(nodus: core.Point, foot: core.Point) -> list[tuple[solids.Quad
     slab = solids.boxes(solids.translator(middle - solids.origin), half_extents)[None]  # [1, 6] Plane+
     # The gnomon's triangle joins the foot of the style, the nodus, and the point of the dial below the nodus.
     below_nodus = nodus - core.up * (core.dial & nodus)                        # [] Point-
-    gnomon = solids.plates(gpu_points(stack([foot, nodus, below_nodus]))[None], gnomon_thickness)  # [1, 5] Plane+
+    corners = solids.origin + solids.context.include_from_algebra(stack([foot, nodus, below_nodus]))   # [corners] Point-
+    gnomon = solids.plates(corners[None], gnomon_thickness)                    # [1, 5] Plane+
     return [(slab, np.array(to_rgb(dial_colour))), (gnomon, np.array(to_rgb(gnomon_colour)))]
 
 
-def sunlight(nodus: core.Point, rays: core.Point, day: core.Point,
+def sunlight(nodus: core.Point, foot: core.Point, rays: core.Point, day: core.Point,
              view: solids.View) -> tuple[list[tuple[solids.Quadric, np.ndarray]], list[solids.Ink]]:
     """Build the daytime sun rays clipped to the walls above the dial plate and the inked shadow conic on the dial."""
     ray_starts, shadow_points = daylight(nodus, rays)                          # [daytime] Point-, Point-
@@ -155,11 +146,12 @@ def sunlight(nodus: core.Point, rays: core.Point, day: core.Point,
     sides = stack([-solids.mv.x, solids.mv.x, -solids.mv.y, solids.mv.y])      # [4] Plane+
     corners = dial_corners[[0, 2, 0, 2]]                                       # [4] Point-
     walls = solids.half_space(sides - solids.mv.w * (sides & corners))
-    rods = solids.rods(gpu_points(ray_starts), gpu_points(shadow_points), ray_width / 2 * view.pixel)  # [rays, 3] Plane+ <- Point-
+    rods = solids.rods(solids.origin + solids.context.include_from_algebra(ray_starts), solids.origin + solids.context.include_from_algebra(shadow_points),
+                       ray_width / 2 * view.pixel)                             # [rays, 3] Plane+ <- Point-
     beams = concatenate([rods, walls[None].broadcast_to((rods.shape[0], 4))], axis=-1)                # [rays, 7] Plane+ <- Point-
     # Blend the ray colour over the white background according to its opacity.
     beam_colour = ray_opacity * np.array(to_rgb(ray_colour)) + (1 - ray_opacity)
-    return [(beams, beam_colour)], [day_path(nodus, day)]
+    return [(beams, beam_colour)], [day_path(nodus, foot, day)]
 
 
 def animate_year(declinations: np.ndarray, rays: core.Point, days: core.Point, nodus: core.Point, foot: core.Point,
@@ -178,7 +170,7 @@ def animate_year(declinations: np.ndarray, rays: core.Point, days: core.Point, n
     view = sky_view(sky_axes, nodus, rays)
     sky = show(sky_axes, np.ones((*view.shape, 3)), view)
     for index in range(len(declinations)):
-        beams, inks = sunlight(nodus, rays[index], days[index], view)
+        beams, inks = sunlight(nodus, foot, rays[index], days[index], view)
         sky.set_data(solids.draw(dial + beams, view, np.ones(3), inks, translucent=[], meshes=[]))
         path.set_segments(shadows(nodus, days[index])[None])
         yield capture(figure)

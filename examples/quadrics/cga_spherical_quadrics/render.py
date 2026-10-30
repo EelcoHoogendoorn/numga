@@ -33,7 +33,8 @@ alias Sample = vec3<f32>;
 
 fn sample(place: vec2<f32>) -> Sample {
     let across = screen(place);
-    let squared = dot(across, across);
+    let foot = (directions * vec3<f32>(across, 0.0)).sum();
+    let squared = foot.dual().scalar_norm_squared();
     if (squared > 1) {
         return background;
     }
@@ -41,7 +42,7 @@ fn sample(place: vec2<f32>) -> Sample {
         return rim;
     }
     // The point of S² under the sample, on the front hemisphere: the centre plus a unit direction.
-    let point = centre + (directions * vec3<f32>(across, sqrt(1 - squared))).sum();
+    let point = centre + foot + toward * sqrt(1 - squared);
     var colour = disk;
     for (var body = 0u; body < arrayLength(&quadrics); body++) {
         if ((quadrics[body](point) & point) < 0) {
@@ -57,7 +58,7 @@ fn sample(place: vec2<f32>) -> Sample {
 @cache
 def shader() -> Shader:
     return Shader(supersampled() + source, ga, dict(Point=Point, Plane=Plane, Quadric=Quadric),
-                  dict(centre=centre, directions=directions, rim_start=RIM_START, disk=to_rgb(DISK), rim=to_rgb(RIM), background=to_rgb(BACKGROUND)))
+                  dict(centre=centre, directions=directions, toward=directions[2], rim_start=RIM_START, disk=to_rgb(DISK), rim=to_rgb(RIM), background=to_rgb(BACKGROUND)))
 
 
 def vortex_frames(world: Quadric, colors: list[str], resolution: int) -> Iterator[np.ndarray]:

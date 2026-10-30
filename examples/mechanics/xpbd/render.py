@@ -154,8 +154,9 @@ def animate_chain(motors: Iterable[Motor], semi_axes: np.ndarray, spacing: float
     # How far the chain reaches along itself from the pin: the lengths of the offsets between neighbouring links.
     length = (centres[1:] - centres[:-1]).dual().norm().sum()                                # [] Scalar+
     extremes = concatenate([centres, (mv.xy * (np.pi / 2)).exp() >> centres, (origin - mv.z.dual() * length)[None]])
-    place = (axes & extremes[:, None]).to_array()                                            # [points, 3]
-    low, high = place.min(axis=0), place.max(axis=0)
+    readings = axes[:, None] & extremes
+    low = readings.min(axis=-1)
+    high = readings.max(axis=-1)
     floor = mv.z - mv.w * (low[2] - floor_drop * spacing)                                   # [] Plane+
     view = framing(extremes, floor, semi_axes.max())
     # The pin sits at the joint of the fixed body and the first link.
@@ -165,7 +166,7 @@ def animate_chain(motors: Iterable[Motor], semi_axes: np.ndarray, spacing: float
         yield np.round(np.clip(shader()(view.shape, motors=bodies[1:], colours=link_colours[np.arange(n_links) % 2],
                                         link=solids.ellipsoid(semi_axes), pin=pin, pin_colour=pin_colour,
                                         octant_contrast=octant_contrast, floor_plane=floor,
-                                        floor_low=low[:2] - floor_reach * spacing,
-                                        floor_high=high[:2] + floor_reach * spacing, tile=tile * spacing,
+                                        floor_low=(low[:2] - floor_reach * spacing).to_array(),
+                                        floor_high=(high[:2] + floor_reach * spacing).to_array(), tile=tile * spacing,
                                         camera=view.camera, back=4 * view.half.max(), half_height=view.half[1],
                                         **lighting)["image"], 0, 1) * 255).astype(np.uint8)

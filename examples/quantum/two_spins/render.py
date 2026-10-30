@@ -61,9 +61,12 @@ def coordinates(spins: Extensor, names: str) -> np.ndarray:
 
 
 def gpu_points(spins: Extensor, names: str) -> solids.Point:
-    """The GPU library's own points where spins are drawn, at their coordinates along the named unit elements: read
-    by their dot products, the one hand-off from this algebra to the renderer's."""
-    return sm.point(coordinates(spins, names))
+    """Draw each copy's named spin-plane readings along the same three scene directions."""
+    mv = spins.context.multivector
+    units = stack([getattr(mv, name) for name in names.split()])
+    readings = units.dot(spins[..., None])
+    return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
+
 
 
 def sizes(spins: Extensor) -> np.ndarray:
@@ -233,8 +236,8 @@ def draw_qubit(across: Extensor, turned: Extensor, balance: Extensor, times: np.
     the front. Beside it, how likely the pair is found back in the singlet."""
     # The pair's place on the qubit's sphere: how far it leans to up-down along x, its turn along y, and its balance
     # of singlet against triplet up z.
-    paths = (solids.origin + sm.x.dual() * across.to_array() + sm.y.dual() * turned.to_array()
-             + sm.z.dual() * balance.to_array())                               # [rates, times] Point-
+    readings = stack((across, turned, balance), axis=-1)
+    paths = solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)                               # [rates, times] Point-
     shades = (TOGETHER, FIRST, SECOND)
     # The sphere beside the curves, the column's width but the room the legend needs past them.
     figure = plt.figure(figsize=(760 / charts.DPI, 320 / charts.DPI))

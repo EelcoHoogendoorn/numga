@@ -48,9 +48,9 @@ def held(bodies: core.arm.PointMap, surface: core.Quadric, view: tuple[float, fl
     # where they pair to zero with its dual, `plane & dual(plane)`, a quadratic in the shift.
     screen = solids.aim(solids.origin, elevation, azimuth) >> stack((mv.x, mv.y))   # [2] Plane+
     dual = surface.inverse()                                                 # [] Point- <- Plane+
-    square, linear, constant = (w & dual(w)).to_array(), (screen & dual(w)).to_array(), (screen & dual(screen)).to_array()
-    root = np.sqrt(linear**2 - square * constant)
-    shifts = np.stack([(-linear - root) / square, (-linear + root) / square])   # [sides, 2]
+    square, linear, constant = w & dual(w), screen & dual(w), screen & dual(screen)
+    root = (linear.squared() - square * constant).square_root()
+    shifts = stack([(-linear - root) / square, (-linear + root) / square])   # [sides, 2]
     # The quadric's outermost points across and up the image: the poles of its tangent planes there.
     outermost = dual(screen + w * shifts)                                    # [sides, 2] Point-
     return solids.view([boxes, outermost], 0.0, elevation, azimuth, margin, pixels).squared()

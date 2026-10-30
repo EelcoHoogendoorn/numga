@@ -1,4 +1,5 @@
-"""Test configuration: headless plotting, and a guard against running the whole suite by accident."""
+"""Test configuration: headless plotting, and a guard against running the whole suite by accident, with the one
+sanctioned way to run it, `pytest tests --full-sweep`, before a commit."""
 
 from __future__ import annotations
 
@@ -6,6 +7,9 @@ import os
 from pathlib import Path
 
 import pytest
+
+# Numerical threads a full sweep may use, so that it never saturates the machine.
+SWEEP_THREADS = 4
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -18,10 +22,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Display matplotlib figures instead of closing them headlessly.",
     )
     parser.addoption(
-        "--i-am-a-dunce-for-ignoring-instructions",
+        "--full-sweep",
         action="store_true",
         default=False,
-        help="Force running the full test suite (which takes >2 minutes).",
+        help="Run the whole suite before a commit, in one process with at most "
+             f"{SWEEP_THREADS} numerical threads, leaving the machine's other cores free.",
     )
 
 
@@ -29,8 +34,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 def pytest_collection_modifyitems(
     session: pytest.Session, config: pytest.Config, items: list[pytest.Item]
 ) -> None:
-    """Block full test suite runs unless --i-am-a-dunce-for-ignoring-instructions is passed."""
-    if config.getoption("--i-am-a-dunce-for-ignoring-instructions", False):
+    """Block full test suite runs unless --full-sweep is passed."""
+    if config.getoption("--full-sweep", False):
         return
 
     test_root = Path(__file__).parent.resolve()
@@ -57,12 +62,16 @@ def pytest_collection_modifyitems(
         raise pytest.UsageError(
             f"Full test suite run blocked ({len(items)} tests collected, takes >2 minutes).\n"
             "Target a specific file or directory (e.g. 'pytest tests/examples/...').\n"
-            "To force a full run, pass '--i-am-a-dunce-for-ignoring-instructions'."
+            "Before a commit, run the whole suite as 'pytest tests --full-sweep'."
         )
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    """Only force headless Agg backend if --show-plot was not passed."""
+    """Only force headless Agg backend if --show-plot was not passed; cap numerical threads for a full sweep."""
+    if config.getoption("--full-sweep", False):
+        # Set before numpy is imported, so that its linear algebra starts with this many threads.
+        for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+            os.environ.setdefault(name, str(SWEEP_THREADS))
     if not config.getoption("--show-plots", False):
         os.environ.setdefault("MPLBACKEND", "Agg")
         try:

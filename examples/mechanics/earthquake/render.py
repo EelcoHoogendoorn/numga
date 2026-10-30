@@ -51,12 +51,6 @@ def coordinates(directions: core.Point) -> np.ndarray:
     return (stack((mv.x, mv.y, mv.z)) & directions[..., None]).to_array()
 
 
-def gpu_points(directions: core.Point) -> solids.Point:
-    """The GPU library's own points at the tips of directions in the drawing's frame: their coordinates are the one
-    hand-off from this algebra to the renderer's."""
-    return solids.mv.point(coordinates(directions))
-
-
 def chart(points: core.Point) -> np.ndarray:
     """Points on the level ground across the beachball's chart `[..., 2]`, east to the right and north up: their
     first two coordinates in the drawing's frame."""
@@ -129,7 +123,8 @@ def slip_arrows(normal: core.Point, slip: core.Point) -> tuple[core.Point, core.
 
 def view(surfaces: core.Point, ends: core.Point) -> solids.View:
     """A view framing lobes and arrows' ends, in the drawing's frame."""
-    return solids.view([gpu_points(surfaces), gpu_points(ends)], 0.0, elevation, azimuth, margin, 1)
+    framed = [solids.origin + solids.context.include_from_algebra(tips) for tips in (surfaces, ends)]
+    return solids.view(framed, 0.0, elevation, azimuth, margin, 1)
 
 
 def draw_fault(directions: core.Point, push: core.Scalar, normal: core.Point, slip: core.Point,
@@ -146,25 +141,26 @@ def draw_fault(directions: core.Point, push: core.Scalar, normal: core.Point, sl
     colours = np.where(middle[..., None] > 0, to_rgb(PUSH_LOBE), to_rgb(PULL_LOBE))   # [rings - 1, spokes - 1, 3]
     triangles = cells[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)             # [cells * 2, 3]
     colours = np.repeat(colours.reshape(-1, 1, 3), 2, axis=0)                 # [cells * 2, 1, 3]
-    places = gpu_points(surface)                                              # [rings * spokes] Point-
+    places = solids.origin + solids.context.include_from_algebra(surface)               # [rings * spokes] Point-
     # At the grid's poles a ring of directions gathers into one point, and along the nodal planes the lobes shrink
     # into the source: the halves of the cells there have no area, the join of their corners no weight, and are
     # left out.
     corners = places[triangles]                                               # [cells * 2, 3] Point-
     spanned = (corners[:, 0] & corners[:, 1] & corners[:, 2]).norm() > 0
-    lobe_samples = meshes.samples(places, triangles[spanned], colours[spanned], meshes.smooth(places, triangles[spanned]),
+    lobe_samples = meshes.samples(places, triangles[spanned], colours[spanned], meshes.smooth(places, meshes.Mesh(len(places), triangles[spanned])),
                                   view, face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
     # The patch: a thin disc about the source, square to the normal, reaching half the rim's width past the patch so
     # that its rim, inked where the cylinder of the patch's radius about the normal meets it, lies whole on it.
-    across = (drawing >> normal) * (patch_thickness / 2 * view.pixel)         # [] Point-
-    faces = gpu_points(stack([-across, across]))                              # [2] Point-
+    across = solids.context.include_from_algebra(drawing >> normal)                     # [] Point-
+    faces = solids.origin + stack([-across, across]) * (patch_thickness / 2 * view.pixel)   # [2] Point-
     disc = solids.rods(faces[0], faces[1], patch + rim_width / 2 * view.pixel)[None]   # [1, 3] Plane+ <- Point-
     rim = solids.Ink(0, solids.rods(faces[0], faces[1], patch)[:1], solids.everywhere[None], np.array(to_rgb(RIM)),
                      rim_width, 1.0)
     fault = solids.layer([], view, [rim], translucent=[(disc, np.array(to_rgb(FAULT)), patch_opacity)],
                          meshes=[(lobe_samples, 1.0)])
     starts, ends = slip_arrows(normal, slip)
-    shafts, heads = solids.arrows(gpu_points(starts), gpu_points(ends), shaft_radius * view.pixel,
+    shafts, heads = solids.arrows(solids.origin + solids.context.include_from_algebra(starts),
+                                  solids.origin + solids.context.include_from_algebra(ends), shaft_radius * view.pixel,
                                   head_share * slip_length, head_width * head_share * slip_length)
     arrow_colour, arrow_depth = solids.layer([(shafts, np.array(to_rgb(SLIP))), (heads, np.array(to_rgb(SLIP)))], view,
                                              inks=[], translucent=[], meshes=[])

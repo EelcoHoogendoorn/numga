@@ -36,32 +36,26 @@ unit_volume = core.mv.antipseudoscalar([1.0])                                # [
 
 
 # --- plumbing -------------------------------------------------------------------------
-def gpu_points(points: core.Point) -> solids.Point:
-    """The GPU library's own points at the places of the example's, a field's sites read as a batch: their
-    coordinates, read by pairing the intrinsic points with the drawing frame, are the one hand-off from this algebra
-    to the renderer's."""
-    mv = points.context.multivector
-    return solids.mv.point((stack((mv.x, mv.y, mv.z)) & points.batch()[..., None]).to_array())
-
-
 def square_view(view_degrees: np.ndarray, vertices: core.Point, spare: float) -> solids.View:
     """A square orthographic view frames the supplied geometric points."""
     elevation, azimuth = np.radians(view_degrees + [0, 90])
-    return solids.view([gpu_points(vertices)], spare, elevation, azimuth, 0.06, pixels).squared()
+    places = solids.origin + solids.context.include_from_algebra(vertices.batch())             # [vertices] Point-
+    return solids.view([places], spare, elevation, azimuth, 0.06, pixels).squared()
 
 
 def sheet(places: core.Point, faces: np.ndarray, colours: np.ndarray,
           view: solids.View) -> meshes.Samples:
     """A lit sheet carries its vertex colours at the image's own pixel size."""
-    points = gpu_points(places)
-    return meshes.samples(points, faces, colours, meshes.smooth(points, faces), view,
+    points = solids.origin + solids.context.include_from_algebra(places.batch())                 # [vertices] Point-
+    return meshes.samples(points, faces, colours, meshes.smooth(points, meshes.Mesh(len(points), faces)), view,
                           face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
 
 
 def boundary_lines(mesh: core.Mesh, vertices: core.Point, view: solids.View) -> meshes.Samples:
     """Thin outlines keep the reference geometry visible beneath the field."""
     tails, heads = mesh.reading(mesh.boundary_edges, 1) * (mesh.incidence[1, 0] * vertices)   # Point-[rim], Point-[rim]
-    return strokes.segments(gpu_points(tails), gpu_points(heads), ink, 1.1, view)
+    return strokes.segments(solids.origin + solids.context.include_from_algebra(tails.batch()),
+                            solids.origin + solids.context.include_from_algebra(heads.batch()), ink, 1.1, view)
 
 
 def panels(images: list[np.ndarray]) -> plt.Figure:
@@ -85,7 +79,7 @@ def frame_patches(starts: core.Point, rotors: core.Rotor, size: float,
     faces = (local_faces[None] + np.arange(n_patches)[:, None, None] * n_profile).reshape(-1, 3)
     colours = np.broadcast_to(np.stack((coral, gold, teal, blue))[None, :, None, :], (n_patches, 4, 3, 3)).reshape(-1, 3, 3)
     patches = sheet(places.reshape(-1), faces, colours, view)
-    perimeters = gpu_points(places[:, [0, 1, 2, 3, 0]])                       # [patches, 5] Point-
+    perimeters = solids.origin + solids.context.include_from_algebra(places[:, [0, 1, 2, 3, 0]])   # [patches, 5] Point-
     seams = strokes.polylines([(perimeters[patch], ink) for patch in range(n_patches)], 1.0, view)
     return patches, seams
 
@@ -122,13 +116,15 @@ def draw_darboux_whitney(
     arc_points = centres[:, None] + (turns >> ray[:, None]) * 0.115           # [selected, samples] Point-
     progression = phases[:-1, None] * gold + (1 - phases[:-1, None]) * coral
     arc_colours = np.broadcast_to(progression, (len(selected), n_curve_samples - 1, 3))
-    arcs = strokes.segments(gpu_points(arc_points[:, :-1].reshape(-1)), gpu_points(arc_points[:, 1:].reshape(-1)),
-                            arc_colours.reshape(-1, 3), 3.0, view)
+    arc_places = solids.origin + solids.context.include_from_algebra(arc_points)               # [selected, samples] Point-
+    arcs = strokes.segments(arc_places[:, :-1].reshape(-1), arc_places[:, 1:].reshape(-1), arc_colours.reshape(-1, 3),
+                            3.0, view)
     probe_starts = points[selected] + lift * 0.025 - probe * 0.08             # [selected] Point-
     probe_ends = probe_starts + probe * 0.18                                  # [selected] Point-
-    probes = strokes.segments(gpu_points(probe_starts), gpu_points(probe_ends), blue, 2.0, view)
-    probe_ends_mark = solids.ball(gpu_points(probe_ends), 0.018)[:, None]
-    arc_ends = solids.ball(gpu_points(arc_points[:, -1]), 0.018)[:, None]
+    probe_tips = solids.origin + solids.context.include_from_algebra(probe_ends)               # [selected] Point-
+    probes = strokes.segments(solids.origin + solids.context.include_from_algebra(probe_starts), probe_tips, blue, 2.0, view)
+    probe_ends_mark = solids.ball(probe_tips, 0.018)[:, None]
+    arc_ends = solids.ball(arc_places[:, -1], 0.018)[:, None]
     rates_image = solids.draw([(probe_ends_mark, blue), (arc_ends, gold)], view, background, inks=[], translucent=[],
                              meshes=[(base, 1.0), (outline, 1.0), (probes, 1.0), (arcs, 1.0)])
 
@@ -138,7 +134,7 @@ def draw_darboux_whitney(
     depth = np.clip((1 - norms) / (1 - norms.min()), 0, 1)
     bowl_colours = (1 - depth[:, None]) * np.array([0.50, 0.83, 0.98]) + depth[:, None] * blue
     bowl = sheet(bowl_points, fine_mesh.faces, bowl_colours[fine_mesh.faces], view)
-    corner_marks = solids.ball(gpu_points(corners), 0.025)[:, None]
+    corner_marks = solids.ball(solids.origin + solids.context.include_from_algebra(corners), 0.025)[:, None]
     norm_image = solids.draw([(corner_marks, gold)], view, background, inks=[], translucent=[], meshes=[(bowl, 1.0), (outline, 1.0)])
     return panels([orientation, rates_image, norm_image])
 
@@ -152,7 +148,8 @@ def concentric_paths(vertices: core.Point) -> core.Point:
     """Circular display paths `[ribbons, samples]` on the level plane, inside the shadow of the disk's polygonal
     boundary: the farthest shadow's distance from the middle, scaled, turned about the vertical."""
     mv = core.mv
-    radius = shadow(vertices.batch()).norm().to_array().max()
+    radii = shadow(vertices.batch()).norm()
+    radius = radii.max()
     radii = radius * np.linspace(0.18, 0.90, n_ribbons)
     turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_curve_samples) / 2)).exp()   # [samples] Rotor+
     return turns >> (mv.x.dual() * radii[:, None])                            # [ribbons, samples] Point-
@@ -169,7 +166,8 @@ def sampling(mesh: core.Mesh, vertices: core.Point, samples: core.Point) -> Spar
     # A hat rises from zero along the side facing its corner to one at the corner.
     gradients = ((sides | patches.inverse()) / 2).batch()                     # [3, faces] Plane+
     hats = 1 + (gradients[:, None] & (samples[:, None] - (corners * flat).batch()[:, None]))   # [3, samples, faces] Scalar+
-    holding = hats.to_array().min(axis=0).argmax(axis=-1)                    # [samples]
+    least_hats = hats.min(axis=0)
+    holding = least_hats.argmax(axis=-1)                    # [samples]
     weights = hats[:, np.arange(samples.shape[0]), holding].field()           # [3] Scalar+[samples]
     return (spdiag(weights) * (mesh.reading(holding, 2) * corners)).sum(axis=0)   # Scalar+[samples <- vertices]
 
@@ -189,19 +187,21 @@ def draw_skyrmion(mesh: core.Mesh, vertices: core.Point, directors: core.Point) 
 
     paths = concatenate((rings, meridians))                                   # [paths, samples] Point-
     along_paths = sampling(mesh, vertices, paths.reshape(-1))                 # Scalar+[paths * samples <- vertices]
-    domain_paths = gpu_points((along_paths * vertices).batch().reshape(paths.shape) + vertical * 0.012)
-    sphere_paths = gpu_points((along_paths * directors).batch().reshape(paths.shape).normalized() * 1.012)
+    domain_points = (along_paths * vertices).batch().reshape(paths.shape) + vertical * 0.012   # [paths, samples] Point-
+    sphere_points = (along_paths * directors).batch().reshape(paths.shape).normalized() * 1.012   # [paths, samples] Point-
+    domain_paths = solids.origin + solids.context.include_from_algebra(domain_points)          # [paths, samples] Point-
+    sphere_paths = solids.origin + solids.context.include_from_algebra(sphere_points)          # [paths, samples] Point-
     colours = np.concatenate((np.broadcast_to([0.56, 0.64, 0.72], (rings.shape[0], 3)), path_colours))
     domain_lines = [(domain_paths[path], colour) for path, colour in enumerate(colours)]
     sphere_lines = [(sphere_paths[path], colour) for path, colour in enumerate(colours)]
 
     disk = sheet(vertices, mesh.faces, surface_colour, disk_frame)
     domain_grid = strokes.polylines(domain_lines, 2.4, disk_frame)
-    centre = solids.ball(gpu_points(vertical * 0.018)[None], 0.045)[:, None]
+    centre = solids.ball((solids.origin + solids.context.include_from_algebra(vertical * 0.018))[None], 0.045)[:, None]
     domain = solids.draw([(centre, coral)], disk_frame, background, inks=[], translucent=[], meshes=[(disk, 1.0), (domain_grid, 1.0)])
     sphere = solids.ball(solids.origin[None], 1.0)[:, None]
     sphere_grid = strokes.polylines(sphere_lines, 2.8, sphere_frame)
-    poles = solids.ball(gpu_points(stack([vertical, -vertical]) * 1.02), 0.045)[:, None]
+    poles = solids.ball(solids.origin + solids.context.include_from_algebra(stack([vertical, -vertical]) * 1.02), 0.045)[:, None]
     image = solids.draw([(sphere, surface_colour), (poles, np.stack((coral, blue)))], sphere_frame, background,
                         inks=[], translucent=[], meshes=[(sphere_grid, 1.0)])
     return panels([domain, image])
@@ -228,7 +228,8 @@ def ribbon_panel(mesh: core.Mesh, vertices: core.Point, rotors: core.Rotor, ring
     layers = [(base, 0.34), (boundary_lines(mesh, vertices, view), 0.65)]
     for ribbon in range(ribbons.shape[0]):
         layers.append((sheet(ribbons[ribbon].reshape(-1), faces, colours[faces], view), 1.0))
-        seam = strokes.polylines([(gpu_points(ribbons[ribbon, :, 0]), gold), (gpu_points(ribbons[ribbon, :, -1]), teal)], 1.3, view)
+        edges = solids.origin + solids.context.include_from_algebra(ribbons[ribbon][:, [0, -1]])   # [samples, 2] Point-
+        seam = strokes.polylines([(edges[:, 0], gold), (edges[:, 1], teal)], 1.3, view)
         layers.append((seam, 1.0))
     return solids.draw([], view, background, inks=[], translucent=[], meshes=layers)
 

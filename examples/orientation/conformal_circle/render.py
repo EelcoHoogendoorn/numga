@@ -50,17 +50,19 @@ horizon = mv.e + mv.w                                                           
 
 
 # --- plumbing -------------------------------------------------------------------------
+
+
 def coordinates(points: Point) -> np.ndarray:
-    """x, y and z of points, on the last axis: their pairings with the planes x, y and z, over their weights, which
-    the sphere at infinity reads."""
+    """Read conformal points for numerical diagnostics, dividing spatial readings by the infinity weight."""
     weights = -horizon & points
     return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / weights[..., None]).to_array()
 
 
 def gpu_points(points: Point) -> solids.Point:
-    """The GPU library's own points at the places of the conformal points: their coordinates, read by pairing, are the
-    one hand-off from this algebra to the renderer's."""
-    return sm.point(coordinates(points))
+    """Forget the conformal infinity part and place the weighted spatial part in the projective scene."""
+    weights = -horizon & points
+    readings = (stack((mv.x, mv.y, mv.z)) & points[..., None]) / weights[..., None]
+    return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
 
 
 def plane_coordinates(points: Point) -> np.ndarray:
@@ -105,12 +107,12 @@ def panel(vertices: Point, circle: Point, globe: Point, plane: Sphere, sphere: S
     # The ball the sphere's parallels and meridians lie on, about the centre a sphere's reflection sends infinity to;
     # the circles inked on it where their planes cut it.
     radius = (sphere.squared() / (sphere & infinity).squared()).square_root()   # [] Scalar+
-    ball = solids.ball(gpu_points(sphere >> infinity), radius.to_array())[None, None]
+    ball = solids.ball(gpu_points(sphere >> infinity), solids.context.include_from_algebra(radius))[None, None]
     n_parallels, n_meridians = globe.shape
     parallels = circle_planes(globe[:, 0], globe[:, n_meridians // 3], globe[:, 2 * n_meridians // 3])
     meridians = circle_planes(globe[0], globe[n_parallels // 3], globe[2 * n_parallels // 3])
     planes = concatenate([parallels, meridians])                                # [circles] Plane+
-    spans = (planes | planes).to_array()
+    spans = planes.scalar_norm_squared()
     planes = planes[spans > spanned * spans.max()]
     curve = strokes.polylines([(gpu_points(circle), curve_colour)], circle_width, view)
 

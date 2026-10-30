@@ -90,13 +90,6 @@ fn fragment(@builtin(position) at: vec4<f32>) -> @location(0) vec4<f32> {
 
 
 # --- math -----------------------------------------------------------------------------
-def camera(azimuth: float, inclination: float, distance: float) -> dict:
-    """The camera's orientation and distance from the hole, for a camera turned by `inclination` from above the hole
-    and by `azimuth` around it; the shader finds its eye and its rest frame."""
-    orientation = (mv.xy * (-azimuth / 2)).exp() * (mv.zx * (-inclination / 2)).exp()     # [] Rotor
-    return dict(orientation=orientation, distance=distance)
-
-
 def luminance(temperature: float) -> float:
     """A blackbody's luminance at a temperature, K, in the units of the traced light."""
     return float(render.blackbody(np.array(temperature)) @ render.luminance_weights)
@@ -176,7 +169,10 @@ def main() -> None:
         spin_size = LARGEST_SPIN * np.sin(state["sweep"])
         target = context.get_current_texture()
         columns, rows = target.size[0], target.size[1]
-        frame = values | camera(state["azimuth"], state["inclination"], state["distance"]) | dict(spin=mv.xy.dual() * spin_size,
+        # The camera turned by its inclination from above the hole and by its azimuth around it, at its distance: the
+        # shader forms its orientation, and finds its eye and its rest frame.
+        frame = values | dict(azimuth=state["azimuth"], inclination=state["inclination"], distance=state["distance"],
+            spin=mv.xy.dual() * spin_size,
             # The loop's waves faded into the last loop's as the clock runs round.
             elapsed=state["elapsed"],
             fade=np.pi / 2 * state["elapsed"] / scenarios.flow_time,

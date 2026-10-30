@@ -100,7 +100,8 @@ alias Sample = vec3<f32>;
 
 fn sample(place: vec2<f32>) -> Sample {
     let across = screen(place);
-    let squared = dot(across, across);
+    let foot = (axes.dual() * vec3<f32>(across, 0.0)).sum();
+    let squared = foot.scalar_norm_squared();
     if (squared > 1) {
         return background;
     }
@@ -108,7 +109,7 @@ fn sample(place: vec2<f32>) -> Sample {
         return rim;
     }
     // The point of S² under the sample, on the front hemisphere: the dual of its unit vector.
-    let point = (axes * vec3<f32>(across, sqrt(1 - squared))).sum().dual();
+    let point = foot + toward * sqrt(1 - squared);
     var colour = disk;
     for (var body = 0u; body < arrayLength(&quadrics); body++) {
         if ((quadrics[body](point) & point) < 0) {
@@ -123,7 +124,7 @@ fn sample(place: vec2<f32>) -> Sample {
 @cache
 def shader() -> Shader:
     return Shader(supersampled() + source, S2.ga, dict(Point=S2.Point, Plane=S2.Plane, Quadric=S2.Quadric),
-                  dict(axes=axes, rim_start=rim_start, disk=to_rgb(disk_colour), rim=to_rgb(rim_colour), background=to_rgb(background_colour)))
+                  dict(axes=axes, toward=axes[2].dual(), rim_start=rim_start, disk=to_rgb(disk_colour), rim=to_rgb(rim_colour), background=to_rgb(background_colour)))
 
 
 def hemisphere_frames(surfaces: S2.Quadric, colors: np.ndarray, resolution: int) -> Iterator[np.ndarray]:

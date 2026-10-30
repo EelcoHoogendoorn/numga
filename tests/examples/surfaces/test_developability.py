@@ -53,7 +53,7 @@ def test_the_gradient_is_the_energys_derivative():
     normals, spreads = core.spread(mesh, edges, angles)
     _, directions = spreads.batch().eigh()
     gradient = core.gradient(mesh, edges, angles, normals, directions[:, 0].field()).batch()     # [vertices] Vector+
-    points = render.coordinates(vertices)                                         # [V, 3]
+    points = render.coordinates(vertices.batch())                                 # [V, 3]
     epsilon = 1e-6
     rng = np.random.default_rng(0)
     for vertex, axis in zip(rng.integers(len(points), size=6), rng.integers(3, size=6)):

@@ -9,6 +9,7 @@ from collections.abc import Iterable, Iterator
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
+from numga import stack
 
 from examples.util import charts
 from examples.util.animation import capture
@@ -80,7 +81,8 @@ def end_view(window: tuple[tuple[float, float], tuple[float, float]], pixels: in
 def front_projection(points: core.Point, view: solids.View) -> Projection:
     """The projection along the axis of heel onto a plane square to it, in front of a body, its points of unit weight,
     and of the water around it: a point moved along the axis by how far it lies behind that plane."""
-    reach = np.abs((mv.x & points).to_array()).max() + 2 * view.pixel
+    depths = (mv.x & points).abs().reshape(-1)
+    reach = depths.max() + 2 * view.pixel
     front = mv.x - mv.w * reach                                                # [] Plane+
     return core.Point - along_heel * (front & core.Point)                     # [] Point- <- Point-
 
@@ -94,9 +96,10 @@ def forces_end_on(view: solids.View, placed: core.Motor, push: core.Forque, cent
     # The buoyancy's line meets the water surface in a point of positive weight.
     buoyant = onto_front(((placed >> push) ^ core.water).normalized())       # [] Point-
     # The heights of the view's bottom and top, about the middle where its camera stands.
-    bottom, top = (core.water & (view.camera >> solids.origin)).to_array() + np.array([-1, 1]) * view.half[1]
+    bottom = (core.water & (view.camera >> solids.origin)) - view.half[1]
     # Each force line's dashes, up the whole view.
-    marks = np.arange(bottom, top, 2 * dash * view.pixel)                     # [dashes]
+    n_dashes = int(np.ceil(view.half[1] / (dash * view.pixel)))
+    marks = bottom + np.arange(n_dashes) * (2 * dash * view.pixel)            # [dashes] Scalar+
     parts = []
     for start, colour, sense in ((buoyant, buoyancy_colour, 1), (gravity, weight_colour, -1)):
         # The start dropped onto the water surface, and raised to each mark.
@@ -122,11 +125,12 @@ def end_on(mesh: core.Mesh, points: core.Point, view: solids.View,
     # centred below the view's middle, where its camera stands.
     across, up = view.half + view.pixel
     middle = view.camera >> solids.origin                                     # [] Point-
-    height = (core.water & middle).to_array()
+    height = core.water & middle
     depth = up - height
-    half_length = np.abs((mv.x & points).to_array()).max() + view.pixel
+    depths = (mv.x & points).abs().reshape(-1)
+    half_length = depths.max() + view.pixel
     water = solids.boxes(solids.translator(middle - core.up * (height + depth / 2) - solids.origin),
-                         np.array([half_length, across, depth / 2]))
+                         stack((half_length, mv.scalar([across]), depth / 2)))
     # The waterline runs across the view, along the camera's own x, through the middle dropped onto the surface.
     surface_middle = middle - core.up * height                                # [] Point-
     sideways = view.camera >> mv.x.dual()                                     # [] Point-

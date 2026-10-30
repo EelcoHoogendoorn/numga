@@ -16,7 +16,7 @@ from collections.abc import Callable, Iterator
 
 import numpy as np
 
-from numga import concatenate
+from numga import concatenate, stack
 from examples.thermodynamics import rendering as art
 from examples.thermodynamics.phase_change import core
 from examples.util.wgsl import solids
@@ -51,15 +51,10 @@ liquid_colour, vapour_colour, vapour_opacity = art.blue, art.rgb("#9ccfe0"), 0.3
 dome_colour = art.boundary
 
 
-def numbers(value: core.Scalar) -> np.ndarray:
-    """The values of a scalar as a NumPy array, which the charts index cheaply frame after frame."""
-    return np.asarray(value.to_array())
-
-
 def isotherms(mv, pressure_at: PressureAt, temperatures: np.ndarray) -> art.Point:
     """Isotherms on the pressure–volume chart `[temperatures, samples]`."""
     volumes = np.broadcast_to(np.linspace(0.36, volume_range[1], 2 * n_samples), (len(temperatures), 2 * n_samples))
-    return art.chart_points(volumes, numbers(pressure_at(mv.scalar(volumes[..., None]), temperatures[:, None])))
+    return art.chart_points(volumes, art.context.include_from_algebra(pressure_at(mv.scalar(volumes[..., None]), temperatures[:, None])))
 
 
 def isobar(isobar_at: IsobarAt, enthalpy_at: EnthalpyAt, coexisting: core.State, saturation: core.Scalar
@@ -67,13 +62,14 @@ def isobar(isobar_at: IsobarAt, enthalpy_at: EnthalpyAt, coexisting: core.State,
     """The isobar at a saturation pressure on the temperature–enthalpy chart `[samples]`: the liquid squeezed toward
     its excluded volume up to boiling, the fluid boiling, and the vapour expanding beyond."""
     mv = coexisting.context.multivector
-    liquid, vapour = float(numbers(mv.l & coexisting)), float(numbers(mv.g & coexisting))
+    liquid, vapour = mv.l & coexisting, mv.g & coexisting
     # The liquid's volumes crowd toward the excluded volume, the vapour's spread out, each by equal ratios.
     squeezed = exclusion + (liquid - exclusion) * np.geomspace(0.05, 1, n_samples)
-    expanded = vapour * np.geomspace(1, 4 * temperature_range[1] / (float(numbers(saturation)) * vapour), n_samples)
-    volumes = mv.scalar(np.concatenate([squeezed, expanded])[:, None])
-    temperatures = numbers(isobar_at(volumes, saturation))
-    return art.chart_points(numbers(enthalpy_at(volumes, temperatures)), temperatures)
+    expansion = 4 * temperature_range[1] / (saturation * vapour)
+    expanded = vapour * (expansion.log() * np.linspace(0, 1, n_samples)).exp()
+    volumes = concatenate((squeezed, expanded))
+    temperatures = isobar_at(volumes, saturation)
+    return art.chart_points(art.context.include_from_algebra(enthalpy_at(volumes, temperatures)), art.context.include_from_algebra(temperatures))
 
 
 def region_labels(liquid: tuple[float, float], mixed: tuple[float, float], vapour: tuple[float, float]
@@ -106,14 +102,14 @@ class Charts:
         mv = coexisting_dome.context.multivector
         liquid_dome, vapour_dome = mv.l & coexisting_dome, mv.g & coexisting_dome
         temperatures = dome_sample_temperatures
-        levels = numbers(pressure_at(liquid_dome, temperatures))                         # [dome]
-        liquid_heat = art.chart_points(numbers(enthalpy_at(liquid_dome, temperatures)), temperatures)   # [dome] Point-
-        vapour_heat = art.chart_points(numbers(enthalpy_at(vapour_dome, temperatures)), temperatures)   # [dome] Point-
-        critical_enthalpy = float(numbers(enthalpy_at(mv.scalar([critical_volume]), critical_temperature)))
+        levels = art.context.include_from_algebra(pressure_at(liquid_dome, temperatures))                         # [dome]
+        liquid_heat = art.chart_points(art.context.include_from_algebra(enthalpy_at(liquid_dome, temperatures)), temperatures)   # [dome] Point-
+        vapour_heat = art.chart_points(art.context.include_from_algebra(enthalpy_at(vapour_dome, temperatures)), temperatures)   # [dome] Point-
+        critical_enthalpy = art.context.include_from_algebra(enthalpy_at(mv.scalar([critical_volume]), critical_temperature))
         # Each chart's dome: up the liquid's side to the critical point and down the vapour's.
-        self.pressure_dome = concatenate([art.chart_points(numbers(liquid_dome), levels),
+        self.pressure_dome = concatenate([art.chart_points(art.context.include_from_algebra(liquid_dome), levels),
                                           art.chart_points(critical_volume, critical_pressure)[None],
-                                          art.chart_points(numbers(vapour_dome), levels)[::-1]])   # [dome] Point-
+                                          art.chart_points(art.context.include_from_algebra(vapour_dome), levels)[::-1]])   # [dome] Point-
         self.heat_dome = concatenate([liquid_heat, art.chart_points(critical_enthalpy, critical_temperature)[None],
                                       vapour_heat[::-1]])                                     # [dome] Point-
         # The mixtures of equal vapour fraction across the dome, each shared out between the phases at its temperature.
@@ -126,7 +122,7 @@ class Charts:
         self.saturation_curve = concatenate([art.chart_points(temperatures, levels),
                                              art.chart_points(critical_temperature, critical_pressure)[None]])
         isochore_temperatures = np.linspace(*phase_temperature_range, 60)
-        isochores = art.chart_points(isochore_temperatures, numbers(pressure_at(
+        isochores = art.chart_points(isochore_temperatures, art.context.include_from_algebra(pressure_at(
             mv.scalar(isochore_volumes[:, None, None]), isochore_temperatures[None, :])))   # [volumes, samples] Point-
         self.isochores = [isochores[volume] for volume in range(isochores.shape[0])]
         self.own = isotherm_temperatures == temperature
@@ -140,10 +136,10 @@ class Charts:
         # The loop of the isotherm at the boiling temperature, cut where it crosses the saturation pressure into its
         # two lobes, each closed back along the flat stretch.
         coexisting = coexistence_at(np.array(temperature))
-        liquid, vapour = numbers(mv.l & coexisting), numbers(mv.g & coexisting)
-        self.saturation = float(numbers(pressure_at(mv.l & coexisting, temperature)))
-        loop_volumes = np.linspace(float(liquid), float(vapour), 2 * n_samples)
-        loop = art.chart_points(loop_volumes, numbers(pressure_at(mv.scalar(loop_volumes[:, None]), temperature)))
+        liquid, vapour = mv.l & coexisting, mv.g & coexisting
+        self.saturation = art.context.include_from_algebra(pressure_at(mv.l & coexisting, temperature))
+        loop_volumes = liquid + (vapour - liquid) * np.linspace(0, 1, 2 * n_samples)
+        loop = art.chart_points(art.context.include_from_algebra(loop_volumes), art.context.include_from_algebra(pressure_at(loop_volumes, temperature)))
         # The plane the flat stretch lies in, where the pressure is the saturation pressure.
         flat = art.mv.y - art.mv.w * self.saturation                                 # [] Plane+
         middle = 1 + np.flatnonzero(np.diff((flat & loop[1:-1]) > 0))[0]
@@ -192,7 +188,7 @@ class Charts:
             for index, fraction in enumerate(vapour_fractions)]
         own = [isobar_line for isobar_line, flag in zip(self.isobars, self.own_isobar) if flag]
         others = [isobar_line for isobar_line, flag in zip(self.isobars, self.own_isobar) if not flag]
-        names = [art.Floating(art.along(own, 8), f"p = {self.saturation:.2f}", isobar, art.text_size, "lb"),
+        names = [art.Floating(art.along(own, 8), f"p = {float(self.saturation.to_array()):.2f}", isobar, art.text_size, "lb"),
                  art.Floating(art.along(others, 8), "p = const", isobar, art.text_size, "lb"),
                  art.Floating(art.along(fractions, 4), "x = const", art.families["level"], art.text_size, "lb")]
         return art.floated(diagram, art.picture(diagram, layers, labels), names)
@@ -213,10 +209,10 @@ class Charts:
         return art.floated(diagram, art.picture(diagram, layers, labels), names)
 
 
-def boiler(volume: float, liquid_volume: float, largest_volume: float, warmth: float) -> np.ndarray:
+def boiler(volume: solids.Scalar, liquid_volume: solids.Scalar, largest_volume: float, warmth: float) -> np.ndarray:
     """The cylinder under its loaded piston, the liquid at the bottom and the vapour above it."""
     height, liquid = volume * height_per_volume, liquid_volume * height_per_volume
-    maximum = largest_volume * height_per_volume
+    maximum = solids.mv.scalar([largest_volume * height_per_volume])
     view = art.cylinder_view(maximum, cylinder_pixels)
     parts = art.cylinder(height, maximum) + art.load(height) + [(art.fill(0.0, liquid), liquid_colour)]
     vapour = art.thermal_colour(warmth) * 0.5 + vapour_colour * 0.5
@@ -241,11 +237,12 @@ def heating(pressure_at: PressureAt, enthalpy_at: EnthalpyAt, coexistence_at: Co
     charts = Charts(pressure_at, enthalpy_at, coexistence_at, isobar_at, temperature)
     path = []
     for volume, fluid_temperature, enthalpy, liquid_volume in states:
-        values = [float(numbers(value)) for value in (volume, fluid_temperature, enthalpy, liquid_volume)]
-        path.append(values)
-        volumes, temperatures, enthalpies, _ = np.array(path).T
-        warmth = (values[1] - temperature_range[0]) / (temperature_range[1] - temperature_range[0])
-        yield art.beside([boiler(values[0], values[3], volume_range[1], warmth),
+        path.append(art.context.include_from_algebra(stack((volume, fluid_temperature, enthalpy))))
+        history = stack(path)
+        volumes, temperatures, enthalpies = history[:, 0], history[:, 1], history[:, 2]
+        warmth = float(((fluid_temperature - temperature_range[0]) / (temperature_range[1] - temperature_range[0])).to_array())
+        yield art.beside([boiler(solids.context.include_from_algebra(volume), solids.context.include_from_algebra(liquid_volume),
+                                volume_range[1], warmth),
                           charts.pressure_volume_chart(art.chart_points(volumes, charts.saturation)),
                           charts.temperature_enthalpy_chart(art.chart_points(enthalpies, temperatures)),
                           charts.pressure_temperature_chart(art.chart_points(temperatures, charts.saturation))])

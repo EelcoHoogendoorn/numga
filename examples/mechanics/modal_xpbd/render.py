@@ -65,8 +65,8 @@ def history(points: Point, damping: np.ndarray, frame_dt: float) -> plt.Figure:
     return figure
 
 
-def chain_scene(edges: np.ndarray, reference: Point, lower: np.ndarray,
-                upper: np.ndarray) -> tuple[plt.Figure, LineCollection]:
+def chain_scene(edges: np.ndarray, reference: Point, lower: Point,
+                upper: Point) -> tuple[plt.Figure, LineCollection]:
     """The chain's figure between the corners `lower` and `upper`, its pivot marked, its bars still to be set."""
     rest = coordinates(reference[0, 1:])
     pivot = rest[0, 1]
@@ -76,7 +76,8 @@ def chain_scene(edges: np.ndarray, reference: Point, lower: np.ndarray,
     bars = LineCollection([], colors=edge_colours, linewidths=1.3)
     axes.add_collection(bars)
     axes.plot(*pivot, marker="o", color="#334155", markersize=5)
-    axes.set(xlim=(lower[0], upper[0]), ylim=(lower[1], upper[1]))
+    bounds = coordinates(stack((lower, upper)))
+    axes.set(xlim=bounds[:, 0], ylim=bounds[:, 1])
     axes.set_aspect("equal")
     axes.set_axis_off()
     return figure, bars
@@ -92,10 +93,13 @@ def swinging_chain(frames: Iterable[Point], edges: np.ndarray, reference: Point)
     times over, to either side and below, and a share of that above."""
     frames = iter(frames)
     first = next(frames)
-    pivot = coordinates(reference[0, 1:])[0, 1]
-    positions = coordinates(first[0, 1:])     # [bodies, vertices, 2]
-    extent = CHAIN_ROOM * np.linalg.norm(positions - pivot, axis=-1).max()
-    figure, bars = chain_scene(edges, reference, pivot - extent, pivot + extent * np.array([1, CHAIN_ABOVE]))
+    mv = first.context.multivector
+    pivot = reference[0, 1:].batch()[0, 1]
+    distances = (first[0, 1:].batch() - pivot).dual().norm().reshape(-1)
+    extent = CHAIN_ROOM * distances.max()
+    lower = pivot - (mv.x.dual() + mv.y.dual()) * extent
+    upper = pivot + (mv.x.dual() + mv.y.dual() * CHAIN_ABOVE) * extent
+    figure, bars = chain_scene(edges, reference, lower, upper)
     for points in chain([first], frames):
         update_chain(points, edges, bars)
         yield capture(figure)
@@ -104,10 +108,17 @@ def swinging_chain(frames: Iterable[Point], edges: np.ndarray, reference: Point)
 
 def draw_chain(points: Point, edges: np.ndarray) -> plt.Figure:
     """The chain at one moment."""
-    positions = coordinates(points[0, 1:])
-    lower, upper = positions.min(axis=(0, 1)), positions.max(axis=(0, 1))
-    margin = (upper - lower).max() * 0.06
-    figure, bars = chain_scene(edges, points, lower - margin, upper + margin)
+    mv = points.context.multivector
+    frame = stack((mv.x, mv.y))
+    positions = points[0, 1:].batch().reshape(-1)
+    readings = frame[:, None] & positions
+    low = frame & positions[readings.argmin(axis=-1)]
+    high = frame & positions[readings.argmax(axis=-1)]
+    spans = high - low
+    margin = spans.max() * 0.06
+    lower = mv.w.dual() + (frame.dual() * (low - margin)).sum()
+    upper = mv.w.dual() + (frame.dual() * (high + margin)).sum()
+    figure, bars = chain_scene(edges, points, lower, upper)
     update_chain(points, edges, bars)
     return figure
 
@@ -118,17 +129,20 @@ def beam(frames: Iterable[Point], edges: np.ndarray) -> Iterator[np.ndarray]:
     farthest point from the axis or a fortieth of its length, whichever is more."""
     frames = iter(frames)
     first = next(frames)
-    positions = coordinates(first[0])         # [bodies, vertices, 2]
+    mv = first.context.multivector
+    positions = first[0].batch()                                             # [bodies, vertices] Point-
     bodies = positions.shape[0]
     colours = np.where((np.arange(bodies) == 0) | (np.arange(bodies) == bodies - 1), "#94a3b8",
                        np.asarray(COLOURS)[np.arange(bodies) % len(COLOURS)])
-    lower, upper = positions.min(axis=(0, 1)), positions.max(axis=(0, 1))
-    extent = BEAM_ROOM * max(np.abs(positions[..., 1]).max(), (upper[0] - lower[0]) / 40)
-    beyond = BEAM_END_ROOM * (upper[0] - lower[0])
+    along = (mv.x & positions).reshape(-1)
+    heights = (mv.y & positions).abs().reshape(-1)
+    left, right = along.min(), along.max()
+    extent = BEAM_ROOM * max(heights.max(), (right - left) / 40)
+    beyond = BEAM_END_ROOM * (right - left)
     figure, axes = plt.subplots(figsize=(10, 1.6), dpi=60, layout="constrained")
     bars = LineCollection([], colors=np.repeat(colours, len(edges)), linewidths=0.8)
     axes.add_collection(bars)
-    axes.set(xlim=(lower[0] - beyond, upper[0] + beyond), ylim=(-extent, extent))
+    axes.set(xlim=stack((left - beyond, right + beyond)).to_array(), ylim=stack((-extent, extent)).to_array())
     axes.set_aspect("equal")
     axes.set_axis_off()
     for points in chain([first], frames):

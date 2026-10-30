@@ -206,11 +206,10 @@ async function start() {
     if (state.spinning) state.sweep += seconds * 2 * Math.PI / C.limits.spin_period;
     const spin = C.limits.largest_spin * Math.sin(state.sweep);
 
-    // The spin along the disk's plane, and the camera's orientation from its four terms.
+    // The spin along the disk's plane, and the camera's turns, from which the shader forms its orientation.
     setNumbers("spin", C.spin.map(coefficient => spin * coefficient));
-    const [ca, sa, ci, si] = [Math.cos(state.azimuth / 2), Math.sin(state.azimuth / 2), Math.cos(state.inclination / 2), Math.sin(state.inclination / 2)];
-    const weights = [ca * ci, ca * si, sa * ci, sa * si];
-    setNumbers("orientation", C.rotor[0].map((_, index) => C.rotor.reduce((sum, term, which) => sum + weights[which] * term[index], 0)));
+    setNumbers("azimuth", [state.azimuth]);
+    setNumbers("inclination", [state.inclination]);
     setNumbers("distance", [state.distance]);
     // The loop's waves faded into the last loop's as the clock runs round.
     setNumbers("elapsed", [state.elapsed]);

@@ -39,13 +39,6 @@ BACKGROUND = np.ones(3)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def gpu_points(points: core.Point) -> solids.Point:
-    """The GPU library's own points at the places of the example's: their coordinates, read by pairing the intrinsic
-    points with the drawing frame, are the one hand-off from this algebra to the renderer's."""
-    mv = core.mv
-    return solids.mv.point((stack((mv.x, mv.y, mv.z)) & points.batch()[..., None]).to_array())
-
-
 def plane_places(points: core.Point) -> np.ndarray:
     """x and y of points `[...]` on the last axis, for the planar truss's artists: their pairings with the planes x
     and y."""
@@ -59,7 +52,8 @@ def colours(stresses: np.ndarray) -> np.ndarray:
 
 def view(points: core.Point, heights: core.Scalar) -> solids.View:
     """A view framing the terrain over the points at all the heights `[...] Scalar+[vertices]`."""
-    return solids.view([gpu_points(points + core.up * heights)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
+    lifted = solids.origin + solids.context.include_from_algebra((points + core.up * heights).batch())   # [...] Point-[vertices]
+    return solids.view([lifted], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
 
 
 def terrain(mesh: core.Mesh, points: core.Point, heights: core.Scalar, shades: np.ndarray,
@@ -68,7 +62,7 @@ def terrain(mesh: core.Mesh, points: core.Point, heights: core.Scalar, shades: n
     rods coloured by their shades `[inner, 3]`, and its boundary grey."""
     # Each point of the plane lifted by its height along the direction up.
     lifted = points + core.up * heights                                         # Point-[vertices]
-    places = gpu_points(lifted)
+    places = solids.origin + solids.context.include_from_algebra(lifted.batch())          # [vertices] Point-
     pixel = framing.pixel
     # The faces as a mesh, which the tracer composites sample by sample, where thin plates would each be searched
     # through every translucent layer; a plate is crossed twice, a face once, so a face hides what both would.
@@ -77,8 +71,10 @@ def terrain(mesh: core.Mesh, points: core.Point, heights: core.Scalar, shades: n
     ends = mesh.incidence[1, 0] * lifted                                        # [ends] Point-[edges]
     crease_tails, crease_heads = mesh.reading(mesh.interior_edges, 1) * ends    # Point-[inner], Point-[inner]
     rim_tails, rim_heads = mesh.reading(mesh.boundary_edges, 1) * ends          # Point-[rim], Point-[rim]
-    creases = solids.rods(gpu_points(crease_tails), gpu_points(crease_heads), CREASE_WIDTH / 2 * pixel)
-    boundary = solids.rods(gpu_points(rim_tails), gpu_points(rim_heads), BOUNDARY_WIDTH / 2 * pixel)
+    creases = solids.rods(solids.origin + solids.context.include_from_algebra(crease_tails.batch()),
+                          solids.origin + solids.context.include_from_algebra(crease_heads.batch()), CREASE_WIDTH / 2 * pixel)
+    boundary = solids.rods(solids.origin + solids.context.include_from_algebra(rim_tails.batch()),
+                           solids.origin + solids.context.include_from_algebra(rim_heads.batch()), BOUNDARY_WIDTH / 2 * pixel)
     return solids.draw([(creases, shades), (boundary, BOUNDARY_COLOUR)], framing, BACKGROUND,
                        inks=[], translucent=[], meshes=[(surface, 1 - (1 - TERRAIN_OPACITY) ** 2)])
 

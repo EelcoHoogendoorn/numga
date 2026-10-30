@@ -12,11 +12,15 @@ from typing import NamedTuple
 
 import numpy as np
 
+from numga.sparse import SparseExtensor
+from examples import instantiate
 from examples.util.wgsl import Shader
 from examples.util.wgsl import solids
 from examples.util.wgsl.library import samples_per_side
 from examples.util.wgsl.solids import (Line, Motor, Plane, Point, View, axes, flip, ga, lamp_shading, lighting,
                                        mv, origin)
+
+Mesh = instantiate("examples.util.mesh", solids.ga).Mesh
 
 
 class Colour(NamedTuple):
@@ -138,13 +142,19 @@ def flat(points: Point, faces: np.ndarray) -> dict:
     return dict(a=normal, b=normal, c=normal)
 
 
-def smooth(points: Point, faces: np.ndarray) -> dict:
+def smooth(points: Point, mesh: Mesh) -> dict:
     """At each corner, the unit normals of the faces around its vertex, summed and made unit."""
-    # Summed at each vertex: a scatter of the faces' coefficients, the one step outside the algebra.
-    summed = np.zeros((len(points), 4))
-    np.add.at(summed, faces.reshape(-1), np.repeat(np.asarray(face_normals(points, faces).kernel), 3, axis=0))
-    corners = mv.vector(summed)[faces].normalized()                           # [faces, 3] Plane
-    return dict(a=corners[:, 0], b=corners[:, 1], c=corners[:, 2])
+    # The mesh's incidence has scalar cells: carry them into the scene's algebra with its topology intact.
+    incidence = mesh.incidence[2, 0]
+    incidence = SparseExtensor(solids.context.include_from_algebra(incidence.cells), incidence.rows, incidence.columns, incidence.shape)
+    corners = incidence * points.field()                                    # [3] Point-[faces]
+    joined = (corners[0] & corners[1] & corners[2]) * flip                    # Plane+[faces]
+    face_normals = (joined - mv.w * (joined & origin)).normalized()           # Plane+[faces]
+    # Read incidence backwards to sum each vertex's neighbouring normals, then forwards to its face corners, made
+    # unit there, where every vertex has a face.
+    normals = incidence.sum(axis=0).reverse() * face_normals                 # Plane+[vertices]
+    corners = (incidence * normals).batch().normalized()                     # [3, faces] Plane+
+    return dict(a=corners[0], b=corners[1], c=corners[2])
 
 
 def face_normals(points: Point, faces: np.ndarray) -> Plane:

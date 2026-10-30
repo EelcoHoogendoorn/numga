@@ -86,11 +86,11 @@ class Charts:
 
     def energy_points(self, states: Extensor) -> art.Point:
         """States on the chart of the two bodies' energies, read by pairing."""
-        return art.chart_points((self.mv.a & states).to_array(), (self.mv.b & states).to_array())
+        return art.chart_points(art.context.include_from_algebra(self.mv.a & states), art.context.include_from_algebra(self.mv.b & states))
 
     def hill_points(self, states: Extensor) -> art.Point:
         """States on the chart of the entropy against body a's energy."""
-        return art.chart_points((self.mv.a & states).to_array(), self.entropy_of(states).to_array())
+        return art.chart_points(art.context.include_from_algebra(self.mv.a & states), art.context.include_from_algebra(self.entropy_of(states)))
 
     def pictures(self, state: Extensor, flow: Extensor, path: list[art.Point], hill_path: list[art.Point]
                  ) -> list[np.ndarray]:
@@ -98,7 +98,7 @@ class Charts:
         now, hill_now = path[-1], hill_path[-1]                                         # [] Point-, Point-
         # The flow's arrow: as long as the flow, on the chart, times so many pixels.
         ahead = self.energy_points(state + flow)                                       # [] Point-
-        flow_size = float((ahead - now).dual().norm().to_array())
+        flow_size = (ahead - now).dual().norm()
         energy = (self.energy_layers
                   + art.polylines(self.energies, [stack(path)], art.bold, art.orange, 1.0, art.SOLID)
                   + (art.arrows(self.energies, now[None], ahead[None], arrow_pixels_per_flow * flow_size, art.medium,
@@ -107,9 +107,9 @@ class Charts:
                   + art.dots(self.energies, now[None], art.orange))
         # The hill's tangent at the state: the change along the transfer, of body a's energy and of the entropy.
         mv = self.mv
-        tangent = art.chart_directions((mv.a & self.transfer).to_array(),
-                                     derivative(self.entropy_of)(state)(self.transfer).to_array())   # [] Point-
-        reach = (mv.a & state).to_array() + tangent_half_length * np.array([-1, 1])
+        tangent = art.chart_directions(art.context.include_from_algebra(mv.a & self.transfer),
+                                     art.context.include_from_algebra(derivative(self.entropy_of)(state)(self.transfer)))   # [] Point-
+        reach = art.context.include_from_algebra(mv.a & state) + tangent_half_length * np.array([-1, 1])
         hill = (self.hill_layers
                 + art.polylines(self.hill, [stack(hill_path)], art.bold, art.orange, 1.0, art.SOLID)
                 + art.polylines(self.hill, [art.tangent_lines(hill_now, tangent, reach)], art.medium, art.orange, 1.0,
@@ -120,7 +120,7 @@ class Charts:
         return [art.floated(self.energies, art.picture(self.energies, energy, []), names),
                 art.picture(self.hill, hill, [])]
 
-    def temperatures(self, times: np.ndarray, temperatures: np.ndarray, common: float) -> np.ndarray:
+    def temperatures(self, times: np.ndarray, temperatures: art.Scalar, common: art.Scalar) -> np.ndarray:
         """The two temperatures against time so far `[steps, 2]`, the hot body's red and the cold one's blue, over
         the common temperature, dashed."""
         diagram = self.cooling
@@ -145,11 +145,12 @@ def exchange(entropy_of: Callable[[Extensor], Extensor], temperatures_of: Callab
         path.append(charts.energy_points(state))
         hill_path.append(charts.hill_points(state))
         times.append(time)
-        history.append(np.asarray(temperatures_of(state).to_array()))
-        temperatures = np.array(history)
+        history.append(art.context.include_from_algebra(temperatures_of(state)))
+        temperatures = stack(history)
         common = (capacities * temperatures[0]).sum() / capacities.sum()
-        widest = np.abs(temperatures[0] - common).max()
-        yield art.beside([bodies(temperatures[-1], capacities, widest)]
+        gaps = (temperatures[0] - common).abs()
+        widest = gaps.max()
+        yield art.beside([bodies(temperatures[-1].to_array(), capacities, float(widest.to_array()))]
                          + charts.pictures(state, flow, path, hill_path)
                          + [charts.temperatures(np.array(times), temperatures, common)])
 

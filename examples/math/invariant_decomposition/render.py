@@ -34,16 +34,12 @@ plane_colours = ("#c0392b", "#2e86c1", "#27ae60")
 circle_width, trace_width, marker_area = 0.5, 0.9, 8.0
 
 
-def coordinates(points: core.Antivector) -> np.ndarray:
-    """The points' first three coordinates, `[..., 3]`: their pairings with the planes x = 0, y = 0 and z = 0."""
-    mv = points.context.multivector
-    return (stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array()
-
-
 def gpu_points(points: core.Antivector) -> solids.Point:
-    """The GPU library's own points at the places of the points' first three coordinates: their pairings with the
-    planes x = 0, y = 0 and z = 0, the one hand-off from this algebra to the renderer's."""
-    return solids.mv.point(coordinates(points))
+    """View the source along its remaining directions, with its x, y and z slices along the scene's axes."""
+    mv = points.context.multivector
+    readings = stack((mv.x, mv.y, mv.z)) & points[..., None]
+    return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
+
 
 
 def plane_axes(circles: core.Antivector, parts: core.Bivector) -> tuple[core.Antivector, core.Antivector]:

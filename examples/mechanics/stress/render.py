@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Circle
 
-from numga import stack
 from matplotlib.colors import to_rgb
 
 from examples.util import charts
@@ -55,18 +54,13 @@ head_share = 0.28
 head_width = 0.4
 
 
-def gpu_points(points: core.Point) -> solids.Point:
-    """The GPU library's own points at the places of the cube's: their coordinates, read by pairing with the planes
-    x, y and z, are the one hand-off from this algebra to the renderer's."""
-    return solids.mv.point((stack((core.mv.x, core.mv.y, core.mv.z)) & points[..., None]).to_array())
-
-
 def view(corners: core.Point, centres: core.Point, normal: core.Point, shear: core.Point,
          principal: core.Point, room: float) -> solids.View:
     """A view framing every cube, arrow and principal direction given, with `room` to spare around each."""
     points = [core.corners, corners, centres + normal * NORMAL_SCALE, centres + shear * SHEAR_SCALE,
               REACH * principal]
-    return solids.view([gpu_points(batch) for batch in points], room, elevation, azimuth, margin, 1)
+    framed = [solids.origin + solids.context.include_from_algebra(batch) for batch in points]
+    return solids.view(framed, room, elevation, azimuth, margin, 1)
 
 
 def arrows(starts: core.Point, offsets: core.Point, pixel: float,
@@ -76,13 +70,14 @@ def arrows(starts: core.Point, offsets: core.Point, pixel: float,
     lengths = offsets.norm()                                                   # [arrows] Scalar+
     shown = lengths > pixel
     heads = head_share * lengths[shown].to_array()
-    return solids.arrows(gpu_points(starts[shown]), gpu_points(starts[shown] + offsets[shown]),
-                         thickness * shaft_radius * pixel, heads, head_width * heads)
+    tails = solids.origin + solids.context.include_from_algebra(starts[shown])         # [shown] Point-
+    tips = tails + solids.context.include_from_algebra(offsets[shown])                  # [shown] Point-
+    return solids.arrows(tails, tips, thickness * shaft_radius * pixel, heads, head_width * heads)
 
 
 def ghost(view: solids.View, thickness: float) -> list[tuple[solids.Quadric, np.ndarray]]:
     """The undeformed cube, a ghost of thin pale rods, their radius a share `thickness` of the one set above."""
-    corners = gpu_points(core.corners)                                         # [8] Point-
+    corners = solids.origin + solids.context.include_from_algebra(core.corners)          # [corners] Point-
     edges, joints = solids.edges(corners[EDGES[:, 0]], corners[EDGES[:, 1]], thickness * ghost_radius * view.pixel)
     return [(edges, ghost_tint), (joints, ghost_tint)]
 
@@ -93,13 +88,13 @@ def cube(corners: core.Point, centres: core.Point, normal: core.Point, shear: co
     """The deformed cube seen from one frame, its edges solid and its faces translucent, the normal traction on each
     face in blue and the shear in red, and the principal directions in green; the radii a share `thickness` of those
     set above."""
-    places = gpu_points(corners)                                               # [8] Point-
-    directions = REACH * principal                                             # [3] Point-
+    places = solids.origin + solids.context.include_from_algebra(corners)                # [corners] Point-
+    directions = solids.context.include_from_algebra(REACH * principal)                  # [3] Point-
     normal_shafts, normal_heads = arrows(centres, normal * NORMAL_SCALE, view.pixel, thickness)
     shear_shafts, shear_heads = arrows(centres, shear * SHEAR_SCALE, view.pixel, thickness)
     edges, joints = solids.edges(places[EDGES[:, 0]], places[EDGES[:, 1]], thickness * edge_radius * view.pixel)
     # Each principal direction a rod through the centre, both ways.
-    principal_rods = solids.rods(gpu_points(-directions), gpu_points(directions),
+    principal_rods = solids.rods(solids.origin - directions, solids.origin + directions,
                                  thickness * principal_radius * view.pixel)
     parts = [(edges, edge_colour), (joints, edge_colour), (normal_shafts, normal_colour), (normal_heads, normal_colour),
              (shear_shafts, shear_colour), (shear_heads, shear_colour), (principal_rods, principal_tint)]

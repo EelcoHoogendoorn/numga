@@ -30,7 +30,7 @@ def panel(frames: core.Point, surface: core.Point, control_mesh: core.Mesh, refi
     `[axes + 1] Point-[vertices]`, each frame's origin followed by its axes' tips."""
     pixel = view.pixel
     faces = refined_mesh.faces
-    sheet = meshes.samples(surface, faces, SURFACE_COLOUR, meshes.smooth(surface, faces), view, face_values=np.zeros(4),
+    sheet = meshes.samples(surface, faces, SURFACE_COLOUR, meshes.smooth(surface, refined_mesh), view, face_values=np.zeros(4),
                            colour=meshes.plain, gloss=solids.gloss)
     origins, tips = frames[0], frames[1:].batch()                              # Point-[vertices], [axes, vertices] Point-
     # Cut each edge of the control net into equal pieces, one fewer than twice the dash count, so every other piece is a dash.

@@ -24,7 +24,8 @@ sheet_colours = ("#2563eb", "#ea580c")
 view_limit = 2.4
 latitude_stride = 4
 longitude_stride = 8
-sm = solids.mv
+# Each spatial wavevector is drawn at its tip in the observer's k-space.
+space_tip = core.mv.t ^ (core.Vector.dual() & core.time)
 # How much of what lies behind them each side of a sheet and its grid lines hide, and the axes' colour.
 sheet_opacity, grid_opacity = 0.12, 0.4
 axis_colour = np.array([0.45, 0.47, 0.52])
@@ -46,12 +47,6 @@ def coordinates(wavevectors: core.Vector) -> np.ndarray:
     """The coordinates of spatial wavevectors, read along the axes of space `[..., 3]`."""
     mv = wavevectors.context.multivector
     return (wavevectors[..., None] & stack((mv.x, mv.y, mv.z)).dual()).to_array()
-
-
-def gpu_points(wavevectors: core.Vector) -> solids.Point:
-    """The renderer's points at the tips of spatial wavevectors in k-space: the one hand-off from the spacetime
-    algebra to the renderer's."""
-    return sm.point(coordinates(wavevectors))
 
 
 def sheet_faces(n_latitudes: int, n_longitudes: int) -> np.ndarray:
@@ -110,8 +105,8 @@ def sheet_sides(sheets: core.Vector, view: solids.View) -> list[tuple[meshes.Sam
     # Each sheet's near side and far side a mesh of its own, so that the far side shows through the near.
     sides = []
     for index, colour in zip(range(n_sheets), map(to_rgb, sheet_colours)):
-        places = gpu_points(sheets[:, :, index].reshape(-1))                     # [vertices] Point-
-        normals = meshes.smooth(places, faces)
+        places = (solids.origin + solids.context.include_from_algebra(space_tip(sheets[:, :, index].reshape(-1))))                     # [vertices] Point-
+        normals = meshes.smooth(places, meshes.Mesh(len(places), faces))
         sides += [(meshes.samples(places, faces, grid, normals, view, face_values=np.zeros(4),
                                   colour=side_colour(np.array(colour), n_latitudes, near),
                                    gloss=0.2), 1.0) for near in (True, False)]

@@ -15,7 +15,6 @@ from examples.math.spin_groups import core
 from examples.util.wgsl import fitted, meshes, show, solids, strokes
 from examples.util.wgsl.scene import Scene
 
-sm = solids.mv
 background = np.ones(3)
 # One view for all three families: the elevation and azimuth in radians, azimuth zero looking along +y, the margin
 # around the orbits as a share of the larger side, and the pixels across a panel of a frame.
@@ -29,16 +28,12 @@ rider_radius = 2.2
 n_riders = 6
 
 
-def coordinates(points: core.Euclidean) -> np.ndarray:
-    """The x, y and z coordinates of points in space, `[..., 3]`."""
-    mv = points.context.multivector
-    return (stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array()
-
-
 def gpu_points(points: core.Euclidean) -> solids.Point:
-    """The GPU library's own points at the places of points in space: their coordinates, read by pairing, are the one
-    hand-off from this algebra to the renderer's."""
-    return sm.point(coordinates(points))
+    """View the source along its remaining directions, with its x, y and z slices along the scene's axes."""
+    mv = points.context.multivector
+    readings = stack((mv.x, mv.y, mv.z)) & points[..., None]
+    return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
+
 
 
 def colours(shape: tuple[int, int]) -> np.ndarray:

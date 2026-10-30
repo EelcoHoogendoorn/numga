@@ -16,7 +16,9 @@ from examples.util.animation import capture
 from examples.relativity.dirac import core
 from examples.util.wgsl import fitted, show, solids, strokes
 
-sm = solids.mv
+# The observer sees the point where its time line meets the spatial slice.
+space_slice = core.mv.t ^ (core.Antivector & core.time)
+
 colours = ("#2e86c1", "#7d3c98", "#c0392b")
 BACKGROUND = np.ones(3)
 # The view's elevation and azimuth in radians, azimuth zero looking along +y, and the margin around the paths as a
@@ -27,13 +29,6 @@ MARGIN = 0.1
 # width, in pixels.
 SPIN_LENGTH = 0.4
 PATH_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 1.5, 1.5, 9.0, 5.0
-
-
-def gpu_points(points: core.Antivector) -> solids.Point:
-    """The GPU library's points at the places of the example's: as the observer sees them, read by pairing with the
-    slices x, y and z, the one hand-off from spacetime to the renderer's space."""
-    mv = points.context.multivector
-    return sm.point((stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array())
 
 
 def spin_arrow(psi: core.Spinor) -> core.Antivector:
@@ -47,7 +42,8 @@ def framing(ax, spinors: list, paths: list) -> solids.View:
     """One view for every frame, framing the whole of each path and every spin arrow along it, as many pixels across
     as the axes' room holds."""
     tips = [trace + spin_arrow(psi) for psi, trace in zip(spinors, paths)]      # [mixtures] Antivector-[times]
-    return fitted(solids.view([gpu_points(trace) for trace in [*paths, *tips]], 0.0, ELEVATION, AZIMUTH, MARGIN, 1), ax)
+    points = [solids.origin + solids.context.include_from_algebra(space_slice(trace)) for trace in [*paths, *tips]]
+    return fitted(solids.view(points, 0.0, ELEVATION, AZIMUTH, MARGIN, 1), ax)
 
 
 def picture(spinors: list, paths: list, upto: int, view: solids.View) -> np.ndarray:
@@ -55,9 +51,12 @@ def picture(spinors: list, paths: list, upto: int, view: solids.View) -> np.ndar
     rgb = np.array([to_rgb(colour) for colour in colours[: len(paths)]])
     here = stack([trace[upto - 1] for trace in paths])                          # [mixtures] Antivector-
     tips = here + spin_arrow(stack([psi[upto - 1] for psi in spinors]))         # [mixtures] Antivector-
-    lines = strokes.polylines([(gpu_points(trace[:upto]), colour) for trace, colour in zip(paths, rgb)], PATH_WIDTH,
-                              view)
-    shafts, heads = solids.arrows(gpu_points(here), gpu_points(tips), ARROW_WIDTH / 2 * view.pixel,
+    trails = [(solids.origin + solids.context.include_from_algebra(space_slice(trace[:upto])), colour)
+              for trace, colour in zip(paths, rgb)]
+    lines = strokes.polylines(trails, PATH_WIDTH, view)
+    starts = solids.origin + solids.context.include_from_algebra(space_slice(here))
+    ends = solids.origin + solids.context.include_from_algebra(space_slice(tips))
+    shafts, heads = solids.arrows(starts, ends, ARROW_WIDTH / 2 * view.pixel,
                                   HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
     return solids.draw([(shafts, rgb), (heads, rgb)], view, BACKGROUND, inks=[], translucent=[], meshes=[(lines, 1.0)])
 

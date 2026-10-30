@@ -14,7 +14,6 @@ from examples.quantum.graphene import core
 from examples.util import charts
 from examples.util.wgsl import fitted, meshes, pinned, room, show, solids
 
-sm = solids.mv
 COLOURS = ("#2e86c1", "#7d3c98", "#c0392b", "#d68910")
 # The size of the names on the bands' chart, in points.
 FONT_SIZE = 7
@@ -43,9 +42,6 @@ ELEVATION, AZIMUTH = np.radians(22.0), np.radians(-15.0)
 MARGIN, N_PIXELS = 0.1, 400
 # The widths of the frame's shafts, and their heads' length and width, in pixels.
 AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 1.6, 12.0, 6.8
-# A place in the bands' chart: momentum across, along x and y, and energy up, along z; an antivector, intrinsic, as
-# every place is.
-Place = core.ga.gatype.antivector()                                             # Antivector-
 
 
 def momentum_coordinates(momenta: core.Wavevector) -> np.ndarray:
@@ -64,13 +60,6 @@ def plane_components(fields: core.Field) -> np.ndarray:
     """The parts of fields in the planes yz, zx and xy: their pairings with those planes' patches."""
     mv = fields.context.multivector
     return (fields[..., None] & stack((mv.yz.dual(), mv.zx.dual(), mv.xy.dual()))).to_array()
-
-
-def gpu_points(places: Place) -> solids.Point:
-    """The GPU library's own points at the places of the bands' chart: their coordinates, read by pairing with the
-    planes x, y and z, are the one hand-off from this algebra to the renderer's."""
-    mv = places.context.multivector
-    return sm.point((stack((mv.x, mv.y, mv.z)) & places[..., None]).to_array())
 
 
 def phase(rotors: core.Rotor, starts: core.Pseudospin) -> np.ndarray:
@@ -142,7 +131,8 @@ def draw_bands(momenta: core.Wavevector, values: core.Scalar) -> plt.Figure:
     faces = grid_faces(*momenta.shape)
     sheets = []
     for band, cmap in ((-1, "Reds"), (0, "Blues_r")):
-        places = gpu_points(across + ENERGY_SCALE * values[..., band] * up).reshape(-1)   # [samples * samples] Point-
+        offsets = across + ENERGY_SCALE * values[..., band] * up                 # [samples, samples] Place-
+        places = solids.origin + solids.context.include_from_algebra(offsets).reshape(-1)       # [samples * samples] Point-
         # Each band shaded by where its energy lies between its own lowest and highest.
         sheet = energies[..., band]                                             # [samples, samples]
         shade = plt.colormaps[cmap]((sheet - sheet.min()) / np.ptp(sheet))[..., :3].reshape(-1, 3)
@@ -150,12 +140,16 @@ def draw_bands(momenta: core.Wavevector, values: core.Scalar) -> plt.Figure:
     # The frame from a corner just outside the bands' front left and below them, its arrows reaching just past the
     # bands along x and y, and up past the upper band as the camera sees its far side, raised by the depth across the
     # bands at the view's elevation.
-    half_width = np.abs(momentum_coordinates(momenta)).max() + AXIS_OVERHANG
-    floor, ceiling = ENERGY_SCALE * (energies.min() - 1), ENERGY_SCALE * (energies.max() + 1)
+    widths = (stack((mv.x, mv.y)) | momenta[..., None]).abs().reshape(-1)
+    half_width = widths.max() + AXIS_OVERHANG
+    levels = values.reshape(-1)
+    floor = ENERGY_SCALE * (levels.min() - 1)
+    ceiling = ENERGY_SCALE * (levels.max() + 1)
     corner = -half_width * (mv.x.dual() + mv.y.dual()) + floor * up            # [] Place-
-    reaches = np.array([2 * half_width, 2 * half_width, ceiling - floor + 2 * half_width * np.tan(ELEVATION)])
+    reaches = stack((2 * half_width, 2 * half_width, ceiling - floor + 2 * half_width * np.tan(ELEVATION)))
     tips = corner + stack((mv.x.dual(), mv.y.dual(), up)) * reaches            # [3] Place-
-    frame_corner, frame_tips = gpu_points(corner), gpu_points(tips)             # [] Point-, [3] Point-
+    frame_corner = solids.origin + solids.context.include_from_algebra(corner)                   # [] Point-
+    frame_tips = solids.origin + solids.context.include_from_algebra(tips)                       # [3] Point-
     view = solids.view([places for places, _ in sheets] + [frame_corner, frame_tips], 0.0, ELEVATION, AZIMUTH, MARGIN,
                        N_PIXELS)
     figure = plt.figure(figsize=(3.0, 3.0 * view.half[1] / view.half[0]), dpi=200)
@@ -163,7 +157,7 @@ def draw_bands(momenta: core.Wavevector, values: core.Scalar) -> plt.Figure:
     view = fitted(view, ax)
     shafts, heads = solids.arrows(frame_corner, frame_tips, AXIS_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel,
                                   HEAD_WIDTH / 2 * view.pixel)
-    bands = [(meshes.samples(places, faces, shade, meshes.smooth(places, faces), view, face_values=np.zeros(4),
+    bands = [(meshes.samples(places, faces, shade, meshes.smooth(places, meshes.Mesh(len(places), faces)), view, face_values=np.zeros(4),
                              colour=meshes.plain, gloss=0.2), 1.0)
              for places, shade in sheets]
     show(ax, solids.draw([(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR)], view, np.ones(3), inks=[], translucent=[],

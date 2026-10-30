@@ -64,8 +64,7 @@ const far_particles = 0.25;
 
 // The point of the sphere at a place across the view and a depth toward the viewer.
 fn on_sphere(across: vec2<f32>, depth: f32) -> Point {
-    return (camera >> mv.x.dual()) * across.x + (camera >> mv.y.dual()) * across.y + (camera >> mv.z.dual()) * depth
-           + time;
+    return camera >> (time + (frame * vec3<f32>(across, depth)).sum());
 }
 
 // How strongly a point at a depth toward the viewer shows, from a floor on the far side to one on the near.
@@ -92,8 +91,8 @@ fn inked_cuts(beneath: vec3<f32>, across: vec2<f32>, depth: f32) -> vec3<f32> {
     var colour = beneath;
     for (var index = 0u; index < arrayLength(&cuts); index++) {
         let cut = cuts[index];
-        let change = vec2<f32>(cut & rightward, cut & upward);
-        if (abs(cut & point) < line_half_width * length(change)) {
+        let change = right.dual_inverse() * (cut & rightward) + up.dual_inverse() * (cut & upward);
+        if (abs(cut & point) < line_half_width * change.norm()) {
             colour = faded(cut_colour, showing(depth, far_cuts));
         }
     }
@@ -109,7 +108,9 @@ fn dots(beneath: vec3<f32>, across: vec2<f32>, near_side: bool) -> vec3<f32> {
         let depth = (camera >> mv.z) & particle.place;
         let strength = showing(depth, far_particles);
         let radius = dot_radius * (0.75 + 0.25 * strength);
-        let distance = length(across - vec2<f32>((camera >> mv.x) & particle.place, (camera >> mv.y) & particle.place));
+        let offset = on_sphere(across, 0.0) - particle.place;
+        let screen_offset = offset - (camera >> mv.z.dual()) * ((camera >> mv.z) & offset);
+        let distance = screen_offset.dual().norm();
         if (distance < radius && depth > nearest && (depth >= 0) == near_side) {
             nearest = depth;
             colour = select(white, faded(particle.colour, strength), distance < radius - rim_width);
@@ -120,7 +121,8 @@ fn dots(beneath: vec3<f32>, across: vec2<f32>, near_side: bool) -> vec3<f32> {
 
 fn sample(place: vec2<f32>) -> Sample {
     let across = screen(place) * half_height;
-    let distance = length(across);
+    let foot = (frame * vec3<f32>(across, 0.0)).sum();
+    let distance = foot.dual().norm();
     let depth = sqrt(max(1 - distance * distance, 0.0));
     // The sphere, softly lit by the lamp, white beyond it, its outline drawn.
     let shade = 0.92 + 0.07 * clamp(lamp & on_sphere(across, depth), 0.0, 1.0);
@@ -138,7 +140,7 @@ fn sample(place: vec2<f32>) -> Sample {
 # --- plumbing -------------------------------------------------------------------------
 @cache
 def shader() -> Shader:
-    return Shader(supersampled() + source, ga, dict(Point=Point, Cut=Cut, Rotor=Rotor), dict(lamp=lamp))
+    return Shader(supersampled() + source, ga, dict(Point=Point, Cut=Cut, Rotor=Rotor), dict(lamp=lamp, frame=stack((mv.x, mv.y, mv.z)).dual()))
 
 
 azimuth_turn = (mv.xy * (-azimuth / 2)).exp()                               # [] Rotor+

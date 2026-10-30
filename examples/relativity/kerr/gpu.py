@@ -267,7 +267,8 @@ fn disk_coherency(crossing: Ray) -> Coherency {
 """
 
 camera = """
-var<uniform> orientation: Rotor;
+var<uniform> azimuth: f32;
+var<uniform> inclination: f32;
 var<uniform> distance: f32;
 var<uniform> analyzer: ScreenSlice;
 var<uniform> half_view: f32;
@@ -283,9 +284,14 @@ struct Sample {
     sky: vec3<f32>,
 }
 
+// The camera's orientation: turned by its inclination from above the hole, then by its azimuth around it.
+fn orientation() -> Rotor {
+    return (mv.xy * (-azimuth / 2)).exp() * (mv.zx * (-inclination / 2)).exp();
+}
+
 // The camera's eye, at its distance from the hole along its own backward direction.
 fn eye() -> Antivector {
-    return (orientation >> mv.z.dual()) * distance;
+    return (orientation() >> mv.z.dual()) * distance;
 }
 
 // The camera at rest: a unit along the lab's time measured in proper time at the eye.
@@ -313,10 +319,10 @@ fn camera_screen(position: Antivector, momentum: Vector) -> ScreenFrame {
     let direction = space(heading) / -(mv.t & heading);
     // The turn carrying the camera's forward onto the direction it looks to see the ray: the reflection in the
     // forward, then in the direction halfway between the two. It turns the camera's right and up with it.
-    let forward = orientation >> camera_forward;
+    let forward = orientation() >> camera_forward;
     let halfway = direction + forward;
     let turn = halfway * forward / halfway.squared().square_root();
-    return (boost * turn * orientation) >> (camera_right * (mv.x & Screen) + camera_up * (mv.y & Screen));
+    return (boost * turn * orientation()) >> (camera_right * (mv.x & Screen) + camera_up * (mv.y & Screen));
 }
 
 // The starlight a ray escaping along a direction brings: the sky's image at its longitude and latitude.
@@ -331,7 +337,7 @@ fn starlight(direction: Antivector) -> vec3<f32> {
 fn sample(place: vec2<f32>) -> Sample {
     let across = screen(place) * half_view;
     // Past-directed light from the pixel, looking along the camera's -z.
-    var direction = orientation >> (camera_forward + camera_right * across.x + camera_up * across.y);
+    var direction = orientation() >> (camera_forward + camera_right * across.x + camera_up * across.y);
     direction = direction / direction.squared().square_root();
     let start = eye();
     let geometry = field(start);
@@ -390,11 +396,11 @@ def live_shader() -> Shader:
 
 def scene() -> dict:
     """The values the shader reads for the still: hole, camera, disk, tables and sky. The shader finds the rest from
-    them: the camera's eye and rest frame, and the disk's inner edge and temperatures."""
+    them: the camera's orientation, eye and rest frame, and the disk's inner edge and temperatures."""
     spin = mv.xy.dual() * scenarios.camera_spin                                 # [] Spin
-    orientation = (mv.zx * (-scenarios.camera_inclination / 2)).exp()           # [] Rotor
     return dict(
-        spin=spin, mass=scenarios.mass, orientation=orientation, distance=scenarios.camera_distance,
+        spin=spin, mass=scenarios.mass, azimuth=0.0, inclination=scenarios.camera_inclination,
+        distance=scenarios.camera_distance,
         outer_radius=scenarios.disk_outer_radius, inner_depth=scenarios.inner_depth,
         polarization_degree=scenarios.polarization_degree, clump_contrast=render.clump_contrast,
         elapsed=0.0, flow_time=scenarios.flow_time, fade=0.0, analyzer=mv.x,

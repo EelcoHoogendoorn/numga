@@ -144,10 +144,13 @@ class Membrane:
 
     def __init__(self, vertices: Point, triangles: np.ndarray, corners: Point, scale: float):
         self.vertices, self.triangles, self.corners, self.scale = vertices.batch(), triangles, corners, scale
-        places = coordinates(vertices)
+        axes = stack((mv.x, mv.y))
+        readings = axes[:, None] & vertices.batch()
+        low = readings.min(axis=-1)
+        high = readings.max(axis=-1)
         # The middle of the drum's extent, a point as the vertices are: the plane's points, offsets from the origin,
         # as far along x and y as they read on the planes x and y.
-        self.centre = (stack((mv.x, mv.y)).dual() * ((places.min(axis=0) + places.max(axis=0)) / 2)).sum()
+        self.centre = (axes.dual() * ((low + high) / 2)).sum()
         # The outline is whole on the drum's perimeter, and half on each side of a seam between two tiles.
         n_tiles = corners.shape[0]
         tiling, _ = welded(corners)

@@ -14,7 +14,7 @@ from matplotlib.patches import Circle, FancyArrowPatch
 from matplotlib.path import Path
 from matplotlib.tri import Triangulation
 
-from numga import concatenate, stack
+from numga import concatenate, stack, where
 from numga.extensor import Extensor
 from numga.sparse import SparseExtensor, spdiag
 from examples.util.animation import capture
@@ -71,7 +71,8 @@ def magnet(ax: plt.Axes, centre: core.Point, width: float, field: core.Bivector)
     arrowhead for the sense the field turns in, read by pairing the field with the patch of the disc's plane."""
     ax.add_patch(Circle(planar(centre), width, facecolor="none", edgecolor=magnet_colour,
                         linewidth=0.75, linestyle=(0, (3, 3)), zorder=4))
-    sense = np.sign((field & core.mv.xy.dual()).to_array())
+    handedness = field & core.mv.xy.dual()
+    sense = np.asarray(handedness > 0, dtype=int) - np.asarray(handedness < 0, dtype=int)
     angles = field_arc_start + sense * np.linspace(0, field_arc_span, n_field_arc)
     # The arc: a point on the rim along x, turned about the magnet's centre through the angles.
     turns = (core.mv.xy * (-angles / 2)).exp()                               # [arc] Rotor+
@@ -226,30 +227,44 @@ def smoothed(loop: core.Point, passes: int) -> core.Point:
     return loop
 
 
+def periodic_location(distances: core.Scalar, samples: core.Scalar) -> tuple[np.ndarray, core.Scalar, core.Scalar]:
+    """Locate scalar distances along a closed sampled curve: segment indices, shares and wrapped distances.
+
+    NumPy supplies periodic wrapping and sorted interval lookup; the interpolation shares return as scalars.
+    """
+    offsets = distances.to_array()
+    wrapped = samples.to_array() % offsets[-1]
+    indices = np.searchsorted(offsets, wrapped, side="right") - 1
+    shares = (wrapped - offsets[indices]) / (offsets[indices + 1] - offsets[indices])
+    mv = distances.context.multivector
+    return indices, mv.scalar(shares[..., None]), mv.scalar(wrapped[..., None])
+
+
 def arrow_along(curve: core.Point, direction: float, phase: float, arrow_length: float) -> core.Point:
-    """An arrow along a closed curve `[samples] Point-`, in the sense `direction` against the curve's own, as its points
-    from tail to tip, `[arrow] Point-`: anchored at the rightmost place the curve crosses its middle height, wherever
-    the curve starts, and moved on from there by the share `phase` of the curve's length."""
+    """An arrow along a closed curve, anchored at its rightmost crossing of its middle height and moved by
+    a share of its perimeter in the current's direction."""
+    mv = curve.context.multivector
     following = np.roll(np.arange(curve.shape[0]), -1)
     sides = curve[following] - curve                                        # [samples] Point-
-    lengths = sides.squared().square_root().to_array()                      # [samples]
-    distance = np.concatenate(([0], np.cumsum(lengths)))
+    lengths = sides.squared().square_root()                                  # [samples] Scalar+
+    distance = concatenate((mv.scalar([[0]]), lengths.cumsum(axis=0)))       # [samples + 1] Scalar+
     perimeter = distance[-1]
-    heights = (core.mv.y & curve).to_array()                                # [samples]
+    heights = core.mv.y & curve                                              # [samples] Scalar+
     middle = (heights.min() + heights.max()) / 2
     crossing = np.flatnonzero((heights > middle) != (heights[following] > middle))
     shares = (middle - heights[crossing]) / (heights[following][crossing] - heights[crossing])
-    middle_crossings = curve[crossing] + shares * sides[crossing]           # [crossing] Point-
+    middle_crossings = curve[crossing] + shares * sides[crossing]             # [crossings] Point-
     rightmost = (core.mv.x & middle_crossings).argmax()
     anchor = distance[crossing[rightmost]] + shares[rightmost] * lengths[crossing[rightmost]]
-    half_length = min(arrow_length, perimeter / 8) / 2
-    samples = (anchor + direction * (phase * perimeter + np.array([-half_length, half_length]))) % perimeter
-    # The arrow's ends on the curve, and between them the curve's own points, so that it stays on the drawn path.
-    side_idx = np.searchsorted(distance, samples, side="right") - 1
-    ends = curve[side_idx] + (samples - distance[side_idx]) / lengths[side_idx] * sides[side_idx]   # [2] Point-
-    offsets = direction * (distance[:-1] - samples[0]) % perimeter
+    half_length = (perimeter / 8).clip(0, arrow_length) / 2
+    samples = anchor + direction * (phase * perimeter + half_length * np.array([-1, 1]))
+    # Interpolate the two ends on their segments, retaining the curve's own points between them.
+    side_idx, shares, samples = periodic_location(distance, samples)
+    ends = curve[side_idx] + shares * sides[side_idx]                         # [2] Point-
+    offsets = direction * (distance[:-1] - samples[0])
+    offsets = where(offsets < 0, offsets + perimeter, offsets)
     inside = np.flatnonzero((offsets > 0) & (offsets < 2 * half_length))
-    return concatenate((ends[:1], curve[inside[np.argsort(offsets[inside])]], ends[1:]))
+    return concatenate((ends[:1], curve[inside[offsets[inside].argsort()]], ends[1:]))
 
 
 def current_paths(ax: plt.Axes, mesh: Mesh, vertices: core.Point, stream: core.Scalar, gradients: core.Vector,
@@ -261,7 +276,8 @@ def current_paths(ax: plt.Axes, mesh: Mesh, vertices: core.Point, stream: core.S
     artists drawn."""
     # The current runs with a loop where the streamfunction rises on the current's left, as it does on the loop's.
     stream_gradients = (gradients * (mesh.incidence[2, 0] * stream)).sum(axis=0)   # Vector+[faces]
-    senses = np.sign((stream_gradients & (core.quarter_turn >> current)).batch().to_array())   # [faces]
+    alignments = (stream_gradients & (core.quarter_turn >> current)).batch()
+    senses = np.asarray(alignments > 0, dtype=int) - np.asarray(alignments < 0, dtype=int)  # [faces]
     paths, arrows = [], []
     for level, crossings, faces in level_loops(mesh, vertices, stream, levels):
         # The loop's sense against the current's, read on its longest segment.
@@ -288,16 +304,23 @@ def draw(mesh: Mesh, points: core.Point, areas: core.Scalar, response: core.Resp
     # Average the face currents at shared vertices solely to draw a continuous field.
     # The streamlines follow this interpolated solution; they are not prescribed paths.
     vertex_current = at_vertices(mesh, areas, response.current)            # [cases] Current-[vertices]
-    extent = np.abs(positions).max()
-    sample_axis = np.linspace(-extent, extent, image_samples)
-    horizontal, vertical = np.meshgrid(sample_axis, sample_axis)
-    # The face holding each sample of the picture's grid, found by matplotlib's point location over the drawn
-    # triangles, and the current carried to the samples inside the disc, linear across each face.
-    holding = triangles.get_trifinder()(horizontal, vertical)               # [rows, columns]
-    inside = holding >= 0
-    samples = core.mv.x.dual() * horizontal[inside] + core.mv.y.dual() * vertical[inside]   # [inside] Point-
-    sampled = sampling(mesh, points, samples, holding[inside]) * vertex_current   # [cases] Current-[inside]
-    flows = np.full(vertex_current.shape + horizontal.shape + (2,), np.nan)   # [cases, rows, columns, 2]
+    widths = (stack((core.mv.x, core.mv.y)) & points.batch()[..., None]).abs().reshape(-1)
+    extent = widths.max()
+    sample_axis = extent * np.linspace(-1, 1, image_samples)
+    samples = core.mv.x.dual() * sample_axis[None, :] + core.mv.y.dual() * sample_axis[:, None]
+    corners = (mesh.incidence[2, 0] * points).batch()                          # [corners, faces] Point-
+    gradients = corner_gradients(mesh, points).batch()                        # [corners, faces] Vector+
+    # The hats of a point sum to one; their absolute values do so only inside the triangle.
+    # Locate one image row at a time, so the hats for the whole image and every face are never held together.
+    rows, masks = [], []
+    for row in samples:
+        candidates = (1 + (gradients[:, None] & (row[None, :, None] - corners[:, None]))).abs().sum(axis=0)
+        nearest = candidates.argmin(axis=-1)
+        rows.append(nearest)
+        masks.append(candidates[np.arange(len(row)), nearest] <= 1 + 1e-9)
+    holding, inside = np.stack(rows), np.stack(masks)
+    sampled = sampling(mesh, points, samples[inside], holding[inside]) * vertex_current
+    flows = np.full(vertex_current.shape + samples.shape + (2,), np.nan)     # [cases, rows, columns, 2]
     flows[:, inside] = planar(sampled.batch())
     magnitude = scalars(vertex_current.squared().square_root())            # [cases, vertices]
     current_scale = PowerNorm(current_gamma, vmin=0, vmax=magnitude.max())
@@ -307,11 +330,12 @@ def draw(mesh: Mesh, points: core.Point, areas: core.Scalar, response: core.Resp
     for ax, flow, speed in zip(panels[0], flows, magnitude):
         ax.tripcolor(triangles, speed, shading="gouraud", cmap=current_colours,
                      norm=current_scale, rasterized=True)
-        ax.streamplot(sample_axis, sample_axis, flow[..., 0], flow[..., 1], color="#493c32",
+        ax.streamplot(sample_axis.to_array(), sample_axis.to_array(), flow[..., 0], flow[..., 1], color="#493c32",
                        density=1.0, linewidth=0.6, arrowsize=0.6)
         ax.add_collection(LineCollection(rim(mesh, points), colors="#746b60", linewidths=0.6))
         magnet(ax, centre, width, field)
-        ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
+        limits = (extent * np.array([-1, 1])).to_array()
+        ax.set(xlim=limits, ylim=limits, aspect="equal")
         ax.set_axis_off()
     return figure
 

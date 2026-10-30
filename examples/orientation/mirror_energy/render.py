@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import concatenate, stack
+from numga import concatenate
 
 from examples.orientation.mirror_energy.core import Point
 from examples.util.wgsl import image_figure, solids, strokes
@@ -31,24 +31,12 @@ velocity_length = 0.35
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(points: Point) -> np.ndarray:
-    """x, y and z of points, on the last axis, read by pairing with the planes x, y and z."""
-    mv = points.context.multivector
-    return (stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array()
-
-
-def gpu_points(points: Point) -> solids.Point:
-    """The GPU library's own points at the places of the sphere's points: their coordinates, read by pairing, are the
-    one hand-off from this algebra to the renderer's."""
-    return solids.mv.point(coordinates(points))
-
-
 def scenes(paths: Point) -> list[Scene]:
     """Each case's unit sphere with its great circles, and the paths of its masses `[times, cases, masses]`, closed,
     as faint strokes, set up once for the masses to be drawn among, all in one view."""
     corners = np.stack(np.meshgrid(*[[-1.0, 1.0]] * 3, indexing="ij"), axis=-1).reshape(-1, 3)
     view = solids.view([solids.mv.point(corners)], 0.0, elevation, azimuth, margin, n_pixels)
-    closed = gpu_points(concatenate([paths, paths[:1]]))                       # [times + 1, cases, masses] Point-
+    closed = solids.origin + solids.context.include_from_algebra(concatenate([paths, paths[:1]]))   # [times + 1, cases, masses] Point-
     sphere = solids.ball(solids.origin, 1.0)[None, None]
     # The great circles where the planes x, y and z through the centre cut the sphere, the first translucent part,
     # after the shape, each mass's ball, and the arrows' shafts and heads.
@@ -65,13 +53,13 @@ def case_image(scene: Scene, positions: Point, velocities: Point, masses: np.nda
     """One case at one moment: the masses at their positions `[masses]`, joined into their shape, with their
     velocities `[masses]`, among the scene's sphere and paths."""
     view = scene.view
-    places = gpu_points(positions)                                             # [masses] Point-
+    places = solids.origin + solids.context.include_from_algebra(positions)              # [masses] Point-
     # Joining the masses makes the reflected shape visible throughout the turn.
     shape = solids.rods(places, places[np.roll(np.arange(len(positions)), -1)], shape_radius * view.pixel)
     # Each mass a ball whose area goes with its mass.
     balls = [solids.ball(places[mass:mass + 1], mass_radius * np.sqrt(masses[mass]) * view.pixel)
              for mass in range(len(positions))]
-    tips = gpu_points(positions + velocity_length * velocities)               # [masses] Point-
+    tips = places + velocity_length * solids.context.include_from_algebra(velocities)    # [masses] Point-
     shafts, heads = solids.arrows(places, tips, shaft_radius * view.pixel, head_length * view.pixel,
                                   head_radius * view.pixel)
     parts = ([(shape, shape_colour)] + [(ball[:, None], colour) for ball, colour in zip(balls, mass_colours)]

@@ -74,7 +74,9 @@ def draw_complex(mesh: core.Mesh, vertices: core.Point, circumcentres: core.Poin
                  dual_edges: core.Point) -> plt.Figure:
     """An interior vertex and its dual polygon, with a crossing primal and dual edge."""
     places = coordinates(vertices)
-    low, high = places.min(axis=0), places.max(axis=0)
+    readings = axes[:, None] & vertices.batch()
+    low = readings.min(axis=-1)
+    high = readings.max(axis=-1)
     target = (axes.dual() * (low + target_shares * (high - low))).sum()      # [] Point-
     interior = mesh.interior(0)
     interior_points = (mesh.reading(interior) * vertices).batch()          # [interior] Point-
@@ -88,7 +90,7 @@ def draw_complex(mesh: core.Mesh, vertices: core.Point, circumcentres: core.Poin
     star = np.flatnonzero(at_vertex.batch() > 0)
     neighbours = np.flatnonzero((~corners * at_vertex).batch() > 0)
     reach = ((mesh.reading(neighbours) * vertices).batch() - centre).norm()     # [neighbours] Scalar+
-    radius = 1.8 * float(reach.to_array().max())
+    radius = 1.8 * reach.max()
     visible = (vertices.batch() - centre).norm() < 1.6 * radius
     # The edges with both ends visible: the edge-vertex incidence counts an edge's visible ends.
     visible_ends = mesh.incidence[1, 0].sum(axis=0) * mv.scalar(visible[:, None] * 1.0).field()   # Scalar+[edges]
@@ -107,8 +109,8 @@ def draw_complex(mesh: core.Mesh, vertices: core.Point, circumcentres: core.Poin
     figure, ax = plt.subplots(figsize=(3.1, 3.1), dpi=dpi)
     figure.subplots_adjust(0.02, 0.02, 0.98, 0.98)
     middle = coordinates(centre)
-    ax.set(xlim=middle[0] + np.array([-radius, radius]),
-           ylim=middle[1] + np.array([-radius, radius]), aspect="equal")
+    limits = (radius * np.array([-1, 1])).to_array()
+    ax.set(xlim=middle[0] + limits, ylim=middle[1] + limits, aspect="equal")
     ax.set_axis_off()
     primal_tails, primal_heads = shown * (mesh.incidence[1, 0] * vertices)       # Point-[shown], Point-[shown]
     ax.add_collection(LineCollection(np.stack((coordinates(primal_tails), coordinates(primal_heads)), axis=1),
@@ -170,59 +172,98 @@ def draw_fields(mesh: core.Mesh, vertices: core.Point, pressure: core.Scalar, vo
     return figure
 
 
+def timed_streamlines(mesh: core.Mesh, vertices: core.Point, streamfunction: core.Scalar,
+                      velocity: core.Point, levels: core.Scalar) -> tuple[core.Point, list[core.Scalar]]:
+    """Join the streamfunction's edge crossings into paths, timed by the face velocity along each segment."""
+    values = streamfunction.batch()
+    tails, heads = (mesh.incidence[1, 0] * streamfunction).batch()
+    starts = (mesh.incidence[1, 0] * vertices)[0].batch()
+    edges = (mesh.d[0] * vertices).batch()
+    above = values > levels[:, None]
+    crossed = above[:, mesh.edges[:, 0]] != above[:, mesh.edges[:, 1]]
+    level, edge = np.nonzero(crossed)
+    shares = (levels[level] - tails[edge]) / (heads - tails)[edge]
+    crossings = starts[edge] + edges[edge] * shares                          # [crossings] Point-
+    crossing_indices = np.full(crossed.shape, -1)
+    crossing_indices[crossed] = np.arange(len(edge))
+
+    # A level crosses two sides of each triangle it passes through. The velocity gives their order.
+    face_crossings = crossed[:, mesh.face_edges]
+    level, face = np.nonzero(face_crossings.sum(axis=-1) == 2)
+    sides = np.argsort(~face_crossings[level, face], axis=-1, kind="stable")[:, :2]
+    ends = crossing_indices[level[:, None], mesh.face_edges[face[:, None], sides]]
+    steps = crossings[ends[:, 1]] - crossings[ends[:, 0]]
+    face_velocity = (mesh.reading(face, 2) * velocity).batch()
+    backwards = steps.dot(face_velocity) < 0
+    ends = np.where(backwards[:, None], ends[:, ::-1], ends)
+    durations = steps.norm() / face_velocity.norm()                          # [segments] Scalar+
+    following = np.full(len(crossings), -1)
+    segment_at = np.full(len(crossings), -1)
+    following[ends[:, 0]] = ends[:, 1]
+    segment_at[ends[:, 0]] = np.arange(len(ends))
+    incoming = np.zeros(len(crossings), dtype=bool)
+    incoming[ends[:, 1]] = True
+
+    # Open paths start on the boundary; any paths left afterwards are closed loops.
+    firsts = np.concatenate((np.flatnonzero(~incoming & (following >= 0)), ends[:, 0]))
+    unvisited = np.ones(len(crossings), dtype=bool)
+    lines, clocks = [], []
+    for first in firsts:
+        if not unvisited[first] or following[first] < 0:
+            continue
+        path, elapsed = [first], []
+        while following[path[-1]] >= 0 and unvisited[path[-1]]:
+            here = path[-1]
+            unvisited[here] = False
+            elapsed.append(segment_at[here])
+            path.append(following[here])
+        lines.append(crossings[np.array(path)])
+        clocks.append(concatenate((mv.scalar([[0]]), durations[np.array(elapsed)].cumsum(axis=0))))
+    return concatenate(lines), clocks
+
+
+def tracer_samples(clocks: list[core.Scalar], frame: int, n_frames: int) -> tuple[np.ndarray, core.Scalar]:
+    """Sample uniformly spaced tracer arrivals on the paths' scalar clocks, returning segment indices and shares.
+
+    Sorted interval lookup and counts run in NumPy; the interpolation shares return as scalars.
+    """
+    times = [clock.to_array() for clock in clocks]
+    offsets = np.cumsum([0] + [len(clock) for clock in times])[:-1]
+    period = np.median([clock[-1] for clock in times]) / 6
+    trail_time = 0.2 * period
+    elapsed = frame * period / n_frames
+    stroke_steps, stroke_shares = [], []
+    for index, (offset, clock) in enumerate(zip(offsets, times)):
+        arrivals = np.arange(-1, int(np.ceil(clock[-1] / period)) + 1) * period
+        arrivals += elapsed + period * ((index * 0.61803398875) % 1)
+        arrivals = arrivals[(arrivals >= 0) & (arrivals <= clock[-1])]
+        samples = np.maximum(0, arrivals[:, None] - np.linspace(trail_time, 0, n_trail_samples))
+        step = np.clip(np.searchsorted(clock, samples, side="right") - 1, 0, len(clock) - 2)
+        stroke_steps.append(offset + step)
+        stroke_shares.append((samples - clock[step]) / (clock[step + 1] - clock[step]))
+    return np.concatenate(stroke_steps), mv.scalar(np.concatenate(stroke_shares)[..., None])
+
+
 def animate_flow(mesh: core.Mesh, vertices: core.Point, pressure: core.Scalar, streamfunction: core.Scalar,
                  velocity: core.Point, n_frames: int) -> Iterator[np.ndarray]:
     """Tracers travelling along the conserved flux's streamlines over the steady pressure field."""
     figure, panels, triangulation = channel_axes(mesh, vertices, 1)
     ax = panels[0]
-    values = np.asarray(pressure.batch().to_array())
-    potential = np.asarray(streamfunction.batch().to_array())
-    levels = np.linspace(potential.min(), potential.max(), n_streamlines + 2)[1:-1]
+    potential = streamfunction.batch()
+    low, high = potential.min(), potential.max()
+    levels = low + (high - low) * np.linspace(0, 1, n_streamlines + 2)[1:-1]
+    corners, clocks = timed_streamlines(mesh, vertices, streamfunction, velocity, levels)
+    values = pressure.batch().to_array()
     ax.tripcolor(triangulation, facecolors=values, shading="flat", cmap=pressure_colours,
                  norm=Normalize(values.min(), values.max()), zorder=1)
-    contours = ax.tricontour(triangulation, potential, levels=levels, linestyles="solid",
-                             colors=flow_colour, linewidths=0.23, alpha=0.22, zorder=2)
-    finder = triangulation.get_trifinder()
-    lines, clocks = [], []
-    for segments in contours.allsegs:
-        for path in segments:
-            if len(path) < 2:
-                continue
-            # The streamline's corners as points of the plane, its steps between them, and the face each step's
-            # middle lies in.
-            line = (axes.dual() * path).sum(axis=-1)                           # [corners] Point-
-            steps = line[1:] - line[:-1]                                       # [steps] Point-
-            faces = finder(*coordinates((line[1:] + line[:-1]) / 2).T)
-            flow = (mesh.reading(faces, 2) * velocity).batch()                 # [steps] Point-
-            # Contours may be listed in either sense; the velocity along the steps determines travel direction.
-            if steps.dot(flow).sum(axis=0) < 0:
-                line, steps, flow = line[::-1], -steps[::-1], flow[::-1]
-            # Each step takes its length over the speed of the flow through its face.
-            durations = (steps.norm() / flow.norm()).to_array()
-            lines.append(line)
-            clocks.append(np.concatenate(([0], np.cumsum(durations))))
-    # All streamlines' corners in one batch, each line's first corner at its offset.
-    offsets = np.cumsum([0] + [len(clock) for clock in clocks])[:-1]
-    corners = concatenate(lines)                                               # [corners] Point-
-    period = np.median([clock[-1] for clock in clocks]) / 6
-    trail_time = 0.2 * period
+    offsets = np.cumsum([0] + [len(clock) for clock in clocks])
+    paths = [coordinates(corners[first:last]) for first, last in zip(offsets[:-1], offsets[1:])]
+    ax.add_collection(LineCollection(paths, colors=flow_colour, linewidths=0.23, alpha=0.22, zorder=2))
     trails = LineCollection([], colors=flow_colour, linewidths=0.9, capstyle="round", zorder=4)
     ax.add_collection(trails)
     heads = ax.scatter([], [], s=1.75, color=flow_colour, zorder=4)
     for frame in range(n_frames):
-        elapsed = frame * period / n_frames
-        stroke_steps, stroke_shares = [], []
-        for index, (offset, clock) in enumerate(zip(offsets, clocks)):
-            arrivals = np.arange(-1, int(np.ceil(clock[-1] / period)) + 1) * period
-            arrivals += elapsed + period * ((index * 0.61803398875) % 1)
-            arrivals = arrivals[(arrivals >= 0) & (arrivals <= clock[-1])]
-            samples = np.maximum(0, arrivals[:, None] - np.linspace(trail_time, 0, n_trail_samples))
-            # The step of the streamline each sample's time falls in, and how far along it.
-            step = np.clip(np.searchsorted(clock, samples, side="right") - 1, 0, len(clock) - 2)
-            stroke_steps.append(offset + step)
-            stroke_shares.append((samples - clock[step]) / (clock[step + 1] - clock[step]))
-        step, share = np.concatenate(stroke_steps), np.concatenate(stroke_shares)   # [strokes, trail]
-        # Each tracer's trail: points along the streamline's steps, at the shares their times reach.
+        step, share = tracer_samples(clocks, frame, n_frames)
         strokes = coordinates(corners[step] + (corners[step + 1] - corners[step]) * share)
         trails.set_segments(strokes)
         heads.set_offsets(strokes[:, -1])

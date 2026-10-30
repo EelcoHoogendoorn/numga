@@ -9,6 +9,8 @@ import numpy as np
 
 from examples.quantum.hubbard_dimer import core
 from examples.util import charts
+from examples.util.wgsl import planar
+from numga import stack
 
 COLOURS = ("#7d3c98", "#2e86c1", "#c0392b")
 CONFIGURATION_LABELS = (
@@ -111,7 +113,10 @@ def draw_transfer(asymmetries: np.ndarray, transferred: core.Scalar, names: tupl
 # The configurations that can ever be occupied from spin up on the left and spin down on the right.
 DIALS = (0, 2, 3, 5)
 # The side of each dial, and the room for the row labels on the left and the column labels below, in pixels.
-DIAL_PX, LABEL_PX, FOOT_PX = 100, 50, 30
+dial_pixels, label_pixels, foot_pixels = 100, 50, 30
+n_rim_samples = 120
+mv = planar.mv
+axes = stack((mv.x, mv.y))                                                   # [2] Plane+
 
 
 def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitudes: core.Scalar,
@@ -120,21 +125,27 @@ def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitud
     part up, one labelled row per case, frame by frame. The arrow is drawn as the triplet's share,
     followed by the rest, the singlet block's, from its tip; the path the tip takes over the whole run
     is traced faintly."""
-    total = np.stack([cosine_amplitudes.to_array(), sine_amplitudes.to_array()], axis=-1)[..., DIALS, :]   # [cases, times, dials, 2]
-    triplet = np.stack([triplet_cosine.to_array(), triplet_sine.to_array()], axis=-1)[..., DIALS, :]       # [cases, times, dials, 2]
+    readings = planar.context.include_from_algebra(stack((cosine_amplitudes, sine_amplitudes), axis=-1))
+    ends = planar.origin + (axes.dual() * readings).sum(axis=-1)              # [cases, times, configurations] Point-
+    triplet_readings = planar.context.include_from_algebra(stack((triplet_cosine, triplet_sine), axis=-1))
+    starts = planar.origin + (axes.dual() * triplet_readings).sum(axis=-1)     # [cases, times, configurations] Point-
+    total = (axes & ends[..., DIALS, None]).to_array()                         # [cases, times, dials, 2]
+    triplet = (axes & starts[..., DIALS, None]).to_array()
     count, columns = len(rows), len(DIALS)
-    width, height = LABEL_PX + DIAL_PX * columns, DIAL_PX * count + FOOT_PX
+    width, height = label_pixels + dial_pixels * columns, dial_pixels * count + foot_pixels
     with charts.style():
         figure = plt.figure(figsize=(width / charts.DPI, height / charts.DPI))
-        turn = np.linspace(0, 2 * np.pi, 120)
+        turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_rim_samples) / 2)).exp()
+        rim = planar.origin + (turns >> mv.x.dual())
+        outline = (axes & rim[..., None]).to_array()
         arrows = []
         for row, row_label in enumerate(rows):
             for column, label in enumerate(np.array(CONFIGURATION_LABELS)[list(DIALS)]):
                 # Each dial in its own square, a small gap left between neighbours.
-                ax = figure.add_axes(((LABEL_PX + DIAL_PX * column) / width, 1 - (row + 1) * DIAL_PX / height,
-                                      0.95 * DIAL_PX / width, 0.95 * DIAL_PX / height))
+                ax = figure.add_axes(((label_pixels + dial_pixels * column) / width, 1 - (row + 1) * dial_pixels / height,
+                                      0.95 * dial_pixels / width, 0.95 * dial_pixels / height))
                 # The dial's rim and the traced path faint, as thin as the frames.
-                ax.plot(np.cos(turn), np.sin(turn), color="0.85", linewidth=charts.FRAME_WIDTH)
+                ax.plot(*outline.T, color="0.85", linewidth=charts.FRAME_WIDTH)
                 ax.plot(*total[row, :, column].T, color=COLOURS[0], linewidth=charts.FRAME_WIDTH, alpha=0.3)
                 arrows.append((ax.plot([], [], color="0.55", animated=True)[0],
                                ax.plot([], [], color=COLOURS[0], animated=True)[0],

@@ -23,13 +23,6 @@ background = np.ones(3)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def gpu_points(points: core.Point) -> solids.Point:
-    """The GPU library's own points at the places of the example's: their coordinates, read by pairing the intrinsic
-    points with the drawing frame, are the one hand-off from this algebra to the renderer's."""
-    mv = core.mv
-    return solids.mv.point((stack((mv.x, mv.y, mv.z)) & points.batch()[..., None]).to_array())
-
-
 def checker(bar_mesh: core.Mesh, rest_vertices: core.Point, cell: np.ndarray) -> np.ndarray:
     """Per-face checkerboard colours from the parity of the grid cell containing each triangle's centroid at rest."""
     mv = core.mv
@@ -48,7 +41,7 @@ def box_view(n_pixels: int) -> solids.View:
 
 def picture(vertices: core.Point, faces: np.ndarray, colours: np.ndarray, view: solids.View) -> np.ndarray:
     """Render the bar's flat-shaded triangles with per-face checkerboard colours from the given view."""
-    places = gpu_points(vertices)
+    places = solids.origin + solids.context.include_from_algebra(vertices.batch())        # [vertices] Point-
     return meshes.draw(places, faces, np.zeros(3), meshes.flat(places, faces), view, background, face_values=colours,
                        colour=meshes.by_face, gloss=solids.gloss)
 

@@ -83,7 +83,7 @@ def draw_orbits(trails: core.Point) -> plt.Figure:
     directions, both ends of the axis drawn, among the sphere's own surfaces sample by sample."""
     # Both ends of every long axis, the scene's points the axis reaches from its origin.
     axis_ends = trails * np.array([1.0, -1.0])[:, None, None, None]          # [ends, steps + 1, bodies, starts] Point-
-    ends = solids.origin + (to_scene >> solids.mv.from_subalgebra(axis_ends))   # [ends, steps + 1, bodies, starts]
+    ends = solids.origin + (to_scene >> solids.context.include_from_algebra(axis_ends))   # [ends, steps + 1, bodies, starts]
     count = trails.shape[1]
     view = solids.View(solids.aim(solids.origin, np.radians(VIEW[0]), np.radians(VIEW[1] + 90)),
                        np.full(2, LABEL_DISTANCE * (1 + ORBIT_MARGIN)), ORBIT_PIXELS)
@@ -104,10 +104,10 @@ def bodies(stretches: core.Stretch, orientations: core.Rotor) -> solids.Quadric:
     """Each body as traced solids about the origin, `[..., octants, 4]`: its ellipsoid, the offsets its inverse shape
     takes into the unit ball, cut by its own planes into eight octants."""
     # The body's shape, its dual quadric, the solid about the origin, turned into the scene's frame.
-    shapes = solids.mv.from_subalgebra(core.placed(stretches, orientations))   # [...] Point- <- Plane+
+    shapes = solids.context.include_from_algebra(core.placed(stretches, orientations))   # [...] Point- <- Plane+
     ellipsoids = solids.placed(solids.solid_of_dual_quadric(shapes), to_scene)   # [...] Plane+ <- Point-
     # Each octant on the side of each of the body's own planes its signs pick: the planes across the body's axes.
-    normals = to_scene >> solids.mv.from_subalgebra(orientations[..., None] >> core.axes)   # [..., 3] Plane+
+    normals = to_scene >> solids.context.include_from_algebra(orientations[..., None] >> core.axes)   # [..., 3] Plane+
     sides = solids.half_space(normals[..., None, :] * -OCTANTS)               # [..., octants, 3] Quadric
     return concatenate([ellipsoids[..., None, None].broadcast_to(sides.shape[:-1] + (1,)), sides], axis=-1)
 
@@ -121,9 +121,10 @@ def animate_tumbling(stretches: core.Stretch, heights: core.Point, velocities: c
     count = tips.shape[1]
     # One frame for every panel, so that the bodies' sizes compare: the farthest marks past a long axis's tips,
     # and the margin.
-    limit = MARK_END * (1 + FRAME_MARGIN) * tips.norm().to_array().max()
+    radii = tips.norm().reshape(-1)
+    limit = solids.context.include_from_algebra(radii.max()) * (MARK_END * (1 + FRAME_MARGIN))
     camera = solids.aim(solids.origin, np.radians(VIEW[0]), np.radians(VIEW[1] + 90))
-    view = solids.View(camera, np.array([count, 1.0]) * limit, count * pixels)
+    view = solids.View(camera, (limit * np.array([count, 1.0])).to_array(), count * pixels)
     # Each body's panel about its own centre, two half-widths apart across the image, the row about the origin.
     across = (camera >> solids.mv.x.dual()) * (2 * limit * (np.arange(count) - (count - 1) / 2))   # [bodies] Point-
     shifts = solids.translator(across)                                        # [bodies] Motor+
@@ -131,14 +132,14 @@ def animate_tumbling(stretches: core.Stretch, heights: core.Point, velocities: c
     placed_bodies = solids.placed(bodies(stretches, orientations), shifts[:, None, None])
     colours = np.tile(OCTANT_COLOURS, (count, 1))                             # [bodies * octants, 3]
     # The shear flow's velocity at each height, centred on it, about every body.
-    starts, ends = (shifts[:, None] >> (solids.origin + (to_scene >> solids.mv.from_subalgebra(offsets)))
+    starts, ends = (shifts[:, None] >> (solids.origin + (to_scene >> solids.context.include_from_algebra(offsets)))
                     for offsets in (heights - velocities / 2, heights + velocities / 2))   # [bodies, heights] Point-, Point-
     shafts, heads = solids.arrows(starts, ends, ARROW_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel,
                                   HEAD_WIDTH / 2 * view.pixel)
     flow = [(shafts.reshape(-1, 3), FLOW_RGB), (heads.reshape(-1, 3), FLOW_RGB)]
     # Both ends of every long axis, in its panel, over the frames, and the flow, which stays put.
     tip_ends = tips * np.array([1.0, -1.0])[:, None, None]                    # [ends, frames, bodies] Point-
-    tip_offsets = to_scene >> solids.mv.from_subalgebra(tip_ends)             # [ends, frames, bodies] Point-
+    tip_offsets = to_scene >> solids.context.include_from_algebra(tip_ends)             # [ends, frames, bodies] Point-
     axis_ends = shifts >> (solids.origin + tip_offsets)                       # [ends, frames, bodies] Point-
     mark_ends = shifts >> (solids.origin + tip_offsets * MARK_END)            # [ends, frames, bodies] Point-
     scene = Scene(view, np.ones(3), flow, [], inks=[], translucent=[])

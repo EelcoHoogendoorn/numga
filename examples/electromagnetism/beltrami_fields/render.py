@@ -12,6 +12,9 @@ from examples.electromagnetism.beltrami_fields import core
 from examples.util import charts
 from examples.util.wgsl import meshes, show_pixels, solids, strokes
 
+# The observer sees the point where its time line meets the spatial slice.
+space_slice = core.mv.t ^ (core.Point & core.time)
+
 n_torus_pixels = 320
 n_anim_pixels = 270
 # The spectrum's width beside the two torus panels, in pixels: what the column leaves them.
@@ -46,14 +49,6 @@ speed_floor, wall_pull = 0.14, 0.08
 
 
 # --- plumbing -------------------------------------------------------------------------
-def gpu_points(points: core.Point) -> solids.Point:
-    """The GPU library's own points at the places of the example's, a field's sites read as a batch: their
-    coordinates, read by pairing the intrinsic points with the frame planes, are the one hand-off from this algebra to
-    the renderer's."""
-    mv = points.context.multivector
-    return solids.mv.point((stack((mv.x, mv.y, mv.z)) & points.batch()[..., None]).to_array())
-
-
 def length(directions: core.Point) -> core.Scalar:
     """The lengths of directions of space: the size of the patch each sweeps through a unit of time."""
     return (directions & core.time).norm()
@@ -96,9 +91,8 @@ def field_lines(centres: core.Point, volumes: core.Volume, magnetic: core.Field)
     distances = length(level)                                                 # [samples] Scalar+
     outwards = level / distances                                              # [samples] Point-
     frames = stack([outwards, outwards.commutator(mv.xy), up.broadcast_to(outwards.shape)], axis=-1)   # [samples, 3] Point-
-    readings = (frames | fields[:, None]).to_array()                          # [samples, 3]
-    sample_distances, sample_heights = distances.to_array(), heights.to_array()   # [samples], [samples]
-    typical = float((fields | fields).mean(axis=0).square_root().to_array())
+    readings = frames | fields[:, None]                                      # [samples, 3] Scalar+
+    typical = fields.squared().mean(axis=0).square_root()                     # [] Scalar+
 
     def velocity(points: core.Point, senses: np.ndarray) -> core.Point:
         """The unit direction of the smoothed, tapered field at points `[senses, lines]`, along each sense."""
@@ -108,11 +102,11 @@ def field_lines(centres: core.Point, volumes: core.Volume, magnetic: core.Field)
         outward = level / distance                                            # [senses, lines] Point-
         # How near each sample lies around the axis, as the chord between the unit directions out to each, and
         # across the tube: the smoothing's weights, numbers that average the samples' readings.
-        chords = 2 - 2 * (outward[..., None] | outwards).to_array()           # [senses, lines, samples]
-        across = ((distance.to_array()[..., None] - sample_distances)**2
-                  + (height.to_array()[..., None] - sample_heights)**2)       # [senses, lines, samples]
-        weights = np.exp(-chords / smoothing_turn**2 - across / smoothing_reach**2)
-        smoothed = senses[..., None] * (weights @ readings) / weights.sum(axis=-1, keepdims=True)   # [senses, lines, 3]
+        chords = 2 - 2 * (outward[..., None] | outwards)                      # [senses, lines, samples] Scalar+
+        across = (distance[..., None] - distances).squared() + (height[..., None] - heights).squared()
+        weights = (-chords / smoothing_turn**2 - across / smoothing_reach**2).exp()
+        mean_readings = (weights[..., None] * readings).sum(axis=-2) / weights.sum(axis=-1)[..., None]
+        smoothed = senses[..., None] * mean_readings                         # [senses, lines, 3] Scalar+
         frame = stack([outward, outward.commutator(mv.xy), up.broadcast_to(outward.shape)], axis=-1)   # [senses, lines, 3] Point-
         field = (frame * smoothed).sum(axis=-1)                               # [senses, lines] Point-
 
@@ -121,11 +115,11 @@ def field_lines(centres: core.Point, volumes: core.Volume, magnetic: core.Field)
         offset = points - outward * tube_major                                # [senses, lines] Point-
         reach = length(offset)                                                # [senses, lines] Scalar+
         tube_out = offset / reach                                             # [senses, lines] Point-
-        share = np.clip(reach.to_array() / tube_minor, 0.0, 1.0)             # [senses, lines]
-        out = (field | tube_out).to_array()                                   # [senses, lines]
-        tapered = out * np.cos(0.5 * np.pi * share) ** 2 - wall_pull * share**3 * typical
+        share = (reach / tube_minor).clip(0, 1)                              # [senses, lines] Scalar+
+        out = field | tube_out                                               # [senses, lines] Scalar+
+        tapered = out * (0.5 * np.pi * share).cos().squared() - wall_pull * share**3 * typical
         field = field + tube_out * (tapered - out)                            # [senses, lines] Point-
-        return field / np.sqrt((field | field).to_array() + (speed_floor * typical) ** 2)
+        return field / (field.squared() + (speed_floor * typical).squared()).square_root()
 
     # Both ways from each seed at once, every `trace_stride` steps kept.
     senses = np.array([-1.0, 1.0])[:, None]                                   # [senses, 1]
@@ -157,25 +151,27 @@ def render_torus_field(mesh: core.Mesh, vertices: core.Point, lines: core.Point,
                        view: solids.View) -> np.ndarray:
     """Continuous 3D magnetic field-line tubes `[lines, steps]` inside a smooth translucent toroidal cavity, each
     coloured by its shell `[lines]`."""
-    torus_pts = gpu_points(vertices)
+    torus_pts = solids.origin + solids.context.include_from_algebra(space_slice(vertices).batch())
     _, b_faces = outward_wall(mesh)
     shell_colours = np.broadcast_to(cream, b_faces.shape + (3,))
-    shell = meshes.samples(torus_pts, b_faces, shell_colours, meshes.smooth(torus_pts, b_faces), view,
+    shell = meshes.samples(torus_pts, b_faces, shell_colours, meshes.smooth(torus_pts, meshes.Mesh(len(torus_pts), b_faces)), view,
                            face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
 
     starts, ends = lines[:, :-1], lines[:, 1:]                                # [lines, segments] Point-
     # Local helical twist: how steeply each segment climbs, its unit direction's height.
     climb = (core.mv.z & (ends - starts)) / length(ends - starts)            # [lines, segments] Scalar+
     seg_colours = palette_blend(climb.to_array(), shells)                     # [lines, segments, 3]
-    tubes = strokes.segments(gpu_points(starts.reshape(-1)), gpu_points(ends.reshape(-1)), seg_colours.reshape(-1, 3),
-                             4.6, view)
+    scene_lines = solids.origin + solids.context.include_from_algebra(space_slice(lines).batch())
+    tubes = strokes.segments(scene_lines[:, :-1].reshape(-1), scene_lines[:, 1:].reshape(-1),
+                             seg_colours.reshape(-1, 3), 4.6, view)
 
     # Place glossy 3D cone arrowheads along each field line to show its flow direction.
     middle = lines.shape[1] // 2
     arrow_starts = lines[:, middle - 2]                                       # [lines] Point-
     heading = lines[:, middle + 2] - arrow_starts                             # [lines] Point-
-    _, a_heads = solids.arrows(gpu_points(arrow_starts), gpu_points(arrow_starts + heading * (0.14 / length(heading))),
-                               0.018, 0.082, 0.044)
+    scene_starts = scene_lines[:, middle - 2]
+    reach = solids.context.include_from_algebra(space_slice(heading * (0.14 / length(heading))).batch())
+    _, a_heads = solids.arrows(scene_starts, scene_starts + reach, 0.018, 0.082, 0.044)
     head_colours = np.array([vermilion, teal, sapphire])[shells]
 
     return solids.draw([(a_heads, head_colours)], view, background, inks=[], translucent=[],

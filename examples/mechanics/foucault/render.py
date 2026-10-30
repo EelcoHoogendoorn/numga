@@ -36,12 +36,6 @@ CIRCLE_WIDTH, EDGE_RADIUS, SWING_RADIUS, COMPASS_RADIUS = 2.0, 0.8, 2.0, 1.0
 
 
 # --- plumbing -------------------------------------------------------------------------
-def gpu_points(points: core.Point) -> solids.Point:
-    """The GPU library's own points at the places of the earth's, its centre at the origin: their coordinates, read
-    by pairing with the planes x, y and z, are the one hand-off from this algebra to the renderer's."""
-    return solids.mv.point((stack((core.x, core.y, core.z)) & points[..., None]).to_array())
-
-
 def globe(earth: core.Rotor, vertical: core.Point, swing: core.Point, north: core.Point, east: core.Point) -> np.ndarray:
     """The earth turned by a rotor: its equator and the site's latitude circle, the polar cap that circle
     bounds, and the site's floor with the line the pendulum swings along."""
@@ -49,7 +43,8 @@ def globe(earth: core.Rotor, vertical: core.Point, swing: core.Point, north: cor
     sphere = solids.ball(solids.origin, 1.0)[None, None]                      # [1, 1] Plane+ <- Point-
     # The equator and the site's latitude circle, inked where their planes across the axis cut the globe, and the cap:
     # the globe on the far side of the latitude circle's plane from the equator, the plane z moved to the site.
-    latitude = solids.mv.z - solids.mv.w * (solids.mv.z & gpu_points(vertical))   # [] Plane+
+    on_latitude = solids.origin + solids.context.include_from_algebra(vertical)         # [] Point-
+    latitude = solids.mv.z - solids.mv.w * (solids.mv.z & on_latitude)        # [] Plane+
     circles = solids.half_space(stack([solids.mv.z, latitude]))                 # [2] Plane+ <- Point-
     # The floor at the site, turned with the earth: a slab across the vertical, north and east along its sides, its top
     # lifted off the globe by the latitude circle's width, so that the circle through the site passes under it.
@@ -57,13 +52,14 @@ def globe(earth: core.Rotor, vertical: core.Point, swing: core.Point, north: cor
     signs = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]]) * FLOOR             # [corners, 2]
     # The swing and the compass lie on the floor, their axes their own radius above it.
     resting = site + vertical * (SWING_RADIUS * view.pixel)                   # [] Point-
-    swing_ends, compass_ends, tile = (gpu_points(earth >> points) for points in (
+    swing_ends, compass_ends, tile = (solids.origin + solids.context.include_from_algebra(earth >> points) for points in (
         stack([resting - swing * FLOOR, resting + swing * FLOOR]),
         stack([resting + north * FLOOR, resting + north * (COMPASS * FLOOR)]),
         stack([site + east * across + north * along for across, along in signs])))   # [2] Point-, [2] Point-, [corners] Point-
     # The floor's sides, turned with the earth: the directions from the earth's centre, its origin.
-    sides = gpu_points(earth >> stack([vertical, north, east])) - solids.origin   # [3] Point-
-    middle = gpu_points(earth >> site) - sides[0] * (FLOOR_THICKNESS / 2)        # [] Point-
+    sides = solids.context.include_from_algebra(earth >> stack([vertical, north, east]))   # [3] Point-
+    middle = (solids.origin + solids.context.include_from_algebra(earth >> site)
+              - sides[0] * (FLOOR_THICKNESS / 2))                              # [] Point-
     half_extents = np.array([FLOOR_THICKNESS / 2, FLOOR, FLOOR])
     # The slab: inside the planes square to each of its sides, as far from its middle as it reaches.
     across = concatenate([-sides.dual(), sides.dual()])                        # [6] Plane+

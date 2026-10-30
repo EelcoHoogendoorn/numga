@@ -17,6 +17,7 @@ import numpy as np
 
 from numga import Extensor
 from examples.thermodynamics import rendering as art
+from examples.util.wgsl import solids
 
 Reading = Callable[[Extensor], Extensor]
 
@@ -104,11 +105,13 @@ def animate_cycle(temperature_of: Reading, pressure_of: Reading, cycle: Extensor
     """The piston and the two charts at each state of the gas as it runs around the cycle."""
     charts = Charts(temperature_of, pressure_of, cycle)
     blades = cycle.context.multivector
-    largest = np.asarray((blades.v & cycle).to_array()).max()
-    temperatures = np.asarray(temperature_of(cycle).to_array())
+    volumes = blades.v & cycle
+    largest = solids.context.include_from_algebra(volumes.max())
+    temperatures = temperature_of(cycle)
+    cold, hot = temperatures.min(), temperatures.max()
     for travelled, state in enumerate(running):
-        warmth = (float(temperature_of(state).to_array()) - temperatures.min()) / np.ptp(temperatures)
-        piston = art.gas_cylinder(float((blades.v & state).to_array()) * height_per_volume, warmth, False,
+        warmth = float(((temperature_of(state) - cold) / (hot - cold)).to_array())
+        piston = art.gas_cylinder(solids.context.include_from_algebra(blades.v & state) * height_per_volume, warmth, False,
                                   largest * height_per_volume, cylinder_pixels)
         yield art.beside([piston] + charts.pictures(travelled))
 

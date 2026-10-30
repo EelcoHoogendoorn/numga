@@ -56,12 +56,6 @@ def coordinates(points: core.Antivector) -> np.ndarray:
     return (stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array()
 
 
-def gpu_points(points: core.Antivector) -> solids.Point:
-    """The GPU library's own points at the places of the spins or of the projected fibres: their coordinates, read by
-    pairing, are the one hand-off from this algebra to the renderer's."""
-    return sm.point(coordinates(points))
-
-
 def colour(spins: core.Antivector) -> np.ndarray:
     """An RGB colour for each spin: its azimuth as the hue, darker towards the south pole."""
     x, y, z = np.moveaxis(coordinates(spins), -1, 0)
@@ -76,7 +70,8 @@ def visible(curves: core.Antivector, colours: np.ndarray) -> list[tuple[solids.P
     for curve, rgb in zip(curves, colours):
         inside = curve.norm() <= limit                                         # [n]
         bounds = np.concatenate([[0], np.flatnonzero(np.diff(inside)) + 1, [len(inside)]])
-        runs += [(gpu_points(curve[start:stop]), rgb) for start, stop in zip(bounds[:-1], bounds[1:])
+        places = solids.origin + solids.context.include_from_algebra(curve)                     # [n] Point-
+        runs += [(places[start:stop], rgb) for start, stop in zip(bounds[:-1], bounds[1:])
                  if inside[start] and stop - start > 1]
     return runs
 
@@ -103,8 +98,8 @@ def sphere_surface(n_parts: int,
     ball = [(solids.ball(solids.origin, 1.0)[None, None], sphere_colour, sphere_opacity)]
     # The parallels: the planes through the pole turned down by each polar angle, along the directions x and y; the
     # meridians: the plane x turned about z by each azimuth.
-    rims = (sm.zx * (-parallel_polars / 2)).exp() >> sm.point([0, 0, 1])     # [parallels] Point-
-    parallels = (rims & sm.direction([1, 0, 0]) & sm.direction([0, 1, 0])) * solids.flip   # [parallels] Plane+
+    rims = (sm.zx * (-parallel_polars / 2)).exp() >> (solids.origin + sm.z.dual())   # [parallels] Point-
+    parallels = (rims & sm.x.dual() & sm.y.dual()) * solids.flip               # [parallels] Plane+
     meridians = (sm.xy * (-meridian_azimuths / 2)).exp() >> sm.x             # [meridians] Plane+
     planes = concatenate([parallels, meridians])                             # [circles] Plane+
     # The ball is the first translucent part, after the opaque ones.
@@ -124,7 +119,7 @@ def sphere_image(parts: list[tuple[solids.Quadric, np.ndarray]], lines: list[tup
 def dots(points: core.Antivector, colours: np.ndarray, radius: float,
          view: solids.View) -> tuple[solids.Quadric, np.ndarray]:
     """A dot at each spin on the sphere `[n]`, in its colour `[n, 3]`, of a radius in pixels, as an opaque part."""
-    return solids.ball(gpu_points(points), radius * view.pixel)[:, None], colours
+    return solids.ball(solids.origin + solids.context.include_from_algebra(points), radius * view.pixel)[:, None], colours
 
 
 def segments(runs: list[tuple[solids.Point, np.ndarray]]) -> tuple[solids.Point, solids.Point, np.ndarray]:
@@ -172,8 +167,9 @@ def draw_lift(loop: core.Antivector, path: core.Antivector, fibre: core.Antivect
     lines = [(strokes.polylines(runs, width, space), 1.0)
              for runs, width in ((circles, lift_fibre_width), (tracks, track_width))]
     # The track's start in blue, its end in its own colour.
-    ends = (solids.ball(gpu_points(path[[0, -1]]), end_radius * space.pixel)[:, None], np.stack([start_colour, loop_colour]))
-    on_sphere = strokes.polylines([(gpu_points(loop), loop_colour)], track_width, sphere)
+    track_ends = solids.origin + solids.context.include_from_algebra(path[[0, -1]])            # [2] Point-
+    ends = (solids.ball(track_ends, end_radius * space.pixel)[:, None], np.stack([start_colour, loop_colour]))
+    on_sphere = strokes.polylines([(solids.origin + solids.context.include_from_algebra(loop), loop_colour)], track_width, sphere)
     shown(axes, solids.draw([ends], space, background, inks=[], translucent=[],
                             meshes=lines), sphere_image([], [(on_sphere, 1.0)], sphere),
           (space, sphere))

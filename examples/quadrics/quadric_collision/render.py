@@ -8,7 +8,7 @@ from itertools import chain
 import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import stack
+from numga import concatenate, stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.quadrics.quadric_collision.core import (
@@ -37,11 +37,15 @@ def xy(points: Point) -> np.ndarray:
     return ((stack((mv.x, mv.y)) & points[..., None]) / (infinity & points)[..., None]).to_array()
 
 
-def bounds(dual: Quadric) -> np.ndarray:
+def bounds(dual: Quadric) -> Point:
     """The low and high corners of the box around an ellipsoid: the contact points of its tangents facing along and
     against x and y."""
-    contacts = xy(dual(tangent_plane(dual, stack((mv.x, mv.y, -mv.x, -mv.y)))))
-    return np.stack([contacts.min(axis=0), contacts.max(axis=0)])
+    contacts = dual(tangent_plane(dual, stack((mv.x, mv.y, -mv.x, -mv.y))))
+    axes = stack((mv.x, mv.y))
+    readings = axes[:, None] & (contacts / (infinity & contacts))
+    low = readings.min(axis=-1)
+    high = readings.max(axis=-1)
+    return origin + (axes.dual() * stack((low, high))).sum(axis=-1)
 
 
 def draw_ellipsoid(ax, dual: Quadric, grid: Point, colours: tuple[str, str]) -> list:
@@ -79,14 +83,19 @@ def animate_collision(
     states = iter(states)
     first_state = next(states)
     placed_second, determinants = first_state[0], first_state[4].to_array()
-    extent = np.concatenate([bounds(first_ellipsoid), bounds(placed_second)])
-    low, high = extent.min(axis=0), extent.max(axis=0)
-    centre, size = (low + high) / 2, high - low
-    half_width = margin * max(size[0], size[1] / aspect) / 2
-    xlim = (centre[0] - half_width, centre[0] + half_width)
-    ylim = (centre[1] - half_width * aspect, centre[1] + half_width * aspect)
-    xs, ys = np.meshgrid(np.linspace(*xlim, resolution), np.linspace(*ylim, resolution))
-    grid = mv.point(np.stack([xs, ys], axis=-1))
+    extent = concatenate([bounds(first_ellipsoid), bounds(placed_second)])
+    readings = stack((mv.x, mv.y))[:, None] & extent
+    low = readings.min(axis=-1)
+    high = readings.max(axis=-1)
+    middle = origin + (stack((mv.x, mv.y)).dual() * ((low + high) / 2)).sum()
+    widths = (high - low) / np.array([1, aspect])
+    half_width = margin * widths.max() / 2
+    across = half_width * np.linspace(-1, 1, resolution)
+    up = across * aspect
+    grid = middle + mv.x.dual() * across[None, :] + mv.y.dual() * up[:, None]
+    coordinates = xy(grid)
+    xs, ys = coordinates[..., 0], coordinates[..., 1]
+    xlim, ylim = xs[0, [0, -1]], ys[[0, -1], 0]
     bottom, top = min(determinants.min(), 0.0), max(determinants.max(), 0.0)
     middle, half_height = (bottom + top) / 2, margin * (top - bottom) / 2
 

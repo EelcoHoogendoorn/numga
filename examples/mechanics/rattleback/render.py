@@ -20,7 +20,7 @@ from numga import concatenate
 from numga.algebras import PGA3D
 from examples import instantiate
 from examples.util.wgsl import Shader, image_figure, solids, supersampled
-from examples.util.wgsl.solids import lamp_shading, quadric_crossings
+from examples.util.wgsl.solids import lamp_shading, quadric_regions
 
 core = instantiate("examples.mechanics.rattleback.core", PGA3D)
 mv = core.mv
@@ -83,7 +83,6 @@ struct Finish {
 }
 
 var<storage, read> parts: array<Part>;
-var<storage, read> quadrics: array<Quadric>;
 var<storage, read> finishes: array<Finish>;
 // A camera looking along its own -z, its rays parallel, starting `back` behind the middle of the view; the image
 // half as high as this. Its frame, `axes`, is given from Python.
@@ -100,41 +99,14 @@ const ground_plane = mv.z;
 const tolerance = 1e-4;
 const clearance = 1e-3;
 
-struct Hit {
-    distance: f32,
-    quadric: u32,
-    tangent: Cut,
-}
-
-fn inside_others(part: Part, own: u32, point: Point) -> bool {
-    for (var index = part.first; index < part.end; index++) {
-        if (index != own && (quadrics[index](point) & point) > tolerance) {
-            return false;
-        }
-    }
-    return true;
-}
-
-// The first point past `nearest` along a ray on a part's surface: on one of its quadrics, inside all the others.
-fn first_hit(start: Point, direction: Point, nearest: f32) -> Hit {
-    var hit = Hit(far, 0u, mv.z);
+// Every part shares the region intersection; each quadric retains its own finish.
+fn first_hit(start: Point, direction: Point, nearest: f32) -> SurfaceHit {
+    var hit = SurfaceHit(far, 0u, mv.z);
     for (var index = 0u; index < arrayLength(&parts); index++) {
         let part = parts[index];
-        for (var own = part.first; own < part.end; own++) {
-            let quadric = quadrics[own];
-            let along = along_ray(quadric, start, direction);
-            if (along.b * along.b - along.a * along.c < 0) {
-                continue;
-            }
-            let roots = crossings(along);
-            for (var which = 0u; which < 2u; which++) {
-                let distance = roots[which];
-                let point = start + direction * distance;
-                if (distance > nearest && distance < hit.distance && inside_others(part, own, point)) {
-                    // The quadric's plane at a point of its surface is the tangent plane there.
-                    hit = Hit(distance, own, quadric(point));
-                }
-            }
+        let surface = region_hit(part.first, part.end, start, direction, nearest, hit.distance, tolerance);
+        if (surface.distance < hit.distance) {
+            hit = surface;
         }
     }
     return hit;
@@ -174,7 +146,7 @@ fn surroundings(start: Point, direction: Point) -> vec3<f32> {
 
 // A surface lit by the lamp, with its finish's glint, unless the body stands between them: then none of the lamp's
 // light and glint reaches it, only the light that falls everywhere.
-fn lit_or_shadowed(hit: Hit, start: Point, direction: Point) -> vec3<f32> {
+fn lit_or_shadowed(hit: SurfaceHit, start: Point, direction: Point) -> vec3<f32> {
     let normal = facing(hit.tangent, direction);
     let lamp_share = select(1.0, 0.0, first_hit(start + direction * hit.distance, lamp, clearance).distance < far);
     let finish = finishes[hit.quadric];
@@ -219,7 +191,7 @@ fn sample(place: vec2<f32>) -> Sample {
 # --- plumbing -------------------------------------------------------------------------
 @cache
 def shader() -> Shader:
-    return Shader(supersampled() + quadric_crossings() + lamp_shading() + source, PGA3D,
+    return Shader(supersampled() + quadric_regions() + lamp_shading() + source, PGA3D,
                   dict(Point=core.Point, Plane=core.Cut, Cut=core.Cut, Motor=core.Motor, Quadric=core.Quadric),
                   dict(axes=solids.axes, stone=stone, tile_variation=tile_variation, mottling=mottling,
                        mottle_scale=mottle_scale, stone_reflectance=stone_reflectance, horizon=horizon, zenith=zenith,

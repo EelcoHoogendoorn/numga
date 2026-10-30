@@ -19,7 +19,7 @@ from numga.algebras import PGA2D
 
 from examples import instantiate
 from examples.util.wgsl import image_figure
-from examples.util.wgsl.planar import SOLID, Cap, Quadrics, Polygons, Regions, Strokes, draw, window
+from examples.util.wgsl.planar import Window, SOLID, Cap, Quadrics, Polygons, Regions, Strokes, draw, window
 
 # The figures draw PGA2D geometry, from above.
 core = instantiate("examples.estimation.multiview.core", PGA2D)
@@ -69,11 +69,11 @@ def cones(motors: Motor, world_cones: Quadric) -> list[Quadrics]:
 
 def splats(motors: Motor, fused_splats: Quadric, points: Point) -> list[Quadrics]:
     """The layer of fused splat quadrics around the triangulated points where they lie in front of a camera."""
-    floor = np.maximum((fused_splats(points) & points).to_array(), 0.0)          # [landmarks]
-    depth = ((motors >> mv.y)[None, :] & points[:, None]).to_array().mean(axis=1)  # [landmarks]
-    radius = np.sqrt((PIXEL_ANGLE * np.maximum(depth, 0.2)) ** 2 + floor)        # [landmarks]
+    floor = (fused_splats(points) & points).clip(0, np.inf)                    # [landmarks] Scalar+
+    depth = ((motors >> mv.y)[None, :] & points[:, None]).mean(axis=1)         # [landmarks] Scalar+
+    radius = ((PIXEL_ANGLE * depth.clip(0.2, np.inf)).squared() + floor).square_root()
     front_planes = ((motors >> mv.y) - mv.w * 0.02)[None]                        # [clips, cameras] Plane+
-    return [Quadrics(fused_splats, floor, mv.w * radius, np.zeros(1), front_planes, SPLAT_COLOR, 0.95)]
+    return [Quadrics(fused_splats, floor.to_array(), mv.w * radius, np.zeros(1), front_planes, SPLAT_COLOR, 0.95)]
 
 
 def cameras(motors: Motor) -> list:
@@ -158,8 +158,13 @@ def animate_convergence(
     """Yield RGB frames of the reconstruction across the scene, widened to hold the first state's cameras with `room` around them."""
     states = iter(states)
     first = next(states)
-    centres = coordinates(first[0] >> mv.point([0, 0]))[:, 0]                    # [cameras]
-    x_range = (min(X_RANGE[0], centres.min() - room), max(X_RANGE[1], centres.max() + room))
+    centres = mv.x & (first[0] >> mv.w.dual())                                # [cameras] Scalar+
+    left = (centres.min() - room).clip(-np.inf, X_RANGE[0])
+    right = (centres.max() + room).clip(X_RANGE[1], np.inf)
+    pixel = (Y_RANGE[1] - Y_RANGE[0]) / PIXELS
+    n_columns = round(float(((right - left) / pixel).to_array()))
+    corner = mv.w.dual() + mv.x.dual() * ((left + right - n_columns * pixel) / 2) + mv.y.dual() * Y_RANGE[1]
+    viewport = Window(corner, pixel, (PIXELS, n_columns))
     for motors, world_cones, fused_splats, points in chain([first], states):
         layers = cones(motors, world_cones) + splats(motors, fused_splats, points) + cameras(motors)
-        yield draw(window(x_range, Y_RANGE, PIXELS), layers, np.ones(3))
+        yield draw(viewport, layers, np.ones(3))

@@ -15,6 +15,9 @@ from examples.util import charts
 from examples.util.wgsl import solids, strokes
 from examples.util.wgsl.scene import Scene
 
+# The observer sees the point where its time line meets the spatial slice.
+space_slice = core.real.t ^ (core.Direction & -core.real.t.dual())
+
 case_colours = ("#2563eb", "#ea580c", "#0d9488", "#7c3aed")
 # The quantity plots' sizes in pixels: one panel, about half the column, and two panels side by side.
 single_size, double_size = (420, 280), (640, 280)
@@ -44,14 +47,6 @@ square_corners = np.array([[-1, -1], [-1, 1], [1, -1], [1, 1]])            # [co
 def quantity_axes(ax: plt.Axes) -> None:
     """Axes of a quantity plot, without the frame's top and right."""
     ax.spines[["top", "right"]].set_visible(False)
-
-
-def gpu_points(points: core.Direction) -> solids.Point:
-    """The GPU library's own points at the places of the example's, in the beam's frame turned upright into the scene:
-    their pairings with the planes x, y and z, the observer's slice of spacetime, are the one hand-off from this
-    algebra to the renderer's."""
-    mv = points.context.multivector
-    return upright >> sm.point((stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array())
 
 
 @charts.style()
@@ -170,16 +165,20 @@ def pulse(nodes: core.Direction, slab: core.Direction, directors: core.Direction
     framed = stack((nodes[0] + length * framed_start, nodes[-1] - length * framed_end))   # [ends] Direction-
     half_width = slab_half_width * field_length
     corners = framed[:, None] + (across * (half_width * square_corners)).sum(axis=-1)   # [ends, corners] Direction-
-    view = solids.view([gpu_points(corners)], 0.0, pulse_elevation, pulse_azimuth, pulse_margin, n_pulse_pixels)
-    line = solids.rods(gpu_points(nodes[0]), gpu_points(nodes[-1]), line_width / 2 * view.pixel)[None]
+    scene_corners = solids.origin + (upright >> solids.context.include_from_algebra(space_slice(corners)))
+    stations = solids.origin + (upright >> solids.context.include_from_algebra(space_slice(nodes)))
+    view = solids.view([scene_corners], 0.0, pulse_elevation, pulse_azimuth, pulse_margin, n_pulse_pixels)
+    line = solids.rods(stations[0], stations[-1], line_width / 2 * view.pixel)[None]
     # The slab: a box about its middle on the line, as long as the slab's stretch of it, turned upright with
     # everything else.
-    middle = gpu_points((slab[0] + slab[-1]) / 2)                                     # [] Point-
-    slab_length = (mv.z & (slab[-1] - slab[0])).to_array()
+    middle = solids.origin + (upright >> solids.context.include_from_algebra(space_slice((slab[0] + slab[-1]) / 2)))
+    slab_length = mv.z & (slab[-1] - slab[0])
+    half_extents = stack((mv.scalar([half_width]), mv.scalar([half_width]), slab_length / 2))
     box = solids.boxes(solids.translator(middle - solids.origin) * upright,
-                       np.array([half_width, half_width, slab_length / 2]))[None]
-    optics = solids.rods(gpu_points(rod_middles - rod_reach), gpu_points(rod_middles + rod_reach),
-                         optic_width / 2 * view.pixel)
+                       solids.context.include_from_algebra(half_extents))[None]
+    rod_centres = solids.origin + (upright >> solids.context.include_from_algebra(space_slice(rod_middles)))
+    rod_offsets = upright >> solids.context.include_from_algebra(space_slice(rod_reach))
+    optics = solids.rods(rod_centres - rod_offsets, rod_centres + rod_offsets, optic_width / 2 * view.pixel)
 
     # The line, the optic axes and the slab stay put.
     picture = Scene(view, np.ones(3), [(line, line_colour), (optics, optic_colour)], [],
@@ -188,7 +187,8 @@ def pulse(nodes: core.Direction, slab: core.Direction, directors: core.Direction
         readings = planes[:, None] & swept                                            # [nodes, 2] Scalar+
         # The field across the line, a direction from its readings along x and y, drawn out from each node.
         transverse = (across * readings).sum(axis=-1)                                 # [nodes] Direction-
-        tips = gpu_points(nodes + transverse * field_length)                          # [nodes] Point-
+        offsets = upright >> solids.context.include_from_algebra(space_slice(transverse * field_length))
+        tips = stations + offsets                                             # [nodes] Point-
         # The field's direction around the line sets its hue, and its strength how far its colour shows.
         field = readings.to_array()                                                   # [nodes, 2]
         hue = (np.arctan2(field[:, 1], field[:, 0]) / (2 * np.pi)) % 1
@@ -196,7 +196,7 @@ def pulse(nodes: core.Direction, slab: core.Direction, directors: core.Direction
         colours = hsv_to_rgb(np.column_stack([hue, np.full_like(hue, 0.85), np.ones_like(hue)]))
         # Every other node's spoke, where the field shows.
         spoked = np.flatnonzero(strength > spoke_floor)[::2]
-        spokes = strokes.segments(gpu_points(nodes[spoked]), tips[spoked],
+        spokes = strokes.segments(stations[spoked], tips[spoked],
                                   faded(colours, spoke_opacity * strength)[spoked], spoke_width, view)
         # Each piece of the path in the colour and strength halfway along it.
         shades = faded(colours, strength)

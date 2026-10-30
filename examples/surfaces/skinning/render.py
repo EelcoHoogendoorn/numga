@@ -46,7 +46,8 @@ def surface(points: Point, n_rings: int, n_around: int, view: solids.View) -> np
     stripes = plt.get_cmap(stripe_map)(np.linspace(0.0, 1.0, n_around + 1)[:n_around])[:, :3]   # [around, 3]
     colours = np.broadcast_to(stripes[None, :, None, None], faces.shape + (3,))                 # [rings - 1, around, 2, 3, 3]
     faces = faces.reshape(-1, 3)
-    return meshes.draw(points, faces, colours.reshape(-1, 3, 3), meshes.smooth(points, faces), view, background,
+    topology = meshes.Mesh(len(points), faces)
+    return meshes.draw(points, faces, colours.reshape(-1, 3, 3), meshes.smooth(points, topology), view, background,
                        face_values=ink.reshape(-1, 3), colour=inked, gloss=solids.gloss)
 
 

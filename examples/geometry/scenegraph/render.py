@@ -16,7 +16,7 @@ import numpy as np
 
 from numga import concatenate, stack
 from examples.util.animation import capture
-from examples.geometry.scenegraph.core import Motor, Plane, Point, mv, unit_box_topology
+from examples.geometry.scenegraph.core import Motor, Plane, Point, ga, mv, unit_box_topology
 from examples.util.wgsl import fitted, image_figure, meshes, show, solids, strokes
 from examples.util.wgsl.scene import Scene
 
@@ -127,6 +127,7 @@ def scene_3d(world_vertices: Point, camera_pose: Motor, rays: tuple, view: solid
 
 # --- sensor photograph ------------------------------------------------------------------
 # The sensor's pixels across and up, and the photograph's glint, faint, as on painted metal.
+Scalar = ga.gatype.scalar()                                                 # Scalar+
 sensor_pixels = np.array([640, 480])
 photo_gloss = 0.15
 
@@ -138,11 +139,12 @@ def sensor_view(ax: plt.Axes) -> solids.View:
     return fitted(solids.View(solids.aim(middle, np.pi / 2, 0.0), sensor_pixels / 2, sensor_pixels[0]), ax)
 
 
-def spread(points: Point, planes: Plane) -> np.ndarray:
+def spread(points: Point, planes: Plane) -> Scalar:
     """How far each body's points spread across the planes through the origin, the widest of them, `[bodies]`: the
     range of their pairings with each plane at unit weight."""
-    readings = (planes & points.normalized()[..., None]).to_array()          # [bodies, vertices, planes]
-    return np.ptp(readings, axis=1).max(axis=-1)
+    readings = planes[None, :, None] & points.normalized()[:, None, :]       # [bodies, planes, vertices] Scalar+
+    spans = readings.max(axis=-1) - readings.min(axis=-1)
+    return spans.max(axis=-1)
 
 
 def photograph_image(world_vertices: Point, projected_pixels: Point, camera_pose: Motor,
@@ -153,7 +155,9 @@ def photograph_image(world_vertices: Point, projected_pixels: Point, camera_pose
     depth = mv.z & (camera_pose << world_vertices).normalized()               # [bodies, vertices] Scalar+
     # The depth in the photograph's own units, at the scale the camera shows the arm, so the faces keep their slopes
     # and catch the light much as they would: the pixels the bodies span over the room they take in the world.
-    scale = np.median(spread(projected_pixels, stack((mv.x, mv.y))) / spread(world_vertices, stack((mv.x, mv.y, mv.z))))
+    scales = spread(projected_pixels, stack((mv.x, mv.y))) / spread(world_vertices, stack((mv.x, mv.y, mv.z)))
+    ordered = scales[scales.argsort()]
+    scale = (ordered[(len(ordered) - 1) // 2] + ordered[len(ordered) // 2]) / 2
     # The pixels on the sensor's plane z == 0, raised off it by their depth from the mean depth, at that scale.
     on_sensor = projected_pixels - mv.z.dual() * (mv.z & projected_pixels)    # [bodies, vertices] Point-
     relief = on_sensor + mv.z.dual() * ((depth - depth.mean()) * scale)       # [bodies, vertices] Point-

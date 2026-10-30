@@ -82,6 +82,34 @@ class Context(ABC):
 
         return self._multivector_factory
 
+    def include_from_algebra(self, value: Extensor) -> Extensor:
+        """A value of another algebra included in this context's algebra, by generator names: every generator the
+        value's type uses must be one of this algebra's, by name and with the same square, as the algebra of space
+        `x+y+z+` lies in its projective algebra `w0x+y+z+`. With `space` and `mv` the two algebras' value constructors,
+        and `context` this one:
+
+        An extrinsic element keeps its blades: `context.include_from_algebra(space.x) == mv.x`, the plane through the
+        origin. The inclusion preserves the geometric product, so a rotor of space is the projective rotor about the
+        origin and keeps its facts. An intrinsic element keeps its complement, the element that completes it to the unit
+        volume: `context.include_from_algebra(space.x.dual()) == mv.x.dual()`. A point of space, an offset from its
+        origin, is therefore the projective point at infinity of that offset, `origin +
+        context.include_from_algebra(offset)` the point at it, and the unit volume of space the projective unit volume.
+
+        Joins of intrinsic elements carry over, and so do an extrinsic element's products and pairings with an element
+        on its right, `plane & point`, `rotor >> point`; with an intrinsic element on the left a product may differ in
+        sign, or vanish, as the product of two directions does where the degenerate generator meets itself.
+
+        A map carries each axis by its own kind, its inputs read back through the inclusion of theirs, so that
+        `context.include_from_algebra(f)(context.include_from_algebra(x)) == context.include_from_algebra(f(x))`; it
+        takes the included elements of its inputs' types. The coefficients are reordered and signed, in this context.
+
+        The source's ambient algebra may contain other generators. A spatial projection of a spacetime event carries
+        over once its type excludes time: `space_slice = mv.t ^ (Point & time)`. This inclusion never discards
+        components; every axis of the supplied value's type must fit the common subalgebra."""
+        from numga.multivector.subalgebra import include_from_algebra
+
+        return include_from_algebra(self, value)
+
     @property
     def gatype(self) -> GATypeFactory:
         return self.algebra.gatype

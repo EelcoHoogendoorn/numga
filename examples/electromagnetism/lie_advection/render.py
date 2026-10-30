@@ -39,13 +39,17 @@ def coordinates(points: core.Point) -> np.ndarray:
     return np.asarray((stack((mv.x, mv.y)) & points.batch()[..., None]).to_array())
 
 
-def frame_panel(ax: plt.Axes, places: np.ndarray, margin_ratio: float) -> None:
-    """Square equal-aspect viewport around `places` with no axes or ticks."""
-    low, high = places.min(axis=0), places.max(axis=0)
+def frame_panel(ax: plt.Axes, points: core.Point, margin_ratio: float) -> None:
+    """Square equal-aspect viewport around the points with no axes or ticks."""
+    mv = points.context.multivector
+    readings = stack((mv.x, mv.y))[:, None] & points.batch().reshape(-1)
+    low = readings.min(axis=-1)
+    high = readings.max(axis=-1)
     centre = (low + high) / 2
-    half_span = (1 + margin_ratio) * (high - low).max() / 2
-    ax.set(xlim=(centre[0] - half_span, centre[0] + half_span),
-           ylim=(centre[1] - half_span, centre[1] + half_span), aspect="equal")
+    spans = high - low
+    half_span = (1 + margin_ratio) * spans.max() / 2
+    limits = stack((centre - half_span, centre + half_span), axis=-1).to_array()
+    ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
     ax.set_axis_off()
 
 
@@ -93,8 +97,7 @@ def draw_cartan_ribbon(corners: core.Point, points: core.Point, sample_forms: co
     # Three quarters of the column: the triangle in a square beside the bars of its three edges and their sum.
     figure, (geom_ax, bar_ax) = charts.subplots(600, 270, ncols=2, width_ratios=(1, 1.2), layout="constrained")
 
-    all_places = np.vstack((corner_xy, displaced_xy))
-    frame_panel(geom_ax, all_places, 0.16)
+    frame_panel(geom_ax, stack((corners, displaced)), 0.16)
     flux_scale = max(np.abs(swept_vals).max(), 1e-8)
     for index in range(3):
         colour = flux_colours(0.5 + 0.42 * swept_vals[index] / flux_scale)
@@ -103,9 +106,10 @@ def draw_cartan_ribbon(corners: core.Point, points: core.Point, sample_forms: co
 
     geom_ax.add_patch(Polygon(corner_xy, facecolor="#f6f4ee", edgecolor=wall_colour, alpha=0.88, zorder=2))
     geom_ax.add_patch(Polygon(displaced_xy, fill=False, edgecolor=ink_colour, linestyle="--", zorder=4))
-    max_norm = sample_forms.norm().to_array().max()
+    lengths = sample_forms.norm().reshape(-1)
+    max_norm = lengths.max()
     geom_ax.quiver(sample_xy[:, 0], sample_xy[:, 1], field_xy[:, 0], field_xy[:, 1],
-                   color=primal_colour, angles="xy", scale_units="xy", scale=6.2 * max_norm,
+                   color=primal_colour, angles="xy", scale_units="xy", scale=float((6.2 * max_norm).to_array()),
                    width=0.0085, headwidth=3.6, headlength=4.3, pivot="mid", zorder=3)
 
     for index in range(3):
@@ -138,11 +142,11 @@ def draw_cartan_ribbon(corners: core.Point, points: core.Point, sample_forms: co
     return figure
 
 
-def draw_disk_panel(ax: plt.Axes, triangulation: Triangulation, places: np.ndarray,
+def draw_disk_panel(ax: plt.Axes, triangulation: Triangulation, vertices: core.Point,
                     walls: np.ndarray, vertex_flux: np.ndarray,
                     flux_levels: np.ndarray, flux_limit: float) -> None:
     """One disk panel shaded by magnetic flux density with evolving iso-flux contours."""
-    frame_panel(ax, places, 0.06)
+    frame_panel(ax, vertices, 0.06)
     ax.tripcolor(triangulation, vertex_flux, shading="gouraud", cmap=flux_colours,
                  norm=Normalize(-flux_limit, flux_limit), zorder=1)
     ax.triplot(triangulation, color=mesh_colour, linewidth=charts.FRAME_WIDTH, alpha=mesh_alpha, zorder=2)
@@ -177,7 +181,7 @@ def draw_advection_comparison(mesh: core.Mesh, vertices: core.Point,
     trace_ax = traces.subplots()
 
     for index, ax in enumerate((left_ax, mid_ax)):
-        draw_disk_panel(ax, triangulation, places, walls, vertex_fluxes[index],
+        draw_disk_panel(ax, triangulation, vertices, walls, vertex_fluxes[index],
                         flux_levels, flux_limit)
 
     energy_vals = np.asarray(energies.to_array())
@@ -216,7 +220,7 @@ def animate_advection(mesh: core.Mesh, vertices: core.Point,
             figure, axes = charts.subplots(612, 306, ncols=2)
             figure.subplots_adjust(left=0.015, right=0.985, bottom=0.02, top=0.98, wspace=0.04)
             for index, ax in enumerate(axes):
-                draw_disk_panel(ax, triangulation, places, walls, vertex_fluxes[index],
+                draw_disk_panel(ax, triangulation, vertices, walls, vertex_fluxes[index],
                                 flux_levels, flux_limit)
             image = capture(figure)
         plt.close(figure)

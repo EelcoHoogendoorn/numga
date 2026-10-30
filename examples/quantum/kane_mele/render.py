@@ -81,10 +81,9 @@ def spin_dots(spin: core.Spin) -> tuple[np.ndarray, np.ndarray]:
     """A spin density's dots: their areas, in proportion to the density, and their shades, the spin up
     over the largest density."""
     mv = spin.context.multivector
-    # Each spin read by the planes it turns in, yz, zx and xy.
-    components = (stack((mv.yz, mv.zx, mv.xy)) & spin.batch()[..., None]).to_array()   # [atoms, 3]
-    density = np.linalg.norm(components, axis=-1)
-    return DOT * density / density.max(), components[:, 2] / density.max()
+    density = spin.batch().norm()                                            # [atoms] Scalar+
+    largest = density.max()
+    return (DOT * density / largest).to_array(), ((mv.xy & spin.batch()) / largest).to_array()
 
 
 def draw_spin(flake: core.Flake, spin: core.Spin, pixels: int) -> plt.Figure:

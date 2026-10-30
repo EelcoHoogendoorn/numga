@@ -11,7 +11,7 @@ from collections.abc import Iterator
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import concatenate, stack
+from numga import concatenate
 from examples.fluids.sphere_vortices import core
 from examples.util.wgsl import solids, strokes
 from examples.util.wgsl.scene import Scene
@@ -25,14 +25,9 @@ sphere_colour = np.array([0.90, 0.91, 0.93])
 trail = 120
 trail_width, dot_radius = 1.6, 2.2
 n_pixels, margin = 160, 0.08
-# The planes x = 0, y = 0 and z = 0 of the sphere's space, the drawing frame.
-axes = stack((core.mv.x, core.mv.y, core.mv.z))                              # [3] Plane+
-
-
-def gpu_directions(pivots: core.Pivot) -> solids.Point:
-    """The GPU library's own directions toward points of the unit sphere: their coordinates, read by pairing the
-    points with the drawing frame, are the one hand-off from the sphere's algebra to the renderer's."""
-    return sm.direction((axes & pivots[..., None]).to_array())
+# The intrinsic scalar one: a pivot, a point of the sphere as the meet of great circles, times it is the direction
+# from the sphere's centre to that point, every coefficient kept.
+intrinsic_one = core.mv.antipseudoscalar([1])                                # [] Scalar-
 
 
 def animate(histories: list[core.Pivot], view: tuple[float, float], every: int) -> Iterator[np.ndarray]:
@@ -49,8 +44,9 @@ def animate(histories: list[core.Pivot], view: tuple[float, float], every: int) 
     across = seen.camera >> sm.x.dual()                                       # [] Point-
     centres = solids.origin + across * (2 * (1 + margin) * (np.arange(count) - (count - 1) / 2))   # [spheres] Point-
     # Each vortex and its antipode, in one colour, on its sphere in the row.
-    places = concatenate([centre + gpu_directions(concatenate((pivots, -pivots), axis=1).normalized())
-                          for pivots, centre in zip(histories, centres)], axis=1)   # [steps, points] Point-
+    pairs = [concatenate((pivots, -pivots), axis=1).normalized() * intrinsic_one for pivots in histories]
+    places = concatenate([centre + solids.context.include_from_algebra(pair) for pair, centre in zip(pairs, centres)],
+                         axis=1)                                              # [steps, points] Point-
     n_points = [2 * pivots.shape[1] for pivots in histories]
     colours = np.concatenate([strands[np.arange(n) % (n // 2) % len(strands)] for n in n_points])   # [points, 3]
     scene = Scene(seen, np.ones(3), [(solids.ball(centres, 1.0)[:, None], sphere_colour)], [], inks=[],

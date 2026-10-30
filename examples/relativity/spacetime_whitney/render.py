@@ -94,7 +94,8 @@ def streamlines(corners: core.Point, gradients: core.Plane, directions: core.Poi
     """The curves through the seeds `[seeds]` along a direction field affine across the triangle, its values at the
     corners `[corners]`, read out in (x, t) up to where each first leaves the triangle, the short ones left out: each
     step taken along the field at its own midpoint, the field there interpolated by the corners' hats."""
-    extent = picture_length(corners[:, None] - corners[None, :]).to_array().max()
+    distances = picture_length(corners[:, None] - corners[None, :]).reshape(-1)
+    extent = distances.max()
 
     def velocity(points: core.Point) -> core.Point:
         # The corner hats at the points weight the field's values at the corners; drawn at unit picture speed.
@@ -119,7 +120,7 @@ def streamlines(corners: core.Point, gradients: core.Plane, directions: core.Poi
     backward = np.logical_and.accumulate(inside[n_stream_steps::-1], axis=0)[::-1]
     kept = np.concatenate((backward[:-1], forward))                          # [2 * steps + 1, seeds]
     steps_kept = kept[1:] & kept[:-1]                                        # [2 * steps, seeds]
-    lengths = (picture_length(path[1:] - path[:-1]).to_array() * steps_kept).sum(axis=0)   # [seeds]
+    lengths = (picture_length(path[1:] - path[:-1]) * steps_kept).sum(axis=0)   # [seeds]
     lines = np.swapaxes(coordinates(path), 0, 1)                             # [seeds, 2 * steps + 1, 2]
     return [line[keep] for line, keep, length in zip(lines, kept.T, lengths) if length >= min_stream_length * extent]
 

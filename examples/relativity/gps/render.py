@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import concatenate, stack
+from numga import concatenate
 from examples.relativity.gps import core
 from examples.util.wgsl import image_figure, solids, strokes
 
@@ -18,13 +18,6 @@ BLUE, ORANGE, EARTH, GRID, INK = (
 WHITE = np.ones(3)
 N_PIXELS = 320
 ELEVATION, AZIMUTH = np.radians([22, 32])
-
-
-def gpu_points(events: core.Event) -> solids.Point:
-    """The GPU library's points at the places of events of unit weight: their spatial coordinates, read by pairing
-    with the three spatial planes, are the one hand-off from spacetime to the renderer's space."""
-    mv = events.context.multivector
-    return solids.mv.point((stack((mv.x, mv.y, mv.z)) & events[..., None]).to_array())
 
 
 def earth_grid() -> solids.Ink:
@@ -41,8 +34,12 @@ def earth_grid() -> solids.Ink:
 def constellation(emitted: core.Event, receiver: core.Event, orbit_radius: float) -> tuple[solids.View, list, list]:
     """The view at a fixed orbital scale, the solids of Earth, the transmitting satellites and the receiver, and the
     signals' paths to it."""
-    satellite_points = gpu_points(emitted)
-    receiver_point = gpu_points(receiver)
+    mv = emitted.context.multivector
+    Event = emitted.algebra.gatype.antivector()                               # Antivector-
+    # The observer sees the point where its time line meets the spatial slice.
+    space_slice = mv.t ^ (Event & -mv.t.dual())
+    satellite_points = solids.context.include_from_algebra(space_slice(emitted))
+    receiver_point = solids.context.include_from_algebra(space_slice(receiver))
     centre = solids.origin + (receiver_point - solids.origin) * (orbit_radius * 0.3)
     camera = solids.aim(centre, ELEVATION, AZIMUTH)
     view = solids.View(camera, np.full(2, orbit_radius * 0.95), N_PIXELS)
@@ -70,9 +67,12 @@ def solution_image(emitted: core.Event, receiver: core.Event, estimate: core.Eve
                    orbit_radius: float) -> np.ndarray:
     """The constellation with the fitted reception, its position's one-standard-deviation ellipsoid about it, and the
     ellipsoid's semi-axes `[3]` as diameters through it."""
+    mv = estimate.context.multivector
+    Event = estimate.algebra.gatype.antivector()                              # Antivector-
+    space_slice = mv.t ^ (Event & -mv.t.dual())
     view, parts, rays = constellation(emitted, receiver, orbit_radius)
-    centre = gpu_points(estimate)
-    reach = gpu_points(estimate + semi_axes) - centre                            # [3] Point-
+    centre = solids.context.include_from_algebra(space_slice(estimate))
+    reach = solids.context.include_from_algebra(space_slice(estimate + semi_axes)) - centre                            # [3] Point-
     # The semi-axes' dyads sum to the spatial covariance, the dual quadric of the ellipsoid about the origin; its
     # inverse bounds the ellipsoid, moved to the fitted position.
     dual = (reach * (solids.Plane & reach)).sum(axis=0) - solids.origin * (solids.Plane & solids.origin)   # [] Point- <- Plane+

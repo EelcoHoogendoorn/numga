@@ -34,12 +34,13 @@ def draw_roots(roots: Vector, horizontal: Vector, vertical: Vector) -> plt.Figur
     """The roots in the Coxeter plane, coloured by orbit, with nearest neighbours joined."""
     points = coordinates(roots, horizontal, vertical)
     flat = roots.reshape((-1,))
-    distances = (flat[:, None] - flat[None, :]).scalar_norm_squared().to_array()
-    nearest = distances[distances > 1e-8].min()
-    first, second = np.nonzero(np.triu(np.isclose(distances, nearest), k=1))
+    distances = (flat[:, None] - flat[None, :]).scalar_norm_squared()
+    distinct = distances[distances > 1e-8]
+    nearest = distinct.min()
+    first, second = np.nonzero(np.triu((distances - nearest).abs() <= (1e-8 + 1e-5 * nearest.abs()), k=1))
     projected = points.reshape((-1, 2))
     # A root's part in the drawing plane is as long as its contraction onto the plane's unit bivector.
-    reach = (roots | (horizontal ^ vertical)).norm().to_array()               # [steps, orbits]
+    reach = (roots | (horizontal ^ vertical)).norm().reshape(-1)             # [steps * orbits] Scalar+
     colours = np.tile(orbit_colours, (roots.shape[0], 1))
     edge_colours = (colours[first] + colours[second]) / 2
     segments = np.stack([projected[first], projected[second]], axis=1)
@@ -47,7 +48,7 @@ def draw_roots(roots: Vector, horizontal: Vector, vertical: Vector) -> plt.Figur
     figure, ax = plt.subplots(figsize=(7, 7), facecolor=background)
     ax.add_collection(LineCollection(segments, colors=edge_colours, alpha=0.17, linewidths=0.33))
     ax.scatter(*projected.T, c=colours, s=12, edgecolors=background, linewidths=0.35, zorder=3)
-    radius = reach.max() * 1.05
+    radius = float((reach.max() * 1.05).to_array())
     ax.set(xlim=(-radius, radius), ylim=(-radius, radius), aspect="equal")
     ax.set_axis_off()
     figure.subplots_adjust(0, 0, 1, 1)

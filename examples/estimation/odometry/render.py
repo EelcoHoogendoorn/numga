@@ -13,7 +13,7 @@ from numga.algebras import PGA2D
 from examples import instantiate
 from examples.util.animation import capture
 from examples.util.wgsl import pinned, planar, room
-from examples.util.wgsl.planar import SOLID, Cap, Curves, Marker, Marks, Strokes, Window, filling
+from examples.util.wgsl.planar import SOLID, Cap, Curves, Marker, Marks, Strokes, Window
 
 # The drawings are of the lap in PGA2D.
 core = instantiate("examples.estimation.odometry.core", PGA2D)
@@ -42,12 +42,16 @@ def coordinates(points: Point) -> np.ndarray:
     return (stack((mv.x, mv.y)) & points.normalized()[..., None]).to_array()
 
 
-def extent(truth: core.Motor, dead: core.Motor) -> np.ndarray:
-    """Compute the lower and upper corners `[2, 2]` of a bounding box around the true and dead-reckoned positions."""
-    corners = coordinates(concatenate([truth, dead]) >> origin)
-    low, high = corners.min(axis=0), corners.max(axis=0)
-    margin = 0.15 * (high - low).max()
-    return np.stack([low - margin, high + margin])
+def extent(truth: core.Motor, dead: core.Motor) -> Point:
+    """The lower and upper corner points of a box around the true and dead-reckoned positions, with a margin."""
+    positions = concatenate([truth, dead]) >> origin
+    axes = stack((mv.x, mv.y))
+    readings = axes[:, None] & positions.normalized()
+    low = readings.min(axis=-1)
+    high = readings.max(axis=-1)
+    spans = high - low
+    margin = 0.15 * spans.max()
+    return origin + (axes.dual() * stack((low - margin, high + margin))).sum(axis=-1)
 
 
 def base_layers(truth: core.Motor, dead: core.Motor, reckoned_ellipsoids) -> list:
@@ -71,12 +75,12 @@ def likely_layers(truth: core.Motor, poses: core.Motor, ellipsoids) -> list:
     ]
 
 
-def framed(box: np.ndarray) -> tuple[plt.Figure, plt.Axes, Window]:
+def framed(box: Point) -> tuple[plt.Figure, plt.Axes, Window]:
     """Create a figure, axes, and planar window for the bounding box."""
     figure, ax = plt.subplots(figsize=(5, 5))
     ax.set_axis_off()
     figure.tight_layout()
-    view = filling(box[:, 0], box[:, 1], room(ax))
+    view = planar.view([box], 0.0, room(ax))
     return figure, ax, view
 
 

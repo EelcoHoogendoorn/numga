@@ -48,18 +48,6 @@ def positions(points: core.Point) -> np.ndarray:
     return (stack((core.mv.x, core.mv.y)) & points[..., None]).to_array()
 
 
-def gpu_points(points: core.Point) -> solids.Point:
-    """The GPU library's own points of space at the places of the plane's, the plane laid on z = 0: their coordinates,
-    read by pairing, are the one hand-off from the plane's algebra to the renderer's."""
-    return solids.origin + (solids.axes[:2].dual() * positions(points)).sum(axis=-1)
-
-
-def planar_points(points: core.Point) -> planar.Point:
-    """The planar renderer's own points at the places of the example's: their coordinates, read by pairing, are the
-    one hand-off from this algebra to the renderer's."""
-    return planar.mv.point(positions(points))
-
-
 def extent(points: core.Point) -> tuple[float, float, float, float]:
     """The box the grid's cells cover: its samples sit at the cell centres, half a cell inside."""
     coordinates = positions(points)
@@ -119,11 +107,17 @@ def braids(worldlines: list[core.Point], height: float) -> plt.Figure:
     `height` times the braid's width: it has no scale of its own against distance."""
     result = plt.figure(figsize=(panel_size * len(worldlines), panel_size))
     for ax, centres in zip(result.subplots(1, len(worldlines)), worldlines):
-        following = centres - centres.mean(axis=-1)[..., None]                  # [times, vortices] Point-
-        width = np.ptp(positions(following).reshape(-1, 2), axis=0).max()
-        # Time runs up, along z.
-        times = np.linspace(0, height * width, following.shape[0])[:, None]    # [times, 1]
-        drawn = gpu_points(following) + solids.mv.z.dual() * times              # [times, vortices] Point-
+        following = (centres - centres.mean(axis=-1)[..., None]).reshape(-1)    # [times * vortices] Point-
+        # The braid's width: the larger of its spans across x and y, between the lines that touch it on either side.
+        across = stack((core.mv.x, core.mv.y))                                  # [2] Plane+
+        heights = across[:, None] & following                                   # [2, times * vortices] Scalar+
+        lowest, highest = following[heights.argmin(axis=-1)], following[heights.argmax(axis=-1)]   # [2] Point-, Point-
+        spans = (across & highest) - (across & lowest)
+        width = spans.max()
+        # The plane laid on z = 0 of space, and time running up, along z.
+        times = solids.context.include_from_algebra(width) * np.linspace(0, height, centres.shape[0])[:, None]  # [times, 1] Scalar+
+        on_plane = solids.context.include_from_algebra(following.reshape(centres.shape))  # [times, vortices] Point-
+        drawn = solids.origin + on_plane + solids.mv.z.dual() * times           # [times, vortices] Point-
         view = fitted(solids.view([drawn], 0.0, elevation, azimuth, margin, 1), ax)
         # Each vortex's strand, its points through time and its colour.
         strands = [(drawn[:, vortex], colour) for vortex, colour in zip(range(drawn.shape[1]), strand_colours)]
@@ -199,12 +193,16 @@ def window(frames: Iterable[core.Vortices], middle: core.Point, half_height: flo
     """The vorticity on one fixed window of the plane, frame by frame, each vortex trailing the path it has taken,
     stroked over it."""
     rows, columns = shape
-    (x, y), pixel = positions(middle), 2 * half_height / rows
-    view = planar.Window(x - pixel * columns / 2, y + half_height, pixel, shape)
+    # The window's opposite corners, half its height above and below the middle and as far to either side as its
+    # columns of square pixels reach, framed pixel for pixel in a room of its own shape.
+    reach = core.mv.x.dual() * (half_height * columns / rows) + core.mv.y.dual() * half_height   # [] Point-
+    corners = planar.origin + planar.context.include_from_algebra(stack([middle - reach, middle + reach]))   # [2] Point-
+    view = planar.view([corners], 0.0, (columns, rows))
     travelled = []
     for vortices in frames:
         travelled.append(vortices.centres)
         # Each vortex's path so far, from where it started, which is the whole path on the first frame.
-        paths = planar_points(stack([travelled[0]] + travelled, axis=1))       # [vortices, frames + 1] Point-
+        offsets = stack([travelled[0]] + travelled, axis=1)                    # [vortices, frames + 1] Point-
+        paths = planar.origin + planar.context.include_from_algebra(offsets)             # [vortices, frames + 1] Point-
         trails = planar.Strokes(paths, trail_width, trail_colour, trail_opacity, planar.SOLID, planar.Cap.ROUND)
         yield planar.draw(view, [trails], vorticity_image(vortices, middle, half_height, shape, scale))

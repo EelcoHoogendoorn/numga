@@ -9,12 +9,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import stack
 from examples.electromagnetism.magnetic_bottle import core
 from examples.util.wgsl import meshes, solids, strokes
 from examples.util.wgsl.scene import Scene
 
 mv = core.mv
+sm = solids.mv
+# The observer sees the point where its time line meets the spatial slice.
+space_slice = mv.t ^ (core.Antivector & core.time)
+# A third turn cycles z to x, x to y and y to z in the drawing.
+to_scene = (-(sm.xy + sm.yz + sm.zx) * (np.pi / (3 * np.sqrt(3)))).exp()
 # The colours of the field's strength, the coils' wire, and the particles by their angle to the axis.
 strength_colours = plt.get_cmap("Blues")
 wire_colour = "#f59e0b"
@@ -33,18 +37,6 @@ n_around_coil = 96
 
 
 # --- plumbing -------------------------------------------------------------------------
-def space(points: core.Antivector) -> np.ndarray:
-    """Points in the view's space, on the last axis: along the bottle's axis, then across it twice, turned on from z,
-    x and y, so that the tracks keep the sense they turn in."""
-    return (stack((mv.z, mv.x, mv.y)) & points[..., None]).to_array()
-
-
-def gpu_points(points: core.Antivector) -> solids.Point:
-    """The renderer's points at the example's, placed in the view's space: the one hand-off from the spacetime
-    algebra to the renderer's."""
-    return solids.mv.point(space(points))
-
-
 def sheet(points: core.Antivector, strength: core.Scalar, view: solids.View) -> meshes.Samples:
     """The field's strength over its grid in the plane through the axis `[across, along]`, coloured by its logarithm,
     as a mesh of the grid's squares, as `meshes.samples`."""
@@ -54,7 +46,7 @@ def sheet(points: core.Antivector, strength: core.Scalar, view: solids.View) -> 
     index = np.arange(points.shape[0] * points.shape[1]).reshape(points.shape[:2])
     quads = np.stack([index[:-1, :-1], index[:-1, 1:], index[1:, 1:], index[1:, :-1]], axis=-1)
     triangles = quads[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
-    places = gpu_points(points.reshape(-1))                                   # [grid] Point-
+    places = to_scene >> (solids.origin + solids.context.include_from_algebra(space_slice(points.reshape(-1))))
     return meshes.samples(places, triangles, shades.reshape(-1, 3)[triangles], meshes.flat(places, triangles), view,
                           face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
 
@@ -64,12 +56,16 @@ def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.A
     """The particles' tracks `[steps, particles]`, coloured by their angle to the axis, each trailing behind its
     particle, through the field's strength at the points of a grid in the plane through the axis `[across, along]`,
     between the coils of a radius at their heights."""
-    tracks = gpu_points(events)                                               # [steps, particles] Point-
+    tracks = to_scene >> (solids.origin + solids.context.include_from_algebra(space_slice(events)))
     colours = particle_colours(0.15 + 0.7 * (pitches - pitches.min()) / np.ptp(pitches))[:, :3]
-    # The box of the grid, as deep across the axis as it is wide.
-    half_extent = np.abs(space(points)).max(axis=(0, 1))
-    box = np.stack(np.meshgrid(*[[-1, 1]] * 3, indexing="ij"), axis=-1).reshape(-1, 3) * half_extent[[0, 1, 1]]
-    view = solids.view([solids.mv.point(box)], 0.0, elevation, azimuth, margin, n_pixels)
+    # The box of the grid, as deep across the axis as it is wide: the grid's corners, each moved either way along the
+    # depth by its offset from the axis, turned a quarter about the axis.
+    corners = points[[0, -1]][:, [0, -1]]                                     # [across, along] Antivector-
+    offsets = corners - corners.mean(axis=0)                                  # [across, along] Antivector-
+    depths = (mv.xy * (-np.pi / 4)).exp() >> offsets                          # [across, along] Antivector-
+    box = corners[..., None] + depths[..., None] * np.array([1, -1])          # [across, along, sides] Antivector-
+    scene_box = solids.origin + (to_scene >> solids.context.include_from_algebra(space_slice(box)))
+    view = solids.view([scene_box], 0.0, elevation, azimuth, margin, n_pixels)
     # What stays put, set up once: the sheet and the coils' wire, each coil a ring about the axis, x, through the point
     # a radius above the axis at its height.
     rims = solids.origin + solids.mv.x.dual() * heights + solids.mv.z.dual() * radius   # [coils] Point-

@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
+from numga import stack
 from examples.mechanics.symmetry.core import Conductivity, Direction, Field, Gyration, Point, Rotor, ga, mv
 from examples.util.wgsl import Shader, fitted, meshes, show, solids, supersampled
 
@@ -53,12 +54,13 @@ alias Sample = vec3<f32>;
 
 fn sample(place: vec2<f32>) -> Sample {
     let across = screen(place) * half_height;
-    let squared = dot(across, across);
+    let foot = (frame * vec3<f32>(across, 0.0)).sum();
+    let squared = foot.scalar_norm_squared();
     if (squared > 1) {
         return background;
     }
     // The direction under the pixel: the sphere's point in the camera's frame, turned out.
-    let direction = turn >> (mv.x.dual() * across.x + mv.y.dual() * across.y + mv.z.dual() * sqrt(1 - squared));
+    let direction = turn >> (foot + mv.z.dual() * sqrt(1 - squared));
     let power = rotary(direction, direction) / limit;
     let entries = f32(textureDimensions(colours).x);
     let colour = textureSampleLevel(colours, filtered, vec2<f32>(((power + 1) / 2 * (entries - 1) + 0.5) / entries, 0.5), 0.0).rgb;
@@ -88,9 +90,9 @@ def image_of_sphere(conductivity: Conductivity) -> tuple[solids.Quadric, Point]:
     # The unit ball's dual quadric, carried by the conductivity: the ball's metric, the dual, between the
     # conductivity and its adjugate.
     image = conductivity(conductivity.adjugate().dual())                      # [] Direction- <- Field+
-    quadric = solids.solid_of_dual_quadric(solids.mv.from_subalgebra(image))   # [] Plane+ <- Point-
+    quadric = solids.solid_of_dual_quadric(solids.context.include_from_algebra(image))   # [] Plane+ <- Point-
     # The flows of unit fields, the scene's points they reach from its origin.
-    return quadric, solids.origin + solids.mv.from_subalgebra(conductivity(spiral(n_framing) >> mv.x))
+    return quadric, solids.origin + solids.context.include_from_algebra(conductivity(spiral(n_framing) >> mv.x))
 
 
 def figure(halves: list[np.ndarray], height: float) -> tuple[plt.Figure, list[plt.Axes]]:
@@ -107,10 +109,11 @@ def draw_conduction(conductivities: Conductivity, driving: Field, fluxes: Direct
     ellipsoid, with one driving field, dark, and the heat flow it drives, orange."""
     # The unit driving field is drawn along its direction at the largest gain of any panel's conductivity, the scale
     # the flows are drawn at.
-    largest = conductivities.svdvals().to_array().max()
+    gains = conductivities.svdvals().reshape(-1)
+    largest = gains.max()
     # The arrows' tips, the scene's points the field's direction and the flows reach from its origin.
-    driving_tip = solids.origin + solids.mv.from_subalgebra(driving.dual() * largest)   # [] Point-
-    flows = solids.origin + solids.mv.from_subalgebra(fluxes)                 # [panels] Point-
+    driving_tip = solids.origin + solids.context.include_from_algebra(driving.dual() * largest)   # [] Point-
+    flows = solids.origin + solids.context.include_from_algebra(fluxes)                 # [panels] Point-
     ellipsoids = [image_of_sphere(conductivity) for conductivity in conductivities]
     view = solids.view([framed for _, framed in ellipsoids] + [driving_tip, flows], 0.0, elevation, azimuth, margin, 1)
     fig, axes = figure([view.half] * conductivities.shape[0], 1.1)
@@ -140,7 +143,7 @@ def lattice(centre: Point, axial: Point, diagonal: Point, corners: Point) -> lis
 
 def stiffness_mesh(stiffness: Direction) -> tuple[Point, np.ndarray]:
     """The stiffness along every direction as a radius, sampled on a latitude-longitude grid, as a mesh."""
-    vertices = solids.origin + solids.mv.from_subalgebra(stiffness)           # [latitudes, longitudes] Point-
+    vertices = solids.origin + solids.context.include_from_algebra(stiffness)           # [latitudes, longitudes] Point-
     rows, columns = vertices.shape
     index = np.arange(rows * columns).reshape(rows, columns)
     corner = index[:-1, :-1].ravel(), index[:-1, 1:].ravel(), index[1:, 1:].ravel(), index[1:, :-1].ravel()
@@ -165,7 +168,7 @@ def draw_crystal(centre: Point, axial: Point, diagonal: Point, corners: Point, c
     show(axes[0], solids.draw(parts, lattice_view, background, inks=[], translucent=[], meshes=[]), lattice_view)
     show(axes[1], solids.draw([(ellipsoid[None, None], surface_colour)], conduction_view, background, inks=[],
                               translucent=[], meshes=[]), conduction_view)
-    show(axes[2], meshes.draw(points, faces, stiffness_colour, meshes.smooth(points, faces), stiffness_view, background,
+    show(axes[2], meshes.draw(points, faces, stiffness_colour, meshes.smooth(points, meshes.Mesh(len(points), faces)), stiffness_view, background,
                               face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss),
          stiffness_view)
     return fig
@@ -174,7 +177,7 @@ def draw_crystal(centre: Point, axial: Point, diagonal: Point, corners: Point, c
 @cache
 def sphere_shader(rotary: object) -> Shader:
     """The sphere's shader, for rotary powers of a type: a scalar of two directions."""
-    return Shader(supersampled() + sphere_source, ga, dict(Rotary=rotary, Rotor=ga.gatype.rotor(), Field=Field, Direction=Direction), {})
+    return Shader(supersampled() + sphere_source, ga, dict(Rotary=rotary, Rotor=ga.gatype.rotor(), Field=Field, Direction=Direction), dict(frame=stack((mv.x, mv.y, mv.z)).dual()))
 
 
 def draw_optical_activity(rotary: Gyration) -> plt.Figure:

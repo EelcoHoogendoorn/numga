@@ -9,12 +9,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import hsv_to_rgb, to_rgb
 
-from numga import stack
+from numga import concatenate, stack
 from examples.util.animation import capture
 from examples.relativity.twistors import core
 from examples.util.wgsl import fitted, image_figure, labels, show, solids, strokes
 
-sm = solids.mv
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
 AXIS_COLOUR = np.array([0.6, 0.62, 0.66])
 BACKGROUND = np.ones(3)
@@ -35,23 +34,12 @@ AXIS_REACH, LABEL_DISTANCE = 1.12, 1.24
 
 
 # --- plumbing -----------------------------------------------------------------------
-def gpu_points(events: core.Event) -> solids.Point:
-    """The GPU library's points at the places of events in space: their x, y and z, read by pairing with the slices
-    x, y and z, are the one hand-off from the conformal algebra of spacetime to the renderer's space."""
-    mv = events.context.multivector
-    return sm.point((stack((mv.x, mv.y, mv.z)) & events[..., None]).to_array())
-
-
-def spacetime(events: core.Event) -> np.ndarray:
-    """The x, z and t components of events: their pairings with the slices x, z and t."""
-    mv = events.context.multivector
-    return (stack((mv.x, mv.z, mv.t)) & events[..., None]).to_array()
-
-
 def diagram_points(events: core.Event) -> solids.Point:
-    """The GPU library's points at the places of events in the spacetime diagram, x, z and t drawn along the scene's
-    x, y and z: the diagram's hand-off from spacetime to the renderer's space."""
-    return sm.point(spacetime(events))
+    """Draw x, z and time along the scene's x, y and z: an explicit diagram, with Euclidean picture distances."""
+    mv = events.context.multivector
+    readings = stack((mv.x, mv.z, mv.t)) & events[..., None]
+    return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
+
 
 
 def colours(count: int) -> np.ndarray:
@@ -62,12 +50,19 @@ def colours(count: int) -> np.ndarray:
 
 def space_view(pixels: int, *curves: core.Event) -> solids.View:
     """A view framing every spatial curve, `pixels` across."""
-    return solids.view([gpu_points(batch) for batch in curves], 0.0, ELEVATION, AZIMUTH, MARGIN, pixels)
+    mv = curves[0].context.multivector
+    Event = curves[0].algebra.gatype.antivector().derive.containing("u v")     # Antivector-
+    space_slice = mv.t ^ (Event & -mv.t.dual())
+    points = [solids.origin + solids.context.include_from_algebra(space_slice(batch)) for batch in curves]
+    return solids.view(points, 0.0, ELEVATION, AZIMUTH, MARGIN, pixels)
 
 
 def draw_curves(curves: core.Event, width: float, view: solids.View) -> np.ndarray:
     """Each spatial curve as a stroke of a width in pixels, in its own colour."""
-    points = gpu_points(curves)
+    mv = curves.context.multivector
+    Event = curves.algebra.gatype.antivector().derive.containing("u v")        # Antivector-
+    space_slice = mv.t ^ (Event & -mv.t.dual())
+    points = solids.origin + solids.context.include_from_algebra(space_slice(curves))
     points = points.reshape((-1, points.shape[-1]))                           # [curves, samples] Point-
     lines = strokes.polylines(list(zip(points, colours(len(points)))), width, view)
     return solids.draw([], view, BACKGROUND, inks=[], translucent=[], meshes=[(lines, 1.0)])
@@ -78,7 +73,9 @@ def draw_incidence(events: core.Event, rays: core.Event) -> plt.Figure:
     spacetime diagram, x, z and t drawn along the scene's x, y and z, its axes arrows named at their tips."""
     positions, lines = diagram_points(events), diagram_points(rays)           # [cases, events] Point-, [cases, ray_samples] Point-
     # The axes reach a little past the farthest coordinate drawn, and their names a little past their tips.
-    extent = AXIS_REACH * max(np.abs(spacetime(events)).max(), np.abs(spacetime(rays)).max())
+    framed = concatenate((positions.reshape(-1), lines.reshape(-1)))
+    widths = (solids.axes & framed[..., None]).abs().reshape(-1)
+    extent = AXIS_REACH * widths.max()
     names = solids.origin + solids.axes.dual() * (LABEL_DISTANCE / AXIS_REACH * extent)   # [3] Point-
     figure = plt.figure(figsize=(5, 2.5), facecolor="white")
     panels = [figure.add_axes((column / len(positions), 0.0, 1 / len(positions), 1.0))

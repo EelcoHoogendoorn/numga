@@ -40,7 +40,7 @@ tangent_span = 0.35
 def chart_points(states: Extensor) -> art.Point:
     """States on the chart of temperature up against volume across, read by pairing `[...]`."""
     mv = states.context.multivector
-    return art.chart_points((mv.v & states).to_array(), (mv.t & states).to_array())
+    return art.chart_points(art.context.include_from_algebra(mv.v & states), art.context.include_from_algebra(mv.t & states))
 
 
 def cost_quadrics(metric_of: Function, states: Extensor) -> art.Quadric:
@@ -50,16 +50,14 @@ def cost_quadrics(metric_of: Function, states: Extensor) -> art.Quadric:
     the metric leaves the fluid's algebra for the chart's."""
     mv, Point = states.context.multivector, art.Point
     form = metric_of(states)                                                    # [...] Gradient+ <- State-
-    entry = lambda row, column: np.asarray((form(row) & column).to_array())     # [...]
-    volume_step, temperature_step = mv.v.dual(), mv.t.dual()                    # [] State-, State-
+    steps = stack((mv.v.dual(), mv.t.dual()))                                 # [quantities] State-
+    entries = art.context.include_from_algebra(form[..., None, None](steps[:, None]) & steps[None, :])
     centres = chart_points(states)                                              # [...] Point-
     across = art.mv.x - art.mv.w * (art.mv.x & centres)                         # [...] Plane+
     up = art.mv.y - art.mv.w * (art.mv.y & centres)                             # [...] Plane+
-    return (across * entry(volume_step, volume_step) * (across & Point)
-            + across * entry(volume_step, temperature_step) * (up & Point)
-            + up * entry(temperature_step, volume_step) * (across & Point)
-            + up * entry(temperature_step, temperature_step) * (up & Point)
-            - art.mv.w * cost_level * (art.mv.w & Point))
+    readings = stack((across, up), axis=-1)                                   # [..., quantities] Plane+
+    cost = (readings[..., :, None] * entries * (readings[..., None, :] & Point)).sum(axis=(-2, -1))
+    return cost - art.mv.w * cost_level * (art.mv.w & Point)
 
 
 class Charts:
@@ -101,7 +99,7 @@ class Charts:
 
     def isotherm_points(self, states: Extensor) -> art.Point:
         """States on the chart of pressure up against volume across `[...]`."""
-        return art.chart_points((self.mv.v & states).to_array(), self.pressure_of(states).to_array())
+        return art.chart_points(art.context.include_from_algebra(self.mv.v & states), art.context.include_from_algebra(self.pressure_of(states)))
 
     def pictures(self, state: Extensor, path: list[art.Point]) -> list[np.ndarray]:
         mv = self.mv
@@ -114,8 +112,8 @@ class Charts:
         # The state's own isotherm, and its tangent there: a unit of volume, and the change of the pressure along it.
         own = self.isotherm_points(mv.v.dual() * self.volumes + mv.t.dual() * (mv.t & state))   # [samples] Point-
         on_isotherm = self.isotherm_points(state)                                        # [] Point-
-        tangent = art.chart_directions(1.0, derivative(self.pressure_of)(state)(mv.v.dual()).to_array())   # [] Point-
-        reach = (mv.v & state).to_array() + tangent_span * np.array([-1, 1])
+        tangent = art.chart_directions(1.0, art.context.include_from_algebra(derivative(self.pressure_of)(state)(mv.v.dual())))   # [] Point-
+        reach = art.context.include_from_algebra(mv.v & state) + tangent_span * np.array([-1, 1])
         isotherm = (self.isotherm_layers
                     + art.polylines(self.isotherm, [own], art.bold, art.ink, 1.0, art.SOLID)
                     + art.polylines(self.isotherm, [art.tangent_lines(on_isotherm, tangent, reach)], art.medium,

@@ -26,25 +26,9 @@ margin, n_pixels = 0.06, 300
 # the spacing and radius of the dots along a control polygon, and the radius of a control point; all in pixels.
 line_width, curve_width, sphere_curve_width = 1.8, 2.2, 3.5
 dot_spacing, dot_radius, point_radius = 4.0, 1.0, 2.2
-# The planes of the drawing's frame, which read the x, y and weight of a point of the plane.
-frame = stack((core.mv.x, core.mv.y, core.mv.z))                              # [3] Plane+
 
 
 # --- plumbing -------------------------------------------------------------------------
-def gpu_points(points: core.Point) -> solids.Point:
-    """The GPU library's own points at the places of the example's rays: their pairings with the planes x, y and z are
-    the one hand-off from this algebra to the renderer's, the weight read along z."""
-    return sm.point((frame & points[..., None]).to_array())
-
-
-def gpu_cone(shape: core.Conic) -> solids.Quadric:
-    """The renderer's quadric cone about its origin with the same pairings as a conic's form on the rays of the frame:
-    the hand-off of a form, read on those rays and rebuilt on the renderer's frame."""
-    rays = frame.dual()                                                       # [3] Point-
-    form = (shape(rays[:, None]) & rays[None, :]).to_array()                  # [3, 3]
-    return (solids.axes[:, None] * (solids.axes & solids.Point)[None, :] * form).sum(axis=(-1, -2))
-
-
 def dotted(polygon: core.Point, spacing: float) -> core.Point:
     """The dots along an open polyline are spaced evenly along each side, as many as fit at the spacing, from its
     start up to the next side's; the last corner closes it."""
@@ -69,24 +53,29 @@ def draw_rays(controls: core.Point, curve: core.Point, complement: core.Point, s
     # Each weighted control point on its ray from the origin, the ray reaching out to the sphere where the point lies inside it.
     corners = controls.reshape(-1)                                            # [corners] Point-
     reaches = where(corners.norm() < 1, corners.normalized(), corners)        # [corners] Point-
-    rays = solids.rods(solids.origin, gpu_points(reaches), line_width / 2 * view.pixel)   # [corners, 3] Quadric
-    arc_strokes = strokes.polylines([(gpu_points(arc), colour) for arc, colour in zip(arcs, colours)], line_width, view)
-    # Each point of a curve where its ray meets the unit sphere.
-    on_sphere = strokes.polylines([(gpu_points(arc.normalized()), colour) for arc, colour in zip(arcs, colours)],
-                                  sphere_curve_width, view)
+    rays = solids.rods(solids.origin, solids.origin + solids.context.include_from_algebra(reaches),
+                       line_width / 2 * view.pixel)                            # [corners, 3] Quadric
+    # The curves in the renderer's space, each point a ray's place, and where each ray meets the unit sphere.
+    places = [solids.origin + solids.context.include_from_algebra(arc) for arc in arcs]        # [samples] Point- each
+    on_sphere_places = [solids.origin + solids.context.include_from_algebra(arc.normalized()) for arc in arcs]   # [samples] Point- each
+    arc_strokes = strokes.polylines(list(zip(places, colours)), line_width, view)
+    on_sphere = strokes.polylines(list(zip(on_sphere_places, colours)), sphere_curve_width, view)
+    # The cone of the curve's rays about the origin reads each point of the renderer's space by its offset from the
+    # origin, its part along the degenerate blades.
+    cone = solids.context.include_from_algebra(shape)(solids.Point.restrict.degenerate())      # [] Plane+ <- Point-
     # The control polygons dotted, their corners and the origin as points.
     dots = concatenate([dotted(polygon, dot_spacing * view.pixel) for polygon in controls])   # [dots] Point-
     parts = [(rays, ray_colour),
-             (solids.ball(gpu_points(dots), dot_radius * view.pixel)[:, None], control_colour),
-             (solids.ball(gpu_points(corners), point_radius * view.pixel)[:, None], control_colour),
+             (solids.ball(solids.origin + solids.context.include_from_algebra(dots), dot_radius * view.pixel)[:, None], control_colour),
+             (solids.ball(solids.origin + solids.context.include_from_algebra(corners), point_radius * view.pixel)[:, None], control_colour),
              (solids.ball(solids.origin, point_radius * view.pixel)[None, None], origin_colour)]
     sphere = [(solids.ball(solids.origin, 1.0)[None, None], sphere_colour, sphere_opacity)]
     # Inked on the sphere, the first translucent part after the opaque ones: the equator, where the plane of zero
     # weight cuts it, and the cone's two loops.
     inks = [solids.Ink(len(parts), solids.half_space(sm.z)[None], solids.everywhere[None], equator_colour, line_width, 1.0),
-            solids.Ink(len(parts), gpu_cone(shape)[None], solids.everywhere[None], loop_colour, line_width, 1.0)]
+            solids.Ink(len(parts), cone[None], solids.everywhere[None], loop_colour, line_width, 1.0)]
     # The rays from the origin to each curve: a fan of triangles, the origin and two neighbouring samples each.
-    vertices = concatenate([concatenate([solids.origin[None], gpu_points(arc)]) for arc in arcs])   # [vertices] Point-
+    vertices = concatenate([concatenate([solids.origin[None], arc]) for arc in places])   # [vertices] Point-
     faces = np.concatenate([fan(len(arcs[0]), 0), fan(len(arcs[1]), len(arcs[0]) + 1)])
     face_colours = np.concatenate([np.broadcast_to(colour, (len(arc) - 1, 3)) for arc, colour in zip(arcs, colours)])
     fans = meshes.samples(vertices, faces, face_colours[:, None], meshes.flat(vertices, faces), view,
@@ -99,10 +88,12 @@ def views(points: list[core.Point], azimuths: np.ndarray) -> list[solids.View]:
     """The camera views orbit the origin across the given azimuths at a shared framing."""
     turns = np.radians(azimuths + 90)
     cameras = [solids.aim(solids.origin, np.radians(elevation), turn) for turn in turns]
-    framed_points = concatenate([gpu_points(batch).reshape(-1) for batch in points])   # [points] Point-
-    places = np.concatenate([solids.View(camera, np.ones(2), n_pixels).across(framed_points) for camera in cameras])
-    half = np.maximum(np.abs(places).max(axis=0), 1.0)
-    return [solids.View(camera, half + margin * half.max(), n_pixels) for camera in cameras]
+    framed_points = solids.origin + solids.context.include_from_algebra(concatenate([batch.reshape(-1) for batch in points]))   # [points] Point-
+    screens = stack(cameras)[None, :] >> solids.axes[:2, None]                # [2, views] Plane+
+    readings = (screens[..., None] & framed_points).abs().reshape(2, -1)
+    half = readings.max(axis=-1).clip(1, np.inf)
+    half = half + margin * half.max()
+    return [solids.View(camera, half.to_array(), n_pixels) for camera in cameras]
 
 
 def animate_rays(controls: core.Point, curves: core.Point, complements: core.Point, shapes: core.Conic) -> Iterator[np.ndarray]:

@@ -101,6 +101,8 @@ class Extensor:
     argsort = ExtensionMethod("argsort", takes="a scalar")
     argmax = ExtensionMethod("argmax", takes="a scalar")
     argmin = ExtensionMethod("argmin", takes="a scalar")
+    min = ExtensionMethod("min", takes="a scalar")
+    max = ExtensionMethod("max", takes="a scalar")
     abs = ExtensionMethod("abs", takes="a scalar")
     less = ExtensionMethod("less", takes="two scalars")
     less_equal = ExtensionMethod("less_equal", takes="two scalars")

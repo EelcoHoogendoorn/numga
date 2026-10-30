@@ -20,6 +20,7 @@ import numpy as np
 
 from numga import Extensor, concatenate, stack
 from examples.thermodynamics import rendering as art
+from examples.util.wgsl import solids
 
 Reading = Callable[[Extensor], Extensor]
 
@@ -107,7 +108,7 @@ class Charts:
                             temperature_names),
                 art.floated(self.volume_pressure, art.picture(self.volume_pressure, layers[1], []), pressure_names)]
 
-    def heating_curves(self, heats: np.ndarray, temperatures: np.ndarray) -> np.ndarray:
+    def heating_curves(self, heats: np.ndarray, temperatures: art.Scalar) -> np.ndarray:
         """Each cylinder's temperature against the heat it has taken in so far `[steps, cylinders]`."""
         diagram = self.heat_temperature
         curves = art.chart_points(heats[:, None], temperatures)               # [steps, cylinders] Point-
@@ -131,13 +132,13 @@ def heating(temperature_of: Reading, pressure_of: Reading,
     for states, directions, heat in chain([first], stages):
         path.append(charts.points(states))
         heats.append(heat)
-        temperatures.append(np.asarray(temperature_of(states).to_array()))
+        temperatures.append(art.context.include_from_algebra(temperature_of(states)))
         toward = charts.points(states + directions * arrow_step)
-        heights = np.asarray((blades.v & states).to_array()) * height_per_volume
-        pictures = [art.gas_cylinder(heights[case], temperatures[-1][case] / temperature_range[1], case == 0,
-                                     volume_range[1] * height_per_volume, cylinder_pixels) for case in range(2)]
+        heights = solids.context.include_from_algebra(blades.v & states) * height_per_volume
+        pictures = [art.gas_cylinder(heights[case], float((temperatures[-1][case] / temperature_range[1]).to_array()), case == 0,
+                                     solids.mv.scalar([volume_range[1] * height_per_volume]), cylinder_pixels) for case in range(2)]
         yield art.beside(pictures + charts.pictures(path, toward, True)
-                         + [charts.heating_curves(np.array(heats), np.array(temperatures))])
+                         + [charts.heating_curves(np.array(heats), stack(temperatures))])
 
 
 def draw_charts(temperature_of: Reading, pressure_of: Reading, states: Extensor):

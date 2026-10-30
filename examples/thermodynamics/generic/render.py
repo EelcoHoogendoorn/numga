@@ -42,10 +42,10 @@ decades = 2.0
 def phase_points(states: Extensor) -> art.Point:
     """States on the phase portrait: their position and momentum, read by pairing with `mv.q` and `mv.p`."""
     mv = states.context.multivector
-    return art.chart_points((mv.q & states).to_array(), (mv.p & states).to_array())
+    return art.chart_points(art.context.include_from_algebra(mv.q & states), art.context.include_from_algebra(mv.p & states))
 
 
-def oscillator(position: float, warmth: float) -> np.ndarray:
+def oscillator(position: solids.Scalar, warmth: float) -> np.ndarray:
     """The mass on its floor, held to the wall by a spring and a damper, the damper coloured by its temperature."""
     mv = solids.mv
     # The mass, and the hook on its near side where the rod and the spring hold it, carried along by its position.
@@ -94,19 +94,19 @@ class Charts:
         # The entropy at fixed energy against the mechanical energy, along the positions at rest.
         rest = mv.q.dual() * np.linspace(0, 2.0, 200)
         kinetic, spring, _ = energies_of(rest)
-        self.curve = art.chart_points((kinetic + spring).to_array(), surface_entropy_of(rest).to_array())
+        self.curve = art.chart_points(art.context.include_from_algebra(kinetic + spring), art.context.include_from_algebra(surface_entropy_of(rest)))
 
-    def pictures(self, path: list[art.Point], rates: list[art.Point], times: np.ndarray, entropies: np.ndarray,
-                 mechanical: np.ndarray) -> list[np.ndarray]:
+    def pictures(self, path: list[art.Point], rates: list[art.Point], times: np.ndarray, entropies: art.Scalar,
+                 mechanical: art.Scalar) -> list[np.ndarray]:
         """The spiral so far over the entropy's level lines, with the rates' arrows at its end, from the state toward
         where each rate alone would carry it a look ahead on; the entropy against time; and the entropy against the
         mechanical energy left."""
         now = path[-1]                                                                   # [] Point-
         arrows = []
         for toward, colour in zip(rates, [reversible_colour, irreversible_colour]):
-            arrow_length = float((self.phase.placement(toward) - self.phase.placement(now)).dual().norm().to_array())
+            arrow_length = (self.phase.placement(toward) - self.phase.placement(now)).dual().norm()
             if arrow_length > 3:
-                arrows += art.arrows(self.phase, now[None], toward[None], min(arrow_length, arrow_most), art.medium,
+                arrows += art.arrows(self.phase, now[None], toward[None], arrow_length.clip(0, arrow_most), art.medium,
                                      colour)
         phase = (self.levels + art.polylines(self.phase, [stack(path)], art.bold, art.orange, 1.0, art.SOLID)
                  + arrows + art.dots(self.phase, now[None], art.orange))
@@ -141,19 +141,19 @@ def damping(energies_of: Callable, surface_entropy_of: Callable, rates_of: Calla
     mv = first.context.multivector
     charts = Charts(energies_of, surface_entropy_of, mv)
     path, entropies, mechanical = [], [], []
-    start = np.array([float(energy.to_array()) for energy in energies_of(first)])
+    start = stack(energies_of(first))
     for state in chain([first], states):
-        kinetic, spring, internal = (float(energy.to_array()) for energy in energies_of(state))
+        kinetic, spring, internal = energies_of(state)
         path.append(phase_points(state))
-        entropies.append(float((mv.s & state).to_array()))
-        mechanical.append(kinetic + spring)
+        entropies.append(art.context.include_from_algebra(mv.s & state))
+        mechanical.append(art.context.include_from_algebra(kinetic + spring))
         rates = [phase_points(state + rate * look_ahead) for rate in rates_of(state)]
         # The share of its warming the damper has still to do, half as it is and half on its logarithm.
-        remaining = max(start.sum() - internal, 1e-300) / (start.sum() - start[2])
+        remaining = float(((start.sum() - internal).clip(1e-300, np.inf) / (start.sum() - start[2])).to_array())
         warmth = 1.0 - 0.5 * remaining - 0.5 * np.clip(np.log10(remaining) / decades + 1, 0.0, 1.0)
         times = np.arange(len(path)) * frame_time
-        yield art.beside([oscillator(float((mv.q & state).to_array()), warmth)]
-                         + charts.pictures(path, rates, times, np.array(entropies), np.array(mechanical)))
+        yield art.beside([oscillator(solids.context.include_from_algebra(mv.q & state), warmth)]
+                         + charts.pictures(path, rates, times, stack(entropies), stack(mechanical)))
 
 
 def draw(energies_of: Callable, surface_entropy_of: Callable, rates_of: Callable, state: Extensor):

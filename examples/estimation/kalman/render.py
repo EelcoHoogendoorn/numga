@@ -8,10 +8,10 @@ import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import stack
+from numga import concatenate, stack
 from examples.util.animation import capture
 from examples.util.wgsl import pinned, planar, room
-from examples.util.wgsl.planar import Curves, Regions, filling
+from examples.util.wgsl.planar import Curves, Regions
 from examples.estimation.kalman.core import Motor, Point, mv
 
 TRUE_COLOUR, DEAD_COLOUR, FILTER_COLOUR, READING_COLOUR = "#1f2329", "#d0482b", "#2c6fb4", "#3a9a5b"
@@ -36,21 +36,24 @@ def animate_tracking(truth: Motor, dead: Motor, estimates: Motor, positions: Poi
     origin = mv.w.dual()
     true_xy, dead_xy, est_xy, reading_xy = coordinates(truth >> origin), coordinates(dead >> origin), coordinates(positions), coordinates(readings >> origin)
     outline = mv.point(OUTLINE)
-    shapes = {
-        colour: coordinates(poses[..., None] >> outline)
-        for colour, poses in ((TRUE_COLOUR, truth), (DEAD_COLOUR, dead), (FILTER_COLOUR, estimates))
-    }
-    # A reading is new where it differs from the one before.
-    fresh = np.r_[False, np.any(np.diff(reading_xy, axis=0) != 0, axis=-1)]
-    everything = np.concatenate([true_xy, dead_xy, est_xy, reading_xy[fresh],
-                                 *[shape.reshape(-1, 2) for shape in shapes.values()]])
-    low, high = everything.min(axis=0), everything.max(axis=0)
-    low, high = low - MARGIN * (high - low).max(), high + MARGIN * (high - low).max()
-
-    fig = plt.figure(figsize=(WIDTH, WIDTH * (high[1] - low[1]) / (high[0] - low[0])), dpi=100)
+    outlines = {colour: poses[..., None] >> outline
+                for colour, poses in ((TRUE_COLOUR, truth), (DEAD_COLOUR, dead), (FILTER_COLOUR, estimates))}
+    shapes = {colour: coordinates(shape) for colour, shape in outlines.items()}
+    # A reading is new where its position differs from the one before.
+    reading_points = readings >> origin
+    fresh = np.r_[False, (reading_points[1:] - reading_points[:-1]).dual().norm() > 0]
+    everything = concatenate([truth >> origin, dead >> origin, positions, reading_points[fresh],
+                              *[shape.reshape(-1) for shape in outlines.values()]])
+    heights = stack((mv.x, mv.y))[:, None] & everything.normalized()
+    low = heights.min(axis=-1)
+    high = heights.max(axis=-1)
+    spans = high - low
+    spans = spans + 2 * MARGIN * spans.max()
+    aspect = float((spans[1] / spans[0]).to_array())
+    fig = plt.figure(figsize=(WIDTH, WIDTH * aspect), dpi=100)
     ax = fig.add_axes([0, 0, 1, 1])
     ax.set_axis_off()
-    view = filling(np.array([low[0], high[0]]), np.array([low[1], high[1]]), room(ax))
+    view = planar.view([everything], MARGIN, room(ax))
     image = pinned(ax, np.full(view.shape + (3,), 255, dtype=np.uint8), view.extent)
     # Lay the figure out once; only the trails, the readings, the quadric image, and the vehicles move between frames.
     true_trail, = ax.plot([], [], color=TRUE_COLOUR, linewidth=1.3)

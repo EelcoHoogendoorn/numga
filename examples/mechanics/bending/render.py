@@ -324,9 +324,10 @@ def kern(polars: core.Strain, centre: core.Point) -> np.ndarray:
     centroid's side."""
     corners = core.point(SECTION_LIMIT * SQUARE)                             # [corners] Point-
     # Each polar's stretch of the centroid's fibre gives the side that is kept.
-    keeping = np.sign((polars & (core.beam_direction & centre)).to_array())   # [nodes]
+    stretch = polars & (core.beam_direction & centre)
+    keeping = np.asarray(stretch > 0, dtype=int) - np.asarray(stretch < 0, dtype=int)
     for polar, sense in zip(polars, keeping):
-        sides = sense * (polar & (core.beam_direction & corners)).to_array()   # [corners]
+        sides = sense * (polar & (core.beam_direction & corners))   # [corners]
         following = np.roll(np.arange(len(sides)), -1)
         kept = []
         for corner, here, there in zip(range(len(sides)), sides, sides[following]):

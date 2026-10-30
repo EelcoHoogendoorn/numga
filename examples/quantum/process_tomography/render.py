@@ -11,14 +11,13 @@ import numpy as np
 from matplotlib.colors import LogNorm, to_rgb
 from matplotlib.lines import Line2D
 
-from numga import Extensor, concatenate, stack
+from numga import Extensor, concatenate
 from examples.util.animation import capture
 from examples.quantum.process_tomography import core
 from examples.util import charts
 from examples.util.wgsl import fitted, labels, meshes, show, solids, strokes
 from examples.util.wgsl.scene import Scene
 
-sm = solids.mv
 CHANNEL_COLOURS = ("#3275a8", "#d16a30", "#7b62a3")
 PROBE_COLOURS = ("#3275a8", "#d16a30", "#438e65", "#7b62a3")
 PROBE_NAMES = ("A", "B", "C", "D")
@@ -58,11 +57,10 @@ def ball_positions(points: core.Point) -> solids.Point:
 
 
 def bloch_positions(states: Extensor) -> solids.Point:
-    """The GPU library's own points at the tips of the Bloch vectors of states of the Pauli algebra, a half plus half
-    the Bloch vector: their coordinates, twice the states' scalar products with x, y and z, are the one hand-off from
-    that algebra to the renderer's."""
-    mv = states.context.multivector
-    return sm.point(2 * stack((mv.x, mv.y, mv.z)).scalar_product(states[..., None]).to_array())
+    """The points at the tips of the Bloch vectors of states of the Pauli algebra, a half plus half the Bloch vector:
+    the dual of twice each state's vector part is the offset of that tip in the algebra of space, carried into the
+    renderer's and placed from its origin."""
+    return solids.origin + solids.context.include_from_algebra((2 * states.select.vector()).dual())
 
 
 # How states are placed in the Bloch ball: `ball_positions` or `bloch_positions`.
@@ -202,7 +200,7 @@ def channel_picture(scene: Scene, faces: np.ndarray, image: solids.Point, points
     colours = np.array([to_rgb(colour) for colour in PROBE_COLOURS])
     # The reference grid and the channel's image use the same sampled directions.
     places = image[:, :-1].reshape(-1)                                       # [(latitudes + 1) * longitudes] Point-
-    shell = meshes.samples(places, faces, np.array(to_rgb(colour)), meshes.smooth(places, faces), view,
+    shell = meshes.samples(places, faces, np.array(to_rgb(colour)), meshes.smooth(places, meshes.Mesh(len(places), faces)), view,
                            face_values=np.zeros(4), colour=meshes.plain, gloss=0.1)
     lines = grid(image, np.array(to_rgb(colour)), IMAGE_WIDTH, view)
     after = solids.ball(points, AFTER_RADIUS)[:, None]

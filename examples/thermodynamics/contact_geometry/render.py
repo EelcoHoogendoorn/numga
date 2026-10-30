@@ -27,13 +27,13 @@ def chart_points(points: Extensor) -> art.Point:
     """Points on a chart of their entropy across and their energy up, read by pairing `[...]`; after the Legendre
     change, of the temperature and the Helmholtz energy."""
     mv = points.context.multivector
-    return art.chart_points((mv.s & points).to_array(), (mv.u & points).to_array())
+    return art.chart_points(art.context.include_from_algebra(mv.s & points), art.context.include_from_algebra(mv.u & points))
 
 
 def chart_directions(tangents: Extensor) -> art.Point:
     """The directions on the chart of changes `[...]`: their changes of entropy and of energy, read by pairing."""
     mv = tangents.context.multivector
-    return art.chart_directions((mv.s & tangents).to_array(), (mv.u & tangents).to_array())
+    return art.chart_directions(art.context.include_from_algebra(mv.s & tangents), art.context.include_from_algebra(mv.u & tangents))
 
 
 class Chart:
