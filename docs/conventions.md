@@ -85,18 +85,6 @@ T(a ^ b) == T(a) & T(b)    # vectors to antivectors
 
 **Spectra of forms.** For symmetric forms `F` and `G`, `F.eigh(G)` solves `F(v) == eigenvalue * G(v)`; without a partner, `G` is the dot form of `F`'s space.
 
-## Between algebras
-
-**Values of another algebra, by generator names.** A context takes a value of another algebra into its own with `context.include_from_algebra(value)`, where every generator the value's type uses is among the context's, by name and with the same square, as the algebra of space `x+y+z+` lies in its projective algebra `w0x+y+z+`. It takes the value by kind, and refuses a value whose type needs a generator the context's algebra lacks, rather than dropping that part; a part to be dropped is projected away first, explicitly, as an observer's slice of spacetime is `space_slice = mv.t ^ (Point & time)`. With `context` and `mv = context.multivector` on the larger algebra, `small` the other algebra's value constructors and `x` any blade of it, it is the linear map defined by
-
-```python
-context.include_from_algebra(small.x) == mv.x                  # extrinsic: the same blade
-context.include_from_algebra(small.x.dual()) == mv.x.dual()    # intrinsic: the same complement
-context.include_from_algebra(f)(context.include_from_algebra(a)) == context.include_from_algebra(f(a))    # a map, each axis by its kind
-```
-
-Products of extrinsic elements carry over, as do joins of intrinsic ones and an extrinsic element's products and pairings with an element on its right, `plane & point` and `rotor >> point`. A point of space, an offset from its origin, is the projective direction of that offset, and `origin + context.include_from_algebra(offset)` the point at it, with `origin = mv.w.dual()`.
-
 ## Norms
 
 **Norm.** `x.norm()` and `x.normalized()` are defined by
