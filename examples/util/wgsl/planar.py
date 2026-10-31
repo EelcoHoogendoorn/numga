@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from enum import IntEnum
 from functools import cache
+from itertools import groupby
 from typing import NamedTuple
 
 import numpy as np
@@ -37,7 +38,9 @@ import numpy as np
 from numga import Extensor, NumpyContext, concatenate, stack
 from numga.algebras import PGA2D as ga
 from numga.gatype import GAType
-from examples.util.wgsl import Shader
+from examples.util.wgsl import Shader, simplices
+from examples.util.wgsl.camera import Camera
+from examples.util.wgsl.simplices import Cap, Marker
 
 context = NumpyContext(ga)
 mv = context.multivector
@@ -57,21 +60,6 @@ flip = mv.antipseudoscalar([1.0])                                            # [
 SOLID = (1.0, 0.0)
 
 
-class Cap(IntEnum):
-    """How a stroke's dashes end: square at their ends, square half the stroke's width past them, or round."""
-    BUTT = 0
-    PROJECTING = 1
-    ROUND = 2
-
-
-class Marker(IntEnum):
-    """The outline of a mark about its point: a circle, a square along the window's rows and columns, or that square
-    turned an eighth of a turn."""
-    DISC = 0
-    SQUARE = 1
-    DIAMOND = 2
-
-
 class Kind(IntEnum):
     """What a primitive is, as the shader reads it."""
     QUADRIC = 0
@@ -79,8 +67,6 @@ class Kind(IntEnum):
     CURVE = 2
     FLAT = 3
     POLYGON = 4
-    STROKE = 5
-    MARK = 6
 
 
 source = """
@@ -195,98 +181,6 @@ fn spanned(a: Point, b: Point, c: Point, point: Point) -> f32 {
     return overlap(0.0, length, square & point);
 }
 
-// The share of a pixel a dash from `low` to `high` along a segment covers, the pixel's centre `along` it and `across`
-// it: a band of the stroke's width, cut square at the dash's ends, and at an end the dash ends at, rather than carrying
-// on into the segment next to it, past it by its cap. Where it carries on, the band reaches half a pixel past the end,
-// so that the pixel on the joint, half on each segment, is covered whole by either.
-fn dash_share(primitive: Primitive, low: f32, high: f32, low_capped: bool, high_capped: bool, along: f32,
-              across: f32) -> f32 {
-    let half = primitive.width / 2;
-    if (low > high) {
-        return 0.0;
-    }
-    let reach = select(0.0, half, primitive.shape == cap_projecting);
-    let band = overlap(-half, half, across)
-        * overlap(low - select(pixel / 2, reach, low_capped), high + select(pixel / 2, reach, high_capped), along);
-    let round = primitive.shape == cap_round;
-    let from_low = sqrt((along - low) * (along - low) + across * across);
-    let from_high = sqrt((along - high) * (along - high) + across * across);
-    return max(band, max(select(0.0, overlap(-half, half, from_low), round && low_capped),
-                         select(0.0, overlap(-half, half, from_high), round && high_capped)));
-}
-
-// The round join at a segment's start, where the stroke carries on from the segment before: within half its width of
-// the corner, behind the segment's start and past the end of the one before, on the outer side of the turn that the
-// two bands leave open.
-fn join_share(primitive: Primitive, before: Point, corner: Point, square: Plane, point: Point) -> f32 {
-    let line = (before & corner).normalized();
-    let past = -(line | corner) & point;
-    let behind = -(square & point);
-    let distance = (corner & point).norm();
-    return overlap(-primitive.width / 2, primitive.width / 2, distance) * inner(past) * inner(behind);
-}
-
-fn stroke_share(primitive: Primitive, point: Point) -> f32 {
-    var share = 0.0;
-    let period = primitive.dash + primitive.gap;
-    for (var index = primitive.first; index + 1 < primitive.end; index++) {
-        let start = points[index];
-        let end = points[index + 1];
-        // A segment of no length draws nothing, and has no line to draw it by; its neighbours join across it.
-        if ((start & end).norm() == 0) {
-            continue;
-        }
-        // Across the segment: its line at unit weight paired with the point; along it: the plane square to it through
-        // its start, pointing to its end. Along the polyline, from its start.
-        let line = (start & end).normalized();
-        let square = -(line | start);
-        let across = line & point;
-        let low = phases[index];
-        let high = phases[index + 1];
-        let along = low + (square & point);
-        // A segment after the first joins the one before, unless that one has no length and no direction to join.
-        let after_first = index > primitive.first && (points[index - 1] & start).norm() > 0;
-        let before_last = index + 2 < primitive.end;
-        // A segment's start on a dash, after the first segment, joins it to the one before.
-        let into = low - floor(low / period) * period;
-        if (after_first && (primitive.gap == 0 || (into > 0 && into < primitive.dash))) {
-            share = max(share, join_share(primitive, points[index - 1], start, square, point));
-        }
-        if (primitive.gap == 0) {
-            share = max(share, dash_share(primitive, low, high, !after_first, !before_last, along, across));
-            continue;
-        }
-        // The dash the pixel's centre lies along, and those either side of it, within the segment.
-        let dash = floor(along / period);
-        for (var step = -1.0; step <= 1.0; step += 1.0) {
-            let first = (dash + step) * period;
-            let last = first + primitive.dash;
-            share = max(share, dash_share(primitive, max(first, low), min(last, high), !after_first || first >= low,
-                                          !before_last || last <= high, along, across));
-        }
-    }
-    return share;
-}
-
-// About a disc's point by its distance, the norm of their join; about a square's or a diamond's by the pairings of the
-// planes x = 0 and y = 0 with the two, their offsets across the window's columns and rows, turned an eighth of a turn
-// for a diamond.
-fn mark_share(primitive: Primitive, point: Point) -> f32 {
-    let centre = points[primitive.first];
-    let low = primitive.inner;
-    let high = primitive.outer;
-    if (primitive.shape == marker_disc) {
-        let distance = (centre & point).norm();
-        return overlap(-high, high, distance) - overlap(-low, low, distance);
-    }
-    let x = (mv.x & point) - (mv.x & centre);
-    let y = (mv.y & point) - (mv.y & centre);
-    let turned = primitive.shape == marker_diamond;
-    let u = select(x, (x + y) * sqrt(0.5), turned);
-    let v = select(y, (x - y) * sqrt(0.5), turned);
-    return overlap(-high, high, u) * overlap(-high, high, v) - overlap(-low, low, u) * overlap(-low, low, v);
-}
-
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     if (id.x >= pixels.x || id.y >= pixels.y) {
@@ -306,12 +200,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             share = curve_share(primitive, point);
         } else if (primitive.kind == kind_flat) {
             share = flat_share(primitive, point);
-        } else if (primitive.kind == kind_polygon) {
-            share = polygon_share(primitive, point);
-        } else if (primitive.kind == kind_stroke) {
-            share = stroke_share(primitive, point);
         } else {
-            share = mark_share(primitive, point);
+            share = polygon_share(primitive, point);
         }
         colour = mix(colour, primitive.colour, primitive.opacity * share);
     }
@@ -322,9 +212,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
 @cache
 def shader() -> Shader:
-    # Each kind, cap and marker as a constant of the shader, `kind_quadric`, `cap_round`.
-    constants = {f"{kind.__name__.lower()}_{member.name.lower()}": member.value
-                 for kind in (Kind, Cap, Marker) for member in kind}
+    # Each kind as a constant of the shader, `kind_quadric`.
+    constants = {f"kind_{member.name.lower()}": member.value for member in Kind}
     return Shader(source, ga, dict(Point=Point, Plane=Plane, Quadric=Quadric), constants)
 
 
@@ -535,16 +424,12 @@ class Strokes(NamedTuple):
     dashes: tuple[float, float]
     cap: Cap
 
-    def primitives(self, parts: Parts, pixel: float) -> dict:
-        # Where each point lies along its polyline: the lengths of the segments before it.
+    def picture(self, camera: Camera) -> np.ndarray:
+        """The polylines drawn by the simplex rasteriser, each a chain of edges: colour and coverage."""
         size, n_points = self.points.shape
-        points = unit(self.points)
-        lengths = (points[:, 1:] - points[:, :-1]).dual().norm()              # [n, k - 1] Scalar+
-        phases = concatenate([mv.scalar(np.zeros((size, 1, 1))), lengths.cumsum(axis=1)], axis=1)   # [n, k] Scalar+
-        first = parts.add_points(points.reshape(size * n_points), phases.reshape(-1))
-        firsts = first + n_points * np.arange(size)
-        return fields(Kind.STROKE, firsts, self.colour, self.opacity, end=firsts + n_points, shape=int(self.cap),
-                      width=self.width * pixel, dash=self.dashes[0] * pixel, gap=self.dashes[1] * pixel)
+        colours = np.repeat(np.broadcast_to(self.colour, (size, 3)), n_points - 1, axis=0)
+        return simplices.strokes(unit(self.points).reshape(-1), simplices.Mesh.chains([n_points] * size), colours,
+                                 self.width, camera, dashes=self.dashes, cap=self.cap, opacity=self.opacity)
 
 
 class Marks(NamedTuple):
@@ -557,17 +442,38 @@ class Marks(NamedTuple):
     colour: np.ndarray
     opacity: float
 
-    def primitives(self, parts: Parts, pixel: float) -> dict:
-        size = self.points.shape[0]
-        first = parts.add_points(unit(self.points), mv.scalar(np.zeros((size, 1)))) + np.arange(size)
-        return fields(Kind.MARK, first, self.colour, self.opacity, shape=int(self.marker), inner=self.inner * pixel,
-                      outer=self.outer * pixel)
+    def picture(self, camera: Camera) -> np.ndarray:
+        """The marks drawn by the simplex rasteriser: colour and coverage."""
+        return simplices.markers(unit(self.points), self.colour, self.outer, camera, inner=self.inner,
+                                 marker=self.marker, opacity=self.opacity)
+
+
+def window_camera(window: Window) -> Camera:
+    """The window as a camera of the plane: read by the planes x and y, its middle and half its extent in them."""
+    rows, columns = window.shape
+    half = np.array([columns, rows]) * window.pixel / 2
+    middle = np.array([window.left, window.top]) + half * np.array([1, -1])
+    return Camera(mv.x, mv.y, 0 * mv.x, mv.w, 0.0, middle, half, columns)
 
 
 def draw(window: Window, layers: list, background: np.ndarray) -> np.ndarray:
     """The layers, `Quadrics`, `Regions`, `Curves`, `Envelopes`, `Flats`, `Polygons`, `Strokes` and `Marks`, composited
     in order over the background, a colour `[3]` or a picture of the window `[rows, columns, 3]`, each primitive of a
-    layer after the one before: the window's RGB bytes `[rows, columns, 3]`."""
+    layer after the one before: the window's RGB bytes `[rows, columns, 3]`. Strokes and marks are drawn by the simplex
+    rasteriser, the rest pixel by pixel here; each run of the rest is drawn over the picture so far."""
+    image = np.broadcast_to(np.asarray(background, dtype=float), window.shape + (3,))
+    for rasterised, run in groupby(layers, key=lambda layer: hasattr(layer, "picture")):
+        if rasterised:
+            for layer in run:
+                picture = layer.picture(window_camera(window))
+                image = image * (1 - picture[..., 3:]) + picture[..., :3] * picture[..., 3:]
+        else:
+            image = traced(window, list(run), image)
+    return np.round(np.clip(image, 0, 1) * 255).astype(np.uint8)
+
+
+def traced(window: Window, layers: list, background: np.ndarray) -> np.ndarray:
+    """The layers drawn pixel by pixel over a picture of the window `[rows, columns, 3]`: the new picture."""
     parts = Parts()
     found = [layer.primitives(parts, window.pixel) for layer in layers]
     # Every field of every primitive; those a kind does not read are zero.
@@ -582,4 +488,4 @@ def draw(window: Window, layers: list, background: np.ndarray) -> np.ndarray:
     image = shader()(window.shape, **arrays, phases=concatenate(parts.phases or [mv.scalar([[0]])]),
                      primitives=primitives, corner=window.corner, pixel=window.pixel,
                      background=np.broadcast_to(np.asarray(background, dtype=float), window.shape + (3,)))["image"]
-    return np.round(np.clip(image, 0, 1) * 255).astype(np.uint8)
+    return image
