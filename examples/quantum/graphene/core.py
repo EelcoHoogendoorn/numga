@@ -39,7 +39,7 @@ Scalar = ga.gatype.scalar()                                                     
 Wavevector = ga.gatype.vector()                                                 # Vector+
 # The field that turns a pseudospin, extrinsic, and a pseudospin, intrinsic.
 Field = ga.gatype.bivector()                                                    # Bivector+
-Pseudospin = ga.gatype.vector().derive.flipped_orientation                      # Vector-
+Pseudospin = ga.gatype.antibivector()                                           # Antibivector-
 Spinor = ga.gatype.even()                                                       # Even+
 Rotor = ga.gatype.rotor()                                                       # Rotor+
 # The energy of a hop between neighbouring atoms, in eV.

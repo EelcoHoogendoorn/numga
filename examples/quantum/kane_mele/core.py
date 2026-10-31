@@ -38,7 +38,7 @@ from numga.sparse import SparseExtensor
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                    # Scalar+
 # A spin, read out in its own space: intrinsic, like every angular momentum.
-Spin = ga.gatype.vector().derive.flipped_orientation                           # Vector-
+Spin = ga.gatype.antibivector()                                                # Antibivector-
 # The atoms' positions, and displacements between them, are antivectors with intrinsic orientation.
 Point = ga.gatype.antivector()                                                 # Antivector-
 Even = ga.gatype.even()                                                        # Even+

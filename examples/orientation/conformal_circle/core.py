@@ -17,7 +17,7 @@ mv = NumpyContext(ga).multivector
 Point = ga.gatype.antivector()                                                  # Antivector-
 Sphere = ga.gatype.vector()                                                     # Vector+
 Circle = ga.gatype.bivector()                                                   # Bivector+
-Path = Circle.derive.flipped_orientation                                        # Bivector-
+Path = ga.gatype.antitrivector()                                                # Antitrivector-
 
 
 # --- plumbing -------------------------------------------------------------------------

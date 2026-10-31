@@ -27,7 +27,7 @@ Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 Antivector = ga.gatype.antivector()
 # The hole's spin per unit mass: intrinsic, the patch of the plane it turns in, a plane through time.
-Spin = Bivector.derive.containing("t").derive.flipped_orientation
+Spin = ga.gatype.antibivector().derive.containing("t")
 Rotor = ga.gatype.rotor()
 # Directions on the camera's screen, along its own x and y: the antivectors that hold both t and z.
 Screen = Antivector.derive.containing("t z")

@@ -30,11 +30,11 @@ def test_barycentric_hats_and_edge_whitney_forms_on_single_triangle_and_diamond(
 
     # Edge 1-forms match Whitney's alternating formula and satisfy Kronecker duality along the edges.
     edge_forms = core.edge_whitney_forms(corners, points)
-    first, second = [1, 2, 0], [2, 0, 1]
+    first, second = core.complements(core.triangle, 0).T
     alternating_forms = hats[first] * gradients[second, None] - hats[second] * gradients[first, None]
     np.testing.assert_allclose((edge_forms - alternating_forms).kernel, 0.0, atol=1e-14)
 
-    sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]
+    sides = (core.triangle.boundary[2, 1] * (core.triangle.d[0] * corners.field())).batch()[:, 0]
     for fraction in (0.15, 0.5, 0.82):
         edge_points = corners[first] * (1 - fraction) + corners[second] * fraction
         readings = core.edge_whitney_forms(corners, edge_points) & sides[None, :]
@@ -86,7 +86,7 @@ def test_tetrahedral_whitney_0_1_2_forms_and_opposite_edge_helicity():
 
     # Edge 1-forms match Whitney's alternating formula, have constant curl, and read one along their own edge only.
     edge_forms, edge_curls = core.tetrahedral_edge_forms(mesh, vertices, points)
-    tails, heads = mesh.corners(3, 1).T
+    tails, heads = mesh.corners[3, 1]
     alternating_edge_forms = hats[tails] * gradients[heads, None] - hats[heads] * gradients[tails, None]
     alternating_curls = 2 * (gradients[tails] ^ gradients[heads])
     np.testing.assert_allclose((edge_forms - alternating_edge_forms).kernel, 0.0, atol=1e-13)
@@ -116,7 +116,7 @@ def test_tetrahedral_whitney_0_1_2_forms_and_opposite_edge_helicity():
     deformed_helicity = core.tetrahedral_helicity(mesh, scenarios.deformed_tetrahedron())
     assert tet_helicity.batch().gatype == core.SpaceScalar
     np.testing.assert_allclose((tet_helicity - deformed_helicity).kernel, 0.0, atol=1e-13)
-    edge_corners = mesh.corners(3, 1)
+    edge_corners = mesh.corners[3, 1].T
     edge_pairs = np.concatenate(np.broadcast_arrays(edge_corners[:, None], edge_corners[None, :]), axis=-1)
     disjoint = (edge_corners[:, None, :, None] != edge_corners[None, :, None, :]).all(axis=(-1, -2))
     linking = np.where(disjoint, core.simplex_parity(edge_pairs), 0) / 6
@@ -178,7 +178,8 @@ def test_cochain_complex_and_exact_midpoint_quadrature_including_obtuse_triangle
     # On the obtuse diamond, circumcentric DEC's shared-edge weight is negative while Whitney's 1-form mass is positive-definite.
     obtuse_mesh, obtuse_vertices = scenarios.obtuse_diamond()
     obtuse_ops = core.Operators(obtuse_mesh, obtuse_vertices)
-    next_sides, prev_sides = obtuse_ops.sides[[1, 2, 0]], obtuse_ops.sides[[2, 0, 1]]
+    tails, heads = obtuse_mesh.corners[2, 1]
+    next_sides, prev_sides = obtuse_ops.sides[tails], obtuse_ops.sides[heads]
     cotangents = -next_sides.dot(prev_sides) / (2 * obtuse_ops.areas)
     unit_amount = core.as_scalar(np.ones(len(obtuse_mesh.faces))).field().dual()
     cotangent_weights = (~obtuse_mesh.incidence[2, 1] * ((cotangents / 2) * unit_amount)).sum(axis=0)

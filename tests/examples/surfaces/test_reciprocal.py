@@ -29,7 +29,8 @@ def test_on_the_paraboloid_the_reciprocal_is_the_voronoi_diagram_and_the_stresse
     mesh, points, heights = scenarios.grid()
     inner = mesh.interior_edges
     edges = mesh.boundary[2, 1] * (mesh.d[0] * points)                         # [3] Point-[faces]
-    after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]                         # [3] Point-[faces], Point-[faces]
+    tails, heads = mesh.corners[2, 1]
+    after, before = edges[tails], edges[heads]                                 # [3] Point-[faces], Point-[faces]
     cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()   # [3] Scalar+[faces]
     weights = (~mesh.incidence[2, 1] * (cotangents / 2)).sum(axis=0)           # Scalar+[edges]
     assert np.abs(core.stresses(mesh, points, heights).to_array() - weights.to_array()[inner]).max() < 1e-10

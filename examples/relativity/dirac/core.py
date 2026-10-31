@@ -42,7 +42,7 @@ Frame = ga.gatype((Vector, Vector))                 # Vector+ <- Vector+
 # Currents and positions are directions in spacetime, antivectors.
 Antivector = ga.gatype.antivector()                 # Antivector-
 # A spin is the patch of the plane it turns in, intrinsic.
-Spin = Bivector.derive.flipped_orientation          # Bivector-
+Spin = ga.gatype.antibivector()                     # Antibivector-
 # Vectors in the observer's space, perpendicular to the time axis.
 Spatial = Vector.derive.within("x y z")             # Vector+
 # The plane-wave Dirac equation.

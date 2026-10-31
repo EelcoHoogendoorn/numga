@@ -136,7 +136,8 @@ def cotangent_weights(mesh: Mesh, vertices: Point, face_weights: Scalar) -> Scal
     weighted by `Scalar+[faces]`: the cotangent at a corner is one edge's slice read along the other, over the size
     of the plane they span; head to tail, the corner's own edges point the other way."""
     edges = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                        # [3] Point-[faces]
-    after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]                          # [3] Point-[faces], Point-[faces]
+    tails, heads = mesh.corners[2, 1]
+    after, before = edges[tails], edges[heads]                                  # [3] Point-[faces], Point-[faces]
     cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()   # [3] Scalar+[faces]
     return (~mesh.incidence[2, 1] * (face_weights * cotangents / 2)).sum(axis=0)
 

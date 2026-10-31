@@ -92,18 +92,17 @@ def draw_cartan_ribbon(corners: core.Point, corner_forms: core.Plane,
                        endpoint_differences: core.Scalar, swept_fluxes: core.Scalar) -> plt.Figure:
     """Swept edge parallelogram ribbons on a moving triangle beside the Cartan rate decomposition."""
     displaced = corners + ribbon_step * corner_velocities                       # [corners] Point-
-    # The edge facing each corner runs from the corner after it to the one before it; the ribbon it sweeps in the
-    # step is the parallelogram between it and its displaced copy.
-    firsts, seconds = corners[[1, 2, 0]], corners[[2, 0, 1]]                    # [corners] Point-, [corners] Point-
-    ribbons = stack((firsts, seconds, displaced[[2, 0, 1]], displaced[[1, 2, 0]]), axis=-1)   # [corners, 4] Point-
-    middles, edges = (firsts + seconds) / 2, seconds - firsts                   # [corners] Point-, [corners] Point-
+    # The ribbon each edge sweeps in the step is the parallelogram between its endpoints and their displaced copies.
+    tails, heads = core.triangle.corners[2, 1]
+    ribbons = stack((corners[tails], corners[heads], displaced[heads], displaced[tails]), axis=-1)   # [corners, 4] Point-
+    middles = (core.triangle.incidence[2, 1] * (core.triangle.incidence[1, 0].mean(axis=0) * corners.field())).batch()[:, 0]  # [corners] Point-
+    edges = (core.triangle.boundary[2, 1] * (core.triangle.d[0] * corners.field())).batch()[:, 0]    # [corners] Point-
     # Each edge's arrow about its middle, and each corner's velocity from it to its displaced copy, chains of two.
     edge_arrows = stack((middles - 0.16 * edges, middles + 0.16 * edges), axis=-1).reshape(-1)   # [corners * 2] Point-
     velocity_arrows = stack((corners, displaced), axis=-1).reshape(-1)          # [corners * 2] Point-
     arrows = Mesh.chains([2, 2, 2])
     # Each ribbon two triangles, its outline their boundary; the triangle and its displaced copy closed chains.
     ribbon = Mesh(4, np.array([[0, 1, 2], [0, 2, 3]]))
-    triangle = Mesh(3, np.array([[0, 1, 2]]))
     loop = np.array([0, 1, 2, 0])
     endpoint_vals = np.asarray(endpoint_differences.to_array())
     swept_vals = np.asarray(swept_fluxes.to_array())
@@ -127,10 +126,10 @@ def draw_cartan_ribbon(corners: core.Point, corner_forms: core.Plane,
                           cap=simplices.Cap.BUTT, opacity=ribbon_opacity))]
     simplices.overlay(geom_ax, [
         *ribbon_pictures,
-        contours.picture(corners, triangle, np.zeros(3), triangle_colour, camera, opacity=triangle_opacity),
+        contours.picture(corners, core.triangle, np.zeros(3), triangle_colour, camera, opacity=triangle_opacity),
         simplices.strokes(corners[loop], Mesh.chains([4]), rgb(wall_colour), charts.LINE_PX, camera,
                           opacity=triangle_opacity),
-        flow.layer(corners, triangle, directions, camera, strongest, rgb(primal_colour)),
+        flow.layer(corners, core.triangle, directions, camera, strongest, rgb(primal_colour)),
         simplices.strokes(displaced[loop], Mesh.chains([4]), rgb(ink_colour), charts.LINE_PX, camera,
                           dashes=displaced_dashes, cap=simplices.Cap.BUTT),
         simplices.strokes(edge_arrows, arrows, rgb(wall_colour), charts.LINE_PX, camera, np.ones(3), edge_arrow_head),

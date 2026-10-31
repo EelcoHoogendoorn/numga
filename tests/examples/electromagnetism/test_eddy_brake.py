@@ -187,7 +187,8 @@ def test_isotropic_material_recovers_the_cotangent_stiffness():
     balance = outflow(material(gradient))
     # Each edge's cotangent weight, half the cotangents of the angles facing it: at each corner, one edge's slice
     # read along the other, over the size of the plane they span.
-    after, before = disc.triangle_edges[[1, 2, 0]], disc.triangle_edges[[2, 0, 1]]
+    tails, heads = disc.mesh.corners[2, 1]
+    after, before = disc.triangle_edges[tails], disc.triangle_edges[heads]
     cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()
     weights = (~disc.mesh.incidence[2, 1] * (cotangents / 2)).sum(axis=0)
     cotangent = (~disc.mesh.d[0] * core.spdiag(conductance * weights) * disc.mesh.d[0]) * core.Scalar

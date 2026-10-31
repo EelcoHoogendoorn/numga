@@ -86,7 +86,7 @@ def saddle_surface(
 def main() -> None:
     from examples.surfaces.frame_fields.core import (
         harmonic_rotor_frames, relax_rotor_frames, rotor_laplacian_operators,
-        skyrmion_winding, triangle_darboux,
+        skyrmion_winding, triangle, triangle_darboux,
     )
     from examples.surfaces.frame_fields import render
     from examples.util.animation import save_animation, save_figure
@@ -145,9 +145,9 @@ def main() -> None:
     np.testing.assert_allclose((darboux.select[0] - chord_stretch).kernel, 0.0, atol=1e-14)
     np.testing.assert_allclose(unit_rotors.scalar_norm_squared().kernel, 1.0, atol=1e-14)
 
-    sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]
+    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]
     patch = (sides[0] & sides[1]) / 2
-    radial_whitney = ((points[:, None] - corners) | patch.inverse()) / 2
+    radial_whitney = (((points[:, None] - corners) | patch.inverse()) / 2) * triangle.face_edge_orientation
     np.testing.assert_allclose((whitney_forms - radial_whitney).kernel, 0.0, atol=1e-14)
 
     skyrmion_charge = solid_angles.sites.sum() / (4 * np.pi)

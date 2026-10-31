@@ -35,8 +35,8 @@ Scalar = ga.gatype.scalar()                                                  # S
 Bivector = ga.gatype.bivector()                                              # Bivector+
 # An isospin, intrinsic; a two-flavor state, half the antiscalar, its trace, plus its isospin; its rates of change,
 # and its evolution over a step.
-Isospin = ga.gatype.vector().derive.flipped_orientation                      # Vector-
-State = ga.gatype.odd().derive.flipped_orientation                           # Vector- + Antiscalar-
+Isospin = ga.gatype.antibivector()                                           # Antibivector-
+State = (Isospin + ga.gatype.antiscalar()).output_gatype                     # Antibivector- + Antiscalar-
 Rates = ga.gatype((State, State))                                            # State- <- State-
 Evolution = ga.gatype((State, State))                                        # State- <- State-
 Generator = ga.gatype((State, Bivector, State))                              # State- <- (Bivector+, State-)

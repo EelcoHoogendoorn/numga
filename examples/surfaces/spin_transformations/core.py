@@ -43,7 +43,8 @@ def cotangent_weights(mesh: Mesh, sides: Point) -> Scalar:
     """Each edge's cotangent weight, `Scalar+[edges]`, is half the cotangents of the angles facing it, from the edge
     facing each corner, `[3] Point-[faces]`; a corner's cotangent is one edge's slice read along the other, over the
     size of the plane they span."""
-    after, before = sides[[1, 2, 0]], sides[[2, 0, 1]]                         # [3] Point-[faces], Point-[faces]
+    tails, heads = mesh.corners[2, 1]
+    after, before = sides[tails], sides[heads]                                 # [3] Point-[faces], Point-[faces]
     cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()   # [3] Scalar+[faces]
     return (~mesh.incidence[2, 1] * (cotangents / 2)).sum(axis=0)
 
@@ -52,7 +53,8 @@ def corner_cosines(mesh: Mesh, vertices: Point) -> Scalar:
     """The cosine of each corner's angle, `[3] Scalar+[faces]`, which a conformal map keeps exactly, is one edge's
     slice read along the other, over both their lengths."""
     sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                       # [3] Point-[faces]
-    after, before = sides[[1, 2, 0]], sides[[2, 0, 1]]                         # [3] Point-[faces], Point-[faces]
+    tails, heads = mesh.corners[2, 1]
+    after, before = sides[tails], sides[heads]                                 # [3] Point-[faces], Point-[faces]
     return -(after.dual_inverse() & before) / (after.norm() * before.norm())
 
 
@@ -103,12 +105,11 @@ def dirac_spheres(mesh: Mesh, vertices: Point, eigenvalues: np.ndarray, count: i
 
 def geometric_derivative(mesh: Mesh, vertices: Point) -> SparseExtensor:
     """The geometric derivative of fields on the vertices, linear on each face, `Vector+[faces <- vertices]`,
-    couples each face to each corner by the gradient of the corner's hat function: the edge facing it paired with
-    the face's unit normal, over twice the face's area."""
+    couples each face to each corner by the gradient of the corner's hat function: the edge facing it contracted
+    with the inverse of twice the face's patch."""
     sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                       # [3] Point-[faces]
-    areas = sides[1].commutator(sides[0]).norm() / 2                           # Scalar+[faces]
-    normals = (sides[0] & sides[1]) / (2 * areas)                              # Vector-[faces]
-    return (spdiag((sides | normals) / (2 * areas)) * mesh.incidence[2, 0]).sum(axis=0)
+    patches = (sides[0] & sides[1]) / 2                                        # Vector-[faces]
+    return (spdiag((sides | patches.inverse()) / 2) * mesh.incidence[2, 0]).sum(axis=0)
 
 
 def mean_curvature(mesh: Mesh, vertices: Point) -> Scalar:

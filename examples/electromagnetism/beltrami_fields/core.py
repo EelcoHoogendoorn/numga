@@ -50,7 +50,7 @@ class Operators:
 
         # At each tetrahedron centroid the four barycentric hats equal 1/4, so the edge 1-form
         # reduces to one quarter of the difference of its endpoints' corner gradients.
-        tails, heads = mesh.corners(3, 1).T
+        tails, heads = mesh.corners[3, 1]
         centroid_1forms = (self.corner_gradients[heads] - self.corner_gradients[tails]) / 4  # [tet_edges] Plane+[tets]
         # A tet's edges run from its lower local corner to its higher, the mesh's edges from the lower vertex to the
         # higher: `mesh.oriented[3, 1]` reads each mesh edge with the sign of their agreement.

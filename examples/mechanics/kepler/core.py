@@ -15,7 +15,7 @@ Scalar = ga.gatype.scalar()
 # Positions and velocities are antivectors with intrinsic orientation.
 Point = ga.gatype.antivector()
 # The plane an orbit sweeps, the join of two points: a vector with intrinsic orientation.
-Patch = ga.gatype.vector().derive.flipped_orientation
+Patch = ga.gatype.antibivector()
 Spinor = ga.gatype.even()
 
 

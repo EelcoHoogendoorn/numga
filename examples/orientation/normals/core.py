@@ -18,7 +18,7 @@ ga = PGA3D
 mv = NumpyContext(ga).multivector
 Point = ga.gatype.antivector()                                                  # Antivector-
 Plane = ga.gatype.vector()                                                      # Vector+
-Surface = Plane.derive.flipped_orientation                                      # Vector-
+Surface = ga.gatype.antitrivector()                                             # Antitrivector-
 # A line oriented along itself, as the join of two points is, and one oriented around itself, as the meet of two
 # planes is: a spear and an axis, in Dorst's names.
 Spear = (Point & Point).output_gatype                                           # Antibivector-

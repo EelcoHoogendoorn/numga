@@ -45,7 +45,8 @@ def deform(
     # The directed edge opposite each corner of each face, its corner cotangent from the inner product
     # over the spanned plane norm, and each edge's cotangent weight summed from its opposite corners.
     triangle_edges = mesh.boundary[2, 1] * rest_edges                               # [corners] Point-[faces]
-    next_edges, prev_edges = triangle_edges[[1, 2, 0]], triangle_edges[[2, 0, 1]]   # [corners] Point-[faces], Point-[faces]
+    tails, heads = mesh.corners[2, 1]
+    next_edges, prev_edges = triangle_edges[tails], triangle_edges[heads]           # [corners] Point-[faces], Point-[faces]
     cotangents = -(next_edges.dual_inverse() & prev_edges) / next_edges.commutator(prev_edges).norm()  # [corners] Scalar+[faces]
     cotangent_weights = (~mesh.incidence[2, 1] * (cotangents / 2)).sum(axis=0)     # Scalar+[edges]
 

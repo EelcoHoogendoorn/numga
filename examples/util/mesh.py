@@ -129,6 +129,29 @@ class Operators:
         return self.built[n, m]
 
 
+class Corners:
+    """`corners[n, m]`, `[m + 1, k]`: the local corners of each m-simplex of an n-simplex, in the order of `incidence[n, m]`.
+
+    Unpacks directly along axis 0: on a triangle or tet's edges, `tails, heads = mesh.corners[2, 1]`, and on a tet's
+    faces, `first, second, third = mesh.corners[3, 2]`."""
+
+    def __init__(self, n_dim: int) -> None:
+        self.n_dim, self.built = n_dim, {}
+
+    def __getitem__(self, dimensions: tuple[int, int]) -> np.ndarray:
+        n, m = (dimension % (self.n_dim + 1) for dimension in dimensions)
+        if m >= n:
+            raise ValueError(f"sub-simplex dimension m={m} must be strictly less than simplex dimension n={n}")
+        if (n, m) not in self.built:
+            if m == 0:
+                self.built[n, m] = np.arange(n + 1)[None, :]
+            elif m == n - 1:
+                self.built[n, m] = generate_simplex_boundary(np.arange(n + 1)).T
+            else:
+                self.built[n, m] = np.array(list(combinations(range(n + 1), m + 1))).T
+        return self.built[n, m]
+
+
 class Mesh:
     """An oriented simplicial mesh's topology: `n_vertices` vertices and top simplices `[N, n_dim + 1]`, kept in
     their own order, which orients them, faces counter-clockwise from outside. Every simplex below the top is
@@ -196,7 +219,7 @@ class Mesh:
         a simplex's own vertex order, such as a Whitney form on a tet's edge from its local tail to its local head,
         reaches the stored m-simplices through these signs. A facet's sign here differs from its sign in `boundary`
         by `(-1)**i` for the facet facing corner `i`. Each map is built on first use."""
-        return Operators(self.n_dim, lambda n, m: self._signed(n, m, simplex_parity(self.elements[n][:, self.corners(n, m)])))
+        return Operators(self.n_dim, lambda n, m: self._signed(n, m, simplex_parity(self.elements[n][:, self.corners[n, m].T])))
 
     @cached_property
     def d(self) -> tuple[SparseExtensor, ...]:
@@ -205,18 +228,12 @@ class Mesh:
         each its head less its tail, and `d[k + 1] * d[k]` vanishes."""
         return tuple(self.boundary[k + 1, k].sum(axis=0) for k in range(self.n_dim))
 
-    def corners(self, n: int, m: int) -> np.ndarray:
-        """`[k, m + 1]`: the local corners of each m-simplex of an n-simplex, in the order of `incidence[n, m]`: which
-        entries of an n-simplex's own corners each of its m-simplices has, the same for every n-simplex. A quantity per
-        corner, a `[n + 1]` batch of fields over the n-simplices such as corner gradients, is read at each m-simplex's
-        corners through it: on a tet's edges, `tails, heads = mesh.corners(3, 1).T`, and `gradients[heads] -
-        gradients[tails]` runs along each edge from its local tail to its local head, the sense `oriented[3, 1]`
-        relates to the stored edge."""
-        if m == 0:
-            return np.arange(n + 1)[:, None]
-        if m == n - 1:
-            return generate_simplex_boundary(np.arange(n + 1))
-        return np.array(list(combinations(range(n + 1), m + 1)))
+    @cached_property
+    def corners(self) -> Corners:
+        """`corners[n, m]`, `[m + 1, k]`: the local corners of each m-simplex of an n-simplex, in the order of
+        `incidence[n, m]`. Unpacks directly along axis 0: on edges, `tails, heads = mesh.corners[n, 1]`, and on a tet's
+        faces, `first, second, third = mesh.corners[3, 2]`."""
+        return Corners(self.n_dim)
 
     def _local(self, n: int, m: int) -> np.ndarray:
         """`[N, k]`: the index in `elements[m]` of each m-simplex of each n-simplex, in the order of
@@ -225,7 +242,7 @@ class Mesh:
             return self.elements[n]
         if m == n - 1:
             return self.boundary_indices[m]
-        return lookup_simplices(self.elements[m], np.sort(self.elements[n][:, self.corners(n, m)], axis=-1))
+        return lookup_simplices(self.elements[m], np.sort(self.elements[n][:, self.corners[n, m].T], axis=-1))
 
     def _signed(self, n: int, m: int, signs: np.ndarray) -> SparseExtensor:
         """`[k] Scalar+[n-simplices <- m-simplices]`: the batches of `incidence[n, m]`, each entry signed by
@@ -337,8 +354,8 @@ class Mesh:
 
         # Equal edge springs even out the circular map's distortion. Rim vertices can
         # slide along the circle; the incidence adjoint sums edge forces at each vertex.
-        a, b, c = (mesh.incidence[2, 0] * vertices).batch()                # [F] Point-
-        area = ((b - a) & (c - a)).squared().norm().square_root().sum() / 2
+        sides = (mesh.boundary[2, 1] * (mesh.d[0] * vertices)).batch()     # [corners, F] Point-
+        area = (sides[0] & sides[1]).squared().norm().square_root().sum() / 2
         target = (4 * area / (np.sqrt(3) * len(mesh.faces))).square_root()
         for _ in range(relaxation_steps):
             edges = mesh.d[0] * vertices                                   # Point-[E]

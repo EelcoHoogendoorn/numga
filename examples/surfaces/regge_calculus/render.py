@@ -108,8 +108,7 @@ def draw_metric_basis(corners: core.Point, points: core.Point,
     figure, axes = charts.subplots(*row_size, ncols=4)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.04)
 
-    # The triangle, a mesh of one face, outlined by its own edges.
-    triangle = simplices.Mesh(3, np.array([[0, 1, 2]]))
+    tails, heads = core.triangle.corners[2, 1]
     for index in range(3):
         ax = axes[index]
         frame_panel(ax, corner_xy, 0.22)
@@ -118,8 +117,8 @@ def draw_metric_basis(corners: core.Point, points: core.Point,
         colours = diverging_colours(Normalize(-basis_bound, basis_bound)(values))[:, :3]
         simplices.overlay(ax, [
             contours.picture(places, mesh, values, colours, camera, lines=(nonzero_levels,), levels=(null_lines,)),
-            simplices.strokes(corners, triangle, ink(wall_colour), thin_width, camera),
-            simplices.strokes(corners[[(index + 1) % 3, (index + 2) % 3]], simplices.Mesh.chains([2]),
+            simplices.strokes(corners, core.triangle, ink(wall_colour), thin_width, camera),
+            simplices.strokes(corners[[tails[index], heads[index]]], simplices.Mesh.chains([2]),
                               ink(accent_colour), edge_width, camera),
             simplices.markers(corners, ink(wall_colour), small_dot, camera),
             *ringed(corners[index][None], primal_colour, highlight_dot, camera)])
@@ -136,7 +135,7 @@ def draw_metric_basis(corners: core.Point, points: core.Point,
         contours.picture(places, mesh, metric_form, hat_colours(Normalize(0.0, max_metric)(metric_form))[:, :3],
                          camera, levels=ellipses),
         contours.picture(places, mesh, reference_form, np.zeros(3), camera, levels=circles, opacity=0.0),
-        simplices.strokes(corners, triangle, ink(wall_colour), outline_width, camera),
+        simplices.strokes(corners, core.triangle, ink(wall_colour), outline_width, camera),
         *ringed(corners, accent_colour, corner_dot, camera),
         simplices.markers(centroid[None], ink(wall_colour), centroid_dot, camera)])
     return figure

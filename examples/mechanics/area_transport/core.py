@@ -29,7 +29,7 @@ Scalar = ga.gatype.scalar()
 # Points, and edges between them, are antivectors with intrinsic orientation.
 Point = ga.gatype.antivector()
 # An oriented patch, the meet of two edges: a plane through the centre as large as its area.
-Patch = ga.gatype.vector().derive.flipped_orientation
+Patch = ga.gatype.antibivector()
 # A flux density: its pairing with a patch is the flux through it.
 Flux = ga.gatype.bivector()
 Linear = ga.gatype((Point, Point))                           # Point- <- Point-

@@ -113,6 +113,7 @@ def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
     figure, axes = charts.subplots(*row_size, ncols=4)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.04)
 
+    tails, heads = triangle.corners[2, 1]
     for index in range(3):
         ax = axes[index]
         camera = frame_panel(ax, corners, 0.22)
@@ -121,7 +122,7 @@ def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
         simplices.overlay(ax, [
             contours.picture(corners, triangle, values, hat_colours(values)[:, :3], camera, levels=levels),
             simplices.strokes(corners, triangle, ink(wall_colour), outline_width, camera),
-            simplices.strokes(corners[[(index + 1) % 3, (index + 2) % 3]], simplices.Mesh.chains([2]),
+            simplices.strokes(corners[[tails[index], heads[index]]], simplices.Mesh.chains([2]),
                               ink(wall_colour), edge_width, camera),
             simplices.markers(corners, ink(wall_colour), small_dot, camera),
             *ringed(corners[index][None], accent_colour, highlight_dot, camera),
@@ -147,7 +148,8 @@ def draw_edge_1forms(corners: core.Point, corner_forms: core.Plane,
     directions = corner_forms.dual()                                          # [corners] Point-
     reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
     # Each side, from the corner after its own to the one after that, with an arrow about its middle along it.
-    side_starts, side_ends = corners[[1, 2, 0]], corners[[2, 0, 1]]           # [corners] Point-, Point-
+    first, second = core.complements(core.triangle, 0).T
+    side_starts, side_ends = corners[first], corners[second]                  # [corners] Point-, Point-
     side_middles, alongs = (side_starts + side_ends) / 2, side_ends - side_starts   # [corners] Point-, Point-
     along_tails, along_tips = side_middles - 0.18 * alongs, side_middles + 0.18 * alongs   # [corners] Point-, Point-
 
@@ -210,8 +212,8 @@ def draw_tet_whitney(mesh: core.SpaceMesh, vertices: core.SpacePoint, points: co
     # The tetrahedron's first edge, the edge across it, the corner the first face form radiates from, and the face
     # facing that corner, as vertices.
     tet = mesh.tets[0]
-    edge, across = tet[mesh.corners(3, 1)[0]], tet[core.complements(mesh, 1)[0]]
-    apex, face = tet[0], tet[mesh.corners(3, 2)[0]]
+    edge, across = tet[mesh.corners[3, 1][:, 0]], tet[core.complements(mesh, 1)[0]]
+    apex, face = tet[0], tet[mesh.corners[3, 2][:, 0]]
     wall, wall_faces = outward_wall(mesh)
 
     view = solids.View(solids.aim(solids.origin, tet_elevation, tet_azimuth), np.full(2, 0.86), n_tet_pixels)

@@ -50,9 +50,9 @@ def test_darboux_whitney_grade_decomposition_and_maurer_cartan():
     assert np.all(chord_rotors.scalar_norm_squared().to_array() < 1.0 - 1e-3)
 
     # Antisymmetric combination lambda_i g_j - lambda_j g_i matches the radial contraction with the inverse patch.
-    sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]
+    sides = (core.triangle.boundary[2, 1] * (core.triangle.d[0] * corners.field())).batch()[:, 0]
     patch = (sides[0] & sides[1]) / 2
-    radial_whitney = ((points[:, None] - corners) | patch.inverse()) / 2
+    radial_whitney = (((points[:, None] - corners) | patch.inverse()) / 2) * core.triangle.face_edge_orientation
     np.testing.assert_allclose((whitney_forms - radial_whitney).kernel, 0.0, atol=1e-14)
 
     # Dividing the grade-2 Whitney rate by |R(x)|^2 gives the exact Maurer-Cartan 1-form 2 * ~R_unit * dR_unit.

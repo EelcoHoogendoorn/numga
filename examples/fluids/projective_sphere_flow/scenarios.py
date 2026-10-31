@@ -47,8 +47,7 @@ def spherical_frames(mesh: core.Mesh, vertices: core.Point, radii: Iterable[np.n
                      ) -> Iterator[tuple[core.Point, core.Point, core.Point, core.Scalar]]:
     """Each frame solves the same source-and-sink problem again, under the interpolation its corner scales choose."""
     corners = mesh.incidence[2, 0] * vertices                              # [corners] Point-[faces]
-    first, second, third = corners                                         # Point-[faces], Point-[faces], Point-[faces]
-    volume = first & second & third                                        # Volume-[faces]
+    volume = corners[0] & corners[1] & corners[2]                          # Volume-[faces]
     quadrature_chords = (corners[:, None] * quadrature).sum(axis=0)        # [samples] Point-[faces]
     samples = quadrature_chords.normalized()                               # [samples] Point-[faces]
     # Radial projection expands chord area by the inverse cube of the distance.
@@ -59,11 +58,7 @@ def spherical_frames(mesh: core.Mesh, vertices: core.Point, radii: Iterable[np.n
     display_points = (corners[:, None] * display).sum(axis=0).normalized() # [samples] Point-[faces]
     for scales in radii:
         lifted = vertices * core.as_scalar(scales).field()                 # Point-[vertices]
-        lifted_corners = mesh.incidence[2, 0] * lifted                     # [corners] Point-[faces]
-        potential, numerator = core.diffusion(mesh, lifted_corners, samples, measures, source, conductivity)
-        first, second, third = lifted_corners                              # Point-[faces], Point-[faces], Point-[faces]
-        reciprocals = stack((second & third, third & first, first & second)) / (first & second & third)   # [corners] Plane+[faces]
-        section = reciprocals.sum(axis=0)                                  # Plane+[faces]
+        _, numerator, section = core.diffusion(mesh, lifted, samples, measures, source, conductivity)
         values = (numerator & display_points) / (section & display_points) # [samples] Scalar+[faces]
         yield lifted, section.dual().normalized(), display_points, values
 
@@ -85,10 +80,11 @@ def main() -> None:
     save_animation(render.animate_sphere(mesh, display_grid, frames), "projective_sphere_weights", frame_duration_ms)
 
     # The same projective quotient uses the degenerate algebra's finite affine slice.
+    triangle = planar.Mesh(3, [[0, 1, 2]])
     points = (planar_corners[:, None] * display).sum(axis=0)               # [samples] Point-
-    lifted = planar_corners * corner_scales                                # [corners] Point-
-    first, second, third = lifted                                          # [] Point-, Point-, Point-
-    reciprocals = stack((second & third, third & first, first & second)) / (first & second & third)   # [corners] Plane+
+    lifted = (planar_corners * corner_scales).field()                      # Point-[corners]
+    tails, heads = triangle.incidence[1, 0] * lifted                       # Point-[edges], Point-[edges]
+    reciprocals = ((triangle.boundary[2, 1] * (tails & heads)) / (lifted.batch()[0] & lifted.batch()[1] & lifted.batch()[2])).batch()[:, 0]   # [corners] Plane+
     section = reciprocals.sum(axis=0)                                      # [] Plane+
     hats = (reciprocals[:, None] & points) / (section & points)            # [corners, samples] Scalar+
     gradients = (reciprocals[:, None] - hats * section) / (section & points)   # [corners, samples] Plane+

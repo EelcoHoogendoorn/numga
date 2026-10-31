@@ -77,15 +77,11 @@ def gradient(mesh: Mesh, edges: Point, angles: Scalar, normals: Vector, directio
     across = 2 * (pulled - normals.dual() * (normals & pulled))                # Point+[faces]
     # The direction along the face joined with the edge facing each corner: the plane they span.
     turning = (across & edges) / double_areas                                  # [3] Vector+[faces]
-    # The edges from each corner to the next corner and to the one after, and where they meet.
-    ahead, behind = edges[[2, 0, 1]], -edges[[1, 2, 0]]                         # [3] Point-[faces], [3] Point-[faces]
-    corner = ahead & behind                                                     # [3] Vector-[faces]
-    weight = along * along / corner.norm()                                      # [3] Scalar+[faces]
-    # Each edge met with the corner turns it a quarter turn within the face.
-    to_next = -(ahead | corner) / ahead.scalar_norm_squared() * weight          # [3] Vector+[faces]
-    to_after = (behind | corner) / behind.scalar_norm_squared() * weight        # [3] Vector+[faces]
-    opening = to_next[[2, 0, 1]] + to_after[[1, 2, 0]] - to_next - to_after     # [3] Vector+[faces]
-    return (~mesh.incidence[2, 0] * (turning + opening)).sum(axis=0)           # Vector+[vertices]
+    # Moving an edge's two ends opposite ways along its in-plane normal opens one corner's angle and closes
+    # the other's at the same rate, weighted by the difference of their squared normal components.
+    tails, heads = mesh.corners[2, 1]
+    opening = (edges | normals) / edges.scalar_norm_squared() * (along[heads].squared() - along[tails].squared())  # [3] Vector+[faces]
+    return (~mesh.incidence[2, 0] * turning + ~(mesh.oriented[2, 1] * mesh.d[0]) * opening).sum(axis=0)  # Vector+[vertices]
 
 
 def stiffness(mesh: Mesh, edges: Point, angles: Scalar) -> Scalar:
@@ -102,10 +98,11 @@ def flow(mesh: Mesh, vertices: Point, step: float) -> Iterator[tuple[Point, Scal
     smallest eigenvalue `Scalar+[vertices]`. A step of the same size everywhere
     overshoots where triangles are small or thin, and the flow jitters there; over the stiffness, every
     vertex moves by the same share of what its faces can take."""
+    tails, heads = mesh.corners[2, 1]
     while True:
         # The edge facing each corner of each face, and the angle at each corner between the two edges meeting there.
         edges = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                    # [3] Point-[faces]
-        after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]                      # [3] Point-[faces], [3] Point-[faces]
+        after, before = edges[tails], edges[heads]                              # [3] Point-[faces], [3] Point-[faces]
         angles = (-(after.dual_inverse() & before) / (after.norm() * before.norm())).arccos()   # [3] Scalar+[faces]
         normals, spreads = spread(mesh, edges, angles)
         values, directions = spreads.batch().eigh()                             # [vertices, 3] Scalar+, [vertices, 3] Point-

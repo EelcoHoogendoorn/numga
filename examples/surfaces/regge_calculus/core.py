@@ -21,17 +21,19 @@ Patch = ga.gatype.antibivector()                                             # A
 Rotor = ga.gatype.rotor()                                                    # Rotor+
 Metric = ga.gatype((Plane, Point))                                           # Vector+ <- Antivector-
 Conductivity = ga.gatype((Point, Plane))                                     # Antivector- <- Vector+
+triangle = Mesh(3, [[0, 1, 2]])
 
 
 # --- math -----------------------------------------------------------------------------
 def regge_metric_basis(corners: Point) -> tuple[Metric, Plane, Patch]:
     """Each edge's correlation reads one on that edge and zero on the other two; its corner gradients and signed patch define the reference triangle."""
-    sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]                          # [corners] Point-
+    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]  # [corners] Point-
     patch = (sides[0] & sides[1]) / 2                                        # [] Patch-
     gradients = sides / (2 * patch)                                          # [corners] Plane+
     # Along the two sides meeting at a corner, one endpoint gradient vanishes while on the opposite
     # side the two endpoint gradients pair to -1 and +1, making their symmetric product dual to the squared edge lengths.
-    first, second = gradients[[1, 2, 0]], gradients[[2, 0, 1]]               # [corners] Plane+, [corners] Plane+
+    tails, heads = triangle.corners[2, 1]
+    first, second = gradients[tails], gradients[heads]                       # [corners] Plane+, [corners] Plane+
     basis = -(first * (second & Point) + second * (first & Point)) / 2       # [corners] Plane+ <- Point-
     return basis, gradients, patch
 
@@ -39,7 +41,7 @@ def regge_metric_basis(corners: Point) -> tuple[Metric, Plane, Patch]:
 def triangle_geometry(corners: Point, squared_lengths: Scalar
                       ) -> tuple[Metric, Scalar, Rotor, Bivector]:
     """Prescribed squared edge lengths determine the triangle's correlation, area, unit corner rotors, and corner turns."""
-    sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]                          # [corners] Point-
+    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]  # [corners] Point-
     basis, _, patch = regge_metric_basis(corners)                            # [corners] Plane+ <- Point-, [corners] Plane+, [] Patch-
     metric = (squared_lengths * basis).sum(axis=0)                           # [] Plane+ <- Point-
     # The wedge carries the correlation's area scaling; pairing it with the reference patch
@@ -47,7 +49,8 @@ def triangle_geometry(corners: Point, squared_lengths: Scalar
     intrinsic_area = (((metric(sides[0]) ^ metric(sides[1])) & patch) / 2).square_root()  # [] Scalar+
     # Combining the metric inner product of the two sides meeting at each corner with twice the intrinsic
     # area in the even subalgebra forms a rotor whose norm is the product of those two side lengths.
-    dots = -(metric(sides[[1, 2, 0]]) & sides[[2, 0, 1]])                    # [corners] Scalar+
+    tails, heads = triangle.corners[2, 1]
+    dots = -(metric(sides[tails]) & sides[heads])                            # [corners] Scalar+
     corner_rotors = (dots + 2 * intrinsic_area * mv.xy).normalized()         # [corners] Rotor+
     corner_turns = corner_rotors.log()                                       # [corners] Bivector+
     return metric, intrinsic_area, corner_rotors, corner_turns
@@ -60,12 +63,13 @@ def mesh_geometry(mesh: Mesh, vertices: Point, edge_squared_lengths: Scalar
     sides = mesh.boundary[2, 1] * edges                                      # [corners] Point-[faces]
     patches = (sides[0] & sides[1]) / 2                                      # Patch-[faces]
     corner_gradients = sides / (2 * patches)                                 # [corners] Plane+[faces]
-    first, second = corner_gradients[[1, 2, 0]], corner_gradients[[2, 0, 1]]  # [corners] Plane+[faces], [corners] Plane+[faces]
+    tails, heads = mesh.corners[2, 1]
+    first, second = corner_gradients[tails], corner_gradients[heads]         # [corners] Plane+[faces], [corners] Plane+[faces]
     basis = -(first * (second & Point) + second * (first & Point)) / 2       # [corners] (Plane+ <- Point-)[faces]
 
     metrics = (spdiag(basis) * mesh.incidence[2, 1]).sum(axis=0) * edge_squared_lengths  # [...] (Plane+ <- Point-)[faces]
     intrinsic_areas = (((metrics(sides[0]) ^ metrics(sides[1])) & patches) / 2).square_root()  # [...] Scalar+[faces]
-    dots = -(metrics[..., None](sides[[1, 2, 0]]) & sides[[2, 0, 1]])        # [..., corners] Scalar+[faces]
+    dots = -(metrics[..., None](sides[tails]) & sides[heads])                # [..., corners] Scalar+[faces]
     corner_rotors = (dots + 2 * intrinsic_areas[..., None] * mv.xy).normalized()  # [..., corners] Rotor+[faces]
     corner_turns = corner_rotors.log()                                       # [..., corners] Bivector+[faces]
 

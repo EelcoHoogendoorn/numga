@@ -30,8 +30,9 @@ def poles(mesh: Mesh, points: Point) -> Point:
     """The pole of each face about the unit sphere is the dual of the face's plane, the plane that pairs to one
     with each of its vertices: the planes through the centre and each edge, summed, over the volume of the
     vertices."""
-    a, b, c = mesh.incidence[2, 0] * points                                    # Point-[faces], Point-[faces], Point-[faces]
-    planes = ((a & b) + (b & c) + (c & a)) * (a & b & c).inverse()             # Plane+[faces]
+    corners = mesh.incidence[2, 0] * points                                    # [corners] Point-[faces]
+    tails, heads = mesh.incidence[1, 0] * points                               # Point-[edges], Point-[edges]
+    planes = (mesh.d[1] * (tails & heads)) / (corners[0] & corners[1] & corners[2])   # Plane+[faces]
     return planes.dual()                                                       # Point-[faces]
 
 
@@ -88,14 +89,13 @@ def insides(mesh: Mesh, directions: Point, weights: Scalar) -> Scalar:
     direction and to zero with the other two, and the planes through the edges are fixed by the directions, so
     the distances are linear in the weights."""
     corners = mesh.incidence[2, 0] * directions                                # [corners] Point-[faces]
-    a, b, c = corners                                                          # Point-[faces], Point-[faces], Point-[faces]
-    volume = (a & b & c).inverse()                                             # Scalar-[faces]
-    frame = stack([(b & c) * volume, (c & a) * volume, (a & b) * volume], axis=-1)   # [corners] Plane+[faces]
-    # The weights at each face's corners, on the last axis.
-    duals = (frame * (mesh.incidence[2, 0] * weights[..., None])).sum(axis=-1).dual()   # [...] Point-[faces]
     tails, heads = mesh.incidence[1, 0] * directions                           # Point-[edges], Point-[edges]
     # The plane through the centre and the edge facing each corner, turned as the face runs along the edge.
-    walls = (mesh.boundary[2, 1] * (tails & heads)).normalized()               # [corners] Plane-[faces]
+    edge_planes = mesh.boundary[2, 1] * (tails & heads)                        # [corners] Plane-[faces]
+    frame = edge_planes / (corners[0] & corners[1] & corners[2])               # [corners] Plane+[faces]
+    # The weights at each face's corners, on the last axis.
+    duals = (frame * (mesh.incidence[2, 0] * weights[..., None])).sum(axis=-1).dual()   # [...] Point-[faces]
+    walls = edge_planes.normalized()                                           # [corners] Plane-[faces]
     facing = walls & corners                                                   # [corners] Scalar-[faces]
     return (walls & duals[..., None]) * facing / facing.norm()                 # [..., corners] Scalar+[faces]
 

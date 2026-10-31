@@ -36,9 +36,9 @@ from numga.algebras import STA as ga
 mv = NumpyContext(ga).multivector
 Bivector = ga.gatype.bivector()                                     # Bivector+
 # A spin: the patch of the plane it turns in, intrinsic.
-Spin = Bivector.derive.flipped_orientation                          # Bivector-
+Spin = ga.gatype.antibivector()                                     # Antibivector-
 # A spin's state: half the antiscalar, its trace, plus the spin.
-State = ga.gatype.from_grades([2, 4]).derive.flipped_orientation    # Bivector- + Antiscalar-
+State = (Spin + ga.gatype.antiscalar()).output_gatype               # Antibivector- + Antiscalar-
 Rates = ga.gatype((State, State))                                   # State- <- State-
 # What becomes of each state over a stretch of time.
 Evolution = ga.gatype((State, State))                               # State- <- State-

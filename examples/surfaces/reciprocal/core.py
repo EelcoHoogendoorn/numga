@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import stack
 from numga.algebras import VGA3D as ga
 from examples import instantiate
 
@@ -37,11 +36,12 @@ def slopes(mesh: Mesh, points: Point, heights: Scalar) -> Plane:
     the origin. It is the corners' heights times the reciprocal frame of the corners lifted to unit height, the
     three planes pairing to one with their own corner and to nothing with the other two, so it is linear in the
     heights."""
-    a, b, c = mesh.incidence[2, 0] * (points + up)                             # Point-[faces], Point-[faces], Point-[faces]
+    lifted = points + up                                                       # Point-[vertices]
+    corners = mesh.incidence[2, 0] * lifted                                    # [corners] Point-[faces]
+    tails, heads = mesh.incidence[1, 0] * lifted                               # Point-[edges], Point-[edges]
     # Two corners meet in a vector that pairs to nothing with either; over the meet of all three, it pairs
     # to one with the third.
-    volume = a & b & c                                                         # Scalar-[faces]
-    frame = stack([(b & c) / volume, (c & a) / volume, (a & b) / volume], axis=-1)   # [corners] Plane+[faces]
+    frame = (mesh.boundary[2, 1] * (tails & heads)) / (corners[0] & corners[1] & corners[2])   # [corners] Plane+[faces]
     # The heights at each face's corners, on the last axis.
     corner_heights = mesh.incidence[2, 0] * heights[..., None]                 # [..., corners] Scalar+[faces]
     return (frame * corner_heights).sum(axis=-1)                               # [...] Plane+[faces]

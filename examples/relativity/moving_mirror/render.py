@@ -176,10 +176,9 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
     wake_ax = figure.add_axes((0.69, 0.17, 0.29, 0.79))
 
     # Panel 1: Corner hat contours, light cone, Euclidean normal, and Lorentzian dual.
+    tails, heads = core.triangle.corners[2, 1]
     index = 1
-    others = [(index + 1) % 3, (index + 2) % 3]
-    # The triangle, a mesh of one face, filled and outlined by its own edges.
-    triangle = simplices.Mesh(3, np.array([[0, 1, 2]]))
+    others = [tails[index], heads[index]]
     # The hat falls evenly from one at its corner to zero along the opposite side: each level runs parallel to that
     # side, across the two sides from the corner, a share of one less the level of the way along them.
     levels = np.linspace(0.0, 1.0, n_contours + 2)[1:-1]
@@ -193,10 +192,10 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
     scale = 0.28 / picture_length(lorentz_dual)                              # [] Scalar+
     tips = centroid + scale * stack((euclidean_normal, lorentz_dual))        # [2] Point-
     simplices.overlay(hat_ax, [
-        contours.picture(corners, triangle, np.zeros(3), ink(paper_colour), camera),
+        contours.picture(corners, core.triangle, np.zeros(3), ink(paper_colour), camera),
         simplices.strokes(level_ends.reshape(-1), simplices.Mesh.chains([2] * n_contours), ink(primal_colour),
                           charts.LINE_PX, camera, opacity=0.55),
-        simplices.strokes(corners, triangle, ink(wall_colour), charts.LINE_PX, camera),
+        simplices.strokes(corners, core.triangle, ink(wall_colour), charts.LINE_PX, camera),
         simplices.strokes(corners[others], simplices.Mesh.chains([2]), ink(wall_colour), bold_px, camera),
         light_cone_cross(centroid, 0.38, camera, 0.82),
         simplices.markers(corners, ink(wall_colour), charts.MARKER_PX / 2, camera),
@@ -217,13 +216,13 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
     sample_hats = 1 + (gradients[:, None] & (points[None, :] - corners[:, None]))   # [corners, samples] Scalar+
     corner_field = edge_forms[edge_index, sample_hats.argmax(axis=-1)].dual()   # [corners] Point-
     # Seeds along the edge, drawn a little in towards the centroid.
-    start, end = corners[(edge_index + 1) % 3], corners[(edge_index + 2) % 3]   # [] Point-, Point-
+    start, end = corners[tails[edge_index]], corners[heads[edge_index]]      # [] Point-, Point-
     fractions = np.linspace(0.06, 0.94, n_streamlines)
     seeds = (start * (1 - fractions) + end * fractions) * 0.85 + centroid * 0.15   # [seeds] Point-
     curves, chains = streamlines(corners, gradients, corner_field, seeds)
     simplices.overlay(edge_ax, [
-        contours.picture(corners, triangle, np.zeros(3), ink(paper_colour), camera),
-        simplices.strokes(corners, triangle, ink(wall_colour), charts.LINE_PX, camera),
+        contours.picture(corners, core.triangle, np.zeros(3), ink(paper_colour), camera),
+        simplices.strokes(corners, core.triangle, ink(wall_colour), charts.LINE_PX, camera),
         simplices.strokes(curves, chains, ink(primal_colour), charts.LINE_PX, camera),
         light_cone_cross(corners[edge_index], 0.42, camera, 0.82),
         simplices.strokes(stack((start, end)), simplices.Mesh.chains([2]), ink(accent_colour), bold_px, camera),

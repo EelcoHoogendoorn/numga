@@ -23,7 +23,7 @@ Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 Full = ga.gatype.full()
-Intrinsic = Full.derive.flipped_orientation
+Intrinsic = (Full * ga.gatype.antiscalar()).output_gatype
 # Points, light rays and the twistors of rays are intrinsic, like all geometry.
 Point = ga.gatype.antivector()                                               # Antivector-
 Ray = ga.gatype.antibivector()                                               # Antibivector-
@@ -31,7 +31,7 @@ Event = Point.derive.containing("u v")                                       # A
 Spatial = Point.derive.containing("t u v")                                   # Antivector-
 Faraday = Bivector.derive.within("x y z t")                                  # Bivector+
 ExtrinsicTwistor = Full.derive.within("y z u")                               # Full+
-Twistor = ExtrinsicTwistor.derive.flipped_orientation                        # Full-
+Twistor = Intrinsic.derive.within("y z u")                                   # Full-
 # The handedness of the pulse and of the fibres it is carried along.
 Helicity = ga.gatype.antipseudoscalar()                                 # Antipseudoscalar-
 
