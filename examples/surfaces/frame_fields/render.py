@@ -10,7 +10,7 @@ import numpy as np
 from numga import concatenate, stack
 from numga.sparse import SparseExtensor, spdiag
 from examples.surfaces.frame_fields import core
-from examples.util.wgsl import image_figure, meshes, solids, strokes
+from examples.util.wgsl import image_figure, meshes, simplices, solids
 
 background = np.ones(3)
 surface_colour = np.array([0.91, 0.93, 0.95])
@@ -53,9 +53,10 @@ def sheet(places: core.Point, faces: np.ndarray, colours: np.ndarray,
 
 def boundary_lines(mesh: core.Mesh, vertices: core.Point, view: solids.View) -> meshes.Samples:
     """Thin outlines keep the reference geometry visible beneath the field."""
-    tails, heads = mesh.reading(mesh.boundary_edges, 1) * (mesh.incidence[1, 0] * vertices)   # Point-[rim], Point-[rim]
-    return strokes.segments(solids.origin + solids.context.include_from_algebra(tails.batch()),
-                            solids.origin + solids.context.include_from_algebra(heads.batch()), ink, 1.1, view)
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())             # [vertices] Point-
+    # The rim: the mesh of the boundary's edges.
+    rim = simplices.Mesh(len(points), mesh.edges[mesh.boundary_edges])
+    return simplices.tubes(points, rim, ink, 1.1, view, solids.gloss)
 
 
 def panels(images: list[np.ndarray]) -> plt.Figure:
@@ -80,7 +81,7 @@ def frame_patches(starts: core.Point, rotors: core.Rotor, size: float,
     colours = np.broadcast_to(np.stack((coral, gold, teal, blue))[None, :, None, :], (n_patches, 4, 3, 3)).reshape(-1, 3, 3)
     patches = sheet(places.reshape(-1), faces, colours, view)
     perimeters = solids.origin + solids.context.include_from_algebra(places[:, [0, 1, 2, 3, 0]])   # [patches, 5] Point-
-    seams = strokes.polylines([(perimeters[patch], ink) for patch in range(n_patches)], 1.0, view)
+    seams = simplices.tubes(perimeters.reshape(-1), simplices.Mesh.chains([5] * n_patches), ink, 1.0, view, solids.gloss)
     return patches, seams
 
 
@@ -117,12 +118,15 @@ def draw_darboux_whitney(
     progression = phases[:-1, None] * gold + (1 - phases[:-1, None]) * coral
     arc_colours = np.broadcast_to(progression, (len(selected), n_curve_samples - 1, 3))
     arc_places = solids.origin + solids.context.include_from_algebra(arc_points)               # [selected, samples] Point-
-    arcs = strokes.segments(arc_places[:, :-1].reshape(-1), arc_places[:, 1:].reshape(-1), arc_colours.reshape(-1, 3),
-                            3.0, view)
+    # Each arc a chain of edges, each edge in its own colour along the arc.
+    arcs = simplices.tubes(arc_places.reshape(-1), simplices.Mesh.chains([n_curve_samples] * len(selected)),
+                           arc_colours.reshape(-1, 3), 3.0, view, solids.gloss)
     probe_starts = points[selected] + lift * 0.025 - probe * 0.08             # [selected] Point-
     probe_ends = probe_starts + probe * 0.18                                  # [selected] Point-
     probe_tips = solids.origin + solids.context.include_from_algebra(probe_ends)               # [selected] Point-
-    probes = strokes.segments(solids.origin + solids.context.include_from_algebra(probe_starts), probe_tips, blue, 2.0, view)
+    probe_segments = stack((solids.origin + solids.context.include_from_algebra(probe_starts), probe_tips), axis=-1)   # [selected, 2] Point-
+    probes = simplices.tubes(probe_segments.reshape(-1), simplices.Mesh.chains([2] * len(selected)), blue, 2.0, view,
+                             solids.gloss)
     probe_ends_mark = solids.ball(probe_tips, 0.018)[:, None]
     arc_ends = solids.ball(arc_places[:, -1], 0.018)[:, None]
     rates_image = solids.draw([(probe_ends_mark, blue), (arc_ends, gold)], view, background, inks=[], translucent=[],
@@ -192,15 +196,16 @@ def draw_skyrmion(mesh: core.Mesh, vertices: core.Point, directors: core.Point) 
     domain_paths = solids.origin + solids.context.include_from_algebra(domain_points)          # [paths, samples] Point-
     sphere_paths = solids.origin + solids.context.include_from_algebra(sphere_points)          # [paths, samples] Point-
     colours = np.concatenate((np.broadcast_to([0.56, 0.64, 0.72], (rings.shape[0], 3)), path_colours))
-    domain_lines = [(domain_paths[path], colour) for path, colour in enumerate(colours)]
-    sphere_lines = [(sphere_paths[path], colour) for path, colour in enumerate(colours)]
+    # Each path a chain of edges, each edge in its path's colour.
+    chains = simplices.Mesh.chains([n_curve_samples] * len(paths))
+    chain_colours = np.repeat(colours, n_curve_samples - 1, axis=0)
 
     disk = sheet(vertices, mesh.faces, surface_colour, disk_frame)
-    domain_grid = strokes.polylines(domain_lines, 2.4, disk_frame)
+    domain_grid = simplices.tubes(domain_paths.reshape(-1), chains, chain_colours, 2.4, disk_frame, solids.gloss)
     centre = solids.ball((solids.origin + solids.context.include_from_algebra(vertical * 0.018))[None], 0.045)[:, None]
     domain = solids.draw([(centre, coral)], disk_frame, background, inks=[], translucent=[], meshes=[(disk, 1.0), (domain_grid, 1.0)])
     sphere = solids.ball(solids.origin[None], 1.0)[:, None]
-    sphere_grid = strokes.polylines(sphere_lines, 2.8, sphere_frame)
+    sphere_grid = simplices.tubes(sphere_paths.reshape(-1), chains, chain_colours, 2.8, sphere_frame, solids.gloss)
     poles = solids.ball(solids.origin + solids.context.include_from_algebra(stack([vertical, -vertical]) * 1.02), 0.045)[:, None]
     image = solids.draw([(sphere, surface_colour), (poles, np.stack((coral, blue)))], sphere_frame, background,
                         inks=[], translucent=[], meshes=[(sphere_grid, 1.0)])
@@ -229,7 +234,8 @@ def ribbon_panel(mesh: core.Mesh, vertices: core.Point, rotors: core.Rotor, ring
     for ribbon in range(ribbons.shape[0]):
         layers.append((sheet(ribbons[ribbon].reshape(-1), faces, colours[faces], view), 1.0))
         edges = solids.origin + solids.context.include_from_algebra(ribbons[ribbon][:, [0, -1]])   # [samples, 2] Point-
-        seam = strokes.polylines([(edges[:, 0], gold), (edges[:, 1], teal)], 1.3, view)
+        seam = simplices.tubes(concatenate((edges[:, 0], edges[:, 1])), simplices.Mesh.chains([n_curve_samples] * 2),
+                               np.repeat(np.stack((gold, teal)), n_curve_samples - 1, axis=0), 1.3, view, solids.gloss)
         layers.append((seam, 1.0))
     return solids.draw([], view, background, inks=[], translucent=[], meshes=layers)
 

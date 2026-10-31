@@ -20,7 +20,7 @@ from matplotlib.colors import to_rgb
 from numga import concatenate, stack
 from examples.fluids.jeffery import core
 from examples.util import charts
-from examples.util.wgsl import labels, show, solids, strokes
+from examples.util.wgsl import labels, show, simplices, solids
 from examples.util.wgsl.scene import Scene
 
 # The colours of the starts, of the bodies, of the flow and of the frame's names. The view as (elevation, azimuth) in
@@ -84,14 +84,19 @@ def draw_orbits(trails: core.Point) -> plt.Figure:
     # Both ends of every long axis, the scene's points the axis reaches from its origin.
     axis_ends = trails * np.array([1.0, -1.0])[:, None, None, None]          # [ends, steps + 1, bodies, starts] Point-
     ends = solids.origin + (to_scene >> solids.context.include_from_algebra(axis_ends))   # [ends, steps + 1, bodies, starts]
-    count = trails.shape[1]
+    n_ends, n_points, count, n_starts = ends.shape
+    # The paths from every start at both ends of the axis, chains of edges down the steps through a body's points
+    # numbered as they lie, each edge in its start's colour.
+    numbered = np.arange(n_ends * n_points * n_starts).reshape(n_ends, n_points, n_starts)
+    paths = simplices.Mesh(numbered.size, np.stack([numbered[:, :-1], numbered[:, 1:]], axis=-1).reshape(-1, 2))
+    path_colours = np.broadcast_to(STARTS[:, :3], numbered[:, 1:].shape + (3,)).reshape(-1, 3)
     view = solids.View(solids.aim(solids.origin, np.radians(VIEW[0]), np.radians(VIEW[1] + 90)),
                        np.full(2, LABEL_DISTANCE * (1 + ORBIT_MARGIN)), ORBIT_PIXELS)
     figure = plt.figure(figsize=(count * ORBIT_PIXELS / 100, ORBIT_PIXELS / 100), dpi=100)
     parts, ball, inks = sphere(view)
     for body in range(count):
-        orbits = strokes.polylines([(ends[end, :, body, start], colour[:3])
-                                    for start, colour in enumerate(STARTS) for end in range(2)], ORBIT_WIDTH, view)
+        orbits = simplices.tubes(ends[:, :, body].reshape(-1), paths, path_colours, ORBIT_WIDTH, view,
+                                 gloss=solids.gloss)
         ax = figure.add_axes((body / count, 0, 1 / count, 1))
         show(ax, solids.draw(parts, view, np.ones(3), inks, translucent=ball, meshes=[(orbits, 1.0)]), view)
         # Each arrow named just past its tip by the direction it runs along: the normal z, the flow x, the gradient y.
@@ -142,12 +147,17 @@ def animate_tumbling(stretches: core.Stretch, heights: core.Point, velocities: c
     tip_offsets = to_scene >> solids.context.include_from_algebra(tip_ends)             # [ends, frames, bodies] Point-
     axis_ends = shifts >> (solids.origin + tip_offsets)                       # [ends, frames, bodies] Point-
     mark_ends = shifts >> (solids.origin + tip_offsets * MARK_END)            # [ends, frames, bodies] Point-
+    # The tips' paths, chains of edges down the frames through the ends numbered as they lie; and the marks, an edge
+    # from each end out past it.
+    numbered = np.arange(np.prod(axis_ends.shape)).reshape(axis_ends.shape)  # [ends, frames, bodies]
+    steps = np.stack([numbered[:, :-1], numbered[:, 1:]], axis=-1)           # [ends, frames - 1, bodies, 2]
+    marked = simplices.Mesh.chains([2] * (2 * count))
     scene = Scene(view, np.ones(3), flow, [], inks=[], translucent=[])
     for index in range(len(tips)):
         # The paths of the tips so far, and the marks from each end out past it.
-        paths = strokes.segments(axis_ends[:, :index].reshape(-1), axis_ends[:, 1:index + 1].reshape(-1), TIP_RGB,
-                                 PATH_WIDTH, view)
-        marks = strokes.segments(axis_ends[:, index].reshape(-1), mark_ends[:, index].reshape(-1), TIP_RGB, MARK_WIDTH,
-                                 view)
+        paths = simplices.tubes(axis_ends.reshape(-1), simplices.Mesh(numbered.size, steps[:, :index].reshape(-1, 2)),
+                                TIP_RGB, PATH_WIDTH, view, gloss=solids.gloss)
+        marks = simplices.tubes(stack([axis_ends[:, index], mark_ends[:, index]], axis=-1).reshape(-1), marked, TIP_RGB,
+                                MARK_WIDTH, view, gloss=solids.gloss)
         yield scene.draw([(placed_bodies[index].reshape(-1, 4), colours)], inks=[], translucent=[],
                          meshes=[(paths, 1.0), (marks, 1.0)])

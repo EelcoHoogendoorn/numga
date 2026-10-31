@@ -15,7 +15,7 @@ from matplotlib.colors import to_rgb
 from examples.util.animation import capture
 from numga import concatenate, stack
 from examples.orientation.conformal_circle.core import Point, Sphere, mv
-from examples.util.wgsl import show, solids, strokes
+from examples.util.wgsl import show, simplices, solids
 
 sm = solids.mv
 plane_ink, sphere_ink, curve_ink = "#218c9d", "#ce713f", "#3d354a"
@@ -114,7 +114,8 @@ def panel(vertices: Point, circle: Point, globe: Point, plane: Sphere, sphere: S
     planes = concatenate([parallels, meridians])                                # [circles] Plane+
     spans = planes.scalar_norm_squared()
     planes = planes[spans > spanned * spans.max()]
-    curve = strokes.polylines([(gpu_points(circle), curve_colour)], circle_width, view)
+    curve = simplices.tubes(gpu_points(circle), simplices.Mesh.chains([len(circle)]), curve_colour, circle_width, view,
+                            gloss=solids.gloss)
 
     # Short arrows follow the point order around the circle in both views.
     count = len(circle) - 1

@@ -7,10 +7,10 @@ from collections.abc import Iterable, Iterator
 import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import concatenate
+from numga import concatenate, stack
 from numga.sparse import SparseExtensor, spdiag
 from examples.surfaces.minimal_surfaces import core
-from examples.util.wgsl import image_figure, meshes, solids, strokes
+from examples.util.wgsl import image_figure, meshes, simplices, solids
 
 mv = core.mv
 background = np.ones(3)
@@ -54,9 +54,10 @@ def sheet(mesh: core.Mesh, surface: core.Point, corner_colours: np.ndarray, view
 
 def boundary_lines(mesh: core.Mesh, surface: core.Point, width: float, view: solids.View) -> meshes.Samples:
     """Crisp outlines mark the boundary wire of a surface."""
-    tails, heads = mesh.reading(mesh.exterior(1), 1) * (mesh.incidence[1, 0] * surface)   # Point-[rim], Point-[rim]
-    return strokes.segments(solids.origin + solids.context.include_from_algebra(tails.batch()),
-                            solids.origin + solids.context.include_from_algebra(heads.batch()), ink, width, view)
+    points = solids.origin + solids.context.include_from_algebra(surface.batch())               # [vertices] Point-
+    # The wire: the mesh of the boundary's edges.
+    wire = simplices.Mesh(len(points), mesh.edges[mesh.exterior(1)])
+    return simplices.tubes(points, wire, ink, width, view, solids.gloss)
 
 
 def disk_paths(rim: core.Point) -> core.Point:
@@ -101,7 +102,10 @@ def surface_with_curves(
     """A lit surface sheet overlaid with its boundary wire and its lifted domain curves."""
     curves = solids.origin + solids.context.include_from_algebra((lift * surface).batch())    # [curves, samples] Point-
     colours = np.concatenate((np.broadcast_to(teal, (n_rings, 3)), meridian_colours))
-    curve_strokes = strokes.polylines(list(zip(curves, colours)), 2.0, view)
+    n_curves, n_samples = curves.shape
+    # Each curve a chain of edges, each edge in its curve's colour.
+    curve_strokes = simplices.tubes(curves.reshape(-1), simplices.Mesh.chains([n_samples] * n_curves),
+                                    np.repeat(colours, n_samples - 1, axis=0), 2.0, view, solids.gloss)
     base = sheet(mesh, surface, corner_colours, view)
     rim = boundary_lines(mesh, surface, 2.2, view)
     return solids.draw([], view, background, inks=[], translucent=[],
@@ -171,8 +175,12 @@ def animate_bonnet(
     for surface, normals in frames:
         ring_curves = solids.origin + solids.context.include_from_algebra((ring_reading * surface).batch())   # [rings, azimuths] Point-
         meridian_curves = solids.origin + solids.context.include_from_algebra((meridian_reading * surface).batch())   # [meridians, heights] Point-
-        curves = [(points, teal) for points in ring_curves] + [(points, coral) for points in meridian_curves]
-        curve_strokes = strokes.polylines(curves, 2.0, view)
+        # Each ring and each meridian a chain of edges, the rings teal and the meridians coral.
+        lengths = [n_azimuths] * len(ring_curves) + [n_heights] * len(meridian_curves)
+        colours = np.repeat(np.stack((teal, coral)),
+                            [len(ring_curves) * (n_azimuths - 1), len(meridian_curves) * (n_heights - 1)], axis=0)
+        curve_strokes = simplices.tubes(concatenate((ring_curves.reshape(-1), meridian_curves.reshape(-1))),
+                                        simplices.Mesh.chains(lengths), colours, 2.0, view, solids.gloss)
         base = sheet(mesh, surface, surface_colour, view)
         rim = boundary_lines(mesh, surface, 1.8, view)
 
@@ -181,7 +189,8 @@ def animate_bonnet(
         normal_directions = (pin_reading * normals * unit_volume).dual()     # Point-[pins]
         roots = solids.origin + solids.context.include_from_algebra((pin_points - pin_depth * normal_directions).batch())   # [pins] Point-
         tips = solids.origin + solids.context.include_from_algebra((pin_points + pin_reach * normal_directions).batch())    # [pins] Point-
-        stems = strokes.segments(roots, tips, gold, 2.2, view)
+        stems = simplices.tubes(stack((roots, tips), axis=-1).reshape(-1), simplices.Mesh.chains([2] * len(roots)),
+                                gold, 2.2, view, solids.gloss)
         heads = solids.ball(tips, pin_head_radius)[:, None]
         yield solids.draw([(heads, gold)], view, background, inks=[], translucent=[],
                           meshes=[(base, 1.0), (curve_strokes, 1.0), (rim, 1.0), (stems, 1.0)])

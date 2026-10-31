@@ -15,7 +15,7 @@ from numga import Extensor, concatenate
 from examples.util.animation import capture
 from examples.quantum.process_tomography import core
 from examples.util import charts
-from examples.util.wgsl import fitted, labels, meshes, show, solids, strokes
+from examples.util.wgsl import fitted, labels, meshes, show, simplices, solids
 from examples.util.wgsl.scene import Scene
 
 CHANNEL_COLOURS = ("#3275a8", "#d16a30", "#7b62a3")
@@ -117,8 +117,12 @@ def grid_lines(points: solids.Point) -> tuple[solids.Point, solids.Point]:
 def grid(points: solids.Point, colour: np.ndarray, width: float, view: solids.View) -> meshes.Samples:
     """The grid lines of a grid of points `[latitudes + 1, longitudes + 1]`, as strokes `width` across in a colour,
     at every sample."""
-    lines = [line for batch in grid_lines(points) for line in batch]
-    return strokes.polylines([(line, colour) for line in lines], width / view.pixel, view)
+    latitudes, longitudes = grid_lines(points)   # [lines, longitudes + 1] Point-, [lines, latitudes + 1] Point-
+    # Every grid line a chain of edges through its points, the latitudes' and then the longitudes'.
+    chains = simplices.Mesh.chains([latitudes.shape[1]] * latitudes.shape[0]
+                                   + [longitudes.shape[1]] * longitudes.shape[0])
+    return simplices.tubes(concatenate([latitudes.reshape(-1), longitudes.reshape(-1)]), chains, colour,
+                           width / view.pixel, view, gloss=solids.gloss)
 
 
 def grid_planes(points: solids.Point) -> solids.Plane:

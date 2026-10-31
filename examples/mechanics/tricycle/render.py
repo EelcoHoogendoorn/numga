@@ -15,7 +15,7 @@ from matplotlib.colors import to_rgb
 
 from numga import Extensor, concatenate, stack
 from examples.util.animation import capture
-from examples.util.wgsl import meshes, solids, strokes
+from examples.util.wgsl import meshes, simplices, solids
 
 FRAME = "#2c3e50"
 WHEEL = "#222222"
@@ -124,8 +124,10 @@ def space(contacts: solids.Point, forward: solids.Point, centre: solids.Line, mi
     steps = wheel_steps(contacts, forward)                                                # [wheels] Point-
     sideways = steps.commutator(mv.xy)                                                    # [wheels] Point-
     rims = meshes.circles(hubs + steps, (hubs & sideways) * solids.flip, N_RIM)          # [wheels, rim + 1] Point-
-    tyres = strokes.polylines([(rim, to_rgb(WHEEL)) for rim in rims], RIM_WIDTH, view)
-    trail = strokes.polylines([(middle, to_rgb(TRAIL))], TRAIL_WIDTH, view)
+    tyres = simplices.tubes(rims.reshape(-1), simplices.Mesh.chains([rims.shape[1]] * rims.shape[0]), to_rgb(WHEEL),
+                            RIM_WIDTH, view, gloss=solids.gloss)
+    trail = simplices.tubes(middle, simplices.Mesh.chains([len(middle)]), to_rgb(TRAIL), TRAIL_WIDTH, view,
+                            gloss=solids.gloss)
     return solids.draw(parts, view, BACKGROUND, inks=[], translucent=[], meshes=[(tyres, 1.0), (trail, 1.0)])
 
 

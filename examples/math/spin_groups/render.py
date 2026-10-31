@@ -12,7 +12,7 @@ from matplotlib.colors import hsv_to_rgb
 from numga import stack
 
 from examples.math.spin_groups import core
-from examples.util.wgsl import fitted, meshes, show, solids, strokes
+from examples.util.wgsl import fitted, meshes, show, simplices, solids
 from examples.util.wgsl.scene import Scene
 
 background = np.ones(3)
@@ -51,8 +51,11 @@ def view(pixels: int, drawn: list[core.Euclidean]) -> solids.View:
 def orbit_samples(orbits: core.Euclidean, width: float, view: solids.View) -> meshes.Samples:
     """Each orbit `[heights, azimuths, steps + 1]` as a stroke of a width in pixels, in the colour of its start, at
     every sample."""
-    curves = zip(gpu_points(orbits.reshape((-1, orbits.shape[-1]))), colours(orbits.shape[:2]).reshape(-1, 3))
-    return strokes.polylines(list(curves), width, view)
+    n_orbits, n_points = int(np.prod(orbits.shape[:-1])), orbits.shape[-1]
+    # Each orbit a chain of edges through its points, each edge in its orbit's colour.
+    chains = simplices.Mesh.chains([n_points] * n_orbits)
+    shades = np.repeat(colours(orbits.shape[:2]).reshape(-1, 3), n_points - 1, axis=0)   # [edges, 3]
+    return simplices.tubes(gpu_points(orbits.reshape(-1)), chains, shades, width, view, gloss=solids.gloss)
 
 
 def dots(positions: core.Euclidean, rgb: np.ndarray, view: solids.View) -> tuple[solids.Quadric, np.ndarray]:

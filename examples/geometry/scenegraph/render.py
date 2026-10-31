@@ -17,7 +17,7 @@ import numpy as np
 from numga import concatenate, stack
 from examples.util.animation import capture
 from examples.geometry.scenegraph.core import Motor, Plane, Point, ga, mv, unit_box_topology
-from examples.util.wgsl import fitted, image_figure, meshes, show, solids, strokes
+from examples.util.wgsl import fitted, image_figure, meshes, show, simplices, solids
 from examples.util.wgsl.scene import Scene
 
 
@@ -90,8 +90,10 @@ def camera_and_floor(camera_pose: Motor, view: solids.View, thickness: float) ->
     edge, edge_joints = solids.edges(sensor, sensor[[1, 2, 3, 0]], thickness * ray_width / 2 * view.pixel)
     grid_lines = floor()                                                      # [lines, ends] Point-
     grid = solids.rods(grid_lines[:, 0], grid_lines[:, 1], thickness * floor_width / 2 * view.pixel)
-    lenses = strokes.polylines([(rims[0], mcolors.to_rgb(front_lens_color)), (rims[1], mcolors.to_rgb(rear_lens_color))],
-                               thickness * rim_width, view)
+    # Each lens rim a chain of edges, in its lens's colour.
+    rim_colours = np.repeat([mcolors.to_rgb(front_lens_color), mcolors.to_rgb(rear_lens_color)], n_rim, axis=0)
+    lenses = simplices.tubes(rims.reshape(-1), simplices.Mesh.chains([n_rim + 1] * 2), rim_colours,
+                             thickness * rim_width, view, gloss=solids.gloss)
     parts = [(grid, np.array(mcolors.to_rgb(floor_color))),
              (edge, np.array(mcolors.to_rgb(sensor_edge_color))), (edge_joints, np.array(mcolors.to_rgb(sensor_edge_color)))]
     return parts, [(chip, np.array(mcolors.to_rgb(sensor_color)), sensor_opacity)], [(lenses, 1.0)]

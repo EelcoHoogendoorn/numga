@@ -21,7 +21,7 @@ import numpy as np
 
 from numga import Extensor, stack
 from examples.thermodynamics import rendering as art
-from examples.util.wgsl import solids, strokes
+from examples.util.wgsl import simplices, solids
 
 # The charts' size in pixels and their ranges: position and momentum, time and entropy, mechanical energy and entropy.
 chart_rows, chart_columns = 300, 310
@@ -63,7 +63,7 @@ def oscillator(position: solids.Scalar, warmth: float) -> np.ndarray:
     coil = centres + ((mv.yz * (coil_angles / 2)).exp() >> mv.direction([0, 0, 0.13]))   # [coil] Point-
     corners = mv.point([[x, y, z] for x in (-2.95, 2.5) for y in (-0.65, 0.65) for z in (0.1, 1.4)])
     view = solids.view([corners], 0.0, np.radians(18), np.radians(-12), 0.04, apparatus_pixels)
-    spring = strokes.polylines([(coil, art.ink)], 1.6, view)
+    spring = simplices.tubes(coil, simplices.Mesh.chains([len(coil)]), art.ink, 1.6, view, solids.gloss)
     return solids.draw([(floor, art.grey), (wall, art.grey), (body, art.blue), (rod, art.grey),
                         (damper, art.thermal_colour(warmth))], view, art.white, inks=[], translucent=[],
                        meshes=[(spring, 1.0)])

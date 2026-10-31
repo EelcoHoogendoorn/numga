@@ -11,7 +11,7 @@ from matplotlib.tri import Triangulation
 
 from numga import stack
 from examples.util import charts
-from examples.util.wgsl import contours, flow, image_figure, meshes, solids, strokes
+from examples.util.wgsl import contours, flow, image_figure, meshes, simplices, solids
 from examples.surfaces.whitney_forms import core
 
 primal_colour = "#286580"
@@ -214,9 +214,8 @@ def draw_tet_whitney(mesh: core.SpaceMesh, vertices: core.SpacePoint, points: co
     shell_colours = np.broadcast_to(cream, wall_faces.shape + (3,))
     shell = meshes.samples(places, wall_faces, shell_colours, meshes.flat(places, wall_faces), view,
                            face_values=np.zeros(len(wall)), colour=meshes.plain, gloss=solids.gloss)
-    tails, heads = mesh.incidence[1, 0] * (vertices - centroid)               # Point-[edges], Point-[edges]
-    wire = strokes.segments(solids.origin + solids.context.include_from_algebra(tails.batch()),
-                            solids.origin + solids.context.include_from_algebra(heads.batch()), light_slate, 1.5, view)
+    # The tetrahedron's wireframe: its mesh's own edges.
+    wire = simplices.tubes(places, simplices.Mesh(len(places), mesh.edges), light_slate, 1.5, view, solids.gloss)
 
     # The Whitney 1-form of the first edge, circulating around the edge across it, the longest glyph a fixed length.
     edge_lengths = edge_field.norm().reshape(-1)
@@ -250,7 +249,9 @@ def draw_tet_whitney(mesh: core.SpaceMesh, vertices: core.SpacePoint, points: co
     face_mesh = meshes.samples(places, wall_faces, face_colours, meshes.flat(places, wall_faces), view,
                                face_values=np.zeros(len(wall)), colour=meshes.plain, gloss=solids.gloss)
     apex_ball = solids.ball(places[[apex]], 0.046)[:, None]
-    face_rim = strokes.segments(places[face], places[np.roll(face, -1)], accent_rgb, 2.8, view)
+    # The face's rim: an edge from each of its corners to the next, round the face.
+    face_rim = simplices.tubes(places, simplices.Mesh(len(places), np.stack((face, np.roll(face, -1)), axis=-1)),
+                               accent_rgb, 2.8, view, solids.gloss)
     panel_face = solids.draw(
         [(f_shafts, primal_rgb), (f_heads, primal_rgb), (apex_ball, accent_rgb)],
         view, background, inks=[], translucent=[], meshes=[(face_mesh, 0.30), (wire, 1.0), (face_rim, 1.0)],
@@ -271,7 +272,9 @@ def draw_tet_whitney(mesh: core.SpaceMesh, vertices: core.SpacePoint, points: co
     ring_turns = ((across_axis * unit_volume) * (-np.linspace(0.0, 2 * np.pi, n_ring_samples) / 2)).exp()   # [samples] Rotor+
     ring_points = across_middle * 0.62 + ring_radii[:, None] * (ring_turns >> radial)   # [rings, samples] Point-
     ring_places = solids.origin + solids.context.include_from_algebra(ring_points)            # [rings, samples] Point-
-    rings = strokes.polylines(list(zip(ring_places, ring_colours)), 3.2, view)
+    # Each ring a closed chain of edges, each edge in its ring's colour.
+    rings = simplices.tubes(ring_places.reshape(-1), simplices.Mesh.chains([n_ring_samples] * len(ring_places)),
+                            np.repeat(np.stack(ring_colours), n_ring_samples - 1, axis=0), 3.2, view, solids.gloss)
     panel_link = solids.draw(
         [(active_rod, accent_rgb), (active_balls, accent_rgb), (edge_arrow_s, accent_rgb), (edge_arrow_h, accent_rgb),
          (opp_rod, primal_rgb), (opp_balls, primal_rgb), (opp_arrow_s, primal_rgb), (opp_arrow_h, primal_rgb)],

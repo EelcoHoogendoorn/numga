@@ -10,7 +10,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.electromagnetism.magnetic_bottle import core
-from examples.util.wgsl import meshes, solids, strokes
+from examples.util.wgsl import meshes, simplices, solids
 from examples.util.wgsl.scene import Scene
 
 mv = core.mv
@@ -70,13 +70,17 @@ def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.A
     # a radius above the axis at its height.
     rims = solids.origin + solids.mv.x.dual() * heights + solids.mv.z.dual() * radius   # [coils] Point-
     rings = meshes.circles(rims, solids.mv.yz, n_around_coil)                 # [coils, around + 1] Point-
-    wire = strokes.polylines([(ring, to_rgb(wire_colour)) for ring in rings], wire_width, view)
+    wire = simplices.tubes(rings.reshape(-1), simplices.Mesh.chains([n_around_coil + 1] * len(heights)),
+                           to_rgb(wire_colour), wire_width, view, gloss=solids.gloss)
     scene = Scene(view, np.ones(3), [], [(sheet(points, strength, view), sheet_opacity), (wire, 1.0)], inks=[],
                   translucent=[])
     # What moves, frame by frame: the particles and their trails.
     for end in range(n_steps_per_frame, len(tracks) + 1, n_steps_per_frame):
         trail = tracks[max(0, end - n_trail):end]                             # [trail, particles] Point-
-        trails = strokes.polylines([(trail[:, particle], colour) for particle, colour in enumerate(colours)],
-                                   track_width, view)
+        # Each particle's trail a chain of edges down the steps, through the trail's points numbered as they lie.
+        numbered = np.arange(np.prod(trail.shape)).reshape(trail.shape)       # [trail, particles]
+        chains = simplices.Mesh(numbered.size, np.stack([numbered[:-1], numbered[1:]], axis=-1).reshape(-1, 2))
+        trails = simplices.tubes(trail.reshape(-1), chains, np.tile(colours, (len(trail) - 1, 1)), track_width, view,
+                                 gloss=solids.gloss)
         particles = solids.ball(tracks[end - 1], particle_radius * view.pixel)[:, None]
         yield scene.draw([(particles, colours)], inks=[], translucent=[], meshes=[(trails, 1.0)])

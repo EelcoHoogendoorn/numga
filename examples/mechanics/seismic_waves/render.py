@@ -10,7 +10,7 @@ import numpy as np
 
 from numga import stack
 from examples.mechanics.seismic_waves import core
-from examples.util.wgsl import image_figure, meshes, solids, strokes
+from examples.util.wgsl import image_figure, meshes, simplices, solids
 
 n_pixels = 300
 n_markers = 12
@@ -80,6 +80,7 @@ class DiskDrawing:
         sides = regions[mesh.edge_faces]                                          # [interior edges, 2]
         interface = mesh.interior_edges[sides[:, 0] != sides[:, 1]]
         self.rim = mesh.edges[np.concatenate((mesh.boundary_edges, interface))]
+        self.outline = simplices.Mesh(mesh.n_vertices, self.rim)
         # The markers: the vertices of the free surface nearest points turned evenly around it, from the top.
         surface_vertices = mesh.exterior(0)
         angles = np.linspace(0, 2 * np.pi, n_markers, endpoint=False) + np.pi / 2
@@ -105,7 +106,7 @@ class DiskDrawing:
         wall = meshes.samples(wall_points, wall_faces, wall_colour,
                               meshes.smooth(wall_points, meshes.Mesh(len(wall_points), wall_faces)), self.view,
                               face_values=np.zeros(1), colour=meshes.plain, gloss=0.06)
-        rim = strokes.segments(top_start, top_end, outline_colour, 1.0, self.view)
+        rim = simplices.tubes(points, self.outline, outline_colour, 1.0, self.view, gloss=solids.gloss)
         tops = [meshes.samples(points, self.mesh.faces, values[self.mesh.faces], self.top_normals, self.view,
                                face_values=self.regions[:, None], colour=surface, gloss=0.0)
                 for values, surface in panels]
@@ -136,13 +137,14 @@ def animate_waves(mesh: core.Mesh, vertices: core.Point, regions: np.ndarray,
         places = vertices + displacement_scale * displacement                      # Point-[vertices]
         history.append(places.batch()[drawing.markers])
         # The beads follow material points of the free surface; their short tails trace its motion.
-        trail_places = solids.context.include_from_algebra(stack(list(history)))           # [trail, markers] Point-
-        trajectory = top_middle + up * 0.009 + trail_places                       # [trail, markers] Point-
-        age = np.linspace(0.72, 0.12, len(history) - 1)
-        trail_colours = np.broadcast_to(age[:, None, None], (len(age), n_markers, 3))
-        tails = strokes.segments(trajectory[:-1].reshape(-1), trajectory[1:].reshape(-1),
-                                 trail_colours.reshape(-1, 3), 1.0, drawing.view)
-        beads = solids.ball(trajectory[-1], 0.012)[:, None]
+        trail_places = solids.context.include_from_algebra(stack(list(history), axis=1))   # [markers, trail] Point-
+        trajectory = top_middle + up * 0.009 + trail_places                       # [markers, trail] Point-
+        # Each marker's tail a chain of edges through its trail, each edge greyer the older it is.
+        tail_chains = simplices.Mesh.chains([len(history)] * n_markers)
+        age = np.tile(np.linspace(0.72, 0.12, len(history) - 1), n_markers)       # [edges]
+        tails = simplices.tubes(trajectory.reshape(-1), tail_chains, np.repeat(age[:, None], 3, axis=-1), 1.0,
+                                drawing.view, gloss=solids.gloss)
+        beads = solids.ball(trajectory[:, -1], 0.012)[:, None]
         moon_ball = solids.ball(solids.origin + solids.context.include_from_algebra(moon_place[None]), moon_radius)[:, None]
         panels = [(drawing.vertex_values(dilation_rate / dilation_scale), dilation_surface),
                   (drawing.vertex_values(vorticity / vorticity_scale), rotation_surface)]

@@ -8,9 +8,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import concatenate
+from numga import concatenate, stack
 from examples.relativity.gps import core
-from examples.util.wgsl import image_figure, solids, strokes
+from examples.util.wgsl import image_figure, simplices, solids
 
 BLUE, ORANGE, EARTH, GRID, INK = (
     np.array(to_rgb(colour)) for colour in
@@ -52,8 +52,10 @@ def constellation(emitted: core.Event, receiver: core.Event, orbit_radius: float
     parts = [(solids.ball(solids.origin, 1)[None, None], EARTH),
              (bodies, ORANGE), (panels, BLUE),
              (solids.ball(receiver_point, 2.7 * view.pixel)[None, None], ORANGE)]
-    rays = [(strokes.segments(satellite_points, receiver_point.broadcast_to(satellite_points.shape), BLUE, 0.9, view),
-             0.35)]
+    # Each signal's path an edge from its satellite to the receiver.
+    signals = stack((satellite_points, receiver_point.broadcast_to(satellite_points.shape)), axis=-1)   # [satellites, 2] Point-
+    rays = [(simplices.tubes(signals.reshape(-1), simplices.Mesh.chains([2] * len(satellite_points)), BLUE, 0.9, view,
+                             solids.gloss), 0.35)]
     return view, parts, rays
 
 
@@ -77,7 +79,8 @@ def solution_image(emitted: core.Event, receiver: core.Event, estimate: core.Eve
     # inverse bounds the ellipsoid, moved to the fitted position.
     dual = (reach * (solids.Plane & reach)).sum(axis=0) - solids.origin * (solids.Plane & solids.origin)   # [] Point- <- Plane+
     ellipsoid = solids.placed(dual.inverse(), solids.translator(centre - solids.origin))
-    principal = strokes.segments(centre - reach, centre + reach, BLUE, 0.9, view)
+    diameters = stack((centre - reach, centre + reach), axis=-1)               # [3, 2] Point-
+    principal = simplices.tubes(diameters.reshape(-1), simplices.Mesh.chains([2] * 3), BLUE, 0.9, view, solids.gloss)
     parts = parts + [(solids.ball(centre, 2.0 * view.pixel)[None, None], BLUE)]
     return solids.draw(parts, view, WHITE, inks=[earth_grid()], translucent=[(ellipsoid[None, None], BLUE, 0.3)],
                        meshes=rays + [(principal, 0.8)])

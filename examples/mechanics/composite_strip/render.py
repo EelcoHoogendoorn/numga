@@ -11,7 +11,7 @@ from contourpy import contour_generator
 from matplotlib.colors import to_rgb
 
 from examples.mechanics.composite_strip import core
-from examples.util.wgsl import meshes, solids, strokes
+from examples.util.wgsl import meshes, simplices, solids
 
 # The pixels across the frames; the view's elevation and azimuth in radians, azimuth zero looking along +y, and
 # the margin around the strips as a share of the larger side; the strip's colour and its fibres', and the fibres'
@@ -61,7 +61,8 @@ def animate_strips(rest: core.Direction, frames: core.Direction, across_fibres: 
     first = np.minimum(np.floor(positions).astype(int), np.array(frames.shape[2:]) - 2)   # [fibre vertices, 2]
     along, across = (positions - first).T                              # [fibre vertices], [fibre vertices]
     rows, columns = first.T
-    bounds = np.cumsum([0] + [len(line) for _, line in lines])        # [lines + 1]
+    # The fibre lines as chains of edges through their vertices.
+    fibre_chains = simplices.Mesh.chains([len(line) for _, line in lines])
 
     for grids in frames:
         points = solids.origin + solids.context.include_from_algebra(grids.reshape(-1))  # [vertices] Point-
@@ -73,6 +74,5 @@ def animate_strips(rest: core.Direction, frames: core.Direction, across_fibres: 
                    + (grids[cases, rows + 1, columns] * (1 - across) + grids[cases, rows + 1, columns + 1] * across)
                    * along)                                            # [fibre vertices] Direction-
         drawn = solids.origin + solids.context.include_from_algebra(threads)            # [fibre vertices] Point-
-        fibres = strokes.polylines([(drawn[start:end], FIBRE) for start, end in zip(bounds[:-1], bounds[1:])],
-                                   FIBRE_WIDTH, view)
+        fibres = simplices.tubes(drawn, fibre_chains, FIBRE, FIBRE_WIDTH, view, gloss=solids.gloss)
         yield solids.draw([], view, background, inks=[], translucent=[], meshes=[(strips, 1.0), (fibres, 1.0)])

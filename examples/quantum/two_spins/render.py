@@ -18,7 +18,7 @@ from matplotlib.colors import to_rgb
 from numga import Extensor, stack
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import fitted, labels, meshes, show, solids, strokes
+from examples.util.wgsl import fitted, labels, meshes, show, simplices, solids
 from examples.util.wgsl.scene import Scene
 
 sm = solids.mv
@@ -243,8 +243,11 @@ def draw_qubit(across: Extensor, turned: Extensor, balance: Extensor, times: np.
     figure = plt.figure(figsize=(760 / charts.DPI, 320 / charts.DPI))
     ax = figure.add_axes((0.0, 0.0, 0.45, 1.0))
     view = ball(ax)
-    tracks = strokes.polylines([(path, np.array(to_rgb(colour))) for path, colour in zip(paths, shades)],
-                               PATH_WIDTH / view.pixel, view)
+    # One chain of edges a rate, each edge in its rate's colour.
+    n_rates, n_times = paths.shape
+    tracks = simplices.tubes(paths.reshape(-1), simplices.Mesh.chains([n_times] * n_rates),
+                             np.repeat([to_rgb(colour) for colour in shades[:n_rates]], n_times - 1, axis=0),
+                             PATH_WIDTH / view.pixel, view, solids.gloss)
     start = [(solids.ball(paths[0, 0], START_RADIUS)[None, None], START_COLOUR)]
     show(ax, on_sphere(start, view, [(tracks, 1.0)]), view)
     # Each pole named just past the sphere, where the camera sees it.

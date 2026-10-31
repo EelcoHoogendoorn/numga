@@ -19,7 +19,7 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack, where
 from examples.surfaces.connections import core
-from examples.util.wgsl import fitted, flow, meshes, show, solids, strokes
+from examples.util.wgsl import fitted, flow, meshes, show, simplices, solids
 from examples.util.wgsl.scene import Scene
 
 # Surface colours, the ring palette, and views as elevation and azimuth in degrees from x.
@@ -67,16 +67,20 @@ def square_view(view_degrees: np.ndarray, vertices: core.Point, spare: float) ->
 
 
 def needles(origins: core.Point, directions: core.Point, normals: core.Vector,
-            length: float) -> tuple[solids.Point, solids.Point]:
+            length: float) -> tuple[solids.Point, simplices.Mesh]:
     """Arrows along the directions `[arrows]`, with their heads in each point's tangent plane: a shaft and two strokes
-    to the tip, as segments, their starts and ends `[arrows * 3]`."""
+    to the tip, their points `[arrows * 4]`, the origins, the tips and the heads' two outer ends, and the mesh of their
+    edges, the shafts first and then each side of the heads, each edge to its tip."""
     tips = origins + directions * length                                        # [arrows] Point-
     # The heads spread to either side of the shaft by a quarter turn of it in the tangent plane: its commutator with
     # the plane a tangent vector turns in, the normal's dual.
     side = directions.commutator(normals.dual())                                # [arrows] Point-
     base = origins + directions * (0.62 * length)                               # [arrows] Point-
-    starts = concatenate([origins, base + side * (0.25 * length), base - side * (0.25 * length)])
-    return solids.origin + solids.context.include_from_algebra(starts), solids.origin + solids.context.include_from_algebra(concatenate([tips, tips, tips]))
+    points = concatenate([origins, tips, base + side * (0.25 * length), base - side * (0.25 * length)])
+    arrow = np.arange(len(origins))
+    edges = np.stack([np.concatenate([arrow, arrow + 2 * len(arrow), arrow + 3 * len(arrow)]),
+                      np.tile(arrow + len(arrow), 3)], axis=-1)
+    return solids.origin + solids.context.include_from_algebra(points), simplices.Mesh(4 * len(arrow), edges)
 
 
 def surface(mesh: core.Mesh, vertices: core.Point, colours: np.ndarray, frame: solids.View, face_values: np.ndarray,
@@ -98,9 +102,12 @@ def animate_holonomy(sphere: core.Mesh, vertices: core.Point, rings: core.Vector
     ring_paths = solids.origin + solids.context.include_from_algebra(rings.dual() * unit_volume)   # [steps + 1, rings] Point-
     colours = np.array([to_rgb(colour) for colour in ring_colours])             # [rings, 3]
     ball = [(solids.ball(solids.origin, 1.0)[None, None], surface_colour, sphere_opacity)]
-    # The circles and the needles are strokes; the sphere alone is traced. The sphere and the circles stay put.
-    circles = strokes.polylines([(ring_paths[:, ring], colour) for ring, colour in enumerate(colours)], 4 * line_width,
-                                frame)
+    n_points, n_rings = ring_paths.shape
+    # The circles and the needles are strokes; the sphere alone is traced. The sphere and the circles stay put, each
+    # circle a chain of edges in its ring's colour, the rings one after another.
+    circles = simplices.tubes(concatenate([ring_paths[:, ring] for ring in range(n_rings)]),
+                              simplices.Mesh.chains([n_points] * n_rings),
+                              np.repeat(colours, n_points - 1, axis=0), 4 * line_width, frame, solids.gloss)
     scene = Scene(frame, background, [], [(circles, 1.0)], inks=[], translucent=ball)
     normals, carried = [], []
     for normal, vector in states:
@@ -108,11 +115,11 @@ def animate_holonomy(sphere: core.Mesh, vertices: core.Point, rings: core.Vector
         carried.append(vector)                                                  # [rings] Point-
         past, along = stack(normals[::holonomy_stride]), stack(carried[::holonomy_stride])   # [trail, rings] Vector-, Point-
         # Each needle of the trail in its ring's colour: a needle's three strokes, a run per stroke.
-        trail = strokes.segments(*needles((past.dual() * unit_volume).reshape(-1), along.reshape(-1), past.reshape(-1),
-                                          holonomy_needle), np.tile(np.tile(colours, (past.shape[0], 1)), (3, 1)),
-                                 2 * line_width, frame)
-        now = strokes.segments(*needles(normal.dual() * unit_volume, vector, normal, holonomy_needle * 1.15),
-                               np.tile(colours, (3, 1)), 5 * line_width, frame)
+        trail = simplices.tubes(*needles((past.dual() * unit_volume).reshape(-1), along.reshape(-1), past.reshape(-1),
+                                         holonomy_needle), np.tile(np.tile(colours, (past.shape[0], 1)), (3, 1)),
+                                2 * line_width, frame, solids.gloss)
+        now = simplices.tubes(*needles(normal.dual() * unit_volume, vector, normal, holonomy_needle * 1.15),
+                              np.tile(colours, (3, 1)), 5 * line_width, frame, solids.gloss)
         yield scene.draw([], inks=[], translucent=[], meshes=[(now, 1.0), (trail, trail_opacity)])
 
 
@@ -296,7 +303,8 @@ def lines_image(mesh: core.Mesh, vertices: core.Point, pattern: tuple[core.Point
                                       stack([corners[turns[:, family] == 0, corner, family] for corner in range(3)]) / (2 * np.pi)).reshape(2, -1)
                             for family in range(corners.shape[-1])], axis=1)   # [2, segments] Point-
     drawn = solids.origin + solids.context.include_from_algebra(segments[:, (segments[1] - segments[0]).norm() > 0])   # [2, segments] Point-
-    lines = strokes.segments(drawn[0], drawn[1], dark, line_width * frame.pixels / (panel_inches * panel_dpi), frame)
+    lines = simplices.tubes(stack((drawn[0], drawn[1]), axis=-1).reshape(-1), simplices.Mesh.chains([2] * drawn.shape[1]),
+                            dark, line_width * frame.pixels / (panel_inches * panel_dpi), frame, solids.gloss)
     return solids.draw([], frame, background, inks=[], translucent=[],
                        meshes=[(surface(mesh, vertices, light, frame, face_values=np.zeros(4), colour=meshes.plain), 1.0),
                                (lines, 1.0)])

@@ -12,7 +12,7 @@ from matplotlib.colors import hsv_to_rgb, to_rgb
 from numga import concatenate, stack
 from examples.util.animation import capture
 from examples.relativity.twistors import core
-from examples.util.wgsl import fitted, image_figure, labels, show, solids, strokes
+from examples.util.wgsl import fitted, image_figure, labels, show, simplices, solids
 
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
 AXIS_COLOUR = np.array([0.6, 0.62, 0.66])
@@ -63,8 +63,10 @@ def draw_curves(curves: core.Event, width: float, view: solids.View) -> np.ndarr
     Event = curves.algebra.gatype.antivector().derive.containing("u v")        # Antivector-
     space_slice = mv.t ^ (Event & -mv.t.dual())
     points = solids.origin + solids.context.include_from_algebra(space_slice(curves))
-    points = points.reshape((-1, points.shape[-1]))                           # [curves, samples] Point-
-    lines = strokes.polylines(list(zip(points, colours(len(points)))), width, view)
+    n_curves, n_samples = int(np.prod(points.shape[:-1])), points.shape[-1]
+    # Each curve a chain of edges, each edge in its curve's colour.
+    lines = simplices.tubes(points.reshape(-1), simplices.Mesh.chains([n_samples] * n_curves),
+                            np.repeat(colours(n_curves), n_samples - 1, axis=0), width, view, solids.gloss)
     return solids.draw([], view, BACKGROUND, inks=[], translucent=[], meshes=[(lines, 1.0)])
 
 

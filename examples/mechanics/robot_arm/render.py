@@ -11,7 +11,7 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.mechanics.robot_arm.core import Point
-from examples.util.wgsl import solids, strokes
+from examples.util.wgsl import simplices, solids
 
 LINK_COLOURS = np.array([to_rgb(colour) for colour in ("tab:blue", "tab:cyan", "tab:purple")])
 TARGET_COLOUR = np.array(to_rgb("tab:red"))
@@ -55,7 +55,8 @@ def animate_tracking(states: Iterable, room: float = VIEW_ROOM) -> Iterator[np.n
     for boxes, target, tip in chain([first], states):
         # The tip's path up to this frame's tip.
         path.append(tip)
-        trail = strokes.polylines([(stack(path), TARGET_COLOUR)], TRAIL_WIDTH, view)
+        trail = simplices.tubes(stack(path), simplices.Mesh.chains([len(path)]), TARGET_COLOUR, TRAIL_WIDTH, view,
+                                gloss=solids.gloss)
         ball = solids.ball(target, TARGET_RADIUS * view.pixel)[None, None]      # [1, 1] Plane+ <- Point-
         yield solids.draw([(ball, TARGET_COLOUR)], view, BACKGROUND,
                           inks=[], translucent=[(solid_boxes(boxes), LINK_COLOURS, LINK_OPACITY)],

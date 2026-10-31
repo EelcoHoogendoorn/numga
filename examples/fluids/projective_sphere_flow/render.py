@@ -11,7 +11,7 @@ from numga import Extensor, stack
 from examples import instantiate
 from examples.util import charts
 from numga.algebras import VGA3D
-from examples.util.wgsl import contours, flow, image_figure, meshes, solids, strokes
+from examples.util.wgsl import contours, flow, image_figure, meshes, simplices, solids
 
 core = instantiate("examples.fluids.projective_sphere_flow.core", VGA3D)
 
@@ -47,9 +47,7 @@ def draw_mesh(mesh: core.Mesh, vertices: core.Point) -> plt.Figure:
     colours = np.broadcast_to(cream, mesh.faces.shape + (3,))
     surface = meshes.samples(points, mesh.faces, colours, meshes.smooth(points, mesh), frame,
                              face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
-    tails, heads = mesh.incidence[1, 0] * vertices                           # Point-[edges], Point-[edges]
-    lines = strokes.segments(solids.origin + solids.context.include_from_algebra(tails.batch()),
-                             solids.origin + solids.context.include_from_algebra(heads.batch()), blue, 1.0, frame)
+    lines = simplices.tubes(points, mesh, blue, 1.0, frame, gloss=solids.gloss)
     return image_figure(solids.draw([], frame, background, inks=[], translucent=[],
                                     meshes=[(surface, 1.0), (lines, 1.0)]))
 
@@ -73,18 +71,19 @@ def animate_sphere(mesh: core.Mesh, display: core.Mesh,
         sphere = solids.draw([], sphere_view, background, inks=[], translucent=[], meshes=[(surface, 1.0)])
 
         vertices = solids.origin + solids.context.include_from_algebra(lifted.batch())         # [vertices] Point-
-        tails, heads = mesh.incidence[1, 0] * lifted                         # Point-[edges], Point-[edges]
-        mesh_lines = strokes.segments(solids.origin + solids.context.include_from_algebra(tails.batch()),
-                                      solids.origin + solids.context.include_from_algebra(heads.batch()), blue, 1.25, space_view)
+        mesh_lines = simplices.tubes(vertices, mesh, blue, 1.25, space_view, gloss=solids.gloss)
         # Great-circle arcs draw the projected dual on the same unit sphere: the chord between the poles of the faces
         # either side of each edge, pushed out onto it.
         left, right = (mesh.reading(mesh.edge_faces.T, 2) * duals).batch()   # [edges] Point-, [edges] Point-
         arcs = (left[:, None] * (1 - fractions) + right[:, None] * fractions).normalized()   # [edges, arc points] Point-
         arc_places = solids.origin + solids.context.include_from_algebra(arcs)                # [edges, arc points] Point-
-        dual_lines = strokes.segments(arc_places[:, :-1].reshape(-1), arc_places[:, 1:].reshape(-1), orange, 1.1,
-                                      space_view)
+        dual_lines = simplices.tubes(arc_places.reshape(-1), simplices.Mesh.chains([n_arc_segments + 1] * len(arcs)),
+                                     orange, 1.1, space_view, gloss=solids.gloss)
         on_sphere = solids.origin + solids.context.include_from_algebra(lifted.normalized().batch())   # [vertices] Point-
-        rays = strokes.segments(on_sphere, vertices, np.full(3, 0.45), 1.0, space_view)
+        # Each ray an edge from its vertex's place on the sphere out to the vertex.
+        rays = simplices.tubes(stack([on_sphere, vertices], axis=-1).reshape(-1),
+                               simplices.Mesh.chains([2] * len(vertices)), np.full(3, 0.45), 1.0, space_view,
+                               gloss=solids.gloss)
         shell = solids.ball(solids.origin, 1.0)[None, None]
         markers = solids.ball(vertices, 2.0 * space_view.pixel)[:, None]
         space = solids.draw([(markers, blue)], space_view, background, inks=[],

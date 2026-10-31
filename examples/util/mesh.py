@@ -417,6 +417,16 @@ class Mesh:
         return cls(major_count * minor_count, faces), vertices
 
     @classmethod
+    def chains(cls, lengths: list[int]) -> Mesh:
+        """Chains of edges through runs of vertices numbered one run after another, each run `lengths` long: a set of
+        polylines as a mesh of edges, each edge from a vertex to the next in its run."""
+        ends = np.cumsum(lengths, dtype=int)
+        starts = ends - np.asarray(lengths, dtype=int)
+        edges = [np.stack([np.arange(start, end - 1), np.arange(start + 1, end)], axis=-1)
+                 for start, end in zip(starts, ends)]
+        return cls(int(np.sum(lengths)), np.concatenate(edges + [np.zeros((0, 2), dtype=int)]))
+
+    @classmethod
     def grid(cls, n_rows: int, n_columns: int) -> Mesh:
         """Two triangles to each cell of a rectangular grid of vertices numbered row by row, wound alike."""
         vertices = np.arange(n_rows * n_columns).reshape(n_rows, n_columns)

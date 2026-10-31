@@ -13,7 +13,7 @@ from matplotlib.colors import to_rgb
 from numga import concatenate
 
 from examples.orientation.mirror_energy.core import Point
-from examples.util.wgsl import image_figure, solids, strokes
+from examples.util.wgsl import image_figure, simplices, solids
 from examples.util.wgsl.scene import Scene
 
 mass_colours = np.array([to_rgb(colour) for colour in ("#df7246", "#238c9b", "#7662a1")])
@@ -42,9 +42,13 @@ def scenes(paths: Point) -> list[Scene]:
     # after the shape, each mass's ball, and the arrows' shafts and heads.
     circles = solids.Ink(paths.shape[2] + 3, solids.half_space(solids.axes), solids.everywhere[None],
                          circle_colour, circle_width, 1.0)
+    # Each mass's closed path a chain of edges, each edge in its mass's colour.
+    n_closed, n_masses = len(closed), paths.shape[2]
+    path_chains = simplices.Mesh.chains([n_closed] * n_masses)
+    path_colours = np.repeat(mass_colours, n_closed - 1, axis=0)                            # [edges, 3]
     return [Scene(view, np.ones(3), [],
-                  [(strokes.polylines([(closed[:, case, mass], colour) for mass, colour in enumerate(mass_colours)],
-                                      path_width, view), path_opacity)],
+                  [(simplices.tubes(concatenate([closed[:, case, mass] for mass in range(n_masses)]), path_chains,
+                                    path_colours, path_width, view, gloss=solids.gloss), path_opacity)],
                   inks=[circles], translucent=[(sphere, sphere_colour, sphere_opacity)])
             for case in range(paths.shape[1])]
 

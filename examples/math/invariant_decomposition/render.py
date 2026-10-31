@@ -12,7 +12,7 @@ from matplotlib.colors import to_rgb
 from numga import stack
 from examples.math.invariant_decomposition import core
 from examples.util.animation import capture
-from examples.util.wgsl import compose, fitted, show, solids, strokes
+from examples.util.wgsl import compose, fitted, show, simplices, solids
 
 # The figure's size in inches, at a hundred pixels to the inch, and the share of its width the tangle takes, the planes
 # sharing the rest; the share of a plane's panel left free around its view, and how many times its circle's radius
@@ -54,7 +54,8 @@ def tangle_image(places: solids.Point, index: int, view: solids.View) -> np.ndar
     # Each segment runs from one time of the orbit to the next: purple up to the moment, grey after it.
     passed = np.arange(1, len(places)) <= index                                # [times - 1]
     colours = np.where(passed[:, None], trail_colour, orbit_colour)            # [times - 1, 3]
-    tube = strokes.segments(places[:-1], places[1:], colours, 2 * tube_radius, view)
+    tube = simplices.tubes(places, simplices.Mesh.chains([len(places)]), colours, 2 * tube_radius, view,
+                           gloss=solids.gloss)
     orbit = solids.layer([], view, inks=[], translucent=[], meshes=[(tube, 1.0)])
     moment = solids.layer([(solids.ball(places[index], marker_radius * view.pixel)[None, None], trail_colour)], view,
                           inks=[], translucent=[], meshes=[])

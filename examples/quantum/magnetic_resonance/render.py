@@ -9,11 +9,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
+from numga.gatype import Orientation
 from numga import stack
 from examples.util.animation import capture
 from examples.quantum.magnetic_resonance import core
 from examples.util import charts
-from examples.util.wgsl import labels, show, solids, strokes
+from examples.util.wgsl import labels, show, simplices, solids
 
 COLOURS = ("#c0392b", "#7d3c98", "#2e86c1")
 SPHERE_COLOUR, SPHERE_OPACITY = np.array([0.70, 0.76, 0.86]), 0.09
@@ -45,10 +46,15 @@ def components(rho: core.State) -> np.ndarray:
 
 
 def gpu_points(states: core.State) -> solids.Point:
-    """The spin's three plane readings set its Bloch-ball position, for either source representation."""
+    """A spin's place in the Bloch ball, for either source representation. In spacetime the spin is the patch of the
+    plane it turns in, intrinsic, read by those planes; in the conventional twin's algebra of space the Bloch vector is
+    an ordinary vector, extrinsic, read by the metric along the axes."""
     mv = states.context.multivector
-    spin_planes = stack((mv.yz, mv.zx, mv.xy))
-    readings = 2 * (spin_planes & states.select.antibivector()[..., None])
+    spin = states.select.antibivector()
+    if spin.gatype.orientation is Orientation.intrinsic:
+        readings = 2 * (stack((mv.yz, mv.zx, mv.xy)) & spin[..., None])
+    else:
+        readings = 2 * (stack((mv.x, mv.y, mv.z)) | spin[..., None])
     return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
 
 
@@ -60,7 +66,10 @@ def draw_nutation(states: Iterable[core.State], steady_states: core.State) -> pl
     paths = gpu_points(stack(list(states), axis=-1))                     # [detunings, times] Point-
     colours = np.array([to_rgb(colour) for colour in COLOURS[: paths.shape[0]]])
     view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, REACH), N_PIXELS)
-    tracks = strokes.polylines(list(zip(paths, colours)), PATH_WIDTH, view)
+    # Each spin's path a chain of edges, each edge in its spin's colour.
+    n_paths, n_times = paths.shape
+    tracks = simplices.tubes(paths.reshape(-1), simplices.Mesh.chains([n_times] * n_paths),
+                             np.repeat(colours, n_times - 1, axis=0), PATH_WIDTH, view, gloss=solids.gloss)
     shafts, heads = solids.frame(AXIS_LENGTH, ARROW_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel,
                                  HEAD_WIDTH / 2 * view.pixel)
     parts = [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR),

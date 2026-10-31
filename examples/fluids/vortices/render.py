@@ -14,7 +14,7 @@ from matplotlib.image import AxesImage
 from numga import stack
 
 from examples.fluids.vortices import core
-from examples.util.wgsl import Shader, fitted, pinned, planar, show, solids, strokes, supersampled
+from examples.util.wgsl import Shader, fitted, pinned, planar, show, simplices, solids, supersampled
 
 # Fields: the figures' resolution, and the pixels between two panels side by side.
 dpi = 100
@@ -119,9 +119,13 @@ def braids(worldlines: list[core.Point], height: float) -> plt.Figure:
         on_plane = solids.context.include_from_algebra(following.reshape(centres.shape))  # [times, vortices] Point-
         drawn = solids.origin + on_plane + solids.mv.z.dual() * times           # [times, vortices] Point-
         view = fitted(solids.view([drawn], 0.0, elevation, azimuth, margin, 1), ax)
-        # Each vortex's strand, its points through time and its colour.
-        strands = [(drawn[:, vortex], colour) for vortex, colour in zip(range(drawn.shape[1]), strand_colours)]
-        lines = strokes.polylines(strands, strand_width, view)
+        # Each vortex's strand a chain of edges up through time, through the points numbered as they lie, in its
+        # vortex's colour.
+        n_times, n_vortices = drawn.shape
+        numbered = np.arange(n_times * n_vortices).reshape(n_times, n_vortices)
+        strands = simplices.Mesh(numbered.size, np.stack([numbered[:-1], numbered[1:]], axis=-1).reshape(-1, 2))
+        lines = simplices.tubes(drawn.reshape(-1), strands, np.tile(strand_colours[:n_vortices], (n_times - 1, 1)),
+                                strand_width, view, gloss=solids.gloss)
         show(ax, solids.draw([], view, background, inks=[], translucent=[], meshes=[(lines, 1.0)]), view)
     return result
 

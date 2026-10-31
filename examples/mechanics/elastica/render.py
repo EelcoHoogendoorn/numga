@@ -14,7 +14,7 @@ from matplotlib.lines import Line2D
 from numga import stack
 from examples.util.animation import capture
 from examples.mechanics.elastica import core
-from examples.util.wgsl import image_figure, meshes, solids, strokes
+from examples.util.wgsl import image_figure, meshes, simplices, solids
 
 mv = core.mv
 # The colours of the rods by case, of the line of thrust and the pins, and of the ribbon; the margin around
@@ -160,7 +160,8 @@ def wires(curves: core.Point, ribbons: core.Point, view: solids.View) -> list[tu
     edges = ribbons.reshape(-1)                                              # [vertices] Point-
     strips = meshes.samples(edges, faces, RIBBON, meshes.smooth(edges, meshes.Mesh(len(edges), faces)), view, face_values=np.zeros(4),
                             colour=meshes.plain, gloss=solids.gloss)
-    rods = strokes.polylines([(curve, ROD) for curve in curves], ROD_WIDTH, view)
+    rods = simplices.tubes(curves.reshape(-1), simplices.Mesh.chains([curves.shape[1]] * curves.shape[0]), ROD,
+                           ROD_WIDTH, view, gloss=solids.gloss)
     return [(strips, 1.0), (rods, 1.0)]
 
 

@@ -9,7 +9,7 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack, where
 from examples.geometry.bezier import core
-from examples.util.wgsl import meshes, solids, strokes
+from examples.util.wgsl import meshes, simplices, solids
 
 sm = solids.mv
 curve_colour = np.array(to_rgb("#287fa0"))
@@ -58,8 +58,13 @@ def draw_rays(controls: core.Point, curve: core.Point, complement: core.Point, s
     # The curves in the renderer's space, each point a ray's place, and where each ray meets the unit sphere.
     places = [solids.origin + solids.context.include_from_algebra(arc) for arc in arcs]        # [samples] Point- each
     on_sphere_places = [solids.origin + solids.context.include_from_algebra(arc.normalized()) for arc in arcs]   # [samples] Point- each
-    arc_strokes = strokes.polylines(list(zip(places, colours)), line_width, view)
-    on_sphere = strokes.polylines(list(zip(on_sphere_places, colours)), sphere_curve_width, view)
+    # Both curves, chains of edges one after the other, each edge in its curve's colour.
+    lengths = [len(arc) for arc in arcs]
+    chains = simplices.Mesh.chains(lengths)
+    edge_colours = np.repeat(colours, np.array(lengths) - 1, axis=0)          # [edges, 3]
+    arc_strokes = simplices.tubes(concatenate(places), chains, edge_colours, line_width, view, gloss=solids.gloss)
+    on_sphere = simplices.tubes(concatenate(on_sphere_places), chains, edge_colours, sphere_curve_width, view,
+                                gloss=solids.gloss)
     # The cone of the curve's rays about the origin reads each point of the renderer's space by its offset from the
     # origin, its part along the degenerate blades.
     cone = solids.context.include_from_algebra(shape)(solids.Point.restrict.degenerate())      # [] Plane+ <- Point-

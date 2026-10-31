@@ -15,7 +15,7 @@ from numga import stack
 from examples.util.animation import capture
 from examples.quantum.neutrino_isospin import core
 from examples.util import charts
-from examples.util.wgsl import fitted, meshes, show, solids, strokes
+from examples.util.wgsl import fitted, meshes, show, simplices, solids
 from examples.util.wgsl.meshes import Samples
 from examples.util.wgsl.scene import Scene
 
@@ -96,7 +96,8 @@ def path_marks(path: core.Isospin, view: solids.View) -> tuple[Samples, tuple[so
     """A path of isospins over the sphere `[steps]` as a stroke, and its ends as balls, its start green and its end
     orange."""
     places = solids.origin + solids.context.include_from_algebra(direction_of_isospin(path))     # [steps] Point-
-    stroke = strokes.polylines([(places, path_colour)], PATH_WIDTH / view.pixel, view)
+    stroke = simplices.tubes(places, simplices.Mesh.chains([len(places)]), path_colour, PATH_WIDTH / view.pixel, view,
+                             gloss=solids.gloss)
     ends = (solids.ball(places[np.array([0, -1])], END_RADIUS)[:, None], np.stack([start_colour, end_colour]))
     return stroke, ends
 

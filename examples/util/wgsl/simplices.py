@@ -2,14 +2,16 @@
 
 A stroke is a 1-simplex and a marker a 0-simplex, drawn as a triangle is: the camera of `examples.util.wgsl.camera`
 reads each vertex, and the vertex stage covers a box on the picture padded around the projected edge or point by its
-half width; the fragment stage then measures, in pixels, how far each sample lies from the edge's segment or the point,
-and keeps the samples within the half width. Round caps and round joins follow from that distance alone, and the
-picture's samples, sixteen to a pixel on the GPU, smooth its edges. An edge may end in an arrowhead, a triangle in its
-own frame along and across it, and a chain of edges may be dashed, by the distance travelled along it from where the
-chain starts. Nothing of it depends on the scene's dimension or signature: the same program draws the edges of a
-polyline in the plane, of a graph in space or of a world line in a spacetime diagram. The topology is a `Mesh`: its
-edges are the strokes, whatever its dimension, so a polyline is a chain of edges and a surface's wireframe its own
-edges.
+half width; the fragment stage then measures, in pixels, how far each sample lies from the edge's segment or the
+point, and keeps the samples within the half width. Round caps and round joins follow from that distance alone, and
+the picture's samples, sixteen to a pixel on the GPU, smooth its edges. An edge may end in an arrowhead, a triangle
+in its own frame along and across it, and a chain of edges may be dashed, by the distance travelled along it from
+where the chain starts. In a lit 3D scene the strokes are tubes among the solids and meshes: each sample's distance
+from the segment gives the tube's normal, from the camera's own planes, and how far its surface comes toward the
+viewer, so tubes cross the other surfaces where they truly do. Nothing of it depends on the scene's dimension or
+signature: the same program draws the edges of a polyline in the plane, of a graph in space or of a world line in a
+spacetime diagram. The topology is a `Mesh`: its edges are the strokes, whatever its dimension, so a polyline is a
+chain of edges and a surface's wireframe its own edges.
 """
 from __future__ import annotations
 
@@ -42,10 +44,14 @@ var<uniform> dashes: vec2<f32>;
 struct Corner {
     @builtin(position) position: vec4<f32>,
     // The edge's ends on the picture, in samples from its top left; its colour; its distance along its chain and
-    // whether it ends in a head.
+    // whether it ends in a head; its ends' depths along the view.
     @location(0) @interpolate(flat) ends: vec4<f32>,
     @location(1) @interpolate(flat) colour: vec3<f32>,
     @location(2) @interpolate(flat) chain: vec2<f32>,
+    @location(3) @interpolate(flat) depths: vec2<f32>,
+    // The edge's run in the camera's frame, across, up and toward the viewer, in the scene's units; and which edge.
+    @location(4) @interpolate(flat) run: vec3<f32>,
+    @location(5) @interpolate(flat) edge: u32,
 }
 
 // A place in clip space as samples from the picture's top left.
@@ -71,11 +77,29 @@ fn place(@builtin(vertex_index) index: u32) -> Corner {
     let at = mix(from - along * reach, to + along * reach, corner.x) + across * reach * corner.y;
     let depth = mix(start.z, end.z, corner.x);
     let position = vec4<f32>(at.x / samples.x * 2.0 - 1.0, 1.0 - at.y / samples.y * 2.0, depth, 1.0);
-    return Corner(position, vec4<f32>(from, to), colours[index / 6], vec2<f32>(travelled[index / 6], heads[index / 6]));
+    // Each end's depth along the view: how far it lies away from the viewer, in the scene's units.
+    let depths = vec2<f32>(-(screen_toward & points[edge.x]) / weight_of(points[edge.x]),
+                           -(screen_toward & points[edge.y]) / weight_of(points[edge.y]));
+    let run = vec3<f32>(screen_across & points[edge.y], screen_up & points[edge.y], screen_toward & points[edge.y])
+              / weight_of(points[edge.y])
+            - vec3<f32>(screen_across & points[edge.x], screen_up & points[edge.x], screen_toward & points[edge.x])
+              / weight_of(points[edge.x]);
+    return Corner(position, vec4<f32>(from, to), colours[index / 6], vec2<f32>(travelled[index / 6], heads[index / 6]),
+                  depths, run, index / 6);
 }
 
-@fragment
-fn shade(corner: Corner) -> @location(0) vec4<f32> {
+// Where a sample lies against the edge: how far along it, a share of its length; how far across its line and on
+// which side, and how far from the segment's nearest point, in samples; past which end it lies, start or end, or
+// neither; and whether it is covered, by the shaft, the head or a dash.
+struct Against {
+    share: f32,
+    across: vec2<f32>,
+    away: vec2<f32>,
+    past: vec2<f32>,
+    covered: bool,
+}
+
+fn against(corner: Corner) -> Against {
     let from = corner.ends.xy;
     let span = corner.ends.zw - from;
     let length = sqrt(span.x * span.x + span.y * span.y);
@@ -97,8 +121,67 @@ fn shade(corner: Corner) -> @location(0) vec4<f32> {
     let travel = corner.chain.x + clamp(along, 0.0, length);
     let period = dashes.x + dashes.y;
     let dashed = dashes.y <= 0.0 || travel - period * floor(travel / period) <= dashes.x;
-    if (!(in_head || (in_shaft && dashed))) { discard; }
+    let sideways = offset - along_unit * along;
+    let past = vec2<f32>(select(0.0, 1.0, along < 0.0), select(0.0, 1.0, along > shaft_end));
+    return Against(select(0.0, share / length, length > 0.0), sideways, away, past, in_head || (in_shaft && dashed));
+}
+"""
+
+flat_stroke = """
+@fragment
+fn shade(corner: Corner) -> @location(0) vec4<f32> {
+    if (!against(corner).covered) { discard; }
     return vec4<f32>(corner.colour, 1.0);
+}
+"""
+
+# A stroke in a lit 3D scene: a tube, its colour lit through its normal, its depth along the view where it shows, as
+# the meshes write theirs for the tracer to compose.
+tube_stroke = """
+// A pixel's width in the scene's units, at the picture's own pixels; the samples a pixel; whether each edge's start and
+// end are open, ends of the strokes rather than joins, one or zero.
+var<uniform> scene_pixel: f32;
+var<uniform> oversampling: f32;
+var<storage, read> open_ends: array<vec2<f32>>;
+
+struct Shade {
+    @location(0) colour: vec4<f32>,
+    @location(1) depth: vec4<f32>,
+    @builtin(frag_depth) nearness: f32,
+}
+
+@fragment
+fn shade(corner: Corner) -> Shade {
+    let sample = against(corner);
+    if (!sample.covered) { discard; }
+    // Past an open end, a ball about it: the normal from the sample's place against the end point. Elsewhere the
+    // tube's normal from the sample's place across its line, not from the nearest point of its segment, so that a
+    // chain of edges shades as one tube through its joints. Either way across and up the picture toward the sample,
+    // rows counted down, and toward the viewer by what the radius leaves.
+    let ends_open = open_ends[corner.edge];
+    let open = sample.past.x * ends_open.x + sample.past.y * ends_open.y > 0.0;
+    let offset = select(sample.across, sample.away, open);
+    let distance = sqrt(offset.x * offset.x + offset.y * offset.y);
+    let across = min(distance / radius, 1.0);
+    let toward = sqrt(1.0 - across * across);
+    let side = select(vec2<f32>(0.0), offset / max(distance, 1e-6), distance > 0.0) * across;
+    // On the tube, made square to the edge's run in space, so that an edge running into depth turns its face as a
+    // tube does; on a ball, left as it is.
+    let seen = vec3<f32>(side.x, -side.y, toward);
+    let run = corner.run;
+    let run_squared = max(run.x * run.x + run.y * run.y + run.z * run.z, 1e-12);
+    let along_run = (seen.x * run.x + seen.y * run.y + seen.z * run.z) / run_squared;
+    let square = seen - run * along_run;
+    let size = sqrt(square.x * square.x + square.y * square.y + square.z * square.z);
+    let unit = select(select(seen, square / size, size > 1e-6), seen, open);
+    let normal = screen_across * unit.x + screen_up * unit.y + screen_toward * unit.z;
+    let direction = -screen_toward.dual();
+    // The depth along the view, the tube's surface nearer the viewer by its bulge, and the whole tube lifted toward the
+    // viewer by a pixel, so that a stroke lying on a surface shows on it however obliquely the surface is seen.
+    let lift = (toward * radius / oversampling + 1.0) * scene_pixel;
+    let along_view = mix(corner.depths.x, corner.depths.y, sample.share) - lift;
+    return Shade(vec4<f32>(lit(corner.colour, normal, direction), 1.0), vec4<f32>(along_view, 0.0, 0.0, 1.0),
+                 0.5 + along_view / screen_depth);
 }
 """
 
@@ -138,7 +221,16 @@ fn shade(corner: Corner) -> @location(0) vec4<f32> {
 def stroke_shader(algebra) -> Shader:
     """The strokes of edges whose points belong to an algebra, placed by that algebra's camera."""
     types = dict(Point=algebra.gatype.antivector(), Plane=algebra.gatype.vector())
-    return Shader(placing() + stroke_source, algebra, types, {}, targets=("rgba8unorm",))
+    return Shader(placing() + stroke_source + flat_stroke, algebra, types, {}, targets=("rgba8unorm",))
+
+
+@cache
+def tube_shader() -> Shader:
+    """The strokes of a lit 3D scene as tubes, in the solids' algebra, whose lamp lights them: the colour a byte a
+    channel and the depth alone at full precision, as the meshes write them."""
+    from examples.util.wgsl import solids
+    return Shader(solids.lamp_shading() + placing() + stroke_source + tube_stroke, solids.ga,
+                  dict(Point=solids.Point, Plane=solids.Plane), {}, targets=("rgba8unorm", "r32float"))
 
 
 @cache
@@ -183,6 +275,36 @@ def strokes(points: Extensor, mesh: Mesh, colours: np.ndarray, width: float, cam
         samples=np.array([columns * side, rows * side], dtype=float), radius=width * side / 2,
         head=np.array([head, head / 2]) * side, dashes=np.array(dashes) * side, **camera.uniforms(1.0))
     return straight(image)
+
+
+def view_camera(view) -> Camera:
+    """The camera of a solids view, its planes the view's camera turning the solids' planes x, y and z, its middle the
+    view's own middle."""
+    from examples.util.wgsl import solids
+    mv = solids.mv
+    return Camera(view.camera >> mv.x, view.camera >> mv.y, view.camera >> mv.z, mv.w, 0.0, np.zeros(2), view.half,
+                  view.pixels)
+
+
+def tubes(points: Extensor, mesh: Mesh, colours: np.ndarray, width: float, view, gloss: float = 0.0,
+          heads: np.ndarray = np.zeros(1), head: float = 0.0, dashes: tuple[float, float] = (1.0, 0.0)):
+    """The mesh's edges as tubes `width` pixels across among the solids and meshes of a lit 3D scene, its points of the
+    solids' algebra, each edge in its colour `[edges, 3]`, at every sample of the view's pixels, for `solids.draw` and
+    `Scene` to compose as they compose meshes; heads and dashes as `strokes` draws them."""
+    from examples.util.wgsl import solids
+    from examples.util.wgsl.meshes import Samples
+    camera = view_camera(view)
+    side = samples_per_side()
+    rows, columns = camera.shape
+    edges = np.asarray(mesh.edges, dtype=np.uint32)
+    return Samples(tube_shader(), 6 * len(edges), dict(
+        points=points, edges=edges, colours=np.broadcast_to(colours, (len(edges), 3)),
+        travelled=travelled(points, edges, camera) * side, heads=np.broadcast_to(heads, len(edges)).astype(float),
+        samples=np.array([columns * side, rows * side], dtype=float), radius=width * side / 2,
+        head=np.array([head, head / 2]) * side, dashes=np.array(dashes) * side, scene_pixel=view.pixel,
+        oversampling=float(side),
+        open_ends=np.isin(edges, mesh.exterior(0)).astype(float),
+        **camera.uniforms(8 * view.half.max()), **solids.lighting(view.camera, gloss)))
 
 
 def markers(points: Extensor, colours: np.ndarray, width: float, camera: Camera) -> np.ndarray:

@@ -12,7 +12,7 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.surfaces.weighted_dual import core
-from examples.util.wgsl import image_figure, solids, strokes
+from examples.util.wgsl import image_figure, simplices, solids
 
 sm = solids.mv
 PRIMAL_COLOUR = np.array(to_rgb("#287fa0"))
@@ -85,8 +85,11 @@ def picture(mesh: core.Mesh, points: core.Point, duals: core.Point) -> np.ndarra
     primal_rods, primal_joints = solids.edges(tails, heads, EDGE_WIDTH / 2 * pixel)
     dual_rods, dual_joints = solids.edges(left[front], right[front], EDGE_WIDTH / 2 * pixel)
     ray_offsets = solids.context.include_from_algebra(rays.batch())                             # [points] Point-
-    ray_strokes = strokes.segments(solids.origin + ray_offsets * (1 - RAY_SPAN),
-                                   solids.origin + ray_offsets * (1 + RAY_SPAN), RAY_COLOUR, RAY_WIDTH, view)
+    # A stretch of each ray about the sphere, an edge from inside it to outside.
+    ray_spans = stack((solids.origin + ray_offsets * (1 - RAY_SPAN), solids.origin + ray_offsets * (1 + RAY_SPAN)),
+                      axis=-1)                                                 # [points, 2] Point-
+    ray_strokes = simplices.tubes(ray_spans.reshape(-1), simplices.Mesh.chains([2] * len(ray_offsets)), RAY_COLOUR,
+                                  RAY_WIDTH, view, solids.gloss)
     parts = [(hull, HULL_COLOUR), (primal_rods, PRIMAL_COLOUR), (primal_joints, PRIMAL_COLOUR),
              (dual_rods, DUAL_COLOUR), (dual_joints, DUAL_COLOUR),
              (solids.ball(vertices, VERTEX_RADIUS * pixel)[:, None], colours)]

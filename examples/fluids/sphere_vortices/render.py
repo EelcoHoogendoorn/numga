@@ -13,7 +13,7 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate
 from examples.fluids.sphere_vortices import core
-from examples.util.wgsl import solids, strokes
+from examples.util.wgsl import simplices, solids
 from examples.util.wgsl.scene import Scene
 
 sm = solids.mv
@@ -56,7 +56,11 @@ def animate(histories: list[core.Pivot], view: tuple[float, float], every: int) 
         # Each trail's segment its vortex's colour, mixed with the sphere's the older its middle is.
         age = np.clip((np.arange(first, last) + 0.5 - first) / max(last - first, 1), 0, 1)[:, None, None]   # [segments, 1, 1]
         shades = sphere_colour + (colours - sphere_colour) * age                  # [segments, points, 3]
-        drawn = strokes.segments(places[first:last].reshape(-1), places[first + 1:last + 1].reshape(-1),
-                                 shades.reshape(-1, 3), trail_width, seen)
+        # Each vortex's trail a chain of edges down the steps, through the trails' points numbered as they lie.
+        trails = places[first:last + 1]                                       # [segments + 1, points] Point-
+        numbered = np.arange(np.prod(trails.shape)).reshape(trails.shape)
+        chains = simplices.Mesh(numbered.size, np.stack([numbered[:-1], numbered[1:]], axis=-1).reshape(-1, 2))
+        drawn = simplices.tubes(trails.reshape(-1), chains, shades.reshape(-1, 3), trail_width, seen,
+                                gloss=solids.gloss)
         dots = solids.ball(places[time], dot_radius * seen.pixel)[:, None]
         yield scene.draw([(dots, colours)], inks=[], translucent=[], meshes=[(drawn, 1.0)])

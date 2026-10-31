@@ -10,7 +10,7 @@ import numpy as np
 from numga import concatenate, stack
 from examples.electromagnetism.beltrami_fields import core
 from examples.util import charts
-from examples.util.wgsl import meshes, show_pixels, solids, strokes
+from examples.util.wgsl import meshes, show_pixels, simplices, solids
 
 # The observer sees the point where its time line meets the spatial slice.
 space_slice = core.mv.t ^ (core.Point & core.time)
@@ -162,8 +162,10 @@ def render_torus_field(mesh: core.Mesh, vertices: core.Point, lines: core.Point,
     climb = (core.mv.z & (ends - starts)) / length(ends - starts)            # [lines, segments] Scalar+
     seg_colours = palette_blend(climb.to_array(), shells)                     # [lines, segments, 3]
     scene_lines = solids.origin + solids.context.include_from_algebra(space_slice(lines).batch())
-    tubes = strokes.segments(scene_lines[:, :-1].reshape(-1), scene_lines[:, 1:].reshape(-1),
-                             seg_colours.reshape(-1, 3), 4.6, view)
+    # Each field line a chain of edges through its steps.
+    n_lines, n_steps = scene_lines.shape
+    chains = simplices.Mesh.chains([n_steps] * n_lines)
+    tubes = simplices.tubes(scene_lines.reshape(-1), chains, seg_colours.reshape(-1, 3), 4.6, view, gloss=solids.gloss)
 
     # Place glossy 3D cone arrowheads along each field line to show its flow direction.
     middle = lines.shape[1] // 2

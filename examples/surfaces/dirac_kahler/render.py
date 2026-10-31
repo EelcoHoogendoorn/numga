@@ -14,7 +14,7 @@ from numga import stack
 from numga.extensor import Extensor
 from examples.surfaces.dirac_kahler import core
 from examples.util import charts
-from examples.util.wgsl import contours, flow, meshes, solids, strokes
+from examples.util.wgsl import contours, flow, meshes, simplices, solids
 
 sm = solids.mv
 
@@ -146,21 +146,19 @@ def wave_relief(mesh: core.Mesh, vertices: core.Point, heights: core.Scalar, cha
     """Signed wave amplitude `Scalar+[vertices]` lifts a neutral annulus out of the drawing plane, coloured by the
     channels `Scalar+[vertices]` at the corners of its faces; both grade panels share its height and contour
     spacing."""
-    # The annulus raised along z by its heights, and its rim's edges, raised and at rest.
+    # The annulus raised along z by its heights, and its rim, the mesh of its boundary's edges, raised and at rest.
     rest = solids.origin + solids.context.include_from_algebra(vertices.batch())                # [vertices] Point-
     elevated = rest + sm.z.dual() * solids.context.include_from_algebra((relief_height * heights).batch())   # [vertices] Point-
-    rim = mesh.reading(mesh.boundary_edges, 1) * mesh.incidence[1, 0]          # [ends] Scalar+[rim <- vertices]
-    rim_tails, rim_heads = rim * elevated.field()                              # Point-[rim], Point-[rim]
-    rest_tails, rest_heads = rim * rest.field()                                # Point-[rim], Point-[rim]
+    rim = simplices.Mesh(len(rest), mesh.edges[mesh.boundary_edges])
     # The channels at each corner of each face, faces first, for the shader.
     corner_values = np.stack([(mesh.incidence[2, 0] * channel).batch().to_array() for channel in channels],
                              axis=-1).transpose(1, 0, 2)                       # [faces, corners, channels]
     surface = meshes.samples(elevated, mesh.faces, corner_values,
                               meshes.smooth(elevated, mesh), view,
                               face_values=np.zeros(1), colour=colour, gloss=0.14)
-    edge = strokes.segments(rim_tails.batch(), rim_heads.batch(), np.array([0.24, 0.32, 0.35]), 1.25, view)
+    edge = simplices.tubes(elevated, rim, np.array([0.24, 0.32, 0.35]), 1.25, view, solids.gloss)
     # A faint undisturbed rim gives height a fixed reference through crests and troughs.
-    baseline = strokes.segments(rest_tails.batch(), rest_heads.batch(), np.array([0.66, 0.71, 0.72]), 0.9, view)
+    baseline = simplices.tubes(rest, rim, np.array([0.66, 0.71, 0.72]), 0.9, view, solids.gloss)
     return solids.draw([], view, background, inks=[], translucent=[],
                        meshes=[(surface, 1.0), (edge, 1.0), (baseline, 0.35)])
 

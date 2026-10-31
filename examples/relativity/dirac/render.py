@@ -10,11 +10,11 @@ from matplotlib.colors import to_rgb
 from matplotlib.image import AxesImage
 from matplotlib.lines import Line2D
 
-from numga import stack
+from numga import concatenate, stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.relativity.dirac import core
-from examples.util.wgsl import fitted, show, solids, strokes
+from examples.util.wgsl import fitted, show, simplices, solids
 
 # The observer sees the point where its time line meets the spatial slice.
 space_slice = core.mv.t ^ (core.Antivector & core.time)
@@ -51,9 +51,11 @@ def picture(spinors: list, paths: list, upto: int, view: solids.View) -> np.ndar
     rgb = np.array([to_rgb(colour) for colour in colours[: len(paths)]])
     here = stack([trace[upto - 1] for trace in paths])                          # [mixtures] Antivector-
     tips = here + spin_arrow(stack([psi[upto - 1] for psi in spinors]))         # [mixtures] Antivector-
-    trails = [(solids.origin + solids.context.include_from_algebra(space_slice(trace[:upto])), colour)
-              for trace, colour in zip(paths, rgb)]
-    lines = strokes.polylines(trails, PATH_WIDTH, view)
+    # Each path up to the time a chain of edges, each edge in its path's colour.
+    trails = concatenate([trace[:upto] for trace in paths])                     # [mixtures * upto] Antivector-
+    lines = simplices.tubes(solids.origin + solids.context.include_from_algebra(space_slice(trails)),
+                            simplices.Mesh.chains([upto] * len(paths)), np.repeat(rgb, upto - 1, axis=0),
+                            PATH_WIDTH, view, solids.gloss)
     starts = solids.origin + solids.context.include_from_algebra(space_slice(here))
     ends = solids.origin + solids.context.include_from_algebra(space_slice(tips))
     shafts, heads = solids.arrows(starts, ends, ARROW_WIDTH / 2 * view.pixel,

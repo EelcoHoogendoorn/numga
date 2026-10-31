@@ -10,12 +10,12 @@ import numpy as np
 from matplotlib.colors import to_rgb
 from matplotlib.image import AxesImage
 
-from numga import stack
+from numga import concatenate, stack
 
 from examples.util import charts
 from examples.util.animation import capture
 from examples.electromagnetism.constitutive import core
-from examples.util.wgsl import fitted, show, solids, strokes
+from examples.util.wgsl import fitted, show, simplices, solids
 from examples.util.wgsl.scene import Scene
 
 Modes = tuple[np.ndarray, core.Bivector]
@@ -155,8 +155,13 @@ def wave_image(scene: Scene, modes: Modes, tau: float) -> np.ndarray:
     discs, arcs, turning_shafts, turning_heads = magnetic_discs(stations[::2], field[station_idx[::2]],
                                                                 arrow_width / 2 * view.pixel)
 
-    curves = strokes.polylines([(axis + electric, electric_colour)]
-                               + [(arc, magnetic_colour) for arc in arcs], curve_width, view)
+    # The curve the electric arrows' tips trace and the discs' arcs, chains of edges one after another, each edge in
+    # its curve's colour.
+    n_discs = arcs.shape[0]
+    curve_points = concatenate([axis + electric, arcs.reshape(-1)])            # [samples + discs * arc] Point-
+    chains = simplices.Mesh.chains([n_samples] + [n_arc] * n_discs)
+    colours = np.repeat([electric_colour, magnetic_colour], [n_samples - 1, n_discs * (n_arc - 1)], axis=0)
+    curves = simplices.tubes(curve_points, chains, colours, curve_width, view, gloss=solids.gloss)
     parts = [(shafts, electric_colour), (heads, electric_colour), (turning_shafts, magnetic_colour),
              (turning_heads, magnetic_colour)]
     return scene.draw(parts, inks=[], translucent=[(discs, magnetic_colour, disc_opacity)], meshes=[(curves, 1.0)])

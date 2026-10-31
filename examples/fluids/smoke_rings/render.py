@@ -12,7 +12,7 @@ import numpy as np
 
 from examples.fluids.smoke_rings import core
 from examples.util import charts
-from examples.util.wgsl import image_figure, meshes, solids, strokes
+from examples.util.wgsl import image_figure, meshes, simplices, solids
 
 # The surface's colour from the first time to the last, and the colours of the rings' swept tubes, one per ring; the
 # curves' colours by speed, from blue at rest to green at the fastest, the stretch of the map light enough to show its
@@ -70,8 +70,9 @@ def curve_strokes(points: solids.Point, speeds: np.ndarray, fastest: float, view
     the vertices `[curves, n]`, against the fastest, at every sample of the view."""
     middles = (speeds[..., :-1] + speeds[..., 1:]) / 2                         # [curves, n - 1]
     shades = plt.get_cmap(speed_map)(rest_share + (fastest_share - rest_share) * middles / fastest)[..., :3]   # [curves, n - 1, 3]
-    return strokes.segments(points[:, :-1].reshape(-1), points[:, 1:].reshape(-1), shades.reshape(-1, 3), curve_width,
-                            view)
+    n_curves, n_vertices = points.shape
+    return simplices.tubes(points.reshape(-1), simplices.Mesh.chains([n_vertices] * n_curves), shades.reshape(-1, 3),
+                           curve_width, view, gloss=solids.gloss)
 
 
 def draw_surface(curves: core.Point) -> plt.Figure:

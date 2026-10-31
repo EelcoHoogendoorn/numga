@@ -13,7 +13,7 @@ from matplotlib.figure import Figure
 from examples.util.animation import capture
 from examples.quantum.superconductivity import core
 from examples.util import charts
-from examples.util.wgsl import fitted, labels, meshes, show, solids, strokes
+from examples.util.wgsl import fitted, labels, meshes, show, simplices, solids
 from examples.util.wgsl.scene import Scene
 
 sm = solids.mv
@@ -132,7 +132,9 @@ def animate_quench(
         axis = figure.add_axes((0.01, 0.08, 0.57, 0.85))
         curve = figure.add_axes((0.68, 0.22, 0.29, 0.64))
         view, axes, circles = chart(energies, axis)
-        rings = (strokes.polylines([(circle, CIRCLE_COLOUR) for circle in circles], CIRCLE_WIDTH, view), CIRCLE_OPACITY)
+        # Each circle a closed chain of edges through its points.
+        rings = (simplices.tubes(circles.reshape(-1), simplices.Mesh.chains([circles.shape[1]] * len(circles)),
+                                 CIRCLE_COLOUR, CIRCLE_WIDTH, view, solids.gloss), CIRCLE_OPACITY)
         scene = Scene(view, np.ones(3), axes, [rings], inks=[], translucent=[])
 
         def arrows(coherence: np.ndarray) -> np.ndarray:
@@ -144,7 +146,8 @@ def animate_quench(
                                           STEM_HEAD_LENGTH * view.pixel, STEM_HEAD_WIDTH / 2 * view.pixel)
             stems = [(shafts, colours), (heads, colours),
                      (solids.ball(tips, TIP_RADIUS * view.pixel)[:, None], np.array(to_rgb(PAIR)))]
-            path = strokes.polylines([(tips, np.array(to_rgb(INK)))], PATH_WIDTH, view)
+            path = simplices.tubes(tips, simplices.Mesh.chains([len(tips)]), np.array(to_rgb(INK)), PATH_WIDTH, view,
+                                   solids.gloss)
             return scene.draw(stems, inks=[], translucent=[], meshes=[(path, PATH_OPACITY)])
 
         image = show(axis, arrows(transverse[0]), view)

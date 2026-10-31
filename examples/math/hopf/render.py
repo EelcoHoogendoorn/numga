@@ -14,7 +14,7 @@ from matplotlib.image import AxesImage
 from numga import concatenate, stack
 from examples.util.animation import capture
 from examples.math.hopf import core
-from examples.util.wgsl import fitted, meshes, show, solids, strokes
+from examples.util.wgsl import fitted, meshes, show, simplices, solids
 from examples.util.wgsl.scene import Scene
 
 sm = solids.mv
@@ -122,11 +122,11 @@ def dots(points: core.Antivector, colours: np.ndarray, radius: float,
     return solids.ball(solids.origin + solids.context.include_from_algebra(points), radius * view.pixel)[:, None], colours
 
 
-def segments(runs: list[tuple[solids.Point, np.ndarray]]) -> tuple[solids.Point, solids.Point, np.ndarray]:
-    """Polylines, each with its colour, as their segments: the starts and the ends `[segments]`, and the colours
-    `[segments, 3]`, none for no polylines."""
+def chained(runs: list[tuple[solids.Point, np.ndarray]]) -> tuple[solids.Point, simplices.Mesh, np.ndarray]:
+    """Polylines, each with its colour, as one batch of their points `[points]`, the chains of edges through them,
+    and the edges' colours `[edges, 3]`, none for no polylines."""
     none = sm.point(np.zeros((0, 3)))                                          # [0] Point-
-    return (concatenate([none] + [run[:-1] for run, _ in runs]), concatenate([none] + [run[1:] for run, _ in runs]),
+    return (concatenate([none] + [run for run, _ in runs]), simplices.Mesh.chains([0] + [len(run) for run, _ in runs]),
             np.concatenate([np.zeros((0, 3))] + [np.broadcast_to(rgb, (len(run) - 1, 3)) for run, rgb in runs]))
 
 
@@ -153,7 +153,7 @@ def draw_tori(spins: core.Antivector, projected: core.Antivector) -> plt.Figure:
     colours = colour(points)
     runs = visible(curves, colours)
     figure, axes, (space, sphere) = panels(space_view(runs), figure_pixels)
-    fibres = strokes.polylines(runs, torus_width, space)
+    fibres = simplices.tubes(*chained(runs), torus_width, space, gloss=solids.gloss)
     shown(axes, solids.draw([], space, background, inks=[], translucent=[], meshes=[(fibres, 1.0)]),
           sphere_image([dots(points, colours, dot_radius, sphere)], [], sphere), (space, sphere))
     return figure
@@ -164,12 +164,13 @@ def draw_lift(loop: core.Antivector, path: core.Antivector, fibre: core.Antivect
     fibre, drawn grey, and comes back onto it further along."""
     tracks, circles = visible(path[None], loop_colour[None]), visible(fibre[None], fibre_colour[None])
     figure, axes, (space, sphere) = panels(space_view(tracks + circles), figure_pixels)
-    lines = [(strokes.polylines(runs, width, space), 1.0)
+    lines = [(simplices.tubes(*chained(runs), width, space, gloss=solids.gloss), 1.0)
              for runs, width in ((circles, lift_fibre_width), (tracks, track_width))]
     # The track's start in blue, its end in its own colour.
     track_ends = solids.origin + solids.context.include_from_algebra(path[[0, -1]])            # [2] Point-
     ends = (solids.ball(track_ends, end_radius * space.pixel)[:, None], np.stack([start_colour, loop_colour]))
-    on_sphere = strokes.polylines([(solids.origin + solids.context.include_from_algebra(loop), loop_colour)], track_width, sphere)
+    on_sphere = simplices.tubes(*chained([(solids.origin + solids.context.include_from_algebra(loop), loop_colour)]),
+                                track_width, sphere, gloss=solids.gloss)
     shown(axes, solids.draw([ends], space, background, inks=[], translucent=[],
                             meshes=lines), sphere_image([], [(on_sphere, 1.0)], sphere),
           (space, sphere))
@@ -186,16 +187,16 @@ def animate_sweep(stream: Iterable[tuple[core.Antivector, core.Antivector]]) -> 
     inks, ball = sphere_surface(1, sweep_circle_width)
     sphere_scene = Scene(sphere, background, [], [], inks=inks, translucent=ball)
     space_scene = Scene(space, background, [], [], inks=[], translucent=[])
-    # The spins so far, their colours, and each one's fibre as segments of its runs inside the drawing limit.
+    # The spins so far, their colours, and each one's fibre as its runs inside the drawing limit.
     points, colours, fibres = [], [], []
     for spin, projected in stream:
         points.append(spin)                                                    # [] Antivector-
         colours.append(colour(spin))                                           # [3]
-        fibres.append(segments(visible(projected[None], colours[-1][None])))
+        fibres.append(visible(projected[None], colours[-1][None]))
         # Every fibre so far thin, and the newest thick around its thin self.
-        starts, ends, shades = zip(*fibres)
-        thin = strokes.segments(concatenate(starts), concatenate(ends), np.concatenate(shades), swept_width, space)
-        thick = strokes.segments(*fibres[-1], newest_width, space)
+        thin = simplices.tubes(*chained([run for runs in fibres for run in runs]), swept_width, space,
+                               gloss=solids.gloss)
+        thick = simplices.tubes(*chained(fibres[-1]), newest_width, space, gloss=solids.gloss)
         sphere_shown.set_data(sphere_scene.draw([dots(stack(points), np.stack(colours), sweep_dot_radius, sphere)],
                                                 inks=[], translucent=[], meshes=[]))
         space_shown.set_data(space_scene.draw([], inks=[], translucent=[], meshes=[(thin, 1.0), (thick, 1.0)]))
