@@ -6,23 +6,24 @@ from collections.abc import Callable, Iterable, Iterator
 from itertools import chain
 
 import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
 from matplotlib.colors import TwoSlopeNorm, to_rgb
 import numpy as np
 
 from numga import stack
 from examples.util.animation import capture
 from examples.surfaces.reciprocal import core
-from examples.util.wgsl import fitted, meshes, show, solids
+from examples.util.wgsl import fitted, meshes, show, simplices, solids
+from examples.util.wgsl.camera import flat_panel
 
 TERRAIN_COLOUR = np.array(to_rgb("#9fb7c4"))
 BOUNDARY_COLOUR = np.full(3, 0.65)
-RECIPROCAL_COLOUR = "0.2"
+RECIPROCAL_COLOUR, RIM_COLOUR = np.full(3, 0.2), np.full(3, 0.5)
 # Tension blue, compression red, white at zero, on one scale for every frame: compression is far weaker than
-# tension, so each side saturates at its own end. The widths of the bars.
+# tension, so each side saturates at its own end. In pixels, the widths of the bars and of the other lines, and the
+# radius of the reciprocal diagram's vertices.
 STRESS_MAP = "coolwarm_r"
 COMPRESSION, TENSION = -0.3, 1.5
-BAR_WIDTH = 1.6
+BAR_WIDTH, LINE_WIDTH, CORNER_RADIUS = 2.2, 1.4, 1.5
 REACH = 1.25
 # The terrain's view, elevation and azimuth in radians, azimuth zero looking along +y, the margin around it as a
 # share of its larger side, and the pixels across its picture, until the view is fitted to its axes; how much each
@@ -39,13 +40,6 @@ BACKGROUND = np.ones(3)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def plane_places(points: core.Point) -> np.ndarray:
-    """x and y of points `[...]` on the last axis, for the planar truss's artists: their pairings with the planes x
-    and y."""
-    mv = core.mv
-    return (stack((mv.x, mv.y)) & points.batch()[..., None]).to_array()
-
-
 def colours(stresses: np.ndarray) -> np.ndarray:
     return plt.get_cmap(STRESS_MAP)(TwoSlopeNorm(0.0, COMPRESSION, TENSION)(np.clip(stresses, COMPRESSION, TENSION)))
 
@@ -85,12 +79,12 @@ def panels(mesh: core.Mesh, points: core.Point, framing: solids.View
     reciprocal vertices `Plane+[faces]` on it: left, the terrain the heights lift the mesh to, its creases coloured by stress,
     seen by the framing camera, fitted to its axes; right, the planar truss, its bars coloured by stress, and the reciprocal diagram over
     it, an edge across every bar."""
-    # The truss's bars and its boundary, each edge from its tail to its head, `[edges, ends, 2]` for the artists.
-    ends = mesh.incidence[1, 0] * points                                        # [ends] Point-[edges]
-    bar_ends = plane_places(mesh.reading(mesh.interior_edges, 1) * ends).transpose(1, 0, 2)   # [inner, ends, 2]
-    rim_ends = plane_places(mesh.reading(mesh.boundary_edges, 1) * ends).transpose(1, 0, 2)   # [rim, ends, 2]
-    # The faces on either side of each bar, whose reciprocal vertices its reciprocal edge joins.
-    sides = mesh.reading(mesh.edge_faces.T, 2)                                  # [sides] Scalar+[inner <- faces]
+    places = points.batch()                                                     # [vertices] Point-
+    # The truss's bars and its boundary, the mesh's inner and boundary edges.
+    bars = simplices.Mesh(len(places), mesh.edges[mesh.interior_edges])
+    rim = simplices.Mesh(len(places), mesh.edges[mesh.boundary_edges])
+    # The reciprocal diagram: a reciprocal vertex for each face, joined across every bar to the one on its other side.
+    reciprocal = simplices.Mesh(len(mesh.faces), mesh.edge_faces)
     # The directions along x and y: a reciprocal vertex, a face's slope, pairs with them to how fast the face rises
     # along each, its place in the diagram.
     directions = stack((core.mv.x, core.mv.y)).dual()                           # [2] Point-
@@ -99,20 +93,20 @@ def panels(mesh: core.Mesh, points: core.Point, framing: solids.View
     framing = fitted(framing, terrain_axes)
     picture = show(terrain_axes, np.zeros(framing.shape + (3,), dtype=np.uint8), framing)
     plane = figure.add_axes((0.5, 0.05, 0.5, 0.9))
-    bars = plane.add_collection(LineCollection(bar_ends, linewidths=BAR_WIDTH))
-    plane.add_collection(LineCollection(rim_ends, colors="0.5", linewidths=1.0))
-    diagram = plane.add_collection(LineCollection([], colors=RECIPROCAL_COLOUR, linewidths=1.0))
-    vertices = plane.scatter(np.zeros(0), np.zeros(0), color=RECIPROCAL_COLOUR, s=5, zorder=3)
     plane.set(xlim=(-REACH, REACH), ylim=(-REACH, REACH), aspect="equal")
     plane.set_axis_off()
+    camera = flat_panel(plane, places.algebra)
+    boundary = simplices.strokes(places, rim, RIM_COLOUR, LINE_WIDTH, camera)
+    truss = simplices.overlay(plane, [boundary])
 
     def drawn(heights: core.Scalar, stresses: core.Scalar, duals: core.Plane) -> None:
         shades = colours(stresses.batch().to_array())                          # [inner, 4]
         picture.set_data(terrain(mesh, points, heights, shades[:, :3], framing))
-        bars.set_color(shades)
-        reciprocal_edges = (sides * duals).batch()[..., None] & directions    # [sides, inner, 2] Scalar+
-        diagram.set_segments(reciprocal_edges.to_array().transpose(1, 0, 2))
-        vertices.set_offsets((duals.batch()[..., None] & directions).to_array())
+        corners = ((duals.batch()[..., None] & directions) * directions).sum(axis=-1)   # [faces] Point-
+        truss.set_data(simplices.composited([
+            simplices.strokes(places, bars, shades[:, :3], BAR_WIDTH, camera), boundary,
+            simplices.strokes(corners, reciprocal, RECIPROCAL_COLOUR, LINE_WIDTH, camera),
+            simplices.markers(corners, RECIPROCAL_COLOUR, CORNER_RADIUS, camera)]))
 
     return figure, drawn
 

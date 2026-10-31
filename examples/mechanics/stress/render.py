@@ -11,14 +11,14 @@ from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Circle
-
 from matplotlib.colors import to_rgb
 
+from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.mechanics.stress import core
-from examples.util.wgsl import fitted, show, solids
+from examples.util.wgsl import fitted, show, simplices, solids
+from examples.util.wgsl.camera import Camera, flat_panel
 from examples.util.wgsl.scene import Scene
 
 # The cube's edges and faces, by the corners' indices: corner 4 i + 2 j + k sits at the i-th, j-th and
@@ -28,6 +28,11 @@ FACES = np.array([(4, 5, 7, 6), (0, 2, 3, 1), (2, 6, 7, 3), (0, 1, 5, 4), (1, 3,
 # The arrows' lengths per unit traction, and the colours of the frames' diameters on Mohr's circle.
 NORMAL_SCALE, SHEAR_SCALE = 0.4, 0.5
 COLOURS = ("#0284c7", "#10b981", "#e11d48")
+# Mohr's circles: the outer one's colour and the inner ones' and the cross's, the samples round each circle, and the
+# inner circles' dots, a dot and a gap, in pixels.
+outer_colour, inner_colour = np.array(to_rgb("#1e293b")), np.array(to_rgb("#94a3b8"))
+n_circle = 181
+circle_dots = (1.5, 2.0)
 # The principal directions are drawn out to this distance from the centre, just past the cube; the room the view of
 # a turning frame leaves around the first frame's cube and arrows, for them to move in.
 REACH = 0.75
@@ -110,15 +115,15 @@ def draw_cube(corners: core.Point, centres: core.Point, normal: core.Point, shea
     return solids.draw(ghost(view, 1.0) + parts, view, background, inks=[], translucent=translucent, meshes=[])
 
 
+def mohr_place(normal: core.Scalar, shear: core.Scalar) -> core.Point:
+    """A place on Mohr's diagram, its normal traction across, along x, and its shear up, along y."""
+    x, y, _ = core.axes
+    return x.dual() * normal + y.dual() * shear
+
+
 def draw_circles(ax, values: core.Scalar) -> None:
-    """Mohr's circles of the principal stresses, on axes framing the largest."""
+    """The frame of Mohr's circles of the principal stresses, on axes framing the largest: its limits and names."""
     stresses = np.sort(values.to_array())
-    for low, high, style in [(0, 2, "-"), (0, 1, ":"), (1, 2, ":")]:
-        centre, radius = (stresses[low] + stresses[high]) / 2, (stresses[high] - stresses[low]) / 2
-        # The outer circle at a chart's line width, the inner two as thin as its frame.
-        ax.add_patch(Circle((centre, 0), radius, fill=False, edgecolor="#1e293b" if style == "-" else "#94a3b8",
-                            linestyle=style, linewidth=charts.LINE_WIDTH if style == "-" else charts.FRAME_WIDTH))
-    ax.scatter(stresses, np.zeros(3), color="#1e293b", zorder=3)
     # The outer two outside the circle that passes through them, the middle one below its dot.
     for stress, name, shift, align in zip(stresses, ["$\\sigma_1$", "$\\sigma_2$", "$\\sigma_3$"], (-5, 0, 5),
                                           ("right", "center", "left")):
@@ -128,42 +133,49 @@ def draw_circles(ax, values: core.Scalar) -> None:
     margin = 1.3 * radius
     ax.set_xlim(centre - margin, centre + margin)
     ax.set_ylim(-margin, margin)
-    ax.axhline(0, color="#94a3b8", linewidth=charts.FRAME_WIDTH, zorder=2)
-    ax.axvline(0, color="#94a3b8", linewidth=charts.FRAME_WIDTH, zorder=2)
     ax.text(centre + 0.95 * margin, 0.04, "$\\sigma$", ha="right", va="bottom", color="#64748b")
     ax.text(0.04, 0.95 * margin, "$\\tau$", ha="left", va="top", color="#64748b")
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-    ax.set_xticks([])
-    ax.set_yticks([])
     ax.set_aspect("equal")
+    ax.set_axis_off()
 
 
-def diameter(normal: core.Point, shear: core.Point) -> np.ndarray:
-    """The ends of a frame's diameter, from the normal and shear traction on its faces `[6]`, read by pairing: the
-    face facing x, its normal traction along x and its shear along y, and the face facing y, with the opposite shear,
-    `[2, 2]`."""
+def circles_drawn(ax, values: core.Scalar, camera: Camera) -> list[np.ndarray]:
+    """Mohr's circles of the principal stresses, the outer one at a chart's line width and the inner two dotted as
+    thin as its frame, under the cross through the origin and the principal stresses' dots: their pictures."""
+    x, _, _ = core.axes
+    stresses = values[values.argsort()]                                       # [3] Scalar+
+    # Each circle between two principal stresses, the outer one first: about their mean on the axis of normal
+    # traction, out to half their difference, turned all the way round in the plane of the diagram.
+    lows, highs = stresses[[0, 0, 1]], stresses[[2, 1, 2]]                    # [circles] Scalar+, [circles] Scalar+
+    turns = (core.mv.xy * (-np.linspace(0, 2 * np.pi, n_circle) / 2)).exp()  # [samples] Rotor+
+    rims = x.dual() * ((lows + highs) / 2)[:, None] + (turns >> x.dual() * ((highs - lows) / 2)[:, None])   # [circles, samples] Point-
+    (left, right), (bottom, top) = ax.get_xlim(), ax.get_ylim()
+    cross = mohr_place(np.array([left, right, 0, 0]), np.array([0, 0, bottom, top]))   # [4] Point-
+    return [simplices.strokes(rims[0], simplices.Mesh.chains([n_circle]), outer_colour, charts.LINE_PX, camera),
+            simplices.strokes(rims[1:].reshape(-1), simplices.Mesh.chains([n_circle] * 2), inner_colour,
+                              charts.FRAME_PX, camera, dashes=circle_dots, cap=simplices.Cap.BUTT),
+            simplices.strokes(cross, simplices.Mesh.chains([2, 2]), inner_colour, charts.FRAME_PX, camera,
+                              cap=simplices.Cap.BUTT),
+            simplices.markers(x.dual() * stresses, outer_colour, charts.MARKER_PX / 2, camera)]
+
+
+def diameter(normal: core.Point, shear: core.Point) -> core.Point:
+    """The ends of a frame's diameter on Mohr's diagram, from the normal and shear traction on its faces `[6]`, read by
+    pairing: the face facing x, its normal traction along x and its shear along y, and the face facing y, with the
+    opposite shear, `[2] Point-`."""
     x, y, _ = core.axes
-    along_x, along_y, sliding = ((x & normal[0]).to_array(), (y & normal[1]).to_array(),
-                                 (y & shear[0]).to_array())
-    return np.array([(along_x, sliding), (along_y, -sliding)])
+    sliding = y & shear[0]                                                    # [] Scalar+
+    return stack((mohr_place(x & normal[0], sliding), mohr_place(y & normal[1], -sliding)))
 
 
-def draw_diameter(ax, ends: np.ndarray, colour: str) -> tuple:
-    """A frame's diameter between its ends `[2, 2]`, the face facing x filled and the face facing y open: the line
-    and the two markers, for an animation to move."""
-    line, = ax.plot(*ends.T, color=colour, zorder=4)
-    filled = ax.scatter(*ends[0], color=colour, zorder=5)
-    hollow = ax.scatter(*ends[1], zorder=5, facecolors="none", edgecolors=colour)
-    return line, filled, hollow
-
-
-def draw_mohr(ax, values: core.Scalar, normal: core.Point, shear: core.Point) -> None:
-    """Mohr's circles of the principal stresses, and for each frame `[frames]` the diameter joining the
-    normal and shear traction on the faces facing x, filled, and y, open, in the frame's colour."""
-    draw_circles(ax, values)
-    for frame, colour in zip(range(normal.shape[0]), COLOURS * normal.shape[0]):
-        draw_diameter(ax, diameter(normal[frame], shear[frame]), colour)
+def diameter_drawn(ends: core.Point, colour: str, camera: Camera) -> list[np.ndarray]:
+    """A frame's diameter between its ends `[2]`, the face facing x a filled dot and the face facing y a ring: their
+    pictures."""
+    ink = np.array(to_rgb(colour))
+    rim = charts.LINE_PX / 2
+    return [simplices.strokes(ends, simplices.Mesh.chains([2]), ink, charts.LINE_PX, camera),
+            simplices.markers(ends[:1], ink, charts.MARKER_PX / 2, camera),
+            simplices.markers(ends[1:], ink, charts.MARKER_PX / 2 + rim, camera, inner=charts.MARKER_PX / 2 - rim)]
 
 
 @charts.style()
@@ -176,7 +188,8 @@ def draw_frames(views: tuple[core.Point, core.Point, core.Point, core.Point, cor
     # Nearly the whole column: a square panel a frame's cube, and Mohr's circles beside them.
     figure, panels = charts.subplots(190 * (count + 1), 190, ncols=count + 1)
     cubes = panels[:count]
-    draw_mohr(panels[count], values, normal, shear)
+    circles = panels[count]
+    draw_circles(circles, values)
     # The figure laid out with the cubes' axes bare, as their pictures show them; their rooms alike, one view fitted
     # to the first holds them all.
     for ax in cubes:
@@ -185,6 +198,11 @@ def draw_frames(views: tuple[core.Point, core.Point, core.Point, core.Point, cor
     seen = fitted(view(*views, 0.0), cubes[0])
     for frame, ax in enumerate(cubes):
         show(ax, draw_cube(corners[frame], centres[frame], normal[frame], shear[frame], principal[frame], seen), seen)
+    # Mohr's circles, and each frame's diameter in its colour.
+    camera = flat_panel(circles, core.ga)
+    simplices.overlay(circles, circles_drawn(circles, values, camera) + [
+        picture for frame, colour in zip(range(count), COLOURS * count)
+        for picture in diameter_drawn(diameter(normal[frame], shear[frame]), colour, camera)])
     return figure
 
 
@@ -202,13 +220,12 @@ def animate_turning(values: core.Scalar, frames: Iterable[tuple[core.Point, core
         scene = Scene(seen, background, ghost(seen, turning_thickness), [], inks=[], translucent=[])
         picture = show(cube_ax, np.zeros((*seen.shape, 3), dtype=np.uint8), seen)
         draw_circles(circles, values)
-        line, filled, hollow = draw_diameter(circles, np.zeros((2, 2)), COLOURS[0])
+        camera = flat_panel(circles, core.ga)
+        backdrop = circles_drawn(circles, values, camera)
+        diagram = simplices.overlay(circles, backdrop)
     for corners, centres, normal, shear, principal in chain([first], frames):
         parts, translucent = cube(corners, centres, normal, shear, principal, seen, turning_thickness)
         picture.set_data(scene.draw(parts, inks=[], translucent=translucent, meshes=[]))
-        ends = diameter(normal, shear)
-        line.set_data(*ends.T)
-        filled.set_offsets(ends[:1])
-        hollow.set_offsets(ends[1:])
+        diagram.set_data(simplices.composited(backdrop + diameter_drawn(diameter(normal, shear), COLOURS[0], camera)))
         yield capture(figure)
     plt.close(figure)

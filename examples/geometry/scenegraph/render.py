@@ -11,7 +11,6 @@ from collections.abc import Iterable, Iterator
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 from matplotlib.image import AxesImage
-from matplotlib.patches import Rectangle
 import numpy as np
 
 from numga import concatenate, stack
@@ -132,13 +131,18 @@ def scene_3d(world_vertices: Point, camera_pose: Motor, rays: tuple, view: solid
 Scalar = ga.gatype.scalar()                                                 # Scalar+
 sensor_pixels = np.array([640, 480])
 photo_gloss = 0.15
+# The room the sensor's view leaves around its pixel grid, for the border drawn round it, as a share of the grid; the
+# border's colour, and its width in points, drawn at each figure's pixels a point.
+sensor_margin = 0.015
+border_colour, border_width = "#4A5568", 1.2
 
 
 def sensor_view(ax: plt.Axes) -> solids.View:
-    """The sensor view looks square on at the sensor's pixel grid, fitted to the axes."""
+    """The sensor view looks square on at the sensor's pixel grid, with a little room around it, fitted to the axes."""
     ax.set_axis_off()
     middle = mv.point([sensor_pixels[0] / 2, -sensor_pixels[1] / 2, 0.0])
-    return fitted(solids.View(solids.aim(middle, np.pi / 2, 0.0), sensor_pixels / 2, sensor_pixels[0]), ax)
+    return fitted(solids.View(solids.aim(middle, np.pi / 2, 0.0), (1 + sensor_margin) * sensor_pixels / 2,
+                              sensor_pixels[0]), ax)
 
 
 def spread(points: Point, planes: Plane) -> Scalar:
@@ -172,13 +176,23 @@ def photograph_image(world_vertices: Point, projected_pixels: Point, camera_pose
                        face_values=np.zeros(4), colour=meshes.plain, gloss=photo_gloss)
 
 
+def framed_photograph(world_vertices: Point, projected_pixels: Point, camera_pose: Motor, view: solids.View,
+                      width: float) -> np.ndarray:
+    """The photograph on the sensor's pixels with the border round them, `width` pixels wide: colour and coverage."""
+    photograph = photograph_image(world_vertices, projected_pixels, camera_pose, view) / 255
+    # The pixel grid's corners in the photograph's plane, its rows running down from the top left, round and back.
+    width_px, height_px = sensor_pixels
+    corners = mv.point([[0, 0, 0], [width_px, 0, 0], [width_px, -height_px, 0], [0, -height_px, 0], [0, 0, 0]])   # [5] Point-
+    border = simplices.strokes(corners, simplices.Mesh.chains([5]), np.array(mcolors.to_rgb(border_colour)), width,
+                               simplices.view_camera(view))
+    return simplices.composited([np.concatenate([photograph, np.ones(photograph.shape[:2] + (1,))], axis=-1), border])
+
+
 def plot_camera_image(ax: plt.Axes, world_vertices: Point, projected_pixels: Point, camera_pose: Motor,
                       view: solids.View) -> AxesImage:
     """Draw the sensor photograph and its border on the axes."""
-    shown = show(ax, photograph_image(world_vertices, projected_pixels, camera_pose, view), view)
-    left, _, bottom, _ = view.extent
-    ax.add_patch(Rectangle((left, bottom), *sensor_pixels, fill=False, edgecolor="#4A5568", linewidth=1.2))
-    return shown
+    return show(ax, framed_photograph(world_vertices, projected_pixels, camera_pose, view,
+                                      border_width * ax.figure.dpi / 72), view)
 
 
 # --- figures ----------------------------------------------------------------------------
@@ -232,6 +246,7 @@ def animate_scenegraph(frames: Iterable) -> Iterator[np.ndarray]:
     for world_vertices, projected_pixels, camera_pose, rays in frames[1:]:
         scene_image.set_data(scene.draw(arm_and_rays(world_vertices, rays, view, animation_thickness), inks=[],
                                         translucent=[], meshes=[]))
-        photograph.set_data(photograph_image(world_vertices, projected_pixels, camera_pose, sensor))
+        photograph.set_data(framed_photograph(world_vertices, projected_pixels, camera_pose, sensor,
+                                              border_width * fig.dpi / 72))
         yield capture(fig)
     plt.close(fig)

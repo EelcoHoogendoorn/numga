@@ -13,7 +13,10 @@ from numga import stack
 from examples.math.invariant_decomposition import core
 from examples.util.animation import capture
 from examples.util.wgsl import compose, fitted, show, simplices, solids
+from examples.util.wgsl.camera import Camera, panel
 
+# The planes that read a point along a direction of space.
+Vector = core.ga.gatype.vector()                                               # Vector+
 # The figure's size in inches, at a hundred pixels to the inch, and the share of its width the tangle takes, the planes
 # sharing the rest; the share of a plane's panel left free around its view, and how many times its circle's radius
 # the view spans to either side of the middle, room for the marks' width.
@@ -28,10 +31,10 @@ tangle_elevation, tangle_azimuth = np.radians([30.0, 30.0])
 tangle_margin = 0.16
 tube_radius, marker_radius = 0.9, 2.3
 trail_colour, orbit_colour = np.array(to_rgb("#7d3c98")), np.array(to_rgb("0.8"))
-# Each plane's colour; the widths of the whole circle and of its trace up to the moment, in points, and the area of
-# the moving point, in square points.
-plane_colours = ("#c0392b", "#2e86c1", "#27ae60")
-circle_width, trace_width, marker_area = 0.5, 0.9, 8.0
+# Each plane's colour; the widths of the whole circle and of its trace up to the moment, and the radius of the moving
+# point, in pixels.
+plane_colours = np.array([to_rgb(colour) for colour in ("#c0392b", "#2e86c1", "#27ae60")])
+circle_width, trace_width, point_radius = 0.7, 1.25, 2.0
 
 
 def gpu_points(points: core.Antivector) -> solids.Point:
@@ -42,10 +45,19 @@ def gpu_points(points: core.Antivector) -> solids.Point:
 
 
 
-def plane_axes(circles: core.Antivector, parts: core.Bivector) -> tuple[core.Antivector, core.Antivector]:
-    """In each plane, the direction of the first projected point and the direction a quarter turn on from it."""
+def plane_axes(circles: core.Antivector, parts: core.Bivector) -> tuple[Vector, Vector]:
+    """In each plane, the planes that read a point along the direction of the first projected point and along the
+    direction a quarter turn on from it."""
     first = circles[:, 0].normalized()                                         # [3] Antivector-
-    return first, first.commutator(parts).normalized()                         # [3] Antivector-, [3] Antivector-
+    return first.dual_inverse(), first.commutator(parts).normalized().dual_inverse()   # [3] Vector+, [3] Vector+
+
+
+def plane_image(circle: core.Antivector, colour: np.ndarray, index: int, camera: Camera) -> np.ndarray:
+    """A plane's circle, grey, its trace up to one moment in the plane's colour, and the point at that moment."""
+    return simplices.composited([
+        simplices.strokes(circle, simplices.Mesh.chains([len(circle)]), orbit_colour, circle_width, camera),
+        simplices.strokes(circle[:index + 1], simplices.Mesh.chains([index + 1]), colour, trace_width, camera),
+        simplices.markers(circle[index][None], colour, point_radius, camera)])
 
 
 def tangle_image(places: solids.Point, index: int, view: solids.View) -> np.ndarray:
@@ -72,25 +84,23 @@ def layout(points: core.Antivector, circles: core.Antivector, parts: core.Bivect
     # One view framing the whole orbit, as many pixels across as the tangle's room holds.
     view = fitted(solids.view([places], 0.0, tangle_elevation, tangle_azimuth, tangle_margin, 1), tangle)
     shown = show(tangle, tangle_image(places, index, view), view)
-    across, along = plane_axes(circles, parts)
-    flat = np.stack([circles.dot(across[:, None]).to_array(), circles.dot(along[:, None]).to_array()], axis=-1)   # [3, times, 2]
-    panel = (1 - tangle_width) / len(plane_colours)
-    traces, markers = [], []
+    across, along = plane_axes(circles, parts)                                 # [3] Vector+, [3] Vector+
+    panel_width = (1 - tangle_width) / len(plane_colours)
+    images, cameras = [], []
     for plane, colour in enumerate(plane_colours):
-        extent = circle_room * np.abs(flat[plane]).max()
-        ax = figure.add_axes((tangle_width + (plane + plane_padding) * panel, plane_padding,
-                              (1 - 2 * plane_padding) * panel, 1 - 2 * plane_padding))
-        ax.plot(*flat[plane].T, color=orbit_colour, linewidth=circle_width)
-        traces += ax.plot(*flat[plane, : index + 1].T, color=colour, linewidth=trace_width)
-        markers.append(ax.scatter(*flat[plane, index], color=colour, s=marker_area, zorder=3))
+        extent = circle_room * float(circles[plane].norm().max().to_array())
+        ax = figure.add_axes((tangle_width + (plane + plane_padding) * panel_width, plane_padding,
+                              (1 - 2 * plane_padding) * panel_width, 1 - 2 * plane_padding))
         ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
         ax.set_axis_off()
+        # The plane's camera reads the circle by the planes along its two directions.
+        cameras.append(panel(ax, across[plane], along[plane]))
+        images.append(simplices.overlay(ax, [plane_image(circles[plane], colour, index, cameras[plane])]))
 
     def move(moment: int) -> None:
         shown.set_data(tangle_image(places, moment, view))
-        for plane, (trace, marker) in enumerate(zip(traces, markers)):
-            trace.set_data(*flat[plane, : moment + 1].T)
-            marker.set_offsets(flat[plane, moment])
+        for plane, (image, camera) in enumerate(zip(images, cameras)):
+            image.set_data(plane_image(circles[plane], plane_colours[plane], moment, camera))
 
     return figure, move
 

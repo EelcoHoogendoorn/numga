@@ -8,21 +8,22 @@ from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import PathCollection
 from matplotlib.colors import to_rgb, to_rgba
 from matplotlib.image import AxesImage
 
 from numga import concatenate, stack, where
 from examples.util.animation import capture
 from examples.mechanics.earthquake import core
-from examples.util.wgsl import compose, contours, fitted, meshes, pinned, show, solids
+from examples.util.wgsl import compose, contours, fitted, meshes, show, simplices, solids
 from examples.util.wgsl.camera import Camera, flat_panel
 
 # Pushes shaded, pulls left white; the nodal lines, the pressure and tension axes, the slip.
 PUSH, PULL = "#1e293b", "#f8fafc"
 NODAL, PRESSURE, TENSION, SLIP = "#0f172a", "#0ea5e9", "#e11d48", "#f59e0b"
-# The width of the beachball's nodal lines, in pixels.
-nodal_width = 1.1
+# In pixels: the width of the beachball's nodal lines and of its rim, and the radius of its axes' marks, with their
+# white rims' width.
+nodal_width, ball_rim_width = 1.1, 1.2
+axis_radius, axis_rim = 4.0, 0.9
 # The lobes in space, pushing and pulling; the fault patch and its rim.
 PUSH_LOBE, PULL_LOBE = "#475569", "#e2e8f0"
 FAULT, RIM = "#fde68a", "#b45309"
@@ -47,19 +48,6 @@ drawing = (core.down.commutator(core.north - core.east).normalized() * (np.pi / 
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(directions: core.Point) -> np.ndarray:
-    """The x, y and z coordinates of directions `[..., 3]`, their readings by the planes x, y and z: north, east and
-    down, and in the drawing's frame east, north and up."""
-    mv = core.mv
-    return (stack((mv.x, mv.y, mv.z)) & directions[..., None]).to_array()
-
-
-def chart(points: core.Point) -> np.ndarray:
-    """Points on the level ground across the beachball's chart `[..., 2]`, east to the right and north up: their
-    first two coordinates in the drawing's frame."""
-    return coordinates(drawing >> points)[..., :2]
-
-
 def lambert(directions: core.Point) -> core.Point:
     """Directions in the equal-area projection of the lower hemisphere onto the level ground: a direction on the
     upper hemisphere is drawn as its opposite, and each keeps its level part, shrunk by the square root of one plus
@@ -89,42 +77,46 @@ def shade_ball(places: core.Point, grid: contours.Mesh, push: core.Scalar, view:
     return contours.picture(places, grid, values, np.array(to_rgb(PULL)), view, levels=(nodal,), bands=(sides,))
 
 
-def draw_ball(ax, axes: core.Point) -> list[PathCollection]:
-    """The frame of one fault's beachball: the rim of the lower hemisphere and its pressure and tension axes, north
-    up. The axes' marks, for an animation to move."""
-    # The rim over the nodal lines: the level directions, which the projection leaves where they are, turned from
-    # north toward east.
-    level = (core.horizontal * (-np.linspace(0, 2 * np.pi, n_rim) / 2)).exp() >> core.north   # [rim] Point-
-    ax.plot(*chart(level).T, color=NODAL, linewidth=1.6, zorder=2.5)
-    principal = chart(lambert(axes))
-    marks = [ax.scatter(*point, s=110, color=colour, edgecolor="white", linewidth=1.2, zorder=5)
-             for point, colour in [(principal[0], PRESSURE), (principal[2], TENSION)]]
+def frame_ball(ax) -> None:
+    """The panel of one fault's beachball, north up."""
     ax.set_xlim(-1.12, 1.12)
     ax.set_ylim(-1.12, 1.12)
     ax.set_aspect("equal")
     ax.set_axis_off()
-    return marks
 
 
-def pin_ball(ax, places: core.Point, grid: contours.Mesh, push: core.Scalar) -> tuple[AxesImage, Camera]:
-    """The shaded beachball pinned under the frame `draw_ball` drew in its panel, once the figure is laid out; the
-    image and its camera, for an animation to set its data."""
+def ball_pictures(places: core.Point, grid: contours.Mesh, push: core.Scalar, axes: core.Point,
+                  view: Camera) -> list[np.ndarray]:
+    """One fault's beachball, shaded as `shade_ball` shades it; the rim of the lower hemisphere over its nodal lines;
+    and its pressure and tension axes."""
+    # The rim: the level directions, which the projection leaves where they are, turned from north toward east.
+    level = (core.horizontal * (-np.linspace(0, 2 * np.pi, n_rim) / 2)).exp() >> core.north   # [rim] Point-
+    principal = drawing >> lambert(axes)[[0, 2]]                              # [2] Point-
+    return [shade_ball(places, grid, push, view),
+            simplices.strokes(drawing >> level, simplices.Mesh.chains([n_rim]), np.array(to_rgb(NODAL)),
+                              ball_rim_width, view),
+            simplices.markers(principal, np.ones(3), axis_radius + axis_rim, view),
+            simplices.markers(principal, np.array([to_rgb(PRESSURE), to_rgb(TENSION)]), axis_radius, view)]
+
+
+def pin_ball(ax, places: core.Point, grid: contours.Mesh, push: core.Scalar,
+             axes: core.Point) -> tuple[AxesImage, Camera]:
+    """The beachball pinned in its panel, once the figure is laid out; the image and its camera, for an animation to
+    set its data."""
     view = flat_panel(ax, core.ga)
-    image = pinned(ax, shade_ball(places, grid, push, view), (*ax.get_xlim(), *ax.get_ylim()))
-    image.set_zorder(1)
-    return image, view
+    return simplices.overlay(ax, ball_pictures(places, grid, push, axes, view)), view
 
 
 def draw_mechanisms(directions: core.Point, push: core.Scalar, axes: core.Point) -> plt.Figure:
     """The beachball of each fault `[faults]`, side by side."""
     count = push.shape[0]
     figure, panels = plt.subplots(1, count, figsize=(3.2 * count, 3.2), dpi=55)
-    for index, ax in enumerate(panels):
-        draw_ball(ax, axes[index])
+    for ax in panels:
+        frame_ball(ax)
     figure.tight_layout()
     places, grid = ball_grid(directions)
     for index, ax in enumerate(panels):
-        pin_ball(ax, places, grid, push[index])
+        pin_ball(ax, places, grid, push[index], axes[index])
     return figure
 
 
@@ -197,23 +189,19 @@ def animate_sweep(hemisphere: core.Point, frames: Iterable[tuple[core.Point, cor
     lower hemisphere; all from one camera framing every frame's lobes and arrows."""
     frames = list(frames)
     normals, slips, _, _, spheres, pushes = (stack(list(parts)) for parts in zip(*frames))   # [frames, ...] each
-    # The figure and the beachball's rim set up once; the fault's picture, the shading and the axes' marks set for
-    # each frame.
+    # The figure set up once; the fault's picture and the beachball set for each frame.
     figure = plt.figure(figsize=(8.4, 4.2), dpi=50)
     fault_ax, ax = figure.add_subplot(1, 2, 1), figure.add_subplot(1, 2, 2)
-    marks = draw_ball(ax, frames[0][2])
+    frame_ball(ax)
     # The figure laid out with the fault's axes bare, as its picture shows them, and the view fitted to them.
     fault_ax.set_axis_off()
     figure.tight_layout()
     seen = fitted(view(lobes(spheres, pushes), concatenate(slip_arrows(normals[:, None], slips[:, None]))), fault_ax)
     image = show(fault_ax, np.ones((*seen.shape, 3)), seen)
     places, grid = ball_grid(hemisphere)
-    shading, ball_view = pin_ball(ax, places, grid, frames[0][3])
+    shading, ball_view = pin_ball(ax, places, grid, frames[0][3], frames[0][2])
     for normal, slip, axes, ball, sphere, push in frames:
         image.set_data(draw_fault(sphere, push, normal, slip, seen))
-        shading.set_data(shade_ball(places, grid, ball, ball_view))
-        principal = chart(lambert(axes))
-        for mark, point in zip(marks, principal[[0, 2]]):
-            mark.set_offsets(point[None])
+        shading.set_data(simplices.composited(ball_pictures(places, grid, ball, axes, ball_view)))
         yield capture(figure)
     plt.close(figure)

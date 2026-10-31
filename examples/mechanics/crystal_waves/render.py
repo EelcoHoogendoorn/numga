@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgb
+from matplotlib.lines import Line2D
 
+from numga import stack
 from examples.util import charts
 from examples.mechanics.crystal_waves import core
 from examples.mechanics.crystal_waves.scenarios import MODES
-from examples.util.wgsl import pinned, room
+from examples.util.wgsl import pinned, room, simplices
+from examples.util.wgsl.camera import Camera, flat_panel
 
 MODE_COLOURS = ("#c0392b", "#2e86c1", "#7d3c98")
 CROSS_COLOUR, LABEL_COLOUR = "0.85", "0.4"
@@ -16,8 +20,8 @@ CROSS_COLOUR, LABEL_COLOUR = "0.85", "0.4"
 MARGIN = 0.45
 # The span of the cube face the focusing panels show, across and up.
 FACE = (-1.5, 1.5)
-# The size of the wave fronts' point markers in pixels, each dot drawn half as wide.
-DOT_PX = 3
+# The wave fronts' dots, in pixels across.
+DOT_PX = 2
 
 
 def components(directions: core.Antivector) -> np.ndarray:
@@ -26,15 +30,21 @@ def components(directions: core.Antivector) -> np.ndarray:
 
 
 def cross(ax: plt.Axes, limit: float, across: str, up: str) -> None:
-    """A square plane of half width `limit` without scales: a faint cross through the origin, its lines named at
+    """A square plane of half width `limit` without scales, the names of the lines of its cross through the origin at
     their ends."""
-    # The cross as thin as a chart's frame, which it stands in for.
-    ax.axhline(0, color=CROSS_COLOUR, linewidth=charts.FRAME_WIDTH, zorder=0)
-    ax.axvline(0, color=CROSS_COLOUR, linewidth=charts.FRAME_WIDTH, zorder=0)
     ax.text(limit, 0, across, ha="right", va="top", color=LABEL_COLOUR)
     ax.text(0, limit, f" {up}", ha="left", va="top", color=LABEL_COLOUR)
     ax.set(xlim=(-limit, limit), ylim=(-limit, limit), aspect="equal")
     ax.set_axis_off()
+
+
+def cross_drawn(limit: float, camera: Camera) -> np.ndarray:
+    """The faint cross through the origin, out to `limit` along x and y either way, as thin as a chart's frame, which
+    it stands in for: its picture."""
+    x, y, _ = core.axes
+    ends = limit * stack((-x.dual(), x.dual(), -y.dual(), y.dual()))         # [4] Antivector-
+    return simplices.strokes(ends, simplices.Mesh.chains([2, 2]), np.array(to_rgb(CROSS_COLOUR)), charts.FRAME_PX,
+                             camera, cap=simplices.Cap.BUTT)
 
 
 @charts.style()
@@ -68,14 +78,18 @@ def draw_wave_fronts(velocities: core.Vector, names: list[str]) -> plt.Figure:
     the crystal."""
     # Nearly the whole column: a panel a crystal, each a dense section of three wave surfaces, over one legend.
     figure, row = charts.subplots(250 * len(names), 300, ncols=len(names), layout="constrained")
-    for ax, velocity, name in zip(np.atleast_1d(row), velocities, names):
-        flow = components(velocity)                                    # [count, waves, 3]
-        for wave, mode, colour in zip(np.moveaxis(flow, 1, 0), MODES, MODE_COLOURS):
-            # Small dots, so that the sampled headings read as curves.
-            ax.plot(wave[:, 0], wave[:, 1], ".", markersize=charts.points(DOT_PX), color=colour, label=mode)
-        cross(ax, (1 + MARGIN) * np.abs(flow[..., :2]).max(), "[100]", "[010]")
+    limits = [(1 + MARGIN) * np.abs(components(velocity)[..., :2]).max() for velocity in velocities]
+    for ax, limit, name in zip(np.atleast_1d(row), limits, names):
+        cross(ax, limit, "[100]", "[010]")
         ax.set_title(name)
     # The legend's dots as wide as a chart's markers.
-    figure.legend(*np.atleast_1d(row)[0].get_legend_handles_labels(), loc="outside lower center", ncol=len(MODES),
-                  markerscale=2 * charts.MARKER_PX / DOT_PX, frameon=False)
+    handles = [Line2D([], [], linestyle="none", marker="o", markersize=charts.MARKER_SIZE, color=colour, label=mode)
+               for mode, colour in zip(MODES, MODE_COLOURS)]
+    figure.legend(handles=handles, loc="outside lower center", ncol=len(MODES), frameon=False)
+    for ax, velocity, limit in zip(np.atleast_1d(row), velocities, limits):
+        camera = flat_panel(ax, core.ga)
+        # Small dots, so that the sampled headings read as curves, each wave over the slower ones.
+        simplices.overlay(ax, [cross_drawn(limit, camera)] + [
+            simplices.markers(velocity[:, mode], np.array(to_rgb(colour)), DOT_PX / 2, camera)
+            for mode, colour in zip(range(len(MODES)), MODE_COLOURS)])
     return figure

@@ -1,11 +1,10 @@
-"""Rendering for the horizontal sundial draws the dial face with its hour lines and seasonal conics in matplotlib and traces the sun's daily cone of rays past the nodus in space on the GPU."""
+"""Rendering for the horizontal sundial draws the dial face with its hour lines and seasonal conics as strokes read by the dial's planes east and north, with matplotlib's numerals over them, and traces the sun's daily cone of rays past the nodus in space on the GPU."""
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 
 import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
 from matplotlib.colors import to_rgb
 import numpy as np
 
@@ -13,7 +12,8 @@ from examples.util import charts
 from examples.util.animation import capture
 from examples.geometry.sundial import core
 from numga import concatenate, stack
-from examples.util.wgsl import fitted, show, solids
+from examples.util.wgsl import fitted, show, simplices, solids
+from examples.util.wgsl.camera import Camera, flat_panel
 
 # The part of the dial drawn, east and north of the point below the nodus.
 east_range = (-4.5, 4.5)
@@ -36,6 +36,11 @@ elevation, azimuth = np.radians(16.0), np.radians(-125.0 + 90.0)
 margin = 0.04
 # The widths of the rays and of the day's shadow path, in pixels; the thickness of the dial's plate and of the gnomon.
 ray_width, path_width = 1.8, 3.1
+# The widths on the dial's face, in pixels: the hour lines a frame's width, the seasons' paths a line's, the day's path
+# twice that and the gnomon's base three times; and how much the seasons' paths cover behind the day's.
+hour_width, season_width = charts.FRAME_PX, charts.LINE_PX
+day_width, base_width = 2 * charts.LINE_PX, 3 * charts.LINE_PX
+faint_opacity = 0.35
 plate_thickness, gnomon_thickness = 0.25, 0.08
 # The dial's corners, east, north and up.
 dial_corners = solids.mv.point([[east_range[0], north_range[0], 0], [east_range[1], north_range[0], 0],
@@ -45,14 +50,29 @@ face_planes = stack((core.mv.x, core.mv.y))                                    #
 
 
 # --- plumbing -------------------------------------------------------------------------
-def shadows(nodus: core.Point, suns: core.Point) -> np.ndarray:
-    """The shadows of the nodus on the dial, east and north `[..., 2]`, masked where the sun is below the horizon or
-    the shadow falls outside the dial face."""
+def on_face(nodus: core.Point, suns: core.Point) -> np.ndarray:
+    """Whether the sun is up and the nodus's shadow falls on the dial face `[...]`."""
     tips = core.shadow(nodus, suns)                                            # [...] Point-
     east, north = core.mv.x & tips, core.mv.y & tips                           # [...] Scalar+, Scalar+
-    inside = ((core.dial & suns) > 0) & (east > east_range[0]) & (east < east_range[1]) \
+    return ((core.dial & suns) > 0) & (east > east_range[0]) & (east < east_range[1]) \
         & (north > north_range[0]) & (north < north_range[1])
-    return np.where(inside[..., None], (face_planes & tips[..., None]).to_array(), np.nan)
+
+
+def sunlit_chains(suns: core.Point) -> simplices.Mesh:
+    """The shadow paths of a batch of suns as chains of edges along its last axis, an edge kept where the sun is up at
+    both its ends; the face's camera cuts them at the dial's edges."""
+    n_samples = suns.shape[-1]
+    chains = simplices.Mesh.chains([n_samples] * (np.prod(suns.shape) // n_samples))
+    up = ((core.dial & suns) > 0).reshape(-1)
+    return simplices.Mesh(chains.n_vertices, chains.edges[up[chains.edges].all(axis=-1)])
+
+
+def shadow_strokes(nodus: core.Point, suns: core.Point, colours: np.ndarray, width: float, camera: Camera,
+                   opacity: float = 1.0) -> np.ndarray:
+    """The shadow paths of the nodus under a batch of suns, each run along the last axis, as strokes on the dial, each
+    edge in its colour `[edges, 3]`."""
+    return simplices.strokes(core.shadow(nodus, suns).reshape(-1), sunlit_chains(suns), colours, width, camera,
+                             opacity=opacity)
 
 
 def season_colours(seasons: np.ndarray) -> np.ndarray:
@@ -61,27 +81,31 @@ def season_colours(seasons: np.ndarray) -> np.ndarray:
 
 
 def draw_face(ax: plt.Axes, nodus: core.Point, foot: core.Point, seasons: np.ndarray, days: core.Point,
-              suns: core.Point, hours: np.ndarray, faint: bool) -> None:
-    """Draw the dial face with each season's shadow path, the numbered hour lines from solstice to solstice, and the gnomon's base along the noon line."""
-    paths = shadows(nodus, days)                                               # [seasons, samples, 2]
-    ax.add_collection(LineCollection(paths, colors=season_colours(seasons), alpha=0.35 if faint else 1.0))
-    lines = shadows(nodus, suns)                                               # [hours, declinations, 2]
+              suns: core.Point, hours: np.ndarray, faint: bool) -> tuple[Camera, list[np.ndarray]]:
+    """Draw the dial face with each season's shadow path, the numbered hour lines from solstice to solstice, and the
+    gnomon's base along the noon line: the face's camera and its pictures, the numerals written over them."""
+    ax.set(xlim=east_range, ylim=north_range, aspect="equal")
+    ax.set_axis_off()
+    camera = flat_panel(ax, core.ga)
+    # Each season's path in its colour, one per edge of its run.
+    season_edges = sunlit_chains(days).edges[:, 0] // days.shape[-1]          # [edges]
+    paths = shadow_strokes(nodus, days, season_colours(seasons)[season_edges, :3], season_width, camera,
+                           faint_opacity if faint else 1.0)
     # The hour lines thin, a frame's width, under the seasons' paths.
-    ax.add_collection(LineCollection(lines, colors=hour_colour, linewidths=charts.FRAME_WIDTH))
+    lines = shadow_strokes(nodus, suns, np.array(to_rgb(hour_colour)), hour_width, camera)
     hour_lines = core.shadow(nodus, suns)                                      # [hours, declinations] Point-
-    for hour, line, drawn in zip(hours, hour_lines, ~np.isnan(lines[..., 0])):
+    for hour, line, drawn in zip(hours, hour_lines, on_face(nodus, suns)):
         # The numeral just inside the outer end of the line's part on the dial.
         outer, inner = line[np.flatnonzero(drawn)[[0, -1]]]                    # [] Point-, Point-
         place = outer - inset * (outer - inner).normalized()                   # [] Point-
         ax.text(*(face_planes & place[None]).to_array(), f"{hour}", color=hour_colour, ha="center", va="center",
                 bbox=dict(facecolor="white", edgecolor="none", pad=0.5))
-    # The gnomon's edge seen from above: from the foot of the style to the point of the dial below the nodus.
+    # The gnomon's edge seen from above, bold and square at its ends: from the foot of the style to the point of the
+    # dial below the nodus.
     below_nodus = nodus - core.up * (core.dial & nodus)                        # [] Point-
-    base = (face_planes & stack([foot, below_nodus])[:, None]).to_array()     # [ends, 2]
-    # The gnomon's base bold, three lines wide.
-    ax.plot(*base.T, color=gnomon_colour, linewidth=3 * charts.LINE_WIDTH, solid_capstyle="butt")
-    ax.set(xlim=east_range, ylim=north_range, aspect="equal")
-    ax.set_axis_off()
+    base = simplices.strokes(stack([foot, below_nodus]), simplices.Mesh.chains([2]), np.array(to_rgb(gnomon_colour)),
+                             base_width, camera, cap=simplices.Cap.BUTT)
+    return camera, [lines, paths, base]
 
 
 @charts.style()
@@ -90,7 +114,8 @@ def draw_dial(nodus: core.Point, foot: core.Point, seasons: np.ndarray, days: co
     """Render the static dial face figure."""
     # Over half the column: the hour lines, their numerals and the seasons' paths across the dial.
     figure, ax = charts.subplots(460, 345, layout="constrained")
-    draw_face(ax, nodus, foot, seasons, days, suns, hours, faint=False)
+    _, pictures = draw_face(ax, nodus, foot, seasons, days, suns, hours, faint=False)
+    simplices.overlay(ax, pictures)
     return figure
 
 
@@ -164,14 +189,15 @@ def animate_year(declinations: np.ndarray, rays: core.Point, days: core.Point, n
         figure = plt.figure(figsize=(800 / charts.DPI, 370 / charts.DPI), dpi=charts.DPI)
         sky_axes = figure.add_axes((0.0, 0.0, 0.5, 1.0))
         face = figure.add_axes((0.52, 0.04, 0.46, 0.92))
-        draw_face(face, nodus, foot, seasons, season_days, suns, hours, faint=True)
-        # The day's shadow path bold, twice a line's width.
-        path = face.add_collection(LineCollection([], colors=day_colour, linewidths=2 * charts.LINE_WIDTH))
+        camera, pictures = draw_face(face, nodus, foot, seasons, season_days, suns, hours, faint=True)
+    # The day's shadow path, bold, laid over the face each frame.
+    path = simplices.overlay(face, pictures)
     view = sky_view(sky_axes, nodus, rays)
     sky = show(sky_axes, np.ones((*view.shape, 3)), view)
     for index in range(len(declinations)):
         beams, inks = sunlight(nodus, foot, rays[index], days[index], view)
         sky.set_data(solids.draw(dial + beams, view, np.ones(3), inks, translucent=[], meshes=[]))
-        path.set_segments(shadows(nodus, days[index])[None])
+        day = shadow_strokes(nodus, days[index], np.array(to_rgb(day_colour)), day_width, camera)
+        path.set_data(simplices.composited(pictures + [day]))
         yield capture(figure)
     plt.close(figure)

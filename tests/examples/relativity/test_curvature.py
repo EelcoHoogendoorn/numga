@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
+from numga import stack
 from examples.relativity.curvature import render, scenarios
 from examples.relativity.curvature.core import (
     Antibivector, Antivector, curvature_of_strain, integrate_acceleration, mv, polarizations, polarized,
@@ -11,6 +12,11 @@ from examples.relativity.curvature.core import (
 )
 
 polarization_weights = scenarios.polarization_weights
+
+
+def transverse(value: Antivector) -> np.ndarray:
+    """(..., 2) x and y of separations in the plane transverse to the wave: their pairings with the slices x and y."""
+    return (stack((mv.x, mv.y)) & value[..., None]).to_array()
 
 
 def ring(count: int) -> Antivector:
@@ -100,7 +106,7 @@ def test_integrated_detector_response_converges_to_weak_wave_displacements():
         _, second = wave_packet(time, duration=6.0, cycles=3, amplitude=1e-4)
         waves = polarized(plus, cross, -0.5 * second[:, None] * polarization_weights)
         acceleration = -tidal_map(waves, time_direction)[:, :, None](reference).dual()
-        displacement = render.transverse(integrate_acceleration(time, acceleration))
+        displacement = transverse(integrate_acceleration(time, acceleration))
 
         # Independent prediction: the displacement is half the strain applied to the separation, for all
         # three polarizations and every bead, with the stated Gaussian packet.
@@ -108,7 +114,7 @@ def test_integrated_detector_response_converges_to_weak_wave_displacements():
         hp = (envelope * np.cos(np.pi * (time - 3)))[:, None, None]
         hc = (envelope * np.sin(np.pi * (time - 3)))[:, None, None]
         strain = np.stack((hp * plus_matrix, hc * cross_matrix, hp * plus_matrix + hc * cross_matrix), axis=1)
-        expected = .5 * np.einsum("tcij,nj->tcni", strain, render.transverse(reference))
+        expected = .5 * np.einsum("tcij,nj->tcni", strain, transverse(reference))
         errors.append(np.max(np.abs(displacement - expected)))
 
     assert errors[1] < errors[0] / 10  # Fourth-order integration convergence.

@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import LineCollection
 from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
-from matplotlib.patches import Polygon
-from matplotlib.tri import Triangulation
 
 from numga import stack
 from examples.util import charts
 from examples.util.wgsl import contours, flow, image_figure, meshes, simplices, solids
+from examples.util.wgsl.camera import Camera, flat_panel
 from examples.surfaces.whitney_forms import core
 
 primal_colour = "#286580"
@@ -25,6 +23,14 @@ hat_colours = LinearSegmentedColormap.from_list(
 potential_colours = LinearSegmentedColormap.from_list(
     "whitney_potential", ("#286580", "#f5f2eb", "#d77542"))
 n_contours = 7
+# In pixels: the triangles' outlines, their sides drawn bold, the disks' boundaries, the meshes' edges and the fibre's
+# chords; the arrows' width and their heads' length; the dots, small, highlighted and on the diamond, and their white
+# rings. The fibre's chords dotted, a dot and a gap.
+outline_width, side_width, edge_width, wall_width, mesh_width, chord_width = 1.6, 3.2, 3.0, 1.8, 1.0, 1.0
+arrow_width, arrow_head = 2.8, 8.0
+small_dot, highlight_dot, apex_dot, halo = 2.9, 4.8, 4.3, 1.25
+chord_dots = (1.0, 2.0)
+paper_colour = "#f6f4ee"
 # The pixel sizes of a row of four triangles and of the two disks side by side.
 row_size, flow_size = (780, 195), (600, 290)
 # The tetrahedron's three views, each square, and the gap between them, in pixels.
@@ -47,12 +53,6 @@ unit_volume = core.space_mv.antipseudoscalar([1.0])                          # [
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(points: core.Point) -> np.ndarray:
-    """Drawing coordinates of intrinsic positions and directions."""
-    mv = points.context.multivector
-    return np.asarray((stack((mv.x, mv.y)) & points.batch()[..., None]).to_array())
-
-
 def outward_wall(mesh: core.SpaceMesh) -> tuple[np.ndarray, np.ndarray]:
     """The faces on the wall of a solid mesh, `[wall]`, and their corners `[wall, 3]`, wound outward. The wall is the
     boundary of the solid, the sum of its tetrahedra's outward faces: one on a wall face that runs outward as stored,
@@ -63,8 +63,8 @@ def outward_wall(mesh: core.SpaceMesh) -> tuple[np.ndarray, np.ndarray]:
     return wall, np.where(sense[:, None] > 0, mesh.faces[wall], mesh.faces[wall][:, ::-1])
 
 
-def frame_panel(ax: plt.Axes, points: core.Point, margin_ratio: float) -> None:
-    """Square equal-aspect viewport around the points with no axes or ticks."""
+def frame_panel(ax: plt.Axes, points: core.Point, margin_ratio: float) -> Camera:
+    """Square equal-aspect viewport around the points with no axes or ticks; its camera, looking down on x and y."""
     mv = points.context.multivector
     readings = stack((mv.x, mv.y))[:, None] & points.batch().reshape(-1)
     low = readings.min(axis=-1)
@@ -75,13 +75,30 @@ def frame_panel(ax: plt.Axes, points: core.Point, margin_ratio: float) -> None:
     limits = stack((centre - half_span, centre + half_span), axis=-1).to_array()
     ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
     ax.set_axis_off()
+    return flat_panel(ax, points.algebra)
+
+
+def ink(colour: str) -> np.ndarray:
+    """A colour's red, green and blue."""
+    return np.array(to_rgb(colour))
+
+
+def ringed(points: core.Point, colour: str, radius: float, camera: Camera) -> list[np.ndarray]:
+    """Dots at points, `radius` pixels, ringed in white: their pictures."""
+    return [simplices.markers(points, np.ones(3), radius + halo, camera),
+            simplices.markers(points, ink(colour), radius, camera)]
+
+
+def arrows(tails: core.Point, tips: core.Point, width: float, head: float, camera: Camera) -> np.ndarray:
+    """Arrows in the accent from tails to tips `[arrows]`: their picture."""
+    n_arrows = tails.shape[0]
+    return simplices.strokes(stack((tails, tips), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_arrows),
+                             accent_rgb, width, camera, heads=np.ones(n_arrows), head=head, cap=simplices.Cap.BUTT)
 
 
 def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
-                    star_mesh: core.Mesh, star_vertices: core.Point,
-                    vertex_hat: core.Scalar, star_gradients: core.Plane) -> plt.Figure:
-    """The three corner hat ramps with their constant gradients, and the assembled vertex pyramid."""
-    corner_xy = coordinates(corners)
+                    star_mesh: core.Mesh, star_vertices: core.Point, vertex_hat: core.Scalar) -> plt.Figure:
+    """The three corner hat ramps with their constant gradients, and the assembled vertex pyramid by its levels."""
     triangle = meshes.Mesh(3, [[0, 1, 2]])
     # The hats' levels at even steps between nothing and one.
     levels = tuple(contours.Level(level, np.append(primal_rgb, 0.55), 1.0)
@@ -92,80 +109,66 @@ def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
     rises = gradients.dual()                                                  # [corners] Point-
     lengths = rises.norm().reshape(-1)
     reaches = rises * (0.24 / lengths.max())                  # [corners] Point-
-    rise_tails, rise_tips = coordinates(centroid - reaches), coordinates(centroid + reaches)   # [corners, 2], [corners, 2]
 
     figure, axes = charts.subplots(*row_size, ncols=4)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.04)
 
     for index in range(3):
         ax = axes[index]
-        frame_panel(ax, corners, 0.22)
+        camera = frame_panel(ax, corners, 0.22)
         # The hat of this corner: one there, nothing at the others.
         values = np.eye(3)[index]
-        contours.overlay(ax, corners, triangle, values, hat_colours(values)[:, :3], levels=levels).set_zorder(1)
-        ax.add_patch(Polygon(corner_xy, fill=False, edgecolor=wall_colour, linewidth=1.2, zorder=3))
-        opposite = corner_xy[[(index + 1) % 3, (index + 2) % 3]]
-        ax.plot(*opposite.T, color=wall_colour, linewidth=2.2, solid_capstyle="round", zorder=4)
-        ax.scatter(*corner_xy.T, s=18, color=wall_colour, zorder=5)
-        ax.scatter(*corner_xy[index], s=48, color=accent_colour, edgecolor="white", linewidth=0.9, zorder=6)
-        ax.annotate("", xy=rise_tips[index], xytext=rise_tails[index],
-                    arrowprops=dict(arrowstyle="-|>", mutation_scale=12, color=accent_colour, linewidth=2.0),
-                    zorder=7)
+        simplices.overlay(ax, [
+            contours.picture(corners, triangle, values, hat_colours(values)[:, :3], camera, levels=levels),
+            simplices.strokes(corners, triangle, ink(wall_colour), outline_width, camera),
+            simplices.strokes(corners[[(index + 1) % 3, (index + 2) % 3]], simplices.Mesh.chains([2]),
+                              ink(wall_colour), edge_width, camera),
+            simplices.markers(corners, ink(wall_colour), small_dot, camera),
+            *ringed(corners[index][None], accent_colour, highlight_dot, camera),
+            arrows((centroid - reaches[index])[None], (centroid + reaches[index])[None], arrow_width, arrow_head,
+                   camera)])
 
     ax = axes[3]
-    star_xy = coordinates(star_vertices)
-    star_tri = Triangulation(*star_xy.T, triangles=star_mesh.faces)
     hat_values = np.asarray(vertex_hat.batch().to_array())
     star_places = star_vertices.batch()                                       # [vertices] Point-
-    frame_panel(ax, star_vertices, 0.14)
-    contours.overlay(ax, star_places, star_mesh, hat_values, hat_colours(hat_values)[:, :3],
-                     levels=levels).set_zorder(1)
-    ax.triplot(star_tri, color=wall_colour, linewidth=0.65, alpha=0.65, zorder=3)
-    ax.scatter(*star_xy[0], s=48, color=accent_colour, edgecolor="white", linewidth=0.9, zorder=6)
-    # The gradient on each face where the hat rises, through the face's centroid, the longest a fixed length.
-    star_rises = star_gradients.dual().batch()                                # [faces] Point-
-    rising = star_rises.norm() > 1e-8                                         # [faces]
-    star_lengths = star_rises[rising].norm().reshape(-1)
-    star_reaches = star_rises[rising] * (0.16 / star_lengths.max())   # [rising] Point-
-    star_centres = (star_mesh.incidence[2, 0].mean(axis=0) * star_vertices).batch()[rising]   # [rising] Point-
-    for tail, tip in zip(coordinates(star_centres - star_reaches), coordinates(star_centres + star_reaches)):
-        ax.annotate("", xy=tip, xytext=tail,
-                    arrowprops=dict(arrowstyle="-|>", mutation_scale=10, color=accent_colour, linewidth=1.6),
-                    zorder=7)
+    camera = frame_panel(ax, star_vertices, 0.14)
+    # The assembled hat's gradient, a field over the star, reads in its level lines.
+    simplices.overlay(ax, [
+        contours.picture(star_places, star_mesh, hat_values, hat_colours(hat_values)[:, :3], camera, levels=levels),
+        simplices.strokes(star_places, star_mesh, ink(wall_colour), mesh_width, camera, opacity=0.65),
+        *ringed(star_places[:1], accent_colour, highlight_dot, camera)])
     return figure
 
 
 def draw_edge_1forms(corners: core.Point, corner_forms: core.Plane,
                      diamond: core.Mesh, diamond_vertices: core.Point, shared_corner_forms: core.Plane) -> plt.Figure:
     """Whitney edge forms as feathered streaks, with each face's corner values kept separate across the seam."""
-    corner_xy = coordinates(corners)
     triangle = meshes.Mesh(3, [[0, 1, 2]])
     directions = corner_forms.dual()                                          # [corners] Point-
     reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
     # Each side, from the corner after its own to the one after that, with an arrow about its middle along it.
     side_starts, side_ends = corners[[1, 2, 0]], corners[[2, 0, 1]]           # [corners] Point-, Point-
     side_middles, alongs = (side_starts + side_ends) / 2, side_ends - side_starts   # [corners] Point-, Point-
-    start_xy, end_xy = coordinates(side_starts), coordinates(side_ends)       # [corners, 2], [corners, 2]
-    along_tails, along_tips = coordinates(side_middles - 0.18 * alongs), coordinates(side_middles + 0.18 * alongs)
+    along_tails, along_tips = side_middles - 0.18 * alongs, side_middles + 0.18 * alongs   # [corners] Point-, Point-
 
     figure, axes = charts.subplots(*row_size, ncols=4)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.04)
 
     for index in range(3):
         ax = axes[index]
-        frame_panel(ax, corners, 0.22)
-        ax.add_patch(Polygon(corner_xy, facecolor="#f6f4ee", edgecolor=wall_colour, linewidth=1.1, zorder=1))
-        flow.overlay(ax, corners, triangle, directions[index], reference_speed, primal_rgb)
-        ax.plot(*np.stack([start_xy[index], end_xy[index]]).T, color=accent_colour, linewidth=2.4, zorder=4)
-        ax.annotate("", xy=along_tips[index], xytext=along_tails[index],
-                    arrowprops=dict(arrowstyle="-|>", mutation_scale=12, color=accent_colour, linewidth=2.0),
-                    zorder=5)
-        ax.scatter(*corner_xy[index], s=42, color=primal_colour, edgecolor="white", linewidth=0.9, zorder=6)
+        camera = frame_panel(ax, corners, 0.22)
+        simplices.overlay(ax, [
+            contours.picture(corners, triangle, np.zeros(3), ink(paper_colour), camera),
+            simplices.strokes(corners, triangle, ink(wall_colour), charts.LINE_PX, camera),
+            flow.layer(corners, triangle, directions[index], camera, reference_speed, primal_rgb),
+            simplices.strokes(stack((side_starts[index], side_ends[index])), simplices.Mesh.chains([2]), accent_rgb,
+                              side_width, camera, cap=simplices.Cap.BUTT),
+            arrows(along_tails[index][None], along_tips[index][None], arrow_width, arrow_head, camera),
+            *ringed(corners[index][None], primal_colour, highlight_dot, camera)])
 
     ax = axes[3]
-    frame_panel(ax, diamond_vertices, 0.16)
-    for tri_xy in coordinates(diamond.incidence[2, 0] * diamond_vertices).transpose(1, 0, 2):
-        ax.add_patch(Polygon(tri_xy, facecolor="#f6f4ee", edgecolor=wall_colour, linewidth=1.1, zorder=1))
+    camera = frame_panel(ax, diamond_vertices, 0.16)
+    places = diamond_vertices.batch()                                         # [vertices] Point-
     # Separate corners retain the two faces' different normal components along their shared edge.
     diamond_corners = (diamond.incidence[2, 0] * diamond_vertices).batch()
     positions = diamond_corners.reshape(-1)
@@ -173,18 +176,20 @@ def draw_edge_1forms(corners: core.Point, corner_forms: core.Plane,
     n_faces = len(diamond.faces)
     split_mesh = meshes.Mesh(3 * n_faces, np.arange(3 * n_faces).reshape(3, n_faces).T)
     reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
-    flow.overlay(ax, positions, split_mesh, directions, reference_speed, primal_rgb)
     # The shared edge, from its tail to its head, with an arrow about its middle along it.
     shared = diamond.reading(diamond.interior_edges[:1], 1)                   # Scalar+[shared <- edges]
     tail, head = (shared * (diamond.incidence[1, 0] * diamond_vertices)).batch()[:, 0]   # [] Point-, Point-
     middle, along = (tail + head) / 2, head - tail                            # [] Point-, Point-
-    ax.plot(*coordinates(stack([tail, head])).T, color=accent_colour, linewidth=2.4, zorder=4)
-    ax.annotate("", xy=coordinates(middle + 0.2 * along), xytext=coordinates(middle - 0.2 * along),
-                arrowprops=dict(arrowstyle="-|>", mutation_scale=12, color=accent_colour, linewidth=2.0),
-                zorder=5)
     # The corners across the shared edge, in the face on its left and in the face on its right.
-    for apex in coordinates(diamond.reading(diamond.edge_opposites[0]) * diamond_vertices):
-        ax.scatter(*apex, s=38, color=primal_colour, edgecolor="white", linewidth=0.9, zorder=6)
+    apexes = (diamond.reading(diamond.edge_opposites[0]) * diamond_vertices).batch()   # [sides] Point-
+    simplices.overlay(ax, [
+        contours.picture(places, diamond, np.zeros(len(places)), ink(paper_colour), camera),
+        simplices.strokes(places, diamond, ink(wall_colour), charts.LINE_PX, camera),
+        flow.layer(positions, split_mesh, directions, camera, reference_speed, primal_rgb),
+        simplices.strokes(stack((tail, head)), simplices.Mesh.chains([2]), accent_rgb, side_width, camera,
+                          cap=simplices.Cap.BUTT),
+        arrows((middle - 0.2 * along)[None], (middle + 0.2 * along)[None], arrow_width, arrow_head, camera),
+        *ringed(apexes, primal_colour, apex_dot, camera)])
     return figure
 
 
@@ -289,10 +294,7 @@ def draw_anisotropic_flow(mesh: core.Mesh, vertices: core.Point,
                           potential: core.Scalar,
                           current: core.Point, fibre: core.Point) -> plt.Figure:
     """Isotropic and tilted-anisotropic conduction share one potential palette and current-length scale."""
-    places = coordinates(vertices)
     potentials = np.asarray(potential.batch().to_array())
-    triangulation = Triangulation(*places.T, triangles=mesh.faces)
-    walls = coordinates(mesh.reading(mesh.boundary_edges, 1) * (mesh.incidence[1, 0] * vertices)).transpose(1, 0, 2)
     potential_levels = tuple(contours.Level(level, np.append(to_rgb(wall_colour), 0.45), 1.0)
                              for level in np.linspace(-0.85, 0.85, n_contours + 2)[1:-1])
 
@@ -304,27 +306,30 @@ def draw_anisotropic_flow(mesh: core.Mesh, vertices: core.Point,
     reference_speed = float(np.percentile(vertex_current.norm().batch().to_array(), 95))
     points = vertices.batch()                                                 # [vertices] Point-
     directions = vertex_current.batch()                                       # [cases, vertices] Point-
+    # The disk's boundary, the mesh of its boundary's edges.
+    rim = simplices.Mesh(len(points), mesh.edges[mesh.boundary_edges])
 
     # Faint chords of the unit disk along the fibre, across it at even offsets: each reaches the disk's edge the
     # half-chord of its offset either way.
     across = (core.mv.xy * (-np.pi / 4)).exp() >> fibre                       # [] Point-
     offsets = np.linspace(-0.85, 0.85, 9)
     half_chords = np.sqrt(1.0 - offsets**2)
-    chord_ends = across * offsets + fibre * (np.array([-1.0, 1.0])[:, None] * half_chords)   # [ends, chords] Point-
-    chords = coordinates(chord_ends).transpose(1, 0, 2)                       # [chords, ends, 2]
+    chord_ends = across * offsets[:, None] + fibre * (half_chords[:, None] * np.array([-1.0, 1.0]))   # [chords, ends] Point-
 
     figure, axes = charts.subplots(*flow_size, ncols=2)
     figure.subplots_adjust(left=0.015, right=0.985, bottom=0.02, top=0.98, wspace=0.05)
 
     for index, ax in enumerate(axes):
-        frame_panel(ax, vertices, 0.08)
+        camera = frame_panel(ax, vertices, 0.08)
         colours = potential_colours(Normalize(-1.0, 1.0)(potentials[index]))[:, :3]
-        contours.overlay(ax, points, mesh, potentials[index], colours, levels=potential_levels).set_zorder(1)
-        ax.triplot(triangulation, color=mesh_colour, linewidth=0.35, alpha=0.45, zorder=2)
-        flow.overlay(ax, points, mesh, directions[index], reference_speed, np.array(to_rgb(flow_colour)))
-        ax.add_collection(LineCollection(walls, colors=wall_colour, linewidths=1.3, zorder=6))
-        if index == 1:
-            # Faint background chords indicate the tilted high-conductivity fibre orientation.
-            ax.add_collection(LineCollection(chords, colors=fibre_colour, linewidths=0.65,
-                                             linestyles="dotted", alpha=0.55, zorder=2))
+        # Faint background chords indicate the tilted high-conductivity fibre orientation.
+        fibres = [simplices.strokes(chord_ends.reshape(-1), simplices.Mesh.chains([2] * len(offsets)),
+                                    ink(fibre_colour), chord_width, camera, dashes=chord_dots, opacity=0.55)
+                  ] if index == 1 else []
+        simplices.overlay(ax, [
+            contours.picture(points, mesh, potentials[index], colours, camera, levels=potential_levels),
+            simplices.strokes(points, mesh, ink(mesh_colour), mesh_width, camera, opacity=0.45),
+            *fibres,
+            flow.layer(points, mesh, directions[index], camera, reference_speed, ink(flow_colour)),
+            simplices.strokes(points, rim, ink(wall_colour), wall_width, camera)])
     return figure

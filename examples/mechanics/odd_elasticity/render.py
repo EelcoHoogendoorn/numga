@@ -1,4 +1,4 @@
-"""Active bonds, cyclic work and waves in a planar elastic lattice."""
+"""Active bonds, cyclic work and waves in a planar elastic lattice, drawn on the GPU in the lattice's own algebra."""
 
 from __future__ import annotations
 
@@ -6,21 +6,17 @@ from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import LineCollection
-from matplotlib.colors import LinearSegmentedColormap, Normalize
-from matplotlib.patches import Polygon
+from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 
-from numga import stack
+from numga import concatenate, stack
 from examples.util.animation import capture
+from examples.util.wgsl import contours, simplices
+from examples.util.wgsl.camera import panel
 from examples.mechanics.odd_elasticity import core
 
 BACKGROUND = "#fbfaf7"
-BOND = "#267c8b"
-FORCE = "#db663d"
-ANCHOR = "#35434d"
-REFERENCE = "#d9dcda"
-SWEPT = "#f6d9c9"
-TRACK = "#f3b83f"
+BOND, FORCE, ANCHOR, REFERENCE, SWEPT, TRACK = (
+    to_rgb(colour) for colour in ("#267c8b", "#db663d", "#35434d", "#d9dcda", "#f6d9c9", "#f3b83f"))
 STRAIN = LinearSegmentedColormap.from_list("bond_extension", ["#4775bd", "#32666d", "#ed8b3d"])
 
 
@@ -29,8 +25,6 @@ def _coordinates(points: core.Displacement) -> np.ndarray:
     """Positions read by pairing with the lines across the axes; sites become a batch axis."""
     lines = stack((core.mv.x, core.mv.y))
     return (lines & points.batch()[..., None]).to_array()
-
-
 
 
 def _bounds(coordinates: np.ndarray, margin: float) -> tuple[np.ndarray, np.ndarray]:
@@ -48,42 +42,50 @@ def _scene(figure: plt.Figure, bounds: tuple[np.ndarray, np.ndarray], position: 
     return ax
 
 
+def _arrows(n_arrows: int) -> simplices.Mesh:
+    """Arrows from tails to tips listed after them: an edge from each of the first `n_arrows` points to the one
+    `n_arrows` after it."""
+    return simplices.Mesh(2 * n_arrows, np.stack([np.arange(n_arrows), n_arrows + np.arange(n_arrows)], axis=-1))
+
+
 def bond_frames(
     anchor: core.Displacement, reference: core.Displacement, path: core.Displacement,
     states: Iterable[tuple[core.Displacement, core.Force]], force_scale: float,
 ) -> Iterator[np.ndarray]:
     """An endpoint follows its closed path, the area it has swept about its rest position shaded, while
     the bond's force changes."""
-    fixed = _coordinates(anchor)
-    rest = _coordinates(reference)
-    loop = _coordinates(path)
     # Each force drawn along its metric direction, its dual, from the bond's moving end.
     positions, forces = (stack([value.batch() for value in values]) for values in zip(*states))   # [steps] Displacement-, Force+
     arrows = force_scale * forces.dual()                                     # [steps] Displacement-
-    endpoints, offsets = _coordinates(positions), _coordinates(arrows)       # [steps, 2], [steps, 2]
-    bounds = _bounds(np.concatenate((fixed[None], rest[None], loop, _coordinates(positions + arrows))), 0.08)
+    bounds = _bounds(np.concatenate((_coordinates(anchor)[None], _coordinates(reference)[None], _coordinates(path),
+                                     _coordinates(positions + arrows))), 0.08)
 
     figure = plt.figure(figsize=(6.2, 2.9), dpi=50, facecolor=BACKGROUND)
     ax = _scene(figure, bounds, (0.02, 0.02, 0.96, 0.96))
-    swept = Polygon(np.stack((rest, rest)), closed=True, facecolor=SWEPT, edgecolor="none", zorder=0)
-    ax.add_patch(swept)
-    ax.plot(*np.stack((fixed, rest)).T, color=REFERENCE, linewidth=2, linestyle="--")
-    ax.plot(*loop.T, color=REFERENCE, linewidth=1.5)
-    ax.plot(*fixed, "o", color=ANCHOR, markersize=9)
-    ax.plot(*rest, "+", color=ANCHOR, markersize=8, markeredgewidth=1)
-    bond, = ax.plot([], [], color=BOND, linewidth=4, solid_capstyle="round")
-    endpoint, = ax.plot([], [], "o", color=BOND, markersize=9)
-    trail, = ax.plot([], [], color=BOND, linewidth=1.4, alpha=0.55)
-    arrow = ax.quiver(*endpoints[0], 0, 0, angles="xy", scale_units="xy", scale=1,
-                      color=FORCE, width=0.011, headwidth=4, headlength=5, zorder=5)
+    camera = panel(ax, core.mv.x, core.mv.y)
+    # The swept area, a fan from the rest position over the path so far.
+    swept_corners = concatenate([reference[None], positions])                # [steps + 1] Displacement-
+    n_steps = len(positions)
+    fan = np.stack([np.zeros(n_steps - 1, dtype=int), np.arange(1, n_steps), np.arange(2, n_steps + 1)], axis=-1)
+    guides = [simplices.strokes(concatenate([anchor[None], reference[None]]), simplices.Mesh.chains([2]), REFERENCE,
+                                1.5, camera, dashes=(5.0, 3.0), cap=simplices.Cap.BUTT),
+              simplices.strokes(path, simplices.Mesh.chains([len(path)]), REFERENCE, 1.0, camera),
+              simplices.markers(anchor[None], ANCHOR, 3.0, camera),
+              simplices.markers(reference[None], ANCHOR, 2.5, camera, inner=1.5)]
+    image = simplices.overlay(ax, guides)
 
-    for i, (position, offset) in enumerate(zip(endpoints, offsets)):
-        swept.set_xy(np.concatenate((rest[None], endpoints[:i + 1])))
-        bond.set_data(*np.stack((fixed, position)).T)
-        endpoint.set_data([position[0]], [position[1]])
-        trail.set_data(*endpoints[:i + 1].T)
-        arrow.set_offsets(position)
-        arrow.set_UVC(*offset)
+    for step, (position, arrow) in enumerate(zip(positions, arrows)):
+        bond = concatenate([anchor[None], position[None]])                   # [2] Displacement-
+        force = concatenate([position[None], (position + arrow)[None]])      # [2] Displacement-
+        image.set_data(simplices.composited([
+            contours.picture(swept_corners, simplices.Mesh(n_steps + 1, fan[:step]), np.zeros(n_steps + 1), SWEPT,
+                             camera),
+            *guides,
+            simplices.strokes(positions[:step + 1], simplices.Mesh.chains([step + 1]), BOND, 1.0, camera,
+                              opacity=0.55),
+            simplices.strokes(bond, simplices.Mesh.chains([2]), BOND, 3.0, camera),
+            simplices.markers(position[None], BOND, 3.0, camera),
+            simplices.strokes(force, _arrows(1), FORCE, 3.0, camera, heads=np.ones(1), head=14.0)]))
         yield capture(figure)
     plt.close(figure)
 
@@ -93,30 +95,28 @@ def patch_frames(
     states: Iterable[tuple[core.Displacement, core.Force]], force_scale: float,
 ) -> Iterator[np.ndarray]:
     """A deforming patch pushes on its boundary around its closed cycle."""
-    rest = _coordinates(reference)
     boundary = mesh.exterior(0)
     # Each force on the boundary drawn along its metric direction, its dual, from its particle.
     places, forces = (stack([value.batch() for value in values]) for values in zip(*states))   # [steps, vertices] Displacement-, Force+
     arrows = force_scale * forces[:, boundary].dual()                        # [steps, boundary] Displacement-
-    positions, offsets = _coordinates(places), _coordinates(arrows)          # [steps, vertices, 2], [steps, boundary, 2]
-    tips = _coordinates(places[:, boundary] + arrows)                        # [steps, boundary, 2]
-    bounds = _bounds(np.concatenate((rest, positions.reshape(-1, 2), tips.reshape(-1, 2))), 0.055)
+    bounds = _bounds(np.concatenate((_coordinates(reference), _coordinates(places).reshape(-1, 2),
+                                     _coordinates(places[:, boundary] + arrows).reshape(-1, 2))), 0.055)
 
     figure = plt.figure(figsize=(5.2, 3.6), dpi=50, facecolor=BACKGROUND)
     ax = _scene(figure, bounds, (0.02, 0.02, 0.96, 0.96))
-    ax.add_collection(LineCollection(rest[mesh.edges], colors=REFERENCE, linewidths=1))
-    bonds = LineCollection([], colors=BOND, linewidths=1.7)
-    ax.add_collection(bonds)
-    nodes = ax.scatter(*rest.T, s=13, c=ANCHOR, linewidths=0, zorder=3)
-    quivers = ax.quiver(*rest[boundary].T, *np.zeros_like(rest[boundary]).T,
-                        angles="xy", scale_units="xy", scale=1, color=FORCE,
-                        width=0.005, headwidth=3.8, headlength=4.8, zorder=4)
+    camera = panel(ax, core.mv.x, core.mv.y)
+    rest = simplices.strokes(reference, mesh, REFERENCE, 1.0, camera)
+    forces_mesh = _arrows(len(boundary))
+    image = simplices.overlay(ax, [rest])
 
-    for position, offset in zip(positions, offsets):
-        bonds.set_segments(position[mesh.edges])
-        nodes.set_offsets(position)
-        quivers.set_offsets(position[boundary])
-        quivers.set_UVC(*offset.T)
+    for position, arrow in zip(places, arrows):
+        tails = position[boundary]                                           # [boundary] Displacement-
+        image.set_data(simplices.composited([
+            rest,
+            simplices.strokes(position, mesh, BOND, 1.5, camera),
+            simplices.markers(position, ANCHOR, 2.0, camera),
+            simplices.strokes(concatenate([tails, tails + arrow]), forces_mesh, FORCE, 1.5, camera,
+                              heads=np.ones(len(boundary)), head=7.0)]))
         yield capture(figure)
     plt.close(figure)
 
@@ -127,28 +127,27 @@ def wave_frames(
     displacement_scale: float, extension_scale: float, tracked_index: int,
 ) -> Iterator[np.ndarray]:
     """Moving bonds coloured by signed extension, with one particle's short trajectory marked."""
-    rest = _coordinates(reference)
     figure = plt.figure(figsize=(6.5, 3.7), dpi=50, facecolor=BACKGROUND)
-    ax = _scene(figure, _bounds(rest, 0.035), (0.015, 0.015, 0.97, 0.97))
-    ax.add_collection(LineCollection(rest[mesh.edges], colors=REFERENCE, linewidths=0.65))
-    bonds = LineCollection([], linewidths=1.15, cmap=STRAIN, norm=Normalize(-extension_scale, extension_scale))
-    ax.add_collection(bonds)
-    nodes = ax.scatter(*rest.T, s=3, c=ANCHOR, linewidths=0, zorder=3)
-    trail, = ax.plot([], [], color=TRACK, linewidth=2.2, zorder=4)
-    tracked, = ax.plot([], [], "o", color=TRACK, markersize=7, markeredgecolor=ANCHOR,
-                       markeredgewidth=0.7, zorder=5)
+    ax = _scene(figure, _bounds(_coordinates(reference), 0.035), (0.015, 0.015, 0.97, 0.97))
+    camera = panel(ax, core.mv.x, core.mv.y)
+    rest = simplices.strokes(reference, mesh, REFERENCE, 1.0, camera)
+    strain = Normalize(-extension_scale, extension_scale)
+    image = simplices.overlay(ax, [rest])
 
     n_trail_frames = 33
     history = []
     for positions, extensions in states:
         # The motion from the rest positions, exaggerated.
-        position = _coordinates(reference + displacement_scale * (positions - reference))
-        bonds.set_segments(position[mesh.edges])
-        bonds.set_array(extensions.batch().to_array())
-        nodes.set_offsets(position)
-        history.append(position[tracked_index])
-        trajectory = np.stack(history[-n_trail_frames:])
-        trail.set_data(*trajectory.T)
-        tracked.set_data([position[tracked_index, 0]], [position[tracked_index, 1]])
+        position = (reference + displacement_scale * (positions - reference)).batch()   # [vertices] Displacement-
+        tracked = position[tracked_index][None]                              # [1] Displacement-
+        history.append(tracked)
+        trajectory = concatenate(history[-n_trail_frames:])                  # [trail] Displacement-
+        image.set_data(simplices.composited([
+            rest,
+            simplices.strokes(position, mesh, STRAIN(strain(extensions.batch().to_array()))[:, :3], 1.2, camera),
+            simplices.markers(position, ANCHOR, 1.2, camera),
+            simplices.strokes(trajectory, simplices.Mesh.chains([len(trajectory)]), TRACK, 2.5, camera),
+            simplices.markers(tracked, ANCHOR, 4.0, camera),
+            simplices.markers(tracked, TRACK, 3.3, camera)]))
         yield capture(figure)
     plt.close(figure)

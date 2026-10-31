@@ -6,16 +6,20 @@ from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Circle
 
-from numga import stack
+from numga import NumpyContext, stack
 from examples.util.animation import capture
-from examples.util.wgsl import pinned
+from examples.util.wgsl import pinned, simplices
+from examples.util.wgsl.camera import panel
 from examples.optics.photoelasticity import core
 
 figure_dpi = 100
 panel_gap = 4
-rim_width = 0.7
+# The hole's rim, its width in pixels and its grey.
+rim_width = 1.0
+rim_colour = np.full(3, 0.6)
+# The plate's algebra with real coefficients, for the picture: the hole's middle, the origin, which the camera reads.
+real = NumpyContext(core.ga).multivector
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -41,11 +45,16 @@ def panels(n_panels: int, pixels: tuple[int, ...]) -> tuple[plt.Figure, list[plt
 
 def plate(ax: plt.Axes, values: np.ndarray, extent: tuple[float, float, float, float], hole_radius: float,
           cmap: str, vmin: float, vmax: float) -> plt.AxesImage:
-    """An image over the plate's window, rows up from the bottom, pixel for pixel, with the hole drawn over it."""
+    """An image over the plate's window, rows up from the bottom, pixel for pixel, with the hole drawn over it, a white
+    disc rimmed in grey about the origin, as a camera of the plate's planes x and y sees it."""
     image = pinned(ax, values[::-1], extent)
     image.set_cmap(cmap)
     image.set_clim(vmin, vmax)
-    ax.add_patch(Circle((0, 0), hole_radius, facecolor="white", edgecolor="0.6", linewidth=rim_width))
+    camera = panel(ax, real.x, real.y)
+    middle = (0 * real.x.dual())[None]                                          # [1] Planar-
+    radius = hole_radius / camera.pixel
+    simplices.overlay(ax, [simplices.markers(middle, rim_colour, radius + rim_width / 2, camera),
+                           simplices.markers(middle, np.ones(3), radius - rim_width / 2, camera)])
     return image
 
 

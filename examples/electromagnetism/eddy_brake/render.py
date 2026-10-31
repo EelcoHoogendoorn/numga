@@ -7,24 +7,23 @@ from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import LineCollection, PathCollection
 from matplotlib.colors import LinearSegmentedColormap, PowerNorm
-from matplotlib.patches import Circle, FancyArrowPatch
-from matplotlib.path import Path
 
-from numga import concatenate, stack
+from numga import concatenate
 from numga.extensor import Extensor
 from examples.util.animation import capture
-from examples.util.wgsl import contours, pinned
-from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl import contours, simplices
+from examples.util.wgsl.camera import Camera, flat_panel
 from examples.electromagnetism.eddy_brake import core
 
 Mesh, as_scalar = core.Mesh, core.as_scalar
 
 animation_dpi = 90
 fibre_reach = 0.94
-fibre_colour = (0.16, 0.43, 0.56, 0.8)
-fibre_width = 1.35
+fibre_colour, fibre_opacity = np.array([0.16, 0.43, 0.56]), 0.8
+fibre_width = 1.7
+# The rim's colour and width in pixels.
+rim_colour, rim_width = np.array([0x74, 0x6b, 0x60]) / 255, 1.0
 current_gamma = 0.35
 streamline_gamma = 0.25
 current_levels = 10
@@ -32,11 +31,17 @@ current_levels = 10
 path_ink = np.array([0.29, 0.24, 0.20, 1.0])
 mode_ink = np.array([0.29, 0.24, 0.20, 1.0])
 # The arc of the magnet's sense of turning, just outside the dashed rim of its width, as a share of that width: where
-# it starts around the rim, how far it runs, and the samples along it.
+# it starts around the rim, how far it runs, and the samples along it; and the samples around the dashed rim.
 field_arc_reach = 1.3
 field_arc_start, field_arc_span = np.radians(-60.0), np.radians(240.0)
 n_field_arc = 24
-magnet_colour = "#334155"
+n_magnet_rim = 64
+magnet_colour = np.array([0x33, 0x41, 0x55]) / 255
+# The magnet's strokes' width, its rim's dashes and its arc's head, in pixels.
+magnet_width, magnet_dashes, magnet_head = 1.0, (4.0, 4.0), 6.0
+# The fluorescent rim knob showing the material's rotation: its colour and its white ring's, and their radii in pixels.
+knob_colour, knob_ring_colour = np.array([1.0, 0.0, 0.784]), np.ones(3)
+knob_radius, knob_ring_radius = 6.5, 8.4
 heat_gamma = 0.3
 current_colours = LinearSegmentedColormap.from_list("current", ("#f8f5ed", "#edb15f", "#c95832"))
 heat_colours = LinearSegmentedColormap.from_list("heat", ("#fbf9f4", "#e58b3a", "#8f2d1b"))
@@ -54,29 +59,29 @@ induction_heat_peak = 1.94e4
 
 
 # --- plumbing -------------------------------------------------------------------------
-def planar(directions: core.Point) -> np.ndarray:
-    """Directions in the disc read by pairing with the slices across x and y, on the last axis."""
-    return (stack((core.mv.x, core.mv.y)) & directions[..., None]).to_array()
-
-
 def scalars(values: core.Scalar) -> np.ndarray:
     """The values of a batch or field of scalars, for drawing."""
     return values.batch().to_array()
 
 
-def magnet(ax: plt.Axes, centre: core.Point, width: float, field: core.Bivector) -> None:
+def magnet(centre: core.Point, width: float, field: core.Bivector, camera: Camera) -> list[np.ndarray]:
     """The magnet's field, a plane of space, as a patch in that plane: its width dashed, and an arc around it with an
     arrowhead for the sense the field turns in, read by pairing the field with the patch of the disc's plane."""
-    ax.add_patch(Circle(planar(centre), width, facecolor="none", edgecolor=magnet_colour,
-                        linewidth=0.75, linestyle=(0, (3, 3)), zorder=4))
+    # The dashed rim: a point along x at the magnet's width, turned once around its centre.
+    around = (core.mv.xy * (-np.linspace(0, 2 * np.pi, n_magnet_rim + 1) / 2)).exp()   # [rim] Rotor+
+    outline = centre + (around >> (core.mv.x.dual() * width))                          # [rim] Point-
     handedness = field & core.mv.xy.dual()
     sense = np.asarray(handedness > 0, dtype=int) - np.asarray(handedness < 0, dtype=int)
     angles = field_arc_start + sense * np.linspace(0, field_arc_span, n_field_arc)
     # The arc: a point on the rim along x, turned about the magnet's centre through the angles.
     turns = (core.mv.xy * (-angles / 2)).exp()                               # [arc] Rotor+
     arc = centre + (turns >> (core.mv.x.dual() * (field_arc_reach * width)))  # [arc] Point-
-    ax.add_patch(FancyArrowPatch(path=Path(planar(arc)), arrowstyle="-|>", mutation_scale=8, shrinkA=0, shrinkB=0,
-                                 linewidth=0.75, color=magnet_colour, zorder=4))
+    # A head on the arc's last edge.
+    heads = np.arange(n_field_arc - 1) == n_field_arc - 2
+    return [simplices.strokes(outline, Mesh.chains([n_magnet_rim + 1]), magnet_colour, magnet_width, camera,
+                              dashes=magnet_dashes, cap=simplices.Cap.BUTT),
+            simplices.strokes(arc, Mesh.chains([n_field_arc]), magnet_colour, magnet_width, camera, heads,
+                              magnet_head)]
 
 
 def parallel_fibres(radius: float, curves: int, samples: int) -> core.Point:
@@ -105,15 +110,16 @@ def circular_fibres(inner_radius: float, outer_radius: float, curves: int, sampl
     return directions[None, :] * radii[:, None]
 
 
-def rotation_marks(orientations: core.Rotor, radius: float) -> np.ndarray:
-    """Material rim positions, `[..., 2]`, one for each orientation `[...]`."""
-    return planar(orientations >> (core.mv.x.dual() * (fibre_reach * radius)))
+def rotation_marks(orientations: core.Rotor, radius: float) -> core.Point:
+    """Material rim positions `[...] Point-`, one for each orientation `[...]`."""
+    return orientations >> (core.mv.x.dual() * (fibre_reach * radius))
 
 
-def rotation_marker(ax: plt.Axes) -> PathCollection:
-    """A fluorescent rim knob showing the material's rotation."""
-    return ax.scatter([], [], s=180, c="#ff00c8", edgecolors="white", linewidths=1.5,
-                      zorder=6, clip_on=False)
+def rotation_marker(mark: core.Point, camera: Camera) -> list[np.ndarray]:
+    """A fluorescent rim knob in a white ring at a material rim position `[1] Point-`, showing the material's
+    rotation."""
+    return [simplices.markers(mark, knob_ring_colour, knob_ring_radius, camera),
+            simplices.markers(mark, knob_colour, knob_radius, camera)]
 
 
 def at_vertices(mesh: Mesh, areas: core.Scalar, field: Extensor) -> Extensor:
@@ -123,34 +129,25 @@ def at_vertices(mesh: Mesh, areas: core.Scalar, field: Extensor) -> Extensor:
     return (~third * (areas * field)) / (~third * areas)
 
 
-def fibre_colours(fibres: tuple[core.Point, ...], shown: np.ndarray) -> np.ndarray:
-    """A colour for every guide curve of every family on every panel, `[cases, curves, 4]`: each family
-    is drawn on the panels that show it, `shown` `[cases, families]`."""
-    family = np.concatenate([np.full(len(guides), index) for index, guides in enumerate(fibres)])
-    return np.concatenate((np.broadcast_to(fibre_colour[:3], shown.shape[:1] + family.shape + (3,)),
-                           (fibre_colour[3] * shown[:, family])[..., None]), axis=-1)
+def fibre_strokes(threads: core.Point, shown: np.ndarray, camera: Camera) -> np.ndarray:
+    """The guide curves `[curves, samples] Point-` that a panel shows, `shown` `[curves]`, as strokes."""
+    visible = threads[np.flatnonzero(shown)]                               # [shown curves, samples] Point-
+    n_shown, n_samples = visible.shape
+    return simplices.strokes(visible.reshape(-1), Mesh.chains([n_samples] * n_shown), fibre_colour, fibre_width,
+                             camera, opacity=fibre_opacity)
 
 
-def disc_panel(figure: plt.Figure, index: int, count: int, extent: float, centre: core.Point,
-               width: float, field: core.Bivector,
-               colours: np.ndarray) -> tuple[plt.Axes, LineCollection, PathCollection, LineCollection]:
-    """One panel of a row of rotating discs: fibre guides, rim knob, rim outline and the magnet."""
+def disc_panel(figure: plt.Figure, index: int, count: int, extent: float) -> plt.Axes:
+    """One panel of a row of rotating discs."""
     ax = figure.add_axes(((index + 0.035) / count, 0.03, 0.93 / count, 0.86))
-    threads = LineCollection([], colors=colours, linewidths=fibre_width, zorder=2)
-    ax.add_collection(threads)
-    marker = rotation_marker(ax)
-    outline = LineCollection([], colors="#746b60", linewidths=0.8, zorder=3)
-    ax.add_collection(outline)
-    magnet(ax, centre, width, field)
     ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
     ax.set_axis_off()
-    return ax, threads, marker, outline
+    return ax
 
 
-def rim(mesh: Mesh, vertices: core.Point) -> np.ndarray:
-    """The rim's edges as segments to draw, `[rim, 2, 2]`: each edge's tail and head."""
-    tails, heads = mesh.reading(mesh.boundary_edges, 1) * (mesh.incidence[1, 0] * vertices)   # Point-[rim], Point-[rim]
-    return np.stack((planar(tails.batch()), planar(heads.batch())), axis=-2)
+def rim(mesh: Mesh) -> Mesh:
+    """The rim's edges, a mesh of edges over the mesh's vertices."""
+    return Mesh(mesh.n_vertices, mesh.edges[mesh.boundary_edges])
 
 
 def draw(mesh: Mesh, points: core.Point, areas: core.Scalar, response: core.Response, streamfunction: core.Scalar,
@@ -166,18 +163,20 @@ def draw(mesh: Mesh, points: core.Point, areas: core.Scalar, response: core.Resp
     extent = scalars(points.squared().square_root()).max()
     places = points.batch()                                                 # [vertices] Point-
 
+    outline = rim(mesh)
     figure, panels = plt.subplots(1, len(magnitude), figsize=(3 * len(magnitude), 3.15),
                                   squeeze=False, layout="constrained")
     for ax, stream, spacing, speed in zip(panels[0], streams, spacings, magnitude):
-        ax.add_collection(LineCollection(rim(mesh, points), colors="#746b60", linewidths=0.6))
-        magnet(ax, centre, width, field)
         ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
         ax.set_axis_off()
+        camera = flat_panel(ax, core.ga)
         colours = current_colours(current_scale(speed))[:, :3]
         # The paths halfway between the multiples of the step, so that none runs along the rim, where the
         # streamfunction vanishes.
         paths = contours.Lines(spacing, spacing / 2, path_ink, 1.0)
-        contours.overlay(ax, places, mesh, stream, colours, lines=(paths,)).set_zorder(1)
+        simplices.overlay(ax, [contours.picture(places, mesh, stream, colours, camera, lines=(paths,)),
+                               simplices.strokes(places, outline, rim_colour, rim_width, camera),
+                               *magnet(centre, width, field, camera)])
     return figure
 
 
@@ -186,7 +185,7 @@ def draw_modes(mesh: Mesh, points: core.Point, streamfunctions: core.Scalar) -> 
     material: current circulates along their contours, opposite ways around warm and cool peaks."""
     values = scalars(streamfunctions)                                      # [cases, patterns, vertices]
     extent = scalars(points.squared().square_root()).max()
-    outline = rim(mesh, points)
+    outline = rim(mesh)
     places = points.batch()                                                 # [vertices] Point-
     rows, columns = values.shape[:2]
     figure, panels = plt.subplots(rows, columns, figsize=(2 * columns, 2 * rows),
@@ -194,13 +193,14 @@ def draw_modes(mesh: Mesh, points: core.Point, streamfunctions: core.Scalar) -> 
     for row, streams in zip(panels, values):
         for ax, stream in zip(row, streams):
             largest = np.abs(stream).max()
-            ax.add_collection(LineCollection(outline, colors="#746b60", linewidths=0.8))
             ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
             ax.set_axis_off()
+            camera = flat_panel(ax, core.ga)
             # Levels at equal steps between the extremes, one of them through zero.
             colours = mode_colours((stream / largest + 1) / 2)[:, :3]
             levels = contours.Lines(2 * largest / (mode_levels + 1), 0.0, mode_ink, 1.0)
-            contours.overlay(ax, places, mesh, stream, colours, lines=(levels,)).set_zorder(1)
+            simplices.overlay(ax, [contours.picture(places, mesh, stream, colours, camera, lines=(levels,)),
+                                   simplices.strokes(places, outline, rim_colour, rim_width, camera)])
     return figure
 
 
@@ -235,15 +235,16 @@ def currents(mesh: Mesh, points: core.Point, areas: core.Scalar, states: Iterabl
     widened where a state's current exceeds it."""
     extent = scalars(points.squared().square_root()).max()
     guides = concatenate(fibres)                                              # [curves, samples] Point-
+    # Each family's curves on the panels that show it.
+    family = np.concatenate([np.full(len(curves), index) for index, curves in enumerate(fibres)])
+    shown_curves = shown[:, family]                                           # [cases, curves]
+    outline = rim(mesh)
 
     figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=animation_dpi)
-    panels = [disc_panel(figure, i, len(shown), extent, centre, width, field, colours)
-              for i, colours in enumerate(fibre_colours(fibres, shown))]
-    views = [flat_panel(ax, core.ga) for ax, _, _, _ in panels]
-    textures = [pinned(ax, np.zeros(view.shape + (4,)), (*ax.get_xlim(), *ax.get_ylim()))
-                for (ax, _, _, _), view in zip(panels, views)]
-    for texture in textures:
-        texture.set_zorder(1)
+    panels = [disc_panel(figure, i, len(shown), extent) for i in range(len(shown))]
+    views = [flat_panel(ax, core.ga) for ax in panels]
+    magnets = [magnet(centre, width, field, view) for view in views]
+    textures = [simplices.overlay(ax, [np.zeros(view.shape + (4,))]) for ax, view in zip(panels, views)]
     for state in states:
         # The current belongs to material faces; turning it into the laboratory frame keeps its strength.
         strength = state.current.squared().square_root()                      # [cases] Scalar+[faces]
@@ -258,16 +259,17 @@ def currents(mesh: Mesh, points: core.Point, areas: core.Scalar, states: Iterabl
         current_scale = PowerNorm(current_gamma, vmin=0, vmax=peak)
         speed = scalars(at_vertices(mesh, areas, strength))                   # [cases, vertices]
         places = state.vertices.batch()                                       # [cases, vertices] Point-
-        threads_at = planar(state.orientation[:, None, None] >> guides)
-        marks = rotation_marks(state.orientation, extent)                     # [cases, 2]
-        for i, ((ax, threads, marker, outline), view, texture) in enumerate(zip(panels, views, textures)):
-            outline.set_segments(rim(mesh, state.vertices[i]))
-            threads.set_segments(threads_at[i])
-            marker.set_offsets(marks[i:i + 1])
+        threads = state.orientation[:, None, None] >> guides                  # [cases, curves, samples] Point-
+        marks = rotation_marks(state.orientation, extent)                     # [cases] Point-
+        for i, (view, texture) in enumerate(zip(views, textures)):
             colours = current_colours(current_scale(speed[i]))[:, :3]
             ink = np.append(path_ink[:3], alpha[i])
             paths = contours.Lines(spacings[i], spacings[i] / 2, ink, 1.0)
-            texture.set_data(contours.picture(places[i], mesh, stream[i], colours, view, lines=(paths,)))
+            texture.set_data(simplices.composited([
+                contours.picture(places[i], mesh, stream[i], colours, view, lines=(paths,)),
+                fibre_strokes(threads[i], shown_curves[i], view),
+                simplices.strokes(places[i], outline, rim_colour, rim_width, view),
+                *magnets[i], *rotation_marker(marks[i:i + 1], view)]))
         yield capture(figure)
     plt.close(figure)
 
@@ -279,28 +281,30 @@ def animate_heat(mesh: Mesh, points: core.Point, areas: core.Scalar, frames: Ite
     heat_scale = PowerNorm(heat_gamma, vmin=0, vmax=peak)
     extent = scalars(points.squared().square_root()).max()
     guides = concatenate(fibres)                                              # [curves, samples] Point-
+    # Each family's curves on the panels that show it.
+    family = np.concatenate([np.full(len(curves), index) for index, curves in enumerate(fibres)])
+    shown_curves = shown[:, family]                                           # [cases, curves]
+    outline = rim(mesh)
 
     figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=animation_dpi)
-    panels = [disc_panel(figure, i, len(shown), extent, centre, width, field, colours)
-              for i, colours in enumerate(fibre_colours(fibres, shown))]
-    views = [flat_panel(ax, core.ga) for ax, _, _, _ in panels]
-    textures = [pinned(ax, np.zeros(view.shape + (4,)), (*ax.get_xlim(), *ax.get_ylim()))
-                for (ax, _, _, _), view in zip(panels, views)]
-    for texture in textures:
-        texture.set_zorder(1)
+    panels = [disc_panel(figure, i, len(shown), extent) for i in range(len(shown))]
+    views = [flat_panel(ax, core.ga) for ax in panels]
+    magnets = [magnet(centre, width, field, view) for view in views]
+    textures = [simplices.overlay(ax, [np.zeros(view.shape + (4,))]) for ax, view in zip(panels, views)]
     for state in frames:
         # Face heat is energy. Dividing by each material face's area gives the density to colour.
         densities = scalars(at_vertices(mesh, areas, state.heat / areas))     # [cases, vertices]
         places = state.vertices.batch()                                       # [cases, vertices] Point-
-        threads_at = planar(state.orientation[:, None, None] >> guides)
-        marks = rotation_marks(state.orientation, extent)                     # [cases, 2]
-        for i, ((ax, threads, marker, outline), view, texture) in enumerate(zip(panels, views, textures)):
+        threads = state.orientation[:, None, None] >> guides                  # [cases, curves, samples] Point-
+        marks = rotation_marks(state.orientation, extent)                     # [cases] Point-
+        for i, (view, texture) in enumerate(zip(views, textures)):
             # The display mesh moves with the material; its colours interpolate face heat, with no level lines.
             colours = heat_colours(heat_scale(densities[i]))[:, :3]
-            texture.set_data(contours.picture(places[i], mesh, densities[i], colours, view))
-            outline.set_segments(rim(mesh, state.vertices[i]))
-            threads.set_segments(threads_at[i])
-            marker.set_offsets(marks[i:i + 1])
+            texture.set_data(simplices.composited([
+                contours.picture(places[i], mesh, densities[i], colours, view),
+                fibre_strokes(threads[i], shown_curves[i], view),
+                simplices.strokes(places[i], outline, rim_colour, rim_width, view),
+                *magnets[i], *rotation_marker(marks[i:i + 1], view)]))
         yield capture(figure)
     plt.close(figure)
 

@@ -15,6 +15,7 @@ from examples.util.animation import capture
 from examples.quantum.magnetic_resonance import core
 from examples.util import charts
 from examples.util.wgsl import labels, show, simplices, solids
+from examples.util.wgsl.camera import flat_panel
 
 COLOURS = ("#c0392b", "#7d3c98", "#2e86c1")
 SPHERE_COLOUR, SPHERE_OPACITY = np.array([0.70, 0.76, 0.86]), 0.09
@@ -33,8 +34,10 @@ AXIS_LENGTH, LABEL_DISTANCE = 1.18, 1.26
 LINES_PX, SIGNAL_PX = (640, 280), (440, 250)
 # The echo's animation, in pixels: the docs' picture, kept at its size.
 ECHO_PX = (603, 281)
-# The time the echo's signal is followed for, in µs from the first pulse.
+# The time the echo's signal is followed for, in µs from the first pulse; the echo's view of the ball's equator, its
+# ink and its samples.
 ECHO_SPAN = 8.0
+EQUATOR_COLOUR, N_RIM_SAMPLES = np.full(3, 0.8), 120
 
 
 def components(rho: core.State) -> np.ndarray:
@@ -168,12 +171,13 @@ def animate_echo(detunings: np.ndarray, states: Iterable[core.State], dt: float,
                  every: int) -> Iterator[np.ndarray]:
     """The spins seen from above the field, fanning out and refocusing, beside the signal so far, over ECHO_SPAN;
     one frame for every few recorded states, each drawn as its state comes."""
-    order = np.argsort(detunings)
     span = np.linspace(0.0, ECHO_SPAN)
+    # Each spin's dot shaded by its detuning, from the lowest to the highest.
+    shades = plt.get_cmap("coolwarm")(plt.Normalize()(detunings))[:, :3]   # [spins, 3]
+    turns = (solids.mv.xy * (-np.linspace(0, 2 * np.pi, N_RIM_SAMPLES) / 2)).exp()
+    equator = solids.origin + (turns >> solids.mv.x.dual())                   # [rim samples] Point-
     with charts.style():
         figure, (top, trace) = charts.subplots(*ECHO_PX, ncols=2, width_ratios=(1, 1.4))
-        top.add_patch(plt.Circle((0, 0), 1.0, fill=False, color="0.8"))
-        spins = top.scatter(np.zeros(len(order)), np.zeros(len(order)), c=detunings[order], cmap="coolwarm")
         top.set_xlim(-1.1, 1.1)
         top.set_ylim(-1.1, 1.1)
         top.set_aspect("equal")
@@ -186,12 +190,18 @@ def animate_echo(detunings: np.ndarray, states: Iterable[core.State], dt: float,
         trace.set(ylim=(0, 1.05), xticks=[], yticks=[], xlabel="time", ylabel="mean transverse spin")
         trace.spines[["top", "right"]].set_visible(False)
         figure.tight_layout()
+        # The spins seen from above the field, inside the ball's equator.
+        camera = flat_panel(top, solids.ga)
+        rim = simplices.strokes(equator, simplices.Mesh.chains([N_RIM_SAMPLES]), EQUATOR_COLOUR, charts.LINE_PX,
+                                camera)
+        spins = simplices.overlay(top, [rim])
         times, strength = [], []
         for index, rho in enumerate(states):
             times.append(index * dt)
             strength.append(signal(rho))
             if index % every == 0:
-                spins.set_offsets(components(rho)[order, :2])
+                spins.set_data(simplices.composited([
+                    rim, simplices.markers(gpu_points(rho), shades, charts.MARKER_PX / 2, camera)]))
                 so_far.set_data(times, strength)
                 yield capture(figure)
         plt.close(figure)

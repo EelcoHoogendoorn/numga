@@ -6,13 +6,17 @@ from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import TwoSlopeNorm, to_rgba
+from matplotlib.colors import TwoSlopeNorm, to_rgb, to_rgba
 
 from numga import Extensor, concatenate, stack
 
+from examples import instantiate
 from examples.util.animation import capture
-from examples.util.wgsl import contours
+from examples.util.wgsl import contours, simplices
+from examples.util.wgsl.camera import Camera, flat_panel
 from examples.fluids.wing import core
+
+Mesh = instantiate("examples.util.mesh", core.ga).Mesh
 
 window = (-3.2, 3.2, -1.8, 1.8)
 pressure_range = (-3.0, 1.0)
@@ -27,21 +31,31 @@ mark_colour = "#facc15"
 centre_colour = "#f8fafc"
 # The animations' dots per inch: the README's wing.gif 400 pixels across.
 frame_dpi = 50
+# Widths, heads and radii in pixels at the frames' dots per inch: the lift's arrow; the marks and their rims.
+lift_width, lift_head = 1.7, 7.0
+mark_radius, mark_rim = 2.2, 0.56
+# The map's figure, at its own dots per inch: the grid's curves, the wing's circle and its image, the marks.
+map_dpi = 40
+grid_width, outline_width, map_mark_radius, map_mark_rim = 0.5, 1.2, 1.9, 0.56
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(points: core.Point) -> np.ndarray:
-    """x and y of each point, on the last axis: its pairings with the lines x and y."""
-    return (stack((core.mv.x, core.mv.y)) & points[..., None]).to_array()
+def rgb(colour: str) -> np.ndarray:
+    """A named colour's red, green and blue."""
+    return np.array(to_rgb(colour))
 
 
-def components(force: core.Force) -> np.ndarray:
-    """A force's x and y components, its pairings with the unit displacements along x and y."""
-    return (force & stack((core.mv.x, core.mv.y)).dual()).to_array()
+def marked(marks: core.Point, colour: str, radius: float, rim: float, camera: Camera) -> list[np.ndarray]:
+    """Marks at points `[...] Point-`, in a colour inside a rim of the wing's."""
+    places = marks.reshape(-1)
+    return [simplices.markers(places, rgb(wing_colour), radius, camera),
+            simplices.markers(places, rgb(colour), radius - rim, camera)]
 
 
-def draw(ax, points: core.Point, velocity: core.Point, stream: core.Bivector, lift: core.Force, speed: float) -> None:
-    """The pressure coefficient around the wing at the points, the streamlines, the wing, and its lift."""
+def draw(ax, points: core.Point, velocity: core.Point, stream: core.Bivector, lift: core.Force, speed: float,
+         marks: list = ()) -> None:
+    """The pressure coefficient around the wing at the points, the streamlines, the wing, its lift, and the marks
+    `[(points, colour)]`."""
     # Each ring closed, its first angle repeated at the end, so no seam is left unpainted.
     def closed(values: Extensor) -> Extensor:
         return concatenate([values, values[:, :1]], axis=1)
@@ -59,13 +73,22 @@ def draw(ax, points: core.Point, velocity: core.Point, stream: core.Bivector, li
     mesh = contours.Mesh.grid(*ring_points.shape)
     places = ring_points.reshape(-1)                                         # [rings * (angles + 1)] Point-
     streamlines = contours.Lines(stream_spacing, 0.0, stream_ink, stream_width)
-    contours.overlay(ax, places, mesh, stream_values.reshape(-1), colours.reshape(-1, 3), lines=(streamlines,))
+    camera = flat_panel(ax, core.ga)
+    # The wing filled by the triangles of its outline's hull, under the flow, whose rings start at the wing's surface
+    # and cover all of the hull outside it.
+    outline = points[0]                                                      # [angles] Point-
+    # The lift from the origin, drawn along the direction it pushes.
+    push = (lift * lift_scale).dual()                                        # [] Point-
+    simplices.overlay(ax, [
+        contours.picture(outline, Mesh.triangulate(outline), np.zeros(len(outline)), rgb(wing_colour), camera),
+        contours.picture(places, mesh, stream_values.reshape(-1), colours.reshape(-1, 3), camera,
+                         lines=(streamlines,)),
+        simplices.strokes(stack((0 * push, push)), Mesh.chains([2]), rgb(lift_colour), lift_width, camera, np.ones(1),
+                          lift_head),
+        *[picture for spots, colour in marks
+          for picture in marked(spots, colour, mark_radius, mark_rim, camera)]])
     # The panel keeps its frame around the picture.
     ax.set_axis_on()
-    xy = coordinates(ring_points[0])
-    ax.fill(xy[:, 0], xy[:, 1], color=wing_colour)
-    arrow = components(lift * lift_scale)
-    ax.annotate("", xy=arrow, xytext=(0.0, 0.0), arrowprops=dict(arrowstyle="-|>", color=lift_colour, linewidth=2.5))
 
 
 def figure(points: core.Point, velocity: core.Point, stream: core.Bivector, lift: core.Force, speed: float) -> plt.Figure:
@@ -78,11 +101,7 @@ def frame(points: core.Point, velocity: core.Point, stream: core.Bivector, lift:
           critical: core.Point, centre: core.Point) -> np.ndarray:
     """One frame, with the images of the map's critical points and the cylinder's centre marked."""
     result = plt.figure(figsize=(8, 4.6), dpi=frame_dpi, layout="constrained")
-    ax = result.subplots()
-    draw(ax, points, velocity, stream, lift, speed)
-    for marks, colour in ((critical, mark_colour), (centre, centre_colour)):
-        xy = coordinates(marks)
-        ax.scatter(xy[..., 0], xy[..., 1], s=30, color=colour, edgecolors=wing_colour, linewidths=0.8, zorder=3)
+    draw(result.subplots(), points, velocity, stream, lift, speed, [(critical, mark_colour), (centre, centre_colour)])
     pixels = capture(result)
     plt.close(result)
     return pixels
@@ -116,16 +135,19 @@ def bipolar(grid: core.Point, grid_images: core.Point, circle: core.Point, circl
             critical: core.Point) -> plt.Figure:
     """The grid of circles through and around the critical points with the wing's circle, before and
     after the map, with the critical points and where they move."""
-    result = plt.figure(figsize=(10, 4.2), dpi=40, layout="constrained")
+    result = plt.figure(figsize=(10, 4.2), dpi=map_dpi, layout="constrained")
     for ax, curves, outline, marks in zip(
             result.subplots(1, 2), (grid, grid_images), (circle, circle_image), (critical, 2 * critical)):
-        for curve in coordinates(curves):
-            ax.plot(curve[:, 0], curve[:, 1], color="#94a3b8", linewidth=0.9)
-        xy = coordinates(outline)
-        ax.plot(xy[:, 0], xy[:, 1], color=wing_colour, linewidth=2.2)
-        # The marks and their reflections through the origin.
-        ends = coordinates(stack([marks, -marks]))
-        ax.scatter(ends[:, 0], ends[:, 1], color=mark_colour, edgecolors=wing_colour, zorder=4)
         ax.set(xlim=window[:2], ylim=window[2:], xticks=[], yticks=[])
         ax.set_aspect("equal")
+        camera = flat_panel(ax, core.ga)
+        n_curves, n_samples = curves.shape
+        # The marks and their reflections through the origin.
+        simplices.overlay(ax, [
+            simplices.strokes(curves.reshape(-1), Mesh.chains([n_samples] * n_curves), rgb("#94a3b8"), grid_width,
+                              camera),
+            simplices.strokes(outline, Mesh.chains([len(outline)]), rgb(wing_colour), outline_width, camera),
+            *marked(stack([marks, -marks]), mark_colour, map_mark_radius, map_mark_rim, camera)])
+        # The panel keeps its frame around the picture.
+        ax.set_axis_on()
     return result

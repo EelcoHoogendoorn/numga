@@ -8,13 +8,13 @@ from itertools import chain
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
-from matplotlib.collections import LineCollection, PolyCollection
 
 from numga import stack
 from numga.extensor import Extensor
 from examples.surfaces.dirac_kahler import core
 from examples.util import charts
 from examples.util.wgsl import contours, flow, meshes, simplices, solids
+from examples.util.wgsl.camera import Camera, flat_panel
 
 sm = solids.mv
 
@@ -23,6 +23,8 @@ n_contours = 6
 panel_gap = 12
 background = np.ones(3)
 wall_colour = "#68747b"
+# The domain's boundary's width in pixels.
+wall_width = 1.5
 contour_colour = "#bac3c7"
 domain_colour = "#f7f8f6"
 flow_colours = ("#214b56", "#dc402c", "#386be0", "#8e4d9a")
@@ -73,13 +75,9 @@ def at_vertices(mesh: core.Mesh, field: Extensor) -> Extensor:
     return (corners * field) / (corners * ones)
 
 
-def domain_panel(ax: plt.Axes, mesh: core.Mesh, vertices: core.Point) -> None:
-    """A quiet domain boundary leaves the flow paths as the main drawing."""
+def frame_panel(ax: plt.Axes, vertices: core.Point) -> None:
+    """A square view about the domain, a little wider than it, without axes."""
     places = plane_places(vertices)                                            # [vertices, 2]
-    faces = plane_places(mesh.incidence[2, 0] * vertices).transpose(1, 0, 2)  # [faces, corners, 2]
-    ax.add_collection(PolyCollection(faces, facecolors=domain_colour, edgecolors="none"))
-    walls = plane_places(mesh.reading(mesh.boundary_edges, 1) * (mesh.incidence[1, 0] * vertices))   # [ends, rim, 2]
-    ax.add_collection(LineCollection(walls.transpose(1, 0, 2), colors=wall_colour, linewidths=1.1, zorder=4))
     low, high = places.min(axis=0), places.max(axis=0)
     centre = (low + high) / 2
     half_span = 0.54 * (high - low).max()
@@ -88,16 +86,14 @@ def domain_panel(ax: plt.Axes, mesh: core.Mesh, vertices: core.Point) -> None:
     ax.set_axis_off()
 
 
-def level_curves(ax: plt.Axes, mesh: core.Mesh, vertices: core.Point, potential: core.Scalar) -> None:
-    """Sparse level curves distinguish crossing a potential from following a stream potential."""
+def level_curves(mesh: core.Mesh, vertices: core.Point, potential: core.Scalar, camera: Camera) -> np.ndarray:
+    """Sparse level curves distinguish crossing a potential from following a stream potential: their picture."""
     values = np.asarray(potential.batch().to_array())
     bound = np.abs(values).max()
     # An even count of levels at even steps across four fifths of the bound either side of zero, none at zero.
     spacing = 1.6 * bound / (n_contours - 1)
     levels = contours.Lines(spacing, spacing / 2, np.append(to_rgb(contour_colour), 0.7), 1.0)
-    places = vertices.batch()                                                   # [vertices] Point-
-    colours = np.broadcast_to(to_rgb(domain_colour), (len(values), 3))
-    contours.overlay(ax, places, mesh, values, colours, lines=(levels,)).set_zorder(2)
+    return contours.picture(vertices.batch(), mesh, values, np.zeros(3), camera, lines=(levels,), opacity=0.0)
 
 
 def panel_figure() -> tuple[plt.Figure, np.ndarray]:
@@ -113,22 +109,30 @@ def draw_dirac_grades(mesh: core.Mesh, vertices: core.Point,
     """The scalar and circulating parts, their sum, and a Whitney reconstruction share a streak-length scale."""
     fields = stack((scalar_gradient.dual(), (face_dirac.select[1] - scalar_gradient).dual(),
                     face_dirac.select[1].dual(), whitney_multivector.select[1].dual()))
-    figure, axes = field_panels(mesh, vertices, fields, (flow_colours[1], flow_colours[2], flow_colours[0], flow_colours[3]))
-    level_curves(axes[0], mesh, vertices, vertex_multivector.select[0])
-    return figure
+    return field_panels(mesh, vertices, fields, (flow_colours[1], flow_colours[2], flow_colours[0], flow_colours[3]),
+                        0, vertex_multivector.select[0])
 
 
-def field_panels(mesh: core.Mesh, vertices: core.Point, fields: core.Point,
-                 colours: tuple[str, ...]) -> tuple[plt.Figure, np.ndarray]:
-    """Face fields interpolated for drawing on identical panels with one magnitude scale."""
+def field_panels(mesh: core.Mesh, vertices: core.Point, fields: core.Point, colours: tuple[str, ...],
+                 contoured: int, potential: core.Scalar) -> plt.Figure:
+    """Face fields interpolated for drawing on identical panels with one magnitude scale, each over a quiet domain
+    under its boundary; the level curves of a potential under the flow of one panel."""
     directions = at_vertices(mesh, fields).batch()
     points = vertices.batch()
     reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
     figure, axes = panel_figure()
-    for ax, field, colour in zip(axes, directions, colours):
-        domain_panel(ax, mesh, vertices)
-        flow.overlay(ax, points, mesh, field, reference_speed, np.array(to_rgb(colour)))
-    return figure, axes
+    # A quiet domain, and its boundary, the mesh of its boundary's edges, leave the flow paths as the main drawing.
+    rim = simplices.Mesh(len(points), mesh.edges[mesh.boundary_edges])
+    for index, (ax, field, colour) in enumerate(zip(axes, directions, colours)):
+        frame_panel(ax, vertices)
+        camera = flat_panel(ax, points.algebra)
+        levels = [level_curves(mesh, vertices, potential, camera)] if index == contoured else []
+        simplices.overlay(ax, [contours.picture(points, mesh, np.zeros(len(points)), np.array(to_rgb(domain_colour)),
+                                                camera)]
+                          + levels
+                          + [flow.layer(points, mesh, field, camera, reference_speed, np.array(to_rgb(colour))),
+                             simplices.strokes(points, rim, np.array(to_rgb(wall_colour)), wall_width, camera)])
+    return figure
 
 
 def draw_hodge_decomposition(mesh: core.Mesh, vertices: core.Point,
@@ -136,9 +140,7 @@ def draw_hodge_decomposition(mesh: core.Mesh, vertices: core.Point,
                              stream_flow: core.Point, harmonic_flow: core.Point) -> plt.Figure:
     """The total velocity separates into source-to-sink paths, local eddies, and circulation around the hole."""
     fields = stack((total_flow, potential_flow, stream_flow, harmonic_flow))
-    figure, axes = field_panels(mesh, vertices, fields, flow_colours)
-    level_curves(axes[1], mesh, vertices, potential)
-    return figure
+    return field_panels(mesh, vertices, fields, flow_colours, 1, potential)
 
 
 def wave_relief(mesh: core.Mesh, vertices: core.Point, heights: core.Scalar, channels: list[core.Scalar],

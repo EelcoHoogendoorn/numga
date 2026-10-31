@@ -117,7 +117,7 @@ struct Shade {
     @location(2) grain: vec4<f32>,
 }
 
-// Jittered specks, one to a cell of the picture's readings, `noise_scale` across.
+// Jittered specks, one to a cell of the picture's readings, `noise_scale` across, an eighth of a cell in radius.
 fn seed(place: Point) -> f32 {
     let reading = vec2<f32>(screen_across & place, screen_up & place) / weight_of(place) / noise_scale;
     let cell = floor(reading);
@@ -128,7 +128,7 @@ fn seed(place: Point) -> f32 {
             let jitter = vec2<f32>(hash(vec3<f32>(neighbour, 19.1)), hash(vec3<f32>(neighbour, 53.4)));
             let away = reading - neighbour - jitter;
             let distance = sqrt(away.x * away.x + away.y * away.y);
-            ink = max(ink, 1.0 - smoothstep(0.17, 0.29, distance));
+            ink = max(ink, 1.0 - smoothstep(0.09, 0.16, distance));
         }
     }
     return ink;
@@ -260,7 +260,7 @@ def layer(points: Extensor, mesh: Mesh, field: Extensor, camera: Camera,
     their own algebra, read by its camera."""
     surface, projected, grains = planar_shader(points.algebra).draw_averaged(
         camera.shape, samples_per_side(), 3 * len(mesh.faces), points=points, faces=mesh.faces, field=field,
-        noise_scale=camera.pixel * 4.0, **camera.uniforms(1.0))
+        noise_scale=camera.pixel * 6.0, **camera.uniforms(1.0))
     result = trace_shader()(camera.shape, surface=surface, flow=projected, grains=grains, background=np.ones(3),
                             step_pixels=length / n_trace_steps,
                             reference_speed=max(reference_speed, np.finfo(np.float32).tiny),

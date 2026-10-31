@@ -12,13 +12,12 @@ from __future__ import annotations
 from collections.abc import Iterator
 from functools import cache
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import NumpyContext, stack
 from numga.algebras import VGA3D
-from examples.util.animation import capture
-from examples.util.wgsl import Shader, supersampled
+from examples.util.wgsl import Shader, simplices, supersampled
+from examples.util.wgsl.camera import Camera, weighing
 
 mv = NumpyContext(VGA3D).multivector
 
@@ -34,6 +33,8 @@ TRAIL = np.array([0.85, 0.20, 0.20])
 # margin around the loop and the ball, as a share of the ball's radius.
 TRAIL_SEGMENTS = 64
 N_PIXELS = 300
+# The loop's width in pixels.
+LOOP_WIDTH = 1.0
 MARGIN = 1.3
 # The planes whose pairings with a point of the table are how far across and up the picture it lies; the point so far
 # along each is `(axes.dual() * at).sum()`.
@@ -108,16 +109,10 @@ def coordinates(points) -> np.ndarray:
 def table(path, half_width: float) -> np.ndarray:
     """The table from above with the loop on it, `[pixels, pixels, 3]` in [0, 1], within `half_width` of its middle: drawn
     once, for every frame to lay the ball over."""
-    xy = coordinates(path)
-    figure, ax = plt.subplots(figsize=(N_PIXELS / 100, N_PIXELS / 100), dpi=100, facecolor=TABLE)
-    ax.set_facecolor(TABLE)
-    ax.plot(*xy.T, color=LOOP, linewidth=0.6)
-    ax.set(xlim=(-half_width, half_width), ylim=(-half_width, half_width), aspect="equal")
-    ax.axis("off")
-    figure.subplots_adjust(0, 0, 1, 1)
-    image = capture(figure) / 255
-    plt.close(figure)
-    return image
+    weight, unit = weighing(VGA3D)
+    camera = Camera(mv.x, mv.y, 0 * mv.x, weight, unit, np.zeros(2), np.full(2, half_width), N_PIXELS)
+    loop = simplices.strokes(path, simplices.Mesh.chains([len(path)]), LOOP, LOOP_WIDTH, camera)
+    return TABLE * (1 - loop[..., 3:]) + loop[..., :3] * loop[..., 3:]
 
 
 def frame(background: np.ndarray, half_width: float, position, turn, trail, radius: float) -> np.ndarray:

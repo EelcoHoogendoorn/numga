@@ -127,11 +127,9 @@ def main() -> None:
     corners, points = single_triangle(n_triangle_subdivisions)
     hats, gradients = barycentric_hats(corners, points)
     star_mesh, star_vertices = disk(disk_radius, n_star_divisions)
-    star_operators = Operators(star_mesh, star_vertices)
     vertex_hat = as_scalar(np.arange(star_mesh.n_vertices) == 0).field()     # Scalar+[vertices]
-    star_gradients = star_operators.gradient(vertex_hat)                     # Plane+[faces]
     save_figure(
-        render.draw_hat_0forms(corners, gradients, star_mesh, star_vertices, vertex_hat, star_gradients),
+        render.draw_hat_0forms(corners, gradients, star_mesh, star_vertices, vertex_hat),
         "whitney_hat_0form",
     )
 

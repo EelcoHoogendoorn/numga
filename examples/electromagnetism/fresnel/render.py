@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.image import AxesImage
-from matplotlib.lines import Line2D
 
 from matplotlib.colors import to_rgb
 
@@ -17,7 +16,8 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.electromagnetism.fresnel import core
-from examples.util.wgsl import fitted, labels, meshes, show, solids
+from examples.util.wgsl import fitted, labels, meshes, show, simplices, solids
+from examples.util.wgsl.camera import Camera, panel
 from examples.util.wgsl.scene import Scene
 
 sheet_colours = ("#2563eb", "#ea580c")
@@ -40,15 +40,12 @@ axis_length, label_distance = 1.95, 2.12
 # The figures' sizes in pixels: the comparison, each medium's sheets above their sections, three quarters of the
 # column; the animation, the sheets beside their sections, about two thirds of it.
 comparison_size, animation_size = (600, 400), (520, 260)
+# The sections' faint cross through the origin, and the second sheet's dashes, a dash and a gap in pixels.
+cross_colour = np.array(to_rgb("#cbd5e1"))
+section_dashes = (5.5, 2.4)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(wavevectors: core.Vector) -> np.ndarray:
-    """The coordinates of spatial wavevectors, read along the axes of space `[..., 3]`."""
-    mv = wavevectors.context.multivector
-    return (wavevectors[..., None] & stack((mv.x, mv.y, mv.z)).dual()).to_array()
-
-
 def sheet_faces(n_latitudes: int, n_longitudes: int) -> np.ndarray:
     """Triangles over a grid of points from pole to pole, `[latitudes, longitudes]`: two to each cell, but one in the
     cells at either pole, whose two corners on the pole coincide."""
@@ -122,26 +119,35 @@ def surface(ax: Axes, picture: np.ndarray, view: solids.View) -> AxesImage:
     return shown
 
 
-def section_axes(ax: Axes) -> list[Line2D]:
-    """Axes for the sheets' sections, and each sheet's curve, empty, for its points to be set."""
-    curves = [ax.plot([], [], color=colour, linestyle=style)[0]
-              for colour, style in zip(sheet_colours, ("-", "--"))]
-    ax.axhline(0, color="#cbd5e1", linewidth=charts.FRAME_WIDTH)
-    ax.axvline(0, color="#cbd5e1", linewidth=charts.FRAME_WIDTH)
-    # The axes named at their ends, without scales: the sheets' shapes against each other are the point.
+def section_axes(ax: Axes) -> None:
+    """The plane of the sheets' sections, xz, its cross's lines named at their ends, without scales: the sheets' shapes
+    against each other are the point."""
     ax.text(view_limit, 0, "$k_x$", ha="right", va="bottom", color=axis_colour)
     ax.text(0, view_limit, "$k_z$", ha="left", va="top", color=axis_colour)
     ax.set(xlim=(-view_limit, view_limit), ylim=(-view_limit, view_limit))
     ax.set_aspect("equal")
     ax.set_axis_off()
-    return curves
 
 
-def trace_sections(curves: list[Line2D], sections: core.Vector) -> None:
-    """Each sheet's section in the xz plane along its curve."""
-    points = coordinates(sections)                                               # [section_samples, sheets, 3]
-    for mode, curve in enumerate(curves):
-        curve.set_data(points[:, mode, 0], points[:, mode, 2])
+def section_camera(ax: Axes) -> Camera:
+    """The camera of the sections' plane, reading the wavevectors' tips by the planes x across and z up."""
+    return panel(ax, core.mv.x, core.mv.z)
+
+
+def trace_sections(sections: core.Vector, camera: Camera) -> np.ndarray:
+    """A faint cross through the origin, along the directions the camera reads as one across and one up, the duals of
+    its planes over their own readings, and each sheet's section `[section_samples, sheets]` in the xz plane along its
+    curve, the second dashed, drawn at the wavevectors' tips: their picture."""
+    along, rise = (plane.dual() / (plane & plane.dual()) for plane in (camera.across, camera.up))
+    ends = view_limit * stack((-along, along, -rise, rise))                     # [4] Point-
+    tips = space_tip(sections)                                                   # [section_samples, sheets] Point-
+    chain = simplices.Mesh.chains([tips.shape[0]])
+    return simplices.composited([
+        simplices.strokes(ends, simplices.Mesh.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
+                          cap=simplices.Cap.BUTT),
+        simplices.strokes(tips[:, 0], chain, np.array(to_rgb(sheet_colours[0])), charts.LINE_PX, camera),
+        simplices.strokes(tips[:, 1], chain, np.array(to_rgb(sheet_colours[1])), charts.LINE_PX, camera,
+                          dashes=section_dashes, cap=simplices.Cap.BUTT)])
 
 
 @charts.style()
@@ -152,13 +158,15 @@ def comparison(sheets: core.Vector, sections: core.Vector) -> plt.Figure:
                                                             layout="constrained")
     for i, ax in enumerate(sections_axes):
         surface_axes[i].set_axis_off()
-        trace_sections(section_axes(ax), sections[i])
-    # The sheets traced once every axes is laid out, the sheets' as bare as their pictures leave them, each at the
-    # size of its room.
+        section_axes(ax)
+    # The sheets and their sections traced once every axes is laid out, the sheets' as bare as their pictures leave
+    # them, each at the size of its room.
     for i, ax in enumerate(surface_axes):
         view = k_space(ax)
         surface(ax, solids.draw(k_axes(view), view, np.ones(3), inks=[], translucent=[],
                                 meshes=sheet_sides(sheets[i], view)), view)
+    for i, ax in enumerate(sections_axes):
+        simplices.overlay(ax, [trace_sections(sections[i], section_camera(ax))])
     return figure
 
 
@@ -169,15 +177,17 @@ def animate(frames: Iterable[tuple[core.Vector, core.Vector]]) -> Iterator[np.nd
         figure, (surface_axes, sections_axes) = charts.subplots(*animation_size, ncols=2, layout="constrained")
         # The sheets' axes as bare as their picture leaves them, for the layout to give them their room.
         surface_axes.set_axis_off()
-        curves = section_axes(sections_axes)
+        section_axes(sections_axes)
         view = k_space(surface_axes)
         scene = Scene(view, np.ones(3), k_axes(view), [], inks=[], translucent=[])
         image = surface(surface_axes, np.full((*view.shape, 3), 255, dtype=np.uint8), view)
         # Laid out once, so that nothing moves between frames.
         figure.canvas.draw()
         figure.set_layout_engine("none")
+        camera = section_camera(sections_axes)
+        traced = simplices.overlay(sections_axes, [np.zeros(camera.shape + (4,))])
         for sheets, sections in frames:
             image.set_data(scene.draw([], inks=[], translucent=[], meshes=sheet_sides(sheets, view)))
-            trace_sections(curves, sections)
+            traced.set_data(trace_sections(sections, camera))
             yield capture(figure)
         plt.close(figure)

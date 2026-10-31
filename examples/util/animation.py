@@ -57,13 +57,15 @@ def check_frame_duration(duration_ms: int, stepped: bool) -> None:
 
 def capture(fig: plt.Figure) -> np.ndarray:
     """Render a figure at SUPERSAMPLE times its resolution and return its RGB pixels, each the average of
-    its block: antialiasing that holds for every artist."""
+    its block: antialiasing that holds for every artist. The figure's layout is solved on its first capture and kept
+    from then on, so that nothing of an animation shifts between its frames."""
     # A closed figure holds its pixels in reference cycles until the collector runs, which a frame's few objects and
     # large buffers rarely trigger: collected here, an animation keeps one frame's figure alive at a time.
     gc.collect()
     dpi = fig.dpi
     fig.set_dpi(dpi * SUPERSAMPLE)
     fig.canvas.draw()
+    fig.set_layout_engine("none")
     image = Image.fromarray(np.asarray(fig.canvas.buffer_rgba())).convert("RGB")
     fig.set_dpi(dpi)
     return np.asarray(image.reduce(SUPERSAMPLE))

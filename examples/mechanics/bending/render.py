@@ -3,11 +3,12 @@ centres; each section with its stress at the clamp, its principal axes, its neut
 the way the tip moves; the bent cantilevers beside the straight beam; a load turning or moving across
 the tip; and each section pushed along the beam, with the polars of its nodes and its kern.
 
-Sections are seen from beyond the tip, looking back at the clamp: across to the right and up. Walls are
-drawn as thick lines along their midlines. The beams are drawn on the GPU as each wall swept along the beam, lit
-strips seen along parallel rays, the straight beam a faint ghost beside them, all turned from the beam's frame into
-the drawing's by one rotor. Coordinates are read out here alone, for the section views: points by their pairings
-with the planes across and up over their weight."""
+Sections are seen from beyond the tip, looking back at the clamp: across to the right and up, read by the planes x
+and y. Walls are drawn as thick strokes along their midlines, the axes, the load and the kern as strokes, marks and
+fills over them. The beams are drawn on the GPU as each wall swept along the beam, lit strips seen along parallel
+rays, the straight beam a faint ghost beside them, all turned from the beam's frame into the drawing's by one rotor.
+Coordinates are read out here alone, to frame the section views: points by their pairings with the planes across
+and up over their weight."""
 
 from __future__ import annotations
 
@@ -15,15 +16,13 @@ from collections.abc import Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import LineCollection
-from matplotlib.colors import Normalize, to_rgb, to_rgba
-from matplotlib.lines import Line2D
-from matplotlib.text import Annotation
+from matplotlib.colors import Normalize, to_rgb
 
 from numga import stack
 from examples.util.animation import capture
 from examples.mechanics.bending import core
-from examples.util.wgsl import fitted, image_figure, meshes, show, solids
+from examples.util.wgsl import contours, fitted, image_figure, meshes, show, simplices, solids
+from examples.util.wgsl.camera import Camera, flat_panel
 
 mv = core.mv
 # Colours of the beam, of the straight beam, of the load, of the neutral axis, of the principal axes,
@@ -50,6 +49,14 @@ MARGIN = 0.1
 PIXELS = 520
 STRAIGHT_OPACITY = 0.19
 GLOSS = 0.1
+# In the section views, in points, at the figure's pixels to the inch: the widths of the principal axes, with their
+# dashes and gaps, of the neutral axis, of the load's arrow, with its head's length, and of the kern's outline; the
+# sides of the centroid's dot, of the shear centre's ring, with its rim's width, and of the push point's mark, with
+# its white rim; and how much the kern's fill covers.
+PRINCIPAL_WIDTH, PRINCIPAL_DASHES = 1.0, (3.7, 1.6)
+NEUTRAL_WIDTH, LOAD_WIDTH, LOAD_HEAD, KERN_WIDTH = 1.8, 2.0, 5.0, 1.4
+DOT_SIDE, RING_SIDE, RING_WIDTH, PUSH_SIDE, PUSH_RIM = 3.0, 7.0, 1.4, 9.0, 1.0
+KERN_OPACITY = 0.3
 # The radii of the shear centres' dashes, of the clamp's rods and of the load's shaft, in pixels; the load's head,
 # its length a share of the arrow's, and its radius a share of its own length.
 DASH_RADIUS, CLAMP_RADIUS, SHAFT_RADIUS = 0.85, 1.2, 1.7
@@ -76,31 +83,13 @@ def reach(start: core.Point, direction: core.Point, length: float) -> core.Point
     return start + direction / direction.dual().norm() * length
 
 
-def arrow(ax, start: core.Point, end: core.Point, colour: str) -> Annotation:
-    """An arrow from a start to an end in the section view, for an animation to move with `aim`."""
-    pointer = ax.annotate("", xy=flat(end), xytext=flat(start),
-                          arrowprops=dict(arrowstyle="-|>", color=colour, lw=2, shrinkA=0, shrinkB=0))
-    return pointer
-
-
-def aim(pointer: Annotation, start: core.Point, end: core.Point) -> None:
-    """An arrow moved to run from a start to an end in the section view."""
-    pointer.xy = flat(end)
-    pointer.set_position(flat(start))
-
-
-def line_ends(line: core.Strain, centre: core.Point, half: float) -> np.ndarray:
-    """The ends `[2, 2]` of a line of the section drawn for `half` either side of the foot of `centre` on it: the
-    foot moved both ways along the line's direction, where it meets the plane at infinity; normalized, the foot
-    keeps the sign of its weight, which at most swaps the two ends."""
+def line_ends(line: core.Strain, centre: core.Point, half: float) -> core.Point:
+    """The ends `[2]` of a line of the section drawn for `half` either side of the foot of `centre` on it: the foot
+    moved both ways along the line's direction, where it meets the plane at infinity; normalized, the foot keeps the
+    sign of its weight, which at most swaps the two ends."""
     foot = ((centre | line) ^ line).normalized()                             # [] Point-
     direction = (line ^ mv.w) * unit_volume                                  # [] Point-
-    return flat(reach(foot, direction, half * np.array([-1.0, 1.0])))
-
-
-def line_through(ax, line: core.Strain, centre: core.Point, half: float, **style) -> Line2D:
-    """A line of the section, drawn for `half` either side of the foot of `centre` on it."""
-    return ax.plot(*line_ends(line, centre, half).T, **style)[0]
+    return reach(foot, direction, half * np.array([-1.0, 1.0]))
 
 
 def wall_stress(stress: core.Scalar) -> np.ndarray:
@@ -112,48 +101,74 @@ def wall_stress(stress: core.Scalar) -> np.ndarray:
     return (tails[:, None] * (1 - middles) + heads[:, None] * middles).reshape(-1)
 
 
-def draw_stress(ax, walls: core.Point, stress: core.Scalar, largest: float) -> LineCollection:
-    """The walls, their ends `[walls, ends]`, as thick lines coloured by the stress along the beam, linear along each
-    wall between its ends, for an animation to set the stress of."""
+def walls_drawn(walls: core.Point, colours: np.ndarray, scale: float, camera: Camera) -> np.ndarray:
+    """Walls, their ends `[walls, ends]`, as thick strokes, each in its colour `[walls, 3]`."""
+    return simplices.strokes(walls.reshape(-1), simplices.Mesh.chains([2] * walls.shape[0]), colours,
+                             WALL_WIDTH * scale, camera)
+
+
+def stress_drawn(walls: core.Point, stress: core.Scalar, largest: float, scale: float, camera: Camera) -> np.ndarray:
+    """The walls, their ends `[walls, ends]`, as thick strokes coloured by the stress along the beam, linear along each
+    wall between its ends."""
     fractions = np.linspace(0, 1, WALL_PIECES + 1)                           # [pieces + 1]
-    along = flat(walls[:, None, 0] * (1 - fractions) + walls[:, None, 1] * fractions)   # [walls, pieces + 1, 2]
-    pieces = np.stack([along[:, :-1], along[:, 1:]], axis=-2).reshape(-1, 2, 2)
-    lines = LineCollection(pieces, array=wall_stress(stress), cmap=STRESS, norm=Normalize(-largest, largest),
-                           linewidths=WALL_WIDTH, capstyle="round")
-    ax.add_collection(lines)
-    return lines
+    along = walls[:, None, 0] * (1 - fractions) + walls[:, None, 1] * fractions   # [walls, pieces + 1] Point-
+    colours = plt.get_cmap(STRESS)(Normalize(-largest, largest)(wall_stress(stress)))[:, :3]
+    return simplices.strokes(along.reshape(-1), simplices.Mesh.chains([WALL_PIECES + 1] * walls.shape[0]), colours,
+                             WALL_WIDTH * scale, camera)
 
 
-def frame_section(ax, limit: float) -> None:
+def line_drawn(line: core.Strain, centre: core.Point, half: float, colour: str, width: float, camera: Camera,
+               dashes: tuple[float, float] = (1.0, 0.0)) -> np.ndarray:
+    """A line of the section, drawn for `half` either side of the foot of `centre` on it, `width` pixels wide."""
+    return simplices.strokes(line_ends(line, centre, half), simplices.Mesh.chains([2]), np.array(to_rgb(colour)), width,
+                             camera, dashes=dashes, cap=simplices.Cap.BUTT)
+
+
+def section_panel(ax, limit: float) -> tuple[Camera, float]:
+    """A section view's axes framed `limit` either way of the middle, and their camera, reading points by the planes
+    across and up; and its pixels to a point."""
     ax.set_xlim(-limit, limit)
     ax.set_ylim(-limit, limit)
     ax.set_aspect("equal")
     ax.set_axis_off()
+    return flat_panel(ax, core.ga), ax.figure.dpi / 72
 
 
-def mark_centres(ax, centre: core.Point, shear: core.Point) -> None:
+def centres_drawn(centre: core.Point, shear: core.Point, scale: float, camera: Camera) -> list[np.ndarray]:
     """The centroid as a dot, and the shear centre as a ring."""
-    ax.plot(*flat(centre), "o", color="#0f172a", markersize=3)
-    ax.plot(*flat(shear), "o", markerfacecolor="none", markeredgecolor="#0f172a", markersize=7, markeredgewidth=1.4)
+    ink = np.array(to_rgb("#0f172a"))
+    return [simplices.markers(centre[None], ink, DOT_SIDE / 2 * scale, camera),
+            simplices.markers(shear[None], ink, (RING_SIDE + RING_WIDTH) / 2 * scale, camera,
+                              inner=(RING_SIDE - RING_WIDTH) / 2 * scale)]
+
+
+def section_row(sections: list[tuple[core.Mesh, core.Point, core.Scalar]]) -> tuple[plt.Figure, list, list[Camera],
+                                                                                   float]:
+    """A row of section views, one a section: the figure, its axes, their cameras and its pixels to a point."""
+    figure, axes = plt.subplots(1, len(sections), figsize=(4 * len(sections), 3.8), dpi=50)
+    for ax in axes:
+        ax.set_axis_off()
+    figure.tight_layout()
+    panels = [section_panel(ax, SECTION_LIMIT) for ax in axes]
+    return figure, axes, [camera for camera, _ in panels], panels[0][1]
 
 
 def draw_sections(sections: list[tuple[core.Mesh, core.Point, core.Scalar]]) -> plt.Figure:
     """The sections' walls along their midlines."""
-    figure, axes = plt.subplots(1, len(sections), figsize=(4 * len(sections), 3.8), dpi=50)
-    for ax, (mesh, nodes, _) in zip(axes, sections):
-        ax.add_collection(LineCollection(flat(nodes.batch()[mesh.edges]), colors=STRAIGHT, linewidths=WALL_WIDTH,
-                                         capstyle="round"))
-        frame_section(ax, SECTION_LIMIT)
-    figure.tight_layout()
+    figure, axes, cameras, scale = section_row(sections)
+    for ax, camera, (mesh, nodes, _) in zip(axes, cameras, sections):
+        simplices.overlay(ax, [simplices.strokes(nodes.batch(), mesh, np.array(to_rgb(STRAIGHT)), WALL_WIDTH * scale,
+                                                 camera)])
     return figure
 
 
 def draw_walls(sections: list[tuple[core.Mesh, core.Point, core.Scalar]], centres: list[core.Point],
                shears: list[core.Point]) -> plt.Figure:
     """The sections' walls along their midlines, each with its centroid and its shear centre."""
-    figure = draw_sections(sections)
-    for ax, centre, shear in zip(figure.axes, centres, shears):
-        mark_centres(ax, centre, shear)
+    figure, axes, cameras, scale = section_row(sections)
+    for ax, camera, (mesh, nodes, _), centre, shear in zip(axes, cameras, sections, centres, shears):
+        simplices.overlay(ax, [simplices.strokes(nodes.batch(), mesh, np.array(to_rgb(STRAIGHT)), WALL_WIDTH * scale,
+                                                 camera), *centres_drawn(centre, shear, scale, camera)])
     return figure
 
 
@@ -163,23 +178,22 @@ def section_limit(tips: np.ndarray) -> float:
     return max(SECTION_LIMIT, np.abs(tips).max() + ARROW)
 
 
-def draw_section(ax, walls: core.Point, stress: core.Scalar, principal: core.Strain, centre: core.Point,
-                 shear: core.Point, through: core.Point, load: core.Point, tip: core.Point, strain: core.Twist,
-                 largest: float, limit: float) -> tuple[LineCollection, LineCollection, Line2D, Annotation]:
+def section_drawn(walls: core.Point, stress: core.Scalar, principal: core.Strain, centre: core.Point,
+                  shear: core.Point, through: core.Point, load: core.Point, tip: core.Point, strain: core.Twist,
+                  largest: float, limit: float, scale: float, camera: Camera) -> list[np.ndarray]:
     """One section: the stress along the beam over its walls at the clamp, their ends `[walls, ends]`, the walls at
     the tip as the tip has moved, `tip` alike, its principal axes dashed through the centroid, the neutral axis, and
-    the load's direction where it acts on the moved tip. The stress, the tip's walls, the neutral axis and the load's
-    arrow, for an animation to move."""
-    stresses = draw_stress(ax, walls, stress, largest)
-    tip_walls = ax.add_collection(LineCollection(flat(tip), colors=BEAM, linewidths=WALL_WIDTH, capstyle="round"))
-    for axis in principal:
-        line_through(ax, axis, centre, 2 * limit, color=PRINCIPAL, linestyle="--", linewidth=1.0)
+    the load's direction where it acts on the moved tip, an arrow."""
+    pictures = [stress_drawn(walls, stress, largest, scale, camera),
+                walls_drawn(tip, np.array(to_rgb(BEAM)), scale, camera)]
+    pictures += [line_drawn(axis, centre, 2 * limit, PRINCIPAL, PRINCIPAL_WIDTH * scale, camera,
+                            tuple(np.array(PRINCIPAL_DASHES) * PRINCIPAL_WIDTH * scale)) for axis in principal]
     # The neutral axis: the strain's part in the section's plane, the part that stretches the fibres.
-    neutral = line_through(ax, strain.cast(core.Strain), centre, 2 * limit, color=NEUTRAL, linewidth=1.8)
-    pointer = arrow(ax, through, reach(through, load, ARROW), LOAD)
-    mark_centres(ax, centre, shear)
-    frame_section(ax, limit)
-    return stresses, tip_walls, neutral, pointer
+    pictures.append(line_drawn(strain.cast(core.Strain), centre, 2 * limit, NEUTRAL, NEUTRAL_WIDTH * scale, camera))
+    pictures.append(simplices.strokes(stack([through, reach(through, load, ARROW)]), simplices.Mesh.chains([2]),
+                                      np.array(to_rgb(LOAD)), LOAD_WIDTH * scale, camera, heads=np.ones(1),
+                                      head=LOAD_HEAD * scale))
+    return pictures + centres_drawn(centre, shear, scale, camera)
 
 
 def straightened(bent: core.Point) -> core.Point:
@@ -267,8 +281,10 @@ def draw_beams(sections: list[tuple[core.Mesh, core.Point, core.Scalar]], centre
     limit = max(section_limit(flat(beam[-1])) for beam in bent)
     for section_ax, beam_ax, (mesh, nodes, _), centre, shear, (strains, frames, principal, stress), beam in zip(
             section_axes, beam_axes, sections, centres, shears, beams, bent):
-        draw_section(section_ax, nodes.batch()[mesh.edges], stress, principal, centre, shear, frames[-1] >> centre,
-                     load, beam[-1], strains[0], largest, limit)
+        camera, scale = section_panel(section_ax, limit)
+        simplices.overlay(section_ax, section_drawn(nodes.batch()[mesh.edges], stress, principal, centre, shear,
+                                                    frames[-1] >> centre, load, beam[-1], strains[0], largest, limit,
+                                                    scale, camera))
         show(beam_ax, draw_beam(beam, frames >> shear, frames[-1] >> centre, load, seen), seen)
     return figure
 
@@ -305,21 +321,19 @@ def sized_loads(section: tuple[core.Mesh, core.Point, core.Scalar], centre: core
     # One camera framing every frame's beam.
     seen = fitted(view([bent], [reach(moved, loads, TIP_ARROW)], ELEVATION, AZIMUTH), beam_ax)
     image = show(beam_ax, np.ones((*seen.shape, 3)), seen)
-    stresses, tip_walls, neutral, pointer = draw_section(section_ax, nodes.batch()[mesh.edges], stress[0], principal,
-                                                         centre, shear, moved[0], loads[0], bent[0, -1], strains[0, 0],
-                                                         largest, limit)
+    camera, scale = section_panel(section_ax, limit)
+    section = simplices.overlay(section_ax, [np.zeros(camera.shape + (4,))])
     for frame in range(count):
         image.set_data(draw_beam(bent[frame], frames[frame] >> shear, moved[frame], loads[frame], seen))
-        stresses.set_array(wall_stress(stress[frame]))
-        tip_walls.set_segments(tip_ends[frame])
-        neutral.set_data(*line_ends(strains[frame, 0].cast(core.Strain), centre, 2 * limit).T)
-        aim(pointer, moved[frame], reach(moved[frame], loads[frame], ARROW))
+        section.set_data(simplices.composited(section_drawn(
+            nodes.batch()[mesh.edges], stress[frame], principal, centre, shear, moved[frame], loads[frame],
+            bent[frame, -1], strains[frame, 0], largest, limit, scale, camera)))
         yield capture(figure)
     plt.close(figure)
 
 
-def kern(polars: core.Strain, centre: core.Point) -> np.ndarray:
-    """The kern as a polygon `[corners, 2]`: the view cut down to the centroid's side of every node's polar. Each
+def kern(polars: core.Strain, centre: core.Point) -> core.Point:
+    """The kern as a polygon `[corners]`: the view cut down to the centroid's side of every node's polar. Each
     polar is read by the stretch it gives the fibre through a point, affine across the section, positive on the
     centroid's side."""
     corners = core.point(SECTION_LIMIT * SQUARE)                             # [corners] Point-
@@ -338,19 +352,31 @@ def kern(polars: core.Strain, centre: core.Point) -> np.ndarray:
             if here * there < 0:
                 kept.append((corners[following[corner]] * here - corners[corner] * there) / (here - there))
         corners = stack(kept)
-    return flat(corners)
+    return corners
 
 
 def draw_push(ax, walls: core.Point, point: core.Point, strain: core.Strain, stress: core.Scalar,
               polars: core.Strain, centre: core.Point, largest: float) -> None:
     """One section pushed through one point: the stress over its walls, their ends `[walls, ends]`, the kern, and the
     neutral axis, the push point's polar."""
-    draw_stress(ax, walls, stress, largest)
-    ax.fill(*kern(polars, centre).T, facecolor=to_rgba(KERN, 0.3), edgecolor=KERN, linewidth=1.4, zorder=3)
-    line_through(ax, strain, centre, 4 * SECTION_LIMIT, color=NEUTRAL, linewidth=1.8)
-    ax.plot(*flat(point), "X", color=LOAD, markersize=9, markeredgecolor="white", zorder=4)
-    ax.plot(*flat(centre), "o", color="#0f172a", markersize=3, zorder=4)
-    frame_section(ax, SECTION_LIMIT)
+    camera, scale = section_panel(ax, SECTION_LIMIT)
+    corners = kern(polars, centre)                                           # [corners] Point-
+    n_corners = len(corners)
+    # The kern is convex: a fan of triangles from its first corner fills it.
+    fan = simplices.Mesh(n_corners, np.stack([np.zeros(n_corners - 2, dtype=int), np.arange(1, n_corners - 1),
+                                              np.arange(2, n_corners)], axis=-1))
+    loop = simplices.Mesh(n_corners, np.stack([np.arange(n_corners), np.roll(np.arange(n_corners), -1)], axis=-1))
+    kern_colour = np.array(to_rgb(KERN))
+    simplices.overlay(ax, [
+        stress_drawn(walls, stress, largest, scale, camera),
+        contours.picture(corners, fan, np.zeros(n_corners), kern_colour, camera, opacity=KERN_OPACITY),
+        simplices.strokes(corners, loop, kern_colour, KERN_WIDTH * scale, camera),
+        line_drawn(strain, centre, 4 * SECTION_LIMIT, NEUTRAL, NEUTRAL_WIDTH * scale, camera),
+        simplices.markers(point[None], np.ones(3), (PUSH_SIDE / 2 + PUSH_RIM) * scale, camera,
+                          marker=simplices.Marker.DIAMOND),
+        simplices.markers(point[None], np.array(to_rgb(LOAD)), PUSH_SIDE / 2 * scale, camera,
+                          marker=simplices.Marker.DIAMOND),
+        centres_drawn(centre, centre, scale, camera)[0]])
 
 
 def draw_pushes(sections: list[tuple[core.Mesh, core.Point, core.Scalar]], centres: list[core.Point],
@@ -359,10 +385,10 @@ def draw_pushes(sections: list[tuple[core.Mesh, core.Point, core.Scalar]], centr
     point, with its kern."""
     figure = plt.figure(figsize=(4.0 * len(sections), 8.4), dpi=55)
     largest = max(np.abs(stress.to_array()).max() for _, stress, _ in pushes)
+    axes = figure.subplots(points.shape[0], len(sections))
+    figure.subplots_adjust(left=0.01, right=0.99, bottom=0.01, top=0.99, hspace=0.05, wspace=0.05)
     for push in range(points.shape[0]):
         for case, ((mesh, nodes, _), centre, (strains, stress, polars)) in enumerate(zip(sections, centres, pushes)):
-            ax = figure.add_subplot(points.shape[0], len(sections), push * len(sections) + case + 1)
-            draw_push(ax, nodes.batch()[mesh.edges], points[push], strains[push], stress[push], polars, centre,
-                      largest)
-    figure.subplots_adjust(left=0.01, right=0.99, bottom=0.01, top=0.99, hspace=0.05, wspace=0.05)
+            draw_push(axes[push, case], nodes.batch()[mesh.edges], points[push], strains[push], stress[push], polars,
+                      centre, largest)
     return figure

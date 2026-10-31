@@ -6,15 +6,23 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
 from examples.mechanics.earthquake import core, render, scenarios
+
+
+def coordinates(directions: core.Point) -> np.ndarray:
+    """The x, y and z coordinates of directions `[..., 3]`, their readings by the planes x, y and z: north, east and
+    down."""
+    mv = core.mv
+    return (stack((mv.x, mv.y, mv.z)) & directions[..., None]).to_array()
 
 
 def test_fault_frame_matches_aki_and_richards():
     """The normal and slip of the fault rotor are the textbook formulas in strike, dip and rake."""
     strikes, dips, rakes = np.deg2rad([0.0, 75.0, 210.0]), np.deg2rad([90.0, 35.0, 60.0]), np.deg2rad([0.0, 120.0, -45.0])
     frames = core.fault_frame(strikes, dips, rakes)
-    normals = render.coordinates(frames >> -core.down)
-    slips = render.coordinates(frames >> core.north)
+    normals = coordinates(frames >> -core.down)
+    slips = coordinates(frames >> core.north)
     expected_normals = np.stack([-np.sin(dips) * np.sin(strikes), np.sin(dips) * np.cos(strikes), -np.cos(dips)], axis=-1)
     expected_slips = np.stack([np.cos(rakes) * np.cos(strikes) + np.sin(rakes) * np.cos(dips) * np.sin(strikes),
                                np.cos(rakes) * np.sin(strikes) - np.sin(rakes) * np.cos(dips) * np.cos(strikes),

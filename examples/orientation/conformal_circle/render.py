@@ -9,13 +9,13 @@ from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import LineCollection
 from matplotlib.colors import to_rgb
 
 from examples.util.animation import capture
 from numga import concatenate, stack
 from examples.orientation.conformal_circle.core import Point, Sphere, mv
-from examples.util.wgsl import show, simplices, solids
+from examples.util.wgsl import contours, show, simplices, solids
+from examples.util.wgsl.camera import Camera, panel as panel_camera
 
 sm = solids.mv
 plane_ink, sphere_ink, curve_ink = "#218c9d", "#ce713f", "#3d354a"
@@ -63,13 +63,6 @@ def gpu_points(points: Point) -> solids.Point:
     weights = -horizon & points
     readings = (stack((mv.x, mv.y, mv.z)) & points[..., None]) / weights[..., None]
     return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
-
-
-def plane_coordinates(points: Point) -> np.ndarray:
-    """x and y of points, on the last axis, for matplotlib: their pairings with the planes x and y, over their
-    weights."""
-    weights = -horizon & points
-    return ((stack((mv.x, mv.y)) & points[..., None]) / weights[..., None]).to_array()
 
 
 def downhill(surface: Sphere, anchor: Point, length: float) -> Point:
@@ -157,38 +150,46 @@ def draw_circle(points: Point, curve: Point, surface: Point, planes: Sphere,
 
 def animate_circle_motions(frames: Iterable[Point], fixed_points: Point) -> Iterator[np.ndarray]:
     """A coloured disk turns rigidly beside its reflected, conformally distorted image, from frames of the two disks
-    with radius and angle axes."""
+    with radius and angle axes, drawn on the GPU in the conformal algebra itself: a camera reading its points by the
+    planes x and y over their weights, their pairings with the point at infinity."""
     frames = iter(frames)
-    first = plane_coordinates(next(frames))                                     # [sides, radii, angles, 2]
-    fixed = plane_coordinates(fixed_points)
-    ring_indices = np.linspace(0, first.shape[1] - 1, 6, dtype=int)[1:-1]
-    spoke_indices = np.linspace(0, first.shape[2] - 1, 13, dtype=int)[:-1]
-    colours = plt.get_cmap("twilight_shifted")(np.linspace(0, 1, len(spoke_indices), endpoint=False))
+    first = next(frames)                                                        # [sides, radii, angles] Point-
+    n_radii, n_angles = first.shape[1:]
+    ring_indices = np.linspace(0, n_radii - 1, 6, dtype=int)[1:-1]
+    spoke_indices = np.linspace(0, n_angles - 1, 13, dtype=int)[:-1]
+    colours = plt.get_cmap("twilight_shifted")(np.linspace(0, 1, len(spoke_indices), endpoint=False))[:, :3]
+    disk_mesh = simplices.Mesh.grid(n_radii, n_angles)
+    rim_chain = simplices.Mesh.chains([n_angles])
+    ring_chains = simplices.Mesh.chains([n_angles] * len(ring_indices))
+    spoke_chains = simplices.Mesh.chains([n_radii] * len(spoke_indices))
 
     figure, axes = plt.subplots(1, 2, figsize=(2 * motion_pixels / motion_dpi, motion_pixels / motion_dpi),
                                 dpi=motion_dpi)
     figure.subplots_adjust(left=0.015, right=0.985, bottom=0.025, top=0.975, wspace=0.06)
-    artists = []
-    for ax, disk in zip(axes, first):
+    for ax in axes:
         ax.set(xlim=(-1.12, 1.12), ylim=(-1.12, 1.12), aspect="equal")
         ax.set_axis_off()
-        ax.fill(*disk[-1].T, color="#f5f6f8", zorder=0)
-        ax.plot(*disk[-1].T, color=curve_ink, linewidth=1.5, zorder=2)
-        rings = LineCollection(disk[ring_indices], colors="#b8c1cc", linewidths=0.85)
-        spokes = LineCollection(disk[:, spoke_indices].transpose(1, 0, 2),
-                                colors=colours, linewidths=1.15, alpha=0.85)
-        ax.add_collection(rings)
-        ax.add_collection(spokes)
-        dots = ax.scatter(*disk[-1, spoke_indices].T, c=colours, s=33,
-                          edgecolors="white", linewidths=0.85, zorder=4)
-        artists.append((rings, spokes, dots))
-    axes[1].scatter(*fixed.T, s=94, facecolors="none", edgecolors=curve_ink,
-                    linewidths=1.35, zorder=5)
+    cameras = [panel_camera(ax, mv.x, mv.y)._replace(weight=-horizon, unit=0.0) for ax in axes]
 
-    for pair in chain([first], (plane_coordinates(frame) for frame in frames)):
-        for disk, (rings, spokes, dots) in zip(pair, artists):
-            rings.set_segments(disk[ring_indices])
-            spokes.set_segments(disk[:, spoke_indices].transpose(1, 0, 2))
-            dots.set_offsets(disk[-1, spoke_indices])
+    def pictures(disk: Point, camera: Camera) -> list[np.ndarray]:
+        """The disk `[radii, angles]` filled, its rings and its spokes, each spoke in its colour, its rim, and the
+        spokes' ends on it."""
+        # Each spoke's places from the middle out, a chain of them.
+        spokes = disk[np.arange(n_radii), spoke_indices[:, None]].reshape(-1)  # [spokes * radii] Point-
+        ends = disk[-1, spoke_indices]                                           # [spokes] Point-
+        return [contours.picture(disk.reshape(-1), disk_mesh, np.zeros(n_radii * n_angles), to_rgb("#f5f6f8"), camera),
+                simplices.strokes(disk[ring_indices].reshape(-1), ring_chains, to_rgb("#b8c1cc"), 1.0, camera),
+                simplices.strokes(spokes, spoke_chains, np.repeat(colours, n_radii - 1, axis=0), 1.2, camera,
+                                  opacity=0.85),
+                simplices.strokes(disk[-1], rim_chain, to_rgb(curve_ink), 1.5, camera),
+                simplices.markers(ends, background, 2.3, camera),
+                simplices.markers(ends, colours, 1.8, camera)]
+
+    # The reflection's fixed points, ringed on the image's side.
+    marks = ([], [simplices.markers(fixed_points, to_rgb(curve_ink), 3.0, cameras[1], inner=2.0)])
+    images = [simplices.overlay(ax, pictures(disk, camera)) for ax, disk, camera in zip(axes, first, cameras)]
+    for pair in chain([first], frames):
+        for image, disk, camera, fixed in zip(images, pair, cameras, marks):
+            image.set_data(simplices.composited(pictures(disk, camera) + fixed))
         yield capture(figure)
     plt.close(figure)

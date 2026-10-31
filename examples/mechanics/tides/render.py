@@ -7,20 +7,22 @@ from collections.abc import Iterable, Iterator
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
-from matplotlib.colors import LogNorm, to_rgba
+from matplotlib.colors import LogNorm, to_rgb, to_rgba
 
 from numga import stack
 from examples.util.animation import capture
-from examples.util.wgsl import contours, pinned
+from examples.util.wgsl import contours, pinned, simplices
 from examples.util.wgsl.camera import Camera, flat_panel
 from examples.mechanics.tides import core
 
-STARS = "#0f172a"
+STARS = to_rgb("#0f172a")
 PREDICTION = "#ea580c"
 ZOOM = 1.6
 RIM_PIXELS = 160
 # The width of the predicted rim, in pixels.
 RIM_WIDTH = 1.6
+# The stars' radii in pixels, over the whole density and close up.
+WIDE_STAR_RADIUS, NEAR_STAR_RADIUS = 1.0, 1.5
 # The faintest density drawn, as a fraction of the peak.
 DENSITY_FLOOR = 1e-4
 
@@ -31,17 +33,17 @@ def coordinates(points: core.Point) -> np.ndarray:
     return (stack((core.mv.x, core.mv.y)) & points[..., None]).to_array()
 
 
-def density(ax: Axes, points: core.Point, mass_density: core.Scalar) -> None:
-    """The density on a log scale over the grid of its samples `[rows, columns]`, from the first to the last."""
+def density(ax: Axes, points: core.Point, mass_density: core.Scalar) -> np.ndarray:
+    """The density on a log scale over the grid of its samples `[rows, columns]`, from the first to the last, framed
+    by the panel: its picture, `[rows, columns, 4]`."""
     corners = coordinates(points[[0, -1], [0, -1]])                          # [2, 2]
     values = mass_density.to_array()                                         # [rows, columns]
     colours = plt.get_cmap("Blues")(LogNorm(values.max() * DENSITY_FLOOR, values.max())(values))[..., :3]
     ax.set(xlim=corners[:, 0], ylim=corners[:, 1], xticks=[], yticks=[])
     ax.set_aspect("equal")
     places = points.reshape(-1)                                              # [rows * columns] Point-
-    contours.overlay(ax, places, contours.Mesh.grid(*values.shape), values.reshape(-1), colours.reshape(-1, 3))
-    # The panel keeps its frame around the picture.
-    ax.set_axis_on()
+    return contours.picture(places, contours.Mesh.grid(*values.shape), values.reshape(-1), colours.reshape(-1, 3),
+                            flat_panel(ax, core.ga))
 
 
 def rim_at(centre: core.Point, rim: core.Form, half_size: core.Scalar, grid: contours.Mesh,
@@ -70,16 +72,18 @@ def animate(points: core.Point, mass_density: core.Scalar,
     # Both panels bare of ticks before either picture is fitted to the room the layout gives it.
     near.set(xlim=(-1, 1), ylim=(-1, 1), xticks=[], yticks=[])
     near.set_aspect("equal")
-    density(whole, points, mass_density)
-    wide, close = (ax.scatter([], [], s=size, color=STARS, linewidths=0) for ax, size in ((whole, 2), (near, 5)))
-    # The rim's picture pinned once, its data and extent set for each frame; the panel keeps its frame around it.
+    background = density(whole, points, mass_density)
+    # The stars over the density, and the rim's picture, pinned once, their data and the rim's extent set for each
+    # frame; the panels keep their frames around them.
+    whole_camera = flat_panel(whole, core.ga)
+    stars_seen = simplices.overlay(whole, [background])
+    whole.set_axis_on()
     rims = pinned(near, np.zeros(flat_panel(near, core.ga).shape + (4,)), (-1, 1, -1, 1))
     near.set_axis_on()
     rim_grid = contours.Mesh.grid(RIM_PIXELS, RIM_PIXELS)
     for stars, centre, rim in states:
-        positions = coordinates(stars.positions)                             # [stars, 2]
-        wide.set_offsets(positions)
-        close.set_offsets(positions)
+        stars_seen.set_data(simplices.composited([
+            background, simplices.markers(stars.positions, STARS, WIDE_STAR_RADIUS, whole_camera)]))
         # Around the cluster, scaled to its extent: the stars' largest offset from the centre across or up.
         middle = coordinates(centre)                                         # [2]
         spans = (stack((core.mv.x, core.mv.y)) & (stars.positions - centre)[..., None]).abs().reshape(-1)
@@ -88,6 +92,9 @@ def animate(points: core.Point, mass_density: core.Scalar,
         window = (middle[0] - frame_size, middle[0] + frame_size, middle[1] - frame_size, middle[1] + frame_size)
         rims.set_extent(window)
         near.set(xlim=window[:2], ylim=window[2:])
-        rims.set_data(rim_at(centre, rim, half_size, rim_grid, flat_panel(near, core.ga)))
+        near_camera = flat_panel(near, core.ga)
+        rims.set_data(simplices.composited([
+            rim_at(centre, rim, half_size, rim_grid, near_camera),
+            simplices.markers(stars.positions, STARS, NEAR_STAR_RADIUS, near_camera)]))
         yield capture(figure)
     plt.close(figure)

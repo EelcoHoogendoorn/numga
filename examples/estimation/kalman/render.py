@@ -11,7 +11,7 @@ import numpy as np
 from numga import concatenate, stack
 from examples.util.animation import capture
 from examples.util.wgsl import pinned, planar, room
-from examples.util.wgsl.planar import Curves, Regions
+from examples.util.wgsl.planar import SOLID, Cap, Curves, Marker, Marks, Polygons, Regions, Strokes
 from examples.estimation.kalman.core import Motor, Point, mv
 
 TRUE_COLOUR, DEAD_COLOUR, FILTER_COLOUR, READING_COLOUR = "#1f2329", "#d0482b", "#2c6fb4", "#3a9a5b"
@@ -22,23 +22,28 @@ OUTLINE = [[0.32, 0.0], [-0.18, 0.16], [-0.18, -0.16]]
 MARGIN = 0.12
 WIDTH = 3.2
 POINT = 100 / 72
+# The trails' widths in pixels, the dead-reckoned trail's dashes, the readings' marks' reach and ring width, and the
+# vehicles' opacity.
+TRUE_WIDTH, DEAD_WIDTH, FILTER_WIDTH = 1.3 * POINT, 1.0 * POINT, 1.0 * POINT
+DEAD_DASHES = (5.1, 2.2)
+READING_REACH, READING_RING = 4.0, 1.5
+VEHICLE_OPACITY = 0.9
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(points: Point) -> np.ndarray:
-    """Read out the x and y coordinates of each point from its pairings with the coordinate planes."""
-    return (stack((mv.x, mv.y)) & points.normalized()[..., None]).to_array()
+def rgb(colour: str) -> np.ndarray:
+    """A named colour's red, green and blue."""
+    return np.array(mcolors.to_rgb(colour))
 
 
 def animate_tracking(truth: Motor, dead: Motor, estimates: Motor, positions: Point, ellipsoids,
                      readings: Motor) -> Iterator[np.ndarray]:
     """Yield one frame per state of the drive with the trails of the true, dead-reckoned, and filtered paths, the pose readings, the implicit position quadric, and the three vehicles."""
     origin = mv.w.dual()
-    true_xy, dead_xy, est_xy, reading_xy = coordinates(truth >> origin), coordinates(dead >> origin), coordinates(positions), coordinates(readings >> origin)
+    true_path, dead_path = truth >> origin, dead >> origin                     # [steps] Point-, [steps] Point-
     outline = mv.point(OUTLINE)
     outlines = {colour: poses[..., None] >> outline
                 for colour, poses in ((TRUE_COLOUR, truth), (DEAD_COLOUR, dead), (FILTER_COLOUR, estimates))}
-    shapes = {colour: coordinates(shape) for colour, shape in outlines.items()}
     # A reading is new where its position differs from the one before.
     reading_points = readings >> origin
     fresh = np.r_[False, (reading_points[1:] - reading_points[:-1]).dual().norm() > 0]
@@ -55,22 +60,16 @@ def animate_tracking(truth: Motor, dead: Motor, estimates: Motor, positions: Poi
     ax.set_axis_off()
     view = planar.view([everything], MARGIN, room(ax))
     image = pinned(ax, np.full(view.shape + (3,), 255, dtype=np.uint8), view.extent)
-    # Lay the figure out once; only the trails, the readings, the quadric image, and the vehicles move between frames.
-    true_trail, = ax.plot([], [], color=TRUE_COLOUR, linewidth=1.3)
-    dead_trail, = ax.plot([], [], color=DEAD_COLOUR, linestyle="--", linewidth=1.0)
-    est_trail, = ax.plot([], [], color=FILTER_COLOUR, linewidth=1.0)
-    reading_marks, = ax.plot([], [], marker="x", color=READING_COLOUR, linestyle="none", markersize=5, markeredgewidth=1.4)
-    vehicles = {colour: ax.fill(*shape[0].T, color=colour, alpha=0.9, linewidth=0)[0]
-                for colour, shape in shapes.items()}
-    for step in range(len(true_xy)):
+    # Lay the figure out once; each frame draws the trails so far, the readings, the quadric, and the vehicles.
+    for step in range(len(true_path)):
         layers = [Regions(ellipsoids[step:step + 1], FILTER_RGB, 0.18),
-                  Curves(ellipsoids[step:step + 1], 1.0 * POINT, FILTER_RGB, 1.0)]
+                  Curves(ellipsoids[step:step + 1], 1.0 * POINT, FILTER_RGB, 1.0),
+                  Strokes(true_path[None, :step + 1], TRUE_WIDTH, rgb(TRUE_COLOUR), 1.0, SOLID, Cap.ROUND),
+                  Strokes(dead_path[None, :step + 1], DEAD_WIDTH, rgb(DEAD_COLOUR), 1.0, DEAD_DASHES, Cap.BUTT),
+                  Strokes(positions[None, :step + 1], FILTER_WIDTH, FILTER_RGB, 1.0, SOLID, Cap.ROUND),
+                  Marks(reading_points[:step + 1][fresh[:step + 1]], Marker.DIAMOND, READING_REACH - READING_RING,
+                        READING_REACH, rgb(READING_COLOUR), 1.0),
+                  *[Polygons(shape[step:step + 1], rgb(colour), VEHICLE_OPACITY) for colour, shape in outlines.items()]]
         image.set_data(planar.draw(view, layers, np.ones(3)))
-        true_trail.set_data(*true_xy[:step + 1].T)
-        dead_trail.set_data(*dead_xy[:step + 1].T)
-        est_trail.set_data(*est_xy[:step + 1].T)
-        reading_marks.set_data(*reading_xy[:step + 1][fresh[:step + 1]].T)
-        for colour, shape in shapes.items():
-            vehicles[colour].set_xy(shape[step])
         yield capture(fig)
     plt.close(fig)

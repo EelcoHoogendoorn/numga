@@ -3,7 +3,8 @@ wheels, each axle drawn on to the turning centre, and the trails of the middle o
 front wheel.
 
 The geometry of the drawing is written once for both algebras, on the points of whichever the drive is in; the
-plane is read out for matplotlib by pairing, and space, in the GPU library's own algebra, is passed as it is."""
+plane is drawn in its own algebra, read by a camera of its planes x and y, and space, in the GPU library's own
+algebra, is passed as it is."""
 
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from matplotlib.colors import to_rgb
 from numga import Extensor, concatenate, stack
 from examples.util.animation import capture
 from examples.util.wgsl import meshes, simplices, solids
+from examples.util.wgsl.camera import panel
 
 FRAME = "#2c3e50"
 WHEEL = "#222222"
@@ -27,9 +29,10 @@ WHEEL_RADIUS = 0.25
 # Half the width of the view, which follows the middle of the rear axle.
 VIEW = 3.0
 BACKGROUND = np.ones(3)
-# The plane view: the width in points of the axles, drawn dashed, and the lengths of their dashes and gaps in stroke
-# widths.
-AXLE_WIDTH, AXLE_DASHES = 0.9, (4.0, 3.0)
+# The plane view, in pixels: the widths of the trail, the axles, drawn dashed, with the lengths of their dashes and
+# gaps, the frame and the wheels; the turning centre's radius.
+PLANE_TRAIL_WIDTH, AXLE_WIDTH, AXLE_DASHES, PLANE_FRAME_WIDTH, WHEEL_WIDTH = 1.0, 1.5, (6.0, 4.5), 2.0, 4.0
+CENTRE_RADIUS = 2.3
 # Space: the view's elevation and azimuth in radians, azimuth zero looking along +y, the margin around the square
 # of ground it follows as a share of the larger side, and the pixels across it; the length of a dash along an axle
 # and of the gap after it, and the points around a rim; the widths in pixels of the axles' dashes, the frame, the
@@ -72,25 +75,35 @@ def wheel_steps(contacts: Extensor, forward: Extensor) -> Extensor:
     return (forward - contacts) * (WHEEL_RADIUS / (contacts & forward).norm())
 
 
+def pairs(n_pairs: int) -> simplices.Mesh:
+    """An edge from each of the first `n_pairs` points to the one `n_pairs` after it."""
+    return simplices.Mesh(2 * n_pairs, np.stack([np.arange(n_pairs), n_pairs + np.arange(n_pairs)], axis=-1))
+
+
 def plane(contacts: Extensor, forward: Extensor, centre: Extensor, middle: Extensor) -> np.ndarray:
-    """The plane from above, around the tricycle."""
+    """The plane from above, around the tricycle, drawn on the GPU in the drive's own algebra."""
     mv = centre.context.multivector
     # The turning centre, an extrinsic meet, as the intrinsic point it names, at unit weight.
     centre = (centre * mv.antipseudoscalar([1.0])).normalized()
     steps = wheel_steps(contacts, forward)
     extent = following(ground(middle))
     figure, ax = plt.subplots(figsize=(3, 3))
-    ax.plot(*ground(middle).T, color=TRAIL, linewidth=0.6)
-    for start in ground(axles(contacts, centre)):
-        ax.plot(*np.stack([start, ground(centre)]).T, color=AXLE, linewidth=AXLE_WIDTH, linestyle=(0, AXLE_DASHES))
-    ax.scatter(*ground(centre), color=CENTRE, s=11, zorder=4)
-    for start, end in zip(*(ground(ends) for ends in frame(contacts))):
-        ax.plot(*np.stack([start, end]).T, color=FRAME, linewidth=1.5)
-    for start, end in zip(ground(contacts - steps), ground(contacts + steps)):
-        ax.plot(*np.stack([start, end]).T, color=WHEEL, linewidth=3, solid_capstyle="round")
     ax.set(xlim=extent[:, 0], ylim=extent[:, 1], aspect="equal")
     ax.axis("off")
     figure.tight_layout()
+    camera = panel(ax, mv.x, mv.y)
+    # Each axle on to the turning centre, the last of the points.
+    froms = axles(contacts, centre)                                          # [axles] Point-
+    spokes = simplices.Mesh(len(froms) + 1, np.stack([np.arange(len(froms)), np.full(len(froms), len(froms))], -1))
+    starts, ends = frame(contacts)                                           # [bars] Point-, Point-
+    simplices.overlay(ax, [
+        simplices.strokes(middle, simplices.Mesh.chains([len(middle)]), to_rgb(TRAIL), PLANE_TRAIL_WIDTH, camera),
+        simplices.strokes(concatenate([froms, centre[None]]), spokes, to_rgb(AXLE), AXLE_WIDTH, camera,
+                          dashes=AXLE_DASHES, cap=simplices.Cap.BUTT),
+        simplices.markers(centre[None], to_rgb(CENTRE), CENTRE_RADIUS, camera),
+        simplices.strokes(concatenate([starts, ends]), pairs(len(starts)), to_rgb(FRAME), PLANE_FRAME_WIDTH, camera),
+        simplices.strokes(concatenate([contacts - steps, contacts + steps]), pairs(len(contacts)), to_rgb(WHEEL),
+                          WHEEL_WIDTH, camera)])
     pixels = capture(figure)
     plt.close(figure)
     return pixels

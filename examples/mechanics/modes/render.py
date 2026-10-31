@@ -1,4 +1,4 @@
-"""Matplotlib views of rigid-body normal modes and spring suspensions.
+"""Views of rigid-body normal modes and spring suspensions, drawn on the GPU in the plate's own algebra.
 
 The mechanics supplies infinitesimal mode displacements. Outlines and springs
 are displaced linearly and exaggerated for readability.
@@ -9,15 +9,21 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
+from matplotlib.colors import to_rgb
 import numpy as np
 
 from examples.util.animation import capture
+from examples.util.wgsl import contours, simplices
+from examples.util.wgsl.camera import Camera, panel
 from numga import stack
 from examples.mechanics.modes.core import ModeCase, Point, mv
 
 
-BODY, GHOST, SUPPORT, SPRING = "#254e70", "#929ba7", "#3a414b", "#5b6470"
+BODY, GHOST, SUPPORT, SPRING, PLATE = (to_rgb(colour) for colour in ("#254e70", "#929ba7", "#3a414b", "#5b6470", "#d4e3ed"))
+# Widths and radii in pixels; the reference outline dotted, dots of no length a few pixels apart.
+BODY_WIDTH, GHOST_WIDTH, SPRING_WIDTH = 2.0, 1.5, 1.5
+GHOST_DOTS = (0.0, 3.5)
+SUPPORT_RADIUS, ATTACHMENT_RADIUS = 2.6, 2.0
 # A spring's coil: its places along the spring as shares of its length, straight leads at both ends, and how far
 # each zigzags across it, to either side in turn.
 n_coil_turns = 15
@@ -31,18 +37,34 @@ def coordinates(points: Point) -> np.ndarray:
     return (stack((mv.x, mv.y)) & points[..., None]).to_array()
 
 
-def spring_path(start: Point, end: Point) -> np.ndarray:
-    """A coil with straight leads, oriented between two endpoints."""
-    along = end - start                                                      # [] Point-
-    # Across the spring: its step turned a quarter turn in the plane, over its length, the size of the line through
+def spring_paths(starts: Point, ends: Point) -> Point:
+    """Coils with straight leads between pairs of endpoints `[springs]`, their places `[springs, coil]`."""
+    along = ends - starts                                                    # [springs] Point-
+    # Across each spring: its step turned a quarter turn in the plane, over its length, the size of the line through
     # its ends.
-    across = along.commutator(mv.xy) / (start & end).norm()                  # [] Point-
-    return coordinates(start + along * coil_along + across * coil_across)
+    across = along.commutator(mv.xy) / (starts & ends).norm()                # [springs] Point-
+    return starts[:, None] + along[:, None] * coil_along + across[:, None] * coil_across
 
 
-def fixed_support(ax: plt.Axes, anchor: Point) -> None:
-    """A fixed anchor, as a dot."""
-    ax.scatter(*coordinates(anchor), s=22, color=SUPPORT, zorder=4)
+def plate(n_corners: int) -> tuple[simplices.Mesh, simplices.Mesh]:
+    """A convex plate of `n_corners` corners as triangles fanning out from its first corner, and its rim, the fan's
+    boundary edges."""
+    corners = np.arange(n_corners)
+    surface = simplices.Mesh(n_corners, np.stack([np.zeros(n_corners - 2, dtype=int), corners[1:-1], corners[2:]], -1))
+    return surface, simplices.Mesh(n_corners, surface.edges[surface.exterior(1)])
+
+
+def suspension(camera: Camera, body: Point, anchors: Point, attachments: Point) -> list[np.ndarray]:
+    """The pictures of a plate on its springs: the plate filled and outlined, the springs, their anchors and the
+    attachments on the plate."""
+    surface, rim = plate(len(body))
+    paths = spring_paths(anchors, attachments).reshape(-1)                   # [springs * coil] Point-
+    coils = simplices.Mesh.chains([len(coil_along)] * len(anchors))
+    return [contours.picture(body, surface, np.zeros(len(body)), PLATE, camera),
+            simplices.strokes(body, rim, BODY, BODY_WIDTH, camera),
+            simplices.markers(anchors, SUPPORT, SUPPORT_RADIUS, camera),
+            simplices.strokes(paths, coils, SPRING, SPRING_WIDTH, camera),
+            simplices.markers(attachments, BODY, ATTACHMENT_RADIUS, camera)]
 
 
 def _new_figure(cases: list[ModeCase], header: float, top: float, hspace: float) -> tuple[plt.Figure, list[list[plt.Axes]]]:
@@ -68,38 +90,27 @@ def _new_figure(cases: list[ModeCase], header: float, top: float, hspace: float)
 
 def _draw_mode(ax: plt.Axes, case: ModeCase, mode: int):
     """Draw one mode panel and return its phase-update function."""
-    reference = Polygon(coordinates(case.body), closed=True, facecolor="none", edgecolor=GHOST,
-                        lw=1.0, linestyle=":", zorder=1)
-    ax.add_patch(reference)
+    camera = panel(ax, mv.x, mv.y)
+    _, rim = plate(len(case.body))
+    reference = simplices.strokes(case.body, rim, GHOST, GHOST_WIDTH, camera, dashes=GHOST_DOTS)
 
     # The largest offset of a corner drawn a fifth of a unit long; a direction's length is the size of the line
     # through the origin square to it, its dual.
     lengths = case.body_offsets[mode].dual().norm().reshape(-1)
     scale = 0.20 / lengths.max()
 
-    displaced_body = case.body + case.body_offsets[mode] * scale
-    body = Polygon(coordinates(displaced_body), closed=True,
-                   facecolor="#d4e3ed", edgecolor=BODY, lw=1.6, zorder=3)
-    ax.add_patch(body)
-    springs = []
-    for anchor in case.anchors:
-        fixed_support(ax, anchor)
-        spring, = ax.plot([], [], lw=1.3, color=SPRING, zorder=5)
-        springs.append(spring)
-    markers = ax.scatter([], [], s=14, color=BODY, zorder=6)
-
-    def update(phase: float):
+    def picture(phase: float) -> np.ndarray:
         s = phase * scale
         current_body = case.body + case.body_offsets[mode] * s
         current_attachments = case.attachments + case.attachment_offsets[mode] * s
+        return simplices.composited([reference, *suspension(camera, current_body, case.anchors, current_attachments)])
 
-        body.set_xy(coordinates(current_body))
-        markers.set_offsets(coordinates(current_attachments))
-        for spring, anchor, attachment in zip(springs, case.anchors, current_attachments):
-            spring.set_data(*spring_path(anchor, attachment).T)
-        return [body, markers, *springs]
+    image = simplices.overlay(ax, [picture(1.0)])
 
-    update(1.0)
+    def update(phase: float):
+        image.set_data(picture(phase))
+        return [image]
+
     return update
 
 
@@ -136,20 +147,11 @@ def render_setup(
     """The suspension at equilibrium: the plate, its springs and their anchors."""
     fig, ax = plt.subplots(figsize=(5, 4), dpi=120, facecolor="white")
 
-    plate = Polygon(coordinates(body), closed=True, facecolor="#d4e3ed", edgecolor=BODY, lw=1.6, zorder=3)
-    ax.add_patch(plate)
-
-    for anchor, attachment in zip(anchors, attachments):
-        fixed_support(ax, anchor)
-        ax.plot(*spring_path(anchor, attachment).T, lw=1.3, color=SPRING, zorder=5)
-
-    att_coords = coordinates(attachments)
-    ax.scatter(att_coords[:, 0], att_coords[:, 1], s=14, color=BODY, zorder=6)
-
     all_pts = np.concatenate([coordinates(body), coordinates(anchors)])
     lo, hi = all_pts.min(axis=0) - [0.35, 0.35], all_pts.max(axis=0) + [0.35, 0.35]
     ax.set(xlim=(lo[0], hi[0]), ylim=(lo[1], hi[1]))
     ax.set_aspect("equal")
     ax.set_axis_off()
     fig.tight_layout()
+    simplices.overlay(ax, suspension(panel(ax, mv.x, mv.y), body, anchors, attachments))
     return fig

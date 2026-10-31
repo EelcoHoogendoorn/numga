@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import LineCollection
 from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
-from matplotlib.patches import Polygon
-from matplotlib.tri import Triangulation
 
 from numga import stack
 from examples.util import charts
-from examples.util.wgsl import contours, flow
+from examples.util.wgsl import contours, flow, simplices
+from examples.util.wgsl.camera import Camera, flat_panel
 from examples.surfaces.regge_calculus import core
 
 primal_colour = "#286580"
@@ -29,6 +27,13 @@ indicatrix_colours = LinearSegmentedColormap.from_list(
     "regge_indicatrix", (hoop_ellipse_colour, wall_colour, radial_ellipse_colour))
 n_contours = 7
 n_ellipse_grid = 25
+# In pixels: the triangles' outlines, thin and regular, their highlighted edges and the disks' boundaries; the mesh's
+# edges and how much they cover; the corners' dots, small, regular and highlighted, and the centroid's; the white rings
+# about the highlighted dots.
+thin_width, outline_width, edge_width, wall_width = 1.5, 1.7, 3.6, 1.8
+mesh_width, mesh_opacity = 1.0, 0.38
+small_dot, corner_dot, highlight_dot, centroid_dot = 2.9, 4.2, 4.6, 3.25
+halo = 1.25
 # The pixel sizes of a row of four triangles and of a row of three disks.
 row_size, disk_row_size = (780, 195), (780, 260)
 
@@ -49,6 +54,23 @@ def frame_panel(ax: plt.Axes, places: np.ndarray, margin_ratio: float) -> None:
     ax.set(xlim=(centre[0] - half_span, centre[0] + half_span),
            ylim=(centre[1] - half_span, centre[1] + half_span), aspect="equal")
     ax.set_axis_off()
+
+
+def ink(colour: str) -> np.ndarray:
+    """A colour's red, green and blue."""
+    return np.array(to_rgb(colour))
+
+
+def ringed(points: core.Point, colour: str, radius: float, camera: Camera) -> list[np.ndarray]:
+    """Dots at points, `radius` pixels, ringed in white: their pictures."""
+    return [simplices.markers(points, np.ones(3), radius + halo, camera),
+            simplices.markers(points, ink(colour), radius, camera)]
+
+
+def walls(mesh: core.Mesh, points: core.Point, camera: Camera) -> np.ndarray:
+    """The boundary of a mesh at its points `[vertices]`, the mesh of its boundary's edges: their picture."""
+    rim = simplices.Mesh(len(points), mesh.edges[mesh.boundary_edges])
+    return simplices.strokes(points, rim, ink(wall_colour), wall_width, camera)
 
 
 def spaced_faces(centres: core.Point, max_radius: float, min_separation: float) -> list[int]:
@@ -86,33 +108,37 @@ def draw_metric_basis(corners: core.Point, points: core.Point,
     figure, axes = charts.subplots(*row_size, ncols=4)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.04)
 
+    # The triangle, a mesh of one face, outlined by its own edges.
+    triangle = simplices.Mesh(3, np.array([[0, 1, 2]]))
     for index in range(3):
         ax = axes[index]
         frame_panel(ax, corner_xy, 0.22)
+        camera = flat_panel(ax, places.algebra)
         values = basis_forms[index]
         colours = diverging_colours(Normalize(-basis_bound, basis_bound)(values))[:, :3]
-        contours.overlay(ax, places, mesh, values, colours, lines=(nonzero_levels,),
-                         levels=(null_lines,)).set_zorder(1)
-        ax.add_patch(Polygon(corner_xy, fill=False, edgecolor=wall_colour, linewidth=1.1, zorder=4))
-        start, end = corner_xy[(index + 1) % 3], corner_xy[(index + 2) % 3]
-        ax.plot([start[0], end[0]], [start[1], end[1]], color=accent_colour,
-                linewidth=2.6, solid_capstyle="round", zorder=5)
-        ax.scatter(*corner_xy.T, s=18, color=wall_colour, zorder=6)
-        ax.scatter(*corner_xy[index], s=44, color=primal_colour, edgecolor="white", linewidth=0.9, zorder=7)
+        simplices.overlay(ax, [
+            contours.picture(places, mesh, values, colours, camera, lines=(nonzero_levels,), levels=(null_lines,)),
+            simplices.strokes(corners, triangle, ink(wall_colour), thin_width, camera),
+            simplices.strokes(corners[[(index + 1) % 3, (index + 2) % 3]], simplices.Mesh.chains([2]),
+                              ink(accent_colour), edge_width, camera),
+            simplices.markers(corners, ink(wall_colour), small_dot, camera),
+            *ringed(corners[index][None], primal_colour, highlight_dot, camera)])
 
     ax = axes[3]
     frame_panel(ax, corner_xy, 0.22)
+    camera = flat_panel(ax, places.algebra)
     max_metric = metric_form.max()
     ellipse_levels = np.linspace(0.03 * max_metric, 0.28 * max_metric, 4)
     ellipses = tuple(contours.Level(level, np.append(to_rgb(accent_colour), 1.0), 1.9) for level in ellipse_levels)
-    contours.overlay(ax, places, mesh, metric_form, hat_colours(Normalize(0.0, max_metric)(metric_form))[:, :3],
-                     levels=ellipses).set_zorder(1)
     # The reference circles, the same levels of a second field over the same samples, a clear picture over the first.
     circles = tuple(contours.Level(level, np.append(to_rgb(wall_colour), 0.65), 0.9) for level in ellipse_levels)
-    contours.overlay(ax, places, mesh, reference_form, np.zeros(3), levels=circles, opacity=0.0).set_zorder(2)
-    ax.add_patch(Polygon(corner_xy, fill=False, edgecolor=wall_colour, linewidth=1.2, zorder=4))
-    ax.scatter(*corner_xy.T, s=36, color=accent_colour, edgecolor="white", linewidth=0.9, zorder=6)
-    ax.scatter(*plane_places(centroid), s=22, color=wall_colour, zorder=6)
+    simplices.overlay(ax, [
+        contours.picture(places, mesh, metric_form, hat_colours(Normalize(0.0, max_metric)(metric_form))[:, :3],
+                         camera, levels=ellipses),
+        contours.picture(places, mesh, reference_form, np.zeros(3), camera, levels=circles, opacity=0.0),
+        simplices.strokes(corners, triangle, ink(wall_colour), outline_width, camera),
+        *ringed(corners, accent_colour, corner_dot, camera),
+        simplices.markers(centroid[None], ink(wall_colour), centroid_dot, camera)])
     return figure
 
 
@@ -122,9 +148,7 @@ def draw_curvature_defects(mesh: core.Mesh, vertices: core.Point, centres: core.
     mv = vertices.context.multivector
     places = plane_places(vertices)
     curvature_values = np.asarray((curvatures.batch() & mv.xy.dual()).to_array())
-    triangulation = Triangulation(*places.T, triangles=mesh.faces)
     points = vertices.batch()                                                 # [vertices] Point-
-    walls = plane_places(mesh.reading(mesh.boundary_edges, 1) * (mesh.incidence[1, 0] * vertices)).transpose(1, 0, 2)
     boundary = mesh.exterior(0)
     interior = ~np.isin(np.arange(mesh.n_vertices), boundary)
     bound = np.abs(curvature_values[:, interior]).max()
@@ -164,23 +188,28 @@ def draw_curvature_defects(mesh: core.Mesh, vertices: core.Point, centres: core.
 
     for case_index, ax in enumerate(axes):
         frame_panel(ax, places, 0.08)
+        camera = flat_panel(ax, points.algebra)
         field = curvature_values[case_index].copy()
         field[boundary] = 0.0
-        contours.overlay(ax, points, mesh, field, diverging_colours(Normalize(-bound, bound)(field))[:, :3]).set_zorder(1)
-        ax.triplot(triangulation, color=mesh_colour, linewidth=0.35, alpha=0.38, zorder=2)
         # Each face's ellipse its own clear picture, filled translucent inside and outlined in its colour: the fills
         # under the reference circles, the outlines over them.
+        fills, outlines = [], []
         for places_at, quadric, stretch in zip(grid_points, quadrics[case_index], anisotropy[case_index]):
             colour = np.array(indicatrix_colours(indicatrix_norm(stretch)))
             inside = contours.Bands(0.0, radius**2, np.array([np.append(colour[:3], 0.22), np.zeros(4)]))
-            contours.overlay(ax, places_at, grid, quadric.reshape(-1), np.zeros(3), bands=(inside,),
-                             opacity=0.0).set_zorder(3)
+            fills.append(contours.picture(places_at, grid, quadric.reshape(-1), np.zeros(3), camera, bands=(inside,),
+                                          opacity=0.0))
             outline = contours.Level(radius**2, colour, 1.5)
-            contours.overlay(ax, places_at, grid, quadric.reshape(-1), np.zeros(3), levels=(outline,),
-                             opacity=0.0).set_zorder(5)
-        contours.overlay(ax, grid_points.reshape(-1), grids, np.tile(reference_quadric.reshape(-1), len(grid_points)),
-                         np.zeros(3), levels=(reference_circles,), opacity=0.0).set_zorder(4)
-        ax.add_collection(LineCollection(walls, colors=wall_colour, linewidths=1.3, zorder=6))
+            outlines.append(contours.picture(places_at, grid, quadric.reshape(-1), np.zeros(3), camera,
+                                             levels=(outline,), opacity=0.0))
+        simplices.overlay(ax, [
+            contours.picture(points, mesh, field, diverging_colours(Normalize(-bound, bound)(field))[:, :3], camera),
+            simplices.strokes(points, mesh, ink(mesh_colour), mesh_width, camera, opacity=mesh_opacity),
+            *fills,
+            contours.picture(grid_points.reshape(-1), grids, np.tile(reference_quadric.reshape(-1), len(grid_points)),
+                             np.zeros(3), camera, levels=(reference_circles,), opacity=0.0),
+            *outlines,
+            walls(mesh, points, camera)])
     return figure
 
 
@@ -190,8 +219,6 @@ def draw_intrinsic_flow(mesh: core.Mesh, vertices: core.Point,
     """Potential colours and current streaks on one shared magnitude scale across the Regge metrics."""
     places = plane_places(vertices)
     potentials = np.asarray(potential.batch().to_array())
-    triangulation = Triangulation(*places.T, triangles=mesh.faces)
-    walls = plane_places(mesh.reading(mesh.boundary_edges, 1) * (mesh.incidence[1, 0] * vertices)).transpose(1, 0, 2)
     potential_levels = tuple(contours.Level(level, np.append(to_rgb(wall_colour), 0.45), 1.0)
                              for level in np.linspace(-0.85, 0.85, n_contours + 2)[1:-1])
     # Area-weighted vertex currents give a continuous drawing of the facewise solution.
@@ -208,9 +235,11 @@ def draw_intrinsic_flow(mesh: core.Mesh, vertices: core.Point,
 
     for index, ax in enumerate(axes):
         frame_panel(ax, places, 0.08)
+        camera = flat_panel(ax, points.algebra)
         colours = diverging_colours(Normalize(-1.0, 1.0)(potentials[index]))[:, :3]
-        contours.overlay(ax, points, mesh, potentials[index], colours, levels=potential_levels).set_zorder(1)
-        ax.triplot(triangulation, color=mesh_colour, linewidth=0.35, alpha=0.45, zorder=2)
-        flow.overlay(ax, points, mesh, directions[index], reference_speed, np.array(to_rgb(flow_colour)))
-        ax.add_collection(LineCollection(walls, colors=wall_colour, linewidths=1.3, zorder=6))
+        simplices.overlay(ax, [
+            contours.picture(points, mesh, potentials[index], colours, camera, levels=potential_levels),
+            simplices.strokes(points, mesh, ink(mesh_colour), mesh_width, camera, opacity=0.45),
+            flow.layer(points, mesh, directions[index], camera, reference_speed, ink(flow_colour)),
+            walls(mesh, points, camera)])
     return figure

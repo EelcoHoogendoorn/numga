@@ -6,10 +6,12 @@ from collections.abc import Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgb
 
 from examples.quantum.hubbard_dimer import core
 from examples.util import charts
-from examples.util.wgsl import planar
+from examples.util.wgsl import planar, simplices
+from examples.util.wgsl.camera import flat_panel
 from numga import stack
 
 COLOURS = ("#7d3c98", "#2e86c1", "#c0392b")
@@ -117,6 +119,9 @@ dial_pixels, label_pixels, foot_pixels = 100, 50, 30
 n_rim_samples = 120
 mv = planar.mv
 axes = stack((mv.x, mv.y))                                                   # [2] Plane+
+# The rim's and the triplet share's inks, the tip's, and how much the traced path covers.
+RIM, TRIPLET, TIP = np.full(3, 0.85), np.full(3, 0.55), np.full(3, 0.1)
+TRACE_OPACITY = 0.3
 
 
 def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitudes: core.Scalar,
@@ -125,48 +130,59 @@ def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitud
     part up, one labelled row per case, frame by frame. The arrow is drawn as the triplet's share,
     followed by the rest, the singlet block's, from its tip; the path the tip takes over the whole run
     is traced faintly."""
-    readings = planar.context.include_from_algebra(stack((cosine_amplitudes, sine_amplitudes), axis=-1))
-    ends = planar.origin + (axes.dual() * readings).sum(axis=-1)              # [cases, times, configurations] Point-
-    triplet_readings = planar.context.include_from_algebra(stack((triplet_cosine, triplet_sine), axis=-1))
-    starts = planar.origin + (axes.dual() * triplet_readings).sum(axis=-1)     # [cases, times, configurations] Point-
-    total = (axes & ends[..., DIALS, None]).to_array()                         # [cases, times, dials, 2]
-    triplet = (axes & starts[..., DIALS, None]).to_array()
     count, columns = len(rows), len(DIALS)
+    # The dials laid out in one panel, a dial's span apart: a dial of radius one fills most of its square.
+    span = 2.2 / 0.95
+    across, up = np.meshgrid((np.arange(columns) + 0.5) * span, (count - np.arange(count) - 0.5) * span)
+    centres = mv.point(np.stack((across, up), axis=-1))                        # [cases, dials] Point-
+    # Each configuration's amplitude as a move on its dial, its cosine part across and its sine part up.
+    readings = planar.context.include_from_algebra(stack((cosine_amplitudes, sine_amplitudes), axis=-1))
+    triplet_readings = planar.context.include_from_algebra(stack((triplet_cosine, triplet_sine), axis=-1))
+    n_times = readings.shape[1]
+    # The amplitudes of the configurations shown, a dial's in a row, its times along it.
+    shown = (np.arange(count)[:, None, None], np.arange(n_times)[None, None, :], np.array(DIALS)[None, :, None])
+    ends = centres[..., None] + (axes.dual() * readings[shown]).sum(axis=-1)   # [cases, dials, times] Point-
+    starts = centres[..., None] + (axes.dual() * triplet_readings[shown]).sum(axis=-1)   # [cases, dials, times] Point-
+    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_rim_samples) / 2)).exp()
+    rims = centres[..., None] + (turns >> mv.x.dual())                         # [cases, dials, rim samples] Point-
     width, height = label_pixels + dial_pixels * columns, dial_pixels * count + foot_pixels
+    colour = np.array(to_rgb(COLOURS[0]))
+    n_dials = count * columns
     with charts.style():
         figure = plt.figure(figsize=(width / charts.DPI, height / charts.DPI))
-        turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_rim_samples) / 2)).exp()
-        rim = planar.origin + (turns >> mv.x.dual())
-        outline = (axes & rim[..., None]).to_array()
-        arrows = []
-        for row, row_label in enumerate(rows):
-            for column, label in enumerate(np.array(CONFIGURATION_LABELS)[list(DIALS)]):
-                # Each dial in its own square, a small gap left between neighbours.
-                ax = figure.add_axes(((label_pixels + dial_pixels * column) / width, 1 - (row + 1) * dial_pixels / height,
-                                      0.95 * dial_pixels / width, 0.95 * dial_pixels / height))
-                # The dial's rim and the traced path faint, as thin as the frames.
-                ax.plot(*outline.T, color="0.85", linewidth=charts.FRAME_WIDTH)
-                ax.plot(*total[row, :, column].T, color=COLOURS[0], linewidth=charts.FRAME_WIDTH, alpha=0.3)
-                arrows.append((ax.plot([], [], color="0.55", animated=True)[0],
-                               ax.plot([], [], color=COLOURS[0], animated=True)[0],
-                               ax.plot([], [], "o", color="0.1", animated=True)[0], row, column))
-                ax.set(xlim=(-1.1, 1.1), ylim=(-1.1, 1.1), xticks=[], yticks=[])
-                ax.set_xlabel(label if row == count - 1 else "")
-                ax.set_ylabel(row_label if column == 0 else "")
-                ax.set_aspect("equal")
-                for side in ax.spines.values():
-                    side.set_visible(False)
-        # The dials, labels and traced paths are drawn once; each frame draws only the arrows over them.
+        ax = figure.add_axes((label_pixels / width, foot_pixels / height, columns * dial_pixels / width,
+                              count * dial_pixels / height))
+        ax.set(xlim=(0, columns * span), ylim=(0, count * span), aspect="equal")
+        camera = flat_panel(ax, planar.ga)
+        # The dials' rims and the traced paths faint, as thin as the frames.
+        faces = simplices.composited([
+            simplices.strokes(rims.reshape(-1), simplices.Mesh.chains([n_rim_samples] * n_dials), RIM,
+                              charts.FRAME_PX, camera),
+            simplices.strokes(ends.reshape(-1), simplices.Mesh.chains([n_times] * n_dials), colour, charts.FRAME_PX,
+                              camera, opacity=TRACE_OPACITY)])
+        simplices.overlay(ax, [faces])
+        # The arrows and their tips over the faces, drawn anew each frame.
+        shafts_shown, tips_shown = (simplices.overlay(ax, [np.zeros(camera.shape + (4,))]) for _ in range(2))
+        shafts_shown.set_animated(True)
+        tips_shown.set_animated(True)
+        # Each case's name left of its row, each configuration's under its column.
+        for height_at, row_label in zip(up[:, 0], rows):
+            ax.annotate(row_label, (0, height_at), xytext=(-4, 0), textcoords="offset points", rotation=90,
+                        ha="right", va="center", multialignment="center")
+        for across_at, label in zip(across[-1], np.array(CONFIGURATION_LABELS)[list(DIALS)]):
+            ax.annotate(label, (across_at, 0), xytext=(0, -6), textcoords="offset points", ha="center", va="top")
+        # The labels are drawn once; each frame draws only the dials over them, the arrows on their faces.
         figure.canvas.draw()
         background = figure.canvas.copy_from_bbox(figure.bbox)
-        for index in range(total.shape[1]):
+        arrows = simplices.Mesh.chains([3] * n_dials)
+        shares = np.tile(np.stack((TRIPLET, colour)), (n_dials, 1))
+        for index in range(n_times):
             figure.canvas.restore_region(background)
-            for triplet_line, rest_line, tip, row, column in arrows:
-                start, end = triplet[row, index, column], total[row, index, column]
-                triplet_line.set_data([0, start[0]], [0, start[1]])
-                rest_line.set_data([start[0], end[0]], [start[1], end[1]])
-                tip.set_data([end[0]], [end[1]])
-                for artist in (triplet_line, rest_line, tip):
-                    artist.axes.draw_artist(artist)
+            tips = ends[..., index]                                            # [cases, dials] Point-
+            shafts = stack((centres, starts[..., index], tips), axis=-1)       # [cases, dials, 3] Point-
+            shafts_shown.set_data(simplices.strokes(shafts.reshape(-1), arrows, shares, charts.LINE_PX, camera))
+            tips_shown.set_data(simplices.markers(tips.reshape(-1), TIP, charts.MARKER_PX / 2, camera))
+            ax.draw_artist(shafts_shown)
+            ax.draw_artist(tips_shown)
             yield np.asarray(figure.canvas.buffer_rgba())[..., :3].copy()
         plt.close(figure)

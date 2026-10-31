@@ -7,17 +7,20 @@ from collections.abc import Callable, Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import LineCollection
-from matplotlib.colors import LinearSegmentedColormap, PowerNorm
+from matplotlib.colors import LinearSegmentedColormap, PowerNorm, to_rgb
 from matplotlib.image import AxesImage
 
 from numga import stack
 from examples.util.animation import capture
-from examples.util.wgsl import pinned, room
+from examples.util.wgsl import pinned, room, simplices
+from examples.util.wgsl.camera import flat_panel
 from examples.relativity.gravitational_lensing import core
 
-CRITICAL = "#55cbd3"
-CAUSTIC = "#ff8772"
+CRITICAL = np.array(to_rgb("#55cbd3"))
+CAUSTIC = np.array(to_rgb("#ff8772"))
+# The curves' width, and the masses' rings: their ink, and how far they reach from their points, in pixels.
+CURVE_WIDTH = 1.0
+MASS, MASS_OUTER, MASS_INNER = np.full(3, 0.65), 3.0, 2.0
 BRIGHTNESS = LinearSegmentedColormap.from_list(
     "starlight", ["#090d13", "#413043", "#966042", "#eab772", "#fff2ca"], N=256,
 )
@@ -34,12 +37,6 @@ ANIMATION_DPI = 50
 # The corners of a grid cell, as offsets in rows and columns, that each of its sides runs from and to, around it.
 side_starts = np.array([[0, 0], [0, 1], [1, 1], [1, 0]])
 side_ends = np.roll(side_starts, -1, axis=0)
-
-
-def xy(directions: core.Point) -> np.ndarray:
-    """The x and y components of directions, their pairings with the planes x and y."""
-    mv = directions.context.multivector
-    return (stack((mv.x, mv.y)) & directions[..., None]).to_array()
 
 
 def pixels(ax: plt.Axes, mv) -> core.Point:
@@ -75,11 +72,6 @@ def critical_curve(directions: core.Point, area: core.Scalar) -> tuple[core.Poin
             zero_along(directions, area, rows, columns, order[2 * pieces + 1, rows, columns]))
 
 
-def strokes(ax: plt.Axes, tails: core.Point, heads: core.Point, colour: str) -> None:
-    """Straight pieces from tails to heads."""
-    ax.add_collection(LineCollection(np.stack((xy(tails), xy(heads)), axis=-2), colors=colour, linewidths=0.9))
-
-
 def figure_at(directions: core.Point, area: core.Scalar, lens: Callable[[core.Point], core.Point],
               positions: core.Point, step: Step, dpi: int) -> tuple[plt.Figure, core.Point, list[AxesImage]]:
     """The source with the caustic, and its images on the sky with the critical curve and the masses, both over the
@@ -96,12 +88,17 @@ def figure_at(directions: core.Point, area: core.Scalar, lens: Callable[[core.Po
         image = pinned(ax, light(shown).to_array(), (-HALF, HALF, -HALF, HALF))
         image.set(cmap=BRIGHTNESS, norm=norm)
         images.append(image)
-    tails, heads = critical_curve(directions, area)                            # [pieces] Point-, Point-
-    strokes(sky_ax, tails, heads, CRITICAL)
-    strokes(source_ax, lens(tails), lens(heads), CAUSTIC)
-    sky_ax.scatter(*xy(positions).T, s=40, facecolors="none", edgecolors="0.65", linewidths=0.8)
     for ax in (source_ax, sky_ax):
         ax.set(xlim=(-HALF, HALF), ylim=(-HALF, HALF))
+    # The critical curve's straight pieces, each from its tail to its head, over the sky, with the masses' rings; the
+    # caustic, the same pieces carried by the lens, over the source.
+    ends = stack(critical_curve(directions, area), axis=-1).reshape(-1)        # [pieces * 2] Point-
+    pieces = simplices.Mesh.chains([2] * (ends.shape[0] // 2))
+    sky = flat_panel(sky_ax, ends.algebra)
+    simplices.overlay(sky_ax, [simplices.strokes(ends, pieces, CRITICAL, CURVE_WIDTH, sky),
+                               simplices.markers(positions, MASS, MASS_OUTER, sky, inner=MASS_INNER)])
+    simplices.overlay(source_ax, [simplices.strokes(lens(ends), pieces, CAUSTIC, CURVE_WIDTH,
+                                                    flat_panel(source_ax, ends.algebra))])
     return figure, shown, images
 
 

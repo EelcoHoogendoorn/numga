@@ -127,6 +127,9 @@ def picture(points: Extensor, mesh: Mesh, values: np.ndarray, colours: np.ndarra
     bands filled and its lines and levels drawn over them, in that order: `[rows, columns, 4]`, colour and coverage,
     transparent where no triangle lies."""
     side = samples_per_side()
+    # No faces cover nothing: a clear picture.
+    if len(mesh.faces) == 0:
+        return np.zeros(camera.shape + (4,))
     lines, levels, bands = lines or (no_lines,), levels or (no_level,), bands or (no_bands,)
     starts = np.cumsum([0] + [len(band.colours) for band in bands[:-1]])
     image, = shader(points.algebra).draw_averaged(
@@ -141,7 +144,7 @@ def picture(points: Extensor, mesh: Mesh, values: np.ndarray, colours: np.ndarra
         band_colours=np.concatenate([band.colours for band in bands]))
     # The samples averaged with their colours weighted by coverage; the colour where anything covers, divided back.
     coverage = image[..., 3:]
-    return np.concatenate((image[..., :3] / np.where(coverage > 0, coverage, 1), coverage), axis=-1)
+    return np.minimum(np.concatenate((image[..., :3] / np.where(coverage > 0, coverage, 1), coverage), axis=-1), 1)
 
 
 def overlay(ax: Axes, points: Extensor, mesh: Mesh, values: np.ndarray, colours: np.ndarray,

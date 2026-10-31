@@ -16,7 +16,6 @@ OBSTACLE_CENTRE = (2.5, 0.2)
 OBSTACLE_RADIUS = 0.45
 N_DIVISIONS = 18
 VISCOSITY, MEAN_SPEED = 1.0, 1.0
-N_FRAMES, DURATION_MS = 84, 40
 MESH_SEED = 8294
 
 
@@ -95,7 +94,7 @@ def main() -> None:
     from numga.sparse import SparseExtensor
     from examples.fluids.dec_stokes.core import Operators, stokes
     from examples.fluids.dec_stokes import render
-    from examples.util.animation import save_animation, save_figure
+    from examples.util.animation import save_figure
 
     mesh, vertices, inlet, outlet, walls = channel(N_DIVISIONS)
     operators = Operators(mesh, vertices)
@@ -114,8 +113,7 @@ def main() -> None:
     save_figure(render.draw_mesh(mesh, vertices), "dec_stokes_mesh")
     save_figure(render.draw_complex(mesh, vertices, operators.circumcentres, operators.dual_edges), "dec_stokes_complex")
     save_figure(render.draw_fields(mesh, vertices, pressure, vorticity, streamfunction), "dec_stokes_fields")
-    save_animation(render.animate_flow(mesh, vertices, pressure, streamfunction, velocity, N_FRAMES),
-                   "dec_stokes_flow", DURATION_MS)
+    save_figure(render.draw_flow(mesh, vertices, pressure, velocity), "dec_stokes_flow")
 
 
 if __name__ == "__main__":

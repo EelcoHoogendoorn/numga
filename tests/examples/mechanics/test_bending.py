@@ -159,7 +159,7 @@ def test_kern_and_reciprocity():
         direct = core.pulls(rigidity, points[:, None]) & (core.beam_direction & nodes.batch())
         np.testing.assert_allclose((polars & (core.beam_direction & points[:, None])).to_array(), direct.to_array(), atol=1e-12)
         # A push through a corner of the kern leaves some fibre unstretched and squeezes the rest.
-        corners = core.point(render.kern(polars, centre))                   # [corners] Point
+        corners = render.kern(polars, centre)                               # [corners] Point
         least = (core.pulls(rigidity, corners[:, None]) & (core.beam_direction & nodes.batch())).to_array().min(axis=-1)
         np.testing.assert_allclose(least, 0.0, atol=1e-9)
 

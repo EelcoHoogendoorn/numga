@@ -6,92 +6,93 @@ from collections.abc import Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import LineCollection
 
 from numga import stack
 
 from examples.util import charts
 from examples.util.animation import capture
-from examples.electromagnetism.electrostriction.core import Field, Point, Scalar
+from examples.util.wgsl import simplices
+from examples.util.wgsl.camera import flat_panel
+from examples.electromagnetism.electrostriction.core import Field, Point, Scalar, field_along
 
-rest_colour = "#c4cbd0"
-bond_colour = "#286580"
-dipole_colour = "#df6435"
-applied_colour = "#bd9224"
+Mesh = simplices.Mesh
+
+rest_colour = np.array([0xc4, 0xcb, 0xd0]) / 255
+bond_colour = np.array([0x28, 0x65, 0x80]) / 255
+dipole_colour = np.array([0xdf, 0x64, 0x35]) / 255
+applied_colour = np.array([0xbd, 0x92, 0x24]) / 255
 transverse_colour = "#8271a6"
 label_colour = "0.4"
 margin = 0.55
 field_gap = 0.8
-# Line widths and marker sizes, in points, for a lattice picture about 300 pixels a side.
-bond_width = 1.1
-rest_width = 0.7
-particle_size = 11
-rest_size = 7
+# Widths, heads, dashes and radii in pixels, for a lattice picture about 300 pixels a side.
+bond_width = 1.5
+rest_width = 1.2
+rest_dashes = (4.0, 3.0)
+particle_radius = 2.2
+rest_radius = 2.0
+dipole_width, dipole_head = 2.6, 9.0
+applied_width, applied_head = 3.5, 11.0
 
 
-def coordinates(value: Field) -> np.ndarray:
-    """Components of fields along x and y: their pairings with the planes those directions sweep in time."""
-    mv = value.context.multivector
-    time = -mv.t.dual()                                                                  # [] Antivector-
-    sweeps = stack((mv.x.dual(), mv.y.dual())) & time                                   # [2] Antibivector-
-    return np.asarray((value[..., None] & sweeps).to_array())                            # [..., 2]
-
-
-def point_coordinates(value: Point) -> np.ndarray:
-    """Coordinates of positions and dipoles at every particle: their pairings with the lines x and y."""
-    mv = value.context.multivector
-    return np.asarray((stack((mv.x, mv.y)) & value.batch()[..., None]).to_array())   # [..., particles, 2]
-
-
-def lattice_axes(sites: np.ndarray) -> tuple[plt.Figure, plt.Axes, np.ndarray]:
+def lattice_axes(rest: Point) -> tuple[plt.Figure, plt.Axes, np.ndarray]:
     """A figure framing the reference sites, with room below them for the applied field."""
+    mv = rest.context.multivector
+    sites = (stack((mv.x, mv.y)) & rest.batch()[..., None]).to_array()                 # [particles, 2]
     figure, ax = plt.subplots(figsize=(3.4, 3.4), dpi=90)
+    figure.subplots_adjust(0.02, 0.03, 0.98, 0.98)
     half_size = np.abs(sites).max(axis=0) + margin
     ax.set(xlim=(-half_size[0], half_size[0]), ylim=(-half_size[1] - field_gap - 0.35, half_size[1]),
            aspect="equal")
     ax.axis("off")
-    figure.subplots_adjust(0.02, 0.03, 0.98, 0.98)
     return figure, ax, half_size
 
 
 def draw_rest(rest: Point, bonds: np.ndarray) -> plt.Figure:
     """The reference lattice: its particles and the bonds between them."""
-    sites = point_coordinates(rest)
-    figure, ax, _ = lattice_axes(sites)
-    ax.add_collection(LineCollection(sites[bonds], colors=bond_colour, linewidths=bond_width, zorder=2))
-    ax.scatter(*sites.T, s=particle_size, color=bond_colour, zorder=4)
+    figure, ax, _ = lattice_axes(rest)
+    camera = flat_panel(ax, rest.algebra)
+    sites = rest.batch()
+    simplices.overlay(ax, [simplices.strokes(sites, Mesh(len(sites), bonds), bond_colour, bond_width, camera),
+                           simplices.markers(sites, bond_colour, particle_radius, camera)])
     return figure
 
 
 class LatticeView:
-    """Artists for a lattice at actual scale; the arrows have fixed scales across frames."""
+    """A lattice at actual scale over its reference, pinned once and redrawn per state; the arrows have fixed scales
+    across frames."""
 
     def __init__(self, rest: Point, bonds: np.ndarray, dipole_scale: float, field_scale: float) -> None:
-        self.bonds, self.dipole_scale, self.field_scale = bonds, dipole_scale, field_scale
-        sites = point_coordinates(rest)
-        self.figure, ax, half_size = lattice_axes(sites)
-        ax.add_collection(LineCollection(sites[bonds], colors=rest_colour, linewidths=rest_width,
-                                        linestyles="dashed", zorder=0))
-        ax.scatter(*sites.T, s=rest_size, facecolors="white", edgecolors=rest_colour, linewidths=rest_width,
-                   zorder=1)
-        self.links = LineCollection(sites[bonds], colors=bond_colour, linewidths=bond_width, zorder=2)
-        ax.add_collection(self.links)
-        self.particles = ax.scatter(*sites.T, s=particle_size, color=bond_colour, zorder=4)
-        self.dipoles = ax.quiver(*sites.T, np.zeros(len(sites)), np.zeros(len(sites)),
-                                 color=dipole_colour, angles="xy", scale_units="xy", scale=1,
-                                 pivot="middle", width=0.009, headwidth=3, headlength=4, zorder=5)
-        field_y = -half_size[1] - field_gap / 2
-        self.field = ax.quiver([0], [field_y], [0], [0], color=applied_colour, angles="xy",
-                               scale_units="xy", scale=1, pivot="middle", width=0.012,
-                               headwidth=3, headlength=4)
+        self.dipole_scale, self.field_scale = dipole_scale, field_scale
+        self.figure, ax, half_size = lattice_axes(rest)
+        self.camera = flat_panel(ax, rest.algebra)
+        sites = rest.batch()
+        n_particles = len(sites)
+        self.bonds = Mesh(n_particles, bonds)
+        # Each dipole a chain of two points, its tail and its head, about its particle.
+        self.arrows = Mesh.chains([2] * n_particles)
+        # The applied field's arrow, centred below the lattice.
+        mv = rest.context.multivector
+        self.anchor = mv.y.dual() * (-half_size[1] - field_gap / 2)                     # [] Point-
+        self.reference = [simplices.strokes(sites, self.bonds, rest_colour, rest_width, self.camera,
+                                            dashes=rest_dashes),
+                          simplices.markers(sites, rest_colour, rest_radius, self.camera,
+                                            inner=rest_radius - rest_width)]
+        self.image = simplices.overlay(ax, self.reference)
 
     def update(self, positions: Point, dipoles: Point, applied: Field) -> plt.Figure:
-        sites = point_coordinates(positions)
-        self.links.set_segments(sites[self.bonds])
-        self.particles.set_offsets(sites)
-        self.dipoles.set_offsets(sites)
-        self.dipoles.set_UVC(*(point_coordinates(dipoles) * self.dipole_scale).T)
-        self.field.set_UVC(*(coordinates(applied) * self.field_scale))
+        sites, arrows = positions.batch(), dipoles.batch() * self.dipole_scale
+        dipole_ends = stack((sites - arrows / 2, sites + arrows / 2), axis=-1).reshape(-1)
+        # The applied field drawn along the direction whose field it is.
+        applied_arrow = field_along.solve(applied) * self.field_scale                     # [] Point-
+        applied_ends = stack((self.anchor - applied_arrow / 2, self.anchor + applied_arrow / 2))
+        self.image.set_data(simplices.composited(self.reference + [
+            simplices.strokes(sites, self.bonds, bond_colour, bond_width, self.camera),
+            simplices.markers(sites, bond_colour, particle_radius, self.camera),
+            simplices.strokes(dipole_ends, self.arrows, dipole_colour, dipole_width, self.camera, np.ones(1),
+                              dipole_head),
+            simplices.strokes(applied_ends, Mesh.chains([2]), applied_colour, applied_width, self.camera,
+                              np.ones(1), applied_head)]))
         return self.figure
 
 

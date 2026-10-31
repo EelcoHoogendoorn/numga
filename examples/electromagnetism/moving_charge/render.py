@@ -8,14 +8,14 @@ from itertools import chain
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
-from matplotlib.colors import Colormap, LogNorm, Normalize, TwoSlopeNorm, to_rgba
+from matplotlib.colors import Colormap, LogNorm, Normalize, TwoSlopeNorm, to_rgb, to_rgba
 from matplotlib.figure import Figure
 from matplotlib.image import AxesImage
 
 from numga import stack
 
 from examples.util.animation import capture
-from examples.util.wgsl import contours, pinned
+from examples.util.wgsl import contours, pinned, simplices
 from examples.util.wgsl.camera import Camera, flat_panel
 from examples.electromagnetism.moving_charge import core
 
@@ -180,12 +180,14 @@ def compressed_waves(events: core.Antivector, field: core.Bivector, limit: np.nd
     return np.sign(scaled) * np.abs(scaled) ** wave_power
 
 
-def mark_charge(ax: Axes, columns: int, charge: core.Antivector):
-    """The charge as a dot with a dark rim, sized with the picture, the given pixels across."""
-    position = coordinates(charge).reshape(-1, 2)
-    diameter, rim = charge_size * columns * 72 / figure_dpi, charge_rim * columns * 72 / figure_dpi
-    return ax.scatter(position[:, 0], position[:, 1], s=diameter**2, color=charge_colour,
-                      edgecolors=charge_rim_colour, linewidths=rim, zorder=3)
+def marked(colours: np.ndarray, charge: core.Antivector, view: Camera) -> np.ndarray:
+    """A picture's colours `[rows, columns, 3]` with the charge marked over them, a dot with a dark rim, sized with
+    the picture: `[rows, columns, 4]`."""
+    places = charge.reshape(-1)                                                 # [1] Antivector-
+    rim_radius, dot_radius = (charge_size + charge_rim) / 2 * view.pixels, (charge_size - charge_rim) / 2 * view.pixels
+    return simplices.composited([np.concatenate((colours, np.ones(colours.shape[:-1] + (1,))), axis=-1),
+                                 simplices.markers(places, np.array(to_rgb(charge_rim_colour)), rim_radius, view),
+                                 simplices.markers(places, np.array(to_rgb(charge_colour)), dot_radius, view)])
 
 
 def averaged(image: np.ndarray, samples: int) -> np.ndarray:
@@ -206,13 +208,13 @@ def animate_waves(frames: Iterable[tuple[core.Antivector, core.Bivector, core.An
     limit = wave_limit(events, field)
     pixels = (events.shape[-2] // samples, events.shape[-1] // samples)
     figure, (ax,) = panels(1, pixels)
-    image = pinned(ax, averaged(coloured(compressed_waves(events, field, limit), signed_colours, wave_norm), samples),
-                   extent(events))
+    ax.set(xlim=extent(events)[:2], ylim=extent(events)[2:])
+    view = flat_panel(ax, core.ga)
+    image = pinned(ax, np.zeros(view.shape + (4,)), extent(events))
     ax.set_autoscale_on(False)
-    marker = mark_charge(ax, pixels[1], charge)
     for events, field, charge in chain([first], frames):
-        image.set_data(averaged(coloured(compressed_waves(events, field, limit), signed_colours, wave_norm), samples))
-        marker.set_offsets(coordinates(charge).reshape(-1, 2))
+        waves = averaged(coloured(compressed_waves(events, field, limit), signed_colours, wave_norm), samples)
+        image.set_data(marked(waves, charge, view))
         yield capture(figure)
     plt.close(figure)
 
@@ -223,6 +225,6 @@ def radiation(events: core.Antivector, field: core.Bivector, charge: core.Antive
     values = compressed_waves(events, field, wave_limit(events, field))           # [cases, rows, columns]
     figure, axes = panels(len(values), events.shape[-2:])
     for case, (ax, value) in enumerate(zip(axes, values)):
-        panel(ax, events, value, signed_colours, wave_norm)
-        mark_charge(ax, events.shape[-1], charge[case])
+        image = panel(ax, events, value, signed_colours, wave_norm)
+        image.set_data(marked(coloured(value, signed_colours, wave_norm), charge[case], flat_panel(ax, core.ga)))
     return figure

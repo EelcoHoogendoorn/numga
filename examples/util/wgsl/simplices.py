@@ -130,11 +130,13 @@ fn against(corner: Corner) -> Against {
     // The sample in the edge's own frame: how far along it, and how far across.
     let along = offset.x * along_unit.x + offset.y * along_unit.y;
     let across = abs(offset.y * along_unit.x - offset.x * along_unit.y);
-    // A head is a triangle back from the end, its base a head's length from it; the shaft stops at its base.
+    // A head is a triangle back from the end, its base a head's length from it, or the edge's own length where that
+    // is shorter, the head shrunk to fit; the shaft stops at its base.
     let headed = corner.chain.y > 0.0;
-    let shaft_end = select(length, length - head.x, headed);
+    let head_length = min(head.x, length);
+    let shaft_end = select(length, length - head_length, headed);
     let back = length - along;
-    let in_head = headed && back >= 0.0 && back <= head.x && across <= head.y * back / head.x;
+    let in_head = headed && back >= 0.0 && back <= head_length && across <= head.y * back / head.x;
     // The sample's distance from the shaft's segment, in samples: from its nearest point, the ends included, which
     // rounds the joins.
     let share = clamp(along, 0.0, max(shaft_end, 0.0));
@@ -219,11 +221,10 @@ fn shade(corner: Corner) -> Shade {
 marker_source = """
 var<storage, read> points: array<Point>;
 var<storage, read> colours: array<vec3<f32>>;
-// The picture's samples across and down; the markers' outline, a `Marker`; how far from their points they reach, from
-// `inner` out to `radius`, in samples, filled from zero; and how much they cover.
+// How far from its point each marker reaches, out to its outer radius from its inner one, in samples, filled from
+// zero; the picture's samples across and down; the markers' outline, a `Marker`; and how much they cover.
+var<storage, read> reaches: array<vec2<f32>>;
 var<uniform> samples: vec2<f32>;
-var<uniform> radius: f32;
-var<uniform> inner: f32;
 var<uniform> marker: f32;
 var<uniform> opacity: f32;
 
@@ -231,6 +232,7 @@ struct Corner {
     @builtin(position) position: vec4<f32>,
     @location(0) @interpolate(flat) middle: vec2<f32>,
     @location(1) @interpolate(flat) colour: vec3<f32>,
+    @location(2) @interpolate(flat) reach: vec2<f32>,
 }
 
 @vertex
@@ -239,9 +241,11 @@ fn place(@builtin(vertex_index) index: u32) -> Corner {
     let middle = vec2<f32>(point.x + 1.0, 1.0 - point.y) * 0.5 * samples;
     let corner = array<vec2<f32>, 6>(vec2<f32>(-1, -1), vec2<f32>(1, -1), vec2<f32>(1, 1),
                                      vec2<f32>(-1, -1), vec2<f32>(1, 1), vec2<f32>(-1, 1))[index % 6];
-    let at = middle + corner * (radius + 1.0);
+    // A box about the point reaching the diamond's corners, the farthest any outline reaches.
+    let reach = reaches[index / 6];
+    let at = middle + corner * (reach.x * 1.4142136 + 1.0);
     let position = vec4<f32>(at.x / samples.x * 2.0 - 1.0, 1.0 - at.y / samples.y * 2.0, point.z, 1.0);
-    return Corner(position, middle, colours[index / 6]);
+    return Corner(position, middle, colours[index / 6], reach);
 }
 
 @fragment
@@ -250,7 +254,7 @@ fn shade(corner: Corner) -> @location(0) vec4<f32> {
     // The distance from the point by the marker's outline: round, square, or the square turned an eighth.
     let distance = select(select(sqrt(away.x * away.x + away.y * away.y), max(away.x, away.y), marker == 1.0),
                           (away.x + away.y) * 0.70710678, marker == 2.0);
-    if (distance > radius || distance < inner) { discard; }
+    if (distance > corner.reach.x || distance < corner.reach.y) { discard; }
     return vec4<f32>(corner.colour * opacity, opacity);
 }
 """
@@ -280,9 +284,10 @@ def marker_shader(algebra) -> Shader:
 
 
 def straight(image: np.ndarray) -> np.ndarray:
-    """Colour and coverage from samples averaged as colour weighted by coverage: the colour divided back."""
+    """Colour and coverage from samples averaged as colour weighted by coverage: the colour divided back, both within the
+    unit its rounding may overshoot."""
     coverage = image[..., 3:]
-    return np.concatenate((image[..., :3] / np.where(coverage > 0, coverage, 1), coverage), axis=-1)
+    return np.minimum(np.concatenate((image[..., :3] / np.where(coverage > 0, coverage, 1), coverage), axis=-1), 1)
 
 
 def travelled(points: Extensor, edges: np.ndarray, camera: Camera) -> np.ndarray:
@@ -353,11 +358,11 @@ def tubes(points: Extensor, mesh: Mesh, colours: np.ndarray, width: float, view,
         **camera.uniforms(8 * view.half.max()), **solids.lighting(view.camera, gloss)))
 
 
-def markers(points: Extensor, colours: np.ndarray, outer: float, camera: Camera, inner: float = 0.0,
+def markers(points: Extensor, colours: np.ndarray, outer: np.ndarray, camera: Camera, inner: np.ndarray = np.zeros(1),
             marker: Marker = Marker.DISC, opacity: float = 1.0) -> np.ndarray:
-    """Markers about the points `[points]`, each in its colour `[points, 3]`, covering from `inner` to `outer` pixels
-    from its point by the marker's outline, filled from zero, a ring further out, read by the camera: `[rows, columns,
-    4]`, colour and coverage, clear where no marker lies."""
+    """Markers about the points `[points]`, each in its colour `[points, 3]`, covering from its `inner` to its `outer`
+    pixels `[points]` from its point by the marker's outline, filled from zero, a ring further out, read by the camera:
+    `[rows, columns, 4]`, colour and coverage, clear where no marker lies."""
     side = samples_per_side()
     rows, columns = camera.shape
     # No points draw nothing: a clear picture.
@@ -365,9 +370,24 @@ def markers(points: Extensor, colours: np.ndarray, outer: float, camera: Camera,
         return np.zeros(camera.shape + (4,))
     image, = marker_shader(points.algebra).draw_averaged(
         camera.shape, side, 6 * len(points), points=points, colours=np.broadcast_to(colours, (len(points), 3)),
-        samples=np.array([columns * side, rows * side], dtype=float), radius=outer * side, inner=inner * side,
-        marker=float(marker), opacity=opacity, **camera.uniforms(1.0))
+        reaches=np.stack([np.broadcast_to(outer, len(points)), np.broadcast_to(inner, len(points))], axis=-1) * side,
+        samples=np.array([columns * side, rows * side], dtype=float), marker=float(marker), opacity=opacity, **camera.uniforms(1.0))
     return straight(image)
+
+
+def composited(pictures: list[np.ndarray]) -> np.ndarray:
+    """Pictures of colour and coverage `[rows, columns, 4]`, each laid over the ones before: one such picture."""
+    colour, coverage = np.zeros(pictures[0].shape[:2] + (3,)), np.zeros(pictures[0].shape[:2] + (1,))
+    for picture in pictures:
+        colour = colour * (1 - picture[..., 3:]) + picture[..., :3] * picture[..., 3:]
+        coverage = coverage * (1 - picture[..., 3:]) + picture[..., 3:]
+    return np.minimum(np.concatenate((colour / np.where(coverage > 0, coverage, 1), coverage), axis=-1), 1)
+
+
+def overlay(ax: Axes, pictures: list[np.ndarray]):
+    """Pictures of a panel, as its camera draws them, laid over each other in order and pinned into the panel at its
+    own pixels, clear where none covers; the image, for an animation to set its data."""
+    return pinned(ax, composited(pictures), (*ax.get_xlim(), *ax.get_ylim()))
 
 
 def stroke_overlay(ax: Axes, points: Extensor, mesh: Mesh, colours: np.ndarray, width: float):

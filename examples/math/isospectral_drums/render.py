@@ -7,13 +7,13 @@ from functools import cache
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import LineCollection, PolyCollection
 from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 
 from numga import stack
 from examples.math.isospectral_drums.core import Point, Scalar, ga, mv
 from examples.math.isospectral_drums.numerics import Mesh
-from examples.util.wgsl import Shader, contours
+from examples.util.wgsl import Shader, contours, simplices
+from examples.util.wgsl.camera import flat_panel
 
 pixels = 260
 # Displacement one way blue, the other orange, and rest a light neutral; the tiles' outlines.
@@ -21,8 +21,10 @@ colours = LinearSegmentedColormap.from_list(
     "membrane", ["#277daf", "#f1efe9", "#e79a47"],
 )
 outline = np.array([39, 49, 58]) / 255
-# The width of the tiles' outlines in pixels.
+# The width of the tiles' outlines in pixels; in the flat pictures, the widths of the drums' rims, of the seams between
+# their tiles, white, and of the pieces' rims, in pixels.
 outline_width = 1.4
+rim_width, seam_width, piece_rim_width = 2.1, 2.1, 1.4
 # The nodal lines of the pieces: their ink, colour and opacity, and their width in pixels.
 nodal_ink = np.append(to_rgb("#394b59"), 0.7)
 nodal_width = 0.9
@@ -57,19 +59,25 @@ def welded(corners: Point) -> tuple[Mesh, Point]:
 def draw_tiles(tiles: Point) -> plt.Figure:
     """The two polygonal drums, with matching colours for their seven constituent triangles."""
     points = coordinates(tiles)
+    n_tiles = tiles.shape[1]
+    # Each tile its own three corners, so that it takes its own colour.
+    pieces = simplices.Mesh(3 * n_tiles, np.arange(3 * n_tiles).reshape(n_tiles, 3))
     figure, axes = plt.subplots(1, len(points), figsize=(8, 3.7), facecolor="white")
+    figure.subplots_adjust(0, 0, 1, 1, wspace=0.07)
     span = np.ptp(points, axis=(1, 2)).max() * 1.08
     for ax, drum, corners in zip(axes, tiles, points):
-        ax.add_collection(PolyCollection(corners, facecolors=tile_colours,
-                                        edgecolors="white", linewidths=1.5))
-        mesh, welds = welded(drum)
-        ax.add_collection(LineCollection(coordinates(welds[mesh.edges[mesh.boundary_edges]]), colors="#27313a",
-                                         linewidths=1.5))
         centre = (corners.min(axis=(0, 1)) + corners.max(axis=(0, 1))) / 2
         ax.set(xlim=centre[0] + np.array([-0.5, 0.5]) * span,
                ylim=centre[1] + np.array([-0.5, 0.5]) * span, aspect="equal")
         ax.set_axis_off()
-    figure.subplots_adjust(0, 0, 1, 1, wspace=0.07)
+        camera = flat_panel(ax, ga)
+        mesh, welds = welded(drum)
+        simplices.overlay(ax, [
+            contours.picture(drum.reshape(-1), pieces, np.zeros(3 * n_tiles), np.repeat(tile_colours, 3, axis=0),
+                             camera),
+            simplices.strokes(drum.reshape(-1), pieces, np.ones(3), seam_width, camera),
+            simplices.strokes(welds, simplices.Mesh(mesh.n_vertices, mesh.edges[mesh.boundary_edges]), outline,
+                              rim_width, camera)])
     return figure
 
 
@@ -189,18 +197,19 @@ def draw_pieces(vertices: Point, mesh: Mesh, pieces: Scalar, exposure: float) ->
     """Signed source contributions and their sum on the same reference triangle."""
     points = coordinates(vertices)
     values = amplitudes(pieces)
-    edges = points[mesh.edges[mesh.boundary_edges]]
     centre = (points.min(axis=0) + points.max(axis=0)) / 2
     span = np.ptp(points, axis=0).max() * 1.05
     places = vertices.batch()                                                 # [vertices] Point-
+    rim = simplices.Mesh(mesh.n_vertices, mesh.edges[mesh.boundary_edges])
     figure, axes = plt.subplots(1, len(values), figsize=(10, 2.5), facecolor="white")
     figure.subplots_adjust(0, 0, 1, 1, wspace=0.08)
     for ax, field in zip(axes, values):
-        ax.add_collection(LineCollection(edges, colors="#27313a", linewidths=1.0, zorder=2))
         ax.set(xlim=centre[0] + np.array([-0.5, 0.5]) * span,
                ylim=centre[1] + np.array([-0.5, 0.5]) * span, aspect="equal")
         ax.set_axis_off()
+        camera = flat_panel(ax, ga)
         shades = colours(Normalize(-exposure, exposure)(field))[:, :3]
         nodal_lines = contours.Level(0.0, nodal_ink, nodal_width)
-        contours.overlay(ax, places, mesh, field, shades, levels=(nodal_lines,)).set_zorder(1)
+        simplices.overlay(ax, [contours.picture(places, mesh, field, shades, camera, levels=(nodal_lines,)),
+                               simplices.strokes(places, rim, outline, piece_rim_width, camera)])
     return figure

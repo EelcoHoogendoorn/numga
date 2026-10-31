@@ -6,16 +6,15 @@ from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import LineCollection
-from matplotlib.colors import LinearSegmentedColormap, Normalize
-from matplotlib.patches import Polygon, Rectangle
+from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
+from matplotlib.patches import Rectangle
 
 from numga import concatenate, stack
 from examples.relativity.moving_mirror import core
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import contours, pinned
-from examples.util.wgsl.camera import panel
+from examples.util.wgsl import contours, simplices
+from examples.util.wgsl.camera import Camera, panel
 
 primal_colour = "#286580"
 accent_colour = "#d77542"
@@ -24,6 +23,7 @@ teal_colour = "#148d88"
 cone_colour = "#b5892e"
 mesh_colour = "#b8c4c9"
 wall_colour = "#52616a"
+paper_colour = "#f6f4ee"
 wave_colours = LinearSegmentedColormap.from_list(
     "spacetime_wave", ("#184a63", "#5b9ab5", "#f6f4ee", "#df7a47", "#a6341b"))
 n_contours = 7
@@ -38,11 +38,14 @@ cone_width_px, cone_height_px = 780, 270
 # Three quantity panels side by side, each with its own labelled axes, across the full column.
 doppler_width_px, doppler_height_px = 800, 300
 animation_width_px, animation_height_px = 680, 300
-# A highlighted event or corner, twice a chart's marker across, as a scatter's area in points squared.
-highlight_size = charts.points(2 * charts.MARKER_PX) ** 2
-# Walls, mirrors and the highlighted edge drawn twice a chart's line; the faint mesh and the markers' white halos as
-# thin as a chart's frame.
-bold_width = charts.points(2 * charts.LINE_PX)
+# A highlighted event or corner, twice a chart's marker across, as a radius in pixels.
+highlight_radius = charts.MARKER_PX
+# Walls, mirrors and the highlighted edge drawn twice a chart's line, in pixels, and in points for the charts; the faint
+# mesh and the markers' white halos as thin as a chart's frame.
+bold_px = 2 * charts.LINE_PX
+bold_width = charts.points(bold_px)
+# The light cone's dashes, a dash and a gap in pixels.
+cone_dashes = (5.5, 2.5)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -69,13 +72,30 @@ def plain_axes(ax: plt.Axes) -> None:
     ax.tick_params(color="0.78")
 
 
-def shade_worldsheet(ax: plt.Axes, events: core.Point, mesh: core.Mesh, values: np.ndarray, limit: float) -> None:
-    """A field on a world sheet's events coloured in a spacetime diagram's panel, read by the planes x across and t
-    up, under the panel's frame, which stays."""
-    camera = panel(ax, core.mv.x, core.mv.t)
+def ink(colour: str) -> np.ndarray:
+    """A colour's red, green and blue."""
+    return np.array(to_rgb(colour))
+
+
+def worldsheet(events: core.Point, mesh: core.Mesh, values: np.ndarray, limit: float, camera: Camera) -> np.ndarray:
+    """A field on a world sheet's events coloured, as a spacetime diagram's camera sees it: its picture."""
     colours = wave_colours(Normalize(-limit, limit)(values))[:, :3]
-    pinned(ax, contours.picture(events, mesh, values, colours, camera), (*ax.get_xlim(), *ax.get_ylim())).set_zorder(1)
+    return contours.picture(events, mesh, values, colours, camera)
+
+
+def diagram(ax: plt.Axes, pictures: list[np.ndarray]):
+    """A spacetime diagram's pictures laid over each other into its panel, under the panel's frame, which stays; the
+    image, for an animation to set its data."""
+    shown = simplices.overlay(ax, pictures)
+    shown.set_zorder(1)
     ax.set_axis_on()
+    return shown
+
+
+def ringed(events: core.Point, colour: str, radius: float, camera: Camera) -> list[np.ndarray]:
+    """Dots at events, `radius` pixels, ringed in white as thin as a chart's frame: their pictures."""
+    return [simplices.markers(events, np.ones(3), radius + charts.FRAME_PX, camera),
+            simplices.markers(events, ink(colour), radius, camera)]
 
 
 def null_rays(event: core.Point, before: float, after: float) -> core.Point:
@@ -94,16 +114,19 @@ def picture_length(directions: core.Point) -> core.Scalar:
     return ((mv.x & directions).squared() + (mv.t & directions).squared()).square_root()
 
 
-def draw_light_cone_cross(ax: plt.Axes, origin: core.Point, arm_length: float) -> None:
-    """Dashed null rays at 45 degrees through the event `origin`."""
-    for ray in coordinates(null_rays(origin, arm_length, arm_length)):
-        ax.plot(*ray.T, color=cone_colour, linestyle="--", alpha=0.82, zorder=4)
+def light_cone_cross(origin: core.Point, arm_length: float, camera: Camera, opacity: float) -> np.ndarray:
+    """Dashed null rays at 45 degrees through the event `origin`: their picture."""
+    return simplices.strokes(null_rays(origin, arm_length, arm_length).reshape(-1), simplices.Mesh.chains([2, 2]),
+                             ink(cone_colour), charts.LINE_PX, camera, dashes=cone_dashes, cap=simplices.Cap.BUTT,
+                             opacity=opacity)
 
 
-def streamlines(corners: core.Point, gradients: core.Plane, directions: core.Point, seeds: core.Point) -> list[np.ndarray]:
+def streamlines(corners: core.Point, gradients: core.Plane, directions: core.Point,
+                seeds: core.Point) -> tuple[core.Point, core.Mesh]:
     """The curves through the seeds `[seeds]` along a direction field affine across the triangle, its values at the
-    corners `[corners]`, read out in (x, t) up to where each first leaves the triangle, the short ones left out: each
-    step taken along the field at its own midpoint, the field there interpolated by the corners' hats."""
+    corners `[corners]`, up to where each first leaves the triangle, the short ones left out: their events, one curve
+    after another, and the chains of edges through them. Each step is taken along the field at its own midpoint, the
+    field there interpolated by the corners' hats."""
     distances = picture_length(corners[:, None] - corners[None, :]).reshape(-1)
     extent = distances.max()
 
@@ -130,9 +153,10 @@ def streamlines(corners: core.Point, gradients: core.Plane, directions: core.Poi
     backward = np.logical_and.accumulate(inside[n_stream_steps::-1], axis=0)[::-1]
     kept = np.concatenate((backward[:-1], forward))                          # [2 * steps + 1, seeds]
     steps_kept = kept[1:] & kept[:-1]                                        # [2 * steps, seeds]
-    lengths = (picture_length(path[1:] - path[:-1]) * steps_kept).sum(axis=0)   # [seeds]
-    lines = np.swapaxes(coordinates(path), 0, 1)                             # [seeds, 2 * steps + 1, 2]
-    return [line[keep] for line, keep, length in zip(lines, kept.T, lengths) if length >= min_stream_length * extent]
+    lengths = (picture_length(path[1:] - path[:-1]) * steps_kept).sum(axis=0)   # [seeds] Scalar+
+    long = lengths >= min_stream_length * extent                             # [seeds]
+    curves = [path[:, seed][keep] for seed, keep in enumerate(kept.T) if long[seed]]
+    return concatenate(curves), simplices.Mesh.chains([curve.shape[0] for curve in curves])
 
 
 @charts.style()
@@ -154,37 +178,40 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
     # Panel 1: Corner hat contours, light cone, Euclidean normal, and Lorentzian dual.
     index = 1
     others = [(index + 1) % 3, (index + 2) % 3]
+    # The triangle, a mesh of one face, filled and outlined by its own edges.
+    triangle = simplices.Mesh(3, np.array([[0, 1, 2]]))
     # The hat falls evenly from one at its corner to zero along the opposite side: each level runs parallel to that
     # side, across the two sides from the corner, a share of one less the level of the way along them.
     levels = np.linspace(0.0, 1.0, n_contours + 2)[1:-1]
     level_ends = corners[index] + (1 - levels[:, None]) * (corners[others] - corners[index])   # [levels, 2] Point-
     frame_panel(hat_ax, corner_xt, 0.22)
-    hat_ax.add_patch(Polygon(corner_xt, facecolor="#f6f4ee", edgecolor="none", zorder=1))
-    hat_ax.add_collection(LineCollection(coordinates(level_ends), colors=primal_colour, alpha=0.55, zorder=2))
-    hat_ax.add_patch(Polygon(corner_xt, fill=False, edgecolor=wall_colour, zorder=3))
-    hat_ax.plot(*corner_xt[others].T, color=wall_colour, linewidth=bold_width, solid_capstyle="round", zorder=4)
-    hat_ax.scatter(*corner_xt.T, color=wall_colour, zorder=5)
-    hat_ax.scatter(*corner_xt[index], s=highlight_size, color=accent_colour, edgecolor="white",
-                   linewidth=charts.FRAME_WIDTH, zorder=6)
-    draw_light_cone_cross(hat_ax, centroid, 0.38)
-
+    camera = panel(hat_ax, mv.x, mv.t)
     # The Euclidean normal -(mv.t >> gradients.dual()) beside the Lorentzian dual gradients.dual(), both drawn from
     # the centroid at the scale that draws the Lorentzian dual a fixed length.
     lorentz_dual = gradients[index].dual()                                   # [] Point-
     euclidean_normal = -(mv.t >> lorentz_dual)                               # [] Point-
     scale = 0.28 / picture_length(lorentz_dual)                              # [] Scalar+
-    for direction, colour in ((euclidean_normal, primal_colour), (lorentz_dual, accent_colour)):
-        segment = coordinates(stack((centroid, centroid + scale * direction)))   # [2, 2]
-        hat_ax.plot(*segment.T, color=colour, linewidth=bold_width, zorder=7)
-        hat_ax.scatter(*segment[1], color=colour,
-                       edgecolor="white", linewidth=charts.FRAME_WIDTH, zorder=8)
-    hat_ax.scatter(*coordinates(centroid), color=ink_colour, zorder=8)
+    tips = centroid + scale * stack((euclidean_normal, lorentz_dual))        # [2] Point-
+    simplices.overlay(hat_ax, [
+        contours.picture(corners, triangle, np.zeros(3), ink(paper_colour), camera),
+        simplices.strokes(level_ends.reshape(-1), simplices.Mesh.chains([2] * n_contours), ink(primal_colour),
+                          charts.LINE_PX, camera, opacity=0.55),
+        simplices.strokes(corners, triangle, ink(wall_colour), charts.LINE_PX, camera),
+        simplices.strokes(corners[others], simplices.Mesh.chains([2]), ink(wall_colour), bold_px, camera),
+        light_cone_cross(centroid, 0.38, camera, 0.82),
+        simplices.markers(corners, ink(wall_colour), charts.MARKER_PX / 2, camera),
+        *ringed(corners[index][None], accent_colour, highlight_radius, camera),
+        simplices.strokes(stack((centroid.broadcast_to((2,)), tips), axis=-1).reshape(-1),
+                          simplices.Mesh.chains([2, 2]), np.stack((ink(primal_colour), ink(accent_colour))), bold_px,
+                          camera, cap=simplices.Cap.BUTT),
+        *ringed(tips[:1], primal_colour, charts.MARKER_PX / 2, camera),
+        *ringed(tips[1:], accent_colour, charts.MARKER_PX / 2, camera),
+        simplices.markers(centroid[None], ink(ink_colour), charts.MARKER_PX / 2, camera)])
 
     # Panel 2: Spacetime edge Whitney 1-form circulating around its opposite corner.
     edge_index = 0
     frame_panel(edge_ax, corner_xt, 0.22)
-    edge_ax.add_patch(Polygon(corner_xt, facecolor="#f6f4ee", edgecolor=wall_colour, zorder=1))
-    draw_light_cone_cross(edge_ax, corners[edge_index], 0.42)
+    camera = panel(edge_ax, mv.x, mv.t)
     # The edge form is affine across the triangle; its dual at the corners, the samples where their own hats reach
     # one, sets it everywhere.
     sample_hats = 1 + (gradients[:, None] & (points[None, :] - corners[:, None]))   # [corners, samples] Scalar+
@@ -193,26 +220,31 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
     start, end = corners[(edge_index + 1) % 3], corners[(edge_index + 2) % 3]   # [] Point-, Point-
     fractions = np.linspace(0.06, 0.94, n_streamlines)
     seeds = (start * (1 - fractions) + end * fractions) * 0.85 + centroid * 0.15   # [seeds] Point-
-    edge_ax.add_collection(LineCollection(streamlines(corners, gradients, corner_field, seeds),
-                                          colors=primal_colour, zorder=3))
-    edge_ax.plot(*coordinates(stack((start, end))).T, color=accent_colour, linewidth=bold_width, zorder=5)
-    edge_ax.scatter(*corner_xt[edge_index], s=highlight_size, color=primal_colour, edgecolor="white",
-                    linewidth=charts.FRAME_WIDTH, zorder=7)
+    curves, chains = streamlines(corners, gradients, corner_field, seeds)
+    simplices.overlay(edge_ax, [
+        contours.picture(corners, triangle, np.zeros(3), ink(paper_colour), camera),
+        simplices.strokes(corners, triangle, ink(wall_colour), charts.LINE_PX, camera),
+        simplices.strokes(curves, chains, ink(primal_colour), charts.LINE_PX, camera),
+        light_cone_cross(corners[edge_index], 0.42, camera, 0.82),
+        simplices.strokes(stack((start, end)), simplices.Mesh.chains([2]), ink(accent_colour), bold_px, camera),
+        *ringed(corners[edge_index][None], primal_colour, highlight_radius, camera)])
 
     # Panel 3: Causal forward light-cone wake from a localized spacetime source event.
     wake_xt = coordinates(wake_vertices)
     wake_vals = np.asarray(wake.batch().to_array())
     wake_limit = float(np.percentile(np.abs(wake_vals), 99.2))
-    for ray in coordinates(null_rays(source_event, 0.0, 0.50)):
-        wake_ax.plot(*ray.T, color=cone_colour, linestyle="--", alpha=0.85, zorder=3)
-    wake_ax.scatter(*coordinates(source_event), s=highlight_size, color=accent_colour, edgecolor="white",
-                    linewidth=charts.FRAME_WIDTH, zorder=4)
     duration = float(wake_xt[:, 1].max())
     wake_ax.set(xlim=(0.0, 1.0), ylim=(0.0, duration), aspect="equal",
                 xticks=[0.0, 0.5, 1.0], yticks=[0.0, round(duration, 2)],
                 xlabel="space $x$", ylabel="time $t$")
     plain_axes(wake_ax)
-    shade_worldsheet(wake_ax, wake_vertices.batch(), wake_mesh, wake_vals, wake_limit)
+    camera = panel(wake_ax, mv.x, mv.t)
+    rays = null_rays(source_event, 0.0, 0.50).reshape(-1)                   # [rays * 2] Point-
+    diagram(wake_ax, [
+        worldsheet(wake_vertices.batch(), wake_mesh, wake_vals, wake_limit, camera),
+        simplices.strokes(rays, simplices.Mesh.chains([2, 2]), ink(cone_colour), charts.LINE_PX, camera,
+                          dashes=cone_dashes, cap=simplices.Cap.BUTT, opacity=0.85),
+        *ringed(source_event[None], accent_colour, highlight_radius, camera)])
     return figure
 
 
@@ -222,17 +254,29 @@ def strip_grid(vertices: core.Point, n_space: int, n_time: int) -> core.Point:
     return vertices.batch().reshape(n_time, n_space)                          # [times, space] Point-
 
 
-def decimated_mesh_segments(grid: core.Point, step_t: int, step_x: int) -> np.ndarray:
+def coarse_grid(grid: core.Point, step_t: int, step_x: int) -> tuple[core.Point, core.Mesh]:
     """Coarse subset of spacetime mesh lines so the deforming moving-mirror grid is visible without clutter: every
-    few rows and columns of the grid of events `[times, space]`, and the diagonals across their cells, read out."""
-    rows, columns = grid[::step_t], grid[:, ::step_x]                        # [rows, space] Point-, [times, columns] Point-
+    few rows and columns of the grid of events `[times, space]`, and the diagonals across their cells; their events,
+    one line after another, and the chains of edges along them."""
+    n_times, n_space = grid.shape
+    rows = grid[::step_t]                                                    # [rows, space] Point-
+    # Every few columns, each with its events in their order up it.
+    columns = grid[np.arange(n_times)[None, :], np.arange(0, n_space, step_x)[:, None]]   # [columns, times] Point-
     # Each diagonal joins a corner of a coarse cell to the corner opposite it.
     diagonals = stack((grid[:-step_t:step_t, :-step_x:step_x], grid[step_t::step_t, step_x::step_x]), axis=-1)   # [rows, columns, 2] Point-
-    return np.concatenate([
-        np.stack((coordinates(rows[:, :-1]), coordinates(rows[:, 1:])), axis=-2).reshape(-1, 2, 2),
-        np.stack((coordinates(columns[:-1]), coordinates(columns[1:])), axis=-2).reshape(-1, 2, 2),
-        coordinates(diagonals).reshape(-1, 2, 2),
-    ])
+    lines = concatenate((rows.reshape(-1), columns.reshape(-1), diagonals.reshape(-1)))
+    return lines, simplices.Mesh.chains([n_space] * rows.shape[0] + [n_times] * columns.shape[0]
+                                        + [2] * (diagonals.shape[0] * diagonals.shape[1]))
+
+
+def world_lines(grid: core.Point, opacity: float, camera: Camera) -> list[np.ndarray]:
+    """The world sheet's coarse lines, faint, and the worldlines of the wall at rest and of the mirror, bold, read from
+    the grid of events `[times, space]`: their pictures."""
+    lines, chains = coarse_grid(grid, 18, 7)
+    n_times = grid.shape[0]
+    return [simplices.strokes(lines, chains, ink(wall_colour), charts.FRAME_PX, camera, opacity=opacity),
+            simplices.strokes(grid[:, 0], simplices.Mesh.chains([n_times]), ink(wall_colour), charts.LINE_PX, camera),
+            simplices.strokes(grid[:, -1], simplices.Mesh.chains([n_times]), ink(ink_colour), bold_px, camera)]
 
 
 @charts.style()
@@ -258,20 +302,18 @@ def draw_moving_mirror_doppler(mesh: core.Mesh, vertices: core.Point,
     energy_ax = figure.add_axes((0.77, 0.17, 0.21, 0.80))
 
     # Panel 1: 2D (x, t) spacetime worldsheet with deforming mesh and moving mirror worldline.
-    coarse_lines = decimated_mesh_segments(grid, 18, 7)
-    world_ax.add_collection(LineCollection(coarse_lines, colors=wall_colour, linewidths=charts.FRAME_WIDTH,
-                                           alpha=0.14, zorder=2))
-    world_ax.plot(*coordinates(grid[:, 0]).T, color=wall_colour, zorder=4)
-    world_ax.plot(*coordinates(grid[:, -1]).T, color=ink_colour, linewidth=bold_width, zorder=5)
-    for row, colour in ((before_row, primal_colour), (after_row, accent_colour)):
-        world_ax.plot(*coordinates(grid[row]).T, color=colour, linestyle="--", zorder=6)
     world_ax.set(xlim=(0.0, 1.02), ylim=(0.0, duration), aspect="equal",
                  xticks=[0.0, round(final_mirror, 2), 1.0],
                  yticks=[0.0, round(float(row_times[before_row]), 2),
                          round(float(row_times[after_row]), 2), round(duration, 2)],
                  xlabel="space $x$", ylabel="time $t$")
     plain_axes(world_ax)
-    shade_worldsheet(world_ax, vertices.batch(), mesh, wave_rate_vals, field_limit)
+    camera = panel(world_ax, mv.x, mv.t)
+    diagram(world_ax, [worldsheet(vertices.batch(), mesh, wave_rate_vals, field_limit, camera)]
+            + world_lines(grid, 0.14, camera)
+            + [simplices.strokes(grid[[before_row, after_row]].reshape(-1), simplices.Mesh.chains([n_space, n_space]),
+                                 np.repeat([ink(primal_colour), ink(accent_colour)], n_space - 1, axis=0),
+                                 charts.LINE_PX, camera, dashes=cone_dashes, cap=simplices.Cap.BUTT)])
 
     # Panel 2: Spatial wave-rate slices before and after relativistic mirror reflection.
     peak_before = float(np.abs(wave_rate_grid[before_row]).max())
@@ -316,11 +358,11 @@ def animate_moving_mirror(mesh: core.Mesh, vertices: core.Point,
                           wave_rate: core.Scalar, frame_rows: Iterable[int]
                           ) -> Iterator[np.ndarray]:
     """Side-by-side spacetime worldsheet slice bar and live 1D relativistic moving-mirror cavity."""
+    mv = vertices.context.multivector
     grid = strip_grid(vertices, n_space, n_time)                             # [times, space] Point-
     wave_rate_vals = np.asarray(wave_rate.batch().to_array())
     wave_rate_grid = wave_rate_vals.reshape(n_time, n_space)
-    coarse_lines = decimated_mesh_segments(grid, 18, 7)
-    # Each row of events read out once, for the slice and the cavity at its moment.
+    # Each row of events read out once, for the cavity at its moment.
     grid_xt = coordinates(grid)                                              # [times, space, 2]
 
     field_limit = float(np.percentile(np.abs(wave_rate_vals), 99.4))
@@ -337,18 +379,14 @@ def animate_moving_mirror(mesh: core.Mesh, vertices: core.Point,
         cavity_ax = figure.add_axes((0.54, 0.17, 0.44, 0.79))
 
         # Left: the spacetime worldsheet, with the horizontal slice of simultaneity sweeping up it.
-        world_ax.add_collection(LineCollection(coarse_lines, colors=wall_colour,
-                                               linewidths=charts.FRAME_WIDTH, alpha=0.1, zorder=2))
-        world_ax.plot(*grid_xt[:, 0].T, color=wall_colour, zorder=4)
-        world_ax.plot(*grid_xt[:, -1].T, color=ink_colour, linewidth=bold_width, zorder=5)
-        slice_line, = world_ax.plot([], [], color=accent_colour, zorder=6)
-        slice_end = world_ax.scatter([], [], color=accent_colour, edgecolor="white", linewidth=charts.FRAME_WIDTH,
-                                     zorder=7)
         world_ax.set(xlim=(0.0, 1.02), ylim=(0.0, duration), aspect="equal",
                      xticks=[0.0, 1.0], yticks=[0.0, round(duration, 2)],
                      xlabel="space $x$", ylabel="time $t$")
         plain_axes(world_ax)
-        shade_worldsheet(world_ax, vertices.batch(), mesh, wave_rate_vals, field_limit)
+        camera = panel(world_ax, mv.x, mv.t)
+        sheet = simplices.composited([worldsheet(vertices.batch(), mesh, wave_rate_vals, field_limit, camera)]
+                                     + world_lines(grid, 0.1, camera))
+        world = diagram(world_ax, [sheet])
 
         # Right: the cavity at that moment, the advancing mirror and the Doppler-compressed waveform.
         cavity_ax.axhline(0.0, color="0.82", linewidth=charts.FRAME_WIDTH, zorder=1)
@@ -368,8 +406,10 @@ def animate_moving_mirror(mesh: core.Mesh, vertices: core.Point,
         for row in frame_rows:
             x_slice, waveform = grid_xt[row, :, 0], normalized_grid[row]
             wall_x = float(x_slice[-1])
-            slice_line.set_data(*grid_xt[row].T)
-            slice_end.set_offsets(grid_xt[row, -1][None])
+            world.set_data(simplices.composited([
+                sheet, simplices.strokes(grid[row], simplices.Mesh.chains([n_space]), ink(accent_colour),
+                                         charts.LINE_PX, camera),
+                *ringed(grid[row, -1:], accent_colour, charts.MARKER_PX / 2, camera)]))
             beyond.set_x(wall_x)
             beyond.set_width(1.02 - wall_x)
             mirror.set_xdata([wall_x, wall_x])

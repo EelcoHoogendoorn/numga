@@ -16,6 +16,7 @@ from examples.util import charts
 from examples.util.animation import capture
 from examples.electromagnetism.constitutive import core
 from examples.util.wgsl import fitted, show, simplices, solids
+from examples.util.wgsl.camera import Camera, panel
 from examples.util.wgsl.scene import Scene
 
 Modes = tuple[np.ndarray, core.Bivector]
@@ -59,6 +60,9 @@ disc_scale, disc_flatness, disc_opacity = 0.41, 0.1, 0.55
 arc_reach = 1.2
 arc_start, arc_span, arc_head = np.radians(30.0), np.radians(240.0), np.radians(35.0)
 n_arc = 16
+# The polarizations' arrows, their width and heads in pixels, and their dotted lines' width, dots and opacity.
+polarization_width, polarization_head = 3.5, 12.0
+polarization_dots, polarization_opacity = (1.5, 2.5), 0.6
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -73,13 +77,18 @@ def _zero_axes(ax: plt.Axes, across: str, up: str) -> None:
     ax.set_ylabel(up, color=label_colour)
 
 
-def _cross(ax: plt.Axes, across: str, up: str) -> None:
-    """A plane without scales: a faint cross through the origin, its lines named at their ends."""
-    ax.axhline(0, color=cross_colour, linewidth=charts.FRAME_WIDTH, zorder=0)
-    ax.axvline(0, color=cross_colour, linewidth=charts.FRAME_WIDTH, zorder=0)
+def _cross(ax: plt.Axes, camera: Camera, across: str, up: str) -> np.ndarray:
+    """A plane without scales: a faint cross through the origin, across the whole panel along the directions the
+    camera reads as one across and one up, the duals of its planes over their own readings, its lines named at their
+    ends; the cross's picture."""
     ax.text(1, 0, across, transform=ax.get_yaxis_transform(), ha="right", va="top", color=label_colour)
     ax.text(0, 1, f" {up}", transform=ax.get_xaxis_transform(), ha="left", va="top", color=label_colour)
     ax.set_axis_off()
+    (left, right), (bottom, top) = ax.get_xlim(), ax.get_ylim()
+    along, rise = (plane.dual() / (plane & plane.dual()) for plane in (camera.across, camera.up))
+    ends = stack((left * along, right * along, bottom * rise, top * rise))   # [4] Antivector-
+    return simplices.strokes(ends, simplices.Mesh.chains([2, 2]), np.array(to_rgb(cross_colour)), charts.FRAME_PX,
+                             camera, cap=simplices.Cap.BUTT)
 
 
 def waves(modes: Modes, taus: np.ndarray, distance: np.ndarray) -> core.Bivector:
@@ -223,20 +232,27 @@ def draw_polarizations(
     """Draw the electric field of the slow and the fast mode of the birefringent crystal as arrows in the xy plane,
     each of unit length."""
     _, fields = modes
-    # Each mode's field at unit strength of its electric field, read through the planes x and y sweep in time.
+    # Each mode's field at unit strength of its electric field, drawn along the direction it lies in.
     units = fields / (fields & core.time).norm()                                # [modes] Bivector+
-    readers = stack((mv.x, mv.y)).dual() & core.time                            # [2] Antibivector-
-    arrows = (units[:, None] & readers).to_array()                              # [modes, 2]
-    colors = ("crimson", "dodgerblue")
-    ax.quiver(np.zeros(len(arrows)), np.zeros(len(arrows)), *arrows.T,
-              angles="xy", scale_units="xy", scale=1, color=colors, width=0.015)
-    for (horizontal, vertical), color in zip(arrows, colors):
-        ax.plot([-horizontal, horizontal], [-vertical, vertical], color=color, linestyle=":", alpha=0.6)
+    directions = electric_direction(units)                                      # [modes] Antivector-
+    n_modes = len(directions)
+    colours = np.stack((electric_colour, magnetic_colour))                      # [modes, 3]
+    pairs = simplices.Mesh.chains([2] * n_modes)
 
     ax.set_xlim([-1.3, 1.3])
     ax.set_ylim([-1.3, 1.3])
     ax.set_aspect("equal")
-    _cross(ax, "$x$", "$y$")
+    ax.set_axis_off()
+    # The figure laid out before the picture takes the panel's pixels.
+    ax.figure.tight_layout()
+    plane = panel(ax, mv.x, mv.y)
+    # Each mode's line through the origin, dotted, under its arrow from the origin.
+    simplices.overlay(ax, [
+        _cross(ax, plane, "$x$", "$y$"),
+        simplices.strokes(stack((-directions, directions), axis=-1).reshape(-1), pairs, colours, charts.LINE_PX, plane,
+                          dashes=polarization_dots, cap=simplices.Cap.ROUND, opacity=polarization_opacity),
+        simplices.strokes(stack((0 * directions, directions), axis=-1).reshape(-1), pairs, colours,
+                          polarization_width, plane, np.ones(n_modes), polarization_head)])
 
 
 def draw_fresnel_surface_polar(
@@ -306,7 +322,6 @@ def draw_polarizations_figure(modes: Modes) -> plt.Figure:
     # Two arrows on a cross: a third of the column.
     fig, ax = charts.subplots(260, 260)
     draw_polarizations(ax, modes)
-    fig.tight_layout()
     return fig
 
 

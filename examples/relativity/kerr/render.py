@@ -6,16 +6,20 @@ from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import LineCollection
-from matplotlib.patches import Polygon
+from matplotlib.colors import to_rgb
 
-from numga import stack
+from numga import concatenate, stack
 
 from examples.util.animation import capture
+from examples.util.wgsl import contours, simplices
+from examples.util.wgsl.camera import Camera, flat_panel
 from examples.relativity.kerr import core
 
-# The spin sweep's resolution: its thin rays need no more.
+# The spin sweep's resolution: its thin rays need no more. The rays' width in pixels and how much they cover, and the
+# horizon's shade.
 sweep_dpi = 64
+ray_width, ray_opacity = 1.0, 0.9
+horizon_shade = np.array(to_rgb("#161b22"))
 # Wavelengths across the visible band, nm, and the second radiation constant, nm K.
 visible_wavelengths = np.linspace(380.0, 780.0, 81)
 radiation_constant = 1.4388e7
@@ -42,26 +46,38 @@ def coordinates(events: core.Antivector, slices: tuple[core.Vector, ...]) -> np.
     return (stack(slices) & events[..., None]).to_array()                     # [..., slices]
 
 
+def rays_and_horizon(paths: core.Antivector, outline: core.Antivector, camera: Camera) -> np.ndarray:
+    """Rays along events `[steps, rays]`, each in its colour across the sweep from cool to warm, under the horizon
+    filled within its closed outline `[samples + 1]`, seen by the camera: their picture."""
+    n_steps, n_rays = paths.shape
+    # The events ray by ray, each ray's in its order along it.
+    by_ray = paths[np.arange(n_steps)[None, :], np.arange(n_rays)[:, None]].reshape(-1)   # [rays * steps] Antivector-
+    colours = plt.colormaps["coolwarm"](np.linspace(0.05, 0.95, n_rays))[:, :3]
+    # The horizon a fan of triangles from the hole's centre to each side of its outline.
+    n_sides = outline.shape[0] - 1
+    sides = np.arange(n_sides)
+    fan = contours.Mesh(n_sides + 1, np.stack((np.zeros(n_sides, dtype=int), 1 + sides, 1 + (sides + 1) % n_sides),
+                                              axis=-1))
+    disc = concatenate((0 * outline[:1], outline[:-1]))                      # [sides + 1] Antivector-
+    return simplices.composited([
+        simplices.strokes(by_ray, simplices.Mesh.chains([n_steps] * n_rays), np.repeat(colours, n_steps - 1, axis=0),
+                          ray_width, camera, opacity=ray_opacity),
+        contours.picture(disc, fan, np.zeros(n_sides + 1), horizon_shade, camera)])
+
+
 def animate_rays(paths: core.Antivector, horizons: core.Antivector,
                  extent: float) -> Iterator[np.ndarray]:
     """Sweep stationary spins with fixed ray colours and spatial scales."""
-    tracks = coordinates(paths, (core.mv.x, core.mv.y)).transpose(1, 2, 0, 3)
-    outlines = coordinates(horizons, (core.mv.x, core.mv.y))
-    colours = plt.colormaps["coolwarm"](np.linspace(0.05, 0.95, tracks.shape[1]))
-
     figure, ax = plt.subplots(figsize=(5, 5), dpi=sweep_dpi, layout="constrained")
-    rays = LineCollection(tracks[0], colors=colours, linewidths=1.0, alpha=0.9)
-    horizon = Polygon(outlines[0], facecolor="#161b22", edgecolor="none", zorder=3)
-    ax.add_collection(rays)
-    ax.add_patch(horizon)
     ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
     ax.set_axis_off()
     figure.canvas.draw()
     figure.set_layout_engine("none")
+    camera = flat_panel(ax, paths.algebra)
+    picture = simplices.overlay(ax, [np.zeros(camera.shape + (4,))])
 
-    for paths, outline in zip(tracks, outlines):
-        rays.set_segments(paths)
-        horizon.set_xy(outline)
+    for spin in range(paths.shape[1]):
+        picture.set_data(rays_and_horizon(paths[:, spin], horizons[spin], camera))
         yield capture(figure)
     plt.close(figure)
 
@@ -69,15 +85,12 @@ def animate_rays(paths: core.Antivector, horizons: core.Antivector,
 def draw_ray_comparison(paths: tuple[core.Antivector, core.Antivector], horizon: core.Antivector,
                         extent: float) -> plt.Figure:
     """Gauge and metric rays side by side, with the same colours, horizon and spatial scale."""
-    outline = coordinates(horizon, (core.mv.x, core.mv.y))
     figure, axes = plt.subplots(1, 2, figsize=(10, 5), dpi=sweep_dpi, layout="constrained")
-    for ax, path in zip(axes, paths):
-        tracks = coordinates(path, (core.mv.x, core.mv.y)).transpose(1, 0, 2)
-        colours = plt.colormaps["coolwarm"](np.linspace(0.05, 0.95, tracks.shape[0]))
-        ax.add_collection(LineCollection(tracks, colors=colours, linewidths=1.0, alpha=0.9))
-        ax.add_patch(Polygon(outline, facecolor="#161b22", edgecolor="none", zorder=3))
+    for ax in axes:
         ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
         ax.set_axis_off()
+    for ax, path in zip(axes, paths):
+        simplices.overlay(ax, [rays_and_horizon(path, horizon, flat_panel(ax, path.algebra))])
     return figure
 
 

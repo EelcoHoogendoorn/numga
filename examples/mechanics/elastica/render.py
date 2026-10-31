@@ -9,19 +9,20 @@ from collections.abc import Iterator
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
-from matplotlib.lines import Line2D
 
 from numga import stack
 from examples.util.animation import capture
 from examples.mechanics.elastica import core
 from examples.util.wgsl import image_figure, meshes, simplices, solids
+from examples.util.wgsl.camera import Camera, panel
 
 mv = core.mv
 # The colours of the rods by case, of the line of thrust and the pins, and of the ribbon; the margin around
 # the drawn rods, the spacing of the helices as a share of the widest, and their view as (elevation, azimuth), in
 # radians, azimuth zero looking along +y.
 ROD_MAP = "viridis"
-ROD, THRUST, RIBBON = np.array(to_rgb("#1f6f99")), "0.55", np.array(to_rgb("#7cc4e4"))
+ROD, THRUST, RIBBON = np.array(to_rgb("#1f6f99")), np.array(to_rgb("0.55")), np.array(to_rgb("#7cc4e4"))
+PIN = np.array(to_rgb("0.2"))
 MARGIN = 0.08
 SPACING = 1.4
 VIEW = np.radians([12.0, 10.0])
@@ -36,6 +37,9 @@ CLAMP = np.full(3, 0.2)
 N_HELIX_PIXELS, N_UNCOIL_PIXELS, N_CORD_PIXELS = 330, 160, 675
 ROD_WIDTH, CLAMP_RADIUS = 3.0, 5.0
 BACKGROUND = np.ones(3)
+# In the plane of bending, in pixels: the widths of the rods, of the clamp and of the line of thrust, and the pins'
+# radius.
+PLANE_ROD_WIDTH, PLANE_CLAMP_WIDTH, THRUST_WIDTH, PIN_RADIUS = 1.7, 3.0, 1.0, 3.0
 # The points around each rim of the cylinder that frames the uncoiling wire: a multiple of four, so that the rims'
 # points across and along every view lie among them.
 N_FRAMING_RIM = 4
@@ -52,34 +56,41 @@ def plane(points: core.Point) -> np.ndarray:
     return coordinates(points)[..., [2, 1]]
 
 
-def frame_plane(ax: plt.Axes, low: np.ndarray, high: np.ndarray) -> None:
+def frame_plane(ax: plt.Axes, low: np.ndarray, high: np.ndarray) -> Camera:
+    """The panel of the plane of bending, framed about the extent from `low` to `high`, and its camera, reading points
+    along the unbent rod and up by the planes z and y."""
     ax.set(xlim=(low[0] - MARGIN, high[0] + MARGIN), ylim=(low[1] - MARGIN, high[1] + MARGIN), aspect="equal")
     ax.set_axis_off()
+    return panel(ax, mv.z, mv.y)
 
 
 def draw_curls(centres: core.Point) -> plt.Figure:
     """The strip curled by each couple `[curls, pieces + 1]`, from straight, darkest, to a double ring, with
     its clamp."""
     curves = plane(centres)                                                  # [curls, pieces + 1, 2]
-    colours = plt.get_cmap(ROD_MAP)(np.linspace(0.05, 0.9, len(curves)))
+    n_curls, n_points = centres.shape
+    colours = plt.get_cmap(ROD_MAP)(np.linspace(0.05, 0.9, n_curls))[:, :3]
     figure, ax = plt.subplots(figsize=(7.5, 4.0), dpi=55)
-    for curve, colour in zip(curves, colours):
-        ax.plot(*curve.T, color=colour, lw=2.2)
-    low, high = curves.reshape(-1, 2).min(axis=0), curves.reshape(-1, 2).max(axis=0)
-    ax.plot([0, 0], [low[1] - MARGIN, high[1] + MARGIN], color="0.2", lw=4, solid_capstyle="butt")
-    frame_plane(ax, low, high)
+    ax.set_axis_off()
     figure.tight_layout()
+    low, high = curves.reshape(-1, 2).min(axis=0), curves.reshape(-1, 2).max(axis=0)
+    camera = frame_plane(ax, low, high)
+    # The clamp across the whole panel, along the plane z = 0 where the strip is held.
+    clamp = mv.point([[0, height, 0] for height in ax.get_ylim()])           # [ends] Point-
+    simplices.overlay(ax, [
+        simplices.strokes(centres.reshape(-1), simplices.Mesh.chains([n_points] * n_curls),
+                          np.repeat(colours, n_points - 1, axis=0), PLANE_ROD_WIDTH, camera),
+        simplices.strokes(clamp, simplices.Mesh.chains([2]), PIN, PLANE_CLAMP_WIDTH, camera, cap=simplices.Cap.BUTT)])
     return figure
 
 
-def draw_rod(ax: plt.Axes, curve: np.ndarray, low: np.ndarray, high: np.ndarray) -> tuple[Line2D, Line2D]:
-    """One of Euler's elastica: the line of thrust, the rod, and its pins at its two ends. The rod and the pins,
-    for an animation to move."""
-    ax.axhline(0, color=THRUST, lw=0.8)
-    rod, = ax.plot(*curve.T, color=ROD, lw=2.2)
-    pins, = ax.plot(*curve[[0, -1]].T, "^", color="0.2", markersize=6)
-    frame_plane(ax, low, high)
-    return rod, pins
+def rod_pictures(curve: core.Point, ax: plt.Axes, camera: Camera) -> list[np.ndarray]:
+    """One of Euler's elastica `[pieces + 1]`: the line of thrust across the panel, the rod, and its pins at its two
+    ends."""
+    thrust = mv.point([[0, 0, along] for along in ax.get_xlim()])            # [ends] Point-
+    return [simplices.strokes(thrust, simplices.Mesh.chains([2]), THRUST, THRUST_WIDTH, camera),
+            simplices.strokes(curve, simplices.Mesh.chains([len(curve)]), ROD, PLANE_ROD_WIDTH, camera),
+            simplices.markers(curve[[0, -1]], PIN, PIN_RADIUS, camera)]
 
 
 def animate_sweep(centres: core.Point) -> Iterator[np.ndarray]:
@@ -89,11 +100,11 @@ def animate_sweep(centres: core.Point) -> Iterator[np.ndarray]:
     low, high = curves.reshape(-1, 2).min(axis=0), curves.reshape(-1, 2).max(axis=0)
     figure, ax = plt.subplots(figsize=(5.0, 5.0 * (high[1] - low[1] + 2 * MARGIN) / (high[0] - low[0] + 2 * MARGIN)),
                               dpi=60)
-    rod, pins = draw_rod(ax, curves[0], low, high)
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
-    for curve in curves:
-        rod.set_data(*curve.T)
-        pins.set_data(*curve[[0, -1]].T)
+    camera = frame_plane(ax, low, high)
+    rod = simplices.overlay(ax, rod_pictures(centres[0], ax, camera))
+    for curve in centres:
+        rod.set_data(simplices.composited(rod_pictures(curve, ax, camera)))
         yield capture(figure)
     plt.close(figure)
 

@@ -6,68 +6,66 @@ from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import PolyCollection
+from matplotlib.colors import to_rgb
 
 from examples.util.animation import capture
+from examples.util.wgsl import contours, simplices
+from examples.util.wgsl.camera import Camera, panel
 from examples.math.penrose import core
 
 # The colours of thick and thin tiles, and of their edges.
-thick_colour = "#f59e0b"
-thin_colour = "#38bdf8"
-edge_colour = "#1e293b"
+thick_colour, thin_colour, edge_colour = (np.array(to_rgb(colour)) for colour in ("#f59e0b", "#38bdf8", "#1e293b"))
 
-# The sides of the still and of the animation, in inches at 100 dpi.
+# The sides of the still and of the animation, in inches at 100 dpi, and the widths of their edges in pixels.
 still_side, animation_side = 7.0, 3.5
+still_edge_width, animation_edge_width = 0.8, 0.6
 
 
 # --- plumbing -------------------------------------------------------------------------
-def flat(reading: core.Plane, points: core.Antivector) -> np.ndarray:
-    """The coordinates of points in the cut, read by pairing them with the two reading planes, on the
-    last axis."""
-    return (reading & points[..., None]).to_array()
-
-
-def canvas(extent: float, side: float) -> tuple[plt.Figure, plt.Axes]:
+def canvas(reading: core.Plane, extent: float, side: float) -> tuple[plt.Figure, plt.Axes, Camera]:
+    """The figure, its axes on the cut, and their camera reading points by the two reading planes."""
     figure = plt.figure(figsize=(side, side), dpi=100)
     ax = figure.add_axes((0, 0, 1, 1))
     ax.set_xlim(-extent, extent)
     ax.set_ylim(-extent, extent)
     ax.set_aspect("equal")
     ax.set_axis_off()
-    return figure, ax
+    return figure, ax, panel(ax, reading[0], reading[1])
 
 
-def selected(polygons: np.ndarray, colours: np.ndarray, margins: core.Scalar) -> tuple[np.ndarray, np.ndarray]:
-    """The faces whose three margins are all positive, `polygons [points, faces, 4, 2]`, and their colours."""
+def tiles(corners: core.Antivector, colours: np.ndarray, margins: core.Scalar, camera: Camera,
+          width: float) -> np.ndarray:
+    """The faces whose three margins are all positive, among those with these corners `[points, faces, 4]`, each in
+    its colour `[faces, 3]`, with their edges."""
     chosen = np.all(margins > 0, axis=-1)                                    # [points, faces]
-    return polygons[chosen], colours[np.nonzero(chosen)[1]]
-
-
-def tiles(ax: plt.Axes, polygons: np.ndarray, colours: np.ndarray, margins: core.Scalar):
-    """The faces whose three margins are all positive, `polygons [points, faces, 4, 2]`."""
-    faces, shades = selected(polygons, colours, margins)
-    ax.add_collection(PolyCollection(faces, facecolors=shades, edgecolors=edge_colour, linewidths=0.6))
+    n_tiles = np.count_nonzero(chosen)
+    # Each tile's four corners its own, two triangles of them, and the loop of its sides.
+    own = np.arange(4 * n_tiles).reshape(n_tiles, 4)
+    halves = simplices.Mesh(4 * n_tiles, own[:, [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3))
+    sides = simplices.Mesh(4 * n_tiles, np.stack([own, np.roll(own, -1, axis=-1)], axis=-1).reshape(-1, 2))
+    places = corners[chosen].reshape(-1)                                     # [tiles * 4] Antivector-
+    return simplices.composited([
+        contours.picture(places, halves, np.zeros(4 * n_tiles), np.repeat(colours[np.nonzero(chosen)[1]], 4, axis=0),
+                         camera),
+        simplices.strokes(places, sides, edge_colour, width, camera)])
 
 
 def draw_tiling(reading: core.Plane, corners: core.Antivector, areas: core.Scalar, margins: core.Scalar,
                 extent: float) -> plt.Figure:
     """The tiles the cut selects among the faces with these corners `[points, faces, 4]`."""
-    colours = np.where(areas > areas.mean(), thick_colour, thin_colour)      # [faces]
-    figure, ax = canvas(extent, still_side)
-    tiles(ax, flat(reading, corners), colours, margins)
+    colours = np.where((areas > areas.mean())[:, None], thick_colour, thin_colour)   # [faces, 3]
+    figure, ax, camera = canvas(reading, extent, still_side)
+    simplices.overlay(ax, [tiles(corners, colours, margins, camera, still_edge_width)])
     return figure
 
 
 def animate_flips(reading: core.Plane, corners: core.Antivector, areas: core.Scalar, frames: Iterable[core.Scalar],
                   extent: float) -> Iterator[np.ndarray]:
     """The tiles each frame's margins select, on a canvas laid out once."""
-    colours = np.where(areas > areas.mean(), thick_colour, thin_colour)      # [faces]
-    polygons = flat(reading, corners)                                        # [points, faces, 4, 2]
-    figure, ax = canvas(extent, animation_side)
-    shown = ax.add_collection(PolyCollection([], edgecolors=edge_colour, linewidths=0.4))
+    colours = np.where((areas > areas.mean())[:, None], thick_colour, thin_colour)   # [faces, 3]
+    figure, ax, camera = canvas(reading, extent, animation_side)
+    shown = simplices.overlay(ax, [np.zeros(camera.shape + (4,))])
     for margins in frames:
-        faces, shades = selected(polygons, colours, margins)
-        shown.set_verts(faces)
-        shown.set_facecolor(shades)
+        shown.set_data(tiles(corners, colours, margins, camera, animation_edge_width))
         yield capture(figure)
     plt.close(figure)

@@ -15,13 +15,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import concatenate, stack
+from numga import NumpyContext, concatenate, stack
+from numga.algebras import VGA2D
 
 from examples.util import charts
 from examples.util.animation import capture
 from examples.relativity.curvature import core
 from examples.relativity.curvature.core import Antivector, Curvature, Scalar, mv
-from examples.util.wgsl import labels, show, solids
+from examples.util.wgsl import labels, show, simplices, solids
+from examples.util.wgsl.camera import flat_panel
 
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
 light_colour = "#c3ccd4"
@@ -51,8 +53,18 @@ PATCH_OPACITY = 0.15
 AXIS_LENGTH, LABEL_DISTANCE = 0.88, 0.97
 AXIS_WIDTH, OUTLINE_WIDTH = 1.5, 1.8
 HEAD_LENGTH, HEAD_WIDTH = 4.5, 3.0
-# The colour of the names of the lines of the faint cross through a ring's centre.
+# The colour of the names of the lines of the faint cross through a ring's centre, and of the cross.
 CROSS_LABEL_COLOUR = "#7b8794"
+CROSS = np.array(to_rgb("#edf0f3"))
+# The ring at rest, its samples and its dots, a dash and a gap in pixels; the accelerations' arrows: the largest's
+# length in radii of the ring, their width and their heads' length in pixels.
+n_rest_samples = 200
+REST_DOTS = (1.5, 2.5)
+ARROW_REACH, ARROW_WIDTH, ARROW_HEAD = 0.31, 2.0, 8.0
+# The page the map's arrow between the two diagrams is drawn on, in the figure's pixels, its points antivectors; the
+# arrow's width and its head's length in pixels.
+page = NumpyContext(VGA2D).multivector
+MAP_ARROW_WIDTH, MAP_ARROW_HEAD = 1.5, 8.0
 
 
 # --- coordinate readout ---------------------------------------------------------------
@@ -64,12 +76,6 @@ def plain_axes(ax: plt.Axes, across: str, up: str) -> None:
     # The horizontal axis's name below the plot, wherever its zero lies.
     ax.xaxis.set_label_coords(0.5, -0.03)
     ax.xaxis.label.set_va("top")
-
-
-def transverse(value: Antivector) -> np.ndarray:
-    """(..., 2) x and y of separations in the plane transverse to the wave: their pairings with the
-    slices x and y."""
-    return (stack((mv.x, mv.y)) & value[..., None]).to_array()
 
 
 # --- the curvature map at one event ---------------------------------------------------
@@ -136,10 +142,17 @@ def draw_curvature_map(
     panel(before, patches[0], [(observer[None], ORANGE_RGB, 2.0)], extent, view)
     panel(after, patches[1], [(wave[None], BLUE_RGB, 2.2), (observer[None], ORANGE_RGB, 2.0),
                               (readout[None], ORANGE_RGB, 2.5)], extent, view)
-    # The map from the ribbon to its image, an arrow across the gap between the diagrams.
-    before.annotate("", xy=(1 - PANEL_WIDTH + 0.01, 0.5), xytext=(PANEL_WIDTH - 0.01, 0.5),
-                    xycoords=fig.transFigure, textcoords=fig.transFigure,
-                    arrowprops={"arrowstyle": "->", "lw": 1.8, "color": INK})
+    # The map from the ribbon to its image, an arrow across the gap between the diagrams, on a page spanning the
+    # figure, in its pixels.
+    width, height = fig.bbox.width, fig.bbox.height
+    across = fig.add_axes((0, 0, 1, 1))
+    across.set(xlim=(0, width), ylim=(0, height))
+    across.set_axis_off()
+    ends = (page.x.dual() * (width * np.array([PANEL_WIDTH - 0.01, 1 - PANEL_WIDTH + 0.01]))
+            + page.y.dual() * (height / 2))                                    # [2] Antivector-
+    simplices.overlay(across, [simplices.strokes(ends, simplices.Mesh.chains([2]), np.array(to_rgb(INK)),
+                                                 MAP_ARROW_WIDTH, flat_panel(across, VGA2D),
+                                                 heads=np.ones(1), head=MAP_ARROW_HEAD, cap=simplices.Cap.BUTT)])
     return fig
 
 
@@ -183,84 +196,100 @@ def draw_doppler(rapidities: np.ndarray, amplitudes: Scalar) -> plt.Figure:
 @dataclass(frozen=True)
 class _Detector:
     time: np.ndarray            # [n_time]
-    reference: np.ndarray       # [n_beads, 2] in initial-radius units
-    rest: np.ndarray            # [n_rest_samples, 2] the ring at rest, of unit radius
-    positions: np.ndarray       # [n_polarizations, n_time, n_beads, 2]
-    accelerations: np.ndarray   # [n_polarizations, n_time, n_beads, 2]
-    largest_acceleration: float
+    reference: Antivector       # [n_beads] in initial-radius units
+    positions: Antivector       # [n_time, n_polarizations, n_beads] in initial-radius units
+    tips: Antivector            # [n_time, n_polarizations, n_beads] the accelerations' arrows' tips, at one fixed scale
+    limit: float                # the view's half width, past the farthest bead and its arrow
     most_deformed: int          # the time of largest deformation, over every polarization
 
 
 def _detector(
     time: np.ndarray, reference: Antivector, displacement: Antivector, acceleration: Antivector, amplification: float,
 ) -> _Detector:
-    """The beads in initial-radius units, with displacements magnified for display, read out."""
+    """The beads in initial-radius units, with displacements magnified for display, and the arrows of their
+    accelerations, the largest a share `ARROW_REACH` of the radius long."""
     # The ring's radius: a separation within the slice of space squares to its squared length.
     radius = reference.squared().square_root().mean()                    # [] Scalar+
     positions = (reference + amplification * displacement) / radius     # [n_time, n_polarizations, n_beads] Antivector-
     accelerations = amplification * acceleration / radius                # [n_time, n_polarizations, n_beads] Antivector-
-    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, 200) / 2)).exp()        # [n_rest_samples] Rotor+
+    largest = accelerations.squared().square_root().max()               # [] Scalar+
+    farthest = (stack((mv.x, mv.y)) & positions[..., None]).abs().max()  # [] Scalar+
     return _Detector(
         time=np.asarray(time),
-        reference=transverse(reference / radius),
-        rest=transverse(turns >> mv.x.dual()),
-        positions=np.swapaxes(transverse(positions), 0, 1),
-        accelerations=np.swapaxes(transverse(accelerations), 0, 1),
-        largest_acceleration=float(accelerations.squared().square_root().to_array().max()),
+        reference=reference / radius,
+        positions=positions,
+        tips=positions + accelerations * (ARROW_REACH / largest),
+        limit=max(1.35, float(farthest.to_array()) + ARROW_REACH),
         most_deformed=int(displacement.squared().sum(axis=(1, 2)).argmax()),
     )
 
 
 def _ring_axes(fig: plt.Figure, data: _Detector) -> list[plt.Axes]:
-    limit = max(1.35, float(np.abs(data.positions).max()) + 0.31)
     axes = []
     for column in range(len(polarization_names)):
         ax = fig.add_subplot(1, 3, column + 1)
-        ax.set(xlim=(-limit, limit), ylim=(-limit, limit), aspect="equal")
+        ax.set(xlim=(-data.limit, data.limit), ylim=(-data.limit, data.limit), aspect="equal")
         ax.set_axis_off()
         axes.append(ax)
     return axes
 
 
 def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
-    reference = data.reference
-    selected = np.arange(0, len(reference), max(1, len(reference) // 4))[:4]
-    arrows_at = np.arange(0, len(reference), max(1, len(reference) // 8))
-    ax.plot(*data.rest.T, color=light_colour, ls=":")
-    ax.scatter([0], [0], color=ORANGE, zorder=8)
+    """The ring of beads in a panel at each frame: the ring at rest dotted over a faint cross, the beads' outline,
+    trails of four tracked beads, the beads, arrows of eight beads' accelerations, the tracked beads and the centre;
+    with the tracked beads' full trails, faint, for a still."""
+    n_beads = data.reference.shape[0]
+    selected = np.arange(0, n_beads, max(1, n_beads // 4))[:4]
+    arrows_at = np.arange(0, n_beads, max(1, n_beads // 8))
+    trail_colours = np.array([to_rgb(colour) for colour in tracking_colours[:len(selected)]])
+    camera = flat_panel(ax, mv.x.algebra)
     # The cross through the centre, across the whole view but for room for its names at its ends.
     half_span = 0.9 * ax.get_xlim()[1]
-    ax.plot([-half_span, half_span], [0, 0], color="#edf0f3", lw=charts.FRAME_WIDTH, zorder=0)
-    ax.plot([0, 0], [-half_span, half_span], color="#edf0f3", lw=charts.FRAME_WIDTH, zorder=0)
+    cross_ends = half_span * stack((-mv.x.dual(), mv.x.dual(), -mv.y.dual(), mv.y.dual()))   # [4] Antivector-
     ax.annotate("x", (half_span, 0), xytext=(4, 0), textcoords="offset points", ha="left", va="center",
                 color=CROSS_LABEL_COLOUR)
     ax.annotate("y", (0, half_span), xytext=(0, 4), textcoords="offset points", ha="center", va="bottom",
                 color=CROSS_LABEL_COLOUR)
-    outline, = ax.plot([], [], color=BLUE, alpha=0.42, zorder=2)
-    beads = ax.scatter([], [], color=BLUE, edgecolors="white", linewidths=charts.FRAME_WIDTH, zorder=5)
-    markers = ax.scatter(*reference[selected].T, s=charts.points(TRACKED_SCALE * charts.MARKER_PX) ** 2,
-                         c=tracking_colours[:len(selected)], edgecolors="white", linewidths=charts.FRAME_WIDTH, zorder=7)
-    trails = [ax.plot([], [], color=colour, alpha=0.60, zorder=4)[0]
-              for colour in tracking_colours[:len(selected)]]
-    quiver = ax.quiver(*reference[arrows_at].T, np.zeros(len(arrows_at)), np.zeros(len(arrows_at)),
-                       color=BLUE, alpha=0.85, angles="xy", scale_units="xy",
-                       scale=max(data.largest_acceleration, 1e-15) / 0.31, width=0.006, headwidth=3.5, headlength=4, zorder=6)
+    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_rest_samples) / 2)).exp()   # [n_rest_samples] Rotor+
+    rest = turns >> mv.x.dual()                                          # [n_rest_samples] Antivector-
+    beneath = [
+        simplices.strokes(cross_ends, simplices.Mesh.chains([2, 2]), CROSS, charts.FRAME_PX, camera,
+                          cap=simplices.Cap.BUTT),
+        simplices.strokes(rest, simplices.Mesh.chains([n_rest_samples]), LIGHT, charts.LINE_PX, camera,
+                          dashes=REST_DOTS)]
     if static:
-        for index in selected:
-            ax.plot(*data.positions[polarization, :, index].T,
-                    color=tracking_colours[list(selected).index(index)], lw=charts.FRAME_WIDTH, alpha=0.22)
+        tracks = data.positions[:, polarization, selected].reshape(-1)     # [n_time * tracked] Antivector-
+        n_time = len(data.time)
+        beneath.append(simplices.strokes(
+            tracks, simplices.Mesh(len(tracks), np.stack((np.arange(len(tracks) - len(selected)),
+                                                           np.arange(len(selected), len(tracks))), axis=-1)),
+            np.tile(trail_colours, (n_time - 1, 1)), charts.FRAME_PX, camera, opacity=0.22))
+    centre = 0 * mv.x.dual()                                             # [] Antivector-
+    above = [simplices.markers(centre[None], ORANGE_RGB, charts.MARKER_PX / 2, camera)]
+    shown = simplices.overlay(ax, beneath + above)
+    n_trail = max(2, len(data.time) // 7)
 
-    def update(frame: int):
-        positions = data.positions[polarization, frame]
-        outline.set_data(*np.vstack((positions, positions[0])).T)
-        beads.set_offsets(positions)
-        markers.set_offsets(positions[selected])
-        quiver.set_offsets(positions[arrows_at])
-        quiver.set_UVC(*data.accelerations[polarization, frame, arrows_at].T)
-        first = max(0, frame - max(2, len(data.time) // 7))
-        for index, trail in zip(selected, trails):
-            trail.set_data(*data.positions[polarization, first:frame + 1, index].T)
-        return [outline, beads, markers, quiver, *trails]
+    def update(frame: int) -> None:
+        positions = data.positions[frame, polarization]                  # [n_beads] Antivector-
+        first = max(0, frame - n_trail)
+        trails = data.positions[np.arange(first, frame + 1)[None, :], polarization, selected[:, None]]   # [tracked, n_trail] Antivector-
+        arrows = stack((positions[arrows_at], data.tips[frame, polarization, arrows_at]), axis=-1)   # [arrows, 2] Antivector-
+        shown.set_data(simplices.composited(beneath + [
+            simplices.strokes(positions, simplices.Mesh(n_beads, np.stack((np.arange(n_beads),
+                                                                          np.roll(np.arange(n_beads), -1)), axis=-1)),
+                              BLUE_RGB, charts.LINE_PX, camera, opacity=0.42),
+            simplices.strokes(trails.reshape(-1), simplices.Mesh.chains([frame + 1 - first] * len(selected)),
+                              np.repeat(trail_colours, frame - first, axis=0), charts.LINE_PX, camera, opacity=0.60),
+            # Each bead ringed in white.
+            simplices.markers(positions, np.ones(3), charts.MARKER_PX / 2 + charts.FRAME_PX, camera),
+            simplices.markers(positions, BLUE_RGB, charts.MARKER_PX / 2, camera),
+            simplices.strokes(arrows.reshape(-1), simplices.Mesh.chains([2] * len(arrows_at)), BLUE_RGB,
+                              ARROW_WIDTH, camera, heads=np.ones(len(arrows_at)), head=ARROW_HEAD, opacity=0.85,
+                              cap=simplices.Cap.BUTT),
+            simplices.markers(positions[selected], np.ones(3), TRACKED_SCALE * charts.MARKER_PX / 2 + charts.FRAME_PX,
+                              camera),
+            simplices.markers(positions[selected], trail_colours, TRACKED_SCALE * charts.MARKER_PX / 2, camera),
+        ] + above))
 
     return update
 
@@ -288,9 +317,8 @@ def animate_detector(
     data = _detector(time, reference, displacement, acceleration, amplification)
     with charts.style():
         fig = plt.figure(figsize=(ANIMATION_PX / charts.DPI, ANIMATION_PX / charts.DPI), facecolor="white")
-        limit = max(1.35, float(np.abs(data.positions).max()) + 0.31)
         ax = fig.add_axes((0, 0, 1, 1))
-        ax.set(xlim=(-limit, limit), ylim=(-limit, limit), aspect="equal")
+        ax.set(xlim=(-data.limit, data.limit), ylim=(-data.limit, data.limit), aspect="equal")
         ax.set_axis_off()
         update = _ring(ax, data, animated_polarization, static=False)
         count = min(len(data.time), max(2, round((data.time[-1] - data.time[0]) * frames_per_unit_time) + 1))

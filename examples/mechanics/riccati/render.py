@@ -1,28 +1,37 @@
-"""Docking paths, thruster commands and fixed-heading slices of the remaining cost."""
+"""Docking paths, thruster commands and fixed-heading slices of the remaining cost, drawn on the GPU in the plane's own
+algebra."""
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 
 import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
+from matplotlib.colors import to_rgb
 from matplotlib.lines import Line2D
-from matplotlib.patches import Polygon
 import numpy as np
 
 from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
+from examples.util.wgsl import contours, simplices
+from examples.util.wgsl.camera import Camera, panel
 from examples.mechanics.riccati import core
 
 BODY_COLOUR = "#3275a8"
 FORCE_COLOUR = "#d16a30"
 SITE_COLOUR = "#7b62a3"
+THRUSTER_COLOUR = "0.25"
+TARGET_COLOUR = "0.5"
 GHOST_COUNT = 5
 COST_GRID_EXTENT = 0.55
 COST_GRID_COUNT = 101
 COST_LEVEL = 0.15
 COST_HORIZONS = 3
+# Widths, radii and arrowheads in pixels; the target's dashes, a dash and a gap.
+LINE_WIDTH = 1.5
+ARROW_WIDTH, ARROW_HEAD = 2.0, 9.0
+MARK_RADIUS = 3.0
+TARGET_DASHES = (5.5, 2.5)
 # The point each pose carries: the origin, dual to the weight direction w.
 origin = core.mv.w.dual()
 
@@ -31,11 +40,6 @@ origin = core.mv.w.dual()
 def xy(points: core.Point) -> np.ndarray:
     """Coordinates of finite points, by their pairings with the coordinate planes over their weight."""
     return ((stack((core.mv.x, core.mv.y)) & points[..., None]) / (core.mv.w & points)[..., None]).to_array()   # [..., 2] float
-
-
-def along(directions: core.Point) -> np.ndarray:
-    """Components of directions, points at infinity, by their pairings with the coordinate planes."""
-    return (stack((core.mv.x, core.mv.y)) & directions[..., None]).to_array()   # [..., 2] float
 
 
 def _limits(points: np.ndarray) -> np.ndarray:
@@ -52,9 +56,25 @@ def _axes(axes: plt.Axes, limits: np.ndarray, title: str) -> None:
     axes.set_axis_off()
 
 
-def _target(axes: plt.Axes, hull: np.ndarray) -> None:
-    axes.add_patch(Polygon(hull, closed=True, fill=False, edgecolor="0.5",
-                           linestyle="--", zorder=1))
+def _hulls(n_hulls: int, n_corners: int) -> tuple[simplices.Mesh, simplices.Mesh]:
+    """Convex hulls of `n_corners` corners each, numbered hull after hull: triangles fanning out from each hull's
+    first corner, and their outlines, the fans' boundary edges."""
+    corners = np.arange(n_corners)
+    fan = np.stack([np.zeros(n_corners - 2, dtype=int), corners[1:-1], corners[2:]], axis=-1)   # [triangles, 3] int
+    surface = simplices.Mesh(n_hulls * n_corners, (fan + n_corners * np.arange(n_hulls)[:, None, None]).reshape(-1, 3))
+    return surface, simplices.Mesh(n_hulls * n_corners, surface.edges[surface.exterior(1)])
+
+
+def _arrows(n_arrows: int) -> simplices.Mesh:
+    """Arrows from tails to tips listed after them: an edge from each tail to its tip, ending in a head."""
+    return simplices.Mesh(2 * n_arrows, np.stack([np.arange(n_arrows), n_arrows + np.arange(n_arrows)], axis=-1))
+
+
+def _target(camera: Camera, hull: core.Point) -> np.ndarray:
+    """The target pose's outline, dashed."""
+    _, outline = _hulls(1, len(hull))
+    return simplices.strokes(hull, outline, to_rgb(TARGET_COLOUR), LINE_WIDTH, camera, dashes=TARGET_DASHES,
+                             cap=simplices.Cap.BUTT)
 
 
 @charts.style()
@@ -63,23 +83,25 @@ def draw_setup(
 ) -> plt.Figure:
     """The hull, the points used to measure docking error, and each positive thrust direction."""
     body = xy(hull)                                                       # [vertices, 2] float
-    sites = xy(tracking_points)                                                   # [sites, 2] float
-    bases = xy(mounts)                                                    # [thrusters, 2] float
     # These arrows show direction; their common display length is tied to the hull's size.
     display_length = np.ptp(body, axis=0).max() * 0.3
-    ends = xy(mounts + directions * display_length)                       # [thrusters, 2] float
-    arrows = along(directions * display_length)                          # [thrusters, 2] float
-    limits = _limits(np.concatenate([body, sites, bases, ends]))          # [corners, 2] float
+    tips = mounts + directions * display_length                           # [thrusters] Point-
+    limits = _limits(np.concatenate([body, xy(tracking_points), xy(mounts), xy(tips)]))   # [corners, 2] float
     # A third of the column: one hull, five marks and three arrows, under a title and a legend.
     figure, axes = charts.subplots(280, 270, layout="constrained")
-    axes.add_patch(Polygon(body, closed=True, facecolor=BODY_COLOUR, edgecolor=BODY_COLOUR, alpha=0.16))
-    axes.scatter(*bases.T, marker="s", color="0.25", label="Thrusters", zorder=4)
-    axes.scatter(*sites.T, color=SITE_COLOUR, label="Tracking points", zorder=5)
-    axes.quiver(*bases.T, *arrows.T, angles="xy", scale_units="xy", scale=1,
-                color=FORCE_COLOUR, width=0.007, zorder=3)
     axes.set(xlim=limits[:, 0], ylim=limits[:, 1], aspect="equal", title="Docking geometry")
     axes.set_axis_off()
-    axes.legend(loc="upper right", frameon=False)
+    handles = [Line2D([], [], marker="s", linestyle="none", color=THRUSTER_COLOUR, label="Thrusters"),
+               Line2D([], [], marker="o", linestyle="none", color=SITE_COLOUR, label="Tracking points")]
+    axes.legend(handles=handles, loc="upper right", frameon=False)
+    camera = panel(axes, core.mv.x, core.mv.y)
+    surface, _ = _hulls(1, len(hull))
+    simplices.overlay(axes, [
+        contours.picture(hull, surface, np.zeros(len(hull)), to_rgb(BODY_COLOUR), camera, opacity=0.16),
+        simplices.strokes(stack([mounts, tips]).reshape(-1), _arrows(len(mounts)), to_rgb(FORCE_COLOUR), ARROW_WIDTH,
+                          camera, heads=np.ones(len(mounts)), head=ARROW_HEAD),
+        simplices.markers(mounts, to_rgb(THRUSTER_COLOUR), MARK_RADIUS, camera, marker=simplices.Marker.SQUARE),
+        simplices.markers(tracking_points, to_rgb(SITE_COLOUR), MARK_RADIUS, camera)])
     return figure
 
 
@@ -88,26 +110,29 @@ def draw_approaches(hull: core.Point, poses: core.Motor, labels: tuple[str, ...]
     """The center paths and a few hull positions, with the target pose shown dashed."""
     carried = poses[..., None] >> hull                                   # [times, cases, vertices] Point-
     centers = poses >> origin                                            # [times, cases] Point-
-    bodies = xy(carried)                                                 # [times, cases, vertices, 2] float
-    paths = xy(centers)                                                  # [times, cases, 2] float
-    target = xy(hull)                                                    # [vertices, 2] float
-    limits = _limits(np.concatenate([bodies.reshape(-1, 2), target]))     # [corners, 2] float
+    limits = _limits(np.concatenate([xy(carried).reshape(-1, 2), xy(hull)]))   # [corners, 2] float
+    final, _ = _hulls(1, len(hull))
     # A panel a case as large as the docking geometry's, under its title.
     figure, panels = charts.subplots(280 * len(labels), 260, ncols=len(labels), squeeze=False, layout="constrained")
-    for case, (axes, label) in enumerate(zip(panels[0], labels)):
-        _target(axes, target)
-        axes.plot(*paths[:, case].T, color=BODY_COLOUR)
+    for axes, label in zip(panels[0], labels):
+        _axes(axes, limits, label)
+    for case, axes in enumerate(panels[0]):
+        camera = panel(axes, core.mv.x, core.mv.y)
         # Equal distances along the path keep the ghost hulls apart near the final pose: each step's length, the
         # size of the line through the centres before and after it.
         steps = (centers[:-1, case] & centers[1:, case]).norm().to_array()   # [times - 1] float
         distance = np.concatenate([[0], np.cumsum(steps)])                 # [times] float
         selected = np.unique(np.searchsorted(distance, np.linspace(0, distance[-1], GHOST_COUNT)))  # [ghosts] int
-        ghosts = bodies[selected, case]                                 # [ghosts, vertices, 2] float
-        outlines = np.concatenate([ghosts, ghosts[:, :1]], axis=1)       # [ghosts, vertices + 1, 2] float
-        axes.add_collection(LineCollection(outlines, colors=BODY_COLOUR, alpha=0.35))
-        axes.add_patch(Polygon(bodies[-1, case], closed=True, facecolor=BODY_COLOUR, edgecolor=BODY_COLOUR, alpha=0.25))
-        axes.plot(*paths[0, case], "o", color=BODY_COLOUR)
-        _axes(axes, limits, label)
+        _, ghost_outlines = _hulls(len(selected), len(hull))
+        ghosts = carried[selected, case].reshape(-1)                     # [ghosts * vertices] Point-
+        simplices.overlay(axes, [
+            _target(camera, hull),
+            contours.picture(carried[-1, case], final, np.zeros(len(hull)), to_rgb(BODY_COLOUR), camera,
+                             opacity=0.25),
+            simplices.strokes(ghosts, ghost_outlines, to_rgb(BODY_COLOUR), LINE_WIDTH, camera, opacity=0.35),
+            simplices.strokes(centers[:, case], simplices.Mesh.chains([len(centers)]), to_rgb(BODY_COLOUR),
+                              LINE_WIDTH, camera),
+            simplices.markers(centers[0, case][None], to_rgb(BODY_COLOUR), MARK_RADIUS, camera)])
     return figure
 
 
@@ -120,20 +145,23 @@ def draw_costs(values: core.StateCost, labels: tuple[str, ...]) -> plt.Figure:
     costs = values[remaining - 1, :, None, None](samples, samples)        # [remaining, cases, samples_y, samples_x] Scalar+
     points = (samples * -0.5).exp() >> origin                             # [samples_y, samples_x] Point-
     coordinates = xy(points)                                             # [samples_y, samples_x, 2] float
-    cost_values = costs.to_array()                                       # [remaining, cases, samples_y, samples_x] float
+    grid = simplices.Mesh.grid(COST_GRID_COUNT, COST_GRID_COUNT)
     colours = plt.get_cmap("viridis")(np.linspace(0.15, 0.8, len(remaining)))  # [remaining, 4] float
     limits = np.stack([coordinates.min(axis=(0, 1)), coordinates.max(axis=(0, 1))])  # [corners, 2] float
     # A panel a case as large as the docking geometry's, under its title, over one legend.
     figure, panels = charts.subplots(280 * len(labels), 310, ncols=len(labels), squeeze=False, layout="constrained")
-    for case, (axes, label) in enumerate(zip(panels[0], labels)):
-        # The same contour value makes the accumulated cost comparable at different horizons.
-        for index, colour in enumerate(colours):
-            axes.contour(coordinates[..., 0], coordinates[..., 1], cost_values[index, case],
-                         levels=[COST_LEVEL], colors=[colour])
-        _axes(axes, limits, label)
     handles = [Line2D([], [], color=colour, label=str(steps)) for colour, steps in zip(colours, remaining)]
     figure.legend(handles=handles, loc="outside lower center", ncol=len(remaining), frameon=False,
                   title="Steps remaining")
+    for axes, label in zip(panels[0], labels):
+        _axes(axes, limits, label)
+    for case, axes in enumerate(panels[0]):
+        camera = panel(axes, core.mv.x, core.mv.y)
+        # The same contour value makes the accumulated cost comparable at different horizons.
+        simplices.overlay(axes, [
+            contours.picture(points.reshape(-1), grid, costs[index, case].to_array().reshape(-1), np.zeros(3), camera,
+                             levels=(contours.Level(COST_LEVEL, colour, LINE_WIDTH),), opacity=0.0)
+            for index, colour in enumerate(colours)])
     return figure
 
 
@@ -162,36 +190,35 @@ def animate(
     carried_mounts = poses[..., None] >> mounts                          # [times, cases, thrusters] Point-
     # A signed command reverses its ideal force direction before the pose carries it to the world.
     forces = poses[..., None] >> (directions * commands * arrow_scale)   # [times, cases, thrusters] Point-
-    ends = xy(carried_mounts + forces)                                   # [times, cases, thrusters, 2] float
-    bases = xy(carried_mounts)                                           # [times, cases, thrusters, 2] float
-    arrows = along(forces)                                               # [times, cases, thrusters, 2] float
-    bodies = xy(carried)                                                 # [times, cases, vertices, 2] float
-    trajectories = xy(poses >> origin)                                   # [times, cases, 2] float
-    target = xy(hull)                                                    # [vertices, 2] float
-    limits = _limits(np.concatenate([bodies.reshape(-1, 2), bases.reshape(-1, 2),
-                                     ends.reshape(-1, 2), trajectories.reshape(-1, 2), target]))
+    tips = carried_mounts + forces                                       # [times, cases, thrusters] Point-
+    trajectories = poses >> origin                                       # [times, cases] Point-
+    limits = _limits(np.concatenate([xy(carried).reshape(-1, 2), xy(carried_mounts).reshape(-1, 2),
+                                     xy(tips).reshape(-1, 2), xy(trajectories).reshape(-1, 2), xy(hull)]))
+    surface, _ = _hulls(1, len(hull))
+    thrust = _arrows(len(mounts))
     # A panel a case as large as the docking geometry's, under its title; the figure laid out once under the charts'
     # style, and only the bodies and the arrows moved between frames.
     with charts.style():
         figure, panels = charts.subplots(280 * len(labels), 260, ncols=len(labels), squeeze=False,
                                          layout="constrained")
-        patches, quivers = [], []
-        for case, (axes, label) in enumerate(zip(panels[0], labels)):
-            _target(axes, target)
-            axes.plot(*trajectories[:, case].T, color=BODY_COLOUR, alpha=0.3)
-            body = Polygon(bodies[0, case], closed=True, facecolor=BODY_COLOUR, edgecolor=BODY_COLOUR, alpha=0.25)
-            axes.add_patch(body)
-            thrust = axes.quiver(*bases[0, case].T, *arrows[0, case].T, angles="xy",
-                                 scale_units="xy", scale=1, color=FORCE_COLOUR, width=0.007, minlength=0)
-            patches.append(body)
-            quivers.append(thrust)
+        for axes, label in zip(panels[0], labels):
             _axes(axes, limits, label)
         figure.canvas.draw()
         figure.set_layout_engine("none")
+    cameras = [panel(axes, core.mv.x, core.mv.y) for axes in panels[0]]
+    guides = [[_target(camera, hull),
+               simplices.strokes(trajectories[:, case], simplices.Mesh.chains([len(trajectories)]), to_rgb(BODY_COLOUR),
+                                 LINE_WIDTH, camera, opacity=0.3)]
+              for case, camera in enumerate(cameras)]
+    images = [simplices.overlay(axes, layers) for axes, layers in zip(panels[0], guides)]
     for index in range(len(poses)):
-        for case, (body, thrust) in enumerate(zip(patches, quivers)):
-            body.set_xy(bodies[index, case])
-            thrust.set_offsets(bases[index, case])
-            thrust.set_UVC(*arrows[index, case].T)
+        for case, (image, camera) in enumerate(zip(images, cameras)):
+            image.set_data(simplices.composited([
+                *guides[case],
+                contours.picture(carried[index, case], surface, np.zeros(len(hull)), to_rgb(BODY_COLOUR), camera,
+                                 opacity=0.25),
+                simplices.strokes(stack([carried_mounts[index, case], tips[index, case]]).reshape(-1), thrust,
+                                  to_rgb(FORCE_COLOUR), ARROW_WIDTH, camera, heads=np.ones(len(mounts)),
+                                  head=ARROW_HEAD)]))
         yield capture(figure)
     plt.close(figure)

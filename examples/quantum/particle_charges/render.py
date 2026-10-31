@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import LineCollection
+from matplotlib.colors import to_rgb
 
 from numga import NumpyContext, stack
 from numga.algebras import VGA2D
 from examples.quantum.particle_charges.core import Scalar
+from examples.util.wgsl import simplices
+from examples.util.wgsl.camera import flat_panel
 
 background = "#fbfaf7"
-particle_colours = np.array(["#d6453d", "#3a9a5b", "#2f6fc0", "#d9a227"])
-connection_colours = ("#4a9ea3", "#8a6fc4", "#db663d")
+particle_colours = np.array([to_rgb(colour) for colour in ("#d6453d", "#3a9a5b", "#2f6fc0", "#d9a227")])
+connection_colours = np.array([to_rgb(colour) for colour in ("#4a9ea3", "#8a6fc4", "#db663d")])
+# The connections' width and opacity, and the sectors' dots: their radius and, for a hollow one, its hole's, in pixels.
+connection_width, connection_opacity = 2.7, 0.82
+dot_radius, hole_radius = 6.0, 4.0
 # The plane of the weight diagrams, its places antivectors, intrinsic: the two weak charges across and up, four
 # apart for each unit, and the colour weights about them, turned a little clockwise and drawn in at a share.
 diagram = NumpyContext(VGA2D).multivector
@@ -39,8 +44,7 @@ def draw_connections(
     # The two weak charges separate the four multiplets; colour weights separate their states.
     centres = weak_spacing * (left * across + right * up)                  # [sectors] Antivector-
     offsets = colour_share * (colour_tilt >> (weights[:, 0] * across + weights[:, 1] * up))   # [sectors] Antivector-
-    # The places read by pairing with the diagram's planes x and y.
-    positions = (stack((diagram.x, diagram.y)) & (centres + offsets)[..., None]).to_array()   # [sectors, 2]
+    places = centres + offsets                                              # [sectors] Antivector-
     colour_counts = occupations[:, :3].sum(axis=-1)
     occupied_colour = np.argmax(occupations[:, :3], axis=-1)
     missing_colour = np.argmin(occupations[:, :3], axis=-1)
@@ -48,25 +52,27 @@ def draw_connections(
     colour_indices = np.where((colour_counts == 0) | (colour_counts == 3), 3, colour_indices)
     colours = particle_colours[colour_indices]
     doublets = np.abs(left) > 1e-10
-    faces = np.where(doublets, colours, background)
+    faces = np.where(doublets[:, None], colours, to_rgb(background))
 
     figure, axes = plt.subplots(
         1, n_panels, squeeze=False, figsize=(3 * n_panels, 3), facecolor=background,
     )
-    extent = np.abs(positions).max() + 0.35
-    for panel, ax in enumerate(axes[0]):
-        response = responses[panel]
-        source, target = np.nonzero(np.triu(response > 1e-10, k=1))
-        segments = np.stack((positions[source], positions[target]), axis=1)
-        widths = 1.95 * np.sqrt(response[source, target] / response.max())
-        ax.add_collection(LineCollection(
-            segments, colors=connection_colours[panel], linewidths=widths, alpha=0.82, zorder=1,
-        ))
-        ax.scatter(
-            *positions.T, facecolors=faces, edgecolors=colours, s=51, linewidths=1.45, zorder=3,
-        )
+    # The view reaches past the farthest place across or up, read by pairing with the diagram's planes x and y.
+    extent = float((stack((diagram.x, diagram.y)) & places[..., None]).abs().max().to_array()) + 0.35
+    for ax in axes[0]:
         ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
         ax.set_axis_off()
     figure.subplots_adjust(0, 0, 1, 1, wspace=0.035)
+    for panel, ax in enumerate(axes[0]):
+        response = responses[panel]
+        connected = np.stack(np.nonzero(np.triu(response > 1e-10, k=1)), axis=-1)   # [connections, 2]
+        camera = flat_panel(ax, diagram.x.algebra)
+        simplices.overlay(ax, [
+            simplices.strokes(places, simplices.Mesh(len(places), connected), connection_colours[panel],
+                              connection_width, camera, opacity=connection_opacity),
+            # Each sector's dot, hollow where it is no doublet: its face, under its rim.
+            simplices.markers(places, faces, dot_radius, camera),
+            simplices.markers(places, colours, dot_radius, camera, inner=hole_radius),
+        ])
     plt.close(figure)
     return figure

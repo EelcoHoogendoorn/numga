@@ -7,11 +7,12 @@ from collections.abc import Iterable, Iterator
 import matplotlib.pyplot as plt
 import numpy as np
 from contourpy import contour_generator
-from matplotlib.collections import LineCollection
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.colors import LinearSegmentedColormap, to_rgb
 from scipy.ndimage import gaussian_filter
 
-from numga import stack
+from numga import concatenate, stack
+from examples.util.wgsl import contours, simplices
+from examples.util.wgsl.camera import panel
 from examples.optics.specular_caustics import core
 
 dpi = 100
@@ -25,6 +26,14 @@ receiver_planes = stack((core.mv.x, core.mv.y))                             # [2
 section_planes = stack((core.mv.x, core.mv.z))                              # [2] Plane+
 # The four samples of a chart around a place between them, as steps along its rows and columns.
 cell_corners = np.array([[0, 0], [1, 0], [0, 1], [1, 1]])                  # [corners, 2]
+# The folds' colour and width in pixels; the section's colours, of the water, the fan of rays, the surface, the paths
+# to the target, the receiver and the target, and its widths and the target's radius, in pixels.
+fold_colour, fold_width = "#ff907a", 1.0
+water_colour, fan_colour, surface_colour, solved_colour, receiver_colour, target_colour = (
+    "#e4f2f6", "#7798a6", "#428698", "#df8a35", "#578390", "#b25422")
+fan_width, surface_width, solved_width, target_radius = 1.0, 1.0, 1.5, 2.0
+# The room the section leaves below the receiver, as a share of its height above it.
+section_room = 0.03
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -89,12 +98,15 @@ def draw_critical(
 ) -> plt.Figure:
     """The zero-area curves carried through the ray map, over the receiver's irradiance."""
     figure = draw(landings, halfwidth, ray_area, n_pixels, blur_pixels, exposure)
+    axes = figure.axes[0]
     areas = np.asarray(area.to_array())
-    # The zero-area curves over the water, in its chart's columns and rows, between its samples.
+    # The zero-area curves over the water, in its chart's columns and rows, between its samples, carried to the
+    # receiver, a chain of their places each.
     source_curves = contour_generator(z=areas).lines(0)
-    receiver_curves = [coordinates(between_samples(chart_landings, curve[:, ::-1]), receiver_planes)
-                       for curve in source_curves]
-    figure.axes[0].add_collection(LineCollection(receiver_curves, colors="#ff907a", linewidths=0.45))
+    receiver_curves = concatenate([between_samples(chart_landings, curve[:, ::-1]) for curve in source_curves])
+    chains = simplices.Mesh.chains([len(curve) for curve in source_curves])
+    simplices.overlay(axes, [simplices.strokes(receiver_curves, chains, to_rgb(fold_colour), fold_width,
+                                               panel(axes, core.mv.x, core.mv.y))])
     return figure
 
 
@@ -119,19 +131,31 @@ def draw_paths(
     destinations = target.broadcast_to(solution_surface.shape)                                    # [paths] Direction-
     fan_paths = stack((incoming, ray_surface, ray_landing), axis=1)                               # [rays, stages] Direction-
     solved_paths = stack((solution_incoming, solution_surface, destinations), axis=1)             # [paths, stages] Direction-
-    curve, paths, solved, landings, destination = (coordinates(points, section_planes)
-                                                   for points in (surface, fan_paths, solved_paths, ray_landing, target))
-    lower = landings[:, 1].min()
-    left, right = curve[:, 0].min(), curve[:, 0].max()
-    vertical_span = incident_height - lower
+    lower = coordinates(ray_landing, section_planes)[:, 1].min()
+    across = coordinates(surface, section_planes)[:, 0]
+    left, right = across.min(), across.max()
+    # The view reaches a little below the receiver, so that the target on it shows whole.
+    bottom = lower - section_room * (incident_height - lower)
+    vertical_span = incident_height - bottom
     figure = plt.figure(figsize=(3 * (right - left) / vertical_span, 3), dpi=dpi, facecolor="white")
     axes = figure.add_axes((0, 0, 1, 1))
-    axes.fill_between(curve[:, 0], lower, curve[:, 1], color="#e4f2f6")
-    axes.add_collection(LineCollection(paths, colors="#7798a6", linewidths=0.35, alpha=0.35))
-    axes.plot(curve[:, 0], curve[:, 1], color="#428698", linewidth=0.7)
-    axes.add_collection(LineCollection(solved, colors="#df8a35", linewidths=0.9))
-    axes.plot((left, right), (lower, lower), color="#578390", linewidth=0.65)
-    axes.scatter(destination[0], destination[1], s=6, color="#b25422", zorder=3, clip_on=False)
-    axes.set(xlim=(left, right), ylim=(lower, incident_height), aspect="equal")
+    axes.set(xlim=(left, right), ylim=(bottom, incident_height), aspect="equal")
     axes.set_axis_off()
+    camera = panel(axes, core.mv.x, core.mv.z)
+    # The water, between the receiver and the surface: the surface's samples, and below each its foot on the
+    # receiver, a strip of triangles between the two rows.
+    feet = surface - core.up * ((core.mv.z & surface) - lower)                                   # [samples] Direction-
+    water = stack((feet, surface)).reshape(-1)                                                   # [2 * samples] Direction-
+    n_rays, n_paths, n_stages = fan_paths.shape[0], solved_paths.shape[0], fan_paths.shape[1]
+    simplices.overlay(axes, [
+        contours.picture(water, simplices.Mesh.grid(2, len(surface)), np.zeros(len(water)), to_rgb(water_colour),
+                         camera),
+        simplices.strokes(fan_paths.reshape(-1), simplices.Mesh.chains([n_stages] * n_rays), to_rgb(fan_colour),
+                          fan_width, camera, opacity=0.35),
+        simplices.strokes(surface, simplices.Mesh.chains([len(surface)]), to_rgb(surface_colour), surface_width,
+                          camera),
+        simplices.strokes(solved_paths.reshape(-1), simplices.Mesh.chains([n_stages] * n_paths), to_rgb(solved_colour),
+                          solved_width, camera),
+        simplices.strokes(feet[[0, -1]], simplices.Mesh.chains([2]), to_rgb(receiver_colour), surface_width, camera),
+        simplices.markers(target[None], to_rgb(target_colour), target_radius, camera)])
     return figure

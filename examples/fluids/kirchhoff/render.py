@@ -7,11 +7,16 @@ from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
+from examples.util.wgsl import contours, simplices
+from examples.util.wgsl.camera import flat_panel
 from examples.fluids.kirchhoff import core
+
+Mesh = simplices.Mesh
 
 mv = core.mv
 # The colours of the three coefficients: shifting along the axis of symmetry, shifting across it, and
@@ -23,13 +28,15 @@ path_colours = ["#94a3b8", "#0284c7", "#ea580c"]
 impulse_colour = "#475569"
 # The free space between the lanes, and around the bodies at the ends of the view.
 gap = 1.0
+# Widths, dashes and radii in pixels: the impulse's dashed line, the paths and the bodies' outlines, and the noses.
+impulse_width, impulse_dashes = 1.1, (8.3, 5.6)
+path_width, outline_width, nose_radius = 1.95, 1.95, 3.5
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(points: core.Point) -> np.ndarray:
-    """x and y of points, on the last axis, the view from above: each point, at unit weight, paired with the planes
-    across x and y."""
-    return (stack((mv.x, mv.y), axis=-1) & points.normalized()[..., None]).to_array()
+def rgb(colour: str) -> np.ndarray:
+    """A named colour's red, green and blue."""
+    return np.array(to_rgb(colour))
 
 
 @charts.style()
@@ -73,30 +80,38 @@ def animate_gliding(impulse: core.Forque,
     lanes = core.directions[1] * (lane * (count - 1 - np.arange(count)))     # [cases] Direction-
     # The ends of the impulse's line within the extent: where it meets the planes square to x there.
     ends = (impulse ^ (mv.x - extent * mv.w)).normalized()                    # [2] Point-
-    line = coordinates(ends + lanes[:, None])                                # [cases, 2, 2]
-    shapes = coordinates(outlines + lanes[:, None])                          # [frames, cases, outline + 1, 2]
-    paths = coordinates(centres + lanes)                                     # [frames, cases, 2]
-    tips = coordinates(noses + lanes)                                        # [frames, cases, 2]
+    lines = (ends + lanes[:, None]).reshape(-1)                               # [cases * 2] Point-
+    shapes = outlines + lanes[:, None]                                        # [frames, cases, outline + 1] Point-
+    # Each case's path through the frames, case by case.
+    tracks = stack([(centres + lanes)[:, case] for case in range(count)])    # [cases, frames] Point-
+    tips = noses + lanes                                                      # [frames, cases] Point-
+    # The body's triangles, the same in every frame, and its outline a closed chain.
+    body = Mesh.triangulate(shapes[0, 0, :-1])
+    rim = Mesh.chains([shapes.shape[-1]])
     height = lane * count
     # The lanes and their impulses set up once; each body, its path so far and its nose move.
     aspect = float((height / (extent[1] - extent[0])).to_array())
     figure = plt.figure(figsize=(4.0, 4.0 * aspect), dpi=100)
     ax = figure.add_axes((0, 0, 1, 1))
-    trails, bodies, dots = [], [], []
-    for case in range(count):
-        ax.plot(*line[case].T, color=impulse_colour, linewidth=0.8, linestyle=(0, (6, 4)), zorder=0)
-        trails += ax.plot([], [], color=path_colours[case], linewidth=1.4, zorder=1)
-        bodies += ax.fill(*shapes[0, case].T, facecolor=body_colours[case], edgecolor=edge_colours[case],
-                          linewidth=1.4, zorder=2)
-        dots += ax.plot([], [], "o", color=edge_colours[case], markersize=5, zorder=3)
     ax.set_xlim(*extent.to_array())
     ax.set_ylim(*stack((-lane / 2, height - lane / 2)).to_array())
     ax.set_aspect("equal")
     ax.set_axis_off()
+    camera = flat_panel(ax, core.ga)
+    impulses = simplices.strokes(lines, Mesh.chains([2] * count), rgb(impulse_colour), impulse_width, camera,
+                                 dashes=impulse_dashes, cap=simplices.Cap.BUTT)
+    image = simplices.overlay(ax, [impulses])
     for index in range(len(frames)):
-        for case in range(count):
-            trails[case].set_data(*paths[:index + 1, case].T)
-            bodies[case].set_xy(shapes[index, case])
-            dots[case].set_data(*tips[index, case, :, None])
+        path_ink = np.repeat([rgb(colour) for colour in path_colours], index, axis=0)   # [cases * index, 3]
+        bodies = [picture for case in range(count) for picture in (
+            contours.picture(shapes[index, case, :-1], body, np.zeros(body.n_vertices), rgb(body_colours[case]),
+                             camera),
+            simplices.strokes(shapes[index, case], rim, rgb(edge_colours[case]), outline_width, camera))]
+        image.set_data(simplices.composited([
+            impulses,
+            simplices.strokes(tracks[:, :index + 1].reshape(-1), Mesh.chains([index + 1] * count), path_ink,
+                              path_width, camera),
+            *bodies,
+            simplices.markers(tips[index], np.array([rgb(colour) for colour in edge_colours]), nose_radius, camera)]))
         yield capture(figure)
     plt.close(figure)

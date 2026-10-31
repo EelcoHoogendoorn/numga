@@ -5,18 +5,26 @@ from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import LineCollection
+from matplotlib.colors import to_rgb
 
 from numga import stack
 from numga.algebras import PGA2D as ga
 from examples.util import charts
 from examples.util.animation import capture
+from examples.util.wgsl import simplices
+from examples.util.wgsl.camera import Camera, flat_panel
 
 Point = ga.gatype.antivector()  # Antivector-
 
 
 COLOURS = ("#2563eb", "#0d9488", "#d97706", "#9333ea")
 CROSS_COLOUR, LABEL_COLOUR, CRITICAL_COLOUR = "0.85", "0.4", "#dc2626"
+REST_COLOUR, PIVOT_COLOUR, FIXED_COLOUR = "#cbd5e1", "#334155", "#94a3b8"
+# In pixels: the widths of a mode's rest shape and of its moved shape, of the chain's bars and of the beam's, and the
+# radius of the pivot.
+REST_WIDTH, MODE_WIDTH, CHAIN_WIDTH, BEAM_WIDTH, PIVOT_RADIUS = 1.1, 1.7, 1.8, 0.7, 3.5
+# The margin around the mode shapes, as a share of their extent either way.
+MODE_MARGIN = 0.05
 # How many times the first frame's reach from the pivot the swinging chain's view spans to either side and below, room
 # for the swing, and the share of that it spans above; how many times the first frame's farthest point from its axis,
 # or a fortieth of its length, the beam's view spans above and below the axis, room for the buckling, and the share of
@@ -31,19 +39,39 @@ def coordinates(points: Point) -> np.ndarray:
     return (stack((mv.x, mv.y)) & points.batch()[..., None]).to_array()
 
 
+def rgb(colours) -> np.ndarray:
+    """Colours by name as red, green and blue `[..., 3]`."""
+    return np.array([to_rgb(colour) for colour in np.ravel(colours)]).reshape(np.shape(colours) + (3,))
+
+
+def bodies_mesh(n_bodies: int, n_vertices: int, edges: np.ndarray) -> simplices.Mesh:
+    """The bars of bodies alike, their vertices numbered body by body, as one mesh of edges."""
+    offsets = n_vertices * np.arange(n_bodies)
+    return simplices.Mesh(n_bodies * n_vertices, (edges[None] + offsets[:, None, None]).reshape(-1, 2))
+
+
 def mode_shapes(rest: Point, deformed: Point, edges: np.ndarray) -> plt.Figure:
     reference = coordinates(rest)
     positions = coordinates(deformed)
     figure = plt.figure(figsize=(8, 5), layout="constrained")
     columns = 2
     rows = (len(positions) + columns - 1) // columns
+    panels = []
     for i, points in enumerate(positions):
         axes = figure.add_subplot(rows, columns, i + 1)
-        axes.add_collection(LineCollection(reference[edges], colors="#cbd5e1", linewidths=0.8))
-        axes.add_collection(LineCollection(points[edges], colors=COLOURS[i % len(COLOURS)], linewidths=1.2))
-        axes.autoscale()
-        axes.set_aspect("equal")
+        drawn = np.concatenate([reference, points])
+        low, high = drawn.min(axis=0), drawn.max(axis=0)
+        padding = MODE_MARGIN * (high - low)
+        axes.set(xlim=(low[0] - padding[0], high[0] + padding[0]), ylim=(low[1] - padding[1], high[1] + padding[1]),
+                 aspect="equal")
         axes.set_axis_off()
+        panels.append(axes)
+    girder = simplices.Mesh(reference.shape[0], edges)
+    for i, (axes, shape) in enumerate(zip(panels, deformed.batch())):
+        camera = flat_panel(axes, ga)
+        simplices.overlay(axes, [simplices.strokes(rest.batch(), girder, rgb(REST_COLOUR), REST_WIDTH, camera),
+                                 simplices.strokes(shape, girder, rgb(COLOURS[i % len(COLOURS)]), MODE_WIDTH,
+                                                   camera)])
     return figure
 
 
@@ -66,26 +94,27 @@ def history(points: Point, damping: np.ndarray, frame_dt: float) -> plt.Figure:
 
 
 def chain_scene(edges: np.ndarray, reference: Point, lower: Point,
-                upper: Point) -> tuple[plt.Figure, LineCollection]:
-    """The chain's figure between the corners `lower` and `upper`, its pivot marked, its bars still to be set."""
-    rest = coordinates(reference[0, 1:])
-    pivot = rest[0, 1]
-    body_colours = np.asarray(COLOURS)[np.arange(len(rest)) % len(COLOURS)]
-    edge_colours = np.repeat(body_colours, len(edges))
+                upper: Point) -> tuple[plt.Figure, plt.Axes, Camera]:
+    """The chain's figure between the corners `lower` and `upper`, and its camera."""
     figure, axes = plt.subplots(figsize=(6, 4), layout="constrained")
-    bars = LineCollection([], colors=edge_colours, linewidths=1.3)
-    axes.add_collection(bars)
-    axes.plot(*pivot, marker="o", color="#334155", markersize=5)
     bounds = coordinates(stack((lower, upper)))
     axes.set(xlim=bounds[:, 0], ylim=bounds[:, 1])
     axes.set_aspect("equal")
     axes.set_axis_off()
-    return figure, bars
+    return figure, axes, flat_panel(axes, ga)
 
 
-def update_chain(points: Point, edges: np.ndarray, bars: LineCollection) -> None:
-    positions = coordinates(points[0, 1:])
-    bars.set_segments(positions[:, edges].reshape(-1, 2, 2))
+def chain_drawn(points: Point, edges: np.ndarray, reference: Point, camera: Camera) -> np.ndarray:
+    """The chain's bars at one moment, the first case's bodies after the first, each in its colour, with its pivot
+    marked."""
+    bodies = points[0, 1:].batch()                                           # [bodies, vertices] Point-
+    n_bodies, n_vertices = bodies.shape
+    pivot = reference[0, 1:].batch()[0, 1]                                   # [] Point-
+    body_colours = rgb(np.asarray(COLOURS)[np.arange(n_bodies) % len(COLOURS)])
+    return simplices.composited([
+        simplices.strokes(bodies.reshape(-1), bodies_mesh(n_bodies, n_vertices, edges),
+                          np.repeat(body_colours, len(edges), axis=0), CHAIN_WIDTH, camera),
+        simplices.markers(pivot[None], rgb(PIVOT_COLOUR), PIVOT_RADIUS, camera)])
 
 
 def swinging_chain(frames: Iterable[Point], edges: np.ndarray, reference: Point) -> Iterator[np.ndarray]:
@@ -99,9 +128,10 @@ def swinging_chain(frames: Iterable[Point], edges: np.ndarray, reference: Point)
     extent = CHAIN_ROOM * distances.max()
     lower = pivot - (mv.x.dual() + mv.y.dual()) * extent
     upper = pivot + (mv.x.dual() + mv.y.dual() * CHAIN_ABOVE) * extent
-    figure, bars = chain_scene(edges, reference, lower, upper)
+    figure, axes, camera = chain_scene(edges, reference, lower, upper)
+    image = simplices.overlay(axes, [chain_drawn(first, edges, reference, camera)])
     for points in chain([first], frames):
-        update_chain(points, edges, bars)
+        image.set_data(chain_drawn(points, edges, reference, camera))
         yield capture(figure)
     plt.close(figure)
 
@@ -118,8 +148,8 @@ def draw_chain(points: Point, edges: np.ndarray) -> plt.Figure:
     margin = spans.max() * 0.06
     lower = mv.w.dual() + (frame.dual() * (low - margin)).sum()
     upper = mv.w.dual() + (frame.dual() * (high + margin)).sum()
-    figure, bars = chain_scene(edges, points, lower, upper)
-    update_chain(points, edges, bars)
+    figure, axes, camera = chain_scene(edges, points, lower, upper)
+    simplices.overlay(axes, [chain_drawn(points, edges, points, camera)])
     return figure
 
 
@@ -132,22 +162,23 @@ def beam(frames: Iterable[Point], edges: np.ndarray) -> Iterator[np.ndarray]:
     mv = first.context.multivector
     positions = first[0].batch()                                             # [bodies, vertices] Point-
     bodies = positions.shape[0]
-    colours = np.where((np.arange(bodies) == 0) | (np.arange(bodies) == bodies - 1), "#94a3b8",
-                       np.asarray(COLOURS)[np.arange(bodies) % len(COLOURS)])
+    colours = rgb(np.where((np.arange(bodies) == 0) | (np.arange(bodies) == bodies - 1), FIXED_COLOUR,
+                           np.asarray(COLOURS)[np.arange(bodies) % len(COLOURS)]))
+    girders = bodies_mesh(bodies, positions.shape[1], edges)
     along = (mv.x & positions).reshape(-1)
     heights = (mv.y & positions).abs().reshape(-1)
     left, right = along.min(), along.max()
     extent = BEAM_ROOM * max(heights.max(), (right - left) / 40)
     beyond = BEAM_END_ROOM * (right - left)
     figure, axes = plt.subplots(figsize=(10, 1.6), dpi=60, layout="constrained")
-    bars = LineCollection([], colors=np.repeat(colours, len(edges)), linewidths=0.8)
-    axes.add_collection(bars)
     axes.set(xlim=stack((left - beyond, right + beyond)).to_array(), ylim=stack((-extent, extent)).to_array())
     axes.set_aspect("equal")
     axes.set_axis_off()
+    camera = flat_panel(axes, ga)
+    image = simplices.overlay(axes, [np.zeros(camera.shape + (4,))])
     for points in chain([first], frames):
-        frame = coordinates(points[0])
-        bars.set_segments(frame[:, edges].reshape(-1, 2, 2))
+        image.set_data(simplices.strokes(points[0].batch().reshape(-1), girders, np.repeat(colours, len(edges), axis=0),
+                                         BEAM_WIDTH, camera))
         yield capture(figure)
     plt.close(figure)
 

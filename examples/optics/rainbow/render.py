@@ -7,15 +7,18 @@ from collections.abc import Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import LineCollection
+from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack
+from examples import instantiate
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import pinned, room
+from examples.util.wgsl import contours, pinned, room, simplices
+from examples.util.wgsl.camera import panel
 from examples.optics.rainbow import core
 
 mv = core.mv
+mesh = instantiate("examples.util.mesh", core.ga)
 # The cross-section's directions along the sunlight and up, as the drawing shows them, across and up the page.
 sunlight = mv.x.dual()                                                        # [] Direction-
 # The colours of the background, the drop, the sunlight, light reflected once and twice inside the drop, the sky
@@ -36,18 +39,16 @@ view_half_width = 62.0
 # The power the sky's light is raised to for display, brightening faint light more than bright.
 tone_exponent = 0.65
 # The sky's width, in inches at 100 dpi, and the sweep's size, in pixels; the widths of the swept light and the
-# bundle, in points, and of the angle curves, a colour's each, thin for the dense fan of colours to stay apart.
+# bundle, in pixels, and of the angle curves, in points, a colour's each, thin for the dense fan of colours to stay
+# apart; the sides of the drop's outline.
 sky_width, sweep_size = 6.0, (600, 270)
-light_width, bundle_width, curve_width = 1.1, 0.35, charts.points(1.0)
+light_width, bundle_width, curve_width = 1.5, 1.0, charts.points(1.0)
+# How much of the bundle's colour shows over the background.
+bundle_share = 0.4
+drop_sectors = 96
 
 
 # --- plumbing -------------------------------------------------------------------------
-def flat(points: core.Direction) -> np.ndarray:
-    """Points of the cross-section through the drop along the sunlight, on the last axis: along the
-    sunlight, and up."""
-    return (stack((mv.x, mv.y)) & points[..., None]).to_array()
-
-
 def pixel_grid(view: tuple[float, float, float, float], columns: int, rows: int
                ) -> tuple[np.ndarray, np.ndarray, tuple[float, float, float, float]]:
     """The middles of the square pixels of the view, left, right, bottom and top, that fit in `columns` by `rows`:
@@ -108,10 +109,16 @@ def draw_sky(sight_cosines: core.Scalar, flux: core.Scalar, wavelengths: np.ndar
     chart = mv.x.dual() * across[None, :] + mv.y.dual() * height[:, None]     # [rows, columns] Direction-
     distance = chart.norm().to_array()                                        # [rows, columns]
     image = np.stack([np.interp(distance, angles, colour[:, channel], right=0) for channel in range(3)], axis=-1)
-    pinned(ax, np.clip(sky_colour + image ** tone_exponent, 0, 1), extent)
-    ax.fill_between(extent[:2], extent[2], sun_elevation, color=ground_colour)
     ax.set_xlim(extent[0], extent[1])
     ax.set_ylim(extent[2], extent[3])
+    # The ground, below the horizon at the sun's height, over the sky, the picture's own pixels read by the planes of
+    # the chart.
+    camera = panel(ax, mv.x, mv.y)._replace(pixels=len(across))
+    ground = (mv.x.dual() * np.array(extent[:2])[None, :]
+              + mv.y.dual() * np.array([extent[2], sun_elevation])[:, None]).reshape(-1)   # [corners] Direction-
+    seen = contours.picture(ground, simplices.Mesh.grid(2, 2), np.zeros(len(ground)), to_rgb(ground_colour), camera)
+    sky = np.clip(sky_colour + image ** tone_exponent, 0, 1)
+    pinned(ax, sky * (1 - seen[..., 3:]) + seen[..., :3] * seen[..., 3:], extent)
     return figure
 
 
@@ -120,13 +127,19 @@ def animate_sweep(swept_light: tuple[core.Direction, core.Direction, core.Direct
                   offsets: core.Direction, sight_cosines: core.Scalar, wavelengths: np.ndarray) -> Iterator[np.ndarray]:
     """Light swept across the drop, with a bundle of light behind it, its paths after one and two
     reflections; beside it, the angle each colour is seen at against the offset of the light."""
-    def rays(entry: core.Direction, vertices: core.Direction, exits: core.Direction) -> list[np.ndarray]:
-        """Per order drawn, the path of each ray from the sun to past the drop `[orders, rays, points, 2]`."""
+    def rays(entry: core.Direction, vertices: core.Direction, exits: core.Direction) -> list[core.Direction]:
+        """Per order drawn, the path of each ray from the sun to past the drop `[points, rays]`."""
         sunward = entry - sunlight * ray_length                               # [rays] Direction-
         ahead = vertices + exits * ray_length                                 # [orders + 1, rays] Direction-
-        paths = [concatenate([stack([sunward, entry]), vertices[:order + 1], ahead[order][None]])
-                 for order in (1, 2)]                                         # [orders][points, rays] Direction-
-        return [np.moveaxis(flat(path), 0, -2) for path in paths]
+        return [concatenate([stack([sunward, entry]), vertices[:order + 1], ahead[order][None]])
+                for order in (1, 2)]                                          # [orders][points, rays] Direction-
+
+    def exits(paths: core.Direction) -> tuple[core.Direction, simplices.Mesh]:
+        """The light leaving the drop along each path `[points, rays]`: the ends of its last stretch, and an edge
+        between them."""
+        n_rays = paths.shape[1]
+        ends = concatenate([paths[-2], paths[-1]])                            # [2 * rays] Direction-
+        return ends, simplices.Mesh(2 * n_rays, np.stack([np.arange(n_rays), n_rays + np.arange(n_rays)], axis=-1))
 
     swept_rays, bundle_rays = rays(*swept_light[:3]), rays(*bundle[:3])
     heights = (mv.y & offsets).to_array()                                     # [rays]
@@ -140,16 +153,19 @@ def animate_sweep(swept_light: tuple[core.Direction, core.Direction, core.Direct
                             facecolor=background)
         drop = figure.add_axes((0, 0, 0.5, 1))
         drop.set_facecolor(background)
-        drop.add_patch(plt.Circle((0, 0), 1, color=drop_colour))
-        for paths, colour in zip(bundle_rays, (primary_colour, secondary_colour)):
-            drop.add_collection(LineCollection(paths[:, -2:], colors=colour, linewidths=bundle_width, alpha=0.4))
-        # The swept light's paths after two reflections and after one, and the sunlight reaching the drop.
-        lights = [drop.plot([], [], color=colour, linewidth=light_width)[0]
-                  for colour in (secondary_colour, primary_colour, sunlight_colour)]
         drop.set_xlim(-ray_length, ray_length)
         drop.set_ylim(-ray_length * 0.9, ray_length * 0.9)
         drop.set_aspect("equal")
         drop.set_axis_off()
+        camera = panel(drop, mv.x, mv.y)
+        disk, places = mesh.Mesh.disk(1.0, 1, drop_sectors)
+        still = [contours.picture(places.batch(), disk, np.zeros(disk.n_vertices), to_rgb(drop_colour), camera)]
+        # The bundle faint, its colours dimmed toward the background, and opaque, so that its few shades leave the
+        # animation's palette to the angles' colours.
+        still += [simplices.strokes(*exits(paths), bundle_share * np.array(to_rgb(colour))
+                                    + (1 - bundle_share) * np.array(to_rgb(background)), bundle_width, camera)
+                  for paths, colour in zip(bundle_rays, (primary_colour, secondary_colour))]
+        drop_seen = simplices.overlay(drop, still)
         angles = figure.add_axes((0.57, 0.1, 0.4, 0.85))
         angles.set_facecolor(background)
         markers = []
@@ -169,9 +185,12 @@ def animate_sweep(swept_light: tuple[core.Direction, core.Direction, core.Direct
         for spine in angles.spines.values():
             spine.set_color(axis_colour)
         for frame in range(len(swept_heights)):
-            for light, path in zip(lights, (swept_rays[1][frame, 1:], swept_rays[0][frame, 1:],
-                                            swept_rays[0][frame, :2])):
-                light.set_data(*path.T)
+            # The swept light's paths after two reflections and after one, and the sunlight reaching the drop.
+            lights = [(swept_rays[1][1:, frame], secondary_colour), (swept_rays[0][1:, frame], primary_colour),
+                      (swept_rays[0][:2, frame], sunlight_colour)]
+            drop_seen.set_data(simplices.composited(still + [
+                simplices.strokes(path, simplices.Mesh.chains([len(path)]), to_rgb(colour), light_width, camera)
+                for path, colour in lights]))
             for order, marker in enumerate(markers):
                 marker.set_data([swept_heights[frame]], [marks[order + 1, frame]])
             yield capture(figure)

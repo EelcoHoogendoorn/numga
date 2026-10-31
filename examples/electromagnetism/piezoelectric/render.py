@@ -6,17 +6,15 @@ from collections.abc import Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import LineCollection
-from matplotlib.colors import LinearSegmentedColormap, Normalize
-from matplotlib.patches import Rectangle
-from matplotlib.tri import Triangulation
+from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 
 from numga import concatenate, stack
 from examples.electromagnetism.piezoelectric import core
 from examples.util.animation import capture
-from examples.util.wgsl import contours, pinned
-from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl import contours, simplices
+from examples.util.wgsl.camera import Camera, flat_panel
 
+Mesh = core.Mesh
 
 compression_colour = "#286580"
 extension_colour = "#df6435"
@@ -26,7 +24,20 @@ strain_colours = LinearSegmentedColormap.from_list(
     "piezoelectric_strain", (compression_colour, "#f5f4ef", extension_colour))
 electrode_colours = LinearSegmentedColormap.from_list(
     "piezoelectric_voltage", (compression_colour, "#8b969b", extension_colour))
-# The observer's slice of space, which carries the strip's events into the renderer's space.
+# The clamp's face and edge colours, its edge's width, and how many hatches cross it.
+clamp_face, clamp_edge, clamp_width, n_hatches = "#edf0f0", "#a0aaaf", 1.1, 4
+# Widths, dashes, heads and radii in pixels: the device's rest outline, its interface and tip, its electrodes and its
+# poling arrows; the mesh's edges, electrodes, interface and clamped nodes.
+rest_width, rest_dashes = 1.25, (5.5, 5.5)
+bond_width, end_width, electrode_width = 1.25, 1.4, 2.1
+poling_width, poling_head, poling_opacity = 1.0, 4.0, 0.75
+mesh_width, mesh_electrode_width, mesh_interface_width, clamped_radius = 0.8, 3.5, 1.7, 1.5
+
+
+# --- plumbing -------------------------------------------------------------------------
+def rgb(colour: str) -> np.ndarray:
+    """A named colour's red, green and blue."""
+    return np.array(to_rgb(colour))
 
 
 def coordinates(points: core.Point) -> np.ndarray:
@@ -40,26 +51,52 @@ def scalars(values: core.Scalar) -> np.ndarray:
     return np.asarray(values.batch().to_array())
 
 
+def chain(points: core.Point, colour: str, width: float, camera: Camera, **style) -> np.ndarray:
+    """A polyline through points `[points] Point-`, in order, as a stroke."""
+    return simplices.strokes(points, Mesh.chains([len(points)]), rgb(colour), width, camera, **style)
+
+
+def clamp(low: core.Point, high: core.Point, depth: core.Point, camera: Camera) -> list[np.ndarray]:
+    """A hatched clamp, a block from its face between `low` and `high` back by `depth`: its fill, outline and hatches,
+    rising from its back to its face at forty-five degrees."""
+    corners = stack((low - depth, low, high, high - depth))                     # [4] Point-
+    span = high - low                                                           # [] Point-
+    # The depth as a share of the face's length: how far up the face a hatch rises across the block.
+    rise = float((depth.squared() / span.squared()).square_root().to_array())
+    starts = np.linspace(0, 1 - rise, n_hatches)
+    hatches = stack((low - depth + span * starts, low + span * (starts + rise)), axis=-1).reshape(-1)   # [hatches * 2] Point-
+    return [contours.picture(corners, Mesh(4, np.array([[0, 1, 2], [0, 2, 3]])), np.zeros(4), rgb(clamp_face), camera),
+            simplices.strokes(hatches, Mesh.chains([2] * n_hatches), rgb(clamp_edge), clamp_width, camera,
+                              cap=simplices.Cap.BUTT),
+            chain(corners[[0, 1, 2, 3, 0]], clamp_edge, clamp_width, camera)]
+
+
 class DeviceView:
-    """The strip's moving artists, with fixed deformation and colour scales across frames."""
+    """The strip over its rest outline and clamp, pinned once and redrawn per state, with fixed deformation and colour
+    scales across frames."""
 
     def __init__(self, mesh: core.Strip, vertices: core.Point, areas: core.Scalar, displacement_scale: float,
                  voltage_scale: float, strain_scale: float) -> None:
         self.mesh, self.vertices = mesh, vertices
-        self.rest = coordinates(vertices)
+        rest = coordinates(vertices)
         self.displacement_scale = displacement_scale
         self.voltage_norm = Normalize(-voltage_scale / 2, voltage_scale / 2)
         self.strain_norm = Normalize(-strain_scale, strain_scale)
         # Each face's area shared among its corners, for area-weighted readings of face values at the vertices.
         self.corner_shares = ~mesh.incidence[2, 0].mean(axis=0)                 # Scalar+[vertices <- faces]
         self.areas, self.vertex_areas = areas, self.corner_shares * areas
-        left, lower = self.rest.min(axis=0)
-        right, upper = self.rest.max(axis=0)
+        left, lower = rest.min(axis=0)
+        right, upper = rest.max(axis=0)
         length, self.thickness = right - left, upper - lower
         middle = (upper + lower) / 2
 
         # The strip's electrodes and interface run in order along it, and its tip from the bottom up.
         self.poles = np.linspace(0, len(mesh.top) - 1, 9, dtype=int)[1:-1]
+        # Each poling arrow a chain of two points, its tail and its head.
+        self.arrows = Mesh.chains([2] * (2 * len(self.poles)))
+        # The electrodes, top and bottom, as chains; each edge coloured by its electrode.
+        self.electrodes = Mesh.chains([len(mesh.top), len(mesh.bottom)])
+        self.electrode_edges = np.array([len(mesh.top) - 1, len(mesh.bottom) - 1])
 
         self.figure, ax = plt.subplots(figsize=(5.25, 1.4), dpi=100)
         self.figure.subplots_adjust(0.015, 0.025, 0.995, 0.975)
@@ -67,61 +104,53 @@ class DeviceView:
         ax.set(xlim=(left - 0.045 * length, right + 0.025 * length),
                ylim=(middle - half_height, middle + half_height), aspect="equal")
         ax.set_axis_off()
-        ax.add_patch(Rectangle((left - 0.025 * length, middle - self.thickness),
-                               0.025 * length, 2 * self.thickness,
-                               facecolor="#edf0f0", edgecolor="#a0aaaf", linewidth=0.8,
-                               hatch="////", zorder=1))
-        ax.plot([left, left], [middle - self.thickness, middle + self.thickness],
-                color=interface_colour, linewidth=0.8, zorder=5)
-
-        rest_outline = np.concatenate((mesh.bottom, mesh.tip, mesh.top[::-1]))
-        ax.plot(*self.rest[rest_outline].T, color=rest_colour, linewidth=0.9,
-                linestyle=(0, (4, 4)), zorder=0)
-        # The strained body, a picture of the deformed mesh shaded anew at each state.
         self.view = flat_panel(ax, core.ga)
-        self.body = pinned(ax, np.zeros(self.view.shape + (4,)), (*ax.get_xlim(), *ax.get_ylim()))
-        self.body.set_zorder(2)
-        self.bond, = ax.plot([], [], color=interface_colour, linewidth=0.9, zorder=4)
-        self.end, = ax.plot([], [], color=interface_colour, linewidth=1, zorder=4)
-        self.electrodes = LineCollection([], linewidths=1.5, zorder=5, capstyle="round")
-        ax.add_collection(self.electrodes)
-        # The arrows belong to the material: the upper layer is poled up and the lower layer down.
-        count = 2 * len(self.poles)
-        self.poling = ax.quiver(np.zeros(count), np.zeros(count), np.zeros(count), np.zeros(count),
-                                color=interface_colour, angles="xy", scale_units="xy", scale=1,
-                                pivot="middle", width=0.0015, headwidth=3.1, headlength=4,
-                                headaxislength=3.5, alpha=0.75, zorder=6)
+        # The clamp, twice the strip's thickness, its face along the strip's clamped edge.
+        places = vertices.batch()                                               # [vertices] Point-
+        foot, head = places[mesh.clamped[0]], places[mesh.clamped[-1]]          # [] Point-, [] Point-
+        low, high = foot - (head - foot) / 2, head + (head - foot) / 2          # [] Point-, [] Point-
+        rest_outline = places[np.concatenate((mesh.bottom, mesh.tip, mesh.top[::-1]))]   # [outline] Point-
+        self.under = [chain(rest_outline, rest_colour, rest_width, self.view, dashes=rest_dashes),
+                      *clamp(low, high, core.axis * (0.025 * length), self.view)]
+        self.face = chain(stack((low, high)), interface_colour, rest_width, self.view)
+        # The strained body, a picture of the deformed mesh shaded anew at each state.
+        self.image = simplices.overlay(ax, self.under)
 
     def update(self, displacement: core.Point, potential: core.Scalar,
                axial_strain: core.Scalar) -> plt.Figure:
         deformed = self.vertices + self.displacement_scale * displacement           # Point-[vertices]
-        points = coordinates(deformed)
         # Area-weighted nodal readings give a continuous display of the piecewise-constant element strain.
         # The strain comes per triangle, a batch over the faces; as a field over them it reaches the vertices.
         strain = scalars(self.corner_shares * (self.areas * axial_strain.field()) / self.vertex_areas)
         places = deformed.batch()                                             # [vertices] Point-
-        self.body.set_data(contours.picture(places, self.mesh, strain, strain_colours(self.strain_norm(strain))[:, :3],
-                                            self.view))
-        self.bond.set_data(*points[self.mesh.interface].T)
-        self.end.set_data(*points[self.mesh.tip].T)
+        body = contours.picture(places, self.mesh, strain, strain_colours(self.strain_norm(strain))[:, :3], self.view)
 
         potential = scalars(potential)
         electrode_potential = np.array([potential[self.mesh.top].mean(), potential[self.mesh.bottom].mean()])
         # The two electrode colours read their voltage difference, independent of the potential's zero.
         electrode_potential -= electrode_potential.mean()
-        self.electrodes.set_segments([points[self.mesh.top], points[self.mesh.bottom]])
-        self.electrodes.set_colors(electrode_colours(self.voltage_norm(electrode_potential)))
+        electrode_ink = np.repeat(electrode_colours(self.voltage_norm(electrode_potential))[:, :3],
+                                  self.electrode_edges, axis=0)                 # [electrode edges, 3]
 
         # The poling arrows, across the strip from electrode to electrode: up in the upper layer, a quarter of the way
         # down from the top, and down in the lower layer, a quarter of the way up from the bottom.
-        upper = deformed.batch()[self.mesh.top[self.poles]]                         # [poles] Point-
-        lower = deformed.batch()[self.mesh.bottom[self.poles]]                      # [poles] Point-
+        upper = places[self.mesh.top[self.poles]]                                   # [poles] Point-
+        lower = places[self.mesh.bottom[self.poles]]                                # [poles] Point-
         separation = upper - lower                                                  # [poles] Point-
         across = separation / separation.squared().square_root()                    # [poles] Point-
         centres = concatenate((0.75 * upper + 0.25 * lower, 0.25 * upper + 0.75 * lower))   # [arrows] Point-
         arrows = 0.32 * self.thickness * concatenate((across, -across))             # [arrows] Point-
-        self.poling.set_offsets(coordinates(centres))
-        self.poling.set_UVC(*coordinates(arrows).T)
+        poling = stack((centres - arrows / 2, centres + arrows / 2), axis=-1).reshape(-1)   # [arrows * 2] Point-
+
+        self.image.set_data(simplices.composited(self.under + [
+            body,
+            chain(places[self.mesh.interface], interface_colour, bond_width, self.view),
+            chain(places[self.mesh.tip], interface_colour, end_width, self.view),
+            self.face,
+            simplices.strokes(places[np.concatenate((self.mesh.top, self.mesh.bottom))], self.electrodes,
+                              electrode_ink, electrode_width, self.view),
+            simplices.strokes(poling, self.arrows, rgb(interface_colour), poling_width, self.view,
+                              np.ones(len(self.arrows.edges)), poling_head, opacity=poling_opacity)]))
         return self.figure
 
 
@@ -138,14 +167,19 @@ def draw_mesh(mesh: core.Strip, vertices: core.Point) -> plt.Figure:
     ax.set(xlim=(left - 0.12 * thickness, left + shown), ylim=(lower - 0.12 * thickness, upper + 0.12 * thickness),
            aspect="equal")
     ax.set_axis_off()
-    ax.add_patch(Rectangle((left - 0.12 * thickness, lower - 0.12 * thickness), 0.12 * thickness, 1.24 * thickness,
-                           facecolor="#edf0f0", edgecolor="#a0aaaf", linewidth=0.8, hatch="////", zorder=1))
-    ax.triplot(Triangulation(rest[:, 0], rest[:, 1], mesh.faces), color=rest_colour, linewidth=0.5, zorder=2)
+    camera = flat_panel(ax, core.ga)
+    places = vertices.batch()                                                   # [vertices] Point-
+    foot, head = places[mesh.clamped[0]], places[mesh.clamped[-1]]              # [] Point-, [] Point-
+    margin = 0.12 * (head - foot)                                               # [] Point-
     # The electrodes and the interface run in order along the strip.
-    for nodes, colour, width in ((mesh.top, extension_colour, 2.5), (mesh.bottom, compression_colour, 2.5),
-                                 (mesh.interface, interface_colour, 1.2)):
-        ax.plot(*rest[nodes].T, color=colour, linewidth=width, solid_capstyle="butt", zorder=3)
-    ax.plot(*rest[mesh.clamped].T, "o", color=interface_colour, markersize=2.2, zorder=4)
+    simplices.overlay(ax, [
+        *clamp(foot - margin, head + margin, core.axis * (0.12 * thickness), camera),
+        simplices.strokes(places, mesh, rgb(rest_colour), mesh_width, camera),
+        *[chain(places[nodes], colour, width, camera, cap=simplices.Cap.BUTT)
+          for nodes, colour, width in ((mesh.top, extension_colour, mesh_electrode_width),
+                                       (mesh.bottom, compression_colour, mesh_electrode_width),
+                                       (mesh.interface, interface_colour, mesh_interface_width))],
+        simplices.markers(places[mesh.clamped], rgb(interface_colour), clamped_radius, camera)])
     return figure
 
 

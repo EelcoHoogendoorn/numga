@@ -8,13 +8,12 @@ from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.artist import Artist
 from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack
 from examples.util import charts
-from examples.util.wgsl import flow as ink, pinned
-from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl import flow as ink, simplices
+from examples.util.wgsl.camera import Camera, flat_panel
 from examples.util.animation import capture
 from examples.fluids.stokes_swimmer import core
 
@@ -29,6 +28,13 @@ cross_colour, label_colour = "#cbd5e1", "0.4"
 hinge_margin, hinge_room = 0.12, 0.5
 # Half the height of the water each animated panel shows.
 water_half_height = 1.55
+# The swimmer's sizes in points, drawn at each figure's pixels a point: its chain's width, its beads' radius and their
+# white rims, its hinges' radius and their coloured rims; the trail's width.
+chain_width, bead_radius, bead_rim, hinge_radius, hinge_rim = 2.6, 3.25, 0.6, 2.55, 1.4
+summary_trail_width, animation_trail_width = charts.points(charts.LINE_PX), 1.6
+# The bead forces' arrows: their width and heads in pixels, and the force per width of the flow's panel, the arrows'
+# scale.
+force_width, force_head, force_scale = 1.75, 5.0, 1.4
 
 
 def point_coords(points: core.Point) -> np.ndarray:
@@ -38,10 +44,9 @@ def point_coords(points: core.Point) -> np.ndarray:
     return (stack((mv.x, mv.y)) & points[..., None]).to_array()
 
 
-def force_coords(forces: core.Force) -> np.ndarray:
-    """The `(x, y)` components of forces: their pairings with the unit displacements along x and y."""
-    mv = core.mv
-    return (forces[..., None] & stack((mv.direction([1.0, 0.0]), mv.direction([0.0, 1.0])))).to_array()
+def rgb(colour: str) -> np.ndarray:
+    """A named colour's red, green and blue."""
+    return np.array(to_rgb(colour))
 
 
 def _cross(ax, across: str, up: str) -> None:
@@ -66,44 +71,31 @@ def _zero_axes(ax, across: str, up: str) -> None:
             rotation=90, rotation_mode="anchor")
 
 
-def _links(beads: core.Point) -> tuple[np.ndarray, np.ndarray]:
-    """The three-link body through its nine beads `[..., 9]`: the chain through the beads and the hinges
-    `[..., 11, 2]`, and the two hinges `[..., 2, 2]`."""
+def _links(beads: core.Point) -> tuple[core.Point, core.Point]:
+    """The three-link body through its nine beads `[9]`: the chain through the beads and the hinges `[11] Point-`,
+    and the two hinges `[2] Point-`."""
     # Left arm (beads 0, 1, 2), centre bar (beads 3, 4, 5), right arm (beads 6, 7, 8); each hinge half a bead's
     # spacing beyond the end of the centre bar.
-    left_hinge = 1.5 * beads[..., 3:4] - 0.5 * beads[..., 4:5]                   # [..., 1] Point-
-    right_hinge = 1.5 * beads[..., 5:6] - 0.5 * beads[..., 4:5]                  # [..., 1] Point-
-    chain = concatenate([beads[..., 0:3], left_hinge, beads[..., 3:6], right_hinge, beads[..., 6:9]], axis=-1)
-    return point_coords(chain), point_coords(concatenate([left_hinge, right_hinge], axis=-1))
+    left_hinge = 1.5 * beads[3:4] - 0.5 * beads[4:5]                             # [1] Point-
+    right_hinge = 1.5 * beads[5:6] - 0.5 * beads[4:5]                            # [1] Point-
+    chain = concatenate([beads[0:3], left_hinge, beads[3:6], right_hinge, beads[6:9]])
+    return chain, concatenate([left_hinge, right_hinge])
 
 
-def _draw_swimmer(ax, beads: core.Point, colour: str, alpha: float) -> list[Artist]:
-    """Draw the three-link body and its nine hydrodynamic beads: the chain, the beads and the hinges."""
+def _swimmer(beads: core.Point, colour: str, camera: Camera, pixels: float) -> list[np.ndarray]:
+    """The three-link body and its nine hydrodynamic beads `[9] Point-`: the chain, the beads in white rims and the
+    hinges, white in coloured rims, at `pixels` a point."""
     chain, hinges = _links(beads)
-    beads_xy = point_coords(beads)
-    line, = ax.plot(chain[:, 0], chain[:, 1], color=colour, linewidth=2.6, alpha=alpha, zorder=3)
-    dots = ax.scatter(beads_xy[:, 0], beads_xy[:, 1], s=42, color=colour, alpha=alpha, zorder=4, edgecolors="white",
-                      linewidths=0.6)
-    joints = ax.scatter(
-        hinges[:, 0],
-        hinges[:, 1],
-        s=26,
-        color="white",
-        edgecolors=colour,
-        linewidths=1.4,
-        zorder=5,
-        alpha=alpha,
-    )
-    return [line, dots, joints]
+    return [simplices.strokes(chain, simplices.Mesh.chains([len(chain)]), rgb(colour), chain_width * pixels, camera),
+            simplices.markers(beads, np.ones(3), (bead_radius + bead_rim / 2) * pixels, camera),
+            simplices.markers(beads, rgb(colour), (bead_radius - bead_rim / 2) * pixels, camera),
+            simplices.markers(hinges, rgb(colour), (hinge_radius + hinge_rim / 2) * pixels, camera),
+            simplices.markers(hinges, np.ones(3), (hinge_radius - hinge_rim / 2) * pixels, camera)]
 
 
-def _move_swimmer(parts: list[Artist], beads: core.Point) -> None:
-    """Move a swimmer drawn by `_draw_swimmer` to its beads."""
-    line, dots, joints = parts
-    chain, hinges = _links(beads)
-    line.set_data(chain[:, 0], chain[:, 1])
-    dots.set_offsets(point_coords(beads))
-    joints.set_offsets(hinges)
+def _trail(track: core.Point, width: float, camera: Camera) -> np.ndarray:
+    """A swimmer's centre's trail through its places `[steps] Point-`, `width` pixels wide."""
+    return simplices.strokes(track, simplices.Mesh.chains([len(track)]), rgb(trail_colour), width, camera)
 
 
 @charts.style()
@@ -123,17 +115,8 @@ def draw_summary(
 
     grid_xy = point_coords(grid)                                                # [gy, gx, 2]
     beads = world_sites.batch()                                                 # [steps, swimmers, beads] Point-
-    beads_xy = point_coords(beads)                                              # [steps, swimmers, beads, 2]
-    forces_xy = force_coords(world_forces.batch())                              # [steps, swimmers, beads, 2]
     pos_xy = point_coords(positions)                                            # [steps + 1, swimmers, 2]
 
-    _draw_swimmer(ax_flow, beads[0, 0], purcell_colour, 1.0)
-    ax_flow.quiver(
-        beads_xy[0, 0, :, 0], beads_xy[0, 0, :, 1],
-        forces_xy[0, 0, :, 0], forces_xy[0, 0, :, 1],
-        color=force_colour, scale=1.4, width=0.007, zorder=6,
-    )
-    ax_flow.plot(pos_xy[:, 0, 0], pos_xy[:, 0, 1], color=trail_colour, zorder=2)
     ax_flow.set_xlim(grid_xy[0, 0, 0], grid_xy[0, -1, 0])
     ax_flow.set_ylim(grid_xy[0, 0, 1], grid_xy[-1, 0, 1])
     ax_flow.set_aspect("equal")
@@ -155,8 +138,17 @@ def draw_summary(
     mesh = ink.Mesh.grid(*grid.shape)
     points, directions = grid.reshape(-1), flow[0].reshape(-1)
     reference_speed = float(directions.dual().norm().max().to_array())
-    texture = ink.overlay(ax_flow, points, mesh, directions, reference_speed, np.array(to_rgb(flow_colour)))
-    texture.set_zorder(1)
+    camera = flat_panel(ax_flow, core.ga)
+    # Each bead's force drawn along the direction it pushes, one panel's width for `force_scale` of force.
+    sites = beads[0, 0]                                                         # [beads] Point-
+    pushes = world_forces.batch()[0, 0].dual() * ((grid_xy[0, -1, 0] - grid_xy[0, 0, 0]) / force_scale)   # [beads] Direction-
+    n_beads = len(sites)
+    simplices.overlay(ax_flow, [
+        ink.layer(points, mesh, directions, camera, reference_speed, rgb(flow_colour)),
+        _trail(positions[:, 0], summary_trail_width * charts.DPI / 72, camera),
+        *_swimmer(sites, purcell_colour, camera, charts.DPI / 72),
+        simplices.strokes(stack((sites, sites + pushes), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_beads),
+                          rgb(force_colour), force_width, camera, np.ones(n_beads), force_head)])
     return figure
 
 
@@ -170,6 +162,8 @@ def animate_swimmers(
     """Both swimmers' instantaneous velocities share fixed seeds and a fixed magnitude scale."""
     beads = world_sites.batch()[::every]                                        # [frames, swimmers, beads] Point-
     tracks = point_coords(positions)                                           # [steps + 1, swimmers, 2]
+    # Each swimmer's centre's places, swimmer by swimmer.
+    paths = stack([positions[:, swimmer] for swimmer in range(positions.shape[1])])   # [swimmers, steps + 1] Point-
     mesh = ink.Mesh.grid(*grid.shape)
     points = grid.reshape(-1)                                                  # [samples] Point-
     flows = iter(flows)
@@ -181,25 +175,22 @@ def animate_swimmers(
     # As wide as the stretch of water each panel shows, at the height the two panels share.
     figure_height = 4.6
     figure_width = figure_height / 2 * (right - left) / (2 * water_half_height)
-    figure, axes = plt.subplots(2, 1, figsize=(figure_width, figure_height), dpi=55)
+    dpi = 55
+    figure, axes = plt.subplots(2, 1, figsize=(figure_width, figure_height), dpi=dpi)
     figure.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98, hspace=0.06)
-    trails, swimmers = [], []
-    for swimmer, (ax, colour) in enumerate(zip(axes, (purcell_colour, scallop_colour))):
-        trail, = ax.plot([], [], color=trail_colour, linewidth=1.6, zorder=2)
-        trails.append(trail)
-        swimmers.append(_draw_swimmer(ax, beads[0, swimmer], colour, 1.0))
+    for ax in axes:
         ax.set(xlim=(left, right), ylim=(-water_half_height, water_half_height), aspect="equal")
         ax.set_axis_off()
     views = [flat_panel(ax, core.ga) for ax in axes]
-    textures = [pinned(ax, np.zeros(view.shape + (4,)), (left, right, -water_half_height, water_half_height))
-                for ax, view in zip(axes, views)]
+    textures = [simplices.overlay(ax, [np.zeros(view.shape + (4,))]) for ax, view in zip(axes, views)]
     for frame, fields in enumerate(chain((first,), flows)):
         directions = fields.reshape(fields.shape[0], -1)
-        for texture, view, field in zip(textures, views, directions):
-            texture.set_data(ink.layer(points, mesh, field, view, reference_speed, np.array(to_rgb(flow_colour))))
         step_end = frame * every + 1
-        for swimmer, (trail, parts) in enumerate(zip(trails, swimmers)):
-            trail.set_data(tracks[:step_end, swimmer, 0], tracks[:step_end, swimmer, 1])
-            _move_swimmer(parts, beads[frame, swimmer])
+        for swimmer, (texture, view, field, colour) in enumerate(
+                zip(textures, views, directions, (purcell_colour, scallop_colour))):
+            texture.set_data(simplices.composited([
+                ink.layer(points, mesh, field, view, reference_speed, rgb(flow_colour)),
+                _trail(paths[swimmer, :step_end], animation_trail_width * dpi / 72, view),
+                *_swimmer(beads[frame, swimmer], colour, view, dpi / 72)]))
         yield capture(figure)
     plt.close(figure)

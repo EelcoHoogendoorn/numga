@@ -12,8 +12,8 @@ from matplotlib.colors import to_rgba
 from numga import concatenate, stack
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import contours, pinned, solids
-from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl import contours, pinned, simplices
+from examples.util.wgsl.camera import Camera, flat_panel
 from examples.quadrics.quadric_collision.core import (
     Plane, Point, Polarity, Quadric, Scalar, infinity, mv, origin, tangent_plane,
 )
@@ -21,8 +21,8 @@ from examples.quadrics.quadric_collision.core import (
 # The height of the view over its width, and the margin around what the view frames, over its extent.
 aspect = 0.75
 margin = 1.15
-# The area of an ellipsoid's centre's dot in square points: four pixels across, smaller than the contact points'.
-centre_size = charts.points(4) ** 2
+# The radius of an ellipsoid's centre's dot in pixels, four across, smaller than the contact points'.
+centre_radius = 2.0
 # The grid the ellipsoids and the blend at the peak are evaluated on, per side.
 resolution = 250
 first_colours, second_colours = ("#3b82f6", "#1d4ed8"), ("#f97316", "#ea580c")
@@ -34,6 +34,8 @@ apart_colours = ("#16a34a", "#059669", "#10b981", 0.10)
 overlap_colours = ("#9333ea", "#7c3aed", "#a855f7", 0.22)
 # The width of the blend's edge in pixels, thinner than the ellipsoids' outlines.
 blend_edge_width = 1.0
+# The tangent planes' dashes and the witness's dots: a dash and a gap, in pixels.
+tangent_dashes, witness_dots = (4.0, 2.0), (0.0, 4.0)
 # A volume, the join of three points, is an intrinsic scalar, and its unit carries the extrinsic to the intrinsic.
 unit_volume = mv.antipseudoscalar([1])                                         # [] Antipseudoscalar-
 
@@ -69,20 +71,20 @@ def inside(colour: str, opacity: float) -> contours.Bands:
     return contours.Bands(-1.0, 1.0, np.array([np.zeros(4), to_rgba(colour, opacity)]))
 
 
-def clear_picture(ax, view: solids.View, zorder: float):
-    """A clear picture pinned over the panel at a z-order, for an animation to set its data."""
-    shown = pinned(ax, np.zeros(view.shape + (4,)), (*ax.get_xlim(), *ax.get_ylim()))
-    shown.set_zorder(zorder)
-    return shown
-
-
-def plane_ends(plane: Plane) -> tuple[np.ndarray, np.ndarray]:
-    """Two points of the plane, to draw it through: its foot from the origin, where it meets its perpendicular through
-    the origin, and that foot moved along the plane by its direction, where it meets the plane at infinity."""
-    foot = plane ^ (plane | origin)                                            # [] Point-
+def plane_ends(plane: Plane, reach: float) -> Point:
+    """Two points of the plane, to draw it through the panel: `reach` either way along it from its foot from the
+    origin, where it meets its perpendicular through the origin; its direction is where it meets the plane at
+    infinity. `[2] Point-`"""
+    unit = plane.normalized()                                                  # [] Plane+
+    foot = unit ^ (unit | origin)                                              # [] Point-
     # The meet of two planes is extrinsic; the intrinsic scalar one makes the direction a point like the foot.
-    direction = (plane ^ infinity) * unit_volume                              # [] Point-
-    return xy(foot), xy(foot + direction)
+    direction = (unit ^ infinity) * unit_volume                               # [] Point-
+    return stack((foot - direction * reach, foot + direction * reach))
+
+
+def dots(points: Point, colour: str, radius: float, camera: Camera) -> np.ndarray:
+    """Points as dots of a colour, `radius` pixels, read by the camera: their picture."""
+    return simplices.markers(points, np.array(to_rgba(colour))[:3], radius, camera)
 
 
 def animate_collision(
@@ -120,18 +122,6 @@ def animate_collision(
     # anew, so the charts' style holds while they are drawn.
     with charts.style():
         figure, (ax_pair, ax_det) = charts.subplots(600, 260, ncols=2, gridspec_kw={"width_ratios": [1.45, 1]})
-        ax_pair.scatter(*xy(first_ellipsoid(infinity)), color=first_colours[1], s=centre_size, zorder=5)
-        second_centre = ax_pair.scatter([], [], color=second_colours[1], s=centre_size, zorder=5)
-        near = xy(first_ellipsoid(first_tangent))
-        # The tangent planes thin guides, a frame's width, under the midplane.
-        ax_pair.axline(*plane_ends(first_tangent), color=first_colours[1], linestyle="--", linewidth=charts.FRAME_WIDTH,
-                       zorder=4)
-        second_tangent_stroke = ax_pair.axline((0, 0), (1, 0), color=second_colours[1], linestyle="--",
-                                               linewidth=charts.FRAME_WIDTH, zorder=4)
-        midplane_stroke = ax_pair.axline((0, 0), (1, 0), linestyle="-", zorder=4)
-        ax_pair.scatter(*near, color=first_colours[1], zorder=6)
-        far_point = ax_pair.scatter([], [], color=second_colours[1], zorder=6)
-        witness, = ax_pair.plot([], [], "k:", zorder=5)
         ax_pair.set(xlim=xlim, ylim=ylim, aspect="equal")
         ax_pair.set_axis_off()
 
@@ -148,48 +138,56 @@ def animate_collision(
         figure.tight_layout()
         figure.set_layout_engine("none")
 
-        # The ellipsoids and the blend as clear pictures over the panel, at its own pixels: the fills under the
-        # outlines, the first ellipsoid's drawn once, the second's and the blend's anew each frame.
-        view = flat_panel(ax_pair, places.algebra)
+        # The pair as one picture over the panel, at its own pixels, laid anew each frame from its layers: the fills
+        # under the outlines, under the planes, under the centres, the witness and the contact points. The first
+        # ellipsoid's layers are drawn once.
+        camera = flat_panel(ax_pair, places.algebra)
+        pair = pinned(ax_pair, np.zeros(camera.shape + (4,)), (*ax_pair.get_xlim(), *ax_pair.get_ylim()))
+        # The planes run on past the panel's corners either way from their feet.
+        reach = 2 * np.hypot(*camera.half) + np.hypot(*camera.middle)
         first_form = ellipsoid_form(first_ellipsoid, grid)                    # [points]
         first_ink = np.array(to_rgba(first_colours[1]))
-        clear_picture(ax_pair, view, 1.0).set_data(contours.picture(
-            places, mesh, first_form, np.zeros(3), view, bands=(inside(first_colours[0], ellipsoid_opacity),),
-            opacity=0.0))
-        second_fill, blend_fill = clear_picture(ax_pair, view, 1.1), clear_picture(ax_pair, view, 1.2)
-        clear_picture(ax_pair, view, 2.0).set_data(contours.picture(
-            places, mesh, first_form, np.zeros(3), view, levels=(contours.Level(0.0, first_ink, charts.LINE_PX),),
-            opacity=0.0))
-        second_outline, blend_edge = clear_picture(ax_pair, view, 2.1), clear_picture(ax_pair, view, 2.2)
         second_ink = np.array(to_rgba(second_colours[1]))
+        first_fill = contours.picture(places, mesh, first_form, np.zeros(3), camera,
+                                      bands=(inside(first_colours[0], ellipsoid_opacity),), opacity=0.0)
+        first_outline = contours.picture(places, mesh, first_form, np.zeros(3), camera,
+                                         levels=(contours.Level(0.0, first_ink, charts.LINE_PX),), opacity=0.0)
+        near = first_ellipsoid(first_tangent)                                  # [] Point-
+        first_centre = dots(first_ellipsoid(infinity)[None], first_colours[1], centre_radius, camera)
+        near_point = dots(near[None], first_colours[1], charts.MARKER_PX / 2, camera)
+        # The tangent planes thin guides, a frame's width, under the midplane.
+        tangent_strokes = simplices.Mesh.chains([2])
+        first_guide = simplices.strokes(plane_ends(first_tangent, reach), tangent_strokes, first_ink[:3],
+                                        charts.FRAME_PX, camera, dashes=tangent_dashes, cap=simplices.Cap.BUTT)
 
         for (placed_second, second_tangent, midplane, peak, determinants, parameter,
              maximum) in chain([first_state], states):
             line_colour, edge_colour, fill_colour, fill_alpha = apart_colours if maximum > 0 else overlap_colours
-            second_centre.set_offsets(xy(placed_second(infinity))[None])
-            for artist, plane in ((second_tangent_stroke, second_tangent), (midplane_stroke, midplane)):
-                start, end = plane_ends(plane)
-                artist.set_xy1(*start)
-                artist.set_xy2(*end)
-            midplane_stroke.set_color(line_colour)
-            far = xy(placed_second(second_tangent))
-            far_point.set_offsets(far[None])
-            witness.set_data([near[0], far[0]], [near[1], far[1]])
             second_form = ellipsoid_form(placed_second, grid)                 # [points]
-            second_fill.set_data(contours.picture(
-                places, mesh, second_form, np.zeros(3), view, bands=(inside(second_colours[0], ellipsoid_opacity),),
-                opacity=0.0))
-            second_outline.set_data(contours.picture(
-                places, mesh, second_form, np.zeros(3), view,
-                levels=(contours.Level(0.0, second_ink, charts.LINE_PX),), opacity=0.0))
+            second_fill = contours.picture(places, mesh, second_form, np.zeros(3), camera,
+                                           bands=(inside(second_colours[0], ellipsoid_opacity),), opacity=0.0)
+            second_outline = contours.picture(places, mesh, second_form, np.zeros(3), camera,
+                                              levels=(contours.Level(0.0, second_ink, charts.LINE_PX),), opacity=0.0)
             # The blend at the peak is drawn where each point lies on its own polar plane, and filled on the side the
             # sign of its determinant selects: within the hyperboloid's branches, and inside the bridging ellipsoid.
             side = (grid & peak(grid)).to_array() * np.sign(maximum.to_array())   # [points]
-            blend_fill.set_data(contours.picture(
-                places, mesh, side, np.zeros(3), view, bands=(inside(fill_colour, fill_alpha),), opacity=0.0))
-            blend_edge.set_data(contours.picture(
-                places, mesh, side, np.zeros(3), view,
-                levels=(contours.Level(0.0, np.array(to_rgba(edge_colour)), blend_edge_width),), opacity=0.0))
+            blend_fill = contours.picture(places, mesh, side, np.zeros(3), camera,
+                                          bands=(inside(fill_colour, fill_alpha),), opacity=0.0)
+            blend_edge = contours.picture(places, mesh, side, np.zeros(3), camera,
+                                          levels=(contours.Level(0.0, np.array(to_rgba(edge_colour)),
+                                                                 blend_edge_width),), opacity=0.0)
+            second_guide = simplices.strokes(plane_ends(second_tangent, reach), tangent_strokes, second_ink[:3],
+                                             charts.FRAME_PX, camera, dashes=tangent_dashes, cap=simplices.Cap.BUTT)
+            separator = simplices.strokes(plane_ends(midplane, reach), tangent_strokes,
+                                          np.array(to_rgba(line_colour))[:3], charts.LINE_PX, camera)
+            far = placed_second(second_tangent)                                # [] Point-
+            witness = simplices.strokes(stack((near, far)), tangent_strokes, np.zeros(3), charts.LINE_PX, camera,
+                                        dashes=witness_dots)
+            pair.set_data(simplices.composited([
+                first_fill, second_fill, blend_fill, first_outline, second_outline, blend_edge,
+                first_guide, second_guide, separator,
+                first_centre, dots(placed_second(infinity)[None], second_colours[1], centre_radius, camera), witness,
+                near_point, dots(far[None], second_colours[1], charts.MARKER_PX / 2, camera)]))
             curve.set_ydata(determinants.to_array())
             curve.set_color(line_colour)
             peak_marker.set_offsets([[parameter.to_array(), maximum.to_array()]])

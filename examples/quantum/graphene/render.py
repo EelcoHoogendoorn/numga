@@ -12,7 +12,8 @@ from matplotlib import patheffects
 from numga import stack
 from examples.quantum.graphene import core
 from examples.util import charts
-from examples.util.wgsl import contours, fitted, flow, meshes, pinned, room, show, solids
+from examples.util.wgsl import contours, fitted, flow, meshes, pinned, room, show, simplices, solids
+from examples.util.wgsl.camera import flat_panel
 
 COLOURS = ("#2e86c1", "#7d3c98", "#c0392b", "#d68910")
 # The size of the names on the bands' chart, in points.
@@ -29,7 +30,7 @@ FIELD_STREAK_COLOUR = np.ones(3)
 ENERGY_SCALE, AXIS_OVERHANG = 0.3, 0.8
 AXIS_COLOUR = np.full(3, 0.45)
 # The colour of the faint cross through the origin of the momentum plane, and of its names.
-CROSS_COLOUR = "0.6"
+CROSS_COLOUR = np.full(3, 0.6)
 # The colour of the names at the cross's ends over the pseudospin about the valleys, and the width of their white
 # halo, in points.
 NAME_COLOUR, HALO_WIDTH = "0.25", 2.0
@@ -64,8 +65,15 @@ def phase(rotors: core.Rotor, starts: core.Pseudospin) -> np.ndarray:
 def haloed_cross(ax, across: str, up: str) -> None:
     """No scales: a faint cross through the origin over the picture, its lines named inside the picture near their
     ends, each name on a thin white halo that keeps it legible over the colours and the arrows."""
-    ax.axhline(0, color=CROSS_COLOUR, linewidth=charts.FRAME_WIDTH, zorder=1.5)
-    ax.axvline(0, color=CROSS_COLOUR, linewidth=charts.FRAME_WIDTH, zorder=1.5)
+    mv = core.mv
+    # The cross's two lines from edge to edge of the panel, the momenta along x and along y at its limits, each at the
+    # place of its dual, as the momentum plane is drawn.
+    limits = np.array([ax.get_xlim(), ax.get_ylim()])                          # [2, ends]
+    ends = (stack((mv.x, mv.y))[:, None] * limits).dual().reshape(-1)          # [4] Point-
+    camera = flat_panel(ax, core.ga)
+    cross = simplices.strokes(ends, simplices.Mesh.chains([2, 2]), CROSS_COLOUR, charts.FRAME_PX, camera,
+                              cap=simplices.Cap.BUTT)
+    simplices.overlay(ax, [cross]).set_zorder(1.5)
     halo = [patheffects.withStroke(linewidth=HALO_WIDTH, foreground="white")]
     ax.annotate(across, (1, 0), xycoords=("axes fraction", "data"), xytext=(-3, -3), textcoords="offset points",
                 ha="right", va="top", color=NAME_COLOUR, path_effects=halo, zorder=3)

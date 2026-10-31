@@ -8,7 +8,6 @@ import numpy as np
 from numga import stack
 from examples.geometry.projection import core, render, scenarios
 from examples.geometry.projection.core import Correspondence, Line, Plane, Point, cube, ga, mv
-from examples.geometry.projection.render import screen_coordinates
 
 origin = mv.w.dual()
 Camera = ga.gatype((Point, Point))
@@ -101,7 +100,7 @@ def test_moving_the_rig_equals_moving_centre_and_screen():
 
     world = mv.point([1.0, 2.0, 4.0])
     local = euclidean(camera(motor << world))[:2]
-    np.testing.assert_allclose(screen_coordinates(motor, moved(world)), local, atol=1e-14)
+    np.testing.assert_allclose(euclidean(motor << moved(world))[:2], local, atol=1e-14)
 
 
 def test_line_camera_commutes_with_join():

@@ -7,18 +7,26 @@ from collections.abc import Iterable, Iterator
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
+from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator
 
-from numga import concatenate, stack
+from numga import NumpyContext, concatenate, stack
+from numga.algebras import VGA2D
 
 from examples.util import charts
 from examples.util.animation import capture
 from examples.electromagnetism.second_harmonic import core
-from examples.util.wgsl import fitted, labels, show, solids
+from examples.util.wgsl import fitted, labels, show, simplices, solids
+from examples.util.wgsl.camera import Camera, flat_panel, panel
 from examples.util.wgsl.scene import Scene
 
 # The observer sees the point where its time line meets the spatial slice.
 space_slice = core.mv.t ^ (core.Direction & core.time)
+# The direction a polarization sweeps through the observer's time: its join with time undone by the time line.
+swept = core.mv.t ^ core.Polarization                                        # [] Direction- <- Polarization-
+# The phase plane of a wave's amplitude, its two quadratures in phase across and in quadrature up, its points
+# antivectors.
+phase_plane = NumpyContext(VGA2D).multivector
 
 pump_colour = "#3275a8"
 generated_colour = "#d16a30"
@@ -27,6 +35,8 @@ case_colours = ("#3275a8", "#d16a30", "#7b62a3")
 cases = ("matched", "mismatched", "mismatched, flipped every half turn of slip")
 bond_colour, centre_colour, axis_colour = np.full(3, 0.45), np.full(3, 0.3), np.array([0.68, 0.70, 0.75])
 label_colour = np.array([0.4, 0.42, 0.47])
+# The faint cross through the origin of a plane.
+cross_colour = np.full(3, 0.85)
 # The charts' sizes in pixels: the response, the crystal beside the response and its power, all of the column; the
 # waveform, two curves over two periods; the mixing, a panel to a pump above the legend; the phase matching, the
 # phase plane beside the power along the crystals.
@@ -45,6 +55,16 @@ axis_length, label_distance = 1.15, 1.27
 beam_step = core.mv.x.dual() + core.mv.y.dual()                              # [] Direction-
 beam = beam_step / beam_step.squared().square_root()                         # [] Direction-
 beam_reach = 1.25
+# The screen across the beam: the planes reading a direction's part along y - x, to the right, and along z, up.
+screen_across, screen_up = (core.mv.y - core.mv.x) / np.sqrt(2), core.mv.z
+# The response's and the mixing's widths and arrowheads in pixels: curves, the pump and second harmonic's arrows, the
+# fixed pumps' pale arrows, and the probe's dashes.
+curve_width = charts.LINE_PX
+arrow_shaft, arrow_head = 3.0, 11.0
+pale_shaft, pale_head, pale_opacity = 2.3, 8.0, 0.4
+# The extent of the response's plane across the beam, either way, in units of the pump.
+response_limit = 1.15
+probe_dashes = (5.5, 2.4)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -62,11 +82,9 @@ def transverse_polarization(polarizations: core.Polarization) -> np.ndarray:
     return (fields & polarizations[..., None]).to_array()                     # [..., 2]
 
 
-def cross(axes: plt.Axes, extents: np.ndarray, across: str, up: str) -> None:
-    """A plane within extents `[2, 2]`, lowest and highest across and up, without scales: a faint cross through the
-    origin, its lines named just past their ends, clear of what the plane holds."""
-    axes.axhline(0, color="0.85", linewidth=charts.FRAME_WIDTH, zorder=0)
-    axes.axvline(0, color="0.85", linewidth=charts.FRAME_WIDTH, zorder=0)
+def named(axes: plt.Axes, extents: np.ndarray, across: str, up: str) -> None:
+    """A plane within extents `[2, 2]`, lowest and highest across and up, without scales: the lines of its cross through
+    the origin named just past their ends, clear of what the plane holds."""
     axes.text(extents[0, 1], 0, f" {across}", ha="left", va="center", color=label_colour)
     axes.text(0, extents[1, 1], up, ha="center", va="bottom", color=label_colour)
     axes.set(xlim=extents[0], ylim=extents[1], aspect="equal")
@@ -75,7 +93,39 @@ def cross(axes: plt.Axes, extents: np.ndarray, across: str, up: str) -> None:
 
 def screen_axes(axes: plt.Axes, limit: float) -> None:
     """The plane across the beam, one extent on both directions, named by the directions of space along it."""
-    cross(axes, np.array([[-limit, limit], [-limit, limit]]), "$y - x$", "$z$")
+    named(axes, np.array([[-limit, limit], [-limit, limit]]), "$y - x$", "$z$")
+
+
+def cross(camera: Camera, limit: float) -> np.ndarray:
+    """A faint cross through the origin of the plane across the beam, `limit` either way along the directions the
+    camera reads as one across and one up, the duals of its planes over their own readings: its picture."""
+    along, rise = (plane.dual() / (plane & plane.dual()) for plane in (camera.across, camera.up))
+    ends = limit * stack((-along, along, -rise, rise))                       # [4] Direction-
+    return simplices.strokes(ends, simplices.Mesh.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
+                             cap=simplices.Cap.BUTT)
+
+
+def along(fields: core.Field) -> core.Direction:
+    """The directions fields lie along, `[...] Direction-`: the vacuum's identification of a direction with the field
+    along it undone, and the plane the direction sweeps through time undone by the time line."""
+    return swept(fields.dual_inverse())
+
+
+def curve(directions: core.Direction, colour: str, camera: Camera, **style) -> np.ndarray:
+    """A curve through directions across the beam `[samples] Direction-`, in order, as a stroke."""
+    return simplices.strokes(directions, simplices.Mesh.chains([len(directions)]), np.array(to_rgb(colour)),
+                             curve_width, camera, **style)
+
+
+def arrow(direction: core.Direction, colour, width: float, head: float, camera: Camera, **style) -> np.ndarray:
+    """An arrow from the origin to a direction across the beam `[] Direction-`."""
+    return simplices.strokes(stack((0 * direction, direction)), simplices.Mesh.chains([2]), np.array(to_rgb(colour)),
+                             width, camera, np.ones(1), head, **style)
+
+
+def legend_line(colour, label: str, **style) -> Line2D:
+    """A legend's entry for a stroke the GPU draws: a line in its colour and style."""
+    return Line2D([], [], color=colour, label=label, **style)
 
 
 def space_scene(view: solids.View) -> Scene:
@@ -105,12 +155,11 @@ class ResponseView:
     """One response figure for a fixed set of pumps, its artists updated for each crystal."""
 
     def __init__(self, pumps: core.Field) -> None:
-        pumps = transverse(pumps)                                            # [angles, 2]
-        pump = pumps[0]
+        components = transverse(pumps)                                       # [angles, 2]
         # The polar chart's angle of each pump, its heading across the beam read from its two components: a turn's
         # logarithm would give it too, but has no plane at the half turn.
-        self.angles = np.arctan2(pumps[:, 1], pumps[:, 0])                  # [angles]
-        self.selected_angle = np.arctan2(pump[1], pump[0])
+        self.angles = np.arctan2(components[:, 1], components[:, 0])        # [angles]
+        self.selected_angle = self.angles[0]
 
         width, height = response_size
         self.figure = plt.figure(figsize=(width / charts.DPI, height / charts.DPI), dpi=charts.DPI,
@@ -119,16 +168,9 @@ class ResponseView:
         response_axes = self.figure.add_subplot(1, 3, 2)
         self.intensity_axes = self.figure.add_subplot(1, 3, 3, projection="polar")
 
-        response_axes.plot(pumps[:, 0], pumps[:, 1], color=pump_colour, alpha=0.3)
-        self.harmonic_curve, = response_axes.plot([], [], color=generated_colour, alpha=0.65)
-        response_axes.quiver(0, 0, pump[0], pump[1], color=pump_colour,
-                             angles="xy", scale_units="xy", scale=1, width=0.012,
-                             label="Pump")
-        self.generated_arrow = response_axes.quiver(0, 0, 0, 0, color=generated_colour,
-                                                    angles="xy", scale_units="xy", scale=1, width=0.012,
-                                                    label="Second harmonic")
-        screen_axes(response_axes, 1.15)
-        response_axes.legend(loc="upper center", bbox_to_anchor=(0.5, 0.02), ncol=2, frameon=False)
+        screen_axes(response_axes, response_limit)
+        response_axes.legend(handles=[legend_line(pump_colour, "Pump"), legend_line(generated_colour, "Second harmonic")],
+                             loc="upper center", bbox_to_anchor=(0.5, 0.02), ncol=2, frameon=False)
 
         self.intensity_curve, = self.intensity_axes.plot([], [], color=generated_colour)
         self.intensity_fill, = self.intensity_axes.fill([], [], color=generated_colour, alpha=0.08)
@@ -143,6 +185,12 @@ class ResponseView:
         crystal_axes.set_axis_off()
         self.figure.get_layout_engine().execute(self.figure)
         self.figure.set_layout_engine("none")
+        # The pumps across the beam, the first as an arrow, under the second harmonic each crystal drives.
+        self.screen = panel(response_axes, screen_across, screen_up)
+        directions = along(pumps)                                            # [angles] Direction-
+        self.pumps = [cross(self.screen, response_limit), curve(directions, pump_colour, self.screen, opacity=0.3),
+                      arrow(directions[0], pump_colour, arrow_shaft, arrow_head, self.screen)]
+        self.response = simplices.overlay(response_axes, self.pumps)
         # The crystal's image, blank until the bonds are drawn, as many pixels across as its room holds, with each
         # axis named just past its arrow's tip.
         self.view = fitted(solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, half_width), 1),
@@ -158,10 +206,11 @@ class ResponseView:
     def update(self, bonds: core.Direction, harmonic: core.Polarization) -> plt.Figure:
         # The doubled light's power, the squared size of its polarization across the beam.
         intensity = harmonic.norm_squared().to_array()                       # [angles]
-        components = transverse_polarization(harmonic)                       # [angles, 2]
+        directions = swept(harmonic)                                         # [angles] Direction-
         self.crystal.set_data(crystal_image(bonds, self.scene))
-        self.harmonic_curve.set_data(components[:, 0], components[:, 1])
-        self.generated_arrow.set_UVC(*components[0])
+        self.response.set_data(simplices.composited(self.pumps + [
+            curve(directions, generated_colour, self.screen, opacity=0.65),
+            arrow(directions[0], generated_colour, arrow_shaft, arrow_head, self.screen)]))
         self.intensity_curve.set_data(self.angles, intensity)
         self.intensity_fill.set_xy(np.stack((self.angles, intensity), axis=-1))
         self.selected_power.set_data([self.selected_angle], [intensity[0]])
@@ -196,22 +245,26 @@ def draw_waveform(phase: np.ndarray, pump: core.Field, harmonic: core.Polarizati
 def draw_mixing(pumps: core.Field, probes: core.Field, generated: core.Polarization) -> plt.Figure:
     """A probe circle and its image with each fixed pump, at a shared display scale."""
     probe_components = transverse(probes)                                    # [angles, 2]
-    generated = transverse_polarization(generated)                           # [cases, angles, 2]
-    limit = 1.25 * max(float(np.max(np.abs(probe_components))), float(np.max(np.abs(generated))))
+    limit = 1.25 * max(float(np.max(np.abs(probe_components))),
+                       float(np.max(np.abs(transverse_polarization(generated)))))
     # The pale arrows show the fixed pumps' directions at a display-only length.
-    pump_arrows = transverse(0.85 * limit * pumps)                           # [cases, 2]
+    pump_arrows = along(0.85 * limit * pumps)                                # [cases] Direction-
+    probe_directions, responses = along(probes), swept(generated)           # [angles] Direction-, [cases, angles] Direction-
     figure, grid = charts.subplots(len(pump_arrows) * mixing_panel_size[0], mixing_panel_size[1],
                                    ncols=len(pump_arrows), squeeze=False, layout="constrained")
-    for axes, pump, response in zip(grid[0], pump_arrows, generated):
-        axes.quiver(0, 0, pump[0], pump[1],
-                    angles="xy", scale_units="xy", scale=1, color="0.55",
-                    alpha=0.4, width=0.009, label="Fixed pump")
-        axes.plot(probe_components[:, 0], probe_components[:, 1], color=pump_colour, linestyle="--", zorder=3,
-                  label="Probe")
-        axes.plot(response[:, 0], response[:, 1], color=generated_colour, label="Mixed response")
+    for axes in grid[0]:
         screen_axes(axes, limit)
-    figure.legend(*grid[0, 0].get_legend_handles_labels(), loc="outside lower center",
-                  ncol=3, frameon=False)
+    figure.legend(handles=[legend_line("0.55", "Fixed pump", alpha=0.4),
+                           legend_line(pump_colour, "Probe", linestyle="--"),
+                           legend_line(generated_colour, "Mixed response")],
+                  loc="outside lower center", ncol=3, frameon=False)
+    for axes, pump, response in zip(grid[0], pump_arrows, responses):
+        screen = panel(axes, screen_across, screen_up)
+        simplices.overlay(axes, [cross(screen, limit),
+                                 arrow(pump, "0.55", pale_shaft, pale_head, screen, opacity=pale_opacity),
+                                 curve(response, generated_colour, screen),
+                                 curve(probe_directions, pump_colour, screen, dashes=probe_dashes,
+                                       cap=simplices.Cap.BUTT)])
     return figure
 
 
@@ -224,15 +277,25 @@ def draw_growth(depths: np.ndarray, amplitude: core.Polarization) -> plt.Figure:
     amplitude = (core.vertical_field & amplitude).to_array()                 # [cases, slices, quadratures]
     figure, axes = charts.subplots(*growth_size, ncols=2, layout="constrained")
     quadrature_axes, power_axes = axes
-    for label, path, intensity, colour in zip(cases, amplitude, power, case_colours):
-        quadrature_axes.plot(path[:, 0], path[:, 1], color=colour, label=label)
-        quadrature_axes.plot(path[-1, 0], path[-1, 1], "o", color=colour)
+    for label, intensity, colour in zip(cases, power, case_colours):
         power_axes.plot(depths, intensity, color=colour, label=label)
     # The plane about the paths and the origin they start from, with a margin.
     lowest = np.minimum(amplitude.min(axis=(0, 1)), 0)                       # [2]
     highest = np.maximum(amplitude.max(axis=(0, 1)), 0)
     margin = 0.1 * (highest - lowest).max()
-    cross(quadrature_axes, np.stack([lowest - margin, highest + margin], axis=-1), "in phase", "in quadrature")
+    extents = np.stack([lowest - margin, highest + margin], axis=-1)          # [2, 2]
+    named(quadrature_axes, extents, "in phase", "in quadrature")
+    # Each case's path through the phase plane, ending in a dot, over a faint cross through the origin.
+    paths = phase_plane.x.dual() * amplitude[..., 0] + phase_plane.y.dual() * amplitude[..., 1]   # [cases, slices] Antivector-
+    ends = stack((phase_plane.x.dual() * extents[0], phase_plane.y.dual() * extents[1])).reshape(-1)  # [4] Antivector-
+    camera = flat_panel(quadrature_axes, VGA2D)
+    traced = [simplices.strokes(path, simplices.Mesh.chains([len(path)]), np.array(to_rgb(colour)), curve_width,
+                                camera) for path, colour in zip(paths, case_colours)]
+    reached = simplices.markers(paths[:, -1], np.array([to_rgb(colour) for colour in case_colours]),
+                                charts.MARKER_PX / 2, camera)
+    simplices.overlay(quadrature_axes, [simplices.strokes(ends, simplices.Mesh.chains([2, 2]), cross_colour,
+                                                          charts.FRAME_PX, camera, cap=simplices.Cap.BUTT),
+                                        *traced, reached])
     power_axes.set(xlabel="depth in the crystal", ylabel="generated power", xlim=(0, 1), xticks=[], yticks=[])
     power_axes.spines[["top", "right"]].set_visible(False)
     # The cases named under both panels, whose colours they share.

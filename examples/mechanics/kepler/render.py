@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import matplotlib.pyplot as plt
+from matplotlib.colors import to_rgb
+from matplotlib.lines import Line2D
 from matplotlib.ticker import NullLocator
 import numpy as np
 
@@ -12,17 +14,28 @@ from numga import stack
 
 from examples.util import charts
 from examples.util.animation import capture
+from examples.util.wgsl import room, simplices
+from examples.util.wgsl.camera import Camera, flat_panel
 from examples.mechanics.kepler import core
 
 EXACT_COLOUR = "#626c76"
 PHYSICAL_COLOUR = "#d06c36"
 REGULARIZED_COLOUR = "#287fa0"
 BODY_COLOUR = "#ff00b7"
+CENTRE_COLOUR = "#e5ab32"
 CROSS_COLOUR, LABEL_COLOUR = "0.85", "0.4"
-# The margin around a lifted path, as a share of its extent.
+# The margin around a lifted path, as a share of its extent, and around the animation's paths.
 LABEL_ROOM = 0.12
-# The centre of attraction's marker, twice a chart's marker across, as a scatter's area in points squared.
-CENTRE_SIZE = charts.points(2 * charts.MARKER_PX) ** 2
+MARGIN = 0.05
+# The room beyond the periapsis detail's box for its frame, as a share of the box's half width.
+FRAME_ROOM = 0.02
+# The centre of attraction's marker, twice a chart's marker across, and the white rim of the centre's and the body's
+# marks, in pixels; in the animation, the width of the paths and the radii of the centre and of the body.
+CENTRE_RADIUS = charts.MARKER_PX
+RIM = charts.LINE_PX / 2
+ANIMATION_WIDTH, ANIMATION_CENTRE, BODY_RADIUS = 1.4, 3.2, 3.8
+# How much the exact orbit covers, under the two integrated ones.
+EXACT_OPACITY = 0.5
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -31,39 +44,86 @@ def plane_coordinates(points: core.Point) -> np.ndarray:
     return (stack((core.mv.x, core.mv.y)) & points[..., None]).to_array()
 
 
-def spinor_coordinates(spinors: core.Spinor) -> np.ndarray:
-    """The scalar and xy parts of spinors, on the last axis: their scalar products with one and with `-mv.xy`."""
-    return np.stack([spinors.scalar_product(core.mv.scalar([1])).to_array(),
-                     spinors.scalar_product(-core.mv.xy).to_array()], axis=-1)
+def lifted_points(spinors: core.Spinor) -> core.Point:
+    """Spinors drawn in the plane of directions: each acting from one side on the direction x, which carries the
+    spinors' scalar part along x and their xy part along y."""
+    return core.mv.x.dual() * spinors
+
+
+def framed(ax: plt.Axes, path: core.Point, margin: float) -> Camera:
+    """A panel framed about a path in the orbit's plane and the centre of attraction, with a margin as a share of
+    their extent, widened to fill the room the figure's layout gives the panel at equal scales; its camera, reading
+    by the planes x and y."""
+    drawn = np.concatenate([plane_coordinates(path), np.zeros((1, 2))])
+    low, high = drawn.min(axis=0), drawn.max(axis=0)
+    spans = (1 + 2 * margin) * (high - low)
+    shape = np.array(room(ax))
+    # The span of a pixel that holds both spans in the room, and the room's half extent at that span.
+    half = shape * (spans / shape).max() / 2
+    middle = (low + high) / 2
+    ax.set(xlim=(middle[0] - half[0], middle[0] + half[0]), ylim=(middle[1] - half[1], middle[1] + half[1]),
+           aspect="equal")
+    return flat_panel(ax, core.ga)
+
+
+def centre_drawn(radius: float, camera: Camera) -> list[np.ndarray]:
+    """The centre of attraction, rimmed in white."""
+    origin = (0 * core.mv.x.dual())[None]                                      # [1] Point-
+    return [simplices.markers(origin, np.ones(3), radius + RIM, camera),
+            simplices.markers(origin, np.array(to_rgb(CENTRE_COLOUR)), radius, camera)]
 
 
 def cross(ax: plt.Axes, across: str, up: str) -> None:
-    """A plane without scales: a faint cross through the origin, its lines named at their ends where they are in
+    """A plane without scales, the lines of its faint cross through the origin named at their ends where they are in
     view."""
-    # The cross as thin as a chart's frame, which it stands in for.
-    ax.axhline(0, color=CROSS_COLOUR, linewidth=charts.FRAME_WIDTH, zorder=0)
-    ax.axvline(0, color=CROSS_COLOUR, linewidth=charts.FRAME_WIDTH, zorder=0)
     ax.text(1, 0, across, transform=ax.get_yaxis_transform(), ha="right", va="top", color=LABEL_COLOUR, clip_on=True)
     ax.text(0, 1, f" {up}", transform=ax.get_xaxis_transform(), ha="left", va="top", color=LABEL_COLOUR, clip_on=True)
     ax.set_axis_off()
 
 
+def place(across: np.ndarray, up: np.ndarray) -> core.Point:
+    """Points of the orbit's plane, so far along x and along y."""
+    return core.mv.x.dual() * across + core.mv.y.dual() * up
+
+
+def cross_drawn(box: tuple[float, float, float, float], camera: Camera) -> np.ndarray:
+    """The faint cross through the origin, from edge to edge of a box, left, right, bottom and top, as thin as a
+    chart's frame, which it stands in for: its picture."""
+    left, right, bottom, top = box
+    ends = place(np.array([left, right, 0, 0]), np.array([0, 0, bottom, top]))   # [4] Point-
+    return simplices.strokes(ends, simplices.Mesh.chains([2, 2]), np.array(to_rgb(CROSS_COLOUR)), charts.FRAME_PX,
+                             camera, cap=simplices.Cap.BUTT)
+
+
+def frame_drawn(box: tuple[float, float, float, float], camera: Camera) -> np.ndarray:
+    """A frame round a box, left, right, bottom and top, in the cross's colour and width: its picture."""
+    left, right, bottom, top = box
+    corners = place(np.array([left, right, right, left, left]), np.array([bottom, bottom, top, top, bottom]))   # [5] Point-
+    return simplices.strokes(corners, simplices.Mesh.chains([5]), np.array(to_rgb(CROSS_COLOUR)), charts.FRAME_PX,
+                             camera)
+
+
+def path_drawn(path: core.Point, colour: str, width: float, camera: Camera, opacity: float = 1.0) -> np.ndarray:
+    """A path `[samples]` as a stroke."""
+    return simplices.strokes(path, simplices.Mesh.chains([len(path)]), np.array(to_rgb(colour)), width, camera,
+                             opacity=opacity)
+
+
 @charts.style()
 def draw_lift(positions: core.Point, spinors: core.Spinor) -> plt.Figure:
     """A planar orbital passage and the half-turn of its position spinor."""
-    points = plane_coordinates(positions)
-    lifted = spinor_coordinates(spinors)
     # Three fifths of the column: two paths side by side, room enough for their samples' dots to stand apart.
     figure, panels = charts.subplots(480, 200, ncols=2, layout="constrained")
-    for ax, path, (across, up) in zip(panels, (points, lifted), (("x", "y"), ("scalar", "xy"))):
-        ax.plot(*path.T, color=REGULARIZED_COLOUR)
-        ax.scatter(*path.T, c=np.linspace(0, 1, len(path)), cmap="viridis", zorder=3)
-        # The centre of attraction twice the size of the samples.
-        ax.scatter(0, 0, s=CENTRE_SIZE, color="#e5ab32", edgecolors="white", zorder=4)
+    for ax, path, (across, up) in zip(panels, (positions, lifted_points(spinors)), (("x", "y"), ("scalar", "xy"))):
         # Room beyond the path for the names of the cross.
-        ax.margins(LABEL_ROOM)
-        ax.set_aspect("equal", adjustable="datalim")
+        camera = framed(ax, path, LABEL_ROOM)
         cross(ax, across, up)
+        samples = plt.get_cmap("viridis")(np.linspace(0, 1, len(path)))[:, :3]
+        # The centre of attraction twice the size of the samples.
+        simplices.overlay(ax, [cross_drawn(camera.extent, camera),
+                               path_drawn(path, REGULARIZED_COLOUR, charts.LINE_PX, camera),
+                               simplices.markers(path, samples, charts.MARKER_PX / 2, camera),
+                               *centre_drawn(CENTRE_RADIUS, camera)])
     return figure
 
 
@@ -71,37 +131,44 @@ def draw_lift(positions: core.Point, spinors: core.Spinor) -> plt.Figure:
 def draw_comparison(reference: core.State, physical: core.State, regularized: core.State) -> plt.Figure:
     """One orbit at equal step counts, with a periapsis detail below each full path."""
     exact = plane_coordinates(reference.position)
-    direct = plane_coordinates(physical.position)
-    lifted = plane_coordinates(regularized.position)
     cases = exact.shape[1]
     # Three quarters of the column: a full path and its periapsis a case, over one legend.
     figure, panels = charts.subplots(600, 400, nrows=2, ncols=cases, squeeze=False, layout="constrained")
+    # The exact orbit wide and faint, under the two integrated ones.
+    styles = [(reference.position, EXACT_COLOUR, 2 * charts.LINE_PX, EXACT_OPACITY, "Exact"),
+              (physical.position, PHYSICAL_COLOUR, charts.LINE_PX, 1.0, "Physical clock"),
+              (regularized.position, REGULARIZED_COLOUR, charts.LINE_PX, 1.0, "Spinor clock")]
+    # Each panel's box, left, right, bottom and top: the full path, and the periapsis detail.
+    boxes = np.empty((2, cases, 4))
     for case in range(cases):
+        low, high = exact[:, case].min(axis=0), exact[:, case].max(axis=0)
+        span = np.max(high - low)
+        centre = (low + high) / 2
+        half_width = 0.12 * span
+        boxes[0, case] = (centre[0] - 0.6 * span, centre[0] + 0.6 * span, centre[1] - 0.6 * span,
+                          centre[1] + 0.6 * span)
+        boxes[1, case] = (low[0] - half_width, low[0] + half_width, -half_width, half_width)
         for row in range(2):
             ax = panels[row, case]
-            # The exact orbit wide and faint, under the two integrated ones.
-            ax.plot(*exact[:, case].T, color=EXACT_COLOUR, linewidth=2 * charts.LINE_WIDTH, alpha=0.5, label="Exact")
-            ax.plot(*direct[:, case].T, color=PHYSICAL_COLOUR, label="Physical clock")
-            ax.plot(*lifted[:, case].T, color=REGULARIZED_COLOUR, label="Spinor clock")
-            ax.scatter(0, 0, s=CENTRE_SIZE, color="#e5ab32", edgecolors="white", zorder=4)
-            low, high = exact[:, case].min(axis=0), exact[:, case].max(axis=0)
-            span = np.max(high - low)
-            if row == 0:
-                centre = (low + high) / 2
-                ax.set(xlim=(centre[0] - 0.6 * span, centre[0] + 0.6 * span),
-                       ylim=(centre[1] - 0.6 * span, centre[1] + 0.6 * span))
-            else:
-                half_width = 0.12 * span
-                ax.set(xlim=(low[0] - half_width, low[0] + half_width), ylim=(-half_width, half_width))
-            ax.set_aspect("equal")
+            left, right, bottom, top = boxes[row, case]
+            # The periapsis detail's limits a little wider than its box, room for the frame drawn round it.
+            room_beyond = (FRAME_ROOM if row == 1 else 0) * (right - left) / 2
+            ax.set(xlim=(left - room_beyond, right + room_beyond), ylim=(bottom - room_beyond, top + room_beyond),
+                   aspect="equal")
             cross(ax, "x", "y")
-            if row == 1:
-                # The periapsis detail framed, so that it reads as a close-up rather than as the path running on.
-                ax.set_axis_on()
-                ax.set(xticks=[], yticks=[])
-                ax.spines[:].set_color(CROSS_COLOUR)
     figure.get_layout_engine().set(hspace=0.08)
-    figure.legend(*panels[0, 0].get_legend_handles_labels(), loc="outside lower center", ncol=3, frameon=False)
+    handles = [Line2D([], [], color=colour, linewidth=charts.points(width), alpha=opacity, label=label)
+               for _, colour, width, opacity, label in styles]
+    figure.legend(handles=handles, loc="outside lower center", ncol=3, frameon=False)
+    for case in range(cases):
+        for row, ax in enumerate(panels[:, case]):
+            camera = flat_panel(ax, core.ga)
+            # The periapsis detail framed, so that it reads as a close-up rather than as the path running on.
+            frame = [frame_drawn(boxes[row, case], camera)] if row == 1 else []
+            simplices.overlay(ax, [cross_drawn(boxes[row, case], camera)]
+                              + [path_drawn(position[:, case], colour, width, camera, opacity)
+                                 for position, colour, width, opacity, _ in styles]
+                              + centre_drawn(CENTRE_RADIUS, camera) + frame)
     return figure
 
 
@@ -128,22 +195,22 @@ def draw_errors(counts: np.ndarray, physical: core.Scalar, regularized: core.Sca
 
 def animate_lift(positions: core.Point, spinors: core.Spinor) -> Iterator[np.ndarray]:
     """Two orbital revolutions and one closed spinor loop, sampled in the regularized clock."""
-    points = plane_coordinates(positions)
-    lifted = spinor_coordinates(spinors)
     figure, panels = plt.subplots(1, 2, figsize=(4, 1.7), layout="constrained")
-    markers = []
-    for ax, path in zip(panels, (points, lifted)):
-        ax.plot(*path.T, color=REGULARIZED_COLOUR, linewidth=1.0)
-        ax.scatter(0, 0, s=22, color="#e5ab32", edgecolors="white", zorder=4)
-        markers.append(ax.scatter([], [], s=30, color=BODY_COLOUR, edgecolors="white", zorder=5))
-        ax.set_aspect("equal", adjustable="datalim")
+    paths = (positions, lifted_points(spinors))
+    for ax in panels:
         ax.set_axis_off()
-    # Lay the figure out once; only the markers move between frames.
+    # Lay the figure out once; only the body moves between frames.
+    cameras = [framed(ax, path, MARGIN) for ax, path in zip(panels, paths)]
     figure.canvas.draw()
     figure.set_layout_engine("none")
-    for point, spinor in zip(points, lifted):
-        markers[0].set_offsets(point[None])
-        markers[1].set_offsets(spinor[None])
+    backdrops = [[path_drawn(path, REGULARIZED_COLOUR, ANIMATION_WIDTH, camera),
+                  *centre_drawn(ANIMATION_CENTRE, camera)] for path, camera in zip(paths, cameras)]
+    images = [simplices.overlay(ax, backdrop) for ax, backdrop in zip(panels, backdrops)]
+    for index in range(len(positions)):
+        for image, backdrop, path, camera in zip(images, backdrops, paths, cameras):
+            body = path[index][None]                                           # [1] Point-
+            image.set_data(simplices.composited(backdrop + [
+                simplices.markers(body, np.ones(3), BODY_RADIUS + RIM, camera),
+                simplices.markers(body, np.array(to_rgb(BODY_COLOUR)), BODY_RADIUS, camera)]))
         yield capture(figure)
     plt.close(figure)
-

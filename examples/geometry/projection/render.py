@@ -4,7 +4,8 @@ This module consumes the geometry that `core` produces and turns it into a figur
 It constructs viewport geometry only, never scene geometry, and the mathematics
 never imports it. The shadow scene is ray traced on the GPU: edges as rods, the
 shadow trail as a row of beads, the point light a ball and the sun's direction an
-arrow; the two camera images are drawn flat.
+arrow; the two camera images are drawn flat, as strokes and markers read by each
+rig's own planes.
 """
 
 from __future__ import annotations
@@ -16,10 +17,16 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack
 from examples.geometry.projection.core import Line, Motor, Point, mv
-from examples.util.wgsl import fitted, show, solids
+from examples.util.wgsl import fitted, show, simplices, solids
+from examples.util.wgsl.camera import panel
 
-# The image panels' margin around both images, as a fraction of their larger side.
+# The image panels' margin around both images, as a fraction of their larger side; the colours of the subject's edges
+# and of the epipolar lines and corners; the widths of the edges and of the epipolar lines, and the corners' radius,
+# in pixels; and how much the epipolar lines cover.
 image_margin = 0.08
+subject_colour, epipolar_colour = (np.array(to_rgb(colour)) for colour in ("#38bdf8", "#f43f5e"))
+subject_width, epipolar_width, corner_radius = 3.0, 1.3, 3.5
+epipolar_opacity = 0.8
 # The shadow scene: the colours of the body, of its shadows under the point light and the sun, and of the sun's
 # direction, drawn as an arrow of unit length from a place above the scene.
 body_colour, light_colour, sun_colour = (np.array(to_rgb(colour)) for colour in ("#38bdf8", "#fbbf24", "#a855f7"))
@@ -33,19 +40,6 @@ scene_margin = 0.1
 # of the arrow's shaft and head, with its head's length.
 body_radius, shadow_radius, bead_radius, light_radius = 1.6, 1.2, 2.4, 6.5
 shaft_radius, head_radius, head_length = 2.4, 6.5, 19.5
-
-
-def screen_coordinates(motor: Motor, image: Point) -> np.ndarray:
-    """The (x, y) screen coordinates of image points in the frame of a posed camera rig: their pairings with the
-    rig's planes x and y, at unit weight."""
-    seen = motor << image                                                      # [...] Point-
-    return ((stack((mv.x, mv.y)) & seen[..., None]) / (mv.w & seen)[..., None]).to_array()
-
-
-def draw_edges(ax, coords: np.ndarray, edges, color: str, **kwargs) -> None:
-    """Draw the given edge list through 2D or 3D coordinates."""
-    for a, b in edges:
-        ax.plot(*zip(coords[a], coords[b]), color=color, **kwargs)
 
 
 def render_shadow_scene(
@@ -78,9 +72,9 @@ def render_shadow_scene(
     show(ax, solids.draw(parts, view, background, inks=[], translucent=[], meshes=[]), view)
 
 
-def screen_line_endpoints(rig: Motor, lines: Line, half_width: float) -> np.ndarray:
-    """The screen coordinates where lines on a rig's screen meet its left and right edges at x = ±half_width."""
-    return np.stack([screen_coordinates(rig, lines ^ (rig >> (mv.x - mv.w * x))) for x in (-half_width, half_width)], axis=-2)
+def screen_line_ends(rig: Motor, lines: Line, half_width: float) -> Point:
+    """Where lines on a rig's screen meet its left and right edges at x = ±half_width, `[lines, ends]`."""
+    return stack([lines ^ (rig >> (mv.x - mv.w * x)) for x in (-half_width, half_width)], axis=-1)
 
 
 def render_stereo_scene(
@@ -92,8 +86,6 @@ def render_stereo_scene(
 ) -> None:
     """Draw the two camera views of the subject, with camera 2's corners on the epipolar lines of camera 1's corners."""
     image_1, image_2, _epipole_2, epipolar_lines_2, _correspondence = stereo
-    px_1 = screen_coordinates(rig_1, image_1)
-    px_2 = screen_coordinates(rig_2, image_2)
     both = concatenate(((rig_1 << image_1).normalized(), (rig_2 << image_2).normalized()))
     readings = stack((mv.x, mv.y))[:, None] & both
     low = readings.min(axis=-1)
@@ -102,15 +94,21 @@ def render_stereo_scene(
     padding = margin * spans.max()
     low, high = low - padding, high + padding
     widths = stack((low[0], high[0])).abs()
-    draw_edges(ax_1, px_1, edges, "#38bdf8", linewidth=2.0)
-    draw_edges(ax_2, px_2, edges, "#38bdf8", linewidth=2.0)
-    for (a, b) in screen_line_endpoints(rig_2, epipolar_lines_2, widths.max()):
-        ax_2.plot([a[0], b[0]], [a[1], b[1]], color="#f43f5e", linewidth=0.8, alpha=0.8)
-    ax_2.scatter(px_2[:, 0], px_2[:, 1], color="#f43f5e", s=18, zorder=3)
     limits = stack((low, high), axis=-1).to_array()
     for ax in (ax_1, ax_2):
         ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
         ax.set_axis_off()
+    subject = simplices.Mesh(len(image_1), np.array(edges))
+    # Each rig's camera reads image points by the rig's own planes x and y, so the screen is seen as the rig sees it.
+    camera_1 = panel(ax_1, rig_1 >> mv.x, rig_1 >> mv.y)
+    camera_2 = panel(ax_2, rig_2 >> mv.x, rig_2 >> mv.y)
+    simplices.overlay(ax_1, [simplices.strokes(image_1, subject, subject_colour, subject_width, camera_1)])
+    epipolar_ends = screen_line_ends(rig_2, epipolar_lines_2, widths.max())   # [corners, ends] Point-
+    simplices.overlay(ax_2, [
+        simplices.strokes(image_2, subject, subject_colour, subject_width, camera_2),
+        simplices.strokes(epipolar_ends.reshape(-1), simplices.Mesh.chains([2] * len(image_2)), epipolar_colour,
+                          epipolar_width, camera_2, opacity=epipolar_opacity),
+        simplices.markers(image_2, epipolar_colour, corner_radius, camera_2)])
 
 
 def draw_projection(
@@ -126,10 +124,11 @@ def draw_projection(
     """Lay out the shadow scene and both camera views."""
     fig = plt.figure(figsize=(16, 5), dpi=120)
     scene_axes, camera_1_axes, camera_2_axes = (fig.add_subplot(1, 3, i + 1) for i in range(3))
-    render_stereo_scene(camera_1_axes, camera_2_axes, edges, stereo, rig_1, rig_2, image_margin)
-    # The figure laid out, the scene's axes as bare as its picture leaves them, before the picture is traced at the
-    # size of their room.
-    scene_axes.set_axis_off()
+    # The figure laid out, the axes as bare as their pictures leave them, before the pictures are drawn at the size of
+    # their room.
+    for ax in (scene_axes, camera_1_axes, camera_2_axes):
+        ax.set_axis_off()
     fig.tight_layout()
+    render_stereo_scene(camera_1_axes, camera_2_axes, edges, stereo, rig_1, rig_2, image_margin)
     render_shadow_scene(scene_axes, body, edges, shadows, point_light, sun)
     return fig

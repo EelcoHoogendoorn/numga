@@ -8,11 +8,14 @@ from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgb
 
 from numga import stack
 
 from examples.util import charts
 from examples.util.animation import capture
+from examples.util.wgsl import contours, simplices
+from examples.util.wgsl.camera import Camera, flat_panel
 from examples.relativity.thomas_precession import core
 
 INK, FAINT, FILL, SPIN = "#1e293b", "#cbd5e1", "#dbeafe", "#ea580c"
@@ -25,6 +28,12 @@ orbit_half_width = 0.66
 # The window of the disk on the rocket's triangle at its largest: the centre, and its half width.
 TRIANGLE_CENTRE, TRIANGLE_HALF_WIDTH = (0.5, 0.2), 0.62
 FRAME_INCHES, DPI = 10 / 3, 90
+# In pixels: the outlines' widths, thin, regular and bold; the arrows' widths and their heads' length; the dots' radii,
+# small and for a particle. The samples round the disk's rim.
+THIN, LINE, BOLD = 1.0, 1.25, 1.6
+ARROW_WIDTH, ARROW_HEAD = 2.5, 9.0
+DOT, PARTICLE = 1.9, 3.1
+N_RIM_SAMPLES = 200
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -46,69 +55,77 @@ def unit_spins(spins: core.Spin) -> core.Spin:
     return spins / spins.squared().square_root()                                # [...] Spin-
 
 
-def planar(directions: core.Antivector) -> np.ndarray:
-    """x and y of directions and positions, on the last axis: their pairings with the slices x and y."""
-    return (stack((core.mv.x, core.mv.y)) & directions[..., None]).to_array()
+def spin_arrows(spins: core.Spin) -> core.Antivector:
+    """The arrow of each spin in the plane: its pairings with the planes yz and zx, the planes its patch turns in when
+    it points along x and along y, as its steps along x and along y."""
+    mv = core.mv
+    steps = stack((mv.x.dual(), mv.y.dual()))                                  # [2] Antivector-
+    return ((stack((mv.yz, mv.zx)) & spins[..., None]) * steps).sum(axis=-1)   # [...] Antivector-
 
 
-def spin_planar(spins: core.Spin) -> np.ndarray:
-    """The arrow of each spin in the plane, on the last axis: its pairings with the planes yz and zx, the
-    planes its patch turns in when it points along x and along y."""
-    return (stack((core.mv.yz, core.mv.zx)) & spins[..., None]).to_array()
+def ink(colour: str) -> np.ndarray:
+    """A colour's red, green and blue."""
+    return np.array(to_rgb(colour))
 
 
-def arrows(ax: plt.Axes, tails: np.ndarray, vectors: np.ndarray, colour: str, width: float):
-    return ax.quiver(tails[..., 0], tails[..., 1], vectors[..., 0], vectors[..., 1],
-                     angles="xy", scale_units="xy", scale=1, color=colour, width=width, zorder=4)
+def arrows(tails: core.Antivector, steps: core.Antivector, colours: np.ndarray, camera: Camera) -> np.ndarray:
+    """Arrows from the tails by the steps `[arrows]`, each in its colour: their picture."""
+    ends = stack((tails, tails + steps), axis=-1).reshape(-1)                 # [arrows * 2] Antivector-
+    n_arrows = tails.shape[0]
+    return simplices.strokes(ends, simplices.Mesh.chains([2] * n_arrows), colours, ARROW_WIDTH, camera,
+                             heads=np.ones(n_arrows), head=ARROW_HEAD, cap=simplices.Cap.BUTT)
 
 
-def aim(quiver, tails: np.ndarray, vectors: np.ndarray) -> None:
-    """The arrows of `arrows` moved to other tails and arrow vectors."""
-    quiver.set_offsets(np.reshape(tails, (-1, 2)))
-    quiver.set_UVC(*np.reshape(vectors, (-1, 2)).T)
+def dots(points: core.Antivector, radius: float, camera: Camera) -> np.ndarray:
+    """Dots in ink at points `[points]`: their picture."""
+    return simplices.markers(points, ink(INK), radius, camera)
 
 
-def canvas(centre: tuple[float, float], half_width: float) -> tuple[plt.Figure, plt.Axes]:
-    """A square view of half width `half_width` about `centre`."""
+def outline(points: core.Antivector, colour: str, width: float, camera: Camera, opacity: float = 1.0) -> np.ndarray:
+    """The polyline through points `[points]`: its picture."""
+    return simplices.strokes(points, simplices.Mesh.chains([points.shape[0]]), ink(colour), width, camera,
+                             opacity=opacity)
+
+
+def canvas(centre: tuple[float, float], half_width: float) -> tuple[plt.Figure, plt.Axes, Camera]:
+    """A square view of half width `half_width` about `centre`, and its camera, looking down on x and y."""
     figure, ax = plt.subplots(figsize=(FRAME_INCHES, FRAME_INCHES), dpi=DPI)
     ax.set(xlim=(centre[0] - half_width, centre[0] + half_width), ylim=(centre[1] - half_width, centre[1] + half_width),
            aspect="equal")
     ax.set_axis_off()
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
-    return figure, ax
+    return figure, ax, flat_panel(ax, core.mv.x.algebra)
 
 
-def disk_canvas(centre: tuple[float, float], half_width: float) -> tuple[plt.Figure, plt.Axes]:
-    """An empty Poincaré disk, in a square view of half width `half_width` about `centre`: its rim is the
-    speed of light."""
-    figure, ax = canvas(centre, half_width)
-    ax.add_patch(plt.Circle((0, 0), 1, facecolor="none", edgecolor=FAINT, linewidth=1.0))
-    return figure, ax
+def rim(camera: Camera) -> np.ndarray:
+    """The rim of the Poincaré disk, the speed of light: its picture."""
+    turns = (core.mv.xy * (-np.linspace(0, 2 * np.pi, N_RIM_SAMPLES) / 2)).exp()
+    return outline(turns >> core.mv.x.dual(), FAINT, LINE, camera)
 
 
 def animate_two_boosts(frames: Iterable[tuple[core.Antivector, core.Antivector, core.Antivector]]) -> Iterator[np.ndarray]:
     """Each frame: the triangle of velocities `[samples]`, rest to the first boost to the second and
     straight back; its corners `[3]`, with the rocket's first axis at each as the observer at rest
     reads it `[3]`, and at the last corner that axis as the straight boost from rest would carry it."""
-    frames = iter(frames)
-    loop, corners, axes = next(frames)
-    # The disk set up once, the triangle and its arrows drawn for the first frame and moved for each.
-    figure, ax = disk_canvas(TRIANGLE_CENTRE, TRIANGLE_HALF_WIDTH)
+    # The disk set up once, the triangle and its arrows drawn for each frame.
+    figure, ax, camera = canvas(TRIANGLE_CENTRE, TRIANGLE_HALF_WIDTH)
+    edge = rim(camera)
+    shown = simplices.overlay(ax, [edge])
     # The straight boost from rest keeps the rocket's x axis along the lab's.
-    straight_axis = planar(DISK_ARROW * core.mv.x.dual())
-    outline, tails = planar(disk(loop)), planar(disk(corners))
-    fill, = ax.fill(*outline.T, color=FILL, zorder=1)
-    edge, = ax.plot(*outline.T, color=INK, linewidth=1.0, zorder=2)
-    straight = arrows(ax, tails[-1], straight_axis, FAINT, 0.012)
-    rocket_axes = arrows(ax, tails, planar(DISK_ARROW * unit(axes)), SPIN, 0.012)
-    dots, = ax.plot(*tails.T, "o", color=INK, markersize=3, zorder=5)
-    for loop, corners, axes in chain([(loop, corners, axes)], frames):
-        outline, tails = planar(disk(loop)), planar(disk(corners))
-        fill.set_xy(outline)
-        edge.set_data(*outline.T)
-        aim(straight, tails[-1], straight_axis)
-        aim(rocket_axes, tails, planar(DISK_ARROW * unit(axes)))
-        dots.set_data(*tails.T)
+    straight_axis = DISK_ARROW * core.mv.x.dual()                             # [] Antivector-
+    for loop, corners, axes in frames:
+        outline_points, tails = disk(loop), disk(corners)                      # [samples] Antivector-, [3] Antivector-
+        # The triangle filled as a fan from rest, its first point, which its two straight sides leave from.
+        n_samples = outline_points.shape[0]
+        fan = contours.Mesh(n_samples, np.stack((np.zeros(n_samples - 2, dtype=int), np.arange(1, n_samples - 1),
+                                                 np.arange(2, n_samples)), axis=-1))
+        shown.set_data(simplices.composited([
+            edge,
+            contours.picture(outline_points, fan, np.zeros(n_samples), ink(FILL), camera),
+            outline(outline_points, INK, LINE, camera),
+            arrows(tails[-1:], straight_axis[None], ink(FAINT), camera),
+            arrows(tails, DISK_ARROW * unit(axes), ink(SPIN), camera),
+            dots(tails, DOT, camera)]))
         yield capture(figure)
     plt.close(figure)
 
@@ -116,23 +133,23 @@ def animate_two_boosts(frames: Iterable[tuple[core.Antivector, core.Antivector, 
 def animate_orbits(loops: core.Antivector, states: Iterable[tuple[core.Antivector, core.Spin]]) -> Iterator[np.ndarray]:
     """The circles of velocities `[steps + 1, orbits]`, and each frame's velocities and spins as the
     observer at rest reads them `[orbits]`, the first frame's spins kept faint at the start."""
-    outlines = planar(disk(loops))
+    outlines = disk(loops)                                                     # [steps + 1, orbits] Antivector-
+    n_samples, n_orbits = outlines.shape
+    colours = np.stack([ink(colour) for colour in orbit_colours])
     states = iter(states)
     first = next(states)
-    starts, start_spins = planar(disk(first[0])), spin_planar(ORBIT_ARROW * unit_spins(first[1]))
-    # The disk, the orbits and the first frame's spins set up once; the spins and the dots moved for each frame.
-    figure, ax = disk_canvas((0, 0), orbit_half_width)
-    spin_arrows = []
-    for orbit, colour in enumerate(orbit_colours):
-        ax.plot(*outlines[:, orbit].T, color=colour, linewidth=0.8, alpha=0.5, zorder=2)
-        arrows(ax, starts[orbit], start_spins[orbit], FAINT, 0.010)
-        spin_arrows.append(arrows(ax, starts[orbit], start_spins[orbit], colour, 0.011))
-    dots, = ax.plot(*starts.T, "o", color=INK, markersize=3, zorder=5)
+    # The disk, the orbits and the first frame's spins set up once; the spins and the dots drawn for each frame.
+    figure, ax, camera = canvas((0, 0), orbit_half_width)
+    by_orbit = outlines[np.arange(n_samples)[None, :], np.arange(n_orbits)[:, None]].reshape(-1)   # [orbits * samples] Antivector-
+    beneath = [rim(camera),
+               simplices.strokes(by_orbit, simplices.Mesh.chains([n_samples] * n_orbits),
+                                 np.repeat(colours, n_samples - 1, axis=0), THIN, camera, opacity=0.5),
+               arrows(disk(first[0]), spin_arrows(ORBIT_ARROW * unit_spins(first[1])), ink(FAINT), camera)]
+    shown = simplices.overlay(ax, beneath)
     for velocities, spins in chain([first], states):
-        points, spin_vectors = planar(disk(velocities)), spin_planar(ORBIT_ARROW * unit_spins(spins))
-        for orbit, arrow in enumerate(spin_arrows):
-            aim(arrow, points[orbit], spin_vectors[orbit])
-        dots.set_data(*points.T)
+        points = disk(velocities)                                              # [orbits] Antivector-
+        shown.set_data(simplices.composited(beneath + [
+            arrows(points, spin_arrows(ORBIT_ARROW * unit_spins(spins)), colours, camera), dots(points, DOT, camera)]))
         yield capture(figure)
     plt.close(figure)
 
@@ -144,17 +161,14 @@ def animate_box(half_width: float, walls: core.Antivector, states: Iterable[tupl
     # The box's corners, a corner on the diagonal turned by quarter turns all the way round.
     quarters = (core.mv.xy * (-np.arange(5) * np.pi / 4)).exp()                 # [corners + 1] Rotor+
     corners = quarters >> (half_width * (core.mv.x.dual() + core.mv.y.dual()))  # [corners + 1] Antivector-
-    diamond = planar(walls)[[0, 1, 2, 3, 0]]
-    # The box and the diamond set up once; the spin and the particle moved for each frame.
-    figure, ax = canvas((0, 0), 1.15 * half_width)
-    ax.plot(*planar(corners).T, color=INK, linewidth=1.3, zorder=2)
-    ax.plot(*diamond.T, color=FAINT, linewidth=0.7, zorder=1)
-    spin_arrow = arrows(ax, np.zeros(2), np.zeros(2), SPIN, 0.012)
-    particle, = ax.plot(0, 0, "o", color=INK, markersize=5, zorder=5)
+    # The box and the diamond set up once; the spin and the particle drawn for each frame.
+    figure, ax, camera = canvas((0, 0), 1.15 * half_width)
+    beneath = [outline(walls[[0, 1, 2, 3, 0]], FAINT, THIN, camera), outline(corners, INK, BOLD, camera)]
+    shown = simplices.overlay(ax, beneath)
     for position, spin in states:
-        point = planar(position)
-        aim(spin_arrow, point, spin_planar(SCENE_ARROW * half_width * unit_spins(spin)))
-        particle.set_data(*point[:, None])
+        shown.set_data(simplices.composited(beneath + [
+            arrows(position[None], spin_arrows(SCENE_ARROW * half_width * unit_spins(spin))[None], ink(SPIN), camera),
+            dots(position[None], PARTICLE, camera)]))
         yield capture(figure)
     plt.close(figure)
 
@@ -165,17 +179,15 @@ def animate_ring(ring: core.Antivector, states: Iterable[tuple[core.Antivector, 
     # The ring's radius: its points lie in the lab's slice, where they square to their squared distance from the axis.
     radii = ring.squared().square_root()
     radius = radii.max()
-    # The ring set up once; the momentum, the spin and the particle moved for each frame.
-    figure, ax = canvas((0, 0), float((1.3 * radius).to_array()))
-    ax.plot(*planar(ring).T, color=FAINT, linewidth=1.3, zorder=1)
-    momentum_arrow = arrows(ax, np.zeros(2), np.zeros(2), line_colours[0], 0.010)
-    spin_arrow = arrows(ax, np.zeros(2), np.zeros(2), SPIN, 0.012)
-    particle, = ax.plot(0, 0, "o", color=INK, markersize=5, zorder=5)
+    # The ring set up once; the momentum, the spin and the particle drawn for each frame.
+    figure, ax, camera = canvas((0, 0), float((1.3 * radius).to_array()))
+    beneath = [outline(ring, FAINT, BOLD, camera)]
+    shown = simplices.overlay(ax, beneath)
     for position, velocity, spin in states:
-        point = planar(position)
-        aim(momentum_arrow, point, planar(SCENE_ARROW * radius * unit(velocity)))
-        aim(spin_arrow, point, spin_planar(SCENE_ARROW * radius * unit_spins(spin)))
-        particle.set_data(*point[:, None])
+        shown.set_data(simplices.composited(beneath + [
+            arrows(position[None], (SCENE_ARROW * radius * unit(velocity))[None], ink(line_colours[0]), camera),
+            arrows(position[None], spin_arrows(SCENE_ARROW * radius * unit_spins(spin))[None], ink(SPIN), camera),
+            dots(position[None], PARTICLE, camera)]))
         yield capture(figure)
     plt.close(figure)
 
