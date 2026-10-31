@@ -23,7 +23,7 @@ Scalar = ga.gatype.scalar()                                                     
 Direction = ga.gatype.antivector()                                                # Antivector-
 Mirror = ga.gatype.vector()                                                       # Vector+
 # A spin is an angular momentum: the patch its current circulates around, intrinsic.
-Spin = ga.gatype.vector().derive.flipped_orientation                              # Vector-
+Spin = ga.gatype.antibivector()                                                   # Antibivector-
 # A constant of the decay with a sense of its own: measured against a handedness.
 Asymmetry = ga.gatype.antipseudoscalar()                                     # Antipseudoscalar-
 

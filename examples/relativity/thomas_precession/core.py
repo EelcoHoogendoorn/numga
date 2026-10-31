@@ -36,7 +36,7 @@ Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 # A spin: the patch of the plane it turns in, intrinsic.
-Spin = Bivector.derive.flipped_orientation
+Spin = ga.gatype.antibivector()
 Antivector = ga.gatype.antivector()
 Rotor = ga.gatype.rotor()
 

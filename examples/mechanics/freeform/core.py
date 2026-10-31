@@ -40,7 +40,7 @@ directions = planes.dual()                                   # [3] Antivector-
 # The reference volume, the join of the three directions: an intrinsic scalar of value one.
 unit_volume = directions[0] & directions[1] & directions[2]
 # Planes as the joins of the two directions that span them: vectors, oriented within themselves.
-Span = ga.gatype.vector().derive.flipped_orientation
+Span = ga.gatype.antibivector()
 one = mv.antipseudoscalar([1.0])          # [] Antipseudoscalar-
 
 

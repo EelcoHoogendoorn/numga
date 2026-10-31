@@ -61,7 +61,7 @@ WallLine = Forque.derive.containing("z")
 Resultant = Forque.derive.within("x y w")
 # The fibres' pulls weighted by a warping, a swept area signed by the sense of the sweep: resultants of the
 # other orientation, and their couples across the beam.
-Warped = Resultant.derive.flipped_orientation
+Warped = Twist.derive.within("x y w")
 Couples = Warped.derive.containing("w")
 # The shifts of a pole across the beam: points at infinity in the section's plane.
 Shift = ga.gatype.antivector().derive.containing("w z")

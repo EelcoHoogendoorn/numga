@@ -42,7 +42,7 @@ Current = Point.derive.containing("t")                     # Antivector-
 # Fluxes and charges: amounts, intrinsic, paired with voltages and potentials into power.
 Amount = ga.gatype.antiscalar()                            # Antiscalar-
 # A force's moment: what pairs with a spin into power, intrinsic.
-Moment = Vector.derive.flipped_orientation                 # Vector-
+Moment = ga.gatype.antibivector()                          # Antibivector-
 Conductivity = ga.gatype((Current, Field))
 Resistivity = ga.gatype((Field, Current))
 Projection = ga.gatype((Scalar, Scalar))

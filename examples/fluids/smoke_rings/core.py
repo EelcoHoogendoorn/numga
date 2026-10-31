@@ -93,7 +93,7 @@ Circulation = ga.gatype.antipseudoscalar()                                  # An
 # The Bäcklund transformation's parameter, added to the quad's diagonal, a point: an intrinsic scalar too.
 Parameter = ga.gatype.antipseudoscalar()                                    # Antipseudoscalar-
 # A polygon's vector area, the join of its points: an intrinsic vector, a patch.
-Patch = Vector.derive.flipped_orientation                                        # Vector-
+Patch = ga.gatype.antibivector()                                                 # Antibivector-
 
 
 # --- math -----------------------------------------------------------------------------

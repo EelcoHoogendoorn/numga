@@ -23,7 +23,7 @@ from numga.algebras import VGA3D as ga
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                           # Scalar+
 # A pseudospin, the state of a pair, is the intrinsic patch of the plane it turns in; that field is extrinsic.
-Spin = ga.gatype.vector().derive.flipped_orientation  # Vector-
+Spin = ga.gatype.antibivector()                       # Antibivector-
 Field = ga.gatype.bivector()                          # Bivector+
 Pairing = ga.gatype((Field, Spin))                    # Field+ <- Spin-
 Map = ga.gatype((Spin, Spin))                         # Spin- <- Spin-

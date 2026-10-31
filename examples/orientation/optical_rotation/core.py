@@ -29,7 +29,7 @@ Direction = ga.gatype.antivector()                                              
 Field = ga.gatype.bivector()                                                      # Bivector+
 TurnRate = ga.gatype.bivector()                                                   # Bivector+
 # The beam's cross-section: the patch two directions across the path span, intrinsic.
-CrossSection = Field.derive.flipped_orientation                                   # Bivector-
+CrossSection = ga.gatype.antibivector()                                           # Antibivector-
 # A turn per distance with a sense of its own: measured against a handedness.
 RotaryPower = ga.gatype.antipseudoscalar()                                   # Antipseudoscalar-
 
