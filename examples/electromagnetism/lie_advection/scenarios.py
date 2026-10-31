@@ -19,7 +19,6 @@ Magnetic = Bivector.derive.within("x y")                                     # B
 Point = ga.gatype.antivector()                                               # Antivector-
 
 horizontal, vertical = mv.x.dual(), mv.y.dual()                              # [] Point-, Point-
-n_triangle_subdivisions = 7
 ribbon_step = 0.55
 corner_forms = mv.vector([[0.45, -0.65, 0.0], [1.35, 0.25, 0.0], [-0.55, 1.15, 0.0]])  # [corners] Plane+
 corner_velocities = stack((0.48 * horizontal + 0.26 * vertical,
@@ -42,22 +41,12 @@ frame_duration_ms = 40
 
 
 # --- plumbing -------------------------------------------------------------------------
-def triangle_samples(corners: Point, n_subdivisions: int) -> Point:
-    """Interior barycentric lattice points inside a triangle."""
-    steps = np.arange(1, n_subdivisions)
-    first, second = np.meshgrid(steps, steps, indexing="ij")
-    inside = first + second < n_subdivisions
-    weights = np.stack((n_subdivisions - first[inside] - second[inside],
-                        first[inside], second[inside]), axis=-1) / n_subdivisions  # [samples, corners]
-    return (corners * weights).sum(axis=-1)                                  # [samples] Point-
-
-
-def single_triangle(n_subdivisions: int) -> tuple[Point, Point]:
-    """A scalene triangle and its interior sample points."""
+def single_triangle() -> Point:
+    """A scalene triangle's corners."""
     corners = stack((horizontal * 0.0 + vertical * 0.0,
                      horizontal * 1.15 + vertical * 0.1,
                      horizontal * 0.34 + vertical * 0.92))                   # [corners] Point-
-    return corners, triangle_samples(corners, n_subdivisions)
+    return corners
 
 
 def disk(radius: float, n_divisions: int) -> tuple[Mesh, Point]:
@@ -85,17 +74,15 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
 
     # 1. Edge world sheets and Cartan's formula on a moving triangle.
-    corners, points = single_triangle(n_triangle_subdivisions)
+    corners = single_triangle()
     sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]                          # [corners] Point-
     patch = (sides[0] & sides[1]) / 2                                        # [] Patch-
     gradients = (time & sides) / (2 * (time & patch))                        # [corners] Plane+
-    hats = 1 + (gradients[:, None] & (points[None, :] - corners[:, None]))   # [corners, samples] Scalar+
-    sample_forms = (hats * corner_forms[:, None]).sum(axis=0)                # [samples] Plane+
     endpoint_differences, swept_fluxes, _, face_bivector = cartan_decomposition(
         corners, corner_forms, corner_velocities,
     )
     save_figure(
-        render.draw_cartan_ribbon(corners, points, sample_forms, corner_velocities,
+        render.draw_cartan_ribbon(corners, corner_forms, corner_velocities,
                                   ribbon_step, endpoint_differences, swept_fluxes),
         "lie_advection_cartan",
     )

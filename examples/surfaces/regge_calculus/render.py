@@ -11,7 +11,7 @@ from matplotlib.tri import Triangulation
 
 from numga import stack
 from examples.util import charts
-from examples.util.wgsl import flow, solids
+from examples.util.wgsl import contours, flow, solids
 from examples.surfaces.regge_calculus import core
 
 primal_colour = "#286580"
@@ -67,10 +67,10 @@ def spaced_faces(centres: core.Point, max_radius: float, min_separation: float) 
 def draw_metric_basis(corners: core.Point, points: core.Point,
                       basis: core.Metric, metric: core.Metric) -> plt.Figure:
     """The three hyperbolic Regge edge metric basis forms and their sum into a positive-definite metric ellipse."""
-    sample_xy = plane_places(points)
     corner_xy = plane_places(corners)
-    # The samples triangulated, for the artists that shade and contour across them.
-    triangulation = Triangulation(*sample_xy.T, triangles=core.Mesh.triangulate(points).faces)
+    # The samples triangulated, for the pictures of the forms across them.
+    mesh = core.Mesh.triangulate(points)
+    places = solids.origin + solids.context.include_from_algebra(points.batch())   # [samples] Point-
     centroid = corners.mean()                                                  # [] Point-
     offsets = points - centroid
 
@@ -78,7 +78,10 @@ def draw_metric_basis(corners: core.Point, points: core.Point,
     metric_form = np.asarray((metric(offsets) & offsets).to_array())
     reference_form = np.asarray(offsets.norm_squared().to_array())
     basis_bound = np.abs(basis_forms).max()
-    nonzero_levels = np.linspace(-0.75 * basis_bound, 0.75 * basis_bound, 6)
+    # Six levels at even steps either side of zero, the outermost three quarters of the way to the bound.
+    nonzero_levels = contours.Lines(0.3 * basis_bound, 0.15 * basis_bound, np.append(to_rgb(wall_colour), 0.55), 0.9)
+    # The zero level through the centroid consists of the two null lines parallel to the other two edges.
+    null_lines = contours.Level(0.0, np.append(to_rgb(primal_colour), 1.0), 1.5)
 
     figure, axes = charts.subplots(*row_size, ncols=4)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.04)
@@ -87,13 +90,9 @@ def draw_metric_basis(corners: core.Point, points: core.Point,
         ax = axes[index]
         frame_panel(ax, corner_xy, 0.22)
         values = basis_forms[index]
-        ax.tripcolor(triangulation, values, shading="gouraud", cmap=diverging_colours,
-                     norm=Normalize(-basis_bound, basis_bound), zorder=1)
-        ax.tricontour(triangulation, values, levels=nonzero_levels, colors=wall_colour,
-                      linestyles="solid", linewidths=0.65, alpha=0.55, zorder=2)
-        # The zero contour through the centroid consists of the two null lines parallel to the other two edges.
-        ax.tricontour(triangulation, values, levels=[0.0], colors=primal_colour,
-                      linestyles="dashed", linewidths=1.35, zorder=3)
+        colours = diverging_colours(Normalize(-basis_bound, basis_bound)(values))[:, :3]
+        contours.overlay(ax, places, mesh, values, colours, lines=(nonzero_levels,),
+                         levels=(null_lines,)).set_zorder(1)
         ax.add_patch(Polygon(corner_xy, fill=False, edgecolor=wall_colour, linewidth=1.1, zorder=4))
         start, end = corner_xy[(index + 1) % 3], corner_xy[(index + 2) % 3]
         ax.plot([start[0], end[0]], [start[1], end[1]], color=accent_colour,
@@ -105,12 +104,12 @@ def draw_metric_basis(corners: core.Point, points: core.Point,
     frame_panel(ax, corner_xy, 0.22)
     max_metric = metric_form.max()
     ellipse_levels = np.linspace(0.03 * max_metric, 0.28 * max_metric, 4)
-    ax.tripcolor(triangulation, metric_form, shading="gouraud", cmap=hat_colours,
-                 norm=Normalize(0.0, max_metric), zorder=1)
-    ax.tricontour(triangulation, reference_form, levels=ellipse_levels, colors=wall_colour,
-                  linestyles="dashed", linewidths=0.9, alpha=0.65, zorder=2)
-    ax.tricontour(triangulation, metric_form, levels=ellipse_levels, colors=accent_colour,
-                  linestyles="solid", linewidths=1.35, zorder=3)
+    ellipses = tuple(contours.Level(level, np.append(to_rgb(accent_colour), 1.0), 1.9) for level in ellipse_levels)
+    contours.overlay(ax, places, mesh, metric_form, hat_colours(Normalize(0.0, max_metric)(metric_form))[:, :3],
+                     levels=ellipses).set_zorder(1)
+    # The reference circles, the same levels of a second field over the same samples, a clear picture over the first.
+    circles = tuple(contours.Level(level, np.append(to_rgb(wall_colour), 0.65), 0.9) for level in ellipse_levels)
+    contours.overlay(ax, places, mesh, reference_form, np.zeros(3), levels=circles, opacity=0.0).set_zorder(2)
     ax.add_patch(Polygon(corner_xy, fill=False, edgecolor=wall_colour, linewidth=1.2, zorder=4))
     ax.scatter(*corner_xy.T, s=36, color=accent_colour, edgecolor="white", linewidth=0.9, zorder=6)
     ax.scatter(*plane_places(centroid), s=22, color=wall_colour, zorder=6)
@@ -124,6 +123,7 @@ def draw_curvature_defects(mesh: core.Mesh, vertices: core.Point, centres: core.
     places = plane_places(vertices)
     curvature_values = np.asarray((curvatures.batch() & mv.xy.dual()).to_array())
     triangulation = Triangulation(*places.T, triangles=mesh.faces)
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())   # [vertices] Point-
     walls = plane_places(mesh.reading(mesh.boundary_edges, 1) * (mesh.incidence[1, 0] * vertices)).transpose(1, 0, 2)
     boundary = mesh.exterior(0)
     interior = ~np.isin(np.arange(mesh.n_vertices), boundary)
@@ -139,8 +139,15 @@ def draw_curvature_defects(mesh: core.Mesh, vertices: core.Point, centres: core.
     quadrics = np.asarray((sampled_metrics[:, :, None, None](grid_offsets) & grid_offsets).to_array())
     reference_quadric = grid_offsets.norm_squared().to_array()                # [grid, grid]
     sampled_centres = centres.batch()[ellipse_faces]                          # [samples] Point-
-    # Each local grid placed at its face's centre, where its ellipses are drawn.
-    grid_places = plane_places(sampled_centres[:, None, None] + grid_offsets)  # [samples, grid, grid, 2]
+    # Each local grid placed at its face's centre, where its ellipses are drawn, its points numbered row by row; and
+    # all the grids together, one mesh for the reference circles of them all.
+    n_samples = len(ellipse_faces)
+    grid_points = (solids.origin + solids.context.include_from_algebra(sampled_centres[:, None, None] + grid_offsets)
+                   ).reshape(n_samples, -1)                                   # [samples, grid * grid] Point-
+    grid = contours.Mesh.grid(n_ellipse_grid, n_ellipse_grid)
+    grids = contours.Mesh(n_samples * grid.n_vertices,
+                          (grid.faces + grid.n_vertices * np.arange(n_samples)[:, None, None]).reshape(-1, 3))
+    reference_circles = contours.Level(radius**2, np.append(to_rgb(wall_colour), 0.65), 0.75)
 
     # Log-ratio of radial to circumferential metric stretch at each sampled face centroid for indicatrix colouring.
     radial_dirs = sampled_centres.normalized()                                # [samples] Point-
@@ -159,17 +166,20 @@ def draw_curvature_defects(mesh: core.Mesh, vertices: core.Point, centres: core.
         frame_panel(ax, places, 0.08)
         field = curvature_values[case_index].copy()
         field[boundary] = 0.0
-        ax.tripcolor(triangulation, field, shading="gouraud", cmap=diverging_colours,
-                     norm=Normalize(-bound, bound), zorder=1)
+        contours.overlay(ax, points, mesh, field, diverging_colours(Normalize(-bound, bound)(field))[:, :3]).set_zorder(1)
         ax.triplot(triangulation, color=mesh_colour, linewidth=0.35, alpha=0.38, zorder=2)
-        for sample_index, (grid_x, grid_y) in enumerate(np.moveaxis(grid_places, -1, 1)):
-            colour = indicatrix_colours(indicatrix_norm(anisotropy[case_index, sample_index]))
-            ax.contourf(grid_x, grid_y, quadrics[case_index, sample_index],
-                        levels=[0.0, radius**2], colors=[colour], alpha=0.22, zorder=3)
-            ax.contour(grid_x, grid_y, reference_quadric, levels=[radius**2],
-                       colors=wall_colour, linestyles="dashed", linewidths=0.75, alpha=0.65, zorder=4)
-            ax.contour(grid_x, grid_y, quadrics[case_index, sample_index], levels=[radius**2],
-                       colors=[colour], linestyles="solid", linewidths=1.5, zorder=5)
+        # Each face's ellipse its own clear picture, filled translucent inside and outlined in its colour: the fills
+        # under the reference circles, the outlines over them.
+        for places_at, quadric, stretch in zip(grid_points, quadrics[case_index], anisotropy[case_index]):
+            colour = np.array(indicatrix_colours(indicatrix_norm(stretch)))
+            inside = contours.Bands(0.0, radius**2, np.array([np.append(colour[:3], 0.22), np.zeros(4)]))
+            contours.overlay(ax, places_at, grid, quadric.reshape(-1), np.zeros(3), bands=(inside,),
+                             opacity=0.0).set_zorder(3)
+            outline = contours.Level(radius**2, colour, 1.5)
+            contours.overlay(ax, places_at, grid, quadric.reshape(-1), np.zeros(3), levels=(outline,),
+                             opacity=0.0).set_zorder(5)
+        contours.overlay(ax, grid_points.reshape(-1), grids, np.tile(reference_quadric.reshape(-1), len(grid_points)),
+                         np.zeros(3), levels=(reference_circles,), opacity=0.0).set_zorder(4)
         ax.add_collection(LineCollection(walls, colors=wall_colour, linewidths=1.3, zorder=6))
     return figure
 
@@ -182,7 +192,8 @@ def draw_intrinsic_flow(mesh: core.Mesh, vertices: core.Point,
     potentials = np.asarray(potential.batch().to_array())
     triangulation = Triangulation(*places.T, triangles=mesh.faces)
     walls = plane_places(mesh.reading(mesh.boundary_edges, 1) * (mesh.incidence[1, 0] * vertices)).transpose(1, 0, 2)
-    potential_levels = np.linspace(-0.85, 0.85, n_contours + 2)[1:-1]
+    potential_levels = tuple(contours.Level(level, np.append(to_rgb(wall_colour), 0.45), 1.0)
+                             for level in np.linspace(-0.85, 0.85, n_contours + 2)[1:-1])
     # Area-weighted vertex currents give a continuous drawing of the facewise solution.
     sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
     areas = ((sides[0] & sides[1]) / 2).norm()                              # Scalar+[faces]
@@ -197,11 +208,9 @@ def draw_intrinsic_flow(mesh: core.Mesh, vertices: core.Point,
 
     for index, ax in enumerate(axes):
         frame_panel(ax, places, 0.08)
-        ax.tripcolor(triangulation, potentials[index], shading="gouraud", cmap=diverging_colours,
-                     norm=Normalize(-1.0, 1.0), zorder=1)
+        colours = diverging_colours(Normalize(-1.0, 1.0)(potentials[index]))[:, :3]
+        contours.overlay(ax, points, mesh, potentials[index], colours, levels=potential_levels).set_zorder(1)
         ax.triplot(triangulation, color=mesh_colour, linewidth=0.35, alpha=0.45, zorder=2)
-        ax.tricontour(triangulation, potentials[index], levels=potential_levels,
-                      colors=wall_colour, linestyles="dashed", linewidths=0.75, alpha=0.65, zorder=3)
         flow.overlay(ax, points, mesh, directions[index], reference_speed, np.array(to_rgb(flow_colour)))
         ax.add_collection(LineCollection(walls, colors=wall_colour, linewidths=1.3, zorder=6))
     return figure

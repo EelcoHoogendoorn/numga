@@ -11,7 +11,7 @@ from numga import Extensor, stack
 from examples import instantiate
 from examples.util import charts
 from numga.algebras import VGA3D
-from examples.util.wgsl import image_figure, meshes, solids, strokes
+from examples.util.wgsl import contours, flow, image_figure, meshes, solids, strokes
 
 core = instantiate("examples.fluids.projective_sphere_flow.core", VGA3D)
 
@@ -94,16 +94,24 @@ def animate_sphere(mesh: core.Mesh, display: core.Mesh,
 
 
 def draw_planar(points: Extensor, display: core.Mesh, potential: Extensor, current: Extensor) -> plt.Figure:
-    """Finite points and spatial current in x,y,w, with no readout of the null coordinate as distance."""
+    """Finite points and spatial current in x,y,w, with no readout of the null coordinate as distance: the potential
+    in its colours, the current as white streaks running downstream."""
     mv = points.context.multivector
-    planes = stack((mv.x, mv.y))
-    xy = read_points(points.normalized(), planes)
-    flow = read_points(current, planes)
+    xy = read_points(points.normalized(), stack((mv.x, mv.y)))
     figure, axis = charts.subplots(300, 300)
-    axis.tripcolor(xy[:, 0], xy[:, 1], display.faces, potential.to_array(), shading="gouraud", cmap="viridis", vmin=0, vmax=1)
-    chosen = np.arange(0, len(xy), 4)
-    axis.quiver(xy[chosen, 0], xy[chosen, 1], flow[chosen, 0], flow[chosen, 1], color="white", width=0.005)
+    # The panel framed about the samples as matplotlib frames its data.
+    axis.update_datalim(xy)
+    axis.autoscale_view()
     axis.set_aspect("equal")
     axis.set_axis_off()
     figure.tight_layout(pad=0.2)
+    # Finite points of the affine plane are the renderer's points, as weighted as they come, and the current's
+    # directions its directions.
+    places = solids.context.include_from_algebra(points)                     # [samples] Point-
+    directions = solids.context.include_from_algebra(current)                # [samples] Point-
+    values = potential.to_array()
+    contours.overlay(axis, places, display, values, plt.get_cmap("viridis")(values)[:, :3]).set_zorder(1)
+    # The streaks' lengths measured against the strongest current.
+    fastest = float(current.dual().norm().max().to_array())
+    flow.overlay(axis, places, display, directions, fastest, np.ones(3))
     return figure

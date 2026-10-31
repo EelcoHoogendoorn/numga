@@ -9,13 +9,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 from matplotlib.collections import LineCollection, PolyCollection
-from matplotlib.tri import Triangulation
 
 from numga import stack
 from numga.extensor import Extensor
 from examples.surfaces.dirac_kahler import core
 from examples.util import charts
-from examples.util.wgsl import flow, meshes, solids, strokes
+from examples.util.wgsl import contours, flow, meshes, solids, strokes
 
 sm = solids.mv
 
@@ -25,6 +24,7 @@ panel_gap = 12
 background = np.ones(3)
 wall_colour = "#68747b"
 contour_colour = "#bac3c7"
+domain_colour = "#f7f8f6"
 flow_colours = ("#214b56", "#dc402c", "#386be0", "#8e4d9a")
 scalar_colour = np.array([0.96, 0.24, 0.12])
 bivector_colour = np.array([0.12, 0.36, 0.94])
@@ -73,12 +73,11 @@ def at_vertices(mesh: core.Mesh, field: Extensor) -> Extensor:
     return (corners * field) / (corners * ones)
 
 
-def domain_panel(ax: plt.Axes, mesh: core.Mesh, vertices: core.Point) -> Triangulation:
+def domain_panel(ax: plt.Axes, mesh: core.Mesh, vertices: core.Point) -> None:
     """A quiet domain boundary leaves the flow paths as the main drawing."""
     places = plane_places(vertices)                                            # [vertices, 2]
-    triangulation = Triangulation(*places.T, triangles=mesh.faces)
     faces = plane_places(mesh.incidence[2, 0] * vertices).transpose(1, 0, 2)  # [faces, corners, 2]
-    ax.add_collection(PolyCollection(faces, facecolors="#f7f8f6", edgecolors="none"))
+    ax.add_collection(PolyCollection(faces, facecolors=domain_colour, edgecolors="none"))
     walls = plane_places(mesh.reading(mesh.boundary_edges, 1) * (mesh.incidence[1, 0] * vertices))   # [ends, rim, 2]
     ax.add_collection(LineCollection(walls.transpose(1, 0, 2), colors=wall_colour, linewidths=1.1, zorder=4))
     low, high = places.min(axis=0), places.max(axis=0)
@@ -87,19 +86,18 @@ def domain_panel(ax: plt.Axes, mesh: core.Mesh, vertices: core.Point) -> Triangu
     ax.set(xlim=(centre[0] - half_span, centre[0] + half_span),
            ylim=(centre[1] - half_span, centre[1] + half_span), aspect="equal")
     ax.set_axis_off()
-    return triangulation
 
 
-def contours(ax: plt.Axes, mesh: core.Mesh, vertices: core.Point,
-             potential: core.Scalar, linestyle: str) -> None:
+def level_curves(ax: plt.Axes, mesh: core.Mesh, vertices: core.Point, potential: core.Scalar) -> None:
     """Sparse level curves distinguish crossing a potential from following a stream potential."""
     values = np.asarray(potential.batch().to_array())
     bound = np.abs(values).max()
-    levels = np.linspace(-0.8 * bound, 0.8 * bound, n_contours)
-    active = levels[(values.min() < levels) & (levels < values.max())]
-    triangulation = Triangulation(*plane_places(vertices).T, triangles=mesh.faces)
-    ax.tricontour(triangulation, values, levels=active, colors=contour_colour,
-                  linewidths=0.75, linestyles=linestyle, zorder=2)
+    # An even count of levels at even steps across four fifths of the bound either side of zero, none at zero.
+    spacing = 1.6 * bound / (n_contours - 1)
+    levels = contours.Lines(spacing, spacing / 2, np.append(to_rgb(contour_colour), 0.7), 1.0)
+    places = solids.origin + solids.context.include_from_algebra(vertices.batch())   # [vertices] Point-
+    colours = np.broadcast_to(to_rgb(domain_colour), (len(values), 3))
+    contours.overlay(ax, places, mesh, values, colours, lines=(levels,)).set_zorder(2)
 
 
 def panel_figure() -> tuple[plt.Figure, np.ndarray]:
@@ -116,7 +114,7 @@ def draw_dirac_grades(mesh: core.Mesh, vertices: core.Point,
     fields = stack((scalar_gradient.dual(), (face_dirac.select[1] - scalar_gradient).dual(),
                     face_dirac.select[1].dual(), whitney_multivector.select[1].dual()))
     figure, axes = field_panels(mesh, vertices, fields, (flow_colours[1], flow_colours[2], flow_colours[0], flow_colours[3]))
-    contours(axes[0], mesh, vertices, vertex_multivector.select[0], "dashed")
+    level_curves(axes[0], mesh, vertices, vertex_multivector.select[0])
     return figure
 
 
@@ -139,7 +137,7 @@ def draw_hodge_decomposition(mesh: core.Mesh, vertices: core.Point,
     """The total velocity separates into source-to-sink paths, local eddies, and circulation around the hole."""
     fields = stack((total_flow, potential_flow, stream_flow, harmonic_flow))
     figure, axes = field_panels(mesh, vertices, fields, flow_colours)
-    contours(axes[1], mesh, vertices, potential, "dashed")
+    level_curves(axes[1], mesh, vertices, potential)
     return figure
 
 

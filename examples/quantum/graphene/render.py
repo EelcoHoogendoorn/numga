@@ -12,21 +12,18 @@ from matplotlib import patheffects
 from numga import stack
 from examples.quantum.graphene import core
 from examples.util import charts
-from examples.util.wgsl import fitted, meshes, pinned, room, show, solids
+from examples.util.wgsl import contours, fitted, flow, meshes, pinned, room, show, solids
 
 COLOURS = ("#2e86c1", "#7d3c98", "#c0392b", "#d68910")
 # The size of the names on the bands' chart, in points.
 FONT_SIZE = 7
-# One arrow for every few samples of the field.
-ARROW_STRIDE = 10
-# The pseudospin about the valleys: the side of each valley's panel and the gap between them, in pixels; the arrows
-# each way, the longest arrow's share of their spacing, their shafts' width as a share of the panel's, and their
-# colour; the diverging map of the part along z, from -1 to 1.
+# The pseudospin about the valleys: the side of each valley's panel and the gap between them, in pixels; the colour
+# of the streaks of its part in the plane; the diverging map of the part along z, from -1 to 1.
 TEXTURE_SIDE, TEXTURE_GAP = 280, 16
-N_TEXTURE_ARROWS = 7
-ARROW_REACH, ARROW_WIDTH = 0.85, 0.012
-ARROW_COLOUR = "0.15"
+STREAK_COLOUR = np.full(3, 0.15)
 TEXTURE_MAP = plt.get_cmap("RdBu_r")
+# The streaks of the field's direction over the zone.
+FIELD_STREAK_COLOUR = np.ones(3)
 # The bands' chart: the height of one electronvolt against one unit of momentum, and how far past the bands the
 # frame's arrows reach, in units of momentum; the frame's colour.
 ENERGY_SCALE, AXIS_OVERHANG = 0.3, 0.8
@@ -70,18 +67,6 @@ def phase(rotors: core.Rotor, starts: core.Pseudospin) -> np.ndarray:
     return np.arctan2(turned, rotors.select[0].to_array())
 
 
-def cross(ax, across: str, up: str) -> None:
-    """No scales: a faint cross through the origin over the picture, its lines named at their ends, each along
-    itself."""
-    ax.axhline(0, color=CROSS_COLOUR, linewidth=charts.FRAME_WIDTH, zorder=1.5)
-    ax.axvline(0, color=CROSS_COLOUR, linewidth=charts.FRAME_WIDTH, zorder=1.5)
-    ax.annotate(across, (1, 0), xycoords=("axes fraction", "data"), xytext=(3, 0), textcoords="offset points",
-                ha="left", va="center", color=CROSS_COLOUR)
-    ax.annotate(up, (0, 1), xycoords=("data", "axes fraction"), xytext=(-3, 0), textcoords="offset points",
-                ha="right", va="bottom", color=CROSS_COLOUR, rotation=90, rotation_mode="anchor")
-    ax.set_axis_off()
-
-
 def haloed_cross(ax, across: str, up: str) -> None:
     """No scales: a faint cross through the origin over the picture, its lines named inside the picture near their
     ends, each name on a thin white halo that keeps it legible over the colours and the arrows."""
@@ -97,19 +82,23 @@ def haloed_cross(ax, across: str, up: str) -> None:
 @charts.style()
 def draw_field(momenta: core.Wavevector, field: core.Field) -> plt.Figure:
     """The pseudospin field over the momentum plane: its length as shade, vanishing at the six
-    corners of the zone, and its direction in the plane as arrows, which turn once around each
+    corners of the zone, and its direction in the plane as streaks running downstream, which turn once around each
     corner."""
     k = momentum_coordinates(momenta)                                           # [samples, samples, 2]
-    # The field's direction, its parts in the planes yz and zx drawn as an arrow in the momentum plane.
-    d = plane_components(field.normalized())                                    # [samples, samples, 3]
-    sparse = (slice(None, None, ARROW_STRIDE),) * 2
-    # The zone and its six corners, with an arrow every few samples, and room for the cross's names.
+    mesh = meshes.Mesh.grid(*momenta.shape)
+    # The momentum plane drawn as a plane of space: each momentum at the place of its dual.
+    places = solids.origin + solids.context.include_from_algebra(momenta.dual().reshape(-1))   # [samples] Point-
+    strength = field.norm().reshape(-1).to_array()                              # [samples]
+    # The field's direction, its parts in the planes yz and zx drawn as a direction in the momentum plane.
+    d = plane_components(field.normalized()).reshape(-1, 3)                    # [samples, 3]
+    directions = solids.mv.direction(d * np.array([1, 1, 0]))                  # [samples] Point-
+    # The zone and its six corners, and room for the cross's names.
     figure, ax = charts.subplots(340, 340, layout="constrained")
-    ax.pcolormesh(k[..., 0], k[..., 1], field.norm().to_array(), cmap="viridis", shading="auto")
-    ax.quiver(k[sparse][..., 0], k[sparse][..., 1], d[sparse][..., 0], d[sparse][..., 1],
-              color="white", pivot="mid", scale=20, zorder=2)
-    ax.set_aspect("equal")
-    cross(ax, "momentum x", "momentum y")
+    ax.set(xlim=(k[..., 0].min(), k[..., 0].max()), ylim=(k[..., 1].min(), k[..., 1].max()), aspect="equal")
+    colours = plt.get_cmap("viridis")(strength / strength.max())[:, :3]
+    contours.overlay(ax, places, mesh, strength, colours).set_zorder(1)
+    flow.overlay(ax, places, mesh, directions, 1.0, FIELD_STREAK_COLOUR).set_zorder(2)
+    haloed_cross(ax, "momentum x", "momentum y")
     return figure
 
 
@@ -179,20 +168,21 @@ def draw_textures(pseudospins_at: Callable[[core.Wavevector], core.Pseudospin], 
     figure = plt.figure(figsize=(width / charts.DPI, TEXTURE_SIDE / charts.DPI))
     panels = [figure.add_axes((left / width, 0, TEXTURE_SIDE / width, 1)) for left in (0, TEXTURE_SIDE + TEXTURE_GAP)]
     side = min(room(panels[0]))
-    # One momentum at the middle of each pixel, rows down from the top, and one at the middle of each cell of the
-    # arrows' grid.
+    # One momentum at the middle of each pixel, rows down from the top.
     across = -extent + (np.arange(side) + 0.5) * 2 * extent / side
     pixels = core.mv.x * across + core.mv.y * across[::-1, None]                      # [rows, columns] Wavevector+
-    centres = -extent + (np.arange(N_TEXTURE_ARROWS) + 0.5) * 2 * extent / N_TEXTURE_ARROWS
-    arrows = core.mv.x * centres + core.mv.y * centres[:, None]                       # [arrows, arrows] Wavevector+
-    along_z = pseudospin_coordinates(pseudospins_at(pixels))[..., 2]                # [valleys, rows, columns]
-    k, s = momentum_coordinates(arrows), pseudospin_coordinates(pseudospins_at(arrows))   # [arrows, arrows, 2], [valleys, arrows, arrows, 3]
-    for ax, shade, spin in zip(panels, along_z, s):
-        colours = TEXTURE_MAP((shade + 1) / 2)[..., :3]
+    spins = pseudospin_coordinates(pseudospins_at(pixels))                          # [valleys, rows, columns, 3]
+    # The momentum plane drawn as a plane of space, and the pixels as a grid over it.
+    mesh = meshes.Mesh.grid(side, side)
+    places = solids.origin + solids.context.include_from_algebra(pixels.dual().reshape(-1))   # [pixels] Point-
+    for ax, spin in zip(panels, spins):
+        colours = TEXTURE_MAP((spin[..., 2] + 1) / 2)[..., :3]
         pinned(ax, np.round(colours * 255).astype(np.uint8), (-extent, extent, -extent, extent))
-        ax.quiver(k[..., 0], k[..., 1], spin[..., 0], spin[..., 1], color=ARROW_COLOUR, pivot="mid",
-                  scale=N_TEXTURE_ARROWS / ARROW_REACH, width=ARROW_WIDTH, zorder=2)
         ax.set(xlim=(-extent, extent), ylim=(-extent, extent))
+        # The part in the plane as streaks running downstream, as long as that part: specks where the pseudospin
+        # stands along z.
+        directions = solids.mv.direction(spin.reshape(-1, 3) * np.array([1, 1, 0]))   # [pixels] Point-
+        flow.overlay(ax, places, mesh, directions, 1.0, STREAK_COLOUR).set_zorder(2)
         haloed_cross(ax, "momentum x", "momentum y")
     return figure
 

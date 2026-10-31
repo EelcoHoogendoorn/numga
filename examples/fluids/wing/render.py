@@ -6,16 +6,20 @@ from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import TwoSlopeNorm
+from matplotlib.colors import TwoSlopeNorm, to_rgba
 
 from numga import Extensor, concatenate, stack
 
 from examples.util.animation import capture
+from examples.util.wgsl import contours, solids
 from examples.fluids.wing import core
 
 window = (-3.2, 3.2, -1.8, 1.8)
 pressure_range = (-3.0, 1.0)
-stream_levels = np.linspace(-3.0, 3.0, 21)
+# The streamlines: the stream function's levels a step apart, one through zero, and their ink and width in pixels.
+stream_spacing = 0.3
+stream_ink = np.array(to_rgba("#334155"))
+stream_width = 0.5
 lift_scale = 0.35
 wing_colour = "#0f172a"
 lift_colour = "#16a34a"
@@ -42,20 +46,26 @@ def draw(ax, points: core.Point, velocity: core.Point, stream: core.Bivector, li
     def closed(values: Extensor) -> Extensor:
         return concatenate([values, values[:, :1]], axis=1)
 
-    xy = coordinates(closed(points))
+    ring_points = closed(points)                                             # [rings, angles + 1] Point-
     speed_squared = closed(velocity.dot(velocity)).to_array()
     # The pressure coefficient: low where the flow is fast.
     pressure = 1 - speed_squared / speed**2
-    ax.pcolormesh(xy[..., 0], xy[..., 1], pressure, cmap="RdBu", shading="gouraud",
-                  norm=TwoSlopeNorm(0.0, *pressure_range))
+    colours = plt.get_cmap("RdBu")(TwoSlopeNorm(0.0, *pressure_range)(pressure))[..., :3]
     # The stream function's values, its pairings with the unit scalar.
     stream_values = closed(stream & core.mv.scalar([1])).to_array()
-    ax.contour(xy[..., 0], xy[..., 1], stream_values, levels=stream_levels, colors="#334155", linewidths=0.6)
-    ax.fill(xy[0, :, 0], xy[0, :, 1], color=wing_colour)
-    arrow = components(lift * lift_scale)
-    ax.annotate("", xy=arrow, xytext=(0.0, 0.0), arrowprops=dict(arrowstyle="-|>", color=lift_colour, linewidth=2.5))
     ax.set(xlim=window[:2], ylim=window[2:], xticks=[], yticks=[])
     ax.set_aspect("equal")
+    # The rings, numbered ring by ring, a grid around the wing.
+    mesh = contours.Mesh.grid(*ring_points.shape)
+    places = solids.origin + solids.context.include_from_algebra(ring_points.reshape(-1))   # [rings * (angles + 1)] Point-
+    streamlines = contours.Lines(stream_spacing, 0.0, stream_ink, stream_width)
+    contours.overlay(ax, places, mesh, stream_values.reshape(-1), colours.reshape(-1, 3), lines=(streamlines,))
+    # The panel keeps its frame around the picture.
+    ax.set_axis_on()
+    xy = coordinates(ring_points[0])
+    ax.fill(xy[:, 0], xy[:, 1], color=wing_colour)
+    arrow = components(lift * lift_scale)
+    ax.annotate("", xy=arrow, xytext=(0.0, 0.0), arrowprops=dict(arrowstyle="-|>", color=lift_colour, linewidth=2.5))
 
 
 def figure(points: core.Point, velocity: core.Point, stream: core.Bivector, lift: core.Force, speed: float) -> plt.Figure:

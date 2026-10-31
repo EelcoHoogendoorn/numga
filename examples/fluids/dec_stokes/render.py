@@ -7,13 +7,14 @@ from collections.abc import Iterator
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
-from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 from matplotlib.patches import Polygon
 from matplotlib.tri import Triangulation
 
 from numga import concatenate, stack
 from examples.fluids.dec_stokes import core
 from examples.util.animation import capture
+from examples.util.wgsl import contours, solids
 
 
 primal_colour = "#286580"
@@ -41,6 +42,15 @@ arrow_reach = 0.35
 def coordinates(points: core.Point) -> np.ndarray:
     """Drawing coordinates of intrinsic positions and velocities."""
     return np.asarray((axes & points.batch()[..., None]).to_array())
+
+
+def face_corners(mesh: core.Mesh, vertices: core.Point) -> tuple[solids.Point, core.Mesh]:
+    """Each face with its own three corners, for a field shaded per face: the corners in the renderer's space, corner
+    after corner of every face, `[corners * faces]`, and the faces among them."""
+    n_faces = len(mesh.faces)
+    corners = (mesh.incidence[2, 0] * vertices).batch().reshape(-1)          # [corners * faces] Point-
+    split = core.Mesh(3 * n_faces, np.arange(3 * n_faces).reshape(3, n_faces).T)
+    return solids.origin + solids.context.include_from_algebra(corners), split
 
 
 def channel_axes(mesh: core.Mesh, vertices: core.Point, n_rows: int):
@@ -156,19 +166,23 @@ def draw_complex(mesh: core.Mesh, vertices: core.Point, circumcentres: core.Poin
 def draw_fields(mesh: core.Mesh, vertices: core.Point, pressure: core.Scalar, vorticity: core.Bivector,
                 streamfunction: core.Scalar) -> plt.Figure:
     """Pressure above and signed vorticity below, with the same flow paths on both."""
-    figure, panels, triangulation = channel_axes(mesh, vertices, 2)
+    figure, panels, _ = channel_axes(mesh, vertices, 2)
     values = np.asarray(pressure.batch().to_array())
     rotation = np.asarray((mv.xy.dual() & vorticity).batch().to_array())
     potential = np.asarray(streamfunction.batch().to_array())
-    levels = np.linspace(potential.min(), potential.max(), n_streamlines + 2)[1:-1]
+    # The flow paths, the streamfunction's levels at even steps between its values on the walls.
+    paths = tuple(contours.Level(level, np.append(to_rgb(flow_colour), 0.45), 1.0)
+                  for level in np.linspace(potential.min(), potential.max(), n_streamlines + 2)[1:-1])
     extent = np.quantile(np.abs(rotation), 0.97)
-    panels[0].tripcolor(triangulation, facecolors=values, shading="flat", cmap=pressure_colours,
-                        norm=Normalize(values.min(), values.max()), zorder=1)
-    panels[1].tripcolor(triangulation, rotation, shading="gouraud", cmap=vorticity_colours,
-                        norm=Normalize(-extent, extent), zorder=1)
-    for ax in panels:
-        ax.tricontour(triangulation, potential, levels=levels, linestyles="solid",
-                      colors=flow_colour, linewidths=0.33, alpha=0.65, zorder=3)
+    # The pressure, constant on each face, shades each face's own corners alike; the streamfunction at them is the one
+    # at their vertices.
+    face_places, split = face_corners(mesh, vertices)
+    corner_potential = np.asarray((mesh.incidence[2, 0] * streamfunction).batch().to_array()).reshape(-1)
+    pressure_colours_at = np.tile(pressure_colours(Normalize(values.min(), values.max())(values))[:, :3], (3, 1))
+    contours.overlay(panels[0], face_places, split, corner_potential, pressure_colours_at, levels=paths).set_zorder(1)
+    places = solids.origin + solids.context.include_from_algebra(vertices.batch())   # [vertices] Point-
+    contours.overlay(panels[1], places, mesh, potential, vorticity_colours(Normalize(-extent, extent)(rotation))[:, :3],
+                     levels=paths).set_zorder(1)
     return figure
 
 
@@ -247,15 +261,17 @@ def tracer_samples(clocks: list[core.Scalar], frame: int, n_frames: int) -> tupl
 def animate_flow(mesh: core.Mesh, vertices: core.Point, pressure: core.Scalar, streamfunction: core.Scalar,
                  velocity: core.Point, n_frames: int) -> Iterator[np.ndarray]:
     """Tracers travelling along the conserved flux's streamlines over the steady pressure field."""
-    figure, panels, triangulation = channel_axes(mesh, vertices, 1)
+    figure, panels, _ = channel_axes(mesh, vertices, 1)
     ax = panels[0]
     potential = streamfunction.batch()
     low, high = potential.min(), potential.max()
     levels = low + (high - low) * np.linspace(0, 1, n_streamlines + 2)[1:-1]
     corners, clocks = timed_streamlines(mesh, vertices, streamfunction, velocity, levels)
     values = pressure.batch().to_array()
-    ax.tripcolor(triangulation, facecolors=values, shading="flat", cmap=pressure_colours,
-                 norm=Normalize(values.min(), values.max()), zorder=1)
+    # The pressure, constant on each face, shades each face's own corners alike.
+    face_places, split = face_corners(mesh, vertices)
+    shades = np.tile(pressure_colours(Normalize(values.min(), values.max())(values))[:, :3], (3, 1))
+    contours.overlay(ax, face_places, split, np.tile(values, 3), shades).set_zorder(1)
     offsets = np.cumsum([0] + [len(clock) for clock in clocks])
     paths = [coordinates(corners[first:last]) for first, last in zip(offsets[:-1], offsets[1:])]
     ax.add_collection(LineCollection(paths, colors=flow_colour, linewidths=0.23, alpha=0.22, zorder=2))

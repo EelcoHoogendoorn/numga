@@ -8,7 +8,7 @@ from examples.electromagnetism.lie_advection import core, scenarios
 
 
 def test_cartan_magic_formula_and_edge_world_sheets_on_moving_triangle():
-    corners, _ = scenarios.single_triangle(6)
+    corners = scenarios.single_triangle()
     endpoint_differences, swept_fluxes, world_sheets, face_bivector = core.cartan_decomposition(
         corners, scenarios.corner_forms, scenarios.corner_velocities,
     )

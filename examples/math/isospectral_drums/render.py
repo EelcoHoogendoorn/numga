@@ -8,12 +8,12 @@ from functools import cache
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection, PolyCollection
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 
 from numga import stack
 from examples.math.isospectral_drums.core import Point, Scalar, ga, mv
 from examples.math.isospectral_drums.numerics import Mesh
-from examples.util.wgsl import Shader
+from examples.util.wgsl import Shader, contours, solids
 
 pixels = 260
 # Displacement one way blue, the other orange, and rest a light neutral; the tiles' outlines.
@@ -23,6 +23,9 @@ colours = LinearSegmentedColormap.from_list(
 outline = np.array([39, 49, 58]) / 255
 # The width of the tiles' outlines in pixels.
 outline_width = 1.4
+# The nodal lines of the pieces: their ink, colour and opacity, and their width in pixels.
+nodal_ink = np.append(to_rgb("#394b59"), 0.7)
+nodal_width = 0.9
 tile_colours = np.array([
     [0.85, 0.40, 0.25], [0.94, 0.66, 0.27], [0.84, 0.78, 0.48],
     [0.35, 0.66, 0.54], [0.32, 0.65, 0.76], [0.39, 0.48, 0.72],
@@ -189,16 +192,15 @@ def draw_pieces(vertices: Point, mesh: Mesh, pieces: Scalar, exposure: float) ->
     edges = points[mesh.edges[mesh.boundary_edges]]
     centre = (points.min(axis=0) + points.max(axis=0)) / 2
     span = np.ptp(points, axis=0).max() * 1.05
+    places = solids.origin + solids.context.include_from_algebra(vertices.batch())   # [vertices] Point-
     figure, axes = plt.subplots(1, len(values), figsize=(10, 2.5), facecolor="white")
+    figure.subplots_adjust(0, 0, 1, 1, wspace=0.08)
     for ax, field in zip(axes, values):
-        ax.tripcolor(points[:, 0], points[:, 1], mesh.faces, field, shading="gouraud",
-                     cmap=colours, vmin=-exposure, vmax=exposure)
-        contour_field = np.where(np.abs(field) < np.max(np.abs(field)) * 1e-10, 0, field)
-        ax.tricontour(points[:, 0], points[:, 1], mesh.faces, contour_field, levels=[0],
-                      colors="#394b59", linewidths=0.65, alpha=0.7)
-        ax.add_collection(LineCollection(edges, colors="#27313a", linewidths=1.0))
+        ax.add_collection(LineCollection(edges, colors="#27313a", linewidths=1.0, zorder=2))
         ax.set(xlim=centre[0] + np.array([-0.5, 0.5]) * span,
                ylim=centre[1] + np.array([-0.5, 0.5]) * span, aspect="equal")
         ax.set_axis_off()
-    figure.subplots_adjust(0, 0, 1, 1, wspace=0.08)
+        shades = colours(Normalize(-exposure, exposure)(field))[:, :3]
+        nodal_lines = contours.Level(0.0, nodal_ink, nodal_width)
+        contours.overlay(ax, places, mesh, field, shades, levels=(nodal_lines,)).set_zorder(1)
     return figure

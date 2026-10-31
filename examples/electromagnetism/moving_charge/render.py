@@ -8,16 +8,19 @@ from itertools import chain
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
-from matplotlib.colors import Colormap, LogNorm, Normalize, TwoSlopeNorm
+from matplotlib.colors import Colormap, LogNorm, Normalize, TwoSlopeNorm, to_rgba
 from matplotlib.figure import Figure
 from matplotlib.image import AxesImage
 
 from numga import stack
 
 from examples.util.animation import capture
-from examples.util.wgsl import pinned
+from examples.util.wgsl import contours, pinned, solids
+from examples.util.wgsl.flow import axes_view
 from examples.electromagnetism.moving_charge import core
 
+# The lab's slice of space, which carries the events into the renderer's space.
+space_slice = core.mv.t ^ (core.Antivector & core.time)                         # [] Antivector- <- Antivector-
 # The scales of the electric field's strength, of the magnetic field, and of the waves, compressed to within one.
 electric_norm = LogNorm(0.05, 50.0)
 magnetic_norm = TwoSlopeNorm(0.0, -10.0, 10.0)
@@ -34,7 +37,9 @@ charge_colour, charge_rim_colour = "#facc15", "#0f172a"
 # The figures' dots per inch, and the pixels between panels side by side.
 figure_dpi = 100
 panel_gap = 4
-# The width of the charge's outline, in pixels; the charge's dot and its rim, as shares of the picture's width.
+# The ink of the charge's outline, and its width in pixels; the charge's dot and its rim, as shares of the
+# picture's width.
+outline_ink = np.array(to_rgba(density_colour))
 outline_width = 0.9
 charge_size, charge_rim = 0.0105, 0.002
 
@@ -107,11 +112,15 @@ def panel(ax: Axes, events: core.Antivector, values: np.ndarray, colours: Colorm
     return image
 
 
-def outline(ax: Axes, events: core.Antivector, current: core.Antivector):
-    """The charge's outline, where its density is high."""
-    xy = coordinates(events)
-    return ax.contour(xy[..., 0], xy[..., 1], np.abs(density(current)), levels=[density_level],
-                      colors=[density_colour], linewidths=outline_width * 72 / figure_dpi)
+def outlined(places: solids.Point, mesh: contours.Mesh, field: core.Bivector, current: core.Antivector,
+             view: solids.View) -> np.ndarray:
+    """The electric field's strength over the grid of events at their places in the lab's space, `[rows, columns]`
+    numbered row by row, with the charge's outline, where its density is high, seen by the view of its panel:
+    `[rows, columns, 4]`."""
+    strengths = strength_colours(np.ma.filled(electric_norm(electric_strength(field)), 0.0))[..., :3]
+    charge_outline = contours.Level(density_level, outline_ink, outline_width)
+    return contours.picture(places, mesh, np.abs(density(current)).reshape(-1), strengths.reshape(-1, 3), view,
+                            levels=(charge_outline,))
 
 
 def fields(events: core.Antivector, field: core.Bivector) -> Figure:
@@ -140,14 +149,19 @@ def animate(frames: Iterable[tuple[core.Antivector, core.Bivector, core.Antivect
     states = iter(frames)
     events, field, current = next(states)
     figure, (left, right) = panels(2, events.shape[-2:])
-    images = (panel(left, events, electric_strength(field), strength_colours, electric_norm),
-              panel(right, events, magnetic_across(field), signed_colours, magnetic_norm))
+    # The strength and the charge's outline over the grid of events, from its first to its last.
+    corners = coordinates(events[[0, -1], [0, -1]])                            # [2, 2]
+    left.set(xlim=corners[:, 0], ylim=corners[:, 1])
+    view = axes_view(left)
+    strength = pinned(left, np.zeros(view.shape + (4,)), (*corners[:, 0], *corners[:, 1]))
+    left.set_autoscale_on(False)
+    places = solids.origin + solids.context.include_from_algebra(space_slice(events).reshape(-1))   # [rows * columns] Point-
+    mesh = contours.Mesh.grid(*events.shape[-2:])
+    magnetic = panel(right, events, magnetic_across(field), signed_colours, magnetic_norm)
     for _, field, current in chain([(events, field, current)], states):
-        images[0].set_data(coloured(electric_strength(field), strength_colours, electric_norm))
-        images[1].set_data(coloured(magnetic_across(field), signed_colours, magnetic_norm))
-        charge_outline = outline(left, events, current)
+        strength.set_data(outlined(places, mesh, field, current, view))
+        magnetic.set_data(coloured(magnetic_across(field), signed_colours, magnetic_norm))
         yield capture(figure)
-        charge_outline.remove()
     plt.close(figure)
 
 

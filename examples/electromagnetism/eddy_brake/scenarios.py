@@ -130,7 +130,8 @@ def main() -> None:
 
     disc, conductivity = materials()
     response = scene(disc, conductivity)
-    save_figure(render.draw(disc.mesh, disc.vertices, disc.triangle_areas, response, centre, field_width,
+    paths = core.streamlines(disc, conductivity)(response.current)            # [cases] Scalar+[vertices]
+    save_figure(render.draw(disc.mesh, disc.vertices, disc.triangle_areas, response, paths, centre, field_width,
                             magnet_field),
                 "eddy_brake_materials")
     straight, frames = spin_down()

@@ -7,10 +7,13 @@ from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgba
 
 from numga import concatenate, stack
 from examples.util import charts
 from examples.util.animation import capture
+from examples.util.wgsl import contours, pinned, solids
+from examples.util.wgsl.flow import axes_view
 from examples.quadrics.quadric_collision.core import (
     Plane, Point, Polarity, Quadric, Scalar, infinity, mv, origin, tangent_plane,
 )
@@ -23,10 +26,14 @@ centre_size = charts.points(4) ** 2
 # The grid the ellipsoids and the blend at the peak are evaluated on, per side.
 resolution = 250
 first_colours, second_colours = ("#3b82f6", "#1d4ed8"), ("#f97316", "#ea580c")
+# The opacity of the ellipsoids' fills.
+ellipsoid_opacity = 0.35
 # While the pair is apart and once it overlaps: the midplane, determinant curve and peak; the blend's edge; its fill
 # and the fill's opacity.
 apart_colours = ("#16a34a", "#059669", "#10b981", 0.10)
 overlap_colours = ("#9333ea", "#7c3aed", "#a855f7", 0.22)
+# The width of the blend's edge in pixels, thinner than the ellipsoids' outlines.
+blend_edge_width = 1.0
 # A volume, the join of three points, is an intrinsic scalar, and its unit carries the extrinsic to the intrinsic.
 unit_volume = mv.antipseudoscalar([1])                                         # [] Antipseudoscalar-
 
@@ -48,17 +55,25 @@ def bounds(dual: Quadric) -> Point:
     return origin + (axes.dual() * stack((low, high))).sum(axis=-1)
 
 
-def draw_ellipsoid(ax, dual: Quadric, grid: Point, colours: tuple[str, str]) -> list:
-    """An ellipsoid filled and outlined where its form over the grid changes sign: each point paired with its polar
-    plane, under the inverse of the dual, signed by the centre's so that it is positive inside; the artists, for an
-    animation to remove."""
+def ellipsoid_form(dual: Quadric, grid: Point) -> np.ndarray:
+    """An ellipsoid's form over the grid's points `[points]`: each point paired with its polar plane, under the inverse
+    of the dual, signed by the centre's so that it is positive inside."""
     primal = dual.inverse()                                                    # [] Plane+ <- Point-
     centre = dual(infinity)                                                    # [] Point-
-    field = ((grid & primal(grid)) * (centre & primal(centre))).to_array()
-    coordinates = xy(grid)
-    xs, ys = coordinates[..., 0], coordinates[..., 1]
-    return [ax.contourf(xs, ys, field, levels=[0.0, field.max()], colors=[colours[0]], alpha=0.35),
-            ax.contour(xs, ys, field, levels=[0.0], colors=[colours[1]])]
+    return ((grid & primal(grid)) * (centre & primal(centre))).to_array()
+
+
+def inside(colour: str, opacity: float) -> contours.Bands:
+    """A field's positive side filled in a colour at an opacity, its negative side clear: two bands that meet at zero,
+    each reaching on."""
+    return contours.Bands(-1.0, 1.0, np.array([np.zeros(4), to_rgba(colour, opacity)]))
+
+
+def clear_picture(ax, view: solids.View, zorder: float):
+    """A clear picture pinned over the panel at a z-order, for an animation to set its data."""
+    shown = pinned(ax, np.zeros(view.shape + (4,)), (*ax.get_xlim(), *ax.get_ylim()))
+    shown.set_zorder(zorder)
+    return shown
 
 
 def plane_ends(plane: Plane) -> tuple[np.ndarray, np.ndarray]:
@@ -92,18 +107,19 @@ def animate_collision(
     half_width = margin * widths.max() / 2
     across = half_width * np.linspace(-1, 1, resolution)
     up = across * aspect
-    grid = middle + mv.x.dual() * across[None, :] + mv.y.dual() * up[:, None]
-    coordinates = xy(grid)
-    xs, ys = coordinates[..., 0], coordinates[..., 1]
-    xlim, ylim = xs[0, [0, -1]], ys[[0, -1], 0]
+    # The grid's points numbered row by row, one row for each step up.
+    grid = (middle + mv.x.dual() * across[None, :] + mv.y.dual() * up[:, None]).reshape(-1)   # [points] Point-
+    mesh = contours.Mesh.grid(resolution, resolution)
+    places = solids.context.include_from_algebra(grid)                         # [points] Point-
+    # The panel's limits, at the grid's first and last corners.
+    xlim, ylim = np.stack((xy(grid[0]), xy(grid[-1])), axis=-1)
     bottom, top = min(determinants.min(), 0.0), max(determinants.max(), 0.0)
     middle, half_height = (bottom + top) / 2, margin * (top - bottom) / 2
 
-    # Three quarters of the column: the pair beside the determinant's curve and its two labels. The frames draw new
-    # contours, so the charts' style holds while they are drawn.
+    # Three quarters of the column: the pair beside the determinant's curve and its two labels. The frames are drawn
+    # anew, so the charts' style holds while they are drawn.
     with charts.style():
         figure, (ax_pair, ax_det) = charts.subplots(600, 260, ncols=2, gridspec_kw={"width_ratios": [1.45, 1]})
-        draw_ellipsoid(ax_pair, first_ellipsoid, grid, first_colours)
         ax_pair.scatter(*xy(first_ellipsoid(infinity)), color=first_colours[1], s=centre_size, zorder=5)
         second_centre = ax_pair.scatter([], [], color=second_colours[1], s=centre_size, zorder=5)
         near = xy(first_ellipsoid(first_tangent))
@@ -132,7 +148,21 @@ def animate_collision(
         figure.tight_layout()
         figure.set_layout_engine("none")
 
-        changing = []
+        # The ellipsoids and the blend as clear pictures over the panel, at its own pixels: the fills under the
+        # outlines, the first ellipsoid's drawn once, the second's and the blend's anew each frame.
+        view = axes_view(ax_pair)
+        first_form = ellipsoid_form(first_ellipsoid, grid)                    # [points]
+        first_ink = np.array(to_rgba(first_colours[1]))
+        clear_picture(ax_pair, view, 1.0).set_data(contours.picture(
+            places, mesh, first_form, np.zeros(3), view, bands=(inside(first_colours[0], ellipsoid_opacity),),
+            opacity=0.0))
+        second_fill, blend_fill = clear_picture(ax_pair, view, 1.1), clear_picture(ax_pair, view, 1.2)
+        clear_picture(ax_pair, view, 2.0).set_data(contours.picture(
+            places, mesh, first_form, np.zeros(3), view, levels=(contours.Level(0.0, first_ink, charts.LINE_PX),),
+            opacity=0.0))
+        second_outline, blend_edge = clear_picture(ax_pair, view, 2.1), clear_picture(ax_pair, view, 2.2)
+        second_ink = np.array(to_rgba(second_colours[1]))
+
         for (placed_second, second_tangent, midplane, peak, determinants, parameter,
              maximum) in chain([first_state], states):
             line_colour, edge_colour, fill_colour, fill_alpha = apart_colours if maximum > 0 else overlap_colours
@@ -145,17 +175,21 @@ def animate_collision(
             far = xy(placed_second(second_tangent))
             far_point.set_offsets(far[None])
             witness.set_data([near[0], far[0]], [near[1], far[1]])
+            second_form = ellipsoid_form(placed_second, grid)                 # [points]
+            second_fill.set_data(contours.picture(
+                places, mesh, second_form, np.zeros(3), view, bands=(inside(second_colours[0], ellipsoid_opacity),),
+                opacity=0.0))
+            second_outline.set_data(contours.picture(
+                places, mesh, second_form, np.zeros(3), view,
+                levels=(contours.Level(0.0, second_ink, charts.LINE_PX),), opacity=0.0))
             # The blend at the peak is drawn where each point lies on its own polar plane, and filled on the side the
             # sign of its determinant selects: within the hyperboloid's branches, and inside the bridging ellipsoid.
-            for artist in changing:
-                artist.remove()
-            field = (grid & peak(grid)).to_array()
-            side = field * np.sign(maximum.to_array())
-            changing = draw_ellipsoid(ax_pair, placed_second, grid, second_colours) + [
-                ax_pair.contour(xs, ys, field, levels=[0.0], colors=[edge_colour], linestyles=["-."]),
-                ax_pair.contourf(xs, ys, side, levels=[0.0, np.abs(side).max()], colors=[fill_colour],
-                                 alpha=fill_alpha),
-            ]
+            side = (grid & peak(grid)).to_array() * np.sign(maximum.to_array())   # [points]
+            blend_fill.set_data(contours.picture(
+                places, mesh, side, np.zeros(3), view, bands=(inside(fill_colour, fill_alpha),), opacity=0.0))
+            blend_edge.set_data(contours.picture(
+                places, mesh, side, np.zeros(3), view,
+                levels=(contours.Level(0.0, np.array(to_rgba(edge_colour)), blend_edge_width),), opacity=0.0))
             curve.set_ydata(determinants.to_array())
             curve.set_color(line_colour)
             peak_marker.set_offsets([[parameter.to_array(), maximum.to_array()]])

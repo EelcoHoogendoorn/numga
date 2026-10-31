@@ -7,17 +7,20 @@ from collections.abc import Iterable, Iterator
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
-from matplotlib.colors import LogNorm
-from matplotlib.contour import ContourSet
+from matplotlib.colors import LogNorm, to_rgba
 
 from numga import stack
 from examples.util.animation import capture
+from examples.util.wgsl import contours, pinned, solids
+from examples.util.wgsl.flow import axes_view
 from examples.mechanics.tides import core
 
 STARS = "#0f172a"
 PREDICTION = "#ea580c"
 ZOOM = 1.6
 RIM_PIXELS = 160
+# The width of the predicted rim, in pixels.
+RIM_WIDTH = 1.6
 # The faintest density drawn, as a fraction of the peak.
 DENSITY_FLOOR = 1e-4
 
@@ -29,27 +32,28 @@ def coordinates(points: core.Point) -> np.ndarray:
 
 
 def density(ax: Axes, points: core.Point, mass_density: core.Scalar) -> None:
-    """The density on a log scale, as an image over the grid's cells."""
-    places = coordinates(points)                                             # [rows, columns, 2]
-    # The grid samples cell centres; the image extends half a cell beyond them.
-    half_cell = (places[1, 1] - places[0, 0]) / 2
-    box = (places[0, 0, 0] - half_cell[0], places[0, -1, 0] + half_cell[0],
-           places[0, 0, 1] - half_cell[1], places[-1, 0, 1] + half_cell[1])
-    values = mass_density.to_array()
-    ax.imshow(values, extent=box, origin="lower", cmap="Blues", norm=LogNorm(values.max() * DENSITY_FLOOR, values.max()),
-              interpolation="bilinear")
-    ax.set(xlim=box[:2], ylim=box[2:], xticks=[], yticks=[])
+    """The density on a log scale over the grid of its samples `[rows, columns]`, from the first to the last."""
+    corners = coordinates(points[[0, -1], [0, -1]])                          # [2, 2]
+    values = mass_density.to_array()                                         # [rows, columns]
+    colours = plt.get_cmap("Blues")(LogNorm(values.max() * DENSITY_FLOOR, values.max())(values))[..., :3]
+    ax.set(xlim=corners[:, 0], ylim=corners[:, 1], xticks=[], yticks=[])
     ax.set_aspect("equal")
+    places = solids.origin + solids.context.include_from_algebra(points.reshape(-1))   # [rows * columns] Point-
+    contours.overlay(ax, places, contours.Mesh.grid(*values.shape), values.reshape(-1), colours.reshape(-1, 3))
+    # The panel keeps its frame around the picture.
+    ax.set_axis_on()
 
 
-def rim_at(ax: Axes, centre: core.Point, rim: core.Form, half_size: core.Scalar) -> ContourSet:
-    """The rim as the level set of its form, evaluated on a grid of offsets around the centre: its contour, for an
-    animation to replace."""
+def rim_at(centre: core.Point, rim: core.Form, half_size: core.Scalar, grid: contours.Mesh,
+           view: solids.View) -> np.ndarray:
+    """The rim as the level set of its form, evaluated on a grid of offsets around the centre, `RIM_PIXELS` a side
+    and numbered row by row, and seen by the view of its panel, white elsewhere: `[rows, columns, 4]`."""
     samples = half_size * np.linspace(-1, 1, RIM_PIXELS)
-    offsets = core.mv.x.dual() * samples[None, :] + core.mv.y.dual() * samples[:, None]
-    level = rim(offsets, offsets).to_array()
-    xy = coordinates(centre + offsets)                                       # [rows, columns, 2]
-    return ax.contour(xy[..., 0], xy[..., 1], level, levels=[1.0], colors=[PREDICTION], linewidths=1.4)
+    offsets = core.mv.x.dual() * samples[None, :] + core.mv.y.dual() * samples[:, None]   # [rim, rim] Point-
+    level = rim(offsets, offsets).to_array()                                 # [rim, rim]
+    places = solids.origin + solids.context.include_from_algebra((centre + offsets).reshape(-1))   # [rim * rim] Point-
+    prediction = contours.Level(1.0, np.array(to_rgba(PREDICTION)), RIM_WIDTH)
+    return contours.picture(places, grid, level.reshape(-1), np.ones(3), view, levels=(prediction,))
 
 
 def frame(points: core.Point, mass_density: core.Scalar, stars: core.Stars, centre: core.Point, rim: core.Form) -> np.ndarray:
@@ -63,12 +67,15 @@ def animate(points: core.Point, mass_density: core.Scalar,
     once, beside a close view of the cluster with its predicted rim."""
     figure = plt.figure(figsize=(11, 4.4), dpi=80, layout="constrained")
     whole, near = figure.subplots(1, 2, gridspec_kw={"width_ratios": (1.5, 1)})
+    # Both panels bare of ticks before either picture is fitted to the room the layout gives it.
+    near.set(xlim=(-1, 1), ylim=(-1, 1), xticks=[], yticks=[])
+    near.set_aspect("equal")
     density(whole, points, mass_density)
     wide, close = (ax.scatter([], [], s=size, color=STARS, linewidths=0) for ax, size in ((whole, 2), (near, 5)))
-    near.set(xticks=[], yticks=[])
-    near.set_aspect("equal")
-    # The rim drawn for the frame before, which each frame replaces.
-    rims = []
+    # The rim's picture pinned once, its data and extent set for each frame; the panel keeps its frame around it.
+    rims = pinned(near, np.zeros(axes_view(near).shape + (4,)), (-1, 1, -1, 1))
+    near.set_axis_on()
+    rim_grid = contours.Mesh.grid(RIM_PIXELS, RIM_PIXELS)
     for stars, centre, rim in states:
         positions = coordinates(stars.positions)                             # [stars, 2]
         wide.set_offsets(positions)
@@ -77,11 +84,10 @@ def animate(points: core.Point, mass_density: core.Scalar,
         middle = coordinates(centre)                                         # [2]
         spans = (stack((core.mv.x, core.mv.y)) & (stars.positions - centre)[..., None]).abs().reshape(-1)
         half_size = spans.max() * ZOOM
-        while rims:
-            rims.pop().remove()
-        rims.append(rim_at(near, centre, rim, half_size))
         frame_size = float(half_size.to_array())
-        near.set(xlim=(middle[0] - frame_size, middle[0] + frame_size),
-                 ylim=(middle[1] - frame_size, middle[1] + frame_size))
+        window = (middle[0] - frame_size, middle[0] + frame_size, middle[1] - frame_size, middle[1] + frame_size)
+        rims.set_extent(window)
+        near.set(xlim=window[:2], ylim=window[2:])
+        rims.set_data(rim_at(centre, rim, half_size, rim_grid, axes_view(near)))
         yield capture(figure)
     plt.close(figure)

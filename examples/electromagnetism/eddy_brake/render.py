@@ -11,21 +11,28 @@ from matplotlib.collections import LineCollection, PathCollection
 from matplotlib.colors import LinearSegmentedColormap, PowerNorm
 from matplotlib.patches import Circle, FancyArrowPatch
 from matplotlib.path import Path
-from matplotlib.tri import Triangulation
 
 from numga import concatenate, stack
 from numga.extensor import Extensor
 from examples.util.animation import capture
-from examples.util.wgsl import flow, pinned, solids
+from examples.util.wgsl import contours, pinned, solids
+from examples.util.wgsl.flow import axes_view
 from examples.electromagnetism.eddy_brake import core
 
 Mesh, as_scalar = core.Mesh, core.as_scalar
+# The observer's slice of space, which carries the disc's events into the renderer's space.
+space_slice = core.mv.t ^ (core.Point & core.time)                              # [] Point- <- Point-
 
 animation_dpi = 90
 fibre_reach = 0.94
-fibre_colour = (0.16, 0.43, 0.56, 0.34)
+fibre_colour = (0.16, 0.43, 0.56, 0.8)
 fibre_width = 1.35
 current_gamma = 0.35
+streamline_gamma = 0.25
+current_levels = 10
+# The ink of the current paths and of the current patterns' contours: colour and opacity.
+path_ink = np.array([0.29, 0.24, 0.20, 1.0])
+mode_ink = np.array([0.29, 0.24, 0.20, 1.0])
 # The arc of the magnet's sense of turning, just outside the dashed rim of its width, as a share of that width: where
 # it starts around the rim, how far it runs, and the samples along it.
 field_arc_reach = 1.3
@@ -37,11 +44,9 @@ current_colours = LinearSegmentedColormap.from_list("current", ("#f8f5ed", "#edb
 heat_colours = LinearSegmentedColormap.from_list("heat", ("#fbf9f4", "#e58b3a", "#8f2d1b"))
 mode_colours = LinearSegmentedColormap.from_list("mode", ("#2b6c8f", "#f8f5ed", "#c95832"))
 mode_levels = 9
-# The braking current's fixed magnitude scale, as a multiple of its initial peak.
+# How many times over the braking currents' colour scale and contour values take the first state's: once, as the drag
+# only slows the disc; a later state's larger current widens them.
 current_room = 1.0
-# The share of the peak current whose streaks run the full length: the current gathers under the magnet, so most of
-# the disc carries a small share of the peak, and streaks scaled to the peak itself would be specks there.
-streak_share = 0.2
 # The tops of the fixed colour scales of the runs that start without current or heat, the most the notebook's runs
 # reach: the current of the discs spun up from rest, in A/m, and the heat per area, in J/m², of the braking discs and of
 # the discs spun up.
@@ -109,7 +114,7 @@ def rotation_marks(orientations: core.Rotor, radius: float) -> np.ndarray:
 
 def rotation_marker(ax: plt.Axes) -> PathCollection:
     """A fluorescent rim knob showing the material's rotation."""
-    return ax.scatter([], [], s=20, c="#26788c", edgecolors="white", linewidths=0.6,
+    return ax.scatter([], [], s=180, c="#ff00c8", edgecolors="white", linewidths=1.5,
                       zorder=6, clip_on=False)
 
 
@@ -150,28 +155,31 @@ def rim(mesh: Mesh, vertices: core.Point) -> np.ndarray:
     return np.stack((planar(tails.batch()), planar(heads.batch())), axis=-2)
 
 
-def draw(mesh: Mesh, points: core.Point, areas: core.Scalar, response: core.Response, centre: core.Point,
-         width: float, field: core.Bivector) -> plt.Figure:
-    """The materials' currents share one magnitude palette and one streak-length scale."""
-    vertex_current = at_vertices(mesh, areas, response.current)                 # [cases] Current-[vertices]
-    magnitude = scalars(vertex_current.squared().square_root())
-    peak = magnitude.max()
-    extent = float(points.squared().square_root().batch().max().to_array())
-    space_slice = core.mv.t ^ (core.Point & core.time)                          # [] Point- <- Point-
-    places = solids.origin + solids.context.include_from_algebra(space_slice(points).batch())
-    directions = solids.context.include_from_algebra(space_slice(vertex_current).batch())
-    figure, panels = plt.subplots(1, len(directions), figsize=(3 * len(directions), 3.15),
+def draw(mesh: Mesh, points: core.Point, areas: core.Scalar, response: core.Response, streamfunction: core.Scalar,
+         centre: core.Point, width: float, field: core.Bivector) -> plt.Figure:
+    """The materials' solved currents on the mesh at its points, their strength on one colour scale and their paths
+    the contours of their streamfunctions `[cases] Scalar+[vertices]`, and the magnet's field, `field` at its centre, as
+    its patch."""
+    # Separate contour steps keep the weak material cases legible; colours share one magnitude scale.
+    streams = scalars(streamfunction)                                       # [cases, vertices]
+    spacings = np.abs(streams).max(axis=-1) / current_levels                # [cases]
+    magnitude = scalars(at_vertices(mesh, areas, response.current).squared().square_root())   # [cases, vertices]
+    current_scale = PowerNorm(current_gamma, vmin=0, vmax=magnitude.max())
+    extent = scalars(points.squared().square_root()).max()
+    places = solids.origin + solids.context.include_from_algebra(space_slice(points).batch())   # [vertices] Point-
+
+    figure, panels = plt.subplots(1, len(magnitude), figsize=(3 * len(magnitude), 3.15),
                                   squeeze=False, layout="constrained")
-    for ax, direction, speed in zip(panels[0], directions, magnitude):
+    for ax, stream, spacing, speed in zip(panels[0], streams, spacings, magnitude):
         ax.add_collection(LineCollection(rim(mesh, points), colors="#746b60", linewidths=0.6))
         magnet(ax, centre, width, field)
         ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
         ax.set_axis_off()
-        view = flow.axes_view(ax)
-        colours = current_colours((speed / peak)**current_gamma)[..., :3]
-        picture = flow.texture(places, mesh, direction, view, colours, streak_share * peak, flow.planar_grain, 4.0,
-                               0.9, flow.length_pixels, np.ones(3))["image"]
-        pinned(ax, np.clip(picture[..., :3], 0, 1), (*ax.get_xlim(), *ax.get_ylim()))
+        colours = current_colours(current_scale(speed))[:, :3]
+        # The paths halfway between the multiples of the step, so that none runs along the rim, where the
+        # streamfunction vanishes.
+        paths = contours.Lines(spacing, spacing / 2, path_ink, 1.0)
+        contours.overlay(ax, places, mesh, stream, colours, lines=(paths,)).set_zorder(1)
     return figure
 
 
@@ -179,72 +187,89 @@ def draw_modes(mesh: Mesh, points: core.Point, streamfunctions: core.Scalar) -> 
     """Streamfunctions of current patterns `[cases, patterns] Scalar+[vertices]`, a row of patterns per
     material: current circulates along their contours, opposite ways around warm and cool peaks."""
     values = scalars(streamfunctions)                                      # [cases, patterns, vertices]
-    positions = planar(points.batch())
-    triangles = Triangulation(positions[:, 0], positions[:, 1], mesh.faces)
     extent = scalars(points.squared().square_root()).max()
     outline = rim(mesh, points)
+    places = solids.origin + solids.context.include_from_algebra(space_slice(points).batch())   # [vertices] Point-
     rows, columns = values.shape[:2]
     figure, panels = plt.subplots(rows, columns, figsize=(2 * columns, 2 * rows),
                                   squeeze=False, layout="constrained")
     for row, streams in zip(panels, values):
         for ax, stream in zip(row, streams):
             largest = np.abs(stream).max()
-            ax.tripcolor(triangles, stream, shading="gouraud", cmap=mode_colours,
-                         vmin=-largest, vmax=largest, rasterized=True)
-            ax.tricontour(triangles, stream, levels=np.linspace(-largest, largest, mode_levels + 2)[1:-1],
-                          colors="#493c32", linewidths=0.6, linestyles="solid")
             ax.add_collection(LineCollection(outline, colors="#746b60", linewidths=0.8))
             ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
             ax.set_axis_off()
+            # Levels at equal steps between the extremes, one of them through zero.
+            colours = mode_colours((stream / largest + 1) / 2)[:, :3]
+            levels = contours.Lines(2 * largest / (mode_levels + 1), 0.0, mode_ink, 1.0)
+            contours.overlay(ax, places, mesh, stream, colours, lines=(levels,)).set_zorder(1)
     return figure
 
 
 def animate(mesh: Mesh, points: core.Point, areas: core.Scalar, frames: Iterable[core.Motion], centre: core.Point,
             width: float, field: core.Bivector, fibres: tuple[core.Point, ...], shown: np.ndarray,
             room: float = current_room) -> Iterator[np.ndarray]:
-    """Braking currents shorten on a fixed scale while the material's fibres and rim marker rotate."""
+    """Batched rotating materials and their currents, the currents' paths the contours of their streamfunctions, with
+    `[curves, samples]` body-fixed guide families drawn on the panels that show them, `[cases, families]`. The colours
+    share one magnitude scale across cases, and each panel keeps its contour values: both the first state's, `room`
+    times over, widened where a later state's current exceeds them."""
     states = iter(frames)
     first = next(states)
-    current = at_vertices(mesh, areas, first.current)
-    peak = room * scalars(current.squared().square_root()).max()
-    yield from currents(mesh, points, areas, chain((first,), states), centre, width, field, fibres, shown, peak)
+    peak = room * scalars((first.orientation >> first.current).squared().square_root()).max()
+    stream_top = room * np.abs(scalars(first.streamfunction)).max(axis=-1)     # [cases]
+    yield from currents(mesh, points, areas, chain([first], states), centre, width, field, fibres, shown, peak,
+                        stream_top)
 
 
 def animate_induction(mesh: Mesh, points: core.Point, areas: core.Scalar, frames: Iterable[core.Motion],
                       centre: core.Point, width: float, field: core.Bivector, fibres: tuple[core.Point, ...],
                       shown: np.ndarray, peak: float = induction_current_peak) -> Iterator[np.ndarray]:
-    """Induced currents grow from stationary specks into streaks on a fixed magnitude scale."""
-    yield from currents(mesh, points, areas, frames, centre, width, field, fibres, shown, peak)
+    """Rotating materials whose currents build up from none, drawn as `animate` draws them: the colours on a fixed
+    magnitude scale up to `peak`, so that the currents fade in as they grow, and each panel's contour values widened
+    with its current."""
+    yield from currents(mesh, points, areas, frames, centre, width, field, fibres, shown, peak, np.zeros(len(shown)))
 
 
 def currents(mesh: Mesh, points: core.Point, areas: core.Scalar, states: Iterable[core.Motion], centre: core.Point,
-             width: float, field: core.Bivector, fibres: tuple[core.Point, ...], shown: np.ndarray,
-             peak: float) -> Iterator[np.ndarray]:
-    """Current colours and downstream feathering share a fixed magnitude reference across cases and time."""
-    extent = float(points.squared().square_root().batch().max().to_array())
+             width: float, field: core.Bivector, fibres: tuple[core.Point, ...], shown: np.ndarray, peak: float,
+             stream_top: np.ndarray) -> Iterator[np.ndarray]:
+    """The currents' frames, from a colour scale up to `peak` and contour values up to `stream_top` per case, each
+    widened where a state's current exceeds it."""
+    extent = scalars(points.squared().square_root()).max()
     guides = concatenate(fibres)                                              # [curves, samples] Point-
-    space_slice = core.mv.t ^ (core.Point & core.time)                          # [] Point- <- Point-
+
     figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=animation_dpi)
     panels = [disc_panel(figure, i, len(shown), extent, centre, width, field, colours)
               for i, colours in enumerate(fibre_colours(fibres, shown))]
-    views = [flow.axes_view(ax) for ax, _, _, _ in panels]
-    textures = [pinned(ax, np.ones(view.shape + (3,)), (*ax.get_xlim(), *ax.get_ylim()))
+    views = [axes_view(ax) for ax, _, _, _ in panels]
+    textures = [pinned(ax, np.zeros(view.shape + (4,)), (*ax.get_xlim(), *ax.get_ylim()))
                 for (ax, _, _, _), view in zip(panels, views)]
+    for texture in textures:
+        texture.set_zorder(1)
     for state in states:
-        current = state.orientation >> at_vertices(mesh, areas, state.current)  # [cases] Current-[vertices]
-        magnitude = scalars(current.squared().square_root())
-        positions = solids.origin + solids.context.include_from_algebra(space_slice(state.vertices).batch())
-        directions = solids.context.include_from_algebra(space_slice(current).batch())
+        # The current belongs to material faces; turning it into the laboratory frame keeps its strength.
+        strength = state.current.squared().square_root()                      # [cases] Scalar+[faces]
+        magnitude = scalars(strength)                                         # [cases, faces]
+        stream = scalars(state.streamfunction)                                # [cases, vertices]
+        # The scales widened where this state's current exceeds them.
+        peak, stream_top = max(peak, magnitude.max()), np.maximum(stream_top, np.abs(stream).max(axis=-1))
+        # Separate contour steps keep the weak material cases legible; a disc still without current has no levels.
+        spacings = np.where(stream_top > 0, stream_top, 1.0) / current_levels   # [cases]
+        alpha = np.divide(magnitude.max(axis=-1), peak, out=np.zeros(len(magnitude)),
+                          where=peak > 0) ** streamline_gamma
+        current_scale = PowerNorm(current_gamma, vmin=0, vmax=peak)
+        speed = scalars(at_vertices(mesh, areas, strength))                   # [cases, vertices]
+        places = solids.origin + solids.context.include_from_algebra(space_slice(state.vertices).batch())   # [cases, vertices] Point-
         threads_at = planar(state.orientation[:, None, None] >> guides)
-        marks = rotation_marks(state.orientation, extent)
+        marks = rotation_marks(state.orientation, extent)                     # [cases, 2]
         for i, ((ax, threads, marker, outline), view, texture) in enumerate(zip(panels, views, textures)):
             outline.set_segments(rim(mesh, state.vertices[i]))
             threads.set_segments(threads_at[i])
             marker.set_offsets(marks[i:i + 1])
-            colours = current_colours((magnitude[i] / peak)**current_gamma)[..., :3]
-            picture = flow.texture(positions[i], mesh, directions[i], view, colours, streak_share * peak, flow.planar_grain, 4.0,
-                                   0.9, flow.length_pixels, np.ones(3))["image"]
-            texture.set_data(np.clip(picture[..., :3], 0, 1))
+            colours = current_colours(current_scale(speed[i]))[:, :3]
+            ink = np.append(path_ink[:3], alpha[i])
+            paths = contours.Lines(spacings[i], spacings[i] / 2, ink, 1.0)
+            texture.set_data(contours.picture(places[i], mesh, stream[i], colours, view, lines=(paths,)))
         yield capture(figure)
     plt.close(figure)
 
@@ -260,24 +285,25 @@ def animate_heat(mesh: Mesh, points: core.Point, areas: core.Scalar, frames: Ite
     figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=animation_dpi)
     panels = [disc_panel(figure, i, len(shown), extent, centre, width, field, colours)
               for i, colours in enumerate(fibre_colours(fibres, shown))]
+    views = [axes_view(ax) for ax, _, _, _ in panels]
+    textures = [pinned(ax, np.zeros(view.shape + (4,)), (*ax.get_xlim(), *ax.get_ylim()))
+                for (ax, _, _, _), view in zip(panels, views)]
+    for texture in textures:
+        texture.set_zorder(1)
     for state in frames:
         # Face heat is energy. Dividing by each material face's area gives the density to colour.
         densities = scalars(at_vertices(mesh, areas, state.heat / areas))     # [cases, vertices]
-        positions = planar(state.vertices.batch())
+        places = solids.origin + solids.context.include_from_algebra(space_slice(state.vertices).batch())   # [cases, vertices] Point-
         threads_at = planar(state.orientation[:, None, None] >> guides)
         marks = rotation_marks(state.orientation, extent)                     # [cases, 2]
-        surfaces = []
-        for i, (ax, threads, marker, outline) in enumerate(panels):
-            # The display mesh moves with the material; vertex colours interpolate face heat.
-            triangles = Triangulation(positions[i, :, 0], positions[i, :, 1], mesh.faces)
-            surfaces.append(ax.tripcolor(triangles, densities[i], shading="gouraud",
-                                          cmap=heat_colours, norm=heat_scale, rasterized=True, zorder=1))
+        for i, ((ax, threads, marker, outline), view, texture) in enumerate(zip(panels, views, textures)):
+            # The display mesh moves with the material; its colours interpolate face heat, with no level lines.
+            colours = heat_colours(heat_scale(densities[i]))[:, :3]
+            texture.set_data(contours.picture(places[i], mesh, densities[i], colours, view))
             outline.set_segments(rim(mesh, state.vertices[i]))
             threads.set_segments(threads_at[i])
             marker.set_offsets(marks[i:i + 1])
         yield capture(figure)
-        for surface in surfaces:
-            surface.remove()
     plt.close(figure)
 
 

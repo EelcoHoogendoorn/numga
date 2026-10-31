@@ -9,9 +9,9 @@ from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 from matplotlib.patches import Polygon
 from matplotlib.tri import Triangulation
 
-from numga import where, stack
+from numga import stack
 from examples.util import charts
-from examples.util.wgsl import flow, image_figure, meshes, solids, strokes
+from examples.util.wgsl import contours, flow, image_figure, meshes, solids, strokes
 from examples.surfaces.whitney_forms import core
 
 primal_colour = "#286580"
@@ -63,24 +63,6 @@ def outward_wall(mesh: core.SpaceMesh) -> tuple[np.ndarray, np.ndarray]:
     return wall, np.where(sense[:, None] > 0, mesh.faces[wall], mesh.faces[wall][:, ::-1])
 
 
-def level_lines(corners: core.Point, values: core.Scalar, levels: np.ndarray) -> core.Point:
-    """The level lines of a field linear across triangles, `[ends, lines]`: in each triangle, of corners
-    `[corners, faces]` and the field's values there `[corners, faces]`, the segment between the two sides where the
-    field passes a level, for every level `[levels]` it passes."""
-    following = corners[[1, 2, 0]]                                            # [corners, faces] Point-
-    start, end = values[..., None], values[[1, 2, 0], :, None]                # [corners, faces, 1]
-    # How far along each side, from its corner to the next, the field reaches each level, on a side where it changes.
-    mv = values.context.multivector
-    changing = (end - start).abs() > 0
-    share = (levels - start) / where(changing, end - start, mv.scalar([np.inf]))    # [corners, faces, levels] Scalar+
-    crossed = (share >= 0) & (share < 1) & changing                           # [corners, faces, levels]
-    meeting = corners[..., None] + (following - corners)[..., None] * where(crossed, share, mv.scalar([0]))   # [corners, faces, levels] Point-
-    # The two sides a level crosses, in the faces where it crosses any.
-    order = np.argsort(~crossed, axis=0, kind="stable")[:2]                   # [ends, faces, levels]
-    face, level = np.indices(order.shape[1:])
-    return meeting[order, face, level][:, crossed.any(axis=0)]                # [ends, lines] Point-
-
-
 def frame_panel(ax: plt.Axes, points: core.Point, margin_ratio: float) -> None:
     """Square equal-aspect viewport around the points with no axes or ticks."""
     mv = points.context.multivector
@@ -100,8 +82,11 @@ def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
                     vertex_hat: core.Scalar, star_gradients: core.Plane) -> plt.Figure:
     """The three corner hat ramps with their constant gradients, and the assembled vertex pyramid."""
     corner_xy = coordinates(corners)
-    single_tri = Triangulation(*corner_xy.T, triangles=np.array([[0, 1, 2]]))
-    levels = np.linspace(0.0, 1.0, n_contours + 2)[1:-1]
+    triangle = meshes.Mesh(3, [[0, 1, 2]])
+    places = solids.origin + solids.context.include_from_algebra(corners)   # [corners] Point-
+    # The hats' levels at even steps between nothing and one.
+    levels = tuple(contours.Level(level, np.append(primal_rgb, 0.55), 1.0)
+                   for level in np.linspace(0.0, 1.0, n_contours + 2)[1:-1])
     # Each gradient drawn through the triangle's centroid along the direction its hat rises, the longest a fixed
     # length.
     centroid = corners.mean(axis=0)                                           # [] Point-
@@ -118,11 +103,7 @@ def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
         frame_panel(ax, corners, 0.22)
         # The hat of this corner: one there, nothing at the others.
         values = np.eye(3)[index]
-        ax.tripcolor(single_tri, values, shading="gouraud", cmap=hat_colours,
-                     norm=Normalize(0.0, 1.0), zorder=1)
-        lines = level_lines(corners[:, None], corners.context.multivector.scalar(values[:, None, None]), levels)        # [ends, lines] Point-
-        ax.add_collection(LineCollection(coordinates(lines).transpose(1, 0, 2), colors=primal_colour,
-                                         linewidths=0.75, alpha=0.55, zorder=2))
+        contours.overlay(ax, places, triangle, values, hat_colours(values)[:, :3], levels=levels).set_zorder(1)
         ax.add_patch(Polygon(corner_xy, fill=False, edgecolor=wall_colour, linewidth=1.2, zorder=3))
         opposite = corner_xy[[(index + 1) % 3, (index + 2) % 3]]
         ax.plot(*opposite.T, color=wall_colour, linewidth=2.2, solid_capstyle="round", zorder=4)
@@ -136,14 +117,10 @@ def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
     star_xy = coordinates(star_vertices)
     star_tri = Triangulation(*star_xy.T, triangles=star_mesh.faces)
     hat_values = np.asarray(vertex_hat.batch().to_array())
+    star_places = solids.origin + solids.context.include_from_algebra(star_vertices.batch())   # [vertices] Point-
     frame_panel(ax, star_vertices, 0.14)
-    ax.tripcolor(star_tri, hat_values, shading="gouraud", cmap=hat_colours,
-                 norm=Normalize(0.0, 1.0), zorder=1)
-    # The hat's level lines across the faces, from its values at their corners.
-    corner_hats = (star_mesh.incidence[2, 0] * vertex_hat).batch()   # [corners, faces]
-    star_lines = level_lines((star_mesh.incidence[2, 0] * star_vertices).batch(), corner_hats, levels)   # [ends, lines] Point-
-    ax.add_collection(LineCollection(coordinates(star_lines).transpose(1, 0, 2), colors=primal_colour,
-                                     linewidths=0.7, alpha=0.55, zorder=2))
+    contours.overlay(ax, star_places, star_mesh, hat_values, hat_colours(hat_values)[:, :3],
+                     levels=levels).set_zorder(1)
     ax.triplot(star_tri, color=wall_colour, linewidth=0.65, alpha=0.65, zorder=3)
     ax.scatter(*star_xy[0], s=48, color=accent_colour, edgecolor="white", linewidth=0.9, zorder=6)
     # The gradient on each face where the hat rises, through the face's centroid, the longest a fixed length.
@@ -316,7 +293,8 @@ def draw_anisotropic_flow(mesh: core.Mesh, vertices: core.Point,
     potentials = np.asarray(potential.batch().to_array())
     triangulation = Triangulation(*places.T, triangles=mesh.faces)
     walls = coordinates(mesh.reading(mesh.boundary_edges, 1) * (mesh.incidence[1, 0] * vertices)).transpose(1, 0, 2)
-    potential_levels = np.linspace(-0.85, 0.85, n_contours + 2)[1:-1]
+    potential_levels = tuple(contours.Level(level, np.append(to_rgb(wall_colour), 0.45), 1.0)
+                             for level in np.linspace(-0.85, 0.85, n_contours + 2)[1:-1])
 
     # Area-weighted vertex currents give a continuous drawing of the facewise solution.
     sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
@@ -340,11 +318,9 @@ def draw_anisotropic_flow(mesh: core.Mesh, vertices: core.Point,
 
     for index, ax in enumerate(axes):
         frame_panel(ax, vertices, 0.08)
-        ax.tripcolor(triangulation, potentials[index], shading="gouraud", cmap=potential_colours,
-                     norm=Normalize(-1.0, 1.0), zorder=1)
+        colours = potential_colours(Normalize(-1.0, 1.0)(potentials[index]))[:, :3]
+        contours.overlay(ax, points, mesh, potentials[index], colours, levels=potential_levels).set_zorder(1)
         ax.triplot(triangulation, color=mesh_colour, linewidth=0.35, alpha=0.45, zorder=2)
-        ax.tricontour(triangulation, potentials[index], levels=potential_levels,
-                      colors=wall_colour, linestyles="dashed", linewidths=0.75, alpha=0.65, zorder=3)
         flow.overlay(ax, points, mesh, directions[index], reference_speed, np.array(to_rgb(flow_colour)))
         ax.add_collection(LineCollection(walls, colors=wall_colour, linewidths=1.3, zorder=6))
         if index == 1:

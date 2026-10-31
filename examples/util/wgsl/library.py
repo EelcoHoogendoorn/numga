@@ -31,6 +31,26 @@ def supersampled() -> str:
     return sampled(samples_per_side())
 
 
+def level_lines() -> str:
+    """WGSL for lines where a field crosses its levels, each `width` samples wide however steep the field: its distance
+    to a level over `rate`, its change across one sample, `fwidth` of it taken where the control flow is uniform.
+    `level_line(level, rate, width)` covers the whole numbers of a field scaled so that its levels fall on them;
+    `level_mark(offset, rate, width)` covers the one level where an offset from it vanishes. A line is drawn only where
+    the field changes: where it is flat, even at a level, there is no line to draw."""
+    return """
+fn level_line(level: f32, rate: f32, width: f32) -> f32 {
+    // The distance to the nearest level, in samples: how far the field lies from it over its change across one sample.
+    let distance = abs(fract(level + 0.5) - 0.5) / max(rate, 1e-6);
+    return select(0.0, 1.0 - smoothstep(width / 2.0 - 0.5, width / 2.0 + 0.5, distance), rate > 0.0);
+}
+
+fn level_mark(offset: f32, rate: f32, width: f32) -> f32 {
+    let distance = abs(offset) / max(rate, 1e-30);
+    return select(0.0, 1.0 - smoothstep(width / 2.0 - 0.5, width / 2.0 + 0.5, distance), rate > 0.0);
+}
+"""
+
+
 def sampled(side: int) -> str:
     """WGSL for an image of `side` squared samples a pixel, on a grid turned so that no two share a row or a
     column, which resolves near-horizontal and near-vertical edges as finely as a grid of that many to a side;
@@ -94,26 +114,26 @@ def pinned(ax, image: np.ndarray, extent: tuple[float, float, float, float]):
     many pixels across and up as the image, at the figure's own resolution, about the middle of that room and on whole
     pixels, so that no pixel of the picture is resampled. Drawn finer, as `capture` draws, each pixel is a whole block
     of them."""
-    resolution = ax.figure.dpi
+    resolution = ax.figure.figure.dpi
     rows, columns = image.shape[:2]
 
     def exact(ax, renderer):
         """The axes' place in the figure: the image's own pixels, about the middle of the room the layout gave them."""
         from matplotlib.transforms import Bbox
-        figure = ax.figure
+        figure = ax.figure.figure
         scale = figure.dpi / resolution
-        width, height = figure.bbox.width, figure.bbox.height
-        room = ax.get_position(original=True)
+        # The room in pixels of the canvas, read through the axes' own figure, a subfigure too.
+        room = ax.get_position(original=True).transformed(ax.figure.transSubfigure)
         # The top left corner on a whole pixel of the figure's own resolution, and so of any multiple of it, counted
         # from the top left of the canvas, as its rows of pixels are.
-        canvas_rows = int(height)
-        left = round(((room.x0 + room.x1) / 2 * width - columns * scale / 2) / scale) * scale
-        top = round((canvas_rows - (room.y0 + room.y1) / 2 * height - rows * scale / 2) / scale) * scale
+        canvas_rows = int(figure.bbox.height)
+        left = round(((room.x0 + room.x1) / 2 - columns * scale / 2) / scale) * scale
+        top = round((canvas_rows - (room.y0 + room.y1) / 2 - rows * scale / 2) / scale) * scale
         bottom = canvas_rows - top - rows * scale
         # The corner a millionth of a pixel over its whole pixel and the size a millionth under, so that the round
         # trip through the figure's fractions lands on them as matplotlib rounds them: the corner down, the size up.
-        return Bbox.from_bounds((left + 1e-6) / width, (bottom + 1e-6) / height, (columns * scale - 1e-6) / width,
-                                (rows * scale - 1e-6) / height)
+        pixels = Bbox.from_bounds(left + 1e-6, bottom + 1e-6, columns * scale - 1e-6, rows * scale - 1e-6)
+        return pixels.transformed(ax.figure.transSubfigure.inverted())
 
     shown = ax.imshow(image, extent=extent, interpolation="nearest", aspect="auto")
     ax.set_axes_locator(exact)
@@ -124,11 +144,12 @@ def pinned(ax, image: np.ndarray, extent: tuple[float, float, float, float]):
 def room(ax) -> tuple[int, int]:
     """The columns and rows of pixels the figure's layout gives the axes, at the figure's own resolution: the size a
     picture shown in them is drawn at to fill them."""
-    figure = ax.figure
+    # The root figure holds the layout; the axes' place is read in pixels through their own figure, a subfigure too.
+    figure = ax.figure.figure
     if figure.get_layout_engine() is not None:
         figure.get_layout_engine().execute(figure)
-    box = ax.get_position(original=True)
-    return int(box.width * figure.bbox.width), int(box.height * figure.bbox.height)
+    box = ax.get_position(original=True).transformed(ax.figure.transSubfigure)
+    return int(box.width), int(box.height)
 
 
 def fitted(view, ax):

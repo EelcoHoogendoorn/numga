@@ -14,6 +14,8 @@ from matplotlib.tri import Triangulation
 from numga import concatenate, stack
 from examples.electromagnetism.piezoelectric import core
 from examples.util.animation import capture
+from examples.util.wgsl import contours, pinned, solids
+from examples.util.wgsl.flow import axes_view
 
 
 compression_colour = "#286580"
@@ -24,6 +26,8 @@ strain_colours = LinearSegmentedColormap.from_list(
     "piezoelectric_strain", (compression_colour, "#f5f4ef", extension_colour))
 electrode_colours = LinearSegmentedColormap.from_list(
     "piezoelectric_voltage", (compression_colour, "#8b969b", extension_colour))
+# The observer's slice of space, which carries the strip's events into the renderer's space.
+space_slice = core.mv.t ^ (core.Point & core.time)                              # [] Point- <- Point-
 
 
 def coordinates(points: core.Point) -> np.ndarray:
@@ -74,9 +78,10 @@ class DeviceView:
         rest_outline = np.concatenate((mesh.bottom, mesh.tip, mesh.top[::-1]))
         ax.plot(*self.rest[rest_outline].T, color=rest_colour, linewidth=0.9,
                 linestyle=(0, (4, 4)), zorder=0)
-        self.triangulation = Triangulation(self.rest[:, 0], self.rest[:, 1], mesh.faces)
-        self.body = ax.tripcolor(self.triangulation, np.zeros(len(self.rest)), shading="gouraud",
-                                 cmap=strain_colours, norm=self.strain_norm, edgecolors="none", zorder=2)
+        # The strained body, a picture of the deformed mesh shaded anew at each state.
+        self.view = axes_view(ax)
+        self.body = pinned(ax, np.zeros(self.view.shape + (4,)), (*ax.get_xlim(), *ax.get_ylim()))
+        self.body.set_zorder(2)
         self.bond, = ax.plot([], [], color=interface_colour, linewidth=0.9, zorder=4)
         self.end, = ax.plot([], [], color=interface_colour, linewidth=1, zorder=4)
         self.electrodes = LineCollection([], linewidths=1.5, zorder=5, capstyle="round")
@@ -95,8 +100,9 @@ class DeviceView:
         # Area-weighted nodal readings give a continuous display of the piecewise-constant element strain.
         # The strain comes per triangle, a batch over the faces; as a field over them it reaches the vertices.
         strain = scalars(self.corner_shares * (self.areas * axial_strain.field()) / self.vertex_areas)
-        self.triangulation.x, self.triangulation.y = points.T
-        self.body.set_array(strain)
+        places = solids.origin + solids.context.include_from_algebra(space_slice(deformed.batch()))   # [vertices] Point-
+        self.body.set_data(contours.picture(places, self.mesh, strain, strain_colours(self.strain_norm(strain))[:, :3],
+                                            self.view))
         self.bond.set_data(*points[self.mesh.interface].T)
         self.end.set_data(*points[self.mesh.tip].T)
 
