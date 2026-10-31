@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 import numpy as np
 from matplotlib.colors import to_rgb
 from matplotlib.font_manager import FontProperties, findfont
@@ -10,16 +12,26 @@ from PIL import Image, ImageDraw, ImageFont
 from numga import concatenate, stack, where
 from numga.multivector.factory import MultivectorFactory
 from examples.relativity.radar.core import Event, Scalar, Slice
-from examples.util.wgsl import contours, planar, simplices
+from examples.util.wgsl import contours, simplices
 from examples.util.wgsl.camera import Camera
-from examples.util.wgsl.planar import SOLID
 
 BLUE, ORANGE, GREY, INK, GREEN = (
     np.array(to_rgb(colour)) for colour in ("#3196b4", "#de9439", "#aab9c1", "#485961", "#458875"))
 FAINT, WHITE = np.array(to_rgb("#e2e8eb")), np.ones(3)
 FONT = ImageFont.truetype(findfont(FontProperties(family="DejaVu Sans")), 13)
-EXCHANGE_WINDOW = planar.window((-1.55, 4.8), (-0.65, 8.75), 620)
-FRAME_WINDOW = planar.window((-4, 6), (-2.65, 10.15), 620)
+# A solid stroke: one dash, no gap.
+SOLID = (1.0, 0.0)
+
+
+class Window(NamedTuple):
+    """The positions and coordinate times a diagram shows, and its rows of pixels down the times."""
+    positions: tuple[float, float]
+    times: tuple[float, float]
+    rows: int
+
+
+EXCHANGE_WINDOW = Window((-1.55, 4.8), (-0.65, 8.75), 620)
+FRAME_WINDOW = Window((-4, 6), (-2.65, 10.15), 620)
 
 
 def coordinates(events: Event) -> np.ndarray:
@@ -28,10 +40,14 @@ def coordinates(events: Event) -> np.ndarray:
     return (stack((mv.x, mv.t)) & events[..., None]).to_array()
 
 
-def diagram_camera(window: planar.Window, mv: MultivectorFactory) -> Camera:
-    """The window as a camera of the diagram's events, as they are: position across, read by the plane x, and
-    coordinate time up, read by the plane t, over their weights, their pairings with the plane w."""
-    return planar.window_camera(window)._replace(across=mv.x, up=mv.t, toward=0 * mv.x, weight=mv.w)
+def diagram_camera(window: Window, mv: MultivectorFactory) -> Camera:
+    """The camera of a diagram, as many square pixels across its positions as fit, about their middle: the events as
+    they are, position across, read by the plane x, and coordinate time up, read by the plane t, over their weights,
+    their pairings with the plane w."""
+    pixel = (window.times[1] - window.times[0]) / window.rows
+    columns = round((window.positions[1] - window.positions[0]) / pixel)
+    return Camera(mv.x, mv.t, 0 * mv.x, mv.w, 0.0, np.array([sum(window.positions), sum(window.times)]) / 2,
+                  np.array([columns, window.rows]) * pixel / 2, columns)
 
 
 def strokes(events: Event, width: float, colour: np.ndarray, opacity: float, dashes: tuple[float, float],
@@ -50,9 +66,9 @@ def dots(events: Event, colour: np.ndarray, radius: float, camera: Camera) -> li
             simplices.markers(events, colour, radius, camera)]
 
 
-def axis_ends(window: planar.Window, mv: MultivectorFactory) -> tuple[Event, Event]:
-    """The ends of the space and time axes through the origin, a little inside the window: x first, then t."""
-    left, right, bottom, top = window.extent
+def axis_ends(camera: Camera, mv: MultivectorFactory) -> tuple[Event, Event]:
+    """The ends of the space and time axes through the origin, a little inside the picture: x first, then t."""
+    left, right, bottom, top = camera.extent
     margin = 0.2
     # The origin, of unit weight, and the ideal events along space and along time.
     origin, across, time = mv.w.dual(), mv.x.dual(), -mv.t.dual()             # [] Event-, Event-, Event-
@@ -61,10 +77,9 @@ def axis_ends(window: planar.Window, mv: MultivectorFactory) -> tuple[Event, Eve
     return starts, ends
 
 
-def written(window: planar.Window, camera: Camera, layers: list[np.ndarray], labels: list,
-            mv: MultivectorFactory) -> np.ndarray:
+def written(camera: Camera, layers: list[np.ndarray], labels: list, mv: MultivectorFactory) -> np.ndarray:
     """Composite the geometry over white and attach labels, each beside its event, in the same native pixel grid."""
-    starts, ends = axis_ends(window, mv)
+    starts, ends = axis_ends(camera, mv)
     axes = strokes(stack((starts, ends), axis=1), 1, FAINT, 1, SOLID, camera)
     picture = simplices.composited([axes] + layers)
     seen = WHITE * (1 - picture[..., 3:]) + picture[..., :3] * picture[..., 3:]
@@ -72,9 +87,9 @@ def written(window: planar.Window, camera: Camera, layers: list[np.ndarray], lab
     pen = ImageDraw.Draw(canvas)
     labels = [(ends[0], "x", INK, (0, 12), "mm"), (ends[1], "t", INK, (10, 0), "lm")] + labels
     places = coordinates(stack([event for event, *_ in labels]))               # [labels, 2]
+    left, _, _, top = camera.extent
     for (x, t), (_, text, colour, offset, anchor) in zip(places, labels):
-        place = ((x - window.left) / window.pixel + offset[0],
-                 (window.top - t) / window.pixel + offset[1])
+        place = ((x - left) / camera.pixel + offset[0], (top - t) / camera.pixel + offset[1])
         pen.text(place, text, font=FONT, fill=tuple(np.rint(colour * 255).astype(int)), anchor=anchor)
     return np.asarray(canvas)
 
@@ -109,12 +124,12 @@ def exchange_frames(worldlines: Event, emitted: Event, reflected: Event, receive
         layers += dots(clock_events, INK, 3, camera)
         labels = [(event, f"{reading:.2f}", INK, (-10, 0), "rm")
                   for event, reading in zip(clock_events, (mv.t & clock_events).to_array())]
-        yield written(EXCHANGE_WINDOW, camera, layers, labels, mv)
+        yield written(camera, layers, labels, mv)
 
 
 def reconstruction(worldlines: Event, emitted: Event, reflected: Event, received: Event,
                    located: Event, simultaneous: Event, radar_time: Scalar, radar_range: Scalar, clock: Slice,
-                   window: planar.Window) -> np.ndarray:
+                   window: Window) -> np.ndarray:
     """The radar assignment for the middle pulse, with every recovered reflection marked and the middle one's clock
     readings, radar time and range written beside it."""
     mv = emitted.context.multivector
@@ -143,4 +158,4 @@ def reconstruction(worldlines: Event, emitted: Event, reflected: Event, received
               (received[index], f"τ+ = {readings[1]:.2f}", INK, (-10, 0), "rm"),
               (simultaneous[index], f"T = {middle:.2f}", GREEN, (-10, 0), "rm"),
               (range_label, f"R = {distance:.2f}", GREEN, (0, -12), "mm")]
-    return written(window, camera, layers, labels, mv)
+    return written(camera, layers, labels, mv)

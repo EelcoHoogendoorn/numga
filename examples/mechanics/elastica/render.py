@@ -139,7 +139,9 @@ def animate_uncoiling(centres: core.Point, edges: core.Point) -> Iterator[np.nda
     radius = radii.max()
     half_height = (high - low)[2] / 2
     rims = middle + mv.z.dual() * (half_height * np.array([-1.0, 1.0]))      # [2] Point-
-    circles = meshes.circles(rims + mv.x.dual() * radius, axis * solids.flip, N_FRAMING_RIM)   # [2, rim + 1] Point-
+    # Each rim the directions across, turned a full turn in the level plane, as far from its middle as the radius.
+    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, N_FRAMING_RIM, endpoint=False) / 2)).exp()   # [rim] Rotor+
+    circles = rims[:, None] + (turns >> mv.x.dual() * radius)                # [2, rim] Point-
     framing = solids.view([circles], 0.0, UNCOIL_ELEVATION, 0.0, MARGIN, N_UNCOIL_PIXELS)
     azimuths = np.linspace(*UNCOIL_AZIMUTHS, centres.shape[0], endpoint=False)
     for curve, ribbon, azimuth in zip(centres, edges, azimuths):

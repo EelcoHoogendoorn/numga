@@ -125,6 +125,7 @@ def draw_bands(momenta: core.Wavevector, values: core.Scalar) -> plt.Figure:
     sheets = []
     for band, cmap in ((-1, "Reds"), (0, "Blues_r")):
         offsets = across + ENERGY_SCALE * values[..., band] * up                 # [samples, samples] Place-
+        # The sheet embedded in the drawing's projective space about its origin.
         places = solids.origin + solids.context.include_from_algebra(offsets).reshape(-1)       # [samples * samples] Point-
         # Each band shaded by where its energy lies between its own lowest and highest.
         sheet = energies[..., band]                                             # [samples, samples]

@@ -38,6 +38,8 @@ def constellation(emitted: core.Event, receiver: core.Event, orbit_radius: float
     Event = emitted.algebra.gatype.antivector()                               # Antivector-
     # The observer sees the point where its time line meets the spatial slice.
     space_slice = mv.t ^ (Event & -mv.t.dual())
+    # The projective embedding of the satellites and the receiver as the observer slices them: the projective algebra
+    # of spacetime holds the one of space.
     satellite_points = solids.context.include_from_algebra(space_slice(emitted))
     receiver_point = solids.context.include_from_algebra(space_slice(receiver))
     centre = solids.origin + (receiver_point - solids.origin) * (orbit_radius * 0.3)
@@ -73,8 +75,9 @@ def solution_image(emitted: core.Event, receiver: core.Event, estimate: core.Eve
     Event = estimate.algebra.gatype.antivector()                              # Antivector-
     space_slice = mv.t ^ (Event & -mv.t.dual())
     view, parts, rays = constellation(emitted, receiver, orbit_radius)
-    centre = solids.context.include_from_algebra(space_slice(estimate))
-    reach = solids.context.include_from_algebra(space_slice(estimate + semi_axes)) - centre                            # [3] Point-
+    # The projective embedding of the sliced estimate, and of its semi-axes, directions at infinity.
+    centre = solids.context.include_from_algebra(space_slice(estimate))       # [] Point-
+    reach = solids.context.include_from_algebra(space_slice(semi_axes))       # [3] Point-
     # The semi-axes' dyads sum to the spatial covariance, the dual quadric of the ellipsoid about the origin; its
     # inverse bounds the ellipsoid, moved to the fitted position.
     dual = (reach * (solids.Plane & reach)).sum(axis=0) - solids.origin * (solids.Plane & solids.origin)   # [] Point- <- Plane+

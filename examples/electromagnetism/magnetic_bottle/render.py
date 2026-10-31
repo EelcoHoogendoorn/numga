@@ -56,6 +56,7 @@ def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.A
     """The particles' tracks `[steps, particles]`, coloured by their angle to the axis, each trailing behind its
     particle, through the field's strength at the points of a grid in the plane through the axis `[across, along]`,
     between the coils of a radius at their heights."""
+    # The tracks' events, sliced by the observer, embedded in the drawing's projective space about its origin.
     tracks = to_scene >> (solids.origin + solids.context.include_from_algebra(space_slice(events)))
     colours = particle_colours(0.15 + 0.7 * (pitches - pitches.min()) / np.ptp(pitches))[:, :3]
     # The box of the grid, as deep across the axis as it is wide: the grid's corners, each moved either way along the
@@ -66,10 +67,13 @@ def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.A
     box = corners[..., None] + depths[..., None] * np.array([1, -1])          # [across, along, sides] Antivector-
     scene_box = solids.origin + (to_scene >> solids.context.include_from_algebra(space_slice(box)))
     view = solids.view([scene_box], 0.0, elevation, azimuth, margin, n_pixels)
-    # What stays put, set up once: the sheet and the coils' wire, each coil a ring about the axis, x, through the point
-    # a radius above the axis at its height.
-    rims = solids.origin + solids.mv.x.dual() * heights + solids.mv.z.dual() * radius   # [coils] Point-
-    rings = meshes.circles(rims, solids.mv.yz, n_around_coil)                 # [coils, around + 1] Point-
+    # What stays put, set up once: the sheet and the coils' wire, each coil a ring about the axis through the point
+    # a radius out from the axis at its height, embedded alike; the plane across the axis, embedded, is the line the
+    # rings turn about.
+    coil_places = core.axis * heights + core.sideways * radius                # [coils] Antivector-
+    rims = solids.origin + (to_scene >> solids.context.include_from_algebra(space_slice(coil_places)))   # [coils] Point-
+    bottle_axis = to_scene >> solids.context.include_from_algebra(mv.xy)      # [] Line+
+    rings = meshes.circles(rims, bottle_axis, n_around_coil)                  # [coils, around + 1] Point-
     wire = simplices.tubes(rings.reshape(-1), simplices.Mesh.chains([n_around_coil + 1] * len(heights)),
                            to_rgb(wire_colour), wire_width, view, gloss=solids.gloss)
     scene = Scene(view, np.ones(3), [], [(sheet(points, strength, view), sheet_opacity), (wire, 1.0)], inks=[],

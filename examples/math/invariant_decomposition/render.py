@@ -9,7 +9,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import stack
 from examples.math.invariant_decomposition import core
 from examples.util.animation import capture
 from examples.util.wgsl import compose, fitted, show, simplices, solids
@@ -35,14 +34,6 @@ trail_colour, orbit_colour = np.array(to_rgb("#7d3c98")), np.array(to_rgb("0.8")
 # point, in pixels.
 plane_colours = np.array([to_rgb(colour) for colour in ("#c0392b", "#2e86c1", "#27ae60")])
 circle_width, trace_width, point_radius = 0.7, 1.25, 2.0
-
-
-def gpu_points(points: core.Antivector) -> solids.Point:
-    """View the source along its remaining directions, with its x, y and z slices along the scene's axes."""
-    mv = points.context.multivector
-    readings = stack((mv.x, mv.y, mv.z)) & points[..., None]
-    return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
-
 
 
 def plane_axes(circles: core.Antivector, parts: core.Bivector) -> tuple[Vector, Vector]:
@@ -78,7 +69,11 @@ def layout(points: core.Antivector, circles: core.Antivector, parts: core.Bivect
            index: int) -> tuple[plt.Figure, Callable[[int], None]]:
     """The orbit in the first three directions, and in each of the three planes, up to one moment: the figure, and
     what moves it on to another moment."""
-    places = gpu_points(points)                                                # [times] Point-
+    # The orbit seen along its remaining directions w, v and u: its slice by them, its shadow, lies in the space of x,
+    # y and z, which the projective embedding places about the scene's origin.
+    remaining = points.context.multivector.wvu                                 # [] Trivector+
+    shadow = remaining ^ (points & remaining.dual())                           # [times] Antivector-
+    places = solids.origin + solids.context.include_from_algebra(shadow)       # [times] Point-
     figure = plt.figure(figsize=figure_size)
     tangle = figure.add_axes((0.0, 0.0, tangle_width, 1.0))
     # One view framing the whole orbit, as many pixels across as the tangle's room holds.

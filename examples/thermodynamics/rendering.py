@@ -1,16 +1,17 @@
-"""Drawing shared by the thermodynamics examples: diagrams of one quantity against another, drawn on the GPU by
-`planar` with their names written over them, and the apparatus, a cylinder under a piston traced by `solids`.
+"""Drawing shared by the thermodynamics examples: diagrams of one quantity against another, drawn on the GPU under a
+camera with their names written over them, and the apparatus, a cylinder under a piston traced by `solids`.
 
-A diagram's chart is a plane whose points carry its two quantities, read back by pairing, `mv.x & point` across and
-`mv.y & point` up; the diagram is an affine map from that plane onto the plane of its picture, in pixels, each quantity
-at its own scale. Curves are polylines through chart points, areas are polygons, tangents are joins of a point with a
-direction and their crossings meets, and the conics of a chart are carried into the picture through the map; the
-picture's points are read as pixels only where Pillow writes text.
+A diagram reads its two quantities off the points it shows by two planes, `across & point` across and `up & point` up,
+each quantity at its own scale. Where the two are readings of a state, the planes are the state algebra's own and the
+states are drawn as they are; where one is a function of the state, the diagram is a chart, a projective plane whose
+points carry the two quantities, `mv.x & point` across and `mv.y & point` up. Curves are polylines through the points,
+areas are meshes of triangles, and the conics of a chart are drawn where their forms vanish; the picture's
+points are read as pixels only where Pillow writes text.
 """
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 from typing import NamedTuple
 
@@ -20,18 +21,21 @@ from matplotlib.font_manager import FontProperties, findfont
 from PIL import Image, ImageDraw, ImageFont
 from contourpy import contour_generator
 
-from numga import Extensor, concatenate, stack
+from numga import Extensor, NumpyContext, concatenate, stack
+from numga.algebras import PGA2D
 from examples.util import charts
-from examples.util.wgsl import image_figure, planar, solids
-from examples.util.wgsl.planar import SOLID, Cap, Marker, Marks, Polygons, Strokes
+from examples.util.wgsl import contours, image_figure, simplices, solids
+from examples.util.wgsl.camera import Camera, read, weighing
+from examples.util.wgsl.simplices import Cap, Mesh
 
-context = planar.context
-mv = planar.mv
-Point = planar.Point                                                         # Antivector-
-Plane = planar.Plane                                                         # Vector+
-Scalar = planar.Scalar                                                       # Scalar+
-Quadric = planar.Quadric                                                     # Plane+ <- Point-
-Placement = planar.ga.gatype((Point, Point))                                 # Point- <- Point-
+context = NumpyContext(PGA2D)
+mv = context.multivector
+Point = PGA2D.gatype.antivector()                                            # Antivector-
+Plane = PGA2D.gatype.vector()                                                # Vector+
+Scalar = PGA2D.gatype.scalar()                                               # Scalar+
+Quadric = PGA2D.gatype((Plane, Point))                                       # Plane+ <- Point-
+# A solid stroke: one dash, no gap.
+SOLID = (1.0, 0.0)
 
 
 def rgb(colour: str) -> np.ndarray:
@@ -55,7 +59,7 @@ boundary = rgb("#1c2326")
 left_margin, bottom_margin, right_margin, top_margin = 30, 24, 12, 16
 # The axes' width and arrowheads, in pixels: the axes as wide as a chart's frame; and how far a tick mark reaches out
 # from its axis.
-axis_width, head_length, head_width, tick_length = charts.FRAME_PX, 7.0, 5.0, 4.0
+axis_width, head_length, tick_length = charts.FRAME_PX, 7.0, 4.0
 # The widths of the strokes, in pixels, those of the charts: the lines a diagram is read against as thin as a chart's
 # frame, a curve as wide as a chart's, and the path the diagram follows half as wide again.
 thin, medium, bold = charts.FRAME_PX, charts.LINE_PX, 1.5 * charts.LINE_PX
@@ -68,13 +72,22 @@ fonts = {size: ImageFont.truetype(findfont(FontProperties(family="DejaVu Sans", 
 halo = 2
 # The radius of a dot marking a state, and of the white ring around it, in pixels.
 dot, ring = 4.0, 5.5
+# How far outside a plot a point may read and still count as inside it, in pixels: the rounding of its readings.
+slack = 1e-6
 
 
 # --- diagrams --------------------------------------------------------------------------
+def on_numpy(values: Extensor) -> Extensor:
+    """Values on the NumPy backend, in their own algebra and of their own type. A diagram draws there, whatever backend
+    its values come from: a path a JAX computation gives, whose growing slices an animation draws, then compiles
+    nothing a frame."""
+    return NumpyContext(values.algebra).include_from_algebra(values)
+
+
 def chart_points(across: Scalar, up: Scalar) -> Point:
     """The points of a chart's plane at values of its two quantities `[...]`: the origin moved by each value along its
     quantity's direction. Every value a chart shows enters its plane here."""
-    return planar.origin + mv.x.dual() * across + mv.y.dual() * up
+    return mv.w.dual() + mv.x.dual() * across + mv.y.dual() * up
 
 
 def chart_directions(across: Scalar, up: Scalar) -> Point:
@@ -85,94 +98,114 @@ def chart_directions(across: Scalar, up: Scalar) -> Point:
 @dataclass(frozen=True)
 class Diagram:
     """A diagram of one quantity across against another up: the range of each shown, the values at which the axes
-    cross, the picture's rows and columns of pixels, and the names of the two quantities."""
+    cross, the picture's rows and columns of pixels, the names of the two quantities, and the planes that read them off
+    the points it shows, a state algebra's where they are readings of a state and the chart's otherwise."""
     across: tuple[float, float]
     up: tuple[float, float]
     crossing: tuple[float, float]
     rows: int
     columns: int
     names: tuple[str, str]
+    planes: tuple[Extensor, Extensor] = field(default=(mv.x, mv.y), compare=False)
 
     @cached_property
-    def placement(self) -> Placement:
-        """The affine map from the chart's plane onto the picture's, in pixels right and up from its bottom left
-        corner: the starts of the two ranges to the plot's corner inside the margins, each range across the plot's
-        width or up its height."""
-        corner = planar.origin + mv.x.dual() * left_margin + mv.y.dual() * bottom_margin   # [] Point-
-        # A unit of each quantity in the picture: so many pixels right, and so many up.
+    def scales(self) -> np.ndarray:
+        """Pixels a unit of each quantity, across and up `[2]`: each range across the plot's width or up its height."""
         width, height = self.columns - left_margin - right_margin, self.rows - bottom_margin - top_margin
-        rightward = mv.x.dual() * (width / (self.across[1] - self.across[0]))       # [] Point-
-        upward = mv.y.dual() * (height / (self.up[1] - self.up[0]))                 # [] Point-
-        # The chart's planes where the two ranges start: a chart point pairs with each to how far past the start it
-        # lies.
-        left_edge = mv.x - mv.w * self.across[0]                                # [] Plane+
-        bottom_edge = mv.y - mv.w * self.up[0]                                  # [] Plane+
-        return corner * (mv.w & Point) + rightward * (left_edge & Point) + upward * (bottom_edge & Point)
+        return np.array([width / (self.across[1] - self.across[0]), height / (self.up[1] - self.up[0])])
+
+    def reading(self, across: Extensor, up: Extensor) -> Camera:
+        """The camera of the picture reading points by the planes `across` and `up`, each at its quantity's scale, in
+        pixels, its bottom left corner the starts of the two ranges less the margins."""
+        across, up = on_numpy(across), on_numpy(up)
+        weight, unit = weighing(across)
+        half = np.array([self.columns, self.rows]) / 2
+        corner = np.array([self.across[0], self.up[0]]) * self.scales - np.array([left_margin, bottom_margin])
+        return Camera(across * self.scales[0], up * self.scales[1], 0 * across, weight, unit, corner + half, half,
+                      self.columns)
 
     @cached_property
-    def bounds(self) -> Plane:
-        """The four planes at the ends of the chart's ranges, each positive on the side of the ranges `[4]`."""
-        return stack((mv.x - mv.w * self.across[0], mv.w * self.across[1] - mv.x,
-                      mv.y - mv.w * self.up[0], mv.w * self.up[1] - mv.y))
+    def camera(self) -> Camera:
+        """The camera of the picture reading the diagram's points by its own planes."""
+        return self.reading(*self.planes)
 
-    @cached_property
-    def window(self) -> planar.Window:
-        """The picture's window onto its plane, from the bottom left corner to the top right, a pixel to a unit."""
-        offsets = mv.x.dual() * np.array([0, self.columns]) + mv.y.dual() * np.array([0, self.rows])  # [corners] Point-
-        return planar.view([planar.origin + offsets], 0.0, (self.columns, self.rows))
+    def at(self, across: Scalar, up: Scalar) -> Extensor:
+        """The points of the diagram's algebra its planes read as values of its two quantities `[...]`: its origin, the
+        point its weight plane reads as one, moved by each value along the direction its plane reads as one, the
+        plane's complement over its reading of it."""
+        planes = [on_numpy(plane) for plane in self.planes]
+        weight, _ = weighing(planes[0])
+        steps = [plane.dual() / read(plane, plane.dual()) for plane in planes]
+        return weight.dual() + steps[0] * across + steps[1] * up
+
+    def pixels(self, points: Extensor) -> np.ndarray:
+        """The pixels right and up from the picture's bottom left corner at which points `[...]` lie, `[..., 2]`, read
+        by the camera's planes over their weights: where Pillow writes text and where a polyline leaves the plot."""
+        camera, points = self.camera, on_numpy(points)
+        weights = read(camera.weight, points) + camera.unit                    # [...] Scalar+
+        readings = stack((read(camera.across, points), read(camera.up, points)), axis=-1) / weights[..., None]
+        return readings.to_array() - (camera.middle - camera.half)
+
+    def lengths(self, directions: Extensor) -> Extensor:
+        """The lengths in pixels of directions `[...]` across the picture: their readings across and up, which no
+        weight divides."""
+        directions = on_numpy(directions)
+        across, up = read(self.camera.across, directions), read(self.camera.up, directions)
+        return (across * across + up * up).square_root()
+
+    def inside(self, points: Extensor) -> np.ndarray:
+        """Whether points `[...]` lie inside the diagram's ranges, its plot."""
+        right, up = np.moveaxis(self.pixels(points), -1, 0)
+        return ((right >= left_margin - slack) & (right <= self.columns - right_margin + slack)
+                & (up >= bottom_margin - slack) & (up <= self.rows - top_margin + slack))
 
 
-def pixel_places(points: Point) -> np.ndarray:
-    """The pixels right and up from a picture's bottom left corner at which its points of unit weight `[...]` lie,
-    `[..., 2]`, read by pairing: where Pillow writes text."""
-    return (stack((mv.x, mv.y)) & points[..., None]).to_array()
+def strokes(diagram: Diagram, lines: list[Extensor], width: float, colours: np.ndarray, opacity: float,
+            dashes: tuple[float, float], heads: np.ndarray = np.zeros(1)) -> list[np.ndarray]:
+    """Polylines through points of the diagram's algebra, each its own number of samples and its colour `[lines, 3]`,
+    `width` pixels across, dashed `dashes` pixels on and off, `SOLID` for solid; the last edge of each polyline where
+    `heads` `[lines]` is one ends in an arrowhead. Nothing where there are none."""
+    if not lines:
+        return []
+    cap = Cap.ROUND if dashes == SOLID else Cap.BUTT
+    lengths = [points.shape[0] for points in lines]
+    chains = Mesh.chains(lengths)
+    # Each edge in its polyline's colour, and an arrowhead on the last edge of each polyline that has one.
+    colours = np.repeat(np.broadcast_to(colours, (len(lines), 3)), np.subtract(lengths, 1), axis=0)
+    ends = np.zeros(len(chains.edges))
+    ends[np.cumsum(np.subtract(lengths, 1)) - 1] = np.broadcast_to(heads, len(lines))
+    return [simplices.strokes(on_numpy(concatenate(lines)), chains, colours, width, diagram.camera, ends, head_length,
+                              dashes, cap, opacity)]
 
 
-def arrowheads(starts: Point, ends: Point, colour: np.ndarray) -> Polygons:
-    """Heads on segments of the picture's plane from starts to ends `[n]`, each a triangle beyond its end, pointing
-    on along the segment."""
-    along = ends - starts                                                    # [n] Point-
-    # A direction has no weight to normalise by: its length is the norm of its dual, the plane square to it.
-    unit = along / along.dual().norm()                                       # [n] Point-
-    # The direction square to it, a quarter turn in the plane of the picture.
-    square = unit.commutator(mv.xy)                                          # [n] Point-
-    corners = stack((ends + unit * head_length, ends + square * (head_width / 2), ends - square * (head_width / 2)),
-                    axis=-1)                                                 # [n, 3] Point-
-    return Polygons(corners, colour, 1.0)
-
-
-def axes(diagram: Diagram) -> list:
+def axes(diagram: Diagram) -> list[np.ndarray]:
     """The two axes, crossing where the diagram says, each ending in an arrowhead."""
     x0, y0 = diagram.crossing
-    corner = diagram.placement(chart_points(x0, y0))                          # [] Point-
-    ends = diagram.placement(chart_points(np.array([diagram.across[1], x0]),
-                                          np.array([y0, diagram.up[1]])))           # [2] Point-
-    starts = corner.broadcast_to((2,))                                       # [2] Point-
-    return [Strokes(stack((starts, ends), axis=-1), axis_width, ink, 1.0, SOLID, Cap.BUTT),
-            arrowheads(starts, ends, ink)]
+    corner = diagram.at(x0, y0)
+    ends = diagram.at(np.array([diagram.across[1], x0]), np.array([y0, diagram.up[1]]))   # [2] Point-
+    return strokes(diagram, [stack((corner, ends[0])), stack((corner, ends[1]))], axis_width, ink, 1.0, SOLID,
+                   np.ones(2))
 
 
-def within(diagram: Diagram, lines: Point, width: float, colour: np.ndarray, opacity: float) -> list[Strokes]:
-    """Polylines through chart points `[curves, samples]`, each in its colour `[curves, 3]`, cut to the runs of samples
+def within(diagram: Diagram, lines: Extensor, width: float, colour: np.ndarray, opacity: float) -> list[np.ndarray]:
+    """Polylines through points `[curves, samples]`, each in its colour `[curves, 3]`, cut to the runs of samples
     inside the diagram's ranges."""
-    return [stroke for curve in range(lines.shape[0])
-            for stroke in polylines(diagram, [lines[curve]], width, colour[curve], opacity, SOLID)]
+    return polylines(diagram, [lines[curve] for curve in range(lines.shape[0])], width, colour, opacity, SOLID)
 
 
-def polylines(diagram: Diagram, lines: list[Point], width: float, colour: np.ndarray, opacity: float,
-              dashes: tuple[float, float]) -> list[Strokes]:
-    """Polylines through chart points of unit weight, each its own number of samples, cut to the runs of samples
-    inside the diagram's ranges; dashed `dashes` pixels on and off, `SOLID` for solid."""
-    strokes = []
-    for points in lines:
-        inside = ((diagram.bounds & points[:, None]) >= 0).all(axis=-1)
+def polylines(diagram: Diagram, lines: list[Extensor], width: float, colour: np.ndarray, opacity: float,
+              dashes: tuple[float, float]) -> list[np.ndarray]:
+    """Polylines through points of the diagram's algebra, each its own number of samples and its colour, or all in one,
+    cut to the runs of samples inside the diagram's ranges; dashed `dashes` pixels on and off, `SOLID` for solid."""
+    runs, colours = [], np.broadcast_to(colour, (len(lines), 3))
+    for points, run_colour in zip(lines, colours):
+        inside = diagram.inside(points)
         # The runs of samples inside, between the steps into and out of the ranges.
         steps = np.diff(np.concatenate([[0], inside.astype(int), [0]]))
-        for start, end in zip(np.flatnonzero(steps == 1), np.flatnonzero(steps == -1)):
-            if end - start > 1:
-                cap = Cap.ROUND if dashes == SOLID else Cap.BUTT
-                strokes.append(Strokes(diagram.placement(points[start:end])[None], width, colour, opacity, dashes, cap))
-    return strokes
+        runs += [(points[start:end], run_colour) for start, end in zip(np.flatnonzero(steps == 1),
+                                                                       np.flatnonzero(steps == -1)) if end - start > 1]
+    return strokes(diagram, [run for run, _ in runs], width, np.array([colour for _, colour in runs]).reshape(-1, 3),
+                   opacity, dashes)
 
 
 def level_lines(across: np.ndarray, up: np.ndarray, values: np.ndarray,
@@ -183,61 +216,63 @@ def level_lines(across: np.ndarray, up: np.ndarray, values: np.ndarray,
     return [(level, line) for level in levels for line in lines.lines(level) if len(line) > 1]
 
 
-def family(diagram: Diagram, lines: list[Point], name: str, width: float) -> list[Strokes]:
-    """A family of lines, polylines of chart points, in the family's colour."""
+def family(diagram: Diagram, lines: list[Extensor], name: str, width: float) -> list[np.ndarray]:
+    """A family of lines, polylines of the diagram's points, in the family's colour."""
     return polylines(diagram, lines, width, families[name], 1.0, SOLID)
 
 
-def tangent_lines(points: Point, directions: Point, across: Scalar) -> Point:
-    """Lines of a chart's plane through points along directions `[...]`, sampled where they cross the planes of the
-    across quantity's values `[samples]`, `[..., samples]`: each line, the join of its point and its direction, met
-    with each of those."""
-    lines = points & directions                                              # [...] Line-
-    crossings = mv.x - mv.w * across                                         # [samples] Plane+
-    return planar.unit(lines[..., None] ^ crossings)
+def tangent_lines(diagram: Diagram, points: Extensor, directions: Extensor, across: np.ndarray) -> Extensor:
+    """Lines of the diagram through points along directions `[...]`, sampled where its quantity across takes the values
+    `[samples]`, `[..., samples]`: each point moved along its direction by the change of that quantity over the
+    direction's, as the diagram's plane across reads them."""
+    plane, points, directions = on_numpy(diagram.planes[0]), on_numpy(points), on_numpy(directions)
+    weight, unit = weighing(plane)
+    # How far each point lies across, its reading over its weight, and how far its direction carries it.
+    weights = read(weight, points) + unit                                    # [...] Scalar+
+    steps = (weights[..., None] * across - read(plane, points)[..., None]) / read(plane, directions)[..., None]
+    return points[..., None] + directions[..., None] * steps
 
 
-def arrows(diagram: Diagram, starts: Point, toward: Point, length: float, width: float,
-           colour: np.ndarray) -> list:
-    """Arrows `length` pixels long from chart points `[n]` toward others, each a stroke ending in a head."""
-    tails, aims = diagram.placement(starts), diagram.placement(toward)      # [n] Point-, Point-
-    along = aims - tails                                                     # [n] Point-
-    tips = tails + along * (length / along.dual().norm())                    # [n] Point-
-    return [Strokes(stack((tails, tips), axis=-1), width, colour, 1.0, SOLID, Cap.BUTT),
-            arrowheads(tails, tips, colour)]
+def arrows(diagram: Diagram, starts: Extensor, toward: Extensor, length: float, width: float,
+           colour: np.ndarray) -> list[np.ndarray]:
+    """Arrows `length` pixels long from points of the diagram `[n]` toward others, each a stroke ending in a head."""
+    starts, toward = on_numpy(starts), on_numpy(toward)
+    along = toward - starts                                                  # [n] Point-
+    tips = starts + along / diagram.lengths(along) * length                  # [n] Point-
+    ends = stack((starts, tips), axis=-1)                                    # [n, 2] Point-
+    return strokes(diagram, [ends[arrow] for arrow in range(ends.shape[0])], width, colour, 1.0, SOLID,
+                   np.ones(ends.shape[0]))
 
 
-def ellipses(diagram: Diagram, quadrics: Quadric) -> Quadric:
-    """Quadrics of a chart's plane `[n]` as quadrics of the picture's: each pixel's point carried back onto the chart,
-    measured there, and its plane carried forward by the adjugate, which keeps every pairing of a plane with a
-    point."""
-    reading = diagram.placement.solve(Point)                                 # [] Point- <- Point-
-    return reading.adjugate()(quadrics(reading))
+def dashed(diagram: Diagram, points: Extensor, width: float, colour: np.ndarray,
+           dashes: tuple[float, float]) -> list[np.ndarray]:
+    """Dashed polylines through points `[..., samples]`, dashes and gaps in pixels."""
+    rows = points.reshape(-1, points.shape[-1])
+    return strokes(diagram, [rows[row] for row in range(rows.shape[0])], width, colour, 1.0, dashes)
 
 
-def dashed(diagram: Diagram, points: Point, width: float, colour: np.ndarray, dashes: tuple[float, float]) -> Strokes:
-    """Dashed polylines through chart points `[..., samples]`, dashes and gaps in pixels."""
-    placed = diagram.placement(points)                                       # [..., samples] Point-
-    return Strokes(placed.reshape(-1, placed.shape[-1]), width, colour, 1.0, dashes, Cap.BUTT)
+def area(diagram: Diagram, points: Extensor, mesh: Mesh, colour: np.ndarray, opacity: float) -> np.ndarray:
+    """The area a mesh of triangles over points of the diagram `[vertices]` covers, in one colour."""
+    return contours.picture(on_numpy(points), mesh, np.zeros(points.shape[0]), colour, diagram.camera, opacity=opacity)
 
 
-def areas(diagram: Diagram, corners: Point, colour: np.ndarray, opacity: float) -> Polygons:
-    """The areas inside outlines through chart points `[..., corners]`, each closed from its last corner back to its
-    first, which it does not repeat."""
-    placed = diagram.placement(corners)                                      # [..., corners] Point-
-    return Polygons(placed.reshape(-1, placed.shape[-1]), colour, opacity)
+def between(diagram: Diagram, curve: Extensor, feet: Extensor, colour: np.ndarray, opacity: float) -> np.ndarray:
+    """The area between a curve of the diagram's points `[samples]` and the points it is dropped onto `[samples]`, such
+    as its feet on an axis: a strip of triangles, two between each pair of samples and their feet."""
+    return area(diagram, concatenate((curve, feet)), Mesh.grid(2, curve.shape[0]), colour, opacity)
 
 
-def dots(diagram: Diagram, points: Point, colour: np.ndarray) -> list:
-    """Dots at chart points `[n]`, each in a white ring."""
-    placed = diagram.placement(points)                                       # [n] Point-
-    return [Marks(placed, Marker.DISC, 0.0, ring, white, 1.0), Marks(placed, Marker.DISC, 0.0, dot, colour, 1.0)]
+def dots(diagram: Diagram, points: Extensor, colour: np.ndarray) -> list[np.ndarray]:
+    """Dots at points of the diagram `[n]`, each in a white ring."""
+    points = on_numpy(points)
+    return [simplices.markers(points, white, ring, diagram.camera),
+            simplices.markers(points, colour, dot, diagram.camera)]
 
 
 class Label(NamedTuple):
-    """A name written at a chart point of unit weight, in its colour and size, placed by a Pillow anchor (`"lb"` puts
-    the text's left bottom there) and shifted a few pixels right and up."""
-    place: Point
+    """A name written at a point of a diagram, in its colour and size, placed by a Pillow anchor (`"lb"` puts the
+    text's left bottom there) and shifted a few pixels right and up."""
+    place: Extensor
     text: str
     colour: np.ndarray
     size: int
@@ -246,25 +281,26 @@ class Label(NamedTuple):
 
 
 def ticks(diagram: Diagram, across: np.ndarray, up: np.ndarray) -> tuple[list, list]:
-    """Short marks on the axes at values to read off, and their numbers beside them: layers and labels."""
+    """Short marks on the axes at values to read off, and their numbers beside them: pictures and labels."""
     x0, y0 = diagram.crossing
-    on_across = diagram.placement(chart_points(across, y0))                  # [ticks] Point-
-    on_up = diagram.placement(chart_points(x0, up))                          # [ticks] Point-
+    reach = tick_length / diagram.scales                                     # [2]
     # Each mark reaches out from its axis: down from the one across, left from the one up.
-    marks = concatenate([stack((on_across, on_across - mv.y.dual() * tick_length), axis=-1),
-                         stack((on_up, on_up - mv.x.dual() * tick_length), axis=-1)])   # [ticks, 2] Point-
-    labels = ([Label(chart_points(value, y0), f"{value:g}", ink, tick_size, "mt", (0, -6)) for value in across]
-              + [Label(chart_points(x0, value), f"{value:g}", ink, tick_size, "rm", (-6, 0)) for value in up])
-    return [Strokes(marks, axis_width, ink, 1.0, SOLID, Cap.BUTT)], labels
+    marks = ([stack((diagram.at(value, y0), diagram.at(value, y0 - reach[1]))) for value in across]
+             + [stack((diagram.at(x0, value), diagram.at(x0 - reach[0], value))) for value in up])
+    labels = ([Label(diagram.at(value, y0), f"{value:g}", ink, tick_size, "mt", (0, -6)) for value in across]
+              + [Label(diagram.at(x0, value), f"{value:g}", ink, tick_size, "rm", (-6, 0)) for value in up])
+    return strokes(diagram, marks, axis_width, ink, 1.0, SOLID), labels
 
 
-def picture(diagram: Diagram, layers: list, labels: list[Label]) -> np.ndarray:
-    """The diagram's axes under the layers, `planar`'s primitives composited in order, with the quantities' names at
+def picture(diagram: Diagram, pictures: list[np.ndarray], labels: list[Label]) -> np.ndarray:
+    """The diagram's axes under the pictures, laid over each other in order over white, with the quantities' names at
     the ends of the axes and the labels written over them: RGB bytes `[rows, columns, 3]`."""
-    image = planar.draw(diagram.window, axes(diagram) + layers, white)
+    laid = simplices.composited(axes(diagram) + pictures)
+    seen = white * (1 - laid[..., 3:]) + laid[..., :3] * laid[..., 3:]
+    image = np.round(np.clip(seen, 0, 1) * 255).astype(np.uint8)
     x0, y0 = diagram.crossing
-    names = [Label(chart_points(diagram.across[1], y0), diagram.names[0], ink, text_size, "rt", (0, -4)),
-             Label(chart_points(x0, diagram.up[1]), diagram.names[1], ink, text_size, "lt", (8, 6))]
+    names = [Label(diagram.at(diagram.across[1], y0), diagram.names[0], ink, text_size, "rt", (0, -4)),
+             Label(diagram.at(x0, diagram.up[1]), diagram.names[1], ink, text_size, "lt", (8, 6))]
     return written(diagram, image, names + labels)
 
 
@@ -273,7 +309,7 @@ def written(diagram: Diagram, image: np.ndarray, labels: list[Label]) -> np.ndar
     canvas = Image.fromarray(image)
     pen = ImageDraw.Draw(canvas)
     for label in labels:
-        right, up = pixel_places(diagram.placement(label.place)) + np.array(label.shift)
+        right, up = diagram.pixels(label.place) + np.array(label.shift)
         colour = tuple(int(round(255 * channel)) for channel in label.colour)
         # A name with a subscript after an underscore: the subscript at the size of the ticks' numbers and lower, after
         # the rest, the two placed together by the anchor.
@@ -292,17 +328,17 @@ def written(diagram: Diagram, image: np.ndarray, labels: list[Label]) -> np.ndar
 
 
 class Floating(NamedTuple):
-    """A name that finds its own place: among candidate chart points of unit weight `[n]`, the one where the text,
-    placed by its Pillow anchor, covers the least of what is drawn; in its colour and size."""
-    places: Point
+    """A name that finds its own place: among candidate points of a diagram `[n]`, the one where the text, placed by
+    its Pillow anchor, covers the least of what is drawn; in its colour and size."""
+    places: Extensor
     text: str
     colour: np.ndarray
     size: int
     anchor: str
 
 
-def along(lines: list[Point], every: int) -> Point:
-    """Candidate places along polylines of chart points: every so many of their samples."""
+def along(lines: list[Extensor], every: int) -> Extensor:
+    """Candidate places along polylines of a diagram's points: every so many of their samples."""
     return concatenate([points[every // 2::every] for points in lines])
 
 
@@ -317,7 +353,7 @@ def floated(diagram: Diagram, image: np.ndarray, names: list[Floating]) -> np.nd
     canvas = Image.fromarray(image)
     pen = ImageDraw.Draw(canvas)
     for name in names:
-        candidates = pixel_places(diagram.placement(name.places))           # [n, 2]
+        candidates = diagram.pixels(name.places)                             # [n, 2]
         key = (diagram, name.text, name.anchor, candidates.tobytes())
         if key in places:
             if places[key] is not None:

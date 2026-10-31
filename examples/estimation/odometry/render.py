@@ -1,4 +1,4 @@
-"""Render the true, dead-reckoned, and most likely trajectories around the lap with each pose's confidence ellipsoid on the GPU via `planar`."""
+"""Render the true, dead-reckoned, and most likely trajectories around the lap with each pose's confidence ellipsoid on the GPU."""
 
 from __future__ import annotations
 
@@ -12,8 +12,9 @@ from numga import concatenate, stack
 from numga.algebras import PGA2D
 from examples import instantiate
 from examples.util.animation import capture
-from examples.util.wgsl import pinned, planar, room
-from examples.util.wgsl.planar import SOLID, Cap, Curves, Marker, Marks, Strokes, Window
+from examples.util.wgsl import quadrics, simplices
+from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.simplices import Cap, Mesh
 
 # The drawings are of the lap in PGA2D.
 core = instantiate("examples.estimation.odometry.core", PGA2D)
@@ -37,81 +38,86 @@ LIKELY_MARK, CLOSING_MARK, START_MARK = 2.5, 5.0, 7.0
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(points: Point) -> np.ndarray:
-    """Read out the x and y coordinates of each point from its pairings with the coordinate planes."""
-    return (stack((mv.x, mv.y)) & points.normalized()[..., None]).to_array()
-
-
-def extent(truth: core.Motor, dead: core.Motor) -> Point:
-    """The lower and upper corner points of a box around the true and dead-reckoned positions, with a margin."""
+def extent(truth: core.Motor, dead: core.Motor) -> np.ndarray:
+    """The lower and upper limits across and up of a box around the true and dead-reckoned positions, with a margin,
+    `[2, 2]`."""
     positions = concatenate([truth, dead]) >> origin
-    axes = stack((mv.x, mv.y))
-    readings = axes[:, None] & positions.normalized()
+    readings = stack((mv.x, mv.y))[:, None] & positions.normalized()
     low = readings.min(axis=-1)
     high = readings.max(axis=-1)
     spans = high - low
     margin = 0.15 * spans.max()
-    return origin + (axes.dual() * stack((low - margin, high + margin))).sum(axis=-1)
+    return stack((low - margin, high + margin), axis=-1).to_array()
 
 
-def base_layers(truth: core.Motor, dead: core.Motor, reckoned_ellipsoids) -> list:
-    """Build the planar layers for the true path, the dashed dead-reckoned path, and its uncertainty ellipsoids."""
+def path(points: Point, width: float, colour: np.ndarray, camera: Camera, dashes: tuple[float, float] = (1.0, 0.0),
+         cap: Cap = Cap.PROJECTING) -> np.ndarray:
+    """A polyline through points `[points]`, `width` points across."""
+    return simplices.strokes(points, Mesh.chains([len(points)]), colour, width * POINT, camera, dashes=dashes, cap=cap)
+
+
+def disc(points: Point, width: float, colour: np.ndarray, camera: Camera) -> np.ndarray:
+    """Discs at points `[points]`, `width` points across with an outline a point wide."""
+    return simplices.markers(points, colour, (width + 1.0) / 2 * POINT, camera)
+
+
+def base_pictures(truth: core.Motor, dead: core.Motor, reckoned_ellipsoids, camera: Camera) -> list[np.ndarray]:
+    """The true path, the dashed dead-reckoned path, and its uncertainty ellipsoids."""
     dash_pattern = (DASHED[0] * DEAD_WIDTH * POINT, DASHED[1] * DEAD_WIDTH * POINT)
     return [
-        Strokes((truth >> origin)[None], TRUTH_WIDTH * POINT, TRUTH_RGB, 1.0, SOLID, Cap.PROJECTING),
-        Strokes((dead >> origin)[None], DEAD_WIDTH * POINT, DEAD_RGB, 1.0, dash_pattern, Cap.BUTT),
-        Curves(reckoned_ellipsoids, ELLIPSOID_WIDTH * POINT, DEAD_RGB, 0.35),
+        path(truth >> origin, TRUTH_WIDTH, TRUTH_RGB, camera),
+        path(dead >> origin, DEAD_WIDTH, DEAD_RGB, camera, dash_pattern, Cap.BUTT),
+        quadrics.curves(reckoned_ellipsoids, ELLIPSOID_WIDTH * POINT, DEAD_RGB, camera, 0.35),
     ]
 
 
-def likely_layers(truth: core.Motor, poses: core.Motor, ellipsoids) -> list:
-    """Build the planar layers for the estimated poses, their uncertainty ellipsoids, and the start marker."""
+def likely_pictures(truth: core.Motor, poses: core.Motor, ellipsoids, camera: Camera) -> list[np.ndarray]:
+    """The estimated poses, their uncertainty ellipsoids, and the start marker."""
     positions = poses >> origin                                                 # [poses] Point-
     return [
-        Curves(ellipsoids, ELLIPSOID_WIDTH * POINT, LIKELY_RGB, 0.7),
-        Strokes(positions[None], LIKELY_WIDTH * POINT, LIKELY_RGB, 1.0, SOLID, Cap.PROJECTING),
-        Marks(positions, Marker.DISC, 0.0, (LIKELY_MARK + 1.0) / 2 * POINT, LIKELY_RGB, 1.0),
-        Marks(truth[:1] >> origin, Marker.DISC, 0.0, (START_MARK + 1.0) / 2 * POINT, START_RGB, 1.0),
+        quadrics.curves(ellipsoids, ELLIPSOID_WIDTH * POINT, LIKELY_RGB, camera, 0.7),
+        path(positions, LIKELY_WIDTH, LIKELY_RGB, camera),
+        disc(positions, LIKELY_MARK, LIKELY_RGB, camera),
+        disc(truth[:1] >> origin, START_MARK, START_RGB, camera),
     ]
 
 
-def framed(box: Point) -> tuple[plt.Figure, plt.Axes, Window]:
-    """Create a figure, axes, and planar window for the bounding box."""
+def framed(limits: np.ndarray) -> tuple[plt.Figure, plt.Axes, Camera]:
+    """Create a figure, axes on the box between the limits `[2, 2]`, and the camera its picture is read by."""
     figure, ax = plt.subplots(figsize=(5, 5))
     ax.set_axis_off()
     figure.tight_layout()
-    view = planar.view([box], 0.0, room(ax))
-    return figure, ax, view
+    ax.set(xlim=limits[0], ylim=limits[1])
+    return figure, ax, flat_panel(ax, PGA2D)
 
 
 def draw_lap(truth: core.Motor, dead: core.Motor, reckoned_ellipsoids, linked_poses: core.Motor) -> plt.Figure:
     """Render the true lap, the dead-reckoned trajectory with its uncertainty ellipsoids, and the loop-closing link."""
-    figure, ax, view = framed(extent(truth, dead))
+    figure, ax, camera = framed(extent(truth, dead))
     linked_positions = linked_poses >> origin                                   # [endpoints] Point-
-    layers = base_layers(truth, dead, reckoned_ellipsoids) + [
-        Strokes(linked_positions[None], CLOSING_WIDTH * POINT, CLOSING_RGB, 1.0, SOLID, Cap.PROJECTING),
-        Marks(linked_positions, Marker.DISC, 0.0, (CLOSING_MARK + 1.0) / 2 * POINT, CLOSING_RGB, 1.0),
-        Marks(truth[:1] >> origin, Marker.DISC, 0.0, (START_MARK + 1.0) / 2 * POINT, START_RGB, 1.0),
-    ]
-    pinned(ax, planar.draw(view, layers, np.ones(3)), view.extent)
+    simplices.overlay(ax, base_pictures(truth, dead, reckoned_ellipsoids, camera) + [
+        path(linked_positions, CLOSING_WIDTH, CLOSING_RGB, camera),
+        disc(linked_positions, CLOSING_MARK, CLOSING_RGB, camera),
+        disc(truth[:1] >> origin, START_MARK, START_RGB, camera),
+    ])
     return figure
 
 
 def draw(truth: core.Motor, dead: core.Motor, reckoned_ellipsoids, poses: core.Motor,
          ellipsoids) -> plt.Figure:
     """Render the true path, the dead-reckoned trajectory with its uncertainty ellipsoids, and the estimated poses with theirs."""
-    figure, ax, view = framed(extent(truth, dead))
-    layers = base_layers(truth, dead, reckoned_ellipsoids) + likely_layers(truth, poses, ellipsoids)
-    pinned(ax, planar.draw(view, layers, np.ones(3)), view.extent)
+    figure, ax, camera = framed(extent(truth, dead))
+    simplices.overlay(ax, base_pictures(truth, dead, reckoned_ellipsoids, camera)
+                      + likely_pictures(truth, poses, ellipsoids, camera))
     return figure
 
 
 def animate(truth: core.Motor, dead: core.Motor, reckoned_ellipsoids, closing_steps) -> Iterator[np.ndarray]:
     """Yield one frame per damped Gauss-Newton iteration over the true path and dead reckoning."""
-    figure, ax, view = framed(extent(truth, dead))
-    image = pinned(ax, np.full(view.shape + (3,), 255, dtype=np.uint8), view.extent)
-    background_layers = base_layers(truth, dead, reckoned_ellipsoids)
+    figure, ax, camera = framed(extent(truth, dead))
+    background = base_pictures(truth, dead, reckoned_ellipsoids, camera)
+    image = simplices.overlay(ax, background)
     for poses, ellipsoids in closing_steps:
-        image.set_data(planar.draw(view, background_layers + likely_layers(truth, poses, ellipsoids), np.ones(3)))
+        image.set_data(simplices.composited(background + likely_pictures(truth, poses, ellipsoids, camera)))
         yield capture(figure)
     plt.close(figure)

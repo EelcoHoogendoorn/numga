@@ -130,6 +130,7 @@ def space_scene(view: solids.View) -> Scene:
     """The frame of space, its centre and the beam through it, for the bonds to be drawn among."""
     shafts, heads = solids.frame(axis_length, arrow_width / 2 * view.pixel, head_length * view.pixel,
                                  head_width / 2 * view.pixel)
+    # The beam's reach, a direction of space, embedded in the drawing's projective space as a point at infinity.
     reach = solids.context.include_from_algebra(space_slice(beam_reach * beam))                 # [] Point-
     beam_shaft, beam_head = solids.arrows(solids.origin - reach, solids.origin + reach,
                                          arrow_width / 2 * view.pixel, head_length * view.pixel, head_width / 2 * view.pixel)
@@ -142,6 +143,7 @@ def space_scene(view: solids.View) -> Scene:
 def crystal_image(bonds: core.Direction, scene: Scene) -> np.ndarray:
     """The bonds `[bonds] Direction-` as rods from their shared centre to their ends, the tetrahedral geometry,
     among the scene's frame of space and beam."""
+    # The bonds' ends, sliced by the observer, embedded about the drawing's origin, the bonds' centre.
     ends = solids.origin + solids.context.include_from_algebra(space_slice(bonds))              # [bonds] Point-
     view = scene.view
     return scene.draw([(solids.rods(solids.origin, ends, bond_width / 2 * view.pixel), bond_colour),

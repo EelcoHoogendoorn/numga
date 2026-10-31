@@ -59,10 +59,13 @@ def coordinates(points: Point) -> np.ndarray:
 
 
 def gpu_points(points: Point) -> solids.Point:
-    """Forget the conformal infinity part and place the weighted spatial part in the projective scene."""
-    weights = -horizon & points
-    readings = (stack((mv.x, mv.y, mv.z)) & points[..., None]) / weights[..., None]
-    return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
+    """The projective embedding of conformal points: each point's spatial part, its offset from the origin times its
+    weight, over that weight, placed at the projective scene's origin."""
+    # The line joining the origin and infinity; its meet with a point, wedged with the plane the two span, keeps the
+    # point's spatial part, an antivector of space alone.
+    origin_to_infinity = origin & infinity                                      # [] Antibivector-
+    offsets = (points & origin_to_infinity) ^ origin_to_infinity.dual()         # [...] Antivector-
+    return solids.origin + solids.context.include_from_algebra(offsets / (-horizon & points))
 
 
 def downhill(surface: Sphere, anchor: Point, length: float) -> Point:

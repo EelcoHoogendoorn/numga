@@ -32,9 +32,11 @@ isotherms = np.array([0.5, 1.0, 1.5, 2.0, 2.5])
 adiabats = np.array([-1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0])
 state_entropies = np.linspace(-2.5, 3.0, 120)
 state_volumes = np.geomspace(0.2, 5.0, 120)
-# The strokes' colours: heated, insulated, cooled, insulated; the enclosed area's.
+# The strokes' colours: heated, insulated, cooled, insulated; the enclosed area's, and the rows of the grid that
+# fills it, from the hot stroke to the cold.
 stroke_colours = np.stack([art.orange, art.grey, art.blue, art.grey])
 enclosed_colour = art.rgb("#c5d9a7")
+n_fill = 16
 # The cylinder's picture, pixels across, and the height of a unit of volume.
 cylinder_pixels, height_per_volume = 150, 0.7
 
@@ -58,12 +60,21 @@ class Charts:
                                                art.thin))
         self.cycle = art.gas_points(temperature_of, pressure_of, cycle)                   # [steps] Point-, Point-
         self.n_steps = (cycle.shape[0] - 1) // 4
+        # The states the cycle encloses: at each entropy of the hot stroke, from its state to the cold stroke's at the
+        # same entropy, straight across the plane of states along the adiabat between them; a grid of states, which
+        # either chart carries onto the area the cycle encloses there.
+        heated = cycle[:self.n_steps + 1]                                                 # [steps + 1] State-
+        cooled = cycle[2 * self.n_steps:3 * self.n_steps + 1][::-1]                       # [steps + 1] State-
+        shares = np.linspace(0, 1, n_fill)[:, None]
+        enclosed = (heated * (1 - shares) + cooled * shares).reshape(-1)                  # [fill * (steps + 1)] State-
+        self.enclosed = art.gas_points(temperature_of, pressure_of, enclosed)            # [...] Point-, Point-
+        self.grid = art.Mesh.grid(n_fill, self.n_steps + 1)
 
-    def picture(self, diagram: art.Diagram, cycle: art.Point, lines: list, travelled: int, labels: list,
-                names: list) -> np.ndarray:
-        """A chart with its lines, the area the cycle `[steps]` encloses, the strokes faint and, as far as travelled,
-        bold."""
-        layers = [art.areas(diagram, cycle[:-1], enclosed_colour, 0.45)] + lines
+    def picture(self, diagram: art.Diagram, cycle: art.Point, enclosed: art.Point, lines: list, travelled: int,
+                labels: list, names: list) -> np.ndarray:
+        """A chart with its lines, the area the cycle `[steps]` encloses, a grid of points `[fill * (steps + 1)]`, the
+        strokes faint and, as far as travelled, bold."""
+        layers = [art.area(diagram, enclosed, self.grid, enclosed_colour, 0.45)] + lines
         for stroke in range(4):
             part = cycle[stroke * self.n_steps: (stroke + 1) * self.n_steps + 1]
             layers += art.polylines(diagram, [part], art.thin, stroke_colours[stroke], 1.0, art.SOLID)
@@ -80,7 +91,7 @@ class Charts:
         # through a corner of the cycle along the entropy, met with that edge.
         left_edge = art.mv.x - art.mv.w * entropy_range[0]                                # [] Plane+
         reservoirs = temperature_cycle[np.array([0, 2 * self.n_steps])]                  # [2] Point-
-        hot, cold = art.planar.unit((reservoirs & art.mv.x.dual()) ^ left_edge)          # [] Point-, Point-
+        hot, cold = (reservoirs & art.mv.x.dual()) ^ left_edge                           # [] Point-, Point-
         temperature_labels = [art.Label(temperature_cycle[:-1].mean(axis=0), "W", art.ink, art.text_size, "mm",
                                         (0, 0)),
                               art.Label(hot, "hot", art.orange, art.text_size, "lb", (4, 2)),
@@ -94,10 +105,10 @@ class Charts:
                                           art.families["volume"], art.text_size, "lb"),
                              art.Floating(art.along(lines.isobars.entropy_temperature, 8), "p = const",
                                           art.families["pressure"], art.text_size, "lb")]
-        return [self.picture(self.volume_pressure, pressure_cycle, self.pressure_lines, travelled, pressure_labels,
-                             pressure_names),
-                self.picture(self.entropy_temperature, temperature_cycle, self.temperature_lines, travelled,
-                             temperature_labels, temperature_names)]
+        return [self.picture(self.volume_pressure, pressure_cycle, self.enclosed.volume_pressure, self.pressure_lines,
+                             travelled, pressure_labels, pressure_names),
+                self.picture(self.entropy_temperature, temperature_cycle, self.enclosed.entropy_temperature,
+                             self.temperature_lines, travelled, temperature_labels, temperature_names)]
 
 
 def animate_cycle(temperature_of: Reading, pressure_of: Reading, cycle: Extensor,

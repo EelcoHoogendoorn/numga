@@ -10,9 +10,10 @@ import numpy as np
 
 from numga import concatenate, stack
 from examples.util.animation import capture
-from examples.util.wgsl import pinned, planar, room
-from examples.util.wgsl.planar import SOLID, Cap, Curves, Marker, Marks, Polygons, Regions, Strokes
-from examples.estimation.kalman.core import Motor, Point, mv
+from examples.util.wgsl import contours, quadrics, simplices
+from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl.simplices import Cap, Marker, Mesh
+from examples.estimation.kalman.core import Motor, Point, ga, mv
 
 TRUE_COLOUR, DEAD_COLOUR, FILTER_COLOUR, READING_COLOUR = "#1f2329", "#d0482b", "#2c6fb4", "#3a9a5b"
 FILTER_RGB = np.array(mcolors.to_rgb(FILTER_COLOUR))
@@ -53,23 +54,31 @@ def animate_tracking(truth: Motor, dead: Motor, estimates: Motor, positions: Poi
     low = heights.min(axis=-1)
     high = heights.max(axis=-1)
     spans = high - low
-    spans = spans + 2 * MARGIN * spans.max()
-    aspect = float((spans[1] / spans[0]).to_array())
+    # The view about the drive's middle, half its spans and the margin on every side.
+    middle, half = (low + high) / 2, spans / 2 + MARGIN * spans.max()
+    limits = stack((middle - half, middle + half), axis=-1).to_array()
+    aspect = float((half[1] / half[0]).to_array())
     fig = plt.figure(figsize=(WIDTH, WIDTH * aspect), dpi=100)
     ax = fig.add_axes([0, 0, 1, 1])
-    ax.set_axis_off()
-    view = planar.view([everything], MARGIN, room(ax))
-    image = pinned(ax, np.full(view.shape + (3,), 255, dtype=np.uint8), view.extent)
+    ax.set(xlim=limits[0], ylim=limits[1])
+    camera = flat_panel(ax, ga)
+    image = simplices.overlay(ax, [np.zeros(camera.shape + (4,))])
+    # A vehicle is one triangle, its outline.
+    vehicle = Mesh(3, [[0, 1, 2]])
     # Lay the figure out once; each frame draws the trails so far, the readings, the quadric, and the vehicles.
     for step in range(len(true_path)):
-        layers = [Regions(ellipsoids[step:step + 1], FILTER_RGB, 0.18),
-                  Curves(ellipsoids[step:step + 1], 1.0 * POINT, FILTER_RGB, 1.0),
-                  Strokes(true_path[None, :step + 1], TRUE_WIDTH, rgb(TRUE_COLOUR), 1.0, SOLID, Cap.ROUND),
-                  Strokes(dead_path[None, :step + 1], DEAD_WIDTH, rgb(DEAD_COLOUR), 1.0, DEAD_DASHES, Cap.BUTT),
-                  Strokes(positions[None, :step + 1], FILTER_WIDTH, FILTER_RGB, 1.0, SOLID, Cap.ROUND),
-                  Marks(reading_points[:step + 1][fresh[:step + 1]], Marker.DIAMOND, READING_REACH - READING_RING,
-                        READING_REACH, rgb(READING_COLOUR), 1.0),
-                  *[Polygons(shape[step:step + 1], rgb(colour), VEHICLE_OPACITY) for colour, shape in outlines.items()]]
-        image.set_data(planar.draw(view, layers, np.ones(3)))
+        trail = Mesh.chains([step + 1])
+        readings_so_far = reading_points[:step + 1][fresh[:step + 1]]
+        pictures = [quadrics.regions(ellipsoids[step:step + 1, None], FILTER_RGB, camera, 0.18),
+                    quadrics.curves(ellipsoids[step:step + 1], 1.0 * POINT, FILTER_RGB, camera),
+                    simplices.strokes(true_path[:step + 1], trail, rgb(TRUE_COLOUR), TRUE_WIDTH, camera),
+                    simplices.strokes(dead_path[:step + 1], trail, rgb(DEAD_COLOUR), DEAD_WIDTH, camera,
+                                      dashes=DEAD_DASHES, cap=Cap.BUTT),
+                    simplices.strokes(positions[:step + 1], trail, FILTER_RGB, FILTER_WIDTH, camera),
+                    simplices.markers(readings_so_far, rgb(READING_COLOUR), READING_REACH, camera,
+                                      inner=READING_REACH - READING_RING, marker=Marker.DIAMOND),
+                    *[contours.picture(shape[step], vehicle, np.zeros(3), rgb(colour), camera, opacity=VEHICLE_OPACITY)
+                      for colour, shape in outlines.items()]]
+        image.set_data(simplices.composited(pictures))
         yield capture(fig)
     plt.close(fig)

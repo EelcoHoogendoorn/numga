@@ -31,6 +31,7 @@ def picture(points: solids.Point, mesh: Mesh, view: solids.View) -> np.ndarray:
 
 def frames(vertices: Iterable[Antivector], mesh: Mesh) -> Iterator[np.ndarray]:
     """Draw a sequence of surfaces of the mesh's triangles with a camera fixed by the first frame."""
+    # The projective embedding: places of space, offsets from its origin, as the renderer's points about its own.
     states = [solids.origin + solids.context.include_from_algebra(state) for state in vertices]
     view = viewport(states[0])
     for state in states:
@@ -39,5 +40,6 @@ def frames(vertices: Iterable[Antivector], mesh: Mesh) -> Iterator[np.ndarray]:
 
 def draw(vertices: Antivector, mesh: Mesh) -> plt.Figure:
     """One surface of the mesh's triangles without axes or margins."""
+    # The projective embedding: places of space, offsets from its origin, as the renderer's points about its own.
     points = solids.origin + solids.context.include_from_algebra(vertices)               # [vertices] Point-
     return image_figure(picture(points, mesh, viewport(points)))

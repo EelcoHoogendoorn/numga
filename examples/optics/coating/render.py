@@ -17,6 +17,8 @@ from examples.util.wgsl.scene import Scene
 
 # The observer sees the point where its time line meets the spatial slice.
 space_slice = core.real.t ^ (core.Direction & -core.real.t.dual())
+# Electric planes meet the spatial slice in the direction they sweep through time.
+electric_direction = core.Bivector.dual_inverse() ^ core.real.t
 
 case_colours = ("#2563eb", "#ea580c", "#0d9488", "#7c3aed")
 # The quantity plots' sizes in pixels: one panel, about half the column, and two panels side by side.
@@ -184,12 +186,11 @@ def pulse(nodes: core.Direction, slab: core.Direction, directors: core.Direction
     picture = Scene(view, np.ones(3), [(line, line_colour), (optics, optic_colour)], [],
                     inks=[], translucent=[(box, slab_colour, slab_opacity)])
     for planes in electric:
-        readings = planes[:, None] & swept                                            # [nodes, 2] Scalar+
-        # The field across the line, a direction from its readings along x and y, drawn out from each node.
-        transverse = (across * readings).sum(axis=-1)                                 # [nodes] Direction-
-        offsets = upright >> solids.context.include_from_algebra(space_slice(transverse * field_length))
+        # The field across the line, the direction it sweeps through time, drawn out from each node.
+        offsets = upright >> solids.context.include_from_algebra(field_length * electric_direction(planes))
         tips = stations + offsets                                             # [nodes] Point-
         # The field's direction around the line sets its hue, and its strength how far its colour shows.
+        readings = planes[:, None] & swept                                            # [nodes, 2] Scalar+
         field = readings.to_array()                                                   # [nodes, 2]
         hue = (np.arctan2(field[:, 1], field[:, 0]) / (2 * np.pi)) % 1
         strength = np.clip(np.hypot(*field.T) * 4, 0, 1)

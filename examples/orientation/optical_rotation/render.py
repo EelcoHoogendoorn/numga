@@ -55,11 +55,13 @@ def draw_isolator(fields: Field, depths: np.ndarray) -> plt.Figure:
     square = (reflector_half_width * (mv.x.dual() * np.array([-1, 1, 1, -1]) + mv.y.dual() * np.array([-1, -1, 1, 1]))
               + length * beam)                                                # [corners] Direction-
     corners = concatenate([square - length * beam, square + length * beam])   # [2 * corners] Direction-
+    # The places, sliced by the observer, embedded in the drawing's projective space about its origin; the
+    # polarizations, already directions of the observer's space, embedded as points at infinity.
     scene_corners = solids.origin + (upright >> solids.context.include_from_algebra(space_slice(corners)))
     scene_square = solids.origin + (upright >> solids.context.include_from_algebra(space_slice(square)))
     beam_ends = solids.origin + (upright >> solids.context.include_from_algebra(space_slice(ends)))
     stations = solids.origin + (upright >> solids.context.include_from_algebra(space_slice(beam_places)))
-    directions = upright >> solids.context.include_from_algebra(space_slice(polarizations))
+    directions = upright >> solids.context.include_from_algebra(polarizations)
     view = solids.view([scene_corners], 0.0, elevation, azimuth, margin, n_pixels)
     reflector = solids.plates(scene_square[None], reflector_thickness)
     beam_rod = solids.rods(beam_ends[0], beam_ends[1], beam_width / 2 * view.pixel)[None]

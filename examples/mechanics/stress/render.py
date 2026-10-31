@@ -64,6 +64,7 @@ def view(corners: core.Point, centres: core.Point, normal: core.Point, shear: co
     """A view framing every cube, arrow and principal direction given, with `room` to spare around each."""
     points = [core.corners, corners, centres + normal * NORMAL_SCALE, centres + shear * SHEAR_SCALE,
               REACH * principal]
+    # The projective embedding: places of space, offsets from the cube's centre, as the renderer's points about its origin.
     framed = [solids.origin + solids.context.include_from_algebra(batch) for batch in points]
     return solids.view(framed, room, elevation, azimuth, margin, 1)
 
@@ -93,6 +94,7 @@ def cube(corners: core.Point, centres: core.Point, normal: core.Point, shear: co
     """The deformed cube seen from one frame, its edges solid and its faces translucent, the normal traction on each
     face in blue and the shear in red, and the principal directions in green; the radii a share `thickness` of those
     set above."""
+    # The projective embedding: places of space, offsets from the cube's centre, as the renderer's points about its origin.
     places = solids.origin + solids.context.include_from_algebra(corners)                # [corners] Point-
     directions = solids.context.include_from_algebra(REACH * principal)                  # [3] Point-
     normal_shafts, normal_heads = arrows(centres, normal * NORMAL_SCALE, view.pixel, thickness)

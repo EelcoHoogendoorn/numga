@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import concatenate, stack
+from numga import concatenate
 from examples.surfaces.koebe import core
 from examples.util.wgsl import show, solids
 
@@ -30,21 +30,24 @@ EDGE_WIDTH, CIRCLE_WIDTH, TOUCH_RADIUS = 2.6, 2.4, 3.5
 
 # --- plumbing -------------------------------------------------------------------------
 def gpu_points(points: core.Point) -> solids.Point:
-    """View the rays in the projective slice read by -w; the spatial slices become the scene's frame."""
+    """The projective embedding of the scene: each point, scaled to unit weight `mv.w & point == 1`, is the centre
+    moved by an offset that lies in space, and its embedding is the renderer's origin moved by that offset."""
     mv = core.mv
     points = points.batch()
-    readings = (stack((mv.x, mv.y, mv.z)) & points[..., None]) / (-mv.w & points)[..., None]
-    return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
-
+    # The offset from the centre: the point's part transverse to w, at unit weight.
+    offsets = (mv.w ^ (points & core.origin)) / (mv.w & points)               # [...] Point-
+    return solids.origin + solids.context.include_from_algebra(offsets)
 
 
 def gpu_planes(circles: core.Vector) -> solids.Plane:
-    """Carry each circle's linear form into the scene, including its offset from the sphere's centre."""
+    """The planes of the circles `n + s * w` in the scene: the normal `n` lies in space and is included as it is,
+    and the offset, the circle's pairing with the centre, is its part along the renderer's w, which moves the plane
+    off the origin."""
     mv = core.mv
-    frame_points = stack((mv.x, mv.y, mv.z, mv.w)).dual()
-    readings = circles.batch()[..., None] & frame_points
-    frame = stack((sm.x, sm.y, sm.z, sm.w))
-    return (frame * solids.context.include_from_algebra(readings)).sum(axis=-1)
+    circles = circles.batch()
+    normals = mv.w | (circles ^ mv.w)                                          # [...] Vector+
+    offsets = circles & core.origin                                            # [...] Scalar+
+    return solids.context.include_from_algebra(normals) + solids.context.include_from_algebra(offsets) * sm.w
 
 
 

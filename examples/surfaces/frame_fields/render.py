@@ -43,17 +43,15 @@ def square_view(view_degrees: np.ndarray, vertices: core.Point, spare: float) ->
     return solids.view([places], spare, elevation, azimuth, 0.06, pixels).squared()
 
 
-def sheet(places: core.Point, faces: np.ndarray, colours: np.ndarray,
+def sheet(points: solids.Point, faces: np.ndarray, colours: np.ndarray,
           view: solids.View) -> meshes.Samples:
     """A lit sheet carries its vertex colours at the image's own pixel size."""
-    points = solids.origin + solids.context.include_from_algebra(places.batch())                 # [vertices] Point-
     return meshes.samples(points, faces, colours, meshes.smooth(points, meshes.Mesh(len(points), faces)), view,
                           face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
 
 
-def boundary_lines(mesh: core.Mesh, vertices: core.Point, view: solids.View) -> meshes.Samples:
+def boundary_lines(mesh: core.Mesh, points: solids.Point, view: solids.View) -> meshes.Samples:
     """Thin outlines keep the reference geometry visible beneath the field."""
-    points = solids.origin + solids.context.include_from_algebra(vertices.batch())             # [vertices] Point-
     # The rim: the mesh of the boundary's edges.
     rim = simplices.Mesh(len(points), mesh.edges[mesh.boundary_edges])
     return simplices.tubes(points, rim, ink, 1.1, view, solids.gloss)
@@ -75,12 +73,14 @@ def frame_patches(starts: core.Point, rotors: core.Rotor, size: float,
     profile = np.array([[-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0], [0, 0, 0.16]])
     shape = (stack((mv.x.dual(), mv.y.dual(), mv.z.dual())) * (size * profile)).sum(axis=-1)   # [profile] Point-
     places = starts[:, None] + (rotors.batch()[:, None] >> shape)             # [patches, profile] Point-
+    # The patches' projective embedding, once for their faces and their perimeters.
+    embedded = solids.origin + solids.context.include_from_algebra(places)    # [patches, profile] Point-
     n_patches, n_profile = places.shape
     local_faces = np.array([[0, 1, 4], [1, 2, 4], [2, 3, 4], [3, 0, 4]])
     faces = (local_faces[None] + np.arange(n_patches)[:, None, None] * n_profile).reshape(-1, 3)
     colours = np.broadcast_to(np.stack((coral, gold, teal, blue))[None, :, None, :], (n_patches, 4, 3, 3)).reshape(-1, 3, 3)
-    patches = sheet(places.reshape(-1), faces, colours, view)
-    perimeters = solids.origin + solids.context.include_from_algebra(places[:, [0, 1, 2, 3, 0]])   # [patches, 5] Point-
+    patches = sheet(embedded.reshape(-1), faces, colours, view)
+    perimeters = embedded[:, [0, 1, 2, 3, 0]]                                 # [patches, 5] Point-
     seams = simplices.tubes(perimeters.reshape(-1), simplices.Mesh.chains([5] * n_patches), ink, 1.0, view, solids.gloss)
     return patches, seams
 
@@ -96,8 +96,10 @@ def draw_darboux_whitney(
     # The unit direction square to the triangle: the dual of its patch, the join of two of its sides.
     normal = ((corners[1] - corners[0]) & (corners[2] - corners[0])).normalized()   # [] Patch-
     lift = normal.dual() * unit_volume                                        # [] Point-
-    outline = boundary_lines(fine_mesh, fine_vertices, view)
-    base = sheet(fine_vertices, fine_mesh.faces, surface_colour, view)
+    # The fine mesh's projective embedding, once for its sheet and its outline.
+    fine_places = solids.origin + solids.context.include_from_algebra(fine_vertices.batch())   # [vertices] Point-
+    outline = boundary_lines(fine_mesh, fine_places, view)
+    base = sheet(fine_places, fine_mesh.faces, surface_colour, view)
 
     n_inner_patches = 4
     selected = np.linspace(0, points.shape[0] - 1, n_inner_patches, dtype=int)
@@ -137,7 +139,8 @@ def draw_darboux_whitney(
     norms = fine_norms_squared.batch().to_array()
     depth = np.clip((1 - norms) / (1 - norms.min()), 0, 1)
     bowl_colours = (1 - depth[:, None]) * np.array([0.50, 0.83, 0.98]) + depth[:, None] * blue
-    bowl = sheet(bowl_points, fine_mesh.faces, bowl_colours[fine_mesh.faces], view)
+    bowl = sheet(solids.origin + solids.context.include_from_algebra(bowl_points), fine_mesh.faces,
+                 bowl_colours[fine_mesh.faces], view)
     corner_marks = solids.ball(solids.origin + solids.context.include_from_algebra(corners), 0.025)[:, None]
     norm_image = solids.draw([(corner_marks, gold)], view, background, inks=[], translucent=[], meshes=[(bowl, 1.0), (outline, 1.0)])
     return panels([orientation, rates_image, norm_image])
@@ -200,7 +203,8 @@ def draw_skyrmion(mesh: core.Mesh, vertices: core.Point, directors: core.Point) 
     chains = simplices.Mesh.chains([n_curve_samples] * len(paths))
     chain_colours = np.repeat(colours, n_curve_samples - 1, axis=0)
 
-    disk = sheet(vertices, mesh.faces, surface_colour, disk_frame)
+    disk = sheet(solids.origin + solids.context.include_from_algebra(vertices.batch()), mesh.faces, surface_colour,
+                 disk_frame)
     domain_grid = simplices.tubes(domain_paths.reshape(-1), chains, chain_colours, 2.4, disk_frame, solids.gloss)
     centre = solids.ball((solids.origin + solids.context.include_from_algebra(vertical * 0.018))[None], 0.045)[:, None]
     domain = solids.draw([(centre, coral)], disk_frame, background, inks=[], translucent=[], meshes=[(disk, 1.0), (domain_grid, 1.0)])
@@ -229,11 +233,14 @@ def ribbon_panel(mesh: core.Mesh, vertices: core.Point, rotors: core.Rotor, ring
                             np.stack((first + 1, first + n_profile_samples + 1, first + n_profile_samples), axis=-1).reshape(-1, 3)))
     across_colours = (1 - (profile + 1)[:, None] / 2) * coral + ((profile + 1)[:, None] / 2) * blue
     colours = np.broadcast_to(across_colours, (n_curve_samples, n_profile_samples, 3)).reshape(-1, 3)
-    base = sheet(vertices, mesh.faces, surface_colour, view)
-    layers = [(base, 0.34), (boundary_lines(mesh, vertices, view), 0.65)]
+    # The surface's and the ribbons' projective embeddings, each once for its sheets and its lines.
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())             # [vertices] Point-
+    ribbon_places = solids.origin + solids.context.include_from_algebra(ribbons)              # [ribbons, samples, profile] Point-
+    base = sheet(points, mesh.faces, surface_colour, view)
+    layers = [(base, 0.34), (boundary_lines(mesh, points, view), 0.65)]
     for ribbon in range(ribbons.shape[0]):
-        layers.append((sheet(ribbons[ribbon].reshape(-1), faces, colours[faces], view), 1.0))
-        edges = solids.origin + solids.context.include_from_algebra(ribbons[ribbon][:, [0, -1]])   # [samples, 2] Point-
+        layers.append((sheet(ribbon_places[ribbon].reshape(-1), faces, colours[faces], view), 1.0))
+        edges = ribbon_places[ribbon][:, [0, -1]]                             # [samples, 2] Point-
         seam = simplices.tubes(concatenate((edges[:, 0], edges[:, 1])), simplices.Mesh.chains([n_curve_samples] * 2),
                                np.repeat(np.stack((gold, teal)), n_curve_samples - 1, axis=0), 1.3, view, solids.gloss)
         layers.append((seam, 1.0))

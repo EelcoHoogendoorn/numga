@@ -9,8 +9,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import hsv_to_rgb
 
-from numga import stack
-
 from examples.math.spin_groups import core
 from examples.util.wgsl import fitted, meshes, show, simplices, solids
 from examples.util.wgsl.scene import Scene
@@ -28,14 +26,6 @@ rider_radius = 2.2
 n_riders = 6
 
 
-def gpu_points(points: core.Euclidean) -> solids.Point:
-    """View the source along its remaining directions, with its x, y and z slices along the scene's axes."""
-    mv = points.context.multivector
-    readings = stack((mv.x, mv.y, mv.z)) & points[..., None]
-    return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
-
-
-
 def colours(shape: tuple[int, int]) -> np.ndarray:
     """A colour per orbit: the start's position around the xy plane as the hue, its height as the value."""
     hue = np.broadcast_to(np.linspace(0.0, 1.0, shape[1], endpoint=False), shape)
@@ -43,31 +33,35 @@ def colours(shape: tuple[int, int]) -> np.ndarray:
     return hsv_to_rgb(np.stack([hue, np.full(shape, 0.75), value], axis=-1))
 
 
-def view(pixels: int, drawn: list[core.Euclidean]) -> solids.View:
+def view(pixels: int, drawn: list[solids.Point]) -> solids.View:
     """One view for every panel, `pixels` across, framing everything drawn."""
-    return solids.view([gpu_points(points) for points in drawn], 0.0, elevation, azimuth, margin, pixels)
+    return solids.view(drawn, 0.0, elevation, azimuth, margin, pixels)
 
 
-def orbit_samples(orbits: core.Euclidean, width: float, view: solids.View) -> meshes.Samples:
+def orbit_samples(orbits: solids.Point, width: float, view: solids.View) -> meshes.Samples:
     """Each orbit `[heights, azimuths, steps + 1]` as a stroke of a width in pixels, in the colour of its start, at
     every sample."""
     n_orbits, n_points = int(np.prod(orbits.shape[:-1])), orbits.shape[-1]
     # Each orbit a chain of edges through its points, each edge in its orbit's colour.
     chains = simplices.Mesh.chains([n_points] * n_orbits)
     shades = np.repeat(colours(orbits.shape[:2]).reshape(-1, 3), n_points - 1, axis=0)   # [edges, 3]
-    return simplices.tubes(gpu_points(orbits.reshape(-1)), chains, shades, width, view, gloss=solids.gloss)
+    return simplices.tubes(orbits.reshape(-1), chains, shades, width, view, gloss=solids.gloss)
 
 
-def dots(positions: core.Euclidean, rgb: np.ndarray, view: solids.View) -> tuple[solids.Quadric, np.ndarray]:
+def dots(positions: solids.Point, rgb: np.ndarray, view: solids.View) -> tuple[solids.Quadric, np.ndarray]:
     """A dot at each position `[n]`, in its colour `[n, 3]`, as an opaque part."""
-    return solids.ball(gpu_points(positions), rider_radius * view.pixel)[:, None], rgb
+    return solids.ball(positions, rider_radius * view.pixel)[:, None], rgb
 
 
 def draw_flows(left: core.Euclidean, right: core.Euclidean, knotted: core.Euclidean) -> plt.Figure:
     """The orbits of the two isoclinic flows, each a family of circles filling nested tori and linked
     in opposite senses, beside the orbits of a rotation combining them at different rates: trefoil
     knots, one on each torus."""
-    drawn = [left, right, knotted]
+    # The orbits seen along w: the stereographic projection put them in the space of x, y and z, which their slice by
+    # w states, and the projective embedding places that space about the scene's origin.
+    w = left.context.multivector.w
+    drawn = [solids.origin + solids.context.include_from_algebra(w ^ (orbits & w.dual()))
+             for orbits in (left, right, knotted)]
     figure = plt.figure(figsize=(9, 3.1))
     axes = [figure.add_axes((index / len(drawn), 0.0, 1 / len(drawn), 1.0)) for index in range(len(drawn))]
     # The panels' rooms alike, one view fitted to the first holds them all.
@@ -82,7 +76,11 @@ def animate_flows(left: core.Euclidean, right: core.Euclidean, knotted: core.Euc
                   n_frames: int) -> Iterator[np.ndarray]:
     """The points of the three-sphere carried along every flow at once, their orbits drawn faintly;
     a few points ride along each knot. The three panels side by side, seen by one camera."""
-    drawn = [left, right, knotted]
+    # The orbits seen along w: the stereographic projection put them in the space of x, y and z, which their slice by
+    # w states, and the projective embedding places that space about the scene's origin.
+    w = left.context.multivector.w
+    drawn = [solids.origin + solids.context.include_from_algebra(w ^ (orbits & w.dual()))
+             for orbits in (left, right, knotted)]
     frame = view(frame_pixels, drawn)
     # Each panel's faint orbits, set up once.
     panels = [Scene(frame, background, [], [(orbit_samples(orbits, faint_width, frame), faint_opacity)], inks=[],

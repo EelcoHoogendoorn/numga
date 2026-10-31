@@ -9,7 +9,7 @@ from collections.abc import Iterator
 from matplotlib.colors import to_rgb
 import numpy as np
 
-from numga import concatenate, stack
+from numga import stack
 from examples.mechanics.foucault import core
 from examples.util.wgsl import solids
 
@@ -50,20 +50,19 @@ def globe(earth: core.Rotor, vertical: core.Point, swing: core.Point, north: cor
     # lifted off the globe by the latitude circle's width, so that the circle through the site passes under it.
     site = vertical * (1 + CIRCLE_WIDTH * view.pixel)                          # [] Point-
     signs = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]]) * FLOOR             # [corners, 2]
+    # The floor's corners about the site, on its top, and about its middle, half its thickness below.
+    spans = stack([east * across + north * along for across, along in signs]) # [corners] Point-
+    middle = site - vertical * (FLOOR_THICKNESS / 2)                           # [] Point-
     # The swing and the compass lie on the floor, their axes their own radius above it.
     resting = site + vertical * (SWING_RADIUS * view.pixel)                   # [] Point-
-    swing_ends, compass_ends, tile = (solids.origin + solids.context.include_from_algebra(earth >> points) for points in (
+    # The projective embedding: places of space turned with the earth, offsets from its centre, as the renderer's
+    # points about its origin.
+    swing_ends, compass_ends, tile, slab = (solids.origin + solids.context.include_from_algebra(earth >> points) for points in (
         stack([resting - swing * FLOOR, resting + swing * FLOOR]),
         stack([resting + north * FLOOR, resting + north * (COMPASS * FLOOR)]),
-        stack([site + east * across + north * along for across, along in signs])))   # [2] Point-, [2] Point-, [corners] Point-
-    # The floor's sides, turned with the earth: the directions from the earth's centre, its origin.
-    sides = solids.context.include_from_algebra(earth >> stack([vertical, north, east]))   # [3] Point-
-    middle = (solids.origin + solids.context.include_from_algebra(earth >> site)
-              - sides[0] * (FLOOR_THICKNESS / 2))                              # [] Point-
-    half_extents = np.array([FLOOR_THICKNESS / 2, FLOOR, FLOOR])
-    # The slab: inside the planes square to each of its sides, as far from its middle as it reaches.
-    across = concatenate([-sides.dual(), sides.dual()])                        # [6] Plane+
-    floor = (across - solids.mv.w * (across & middle) - solids.mv.w * np.concatenate([half_extents, half_extents]))[None]   # [1, 6] Plane+
+        site + spans, middle + spans))   # [2] Point-, [2] Point-, [corners] Point-, [corners] Point-
+    # The slab: a plate as thick as the floor about its middle.
+    floor = solids.plates(slab, FLOOR_THICKNESS)[None]                         # [1, corners + 2] Plane+
     # The swing through the middle of the floor, both ways, and north from its edge outwards.
     swing_rod = solids.rods(swing_ends[0], swing_ends[1], SWING_RADIUS * view.pixel)
     compass = solids.rods(compass_ends[0], compass_ends[1], COMPASS_RADIUS * view.pixel)

@@ -35,7 +35,7 @@ margin = 0.1
 # `lamp_shading` takes them, each finish carrying its own glint.
 toward_lamp = mv.direction([-0.3, -0.6, 0.85])                                 # [] Point-
 lamp = toward_lamp / toward_lamp.dual().norm()                                 # [] Point-
-lighting = dict(lamp=lamp, ambient=0.38, fill_tilt=0.0, headlight=0.0, gloss=0.0, shininess=32.0)
+lighting = dict(ambient=0.38, fill_tilt=0.0, headlight=0.0, gloss=0.0, shininess=32.0)
 # The surfaces' colours; the glint of the satin paint, the bare wood having none; and how much of what lies around
 # it the steel mirrors.
 paint = np.array([0.19, 0.52, 0.62])
@@ -87,6 +87,8 @@ var<storage, read> finishes: array<Finish>;
 // A camera looking along its own -z, its rays parallel, starting `back` behind the middle of the view; the image
 // half as high as this. Its frame, `axes`, is given from Python.
 var<uniform> camera: Motor;
+// The lamp's direction in the scene, along which the shadows fall and where it shows in the sky.
+var<uniform> lamp_in_scene: Point;
 var<uniform> back: f32;
 var<uniform> half_height: f32;
 
@@ -135,10 +137,10 @@ fn surroundings(start: Point, direction: Point) -> vec3<f32> {
     let joint = clamp(1 - off_joint / joint_width, 0.0, 1.0);
     let tone = 1 + tile_variation * (2 * hash(floor(spot)) - 1);
     let mottle = 1 + mottling * (noise(spot * mottle_scale) + noise(spot * mottle_scale * 2.3) / 2 - 0.75);
-    let shaded = select(1.0, 1 - shadow, first_hit(on_ground, lamp, clearance).distance < far);
+    let shaded = select(1.0, 1 - shadow, first_hit(on_ground, lamp_in_scene, clearance).distance < far);
     let floor = stone * tone * mottle * (1 - joint_darkness * joint) * shaded;
     let rise = max(mv.z & direction, 0.0);
-    let toward_lamp = -(direction.dual() & lamp);
+    let toward_lamp = -(direction.dual() & lamp_in_scene);
     let heaven = mix(horizon, zenith, sqrt(rise)) + lamp_brightness * smoothstep(lamp_size, 1.0, toward_lamp);
     // Every ray starts on or above the ground, so it meets the ground only heading down.
     return select(heaven, floor, (ground_plane & direction) < 0);
@@ -147,11 +149,10 @@ fn surroundings(start: Point, direction: Point) -> vec3<f32> {
 // A surface lit by the lamp, with its finish's glint, unless the body stands between them: then none of the lamp's
 // light and glint reaches it, only the light that falls everywhere.
 fn lit_or_shadowed(hit: SurfaceHit, start: Point, direction: Point) -> vec3<f32> {
-    let normal = facing(hit.tangent, direction);
-    let lamp_share = select(1.0, 0.0, first_hit(start + direction * hit.distance, lamp, clearance).distance < far);
+    let normal = turned(slopes(hit.tangent));
+    let lamp_share = select(1.0, 0.0, first_hit(start + direction * hit.distance, lamp_in_scene, clearance).distance < far);
     let finish = finishes[hit.quadric];
-    return finish.colour * mix(ambient, brightness(normal, direction), lamp_share)
-        + finish.gloss * lamp_share * glint(normal, direction);
+    return finish.colour * mix(ambient, brightness(normal), lamp_share) + finish.gloss * lamp_share * glint(normal);
 }
 
 // What a ray sees, without looking into mirrors.
@@ -191,8 +192,8 @@ fn sample(place: vec2<f32>) -> Sample {
 # --- plumbing -------------------------------------------------------------------------
 @cache
 def shader() -> Shader:
-    return Shader(supersampled() + quadric_regions() + lamp_shading() + source, PGA3D,
-                  dict(Point=core.Point, Plane=core.Cut, Cut=core.Cut, Motor=core.Motor, Quadric=core.Quadric),
+    return Shader(supersampled() + quadric_regions() + lamp_shading() + solids.tangent_seen() + source, PGA3D,
+                  dict(Point=core.Point, Plane=core.Cut, Cut=core.Cut, Tangent=core.Cut, Motor=core.Motor, Quadric=core.Quadric),
                   dict(axes=solids.axes, stone=stone, tile_variation=tile_variation, mottling=mottling,
                        mottle_scale=mottle_scale, stone_reflectance=stone_reflectance, horizon=horizon, zenith=zenith,
                        lamp_size=lamp_size, lamp_brightness=lamp_brightness, shadow=shadow, tile_size=tile_size,
@@ -230,7 +231,8 @@ def framing(motors: core.Motor, samples: core.Point, elevation: float, azimuth: 
 def picture(built: core.Body, motor: core.Motor, seen: solids.View) -> np.ndarray:
     """The body and its shadow, `[rows, columns, 3]` bytes."""
     traced = shader()(seen.shape, **scene(built, motor), camera=seen.camera, back=4 * seen.half.max(),
-                      half_height=seen.half[1], **lighting)["image"]
+                      half_height=seen.half[1], lamp=solids.seen_lamp(seen, lamp), lamp_in_scene=lamp, **lighting,
+                      **solids.steps(seen))["image"]
     return np.round(np.clip(traced, 0, 1) * 255).astype(np.uint8)
 
 

@@ -102,6 +102,7 @@ def sheet_sides(sheets: core.Vector, view: solids.View) -> list[tuple[meshes.Sam
     # Each sheet's near side and far side a mesh of its own, so that the far side shows through the near.
     sides = []
     for index, colour in zip(range(n_sheets), map(to_rgb, sheet_colours)):
+        # The sheet's tips embedded in the drawing's projective space about its origin.
         places = (solids.origin + solids.context.include_from_algebra(space_tip(sheets[:, :, index].reshape(-1))))                     # [vertices] Point-
         normals = meshes.smooth(places, meshes.Mesh(len(places), faces))
         sides += [(meshes.samples(places, faces, grid, normals, view, face_values=np.zeros(4),

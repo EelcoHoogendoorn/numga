@@ -1,5 +1,6 @@
-"""Drawing for the Cayley-Klein example, on the GPU by `planar`: the level sets of polarities, the curves where they
-vanish; planes and lines, whole across the view; and points, as marks. The angles' labels over it in matplotlib."""
+"""Drawing for the Cayley-Klein example, on the GPU under two cameras of the plane: the level sets of polarities, the
+curves where they vanish, and planes, whole across the view, read by planes; lines, whole across the view, read by
+lines, joins of points; and points, as marks. The angles' labels over it in matplotlib."""
 
 from __future__ import annotations
 
@@ -8,15 +9,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.util import charts
-from examples.util.wgsl import pinned
-from examples.util.wgsl import planar
-from examples.util.wgsl.planar import Curves, Flats, Marker, Marks, window
+from examples.util.wgsl import quadrics, simplices
+from examples.util.wgsl.camera import Camera, flat_panel, panel
+from examples.util.wgsl.simplices import Marker
 from numga import stack
-from examples.quadrics.cayley_klein.core import Line, Plane, Point, Polarity, Scalar, mv
+from examples.quadrics.cayley_klein.core import Line, Plane, Point, Polarity, Scalar, ga, mv
 
 BOX = (-1.2, 1.9, -1.2, 1.6)
-# The rows of pixels down the view.
-ROWS = 340
 # The pixels of a point the marks' areas and the strokes' widths below are given in, a point at 120 dots per inch;
 # the width of the marks' outlines.
 POINT = 120 / 72
@@ -32,19 +31,26 @@ def rgb(colour: str) -> np.ndarray:
     return np.array(mcolors.to_rgb(colour))
 
 
-def marks(points: Point, colour: str, area: float, marker: Marker) -> Marks:
+def cameras(ax: plt.Axes) -> tuple[Camera, Camera]:
+    """The panel on the view and its two cameras: planes reading points, and lines, joins of points, reading meets of
+    planes, each pairing with what it reads."""
+    ax.set(xlim=BOX[:2], ylim=BOX[2:])
+    origin = mv.w.dual()                                                       # [] Point-
+    # The lines through the origin along y and along x, which read a meet's place across and up, and the line at
+    # infinity, which reads its weight.
+    lines = panel(ax, mv.y.dual() & origin, origin & mv.x.dual())._replace(weight=mv.x.dual() & mv.y.dual())
+    return flat_panel(ax, ga), lines
+
+
+def marks(points: Point, colour: str, area: float, marker: Marker, camera: Camera) -> np.ndarray:
     """Points as marks of the area, in square points, with an outline in their colour."""
-    return Marks(points.reshape(-1), marker, 0.0, (np.sqrt(area) / 2 + OUTLINE / 2) * POINT, rgb(colour), 1.0)
+    return simplices.markers(points.reshape(-1), rgb(colour), (np.sqrt(area) / 2 + OUTLINE / 2) * POINT, camera,
+                             marker=marker)
 
 
-def level_sets(quadrics: Polarity, colour: str, width: float) -> Curves:
-    """Each locus P & quadric(P) == 0, `width` points across."""
-    return Curves(quadrics.reshape(-1), width * POINT, rgb(colour), 1.0)
-
-
-def flats(flats: Plane, colour: str, width: float) -> Flats:
-    """Planes and lines whole across the view, `width` points across."""
-    return Flats(flats.reshape(-1), width * POINT, rgb(colour), 1.0)
+def level_sets(polarities: Polarity, colour: str, width: float, camera: Camera) -> np.ndarray:
+    """Each locus P & polarity(P) == 0, `width` points across."""
+    return quadrics.curves(polarities.reshape(-1), width * POINT, rgb(colour), camera)
 
 
 @charts.style()
@@ -55,25 +61,26 @@ def draw_hyperbolic_space(
     """Left, inside the absolute, black: the triangle, blue, with its angles, the perpendicular, red, from
     the point, red, to its foot, dark red square, the point's reflection, orange, and the side's pole,
     purple diamond. Right, the spheres about the two centres, blue and orange."""
-    view = window(BOX[:2], BOX[2:], ROWS)
     # Two panels, each the room of its picture, and the angles' labels over the first.
     fig, (left, right) = charts.subplots(780, 360, ncols=2)
     for ax in (left, right):
         ax.set_axis_off()
     fig.tight_layout()
-    hyperbolic = [level_sets(absolute[None], "black", 1.2),
-                  flats(sides, "#2563eb", 1.2),
-                  flats(normal[None], "#dc2626", 1.0),
-                  marks(vertices, "#1d4ed8", 14, Marker.DISC),
-                  marks(probe[None], "#dc2626", 18, Marker.DISC),
-                  marks(foot[None], "#b91c1c", 14, Marker.SQUARE),
-                  marks(reflected[None], "#f97316", 16, Marker.DISC),
-                  marks(pole[None], "#a855f7", 16, Marker.DIAMOND)]
-    pinned(left, planar.draw(view, hyperbolic, np.ones(3)), view.extent)
+    planes, lines = cameras(left)
+    simplices.overlay(left, [level_sets(absolute[None], "black", 1.2, planes),
+                             quadrics.flats(sides, 1.2 * POINT, rgb("#2563eb"), planes),
+                             quadrics.flats(normal[None], 1.0 * POINT, rgb("#dc2626"), lines),
+                             marks(vertices, "#1d4ed8", 14, Marker.DISC, planes),
+                             marks(probe[None], "#dc2626", 18, Marker.DISC, planes),
+                             marks(foot[None], "#b91c1c", 14, Marker.SQUARE, planes),
+                             marks(reflected[None], "#f97316", 16, Marker.DISC, planes),
+                             marks(pole[None], "#a855f7", 16, Marker.DIAMOND, planes)])
     for xy, theta in zip(euclidean(vertices), angles.to_array()):
         left.annotate(f"{np.degrees(theta):.1f}°", xy, textcoords="offset points", xytext=(3, 3))
 
-    rings = [level_sets(absolute[None], "black", 1.2)] + [level_sets(family, colour, 0.8)
-                                                    for family, colour in zip(spheres, ("#3b82f6", "#f97316"))]
-    pinned(right, planar.draw(view, rings + [marks(centres, "#111827", 13, Marker.DISC)], np.ones(3)), view.extent)
+    planes, _ = cameras(right)
+    simplices.overlay(right, [level_sets(absolute[None], "black", 1.2, planes)]
+                      + [level_sets(family, colour, 0.8, planes)
+                         for family, colour in zip(spheres, ("#3b82f6", "#f97316"))]
+                      + [marks(centres, "#111827", 13, Marker.DISC, planes)])
     return fig

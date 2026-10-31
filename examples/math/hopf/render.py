@@ -96,10 +96,10 @@ def sphere_surface(n_parts: int,
     """The sphere of spins, a translucent ball after `n_parts` opaque parts, with its parallels and meridians inked
     on it where their planes cut it, a width in pixels: its inks and its translucent part."""
     ball = [(solids.ball(solids.origin, 1.0)[None, None], sphere_colour, sphere_opacity)]
-    # The parallels: the planes through the pole turned down by each polar angle, along the directions x and y; the
+    # The parallels: the planes across the vertical through the points the pole turns to at each polar angle; the
     # meridians: the plane x turned about z by each azimuth.
     rims = (sm.zx * (-parallel_polars / 2)).exp() >> (solids.origin + sm.z.dual())   # [parallels] Point-
-    parallels = (rims & sm.x.dual() & sm.y.dual()) * solids.flip               # [parallels] Plane+
+    parallels = sm.z - sm.w * (sm.z & rims)                                    # [parallels] Plane+
     meridians = (sm.xy * (-meridian_azimuths / 2)).exp() >> sm.x             # [meridians] Plane+
     planes = concatenate([parallels, meridians])                             # [circles] Plane+
     # The ball is the first translucent part, after the opaque ones.

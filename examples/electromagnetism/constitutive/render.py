@@ -105,6 +105,7 @@ def wave_scene(ax: plt.Axes, modes: Modes) -> Scene:
     """The axis, seen by a camera that frames every time of a period alike, as many pixels across as the axes' room
     holds, for the fields at any time to be drawn along it."""
     distance = np.linspace(0, z_max, n_samples)
+    # The axis's events, sliced by the observer, embedded in the drawing's projective space about its origin.
     axis = solids.origin + (to_scene >> solids.context.include_from_algebra(space_slice(travel * distance)))
     taus = np.linspace(0, 2 * np.pi / omega, n_framing, endpoint=False)
     framed = waves(modes, taus, distance)                                       # [framing, samples] Bivector+
@@ -121,18 +122,18 @@ def magnetic_discs(stations: solids.Point, fields: core.Bivector,
     plane, its area growing with the field's strength, `[stations, 1]`; and the sense it turns in, as an arc around
     the rim `[stations, arc]` ending in an arrow along the rim, its shaft of a radius and its head nearly all of it
     `[stations]` each."""
-    # The plane of the drawing the field lies in, through the origin, its size the field's strength.
-    magnetic = to_scene >> solids.context.include_from_algebra(magnetic_field(fields))        # [stations] Bivector+
-    planes = (solids.origin & magnetic.dual()) * solids.flip                  # [stations] Plane+
-    radii = disc_scale * planes.norm().square_root()                            # [stations] Scalar+
+    # The field embedded in the drawing is the line through the origin it turns about, its size the field's strength.
+    magnetic = to_scene >> solids.context.include_from_algebra(magnetic_field(fields))        # [stations] Line+
+    radii = disc_scale * magnetic.norm().square_root()                          # [stations] Scalar+
     centres = solids.translator(stations - solids.origin)                       # [stations] Motor+
+    # The line about which each rim turns in the field's sense, and the field's own plane through the origin,
+    # square to it.
+    pivots = magnetic.normalized()                                              # [stations] Line+
+    planes = pivots | solids.origin                                             # [stations] Plane-
     # A ball flattened across each plane, scaled by its radius squared, so that a field of no strength is a point.
-    unit_planes = planes.normalized()                                           # [stations] Plane+
-    flattening = (1 / disc_flatness**2 - 1) * unit_planes * (unit_planes & solids.Point)   # [stations] Plane+ <- Point-
+    flattening = (1 / disc_flatness**2 - 1) * planes * (planes & solids.Point)  # [stations] Plane+ <- Point-
     rounded = (solids.axes * (solids.axes & solids.Point)).sum(axis=-1)          # [] Plane+ <- Point-
     lenses = rounded + flattening - radii**2 * sm.w * (sm.w & solids.Point)     # [stations] Plane+ <- Point-
-    # The line through the origin square to each plane, about which its rim turns in the field's sense.
-    pivots = (solids.origin & solids.normal_direction(unit_planes)) * solids.flip   # [stations] Line+
     angles = arc_start + np.append(np.linspace(0, arc_span, n_arc), arc_span + arc_head)   # [arc + 1]
     turns = (pivots[:, None] * (-angles / 2)).exp()                             # [stations, arc + 1] Motor+
     # Each arc from where the plane holds the direction of travel, as every magnetic plane of the wave does.

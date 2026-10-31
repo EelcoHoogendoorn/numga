@@ -18,7 +18,7 @@ from itertools import chain
 
 import numpy as np
 
-from numga import Extensor, concatenate, stack
+from numga import Extensor, stack
 from examples.thermodynamics import rendering as art
 from examples.util.wgsl import solids
 
@@ -48,7 +48,7 @@ heat_range = (0.0, 2.6)
 def feet(points: art.Point) -> art.Point:
     """The feet of chart points `[...]` on the plane where the quantity up vanishes: the line through each along the
     quantity up, met with it."""
-    return art.planar.unit((points & art.mv.y.dual()) ^ art.mv.y)
+    return (points & art.mv.y.dual()) ^ art.mv.y
 
 
 class Charts:
@@ -87,8 +87,7 @@ class Charts:
             traced = stack(steps)                                            # [steps, cylinders] Point-
             now = traced[-1]                                                 # [cylinders] Point-
             # The area under each path down to zero: the heat on the temperature–entropy chart, the work on the other.
-            under = concatenate([traced, feet(now)[None], feet(traced[0])[None]])   # [steps + 2, cylinders] Point-
-            shaded = [art.areas(diagram, under[:, case], case_colours[case], 0.16)
+            shaded = [art.between(diagram, traced[:, case], feet(traced[:, case]), case_colours[case], 0.16)
                       for case in range(2) if len(path) > 1]
             paths = [stroke for case in range(2) for stroke in
                      art.polylines(diagram, [traced[:, case]], art.bold, case_colours[case], 1.0, art.SOLID)]

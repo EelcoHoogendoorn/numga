@@ -17,6 +17,7 @@ from typing import NamedTuple
 import numpy as np
 from matplotlib.axes import Axes
 
+from numga import NumpyContext
 from numga.extensor import Extensor
 from numga.gatype import GAType, Orientation
 from examples.util.wgsl.library import fitted
@@ -76,6 +77,26 @@ def reading(points: Extensor, camera: Camera) -> dict:
     """The types a shader reads points by, each as it is: `Point`, the points' own, a point, a direction, a spin's
     patch or a vector alike; `Plane`, the camera's planes', whose regressive product with a point is a number."""
     return dict(Point=whole(points, points.algebra), Plane=whole(camera.across, points.algebra))
+
+
+def preimage(camera: Camera, Point: GAType) -> tuple[Extensor, Extensor, Extensor, Extensor]:
+    """The picture read back into the scene: the point of the type `Point` the camera reads at the origin of its
+    readings, at unit weight, and the steps it reads as one across, one up and one toward the viewer, at none, so that
+    the point read at readings `x`, `y`, `z` is `origin + x * across + y * up + z * toward`. Solved once from the
+    camera's readings of the type's basis, in the least squares where the readings leave a point free, as a picture
+    of a plane in space does."""
+    context = NumpyContext(Point.algebra)
+    n_coefficients = len(Point.output_subspace.masks)
+    basis = context.extensor(Point, np.eye(n_coefficients))                     # [coefficients] Point
+    readers = (camera.across, camera.up, camera.toward, camera.weight)
+    readings = np.stack([read(reader, basis).to_array() for reader in readers])
+    # The readings, across, up, toward and weight, of the origin and of a step along each.
+    wanted = np.zeros((4, 4))
+    wanted[[0, 1, 2], [1, 2, 3]] = 1.0
+    wanted[3, 0] = 1.0 - camera.unit
+    coefficients = np.linalg.lstsq(readings, wanted, rcond=None)[0]             # [coefficients, 4]
+    origin, across, up, toward = (context.extensor(Point, coefficients[:, index]) for index in range(4))
+    return origin, across, up, toward
 
 
 def plane(algebra, name: str) -> Extensor:

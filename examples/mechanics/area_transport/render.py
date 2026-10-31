@@ -54,6 +54,7 @@ def arrow_offsets(patches: core.Patch) -> core.Point:
 
 def view(vertices: core.Point, centres: core.Point, patches: core.Patch) -> solids.View:
     """A view framing every cube and arrow given."""
+    # The projective embedding: places of space, offsets from its origin, as the renderer's points about its own.
     corners = solids.origin + solids.context.include_from_algebra(vertices)            # [vertices] Point-
     tips = solids.origin + solids.context.include_from_algebra(centres + arrow_offsets(patches))   # [faces] Point-
     return solids.view([corners, tips], 0.0, elevation, azimuth, margin, 1)
@@ -61,6 +62,7 @@ def view(vertices: core.Point, centres: core.Point, patches: core.Patch) -> soli
 
 def picture(vertices: core.Point, centres: core.Point, patches: core.Patch, view: solids.View) -> np.ndarray:
     """The cube as the view sees it: its faces translucent, its edges and arrows opaque."""
+    # The projective embedding: places of space, offsets from its origin, as the renderer's points about its own.
     places = solids.origin + solids.context.include_from_algebra(vertices)               # [vertices] Point-
     offsets = arrow_offsets(patches)                                           # [faces] Point-
     # A crushed face has no area: nothing to draw, and no arrow.

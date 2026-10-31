@@ -50,15 +50,16 @@ def components(rho: core.State) -> np.ndarray:
 
 
 def gpu_points(states: core.State) -> solids.Point:
-    """A spin's place in the Bloch ball, for either source representation. In spacetime the spin is the patch of the
-    plane it turns in, intrinsic, read by those planes; in the conventional twin's algebra of space the Bloch vector is
-    an ordinary vector, extrinsic, read by the metric along the axes."""
+    """A spin's place in the Bloch ball, for either source representation. In the conventional twin's algebra of space
+    the Bloch vector is an ordinary vector, extrinsic, which the metric turns into the direction it points along,
+    embedded about the drawing's origin. In spacetime the spin is the patch of the plane it turns in, intrinsic: its
+    place is a handed direction, which no embedding gives as a point, so it is read by those planes and set out along
+    the drawing's axes."""
     mv = states.context.multivector
-    spin = states.select.antibivector()
-    if spin.gatype.orientation is Orientation.intrinsic:
-        readings = 2 * (stack((mv.yz, mv.zx, mv.xy)) & spin[..., None])
-    else:
-        readings = 2 * (stack((mv.x, mv.y, mv.z)) | spin[..., None])
+    spin = 2 * states.select.antibivector()
+    if spin.gatype.orientation is Orientation.extrinsic:
+        return solids.origin + solids.context.include_from_algebra(spin.dual())
+    readings = stack((mv.yz, mv.zx, mv.xy)) & spin[..., None]
     return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
 
 

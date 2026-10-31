@@ -137,6 +137,7 @@ def slip_arrows(normal: core.Point, slip: core.Point) -> tuple[core.Point, core.
 
 def view(surfaces: core.Point, ends: core.Point) -> solids.View:
     """A view framing lobes and arrows' ends, in the drawing's frame."""
+    # The projective embedding: places of space, offsets from the source, as the renderer's points about its origin.
     framed = [solids.origin + solids.context.include_from_algebra(tips) for tips in (surfaces, ends)]
     return solids.view(framed, 0.0, elevation, azimuth, margin, 1)
 
@@ -155,6 +156,7 @@ def draw_fault(directions: core.Point, push: core.Scalar, normal: core.Point, sl
     colours = np.where(middle[..., None] > 0, to_rgb(PUSH_LOBE), to_rgb(PULL_LOBE))   # [rings - 1, spokes - 1, 3]
     triangles = cells[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)             # [cells * 2, 3]
     colours = np.repeat(colours.reshape(-1, 1, 3), 2, axis=0)                 # [cells * 2, 1, 3]
+    # The projective embedding: places of space, offsets from the source, as the renderer's points about its origin.
     places = solids.origin + solids.context.include_from_algebra(surface)               # [rings * spokes] Point-
     # At the grid's poles a ring of directions gathers into one point, and along the nodal planes the lobes shrink
     # into the source: the halves of the cells there have no area, the join of their corners no weight, and are

@@ -49,9 +49,9 @@ def animate_strips(rest: core.Direction, frames: core.Direction, across_fibres: 
     behind the ends that stay in place: flat-shaded meshes with the top ply's fibres over them, the level lines
     of `across_fibres`, `[cases, length samples, width samples]`, `spacing` apart, carried on each deformed
     surface. `rest` sets the common framing."""
-    # The strip's places, offsets from its origin, are the renderer's offsets from its own.
-    framed = [solids.origin + solids.context.include_from_algebra(places.reshape(-1)) for places in (rest, frames)]
-    view = solids.view(framed, 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
+    # The strip's places, offsets from its origin, are the renderer's offsets from its own: the projective embedding.
+    resting, placed = (solids.origin + solids.context.include_from_algebra(places) for places in (rest, frames))
+    view = solids.view([resting.reshape(-1), placed.reshape(-1)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
     faces = grid_faces(frames.shape[1:])                               # [faces, 3]
     # Each fibre line as fractional sample positions on its own strip's grid, all lines one after another.
     lines = [(case, line) for case, field in enumerate(across_fibres.to_array()) for line in level_lines(field, spacing)]
@@ -64,15 +64,14 @@ def animate_strips(rest: core.Direction, frames: core.Direction, across_fibres: 
     # The fibre lines as chains of edges through their vertices.
     fibre_chains = simplices.Mesh.chains([len(line) for _, line in lines])
 
-    for grids in frames:
-        points = solids.origin + solids.context.include_from_algebra(grids.reshape(-1))  # [vertices] Point-
+    for grids in placed:
+        points = grids.reshape(-1)                                     # [vertices] Point-
         strips = meshes.samples(points, faces, FACE, meshes.flat(points, faces), view, face_values=np.zeros(4),
                                 colour=meshes.plain, gloss=solids.gloss)
         # The deformed surface at each fibre vertex: the four corners of its cell blended by its shares, linear
         # along each side of the cell, as the surface's samples are.
         threads = ((grids[cases, rows, columns] * (1 - across) + grids[cases, rows, columns + 1] * across) * (1 - along)
                    + (grids[cases, rows + 1, columns] * (1 - across) + grids[cases, rows + 1, columns + 1] * across)
-                   * along)                                            # [fibre vertices] Direction-
-        drawn = solids.origin + solids.context.include_from_algebra(threads)            # [fibre vertices] Point-
-        fibres = simplices.tubes(drawn, fibre_chains, FIBRE, FIBRE_WIDTH, view, gloss=solids.gloss)
+                   * along)                                            # [fibre vertices] Point-
+        fibres = simplices.tubes(threads, fibre_chains, FIBRE, FIBRE_WIDTH, view, gloss=solids.gloss)
         yield solids.draw([], view, background, inks=[], translucent=[], meshes=[(strips, 1.0), (fibres, 1.0)])

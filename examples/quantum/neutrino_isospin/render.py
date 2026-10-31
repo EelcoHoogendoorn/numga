@@ -95,6 +95,7 @@ def inked(circles: list, n_opaque: int) -> list[solids.Ink]:
 def path_marks(path: core.Isospin, view: solids.View) -> tuple[Samples, tuple[solids.Quadric, np.ndarray]]:
     """A path of isospins over the sphere `[steps]` as a stroke, and its ends as balls, its start green and its end
     orange."""
+    # The directions the isospins point along, embedded in the drawing's projective space about its origin.
     places = solids.origin + solids.context.include_from_algebra(direction_of_isospin(path))     # [steps] Point-
     stroke = simplices.tubes(places, simplices.Mesh.chains([len(places)]), path_colour, PATH_WIDTH / view.pixel, view,
                              gloss=solids.gloss)

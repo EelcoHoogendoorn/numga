@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import NamedTuple
 
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
@@ -12,9 +11,9 @@ import numpy as np
 from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import pinned, planar, room, simplices
-from examples.util.wgsl.camera import Camera
-from examples.util.wgsl.planar import Curves, Regions, Strokes, filling
+from examples.util.wgsl import quadrics, simplices
+from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.simplices import Cap, Mesh
 from examples.estimation.pose_diffusion.core import Covariance, Motor, Plane, Point, Spread, Twist, ga, mv, origin
 
 ELLIPSOID_RGB = np.array(mcolors.to_rgb("#c0392b"))
@@ -31,19 +30,6 @@ CROSS_RGB = np.full(3, 0.85)
 
 
 # --- plumbing -------------------------------------------------------------------------
-class Arrows(NamedTuple):
-    """Arrows from tails to tips `[arrows]`, a layer of the planar picture drawn by the simplex rasteriser."""
-    tails: Point
-    tips: Point
-
-    def picture(self, camera: Camera) -> np.ndarray:
-        """The arrows' colour and coverage."""
-        n_arrows = self.tails.shape[0]
-        return simplices.strokes(stack((self.tails, self.tips), axis=-1).reshape(-1),
-                                 simplices.Mesh.chains([2] * n_arrows), ARROW_RGB, ARROW_WIDTH, camera,
-                                 np.ones(n_arrows), ARROW_HEAD)
-
-
 def position_ellipsoid(covariance: Covariance, sigmas: float) -> Quadric:
     """The confidence quadric `sigmas` standard deviations out around the set point."""
     shift = Twist.commutator(origin)                                            # [] Point- <- Twist+
@@ -52,9 +38,9 @@ def position_ellipsoid(covariance: Covariance, sigmas: float) -> Quadric:
     return moment.inverse() - (1 + sigmas**2) * mv.w * (mv.w & Point)           # [...] Plane+ <- Point-
 
 
-def layers(poses: Motor, predicted: Covariance, limit: Covariance, extent: float) -> list:
-    """The planar layers: a faint cross through the set point, the shaded steady-state ellipsoid, a sample of the
-    bodies drawn as short arrows along their headings, and the steady-state and predicted ellipsoids' curves."""
+def pictures(poses: Motor, predicted: Covariance, limit: Covariance, extent: float, camera: Camera) -> list[np.ndarray]:
+    """A faint cross through the set point, the shaded steady-state ellipsoid, a sample of the bodies drawn as short
+    arrows along their headings, and the steady-state and predicted ellipsoids' curves."""
     steady_quadric = position_ellipsoid(limit, SIGMAS)[None]                    # [1] Plane+ <- Point-
     predicted_quadric = position_ellipsoid(predicted, SIGMAS)[None]             # [1] Plane+ <- Point-
     cross = origin + mv.direction([[[-extent, 0.0], [extent, 0.0]], [[0.0, -extent], [0.0, extent]]])   # [2, 2] Point-
@@ -63,28 +49,30 @@ def layers(poses: Motor, predicted: Covariance, limit: Covariance, extent: float
     shown = poses[:N_SHOWN]                                                     # [shown] Motor+
     positions = (shown >> origin).normalized()                                  # [shown] Point-
     headings = (shown >> bow).normalized() - positions                          # [shown] Point-
+    arrows = stack((positions - headings / 2, positions + headings / 2), axis=-1)   # [shown, ends] Point-
     return [
-        Strokes(cross, charts.FRAME_PX, CROSS_RGB, 1.0, planar.SOLID, simplices.Cap.BUTT),
-        Regions(steady_quadric, ELLIPSOID_RGB, 0.14),
-        Arrows(positions - headings / 2, positions + headings / 2),
-        Curves(steady_quadric, 1.0 * POINT, ELLIPSOID_RGB, 0.45),
-        Curves(predicted_quadric, 1.4 * POINT, ELLIPSOID_RGB, 1.0),
+        simplices.strokes(cross.reshape(-1), Mesh.chains([2, 2]), CROSS_RGB, charts.FRAME_PX, camera, cap=Cap.BUTT),
+        quadrics.regions(steady_quadric[:, None], ELLIPSOID_RGB, camera, 0.14),
+        simplices.strokes(arrows.reshape(-1), Mesh.chains([2] * len(shown)), ARROW_RGB, ARROW_WIDTH, camera,
+                          np.ones(len(shown)), ARROW_HEAD),
+        quadrics.curves(steady_quadric, 1.0 * POINT, ELLIPSOID_RGB, camera, 0.45),
+        quadrics.curves(predicted_quadric, 1.4 * POINT, ELLIPSOID_RGB, camera),
     ]
 
 
 def draw_cloud(ax, poses: Motor, predicted: Covariance, limit: Covariance, extent: float) -> tuple:
     """Draw a sample of the bodies as short arrows along their headings over the predicted and settled position
     quadrics, with a faint cross through the set point, its directions named at their ends; the image and its
-    window, for an animation to draw anew."""
+    camera, for an animation to draw anew."""
     ax.set_xlim(-extent, extent)
     ax.set_ylim(-extent, extent)
     ax.set_aspect("equal")
     ax.set_axis_off()
-    view = filling(np.array([-extent, extent]), np.array([-extent, extent]), room(ax))
-    image = pinned(ax, planar.draw(view, layers(poses, predicted, limit, extent), np.ones(3)), view.extent)
+    camera = flat_panel(ax, ga)
+    image = simplices.overlay(ax, pictures(poses, predicted, limit, extent, camera))
     ax.text(extent, 0, "forward", ha="right", va="top", color="0.4")
     ax.text(0, extent, "sideways ", ha="right", va="bottom", color="0.4", rotation=90, rotation_mode="anchor")
-    return image, view
+    return image, camera
 
 
 @charts.style()
@@ -112,8 +100,8 @@ def animate_clouds(runs: dict, extent: float) -> Iterator[np.ndarray]:
     # Lay the figure out once on its first frame; only the pictures change between frames.
     figure.set_layout_engine("none")
     for states in steps:
-        for (image, view), (poses, predicted, limit) in zip(artists, states):
-            image.set_data(planar.draw(view, layers(poses, predicted, limit, extent), np.ones(3)))
+        for (image, camera), (poses, predicted, limit) in zip(artists, states):
+            image.set_data(simplices.composited(pictures(poses, predicted, limit, extent, camera)))
         yield capture(figure)
     plt.close(figure)
 

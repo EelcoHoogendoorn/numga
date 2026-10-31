@@ -18,7 +18,8 @@ import numpy as np
 from numga import concatenate
 from examples.mechanics.xpbd.core import Motor
 from examples.util.wgsl import Shader, solids, supersampled
-from examples.util.wgsl.solids import Plane, Point, Quadric, axes, ga, lamp_shading, mv, origin, quadric_crossings
+from examples.util.wgsl.solids import (Plane, Point, Quadric, axes, ga, lamp_shading, mv, origin, quadric_crossings,
+                                       seen_lamp, steps, tangent_seen)
 
 # Two alternating link colours, the pin's colour, the floor's two tiles and the background.
 link_colours = np.array([[0.86, 0.42, 0.20], [0.20, 0.52, 0.66]])
@@ -39,7 +40,7 @@ pixels = 360
 # lamp as `lamp_shading` takes them; and how much of the lamp's light falls in a shadow.
 toward_lamp = mv.direction([0.35, -0.45, 0.82])                                # [] Point-
 lamp = toward_lamp / toward_lamp.dual().norm()                                 # [] Point-
-lighting = dict(lamp=lamp, ambient=0.3, fill_tilt=0.0, headlight=0.0, gloss=0.3, shininess=40.0)
+lighting = dict(ambient=0.3, fill_tilt=0.0, headlight=0.0, gloss=0.3, shininess=40.0)
 shadow = 0.25
 
 source = """
@@ -58,6 +59,8 @@ var<uniform> tile: f32;
 // A camera looking along its own -z, its rays parallel, starting `back` behind the scene's middle; the image
 // half as high as this. Its frame, `axes`, is given from Python.
 var<uniform> camera: Motor;
+// The lamp's direction in the scene, along which the shadows fall.
+var<uniform> lamp_in_scene: Point;
 var<uniform> back: f32;
 var<uniform> half_height: f32;
 
@@ -92,9 +95,9 @@ fn nearest(start: Point, direction: Point) -> Hit {
 // A colour on a surface with this tangent plane, lit, with its glint; where the bodies stand between it and the lamp,
 // only `shadow` of the lamp's light and glint reaches it, and all the light that falls everywhere.
 fn lit_or_shadowed(colour: vec3<f32>, tangent: Plane, point: Point, direction: Point) -> vec3<f32> {
-    let normal = facing(tangent, direction);
-    let lamp_share = select(1.0, shadow, nearest(point + lamp * clearance, lamp).distance < far);
-    return colour * mix(ambient, brightness(normal, direction), lamp_share) + gloss * lamp_share * glint(normal, direction);
+    let normal = turned(slopes(tangent));
+    let lamp_share = select(1.0, shadow, nearest(point + lamp_in_scene * clearance, lamp_in_scene).distance < far);
+    return colour * mix(ambient, brightness(normal), lamp_share) + gloss * lamp_share * glint(normal);
 }
 
 fn sample(place: vec2<f32>) -> Sample {
@@ -131,8 +134,8 @@ fn sample(place: vec2<f32>) -> Sample {
 # --- plumbing -------------------------------------------------------------------------
 @cache
 def shader() -> Shader:
-    return Shader(supersampled() + quadric_crossings() + lamp_shading() + source, ga,
-                  dict(Point=Point, Plane=Plane, Motor=Motor, Quadric=Quadric),
+    return Shader(supersampled() + quadric_crossings() + lamp_shading() + tangent_seen() + source, ga,
+                  dict(Point=Point, Plane=Plane, Tangent=Plane, Motor=Motor, Quadric=Quadric),
                   dict(axes=axes, shadow=shadow, floor_light=floor_light, floor_dark=floor_dark, background=background))
 
 
@@ -169,4 +172,5 @@ def animate_chain(motors: Iterable[Motor], semi_axes: np.ndarray, spacing: float
                                         floor_low=(low[:2] - floor_reach * spacing).to_array(),
                                         floor_high=(high[:2] + floor_reach * spacing).to_array(), tile=tile * spacing,
                                         camera=view.camera, back=4 * view.half.max(), half_height=view.half[1],
-                                        **lighting)["image"], 0, 1) * 255).astype(np.uint8)
+                                        lamp=seen_lamp(view, lamp), lamp_in_scene=lamp, **lighting, **steps(view))["image"],
+                               0, 1) * 255).astype(np.uint8)

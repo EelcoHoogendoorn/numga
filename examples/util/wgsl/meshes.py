@@ -17,8 +17,9 @@ from examples import instantiate
 from examples.util.wgsl import Shader
 from examples.util.wgsl import solids
 from examples.util.wgsl.library import samples_per_side
-from examples.util.wgsl.solids import (Line, Motor, Plane, Point, View, axes, flip, ga, lamp_shading, lighting,
-                                       mv, origin)
+from examples.util.wgsl.camera import placing
+from examples.util.wgsl.solids import (Line, Plane, Point, View, flip, ga, lamp_shading, lighting, mv, origin, steps,
+                                       tangent_seen)
 
 Mesh = instantiate("examples.util.mesh", solids.ga).Mesh
 
@@ -43,28 +44,22 @@ var<storage, read> faces: array<vec3<u32>>;
 // Values at each corner of each face, three to a face, and each face's own.
 var<storage, read> values: array<vec4<f32>>;
 var<storage, read> face_values: array<vec4<f32>>;
-// Each face's shading normal at its three corners: planes through the origin, square to it.
+// Each face's tangent plane at its three corners, read by the picture for the face's slopes.
 struct Corners {
-    a: Plane,
-    b: Plane,
-    c: Plane,
+    a: Tangent,
+    b: Tangent,
+    c: Tangent,
 }
 var<storage, read> normals: array<Corners>;
 // `oversampling`, a constant given from Python: how many drawn pixels make one of the image's, across and up; a
 // colour function inking a line some pixels wide by `fwidth` scales it by this.
-
-// The camera of `solids`: looking along its own -z, its rays parallel, the image half as wide and high as these; its
-// frame, `axes`, given from Python.
-var<uniform> camera: Motor;
-var<uniform> half_size: vec2<f32>;
-var<uniform> depth: f32;
 
 // Interpolated at every sample of a pixel, so its colour is supersampled along with its edges.
 struct Corner {
     @builtin(position) position: vec4<f32>,
     @location(0) @interpolate(perspective, sample) values: vec4<f32>,
     @location(1) @interpolate(flat) face_values: vec4<f32>,
-    @location(2) @interpolate(perspective, sample) normal: Plane,
+    @location(2) @interpolate(perspective, sample) normal: Tangent,
     @location(3) @interpolate(perspective, sample) corner: vec3<f32>,
     @location(4) @interpolate(perspective, sample) depth: f32,
 }
@@ -75,31 +70,29 @@ struct Shade {
     @location(1) depth: vec4<f32>,
 }
 
-// A corner on the image: the point in the camera's frame, read by its planes.
+// A corner on the image, placed by the camera's planes; its depth along the view, how far it lies from the viewer.
 @vertex
 fn place(@builtin(vertex_index) index: u32) -> Corner {
     let face = faces[index / 3];
     let vertex = face[index % 3];
-    let seen = camera << points[vertex];
-    let framed = (axes & seen) / (mv.w & seen);
-    let position = vec4<f32>(framed.xy / half_size, 0.5 - framed.z / depth, 1.0);
+    let point = points[vertex];
     let corners = normals[index / 3];
     let normal = select(select(corners.c, corners.b, index % 3 == 1), corners.a, index % 3 == 0);
     let corner = vec3<f32>(f32(index % 3 == 0), f32(index % 3 == 1), f32(index % 3 == 2));
-    return Corner(position, values[index], face_values[index / 3], normal, corner, -framed.z);
+    return Corner(clip(point), values[index], face_values[index / 3], normal, corner,
+                  -paired(screen_toward, point) / weight_of(point));
 }
 
 // A pixel of a face: its colour, lit by the lamp through its normal blended across the face, with a glint.
 @fragment
 fn shade(corner: Corner) -> Shade {
-    let direction = camera >> -mv.z.dual();
     // Whether the camera sees the side the normal points to.
-    let front = (corner.normal & direction) <= 0;
+    let front = slopes(corner.normal).z >= 0;
     let surface = colour(corner.values, corner.face_values, corner.corner, front);
     if (surface.a <= 0) {
         discard;
     }
-    let shaded = lit(surface.rgb, corner.normal, direction);
+    let shaded = lit(surface.rgb, corner.normal);
     return Shade(vec4<f32>(shaded * surface.a, surface.a), vec4<f32>(corner.depth, 0.0, 0.0, 1.0));
 }
 """
@@ -130,40 +123,31 @@ def shader(colour: Colour) -> Shader:
     key = (colour.source, tuple((name, np.asarray(value).tobytes()) for name, value in colour.constants.items()))
     if key not in shaders:
         # The colour a byte a channel, premultiplied by how much it hides, and the depth alone at full precision.
-        shaders[key] = Shader(lamp_shading() + source(colour.source), ga, dict(Point=Point, Plane=Plane, Motor=Motor),
-                              dict(oversampling=float(samples_per_side()), axes=axes) | colour.constants,
+        shaders[key] = Shader(lamp_shading() + tangent_seen() + placing(Plane) + source(colour.source), ga,
+                              dict(Point=Point, Plane=Plane, Tangent=solids.Patch), dict(oversampling=float(samples_per_side())) | colour.constants,
                               targets=("rgba8unorm", "r32float"))
     return shaders[key]
 
 
 def flat(points: Point, faces: np.ndarray) -> dict:
-    """Each face's own normal at all three corners."""
-    normal = face_normals(points, faces)                                      # [faces] Plane
-    return dict(a=normal, b=normal, c=normal)
+    """Each face's tangent plane at all three corners: the join of its corners, as it is."""
+    corners = points[faces]
+    joined = corners[:, 0] & corners[:, 1] & corners[:, 2]                    # [faces] Patch-
+    return dict(a=joined, b=joined, c=joined)
 
 
 def smooth(points: Point, mesh: Mesh) -> dict:
-    """At each corner, the unit normals of the faces around its vertex, summed and made unit."""
+    """At each corner, the tangent planes of the faces around its vertex summed: each face's the join of its corners,
+    so that a larger face counts for more, as the picture's lighting reads only their slopes."""
     # The mesh's incidence has scalar cells: carry them into the scene's algebra with its topology intact.
     incidence = mesh.incidence[2, 0]
     incidence = SparseExtensor(solids.context.include_from_algebra(incidence.cells), incidence.rows, incidence.columns, incidence.shape)
     corners = incidence * points.field()                                    # [3] Point-[faces]
-    joined = (corners[0] & corners[1] & corners[2]) * flip                    # Plane+[faces]
-    face_normals = (joined - mv.w * (joined & origin)).normalized()           # Plane+[faces]
-    # Read incidence backwards to sum each vertex's neighbouring normals, then forwards to its face corners, made
-    # unit there, where every vertex has a face.
-    normals = incidence.sum(axis=0).reverse() * face_normals                 # Plane+[vertices]
-    corners = (incidence * normals).batch().normalized()                     # [3, faces] Plane+
+    joined = corners[0] & corners[1] & corners[2]                            # Patch-[faces]
+    # Read incidence backwards to sum each vertex's neighbouring tangents, then forwards to its face corners.
+    tangents = incidence.sum(axis=0).reverse() * joined                      # Patch-[vertices]
+    corners = (incidence * tangents).batch()                                 # [3, faces] Patch-
     return dict(a=corners[0], b=corners[1], c=corners[2])
-
-
-def face_normals(points: Point, faces: np.ndarray) -> Plane:
-    """Each face's unit normal, as the plane through the origin square to it `[faces]`: the join of its
-    corners, intrinsic as they are, made extrinsic by the intrinsic scalar one, and moved to the origin."""
-    corners = points[faces]
-    joined = (corners[:, 0] & corners[:, 1] & corners[:, 2]) * flip           # [faces] Plane
-    through_origin = joined - mv.w * (joined & origin)
-    return through_origin.normalized()
 
 
 class Samples(NamedTuple):
@@ -184,10 +168,11 @@ def samples(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict,
     def padded(entries: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
         entries = np.broadcast_to(entries, shape + (np.shape(entries)[-1],))
         return np.concatenate([entries, np.zeros(shape + (4 - entries.shape[-1],))], axis=-1)
+    from examples.util.wgsl.simplices import view_camera
     return Samples(shader(colour), 3 * len(faces),
                    dict(points=points, faces=faces, values=padded(values, (len(faces), 3)).reshape(-1, 4),
-                        face_values=padded(face_values, (len(faces),)), normals=normals, camera=view.camera,
-                        half_size=view.half, depth=8 * view.half.max(), **lighting(view.camera, gloss)))
+                        face_values=padded(face_values, (len(faces),)), normals=normals,
+                        **view_camera(view).uniforms(8 * view.half.max()), **lighting(gloss), **steps(view)))
 
 
 def layer(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, view: View,

@@ -15,6 +15,7 @@ from matplotlib.axes import Axes
 from numga.extensor import Extensor
 from numga.gatype import GAType
 from examples.util.wgsl import Shader, meshes, solids
+from examples.util.wgsl.simplices import view_camera
 from examples.util.wgsl.camera import Camera, extrinsic_first, flat_panel, placing, reading, whole
 from examples.util.wgsl.library import pinned, samples_per_side
 
@@ -29,11 +30,8 @@ var<storage, read> points: array<Point>;
 var<storage, read> faces: array<vec3<u32>>;
 var<storage, read> field: array<Point>;
 var<storage, read> colours: array<vec3<f32>>;
-struct Normals { a: Plane, b: Plane, c: Plane, }
+struct Normals { a: Tangent, b: Tangent, c: Tangent, }
 var<storage, read> normals: array<Normals>;
-var<uniform> camera: Motor;
-var<uniform> half_size: vec2<f32>;
-var<uniform> depth: f32;
 var<uniform> noise_scale: f32;
 
 fn hash(place: vec3<f32>) -> f32 {
@@ -44,7 +42,7 @@ fn hash(place: vec3<f32>) -> f32 {
 
 struct Corner {
     @builtin(position) position: vec4<f32>,
-    @location(0) normal: Plane,
+    @location(0) normal: Tangent,
     @location(1) tangent: Point,
     @location(2) place: Point,
     @location(3) depth: f32,
@@ -60,21 +58,18 @@ struct Shade {
 fn place(@builtin(vertex_index) index: u32) -> Corner {
     let face = faces[index / 3];
     let vertex = face[index % 3];
-    let seen = camera << points[vertex];
-    let framed = (axes & seen) / (mv.w & seen);
-    let position = vec4<f32>(framed.xy / half_size, 0.5 - framed.z / depth, 1.0);
+    let point = points[vertex];
     let corners = normals[index / 3];
     let normal = select(select(corners.c, corners.b, index % 3 == 1), corners.a, index % 3 == 0);
-    return Corner(position, normal, field[vertex], points[vertex], -framed.z, colours[vertex]);
+    return Corner(clip(point), normal, field[vertex], point, -paired(screen_toward, point) / weight_of(point),
+                  colours[vertex]);
 }
 
 @fragment
 fn shade(corner: Corner) -> Shade {
-    let direction = camera >> -mv.z.dual();
-    let lighting = lit(corner.colour, corner.normal, direction);
-    // The geometric tangent becomes a pixel displacement only at the image boundary.
-    let tangent = axes & (camera << corner.tangent);
-    let projected = tangent.xy * vec2<f32>(1, -1);
+    let lighting = lit(corner.colour, corner.normal);
+    // The field's change of place in the picture, read by the camera's planes, rows counted down.
+    let projected = screen_of(corner.tangent) * vec2<f32>(1, -1);
     return Shade(vec4<f32>(lighting, 1), vec4<f32>(projected, 0, corner.depth), vec4<f32>(seed(corner.place)));
 }
 """
@@ -212,9 +207,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
 @cache
 def seed_shader(grain: str) -> Shader:
-    return Shader(solids.lamp_shading() + surface_source + grain, solids.ga,
-                  dict(Point=solids.Point, Plane=solids.Plane, Motor=solids.Motor),
-                  dict(axes=solids.axes, origin=solids.origin),
+    return Shader(solids.lamp_shading() + solids.tangent_seen() + placing(solids.Plane) + surface_source + grain,
+                  solids.ga, dict(Point=solids.Point, Plane=solids.Plane, Tangent=solids.Patch), dict(axes=solids.axes, origin=solids.origin),
                   targets=("rgba8unorm", "rgba32float", "rgba32float"))
 
 
@@ -244,9 +238,9 @@ def texture(points: solids.Point, mesh: Mesh, field: solids.Point, view: solids.
     """The shaded surface and ink coverage share one projected field and one feathering pass."""
     surface, projected, grains = seed_shader(grain).draw_averaged(
         view.shape, samples_per_side(), 3 * len(mesh.faces), points=points, faces=mesh.faces, field=field,
-        normals=meshes.smooth(points, mesh), camera=view.camera, half_size=view.half,
-        depth=8 * view.half.max(), noise_scale=view.pixel * grain_pixels,
-        colours=np.broadcast_to(colours, points.shape + (3,)), **solids.lighting(view.camera, 0.06))
+        normals=meshes.smooth(points, mesh), noise_scale=view.pixel * grain_pixels,
+        colours=np.broadcast_to(colours, points.shape + (3,)), **view_camera(view).uniforms(8 * view.half.max()),
+        **solids.lighting(0.06), **solids.steps(view))
     return trace_shader()(view.shape, surface=surface, flow=projected, grains=grains,
                           background=background, step_pixels=length / n_trace_steps,
                           reference_speed=max(reference_speed, np.finfo(np.float32).tiny),

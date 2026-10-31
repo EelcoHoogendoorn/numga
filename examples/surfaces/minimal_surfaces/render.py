@@ -45,16 +45,14 @@ def square_view(view_degrees: np.ndarray, surfaces: list[core.Point], spare: flo
     return solids.view(places, spare, elevation, azimuth, 0.06, pixels).squared()
 
 
-def sheet(mesh: core.Mesh, surface: core.Point, corner_colours: np.ndarray, view: solids.View) -> meshes.Samples:
+def sheet(mesh: core.Mesh, points: solids.Point, corner_colours: np.ndarray, view: solids.View) -> meshes.Samples:
     """A lit sheet carries its colours at the corners of its faces at the image's own pixel size."""
-    points = solids.origin + solids.context.include_from_algebra(surface.batch())               # [vertices] Point-
     return meshes.samples(points, mesh.faces, corner_colours, meshes.smooth(points, mesh), view,
                           face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
 
 
-def boundary_lines(mesh: core.Mesh, surface: core.Point, width: float, view: solids.View) -> meshes.Samples:
+def boundary_lines(mesh: core.Mesh, points: solids.Point, width: float, view: solids.View) -> meshes.Samples:
     """Crisp outlines mark the boundary wire of a surface."""
-    points = solids.origin + solids.context.include_from_algebra(surface.batch())               # [vertices] Point-
     # The wire: the mesh of the boundary's edges.
     wire = simplices.Mesh(len(points), mesh.edges[mesh.exterior(1)])
     return simplices.tubes(points, wire, ink, width, view, solids.gloss)
@@ -106,8 +104,10 @@ def surface_with_curves(
     # Each curve a chain of edges, each edge in its curve's colour.
     curve_strokes = simplices.tubes(curves.reshape(-1), simplices.Mesh.chains([n_samples] * n_curves),
                                     np.repeat(colours, n_samples - 1, axis=0), 2.0, view, solids.gloss)
-    base = sheet(mesh, surface, corner_colours, view)
-    rim = boundary_lines(mesh, surface, 2.2, view)
+    # The surface's projective embedding, once for the sheet and its wire.
+    points = solids.origin + solids.context.include_from_algebra(surface.batch())               # [vertices] Point-
+    base = sheet(mesh, points, corner_colours, view)
+    rim = boundary_lines(mesh, points, 2.2, view)
     return solids.draw([], view, background, inks=[], translucent=[],
                        meshes=[(base, 1.0), (curve_strokes, 1.0), (rim, 1.0)])
 
@@ -181,8 +181,10 @@ def animate_bonnet(
                             [len(ring_curves) * (n_azimuths - 1), len(meridian_curves) * (n_heights - 1)], axis=0)
         curve_strokes = simplices.tubes(concatenate((ring_curves.reshape(-1), meridian_curves.reshape(-1))),
                                         simplices.Mesh.chains(lengths), colours, 2.0, view, solids.gloss)
-        base = sheet(mesh, surface, surface_colour, view)
-        rim = boundary_lines(mesh, surface, 1.8, view)
+        # The surface's projective embedding, once for the sheet and its wire.
+        points = solids.origin + solids.context.include_from_algebra(surface.batch())           # [vertices] Point-
+        base = sheet(mesh, points, surface_colour, view)
+        rim = boundary_lines(mesh, points, 1.8, view)
 
         # Outward normal pins at the crossings show that the Gauss normals stay fixed in space.
         pin_points = pin_reading * surface                                   # Point-[pins]

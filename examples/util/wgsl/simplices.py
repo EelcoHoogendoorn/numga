@@ -223,12 +223,10 @@ fn shade(corner: Corner) -> Shade {
     let along_run = (seen.x * run.x + seen.y * run.y + seen.z * run.z) / run_squared;
     let square = seen - run * along_run;
     let size = sqrt(square.x * square.x + square.y * square.y + square.z * square.z);
-    let unit = select(select(seen, square / size, size > 1e-6), seen, open);
-    let normal = screen_across * unit.x + screen_up * unit.y + screen_toward * unit.z;
-    let direction = -screen_toward.dual();
+    let normal = select(select(seen, square / size, size > 1e-6), seen, open);
     // The depth along the view, the tube's surface nearer the viewer by its bulge.
     let along_view = mix(corner.depths.x, corner.depths.y, sample.share) - toward * radius / oversampling * scene_pixel;
-    return Shade(vec4<f32>(lit(corner.colour, normal, direction), 1.0), vec4<f32>(along_view, 0.0, 0.0, 1.0),
+    return Shade(vec4<f32>(lit_seen(corner.colour, normal), 1.0), vec4<f32>(along_view, 0.0, 0.0, 1.0),
                  0.5 + along_view / screen_depth);
 }
 """
@@ -379,7 +377,7 @@ def tubes(points: Extensor, mesh: Mesh, colours: np.ndarray, width: float, view,
         oversampling=float(side), cap=float(Cap.ROUND), opacity=1.0,
         open_ends=np.isin(edges, mesh.exterior(0)).astype(float),
         follows=following(edges),
-        **camera.uniforms(8 * view.half.max()), **solids.lighting(view.camera, gloss)))
+        **camera.uniforms(8 * view.half.max()), **solids.lighting(gloss)))
 
 
 def markers(points: Extensor, colours: np.ndarray, outer: np.ndarray, camera: Camera, inner: np.ndarray = np.zeros(1),

@@ -134,7 +134,7 @@ class Charts:
                         for index in range(len(isobar_temperatures))]
         self.own_isobar = isobar_temperatures == temperature
         # The loop of the isotherm at the boiling temperature, cut where it crosses the saturation pressure into its
-        # two lobes, each closed back along the flat stretch.
+        # two lobes, each with its feet on the flat stretch.
         coexisting = coexistence_at(np.array(temperature))
         liquid, vapour = mv.l & coexisting, mv.g & coexisting
         self.saturation = art.context.include_from_algebra(pressure_at(mv.l & coexisting, temperature))
@@ -144,18 +144,21 @@ class Charts:
         flat = art.mv.y - art.mv.w * self.saturation                                 # [] Plane+
         middle = 1 + np.flatnonzero(np.diff((flat & loop[1:-1]) > 0))[0]
         # Where the loop crosses the flat stretch between its samples on either side: the line through them met with it.
-        crossing = art.planar.unit((loop[middle] & loop[middle + 1]) ^ flat)[None]   # [1] Point-
+        crossing = ((loop[middle] & loop[middle + 1]) ^ flat)[None]                   # [1] Point-
         # The loop's two ends on the flat stretch: the lines through them along the pressure, met with it.
-        ends = art.planar.unit((loop[np.array([0, -1])] & art.mv.y.dual()) ^ flat)    # [2] Point-
-        self.lobes = [(concatenate([ends[:1], loop[1:middle + 1], crossing]), liquid_colour),
-                      (concatenate([crossing, loop[middle + 1:-1], ends[1:]]), art.orange)]
+        ends = (loop[np.array([0, -1])] & art.mv.y.dual()) ^ flat                     # [2] Point-
+        lobes = [concatenate([ends[:1], loop[1:middle + 1], crossing]),
+                 concatenate([crossing, loop[middle + 1:-1], ends[1:]])]
+        # Each lobe and its feet on the flat stretch, the lines through its points along the pressure met with it.
+        self.lobes = [(lobe, (lobe & art.mv.y.dual()) ^ flat, colour)
+                      for lobe, colour in zip(lobes, (liquid_colour, art.orange))]
 
     def pressure_volume_chart(self, path: art.Point) -> np.ndarray:
         diagram = self.pressure_volume
         isotherm = art.families["temperature"]
         others = self.isotherm_lines[~self.own]                                      # [isotherms, samples] Point-
         own = self.isotherm_lines[self.own]                                          # [1, samples] Point-
-        layers = ([art.areas(diagram, corners, colour, 0.28) for corners, colour in self.lobes]
+        layers = ([art.between(diagram, lobe, feet, colour, 0.28) for lobe, feet, colour in self.lobes]
                   + art.within(diagram, others, art.thin, np.broadcast_to(isotherm, (others.shape[0], 3)), 1.0)
                   + art.within(diagram, own, art.medium, isotherm[None], 1.0)
                   + art.within(diagram, self.pressure_dome[None], art.medium, dome_colour[None], 1.0)

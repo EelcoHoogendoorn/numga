@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import Extensor, stack
+from numga import Extensor
 from examples.util.wgsl import image_figure, solids
 
 source_colour, target_colour, aligned_colour = (np.array(to_rgb(colour)) for colour in ("#94a3b8", "#0284c7", "#f43f5e"))
@@ -23,17 +23,14 @@ target_opacity = 0.16
 
 
 # --- plumbing -------------------------------------------------------------------------
-def gpu_points(points: Extensor) -> solids.Point:
-    """View the source along its remaining directions, with its x, y and z slices along the scene's axes."""
-    mv = points.context.multivector
-    readings = stack((mv.x, mv.y, mv.z)) & points.normalized()[..., None]
-    return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
-
-
-
 def draw_registration(source: Extensor, target: Extensor, aligned: Extensor) -> plt.Figure:
     """The source, grey, the target, blue shells, and the aligned source, red, each aligned point tied to its target."""
-    source, target, aligned = (gpu_points(points) for points in (source, target, aligned))
+    # Each point seen along w: its slice by w lies in the space of x, y and z, its offset from the origin in flat space
+    # and its shadow on the equatorial space of the three-sphere, which the projective embedding places about the
+    # scene's origin.
+    w = source.context.multivector.w
+    source, target, aligned = (solids.origin + solids.context.include_from_algebra(w ^ (points.normalized() & w.dual()))
+                               for points in (source, target, aligned))       # [points] Point-, Point-, Point-
     view = solids.view([source, target, aligned], 0.0, elevation, azimuth, margin, n_pixels)
     pixel = view.pixel
     opaque = [(solids.ball(source, point_radius * pixel)[:, None], source_colour),

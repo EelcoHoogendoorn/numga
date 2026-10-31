@@ -6,6 +6,11 @@ the level lines of the metric's scalar curvature, crowding toward the critical p
 The moving state's ellipse is orange: as it cools toward the critical point, fluctuations of the volume grow cheap and
 its ellipse stretches along the volume. The right chart holds the isotherms and the moving state's isotherm with its
 tangent, whose slope, the mechanical part of the cost times minus the temperature, flattens.
+
+The left chart's two quantities are readings of the fluid's state, so it draws the states as they are, read by the
+planes of volume and of temperature. Its ellipses are conics of a chart, a projective plane, drawn where their forms
+vanish under a camera of that plane framed alike: an ellipse about a state needs the weight a projective plane gives
+its points. The right chart's pressure is a function of the state, and that chart is a chart.
 """
 from __future__ import annotations
 
@@ -17,7 +22,7 @@ import numpy as np
 from numga import Extensor, stack
 from numga.backend.jax import derivative
 from examples.thermodynamics import rendering as art
-from examples.util.wgsl import planar
+from examples.util.wgsl import quadrics
 
 Function = Callable[[Extensor], Extensor]
 
@@ -66,30 +71,34 @@ class Charts:
     def __init__(self, metric_of: Function, curvature_of: Function, pressure_of: Function, mv) -> None:
         self.metric_of, self.pressure_of, self.mv = metric_of, pressure_of, mv
         self.plane = art.Diagram(volume_range, temperature_range, (0.0, temperature_range[0]), n_rows, n_columns,
-                                 ("V", "T"))
+                                 ("V", "T"), (mv.v, mv.t))
+        # The camera of the chart the ellipses are conics of, framed as the plane's own.
+        self.conic_camera = self.plane.reading(art.mv.x, art.mv.y)
         self.isotherm = art.Diagram(volume_range, pressure_range, (0.0, 0.0), n_rows, n_columns, ("V", "p"))
         grid = mv.v.dual() * grid_volumes[None, :] + mv.t.dual() * grid_temperatures[:, None]
         # The mechanical part of the cost, its value on a variation of the volume alone.
         mechanical = metric_of(grid)(mv.v.dual()) & mv.v.dual()                   # [temperatures, volumes] Scalar+
         curvature = np.where(mechanical > 0, curvature_of(grid).to_array(), np.nan)
-        spinodal = [art.chart_points(*line.T) for _, line in
-                    art.level_lines(grid_volumes, grid_temperatures, mechanical.to_array(), np.zeros(1))]
-        unstable = [art.areas(self.plane, line, art.grey, 0.25) for line in spinodal]
+        spinodal_lines = art.level_lines(grid_volumes, grid_temperatures, mechanical.to_array(), np.zeros(1))
+        spinodal = [self.plane.at(*line.T) for _, line in spinodal_lines]
+        # Below the spinodal: between it and the states of its volumes at the chart's lowest temperature.
+        floors = [self.plane.at(line[:, 0], np.full(len(line), temperature_range[0])) for _, line in spinodal_lines]
+        unstable = [art.between(self.plane, line, floor, art.grey, 0.25) for line, floor in zip(spinodal, floors)]
         lattice = (mv.v.dual() * lattice_volumes[None, :]
                    + mv.t.dual() * lattice_temperatures[:, None]).reshape(-1)    # [lattice] State-
         # The lattice's states where every variation costs: the metric, carried back from gradients to variations by
         # the complement, has a positive spectrum there.
         stable = lattice[(metric_of(lattice).dual().eigvalsh() > 0).all(axis=-1)]   # [stable] State-
-        conics = art.ellipses(self.plane, cost_quadrics(metric_of, stable))
-        self.curvature_lines = [art.chart_points(*line.T) for _, line in
+        conics = cost_quadrics(metric_of, stable)                                       # [stable] Plane+ <- Point-
+        self.curvature_lines = [self.plane.at(*line.T) for _, line in
                                 art.level_lines(grid_volumes, grid_temperatures, curvature, curvature_levels)]
-        self.lattice = chart_points(stable)
+        self.lattice = stable
         self.plane_layers = (unstable
                              + art.polylines(self.plane, self.curvature_lines, art.thin, art.families["level"], 1.0,
                                              art.SOLID)
-                             + [planar.Curves(conics, art.thin, art.families["entropy"], 1.0)]
+                             + [quadrics.curves(conics, art.thin, art.families["entropy"], self.conic_camera)]
                              + art.polylines(self.plane, spinodal, art.medium, art.boundary, 1.0, art.SOLID)
-                             + art.dots(self.plane, art.chart_points(np.ones(1), np.ones(1)), art.boundary))
+                             + art.dots(self.plane, self.plane.at(np.ones(1), np.ones(1)), art.boundary))
         self.volumes = np.linspace(0.38, volume_range[1], 240)
         family = mv.v.dual() * self.volumes[None, :] + mv.t.dual() * isotherms[:, None]   # [isotherms, samples] State-
         isotherm_lines = self.isotherm_points(family)                                   # [isotherms, samples] Point-
@@ -103,12 +112,12 @@ class Charts:
 
     def pictures(self, state: Extensor, path: list[art.Point]) -> list[np.ndarray]:
         mv = self.mv
-        here = chart_points(state)                                                       # [] Point-
-        conic = art.ellipses(self.plane, cost_quadrics(self.metric_of, state[None]))
+        conic = cost_quadrics(self.metric_of, state[None])                              # [1] Plane+ <- Point-
         plane = (self.plane_layers
                  + art.polylines(self.plane, [stack(path)], art.bold, art.orange, 0.6, art.SOLID)
-                 + [planar.Regions(conic, art.orange, 0.25), planar.Curves(conic, art.medium, art.orange, 1.0)]
-                 + art.dots(self.plane, here[None], art.orange))
+                 + [quadrics.regions(conic[:, None], art.orange, self.conic_camera, 0.25),
+                    quadrics.curves(conic, art.medium, art.orange, self.conic_camera)]
+                 + art.dots(self.plane, state[None], art.orange))
         # The state's own isotherm, and its tangent there: a unit of volume, and the change of the pressure along it.
         own = self.isotherm_points(mv.v.dual() * self.volumes + mv.t.dual() * (mv.t & state))   # [samples] Point-
         on_isotherm = self.isotherm_points(state)                                        # [] Point-
@@ -116,11 +125,11 @@ class Charts:
         reach = art.context.include_from_algebra(mv.v & state) + tangent_span * np.array([-1, 1])
         isotherm = (self.isotherm_layers
                     + art.polylines(self.isotherm, [own], art.bold, art.ink, 1.0, art.SOLID)
-                    + art.polylines(self.isotherm, [art.tangent_lines(on_isotherm, tangent, reach)], art.medium,
-                                    art.orange, 1.0, art.SOLID)
+                    + art.polylines(self.isotherm, [art.tangent_lines(self.isotherm, on_isotherm, tangent, reach)],
+                                    art.medium, art.orange, 1.0, art.SOLID)
                     + art.dots(self.isotherm, on_isotherm[None], art.orange))
-        labels = [art.Label(art.chart_points(1.0, 1.0), "critical point", art.boundary, art.text_size, "lt", (6, -4)),
-                  art.Label(art.chart_points(0.45, 0.75), "unstable", art.ink, art.text_size, "lb", (0, 2))]
+        labels = [art.Label(self.plane.at(1.0, 1.0), "critical point", art.boundary, art.text_size, "lt", (6, -4)),
+                  art.Label(self.plane.at(0.45, 0.75), "unstable", art.ink, art.text_size, "lb", (0, 2))]
         names = [art.Floating(art.along(self.curvature_lines, 6), "R = const", art.families["level"], art.text_size,
                               "lb"),
                  art.Floating(self.lattice, "equal cost", art.families["entropy"], art.text_size, "lt")]
@@ -137,14 +146,14 @@ def fluctuations(metric_of: Function, curvature_of: Function, pressure_of: Funct
     charts = Charts(metric_of, curvature_of, pressure_of, first.context.multivector)
     path = []
     for state in chain([first], states):
-        path.append(chart_points(state))
+        path.append(art.on_numpy(state))
         yield art.beside(charts.pictures(state, path))
 
 
 def draw_landscape(metric_of: Function, curvature_of: Function, pressure_of: Function, state: Extensor):
     """The plane of temperature and volume with its ellipses, curvature and spinodal, and a state's ellipse."""
     charts = Charts(metric_of, curvature_of, pressure_of, state.context.multivector)
-    return art.figure(charts.pictures(state, [chart_points(state)])[0])
+    return art.figure(charts.pictures(state, [art.on_numpy(state)])[0])
 
 
 def scaling(states: Extensor, curvature_of: Function):
@@ -156,9 +165,9 @@ def scaling(states: Extensor, curvature_of: Function):
     diagram = art.Diagram((-3.0, 0.0), (-0.5, 5.5), (-3.0, -0.5), n_rows, n_columns, ("log(T - 1)", "log R"))
     # The line falling as the inverse square, through a point a little above the curve's first.
     through, falling = art.chart_points(distance[0], curvature[0] + 0.4), art.chart_directions(1.0, -2.0)
-    reference = art.tangent_lines(through, falling, np.linspace(-3.0, 0.0, 60))       # [samples] Point-
+    reference = art.tangent_lines(diagram, through, falling, np.linspace(-3.0, 0.0, 60))   # [samples] Point-
     layers = (art.polylines(diagram, [reference], art.medium, art.grey, 1.0, (4.0, 3.0))
               + art.polylines(diagram, [art.chart_points(distance, curvature)], art.bold, art.blue, 1.0, art.SOLID))
-    labels = [art.Label(art.tangent_lines(through, falling, np.array([-1.0]))[0], "slope -2", art.grey, art.text_size,
-                        "lb", (6, 2))]
+    labels = [art.Label(art.tangent_lines(diagram, through, falling, np.array([-1.0]))[0], "slope -2", art.grey,
+                        art.text_size, "lb", (6, 2))]
     return art.figure(art.picture(diagram, layers, labels))

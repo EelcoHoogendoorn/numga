@@ -151,6 +151,7 @@ def render_torus_field(mesh: core.Mesh, vertices: core.Point, lines: core.Point,
                        view: solids.View) -> np.ndarray:
     """Continuous 3D magnetic field-line tubes `[lines, steps]` inside a smooth translucent toroidal cavity, each
     coloured by its shell `[lines]`."""
+    # The torus's events, sliced by the observer, embedded in the renderer's projective space about its origin.
     torus_pts = solids.origin + solids.context.include_from_algebra(space_slice(vertices).batch())
     _, b_faces = outward_wall(mesh)
     shell_colours = np.broadcast_to(cream, b_faces.shape + (3,))
@@ -161,6 +162,7 @@ def render_torus_field(mesh: core.Mesh, vertices: core.Point, lines: core.Point,
     # Local helical twist: how steeply each segment climbs, its unit direction's height.
     climb = (core.mv.z & (ends - starts)) / length(ends - starts)            # [lines, segments] Scalar+
     seg_colours = palette_blend(climb.to_array(), shells)                     # [lines, segments, 3]
+    # The field lines embedded alike.
     scene_lines = solids.origin + solids.context.include_from_algebra(space_slice(lines).batch())
     # Each field line a chain of edges through its steps.
     n_lines, n_steps = scene_lines.shape
@@ -172,6 +174,7 @@ def render_torus_field(mesh: core.Mesh, vertices: core.Point, lines: core.Point,
     arrow_starts = lines[:, middle - 2]                                       # [lines] Point-
     heading = lines[:, middle + 2] - arrow_starts                             # [lines] Point-
     scene_starts = scene_lines[:, middle - 2]
+    # Each head's reach, a direction of space, embedded as a point at infinity.
     reach = solids.context.include_from_algebra(space_slice(heading * (0.14 / length(heading))).batch())
     _, a_heads = solids.arrows(scene_starts, scene_starts + reach, 0.018, 0.082, 0.044)
     head_colours = np.array([vermilion, teal, sapphire])[shells]

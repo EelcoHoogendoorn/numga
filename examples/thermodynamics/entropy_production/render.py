@@ -7,6 +7,9 @@ in the direction of the transfer, and its arrow is the heat flow. It comes to re
 black, touches the line. On the second, the entropy along that line against body a's energy: a hill whose top is
 equilibrium, which the state climbs; the tangent's slope is how much entropy a unit of energy moved to body a would
 produce, and the flow runs uphill. On the third, the two temperatures against time, closing on the common one.
+
+The first chart's two quantities are readings of the state, so it draws the states as they are, read by the planes of
+the two energies; the entropy and the temperatures are functions of the state, and the other two charts are charts.
 """
 from __future__ import annotations
 
@@ -59,7 +62,8 @@ class Charts:
     def __init__(self, entropy_of: Callable[[Extensor], Extensor], transfer: Extensor, state: Extensor) -> None:
         mv = state.context.multivector
         self.entropy_of, self.transfer, self.mv = entropy_of, transfer, mv
-        self.energies = art.Diagram(energy_range, energy_range, (0.0, 0.0), n_rows, n_columns, ("U_a", "U_b"))
+        self.energies = art.Diagram(energy_range, energy_range, (0.0, 0.0), n_rows, n_columns, ("U_a", "U_b"),
+                                    (mv.a, mv.b))
         self.cooling = art.Diagram(time_range, temperature_range, (0.0, 0.0), n_rows, n_columns, ("t", "T"))
         self.hill = art.Diagram(energy_range, entropy_range, (0.0, entropy_range[0]), n_rows, n_columns, ("U_a", "S"))
         grid = mv.a.dual() * grid_energies[None, :] + mv.b.dual() * grid_energies[:, None]
@@ -71,22 +75,18 @@ class Charts:
         line = state + transfer * ((held_by_a - (mv.a & state)) / (mv.a & transfer))    # [line] State-
         line_entropy = entropy_of(line)                                                 # [line] Scalar+
         top = line_entropy.argmax()
-        energy_line, hill_line = self.energy_points(line), self.hill_points(line)       # [line] Point-, Point-
+        hill_line = self.hill_points(line)                                              # [line] Point-
         # The entropy's level line through the top of the hill touches the line of fixed energy there.
         touching = art.level_lines(grid_energies, grid_energies, grid_entropy, line_entropy[top].to_array()[None])
-        self.level_lines = [art.chart_points(*level_line.T) for _, level_line in levels]
+        self.level_lines = [self.energies.at(*level_line.T) for _, level_line in levels]
         self.energy_layers = (art.family(self.energies, self.level_lines, "entropy", art.thin)
                               + art.polylines(self.energies,
-                                              [art.chart_points(*level_line.T) for _, level_line in touching],
+                                              [self.energies.at(*level_line.T) for _, level_line in touching],
                                               art.medium, art.boundary, 1.0, art.SOLID)
-                              + art.polylines(self.energies, [energy_line], art.medium, art.ink, 1.0, art.SOLID)
-                              + art.dots(self.energies, energy_line[top][None], art.green))
+                              + art.polylines(self.energies, [line], art.medium, art.ink, 1.0, art.SOLID)
+                              + art.dots(self.energies, line[top][None], art.green))
         self.hill_layers = (art.polylines(self.hill, [hill_line], art.medium, art.ink, 1.0, art.SOLID)
                             + art.dots(self.hill, hill_line[top][None], art.green))
-
-    def energy_points(self, states: Extensor) -> art.Point:
-        """States on the chart of the two bodies' energies, read by pairing."""
-        return art.chart_points(art.context.include_from_algebra(self.mv.a & states), art.context.include_from_algebra(self.mv.b & states))
 
     def hill_points(self, states: Extensor) -> art.Point:
         """States on the chart of the entropy against body a's energy."""
@@ -95,25 +95,25 @@ class Charts:
     def pictures(self, state: Extensor, flow: Extensor, path: list[art.Point], hill_path: list[art.Point]
                  ) -> list[np.ndarray]:
         """The two charts with the paths so far, each step's state on either chart, and the state's heat flow."""
-        now, hill_now = path[-1], hill_path[-1]                                         # [] Point-, Point-
-        # The flow's arrow: as long as the flow, on the chart, times so many pixels.
-        ahead = self.energy_points(state + flow)                                       # [] Point-
-        flow_size = (ahead - now).dual().norm()
+        mv = self.mv
+        now, hill_now = path[-1], hill_path[-1]                                         # [] State-, Point-
+        # The flow's arrow: as long as the flow, its change of the two energies, times so many pixels.
+        ahead = state + flow                                                           # [] State-
+        flow_size = ((mv.a & flow) * (mv.a & flow) + (mv.b & flow) * (mv.b & flow)).square_root()
         energy = (self.energy_layers
                   + art.polylines(self.energies, [stack(path)], art.bold, art.orange, 1.0, art.SOLID)
-                  + (art.arrows(self.energies, now[None], ahead[None], arrow_pixels_per_flow * flow_size, art.medium,
-                                art.ink)
+                  + (art.arrows(self.energies, now[None], ahead[None],
+                                float((arrow_pixels_per_flow * flow_size).to_array()), art.medium, art.ink)
                      if flow_size > 1e-3 else [])
                   + art.dots(self.energies, now[None], art.orange))
         # The hill's tangent at the state: the change along the transfer, of body a's energy and of the entropy.
-        mv = self.mv
         tangent = art.chart_directions(art.context.include_from_algebra(mv.a & self.transfer),
                                      art.context.include_from_algebra(derivative(self.entropy_of)(state)(self.transfer)))   # [] Point-
         reach = art.context.include_from_algebra(mv.a & state) + tangent_half_length * np.array([-1, 1])
         hill = (self.hill_layers
                 + art.polylines(self.hill, [stack(hill_path)], art.bold, art.orange, 1.0, art.SOLID)
-                + art.polylines(self.hill, [art.tangent_lines(hill_now, tangent, reach)], art.medium, art.orange, 1.0,
-                                art.SOLID)
+                + art.polylines(self.hill, [art.tangent_lines(self.hill, hill_now, tangent, reach)], art.medium,
+                                art.orange, 1.0, art.SOLID)
                 + art.dots(self.hill, hill_now[None], art.orange))
         names = [art.Floating(art.along(self.level_lines, 8), "S = const", art.families["entropy"], art.text_size,
                               "lb")]
@@ -126,7 +126,7 @@ class Charts:
         diagram = self.cooling
         colours = [art.thermal_colour(1.0), art.thermal_colour(0.0)]
         curves = art.chart_points(times[:, None], temperatures)                        # [steps, bodies] Point-
-        layers = [art.dashed(diagram, art.chart_points(np.array(time_range), common), art.medium, art.ink, (4.0, 3.0))]
+        layers = art.dashed(diagram, art.chart_points(np.array(time_range), common), art.medium, art.ink, (4.0, 3.0))
         for body in range(2):
             layers += art.polylines(diagram, [curves[:, body]], art.bold, colours[body], 1.0, art.SOLID)
             layers += art.dots(diagram, curves[-1, body][None], colours[body])
@@ -142,7 +142,7 @@ def exchange(entropy_of: Callable[[Extensor], Extensor], temperatures_of: Callab
     charts = Charts(entropy_of, transfer, first[0])
     path, hill_path, times, history = [], [], [], []
     for state, flow, time in chain([first], states):
-        path.append(charts.energy_points(state))
+        path.append(art.on_numpy(state))
         hill_path.append(charts.hill_points(state))
         times.append(time)
         history.append(art.context.include_from_algebra(temperatures_of(state)))

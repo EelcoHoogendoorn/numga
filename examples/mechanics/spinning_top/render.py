@@ -75,14 +75,14 @@ fn sample(place: vec2<f32>) -> Sample {
     if (shape == 0) {
         let spot = floor(vec2<f32>(mv.x & point, mv.y & point) / square);
         let checker = spot.x + spot.y - 2 * floor((spot.x + spot.y) / 2);
-        return lit(mix(checker_tones.x, checker_tones.y, checker) * ground_colour, tangent, direction);
+        return lit(mix(checker_tones.x, checker_tones.y, checker) * ground_colour, tangent);
     }
     // Alternating sectors about the top's axis, in its own frame.
     let local = motor << point;
     let turns = floor(atan2(mv.y & local, mv.x & local) / sector_angle);
     let sector = turns - 2 * floor(turns / 2);
     let paint = paints[shape - 1];
-    return lit(paint.colour * (1 - paint.contrast * (1 - sector)), tangent, direction);
+    return lit(paint.colour * (1 - paint.contrast * (1 - sector)), tangent);
 }
 """
 
@@ -90,8 +90,8 @@ fn sample(place: vec2<f32>) -> Sample {
 # --- plumbing -------------------------------------------------------------------------
 @cache
 def shader() -> Shader:
-    return Shader(supersampled() + quadric_crossings() + lamp_shading() + source, core.ga,
-                  dict(Point=core.Point, Plane=core.Plane, Motor=core.Motor, Quadric=core.Quadric),
+    return Shader(supersampled() + quadric_crossings() + lamp_shading() + solids.tangent_seen() + source, core.ga,
+                  dict(Point=core.Point, Plane=core.Plane, Tangent=core.Plane, Motor=core.Motor, Quadric=core.Quadric),
                   dict(axes=solids.axes, background=background, ground_colour=ground_colour, square=square,
                        checker_tones=checker_tones, sector_angle=sector_angle))
 
@@ -101,14 +101,14 @@ def frame(motor: core.Motor, parts: core.Quadric, ground: core.Quadric, view: tu
     """One RGB image of the top placed by the motor on the ground, square, of half-width extent about the centre,
     seen from an elevation and azimuth in degrees, the azimuth measured from x."""
     camera = solids.aim(centre, np.radians(view[0]), np.radians(view[1] + 90))                  # [] Motor+
-    # The lamp above the viewer's left shoulder.
-    toward = camera >> mv.direction([-0.3, 0.8, 1.0])                                         # [] Point-
-    lighting = dict(lamp=toward / toward.dual().norm(), ambient=ambient, fill_tilt=0.0, headlight=0.0, gloss=gloss,
-                    shininess=shininess)
+    # The lamp above the viewer's left shoulder, across, up and toward the viewer in the picture.
+    lighting = dict(lamp=np.array([-0.3, 0.8, 1.0]) / np.linalg.norm([-0.3, 0.8, 1.0]), ambient=ambient, fill_tilt=0.0,
+                    headlight=0.0, gloss=gloss, shininess=shininess)
     placed_parts = motor >> parts(motor << core.Point)                                          # [parts] Plane+ <- Point-
     traced = shader()((pixels, pixels), quadrics=concatenate([ground[None], placed_parts]),
                       paints=dict(colour=part_colours, contrast=sector_contrast), motor=motor, camera=camera,
-                      back=20 * extent, half_height=extent, **lighting)["image"]
+                      back=20 * extent, half_height=extent, **lighting,
+                      **solids.steps(solids.View(camera, np.full(2, extent), pixels)))["image"]
     return np.round(np.clip(traced, 0, 1) * 255).astype(np.uint8)
 
 

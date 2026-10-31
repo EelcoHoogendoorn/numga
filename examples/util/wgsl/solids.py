@@ -31,6 +31,8 @@ Scalar = ga.gatype.scalar()
 Plane = ga.gatype.vector()
 Motor = ga.gatype.rotor()
 Line = ga.gatype.bivector()
+# A face's tangent plane as the join of its corners.
+Patch = Plane.derive.flipped_orientation                                      # Vector-
 Quadric = ga.gatype((Plane, Point))                                          # Plane <- Point
 DualQuadric = ga.gatype((Point, Plane))                                      # Point <- Plane
 # The planes of the frame, and of every camera's in its own: a point's pairings with them are how far it lies across
@@ -51,47 +53,75 @@ fill_tilt = 0.5
 # The share of the light that comes from the viewer, so that every face the camera sees keeps its colour, by how
 # squarely it is turned to the viewer; the lamp gives the rest.
 headlight = 0.25
+# The lamp's direction in the picture's frame, across, up and toward the viewer: up and to the right of the viewer, and
+# a little behind, so that strokes running up the image catch it as well as the faces turned up.
+lamp = np.array([0.35, 0.5, 0.8]) / np.linalg.norm([0.35, 0.5, 0.8])
 
 
 def lamp_shading() -> str:
-    """WGSL lighting a surface by the lamp, for the solids, meshes and strokes alike: the lamp's uniforms, as
-    `lighting` gives them, and from a tangent plane and the direction of the view, `facing`, the plane at unit weight
-    turned to the viewer, `brightness`, how brightly the lamp, the sky and the viewer light it, `glint`, and `lit`, a
-    colour lit with its glint."""
+    """WGSL lighting a surface in the picture's frame, for the solids, meshes, strokes and streaks alike: the lamp's
+    uniforms, as `lighting` gives them, and from a normal read in the picture's frame, across, up and toward the viewer,
+    `turned`, the unit normal facing the viewer, `brightness`, how brightly the lamp, the sky and the viewer light it,
+    `glint`, and `lit_seen`, a colour lit with its glint. The picture's frame is the metric the eye sees, so no metric
+    of the scene enters: a surface of any algebra the camera reads is lit alike."""
     return """
-// The lamp's direction, the light that falls everywhere, how much more of it falls on faces turned up, the share of
-// the light that comes from the viewer, and the glint's share and sharpness.
-var<uniform> lamp: Point;
+// The lamp's direction in the picture's frame, across, up and toward the viewer, a unit; the light that falls
+// everywhere, how much more of it falls on faces turned up the picture, the share of the light that comes from the
+// viewer, and the glint's share and sharpness.
+var<uniform> lamp: vec3<f32>;
 var<uniform> ambient: f32;
 var<uniform> fill_tilt: f32;
 var<uniform> headlight: f32;
 var<uniform> gloss: f32;
 var<uniform> shininess: f32;
 
-// A tangent plane at unit weight, facing a viewer looking along `direction`: a surface is lit on the side the camera
-// sees.
-fn facing(tangent: Plane, direction: Point) -> Plane {
-    return (tangent * select(1.0, -1.0, (tangent & direction) > 0)).normalized();
+// A normal in the picture's frame as a unit, turned to the viewer: a surface is lit on the side the camera sees.
+fn turned(seen: vec3<f32>) -> vec3<f32> {
+    let size = sqrt(seen.x * seen.x + seen.y * seen.y + seen.z * seen.z);
+    return select(seen, -seen, seen.z < 0) / max(size, 1e-30);
 }
 
-// How brightly a surface is lit, its normal a plane at unit weight facing the viewer: by the lamp, by the sky above
-// and the ground below, by the normal's pairing with the upward direction, and by the viewer.
-fn brightness(normal: Plane, direction: Point) -> f32 {
-    let light = max(normal & lamp, 0.0);
-    let fill = ambient * (1 + fill_tilt * (normal & mv.z.dual())) + headlight * -(normal & direction);
+// How brightly a surface with this unit normal is lit: by the lamp, by the sky above the picture and the ground
+// below it, and by the viewer.
+fn brightness(normal: vec3<f32>) -> f32 {
+    let light = max(normal.x * lamp.x + normal.y * lamp.y + normal.z * lamp.z, 0.0);
+    let fill = ambient * (1 + fill_tilt * normal.y) + headlight * normal.z;
     return fill + (1 - ambient - headlight) * light;
 }
 
-// The glint where the view ray, reflected in the tangent plane, meets the lamp, on a surface the lamp lights:
-// `-d.dual()` is the plane square to d.
-fn glint(normal: Plane, direction: Point) -> f32 {
-    return pow(max(-((normal >> direction).dual() & lamp), 0.0), shininess) * select(0.0, 1.0, (normal & lamp) > 0);
+// The glint where the view ray, into the picture, reflected in the surface, meets the lamp, on a surface it lights.
+fn glint(normal: vec3<f32>) -> f32 {
+    let reflected = vec3<f32>(0.0, 0.0, -1.0) + normal * (2 * normal.z);
+    let facing_lamp = normal.x * lamp.x + normal.y * lamp.y + normal.z * lamp.z > 0;
+    return pow(max(reflected.x * lamp.x + reflected.y * lamp.y + reflected.z * lamp.z, 0.0), shininess)
+        * select(0.0, 1.0, facing_lamp);
 }
 
-// A colour on a surface with this tangent plane, lit, with its glint.
-fn lit(colour: vec3<f32>, tangent: Plane, direction: Point) -> vec3<f32> {
-    let normal = facing(tangent, direction);
-    return colour * brightness(normal, direction) + gloss * glint(normal, direction);
+// A colour on a surface with this normal in the picture's frame, lit, with its glint.
+fn lit_seen(colour: vec3<f32>, seen: vec3<f32>) -> vec3<f32> {
+    let normal = turned(seen);
+    return colour * brightness(normal) + gloss * glint(normal);
+}
+"""
+
+
+def tangent_seen() -> str:
+    """WGSL reading a tangent plane of the type `Tangent` in the picture's frame, a quadric's plane at its surface or
+    the join of a face's corners alike: `slopes(tangent)`, its pairings with the camera's steps across, up and toward
+    the viewer, as `steps` gives them, the plane's slope along each; and `lit(colour, tangent)`."""
+    return """
+// The steps the camera reads as one across, one up and one toward the viewer.
+var<uniform> step_across: Point;
+var<uniform> step_up: Point;
+var<uniform> step_toward: Point;
+
+// A tangent plane's slope along the picture's frame: the surface's normal there, as the picture sees it.
+fn slopes(tangent: Tangent) -> vec3<f32> {
+    return vec3<f32>(tangent & step_across, tangent & step_up, tangent & step_toward);
+}
+
+fn lit(colour: vec3<f32>, tangent: Tangent) -> vec3<f32> {
+    return lit_seen(colour, slopes(tangent));
 }
 """
 
@@ -342,9 +372,9 @@ var<uniform> mesh_row: u32;
 // How much of what each mesh covers it hides, a share of its colour's own.
 var<storage, read> mesh_opacities: array<f32>;
 var<uniform> n_meshes: u32;
-// A camera looking along its own -z, its rays parallel, starting `back` behind the middle of the view; the
-// image half as high as this. Its frame, `axes`, is given from Python.
-var<uniform> camera: Motor;
+// The camera's preimage: the point it reads at the middle of the view, the rays parallel along the step it reads as one
+// toward the viewer, starting `back` toward the viewer from there; the image half as high as this.
+var<uniform> middle: Point;
 var<uniform> back: f32;
 var<uniform> half_height: f32;
 // What shows through where the surfaces let light pass: black, nothing, for a layer to compose with others.
@@ -396,11 +426,11 @@ fn inked(hit: Hit, point: Point, normal: Plane) -> Painted {
 
 // A hit's colour, lit by the lamp, the sky and the viewer, and its opacity; an ink keeps a share of its own colour.
 fn shade(hit: Hit, start: Point, direction: Point) -> vec4<f32> {
-    let normal = facing(hit.tangent, direction);
-    let surface = inked(hit, start + direction * hit.distance, normal);
+    let normal = turned(slopes(hit.tangent));
+    let surface = inked(hit, start + direction * hit.distance, hit.tangent.normalized());
     let own = select(0.0, ink_own, surface.inked);
-    let shaded = mix(surface.colour.rgb * brightness(normal, direction), surface.colour.rgb, own);
-    return vec4<f32>(shaded + gloss * glint(normal, direction), surface.colour.a);
+    let shaded = mix(surface.colour.rgb * brightness(normal), surface.colour.rgb, own);
+    return vec4<f32>(shaded + gloss * glint(normal), surface.colour.a);
 }
 
 // A mesh's surface at a sample: its colour, premultiplied by how much it hides, and its distance along the ray.
@@ -429,10 +459,10 @@ fn mesh_after(cell: u32, last_distance: f32, last_order: u32) -> Seen {
 // The surfaces along a ray, solids' and meshes' alike, nearest first, each hiding its share of what lies behind it;
 // the depth is the nearest one's, weighted as the colour is by how much the surfaces hide.
 fn sample(place: vec2<f32>) -> Sample {
-    // The ray's start in the camera's frame: across and up the image, and `back` toward the viewer.
+    // The ray's start: across and up the image, and `back` toward the viewer, read back into the scene.
     let across = screen(place) * half_height;
-    let start = camera >> (origin + (axes.dual() * vec3<f32>(across, back)).sum());
-    let direction = camera >> -mv.z.dual();
+    let start = middle + step_across * across.x + step_up * across.y + step_toward * back;
+    let direction = -step_toward;
     // The sample's cell in the meshes' grid, and its tile of the picture.
     let grid = vec2<u32>(floor(place * f32(samples_per_side)));
     let cell = grid.y * mesh_row + grid.x;
@@ -612,8 +642,8 @@ TILE = 16
 
 @cache
 def shader() -> Shader:
-    return Shader(supersampled() + quadric_tracing() + lamp_shading() + source, ga,
-                  dict(Point=Point, Plane=Plane, Motor=Motor, Quadric=Quadric), dict(axes=axes))
+    return Shader(supersampled() + quadric_tracing() + lamp_shading() + tangent_seen() + source, ga,
+                  dict(Point=Point, Plane=Plane, Tangent=Plane, Quadric=Quadric), {})
 
 
 class Ink(NamedTuple):
@@ -822,17 +852,26 @@ def aim(centre: Point, elevation: float, azimuth: float) -> Motor:
     return translator(centre / (mv.w & centre) - origin) * turn
 
 
-def lamp(camera: Motor) -> Point:
-    """The lamp's direction for a camera: up and to the right of the viewer, and a little behind, so that strokes
-    running up the image catch it as well as the faces turned up."""
-    toward = camera >> mv.direction([0.35, 0.5, 0.8])
-    return toward / toward.dual().norm()
+def lighting(glint: float) -> dict:
+    """The uniforms of `lamp_shading`, with a glint of `glint`."""
+    return dict(lamp=lamp, ambient=ambient, fill_tilt=fill_tilt, headlight=headlight, gloss=glint, shininess=shininess)
 
 
-def lighting(camera: Motor, glint: float) -> dict:
-    """The uniforms of `lamp_shading` for a camera, with a glint of `glint`."""
-    return dict(lamp=lamp(camera), ambient=ambient, fill_tilt=fill_tilt, headlight=headlight, gloss=glint,
-                shininess=shininess)
+def seen_lamp(view: View, lamp: Point) -> np.ndarray:
+    """A lamp's direction in the scene, as the view's picture sees it: across, up and toward the viewer, a unit."""
+    from examples.util.wgsl.camera import read
+    from examples.util.wgsl.simplices import view_camera
+    camera = view_camera(view)
+    seen = np.array([float(read(plane, lamp).to_array()) for plane in (camera.across, camera.up, camera.toward)])
+    return seen / np.linalg.norm(seen)
+
+
+def steps(view: View) -> dict:
+    """The uniforms of `tangent_seen` for a view: the steps its camera reads as one across, up and toward the viewer."""
+    from examples.util.wgsl.camera import preimage
+    from examples.util.wgsl.simplices import view_camera
+    _, across, up, toward = preimage(view_camera(view), Point)
+    return dict(step_across=across, step_up=up, step_toward=toward)
 
 
 def layer(parts: list[tuple[Quadric, np.ndarray]], view: View, inks: list[Ink],
@@ -864,14 +903,16 @@ def trace(tracer: Shader, encoder: Any, view: View, solids: tuple, buffers: Mesh
           opacities: list[float], background: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """The solids, as `scene` lays them out, traced among the meshes whose samples the buffers hold, each with its
     opacity, over the background, on the encoder: the picture's colour and depth."""
+    from examples.util.wgsl.camera import preimage
+    from examples.util.wgsl.simplices import view_camera
     quadrics, solids, looks, ink_quadrics, ink_regions, marked, holding = solids
     # A mesh that shows nothing stands for none, so that the opacities are never empty.
     outputs = tracer.encode(encoder, view.shape, (), dict(
         quadrics=quadrics, solids=solids, looks=looks, inks=marked, ink_quadrics=ink_quadrics, ink_regions=ink_regions,
         mesh_colours=Resident(buffers.colours, buffers.size), mesh_depths=Resident(buffers.depths, buffers.size),
         mesh_row=buffers.row_bytes // 4, mesh_opacities=np.array(opacities or [0.0], dtype=np.float32),
-        n_meshes=len(opacities), **tiles(*holding, view), pixel=view.pixel, camera=view.camera,
-        back=4 * view.half.max(), half_height=view.half[1], background=background, **lighting(view.camera, gloss)))
+        n_meshes=len(opacities), **tiles(*holding, view), pixel=view.pixel, middle=preimage(view_camera(view), Point)[0],
+        back=4 * view.half.max(), half_height=view.half[1], background=background, **lighting(gloss), **steps(view)))
     image = tracer.read(encoder, outputs, view.shape)["image"]
     return image["colour"], image["depth"][..., 0]
 

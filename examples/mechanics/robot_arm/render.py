@@ -10,7 +10,6 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import stack
-from examples.mechanics.robot_arm.core import Point
 from examples.util.wgsl import simplices, solids
 
 LINK_COLOURS = np.array([to_rgb(colour) for colour in ("tab:blue", "tab:cyan", "tab:purple")])
@@ -32,18 +31,6 @@ BOX_FACES = np.array([[0, 1, 2], [4, 5, 6], [0, 1, 4], [2, 3, 6], [0, 2, 4], [1,
 
 
 # --- plumbing -------------------------------------------------------------------------
-def solid_boxes(corners: Point) -> solids.Plane:
-    """The boxes of corner points `[boxes, 8]` as solids bounded by planes `[boxes, 6]`: each face the join of three
-    of its corners, made extrinsic by the intrinsic scalar one, and turned so that the box's middle lies on its
-    negative side."""
-    faces = corners[:, BOX_FACES]                                              # [boxes, 6, 3] Point-
-    planes = (faces[..., 0] & faces[..., 1] & faces[..., 2]) * solids.flip     # [boxes, 6] Plane+
-    planes = planes.normalized()
-    middles = corners.sum(axis=-1)[:, None]                                    # [boxes, 1] Point-
-    side = planes & middles
-    return planes * (np.asarray(side < 0, dtype=int) - np.asarray(side > 0, dtype=int))
-
-
 def animate_tracking(states: Iterable, room: float = VIEW_ROOM) -> Iterator[np.ndarray]:
     """One frame per solved state: the link boxes, the target, and the tip trail, all from one fixed view framing the
     arm as it starts, `room` times over."""
@@ -58,6 +45,8 @@ def animate_tracking(states: Iterable, room: float = VIEW_ROOM) -> Iterator[np.n
         trail = simplices.tubes(stack(path), simplices.Mesh.chains([len(path)]), TARGET_COLOUR, TRAIL_WIDTH, view,
                                 gloss=solids.gloss)
         ball = solids.ball(target, TARGET_RADIUS * view.pixel)[None, None]      # [1, 1] Plane+ <- Point-
+        # Each link a solid bounded by the planes of its box's faces, through its corners.
+        links = solids.polyhedra(boxes, BOX_FACES)                                 # [boxes, 6] Plane+
         yield solids.draw([(ball, TARGET_COLOUR)], view, BACKGROUND,
-                          inks=[], translucent=[(solid_boxes(boxes), LINK_COLOURS, LINK_OPACITY)],
+                          inks=[], translucent=[(links, LINK_COLOURS, LINK_OPACITY)],
                           meshes=[(trail, TRAIL_OPACITY)])
