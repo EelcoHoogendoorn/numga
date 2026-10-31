@@ -135,9 +135,10 @@ def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitud
     span = 2.2 / 0.95
     across, up = np.meshgrid((np.arange(columns) + 0.5) * span, (count - np.arange(count) - 0.5) * span)
     centres = mv.point(np.stack((across, up), axis=-1))                        # [cases, dials] Point-
-    # Each configuration's amplitude as a move on its dial, its cosine part across and its sine part up.
-    readings = planar.context.include_from_algebra(stack((cosine_amplitudes, sine_amplitudes), axis=-1))
-    triplet_readings = planar.context.include_from_algebra(stack((triplet_cosine, triplet_sine), axis=-1))
+    # Each configuration's amplitude as a move on its dial, its cosine part across and its sine part up: numbers of
+    # the chart, read out of the dimer's algebra.
+    readings = stack((cosine_amplitudes, sine_amplitudes), axis=-1).to_array()   # [cases, times, configurations, 2]
+    triplet_readings = stack((triplet_cosine, triplet_sine), axis=-1).to_array()  # [cases, times, configurations, 2]
     n_times = readings.shape[1]
     # The amplitudes of the configurations shown, a dial's in a row, its times along it.
     shown = (np.arange(count)[:, None, None], np.arange(n_times)[None, None, :], np.array(DIALS)[None, :, None])

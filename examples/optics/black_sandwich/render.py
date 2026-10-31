@@ -12,10 +12,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import concatenate, stack
+from numga import Extensor, concatenate, stack
 from examples.util.animation import capture
 from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import Camera, panel
+from examples.util.wgsl.camera import panel
 from examples.optics.black_sandwich import core
 
 background_colour = "#fbfaf7"
@@ -30,65 +30,72 @@ field_radius = 0.38
 # axes across them and the fields, and the fields' circles.
 axis_width, beam_width, outline_width, glyph_width, circle_width = 1.0, 4.0, 1.0, 2.2, 0.8
 
-mv = core.mv
-# The glyphs' places in the diagram: the components on the beam, the fields above it, and the beam's ends and the
-# components between them.
-components = mv.x.dual() * component_positions                               # [components] Direction-
-field_places = mv.x.dual() * field_positions + mv.y.dual() * field_height    # [stages] Direction-
-boundaries = mv.x.dual() * np.r_[field_positions[0] - 0.3, component_positions, field_positions[-1] + 0.3]   # [stages + 1] Direction-
-
-
 # --- plumbing -------------------------------------------------------------------------
-def _across(centres: core.Direction, halves: core.Direction) -> tuple[core.Direction, simplices.Mesh]:
+def _across(centres: Extensor, halves: Extensor) -> tuple[Extensor, simplices.Mesh]:
     """Strokes across glyphs `[glyphs]`, either way from each centre by its half `[glyphs]`: their ends, and an
     edge from each glyph's first end to its second."""
     n_glyphs = len(centres)
-    ends = concatenate([centres - halves, centres + halves])                 # [2 * glyphs] Direction-
+    ends = concatenate([centres - halves, centres + halves])                 # [2 * glyphs]
     return ends, simplices.Mesh(2 * n_glyphs, np.stack([np.arange(n_glyphs), n_glyphs + np.arange(n_glyphs)], axis=-1))
 
 
-def _scene(input_axis: core.Direction, output_axis: core.Direction, dpi: float):
-    figure = plt.figure(figsize=(9.2, 2.2), dpi=dpi, facecolor=background_colour)
-    ax = figure.add_axes((0, 0, 1, 1), facecolor=background_colour)
-    ax.set(xlim=(-0.5, 14.3), ylim=(-0.75, 1.85), aspect="equal")
-    ax.set_axis_off()
-    camera = panel(ax, mv.x, mv.y)
-    points = dpi / 72
-    # Each polarizer's axis drawn either way across its middle, its glyph placed on the polarizer.
-    polarizer_axes = stack((input_axis, output_axis, input_axis, output_axis))          # [polarizers] Direction-
-    polarizers = _across(components[[0, 2, 3, 5]], polarizer_axes * (0.8 * component_radius))
-    # The components' discs, in the background's colour, with their outlines; the fields' circles open.
-    radius, field_ring = component_radius / camera.pixel, field_radius / camera.pixel
-    under = [simplices.strokes(boundaries, simplices.Mesh.chains([len(boundaries)]), faint_colour, axis_width * points,
-                               camera, cap=simplices.Cap.BUTT)]
-    over = [simplices.markers(components, to_rgb(background_colour), radius, camera),
-            simplices.markers(components, outline_colour, radius, camera, inner=radius - outline_width * points),
-            simplices.strokes(*polarizers, polarizer_colour, glyph_width * points, camera),
-            simplices.markers(field_places, faint_colour, field_ring, camera,
-                              inner=field_ring - circle_width * points)]
-    image = simplices.overlay(ax, under + over)
-    return figure, image, camera, under, over
+class Diagram:
+    """The diagram, laid out once in the algebra of the axes it is given: the beam's axis, the components and the
+    fields' circles drawn once; and its picture at each state, the beam, the plates' axis and the fields."""
 
+    def __init__(self, input_axis: core.Direction, output_axis: core.Direction, dpi: float) -> None:
+        mv = input_axis.context.multivector
+        self.points = dpi / 72
+        # The planes the transverse directions sweep in the observer's time, which read a field as it is, its parts
+        # along x and y.
+        self.swept_planes = stack((mv.x.dual(), mv.y.dual())) & -mv.t.dual()  # [2] Bivector-
+        # The glyphs' places in the diagram: the components on the beam; the fields above it, as the fields these
+        # planes read there; and the beam's ends and the components between them.
+        self.components = mv.x.dual() * component_positions                  # [components] Direction-
+        along, rise = self.swept_planes.dual() / (self.swept_planes & self.swept_planes.dual())   # [] Field+, Field+
+        self.field_places = along * field_positions + rise * field_height     # [stages] Field+
+        self.boundaries = mv.x.dual() * np.r_[field_positions[0] - 0.3, component_positions,
+                                              field_positions[-1] + 0.3]      # [stages + 1] Direction-
+        self.figure = plt.figure(figsize=(9.2, 2.2), dpi=dpi, facecolor=background_colour)
+        ax = self.figure.add_axes((0, 0, 1, 1), facecolor=background_colour)
+        ax.set(xlim=(-0.5, 14.3), ylim=(-0.75, 1.85), aspect="equal")
+        ax.set_axis_off()
+        self.camera = panel(ax, mv.x, mv.y)
+        self.field_camera = panel(ax, *self.swept_planes)
+        # Each polarizer's axis drawn either way across its middle, its glyph placed on the polarizer.
+        polarizer_axes = stack((input_axis, output_axis, input_axis, output_axis))          # [polarizers] Direction-
+        polarizers = _across(self.components[[0, 2, 3, 5]], polarizer_axes * (0.8 * component_radius))
+        # The components' discs, in the background's colour, with their outlines; the fields' circles open.
+        radius, field_ring = component_radius / self.camera.pixel, field_radius / self.camera.pixel
+        self.under = [simplices.strokes(self.boundaries, simplices.Mesh.chains([len(self.boundaries)]), faint_colour,
+                                        axis_width * self.points, self.camera, cap=simplices.Cap.BUTT)]
+        self.over = [
+            simplices.markers(self.components, to_rgb(background_colour), radius, self.camera),
+            simplices.markers(self.components, outline_colour, radius, self.camera,
+                              inner=radius - outline_width * self.points),
+            simplices.strokes(*polarizers, polarizer_colour, glyph_width * self.points, self.camera),
+            simplices.markers(self.field_places, faint_colour, field_ring, self.field_camera,
+                              inner=field_ring - circle_width * self.points)]
+        self.image = simplices.overlay(ax, self.under + self.over)
 
-def _picture(camera: Camera, under: list[np.ndarray], over: list[np.ndarray], fields: core.Field,
-             plate_axis: core.Direction, dpi: float) -> np.ndarray:
-    points = dpi / 72
-    # The beam's strength between components, from the field's square size there, its readings by the planes the
-    # transverse directions sweep in time: each stretch of the beam as strong.
-    readings = (fields[..., None] & (stack((mv.x.dual(), mv.y.dual())) & core.time)).to_array()   # [stages, 2]
-    strengths = np.clip(np.sum(readings * readings, axis=-1), 0, 1)
-    beam = [simplices.strokes(boundaries[stage:stage + 2], simplices.Mesh.chains([2]), beam_colour, beam_width * points,
-                              camera, cap=simplices.Cap.BUTT, opacity=strength)
-            for stage, strength in enumerate(strengths)]
-    # The field drawn either way across its glyph's middle, above the beam, along the direction it sweeps through
-    # time: the plane it is the field along, `field.dual_inverse()`, met with the observer's space, its ends square,
-    # so that no field draws nothing; and the plates' axis on each plate.
-    swept = fields.dual_inverse() ^ mv.t                                      # [stages] Direction-
-    field_glyphs = _across(field_places, swept * 0.34)
-    plates = _across(components[[1, 4]], stack((plate_axis, plate_axis)) * (0.8 * component_radius))
-    return simplices.composited(under + beam + over + [
-        simplices.strokes(*plates, plate_colour, glyph_width * points, camera),
-        simplices.strokes(*field_glyphs, beam_colour, glyph_width * points, camera, cap=simplices.Cap.BUTT)])
+    def picture(self, fields: core.Field, plate_axis: core.Direction) -> np.ndarray:
+        """The diagram with the fields between components `[stages]` and the plates' axis."""
+        # The beam's strength between components, from the field's square size there, its readings by the planes the
+        # transverse directions sweep in time: each stretch of the beam as strong.
+        readings = (fields[..., None] & self.swept_planes).to_array()        # [stages, 2]
+        strengths = np.clip(np.sum(readings * readings, axis=-1), 0, 1)
+        beam = [simplices.strokes(self.boundaries[stage:stage + 2], simplices.Mesh.chains([2]), beam_colour,
+                                  beam_width * self.points, self.camera, cap=simplices.Cap.BUTT, opacity=strength)
+                for stage, strength in enumerate(strengths)]
+        # The field drawn either way across its glyph's middle, above the beam, as it is, read by the planes the
+        # transverse directions sweep in time, its ends square, so that no field draws nothing; and the plates' axis
+        # on each plate.
+        field_glyphs = _across(self.field_places, fields * 0.34)
+        plates = _across(self.components[[1, 4]], stack((plate_axis, plate_axis)) * (0.8 * component_radius))
+        return simplices.composited(self.under + beam + self.over + [
+            simplices.strokes(*plates, plate_colour, glyph_width * self.points, self.camera),
+            simplices.strokes(*field_glyphs, beam_colour, glyph_width * self.points, self.field_camera,
+                              cap=simplices.Cap.BUTT)])
 
 
 def frames(fields: core.Field, plate_axes: core.Direction, input_axis: core.Direction,
@@ -101,8 +108,8 @@ def frames(fields: core.Field, plate_axes: core.Direction, input_axis: core.Dire
 def sized_frames(fields: core.Field, plate_axes: core.Direction, input_axis: core.Direction,
                  output_axis: core.Direction, dpi: float) -> Iterator[np.ndarray]:
     """As `frames`, the figure drawn at `dpi` dots per inch."""
-    figure, image, camera, under, over = _scene(input_axis, output_axis, dpi)
+    diagram = Diagram(input_axis, output_axis, dpi)
     for field, plate_axis in zip(fields, plate_axes):
-        image.set_data(_picture(camera, under, over, field, plate_axis, dpi))
-        yield capture(figure)
-    plt.close(figure)
+        diagram.image.set_data(diagram.picture(field, plate_axis))
+        yield capture(diagram.figure)
+    plt.close(diagram.figure)

@@ -13,7 +13,7 @@ from numga import stack
 from examples.util.animation import capture
 from examples.surfaces.reciprocal import core
 from examples.util.wgsl import fitted, meshes, show, simplices, solids
-from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl.camera import flat_panel, panel
 
 TERRAIN_COLOUR = np.array(to_rgb("#9fb7c4"))
 BOUNDARY_COLOUR = np.full(3, 0.65)
@@ -85,9 +85,6 @@ def panels(mesh: core.Mesh, points: core.Point, framing: solids.View
     rim = simplices.Mesh(len(places), mesh.edges[mesh.boundary_edges])
     # The reciprocal diagram: a reciprocal vertex for each face, joined across every bar to the one on its other side.
     reciprocal = simplices.Mesh(len(mesh.faces), mesh.edge_faces)
-    # The directions along x and y: a reciprocal vertex, a face's slope, pairs with them to how fast the face rises
-    # along each, its place in the diagram.
-    directions = stack((core.mv.x, core.mv.y)).dual()                           # [2] Point-
     figure = plt.figure(figsize=(6.0, 3.0))
     terrain_axes = figure.add_axes((0.0, 0.0, 0.5, 1.0))
     framing = fitted(framing, terrain_axes)
@@ -96,17 +93,20 @@ def panels(mesh: core.Mesh, points: core.Point, framing: solids.View
     plane.set(xlim=(-REACH, REACH), ylim=(-REACH, REACH), aspect="equal")
     plane.set_axis_off()
     camera = flat_panel(plane, places.algebra)
+    # The reciprocal vertices, the faces' slopes, read as they are by the directions along x and y: how fast each face
+    # rises along each, its place in the diagram.
+    slope_camera = panel(plane, core.mv.x.dual(), core.mv.y.dual())
     boundary = simplices.strokes(places, rim, RIM_COLOUR, LINE_WIDTH, camera)
     truss = simplices.overlay(plane, [boundary])
 
     def drawn(heights: core.Scalar, stresses: core.Scalar, duals: core.Plane) -> None:
         shades = colours(stresses.batch().to_array())                          # [inner, 4]
         picture.set_data(terrain(mesh, points, heights, shades[:, :3], framing))
-        corners = ((duals.batch()[..., None] & directions) * directions).sum(axis=-1)   # [faces] Point-
+        corners = duals.batch()                                                # [faces] Plane+
         truss.set_data(simplices.composited([
             simplices.strokes(places, bars, shades[:, :3], BAR_WIDTH, camera), boundary,
-            simplices.strokes(corners, reciprocal, RECIPROCAL_COLOUR, LINE_WIDTH, camera),
-            simplices.markers(corners, RECIPROCAL_COLOUR, CORNER_RADIUS, camera)]))
+            simplices.strokes(corners, reciprocal, RECIPROCAL_COLOUR, LINE_WIDTH, slope_camera),
+            simplices.markers(corners, RECIPROCAL_COLOUR, CORNER_RADIUS, slope_camera)]))
 
     return figure, drawn
 

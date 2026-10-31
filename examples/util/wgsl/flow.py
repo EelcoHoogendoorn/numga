@@ -13,8 +13,9 @@ import numpy as np
 from matplotlib.axes import Axes
 
 from numga.extensor import Extensor
+from numga.gatype import GAType
 from examples.util.wgsl import Shader, meshes, solids
-from examples.util.wgsl.camera import Camera, flat_panel, placing
+from examples.util.wgsl.camera import Camera, extrinsic_first, flat_panel, placing, reading, whole
 from examples.util.wgsl.library import pinned, samples_per_side
 
 Mesh = meshes.Mesh
@@ -92,12 +93,12 @@ fn seed(place: Point) -> f32 {
 }
 """
 
-# The seeds of a flat field in the points' own algebra, placed by its camera: no lighting, its field read across and up
-# the picture, its specks jittered on cells of the picture's own readings.
+# The seeds of a flat field in the points' own algebra, placed by its camera: no lighting, its field, as it is, read
+# across and up the picture by the camera's planes, its specks jittered on cells of the picture's own readings.
 planar_source = """
 var<storage, read> points: array<Point>;
 var<storage, read> faces: array<vec3<u32>>;
-var<storage, read> field: array<Point>;
+var<storage, read> field: array<Field>;
 var<uniform> noise_scale: f32;
 
 fn hash(place: vec3<f32>) -> f32 {
@@ -108,7 +109,7 @@ fn hash(place: vec3<f32>) -> f32 {
 
 struct Corner {
     @builtin(position) position: vec4<f32>,
-    @location(0) tangent: Point,
+    @location(0) tangent: Field,
     @location(1) place: Point,
 }
 struct Shade {
@@ -119,7 +120,7 @@ struct Shade {
 
 // Jittered specks, one to a cell of the picture's readings, `noise_scale` across, an eighth of a cell in radius.
 fn seed(place: Point) -> f32 {
-    let reading = vec2<f32>(screen_across & place, screen_up & place) / weight_of(place) / noise_scale;
+    let reading = vec2<f32>(paired(screen_across, place), paired(screen_up, place)) / weight_of(place) / noise_scale;
     let cell = floor(reading);
     var ink = 0.0;
     for (var y = -1; y <= 1; y++) {
@@ -144,7 +145,8 @@ fn place(@builtin(vertex_index) index: u32) -> Corner {
 @fragment
 fn shade(corner: Corner) -> Shade {
     // The field's change of place in the picture, in the readings, rows counted down.
-    let projected = screen_of(corner.tangent) * vec2<f32>(1, -1);
+    let projected = vec2<f32>(field_paired(screen_across, corner.tangent), field_paired(screen_up, corner.tangent))
+                    * vec2<f32>(1, -1);
     return Shade(vec4<f32>(1.0), vec4<f32>(projected, 0, 0), vec4<f32>(seed(corner.place)));
 }
 """
@@ -217,10 +219,18 @@ def seed_shader(grain: str) -> Shader:
 
 
 @cache
-def planar_shader(algebra) -> Shader:
-    """The seed pass of a flat field whose points belong to an algebra, placed by that algebra's camera."""
-    types = dict(Point=algebra.gatype.antivector(), Plane=algebra.gatype.vector())
-    return Shader(placing() + planar_source, algebra, types, {}, targets=("rgba8unorm", "rgba32float", "rgba32float"))
+def planar_shader(Point: GAType, Plane: GAType, Field: GAType) -> Shader:
+    """The seed pass of a flat field of the type `Field` over points of the type `Point`, both read by a camera's
+    planes of the type `Plane`, the extrinsic first."""
+    pairing = "plane & field" if extrinsic_first(Plane) else "field & plane"
+    field_pairing = f"""
+// A camera plane's reading of the field, their regressive product, the extrinsic first.
+fn field_paired(plane: Plane, field: Field) -> f32 {{
+    return {pairing};
+}}
+"""
+    return Shader(placing(Plane) + field_pairing + planar_source, Point.algebra,
+                  dict(Point=Point, Plane=Plane, Field=Field), {}, targets=("rgba8unorm", "rgba32float", "rgba32float"))
 
 
 @cache
@@ -258,7 +268,7 @@ def layer(points: Extensor, mesh: Mesh, field: Extensor, camera: Camera,
           length: float = length_pixels) -> np.ndarray:
     """A transparent ink layer, at the camera's own pixels, for a flat field over a panel, the points and the field in
     their own algebra, read by its camera."""
-    surface, projected, grains = planar_shader(points.algebra).draw_averaged(
+    surface, projected, grains = planar_shader(**reading(points, camera), Field=whole(field, points.algebra)).draw_averaged(
         camera.shape, samples_per_side(), 3 * len(mesh.faces), points=points, faces=mesh.faces, field=field,
         noise_scale=camera.pixel * 6.0, **camera.uniforms(1.0))
     result = trace_shader()(camera.shape, surface=surface, flow=projected, grains=grains, background=np.ones(3),

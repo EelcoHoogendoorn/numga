@@ -22,8 +22,9 @@ import numpy as np
 from matplotlib.axes import Axes
 
 from numga.extensor import Extensor
+from numga.gatype import GAType
 from examples.util.wgsl import Shader, meshes, pinned
-from examples.util.wgsl.camera import Camera, flat_panel, placing
+from examples.util.wgsl.camera import Camera, flat_panel, placing, read, reading
 from examples.util.wgsl.library import samples_per_side
 
 Mesh = meshes.Mesh
@@ -100,12 +101,12 @@ fn place(@builtin(vertex_index) index: u32) -> Corner {
     let depth = mix(start.z, end.z, corner.x);
     let position = vec4<f32>(at.x / samples.x * 2.0 - 1.0, 1.0 - at.y / samples.y * 2.0, depth, 1.0);
     // Each end's depth along the view: how far it lies away from the viewer, in the scene's units.
-    let depths = vec2<f32>(-(screen_toward & points[edge.x]) / weight_of(points[edge.x]),
-                           -(screen_toward & points[edge.y]) / weight_of(points[edge.y]));
-    let run = vec3<f32>(screen_across & points[edge.y], screen_up & points[edge.y], screen_toward & points[edge.y])
-              / weight_of(points[edge.y])
-            - vec3<f32>(screen_across & points[edge.x], screen_up & points[edge.x], screen_toward & points[edge.x])
-              / weight_of(points[edge.x]);
+    let depths = vec2<f32>(-paired(screen_toward, points[edge.x]) / weight_of(points[edge.x]),
+                           -paired(screen_toward, points[edge.y]) / weight_of(points[edge.y]));
+    let run = vec3<f32>(paired(screen_across, points[edge.y]), paired(screen_up, points[edge.y]),
+                        paired(screen_toward, points[edge.y])) / weight_of(points[edge.y])
+            - vec3<f32>(paired(screen_across, points[edge.x]), paired(screen_up, points[edge.x]),
+                        paired(screen_toward, points[edge.x])) / weight_of(points[edge.x]);
     return Corner(position, vec4<f32>(from, to), colours[index / 6], vec2<f32>(travelled[index / 6], heads[index / 6]),
                   depths, run, index / 6);
 }
@@ -261,10 +262,10 @@ fn shade(corner: Corner) -> @location(0) vec4<f32> {
 
 
 @cache
-def stroke_shader(algebra) -> Shader:
-    """The strokes of edges whose points belong to an algebra, placed by that algebra's camera."""
-    types = dict(Point=algebra.gatype.antivector(), Plane=algebra.gatype.vector())
-    return Shader(placing() + stroke_source + flat_stroke, algebra, types, {}, targets=("rgba8unorm",))
+def stroke_shader(Point: GAType, Plane: GAType) -> Shader:
+    """The strokes of edges whose points are of the type `Point`, placed by a camera's planes of the type `Plane`."""
+    return Shader(placing(Plane) + stroke_source + flat_stroke, Point.algebra, dict(Point=Point, Plane=Plane), {},
+                  targets=("rgba8unorm",))
 
 
 @cache
@@ -272,15 +273,15 @@ def tube_shader() -> Shader:
     """The strokes of a lit 3D scene as tubes, in the solids' algebra, whose lamp lights them: the colour a byte a
     channel and the depth alone at full precision, as the meshes write them."""
     from examples.util.wgsl import solids
-    return Shader(solids.lamp_shading() + placing() + stroke_source + tube_stroke, solids.ga,
+    return Shader(solids.lamp_shading() + placing(solids.Plane) + stroke_source + tube_stroke, solids.ga,
                   dict(Point=solids.Point, Plane=solids.Plane), {}, targets=("rgba8unorm", "r32float"))
 
 
 @cache
-def marker_shader(algebra) -> Shader:
-    """The markers of points of an algebra, placed by that algebra's camera."""
-    types = dict(Point=algebra.gatype.antivector(), Plane=algebra.gatype.vector())
-    return Shader(placing() + marker_source, algebra, types, {}, targets=("rgba8unorm",))
+def marker_shader(Point: GAType, Plane: GAType) -> Shader:
+    """The markers of points of the type `Point`, placed by a camera's planes of the type `Plane`."""
+    return Shader(placing(Plane) + marker_source, Point.algebra, dict(Point=Point, Plane=Plane), {},
+                  targets=("rgba8unorm",))
 
 
 def straight(image: np.ndarray) -> np.ndarray:
@@ -294,8 +295,8 @@ def travelled(points: Extensor, edges: np.ndarray, camera: Camera) -> np.ndarray
     """Each edge's distance along its chain from where the chain starts, in pixels `[edges]`: the edges in their order,
     a chain starting again wherever an edge does not start where the one before it ends. Read at the hand-off to the
     picture, by the camera's planes, as the shader reads them."""
-    readings = (np.stack([(camera.across & points).to_array(), (camera.up & points).to_array()], axis=-1)
-                / ((camera.weight & points).to_array() + camera.unit)[..., None]).reshape(-1, 2) / camera.pixel
+    readings = (np.stack([read(camera.across, points).to_array(), read(camera.up, points).to_array()], axis=-1)
+                / (read(camera.weight, points).to_array() + camera.unit)[..., None]).reshape(-1, 2) / camera.pixel
     lengths = np.linalg.norm(readings[edges[:, 1]] - readings[edges[:, 0]], axis=-1)
     starts = np.ones(len(edges), dtype=bool)
     starts[1:] = edges[1:, 0] != edges[:-1, 1]
@@ -317,7 +318,7 @@ def strokes(points: Extensor, mesh: Mesh, colours: np.ndarray, width: float, cam
     # No edges, such as a trail not yet begun, draw nothing: a clear picture.
     if len(edges) == 0:
         return np.zeros(camera.shape + (4,))
-    image, = stroke_shader(points.algebra).draw_averaged(
+    image, = stroke_shader(**reading(points, camera)).draw_averaged(
         camera.shape, side, 6 * len(edges), points=points, edges=edges,
         colours=np.broadcast_to(colours, (len(edges), 3)),
         travelled=travelled(points, edges, camera) * side, heads=np.broadcast_to(heads, len(edges)).astype(float),
@@ -368,7 +369,7 @@ def markers(points: Extensor, colours: np.ndarray, outer: np.ndarray, camera: Ca
     # No points draw nothing: a clear picture.
     if len(points) == 0:
         return np.zeros(camera.shape + (4,))
-    image, = marker_shader(points.algebra).draw_averaged(
+    image, = marker_shader(**reading(points, camera)).draw_averaged(
         camera.shape, side, 6 * len(points), points=points, colours=np.broadcast_to(colours, (len(points), 3)),
         reaches=np.stack([np.broadcast_to(outer, len(points)), np.broadcast_to(inner, len(points))], axis=-1) * side,
         samples=np.array([columns * side, rows * side], dtype=float), marker=float(marker), opacity=opacity, **camera.uniforms(1.0))
@@ -377,11 +378,15 @@ def markers(points: Extensor, colours: np.ndarray, outer: np.ndarray, camera: Ca
 
 def composited(pictures: list[np.ndarray]) -> np.ndarray:
     """Pictures of colour and coverage `[rows, columns, 4]`, each laid over the ones before: one such picture."""
-    colour, coverage = np.zeros(pictures[0].shape[:2] + (3,)), np.zeros(pictures[0].shape[:2] + (1,))
+    # Colour weighted by coverage, and coverage, each picture's laid over what is below it.
+    total = np.zeros(pictures[0].shape[:2] + (4,), dtype=np.float32)
     for picture in pictures:
-        colour = colour * (1 - picture[..., 3:]) + picture[..., :3] * picture[..., 3:]
-        coverage = coverage * (1 - picture[..., 3:]) + picture[..., 3:]
-    return np.minimum(np.concatenate((colour / np.where(coverage > 0, coverage, 1), coverage), axis=-1), 1)
+        coverage = picture[..., 3:].astype(np.float32)
+        total *= 1 - coverage
+        total[..., :3] += picture[..., :3] * coverage
+        total[..., 3:] += coverage
+    coverage = total[..., 3:]
+    return np.minimum(np.concatenate((total[..., :3] / np.where(coverage > 0, coverage, 1), coverage), axis=-1), 1)
 
 
 def overlay(ax: Axes, pictures: list[np.ndarray]):

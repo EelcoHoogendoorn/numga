@@ -86,7 +86,7 @@ def _cross(ax: plt.Axes, camera: Camera, across: str, up: str) -> np.ndarray:
     ax.set_axis_off()
     (left, right), (bottom, top) = ax.get_xlim(), ax.get_ylim()
     along, rise = (plane.dual() / (plane & plane.dual()) for plane in (camera.across, camera.up))
-    ends = stack((left * along, right * along, bottom * rise, top * rise))   # [4] Antivector-
+    ends = stack((left * along, right * along, bottom * rise, top * rise))   # [4]
     return simplices.strokes(ends, simplices.Mesh.chains([2, 2]), np.array(to_rgb(cross_colour)), charts.FRAME_PX,
                              camera, cap=simplices.Cap.BUTT)
 
@@ -232,10 +232,9 @@ def draw_polarizations(
     """Draw the electric field of the slow and the fast mode of the birefringent crystal as arrows in the xy plane,
     each of unit length."""
     _, fields = modes
-    # Each mode's field at unit strength of its electric field, drawn along the direction it lies in.
+    # Each mode's field at unit strength of its electric field.
     units = fields / (fields & core.time).norm()                                # [modes] Bivector+
-    directions = electric_direction(units)                                      # [modes] Antivector-
-    n_modes = len(directions)
+    n_modes = len(units)
     colours = np.stack((electric_colour, magnetic_colour))                      # [modes, 3]
     pairs = simplices.Mesh.chains([2] * n_modes)
 
@@ -245,14 +244,16 @@ def draw_polarizations(
     ax.set_axis_off()
     # The figure laid out before the picture takes the panel's pixels.
     ax.figure.tight_layout()
-    plane = panel(ax, mv.x, mv.y)
+    # The fields read as they are, by the planes x and y sweep through time: `swept_plane & field`, the electric
+    # field along each.
+    plane = panel(ax, *core.swept_planes[:2])
     # Each mode's line through the origin, dotted, under its arrow from the origin.
     simplices.overlay(ax, [
         _cross(ax, plane, "$x$", "$y$"),
-        simplices.strokes(stack((-directions, directions), axis=-1).reshape(-1), pairs, colours, charts.LINE_PX, plane,
+        simplices.strokes(stack((-units, units), axis=-1).reshape(-1), pairs, colours, charts.LINE_PX, plane,
                           dashes=polarization_dots, cap=simplices.Cap.ROUND, opacity=polarization_opacity),
-        simplices.strokes(stack((0 * directions, directions), axis=-1).reshape(-1), pairs, colours,
-                          polarization_width, plane, np.ones(n_modes), polarization_head)])
+        simplices.strokes(stack((0 * units, units), axis=-1).reshape(-1), pairs, colours, polarization_width, plane,
+                          np.ones(n_modes), polarization_head)])
 
 
 def draw_fresnel_surface_polar(

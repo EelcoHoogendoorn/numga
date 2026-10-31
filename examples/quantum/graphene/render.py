@@ -13,7 +13,7 @@ from numga import stack
 from examples.quantum.graphene import core
 from examples.util import charts
 from examples.util.wgsl import contours, fitted, flow, meshes, pinned, room, show, simplices, solids
-from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl.camera import Camera, panel
 
 COLOURS = ("#2e86c1", "#7d3c98", "#c0392b", "#d68910")
 # The size of the names on the bands' chart, in points.
@@ -62,15 +62,14 @@ def phase(rotors: core.Rotor, starts: core.Pseudospin) -> np.ndarray:
     return np.arctan2(turned, rotors.select[0].to_array())
 
 
-def haloed_cross(ax, across: str, up: str) -> None:
-    """No scales: a faint cross through the origin over the picture, its lines named inside the picture near their
-    ends, each name on a thin white halo that keeps it legible over the colours and the arrows."""
+def haloed_cross(ax, camera: Camera, across: str, up: str) -> None:
+    """No scales: a faint cross through the origin over the picture, as the momentum plane's camera reads it, its
+    lines named inside the picture near their ends, each name on a thin white halo that keeps it legible over the
+    colours and the arrows."""
     mv = core.mv
-    # The cross's two lines from edge to edge of the panel, the momenta along x and along y at its limits, each at the
-    # place of its dual, as the momentum plane is drawn.
+    # The cross's two lines from edge to edge of the panel, the momenta along x and along y at its limits.
     limits = np.array([ax.get_xlim(), ax.get_ylim()])                          # [2, ends]
-    ends = (stack((mv.x, mv.y))[:, None] * limits).dual().reshape(-1)          # [4] Point-
-    camera = flat_panel(ax, core.ga)
+    ends = (stack((mv.x, mv.y))[:, None] * limits).reshape(-1)                 # [4] Wavevector+
     cross = simplices.strokes(ends, simplices.Mesh.chains([2, 2]), CROSS_COLOUR, charts.FRAME_PX, camera,
                               cap=simplices.Cap.BUTT)
     simplices.overlay(ax, [cross]).set_zorder(1.5)
@@ -89,20 +88,21 @@ def draw_field(momenta: core.Wavevector, field: core.Field) -> plt.Figure:
     k = momentum_coordinates(momenta)                                           # [samples, samples, 2]
     mesh = meshes.Mesh.grid(*momenta.shape)
     mv = momenta.context.multivector
-    # The momentum plane drawn as a plane of space: each momentum at the place of its dual.
-    places = momenta.dual().reshape(-1)                                         # [samples] Point-
+    # The momenta as they are, read by the displacements along x and y.
+    places = momenta.reshape(-1)                                                # [samples] Wavevector+
     strength = field.norm().reshape(-1).to_array()                              # [samples]
     # The field's direction, its parts in the planes yz and zx, pairings with those planes' patches, drawn as a
-    # direction in the momentum plane along x and y.
+    # momentum along x and y.
     parts = field.normalized().reshape(-1)[:, None] & stack((mv.yz.dual(), mv.zx.dual()))   # [samples, 2] Scalar+
-    directions = (stack((mv.x.dual(), mv.y.dual())) * parts).sum(axis=-1)      # [samples] Point-
+    directions = (stack((mv.x, mv.y)) * parts).sum(axis=-1)                    # [samples] Wavevector+
     # The zone and its six corners, and room for the cross's names.
     figure, ax = charts.subplots(340, 340, layout="constrained")
     ax.set(xlim=(k[..., 0].min(), k[..., 0].max()), ylim=(k[..., 1].min(), k[..., 1].max()), aspect="equal")
+    camera = panel(ax, mv.x.dual(), mv.y.dual())
     colours = plt.get_cmap("viridis")(strength / strength.max())[:, :3]
-    contours.overlay(ax, places, mesh, strength, colours).set_zorder(1)
-    flow.overlay(ax, places, mesh, directions, 1.0, FIELD_STREAK_COLOUR).set_zorder(2)
-    haloed_cross(ax, "momentum x", "momentum y")
+    simplices.overlay(ax, [contours.picture(places, mesh, strength, colours, camera)]).set_zorder(1)
+    simplices.overlay(ax, [flow.layer(places, mesh, directions, camera, 1.0, FIELD_STREAK_COLOUR)]).set_zorder(2)
+    haloed_cross(ax, camera, "momentum x", "momentum y")
     return figure
 
 
@@ -180,18 +180,20 @@ def draw_textures(pseudospins_at: Callable[[core.Wavevector], core.Pseudospin], 
     # The pseudospins' parts along x and y, their pairings with the planes yz and zx, drawn as directions in the
     # momentum plane along x and y.
     parts = stack((core.mv.yz, core.mv.zx)) & pseudospins[..., None]            # [valleys, rows, columns, 2] Scalar+
-    directions = (stack((core.mv.x.dual(), core.mv.y.dual())) * parts).sum(axis=-1)   # [valleys, rows, columns] Point-
-    # The momentum plane drawn as a plane of space, and the pixels as a grid over it.
+    directions = (stack((core.mv.x, core.mv.y)) * parts).sum(axis=-1)          # [valleys, rows, columns] Wavevector+
+    # The momenta of the pixels as they are, a grid over the momentum plane.
     mesh = meshes.Mesh.grid(side, side)
-    places = pixels.dual().reshape(-1)                                              # [pixels] Point-
+    places = pixels.reshape(-1)                                                     # [pixels] Wavevector+
     for ax, spin, drawn in zip(panels, spins, directions):
         colours = TEXTURE_MAP((spin[..., 2] + 1) / 2)[..., :3]
         pinned(ax, np.round(colours * 255).astype(np.uint8), (-extent, extent, -extent, extent))
         ax.set(xlim=(-extent, extent), ylim=(-extent, extent))
+        # The momenta read by the displacements along x and y.
+        camera = panel(ax, core.mv.x.dual(), core.mv.y.dual())
         # The part in the plane as streaks running downstream, as long as that part: specks where the pseudospin
         # stands along z.
-        flow.overlay(ax, places, mesh, drawn.reshape(-1), 1.0, STREAK_COLOUR).set_zorder(2)
-        haloed_cross(ax, "momentum x", "momentum y")
+        simplices.overlay(ax, [flow.layer(places, mesh, drawn.reshape(-1), camera, 1.0, STREAK_COLOUR)]).set_zorder(2)
+        haloed_cross(ax, camera, "momentum x", "momentum y")
     return figure
 
 

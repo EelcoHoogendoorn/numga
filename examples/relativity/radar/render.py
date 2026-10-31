@@ -10,8 +10,9 @@ from PIL import Image, ImageDraw, ImageFont
 from numga import concatenate, stack, where
 from numga.multivector.factory import MultivectorFactory
 from examples.relativity.radar.core import Event, Scalar, Slice
-from examples.util.wgsl import planar
-from examples.util.wgsl.planar import Cap, Marker, Marks, Polygons, SOLID, Strokes
+from examples.util.wgsl import contours, planar, simplices
+from examples.util.wgsl.camera import Camera
+from examples.util.wgsl.planar import SOLID
 
 BLUE, ORANGE, GREY, INK, GREEN = (
     np.array(to_rgb(colour)) for colour in ("#3196b4", "#de9439", "#aab9c1", "#485961", "#458875"))
@@ -27,24 +28,26 @@ def coordinates(events: Event) -> np.ndarray:
     return (stack((mv.x, mv.t)) & events[..., None]).to_array()
 
 
-def gpu_points(events: Event) -> planar.Point:
-    """Draw position across and coordinate time up, keeping the readings typed through the diagram mapping."""
-    mv = events.context.multivector
-    readings = stack((mv.x, mv.t)) & events[..., None]
-    frame = stack((planar.mv.x, planar.mv.y)).dual()
-    return planar.origin + (frame * planar.context.include_from_algebra(readings)).sum(axis=-1)
+def diagram_camera(window: planar.Window, mv: MultivectorFactory) -> Camera:
+    """The window as a camera of the diagram's events, as they are: position across, read by the plane x, and
+    coordinate time up, read by the plane t, over their weights, their pairings with the plane w."""
+    return planar.window_camera(window)._replace(across=mv.x, up=mv.t, toward=0 * mv.x, weight=mv.w)
 
 
+def strokes(events: Event, width: float, colour: np.ndarray, opacity: float, dashes: tuple[float, float],
+            camera: Camera) -> np.ndarray:
+    """Polylines through events `[n, k]`, `width` pixels across, one colour `[3]` or one each `[n, 3]`: their
+    picture."""
+    size, n_events = events.shape
+    colours = np.repeat(np.broadcast_to(colour, (size, 3)), n_events - 1, axis=0)
+    return simplices.strokes(events.reshape(-1), simplices.Mesh.chains([n_events] * size), colours, width, camera,
+                             dashes=dashes, opacity=opacity)
 
-def strokes(events: Event, width: float, colour: np.ndarray, opacity: float,
-            dashes: tuple[float, float]) -> Strokes:
-    return Strokes(gpu_points(events), width, colour, opacity, dashes, Cap.ROUND)
 
-
-def dots(events: Event, colour: np.ndarray, radius: float) -> list:
-    placed = gpu_points(events)
-    return [Marks(placed, Marker.DISC, 0, radius + 1.5, WHITE, 1),
-            Marks(placed, Marker.DISC, 0, radius, colour, 1)]
+def dots(events: Event, colour: np.ndarray, radius: float, camera: Camera) -> list[np.ndarray]:
+    """Dots at events `[n]`, `radius` pixels, ringed in white: their pictures."""
+    return [simplices.markers(events, WHITE, radius + 1.5, camera),
+            simplices.markers(events, colour, radius, camera)]
 
 
 def axis_ends(window: planar.Window, mv: MultivectorFactory) -> tuple[Event, Event]:
@@ -58,11 +61,14 @@ def axis_ends(window: planar.Window, mv: MultivectorFactory) -> tuple[Event, Eve
     return starts, ends
 
 
-def written(window: planar.Window, layers: list, labels: list, mv: MultivectorFactory) -> np.ndarray:
-    """Composite the geometry and attach labels, each beside its event, in the same native pixel grid."""
+def written(window: planar.Window, camera: Camera, layers: list[np.ndarray], labels: list,
+            mv: MultivectorFactory) -> np.ndarray:
+    """Composite the geometry over white and attach labels, each beside its event, in the same native pixel grid."""
     starts, ends = axis_ends(window, mv)
-    axes = strokes(stack((starts, ends), axis=1), 1, FAINT, 1, SOLID)
-    canvas = Image.fromarray(planar.draw(window, [axes] + layers, WHITE))
+    axes = strokes(stack((starts, ends), axis=1), 1, FAINT, 1, SOLID, camera)
+    picture = simplices.composited([axes] + layers)
+    seen = WHITE * (1 - picture[..., 3:]) + picture[..., :3] * picture[..., 3:]
+    canvas = Image.fromarray(np.round(np.clip(seen, 0, 1) * 255).astype(np.uint8))
     pen = ImageDraw.Draw(canvas)
     labels = [(ends[0], "x", INK, (0, 12), "mm"), (ends[1], "t", INK, (10, 0), "lm")] + labels
     places = coordinates(stack([event for event, *_ in labels]))               # [labels, 2]
@@ -77,6 +83,7 @@ def exchange_frames(worldlines: Event, emitted: Event, reflected: Event, receive
                     n_frames: int):
     """Light pulses advancing through the diagram; their completed paths stay visible."""
     mv = emitted.context.multivector
+    camera = diagram_camera(EXCHANGE_WINDOW, mv)
     starts, ends = concatenate((emitted, reflected)), concatenate((reflected, received))   # [paths] Event-, Event-
     n_pulses = len(emitted)
     colours = np.repeat(np.stack((ORANGE, BLUE)), n_pulses, axis=0)
@@ -93,16 +100,16 @@ def exchange_frames(worldlines: Event, emitted: Event, reflected: Event, receive
         # Each pulse in flight is where its line meets the present; one that has arrived stays at its end.
         crossings = light_lines ^ present                                      # [paths] Event-
         fronts = where(arrived, ends, crossings / (mv.w & crossings))          # [paths] Event-
-        layers = [strokes(worldlines, 2, np.stack((INK, GREY)), 1, SOLID),
-                  strokes(paths, 1, colours, 0.16, SOLID),
-                  strokes(stack((starts, fronts), axis=1)[begun], 2, colours[begun], 1, SOLID)]
-        layers += dots(fronts[travelling], colours[travelling], 4)
-        layers += dots(reflected[(present & reflected) <= 0], ORANGE, 3)
+        layers = [strokes(worldlines, 2, np.stack((INK, GREY)), 1, SOLID, camera),
+                  strokes(paths, 1, colours, 0.16, SOLID, camera),
+                  strokes(stack((starts, fronts), axis=1)[begun], 2, colours[begun], 1, SOLID, camera)]
+        layers += dots(fronts[travelling], colours[travelling], 4, camera)
+        layers += dots(reflected[(present & reflected) <= 0], ORANGE, 3, camera)
         clock_events = concatenate((emitted[(present & emitted) <= 0], received[(present & received) <= 0]))
-        layers += dots(clock_events, INK, 3)
+        layers += dots(clock_events, INK, 3, camera)
         labels = [(event, f"{reading:.2f}", INK, (-10, 0), "rm")
                   for event, reading in zip(clock_events, (mv.t & clock_events).to_array())]
-        yield written(EXCHANGE_WINDOW, layers, labels, mv)
+        yield written(EXCHANGE_WINDOW, camera, layers, labels, mv)
 
 
 def reconstruction(worldlines: Event, emitted: Event, reflected: Event, received: Event,
@@ -110,21 +117,24 @@ def reconstruction(worldlines: Event, emitted: Event, reflected: Event, received
                    window: planar.Window) -> np.ndarray:
     """The radar assignment for the middle pulse, with every recovered reflection marked and the middle one's clock
     readings, radar time and range written beside it."""
+    mv = emitted.context.multivector
+    camera = diagram_camera(window, mv)
     index = len(emitted) // 2
-    triangle = stack((emitted[index], reflected[index], received[index]))[None]   # [1, corners] Event-
+    triangle = stack((emitted[index], reflected[index], received[index]))   # [corners] Event-
     outgoing = stack((emitted, reflected), axis=1)                            # [pulses, 2] Event-
     incoming = stack((reflected, received), axis=1)                           # [pulses, 2] Event-
-    layers = [Polygons(gpu_points(triangle), BLUE, 0.045),
-              strokes(worldlines, 2, np.stack((INK, GREY)), 1, SOLID),
-              strokes(outgoing, 1, ORANGE, 0.2, SOLID),
-              strokes(incoming, 1, BLUE, 0.2, SOLID),
-              strokes(outgoing[index:index + 1], 2, ORANGE, 1, SOLID),
-              strokes(incoming[index:index + 1], 2, BLUE, 1, SOLID),
-              strokes(stack((simultaneous[index], located[index]))[None], 1.7, GREEN, 1, (5, 4)),
-              strokes(located[None], 2, GREEN, 1, SOLID)]
-    layers += dots(located, GREEN, 4)
-    layers += dots(stack((emitted[index], received[index])), INK, 3)
-    layers += dots(simultaneous[index:index + 1], GREEN, 3)
+    layers = [contours.picture(triangle, simplices.Mesh(3, np.array([[0, 1, 2]])), np.zeros(3), BLUE, camera,
+                               opacity=0.045),
+              strokes(worldlines, 2, np.stack((INK, GREY)), 1, SOLID, camera),
+              strokes(outgoing, 1, ORANGE, 0.2, SOLID, camera),
+              strokes(incoming, 1, BLUE, 0.2, SOLID, camera),
+              strokes(outgoing[index:index + 1], 2, ORANGE, 1, SOLID, camera),
+              strokes(incoming[index:index + 1], 2, BLUE, 1, SOLID, camera),
+              strokes(stack((simultaneous[index], located[index]))[None], 1.7, GREEN, 1, (5, 4), camera),
+              strokes(located[None], 2, GREEN, 1, SOLID, camera)]
+    layers += dots(located, GREEN, 4, camera)
+    layers += dots(stack((emitted[index], received[index])), INK, 3, camera)
+    layers += dots(simultaneous[index:index + 1], GREEN, 3, camera)
     readings = (clock & stack((emitted[index], received[index]))).to_array()
     middle, distance = radar_time[index].to_array(), radar_range[index].to_array()
     # The range written halfway along the line of simultaneity to the located reflection.
@@ -133,4 +143,4 @@ def reconstruction(worldlines: Event, emitted: Event, reflected: Event, received
               (received[index], f"τ+ = {readings[1]:.2f}", INK, (-10, 0), "rm"),
               (simultaneous[index], f"T = {middle:.2f}", GREEN, (-10, 0), "rm"),
               (range_label, f"R = {distance:.2f}", GREEN, (0, -12), "mm")]
-    return written(window, layers, labels, emitted.context.multivector)
+    return written(window, camera, layers, labels, mv)

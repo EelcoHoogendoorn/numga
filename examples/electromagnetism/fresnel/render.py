@@ -17,7 +17,7 @@ from examples.util import charts
 from examples.util.animation import capture
 from examples.electromagnetism.fresnel import core
 from examples.util.wgsl import fitted, labels, meshes, show, simplices, solids
-from examples.util.wgsl.camera import Camera, panel
+from examples.util.wgsl.camera import Camera, panel, read
 from examples.util.wgsl.scene import Scene
 
 sheet_colours = ("#2563eb", "#ea580c")
@@ -130,23 +130,23 @@ def section_axes(ax: Axes) -> None:
 
 
 def section_camera(ax: Axes) -> Camera:
-    """The camera of the sections' plane, reading the wavevectors' tips by the planes x across and z up."""
-    return panel(ax, core.mv.x, core.mv.z)
+    """The camera of the sections' plane, reading the wavevectors by the directions of space x across and z up,
+    `wavevector & axis`."""
+    return panel(ax, core.axes[0], core.axes[2])
 
 
 def trace_sections(sections: core.Vector, camera: Camera) -> np.ndarray:
-    """A faint cross through the origin, along the directions the camera reads as one across and one up, the duals of
-    its planes over their own readings, and each sheet's section `[section_samples, sheets]` in the xz plane along its
-    curve, the second dashed, drawn at the wavevectors' tips: their picture."""
-    along, rise = (plane.dual() / (plane & plane.dual()) for plane in (camera.across, camera.up))
-    ends = view_limit * stack((-along, along, -rise, rise))                     # [4] Point-
-    tips = space_tip(sections)                                                   # [section_samples, sheets] Point-
-    chain = simplices.Mesh.chains([tips.shape[0]])
+    """A faint cross through the origin, along the wavevectors the camera reads as one across and one up, the duals of
+    its directions over their own readings, and each sheet's section `[section_samples, sheets]` in the xz plane along
+    its curve, the second dashed: their picture."""
+    along, rise = (axis.dual() / read(axis, axis.dual()) for axis in (camera.across, camera.up))
+    ends = view_limit * stack((-along, along, -rise, rise))                     # [4] Vector+
+    chain = simplices.Mesh.chains([sections.shape[0]])
     return simplices.composited([
         simplices.strokes(ends, simplices.Mesh.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
                           cap=simplices.Cap.BUTT),
-        simplices.strokes(tips[:, 0], chain, np.array(to_rgb(sheet_colours[0])), charts.LINE_PX, camera),
-        simplices.strokes(tips[:, 1], chain, np.array(to_rgb(sheet_colours[1])), charts.LINE_PX, camera,
+        simplices.strokes(sections[:, 0], chain, np.array(to_rgb(sheet_colours[0])), charts.LINE_PX, camera),
+        simplices.strokes(sections[:, 1], chain, np.array(to_rgb(sheet_colours[1])), charts.LINE_PX, camera,
                           dashes=section_dashes, cap=simplices.Cap.BUTT)])
 
 

@@ -109,7 +109,7 @@ def coordinates(points) -> np.ndarray:
 def table(path, half_width: float) -> np.ndarray:
     """The table from above with the loop on it, `[pixels, pixels, 3]` in [0, 1], within `half_width` of its middle: drawn
     once, for every frame to lay the ball over."""
-    weight, unit = weighing(VGA3D)
+    weight, unit = weighing(mv.x)
     camera = Camera(mv.x, mv.y, 0 * mv.x, weight, unit, np.zeros(2), np.full(2, half_width), N_PIXELS)
     loop = simplices.strokes(path, simplices.Mesh.chains([len(path)]), LOOP, LOOP_WIDTH, camera)
     return TABLE * (1 - loop[..., 3:]) + loop[..., :3] * loop[..., 3:]

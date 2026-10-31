@@ -13,7 +13,7 @@ from numga import Extensor, concatenate, stack
 from examples import instantiate
 from examples.util.animation import capture
 from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, flat_panel, panel
 from examples.fluids.wing import core
 
 Mesh = instantiate("examples.util.mesh", core.ga).Mesh
@@ -77,13 +77,15 @@ def draw(ax, points: core.Point, velocity: core.Point, stream: core.Bivector, li
     # The wing filled by the triangles of its outline's hull, under the flow, whose rings start at the wing's surface
     # and cover all of the hull outside it.
     outline = points[0]                                                      # [angles] Point-
-    # The lift from the origin, drawn along the direction it pushes.
-    push = (lift * lift_scale).dual()                                        # [] Point-
+    # The lift from the origin, as it is, read along the directions x and y: `lift & mv.x.dual()` is `mv.x | lift`, its
+    # share along x.
+    push = lift * lift_scale                                                 # [] Force+
+    forces = panel(ax, core.mv.x.dual(), core.mv.y.dual())
     simplices.overlay(ax, [
         contours.picture(outline, Mesh.triangulate(outline), np.zeros(len(outline)), rgb(wing_colour), camera),
         contours.picture(places, mesh, stream_values.reshape(-1), colours.reshape(-1, 3), camera,
                          lines=(streamlines,)),
-        simplices.strokes(stack((0 * push, push)), Mesh.chains([2]), rgb(lift_colour), lift_width, camera, np.ones(1),
+        simplices.strokes(stack((0 * push, push)), Mesh.chains([2]), rgb(lift_colour), lift_width, forces, np.ones(1),
                           lift_head),
         *[picture for spots, colour in marks
           for picture in marked(spots, colour, mark_radius, mark_rim, camera)]])

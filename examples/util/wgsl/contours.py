@@ -16,8 +16,9 @@ import numpy as np
 from matplotlib.axes import Axes
 
 from numga.extensor import Extensor
+from numga.gatype import GAType
 from examples.util.wgsl import Shader, meshes, pinned
-from examples.util.wgsl.camera import Camera, flat_panel, placing
+from examples.util.wgsl.camera import Camera, flat_panel, placing, reading
 from examples.util.wgsl.library import level_lines, samples_per_side
 
 Mesh = meshes.Mesh
@@ -114,10 +115,10 @@ no_bands = Bands(0.0, 1.0, np.zeros((1, 4)))
 
 
 @cache
-def shader(algebra) -> Shader:
-    """The shader for meshes whose points belong to an algebra, its points read by that algebra's camera."""
-    types = dict(Point=algebra.gatype.antivector(), Plane=algebra.gatype.vector())
-    return Shader(level_lines() + placing() + source, algebra, types, {}, targets=("rgba8unorm",))
+def shader(Point: GAType, Plane: GAType) -> Shader:
+    """The shader for meshes whose points are of the type `Point`, read by a camera's planes of the type `Plane`."""
+    return Shader(level_lines() + placing(Plane) + source, Point.algebra, dict(Point=Point, Plane=Plane), {},
+                  targets=("rgba8unorm",))
 
 
 def picture(points: Extensor, mesh: Mesh, values: np.ndarray, colours: np.ndarray, camera: Camera,
@@ -132,7 +133,7 @@ def picture(points: Extensor, mesh: Mesh, values: np.ndarray, colours: np.ndarra
         return np.zeros(camera.shape + (4,))
     lines, levels, bands = lines or (no_lines,), levels or (no_level,), bands or (no_bands,)
     starts = np.cumsum([0] + [len(band.colours) for band in bands[:-1]])
-    image, = shader(points.algebra).draw_averaged(
+    image, = shader(**reading(points, camera)).draw_averaged(
         camera.shape, side, 3 * len(mesh.faces), points=points, faces=mesh.faces,
         values=np.asarray(values, dtype=np.float32), colours=np.broadcast_to(colours, (len(values), 3)),
         opacity=opacity, **camera.uniforms(1.0),

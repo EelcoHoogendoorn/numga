@@ -1,8 +1,8 @@
 """The atoms and the brightness of the scattered light in a section of momentum transfers.
 
-The atoms, and the rings around the reciprocal lattice at the points its wavevectors' duals name, are drawn on the GPU
-in their own algebra, read by its planes x and y; the brightness is read out for matplotlib by pairing. The same lines
-serve the crystal in spacetime and in the algebra of space.
+The atoms, read by the planes x and y of their algebra, and the rings around the reciprocal lattice's wavevectors,
+read by the points one along x and along y, are drawn on the GPU as they are; the brightness is read out for
+matplotlib by pairing. The same lines serve the crystal in spacetime and in the algebra of space.
 """
 
 from __future__ import annotations
@@ -79,10 +79,9 @@ def atoms(positions: Extensor, radius: float, camera: Camera) -> np.ndarray:
 
 
 def rings(reciprocal: Extensor, scale: float, camera: Camera) -> np.ndarray:
-    """Rings around the reciprocal lattice's wavevectors `[reflections]`, at the points their duals name, which the
-    camera reads as the wavevectors' pairings with the points one along x and along y, `scale` times their size: their
-    picture."""
-    return simplices.markers(reciprocal.dual(), ring_colour, scale * (ring_radius + ring_width / 2), camera,
+    """Rings around the reciprocal lattice's wavevectors `[reflections]`, read as they are by a camera of the points one
+    along x and along y, `scale` times their size: their picture."""
+    return simplices.markers(reciprocal, ring_colour, scale * (ring_radius + ring_width / 2), camera,
                              inner=scale * (ring_radius - ring_width / 2))
 
 
@@ -99,8 +98,9 @@ def diffraction(ax: Axes, reciprocal: Extensor, transfers: Extensor, brightness:
     image = pinned(ax, brightness.to_array()[::-1], extent)
     image.set(cmap="magma", norm=LogNorm(vmin=brightness_floor, vmax=1))
     ax.set(xlim=extent[:2], ylim=extent[2:])
+    # The wavevectors read by the points one along x and along y, as the brightness's samples are.
     mv = transfers.context.multivector
-    camera = panel(ax, mv.x, mv.y)
+    camera = panel(ax, mv.x.dual(), mv.y.dual())
     return image, simplices.overlay(ax, [rings(reciprocal, scale, camera)]), camera
 
 

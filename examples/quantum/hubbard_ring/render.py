@@ -48,7 +48,8 @@ def draw_levels(ratios: np.ndarray, excitations: core.Scalar, heisenberg_levels:
 def animate_ring(ratios: np.ndarray, occupation: core.Scalar) -> Iterator[np.ndarray]:
     """Each site's spin-up count as an arrow up and its spin-down count as an arrow down, one ring per
     ratio of repulsion to hopping, frame by frame."""
-    counts = planar.context.include_from_algebra(occupation)                                  # [cases, times, sites, spins] Scalar+
+    # The counts are numbers of the chart, read out of the ring's algebra to set the bars' heights.
+    counts = occupation.to_array()                                             # [cases, times, sites, spins]
     tips = places[:, None] + mv.y.dual() * counts * (spin_height * np.array([1, -1]))   # [cases, times, sites, spins] Point-
     # Each bar from its site to its tip, up for spin up and down for spin down.
     bars = stack((places[:, None].broadcast_to(tips.shape), tips), axis=-1)       # [cases, times, sites, spins, 2] Point-

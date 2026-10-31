@@ -1420,8 +1420,10 @@ class Compiler:
             algebra_structs.append(f"// {kind}\nstruct {name} {{\n{fields}\n}};\n")
         code = "\n".join(directives + algebra_structs + self.aliases + structs + declarations + constants
                          + helpers + functions)
-        return Program(code, self.bindings, self.uniforms, dict(self.structs),
-                       {name: kind for kind, name in self.names.items()}, self.entry_points,
+        # Every name the shader gives an algebra type, its struct's own first and the aliases of a type named twice after.
+        named = {name: kind for kind, name in self.names.items()}
+        named |= {name: kind for name, kind in self.types.items() if name != "f32" and kind != self.scalar}
+        return Program(code, self.bindings, self.uniforms, dict(self.structs), named, self.entry_points,
                        self.stages.get("vertex"), self.stages.get("fragment"), self.targets)
 
     def struct_code(self, name: str, members: list) -> str:

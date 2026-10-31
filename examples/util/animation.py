@@ -55,13 +55,20 @@ def check_frame_duration(duration_ms: int, stepped: bool) -> None:
                          f"frames over the same span at that rate, or pass stepped=True for a sequence of discrete steps")
 
 
+# The figure `capture` drew last, by its identity.
+captured = {}
+
+
 def capture(fig: plt.Figure) -> np.ndarray:
     """Render a figure at SUPERSAMPLE times its resolution and return its RGB pixels, each the average of
     its block: antialiasing that holds for every artist. The figure's layout is solved on its first capture and kept
     from then on, so that nothing of an animation shifts between its frames."""
     # A closed figure holds its pixels in reference cycles until the collector runs, which a frame's few objects and
-    # large buffers rarely trigger: collected here, an animation keeps one frame's figure alive at a time.
-    gc.collect()
+    # large buffers rarely trigger: collected when a figure other than the last one captured arrives, an animation
+    # drawing a figure a frame keeps one alive at a time, and one redrawing a single figure pays nothing.
+    if captured.get("figure") != id(fig):
+        gc.collect()
+        captured["figure"] = id(fig)
     dpi = fig.dpi
     fig.set_dpi(dpi * SUPERSAMPLE)
     fig.canvas.draw()

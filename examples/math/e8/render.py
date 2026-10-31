@@ -50,13 +50,13 @@ def draw_roots(roots: Vector, horizontal: Vector, vertical: Vector) -> plt.Figur
     ax.set(xlim=(-radius, radius), ylim=(-radius, radius), aspect="equal")
     ax.set_axis_off()
     figure.subplots_adjust(0, 0, 1, 1)
-    # The camera reads places, antivectors, by the drawing plane's two vectors; roots are vectors, read by their
-    # complements.
-    camera = panel(ax, horizontal, vertical)
+    # The camera reads roots, vectors, as they are, along the drawing plane's two directions: `root & horizontal.dual()`
+    # is `horizontal | root`.
+    camera = panel(ax, horizontal.dual(), vertical.dual())
     neighbours = simplices.Mesh(len(flat), np.stack([first, second], axis=-1))
     simplices.overlay(ax, [
-        simplices.strokes(flat.dual(), neighbours, edge_colours, edge_width, camera, opacity=edge_opacity),
-        simplices.markers(flat.dual(), colours, root_radius, camera)])
+        simplices.strokes(flat, neighbours, edge_colours, edge_width, camera, opacity=edge_opacity),
+        simplices.markers(flat, colours, root_radius, camera)])
     plt.close(figure)
     return figure
 
@@ -88,8 +88,9 @@ def animate_planes(turning_roots: Iterable[Vector], roots: Vector, horizontal: V
         ax.set(xlim=(-radius, radius), ylim=(-radius, radius), aspect="equal")
         ax.set_axis_off()
     figure.subplots_adjust(0, 0, 1, 1, wspace=0.025)
-    # Each plane's camera reads places by its two vectors; roots are vectors, read by their complements.
-    cameras = [panel(ax, horizontal[index], vertical[index]) for index, ax in enumerate(axes)]
+    # Each plane's camera reads roots as they are, along its two directions.
+    across, up = horizontal.dual(), vertical.dual()                             # [planes] Antivector-
+    cameras = [panel(ax, across[index], up[index]) for index, ax in enumerate(axes)]
     backdrops = []
     for index, camera in enumerate(cameras):
         step = (planes[index] * (-np.pi / n_around)).exp()                     # [] Rotor+
@@ -98,9 +99,9 @@ def animate_planes(turning_roots: Iterable[Vector], roots: Vector, horizontal: V
             turned.append(step >> turned[-1])
         circles = stack(turned, axis=-1)                                       # [orbits, around + 1] Vector+
         backdrops.append([
-            simplices.strokes(circles.reshape(-1).dual(), orbit_chains, np.repeat(orbit_colours, n_around, axis=0),
+            simplices.strokes(circles.reshape(-1), orbit_chains, np.repeat(orbit_colours, n_around, axis=0),
                               orbit_width, camera, opacity=orbit_opacity),
-            simplices.markers(roots.reshape(-1).dual(), np.tile(orbit_colours, (roots.shape[0], 1)),
+            simplices.markers(roots.reshape(-1), np.tile(orbit_colours, (roots.shape[0], 1)),
                               faint_root_radius, camera, opacity=faint_root_opacity)])
     images = [simplices.overlay(ax, backdrop) for ax, backdrop in zip(axes, backdrops)]
 
@@ -108,7 +109,7 @@ def animate_planes(turning_roots: Iterable[Vector], roots: Vector, horizontal: V
         trails = turning[:, (frame + history) % n_frames]                     # [orbits, trail + 1] Vector+
         for image, camera, backdrop in zip(images, cameras, backdrops):
             image.set_data(simplices.composited(backdrop + [
-                simplices.strokes(trails.reshape(-1).dual(), trail_chains, trail_colours, trail_width, camera),
-                simplices.markers(turning[:, frame].dual(), orbit_colours, rider_radius, camera)]))
+                simplices.strokes(trails.reshape(-1), trail_chains, trail_colours, trail_width, camera),
+                simplices.markers(turning[:, frame], orbit_colours, rider_radius, camera)]))
         yield capture(figure)
     plt.close(figure)

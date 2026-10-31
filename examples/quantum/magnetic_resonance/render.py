@@ -4,6 +4,7 @@ spin echo. The Bloch ball is drawn on the GPU, the rest by matplotlib."""
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
+from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -15,7 +16,7 @@ from examples.util.animation import capture
 from examples.quantum.magnetic_resonance import core
 from examples.util import charts
 from examples.util.wgsl import labels, show, simplices, solids
-from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl.camera import panel
 
 COLOURS = ("#c0392b", "#7d3c98", "#2e86c1")
 SPHERE_COLOUR, SPHERE_OPACITY = np.array([0.70, 0.76, 0.86]), 0.09
@@ -174,8 +175,17 @@ def animate_echo(detunings: np.ndarray, states: Iterable[core.State], dt: float,
     span = np.linspace(0.0, ECHO_SPAN)
     # Each spin's dot shaded by its detuning, from the lowest to the highest.
     shades = plt.get_cmap("coolwarm")(plt.Normalize()(detunings))[:, :3]   # [spins, 3]
-    turns = (solids.mv.xy * (-np.linspace(0, 2 * np.pi, N_RIM_SAMPLES) / 2)).exp()
-    equator = solids.origin + (turns >> solids.mv.x.dual())                   # [rim samples] Point-
+    states = iter(states)
+    first = next(states)
+    mv = first.context.multivector
+    # The spins seen from above the field, read as they are by the planes they turn in, twice over: the Bloch vector's
+    # x and y, in spacetime, where a spin is the patch of its plane, as in the conventional twin's space, where it is a
+    # vector.
+    across, up = 2 * mv.yz, 2 * mv.zx
+    # The ball's equator: the elements these planes read one unit along x, turned about the field.
+    unit = across.dual() / (across & across.dual())
+    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, N_RIM_SAMPLES) / 2)).exp()
+    equator = turns >> unit                                                   # [rim samples]
     with charts.style():
         figure, (top, trace) = charts.subplots(*ECHO_PX, ncols=2, width_ratios=(1, 1.4))
         top.set_xlim(-1.1, 1.1)
@@ -190,18 +200,17 @@ def animate_echo(detunings: np.ndarray, states: Iterable[core.State], dt: float,
         trace.set(ylim=(0, 1.05), xticks=[], yticks=[], xlabel="time", ylabel="mean transverse spin")
         trace.spines[["top", "right"]].set_visible(False)
         figure.tight_layout()
-        # The spins seen from above the field, inside the ball's equator.
-        camera = flat_panel(top, solids.ga)
+        camera = panel(top, across, up)
         rim = simplices.strokes(equator, simplices.Mesh.chains([N_RIM_SAMPLES]), EQUATOR_COLOUR, charts.LINE_PX,
                                 camera)
         spins = simplices.overlay(top, [rim])
         times, strength = [], []
-        for index, rho in enumerate(states):
+        for index, rho in enumerate(chain((first,), states)):
             times.append(index * dt)
             strength.append(signal(rho))
             if index % every == 0:
                 spins.set_data(simplices.composited([
-                    rim, simplices.markers(gpu_points(rho), shades, charts.MARKER_PX / 2, camera)]))
+                    rim, simplices.markers(rho.select.antibivector(), shades, charts.MARKER_PX / 2, camera)]))
                 so_far.set_data(times, strength)
                 yield capture(figure)
         plt.close(figure)

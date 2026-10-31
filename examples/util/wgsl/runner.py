@@ -83,7 +83,8 @@ class Layout:
     def __init__(self, program: Program, scalar: GAType) -> None:
         self.program = program
         self.scalar = scalar
-        self.gatypes = {kind: name for name, kind in program.gatypes.items()}
+        # Each type by its struct's own name, the first the program gives it.
+        self.gatypes = {kind: name for name, kind in reversed(program.gatypes.items())}
 
     def shape(self, kind: Any) -> tuple[str, Any]:
         """A type as one of: scalar, numeric WGSL, algebra, struct or array."""

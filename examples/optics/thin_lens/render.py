@@ -122,9 +122,6 @@ def scene(camera: Camera, subject: Point, planes: Plane, legs: Line, train: Line
     """The bundle leg by leg, each element's plane after the leg that reaches it, and the subject and its image, as
     the camera sees them."""
     count = planes.shape[0]
-    # The image, the meet of two of the train's output lines, is extrinsic: times the unit antiscalar, the intrinsic
-    # point it names.
-    named = subject.context.multivector.antipseudoscalar([1.0])
     tops, bottoms = plane_ends(planes, 0.8)                                  # [elements] Crossing-, Crossing-
     layers = []
     for stage, (start, stop) in enumerate(bundle_legs(subject, planes, legs, train)):
@@ -133,8 +130,7 @@ def scene(camera: Camera, subject: Point, planes: Plane, legs: Line, train: Line
             layers.append(simplices.strokes(*segments(tops[stage][None], bottoms[stage][None]), plane_colour,
                                             plane_width, camera))
     return simplices.composited(layers + [simplices.markers(subject[None], to_rgb("C0"), dot_radius, camera),
-                                          simplices.markers((picture * named)[None], to_rgb(f"C{count}"), dot_radius,
-                                                            camera)])
+                                          simplices.markers(picture[None], to_rgb(f"C{count}"), dot_radius, camera)])
 
 
 def animate_train(states) -> Iterator[np.ndarray]:

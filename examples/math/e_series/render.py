@@ -82,14 +82,14 @@ def draw_nested_roots(root_systems: tuple[Vector, ...], horizontal: Vector, vert
     ax.set(xlim=(-radius, radius), ylim=(-radius, radius), aspect="equal")
     ax.set_axis_off()
     figure.subplots_adjust(0.01, 0.06, 0.99, 0.995)
-    # The camera reads places, antivectors, by the drawing plane's two vectors; roots are vectors, read by their
-    # complements. The edges a faint haze, a frame's width.
-    camera = panel(ax, horizontal, vertical)
+    # The camera reads roots, vectors, as they are, along the drawing plane's two directions: `root & horizontal.dual()`
+    # is `horizontal | root`. The edges a faint haze, a frame's width.
+    camera = panel(ax, horizontal.dual(), vertical.dual())
     neighbours = simplices.Mesh(len(roots), np.stack([first, second], axis=-1))
     simplices.overlay(ax, [
-        simplices.strokes(roots.dual(), neighbours, family_colours[edge_stages], charts.FRAME_PX, camera,
+        simplices.strokes(roots, neighbours, family_colours[edge_stages], charts.FRAME_PX, camera,
                           opacity=haze_opacity),
-        simplices.markers(roots.dual(), colours, charts.MARKER_PX / 2, camera)])
+        simplices.markers(roots, colours, charts.MARKER_PX / 2, camera)])
     labels = (f"{names[0]}: {counts[0]}", *(f"{name}: +{count}" for name, count in zip(names[1:], counts[1:])))
     for name, colour, position in zip(labels, family_colours, (0.23, 0.5, 0.77)):
         figure.text(position, 0.028, name, color=colour, ha="center", va="center")

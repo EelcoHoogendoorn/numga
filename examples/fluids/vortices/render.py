@@ -14,7 +14,8 @@ from matplotlib.image import AxesImage
 from numga import stack
 
 from examples.fluids.vortices import core
-from examples.util.wgsl import Shader, fitted, pinned, planar, show, simplices, solids, supersampled
+from examples.util.wgsl import Shader, fitted, pinned, show, simplices, solids, supersampled
+from examples.util.wgsl.camera import Camera, weighing
 
 # Fields: the figures' resolution, and the pixels between two panels side by side.
 dpi = 100
@@ -197,16 +198,20 @@ def window(frames: Iterable[core.Vortices], middle: core.Point, half_height: flo
     """The vorticity on one fixed window of the plane, frame by frame, each vortex trailing the path it has taken,
     stroked over it."""
     rows, columns = shape
-    # The window's opposite corners, half its height above and below the middle and as far to either side as its
-    # columns of square pixels reach, framed pixel for pixel in a room of its own shape.
-    reach = core.mv.x.dual() * (half_height * columns / rows) + core.mv.y.dual() * half_height   # [] Point-
-    corners = planar.origin + planar.context.include_from_algebra(stack([middle - reach, middle + reach]))   # [2] Point-
-    view = planar.view([corners], 0.0, (columns, rows))
+    # The window's camera reads the vortices' places as they are, by the lines x and y, about its middle, half its
+    # height above and below it and as far to either side as its columns of square pixels reach.
+    across, up = core.mv.x, core.mv.y
+    weight, unit = weighing(across)
+    middle_readings = np.array([(across & middle).to_array(), (up & middle).to_array()])
+    camera = Camera(across, up, 0 * across, weight, unit, middle_readings,
+                    np.array([half_height * columns / rows, half_height]), columns)
     travelled = []
     for vortices in frames:
         travelled.append(vortices.centres)
         # Each vortex's path so far, from where it started, which is the whole path on the first frame.
-        offsets = stack([travelled[0]] + travelled, axis=1)                    # [vortices, frames + 1] Point-
-        paths = planar.origin + planar.context.include_from_algebra(offsets)             # [vortices, frames + 1] Point-
-        trails = planar.Strokes(paths, trail_width, trail_colour, trail_opacity, planar.SOLID, planar.Cap.ROUND)
-        yield planar.draw(view, [trails], vorticity_image(vortices, middle, half_height, shape, scale))
+        paths = stack([travelled[0]] + travelled, axis=1)                      # [vortices, frames + 1] Point-
+        n_vortices, n_points = paths.shape
+        trails = simplices.strokes(paths.reshape(-1), simplices.Mesh.chains([n_points] * n_vortices), trail_colour,
+                                   trail_width, camera, opacity=trail_opacity)
+        image = vorticity_image(vortices, middle, half_height, shape, scale)
+        yield as_bytes(image * (1 - trails[..., 3:]) + trails[..., :3] * trails[..., 3:])

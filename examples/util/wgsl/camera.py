@@ -18,6 +18,7 @@ import numpy as np
 from matplotlib.axes import Axes
 
 from numga.extensor import Extensor
+from numga.gatype import GAType, Orientation
 from examples.util.wgsl.library import fitted
 
 
@@ -62,20 +63,36 @@ class Camera(NamedTuple):
                     screen_half=np.asarray(self.half, dtype=float), screen_depth=depth)
 
 
+def whole(value: Extensor, algebra) -> GAType:
+    """The whole of a value's grade in an algebra, with the value's own orientation: the type a shader of that algebra
+    declares for it, so that values of one grade with fewer blades, a point of the plane or a single plane, fit it
+    alike."""
+    # The grade of the value's blades, the generators each blade holds.
+    grade = bin(int(value.gatype.output_subspace.masks[0])).count("1")
+    return algebra.gatype.from_grades([grade]).derive.with_orientations(value.gatype.orientations)
+
+
+def reading(points: Extensor, camera: Camera) -> dict:
+    """The types a shader reads points by, each as it is: `Point`, the points' own, a point, a direction, a spin's
+    patch or a vector alike; `Plane`, the camera's planes', whose regressive product with a point is a number."""
+    return dict(Point=whole(points, points.algebra), Plane=whole(camera.across, points.algebra))
+
+
 def plane(algebra, name: str) -> Extensor:
     """The plane of a generator of an algebra, by its name, the reading along that generator."""
     from numga import NumpyContext
     return getattr(NumpyContext(algebra).multivector, name)
 
 
-def weighing(algebra) -> tuple[Extensor, float]:
-    """A point's weight in an algebra, as a plane and a constant: the pairing with the plane at infinity where one
-    generator alone is degenerate, as in a projective algebra; one where none is, or all are, as in a vector algebra or
-    a chart."""
+def weighing(across: Extensor) -> tuple[Extensor, float]:
+    """A point's weight, read by planes like `across`, as a plane and a constant: the pairing with the plane at infinity
+    where one generator alone of the planes' algebra is degenerate, as in a projective algebra; one where none is, or
+    all are, as in a vector algebra or a chart."""
+    algebra = across.algebra
     degenerate = [name for name, square in zip(algebra.basis_names, algebra.signature) if square == 0]
     if len(degenerate) == 1 and len(algebra.signature) > 1:
         return plane(algebra, degenerate[0]), 0.0
-    return 0 * plane(algebra, algebra.basis_names[0]), 1.0
+    return 0 * across, 1.0
 
 
 def panel(ax: Axes, across: Extensor, up: Extensor) -> Camera:
@@ -83,7 +100,7 @@ def panel(ax: Axes, across: Extensor, up: Extensor) -> Camera:
     weighs points, its limits the readings it spans, as many pixels across as the panel's room holds."""
     left, right = ax.get_xlim()
     bottom, top = ax.get_ylim()
-    weight, unit = weighing(across.algebra)
+    weight, unit = weighing(across)
     camera = Camera(across, up, 0 * across, weight, unit, np.array([left + right, bottom + top]) / 2,
                     np.array([right - left, top - bottom]) / 2, 300)
     return fitted(camera, ax)
@@ -94,11 +111,29 @@ def flat_panel(ax: Axes, algebra) -> Camera:
     return panel(ax, plane(algebra, "x"), plane(algebra, "y"))
 
 
-def placing() -> str:
-    """WGSL for a camera, the same for every algebra: `clip(point)`, a point's place in the picture's clip space and its
-    depth, read by the camera's planes and divided by its weight; `screen_of(direction)`, a direction's change of
+def extrinsic_first(Plane: GAType) -> bool:
+    """Whether a camera's planes of the type `Plane` come first in their pairing with what they read: a reading pairs the
+    extrinsic with the intrinsic, the extrinsic first, `mv.x & point` as `wavevector & direction`."""
+    return Plane.orientation is not Orientation.intrinsic
+
+
+def read(plane: Extensor, value: Extensor) -> Extensor:
+    """A camera plane's reading of a value, their regressive product, the extrinsic first."""
+    return plane & value if extrinsic_first(plane.gatype) else value & plane
+
+
+def placing(Plane: GAType) -> str:
+    """WGSL for a camera whose planes are of the type `Plane`, the same for every algebra: `paired(plane, point)`, the
+    pairing of a plane with a point, the extrinsic first; `clip(point)`, a point's place in the picture's clip space and
+    its depth, read by the camera's planes and divided by its weight; `screen_of(direction)`, a direction's change of
     place."""
-    return """
+    pairing = "plane & point" if extrinsic_first(Plane) else "point & plane"
+    return f"""
+// A camera plane's reading of a point, their regressive product, the extrinsic first.
+fn paired(plane: Plane, point: Point) -> f32 {{
+    return {pairing};
+}}
+""" + """
 var<uniform> screen_across: Plane;
 var<uniform> screen_up: Plane;
 var<uniform> screen_toward: Plane;
@@ -110,18 +145,18 @@ var<uniform> screen_depth: f32;
 
 // A point's weight: an affine reading of it, its pairing with the camera's weight plane and a constant.
 fn weight_of(point: Point) -> f32 {
-    return (screen_weight & point) + screen_unit;
+    return paired(screen_weight, point) + screen_unit;
 }
 
 // A point's place in the picture, across and up from its middle in half widths and heights, and its depth.
 fn clip(point: Point) -> vec4<f32> {
     let weight = weight_of(point);
-    let framed = vec2<f32>(screen_across & point, screen_up & point) / weight - screen_middle;
-    return vec4<f32>(framed / screen_half, 0.5 - (screen_toward & point) / weight / screen_depth, 1.0);
+    let framed = vec2<f32>(paired(screen_across, point), paired(screen_up, point)) / weight - screen_middle;
+    return vec4<f32>(framed / screen_half, 0.5 - paired(screen_toward, point) / weight / screen_depth, 1.0);
 }
 
 // A direction's change of place in the picture, across and up, in the readings: no weight to divide by.
 fn screen_of(direction: Point) -> vec2<f32> {
-    return vec2<f32>(screen_across & direction, screen_up & direction);
+    return vec2<f32>(paired(screen_across, direction), paired(screen_up, direction));
 }
 """

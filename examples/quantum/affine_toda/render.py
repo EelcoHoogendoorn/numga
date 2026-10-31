@@ -41,13 +41,14 @@ def draw_triangles(paths: Root, roots: Root, species: np.ndarray,
         ax.set_axis_off()
     figure.subplots_adjust(0, 0, 1, 1, wspace=0.04)
     for index, ax in enumerate(axes):
-        # Roots are read as the points they are normal to, by the drawing plane's two vectors.
-        camera = panel(ax, horizontal, vertical)
+        # Roots are read as they are, by the hyperplanes that complement the drawing plane's two vectors:
+        # `root & horizontal.dual()` is `horizontal | root`.
+        camera = panel(ax, horizontal.dual(), vertical.dual())
         particles = np.unique(species[index])
-        rings = (radii[particles, None] * ring[None, :]).reshape(-1).dual()     # [particles * (samples + 1)] Point-
-        orbits = roots[:, particles].reshape(-1).dual()                         # [steps * particles] Point-
+        rings = (radii[particles, None] * ring[None, :]).reshape(-1)            # [particles * (samples + 1)] Root+
+        orbits = roots[:, particles].reshape(-1)                                # [steps * particles] Root+
         n_steps = roots.shape[0]
-        corners = paths[index].dual()                                           # [corners] Point-
+        corners = paths[index]                                                  # [corners] Root+
         simplices.overlay(ax, [
             simplices.strokes(rings, simplices.Mesh.chains([n_ring_samples + 1] * len(particles)),
                               np.repeat(orbit_colours[particles], n_ring_samples, axis=0), ring_width, camera,
