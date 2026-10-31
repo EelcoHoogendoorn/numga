@@ -61,14 +61,14 @@ def disk(radius: float, n_divisions: int) -> tuple[Mesh, Point]:
 
 def main() -> None:
     from examples.surfaces.regge_calculus.core import (
-        intrinsic_conduction, mesh_geometry, regge_metric_basis, triangle_geometry,
+        intrinsic_conduction, mesh_geometry, regge_metric_basis, triangle, triangle_geometry,
     )
     from examples.surfaces.regge_calculus import render
     from examples.util.animation import save_figure
 
     # 1. Regge edge metric basis, reconstructed metric ellipse, and corner rotor turns.
     corners, points = single_triangle(n_triangle_subdivisions)
-    sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]                          # [corners] Point-
+    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]  # [corners] Point-
     squared_lengths = sides.norm_squared() * edge_stretches                  # [corners] Scalar+
     basis, gradients, patch = regge_metric_basis(corners)
     metric, intrinsic_area, corner_rotors, corner_turns = triangle_geometry(corners, squared_lengths)

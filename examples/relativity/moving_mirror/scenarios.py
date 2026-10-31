@@ -81,7 +81,7 @@ def spacetime_strip(space_axis: Point, time_axis: Point, n_space: int, n_time: i
 
 def main() -> None:
     from examples.relativity.moving_mirror.core import (
-        Operators, barycentric_hats, causal_wake, edge_whitney_forms, moving_mirror_wave,
+        Operators, barycentric_hats, causal_wake, edge_whitney_forms, moving_mirror_wave, triangle,
     )
     from examples.relativity.moving_mirror import render
     from examples.util.animation import save_animation, save_figure
@@ -142,11 +142,11 @@ def main() -> None:
     np.testing.assert_allclose(hats.sum(axis=0).kernel, 1.0, atol=1e-14)
     np.testing.assert_allclose(gradients.sum(axis=0).kernel, 0.0, atol=1e-14)
 
-    first, second = [1, 2, 0], [2, 0, 1]
-    classic_forms = hats[first] * gradients[second, None] - hats[second] * gradients[first, None]
+    tails, heads = triangle.corners[2, 1]
+    classic_forms = (hats[tails] * gradients[heads, None] - hats[heads] * gradients[tails, None]) * triangle.face_edge_orientation.T
     np.testing.assert_allclose((edge_forms - classic_forms).kernel, 0.0, atol=1e-14)
-    sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]
-    midpoints = (corners[first] + corners[second]) / 2
+    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]
+    midpoints = (triangle.incidence[2, 1] * (triangle.incidence[1, 0].mean(axis=0) * corners.field())).batch()[:, 0]
     midpoint_readings = edge_whitney_forms(corners, midpoints) & sides[None, :]
     np.testing.assert_allclose(midpoint_readings.kernel, np.eye(3)[..., None], atol=1e-14)
 

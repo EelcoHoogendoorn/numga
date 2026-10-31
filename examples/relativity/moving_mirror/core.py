@@ -18,6 +18,7 @@ Plane = ga.gatype.vector()                                                   # V
 Point = ga.gatype.antivector()                                               # Antivector-
 Patch = ga.gatype.antibivector()                                             # Antibivector-
 Amount = ga.gatype.antiscalar()                                              # Antiscalar-
+triangle = Mesh(3, [[0, 1, 2]])
 
 # Unit spatial and future-timelike displacements, which pair to one with `mv.x` and `mv.t`.
 space, time = mv.x.dual(), -mv.t.dual()                                      # [] Point-, Point-
@@ -26,7 +27,7 @@ space, time = mv.x.dual(), -mv.t.dual()                                      # [
 # --- math -----------------------------------------------------------------------------
 def barycentric_hats(corners: Point, points: Point) -> tuple[Scalar, Plane, Patch]:
     """The barycentric hat values at `points`, the constant corner gradients, and the spacetime triangle's signed patch."""
-    sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]                          # [corners] Point-
+    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]  # [corners] Point-
     patch = (sides[0] & sides[1]) / 2                                        # [] Patch-
     # Dividing each opposite worldline displacement by twice the signed spacetime patch gives the
     # gradient plane of its corner's hat, which drops by one from its corner event to the opposite edge.
@@ -37,7 +38,7 @@ def barycentric_hats(corners: Point, points: Point) -> tuple[Scalar, Plane, Patc
 
 def edge_whitney_forms(corners: Point, points: Point) -> Plane:
     """The three spacetime edge Whitney 1-forms evaluated at `points`, circulating around each edge's opposite corner."""
-    sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]                          # [corners] Point-
+    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]  # [corners] Point-
     patch = (sides[0] & sides[1]) / 2                                        # [] Patch-
     # Dividing the displacement from the opposite corner by twice the signed spacetime patch gives a
     # 1-form with unit line integral along its own edge and zero along the other two edges.

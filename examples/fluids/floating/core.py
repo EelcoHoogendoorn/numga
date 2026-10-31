@@ -65,8 +65,7 @@ def pressing(triangles: Point, surface: Plane) -> tuple[Point, Forque]:
     # The plane through a part's corners, wound as its triangle, has twice the part's area as its weight.
     # The hull's enclosed volume, signed by the same winding, is positive exactly when those planes face
     # outward: times its sign, every plane faces outward, whichever way the hull is wound.
-    first, second, third = triangles                    # Point-[triangles], Point-[triangles], Point-[triangles]
-    volume = (origin & first & second & third).sites.sum()              # [] Scalar+
+    volume = (origin & triangles[0] & triangles[1] & triangles[2]).sites.sum()  # [] Scalar+
     planes = (parts[..., 0] & parts[..., 1] & parts[..., 2]) * (volume / volume.norm())   # [..., triangles, parts] Plane+
     return samples, -(samples | planes[..., None]) / 6
 

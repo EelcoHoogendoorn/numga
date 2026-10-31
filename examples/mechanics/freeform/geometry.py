@@ -49,9 +49,8 @@ def interior(points: np.ndarray, triangles: np.ndarray) -> np.ndarray:
 def volume_samples(mesh: Mesh, vertices: Antivector, n_samples: int) -> tuple[Antivector, np.ndarray]:
     """Equal-volume quadrature from low-discrepancy samples inside a closed mesh."""
     corners = mesh.incidence[2, 0] * vertices                    # [corners] Antivector-[faces]
-    first, second, third = corners
     # The enclosed volume: the cones the faces span from the origin, each the join of its corners, summed.
-    volume = abs((first & second & third).sites.sum().to_array()) / 6
+    volume = abs((corners[0] & corners[1] & corners[2]).sites.sum().to_array()) / 6
     places = coordinates(vertices.batch())                       # [vertices, 3]
     lower, upper = places.min(axis=0), places.max(axis=0)
     triangles = coordinates(corners.batch())                     # [3, faces, 3]

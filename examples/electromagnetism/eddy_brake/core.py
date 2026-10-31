@@ -87,7 +87,8 @@ def disc(mesh: Mesh, vertices: Point) -> Disc:
     # plane through that edge and time, over twice the signed area. All three hats are a third at the centroid, and
     # the difference of two gradients reconstructs an edge's circulation, signed as the mesh edge runs.
     gradients = (time & sides) / double_areas                              # [3] Vector+[faces]
-    reconstruction = (spdiag((gradients[[2, 0, 1]] - gradients[[1, 2, 0]]) / 3 * Scalar) * mesh.boundary[2, 1]).sum(axis=0)
+    tails, heads = mesh.corners[2, 1]
+    reconstruction = (spdiag((gradients[heads] - gradients[tails]) / 3 * Scalar) * mesh.oriented[2, 1]).sum(axis=0)
     return Disc(mesh, vertices, edges, ends.sum(axis=0) / 2, corners, sides, double_areas.norm() / 2,
                 corners.sum(axis=0) / 3, reconstruction)
 
@@ -454,6 +455,7 @@ def magnetic_coupling_blocks(corners: Point, sides: Point, permeability: float,
     logarithms = (semiperimeter / (semiperimeter - lengths)).log()
     self_integral = (4 / 3) * triangle_areas.squared() * (logarithms / lengths).sum(axis=0)
     indices = np.arange(corners.batch().shape[-1])
+    tails, heads = Mesh(3, [[0, 1, 2]]).corners[2, 1]
     areas, centres = triangle_areas.batch(), (corners.sum(axis=0) / 3).batch()
     for start in range(0, len(indices), block_faces):
         rows = indices[start:start + block_faces]
@@ -463,12 +465,12 @@ def magnetic_coupling_blocks(corners: Point, sides: Point, permeability: float,
         # Target points are a batch against the source faces' field: every pair of the two.
         relative = corners - targets[..., None]                           # [samples, block, corners] Point-[faces]
         distances = relative.squared().square_root()                     # [samples, block, corners] Scalar+[faces]
-        # The side facing a corner runs from the next corner to the one after it.
-        endpoint_sum = distances[..., [1, 2, 0]] + distances[..., [2, 0, 1]]   # [samples, block, sides] Scalar+[faces]
+        # The side facing a corner connects the other two corners.
+        endpoint_sum = distances[..., tails] + distances[..., heads]       # [samples, block, sides] Scalar+[faces]
         side_potential = ((endpoint_sum + lengths) / (endpoint_sum - lengths)).log()
         # Each quadrature point's height above each side's line, in the face's own sense: the area the offset of
-        # the side's first corner spans with the side's unit direction, swept through time.
-        heights = (relative[..., [1, 2, 0]] & (sides / lengths) & time) / sense   # [samples, block, sides] Scalar+[faces]
+        # one of the side's corners spans with the side's unit direction, swept through time.
+        heights = (relative[..., tails] & (sides / lengths) & time) / sense   # [samples, block, sides] Scalar+[faces]
         source_potential = (heights * side_potential).sum(axis=-1)         # [samples, block] Scalar+[faces]
         integral = (areas[rows] * source_potential.mean(axis=0)).batch()   # [block, faces] Scalar+
         integral = integral.at[np.arange(len(rows)), rows].set(self_integral.batch()[rows])

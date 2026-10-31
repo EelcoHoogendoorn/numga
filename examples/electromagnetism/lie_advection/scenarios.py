@@ -68,14 +68,14 @@ def disk(radius: float, n_divisions: int) -> tuple[Mesh, Point]:
 def main() -> None:
     from examples.electromagnetism.lie_advection.core import (
         Operators, advect, cartan_decomposition, edge_world_sheets,
-        initial_cochain, time, vortex_streamfunction,
+        initial_cochain, time, triangle, vortex_streamfunction,
     )
     from examples.electromagnetism.lie_advection import render
     from examples.util.animation import save_animation, save_figure
 
     # 1. Edge world sheets and Cartan's formula on a moving triangle.
     corners = single_triangle()
-    sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]                          # [corners] Point-
+    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]  # [corners] Point-
     patch = (sides[0] & sides[1]) / 2                                        # [] Patch-
     gradients = (time & sides) / (2 * (time & patch))                        # [corners] Plane+
     endpoint_differences, swept_fluxes, _, face_bivector = cartan_decomposition(
@@ -128,7 +128,7 @@ def main() -> None:
     # checks
     # Associativity of the regressive product equates the world-sheet flux to the interior-product line integral.
     corner_motions = time + corner_velocities
-    edge_motions = (corner_motions[[1, 2, 0]] + corner_motions[[2, 0, 1]]) / 2
+    edge_motions = (triangle.incidence[2, 1] * (triangle.incidence[1, 0].mean(axis=0) * corner_motions.field())).batch()[:, 0]
     interior_line_integrals = (face_bivector & edge_motions) & sides
     np.testing.assert_allclose((swept_fluxes - interior_line_integrals).kernel, 0.0, atol=1e-13)
     np.testing.assert_allclose(endpoint_differences.sum(axis=0).kernel, 0.0, atol=1e-15)
@@ -136,10 +136,10 @@ def main() -> None:
     # Cartan's decomposition matches the exact material derivative of the edge line integrals.
     plus_corners = corners + 0.5 * corner_motions
     minus_corners = corners - 0.5 * corner_motions
-    plus_sides = plus_corners[[2, 0, 1]] - plus_corners[[1, 2, 0]]
-    minus_sides = minus_corners[[2, 0, 1]] - minus_corners[[1, 2, 0]]
-    plus_midpoints = (plus_corners[[1, 2, 0]] + plus_corners[[2, 0, 1]]) / 2
-    minus_midpoints = (minus_corners[[1, 2, 0]] + minus_corners[[2, 0, 1]]) / 2
+    plus_sides = (triangle.boundary[2, 1] * (triangle.d[0] * plus_corners.field())).batch()[:, 0]
+    minus_sides = (triangle.boundary[2, 1] * (triangle.d[0] * minus_corners.field())).batch()[:, 0]
+    plus_midpoints = (triangle.incidence[2, 1] * (triangle.incidence[1, 0].mean(axis=0) * plus_corners.field())).batch()[:, 0]
+    minus_midpoints = (triangle.incidence[2, 1] * (triangle.incidence[1, 0].mean(axis=0) * minus_corners.field())).batch()[:, 0]
     plus_hats = 1 + (gradients[:, None] & (plus_midpoints[None, :] - corners[:, None]))
     minus_hats = 1 + (gradients[:, None] & (minus_midpoints[None, :] - corners[:, None]))
     plus_forms = (plus_hats * corner_forms[:, None]).sum(axis=0)

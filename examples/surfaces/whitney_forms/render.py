@@ -98,6 +98,7 @@ def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
     figure, axes = charts.subplots(*row_size, ncols=4)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.04)
 
+    tails, heads = triangle.corners[2, 1]
     for index in range(3):
         ax = axes[index]
         frame_panel(ax, corners, 0.22)
@@ -105,7 +106,7 @@ def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
         values = np.eye(3)[index]
         contours.overlay(ax, places, triangle, values, hat_colours(values)[:, :3], levels=levels).set_zorder(1)
         ax.add_patch(Polygon(corner_xy, fill=False, edgecolor=wall_colour, linewidth=1.2, zorder=3))
-        opposite = corner_xy[[(index + 1) % 3, (index + 2) % 3]]
+        opposite = corner_xy[[tails[index], heads[index]]]
         ax.plot(*opposite.T, color=wall_colour, linewidth=2.2, solid_capstyle="round", zorder=4)
         ax.scatter(*corner_xy.T, s=18, color=wall_colour, zorder=5)
         ax.scatter(*corner_xy[index], s=48, color=accent_colour, edgecolor="white", linewidth=0.9, zorder=6)
@@ -145,7 +146,8 @@ def draw_edge_1forms(corners: core.Point, corner_forms: core.Plane,
     directions = solids.context.include_from_algebra(corner_forms.dual())
     reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
     # Each side, from the corner after its own to the one after that, with an arrow about its middle along it.
-    side_starts, side_ends = corners[[1, 2, 0]], corners[[2, 0, 1]]           # [corners] Point-, Point-
+    first, second = core.complements(core.triangle, 0).T
+    side_starts, side_ends = corners[first], corners[second]                  # [corners] Point-, Point-
     side_middles, alongs = (side_starts + side_ends) / 2, side_ends - side_starts   # [corners] Point-, Point-
     start_xy, end_xy = coordinates(side_starts), coordinates(side_ends)       # [corners, 2], [corners, 2]
     along_tails, along_tips = coordinates(side_middles - 0.18 * alongs), coordinates(side_middles + 0.18 * alongs)
@@ -208,8 +210,8 @@ def draw_tet_whitney(mesh: core.SpaceMesh, vertices: core.SpacePoint, points: co
     # The tetrahedron's first edge, the edge across it, the corner the first face form radiates from, and the face
     # facing that corner, as vertices.
     tet = mesh.tets[0]
-    edge, across = tet[mesh.corners(3, 1)[0]], tet[core.complements(mesh, 1)[0]]
-    apex, face = tet[0], tet[mesh.corners(3, 2)[0]]
+    edge, across = tet[mesh.corners[3, 1][:, 0]], tet[core.complements(mesh, 1)[0]]
+    apex, face = tet[0], tet[mesh.corners[3, 2][:, 0]]
     wall, wall_faces = outward_wall(mesh)
 
     view = solids.View(solids.aim(solids.origin, tet_elevation, tet_azimuth), np.full(2, 0.86), n_tet_pixels)

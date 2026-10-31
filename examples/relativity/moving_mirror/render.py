@@ -142,8 +142,9 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
     wake_ax = figure.add_axes((0.69, 0.17, 0.29, 0.79))
 
     # Panel 1: Corner hat contours, light cone, Euclidean normal, and Lorentzian dual.
+    tails, heads = core.triangle.corners[2, 1]
     index = 1
-    others = [(index + 1) % 3, (index + 2) % 3]
+    others = [tails[index], heads[index]]
     # The hat falls evenly from one at its corner to zero along the opposite side: each level runs parallel to that
     # side, across the two sides from the corner, a share of one less the level of the way along them.
     levels = np.linspace(0.0, 1.0, n_contours + 2)[1:-1]
@@ -180,7 +181,7 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
     sample_hats = 1 + (gradients[:, None] & (points[None, :] - corners[:, None]))   # [corners, samples] Scalar+
     corner_field = edge_forms[edge_index, sample_hats.argmax(axis=-1)].dual()   # [corners] Point-
     # Seeds along the edge, drawn a little in towards the centroid.
-    start, end = corners[(edge_index + 1) % 3], corners[(edge_index + 2) % 3]   # [] Point-, Point-
+    start, end = corners[tails[edge_index]], corners[heads[edge_index]]      # [] Point-, Point-
     fractions = np.linspace(0.06, 0.94, n_streamlines)
     seeds = (start * (1 - fractions) + end * fractions) * 0.85 + centroid * 0.15   # [seeds] Point-
     edge_ax.add_collection(LineCollection(streamlines(corners, gradients, corner_field, seeds),

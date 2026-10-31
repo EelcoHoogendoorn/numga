@@ -24,6 +24,7 @@ Point = ga.gatype.antivector()                                               # A
 Patch = ga.gatype.antibivector()                                             # Antibivector-
 Amount = ga.gatype.antiscalar()                                              # Antiscalar-
 Evolution = ga.gatype((Scalar, Scalar))
+triangle = Mesh(3, [[0, 1, 2]])
 
 # The direction in time of an observer at rest with the mesh, which pairs to one with `mv.t`.
 time = -mv.t.dual()                                                          # [] Point-
@@ -34,7 +35,7 @@ def cartan_decomposition(corners: Point, corner_forms: Plane, corner_velocities:
                          ) -> tuple[Scalar, Scalar, Patch, Bivector]:
     """The endpoint potential differences, world-sheet magnetic fluxes, edge world sheets,
     and exterior-derivative 2-form for a linear 1-form on a moving triangle."""
-    sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]                          # [corners] Point-
+    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]  # [corners] Point-
     patch = (sides[0] & sides[1]) / 2                                        # [] Patch-
     # Each hat is constant in time: its gradient is the plane through the opposite side and time,
     # over twice the prism the triangle sweeps in a unit of time.
@@ -44,8 +45,8 @@ def cartan_decomposition(corners: Point, corner_forms: Plane, corner_velocities:
     # Each corner advances through spacetime along its world line, `time + velocity` per unit time.
     corner_motions = time + corner_velocities                                # [corners] Point-
     interior_readings = corner_forms & corner_motions                        # [corners] Scalar+
-    endpoint_differences = interior_readings[[2, 0, 1]] - interior_readings[[1, 2, 0]]  # [corners] Scalar+
-    edge_motions = (corner_motions[[1, 2, 0]] + corner_motions[[2, 0, 1]]) / 2  # [corners] Point-
+    endpoint_differences = (triangle.boundary[2, 1] * (triangle.d[0] * interior_readings.field())).batch()[:, 0]  # [corners] Scalar+
+    edge_motions = (triangle.incidence[2, 1] * (triangle.incidence[1, 0].mean(axis=0) * corner_motions.field())).batch()[:, 0]  # [corners] Point-
     world_sheets = edge_motions & sides                                      # [corners] Patch-
     # Pairing the 2-form curl with each edge's world sheet gives the magnetic flux crossing the moving edge.
     swept_fluxes = face_bivector & world_sheets                              # [corners] Scalar+
@@ -75,8 +76,9 @@ class Operators:
 
         # The exterior derivative of each edge's Whitney 1-form is twice the wedge of its endpoints'
         # gradients, matching the constant Whitney 2-form of unit integral over the face patch.
-        first, second = self.corner_gradients[[1, 2, 0]], self.corner_gradients[[2, 0, 1]]  # [corners] Plane+[faces], [corners] Plane+[faces]
-        self.curl = (spdiag(2 * (first ^ second) * Scalar) * mesh.boundary[2, 1]).sum(axis=0)  # (Magnetic+ <- Scalar+)[faces <- edges]
+        tails, heads = mesh.corners[2, 1]
+        curls = 2 * (self.corner_gradients[tails] ^ self.corner_gradients[heads])  # [corners] Magnetic+[faces]
+        self.curl = (spdiag(curls * Scalar) * mesh.oriented[2, 1]).sum(axis=0)  # (Magnetic+ <- Scalar+)[faces <- edges]
 
         # Averaging adjacent face fields onto each edge preserves exactness of uniform 2-forms and
         # makes the ideal Lie advection rate skew-symmetric in the 2-form magnetic energy.

@@ -86,6 +86,7 @@ def draw_metric_basis(corners: core.Point, points: core.Point,
     figure, axes = charts.subplots(*row_size, ncols=4)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.04)
 
+    tails, heads = core.triangle.corners[2, 1]
     for index in range(3):
         ax = axes[index]
         frame_panel(ax, corner_xy, 0.22)
@@ -94,7 +95,7 @@ def draw_metric_basis(corners: core.Point, points: core.Point,
         contours.overlay(ax, places, mesh, values, colours, lines=(nonzero_levels,),
                          levels=(null_lines,)).set_zorder(1)
         ax.add_patch(Polygon(corner_xy, fill=False, edgecolor=wall_colour, linewidth=1.1, zorder=4))
-        start, end = corner_xy[(index + 1) % 3], corner_xy[(index + 2) % 3]
+        start, end = corner_xy[tails[index]], corner_xy[heads[index]]
         ax.plot([start[0], end[0]], [start[1], end[1]], color=accent_colour,
                 linewidth=2.6, solid_capstyle="round", zorder=5)
         ax.scatter(*corner_xy.T, s=18, color=wall_colour, zorder=6)

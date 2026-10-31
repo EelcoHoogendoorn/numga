@@ -118,7 +118,7 @@ def obtuse_diamond() -> tuple[Mesh, Point]:
 def main() -> None:
     from examples.surfaces.whitney_forms.core import (
         Operators, barycentric_hats, complements, conduction, edge_conductance, edge_whitney_forms, simplex_parity,
-        tetrahedral_edge_forms, tetrahedral_face_forms, tetrahedral_hats, tetrahedral_helicity,
+        tetrahedral_edge_forms, tetrahedral_face_forms, tetrahedral_hats, tetrahedral_helicity, triangle,
     )
     from examples.surfaces.whitney_forms import render
     from examples.util.animation import save_figure
@@ -188,10 +188,10 @@ def main() -> None:
     np.testing.assert_allclose(hats.sum(axis=0).kernel, 1.0, atol=1e-14)
     np.testing.assert_allclose(gradients.sum(axis=0).kernel, 0.0, atol=1e-14)
 
-    first, second = [1, 2, 0], [2, 0, 1]
+    first, second = complements(triangle, 0).T
     alternating_forms = hats[first] * gradients[second, None] - hats[second] * gradients[first, None]
     np.testing.assert_allclose((edge_forms - alternating_forms).kernel, 0.0, atol=1e-14)
-    sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]
+    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]
     midpoints = (corners[first] + corners[second]) / 2
     midpoint_readings = edge_whitney_forms(corners, midpoints) & sides[None, :]
     np.testing.assert_allclose(midpoint_readings.kernel, np.eye(3)[..., None], atol=1e-14)
@@ -211,7 +211,7 @@ def main() -> None:
     np.testing.assert_allclose(tet_gradients.sum(axis=0).kernel, 0.0, atol=1e-13)
     np.testing.assert_allclose(face_patches.sum(axis=0).kernel, 0.0, atol=1e-13)
 
-    tails, heads = tetrahedron.corners(3, 1).T
+    tails, heads = tetrahedron.corners[3, 1]
     alternating_edge_forms = tet_hats[tails] * tet_gradients[heads, None] - tet_hats[heads] * tet_gradients[tails, None]
     alternating_curls = 2 * (tet_gradients[tails] ^ tet_gradients[heads])
     np.testing.assert_allclose((tet_edge_forms - alternating_edge_forms).kernel, 0.0, atol=1e-13)
@@ -236,7 +236,7 @@ def main() -> None:
     np.testing.assert_allclose((tet_helicity - deformed_helicity).kernel, 0.0, atol=1e-13)
     # Two edges link where they share no corner, with the sense of the tetrahedron's corners in the order they list
     # them, over six.
-    edge_corners = tetrahedron.corners(3, 1)
+    edge_corners = tetrahedron.corners[3, 1].T
     edge_pairs = np.concatenate(np.broadcast_arrays(edge_corners[:, None], edge_corners[None, :]), axis=-1)
     disjoint = (edge_corners[:, None, :, None] != edge_corners[None, :, None, :]).all(axis=(-1, -2))
     linking = np.where(disjoint, simplex_parity(edge_pairs), 0) / 6

@@ -85,11 +85,11 @@ def draw_cartan_ribbon(corners: core.Point, corner_forms: core.Plane,
                        endpoint_differences: core.Scalar, swept_fluxes: core.Scalar) -> plt.Figure:
     """Swept edge parallelogram ribbons on a moving triangle beside the Cartan rate decomposition."""
     displaced = corners + ribbon_step * corner_velocities                       # [corners] Point-
-    # The edge facing each corner runs from the corner after it to the one before it; the ribbon it sweeps in the
-    # step is the parallelogram between it and its displaced copy.
-    firsts, seconds = corners[[1, 2, 0]], corners[[2, 0, 1]]                    # [corners] Point-, [corners] Point-
-    ribbons = stack((firsts, seconds, displaced[[2, 0, 1]], displaced[[1, 2, 0]]), axis=-1)   # [corners, 4] Point-
-    middles, edges = (firsts + seconds) / 2, seconds - firsts                   # [corners] Point-, [corners] Point-
+    # The ribbon each edge sweeps in the step is the parallelogram between its endpoints and their displaced copies.
+    tails, heads = core.triangle.corners[2, 1]
+    ribbons = stack((corners[tails], corners[heads], displaced[heads], displaced[tails]), axis=-1)   # [corners, 4] Point-
+    middles = (core.triangle.incidence[2, 1] * (core.triangle.incidence[1, 0].mean(axis=0) * corners.field())).batch()[:, 0]  # [corners] Point-
+    edges = (core.triangle.boundary[2, 1] * (core.triangle.d[0] * corners.field())).batch()[:, 0]    # [corners] Point-
     corner_xy = coordinates(corners)
     displaced_xy = coordinates(displaced)
     ribbon_xy = coordinates(ribbons)                                            # [corners, 4, 2]

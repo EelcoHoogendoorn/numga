@@ -43,8 +43,9 @@ class Operators:
 
         # At each face centroid the three barycentric hats equal 1/3, so each edge 1-form
         # reduces to one third of the difference of its endpoints' corner gradients.
-        centroid_forms = (self.corner_gradients[[2, 0, 1]] - self.corner_gradients[[1, 2, 0]]) / 3  # [corners] Plane+[faces]
-        self.whitney1 = (spdiag(centroid_forms) * mesh.boundary[2, 1]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- edges]
+        tails, heads = mesh.corners[2, 1]
+        centroid_forms = (self.corner_gradients[heads] - self.corner_gradients[tails]) / 3  # [corners] Plane+[faces]
+        self.whitney1 = (spdiag(centroid_forms) * mesh.oriented[2, 1]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- edges]
         self.whitney2 = spdiag(mv.xy / (mv.xy & self.patches) * Scalar)      # (Bivector+ <- Scalar+)[faces <- faces]
 
         # Multiplying the corner gradients by a full multivector unites divergence in grade 0,

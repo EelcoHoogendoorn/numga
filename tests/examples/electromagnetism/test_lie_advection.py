@@ -19,9 +19,10 @@ def test_cartan_magic_formula_and_edge_world_sheets_on_moving_triangle():
     assert face_bivector.gatype == core.Bivector
 
     # Associativity of the regressive pairing equates dA & (u & e) to ((dA & u) & e).
-    sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]
+    triangle = core.triangle
+    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]
     corner_motions = core.time + scenarios.corner_velocities
-    edge_motions = (corner_motions[[1, 2, 0]] + corner_motions[[2, 0, 1]]) / 2
+    edge_motions = (triangle.incidence[2, 1] * (triangle.incidence[1, 0].mean(axis=0) * corner_motions.field())).batch()[:, 0]
     interior_integrals = (face_bivector & edge_motions) & sides
     np.testing.assert_allclose((swept_fluxes - interior_integrals).kernel, 0.0, atol=1e-13)
 
@@ -33,10 +34,10 @@ def test_cartan_magic_formula_and_edge_world_sheets_on_moving_triangle():
     gradients = (core.time & sides) / (2 * (core.time & patch))
     plus_corners = corners + 0.5 * corner_motions
     minus_corners = corners - 0.5 * corner_motions
-    plus_sides = plus_corners[[2, 0, 1]] - plus_corners[[1, 2, 0]]
-    minus_sides = minus_corners[[2, 0, 1]] - minus_corners[[1, 2, 0]]
-    plus_midpoints = (plus_corners[[1, 2, 0]] + plus_corners[[2, 0, 1]]) / 2
-    minus_midpoints = (minus_corners[[1, 2, 0]] + minus_corners[[2, 0, 1]]) / 2
+    plus_sides = (triangle.boundary[2, 1] * (triangle.d[0] * plus_corners.field())).batch()[:, 0]
+    minus_sides = (triangle.boundary[2, 1] * (triangle.d[0] * minus_corners.field())).batch()[:, 0]
+    plus_midpoints = (triangle.incidence[2, 1] * (triangle.incidence[1, 0].mean(axis=0) * plus_corners.field())).batch()[:, 0]
+    minus_midpoints = (triangle.incidence[2, 1] * (triangle.incidence[1, 0].mean(axis=0) * minus_corners.field())).batch()[:, 0]
     plus_hats = 1 + (gradients[:, None] & (plus_midpoints[None, :] - corners[:, None]))
     minus_hats = 1 + (gradients[:, None] & (minus_midpoints[None, :] - corners[:, None]))
     plus_forms = (plus_hats * scenarios.corner_forms[:, None]).sum(axis=0)

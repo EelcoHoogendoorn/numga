@@ -43,16 +43,14 @@ class Operators:
         self.d0_vorticity = mesh.d[0] * Bivector                             # (Bivector+ <- Bivector+)[edges <- vertices]
         self.edges = mesh.d[0] * vertices                                    # Point-[edges]
         self.corners = mesh.incidence[2, 0] * vertices                       # [corners] Point-[faces]
-        a, b, c = self.corners
-        u, v = b - a, c - a
-        self.face_patches = (u & v) / 2                                      # Patch-[faces]
+        sides = mesh.boundary[2, 1] * self.edges                             # [corners] Point-[faces]
+        self.face_patches = (sides[0] & sides[1]) / 2                        # Patch-[faces]
         self.areas = self.face_patches.norm()                                # Scalar+[faces]
         self.face_centres = self.corners.sum(axis=0) / 3                     # Point-[faces]
 
-        # The triangle's signed area patch turns the squared-length-weighted edge difference
-        # into the offset equidistant from all three corners.
-        weighted = v.norm_squared() * u - u.norm_squared() * v               # Point-[faces]
-        self.circumcentres = a + weighted.commutator(self.face_patches.inverse().dual()) / 4  # Point-[faces]
+        # On the paraboloid of half-squared distances, the plane through the three corners has slope equal to the circumcentre.
+        gradients = sides / (2 * self.face_patches)                          # [corners] Vector+[faces]
+        self.circumcentres = (gradients * (self.corners.norm_squared() / 2)).sum(axis=0).dual()  # Point-[faces]
 
         one_face = mv.scalar(np.ones((len(mesh.faces), 1))).field()          # Scalar+[faces]
         midpoints = mesh.incidence[1, 0].mean(axis=0) * vertices             # Point-[edges]

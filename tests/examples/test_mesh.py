@@ -16,7 +16,8 @@ Mesh, as_scalar, mv = mesh_module.Mesh, mesh_module.as_scalar, mesh_module.mv
 def corner_angles(mesh: Mesh, vertices) -> np.ndarray:
     """Each corner's angle in degrees `[3, F]`: one edge's slice read along the other, over both lengths."""
     edges = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
-    after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]
+    tails, heads = mesh.corners[2, 1]
+    after, before = edges[tails], edges[heads]
     return np.rad2deg(np.arccos(np.clip((-(after.dual_inverse() & before) / (after.norm() * before.norm())).to_array(), -1, 1)))
 
 
@@ -129,3 +130,21 @@ def test_closed_mesh_is_wound_outward_whatever_the_given_winding(built):
         same_corners = np.sort(wound, axis=-1) == np.sort(faces, axis=-1)
         same_sense = np.any([np.all(np.roll(faces, shift, axis=-1) == wound, axis=-1) for shift in range(3)], axis=0)
         assert same_corners.all() and same_sense.all()
+
+
+def test_corners_operator_indexing_and_shapes():
+    triangle = Mesh(3, [[0, 1, 2]])
+    assert triangle.corners[2, 1].shape == (2, 3)
+    tails, heads = triangle.corners[2, 1]
+    np.testing.assert_array_equal(tails, [1, 0, 0])
+    np.testing.assert_array_equal(heads, [2, 2, 1])
+
+    tet = Mesh(4, [[0, 1, 2, 3]])
+    assert tet.corners[3, 1].shape == (2, 6)
+    assert tet.corners[3, 2].shape == (3, 4)
+    first, second, third = tet.corners[3, 2]
+    assert len(first) == 4 and len(second) == 4 and len(third) == 4
+
+    # corners must strictly use bracket indexing; call syntax is forbidden with no backwards compatibility.
+    with pytest.raises(TypeError):
+        triangle.corners(2, 1)

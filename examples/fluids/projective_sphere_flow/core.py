@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import Algebra, stack
+from numga import Algebra
 from numga.backend.context import Context
 from numga.sparse import spdiag
 from examples import instantiate
@@ -25,15 +25,15 @@ Conductivity = ga.gatype((Point, Plane))            # Antivector- <- Vector+
 
 
 # --- math -----------------------------------------------------------------------------
-def diffusion(mesh: Mesh, corners: Point, samples: Point, measures: Scalar,
-              source: Scalar, conductivity: Conductivity) -> tuple[Scalar, Plane]:
+def diffusion(mesh: Mesh, vertices: Point, samples: Point, measures: Scalar,
+              source: Scalar, conductivity: Conductivity) -> tuple[Scalar, Plane, Plane]:
     """The vertex potential solves steady diffusion under a prescribed source on a closed surface; the face planes interpolate it.
 
-    Samples and positive quadrature measures belong to the physical surface; only the interpolation depends on the lifted corners.
+    Samples and positive quadrature measures belong to the physical surface; only the interpolation depends on the lifted vertices.
     """
-    first, second, third = corners                                   # Point-[faces], Point-[faces], Point-[faces]
-    volume = first & second & third                                  # Volume-[faces]
-    reciprocals = stack((second & third, third & first, first & second)) / volume  # [corners] Plane+[faces]
+    corners = mesh.incidence[2, 0] * vertices                        # [corners] Point-[faces]
+    tails, heads = mesh.incidence[1, 0] * vertices                   # Point-[edges], Point-[edges]
+    reciprocals = (mesh.boundary[2, 1] * (tails & heads)) / (corners[0] & corners[1] & corners[2])  # [corners] Plane+[faces]
     section = reciprocals.sum(axis=0)                                # Plane+[faces]
     denominator = section & samples                                  # [samples] Scalar+[faces]
     hats = (reciprocals[None, :] & samples[:, None]) / denominator[:, None]  # [samples, corners] Scalar+[faces]
@@ -53,4 +53,4 @@ def diffusion(mesh: Mesh, corners: Point, samples: Point, measures: Scalar,
     potential = (stiffness + pin).solve(load)                        # Scalar+[vertices]
     potential = potential - (potential & mass).sites.sum() / mass.dual_inverse().sites.sum()
     numerator = (reciprocals * (mesh.incidence[2, 0] * potential)).sum(axis=0)  # Plane+[faces]
-    return potential, numerator
+    return potential, numerator, section

@@ -151,8 +151,8 @@ def sheet(mesh: Mesh, points: Point, lengths: Scalar, curvature: Curvature, top:
     angles = curvature(unit, unit) * (first.norm() + second.norm()) / (3 * line.norm())   # Scalar+[hinges]
     # The plane through each face's corners, wound as the face, has twice the face's area as its norm; read
     # against the top side, it says which way the bending angles count.
-    a, b, c = mesh.incidence[2, 0] * points                                      # Point-[faces], Point-[faces], Point-[faces]
-    planes = a & b & c                                                           # Plane+[faces]
+    face_corners = mesh.incidence[2, 0] * points                                 # [corners] Point-[faces]
+    planes = face_corners[0] & face_corners[1] & face_corners[2]                 # Plane+[faces]
     facing = (planes | top).sites.sum()                                          # [] Scalar+
     # Each vertex carries a third of the mass of every face at it.
     double_areas = planes.norm()                                                 # Scalar+[faces]
@@ -175,8 +175,8 @@ def flat_mesh(coords: np.ndarray, spacing: float) -> tuple[Mesh, Point]:
     points = mv.point(np.concatenate([coords, np.zeros((len(coords), 1))], axis=-1)).field()   # Point-[vertices]
     delaunay = Mesh.triangulate(points)
     # The plane through a face's corners has twice the face's area as its norm, all but nothing for a sliver.
-    a, b, c = delaunay.incidence[2, 0] * points                                  # Point-[faces], Point-[faces], Point-[faces]
-    kept = (a & b & c).norm().batch() > 1e-6 * spacing ** 2
+    corners = delaunay.incidence[2, 0] * points                                  # [corners] Point-[faces]
+    kept = (corners[0] & corners[1] & corners[2]).norm().batch() > 1e-6 * spacing ** 2
     return Mesh(len(coords), delaunay.faces[kept]), points
 
 

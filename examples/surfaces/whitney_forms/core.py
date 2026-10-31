@@ -20,6 +20,7 @@ Plane = ga.gatype.vector()                                                   # V
 Bivector = ga.gatype.bivector()                                              # Bivector+
 Point = ga.gatype.antivector()                                               # Antivector-
 Conductivity = ga.gatype((Point, Plane))
+triangle = Mesh(3, [[0, 1, 2]])
 
 # The tetrahedron, in the algebra of space.
 space_mesh_module = instantiate("examples.util.mesh", space)
@@ -33,13 +34,14 @@ Volume = space.gatype.antitrivector()                                        # A
 
 
 # --- plumbing -------------------------------------------------------------------------
-def complements(mesh: SpaceMesh, m: int) -> np.ndarray:
-    """`[k, 3 - m]`: the corners each of a tet's m-simplices leaves out, in the order of `mesh.corners(3, m)`, run so
-    that the m-simplex followed by them runs the tet's own sense: facing each corner, its face, outward; across each
-    edge, the opposite edge."""
-    simplices = mesh.corners(3, m)                                           # [k, m + 1]
-    tet = mesh.corners(3, 0)[:, 0]                                           # [corners]
-    left_out = np.stack([np.setdiff1d(tet, simplex) for simplex in simplices])   # [k, 3 - m]
+def complements(mesh: Mesh | SpaceMesh, m: int) -> np.ndarray:
+    """`[k, n - m]`: the corners each of an n-simplex's m-simplices leaves out, in the order of `mesh.corners[n, m]`,
+    run so that the m-simplex followed by them runs the n-simplex's own sense: facing each corner, its facet, outward;
+    across each edge of a tet, the opposite edge."""
+    n = mesh.n_dim
+    simplices = mesh.corners[n, m].T                                           # [k, m + 1]
+    top = mesh.corners[n, 0][0]                                                # [corners]
+    left_out = np.stack([np.setdiff1d(top, simplex) for simplex in simplices])   # [k, n - m]
     sense = simplex_parity(np.concatenate([simplices, left_out], axis=-1))   # [k]
     return np.where(sense[:, None] > 0, left_out, left_out[:, ::-1])
 
@@ -47,7 +49,7 @@ def complements(mesh: SpaceMesh, m: int) -> np.ndarray:
 # --- math -----------------------------------------------------------------------------
 def barycentric_hats(corners: Point, points: Point) -> tuple[Scalar, Plane]:
     """The barycentric hat values at `points` and the constant corner gradients."""
-    sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]                          # [corners] Point-
+    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]  # [corners] Point-
     patch = (sides[0] & sides[1]) / 2                                        # [] Patch-
     # Dividing each opposite edge by twice the signed area patch gives the gradient
     # that falls by one from its corner to the opposite edge.
@@ -58,7 +60,7 @@ def barycentric_hats(corners: Point, points: Point) -> tuple[Scalar, Plane]:
 
 def edge_whitney_forms(corners: Point, points: Point) -> Plane:
     """The three edge Whitney 1-forms evaluated at `points`, circulating around each edge's opposite corner."""
-    sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]                          # [corners] Point-
+    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]  # [corners] Point-
     patch = (sides[0] & sides[1]) / 2                                        # [] Patch-
     # Along the two edges meeting at a corner, the radial displacement from that corner is parallel
     # to the edge, while along the opposite edge its join with the edge equals twice the triangle patch.
@@ -119,7 +121,7 @@ def tetrahedral_helicity(mesh: SpaceMesh, vertices: SpacePoint) -> SpaceScalar:
     _, curls = tetrahedral_edge_forms(mesh, vertices, corners)               # [tet_edges, corners] Plane+[tets], [tet_edges] Bivector+[tets]
     # At the centroid every hat is a quarter, so each edge form is a quarter of the difference of its ends'
     # gradients; a linear form against a constant curl integrates exactly there.
-    tails, heads = mesh.corners(3, 1).T
+    tails, heads = mesh.corners[3, 1]
     centroid_forms = (gradients[heads] - gradients[tails]) / 4               # [tet_edges] Plane+[tets]
     densities = ((centroid_forms[:, None] ^ curls[None, :]) + (centroid_forms[None, :] ^ curls[:, None])) / 2  # [tet_edges, tet_edges] Trivector+[tets]
     return densities & volume                                                # [tet_edges, tet_edges] Scalar+[tets]
@@ -146,13 +148,14 @@ class Operators:
 
         # At each face centroid the three barycentric hats equal 1/3, so the edge 1-form
         # reduces to one third of the difference of its endpoints' corner gradients.
-        centroid_forms = (self.corner_gradients[[2, 0, 1]] - self.corner_gradients[[1, 2, 0]]) / 3  # [corners] Plane+[faces]
-        self.whitney1 = (spdiag(centroid_forms) * mesh.boundary[2, 1]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- edges]
+        tails, heads = mesh.corners[2, 1]
+        centroid_forms = (self.corner_gradients[heads] - self.corner_gradients[tails]) / 3  # [corners] Plane+[faces]
+        self.whitney1 = (spdiag(centroid_forms) * mesh.oriented[2, 1]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- edges]
 
         # The exterior derivative of each edge's Whitney 1-form is twice the wedge of its endpoints'
         # gradients, matching the constant Whitney 2-form of unit integral over the face patch.
-        first, second = self.corner_gradients[[1, 2, 0]], self.corner_gradients[[2, 0, 1]]  # [corners] Plane+[faces], [corners] Plane+[faces]
-        self.curl = (spdiag(2 * (first ^ second)) * mesh.boundary[2, 1]).sum(axis=0) * Scalar  # (Bivector+ <- Scalar+)[faces <- edges]
+        curls = 2 * (self.corner_gradients[tails] ^ self.corner_gradients[heads])  # [corners] Bivector+[faces]
+        self.curl = (spdiag(curls) * mesh.oriented[2, 1]).sum(axis=0) * Scalar  # (Bivector+ <- Scalar+)[faces <- edges]
         self.whitney2 = spdiag(mv.xy / (mv.xy & self.patches) * Scalar)      # (Bivector+ <- Scalar+)[faces <- faces]
 
         # Evaluating the linear Whitney 1-forms at the three edge midpoints integrates

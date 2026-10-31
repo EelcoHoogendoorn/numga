@@ -8,7 +8,7 @@ from examples.surfaces.regge_calculus import core, scenarios
 
 def test_regge_metric_basis_side_readings_heron_and_corner_rotors():
     corners, _ = scenarios.single_triangle(8)
-    sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]
+    sides = (core.triangle.boundary[2, 1] * (core.triangle.d[0] * corners.field())).batch()[:, 0]
     basis, gradients, patch = core.regge_metric_basis(corners)
 
     assert basis.gatype == core.Metric
@@ -119,7 +119,8 @@ def test_intrinsic_laplace_beltrami_cotangent_equivalence_and_flow():
     np.testing.assert_allclose((conductance - conductance.adjugate()).cells.kernel, 0.0, atol=1e-13)
 
     # Pulling the Regge inverse metric back through the Whitney face gradient matches the intrinsic cotangent Laplacian.
-    dots = -(metrics[:, None](sides[[1, 2, 0]]) & sides[[2, 0, 1]])
+    tails, heads = mesh.corners[2, 1]
+    dots = -(metrics[:, None](sides[tails]) & sides[heads])
     cotangents = dots / (2 * intrinsic_areas[:, None])
     unit_faces = core.as_scalar(np.ones(len(mesh.faces))).field().dual()
     edge_cotangents = (~mesh.incidence[2, 1] * ((cotangents / 2) * unit_faces)).sum(axis=-1)

@@ -16,17 +16,18 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import NumpyContext, Orientation, stack
+from numga import NumpyContext, stack
 from numga.algebras import VGA3D as ga
+from examples import instantiate
 from examples.mechanics.freeform.weights import kernels
 
 mv = NumpyContext(ga).multivector
+Mesh = instantiate("examples.util.mesh", ga).Mesh
+tetrahedron = Mesh(4, [[0, 1, 2, 3]])
 Scalar = ga.gatype.scalar()
 # Points and displacements are antivectors; gradients and forces are covectors, vectors.
 Antivector = ga.gatype.antivector()
 Vector = ga.gatype.vector()
-# A point with an intrinsic one prepended, on which affine functions are linear.
-AffinePoint = ga.gatype(ga.subspace.from_grades([0, 2]), orientation=Orientation.intrinsic)
 Deformation = ga.gatype((Antivector, Antivector))          # Antivector- <- Antivector-
 # The stress, from gradients to forces.
 Stress = ga.gatype((Vector, Vector))                        # Vector+ <- Vector+
@@ -34,14 +35,12 @@ Sampling = ga.gatype((Antivector, Antivector))
 # The mass, from accelerations to forces.
 Mass = ga.gatype((Vector, Antivector))                       # Vector+ <- Antivector-
 
-# The planes across the three axes, and the directions along them, which they pair with to the identity.
+# The reference volume, the join of the three axis directions: an intrinsic scalar of value one.
 planes = stack((mv.x, mv.y, mv.z))                           # [3] Vector+
 directions = planes.dual()                                   # [3] Antivector-
-# The reference volume, the join of the three directions: an intrinsic scalar of value one.
 unit_volume = directions[0] & directions[1] & directions[2]
 # Planes as the joins of the two directions that span them: vectors, oriented within themselves.
 Span = ga.gatype.antibivector()
-one = mv.antipseudoscalar([1.0])          # [] Antipseudoscalar-
 
 
 # --- math -----------------------------------------------------------------------------
@@ -52,13 +51,13 @@ def deformation_basis(queries: Antivector, centers: Antivector, radius: float,
     weights = evaluation[:, None](modes)                         # [samples, modes] Scalar+
     weight_gradients = gradient[:, None](modes)                   # [samples, modes] Vector+
 
-    # Four control points determine each affine map through their barycentric coordinates.
-    points = one + corners                                      # [4] AffinePoint-
-    moment = (points * points.scalar_product(AffinePoint)).sum(axis=0)  # AffinePoint <- AffinePoint
-    coordinates = points.scalar_product(moment.solve(AffinePoint))    # [4] Scalar+ <- AffinePoint
-    affine_weights = coordinates(one + queries[:, None])         # [samples, 4] Scalar+
-    # Each coordinate's gradient: the covector that reads its change along every direction.
-    affine_gradients = (planes[:, None] * coordinates[None, :](directions[:, None])).sum(axis=0)   # [4] Vector+
+    # Each control corner's barycentric gradient is its opposite outward face join over the tetrahedron's edge join.
+    vertices = corners.field()                                   # Antivector-[corners]
+    edges = (tetrahedron.oriented[3, 1] * (tetrahedron.d[0] * vertices)).batch()[:, 0]   # [tet_edges] Antivector-
+    sides = tetrahedron.boundary[2, 1] * (tetrahedron.d[0] * vertices)                   # [face_corners] Antivector-[faces]
+    face_patches = (tetrahedron.boundary[3, 2] * (sides[0] & sides[1])).batch()[:, 0]    # [4] Span-
+    affine_gradients = -face_patches / (edges[0] & edges[1] & edges[2])                  # [4] Vector+
+    affine_weights = 1 + (affine_gradients & (queries[:, None] - corners))  # [samples, 4] Scalar+
 
     features = weights[..., None] * affine_weights[:, None, :]   # [samples, modes, 4] Scalar+
     derivatives = (weight_gradients[..., None] * affine_weights[:, None, :]

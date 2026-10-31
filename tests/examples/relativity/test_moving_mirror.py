@@ -28,13 +28,13 @@ def test_spacetime_barycentric_hats_edge_forms_and_lorentzian_dual():
 
     # Edge 1-forms match Whitney's alternating formula and satisfy Kronecker duality along the worldline edges.
     edge_forms = core.edge_whitney_forms(corners, points)
-    first, second = [1, 2, 0], [2, 0, 1]
-    classic_forms = hats[first] * gradients[second, None] - hats[second] * gradients[first, None]
+    tails, heads = core.triangle.corners[2, 1]
+    classic_forms = (hats[tails] * gradients[heads, None] - hats[heads] * gradients[tails, None]) * core.triangle.face_edge_orientation.T
     np.testing.assert_allclose((edge_forms - classic_forms).kernel, 0.0, atol=1e-14)
 
-    sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]
+    sides = (core.triangle.boundary[2, 1] * (core.triangle.d[0] * corners.field())).batch()[:, 0]
     for fraction in (0.2, 0.5, 0.85):
-        edge_events = corners[first] * (1 - fraction) + corners[second] * fraction
+        edge_events = corners[tails] * (1 - fraction) + corners[heads] * fraction
         readings = core.edge_whitney_forms(corners, edge_events) & sides[None, :]
         np.testing.assert_allclose(readings.kernel, np.eye(3)[..., None], atol=1e-14)
 

@@ -24,6 +24,7 @@ Point = ga.gatype.antivector()                                               # A
 EvenMap = ga.gatype((Even, Point))
 RateMap = ga.gatype((Bivector, Point))
 StretchMap = ga.gatype((Scalar, Point))
+triangle = Mesh(3, [[0, 1, 2]])
 
 
 # --- math -----------------------------------------------------------------------------
@@ -31,7 +32,7 @@ def triangle_darboux(
     corners: Point, points: Point, corner_rotors: Rotor,
 ) -> tuple[Even, Rotor, EvenMap, RateMap, StretchMap, RateMap, Plane]:
     """Linearly blended corner rotors on a triangle decompose their Darboux derivative into edge Whitney 1-forms in grade two and symmetric Regge differentials in grade zero."""
-    sides = corners[[2, 0, 1]] - corners[[1, 2, 0]]                          # [corners] Point-
+    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]  # [corners] Point-
     patch = (sides[0] & sides[1]) / 2                                        # [] Patch-
     gradients = (sides | patch.inverse()) / 2                                # [corners] Plane+
     hats = 1 + (gradients & (points[:, None] - corners))                     # [samples, corners] Scalar+
@@ -44,7 +45,7 @@ def triangle_darboux(
 
     # Reversing an edge flips its transition's turning plane and preserves its scalar part.
     # These match the antisymmetric Whitney forms and symmetric endpoint-product differentials.
-    tails, heads = [1, 2, 0], [2, 0, 1]
+    tails, heads = triangle.corners[2, 1]
     transitions = corner_rotors[tails].reverse() * corner_rotors[heads]      # [corners] Rotor+
     edge_bivectors = 2 * transitions.select[2]                               # [corners] Bivector+
     edge_sagittas = 2 * (transitions.select[0] - 1)                          # [corners] Scalar+
@@ -81,7 +82,8 @@ def skyrmion_winding(
     face_rates = face_darboux.select[2] / chord_rotors.scalar_norm_squared() # (Bivector+ <- Point-)[faces]
 
     # The cotangent weights turn edge readings into the direction-independent frame energy.
-    dots = -sides[[1, 2, 0]].dot(sides[[2, 0, 1]])                           # [corners] Scalar+[faces]
+    tails, heads = mesh.corners[2, 1]
+    dots = -sides[tails].dot(sides[heads])                                   # [corners] Scalar+[faces]
     cotangents = dots / (2 * areas)                                          # [corners] Scalar+[faces]
     energy_density = ((cotangents / (2 * areas)) * face_rates(sides).scalar_norm_squared()).sum(axis=0)  # Scalar+[faces]
 
@@ -100,7 +102,8 @@ def rotor_laplacian_operators(
     sides = mesh.boundary[2, 1] * edges                                      # [corners] Point-[faces]
     patches = (sides[0] & sides[1]) / 2                                      # Patch-[faces]
     areas = patches.norm()                                                   # Scalar+[faces]
-    dots = -sides[[1, 2, 0]].dot(sides[[2, 0, 1]])                           # [corners] Scalar+[faces]
+    tails, heads = mesh.corners[2, 1]
+    dots = -sides[tails].dot(sides[heads])                                   # [corners] Scalar+[faces]
     cotangents = dots / (2 * areas)                                          # [corners] Scalar+[faces]
     edge_weights = (~mesh.incidence[2, 1] * (cotangents / 2)).sum(axis=0)    # Scalar+[edges]
     rotor_d0 = mesh.d[0] * Rotor                                             # (Even+ <- Even+)[edges <- vertices]
