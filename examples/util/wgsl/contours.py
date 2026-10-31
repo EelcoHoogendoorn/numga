@@ -118,7 +118,7 @@ no_bands = Bands(0.0, 1.0, np.zeros((1, 4)))
 def shader(Point: GAType, Plane: GAType) -> Shader:
     """The shader for meshes whose points are of the type `Point`, read by a camera's planes of the type `Plane`."""
     return Shader(level_lines() + placing(Plane) + source, Point.algebra, dict(Point=Point, Plane=Plane), {},
-                  targets=("rgba8unorm",))
+                  targets=("rgba8unorm",), over=True)
 
 
 def picture(points: Extensor, mesh: Mesh, values: np.ndarray, colours: np.ndarray, camera: Camera,
@@ -133,8 +133,9 @@ def picture(points: Extensor, mesh: Mesh, values: np.ndarray, colours: np.ndarra
         return np.zeros(camera.shape + (4,))
     lines, levels, bands = lines or (no_lines,), levels or (no_level,), bands or (no_bands,)
     starts = np.cumsum([0] + [len(band.colours) for band in bands[:-1]])
-    image, = shader(**reading(points, camera)).draw_averaged(
-        camera.shape, side, 3 * len(mesh.faces), points=points, faces=mesh.faces,
+    from examples.util.wgsl.simplices import Layer
+    return Layer(shader(**reading(points, camera)), camera.shape, 3 * len(mesh.faces), dict(
+        points=points, faces=mesh.faces,
         values=np.asarray(values, dtype=np.float32), colours=np.broadcast_to(colours, (len(values), 3)),
         opacity=opacity, **camera.uniforms(1.0),
         lines=np.array([[set.spacing, set.through, set.width * side, 0] for set in lines]),
@@ -142,10 +143,7 @@ def picture(points: Extensor, mesh: Mesh, values: np.ndarray, colours: np.ndarra
         levels=np.array([[level.value, level.width * side, 0, 0] for level in levels]),
         level_inks=np.array([level.ink for level in levels]),
         bands=np.array([[band.start, band.spacing, start, len(band.colours)] for band, start in zip(bands, starts)]),
-        band_colours=np.concatenate([band.colours for band in bands]))
-    # The samples averaged with their colours weighted by coverage; the colour where anything covers, divided back.
-    coverage = image[..., 3:]
-    return np.minimum(np.concatenate((image[..., :3] / np.where(coverage > 0, coverage, 1), coverage), axis=-1), 1)
+        band_colours=np.concatenate([band.colours for band in bands])))
 
 
 def overlay(ax: Axes, points: Extensor, mesh: Mesh, values: np.ndarray, colours: np.ndarray,

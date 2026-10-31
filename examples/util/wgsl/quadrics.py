@@ -99,22 +99,21 @@ fn form_paired(plane: Form, point: Point) -> f32 {{
 
 
 def layer(quadrics: Extensor, flats: Extensor, kind: Kind, width: float, colours: np.ndarray, camera: Camera,
-          opacity: float) -> np.ndarray:
+          opacity: float):
     """Quadrics `[n, bounds]`, maps from points to planes, with their linear parts, planes `[n, bounds]`, covering what
-    `kind` says, read by the camera: `[rows, columns, 4]`, colour and coverage."""
-    from examples.util.wgsl.simplices import straight
+    `kind` says, read by the camera: a layer of colour and coverage."""
+    from examples.util.wgsl.simplices import Layer
     algebra = quadrics.algebra
     Plane = whole(camera.across, algebra)
     Point = points_read_by(Plane)
     origin, step_across, step_up, _ = preimage(camera, Point)
     side = samples_per_side()
     rows, columns = camera.shape
-    image, = shader(Point, Plane, whole(flats, algebra)).draw_averaged(
-        camera.shape, side, 6 * len(quadrics), quadrics=quadrics.reshape(-1), flats=flats.reshape(-1),
+    return Layer(shader(Point, Plane, whole(flats, algebra)), camera.shape, 6 * len(quadrics), dict(
+        quadrics=quadrics.reshape(-1), flats=flats.reshape(-1),
         bounds=quadrics.shape[1], colours=np.broadcast_to(colours, (len(quadrics), 3)), opacity=opacity, kind=float(kind),
         width=width * side, samples=np.array([columns * side, rows * side], dtype=float), origin=origin,
-        step_across=step_across, step_up=step_up, **camera.uniforms(1.0))
-    return straight(image)
+        step_across=step_across, step_up=step_up, **camera.uniforms(1.0)))
 
 
 def points_read_by(Plane: GAType) -> GAType:

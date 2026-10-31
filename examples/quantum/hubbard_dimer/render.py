@@ -164,9 +164,8 @@ def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitud
                               camera, opacity=TRACE_OPACITY)])
         simplices.overlay(ax, [faces])
         # The arrows and their tips over the faces, drawn anew each frame.
-        shafts_shown, tips_shown = (simplices.overlay(ax, [np.zeros(camera.shape + (4,))]) for _ in range(2))
-        shafts_shown.set_animated(True)
-        tips_shown.set_animated(True)
+        arrows_shown = simplices.overlay(ax, [np.zeros(camera.shape + (4,))])
+        arrows_shown.set_animated(True)
         # Each case's name left of its row, each configuration's under its column.
         for height_at, row_label in zip(up, rows):
             ax.annotate(row_label, (0, height_at), xytext=(-4, 0), textcoords="offset points", rotation=90,
@@ -182,9 +181,9 @@ def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitud
             figure.canvas.restore_region(background)
             tips = ends[..., index]                                            # [cases, dials] Point-
             shafts = stack((centres, starts[..., index], tips), axis=-1)       # [cases, dials, 3] Point-
-            shafts_shown.set_data(simplices.strokes(shafts.reshape(-1), arrows, shares, charts.LINE_PX, camera))
-            tips_shown.set_data(simplices.markers(tips.reshape(-1), TIP, charts.MARKER_PX / 2, camera))
-            ax.draw_artist(shafts_shown)
-            ax.draw_artist(tips_shown)
+            arrows_shown.set_data(simplices.composited([
+                simplices.strokes(shafts.reshape(-1), arrows, shares, charts.LINE_PX, camera),
+                simplices.markers(tips.reshape(-1), TIP, charts.MARKER_PX / 2, camera)]))
+            ax.draw_artist(arrows_shown)
             yield np.asarray(figure.canvas.buffer_rgba())[..., :3].copy()
         plt.close(figure)
