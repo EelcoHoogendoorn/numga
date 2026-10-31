@@ -13,7 +13,7 @@ from numga import concatenate, stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import contours, pinned, solids
-from examples.util.wgsl.flow import axes_view
+from examples.util.wgsl.camera import flat_panel
 from examples.quadrics.quadric_collision.core import (
     Plane, Point, Polarity, Quadric, Scalar, infinity, mv, origin, tangent_plane,
 )
@@ -110,7 +110,7 @@ def animate_collision(
     # The grid's points numbered row by row, one row for each step up.
     grid = (middle + mv.x.dual() * across[None, :] + mv.y.dual() * up[:, None]).reshape(-1)   # [points] Point-
     mesh = contours.Mesh.grid(resolution, resolution)
-    places = solids.context.include_from_algebra(grid)                         # [points] Point-
+    places = grid                                                              # [points] Point-
     # The panel's limits, at the grid's first and last corners.
     xlim, ylim = np.stack((xy(grid[0]), xy(grid[-1])), axis=-1)
     bottom, top = min(determinants.min(), 0.0), max(determinants.max(), 0.0)
@@ -150,7 +150,7 @@ def animate_collision(
 
         # The ellipsoids and the blend as clear pictures over the panel, at its own pixels: the fills under the
         # outlines, the first ellipsoid's drawn once, the second's and the blend's anew each frame.
-        view = axes_view(ax_pair)
+        view = flat_panel(ax_pair, places.algebra)
         first_form = ellipsoid_form(first_ellipsoid, grid)                    # [points]
         first_ink = np.array(to_rgba(first_colours[1]))
         clear_picture(ax_pair, view, 1.0).set_data(contours.picture(

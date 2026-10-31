@@ -16,7 +16,7 @@ from numga import concatenate, stack, where
 from examples.util.animation import capture
 from examples.mechanics.earthquake import core
 from examples.util.wgsl import compose, contours, fitted, meshes, pinned, show, solids
-from examples.util.wgsl.flow import axes_view
+from examples.util.wgsl.camera import Camera, flat_panel
 
 # Pushes shaded, pulls left white; the nodal lines, the pressure and tension axes, the slip.
 PUSH, PULL = "#1e293b", "#f8fafc"
@@ -73,11 +73,11 @@ def lambert(directions: core.Point) -> core.Point:
 def ball_grid(directions: core.Point) -> tuple[solids.Point, contours.Mesh]:
     """The lower hemisphere's directions `[rings, spokes]` on the level ground of the drawing's frame, numbered ring by
     ring, and the grid between them."""
-    places = solids.origin + solids.context.include_from_algebra(drawing >> lambert(directions).reshape(-1))   # [rings * spokes] Point-
+    places = drawing >> lambert(directions).reshape(-1)                      # [rings * spokes] Point-
     return places, contours.Mesh.grid(*directions.shape)
 
 
-def shade_ball(places: solids.Point, grid: contours.Mesh, push: core.Scalar, view: solids.View) -> np.ndarray:
+def shade_ball(places: core.Point, grid: contours.Mesh, push: core.Scalar, view: Camera) -> np.ndarray:
     """The lower hemisphere at its places on the grid `ball_grid` gives, with the pushes `[rings, spokes]` shaded and
     its nodal lines, where the pushes change sign, seen by the view of its panel: `[rows, columns, 4]`, transparent
     beyond the rim."""
@@ -106,10 +106,10 @@ def draw_ball(ax, axes: core.Point) -> list[PathCollection]:
     return marks
 
 
-def pin_ball(ax, places: solids.Point, grid: contours.Mesh, push: core.Scalar) -> tuple[AxesImage, solids.View]:
+def pin_ball(ax, places: core.Point, grid: contours.Mesh, push: core.Scalar) -> tuple[AxesImage, Camera]:
     """The shaded beachball pinned under the frame `draw_ball` drew in its panel, once the figure is laid out; the
-    image and its view, for an animation to set its data."""
-    view = axes_view(ax)
+    image and its camera, for an animation to set its data."""
+    view = flat_panel(ax, core.ga)
     image = pinned(ax, shade_ball(places, grid, push, view), (*ax.get_xlim(), *ax.get_ylim()))
     image.set_zorder(1)
     return image, view

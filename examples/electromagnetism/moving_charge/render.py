@@ -15,12 +15,11 @@ from matplotlib.image import AxesImage
 from numga import stack
 
 from examples.util.animation import capture
-from examples.util.wgsl import contours, pinned, solids
-from examples.util.wgsl.flow import axes_view
+from examples.util.wgsl import contours, pinned
+from examples.util.wgsl.camera import Camera, flat_panel
 from examples.electromagnetism.moving_charge import core
 
 # The lab's slice of space, which carries the events into the renderer's space.
-space_slice = core.mv.t ^ (core.Antivector & core.time)                         # [] Antivector- <- Antivector-
 # The scales of the electric field's strength, of the magnetic field, and of the waves, compressed to within one.
 electric_norm = LogNorm(0.05, 50.0)
 magnetic_norm = TwoSlopeNorm(0.0, -10.0, 10.0)
@@ -112,8 +111,8 @@ def panel(ax: Axes, events: core.Antivector, values: np.ndarray, colours: Colorm
     return image
 
 
-def outlined(places: solids.Point, mesh: contours.Mesh, field: core.Bivector, current: core.Antivector,
-             view: solids.View) -> np.ndarray:
+def outlined(places: core.Antivector, mesh: contours.Mesh, field: core.Bivector, current: core.Antivector,
+             view: Camera) -> np.ndarray:
     """The electric field's strength over the grid of events at their places in the lab's space, `[rows, columns]`
     numbered row by row, with the charge's outline, where its density is high, seen by the view of its panel:
     `[rows, columns, 4]`."""
@@ -152,10 +151,10 @@ def animate(frames: Iterable[tuple[core.Antivector, core.Bivector, core.Antivect
     # The strength and the charge's outline over the grid of events, from its first to its last.
     corners = coordinates(events[[0, -1], [0, -1]])                            # [2, 2]
     left.set(xlim=corners[:, 0], ylim=corners[:, 1])
-    view = axes_view(left)
+    view = flat_panel(left, core.ga)
     strength = pinned(left, np.zeros(view.shape + (4,)), (*corners[:, 0], *corners[:, 1]))
     left.set_autoscale_on(False)
-    places = solids.origin + solids.context.include_from_algebra(space_slice(events).reshape(-1))   # [rows * columns] Point-
+    places = events.reshape(-1)                                              # [rows * columns] Antivector-
     mesh = contours.Mesh.grid(*events.shape[-2:])
     magnetic = panel(right, events, magnetic_across(field), signed_colours, magnetic_norm)
     for _, field, current in chain([(events, field, current)], states):

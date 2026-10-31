@@ -17,7 +17,7 @@ from examples.electromagnetism.lie_advection import core
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import contours, flow, pinned, solids
-from examples.util.wgsl.flow import axes_view
+from examples.util.wgsl.camera import flat_panel
 
 primal_colour = "#286580"
 accent_colour = "#d77542"
@@ -197,7 +197,7 @@ def draw_advection_comparison(mesh: core.Mesh, vertices: core.Point,
     plain_axes(trace_ax)
 
     # The flux densities shaded once the layout is set, each picture at the pixels its panel gets.
-    points = solids.origin + solids.context.include_from_algebra(space_slice(vertices.batch()))   # [vertices] Point-
+    points = vertices.batch()                                                # [vertices] Point-
     flux_scale = Normalize(-flux_limit, flux_limit)
     for ax, vertex_flux in zip((left_ax, mid_ax), vertex_fluxes):
         colours = flux_colours(flux_scale(vertex_flux))[:, :3]
@@ -214,7 +214,7 @@ def animate_advection(mesh: core.Mesh, vertices: core.Point,
     places = coordinates(vertices)
     triangulation = Triangulation(*places.T, triangles=mesh.faces)
     walls = rim_segments(mesh, vertices)
-    points = solids.origin + solids.context.include_from_algebra(space_slice(vertices.batch()))   # [vertices] Point-
+    points = vertices.batch()                                                # [vertices] Point-
 
     sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
     areas = (core.time & (sides[0] & sides[1]) / 2).norm()
@@ -230,7 +230,7 @@ def animate_advection(mesh: core.Mesh, vertices: core.Point,
         figure.subplots_adjust(left=0.015, right=0.985, bottom=0.02, top=0.98, wspace=0.04)
         for ax in axes:
             disk_panel(ax, triangulation, vertices, walls)
-        views = [axes_view(ax) for ax in axes]
+        views = [flat_panel(ax, core.ga) for ax in axes]
         textures = [pinned(ax, np.zeros(view.shape + (4,)), (*ax.get_xlim(), *ax.get_ylim()))
                     for ax, view in zip(axes, views)]
     for texture in textures:

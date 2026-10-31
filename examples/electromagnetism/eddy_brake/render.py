@@ -15,13 +15,11 @@ from matplotlib.path import Path
 from numga import concatenate, stack
 from numga.extensor import Extensor
 from examples.util.animation import capture
-from examples.util.wgsl import contours, pinned, solids
-from examples.util.wgsl.flow import axes_view
+from examples.util.wgsl import contours, pinned
+from examples.util.wgsl.camera import flat_panel
 from examples.electromagnetism.eddy_brake import core
 
 Mesh, as_scalar = core.Mesh, core.as_scalar
-# The observer's slice of space, which carries the disc's events into the renderer's space.
-space_slice = core.mv.t ^ (core.Point & core.time)                              # [] Point- <- Point-
 
 animation_dpi = 90
 fibre_reach = 0.94
@@ -166,7 +164,7 @@ def draw(mesh: Mesh, points: core.Point, areas: core.Scalar, response: core.Resp
     magnitude = scalars(at_vertices(mesh, areas, response.current).squared().square_root())   # [cases, vertices]
     current_scale = PowerNorm(current_gamma, vmin=0, vmax=magnitude.max())
     extent = scalars(points.squared().square_root()).max()
-    places = solids.origin + solids.context.include_from_algebra(space_slice(points).batch())   # [vertices] Point-
+    places = points.batch()                                                 # [vertices] Point-
 
     figure, panels = plt.subplots(1, len(magnitude), figsize=(3 * len(magnitude), 3.15),
                                   squeeze=False, layout="constrained")
@@ -189,7 +187,7 @@ def draw_modes(mesh: Mesh, points: core.Point, streamfunctions: core.Scalar) -> 
     values = scalars(streamfunctions)                                      # [cases, patterns, vertices]
     extent = scalars(points.squared().square_root()).max()
     outline = rim(mesh, points)
-    places = solids.origin + solids.context.include_from_algebra(space_slice(points).batch())   # [vertices] Point-
+    places = points.batch()                                                 # [vertices] Point-
     rows, columns = values.shape[:2]
     figure, panels = plt.subplots(rows, columns, figsize=(2 * columns, 2 * rows),
                                   squeeze=False, layout="constrained")
@@ -241,7 +239,7 @@ def currents(mesh: Mesh, points: core.Point, areas: core.Scalar, states: Iterabl
     figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=animation_dpi)
     panels = [disc_panel(figure, i, len(shown), extent, centre, width, field, colours)
               for i, colours in enumerate(fibre_colours(fibres, shown))]
-    views = [axes_view(ax) for ax, _, _, _ in panels]
+    views = [flat_panel(ax, core.ga) for ax, _, _, _ in panels]
     textures = [pinned(ax, np.zeros(view.shape + (4,)), (*ax.get_xlim(), *ax.get_ylim()))
                 for (ax, _, _, _), view in zip(panels, views)]
     for texture in textures:
@@ -259,7 +257,7 @@ def currents(mesh: Mesh, points: core.Point, areas: core.Scalar, states: Iterabl
                           where=peak > 0) ** streamline_gamma
         current_scale = PowerNorm(current_gamma, vmin=0, vmax=peak)
         speed = scalars(at_vertices(mesh, areas, strength))                   # [cases, vertices]
-        places = solids.origin + solids.context.include_from_algebra(space_slice(state.vertices).batch())   # [cases, vertices] Point-
+        places = state.vertices.batch()                                       # [cases, vertices] Point-
         threads_at = planar(state.orientation[:, None, None] >> guides)
         marks = rotation_marks(state.orientation, extent)                     # [cases, 2]
         for i, ((ax, threads, marker, outline), view, texture) in enumerate(zip(panels, views, textures)):
@@ -285,7 +283,7 @@ def animate_heat(mesh: Mesh, points: core.Point, areas: core.Scalar, frames: Ite
     figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=animation_dpi)
     panels = [disc_panel(figure, i, len(shown), extent, centre, width, field, colours)
               for i, colours in enumerate(fibre_colours(fibres, shown))]
-    views = [axes_view(ax) for ax, _, _, _ in panels]
+    views = [flat_panel(ax, core.ga) for ax, _, _, _ in panels]
     textures = [pinned(ax, np.zeros(view.shape + (4,)), (*ax.get_xlim(), *ax.get_ylim()))
                 for (ax, _, _, _), view in zip(panels, views)]
     for texture in textures:
@@ -293,7 +291,7 @@ def animate_heat(mesh: Mesh, points: core.Point, areas: core.Scalar, frames: Ite
     for state in frames:
         # Face heat is energy. Dividing by each material face's area gives the density to colour.
         densities = scalars(at_vertices(mesh, areas, state.heat / areas))     # [cases, vertices]
-        places = solids.origin + solids.context.include_from_algebra(space_slice(state.vertices).batch())   # [cases, vertices] Point-
+        places = state.vertices.batch()                                       # [cases, vertices] Point-
         threads_at = planar(state.orientation[:, None, None] >> guides)
         marks = rotation_marks(state.orientation, extent)                     # [cases, 2]
         for i, ((ax, threads, marker, outline), view, texture) in enumerate(zip(panels, views, textures)):

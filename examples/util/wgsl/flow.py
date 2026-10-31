@@ -10,9 +10,12 @@ from functools import cache
 
 import numpy as np
 
-from examples.util.wgsl import Shader, meshes, solids
-from examples.util.wgsl.library import fitted, pinned, samples_per_side
 from matplotlib.axes import Axes
+
+from numga.extensor import Extensor
+from examples.util.wgsl import Shader, meshes, solids
+from examples.util.wgsl.camera import Camera, flat_panel, placing
+from examples.util.wgsl.library import pinned, samples_per_side
 
 Mesh = meshes.Mesh
 
@@ -89,26 +92,60 @@ fn seed(place: Point) -> f32 {
 }
 """
 
-# Jittered specks avoid a lattice of noise extrema on flat sections.
-planar_grain = """
+# The seeds of a flat field in the points' own algebra, placed by its camera: no lighting, its field read across and up
+# the picture, its specks jittered on cells of the picture's own readings.
+planar_source = """
+var<storage, read> points: array<Point>;
+var<storage, read> faces: array<vec3<u32>>;
+var<storage, read> field: array<Point>;
+var<uniform> noise_scale: f32;
+
+fn hash(place: vec3<f32>) -> f32 {
+    var p = fract(place * 0.1031);
+    p += p.x * (p.y + 33.33) + p.y * (p.z + 33.33) + p.z * (p.x + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+
+struct Corner {
+    @builtin(position) position: vec4<f32>,
+    @location(0) tangent: Point,
+    @location(1) place: Point,
+}
+struct Shade {
+    @location(0) colour: vec4<f32>,
+    @location(1) flow: vec4<f32>,
+    @location(2) grain: vec4<f32>,
+}
+
+// Jittered specks, one to a cell of the picture's readings, `noise_scale` across.
 fn seed(place: Point) -> f32 {
-    let cell = floor((axes & place) / noise_scale);
+    let reading = vec2<f32>(screen_across & place, screen_up & place) / weight_of(place) / noise_scale;
+    let cell = floor(reading);
     var ink = 0.0;
-    for (var z = -1; z <= 1; z++) {
-        for (var y = -1; y <= 1; y++) {
-            for (var x = -1; x <= 1; x++) {
-                let neighbour = cell + vec3<f32>(f32(x), f32(y), f32(z));
-                let jitter = vec3<f32>(hash(neighbour + vec3<f32>(19.1, 31.7, 47.2)),
-                                       hash(neighbour + vec3<f32>(53.4, 11.8, 29.3)),
-                                       hash(neighbour + vec3<f32>(7.6, 61.2, 43.9)));
-                let centre = neighbour + jitter;
-                let offset = (mv.x.dual() * centre.x + mv.y.dual() * centre.y + mv.z.dual() * centre.z) * noise_scale;
-                let distance = (place - origin - offset).dual().norm() / noise_scale;
-                ink = max(ink, 1.0 - smoothstep(0.17, 0.29, distance));
-            }
+    for (var y = -1; y <= 1; y++) {
+        for (var x = -1; x <= 1; x++) {
+            let neighbour = cell + vec2<f32>(f32(x), f32(y));
+            let jitter = vec2<f32>(hash(vec3<f32>(neighbour, 19.1)), hash(vec3<f32>(neighbour, 53.4)));
+            let away = reading - neighbour - jitter;
+            let distance = sqrt(away.x * away.x + away.y * away.y);
+            ink = max(ink, 1.0 - smoothstep(0.17, 0.29, distance));
         }
     }
     return ink;
+}
+
+@vertex
+fn place(@builtin(vertex_index) index: u32) -> Corner {
+    let face = faces[index / 3];
+    let vertex = face[index % 3];
+    return Corner(clip(points[vertex]), field[vertex], points[vertex]);
+}
+
+@fragment
+fn shade(corner: Corner) -> Shade {
+    // The field's change of place in the picture, in the readings, rows counted down.
+    let projected = screen_of(corner.tangent) * vec2<f32>(1, -1);
+    return Shade(vec4<f32>(1.0), vec4<f32>(projected, 0, 0), vec4<f32>(seed(corner.place)));
 }
 """
 
@@ -180,6 +217,13 @@ def seed_shader(grain: str) -> Shader:
 
 
 @cache
+def planar_shader(algebra) -> Shader:
+    """The seed pass of a flat field whose points belong to an algebra, placed by that algebra's camera."""
+    types = dict(Point=algebra.gatype.antivector(), Plane=algebra.gatype.vector())
+    return Shader(placing() + planar_source, algebra, types, {}, targets=("rgba8unorm", "rgba32float", "rgba32float"))
+
+
+@cache
 def trace_shader() -> Shader:
     return Shader(f"const n_steps = {n_trace_steps}u;\n" + trace_source, solids.ga, {}, {})
 
@@ -209,32 +253,31 @@ def draw(points: solids.Point, mesh: Mesh, field: solids.Point, view: solids.Vie
     return np.round(np.clip(result["image"][..., :3], 0, 1) * 255).astype(np.uint8)
 
 
-def layer(points: solids.Point, mesh: Mesh, field: solids.Point, view: solids.View,
+def layer(points: Extensor, mesh: Mesh, field: Extensor, camera: Camera,
           reference_speed: float, colour: np.ndarray, *, downstream_fraction: float = 0.9,
           length: float = length_pixels) -> np.ndarray:
-    """A transparent ink layer, at the view's native pixels, for a flat field over a quantity plot."""
-    result = texture(points, mesh, field, view, np.ones(3), reference_speed, planar_grain, 4.0,
-                     downstream_fraction, length, np.ones(3))
-    rgba = np.empty(view.shape + (4,))
+    """A transparent ink layer, at the camera's own pixels, for a flat field over a panel, the points and the field in
+    their own algebra, read by its camera."""
+    surface, projected, grains = planar_shader(points.algebra).draw_averaged(
+        camera.shape, samples_per_side(), 3 * len(mesh.faces), points=points, faces=mesh.faces, field=field,
+        noise_scale=camera.pixel * 4.0, **camera.uniforms(1.0))
+    result = trace_shader()(camera.shape, surface=surface, flow=projected, grains=grains, background=np.ones(3),
+                            step_pixels=length / n_trace_steps,
+                            reference_speed=max(reference_speed, np.finfo(np.float32).tiny),
+                            downstream_fraction=downstream_fraction, depth_limit=6 * camera.pixel,
+                            ink_opacity=ink_opacity)
+    rgba = np.empty(camera.shape + (4,))
     rgba[..., :3] = colour
     rgba[..., 3] = result["coverage"][..., 0]
     return rgba
 
 
-def axes_view(ax: Axes) -> solids.View:
-    """A planar camera fitted to exactly the pixels and limits of a matplotlib panel."""
-    left, right = ax.get_xlim()
-    bottom, top = ax.get_ylim()
-    corners = solids.mv.point([[left, bottom, 0], [right, top, 0]])          # [2] Point-
-    return fitted(solids.View(solids.aim(corners.mean(axis=0), np.pi / 2, 0),
-                             np.array([right - left, top - bottom]) / 2, 300), ax)
-
-
-def overlay(ax: Axes, points: solids.Point, mesh: Mesh, field: solids.Point,
+def overlay(ax: Axes, points: Extensor, mesh: Mesh, field: Extensor,
             reference_speed: float, colour: np.ndarray):
-    """Draw the current field as a transparent layer, keeping the panel's existing geometric annotations."""
-    view = axes_view(ax)
-    rgba = layer(points, mesh, field, view, reference_speed, colour)
+    """Draw a flat field as a transparent layer over a panel, keeping the panel's existing geometric annotations, the
+    panel looking down on the plane of the points' generators x and y."""
+    camera = flat_panel(ax, points.algebra)
+    rgba = layer(points, mesh, field, camera, reference_speed, colour)
     shown = pinned(ax, rgba, (*ax.get_xlim(), *ax.get_ylim()))
     shown.set_zorder(3.5)
     return shown

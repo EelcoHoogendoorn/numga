@@ -13,7 +13,8 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack
 from examples.util import charts
-from examples.util.wgsl import flow as ink, pinned, solids
+from examples.util.wgsl import flow as ink, pinned
+from examples.util.wgsl.camera import flat_panel
 from examples.util.animation import capture
 from examples.fluids.stokes_swimmer import core
 
@@ -152,8 +153,7 @@ def draw_summary(
 
     figure.tight_layout()
     mesh = ink.Mesh.grid(*grid.shape)
-    points = solids.context.include_from_algebra(grid.reshape(-1))
-    directions = solids.context.include_from_algebra(flow[0].reshape(-1))
+    points, directions = grid.reshape(-1), flow[0].reshape(-1)
     reference_speed = float(directions.dual().norm().max().to_array())
     texture = ink.overlay(ax_flow, points, mesh, directions, reference_speed, np.array(to_rgb(flow_colour)))
     texture.set_zorder(1)
@@ -171,10 +171,10 @@ def animate_swimmers(
     beads = world_sites.batch()[::every]                                        # [frames, swimmers, beads] Point-
     tracks = point_coords(positions)                                           # [steps + 1, swimmers, 2]
     mesh = ink.Mesh.grid(*grid.shape)
-    points = solids.context.include_from_algebra(grid.reshape(-1))              # [samples] Point-
+    points = grid.reshape(-1)                                                  # [samples] Point-
     flows = iter(flows)
     first = next(flows)
-    directions = solids.context.include_from_algebra(first.reshape(first.shape[0], -1))
+    directions = first.reshape(first.shape[0], -1)
     reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
     left = min(float(tracks[:, 0, 0].min()), 0.0) - 2.3
     right = max(float(tracks[:, 0, 0].max()), 0.0) + 2.3
@@ -190,11 +190,11 @@ def animate_swimmers(
         swimmers.append(_draw_swimmer(ax, beads[0, swimmer], colour, 1.0))
         ax.set(xlim=(left, right), ylim=(-water_half_height, water_half_height), aspect="equal")
         ax.set_axis_off()
-    views = [ink.axes_view(ax) for ax in axes]
+    views = [flat_panel(ax, core.ga) for ax in axes]
     textures = [pinned(ax, np.zeros(view.shape + (4,)), (left, right, -water_half_height, water_half_height))
                 for ax, view in zip(axes, views)]
     for frame, fields in enumerate(chain((first,), flows)):
-        directions = solids.context.include_from_algebra(fields.reshape(fields.shape[0], -1))
+        directions = fields.reshape(fields.shape[0], -1)
         for texture, view, field in zip(textures, views, directions):
             texture.set_data(ink.layer(points, mesh, field, view, reference_speed, np.array(to_rgb(flow_colour))))
         step_end = frame * every + 1

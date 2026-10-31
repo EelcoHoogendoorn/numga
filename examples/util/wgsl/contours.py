@@ -1,9 +1,11 @@
-"""A scalar field on a planar mesh, coloured, banded and contoured on the GPU.
+"""A scalar field on a planar mesh, coloured, banded and contoured on the GPU, in the mesh's own algebra.
 
 The field and its colours at the vertices are interpolated across each triangle by its hats. The fragment stage fills
 bands between levels and draws level lines where the field crosses a level, `level_line` and `level_mark` from the
 library, one width in pixels however steep the field: no line is extracted as geometry. The colours may be translucent,
-down to none, and each band, line and level lays its ink over them with its own opacity, so that pictures stack.
+down to none, and each band, line and level lays its ink over them with its own opacity, so that pictures stack. The
+mesh's points are read by a camera of their own algebra, `examples.util.wgsl.camera`: the shader compiles per algebra,
+and the points are never carried into another to be drawn.
 """
 from __future__ import annotations
 
@@ -13,8 +15,9 @@ from typing import NamedTuple
 import numpy as np
 from matplotlib.axes import Axes
 
-from examples.util.wgsl import Shader, meshes, pinned, solids
-from examples.util.wgsl.flow import axes_view
+from numga.extensor import Extensor
+from examples.util.wgsl import Shader, meshes, pinned
+from examples.util.wgsl.camera import Camera, flat_panel, placing
 from examples.util.wgsl.library import level_lines, samples_per_side
 
 Mesh = meshes.Mesh
@@ -50,8 +53,6 @@ var<storage, read> faces: array<vec3<u32>>;
 // The field at the vertices, and the colours there.
 var<storage, read> values: array<f32>;
 var<storage, read> colours: array<vec3<f32>>;
-var<uniform> camera: Motor;
-var<uniform> half_size: vec2<f32>;
 // How much the colours at the vertices cover, under the bands and lines laid over them.
 var<uniform> opacity: f32;
 // Sets of lines: spacing, the level they pass through, and width in samples; and their inks.
@@ -74,9 +75,7 @@ struct Corner {
 fn place(@builtin(vertex_index) index: u32) -> Corner {
     let face = faces[index / 3];
     let vertex = face[index % 3];
-    let seen = camera << points[vertex];
-    let framed = (axes & seen) / (mv.w & seen);
-    return Corner(vec4<f32>(framed.xy / half_size, 0.5, 1.0), values[vertex], colours[vertex]);
+    return Corner(clip(points[vertex]), values[vertex], colours[vertex]);
 }
 
 @fragment
@@ -115,12 +114,13 @@ no_bands = Bands(0.0, 1.0, np.zeros((1, 4)))
 
 
 @cache
-def shader() -> Shader:
-    return Shader(level_lines() + source, solids.ga, dict(Point=solids.Point, Motor=solids.Motor),
-                  dict(axes=solids.axes), targets=("rgba8unorm",))
+def shader(algebra) -> Shader:
+    """The shader for meshes whose points belong to an algebra, its points read by that algebra's camera."""
+    types = dict(Point=algebra.gatype.antivector(), Plane=algebra.gatype.vector())
+    return Shader(level_lines() + placing() + source, algebra, types, {}, targets=("rgba8unorm",))
 
 
-def picture(points: solids.Point, mesh: Mesh, values: np.ndarray, colours: np.ndarray, view: solids.View,
+def picture(points: Extensor, mesh: Mesh, values: np.ndarray, colours: np.ndarray, camera: Camera,
             lines: tuple[Lines, ...] = (), levels: tuple[Level, ...] = (), bands: tuple[Bands, ...] = (),
             opacity: float = 1.0) -> np.ndarray:
     """The field `[vertices]` in its colours `[vertices, 3]`, covering by `opacity`, over the mesh at its points, its
@@ -129,10 +129,10 @@ def picture(points: solids.Point, mesh: Mesh, values: np.ndarray, colours: np.nd
     side = samples_per_side()
     lines, levels, bands = lines or (no_lines,), levels or (no_level,), bands or (no_bands,)
     starts = np.cumsum([0] + [len(band.colours) for band in bands[:-1]])
-    image, = shader().draw_averaged(
-        view.shape, side, 3 * len(mesh.faces), points=points, faces=mesh.faces,
+    image, = shader(points.algebra).draw_averaged(
+        camera.shape, side, 3 * len(mesh.faces), points=points, faces=mesh.faces,
         values=np.asarray(values, dtype=np.float32), colours=np.broadcast_to(colours, (len(values), 3)),
-        camera=view.camera, half_size=view.half, opacity=opacity,
+        opacity=opacity, **camera.uniforms(1.0),
         lines=np.array([[set.spacing, set.through, set.width * side, 0] for set in lines]),
         line_inks=np.array([set.ink for set in lines]),
         levels=np.array([[level.value, level.width * side, 0, 0] for level in levels]),
@@ -144,11 +144,11 @@ def picture(points: solids.Point, mesh: Mesh, values: np.ndarray, colours: np.nd
     return np.concatenate((image[..., :3] / np.where(coverage > 0, coverage, 1), coverage), axis=-1)
 
 
-def overlay(ax: Axes, points: solids.Point, mesh: Mesh, values: np.ndarray, colours: np.ndarray,
+def overlay(ax: Axes, points: Extensor, mesh: Mesh, values: np.ndarray, colours: np.ndarray,
             lines: tuple[Lines, ...] = (), levels: tuple[Level, ...] = (), bands: tuple[Bands, ...] = (),
             opacity: float = 1.0):
-    """The field drawn into a panel at its own pixels, as `picture` draws it; the image, for an animation to set its
-    data."""
-    view = axes_view(ax)
-    image = picture(points, mesh, values, colours, view, lines, levels, bands, opacity)
+    """The field drawn into a panel at its own pixels, as `picture` draws it, the panel looking down on the plane of
+    the points' generators x and y; the image, for an animation to set its data."""
+    camera = flat_panel(ax, points.algebra)
+    image = picture(points, mesh, values, colours, camera, lines, levels, bands, opacity)
     return pinned(ax, image, (*ax.get_xlim(), *ax.get_ylim()))

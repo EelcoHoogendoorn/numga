@@ -9,12 +9,13 @@ import numpy as np
 from matplotlib.collections import LineCollection
 from matplotlib.colors import LinearSegmentedColormap, Normalize
 from matplotlib.patches import Polygon, Rectangle
-from matplotlib.tri import Triangulation
 
 from numga import concatenate, stack
 from examples.relativity.moving_mirror import core
 from examples.util import charts
 from examples.util.animation import capture
+from examples.util.wgsl import contours, pinned
+from examples.util.wgsl.camera import panel
 
 primal_colour = "#286580"
 accent_colour = "#d77542"
@@ -66,6 +67,15 @@ def plain_axes(ax: plt.Axes) -> None:
     ax.spines[["top", "right"]].set_visible(False)
     ax.spines[["left", "bottom"]].set_color("0.78")
     ax.tick_params(color="0.78")
+
+
+def shade_worldsheet(ax: plt.Axes, events: core.Point, mesh: core.Mesh, values: np.ndarray, limit: float) -> None:
+    """A field on a world sheet's events coloured in a spacetime diagram's panel, read by the planes x across and t
+    up, under the panel's frame, which stays."""
+    camera = panel(ax, core.mv.x, core.mv.t)
+    colours = wave_colours(Normalize(-limit, limit)(values))[:, :3]
+    pinned(ax, contours.picture(events, mesh, values, colours, camera), (*ax.get_xlim(), *ax.get_ylim())).set_zorder(1)
+    ax.set_axis_on()
 
 
 def null_rays(event: core.Point, before: float, after: float) -> core.Point:
@@ -191,11 +201,8 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
 
     # Panel 3: Causal forward light-cone wake from a localized spacetime source event.
     wake_xt = coordinates(wake_vertices)
-    wake_tri = Triangulation(*wake_xt.T, triangles=wake_mesh.faces)
     wake_vals = np.asarray(wake.batch().to_array())
     wake_limit = float(np.percentile(np.abs(wake_vals), 99.2))
-    wake_ax.tripcolor(wake_tri, wake_vals, shading="gouraud", cmap=wave_colours,
-                      norm=Normalize(-wake_limit, wake_limit), zorder=1)
     for ray in coordinates(null_rays(source_event, 0.0, 0.50)):
         wake_ax.plot(*ray.T, color=cone_colour, linestyle="--", alpha=0.85, zorder=3)
     wake_ax.scatter(*coordinates(source_event), s=highlight_size, color=accent_colour, edgecolor="white",
@@ -205,6 +212,7 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
                 xticks=[0.0, 0.5, 1.0], yticks=[0.0, round(duration, 2)],
                 xlabel="space $x$", ylabel="time $t$")
     plain_axes(wake_ax)
+    shade_worldsheet(wake_ax, wake_vertices.batch(), wake_mesh, wake_vals, wake_limit)
     return figure
 
 
@@ -238,7 +246,6 @@ def draw_moving_mirror_doppler(mesh: core.Mesh, vertices: core.Point,
     wave_rate_vals = np.asarray(wave_rate.batch().to_array())
     wave_rate_grid = wave_rate_vals.reshape(n_time, n_space)
     energies = np.asarray(slice_energies.to_array())
-    triangulation = Triangulation(*coordinates(vertices).T, triangles=mesh.faces)
     field_limit = float(np.percentile(np.abs(wave_rate_vals), 99.4))
     # The times of the rows, read on the wall at rest, and the mirror's place at the end.
     row_times = (mv.t & grid[:, 0]).to_array()                               # [times]
@@ -251,8 +258,6 @@ def draw_moving_mirror_doppler(mesh: core.Mesh, vertices: core.Point,
     energy_ax = figure.add_axes((0.77, 0.17, 0.21, 0.80))
 
     # Panel 1: 2D (x, t) spacetime worldsheet with deforming mesh and moving mirror worldline.
-    world_ax.tripcolor(triangulation, wave_rate_vals, shading="gouraud", cmap=wave_colours,
-                       norm=Normalize(-field_limit, field_limit), zorder=1)
     coarse_lines = decimated_mesh_segments(grid, 18, 7)
     world_ax.add_collection(LineCollection(coarse_lines, colors=wall_colour, linewidths=charts.FRAME_WIDTH,
                                            alpha=0.14, zorder=2))
@@ -266,6 +271,7 @@ def draw_moving_mirror_doppler(mesh: core.Mesh, vertices: core.Point,
                          round(float(row_times[after_row]), 2), round(duration, 2)],
                  xlabel="space $x$", ylabel="time $t$")
     plain_axes(world_ax)
+    shade_worldsheet(world_ax, vertices.batch(), mesh, wave_rate_vals, field_limit)
 
     # Panel 2: Spatial wave-rate slices before and after relativistic mirror reflection.
     peak_before = float(np.abs(wave_rate_grid[before_row]).max())
@@ -313,7 +319,6 @@ def animate_moving_mirror(mesh: core.Mesh, vertices: core.Point,
     grid = strip_grid(vertices, n_space, n_time)                             # [times, space] Point-
     wave_rate_vals = np.asarray(wave_rate.batch().to_array())
     wave_rate_grid = wave_rate_vals.reshape(n_time, n_space)
-    triangulation = Triangulation(*coordinates(vertices).T, triangles=mesh.faces)
     coarse_lines = decimated_mesh_segments(grid, 18, 7)
     # Each row of events read out once, for the slice and the cavity at its moment.
     grid_xt = coordinates(grid)                                              # [times, space, 2]
@@ -332,8 +337,6 @@ def animate_moving_mirror(mesh: core.Mesh, vertices: core.Point,
         cavity_ax = figure.add_axes((0.54, 0.17, 0.44, 0.79))
 
         # Left: the spacetime worldsheet, with the horizontal slice of simultaneity sweeping up it.
-        world_ax.tripcolor(triangulation, wave_rate_vals, shading="gouraud", cmap=wave_colours,
-                           norm=Normalize(-field_limit, field_limit), zorder=1)
         world_ax.add_collection(LineCollection(coarse_lines, colors=wall_colour,
                                                linewidths=charts.FRAME_WIDTH, alpha=0.1, zorder=2))
         world_ax.plot(*grid_xt[:, 0].T, color=wall_colour, zorder=4)
@@ -345,6 +348,7 @@ def animate_moving_mirror(mesh: core.Mesh, vertices: core.Point,
                      xticks=[0.0, 1.0], yticks=[0.0, round(duration, 2)],
                      xlabel="space $x$", ylabel="time $t$")
         plain_axes(world_ax)
+        shade_worldsheet(world_ax, vertices.batch(), mesh, wave_rate_vals, field_limit)
 
         # Right: the cavity at that moment, the advancing mirror and the Doppler-compressed waveform.
         cavity_ax.axhline(0.0, color="0.82", linewidth=charts.FRAME_WIDTH, zorder=1)

@@ -11,8 +11,8 @@ from matplotlib.colors import LogNorm, to_rgba
 
 from numga import stack
 from examples.util.animation import capture
-from examples.util.wgsl import contours, pinned, solids
-from examples.util.wgsl.flow import axes_view
+from examples.util.wgsl import contours, pinned
+from examples.util.wgsl.camera import Camera, flat_panel
 from examples.mechanics.tides import core
 
 STARS = "#0f172a"
@@ -38,20 +38,20 @@ def density(ax: Axes, points: core.Point, mass_density: core.Scalar) -> None:
     colours = plt.get_cmap("Blues")(LogNorm(values.max() * DENSITY_FLOOR, values.max())(values))[..., :3]
     ax.set(xlim=corners[:, 0], ylim=corners[:, 1], xticks=[], yticks=[])
     ax.set_aspect("equal")
-    places = solids.origin + solids.context.include_from_algebra(points.reshape(-1))   # [rows * columns] Point-
+    places = points.reshape(-1)                                              # [rows * columns] Point-
     contours.overlay(ax, places, contours.Mesh.grid(*values.shape), values.reshape(-1), colours.reshape(-1, 3))
     # The panel keeps its frame around the picture.
     ax.set_axis_on()
 
 
 def rim_at(centre: core.Point, rim: core.Form, half_size: core.Scalar, grid: contours.Mesh,
-           view: solids.View) -> np.ndarray:
+           view: Camera) -> np.ndarray:
     """The rim as the level set of its form, evaluated on a grid of offsets around the centre, `RIM_PIXELS` a side
     and numbered row by row, and seen by the view of its panel, white elsewhere: `[rows, columns, 4]`."""
     samples = half_size * np.linspace(-1, 1, RIM_PIXELS)
     offsets = core.mv.x.dual() * samples[None, :] + core.mv.y.dual() * samples[:, None]   # [rim, rim] Point-
     level = rim(offsets, offsets).to_array()                                 # [rim, rim]
-    places = solids.origin + solids.context.include_from_algebra((centre + offsets).reshape(-1))   # [rim * rim] Point-
+    places = (centre + offsets).reshape(-1)                                  # [rim * rim] Point-
     prediction = contours.Level(1.0, np.array(to_rgba(PREDICTION)), RIM_WIDTH)
     return contours.picture(places, grid, level.reshape(-1), np.ones(3), view, levels=(prediction,))
 
@@ -73,7 +73,7 @@ def animate(points: core.Point, mass_density: core.Scalar,
     density(whole, points, mass_density)
     wide, close = (ax.scatter([], [], s=size, color=STARS, linewidths=0) for ax, size in ((whole, 2), (near, 5)))
     # The rim's picture pinned once, its data and extent set for each frame; the panel keeps its frame around it.
-    rims = pinned(near, np.zeros(axes_view(near).shape + (4,)), (-1, 1, -1, 1))
+    rims = pinned(near, np.zeros(flat_panel(near, core.ga).shape + (4,)), (-1, 1, -1, 1))
     near.set_axis_on()
     rim_grid = contours.Mesh.grid(RIM_PIXELS, RIM_PIXELS)
     for stars, centre, rim in states:
@@ -88,6 +88,6 @@ def animate(points: core.Point, mass_density: core.Scalar,
         window = (middle[0] - frame_size, middle[0] + frame_size, middle[1] - frame_size, middle[1] + frame_size)
         rims.set_extent(window)
         near.set(xlim=window[:2], ylim=window[2:])
-        rims.set_data(rim_at(centre, rim, half_size, rim_grid, axes_view(near)))
+        rims.set_data(rim_at(centre, rim, half_size, rim_grid, flat_panel(near, core.ga)))
         yield capture(figure)
     plt.close(figure)
