@@ -50,10 +50,13 @@ var<storage, read> points: array<Point>;
 var<storage, read> edges: array<vec2<u32>>;
 var<storage, read> colours: array<vec3<f32>>;
 // Each edge's distance from the start of its chain, in samples; whether it ends in a head, one or zero; whether its
-// start and its end are open, ends of the strokes rather than joins, one or zero.
+// start and its end are open, ends of the strokes rather than joins, one or zero; whether it starts where the edge
+// before it ends, one or zero, what that edge covers about the join that edge's to draw, so that a translucent chain
+// covers every sample once.
 var<storage, read> travelled: array<f32>;
 var<storage, read> heads: array<f32>;
 var<storage, read> open_ends: array<vec2<f32>>;
+var<storage, read> follows: array<f32>;
 // The picture's samples across and down, the strokes' half width, the heads' length and half width, and the dashes'
 // length and the gaps', all in samples; a gap of zero draws the strokes whole.
 var<uniform> samples: vec2<f32>;
@@ -80,6 +83,16 @@ struct Corner {
 // A place in clip space as samples from the picture's top left.
 fn sampled(place: vec4<f32>) -> vec2<f32> {
     return vec2<f32>(place.x + 1.0, 1.0 - place.y) * 0.5 * samples;
+}
+
+// Whether a sample, in samples from the picture's top left, lies within the half width of an edge's segment.
+fn within(edge: vec2<u32>, position: vec2<f32>) -> bool {
+    let from = sampled(clip(points[edge.x]));
+    let span = sampled(clip(points[edge.y])) - from;
+    let offset = position - from;
+    let share = clamp((offset.x * span.x + offset.y * span.y) / max(span.x * span.x + span.y * span.y, 1e-12), 0.0, 1.0);
+    let away = offset - span * share;
+    return away.x * away.x + away.y * away.y <= radius * radius;
 }
 
 @vertex
@@ -159,7 +172,8 @@ fn against(corner: Corner) -> Against {
     let in_shaft = select(capped, joined <= radius, outside <= 0.0);
     let sideways = offset - along_unit * along;
     let past = vec2<f32>(select(0.0, 1.0, along < 0.0), select(0.0, 1.0, along > shaft_end));
-    return Against(select(0.0, share / length, length > 0.0), sideways, away, past, in_head || in_shaft);
+    let owned = !(follows[corner.edge] > 0.0 && within(edges[corner.edge - 1u], corner.position.xy));
+    return Against(select(0.0, share / length, length > 0.0), sideways, away, past, (in_head || in_shaft) && owned);
 }
 """
 
@@ -265,7 +279,7 @@ fn shade(corner: Corner) -> @location(0) vec4<f32> {
 def stroke_shader(Point: GAType, Plane: GAType) -> Shader:
     """The strokes of edges whose points are of the type `Point`, placed by a camera's planes of the type `Plane`."""
     return Shader(placing(Plane) + stroke_source + flat_stroke, Point.algebra, dict(Point=Point, Plane=Plane), {},
-                  targets=("rgba8unorm",))
+                  targets=("rgba8unorm",), over=True)
 
 
 @cache
@@ -281,7 +295,7 @@ def tube_shader() -> Shader:
 def marker_shader(Point: GAType, Plane: GAType) -> Shader:
     """The markers of points of the type `Point`, placed by a camera's planes of the type `Plane`."""
     return Shader(placing(Plane) + marker_source, Point.algebra, dict(Point=Point, Plane=Plane), {},
-                  targets=("rgba8unorm",))
+                  targets=("rgba8unorm",), over=True)
 
 
 def straight(image: np.ndarray) -> np.ndarray:
@@ -289,6 +303,13 @@ def straight(image: np.ndarray) -> np.ndarray:
     unit its rounding may overshoot."""
     coverage = image[..., 3:]
     return np.minimum(np.concatenate((image[..., :3] / np.where(coverage > 0, coverage, 1), coverage), axis=-1), 1)
+
+
+def following(edges: np.ndarray) -> np.ndarray:
+    """Whether each edge `[edges]` starts where the edge before it ends, one or zero: a join of a chain."""
+    follows = np.zeros(len(edges))
+    follows[1:] = edges[1:, 0] == edges[:-1, 1]
+    return follows
 
 
 def travelled(points: Extensor, edges: np.ndarray, camera: Camera) -> np.ndarray:
@@ -323,6 +344,7 @@ def strokes(points: Extensor, mesh: Mesh, colours: np.ndarray, width: float, cam
         colours=np.broadcast_to(colours, (len(edges), 3)),
         travelled=travelled(points, edges, camera) * side, heads=np.broadcast_to(heads, len(edges)).astype(float),
         open_ends=np.isin(edges, mesh.exterior(0)).astype(float),
+        follows=following(edges),
         samples=np.array([columns * side, rows * side], dtype=float), radius=width * side / 2,
         head=np.array([head, head / 2]) * side, dashes=np.array(dashes) * side, cap=float(cap), opacity=opacity,
         **camera.uniforms(1.0))
@@ -356,6 +378,7 @@ def tubes(points: Extensor, mesh: Mesh, colours: np.ndarray, width: float, view,
         head=np.array([head, head / 2]) * side, dashes=np.array(dashes) * side, scene_pixel=view.pixel,
         oversampling=float(side), cap=float(Cap.ROUND), opacity=1.0,
         open_ends=np.isin(edges, mesh.exterior(0)).astype(float),
+        follows=following(edges),
         **camera.uniforms(8 * view.half.max()), **solids.lighting(view.camera, gloss)))
 
 

@@ -18,7 +18,7 @@ layout = NumpyContext(PGA2D).multivector
 # The diagram's nodes' radius in pixels, wide enough for a numeral at the size of a tick label; how much the diagram's
 # and the lattice's edges cover.
 node_radius = 8.0
-diagram_opacity, haze_opacity = 0.7, 0.25
+diagram_opacity, haze_opacity = 0.7, 0.065
 
 
 @charts.style()

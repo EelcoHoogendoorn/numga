@@ -207,10 +207,12 @@ FORMATS = {"rgba32float": (16, 4, np.float32), "r32float": (4, 1, np.float32), "
 
 class Shader:
     """A compiled shader in the numga dialect, ready to run over images, with constants given from Python by name, as
-    `compile` declares them; where it draws, the formats of the targets its fragment stage writes, one per target."""
+    `compile` declares them; where it draws, the formats of the targets its fragment stage writes, one per target, and
+    whether each fragment is laid `over` what is drawn before it, its colour premultiplied by its coverage, rather than
+    hidden where something nearer is drawn."""
 
     def __init__(self, source: str, algebra: Any, types: Mapping[str, GAType], constants: Mapping[str, Any],
-                 targets: tuple[str, ...] = ()) -> None:
+                 targets: tuple[str, ...] = (), over: bool = False) -> None:
         self.targets = targets
         self.program = compile(source, algebra, types, constants)
         self.context = NumpyContext(algebra)
@@ -223,15 +225,19 @@ class Shader:
         pipeline_layout = self.device.create_pipeline_layout(bind_group_layouts=[self.bind_layout])
         self.pipelines = [(self.device.create_compute_pipeline(layout=pipeline_layout, compute={"module": module, "entry_point": name}), size)
                           for name, size in self.program.entry_points]
-        # Triangles drawn with depth, one sample a pixel, into the targets' formats.
+        # Triangles drawn one sample a pixel into the targets' formats: hidden by depth, or each laid over the last.
+        laid_over = {"color": {"src_factor": "one", "dst_factor": "one-minus-src-alpha", "operation": "add"},
+                     "alpha": {"src_factor": "one", "dst_factor": "one-minus-src-alpha", "operation": "add"}}
         if self.program.vertex is not None:
             self.raster = self.device.create_render_pipeline(
                 layout=pipeline_layout,
                 vertex={"module": module, "entry_point": self.program.vertex, "buffers": []},
                 fragment={"module": module, "entry_point": self.program.fragment,
-                          "targets": [{"format": target} for target in targets]},
+                          "targets": [{"format": target} | ({"blend": laid_over} if over else {})
+                                      for target in targets]},
                 primitive={"topology": "triangle-list", "cull_mode": "none"},
-                depth_stencil={"format": "depth32float", "depth_write_enabled": True, "depth_compare": "less"})
+                depth_stencil={"format": "depth32float", "depth_write_enabled": not over,
+                               "depth_compare": "always" if over else "less"})
         self.sampler = self.device.create_sampler(mag_filter="linear", min_filter="linear",
                                                   address_mode_u="repeat", address_mode_v="clamp-to-edge")
         # The buffers and textures kept between calls, by their role.

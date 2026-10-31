@@ -28,7 +28,7 @@ orbit_colours = np.array([
 # riders on their orbits; and how much the edges, the orbits and the roots behind the riders cover.
 edge_width, orbit_width, trail_width = 0.5, 0.4, 1.1
 root_radius, faint_root_radius, rider_radius = 2.4, 0.6, 1.5
-edge_opacity, orbit_opacity, faint_root_opacity = 0.3, 0.26, 0.35
+edge_opacity, orbit_opacity, faint_root_opacity = 0.17, 0.26, 0.35
 # The points along each orbit's circle.
 n_around = 120
 
