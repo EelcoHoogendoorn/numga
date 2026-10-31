@@ -14,7 +14,7 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.fluids.floating import core
-from examples.util.wgsl import image_figure, meshes, solids
+from examples.util.wgsl import image_figure, meshes, simplices, solids
 
 mv = core.mv
 # The colours of the hull, of its wet surface by depth, of the water, of the weight and of the buoyancy;
@@ -45,14 +45,14 @@ ship_window = ((-1.1, 1.1), (-0.8, 1.0))
 cube_window = 0.95
 # The end views: seen along the axis of heel from its +x side, y across and z up, as an azimuth; the pixels across
 # the rolling hull's views and the cubes'; how much of what lies behind it the water's near face hides; and in pixels,
-# the length of the force lines' dashes, the radii of the force lines, the arrows' shafts and the balls at their tips,
-# the arm, the waterline, the centre of gravity and the marker of each load.
+# the length of the force lines' dashes, the radii of the force lines, the arm, the waterline, the centre of gravity
+# and the marker of each load, and the arrows' width and the length of the strokes of the chevrons at their tips.
 end_on_azimuth = np.radians(90.0)
 n_end_pixels, n_cube_pixels = 200, 130
 end_water_opacity = 0.3
 dash = 3.0
-line_radius, shaft_radius, tip_radius, arm_radius, waterline_radius, centre_radius, marker_radius = (
-    0.4, 0.8, 2.4, 0.8, 0.4, 2.0, 2.5)
+line_radius, arm_radius, waterline_radius, centre_radius, marker_radius = 0.4, 0.8, 0.4, 2.0, 2.5
+arrow_width, arrow_chevron = 1.6, 6.4
 # The direction along the axis of heel, which an end view looks along, a unit apart across the plane x = 0; and a
 # projection of points onto points.
 along_heel = mv.x.dual()                                                    # [] Point-
@@ -87,10 +87,11 @@ def front_projection(points: core.Point, view: solids.View) -> Projection:
 
 
 def forces_end_on(view: solids.View, placed: core.Motor, push: core.Forque, centre: core.Point,
-                  onto_front: Projection) -> list[tuple[solids.Quadric, np.ndarray]]:
+                  onto_front: Projection) -> tuple[list[tuple[solids.Quadric, np.ndarray]], meshes.Samples]:
     """The weight from the centre of gravity and the buoyancy from the water surface, as arrows on their dashed
-    vertical lines across an end view, each a rod with a ball at its tip, and the righting arm between them at the
-    centre's height; in front of the body, as `onto_front` places them."""
+    vertical lines across an end view, and the righting arm between them at the centre's height; in front of the
+    body, as `onto_front` places them: the lines, the arm and the centre as solids, and the arrows as tubes, each
+    ending in a chevron."""
     gravity = onto_front(placed >> centre)                                    # [] Point-
     # The buoyancy's line meets the water surface in a point of positive weight.
     buoyant = onto_front(((placed >> push) ^ core.water).normalized())       # [] Point-
@@ -100,25 +101,28 @@ def forces_end_on(view: solids.View, placed: core.Motor, push: core.Forque, cent
     n_dashes = int(np.ceil(view.half[1] / (dash * view.pixel)))
     marks = bottom + np.arange(n_dashes) * (2 * dash * view.pixel)            # [dashes] Scalar+
     parts = []
-    for start, colour, sense in ((buoyant, buoyancy_colour, 1), (gravity, weight_colour, -1)):
+    for start, colour in ((buoyant, buoyancy_colour), (gravity, weight_colour)):
         # The start dropped onto the water surface, and raised to each mark.
         dashes = start - core.up * (core.water & start) + core.up * marks     # [dashes] Point-
         lines = solids.rods(dashes, dashes + core.up * (dash * view.pixel), line_radius * view.pixel)
-        tip = start + core.up * (sense * force * 0.6)                          # [] Point-
-        shaft = solids.rods(start, tip, shaft_radius * view.pixel)            # [3] Plane+ <- Point-
-        ball = solids.ball(tip, tip_radius * view.pixel)                      # [] Plane+ <- Point-
-        parts += [(lines, to_rgb(colour)), (shaft[None], to_rgb(colour)), (ball[None, None], to_rgb(colour))]
+        parts += [(lines, to_rgb(colour))]
+    # The buoyancy up and the weight down from their starts.
+    starts = stack((buoyant, gravity))                                         # [forces] Point-
+    tips = starts + core.up * (np.array([1.0, -1.0]) * force * 0.6)            # [forces] Point-
+    arrows = simplices.tubes(stack((starts, tips), axis=-1).reshape(-1), simplices.Mesh.chains([2, 2]),
+                             np.array([to_rgb(buoyancy_colour), to_rgb(weight_colour)]), arrow_width, view,
+                             gloss=solids.gloss, chevrons=np.ones(2), chevron=arrow_chevron)
     # The arm reaches from the centre of gravity across to the buoyancy's vertical, at the centre's height.
     level = core.water - mv.w * (core.water & gravity)                        # [] Plane+
     arm = solids.rods(gravity, (buoyant & core.up) ^ level, arm_radius * view.pixel)
     centre_ball = solids.ball(gravity, centre_radius * view.pixel)
-    return parts + [(arm[None], (0.1, 0.1, 0.1)), (centre_ball[None, None], to_rgb(weight_colour))]
+    return parts + [(arm[None], (0.1, 0.1, 0.1)), (centre_ball[None, None], to_rgb(weight_colour))], arrows
 
 
-def end_on(mesh: core.Mesh, points: core.Point, view: solids.View,
-           parts: list[tuple[solids.Quadric, np.ndarray]]) -> np.ndarray:
+def end_on(mesh: core.Mesh, points: core.Point, view: solids.View, parts: list[tuple[solids.Quadric, np.ndarray]],
+           arrows: list[tuple[meshes.Samples, float]]) -> np.ndarray:
     """A body seen along its axis of heel: the triangles of its points of unit weight, the water over its lower part
-    with its waterline, and parts in front of it, `[rows, columns, 3]` bytes."""
+    with its waterline, and parts and arrows in front of it, `[rows, columns, 3]` bytes."""
     body = meshes.samples(points, mesh.faces, np.array(to_rgb(hull_colour)), meshes.flat(points, mesh.faces), view,
                           face_values=np.zeros(4), colour=meshes.plain, gloss=hull_gloss)
     # The water: a box up to the surface, past the view's sides and bottom, and as long along the axis as the body,
@@ -139,7 +143,7 @@ def end_on(mesh: core.Mesh, points: core.Point, view: solids.View,
                             waterline_radius * view.pixel)
     return solids.draw(parts + [(waterline[None], to_rgb(water_colour))], view, background,
                        inks=[], translucent=[(water[None], np.array(to_rgb(water_colour)), end_water_opacity)],
-                       meshes=[(body, 1.0)])
+                       meshes=[(body, 1.0)] + arrows)
 
 
 def side_by_side(images: list[np.ndarray]) -> np.ndarray:
@@ -178,8 +182,8 @@ def draw_ship(mesh: core.Mesh, vertices: core.Point, placed: core.Motor, push: c
     in_space = in_water(mesh, points)
     (left, right), (bottom, top) = ship_window
     view = end_view(ship_window, round(in_space.shape[0] * (right - left) / (top - bottom)))
-    forces = forces_end_on(view, placed, push, centre, front_projection(points, view))
-    return image_figure(side_by_side([in_space, end_on(mesh, points, view, forces)]))
+    forces, arrows = forces_end_on(view, placed, push, centre, front_projection(points, view))
+    return image_figure(side_by_side([in_space, end_on(mesh, points, view, forces, [(arrows, 1.0)])]))
 
 
 @charts.style()
@@ -215,7 +219,7 @@ def draw_cubes(densities: np.ndarray, heels: np.ndarray, couples: core.Forque, f
     # A rest is stable where the couple turns from pushing over to pushing back as the heel grows.
     rising = np.gradient(moments, heels, axis=1) > 0
     cube_view = end_view(((-cube_window, cube_window), (-cube_window, cube_window)), n_cube_pixels)
-    cubes = side_by_side([end_on(mesh, placed >> vertices.batch(), cube_view, [])
+    cubes = side_by_side([end_on(mesh, placed >> vertices.batch(), cube_view, [], [])
                           for placed in shown])
     # The map as wide as the cubes above it.
     figure, ax = charts.subplots(cubes.shape[1], round(0.6 * cubes.shape[1]))
@@ -278,9 +282,8 @@ def animate_release(mesh: core.Mesh, vertices: core.Point, centres: core.Point,
             onto_front = front_projection(points, view)                          # [] Point- <- Point-
             # Which load this is, a dot in the corner in its curve's colour.
             dot = solids.ball(onto_front(marker), marker_radius * view.pixel)
-            views.append(end_on(mesh, points, view,
-                                forces_end_on(view, placed[case], push[case], centres[case], onto_front)
-                                + [(dot[None, None], colour[:3])]))
+            forces, arrows = forces_end_on(view, placed[case], push[case], centres[case], onto_front)
+            views.append(end_on(mesh, points, view, forces + [(dot[None, None], colour[:3])], [(arrows, 1.0)]))
             so_far[case].set_data(*trail[:, :, case].T)
             now[case].set_data(*trail[-1, :, case, None])
         yield side_by_side(views + [capture(figure)])

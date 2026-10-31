@@ -44,20 +44,21 @@ mixing_panel_size = (260, 290)
 # square view about the bonds' centre.
 elevation, azimuth = np.radians(23.0), np.radians(34.0)
 half_width = 1.35
-# The widths of the bonds and the axes' arrows, the radius of the ball at an axis's or the beam's tip, and the radii
-# of the bonds' ends and their centre, in pixels; how far the axes reach and their names lie, in bond lengths.
-bond_width, arrow_width, axis_tip, end_radius, centre_radius = 3.2, 1.9, 2.6, 4.5, 3.2
+# The widths of the bonds and the axes' arrows, the radius of the ball at an axis's tip, the length of the strokes of
+# the chevron at the beam's head, and the radii of the bonds' ends and their centre, in pixels; how far the axes reach
+# and their names lie, in bond lengths.
+bond_width, arrow_width, axis_tip, beam_chevron, end_radius, centre_radius = 3.2, 1.9, 2.6, 7.6, 4.5, 3.2
 axis_length, label_distance = 1.15, 1.27
 # The beam along the crystal's face diagonal, x + y, coming towards the screen's viewer, across which the screen's
 # directions are y - x, to the right, and z, up; how far the beam reaches either side of the crystal, in bond lengths.
 beam_step = core.mv.x.dual() + core.mv.y.dual()                              # [] Direction-
 beam = beam_step / beam_step.squared().square_root()                         # [] Direction-
 beam_reach = 1.25
-# The response's and the mixing's widths, and the radii of the dots at the arrows' tips, in pixels: curves, the pump
-# and second harmonic's arrows, the fixed pumps' pale arrows, and the probe's dashes.
+# The response's and the mixing's widths, and the lengths of the strokes of the chevrons at the arrows' tips, in
+# pixels: curves, the pump and second harmonic's arrows, the fixed pumps' pale arrows, and the probe's dashes.
 curve_width = charts.LINE_PX
-arrow_shaft, arrow_tip = 3.0, 6.0
-pale_shaft, pale_tip, pale_opacity = 2.3, 4.6, 0.4
+arrow_shaft, arrow_chevron = 3.0, 12.0
+pale_shaft, pale_chevron, pale_opacity = 2.3, 9.2, 0.4
 # The extent of the response's plane across the beam, either way, in units of the pump.
 response_limit = 1.15
 probe_dashes = (5.5, 2.4)
@@ -115,15 +116,11 @@ def curve(values: Extensor, colour: str, camera: Camera, **style) -> np.ndarray:
                              camera, **style)
 
 
-def arrow(value: Extensor, colour, width: float, tip: float, camera: Camera, opacity: float = 1.0) -> np.ndarray:
-    """An arrow from the origin to a field or a polarization across the beam `[]`: a stroke with a dot `tip` pixels in
-    radius at its tip, drawn whole and then covering as much as `opacity`."""
-    ink = np.array(to_rgb(colour))
-    picture = simplices.composited([
-        simplices.strokes(stack((0 * value, value)), simplices.Mesh.chains([2]), ink, width, camera),
-        simplices.markers(value[None], ink, tip, camera)])
-    picture[..., 3] *= opacity
-    return picture
+def arrow(value: Extensor, colour, width: float, chevron: float, camera: Camera, opacity: float = 1.0) -> np.ndarray:
+    """An arrow from the origin to a field or a polarization across the beam `[]`: a stroke with a chevron of strokes
+    `chevron` pixels long at its tip, covering as much as `opacity`."""
+    return simplices.strokes(stack((0 * value, value)), simplices.Mesh.chains([2]), np.array(to_rgb(colour)), width,
+                             camera, chevrons=np.ones(1), chevron=chevron, opacity=opacity)
 
 
 def legend_line(colour, label: str, **style) -> Line2D:
@@ -132,8 +129,8 @@ def legend_line(colour, label: str, **style) -> Line2D:
 
 
 def space_scene(view: solids.View) -> Scene:
-    """The frame of space, its centre and the beam through it, for the bonds to be drawn among: each axis and the beam
-    an arrow, a rod with a ball at its tip."""
+    """The frame of space, its centre and the beam through it, for the bonds to be drawn among: each axis an arrow, a
+    rod with a ball at its tip, and the beam a tube with a chevron at its head."""
     # The axes' tips, embedded about the drawing's origin, and the beam's reach, a direction of space, embedded in the
     # drawing's projective space as a point at infinity.
     tips = solids.origin + solids.context.include_from_algebra(space_slice(axis_length * core.axes))   # [axes] Point-
@@ -142,10 +139,11 @@ def space_scene(view: solids.View) -> Scene:
     beam_colour = np.array(to_rgb(pump_colour))
     parts = [(solids.rods(solids.origin, tips, shaft_radius), axis_colour),
              (solids.ball(tips, tip_radius)[:, None], axis_colour),
-             (solids.rods(solids.origin - reach, solids.origin + reach, shaft_radius)[None], beam_colour),
-             (solids.ball(solids.origin + reach, tip_radius)[None, None], beam_colour),
              (solids.ball(solids.origin, centre_radius * view.pixel)[None, None], centre_colour)]
-    return Scene(view, np.ones(3), parts, [], inks=[], translucent=[])
+    beam_arrow = simplices.tubes(stack((solids.origin - reach, solids.origin + reach)), simplices.Mesh.chains([2]),
+                                 beam_colour, arrow_width, view, gloss=solids.gloss, chevrons=np.ones(1),
+                                 chevron=beam_chevron)
+    return Scene(view, np.ones(3), parts, [(beam_arrow, 1.0)], inks=[], translucent=[])
 
 
 def crystal_image(bonds: core.Direction, scene: Scene) -> np.ndarray:
@@ -197,7 +195,7 @@ class ResponseView:
         # The pumps across the beam, the first as an arrow, under the second harmonic each crystal drives.
         fields, self.polarizations = screens(response_axes)
         self.pumps = [cross(fields, response_limit), curve(pumps, pump_colour, fields, opacity=0.3),
-                      arrow(pumps[0], pump_colour, arrow_shaft, arrow_tip, fields)]
+                      arrow(pumps[0], pump_colour, arrow_shaft, arrow_chevron, fields)]
         self.response = simplices.overlay(response_axes, self.pumps)
         # The crystal's image, blank until the bonds are drawn, as many pixels across as its room holds, with each
         # axis named just past its arrow's tip.
@@ -217,7 +215,7 @@ class ResponseView:
         self.crystal.set_data(crystal_image(bonds, self.scene))
         self.response.set_data(simplices.composited(self.pumps + [
             curve(harmonic, generated_colour, self.polarizations, opacity=0.65),
-            arrow(harmonic[0], generated_colour, arrow_shaft, arrow_tip, self.polarizations)]))
+            arrow(harmonic[0], generated_colour, arrow_shaft, arrow_chevron, self.polarizations)]))
         self.intensity_curve.set_data(self.angles, intensity)
         self.intensity_fill.set_xy(np.stack((self.angles, intensity), axis=-1))
         self.selected_power.set_data([self.selected_angle], [intensity[0]])
@@ -269,7 +267,7 @@ def draw_mixing(pumps: core.Field, probes: core.Field, generated: core.Polarizat
     for axes, pump, response in zip(grid[0], pump_arrows, generated):
         fields, polarizations = screens(axes)
         simplices.overlay(axes, [cross(fields, limit),
-                                 arrow(pump, "0.55", pale_shaft, pale_tip, fields, pale_opacity),
+                                 arrow(pump, "0.55", pale_shaft, pale_chevron, fields, pale_opacity),
                                  curve(response, generated_colour, polarizations),
                                  curve(probes, pump_colour, fields, dashes=probe_dashes, cap=simplices.Cap.BUTT)])
     return figure

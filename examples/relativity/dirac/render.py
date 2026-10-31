@@ -25,10 +25,11 @@ BACKGROUND = np.ones(3)
 # share of the larger side.
 ELEVATION, AZIMUTH = np.radians(12.0), np.radians(30.0)
 MARGIN = 0.1
-# The spin arrows' length, in the paths' units; the widths of the paths and the arrows and the radius of the balls at
-# the arrows' tips, in pixels.
+# The spin arrows' length, in the paths' units; the widths of the paths and the arrows, in pixels, and the length of
+# the strokes of the chevron at an arrow's tip, in widths of the arrow.
 SPIN_LENGTH = 0.4
-PATH_WIDTH, ARROW_WIDTH, TIP_RADIUS = 1.5, 1.5, 2.5
+PATH_WIDTH, ARROW_WIDTH = 1.5, 1.5
+CHEVRON_LENGTH = 4.0
 
 
 def spin_arrow(psi: core.Spinor) -> core.Antivector:
@@ -54,10 +55,11 @@ def picture(places: list, tips: list, upto: int, view: solids.View) -> np.ndarra
     trails = concatenate([place[:upto] for place in places])                    # [mixtures * upto] Point-
     lines = simplices.tubes(trails, simplices.Mesh.chains([upto] * len(places)), np.repeat(rgb, upto - 1, axis=0),
                             PATH_WIDTH, view, solids.gloss)
-    # Each spin's arrow a rod with a ball at its tip.
-    shafts = solids.rods(starts, ends, ARROW_WIDTH / 2 * view.pixel)
-    heads = solids.ball(ends, TIP_RADIUS * view.pixel)[:, None]
-    return solids.draw([(shafts, rgb), (heads, rgb)], view, BACKGROUND, inks=[], translucent=[], meshes=[(lines, 1.0)])
+    # Each spin's arrow a tube ending in a chevron.
+    arrows = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Mesh.chains([2] * len(places)), rgb,
+                             ARROW_WIDTH, view, solids.gloss, chevrons=np.ones(len(places)),
+                             chevron=CHEVRON_LENGTH * ARROW_WIDTH)
+    return solids.draw([], view, BACKGROUND, inks=[], translucent=[], meshes=[(lines, 1.0), (arrows, 1.0)])
 
 
 def draw_scene(ax, places: list, tips: list, mixtures: tuple, upto: int, view: solids.View) -> AxesImage:

@@ -24,12 +24,13 @@ potential_colours = LinearSegmentedColormap.from_list(
     "whitney_potential", ("#286580", "#f5f2eb", "#d77542"))
 n_contours = 7
 # In pixels: the triangles' outlines, their sides drawn bold, the disks' boundaries, the meshes' edges and the fibre's
-# chords; the arrows' width and the radius of the dots at their tips; the dots, small, highlighted and on the diamond,
-# and their white rings. The fibre's chords dotted, a dot and a gap.
+# chords; the arrows' width; the dots, small, highlighted and on the diamond, and their white rings. The fibre's chords
+# dotted, a dot and a gap. The length of the strokes of the chevron at an arrow's tip, in widths of the arrow.
 outline_width, side_width, edge_width, wall_width, mesh_width, chord_width = 1.6, 3.2, 3.0, 1.8, 1.0, 1.0
-arrow_width, arrow_tip = 2.8, 5.6
+arrow_width = 2.8
 small_dot, highlight_dot, apex_dot, halo = 2.9, 4.8, 4.3, 1.25
 chord_dots = (1.0, 2.0)
+chevron_length = 4.0
 paper_colour = "#f6f4ee"
 # The pixel sizes of a row of four triangles and of the two disks side by side.
 row_size, flow_size = (780, 195), (600, 290)
@@ -41,9 +42,11 @@ tet_elevation, tet_azimuth, face_azimuth = np.radians(23), np.radians(38), np.ra
 # How much each of the edge form's level surfaces hides.
 page_opacity = 0.2
 # In pixels: the level surfaces' rims and the field lines. In the tetrahedron's units: the radius of the balls where the
-# field lines cross the face, and of the balls at the heads of the first edge and the edge across it.
+# field lines cross the face. The length of the strokes of the chevron at the head of the first edge and of the edge
+# across it, in widths of the edge.
 page_width, flux_width = 1.6, 2.0
-flux_tip, edge_tip = 0.026, 0.058
+flux_tip = 0.026
+edge_chevron = 3.0
 # The rings about the edge across the first edge: their radii, and the samples around each.
 ring_radii = np.array([0.20, 0.31, 0.42])
 n_ring_samples = 65
@@ -97,13 +100,13 @@ def ringed(points: core.Point, colour: str, radius: float, camera: Camera) -> li
             simplices.markers(points, ink(colour), radius, camera)]
 
 
-def arrows(tails: core.Point, tips: core.Point, width: float, tip: float, camera: Camera) -> list[np.ndarray]:
-    """Arrows in the accent from tails to tips `[arrows]`, each a stroke with a dot `tip` pixels in radius at its tip:
-    their pictures."""
+def arrows(tails: core.Point, tips: core.Point, width: float, camera: Camera) -> np.ndarray:
+    """Arrows in the accent from tails to tips `[arrows]`, each a stroke `width` pixels wide ending in a chevron: their
+    picture."""
     n_arrows = tails.shape[0]
-    return [simplices.strokes(stack((tails, tips), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_arrows),
-                              accent_rgb, width, camera, cap=simplices.Cap.BUTT),
-            simplices.markers(tips, accent_rgb, tip, camera)]
+    return simplices.strokes(stack((tails, tips), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_arrows),
+                             accent_rgb, width, camera, chevrons=np.ones(n_arrows), chevron=chevron_length * width,
+                             cap=simplices.Cap.BUTT)
 
 
 def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
@@ -136,8 +139,7 @@ def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
                               ink(wall_colour), edge_width, camera),
             simplices.markers(corners, ink(wall_colour), small_dot, camera),
             *ringed(corners[index][None], accent_colour, highlight_dot, camera),
-            *arrows((centroid - reaches[index])[None], (centroid + reaches[index])[None], arrow_width, arrow_tip,
-                    camera)])
+            arrows((centroid - reaches[index])[None], (centroid + reaches[index])[None], arrow_width, camera)])
 
     ax = axes[3]
     hat_values = np.asarray(vertex_hat.batch().to_array())
@@ -157,7 +159,7 @@ def draw_edge_1forms(corners: core.Point, corner_forms: core.Plane,
     triangle = meshes.Mesh(3, [[0, 1, 2]])
     directions = corner_forms.dual()                                          # [corners] Point-
     reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
-    # Each side, from the corner after its own to the one after that, an arrow with a dot at its end.
+    # Each side, from the corner after its own to the one after that, an arrow ending in a chevron.
     first, second = core.complements(core.triangle, 0).T
     side_starts, side_ends = corners[first], corners[second]                  # [corners] Point-, Point-
 
@@ -171,7 +173,7 @@ def draw_edge_1forms(corners: core.Point, corner_forms: core.Plane,
             contours.picture(corners, triangle, np.zeros(3), ink(paper_colour), camera),
             simplices.strokes(corners, triangle, ink(wall_colour), charts.LINE_PX, camera),
             flow.layer(corners, triangle, directions[index], camera, reference_speed, primal_rgb),
-            *arrows(side_starts[index][None], side_ends[index][None], side_width, arrow_tip, camera),
+            arrows(side_starts[index][None], side_ends[index][None], side_width, camera),
             *ringed(corners[index][None], primal_colour, highlight_dot, camera)])
 
     ax = axes[3]
@@ -184,7 +186,7 @@ def draw_edge_1forms(corners: core.Point, corner_forms: core.Plane,
     n_faces = len(diamond.faces)
     split_mesh = meshes.Mesh(3 * n_faces, np.arange(3 * n_faces).reshape(3, n_faces).T)
     reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
-    # The shared edge, from its tail to its head, an arrow with a dot at its head.
+    # The shared edge, from its tail to its head, an arrow ending in a chevron.
     shared = diamond.reading(diamond.interior_edges[:1], 1)                   # Scalar+[shared <- edges]
     tail, head = (shared * (diamond.incidence[1, 0] * diamond_vertices)).batch()[:, 0]   # [] Point-, Point-
     # The corners across the shared edge, in the face on its left and in the face on its right.
@@ -193,7 +195,7 @@ def draw_edge_1forms(corners: core.Point, corner_forms: core.Plane,
         contours.picture(places, diamond, np.zeros(len(places)), ink(paper_colour), camera),
         simplices.strokes(places, diamond, ink(wall_colour), charts.LINE_PX, camera),
         flow.layer(positions, split_mesh, directions, camera, reference_speed, primal_rgb),
-        *arrows(tail[None], head[None], side_width, arrow_tip, camera),
+        arrows(tail[None], head[None], side_width, camera),
         *ringed(apexes, primal_colour, apex_dot, camera)])
     return figure
 
@@ -223,11 +225,14 @@ def draw_tet_whitney(mesh: core.SpaceMesh, vertices: core.SpacePoint, pages: cor
                            face_values=np.zeros(len(wall)), colour=meshes.plain, gloss=solids.gloss)
     # The tetrahedron's wireframe: its mesh's own edges.
     wire = simplices.tubes(places, simplices.Mesh(len(places), mesh.edges), light_slate, 1.5, view, solids.gloss)
-    # Each of the two edges an arrow, a ball at its head.
-    active_rod, active_balls = solids.edges(places[edge[:1]], places[edge[1:]], 0.024)
+    # Each of the two edges an arrow, a tube ending in a chevron, as wide as a rod of its radius in the tetrahedron's
+    # units; the edge across, where its sense is not shown, also a plain rod.
+    active_width, opp_width = 2 * 0.024 / view.pixel, 2 * 0.020 / view.pixel
+    active_arrow = simplices.tubes(places[edge], simplices.Mesh.chains([2]), accent_rgb, active_width, view,
+                                   solids.gloss, chevrons=np.ones(1), chevron=edge_chevron * active_width)
+    opp_arrow = simplices.tubes(places[across], simplices.Mesh.chains([2]), primal_rgb, opp_width, view, solids.gloss,
+                                chevrons=np.ones(1), chevron=edge_chevron * opp_width)
     opp_rod, opp_balls = solids.edges(places[across[:1]], places[across[1:]], 0.020)
-    active_head = solids.ball(places[edge[1:]], edge_tip)[:, None]
-    opp_head = solids.ball(places[across[1:]], edge_tip)[:, None]
 
     # The first edge's pages about the centroid, and each page's corners among them, in each tetrahedron.
     first_pages = (pages[0] - centroid).batch()                              # [pages, 3, tets] Point-
@@ -242,10 +247,9 @@ def draw_tet_whitney(mesh: core.SpaceMesh, vertices: core.SpacePoint, pages: cor
     page_rims = simplices.tubes(page_places, simplices.Mesh(len(page_places), page_sides), accent_rgb, page_width,
                                 view, solids.gloss)
     panel_edge = solids.draw(
-        [(active_rod, accent_rgb), (active_balls, accent_rgb), (active_head, accent_rgb), (opp_rod, primal_rgb),
-         (opp_balls, primal_rgb)],
+        [(opp_rod, primal_rgb), (opp_balls, primal_rgb)],
         view, background, inks=[], translucent=[],
-        meshes=[(shell, 0.24), (wire, 1.0), *page_fills, (page_rims, 1.0)],
+        meshes=[(shell, 0.24), (wire, 1.0), *page_fills, (page_rims, 1.0), (active_arrow, 1.0)],
     )
 
     # The first face's field lines about the centroid, each line's ends among them, in each tetrahedron; the flux runs
@@ -286,9 +290,8 @@ def draw_tet_whitney(mesh: core.SpaceMesh, vertices: core.SpacePoint, pages: cor
     rings = simplices.tubes(ring_places.reshape(-1), simplices.Mesh.chains([n_ring_samples] * len(ring_places)),
                             np.repeat(np.stack(ring_colours), n_ring_samples - 1, axis=0), 3.2, view, solids.gloss)
     panel_link = solids.draw(
-        [(active_rod, accent_rgb), (active_balls, accent_rgb), (active_head, accent_rgb),
-         (opp_rod, primal_rgb), (opp_balls, primal_rgb), (opp_head, primal_rgb)],
-        view, background, inks=[], translucent=[], meshes=[(shell, 0.22), (wire, 1.0), (rings, 1.0)],
+        [], view, background, inks=[], translucent=[],
+        meshes=[(shell, 0.22), (wire, 1.0), (rings, 1.0), (active_arrow, 1.0), (opp_arrow, 1.0)],
     )
 
     gap = np.full((n_tet_pixels, n_tet_gap, 3), 255, dtype=np.uint8)

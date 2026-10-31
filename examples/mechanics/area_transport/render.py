@@ -13,10 +13,11 @@ from matplotlib.axes import Axes
 from matplotlib.colors import to_rgb
 from matplotlib.container import BarContainer
 
+from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.mechanics.area_transport import core
-from examples.util.wgsl import fitted, show, solids
+from examples.util.wgsl import fitted, show, simplices, solids
 
 FACES = np.array([(4, 5, 7, 6), (2, 3, 7, 6), (1, 3, 7, 5),
                   (0, 2, 3, 1), (0, 1, 5, 4), (0, 4, 6, 2)])
@@ -33,12 +34,12 @@ margin = 0.16
 # How many times over the first frame's view the animation's view takes, across and up, leaving room for the slide
 # along x and the arrows as the cube flattens.
 view_room = np.array([1.35, 1.04])
-# How much of what lies behind each of a face's two sides hides; the radii of the edges, of the arrows' shafts and of
-# the balls at their tips, in pixels.
+# How much of what lies behind each of a face's two sides hides; the radius of the edges, and the arrows' width with
+# the length of the strokes of the chevrons at their tips, in pixels.
 face_opacity = 0.1
 edge_radius = 0.87
-shaft_radius = 1.42
-tip_radius = 3.6
+arrow_width = 2.84
+chevron_length = 11.4
 # A volume, the join of three points, is an intrinsic scalar; its unit carries an intrinsic patch to the plane square
 # to it, whose dual is the direction square to the patch.
 unit_volume = core.mv.antipseudoscalar([1])                                  # [] Antipseudoscalar-
@@ -70,16 +71,18 @@ def picture(vertices: core.Point, centres: core.Point, patches: core.Patch, view
     colours = np.array([to_rgb(colour) for colour in COLOURS * 2])            # [faces, 3]
     starts = solids.origin + solids.context.include_from_algebra(centres[shown])         # [shown] Point-
     ends = starts + solids.context.include_from_algebra(offsets[shown])                  # [shown] Point-
-    # Each arrow a rod with a ball at its tip.
-    shafts = solids.rods(starts, ends, shaft_radius * view.pixel)               # [shown, 3] Plane+ <- Point-
-    tips = solids.ball(ends, tip_radius * view.pixel)[:, None]                  # [shown, 1] Plane+ <- Point-
+    # Each arrow a tube ending in a chevron.
+    n_shown = starts.shape[0]
+    arrows = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_shown),
+                             colours[shown], arrow_width, view, gloss=solids.gloss, chevrons=np.ones(n_shown),
+                             chevron=chevron_length)
     edges, joints = solids.edges(places[EDGES[:, 0]], places[EDGES[:, 1]], edge_radius * view.pixel)
     edge_colour = np.array(to_rgb(EDGE_COLOUR))
-    opaque = [(shafts, colours[shown]), (tips, colours[shown]), (edges, edge_colour), (joints, edge_colour)]
+    opaque = [(edges, edge_colour), (joints, edge_colour)]
     # Each face a plate a pixel thick, in its own colour.
     faces = solids.plates(places[FACES[shown]], view.pixel)                  # [faces, 6] Plane+
     return solids.draw(opaque, view, background, inks=[], translucent=[(faces, colours[shown], face_opacity)],
-                       meshes=[])
+                       meshes=[(arrows, 1.0)])
 
 
 def heights(patches: core.Patch, volume: core.Scalar) -> np.ndarray:

@@ -40,13 +40,13 @@ TIP_RGB = np.array(to_rgb(TIP))
 PATH_WIDTH, MARK_WIDTH = 2.0, 3.0
 # The sphere of directions, drawn on the GPU: its colour and how much each of its surfaces hides, and its grid's
 # width in pixels and opacity; the frame's arrows' length in radii of the sphere, the flow's arrows' width and the
-# radius of the balls at their tips in pixels, and how far the frame's names reach; the frame's arrows' width and the
-# radius of the balls at their tips in pixels; the orbits' width in pixels, the margin around the names' reach, and
-# the pixels across a sphere.
+# length of the strokes of the chevrons at their tips in pixels, and how far the frame's names reach; the frame's
+# arrows' width and the radius of the balls at their tips in pixels; the orbits' width in pixels, the margin around the
+# names' reach, and the pixels across a sphere.
 SPHERE, SPHERE_OPACITY = np.array(to_rgb("#cbd5e1")), 0.15
 GRID_WIDTH, GRID_OPACITY = 1.5, 0.3
 FLOW_RGB = np.array(to_rgb(FLOW))
-ARROW_LENGTH, ARROW_WIDTH, ARROW_TIP, LABEL_DISTANCE = 1.35, 3.0, 4.5, 1.47
+ARROW_LENGTH, ARROW_WIDTH, ARROW_CHEVRON, LABEL_DISTANCE = 1.35, 3.0, 12.0, 1.47
 SPHERE_ARROW_WIDTH, SPHERE_ARROW_TIP = 1.5, 2.4
 ORBIT_WIDTH, ORBIT_MARGIN, ORBIT_PIXELS = 1.5, 0.05, 260
 
@@ -141,10 +141,10 @@ def animate_tumbling(stretches: core.Stretch, heights: core.Point, velocities: c
     # The shear flow's velocity at each height, centred on it, about every body.
     starts, ends = (shifts[:, None] >> (solids.origin + (to_scene >> solids.context.include_from_algebra(offsets)))
                     for offsets in (heights - velocities / 2, heights + velocities / 2))   # [bodies, heights] Point-, Point-
-    # Each an arrow, a rod with a ball at its tip.
-    shafts = solids.rods(starts, ends, ARROW_WIDTH / 2 * view.pixel)         # [bodies, heights, 3] Plane+ <- Point-
-    balls = solids.ball(ends.reshape(-1), ARROW_TIP * view.pixel)[:, None]    # [bodies * heights, 1] Plane+ <- Point-
-    flow = [(shafts.reshape(-1, 3), FLOW_RGB), (balls, FLOW_RGB)]
+    # Each an arrow, a tube ending in a chevron.
+    n_arrows = np.prod(starts.shape)
+    flow = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_arrows), FLOW_RGB,
+                           ARROW_WIDTH, view, gloss=solids.gloss, chevrons=np.ones(n_arrows), chevron=ARROW_CHEVRON)
     # Both ends of every long axis, in its panel, over the frames, and the flow, which stays put.
     tip_ends = tips * np.array([1.0, -1.0])[:, None, None]                    # [ends, frames, bodies] Point-
     tip_offsets = to_scene >> solids.context.include_from_algebra(tip_ends)             # [ends, frames, bodies] Point-
@@ -155,7 +155,7 @@ def animate_tumbling(stretches: core.Stretch, heights: core.Point, velocities: c
     numbered = np.arange(np.prod(axis_ends.shape)).reshape(axis_ends.shape)  # [ends, frames, bodies]
     steps = np.stack([numbered[:, :-1], numbered[:, 1:]], axis=-1)           # [ends, frames - 1, bodies, 2]
     marked = simplices.Mesh.chains([2] * (2 * count))
-    scene = Scene(view, np.ones(3), flow, [], inks=[], translucent=[])
+    scene = Scene(view, np.ones(3), [], [(flow, 1.0)], inks=[], translucent=[])
     for index in range(len(tips)):
         # The paths of the tips so far, and the marks from each end out past it.
         paths = simplices.tubes(axis_ends.reshape(-1), simplices.Mesh(numbered.size, steps[:, :index].reshape(-1, 2)),

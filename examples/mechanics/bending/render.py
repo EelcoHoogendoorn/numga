@@ -50,16 +50,17 @@ PIXELS = 520
 STRAIGHT_OPACITY = 0.19
 GLOSS = 0.1
 # In the section views, in points, at the figure's pixels to the inch: the widths of the principal axes, with their
-# dashes and gaps, of the neutral axis, of the load's arrow, with the radius of the dot at its tip, and of the kern's
-# outline; the sides of the centroid's dot, of the shear centre's ring, with its rim's width, and of the push point's
-# cross, with its arms' width and their white rim; and how much the kern's fill covers.
+# dashes and gaps, of the neutral axis, of the load's arrow, with the length of the strokes of the chevron at its
+# tip, and of the kern's outline; the sides of the centroid's dot, of the shear centre's ring, with its rim's width,
+# and of the push point's cross, with its arms' width and their white rim; and how much the kern's fill covers.
 PRINCIPAL_WIDTH, PRINCIPAL_DASHES = 1.0, (3.7, 1.6)
-NEUTRAL_WIDTH, LOAD_WIDTH, LOAD_TIP, KERN_WIDTH = 1.8, 2.0, 4.0, 1.4
+NEUTRAL_WIDTH, LOAD_WIDTH, LOAD_CHEVRON, KERN_WIDTH = 1.8, 2.0, 8.0, 1.4
 DOT_SIDE, RING_SIDE, RING_WIDTH, PUSH_SIDE, PUSH_WIDTH, PUSH_RIM = 3.0, 7.0, 1.4, 9.0, 2.4, 1.0
 KERN_OPACITY = 0.3
-# The radii of the shear centres' dashes, of the clamp's rods, of the load's shaft and of the ball at its tip, in
-# pixels.
-DASH_RADIUS, CLAMP_RADIUS, SHAFT_RADIUS, TIP_RADIUS = 0.85, 1.2, 1.7, 4.3
+# The radii of the shear centres' dashes and of the clamp's rods, and the width of the load's arrow with the length
+# of the strokes of the chevron at its tip, in pixels.
+DASH_RADIUS, CLAMP_RADIUS = 0.85, 1.2
+SHAFT_WIDTH, SHAFT_CHEVRON = 3.4, 13.6
 # The turn carrying the beam's frame, along z with the section across x and up y, into the drawing's, along x with
 # the section across y and up z: a quarter turn of z towards x, then of y towards z.
 drawing_turn = (mv.yz * (-np.pi / 4)).exp() * (mv.zx * (-np.pi / 4)).exp()   # [] Motor+
@@ -192,11 +193,10 @@ def section_drawn(walls: core.Point, stress: core.Scalar, principal: core.Strain
                             tuple(np.array(PRINCIPAL_DASHES) * PRINCIPAL_WIDTH * scale)) for axis in principal]
     # The neutral axis: the strain's part in the section's plane, the part that stretches the fibres.
     pictures.append(line_drawn(strain.cast(core.Strain), centre, 2 * limit, NEUTRAL, NEUTRAL_WIDTH * scale, camera))
-    # The load's arrow, a stroke with a dot at its tip.
+    # The load's arrow, a stroke ending in a chevron.
     tip = reach(through, load, ARROW)                                        # [] Point-
-    pictures += [simplices.strokes(stack([through, tip]), simplices.Mesh.chains([2]), np.array(to_rgb(LOAD)),
-                                   LOAD_WIDTH * scale, camera),
-                 simplices.markers(tip[None], np.array(to_rgb(LOAD)), LOAD_TIP * scale, camera)]
+    pictures.append(simplices.strokes(stack([through, tip]), simplices.Mesh.chains([2]), np.array(to_rgb(LOAD)),
+                                      LOAD_WIDTH * scale, camera, chevrons=np.ones(1), chevron=LOAD_CHEVRON * scale))
     return pictures + centres_drawn(centre, shear, scale, camera)
 
 
@@ -238,20 +238,18 @@ def ghost(bent: core.Point, view: solids.View) -> solids.Plane:
                                axis=-1), view.pixel)
 
 
-def clamped(through: core.Point, load: core.Point, length: float, radii: tuple[float, float],
-            view: solids.View) -> list[tuple[solids.Quadric, np.ndarray]]:
-    """The clamp, and the tip load where it acts, drawn a length long; the radii of the clamp's rods and of the load's
-    shaft in pixels."""
-    clamp_radius, shaft_radius = radii
+def clamped(through: core.Point, load: core.Point, length: float, clamp_radius: float, shaft_width: float,
+            view: solids.View) -> tuple[list[tuple[solids.Quadric, np.ndarray]], meshes.Samples]:
+    """The clamp, its rods `clamp_radius` pixels in radius, and the tip load where it acts, drawn a length long, a
+    tube `shaft_width` pixels across for `solids.draw` to compose among the solids."""
     clamp = drawing_turn >> core.point(SQUARE)                                # [corners] Point-
     clamp_rods, clamp_joints = solids.edges(clamp, clamp[[1, 2, 3, 0]], clamp_radius * view.pixel)
-    # The load's arrow, a rod with a ball at its tip.
+    # The load's arrow, a tube ending in a chevron.
     tip = drawing_turn >> reach(through, load, length)                       # [] Point-
-    shaft = solids.rods(drawing_turn >> through, tip, shaft_radius * view.pixel)   # [3] Plane+ <- Point-
-    ball = solids.ball(tip, TIP_RADIUS * view.pixel)                          # [] Plane+ <- Point-
-    load_colour, clamp_colour = (np.array(to_rgb(colour)) for colour in (LOAD, CLAMP_COLOUR))
-    return [(clamp_rods, clamp_colour), (clamp_joints, clamp_colour), (shaft[None], load_colour),
-            (ball[None, None], load_colour)]
+    arrow = simplices.tubes(stack([drawing_turn >> through, tip]), simplices.Mesh.chains([2]), np.array(to_rgb(LOAD)),
+                            shaft_width, view, gloss=solids.gloss, chevrons=np.ones(1), chevron=SHAFT_CHEVRON)
+    clamp_colour = np.array(to_rgb(CLAMP_COLOUR))
+    return [(clamp_rods, clamp_colour), (clamp_joints, clamp_colour)], arrow
 
 
 def draw_beam(bent: core.Point, shears: core.Point, through: core.Point, load: core.Point,
@@ -262,11 +260,11 @@ def draw_beam(bent: core.Point, shears: core.Point, through: core.Point, load: c
     # The line of shear centres in dashes, every other piece of it.
     line = drawing_turn >> shears                                            # [pieces + 1] Point-
     dashes = solids.rods(line[:-1:2], line[1::2], DASH_RADIUS * view.pixel)  # [dashes, 3] Plane+ <- Point-
-    opaque = [(dashes, np.array(to_rgb(SHEAR_LINE)))] + clamped(through, load, TIP_ARROW, (CLAMP_RADIUS, SHAFT_RADIUS),
-                                                                view)
+    clamp, arrow = clamped(through, load, TIP_ARROW, CLAMP_RADIUS, SHAFT_WIDTH, view)
+    opaque = [(dashes, np.array(to_rgb(SHEAR_LINE)))] + clamp
     return solids.draw(opaque, view, np.ones(3), inks=[],
                        translucent=[(ghost(bent, view), np.array(to_rgb(STRAIGHT)), STRAIGHT_OPACITY)],
-                       meshes=[(swept(bent, BEAM, view), 1.0)])
+                       meshes=[(swept(bent, BEAM, view), 1.0), (arrow, 1.0)])
 
 
 def draw_beams(sections: list[tuple[core.Mesh, core.Point, core.Scalar]], centres: list[core.Point],

@@ -22,11 +22,11 @@ SIGMAS = 2.0
 POINT = 100 / 72
 Quadric = ga.gatype((Plane, Point))
 # The bodies drawn: the first so many of the fleet, few enough for each to read as an arrow along its heading; the
-# arrows' colour, their shafts' width and the radius of the dot at their tips, in pixels; and the faint cross's
-# colour.
+# arrows' colour, their shafts' width and the length of the strokes of the chevrons at their tips, in pixels; and the
+# faint cross's colour.
 N_SHOWN = 120
 ARROW_RGB = np.array(mcolors.to_rgb("#4a6fa5"))
-ARROW_WIDTH, ARROW_TIP = 1.5, 2.3
+ARROW_WIDTH, ARROW_CHEVRON = 1.5, 6.0
 CROSS_RGB = np.full(3, 0.85)
 
 
@@ -50,13 +50,12 @@ def pictures(poses: Motor, predicted: Covariance, limit: Covariance, extent: flo
     shown = poses[:N_SHOWN]                                                     # [shown] Motor+
     positions = (shown >> origin).normalized()                                  # [shown] Point-
     headings = (shown >> bow).normalized() - positions                          # [shown] Point-
-    tips = positions + headings / 2                                             # [shown] Point-
-    arrows = stack((positions - headings / 2, tips), axis=-1)                   # [shown, ends] Point-
+    arrows = stack((positions - headings / 2, positions + headings / 2), axis=-1)   # [shown, ends] Point-
     return [
         simplices.strokes(cross.reshape(-1), Mesh.chains([2, 2]), CROSS_RGB, charts.FRAME_PX, camera, cap=Cap.BUTT),
         quadrics.regions(steady_quadric[:, None], ELLIPSOID_RGB, camera, 0.14),
-        simplices.strokes(arrows.reshape(-1), Mesh.chains([2] * len(shown)), ARROW_RGB, ARROW_WIDTH, camera),
-        simplices.markers(tips, ARROW_RGB, ARROW_TIP, camera),
+        simplices.strokes(arrows.reshape(-1), Mesh.chains([2] * len(shown)), ARROW_RGB, ARROW_WIDTH, camera,
+                          chevrons=np.ones(len(shown)), chevron=ARROW_CHEVRON),
         quadrics.curves(steady_quadric, 1.0 * POINT, ELLIPSOID_RGB, camera, 0.45),
         quadrics.curves(predicted_quadric, 1.4 * POINT, ELLIPSOID_RGB, camera),
     ]

@@ -16,14 +16,14 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.mechanics.symmetry.core import Conductivity, Direction, Field, Gyration, Point, Rotor, ga, mv
-from examples.util.wgsl import Shader, fitted, meshes, show, solids, supersampled
+from examples.util.wgsl import Shader, fitted, meshes, show, simplices, solids, supersampled
 
 driving_rgb, flow_rgb = np.array(to_rgb("#262b32")), np.array(to_rgb("#d44e1a"))
 surface_colour = np.array([0.36, 0.60, 0.80])
-# The heat-flow ellipsoid's share of what lies behind it hidden, so that the flow within it shows; the arrows' shaft
-# widths and the radii of the balls at their tips, in pixels, the driving field's and the flow's.
+# The heat-flow ellipsoid's share of what lies behind it hidden, so that the flow within it shows; the arrows'
+# widths and the lengths of the strokes of the chevrons at their tips, in pixels, the driving field's and the flow's.
 surface_opacity = 0.45
-driving_arrow, flow_arrow = (1.6, 2.5), (2.0, 3.0)
+driving_arrow, flow_arrow = (1.6, 6.4), (2.0, 8.0)
 stiffness_colour = np.array([0.88, 0.52, 0.30])
 site_colours = {"centre": [0.20, 0.22, 0.26], "axial": [0.88, 0.45, 0.22], "diagonal": [0.30, 0.56, 0.75], "corner": [0.78, 0.78, 0.80]}
 background = np.array([1.0, 1.0, 1.0])
@@ -120,14 +120,14 @@ def draw_conduction(conductivities: Conductivity, driving: Field, fluxes: Direct
     # The panels' rooms alike, one view fitted to the first holds them all.
     view = fitted(view, axes[0])
     for ax, (ellipsoid, _), flow in zip(axes, ellipsoids, flows):
-        # Both arrows from the centre, the flow's within the ellipsoid, seen through its surface: each a rod with a
-        # ball at its tip.
-        arrows = [part for tip, colour, (width, tip_radius) in
-                  ((driving_tip, driving_rgb, driving_arrow), (flow, flow_rgb, flow_arrow))
-                  for part in ((solids.rods(solids.origin, tip, width / 2 * view.pixel)[None], colour),
-                               (solids.ball(tip, tip_radius * view.pixel)[None, None], colour))]
-        show(ax, solids.draw(arrows, view, background, inks=[], translucent=[(ellipsoid[None, None], surface_colour,
-                                                                     surface_opacity)], meshes=[]), view)
+        # Both arrows from the centre, the flow's within the ellipsoid, seen through its surface: each a tube ending
+        # in a chevron.
+        arrows = [(simplices.tubes(stack([solids.origin, tip]), simplices.Mesh.chains([2]), colour, width, view,
+                                   gloss=solids.gloss, chevrons=np.ones(1), chevron=chevron), 1.0)
+                  for tip, colour, (width, chevron) in
+                  ((driving_tip, driving_rgb, driving_arrow), (flow, flow_rgb, flow_arrow))]
+        show(ax, solids.draw([], view, background, inks=[], translucent=[(ellipsoid[None, None], surface_colour,
+                                                                  surface_opacity)], meshes=arrows), view)
     return fig
 
 

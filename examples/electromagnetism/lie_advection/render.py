@@ -29,10 +29,10 @@ flux_colours = LinearSegmentedColormap.from_list(
 n_flux_contours = 8
 # The iso-flux contours' ink, colour and opacity.
 flux_ink = np.append(to_rgb(ink_colour), 0.68)
-# The velocity arrows bolder than the chart's lines, each with a dot at its tip; the edges' arrows twice as bold, to
-# stand out along the edges they lie on, each with a chevron at its tip; the swept ribbons' dotted outlines and the
-# mesh as thin as its frame, the mesh faint. Widths, dashes, radii and the length of a chevron's strokes in pixels.
-velocity_width, velocity_tip = 1.5 * charts.LINE_PX, 4.5
+# The velocity arrows bolder than the chart's lines and the edges' arrows twice as bold, to stand out along the edges
+# they lie on, each with a chevron at its tip; the swept ribbons' dotted outlines and the mesh as thin as its frame,
+# the mesh faint. Widths, dashes, radii and the length of a chevron's strokes in pixels.
+velocity_width, velocity_chevron = 1.5 * charts.LINE_PX, 9.0
 edge_arrow_width, edge_chevron = 2 * charts.LINE_PX, 10.0
 ribbon_dots = (1.0, 2.0)
 ribbon_opacity, triangle_opacity = 0.72, 0.88
@@ -135,8 +135,8 @@ def draw_cartan_ribbon(corners: core.Point, corner_forms: core.Plane,
                           dashes=displaced_dashes, cap=simplices.Cap.BUTT),
         simplices.strokes(edge_arrows, arrows, rgb(wall_colour), edge_arrow_width, camera, chevrons=np.ones(3),
                           chevron=edge_chevron),
-        simplices.strokes(velocity_arrows, arrows, rgb(accent_colour), velocity_width, camera),
-        simplices.markers(displaced, rgb(accent_colour), velocity_tip, camera),
+        simplices.strokes(velocity_arrows, arrows, rgb(accent_colour), velocity_width, camera, chevrons=np.ones(3),
+                          chevron=velocity_chevron),
         simplices.markers(concatenate((corners, displaced)), np.ones(3), corner_ring_radius, camera),
         simplices.markers(concatenate((corners, displaced)),
                           np.repeat(np.stack((rgb(wall_colour), rgb(ink_colour))), 3, axis=0), corner_radius, camera)])

@@ -27,10 +27,10 @@ COST_GRID_EXTENT = 0.55
 COST_GRID_COUNT = 101
 COST_LEVEL = 0.15
 COST_HORIZONS = 3
-# Widths and radii in pixels: of the lines, of the arrows and the dots at their tips, and of the marks; the target's
-# dashes, a dash and a gap.
+# Widths, lengths and radii in pixels: of the lines, of the arrows and the strokes of the chevrons at their tips, and
+# of the marks; the target's dashes, a dash and a gap.
 LINE_WIDTH = 1.5
-ARROW_WIDTH, ARROW_TIP = 2.0, 4.5
+ARROW_WIDTH, ARROW_CHEVRON = 2.0, 8.0
 MARK_RADIUS = 3.0
 TARGET_DASHES = (5.5, 2.5)
 # The point each pose carries: the origin, dual to the weight direction w.
@@ -46,7 +46,7 @@ def readings(batches: list[core.Point]) -> core.Scalar:
 
 
 def _limits(points: list[core.Point]) -> np.ndarray:
-    """A square viewport around batches of finite points, with room for the dots at the arrows' tips."""
+    """A square viewport around batches of finite points, with room for the chevrons at the arrows' tips."""
     drawn = readings(points)                                              # [2, points] Scalar+
     low, high = drawn.min(axis=-1), drawn.max(axis=-1)                    # [2] Scalar+, [2] Scalar+
     center = (low + high) / 2                                             # [2] Scalar+
@@ -103,8 +103,7 @@ def draw_setup(
     simplices.overlay(axes, [
         contours.picture(hull, surface, np.zeros(len(hull)), to_rgb(BODY_COLOUR), camera, opacity=0.16),
         simplices.strokes(stack([mounts, tips]).reshape(-1), _arrows(len(mounts)), to_rgb(FORCE_COLOUR), ARROW_WIDTH,
-                          camera),
-        simplices.markers(tips, to_rgb(FORCE_COLOUR), ARROW_TIP, camera),
+                          camera, chevrons=np.ones(len(mounts)), chevron=ARROW_CHEVRON),
         simplices.markers(mounts, to_rgb(THRUSTER_COLOUR), MARK_RADIUS, camera),
         simplices.markers(tracking_points, to_rgb(SITE_COLOUR), MARK_RADIUS, camera)])
     return figure
@@ -222,7 +221,9 @@ def animate(
                 contours.picture(carried[index, case], surface, np.zeros(len(hull)), to_rgb(BODY_COLOUR), camera,
                                  opacity=0.25),
                 simplices.strokes(stack([carried_mounts[index, case], tips[index, case]]).reshape(-1), thrust,
-                                  to_rgb(FORCE_COLOUR), ARROW_WIDTH, camera),
-                simplices.markers(tips[index, case], to_rgb(FORCE_COLOUR), ARROW_TIP, camera)]))
+                                  to_rgb(FORCE_COLOUR), ARROW_WIDTH, camera, chevrons=np.ones(len(mounts)),
+                                  chevron=ARROW_CHEVRON),
+                # Each thruster a point of its own, so that it shows whatever it pushes.
+                simplices.markers(carried_mounts[index, case], to_rgb(THRUSTER_COLOUR), MARK_RADIUS, camera)]))
         yield capture(figure)
     plt.close(figure)

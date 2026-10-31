@@ -26,14 +26,14 @@ label_colour = "0.4"
 margin = 0.55
 field_gap = 0.8
 # Widths, dashes and radii in pixels, for a lattice picture about 300 pixels a side: an arrow's width and the
-# radius of the dot at its tip.
+# length of the strokes of the chevron at its tip.
 bond_width = 1.5
 rest_width = 1.2
 rest_dashes = (4.0, 3.0)
 particle_radius = 2.2
 rest_radius = 2.0
-dipole_width, dipole_tip = 2.6, 4.0
-applied_width, applied_tip = 3.5, 5.5
+dipole_width, dipole_chevron = 2.6, 10.0
+applied_width, applied_chevron = 3.5, 14.0
 
 
 def lattice_axes(rest: Point) -> tuple[plt.Figure, plt.Axes, Scalar]:
@@ -83,19 +83,18 @@ class LatticeView:
 
     def update(self, positions: Point, dipoles: Point, applied: Field) -> plt.Figure:
         sites, arrows = positions.batch(), dipoles.batch() * self.dipole_scale
-        # Each arrow a stroke with a dot at its tip.
-        tips = sites + arrows / 2                                                         # [particles] Point-
-        dipole_ends = stack((sites - arrows / 2, tips), axis=-1).reshape(-1)
+        # Each arrow a stroke with a chevron at its tip.
+        dipole_ends = stack((sites - arrows / 2, sites + arrows / 2), axis=-1).reshape(-1)
         # The applied field drawn along the direction whose field it is.
         applied_arrow = field_along.solve(applied) * self.field_scale                     # [] Point-
         applied_ends = stack((self.anchor - applied_arrow / 2, self.anchor + applied_arrow / 2))
         self.image.set_data(simplices.composited(self.reference + [
             simplices.strokes(sites, self.bonds, bond_colour, bond_width, self.camera),
             simplices.markers(sites, bond_colour, particle_radius, self.camera),
-            simplices.strokes(dipole_ends, self.arrows, dipole_colour, dipole_width, self.camera),
-            simplices.markers(tips, dipole_colour, dipole_tip, self.camera),
-            simplices.strokes(applied_ends, Mesh.chains([2]), applied_colour, applied_width, self.camera),
-            simplices.markers(applied_ends[1:], applied_colour, applied_tip, self.camera)]))
+            simplices.strokes(dipole_ends, self.arrows, dipole_colour, dipole_width, self.camera,
+                              chevrons=np.ones(len(sites)), chevron=dipole_chevron),
+            simplices.strokes(applied_ends, Mesh.chains([2]), applied_colour, applied_width, self.camera,
+                              chevrons=np.ones(1), chevron=applied_chevron)]))
         return self.figure
 
 

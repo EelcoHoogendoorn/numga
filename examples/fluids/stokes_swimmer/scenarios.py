@@ -78,7 +78,7 @@ def main() -> None:
 
     angles, sites, _, forces, motors, positions, world_sites, world_forces = strokes()
     grid = sample_grid()
-    save_figure(render.draw_summary(angles, positions, world_sites, world_forces, grid,
+    save_figure(render.draw_summary(angles, positions, world_sites, grid,
                                     next(flows(world_sites, world_forces, grid))), "stokes_swimmer")
     save_animation(render.animate_swimmers(positions, world_sites, grid, flows(world_sites, world_forces, grid),
                                            N_STEPS_PER_FRAME), "stokes_swimmer", DURATION_MS)

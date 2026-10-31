@@ -10,6 +10,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 from matplotlib.figure import Figure
 
+from numga import stack
 from examples.util.animation import capture
 from examples.quantum.superconductivity import core
 from examples.util import charts
@@ -40,11 +41,11 @@ MARGIN, N_PIXELS = 0.08, 470
 # end, and the reach of the pair coherence.
 energy_start = solids.origin + sm.x.dual() * (ENERGY_SCALE * ENERGY_START)                # [] Point-
 reaches = np.array([ENERGY_SCALE * (ENERGY_END - ENERGY_START), COHERENCE_REACH, COHERENCE_REACH])
-# The points around a circle; the widths of the axes' shafts, the circles, the path and the arrows' shafts, and the
-# radii of the balls at the axes' tips and at the arrows', in pixels.
+# The points around a circle; the widths of the axes, the circles, the path and the arrows, in pixels, and the length
+# of the strokes of the chevron at an axis's or an arrow's tip, in widths of its stroke.
 N_CIRCLE = 100
 AXIS_WIDTH, CIRCLE_WIDTH, PATH_WIDTH, STEM_WIDTH = 0.8, 0.64, 0.8, 1.43
-AXIS_TIP_RADIUS, TIP_RADIUS = 1.6, 1.8
+CHEVRON_LENGTH = 4.0
 # The animation's size in pixels: the chart of the arrows beside the gap's curve.
 QUENCH_PX = (640, 270)
 
@@ -89,19 +90,20 @@ def draw_equilibrium(dispersion: core.Field, spins: core.Spin) -> Figure:
     return figure
 
 
-def chart(energies: np.ndarray, axis: plt.Axes
-          ) -> tuple[solids.View, list[tuple[solids.Quadric, np.ndarray]], solids.Point]:
+def chart(energies: np.ndarray, axis: plt.Axes) -> tuple[solids.View, meshes.Samples, solids.Point]:
     """The view of the chart, fitted to the matplotlib axes it is shown in, its axes as arrows from the start of the
-    energy axis, rods with a ball at each tip, the energy along +x and the pair coherence in yz and zx along +y and +z,
-    and the circles of the largest coherence about the energy axis at every few levels `[circles, circle + 1]`."""
+    energy axis, tubes each ending in a chevron, the energy along +x and the pair coherence in yz and zx along +y and
+    +z, and the circles of the largest coherence about the energy axis at every few levels `[circles, circle + 1]`."""
     ends = energy_start + solids.axes.dual() * reaches                                      # [3] Point-
     # The circles about the energy axis, x, at every few levels, each through the point the largest coherence above it.
     levels = solids.origin + sm.x.dual() * (ENERGY_SCALE * energies[::CIRCLE_EVERY])        # [circles] Point-
     circles = meshes.circles(levels + sm.z.dual() * CIRCLE_RADIUS, sm.yz, N_CIRCLE)        # [circles, circle + 1] Point-
     view = fitted(solids.view([circles, energy_start, ends], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS), axis)
-    shafts = solids.rods(energy_start, ends, AXIS_WIDTH / 2 * view.pixel)
-    heads = solids.ball(ends, AXIS_TIP_RADIUS * view.pixel)[:, None]
-    return view, [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR)], circles
+    # Each axis an edge from the start of the energy axis to its end.
+    starts = energy_start[None].broadcast_to(ends.shape)                                     # [3] Point-
+    axes = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Mesh.chains([2] * 3), AXIS_COLOUR,
+                           AXIS_WIDTH, view, solids.gloss, chevrons=np.ones(3), chevron=CHEVRON_LENGTH * AXIS_WIDTH)
+    return view, axes, circles
 
 
 def label_chart(axis: plt.Axes, view: solids.View) -> None:
@@ -134,18 +136,19 @@ def animate_quench(
         # Each circle a closed chain of edges through its points.
         rings = (simplices.tubes(circles.reshape(-1), simplices.Mesh.chains([circles.shape[1]] * len(circles)),
                                  CIRCLE_COLOUR, CIRCLE_WIDTH, view, solids.gloss), CIRCLE_OPACITY)
-        scene = Scene(view, np.ones(3), axes, [rings], inks=[], translucent=[])
+        scene = Scene(view, np.ones(3), [], [rings, (axes, 1.0)], inks=[], translucent=[])
 
         def arrows(coherence: np.ndarray) -> np.ndarray:
-            """Each level's arrow from the energy axis to its pair coherence, a rod with a ball at its tip, over the
+            """Each level's arrow from the energy axis to its pair coherence, a tube ending in a chevron, over the
             path through the tips."""
             # The pair coherence in yz up the chart's y, and in zx along its z.
             tips = origins + sm.y.dual() * coherence[:, 0] + sm.z.dual() * coherence[:, 1]   # [levels] Point-
-            stems = [(solids.rods(origins, tips, STEM_WIDTH / 2 * view.pixel), colours),
-                     (solids.ball(tips, TIP_RADIUS * view.pixel)[:, None], np.array(to_rgb(PAIR)))]
+            stems = simplices.tubes(stack((origins, tips), axis=-1).reshape(-1), simplices.Mesh.chains([2] * len(tips)),
+                                    colours, STEM_WIDTH, view, solids.gloss, chevrons=np.ones(len(tips)),
+                                    chevron=CHEVRON_LENGTH * STEM_WIDTH)
             path = simplices.tubes(tips, simplices.Mesh.chains([len(tips)]), np.array(to_rgb(INK)), PATH_WIDTH, view,
                                    solids.gloss)
-            return scene.draw(stems, inks=[], translucent=[], meshes=[(path, PATH_OPACITY)])
+            return scene.draw([], inks=[], translucent=[], meshes=[(stems, 1.0), (path, PATH_OPACITY)])
 
         image = show(axis, arrows(transverse[0]), view)
         label_chart(axis, view)

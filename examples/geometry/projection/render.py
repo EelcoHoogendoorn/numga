@@ -4,7 +4,7 @@ This module consumes the geometry that `core` produces and turns it into a figur
 It constructs viewport geometry only, never scene geometry, and the mathematics
 never imports it. The shadow scene is ray traced on the GPU: edges as rods, the
 shadow trail as a row of beads, the point light a ball and the sun's direction an
-arrow, a rod with a ball at its tip; the two camera images are drawn flat, as strokes and markers read by each
+arrow, a tube ending in a chevron; the two camera images are drawn flat, as strokes and markers read by each
 rig's own planes.
 """
 
@@ -36,10 +36,10 @@ background = np.ones(3)
 # of the larger side.
 elevation, azimuth = np.radians([30.0, -60.0 + 90.0])
 scene_margin = 0.1
-# Radii in pixels: of the body's edges, of the shadows' edges, of the beads along the trail, of the point light, and
-# of the arrow's shaft and the ball at its tip.
+# Radii in pixels: of the body's edges, of the shadows' edges, of the beads along the trail and of the point light;
+# the arrow's width and the length of the strokes of the chevron at its tip, in pixels.
 body_radius, shadow_radius, bead_radius, light_radius = 1.6, 1.2, 2.4, 6.5
-shaft_radius, tip_radius = 2.4, 6.5
+arrow_width, arrow_chevron = 4.8, 19.2
 
 
 def render_shadow_scene(
@@ -60,16 +60,15 @@ def render_shadow_scene(
     view = fitted(solids.view([body, light_corners, sun_corners, trail, point_light, sun_arrow_start, arrow_end],
                               0.0, elevation, azimuth, scene_margin, 1), ax)
     pixel = view.pixel
-    shaft = solids.rods(sun_arrow_start, arrow_end, shaft_radius * pixel)    # [3] Plane+ <- Point-
-    tip = solids.ball(arrow_end, tip_radius * pixel)                          # [] Plane+ <- Point-
+    arrow = simplices.tubes(stack((sun_arrow_start, arrow_end)), simplices.Mesh.chains([2]), sun_colour, arrow_width,
+                            view, gloss=solids.gloss, chevrons=np.ones(1), chevron=arrow_chevron)
     rods, joints = solids.edges(body[ends[:, 0]], body[ends[:, 1]], body_radius * pixel)
     parts = [(rods, body_colour), (joints, body_colour),
              (solids.rods(light_corners[ends[:, 0]], light_corners[ends[:, 1]], shadow_radius * pixel), light_colour),
              (solids.rods(sun_corners[ends[:, 0]], sun_corners[ends[:, 1]], shadow_radius * pixel), sun_colour),
              (solids.ball(trail, bead_radius * pixel)[:, None], light_colour),
-             (solids.ball(point_light, light_radius * pixel)[None, None], light_colour),
-             (shaft[None], sun_colour), (tip[None, None], sun_colour)]
-    show(ax, solids.draw(parts, view, background, inks=[], translucent=[], meshes=[]), view)
+             (solids.ball(point_light, light_radius * pixel)[None, None], light_colour)]
+    show(ax, solids.draw(parts, view, background, inks=[], translucent=[], meshes=[(arrow, 1.0)]), view)
 
 
 def screen_line_ends(rig: Motor, lines: Line, half_width: float) -> Point:

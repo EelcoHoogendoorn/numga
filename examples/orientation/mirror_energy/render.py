@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import concatenate
+from numga import concatenate, stack
 
 from examples.orientation.mirror_energy.core import Point
 from examples.util.wgsl import image_figure, simplices, solids
@@ -22,12 +22,13 @@ sphere_colour, circle_colour, shape_colour = (np.array(to_rgb(colour)) for colou
 # reflection shows as the picture flipped left for right; its margin as a share of its larger
 # side, and the pixels across each case; how much of what lies behind them the sphere's surfaces and the paths hide;
 # in pixels, the widths of the great circles and the paths, the radius of the shape's edges, a unit mass's radius,
-# and the radii of the arrows' shafts and of the balls at their tips; and the drawn length of a unit velocity.
+# and the arrows' width with the length of the strokes of the chevrons at their tips; and the drawn length of a unit
+# velocity.
 elevation, azimuth = np.radians([23.0, 0.0])
 margin, n_pixels = 0.04, 300
 sphere_opacity, path_opacity = 0.12, 0.8
 circle_width, path_width, shape_radius, mass_radius = 1.0, 1.67, 0.67, 5.0
-shaft_radius, tip_radius = 1.17, 3.0
+arrow_width, chevron_length = 2.34, 9.4
 velocity_length = 0.35
 
 
@@ -40,8 +41,8 @@ def scenes(paths: solids.Point) -> list[Scene]:
     closed = concatenate([paths, paths[:1]])                                    # [times + 1, cases, masses] Point-
     sphere = solids.ball(solids.origin, 1.0)[None, None]
     # The great circles where the planes x, y and z through the centre cut the sphere, the first translucent part,
-    # after the shape, each mass's ball, and the arrows' shafts and tips.
-    circles = solids.Ink(paths.shape[2] + 3, solids.half_space(solids.axes), solids.everywhere[None],
+    # after the shape and each mass's ball.
+    circles = solids.Ink(paths.shape[2] + 1, solids.half_space(solids.axes), solids.everywhere[None],
                          circle_colour, circle_width, 1.0)
     # Each mass's closed path a chain of edges, each edge in its mass's colour.
     n_closed, n_masses = len(closed), paths.shape[2]
@@ -63,13 +64,14 @@ def case_image(scene: Scene, places: solids.Point, velocities: solids.Point, mas
     # Each mass a ball whose area goes with its mass.
     balls = [solids.ball(places[mass:mass + 1], mass_radius * np.sqrt(masses[mass]) * view.pixel)
              for mass in range(len(places))]
-    # Each velocity an arrow, a rod with a ball at its tip.
+    # Each velocity an arrow, a tube ending in a chevron.
     tips = places + velocity_length * velocities                                # [masses] Point-
-    shafts = solids.rods(places, tips, shaft_radius * view.pixel)               # [masses, 3] Plane+ <- Point-
-    tip_balls = solids.ball(tips, tip_radius * view.pixel)[:, None]             # [masses, 1] Plane+ <- Point-
-    parts = ([(shape, shape_colour)] + [(ball[:, None], colour) for ball, colour in zip(balls, mass_colours)]
-             + [(shafts, mass_colours), (tip_balls, mass_colours)])
-    return scene.draw(parts, inks=[], translucent=[], meshes=[])
+    n_masses = len(places)
+    arrows = simplices.tubes(stack((places, tips), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_masses),
+                             mass_colours, arrow_width, view, gloss=solids.gloss, chevrons=np.ones(n_masses),
+                             chevron=chevron_length)
+    parts = [(shape, shape_colour)] + [(ball[:, None], colour) for ball, colour in zip(balls, mass_colours)]
+    return scene.draw(parts, inks=[], translucent=[], meshes=[(arrows, 1.0)])
 
 
 def frames(positions: Point, velocities: Point, masses: np.ndarray, moments: range) -> Iterator[np.ndarray]:

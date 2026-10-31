@@ -19,10 +19,10 @@ velocity_colour, force_colour, crank_colour, guide_colour, mirror_colour = (
 # The figure's width and height in pixels.
 figure_pixels = (420, 210)
 dpi = 100
-# The widths of the mirror, its dashes and gaps, the handles' paths, the cranks and the arrows, the radius of the dots
-# at the arrows' tips, and the radii of the pivots, their rims and the handles, in pixels.
+# The widths of the mirror, its dashes and gaps, the handles' paths, the cranks and the arrows, the length of the
+# strokes of the chevrons at the arrows' tips, and the radii of the pivots, their rims and the handles, in pixels.
 mirror_width, mirror_dashes, guide_width, crank_width = 1.2, (4.5, 5.5), 1.0, 3.6
-arrow_width, arrow_tip = 2.5, 5.5
+arrow_width, arrow_chevron = 2.5, 10.0
 pivot_radius, rim_width, handle_radius = 4.0, 1.3, 2.7
 
 
@@ -78,14 +78,13 @@ class WorkView:
         offset = radius * 0.055
         n_cranks = len(handles)
         # Separate the glyphs slightly so equal directions remain visible: the velocity's arrows and the force's,
-        # each on one side of the handles, each a stroke with a dot at its tip.
+        # each on one side of the handles, each a stroke ending in a chevron.
         arrows = []
         for colour, side, directions in ((velocity_colour, -1, velocities), (force_colour, 1, forces)):
             tails = handles + side * offset * radial                            # [cranks] Point-
             tips = tails + directions * arrow_scale                             # [cranks] Point-
-            arrows += [simplices.strokes(concatenate([tails, tips]), pairs(n_cranks), colour, arrow_width,
-                                         self.camera),
-                       simplices.markers(tips, colour, arrow_tip, self.camera)]
+            arrows.append(simplices.strokes(concatenate([tails, tips]), pairs(n_cranks), colour, arrow_width,
+                                            self.camera, chevrons=np.ones(n_cranks), chevron=arrow_chevron))
         self.image.set_data(simplices.composited(self.guides + [
             simplices.strokes(concatenate([self.pivots, handles]), pairs(n_cranks), crank_colour, crank_width,
                               self.camera),

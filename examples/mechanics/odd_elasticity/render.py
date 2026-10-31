@@ -83,9 +83,8 @@ def bond_frames(
                               opacity=0.55),
             simplices.strokes(bond, simplices.Mesh.chains([2]), BOND, 3.0, camera),
             simplices.markers(position[None], BOND, 3.0, camera),
-            # The force's arrow, a stroke with a dot at its tip.
-            simplices.strokes(force, _arrows(1), FORCE, 3.0, camera),
-            simplices.markers(force[1:], FORCE, 6.0, camera)]))
+            # The force's arrow, a stroke ending in a chevron.
+            simplices.strokes(force, _arrows(1), FORCE, 3.0, camera, chevrons=np.ones(1), chevron=12.0)]))
         yield capture(figure)
     plt.close(figure)
 
@@ -110,13 +109,13 @@ def patch_frames(
 
     for position, arrow in zip(places, arrows):
         tails = position[boundary]                                           # [boundary] Displacement-
-        # The forces' arrows, strokes with dots at their tips.
+        # The forces' arrows, strokes ending in chevrons.
         image.set_data(simplices.composited([
             rest,
             simplices.strokes(position, mesh, BOND, 1.5, camera),
             simplices.markers(position, ANCHOR, 2.0, camera),
-            simplices.strokes(concatenate([tails, tails + arrow]), forces_mesh, FORCE, 1.5, camera),
-            simplices.markers(tails + arrow, FORCE, 3.5, camera)]))
+            simplices.strokes(concatenate([tails, tails + arrow]), forces_mesh, FORCE, 1.5, camera,
+                              chevrons=np.ones(len(boundary)), chevron=6.0)]))
         yield capture(figure)
     plt.close(figure)
 

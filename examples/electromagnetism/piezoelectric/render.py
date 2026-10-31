@@ -27,10 +27,11 @@ electrode_colours = LinearSegmentedColormap.from_list(
 # The clamp's face and edge colours, its edge's width, and how many hatches cross it.
 clamp_face, clamp_edge, clamp_width, n_hatches = "#edf0f0", "#a0aaaf", 1.1, 4
 # Widths, dashes and radii in pixels: the device's rest outline, its interface and tip, its electrodes and its
-# poling arrows, with the dots at their tips; the mesh's edges, electrodes, interface and clamped nodes.
+# poling arrows, with the length of the strokes of the chevrons at their tips; the mesh's edges, electrodes, interface
+# and clamped nodes.
 rest_width, rest_dashes = 1.25, (5.5, 5.5)
 bond_width, end_width, electrode_width = 1.25, 1.4, 2.1
-poling_width, poling_tip, poling_opacity = 1.0, 2.2, 0.75
+poling_width, poling_chevron, poling_opacity = 1.0, 4.0, 0.75
 mesh_width, mesh_electrode_width, mesh_interface_width, clamped_radius = 0.8, 3.5, 1.7, 1.5
 
 
@@ -91,7 +92,7 @@ class DeviceView:
 
         # The strip's electrodes and interface run in order along it, and its tip from the bottom up.
         self.poles = np.linspace(0, len(mesh.top) - 1, 9, dtype=int)[1:-1]
-        # Each poling arrow a chain of two points, its tail and its tip, with a dot at its tip.
+        # Each poling arrow a chain of two points, its tail and its tip, with a chevron at its tip.
         self.arrows = Mesh.chains([2] * (2 * len(self.poles)))
         # The electrodes, top and bottom, as chains; each edge coloured by its electrode.
         self.electrodes = Mesh.chains([len(mesh.top), len(mesh.bottom)])
@@ -140,14 +141,10 @@ class DeviceView:
         across = separation / separation.squared().square_root()                    # [poles] Point-
         centres = concatenate((0.75 * upper + 0.25 * lower, 0.25 * upper + 0.75 * lower))   # [arrows] Point-
         arrows = 0.32 * self.thickness * concatenate((across, -across))             # [arrows] Point-
-        tips = centres + arrows / 2                                                 # [arrows] Point-
-        poling = stack((centres - arrows / 2, tips), axis=-1).reshape(-1)           # [arrows * 2] Point-
-        # The arrows drawn whole, their strokes and dots, then covering as much as their opacity, so that a stroke
-        # under its dot does not show through it.
-        poling_arrows = simplices.composited([
-            simplices.strokes(poling, self.arrows, rgb(interface_colour), poling_width, self.view),
-            simplices.markers(tips, rgb(interface_colour), poling_tip, self.view)])
-        poling_arrows[..., 3] *= poling_opacity
+        poling = stack((centres - arrows / 2, centres + arrows / 2), axis=-1).reshape(-1)   # [arrows * 2] Point-
+        poling_arrows = simplices.strokes(poling, self.arrows, rgb(interface_colour), poling_width, self.view,
+                                          chevrons=np.ones(2 * len(self.poles)), chevron=poling_chevron,
+                                          opacity=poling_opacity)
 
         self.image.set_data(simplices.composited(self.under + [
             body,

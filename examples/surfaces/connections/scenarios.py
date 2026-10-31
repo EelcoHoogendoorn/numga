@@ -287,11 +287,9 @@ def main() -> None:
     fine_mesh, fine_vertices, sphere_patterns, stripe_energies = stripe_spheres()
     bands = [tuple(family[:1] for family in pattern) for pattern in sphere_patterns]
     save_figure(render.draw_bands(fine_mesh, fine_vertices, bands), "connections_stripes_spheres")
-    save_figure(render.draw_lines(fine_mesh, fine_vertices, sphere_patterns, 1.0), "connections_stripes_sphere_grids")
     stripe_torus, stripe_torus_vertices, torus_patterns, torus_stripe_energies = stripe_tori()
     bands = [tuple(family[:1] for family in pattern) for pattern in torus_patterns]
     save_figure(render.draw_bands(stripe_torus, stripe_torus_vertices, bands), "connections_stripes_tori")
-    save_figure(render.draw_lines(stripe_torus, stripe_torus_vertices, torus_patterns, 1.0), "connections_stripes_torus_grids")
     _, _, cross_patterns, cross_angles = crosses()
     save_figure(render.draw_lines(fine_mesh, fine_vertices, cross_patterns, CROSS_SCALE), "connections_stripes_crosses")
     lines, stripe_fields, advance = (family[:1] for family in sphere_patterns[2])

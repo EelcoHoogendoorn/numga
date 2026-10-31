@@ -21,7 +21,6 @@ purcell_colour = "#1d3557"
 scallop_colour = "#c84b31"
 trail_colour = "#e63946"
 flow_colour = "#94a3b8"
-force_colour = "#2a9d8f"
 cross_colour, label_colour = "#cbd5e1", "0.4"
 # The margin around the strokes in hinge-angle space, as a share of their extent, across and up: up, the room for the
 # name running down the line.
@@ -34,9 +33,6 @@ water_margin = 2.3
 # white rims, its hinges' radius and their coloured rims; the trail's width.
 chain_width, bead_radius, bead_rim, hinge_radius, hinge_rim = 2.6, 3.25, 0.6, 2.55, 1.4
 summary_trail_width, animation_trail_width = charts.points(charts.LINE_PX), 1.6
-# The bead forces' arrows: their width and the radius of the dots at their tips in pixels, and the force per width of
-# the flow's panel, the arrows' scale.
-force_width, force_tip, force_scale = 1.75, 2.6, 1.4
 
 
 def rgb(colour: str) -> np.ndarray:
@@ -98,11 +94,10 @@ def draw_summary(
     angles: np.ndarray,
     positions: core.Point,
     world_sites: core.Point,
-    world_forces: core.Force,
     grid: core.Point,
     flow: core.Direction,
 ) -> plt.Figure:
-    """Left: instantaneous Stokes flow around Purcell's swimmer with bead forces and centre trail;
+    """Left: instantaneous Stokes flow around Purcell's swimmer with its centre trail;
     middle: centre displacement along x over the three cycles for both strokes; right: the two strokes
     in hinge-angle space."""
     # The whole column: the surrounding flow and two trajectory plots.
@@ -135,19 +130,10 @@ def draw_summary(
     points, directions = grid.reshape(-1), flow[0].reshape(-1)
     reference_speed = float(directions.dual().norm().max().to_array())
     camera = flat_panel(ax_flow, core.ga)
-    # Each bead's force drawn along the direction it pushes, one panel's width for `force_scale` of force, a stroke
-    # with a dot at its tip.
-    sites = beads[0, 0]                                                         # [beads] Point-
-    panel_width = mv.x & (grid[0, -1] - grid[0, 0])                             # [] Scalar+
-    pushes = world_forces.batch()[0, 0].dual() * (panel_width / force_scale)   # [beads] Direction-
-    n_beads = len(sites)
     simplices.overlay(ax_flow, [
         ink.layer(points, mesh, directions, camera, reference_speed, rgb(flow_colour)),
         _trail(positions[:, 0], summary_trail_width * charts.DPI / 72, camera),
-        *_swimmer(sites, purcell_colour, camera, charts.DPI / 72),
-        simplices.strokes(stack((sites, sites + pushes), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_beads),
-                          rgb(force_colour), force_width, camera),
-        simplices.markers(sites + pushes, rgb(force_colour), force_tip, camera)])
+        *_swimmer(beads[0, 0], purcell_colour, camera, charts.DPI / 72)])
     return figure
 
 

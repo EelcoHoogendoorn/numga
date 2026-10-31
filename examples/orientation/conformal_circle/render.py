@@ -16,6 +16,7 @@ from numga import concatenate, stack
 from examples.orientation.conformal_circle.core import Point, Sphere, mv
 from examples.util.wgsl import contours, show, simplices, solids
 from examples.util.wgsl.camera import Camera, panel as panel_camera
+from examples.util.wgsl.meshes import Samples
 
 sm = solids.mv
 plane_ink, sphere_ink, curve_ink = "#218c9d", "#ce713f", "#3d354a"
@@ -29,13 +30,13 @@ margin, n_pixels = 0.25, 300
 # its rim, each face of the ball and the sphere's wireframe, front and back alike.
 sheet_corners = sm.point(1.23 * np.array([[-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0]]))   # [corners] Point-
 sheet_opacity, rim_opacity, ball_opacity, wireframe_opacity = 0.073, 0.45, 0.062, 0.26
-# The widths of the circle, the sheet's rim and the wireframe, the plane's and the sphere's arrows, the radius of the
-# balls at the arrows' tips, the length of the strokes of the chevrons on the circle and the points' radius, in pixels;
-# the sheet's thickness, in pixels.
+# The widths of the circle, the sheet's rim and the wireframe, the plane's and the sphere's arrows, the length of the
+# strokes of the chevrons on the circle and at the plane's and the sphere's arrows' tips, and the points' radius, in
+# pixels; the sheet's thickness, in pixels.
 circle_width, rim_width, wireframe_width, sheet_thickness = 2.4, 1.8, 1.8, 0.6
 plane_arrow_width, sphere_arrow_width = 3.0, 2.7
-tip_radius = 3.6
 chevron_length = 10.0
+plane_chevron, sphere_chevron = 12.0, 10.8
 dot_radius = 4.8
 # The lengths of the plane's and the sphere's arrows per unit of their normals.
 plane_arrow_length, sphere_arrow_length = 0.85, 0.45
@@ -79,11 +80,14 @@ def downhill(surface: Sphere, anchor: Point, length: float) -> Point:
     return ((tangent ^ horizon) * (length / 2)).exp() >> anchor
 
 
-def arrows(starts: Point, ends: Point, width: float, view: solids.View) -> tuple[solids.Quadric, solids.Quadric]:
-    """Arrows between points, rods `width` pixels across with balls at their tips."""
-    tips = gpu_points(ends)                                                     # [arrows] Point-
-    return (solids.rods(gpu_points(starts), tips, width / 2 * view.pixel),
-            solids.ball(tips, tip_radius * view.pixel)[:, None])
+def arrows(starts: Point, ends: Point, colour: np.ndarray, width: float, chevron: float,
+           view: solids.View) -> Samples:
+    """Arrows between points `[arrows]`, tubes `width` pixels across ending in chevrons of strokes `chevron` pixels
+    long, for `solids.draw` to compose among the solids."""
+    n_arrows = starts.shape[0]
+    return simplices.tubes(gpu_points(stack((starts, ends), axis=-1).reshape(-1)),
+                           simplices.Mesh.chains([2] * n_arrows), colour, width, view, gloss=solids.gloss,
+                           chevrons=np.ones(n_arrows), chevron=chevron)
 
 
 def circle_planes(first: Point, second: Point, third: Point) -> solids.Plane:
@@ -120,13 +124,12 @@ def panel(vertices: Point, circle: Point, globe: Point, plane: Sphere, sphere: S
                             gloss=solids.gloss, chevrons=chevrons, chevron=chevron_length)
 
     # The arrows point down the surfaces' pairings with points: below the plane and into the sphere.
-    plane_arrow = arrows(origin[None], downhill(plane, origin, plane_arrow_length)[None], plane_arrow_width, view)
+    plane_arrow = arrows(origin[None], downhill(plane, origin, plane_arrow_length)[None], plane_colour,
+                         plane_arrow_width, plane_chevron, view)
     sphere_anchor = circle[None, count // 3]
-    sphere_arrow = arrows(sphere_anchor, downhill(sphere, sphere_anchor, sphere_arrow_length), sphere_arrow_width,
-                          view)
-    marks = [(plane_arrow[0], plane_colour), (plane_arrow[1], plane_colour),
-             (sphere_arrow[0], sphere_colour), (sphere_arrow[1], sphere_colour),
-             (solids.ball(gpu_points(vertices), dot_radius * view.pixel)[:, None],
+    sphere_arrow = arrows(sphere_anchor, downhill(sphere, sphere_anchor, sphere_arrow_length), sphere_colour,
+                          sphere_arrow_width, sphere_chevron, view)
+    marks = [(solids.ball(gpu_points(vertices), dot_radius * view.pixel)[:, None],
               np.array([to_rgb(colour) for colour in marker_inks]))]
     # The sheet and the ball are the first and the second translucent parts, after the opaque marks.
     rim = solids.Ink(len(marks), edges, solids.everywhere[None].broadcast_to(edges.shape),
@@ -135,7 +138,7 @@ def panel(vertices: Point, circle: Point, globe: Point, plane: Sphere, sphere: S
                            sphere_colour, wireframe_width, wireframe_opacity)
     return solids.draw(marks, view, background, [rim, wireframe],
                        translucent=[(sheet, plane_colour, sheet_opacity), (ball, sphere_colour, ball_opacity)],
-                       meshes=[(curve, 1.0)])
+                       meshes=[(curve, 1.0), (plane_arrow, 1.0), (sphere_arrow, 1.0)])
 
 
 def draw_circle(points: Point, curve: Point, surface: Point, planes: Sphere,

@@ -39,6 +39,9 @@ camera = (mv.xy * (-AZIMUTH / 2)).exp() * (mv.yz * (-(np.pi / 2 - ELEVATION) / 2
 right, up, toward = camera >> stack((mv.x, mv.y, mv.z)).dual()               # [3] Point-
 across_axes, depth_axis = camera >> stack((mv.x, mv.y)), camera >> mv.z      # [2] Plane, [] Plane
 lamp = (camera >> (mv.x * 0.35 + mv.y * 0.5 + mv.z * 0.8)).normalized()     # [] Plane+
+# The turn by a third of a right angle in the plane of the screen, which lays the strokes of a chevron out to either
+# side of its arrow.
+chevron_turn = ((camera >> mv.xy) * (-np.pi / 12)).exp()                      # [] Rotor+
 # The background; the form's colours below zero, at zero and above, and the polhodes' below and above; the oval, the
 # foci, the point the geodesics run to and the geodesics; the faint sphere and its great circles, the dual conic, the
 # pale sheet under the polhodes, the cone, and the rims of the marks.
@@ -60,10 +63,11 @@ AMBIENT, N_DASHES, REACH, N_TOUCHING, DOT_EVERY = 0.7, 12, 1.25, 16, 3
 POLE_LENGTH = 0.35
 # The polhodes: the levels drawn, as fractions of the form's least and greatest values on the sphere.
 FRACTIONS = np.linspace(0.0, 0.7, 4)[1:]
-# Widths and radii in pixels: the oval, the antipodal loop, the geodesics, the great circles, the polhodes, the
-# arrows' strokes and the dots at their tips; the foci, the sample point, their rims, and the dots of the dual conic.
+# Widths, lengths and radii in pixels: the oval, the antipodal loop, the geodesics, the great circles, the polhodes,
+# the arrows' strokes and the length of the strokes of the chevrons at their tips; the foci, the sample point, their
+# rims, and the dots of the dual conic.
 OVAL_WIDTH, ANTIPODE_WIDTH, GEODESIC_WIDTH, CIRCLE_WIDTH, POLHODE_WIDTH = 2.5, 1.75, 1.75, 1.5, 1.5
-SHAFT_WIDTH, TIP_RADIUS = 1.5, 3.0
+SHAFT_WIDTH, CHEVRON_LENGTH = 1.5, 6.0
 FOCUS_RADIUS, SAMPLE_RADIUS, RIM_WIDTH, DOT_RADIUS = 3.5, 4.0, 0.75, 1.5
 
 
@@ -195,7 +199,7 @@ struct Circle {
 }
 
 // An arrow painted on the sphere from a point of the oval toward the pole of its tangent great circle, a quarter turn
-// away, in its colour: a stroke along the great circle through them, and a dot at its tip.
+// away, in its colour: a stroke along the great circle through them, ending at its tip in a chevron on the picture.
 struct Arrow {
     start: Point,
     pole: Point,
@@ -208,14 +212,29 @@ var<storage, read> arrows: array<Arrow>;
 // The poles of tangent great circles, dots along the dual conic.
 var<storage, read> poles: array<Point>;
 
+// The share of a pixel a stroke on the picture covers at a point of the sphere, the stroke from a place `length` along
+// a direction across the view: by the point's offset across the view from it, where both lie on the same side of the
+// plane of the screen through the centre.
+fn barb(place: Point, direction: Point, length: f32, point: Point) -> f32 {
+    let near = (depth_axis & place) * (depth_axis & point) > 0;
+    let offset = screen_plane(point - place);
+    let nearest = direction * clamp(offset.dot(direction), 0.0, length);
+    return select(0.0, cover(shaft_width / 2 - (offset - nearest).norm()), near);
+}
+
 // The share of a pixel an arrow covers at a point of the sphere: the point's turn from the start toward the pole,
 // read by its pairings with the two, and its distance off the great circle through them, their join, for its stroke;
-// and the dot at its tip.
+// and the chevron at its tip.
 fn arrow_share(arrow: Arrow, point: Point) -> f32 {
     let along = atan2(-(point | arrow.pole), -(point | arrow.start));
     let off = abs((arrow.start & arrow.pole) & point);
     let stroke = select(0.0, cover(shaft_width / 2 - off), along > 0 && along < arrow_length);
-    return max(stroke, disc(arrow.tip, point, tip_radius));
+    // The chevron's two strokes run back from the tip against the arrow's heading across the view, the great circle's
+    // tangent at the tip toward the pole, turned out to either side; on an arrow short across the view, shorter.
+    let back = -screen_plane(arrow.pole - arrow.tip * arrow.tip.dot(arrow.pole)).normalized();
+    let length = min(chevron_length, screen_plane(arrow.tip - arrow.start).norm());
+    let barbs = max(barb(arrow.tip, chevron_turn >> back, length, point), barb(arrow.tip, chevron_turn << back, length, point));
+    return max(stroke, barbs);
 }
 
 fn side(beneath: vec3<f32>, seen: Seen) -> vec3<f32> {
@@ -312,7 +331,8 @@ constants = dict(
     cone_opacity=CONE_OPACITY, dashes_per_turn=N_DASHES / (2 * np.pi), reach=REACH,
     arrow_length=POLE_LENGTH, oval_width=OVAL_WIDTH * PIXEL,
     antipode_width=ANTIPODE_WIDTH * PIXEL, geodesic_width=GEODESIC_WIDTH * PIXEL, circle_width=CIRCLE_WIDTH * PIXEL,
-    polhode_width=POLHODE_WIDTH * PIXEL, shaft_width=SHAFT_WIDTH * PIXEL, tip_radius=TIP_RADIUS * PIXEL,
+    polhode_width=POLHODE_WIDTH * PIXEL, shaft_width=SHAFT_WIDTH * PIXEL, chevron_length=CHEVRON_LENGTH * PIXEL,
+    chevron_turn=chevron_turn,
     rim_width=RIM_WIDTH * PIXEL, dot_radius=DOT_RADIUS * PIXEL,
 )
 

@@ -36,9 +36,9 @@ offset, behind, slip_length = 0.15, 0.45, 0.9
 # the larger side.
 elevation, azimuth = np.radians([24.0, -60.0 + 90.0])
 margin = 0.12
-# The width of the rim, and the radii of the slip arrows' shafts and of the balls at their tips, in pixels; the
-# samples around the beachball's rim.
-rim_width, shaft_radius, tip_radius = 2.2, 2.0, 5.0
+# The width of the rim, and the slip arrows' width with the length of the strokes of the chevrons at their tips, in
+# pixels; the samples around the beachball's rim.
+rim_width, arrow_width, chevron_length = 2.2, 4.0, 16.0
 n_rim = 200
 # Space is drawn east, north and up: the half turn about the level line halfway between north and east swaps the two
 # and turns down up.
@@ -172,12 +172,13 @@ def draw_fault(directions: core.Point, push: core.Scalar, normal: core.Point, sl
                      rim_width, 1.0)
     fault = solids.layer([], view, [rim], translucent=[(disc, np.array(to_rgb(FAULT)), patch_opacity)],
                          meshes=[(lobe_samples, 1.0)])
-    # Each slip arrow a rod with a ball at its tip.
+    # Each slip arrow a tube ending in a chevron.
     starts, ends = (solids.origin + solids.context.include_from_algebra(points) for points in slip_arrows(normal, slip))
-    shafts = solids.rods(starts, ends, shaft_radius * view.pixel)            # [sides, 3] Plane+ <- Point-
-    tips = solids.ball(ends, tip_radius * view.pixel)[:, None]                # [sides, 1] Plane+ <- Point-
-    arrow_colour, arrow_depth = solids.layer([(shafts, np.array(to_rgb(SLIP))), (tips, np.array(to_rgb(SLIP)))], view,
-                                             inks=[], translucent=[], meshes=[])
+    n_sides = starts.shape[0]
+    arrows = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_sides),
+                             np.array(to_rgb(SLIP)), arrow_width, view, gloss=solids.gloss, chevrons=np.ones(n_sides),
+                             chevron=chevron_length)
+    arrow_colour, arrow_depth = solids.layer([], view, inks=[], translucent=[], meshes=[(arrows, 1.0)])
     # The slip arrows lie inside the lobes, which meet the fault at the source: drawn over the fault and its lobes,
     # in front.
     return compose([(arrow_colour, np.full_like(arrow_depth, -np.inf), 1.0), (*fault, 1.0)], np.ones(3))

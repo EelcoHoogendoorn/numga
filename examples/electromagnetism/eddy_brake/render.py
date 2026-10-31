@@ -37,8 +37,9 @@ field_arc_start, field_arc_span = np.radians(-60.0), np.radians(240.0)
 n_field_arc = 24
 n_magnet_rim = 64
 magnet_colour = np.array([0x33, 0x41, 0x55]) / 255
-# The magnet's strokes' width, its rim's dashes and the radius of the dot at its arc's end, in pixels.
-magnet_width, magnet_dashes, magnet_tip = 1.0, (4.0, 4.0), 2.5
+# The magnet's strokes' width, its rim's dashes and the length of the strokes of the chevron at its arc's end, in
+# pixels.
+magnet_width, magnet_dashes, magnet_chevron = 1.0, (4.0, 4.0), 6.0
 # The fluorescent rim knob showing the material's rotation: its colour and its white ring's, and their radii in pixels.
 knob_colour, knob_ring_colour = np.array([1.0, 0.0, 0.784]), np.ones(3)
 knob_radius, knob_ring_radius = 6.5, 8.4
@@ -66,7 +67,7 @@ def scalars(values: core.Scalar) -> np.ndarray:
 
 def magnet(centre: core.Point, width: float, field: core.Bivector, camera: Camera) -> list[np.ndarray]:
     """The magnet's field, a plane of space, as a patch in that plane: its width dashed, and an arc around it ending
-    in a dot for the sense the field turns in, read by pairing the field with the patch of the disc's plane."""
+    in a chevron for the sense the field turns in, read by pairing the field with the patch of the disc's plane."""
     # The dashed rim: a point along x at the magnet's width, turned once around its centre.
     around = (core.mv.xy * (-np.linspace(0, 2 * np.pi, n_magnet_rim + 1) / 2)).exp()   # [rim] Rotor+
     outline = centre + (around >> (core.mv.x.dual() * width))                          # [rim] Point-
@@ -78,8 +79,8 @@ def magnet(centre: core.Point, width: float, field: core.Bivector, camera: Camer
     arc = centre + (turns >> (core.mv.x.dual() * (field_arc_reach * width)))  # [arc] Point-
     return [simplices.strokes(outline, Mesh.chains([n_magnet_rim + 1]), magnet_colour, magnet_width, camera,
                               dashes=magnet_dashes, cap=simplices.Cap.BUTT),
-            simplices.strokes(arc, Mesh.chains([n_field_arc]), magnet_colour, magnet_width, camera),
-            simplices.markers(arc[-1:], magnet_colour, magnet_tip, camera)]
+            simplices.strokes(arc, Mesh.chains([n_field_arc]), magnet_colour, magnet_width, camera,
+                              chevrons=np.arange(n_field_arc - 1) == n_field_arc - 2, chevron=magnet_chevron)]
 
 
 def parallel_fibres(radius: float, curves: int, samples: int) -> core.Point:

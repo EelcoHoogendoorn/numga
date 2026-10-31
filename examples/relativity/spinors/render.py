@@ -27,8 +27,9 @@ N_RIM_SAMPLES = 120
 # rims.
 PORT_PLACES, PORT_RADIUS, RIM_RADIUS = (-0.7, 0.7), 0.45, 0.47
 PORT_FACE, PORT_RIM = "0.94", "0.7"
-# The spin's arrow and the currents', bold, in pixels: their widths and the radius of the dots at their tips.
-SPIN_WIDTH, CURRENT_WIDTH, TIP = 3.0, 2 * charts.LINE_PX, 5.0
+# The spin's arrow and the currents', bold, in pixels: their widths, and the length of the strokes of the chevrons at
+# their tips, in widths of the arrow.
+SPIN_WIDTH, CURRENT_WIDTH, CHEVRON_LENGTH = 3.0, 2 * charts.LINE_PX, 4.0
 
 
 # --- plumbing -----------------------------------------------------------------------
@@ -99,8 +100,7 @@ def animate_rotation(
             arrow = stack((0 * direction, direction))                         # [2] Antivector-
             shown.set_data(simplices.composited(beneath + [
                 simplices.strokes(arrow, simplices.Mesh.chains([2]), ink(INK), SPIN_WIDTH, camera,
-                                  cap=simplices.Cap.BUTT),
-                simplices.markers(direction[None], ink(INK), TIP, camera)]))
+                                  chevrons=np.ones(1), chevron=CHEVRON_LENGTH * SPIN_WIDTH, cap=simplices.Cap.BUTT)]))
             lit.set_data(simplices.composited(faces + [
                 simplices.markers(centres[port][None], ink(PORT_COLOUR), PORT_RADIUS / lamps.pixel, lamps,
                                   opacity=intensity) for port, intensity in enumerate(intensities)]))
@@ -127,7 +127,7 @@ def draw_chirality(
     along, rise = units(camera)
     # The light cone's upper half: the null directions either way along z, from the origin.
     cone = stack((extent * (rise - along), 0 * rise, extent * (rise + along)))   # [3] Antivector-
-    # The currents bold, twice a curve's width, each from the origin, a dot at its tip.
+    # The currents bold, twice a curve's width, each from the origin, ending in a chevron.
     arrows = stack((0 * tips, tips), axis=-1).reshape(-1)                      # [currents * 2] Antivector-
     colours = np.stack([ink(colour) for colour in (LEFT_COLOUR, RIGHT_COLOUR, INK)])
     simplices.overlay(ax, [
@@ -135,8 +135,7 @@ def draw_chirality(
         lines,
         simplices.strokes(cone, simplices.Mesh.chains([3]), ink(RIM_COLOUR), charts.FRAME_PX, camera),
         simplices.strokes(arrows, simplices.Mesh.chains([2] * 3), colours, CURRENT_WIDTH, camera,
-                          cap=simplices.Cap.BUTT),
-        simplices.markers(tips, colours, TIP, camera)])
+                          chevrons=np.ones(3), chevron=CHEVRON_LENGTH * CURRENT_WIDTH, cap=simplices.Cap.BUTT)])
     return figure
 
 

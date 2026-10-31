@@ -17,11 +17,12 @@ reference_colour, grid_colour, boundary_colour, fill_colour, dot_colour = (
     np.array(to_rgb(colour)) for colour in ("#cbd2d8", "#3885a0", "#cc793e", "#fff1df", "#3b4146"))
 basis_colours = np.array([to_rgb("#168b82"), to_rgb("#8050ad")])
 # The figure's size in inches, at a hundred pixels an inch; the widths of its lines, the dashes and gaps of the
-# reference square's outline, and the radii of the dots at the arrows' tips and at the origin, in pixels.
+# reference square's outline, the length of the strokes of the chevrons at the arrows' tips, and the radius of the dot
+# at the origin, in pixels.
 figure_size = (3.2, 2.2)
 grid_width, reference_width, boundary_width, arrow_width = 1.0, 1.4, 2.0, 2.5
 reference_dashes = (4.0, 4.0)
-tip_radius, dot_radius = 5.5, 2.2
+arrow_chevron, dot_radius = 10.0, 2.2
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -63,7 +64,7 @@ def draw_shear(
     n_lines = np.prod(grid.shape[:-1])
     lines = simplices.Mesh.chains([grid.shape[-1]] * n_lines)
     square = simplices.Mesh(len(boundary), np.array([[0, 1, 2], [0, 2, 3]]))
-    # Each basis vector's image an arrow from the origin: a stroke, and a dot at its tip.
+    # Each basis vector's image an arrow from the origin: a stroke ending in a chevron.
     arrow_ends = stack((origin.broadcast_to(arrows.shape), arrows), axis=-1).reshape(-1)   # [arrows * ends] Vector+
     simplices.overlay(ax, [
         contours.picture(boundary, square, np.zeros(len(boundary)), fill_colour, camera),
@@ -73,7 +74,6 @@ def draw_shear(
         simplices.strokes(grid.reshape(-1), lines, grid_colour, grid_width, camera),
         simplices.strokes(boundary, loop(len(boundary)), boundary_colour, boundary_width, camera),
         simplices.strokes(arrow_ends, simplices.Mesh.chains([2] * len(arrows)), basis_colours, arrow_width,
-                          camera),
-        simplices.markers(arrows, basis_colours, tip_radius, camera),
+                          camera, chevrons=np.ones(len(arrows)), chevron=arrow_chevron),
         simplices.markers(origin[None], dot_colour, dot_radius, camera)])
     return figure

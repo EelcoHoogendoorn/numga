@@ -33,10 +33,12 @@ LABEL_COLOUR, START_COLOUR = "0.35", np.full(3, 0.1)
 # about the centre, and the pixels across it, until the view is fitted to its axes.
 ELEVATION, AZIMUTH = np.radians(18.0), np.radians(-55.0 + 90.0)
 REACH, N_PIXELS = 1.3, 300
-# The widths of the great circles, the paths and the arrows' shafts, the radius of the balls at the arrows' tips,
-# and the radii of the dots, the largest landing dot and the start, in radii of the sphere.
-CIRCLE_WIDTH, PATH_WIDTH, ARROW_WIDTH, TIP_RADIUS = 0.00891, 0.026, 0.0223, 0.0334
+# The widths of the great circles, the paths and the arrows, and the radii of the dots, the largest landing dot and
+# the start, in radii of the sphere; the length of the strokes of the chevron at an arrow's tip, in widths of the
+# arrow.
+CIRCLE_WIDTH, PATH_WIDTH, ARROW_WIDTH = 0.00891, 0.026, 0.0223
 DOT_RADIUS, LANDING_RADIUS, START_RADIUS = 0.0186, 0.0334, 0.026
+CHEVRON_LENGTH = 4.0
 
 
 class Reading(NamedTuple):
@@ -115,11 +117,11 @@ def on_sphere(parts: list[tuple[solids.Quadric, np.ndarray]], view: solids.View,
     return sphere_scene(view, len(parts)).draw(parts, inks=[], translucent=[], meshes=lines)
 
 
-def arrow(tip: solids.Point, colour: str) -> list[tuple[solids.Quadric, np.ndarray]]:
-    """An arrow from the centre to a tip, in a colour: a rod, and a ball at its tip."""
-    shaft = solids.rods(solids.origin, tip, ARROW_WIDTH / 2)                   # [3] Plane+ <- Point-
-    head = solids.ball(tip, TIP_RADIUS)                                        # [] Plane+ <- Point-
-    return [(shaft[None], np.array(to_rgb(colour))), (head[None, None], np.array(to_rgb(colour)))]
+def arrow(tip: solids.Point, colour: str, view: solids.View) -> meshes.Samples:
+    """An arrow from the centre to a tip, in a colour: a tube ending in a chevron, at every sample of the view."""
+    width = ARROW_WIDTH / view.pixel
+    return simplices.tubes(stack((solids.origin, tip)), simplices.Mesh.chains([2]), np.array(to_rgb(colour)), width,
+                           view, gloss=solids.gloss, chevrons=np.ones(1), chevron=CHEVRON_LENGTH * width)
 
 
 def dots(centres: solids.Point, radii: np.ndarray) -> solids.Quadric:
@@ -134,7 +136,7 @@ def draw_pair(tips: list[tuple[solids.Point, str]]) -> plt.Figure:
     for column, (tip, colour) in enumerate(tips):
         ax = figure.add_axes((column / 2, 0.0, 0.5, 1.0))
         view = ball(ax)
-        show(ax, on_sphere(arrow(tip, colour), view), view)
+        show(ax, on_sphere([], view, [(arrow(tip, colour, view), 1.0)]), view)
     return figure
 
 

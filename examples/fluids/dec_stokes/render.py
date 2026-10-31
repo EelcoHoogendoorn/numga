@@ -31,12 +31,12 @@ axes = stack((mv.x, mv.y))                                                   # [
 # way of their middles, in lengths of the primal edge.
 target_shares = np.array([0.65, 0.5])
 arrow_reach = 0.35
-# Widths and radii in pixels: the walls and the mesh's edges; the complex's primal and dual edges, cells, vertices,
-# circumcentres, and arrows with the dots at their tips.
+# Widths, radii and lengths in pixels: the walls and the mesh's edges; the complex's primal and dual edges, cells,
+# vertices, circumcentres, and arrows and the strokes of the chevrons at their tips.
 wall_width, mesh_width = 0.76, 0.35
 primal_width, dual_width, cell_width, vertex_radius = 0.8, 0.83, 1.6, 1.4
 marked_radius, marked_ring = 3.1, 0.76
-arrow_width, arrow_tip = 1.9, 3.0
+arrow_width, arrow_chevron = 1.9, 7.6
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -154,15 +154,14 @@ def draw_complex(mesh: core.Mesh, vertices: core.Point, circumcentres: core.Poin
     edge = mesh.reading(np.array([longest]), 1)                                # Scalar+[1 <- edges]
     primal, dual = edge * edges, edge * dual_edges                             # Point-[1], Point-[1]
     reach = arrow_reach * primal.norm()                                        # Scalar+[1]
-    # The two arrows, the primal's and the dual's, each a stroke either way of its middle with a dot at its tip.
+    # The two arrows, the primal's and the dual's, each a stroke either way of its middle ending in a chevron.
     middles = concatenate(((edge * midpoints).batch(), (edge * (dual_starts + dual_ends) / 2).batch()))   # [2] Point-
     directions = concatenate((primal.batch(), dual.batch()))                   # [2] Point-
     along = reach.batch() * directions / directions.norm()                     # [2] Point-
     tips = middles + along                                                     # [2] Point-
     arrow_colours = np.stack((rgb(primal_colour), rgb(dual_colour)))
-    arrows = [simplices.strokes(stack((middles - along, tips), axis=-1).reshape(-1), core.Mesh.chains([2, 2]),
-                                arrow_colours, arrow_width, camera),
-              simplices.markers(tips, arrow_colours, arrow_tip, camera)]
+    arrows = simplices.strokes(stack((middles - along, tips), axis=-1).reshape(-1), core.Mesh.chains([2, 2]),
+                               arrow_colours, arrow_width, camera, chevrons=np.ones(2), chevron=arrow_chevron)
     simplices.overlay(ax, [
         simplices.strokes(primal_ends, pairs, rgb(primal_colour), primal_width, camera, opacity=0.6),
         simplices.strokes(dual_ends_shown, pairs, rgb(dual_colour), dual_width, camera, opacity=0.75),
@@ -178,7 +177,7 @@ def draw_complex(mesh: core.Mesh, vertices: core.Point, circumcentres: core.Poin
         simplices.markers(stack((centre, star_centres[nearest])), np.ones(3), marked_radius, camera),
         simplices.markers(stack((centre, star_centres[nearest])), np.stack((rgb(primal_colour), rgb(dual_colour))),
                           marked_radius - marked_ring, camera),
-        *arrows])
+        arrows])
     return figure
 
 
