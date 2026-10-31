@@ -95,7 +95,7 @@ def level_curves(ax: plt.Axes, mesh: core.Mesh, vertices: core.Point, potential:
     # An even count of levels at even steps across four fifths of the bound either side of zero, none at zero.
     spacing = 1.6 * bound / (n_contours - 1)
     levels = contours.Lines(spacing, spacing / 2, np.append(to_rgb(contour_colour), 0.7), 1.0)
-    places = solids.origin + solids.context.include_from_algebra(vertices.batch())   # [vertices] Point-
+    places = vertices.batch()                                                   # [vertices] Point-
     colours = np.broadcast_to(to_rgb(domain_colour), (len(values), 3))
     contours.overlay(ax, places, mesh, values, colours, lines=(levels,)).set_zorder(2)
 
@@ -121,8 +121,8 @@ def draw_dirac_grades(mesh: core.Mesh, vertices: core.Point,
 def field_panels(mesh: core.Mesh, vertices: core.Point, fields: core.Point,
                  colours: tuple[str, ...]) -> tuple[plt.Figure, np.ndarray]:
     """Face fields interpolated for drawing on identical panels with one magnitude scale."""
-    directions = solids.context.include_from_algebra(at_vertices(mesh, fields).batch())
-    points = solids.origin + solids.context.include_from_algebra(vertices.batch())
+    directions = at_vertices(mesh, fields).batch()
+    points = vertices.batch()
     reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
     figure, axes = panel_figure()
     for ax, field, colour in zip(axes, directions, colours):

@@ -16,7 +16,7 @@ from numga import stack
 from examples.electromagnetism.lie_advection import core
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import contours, flow, pinned, solids
+from examples.util.wgsl import contours, flow, pinned
 from examples.util.wgsl.camera import flat_panel
 
 primal_colour = "#286580"
@@ -34,8 +34,6 @@ flux_ink = np.append(to_rgb(ink_colour), 0.68)
 # frame, the mesh faint.
 velocity_width = charts.points(1.5 * charts.LINE_PX)
 mesh_alpha = 0.16
-# The observer's slice of space, which carries the disk's events into the renderer's space.
-space_slice = core.mv.t ^ (core.Point & core.time)                              # [] Point- <- Point-
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -113,10 +111,9 @@ def draw_cartan_ribbon(corners: core.Point, corner_forms: core.Plane,
     # The form across the triangle as streaks, their length its strength: its values at the corners, interpolated by
     # the corners' hats as the picture's triangle interpolates them.
     triangle = core.Mesh(3, np.array([[0, 1, 2]]))
-    places = solids.origin + solids.context.include_from_algebra(space_slice(corners))   # [corners] Point-
-    directions = solids.context.include_from_algebra(space_slice(corner_forms.dual()))   # [corners] Point-
+    directions = corner_forms.dual()                                            # [corners] Point-
     strongest = float(directions.dual().norm().max().to_array())
-    flow.overlay(geom_ax, places, triangle, directions, strongest, np.array(to_rgb(primal_colour))).set_zorder(3)
+    flow.overlay(geom_ax, corners, triangle, directions, strongest, np.array(to_rgb(primal_colour))).set_zorder(3)
 
     for index in range(3):
         geom_ax.annotate("", xy=heads_xy[index], xytext=tails_xy[index],

@@ -83,7 +83,6 @@ def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
     """The three corner hat ramps with their constant gradients, and the assembled vertex pyramid."""
     corner_xy = coordinates(corners)
     triangle = meshes.Mesh(3, [[0, 1, 2]])
-    places = solids.origin + solids.context.include_from_algebra(corners)   # [corners] Point-
     # The hats' levels at even steps between nothing and one.
     levels = tuple(contours.Level(level, np.append(primal_rgb, 0.55), 1.0)
                    for level in np.linspace(0.0, 1.0, n_contours + 2)[1:-1])
@@ -103,7 +102,7 @@ def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
         frame_panel(ax, corners, 0.22)
         # The hat of this corner: one there, nothing at the others.
         values = np.eye(3)[index]
-        contours.overlay(ax, places, triangle, values, hat_colours(values)[:, :3], levels=levels).set_zorder(1)
+        contours.overlay(ax, corners, triangle, values, hat_colours(values)[:, :3], levels=levels).set_zorder(1)
         ax.add_patch(Polygon(corner_xy, fill=False, edgecolor=wall_colour, linewidth=1.2, zorder=3))
         opposite = corner_xy[[(index + 1) % 3, (index + 2) % 3]]
         ax.plot(*opposite.T, color=wall_colour, linewidth=2.2, solid_capstyle="round", zorder=4)
@@ -117,7 +116,7 @@ def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
     star_xy = coordinates(star_vertices)
     star_tri = Triangulation(*star_xy.T, triangles=star_mesh.faces)
     hat_values = np.asarray(vertex_hat.batch().to_array())
-    star_places = solids.origin + solids.context.include_from_algebra(star_vertices.batch())   # [vertices] Point-
+    star_places = star_vertices.batch()                                       # [vertices] Point-
     frame_panel(ax, star_vertices, 0.14)
     contours.overlay(ax, star_places, star_mesh, hat_values, hat_colours(hat_values)[:, :3],
                      levels=levels).set_zorder(1)
@@ -141,8 +140,7 @@ def draw_edge_1forms(corners: core.Point, corner_forms: core.Plane,
     """Whitney edge forms as feathered streaks, with each face's corner values kept separate across the seam."""
     corner_xy = coordinates(corners)
     triangle = meshes.Mesh(3, [[0, 1, 2]])
-    positions = solids.origin + solids.context.include_from_algebra(corners)
-    directions = solids.context.include_from_algebra(corner_forms.dual())
+    directions = corner_forms.dual()                                          # [corners] Point-
     reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
     # Each side, from the corner after its own to the one after that, with an arrow about its middle along it.
     side_starts, side_ends = corners[[1, 2, 0]], corners[[2, 0, 1]]           # [corners] Point-, Point-
@@ -157,7 +155,7 @@ def draw_edge_1forms(corners: core.Point, corner_forms: core.Plane,
         ax = axes[index]
         frame_panel(ax, corners, 0.22)
         ax.add_patch(Polygon(corner_xy, facecolor="#f6f4ee", edgecolor=wall_colour, linewidth=1.1, zorder=1))
-        flow.overlay(ax, positions, triangle, directions[index], reference_speed, primal_rgb)
+        flow.overlay(ax, corners, triangle, directions[index], reference_speed, primal_rgb)
         ax.plot(*np.stack([start_xy[index], end_xy[index]]).T, color=accent_colour, linewidth=2.4, zorder=4)
         ax.annotate("", xy=along_tips[index], xytext=along_tails[index],
                     arrowprops=dict(arrowstyle="-|>", mutation_scale=12, color=accent_colour, linewidth=2.0),
@@ -165,14 +163,13 @@ def draw_edge_1forms(corners: core.Point, corner_forms: core.Plane,
         ax.scatter(*corner_xy[index], s=42, color=primal_colour, edgecolor="white", linewidth=0.9, zorder=6)
 
     ax = axes[3]
-    places = coordinates(diamond_vertices)
     frame_panel(ax, diamond_vertices, 0.16)
     for tri_xy in coordinates(diamond.incidence[2, 0] * diamond_vertices).transpose(1, 0, 2):
         ax.add_patch(Polygon(tri_xy, facecolor="#f6f4ee", edgecolor=wall_colour, linewidth=1.1, zorder=1))
     # Separate corners retain the two faces' different normal components along their shared edge.
     diamond_corners = (diamond.incidence[2, 0] * diamond_vertices).batch()
-    positions = solids.origin + solids.context.include_from_algebra(diamond_corners.reshape(-1))
-    directions = solids.context.include_from_algebra(shared_corner_forms.dual().batch().reshape(-1))
+    positions = diamond_corners.reshape(-1)
+    directions = shared_corner_forms.dual().batch().reshape(-1)
     n_faces = len(diamond.faces)
     split_mesh = meshes.Mesh(3 * n_faces, np.arange(3 * n_faces).reshape(3, n_faces).T)
     reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
@@ -302,8 +299,8 @@ def draw_anisotropic_flow(mesh: core.Mesh, vertices: core.Point,
     corners = ~mesh.incidence[2, 0].mean(axis=0)
     vertex_current = (corners * (areas * current)) / (corners * areas)       # [cases] Point-[vertices]
     reference_speed = float(np.percentile(vertex_current.norm().batch().to_array(), 95))
-    points = solids.origin + solids.context.include_from_algebra(vertices.batch())   # [vertices] Point-
-    directions = solids.context.include_from_algebra(vertex_current.batch())        # [cases, vertices] Point-
+    points = vertices.batch()                                                 # [vertices] Point-
+    directions = vertex_current.batch()                                       # [cases, vertices] Point-
 
     # Faint chords of the unit disk along the fibre, across it at even offsets: each reaches the disk's edge the
     # half-chord of its offset either way.

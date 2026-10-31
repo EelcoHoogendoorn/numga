@@ -105,13 +105,11 @@ def draw_planar(points: Extensor, display: core.Mesh, potential: Extensor, curre
     axis.set_aspect("equal")
     axis.set_axis_off()
     figure.tight_layout(pad=0.2)
-    # Finite points of the affine plane are the renderer's points, as weighted as they come, and the current's
-    # directions its directions.
-    places = solids.context.include_from_algebra(points)                     # [samples] Point-
-    directions = solids.context.include_from_algebra(current)                # [samples] Point-
+    # The panel reads the finite points of the affine plane as weighted as they come, divided by their weight, and the
+    # current's directions as directions.
     values = potential.to_array()
-    contours.overlay(axis, places, display, values, plt.get_cmap("viridis")(values)[:, :3]).set_zorder(1)
+    contours.overlay(axis, points, display, values, plt.get_cmap("viridis")(values)[:, :3]).set_zorder(1)
     # The streaks' lengths measured against the strongest current.
     fastest = float(current.dual().norm().max().to_array())
-    flow.overlay(axis, places, display, directions, fastest, np.ones(3))
+    flow.overlay(axis, points, display, current, fastest, np.ones(3))
     return figure

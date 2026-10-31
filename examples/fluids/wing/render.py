@@ -11,7 +11,7 @@ from matplotlib.colors import TwoSlopeNorm, to_rgba
 from numga import Extensor, concatenate, stack
 
 from examples.util.animation import capture
-from examples.util.wgsl import contours, solids
+from examples.util.wgsl import contours
 from examples.fluids.wing import core
 
 window = (-3.2, 3.2, -1.8, 1.8)
@@ -57,7 +57,7 @@ def draw(ax, points: core.Point, velocity: core.Point, stream: core.Bivector, li
     ax.set_aspect("equal")
     # The rings, numbered ring by ring, a grid around the wing.
     mesh = contours.Mesh.grid(*ring_points.shape)
-    places = solids.origin + solids.context.include_from_algebra(ring_points.reshape(-1))   # [rings * (angles + 1)] Point-
+    places = ring_points.reshape(-1)                                         # [rings * (angles + 1)] Point-
     streamlines = contours.Lines(stream_spacing, 0.0, stream_ink, stream_width)
     contours.overlay(ax, places, mesh, stream_values.reshape(-1), colours.reshape(-1, 3), lines=(streamlines,))
     # The panel keeps its frame around the picture.

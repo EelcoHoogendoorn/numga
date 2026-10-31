@@ -53,12 +53,6 @@ def pseudospin_coordinates(pseudospins: core.Pseudospin) -> np.ndarray:
     return (stack((mv.yz, mv.zx, mv.xy)) & pseudospins[..., None]).to_array()
 
 
-def plane_components(fields: core.Field) -> np.ndarray:
-    """The parts of fields in the planes yz, zx and xy: their pairings with those planes' patches."""
-    mv = fields.context.multivector
-    return (fields[..., None] & stack((mv.yz.dual(), mv.zx.dual(), mv.xy.dual()))).to_array()
-
-
 def phase(rotors: core.Rotor, starts: core.Pseudospin) -> np.ndarray:
     """The Berry phase of each holonomy: its rotor's angle, signed by the sense of the turn about the
     pseudospin direction the loop starts from."""
@@ -86,12 +80,14 @@ def draw_field(momenta: core.Wavevector, field: core.Field) -> plt.Figure:
     corner."""
     k = momentum_coordinates(momenta)                                           # [samples, samples, 2]
     mesh = meshes.Mesh.grid(*momenta.shape)
+    mv = momenta.context.multivector
     # The momentum plane drawn as a plane of space: each momentum at the place of its dual.
-    places = solids.origin + solids.context.include_from_algebra(momenta.dual().reshape(-1))   # [samples] Point-
+    places = momenta.dual().reshape(-1)                                         # [samples] Point-
     strength = field.norm().reshape(-1).to_array()                              # [samples]
-    # The field's direction, its parts in the planes yz and zx drawn as a direction in the momentum plane.
-    d = plane_components(field.normalized()).reshape(-1, 3)                    # [samples, 3]
-    directions = solids.mv.direction(d * np.array([1, 1, 0]))                  # [samples] Point-
+    # The field's direction, its parts in the planes yz and zx, pairings with those planes' patches, drawn as a
+    # direction in the momentum plane along x and y.
+    parts = field.normalized().reshape(-1)[:, None] & stack((mv.yz.dual(), mv.zx.dual()))   # [samples, 2] Scalar+
+    directions = (stack((mv.x.dual(), mv.y.dual())) * parts).sum(axis=-1)      # [samples] Point-
     # The zone and its six corners, and room for the cross's names.
     figure, ax = charts.subplots(340, 340, layout="constrained")
     ax.set(xlim=(k[..., 0].min(), k[..., 0].max()), ylim=(k[..., 1].min(), k[..., 1].max()), aspect="equal")
@@ -171,18 +167,22 @@ def draw_textures(pseudospins_at: Callable[[core.Wavevector], core.Pseudospin], 
     # One momentum at the middle of each pixel, rows down from the top.
     across = -extent + (np.arange(side) + 0.5) * 2 * extent / side
     pixels = core.mv.x * across + core.mv.y * across[::-1, None]                      # [rows, columns] Wavevector+
-    spins = pseudospin_coordinates(pseudospins_at(pixels))                          # [valleys, rows, columns, 3]
+    pseudospins = pseudospins_at(pixels)                                        # [valleys, rows, columns] Pseudospin-
+    spins = pseudospin_coordinates(pseudospins)                                     # [valleys, rows, columns, 3]
+    # The pseudospins' parts along x and y, their pairings with the planes yz and zx, drawn as directions in the
+    # momentum plane along x and y.
+    parts = stack((core.mv.yz, core.mv.zx)) & pseudospins[..., None]            # [valleys, rows, columns, 2] Scalar+
+    directions = (stack((core.mv.x.dual(), core.mv.y.dual())) * parts).sum(axis=-1)   # [valleys, rows, columns] Point-
     # The momentum plane drawn as a plane of space, and the pixels as a grid over it.
     mesh = meshes.Mesh.grid(side, side)
-    places = solids.origin + solids.context.include_from_algebra(pixels.dual().reshape(-1))   # [pixels] Point-
-    for ax, spin in zip(panels, spins):
+    places = pixels.dual().reshape(-1)                                              # [pixels] Point-
+    for ax, spin, drawn in zip(panels, spins, directions):
         colours = TEXTURE_MAP((spin[..., 2] + 1) / 2)[..., :3]
         pinned(ax, np.round(colours * 255).astype(np.uint8), (-extent, extent, -extent, extent))
         ax.set(xlim=(-extent, extent), ylim=(-extent, extent))
         # The part in the plane as streaks running downstream, as long as that part: specks where the pseudospin
         # stands along z.
-        directions = solids.mv.direction(spin.reshape(-1, 3) * np.array([1, 1, 0]))   # [pixels] Point-
-        flow.overlay(ax, places, mesh, directions, 1.0, STREAK_COLOUR).set_zorder(2)
+        flow.overlay(ax, places, mesh, drawn.reshape(-1), 1.0, STREAK_COLOUR).set_zorder(2)
         haloed_cross(ax, "momentum x", "momentum y")
     return figure
 

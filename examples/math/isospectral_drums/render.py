@@ -13,7 +13,7 @@ from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 from numga import stack
 from examples.math.isospectral_drums.core import Point, Scalar, ga, mv
 from examples.math.isospectral_drums.numerics import Mesh
-from examples.util.wgsl import Shader, contours, solids
+from examples.util.wgsl import Shader, contours
 
 pixels = 260
 # Displacement one way blue, the other orange, and rest a light neutral; the tiles' outlines.
@@ -192,7 +192,7 @@ def draw_pieces(vertices: Point, mesh: Mesh, pieces: Scalar, exposure: float) ->
     edges = points[mesh.edges[mesh.boundary_edges]]
     centre = (points.min(axis=0) + points.max(axis=0)) / 2
     span = np.ptp(points, axis=0).max() * 1.05
-    places = solids.origin + solids.context.include_from_algebra(vertices.batch())   # [vertices] Point-
+    places = vertices.batch()                                                 # [vertices] Point-
     figure, axes = plt.subplots(1, len(values), figsize=(10, 2.5), facecolor="white")
     figure.subplots_adjust(0, 0, 1, 1, wspace=0.08)
     for ax, field in zip(axes, values):

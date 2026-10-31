@@ -14,7 +14,7 @@ from matplotlib.tri import Triangulation
 from numga import concatenate, stack
 from examples.fluids.dec_stokes import core
 from examples.util.animation import capture
-from examples.util.wgsl import contours, solids
+from examples.util.wgsl import contours
 
 
 primal_colour = "#286580"
@@ -44,13 +44,13 @@ def coordinates(points: core.Point) -> np.ndarray:
     return np.asarray((axes & points.batch()[..., None]).to_array())
 
 
-def face_corners(mesh: core.Mesh, vertices: core.Point) -> tuple[solids.Point, core.Mesh]:
-    """Each face with its own three corners, for a field shaded per face: the corners in the renderer's space, corner
-    after corner of every face, `[corners * faces]`, and the faces among them."""
+def face_corners(mesh: core.Mesh, vertices: core.Point) -> tuple[core.Point, core.Mesh]:
+    """Each face with its own three corners, for a field shaded per face: the corners, corner after corner of every
+    face, `[corners * faces]`, and the faces among them."""
     n_faces = len(mesh.faces)
     corners = (mesh.incidence[2, 0] * vertices).batch().reshape(-1)          # [corners * faces] Point-
     split = core.Mesh(3 * n_faces, np.arange(3 * n_faces).reshape(3, n_faces).T)
-    return solids.origin + solids.context.include_from_algebra(corners), split
+    return corners, split
 
 
 def channel_axes(mesh: core.Mesh, vertices: core.Point, n_rows: int):
@@ -180,7 +180,7 @@ def draw_fields(mesh: core.Mesh, vertices: core.Point, pressure: core.Scalar, vo
     corner_potential = np.asarray((mesh.incidence[2, 0] * streamfunction).batch().to_array()).reshape(-1)
     pressure_colours_at = np.tile(pressure_colours(Normalize(values.min(), values.max())(values))[:, :3], (3, 1))
     contours.overlay(panels[0], face_places, split, corner_potential, pressure_colours_at, levels=paths).set_zorder(1)
-    places = solids.origin + solids.context.include_from_algebra(vertices.batch())   # [vertices] Point-
+    places = vertices.batch()                                                 # [vertices] Point-
     contours.overlay(panels[1], places, mesh, potential, vorticity_colours(Normalize(-extent, extent)(rotation))[:, :3],
                      levels=paths).set_zorder(1)
     return figure

@@ -11,7 +11,7 @@ from matplotlib.tri import Triangulation
 
 from numga import stack
 from examples.util import charts
-from examples.util.wgsl import contours, flow, solids
+from examples.util.wgsl import contours, flow
 from examples.surfaces.regge_calculus import core
 
 primal_colour = "#286580"
@@ -70,7 +70,7 @@ def draw_metric_basis(corners: core.Point, points: core.Point,
     corner_xy = plane_places(corners)
     # The samples triangulated, for the pictures of the forms across them.
     mesh = core.Mesh.triangulate(points)
-    places = solids.origin + solids.context.include_from_algebra(points.batch())   # [samples] Point-
+    places = points.batch()                                                   # [samples] Point-
     centroid = corners.mean()                                                  # [] Point-
     offsets = points - centroid
 
@@ -123,7 +123,7 @@ def draw_curvature_defects(mesh: core.Mesh, vertices: core.Point, centres: core.
     places = plane_places(vertices)
     curvature_values = np.asarray((curvatures.batch() & mv.xy.dual()).to_array())
     triangulation = Triangulation(*places.T, triangles=mesh.faces)
-    points = solids.origin + solids.context.include_from_algebra(vertices.batch())   # [vertices] Point-
+    points = vertices.batch()                                                 # [vertices] Point-
     walls = plane_places(mesh.reading(mesh.boundary_edges, 1) * (mesh.incidence[1, 0] * vertices)).transpose(1, 0, 2)
     boundary = mesh.exterior(0)
     interior = ~np.isin(np.arange(mesh.n_vertices), boundary)
@@ -142,7 +142,7 @@ def draw_curvature_defects(mesh: core.Mesh, vertices: core.Point, centres: core.
     # Each local grid placed at its face's centre, where its ellipses are drawn, its points numbered row by row; and
     # all the grids together, one mesh for the reference circles of them all.
     n_samples = len(ellipse_faces)
-    grid_points = (solids.origin + solids.context.include_from_algebra(sampled_centres[:, None, None] + grid_offsets)
+    grid_points = (sampled_centres[:, None, None] + grid_offsets
                    ).reshape(n_samples, -1)                                   # [samples, grid * grid] Point-
     grid = contours.Mesh.grid(n_ellipse_grid, n_ellipse_grid)
     grids = contours.Mesh(n_samples * grid.n_vertices,
@@ -200,8 +200,8 @@ def draw_intrinsic_flow(mesh: core.Mesh, vertices: core.Point,
     corners = ~mesh.incidence[2, 0].mean(axis=0)
     vertex_current = (corners * (areas * current)) / (corners * areas)       # [cases] Point-[vertices]
     reference_speed = float(np.percentile(vertex_current.norm().batch().to_array(), 95))
-    points = solids.origin + solids.context.include_from_algebra(vertices.batch())   # [vertices] Point-
-    directions = solids.context.include_from_algebra(vertex_current.batch())        # [cases, vertices] Point-
+    points = vertices.batch()                                                 # [vertices] Point-
+    directions = vertex_current.batch()                                       # [cases, vertices] Point-
 
     figure, axes = charts.subplots(*disk_row_size, ncols=3)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.04)

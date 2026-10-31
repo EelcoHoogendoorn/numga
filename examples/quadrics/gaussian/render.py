@@ -11,7 +11,7 @@ from collections.abc import Callable
 
 from examples.quadrics.gaussian.core import Point, Polarity, Scalar, mv
 from examples.util import charts
-from examples.util.wgsl import contours, room, solids
+from examples.util.wgsl import contours, room
 
 # The box the fit is shown over, along x and y, and the figure's width in pixels, for one cloud and one ellipse.
 BOX = np.array([[-5.0, -5.0], [6.0, 4.0]])
@@ -43,7 +43,7 @@ def draw_gaussian(points: Point, density: Callable[[Point], Scalar], ellipsoid: 
     corners = mv.point(np.stack(np.meshgrid(across, down), axis=-1))            # [rows + 1, columns + 1] Point-
     shades = plt.get_cmap("Blues")(np.clip(density(corners).to_array(), 0, 1))[..., :3]
     form = (ellipsoid(corners) & corners).to_array()                            # [rows + 1, columns + 1]
-    places = solids.context.include_from_algebra(corners.reshape(-1))         # [(rows + 1) * (columns + 1)] Point-
+    places = corners.reshape(-1)                                                # [(rows + 1) * (columns + 1)] Point-
     grid = contours.Mesh.grid(*form.shape)
     contours.overlay(ax, places, grid, form.reshape(-1), shades.reshape(-1, 3))
     sample_xy = euclidean(points)
