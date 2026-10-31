@@ -51,9 +51,8 @@ def positions(points: core.Point) -> np.ndarray:
 
 def extent(points: core.Point) -> tuple[float, float, float, float]:
     """The box the grid's cells cover: its samples sit at the cell centres, half a cell inside."""
-    coordinates = positions(points)
-    half_cell = (coordinates[1, 1] - coordinates[0, 0]) / 2
-    low, high = coordinates[0, 0] - half_cell, coordinates[-1, -1] + half_cell
+    half_cell = (points[1, 1] - points[0, 0]) / 2                              # [] Point-
+    low, high = positions(points[0, 0] - half_cell), positions(points[-1, -1] + half_cell)
     return low[0], high[0], low[1], high[1]
 
 

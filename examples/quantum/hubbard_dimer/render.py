@@ -131,10 +131,11 @@ def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitud
     followed by the rest, the singlet block's, from its tip; the path the tip takes over the whole run
     is traced faintly."""
     count, columns = len(rows), len(DIALS)
-    # The dials laid out in one panel, a dial's span apart: a dial of radius one fills most of its square.
+    # The dials laid out in one panel, a dial's span apart: a dial of radius one fills most of its square. The columns
+    # across and the rows up, the first row on top.
     span = 2.2 / 0.95
-    across, up = np.meshgrid((np.arange(columns) + 0.5) * span, (count - np.arange(count) - 0.5) * span)
-    centres = mv.point(np.stack((across, up), axis=-1))                        # [cases, dials] Point-
+    across, up = (np.arange(columns) + 0.5) * span, (count - np.arange(count) - 0.5) * span   # [dials], [cases]
+    centres = planar.origin + mv.x.dual() * across + mv.y.dual() * up[:, None]  # [cases, dials] Point-
     # Each configuration's amplitude as a move on its dial, its cosine part across and its sine part up: numbers of
     # the chart, read out of the dimer's algebra.
     readings = stack((cosine_amplitudes, sine_amplitudes), axis=-1).to_array()   # [cases, times, configurations, 2]
@@ -167,10 +168,10 @@ def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitud
         shafts_shown.set_animated(True)
         tips_shown.set_animated(True)
         # Each case's name left of its row, each configuration's under its column.
-        for height_at, row_label in zip(up[:, 0], rows):
+        for height_at, row_label in zip(up, rows):
             ax.annotate(row_label, (0, height_at), xytext=(-4, 0), textcoords="offset points", rotation=90,
                         ha="right", va="center", multialignment="center")
-        for across_at, label in zip(across[-1], np.array(CONFIGURATION_LABELS)[list(DIALS)]):
+        for across_at, label in zip(across, np.array(CONFIGURATION_LABELS)[list(DIALS)]):
             ax.annotate(label, (across_at, 0), xytext=(0, -6), textcoords="offset points", ha="center", va="top")
         # The labels are drawn once; each frame draws only the dials over them, the arrows on their faces.
         figure.canvas.draw()

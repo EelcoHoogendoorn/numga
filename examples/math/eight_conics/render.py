@@ -43,18 +43,20 @@ def framing(shapes: core.Quadric) -> np.ndarray:
     """A square view around every curve where a batch of quadrics vanishes, with a margin `[2, 2]`: the curves found on
     a grid as its samples whose form's sign differs from a neighbour's."""
     samples = np.linspace(-half_width, half_width, n_samples)
-    places = np.stack(np.meshgrid(samples, samples), axis=-1)                 # [samples, samples, 2]
-    grid = core.mv.point(places)                                               # [samples, samples] Point-
-    crossing = np.zeros(places.shape[:2], dtype=bool)
+    grid = core.mv.point(np.stack(np.meshgrid(samples, samples), axis=-1))     # [samples, samples] Point-
+    crossing = np.zeros(grid.shape, dtype=bool)
     # One quadric at a time: every frame's quadrics on the grid at once would hold gigabytes.
     for shape in shapes:
         inside = (shape(grid) & grid) > 0
         crossing[:-1] |= inside[:-1] != inside[1:]
         crossing[:, :-1] |= inside[:, :-1] != inside[:, 1:]
-    points = places[crossing]
-    centre = (points.min(axis=0) + points.max(axis=0)) / 2
-    half = (points.max(axis=0) - points.min(axis=0)).max() / 2 * (1 + margin)
-    return np.stack([centre - half, centre + half])
+    # The samples on the curves, read by the planes x and y over their weights.
+    on_curves = grid[crossing]                                                 # [crossings] Point-
+    readings = (stack((core.mv.x, core.mv.y))[:, None] & on_curves) / (core.mv.w & on_curves)   # [2, crossings] Scalar+
+    low, high = readings.min(axis=-1), readings.max(axis=-1)                   # [2] Scalar+, [2] Scalar+
+    centre = (low + high) / 2                                                  # [2] Scalar+
+    half = (high - low).max() / 2 * (1 + margin)                               # [] Scalar+
+    return stack((centre - half, centre + half)).to_array()
 
 
 def plane_strokes(contacts: core.Point, reach: float) -> core.Point:

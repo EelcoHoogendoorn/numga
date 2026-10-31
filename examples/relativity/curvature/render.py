@@ -24,6 +24,7 @@ from examples.relativity.curvature import core
 from examples.relativity.curvature.core import Antivector, Curvature, Scalar, mv
 from examples.util.wgsl import labels, show, simplices, solids
 from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl.meshes import Samples
 
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
 light_colour = "#c3ccd4"
@@ -49,22 +50,23 @@ BLUE_RGB, ORANGE_RGB, LIGHT, PATCH = (np.array(to_rgb(colour)) for colour in (BL
 # How much each of a patch's two faces hides.
 PATCH_OPACITY = 0.15
 # The axes' arrows and their names, in extents of the diagram; widths in pixels, of the axes' arrows and of the
-# patches' outlines, and an arrowhead's length and width in widths of its shaft.
+# patches' outlines; and the length of the strokes of the chevron at an arrow's tip, in widths of the arrow, in the
+# diagrams, on the rings and between the diagrams alike.
 AXIS_LENGTH, LABEL_DISTANCE = 0.88, 0.97
 AXIS_WIDTH, OUTLINE_WIDTH = 1.5, 1.8
-HEAD_LENGTH, HEAD_WIDTH = 4.5, 3.0
+CHEVRON = 4.0
 # The colour of the names of the lines of the faint cross through a ring's centre, and of the cross.
 CROSS_LABEL_COLOUR = "#7b8794"
 CROSS = np.array(to_rgb("#edf0f3"))
 # The ring at rest, its samples and its dots, a dash and a gap in pixels; the accelerations' arrows: the largest's
-# length in radii of the ring, their width and their heads' length in pixels.
+# length in radii of the ring, and their width in pixels.
 n_rest_samples = 200
 REST_DOTS = (1.5, 2.5)
-ARROW_REACH, ARROW_WIDTH, ARROW_HEAD = 0.31, 2.0, 8.0
+ARROW_REACH, ARROW_WIDTH = 0.31, 2.0
 # The page the map's arrow between the two diagrams is drawn on, in the figure's pixels, its points antivectors; the
-# arrow's width and its head's length in pixels.
+# arrow's width in pixels.
 page = NumpyContext(VGA2D).multivector
-MAP_ARROW_WIDTH, MAP_ARROW_HEAD = 1.5, 8.0
+MAP_ARROW_WIDTH = 1.5
 
 
 # --- coordinate readout ---------------------------------------------------------------
@@ -93,12 +95,13 @@ def patch(first: Antivector, second: Antivector) -> Antivector:
             + second * (0.6 * np.array([-1, -1, 1, 1])))                           # [corners] Antivector-
 
 
-def arrows(ends: solids.Point, colour: np.ndarray, width: float, view: solids.View) -> list[tuple[solids.Quadric, np.ndarray]]:
-    """Arrows from the origin to the diagram's points `[arrows]`, drawn with t up, `width` pixels across: their
-    shafts and heads, in one colour."""
-    shafts, heads = solids.arrows(solids.origin.broadcast_to(ends.shape), ends, width / 2 * view.pixel,
-                                  HEAD_LENGTH * width * view.pixel, HEAD_WIDTH * width / 2 * view.pixel)
-    return [(shafts, colour), (heads, colour)]
+def arrows(ends: solids.Point, colour: np.ndarray, width: float, view: solids.View) -> tuple[Samples, float]:
+    """Arrows from the origin to the diagram's points `[arrows]`, drawn with t up, tubes `width` pixels across, each
+    ending in a chevron, in one colour: a mesh for `solids.draw` to compose among the solids, and its opacity."""
+    n_arrows = ends.shape[0]
+    shafts = stack((solids.origin.broadcast_to(ends.shape), ends), axis=-1).reshape(-1)   # [arrows * 2] Point-
+    return (simplices.tubes(shafts, simplices.Mesh.chains([2] * n_arrows), colour, width, view, gloss=solids.gloss,
+                            chevrons=np.ones(n_arrows), chevron=CHEVRON * width), 1.0)
 
 
 def panel(ax: plt.Axes, corners: Antivector, ends: list[tuple[Antivector, np.ndarray, float]], extent: float,
@@ -108,11 +111,11 @@ def panel(ax: plt.Axes, corners: Antivector, ends: list[tuple[Antivector, np.nda
     corners, and arrows to directions `[arrows]` each with its colour and width in pixels."""
     places = diagram_points(corners)                                           # [corners] Point-
     rims, joints = solids.edges(places, places[np.roll(np.arange(4), -1)], OUTLINE_WIDTH / 2 * view.pixel)
-    parts = (arrows(solids.origin + solids.axes.dual() * (extent * AXIS_LENGTH), LIGHT, AXIS_WIDTH, view)
-             + [(rims, PATCH), (joints, PATCH)]
-             + [part for tips, colour, width in ends for part in arrows(diagram_points(tips), colour, width, view)])
+    shown = ([arrows(solids.origin + solids.axes.dual() * (extent * AXIS_LENGTH), LIGHT, AXIS_WIDTH, view)]
+             + [arrows(diagram_points(tips), colour, width, view) for tips, colour, width in ends])
     area = [(solids.plates(places[None], view.pixel), PATCH, PATCH_OPACITY)]
-    show(ax, solids.draw(parts, view, np.ones(3), inks=[], translucent=area, meshes=[]), view)
+    show(ax, solids.draw([(rims, PATCH), (joints, PATCH)], view, np.ones(3), inks=[], translucent=area, meshes=shown),
+         view)
     labels(ax, view, solids.origin + solids.axes.dual() * (extent * LABEL_DISTANCE), ["x", "z", "ct"], ha="center",
            va="center", fontsize=12, color=INK)
 
@@ -151,8 +154,8 @@ def draw_curvature_map(
     ends = (page.x.dual() * (width * np.array([PANEL_WIDTH - 0.01, 1 - PANEL_WIDTH + 0.01]))
             + page.y.dual() * (height / 2))                                    # [2] Antivector-
     simplices.overlay(across, [simplices.strokes(ends, simplices.Mesh.chains([2]), np.array(to_rgb(INK)),
-                                                 MAP_ARROW_WIDTH, flat_panel(across, VGA2D),
-                                                 heads=np.ones(1), head=MAP_ARROW_HEAD, cap=simplices.Cap.BUTT)])
+                                                 MAP_ARROW_WIDTH, flat_panel(across, VGA2D), chevrons=np.ones(1),
+                                                 chevron=CHEVRON * MAP_ARROW_WIDTH, cap=simplices.Cap.BUTT)])
     return fig
 
 
@@ -284,8 +287,8 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
             simplices.markers(positions, np.ones(3), charts.MARKER_PX / 2 + charts.FRAME_PX, camera),
             simplices.markers(positions, BLUE_RGB, charts.MARKER_PX / 2, camera),
             simplices.strokes(arrows.reshape(-1), simplices.Mesh.chains([2] * len(arrows_at)), BLUE_RGB,
-                              ARROW_WIDTH, camera, heads=np.ones(len(arrows_at)), head=ARROW_HEAD, opacity=0.85,
-                              cap=simplices.Cap.BUTT),
+                              ARROW_WIDTH, camera, chevrons=np.ones(len(arrows_at)), chevron=CHEVRON * ARROW_WIDTH,
+                              opacity=0.85, cap=simplices.Cap.BUTT),
             simplices.markers(positions[selected], np.ones(3), TRACKED_SCALE * charts.MARKER_PX / 2 + charts.FRAME_PX,
                               camera),
             simplices.markers(positions[selected], trail_colours, TRACKED_SCALE * charts.MARKER_PX / 2, camera),

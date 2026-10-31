@@ -40,11 +40,11 @@ EXPERIMENT, PREDICTIONS = (charts.DESIGN_WIDTH, 250), (300, 300)
 # Gallery picture: this makes plots/tomography.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
 GALLERY_PANEL = (240, 285)
 # The grid lines drawn, every few of the sampled latitudes and longitudes; the widths of the sphere's grid lines and
-# an image's, the edges and the axes' shafts, the arrowheads' length and width, and the radii of the probes alone,
+# an image's, the edges and the axes' shafts, and the radii of the balls at the axes' tips and of the probes alone,
 # after a channel and as prepared, in radii of the ball; how far the axes reach and where they are named.
 LATITUDE_STEP, LONGITUDE_STEP = 2, 3
 GRID_WIDTH, IMAGE_WIDTH, EDGE_WIDTH, AXIS_WIDTH = 0.00829, 0.0141, 0.0166, 0.00994
-HEAD_LENGTH, HEAD_WIDTH = 0.0746, 0.0414
+TIP_RADIUS = 0.0207
 PROBE_RADIUS, AFTER_RADIUS, PREPARED_RADIUS = 0.0497, 0.029, 0.0456
 AXIS_LENGTH, LABEL_DISTANCE = 1.3, 1.4
 
@@ -82,9 +82,10 @@ def channel_view(sphere: solids.Point, axes) -> solids.View:
 
 
 def bloch_axes() -> list[tuple[solids.Quadric, np.ndarray]]:
-    """The frame of the x, y and z axes."""
-    shafts, heads = solids.frame(AXIS_LENGTH, AXIS_WIDTH / 2, HEAD_LENGTH, HEAD_WIDTH / 2)
-    return [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR)]
+    """The frame of the x, y and z axes: rods from the centre, each with a ball at its tip."""
+    tips = solids.origin + solids.axes.dual() * AXIS_LENGTH                    # [3] Point-
+    return [(solids.rods(solids.origin, tips, AXIS_WIDTH / 2), AXIS_COLOUR),
+            (solids.ball(tips, TIP_RADIUS)[:, None], AXIS_COLOUR)]
 
 
 def show_ball(axes, image: np.ndarray, view: solids.View):

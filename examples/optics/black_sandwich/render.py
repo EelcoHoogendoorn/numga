@@ -65,25 +65,27 @@ class Diagram:
         # Each polarizer's axis drawn either way across its middle, its glyph placed on the polarizer.
         polarizer_axes = stack((input_axis, output_axis, input_axis, output_axis))          # [polarizers] Direction-
         polarizers = _across(self.components[[0, 2, 3, 5]], polarizer_axes * (0.8 * component_radius))
-        # The components' discs, in the background's colour, with their outlines; the fields' circles open.
+        # The components' discs, in the background's colour within their outlines, and the fields' circles alike:
+        # each a dot over a larger dot.
         radius, field_ring = component_radius / self.camera.pixel, field_radius / self.camera.pixel
         self.under = [simplices.strokes(self.boundaries, simplices.Mesh.chains([len(self.boundaries)]), faint_colour,
                                         axis_width * self.points, self.camera, cap=simplices.Cap.BUTT)]
         self.over = [
-            simplices.markers(self.components, to_rgb(background_colour), radius, self.camera),
-            simplices.markers(self.components, outline_colour, radius, self.camera,
-                              inner=radius - outline_width * self.points),
+            simplices.markers(self.components, outline_colour, radius, self.camera),
+            simplices.markers(self.components, to_rgb(background_colour), radius - outline_width * self.points,
+                              self.camera),
             simplices.strokes(*polarizers, polarizer_colour, glyph_width * self.points, self.camera),
-            simplices.markers(self.field_places, faint_colour, field_ring, self.field_camera,
-                              inner=field_ring - circle_width * self.points)]
+            simplices.markers(self.field_places, faint_colour, field_ring, self.field_camera),
+            simplices.markers(self.field_places, to_rgb(background_colour), field_ring - circle_width * self.points,
+                              self.field_camera)]
         self.image = simplices.overlay(ax, self.under + self.over)
 
     def picture(self, fields: core.Field, plate_axis: core.Direction) -> np.ndarray:
         """The diagram with the fields between components `[stages]` and the plates' axis."""
         # The beam's strength between components, from the field's square size there, its readings by the planes the
         # transverse directions sweep in time: each stretch of the beam as strong.
-        readings = (fields[..., None] & self.swept_planes).to_array()        # [stages, 2]
-        strengths = np.clip(np.sum(readings * readings, axis=-1), 0, 1)
+        readings = fields[..., None] & self.swept_planes                      # [stages, 2] Scalar+
+        strengths = np.clip((readings * readings).sum(axis=-1).to_array(), 0, 1)
         beam = [simplices.strokes(self.boundaries[stage:stage + 2], simplices.Mesh.chains([2]), beam_colour,
                                   beam_width * self.points, self.camera, cap=simplices.Cap.BUTT, opacity=strength)
                 for stage, strength in enumerate(strengths)]

@@ -26,11 +26,11 @@ electrode_colours = LinearSegmentedColormap.from_list(
     "piezoelectric_voltage", (compression_colour, "#8b969b", extension_colour))
 # The clamp's face and edge colours, its edge's width, and how many hatches cross it.
 clamp_face, clamp_edge, clamp_width, n_hatches = "#edf0f0", "#a0aaaf", 1.1, 4
-# Widths, dashes, heads and radii in pixels: the device's rest outline, its interface and tip, its electrodes and its
-# poling arrows; the mesh's edges, electrodes, interface and clamped nodes.
+# Widths, dashes and radii in pixels: the device's rest outline, its interface and tip, its electrodes and its
+# poling arrows, with the dots at their tips; the mesh's edges, electrodes, interface and clamped nodes.
 rest_width, rest_dashes = 1.25, (5.5, 5.5)
 bond_width, end_width, electrode_width = 1.25, 1.4, 2.1
-poling_width, poling_head, poling_opacity = 1.0, 4.0, 0.75
+poling_width, poling_tip, poling_opacity = 1.0, 2.2, 0.75
 mesh_width, mesh_electrode_width, mesh_interface_width, clamped_radius = 0.8, 3.5, 1.7, 1.5
 
 
@@ -40,10 +40,11 @@ def rgb(colour: str) -> np.ndarray:
     return np.array(to_rgb(colour))
 
 
-def coordinates(points: core.Point) -> np.ndarray:
-    """Positions read by the slices across x and y, with the drawing coordinates last."""
+def bounds(points: core.Point) -> tuple[core.Scalar, core.Scalar]:
+    """The lowest and the highest readings of points across x and y, `[2] Scalar+` each: the box about them."""
     mv = points.context.multivector
-    return np.asarray((stack((mv.x, mv.y)) & points.batch()[..., None]).to_array())
+    readings = stack((mv.x, mv.y))[:, None] & points.batch()                   # [2, points] Scalar+
+    return readings.min(axis=-1), readings.max(axis=-1)
 
 
 def scalars(values: core.Scalar) -> np.ndarray:
@@ -78,21 +79,19 @@ class DeviceView:
     def __init__(self, mesh: core.Strip, vertices: core.Point, areas: core.Scalar, displacement_scale: float,
                  voltage_scale: float, strain_scale: float) -> None:
         self.mesh, self.vertices = mesh, vertices
-        rest = coordinates(vertices)
+        low, high = bounds(vertices)                                            # [2] Scalar+, [2] Scalar+
         self.displacement_scale = displacement_scale
         self.voltage_norm = Normalize(-voltage_scale / 2, voltage_scale / 2)
         self.strain_norm = Normalize(-strain_scale, strain_scale)
         # Each face's area shared among its corners, for area-weighted readings of face values at the vertices.
         self.corner_shares = ~mesh.incidence[2, 0].mean(axis=0)                 # Scalar+[vertices <- faces]
         self.areas, self.vertex_areas = areas, self.corner_shares * areas
-        left, lower = rest.min(axis=0)
-        right, upper = rest.max(axis=0)
-        length, self.thickness = right - left, upper - lower
-        middle = (upper + lower) / 2
+        length, self.thickness = high - low                                     # [] Scalar+, [] Scalar+
+        middle = (low[1] + high[1]) / 2                                         # [] Scalar+
 
         # The strip's electrodes and interface run in order along it, and its tip from the bottom up.
         self.poles = np.linspace(0, len(mesh.top) - 1, 9, dtype=int)[1:-1]
-        # Each poling arrow a chain of two points, its tail and its head.
+        # Each poling arrow a chain of two points, its tail and its tip, with a dot at its tip.
         self.arrows = Mesh.chains([2] * (2 * len(self.poles)))
         # The electrodes, top and bottom, as chains; each edge coloured by its electrode.
         self.electrodes = Mesh.chains([len(mesh.top), len(mesh.bottom)])
@@ -100,9 +99,10 @@ class DeviceView:
 
         self.figure, ax = plt.subplots(figsize=(5.25, 1.4), dpi=100)
         self.figure.subplots_adjust(0.015, 0.025, 0.995, 0.975)
-        half_height = max(3.3 * self.thickness, 0.11 * length)
-        ax.set(xlim=(left - 0.045 * length, right + 0.025 * length),
-               ylim=(middle - half_height, middle + half_height), aspect="equal")
+        half_height = stack((3.3 * self.thickness, 0.11 * length)).max()        # [] Scalar+
+        limits = stack((low[0] - 0.045 * length, high[0] + 0.025 * length,
+                        middle - half_height, middle + half_height)).to_array()
+        ax.set(xlim=limits[:2], ylim=limits[2:], aspect="equal")
         ax.set_axis_off()
         self.view = flat_panel(ax, core.ga)
         # The clamp, twice the strip's thickness, its face along the strip's clamped edge.
@@ -140,7 +140,14 @@ class DeviceView:
         across = separation / separation.squared().square_root()                    # [poles] Point-
         centres = concatenate((0.75 * upper + 0.25 * lower, 0.25 * upper + 0.75 * lower))   # [arrows] Point-
         arrows = 0.32 * self.thickness * concatenate((across, -across))             # [arrows] Point-
-        poling = stack((centres - arrows / 2, centres + arrows / 2), axis=-1).reshape(-1)   # [arrows * 2] Point-
+        tips = centres + arrows / 2                                                 # [arrows] Point-
+        poling = stack((centres - arrows / 2, tips), axis=-1).reshape(-1)           # [arrows * 2] Point-
+        # The arrows drawn whole, their strokes and dots, then covering as much as their opacity, so that a stroke
+        # under its dot does not show through it.
+        poling_arrows = simplices.composited([
+            simplices.strokes(poling, self.arrows, rgb(interface_colour), poling_width, self.view),
+            simplices.markers(tips, rgb(interface_colour), poling_tip, self.view)])
+        poling_arrows[..., 3] *= poling_opacity
 
         self.image.set_data(simplices.composited(self.under + [
             body,
@@ -149,23 +156,21 @@ class DeviceView:
             self.face,
             simplices.strokes(places[np.concatenate((self.mesh.top, self.mesh.bottom))], self.electrodes,
                               electrode_ink, electrode_width, self.view),
-            simplices.strokes(poling, self.arrows, rgb(interface_colour), poling_width, self.view,
-                              np.ones(len(self.arrows.edges)), poling_head, opacity=poling_opacity)]))
+            poling_arrows]))
         return self.figure
 
 
 def draw_mesh(mesh: core.Strip, vertices: core.Point) -> plt.Figure:
     """The clamped end of the strip's mesh: its triangles, the electrodes along its top and bottom, the bonded
     interface between its layers, and the clamp holding its first column of nodes."""
-    rest = coordinates(vertices)
-    left, lower = rest.min(axis=0)
-    upper = rest.max(axis=0)[1]
-    thickness = upper - lower
-    shown = 3 * thickness
+    low, high = bounds(vertices)                                                # [2] Scalar+, [2] Scalar+
+    thickness = high[1] - low[1]                                                # [] Scalar+
+    # The clamped end, three thicknesses of the strip along it, with a margin around it.
+    limits = stack((low[0] - 0.12 * thickness, low[0] + 3 * thickness,
+                    low[1] - 0.12 * thickness, high[1] + 0.12 * thickness)).to_array()
     figure, ax = plt.subplots(figsize=(3.0, 1.45), dpi=100)
     figure.subplots_adjust(0, 0, 1, 1)
-    ax.set(xlim=(left - 0.12 * thickness, left + shown), ylim=(lower - 0.12 * thickness, upper + 0.12 * thickness),
-           aspect="equal")
+    ax.set(xlim=limits[:2], ylim=limits[2:], aspect="equal")
     ax.set_axis_off()
     camera = flat_panel(ax, core.ga)
     places = vertices.batch()                                                   # [vertices] Point-

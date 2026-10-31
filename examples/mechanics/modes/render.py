@@ -15,7 +15,7 @@ import numpy as np
 from examples.util.animation import capture
 from examples.util.wgsl import contours, simplices
 from examples.util.wgsl.camera import Camera, panel
-from numga import stack
+from numga import concatenate, stack
 from examples.mechanics.modes.core import ModeCase, Point, mv
 
 
@@ -35,6 +35,13 @@ def coordinates(points: Point) -> np.ndarray:
     """Coordinates of points of unit weight, and of directions, `[..., 2]`: their pairings with the planes x = 0 and
     y = 0."""
     return (stack((mv.x, mv.y)) & points[..., None]).to_array()
+
+
+def extent(points: list[Point]) -> tuple[np.ndarray, np.ndarray]:
+    """The lowest and the highest readings across and up of batches of points of unit weight, `[2]` each: their
+    pairings with the planes x = 0 and y = 0."""
+    readings = concatenate([stack((mv.x, mv.y))[:, None] & batch.reshape(-1) for batch in points], axis=-1)
+    return readings.min(axis=-1).to_array(), readings.max(axis=-1).to_array()
 
 
 def spring_paths(starts: Point, ends: Point) -> Point:
@@ -73,11 +80,8 @@ def _new_figure(cases: list[ModeCase], header: float, top: float, hspace: float)
     fig, axes_grid = plt.subplots(n, 3, figsize=(9, 2.7 * n + header), dpi=75, facecolor="white", squeeze=False)
     axes = axes_grid.tolist()
 
-    all_points = np.concatenate([
-        np.concatenate((coordinates(case.body), coordinates(case.anchors)))
-        for case in cases
-    ])
-    lo, hi = all_points.min(axis=0) - [0.35, 0.35], all_points.max(axis=0) + [0.25, 0.25]
+    low, high = extent([points for case in cases for points in (case.body, case.anchors)])
+    lo, hi = low - 0.35, high + 0.25
     for row in axes:
         for ax in row:
             ax.set(xlim=(lo[0], hi[0]), ylim=(lo[1], hi[1]))
@@ -147,8 +151,8 @@ def render_setup(
     """The suspension at equilibrium: the plate, its springs and their anchors."""
     fig, ax = plt.subplots(figsize=(5, 4), dpi=120, facecolor="white")
 
-    all_pts = np.concatenate([coordinates(body), coordinates(anchors)])
-    lo, hi = all_pts.min(axis=0) - [0.35, 0.35], all_pts.max(axis=0) + [0.35, 0.35]
+    low, high = extent([body, anchors])
+    lo, hi = low - 0.35, high + 0.35
     ax.set(xlim=(lo[0], hi[0]), ylim=(lo[1], hi[1]))
     ax.set_aspect("equal")
     ax.set_axis_off()

@@ -51,13 +51,13 @@ class Charts:
         lines = art.gas_lines(temperature_of, pressure_of, cycle.context.multivector, state_entropies, state_volumes,
                               art.GasLines(isochores, isobars, isotherms, adiabats))
         self.lines = lines
-        self.pressure_lines = (art.family(self.volume_pressure, lines.isotherms.volume_pressure, "temperature",
-                                          art.thin)
+        self.pressure_lines = (art.level_family(self.volume_pressure, lines.isotherms.volume_pressure, "temperature",
+                                                art.thin)
                                + art.family(self.volume_pressure, lines.adiabats.volume_pressure, "entropy", art.thin))
         self.temperature_lines = (art.family(self.entropy_temperature, lines.isochores.entropy_temperature, "volume",
                                              art.thin)
-                                  + art.family(self.entropy_temperature, lines.isobars.entropy_temperature, "pressure",
-                                               art.thin))
+                                  + art.level_family(self.entropy_temperature, lines.isobars.entropy_temperature,
+                                                     "pressure", art.thin))
         self.cycle = art.gas_points(temperature_of, pressure_of, cycle)                   # [steps] Point-, Point-
         self.n_steps = (cycle.shape[0] - 1) // 4
         # The states the cycle encloses: at each entropy of the hot stroke, from its state to the cold stroke's at the
@@ -97,13 +97,13 @@ class Charts:
                               art.Label(hot, "hot", art.orange, art.text_size, "lb", (4, 2)),
                               art.Label(cold, "cold", art.blue, art.text_size, "lt", (4, -2))]
         lines = self.lines
-        pressure_names = [art.Floating(art.along(lines.isotherms.volume_pressure, 8), "T = const",
+        pressure_names = [art.Floating(art.crossings(lines.isotherms.volume_pressure, 8), "T = const",
                                        art.families["temperature"], art.text_size, "lb"),
                           art.Floating(art.along(lines.adiabats.volume_pressure, 8), "S = const",
                                        art.families["entropy"], art.text_size, "lb")]
         temperature_names = [art.Floating(art.along(lines.isochores.entropy_temperature, 8), "V = const",
                                           art.families["volume"], art.text_size, "lb"),
-                             art.Floating(art.along(lines.isobars.entropy_temperature, 8), "p = const",
+                             art.Floating(art.crossings(lines.isobars.entropy_temperature, 8), "p = const",
                                           art.families["pressure"], art.text_size, "lb")]
         return [self.picture(self.volume_pressure, pressure_cycle, self.enclosed.volume_pressure, self.pressure_lines,
                              travelled, pressure_labels, pressure_names),

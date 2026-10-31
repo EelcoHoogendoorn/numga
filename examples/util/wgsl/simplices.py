@@ -4,9 +4,10 @@ A stroke is a 1-simplex and a marker a 0-simplex, drawn as a triangle is: the ca
 reads each vertex, and the vertex stage covers a box on the picture padded around the projected edge or point by its
 half width; the fragment stage then measures, in pixels, how far each sample lies from the edge's segment or the
 point, and keeps the samples within the half width. Round caps and round joins follow from that distance alone, and
-the picture's samples, sixteen to a pixel on the GPU, smooth its edges. An edge may end in an arrowhead, a triangle
-in its own frame along and across it, and a chain of edges may be dashed, by the distance travelled along it from
-where the chain starts. In a lit 3D scene the strokes are tubes among the solids and meshes: each sample's distance
+the picture's samples, sixteen to a pixel on the GPU, smooth its edges. A chain of edges may be dashed, by the
+distance travelled along it from where the chain starts, and an edge may end in a chevron, two short strokes of its
+own width back from its end, laid out on the picture. Strokes and dots are the whole vocabulary: an arrow is a stroke
+with a chevron or a dot at its tip, a square four strokes. In a lit 3D scene the strokes are tubes among the solids and meshes: each sample's distance
 from the segment gives the tube's normal, from the camera's own planes, and how far its surface comes toward the
 viewer, so tubes cross the other surfaces where they truly do. Nothing of it depends on the scene's dimension or
 signature: the same program draws the edges of a polyline in the plane, of a graph in space or of a world line in a
@@ -38,30 +39,24 @@ class Cap(IntEnum):
     ROUND = 2
 
 
-class Marker(IntEnum):
-    """The outline of a marker about its point: a circle, a square along the picture's rows and columns, or that square
-    turned an eighth of a turn."""
-    DISC = 0
-    SQUARE = 1
-    DIAMOND = 2
 
 stroke_source = """
 var<storage, read> points: array<Point>;
 var<storage, read> edges: array<vec2<u32>>;
 var<storage, read> colours: array<vec3<f32>>;
-// Each edge's distance from the start of its chain, in samples; whether it ends in a head, one or zero; whether its
-// start and its end are open, ends of the strokes rather than joins, one or zero; whether it starts where the edge
+// Each edge's distance from the start of its chain, in samples; whether it ends in a chevron, one or zero; whether
+// its start and its end are open, ends of the strokes rather than joins, one or zero; whether it starts where the edge
 // before it ends, one or zero, what that edge covers about the join that edge's to draw, so that a translucent chain
 // covers every sample once.
 var<storage, read> travelled: array<f32>;
-var<storage, read> heads: array<f32>;
+var<storage, read> chevrons: array<f32>;
 var<storage, read> open_ends: array<vec2<f32>>;
 var<storage, read> follows: array<f32>;
-// The picture's samples across and down, the strokes' half width, the heads' length and half width, and the dashes'
-// length and the gaps', all in samples; a gap of zero draws the strokes whole.
+// The picture's samples across and down, the strokes' half width, a chevron's stroke's reach back along its edge and
+// out to its side, and the dashes' length and the gaps', all in samples; a gap of zero draws the strokes whole.
 var<uniform> samples: vec2<f32>;
 var<uniform> radius: f32;
-var<uniform> head: vec2<f32>;
+var<uniform> chevron: vec2<f32>;
 var<uniform> dashes: vec2<f32>;
 // How the dashes and open ends end, a `Cap`; and how much the strokes cover.
 var<uniform> cap: f32;
@@ -70,7 +65,7 @@ var<uniform> opacity: f32;
 struct Corner {
     @builtin(position) position: vec4<f32>,
     // The edge's ends on the picture, in samples from its top left; its colour; its distance along its chain and
-    // whether it ends in a head; its ends' depths along the view.
+    // whether it ends in a chevron; its ends' depths along the view.
     @location(0) @interpolate(flat) ends: vec4<f32>,
     @location(1) @interpolate(flat) colour: vec3<f32>,
     @location(2) @interpolate(flat) chain: vec2<f32>,
@@ -107,7 +102,7 @@ fn place(@builtin(vertex_index) index: u32) -> Corner {
     let length = sqrt(span.x * span.x + span.y * span.y);
     let along = select(vec2<f32>(1.0, 0.0), span / length, length > 0.0);
     let across = vec2<f32>(-along.y, along.x);
-    let reach = max(radius, head.y) + 1.0;
+    let reach = radius + chevron.y * chevrons[index / 6] + 1.0;
     let corner = array<vec2<f32>, 6>(vec2<f32>(0, -1), vec2<f32>(1, -1), vec2<f32>(1, 1),
                                      vec2<f32>(0, -1), vec2<f32>(1, 1), vec2<f32>(0, 1))[index % 6];
     let at = mix(from - along * reach, to + along * reach, corner.x) + across * reach * corner.y;
@@ -120,19 +115,28 @@ fn place(@builtin(vertex_index) index: u32) -> Corner {
                         paired(screen_toward, points[edge.y])) / weight_of(points[edge.y])
             - vec3<f32>(paired(screen_across, points[edge.x]), paired(screen_up, points[edge.x]),
                         paired(screen_toward, points[edge.x])) / weight_of(points[edge.x]);
-    return Corner(position, vec4<f32>(from, to), colours[index / 6], vec2<f32>(travelled[index / 6], heads[index / 6]),
+    return Corner(position, vec4<f32>(from, to), colours[index / 6], vec2<f32>(travelled[index / 6], chevrons[index / 6]),
                   depths, run, index / 6);
 }
 
 // Where a sample lies against the edge: how far along it, a share of its length; how far across its line and on
 // which side, and how far from the segment's nearest point, in samples; past which end it lies, start or end, or
-// neither; and whether it is covered, by the shaft, the head or a dash.
+// neither; whether it is covered, by the stroke, a dash or the chevron; and whether by the chevron alone, and how far
+// from the nearer of its strokes.
 struct Against {
     share: f32,
     across: vec2<f32>,
     away: vec2<f32>,
     past: vec2<f32>,
     covered: bool,
+    barbed: bool,
+    barb: vec2<f32>,
+}
+
+// A sample's offset from the nearest point of a segment, in samples.
+fn off_segment(offset: vec2<f32>, span: vec2<f32>) -> vec2<f32> {
+    let share = clamp((offset.x * span.x + offset.y * span.y) / max(span.x * span.x + span.y * span.y, 1e-12), 0.0, 1.0);
+    return offset - span * share;
 }
 
 fn against(corner: Corner) -> Against {
@@ -143,24 +147,16 @@ fn against(corner: Corner) -> Against {
     let offset = corner.position.xy - from;
     // The sample in the edge's own frame: how far along it, and how far across.
     let along = offset.x * along_unit.x + offset.y * along_unit.y;
-    let across = abs(offset.y * along_unit.x - offset.x * along_unit.y);
-    // A head is a triangle back from the end, its base a head's length from it, or the edge's own length where that
-    // is shorter, the head shrunk to fit; the shaft stops at its base.
-    let headed = corner.chain.y > 0.0;
-    let head_length = min(head.x, length);
-    let shaft_end = select(length, length - head_length, headed);
-    let back = length - along;
-    let in_head = headed && back >= 0.0 && back <= head_length && across <= head.y * back / head.x;
-    // The sample's distance from the shaft's segment, in samples: from its nearest point, the ends included, which
+    // The sample's distance from the edge's segment, in samples: from its nearest point, the ends included, which
     // rounds the joins.
-    let share = clamp(along, 0.0, max(shaft_end, 0.0));
+    let share = clamp(along, 0.0, length);
     let away = offset - along_unit * share;
     let joined = sqrt(away.x * away.x + away.y * away.y);
     let sideways_distance = abs(offset.y * along_unit.x - offset.x * along_unit.y);
     // How far along the chain the sample lies outside what is drawn: past an open end, or between dashes.
     let ends_open = open_ends[corner.edge];
     let past_start = select(0.0, -along, along < 0.0 && ends_open.x > 0.0);
-    let past_end = select(0.0, along - shaft_end, along > shaft_end && ends_open.y > 0.0);
+    let past_end = select(0.0, along - length, along > length && ends_open.y > 0.0);
     let travel = corner.chain.x + clamp(along, 0.0, length);
     let period = dashes.x + dashes.y;
     let phase = travel - period * floor(travel / period);
@@ -171,9 +167,19 @@ fn against(corner: Corner) -> Against {
                         outside * outside + sideways_distance * sideways_distance <= radius * radius, cap == 2.0);
     let in_shaft = select(capped, joined <= radius, outside <= 0.0);
     let sideways = offset - along_unit * along;
-    let past = vec2<f32>(select(0.0, 1.0, along < 0.0), select(0.0, 1.0, along > shaft_end));
+    let past = vec2<f32>(select(0.0, 1.0, along < 0.0), select(0.0, 1.0, along > length));
     let owned = !(follows[corner.edge] > 0.0 && within(edges[corner.edge - 1u], corner.position.xy));
-    return Against(select(0.0, share / length, length > 0.0), sideways, away, past, (in_head || in_shaft) && owned);
+    // The chevron: two strokes from the edge's end, back along it and out to either side, each as wide as the edge,
+    // shrunk to fit an edge shorter than they are long.
+    let to_end = corner.position.xy - corner.ends.zw;
+    let side = vec2<f32>(-along_unit.y, along_unit.x);
+    let fit = min(1.0, length / max(sqrt(chevron.x * chevron.x + chevron.y * chevron.y), 1e-6));
+    let left = off_segment(to_end, (-along_unit * chevron.x + side * chevron.y) * fit);
+    let right = off_segment(to_end, (-along_unit * chevron.x - side * chevron.y) * fit);
+    let barb = select(right, left, dot(left, left) < dot(right, right));
+    let in_barb = corner.chain.y > 0.0 && dot(barb, barb) <= radius * radius;
+    return Against(select(0.0, share / length, length > 0.0), sideways, away, past, (in_shaft || in_barb) && owned,
+                   in_barb && !in_shaft, barb);
 }
 """
 
@@ -209,8 +215,9 @@ fn shade(corner: Corner) -> Shade {
     // chain of edges shades as one tube through its joints. Either way across and up the picture toward the sample,
     // rows counted down, and toward the viewer by what the radius leaves.
     let ends_open = open_ends[corner.edge];
-    let open = sample.past.x * ends_open.x + sample.past.y * ends_open.y > 0.0;
-    let offset = select(sample.across, sample.away, open);
+    // A chevron's stroke shades as a ball does, about its nearest point.
+    let open = sample.past.x * ends_open.x + sample.past.y * ends_open.y > 0.0 || sample.barbed;
+    let offset = select(select(sample.across, sample.away, open), sample.barb, sample.barbed);
     let distance = sqrt(offset.x * offset.x + offset.y * offset.y);
     let across = min(distance / radius, 1.0);
     let toward = sqrt(1.0 - across * across);
@@ -224,8 +231,10 @@ fn shade(corner: Corner) -> Shade {
     let square = seen - run * along_run;
     let size = sqrt(square.x * square.x + square.y * square.y + square.z * square.z);
     let normal = select(select(seen, square / size, size > 1e-6), seen, open);
-    // The depth along the view, the tube's surface nearer the viewer by its bulge.
-    let along_view = mix(corner.depths.x, corner.depths.y, sample.share) - toward * radius / oversampling * scene_pixel;
+    // The depth along the view, the tube's surface nearer the viewer by its bulge; a chevron, laid out on the picture,
+    // nearer by its reach too, so that it shows whole over a surface its edge lies on.
+    let bulge = toward * radius + select(0.0, chevron.x, sample.barbed);
+    let along_view = mix(corner.depths.x, corner.depths.y, sample.share) - bulge / oversampling * scene_pixel;
     return Shade(vec4<f32>(lit_seen(corner.colour, normal), 1.0), vec4<f32>(along_view, 0.0, 0.0, 1.0),
                  0.5 + along_view / screen_depth);
 }
@@ -234,18 +243,16 @@ fn shade(corner: Corner) -> Shade {
 marker_source = """
 var<storage, read> points: array<Point>;
 var<storage, read> colours: array<vec3<f32>>;
-// How far from its point each marker reaches, out to its outer radius from its inner one, in samples, filled from
-// zero; the picture's samples across and down; the markers' outline, a `Marker`; and how much they cover.
-var<storage, read> reaches: array<vec2<f32>>;
+// Each dot's radius, in samples; the picture's samples across and down; and how much the dots cover.
+var<storage, read> radii: array<f32>;
 var<uniform> samples: vec2<f32>;
-var<uniform> marker: f32;
 var<uniform> opacity: f32;
 
 struct Corner {
     @builtin(position) position: vec4<f32>,
     @location(0) @interpolate(flat) middle: vec2<f32>,
     @location(1) @interpolate(flat) colour: vec3<f32>,
-    @location(2) @interpolate(flat) reach: vec2<f32>,
+    @location(2) @interpolate(flat) radius: f32,
 }
 
 @vertex
@@ -254,20 +261,17 @@ fn place(@builtin(vertex_index) index: u32) -> Corner {
     let middle = vec2<f32>(point.x + 1.0, 1.0 - point.y) * 0.5 * samples;
     let corner = array<vec2<f32>, 6>(vec2<f32>(-1, -1), vec2<f32>(1, -1), vec2<f32>(1, 1),
                                      vec2<f32>(-1, -1), vec2<f32>(1, 1), vec2<f32>(-1, 1))[index % 6];
-    // A box about the point reaching the diamond's corners, the farthest any outline reaches.
-    let reach = reaches[index / 6];
-    let at = middle + corner * (reach.x * 1.4142136 + 1.0);
+    // A box about the point, a sample beyond its radius every way.
+    let radius = radii[index / 6];
+    let at = middle + corner * (radius + 1.0);
     let position = vec4<f32>(at.x / samples.x * 2.0 - 1.0, 1.0 - at.y / samples.y * 2.0, point.z, 1.0);
-    return Corner(position, middle, colours[index / 6], reach);
+    return Corner(position, middle, colours[index / 6], radius);
 }
 
 @fragment
 fn shade(corner: Corner) -> @location(0) vec4<f32> {
-    let away = abs(corner.position.xy - corner.middle);
-    // The distance from the point by the marker's outline: round, square, or the square turned an eighth.
-    let distance = select(select(sqrt(away.x * away.x + away.y * away.y), max(away.x, away.y), marker == 1.0),
-                          (away.x + away.y) * 0.70710678, marker == 2.0);
-    if (distance > corner.reach.x || distance < corner.reach.y) { discard; }
+    let away = corner.position.xy - corner.middle;
+    if (away.x * away.x + away.y * away.y > corner.radius * corner.radius) { discard; }
     return vec4<f32>(corner.colour * opacity, opacity);
 }
 """
@@ -291,7 +295,7 @@ def tube_shader() -> Shader:
 
 @cache
 def marker_shader(Point: GAType, Plane: GAType) -> Shader:
-    """The markers of points of the type `Point`, placed by a camera's planes of the type `Plane`."""
+    """The dots of points of the type `Point`, placed by a camera's planes of the type `Plane`."""
     return Shader(placing(Plane) + marker_source, Point.algebra, dict(Point=Point, Plane=Plane), {},
                   targets=("rgba8unorm",), over=True)
 
@@ -301,6 +305,12 @@ def straight(image: np.ndarray) -> np.ndarray:
     unit its rounding may overshoot."""
     coverage = image[..., 3:]
     return np.minimum(np.concatenate((image[..., :3] / np.where(coverage > 0, coverage, 1), coverage), axis=-1), 1)
+
+
+def chevron_reach(length: float) -> np.ndarray:
+    """A chevron's stroke `length` long, a third of a right angle off its edge: how far it reaches back along the edge
+    and out to its side."""
+    return length * np.array([np.sqrt(3) / 2, 1 / 2])
 
 
 def following(edges: np.ndarray) -> np.ndarray:
@@ -324,13 +334,13 @@ def travelled(points: Extensor, edges: np.ndarray, camera: Camera) -> np.ndarray
 
 
 def strokes(points: Extensor, mesh: Mesh, colours: np.ndarray, width: float, camera: Camera,
-            heads: np.ndarray = np.zeros(1), head: float = 0.0, dashes: tuple[float, float] = (1.0, 0.0),
+            chevrons: np.ndarray = np.zeros(1), chevron: float = 0.0, dashes: tuple[float, float] = (1.0, 0.0),
             cap: Cap = Cap.ROUND, opacity: float = 1.0) -> np.ndarray:
     """The mesh's edges as strokes `width` pixels wide over its points, each in its colour `[edges, 3]`, read by the
-    camera: `[rows, columns, 4]`, colour and coverage, clear where no stroke lies. The edges where `heads` `[edges]` is
-    one end in a head `head` pixels long and as wide as its length; `dashes`, a dash's length and a gap's in pixels,
-    breaks each chain of edges into dashes where the gap is not zero, each dash and each open end ended by the cap;
-    `opacity` how much the strokes cover."""
+    camera: `[rows, columns, 4]`, colour and coverage, clear where no stroke lies. The edges where `chevrons` `[edges]`
+    is one end in a chevron, two strokes `chevron` pixels long back from the end, a third of a right angle to either
+    side; `dashes`, a dash's length and a gap's in pixels, breaks each chain of edges into dashes where the gap is not
+    zero, each dash and each open end ended by the cap; `opacity` how much the strokes cover."""
     side = samples_per_side()
     rows, columns = camera.shape
     edges = np.asarray(mesh.edges, dtype=np.uint32)
@@ -340,11 +350,11 @@ def strokes(points: Extensor, mesh: Mesh, colours: np.ndarray, width: float, cam
     image, = stroke_shader(**reading(points, camera)).draw_averaged(
         camera.shape, side, 6 * len(edges), points=points, edges=edges,
         colours=np.broadcast_to(colours, (len(edges), 3)),
-        travelled=travelled(points, edges, camera) * side, heads=np.broadcast_to(heads, len(edges)).astype(float),
+        travelled=travelled(points, edges, camera) * side, chevrons=np.broadcast_to(chevrons, len(edges)).astype(float),
         open_ends=np.isin(edges, mesh.exterior(0)).astype(float),
         follows=following(edges),
         samples=np.array([columns * side, rows * side], dtype=float), radius=width * side / 2,
-        head=np.array([head, head / 2]) * side, dashes=np.array(dashes) * side, cap=float(cap), opacity=opacity,
+        chevron=chevron_reach(chevron) * side, dashes=np.array(dashes) * side, cap=float(cap), opacity=opacity,
         **camera.uniforms(1.0))
     return straight(image)
 
@@ -359,10 +369,11 @@ def view_camera(view) -> Camera:
 
 
 def tubes(points: Extensor, mesh: Mesh, colours: np.ndarray, width: float, view, gloss: float = 0.0,
-          heads: np.ndarray = np.zeros(1), head: float = 0.0, dashes: tuple[float, float] = (1.0, 0.0)):
+          chevrons: np.ndarray = np.zeros(1), chevron: float = 0.0, dashes: tuple[float, float] = (1.0, 0.0)):
     """The mesh's edges as tubes `width` pixels across among the solids and meshes of a lit 3D scene, its points of the
     solids' algebra, each edge in its colour `[edges, 3]`, at every sample of the view's pixels, for `solids.draw` and
-    `Scene` to compose as they compose meshes; heads and dashes as `strokes` draws them."""
+    `Scene` to compose as they compose meshes; chevrons and dashes as `strokes` draws them, a chevron on the
+    picture, facing the viewer."""
     from examples.util.wgsl import solids
     from examples.util.wgsl.meshes import Samples
     camera = view_camera(view)
@@ -371,20 +382,18 @@ def tubes(points: Extensor, mesh: Mesh, colours: np.ndarray, width: float, view,
     edges = np.asarray(mesh.edges, dtype=np.uint32)
     return Samples(tube_shader(), 6 * len(edges), dict(
         points=points, edges=edges, colours=np.broadcast_to(colours, (len(edges), 3)),
-        travelled=travelled(points, edges, camera) * side, heads=np.broadcast_to(heads, len(edges)).astype(float),
+        travelled=travelled(points, edges, camera) * side, chevrons=np.broadcast_to(chevrons, len(edges)).astype(float),
         samples=np.array([columns * side, rows * side], dtype=float), radius=width * side / 2,
-        head=np.array([head, head / 2]) * side, dashes=np.array(dashes) * side, scene_pixel=view.pixel,
+        chevron=chevron_reach(chevron) * side, dashes=np.array(dashes) * side, scene_pixel=view.pixel,
         oversampling=float(side), cap=float(Cap.ROUND), opacity=1.0,
         open_ends=np.isin(edges, mesh.exterior(0)).astype(float),
         follows=following(edges),
         **camera.uniforms(8 * view.half.max()), **solids.lighting(gloss)))
 
 
-def markers(points: Extensor, colours: np.ndarray, outer: np.ndarray, camera: Camera, inner: np.ndarray = np.zeros(1),
-            marker: Marker = Marker.DISC, opacity: float = 1.0) -> np.ndarray:
-    """Markers about the points `[points]`, each in its colour `[points, 3]`, covering from its `inner` to its `outer`
-    pixels `[points]` from its point by the marker's outline, filled from zero, a ring further out, read by the camera:
-    `[rows, columns, 4]`, colour and coverage, clear where no marker lies."""
+def markers(points: Extensor, colours: np.ndarray, radii: np.ndarray, camera: Camera, opacity: float = 1.0) -> np.ndarray:
+    """Dots about the points `[points]`, each in its colour `[points, 3]` and its radius in pixels, one for all or one
+    each `[points]`, read by the camera: `[rows, columns, 4]`, colour and coverage, clear where no dot lies."""
     side = samples_per_side()
     rows, columns = camera.shape
     # No points draw nothing: a clear picture.
@@ -392,8 +401,8 @@ def markers(points: Extensor, colours: np.ndarray, outer: np.ndarray, camera: Ca
         return np.zeros(camera.shape + (4,))
     image, = marker_shader(**reading(points, camera)).draw_averaged(
         camera.shape, side, 6 * len(points), points=points, colours=np.broadcast_to(colours, (len(points), 3)),
-        reaches=np.stack([np.broadcast_to(outer, len(points)), np.broadcast_to(inner, len(points))], axis=-1) * side,
-        samples=np.array([columns * side, rows * side], dtype=float), marker=float(marker), opacity=opacity, **camera.uniforms(1.0))
+        radii=np.broadcast_to(radii, len(points)).astype(float) * side,
+        samples=np.array([columns * side, rows * side], dtype=float), opacity=opacity, **camera.uniforms(1.0))
     return straight(image)
 
 

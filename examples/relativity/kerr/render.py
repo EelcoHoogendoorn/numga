@@ -41,11 +41,6 @@ clump_contrast = 0.35
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(events: core.Antivector, slices: tuple[core.Vector, ...]) -> np.ndarray:
-    """Coordinates of events or directions, on the last axis: their pairings with the slices."""
-    return (stack(slices) & events[..., None]).to_array()                     # [..., slices]
-
-
 def rays_and_horizon(paths: core.Antivector, outline: core.Antivector, camera: Camera) -> np.ndarray:
     """Rays along events `[steps, rays]`, each in its colour across the sweep from cool to warm, under the horizon
     filled within its closed outline `[samples + 1]`, seen by the camera: their picture."""
@@ -96,18 +91,20 @@ def draw_ray_comparison(paths: tuple[core.Antivector, core.Antivector], horizon:
 
 def star_texture(width: int, height: int, seed: int) -> np.ndarray:
     """A seamless sky image with unresolved stars and a faint dusty stellar band."""
+    mv = core.mv
     random = np.random.default_rng(seed)
     star_count = width * height // 140
     longitude = (np.arange(width) + 0.5) * (2 * np.pi / width) - np.pi
     latitude = (0.5 - (np.arange(height) + 0.5) / height) * np.pi
-    horizontal = np.cos(latitude[:, None])
-    sky_x = horizontal * np.cos(longitude)
-    sky_y = horizontal * np.sin(longitude)
-    sky_z = np.sin(latitude[:, None])
-    band_height = 0.2 * sky_x - 0.6 * sky_y - np.sqrt(0.6) * sky_z
-    cloud = (np.sin(13 * sky_x + 9 * sky_y - 7 * sky_z)
-             + 0.45 * np.sin(31 * sky_x - 23 * sky_y + 19 * sky_z)
-             + 0.18 * np.sin(79 * sky_x + 47 * sky_y + 53 * sky_z))
+    # The direction at the middle of each pixel: x turned up toward z by its latitude, then about z by its longitude.
+    meridian = (mv.zx * (latitude / 2)).exp() >> mv.x.dual()                  # [rows] Antivector-
+    sky = (mv.xy * (-longitude / 2)).exp() >> meridian[:, None]               # [rows, columns] Antivector-
+    # The band's height above its plane, and the cloud's waves across the planes they run along.
+    band_plane = 0.2 * mv.x - 0.6 * mv.y - np.sqrt(0.6) * mv.z                 # [] Vector+
+    wave_planes = stack((13 * mv.x + 9 * mv.y - 7 * mv.z, 31 * mv.x - 23 * mv.y + 19 * mv.z,
+                         79 * mv.x + 47 * mv.y + 53 * mv.z))                    # [waves] Vector+
+    band_height = (band_plane & sky).to_array()
+    cloud = (np.array([1.0, 0.45, 0.18]) * np.sin((wave_planes & sky[..., None]).to_array())).sum(axis=-1)
     band = np.exp(-(band_height / 0.16) ** 2) * (0.75 + 0.2 * cloud)
     dust = np.exp(-((band_height + 0.025 * cloud) / 0.035) ** 2)
     background = np.array([0.006, 0.009, 0.019])
@@ -136,14 +133,13 @@ def star_texture(width: int, height: int, seed: int) -> np.ndarray:
 def sky_colour(direction: core.Antivector, texture: np.ndarray) -> np.ndarray:
     """Look up the celestial image using the escaped ray's spatial direction."""
     # The direction's part in the observer's space, at unit length: a spatial direction squares to its squared length.
+    mv = core.mv
     spatial = core.space(direction)                                                         # [...] Antivector-
     unit = spatial / spatial.squared().square_root()                                        # [...] Antivector-
-    horizontal_x, horizontal_y, vertical = np.moveaxis(
-        coordinates(unit, (core.mv.x, core.mv.y, core.mv.z)), -1, 0)
     height, width = texture.shape[:2]
-    # The image's texture coordinates: longitude and latitude.
-    longitude = np.arctan2(horizontal_y, horizontal_x)
-    latitude = np.arcsin(np.clip(vertical, -1, 1))
+    # The image's texture coordinates, longitude and latitude, from the direction's pairings with the planes x, y and z.
+    longitude = np.arctan2((mv.y & unit).to_array(), (mv.x & unit).to_array())
+    latitude = np.arcsin(np.clip((mv.z & unit).to_array(), -1, 1))
     column = (longitude / (2 * np.pi) + 0.5) * width - 0.5
     row = np.clip((0.5 - latitude / np.pi) * height - 0.5, 0, height - 1)
     left = np.floor(column).astype(int)
@@ -160,9 +156,10 @@ def sky_colour(direction: core.Antivector, texture: np.ndarray) -> np.ndarray:
 def clump_waves(points: core.Antivector, radius: core.Scalar) -> np.ndarray:
     """Random waves around and across the disk at each point, summed to unit variance, `[...]`; whole
     turns keep each continuous in angle."""
-    horizontal_x, horizontal_y = np.moveaxis(coordinates(points, (core.mv.x, core.mv.y)), -1, 0)
-    # The texture's coordinate around the disk, the angle from x, read where the pattern is drawn.
-    angle = np.arctan2(horizontal_y, horizontal_x)
+    mv = core.mv
+    # The texture's coordinate around the disk, the angle from x, from the points' pairings with the planes x and y,
+    # read where the pattern is drawn.
+    angle = np.arctan2((mv.y & points).to_array(), (mv.x & points).to_array())
     modes = wave_modes()
     waves = np.sin(modes["turns"] * angle[..., None] + modes["wavenumber"] * radius.to_array()[..., None]
                    + modes["phase"])                                                         # [..., modes]

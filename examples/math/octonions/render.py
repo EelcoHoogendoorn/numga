@@ -16,10 +16,10 @@ from examples.util.wgsl.camera import flat_panel
 line_colour = "#287fa0"
 point_colour = "0.15"
 # The figure's width and height in pixels, for seven points and seven lines; the side of a point, wide enough for its
-# name, and the length of an arrowhead, in pixels; the points along the circle.
+# name, and the length of the strokes of the chevron at an arrow's tip, in pixels; the points along the circle.
 figure_size = (300, 275)
 point_side = 20
-arrow_length = 7.0
+chevron_length = 7.0
 n_around = 120
 # The page the diagram is drawn on, its points antivectors about the middle.
 page = NumpyContext(VGA2D).multivector
@@ -31,8 +31,8 @@ corner = 1.0
 thirds = (page.xy * (-np.array([0, 2, 4]) * np.pi / 3 / 2)).exp()                # [corners] Rotor+
 b, d, g = thirds >> (corner * page.y.dual())                                    # [] Antivector-, Antivector-, Antivector-
 places_by_name = {"a": 0 * b, "b": b, "d": d, "g": g, "f": (b + d) / 2, "e": (b + g) / 2, "c": (d + g) / 2}
-# How far along each segment, and along each arc of the circle, its arrowhead sits: off the middle, where the
-# medians cross the circle; and how far on its tip lies, and back the stroke it ends, on the page.
+# How far along each segment, and along each arc of the circle, its arrow sits: off the middle, where the medians
+# cross the circle; and how far on its tip lies, and back its stroke starts, on the page.
 segment_fraction, arc_fraction = 0.65, 0.3
 tip_step, tail_step = 0.02, 0.06
 
@@ -56,7 +56,7 @@ def triples(cycles: core.Trivector) -> list[str]:
 
 
 def arrow(place: Antivector, heading: Antivector) -> Antivector:
-    """The ends of a short stroke whose arrowhead sits at a place, pointing along a heading `[ends]`."""
+    """The ends of a short arrow at a place, pointing along a heading `[ends]`: the end of its stroke and its tip."""
     unit = heading.normalized()                                                # [] Antivector-
     return stack([place - tail_step * unit, place + tip_step * unit])
 
@@ -76,7 +76,7 @@ def draw_fano(cycles: core.Trivector) -> plt.Figure:
         places = stack([places_by_name[name] for name in triple])              # [3] Antivector-
         following = places[[1, 2, 0]]                                          # [3] Antivector-
         if np.all((places.norm() - radius).abs() <= 1e-8 + 1e-5 * radius):
-            # On the circle: an arrowhead on each arc, part of the way along the shorter turn from each point to the
+            # On the circle: an arrow on each arc, part of the way along the shorter turn from each point to the
             # next, pointing the way the turn runs.
             turns = (1 + following * places.inverse()).normalized()            # [3] Rotor+
             generators = turns.log()                                            # [3] Bivector+
@@ -88,21 +88,23 @@ def draw_fano(cycles: core.Trivector) -> plt.Figure:
         first, last = np.unravel_index(spans.reshape(-1).argmax(), (3, 3))
         sides.append(places[[first, last]])
         for start, end in zip(places, following):
-            # Arrowheads on the segments the cycle runs along without passing through the third point.
+            # Arrows on the segments the cycle runs along without passing through the third point.
             if (end - start).norm() < spans[first, last] - 1e-9:
                 arrows.append(arrow(start + segment_fraction * (end - start), end - start))
     points = stack(list(places_by_name.values()))                              # [points] Antivector-
+    arrow_ends = stack(arrows)                                                 # [arrows, ends] Antivector-
     camera = flat_panel(ax, VGA2D)
     ink, dark = np.array(to_rgb(line_colour)), np.array(to_rgb(point_colour))
     simplices.overlay(ax, [
         simplices.strokes(circle, simplices.Mesh.chains([n_around + 1]), ink, charts.LINE_PX, camera),
         simplices.strokes(stack(sides).reshape(-1), simplices.Mesh.chains([2] * len(sides)), ink, charts.LINE_PX,
                           camera),
-        simplices.strokes(stack(arrows).reshape(-1), simplices.Mesh.chains([2] * len(arrows)), ink, charts.LINE_PX,
-                          camera, heads=np.ones(len(arrows)), head=arrow_length),
-        simplices.markers(points, np.ones(3), point_side / 2, camera),
-        simplices.markers(points, dark, (point_side + charts.LINE_PX) / 2, camera,
-                          inner=(point_side - charts.LINE_PX) / 2)])
+        # Each arrow a stroke along its line, as wide as the line, and a chevron at its tip.
+        simplices.strokes(arrow_ends.reshape(-1), simplices.Mesh.chains([2] * len(arrows)), ink, charts.LINE_PX,
+                          camera, chevrons=np.ones(len(arrows)), chevron=chevron_length),
+        # Each point white within a dark ring: a dot over a larger dot.
+        simplices.markers(points, dark, (point_side + charts.LINE_PX) / 2, camera),
+        simplices.markers(points, np.ones(3), (point_side - charts.LINE_PX) / 2, camera)])
     for name, place in places_by_name.items():
         ax.text(*xy(place), name, ha="center", va="center", color=point_colour, zorder=4)
     return figure

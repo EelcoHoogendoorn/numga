@@ -2,7 +2,7 @@
 and vector heat diffusion as flowing grain in shaded surfaces, and stripe patterns.
 
 The holonomy sphere is a translucent ball traced by `solids`; the other surfaces are meshes drawn by `meshes`;
-needles, rings and stripe middles are strokes, all composited by depth sample by sample. Stripe patterns are drawn in the surface's own shader: every pixel interpolates the phase from the
+needles are strokes with balls at their tips, rings and stripe middles strokes, all composited by depth sample by sample. Stripe patterns are drawn in the surface's own shader: every pixel interpolates the phase from the
 corners of the triangle it falls in, with the whole turns a fork winds spread around the triangle, and the
 stripes are the cosine of that phase, sharp at any resolution. The phase at a triangle's corners is read as the
 angle from the stripe field to its line of the direction field, each corner's lines matched to the first
@@ -30,6 +30,8 @@ view = np.array([24.0, -36.0])
 # The holonomy markers, the transport figures' framing allowance, and the widest panel's aspect.
 holonomy_stride = 5
 holonomy_needle = 0.25
+# The radius of the ball at a needle's tip, in widths of its shaft.
+needle_tip = 1.25
 transport_margin = 0.32
 widest_panel = 1.6
 # How much each surface of the holonomy sphere hides, and each surface of the trail of carried vectors.
@@ -66,21 +68,15 @@ def square_view(view_degrees: np.ndarray, vertices: core.Point, spare: float) ->
     return frame.squared()
 
 
-def needles(origins: core.Point, directions: core.Point, normals: core.Vector,
-            length: float) -> tuple[solids.Point, simplices.Mesh]:
-    """Arrows along the directions `[arrows]`, with their heads in each point's tangent plane: a shaft and two strokes
-    to the tip, their points `[arrows * 4]`, the origins, the tips and the heads' two outer ends, and the mesh of their
-    edges, the shafts first and then each side of the heads, each edge to its tip."""
-    tips = origins + directions * length                                        # [arrows] Point-
-    # The heads spread to either side of the shaft by a quarter turn of it in the tangent plane: its commutator with
-    # the plane a tangent vector turns in, the normal's dual.
-    side = directions.commutator(normals.dual())                                # [arrows] Point-
-    base = origins + directions * (0.62 * length)                               # [arrows] Point-
-    points = concatenate([origins, tips, base + side * (0.25 * length), base - side * (0.25 * length)])
-    arrow = np.arange(len(origins))
-    edges = np.stack([np.concatenate([arrow, arrow + 2 * len(arrow), arrow + 3 * len(arrow)]),
-                      np.tile(arrow + len(arrow), 3)], axis=-1)
-    return solids.origin + solids.context.include_from_algebra(points), simplices.Mesh(4 * len(arrow), edges)
+def needles(origins: core.Point, directions: core.Point, colours: np.ndarray, width: float,
+            frame: solids.View) -> tuple[meshes.Samples, solids.Quadric]:
+    """Needles along the directions from their origins `[needles]`, each in its colour `[needles, 3]`: their shafts,
+    tubes `width` pixels across, and the balls at their tips `[needles, 1]`."""
+    tips = origins + directions                                                 # [needles] Point-
+    ends = solids.origin + solids.context.include_from_algebra(stack((origins, tips), axis=-1))   # [needles, 2] Point-
+    shafts = simplices.tubes(ends.reshape(-1), simplices.Mesh.chains([2] * ends.shape[0]), colours, width, frame,
+                             solids.gloss)
+    return shafts, solids.ball(ends[:, 1], needle_tip * width * frame.pixel)[:, None]
 
 
 def surface(mesh: core.Mesh, vertices: core.Point, colours: np.ndarray, frame: solids.View, face_values: np.ndarray,
@@ -103,8 +99,8 @@ def animate_holonomy(sphere: core.Mesh, vertices: core.Point, rings: core.Vector
     colours = np.array([to_rgb(colour) for colour in ring_colours])             # [rings, 3]
     ball = [(solids.ball(solids.origin, 1.0)[None, None], surface_colour, sphere_opacity)]
     n_points, n_rings = ring_paths.shape
-    # The circles and the needles are strokes; the sphere alone is traced. The sphere and the circles stay put, each
-    # circle a chain of edges in its ring's colour, the rings one after another.
+    # The circles and the needles' shafts are strokes; the sphere and the needles' tips are traced. The sphere and the
+    # circles stay put, each circle a chain of edges in its ring's colour, the rings one after another.
     circles = simplices.tubes(concatenate([ring_paths[:, ring] for ring in range(n_rings)]),
                               simplices.Mesh.chains([n_points] * n_rings),
                               np.repeat(colours, n_points - 1, axis=0), 4 * line_width, frame, solids.gloss)
@@ -114,13 +110,17 @@ def animate_holonomy(sphere: core.Mesh, vertices: core.Point, rings: core.Vector
         normals.append(normal)                                                  # [rings] Vector-
         carried.append(vector)                                                  # [rings] Point-
         past, along = stack(normals[::holonomy_stride]), stack(carried[::holonomy_stride])   # [trail, rings] Vector-, Point-
-        # Each needle of the trail in its ring's colour: a needle's three strokes, a run per stroke.
-        trail = simplices.tubes(*needles((past.dual() * unit_volume).reshape(-1), along.reshape(-1), past.reshape(-1),
-                                         holonomy_needle), np.tile(np.tile(colours, (past.shape[0], 1)), (3, 1)),
-                                2 * line_width, frame, solids.gloss)
-        now = simplices.tubes(*needles(normal.dual() * unit_volume, vector, normal, holonomy_needle * 1.15),
-                              np.tile(colours, (3, 1)), 5 * line_width, frame, solids.gloss)
-        yield scene.draw([], inks=[], translucent=[], meshes=[(now, 1.0), (trail, trail_opacity)])
+        # Each needle of the trail in its ring's colour.
+        trail_colours = np.tile(colours, (past.shape[0], 1))                    # [trail * rings, 3]
+        trail, trail_tips = needles((past.dual() * unit_volume).reshape(-1), along.reshape(-1) * holonomy_needle,
+                                    trail_colours, 2 * line_width, frame)
+        now, now_tips = needles(normal.dual() * unit_volume, vector * (holonomy_needle * 1.15), colours,
+                                5 * line_width, frame)
+        # A ray crosses a ball's surface twice and a tube once: each of a ball's surfaces hides less, so that the two
+        # hide what a tube does.
+        tip_opacity = 1 - (1 - trail_opacity) ** 0.5
+        yield scene.draw([(now_tips, colours)], inks=[], translucent=[(trail_tips, trail_colours, tip_opacity)],
+                         meshes=[(now, 1.0), (trail, trail_opacity)])
 
 
 def torus_panel(torus: core.Mesh, vertices: core.Point, field: core.Point,
@@ -162,7 +162,8 @@ def draw_fields(mesh: core.Mesh, vertices: core.Point, scenes: list[tuple[core.P
     x over its height, up to the widest a panel gets."""
     mv = core.mv
     # The surface's extent across x and up z, read by pairing its vertices with those planes, sets the panels' shape.
-    across, up = np.ptp((stack((mv.x, mv.z)) & vertices.batch()[..., None]).to_array(), axis=0)
+    readings = stack((mv.x, mv.z))[:, None] & vertices.batch()                # [2, vertices] Scalar+
+    across, up = (readings.max(axis=-1) - readings.min(axis=-1)).to_array()
     width = min(across / up, widest_panel)
     figure, axes = plt.subplots(1, len(scenes), figsize=(3.6 * len(scenes) * width, 3.6), dpi=110)
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0)

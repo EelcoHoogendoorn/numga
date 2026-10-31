@@ -31,8 +31,9 @@ mark_colour = "#facc15"
 centre_colour = "#f8fafc"
 # The animations' dots per inch: the README's wing.gif 400 pixels across.
 frame_dpi = 50
-# Widths, heads and radii in pixels at the frames' dots per inch: the lift's arrow; the marks and their rims.
-lift_width, lift_head = 1.7, 7.0
+# Widths and radii in pixels at the frames' dots per inch: the lift's arrow and the dot at its tip; the marks and their
+# rims.
+lift_width, lift_tip = 1.7, 3.5
 mark_radius, mark_rim = 2.2, 0.56
 # The map's figure, at its own dots per inch: the grid's curves, the wing's circle and its image, the marks.
 map_dpi = 40
@@ -78,15 +79,15 @@ def draw(ax, points: core.Point, velocity: core.Point, stream: core.Bivector, li
     # and cover all of the hull outside it.
     outline = points[0]                                                      # [angles] Point-
     # The lift from the origin, as it is, read along the directions x and y: `lift & mv.x.dual()` is `mv.x | lift`, its
-    # share along x.
+    # share along x; a stroke with a dot at its tip.
     push = lift * lift_scale                                                 # [] Force+
     forces = panel(ax, core.mv.x.dual(), core.mv.y.dual())
     simplices.overlay(ax, [
         contours.picture(outline, Mesh.triangulate(outline), np.zeros(len(outline)), rgb(wing_colour), camera),
         contours.picture(places, mesh, stream_values.reshape(-1), colours.reshape(-1, 3), camera,
                          lines=(streamlines,)),
-        simplices.strokes(stack((0 * push, push)), Mesh.chains([2]), rgb(lift_colour), lift_width, forces, np.ones(1),
-                          lift_head),
+        simplices.strokes(stack((0 * push, push)), Mesh.chains([2]), rgb(lift_colour), lift_width, forces),
+        simplices.markers(push[None], rgb(lift_colour), lift_tip, forces),
         *[picture for spots, colour in marks
           for picture in marked(spots, colour, mark_radius, mark_rim, camera)]])
     # The panel keeps its frame around the picture.

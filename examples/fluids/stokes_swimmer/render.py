@@ -26,22 +26,17 @@ cross_colour, label_colour = "#cbd5e1", "0.4"
 # The margin around the strokes in hinge-angle space, as a share of their extent, across and up: up, the room for the
 # name running down the line.
 hinge_margin, hinge_room = 0.12, 0.5
-# Half the height of the water each animated panel shows.
+# Half the height of the water each animated panel shows, and how far it reaches past the swimmer's track and the
+# origin either way.
 water_half_height = 1.55
+water_margin = 2.3
 # The swimmer's sizes in points, drawn at each figure's pixels a point: its chain's width, its beads' radius and their
 # white rims, its hinges' radius and their coloured rims; the trail's width.
 chain_width, bead_radius, bead_rim, hinge_radius, hinge_rim = 2.6, 3.25, 0.6, 2.55, 1.4
 summary_trail_width, animation_trail_width = charts.points(charts.LINE_PX), 1.6
-# The bead forces' arrows: their width and heads in pixels, and the force per width of the flow's panel, the arrows'
-# scale.
-force_width, force_head, force_scale = 1.75, 5.0, 1.4
-
-
-def point_coords(points: core.Point) -> np.ndarray:
-    """The `(x, y)` coordinates of points at unit weight, or of ideal displacements: their pairings with the
-    planes x = 0 and y = 0."""
-    mv = core.mv
-    return (stack((mv.x, mv.y)) & points[..., None]).to_array()
+# The bead forces' arrows: their width and the radius of the dots at their tips in pixels, and the force per width of
+# the flow's panel, the arrows' scale.
+force_width, force_tip, force_scale = 1.75, 2.6, 1.4
 
 
 def rgb(colour: str) -> np.ndarray:
@@ -113,18 +108,19 @@ def draw_summary(
     # The whole column: the surrounding flow and two trajectory plots.
     figure, (ax_flow, ax_path, ax_hinge) = charts.subplots(800, 260, ncols=3)
 
-    grid_xy = point_coords(grid)                                                # [gy, gx, 2]
+    mv = core.mv
     beads = world_sites.batch()                                                 # [steps, swimmers, beads] Point-
-    pos_xy = point_coords(positions)                                            # [steps + 1, swimmers, 2]
+    along = (mv.x & positions).to_array()                                       # [steps + 1, swimmers]
 
-    ax_flow.set_xlim(grid_xy[0, 0, 0], grid_xy[0, -1, 0])
-    ax_flow.set_ylim(grid_xy[0, 0, 1], grid_xy[-1, 0, 1])
+    # The flow's panel spans the grid, from its first sample to its last.
+    limits = (stack((mv.x, mv.y))[:, None] & stack((grid[0, 0], grid[-1, -1]))).to_array()   # [2, 2]
+    ax_flow.set(xlim=limits[0], ylim=limits[1])
     ax_flow.set_aspect("equal")
     ax_flow.set_axis_off()
 
-    t = np.linspace(0.0, 1.0, len(pos_xy))
-    ax_path.plot(t, pos_xy[:, 0, 0], color=purcell_colour)
-    ax_path.plot(t, pos_xy[:, 1, 0], color=scallop_colour, linestyle="--")
+    t = np.linspace(0.0, 1.0, len(along))
+    ax_path.plot(t, along[:, 0], color=purcell_colour)
+    ax_path.plot(t, along[:, 1], color=scallop_colour, linestyle="--")
     _zero_axes(ax_path, "time", "$x$")
 
     ax_hinge.plot(angles[:, 0, 0], angles[:, 0, 1], color=purcell_colour)
@@ -139,16 +135,19 @@ def draw_summary(
     points, directions = grid.reshape(-1), flow[0].reshape(-1)
     reference_speed = float(directions.dual().norm().max().to_array())
     camera = flat_panel(ax_flow, core.ga)
-    # Each bead's force drawn along the direction it pushes, one panel's width for `force_scale` of force.
+    # Each bead's force drawn along the direction it pushes, one panel's width for `force_scale` of force, a stroke
+    # with a dot at its tip.
     sites = beads[0, 0]                                                         # [beads] Point-
-    pushes = world_forces.batch()[0, 0].dual() * ((grid_xy[0, -1, 0] - grid_xy[0, 0, 0]) / force_scale)   # [beads] Direction-
+    panel_width = mv.x & (grid[0, -1] - grid[0, 0])                             # [] Scalar+
+    pushes = world_forces.batch()[0, 0].dual() * (panel_width / force_scale)   # [beads] Direction-
     n_beads = len(sites)
     simplices.overlay(ax_flow, [
         ink.layer(points, mesh, directions, camera, reference_speed, rgb(flow_colour)),
         _trail(positions[:, 0], summary_trail_width * charts.DPI / 72, camera),
         *_swimmer(sites, purcell_colour, camera, charts.DPI / 72),
         simplices.strokes(stack((sites, sites + pushes), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_beads),
-                          rgb(force_colour), force_width, camera, np.ones(n_beads), force_head)])
+                          rgb(force_colour), force_width, camera),
+        simplices.markers(sites + pushes, rgb(force_colour), force_tip, camera)])
     return figure
 
 
@@ -161,7 +160,6 @@ def animate_swimmers(
 ) -> Iterator[np.ndarray]:
     """Both swimmers' instantaneous velocities share fixed seeds and a fixed magnitude scale."""
     beads = world_sites.batch()[::every]                                        # [frames, swimmers, beads] Point-
-    tracks = point_coords(positions)                                           # [steps + 1, swimmers, 2]
     # Each swimmer's centre's places, swimmer by swimmer.
     paths = stack([positions[:, swimmer] for swimmer in range(positions.shape[1])])   # [swimmers, steps + 1] Point-
     mesh = ink.Mesh.grid(*grid.shape)
@@ -170,8 +168,10 @@ def animate_swimmers(
     first = next(flows)
     directions = first.reshape(first.shape[0], -1)
     reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
-    left = min(float(tracks[:, 0, 0].min()), 0.0) - 2.3
-    right = max(float(tracks[:, 0, 0].max()), 0.0) + 2.3
+    # The stretch of water the Purcell swimmer's track and the origin span along x, the margin either way.
+    along = core.mv.x & positions[:, 0]                                        # [steps + 1] Scalar+
+    left = float((along.min() - water_margin).clip(-np.inf, -water_margin).to_array())
+    right = float((along.max() + water_margin).clip(water_margin, np.inf).to_array())
     # As wide as the stretch of water each panel shows, at the height the two panels share.
     figure_height = 4.6
     figure_width = figure_height / 2 * (right - left) / (2 * water_half_height)

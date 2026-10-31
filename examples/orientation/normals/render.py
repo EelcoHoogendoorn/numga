@@ -9,7 +9,8 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.orientation.normals.core import Axis, Plane, Point, Spear, Surface
-from examples.util.wgsl import show, solids
+from examples.util.wgsl import show, simplices, solids
+from examples.util.wgsl.meshes import Samples
 
 side_colour = np.array(to_rgb("#218c9d"))
 winding_colour = np.array(to_rgb("#ce713f"))
@@ -27,23 +28,24 @@ margin, n_pixels, n_line_pixels, n_pair_pixels = 0.25, 300, 200, 175
 # strongly the mirror's rim shows over the white page.
 mirror_opacity, face_opacity, plane_opacity, mirror_rim_opacity = 0.06, 0.55, 0.23, 0.6
 mirror_rim_colour = mirror_rim_opacity * mirror_colour + (1 - mirror_rim_opacity)
-# The widths of rims, lines, normal arrows and edge arrows, the arrowheads' widths, and the points' radius, in pixels
-# of the triangles' panels.
-rim_width, line_width, normal_width, edge_arrow_width, head_width = 2.0, 2.3, 3.3, 2.6, 9.1
+# The widths of rims, lines, normal arrows and edge arrows, and the points' radius, in pixels of the triangles'
+# panels; the length of the strokes of the chevron at an arrow's tip, in widths of the arrow.
+rim_width, line_width, normal_width, edge_arrow_width = 2.0, 2.3, 3.3, 2.6
 dot_radius = 4.6
+chevron_length = 4.0
 # The line in the mirror's widths and the crossing planes' as a share of those above, their scenes that much smaller.
 line_thickness, pair_thickness = 0.67, 0.79
 
 
 # --- plumbing -------------------------------------------------------------------------
-def arrows(starts: Point, ends: Point, width: float, head_share: float, view: solids.View,
-           thickness: float) -> tuple[solids.Quadric, solids.Quadric]:
-    """Arrows between points of unit weight `[arrows]`, their shafts `thickness` times `width` pixels across, and their
-    heads `thickness` times the width set above and a share of each arrow's length."""
-    # The weight of the line through two points of unit weight is the distance between them.
-    lengths = (starts & ends).norm().to_array()                               # [arrows]
-    return solids.arrows(starts, ends, thickness * width / 2 * view.pixel, head_share * lengths,
-                         thickness * head_width / 2 * view.pixel)
+def chevron_arrows(starts: Point, ends: Point, colour: np.ndarray, width: float, view: solids.View,
+                   thickness: float) -> Samples:
+    """Arrows between points `[arrows]`: tubes `thickness` times `width` pixels across, each ending in a chevron, for
+    `solids.draw` to compose among the solids."""
+    n_arrows = starts.shape[0]
+    return simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_arrows), colour,
+                           thickness * width, view, gloss=solids.gloss, chevrons=np.ones(n_arrows),
+                           chevron=chevron_length * thickness * width)
 
 
 def polygons(corners: Point, view: solids.View, thickness: float
@@ -97,18 +99,15 @@ def draw_normals(vertices: Point, side: Plane, winding: Surface, mirror: Plane) 
 
     # Follow the supplied vertex order, so reflection visibly reverses the winding.
     edges = vertices[:, np.roll(np.arange(vertices.shape[1]), -1)] - vertices  # [scenes, vertices] Point-
-    edge_arrows = arrows((vertices + edges * 0.25).reshape(-1), (vertices + edges * 0.75).reshape(-1),
-                         edge_arrow_width, 0.4, view, 1.0)
-    side_arrows = arrows(centres, tips[0], normal_width, 0.25, view, 1.0)
-    winding_arrows = arrows(centres, tips[1], normal_width, 0.25, view, 1.0)
-    side_panel = [(side_arrows[0], side_colour), (side_arrows[1], side_colour)]
-    winding_panel = [(winding_arrows[0], winding_colour), (winding_arrows[1], winding_colour),
-                     (edge_arrows[0], winding_colour), (edge_arrows[1], winding_colour)]
+    edge_arrows = chevron_arrows((vertices + edges * 0.25).reshape(-1), (vertices + edges * 0.75).reshape(-1),
+                                 winding_colour, edge_arrow_width, view, 1.0)
+    side_arrows = chevron_arrows(centres, tips[0], side_colour, normal_width, view, 1.0)
+    winding_arrows = chevron_arrows(centres, tips[1], winding_colour, normal_width, view, 1.0)
 
     figure = grid_figure(view, 1, 2)
-    panels(figure, [solids.draw(common + side_panel, view, background, inks=[], translucent=sheets, meshes=[]),
-                    solids.draw(common + winding_panel, view, background, inks=[], translucent=sheets,
-                                meshes=[])], view, 2)
+    panels(figure, [solids.draw(common, view, background, inks=[], translucent=sheets, meshes=[(side_arrows, 1.0)]),
+                    solids.draw(common, view, background, inks=[], translucent=sheets,
+                                meshes=[(winding_arrows, 1.0), (edge_arrows, 1.0)])], view, 2)
     return figure
 
 
@@ -133,10 +132,10 @@ def draw_line_in_mirror(ends: Point, lines: Spear, mirror: Plane) -> plt.Figure:
 
     images = []
     for case in range(forward.shape[0]):
-        shaft, head = arrows(arrow_starts[case:case + 1], arrow_ends[case:case + 1], normal_width, 0.3, view,
-                             line_thickness)
-        images.append(solids.draw(common + [(shaft, winding_colour), (head, winding_colour)], view, background,
-                                  inks=[], translucent=[(mirror_plates, mirror_colour, mirror_opacity)], meshes=[]))
+        arrow = chevron_arrows(arrow_starts[case:case + 1], arrow_ends[case:case + 1], winding_colour, normal_width,
+                               view, line_thickness)
+        images.append(solids.draw(common, view, background, inks=[],
+                                  translucent=[(mirror_plates, mirror_colour, mirror_opacity)], meshes=[(arrow, 1.0)]))
     figure = grid_figure(view, 1, len(images))
     panels(figure, images, view, len(images))
     return figure

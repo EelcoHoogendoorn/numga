@@ -19,10 +19,10 @@ velocity_colour, force_colour, crank_colour, guide_colour, mirror_colour = (
 # The figure's width and height in pixels.
 figure_pixels = (420, 210)
 dpi = 100
-# The widths of the mirror, its dashes and gaps, the handles' paths, the cranks and the arrows, the arrows' heads,
-# and the radii of the pivots, their rims and the handles, in pixels.
+# The widths of the mirror, its dashes and gaps, the handles' paths, the cranks and the arrows, the radius of the dots
+# at the arrows' tips, and the radii of the pivots, their rims and the handles, in pixels.
 mirror_width, mirror_dashes, guide_width, crank_width = 1.2, (4.5, 5.5), 1.0, 3.6
-arrow_width, arrow_head = 2.5, 12.0
+arrow_width, arrow_tip = 2.5, 5.5
 pivot_radius, rim_width, handle_radius = 4.0, 1.3, 2.7
 
 
@@ -43,15 +43,16 @@ class WorkView:
         margin = radii.max() * 0.95
         mv = paths.context.multivector
         readings = stack((mv.x, mv.y))[:, None] & paths.normalized().reshape(-1)
-        lower = (readings.min(axis=-1) - margin).to_array()
-        upper = (readings.max(axis=-1) + margin).to_array()
+        lower = readings.min(axis=-1) - margin                                  # [2] Scalar+
+        upper = readings.max(axis=-1) + margin                                  # [2] Scalar+
 
         self.figure, ax = plt.subplots(figsize=np.array(figure_pixels) / dpi, dpi=dpi, layout="constrained")
-        ax.set(xlim=(lower[0], upper[0]), ylim=(lower[1], upper[1]), aspect="equal")
+        across, up = stack([lower, upper], axis=-1).to_array()
+        ax.set(xlim=across, ylim=up, aspect="equal")
         ax.set_axis_off()
         self.camera = panel(ax, mv.x, mv.y)
-        # The mirror, the plane x = 0, from the bottom of the view to its top.
-        mirror = mv.point([[0, lower[1]], [0, upper[1]]])                       # [ends] Point-
+        # The mirror, the plane x = 0, from the bottom of the view to its top: the origin moved up as far as each.
+        mirror = mv.w.dual() + mv.y.dual() * stack([lower[1], upper[1]])       # [ends] Point-
         # Each handle's path, closed: its places in turn and the first again, a chain of them.
         n_steps, n_cranks = paths.shape
         steps = np.r_[np.arange(n_steps), 0]
@@ -77,13 +78,14 @@ class WorkView:
         offset = radius * 0.055
         n_cranks = len(handles)
         # Separate the glyphs slightly so equal directions remain visible: the velocity's arrows and the force's,
-        # each on one side of the handles.
+        # each on one side of the handles, each a stroke with a dot at its tip.
         arrows = []
         for colour, side, directions in ((velocity_colour, -1, velocities), (force_colour, 1, forces)):
             tails = handles + side * offset * radial                            # [cranks] Point-
-            arrows.append(simplices.strokes(concatenate([tails, tails + directions * arrow_scale]), pairs(n_cranks),
-                                            colour, arrow_width, self.camera, heads=np.ones(n_cranks),
-                                            head=arrow_head))
+            tips = tails + directions * arrow_scale                             # [cranks] Point-
+            arrows += [simplices.strokes(concatenate([tails, tips]), pairs(n_cranks), colour, arrow_width,
+                                         self.camera),
+                       simplices.markers(tips, colour, arrow_tip, self.camera)]
         self.image.set_data(simplices.composited(self.guides + [
             simplices.strokes(concatenate([self.pivots, handles]), pairs(n_cranks), crank_colour, crank_width,
                               self.camera),

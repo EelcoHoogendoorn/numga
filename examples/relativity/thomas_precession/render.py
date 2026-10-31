@@ -28,10 +28,10 @@ orbit_half_width = 0.66
 # The window of the disk on the rocket's triangle at its largest: the centre, and its half width.
 TRIANGLE_CENTRE, TRIANGLE_HALF_WIDTH = (0.5, 0.2), 0.62
 FRAME_INCHES, DPI = 10 / 3, 90
-# In pixels: the outlines' widths, thin, regular and bold; the arrows' widths and their heads' length; the dots' radii,
-# small and for a particle. The samples round the disk's rim.
+# In pixels: the outlines' widths, thin, regular and bold; the arrows' widths and the radius of the dots at their tips;
+# the dots' radii, small and for a particle. The samples round the disk's rim.
 THIN, LINE, BOLD = 1.0, 1.25, 1.6
-ARROW_WIDTH, ARROW_HEAD = 2.5, 9.0
+ARROW_WIDTH, ARROW_TIP = 2.5, 5.0
 DOT, PARTICLE = 1.9, 3.1
 N_RIM_SAMPLES = 200
 
@@ -68,12 +68,15 @@ def ink(colour: str) -> np.ndarray:
     return np.array(to_rgb(colour))
 
 
-def arrows(tails: core.Antivector, steps: core.Antivector, colours: np.ndarray, camera: Camera) -> np.ndarray:
-    """Arrows from the tails by the steps `[arrows]`, each in its colour: their picture."""
-    ends = stack((tails, tails + steps), axis=-1).reshape(-1)                 # [arrows * 2] Antivector-
+def arrows(tails: core.Antivector, steps: core.Antivector, colours: np.ndarray, camera: Camera) -> list[np.ndarray]:
+    """Arrows from the tails by the steps `[arrows]`, each in its colour, a stroke and a dot at its tip: their
+    pictures."""
+    tips = tails + steps                                                      # [arrows] Antivector-
+    ends = stack((tails, tips), axis=-1).reshape(-1)                          # [arrows * 2] Antivector-
     n_arrows = tails.shape[0]
-    return simplices.strokes(ends, simplices.Mesh.chains([2] * n_arrows), colours, ARROW_WIDTH, camera,
-                             heads=np.ones(n_arrows), head=ARROW_HEAD, cap=simplices.Cap.BUTT)
+    return [simplices.strokes(ends, simplices.Mesh.chains([2] * n_arrows), colours, ARROW_WIDTH, camera,
+                              cap=simplices.Cap.BUTT),
+            simplices.markers(tips, colours, ARROW_TIP, camera)]
 
 
 def dots(points: core.Antivector, radius: float, camera: Camera) -> np.ndarray:
@@ -123,8 +126,8 @@ def animate_two_boosts(frames: Iterable[tuple[core.Antivector, core.Antivector, 
             edge,
             contours.picture(outline_points, fan, np.zeros(n_samples), ink(FILL), camera),
             outline(outline_points, INK, LINE, camera),
-            arrows(tails[-1:], straight_axis[None], ink(FAINT), camera),
-            arrows(tails, DISK_ARROW * unit(axes), ink(SPIN), camera),
+            *arrows(tails[-1:], straight_axis[None], ink(FAINT), camera),
+            *arrows(tails, DISK_ARROW * unit(axes), ink(SPIN), camera),
             dots(tails, DOT, camera)]))
         yield capture(figure)
     plt.close(figure)
@@ -144,12 +147,12 @@ def animate_orbits(loops: core.Antivector, states: Iterable[tuple[core.Antivecto
     beneath = [rim(camera),
                simplices.strokes(by_orbit, simplices.Mesh.chains([n_samples] * n_orbits),
                                  np.repeat(colours, n_samples - 1, axis=0), THIN, camera, opacity=0.5),
-               arrows(disk(first[0]), spin_arrows(ORBIT_ARROW * unit_spins(first[1])), ink(FAINT), camera)]
+               *arrows(disk(first[0]), spin_arrows(ORBIT_ARROW * unit_spins(first[1])), ink(FAINT), camera)]
     shown = simplices.overlay(ax, beneath)
     for velocities, spins in chain([first], states):
         points = disk(velocities)                                              # [orbits] Antivector-
         shown.set_data(simplices.composited(beneath + [
-            arrows(points, spin_arrows(ORBIT_ARROW * unit_spins(spins)), colours, camera), dots(points, DOT, camera)]))
+            *arrows(points, spin_arrows(ORBIT_ARROW * unit_spins(spins)), colours, camera), dots(points, DOT, camera)]))
         yield capture(figure)
     plt.close(figure)
 
@@ -167,7 +170,7 @@ def animate_box(half_width: float, walls: core.Antivector, states: Iterable[tupl
     shown = simplices.overlay(ax, beneath)
     for position, spin in states:
         shown.set_data(simplices.composited(beneath + [
-            arrows(position[None], spin_arrows(SCENE_ARROW * half_width * unit_spins(spin))[None], ink(SPIN), camera),
+            *arrows(position[None], spin_arrows(SCENE_ARROW * half_width * unit_spins(spin))[None], ink(SPIN), camera),
             dots(position[None], PARTICLE, camera)]))
         yield capture(figure)
     plt.close(figure)
@@ -185,8 +188,8 @@ def animate_ring(ring: core.Antivector, states: Iterable[tuple[core.Antivector, 
     shown = simplices.overlay(ax, beneath)
     for position, velocity, spin in states:
         shown.set_data(simplices.composited(beneath + [
-            arrows(position[None], (SCENE_ARROW * radius * unit(velocity))[None], ink(line_colours[0]), camera),
-            arrows(position[None], spin_arrows(SCENE_ARROW * radius * unit_spins(spin))[None], ink(SPIN), camera),
+            *arrows(position[None], (SCENE_ARROW * radius * unit(velocity))[None], ink(line_colours[0]), camera),
+            *arrows(position[None], spin_arrows(SCENE_ARROW * radius * unit_spins(spin))[None], ink(SPIN), camera),
             dots(position[None], PARTICLE, camera)]))
         yield capture(figure)
     plt.close(figure)

@@ -49,18 +49,13 @@ sweep_circle_width, sweep_dot_radius = 0.7, 1.3
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(points: core.Antivector) -> np.ndarray:
-    """Points, spins on the sphere or projected fibres in space, across x, y and z `[..., 3]`: their pairings
-    with the planes x, y and z."""
-    mv = points.context.multivector
-    return (stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array()
-
-
 def colour(spins: core.Antivector) -> np.ndarray:
-    """An RGB colour for each spin: its azimuth as the hue, darker towards the south pole."""
-    x, y, z = np.moveaxis(coordinates(spins), -1, 0)
-    hue = (np.arctan2(y, x) / (2 * np.pi)) % 1.0
-    return hsv_to_rgb(np.stack([hue, np.full_like(hue, 0.75), 0.55 + 0.4 * (1 + z) / 2], axis=-1))
+    """An RGB colour for each spin: its azimuth as the hue, darker towards the south pole, from its pairings with the
+    planes x, y and z."""
+    mv = spins.context.multivector
+    across, along, height = ((plane & spins).to_array() for plane in (mv.x, mv.y, mv.z))
+    hue = (np.arctan2(along, across) / (2 * np.pi)) % 1.0
+    return hsv_to_rgb(np.stack([hue, np.full_like(hue, 0.75), 0.55 + 0.4 * (1 + height) / 2], axis=-1))
 
 
 def visible(curves: core.Antivector, colours: np.ndarray) -> list[tuple[solids.Point, np.ndarray]]:

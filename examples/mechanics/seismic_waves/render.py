@@ -73,7 +73,7 @@ class DiskDrawing:
         self.mesh = mesh
         self.regions = regions
         self.reference = vertices
-        radius = vertices.batch().norm().to_array().max()
+        radius = float(vertices.batch().norm().max().to_array())
         self.view = solids.View(solids.aim(solids.origin, view_elevation, view_azimuth),
                                 np.full(2, 1.12 * radius), n_pixels)
         # The outline: the free surface, and the edges between a liquid and a solid triangle around the core.

@@ -21,24 +21,24 @@ from examples.util.wgsl.camera import flat_panel
 BONDS, BOND_WIDTH = np.array(to_rgb("#d5d8dc")), 1.0
 SUBLATTICES = ("#4a6fa5", "#c8553d")
 DOT = 0.0225
-# The pixels across a picture of the flake, and the inches the flake is drawn at.
+# The pixels across a picture of the flake, and the inches the flake is drawn at; the room past the flake on either
+# side, as a share of its reach.
 PIXELS = 300
 INCHES = 6.0
-
-
-def coordinates(points: core.Point) -> np.ndarray:
-    """The x and y coordinates of points in the plane."""
-    mv = points.context.multivector
-    return (stack((mv.x, mv.y)) & points.batch()[..., None]).to_array()
+MARGIN = 0.05
 
 
 def draw_bonds(ax, flake: core.Flake) -> np.ndarray:
     """The axes fitted to the flake, and its bonds, faint: their picture, for the atoms to be laid over."""
-    ax.update_datalim(coordinates(flake.positions))
-    ax.set_aspect("equal")
-    ax.autoscale_view()
-    ax.axis("off")
     positions = flake.positions.batch()                                       # [atoms] Point-
+    mv = positions.context.multivector
+    # The flake's reach across and up, read by pairing with the planes x and y, and a margin past it either side.
+    readings = stack((mv.x, mv.y))[:, None] & positions                       # [2, atoms] Scalar+
+    low, high = readings.min(axis=-1), readings.max(axis=-1)                  # [2] Scalar+, Scalar+
+    spare = (high - low) * MARGIN
+    limits = stack((low - spare, high + spare), axis=-1).to_array()
+    ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
+    ax.axis("off")
     camera = flat_panel(ax, positions.algebra)
     return simplices.strokes(positions, simplices.Mesh(len(positions), flake.first), BONDS, BOND_WIDTH, camera)
 

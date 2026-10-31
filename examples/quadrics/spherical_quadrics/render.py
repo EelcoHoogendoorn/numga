@@ -56,14 +56,14 @@ SHEET_OPACITY, CONE_OPACITY = 0.55, 0.23
 # The lighting's floor, the dashes of the antipodal loop around the oval's centre, the cone's reach from the centre,
 # the tangent great circles drawn, and every how many tangents a dot of the dual conic.
 AMBIENT, N_DASHES, REACH, N_TOUCHING, DOT_EVERY = 0.7, 12, 1.25, 16, 3
-# The arrows toward the poles: their length along the sphere, and their heads' share of it.
-POLE_LENGTH, HEAD_SHARE = 0.35, 0.3
+# The arrows toward the poles: their length along the sphere.
+POLE_LENGTH = 0.35
 # The polhodes: the levels drawn, as fractions of the form's least and greatest values on the sphere.
 FRACTIONS = np.linspace(0.0, 0.7, 4)[1:]
 # Widths and radii in pixels: the oval, the antipodal loop, the geodesics, the great circles, the polhodes, the
-# arrows' shafts and heads; the foci, the sample point, their rims, and the dots of the dual conic.
+# arrows' strokes and the dots at their tips; the foci, the sample point, their rims, and the dots of the dual conic.
 OVAL_WIDTH, ANTIPODE_WIDTH, GEODESIC_WIDTH, CIRCLE_WIDTH, POLHODE_WIDTH = 2.5, 1.75, 1.75, 1.5, 1.5
-SHAFT_WIDTH, HEAD_WIDTH = 1.5, 5.0
+SHAFT_WIDTH, TIP_RADIUS = 1.5, 3.0
 FOCUS_RADIUS, SAMPLE_RADIUS, RIM_WIDTH, DOT_RADIUS = 3.5, 4.0, 0.75, 1.5
 
 
@@ -195,10 +195,11 @@ struct Circle {
 }
 
 // An arrow painted on the sphere from a point of the oval toward the pole of its tangent great circle, a quarter turn
-// away, in its colour.
+// away, in its colour: a stroke along the great circle through them, and a dot at its tip.
 struct Arrow {
     start: Point,
     pole: Point,
+    tip: Point,
     colour: vec3<f32>,
 }
 
@@ -208,14 +209,13 @@ var<storage, read> arrows: array<Arrow>;
 var<storage, read> poles: array<Point>;
 
 // The share of a pixel an arrow covers at a point of the sphere: the point's turn from the start toward the pole,
-// read by its pairings with the two, and its distance off the great circle through them, their join; a shaft, then a
-// head narrowing to the tip.
+// read by its pairings with the two, and its distance off the great circle through them, their join, for its stroke;
+// and the dot at its tip.
 fn arrow_share(arrow: Arrow, point: Point) -> f32 {
     let along = atan2(-(point | arrow.pole), -(point | arrow.start));
     let off = abs((arrow.start & arrow.pole) & point);
-    let head = (arrow_length - along) / head_length * head_width / 2;
-    let half_width = select(shaft_width / 2, head, along > arrow_length - head_length);
-    return select(0.0, cover(half_width - off), along > 0 && along < arrow_length);
+    let stroke = select(0.0, cover(shaft_width / 2 - off), along > 0 && along < arrow_length);
+    return max(stroke, disc(arrow.tip, point, tip_radius));
 }
 
 fn side(beneath: vec3<f32>, seen: Seen) -> vec3<f32> {
@@ -310,9 +310,9 @@ constants = dict(
     above=ABOVE, oval_colour=OVAL, rim_colour=RIM, sphere_colour=SPHERE, dual_colour=DUAL, sheet_colour=SHEET, cone_colour=CONE, form_opacity=FORM_OPACITY,
     antipode_opacity=ANTIPODE_OPACITY, ball_opacity=BALL_OPACITY, sheet_opacity=SHEET_OPACITY,
     cone_opacity=CONE_OPACITY, dashes_per_turn=N_DASHES / (2 * np.pi), reach=REACH,
-    arrow_length=POLE_LENGTH, head_length=HEAD_SHARE * POLE_LENGTH, oval_width=OVAL_WIDTH * PIXEL,
+    arrow_length=POLE_LENGTH, oval_width=OVAL_WIDTH * PIXEL,
     antipode_width=ANTIPODE_WIDTH * PIXEL, geodesic_width=GEODESIC_WIDTH * PIXEL, circle_width=CIRCLE_WIDTH * PIXEL,
-    polhode_width=POLHODE_WIDTH * PIXEL, shaft_width=SHAFT_WIDTH * PIXEL, head_width=HEAD_WIDTH * PIXEL,
+    polhode_width=POLHODE_WIDTH * PIXEL, shaft_width=SHAFT_WIDTH * PIXEL, tip_radius=TIP_RADIUS * PIXEL,
     rim_width=RIM_WIDTH * PIXEL, dot_radius=DOT_RADIUS * PIXEL,
 )
 
@@ -350,7 +350,11 @@ def draw_spherical_conic(curve: Point, foci: Point, sample: Point, tangents: Pla
     circles = dict(plane=concatenate([stack((mv.x, mv.y, mv.z)).cast(Plane), tangents[touching]]),
                    colour=np.concatenate([np.broadcast_to(SPHERE, (3, 3)), colours]),
                    opacity=np.repeat([MERIDIAN_OPACITY, CIRCLE_OPACITY], [3, N_TOUCHING]))
-    arrows = dict(start=curve[touching], pole=tangents[touching].dual(), colour=colours)
+    # Each arrow's tip: the turn carrying its start onto its pole, a quarter turn, taken the arrow's share of the way.
+    starts, poles = curve[touching], tangents[touching].dual()                 # [touching] Point-, Point-
+    turns = (1 + poles * starts.inverse()).normalized()                         # [touching] Rotor+
+    tips = (turns.log() * (POLE_LENGTH / (np.pi / 2))).exp() >> starts        # [touching] Point-
+    arrows = dict(start=starts, pole=poles, tip=tips, colour=colours)
     envelope = picture(envelope_source, circles=circles, arrows=arrows, poles=tangents[::DOT_EVERY].dual(), **shared)
 
     # The polhodes, below zero and above.

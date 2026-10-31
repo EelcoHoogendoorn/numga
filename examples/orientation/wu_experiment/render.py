@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import concatenate
+from numga import concatenate, stack
 from examples.util.wgsl import contours, simplices
 from examples.util.wgsl.camera import panel
 from examples.orientation.wu_experiment.core import Direction, Scalar, Spin
@@ -33,7 +33,7 @@ def draw_experiment(spins: Spin, directions: Direction, rates: Scalar) -> plt.Fi
     # direction drawn out to its rate, framed by its largest reading across x or up z.
     senses = (spins & mv.z.dual()).to_array()                                     # [cases]
     polar = rates * directions                                                    # [cases, directions] Direction-
-    limit = np.abs(np.stack([(mv.x & polar).to_array(), (mv.z & polar).to_array()])).max() * 1.1
+    limit = float((stack((mv.x, mv.z))[:, None] & polar.reshape(-1)).abs().max().to_array()) * 1.1
     n_directions = polar.shape[-1]
     # The emission filled as triangles fanning out from the origin, first of the points, across each step of the
     # closed curve.

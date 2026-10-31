@@ -40,6 +40,11 @@ DISK = (-1.02, 1.02)
 WINDOW = (-0.04, 0.46)
 # The animation's side in pixels.
 PIXELS = 300
+# The marks drawn as squares of four strokes, in pixels from their middles to their corners: the planes' normals,
+# squares along the picture's rows and columns, and the directions the axes head for, squares turned an eighth of a
+# turn, diamonds.
+NORMAL_REACH = 0.75 * charts.MARKER_PX * np.sqrt(2)
+GOAL_REACH = charts.MARKER_PX
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -62,6 +67,17 @@ def on_disk(directions: core.Direction) -> np.ndarray:
     [001] read across [001] at unit reading along it."""
     bisector = stereographic(directions)                                      # [...] Direction-
     return ((stack((core.mv.x, core.mv.y)) & bisector[..., None]) / (core.mv.z & bisector)[..., None]).to_array()
+
+
+def squares(directions: core.Direction, reach: float, turn: float, camera: Camera) -> core.Direction:
+    """Closed squares about where directions lie on the stereographic disk, their corners in turn and the first
+    again, `[marks, corners + 1]`: `reach` pixels from each direction's bisector with [001] at unit reading along it,
+    the first corner turned `turn` from x in the plane across [001]."""
+    angles = turn + np.pi / 2 * np.arange(5)                                  # [corners + 1]
+    corners = (core.mv.xy * (-angles / 2)).exp() >> core.mv.x.dual()         # [corners + 1] Direction-
+    bisector = stereographic(directions)                                      # [marks] Direction-
+    places = bisector / (core.mv.z & bisector)                                # [marks] Direction-
+    return places[:, None] + corners * (reach * camera.pixel)
 
 
 def disk_camera(ax: plt.Axes) -> Camera:
@@ -126,10 +142,11 @@ def draw_disk(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], pl
     rim = stereographic((core.mv.xy * (-angles / 2)).exp() >> core.mv.x.dual())   # [samples] Direction-
     # The planes' normals a little larger than the directions, so that the two kinds of mark read apart.
     # A plane's normal, the direction square to it, is its dual.
+    normals = squares(planes.dual(), NORMAL_REACH, np.pi / 4, camera)         # [planes, corners + 1] Direction-
     simplices.overlay(ax, [
         simplices.strokes(rim, simplices.Mesh.chains([RIM_SAMPLES]), to_rgb(EDGE_COLOUR), charts.LINE_PX, camera),
-        simplices.markers(stereographic(planes.dual()), to_rgb(NORMAL_COLOUR), 0.75 * charts.MARKER_PX, camera,
-                          marker=simplices.Marker.SQUARE),
+        simplices.strokes(normals.reshape(-1), simplices.Mesh.chains([normals.shape[1]] * normals.shape[0]),
+                          to_rgb(NORMAL_COLOUR), charts.LINE_PX, camera),
         simplices.markers(stereographic(slips.reshape(-1)), to_rgb(NORMAL_COLOUR), charts.MARKER_PX / 2, camera),
         triangle(camera)])
 
@@ -146,8 +163,10 @@ def draw_close(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar]) -
         ax.annotate(name, goal, xytext=(0, 9), textcoords="offset points", ha="center", va="center",
                     color=EDGE_COLOUR)
     camera = disk_camera(ax)
-    return [triangle(camera), simplices.markers(stereographic(goals), to_rgb(EDGE_COLOUR), charts.MARKER_PX / 2, camera,
-                                                marker=simplices.Marker.DIAMOND)]
+    diamonds = squares(goals, GOAL_REACH, 0.0, camera)                        # [goals, corners + 1] Direction-
+    return [triangle(camera), simplices.strokes(diamonds.reshape(-1),
+                                                simplices.Mesh.chains([diamonds.shape[1]] * diamonds.shape[0]),
+                                                to_rgb(EDGE_COLOUR), charts.LINE_PX, camera)]
 
 
 def paths(camera: Camera, axes: core.Direction, amounts: core.Scalar, count: int) -> list[np.ndarray]:

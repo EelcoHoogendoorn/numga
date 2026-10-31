@@ -41,16 +41,13 @@ N_MERIDIAN_SAMPLES, N_OUTLINE_SAMPLES = 31, 121
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(points: core.Point) -> np.ndarray:
-    """x, y and z of each point, on the last axis: its pairings with the planes x, y and z."""
-    mv = core.mv
-    return (stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array()
-
-
 def lonlat(directions: core.Point) -> np.ndarray:
-    """The longitude and latitude in radians of directions, on the last axis."""
-    xyz = coordinates(directions)
-    return np.stack([np.arctan2(xyz[..., 1], xyz[..., 0]), np.arcsin(np.clip(xyz[..., 2], -1, 1))], axis=-1)
+    """The longitude and latitude in radians of directions, on the last axis, from their pairings with the planes x, y
+    and z."""
+    mv = core.mv
+    longitude = np.arctan2((mv.y & directions).to_array(), (mv.x & directions).to_array())
+    latitude = np.arcsin(np.clip((mv.z & directions).to_array(), -1, 1))
+    return np.stack([longitude, latitude], axis=-1)
 
 
 def projected(longitudes_latitudes: np.ndarray) -> np.ndarray:

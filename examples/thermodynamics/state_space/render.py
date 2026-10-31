@@ -64,10 +64,10 @@ class Charts:
         self.lines = lines
         self.temperature_lines = (art.family(self.entropy_temperature, lines.isochores.entropy_temperature, "volume",
                                              art.thin)
-                                  + art.family(self.entropy_temperature, lines.isobars.entropy_temperature, "pressure",
-                                               art.thin))
-        self.pressure_lines = (art.family(self.volume_pressure, lines.isotherms.volume_pressure, "temperature",
-                                          art.thin)
+                                  + art.level_family(self.entropy_temperature, lines.isobars.entropy_temperature,
+                                                     "pressure", art.thin))
+        self.pressure_lines = (art.level_family(self.volume_pressure, lines.isotherms.volume_pressure, "temperature",
+                                                art.thin)
                                + art.family(self.volume_pressure, lines.adiabats.volume_pressure, "entropy", art.thin))
         self.heat_temperature = art.Diagram(heat_range, temperature_range, (0.0, 0.0), n_rows, n_columns, ("Q", "T"))
 
@@ -97,9 +97,9 @@ class Charts:
         lines = self.lines
         temperature_names = [art.Floating(art.along(lines.isochores.entropy_temperature, 8), "V = const",
                                           art.families["volume"], art.text_size, "lb"),
-                             art.Floating(art.along(lines.isobars.entropy_temperature, 8), "p = const",
+                             art.Floating(art.crossings(lines.isobars.entropy_temperature, 8), "p = const",
                                           art.families["pressure"], art.text_size, "lb")]
-        pressure_names = [art.Floating(art.along(lines.isotherms.volume_pressure, 8), "T = const",
+        pressure_names = [art.Floating(art.crossings(lines.isotherms.volume_pressure, 8), "T = const",
                                        art.families["temperature"], art.text_size, "lb"),
                           art.Floating(art.along(lines.adiabats.volume_pressure, 8), "S = const",
                                        art.families["entropy"], art.text_size, "lb")]

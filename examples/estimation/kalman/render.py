@@ -12,7 +12,7 @@ from numga import concatenate, stack
 from examples.util.animation import capture
 from examples.util.wgsl import contours, quadrics, simplices
 from examples.util.wgsl.camera import flat_panel
-from examples.util.wgsl.simplices import Cap, Marker, Mesh
+from examples.util.wgsl.simplices import Cap, Mesh
 from examples.estimation.kalman.core import Motor, Point, ga, mv
 
 TRUE_COLOUR, DEAD_COLOUR, FILTER_COLOUR, READING_COLOUR = "#1f2329", "#d0482b", "#2c6fb4", "#3a9a5b"
@@ -23,11 +23,11 @@ OUTLINE = [[0.32, 0.0], [-0.18, 0.16], [-0.18, -0.16]]
 MARGIN = 0.12
 WIDTH = 3.2
 POINT = 100 / 72
-# The trails' widths in pixels, the dead-reckoned trail's dashes, the readings' marks' reach and ring width, and the
-# vehicles' opacity.
+# The trails' widths in pixels, the dead-reckoned trail's dashes, the readings' dots' radius, and the vehicles'
+# opacity.
 TRUE_WIDTH, DEAD_WIDTH, FILTER_WIDTH = 1.3 * POINT, 1.0 * POINT, 1.0 * POINT
 DEAD_DASHES = (5.1, 2.2)
-READING_REACH, READING_RING = 4.0, 1.5
+READING_RADIUS = 3.0
 VEHICLE_OPACITY = 0.9
 
 
@@ -75,8 +75,7 @@ def animate_tracking(truth: Motor, dead: Motor, estimates: Motor, positions: Poi
                     simplices.strokes(dead_path[:step + 1], trail, rgb(DEAD_COLOUR), DEAD_WIDTH, camera,
                                       dashes=DEAD_DASHES, cap=Cap.BUTT),
                     simplices.strokes(positions[:step + 1], trail, FILTER_RGB, FILTER_WIDTH, camera),
-                    simplices.markers(readings_so_far, rgb(READING_COLOUR), READING_REACH, camera,
-                                      inner=READING_REACH - READING_RING, marker=Marker.DIAMOND),
+                    simplices.markers(readings_so_far, rgb(READING_COLOUR), READING_RADIUS, camera),
                     *[contours.picture(shape[step], vehicle, np.zeros(3), rgb(colour), camera, opacity=VEHICLE_OPACITY)
                       for colour, shape in outlines.items()]]
         image.set_data(simplices.composited(pictures))

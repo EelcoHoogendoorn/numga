@@ -10,16 +10,16 @@ import numpy as np
 
 from examples.util import charts
 from examples.util.wgsl import quadrics, simplices
-from examples.util.wgsl.camera import Camera, flat_panel, panel
-from examples.util.wgsl.simplices import Marker
+from examples.util.wgsl.camera import Camera, flat_panel, panel, read
 from numga import stack
 from examples.quadrics.cayley_klein.core import Line, Plane, Point, Polarity, Scalar, ga, mv
 
 BOX = (-1.2, 1.9, -1.2, 1.6)
 # The pixels of a point the marks' areas and the strokes' widths below are given in, a point at 120 dots per inch;
-# the width of the marks' outlines.
+# the width of the marks' outlines, and of the strokes of the square and the diamond.
 POINT = 120 / 72
 OUTLINE = 1.0
+FRAME = 1.2
 
 
 def euclidean(points: Point) -> np.ndarray:
@@ -42,10 +42,22 @@ def cameras(ax: plt.Axes) -> tuple[Camera, Camera]:
     return flat_panel(ax, ga), lines
 
 
-def marks(points: Point, colour: str, area: float, marker: Marker, camera: Camera) -> np.ndarray:
-    """Points as marks of the area, in square points, with an outline in their colour."""
-    return simplices.markers(points.reshape(-1), rgb(colour), (np.sqrt(area) / 2 + OUTLINE / 2) * POINT, camera,
-                             marker=marker)
+def marks(points: Point, colour: str, area: float, camera: Camera) -> np.ndarray:
+    """Points as dots of the area, in square points, with an outline in their colour."""
+    return simplices.markers(points.reshape(-1), rgb(colour), (np.sqrt(area) / 2 + OUTLINE / 2) * POINT, camera)
+
+
+def squares(points: Point, colour: str, area: float, turn: float, camera: Camera) -> np.ndarray:
+    """Points as squares of the area, in square points, each four strokes in their colour, the first corner turned
+    `turn` from the direction the camera reads as one across: an eighth of a turn for a square along the picture's
+    rows and columns, none for a diamond."""
+    # The direction read as one across, turned to each corner and round to the first again, half a diagonal long.
+    along = camera.across.dual() / read(camera.across, camera.across.dual())  # [] Point-
+    turns = (mv.xy * (-(turn + np.pi / 2 * np.arange(5)) / 2)).exp()        # [corners + 1] Rotor+
+    corners = (turns >> along) * (np.sqrt(2 * area) / 2 * POINT * camera.pixel)   # [corners + 1] Point-
+    places = (points / (mv.w & points))[:, None] + corners                   # [points, corners + 1] Point-
+    return simplices.strokes(places.reshape(-1), simplices.Mesh.chains([5] * len(points)), rgb(colour),
+                             FRAME * POINT, camera)
 
 
 def level_sets(polarities: Polarity, colour: str, width: float, camera: Camera) -> np.ndarray:
@@ -70,11 +82,11 @@ def draw_hyperbolic_space(
     simplices.overlay(left, [level_sets(absolute[None], "black", 1.2, planes),
                              quadrics.flats(sides, 1.2 * POINT, rgb("#2563eb"), planes),
                              quadrics.flats(normal[None], 1.0 * POINT, rgb("#dc2626"), lines),
-                             marks(vertices, "#1d4ed8", 14, Marker.DISC, planes),
-                             marks(probe[None], "#dc2626", 18, Marker.DISC, planes),
-                             marks(foot[None], "#b91c1c", 14, Marker.SQUARE, planes),
-                             marks(reflected[None], "#f97316", 16, Marker.DISC, planes),
-                             marks(pole[None], "#a855f7", 16, Marker.DIAMOND, planes)])
+                             marks(vertices, "#1d4ed8", 14, planes),
+                             marks(probe[None], "#dc2626", 18, planes),
+                             squares(foot[None], "#b91c1c", 14, np.pi / 4, planes),
+                             marks(reflected[None], "#f97316", 16, planes),
+                             squares(pole[None], "#a855f7", 16, 0.0, planes)])
     for xy, theta in zip(euclidean(vertices), angles.to_array()):
         left.annotate(f"{np.degrees(theta):.1f}°", xy, textcoords="offset points", xytext=(3, 3))
 
@@ -82,5 +94,5 @@ def draw_hyperbolic_space(
     simplices.overlay(right, [level_sets(absolute[None], "black", 1.2, planes)]
                       + [level_sets(family, colour, 0.8, planes)
                          for family, colour in zip(spheres, ("#3b82f6", "#f97316"))]
-                      + [marks(centres, "#111827", 13, Marker.DISC, planes)])
+                      + [marks(centres, "#111827", 13, planes)])
     return fig

@@ -39,20 +39,16 @@ row_size, disk_row_size = (780, 195), (780, 260)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def plane_places(points: core.Point) -> np.ndarray:
-    """x and y of intrinsic positions and directions `[...]` on the last axis, for matplotlib's artists: their
-    pairings with the planes x and y."""
+def frame_panel(ax: plt.Axes, points: core.Point, margin_ratio: float) -> None:
+    """Square equal-aspect viewport around the points with no axes or ticks: their extent read by pairing with the
+    planes x and y."""
     mv = points.context.multivector
-    return np.asarray((stack((mv.x, mv.y)) & points.batch()[..., None]).to_array())
-
-
-def frame_panel(ax: plt.Axes, places: np.ndarray, margin_ratio: float) -> None:
-    """Square equal-aspect viewport around `places` with no axes or ticks."""
-    low, high = places.min(axis=0), places.max(axis=0)
+    readings = stack((mv.x, mv.y))[:, None] & points.batch().reshape(-1)      # [2, points] Scalar+
+    low, high = readings.min(axis=-1), readings.max(axis=-1)                  # [2] Scalar+, Scalar+
     centre = (low + high) / 2
     half_span = (1 + margin_ratio) * (high - low).max() / 2
-    ax.set(xlim=(centre[0] - half_span, centre[0] + half_span),
-           ylim=(centre[1] - half_span, centre[1] + half_span), aspect="equal")
+    limits = stack((centre - half_span, centre + half_span), axis=-1).to_array()
+    ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
     ax.set_axis_off()
 
 
@@ -89,7 +85,6 @@ def spaced_faces(centres: core.Point, max_radius: float, min_separation: float) 
 def draw_metric_basis(corners: core.Point, points: core.Point,
                       basis: core.Metric, metric: core.Metric) -> plt.Figure:
     """The three hyperbolic Regge edge metric basis forms and their sum into a positive-definite metric ellipse."""
-    corner_xy = plane_places(corners)
     # The samples triangulated, for the pictures of the forms across them.
     mesh = core.Mesh.triangulate(points)
     places = points.batch()                                                   # [samples] Point-
@@ -111,7 +106,7 @@ def draw_metric_basis(corners: core.Point, points: core.Point,
     tails, heads = core.triangle.corners[2, 1]
     for index in range(3):
         ax = axes[index]
-        frame_panel(ax, corner_xy, 0.22)
+        frame_panel(ax, corners, 0.22)
         camera = flat_panel(ax, places.algebra)
         values = basis_forms[index]
         colours = diverging_colours(Normalize(-basis_bound, basis_bound)(values))[:, :3]
@@ -124,7 +119,7 @@ def draw_metric_basis(corners: core.Point, points: core.Point,
             *ringed(corners[index][None], primal_colour, highlight_dot, camera)])
 
     ax = axes[3]
-    frame_panel(ax, corner_xy, 0.22)
+    frame_panel(ax, corners, 0.22)
     camera = flat_panel(ax, places.algebra)
     max_metric = metric_form.max()
     ellipse_levels = np.linspace(0.03 * max_metric, 0.28 * max_metric, 4)
@@ -145,7 +140,6 @@ def draw_curvature_defects(mesh: core.Mesh, vertices: core.Point, centres: core.
                            metrics: core.Metric, curvatures: core.Bivector) -> plt.Figure:
     """Vertex curvature shades the fixed reference disks, with equal-length displacement contours at sampled faces."""
     mv = vertices.context.multivector
-    places = plane_places(vertices)
     curvature_values = np.asarray((curvatures.batch() & mv.xy.dual()).to_array())
     points = vertices.batch()                                                 # [vertices] Point-
     boundary = mesh.exterior(0)
@@ -186,7 +180,7 @@ def draw_curvature_defects(mesh: core.Mesh, vertices: core.Point, centres: core.
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.04)
 
     for case_index, ax in enumerate(axes):
-        frame_panel(ax, places, 0.08)
+        frame_panel(ax, vertices, 0.08)
         camera = flat_panel(ax, points.algebra)
         field = curvature_values[case_index].copy()
         field[boundary] = 0.0
@@ -216,7 +210,6 @@ def draw_intrinsic_flow(mesh: core.Mesh, vertices: core.Point,
                         potential: core.Scalar,
                         current: core.Point) -> plt.Figure:
     """Potential colours and current streaks on one shared magnitude scale across the Regge metrics."""
-    places = plane_places(vertices)
     potentials = np.asarray(potential.batch().to_array())
     potential_levels = tuple(contours.Level(level, np.append(to_rgb(wall_colour), 0.45), 1.0)
                              for level in np.linspace(-0.85, 0.85, n_contours + 2)[1:-1])
@@ -233,7 +226,7 @@ def draw_intrinsic_flow(mesh: core.Mesh, vertices: core.Point,
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.04)
 
     for index, ax in enumerate(axes):
-        frame_panel(ax, places, 0.08)
+        frame_panel(ax, vertices, 0.08)
         camera = flat_panel(ax, points.algebra)
         colours = diverging_colours(Normalize(-1.0, 1.0)(potentials[index]))[:, :3]
         simplices.overlay(ax, [

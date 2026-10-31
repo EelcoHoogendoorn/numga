@@ -46,14 +46,12 @@ N_FRAMING_RIM = 4
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(points: core.Point) -> np.ndarray:
-    """x, y and z of points, on the last axis: their pairings with the planes x, y and z over their weight."""
-    return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
-
-
-def plane(points: core.Point) -> np.ndarray:
-    """Points of the plane of bending, along the unbent rod and up, on the last axis."""
-    return coordinates(points)[..., [2, 1]]
+def extent(points: core.Point) -> tuple[np.ndarray, np.ndarray]:
+    """The lowest and the highest readings of points in the plane of bending, along the unbent rod and up `[2]` each:
+    their pairings with the planes z and y over their weight."""
+    points = points.reshape(-1)                                              # [points] Point-
+    readings = (stack((mv.z, mv.y))[:, None] & points) / (mv.w & points)      # [2, points] Scalar+
+    return readings.min(axis=-1).to_array(), readings.max(axis=-1).to_array()
 
 
 def frame_plane(ax: plt.Axes, low: np.ndarray, high: np.ndarray) -> Camera:
@@ -67,14 +65,12 @@ def frame_plane(ax: plt.Axes, low: np.ndarray, high: np.ndarray) -> Camera:
 def draw_curls(centres: core.Point) -> plt.Figure:
     """The strip curled by each couple `[curls, pieces + 1]`, from straight, darkest, to a double ring, with
     its clamp."""
-    curves = plane(centres)                                                  # [curls, pieces + 1, 2]
     n_curls, n_points = centres.shape
     colours = plt.get_cmap(ROD_MAP)(np.linspace(0.05, 0.9, n_curls))[:, :3]
     figure, ax = plt.subplots(figsize=(7.5, 4.0), dpi=55)
     ax.set_axis_off()
     figure.tight_layout()
-    low, high = curves.reshape(-1, 2).min(axis=0), curves.reshape(-1, 2).max(axis=0)
-    camera = frame_plane(ax, low, high)
+    camera = frame_plane(ax, *extent(centres))
     # The clamp across the whole panel, along the plane z = 0 where the strip is held.
     clamp = mv.point([[0, height, 0] for height in ax.get_ylim()])           # [ends] Point-
     simplices.overlay(ax, [
@@ -96,8 +92,7 @@ def rod_pictures(curve: core.Point, ax: plt.Axes, camera: Camera) -> list[np.nda
 def animate_sweep(centres: core.Point) -> Iterator[np.ndarray]:
     """Euler's elastica as the end angle grows `[frames, pieces + 1]`, all to one scale, in one figure whose rod and
     pins move."""
-    curves = plane(centres)                                                  # [frames, pieces + 1, 2]
-    low, high = curves.reshape(-1, 2).min(axis=0), curves.reshape(-1, 2).max(axis=0)
+    low, high = extent(centres)
     figure, ax = plt.subplots(figsize=(5.0, 5.0 * (high[1] - low[1] + 2 * MARGIN) / (high[0] - low[0] + 2 * MARGIN)),
                               dpi=60)
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1)

@@ -26,9 +26,10 @@ CIRCLE_COLOUR, CIRCLE_OPACITY = np.full(3, 0.75), 0.55
 # about the centre, and the pixels across it.
 ELEVATION, AZIMUTH = np.radians(18.0), np.radians(40.0)
 REACH, N_PIXELS = 1.3, 300
-# The widths of the great circles, the paths and the arrows, the arrowheads' length and the dots' radius, in pixels,
-# and the size of the axes' names in points; how far the axes' arrows and their names reach, in radii of the ball.
-CIRCLE_WIDTH, PATH_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH, DOT_RADIUS = 1.0, 1.4, 1.0, 7.0, 4.0, 2.6
+# The widths of the great circles, the paths and the arrows, the radii of the balls at the arrows' tips and of the
+# dots, in pixels, and the size of the axes' names in points; how far the axes' arrows and their names reach, in radii
+# of the ball.
+CIRCLE_WIDTH, PATH_WIDTH, ARROW_WIDTH, TIP_RADIUS, DOT_RADIUS = 1.0, 1.4, 1.0, 1.6, 2.6
 LABEL_SIZE = 8
 AXIS_LENGTH, LABEL_DISTANCE = 1.18, 1.26
 # The quantity plots' sizes in pixels: the two lines side by side, and a signal over time.
@@ -75,8 +76,10 @@ def draw_nutation(states: Iterable[core.State], steady_states: core.State) -> pl
     n_paths, n_times = paths.shape
     tracks = simplices.tubes(paths.reshape(-1), simplices.Mesh.chains([n_times] * n_paths),
                              np.repeat(colours, n_times - 1, axis=0), PATH_WIDTH, view, gloss=solids.gloss)
-    shafts, heads = solids.frame(AXIS_LENGTH, ARROW_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel,
-                                 HEAD_WIDTH / 2 * view.pixel)
+    # The frame of the axes: rods from the centre along x, y and z, each with a ball at its tip.
+    axis_tips = solids.origin + solids.axes.dual() * AXIS_LENGTH              # [3] Point-
+    shafts = solids.rods(solids.origin, axis_tips, ARROW_WIDTH / 2 * view.pixel)
+    heads = solids.ball(axis_tips, TIP_RADIUS * view.pixel)[:, None]
     parts = [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR),
              (solids.ball(gpu_points(steady_states), DOT_RADIUS * view.pixel)[:, None], colours)]
     # The ball, translucent, the first part after the opaque ones; its equator and two meridians inked where the

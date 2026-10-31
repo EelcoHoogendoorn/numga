@@ -25,25 +25,27 @@ transverse_colour = "#8271a6"
 label_colour = "0.4"
 margin = 0.55
 field_gap = 0.8
-# Widths, heads, dashes and radii in pixels, for a lattice picture about 300 pixels a side.
+# Widths, dashes and radii in pixels, for a lattice picture about 300 pixels a side: an arrow's width and the
+# radius of the dot at its tip.
 bond_width = 1.5
 rest_width = 1.2
 rest_dashes = (4.0, 3.0)
 particle_radius = 2.2
 rest_radius = 2.0
-dipole_width, dipole_head = 2.6, 9.0
-applied_width, applied_head = 3.5, 11.0
+dipole_width, dipole_tip = 2.6, 4.0
+applied_width, applied_tip = 3.5, 5.5
 
 
-def lattice_axes(rest: Point) -> tuple[plt.Figure, plt.Axes, np.ndarray]:
-    """A figure framing the reference sites, with room below them for the applied field."""
+def lattice_axes(rest: Point) -> tuple[plt.Figure, plt.Axes, Scalar]:
+    """A figure framing the reference sites, with room below them for the applied field; and half the box about the
+    sites, across and up, the margin included."""
     mv = rest.context.multivector
-    sites = (stack((mv.x, mv.y)) & rest.batch()[..., None]).to_array()                 # [particles, 2]
+    readings = stack((mv.x, mv.y))[:, None] & rest.batch()                              # [2, particles] Scalar+
+    half_size = readings.abs().max(axis=-1) + margin                                     # [2] Scalar+
+    limits = stack((-half_size, half_size), axis=-1).to_array()                          # [2, 2]
     figure, ax = plt.subplots(figsize=(3.4, 3.4), dpi=90)
     figure.subplots_adjust(0.02, 0.03, 0.98, 0.98)
-    half_size = np.abs(sites).max(axis=0) + margin
-    ax.set(xlim=(-half_size[0], half_size[0]), ylim=(-half_size[1] - field_gap - 0.35, half_size[1]),
-           aspect="equal")
+    ax.set(xlim=limits[0], ylim=(limits[1, 0] - field_gap - 0.35, limits[1, 1]), aspect="equal")
     ax.axis("off")
     return figure, ax, half_size
 
@@ -76,23 +78,24 @@ class LatticeView:
         self.anchor = mv.y.dual() * (-half_size[1] - field_gap / 2)                     # [] Point-
         self.reference = [simplices.strokes(sites, self.bonds, rest_colour, rest_width, self.camera,
                                             dashes=rest_dashes),
-                          simplices.markers(sites, rest_colour, rest_radius, self.camera,
-                                            inner=rest_radius - rest_width)]
+                          simplices.markers(sites, rest_colour, rest_radius, self.camera)]
         self.image = simplices.overlay(ax, self.reference)
 
     def update(self, positions: Point, dipoles: Point, applied: Field) -> plt.Figure:
         sites, arrows = positions.batch(), dipoles.batch() * self.dipole_scale
-        dipole_ends = stack((sites - arrows / 2, sites + arrows / 2), axis=-1).reshape(-1)
+        # Each arrow a stroke with a dot at its tip.
+        tips = sites + arrows / 2                                                         # [particles] Point-
+        dipole_ends = stack((sites - arrows / 2, tips), axis=-1).reshape(-1)
         # The applied field drawn along the direction whose field it is.
         applied_arrow = field_along.solve(applied) * self.field_scale                     # [] Point-
         applied_ends = stack((self.anchor - applied_arrow / 2, self.anchor + applied_arrow / 2))
         self.image.set_data(simplices.composited(self.reference + [
             simplices.strokes(sites, self.bonds, bond_colour, bond_width, self.camera),
             simplices.markers(sites, bond_colour, particle_radius, self.camera),
-            simplices.strokes(dipole_ends, self.arrows, dipole_colour, dipole_width, self.camera, np.ones(1),
-                              dipole_head),
-            simplices.strokes(applied_ends, Mesh.chains([2]), applied_colour, applied_width, self.camera,
-                              np.ones(1), applied_head)]))
+            simplices.strokes(dipole_ends, self.arrows, dipole_colour, dipole_width, self.camera),
+            simplices.markers(tips, dipole_colour, dipole_tip, self.camera),
+            simplices.strokes(applied_ends, Mesh.chains([2]), applied_colour, applied_width, self.camera),
+            simplices.markers(applied_ends[1:], applied_colour, applied_tip, self.camera)]))
         return self.figure
 
 

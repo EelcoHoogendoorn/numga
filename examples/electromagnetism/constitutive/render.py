@@ -46,22 +46,24 @@ z_max, omega = 4.0 * np.pi, 1.0
 # and the figure's size in inches at its dots per inch.
 elevation, azimuth = np.radians(20.0), np.radians(-35.0)
 margin, figure_size, figure_dpi = 0.06, (18.3, 3.8), 43
-# The widths of the field curves, the axis and the arrows' shafts, in pixels; the arrows' heads, as a share of the
-# arrow's length, and their radius, as a share of the head's length.
+# The widths of the field curves, the axis and the arrows' shafts, in pixels; the radius of the ball at an arrow's
+# tip, as a share of the arrow's length.
 curve_width, axis_width, arrow_width = 1.44, 1.08, 1.08
-head_share, head_spread = 0.18, 0.35
+tip_share = 0.05
 # The magnetic discs, at every other station: their radius at a unit of field, in the drawing's units, their area
 # growing with the field's strength as a patch's does; their thickness, as a share of their radius; and how much of
 # what lies behind them they hide.
 disc_scale, disc_flatness, disc_opacity = 0.41, 0.1, 0.55
 # The arcs of the discs' sense of turning, just outside the rim, as a share of the disc's radius: where they start
-# around it from the direction of travel, how far they run, and their heads, as angles around it; and the samples
-# along each.
+# around it from the direction of travel and how far they run, as angles around it; the samples along each; and the
+# radius of the ball at each arc's end, as a share of the disc's radius.
 arc_reach = 1.2
-arc_start, arc_span, arc_head = np.radians(30.0), np.radians(240.0), np.radians(35.0)
+arc_start, arc_span = np.radians(30.0), np.radians(240.0)
 n_arc = 16
-# The polarizations' arrows, their width and heads in pixels, and their dotted lines' width, dots and opacity.
-polarization_width, polarization_head = 3.5, 12.0
+arc_tip = 0.12
+# The polarizations' arrows, their width and the radius of the dot at their tips in pixels, and their dotted lines'
+# width, dots and opacity.
+polarization_width, polarization_tip = 3.5, 5.5
 polarization_dots, polarization_opacity = (1.5, 2.5), 0.6
 
 
@@ -116,12 +118,11 @@ def wave_scene(ax: plt.Axes, modes: Modes) -> Scene:
     return Scene(view, np.ones(3), [], [], inks=[], translucent=[(line, axis_colour, axis_opacity)])
 
 
-def magnetic_discs(stations: solids.Point, fields: core.Bivector,
-                   radius: float) -> tuple[solids.Quadric, solids.Point, solids.Quadric, solids.Quadric]:
+def magnetic_discs(stations: solids.Point,
+                   fields: core.Bivector) -> tuple[solids.Quadric, solids.Point, solids.Quadric]:
     """The magnetic fields `[stations] Bivector+` at stations `[stations] Point-`, each as a flat disc in its own
     plane, its area growing with the field's strength, `[stations, 1]`; and the sense it turns in, as an arc around
-    the rim `[stations, arc]` ending in an arrow along the rim, its shaft of a radius and its head nearly all of it
-    `[stations]` each."""
+    the rim `[stations, arc]` with a ball at its end `[stations, 1]`, the ball growing with the disc."""
     # The field embedded in the drawing is the line through the origin it turns about, its size the field's strength.
     magnetic = to_scene >> solids.context.include_from_algebra(magnetic_field(fields))        # [stations] Line+
     radii = disc_scale * magnetic.norm().square_root()                          # [stations] Scalar+
@@ -134,16 +135,15 @@ def magnetic_discs(stations: solids.Point, fields: core.Bivector,
     flattening = (1 / disc_flatness**2 - 1) * planes * (planes & solids.Point)  # [stations] Plane+ <- Point-
     rounded = (solids.axes * (solids.axes & solids.Point)).sum(axis=-1)          # [] Plane+ <- Point-
     lenses = rounded + flattening - radii**2 * sm.w * (sm.w & solids.Point)     # [stations] Plane+ <- Point-
-    angles = arc_start + np.append(np.linspace(0, arc_span, n_arc), arc_span + arc_head)   # [arc + 1]
-    turns = (pivots[:, None] * (-angles / 2)).exp()                             # [stations, arc + 1] Motor+
+    angles = arc_start + np.linspace(0, arc_span, n_arc)                        # [arc]
+    turns = (pivots[:, None] * (-angles / 2)).exp()                             # [stations, arc] Motor+
     # Each arc from where the plane holds the direction of travel, as every magnetic plane of the wave does.
     heading = to_scene >> solids.context.include_from_algebra(space_slice(travel))             # [] Point-
     rim_starts = solids.origin + heading * (arc_reach * radii)                  # [stations] Point-
-    rims = (centres[:, None] * turns) >> rim_starts[:, None]                    # [stations, arc + 1] Point-
-    # The head spans the chord from the arc's end to the last point, so it shrinks with the disc.
-    chords = (rims[:, -2] & rims[:, -1]).norm()                                # [stations] Scalar+
-    shafts, heads = solids.arrows(rims[:, -2], rims[:, -1], radius, 0.95 * chords, head_spread * chords)
-    return solids.placed(lenses, centres)[:, None], rims[:, :-1], shafts, heads
+    rims = (centres[:, None] * turns) >> rim_starts[:, None]                    # [stations, arc] Point-
+    # The ball at each arc's end grows with its disc, so it shrinks to nothing with the field.
+    ends = solids.ball(rims[:, -1], arc_tip * radii)[:, None]                   # [stations, 1] Plane+ <- Point-
+    return solids.placed(lenses, centres)[:, None], rims, ends
 
 
 def wave_image(scene: Scene, modes: Modes, tau: float) -> np.ndarray:
@@ -156,14 +156,15 @@ def wave_image(scene: Scene, modes: Modes, tau: float) -> np.ndarray:
     field = waves(modes, np.array(tau), distance)                               # [samples] Bivector+
     electric = to_scene >> solids.context.include_from_algebra(electric_direction(field))       # [samples] Point-
 
-    # Arrows from the axis at evenly spaced stations, their heads a share of their length, so weak fields stay slender.
+    # Arrows from the axis at evenly spaced stations, each a rod with a ball at its tip, the ball's radius a share of
+    # the arrow's length, so weak fields stay slender.
     station_idx = np.linspace(0, n_samples - 1, n_stations, dtype=int)
     stations = axis[station_idx]                                                # [stations] Point-
-    head_lengths = head_share * solids.context.include_from_algebra((field[station_idx] & core.time).norm())
-    shafts, heads = solids.arrows(stations, stations + electric[station_idx], arrow_width / 2 * view.pixel,
-                                  head_lengths, head_spread * head_lengths)
-    discs, arcs, turning_shafts, turning_heads = magnetic_discs(stations[::2], field[station_idx[::2]],
-                                                                arrow_width / 2 * view.pixel)
+    tips = stations + electric[station_idx]                                     # [stations] Point-
+    tip_radii = tip_share * solids.context.include_from_algebra((field[station_idx] & core.time).norm())
+    shafts = solids.rods(stations, tips, arrow_width / 2 * view.pixel)          # [stations, 3] Plane+ <- Point-
+    balls = solids.ball(tips, tip_radii)[:, None]                               # [stations, 1] Plane+ <- Point-
+    discs, arcs, arc_ends = magnetic_discs(stations[::2], field[station_idx[::2]])
 
     # The curve the electric arrows' tips trace and the discs' arcs, chains of edges one after another, each edge in
     # its curve's colour.
@@ -172,8 +173,7 @@ def wave_image(scene: Scene, modes: Modes, tau: float) -> np.ndarray:
     chains = simplices.Mesh.chains([n_samples] + [n_arc] * n_discs)
     colours = np.repeat([electric_colour, magnetic_colour], [n_samples - 1, n_discs * (n_arc - 1)], axis=0)
     curves = simplices.tubes(curve_points, chains, colours, curve_width, view, gloss=solids.gloss)
-    parts = [(shafts, electric_colour), (heads, electric_colour), (turning_shafts, magnetic_colour),
-             (turning_heads, magnetic_colour)]
+    parts = [(shafts, electric_colour), (balls, electric_colour), (arc_ends, magnetic_colour)]
     return scene.draw(parts, inks=[], translucent=[(discs, magnetic_colour, disc_opacity)], meshes=[(curves, 1.0)])
 
 
@@ -248,13 +248,13 @@ def draw_polarizations(
     # The fields read as they are, by the planes x and y sweep through time: `swept_plane & field`, the electric
     # field along each.
     plane = panel(ax, *core.swept_planes[:2])
-    # Each mode's line through the origin, dotted, under its arrow from the origin.
+    # Each mode's line through the origin, dotted, under its arrow from the origin, a stroke with a dot at its tip.
     simplices.overlay(ax, [
         _cross(ax, plane, "$x$", "$y$"),
         simplices.strokes(stack((-units, units), axis=-1).reshape(-1), pairs, colours, charts.LINE_PX, plane,
                           dashes=polarization_dots, cap=simplices.Cap.ROUND, opacity=polarization_opacity),
-        simplices.strokes(stack((0 * units, units), axis=-1).reshape(-1), pairs, colours, polarization_width, plane,
-                          np.ones(n_modes), polarization_head)])
+        simplices.strokes(stack((0 * units, units), axis=-1).reshape(-1), pairs, colours, polarization_width, plane),
+        simplices.markers(units, colours, polarization_tip, plane)])
 
 
 def draw_fresnel_surface_polar(

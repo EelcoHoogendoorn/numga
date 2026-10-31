@@ -12,10 +12,10 @@ from examples.util.wgsl.camera import panel
 
 # The samples around each orbit's ring.
 n_ring_samples = 120
-# In pixels: the rings' width and the orbits' dots' radius, both faint; the arrows' width and their heads' length; the
-# closure gap's width and its dashes; the start's dot's radius.
+# In pixels: the rings' width and the orbits' dots' radius, both faint; the arrows' width and the length of the strokes
+# of the chevrons at their tips; the closure gap's width and its dashes; the start's dot's radius.
 ring_width, ring_opacity, orbit_dot, orbit_opacity = 1.0, 0.22, 1.4, 0.4
-arrow_width, arrow_head = 2.5, 10.0
+arrow_width, chevron_length = 2.5, 10.0
 gap_width, gap_dashes = 1.8, (5.0, 5.0)
 start_dot = 2.4
 white = np.ones(3)
@@ -55,8 +55,9 @@ def draw_triangles(paths: Root, roots: Root, species: np.ndarray,
                               opacity=ring_opacity),
             simplices.markers(orbits, np.tile(orbit_colours[particles], (n_steps, 1)), orbit_dot, camera,
                               opacity=orbit_opacity),
+            # Each root an arrow from the corner before it: a stroke, and a chevron at its tip.
             simplices.strokes(corners, simplices.Mesh.chains([n_corners]), orbit_colours[species[index]],
-                              arrow_width, camera, heads=np.ones(n_corners - 1), head=arrow_head,
+                              arrow_width, camera, chevrons=np.ones(n_corners - 1), chevron=chevron_length,
                               cap=simplices.Cap.BUTT),
             # A closed path has a zero-length dashed segment.
             simplices.strokes(corners[[0, -1]], simplices.Mesh.chains([2]), white, gap_width, camera,

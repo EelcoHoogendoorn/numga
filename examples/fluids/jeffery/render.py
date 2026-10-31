@@ -39,14 +39,15 @@ OCTANT_COLOURS = np.where((OCTANTS.prod(axis=-1) > 0)[:, None], to_rgb(BODY_DARK
 TIP_RGB = np.array(to_rgb(TIP))
 PATH_WIDTH, MARK_WIDTH = 2.0, 3.0
 # The sphere of directions, drawn on the GPU: its colour and how much each of its surfaces hides, and its grid's
-# width in pixels and opacity; the frame's arrows' length in radii of the sphere, the flow's arrows' width and heads
-# in pixels, and how far the frame's names reach; the frame's arrows' width and heads in pixels; the orbits' width in
-# pixels, the margin around the names' reach, and the pixels across a sphere.
+# width in pixels and opacity; the frame's arrows' length in radii of the sphere, the flow's arrows' width and the
+# radius of the balls at their tips in pixels, and how far the frame's names reach; the frame's arrows' width and the
+# radius of the balls at their tips in pixels; the orbits' width in pixels, the margin around the names' reach, and
+# the pixels across a sphere.
 SPHERE, SPHERE_OPACITY = np.array(to_rgb("#cbd5e1")), 0.15
 GRID_WIDTH, GRID_OPACITY = 1.5, 0.3
 FLOW_RGB = np.array(to_rgb(FLOW))
-ARROW_LENGTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH, LABEL_DISTANCE = 1.35, 3.0, 16.0, 10.0, 1.47
-SPHERE_ARROW_WIDTH, SPHERE_HEAD_LENGTH, SPHERE_HEAD_WIDTH = 1.5, 8.0, 5.0
+ARROW_LENGTH, ARROW_WIDTH, ARROW_TIP, LABEL_DISTANCE = 1.35, 3.0, 4.5, 1.47
+SPHERE_ARROW_WIDTH, SPHERE_ARROW_TIP = 1.5, 2.4
 ORBIT_WIDTH, ORBIT_MARGIN, ORBIT_PIXELS = 1.5, 0.05, 260
 
 
@@ -58,11 +59,12 @@ to_scene = ((solids.mv.x - solids.mv.y) * (solids.mv.y - solids.mv.z)).normalize
 
 def sphere(view: solids.View) -> tuple[list, list, list]:
     """The faint unit sphere, traced: the frame of the normal of the vortex plane, the flow and the gradient as arrows,
-    the ball translucent among them, and its parallels and meridians inked on it, where their planes cut it."""
+    rods with balls at their tips, the sphere's ball translucent among them, and its parallels and meridians inked on
+    it, where their planes cut it."""
     # The frame: along the normal of the vortex plane, along the flow and along the gradient.
-    shafts, heads = solids.frame(ARROW_LENGTH, SPHERE_ARROW_WIDTH / 2 * view.pixel, SPHERE_HEAD_LENGTH * view.pixel,
-                                 SPHERE_HEAD_WIDTH / 2 * view.pixel)
-    parts = [(shafts, FLOW_RGB), (heads, FLOW_RGB)]
+    tips = solids.origin + solids.axes.dual() * ARROW_LENGTH                  # [3] Point-
+    parts = [(solids.rods(solids.origin, tips, SPHERE_ARROW_WIDTH / 2 * view.pixel), FLOW_RGB),
+             (solids.ball(tips, SPHERE_ARROW_TIP * view.pixel)[:, None], FLOW_RGB)]
     ball = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE, SPHERE_OPACITY)]
     # The parallels: the planes across the vertical through the points the pole turns to at each polar angle; the
     # meridians: the plane x turned about the vertical by each azimuth.
@@ -139,9 +141,10 @@ def animate_tumbling(stretches: core.Stretch, heights: core.Point, velocities: c
     # The shear flow's velocity at each height, centred on it, about every body.
     starts, ends = (shifts[:, None] >> (solids.origin + (to_scene >> solids.context.include_from_algebra(offsets)))
                     for offsets in (heights - velocities / 2, heights + velocities / 2))   # [bodies, heights] Point-, Point-
-    shafts, heads = solids.arrows(starts, ends, ARROW_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel,
-                                  HEAD_WIDTH / 2 * view.pixel)
-    flow = [(shafts.reshape(-1, 3), FLOW_RGB), (heads.reshape(-1, 3), FLOW_RGB)]
+    # Each an arrow, a rod with a ball at its tip.
+    shafts = solids.rods(starts, ends, ARROW_WIDTH / 2 * view.pixel)         # [bodies, heights, 3] Plane+ <- Point-
+    balls = solids.ball(ends.reshape(-1), ARROW_TIP * view.pixel)[:, None]    # [bodies * heights, 1] Plane+ <- Point-
+    flow = [(shafts.reshape(-1, 3), FLOW_RGB), (balls, FLOW_RGB)]
     # Both ends of every long axis, in its panel, over the frames, and the flow, which stays put.
     tip_ends = tips * np.array([1.0, -1.0])[:, None, None]                    # [ends, frames, bodies] Point-
     tip_offsets = to_scene >> solids.context.include_from_algebra(tip_ends)             # [ends, frames, bodies] Point-

@@ -590,27 +590,6 @@ def rods(starts: Point, ends: Point, radius: float) -> Quadric:
     return stack([tube, beyond_end, before_start], axis=-1)
 
 
-def arrows(starts: Point, ends: Point, radius: float, head_length: float, head_radius: float) -> tuple[Quadric, Quadric]:
-    """Arrows between points: their shafts, rods `[..., 3]` up to where the heads begin, and their heads, cones
-    `[..., 3]` from there to the ends, each the cone and the half-spaces past its base and its tip."""
-    starts, ends = starts / (mv.w & starts), ends / (mv.w & ends)
-    across, sense, turn = aligned(starts, ends)
-    # A head's length back from each end, along the arrow: the dual of the plane square to it.
-    bases = ends - across.dual() * head_length                                # [...] Point
-    # The cone about z with its base at the origin and its tip a head's length along the arrow: the distance from
-    # the axis against the radius, less what remains of the head's length.
-    remaining = mv.w - mv.z * (sense / head_length)                           # [...] Plane
-    cone = (mv.x * (mv.x & Point) + mv.y * (mv.y & Point)) / head_radius**2 - remaining * (remaining & Point)
-    head = stack([cone, half_space(-mv.z * sense), half_space(mv.z * sense - mv.w * head_length)], axis=-1)
-    return rods(starts, bases, radius), placed(head, (translator(bases - origin) * turn)[..., None])
-
-
-def frame(length: float, radius: float, head_length: float, head_radius: float) -> tuple[Quadric, Quadric]:
-    """The coordinate frame: arrows along x, y and z from the shared origin, a length long; their shafts and heads
-    `[3, 3]` each."""
-    return arrows(origin, origin + axes.dual() * length, radius, head_length, head_radius)
-
-
 def boxes(motors: Motor, half_extents: np.ndarray) -> Plane:
     """Solid boxes placed by motors, their half extents along their own x, y and z on the last axis, bounded by planes
     alone, `[..., 6]` each: the planes of the faces, the box on their negative sides."""

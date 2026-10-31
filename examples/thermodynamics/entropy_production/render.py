@@ -3,7 +3,7 @@
 The bodies are coloured by how far each is from the common temperature they approach, half by that gap and half by its
 logarithm, so that the closing gap keeps changing their colours to the end without crowding the start. On the first chart, the bodies' energies,
 with the entropy's level lines, teal; the state runs along the line of fixed total energy, straight
-in the direction of the transfer, and its arrow is the heat flow. It comes to rest where the entropy's level line,
+in the direction of the transfer. It comes to rest where the entropy's level line,
 black, touches the line. On the second, the entropy along that line against body a's energy: a hill whose top is
 equilibrium, which the state climbs; the tangent's slope is how much entropy a unit of energy moved to body a would
 produce, and the flow runs uphill. On the third, the two temperatures against time, closing on the common one.
@@ -31,8 +31,8 @@ entropy_range = (-1.6, 1.3)
 entropy_levels = np.linspace(-0.4, 1.6, 11)
 grid_energies = np.linspace(0.04, 4.3, 160)
 n_line = 240
-# How far an arrow reaches in pixels for a unit of flow, and the tangent's half length in units of energy.
-arrow_pixels_per_flow, tangent_half_length = 40.0, 0.8
+# The tangent's half length, in units of energy.
+tangent_half_length = 0.8
 # The bodies' picture, pixels across, and the decades of the gap to the common temperature their colours span; the
 # third chart's ranges, time and temperature.
 block_pixels = 240
@@ -67,8 +67,8 @@ class Charts:
         self.cooling = art.Diagram(time_range, temperature_range, (0.0, 0.0), n_rows, n_columns, ("t", "T"))
         self.hill = art.Diagram(energy_range, entropy_range, (0.0, entropy_range[0]), n_rows, n_columns, ("U_a", "S"))
         grid = mv.a.dual() * grid_energies[None, :] + mv.b.dual() * grid_energies[:, None]
-        grid_entropy = entropy_of(grid).to_array()
-        levels = art.level_lines(grid_energies, grid_energies, grid_entropy, entropy_levels)
+        grid_entropy = np.asarray(entropy_of(grid).to_array())
+        self.levels = art.Levels(grid, grid_entropy, entropy_levels)
         # The line of fixed total energy through the state, along the transfer, from body a holding almost none of the
         # energy to almost all of it.
         held_by_a = ((mv.a + mv.b) & state) * np.linspace(0.02, 0.98, n_line)         # [line] Scalar+
@@ -77,12 +77,9 @@ class Charts:
         top = line_entropy.argmax()
         hill_line = self.hill_points(line)                                              # [line] Point-
         # The entropy's level line through the top of the hill touches the line of fixed energy there.
-        touching = art.level_lines(grid_energies, grid_energies, grid_entropy, line_entropy[top].to_array()[None])
-        self.level_lines = [self.energies.at(*level_line.T) for _, level_line in levels]
-        self.energy_layers = (art.family(self.energies, self.level_lines, "entropy", art.thin)
-                              + art.polylines(self.energies,
-                                              [self.energies.at(*level_line.T) for _, level_line in touching],
-                                              art.medium, art.boundary, 1.0, art.SOLID)
+        touching = art.Levels(grid, grid_entropy, np.asarray(line_entropy[top].to_array())[None])
+        self.energy_layers = (art.level_family(self.energies, self.levels, "entropy", art.thin)
+                              + art.level_lines(self.energies, touching, art.boundary, art.medium)
                               + art.polylines(self.energies, [line], art.medium, art.ink, 1.0, art.SOLID)
                               + art.dots(self.energies, line[top][None], art.green))
         self.hill_layers = (art.polylines(self.hill, [hill_line], art.medium, art.ink, 1.0, art.SOLID)
@@ -92,19 +89,12 @@ class Charts:
         """States on the chart of the entropy against body a's energy."""
         return art.chart_points(art.context.include_from_algebra(self.mv.a & states), art.context.include_from_algebra(self.entropy_of(states)))
 
-    def pictures(self, state: Extensor, flow: Extensor, path: list[art.Point], hill_path: list[art.Point]
-                 ) -> list[np.ndarray]:
-        """The two charts with the paths so far, each step's state on either chart, and the state's heat flow."""
+    def pictures(self, state: Extensor, path: list[art.Point], hill_path: list[art.Point]) -> list[np.ndarray]:
+        """The two charts with the paths so far, each step's state on either chart."""
         mv = self.mv
         now, hill_now = path[-1], hill_path[-1]                                         # [] State-, Point-
-        # The flow's arrow: as long as the flow, its change of the two energies, times so many pixels.
-        ahead = state + flow                                                           # [] State-
-        flow_size = ((mv.a & flow) * (mv.a & flow) + (mv.b & flow) * (mv.b & flow)).square_root()
         energy = (self.energy_layers
                   + art.polylines(self.energies, [stack(path)], art.bold, art.orange, 1.0, art.SOLID)
-                  + (art.arrows(self.energies, now[None], ahead[None],
-                                float((arrow_pixels_per_flow * flow_size).to_array()), art.medium, art.ink)
-                     if flow_size > 1e-3 else [])
                   + art.dots(self.energies, now[None], art.orange))
         # The hill's tangent at the state: the change along the transfer, of body a's energy and of the entropy.
         tangent = art.chart_directions(art.context.include_from_algebra(mv.a & self.transfer),
@@ -115,7 +105,7 @@ class Charts:
                 + art.polylines(self.hill, [art.tangent_lines(self.hill, hill_now, tangent, reach)], art.medium,
                                 art.orange, 1.0, art.SOLID)
                 + art.dots(self.hill, hill_now[None], art.orange))
-        names = [art.Floating(art.along(self.level_lines, 8), "S = const", art.families["entropy"], art.text_size,
+        names = [art.Floating(art.crossings(self.levels, 8), "S = const", art.families["entropy"], art.text_size,
                               "lb")]
         return [art.floated(self.energies, art.picture(self.energies, energy, []), names),
                 art.picture(self.hill, hill, [])]
@@ -136,12 +126,12 @@ class Charts:
 
 def exchange(entropy_of: Callable[[Extensor], Extensor], temperatures_of: Callable[[Extensor], Extensor],
              transfer: Extensor, capacities: np.ndarray,
-             states: Iterator[tuple[Extensor, Extensor, float]]) -> Iterator[np.ndarray]:
-    """The bodies and the three charts at each state of the exchange, with its heat flow and its time."""
+             states: Iterator[tuple[Extensor, float]]) -> Iterator[np.ndarray]:
+    """The bodies and the three charts at each state of the exchange, with its time."""
     first = next(states)
     charts = Charts(entropy_of, transfer, first[0])
     path, hill_path, times, history = [], [], [], []
-    for state, flow, time in chain([first], states):
+    for state, time in chain([first], states):
         path.append(art.on_numpy(state))
         hill_path.append(charts.hill_points(state))
         times.append(time)
@@ -151,11 +141,11 @@ def exchange(entropy_of: Callable[[Extensor], Extensor], temperatures_of: Callab
         gaps = (temperatures[0] - common).abs()
         widest = gaps.max()
         yield art.beside([bodies(temperatures[-1].to_array(), capacities, float(widest.to_array()))]
-                         + charts.pictures(state, flow, path, hill_path)
+                         + charts.pictures(state, path, hill_path)
                          + [charts.temperatures(np.array(times), temperatures, common)])
 
 
 def draw(entropy_of: Callable[[Extensor], Extensor], temperatures_of: Callable[[Extensor], Extensor],
-         transfer: Extensor, capacities: np.ndarray, state: Extensor, flow: Extensor):
-    """The bodies and the three charts at a state, with its heat flow."""
-    return art.figure(next(exchange(entropy_of, temperatures_of, transfer, capacities, iter([(state, flow, 0.0)]))))
+         transfer: Extensor, capacities: np.ndarray, state: Extensor):
+    """The bodies and the three charts at a state."""
+    return art.figure(next(exchange(entropy_of, temperatures_of, transfer, capacities, iter([(state, 0.0)]))))

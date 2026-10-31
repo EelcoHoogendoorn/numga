@@ -63,9 +63,9 @@ def pictures(planes: Camera, lines: Camera, shape: core.Quadric, hexagon: core.P
             quadrics.flats(pascal_line[None], pascal_width * point, rgb("#c0392b"), lines),
             simplices.markers(hexagon, rgb("0.15"), corner_radius, planes),
             simplices.markers(hexagon[-1:], rgb("#e67e22"), sixth_radius, planes),
-            simplices.markers(crossing, rgb(pair_colours), ring, lines),
-            simplices.markers(crossing, rgb("#c0392b"), ring + outline / 2 * point, lines,
-                              inner=ring - outline / 2 * point)]
+            # Each crossing in its pair's colour, ringed in the line's: a dot over a larger dot.
+            simplices.markers(crossing, rgb("#c0392b"), ring + outline / 2 * point, lines),
+            simplices.markers(crossing, rgb(pair_colours), ring - outline / 2 * point, lines)]
 
 
 def draw(shape: core.Quadric, hexagon: core.Point, sides: core.Line, crossing: core.Crossing,

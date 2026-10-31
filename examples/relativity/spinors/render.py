@@ -27,8 +27,8 @@ N_RIM_SAMPLES = 120
 # rims.
 PORT_PLACES, PORT_RADIUS, RIM_RADIUS = (-0.7, 0.7), 0.45, 0.47
 PORT_FACE, PORT_RIM = "0.94", "0.7"
-# The spin's arrow and the currents', bold, in pixels: their widths and their heads' length.
-SPIN_WIDTH, CURRENT_WIDTH, HEAD = 3.0, 2 * charts.LINE_PX, 10.0
+# The spin's arrow and the currents', bold, in pixels: their widths and the radius of the dots at their tips.
+SPIN_WIDTH, CURRENT_WIDTH, TIP = 3.0, 2 * charts.LINE_PX, 5.0
 
 
 # --- plumbing -----------------------------------------------------------------------
@@ -92,14 +92,15 @@ def animate_rotation(
         lamps = panel(ports, mv.x, mv.z)
         centres = stack([place * along for place in PORT_PLACES])             # [ports] Antivector-
         rim = RIM_RADIUS / lamps.pixel
-        faces = [simplices.markers(centres, ink(PORT_FACE), rim, lamps),
-                 simplices.markers(centres, ink(PORT_RIM), rim, lamps, inner=rim - charts.FRAME_PX)]
+        faces = [simplices.markers(centres, ink(PORT_RIM), rim, lamps),
+                 simplices.markers(centres, ink(PORT_FACE), rim - charts.FRAME_PX, lamps)]
         lit = simplices.overlay(ports, faces)
         for direction, intensities in zip(spin, np.clip(stack((bright, dark), axis=-1).to_array(), 0, 1)):
             arrow = stack((0 * direction, direction))                         # [2] Antivector-
             shown.set_data(simplices.composited(beneath + [
-                simplices.strokes(arrow, simplices.Mesh.chains([2]), ink(INK), SPIN_WIDTH, camera, heads=np.ones(1),
-                                  head=HEAD, cap=simplices.Cap.BUTT)]))
+                simplices.strokes(arrow, simplices.Mesh.chains([2]), ink(INK), SPIN_WIDTH, camera,
+                                  cap=simplices.Cap.BUTT),
+                simplices.markers(direction[None], ink(INK), TIP, camera)]))
             lit.set_data(simplices.composited(faces + [
                 simplices.markers(centres[port][None], ink(PORT_COLOUR), PORT_RADIUS / lamps.pixel, lamps,
                                   opacity=intensity) for port, intensity in enumerate(intensities)]))
@@ -126,15 +127,16 @@ def draw_chirality(
     along, rise = units(camera)
     # The light cone's upper half: the null directions either way along z, from the origin.
     cone = stack((extent * (rise - along), 0 * rise, extent * (rise + along)))   # [3] Antivector-
-    # The currents bold, twice a curve's width, each from the origin.
+    # The currents bold, twice a curve's width, each from the origin, a dot at its tip.
     arrows = stack((0 * tips, tips), axis=-1).reshape(-1)                      # [currents * 2] Antivector-
+    colours = np.stack([ink(colour) for colour in (LEFT_COLOUR, RIGHT_COLOUR, INK)])
     simplices.overlay(ax, [
         contours.picture(cone, simplices.Mesh(3, np.array([[0, 1, 2]])), np.zeros(3), ink(CONE_FILL), camera),
         lines,
         simplices.strokes(cone, simplices.Mesh.chains([3]), ink(RIM_COLOUR), charts.FRAME_PX, camera),
-        simplices.strokes(arrows, simplices.Mesh.chains([2] * 3), np.stack([ink(colour) for colour in
-                                                                            (LEFT_COLOUR, RIGHT_COLOUR, INK)]),
-                          CURRENT_WIDTH, camera, heads=np.ones(3), head=HEAD, cap=simplices.Cap.BUTT)])
+        simplices.strokes(arrows, simplices.Mesh.chains([2] * 3), colours, CURRENT_WIDTH, camera,
+                          cap=simplices.Cap.BUTT),
+        simplices.markers(tips, colours, TIP, camera)])
     return figure
 
 

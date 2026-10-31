@@ -55,10 +55,6 @@ def mobility(state: State, capacity_a: float, capacity_b: float, conductance: fl
     return unit_mobility * (conductance * temperature_a * temperature_b)
 
 
-def heat_flow(state: State, capacity_a: float, capacity_b: float, conductance: float) -> State:
-    return mobility(state, capacity_a, capacity_b, conductance)(entropy_gradient(state, capacity_a, capacity_b))
-
-
 def advance(state: State, capacity_a: float, capacity_b: float, conductance: float, dt: float) -> State:
     """The state after a nonnegative time interval, the heat flow integrated exactly over it."""
     inverse_capacity = 1 / capacity_a + 1 / capacity_b

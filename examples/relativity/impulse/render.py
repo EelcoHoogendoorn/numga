@@ -13,26 +13,28 @@ from matplotlib.colors import to_rgb
 from matplotlib.lines import Line2D
 import numpy as np
 
-from numga import stack
+from numga import Extensor, stack
 
 from examples.util import charts
 from examples.util.wgsl import contours, planar, simplices
-from examples.util.wgsl.camera import flat_panel, panel
+from examples.util.wgsl.camera import Camera, flat_panel, panel, preimage, whole
 from examples.relativity.impulse.core import Point, mv
 
 REAR, FRONT, IMPULSE = "#2475ba", "#db7220", "#258e59"
 DOOR, ELASTIC, CONTACT = "#59616c", "#a64479", "#ba4242"
 BARS, SPAN = "#333333", "#888888"
 # The material's worldlines bold, twice a curve's width; the bars measuring a length across a slice four curves wide
-# and faint; the contact events' discs, and the ships' squares, larger than the events' dots, the ships outlined a
-# curve's width. Widths and radii in pixels for the strokes and markers, in points for the legends' lines.
+# and faint; the contact events' discs, larger than the events' dots, and the half sides of the door closures' and the
+# ships' squares, outlined a curve's width. Widths and radii in pixels for the strokes and markers, in points for the
+# legends' lines.
 WORLDLINE_PX, BAR_PX = 2 * charts.LINE_PX, 4 * charts.LINE_PX
 WORLDLINE = charts.points(WORLDLINE_PX)
-CONTACT_RADIUS, SHIP_RADIUS = charts.MARKER_PX, 1.3 * charts.MARKER_PX
-# Dashes and dots, a dash and a gap in pixels: for a curve, for a bold worldline, and dotted; the length of the
-# arrowheads of a rope's span.
+CONTACT_RADIUS = charts.MARKER_PX
+CLOSURE_HALF_SIDE, SHIP_HALF_SIDE = 0.7 * charts.MARKER_PX, 1.15 * charts.MARKER_PX
+# Dashes and dots, a dash and a gap in pixels: for a curve, for a bold worldline, and dotted; the radius of the dots at
+# the tips of a rope's span.
 DASHED, BOLD_DASHED, DOTTED = (5.5, 2.5), (11.0, 5.0), (1.5, 2.5)
-SPAN_HEAD = 6.0
+SPAN_TIP = 3.0
 # The diagrams' strokes and dots over their grids and under their texts and stars.
 DRAWING_ZORDER = 2
 # A faint white box under a label that sits over the lines, so that it reads; the room a two-line note takes under
@@ -100,6 +102,20 @@ def dots(events: Point, colour: str) -> partial:
     return partial(simplices.markers, events.reshape(-1), ink(colour), charts.MARKER_PX / 2)
 
 
+def squares(events: Extensor, colours: np.ndarray, half_side: float, camera: Camera) -> np.ndarray:
+    """Squares about points `[events]` of any algebra the camera reads, their sides `half_side` pixels from each, four
+    strokes a curve's width each, in one colour `[3]` or one each `[events, 3]`: their picture."""
+    n_squares, n_corners = events.shape[0], 4
+    # The steps the camera reads as one across and one up, whatever the events' own layout, and each square's corners in
+    # turn, closed back to the first.
+    _, across, up, _ = preimage(camera, whole(events, events.algebra))
+    around = across * np.array([-1, 1, 1, -1, -1]) + up * np.array([-1, -1, 1, 1, -1])   # [corners + 1] Point-
+    corners = events[:, None] + around * (half_side * camera.pixel)           # [events, corners + 1] Point-
+    return simplices.strokes(corners.reshape(-1), simplices.Mesh.chains([n_corners + 1] * n_squares),
+                             np.repeat(np.broadcast_to(colours, (n_squares, 3)), n_corners, axis=0), charts.LINE_PX,
+                             camera)
+
+
 def length_bar(ends: Point, colour: str, opacity: float) -> partial:
     """A bar across the equal-time events at both ends `[end]`, faint: a stroke for a diagram's camera."""
     return chain(ends, colour, BAR_PX, cap=simplices.Cap.BUTT, opacity=opacity)
@@ -148,7 +164,7 @@ def draw_impulse(
 
     # Ten small impulses from repeated composition of the same affine map.
     ax = axes[2]
-    end_time = ct_x(train)[-1, 0, 0]
+    end_time = float((mv.t & train[-1, 0]).to_array())
     layers[ax] += [lines_of_ends(train, (REAR, FRONT), WORLDLINE_PX),
                    chain(steps, IMPULSE, charts.LINE_PX, dashes=DASHED, cap=simplices.Cap.BUTT, opacity=0.75),
                    length_bar(train_slice, BARS, 0.35), dots(steps, IMPULSE)]
@@ -206,10 +222,10 @@ def contacts(events: Point) -> list[partial]:
 
 
 def closures(closure: Point) -> list[partial]:
-    """The door-closure events as squares ringed in white, over the rest: layers for a diagram's camera."""
-    return [partial(simplices.markers, closure, np.ones(3), charts.MARKER_PX / 2 + charts.FRAME_PX,
-                    marker=simplices.Marker.SQUARE),
-            partial(simplices.markers, closure, ink(DOOR), charts.MARKER_PX / 2, marker=simplices.Marker.SQUARE)]
+    """The door-closure events as white squares outlined in the doors' ink, over the rest: layers for a diagram's
+    camera."""
+    return [partial(simplices.markers, closure, np.ones(3), CLOSURE_HALF_SIDE),
+            partial(squares, closure, ink(DOOR), CLOSURE_HALF_SIDE)]
 
 
 def bar_label(ax, ends: Point, label, offset, color) -> None:
@@ -306,7 +322,7 @@ def draw_ladder(
     legend = [Line2D([], [], color=REAR, lw=WORLDLINE, label="Rear end"),
               Line2D([], [], color=FRONT, lw=WORLDLINE, label="Front end"),
               Line2D([], [], color=DOOR, ls="--", label="Door position"),
-              Line2D([], [], color=DOOR, marker="s", ls="none", label="Door closes")]
+              Line2D([], [], color=DOOR, marker="s", markerfacecolor="white", ls="none", label="Door closes")]
     header(fig, [("The ladder paradox: fitting in motion, stopping in a shorter barn", "black"),
                  ("Relaxed ladder L₀ = 1   ·   Barn = 0.8 L₀   ·   Incoming speed = 0.8c", DOOR)], legend)
     # The caption under the panels, laid out with them as the figure's label below.
@@ -327,13 +343,14 @@ def rope_comparison(ax, gap, y, color, title, label) -> list[partial]:
     ax.text(gap / 2, y - 0.29, label, color=color, ha="center", va="top")
     rope = planar.mv.point([[0.0, y], [gap, y]])                                 # [2] Point-
     ships = np.stack((ink(REAR), ink(FRONT)))                                   # [ships, 3]
-    # The span from its middle out to either end, an arrowhead at each.
+    # The span from its middle out to either end, a dot at each.
     span = planar.mv.point([[gap / 2, y - 0.17], [0.0, y - 0.17], [gap / 2, y - 0.17], [gap, y - 0.17]])   # [4] Point-
     return [partial(simplices.strokes, rope, simplices.Mesh.chains([2]), ink(color), WORLDLINE_PX),
             partial(simplices.strokes, span, simplices.Mesh.chains([2, 2]), ink(color), charts.LINE_PX,
-                    heads=np.ones(2), head=SPAN_HEAD, cap=simplices.Cap.BUTT),
-            partial(simplices.markers, rope, ships, SHIP_RADIUS, marker=simplices.Marker.SQUARE),
-            partial(simplices.markers, rope, np.ones(3), SHIP_RADIUS - charts.LINE_PX, marker=simplices.Marker.SQUARE)]
+                    cap=simplices.Cap.BUTT),
+            partial(simplices.markers, span[1::2], ink(color), SPAN_TIP),
+            partial(simplices.markers, rope, np.ones(3), SHIP_HALF_SIDE),
+            partial(squares, rope, ships, SHIP_HALF_SIDE)]
 
 
 @charts.style()
@@ -343,7 +360,7 @@ def draw_spaceships(tracks: Point, schedules: Point, slices: Point, final_events
     # a caption.
     fig, axes = charts.subplots(charts.DESIGN_WIDTH, 480, ncols=3, width_ratios=[1.0, 1.0, 1.05], layout="constrained")
     titles = ("Strain-preserving impulse train", "Bell: identical clock programs")
-    end_time = ct_x(tracks)[0, -1, 0, 0]
+    end_time = float((mv.t & tracks[0, -1, 0]).to_array())
     layers = []
     for index, (color, ax) in enumerate(zip((IMPULSE, ELASTIC), axes[:2])):
         cuts = slices[index]                                                     # [slice, end] Point-

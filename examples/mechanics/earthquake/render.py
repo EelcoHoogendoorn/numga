@@ -36,11 +36,9 @@ offset, behind, slip_length = 0.15, 0.45, 0.9
 # the larger side.
 elevation, azimuth = np.radians([24.0, -60.0 + 90.0])
 margin = 0.12
-# The width of the rim and the radius of the slip arrows' shafts, in pixels; an arrow's head, its length a share of
-# the arrow's, and its radius a share of its own length; the samples around the beachball's rim.
-rim_width, shaft_radius = 2.2, 2.0
-head_share = 0.25
-head_width = 0.4
+# The width of the rim, and the radii of the slip arrows' shafts and of the balls at their tips, in pixels; the
+# samples around the beachball's rim.
+rim_width, shaft_radius, tip_radius = 2.2, 2.0, 5.0
 n_rim = 200
 # Space is drawn east, north and up: the half turn about the level line halfway between north and east swaps the two
 # and turns down up.
@@ -174,11 +172,11 @@ def draw_fault(directions: core.Point, push: core.Scalar, normal: core.Point, sl
                      rim_width, 1.0)
     fault = solids.layer([], view, [rim], translucent=[(disc, np.array(to_rgb(FAULT)), patch_opacity)],
                          meshes=[(lobe_samples, 1.0)])
-    starts, ends = slip_arrows(normal, slip)
-    shafts, heads = solids.arrows(solids.origin + solids.context.include_from_algebra(starts),
-                                  solids.origin + solids.context.include_from_algebra(ends), shaft_radius * view.pixel,
-                                  head_share * slip_length, head_width * head_share * slip_length)
-    arrow_colour, arrow_depth = solids.layer([(shafts, np.array(to_rgb(SLIP))), (heads, np.array(to_rgb(SLIP)))], view,
+    # Each slip arrow a rod with a ball at its tip.
+    starts, ends = (solids.origin + solids.context.include_from_algebra(points) for points in slip_arrows(normal, slip))
+    shafts = solids.rods(starts, ends, shaft_radius * view.pixel)            # [sides, 3] Plane+ <- Point-
+    tips = solids.ball(ends, tip_radius * view.pixel)[:, None]                # [sides, 1] Plane+ <- Point-
+    arrow_colour, arrow_depth = solids.layer([(shafts, np.array(to_rgb(SLIP))), (tips, np.array(to_rgb(SLIP)))], view,
                                              inks=[], translucent=[], meshes=[])
     # The slip arrows lie inside the lobes, which meet the fault at the source: drawn over the fault and its lobes,
     # in front.

@@ -19,31 +19,25 @@ from numga import Extensor, stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import pinned, simplices
-from examples.util.wgsl.camera import Camera, panel
+from examples.util.wgsl.camera import Camera, panel, read
 
 position_limit = 7.8
 brightness_floor = 1e-4
 # The room between panels and around them, in pixels.
 gap = 6
 # The atoms' radius in pixels and their colour; the rings' radius in pixels, their width, thin so as not to hide the
-# peaks they ring, and their colour; the faint cross's colour; the animation's panels, about twice as many pixels
-# across, draw them half as large again.
+# peaks they ring, their colour and the strokes around each; the faint cross's colour; the animation's panels, about
+# twice as many pixels across, draw them half as large again.
 atom_radius = 1.6
 atom_colour = to_rgb("#0d9488")
 ring_radius, ring_width = 4.9, 1.4
 ring_colour = to_rgb("#67e8f9")
+n_around = 24
 cross_colour = to_rgb("#cbd5e1")
 movie_scale = 1.5
 
 
 # --- plumbing -------------------------------------------------------------------------
-def readings(wavevectors: Extensor) -> np.ndarray:
-    """Wavevectors `[...]` as coordinates `[..., 2]` along x and y: their pairings with the points one along x and
-    along y."""
-    mv = wavevectors.context.multivector
-    return (wavevectors[..., None] & stack((mv.x.dual(), mv.y.dual()))).to_array()
-
-
 def panels(rows: int, columns: int, pixels: int) -> tuple[plt.Figure, list[list[Axes]]]:
     """A figure of square panels, each `pixels` across, on whole pixels and a gap apart."""
     span = pixels + gap
@@ -80,26 +74,33 @@ def atoms(positions: Extensor, radius: float, camera: Camera) -> np.ndarray:
 
 def rings(reciprocal: Extensor, scale: float, camera: Camera) -> np.ndarray:
     """Rings around the reciprocal lattice's wavevectors `[reflections]`, read as they are by a camera of the points one
-    along x and along y, `scale` times their size: their picture."""
-    return simplices.markers(reciprocal, ring_colour, scale * (ring_radius + ring_width / 2), camera,
-                             inner=scale * (ring_radius - ring_width / 2))
+    along x and along y, `scale` times their size, each a closed chain of strokes: their picture."""
+    # The steps the camera reads as one across and one up, the duals of its planes over their own readings; a ring's
+    # radius from each wavevector, the first step turned about their plane all the way round.
+    along, rise = (plane.dual() / read(plane, plane.dual()) for plane in (camera.across, camera.up))
+    turns = ((along ^ rise) * (-np.linspace(0, 2 * np.pi, n_around + 1) / 2)).exp()   # [around + 1] Rotor+
+    circle = (turns >> along) * (scale * ring_radius * camera.pixel)          # [around + 1] Vector+
+    ends = (reciprocal[:, None] + circle).reshape(-1)                         # [reflections * (around + 1)] Vector+
+    return simplices.strokes(ends, simplices.Mesh.chains([n_around + 1] * len(reciprocal)), ring_colour,
+                             scale * ring_width, camera)
 
 
 def diffraction(ax: Axes, reciprocal: Extensor, transfers: Extensor, brightness: Extensor,
                 scale: float) -> tuple[AxesImage, AxesImage, Camera]:
     """The brightness over the section of momentum transfers, with the reciprocal lattice ringed `scale` times the
     rings' size: the brightness's image and the rings', for an animation to set their data, and the panel's camera."""
-    samples = readings(transfers)                                       # [rows, columns, 2]
-    # Pixel centres coincide with the sampled momentum transfers.
-    pixel = samples[0, 1, 0] - samples[0, 0, 0]
-    extent = (samples[0, 0, 0] - pixel / 2, samples[0, -1, 0] + pixel / 2,
-              samples[0, 0, 1] - pixel / 2, samples[-1, 0, 1] + pixel / 2)
+    # The sampled momentum transfers `[rows, columns]` read by the points one along x and along y; pixel centres
+    # coincide with them, so the picture reaches half a step between samples past the outermost.
+    mv = transfers.context.multivector
+    readings = transfers.reshape(-1) & stack((mv.x.dual(), mv.y.dual()))[:, None]   # [2, samples] Scalar+
+    low, high = readings.min(axis=-1), readings.max(axis=-1)                   # [2] Scalar+, [2] Scalar+
+    half_step = (high - low) / (2 * (np.array(transfers.shape[::-1]) - 1))     # [2] Scalar+
+    extent = tuple(stack((low - half_step, high + half_step), axis=-1).reshape(-1).to_array())
     # Rows run up in y; the image's first row is its top.
     image = pinned(ax, brightness.to_array()[::-1], extent)
     image.set(cmap="magma", norm=LogNorm(vmin=brightness_floor, vmax=1))
     ax.set(xlim=extent[:2], ylim=extent[2:])
     # The wavevectors read by the points one along x and along y, as the brightness's samples are.
-    mv = transfers.context.multivector
     camera = panel(ax, mv.x.dual(), mv.y.dual())
     return image, simplices.overlay(ax, [rings(reciprocal, scale, camera)]), camera
 

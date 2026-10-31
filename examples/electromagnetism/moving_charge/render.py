@@ -52,9 +52,8 @@ def coordinates(events: core.Antivector) -> np.ndarray:
 
 def extent(events: core.Antivector) -> tuple[float, float, float, float]:
     """The box the grid's cells cover: its samples sit at the cell centres, half a cell inside."""
-    corners = coordinates(events)
-    half_cell = (corners[..., 1, 1, :] - corners[..., 0, 0, :]) / 2
-    low, high = corners[..., 0, 0, :] - half_cell, corners[..., -1, -1, :] + half_cell
+    half_cell = (events[..., 1, 1] - events[..., 0, 0]) / 2                     # [...] Antivector-
+    low, high = coordinates(events[..., 0, 0] - half_cell), coordinates(events[..., -1, -1] + half_cell)
     return low[..., 0], high[..., 0], low[..., 1], high[..., 1]
 
 

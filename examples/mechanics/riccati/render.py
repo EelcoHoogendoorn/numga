@@ -10,7 +10,7 @@ from matplotlib.colors import to_rgb
 from matplotlib.lines import Line2D
 import numpy as np
 
-from numga import stack
+from numga import concatenate, stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import contours, simplices
@@ -27,9 +27,10 @@ COST_GRID_EXTENT = 0.55
 COST_GRID_COUNT = 101
 COST_LEVEL = 0.15
 COST_HORIZONS = 3
-# Widths, radii and arrowheads in pixels; the target's dashes, a dash and a gap.
+# Widths and radii in pixels: of the lines, of the arrows and the dots at their tips, and of the marks; the target's
+# dashes, a dash and a gap.
 LINE_WIDTH = 1.5
-ARROW_WIDTH, ARROW_HEAD = 2.0, 9.0
+ARROW_WIDTH, ARROW_TIP = 2.0, 4.5
 MARK_RADIUS = 3.0
 TARGET_DASHES = (5.5, 2.5)
 # The point each pose carries: the origin, dual to the weight direction w.
@@ -37,17 +38,20 @@ origin = core.mv.w.dual()
 
 
 # --- plumbing -------------------------------------------------------------------------
-def xy(points: core.Point) -> np.ndarray:
-    """Coordinates of finite points, by their pairings with the coordinate planes over their weight."""
-    return ((stack((core.mv.x, core.mv.y)) & points[..., None]) / (core.mv.w & points)[..., None]).to_array()   # [..., 2] float
+def readings(batches: list[core.Point]) -> core.Scalar:
+    """Batches of finite points read across and up, `[2, points]`: their pairings with the coordinate planes over their
+    weight."""
+    points = concatenate([batch.reshape(-1) for batch in batches])         # [points] Point-
+    return (stack((core.mv.x, core.mv.y))[:, None] & points) / (core.mv.w & points)
 
 
-def _limits(points: np.ndarray) -> np.ndarray:
-    """A square viewport around display coordinates, with room for arrowheads."""
-    low, high = points.min(axis=0), points.max(axis=0)                     # [2] float
-    center = (low + high) / 2                                             # [2] float
-    half_width = np.max(high - low) * 0.58
-    return np.stack([center - half_width, center + half_width])           # [corners, 2] float
+def _limits(points: list[core.Point]) -> np.ndarray:
+    """A square viewport around batches of finite points, with room for the dots at the arrows' tips."""
+    drawn = readings(points)                                              # [2, points] Scalar+
+    low, high = drawn.min(axis=-1), drawn.max(axis=-1)                    # [2] Scalar+, [2] Scalar+
+    center = (low + high) / 2                                             # [2] Scalar+
+    half_width = (high - low).max() * 0.58
+    return stack([center - half_width, center + half_width]).to_array()   # [corners, 2] float
 
 
 def _axes(axes: plt.Axes, limits: np.ndarray, title: str) -> None:
@@ -66,7 +70,7 @@ def _hulls(n_hulls: int, n_corners: int) -> tuple[simplices.Mesh, simplices.Mesh
 
 
 def _arrows(n_arrows: int) -> simplices.Mesh:
-    """Arrows from tails to tips listed after them: an edge from each tail to its tip, ending in a head."""
+    """Arrows from tails to tips listed after them: an edge from each tail to its tip."""
     return simplices.Mesh(2 * n_arrows, np.stack([np.arange(n_arrows), n_arrows + np.arange(n_arrows)], axis=-1))
 
 
@@ -82,16 +86,16 @@ def draw_setup(
     hull: core.Point, mounts: core.Point, directions: core.Point, tracking_points: core.Point,
 ) -> plt.Figure:
     """The hull, the points used to measure docking error, and each positive thrust direction."""
-    body = xy(hull)                                                       # [vertices, 2] float
+    body = readings([hull])                                               # [2, vertices] Scalar+
     # These arrows show direction; their common display length is tied to the hull's size.
-    display_length = np.ptp(body, axis=0).max() * 0.3
+    display_length = (body.max(axis=-1) - body.min(axis=-1)).max() * 0.3
     tips = mounts + directions * display_length                           # [thrusters] Point-
-    limits = _limits(np.concatenate([body, xy(tracking_points), xy(mounts), xy(tips)]))   # [corners, 2] float
+    limits = _limits([hull, tracking_points, mounts, tips])               # [corners, 2] float
     # A third of the column: one hull, five marks and three arrows, under a title and a legend.
     figure, axes = charts.subplots(280, 270, layout="constrained")
     axes.set(xlim=limits[:, 0], ylim=limits[:, 1], aspect="equal", title="Docking geometry")
     axes.set_axis_off()
-    handles = [Line2D([], [], marker="s", linestyle="none", color=THRUSTER_COLOUR, label="Thrusters"),
+    handles = [Line2D([], [], marker="o", linestyle="none", color=THRUSTER_COLOUR, label="Thrusters"),
                Line2D([], [], marker="o", linestyle="none", color=SITE_COLOUR, label="Tracking points")]
     axes.legend(handles=handles, loc="upper right", frameon=False)
     camera = panel(axes, core.mv.x, core.mv.y)
@@ -99,8 +103,9 @@ def draw_setup(
     simplices.overlay(axes, [
         contours.picture(hull, surface, np.zeros(len(hull)), to_rgb(BODY_COLOUR), camera, opacity=0.16),
         simplices.strokes(stack([mounts, tips]).reshape(-1), _arrows(len(mounts)), to_rgb(FORCE_COLOUR), ARROW_WIDTH,
-                          camera, heads=np.ones(len(mounts)), head=ARROW_HEAD),
-        simplices.markers(mounts, to_rgb(THRUSTER_COLOUR), MARK_RADIUS, camera, marker=simplices.Marker.SQUARE),
+                          camera),
+        simplices.markers(tips, to_rgb(FORCE_COLOUR), ARROW_TIP, camera),
+        simplices.markers(mounts, to_rgb(THRUSTER_COLOUR), MARK_RADIUS, camera),
         simplices.markers(tracking_points, to_rgb(SITE_COLOUR), MARK_RADIUS, camera)])
     return figure
 
@@ -110,7 +115,7 @@ def draw_approaches(hull: core.Point, poses: core.Motor, labels: tuple[str, ...]
     """The center paths and a few hull positions, with the target pose shown dashed."""
     carried = poses[..., None] >> hull                                   # [times, cases, vertices] Point-
     centers = poses >> origin                                            # [times, cases] Point-
-    limits = _limits(np.concatenate([xy(carried).reshape(-1, 2), xy(hull)]))   # [corners, 2] float
+    limits = _limits([carried, hull])                                     # [corners, 2] float
     final, _ = _hulls(1, len(hull))
     # A panel a case as large as the docking geometry's, under its title.
     figure, panels = charts.subplots(280 * len(labels), 260, ncols=len(labels), squeeze=False, layout="constrained")
@@ -144,10 +149,10 @@ def draw_costs(values: core.StateCost, labels: tuple[str, ...]) -> plt.Figure:
     samples = -core.mv.yw * offsets[:, None] - core.mv.xw * offsets[None, :]  # [samples_y, samples_x] Twist+
     costs = values[remaining - 1, :, None, None](samples, samples)        # [remaining, cases, samples_y, samples_x] Scalar+
     points = (samples * -0.5).exp() >> origin                             # [samples_y, samples_x] Point-
-    coordinates = xy(points)                                             # [samples_y, samples_x, 2] float
+    drawn = readings([points])                                           # [2, samples_y * samples_x] Scalar+
     grid = simplices.Mesh.grid(COST_GRID_COUNT, COST_GRID_COUNT)
     colours = plt.get_cmap("viridis")(np.linspace(0.15, 0.8, len(remaining)))  # [remaining, 4] float
-    limits = np.stack([coordinates.min(axis=(0, 1)), coordinates.max(axis=(0, 1))])  # [corners, 2] float
+    limits = stack([drawn.min(axis=-1), drawn.max(axis=-1)]).to_array()  # [corners, 2] float
     # A panel a case as large as the docking geometry's, under its title, over one legend.
     figure, panels = charts.subplots(280 * len(labels), 310, ncols=len(labels), squeeze=False, layout="constrained")
     handles = [Line2D([], [], color=colour, label=str(steps)) for colour, steps in zip(colours, remaining)]
@@ -192,8 +197,7 @@ def animate(
     forces = poses[..., None] >> (directions * commands * arrow_scale)   # [times, cases, thrusters] Point-
     tips = carried_mounts + forces                                       # [times, cases, thrusters] Point-
     trajectories = poses >> origin                                       # [times, cases] Point-
-    limits = _limits(np.concatenate([xy(carried).reshape(-1, 2), xy(carried_mounts).reshape(-1, 2),
-                                     xy(tips).reshape(-1, 2), xy(trajectories).reshape(-1, 2), xy(hull)]))
+    limits = _limits([carried, carried_mounts, tips, trajectories, hull])
     surface, _ = _hulls(1, len(hull))
     thrust = _arrows(len(mounts))
     # A panel a case as large as the docking geometry's, under its title; the figure laid out once under the charts'
@@ -218,7 +222,7 @@ def animate(
                 contours.picture(carried[index, case], surface, np.zeros(len(hull)), to_rgb(BODY_COLOUR), camera,
                                  opacity=0.25),
                 simplices.strokes(stack([carried_mounts[index, case], tips[index, case]]).reshape(-1), thrust,
-                                  to_rgb(FORCE_COLOUR), ARROW_WIDTH, camera, heads=np.ones(len(mounts)),
-                                  head=ARROW_HEAD)]))
+                                  to_rgb(FORCE_COLOUR), ARROW_WIDTH, camera),
+                simplices.markers(tips[index, case], to_rgb(FORCE_COLOUR), ARROW_TIP, camera)]))
         yield capture(figure)
     plt.close(figure)

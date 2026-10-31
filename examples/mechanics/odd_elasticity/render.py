@@ -21,17 +21,14 @@ STRAIN = LinearSegmentedColormap.from_list("bond_extension", ["#4775bd", "#32666
 
 
 # --- plumbing -------------------------------------------------------------------------
-def _coordinates(points: core.Displacement) -> np.ndarray:
-    """Positions read by pairing with the lines across the axes; sites become a batch axis."""
+def _bounds(points: list[core.Displacement], margin: float) -> tuple[np.ndarray, np.ndarray]:
+    """The lowest and the highest readings across and up of batches of positions, read by pairing with the lines
+    across the axes, widened by a margin as a share of the larger span, `[2]` each; sites become a batch axis."""
     lines = stack((core.mv.x, core.mv.y))
-    return (lines & points.batch()[..., None]).to_array()
-
-
-def _bounds(coordinates: np.ndarray, margin: float) -> tuple[np.ndarray, np.ndarray]:
-    low = coordinates.reshape(-1, 2).min(axis=0)
-    high = coordinates.reshape(-1, 2).max(axis=0)
-    padding = margin * np.max(high - low)
-    return low - padding, high + padding
+    readings = concatenate([lines[:, None] & batch.batch().reshape(-1) for batch in points], axis=-1)   # [2, points] Scalar+
+    low, high = readings.min(axis=-1), readings.max(axis=-1)
+    padding = margin * (high - low).max()
+    return (low - padding).to_array(), (high + padding).to_array()
 
 
 def _scene(figure: plt.Figure, bounds: tuple[np.ndarray, np.ndarray], position: tuple[float, float, float, float]) -> plt.Axes:
@@ -57,8 +54,7 @@ def bond_frames(
     # Each force drawn along its metric direction, its dual, from the bond's moving end.
     positions, forces = (stack([value.batch() for value in values]) for values in zip(*states))   # [steps] Displacement-, Force+
     arrows = force_scale * forces.dual()                                     # [steps] Displacement-
-    bounds = _bounds(np.concatenate((_coordinates(anchor)[None], _coordinates(reference)[None], _coordinates(path),
-                                     _coordinates(positions + arrows))), 0.08)
+    bounds = _bounds([anchor, reference, path, positions + arrows], 0.08)
 
     figure = plt.figure(figsize=(6.2, 2.9), dpi=50, facecolor=BACKGROUND)
     ax = _scene(figure, bounds, (0.02, 0.02, 0.96, 0.96))
@@ -71,7 +67,9 @@ def bond_frames(
                                 1.5, camera, dashes=(5.0, 3.0), cap=simplices.Cap.BUTT),
               simplices.strokes(path, simplices.Mesh.chains([len(path)]), REFERENCE, 1.0, camera),
               simplices.markers(anchor[None], ANCHOR, 3.0, camera),
-              simplices.markers(reference[None], ANCHOR, 2.5, camera, inner=1.5)]
+              # The rest position a ring: a dot of the background over a larger one.
+              simplices.markers(reference[None], ANCHOR, 2.5, camera),
+              simplices.markers(reference[None], to_rgb(BACKGROUND), 1.5, camera)]
     image = simplices.overlay(ax, guides)
 
     for step, (position, arrow) in enumerate(zip(positions, arrows)):
@@ -85,7 +83,9 @@ def bond_frames(
                               opacity=0.55),
             simplices.strokes(bond, simplices.Mesh.chains([2]), BOND, 3.0, camera),
             simplices.markers(position[None], BOND, 3.0, camera),
-            simplices.strokes(force, _arrows(1), FORCE, 3.0, camera, heads=np.ones(1), head=14.0)]))
+            # The force's arrow, a stroke with a dot at its tip.
+            simplices.strokes(force, _arrows(1), FORCE, 3.0, camera),
+            simplices.markers(force[1:], FORCE, 6.0, camera)]))
         yield capture(figure)
     plt.close(figure)
 
@@ -99,8 +99,7 @@ def patch_frames(
     # Each force on the boundary drawn along its metric direction, its dual, from its particle.
     places, forces = (stack([value.batch() for value in values]) for values in zip(*states))   # [steps, vertices] Displacement-, Force+
     arrows = force_scale * forces[:, boundary].dual()                        # [steps, boundary] Displacement-
-    bounds = _bounds(np.concatenate((_coordinates(reference), _coordinates(places).reshape(-1, 2),
-                                     _coordinates(places[:, boundary] + arrows).reshape(-1, 2))), 0.055)
+    bounds = _bounds([reference, places, places[:, boundary] + arrows], 0.055)
 
     figure = plt.figure(figsize=(5.2, 3.6), dpi=50, facecolor=BACKGROUND)
     ax = _scene(figure, bounds, (0.02, 0.02, 0.96, 0.96))
@@ -111,12 +110,13 @@ def patch_frames(
 
     for position, arrow in zip(places, arrows):
         tails = position[boundary]                                           # [boundary] Displacement-
+        # The forces' arrows, strokes with dots at their tips.
         image.set_data(simplices.composited([
             rest,
             simplices.strokes(position, mesh, BOND, 1.5, camera),
             simplices.markers(position, ANCHOR, 2.0, camera),
-            simplices.strokes(concatenate([tails, tails + arrow]), forces_mesh, FORCE, 1.5, camera,
-                              heads=np.ones(len(boundary)), head=7.0)]))
+            simplices.strokes(concatenate([tails, tails + arrow]), forces_mesh, FORCE, 1.5, camera),
+            simplices.markers(tails + arrow, FORCE, 3.5, camera)]))
         yield capture(figure)
     plt.close(figure)
 
@@ -128,7 +128,7 @@ def wave_frames(
 ) -> Iterator[np.ndarray]:
     """Moving bonds coloured by signed extension, with one particle's short trajectory marked."""
     figure = plt.figure(figsize=(6.5, 3.7), dpi=50, facecolor=BACKGROUND)
-    ax = _scene(figure, _bounds(_coordinates(reference), 0.035), (0.015, 0.015, 0.97, 0.97))
+    ax = _scene(figure, _bounds([reference], 0.035), (0.015, 0.015, 0.97, 0.97))
     camera = panel(ax, core.mv.x, core.mv.y)
     rest = simplices.strokes(reference, mesh, REFERENCE, 1.0, camera)
     strain = Normalize(-extension_scale, extension_scale)

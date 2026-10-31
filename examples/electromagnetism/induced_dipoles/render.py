@@ -19,9 +19,10 @@ arrow_length = 0.5
 margin = 0.6
 # The side of each panel in inches, at the figure's dots per inch.
 panel_size, figure_dpi = 5, 48
-# The arrows' widths and heads' lengths, the isolated atom's and the dipoles', and the atoms' radius, in pixels.
-isolated_width, isolated_head = 4.0, 9.0
-dipole_width, dipole_head = 2.0, 8.0
+# The arrows' widths and the radii of the dots at their tips, the isolated atom's and the dipoles', and the atoms'
+# radius, in pixels.
+isolated_width, isolated_tip = 4.0, 5.0
+dipole_width, dipole_tip = 2.0, 3.5
 atom_radius = 2.5
 
 
@@ -34,20 +35,22 @@ def clusters(positions, dipoles, isolated) -> plt.Figure:
     arrows = dipoles.batch() * scale                                            # [cases, atoms] Dipole-
     reference = isolated * scale                                                # [] Dipole-
     n_cases, n_atoms = positions.shape
-    # Each arrow a chain of two points, its tail and its head, about its atom.
+    # Each arrow a chain of two points, its tail and its tip, about its atom, with a dot at its tip.
     shafts = simplices.Mesh.chains([2] * n_atoms)
-    heads = np.ones(n_atoms)
-    half_width = np.abs((stack((mv.x, mv.y)) & positions[..., None]).to_array()).max() + margin
+    half_width = float(((stack((mv.x, mv.y)) & positions[..., None]).abs().max() + margin).to_array())
     figure, axes = plt.subplots(1, n_cases, figsize=(panel_size * n_cases, panel_size), dpi=figure_dpi)
     figure.subplots_adjust(0, 0, 1, 1, wspace=0.02)
     for ax, site, arrow in zip(axes, positions, arrows):
         ax.set(xlim=(-half_width, half_width), ylim=(-half_width, half_width), aspect="equal")
         ax.axis("off")
         camera = flat_panel(ax, positions.algebra)
-        isolated_ends = stack((site - reference / 2, site + reference / 2), axis=-1).reshape(-1)
-        dipole_ends = stack((site - arrow / 2, site + arrow / 2), axis=-1).reshape(-1)
+        isolated_tips, dipole_tips = site + reference / 2, site + arrow / 2       # [atoms] Point-, [atoms] Point-
+        isolated_ends = stack((site - reference / 2, isolated_tips), axis=-1).reshape(-1)
+        dipole_ends = stack((site - arrow / 2, dipole_tips), axis=-1).reshape(-1)
         simplices.overlay(ax, [
-            simplices.strokes(isolated_ends, shafts, isolated_colour, isolated_width, camera, heads, isolated_head),
-            simplices.strokes(dipole_ends, shafts, dipole_colour, dipole_width, camera, heads, dipole_head),
+            simplices.strokes(isolated_ends, shafts, isolated_colour, isolated_width, camera),
+            simplices.markers(isolated_tips, isolated_colour, isolated_tip, camera),
+            simplices.strokes(dipole_ends, shafts, dipole_colour, dipole_width, camera),
+            simplices.markers(dipole_tips, dipole_colour, dipole_tip, camera),
             simplices.markers(site, atom_colour, atom_radius, camera)])
     return figure

@@ -19,6 +19,10 @@ Point = ga.gatype.antivector()                                               # A
 n_triangle_subdivisions = 8
 n_star_divisions = 2
 n_tet_subdivisions = 6
+# The level surfaces of each edge form drawn, and the cuts of each side of a face whose parts' middles its face form's
+# field lines run through.
+n_pages = 5
+n_face_cuts = 4
 n_disk_divisions = 9
 disk_radius = 1.0
 electrode_threshold = 0.8
@@ -118,7 +122,8 @@ def obtuse_diamond() -> tuple[Mesh, Point]:
 def main() -> None:
     from examples.surfaces.whitney_forms.core import (
         Operators, barycentric_hats, complements, conduction, edge_conductance, edge_whitney_forms, simplex_parity,
-        tetrahedral_edge_forms, tetrahedral_face_forms, tetrahedral_hats, tetrahedral_helicity, triangle,
+        tetrahedral_edge_forms, tetrahedral_edge_pages, tetrahedral_face_forms, tetrahedral_face_lines, tetrahedral_hats,
+        tetrahedral_helicity, triangle,
     )
     from examples.surfaces.whitney_forms import render
     from examples.util.animation import save_figure
@@ -151,11 +156,13 @@ def main() -> None:
 
     # 3. Whitney 0-, 1- and 2-forms on a tetrahedron, and the volume pairing that links opposite edges.
     tetrahedron, tet_vertices, tet_points = single_tetrahedron(n_tet_subdivisions)
-    tet_hats, tet_gradients, face_patches, volume = tetrahedral_hats(tetrahedron, tet_vertices, tet_points)
+    tet_hats, tet_gradients, face_patches, _ = tetrahedral_hats(tetrahedron, tet_vertices, tet_points)
     tet_edge_forms, tet_curls = tetrahedral_edge_forms(tetrahedron, tet_vertices, tet_points)
     tet_face_forms = tetrahedral_face_forms(tetrahedron, tet_vertices, tet_points)
+    tet_pages = tetrahedral_edge_pages(tetrahedron, tet_vertices, n_pages)     # [tet_edges, pages, 3] Point-[tets]
+    tet_lines = tetrahedral_face_lines(tetrahedron, tet_vertices, n_face_cuts)  # [corners, lines, 2] Point-[tets]
     save_figure(
-        render.draw_tet_whitney(tetrahedron, tet_vertices, tet_points, tet_edge_forms, tet_face_forms, volume),
+        render.draw_tet_whitney(tetrahedron, tet_vertices, tet_pages, tet_lines),
         "whitney_tet_forms",
     )
 

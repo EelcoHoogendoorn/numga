@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import Normalize, to_rgb
 
-from numga import stack
+from numga import concatenate, stack
 from examples.util.animation import capture
 from examples.mechanics.bending import core
 from examples.util.wgsl import contours, fitted, image_figure, meshes, show, simplices, solids
@@ -50,18 +50,16 @@ PIXELS = 520
 STRAIGHT_OPACITY = 0.19
 GLOSS = 0.1
 # In the section views, in points, at the figure's pixels to the inch: the widths of the principal axes, with their
-# dashes and gaps, of the neutral axis, of the load's arrow, with its head's length, and of the kern's outline; the
-# sides of the centroid's dot, of the shear centre's ring, with its rim's width, and of the push point's mark, with
-# its white rim; and how much the kern's fill covers.
+# dashes and gaps, of the neutral axis, of the load's arrow, with the radius of the dot at its tip, and of the kern's
+# outline; the sides of the centroid's dot, of the shear centre's ring, with its rim's width, and of the push point's
+# cross, with its arms' width and their white rim; and how much the kern's fill covers.
 PRINCIPAL_WIDTH, PRINCIPAL_DASHES = 1.0, (3.7, 1.6)
-NEUTRAL_WIDTH, LOAD_WIDTH, LOAD_HEAD, KERN_WIDTH = 1.8, 2.0, 5.0, 1.4
-DOT_SIDE, RING_SIDE, RING_WIDTH, PUSH_SIDE, PUSH_RIM = 3.0, 7.0, 1.4, 9.0, 1.0
+NEUTRAL_WIDTH, LOAD_WIDTH, LOAD_TIP, KERN_WIDTH = 1.8, 2.0, 4.0, 1.4
+DOT_SIDE, RING_SIDE, RING_WIDTH, PUSH_SIDE, PUSH_WIDTH, PUSH_RIM = 3.0, 7.0, 1.4, 9.0, 2.4, 1.0
 KERN_OPACITY = 0.3
-# The radii of the shear centres' dashes, of the clamp's rods and of the load's shaft, in pixels; the load's head,
-# its length a share of the arrow's, and its radius a share of its own length.
-DASH_RADIUS, CLAMP_RADIUS, SHAFT_RADIUS = 0.85, 1.2, 1.7
-HEAD_SHARE = 0.25
-HEAD_WIDTH = 0.4
+# The radii of the shear centres' dashes, of the clamp's rods, of the load's shaft and of the ball at its tip, in
+# pixels.
+DASH_RADIUS, CLAMP_RADIUS, SHAFT_RADIUS, TIP_RADIUS = 0.85, 1.2, 1.7, 4.3
 # The turn carrying the beam's frame, along z with the section across x and up y, into the drawing's, along x with
 # the section across y and up z: a quarter turn of z towards x, then of y towards z.
 drawing_turn = (mv.yz * (-np.pi / 4)).exp() * (mv.zx * (-np.pi / 4)).exp()   # [] Motor+
@@ -135,11 +133,12 @@ def section_panel(ax, limit: float) -> tuple[Camera, float]:
 
 
 def centres_drawn(centre: core.Point, shear: core.Point, scale: float, camera: Camera) -> list[np.ndarray]:
-    """The centroid as a dot, and the shear centre as a ring."""
+    """The centroid as a dot, and the shear centre as a ring, the centroid's dot last."""
     ink = np.array(to_rgb("#0f172a"))
-    return [simplices.markers(centre[None], ink, DOT_SIDE / 2 * scale, camera),
-            simplices.markers(shear[None], ink, (RING_SIDE + RING_WIDTH) / 2 * scale, camera,
-                              inner=(RING_SIDE - RING_WIDTH) / 2 * scale)]
+    # The ring a white dot over a larger dark one, under the centroid's dot, which it rings where the two coincide.
+    return [simplices.markers(shear[None], ink, (RING_SIDE + RING_WIDTH) / 2 * scale, camera),
+            simplices.markers(shear[None], np.ones(3), (RING_SIDE - RING_WIDTH) / 2 * scale, camera),
+            simplices.markers(centre[None], ink, DOT_SIDE / 2 * scale, camera)]
 
 
 def section_row(sections: list[tuple[core.Mesh, core.Point, core.Scalar]]) -> tuple[plt.Figure, list, list[Camera],
@@ -172,10 +171,13 @@ def draw_walls(sections: list[tuple[core.Mesh, core.Point, core.Scalar]], centre
     return figure
 
 
-def section_limit(tips: np.ndarray) -> float:
-    """Half the width of section views that hold the clamp's section and the ends of every moved tip's walls in the
-    section view `[..., walls, 2, 2]` with a load's arrow beside them."""
-    return max(SECTION_LIMIT, np.abs(tips).max() + ARROW)
+def section_limit(tips: core.Point) -> float:
+    """Half the width of section views that hold the clamp's section and the ends of every moved tip's walls
+    `[..., walls, ends]` with a load's arrow beside them: their farthest reading across or up, by the planes x and y
+    over their weight."""
+    ends = tips.batch().reshape(-1)                                          # [ends] Point-
+    readings = (stack((mv.x, mv.y))[:, None] & ends) / (mv.w & ends)          # [2, ends] Scalar+
+    return max(SECTION_LIMIT, float(readings.abs().max().to_array()) + ARROW)
 
 
 def section_drawn(walls: core.Point, stress: core.Scalar, principal: core.Strain, centre: core.Point,
@@ -190,9 +192,11 @@ def section_drawn(walls: core.Point, stress: core.Scalar, principal: core.Strain
                             tuple(np.array(PRINCIPAL_DASHES) * PRINCIPAL_WIDTH * scale)) for axis in principal]
     # The neutral axis: the strain's part in the section's plane, the part that stretches the fibres.
     pictures.append(line_drawn(strain.cast(core.Strain), centre, 2 * limit, NEUTRAL, NEUTRAL_WIDTH * scale, camera))
-    pictures.append(simplices.strokes(stack([through, reach(through, load, ARROW)]), simplices.Mesh.chains([2]),
-                                      np.array(to_rgb(LOAD)), LOAD_WIDTH * scale, camera, heads=np.ones(1),
-                                      head=LOAD_HEAD * scale))
+    # The load's arrow, a stroke with a dot at its tip.
+    tip = reach(through, load, ARROW)                                        # [] Point-
+    pictures += [simplices.strokes(stack([through, tip]), simplices.Mesh.chains([2]), np.array(to_rgb(LOAD)),
+                                   LOAD_WIDTH * scale, camera),
+                 simplices.markers(tip[None], np.array(to_rgb(LOAD)), LOAD_TIP * scale, camera)]
     return pictures + centres_drawn(centre, shear, scale, camera)
 
 
@@ -201,9 +205,10 @@ def straightened(bent: core.Point) -> core.Point:
     ends]`: the walls at the clamp carried straight along the beam, as far along as each cross-section's middle lies
     along the bent beam."""
     middles = bent.mean(axis=-1).mean(axis=-1)                               # [..., pieces + 1] Point-
-    # The distance between neighbouring middles, the size of the line through them.
-    steps = (middles[..., :-1] & middles[..., 1:]).norm().to_array()         # [..., pieces]
-    arc = np.concatenate([np.zeros(steps.shape[:-1] + (1,)), np.cumsum(steps, axis=-1)], axis=-1)   # [..., pieces + 1]
+    # The distance between neighbouring middles, the size of the line through them, and how far along the beam each
+    # middle lies, the distances summed from the clamp.
+    steps = (middles[..., :-1] & middles[..., 1:]).norm()                    # [..., pieces] Scalar+
+    arc = concatenate([0 * steps[..., :1], steps.cumsum(axis=-1)], axis=-1)  # [..., pieces + 1] Scalar+
     return bent[..., :1, :, :] + core.beam_direction * arc[..., None, None]
 
 
@@ -240,10 +245,13 @@ def clamped(through: core.Point, load: core.Point, length: float, radii: tuple[f
     clamp_radius, shaft_radius = radii
     clamp = drawing_turn >> core.point(SQUARE)                                # [corners] Point-
     clamp_rods, clamp_joints = solids.edges(clamp, clamp[[1, 2, 3, 0]], clamp_radius * view.pixel)
-    shaft, head = solids.arrows(drawing_turn >> through, drawing_turn >> reach(through, load, length),
-                                shaft_radius * view.pixel, HEAD_SHARE * length, HEAD_WIDTH * HEAD_SHARE * length)
+    # The load's arrow, a rod with a ball at its tip.
+    tip = drawing_turn >> reach(through, load, length)                       # [] Point-
+    shaft = solids.rods(drawing_turn >> through, tip, shaft_radius * view.pixel)   # [3] Plane+ <- Point-
+    ball = solids.ball(tip, TIP_RADIUS * view.pixel)                          # [] Plane+ <- Point-
     load_colour, clamp_colour = (np.array(to_rgb(colour)) for colour in (LOAD, CLAMP_COLOUR))
-    return [(clamp_rods, clamp_colour), (clamp_joints, clamp_colour), (shaft[None], load_colour), (head[None], load_colour)]
+    return [(clamp_rods, clamp_colour), (clamp_joints, clamp_colour), (shaft[None], load_colour),
+            (ball[None, None], load_colour)]
 
 
 def draw_beam(bent: core.Point, shears: core.Point, through: core.Point, load: core.Point,
@@ -278,7 +286,7 @@ def draw_beams(sections: list[tuple[core.Mesh, core.Point, core.Scalar]], centre
     tips = [reach(frames[-1] >> centre, load, TIP_ARROW) for centre, (_, frames, _, _) in zip(centres, beams)]
     # The beams' rooms alike, one view fitted to the first holds them all.
     seen = fitted(view(bent, tips, ELEVATION, AZIMUTH), beam_axes[0])
-    limit = max(section_limit(flat(beam[-1])) for beam in bent)
+    limit = max(section_limit(beam[-1]) for beam in bent)
     for section_ax, beam_ax, (mesh, nodes, _), centre, shear, (strains, frames, principal, stress), beam in zip(
             section_axes, beam_axes, sections, centres, shears, beams, bent):
         camera, scale = section_panel(section_ax, limit)
@@ -307,11 +315,10 @@ def sized_loads(section: tuple[core.Mesh, core.Point, core.Scalar], centre: core
     count = frames.shape[0]
     through, loads = through.broadcast_to((count,)), loads.broadcast_to((count,))
     placed = frames[..., None] >> nodes.batch()                              # [frames, pieces + 1, nodes] Point-
-    # The ends of the walls at every cross-section, and at the tip in the section view.
+    # The ends of the walls at every cross-section.
     bent = placed[..., mesh.edges]                                           # [frames, pieces + 1, walls, ends] Point-
-    tip_ends = flat(bent[:, -1])                                             # [frames, walls, 2, 2]
     largest = np.abs(stress.to_array()).max()
-    limit = section_limit(tip_ends)
+    limit = section_limit(bent[:, -1])
     moved = frames[:, -1] >> through                                         # [frames] Point-
     # The figure and the section's still parts drawn once; the beam's picture, the stress, the tip's walls, the
     # neutral axis and the load's arrow set for each frame.
@@ -367,16 +374,20 @@ def draw_push(ax, walls: core.Point, point: core.Point, strain: core.Strain, str
                                               np.arange(2, n_corners)], axis=-1))
     loop = simplices.Mesh(n_corners, np.stack([np.arange(n_corners), np.roll(np.arange(n_corners), -1)], axis=-1))
     kern_colour = np.array(to_rgb(KERN))
+    # The push point a cross: two strokes through it, turned an eighth of a turn either way from across, over white
+    # strokes a rim wider.
+    turns = (mv.xy * (np.pi / 8 * np.array([1.0, -1.0]))).exp()              # [arms] Motor+
+    arms = (turns >> mv.x.dual()) * (PUSH_SIDE / 2 * scale * camera.pixel)   # [arms] Point-
+    cross = concatenate([point - arms, point + arms])                        # [2 * arms] Point-
+    strokes = simplices.Mesh(4, np.array([[0, 2], [1, 3]]))
     simplices.overlay(ax, [
         stress_drawn(walls, stress, largest, scale, camera),
         contours.picture(corners, fan, np.zeros(n_corners), kern_colour, camera, opacity=KERN_OPACITY),
         simplices.strokes(corners, loop, kern_colour, KERN_WIDTH * scale, camera),
         line_drawn(strain, centre, 4 * SECTION_LIMIT, NEUTRAL, NEUTRAL_WIDTH * scale, camera),
-        simplices.markers(point[None], np.ones(3), (PUSH_SIDE / 2 + PUSH_RIM) * scale, camera,
-                          marker=simplices.Marker.DIAMOND),
-        simplices.markers(point[None], np.array(to_rgb(LOAD)), PUSH_SIDE / 2 * scale, camera,
-                          marker=simplices.Marker.DIAMOND),
-        centres_drawn(centre, centre, scale, camera)[0]])
+        simplices.strokes(cross, strokes, np.ones(3), (PUSH_WIDTH + 2 * PUSH_RIM) * scale, camera),
+        simplices.strokes(cross, strokes, np.array(to_rgb(LOAD)), PUSH_WIDTH * scale, camera),
+        centres_drawn(centre, centre, scale, camera)[-1]])
 
 
 def draw_pushes(sections: list[tuple[core.Mesh, core.Point, core.Scalar]], centres: list[core.Point],

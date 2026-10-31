@@ -27,9 +27,9 @@ CONGRUENCE_PIXELS, FIELD_PIXELS = 300, 330
 # The view the field lines are carried through, as a multiple of the one framing them at the first instant, holding
 # them at every instant shown.
 FIELD_ROOM = 1.35
-# The widths in pixels of the curves, the ray and the axes, the axes' arrowheads' length and width, and the events'
-# radius; how far the axes reach past what they hold, and their names past their tips.
-CURVE_WIDTH, FIELD_WIDTH, RAY_WIDTH, AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH, EVENT_RADIUS = 1.2, 2.3, 1.7, 0.9, 7.0, 4.0, 2.5
+# The widths in pixels of the curves, the ray and the axes, the radii of the balls at the axes' tips and of the
+# events; how far the axes reach past what they hold, and their names past their tips.
+CURVE_WIDTH, FIELD_WIDTH, RAY_WIDTH, AXIS_WIDTH, TIP_RADIUS, EVENT_RADIUS = 1.2, 2.3, 1.7, 0.9, 1.6, 2.5
 AXIS_REACH, LABEL_DISTANCE = 1.12, 1.24
 
 
@@ -85,7 +85,10 @@ def draw_incidence(events: core.Event, rays: core.Event) -> plt.Figure:
     # One view for both panels, framing the axes, their names and every ray, as many pixels across as a panel holds.
     view = fitted(solids.view([solids.origin[None], names, lines], 0.0, DIAGRAM_ELEVATION, DIAGRAM_AZIMUTH,
                               DIAGRAM_MARGIN, 1), panels[0])
-    shafts, heads = solids.frame(extent, AXIS_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
+    # The diagram's axes: rods from the origin along x, z and t, each with a ball at its tip.
+    axis_tips = solids.origin + solids.axes.dual() * extent                   # [3] Point-
+    shafts = solids.rods(solids.origin, axis_tips, AXIS_WIDTH / 2 * view.pixel)
+    heads = solids.ball(axis_tips, TIP_RADIUS * view.pixel)[:, None]
     for ax, points, line in zip(panels, positions, lines):
         # The ray, straight, as a rod from its first sample to its last.
         ray = solids.rods(line[:1], line[-1:], RAY_WIDTH / 2 * view.pixel)   # [1, 3] Plane+ <- Point-

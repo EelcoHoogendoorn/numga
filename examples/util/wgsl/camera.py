@@ -65,12 +65,12 @@ class Camera(NamedTuple):
 
 
 def whole(value: Extensor, algebra) -> GAType:
-    """The whole of a value's grade in an algebra, with the value's own orientation: the type a shader of that algebra
-    declares for it, so that values of one grade with fewer blades, a point of the plane or a single plane, fit it
-    alike."""
-    # The grade of the value's blades, the generators each blade holds.
-    grade = bin(int(value.gatype.output_subspace.masks[0])).count("1")
-    return algebra.gatype.from_grades([grade]).derive.with_orientations(value.gatype.orientations)
+    """The whole of a value's grades in an algebra, with the value's own orientation: the type a shader of that algebra
+    declares for it, so that values with fewer blades, a point of the plane or a single plane, fit it alike, and a
+    value of several grades, such as a product typed even, declares them all."""
+    # The grades of the value's blades, the generators each blade holds.
+    grades = sorted({bin(int(mask)).count("1") for mask in value.gatype.output_subspace.masks})
+    return algebra.gatype.from_grades(grades).derive.with_orientations(value.gatype.orientations)
 
 
 def reading(points: Extensor, camera: Camera) -> dict:

@@ -27,10 +27,6 @@ def surface_entropy_of(state: core.State) -> core.Scalar:
     return thermal_capacity * (internal / (thermal_capacity * reference_temperature)).log()
 
 
-def rates_of(state: core.State) -> tuple[core.State, core.State]:
-    return core.rates(state, mass, stiffness, friction, thermal_capacity, reference_temperature)
-
-
 def release(n_frames: int, steps_per_frame: int, dt: float) -> Iterator[core.State]:
     """The state at each frame, so many steps of the combined motion apart."""
     state = start
@@ -45,6 +41,6 @@ if __name__ == "__main__":
     from examples.thermodynamics.generic import render
 
     n_frames, steps_per_frame, dt, frame_duration_ms = 150, 2, 0.04, 40
-    save_figure(render.draw(energies_of, surface_entropy_of, rates_of, start), "generic_thermodynamics")
-    save_animation(render.damping(energies_of, surface_entropy_of, rates_of, release(n_frames, steps_per_frame, dt),
+    save_figure(render.draw(energies_of, surface_entropy_of, start), "generic_thermodynamics")
+    save_animation(render.damping(energies_of, surface_entropy_of, release(n_frames, steps_per_frame, dt),
                                   steps_per_frame * dt), "generic_thermodynamics", frame_duration_ms)

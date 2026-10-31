@@ -47,13 +47,6 @@ CORNERS = np.array([[-1.0, -1.0], [-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]])
 
 
 # --- plumbing -------------------------------------------------------------------------
-def ground(points: Extensor) -> np.ndarray:
-    """The coordinates along x and y of points on the ground: their pairings with the planes x = 0 and
-    y = 0 over their weights."""
-    mv = points.context.multivector
-    return ((stack((mv.x, mv.y)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
-
-
 def axles(contacts: Extensor, centre: Extensor) -> Extensor:
     """Where the axles are drawn from, `[axles]`: the rear wheels share one axle, drawn once from the rear wheel nearer
     the turning centre, a point of unit weight, and the front wheel has its own; every axle runs on to the centre."""
@@ -86,9 +79,9 @@ def plane(contacts: Extensor, forward: Extensor, centre: Extensor, middle: Exten
     # The turning centre, an extrinsic meet, as the intrinsic point it names, at unit weight.
     centre = (centre * mv.antipseudoscalar([1.0])).normalized()
     steps = wheel_steps(contacts, forward)
-    extent = following(ground(middle))
+    across, up = following(middle[-1])
     figure, ax = plt.subplots(figsize=(3, 3))
-    ax.set(xlim=extent[:, 0], ylim=extent[:, 1], aspect="equal")
+    ax.set(xlim=across, ylim=up, aspect="equal")
     ax.axis("off")
     figure.tight_layout()
     camera = panel(ax, mv.x, mv.y)
@@ -152,9 +145,12 @@ def space_view(place: solids.Point) -> solids.View:
                        N_PIXELS)
 
 
-def following(trail: np.ndarray) -> np.ndarray:
-    """The square view centred on the last point of a trail: [corners, 2]."""
-    return trail[-1] + np.array([[-VIEW, -VIEW], [VIEW, VIEW]])
+def following(place: Extensor) -> np.ndarray:
+    """The square view centred on a place on the ground, its limits along x and along y `[2, 2]`: the place's
+    pairings with the planes x = 0 and y = 0 over its weight, the view's half width either side."""
+    mv = place.context.multivector
+    middle = (stack((mv.x, mv.y)) & place) / (mv.w & place)                  # [2] Scalar+
+    return stack([middle - VIEW, middle + VIEW], axis=-1).to_array()
 
 
 def animate(draw, scenes) -> Iterator[np.ndarray]:

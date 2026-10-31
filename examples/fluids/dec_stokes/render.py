@@ -31,23 +31,18 @@ axes = stack((mv.x, mv.y))                                                   # [
 # way of their middles, in lengths of the primal edge.
 target_shares = np.array([0.65, 0.5])
 arrow_reach = 0.35
-# Widths, heads and radii in pixels: the walls and the mesh's edges; the complex's primal and dual edges, cells,
-# vertices, circumcentres and arrows.
+# Widths and radii in pixels: the walls and the mesh's edges; the complex's primal and dual edges, cells, vertices,
+# circumcentres, and arrows with the dots at their tips.
 wall_width, mesh_width = 0.76, 0.35
 primal_width, dual_width, cell_width, vertex_radius = 0.8, 0.83, 1.6, 1.4
 marked_radius, marked_ring = 3.1, 0.76
-arrow_width, arrow_head = 1.9, 6.0
+arrow_width, arrow_tip = 1.9, 3.0
 
 
 # --- plumbing -------------------------------------------------------------------------
 def rgb(colour: str) -> np.ndarray:
     """A named colour's red, green and blue."""
     return np.array(to_rgb(colour))
-
-
-def coordinates(points: core.Point) -> np.ndarray:
-    """Drawing coordinates of intrinsic positions and velocities."""
-    return np.asarray((axes & points.batch()[..., None]).to_array())
 
 
 def face_corners(mesh: core.Mesh, vertices: core.Point) -> tuple[core.Point, core.Mesh]:
@@ -61,15 +56,15 @@ def face_corners(mesh: core.Mesh, vertices: core.Point) -> tuple[core.Point, cor
 
 def channel_panels(mesh: core.Mesh, vertices: core.Point, n_rows: int) -> tuple[plt.Figure, list[plt.Axes]]:
     """Equal-aspect channel panels framing the channel."""
-    places = coordinates(vertices)
+    readings = axes[:, None] & vertices.batch()                               # [2, vertices] Scalar+
+    low, high = readings.min(axis=-1), readings.max(axis=-1)                  # [2] Scalar+, [2] Scalar+
+    margin = 0.025 * (high[1] - low[1])                                       # [] Scalar+
+    limits = stack((low - margin, high + margin), axis=-1).to_array()         # [2, 2]
     figure, panels = plt.subplots(n_rows, 1, figsize=(figure_width, figure_height * n_rows),
                                   dpi=dpi, squeeze=False)
     figure.subplots_adjust(left=0.015, right=0.985, bottom=0.025, top=0.975, hspace=0.07)
-    low, high = places.min(axis=0), places.max(axis=0)
-    margin = 0.025 * (high[1] - low[1])
     for ax in panels[:, 0]:
-        ax.set(xlim=(low[0] - margin, high[0] + margin),
-               ylim=(low[1] - margin, high[1] + margin), aspect="equal")
+        ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
         ax.set_axis_off()
     return figure, list(panels[:, 0])
 
@@ -126,9 +121,10 @@ def draw_complex(mesh: core.Mesh, vertices: core.Point, circumcentres: core.Poin
 
     figure, ax = plt.subplots(figsize=(3.1, 3.1), dpi=dpi)
     figure.subplots_adjust(0.02, 0.02, 0.98, 0.98)
-    middle = coordinates(centre)
-    limits = (radius * np.array([-1, 1])).to_array()
-    ax.set(xlim=middle[0] + limits, ylim=middle[1] + limits, aspect="equal")
+    # The panel about the vertex, the radius either way.
+    middle = axes & centre                                                     # [2] Scalar+
+    limits = stack((middle - radius, middle + radius), axis=-1).to_array()     # [2, 2]
+    ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
     ax.set_axis_off()
     camera = flat_panel(ax, core.ga)
     n_shown = shown.shape[0]
@@ -158,11 +154,15 @@ def draw_complex(mesh: core.Mesh, vertices: core.Point, circumcentres: core.Poin
     edge = mesh.reading(np.array([longest]), 1)                                # Scalar+[1 <- edges]
     primal, dual = edge * edges, edge * dual_edges                             # Point-[1], Point-[1]
     reach = arrow_reach * primal.norm()                                        # Scalar+[1]
-    arrows = [simplices.strokes(stack(((middle - reach * direction / direction.norm()).batch(),
-                                       (middle + reach * direction / direction.norm()).batch()), axis=-1).reshape(-1),
-                                core.Mesh.chains([2]), rgb(colour), arrow_width, camera, np.ones(1), arrow_head)
-              for middle, direction, colour in ((edge * midpoints, primal, primal_colour),
-                                                (edge * (dual_starts + dual_ends) / 2, dual, dual_colour))]
+    # The two arrows, the primal's and the dual's, each a stroke either way of its middle with a dot at its tip.
+    middles = concatenate(((edge * midpoints).batch(), (edge * (dual_starts + dual_ends) / 2).batch()))   # [2] Point-
+    directions = concatenate((primal.batch(), dual.batch()))                   # [2] Point-
+    along = reach.batch() * directions / directions.norm()                     # [2] Point-
+    tips = middles + along                                                     # [2] Point-
+    arrow_colours = np.stack((rgb(primal_colour), rgb(dual_colour)))
+    arrows = [simplices.strokes(stack((middles - along, tips), axis=-1).reshape(-1), core.Mesh.chains([2, 2]),
+                                arrow_colours, arrow_width, camera),
+              simplices.markers(tips, arrow_colours, arrow_tip, camera)]
     simplices.overlay(ax, [
         simplices.strokes(primal_ends, pairs, rgb(primal_colour), primal_width, camera, opacity=0.6),
         simplices.strokes(dual_ends_shown, pairs, rgb(dual_colour), dual_width, camera, opacity=0.75),

@@ -38,20 +38,8 @@ NAME_COLOUR, HALO_WIDTH = "0.25", 2.0
 # of the larger side, and the pixels across it, until the view is fitted to its axes.
 ELEVATION, AZIMUTH = np.radians(22.0), np.radians(-15.0)
 MARGIN, N_PIXELS = 0.1, 400
-# The widths of the frame's shafts, and their heads' length and width, in pixels.
-AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 1.6, 12.0, 6.8
-
-
-def momentum_coordinates(momenta: core.Wavevector) -> np.ndarray:
-    """The x and y coordinates of momenta: their pairings with the displacements along x and y."""
-    mv = momenta.context.multivector
-    return (stack((mv.x.dual(), mv.y.dual())) & momenta[..., None]).to_array()
-
-
-def pseudospin_coordinates(pseudospins: core.Pseudospin) -> np.ndarray:
-    """The x, y and z parts of pseudospins: their pairings with the planes yz, zx and xy."""
-    mv = pseudospins.context.multivector
-    return (stack((mv.yz, mv.zx, mv.xy)) & pseudospins[..., None]).to_array()
+# The width of the frame's shafts, and the radius of the balls at their tips, in pixels.
+AXIS_WIDTH, TIP_RADIUS = 1.6, 3.4
 
 
 def phase(rotors: core.Rotor, starts: core.Pseudospin) -> np.ndarray:
@@ -85,7 +73,6 @@ def draw_field(momenta: core.Wavevector, field: core.Field) -> plt.Figure:
     """The pseudospin field over the momentum plane: its length as shade, vanishing at the six
     corners of the zone, and its direction in the plane as streaks running downstream, which turn once around each
     corner."""
-    k = momentum_coordinates(momenta)                                           # [samples, samples, 2]
     mesh = meshes.Mesh.grid(*momenta.shape)
     mv = momenta.context.multivector
     # The momenta as they are, read by the displacements along x and y.
@@ -97,7 +84,10 @@ def draw_field(momenta: core.Wavevector, field: core.Field) -> plt.Figure:
     directions = (stack((mv.x, mv.y)) * parts).sum(axis=-1)                    # [samples] Wavevector+
     # The zone and its six corners, and room for the cross's names.
     figure, ax = charts.subplots(340, 340, layout="constrained")
-    ax.set(xlim=(k[..., 0].min(), k[..., 0].max()), ylim=(k[..., 1].min(), k[..., 1].max()), aspect="equal")
+    # The zone's reach along x and y, read by pairing with the displacements along them.
+    readings = stack((mv.x.dual(), mv.y.dual()))[:, None] & places              # [2, samples] Scalar+
+    limits = stack((readings.min(axis=-1), readings.max(axis=-1)), axis=-1).to_array()
+    ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
     camera = panel(ax, mv.x.dual(), mv.y.dual())
     colours = plt.get_cmap("viridis")(strength / strength.max())[:, :3]
     simplices.overlay(ax, [contours.picture(places, mesh, strength, colours, camera)]).set_zorder(1)
@@ -149,8 +139,9 @@ def draw_bands(momenta: core.Wavevector, values: core.Scalar) -> plt.Figure:
     figure = plt.figure(figsize=(3.0, 3.0 * view.half[1] / view.half[0]), dpi=200)
     ax = figure.add_axes((0, 0, 1, 1))
     view = fitted(view, ax)
-    shafts, heads = solids.arrows(frame_corner, frame_tips, AXIS_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel,
-                                  HEAD_WIDTH / 2 * view.pixel)
+    # The frame's arrows: rods from the corner, each with a ball at its tip.
+    shafts = solids.rods(frame_corner, frame_tips, AXIS_WIDTH / 2 * view.pixel)
+    heads = solids.ball(frame_tips, TIP_RADIUS * view.pixel)[:, None]
     bands = [(meshes.samples(places, faces, shade, meshes.smooth(places, meshes.Mesh(len(places), faces)), view, face_values=np.zeros(4),
                              colour=meshes.plain, gloss=0.2), 1.0)
              for places, shade in sheets]
@@ -177,7 +168,8 @@ def draw_textures(pseudospins_at: Callable[[core.Wavevector], core.Pseudospin], 
     across = -extent + (np.arange(side) + 0.5) * 2 * extent / side
     pixels = core.mv.x * across + core.mv.y * across[::-1, None]                      # [rows, columns] Wavevector+
     pseudospins = pseudospins_at(pixels)                                        # [valleys, rows, columns] Pseudospin-
-    spins = pseudospin_coordinates(pseudospins)                                     # [valleys, rows, columns, 3]
+    # The pseudospins' parts along z, their pairings with the plane xy.
+    heights = (core.mv.xy & pseudospins).to_array()                             # [valleys, rows, columns]
     # The pseudospins' parts along x and y, their pairings with the planes yz and zx, drawn as directions in the
     # momentum plane along x and y.
     parts = stack((core.mv.yz, core.mv.zx)) & pseudospins[..., None]            # [valleys, rows, columns, 2] Scalar+
@@ -185,8 +177,8 @@ def draw_textures(pseudospins_at: Callable[[core.Wavevector], core.Pseudospin], 
     # The momenta of the pixels as they are, a grid over the momentum plane.
     mesh = meshes.Mesh.grid(side, side)
     places = pixels.reshape(-1)                                                     # [pixels] Wavevector+
-    for ax, spin, drawn in zip(panels, spins, directions):
-        colours = TEXTURE_MAP((spin[..., 2] + 1) / 2)[..., :3]
+    for ax, height, drawn in zip(panels, heights, directions):
+        colours = TEXTURE_MAP((height + 1) / 2)[..., :3]
         pinned(ax, np.round(colours * 255).astype(np.uint8), (-extent, extent, -extent, extent))
         ax.set(xlim=(-extent, extent), ylim=(-extent, extent))
         # The momenta read by the displacements along x and y.

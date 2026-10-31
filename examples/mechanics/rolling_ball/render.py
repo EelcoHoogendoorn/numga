@@ -101,11 +101,6 @@ def shader() -> Shader:
                   dict(axes=axes, lamp=lamp, ambient=AMBIENT, light=LIGHT, dark=DARK, circle=CIRCLE, trail=TRAIL))
 
 
-def coordinates(points) -> np.ndarray:
-    """How far points lie across and up the table, their pairings with its axes, along the last axis."""
-    return (axes & points[..., None]).to_array()
-
-
 def table(path, half_width: float) -> np.ndarray:
     """The table from above with the loop on it, `[pixels, pixels, 3]` in [0, 1], within `half_width` of its middle: drawn
     once, for every frame to lay the ball over."""
@@ -129,7 +124,8 @@ def frame(background: np.ndarray, half_width: float, position, turn, trail, radi
 def animate(path, rolling, radius: float) -> Iterator[np.ndarray]:
     """One frame per state of the ball: its position, its turn and its contact point's trail, all over one view of the
     table, the loop drawn once."""
-    half_width = np.abs(coordinates(path)).max() + MARGIN * radius
+    # The farthest the loop lies across or up the table, by its pairings with the table's axes.
+    half_width = float((axes[:, None] & path.reshape(-1)).abs().max().to_array()) + MARGIN * radius
     background = table(path, half_width)
     for position, turn, trail in rolling:
         yield frame(background, half_width, position, turn, trail, radius)

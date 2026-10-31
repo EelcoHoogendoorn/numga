@@ -34,13 +34,6 @@ plane_colour = to_rgb("gray")
 
 
 # --- plumbing -------------------------------------------------------------------------
-def xy(points: Point) -> np.ndarray:
-    """(..., 2) Euclidean coordinates of finite points: their pairings with the planes x = 0 and y = 0,
-    over their weights."""
-    mv = points.context.multivector
-    return ((stack((mv.x, mv.y)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
-
-
 def segments(starts: Crossing, stops: Crossing) -> tuple[Crossing, simplices.Mesh]:
     """Segments between matching starts and stops `[segments]`: their ends, and an edge from each start to its
     stop."""
@@ -79,8 +72,11 @@ def draw_lenses(subject: Point, imaging: Line, image: Crossing, focusing: Line, 
         legs = [(segments(bundles[leg] ^ limits[leg], bundles[leg] ^ limits[leg + 1]), colour)
                 for leg, colour in enumerate(colours)]
         elements = [segments(*plane_ends(plane[None], 1.0)) for plane in lens_planes]
-        # The panel framed around what it draws.
-        ax.update_datalim(xy(concatenate([ends for (ends, _), _ in legs] + [ends for ends, _ in elements])))
+        # The panel framed around what it draws: the low and high corners of its extent, read by the planes x and y
+        # over the weights.
+        ends = concatenate([ends for (ends, _), _ in legs] + [ends for ends, _ in elements])   # [ends] Crossing-
+        readings = (stack((mv.x, mv.y))[:, None] & ends) / (mv.w & ends)     # [2, ends] Scalar+
+        ax.update_datalim(stack((readings.min(axis=-1), readings.max(axis=-1))).to_array())
         drawn.append((legs, elements))
         ax.set_axis_off()
         ax.set_aspect("equal")

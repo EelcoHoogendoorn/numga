@@ -40,12 +40,11 @@ MARGIN, N_PIXELS = 0.08, 470
 # end, and the reach of the pair coherence.
 energy_start = solids.origin + sm.x.dual() * (ENERGY_SCALE * ENERGY_START)                # [] Point-
 reaches = np.array([ENERGY_SCALE * (ENERGY_END - ENERGY_START), COHERENCE_REACH, COHERENCE_REACH])
-# The points around a circle; the widths of the axes' shafts, the circles, the path and the arrows' shafts, the
-# arrowheads' lengths and widths, and the radius of the tips, in pixels.
+# The points around a circle; the widths of the axes' shafts, the circles, the path and the arrows' shafts, and the
+# radii of the balls at the axes' tips and at the arrows', in pixels.
 N_CIRCLE = 100
 AXIS_WIDTH, CIRCLE_WIDTH, PATH_WIDTH, STEM_WIDTH = 0.8, 0.64, 0.8, 1.43
-AXIS_HEAD_LENGTH, AXIS_HEAD_WIDTH, STEM_HEAD_LENGTH, STEM_HEAD_WIDTH = 5.6, 3.2, 5.2, 4.0
-TIP_RADIUS = 1.6
+AXIS_TIP_RADIUS, TIP_RADIUS = 1.6, 1.8
 # The animation's size in pixels: the chart of the arrows beside the gap's curve.
 QUENCH_PX = (640, 270)
 
@@ -93,15 +92,15 @@ def draw_equilibrium(dispersion: core.Field, spins: core.Spin) -> Figure:
 def chart(energies: np.ndarray, axis: plt.Axes
           ) -> tuple[solids.View, list[tuple[solids.Quadric, np.ndarray]], solids.Point]:
     """The view of the chart, fitted to the matplotlib axes it is shown in, its axes as arrows from the start of the
-    energy axis, the energy along +x and the pair coherence in yz and zx along +y and +z, and the circles of the
-    largest coherence about the energy axis at every few levels `[circles, circle + 1]`."""
+    energy axis, rods with a ball at each tip, the energy along +x and the pair coherence in yz and zx along +y and +z,
+    and the circles of the largest coherence about the energy axis at every few levels `[circles, circle + 1]`."""
     ends = energy_start + solids.axes.dual() * reaches                                      # [3] Point-
     # The circles about the energy axis, x, at every few levels, each through the point the largest coherence above it.
     levels = solids.origin + sm.x.dual() * (ENERGY_SCALE * energies[::CIRCLE_EVERY])        # [circles] Point-
     circles = meshes.circles(levels + sm.z.dual() * CIRCLE_RADIUS, sm.yz, N_CIRCLE)        # [circles, circle + 1] Point-
     view = fitted(solids.view([circles, energy_start, ends], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS), axis)
-    shafts, heads = solids.arrows(energy_start, ends, AXIS_WIDTH / 2 * view.pixel,
-                                  AXIS_HEAD_LENGTH * view.pixel, AXIS_HEAD_WIDTH / 2 * view.pixel)
+    shafts = solids.rods(energy_start, ends, AXIS_WIDTH / 2 * view.pixel)
+    heads = solids.ball(ends, AXIS_TIP_RADIUS * view.pixel)[:, None]
     return view, [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR)], circles
 
 
@@ -138,13 +137,11 @@ def animate_quench(
         scene = Scene(view, np.ones(3), axes, [rings], inks=[], translucent=[])
 
         def arrows(coherence: np.ndarray) -> np.ndarray:
-            """Each level's arrow from the energy axis to its pair coherence, and its tip, over the path through the
-            tips."""
+            """Each level's arrow from the energy axis to its pair coherence, a rod with a ball at its tip, over the
+            path through the tips."""
             # The pair coherence in yz up the chart's y, and in zx along its z.
             tips = origins + sm.y.dual() * coherence[:, 0] + sm.z.dual() * coherence[:, 1]   # [levels] Point-
-            shafts, heads = solids.arrows(origins, tips, STEM_WIDTH / 2 * view.pixel,
-                                          STEM_HEAD_LENGTH * view.pixel, STEM_HEAD_WIDTH / 2 * view.pixel)
-            stems = [(shafts, colours), (heads, colours),
+            stems = [(solids.rods(origins, tips, STEM_WIDTH / 2 * view.pixel), colours),
                      (solids.ball(tips, TIP_RADIUS * view.pixel)[:, None], np.array(to_rgb(PAIR)))]
             path = simplices.tubes(tips, simplices.Mesh.chains([len(tips)]), np.array(to_rgb(INK)), PATH_WIDTH, view,
                                    solids.gloss)

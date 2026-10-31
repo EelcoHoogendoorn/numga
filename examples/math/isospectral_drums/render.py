@@ -36,9 +36,10 @@ tile_colours = np.array([
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(points: Point) -> np.ndarray:
-    """Cartesian positions with field sites exposed for drawing: their pairings with the planes `mv.x` and `mv.y`."""
-    return (stack((mv.x, mv.y)) & points.batch()[..., None]).to_array()
+def extent(points: Point) -> tuple[Scalar, Scalar]:
+    """The least and the greatest readings of points, over all their sites, by the planes `mv.x` and `mv.y` `[2]`."""
+    readings = stack((mv.x, mv.y))[:, None] & points.batch().reshape(-1)        # [2, points] Scalar+
+    return readings.min(axis=-1), readings.max(axis=-1)
 
 
 def amplitudes(field: Scalar) -> np.ndarray:
@@ -58,17 +59,18 @@ def welded(corners: Point) -> tuple[Mesh, Point]:
 
 def draw_tiles(tiles: Point) -> plt.Figure:
     """The two polygonal drums, with matching colours for their seven constituent triangles."""
-    points = coordinates(tiles)
     n_tiles = tiles.shape[1]
     # Each tile its own three corners, so that it takes its own colour.
     pieces = simplices.Mesh(3 * n_tiles, np.arange(3 * n_tiles).reshape(n_tiles, 3))
-    figure, axes = plt.subplots(1, len(points), figsize=(8, 3.7), facecolor="white")
+    figure, axes = plt.subplots(1, len(tiles), figsize=(8, 3.7), facecolor="white")
     figure.subplots_adjust(0, 0, 1, 1, wspace=0.07)
-    span = np.ptp(points, axis=(1, 2)).max() * 1.08
-    for ax, drum, corners in zip(axes, tiles, points):
-        centre = (corners.min(axis=(0, 1)) + corners.max(axis=(0, 1))) / 2
-        ax.set(xlim=centre[0] + np.array([-0.5, 0.5]) * span,
-               ylim=centre[1] + np.array([-0.5, 0.5]) * span, aspect="equal")
+    # Each drum framed about its middle, every one as wide as the widest drum is along x or y, with a margin.
+    extents = [extent(drum) for drum in tiles]                                  # [drums] ([2] Scalar+, [2] Scalar+)
+    half_span = stack([(high - low).max() for low, high in extents]).max() * 1.08 / 2   # [] Scalar+
+    for ax, drum, (low, high) in zip(axes, tiles, extents):
+        centre = (low + high) / 2                                              # [2] Scalar+
+        limits = stack((centre - half_span, centre + half_span), axis=-1).to_array()   # [2, 2]
+        ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
         ax.set_axis_off()
         camera = flat_panel(ax, ga)
         mesh, welds = welded(drum)
@@ -186,7 +188,9 @@ def frames(
 ) -> Iterator[np.ndarray]:
     """Two flat displacement maps sharing a fixed scale and colour range, each with the outlines of its
     seven triangles `tiles [drums, tiles, corners]`."""
-    scale = 0.91 * pixels / max(np.ptp(coordinates(value), axis=0).max() for value in vertices)
+    # Both drums at one scale, the wider along x or y filling most of its picture.
+    widest = stack([(high - low).max() for low, high in map(extent, vertices)]).max()   # [] Scalar+
+    scale = float((0.91 * pixels / widest).to_array())
     membranes = tuple(Membrane(value, mesh.faces, drum, scale) for value, mesh, drum in zip(vertices, meshes, tiles))
     for pair in fields:
         yield np.concatenate([membrane.draw(amplitudes(field), exposure) for membrane, field in zip(membranes, pair)],
@@ -195,17 +199,17 @@ def frames(
 
 def draw_pieces(vertices: Point, mesh: Mesh, pieces: Scalar, exposure: float) -> plt.Figure:
     """Signed source contributions and their sum on the same reference triangle."""
-    points = coordinates(vertices)
     values = amplitudes(pieces)
-    centre = (points.min(axis=0) + points.max(axis=0)) / 2
-    span = np.ptp(points, axis=0).max() * 1.05
+    # The triangle framed about its middle, as wide as it is wide along x or y, with a margin.
+    low, high = extent(vertices)                                               # [2] Scalar+, [2] Scalar+
+    centre, half_span = (low + high) / 2, (high - low).max() * 1.05 / 2       # [2] Scalar+, [] Scalar+
+    limits = stack((centre - half_span, centre + half_span), axis=-1).to_array()   # [2, 2]
     places = vertices.batch()                                                 # [vertices] Point-
     rim = simplices.Mesh(mesh.n_vertices, mesh.edges[mesh.boundary_edges])
     figure, axes = plt.subplots(1, len(values), figsize=(10, 2.5), facecolor="white")
     figure.subplots_adjust(0, 0, 1, 1, wspace=0.08)
     for ax, field in zip(axes, values):
-        ax.set(xlim=centre[0] + np.array([-0.5, 0.5]) * span,
-               ylim=centre[1] + np.array([-0.5, 0.5]) * span, aspect="equal")
+        ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
         ax.set_axis_off()
         camera = flat_panel(ax, ga)
         shades = colours(Normalize(-exposure, exposure)(field))[:, :3]

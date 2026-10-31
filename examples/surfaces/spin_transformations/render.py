@@ -75,8 +75,8 @@ def render_surface(mesh: Mesh, vertices: Point, reference: Point, view: solids.V
     frame_planes = stack((mv.x, mv.y, mv.z))                                  # [3] Vector+
     # The reference surface's reach, the largest of its pairings with the frame's planes; scaled by it, the cubes of
     # the checkerboard are unit.
-    reach = np.abs((frame_planes & reference.batch()[..., None]).to_array()).max()
-    cell_corners = mesh.incidence[2, 0] * (reference * (squares / 2 / reach))  # [corners] Point-[faces]
+    reach = (frame_planes & reference.batch()[..., None]).abs().max()        # [] Scalar+
+    cell_corners = mesh.incidence[2, 0] * (reference * (squares / 2) / reach)  # [corners] Point-[faces]
     # The texture's place at each corner of each face, read by pairing, faces first, for the shader.
     cells = (frame_planes & cell_corners.batch()[..., None]).to_array().transpose(1, 0, 2)   # [faces, corners, 3]
     points = solids.origin + solids.context.include_from_algebra(vertices.batch())        # [vertices] Point-

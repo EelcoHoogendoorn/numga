@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import stack
+from numga import Extensor, concatenate, stack
 from numga.algebras import PGA2D as ga
 from examples.util import charts
 from examples.util.animation import capture
@@ -33,10 +33,10 @@ CHAIN_ROOM, CHAIN_ABOVE = 1.12, 0.15
 BEAM_ROOM, BEAM_END_ROOM = 1.2, 0.005
 
 
-def coordinates(points: Point) -> np.ndarray:
-    """Coordinates of points of unit weight, `[..., 2]`: their pairings with the planes x = 0 and y = 0."""
+def readings(points: Point) -> Extensor:
+    """Points of unit weight read across and up, `[2, points]`: their pairings with the planes x = 0 and y = 0."""
     mv = points.context.multivector
-    return (stack((mv.x, mv.y)) & points.batch()[..., None]).to_array()
+    return stack((mv.x, mv.y))[:, None] & points.batch().reshape(-1)
 
 
 def rgb(colours) -> np.ndarray:
@@ -51,23 +51,22 @@ def bodies_mesh(n_bodies: int, n_vertices: int, edges: np.ndarray) -> simplices.
 
 
 def mode_shapes(rest: Point, deformed: Point, edges: np.ndarray) -> plt.Figure:
-    reference = coordinates(rest)
-    positions = coordinates(deformed)
     figure = plt.figure(figsize=(8, 5), layout="constrained")
     columns = 2
-    rows = (len(positions) + columns - 1) // columns
+    shapes = deformed.batch()                                                # [modes, vertices] Point-
+    rows = (len(shapes) + columns - 1) // columns
     panels = []
-    for i, points in enumerate(positions):
+    for i, shape in enumerate(shapes):
         axes = figure.add_subplot(rows, columns, i + 1)
-        drawn = np.concatenate([reference, points])
-        low, high = drawn.min(axis=0), drawn.max(axis=0)
+        drawn = concatenate([readings(rest), readings(shape)], axis=-1)      # [2, points] Scalar+
+        low, high = drawn.min(axis=-1).to_array(), drawn.max(axis=-1).to_array()
         padding = MODE_MARGIN * (high - low)
         axes.set(xlim=(low[0] - padding[0], high[0] + padding[0]), ylim=(low[1] - padding[1], high[1] + padding[1]),
                  aspect="equal")
         axes.set_axis_off()
         panels.append(axes)
-    girder = simplices.Mesh(reference.shape[0], edges)
-    for i, (axes, shape) in enumerate(zip(panels, deformed.batch())):
+    girder = simplices.Mesh(rest.batch().shape[0], edges)
+    for i, (axes, shape) in enumerate(zip(panels, shapes)):
         camera = flat_panel(axes, ga)
         simplices.overlay(axes, [simplices.strokes(rest.batch(), girder, rgb(REST_COLOUR), REST_WIDTH, camera),
                                  simplices.strokes(shape, girder, rgb(COLOURS[i % len(COLOURS)]), MODE_WIDTH,
@@ -79,12 +78,13 @@ def mode_shapes(rest: Point, deformed: Point, edges: np.ndarray) -> plt.Figure:
 def history(points: Point, damping: np.ndarray, frame_dt: float) -> plt.Figure:
     vertices = points.batch()
     tips = (vertices[..., -1, -2] + vertices[..., -1, -1]) / 2
-    positions = coordinates(tips)
-    time = np.arange(len(positions)) * frame_dt
+    # The tip's displacement, its reading up, by the plane y = 0.
+    heights = (vertices.context.multivector.y & tips).to_array()            # [steps, cases]
+    time = np.arange(len(heights)) * frame_dt
     # Three fifths of the column: a few decaying curves, and their legend beside them.
     figure, axes = charts.subplots(480, 260, layout="constrained")
     for i, ratio in enumerate(damping):
-        axes.plot(time, positions[:, i, 1], color=COLOURS[i % len(COLOURS)], label=rf"$\zeta={ratio:g}$")
+        axes.plot(time, heights[:, i], color=COLOURS[i % len(COLOURS)], label=rf"$\zeta={ratio:g}$")
     axes.axhline(0, color="#cbd5e1", linewidth=charts.FRAME_WIDTH)
     axes.set(xlabel="Time", ylabel="Tip displacement")
     axes.spines[["top", "right"]].set_visible(False)
@@ -97,8 +97,9 @@ def chain_scene(edges: np.ndarray, reference: Point, lower: Point,
                 upper: Point) -> tuple[plt.Figure, plt.Axes, Camera]:
     """The chain's figure between the corners `lower` and `upper`, and its camera."""
     figure, axes = plt.subplots(figsize=(6, 4), layout="constrained")
-    bounds = coordinates(stack((lower, upper)))
-    axes.set(xlim=bounds[:, 0], ylim=bounds[:, 1])
+    mv = lower.context.multivector
+    corners = stack((lower, upper))                                          # [2] Point-
+    axes.set(xlim=(mv.x & corners).to_array(), ylim=(mv.y & corners).to_array())
     axes.set_aspect("equal")
     axes.set_axis_off()
     return figure, axes, flat_panel(axes, ga)
@@ -186,7 +187,7 @@ def beam(frames: Iterable[Point], edges: np.ndarray) -> Iterator[np.ndarray]:
 @charts.style()
 def buckling(displacements: np.ndarray, midspans: Point, critical: float) -> plt.Figure:
     """Midspan deflection against end displacement, the first case, with the critical value."""
-    deflection = np.abs(coordinates(midspans[:, 0])[:, 1])
+    deflection = (midspans.context.multivector.y & midspans[:, 0].batch()).abs().to_array()
     # Half the column: one curve, its cross and the critical value named.
     figure, axes = charts.subplots(400, 220, layout="constrained")
     axes.plot(displacements, deflection, color="#0f172a")

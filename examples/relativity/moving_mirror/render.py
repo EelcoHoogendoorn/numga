@@ -49,19 +49,16 @@ cone_dashes = (5.5, 2.5)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(events: core.Point) -> np.ndarray:
-    """Spacetime coordinates (x, t) of intrinsic events and directions."""
+def frame_panel(ax: plt.Axes, events: core.Point, margin_ratio: float) -> None:
+    """Square equal-aspect viewport around the events `[events]`, read across by the plane x and up by t, with no axes
+    or ticks."""
     mv = events.context.multivector
-    return np.asarray((stack((mv.x, mv.t)) & events.batch()[..., None]).to_array())
-
-
-def frame_panel(ax: plt.Axes, places: np.ndarray, margin_ratio: float) -> None:
-    """Square equal-aspect viewport around `places` with no axes or ticks."""
-    low, high = places.min(axis=0), places.max(axis=0)
+    readings = stack((mv.x, mv.t))[:, None] & events                          # [2, events] Scalar+
+    low, high = readings.min(axis=-1), readings.max(axis=-1)                  # [2] Scalar+, Scalar+
     centre = (low + high) / 2
     half_span = (1 + margin_ratio) * (high - low).max() / 2
-    ax.set(xlim=(centre[0] - half_span, centre[0] + half_span),
-           ylim=(centre[1] - half_span, centre[1] + half_span), aspect="equal")
+    limits = stack((centre - half_span, centre + half_span), axis=-1).to_array()
+    ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
     ax.set_axis_off()
 
 
@@ -167,7 +164,6 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
                             source_event: core.Point) -> plt.Figure:
     """Corner hat gradient and its Lorentzian reflection, edge 1-form, and causal light-cone wake."""
     mv = corners.context.multivector
-    corner_xt = coordinates(corners)
     centroid = corners.mean(axis=0)                                          # [] Point-
 
     figure = plt.figure(figsize=(cone_width_px / charts.DPI, cone_height_px / charts.DPI))
@@ -183,7 +179,7 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
     # side, across the two sides from the corner, a share of one less the level of the way along them.
     levels = np.linspace(0.0, 1.0, n_contours + 2)[1:-1]
     level_ends = corners[index] + (1 - levels[:, None]) * (corners[others] - corners[index])   # [levels, 2] Point-
-    frame_panel(hat_ax, corner_xt, 0.22)
+    frame_panel(hat_ax, corners, 0.22)
     camera = panel(hat_ax, mv.x, mv.t)
     # The Euclidean normal -(mv.t >> gradients.dual()) beside the Lorentzian dual gradients.dual(), both drawn from
     # the centroid at the scale that draws the Lorentzian dual a fixed length.
@@ -209,7 +205,7 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
 
     # Panel 2: Spacetime edge Whitney 1-form circulating around its opposite corner.
     edge_index = 0
-    frame_panel(edge_ax, corner_xt, 0.22)
+    frame_panel(edge_ax, corners, 0.22)
     camera = panel(edge_ax, mv.x, mv.t)
     # The edge form is affine across the triangle; its dual at the corners, the samples where their own hats reach
     # one, sets it everywhere.
@@ -229,10 +225,10 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
         *ringed(corners[edge_index][None], primal_colour, highlight_radius, camera)])
 
     # Panel 3: Causal forward light-cone wake from a localized spacetime source event.
-    wake_xt = coordinates(wake_vertices)
     wake_vals = np.asarray(wake.batch().to_array())
     wake_limit = float(np.percentile(np.abs(wake_vals), 99.2))
-    duration = float(wake_xt[:, 1].max())
+    # The wake's last moment, read by the plane t.
+    duration = float((mv.t & wake_vertices.batch()).max().to_array())
     wake_ax.set(xlim=(0.0, 1.0), ylim=(0.0, duration), aspect="equal",
                 xticks=[0.0, 0.5, 1.0], yticks=[0.0, round(duration, 2)],
                 xlabel="space $x$", ylabel="time $t$")
@@ -361,14 +357,14 @@ def animate_moving_mirror(mesh: core.Mesh, vertices: core.Point,
     grid = strip_grid(vertices, n_space, n_time)                             # [times, space] Point-
     wave_rate_vals = np.asarray(wave_rate.batch().to_array())
     wave_rate_grid = wave_rate_vals.reshape(n_time, n_space)
-    # Each row of events read out once, for the cavity at its moment.
-    grid_xt = coordinates(grid)                                              # [times, space, 2]
+    # Each row of events' places across the cavity, read by the plane x once, for the cavity at its moment.
+    places = (mv.x & grid).to_array()                                        # [times, space]
 
     field_limit = float(np.percentile(np.abs(wave_rate_vals), 99.4))
     peak_initial = float(np.abs(wave_rate_grid[20]).max())
     normalized_grid = wave_rate_grid / peak_initial
     y_limit = float(np.abs(normalized_grid).max() * 1.12)
-    duration = float(grid_xt[-1, 0, 1])
+    duration = float((mv.t & grid[-1, 0]).to_array())
 
     with charts.style():
         # The figure, its layout and everything that stays put are drawn once; each frame moves the slice, the mirror
@@ -395,7 +391,7 @@ def animate_moving_mirror(mesh: core.Mesh, vertices: core.Point,
         mirror = cavity_ax.axvline(1.02, color=ink_colour, linewidth=bold_width, zorder=5)
         waveform_line, = cavity_ax.plot([], [], color=ink_colour, zorder=4)
         cavity_ax.set(xlim=(0.0, 1.02), ylim=(-y_limit, y_limit),
-                      xticks=[0.0, round(float(grid_xt[-1, -1, 0]), 2), 1.0],
+                      xticks=[0.0, round(float(places[-1, -1]), 2), 1.0],
                       yticks=[-2.0, -1.0, 0.0, 1.0, 2.0],
                       xlabel="space $x$", ylabel=r"wave rate $\partial_t\phi\,/\,r_0$")
         plain_axes(cavity_ax)
@@ -403,7 +399,7 @@ def animate_moving_mirror(mesh: core.Mesh, vertices: core.Point,
 
         fill = None
         for row in frame_rows:
-            x_slice, waveform = grid_xt[row, :, 0], normalized_grid[row]
+            x_slice, waveform = places[row], normalized_grid[row]
             wall_x = float(x_slice[-1])
             world.set_data(simplices.composited([
                 sheet, simplices.strokes(grid[row], simplices.Mesh.chains([n_space]), ink(accent_colour),

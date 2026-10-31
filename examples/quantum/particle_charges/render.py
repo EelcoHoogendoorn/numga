@@ -70,9 +70,9 @@ def draw_connections(
         simplices.overlay(ax, [
             simplices.strokes(places, simplices.Mesh(len(places), connected), connection_colours[panel],
                               connection_width, camera, opacity=connection_opacity),
-            # Each sector's dot, hollow where it is no doublet: its face, under its rim.
-            simplices.markers(places, faces, dot_radius, camera),
-            simplices.markers(places, colours, dot_radius, camera, inner=hole_radius),
+            # Each sector's dot, hollow where it is no doublet: its rim, under its face.
+            simplices.markers(places, colours, dot_radius, camera),
+            simplices.markers(places, faces, hole_radius, camera),
         ])
     plt.close(figure)
     return figure

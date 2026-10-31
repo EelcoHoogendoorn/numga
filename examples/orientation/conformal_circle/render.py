@@ -29,12 +29,13 @@ margin, n_pixels = 0.25, 300
 # its rim, each face of the ball and the sphere's wireframe, front and back alike.
 sheet_corners = sm.point(1.23 * np.array([[-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0]]))   # [corners] Point-
 sheet_opacity, rim_opacity, ball_opacity, wireframe_opacity = 0.073, 0.45, 0.062, 0.26
-# The widths of the circle, the sheet's rim, the wireframe and the chord arrows, the plane's and the sphere's
-# arrows, in pixels, the arrowheads' lengths and widths, and the points' radius, in pixels; the sheet's thickness,
-# in pixels.
+# The widths of the circle, the sheet's rim and the wireframe, the plane's and the sphere's arrows, the radius of the
+# balls at the arrows' tips, the length of the strokes of the chevrons on the circle and the points' radius, in pixels;
+# the sheet's thickness, in pixels.
 circle_width, rim_width, wireframe_width, sheet_thickness = 2.4, 1.8, 1.8, 0.6
-chord_width, plane_arrow_width, sphere_arrow_width = 2.1, 3.0, 2.7
-chord_head, arrow_head, head_width = 13.0, 13.0, 9.6
+plane_arrow_width, sphere_arrow_width = 3.0, 2.7
+tip_radius = 3.6
+chevron_length = 10.0
 dot_radius = 4.8
 # The lengths of the plane's and the sphere's arrows per unit of their normals.
 plane_arrow_length, sphere_arrow_length = 0.85, 0.45
@@ -78,11 +79,11 @@ def downhill(surface: Sphere, anchor: Point, length: float) -> Point:
     return ((tangent ^ horizon) * (length / 2)).exp() >> anchor
 
 
-def arrows(starts: Point, ends: Point, width: float, head: float, view: solids.View
-           ) -> tuple[solids.Quadric, solids.Quadric]:
-    """Arrows between points, their shafts `width` and their heads `head` pixels long."""
-    return solids.arrows(gpu_points(starts), gpu_points(ends), width / 2 * view.pixel, head * view.pixel,
-                         head_width / 2 * view.pixel)
+def arrows(starts: Point, ends: Point, width: float, view: solids.View) -> tuple[solids.Quadric, solids.Quadric]:
+    """Arrows between points, rods `width` pixels across with balls at their tips."""
+    tips = gpu_points(ends)                                                     # [arrows] Point-
+    return (solids.rods(gpu_points(starts), tips, width / 2 * view.pixel),
+            solids.ball(tips, tip_radius * view.pixel)[:, None])
 
 
 def circle_planes(first: Point, second: Point, third: Point) -> solids.Plane:
@@ -110,21 +111,20 @@ def panel(vertices: Point, circle: Point, globe: Point, plane: Sphere, sphere: S
     planes = concatenate([parallels, meridians])                                # [circles] Plane+
     spans = planes.scalar_norm_squared()
     planes = planes[spans > spanned * spans.max()]
-    curve = simplices.tubes(gpu_points(circle), simplices.Mesh.chains([len(circle)]), curve_colour, circle_width, view,
-                            gloss=solids.gloss)
-
-    # Short arrows follow the point order around the circle in both views.
+    # Chevrons on the circle follow the point order around it in both views: three of its edges, a third of the way
+    # round from each other, end in one.
     count = len(circle) - 1
-    starts = np.arange(3) * count // 3 + count // 12
-    chords = arrows(circle[starts], circle[starts + count // 18], chord_width, chord_head, view)
+    chevrons = np.zeros(count)
+    chevrons[np.arange(3) * count // 3 + count // 12 + count // 18 - 1] = 1
+    curve = simplices.tubes(gpu_points(circle), simplices.Mesh.chains([len(circle)]), curve_colour, circle_width, view,
+                            gloss=solids.gloss, chevrons=chevrons, chevron=chevron_length)
+
     # The arrows point down the surfaces' pairings with points: below the plane and into the sphere.
-    plane_arrow = arrows(origin[None], downhill(plane, origin, plane_arrow_length)[None], plane_arrow_width,
-                         arrow_head, view)
+    plane_arrow = arrows(origin[None], downhill(plane, origin, plane_arrow_length)[None], plane_arrow_width, view)
     sphere_anchor = circle[None, count // 3]
     sphere_arrow = arrows(sphere_anchor, downhill(sphere, sphere_anchor, sphere_arrow_length), sphere_arrow_width,
-                          arrow_head, view)
-    marks = [(chords[0], curve_colour), (chords[1], curve_colour),
-             (plane_arrow[0], plane_colour), (plane_arrow[1], plane_colour),
+                          view)
+    marks = [(plane_arrow[0], plane_colour), (plane_arrow[1], plane_colour),
              (sphere_arrow[0], sphere_colour), (sphere_arrow[1], sphere_colour),
              (solids.ball(gpu_points(vertices), dot_radius * view.pixel)[:, None],
               np.array([to_rgb(colour) for colour in marker_inks]))]
@@ -174,9 +174,9 @@ def animate_circle_motions(frames: Iterable[Point], fixed_points: Point) -> Iter
         ax.set_axis_off()
     cameras = [panel_camera(ax, mv.x, mv.y)._replace(weight=-horizon, unit=0.0) for ax in axes]
 
-    def pictures(disk: Point, camera: Camera) -> list[np.ndarray]:
-        """The disk `[radii, angles]` filled, its rings and its spokes, each spoke in its colour, its rim, and the
-        spokes' ends on it."""
+    def pictures(disk: Point, camera: Camera, fixed: list[np.ndarray]) -> list[np.ndarray]:
+        """The disk `[radii, angles]` filled, its rings and its spokes, each spoke in its colour, its rim, the
+        pictures `fixed`, and the spokes' ends on it."""
         # Each spoke's places from the middle out, a chain of them.
         spokes = disk[np.arange(n_radii), spoke_indices[:, None]].reshape(-1)  # [spokes * radii] Point-
         ends = disk[-1, spoke_indices]                                           # [spokes] Point-
@@ -185,14 +185,18 @@ def animate_circle_motions(frames: Iterable[Point], fixed_points: Point) -> Iter
                 simplices.strokes(spokes, spoke_chains, np.repeat(colours, n_radii - 1, axis=0), 1.2, camera,
                                   opacity=0.85),
                 simplices.strokes(disk[-1], rim_chain, to_rgb(curve_ink), 1.5, camera),
+                *fixed,
                 simplices.markers(ends, background, 2.3, camera),
                 simplices.markers(ends, colours, 1.8, camera)]
 
-    # The reflection's fixed points, ringed on the image's side.
-    marks = ([], [simplices.markers(fixed_points, to_rgb(curve_ink), 3.0, cameras[1], inner=2.0)])
-    images = [simplices.overlay(ax, pictures(disk, camera)) for ax, disk, camera in zip(axes, first, cameras)]
+    # The reflection's fixed points, ringed on the image's side: a white dot over a larger one, under the dots of the
+    # spokes' ends.
+    marks = ([], [simplices.markers(fixed_points, to_rgb(curve_ink), 3.0, cameras[1]),
+                  simplices.markers(fixed_points, background, 2.0, cameras[1])])
+    images = [simplices.overlay(ax, pictures(disk, camera, fixed))
+              for ax, disk, camera, fixed in zip(axes, first, cameras, marks)]
     for pair in chain([first], frames):
         for image, disk, camera, fixed in zip(images, pair, cameras, marks):
-            image.set_data(simplices.composited(pictures(disk, camera) + fixed))
+            image.set_data(simplices.composited(pictures(disk, camera, fixed)))
         yield capture(figure)
     plt.close(figure)

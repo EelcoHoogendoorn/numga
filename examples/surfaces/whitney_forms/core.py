@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from numga import stack
 from numga.algebras import VGA2D as ga, VGA3D as space
 from numga.sparse import SparseExtensor, spdiag
 from examples import instantiate
@@ -44,6 +45,19 @@ def complements(mesh: Mesh | SpaceMesh, m: int) -> np.ndarray:
     left_out = np.stack([np.setdiff1d(top, simplex) for simplex in simplices])   # [k, n - m]
     sense = simplex_parity(np.concatenate([simplices, left_out], axis=-1))   # [k]
     return np.where(sense[:, None] > 0, left_out, left_out[:, ::-1])
+
+
+def part_middles(n_cuts: int) -> np.ndarray:
+    """`[parts, 3]`: the barycentric weights of the middles of a triangle's equal parts, each side cut in `n_cuts`:
+    the parts that point as the triangle does, then those that point the other way."""
+    steps = np.arange(n_cuts)
+    first, second = np.meshgrid(steps, steps, indexing="ij")
+    upright = first + second < n_cuts
+    inverted = first + second < n_cuts - 1
+    upright_corners = np.stack((first[upright], second[upright], n_cuts - 1 - first[upright] - second[upright]), axis=-1)
+    inverted_corners = np.stack((first[inverted], second[inverted], n_cuts - 2 - first[inverted] - second[inverted]),
+                                axis=-1)
+    return np.concatenate((upright_corners + 1 / 3, inverted_corners + 2 / 3)) / n_cuts
 
 
 # --- math -----------------------------------------------------------------------------
@@ -111,6 +125,39 @@ def tetrahedral_face_forms(mesh: SpaceMesh, vertices: SpacePoint, points: SpaceP
     # Along the three faces at a corner the displacement from that corner lies in the face, while across the face
     # facing it, it joins the face's outward patch to three times the volume.
     return (points[None, :] - corners[:, None]) / (3 * volume)               # [corners, samples] Bivector+[tets]
+
+
+def tetrahedral_edge_pages(mesh: SpaceMesh, vertices: SpacePoint, n_pages: int) -> SpacePoint:
+    """Level surfaces of the six edge Whitney 1-forms, `n_pages` of each at even steps of its unit circulation along
+    its edge: the triangles the opposite edge spans with points of the edge, each the opposite edge's tail, the point and
+    the opposite edge's head, `[tet_edges, pages, 3] Point-[tets]`."""
+    corners = mesh.incidence[3, 0] * vertices                                # [corners] Point-[tets]
+    tails, heads = mesh.corners[3, 1]
+    opposite_tails, opposite_heads = complements(mesh, 1).T
+    # The form reads its own edge evenly, so pages through evenly spaced points of the edge lie equal shares of its
+    # circulation apart.
+    fractions = np.arange(1, n_pages + 1) / (n_pages + 1)                    # [pages]
+    points = corners[tails, None] * (1 - fractions) + corners[heads, None] * fractions   # [tet_edges, pages] Point-[tets]
+    # The form at a point is the patch the opposite edge sweeps to it: it reads nothing along the opposite edge, nor
+    # along any step within the triangle that edge spans with the point, so the triangle lies in the form's kernel
+    # throughout, a level surface of the form.
+    opposite_tail = corners[opposite_tails, None].broadcast_to(points.shape)   # [tet_edges, pages] Point-[tets]
+    opposite_head = corners[opposite_heads, None].broadcast_to(points.shape)   # [tet_edges, pages] Point-[tets]
+    return stack((opposite_tail, points, opposite_head), axis=-1)
+
+
+def tetrahedral_face_lines(mesh: SpaceMesh, vertices: SpacePoint, n_cuts: int) -> SpacePoint:
+    """Field lines of the four face Whitney 2-forms, through the middles of each face's equal parts, each side cut in
+    `n_cuts`: each from the corner the face faces to where it crosses the face, `[corners, lines, 2] Point-[tets]`."""
+    corners = mesh.incidence[3, 0] * vertices                                # [corners] Point-[tets]
+    # The corners of the face facing each corner, and the middles of its equal parts: the form's flux through its face
+    # is even, so each line through them carries an equal share of the unit flux.
+    facets = corners[complements(mesh, 0)]                                   # [corners, 3] Point-[tets]
+    crossings = (facets[:, None] * part_middles(n_cuts)).sum(axis=-1)        # [corners, lines] Point-[tets]
+    # The form at a point is the step to it from the corner the face faces, over three times the volume, and reads no
+    # flux through any patch along that step: its kernel runs along the step, so its field lines run straight out of
+    # that corner.
+    return stack((corners[:, None].broadcast_to(crossings.shape), crossings), axis=-1)
 
 
 def tetrahedral_helicity(mesh: SpaceMesh, vertices: SpacePoint) -> SpaceScalar:

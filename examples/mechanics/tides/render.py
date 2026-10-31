@@ -28,18 +28,13 @@ DENSITY_FLOOR = 1e-4
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(points: core.Point) -> np.ndarray:
-    """Points in the plane z = 0 `[..., 2]`: their pairings with the planes x and y."""
-    return (stack((core.mv.x, core.mv.y)) & points[..., None]).to_array()
-
-
 def density(ax: Axes, points: core.Point, mass_density: core.Scalar) -> np.ndarray:
     """The density on a log scale over the grid of its samples `[rows, columns]`, from the first to the last, framed
     by the panel: its picture, `[rows, columns, 4]`."""
-    corners = coordinates(points[[0, -1], [0, -1]])                          # [2, 2]
+    corners = points[[0, -1], [0, -1]]                                       # [2] Point-
     values = mass_density.to_array()                                         # [rows, columns]
     colours = plt.get_cmap("Blues")(LogNorm(values.max() * DENSITY_FLOOR, values.max())(values))[..., :3]
-    ax.set(xlim=corners[:, 0], ylim=corners[:, 1], xticks=[], yticks=[])
+    ax.set(xlim=(core.mv.x & corners).to_array(), ylim=(core.mv.y & corners).to_array(), xticks=[], yticks=[])
     ax.set_aspect("equal")
     places = points.reshape(-1)                                              # [rows * columns] Point-
     return contours.picture(places, contours.Mesh.grid(*values.shape), values.reshape(-1), colours.reshape(-1, 3),
@@ -85,11 +80,11 @@ def animate(points: core.Point, mass_density: core.Scalar,
         stars_seen.set_data(simplices.composited([
             background, simplices.markers(stars.positions, STARS, WIDE_STAR_RADIUS, whole_camera)]))
         # Around the cluster, scaled to its extent: the stars' largest offset from the centre across or up.
-        middle = coordinates(centre)                                         # [2]
-        spans = (stack((core.mv.x, core.mv.y)) & (stars.positions - centre)[..., None]).abs().reshape(-1)
+        planes = stack((core.mv.x, core.mv.y))                               # [2] Vector+
+        spans = (planes & (stars.positions - centre)[..., None]).abs().reshape(-1)
         half_size = spans.max() * ZOOM
-        frame_size = float(half_size.to_array())
-        window = (middle[0] - frame_size, middle[0] + frame_size, middle[1] - frame_size, middle[1] + frame_size)
+        middle = planes & centre                                             # [2] Scalar+
+        window = stack([middle - half_size, middle + half_size], axis=-1).to_array().reshape(-1)
         rims.set_extent(window)
         near.set(xlim=window[:2], ylim=window[2:])
         near_camera = flat_panel(near, core.ga)

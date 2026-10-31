@@ -46,6 +46,8 @@ n_trace_steps, trace_step, trace_stride = 170, 0.018, 2
 # floor in its normalisation, and the inward pull at the wall, as shares of its typical strength.
 smoothing_turn, smoothing_reach = 0.58, 0.20
 speed_floor, wall_pull = 0.14, 0.08
+# The radius of the ball at each field line's forward end, in the torus's units.
+tip_radius = 0.044
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -169,17 +171,11 @@ def render_torus_field(mesh: core.Mesh, vertices: core.Point, lines: core.Point,
     chains = simplices.Mesh.chains([n_steps] * n_lines)
     tubes = simplices.tubes(scene_lines.reshape(-1), chains, seg_colours.reshape(-1, 3), 4.6, view, gloss=solids.gloss)
 
-    # Place glossy 3D cone arrowheads along each field line to show its flow direction.
-    middle = lines.shape[1] // 2
-    arrow_starts = lines[:, middle - 2]                                       # [lines] Point-
-    heading = lines[:, middle + 2] - arrow_starts                             # [lines] Point-
-    scene_starts = scene_lines[:, middle - 2]
-    # Each head's reach, a direction of space, embedded as a point at infinity.
-    reach = solids.context.include_from_algebra(space_slice(heading * (0.14 / length(heading))).batch())
-    _, a_heads = solids.arrows(scene_starts, scene_starts + reach, 0.018, 0.082, 0.044)
-    head_colours = np.array([vermilion, teal, sapphire])[shells]
+    # Each field line an arrow along the field: a glossy ball at its forward end, in its shell's colour.
+    tips = solids.ball(scene_lines[:, -1], tip_radius)[:, None]               # [lines, 1] Plane+ <- Point-
+    tip_colours = np.array([vermilion, teal, sapphire])[shells]
 
-    return solids.draw([(a_heads, head_colours)], view, background, inks=[], translucent=[],
+    return solids.draw([(tips, tip_colours)], view, background, inks=[], translucent=[],
                        meshes=[(shell, 0.16), (tubes, 1.0)])
 
 

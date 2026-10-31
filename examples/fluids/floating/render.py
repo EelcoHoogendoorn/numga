@@ -45,15 +45,14 @@ ship_window = ((-1.1, 1.1), (-0.8, 1.0))
 cube_window = 0.95
 # The end views: seen along the axis of heel from its +x side, y across and z up, as an azimuth; the pixels across
 # the rolling hull's views and the cubes'; how much of what lies behind it the water's near face hides; and in pixels,
-# the length of the force lines' dashes, the radii of the force lines, the arrows' shafts and heads, the arm, the
-# waterline, the centre of gravity and the marker of each load, and the arrows' heads' length.
+# the length of the force lines' dashes, the radii of the force lines, the arrows' shafts and the balls at their tips,
+# the arm, the waterline, the centre of gravity and the marker of each load.
 end_on_azimuth = np.radians(90.0)
 n_end_pixels, n_cube_pixels = 200, 130
 end_water_opacity = 0.3
 dash = 3.0
-line_radius, shaft_radius, head_radius, arm_radius, waterline_radius, centre_radius, marker_radius = (
-    0.4, 0.8, 3.0, 0.8, 0.4, 2.0, 2.5)
-head_length = 7.0
+line_radius, shaft_radius, tip_radius, arm_radius, waterline_radius, centre_radius, marker_radius = (
+    0.4, 0.8, 2.4, 0.8, 0.4, 2.0, 2.5)
 # The direction along the axis of heel, which an end view looks along, a unit apart across the plane x = 0; and a
 # projection of points onto points.
 along_heel = mv.x.dual()                                                    # [] Point-
@@ -90,8 +89,8 @@ def front_projection(points: core.Point, view: solids.View) -> Projection:
 def forces_end_on(view: solids.View, placed: core.Motor, push: core.Forque, centre: core.Point,
                   onto_front: Projection) -> list[tuple[solids.Quadric, np.ndarray]]:
     """The weight from the centre of gravity and the buoyancy from the water surface, as arrows on their dashed
-    vertical lines across an end view, and the righting arm between them at the centre's height; in front of the
-    body, as `onto_front` places them."""
+    vertical lines across an end view, each a rod with a ball at its tip, and the righting arm between them at the
+    centre's height; in front of the body, as `onto_front` places them."""
     gravity = onto_front(placed >> centre)                                    # [] Point-
     # The buoyancy's line meets the water surface in a point of positive weight.
     buoyant = onto_front(((placed >> push) ^ core.water).normalized())       # [] Point-
@@ -105,9 +104,10 @@ def forces_end_on(view: solids.View, placed: core.Motor, push: core.Forque, cent
         # The start dropped onto the water surface, and raised to each mark.
         dashes = start - core.up * (core.water & start) + core.up * marks     # [dashes] Point-
         lines = solids.rods(dashes, dashes + core.up * (dash * view.pixel), line_radius * view.pixel)
-        shaft, head = solids.arrows(start, start + core.up * (sense * force * 0.6),
-                                    shaft_radius * view.pixel, head_length * view.pixel, head_radius * view.pixel)
-        parts += [(lines, to_rgb(colour)), (shaft[None], to_rgb(colour)), (head[None], to_rgb(colour))]
+        tip = start + core.up * (sense * force * 0.6)                          # [] Point-
+        shaft = solids.rods(start, tip, shaft_radius * view.pixel)            # [3] Plane+ <- Point-
+        ball = solids.ball(tip, tip_radius * view.pixel)                      # [] Plane+ <- Point-
+        parts += [(lines, to_rgb(colour)), (shaft[None], to_rgb(colour)), (ball[None, None], to_rgb(colour))]
     # The arm reaches from the centre of gravity across to the buoyancy's vertical, at the centre's height.
     level = core.water - mv.w * (core.water & gravity)                        # [] Plane+
     arm = solids.rods(gravity, (buoyant & core.up) ^ level, arm_radius * view.pixel)

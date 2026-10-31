@@ -62,12 +62,6 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 
 
 # --- plumbing -------------------------------------------------------------------------
-def plane_places(points: core.Point) -> np.ndarray:
-    """x and y of points `[...]` on the last axis, for matplotlib's artists: their pairings with the planes x and y."""
-    mv = points.context.multivector
-    return np.asarray((stack((mv.x, mv.y)) & points.batch()[..., None]).to_array())
-
-
 def at_vertices(mesh: core.Mesh, field: Extensor) -> Extensor:
     """Face fields averaged at each vertex over the faces at it, for drawing `X[faces]` as `X[vertices]`."""
     corners = ~mesh.incidence[2, 0].sum(axis=0)                                # Scalar+[vertices <- faces]
@@ -76,13 +70,15 @@ def at_vertices(mesh: core.Mesh, field: Extensor) -> Extensor:
 
 
 def frame_panel(ax: plt.Axes, vertices: core.Point) -> None:
-    """A square view about the domain, a little wider than it, without axes."""
-    places = plane_places(vertices)                                            # [vertices, 2]
-    low, high = places.min(axis=0), places.max(axis=0)
+    """A square view about the domain, a little wider than it, without axes: its extent read by pairing its vertices
+    with the planes x and y."""
+    mv = vertices.context.multivector
+    readings = stack((mv.x, mv.y))[:, None] & vertices.batch().reshape(-1)    # [2, vertices] Scalar+
+    low, high = readings.min(axis=-1), readings.max(axis=-1)                  # [2] Scalar+, Scalar+
     centre = (low + high) / 2
     half_span = 0.54 * (high - low).max()
-    ax.set(xlim=(centre[0] - half_span, centre[0] + half_span),
-           ylim=(centre[1] - half_span, centre[1] + half_span), aspect="equal")
+    limits = stack((centre - half_span, centre + half_span), axis=-1).to_array()
+    ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
     ax.set_axis_off()
 
 

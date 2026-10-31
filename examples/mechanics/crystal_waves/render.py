@@ -24,9 +24,9 @@ FACE = (-1.5, 1.5)
 DOT_PX = 2
 
 
-def components(directions: core.Antivector) -> np.ndarray:
-    """Euclidean components of directions, read by the planes across the axes, on the last axis."""
-    return (core.axes & directions[..., None]).to_array()
+def farthest(directions: core.Antivector) -> float:
+    """The farthest any direction reaches across x or y, read by the planes across those axes."""
+    return float((core.axes[:2, None] & directions.reshape(-1)).abs().max().to_array())
 
 
 def cross(ax: plt.Axes, limit: float, across: str, up: str) -> None:
@@ -78,7 +78,7 @@ def draw_wave_fronts(velocities: core.Vector, names: list[str]) -> plt.Figure:
     the crystal."""
     # Nearly the whole column: a panel a crystal, each a dense section of three wave surfaces, over one legend.
     figure, row = charts.subplots(250 * len(names), 300, ncols=len(names), layout="constrained")
-    limits = [(1 + MARGIN) * np.abs(components(velocity)[..., :2]).max() for velocity in velocities]
+    limits = [(1 + MARGIN) * farthest(velocity) for velocity in velocities]
     for ax, limit, name in zip(np.atleast_1d(row), limits, names):
         cross(ax, limit, "[100]", "[010]")
         ax.set_title(name)

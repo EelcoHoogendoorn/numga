@@ -35,11 +35,6 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 
 
 # --- plumbing -------------------------------------------------------------------------
-def read_points(points: Extensor, planes: Extensor) -> np.ndarray:
-    """The coordinates of any algebra's points, read against the chosen display planes."""
-    return (planes & points.batch()[..., None]).to_array()
-
-
 def draw_mesh(mesh: core.Mesh, vertices: core.Point) -> plt.Figure:
     """The physical spherical mesh before any choice of lifted representatives."""
     points = solids.origin + solids.context.include_from_algebra(vertices.batch())             # [vertices] Point-
@@ -96,11 +91,14 @@ def draw_planar(points: Extensor, display: core.Mesh, potential: Extensor, curre
     """Finite points and spatial current in x,y,w, with no readout of the null coordinate as distance: the potential
     in its colours, the current as white streaks running downstream."""
     mv = points.context.multivector
-    xy = read_points(points.normalized(), stack((mv.x, mv.y)))
     figure, axis = charts.subplots(300, 300)
-    # The panel framed about the samples as matplotlib frames its data.
-    axis.update_datalim(xy)
-    axis.autoscale_view()
+    # The panel framed about the samples with matplotlib's margins: their lowest and highest readings across x and y,
+    # at unit weight.
+    readings = stack((mv.x, mv.y))[:, None] & points.normalized().batch()     # [2, samples] Scalar+
+    low, high = readings.min(axis=-1), readings.max(axis=-1)                   # [2] Scalar+, [2] Scalar+
+    margins = (high - low) * np.array(axis.margins())                          # [2] Scalar+
+    limits = stack((low - margins, high + margins), axis=-1).to_array()        # [2, 2]
+    axis.set(xlim=limits[0], ylim=limits[1])
     axis.set_aspect("equal")
     axis.set_axis_off()
     figure.tight_layout(pad=0.2)

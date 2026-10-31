@@ -189,11 +189,11 @@ def pulse(nodes: core.Direction, slab: core.Direction, directors: core.Direction
         # The field across the line, the direction it sweeps through time, drawn out from each node.
         offsets = upright >> solids.context.include_from_algebra(field_length * electric_direction(planes))
         tips = stations + offsets                                             # [nodes] Point-
-        # The field's direction around the line sets its hue, and its strength how far its colour shows.
-        readings = planes[:, None] & swept                                            # [nodes, 2] Scalar+
-        field = readings.to_array()                                                   # [nodes, 2]
-        hue = (np.arctan2(field[:, 1], field[:, 0]) / (2 * np.pi)) % 1
-        strength = np.clip(np.hypot(*field.T) * 4, 0, 1)
+        # The field's direction around the line sets its hue, and its strength how far its colour shows: its
+        # readings by the planes the directions across the line sweep through time.
+        along_x, along_y = ((planes & plane).to_array() for plane in swept)          # [nodes], [nodes]
+        hue = (np.arctan2(along_y, along_x) / (2 * np.pi)) % 1
+        strength = np.clip(np.hypot(along_x, along_y) * 4, 0, 1)
         colours = hsv_to_rgb(np.column_stack([hue, np.full_like(hue, 0.85), np.ones_like(hue)]))
         # Every other node's spoke, where the field shows.
         spoked = np.flatnonzero(strength > spoke_floor)[::2]

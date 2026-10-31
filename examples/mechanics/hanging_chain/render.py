@@ -6,7 +6,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import concatenate, stack
+from numga import Extensor, concatenate, stack
 
 from examples.util import charts
 from examples.util.wgsl import simplices
@@ -17,18 +17,18 @@ LATE = np.array([0.15, 0.15, 0.18])
 CHAIN = np.array([0.20, 0.40, 0.70])
 CATENARY = np.array([0.85, 0.30, 0.20])
 PIN = np.array([0.15, 0.15, 0.18])
-# The catenary's dashes and gaps, in pixels; the radius of the last iterate's beads and of the pins' squares, a
-# chart's marker across.
+# The catenary's dashes and gaps, in pixels; the radius of the last iterate's beads and of the pins' dots, a chart's
+# marker across.
 CATENARY_DASHES = (11.0, 5.0)
 BEAD_RADIUS = charts.MARKER_PX / 2
 # The margin around the chains, as a share of their extent either way.
 MARGIN = 0.05
 
 
-def coordinates(points) -> np.ndarray:
-    """The coordinates of points in the plane, along the last axis: their pairings with the lines x = 0 and y = 0."""
+def readings(points: Extensor) -> Extensor:
+    """Points of the plane read across and up `[2, points]`: their pairings with the lines x = 0 and y = 0."""
     lines = points.context.multivector
-    return np.asarray((stack((lines.x, lines.y)) & points[..., None]).to_array())
+    return stack((lines.x, lines.y))[:, None] & points.reshape(-1)
 
 
 @charts.style()
@@ -51,8 +51,8 @@ def iterates(chains, residual, catenary, pins) -> plt.Figure:
     convergence.set_ylabel("unbalanced force, in weights")
     convergence.grid(True, which="major", alpha=0.3)
     # The chains' panel framed about every iterate and the catenary.
-    drawn = np.concatenate([coordinates(lines).reshape(-1, 2), coordinates(catenary)])
-    low, high = drawn.min(axis=0), drawn.max(axis=0)
+    drawn = concatenate([readings(lines), readings(catenary)], axis=-1)       # [2, points] Scalar+
+    low, high = drawn.min(axis=-1).to_array(), drawn.max(axis=-1).to_array()
     padding = MARGIN * (high - low)
     shape.set(xlim=(low[0] - padding[0], high[0] + padding[0]), ylim=(low[1] - padding[1], high[1] + padding[1]),
               aspect="equal")
@@ -71,5 +71,5 @@ def iterates(chains, residual, catenary, pins) -> plt.Figure:
                           dashes=CATENARY_DASHES, cap=simplices.Cap.BUTT),
         simplices.strokes(lines[-1], simplices.Mesh.chains([n_points]), CHAIN, charts.LINE_PX, camera),
         simplices.markers(lines[-1], CHAIN, BEAD_RADIUS, camera),
-        simplices.markers(ends, PIN, BEAD_RADIUS, camera, marker=simplices.Marker.SQUARE)])
+        simplices.markers(ends, PIN, BEAD_RADIUS, camera)])
     return figure

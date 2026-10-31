@@ -18,7 +18,7 @@ from itertools import chain
 
 import numpy as np
 
-from numga import Extensor, stack, where
+from numga import Extensor, stack
 from examples.thermodynamics import rendering as art
 from examples.util.wgsl import solids
 
@@ -70,45 +70,32 @@ class Chart:
         across, up = mv.t, mv.w * grams_per_kilogram                                           # [] Plane+, Plane+
         self.diagram = art.Diagram(temperature_range, water_range, (temperature_range[0], 0.0), n_rows, n_columns,
                                    ("T", "w"), (across, up))
-        states = lambda temperatures, water: mv.t.dual() * temperatures + mv.w.dual() * water
-        grid = states(grid_temperatures[None, :], grid_water[:, None])
-        relative = relative_humidity_of(grid).to_array()
+        grid = mv.t.dual() * grid_temperatures[None, :] + mv.w.dual() * grid_water[:, None]
+        relative = np.asarray(relative_humidity_of(grid).to_array())
+        humidities = art.Levels(grid, relative, humidity_levels)
+        saturation = art.Levels(grid, relative, np.ones(1))
         # The enthalpy only where the air holds its water as vapour.
-        heat = np.where(relative <= 1, enthalpy_of(grid).to_array(), np.nan)
-        charted = lambda levels: [states(*line.T) for _, line in levels]
-        humidities = [charted(art.level_lines(grid_temperatures, grid_water, relative, np.array([level])))
-                      for level in humidity_levels]
-        saturation = charted(art.level_lines(grid_temperatures, grid_water, relative, np.ones(1)))
-        enthalpies = [charted(art.level_lines(grid_temperatures, grid_water, heat, np.array([level])))
-                      for level in enthalpy_levels]
-        # Above the saturation curve: the region up to the chart's top, between the curve and the states above it at the
-        # top's water content, along the water content; the curve's samples past the top dropped onto it.
-        tops = [curve + mv.w.dual() * (water_range[1] / grams_per_kilogram - (mv.w & curve)) for curve in saturation]
-        below = [where((up & curve) > water_range[1], top, curve) for curve, top in zip(saturation, tops)]
+        enthalpies = art.Levels(grid, np.where(relative <= 1, np.asarray(enthalpy_of(grid).to_array()), np.nan),
+                                enthalpy_levels)
         tick_layers, self.tick_labels = art.ticks(self.diagram, temperature_ticks, water_ticks)
-        self.layers = ([art.between(self.diagram, curve, top, art.grey, 0.18) for curve, top in zip(below, tops)]
-                       + art.polylines(self.diagram, [curve for curves in humidities for curve in curves], art.thin,
-                                       art.families["humidity"], 1.0, art.SOLID)
-                       + art.polylines(self.diagram, [curve for curves in enthalpies for curve in curves], art.thin,
-                                       art.families["enthalpy"], 1.0, art.SOLID)
-                       + art.polylines(self.diagram, saturation, art.medium, art.boundary, 1.0, art.SOLID)
+        # Above the saturation curve, where the relative humidity exceeds one, shaded.
+        self.layers = ([art.sides(self.diagram, saturation, np.array([np.zeros(4), np.append(art.grey, 0.18)]))]
+                       + art.level_family(self.diagram, humidities, "humidity", art.thin)
+                       + art.level_family(self.diagram, enthalpies, "enthalpy", art.thin)
+                       + art.level_lines(self.diagram, saturation, art.boundary, art.medium)
                        + tick_layers)
         # Each enthalpy line's value at its upper end, where it meets the saturation curve; each humidity line's at its
         # right end; each only well inside the chart.
         self.labels = [art.Label(self.diagram.at(*saturation_label), "saturation", art.boundary, art.text_size,
                                  "lb", (0, 2))]
-        for level, curves in zip(enthalpy_levels, enthalpies):
-            for curve in curves:
-                top = curve[(up & curve).argmax()]                                            # [] State-
-                if temperature_range[0] < (across & top) and (up & top) < water_range[1] - 1:
-                    self.labels.append(art.Label(top, f"{level:g}", art.families["enthalpy"], art.tick_size, "rb",
-                                                 (-2, 2)))
-        for level, curves in zip(humidity_levels, humidities):
-            for curve in curves:
-                right = curve[(across & curve).argmax()]                                      # [] State-
-                if (up & right) < water_range[1] - 1:
-                    self.labels.append(art.Label(right, f"{level:.0%}", art.families["humidity"], art.tick_size, "rm",
-                                                 (-2, 0)))
+        for level, top in art.furthest(enthalpies, up):
+            if temperature_range[0] < (across & top) and (up & top) < water_range[1] - 1:
+                self.labels.append(art.Label(top, f"{level:g}", art.families["enthalpy"], art.tick_size, "rb",
+                                             (-2, 2)))
+        for level, right in art.furthest(humidities, across):
+            if (up & right) < water_range[1] - 1:
+                self.labels.append(art.Label(right, f"{level:.0%}", art.families["humidity"], art.tick_size, "rm",
+                                             (-2, 0)))
 
     def picture(self, path: Extensor, travelled: int, states: Extensor, toward: Extensor) -> np.ndarray:
         layers = (self.layers

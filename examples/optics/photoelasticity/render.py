@@ -25,12 +25,13 @@ real = NumpyContext(core.ga).multivector
 # --- plumbing -------------------------------------------------------------------------
 def window(positions: core.Planar) -> tuple[float, float, float, float]:
     """The extent of an image grid of pixel centres `[rows, columns]`, on the pixels' outer edges."""
-    # Positions read by pairing with the planes across x and y, in the positions' own algebra.
+    # Positions read by pairing with the planes across x and y, in the positions' own algebra; the outer edges half a
+    # step between pixel centres past the outermost, columns along x and rows along y.
     mv = positions.context.multivector
-    coordinates = (stack((mv.x, mv.y)) & positions[..., None]).to_array().real
-    horizontal, vertical = coordinates[0, :, 0], coordinates[:, 0, 1]
-    half_x, half_y = (horizontal[1] - horizontal[0]) / 2, (vertical[1] - vertical[0]) / 2
-    return horizontal[0] - half_x, horizontal[-1] + half_x, vertical[0] - half_y, vertical[-1] + half_y
+    readings = (stack((mv.x, mv.y))[:, None] & positions.reshape(-1)).real()   # [2, pixels] Scalar+
+    low, high = readings.min(axis=-1), readings.max(axis=-1)                    # [2] Scalar+, [2] Scalar+
+    half_step = (high - low) / (2 * (np.array(positions.shape[::-1]) - 1))      # [2] Scalar+
+    return tuple(stack((low - half_step, high + half_step), axis=-1).reshape(-1).to_array())
 
 
 def panels(n_panels: int, pixels: tuple[int, ...]) -> tuple[plt.Figure, list[plt.Axes]]:

@@ -21,9 +21,8 @@ colours = LinearSegmentedColormap.from_list(
 )
 
 
-# The planes that read places on the receiver, across x and y, and on a vertical section, across x and up z.
+# The planes that read places on the receiver, across x and y.
 receiver_planes = stack((core.mv.x, core.mv.y))                             # [2] Plane+
-section_planes = stack((core.mv.x, core.mv.z))                              # [2] Plane+
 # The four samples of a chart around a place between them, as steps along its rows and columns.
 cell_corners = np.array([[0, 0], [1, 0], [0, 1], [1, 1]])                  # [corners, 2]
 # The folds' colour and width in pixels; the section's colours, of the water, the fan of rays, the surface, the paths
@@ -131,9 +130,10 @@ def draw_paths(
     destinations = target.broadcast_to(solution_surface.shape)                                    # [paths] Direction-
     fan_paths = stack((incoming, ray_surface, ray_landing), axis=1)                               # [rays, stages] Direction-
     solved_paths = stack((solution_incoming, solution_surface, destinations), axis=1)             # [paths, stages] Direction-
-    lower = coordinates(ray_landing, section_planes)[:, 1].min()
-    across = coordinates(surface, section_planes)[:, 0]
-    left, right = across.min(), across.max()
+    # The lowest landing, up z, and the surface's extent across x.
+    lower = float((core.mv.z & ray_landing).min().to_array())
+    across = core.mv.x & surface                                                                  # [samples] Scalar+
+    left, right = float(across.min().to_array()), float(across.max().to_array())
     # The view reaches a little below the receiver, so that the target on it shows whole.
     bottom = lower - section_room * (incident_height - lower)
     vertical_span = incident_height - bottom

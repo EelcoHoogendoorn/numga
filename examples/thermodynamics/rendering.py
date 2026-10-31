@@ -5,8 +5,9 @@ A diagram reads its two quantities off the points it shows by two planes, `acros
 each quantity at its own scale. Where the two are readings of a state, the planes are the state algebra's own and the
 states are drawn as they are; where one is a function of the state, the diagram is a chart, a projective plane whose
 points carry the two quantities, `mv.x & point` across and `mv.y & point` up. Curves are polylines through the points,
-areas are meshes of triangles, and the conics of a chart are drawn where their forms vanish; the picture's
-points are read as pixels only where Pillow writes text.
+areas are meshes of triangles, the level lines of a function are drawn where it crosses its levels across a grid of
+the diagram's points, and the conics of a chart are drawn where their forms vanish; the picture's points are read as
+pixels only where Pillow writes text.
 """
 from __future__ import annotations
 
@@ -19,7 +20,6 @@ import numpy as np
 from matplotlib.colors import to_rgb
 from matplotlib.font_manager import FontProperties, findfont
 from PIL import Image, ImageDraw, ImageFont
-from contourpy import contour_generator
 
 from numga import Extensor, NumpyContext, concatenate, stack
 from numga.algebras import PGA2D
@@ -57,9 +57,9 @@ boundary = rgb("#1c2326")
 # Pixels around a diagram's plot: room for the name of the quantity up on the left, of the one across below, and a
 # little on the other two sides.
 left_margin, bottom_margin, right_margin, top_margin = 30, 24, 12, 16
-# The axes' width and arrowheads, in pixels: the axes as wide as a chart's frame; and how far a tick mark reaches out
-# from its axis.
-axis_width, head_length, tick_length = charts.FRAME_PX, 7.0, 4.0
+# The axes' width and the length of the strokes of the chevrons at their ends, in pixels: the axes as wide as a chart's
+# frame; and how far a tick mark reaches out from its axis.
+axis_width, axis_chevron, tick_length = charts.FRAME_PX, 7.0, 4.0
 # The widths of the strokes, in pixels, those of the charts: the lines a diagram is read against as thin as a chart's
 # frame, a curve as wide as a chart's, and the path the diagram follows half as wide again.
 thin, medium, bold = charts.FRAME_PX, charts.LINE_PX, 1.5 * charts.LINE_PX
@@ -70,8 +70,10 @@ fonts = {size: ImageFont.truetype(findfont(FontProperties(family="DejaVu Sans", 
          for size in (text_size, tick_size)}
 # The width of the white halo around written text, in pixels.
 halo = 2
-# The radius of a dot marking a state, and of the white ring around it, in pixels.
+# The radius of a dot marking a state, and of the white ring around it, in pixels; the length of the strokes of the
+# chevron at an arrow's tip, in widths of its stroke.
 dot, ring = 4.0, 5.5
+chevron = 4.0
 # How far outside a plot a point may read and still count as inside it, in pixels: the rounding of its readings.
 slack = 1e-6
 
@@ -161,30 +163,26 @@ class Diagram:
 
 
 def strokes(diagram: Diagram, lines: list[Extensor], width: float, colours: np.ndarray, opacity: float,
-            dashes: tuple[float, float], heads: np.ndarray = np.zeros(1)) -> list[np.ndarray]:
+            dashes: tuple[float, float]) -> list[np.ndarray]:
     """Polylines through points of the diagram's algebra, each its own number of samples and its colour `[lines, 3]`,
-    `width` pixels across, dashed `dashes` pixels on and off, `SOLID` for solid; the last edge of each polyline where
-    `heads` `[lines]` is one ends in an arrowhead. Nothing where there are none."""
+    `width` pixels across, dashed `dashes` pixels on and off, `SOLID` for solid. Nothing where there are none."""
     if not lines:
         return []
     cap = Cap.ROUND if dashes == SOLID else Cap.BUTT
     lengths = [points.shape[0] for points in lines]
-    chains = Mesh.chains(lengths)
-    # Each edge in its polyline's colour, and an arrowhead on the last edge of each polyline that has one.
+    # Each edge in its polyline's colour.
     colours = np.repeat(np.broadcast_to(colours, (len(lines), 3)), np.subtract(lengths, 1), axis=0)
-    ends = np.zeros(len(chains.edges))
-    ends[np.cumsum(np.subtract(lengths, 1)) - 1] = np.broadcast_to(heads, len(lines))
-    return [simplices.strokes(on_numpy(concatenate(lines)), chains, colours, width, diagram.camera, ends, head_length,
-                              dashes, cap, opacity)]
+    return [simplices.strokes(on_numpy(concatenate(lines)), Mesh.chains(lengths), colours, width, diagram.camera,
+                              dashes=dashes, cap=cap, opacity=opacity)]
 
 
 def axes(diagram: Diagram) -> list[np.ndarray]:
-    """The two axes, crossing where the diagram says, each ending in an arrowhead."""
+    """The two axes, crossing where the diagram says, each ending in a chevron."""
     x0, y0 = diagram.crossing
     corner = diagram.at(x0, y0)
     ends = diagram.at(np.array([diagram.across[1], x0]), np.array([y0, diagram.up[1]]))   # [2] Point-
-    return strokes(diagram, [stack((corner, ends[0])), stack((corner, ends[1]))], axis_width, ink, 1.0, SOLID,
-                   np.ones(2))
+    return [simplices.strokes(on_numpy(stack((stack((corner, corner)), ends), axis=-1).reshape(-1)), Mesh.chains([2, 2]),
+                              ink, axis_width, diagram.camera, chevrons=np.ones(2), chevron=axis_chevron)]
 
 
 def within(diagram: Diagram, lines: Extensor, width: float, colour: np.ndarray, opacity: float) -> list[np.ndarray]:
@@ -208,17 +206,79 @@ def polylines(diagram: Diagram, lines: list[Extensor], width: float, colour: np.
                    opacity, dashes)
 
 
-def level_lines(across: np.ndarray, up: np.ndarray, values: np.ndarray,
-                levels: np.ndarray) -> list[tuple[float, np.ndarray]]:
-    """Where a function sampled on a grid, `values[up, across]` at the grid's coordinates `across` and `up`, takes
-    each of the levels: each level with a polyline `[samples, 2]` of the two coordinates, as many as it has."""
-    lines = contour_generator(across, up, values)
-    return [(level, line) for level in levels for line in lines.lines(level) if len(line) > 1]
-
-
 def family(diagram: Diagram, lines: list[Extensor], name: str, width: float) -> list[np.ndarray]:
     """A family of lines, polylines of the diagram's points, in the family's colour."""
     return polylines(diagram, lines, width, families[name], 1.0, SOLID)
+
+
+class Levels(NamedTuple):
+    """A function's levels over a diagram: the grid of the diagram's points it is sampled at `[rows, columns]`, its
+    values there, not finite where it is not known, and the levels."""
+    grid: Extensor
+    values: np.ndarray
+    levels: np.ndarray
+
+
+def plotted(diagram: Diagram, picture: np.ndarray) -> np.ndarray:
+    """A picture of the diagram `[rows, columns, 4]` clear outside its plot, the pixels within its margins."""
+    inside = np.zeros(picture.shape[:2] + (1,))
+    inside[top_margin:diagram.rows - bottom_margin, left_margin:diagram.columns - right_margin] = 1.0
+    return np.concatenate((picture[..., :3], picture[..., 3:] * inside), axis=-1)
+
+
+def known(levels: Levels) -> tuple[Mesh, np.ndarray]:
+    """The grid's triangles where the function is known at every corner, and its values `[vertices]`, nothing where
+    it is not known."""
+    rows, columns = levels.values.shape
+    grid = Mesh.grid(rows, columns)
+    values = levels.values.reshape(-1)
+    return Mesh(grid.n_vertices, grid.faces[np.isfinite(values)[grid.faces].all(axis=-1)]), np.nan_to_num(values)
+
+
+def level_lines(diagram: Diagram, levels: Levels, colour: np.ndarray, width: float) -> list[np.ndarray]:
+    """A function's level lines, `width` pixels wide in a colour, where it crosses each level across the grid's
+    triangles, cut to the plot."""
+    mesh, values = known(levels)
+    inks = tuple(contours.Level(level, np.append(colour, 1.0), width) for level in levels.levels)
+    return [plotted(diagram, contours.picture(on_numpy(levels.grid).reshape(-1), mesh, values, np.zeros(3),
+                                              diagram.camera, levels=inks, opacity=0.0))]
+
+
+def level_family(diagram: Diagram, levels: Levels, name: str, width: float) -> list[np.ndarray]:
+    """A family of level lines in the family's colour."""
+    return level_lines(diagram, levels, families[name], width)
+
+
+def sides(diagram: Diagram, levels: Levels, inks: np.ndarray) -> np.ndarray:
+    """The two sides of a function's one level, where it is known: where it lies below the level filled in the first
+    ink, colour and opacity, and where above in the second `[2, 4]`, cut to the plot."""
+    mesh, values = known(levels)
+    level, = levels.levels
+    bands = contours.Bands(level - 1.0, 1.0, inks)
+    return plotted(diagram, contours.picture(on_numpy(levels.grid).reshape(-1), mesh, values, np.zeros(3),
+                                             diagram.camera, bands=(bands,), opacity=0.0))
+
+
+def crossings(levels: Levels, every: int) -> Extensor:
+    """Places on a function's level lines, every so many of them: where it crosses each level between neighbouring
+    points of its grid along a row or a column, both known, the share of the way between them its values there give."""
+    places = []
+    for tails, heads, at_tails, at_heads in [(levels.grid[:, :-1], levels.grid[:, 1:], levels.values[:, :-1],
+                                              levels.values[:, 1:]),
+                                             (levels.grid[:-1], levels.grid[1:], levels.values[:-1], levels.values[1:])]:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            shares = (levels.levels - at_tails[..., None]) / (at_heads - at_tails)[..., None]   # [..., levels]
+        rows, columns, level = np.nonzero((shares >= 0) & (shares < 1))
+        starts, steps = tails[rows, columns], heads[rows, columns] - tails[rows, columns]       # [places] Point-, Point-
+        places.append(starts + steps * shares[rows, columns, level])
+    return concatenate(places)[every // 2::every]
+
+
+def furthest(levels: Levels, plane: Extensor) -> list[tuple[float, Extensor]]:
+    """Each level a function crosses on its grid, with the place on its level line that a plane of the diagram's
+    algebra reads highest."""
+    found = [(level, crossings(levels._replace(levels=np.array([level])), 1)) for level in levels.levels]
+    return [(level, places[(plane & places).argmax()]) for level, places in found if places.shape[0] > 0]
 
 
 def tangent_lines(diagram: Diagram, points: Extensor, directions: Extensor, across: np.ndarray) -> Extensor:
@@ -235,13 +295,14 @@ def tangent_lines(diagram: Diagram, points: Extensor, directions: Extensor, acro
 
 def arrows(diagram: Diagram, starts: Extensor, toward: Extensor, length: float, width: float,
            colour: np.ndarray) -> list[np.ndarray]:
-    """Arrows `length` pixels long from points of the diagram `[n]` toward others, each a stroke ending in a head."""
+    """Arrows `length` pixels long from points of the diagram `[n]` toward others, each a stroke with a chevron at its
+    tip."""
     starts, toward = on_numpy(starts), on_numpy(toward)
     along = toward - starts                                                  # [n] Point-
     tips = starts + along / diagram.lengths(along) * length                  # [n] Point-
-    ends = stack((starts, tips), axis=-1)                                    # [n, 2] Point-
-    return strokes(diagram, [ends[arrow] for arrow in range(ends.shape[0])], width, colour, 1.0, SOLID,
-                   np.ones(ends.shape[0]))
+    n_arrows = starts.shape[0]
+    return [simplices.strokes(stack((starts, tips), axis=-1).reshape(-1), Mesh.chains([2] * n_arrows), colour, width,
+                              diagram.camera, chevrons=np.ones(n_arrows), chevron=chevron * width)]
 
 
 def dashed(diagram: Diagram, points: Extensor, width: float, colour: np.ndarray,
@@ -405,12 +466,19 @@ class GasFamily(NamedTuple):
     volume_pressure: list
 
 
+class GasLevels(NamedTuple):
+    """A family of a gas's level lines on its two charts, each the `Levels` of a function over the plane of states
+    carried onto the chart."""
+    entropy_temperature: Levels
+    volume_pressure: Levels
+
+
 class GasLines(NamedTuple):
-    """A gas's lines of equal volume, pressure, temperature and entropy, each family a `GasFamily`; or, as the levels
-    asked for, numbers."""
+    """A gas's lines of equal volume, pressure, temperature and entropy, the straight families a `GasFamily` and the
+    level lines a `GasLevels`; or, as the levels asked for, numbers."""
     isochores: GasFamily
-    isobars: GasFamily
-    isotherms: GasFamily
+    isobars: GasLevels
+    isotherms: GasLevels
     adiabats: GasFamily
 
 
@@ -427,18 +495,19 @@ def gas_lines(temperature_of: Callable[[Extensor], Extensor], pressure_of: Calla
               entropies: np.ndarray, volumes: np.ndarray, levels: GasLines) -> GasLines:
     """A gas's lines at the levels given, each level a number: lines of equal volume and of equal entropy run straight
     across the plane of states sampled at the entropies and volumes; lines of equal pressure and of equal temperature
-    are level lines of the gas's functions over it."""
+    are level lines of the gas's functions over it, the grid of its states carried onto either chart."""
     states = lambda entropy, volume: blades.s.dual() * entropy + blades.v.dual() * volume
     charted = lambda lines: GasFamily([points.entropy_temperature for points in lines],
                                       [points.volume_pressure for points in lines])
     points = lambda entropy, volume: gas_points(temperature_of, pressure_of, states(entropy, volume))
     grid = states(entropies[None, :], volumes[:, None])                                   # [volumes, entropies] State-
-    temperatures, pressures = temperature_of(grid).to_array(), pressure_of(grid).to_array()
+    temperatures, pressures = np.asarray(temperature_of(grid).to_array()), np.asarray(pressure_of(grid).to_array())
+    on_charts = gas_points(temperature_of, pressure_of, grid)                     # [volumes, entropies] Point-, Point-
+    leveled = lambda values, asked: GasLevels(Levels(on_charts.entropy_temperature, values, np.asarray(asked)),
+                                              Levels(on_charts.volume_pressure, values, np.asarray(asked)))
     return GasLines(charted([points(entropies, level) for level in levels.isochores]),
-                    charted([points(*line.T) for _, line in level_lines(entropies, volumes, pressures,
-                                                                       np.asarray(levels.isobars))]),
-                    charted([points(*line.T) for _, line in level_lines(entropies, volumes, temperatures,
-                                                                       np.asarray(levels.isotherms))]),
+                    leveled(pressures, levels.isobars),
+                    leveled(temperatures, levels.isotherms),
                     charted([points(level, volumes) for level in levels.adiabats]))
 
 

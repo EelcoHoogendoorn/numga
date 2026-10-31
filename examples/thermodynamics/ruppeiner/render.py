@@ -76,28 +76,25 @@ class Charts:
         self.conic_camera = self.plane.reading(art.mv.x, art.mv.y)
         self.isotherm = art.Diagram(volume_range, pressure_range, (0.0, 0.0), n_rows, n_columns, ("V", "p"))
         grid = mv.v.dual() * grid_volumes[None, :] + mv.t.dual() * grid_temperatures[:, None]
-        # The mechanical part of the cost, its value on a variation of the volume alone.
+        # The mechanical part of the cost, its value on a variation of the volume alone; the spinodal where it vanishes.
         mechanical = metric_of(grid)(mv.v.dual()) & mv.v.dual()                   # [temperatures, volumes] Scalar+
-        curvature = np.where(mechanical > 0, curvature_of(grid).to_array(), np.nan)
-        spinodal_lines = art.level_lines(grid_volumes, grid_temperatures, mechanical.to_array(), np.zeros(1))
-        spinodal = [self.plane.at(*line.T) for _, line in spinodal_lines]
-        # Below the spinodal: between it and the states of its volumes at the chart's lowest temperature.
-        floors = [self.plane.at(line[:, 0], np.full(len(line), temperature_range[0])) for _, line in spinodal_lines]
-        unstable = [art.between(self.plane, line, floor, art.grey, 0.25) for line, floor in zip(spinodal, floors)]
+        spinodal = art.Levels(grid, np.asarray(mechanical.to_array()), np.zeros(1))
+        # The curvature, known where the fluid is stable.
+        curvature = art.Levels(grid, np.where(mechanical > 0, curvature_of(grid).to_array(), np.nan), curvature_levels)
+        # Below the spinodal, where the mechanical part is negative, unstable.
+        unstable = [art.sides(self.plane, spinodal, np.array([np.append(art.grey, 0.25), np.zeros(4)]))]
         lattice = (mv.v.dual() * lattice_volumes[None, :]
                    + mv.t.dual() * lattice_temperatures[:, None]).reshape(-1)    # [lattice] State-
         # The lattice's states where every variation costs: the metric, carried back from gradients to variations by
         # the complement, has a positive spectrum there.
         stable = lattice[(metric_of(lattice).dual().eigvalsh() > 0).all(axis=-1)]   # [stable] State-
         conics = cost_quadrics(metric_of, stable)                                       # [stable] Plane+ <- Point-
-        self.curvature_lines = [self.plane.at(*line.T) for _, line in
-                                art.level_lines(grid_volumes, grid_temperatures, curvature, curvature_levels)]
+        self.curvature = curvature
         self.lattice = stable
         self.plane_layers = (unstable
-                             + art.polylines(self.plane, self.curvature_lines, art.thin, art.families["level"], 1.0,
-                                             art.SOLID)
+                             + art.level_family(self.plane, curvature, "level", art.thin)
                              + [quadrics.curves(conics, art.thin, art.families["entropy"], self.conic_camera)]
-                             + art.polylines(self.plane, spinodal, art.medium, art.boundary, 1.0, art.SOLID)
+                             + art.level_lines(self.plane, spinodal, art.boundary, art.medium)
                              + art.dots(self.plane, self.plane.at(np.ones(1), np.ones(1)), art.boundary))
         self.volumes = np.linspace(0.38, volume_range[1], 240)
         family = mv.v.dual() * self.volumes[None, :] + mv.t.dual() * isotherms[:, None]   # [isotherms, samples] State-
@@ -130,7 +127,7 @@ class Charts:
                     + art.dots(self.isotherm, on_isotherm[None], art.orange))
         labels = [art.Label(self.plane.at(1.0, 1.0), "critical point", art.boundary, art.text_size, "lt", (6, -4)),
                   art.Label(self.plane.at(0.45, 0.75), "unstable", art.ink, art.text_size, "lb", (0, 2))]
-        names = [art.Floating(art.along(self.curvature_lines, 6), "R = const", art.families["level"], art.text_size,
+        names = [art.Floating(art.crossings(self.curvature, 6), "R = const", art.families["level"], art.text_size,
                               "lb"),
                  art.Floating(self.lattice, "equal cost", art.families["entropy"], art.text_size, "lt")]
         isotherm_names = [art.Floating(art.along(self.isotherm_lines, 8), "T = const", art.families["temperature"],

@@ -39,9 +39,10 @@ EXACT_OPACITY = 0.5
 
 
 # --- plumbing -------------------------------------------------------------------------
-def plane_coordinates(points: core.Point) -> np.ndarray:
-    """x and y of points in the orbit's plane, on the last axis: their pairings with the planes x = 0 and y = 0."""
-    return (stack((core.mv.x, core.mv.y)) & points[..., None]).to_array()
+def plane_readings(points: core.Point) -> core.Scalar:
+    """Points in the orbit's plane read across and up, `[2, ...]`: their pairings with the planes x = 0 and y = 0."""
+    planes = stack((core.mv.x, core.mv.y))                                    # [2] Vector+
+    return planes.reshape((2,) + (1,) * points.ndim) & points
 
 
 def lifted_points(spinors: core.Spinor) -> core.Point:
@@ -54,8 +55,10 @@ def framed(ax: plt.Axes, path: core.Point, margin: float) -> Camera:
     """A panel framed about a path in the orbit's plane and the centre of attraction, with a margin as a share of
     their extent, widened to fill the room the figure's layout gives the panel at equal scales; its camera, reading
     by the planes x and y."""
-    drawn = np.concatenate([plane_coordinates(path), np.zeros((1, 2))])
-    low, high = drawn.min(axis=0), drawn.max(axis=0)
+    # The path's extent, stretched to hold the centre of attraction, the origin, which reads zero.
+    readings = plane_readings(path)                                           # [2, samples] Scalar+
+    low = readings.min(axis=-1).clip(-np.inf, 0).to_array()
+    high = readings.max(axis=-1).clip(0, np.inf).to_array()
     spans = (1 + 2 * margin) * (high - low)
     shape = np.array(room(ax))
     # The span of a pixel that holds both spans in the room, and the room's half extent at that span.
@@ -130,8 +133,10 @@ def draw_lift(positions: core.Point, spinors: core.Spinor) -> plt.Figure:
 @charts.style()
 def draw_comparison(reference: core.State, physical: core.State, regularized: core.State) -> plt.Figure:
     """One orbit at equal step counts, with a periapsis detail below each full path."""
-    exact = plane_coordinates(reference.position)
-    cases = exact.shape[1]
+    # The exact orbit's extent in each case, `[2, cases]` each.
+    exact = plane_readings(reference.position)                                # [2, samples, cases] Scalar+
+    lows, highs = exact.min(axis=1).to_array(), exact.max(axis=1).to_array()
+    cases = lows.shape[1]
     # Three quarters of the column: a full path and its periapsis a case, over one legend.
     figure, panels = charts.subplots(600, 400, nrows=2, ncols=cases, squeeze=False, layout="constrained")
     # The exact orbit wide and faint, under the two integrated ones.
@@ -141,7 +146,7 @@ def draw_comparison(reference: core.State, physical: core.State, regularized: co
     # Each panel's box, left, right, bottom and top: the full path, and the periapsis detail.
     boxes = np.empty((2, cases, 4))
     for case in range(cases):
-        low, high = exact[:, case].min(axis=0), exact[:, case].max(axis=0)
+        low, high = lows[:, case], highs[:, case]
         span = np.max(high - low)
         centre = (low + high) / 2
         half_width = 0.12 * span

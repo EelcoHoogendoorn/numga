@@ -33,9 +33,9 @@ axis_colour = np.array([0.45, 0.47, 0.52])
 # about the origin, the same for every medium so their sizes compare.
 elevation, azimuth = np.radians(22.0), np.radians(37.0)
 half_width = 2.3
-# The widths of the grid lines and the axes' arrows, and the arrowheads' length and width, in pixels; how far the
-# axes reach and their names lie, in units of k.
-grid_width, arrow_width, head_length, head_width = 1.0, 1.0, 5.0, 3.5
+# The widths of the grid lines and the axes' arrows, and the radius of the ball at an arrow's tip, in pixels; how far
+# the axes reach and their names lie, in units of k.
+grid_width, arrow_width, tip_radius = 1.0, 1.0, 2.0
 axis_length, label_distance = 1.95, 2.12
 # The figures' sizes in pixels: the comparison, each medium's sheets above their sections, three quarters of the
 # column; the animation, the sheets beside their sections, about two thirds of it.
@@ -80,10 +80,11 @@ def side_colour(colour: np.ndarray, n_latitudes: int, near: bool) -> meshes.Colo
 
 
 def k_axes(view: solids.View) -> list[tuple[solids.Quadric, np.ndarray]]:
-    """The frame of k-space, its shafts and its heads."""
-    shafts, heads = solids.frame(axis_length, arrow_width / 2 * view.pixel, head_length * view.pixel,
-                                 head_width / 2 * view.pixel)
-    return [(shafts, axis_colour), (heads, axis_colour)]
+    """The frame of k-space, its axes arrows from the origin: rods with balls at their tips."""
+    # Each axis's tip along the direction square to the plane across it.
+    tips = solids.origin + axis_length * solids.normal_direction(solids.axes)   # [axes] Point-
+    return [(solids.rods(solids.origin, tips, arrow_width / 2 * view.pixel), axis_colour),
+            (solids.ball(tips, tip_radius * view.pixel)[:, None], axis_colour)]
 
 
 def k_space(ax: Axes) -> solids.View:

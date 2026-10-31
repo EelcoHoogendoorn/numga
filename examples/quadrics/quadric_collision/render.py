@@ -143,8 +143,11 @@ def animate_collision(
         # ellipsoid's layers are drawn once.
         camera = flat_panel(ax_pair, places.algebra)
         pair = pinned(ax_pair, np.zeros(camera.shape + (4,)), (*ax_pair.get_xlim(), *ax_pair.get_ylim()))
-        # The planes run on past the panel's corners either way from their feet.
-        reach = 2 * np.hypot(*camera.half) + np.hypot(*camera.middle)
+        # The planes run on past the panel's corners either way from their feet: a plane's foot lies no farther from
+        # the origin than its points in the panel, so twice the farthest corner's distance, the length of its join
+        # with the origin, reaches past them all.
+        corners = grid[[0, resolution - 1, -resolution, -1]]                  # [4] Point-
+        reach = 2 * (origin & corners).norm().max()                            # [] Scalar+
         first_form = ellipsoid_form(first_ellipsoid, grid)                    # [points]
         first_ink = np.array(to_rgba(first_colours[1]))
         second_ink = np.array(to_rgba(second_colours[1]))

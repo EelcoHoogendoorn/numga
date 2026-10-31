@@ -69,8 +69,8 @@ def animate_planes(turning_roots: Iterable[Vector], roots: Vector, horizontal: V
     n_planes = len(horizontal)
     # The radius of each root's orbit in each plane: the length of its contraction onto the plane's unit bivector.
     planes = horizontal ^ vertical                                            # [planes] Bivector+
-    orbit_radii = (roots[:, None, :] | planes[None, :, None]).norm().to_array()   # [steps, planes, orbits]
-    radius = orbit_radii.max() * 1.08
+    orbit_radii = (roots[:, None, :] | planes[None, :, None]).norm()          # [steps, planes, orbits] Scalar+
+    radius = float((orbit_radii.max() * 1.08).to_array())
     # Each trail runs through the riders' places over the share of the loop it covers, one Coxeter step of thirty,
     # fading from the background into the rider's colour.
     n_trail = round(n_frames / 30)

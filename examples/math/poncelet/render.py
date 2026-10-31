@@ -60,9 +60,11 @@ def panel_pictures(planes: Camera, lines: Camera, outer: core.Quadric, inner: co
             quadrics.curves(inner[None].inverse(), inner_width * pixels_per_point, rgb("#2c5d9e"), lines),
             simplices.strokes(vertices, Mesh.chains([len(vertices)]), rgb("#c0392b"), path_width * pixels_per_point,
                               planes, cap=Cap.PROJECTING),
-            simplices.markers(vertices[:1], rgb("#e67e22"), start_radius, planes),
-            simplices.markers(vertices[-1:], rgb("#c0392b"), last_radius + outline / 2 * pixels_per_point, planes,
-                              inner=last_radius - outline / 2 * pixels_per_point)]
+            # The last vertex's ring, a white dot over a larger red one, under the start's dot, which it rings where
+            # the path closes.
+            simplices.markers(vertices[-1:], rgb("#c0392b"), last_radius + outline / 2 * pixels_per_point, planes),
+            simplices.markers(vertices[-1:], np.ones(3), last_radius - outline / 2 * pixels_per_point, planes),
+            simplices.markers(vertices[:1], rgb("#e67e22"), start_radius, planes)]
 
 
 def draw(outer: core.Quadric, inner: core.Envelope, vertices: core.Point) -> plt.Figure:

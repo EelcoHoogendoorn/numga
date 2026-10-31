@@ -47,16 +47,14 @@ elevation, azimuth = np.radians([22.0, 25.0 + 90.0])
 margin = 0.14
 # How much of what lies behind them each of the cube's faces hides, and how strongly the undeformed cube and the
 # principal directions show over the white page; the radii of the
-# edges, the undeformed cube's edges, the principal directions and the arrows' shafts, in pixels; an arrow's
-# head, its length a share of the arrow's, and its radius a share of its own length.
+# edges, the undeformed cube's edges, the principal directions, the arrows' shafts and the balls at their tips, in
+# pixels.
 face_opacity, ghost_opacity, principal_opacity = 0.14, 0.7, 0.8
 ghost_tint, principal_tint = (opacity * colour + (1 - opacity) for opacity, colour in
                               ((ghost_opacity, ghost_colour), (principal_opacity, principal_colour)))
-edge_radius, ghost_radius, principal_radius, shaft_radius = 0.9, 0.6, 0.6, 1.1
+edge_radius, ghost_radius, principal_radius, shaft_radius, tip_radius = 0.9, 0.6, 0.6, 1.1, 2.8
 # The turning animation's radii as a share of those above, its picture that much narrower than a frame's.
 turning_thickness = 0.62
-head_share = 0.28
-head_width = 0.4
 
 
 def view(corners: core.Point, centres: core.Point, normal: core.Point, shear: core.Point,
@@ -71,14 +69,14 @@ def view(corners: core.Point, centres: core.Point, normal: core.Point, shear: co
 
 def arrows(starts: core.Point, offsets: core.Point, pixel: float,
            thickness: float) -> tuple[solids.Quadric, solids.Quadric]:
-    """Arrows from points along offsets `[arrows]`, their heads in proportion to them, their shafts' radius a share
-    `thickness` of the one set above; those shorter than a pixel, a traction that vanishes, left out."""
+    """Arrows from points along offsets `[arrows]`, rods with balls at their tips, their radii a share `thickness` of
+    the ones set above; those shorter than a pixel, a traction that vanishes, left out."""
     lengths = offsets.norm()                                                   # [arrows] Scalar+
     shown = lengths > pixel
-    heads = head_share * lengths[shown].to_array()
     tails = solids.origin + solids.context.include_from_algebra(starts[shown])         # [shown] Point-
     tips = tails + solids.context.include_from_algebra(offsets[shown])                  # [shown] Point-
-    return solids.arrows(tails, tips, thickness * shaft_radius * pixel, heads, head_width * heads)
+    return (solids.rods(tails, tips, thickness * shaft_radius * pixel),
+            solids.ball(tips, thickness * tip_radius * pixel)[:, None])
 
 
 def ghost(view: solids.View, thickness: float) -> list[tuple[solids.Quadric, np.ndarray]]:
@@ -97,14 +95,14 @@ def cube(corners: core.Point, centres: core.Point, normal: core.Point, shear: co
     # The projective embedding: places of space, offsets from the cube's centre, as the renderer's points about its origin.
     places = solids.origin + solids.context.include_from_algebra(corners)                # [corners] Point-
     directions = solids.context.include_from_algebra(REACH * principal)                  # [3] Point-
-    normal_shafts, normal_heads = arrows(centres, normal * NORMAL_SCALE, view.pixel, thickness)
-    shear_shafts, shear_heads = arrows(centres, shear * SHEAR_SCALE, view.pixel, thickness)
+    normal_shafts, normal_tips = arrows(centres, normal * NORMAL_SCALE, view.pixel, thickness)
+    shear_shafts, shear_tips = arrows(centres, shear * SHEAR_SCALE, view.pixel, thickness)
     edges, joints = solids.edges(places[EDGES[:, 0]], places[EDGES[:, 1]], thickness * edge_radius * view.pixel)
     # Each principal direction a rod through the centre, both ways.
     principal_rods = solids.rods(solids.origin - directions, solids.origin + directions,
                                  thickness * principal_radius * view.pixel)
-    parts = [(edges, edge_colour), (joints, edge_colour), (normal_shafts, normal_colour), (normal_heads, normal_colour),
-             (shear_shafts, shear_colour), (shear_heads, shear_colour), (principal_rods, principal_tint)]
+    parts = [(edges, edge_colour), (joints, edge_colour), (normal_shafts, normal_colour), (normal_tips, normal_colour),
+             (shear_shafts, shear_colour), (shear_tips, shear_colour), (principal_rods, principal_tint)]
     body = solids.polyhedra(places, FACES)[None]                              # [1, 6] Plane+
     return parts, [(body, cube_colour, face_opacity)]
 
@@ -175,9 +173,11 @@ def diameter_drawn(ends: core.Point, colour: str, camera: Camera) -> list[np.nda
     pictures."""
     ink = np.array(to_rgb(colour))
     rim = charts.LINE_PX / 2
+    # The ring a white dot over a larger one in the diameter's colour.
     return [simplices.strokes(ends, simplices.Mesh.chains([2]), ink, charts.LINE_PX, camera),
             simplices.markers(ends[:1], ink, charts.MARKER_PX / 2, camera),
-            simplices.markers(ends[1:], ink, charts.MARKER_PX / 2 + rim, camera, inner=charts.MARKER_PX / 2 - rim)]
+            simplices.markers(ends[1:], ink, charts.MARKER_PX / 2 + rim, camera),
+            simplices.markers(ends[1:], np.ones(3), charts.MARKER_PX / 2 - rim, camera)]
 
 
 @charts.style()

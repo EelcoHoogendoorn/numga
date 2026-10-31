@@ -37,8 +37,8 @@ field_arc_start, field_arc_span = np.radians(-60.0), np.radians(240.0)
 n_field_arc = 24
 n_magnet_rim = 64
 magnet_colour = np.array([0x33, 0x41, 0x55]) / 255
-# The magnet's strokes' width, its rim's dashes and its arc's head, in pixels.
-magnet_width, magnet_dashes, magnet_head = 1.0, (4.0, 4.0), 6.0
+# The magnet's strokes' width, its rim's dashes and the radius of the dot at its arc's end, in pixels.
+magnet_width, magnet_dashes, magnet_tip = 1.0, (4.0, 4.0), 2.5
 # The fluorescent rim knob showing the material's rotation: its colour and its white ring's, and their radii in pixels.
 knob_colour, knob_ring_colour = np.array([1.0, 0.0, 0.784]), np.ones(3)
 knob_radius, knob_ring_radius = 6.5, 8.4
@@ -65,8 +65,8 @@ def scalars(values: core.Scalar) -> np.ndarray:
 
 
 def magnet(centre: core.Point, width: float, field: core.Bivector, camera: Camera) -> list[np.ndarray]:
-    """The magnet's field, a plane of space, as a patch in that plane: its width dashed, and an arc around it with an
-    arrowhead for the sense the field turns in, read by pairing the field with the patch of the disc's plane."""
+    """The magnet's field, a plane of space, as a patch in that plane: its width dashed, and an arc around it ending
+    in a dot for the sense the field turns in, read by pairing the field with the patch of the disc's plane."""
     # The dashed rim: a point along x at the magnet's width, turned once around its centre.
     around = (core.mv.xy * (-np.linspace(0, 2 * np.pi, n_magnet_rim + 1) / 2)).exp()   # [rim] Rotor+
     outline = centre + (around >> (core.mv.x.dual() * width))                          # [rim] Point-
@@ -76,12 +76,10 @@ def magnet(centre: core.Point, width: float, field: core.Bivector, camera: Camer
     # The arc: a point on the rim along x, turned about the magnet's centre through the angles.
     turns = (core.mv.xy * (-angles / 2)).exp()                               # [arc] Rotor+
     arc = centre + (turns >> (core.mv.x.dual() * (field_arc_reach * width)))  # [arc] Point-
-    # A head on the arc's last edge.
-    heads = np.arange(n_field_arc - 1) == n_field_arc - 2
     return [simplices.strokes(outline, Mesh.chains([n_magnet_rim + 1]), magnet_colour, magnet_width, camera,
                               dashes=magnet_dashes, cap=simplices.Cap.BUTT),
-            simplices.strokes(arc, Mesh.chains([n_field_arc]), magnet_colour, magnet_width, camera, heads,
-                              magnet_head)]
+            simplices.strokes(arc, Mesh.chains([n_field_arc]), magnet_colour, magnet_width, camera),
+            simplices.markers(arc[-1:], magnet_colour, magnet_tip, camera)]
 
 
 def parallel_fibres(radius: float, curves: int, samples: int) -> core.Point:
@@ -160,7 +158,7 @@ def draw(mesh: Mesh, points: core.Point, areas: core.Scalar, response: core.Resp
     spacings = np.abs(streams).max(axis=-1) / current_levels                # [cases]
     magnitude = scalars(at_vertices(mesh, areas, response.current).squared().square_root())   # [cases, vertices]
     current_scale = PowerNorm(current_gamma, vmin=0, vmax=magnitude.max())
-    extent = scalars(points.squared().square_root()).max()
+    extent = float(points.squared().square_root().batch().max().to_array())
     places = points.batch()                                                 # [vertices] Point-
 
     outline = rim(mesh)
@@ -184,7 +182,7 @@ def draw_modes(mesh: Mesh, points: core.Point, streamfunctions: core.Scalar) -> 
     """Streamfunctions of current patterns `[cases, patterns] Scalar+[vertices]`, a row of patterns per
     material: current circulates along their contours, opposite ways around warm and cool peaks."""
     values = scalars(streamfunctions)                                      # [cases, patterns, vertices]
-    extent = scalars(points.squared().square_root()).max()
+    extent = float(points.squared().square_root().batch().max().to_array())
     outline = rim(mesh)
     places = points.batch()                                                 # [vertices] Point-
     rows, columns = values.shape[:2]
@@ -233,7 +231,7 @@ def currents(mesh: Mesh, points: core.Point, areas: core.Scalar, states: Iterabl
              stream_top: np.ndarray) -> Iterator[np.ndarray]:
     """The currents' frames, from a colour scale up to `peak` and contour values up to `stream_top` per case, each
     widened where a state's current exceeds it."""
-    extent = scalars(points.squared().square_root()).max()
+    extent = float(points.squared().square_root().batch().max().to_array())
     guides = concatenate(fibres)                                              # [curves, samples] Point-
     # Each family's curves on the panels that show it.
     family = np.concatenate([np.full(len(curves), index) for index, curves in enumerate(fibres)])
@@ -279,7 +277,7 @@ def animate_heat(mesh: Mesh, points: core.Point, areas: core.Scalar, frames: Ite
                  peak: float = braking_heat_peak) -> Iterator[np.ndarray]:
     """Accumulated heat per area, carried by the moving material faces on one fixed scale up to `peak`."""
     heat_scale = PowerNorm(heat_gamma, vmin=0, vmax=peak)
-    extent = scalars(points.squared().square_root()).max()
+    extent = float(points.squared().square_root().batch().max().to_array())
     guides = concatenate(fibres)                                              # [curves, samples] Point-
     # Each family's curves on the panels that show it.
     family = np.concatenate([np.full(len(curves), index) for index, curves in enumerate(fibres)])

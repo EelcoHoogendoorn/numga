@@ -26,12 +26,12 @@ def temperatures_of(states: core.State) -> core.Scalar:
     return stack(core.temperatures(states, capacity_a, capacity_b), axis=-1)
 
 
-def exchange(n_frames: int, n_relaxation_times: float) -> Iterator[tuple[core.State, core.State, float]]:
-    """The two bodies' state, its heat flow and the time at each frame, over a number of relaxation times."""
+def exchange(n_frames: int, n_relaxation_times: float) -> Iterator[tuple[core.State, float]]:
+    """The two bodies' state and the time at each frame, over a number of relaxation times."""
     dt = n_relaxation_times * relaxation_time / (n_frames - 1)
     state = initial_state
     for frame in range(n_frames):
-        yield state, core.heat_flow(state, capacity_a, capacity_b, conductance), frame * dt
+        yield state, frame * dt
         state = core.advance(state, capacity_a, capacity_b, conductance, dt)
 
 
@@ -41,8 +41,8 @@ if __name__ == "__main__":
 
     n_frames, n_relaxation_times, frame_duration_ms = 135, 5, 40
     capacities = np.array([capacity_a, capacity_b])
-    first_state, first_flow, _ = next(exchange(n_frames, n_relaxation_times))
-    save_figure(render.draw(entropy_of, temperatures_of, core.transfer, capacities, first_state, first_flow),
+    first_state, _ = next(exchange(n_frames, n_relaxation_times))
+    save_figure(render.draw(entropy_of, temperatures_of, core.transfer, capacities, first_state),
                 "entropy_production")
     save_animation(render.exchange(entropy_of, temperatures_of, core.transfer, capacities,
                                    exchange(n_frames, n_relaxation_times)), "entropy_production", frame_duration_ms)
