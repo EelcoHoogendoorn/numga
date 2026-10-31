@@ -35,6 +35,8 @@ Line = ga.gatype.bivector()
 Patch = Plane.derive.flipped_orientation                                      # Vector-
 Quadric = ga.gatype((Plane, Point))                                          # Plane <- Point
 DualQuadric = ga.gatype((Point, Plane))                                      # Point <- Plane
+# A quadric whose form gives a join's plane, as an ink of a join is.
+Joined = ga.gatype((Patch, Point))                                           # Patch- <- Point-
 # The planes of the frame, and of every camera's in its own: a point's pairings with them are how far it lies across
 # to the right, up, and toward the viewer, the camera looking along its own -z; a place so far along each is the
 # origin moved by their duals, `origin + (axes.dual() * place).sum()`.
@@ -340,6 +342,30 @@ fn first_hit(start: Point, direction: Point, last_distance: f32, last_order: u32
 """
 
 
+def ink_pass(name: str) -> str:
+    """WGSL laying the inks of one array over a hit, `{name}_painted`: each ink on the hit's solid, within its region,
+    covering the hit where its distance to its zero set, in the camera's readings, is within half its width."""
+    return f"""
+fn {name}_painted(hit: Hit, point: Point, slide_across: Point, slide_up: Point, painted: Painted) -> Painted {{
+    var result = painted;
+    for (var index = 0u; index < arrayLength(&{name}); index++) {{
+        let ink = {name}[index];
+        // The cheap tests first: the ink's solids, then its region.
+        if (hit.solid < ink.first || hit.solid >= ink.end || ({name}_regions[index](point) & point) > tolerance) {{
+            continue;
+        }}
+        // The form's plane at the point, its value there, and its change per reading across and up on the surface.
+        let plane = {name}_quadrics[index](point);
+        let rate = vec2<f32>(plane & slide_across, plane & slide_up) * 2;
+        let distance = abs(plane & point) / sqrt(rate.x * rate.x + rate.y * rate.y);
+        let covers = distance < ink.width / 2 * pixel;
+        result = Painted(select(result.colour, vec4<f32>(ink.colour, ink.opacity), covers), result.inked || covers);
+    }}
+    return result;
+}}
+"""
+
+
 source = """
 // Each solid's colour, and how much of what lies behind it it hides.
 struct Look {
@@ -358,10 +384,15 @@ struct Ink {
     opacity: f32,
 }
 
+// The inks whose quadrics give planes and those whose quadrics give joins, each kind in arrays of its own type, a zero
+// set the same whatever the sign of its form; where each ink shows, a side: where its region's quadric pairs negatively
+// with the point.
 var<storage, read> inks: array<Ink>;
-var<storage, read> ink_quadrics: array<Quadric>;
-// Where each ink shows: where its region's quadric pairs negatively with the point.
-var<storage, read> ink_regions: array<Quadric>;
+var<storage, read> inks_quadrics: array<Quadric>;
+var<storage, read> inks_regions: array<Quadric>;
+var<storage, read> joined_inks: array<Ink>;
+var<storage, read> joined_inks_quadrics: array<Joined>;
+var<storage, read> joined_inks_regions: array<Quadric>;
 // Meshes drawn at every sample of every pixel, mesh after mesh, each sample one cell of a grid `samples_per_side` to a
 // pixel's side, rows first, each row `mesh_row` cells long: its colour, premultiplied by how much of what lies behind
 // it it hides, a byte a channel packed in a word, red first, and its depth along the view, both zero where the mesh
@@ -401,33 +432,23 @@ struct Painted {
 // still reads in its colour, while the rest takes the surface's shading.
 const ink_own = 0.5;
 
-// A hit's colour and opacity with the lines inked on its solid, and whether one covers it: the distance along the
-// surface to an ink's zero set is its pairing with the point over the part of its gradient along the surface, the
-// quadric's plane there less its part along the normal.
-fn inked(hit: Hit, point: Point, normal: Plane) -> Painted {
+""" + "".join(ink_pass(name) for name in ("inks", "joined_inks")) + """
+// A hit's colour and opacity with the lines inked on its solid, and whether one covers it. A line is as wide as the
+// picture sees it: an ink's distance to its zero set, in the camera's readings, is its form's value there over how fast
+// the form changes as the picture moves one reading across and one up on the surface, each step slid along the ray back
+// onto the tangent plane.
+fn inked(hit: Hit, point: Point, direction: Point) -> Painted {
     let look = looks[hit.solid];
-    var colour = vec4<f32>(look.colour, look.opacity);
-    var painted = false;
-    for (var index = 0u; index < arrayLength(&inks); index++) {
-        let ink = inks[index];
-        // The cheap tests first: the ink's solids, then its region.
-        if (hit.solid < ink.first || hit.solid >= ink.end || (ink_regions[index](point) & point) > tolerance) {
-            continue;
-        }
-        let gradient = ink_quadrics[index](point) * 2;
-        let along = gradient - normal * (gradient | normal);
-        let distance = abs(ink_quadrics[index](point) & point) / along.norm();
-        let covers = distance < ink.width / 2 * pixel;
-        colour = select(colour, vec4<f32>(ink.colour, ink.opacity), covers);
-        painted = painted || covers;
-    }
-    return Painted(colour, painted);
+    let slide_across = step_across - direction * ((hit.tangent & step_across) / (hit.tangent & direction));
+    let slide_up = step_up - direction * ((hit.tangent & step_up) / (hit.tangent & direction));
+    let plain = Painted(vec4<f32>(look.colour, look.opacity), false);
+    return joined_inks_painted(hit, point, slide_across, slide_up, inks_painted(hit, point, slide_across, slide_up, plain));
 }
 
 // A hit's colour, lit by the lamp, the sky and the viewer, and its opacity; an ink keeps a share of its own colour.
 fn shade(hit: Hit, start: Point, direction: Point) -> vec4<f32> {
     let normal = turned(slopes(hit.tangent));
-    let surface = inked(hit, start + direction * hit.distance, hit.tangent.normalized());
+    let surface = inked(hit, start + direction * hit.distance, direction);
     let own = select(0.0, ink_own, surface.inked);
     let shaded = mix(surface.colour.rgb * brightness(normal), surface.colour.rgb, own);
     return vec4<f32>(shaded + gloss * glint(normal), surface.colour.a);
@@ -643,12 +664,13 @@ TILE = 16
 @cache
 def shader() -> Shader:
     return Shader(supersampled() + quadric_tracing() + lamp_shading() + tangent_seen() + source, ga,
-                  dict(Point=Point, Plane=Plane, Tangent=Plane, Quadric=Quadric), {})
+                  dict(Point=Point, Plane=Plane, Tangent=Plane, Quadric=Quadric, Joined=Joined), {})
 
 
 class Ink(NamedTuple):
-    """Lines inked on the surfaces of a part's solids, where each quadric `[lines]` pairs to zero with the point,
-    within where each region `[lines]` pairs negatively with it (`everywhere` for no bound): their colours,
+    """Lines inked on the surfaces of a part's solids, where each quadric `[lines]` pairs to zero with the point, its
+    planes of either orientation, a join's as it is, within where each region `[lines]`, a side and so extrinsic,
+    pairs negatively with it (`everywhere` for no bound): their colours,
     `[lines, 3]` or one for all, their width in pixels, `np.inf` to fill the region, and how much of what lies
     behind them they hide. The parts count the opaque ones first, then the translucent."""
     part: int
@@ -739,7 +761,7 @@ def tiles(centres: Point, radii: Scalar, view: View) -> dict:
 
 
 def scene(parts: list[tuple[Quadric, np.ndarray]], translucent: list[tuple[Quadric, np.ndarray, float]],
-          inks: list[Ink]) -> tuple[Quadric, dict, dict, Quadric, Quadric, dict, tuple[Point, Scalar]]:
+          inks: list[Ink]) -> tuple[Quadric, dict, dict, dict, tuple[Point, Scalar]]:
     """Every solid's quadrics, solid after solid, each solid's range of them and whether they are all half-spaces, and
     its colour and opacity, from parts: each a batch of solids, `[solids, quadrics]` Quadric, all of one kind, or
     `[solids, planes]` Plane for solids bounded by planes alone, on their negative sides, their colours, `[solids, 3]`
@@ -776,19 +798,27 @@ def scene(parts: list[tuple[Quadric, np.ndarray]], translucent: list[tuple[Quadr
     # The solids each part spans, part after part.
     part_ends = np.cumsum([solids.shape[0] for solids, _, _ in parts])
     part_starts = part_ends - [solids.shape[0] for solids, _, _ in parts]
-    # An ink over no solids stands for none, so that the inks' arrays are never empty.
-    inks = list(inks) + [Ink(0, everywhere[None], everywhere[None], np.zeros(3), 0.0, 0.0)]
-    ink_quadrics = concatenate([ink.quadrics.reshape(-1) for ink in inks])
-    ink_regions = concatenate([ink.regions.reshape(-1) for ink in inks])
-    sizes = [int(np.prod(ink.quadrics.shape)) for ink in inks]
-    marked = dict(first=np.repeat([part_starts[ink.part] for ink in inks[:-1]] + [0], sizes),
-                  end=np.repeat([part_ends[ink.part] for ink in inks[:-1]] + [0], sizes),
-                  colour=np.concatenate([np.broadcast_to(ink.colours, (size, 3)) for ink, size in zip(inks, sizes)]),
-                  width=np.repeat([ink.width for ink in inks], sizes), opacity=np.repeat([ink.opacity for ink in inks], sizes))
+    # The inks whose quadrics give planes and those whose quadrics give joins, each kind in arrays of its own; in each,
+    # an ink over no solids stands for none, so that no array is empty.
+    inked = {}
+    for name, kind in (("inks", Quadric), ("joined_inks", Joined)):
+        chosen = [ink for ink in inks if ink.quadrics.gatype.derive.output.orientation is kind.derive.output.orientation]
+        nothing = context.extensor(kind, np.zeros((1,) + kind.structural_shape))
+        chosen += [Ink(0, nothing, everywhere[None], np.zeros(3), 0.0, 0.0)]
+        sizes = [int(np.prod(ink.quadrics.shape)) for ink in chosen]
+        inked |= {name: dict(first=np.repeat([part_starts[ink.part] for ink in chosen[:-1]] + [0], sizes),
+                             end=np.repeat([part_ends[ink.part] for ink in chosen[:-1]] + [0], sizes),
+                             colour=np.concatenate([np.broadcast_to(ink.colours, (size, 3))
+                                                    for ink, size in zip(chosen, sizes)]),
+                             width=np.repeat([ink.width for ink in chosen], sizes),
+                             opacity=np.repeat([ink.opacity for ink in chosen], sizes)),
+                  f"{name}_quadrics": concatenate([ink.quadrics.reshape(-1) for ink in chosen]),
+                  f"{name}_regions": concatenate([ink.regions.broadcast_to(ink.quadrics.shape).reshape(-1)
+                                                  for ink in chosen])}
     return (concatenate(quadrics),
             dict(first=ends - np.concatenate(counts), end=ends, flat=np.concatenate(flats).astype(np.uint32)),
             dict(colour=np.concatenate(colours), opacity=np.concatenate(opacities)),
-            ink_quadrics, ink_regions, marked, (concatenate(centres), concatenate(radii)))
+            inked, (concatenate(centres), concatenate(radii)))
 
 
 class View(NamedTuple):
@@ -905,10 +935,10 @@ def trace(tracer: Shader, encoder: Any, view: View, solids: tuple, buffers: Mesh
     opacity, over the background, on the encoder: the picture's colour and depth."""
     from examples.util.wgsl.camera import preimage
     from examples.util.wgsl.simplices import view_camera
-    quadrics, solids, looks, ink_quadrics, ink_regions, marked, holding = solids
+    quadrics, solids, looks, inked, holding = solids
     # A mesh that shows nothing stands for none, so that the opacities are never empty.
     outputs = tracer.encode(encoder, view.shape, (), dict(
-        quadrics=quadrics, solids=solids, looks=looks, inks=marked, ink_quadrics=ink_quadrics, ink_regions=ink_regions,
+        quadrics=quadrics, solids=solids, looks=looks, **inked,
         mesh_colours=Resident(buffers.colours, buffers.size), mesh_depths=Resident(buffers.depths, buffers.size),
         mesh_row=buffers.row_bytes // 4, mesh_opacities=np.array(opacities or [0.0], dtype=np.float32),
         n_meshes=len(opacities), **tiles(*holding, view), pixel=view.pixel, middle=preimage(view_camera(view), Point)[0],
