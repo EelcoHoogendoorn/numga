@@ -21,7 +21,7 @@ AZIMUTH, ELEVATION = np.deg2rad(-74.0), np.deg2rad(22.0)
 MARGIN = 0.1
 FACE = np.array(to_rgb("#c6a15b"))
 FIBRE = np.array(to_rgb("#4a3a1f"))
-FIBRE_WIDTH = 0.8
+FIBRE_WIDTH = 2.0
 background = np.ones(3)
 
 

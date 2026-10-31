@@ -176,10 +176,8 @@ fn shade(corner: Corner) -> Shade {
     let unit = select(select(seen, square / size, size > 1e-6), seen, open);
     let normal = screen_across * unit.x + screen_up * unit.y + screen_toward * unit.z;
     let direction = -screen_toward.dual();
-    // The depth along the view, the tube's surface nearer the viewer by its bulge, and the whole tube lifted toward the
-    // viewer by a pixel, so that a stroke lying on a surface shows on it however obliquely the surface is seen.
-    let lift = (toward * radius / oversampling + 1.0) * scene_pixel;
-    let along_view = mix(corner.depths.x, corner.depths.y, sample.share) - lift;
+    // The depth along the view, the tube's surface nearer the viewer by its bulge.
+    let along_view = mix(corner.depths.x, corner.depths.y, sample.share) - toward * radius / oversampling * scene_pixel;
     return Shade(vec4<f32>(lit(corner.colour, normal, direction), 1.0), vec4<f32>(along_view, 0.0, 0.0, 1.0),
                  0.5 + along_view / screen_depth);
 }
