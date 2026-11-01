@@ -111,6 +111,7 @@
 - [Laplacian eigenfunction fluids](fluids/eigen_fluids/) — Whitney gradients and precomputed mode interactions evolve vortices on the Stanford bunny and shear layers on a sphere.
 - [Magnetohydrodynamics on a sphere](fluids/mhd_sphere/mhd_sphere.ipynb) — In spacetime, a frozen-in field is one whose flux function's gradient pairs to nothing with every worldline; a differential rotation winds it up until its current gathers in thin sheets and reconnects into magnetic islands.
 - [Electrokinetic transport](fluids/electrokinetics/) — Pressure and electric potential as one field in spacetime joined with a direction for volume drive flow and current through wavy charged channels, reciprocally, while the double layer's osmotic pressure and field balance across them.
+- [Superfluid helium](fluids/superfluid/) — Mass and entropy as two degenerate directions joined to the plane: one commutator pushes the superfluid and the normal fluid, one eigenproblem gives second and fourth sound against measurement, and a heat pulse rings as second sound against a wall of powder that passes pressure but no heat.
 
 ## Relativity
 
