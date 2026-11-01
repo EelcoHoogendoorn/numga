@@ -58,24 +58,22 @@ spins = (three_sphere.mv.xy * (-np.linspace(0, 2 * np.pi, n_paths, endpoint=Fals
 tilts = (three_sphere.mv.zx * (-np.radians([30.0, 90.0, 150.0]) / 2)).exp()   # [3] Motor+
 three_sphere_headings = (spins * tilts >> three_sphere.mv.z.dual()).reshape(-1)   # [paths * 3] Antivector-
 
-# The eye inside the 600-cell, the motor that carries the origin to it and turns its view; the slowest gravitational
-# wave of the closed universe, its swing and its frequency, the root of eight light crossings of the radius; the eye's
-# times over one swing.
+# The eye inside the 600-cell, the motor that carries the origin to it and turns its view; the stepped gravitational
+# waves, the slowest of the closed universe started from its squash, swinging space along one invariant direction by
+# this share and the opposite way along another, at the lattice's own frequency; the frames over one swing.
 eye = (three_sphere.mv.xw * 0.37 + three_sphere.mv.yw * 0.11 + three_sphere.mv.zw * 0.23).exp()   # [] Motor+
 wave_swing = 0.12
-wave_frequency = np.sqrt(8.0)
 n_wave_frames = 75
-eye_times = np.arange(n_wave_frames) * 2 * np.pi / wave_frequency / n_wave_frames   # [frames]
 # Three little crystals ahead of the eye, side by side across its view: tetrahedra of four atoms of unit mass, bonded
 # along their six edges, their bonds soft, tuned to the wave, and stiff: a sixteenth of the stiffness that puts the
 # swing the squash drives, root two times the root of the stiffness, at the wave's, that one, and sixteen times it,
 # with dashpots a quarter of critical. How far ahead, how far apart, how large; the time step, and the swings run
 # before the frames so that the motion has settled.
 crystal_distance, crystal_spacing, crystal_half_size = 0.55, 0.26, 0.05
-tuned_stiffness = wave_frequency ** 2 / 2
-stiffnesses = tuned_stiffness * np.array([1 / 16, 1.0, 16.0])                   # [crystals]
-dampings = 0.25 * np.sqrt(2 * stiffnesses)                                      # [crystals]
+tunings = np.array([1 / 16, 1.0, 16.0])                                       # [crystals]
 crystal_step = 0.01
+# The stepped waves' steps to a swing of the squash.
+n_steps_per_swing = 40
 n_settling_swings = 8
 
 # The step of length in the rolled space, the proper time of a particle, and the steps to half a turn and beyond.
@@ -186,28 +184,52 @@ def crystals() -> tuple[three_sphere.Mesh, three_sphere.Point]:
     return three_sphere.Mesh(len(corners) * len(offsets), bonds), atoms.field()
 
 
-def crystal_states(cell_mesh: three_sphere.Mesh, cell_vertices: three_sphere.Point, cell_rates: three_sphere.Rate
-                   ) -> tuple[three_sphere.Mesh, list]:
-    """The crystals' bonds, and their atoms and bonds' strains, `(Point-[atoms], Scalar+[bonds])`, as the eye sees them
-    at each of its times: when their light left them, after the motion has settled into the wave's swing."""
-    ramps = three_sphere.coframe(cell_mesh, cell_vertices)                      # [corners] Plane+[tets]
-    coframes = three_sphere.invariant_coframe(cell_mesh, ramps, cell_rates)     # [3] Bivector+[tets]
+def squash(cell_mesh: three_sphere.Mesh, cell_vertices: three_sphere.Point, cell_rates: three_sphere.Rate
+           ) -> three_sphere.Scalar:
+    """The squash's change of each edge's squared length, per unit swing of space, `Scalar+[edges]`: its share along the
+    stretched invariant direction less its share along the squeezed one, its steps read along those directions, twice,
+    since a squared length changes twice as fast as the length."""
     mv = three_sphere.mv
-    steps = stack((mv.x, mv.y, mv.z)).dual()                                    # [3] Antivector-
-    moving = three_sphere.infinity ^ three_sphere.across(steps.cast(three_sphere.Step))   # [3] Rate+
-    turning = moving * mv.xyzw                                                  # [3] Rate+
+    steps = three_sphere.origin.commutator(cell_rates).cast(three_sphere.Step)   # Antivector-[edges]
+    along = (stack((mv.x, mv.y, mv.z))[:, None] & steps.batch()[None]).field()  # [3] Scalar+[edges]
+    chords = cell_mesh.d[0] * cell_vertices                                     # Point-[edges]
+    return 2 * chords.dot(chords) * (along[0] * along[0] - along[1] * along[1]) / (along * along).sum(axis=0)
 
-    def generators(time: float):
-        """The wave's generators and stretch rates at a time."""
-        return three_sphere.wave(moving, turning, wave_swing, wave_frequency, time)
 
+def stepped_history(cell_mesh: three_sphere.Mesh, cell_vertices: three_sphere.Point, cell_rates: three_sphere.Rate
+                    ) -> tuple[three_sphere.Waves, float]:
+    """The 600-cell's gravitational waves stepped from the squash, swinging as a cosine at the lattice's frequency, from
+    long enough before the first frame for the crystals to settle and the light to arrive, to the last: as a smooth
+    field over time, and that frequency."""
+    stiffness, masses, _ = three_sphere.gravitational_waves(cell_mesh, cell_vertices)
+    pattern = squash(cell_mesh, cell_vertices, cell_rates)                      # Scalar+[edges]
+    frequency = float(np.sqrt(((pattern * stiffness(pattern)).sites.sum() / (pattern * masses(pattern)).sites.sum()).to_array()))
+    period = 2 * np.pi / frequency
+    step = period / n_steps_per_swing
+    first = -(n_settling_swings + 1) * period - np.pi
+    n_levels = int(np.ceil((period - first) / step)) + 2
+    stepped = three_sphere.waves_stepped(stiffness, masses, wave_swing * np.cos(frequency * first) * pattern,
+                                         -wave_swing * frequency * np.sin(frequency * first) * pattern, step)
+    levels = [state for _, state in zip(range(n_levels), stepped)]
+    return three_sphere.Waves(cell_mesh, cell_vertices, cell_rates, [changes for changes, _ in levels],
+                              [rates for _, rates in levels], first, step), frequency
+
+
+def crystal_states(cell_mesh: three_sphere.Mesh, cell_vertices: three_sphere.Point, cell_rates: three_sphere.Rate,
+                   waves: three_sphere.Waves, frequency: float, eye_times: np.ndarray) -> tuple[three_sphere.Mesh, list]:
+    """The crystals' bonds, and their atoms and bonds' strains, `(Point-[atoms], Scalar+[bonds])`, as the eye sees them
+    at each of its times: when their light left them, after the motion has settled into the waves' swing. The tuned
+    crystal's stiffness puts the swing the squash drives, root two times the root of the stiffness, at the waves'."""
+    stiffnesses = frequency ** 2 / 2 * tunings                                  # [crystals]
+    dampings = 0.25 * np.sqrt(2 * stiffnesses)                                  # [crystals]
+    ramps = waves.ramps                                                         # [corners] Plane+[tets]
+    moving, turning, steps = three_sphere.invariant_generators()               # [3] Rate+, [3] Rate+, [3] Antivector-
     bonds, atoms = crystals()
-    pick = cell_mesh.picking(cell_vertices)
-    faces = pick(atoms)
+    faces = cell_mesh.picking(cell_vertices)(atoms)
     unit = ramps.batch()[:, faces].sum(axis=0).field()
     placed = atoms / (unit & atoms)
     # The crystals' rest lengths: their bonds' proper lengths on the round sphere.
-    round_local = ((moving + turning)[:, None] * (coframes.batch()[:, faces] & three_sphere.Line)).sum(axis=0).field()
+    round_local = ((moving + turning)[:, None] * (waves.coframes.batch()[:, faces] & three_sphere.Line)).sum(axis=0).field()
     rest = three_sphere.proper_separations(round_local, bonds, placed)
     rest = rest.dot(rest).square_root()                                         # Scalar+[bonds]
     per_crystal = len(bonds.edges) // len(stiffnesses)
@@ -215,11 +237,29 @@ def crystal_states(cell_mesh: three_sphere.Mesh, cell_vertices: three_sphere.Poi
     damping = three_sphere.mesh_module.as_scalar(np.repeat(dampings, per_crystal)).field()
     # The light from the crystals left them their distance before it reached the eye.
     seen_at = eye_times - crystal_distance                                      # [frames]
-    start = seen_at[0] - n_settling_swings * 2 * np.pi / wave_frequency
+    start = seen_at[0] - n_settling_swings * 2 * np.pi / frequency
     at_rest = (steps[0] * np.zeros(atoms.batch().shape[0])).field()           # Antivector-[atoms]
-    states = list(three_sphere.massive(cell_mesh, cell_vertices, ramps, coframes, generators, bonds, rest, stiffness,
-                                       damping, placed, at_rest, start, crystal_step, seen_at))
+    states = list(three_sphere.massive(cell_mesh, cell_vertices, ramps, waves, bonds, rest, stiffness, damping, placed,
+                                       at_rest, start, crystal_step, seen_at))
     return bonds, states
+
+
+def stepped_squash(cell_mesh: three_sphere.Mesh, cell_vertices: three_sphere.Point, cell_rates: three_sphere.Rate,
+                   n_swings: int) -> tuple[np.ndarray, float, np.ndarray, np.ndarray]:
+    """The 600-cell's gravitational waves stepped from the squash at rest: the spectrum of their frequencies squared,
+    the squash's own, and the times and the squash's share of the stepped strains at each, over `n_swings` of it."""
+    stiffness, masses, _ = three_sphere.gravitational_waves(cell_mesh, cell_vertices)
+    values, _ = stiffness.eigh(masses)
+    pattern = squash(cell_mesh, cell_vertices, cell_rates)                      # Scalar+[edges]
+    norm = (pattern * masses(pattern)).sites.sum()                              # [] Scalar+
+    frequency_squared = float(((pattern * stiffness(pattern)).sites.sum() / norm).to_array())
+    # Forty steps to the squash's swing, well inside the stiffest wave's limit, two over its frequency.
+    step = 2 * np.pi / np.sqrt(frequency_squared) / n_steps_per_swing
+    n_steps = n_swings * n_steps_per_swing
+    stepped = three_sphere.waves_stepped(stiffness, masses, wave_swing * pattern, 0 * pattern, step)
+    shares = np.array([float(((pattern * masses(strains)).sites.sum() / norm).to_array())
+                       for _, (strains, _) in zip(range(n_steps), stepped)])  # [steps]
+    return values.to_array(), frequency_squared, step * np.arange(n_steps), shares
 
 
 def rolled(core: ModuleType, mesh, vertices: Extensor, rates: Extensor, starts: Extensor, directions: Extensor
@@ -232,7 +272,7 @@ def rolled(core: ModuleType, mesh, vertices: Extensor, rates: Extensor, starts: 
 
 
 def main() -> None:
-    from examples.util.animation import save_animation
+    from examples.util.animation import save_animation, save_figure
     from examples.relativity.motor_connection import render
 
     mesh, vertices = chart()
@@ -250,10 +290,24 @@ def main() -> None:
 
     cell_mesh, cell_vertices = six_hundred_cell()
     cell_rates = three_sphere.round_rates(cell_mesh, isoclinic_frames(cell_vertices))   # Rate+[edges]
-    bonds, states = crystal_states(cell_mesh, cell_vertices, cell_rates)
-    frames = render.inside(three_sphere, cell_mesh, cell_vertices, cell_rates, eye, isoclinic_frames, wave_swing,
-                           wave_frequency, eye_times, guardrails(cell_vertices), bonds, states)
+    waves, frequency = stepped_history(cell_mesh, cell_vertices, cell_rates)
+    eye_times = np.arange(n_wave_frames) * 2 * np.pi / frequency / n_wave_frames   # [frames]
+    bonds, states = crystal_states(cell_mesh, cell_vertices, cell_rates, waves, frequency, eye_times)
+    frames = render.inside(three_sphere, cell_mesh, cell_vertices, eye, isoclinic_frames, waves, eye_times,
+                           guardrails(cell_vertices), bonds, states)
     save_animation(frames, "motor_connection_600_cell", duration_ms)
+
+    # The gate for stepping the motors: the Chern–Simons form on the edges' rates, and the stiffness it leaves on their
+    # lengths, against their expected null directions, gauge alone: the vertices' motors less the six of the whole, and
+    # the vertices' translations less the six isometries.
+    chern_simons = (three_sphere.chern_simons(cell_mesh, cell_vertices) * three_sphere.Rate).to_dense()
+    stiffness = three_sphere.length_stiffness(cell_mesh, cell_vertices, chern_simons)
+    n_vertices = cell_mesh.n_vertices
+    save_figure(render.gate([(render.spectrum(chern_simons, three_sphere.Rate), 6 * (n_vertices - 1)),
+                             (render.spectrum(stiffness, three_sphere.Scalar), 3 * n_vertices - 6)]),
+                "motor_connection_stepping_gate")
+    spectrum, squash_squared, times, shares = stepped_squash(cell_mesh, cell_vertices, cell_rates, 4)
+    save_figure(render.waves(spectrum, squash_squared, times, shares, wave_swing), "motor_connection_stepped_waves")
 
     # checks
     # Half a turn along, every path on the sphere is at the antipode.
@@ -269,9 +323,13 @@ def main() -> None:
     assert np.abs(((spacetime.mv.x & offsets).abs() - (spacetime.mv.t & offsets)).to_array()).max() < 0.02
     # Over the wave's swing, the soft crystal carries the wave's strain, the tuned one more, and the stiff one keeps
     # its shape.
-    swings = np.abs(np.stack([strains.to_array() for _, strains in states])).reshape(len(states), len(stiffnesses), -1)
+    swings = np.abs(np.stack([strains.to_array() for _, strains in states])).reshape(len(states), len(tunings), -1)
     soft, tuned, stiff = swings.max(axis=(0, 2))
     assert 0.5 * wave_swing < soft < 1.5 * wave_swing and tuned > 2 * wave_swing and stiff < 0.2 * wave_swing
+    # The stepped waves have no growing mode, the squash is their slowest, a tenth short of the continuum's eight on
+    # edges a fifth of a half turn long, and the stepped squash rings at its own frequency.
+    assert spectrum.min() > -1e-6 * spectrum.max() and 6.5 < squash_squared < 8
+    assert np.abs(shares - wave_swing * np.cos(np.sqrt(squash_squared) * times)).max() < 0.03 * wave_swing
 
 
 if __name__ == "__main__":

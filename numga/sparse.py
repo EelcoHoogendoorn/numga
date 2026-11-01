@@ -99,6 +99,17 @@ class SparseExtensor:
         on = self.rows == self.columns
         return _scatter(self.cells[..., on], self.rows[on], self.shape[0]).field()
 
+    def to_dense(self) -> Extensor:
+        """The field map the cells make, `X[rows] <- Y[columns]`, each coupling at its pair of sites and zero where
+        none couples: the dense counterpart, for what only a dense field map does, such as `eigh` without a metric,
+        `eig`, `pinv`, or `solve` and `lstsq` with maps on the right. Its cells are maps."""
+        kernel = np.asarray(self.cells.kernel)
+        leading = kernel.shape[:self.cells.ndim - 1]
+        dense = np.zeros(leading + self.shape + kernel.shape[self.cells.ndim:], dtype=kernel.dtype)
+        dense[(slice(None),) * len(leading) + (self.rows, self.columns)] = kernel
+        context = self.cells.context
+        return context.extensor(self.cells.gatype, context.xp.asarray(dense)).field(0, 1)
+
     @property
     def gatype(self) -> GAType:
         """The coupling cells' type, by which the operations dispatch; the sites are `shape`."""

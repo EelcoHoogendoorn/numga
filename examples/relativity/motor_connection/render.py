@@ -75,9 +75,9 @@ bond_radius, saturating_strain = 0.005, 0.15
 inside_source = """
 var<uniform> start_place: Point;
 var<uniform> start_tet: u32;
-var<uniform> right: Point;
-var<uniform> up: Point;
-var<uniform> forward: Point;
+var<uniform> right: Step;
+var<uniform> up: Step;
+var<uniform> forward: Step;
 var<uniform> eye_time: f32;
 var<uniform> half_height: f32;
 var<uniform> step: f32;
@@ -138,9 +138,10 @@ fn sample(place: vec2<f32>) -> Sample {
         position = position / (unit & position);
         // The ray runs back in time: here it is the light that passed the eye's time less the distance travelled.
         let time = eye_time - travelled;
-        let v = velocity(tet, position, unit, heading, time);
         let l = array<f32, 4>(ramps[base] & position, ramps[base + 1u] & position, ramps[base + 2u] & position,
                               ramps[base + 3u] & position);
+        let waves = local_waves(tet, l, time);
+        let v = velocity(tet, position, unit, heading, waves);
         let dl = array<f32, 4>((ramps[base] & v) * step, (ramps[base + 1u] & v) * step, (ramps[base + 2u] & v) * step,
                                (ramps[base + 3u] & v) * step);
         // The share of the step up to the facet the ray leaves by, never the one it came in by.
@@ -255,7 +256,7 @@ fn sample(place: vec2<f32>) -> Sample {
             return mix(background, lit, fog);
         }
         let h = step * u_exit;
-        heading = headed(heading, connection(tet, position & v, time), time, h);
+        heading = headed(heading, connection(tet, position & v, waves), waves, h);
         position = position + v * h;
         travelled = travelled + h;
         if (travelled > 3.14159) {
@@ -291,39 +292,40 @@ def edge_styles(core, mesh, guardrails: np.ndarray) -> np.ndarray:
     return styles[tet_edges.reshape(-1)]
 
 
-def inside(core, mesh, vertices: Extensor, rates: Extensor, camera: Extensor, gauge, swing: float, frequency: float,
-           eye_times: np.ndarray, guardrails: np.ndarray, bonds, states: list) -> Iterator[np.ndarray]:
-    """Frames of the view from inside a three-sphere meshed by tetrahedra whose edges carry the round rates
-    `Rate+[edges]` on isoclinic frames, squashed by the slowest gravitational wave of the closed universe with the given
-    swing and frequency, one at each of the eye's times: the camera, a motor, carries the origin to the eye and the
-    origin's steps across `x`, `y` and `z` to its right, up and forward, read in the frame the vertices' frames give
-    the eye, `gauge(place)`; the tetrahedra's edges are lit struts, the guardrails `[decagons, 10]` in colour; at each
-    time the atoms of `states`, `(Point-[atoms], Scalar+[bonds])` per frame, are balls and their `bonds`, a graph `Mesh`,
-    segments coloured by their strains."""
+def inside(core, mesh, vertices: Extensor, camera: Extensor, gauge, waves, eye_times: np.ndarray, guardrails: np.ndarray,
+           bonds, states: list) -> Iterator[np.ndarray]:
+    """Frames of the view from inside a three-sphere meshed by tetrahedra and carrying the stepped gravitational waves
+    `waves`, one at each of the eye's times: the camera, a motor, carries the origin to the eye and the origin's steps
+    across `x`, `y` and `z` to its right, up and forward, read in the frame the vertices' frames give the eye,
+    `gauge(place)`; the tetrahedra's edges are lit struts, the guardrails `[decagons, 10]` in colour; at each time the
+    atoms of `states`, `(Point-[atoms], Scalar+[bonds])` per frame, are balls and their `bonds`, a graph `Mesh`, segments
+    coloured by their strains."""
     from examples.util.wgsl import Shader, supersampled
 
     mv = core.mv
     shader = Shader(supersampled() + core.geodesic_step_source + inside_source, core.ga,
-                    dict(Point=core.Point, Plane=core.Plane, Rate=core.Rate, Line=core.Line),
+                    dict(Point=core.Point, Plane=core.Plane, Rate=core.Rate, Line=core.Line, Step=core.Step,
+                         Strain=core.Strain, Turning=core.Turning, Across=core.Across, Translating=core.Translating),
                     dict(background=inside_background))
-    ramps = core.coframe(mesh, vertices)                                        # [corners] Plane+[tets]
-    coframes = core.invariant_coframe(mesh, ramps, rates)                       # [3] Bivector+[tets]
+    ramps = waves.ramps                                                         # [corners] Plane+[tets]
     neighbours, entries = mesh.neighbours
-    pseudoscalar = mv.xyzw                                                      # [] Antiscalar+
     spanning = stack((mv.x, mv.y, mv.z, mv.w)).dual()                         # [4] Point-
-    steps = stack((mv.x, mv.y, mv.z)).dual()                                   # [3] Antivector-
-    moving = core.infinity ^ core.across(steps.cast(core.Step))                # [3] Rate+
-    turning = moving * pseudoscalar                                             # [3] Rate+
+    _, _, steps = core.invariant_generators()                                   # [3] Antivector-
+    steps = steps.cast(core.Step)
     place = camera >> core.origin                                               # [] Point-
     view = (gauge(place).inverse() * camera) >> steps                          # [3] Antivector-
     half_height = float(np.tan(fov_radians / 2) * inside_shape[0] / inside_shape[1])
+    n_levels, n_vertices = waves.traces.shape
     fixed = dict(
         ramps=stack(tuple(ramps.batch()), axis=-1).reshape(-1), neighbours=neighbours.astype(np.uint32).reshape(-1),
-        entries=entries.astype(np.uint32).reshape(-1), coframes=stack(tuple(coframes.batch()), axis=-1).reshape(-1),
-        origin=core.origin, infinity=core.infinity, basis_0=spanning[0], basis_1=spanning[1], basis_2=spanning[2],
-        basis_3=spanning[3], moving_x=moving[0], moving_y=moving[1], moving_z=moving[2], turning_x=turning[0],
-        turning_y=turning[1], turning_z=turning[2], reading_x=mv.x, reading_y=mv.y, reading_z=mv.z, step_x=steps[0],
-        step_y=steps[1], step_z=steps[2], swing=swing, frequency=frequency, start_place=place,
+        entries=entries.astype(np.uint32).reshape(-1),
+        coframes=stack(tuple(waves.coframes.batch()), axis=-1).reshape(-1),
+        tet_vertices=mesh.tets.astype(np.uint32).reshape(-1), strains=waves.strains.reshape(-1),
+        strain_rates=waves.strain_rates.reshape(-1), traces=waves.traces.to_array().reshape(-1).astype(np.float32),
+        turns=waves.turns.reshape(-1), n_vertices=n_vertices, n_tets=len(mesh.tets), n_levels=n_levels,
+        first_time=waves.first_time, level_step=waves.level_step, origin=core.origin, infinity=core.infinity,
+        basis_0=spanning[0], basis_1=spanning[1], basis_2=spanning[2], basis_3=spanning[3], step_x=steps[0],
+        step_y=steps[1], step_z=steps[2], across=core.across, translating=core.translating, start_place=place,
         start_tet=int(mesh.picking(vertices)(place[None])[0]), right=view[0], up=view[1], forward=view[2],
         half_height=half_height, step=inside_step, max_steps=int(4 * np.pi / inside_step),
         light=camera >> ((mv.yw * 0.4 + mv.xw * -0.3).exp() >> core.origin),
@@ -337,3 +339,66 @@ def inside(core, mesh, vertices: Extensor, rates: Extensor, camera: Extensor, ga
                        n_particles=atoms.batch().shape[0], bond_tails=tails.batch().normalized(),
                        bond_heads=heads.batch().normalized(), bond_inks=inks, n_bonds=len(bonds.edges), **fixed)["image"]
         yield np.round(np.clip(image, 0.0, 1.0) * 255).astype(np.uint8)
+
+
+# --- the gate for stepping the motors: spectra of forms ---------------------------------------------------------------
+gate_width, gate_height = 560, 230
+
+
+def spectrum(correlation: Extensor, Input) -> np.ndarray:
+    """The eigenvalues of the form `x & correlation(y)` of a dense field correlation over inputs of type `Input`, in
+    the blades of the input, read by the regressive product and symmetrized: by Sylvester's law their signs do not
+    depend on the basis."""
+    blocks = np.asarray(correlation.kernel)                                     # [sites, sites, out blades, in blades]
+    context = correlation.context
+    inputs = context.extensor(Input, np.eye(blocks.shape[-1]))                  # [in blades] Input
+    outputs = context.extensor(correlation.gatype.derive.plain.derive.output, np.eye(blocks.shape[-2]))
+    pairing = (inputs[:, None] & outputs[None, :]).to_array()                   # [in blades, out blades]
+    form = np.einsum("ik,abkj->aibj", pairing, blocks).reshape(blocks.shape[0] * blocks.shape[-1], -1)
+    return np.linalg.eigvalsh((form + form.T) / 2)
+
+
+@charts.style()
+def gate(panels: list[tuple[np.ndarray, int]]) -> plt.Figure:
+    """Each form's eigenvalues, sorted, against its expected count of null directions `[(values, expected)]`: the
+    null ones in red where there are more than expected."""
+    figure, axes = charts.subplots(gate_width, gate_height, ncols=len(panels))
+    for ax, (values, expected) in zip(axes, panels):
+        small = 1e-9 * np.abs(values).max()
+        null = np.abs(values) <= small
+        order = np.argsort(values)
+        ax.axhline(0, color="0.6", linewidth=charts.FRAME_WIDTH)
+        ax.scatter(np.arange(len(values)), values[order], s=2, c=np.where(null[order], "#d0453b", "#3b6fb6"))
+        ax.set_yscale("symlog", linthresh=1e-3)
+        ax.set_xticks([0, len(values)])
+        ax.set_yticks([-1, 0, 1])
+        ax.text(0.03, 0.95, f"null {null.sum()}, expected {expected}", transform=ax.transAxes, va="top")
+    figure.tight_layout()
+    return figure
+
+
+# --- the stepped waves: their spectrum, and the squash ringing ---------------------------------------------------------
+waves_width, waves_height = 560, 220
+
+
+@charts.style()
+def waves(spectrum: np.ndarray, squash_squared: float, times: np.ndarray, shares: np.ndarray, swing: float
+          ) -> plt.Figure:
+    """The waves' frequencies squared, sorted, against the continuum's, `n * n - 1` for n from three; and the squash's
+    share of the stepped strains against the cosine at its own frequency."""
+    figure, (levels, ringing) = charts.subplots(waves_width, waves_height, ncols=2)
+    stiff = np.sort(spectrum[spectrum > 1e-6 * spectrum.max()])
+    for n in range(3, 6):
+        levels.axhline(n * n - 1, color="0.8", linewidth=charts.FRAME_WIDTH)
+    levels.scatter(np.arange(len(stiff)), stiff, s=3, color="#3b6fb6")
+    levels.set_yticks([0, 8, 15, 24])
+    levels.set_xticks([0, len(stiff)])
+    levels.set_ylabel("frequency squared")
+    ringing.axhline(0, color="0.6", linewidth=charts.FRAME_WIDTH)
+    ringing.plot(times, swing * np.cos(np.sqrt(squash_squared) * times), color="0.75")
+    ringing.plot(times, shares, color="#d0453b", linewidth=charts.LINE_WIDTH * 0.8, linestyle=(0, (2, 2)))
+    ringing.set_yticks([-swing, 0, swing])
+    ringing.set_xticks([0, times[-1]])
+    ringing.set_xlabel("time")
+    figure.tight_layout()
+    return figure
