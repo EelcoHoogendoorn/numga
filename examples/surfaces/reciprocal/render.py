@@ -82,7 +82,7 @@ def panels(topology: core.Topology, points: core.Point, framing: solids.View
     it, an edge across every bar."""
     places = points.batch()                                                               # [vertices] Point-
     # The truss's bars and its boundary, the mesh's inner and boundary edges.
-    bars = simplices.Topology(len(places), topology.elements[1][topology.interior[1]])
+    bars = topology.subset(topology.interior[1], 1)
     rim = topology.border
     # The reciprocal diagram: a reciprocal vertex for each face, joined across every bar to the one on its other side
     # along the bar's dual edge, each join drawn as a chain of its two ends.

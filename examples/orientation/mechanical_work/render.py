@@ -53,13 +53,12 @@ class WorkView:
         self.camera = panel(ax, mv.x, mv.y)
         # The mirror, the plane x = 0, from the bottom of the view to its top: the origin moved up as far as each.
         mirror = mv.w.dual() + mv.y.dual() * stack([lower[1], upper[1]])       # [ends] Point-
-        # Each handle's path, closed: its places in turn and the first again, a chain of them.
+        # Each handle's path, closed: its places in turn, a loop of them.
         n_steps, n_cranks = paths.shape
-        steps = np.r_[np.arange(n_steps), 0]
-        trails = paths[steps, np.arange(n_cranks)[:, None]].reshape(-1)         # [cranks * (steps + 1)] Point-
+        trails = paths[np.arange(n_steps), np.arange(n_cranks)[:, None]].reshape(-1)   # [cranks * steps] Point-
         self.guides = [simplices.strokes(mirror, simplices.Topology.chains([2]), mirror_colour, mirror_width, self.camera,
                                          dashes=mirror_dashes, cap=simplices.Cap.BUTT),
-                       simplices.strokes(trails, simplices.Topology.chains([n_steps + 1] * n_cranks), guide_colour,
+                       simplices.strokes(trails, simplices.Topology.loops([n_steps] * n_cranks), guide_colour,
                                          guide_width, self.camera)]
         self.pivot_marks = [simplices.markers(self.pivots, np.ones(3), pivot_radius + rim_width, self.camera),
                             simplices.markers(self.pivots, crank_colour, pivot_radius, self.camera)]

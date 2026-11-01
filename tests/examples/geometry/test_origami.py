@@ -5,11 +5,13 @@ import pytest
 from numga import stack
 
 from examples.geometry.origami import core, scenarios
+from examples.util.topology import Topology
 
 
 def area(paper: core.Paper):
-    normals = stack([(paper.points[face].dual() ^ paper.points[np.roll(face, -1)].dual()).sum(axis=0)
-                     for face in paper.faces()])
+    tails, heads = (Topology.loops(paper.counts).incidence[1, 0] * paper.points.field()).batch()
+    swept = tails.dual() ^ heads.dual()
+    normals = stack([swept[face].sum(axis=0) for face in paper.faces()])
     return normals.norm().sum(axis=0) / 2
 
 
@@ -20,12 +22,14 @@ def test_kabuto_preserves_area_and_facet_lengths_through_every_fold():
     for crease, selected, end in zip(creases, scenarios.SELECTIONS, scenarios.ENDS):
         split_paper, turning, _ = paper.split(crease, selected, scenarios.CREASE_TOLERANCE)
         hinge = crease ^ paper.sheet
-        next_corners = np.concatenate([np.roll(face, -1) for face in split_paper.faces()])
-        lengths = (split_paper.points & split_paper.points[next_corners]).scalar_norm_squared()
+        outlines = Topology.loops(split_paper.counts)
+        tails, heads = outlines.incidence[1, 0] * split_paper.points.field()
+        lengths = (tails & heads).scalar_norm_squared()
         on_crease = (crease & split_paper.points).abs() < scenarios.CREASE_TOLERANCE
         for angle in (0.0, np.pi / 2, end):
             folded_paper = split_paper.folded(hinge, turning, angle)
-            folded_lengths = (folded_paper.points & folded_paper.points[next_corners]).scalar_norm_squared()
+            folded_tails, folded_heads = outlines.incidence[1, 0] * folded_paper.points.field()
+            folded_lengths = (folded_tails & folded_heads).scalar_norm_squared()
             area_error.append(np.max(np.abs((area(folded_paper) - initial_area).kernel)))
             length_error.append(np.max(np.abs((folded_lengths - lengths).kernel)))
             hinge_error.append(np.max(np.abs((folded_paper.points[on_crease] - split_paper.points[on_crease]).kernel)))

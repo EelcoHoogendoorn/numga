@@ -17,6 +17,7 @@ import numpy as np
 
 from numga import NumpyContext, concatenate, stack, where
 from numga.algebras import PGA3D as ga
+from examples.util.topology import Topology
 from examples.util.wgsl import Shader, supersampled
 from examples.util.wgsl.library import samples_per_side
 from examples.util.wgsl.runner import Resident
@@ -615,8 +616,8 @@ def plates(corners: Point, thickness: float) -> Plane:
     face = joined - mv.w * (joined & middle)
     # Along each edge, the plane through the edge and the direction square to the polygon's plane.
     square = (face - mv.w * (face & origin)).dual()                           # [...] Point
-    following = concatenate([corners[..., 1:], corners[..., :1]], axis=-1)    # [..., corners] Point
-    sides = outward((corners & following & square[..., None]) * flip, middle[..., None])   # [..., corners] Plane
+    steps = (Topology.loops([corners.shape[-1]]).d[0] * corners.field()).batch()   # [..., corners] Point
+    sides = outward((corners & steps & square[..., None]) * flip, middle[..., None])   # [..., corners] Plane
     return concatenate([stack([face, -face], axis=-1) - mv.w * (thickness / 2), sides], axis=-1)
 
 

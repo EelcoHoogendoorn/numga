@@ -264,3 +264,16 @@ def test_the_dual_runs_the_transposed_derivatives_and_its_edges_end_on_both_side
     constant = as_scalar(np.ones(dual.n_elements[0])).field()
     inner = dual.reading(topology.interior[-2], 1)
     np.testing.assert_allclose((inner * (dual.d[0] * constant)).kernel, 0, atol=1e-12)
+
+
+def test_loops_close_their_runs_and_a_subset_keeps_its_vertices():
+    loops = Topology.loops([3, 5])
+    assert loops.is_closed and loops.n_components == 2 and loops.euler_characteristic == 0
+    np.testing.assert_array_equal(loops.elements[1][[2, 7]], [[2, 0], [7, 3]])
+    topology, coordinates = shapes.disk(1.0, 3, 12)
+    truss = topology.subset(topology.interior[1], 1)
+    assert truss.n_dim == 1 and truss.n_vertices == topology.n_vertices
+    assert truss.n_elements[1] == len(topology.interior[1])
+    # A mask of the faces and the indices it picks give one topology.
+    near = np.arange(topology.n_elements[2]) % 3 == 0
+    np.testing.assert_array_equal(topology.subset(near).elements[2], topology.subset(np.flatnonzero(near)).elements[2])

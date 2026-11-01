@@ -63,7 +63,7 @@ def annulus(hole_radius: float, rim_radius: float,
     triangles = raw_topology.elements[2]
     # Every Delaunay triangle spanning the central hole has all three corners on the innermost ring.
     keep = ~np.all(ring[triangles] == 0, axis=-1)
-    topology = Topology(len(vertices.batch()), triangles[keep])
+    topology = raw_topology.subset(keep)
     inner_ring = np.flatnonzero(ring == 0)
     interior = np.flatnonzero((ring > 0) & (ring < n_rings - 1))
     return topology, vertices, inner_ring, interior

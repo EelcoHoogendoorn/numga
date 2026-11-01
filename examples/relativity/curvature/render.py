@@ -110,7 +110,8 @@ def panel(ax: plt.Axes, corners: Antivector, ends: list[tuple[Antivector, np.nda
     the area element `[4]` as a translucent plate a pixel thick with its outline, rods joined round at the
     corners, and arrows to directions `[arrows]` each with its colour and width in pixels."""
     places = diagram_points(corners)                                           # [corners] Point-
-    rims, joints = solids.edges(places, places[np.roll(np.arange(4), -1)], OUTLINE_WIDTH / 2 * view.pixel)
+    tails, heads = (simplices.Topology.loops([4]).incidence[1, 0] * places.field()).batch()   # [corners] Point-, Point-
+    rims, joints = solids.edges(tails, heads, OUTLINE_WIDTH / 2 * view.pixel)
     shown = ([arrows(solids.origin + solids.axes.dual() * (extent * AXIS_LENGTH), LIGHT, AXIS_WIDTH, view)]
              + [arrows(diagram_points(tips), colour, width, view) for tips, colour, width in ends])
     area = [(solids.plates(places[None], view.pixel), PATCH, PATCH_OPACITY)]
@@ -278,9 +279,8 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
         trails = data.positions[np.arange(first, frame + 1)[None, :], polarization, selected[:, None]]   # [tracked, n_trail] Antivector-
         arrows = stack((positions[arrows_at], data.tips[frame, polarization, arrows_at]), axis=-1)   # [arrows, 2] Antivector-
         shown.set_data(simplices.composited(beneath + [
-            simplices.strokes(positions, simplices.Topology(n_beads, np.stack((np.arange(n_beads),
-                                                                          np.roll(np.arange(n_beads), -1)), axis=-1)),
-                              BLUE_RGB, charts.LINE_PX, camera, opacity=0.42),
+            simplices.strokes(positions, simplices.Topology.loops([n_beads]), BLUE_RGB, charts.LINE_PX, camera,
+                              opacity=0.42),
             simplices.strokes(trails.reshape(-1), simplices.Topology.chains([frame + 1 - first] * len(selected)),
                               np.repeat(trail_colours, frame - first, axis=0), charts.LINE_PX, camera, opacity=0.60),
             # Each bead ringed in white.

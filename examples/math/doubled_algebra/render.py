@@ -33,12 +33,6 @@ def readers(vectors: core.Vector) -> Extensor:
     return stack((mv.x, mv.y)).dual()
 
 
-def loop(n_corners: int) -> simplices.Topology:
-    """The closed outline through corners in their order, as a mesh of edges."""
-    corners = np.arange(n_corners)
-    return simplices.Topology(n_corners, np.stack([corners, np.roll(corners, -1)], axis=-1))
-
-
 def draw_shear(
     reference_grid: core.Vector,
     grid: core.Vector,
@@ -69,10 +63,10 @@ def draw_shear(
     simplices.overlay(ax, [
         contours.picture(boundary, square, np.zeros(len(boundary)), fill_colour, camera),
         simplices.strokes(reference_grid.reshape(-1), lines, reference_colour, grid_width, camera),
-        simplices.strokes(reference_boundary, loop(len(reference_boundary)), reference_colour,
+        simplices.strokes(reference_boundary, simplices.Topology.loops([len(reference_boundary)]), reference_colour,
                           reference_width, camera, dashes=reference_dashes),
         simplices.strokes(grid.reshape(-1), lines, grid_colour, grid_width, camera),
-        simplices.strokes(boundary, loop(len(boundary)), boundary_colour, boundary_width, camera),
+        simplices.strokes(boundary, simplices.Topology.loops([len(boundary)]), boundary_colour, boundary_width, camera),
         simplices.strokes(arrow_ends, simplices.Topology.chains([2] * len(arrows)), basis_colours, arrow_width,
                           camera, chevrons=np.ones(len(arrows)), chevron=arrow_chevron),
         simplices.markers(origin[None], dot_colour, dot_radius, camera)])

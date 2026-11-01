@@ -83,7 +83,7 @@ def drum(tile_vertices: np.ndarray, n_lattice: int, n_subdivisions: int) -> tupl
     # diagonals, each triangle's side facing its right-angled corner. They make a graph of their own; between interior
     # sites they couple both ways.
     diagonals = topology.boundary_indices[1][np.arange(len(faces)), right_corners]
-    lattice = Topology(n_vertices, topology.elements[1][np.setdiff1d(np.arange(topology.n_elements[1]), diagonals)])
+    lattice = topology.subset(np.setdiff1d(np.arange(topology.n_elements[1]), diagonals), 1)
     tails, heads = (ends * ~read_interior for ends in lattice.incidence[1, 0])   # Scalar+[steps <- interior], Scalar+[steps <- interior]
     neighbors = (~tails * heads + ~heads * tails) * Scalar                 # (Scalar+ <- Scalar+)[interior <- interior]
     return vertices, topology, neighbors, restriction, assembly, lift

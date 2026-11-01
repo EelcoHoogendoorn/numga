@@ -8,6 +8,7 @@ import numpy as np
 
 from examples.quadrics.cayley_klein import render, scenarios
 from examples.quadrics.cayley_klein.core import Point, Polarity, Pole, mv
+from examples.util.topology import Topology
 
 HYPERBOLIC = mv.x * mv.x.regressive(Point) + mv.y * mv.y.regressive(Point) - mv.w * mv.w.regressive(Point)
 ELLIPTIC = mv.x * mv.x.regressive(Point) + mv.y * mv.y.regressive(Point) + mv.w * mv.w.regressive(Point)
@@ -59,8 +60,11 @@ def test_perpendicular_through_the_pole_and_reflection_in_both_geometries():
 def test_triangle_angle_sum_is_below_pi_hyperbolic_and_above_pi_elliptic():
     vertices = mv.point(np.array([[0.0, 0.0], [0.65, 0.0], [0.2, 0.55]]))
     winding = vertices[0].regressive(vertices[1]).regressive(vertices[2])
-    to_next = vertices.regressive(vertices[[1, 2, 0]]) * winding
-    to_prev = vertices.regressive(vertices[[2, 0, 1]]) * winding
+    outline = Topology.loops([3])
+    tails, heads = outline.incidence[1, 0] * vertices.field()
+    leaving, arriving = ~outline.incidence[1, 0]
+    to_next = (leaving * (tails.regressive(heads) * winding)).batch()
+    to_prev = (arriving * (heads.regressive(tails) * winding)).batch()
     sums = {}
     for name, C in (("hyperbolic", HYPERBOLIC), ("elliptic", ELLIPTIC)):
         Q = C.inverse()

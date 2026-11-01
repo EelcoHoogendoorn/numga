@@ -107,11 +107,11 @@ def squares(events: Extensor, colours: np.ndarray, half_side: float, camera: Cam
     strokes a curve's width each, in one colour `[3]` or one each `[events, 3]`: their picture."""
     n_squares, n_corners = events.shape[0], 4
     # The steps the camera reads as one across and one up, whatever the events' own layout, and each square's corners in
-    # turn, closed back to the first.
+    # turn, a closed loop of them.
     _, across, up, _ = preimage(camera, whole(events, events.algebra))
-    around = across * np.array([-1, 1, 1, -1, -1]) + up * np.array([-1, -1, 1, 1, -1])   # [corners + 1] Point-
-    corners = events[:, None] + around * (half_side * camera.pixel)           # [events, corners + 1] Point-
-    return simplices.strokes(corners.reshape(-1), simplices.Topology.chains([n_corners + 1] * n_squares),
+    around = across * np.array([-1, 1, 1, -1]) + up * np.array([-1, -1, 1, 1])   # [corners] Point-
+    corners = events[:, None] + around * (half_side * camera.pixel)           # [events, corners] Point-
+    return simplices.strokes(corners.reshape(-1), simplices.Topology.loops([n_corners] * n_squares),
                              np.repeat(np.broadcast_to(colours, (n_squares, 3)), n_corners, axis=0), charts.LINE_PX,
                              camera)
 

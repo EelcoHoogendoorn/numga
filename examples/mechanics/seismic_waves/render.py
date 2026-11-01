@@ -80,8 +80,7 @@ class DiskDrawing:
         # where the region jumps along the dual edge across them.
         jumps = (topology.dual.d[0] * core.as_scalar(regions).field()).batch().to_array()   # [edges]
         interface = np.intersect1d(topology.interior[1], np.flatnonzero(jumps))
-        self.rim = topology.elements[1][np.concatenate((topology.exterior[1], interface))]
-        self.outline = simplices.Topology(topology.n_vertices, self.rim)
+        self.outline = topology.subset(np.concatenate((topology.exterior[1], interface)), 1)
         # The markers: the vertices of the free surface nearest points turned evenly around it, from the top.
         surface_vertices = topology.exterior[0]
         angles = np.linspace(0, 2 * np.pi, n_markers, endpoint=False) + np.pi / 2
@@ -99,11 +98,11 @@ class DiskDrawing:
         """One image per panel of values and colouring on the same deformed section: the top carries the field
         readings; the shallow side wall only gives the section a visible edge."""
         points = top_middle + solids.context.include_from_algebra(places.batch())           # [vertices] Point-
-        top_start, top_end = points[self.rim[:, 0]], points[self.rim[:, 1]]       # [rim] Point-, Point-
+        top_start, top_end = (self.outline.incidence[1, 0] * points.field()).batch()   # [rim] Point-, Point-
         bottom_start, bottom_end = top_start - up * display_thickness, top_end - up * display_thickness
         wall_points = stack((top_start, top_end, bottom_start, bottom_end), axis=1).reshape(-1)   # [rim * 4] Point-
         wall_faces = (np.array([[0, 2, 1], [1, 2, 3]])[None]
-                      + 4 * np.arange(len(self.rim))[:, None, None]).reshape(-1, 3)
+                      + 4 * np.arange(self.outline.n_elements[1])[:, None, None]).reshape(-1, 3)
         wall = meshes.samples(wall_points, wall_faces, wall_colour,
                               meshes.smooth(wall_points, meshes.Topology(len(wall_points), wall_faces)), self.view,
                               face_values=np.zeros(1), colour=meshes.plain, gloss=0.06)

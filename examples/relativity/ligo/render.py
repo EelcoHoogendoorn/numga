@@ -70,12 +70,12 @@ def graticule() -> tuple[planar.Point, simplices.Topology]:
 
 
 def outline() -> planar.Point:
-    """The map's rim, the meridian at the antimeridian on both sides, up the left and down the right, closed: its points
-    on the map."""
+    """The map's rim, the meridian at the antimeridian on both sides, up the left and down the right: its points on the
+    map, a closed loop of them."""
     latitudes = np.linspace(-np.pi / 2, np.pi / 2, N_OUTLINE_SAMPLES)
     left = np.stack(np.broadcast_arrays(-np.pi, latitudes), axis=-1)
     right = np.stack(np.broadcast_arrays(np.pi, latitudes[::-1]), axis=-1)
-    return planar.mv.point(projected(np.concatenate([left, right, left[:1]])))
+    return planar.mv.point(projected(np.concatenate([left, right])))
 
 
 def map_camera(ax: plt.Axes) -> Camera:
@@ -101,7 +101,7 @@ def sky_map(ax: plt.Axes, directions: core.Point, values: core.Scalar, cmap: str
     simplices.overlay(ax, [
         contours.picture(sky, simplices.Topology.grid(n_latitudes, n_longitudes), values, colours, camera),
         simplices.strokes(lines, chains, np.ones(3), charts.FRAME_PX, camera, opacity=GRATICULE_OPACITY),
-        simplices.strokes(outline(), simplices.Topology.chains([2 * N_OUTLINE_SAMPLES + 1]), np.zeros(3),
+        simplices.strokes(outline(), simplices.Topology.loops([2 * N_OUTLINE_SAMPLES]), np.zeros(3),
                           charts.FRAME_PX, camera),
         simplices.markers(planar.mv.point(sites), ink(LABEL), SITE_RADIUS + charts.FRAME_PX, camera),
         simplices.markers(planar.mv.point(sites), ink(SITE), SITE_RADIUS, camera)])

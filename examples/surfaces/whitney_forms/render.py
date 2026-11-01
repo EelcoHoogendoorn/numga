@@ -225,7 +225,7 @@ def draw_tet_whitney(topology: core.Topology, vertices: core.SpacePoint, pages: 
     shell = meshes.samples(places, wall_faces, shell_colours, meshes.flat(places, wall_faces), view,
                            face_values=np.zeros(len(wall)), colour=meshes.plain, gloss=solids.gloss)
     # The tetrahedron's wireframe: its mesh's own edges.
-    wire = simplices.tubes(places, simplices.Topology(len(places), topology.elements[1]), light_slate, 1.5, view, solids.gloss)
+    wire = simplices.tubes(places, topology, light_slate, 1.5, view, solids.gloss)
     # Each of the two edges an arrow, a tube ending in a chevron, as wide as a rod of its radius in the tetrahedron's
     # units; the edge across, where its sense is not shown, also a plain rod.
     active_width, opp_width = 2 * 0.024 / view.pixel, 2 * 0.020 / view.pixel
@@ -268,8 +268,7 @@ def draw_tet_whitney(topology: core.Topology, vertices: core.SpacePoint, pages: 
     apex_ball = solids.ball(tet_places[[apex]], 0.046)[:, None]
     # The face's rim: an edge from each of its corners to the next, round the face.
     face_rim = simplices.tubes(tet_places[face], core.triangle.border, accent_rgb, 2.8, face_view, solids.gloss)
-    face_wire = simplices.tubes(places, simplices.Topology(len(places), topology.elements[1]), light_slate, 1.5, face_view,
-                                solids.gloss)
+    face_wire = simplices.tubes(places, topology, light_slate, 1.5, face_view, solids.gloss)
     panel_face = solids.draw(
         [(flux_tips, primal_rgb), (apex_ball, accent_rgb)],
         face_view, background, inks=[], translucent=[],

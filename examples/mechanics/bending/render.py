@@ -243,7 +243,8 @@ def clamped(through: core.Point, load: core.Point, length: float, clamp_radius: 
     """The clamp, its rods `clamp_radius` pixels in radius, and the tip load where it acts, drawn a length long, a
     tube `shaft_width` pixels across for `solids.draw` to compose among the solids."""
     clamp = drawing_turn >> core.point(SQUARE)                                # [corners] Point-
-    clamp_rods, clamp_joints = solids.edges(clamp, clamp[[1, 2, 3, 0]], clamp_radius * view.pixel)
+    tails, heads = (simplices.Topology.loops([4]).incidence[1, 0] * clamp.field()).batch()   # [corners] Point-, Point-
+    clamp_rods, clamp_joints = solids.edges(tails, heads, clamp_radius * view.pixel)
     # The load's arrow, a tube ending in a chevron.
     tip = drawing_turn >> reach(through, load, length)                       # [] Point-
     arrow = simplices.tubes(stack([drawing_turn >> through, tip]), simplices.Topology.chains([2]), np.array(to_rgb(LOAD)),
@@ -346,16 +347,19 @@ def kern(polars: core.Strain, centre: core.Point) -> core.Point:
     stretch = polars & (core.beam_direction & centre)
     keeping = np.asarray(stretch > 0, dtype=int) - np.asarray(stretch < 0, dtype=int)
     for polar, sense in zip(polars, keeping):
-        sides = sense * (polar & (core.beam_direction & corners))   # [corners]
-        following = np.roll(np.arange(len(sides)), -1)
+        # The kern so far, a closed loop of its corners: an edge from each corner to the next.
+        tails, heads = (simplices.Topology.loops([len(corners)]).incidence[1, 0] * corners.field()).batch()   # [edges] Point-, Point-
+        # The polar's stretch at both ends of each edge, positive on the side that is kept.
+        at_tails = sense * (polar & (core.beam_direction & tails))   # [edges] Scalar+
+        at_heads = sense * (polar & (core.beam_direction & heads))   # [edges] Scalar+
         kept = []
-        for corner, here, there in zip(range(len(sides)), sides, sides[following]):
+        for tail, head, here, there in zip(tails, heads, at_tails, at_heads):
             if here >= 0:
-                kept.append(corners[corner])
+                kept.append(tail)
             # Where the polar crosses an edge: the point of the edge its stretch vanishes at, the corners weighted
             # by each other's stretch, at unit weight.
             if here * there < 0:
-                kept.append((corners[following[corner]] * here - corners[corner] * there) / (here - there))
+                kept.append((head * here - tail * there) / (here - there))
         corners = stack(kept)
     return corners
 
@@ -370,7 +374,7 @@ def draw_push(ax, walls: core.Point, point: core.Point, strain: core.Strain, str
     # The kern is convex: a fan of triangles from its first corner fills it.
     fan = simplices.Topology(n_corners, np.stack([np.zeros(n_corners - 2, dtype=int), np.arange(1, n_corners - 1),
                                               np.arange(2, n_corners)], axis=-1))
-    loop = simplices.Topology(n_corners, np.stack([np.arange(n_corners), np.roll(np.arange(n_corners), -1)], axis=-1))
+    loop = simplices.Topology.loops([n_corners])
     kern_colour = np.array(to_rgb(KERN))
     # The push point a cross: two strokes through it, turned an eighth of a turn either way from across, over white
     # strokes a rim wider.

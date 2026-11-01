@@ -138,7 +138,7 @@ def draw_complex(topology: core.Topology, vertices: core.Point, circumcentres: c
     # vertex.
     turns = (spokes[0] * spokes).normalized().log()                            # [star] Bivector+
     order = (mv.xy.dual() & turns).argsort()
-    cell = star_centres[np.append(order, order[0])]                            # [star + 1] Point-
+    cell = star_centres[order]                                                 # [star] Point-
     nearest = spokes.norm().argmin()
     face = star[nearest]
     face_corners = (topology.reading(np.array([face]), 2) * (topology.incidence[2, 0] * vertices)).batch()[:, 0]  # [3] Point-
@@ -165,7 +165,7 @@ def draw_complex(topology: core.Topology, vertices: core.Point, circumcentres: c
         simplices.strokes(dual_ends_shown, pairs, rgb(dual_colour), dual_width, camera, opacity=0.75),
         contours.picture(star_centres, core.Topology.triangulate(star_centres), np.zeros(len(star)), rgb(dual_colour),
                          camera, opacity=0.17),
-        simplices.strokes(cell, core.Topology.chains([len(cell)]), rgb(dual_colour), cell_width, camera, opacity=0.17),
+        simplices.strokes(cell, core.Topology.loops([len(cell)]), rgb(dual_colour), cell_width, camera, opacity=0.17),
         contours.picture(face_corners, core.Topology(3, np.array([[0, 1, 2]])), np.zeros(3), rgb(primal_colour), camera,
                          opacity=0.13),
         simplices.strokes(face_corners, core.Topology(3, np.array([[0, 1, 2]])).border, rgb(primal_colour), cell_width,

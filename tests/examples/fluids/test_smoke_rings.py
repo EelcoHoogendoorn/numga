@@ -6,16 +6,17 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
-from numga import concatenate
 
 from examples.fluids.smoke_rings import core, render, scenarios
+from examples.util.topology import Topology
 
 
 def test_each_vertex_moves_across_both_its_edges():
     """The velocity is perpendicular to the edges in and out of its vertex, so no edge changes length."""
     points = core.torus_knot(*scenarios.KNOT_WINDINGS, *scenarios.KNOT_RADII, scenarios.N_KNOT)
     outgoing = core.edges(points)
-    incoming = concatenate([outgoing[-1:], outgoing[:-1]])
+    arriving = ~Topology.loops([len(points)]).incidence[1, 0][1]
+    incoming = (arriving * outgoing.field()).batch()
     velocities = core.velocity(points, scenarios.circulation)
     np.testing.assert_allclose((velocities | outgoing).to_array(), 0.0, atol=1e-13)
     np.testing.assert_allclose((velocities | incoming).to_array(), 0.0, atol=1e-13)

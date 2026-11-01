@@ -80,8 +80,8 @@ def frame_patches(starts: core.Point, rotors: core.Rotor, size: float,
     faces = (local_faces[None] + np.arange(n_patches)[:, None, None] * n_profile).reshape(-1, 3)
     colours = np.broadcast_to(np.stack((coral, gold, teal, blue))[None, :, None, :], (n_patches, 4, 3, 3)).reshape(-1, 3, 3)
     patches = sheet(embedded.reshape(-1), faces, colours, view)
-    perimeters = embedded[:, [0, 1, 2, 3, 0]]                                 # [patches, 5] Point-
-    seams = simplices.tubes(perimeters.reshape(-1), simplices.Topology.chains([5] * n_patches), ink, 1.0, view, solids.gloss)
+    perimeters = embedded[:, :4]                                              # [patches, corners] Point-
+    seams = simplices.tubes(perimeters.reshape(-1), simplices.Topology.loops([4] * n_patches), ink, 1.0, view, solids.gloss)
     return patches, seams
 
 

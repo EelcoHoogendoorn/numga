@@ -81,6 +81,7 @@ import numpy as np
 
 from numga import NumpyContext, concatenate, stack
 from numga.algebras import VGA3D as ga
+from examples.util.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                      # Scalar+
@@ -99,14 +100,16 @@ Patch = ga.gatype.antibivector()                                                
 # --- math -----------------------------------------------------------------------------
 def edges(points: Point) -> Point:
     """The edges of closed polygons `[..., n]`, edge k from point k to point k + 1."""
-    return concatenate([points[..., 1:], points[..., :1]], axis=-1) - points     # [..., n] Point-
+    return (Topology.loops([points.shape[-1]]).d[0] * points.field()).batch()    # [..., n] Point-
 
 
 def velocity(points: Point, circulation: Circulation) -> Point:
     """The smoke ring flow's velocity at each vertex `[..., n]` of a filament of the given circulation:
     the turn's Cayley parameter, twice, times the circulation, over the mean edge length."""
     outgoing = edges(points)                                                     # [..., n] Point-
-    incoming = concatenate([outgoing[..., -1:], outgoing[..., :-1]], axis=-1)    # [..., n] Point-
+    # The edge arriving at each vertex: each edge carried to its head.
+    arriving = ~Topology.loops([points.shape[-1]]).incidence[1, 0][1]            # Scalar+[vertices <- edges]
+    incoming = (arriving * outgoing.field()).batch()                             # [..., n] Point-
     lengths = outgoing.norm() * incoming.norm()                                  # [..., n] Scalar+
     # The commutator of the two edges is the bivector of the turn; over the lengths plus the edges paired,
     # it is the tangent of half the turning angle.

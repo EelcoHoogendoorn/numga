@@ -121,7 +121,7 @@ def cameras(motors: Motor, camera: Camera) -> list[np.ndarray]:
     camera_colours = CAMERA_COLORS[:motors.shape[0]]
     wedge = Topology(3, [[0, 1, 2]])
     wedges = [[contours.picture(marks[index, :3], wedge, np.zeros(3), colour, camera, opacity=0.18),
-               polylines(marks[index:index + 1, [0, 1, 2, 0]], EDGE_WIDTH, colour, 0.18, camera),
+               simplices.strokes(marks[index, :3], Topology.loops([3]), colour, EDGE_WIDTH, camera, opacity=0.18),
                polylines(marks[index][np.array([[0, 1], [0, 2]])], RAY_WIDTH, colour, 0.6, camera)]
               for index, colour in enumerate(camera_colours)]
     sensors = [[polylines(marks[index:index + 1, [1, 2]], SENSOR_WIDTH, colour, 1.0, camera),

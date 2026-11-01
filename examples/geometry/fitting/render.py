@@ -7,6 +7,7 @@ import numpy as np
 
 from numga import stack
 from examples.geometry.fitting.core import Point, mv
+from examples.util.topology import Topology
 from examples.util.wgsl import image_figure, solids
 
 sample_colour, true_colour, fit_colour = np.array([0.42, 0.58, 0.74]), np.array([0.55, 0.56, 0.60]), np.array([0.90, 0.28, 0.30])
@@ -54,7 +55,8 @@ def draw_line_fit(points: Point, truth_ends: Point, fit_ends: Point) -> plt.Figu
 def draw_plane_fit(points: Point, truth_quad: Point, fit_quad: Point) -> plt.Figure:
     """Draw the noisy sample points in blue with the true plane in grey and the fitted plane in red as quad outlines."""
     def edges(corners: Point) -> solids.Quadric:
-        return solids.rods(corners, corners[np.roll(np.arange(len(corners)), -1)], line_radius)
+        tails, heads = (Topology.loops([len(corners)]).incidence[1, 0] * corners.field()).batch()   # [corners] Point-, Point-
+        return solids.rods(tails, heads, line_radius)
     return draw([points, truth_quad, fit_quad], line_radius,
                 [(balls(points, sample_radius), sample_colour),
                  (edges(truth_quad), true_colour), (edges(fit_quad), fit_colour)])

@@ -181,7 +181,7 @@ def flat_mesh(coords: np.ndarray, spacing: float) -> tuple[Topology, Point]:
     # The plane through a face's corners has twice the face's area as its norm, all but nothing for a sliver.
     corners = delaunay.incidence[2, 0] * points                                  # [corners] Point-[faces]
     kept = (corners[0] & corners[1] & corners[2]).norm().batch() > 1e-6 * spacing ** 2
-    return Topology(len(coords), delaunay.elements[2][kept]), points
+    return delaunay.subset(kept), points
 
 
 def lattice(spacing: float, radius: float) -> np.ndarray:

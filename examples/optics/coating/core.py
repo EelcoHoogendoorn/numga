@@ -22,6 +22,7 @@ import numpy as np
 from numga import NumpyContext, Orientation, stack
 from numga.algebras import STA as ga
 from numga.sparse import SparseExtensor
+from examples.util.topology import Topology
 
 mv = NumpyContext(ga, dtype=np.complex128).multivector
 # Real fields along z at normal incidence, stepped in time: no phases, so no complex numbers.
@@ -229,10 +230,8 @@ class Line:
         """The material at each node, and the one material between nodes, which only meets magnetic
         planes. The difference reads, at each node, the next node's value less its own: from the
         electric planes on either side of a magnetic plane."""
-        n_nodes = len(nodes)
-        sites = np.arange(n_nodes)
-        difference = SparseExtensor(real.scalar(np.tile([[1.0], [-1.0]], (n_nodes, 1))), np.repeat(sites, 2),
-                                    np.stack([(sites + 1) % n_nodes, sites], axis=-1).reshape(-1), (n_nodes, n_nodes))
+        # The line closed on itself, each node joined to the next and the last back to the first.
+        difference = Topology.loops([len(nodes)]).d[0]                     # Scalar+[nodes <- nodes]
         return cls(nodes, nodes.inverse(), between, difference, spacing)
 
     def energy(self, electric: Bivector, magnetic: Bivector) -> Scalar:

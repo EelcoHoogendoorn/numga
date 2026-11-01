@@ -48,12 +48,10 @@ def rays_and_horizon(paths: core.Antivector, outline: core.Antivector, camera: C
     # The events ray by ray, each ray's in its order along it.
     by_ray = paths[np.arange(n_steps)[None, :], np.arange(n_rays)[:, None]].reshape(-1)   # [rays * steps] Antivector-
     colours = plt.colormaps["coolwarm"](np.linspace(0.05, 0.95, n_rays))[:, :3]
-    # The horizon a fan of triangles from the hole's centre to each side of its outline.
+    # The horizon a fan of triangles from the hole's centre to each side of its outline: the outline's cone.
     n_sides = outline.shape[0] - 1
-    sides = np.arange(n_sides)
-    fan = contours.Topology(n_sides + 1, np.stack((np.zeros(n_sides, dtype=int), 1 + sides, 1 + (sides + 1) % n_sides),
-                                              axis=-1))
-    disc = concatenate((0 * outline[:1], outline[:-1]))                      # [sides + 1] Antivector-
+    fan = contours.Topology.loops([n_sides]).cone()
+    disc = concatenate((outline[:-1], 0 * outline[:1]))                      # [sides + 1] Antivector-
     return simplices.composited([
         simplices.strokes(by_ray, simplices.Topology.chains([n_steps] * n_rays), np.repeat(colours, n_steps - 1, axis=0),
                           ray_width, camera, opacity=ray_opacity),

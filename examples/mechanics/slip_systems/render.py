@@ -70,11 +70,11 @@ def on_disk(directions: core.Direction) -> np.ndarray:
 
 
 def squares(directions: core.Direction, reach: float, turn: float, camera: Camera) -> core.Direction:
-    """Closed squares about where directions lie on the stereographic disk, their corners in turn and the first
-    again, `[marks, corners + 1]`: `reach` pixels from each direction's bisector with [001] at unit reading along it,
-    the first corner turned `turn` from x in the plane across [001]."""
-    angles = turn + np.pi / 2 * np.arange(5)                                  # [corners + 1]
-    corners = (core.mv.xy * (-angles / 2)).exp() >> core.mv.x.dual()         # [corners + 1] Direction-
+    """Squares about where directions lie on the stereographic disk, their corners in turn, `[marks, corners]`:
+    `reach` pixels from each direction's bisector with [001] at unit reading along it, the first corner turned `turn`
+    from x in the plane across [001]."""
+    angles = turn + np.pi / 2 * np.arange(4)                                  # [corners]
+    corners = (core.mv.xy * (-angles / 2)).exp() >> core.mv.x.dual()         # [corners] Direction-
     bisector = stereographic(directions)                                      # [marks] Direction-
     places = bisector / (core.mv.z & bisector)                                # [marks] Direction-
     return places[:, None] + corners * (reach * camera.pixel)
@@ -124,8 +124,9 @@ def triangle(camera: Camera) -> np.ndarray:
     """The standard triangle, between [001], [011] and [111], its edges arcs of great circles."""
     shares = np.linspace(0, 1, EDGE_SAMPLES)
     # Each edge from a corner towards the next, by shares of the turn between them.
-    turns = ((corners[[1, 2, 0]] * corners.inverse()).log()[:, None] * (shares / 2)).exp()   # [edges, samples] Rotor+
-    arcs = stereographic(turns >> corners[:, None]).reshape(-1)               # [edges * samples] Direction-
+    tails, heads = (simplices.Topology.loops([len(corners)]).incidence[1, 0] * corners.field()).batch()   # [edges] Direction-, Direction-
+    turns = ((heads * tails.inverse()).log()[:, None] * (shares / 2)).exp()  # [edges, samples] Rotor+
+    arcs = stereographic(turns >> tails[:, None]).reshape(-1)                 # [edges * samples] Direction-
     return simplices.strokes(arcs, simplices.Topology.chains([EDGE_SAMPLES] * len(corners)), to_rgb(EDGE_COLOUR),
                              charts.LINE_PX, camera)
 
@@ -142,10 +143,10 @@ def draw_disk(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], pl
     rim = stereographic((core.mv.xy * (-angles / 2)).exp() >> core.mv.x.dual())   # [samples] Direction-
     # The planes' normals a little larger than the directions, so that the two kinds of mark read apart.
     # A plane's normal, the direction square to it, is its dual.
-    normals = squares(planes.dual(), NORMAL_REACH, np.pi / 4, camera)         # [planes, corners + 1] Direction-
+    normals = squares(planes.dual(), NORMAL_REACH, np.pi / 4, camera)         # [planes, corners] Direction-
     simplices.overlay(ax, [
         simplices.strokes(rim, simplices.Topology.chains([RIM_SAMPLES]), to_rgb(EDGE_COLOUR), charts.LINE_PX, camera),
-        simplices.strokes(normals.reshape(-1), simplices.Topology.chains([normals.shape[1]] * normals.shape[0]),
+        simplices.strokes(normals.reshape(-1), simplices.Topology.loops([normals.shape[1]] * normals.shape[0]),
                           to_rgb(NORMAL_COLOUR), charts.LINE_PX, camera),
         simplices.markers(stereographic(slips.reshape(-1)), to_rgb(NORMAL_COLOUR), charts.MARKER_PX / 2, camera),
         triangle(camera)])
@@ -163,9 +164,9 @@ def draw_close(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar]) -
         ax.annotate(name, goal, xytext=(0, 9), textcoords="offset points", ha="center", va="center",
                     color=EDGE_COLOUR)
     camera = disk_camera(ax)
-    diamonds = squares(goals, GOAL_REACH, 0.0, camera)                        # [goals, corners + 1] Direction-
+    diamonds = squares(goals, GOAL_REACH, 0.0, camera)                        # [goals, corners] Direction-
     return [triangle(camera), simplices.strokes(diamonds.reshape(-1),
-                                                simplices.Topology.chains([diamonds.shape[1]] * diamonds.shape[0]),
+                                                simplices.Topology.loops([diamonds.shape[1]] * diamonds.shape[0]),
                                                 to_rgb(EDGE_COLOUR), charts.LINE_PX, camera)]
 
 

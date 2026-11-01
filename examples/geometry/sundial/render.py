@@ -63,9 +63,9 @@ def sunlit_chains(suns: core.Point) -> simplices.Topology:
     both its ends; the face's camera cuts them at the dial's edges."""
     n_samples = suns.shape[-1]
     chains = simplices.Topology.chains([n_samples] * (np.prod(suns.shape) // n_samples))
-    up = ((core.dial & suns) > 0).reshape(-1)
-    edges = chains.elements[1]
-    return simplices.Topology(chains.n_vertices, edges[up[edges].all(axis=-1)])
+    # The dial's reading of the sun at both ends of each edge, positive where it is up.
+    readings = core.dial & (chains.incidence[1, 0] * suns.reshape(-1).field())   # [ends] Scalar+[edges]
+    return chains.subset((readings > 0).all(axis=0), 1)
 
 
 def shadow_strokes(nodus: core.Point, suns: core.Point, colours: np.ndarray, width: float, camera: Camera,

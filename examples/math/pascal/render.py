@@ -32,7 +32,7 @@ corner_area, sixth_area, crossing_area, outline = 28.0, 60.0, 55.0, 1.5
 corner_radius, sixth_radius = ((np.sqrt(np.array([corner_area, sixth_area])) / 2 + outline / 2) * point)
 ring = np.sqrt(crossing_area) / 2 * point
 # The hexagon's outline, each corner to the next.
-hexagon_edges = Topology(6, np.stack([np.arange(6), np.roll(np.arange(6), -1)], axis=-1))
+hexagon_edges = Topology.loops([6])
 
 
 def rgb(colours) -> np.ndarray:

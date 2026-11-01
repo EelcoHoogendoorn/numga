@@ -59,7 +59,7 @@ def triangulate(vertices: Point, hole: np.ndarray, inlet: np.ndarray, outlet: np
     # The obstacle's boundary edges are present in the triangulation; its interior consists
     # exactly of triangles with all three corners on that boundary.
     triangles = delaunay.elements[2]
-    topology = Topology(delaunay.n_vertices, triangles[~np.isin(triangles, hole).all(axis=1)])
+    topology = delaunay.subset(~np.isin(triangles, hole).all(axis=1))
     edges, boundary = topology.elements[1], topology.exterior[1]
     inlet_edges = boundary[np.isin(edges[boundary], inlet).all(axis=1)]
     outlet_edges = boundary[np.isin(edges[boundary], outlet).all(axis=1)]

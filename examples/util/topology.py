@@ -254,6 +254,12 @@ class Topology:
         """`interior[k]`: indices of the k-simplices off the border, for each dimension: all but those of `exterior[k]`."""
         return tuple(np.setdiff1d(np.arange(count), on_border) for count, on_border in zip(self.n_elements, self.exterior))
 
+    def subset(self, chosen: np.ndarray, k: int = -1) -> Topology:
+        """The topology of the chosen k-simplices, the top ones unless asked otherwise, a boolean mask over them or their
+        indices, on the same vertices, so that every field on this topology's vertices reads on it unchanged: the
+        interior edges of a surface as a truss, `topology.subset(topology.interior[1], 1)`, or a region of its faces."""
+        return Topology(self.n_vertices, self.elements[k][chosen])
+
     def cone(self) -> Topology:
         """This topology joined to one new vertex, its apex, numbered after the others: each top simplex with the apex
         before its corners, one dimension up. A sphere's cone is a ball, a polygon's a fan."""
@@ -399,6 +405,17 @@ class Topology:
         starts[np.cumsum(lengths) - lengths] = True
         tails = np.flatnonzero(~starts[1:n_vertices])                             # [edges]
         return cls(n_vertices, np.stack([tails, tails + 1], axis=-1))
+
+    @classmethod
+    def loops(cls, lengths: list[int]) -> Topology:
+        """Closed loops of edges through runs of vertices numbered one run after another, each run `lengths` long: a set
+        of polygons as a topology of edges, each edge from a vertex to the next in its run and the last back to the
+        first."""
+        lengths = np.asarray(lengths, dtype=int)
+        n_vertices = int(lengths.sum())
+        tails = np.arange(n_vertices)                                            # [edges]
+        firsts, sizes = np.repeat(np.cumsum(lengths) - lengths, lengths), np.repeat(lengths, lengths)   # [edges], [edges]
+        return cls(n_vertices, np.stack([tails, firsts + (tails - firsts + 1) % sizes], axis=-1))
 
     @classmethod
     def grid(cls, n_rows: int, n_columns: int) -> Topology:

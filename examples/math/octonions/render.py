@@ -72,22 +72,24 @@ def draw_fano(cycles: core.Trivector) -> plt.Figure:
     angles = np.linspace(0, 2 * np.pi, n_around + 1)
     circle = (page.xy * (-angles / 2)).exp() >> (radius * page.y.dual())       # [around + 1] Antivector-
     sides, arrows = [], []
+    # Each triple a cycle, from each point to the next in the order of the product, the last back to the first.
+    cycle = simplices.Topology.loops([3])
     for triple in triples(cycles):
         places = stack([places_by_name[name] for name in triple])              # [3] Antivector-
-        following = places[[1, 2, 0]]                                          # [3] Antivector-
+        starts, ends = (cycle.incidence[1, 0] * places.field()).batch()        # [3] Antivector-, Antivector-
         if np.all((places.norm() - radius).abs() <= 1e-8 + 1e-5 * radius):
             # On the circle: an arrow on each arc, part of the way along the shorter turn from each point to the
             # next, pointing the way the turn runs.
-            turns = (1 + following * places.inverse()).normalized()            # [3] Rotor+
+            turns = (1 + ends * starts.inverse()).normalized()                 # [3] Rotor+
             generators = turns.log()                                            # [3] Bivector+
-            heads = (generators * arc_fraction).exp() >> places                # [3] Antivector-
+            heads = (generators * arc_fraction).exp() >> starts                # [3] Antivector-
             arrows += [arrow(head, heading) for head, heading in zip(heads, generators.commutator(heads))]
             continue
         # On a straight line: the two points furthest apart are its ends.
         spans = (places[:, None] - places[None, :]).norm()                    # [3, 3] Scalar+
         first, last = np.unravel_index(spans.reshape(-1).argmax(), (3, 3))
         sides.append(places[[first, last]])
-        for start, end in zip(places, following):
+        for start, end in zip(starts, ends):
             # Arrows on the segments the cycle runs along without passing through the third point.
             if (end - start).norm() < spans[first, last] - 1e-9:
                 arrows.append(arrow(start + segment_fraction * (end - start), end - start))

@@ -10,13 +10,15 @@ import numpy as np
 
 from numga import concatenate
 from examples.geometry.three_point_pose import core
+from examples.util.topology import Topology
 from examples.util.wgsl import image_figure, solids
 
 colour = np.array(to_rgb("#218c9d"))
 target_colour = np.array(to_rgb("#ce713f"))
 # How much of what lies behind each of the triangle's two faces hides.
 triangle_opacity = 0.26
-order = [0, 1, 2, 0]
+# The triangle's outline, each corner joined to the next and the last back to the first.
+outline = Topology.loops([3])
 # The view's elevation and azimuth, in radians, azimuth zero looking along +y; the margin as a share of the larger
 # side, and the pixels across a view.
 elevation, azimuth = np.radians(55.0), np.radians(-110.0 + 90.0)
@@ -35,11 +37,11 @@ def framing(points: list[core.Point]) -> solids.View:
     return solids.view(points, 0.0, elevation, azimuth, margin, n_pixels)
 
 
-def dashes(corners: core.Point, period: float) -> tuple[core.Point, core.Point]:
-    """The dashes' starts and ends along a polyline of points, one dash and one gap per period along each side."""
-    corners = corners.normalized()                                           # [corners] Point-
+def dashes(tails: core.Point, heads: core.Point, period: float) -> tuple[core.Point, core.Point]:
+    """The dashes' starts and ends along sides from their tails to their heads `[sides]`, one dash and one gap per
+    period along each side."""
     pieces = []
-    for start, end in zip(corners[:-1], corners[1:]):
+    for start, end in zip(tails.normalized(), heads.normalized()):
         # A side's length is the size of the line joining its ends.
         count = max(1, round(float((start & end).norm().to_array() / period)))
         fractions = np.arange(count) / count
@@ -49,7 +51,8 @@ def dashes(corners: core.Point, period: float) -> tuple[core.Point, core.Point]:
 
 def markers(target: core.Point, view: solids.View) -> list[tuple[solids.Quadric, np.ndarray]]:
     """The measured markers and their dashed outline are built as solid quadrics."""
-    starts, ends = dashes(target[order], dash_period * view.pixel)            # [dashes] Point-, Point-
+    tails, heads = (outline.incidence[1, 0] * target.field()).batch()        # [sides] Point-, Point-
+    starts, ends = dashes(tails, heads, dash_period * view.pixel)             # [dashes] Point-, Point-
     return [(solids.ball(target, marker_radius * view.pixel)[:, None], target_colour),
             (solids.rods(starts, ends, dash_width / 2 * view.pixel), target_colour)]
 
@@ -57,7 +60,8 @@ def markers(target: core.Point, view: solids.View) -> list[tuple[solids.Quadric,
 def triangle(current: core.Point, view: solids.View) -> tuple[list[tuple[solids.Quadric, np.ndarray]],
                                                               list[tuple[solids.Quadric, np.ndarray, float]]]:
     """The moving triangle's solid edges and translucent plate are built as quadric batches."""
-    rods, joints = solids.edges(current[order[:-1]], current[order[1:]], edge_width / 2 * view.pixel)
+    tails, heads = (outline.incidence[1, 0] * current.field()).batch()       # [sides] Point-, Point-
+    rods, joints = solids.edges(tails, heads, edge_width / 2 * view.pixel)
     # The triangle as a plate a pixel thick.
     plate = solids.plates(current[None], view.pixel)                         # [1, 5] Plane+
     return [(rods, colour), (joints, colour)], [(plate, colour, triangle_opacity)]

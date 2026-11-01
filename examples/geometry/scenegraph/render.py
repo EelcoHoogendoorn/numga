@@ -86,7 +86,8 @@ def camera_and_floor(camera_pose: Motor, view: solids.View, thickness: float) ->
     rims, sensor = optics(camera_pose)
     # The sensor chip as a plate a pixel thick, with its edge.
     chip = solids.plates(sensor[None], view.pixel)                            # [1, 6] Plane
-    edge, edge_joints = solids.edges(sensor, sensor[[1, 2, 3, 0]], thickness * ray_width / 2 * view.pixel)
+    tails, heads = (simplices.Topology.loops([4]).incidence[1, 0] * sensor.field()).batch()   # [corners] Point-, Point-
+    edge, edge_joints = solids.edges(tails, heads, thickness * ray_width / 2 * view.pixel)
     grid_lines = floor()                                                                                               # [lines, ends] Point-
     grid = solids.rods(grid_lines[:, 0], grid_lines[:, 1], thickness * floor_width / 2 * view.pixel)
     # Each lens rim a chain of edges, in its lens's colour.
@@ -182,8 +183,8 @@ def framed_photograph(world_vertices: Point, projected_pixels: Point, camera_pos
     photograph = photograph_image(world_vertices, projected_pixels, camera_pose, view) / 255
     # The pixel grid's corners in the photograph's plane, its rows running down from the top left, round and back.
     width_px, height_px = sensor_pixels
-    corners = mv.point([[0, 0, 0], [width_px, 0, 0], [width_px, -height_px, 0], [0, -height_px, 0], [0, 0, 0]])   # [5] Point-
-    border = simplices.strokes(corners, simplices.Topology.chains([5]), np.array(mcolors.to_rgb(border_colour)), width,
+    corners = mv.point([[0, 0, 0], [width_px, 0, 0], [width_px, -height_px, 0], [0, -height_px, 0]])   # [corners] Point-
+    border = simplices.strokes(corners, simplices.Topology.loops([4]), np.array(mcolors.to_rgb(border_colour)), width,
                                simplices.view_camera(view))
     return simplices.composited([np.concatenate([photograph, np.ones(photograph.shape[:2] + (1,))], axis=-1), border])
 

@@ -160,12 +160,15 @@ def animate_box(half_width: float, walls: core.Antivector, states: Iterable[tupl
                 ) -> Iterator[np.ndarray]:
     """A square box, the diamond its particle bounces along between the midpoints of its `walls`
     `[4]`, and each frame's position and spin as the observer at rest reads it."""
-    # The box's corners, a corner on the diagonal turned by quarter turns all the way round.
-    quarters = (core.mv.xy * (-np.arange(5) * np.pi / 4)).exp()                 # [corners + 1] Rotor+
-    corners = quarters >> (half_width * (core.mv.x.dual() + core.mv.y.dual()))  # [corners + 1] Antivector-
+    # The box's corners, a corner on the diagonal turned by quarter turns to each of the four; the box and the diamond
+    # each a closed loop of four.
+    quarters = (core.mv.xy * (-np.arange(4) * np.pi / 4)).exp()                 # [corners] Rotor+
+    corners = quarters >> (half_width * (core.mv.x.dual() + core.mv.y.dual()))  # [corners] Antivector-
+    square = simplices.Topology.loops([4])
     # The box and the diamond set up once; the spin and the particle drawn for each frame.
     figure, ax, camera = canvas((0, 0), 1.15 * half_width)
-    beneath = [outline(walls[[0, 1, 2, 3, 0]], FAINT, THIN, camera), outline(corners, INK, BOLD, camera)]
+    beneath = [simplices.strokes(walls, square, ink(FAINT), THIN, camera),
+               simplices.strokes(corners, square, ink(INK), BOLD, camera)]
     shown = simplices.overlay(ax, beneath)
     for position, spin in states:
         shown.set_data(simplices.composited(beneath + [

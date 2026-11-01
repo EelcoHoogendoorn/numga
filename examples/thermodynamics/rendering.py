@@ -233,7 +233,7 @@ def known(levels: Levels) -> tuple[Topology, np.ndarray]:
     grid = Topology.grid(rows, columns)
     values = levels.values.reshape(-1)
     triangles = grid.elements[2]
-    return Topology(grid.n_vertices, triangles[np.isfinite(values)[triangles].all(axis=-1)]), np.nan_to_num(values)
+    return grid.subset(np.isfinite(values)[triangles].all(axis=-1)), np.nan_to_num(values)
 
 
 def level_lines(diagram: Diagram, levels: Levels, colour: np.ndarray, width: float) -> list[np.ndarray]:

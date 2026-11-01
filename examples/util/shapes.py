@@ -196,7 +196,7 @@ def solid_torus(major_radius: float, minor_radius: float, n_major: int, division
     disk_points = directions(3)[0] * major_radius + placed(np.stack([flat[:, 0], np.zeros(len(flat)), flat[:, 1]], axis=-1))
     around_axis = ((across ^ up) * (-np.linspace(0.0, 2 * np.pi, n_major, endpoint=False) / 2)).exp()   # [major] Rotor+
     coordinates = read((around_axis[:, None] >> disk_points[None, :]).reshape(-1))
-    loop = Topology(n_major, np.stack([np.arange(n_major), (np.arange(n_major) + 1) % n_major], axis=-1))
+    loop = Topology.loops([n_major])
     return outward(section.product(loop), coordinates), coordinates
 
 
