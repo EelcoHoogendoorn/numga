@@ -417,7 +417,13 @@ class Topology:
     def loops(cls, lengths: list[int]) -> Topology:
         """Closed loops of edges through runs of vertices numbered one run after another, each run `lengths` long: a set
         of polygons as a topology of edges, each edge from a vertex to the next in its run and the last back to the
-        first."""
+        first. A topology does not change, so the loops of each set of lengths are built once and kept, with every
+        operator derived from them."""
+        return cls._loops(tuple(lengths))
+
+    @classmethod
+    @cache
+    def _loops(cls, lengths: tuple[int, ...]) -> Topology:
         lengths = np.asarray(lengths, dtype=int)
         n_vertices = int(lengths.sum())
         tails = np.arange(n_vertices)                                            # [edges]
