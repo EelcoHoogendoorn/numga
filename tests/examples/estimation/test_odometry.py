@@ -10,7 +10,7 @@ from examples import instantiate
 from examples.estimation.odometry import render, scenarios
 
 
-def inverse_curvature(core, poses, readings, weights, graph, anchors, anchor_weights) -> np.ndarray:
+def inverse_curvature(core, poses, readings, weights, tails, heads, anchors, anchor_weights) -> np.ndarray:
     """Compute each pose's diagonal block of the inverse curvature of the objective by central differences of its gradient."""
     n_modes, n_poses = len(core.Twist.output_subspace), poses.shape[-1]
     columns = []
@@ -19,8 +19,8 @@ def inverse_curvature(core, poses, readings, weights, graph, anchors, anchor_wei
             nudge = np.zeros((n_poses, n_modes))
             nudge[pose, coefficient] = 1e-6
             step = (core.mv(core.Twist, nudge) * 0.5).exp()
-            up_gradient = core.gradient(poses * step, readings, weights, graph, anchors, anchor_weights).kernel.ravel()
-            down_gradient = core.gradient(poses * step.inverse(), readings, weights, graph, anchors, anchor_weights).kernel.ravel()
+            up_gradient = core.gradient(poses * step, readings, weights, tails, heads, anchors, anchor_weights).kernel.ravel()
+            down_gradient = core.gradient(poses * step.inverse(), readings, weights, tails, heads, anchors, anchor_weights).kernel.ravel()
             columns.append((up_gradient - down_gradient) / 2e-6)
     inverse_hessian = np.linalg.inv(np.stack(columns, axis=1)).reshape(n_poses, n_modes, n_poses, n_modes)
     return inverse_hessian[np.arange(n_poses), :, np.arange(n_poses), :]
@@ -29,21 +29,21 @@ def inverse_curvature(core, poses, readings, weights, graph, anchors, anchor_wei
 def test_uncertainties_are_the_inverse_curvature():
     steps = scenarios.lap_in_space()
     core = instantiate(scenarios.CORE, steps.algebra)
-    truth, dead_reckoning, readings, noises, graph, anchors, priors = scenarios.survey(core, steps, 0)
+    truth, dead_reckoning, readings, noises, tails, heads, anchors, priors = scenarios.survey(core, steps, 0)
     weights, anchor_weights = noises.inverse(), priors.inverse()
 
     # The step readings alone give dead reckoning's uncertainty, up to the remaining poses' vague priors.
     step_slice = slice(0, len(steps))
     expected = inverse_curvature(
-        core, dead_reckoning, readings[step_slice], weights[step_slice], graph.subset(step_slice), anchors, anchor_weights
+        core, dead_reckoning, readings[step_slice], weights[step_slice], tails[step_slice], heads[step_slice], anchors, anchor_weights
     )
     np.testing.assert_allclose(core.reckon(dead_reckoning, noises, priors).kernel, expected, atol=1e-5)
 
     # Every reading: at the most likely poses, the marginals match the Gauss-Newton inverse curvature up to the
     # residual curvature of the remaining mismatches.
-    *_, poses = core.gauss_newton(dead_reckoning, readings, weights, graph, anchors, anchor_weights, 1.0, 3)
-    expected = inverse_curvature(core, poses, readings, weights, graph, anchors, anchor_weights)
-    marginals = core.marginals(poses, noises, graph, priors, weights, anchor_weights)
+    *_, poses = core.gauss_newton(dead_reckoning, readings, weights, tails, heads, anchors, anchor_weights, 1.0, 3)
+    expected = inverse_curvature(core, poses, readings, weights, tails, heads, anchors, anchor_weights)
+    marginals = core.marginals(poses, noises, tails, heads, priors, weights, anchor_weights)
     np.testing.assert_allclose(marginals.kernel, expected, atol=1e-5)
 
 
