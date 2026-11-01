@@ -109,6 +109,7 @@
 - [Stokes flow on a mesh](fluids/dec_stokes/) — Incidence and diagonal Hodge maps determine pressure and flux through a channel around an obstacle.
 - [Diffusion on a sphere of rays](fluids/projective_sphere_flow/) — Homogeneous corner weights vary rational interpolation and the polar dual while diffusion stays on a fixed sphere; the same quotient works in the affine plane.
 - [Laplacian eigenfunction fluids](fluids/eigen_fluids/) — Whitney gradients and precomputed mode interactions evolve vortices on the Stanford bunny and shear layers on a sphere.
+- [Magnetohydrodynamics on a sphere](fluids/mhd_sphere/mhd_sphere.ipynb) — In spacetime, a frozen-in field is one whose flux function's gradient pairs to nothing with every worldline; a differential rotation winds it up until its current gathers in thin sheets and reconnects into magnetic islands.
 
 ## Relativity
 
