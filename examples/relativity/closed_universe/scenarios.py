@@ -1,18 +1,14 @@
 """The closed universe from inside and below its Hopf circles. Round, without waves: a flight down the axis of one of
 the 600-cell's Boerdijk–Coxeter helices, every great circle of its edges in its own colour, the helix panned past, its
-rails in colour, and a flight through an irregular mesh. With waves: inside the 600-cell, its squash rings past three
-crystals ahead of the eye, soft, tuned and stiff; on the irregular mesh, a burst spreads from a source ahead of the
-eye, seen through the decagons and through beacons across the universe; and below the Hopf circles, a quadrupole
-travels round the base, rung by triangle gauges held to their places and crossed by a bundle of light."""
+rails in colour, and a flight through an irregular mesh. With waves, on the 600-cell: from inside, its squash rings
+past three crystals ahead of the eye, soft, tuned and stiff; and below the Hopf circles, a quadrupole travels round the
+base, rung by triangle gauges held to their places and crossed by a bundle of light."""
 
 from __future__ import annotations
-
-from collections.abc import Iterator
 
 import numpy as np
 from numga import stack
 from numga.algebras import VGA3D
-from numga.sparse import SparseExtensor
 
 from examples import instantiate
 from examples.relativity.closed_universe import core
@@ -50,26 +46,6 @@ n_mesh_orbits = 5
 mesh_seed = 7
 n_relax_steps = 60
 relax_pull = 0.5
-# A burst of gravitational waves on it: the squash's pattern held to a bump of this width about a source this far ahead
-# of the eye, just past the crystals, swinging space by this share at its middle, kept to the waves and let go. It is
-# stepped at this share of the fastest wave's limit, found by so many repetitions, and seen over a whole turn, the time
-# light takes around the sphere, after which the shell closes in on its source again, in so many frames played round
-# and round; the bonds' strain that saturates their colour.
-burst_distance = 0.8
-burst_width = 0.5
-burst_swing = 0.15
-stability_share = 0.5
-n_power_steps = 60
-n_burst_frames = 120
-burst_saturating_strain = 0.03
-# The decagons drawn as great circles through the burst, their tubes' radius.
-decagon_radius = 0.016
-# Beacons across the universe: a crystal tuned to the burst at each of the 600-cell's vertices, placed as the decagons
-# are, so that the eye sits in a cell's middle; their states kept at this share of the frames' spacing, for each beacon
-# to be seen when its light left it; the bonds' strain that saturates their colour.
-beacon_tuning = 1.0
-beacon_state_share = 0.5
-beacon_saturating_strain = 0.02
 
 duration_ms = 40
 # The round universe from inside. A Boerdijk–Coxeter helix of the 600-cell is a column of thirty tetrahedra stacked
@@ -113,12 +89,6 @@ n_light_steps = int(np.pi / 2 / light_step)
 target_strain = 0.2
 target_sways = (0.1, 0.2)
 
-
-
-def no_circles() -> tuple[core.Point, core.Point, np.ndarray]:
-    """No great circles for the inside view: none to start from, none a quarter turn on, no inks."""
-    nothing = core.mv.vector(np.zeros((0, 4))).dual()                   # [0] Point-
-    return nothing, nothing, np.zeros((0, 4))
 
 
 def six_hundred_cell() -> tuple[core.Mesh, core.Point]:
@@ -263,127 +233,6 @@ def irregular_three_sphere() -> tuple[core.Mesh, core.Point]:
     mesh, vertices, _ = list(sphere_mesher.relaxed(turns, turns >> core.origin, seeds, n_relax_steps,
                                                    relax_pull))[-1]
     return mesh, vertices
-
-
-def burst_source() -> core.Point:
-    """The burst's source, `[] Point-`: the eye carried ahead along its view."""
-    moving, _, _ = core.invariant_generators()                          # [3] Rate+
-    return (eye * (moving[2] * (-burst_distance / 2)).exp()) >> core.origin
-
-
-def burst(mesh: core.Mesh, vertices: core.Point, rates: core.Rate
-          ) -> tuple[core.Waves, float]:
-    """A burst of gravitational waves on a mesh of the three-sphere as a smooth field over time, from half a turn before
-    its release to a whole turn after, and its frequency, the root of its mean square frequency by the stiffness over
-    the masses: the squash's pattern held to a bump about the source, one there and falling off with each edge's
-    middle's distance from it over the burst's width, kept to the waves and let go."""
-    mv = core.mv
-    stiffness, masses, onto_waves = core.gravitational_waves(mesh, vertices)
-    middles = (mesh.incidence[1, 0] * vertices).sum(axis=0).normalized()        # Point-[edges]
-    bump = ((middles.dot(burst_source()) - 1) * (2 / burst_width ** 2)).exp()  # Scalar+[edges]
-    strains = onto_waves(burst_swing * bump * squash(mesh, vertices, rates, mv.x, mv.y))   # Scalar+[edges]
-    step = stability_share * 2 / fastest_frequency(stiffness, masses, onto_waves, strains)
-    squared = (strains * stiffness(strains)).sites.sum() / (strains * masses(strains)).sites.sum()   # [] Scalar+
-    # Let go from rest, the waves are the same a time before and after: before, a shell closing in on the source.
-    # The eye sees back by up to half a turn, the time light takes to the antipode.
-    n_after, n_before = int(np.ceil(2 * np.pi / step)) + 2, int(np.ceil(np.pi / step)) + 1
-    after = [state for _, state in zip(range(n_after), core.waves_stepped(stiffness, masses, onto_waves, strains,
-                                                                                  0 * strains, step))]
-    levels = [(changes, -change_rates) for changes, change_rates in after[n_before:0:-1]] + after
-    waves = core.Waves(mesh, vertices, [changes for changes, _ in levels],
-                               [change_rates for _, change_rates in levels], -n_before * step, step)
-    return waves, float(np.sqrt(squared.to_array()))
-
-
-def fastest_frequency(stiffness: SparseExtensor, masses: SparseExtensor, onto_waves: core.OntoWaves,
-                      start: core.Scalar) -> float:
-    """The frequency of the fastest wave under the stiffness and the masses: the change the stiffness drives, the
-    masses solved for and kept to the waves, repeated from a start until only the fastest is left."""
-    changes = start
-    for _ in range(n_power_steps):
-        changes = onto_waves(masses.solve(stiffness(changes)))
-        changes = changes / float(changes.dot(changes).sites.sum().square_root().to_array())
-    squared = (changes * stiffness(changes)).sites.sum() / (changes * masses(changes)).sites.sum()
-    return float(np.sqrt(squared.to_array()))
-
-
-def decagon_circles(placement: core.Motor) -> tuple[core.Point, core.Point, np.ndarray]:
-    """The 600-cell's guardrail decagons as great circles, one Hopf fibration of its vertices, each through its first
-    vertex and the point a quarter turn on toward its second, `[decagons] Point-` each, moved by the placement, with
-    inks around the hues and the squared tube radius `[decagons, 4]`."""
-    from matplotlib.colors import hsv_to_rgb
-
-    _, vertices = six_hundred_cell()
-    decagons = guardrails(vertices, guardrail_sides)                            # [decagons, sides]
-    firsts, seconds = vertices.batch()[decagons[:, 0]], vertices.batch()[decagons[:, 1]]   # [decagons] Point-, Point-
-    quarters = (seconds - firsts * firsts.dot(seconds)).normalized()           # [decagons] Point-
-    hues = np.arange(len(decagons)) / len(decagons)
-    inks = hsv_to_rgb(np.stack([hues, np.full_like(hues, 0.75), np.full_like(hues, 0.95)], axis=-1))
-    return (placement >> firsts, placement >> quarters,
-            np.concatenate([inks, np.full((len(decagons), 1), decagon_radius ** 2)], axis=-1))
-
-
-def clear_placement() -> core.Motor:
-    """The motor that places the decagons so that the eye sits where they leave the most room: at the 600-cell's cell
-    centre farthest from all of them, its nearness to a circle the cosine of its distance, read by the two points that
-    span the circle; the choice of the farthest is made outside the algebra."""
-    mesh, vertices = six_hundred_cell()
-    centres = core.coframe(mesh, vertices).sum(axis=0).dual().normalized().batch()   # [cells] Point-
-    starts, quarters, _ = decagon_circles(core.mv.rotor())             # [decagons] Point-, Point-
-    along_start, along_quarter = centres[:, None].dot(starts[None]), centres[:, None].dot(quarters[None])
-    nearness = (along_start * along_start + along_quarter * along_quarter).to_array().reshape(len(centres), -1)
-    farthest = centres[nearness.max(axis=-1).argmin()]                          # [] Point-
-    return eye * core.isoclinic(farthest).inverse()
-
-
-def burst_view(mesh: core.Mesh, vertices: core.Point, rates: core.Rate,
-               waves: core.Waves, frequency: float) -> Iterator[np.ndarray]:
-    """The burst seen from inside the mesh by the eye over a whole turn from its release: the decagons as great
-    circles, fixed in the round sphere, through the light the waves bend, the tetrahedra's edges unseen, and the
-    crystals ahead tuned to the burst's frequency, which the waves shake."""
-    from examples.relativity.closed_universe import render
-
-    eye_times = np.linspace(0, 2 * np.pi, n_burst_frames, endpoint=False)       # [frames]
-    bonds, atoms = crystals(crystals_ahead())
-    # The light from the crystals left them their distance before it reached the eye.
-    states = crystal_states(mesh, vertices, waves, frequency, bonds, atoms, tunings,
-                            eye_times - crystal_distance)
-    unseen = np.zeros((len(mesh.tets) * 6, 4), dtype=np.float32)
-    return render.inside(mesh, vertices, waves, eye.broadcast_to(eye_times.shape), eye_times, unseen,
-                         decagon_circles(clear_placement()),
-                         render.crystal_frames(mesh, vertices, bonds, states, burst_saturating_strain))
-
-
-def beacon_view(mesh: core.Mesh, vertices: core.Point, rates: core.Rate,
-                waves: core.Waves, frequency: float) -> Iterator[np.ndarray]:
-    """The burst seen from inside the mesh by the eye over a whole turn from its release, through beacons at the
-    600-cell's vertices: crystals tuned to the burst, each seen as it was when its light left it, its distance from
-    the eye before."""
-    from examples.relativity.closed_universe import render
-
-    eye_times = np.linspace(0, 2 * np.pi, n_burst_frames, endpoint=False)       # [frames]
-    _, cell_vertices = six_hundred_cell()
-    beacons = clear_placement() >> cell_vertices.batch()                        # [beacons] Point-
-    bonds, atoms = crystals(core.isoclinic(beacons))
-    # Each beacon's distance from the eye, the time its light takes to arrive; its states over the times any frame
-    # sees it at.
-    distances = np.arccos(np.clip((eye >> core.origin).dot(beacons).to_array(), -1, 1))   # [beacons]
-    spacing = (eye_times[1] - eye_times[0]) * beacon_state_share
-    times = np.arange(eye_times[0] - distances.max(), eye_times[-1] + spacing, spacing)   # [states]
-    states = crystal_states(mesh, vertices, waves, frequency, bonds, atoms,
-                            np.full(beacons.shape[0], beacon_tuning), times)
-    positions = stack([atoms.batch() for atoms, _ in states])                  # [states, atoms] Point-
-    strains = stack([strains.batch() for _, strains in states])                # [states, bonds] Scalar+
-    # The state each frame sees each beacon in, and each atom's and bond's beacon.
-    seen = np.rint((eye_times[:, None] - distances[None] - times[0]) / spacing).astype(int)   # [frames, beacons]
-    atom_beacons = np.arange(positions.shape[1]) // (positions.shape[1] // beacons.shape[0])   # [atoms]
-    bond_beacons = np.arange(strains.shape[1]) // (strains.shape[1] // beacons.shape[0])      # [bonds]
-    seen_states = [(positions[seen[frame, atom_beacons], np.arange(positions.shape[1])].field(),
-                    strains[seen[frame, bond_beacons], np.arange(strains.shape[1])].field())
-                   for frame in range(len(eye_times))]
-    unseen = np.zeros((len(mesh.tets) * 6, 4), dtype=np.float32)
-    return render.inside(mesh, vertices, waves, eye.broadcast_to(eye_times.shape), eye_times, unseen, no_circles(),
-                         render.crystal_frames(mesh, vertices, bonds, seen_states, beacon_saturating_strain))
 
 
 def stepped_squash(cell_mesh: core.Mesh, cell_vertices: core.Point, cell_rates: core.Rate,
@@ -616,41 +465,33 @@ def main() -> None:
                             eye_times - crystal_distance)
     rails = render.polygon_struts(guardrails(cell_vertices, guardrail_sides))
     frames = render.inside(cell_mesh, cell_vertices, waves, eye.broadcast_to(eye_times.shape), eye_times,
-                           render.edge_styles(cell_mesh, *rails), no_circles(),
+                           render.edge_styles(cell_mesh, *rails),
                            render.crystal_frames(cell_mesh, cell_vertices, bonds, states, render.saturating_strain))
     save_animation(frames, "closed_universe_600_cell", duration_ms)
     spectrum, squash_squared, times, shares = stepped_squash(cell_mesh, cell_vertices, cell_rates, 4)
 
-    # A burst of waves on an irregular mesh of the three-sphere, seen through the decagons and through beacons across
-    # the universe.
-    burst_mesh, burst_vertices = irregular_three_sphere()
-    burst_rates = core.round_rates(burst_mesh, core.isoclinic(burst_vertices))   # Rate+[edges]
-    burst_waves, burst_frequency = burst(burst_mesh, burst_vertices, burst_rates)
+    # The irregular mesh, flown through straight ahead from the middle of its first tetrahedron.
+    irregular_mesh, irregular_vertices = irregular_three_sphere()
+    middle = (irregular_mesh.incidence[3, 0].mean(axis=0) * irregular_vertices).batch()[0].normalized()   # [] Point-
     no_struts = np.zeros((0, 2), dtype=int), np.zeros((0, 3))
-    # From the middle of the irregular mesh's first tetrahedron, straight ahead.
-    middle = (burst_mesh.incidence[3, 0].mean(axis=0) * burst_vertices).batch()[0].normalized()   # [] Point-
-    save_animation(render.inside(burst_mesh, burst_vertices, round_universe(burst_mesh, burst_vertices),
+    save_animation(render.inside(irregular_mesh, irregular_vertices, round_universe(irregular_mesh, irregular_vertices),
                                  flight(core.isoclinic(middle)), np.zeros(n_flight_frames),
-                                 render.edge_styles(burst_mesh, *no_struts), no_circles(),
-                                 render.no_crystals(burst_mesh)), "closed_universe_irregular", duration_ms)
-    save_animation(burst_view(burst_mesh, burst_vertices, burst_rates, burst_waves, burst_frequency),
-                   "closed_universe_burst", duration_ms)
-    save_animation(beacon_view(burst_mesh, burst_vertices, burst_rates, burst_waves, burst_frequency),
-                   "closed_universe_beacons", duration_ms)
+                                 render.edge_styles(irregular_mesh, *no_struts), render.no_crystals(irregular_mesh)),
+                   "closed_universe_irregular", duration_ms)
 
     # The round universe from inside: the flight along a Boerdijk–Coxeter helix's axis, every great circle of edges in
     # its own colour; and the helix panned past, its rails in colour.
     still = round_universe(cell_mesh, cell_vertices)
     rails, on_axis, along, across_axis = helix(cell_vertices)
-    circles = render.edge_styles(cell_mesh, *render.great_polygon_struts(cell_mesh, cell_vertices))
+    coloured_circles = render.edge_styles(cell_mesh, *render.great_polygon_struts(cell_mesh, cell_vertices))
     # Down the axis, the tunnel the helix's tetrahedra make about it, with the step across it up.
     save_animation(render.inside(cell_mesh, cell_vertices, still, flight(facing(core.isoclinic(on_axis), along,
                                                                                 across_axis)),
-                                 np.zeros(n_flight_frames), circles, no_circles(), render.no_crystals(cell_mesh)),
+                                 np.zeros(n_flight_frames), coloured_circles, render.no_crystals(cell_mesh)),
                    "closed_universe_flight", duration_ms)
     save_animation(render.inside(cell_mesh, cell_vertices, still, pan(on_axis, along, across_axis),
                                  np.zeros(n_pan_frames), render.edge_styles(cell_mesh, *render.helix_struts(cell_mesh, rails)),
-                                 no_circles(), render.no_crystals(cell_mesh)),
+                                 render.no_crystals(cell_mesh)),
                    "closed_universe_helix", duration_ms)
 
     # The travelling quadrupole below the Hopf circles, and how its gauges and light respond.
@@ -676,8 +517,8 @@ def main() -> None:
     assert np.abs(shares - wave_swing * np.cos(np.sqrt(squash_squared) * times)).max() < 0.03 * wave_swing
     # The irregular mesh's round chords are at rest, every deficit of its tetrahedra, read as pieces of the round
     # sphere, nothing.
-    chords = burst_mesh.d[0] * burst_vertices                                   # Point-[edges]
-    deficits, _, _ = core.Space(burst_mesh, burst_vertices).dynamics(chords.dot(chords))
+    chords = irregular_mesh.d[0] * irregular_vertices                                   # Point-[edges]
+    deficits, _, _ = core.Space(irregular_mesh, irregular_vertices).dynamics(chords.dot(chords))
     assert np.abs(deficits.to_array()).max() < 1e-12
     # The quadrupole is the same all along each circle, between the tenth turns that carry the mesh onto itself too: a
     # circle's stretch read at one point of it is its average round it.

@@ -63,10 +63,6 @@ var<storage, read> bond_heads: array<Point>;
 var<storage, read> bond_inks: array<vec4<f32>>;
 var<uniform> n_bonds: u32;
 var<uniform> bond_radius_squared: f32;
-var<storage, read> circle_starts: array<Point>;
-var<storage, read> circle_quarters: array<Point>;
-var<storage, read> circle_inks: array<vec4<f32>>;
-var<uniform> n_circles: u32;
 
 alias Sample = vec3<f32>;
 
@@ -193,53 +189,6 @@ fn sample(place: vec2<f32>) -> Sample {
                 }
             }
         }
-        // The great circles, each the line its plane cuts from the tetrahedron's chart: where the step first comes
-        // within the circle's radius of that line, from outside.
-        var hit_circle = n_circles;
-        var circle_normal = segment;
-        for (var i = 0u; i < n_circles; i++) {
-            let start_reading = unit & circle_starts[i];
-            let quarter_reading = unit & circle_quarters[i];
-            let weight = start_reading * start_reading + quarter_reading * quarter_reading;
-            if (weight > 1e-12) {
-                let through = (circle_starts[i] * start_reading + circle_quarters[i] * quarter_reading) / weight;
-                let along_circle = circle_starts[i] * quarter_reading - circle_quarters[i] * start_reading;
-                let offset = chart - through;
-                let c = along_circle.dot(along_circle);
-                // The offset and the step square to the circle's line, and where the step enters the tube about it.
-                let e = along_circle.dot(offset);
-                let b = along_circle.dot(segment);
-                let gap_squared = offset.dot(offset) - e * e / c;
-                let gap_step = segment.dot(offset) - b * e / c;
-                let step_squared = segment.dot(segment) - b * b / c;
-                let reach = gap_step * gap_step - step_squared * (gap_squared - circle_inks[i].w);
-                if (gap_squared > circle_inks[i].w && reach >= 0.0 && step_squared > 1e-20) {
-                    let u_c = (-gap_step - sqrt(reach)) / step_squared;
-                    if (u_c >= 0.0 && u_c < best_u) {
-                        best_u = u_c;
-                        hit_circle = i;
-                        let entry = offset + segment * u_c;
-                        circle_normal = entry - along_circle * (along_circle.dot(entry) / c);
-                    }
-                }
-            }
-        }
-        if (hit_circle < n_circles) {
-            let hit = (chart + segment * best_u).normalized();
-            let ray = along(hit, segment);
-            let n_tan = along(hit, circle_normal);
-            let to_eye = -ray;
-            let to_light = along(hit, light);
-            let diff1 = max(n_tan.dot(to_light), 0.0);
-            let diff2 = max(n_tan.dot(to_eye), 0.0);
-            let halfway = along(hit, to_eye + to_light);
-            let spec = pow(max(n_tan.dot(halfway), 0.0), 36.0);
-            let lit = circle_inks[hit_circle].xyz * (0.22 + 0.56 * diff1 + 0.28 * diff2) + vec3<f32>(0.95, 0.97, 1.0) * (0.36 * spec);
-            let distance = travelled + best_u * step;
-            // Brightness falls linearly with distance, to nothing at the antipode.
-            let fog = max(1.0 - distance / 3.14159, 0.0);
-            return mix(background, lit, fog);
-        }
         if (hit_bond < n_bonds) {
             let hit = (chart + segment * best_u).normalized();
             let distance = travelled + best_u * step;
@@ -356,15 +305,13 @@ def great_polygon_struts(mesh, vertices: Extensor) -> tuple[np.ndarray, np.ndarr
 
 
 def inside(mesh, vertices: Extensor, waves, cameras: Extensor, eye_times: np.ndarray, styles: np.ndarray,
-           circles: tuple[Extensor, Extensor, np.ndarray], crystals: Iterable[dict]) -> Iterator[np.ndarray]:
+           crystals: Iterable[dict]) -> Iterator[np.ndarray]:
     """Frames of the view from inside a round three-sphere meshed by tetrahedra and carrying the stepped gravitational
     waves `waves`, one for each camera and time: each camera, a motor `[frames] Motor+`, carries the origin to the eye
     and the origin's steps across `x`, `y` and `z` to its right, up and forward, read in the isoclinic frame at the
     eye; the tetrahedra's edges are lit struts, each in its colour and squared radius `styles`, `[tets * 6, 4]` in
-    each tetrahedron's own order of its edges, as `edge_styles` gives them; great circles fixed in the round sphere,
-    `circles`, each through a point and the point a quarter turn on, `[circles] Point-` each, with its colour and
-    squared tube radius `[circles, 4]`, are lit tubes; and at each frame the atoms and bonds of `crystals`, as
-    `crystal_frames` or `no_crystals` gives them."""
+    each tetrahedron's own order of its edges, as `edge_styles` gives them; and at each frame the atoms and bonds of
+    `crystals`, as `crystal_frames` or `no_crystals` gives them."""
     from examples.util.wgsl import Shader, supersampled
 
     mv = core.mv
@@ -390,9 +337,7 @@ def inside(mesh, vertices: Extensor, waves, cameras: Extensor, eye_times: np.nda
         turns=waves.turns.reshape(-1), n_vertices=n_vertices, n_tets=len(mesh.tets), n_levels=n_levels,
         first_time=waves.first_time, level_step=waves.level_step, origin=core.origin, equator=core.equator,
         polar=core.polar, translating=core.translating, half_height=half_height, step=inside_step,
-        max_steps=int(4 * np.pi / inside_step), edge_style=styles, circle_starts=circles[0],
-        circle_quarters=circles[1], circle_inks=circles[2].astype(np.float32), n_circles=circles[0].shape[0],
-        particle_ink=particle_ink, particle_radius_squared=particle_radius ** 2,
+        max_steps=int(4 * np.pi / inside_step), edge_style=styles, particle_ink=particle_ink, particle_radius_squared=particle_radius ** 2,
         bond_radius_squared=bond_radius ** 2)
     for frame, (eye_time, crystal) in enumerate(zip(eye_times, crystals)):
         camera = cameras[frame]                                                 # [] Motor+
