@@ -110,6 +110,13 @@ def coherent(simplices: np.ndarray) -> np.ndarray:
     return np.where(flips[:, None], turned(simplices), simplices)
 
 
+def readings(points: Point) -> np.ndarray:
+    """`[..., generators]`: the readings of points by the planes of each of the algebra's generators, their pairings,
+    the plane first: their coordinates, and in a projective algebra, of points of weight one, their weight."""
+    planes = stack([getattr(mv, name) for name in ga.basis_names])
+    return (planes & points[..., None]).to_array()
+
+
 def lookup_simplices(table: np.ndarray, query: np.ndarray) -> np.ndarray:
     """`[...]`: the row of `table` `[n, k]`, unique and sorted, holding each sorted simplex of `query` `[..., k]`."""
     _, rows = np.unique(np.concatenate([table, query.reshape(-1, table.shape[-1])]), axis=0, return_inverse=True)
@@ -452,12 +459,47 @@ class Mesh:
 
     @classmethod
     def triangulate(cls, vertices: Point) -> Mesh:
-        """Delaunay topology for vertices in the xy plane, with counter-clockwise faces."""
+        """Delaunay topology for vertices in the plane of the algebra's first two generators that square to one or minus
+        one, the xy plane or a plane of spacetime, with counter-clockwise faces."""
         from scipy.spatial import Delaunay
 
-        # Positions read by pairing with the slices across the first two directions.
-        coordinates = (stack((mv.x, mv.y)) & vertices.batch()[..., None]).to_array()
+        coordinates = readings(vertices.batch())[..., np.flatnonzero(np.array(ga.signature) != 0)[:2]]
         return cls(len(coordinates), Delaunay(coordinates).simplices)
+
+    def picking(self, vertices: Point) -> Callable[[Point], np.ndarray]:
+        """`[points]`: the top simplex holding each point, by a single query of a k-d tree built once, as pycomplex
+        picks its primal simplices. Each simplex has the plane that reads each of its corners as the corner's squared
+        norm, by the squares of the algebra's generators, a degenerate one counting as nothing; the point lies in the
+        simplex whose plane reads it the most. On a flat Delaunay mesh, read at a point of weight one, that plane is
+        the squared norm less the power of the simplex's circumcircle, least in the simplex holding the point, and on a
+        closed mesh about the centre of a sphere it is the simplex's own plane, read the most where the ray from the
+        centre crosses it. Lifted out by the root of how much each plane's squared size falls short of the largest,
+        the planes lie nearest a point in the order they read it, so one query finds the simplex; a point outside the
+        mesh gets a simplex on its boundary. Readings are by the planes of the algebra's generators."""
+        from scipy.spatial import cKDTree
+
+        squares = np.abs(np.array(ga.signature))                                    # [generators]
+        corners = readings(vertices.batch())[self.elements[self.n_dim]]             # [simplices, corners, generators]
+        planes = np.linalg.solve(corners, (squares * corners ** 2).sum(axis=-1)[..., None])[..., 0]   # [simplices, generators]
+        sizes = (planes ** 2).sum(axis=-1)                                           # [simplices]
+        tree = cKDTree(np.concatenate([planes, np.sqrt(sizes.max() - sizes)[:, None]], axis=-1))
+        return lambda points: tree.query(np.pad(readings(points.batch()), ((0, 0), (0, 1))))[1]
+
+    @cached_property
+    def neighbours(self) -> tuple[np.ndarray, np.ndarray]:
+        """For each top simplex and each of its facets, the simplex on the other side of that facet, and the corner of
+        that simplex which faces the same facet: two index arrays `[N, n_dim + 1]`, the facet named by the corner
+        facing it, as everywhere in the mesh. A walk leaving a simplex through a facet reads from them the simplex it
+        enters and the facet it enters through. A facet on the boundary has no other side, and names the simplex
+        itself."""
+        width = self.n_dim + 1
+        facets = self.boundary_indices[self.n_dim - 1].reshape(-1)               # [N (n_dim + 1)]
+        order = np.argsort(facets, kind="stable")
+        shared = facets[order][1:] == facets[order][:-1]
+        first, second = order[:-1][shared], order[1:][shared]
+        across = np.arange(len(facets))
+        across[first], across[second] = second, first
+        return (across // width).reshape(-1, width), (across % width).reshape(-1, width)
 
     def reading(self, indices: np.ndarray, k: int = 0) -> SparseExtensor:
         """`Scalar+[..., n <- k-simplices]`: the map reading a field on the k-simplices, the vertices unless asked
