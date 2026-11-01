@@ -53,7 +53,7 @@ duration_ms = 40
 # icosahedron their base points make: flown along its axis once round in so many frames, every great circle of the
 # 600-cell's edges in its own colour; and panned past once round its axis in so many frames, from this far from the
 # axis, the view tilted by this much, its rails in colour. The irregular mesh, flown through once round the same way.
-n_flight_frames = 180
+n_flight_frames = 90
 n_pan_frames = 60
 pan_distance = 1.02
 pan_tilt = 0.36
