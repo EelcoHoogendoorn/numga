@@ -24,7 +24,7 @@ field taken or returned is typed as one. See docs/fields.md for examples.
 
 from __future__ import annotations
 
-from functools import singledispatch
+from functools import partial, singledispatch
 from numbers import Number
 from typing import overload
 
@@ -44,7 +44,7 @@ class SparseExtensor:
     axes hold separate maps of the same pattern.
     """
 
-    __slots__ = ("cells", "rows", "columns", "shape")
+    __slots__ = ("cells", "rows", "columns", "shape", "factors")
     apply = ExtensionMethod("apply", takes="a sparse map")
     reverse = ExtensionMethod("reverse", takes="a sparse extensor")
     clifford_conjugate = ExtensionMethod("clifford_conjugate", takes="a sparse extensor")
@@ -61,6 +61,8 @@ class SparseExtensor:
         self.cells = _scatter(cells, axes, len(pairs))
         self.rows, self.columns = np.divmod(pairs, shape[1])
         self.shape = tuple(shape)
+        # The factorizations solves have made of the map, which does not change, by its leading index.
+        self.factors = {}
 
     @classmethod
     def from_columns(cls, columns: np.ndarray, cells: Extensor, size: int) -> SparseExtensor:
@@ -400,10 +402,16 @@ def adjoint(value: SparseExtensor) -> SparseExtensor:
 @SparseExtensor.solve.register(lambda cell_type, other: cell_type.maps_equal_dimensions, fields=True)
 def solve(value: SparseExtensor, rhs: Extensor) -> Extensor:
     """The fields x with value(x) == rhs: one factorization for each of the map's leading indices,
-    the leading axes of rhs that the map lacks as further right sides of it."""
-    from scipy.sparse.linalg import spsolve
+    made on the first solve and kept with the map for the solves that follow, the leading axes of rhs
+    that the map lacks as further right sides of it."""
+    from scipy.sparse.linalg import splu
 
-    return _per_map(value, rhs, lambda matrix, right: spsolve(matrix, right.T).reshape(matrix.shape[1], len(right)).T)
+    def solved(case: tuple, matrix, right: np.ndarray) -> np.ndarray:
+        if case not in value.factors:
+            value.factors[case] = splu(matrix())
+        return value.factors[case].solve(np.ascontiguousarray(right.T)).T
+
+    return _per_map(value, rhs, solved)
 
 
 @SparseExtensor.lstsq.register(lambda cell_type, other: cell_type.arity == 1, fields=True)
@@ -413,9 +421,11 @@ def lstsq(value: SparseExtensor, rhs: Extensor) -> Extensor:
     gauge, such as a translation, is left at zero."""
     from scipy.sparse.linalg import lsqr
 
-    return _per_map(value, rhs, lambda matrix, right: np.stack([
-        lsqr(matrix, column, atol=0.0, btol=0.0, iter_lim=10 * matrix.shape[1])[0] for column in right
-    ]))
+    def solved(case: tuple, matrix, right: np.ndarray) -> np.ndarray:
+        system = matrix()
+        return np.stack([lsqr(system, column, atol=0.0, btol=0.0, iter_lim=10 * system.shape[1])[0] for column in right])
+
+    return _per_map(value, rhs, solved)
 
 
 @SparseExtensor.eigh.register(lambda cell_type, other: cell_type.is_endomorphism or cell_type.is_correlation)
@@ -441,9 +451,9 @@ def eigh(value: SparseExtensor, metric: SparseExtensor, count: int) -> tuple[Ext
 
 
 def _per_map(value: SparseExtensor, rhs: Extensor, solver) -> Extensor:
-    """The solver's fields for each of the map's leading indices, on its matrix and its right sides
-    `[sides, elements * blades]`: those of rhs at that index, along every leading axis the map
-    lacks or holds once."""
+    """The solver's fields for each of the map's leading indices, given the index, its matrix, built
+    when the solver asks for it, and its right sides `[sides, elements * blades]`: those of rhs at
+    that index, along every leading axis the map lacks or holds once."""
     rhs = _sites(rhs)
     batch = np.broadcast_shapes(value.cells.shape[:-1], rhs.shape[:-1])
     maps = (1,) * (len(batch) - (value.cells.ndim - 1)) + value.cells.shape[:-1]
@@ -455,7 +465,7 @@ def _per_map(value: SparseExtensor, rhs: Extensor, solver) -> Extensor:
         sides = tuple(slice(None) if size == 1 else index for index, size in zip(case, maps))
         block = right[sides]
         right_sides = block.reshape(int(np.prod(block.shape[:-1])), block.shape[-1])
-        solved[sides] = solver(_matrix(value, blocks[case]), right_sides).reshape(block.shape[:-1] + (-1,))
+        solved[sides] = solver(case, partial(_matrix, value, blocks[case]), right_sides).reshape(block.shape[:-1] + (-1,))
     return _field(value, solved)
 
 

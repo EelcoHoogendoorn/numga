@@ -1054,7 +1054,8 @@ class Compiler:
             return self.state(line, symbol, left, right)
         if symbol == "/" and (algebra or left.text is None):
             if not self.is_scalar(right) and not (right.text is None and right.type == _ABSTRACT):
-                raise self.error(line, f"cannot divide by a {right.type}")
+                # A versor divides as numga divides it, by its inverse, its reverse over its reverse product.
+                return self.binary(line, "*", left, self.method(line, right, "inverse", [], []))
             reciprocal = (self.constant(1 / right.constant) if right.type == _ABSTRACT and right.text is not None
                           else Value(f"(1.0 / {self.text(right)})", self.scalar))
             return self.binary(line, "*", left, reciprocal)

@@ -483,8 +483,10 @@ class Shader:
         """The storage buffer kept for a role, holding data, bound to just its length."""
         import wgpu
         buffer = self.buffer_kept(role, len(data), wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
-        self.device.queue.write_buffer(buffer, 0, data)
-        return {"buffer": buffer, "offset": 0, "size": len(data)}
+        # An empty array binds the least buffer there is, which the shader, told it holds nothing, never reads.
+        if data:
+            self.device.queue.write_buffer(buffer, 0, data)
+        return {"buffer": buffer, "offset": 0, "size": max(len(data), 16)}
 
     def surface(self, role: tuple, shape: tuple[int, int], format: str, usage: int) -> Any:
         """The texture kept for a role and an image's shape, rows and columns, made on the first call that needs it."""

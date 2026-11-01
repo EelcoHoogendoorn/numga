@@ -29,7 +29,7 @@ def test_ramps_read_one_at_their_corner_and_whitney_forms_one_along_their_edge()
 def test_the_rolled_plane_steps_along_each_edge_by_the_conformal_factor():
     edges = mesh.d[0] * vertices                                                # Antivector-[edges]
     midpoints = mesh.incidence[1, 0].mean(axis=0) * vertices                    # Point-[edges]
-    conformal = 2 / (1 + core.across((midpoints - core.origin).cast(core.Step)).squared())    # Scalar+[edges]
+    conformal = 2 / (1 + core.polar((midpoints - core.origin).cast(core.Step)).squared())    # Scalar+[edges]
     np.testing.assert_allclose((core.origin.commutator(rates) - conformal * edges).kernel, 0, atol=1e-12)
 
 
@@ -40,12 +40,12 @@ def test_the_motors_around_each_triangle_close_up_and_turn_by_its_area_on_the_sp
     holonomy = motors[2] * motors[0] * motors[1]                                # [faces] Motor+
     # A rate's turn is its weight, read by the plane at infinity; its step moves the point of contact.
     turns = 2 * (core.infinity & holonomy.log())                                # [faces] Scalar+
-    steps = core.across(core.origin.commutator(holonomy.log())).squared().square_root()   # [faces] Scalar+
+    steps = core.polar(core.origin.commutator(holonomy.log())).squared().square_root()   # [faces] Scalar+
     sides = (mesh.boundary[2, 1] * core.origin.commutator(rates)).batch()       # [sides, faces] Antivector-
-    perimeters = core.across(sides.cast(core.Step)).squared().square_root().sum(axis=0)       # [faces] Scalar+
+    perimeters = core.polar(sides.cast(core.Step)).squared().square_root().sum(axis=0)       # [faces] Scalar+
     corners = mesh.incidence[2, 0] * vertices                                   # [corners] Point-[faces]
     centres = (mesh.incidence[2, 0].mean(axis=0) * vertices).batch()            # [faces] Point-
-    conformal = 2 / (1 + core.across((centres - core.origin).cast(core.Step)).squared())      # [faces] Scalar+
+    conformal = 2 / (1 + core.polar((centres - core.origin).cast(core.Step)).squared())      # [faces] Scalar+
     sphere_areas = conformal * conformal * ((corners[0] & corners[1] & corners[2]) / 2).batch()   # [faces] Scalar-
 
     # Around every triangle the rolled plane comes back to its point of contact, so the connection has no torsion,
@@ -59,7 +59,7 @@ def test_the_fan_meets_at_the_antipode():
     starts = scenarios.source[None].broadcast_to((scenarios.n_paths,))          # [paths] Point-
     *_, ends = core.geodesics(mesh, vertices, ramps, connection, starts, scenarios.headings, scenarios.step,
                               scenarios.n_half_turn)                            # [paths] Point-
-    misses = core.across((ends - scenarios.antipode).cast(core.Step)).squared().square_root()  # [paths] Scalar+
+    misses = core.polar((ends - scenarios.antipode).cast(core.Step)).squared().square_root()  # [paths] Scalar+
     assert misses.to_array().max() < 0.05
 
 
@@ -94,7 +94,7 @@ def test_paths_through_the_600_cell_meet_at_the_antipode():
     cell_mesh, cell_vertices = scenarios.six_hundred_cell()
     headings = scenarios.three_sphere_headings                                  # [paths] Antivector-
     paths = scenarios.rolled(three_sphere, cell_mesh, cell_vertices,
-                             three_sphere.round_rates(cell_mesh, scenarios.isoclinic_frames(cell_vertices)),
+                             three_sphere.round_rates(cell_mesh, scenarios.three_sphere.isoclinic(cell_vertices)),
                              three_sphere.origin[None].broadcast_to(headings.shape), headings)   # [paths, steps + 1] Point-
     # Half a turn along, every path is near the antipode, within what cells a fifth of a half turn wide allow.
     ends = paths[:, scenarios.n_half_turn].normalized()                         # [paths] Point-

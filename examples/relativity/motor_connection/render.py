@@ -68,9 +68,12 @@ inside_background = np.array([0.035, 0.04, 0.06], dtype=np.float32)
 # The guardrails' struts, each decagon in its own colour, and every other edge a thin light-grey ghost.
 rail_radius = 0.028
 ghost_ink, ghost_radius = np.array([0.72, 0.75, 0.80], dtype=np.float32), 0.006
-# The atoms' ink and radius, the bonds' radius, and the strain that saturates their colour, blue squeezed, red stretched.
+# The atoms' ink and radius, the bonds' radius, and the strain that saturates their colour in the stepped squash,
+# blue squeezed, red stretched.
 particle_ink, particle_radius = np.array([1.0, 0.86, 0.35], dtype=np.float32), 0.012
 bond_radius, saturating_strain = 0.005, 0.15
+# How far an atom may move from where it starts and still be drawn in the tetrahedra listed for it.
+motion_room = 0.03
 
 inside_source = """
 var<uniform> start_place: Point;
@@ -86,6 +89,10 @@ var<uniform> light: Point;
 var<storage, read> edge_style: array<vec4<f32>>;
 var<storage, read> particles: array<Point>;
 var<uniform> n_particles: u32;
+var<storage, read> particle_starts: array<u32>;
+var<storage, read> tet_particles: array<u32>;
+var<storage, read> bond_starts: array<u32>;
+var<storage, read> tet_bonds: array<u32>;
 var<uniform> particle_ink: vec3<f32>;
 var<uniform> particle_radius_squared: f32;
 var<storage, read> bond_tails: array<Point>;
@@ -93,6 +100,10 @@ var<storage, read> bond_heads: array<Point>;
 var<storage, read> bond_inks: array<vec4<f32>>;
 var<uniform> n_bonds: u32;
 var<uniform> bond_radius_squared: f32;
+var<storage, read> circle_starts: array<Point>;
+var<storage, read> circle_quarters: array<Point>;
+var<storage, read> circle_inks: array<vec4<f32>>;
+var<uniform> n_circles: u32;
 
 alias Sample = vec3<f32>;
 
@@ -124,8 +135,8 @@ fn edge_test(lc: f32, ld: f32, dlc: f32, dld: f32, r2: f32, u_max: f32) -> f32 {
 }
 
 fn sample(place: vec2<f32>) -> Sample {
-    let across = screen(place) * half_height;
-    var heading = (forward + right * across.x + up * across.y).normalized();
+    let on_screen = screen(place) * half_height;
+    var heading = (forward + right * on_screen.x + up * on_screen.y).normalized();
     let opp_c = array<u32, 6>(2u, 1u, 1u, 0u, 0u, 0u);
     let opp_d = array<u32, 6>(3u, 3u, 2u, 3u, 2u, 1u);
     var position = start_place;
@@ -135,15 +146,21 @@ fn sample(place: vec2<f32>) -> Sample {
     for (var k = 0u; k < max_steps; k++) {
         let base = tet * 4u;
         let unit = unit_plane(tet);
-        position = position / (unit & position);
+        // The place on the tetrahedron's chart, its plane through the corners, on which great circles run straight and
+        // the barycentric weights change evenly.
+        let chart = position / (unit & position);
         // The ray runs back in time: here it is the light that passed the eye's time less the distance travelled.
         let time = eye_time - travelled;
-        let l = array<f32, 4>(ramps[base] & position, ramps[base + 1u] & position, ramps[base + 2u] & position,
-                              ramps[base + 3u] & position);
+        let l = array<f32, 4>(ramps[base] & chart, ramps[base + 1u] & chart, ramps[base + 2u] & chart,
+                              ramps[base + 3u] & chart);
         let waves = local_waves(tet, l, time);
-        let v = velocity(tet, position, unit, heading, waves);
-        let dl = array<f32, 4>((ramps[base] & v) * step, (ramps[base + 1u] & v) * step, (ramps[base + 2u] & v) * step,
-                               (ramps[base + 3u] & v) * step);
+        // The ray's round step, its heading less half the waves' stretch of it, and the place a step ahead, rolled along
+        // that step on its great circle by the frame at the place.
+        let steps = heading - translating(waves.strain(heading)) * 0.5;
+        let ahead = (frame(position) * ((infinity ^ polar(steps)) * (-0.5 * step)).exp()) >> origin;
+        let segment = ahead / (unit & ahead) - chart;
+        let dl = array<f32, 4>(ramps[base] & segment, ramps[base + 1u] & segment, ramps[base + 2u] & segment,
+                               ramps[base + 3u] & segment);
         // The share of the step up to the facet the ray leaves by, never the one it came in by.
         var u_exit = 1.0;
         var exit_face = 4u;
@@ -166,13 +183,14 @@ fn sample(place: vec2<f32>) -> Sample {
                 hit_edge = e;
             }
         }
-        // The test particles, balls about their places scaled onto the tetrahedron's plane, where the step comes nearest.
-        let segment = v * step;
+        // The test particles near the tetrahedron, balls about their places scaled onto its plane, where the step comes
+        // nearest.
         var hit_particle = n_particles;
-        for (var i = 0u; i < n_particles; i++) {
+        for (var listed = particle_starts[tet]; listed < particle_starts[tet + 1u]; listed++) {
+            let i = tet_particles[listed];
             let reading = unit & particles[i];
             if (reading > 0.0) {
-                let offset = position - particles[i] / reading;
+                let offset = chart - particles[i] / reading;
                 let a = segment.dot(segment);
                 let b = offset.dot(segment);
                 let c = offset.dot(offset) - particle_radius_squared;
@@ -186,16 +204,17 @@ fn sample(place: vec2<f32>) -> Sample {
                 }
             }
         }
-        // The bonds, segments between their ends scaled onto the tetrahedron's plane, where the step comes nearest.
+        // The bonds near the tetrahedron, segments between their ends scaled onto its plane, where the step comes nearest.
         var hit_bond = n_bonds;
         var bond_share = 0.0;
-        for (var i = 0u; i < n_bonds; i++) {
+        for (var listed = bond_starts[tet]; listed < bond_starts[tet + 1u]; listed++) {
+            let i = tet_bonds[listed];
             let tail_reading = unit & bond_tails[i];
             let head_reading = unit & bond_heads[i];
             if (tail_reading > 0.0 && head_reading > 0.0) {
                 let tail = bond_tails[i] / tail_reading;
                 let along_bond = bond_heads[i] / head_reading - tail;
-                let offset = position - tail;
+                let offset = chart - tail;
                 let a = segment.dot(segment);
                 let b = segment.dot(along_bond);
                 let c = along_bond.dot(along_bond);
@@ -211,19 +230,66 @@ fn sample(place: vec2<f32>) -> Sample {
                 }
             }
         }
+        // The great circles, each the line its plane cuts from the tetrahedron's chart: where the step first comes
+        // within the circle's radius of that line, from outside.
+        var hit_circle = n_circles;
+        var circle_normal = segment;
+        for (var i = 0u; i < n_circles; i++) {
+            let start_reading = unit & circle_starts[i];
+            let quarter_reading = unit & circle_quarters[i];
+            let weight = start_reading * start_reading + quarter_reading * quarter_reading;
+            if (weight > 1e-12) {
+                let through = (circle_starts[i] * start_reading + circle_quarters[i] * quarter_reading) / weight;
+                let along_circle = circle_starts[i] * quarter_reading - circle_quarters[i] * start_reading;
+                let offset = chart - through;
+                let c = along_circle.dot(along_circle);
+                // The offset and the step square to the circle's line, and where the step enters the tube about it.
+                let e = along_circle.dot(offset);
+                let b = along_circle.dot(segment);
+                let gap_squared = offset.dot(offset) - e * e / c;
+                let gap_step = segment.dot(offset) - b * e / c;
+                let step_squared = segment.dot(segment) - b * b / c;
+                let reach = gap_step * gap_step - step_squared * (gap_squared - circle_inks[i].w);
+                if (gap_squared > circle_inks[i].w && reach >= 0.0 && step_squared > 1e-20) {
+                    let u_c = (-gap_step - sqrt(reach)) / step_squared;
+                    if (u_c >= 0.0 && u_c < best_u) {
+                        best_u = u_c;
+                        hit_circle = i;
+                        let entry = offset + segment * u_c;
+                        circle_normal = entry - along_circle * (along_circle.dot(entry) / c);
+                    }
+                }
+            }
+        }
+        if (hit_circle < n_circles) {
+            let hit = (chart + segment * best_u).normalized();
+            let ray = along(hit, segment);
+            let n_tan = along(hit, circle_normal);
+            let to_eye = -ray;
+            let to_light = along(hit, light);
+            let diff1 = max(n_tan.dot(to_light), 0.0);
+            let diff2 = max(n_tan.dot(to_eye), 0.0);
+            let halfway = along(hit, to_eye + to_light);
+            let spec = pow(max(n_tan.dot(halfway), 0.0), 36.0);
+            let lit = circle_inks[hit_circle].xyz * (0.22 + 0.56 * diff1 + 0.28 * diff2) + vec3<f32>(0.95, 0.97, 1.0) * (0.36 * spec);
+            let distance = travelled + best_u * step;
+            // Brightness falls linearly with distance, to nothing at the antipode.
+            let fog = max(1.0 - distance / 3.14159, 0.0);
+            return mix(background, lit, fog);
+        }
         if (hit_bond < n_bonds) {
-            let hit = (position + segment * best_u).normalized();
+            let hit = (chart + segment * best_u).normalized();
             let distance = travelled + best_u * step;
             let fog = max(1.0 - distance / 3.14159, 0.0);
             let to_light = along(hit, light);
-            let lit = bond_inks[hit_bond].xyz * (0.55 + 0.45 * max(along(hit, v).dot(to_light), 0.0));
+            let lit = bond_inks[hit_bond].xyz * (0.55 + 0.45 * max(along(hit, segment).dot(to_light), 0.0));
             return mix(background, lit, fog);
         }
         if (hit_particle < n_particles) {
-            let hit = (position + segment * best_u).normalized();
+            let hit = (chart + segment * best_u).normalized();
             let reading = unit & particles[hit_particle];
             let n_tan = along(hit, hit - particles[hit_particle].normalized());
-            let to_eye = -along(hit, v);
+            let to_eye = -along(hit, segment);
             let to_light = along(hit, light);
             let diff1 = max(n_tan.dot(to_light), 0.0);
             let diff2 = max(n_tan.dot(to_eye), 0.0);
@@ -234,8 +300,8 @@ fn sample(place: vec2<f32>) -> Sample {
             return mix(background, lit, fog);
         }
         if (hit_edge < 6u) {
-            let hit = (position + v * (step * best_u)).normalized();
-            let ray = along(hit, v);
+            let hit = (chart + segment * best_u).normalized();
+            let ray = along(hit, segment);
             let ic = opp_c[hit_edge];
             let id = opp_d[hit_edge];
             let lc = l[ic] + best_u * dl[ic];
@@ -256,8 +322,8 @@ fn sample(place: vec2<f32>) -> Sample {
             return mix(background, lit, fog);
         }
         let h = step * u_exit;
-        heading = headed(heading, connection(tet, position & v, waves), waves, h);
-        position = position + v * h;
+        heading = headed(heading, connection(steps, waves), waves, h);
+        position = (chart + segment * u_exit).normalized();
         travelled = travelled + h;
         if (travelled > 3.14159) {
             break;
@@ -292,53 +358,103 @@ def edge_styles(core, mesh, guardrails: np.ndarray) -> np.ndarray:
     return styles[tet_edges.reshape(-1)]
 
 
-def inside(core, mesh, vertices: Extensor, camera: Extensor, gauge, waves, eye_times: np.ndarray, guardrails: np.ndarray,
-           bonds, states: list) -> Iterator[np.ndarray]:
-    """Frames of the view from inside a three-sphere meshed by tetrahedra and carrying the stepped gravitational waves
-    `waves`, one at each of the eye's times: the camera, a motor, carries the origin to the eye and the origin's steps
-    across `x`, `y` and `z` to its right, up and forward, read in the frame the vertices' frames give the eye,
-    `gauge(place)`; the tetrahedra's edges are lit struts, the guardrails `[decagons, 10]` in colour; at each time the
-    atoms of `states`, `(Point-[atoms], Scalar+[bonds])` per frame, are balls and their `bonds`, a graph `Mesh`, segments
-    coloured by their strains."""
+def inside(core, mesh, vertices: Extensor, camera: Extensor, waves, eye_times: np.ndarray, styles: np.ndarray,
+           circles: tuple[Extensor, Extensor, np.ndarray], bonds, states: list, saturating: float
+           ) -> Iterator[np.ndarray]:
+    """Frames of the view from inside a round three-sphere meshed by tetrahedra and carrying the stepped gravitational
+    waves `waves`, one at each of the eye's times: the camera, a motor, carries the origin to the eye and the origin's
+    steps across `x`, `y` and `z` to its right, up and forward, read in the isoclinic frame at the eye; the
+    tetrahedra's edges are lit struts, each in its colour and squared radius `styles`, `[tets * 6, 4]` in each
+    tetrahedron's own order of its edges, as `edge_styles` gives them; great circles fixed in the round sphere,
+    `circles`, each through a point and the point a quarter turn on, `[circles] Point-` each, with its colour and
+    squared tube radius `[circles, 4]`, are lit tubes; at each time the atoms of `states`, `(Point-[atoms],
+    Scalar+[bonds])` per frame, are balls and their `bonds`, a graph `Mesh`, segments coloured by their strains, blue
+    squeezed and red stretched, saturating at the strain `saturating`."""
     from examples.util.wgsl import Shader, supersampled
 
     mv = core.mv
     shader = Shader(supersampled() + core.geodesic_step_source + inside_source, core.ga,
                     dict(Point=core.Point, Plane=core.Plane, Rate=core.Rate, Line=core.Line, Step=core.Step,
-                         Strain=core.Strain, Turning=core.Turning, Across=core.Across, Translating=core.Translating),
+                         Motor=core.Motor, Strain=core.Strain, Turning=core.Turning, Polarity=core.Polarity,
+                         Translating=core.Translating),
                     dict(background=inside_background))
     ramps = waves.ramps                                                         # [corners] Plane+[tets]
     neighbours, entries = mesh.neighbours
-    spanning = stack((mv.x, mv.y, mv.z, mv.w)).dual()                         # [4] Point-
     _, _, steps = core.invariant_generators()                                   # [3] Antivector-
     steps = steps.cast(core.Step)
     place = camera >> core.origin                                               # [] Point-
-    view = (gauge(place).inverse() * camera) >> steps                          # [3] Antivector-
+    view = (core.isoclinic(place).inverse() * camera) >> steps                 # [3] Antivector-
     half_height = float(np.tan(fov_radians / 2) * inside_shape[0] / inside_shape[1])
     n_levels, n_vertices = waves.traces.shape
     fixed = dict(
         ramps=stack(tuple(ramps.batch()), axis=-1).reshape(-1), neighbours=neighbours.astype(np.uint32).reshape(-1),
         entries=entries.astype(np.uint32).reshape(-1),
-        coframes=stack(tuple(waves.coframes.batch()), axis=-1).reshape(-1),
         tet_vertices=mesh.tets.astype(np.uint32).reshape(-1), strains=waves.strains.reshape(-1),
         strain_rates=waves.strain_rates.reshape(-1), traces=waves.traces.to_array().reshape(-1).astype(np.float32),
         turns=waves.turns.reshape(-1), n_vertices=n_vertices, n_tets=len(mesh.tets), n_levels=n_levels,
         first_time=waves.first_time, level_step=waves.level_step, origin=core.origin, infinity=core.infinity,
-        basis_0=spanning[0], basis_1=spanning[1], basis_2=spanning[2], basis_3=spanning[3], step_x=steps[0],
-        step_y=steps[1], step_z=steps[2], across=core.across, translating=core.translating, start_place=place,
+        polar=core.polar, translating=core.translating, start_place=place,
         start_tet=int(mesh.picking(vertices)(place[None])[0]), right=view[0], up=view[1], forward=view[2],
         half_height=half_height, step=inside_step, max_steps=int(4 * np.pi / inside_step),
         light=camera >> ((mv.yw * 0.4 + mv.xw * -0.3).exp() >> core.origin),
-        edge_style=edge_styles(core, mesh, guardrails), particle_ink=particle_ink,
+        edge_style=styles, circle_starts=circles[0], circle_quarters=circles[1],
+        circle_inks=circles[2].astype(np.float32), n_circles=circles[0].shape[0], particle_ink=particle_ink,
         particle_radius_squared=particle_radius ** 2, bond_radius_squared=bond_radius ** 2)
+    first_atoms, _ = states[0]
+    fixed.update(nearby(core, mesh, vertices, first_atoms, bonds))
     strain_inks = plt.get_cmap("coolwarm")
     for eye_time, (atoms, strains) in zip(eye_times, states):
         tails, heads = bonds.incidence[1, 0] * atoms                           # Point-[bonds], Point-[bonds]
-        inks = strain_inks(0.5 + 0.5 * np.clip(strains.to_array() / saturating_strain, -1, 1)).astype(np.float32)
+        inks = strain_inks(0.5 + 0.5 * np.clip(strains.to_array() / saturating, -1, 1)).astype(np.float32)
         image = shader(inside_shape, eye_time=float(eye_time), particles=atoms.batch().normalized(),
                        n_particles=atoms.batch().shape[0], bond_tails=tails.batch().normalized(),
                        bond_heads=heads.batch().normalized(), bond_inks=inks, n_bonds=len(bonds.edges), **fixed)["image"]
         yield np.round(np.clip(image, 0.0, 1.0) * 255).astype(np.uint8)
+
+
+def nearby(core, mesh, vertices: Extensor, atoms: Extensor, bonds) -> dict[str, np.ndarray]:
+    """For each tetrahedron, the atoms and the bonds near enough to it to be drawn in it, as lists one after another
+    with each tetrahedron's start, `[tets + 1]` and `[listed]` for each: an atom within the tetrahedron's reach of its
+    middle, the farthest of its corners, plus the atom's radius and room for its motion, and a bond whose middle is
+    that near plus half its length."""
+    from scipy.spatial import cKDTree
+
+    mv = core.mv
+    spanning = stack((mv.x, mv.y, mv.z, mv.w))                                  # [4] Plane+
+
+    def directions(points: Extensor) -> np.ndarray:
+        """The points' directions as unit coordinates `[n, 4]`, read by pairing with the planes across each
+        direction."""
+        coordinates = (spanning & points[..., None]).to_array()
+        return coordinates / np.linalg.norm(coordinates, axis=-1, keepdims=True)
+
+    corners = directions(vertices.batch())[mesh.tets]                           # [tets, 4, 4]
+    middles = directions((mesh.incidence[3, 0].mean(axis=0) * vertices).batch())   # [tets, 4]
+    reach = np.arccos(np.clip(np.einsum("tk,tck->tc", middles, corners), -1, 1)).max(axis=-1)   # [tets]
+    places = directions(atoms.batch())                                          # [atoms, 4]
+    tails, heads = places[bonds.edges[:, 0]], places[bonds.edges[:, 1]]        # [bonds, 4], [bonds, 4]
+    bond_middles = (tails + heads) / np.linalg.norm(tails + heads, axis=-1, keepdims=True)   # [bonds, 4]
+    half_lengths = np.arccos(np.clip((tails * heads).sum(axis=-1), -1, 1)) / 2   # [bonds]
+    tree = cKDTree(middles)
+
+    def listed(centres: np.ndarray, radii: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Each tetrahedron's start and the listed indices of the centres `[n, 4]` within its reach plus their radii
+        `[n]`."""
+        widest = reach.max() + radii.max()
+        candidates = tree.query_ball_point(centres, 2 * np.sin(widest / 2))
+        tets, indices = np.array([(tet, index) for index, near in enumerate(candidates) for tet in near],
+                                 dtype=np.int64).reshape(-1, 2).T
+        angles = np.arccos(np.clip((middles[tets] * centres[indices]).sum(axis=-1), -1, 1))
+        kept = angles <= reach[tets] + radii[indices]
+        tets, indices = tets[kept], indices[kept]
+        order = np.lexsort((indices, tets))
+        starts = np.searchsorted(tets[order], np.arange(len(mesh.tets) + 1))
+        return starts.astype(np.uint32), indices[order].astype(np.uint32)
+
+    particle_starts, tet_particles = listed(places, np.full(len(places), particle_radius + motion_room))
+    bond_starts, tet_bonds = listed(bond_middles, half_lengths + bond_radius + motion_room)
+    return dict(particle_starts=particle_starts, tet_particles=tet_particles, bond_starts=bond_starts,
+                tet_bonds=tet_bonds)
 
 
 # --- the gate for stepping the motors: spectra of forms ---------------------------------------------------------------
@@ -400,5 +516,32 @@ def waves(spectrum: np.ndarray, squash_squared: float, times: np.ndarray, shares
     ringing.set_yticks([-swing, 0, swing])
     ringing.set_xticks([0, times[-1]])
     ringing.set_xlabel("time")
+    figure.tight_layout()
+    return figure
+
+
+# --- the beacons' response to the burst ------------------------------------------------------------------------------
+beacons_width, beacons_height = 380, 230
+
+
+@charts.style()
+def beacon_strains(nearness: Extensor, states: list) -> plt.Figure:
+    """Each beacon's largest bond strain over the turn as the eye sees it, against its distance from the burst's
+    source, from the cosine of that distance `[beacons] Scalar+` and the atoms and bonds' strains as each frame sees
+    them, `[(Point-[atoms], Scalar+[bonds])]`: thinning as the shell spreads, and rising again toward the antipode,
+    where it closes in."""
+    figure, ax = charts.subplots(beacons_width, beacons_height)
+    distances = np.arccos(np.clip(nearness.to_array().reshape(-1), -1, 1))     # [beacons]
+    strains = np.abs(np.stack([strain.to_array().reshape(-1) for _, strain in states]))   # [frames, bonds]
+    largest = strains.reshape(len(states), len(distances), -1).max(axis=(0, 2))   # [beacons]
+    ax.scatter(distances, largest, s=charts.MARKER_SIZE ** 2, color="#d0453b")
+    ax.set_xlim(0, np.pi)
+    ax.set_ylim(0, None)
+    ax.set_yticks([0, round(largest.max(), 3)])
+    ax.set_xticks([0, np.pi / 2, np.pi])
+    ax.set_xticklabels(["source", "quarter turn", "antipode"])
+    ax.set_xlabel("distance from the source")
+    ax.set_ylabel("largest bond strain")
+    ax.spines[["top", "right"]].set_visible(False)
     figure.tight_layout()
     return figure
