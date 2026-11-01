@@ -136,6 +136,8 @@ import examples.relativity.twistors.core
 import examples.relativity.twistors.scenarios
 import examples.fluids.stokes_swimmer.core
 import examples.fluids.stokes_swimmer.scenarios
+import examples.fluids.saltfingers.core
+import examples.fluids.saltfingers.scenarios
 import examples.surfaces.connections.core
 import examples.surfaces.connections.scenarios
 import examples.util.topology
