@@ -260,6 +260,15 @@ def stepped_squash(cell_mesh: core.Mesh, cell_vertices: core.Point, cell_rates: 
     return values.to_array(), frequency_squared, step * np.arange(n_steps), shares
 
 
+def hull_faces(steps: core.Point) -> np.ndarray:
+    """The faces of the hull of unit steps of the origin `[n] Point-`, triangles of their indices `[faces, 3]`, found
+    outside the algebra: for the decagons' base points, the icosahedron's faces."""
+    from scipy.spatial import ConvexHull
+
+    coordinates = (core.mv.vector(np.eye(4))[:3] & steps[..., None]).to_array()   # [n, 3]
+    return ConvexHull(coordinates).simplices
+
+
 def round_universe(mesh: core.Mesh, vertices: core.Point) -> core.Waves:
     """No waves on a mesh of the round three-sphere: two moments of no change, the same at every time."""
     chords = mesh.d[0] * vertices                                               # Point-[edges]
@@ -272,13 +281,10 @@ def helix(cell_vertices: core.Point) -> tuple[np.ndarray, core.Point, core.Point
     base points make, `[3, sides]` vertex indices; a point on its axis, the circle above the face's middle, `[]
     Point-`; and at that point the axis's direction and a step across it toward the middle of the face's first side,
     unit steps of the origin in the isoclinic frame there, `[] Point-` each."""
-    from scipy.spatial import ConvexHull
-
     circling = circle_turn(cell_vertices, guardrail_sides).log()               # [] Rate+
     decagons = guardrails(cell_vertices, guardrail_sides)                       # [decagons, sides]
     decagon_bases = core.base_points(cell_vertices.batch()[decagons[:, 0]], circling)   # [decagons] Point-
-    coordinates = (core.mv.vector(np.eye(4))[:3] & decagon_bases[..., None]).to_array()   # [decagons, 3]
-    face = ConvexHull(coordinates).simplices[0]                                 # [3]
+    face = hull_faces(decagon_bases)[0]                                         # [3]
     corners = decagon_bases[face]                                               # [3] Point-
     middle = corners.sum(axis=0).normalized()                                   # [] Point-
     side = (corners[0] + corners[1]).normalized()                               # [] Point-
@@ -330,10 +336,7 @@ def triangle_gauges(decagon_bases: core.Point, circling: core.Rate
     """The triangle gauges' bonds, a graph over their atoms, and the atoms, `Point-[atoms]` on the three-sphere: in
     each face of the icosahedron the decagons' base points make, the corners drawn toward the face's middle, lifted
     from the circle above the middle across the circles, so that the bonds run across them too."""
-    from scipy.spatial import ConvexHull
-
-    coordinates = (core.mv.vector(np.eye(4))[:3] & decagon_bases[..., None]).to_array()   # [decagons, 3]
-    faces = ConvexHull(coordinates).simplices                                   # [faces, 3]
+    faces = hull_faces(decagon_bases)                                           # [faces, 3]
     corners = decagon_bases[faces]                                              # [faces, 3] Point-
     middles = corners.sum(axis=-1).normalized()                                 # [faces] Point-
     atoms = (middles[:, None] + gauge_share * (corners - middles[:, None])).normalized()   # [faces, 3] Point-
