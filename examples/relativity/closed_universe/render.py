@@ -1,5 +1,6 @@
-"""Drawing for geodesics through a connection of motors: the chart's triangles faint, and the paths through them as
-they grow, in the plane or in spacetime alike, read by the planes of the algebra's first two generators."""
+"""Drawing for the closed universe: the view from inside a three-sphere meshed by tetrahedra, its rays rolled on the
+GPU through the waves' field of strain, and the sphere below the Hopf circles seen from outside, ray traced on the
+GPU, its waves, gauges and light lying on it."""
 
 from __future__ import annotations
 
@@ -7,55 +8,14 @@ from collections.abc import Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
-
+from matplotlib.colors import hsv_to_rgb
 from numga import Extensor, stack
+from numga.algebras import VGA3D
+
+from examples import instantiate
+from examples.relativity.closed_universe import core
 from examples.util import charts
-from examples.util.animation import capture
-from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import panel, plane
-
-# The picture's longer side in pixels, and the margin about the chart as a share of its larger half-width.
-n_pixels = 300
-margin = 0.06
-# The triangles' ink and width, and the paths' width, in pixels.
-edge_ink, edge_width = np.full(3, 0.82), 1.0
-path_width = 2.0
-# The steps between frames.
-n_frame_steps = 2
-
-
-def animate(mesh: simplices.Mesh, vertices: Extensor, paths: Extensor, extent: tuple[float, float, float, float]
-            ) -> Iterator[np.ndarray]:
-    """One frame every few steps of the paths `[paths, steps + 1] Point-`: each path from its start to where it has
-    reached, over the chart's triangles, within the extent `(left, right, bottom, top)` of the readings by the planes
-    of the algebra's first two generators, across and up."""
-    algebra = vertices.algebra
-    across, up = (plane(algebra, name) for name, square in zip(algebra.basis_names, algebra.signature) if square != 0)
-    n_paths, n_steps = paths.shape
-    inks = plt.get_cmap("plasma")(np.linspace(0.1, 0.8, n_paths))[:, :3]
-    left, right, bottom, top = extent
-    reach = margin * max(right - left, top - bottom) / 2
-    scale = n_pixels / max(right - left, top - bottom)
-    figure, ax = charts.subplots(round(scale * (right - left + 2 * reach)), round(scale * (top - bottom + 2 * reach)))
-    figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
-    ax.set(xlim=(left - reach, right + reach), ylim=(bottom - reach, top + reach), aspect="equal")
-    ax.set_axis_off()
-    camera = panel(ax, across, up)
-    triangles = simplices.strokes(vertices, mesh, edge_ink, edge_width, camera)
-
-    def layers(reached: int) -> list:
-        """The triangles, and each path's points up to the step reached, path by path, as chains of strokes."""
-        trail = paths[:, : reached + 1].reshape(-1)                             # [paths * (reached + 1)] Point-
-        chains = simplices.Mesh.chains([reached + 1] * n_paths)
-        return [triangles, simplices.strokes(trail, chains, np.repeat(inks, reached, axis=0), path_width, camera)]
-
-    frames = range(1, n_steps, n_frame_steps)
-    image = simplices.overlay(ax, layers(frames[0]))
-    yield capture(figure)
-    for reached in frames[1:]:
-        image.set_data(simplices.composited(layers(reached)))
-        yield capture(figure)
-    plt.close(figure)
+from examples.util.wgsl import meshes, simplices, solids
 
 
 # --- the view from inside a three-sphere, traced on the GPU ------------------------------------------------------------
@@ -157,7 +117,7 @@ fn sample(place: vec2<f32>) -> Sample {
         // The ray's round step, its heading less half the waves' stretch of it, and the place a step ahead, rolled along
         // that step on its great circle by the frame at the place.
         let steps = heading - translating(waves.strain(heading)) * 0.5;
-        let ahead = (frame(position) * ((infinity ^ polar(steps)) * (-0.5 * step)).exp()) >> origin;
+        let ahead = (frame(position) * ((equator ^ polar(steps)) * (-0.5 * step)).exp()) >> origin;
         let segment = ahead / (unit & ahead) - chart;
         let dl = array<f32, 4>(ramps[base] & segment, ramps[base + 1u] & segment, ramps[base + 2u] & segment,
                                ramps[base + 3u] & segment);
@@ -340,7 +300,7 @@ fn sample(place: vec2<f32>) -> Sample {
 """
 
 
-def edge_styles(core, mesh, guardrails: np.ndarray) -> np.ndarray:
+def edge_styles(mesh, guardrails: np.ndarray) -> np.ndarray:
     """Each edge of each tetrahedron's colour and squared strut radius, `[tets * 6, 4]`, in the tetrahedron's own order
     of its edges: along each guardrail `[decagons, 10]`, a thick strut in the guardrail's colour, evenly spaced in hue;
     every other edge a thin ghost."""
@@ -358,7 +318,7 @@ def edge_styles(core, mesh, guardrails: np.ndarray) -> np.ndarray:
     return styles[tet_edges.reshape(-1)]
 
 
-def inside(core, mesh, vertices: Extensor, camera: Extensor, waves, eye_times: np.ndarray, styles: np.ndarray,
+def inside(mesh, vertices: Extensor, camera: Extensor, waves, eye_times: np.ndarray, styles: np.ndarray,
            circles: tuple[Extensor, Extensor, np.ndarray], bonds, states: list, saturating: float
            ) -> Iterator[np.ndarray]:
     """Frames of the view from inside a round three-sphere meshed by tetrahedra and carrying the stepped gravitational
@@ -374,7 +334,7 @@ def inside(core, mesh, vertices: Extensor, camera: Extensor, waves, eye_times: n
 
     mv = core.mv
     shader = Shader(supersampled() + core.geodesic_step_source + inside_source, core.ga,
-                    dict(Point=core.Point, Plane=core.Plane, Rate=core.Rate, Line=core.Line, Step=core.Step,
+                    dict(Point=core.Point, Plane=core.Plane, Rate=core.Rate, Step=core.Step,
                          Motor=core.Motor, Strain=core.Strain, Turning=core.Turning, Polarity=core.Polarity,
                          Translating=core.Translating),
                     dict(background=inside_background))
@@ -392,7 +352,7 @@ def inside(core, mesh, vertices: Extensor, camera: Extensor, waves, eye_times: n
         tet_vertices=mesh.tets.astype(np.uint32).reshape(-1), strains=waves.strains.reshape(-1),
         strain_rates=waves.strain_rates.reshape(-1), traces=waves.traces.to_array().reshape(-1).astype(np.float32),
         turns=waves.turns.reshape(-1), n_vertices=n_vertices, n_tets=len(mesh.tets), n_levels=n_levels,
-        first_time=waves.first_time, level_step=waves.level_step, origin=core.origin, infinity=core.infinity,
+        first_time=waves.first_time, level_step=waves.level_step, origin=core.origin, equator=core.equator,
         polar=core.polar, translating=core.translating, start_place=place,
         start_tet=int(mesh.picking(vertices)(place[None])[0]), right=view[0], up=view[1], forward=view[2],
         half_height=half_height, step=inside_step, max_steps=int(4 * np.pi / inside_step),
@@ -401,7 +361,7 @@ def inside(core, mesh, vertices: Extensor, camera: Extensor, waves, eye_times: n
         circle_inks=circles[2].astype(np.float32), n_circles=circles[0].shape[0], particle_ink=particle_ink,
         particle_radius_squared=particle_radius ** 2, bond_radius_squared=bond_radius ** 2)
     first_atoms, _ = states[0]
-    fixed.update(nearby(core, mesh, vertices, first_atoms, bonds))
+    fixed.update(nearby(mesh, vertices, first_atoms, bonds))
     strain_inks = plt.get_cmap("coolwarm")
     for eye_time, (atoms, strains) in zip(eye_times, states):
         tails, heads = bonds.incidence[1, 0] * atoms                           # Point-[bonds], Point-[bonds]
@@ -412,7 +372,7 @@ def inside(core, mesh, vertices: Extensor, camera: Extensor, waves, eye_times: n
         yield np.round(np.clip(image, 0.0, 1.0) * 255).astype(np.uint8)
 
 
-def nearby(core, mesh, vertices: Extensor, atoms: Extensor, bonds) -> dict[str, np.ndarray]:
+def nearby(mesh, vertices: Extensor, atoms: Extensor, bonds) -> dict[str, np.ndarray]:
     """For each tetrahedron, the atoms and the bonds near enough to it to be drawn in it, as lists one after another
     with each tetrahedron's start, `[tets + 1]` and `[listed]` for each: an atom within the tetrahedron's reach of its
     middle, the farthest of its corners, plus the atom's radius and room for its motion, and a bond whose middle is
@@ -455,3 +415,118 @@ def nearby(core, mesh, vertices: Extensor, atoms: Extensor, bonds) -> dict[str, 
     bond_starts, tet_bonds = listed(bond_middles, half_lengths + bond_radius + motion_room)
     return dict(particle_starts=particle_starts, tet_particles=tet_particles, bond_starts=bond_starts,
                 tet_bonds=tet_bonds)
+
+
+# --- the sphere below the Hopf circles, seen from outside ---------------------------------------------------------------
+# The algebra of the space the base is drawn in, and its meshes; the picture's pixels across, half its width in the
+# scene, and the camera's elevation and azimuth; the view, and its background.
+flat = instantiate("examples.util.mesh", VGA3D)
+base_pixels = 300
+base_half = 1.15
+base_elevation, base_azimuth = 0.45, 2.75
+outside = solids.View(solids.aim(solids.origin, base_elevation, base_azimuth), np.full(2, base_half), base_pixels)
+base_background = np.ones(3)
+strain_map = "coolwarm"
+# The balls at the decagons' base points and the gauges' atoms, their radii in pixels, and the widths of the gauges'
+# bonds and of the light's paths, in pixels; atoms, bonds and light lie on the sphere, raised by half the bonds' or
+# the light's width.
+dot_radius, atom_radius = 4.5, 2.5
+bond_width, light_width = 3.0, 1.4
+atom_ink = np.array([0.25, 0.25, 0.25])
+light_ink = np.array([0.1, 0.1, 0.1])
+
+
+def in_space(steps: core.Point) -> flat.Point:
+    """Unit steps of the three-sphere's origin, `[n] Point-`, as points of the algebra of space, read by pairing with
+    the planes across x, y and z: a stopgap until the steps embed in the renderer's space."""
+    coordinates = (stack((core.mv.x, core.mv.y, core.mv.z), axis=-1)
+                   & steps[..., None]).to_array()                               # [n, 3]
+    return flat.mv.vector(coordinates).dual()
+
+
+def lying(steps: core.Point, height: float) -> solids.Point:
+    """Points of the base `[...] Point-` in the scene, raised above the sphere by `height` pixels."""
+    return solids.origin + solids.context.include_from_algebra(in_space(steps)) * (1 + height * outside.pixel)
+
+
+def on_screen(steps: core.Point) -> tuple[np.ndarray, np.ndarray]:
+    """Points of the base `[...] Point-` on the screen, in pixels across and up from its middle, `[..., 2]`, and
+    whether each faces the viewer, `[...]`: in front of the plane through the sphere's middle across the view, which
+    the camera looks down along its own -z."""
+    places = lying(steps, 0.0)                                                  # [...] Point-
+    seen_by_camera = outside.camera << places                                   # [...] Point-
+    depths = ((solids.mv.z & seen_by_camera) / (solids.mv.w & seen_by_camera)).to_array()
+    return outside.across(places) / outside.pixel, depths > 0
+
+
+def inks(stretches: core.Scalar, saturating: float) -> np.ndarray:
+    """The colours of stretches `[n] Scalar+`, blue shortened and red lengthened, saturating at `saturating`."""
+    return plt.get_cmap(strain_map)(0.5 + 0.5 * np.clip(stretches.to_array().reshape(-1) / saturating, -1, 1))[:, :3]
+
+
+def base_view(sphere_mesh: flat.Mesh, sphere_points: flat.Point, stretches: core.Scalar, decagon_bases: core.Point,
+              atoms: core.Point, arcs: core.Point, strains: core.Scalar, light: core.Point, saturating: float
+              ) -> np.ndarray:
+    """The base from outside: the icosphere coloured by how much the circles above its points stretch,
+    `Scalar+[points]`, the decagons' base points `[decagons] Point-` in hues around the decagons, the gauges' atoms
+    `[atoms] Point-` and their bonds' arcs `[bonds, arc points] Point-` coloured by their strains `[bonds] Scalar+`,
+    and the light's paths `[rays, steps + 1] Point-`, all on the base."""
+    pixel = outside.pixel
+
+    points = solids.origin + solids.context.include_from_algebra(sphere_points.batch())   # [points] Point-
+    faces = sphere_mesh.faces
+    normals = meshes.smooth(points, meshes.Mesh(points.shape[0], faces))
+    surface = meshes.samples(points, faces, inks(stretches, saturating)[faces], normals, outside, np.zeros(3),
+                             meshes.plain, solids.gloss)
+    n_bonds, n_arc_points = arcs.shape
+    bonds = simplices.tubes(lying(arcs.reshape(-1), bond_width / 2), simplices.Mesh.chains([n_arc_points] * n_bonds),
+                            np.repeat(inks(strains, saturating), n_arc_points - 1, axis=0), bond_width, outside,
+                            solids.gloss)
+    n_rays, n_path_points = light.shape
+    rays = simplices.tubes(lying(light.reshape(-1), light_width / 2), simplices.Mesh.chains([n_path_points] * n_rays),
+                           light_ink, light_width, outside, solids.gloss)
+    hues = np.arange(decagon_bases.shape[0]) / decagon_bases.shape[0]
+    dot_inks = hsv_to_rgb(np.stack([hues, np.full_like(hues, 0.75), np.full_like(hues, 0.95)], axis=-1))
+    parts = [(solids.ball(lying(decagon_bases, 0.0), dot_radius * pixel)[:, None], dot_inks),
+             (solids.ball(lying(atoms, bond_width / 2), atom_radius * pixel)[:, None],
+              np.broadcast_to(atom_ink, (atoms.shape[0], 3)))]
+    return solids.draw(parts, outside, base_background, inks=[], translucent=[],
+                       meshes=[(surface, 1.0), (bonds, 1.0), (rays, 1.0)])
+
+
+# --- the gauges' and the light's response -----------------------------------------------------------------------------
+response_width, response_height = 520, 230
+
+
+@charts.style()
+def response(strains: core.Scalar, light: core.Point, undisturbed: core.Point, target_strain: float,
+             target_sways: tuple[float, float]) -> plt.Figure:
+    """The gauges' and the light's response over a swing, against what they are tuned to show: each bond's strain
+    from one end of its swing to the other, from its strains at each frame `[frames, bonds] Scalar+`, largest first,
+    against `target_strain`; and each ray's largest sway on the screen from its undisturbed path, among its points
+    that face the viewer, from its paths at each frame `[frames, rays, steps + 1] Point-` and undisturbed `[rays,
+    steps + 1] Point-`, as a share of the picture, against the band `target_sways`."""
+    figure, (gauges, rays) = charts.subplots(response_width, response_height, ncols=2)
+    readings = strains.to_array().reshape(strains.shape)                       # [frames, bonds]
+    swings = np.sort(readings.max(axis=0) - readings.min(axis=0))[::-1]        # [bonds]
+    gauges.bar(np.arange(len(swings)), swings, width=1.0, color="#d0453b")
+    gauges.axhline(target_strain, color="0.3", linewidth=charts.FRAME_WIDTH, linestyle=(0, (3, 2)))
+    gauges.set_xticks([])
+    gauges.set_yticks([0, target_strain, round(swings.max(), 2)])
+    gauges.set_xlabel("bonds, largest first")
+    gauges.set_ylabel("bond strain, peak to peak")
+    disturbed, facing = on_screen(light)                                        # [frames, rays, steps + 1, 2], [frames, rays, steps + 1]
+    calm, _ = on_screen(undisturbed)                                            # [rays, steps + 1, 2]
+    sways = np.linalg.norm(disturbed - calm[None], axis=-1) * facing / base_pixels   # [frames, rays, steps + 1]
+    largest = sways.max(axis=(0, 2))                                            # [rays]
+    rays.axhspan(*target_sways, color="0.9")
+    rays.bar(np.arange(len(largest)), largest, width=0.7, color="#3b6fb6")
+    rays.set_xticks([])
+    rays.set_yticks([0, *target_sways, round(largest.max(), 2)])
+    rays.set_xlabel("rays, across the bundle")
+    rays.set_ylabel("ray sway, share of picture")
+    for ax in (gauges, rays):
+        ax.axhline(0, color="0.6", linewidth=charts.FRAME_WIDTH)
+        ax.spines[["top", "right"]].set_visible(False)
+    figure.tight_layout()
+    return figure

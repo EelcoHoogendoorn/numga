@@ -1,49 +1,27 @@
-"""Geodesics through a connection of motors: one motor on each edge of a flat mesh, blended across each triangle by
-the triangle's Whitney forms, makes the mesh a curved surface or a curved spacetime, and free paths roll through it.
+"""Gravitational waves of a closed universe, a round three-sphere meshed by tetrahedra: the waves stepped on the
+edges' squared lengths, a smooth field of strain over the mesh, light and massive particles rolled through it, and the
+sphere below its Hopf circles, on which waves that are the same all along the circles are seen without loss.
 
-Cartan described a curved space by how a flat one rolls along it. Rolled from one end of an edge to the other, the
-flat space moves by a motor: a step, how far the edge reaches in the curved space, and a turn about the point of
-contact on the way, which in spacetime is a boost. A mesh whose edges carry such motors is curved, whatever its own
-flat shape, which serves only as a chart. Inside each triangle the motors' generators blend into one connection, a map
-from the line a path runs along to the rate at which the rolled space moves. Along an edge it gives back exactly that
-edge's motor, and two triangles' connections agree along the side they share, so the rolling goes on across a side
-without a jump and the curvature is spread through the triangles, not gathered at their corners: paths passing on
-either side of a corner are turned alike. A free particle, or a ray of light, keeps one direction in the space being
-rolled; its path on the mesh is the one along which the rolled space's point of contact runs straight.
+Regge calculus holds a curved space in the lengths of a mesh's edges. Read as pieces of the round three-sphere, each
+tetrahedron's lengths give its angles, and the deficit about each edge, how far its tetrahedra's angles fall short of
+a whole turn, is the curvature there; the round sphere's own chords leave no deficit, on any mesh. Gravitational
+waves are small changes of the squared lengths: the deficits they cause pull them back, a stiffness over the masses
+of the lengths' motion, and what moving the vertices alone would change is no wave and is kept out. The slowest, the
+squash, stretches the whole sphere along one direction and squeezes it along another.
 
-In a projective algebra each corner of a triangle has a ramp, the plane through the side across from it over the join
-of the corners, `coframe & point` the point's barycentric weights. An edge's Whitney form inside the triangle is the
-meet of its two ends' ramps, `coframe[tails] ^ coframe[heads]`, here the corner across from the edge, and it reads a
-path's tangent line, `position & velocity`, by the line's moment about that corner: one along its own edge from tail
-to head, nothing along the other two. The connection is a constant map from lines to rates in each triangle, the
-edges' rates weighted by those readings. The rolled space's point of contact is its origin; under a rate it moves by
-`origin.commutator(rate)`, the rate's step, while the rest of the rate turns the space about it. A free path's
-velocity through the mesh is the one whose step is its fixed direction in the rolled space, carried into the space's
-frame of the moment, and the motor of the frame grows by each rate along the way.
+The algebra is that of four directions squaring to one, its points antivectors on the unit sphere and the origin the
+pole of its equator, the plane `w`. Each point carries its isoclinic frame, `isoclinic(place)`, the motor that carries
+the origin there by turning alike in two square planes, smooth everywhere, and a step of the origin read in these
+frames is a direction anywhere. A strain is the change of the metric on such steps, a map from a step to the plane
+that reads its stretch, blended across each tetrahedron from its corners. A ray rolls its frame along its step: the
+step, stretched by half the strain, moves the origin, and the strain turns the frame; in the round sphere a ray's
+heading keeps still along its great circle, so only the waves turn it. Massive particles roll the same way, pulled by
+springs along their bonds' proper separations.
 
-A metric that is the chart's own scaled by a conformal factor has every edge's rate in closed form: the rolled space
-steps along the edge by the factor, and turns about the meet of the motion's polar plane with the plane
-`conformal * infinity + gradient`, the gradient being that of the factor's logarithm. A direction's polar plane is
-the one whose meet with the plane at infinity steps the origin along it, so the chart's metric enters only through
-the algebra's own squares, and the same lines serve the plane and spacetime. Taken at an edge's midpoint along the
-whole edge, that rate stands for the edge's motor. The unit sphere through its stereographic chart has the factor
-`2 / (1 + r * r)` at distance `r` from the chart's centre, and every geodesic from a point meets the others again at
-the antipode, half a turn along. Anti-de Sitter spacetime through its strip has the factor one over the cosine of the
-distance from the strip's middle, and every free particle thrown from an event, at whatever speed, meets the others
-again after the same proper time, half a turn of the space's radius, while light runs along the chart's own light
-cone.
-
-The rolled space need not be flat. With `w` squaring to one instead of nothing, the same lines roll a round sphere on
-itself, in any dimension: `infinity` is then the equator of the origin, and the rates that moved the origin along a
-plane now carry it along a great circle. A round sphere's edges carry the motors between frames at their ends, and
-its connection is flat; a free path keeps the one rate that carries it along its great circle. What departs from
-roundness, a lens or a wave, is what the edges' motors depart from those.
-
-In the notation of Cartan geometry, the connection is a Cartan connection valued in the Lie algebra of the
-Euclidean, the Poincaré or the rotation group, its translation part the coframe $e$ and its rotation part the
-Levi-Civita connection $\\omega$, and geodesics are the curves whose development is straight; the edge motors are a
-lattice gauge field of that group, and the blend is the lowest-order Whitney interpolation of a connection, as in the
-simplicial gauge theory of Christiansen and Halvorsen (2012).
+The Hopf circles are the orbits of the turns that act on the frames' own side. Read in its frames, a circle's
+direction is one and the same step of the origin all along it, a point of the sphere of such steps below the whole
+circle, the base. Read along a circle, a wave's strain says how much the circle stretches; read across it, turned a
+quarter about its base point, it is the strain of the base itself.
 """
 
 from __future__ import annotations
@@ -55,30 +33,24 @@ from operator import and_
 import numpy as np
 
 from numga import Algebra, stack
-from numga.backend.context import Context
 from numga.sparse import SparseExtensor, spdiag
 from examples import instantiate
 
-# Supplied by examples.instantiate: an algebra of the Cayley-Klein kind, whose generator `w` squares to nothing for a
-# flat space, as the plane's or a spacetime's projective algebra, or to one for a round sphere, of any dimension.
-ga: Algebra
-ctx: Context
+# The algebra of the round three-sphere: four directions squaring to one, `w` the origin's own.
+ga = Algebra("x+y+z+w+")
 mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, mv = mesh_module.Mesh, mesh_module.mv
+Mesh, mv, ctx = mesh_module.Mesh, mesh_module.mv, mesh_module.ctx
 Scalar = ga.gatype.scalar()                         # Scalar+
 # The corners' ramps, gradients and the polar planes of directions: vectors, extrinsic; those through the origin.
 Plane = ga.gatype.vector()                          # Vector+
 Through = Plane.derive.within(" ".join(name for name in ga.basis_names if name != "w"))   # Vector+
-# Positions in the chart and the origin's steps, and the lines paths run along: antivectors and antibivectors.
+# Points of the sphere and the origin's steps: antivectors.
 Point = ga.gatype.antivector()                      # Antivector-
 Step = Point.derive.containing("w")                 # Antivector-
-Line = ga.gatype.antibivector()                     # Antibivector-
-# The rolled space's rates and the motors they generate; the Whitney forms, meets of the ramps.
+# The rates that move and turn the frames, and the motors they generate.
 Rate = ga.gatype.bivector()                         # Bivector+
 Motor = ga.gatype.rotor()                           # Rotor+
-Connection = ga.gatype((Rate, Line))                # Rate+ <- Line-
 Translating = ga.gatype((Step, Through))            # Antivector- <- Vector+
-Stepping = ga.gatype((Point, Point))                # Antivector- <- Antivector-
 Metric = ga.gatype((Plane, Point))                  # Plane+ <- Point-
 InverseMetric = ga.gatype((Point, Plane))           # Point- <- Plane+
 # A strain, the change of the metric on the origin's steps, the plane that reads each step's stretch; a turning, the
@@ -90,13 +62,12 @@ Rolling = ga.gatype((Rate, Step))                   # Bivector+ <- Antivector-
 Stretching = ga.gatype((Step, Step))                # Antivector- <- Antivector-
 Polarity = ga.gatype((Through, Step))               # Vector+ <- Antivector-
 
-# The plane `w`, at infinity in a flat space and the equator on a sphere, and the rolled space's point of contact, its
-# origin, the plane's pole.
-infinity = mv.w                                     # [] Plane+
-origin = infinity.dual()                            # [] Point-
+# The plane `w`, the origin's equator, and the origin, its pole.
+equator = mv.w                                      # [] Plane+
+origin = equator.dual()                             # [] Point-
 # The step of the origin under the motion across a plane through it, a step by its value, cast so; its inverse, each
-# step's polar plane, is the chart's metric as a correlation.
-translating = origin.commutator(infinity ^ Through).cast(Translating)   # [] Antivector- <- Vector+
+# step's polar plane, is the metric on the origin's steps as a correlation.
+translating = origin.commutator(equator ^ Through).cast(Translating)   # [] Antivector- <- Vector+
 polar = translating.inverse()                                           # [] Vector+ <- Antivector-
 
 
@@ -109,46 +80,6 @@ def coframe(mesh: Mesh, vertices: Point) -> Plane:
     return facets / (facets & corners)
 
 
-def whitney(mesh: Mesh, ramps: Plane) -> Rate:
-    """The Whitney form of each edge of each simplex, `[edges] Bivector+[simplices]`, in the simplex's own order of its
-    edges: the meet of the edge's two ramps, in a triangle the corner across from the edge and in a tetrahedron the
-    edge across from it, which reads a line by its moment about that."""
-    tails, heads = mesh.corners[-1, 1]
-    return ramps[tails] ^ ramps[heads]
-
-
-def connection(mesh: Mesh, ramps: Plane, rates: Rate) -> Connection:
-    """The connection in each simplex, `(Rate+ <- Line-)[simplices]`, from the rates of the edges, `Rate+[edges]`:
-    each edge's rate, run as the simplex runs the edge, weighted by the edge's Whitney form's reading of the line."""
-    return ((mesh.oriented[-1, 1] * rates) * (whitney(mesh, ramps) & Line)).sum(axis=0)
-
-
-def conformal_rates(edges: Point, conformal: Scalar, gradient: Plane) -> Rate:
-    """The rate of each edge, `Rate+[edges]`, where the chart's metric is scaled by a conformal factor: the rolled
-    space steps along the edge by the factor, and turns about where the motion's polar plane meets
-    `conformal * infinity + gradient`, the gradient of the factor's logarithm, both taken at the edge's midpoint."""
-    # In a flat chart the edges, differences of points of weight one, are steps by value, cast so for the metric.
-    return (conformal * infinity + gradient) ^ polar(edges.cast(Step))
-
-
-def sphere_rates(mesh: Mesh, vertices: Point) -> Rate:
-    """The rate of each edge, `Rate+[edges]`, for the unit sphere seen through the stereographic chart, whose
-    conformal factor is `2 / (1 + r * r)` at distance `r` from the chart's centre."""
-    midpoints = mesh.incidence[1, 0].mean(axis=0) * vertices                    # Point-[edges]
-    # The polar plane of each midpoint's radius, as long as the radius: half the gradient of the radius squared.
-    radial = polar((midpoints - origin).cast(Step))                            # Plane+[edges]
-    conformal = 2 / (1 + radial.squared())                                      # Scalar+[edges]
-    return conformal_rates(mesh.d[0] * vertices, conformal, -conformal * radial)
-
-
-def anti_de_sitter_rates(mesh: Mesh, vertices: Point) -> Rate:
-    """The rate of each edge, `Rate+[edges]`, for anti-de Sitter spacetime of unit radius seen through its strip,
-    whose conformal factor is one over the cosine of the distance across the strip from its middle, read by `mv.x`."""
-    midpoints = mesh.incidence[1, 0].mean(axis=0) * vertices                    # Point-[edges]
-    across_strip = mv.x & midpoints                                             # Scalar+[edges]
-    return conformal_rates(mesh.d[0] * vertices, 1 / across_strip.cos(), mv.x * across_strip.tan())
-
-
 def round_rates(mesh: Mesh, frames: Motor) -> Rate:
     """The rate of each edge, `Rate+[edges]`, for a round sphere of unit radius rolled on itself, from frames at the
     vertices, `Motor+[vertices]`, motors that carry the origin to each vertex: the tail's inverse times the head's, so
@@ -157,41 +88,6 @@ def round_rates(mesh: Mesh, frames: Motor) -> Rate:
     three-sphere has the isoclinic ones."""
     tails, heads = mesh.incidence[1, 0] * frames                                # Motor+[edges], Motor+[edges]
     return -2 * (tails.inverse() * heads).log()
-
-
-def geodesics(mesh: Mesh, vertices: Point, ramps: Plane, connection: Connection, starts: Point, headings: Point,
-              step: float, n_steps: int) -> Iterator[Point]:
-    """Free paths from `starts` `[paths] Point-`, setting out along `headings` `[paths] Antivector-`, steps of the
-    origin, and stepped by `step` of their length in the rolled space, the proper time along a unit timelike
-    direction: their positions in the chart at each step, each held where it leaves the mesh. A free path keeps one
-    rate in the rolled space, the one that moves the origin along its heading, and so runs along a straight line of
-    the rolled space, or a great circle of a rolled sphere; its velocity is the step that rate gives the point of
-    contact, seen from the frame of the moment."""
-    pick = mesh.picking(vertices)
-    kept = infinity ^ polar(headings)                                           # [paths] Rate+
-    positions = starts                                                          # [paths] Point-
-    frames = mv.rotor().broadcast_to(starts.shape)                              # [paths] Motor+
-    yield positions
-    for _ in range(n_steps):
-        faces = pick(positions)                                                 # [paths]
-        corner_ramps = ramps.batch()[:, faces]                                  # [corners, paths] Plane+
-        # The plane on which the simplex's barycentric weights add up to one, and the position scaled onto it.
-        unit = corner_ramps.sum(axis=0)                                         # [paths] Plane+
-        positions = positions / (unit & positions)                              # [paths] Point-
-        # The simplex picked holds the point unless the point has left the mesh, past a margin for round-off.
-        inside = ((corner_ramps & positions) >= -margin).all(axis=0)            # [paths]
-        local = (mesh.reading(faces, mesh.n_dim) * connection).batch()         # [paths] Rate+ <- Line-
-        # How the rolled space's point of contact moves per velocity through the mesh, the step of the rate of the
-        # line through the position along that velocity, and with it, in the origin's own part, the weight the
-        # simplex reads in the velocity, to be nothing, so that the position stays on the simplex's plane.
-        # A commutator with a rate keeps the grade, which the type does not carry in four dimensions: cast to points.
-        stepping = (origin.commutator(local(positions & Point)) + origin * (unit & Point)).cast(Stepping)   # [paths] Point- <- Point-
-        velocities = stepping.solve(origin.commutator(frames << kept).cast(Point))   # [paths] Point-
-        rates = local(positions & velocities)                                   # [paths] Rate+
-        held = step * inside                                                    # [paths]
-        frames = frames * (rates * (-held / 2)).exp()                           # [paths] Motor+
-        positions = positions + velocities * held                               # [paths] Point-
-        yield positions
 
 
 class Space:
@@ -316,7 +212,7 @@ def invariant_generators() -> tuple[Rate, Rate, Point]:
     each: the rates that move the origin along them, the turns square to them, each rate times the extrinsic
     pseudoscalar, and the unit steps themselves."""
     steps = stack((mv.x, mv.y, mv.z)).dual()                                    # [3] Antivector-
-    moving = infinity ^ polar(steps.cast(Step))                                 # [3] Rate+
+    moving = equator ^ polar(steps.cast(Step))                                 # [3] Rate+
     return moving, moving * mv.xyzw, steps
 
 
@@ -348,9 +244,9 @@ def strain_field(mesh: Mesh, space: Space, ramps: Plane, frames: Motor, changes:
 
 
 def moving(steps: Point) -> Rate:
-    """The rates that move the origin along steps of it, `Rate+`: the meet of the plane at infinity with each step's
+    """The rates that move the origin along steps of it, `Rate+`: the meet of the origin's equator with each step's
     polar plane."""
-    return infinity ^ polar(steps)
+    return equator ^ polar(steps)
 
 
 def turning(steps: Point) -> Rate:
@@ -483,10 +379,53 @@ def light(mesh: Mesh, vertices: Point, waves: Waves, starts: Point, headings: Po
         yield positions
 
 
+def base_points(places: Point, circling: Rate) -> Point:
+    """The base point below each place, `Point-`: the direction its circle runs in under the rate `circling`, read in
+    the isoclinic frame at the place, a unit step of the origin, the same all along the circle."""
+    along = places.commutator(circling)                                        # Point-
+    return (isoclinic(places).inverse() >> along).cast(Step).normalized()
+
+
+def lifts(bases: Point, circling: Rate) -> Point:
+    """A point on the circle above each base point, `Point-`: the origin moved square to its own base point and the
+    base point, by half the angle between them, which the Hopf map doubles."""
+    below_origin = base_points(origin, circling)                               # [] Point-
+    # The plane the two base points turn in, times the pseudoscalar: the rate that moves the origin square to both.
+    lifting = ((polar(bases) ^ polar(below_origin)) * mv.xyzw).normalized()    # Rate+
+    angles = (polar(bases) & below_origin).arccos()                            # Scalar+
+    return (lifting * (-angles / 4)).exp() >> origin
+
+
+def round_circles(bases: Point, turn: Motor, n_turns: int, n_samples: int) -> Point:
+    """So many points evenly round the circle above each base point, `[samples, bases] Point-`: the lifts carried by
+    powers of the turn along the circles, `n_turns` of which close them."""
+    circling = turn.log()                                                       # [] Rate+
+    shares = np.arange(n_samples) * n_turns / n_samples                         # [samples]
+    return (circling * shares[:, None]).exp() >> lifts(bases, circling)[None]
+
+
+def stretches(waves: Waves, mesh: Mesh, vertices: Point, bases: Point, directions: Point, turn: Motor, n_turns: int,
+              n_samples: int, time: float) -> Scalar:
+    """How much lengths stretch along steps of the origin `directions` in the frames, at the circles above the base
+    points, averaged round each, at a time, `Scalar+[bases]`: half the strain's reading of the step on itself."""
+    places = round_circles(bases, turn, n_turns, n_samples)                    # [samples, bases] Point-
+    faces = mesh.picking(vertices)(places.reshape(-1))                         # [samples * bases]
+    strain, _, _, _ = waves.fields(faces, places.reshape(-1), time)            # [samples * bases] Vector+ <- Antivector-
+    along = directions[None].broadcast_to(places.shape).reshape(-1)            # [samples * bases] Antivector-
+    readings = (strain(along) & along) / (2 * along.dot(along))                 # [samples * bases] Scalar+
+    return readings.reshape(places.shape).sum(axis=0) / n_samples
+
+
+def across(bases: Point, directions: Point) -> Point:
+    """Steps along the base, `directions` at the base points, turned a quarter about them, `Point-`: the steps across
+    the circles that a base direction is the image of."""
+    return turning(bases).commutator(directions).cast(Step)
+
+
 # A ray's step on the GPU, in numga's dialect, through a round three-sphere meshed by tetrahedra and carrying stepped
 # gravitational waves, by the lines of `Waves.at`: each tetrahedron's corner ramps, its neighbours across each facet
 # and the facet each enters by, and its corners' vertices; at each stored moment the strains at the vertices, their
-# rates and traces, and the tetrahedra's turns; the origin and the plane at infinity. The round sphere needs no mesh:
+# rates and traces, and the tetrahedra's turns; the origin and the origin's equator. The round sphere needs no mesh:
 # its isoclinic frames are smooth everywhere, and in them a ray's heading keeps still along its great circle, so only
 # the waves turn it.
 geodesic_step_source = """
@@ -504,7 +443,7 @@ var<uniform> n_levels: u32;
 var<uniform> first_time: f32;
 var<uniform> level_step: f32;
 var<uniform> origin: Point;
-var<uniform> infinity: Plane;
+var<uniform> equator: Plane;
 var<uniform> polar: Polarity;
 var<uniform> translating: Translating;
 
@@ -544,7 +483,7 @@ fn connection(steps: Step, waves: Local) -> Rate {
     let stretch = translating(waves.strain(steps));
     let moved = steps + stretch * 0.5;
     let turned = steps - stretch * 2.0 + steps * (waves.trace * 0.5);
-    return (infinity ^ polar(moved)) + (infinity ^ polar(turned)) * mv.xyzw + waves.turn(steps);
+    return (equator ^ polar(moved)) + (equator ^ polar(turned)) * mv.xyzw + waves.turn(steps);
 }
 
 // The plane on which a tetrahedron's barycentric weights add up to one.
@@ -613,5 +552,3 @@ def largest(value: SparseExtensor) -> float:
 
 # The share of the vertex moves' largest square that settles the moves of the whole sphere.
 settling = 1e-10
-# How far outside a side its ramp may read a point, by round-off, while the point still counts as inside.
-margin = 1e-9

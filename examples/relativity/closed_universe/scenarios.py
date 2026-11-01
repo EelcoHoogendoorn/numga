@@ -1,73 +1,34 @@
-"""Free paths rolled through flat meshes that carry a curved space's motors on their edges, by the same lines in the
-plane and in spacetime: a fan of geodesics on the unit sphere, which set out from one point and meet again at its
-antipode, and a fan of particles thrown from one event in anti-de Sitter spacetime at every speed, which meet again
-after the same proper time, with two rays of light running along the chart's light cone."""
+"""The closed universe's gravitational waves: inside the 600-cell, its squash rings past three crystals ahead of the
+eye, soft, tuned and stiff; on an irregular mesh, a burst spreads from a source ahead of the eye, seen through the
+decagons and through beacons across the universe; and below the Hopf circles, a quadrupole travels round the base,
+rung by triangle gauges held to their places and crossed by a bundle of light."""
 
 from __future__ import annotations
 
 from collections.abc import Iterator
-from types import ModuleType
 
 import numpy as np
-
-from numga import Algebra, Extensor, concatenate, stack
-from numga.algebras import PGA2D, ProjectiveMultivectorFactory
+from numga import stack
+from numga.algebras import VGA3D
 from numga.sparse import SparseExtensor
+
 from examples import instantiate
+from examples.relativity.closed_universe import core
 
-plane = instantiate("examples.relativity.motor_connection.core", PGA2D)
-spacetime = instantiate("examples.relativity.motor_connection.core",
-                        Algebra("x+t-w0", multivector_factory=ProjectiveMultivectorFactory))
-sphere = instantiate("examples.relativity.motor_connection.core", Algebra("x+y+w+"))
-three_sphere = instantiate("examples.relativity.motor_connection.core", Algebra("x+y+z+w+"))
-# Round meshes of the three-sphere relaxed under the binary icosahedral group, in the same algebra.
-sphere_mesher = instantiate("examples.surfaces.annealed_sphere.core", three_sphere.ga)
+# Round meshes of the three-sphere relaxed under the binary icosahedral group, in the same algebra; and the algebra of
+# space, which the base is drawn in.
+sphere_mesher = instantiate("examples.util.annealed_sphere", core.ga)
+flat = instantiate("examples.util.mesh", VGA3D)
 
-# The sphere's chart, a disc out to this radius, of about this many triangles across its radius.
-chart_radius = 2.6
-n_divisions = 16
-# The paths' start in the chart, its antipode on the sphere, on the far side of the chart's centre at the inverse of
-# the start's distance from it, and the headings of the fan about the direction toward it.
-source_distance = 0.6
-source = plane.mv.point([-source_distance, 0.0])                                # [] Point-
-antipode = plane.mv.point([1 / source_distance, 0.0])                           # [] Point-
-n_paths = 13
-spread = np.radians(75)
-turns = (plane.mv.xy * (-np.linspace(-spread, spread, n_paths) / 2)).exp()      # [paths] Motor+
-headings = turns >> plane.mv.direction([1.0, 0.0])                              # [paths] Antivector-
-
-# Anti-de Sitter's strip, across to this distance from its middle, in radii of the space, short of its boundary at a
-# quarter turn, and over these times, of nearly equilateral triangles this wide.
-strip_half_width = 1.35
-strip_times = np.array([-0.15, 1.15 * np.pi + 0.15])
-lattice_spacing = 0.12
-# One unit along time, the direction across the slice `mv.t`, and one unit across the strip; the event the particles
-# are thrown from, and where they meet again, half a turn of the radius later; their rapidities in the rolled
-# spacetime, and the two rays of light.
-time = -spacetime.mv.t.dual()                                                   # [] Antivector-
-sideways = spacetime.mv.x.dual()                                                # [] Antivector-
-event = spacetime.origin                                                        # [] Point-
-meeting = spacetime.origin + time * np.pi                                       # [] Point-
-rapidities = np.linspace(-1.5, 1.5, 9)
-thrown = (spacetime.mv.xt * (-rapidities / 2)).exp() >> time                    # [particles] Antivector-
-rays = concatenate([(time - sideways)[None], thrown, (time + sideways)[None]])  # [paths] Antivector-
-
-# The round spheres' meshes, placed by a turn that keeps every vertex off the antipode of the origin, where the paths
-# start; the paths' headings about the origin, in a fan on the sphere and over the turns of the three-sphere.
-n_sphere_levels = 3
-sphere_placement = (sphere.mv.xw * 0.21 + sphere.mv.yw * 0.13).exp()           # [] Motor+
-sphere_headings = (sphere.mv.xy * (-np.linspace(0, 2 * np.pi, n_paths, endpoint=False) / 2)).exp() >> sphere.mv.x.dual()   # [paths] Antivector-
-three_sphere_placement = (three_sphere.mv.xw * 0.21 + three_sphere.mv.yw * 0.13 + three_sphere.mv.zw * 0.08).exp()   # [] Motor+
-spins = (three_sphere.mv.xy * (-np.linspace(0, 2 * np.pi, n_paths, endpoint=False)[:, None] / 2)).exp()   # [paths, 1] Motor+
-tilts = (three_sphere.mv.zx * (-np.radians([30.0, 90.0, 150.0]) / 2)).exp()   # [3] Motor+
-three_sphere_headings = (spins * tilts >> three_sphere.mv.z.dual()).reshape(-1)   # [paths * 3] Antivector-
+# The 600-cell placed by a turn that keeps its vertices off the origin and its antipode.
+cell_placement = (core.mv.xw * 0.21 + core.mv.yw * 0.13 + core.mv.zw * 0.08).exp()   # [] Motor+
 
 # The guardrails' great polygons: decagons, whose sides are the 600-cell's edges.
 guardrail_sides = 10
 # The eye inside the 600-cell, the motor that carries the origin to it and turns its view; the stepped gravitational
 # waves, the slowest of the closed universe started from its squash, swinging space along one invariant direction by
 # this share and the opposite way along another, at the lattice's own frequency; the frames over one swing.
-eye = (three_sphere.mv.xw * 0.37 + three_sphere.mv.yw * 0.11 + three_sphere.mv.zw * 0.23).exp()   # [] Motor+
+eye = (core.mv.xw * 0.37 + core.mv.yw * 0.11 + core.mv.zw * 0.23).exp()   # [] Motor+
 wave_swing = 0.12
 n_wave_frames = 75
 # Three little crystals ahead of the eye, side by side across its view: tetrahedra of four atoms of unit mass, bonded
@@ -108,44 +69,48 @@ beacon_tuning = 1.0
 beacon_state_share = 0.5
 beacon_saturating_strain = 0.02
 
-# The step of length in the rolled space, the proper time of a particle, and the steps to half a turn and beyond.
-step = 0.02
-n_steps = int(1.15 * np.pi / step)
-n_half_turn = int(round(np.pi / step))
 duration_ms = 40
+# The base drawn as an icosphere, the icosahedron's faces split in four so many times; the points sampled round each
+# circle for its average, so many that they fall between the tenth turns that carry the 600-cell onto itself; the
+# frames over one swing of the waves, as the view from inside has them; the swing of space.
+n_icosphere_levels = 3
+n_circle_samples = 7
+n_frames = n_wave_frames
+swing = 0.085
+# The squash stretches space along x and squeezes it along y in the frames; turned an eighth of a turn about z, it
+# stretches and squeezes along the diagonals between them, and a quarter swing behind the squash, the two make a
+# quadrupole that turns round about z, travelling round the base.
+eighth = (core.mv.xy * (-np.pi / 8)).exp()                              # [] Motor+
+# The triangle gauges, one in each face of the icosahedron the decagons' base points make, its corners this share of
+# the way from the face's middle to its corners. Each atom is held to its place, a free particle at rest, by a spring
+# swinging at this share of the waves' frequency, damped critically, so that a gauge keeps its place and its turn
+# while it rings, rather than taking up the travelling waves' turning; its bonds put the triangle's shear swing at the
+# waves' frequency, damped to this share of critical. The points sampled along each bond for its arc.
+gauge_share = 0.4
+holding_share = 1 / 4
+gauge_damping = 0.4
+n_arc_points = 12
+# Light: a narrow bundle of so many rays set out across the circles from the circle above the base point along z,
+# aimed about the direction toward the base point along y, which faces the viewer, and spread over this angle, as
+# each frame begins; traced in steps of this length for a quarter turn, the base's half from pole to pole.
+n_rays = 7
+light_spread = np.radians(18)
+light_step = 0.02
+n_light_steps = int(np.pi / 2 / light_step)
+# What the gauges and the light are tuned to show: a bond's strain from one end of its swing to the other, and a ray's
+# largest sway on the screen from its undisturbed path, as shares of the picture.
+target_strain = 0.2
+target_sways = (0.1, 0.2)
 
 
-def chart() -> tuple[plane.Mesh, plane.Point]:
-    """The sphere's chart, a disc of triangles, its vertices placed about the origin."""
-    mesh, offsets = plane.Mesh.concentric_disk(np.array([chart_radius]), n_divisions)
-    return mesh, plane.origin + offsets
 
-
-def strip() -> tuple[spacetime.Mesh, spacetime.Point]:
-    """Anti-de Sitter's strip, triangulated from a lattice of nearly equilateral triangles, every other row shifted by
-    half a step across."""
-    times = np.arange(strip_times[0], strip_times[1], lattice_spacing * np.sqrt(3) / 2)   # [rows]
-    columns = np.arange(-strip_half_width, strip_half_width + lattice_spacing, lattice_spacing)   # [columns]
-    shifts = (np.arange(len(times)) % 2)[:, None] * lattice_spacing / 2       # [rows, 1]
-    offsets = np.clip(columns[None, :] + shifts, -strip_half_width, strip_half_width)   # [rows, columns]
-    lattice = np.unique(np.stack(np.broadcast_arrays(offsets, times[:, None]), axis=-1).reshape(-1, 2), axis=0)
-    vertices = (spacetime.origin + sideways * lattice[:, 0] + time * lattice[:, 1]).field()   # Point-[vertices]
-    return spacetime.Mesh.triangulate(vertices), vertices
-
-
-def icosphere() -> tuple[sphere.Mesh, sphere.Point]:
-    """The round sphere's mesh, an icosahedron split in four a few times, placed by its turn."""
-    mesh, vertices = sphere.Mesh.icosphere(n_sphere_levels)
-    return mesh, sphere_placement >> vertices
-
-
-def no_circles() -> tuple[three_sphere.Point, three_sphere.Point, np.ndarray]:
+def no_circles() -> tuple[core.Point, core.Point, np.ndarray]:
     """No great circles for the inside view: none to start from, none a quarter turn on, no inks."""
-    nothing = three_sphere.mv.vector(np.zeros((0, 4))).dual()                   # [0] Point-
+    nothing = core.mv.vector(np.zeros((0, 4))).dual()                   # [0] Point-
     return nothing, nothing, np.zeros((0, 4))
 
 
-def six_hundred_cell() -> tuple[three_sphere.Mesh, three_sphere.Point]:
+def six_hundred_cell() -> tuple[core.Mesh, core.Point]:
     """The round three-sphere's mesh, the 600-cell: the hull of the 120 unit icosians, the units along the axes, the
     halves of every sign, and the even orderings of halves of the golden ratio, one and its inverse, of every sign,
     placed by its turn."""
@@ -160,28 +125,22 @@ def six_hundred_cell() -> tuple[three_sphere.Mesh, three_sphere.Point]:
     signed = np.array(list(product([-1, 1], repeat=3))) * np.array([golden, 1, 1 / golden]) / 2   # [signs, 3]
     golden_ones = np.concatenate([np.pad(signed, ((0, 0), (0, 1)))[:, np.argsort(order)] for order in even])
     coordinates = np.concatenate([axes, halves, golden_ones])                  # [vertices, 4]
-    mesh = three_sphere.Mesh.closed(ConvexHull(coordinates).simplices, coordinates)
-    return mesh, three_sphere_placement >> three_sphere.mv.antivector(coordinates).field()
+    mesh = core.Mesh.closed(ConvexHull(coordinates).simplices, coordinates)
+    return mesh, cell_placement >> core.mv.antivector(coordinates).field()
 
 
-def great_circle_frames(vertices: sphere.Point) -> sphere.Motor:
-    """Frames for the round sphere, `Motor+[vertices]`: the motors that carry the origin to each vertex along a great
-    circle, smooth everywhere but at the origin's antipode."""
-    return (vertices.normalized() / sphere.origin).square_root()
-
-
-def circle_turn(vertices: three_sphere.Point, n_sides: int) -> three_sphere.Motor:
+def circle_turn(vertices: core.Point, n_sides: int) -> core.Motor:
     """The turn along the Hopf circles that the 600-cell's vertices lie on in great polygons of so many sides, `[]
     Motor+`: the isoclinic motor that carries the origin, before the placement, to the vertex that share of a whole
     turn from it, which carries the vertices onto themselves."""
-    unplaced = (three_sphere_placement.inverse() >> vertices).batch()          # [vertices] Point-
+    unplaced = (cell_placement.inverse() >> vertices).batch()          # [vertices] Point-
     # Each vertex's reading by the origin's equator, the cosine of its angle from the origin.
-    readings = (three_sphere.infinity & unplaced).to_array()                    # [vertices]
+    readings = (core.equator & unplaced).to_array()                    # [vertices]
     target = unplaced[np.argmin(np.abs(readings - np.cos(2 * np.pi / n_sides)))]   # [] Point-
-    return three_sphere_placement * three_sphere.isoclinic(target) * three_sphere_placement.inverse()
+    return cell_placement * core.isoclinic(target) * cell_placement.inverse()
 
 
-def guardrails(vertices: three_sphere.Point, n_sides: int) -> np.ndarray:
+def guardrails(vertices: core.Point, n_sides: int) -> np.ndarray:
     """The 600-cell's vertices on great polygons of so many sides, `[polygons, sides]` vertex indices, great circles
     side by side, one Hopf fibration: each the orbit of a vertex under `circle_turn`. Ten sides give twelve decagons
     that the mesh's edges run along, six twenty hexagons and four thirty squares, over the icosahedron's vertices,
@@ -189,7 +148,7 @@ def guardrails(vertices: three_sphere.Point, n_sides: int) -> np.ndarray:
     from scipy.spatial import cKDTree
 
     turn = circle_turn(vertices, n_sides)                                       # [] Motor+
-    readings = three_sphere.mesh_module.readings
+    readings = core.mesh_module.readings
     following = cKDTree(readings(vertices.batch())).query(readings((turn >> vertices).batch()))[1]   # [vertices]
     orbits = [np.arange(len(following))]
     for _ in range(n_sides - 1):
@@ -199,53 +158,53 @@ def guardrails(vertices: three_sphere.Point, n_sides: int) -> np.ndarray:
     return orbits[:, firsts].T
 
 
-def crystals_ahead() -> three_sphere.Motor:
+def crystals_ahead() -> core.Motor:
     """The frames of the three crystals ahead of the eye, `[crystals] Motor+`: the eye carried ahead along its view
     and across it to each crystal's place, each by the rate that moves the origin along the eye's own axes."""
-    moving, _, _ = three_sphere.invariant_generators()                          # [3] Rate+
+    moving, _, _ = core.invariant_generators()                          # [3] Rate+
     offsets = crystal_spacing * np.arange(-1, 2)                                # [crystals]
     ahead = (moving[2] * (-crystal_distance / 2)).exp()                         # [] Motor+
     across_view = (moving[0] * (-offsets / 2)).exp()                            # [crystals] Motor+
     return eye * ahead * across_view
 
 
-def crystals(frames: three_sphere.Motor) -> tuple[three_sphere.Mesh, three_sphere.Point]:
+def crystals(frames: core.Motor) -> tuple[core.Mesh, core.Point]:
     """Crystals in the frames `[crystals] Motor+`, motors that carry the origin to each crystal's middle: their bonds,
     a graph over their atoms, and the atoms, `Point-[atoms]`, at rest in the chart, each frame carried out to every
     other corner of a cube along its own axes, and each two corners bonded."""
     from itertools import product
 
-    moving, _, _ = three_sphere.invariant_generators()                          # [3] Rate+
+    moving, _, _ = core.invariant_generators()                          # [3] Rate+
     cube = np.array(list(product([-1.0, 1.0], repeat=3)))                      # [8, 3]
     corners = cube[cube.prod(axis=-1) > 0]                                      # [corners, 3]
     out = ((moving * corners).sum(axis=-1) * (-crystal_half_size / 2)).exp()  # [corners] Motor+
-    atoms = ((frames[:, None] * out[None]) >> three_sphere.origin).reshape(-1)  # [atoms] Point-
+    atoms = ((frames[:, None] * out[None]) >> core.origin).reshape(-1)  # [atoms] Point-
     # Bonds join every two corners of each crystal, which differ along two of the cube's axes.
     differing = (corners[:, None] != corners[None]).sum(axis=-1)
     pairs = np.argwhere(np.triu((differing >= 1) & (differing <= 2)))           # [bonds per crystal, 2]
     bonds = (pairs[None] + len(corners) * np.arange(frames.shape[0])[:, None, None]).reshape(-1, 2)
-    return three_sphere.Mesh(len(corners) * frames.shape[0], bonds), atoms.field()
+    return core.Mesh(len(corners) * frames.shape[0], bonds), atoms.field()
 
 
-def squash(cell_mesh: three_sphere.Mesh, cell_vertices: three_sphere.Point, cell_rates: three_sphere.Rate,
-           stretched: three_sphere.Plane, squeezed: three_sphere.Plane) -> three_sphere.Scalar:
+def squash(cell_mesh: core.Mesh, cell_vertices: core.Point, cell_rates: core.Rate,
+           stretched: core.Plane, squeezed: core.Plane) -> core.Scalar:
     """The squash's change of each edge's squared length, per unit swing of space, `Scalar+[edges]`, for each pair of
     planes `[...] Plane+` that read the invariant directions it stretches and squeezes: its step's share along the
     stretched direction less its share along the squeezed one, twice, since a squared length changes twice as fast as
     the length."""
-    steps = three_sphere.origin.commutator(cell_rates).cast(three_sphere.Step)   # Antivector-[edges]
+    steps = core.origin.commutator(cell_rates).cast(core.Step)   # Antivector-[edges]
     chords = cell_mesh.d[0] * cell_vertices                                     # Point-[edges]
     shares = ((stretched & steps).squared() - (squeezed & steps).squared()) / steps.dot(steps)   # [...] Scalar+[edges]
     return 2 * chords.dot(chords) * shares
 
 
-def stepped_history(cell_mesh: three_sphere.Mesh, cell_vertices: three_sphere.Point, patterns: three_sphere.Scalar,
-                    lags: np.ndarray, swing: float) -> tuple[three_sphere.Waves, float]:
+def stepped_history(cell_mesh: core.Mesh, cell_vertices: core.Point, patterns: core.Scalar,
+                    lags: np.ndarray, swing: float) -> tuple[core.Waves, float]:
     """The 600-cell's gravitational waves stepped from squash patterns `[patterns] Scalar+[edges]`, swinging space by
     `swing` as cosines at the lattice's frequency, each lagging by its share of `lags` `[patterns]`, from long enough
     before the first frame for the crystals to settle and the light to arrive, to the last: as a smooth field over
     time, and that frequency."""
-    stiffness, masses, onto_waves = three_sphere.gravitational_waves(cell_mesh, cell_vertices)
+    stiffness, masses, onto_waves = core.gravitational_waves(cell_mesh, cell_vertices)
     kept = onto_waves(patterns)                                                 # [patterns] Scalar+[edges]
     squared = (kept * stiffness(kept)).sites.sum().sum(axis=0) / (kept * masses(kept)).sites.sum().sum(axis=0)   # [] Scalar+
     frequency = float(np.sqrt(squared.to_array()))
@@ -256,14 +215,14 @@ def stepped_history(cell_mesh: three_sphere.Mesh, cell_vertices: three_sphere.Po
     phases = frequency * first - lags                                           # [patterns]
     strains = swing * (np.cos(phases) * kept).sum(axis=0)                       # Scalar+[edges]
     change_rates = -swing * frequency * (np.sin(phases) * kept).sum(axis=0)     # Scalar+[edges]
-    stepped = three_sphere.waves_stepped(stiffness, masses, onto_waves, strains, change_rates, step)
+    stepped = core.waves_stepped(stiffness, masses, onto_waves, strains, change_rates, step)
     levels = [state for _, state in zip(range(n_levels), stepped)]
-    return three_sphere.Waves(cell_mesh, cell_vertices, [changes for changes, _ in levels],
+    return core.Waves(cell_mesh, cell_vertices, [changes for changes, _ in levels],
                               [change_rates for _, change_rates in levels], first, step), frequency
 
 
-def crystal_states(cell_mesh: three_sphere.Mesh, cell_vertices: three_sphere.Point, waves: three_sphere.Waves,
-                   frequency: float, bonds: three_sphere.Mesh, atoms: three_sphere.Point, crystal_tunings: np.ndarray,
+def crystal_states(cell_mesh: core.Mesh, cell_vertices: core.Point, waves: core.Waves,
+                   frequency: float, bonds: core.Mesh, atoms: core.Point, crystal_tunings: np.ndarray,
                    times: np.ndarray) -> list:
     """The crystals' atoms and bonds' strains, `(Point-[atoms], Scalar+[bonds])`, at each of the times, after the motion
     has settled into the waves' swing, for crystals of the bonds over the atoms tuned by `crystal_tunings`
@@ -271,44 +230,44 @@ def crystal_states(cell_mesh: three_sphere.Mesh, cell_vertices: three_sphere.Poi
     stiffness, at the waves' frequency."""
     stiffnesses = frequency ** 2 / 2 * crystal_tunings                          # [crystals]
     dampings = 0.25 * np.sqrt(2 * stiffnesses)                                  # [crystals]
-    _, _, steps = three_sphere.invariant_generators()                           # [3] Antivector-
+    _, _, steps = core.invariant_generators()                           # [3] Antivector-
     # The crystals' rest lengths: the lengths of their bonds' round steps.
-    round_steps = three_sphere.bond_steps(bonds, atoms)                         # Antivector-[bonds]
+    round_steps = core.bond_steps(bonds, atoms)                         # Antivector-[bonds]
     rest = round_steps.dot(round_steps).square_root()                           # Scalar+[bonds]
     per_crystal = len(bonds.edges) // len(stiffnesses)
-    stiffness = three_sphere.mesh_module.as_scalar(np.repeat(stiffnesses, per_crystal)).field()
-    damping = three_sphere.mesh_module.as_scalar(np.repeat(dampings, per_crystal)).field()
+    stiffness = core.mesh_module.as_scalar(np.repeat(stiffnesses, per_crystal)).field()
+    damping = core.mesh_module.as_scalar(np.repeat(dampings, per_crystal)).field()
     start = times[0] - n_settling_swings * 2 * np.pi / frequency
     at_rest = (steps[0] * np.zeros(atoms.batch().shape[0])).field()           # Antivector-[atoms]
-    return list(three_sphere.massive(cell_mesh, cell_vertices, waves, bonds, rest, stiffness, damping, 0.0, atoms,
+    return list(core.massive(cell_mesh, cell_vertices, waves, bonds, rest, stiffness, damping, 0.0, atoms,
                                      at_rest, start, crystal_step, times))
 
 
-def irregular_three_sphere() -> tuple[three_sphere.Mesh, three_sphere.Point]:
+def irregular_three_sphere() -> tuple[core.Mesh, core.Point]:
     """An irregular mesh of the round three-sphere and its vertices, `Point-[vertices]`: the 600-cell's vertices, the
     origin's orbit under the binary icosahedral group, and the orbits of random seeds, relaxed until the tetrahedra
     between them are as round as the orbits allow."""
     turns = sphere_mesher.binary_icosahedral_turns()                            # [rotations] Rotor+
-    seeds = three_sphere.mv.vector(np.random.default_rng(mesh_seed).normal(size=(n_mesh_orbits, 4))).dual().normalized()
-    mesh, vertices, _ = list(sphere_mesher.relaxed(turns, turns >> three_sphere.origin, seeds, n_relax_steps,
+    seeds = core.mv.vector(np.random.default_rng(mesh_seed).normal(size=(n_mesh_orbits, 4))).dual().normalized()
+    mesh, vertices, _ = list(sphere_mesher.relaxed(turns, turns >> core.origin, seeds, n_relax_steps,
                                                    relax_pull))[-1]
     return mesh, vertices
 
 
-def burst_source() -> three_sphere.Point:
+def burst_source() -> core.Point:
     """The burst's source, `[] Point-`: the eye carried ahead along its view."""
-    moving, _, _ = three_sphere.invariant_generators()                          # [3] Rate+
-    return (eye * (moving[2] * (-burst_distance / 2)).exp()) >> three_sphere.origin
+    moving, _, _ = core.invariant_generators()                          # [3] Rate+
+    return (eye * (moving[2] * (-burst_distance / 2)).exp()) >> core.origin
 
 
-def burst(mesh: three_sphere.Mesh, vertices: three_sphere.Point, rates: three_sphere.Rate
-          ) -> tuple[three_sphere.Waves, float]:
+def burst(mesh: core.Mesh, vertices: core.Point, rates: core.Rate
+          ) -> tuple[core.Waves, float]:
     """A burst of gravitational waves on a mesh of the three-sphere as a smooth field over time, from half a turn before
     its release to a whole turn after, and its frequency, the root of its mean square frequency by the stiffness over
     the masses: the squash's pattern held to a bump about the source, one there and falling off with each edge's
     middle's distance from it over the burst's width, kept to the waves and let go."""
-    mv = three_sphere.mv
-    stiffness, masses, onto_waves = three_sphere.gravitational_waves(mesh, vertices)
+    mv = core.mv
+    stiffness, masses, onto_waves = core.gravitational_waves(mesh, vertices)
     middles = (mesh.incidence[1, 0] * vertices).sum(axis=0).normalized()        # Point-[edges]
     bump = ((middles.dot(burst_source()) - 1) * (2 / burst_width ** 2)).exp()  # Scalar+[edges]
     strains = onto_waves(burst_swing * bump * squash(mesh, vertices, rates, mv.x, mv.y))   # Scalar+[edges]
@@ -317,16 +276,16 @@ def burst(mesh: three_sphere.Mesh, vertices: three_sphere.Point, rates: three_sp
     # Let go from rest, the waves are the same a time before and after: before, a shell closing in on the source.
     # The eye sees back by up to half a turn, the time light takes to the antipode.
     n_after, n_before = int(np.ceil(2 * np.pi / step)) + 2, int(np.ceil(np.pi / step)) + 1
-    after = [state for _, state in zip(range(n_after), three_sphere.waves_stepped(stiffness, masses, onto_waves, strains,
+    after = [state for _, state in zip(range(n_after), core.waves_stepped(stiffness, masses, onto_waves, strains,
                                                                                   0 * strains, step))]
     levels = [(changes, -change_rates) for changes, change_rates in after[n_before:0:-1]] + after
-    waves = three_sphere.Waves(mesh, vertices, [changes for changes, _ in levels],
+    waves = core.Waves(mesh, vertices, [changes for changes, _ in levels],
                                [change_rates for _, change_rates in levels], -n_before * step, step)
     return waves, float(np.sqrt(squared.to_array()))
 
 
-def fastest_frequency(stiffness: SparseExtensor, masses: SparseExtensor, onto_waves: three_sphere.OntoWaves,
-                      start: three_sphere.Scalar) -> float:
+def fastest_frequency(stiffness: SparseExtensor, masses: SparseExtensor, onto_waves: core.OntoWaves,
+                      start: core.Scalar) -> float:
     """The frequency of the fastest wave under the stiffness and the masses: the change the stiffness drives, the
     masses solved for and kept to the waves, repeated from a start until only the fastest is left."""
     changes = start
@@ -337,7 +296,7 @@ def fastest_frequency(stiffness: SparseExtensor, masses: SparseExtensor, onto_wa
     return float(np.sqrt(squared.to_array()))
 
 
-def decagon_circles(placement: three_sphere.Motor) -> tuple[three_sphere.Point, three_sphere.Point, np.ndarray]:
+def decagon_circles(placement: core.Motor) -> tuple[core.Point, core.Point, np.ndarray]:
     """The 600-cell's guardrail decagons as great circles, one Hopf fibration of its vertices, each through its first
     vertex and the point a quarter turn on toward its second, `[decagons] Point-` each, moved by the placement, with
     inks around the hues and the squared tube radius `[decagons, 4]`."""
@@ -353,25 +312,25 @@ def decagon_circles(placement: three_sphere.Motor) -> tuple[three_sphere.Point, 
             np.concatenate([inks, np.full((len(decagons), 1), decagon_radius ** 2)], axis=-1))
 
 
-def clear_placement() -> three_sphere.Motor:
+def clear_placement() -> core.Motor:
     """The motor that places the decagons so that the eye sits where they leave the most room: at the 600-cell's cell
     centre farthest from all of them, its nearness to a circle the cosine of its distance, read by the two points that
     span the circle; the choice of the farthest is made outside the algebra."""
     mesh, vertices = six_hundred_cell()
-    centres = three_sphere.coframe(mesh, vertices).sum(axis=0).dual().normalized().batch()   # [cells] Point-
-    starts, quarters, _ = decagon_circles(three_sphere.mv.rotor())             # [decagons] Point-, Point-
+    centres = core.coframe(mesh, vertices).sum(axis=0).dual().normalized().batch()   # [cells] Point-
+    starts, quarters, _ = decagon_circles(core.mv.rotor())             # [decagons] Point-, Point-
     along_start, along_quarter = centres[:, None].dot(starts[None]), centres[:, None].dot(quarters[None])
     nearness = (along_start * along_start + along_quarter * along_quarter).to_array().reshape(len(centres), -1)
     farthest = centres[nearness.max(axis=-1).argmin()]                          # [] Point-
-    return eye * three_sphere.isoclinic(farthest).inverse()
+    return eye * core.isoclinic(farthest).inverse()
 
 
-def burst_view(mesh: three_sphere.Mesh, vertices: three_sphere.Point, rates: three_sphere.Rate,
-               waves: three_sphere.Waves, frequency: float) -> Iterator[np.ndarray]:
+def burst_view(mesh: core.Mesh, vertices: core.Point, rates: core.Rate,
+               waves: core.Waves, frequency: float) -> Iterator[np.ndarray]:
     """The burst seen from inside the mesh by the eye over a whole turn from its release: the decagons as great
     circles, fixed in the round sphere, through the light the waves bend, the tetrahedra's edges unseen, and the
     crystals ahead tuned to the burst's frequency, which the waves shake."""
-    from examples.relativity.motor_connection import render
+    from examples.relativity.closed_universe import render
 
     eye_times = np.linspace(0, 2 * np.pi, n_burst_frames, endpoint=False)       # [frames]
     bonds, atoms = crystals(crystals_ahead())
@@ -379,24 +338,24 @@ def burst_view(mesh: three_sphere.Mesh, vertices: three_sphere.Point, rates: thr
     states = crystal_states(mesh, vertices, waves, frequency, bonds, atoms, tunings,
                             eye_times - crystal_distance)
     unseen = np.zeros((len(mesh.tets) * 6, 4), dtype=np.float32)
-    return render.inside(three_sphere, mesh, vertices, eye, waves, eye_times, unseen,
+    return render.inside(mesh, vertices, eye, waves, eye_times, unseen,
                          decagon_circles(clear_placement()), bonds, states, burst_saturating_strain)
 
 
-def beacon_view(mesh: three_sphere.Mesh, vertices: three_sphere.Point, rates: three_sphere.Rate,
-                waves: three_sphere.Waves, frequency: float) -> Iterator[np.ndarray]:
+def beacon_view(mesh: core.Mesh, vertices: core.Point, rates: core.Rate,
+                waves: core.Waves, frequency: float) -> Iterator[np.ndarray]:
     """The burst seen from inside the mesh by the eye over a whole turn from its release, through beacons at the
     600-cell's vertices: crystals tuned to the burst, each seen as it was when its light left it, its distance from
     the eye before."""
-    from examples.relativity.motor_connection import render
+    from examples.relativity.closed_universe import render
 
     eye_times = np.linspace(0, 2 * np.pi, n_burst_frames, endpoint=False)       # [frames]
     _, cell_vertices = six_hundred_cell()
     beacons = clear_placement() >> cell_vertices.batch()                        # [beacons] Point-
-    bonds, atoms = crystals(three_sphere.isoclinic(beacons))
+    bonds, atoms = crystals(core.isoclinic(beacons))
     # Each beacon's distance from the eye, the time its light takes to arrive; its states over the times any frame
     # sees it at.
-    distances = np.arccos(np.clip((eye >> three_sphere.origin).dot(beacons).to_array(), -1, 1))   # [beacons]
+    distances = np.arccos(np.clip((eye >> core.origin).dot(beacons).to_array(), -1, 1))   # [beacons]
     spacing = (eye_times[1] - eye_times[0]) * beacon_state_share
     times = np.arange(eye_times[0] - distances.max(), eye_times[-1] + spacing, spacing)   # [states]
     states = crystal_states(mesh, vertices, waves, frequency, bonds, atoms,
@@ -411,101 +370,210 @@ def beacon_view(mesh: three_sphere.Mesh, vertices: three_sphere.Point, rates: th
                     strains[seen[frame, bond_beacons], np.arange(strains.shape[1])].field())
                    for frame in range(len(eye_times))]
     unseen = np.zeros((len(mesh.tets) * 6, 4), dtype=np.float32)
-    return render.inside(three_sphere, mesh, vertices, eye, waves, eye_times, unseen, no_circles(),
+    return render.inside(mesh, vertices, eye, waves, eye_times, unseen, no_circles(),
                          bonds, seen_states, beacon_saturating_strain)
 
 
-def stepped_squash(cell_mesh: three_sphere.Mesh, cell_vertices: three_sphere.Point, cell_rates: three_sphere.Rate,
+def stepped_squash(cell_mesh: core.Mesh, cell_vertices: core.Point, cell_rates: core.Rate,
                    n_swings: int) -> tuple[np.ndarray, float, np.ndarray, np.ndarray]:
     """The 600-cell's gravitational waves stepped from the squash at rest: the spectrum of their frequencies squared,
     the squash's own, and the times and the squash's share of the stepped strains at each, over `n_swings` of it."""
-    stiffness, masses, onto_waves = three_sphere.gravitational_waves(cell_mesh, cell_vertices)
+    stiffness, masses, onto_waves = core.gravitational_waves(cell_mesh, cell_vertices)
     # The waves' own stiffness, dense on the 600-cell's few edges: the stiffness between every two unit changes kept
     # to the waves.
-    kept = onto_waves(three_sphere.mesh_module.as_scalar(np.eye(len(cell_mesh.edges))).field())   # [edges] Scalar+[edges]
+    kept = onto_waves(core.mesh_module.as_scalar(np.eye(len(cell_mesh.edges))).field())   # [edges] Scalar+[edges]
     pairings = (kept[:, None] * stiffness(kept)[None, :]).sites.sum()           # [edges, edges] Scalar+
-    waves_stiffness = three_sphere.ctx.extensor(three_sphere.ga.gatype((three_sphere.Scalar, three_sphere.Scalar)),
+    waves_stiffness = core.ctx.extensor(core.ga.gatype((core.Scalar, core.Scalar)),
                                                 pairings.to_array()[..., None, None]).field(0, 1)   # (Scalar+ <- Scalar+)[edges <- edges]
     values, _ = waves_stiffness.eigh(masses.to_dense())
-    mv = three_sphere.mv
+    mv = core.mv
     pattern = onto_waves(squash(cell_mesh, cell_vertices, cell_rates, mv.x, mv.y))   # Scalar+[edges]
     norm = (pattern * masses(pattern)).sites.sum()                              # [] Scalar+
     frequency_squared = float(((pattern * stiffness(pattern)).sites.sum() / norm).to_array())
     # Forty steps to the squash's swing, well inside the stiffest wave's limit, two over its frequency.
     step = 2 * np.pi / np.sqrt(frequency_squared) / n_steps_per_swing
     n_steps = n_swings * n_steps_per_swing
-    stepped = three_sphere.waves_stepped(stiffness, masses, onto_waves, wave_swing * pattern, 0 * pattern, step)
+    stepped = core.waves_stepped(stiffness, masses, onto_waves, wave_swing * pattern, 0 * pattern, step)
     shares = np.array([float(((pattern * masses(strains)).sites.sum() / norm).to_array())
                        for _, (strains, _) in zip(range(n_steps), stepped)])  # [steps]
     return values.to_array(), frequency_squared, step * np.arange(n_steps), shares
 
 
-def rolled(core: ModuleType, mesh, vertices: Extensor, rates: Extensor, starts: Extensor, directions: Extensor
-           ) -> Extensor:
-    """The paths from the starts along the directions, `[paths, steps + 1] Point-`, through the connection of the
-    edges' rates, in the algebra of the core's instance."""
-    ramps = core.coframe(mesh, vertices)                                        # [corners] Plane+[faces]
-    connection = core.connection(mesh, ramps, rates)                            # (Rate+ <- Line-)[faces]
-    return stack(list(core.geodesics(mesh, vertices, ramps, connection, starts, directions, step, n_steps)), axis=-1)
+def base_sphere() -> tuple[flat.Mesh, flat.Point, core.Point]:
+    """The icosphere drawn as the base and its points `Point-[points]` in the algebra of space; and the same points as
+    unit steps of the three-sphere's origin, `[points] Point-`."""
+    mesh, points = flat.Mesh.icosphere(n_icosphere_levels)
+    coordinates = (flat.mv.vector(np.eye(3)) & points.batch()[..., None]).to_array()   # [points, 3]
+    bases = core.mv.vector(np.pad(coordinates, ((0, 0), (0, 1)))).dual().cast(core.Step)
+    return mesh, points, bases
+
+
+def triangle_gauges(decagon_bases: core.Point, circling: core.Rate
+                    ) -> tuple[core.Mesh, core.Point]:
+    """The triangle gauges' bonds, a graph over their atoms, and the atoms, `Point-[atoms]` on the three-sphere: in
+    each face of the icosahedron the decagons' base points make, the corners drawn toward the face's middle, lifted
+    from the circle above the middle across the circles, so that the bonds run across them too."""
+    from scipy.spatial import ConvexHull
+
+    coordinates = (core.mv.vector(np.eye(4))[:3] & decagon_bases[..., None]).to_array()   # [decagons, 3]
+    faces = ConvexHull(coordinates).simplices                                   # [faces, 3]
+    corners = decagon_bases[faces]                                              # [faces, 3] Point-
+    middles = corners.sum(axis=-1).normalized()                                 # [faces] Point-
+    atoms = (middles[:, None] + gauge_share * (corners - middles[:, None])).normalized()   # [faces, 3] Point-
+    # Each atom's direction along the base from its face's middle, and the cosine of the angle between them: the step
+    # across the circles that the direction is the image of carries the middle's lift half that angle, which the Hopf
+    # map doubles.
+    cosines = core.polar(middles[:, None]) & atoms                     # [faces, 3] Scalar+
+    directions = (atoms - middles[:, None] * cosines).cast(core.Step).normalized()   # [faces, 3] Point-
+    moves = (core.moving(core.across(middles[:, None], directions)) * (-cosines.arccos() / 4)).exp()   # [faces, 3] Motor+
+    lifted = (core.isoclinic(core.lifts(middles, circling))[:, None] * moves) >> core.origin   # [faces, 3] Point-
+    # Each triangle's three sides, by its atoms' places, three to a face.
+    firsts = 3 * np.arange(len(faces))[:, None] + np.arange(3)[None]           # [faces, 3]
+    bonds = np.stack([firsts, firsts - firsts % 3 + (firsts + 1) % 3], axis=-1).reshape(-1, 2)
+    return core.Mesh(3 * len(faces), bonds), lifted.reshape(-1).field()
+
+
+def bond_arcs(bonds: core.Mesh, positions: core.Point, circling: core.Rate
+              ) -> core.Point:
+    """Each bond's great arc between its atoms on the three-sphere, `Point-[atoms]`, seen on the base: so many points
+    along it, its chord's points moved out onto the sphere, and their base points, `[bonds, arc points] Point-`."""
+    tails, heads = bonds.incidence[1, 0] * positions                            # Point-[bonds], Point-[bonds]
+    shares = np.linspace(0, 1, n_arc_points)                                    # [arc points]
+    along = (tails.batch()[:, None] * (1 - shares) + heads.batch()[:, None] * shares).normalized()   # [bonds, arc points] Point-
+    return core.base_points(along, circling)
+
+
+def light_fan(circling: core.Rate, source: core.Point, toward: core.Point
+              ) -> tuple[core.Point, core.Point]:
+    """The light's start on the circle above the base point `source`, `[rays] Point-`, and its rays' headings, unit
+    steps across the circles, `[rays] Antivector-`: the steps whose images on the base fan out about the direction
+    toward the base point `toward`, turned about the source."""
+    start = core.lifts(source[None], circling)                                  # [1] Point-
+    aim = (toward - source * (core.polar(source) & toward)).cast(core.Step).normalized()   # [] Point-
+    angles = np.linspace(-light_spread / 2, light_spread / 2, n_rays)           # [rays]
+    fan = (core.turning(source) * (-angles / 2)).exp()                  # [rays] Motor+
+    return start.broadcast_to((n_rays,)), core.across(source, fan >> aim).normalized()
+
+
+def light_paths(mesh: core.Mesh, vertices: core.Point, waves: core.Waves,
+                circling: core.Rate, starts: core.Point, headings: core.Point, time: float
+                ) -> core.Point:
+    """The light's paths set out at a time through the waves, seen on the base, `[rays, steps + 1] Point-`."""
+    places = stack([starts, *core.light(mesh, vertices, waves, starts, headings, time, light_step,
+                                                n_light_steps)], axis=-1)       # [rays, steps + 1] Point-
+    return core.base_points(places, circling)
+
+
+def undisturbed_paths(circling: core.Rate, starts: core.Point, headings: core.Point
+                      ) -> core.Point:
+    """The light's paths through the round sphere, seen on the base, `[rays, steps + 1] Point-`: each start rolled
+    along its heading on its great circle, in its isoclinic frame."""
+    lengths = light_step * np.arange(n_light_steps + 1)                         # [steps + 1]
+    rolls = (core.moving(headings)[:, None] * (-lengths / 2)).exp()     # [rays, steps + 1] Motor+
+    places = (core.isoclinic(starts)[:, None] * rolls) >> core.origin   # [rays, steps + 1] Point-
+    return core.base_points(places, circling)
+
+
+def gauge_states(cell_mesh: core.Mesh, cell_vertices: core.Point, waves: core.Waves,
+                 frequency: float, bonds: core.Mesh, atoms: core.Point, times: np.ndarray) -> list:
+    """The gauges' atoms and their bonds' strains, `(Point-[atoms], Scalar+[bonds])`, at each of the times, after their
+    motion has settled into the waves' swing at the frequency."""
+    holding = (holding_share * frequency) ** 2
+    # A triangle of unit masses swings in shear at the root of three halves of its bonds' stiffness and its atoms'
+    # holding; its bonds' dashpots, three halves of them, and the holding's damp the swing.
+    stiffness = 2 / 3 * (frequency ** 2 - holding)
+    damping = 2 / 3 * (2 * gauge_damping * frequency - 2 * np.sqrt(holding))
+    round_steps = core.bond_steps(bonds, atoms)                         # Antivector-[bonds]
+    rest = round_steps.dot(round_steps).square_root()                           # Scalar+[bonds]
+    n_bonds = len(bonds.edges)
+    stiffnesses = core.mesh_module.as_scalar(np.full(n_bonds, stiffness)).field()   # Scalar+[bonds]
+    dampings = core.mesh_module.as_scalar(np.full(n_bonds, damping)).field()       # Scalar+[bonds]
+    _, _, steps = core.invariant_generators()                           # [3] Antivector-
+    at_rest = (steps[0] * np.zeros(bonds.n_vertices)).field()                  # Antivector-[atoms]
+    start = times[0] - n_settling_swings * 2 * np.pi / frequency
+    return list(core.massive(cell_mesh, cell_vertices, waves, bonds, rest, stiffnesses, dampings, holding,
+                                     atoms, at_rest, start, crystal_step, times))
+
+
+def quadrupole_history(cell_mesh: core.Mesh, cell_vertices: core.Point
+                       ) -> tuple[core.Waves, float]:
+    """The 600-cell's travelling quadrupole as a smooth field over time, and its frequency: the squash, stretching
+    space along x and squeezing it along y in the frames, and the squash turned an eighth of a turn about z, a quarter
+    swing behind it."""
+    mv = core.mv
+    cell_rates = core.round_rates(cell_mesh, core.isoclinic(cell_vertices))   # Rate+[edges]
+    patterns = squash(cell_mesh, cell_vertices, cell_rates, stack((mv.x, eighth >> mv.x)),
+                              stack((mv.y, eighth >> mv.y)))                     # [patterns] Scalar+[edges]
+    return stepped_history(cell_mesh, cell_vertices, patterns, np.array([0, np.pi / 2]), swing)
+
+
+def quadrupole_on_base() -> tuple[core.Point, core.Point, list]:
+    """One swing of the 600-cell's travelling quadrupole seen on the base: the decagons' base points `[decagons]
+    Point-`, the light's undisturbed paths `[rays, steps + 1] Point-`, and at each frame the circles' stretch at the
+    icosphere's points `Scalar+[points]`, the gauges' atoms `[atoms] Point-`, their bonds' arcs `[bonds, arc points]
+    Point-` and strains `[bonds] Scalar+`, and the light's paths `[rays, steps + 1] Point-`."""
+    cell_mesh, cell_vertices = six_hundred_cell()
+    waves, frequency = quadrupole_history(cell_mesh, cell_vertices)
+    times = np.arange(n_frames) * 2 * np.pi / frequency / n_frames             # [frames]
+    turn = circle_turn(cell_vertices, guardrail_sides)          # [] Motor+
+    circling = turn.log()                                                       # [] Rate+
+    decagons = guardrails(cell_vertices, guardrail_sides)        # [decagons, sides]
+    decagon_bases = core.base_points(cell_vertices.batch()[decagons[:, 0]], circling)   # [decagons] Point-
+    _, _, bases = base_sphere()
+    bonds, atoms = triangle_gauges(decagon_bases, circling)
+    states = gauge_states(cell_mesh, cell_vertices, waves, frequency, bonds, atoms, times)
+    mv = core.mv
+    starts, headings = light_fan(circling, mv.z.dual().cast(core.Step), mv.y.dual().cast(core.Step))
+    frames = [(core.stretches(waves, cell_mesh, cell_vertices, bases, bases, turn, guardrail_sides,
+                              n_circle_samples, time),
+               core.base_points(positions.batch(), circling), bond_arcs(bonds, positions, circling), strains.batch(),
+               light_paths(cell_mesh, cell_vertices, waves, circling, starts, headings, time))
+              for time, (positions, strains) in zip(times, states)]
+    return decagon_bases, undisturbed_paths(circling, starts, headings), frames
 
 
 def main() -> None:
-    from examples.util.animation import save_animation
-    from examples.relativity.motor_connection import render
-
-    mesh, vertices = chart()
-    paths = rolled(plane, mesh, vertices, plane.sphere_rates(mesh, vertices), source[None].broadcast_to((n_paths,)),
-                   headings)                                                    # [paths, steps + 1] Point-
-    extent = (-chart_radius, chart_radius, -chart_radius, chart_radius)
-    save_animation(render.animate(mesh, vertices, paths, extent), "motor_connection_sphere", duration_ms)
-
-    strip_mesh, strip_vertices = strip()
-    worldlines = rolled(spacetime, strip_mesh, strip_vertices, spacetime.anti_de_sitter_rates(strip_mesh, strip_vertices),
-                        event[None].broadcast_to(rays.shape), rays)             # [paths, steps + 1] Point-
-    strip_extent = (-strip_half_width, strip_half_width, *strip_times)
-    save_animation(render.animate(strip_mesh, strip_vertices, worldlines, strip_extent), "motor_connection_anti_de_sitter",
-                   duration_ms)
+    from examples.util.animation import save_animation, save_figure
+    from examples.relativity.closed_universe import render
 
     cell_mesh, cell_vertices = six_hundred_cell()
-    cell_rates = three_sphere.round_rates(cell_mesh, three_sphere.isoclinic(cell_vertices))   # Rate+[edges]
+    cell_rates = core.round_rates(cell_mesh, core.isoclinic(cell_vertices))   # Rate+[edges]
     # The squash, stretching space along x and squeezing it along y in the frames, alone.
-    squashing = squash(cell_mesh, cell_vertices, cell_rates, stack((three_sphere.mv.x,)), stack((three_sphere.mv.y,)))
+    squashing = squash(cell_mesh, cell_vertices, cell_rates, stack((core.mv.x,)), stack((core.mv.y,)))
     waves, frequency = stepped_history(cell_mesh, cell_vertices, squashing, np.zeros(1), wave_swing)
     eye_times = np.arange(n_wave_frames) * 2 * np.pi / frequency / n_wave_frames   # [frames]
     bonds, atoms = crystals(crystals_ahead())
     # The light from the crystals left them their distance before it reached the eye.
     states = crystal_states(cell_mesh, cell_vertices, waves, frequency, bonds, atoms, tunings,
                             eye_times - crystal_distance)
-    frames = render.inside(three_sphere, cell_mesh, cell_vertices, eye, waves, eye_times,
-                           render.edge_styles(three_sphere, cell_mesh, guardrails(cell_vertices, guardrail_sides)),
-                           no_circles(),
+    frames = render.inside(cell_mesh, cell_vertices, eye, waves, eye_times,
+                           render.edge_styles(cell_mesh, guardrails(cell_vertices, guardrail_sides)), no_circles(),
                            bonds, states, render.saturating_strain)
-    save_animation(frames, "motor_connection_600_cell", duration_ms)
-
+    save_animation(frames, "closed_universe_600_cell", duration_ms)
     spectrum, squash_squared, times, shares = stepped_squash(cell_mesh, cell_vertices, cell_rates, 4)
 
     # A burst of waves on an irregular mesh of the three-sphere, seen through the decagons and through beacons across
     # the universe.
     burst_mesh, burst_vertices = irregular_three_sphere()
-    burst_rates = three_sphere.round_rates(burst_mesh, three_sphere.isoclinic(burst_vertices))   # Rate+[edges]
+    burst_rates = core.round_rates(burst_mesh, core.isoclinic(burst_vertices))   # Rate+[edges]
     burst_waves, burst_frequency = burst(burst_mesh, burst_vertices, burst_rates)
     save_animation(burst_view(burst_mesh, burst_vertices, burst_rates, burst_waves, burst_frequency),
-                   "motor_connection_burst", duration_ms)
+                   "closed_universe_burst", duration_ms)
     save_animation(beacon_view(burst_mesh, burst_vertices, burst_rates, burst_waves, burst_frequency),
-                   "motor_connection_beacons", duration_ms)
+                   "closed_universe_beacons", duration_ms)
+
+    # The travelling quadrupole below the Hopf circles, and how its gauges and light respond.
+    sphere_mesh, sphere_points, _ = base_sphere()
+    decagon_bases, undisturbed, base_frames = quadrupole_on_base()
+    save_animation((render.base_view(sphere_mesh, sphere_points, stretches, decagon_bases, atoms, arcs, strains, light,
+                                     wave_swing)
+                    for stretches, atoms, arcs, strains, light in base_frames), "closed_universe_quadrupole",
+                   duration_ms)
+    save_figure(render.response(stack([strains for *_, strains, _ in base_frames]),
+                                stack([light for *_, light in base_frames]), undisturbed, target_strain, target_sways),
+                "closed_universe_quadrupole_response")
 
     # checks
-    # Half a turn along, every path on the sphere is at the antipode.
-    misses = plane.polar((paths[:, n_half_turn] - antipode).cast(plane.Step)).squared().square_root()   # [paths] Scalar+
-    assert misses.to_array().max() < 0.05
-    # Every particle thrown is back at the middle of the strip after the same proper time, half a turn of the radius,
-    # read across the strip and along time.
-    missed = (worldlines[1:-1, n_half_turn] - meeting).cast(spacetime.Step)  # [particles] Antivector-
-    readings = stack((spacetime.mv.x, spacetime.mv.t))                          # [2] Plane+
-    assert np.abs((readings[:, None] & missed[None]).to_array()).max() < 0.03
-    # Light keeps to the chart's own light cone from the event: as far across as along time.
-    offsets = (worldlines[[0, -1]] - event).cast(spacetime.Step)          # [2, steps + 1] Antivector-
-    assert np.abs(((spacetime.mv.x & offsets).abs() - (spacetime.mv.t & offsets)).to_array()).max() < 0.02
     # Over the wave's swing, the soft crystal carries the wave's strain, the tuned one rings at about twice it, the
     # most a quarter of critical damping allows, and the stiff one keeps its shape.
     swings = np.abs(np.stack([strains.to_array() for _, strains in states])).reshape(len(states), len(tunings), -1)
@@ -518,8 +586,17 @@ def main() -> None:
     # The irregular mesh's round chords are at rest, every deficit of its tetrahedra, read as pieces of the round
     # sphere, nothing.
     chords = burst_mesh.d[0] * burst_vertices                                   # Point-[edges]
-    deficits, _, _ = three_sphere.Space(burst_mesh, burst_vertices).dynamics(chords.dot(chords))
+    deficits, _, _ = core.Space(burst_mesh, burst_vertices).dynamics(chords.dot(chords))
     assert np.abs(deficits.to_array()).max() < 1e-12
+    # The quadrupole is the same all along each circle, between the tenth turns that carry the mesh onto itself too: a
+    # circle's stretch read at one point of it is its average round it.
+    quadrupole, _ = quadrupole_history(cell_mesh, cell_vertices)
+    turn = circle_turn(cell_vertices, guardrail_sides)                          # [] Motor+
+    _, _, bases = base_sphere()
+    at_one = core.stretches(quadrupole, cell_mesh, cell_vertices, bases, bases, turn, guardrail_sides, 1, 0.0)
+    averaged = core.stretches(quadrupole, cell_mesh, cell_vertices, bases, bases, turn, guardrail_sides,
+                              n_circle_samples, 0.0)
+    assert np.abs((at_one - averaged).to_array()).max() < 1e-6 * np.abs(averaged.to_array()).max()
 
 
 if __name__ == "__main__":
