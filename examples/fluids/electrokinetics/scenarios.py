@@ -100,9 +100,9 @@ def generator_efficiency() -> core.Scalar:
 
 def channel_flows():
     """The channels' strip and walls, their liquid's charge density `[channels] Scalar+[vertices]`, its velocity at
-    each vertex `[channels] Point-[vertices]`, the stream function and the heat made `[channels] Scalar+[vertices]`,
-    what each carries `[channels] Flux-`, and the first channel's double layer's own pushes on the liquid, its osmotic
-    pressure's and its field's, `Point-[vertices]` each."""
+    each vertex `[channels] Point-[vertices]`, the heat made `[channels] Scalar+[vertices]`, what each carries
+    `[channels] Flux-`, and the first channel's double layer's own pushes on the liquid, its osmotic pressure's and its
+    field's, `Point-[vertices]` each."""
     topology, coordinates, shifts, lower, upper, charge, wall_charges = channels()
     vertices, edges = core.placed(topology, coordinates, shifts)
     areas, sides, gradients, outflow, circulation, cells = operators(topology, edges)
@@ -117,20 +117,20 @@ def channel_flows():
     # Each vertex's velocity, its triangles' weighed by their areas.
     speeds = (~topology.incidence[2, 0].sum(axis=0) * (velocities * (areas / 3))) / cells             # [channels] Point-[vertices]
     osmotic, electric = core.equilibrium_pushes(topology, areas, gradients, cells, potentials[0], valences, bulk)
-    return topology, vertices, wall_charges, density, speeds, stream, viscous + joule, carried, osmotic, electric
+    return topology, vertices, wall_charges, density, speeds, viscous + joule, carried, osmotic, electric
 
 
 if __name__ == "__main__":
     from examples.util.animation import save_figure
     from examples.fluids.electrokinetics import render
 
-    topology, vertices, wall_charges, density, speeds, stream, heat, carried, osmotic, electric = channel_flows()
+    topology, vertices, wall_charges, density, speeds, heat, carried, osmotic, electric = channel_flows()
     save_figure(render.draw_mesh(topology, vertices, n_across, wavelength, wall_charges[0]), "electrokinetics_channel")
     save_figure(render.draw_charge(topology, vertices, n_across, wavelength, density, wall_charges),
                 "electrokinetics_charge")
     save_figure(render.draw_balance(topology, vertices, n_across, wavelength, osmotic, electric, wall_charges[0]),
                 "electrokinetics_balance")
-    save_figure(render.draw_flow(topology, vertices, n_across, wavelength, speeds, stream, wall_charges),
+    save_figure(render.draw_flow(topology, vertices, n_across, wavelength, speeds, wall_charges),
                 "electrokinetics_flow")
     save_figure(render.draw_heat(topology, vertices, n_across, wavelength, heat, wall_charges), "electrokinetics_heat")
     save_figure(render.draw_efficiency(half_widths, surface_charges, generator_efficiency()), "electrokinetics_efficiency")

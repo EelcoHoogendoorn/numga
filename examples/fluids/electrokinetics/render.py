@@ -4,9 +4,9 @@ A strip closed on itself along its length is opened at its seam to be drawn: its
 along, and the triangles across the seam joined to that copy. Its points are read by the planes x and y and weighed by
 their volume, `mv.v & point`, the algebra's own projective weight. The mesh is drawn as strokes of its edges; a field
 over it as colours on its triangles, a charge density or a heat from white, a velocity along the strip red where it
-runs with the field and blue against; streamlines as the stream function's level lines; and the walls as strokes
-coloured by their charge, magenta where positive and green where negative. The best efficiency of slits as generators
-is a chart.
+runs with the field and blue against; the flow as streaks of ink along the velocity, read by the same planes, each as
+long as the liquid there is fast and fading downstream; and the walls as strokes coloured by their charge, magenta where
+positive and green where negative. The best efficiency of slits as generators is a chart.
 """
 from __future__ import annotations
 
@@ -17,14 +17,14 @@ from matplotlib.colors import to_rgb
 from numga import concatenate
 from numga.extensor import Extensor
 from examples.util.charts import style, subplots
-from examples.util.wgsl import contours, image_figure, simplices
+from examples.util.wgsl import contours, flow, image_figure, simplices
 from examples.util.wgsl.camera import Camera
 
 Topology = simplices.Topology
 wall_colour = np.array(to_rgb("#3b4a57"))
 mesh_colour = np.array(to_rgb("#9aa5ae"))
 positive_colour, negative_colour = np.array(to_rgb("#c51b7d")), np.array(to_rgb("#4d9221"))
-stream_colour = np.array(to_rgb("#2b2f33"))
+streak_colour = np.array(to_rgb("#2b2f33"))
 velocity_map, efficiency_map, heat_map, charge_map, push_map = (
     colormaps[name] for name in ("RdBu_r", "Blues", "Oranges", "PiYG_r", "PuOr_r"))
 # The share of the efficiency's colour map used, light to mid blue, so that its labels read on it; its labelled levels.
@@ -33,14 +33,15 @@ efficiency_levels = np.array([0.01, 0.02, 0.04, 0.06])
 # The chart's pixels.
 efficiency_width, efficiency_height = 320, 260
 # A strip's picture: pixels across, the room above and below its widest place, and the pixels between strips; the widths
-# of the walls, the mesh's edges and the streamlines; the streamlines' spacing in units of volume flow; how much of a
-# field's colour shows at its largest.
+# of the walls and the mesh's edges; how much of a field's colour shows at its largest.
 n_pixels, margin, gap_pixels = 300, 0.4, 8
-wall_width, mesh_width, stream_width = 3.0, 1.5, 1.5
+wall_width, mesh_width = 3.0, 1.5
 # A mesh's picture gets the pixels its rows of vertices need to show apart, within these bounds.
 row_pixels, mesh_pixels = 4.0, (300, 700)
-stream_spacing = 0.06
 field_strength = 0.85
+# The share of the velocity's colour map either side of its middle, mid red and mid blue at the fastest, so that the
+# streaks read on it.
+velocity_reach = 0.35
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -132,25 +133,24 @@ def draw_charge(topology: Topology, vertices: Extensor, n_across: int, period: f
 
 
 def draw_flow(topology: Topology, vertices: Extensor, n_across: int, period: float, speeds: Extensor,
-              stream: Extensor, wall_charges: np.ndarray):
-    """Strips one above the other, each coloured by its liquid's velocity along it `[strips] Point-[vertices]`, on one
-    scale for all, with the stream function's level lines `[strips] Scalar+[vertices]` and walls coloured by their
-    charge `[strips, columns]`."""
+              wall_charges: np.ndarray):
+    """Strips one above the other, each coloured by its liquid's velocity along it `[strips] Point-[vertices]` and
+    streaked along the velocity, a streak as long as the liquid there is fast and fading the way it goes, on one scale
+    for all, between walls coloured by their charge `[strips, columns]`."""
     mv = vertices.context.multivector
     points, faces = unrolled(topology, vertices, n_across, period)
     camera = strip_camera(vertices, period, n_pixels)
     along = closing(readings(mv.x, speeds), n_across)
-    streams = closing(stream.batch().to_array(), n_across)
     fastest = np.abs(along).max()
-    lines = contours.Lines(stream_spacing, stream_spacing / 2, np.append(stream_colour, 1.0), stream_width)
-    images = []
-    for speed, level, wall_charge in zip(along, streams, wall_charges):
-        colours = 1 - field_strength * (1 - velocity_map(0.5 + speed / (2 * fastest))[:, :3])
-        images.append(on_white(simplices.composited([
-            shaded(points, faces, speed, colours, camera),
-            contours.picture(points, faces, level, colours, camera, lines=(lines,), opacity=0.0),
-            wall_strokes(points, n_across, wall_charge, camera)])))
-    return stacked(images)
+    # The velocities as they are, with the first column's again at its copy across the seam, read by the camera's
+    # planes in the streaks' shader; a streak is as long as the liquid there is fast, the fastest's a set length.
+    velocities = speeds.batch()                                                # [strips, vertices] Point-
+    closed = concatenate([velocities, velocities[:, :n_across]], axis=-1)     # [strips, vertices + across] Point-
+    return stacked([on_white(simplices.composited([
+        shaded(points, faces, speed, velocity_map(0.5 + velocity_reach * speed / fastest)[:, :3], camera),
+        flow.layer(points, faces, velocity, camera, fastest, streak_colour),
+        wall_strokes(points, n_across, wall_charge, camera)]))
+        for speed, velocity, wall_charge in zip(along, closed, wall_charges)])
 
 
 def draw_heat(topology: Topology, vertices: Extensor, n_across: int, period: float, heat: Extensor,
