@@ -156,6 +156,7 @@
 - [Induced dipoles](electromagnetism/induced_dipoles/) — Atoms polarize in response to an applied field and to one another's dipoles.
 - [Electrostriction](electromagnetism/electrostriction/) — An elastic lattice deforms while its induced dipoles reach electrical and mechanical equilibrium.
 - [Eddy-current braking](electromagnetism/eddy_brake/) — Directional conductivity determines currents and braking torque in a rotating disc.
+- [The Meissner effect](electromagnetism/superconductor/) — A superconductor's canonical momentum is the spacetime gradient of one phase, so its exterior derivative vanishes: London's two equations in one, which expel a field from a rod cooled in it where a perfect conductor freezes the field in, and integrate around a ring to whole flux quanta.
 - [Second-harmonic generation](electromagnetism/second_harmonic/) — A crystal's quadratic field response generates light at twice the driving frequency.
 - [Magnetic bottle](electromagnetism/magnetic_bottle/) — Charged particles spiral, bounce or escape in the field between two coils.
 - [Magnetic flux advection](electromagnetism/lie_advection/) — Swept edge patches and Cartan's decomposition transport magnetic circulation and conserve total flux across a swirling conductor.
