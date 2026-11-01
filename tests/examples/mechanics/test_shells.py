@@ -16,13 +16,13 @@ def test_forces_are_the_energy_gradient_and_balance():
     rng = np.random.default_rng(1)
     flat = core.lattice(0.3, 0.7)
     flat = flat[np.linalg.norm(flat, axis=-1) <= 0.7]
-    mesh, points = core.flat_mesh(flat, 0.3)
-    tails, heads = mesh.incidence[1, 0] * points
+    topology, points = core.flat_mesh(flat, 0.3)
+    tails, heads = topology.incidence[1, 0] * points
     lengths = (tails & heads).norm() * 1.1
     origin = core.mv.w.dual()
     along, across = origin & core.mv.x.dual(), origin & core.mv.y.dual()
     curvature = 2 * ((along | core.Line) * (along | core.Line) - (across | core.Line) * (across | core.Line))
-    sheet = core.sheet(mesh, points, lengths, curvature, core.mv.z, 0.1)
+    sheet = core.sheet(topology, points, lengths, curvature, core.mv.z, 0.1)
     bent = np.concatenate([flat, np.zeros((len(flat), 1))], axis=-1) + 0.05 * rng.normal(size=(len(flat), 3))
     pushes = core.forces(sheet, core.mv.point(bent).field()).batch()
     components = (stack((core.mv.x, core.mv.y, core.mv.z)) & pushes[:, None]).to_array()
@@ -41,5 +41,5 @@ def test_forces_are_the_energy_gradient_and_balance():
 def test_the_scenes_draw():
     disc, disc_frames = scenarios.disc()
     strip, strip_frames = scenarios.strip()
-    plt.close(render.draw_settled([(disc.mesh.faces, disc_frames[-1]), (strip.mesh.faces, strip_frames[-1])]))
-    assert len(list(render.animate(strip.mesh.faces, strip_frames[-1:]))) == 1
+    plt.close(render.draw_settled([(disc.topology.elements[2], disc_frames[-1]), (strip.topology.elements[2], strip_frames[-1])]))
+    assert len(list(render.animate(strip.topology.elements[2], strip_frames[-1:]))) == 1

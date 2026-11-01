@@ -50,7 +50,7 @@ def view(points: core.Point, heights: core.Scalar) -> solids.View:
     return solids.view([lifted], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
 
 
-def terrain(mesh: core.Mesh, points: core.Point, heights: core.Scalar, shades: np.ndarray,
+def terrain(topology: core.Topology, points: core.Point, heights: core.Scalar, shades: np.ndarray,
             framing: solids.View) -> np.ndarray:
     """The terrain the heights lift the mesh at its points to, translucent and flat over its faces, its creases
     rods coloured by their shades `[inner, 3]`, and its boundary grey."""
@@ -60,11 +60,12 @@ def terrain(mesh: core.Mesh, points: core.Point, heights: core.Scalar, shades: n
     pixel = framing.pixel
     # The faces as a mesh, which the tracer composites sample by sample, where thin plates would each be searched
     # through every translucent layer; a plate is crossed twice, a face once, so a face hides what both would.
-    surface = meshes.samples(places, mesh.faces, TERRAIN_COLOUR, meshes.flat(places, mesh.faces), framing,
+    triangles = topology.elements[2]
+    surface = meshes.samples(places, triangles, TERRAIN_COLOUR, meshes.flat(places, triangles), framing,
                              face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
-    ends = mesh.incidence[1, 0] * lifted                                        # [ends] Point-[edges]
-    crease_tails, crease_heads = mesh.reading(mesh.interior_edges, 1) * ends    # Point-[inner], Point-[inner]
-    rim_tails, rim_heads = mesh.reading(mesh.boundary_edges, 1) * ends          # Point-[rim], Point-[rim]
+    ends = topology.incidence[1, 0] * lifted                                    # [ends] Point-[edges]
+    crease_tails, crease_heads = topology.reading(topology.interior[1], 1) * ends  # Point-[inner], Point-[inner]
+    rim_tails, rim_heads = topology.reading(topology.exterior[1], 1) * ends     # Point-[rim], Point-[rim]
     creases = solids.rods(solids.origin + solids.context.include_from_algebra(crease_tails.batch()),
                           solids.origin + solids.context.include_from_algebra(crease_heads.batch()), CREASE_WIDTH / 2 * pixel)
     boundary = solids.rods(solids.origin + solids.context.include_from_algebra(rim_tails.batch()),
@@ -73,18 +74,20 @@ def terrain(mesh: core.Mesh, points: core.Point, heights: core.Scalar, shades: n
                        inks=[], translucent=[], meshes=[(surface, 1 - (1 - TERRAIN_OPACITY) ** 2)])
 
 
-def panels(mesh: core.Mesh, points: core.Point, framing: solids.View
+def panels(topology: core.Topology, points: core.Point, framing: solids.View
            ) -> tuple[plt.Figure, Callable[[core.Scalar, core.Scalar, core.Plane], None]]:
     """The figure, laid out once, and what draws heights `Scalar+[vertices]`, stresses `Scalar[inner]` and
     reciprocal vertices `Plane+[faces]` on it: left, the terrain the heights lift the mesh to, its creases coloured by stress,
     seen by the framing camera, fitted to its axes; right, the planar truss, its bars coloured by stress, and the reciprocal diagram over
     it, an edge across every bar."""
-    places = points.batch()                                                     # [vertices] Point-
+    places = points.batch()                                                               # [vertices] Point-
     # The truss's bars and its boundary, the mesh's inner and boundary edges.
-    bars = simplices.Mesh(len(places), mesh.edges[mesh.interior_edges])
-    rim = simplices.Mesh(len(places), mesh.edges[mesh.boundary_edges])
-    # The reciprocal diagram: a reciprocal vertex for each face, joined across every bar to the one on its other side.
-    reciprocal = simplices.Mesh(len(mesh.faces), mesh.edge_faces)
+    bars = simplices.Topology(len(places), topology.elements[1][topology.interior[1]])
+    rim = topology.border
+    # The reciprocal diagram: a reciprocal vertex for each face, joined across every bar to the one on its other side
+    # along the bar's dual edge, each join drawn as a chain of its two ends.
+    across_bars = topology.dual.reading(topology.interior[1], 1) * topology.dual.incidence[1, 0]   # [ends] Scalar+[inner <- faces]
+    joins = simplices.Topology.chains([2] * len(topology.interior[1]))
     figure = plt.figure(figsize=(6.0, 3.0))
     terrain_axes = figure.add_axes((0.0, 0.0, 0.5, 1.0))
     framing = fitted(framing, terrain_axes)
@@ -101,31 +104,32 @@ def panels(mesh: core.Mesh, points: core.Point, framing: solids.View
 
     def drawn(heights: core.Scalar, stresses: core.Scalar, duals: core.Plane) -> None:
         shades = colours(stresses.batch().to_array())                          # [inner, 4]
-        picture.set_data(terrain(mesh, points, heights, shades[:, :3], framing))
+        picture.set_data(terrain(topology, points, heights, shades[:, :3], framing))
         corners = duals.batch()                                                # [faces] Plane+
+        tails, heads = (across_bars * duals).batch()                           # [inner] Plane+, [inner] Plane+
         truss.set_data(simplices.composited([
             simplices.strokes(places, bars, shades[:, :3], BAR_WIDTH, camera), boundary,
-            simplices.strokes(corners, reciprocal, RECIPROCAL_COLOUR, LINE_WIDTH, slope_camera),
+            simplices.strokes(stack((tails, heads), axis=-1).reshape(-1), joins, RECIPROCAL_COLOUR, LINE_WIDTH, slope_camera),
             simplices.markers(corners, RECIPROCAL_COLOUR, CORNER_RADIUS, slope_camera)]))
 
     return figure, drawn
 
 
-def draw(mesh: core.Mesh, points: core.Point, heights: core.Scalar, stresses: core.Scalar,
+def draw(topology: core.Topology, points: core.Point, heights: core.Scalar, stresses: core.Scalar,
          duals: core.Plane) -> plt.Figure:
     """The terrain beside the planar truss and its reciprocal diagram, the terrain framed on itself."""
-    figure, drawn = panels(mesh, points, view(points, heights))
+    figure, drawn = panels(topology, points, view(points, heights))
     drawn(heights, stresses, duals)
     return figure
 
 
-def animate(mesh: core.Mesh, points: core.Point, frames: Iterable[tuple[core.Scalar, core.Scalar, core.Plane]]) -> Iterator[np.ndarray]:
+def animate(topology: core.Topology, points: core.Point, frames: Iterable[tuple[core.Scalar, core.Scalar, core.Plane]]) -> Iterator[np.ndarray]:
     """The figure at every frame: its heights `Scalar+[vertices]`, stresses `Scalar[inner]` and reciprocal
     vertices `Plane+[faces]`, the terrain seen by one camera framing the first frame's with room for the heights to
     move."""
     frames = iter(frames)
     first = next(frames)
-    figure, drawn = panels(mesh, points, view(points, stack([first[0] - SWING, first[0] + SWING])))
+    figure, drawn = panels(topology, points, view(points, stack([first[0] - SWING, first[0] + SWING])))
     for heights, stresses, duals in chain([first], frames):
         drawn(heights, stresses, duals)
         yield capture(figure)

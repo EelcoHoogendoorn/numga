@@ -110,14 +110,14 @@ def panel(ax: Axes, events: core.Antivector, values: np.ndarray, colours: Colorm
     return image
 
 
-def outlined(places: core.Antivector, mesh: contours.Mesh, field: core.Bivector, current: core.Antivector,
+def outlined(places: core.Antivector, topology: contours.Topology, field: core.Bivector, current: core.Antivector,
              view: Camera) -> np.ndarray:
     """The electric field's strength over the grid of events at their places in the lab's space, `[rows, columns]`
     numbered row by row, with the charge's outline, where its density is high, seen by the view of its panel:
     `[rows, columns, 4]`."""
     strengths = strength_colours(np.ma.filled(electric_norm(electric_strength(field)), 0.0))[..., :3]
     charge_outline = contours.Level(density_level, outline_ink, outline_width)
-    return contours.picture(places, mesh, np.abs(density(current)).reshape(-1), strengths.reshape(-1, 3), view,
+    return contours.picture(places, topology, np.abs(density(current)).reshape(-1), strengths.reshape(-1, 3), view,
                             levels=(charge_outline,))
 
 
@@ -154,10 +154,10 @@ def animate(frames: Iterable[tuple[core.Antivector, core.Bivector, core.Antivect
     strength = pinned(left, np.zeros(view.shape + (4,)), (*corners[:, 0], *corners[:, 1]))
     left.set_autoscale_on(False)
     places = events.reshape(-1)                                              # [rows * columns] Antivector-
-    mesh = contours.Mesh.grid(*events.shape[-2:])
+    topology = contours.Topology.grid(*events.shape[-2:])
     magnetic = panel(right, events, magnetic_across(field), signed_colours, magnetic_norm)
     for _, field, current in chain([(events, field, current)], states):
-        strength.set_data(outlined(places, mesh, field, current, view))
+        strength.set_data(outlined(places, topology, field, current, view))
         magnetic.set_data(coloured(magnetic_across(field), signed_colours, magnetic_norm))
         yield capture(figure)
     plt.close(figure)
@@ -221,7 +221,7 @@ def animate_waves(frames: Iterable[tuple[core.Antivector, core.Bivector, core.An
 def radiation(events: core.Antivector, field: core.Bivector, charge: core.Antivector) -> Figure:
     """The waves of circling charges side by side, one panel per case, each on its own colour scale,
     with the charge marked."""
-    values = compressed_waves(events, field, wave_limit(events, field))           # [cases, rows, columns]
+    values = compressed_waves(events, field, wave_limit(events, field))         # [cases, rows, columns]
     figure, axes = panels(len(values), events.shape[-2:])
     for case, (ax, value) in enumerate(zip(axes, values)):
         image = panel(ax, events, value, signed_colours, wave_norm)

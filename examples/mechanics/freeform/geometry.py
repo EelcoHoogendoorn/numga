@@ -7,12 +7,12 @@ from pathlib import Path
 import numpy as np
 from scipy.stats import qmc
 
-from numga import stack
+from numga import NumpyContext, stack
 from numga.algebras import VGA3D
-from examples import instantiate
+from examples.util import shapes
+from examples.util.topology import Topology
 
-mesh_module = instantiate("examples.util.mesh", VGA3D)
-Mesh, mv = mesh_module.Mesh, mesh_module.mv
+mv = NumpyContext(VGA3D).multivector
 # Points are antivectors.
 Antivector = VGA3D.gatype.antivector()
 n_ray_batch = 256
@@ -46,9 +46,9 @@ def interior(points: np.ndarray, triangles: np.ndarray) -> np.ndarray:
     return inside
 
 
-def volume_samples(mesh: Mesh, vertices: Antivector, n_samples: int) -> tuple[Antivector, np.ndarray]:
+def volume_samples(topology: Topology, vertices: Antivector, n_samples: int) -> tuple[Antivector, np.ndarray]:
     """Equal-volume quadrature from low-discrepancy samples inside a closed mesh."""
-    corners = mesh.incidence[2, 0] * vertices                    # [corners] Antivector-[faces]
+    corners = topology.incidence[2, 0] * vertices                # [corners] Antivector-[faces]
     # The enclosed volume: the cones the faces span from the origin, each the join of its corners, summed.
     volume = abs((corners[0] & corners[1] & corners[2]).sites.sum().to_array()) / 6
     places = coordinates(vertices.batch())                       # [vertices, 3]
@@ -80,16 +80,17 @@ def center_indices(points: np.ndarray, n_centers: int) -> np.ndarray:
 
 
 def load(path: Path, height: float, n_quadrature: int,
-         n_centers: int) -> tuple[Mesh, Antivector, Antivector, np.ndarray, Antivector]:
+         n_centers: int) -> tuple[Topology, Antivector, Antivector, np.ndarray, Antivector]:
     """A y-up triangular OBJ, upright on z=0 and `height` tall, its vertices a batch of points for the
     deformation to move, with volume samples and kernel centers."""
-    mesh, vertices = Mesh.read(path, height)                     # Antivector-[vertices]
+    topology, vertex_coordinates = shapes.surface(path, height)
+    vertices = mv.vector(vertex_coordinates).dual().field()       # Antivector-[vertices]
     # Each vertex's height, its pairing with the plane y = 0, and the extent of the heights.
     heights = mv.y & vertices.batch()                            # [vertices] Scalar+
     extent = heights[heights.argmax()] - heights[heights.argmin()]   # [] Scalar+
     # As tall as `height` along y, its lowest point lifted onto the plane y = 0.
-    vertices = vertices * (height / extent) + mv.y.dual() * (height / 2)   # Antivector-[vertices]
-    samples, weights = volume_samples(mesh, vertices, n_quadrature)   # [samples] Antivector-, [samples]
+    vertices = vertices * (height / extent) + mv.y.dual() * (height / 2)  # Antivector-[vertices]
+    samples, weights = volume_samples(topology, vertices, n_quadrature)  # [samples] Antivector-, [samples]
     centers = samples[center_indices(coordinates(samples), n_centers)]   # [centers] Antivector-
     upright = (-mv.yz * (np.pi / 4)).exp()
-    return mesh, upright >> vertices.batch(), upright >> samples, weights, upright >> centers
+    return topology, upright >> vertices.batch(), upright >> samples, weights, upright >> centers

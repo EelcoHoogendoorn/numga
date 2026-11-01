@@ -56,7 +56,7 @@ def constellation(emitted: core.Event, receiver: core.Event, orbit_radius: float
              (solids.ball(receiver_point, 2.7 * view.pixel)[None, None], ORANGE)]
     # Each signal's path an edge from its satellite to the receiver.
     signals = stack((satellite_points, receiver_point.broadcast_to(satellite_points.shape)), axis=-1)   # [satellites, 2] Point-
-    rays = [(simplices.tubes(signals.reshape(-1), simplices.Mesh.chains([2] * len(satellite_points)), BLUE, 0.9, view,
+    rays = [(simplices.tubes(signals.reshape(-1), simplices.Topology.chains([2] * len(satellite_points)), BLUE, 0.9, view,
                              solids.gloss), 0.35)]
     return view, parts, rays
 
@@ -83,7 +83,7 @@ def solution_image(emitted: core.Event, receiver: core.Event, estimate: core.Eve
     dual = (reach * (solids.Plane & reach)).sum(axis=0) - solids.origin * (solids.Plane & solids.origin)   # [] Point- <- Plane+
     ellipsoid = solids.placed(dual.inverse(), solids.translator(centre - solids.origin))
     diameters = stack((centre - reach, centre + reach), axis=-1)               # [3, 2] Point-
-    principal = simplices.tubes(diameters.reshape(-1), simplices.Mesh.chains([2] * 3), BLUE, 0.9, view, solids.gloss)
+    principal = simplices.tubes(diameters.reshape(-1), simplices.Topology.chains([2] * 3), BLUE, 0.9, view, solids.gloss)
     parts = parts + [(solids.ball(centre, 2.0 * view.pixel)[None, None], BLUE)]
     return solids.draw(parts, view, WHITE, inks=[earth_grid()], translucent=[(ellipsoid[None, None], BLUE, 0.3)],
                        meshes=rays + [(principal, 0.8)])

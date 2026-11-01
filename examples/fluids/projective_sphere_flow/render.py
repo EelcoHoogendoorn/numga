@@ -35,19 +35,20 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 
 
 # --- plumbing -------------------------------------------------------------------------
-def draw_mesh(mesh: core.Mesh, vertices: core.Point) -> plt.Figure:
+def draw_mesh(topology: core.Topology, vertices: core.Point) -> plt.Figure:
     """The physical spherical mesh before any choice of lifted representatives."""
     points = solids.origin + solids.context.include_from_algebra(vertices.batch())             # [vertices] Point-
     frame = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, 1.15), n_pixels)
-    colours = np.broadcast_to(cream, mesh.faces.shape + (3,))
-    surface = meshes.samples(points, mesh.faces, colours, meshes.smooth(points, mesh), frame,
+    triangles = topology.elements[2]
+    colours = np.broadcast_to(cream, triangles.shape + (3,))
+    surface = meshes.samples(points, triangles, colours, meshes.smooth(points, topology), frame,
                              face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
-    lines = simplices.tubes(points, mesh, blue, 1.0, frame, gloss=solids.gloss)
+    lines = simplices.tubes(points, topology, blue, 1.0, frame, gloss=solids.gloss)
     return image_figure(solids.draw([], frame, background, inks=[], translucent=[],
                                     meshes=[(surface, 1.0), (lines, 1.0)]))
 
 
-def animate_sphere(mesh: core.Mesh, display: core.Mesh,
+def animate_sphere(topology: core.Topology, display: core.Topology,
                    frames: Iterable[tuple[core.Point, core.Point, core.Point, core.Scalar]]) -> Iterator[np.ndarray]:
     """The moving representatives and dual beside the physical solution on its fixed spherical domain."""
     space_view = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, 1.85), n_pixels)
@@ -56,28 +57,28 @@ def animate_sphere(mesh: core.Mesh, display: core.Mesh,
     fractions = np.linspace(0, 1, n_arc_segments + 1)
     for lifted, duals, samples, values in frames:
         # The display samples of every face, sample after sample, and the display triangles of each face among them.
-        n_faces = len(mesh.faces)
-        faces = (n_faces * display.faces[None] + np.arange(n_faces)[:, None, None]).reshape(-1, 3)
+        n_faces = topology.n_elements[2]
+        faces = (n_faces * display.elements[2][None] + np.arange(n_faces)[:, None, None]).reshape(-1, 3)
         points = solids.origin + solids.context.include_from_algebra(samples.batch().reshape(-1))   # [samples] Point-
         field = values.to_array().reshape(-1)
-        normals = meshes.smooth(points, meshes.Mesh(len(points), faces))
+        normals = meshes.smooth(points, meshes.Topology(len(points), faces))
         surface = meshes.samples(points, faces, field[faces, None], normals, sphere_view,
                                  face_values=np.zeros(4), colour=field_shader, gloss=solids.gloss)
         sphere = solids.draw([], sphere_view, background, inks=[], translucent=[], meshes=[(surface, 1.0)])
 
         vertices = solids.origin + solids.context.include_from_algebra(lifted.batch())         # [vertices] Point-
-        mesh_lines = simplices.tubes(vertices, mesh, blue, 1.25, space_view, gloss=solids.gloss)
+        mesh_lines = simplices.tubes(vertices, topology, blue, 1.25, space_view, gloss=solids.gloss)
         # Great-circle arcs draw the projected dual on the same unit sphere: the chord between the poles of the faces
         # either side of each edge, pushed out onto it.
-        left, right = (mesh.reading(mesh.edge_faces.T, 2) * duals).batch()   # [edges] Point-, [edges] Point-
-        arcs = (left[:, None] * (1 - fractions) + right[:, None] * fractions).normalized()   # [edges, arc points] Point-
-        arc_places = solids.origin + solids.context.include_from_algebra(arcs)                # [edges, arc points] Point-
-        dual_lines = simplices.tubes(arc_places.reshape(-1), simplices.Mesh.chains([n_arc_segments + 1] * len(arcs)),
+        dual_tails, dual_heads = (topology.dual.incidence[1, 0] * duals).batch()  # [edges] Point-, [edges] Point-
+        arcs = (dual_tails[:, None] * (1 - fractions) + dual_heads[:, None] * fractions).normalized()   # [edges, arc points] Point-
+        arc_places = solids.origin + solids.context.include_from_algebra(arcs)               # [edges, arc points] Point-
+        dual_lines = simplices.tubes(arc_places.reshape(-1), simplices.Topology.chains([n_arc_segments + 1] * len(arcs)),
                                      orange, 1.1, space_view, gloss=solids.gloss)
-        on_sphere = solids.origin + solids.context.include_from_algebra(lifted.normalized().batch())   # [vertices] Point-
+        on_sphere = solids.origin + solids.context.include_from_algebra(lifted.normalized().batch())  # [vertices] Point-
         # Each ray an edge from its vertex's place on the sphere out to the vertex.
         rays = simplices.tubes(stack([on_sphere, vertices], axis=-1).reshape(-1),
-                               simplices.Mesh.chains([2] * len(vertices)), np.full(3, 0.45), 1.0, space_view,
+                               simplices.Topology.chains([2] * len(vertices)), np.full(3, 0.45), 1.0, space_view,
                                gloss=solids.gloss)
         shell = solids.ball(solids.origin, 1.0)[None, None]
         markers = solids.ball(vertices, 2.0 * space_view.pixel)[:, None]
@@ -87,7 +88,7 @@ def animate_sphere(mesh: core.Mesh, display: core.Mesh,
         yield np.concatenate((space, sphere), axis=1)
 
 
-def draw_planar(points: Extensor, display: core.Mesh, potential: Extensor, current: Extensor) -> plt.Figure:
+def draw_planar(points: Extensor, display: core.Topology, potential: Extensor, current: Extensor) -> plt.Figure:
     """Finite points and spatial current in x,y,w, with no readout of the null coordinate as distance: the potential
     in its colours, the current as white streaks running downstream."""
     mv = points.context.multivector

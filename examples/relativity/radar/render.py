@@ -56,7 +56,7 @@ def strokes(events: Event, width: float, colour: np.ndarray, opacity: float, das
     picture."""
     size, n_events = events.shape
     colours = np.repeat(np.broadcast_to(colour, (size, 3)), n_events - 1, axis=0)
-    return simplices.strokes(events.reshape(-1), simplices.Mesh.chains([n_events] * size), colours, width, camera,
+    return simplices.strokes(events.reshape(-1), simplices.Topology.chains([n_events] * size), colours, width, camera,
                              dashes=dashes, opacity=opacity)
 
 
@@ -138,7 +138,7 @@ def reconstruction(worldlines: Event, emitted: Event, reflected: Event, received
     triangle = stack((emitted[index], reflected[index], received[index]))   # [corners] Event-
     outgoing = stack((emitted, reflected), axis=1)                            # [pulses, 2] Event-
     incoming = stack((reflected, received), axis=1)                           # [pulses, 2] Event-
-    layers = [contours.picture(triangle, simplices.Mesh(3, np.array([[0, 1, 2]])), np.zeros(3), BLUE, camera,
+    layers = [contours.picture(triangle, simplices.Topology(3, np.array([[0, 1, 2]])), np.zeros(3), BLUE, camera,
                                opacity=0.045),
               strokes(worldlines, 2, np.stack((INK, GREY)), 1, SOLID, camera),
               strokes(outgoing, 1, ORANGE, 0.2, SOLID, camera),

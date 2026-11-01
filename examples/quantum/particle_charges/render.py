@@ -43,8 +43,8 @@ def draw_connections(
 
     # The two weak charges separate the four multiplets; colour weights separate their states.
     centres = weak_spacing * (left * across + right * up)                  # [sectors] Antivector-
-    offsets = colour_share * (colour_tilt >> (weights[:, 0] * across + weights[:, 1] * up))   # [sectors] Antivector-
-    places = centres + offsets                                              # [sectors] Antivector-
+    offsets = colour_share * (colour_tilt >> (weights[:, 0] * across + weights[:, 1] * up))  # [sectors] Antivector-
+    places = centres + offsets                                             # [sectors] Antivector-
     colour_counts = occupations[:, :3].sum(axis=-1)
     occupied_colour = np.argmax(occupations[:, :3], axis=-1)
     missing_colour = np.argmin(occupations[:, :3], axis=-1)
@@ -68,7 +68,7 @@ def draw_connections(
         connected = np.stack(np.nonzero(np.triu(response > 1e-10, k=1)), axis=-1)   # [connections, 2]
         camera = flat_panel(ax, diagram.x.algebra)
         simplices.overlay(ax, [
-            simplices.strokes(places, simplices.Mesh(len(places), connected), connection_colours[panel],
+            simplices.strokes(places, simplices.Topology(len(places), connected), connection_colours[panel],
                               connection_width, camera, opacity=connection_opacity),
             # Each sector's dot, hollow where it is no doublet: its rim, under its face.
             simplices.markers(places, colours, dot_radius, camera),

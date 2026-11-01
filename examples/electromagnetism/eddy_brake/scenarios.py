@@ -5,9 +5,8 @@ from collections.abc import Iterator
 import numpy as np
 
 from numga import stack
+from examples.util import shapes
 from examples.electromagnetism.eddy_brake import core
-
-Mesh = core.Mesh
 
 radius = 0.1                                       # m
 thickness = 0.001                                  # m
@@ -53,6 +52,8 @@ inductive_elapsed = 0.07                           # s
 n_inductive_steps = 105
 inductive_time_step = inductive_elapsed / n_inductive_steps
 n_substeps = 4
+# The planes of x and of y, whose duals are the directions across the disc.
+Spatial = core.ga.gatype.from_blades("x y")                                # Vector+
 # The magnet's centre, and its field there in the runs without induction, on the straight-fibre disc, and with
 # induction.
 centre = (core.mv.x * magnet_offset).dual()                                # [] Point-
@@ -64,7 +65,9 @@ inductive_magnet_field = core.mv.xy * inductive_field_strength             # [] 
 # --- math -----------------------------------------------------------------------------
 def materials() -> tuple[core.Disc, core.Conductivity]:
     """The disc and its three material fields, each with the same mean conductivity."""
-    disc = core.disc(*Mesh.concentric_disk(material_radii, n_divisions))
+    topology, coordinates = shapes.concentric_disk(material_radii, n_divisions)
+    points = core.mv(Spatial, coordinates).dual().field()                   # Point-[vertices]
+    disc = core.disc(topology, points)
     principal = thickness * np.stack((radial_conductivity, circumferential_conductivity), axis=-1)  # [cases, axes]
     # Fibres occupy an annulus; the centre and rim conduct equally in both directions.
     conductivity = core.fibre_conductivity(disc, principal, fibre_inner_radius, fibre_outer_radius,
@@ -75,13 +78,15 @@ def materials() -> tuple[core.Disc, core.Conductivity]:
 def scene(disc: core.Disc, conductivity: core.Conductivity) -> core.Response:
     """The steady currents, heating and torque of all three material fields."""
     magnetic = magnet_field * (-(disc.edge_midpoints - centre).squared() / (2 * field_width ** 2)).exp()   # Bivector+[edges]
-    spin = angular_speed * core.mv.xy                                       # [] Bivector+
+    spin = angular_speed * core.mv.xy                                      # [] Bivector+
     return core.solve(disc, magnetic, spin, conductivity)
 
 
 def spin_down() -> tuple[core.Disc, Iterator[core.Motion]]:
     """A disc with straight fibres, released to slow under its own magnetic drag."""
-    disc = core.disc(*Mesh.triangular_disk(radius, n_divisions))
+    topology, coordinates = shapes.triangular_disk(radius, n_divisions)
+    points = core.mv(Spatial, coordinates).dual().field()                   # Point-[vertices]
+    disc = core.disc(topology, points)
     directions = stack((core.mv.x.dual(), core.mv.y.dual()))                 # [axes] Current-
     principal = thickness * np.array([along_conductivity, across_conductivity])
     conductivity = (directions * (core.Field & (directions & core.time)) * principal).sum(axis=-1)[None]   # [cases] Current- <- Field+
@@ -96,8 +101,8 @@ def spin_down() -> tuple[core.Disc, Iterator[core.Motion]]:
 def materials_braking(disc: core.Disc, conductivity: core.Conductivity) -> Iterator[core.Motion]:
     """The three material discs released at the same speed, retaining their Joule heat on the
     rotating material triangles."""
-    orientation = core.mv.rotor().broadcast_to(conductivity.shape)          # [cases] Rotor+
-    spin = (core.mv.xy * initial_speed).broadcast_to(orientation.shape)     # [cases] Bivector+
+    orientation = core.mv.rotor().broadcast_to(conductivity.shape)            # [cases] Rotor+
+    spin = (core.mv.xy * initial_speed).broadcast_to(orientation.shape)      # [cases] Bivector+
     heat = (disc.triangle_areas * 0).broadcast_to(conductivity.shape)       # [cases] Scalar+[faces]
     return core.braking(disc, centre, core.mv.xy, field_strength, field_width,
                         conductivity, inertia, orientation, spin, heat, time_step, n_steps)
@@ -106,7 +111,7 @@ def materials_braking(disc: core.Disc, conductivity: core.Conductivity) -> Itera
 def inductive_materials(disc: core.Disc, conductivity: core.Conductivity) -> Iterator[core.InductiveMotion]:
     """Current build-up and magnetic braking, with inductive memory on the rotating discs."""
     modes = core.current_modes(disc, conductivity, permeability, n_modes)
-    orientation = core.mv.rotor().broadcast_to(conductivity.shape)          # [cases] Rotor+
+    orientation = core.mv.rotor().broadcast_to(conductivity.shape)            # [cases] Rotor+
     spin = (core.mv.xy * inductive_initial_speed).broadcast_to(orientation.shape)  # [cases] Bivector+
     heat = (disc.triangle_areas * 0).broadcast_to(conductivity.shape)       # [cases] Scalar+[faces]
     amplitudes = modes.decay * 0                                           # [cases] Scalar+[modes]
@@ -131,12 +136,12 @@ def main() -> None:
     disc, conductivity = materials()
     response = scene(disc, conductivity)
     paths = core.streamlines(disc, conductivity)(response.current)            # [cases] Scalar+[vertices]
-    save_figure(render.draw(disc.mesh, disc.vertices, disc.triangle_areas, response, paths, centre, field_width,
+    save_figure(render.draw(disc.topology, disc.vertices, disc.triangle_areas, response, paths, centre, field_width,
                             magnet_field),
                 "eddy_brake_materials")
     straight, frames = spin_down()
     parallel = (render.parallel_fibres(radius, n_fibre_lines, n_fibre_samples),)
-    save_animation(render.animate(straight.mesh, straight.vertices, straight.triangle_areas, frames, centre, field_width,
+    save_animation(render.animate(straight.topology, straight.vertices, straight.triangle_areas, frames, centre, field_width,
                                   straight_magnet_field, parallel, np.ones((1, 1))),
                    "eddy_brake_spin_down", duration_ms, n_animation_colours)
     fibres = (render.radial_fibres(fibre_inner_radius, fibre_outer_radius, n_fibre_lines, n_fibre_samples),
@@ -145,26 +150,26 @@ def main() -> None:
     shown = np.stack((radial_conductivity > circumferential_conductivity,
                       circumferential_conductivity > radial_conductivity), axis=-1)  # [cases, families]
     braked = list(materials_braking(disc, conductivity))
-    save_animation(render.animate(disc.mesh, disc.vertices, disc.triangle_areas, braked, centre, field_width,
+    save_animation(render.animate(disc.topology, disc.vertices, disc.triangle_areas, braked, centre, field_width,
                                   magnet_field, fibres, shown),
                    "eddy_brake_materials_spin_down", duration_ms, n_animation_colours)
-    save_animation(render.animate_heat(disc.mesh, disc.vertices, disc.triangle_areas, braked, centre, field_width,
+    save_animation(render.animate_heat(disc.topology, disc.vertices, disc.triangle_areas, braked, centre, field_width,
                                        magnet_field, fibres, shown),
                    "eddy_brake_materials_heat", duration_ms, n_animation_colours)
     # The thicker disc's sheets conduct more, in proportion.
-    inductive_conductivity = inductive_thickness / thickness * conductivity   # [cases] (Current- <- Field+)[faces]
+    inductive_conductivity = inductive_thickness / thickness * conductivity  # [cases] (Current- <- Field+)[faces]
     inductive = list(inductive_materials(disc, inductive_conductivity))
-    save_animation(render.animate_induction(disc.mesh, disc.vertices, disc.triangle_areas, inductive, centre,
+    save_animation(render.animate_induction(disc.topology, disc.vertices, disc.triangle_areas, inductive, centre,
                                             field_width, inductive_magnet_field, fibres, shown),
                    "eddy_brake_inductive_currents", duration_ms, n_animation_colours)
-    save_animation(render.animate_induction_heat(disc.mesh, disc.vertices, disc.triangle_areas, inductive, centre,
+    save_animation(render.animate_induction_heat(disc.topology, disc.vertices, disc.triangle_areas, inductive, centre,
                                                  field_width, inductive_magnet_field, fibres, shown),
                    "eddy_brake_inductive_heat", duration_ms, n_animation_colours)
 
     # --- checks
     # The steady currents turn the mechanical power into heat. The braking discs conserve their
     # rotational energy plus heat; the inductive discs add the magnetic energy and the motor's work.
-    spin = angular_speed * core.mv.xy                                       # [] Bivector+
+    spin = angular_speed * core.mv.xy                                      # [] Bivector+
     np.testing.assert_allclose((-(spin & response.torque)).kernel, response.heating.sites.sum().kernel, rtol=1e-12)
     energy = stack([state.heat.sites.sum() + inertia / 2 * state.spin.scalar_norm_squared() for state in braked])
     np.testing.assert_allclose((energy - energy[0]).kernel, 0, atol=1e-13)

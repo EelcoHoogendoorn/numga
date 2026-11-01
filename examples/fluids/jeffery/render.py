@@ -35,7 +35,7 @@ FRAME_MARGIN = 0.08
 # A body's octants, by the signs of its own directions along its three axes, and their colours: dark where the
 # signs multiply to plus. The width in pixels of the paths of the tips and of the marks past them.
 OCTANTS = np.array(list(product((1.0, -1.0), repeat=3)))                     # [octants, 3]
-OCTANT_COLOURS = np.where((OCTANTS.prod(axis=-1) > 0)[:, None], to_rgb(BODY_DARK), to_rgb(BODY))   # [octants, 3]
+OCTANT_COLOURS = np.where((OCTANTS.prod(axis=-1) > 0)[:, None], to_rgb(BODY_DARK), to_rgb(BODY))  # [octants, 3]
 TIP_RGB = np.array(to_rgb(TIP))
 PATH_WIDTH, MARK_WIDTH = 2.0, 3.0
 # The sphere of directions, drawn on the GPU: its colour and how much each of its surfaces hides, and its grid's
@@ -90,7 +90,7 @@ def draw_orbits(trails: core.Point) -> plt.Figure:
     # The paths from every start at both ends of the axis, chains of edges down the steps through a body's points
     # numbered as they lie, each edge in its start's colour.
     numbered = np.arange(n_ends * n_points * n_starts).reshape(n_ends, n_points, n_starts)
-    paths = simplices.Mesh(numbered.size, np.stack([numbered[:, :-1], numbered[:, 1:]], axis=-1).reshape(-1, 2))
+    paths = simplices.Topology(numbered.size, np.stack([numbered[:, :-1], numbered[:, 1:]], axis=-1).reshape(-1, 2))
     path_colours = np.broadcast_to(STARTS[:, :3], numbered[:, 1:].shape + (3,)).reshape(-1, 3)
     view = solids.View(solids.aim(solids.origin, np.radians(VIEW[0]), np.radians(VIEW[1] + 90)),
                        np.full(2, LABEL_DISTANCE * (1 + ORBIT_MARGIN)), ORBIT_PIXELS)
@@ -143,22 +143,22 @@ def animate_tumbling(stretches: core.Stretch, heights: core.Point, velocities: c
                     for offsets in (heights - velocities / 2, heights + velocities / 2))   # [bodies, heights] Point-, Point-
     # Each an arrow, a tube ending in a chevron.
     n_arrows = np.prod(starts.shape)
-    flow = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_arrows), FLOW_RGB,
+    flow = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Topology.chains([2] * n_arrows), FLOW_RGB,
                            ARROW_WIDTH, view, gloss=solids.gloss, chevrons=np.ones(n_arrows), chevron=ARROW_CHEVRON)
     # Both ends of every long axis, in its panel, over the frames, and the flow, which stays put.
     tip_ends = tips * np.array([1.0, -1.0])[:, None, None]                    # [ends, frames, bodies] Point-
-    tip_offsets = to_scene >> solids.context.include_from_algebra(tip_ends)             # [ends, frames, bodies] Point-
+    tip_offsets = to_scene >> solids.context.include_from_algebra(tip_ends)   # [ends, frames, bodies] Point-
     axis_ends = shifts >> (solids.origin + tip_offsets)                       # [ends, frames, bodies] Point-
     mark_ends = shifts >> (solids.origin + tip_offsets * MARK_END)            # [ends, frames, bodies] Point-
     # The tips' paths, chains of edges down the frames through the ends numbered as they lie; and the marks, an edge
     # from each end out past it.
     numbered = np.arange(np.prod(axis_ends.shape)).reshape(axis_ends.shape)  # [ends, frames, bodies]
     steps = np.stack([numbered[:, :-1], numbered[:, 1:]], axis=-1)           # [ends, frames - 1, bodies, 2]
-    marked = simplices.Mesh.chains([2] * (2 * count))
+    marked = simplices.Topology.chains([2] * (2 * count))
     scene = Scene(view, np.ones(3), [], [(flow, 1.0)], inks=[], translucent=[])
     for index in range(len(tips)):
         # The paths of the tips so far, and the marks from each end out past it.
-        paths = simplices.tubes(axis_ends.reshape(-1), simplices.Mesh(numbered.size, steps[:, :index].reshape(-1, 2)),
+        paths = simplices.tubes(axis_ends.reshape(-1), simplices.Topology(numbered.size, steps[:, :index].reshape(-1, 2)),
                                 TIP_RGB, PATH_WIDTH, view, gloss=solids.gloss)
         marks = simplices.tubes(stack([axis_ends[:, index], mark_ends[:, index]], axis=-1).reshape(-1), marked, TIP_RGB,
                                 MARK_WIDTH, view, gloss=solids.gloss)

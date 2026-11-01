@@ -63,8 +63,8 @@ def view(vertices: core.Point, centres: core.Point, patches: core.Patch) -> soli
 def picture(vertices: core.Point, centres: core.Point, patches: core.Patch, view: solids.View) -> np.ndarray:
     """The cube as the view sees it: its faces translucent, its edges and arrows opaque."""
     # The projective embedding: places of space, offsets from its origin, as the renderer's points about its own.
-    places = solids.origin + solids.context.include_from_algebra(vertices)               # [vertices] Point-
-    offsets = arrow_offsets(patches)                                           # [faces] Point-
+    places = solids.origin + solids.context.include_from_algebra(vertices)             # [vertices] Point-
+    offsets = arrow_offsets(patches)                                                               # [faces] Point-
     # A crushed face has no area: nothing to draw, and no arrow.
     lengths = offsets.norm()                                                   # [faces] Scalar+
     shown = lengths > view.pixel
@@ -73,7 +73,7 @@ def picture(vertices: core.Point, centres: core.Point, patches: core.Patch, view
     ends = starts + solids.context.include_from_algebra(offsets[shown])                  # [shown] Point-
     # Each arrow a tube ending in a chevron.
     n_shown = starts.shape[0]
-    arrows = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_shown),
+    arrows = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Topology.chains([2] * n_shown),
                              colours[shown], arrow_width, view, gloss=solids.gloss, chevrons=np.ones(n_shown),
                              chevron=chevron_length)
     edges, joints = solids.edges(places[EDGES[:, 0]], places[EDGES[:, 1]], edge_radius * view.pixel)

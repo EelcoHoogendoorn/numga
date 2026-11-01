@@ -8,6 +8,7 @@ import numpy as np
 
 from numga import where
 from examples.mechanics.seismic_waves import core
+from examples.util.shapes import concentric_disk
 
 mv = core.mv
 
@@ -27,7 +28,7 @@ layer_viscosities = np.array([0.001, 0.0])
 impact_angle = np.radians(45)
 impact_normal = (mv.xy * (-impact_angle / 2)).exp() >> mv.y.dual()   # [] Point-
 source_depth = 0.05
-source_centre = impact_normal * (surface_radius - source_depth)  # [] Point-
+source_centre = impact_normal * (surface_radius - source_depth)      # [] Point-
 source_width = 0.07
 source_support = 3.0
 source_speed = 0.05
@@ -64,8 +65,9 @@ def main() -> None:
     from examples.mechanics.seismic_waves import render
     from examples.util.animation import save_animation, save_figure
 
-    mesh, vertices = core.Mesh.concentric_disk(radial_boundaries, n_radial_divisions)
-    centres = (mesh.incidence[2, 0].mean(axis=0) * vertices).batch()   # [faces] Point-
+    topology, coordinates = concentric_disk(radial_boundaries, n_radial_divisions)
+    vertices = mv.vector(coordinates).dual().field()                      # Point-[vertices]
+    centres = (topology.incidence[2, 0].mean(axis=0) * vertices).batch()  # [faces] Point-
     # The liquid core is region zero, the solid shell region one.
     regions = (centres.norm() > core_radius).astype(int)
 
@@ -74,16 +76,16 @@ def main() -> None:
     lame_mu = core.as_scalar(layer_mus[regions])                  # [faces] Scalar+
     material = core.constitutive(lame_lambda, lame_mu)
     viscosity = core.viscous(core.as_scalar(layer_viscosities[regions]))
-    operators = core.Operators(mesh, vertices, material, viscosity, density)
-    save_figure(render.draw_materials(mesh, vertices, regions), "seismic_waves_materials")
+    operators = core.Operators(topology, vertices, material, viscosity, density)
+    save_figure(render.draw_materials(topology, vertices, regions), "seismic_waves_materials")
 
     # The moon comes in at an angle to the normal of the surface where it strikes, and rebounds with part of its normal
     # speed reversed and part of its tangential speed kept; the planet's blow is the momentum the moon gives up.
-    incoming = moon_speed * ((mv.xy * (approach_angle / 2)).exp() >> -impact_normal)   # [] Point-
-    normal_part = impact_normal * incoming.dot(impact_normal)                    # [] Point-
-    outgoing = sliding * (incoming - normal_part) - restitution * normal_part     # [] Point-
-    blow = (incoming - outgoing).normalized()                                    # [] Point-
-    contact = impact_normal * (surface_radius + moon_radius)                      # [] Point-
+    incoming = moon_speed * ((mv.xy * (approach_angle / 2)).exp() >> -impact_normal)  # [] Point-
+    normal_part = impact_normal * incoming.dot(impact_normal)        # [] Point-
+    outgoing = sliding * (incoming - normal_part) - restitution * normal_part  # [] Point-
+    blow = (incoming - outgoing).normalized()                        # [] Point-
+    contact = impact_normal * (surface_radius + moon_radius)         # [] Point-
     times = n_substeps * dt * np.arange(-n_approach_frames, n_frames + 1)
     moon = contact + where(times < 0, incoming * times, outgoing * times)        # [frames] Point-
 
@@ -94,19 +96,19 @@ def main() -> None:
     gaussian = (-source_radius_squared / 2).exp()
     envelope = where(source_radius_squared < source_support**2, gaussian * taper, 0 * gaussian)
     velocity = (source_speed * envelope * blow).field()         # Point-[vertices]
-    displacement = 0 * velocity                                # Point-[vertices]
+    displacement = 0 * velocity                                 # Point-[vertices]
 
     # The planet rests while the moon comes in.
     states = chain(repeat((displacement, displacement), n_approach_frames),
                    core.evolve(operators, displacement, velocity, damping_time, dt, n_frames, n_substeps))
     frames = core.reconstruct(operators, states)
-    save_animation(render.animate_waves(mesh, vertices, regions, frames, moon, moon_radius, displacement_scale,
+    save_animation(render.animate_waves(topology, vertices, regions, frames, moon, moon_radius, displacement_scale,
                                        dilation_scale, vorticity_scale),
                    "seismic_waves_waves", frame_duration_ms)
 
     # The modes of a uniform ball of cork, where only their shapes tell them apart.
     ball_regions = np.ones_like(regions)                        # [faces]
-    ball = core.Operators(mesh, vertices, core.constitutive(core.as_scalar(ball_lambda), core.as_scalar(ball_mu)),
+    ball = core.Operators(topology, vertices, core.constitutive(core.as_scalar(ball_lambda), core.as_scalar(ball_mu)),
                           core.viscous(core.as_scalar(0.0)), core.as_scalar(ball_density))
     squared_frequencies, shapes = core.normal_modes(ball, n_rigid_motions + n_modes)
     squared_frequencies, shapes = squared_frequencies[n_rigid_motions:], shapes[n_rigid_motions:]
@@ -114,7 +116,7 @@ def main() -> None:
     frequency_gaps = squared_frequencies[1:] - squared_frequencies[:-1]
     pair_idx = np.flatnonzero(frequency_gaps < pair_tolerance * squared_frequencies[1:])[:n_travelling_waves]
     waves = core.travelling(ball, shapes[pair_idx], shapes[pair_idx + 1], mode_peak, n_cycle_frames)
-    save_animation(render.animate_modes(mesh, vertices, ball_regions, waves, displacement_scale),
+    save_animation(render.animate_modes(topology, vertices, ball_regions, waves, displacement_scale),
                    "seismic_waves_modes", frame_duration_ms)
 
 

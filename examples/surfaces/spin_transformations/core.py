@@ -18,16 +18,17 @@ from collections.abc import Iterator
 
 import numpy as np
 
+from numga import NumpyContext, stack
 from numga.sparse import SparseExtensor, spdiag
 from numga.extensor import Extensor
 from numga.algebras import VGA3D as ga
 from examples import MODEL_DIR
-from examples import instantiate
+from examples.util import shapes
+from examples.util.topology import Topology
 
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, Scalar, Point = mesh_module.Mesh, mesh_module.Scalar, mesh_module.Point
+Scalar, Point = ga.gatype.scalar(), ga.gatype.antivector()
 Vector, Bivector = ga.gatype.vector(), ga.gatype.bivector()
-as_scalar, context = mesh_module.as_scalar, mesh_module.ctx
+context = NumpyContext(ga)
 
 Even = ga.gatype.even()
 # A volume, the join of three points, is an intrinsic scalar, and its unit gives an ordinary number that orientation.
@@ -39,46 +40,46 @@ upright = (context.multivector.xy * (-np.pi / 4)).exp() * (context.multivector.y
 
 
 # --- math -----------------------------------------------------------------------------
-def cotangent_weights(mesh: Mesh, sides: Point) -> Scalar:
+def cotangent_weights(topology: Topology, sides: Point) -> Scalar:
     """Each edge's cotangent weight, `Scalar+[edges]`, is half the cotangents of the angles facing it, from the edge
     facing each corner, `[3] Point-[faces]`; a corner's cotangent is one edge's slice read along the other, over the
     size of the plane they span."""
-    tails, heads = mesh.corners[2, 1]
+    tails, heads = topology.corners[2, 1]
     after, before = sides[tails], sides[heads]                                 # [3] Point-[faces], Point-[faces]
     cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()   # [3] Scalar+[faces]
-    return (~mesh.incidence[2, 1] * (cotangents / 2)).sum(axis=0)
+    return (~topology.incidence[2, 1] * (cotangents / 2)).sum(axis=0)
 
 
-def corner_cosines(mesh: Mesh, vertices: Point) -> Scalar:
+def corner_cosines(topology: Topology, vertices: Point) -> Scalar:
     """The cosine of each corner's angle, `[3] Scalar+[faces]`, which a conformal map keeps exactly, is one edge's
     slice read along the other, over both their lengths."""
-    sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                       # [3] Point-[faces]
-    tails, heads = mesh.corners[2, 1]
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)               # [3] Point-[faces]
+    tails, heads = topology.corners[2, 1]
     after, before = sides[tails], sides[heads]                                 # [3] Point-[faces], Point-[faces]
     return -(after.dual_inverse() & before) / (after.norm() * before.norm())
 
 
-def spin_transform_deform(mesh: Mesh, vertices: Point, curvature_change: Scalar) -> Point:
+def spin_transform_deform(topology: Topology, vertices: Point, curvature_change: Scalar) -> Point:
     """The spin transformation that changes each face's mean curvature by `curvature_change`, `Scalar+[faces]`,
     turns the edges by the field of least energy per unit of vertex area, divided by its area-weighted mean, and
     gives the vertices whose edges match the turned ones best."""
-    edge_means = mesh.incidence[1, 0].mean(axis=0)                             # Scalar+[edges <- vertices]
-    face_means = mesh.incidence[2, 0].mean(axis=0)                             # Scalar+[faces <- vertices]
-    edges = mesh.d[0] * vertices                                               # Point-[edges]
-    sides = mesh.boundary[2, 1] * edges                                        # [3] Point-[faces]
+    edge_means = topology.incidence[1, 0].mean(axis=0)                         # Scalar+[edges <- vertices]
+    face_means = topology.incidence[2, 0].mean(axis=0)                         # Scalar+[faces <- vertices]
+    edges = topology.d[0] * vertices                                           # Point-[edges]
+    sides = topology.boundary[2, 1] * edges                                    # [3] Point-[faces]
     areas = sides[1].commutator(sides[0]).norm() / 2                           # Scalar+[faces]
     face_areas, vertex_areas = spdiag(areas), spdiag(~face_means * areas)      # Scalar+[faces <- faces], Scalar+[vertices <- vertices]
-    edge_weights = spdiag(cotangent_weights(mesh, sides))                      # Scalar+[edges <- edges]
-    laplacian = ~mesh.d[0] * edge_weights * mesh.d[0]                          # Scalar+[vertices <- vertices]
+    edge_weights = spdiag(cotangent_weights(topology, sides))                  # Scalar+[edges <- edges]
+    laplacian = ~topology.d[0] * edge_weights * topology.d[0]                  # Scalar+[vertices <- vertices]
 
-    residual = (spdiag(sides / (2 * areas) - curvature_change * unit_volume / 3) * mesh.incidence[2, 0]).sum(axis=0)   # Even-[faces <- vertices]
+    residual = (spdiag(sides / (2 * areas) - curvature_change * unit_volume / 3) * topology.incidence[2, 0]).sum(axis=0)  # Even-[faces <- vertices]
     _, (field,) = ((~residual * face_areas * residual) * Even).eigh(vertex_areas * Even, 1)   # Even+[vertices]
-    rotors = field / ((vertex_areas * field).sites.sum() / areas.sites.sum())   # Even+[vertices]
-    turned_edges = ((edge_means * (rotors << Point))(edges) + 2 * ((edge_means * rotors) << edges)) / 3   # Point-[edges]
-    return (laplacian * Point).lstsq(~mesh.d[0] * edge_weights * turned_edges)
+    rotors = field / ((vertex_areas * field).sites.sum() / areas.sites.sum())                 # Even+[vertices]
+    turned_edges = ((edge_means * (rotors << Point))(edges) + 2 * ((edge_means * rotors) << edges)) / 3  # Point-[edges]
+    return (laplacian * Point).lstsq(~topology.d[0] * edge_weights * turned_edges)
 
 
-def dirac_spheres(mesh: Mesh, vertices: Point, eigenvalues: np.ndarray, count: int) -> tuple[Scalar, Point]:
+def dirac_spheres(topology: Topology, vertices: Point, eigenvalues: np.ndarray, count: int) -> tuple[Scalar, Point]:
     """For each constant curvature change, one per eigenvalue, the `count` fields of least energy have their
     energies and spin the mesh into surfaces with vertices `[eigenvalues, count] Point-[vertices]`.
 
@@ -87,45 +88,45 @@ def dirac_spheres(mesh: Mesh, vertices: Point, eigenvalues: np.ndarray, count: i
     eigenvalues are the integers but -1, each with multiplicity its value plus one. The fields are taken
     as they come, at unit size per unit of vertex area: their mean vanishes.
     """
-    edge_means = mesh.incidence[1, 0].mean(axis=0)                             # Scalar+[edges <- vertices]
-    face_means = mesh.incidence[2, 0].mean(axis=0)                             # Scalar+[faces <- vertices]
-    edges = mesh.d[0] * vertices                                               # Point-[edges]
-    sides = mesh.boundary[2, 1] * edges                                        # [3] Point-[faces]
+    edge_means = topology.incidence[1, 0].mean(axis=0)                         # Scalar+[edges <- vertices]
+    face_means = topology.incidence[2, 0].mean(axis=0)                         # Scalar+[faces <- vertices]
+    edges = topology.d[0] * vertices                                           # Point-[edges]
+    sides = topology.boundary[2, 1] * edges                                    # [3] Point-[faces]
     areas = sides[1].commutator(sides[0]).norm() / 2                           # Scalar+[faces]
     face_areas, vertex_areas = spdiag(areas), spdiag(~face_means * areas)      # Scalar+[faces <- faces], Scalar+[vertices <- vertices]
-    edge_weights = spdiag(cotangent_weights(mesh, sides))                      # Scalar+[edges <- edges]
-    laplacian = ~mesh.d[0] * edge_weights * mesh.d[0]                          # Scalar+[vertices <- vertices]
+    edge_weights = spdiag(cotangent_weights(topology, sides))                  # Scalar+[edges <- edges]
+    laplacian = ~topology.d[0] * edge_weights * topology.d[0]                  # Scalar+[vertices <- vertices]
 
-    constant = as_scalar(eigenvalues[:, None]) * unit_volume / 3   # [eigenvalues, 1] Scalar-
-    residual = (spdiag(sides / (2 * areas) - constant) * mesh.incidence[2, 0]).sum(axis=-1)   # [eigenvalues] Even-[faces <- vertices]
+    constant = eigenvalues[:, None] * unit_volume / 3              # [eigenvalues, 1] Scalar-
+    residual = (spdiag(sides / (2 * areas) - constant) * topology.incidence[2, 0]).sum(axis=-1)  # [eigenvalues] Even-[faces <- vertices]
     energies, eigenfields = ((~residual * face_areas * residual) * Even).eigh(vertex_areas * Even, count)   # [eigenvalues, count] Even+[vertices]
     turned_edges = ((edge_means * (eigenfields << Point))(edges) + 2 * ((edge_means * eigenfields) << edges)) / 3   # [eigenvalues, count] Point-[edges]
-    return energies, (laplacian * Point).lstsq(~mesh.d[0] * edge_weights * turned_edges)
+    return energies, (laplacian * Point).lstsq(~topology.d[0] * edge_weights * turned_edges)
 
 
-def geometric_derivative(mesh: Mesh, vertices: Point) -> SparseExtensor:
+def geometric_derivative(topology: Topology, vertices: Point) -> SparseExtensor:
     """The geometric derivative of fields on the vertices, linear on each face, `Vector+[faces <- vertices]`,
     couples each face to each corner by the gradient of the corner's hat function: the edge facing it contracted
     with the inverse of twice the face's patch."""
-    sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                       # [3] Point-[faces]
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)               # [3] Point-[faces]
     patches = (sides[0] & sides[1]) / 2                                        # Vector-[faces]
-    return (spdiag((sides | patches.inverse()) / 2) * mesh.incidence[2, 0]).sum(axis=0)
+    return (spdiag((sides | patches.inverse()) / 2) * topology.incidence[2, 0]).sum(axis=0)
 
 
-def mean_curvature(mesh: Mesh, vertices: Point) -> Scalar:
+def mean_curvature(topology: Topology, vertices: Point) -> Scalar:
     """Each face's signed mean curvature follows from the cotangent Laplacian of the positions, the
     area-integrated mean-curvature normal at each vertex: met with the vertex's normal and divided by twice the
     vertex's area, it is the mean curvature there, averaged onto the faces, where the curvature change lives."""
-    face_means = mesh.incidence[2, 0].mean(axis=0)                             # Scalar+[faces <- vertices]
-    sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                       # [3] Point-[faces]
+    face_means = topology.incidence[2, 0].mean(axis=0)                         # Scalar+[faces <- vertices]
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)               # [3] Point-[faces]
     areas = sides[1].commutator(sides[0]).norm() / 2                           # Scalar+[faces]
-    laplacian = ~mesh.d[0] * spdiag(cotangent_weights(mesh, sides)) * mesh.d[0]   # Scalar+[vertices <- vertices]
+    laplacian = ~topology.d[0] * spdiag(cotangent_weights(topology, sides)) * topology.d[0]  # Scalar+[vertices <- vertices]
     # Each vertex's normal: its faces' normals, each twice the face's area long, summed and made unit.
     normals = (~face_means * (sides[0] & sides[1])).normalized()               # Vector-[vertices]
     # The integrated mean-curvature normal, a displacement at each vertex, met with the vertex's normal: its
     # signed size, an intrinsic scalar, read as an ordinary one in the unit of volume.
     integrated_curvature = ((laplacian * vertices) & normals) * unit_volume    # Scalar+[vertices]
-    return face_means * (integrated_curvature / (2 * (~face_means * areas)))             # Scalar+[faces]
+    return face_means * (integrated_curvature / (2 * (~face_means * areas)))   # Scalar+[faces]
 
 
 def recentred(vertices: Point) -> Point:
@@ -135,7 +136,7 @@ def recentred(vertices: Point) -> Point:
     return vertices / vertices.norm().sites.mean()
 
 
-def conformal_smooth(mesh: Mesh, vertices: Point, iterations: int, rate: float) -> Iterator[Point]:
+def conformal_smooth(topology: Topology, vertices: Point, iterations: int, rate: float) -> Iterator[Point]:
     """Conformal curvature flow yields the vertices at the start and after each step, each step one spin
     transformation whose curvature change takes away a share `rate` of each face's departure from the
     area-weighted mean curvature. The surface relaxes towards constant mean curvature while every step keeps its
@@ -144,16 +145,16 @@ def conformal_smooth(mesh: Mesh, vertices: Point, iterations: int, rate: float) 
     vertices = recentred(vertices)
     yield vertices
     for _ in range(iterations):
-        curvature = mean_curvature(mesh, vertices)                             # Scalar+[faces]
-        sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                   # [3] Point-[faces]
+        curvature = mean_curvature(topology, vertices)                         # Scalar+[faces]
+        sides = topology.boundary[2, 1] * (topology.d[0] * vertices)           # [3] Point-[faces]
         areas = sides[1].commutator(sides[0]).norm() / 2                       # Scalar+[faces]
         mean = (curvature * areas).sites.sum() / areas.sites.sum()             # [] Scalar+
-        vertices = recentred(spin_transform_deform(mesh, vertices, -rate * (curvature - mean)))
+        vertices = recentred(spin_transform_deform(topology, vertices, -rate * (curvature - mean)))
         yield vertices
 
 
 # --- plumbing -------------------------------------------------------------------------
-def cube(divisions: int) -> tuple[Mesh, Point]:
+def cube(divisions: int) -> tuple[Topology, Point]:
     """The surface of the cube [-1, 1]^3, each side a grid of divisions by divisions squares, and its vertices."""
     grid = np.linspace(-1, 1, divisions + 1)
     u, v = (axis.ravel() for axis in np.meshgrid(grid, grid, indexing="ij"))
@@ -168,12 +169,13 @@ def cube(divisions: int) -> tuple[Mesh, Point]:
             faces.append(side + len(coords) * len(u))
             coords.append(point)
     unique, inverse = np.unique(np.round(np.concatenate(coords), 9), axis=0, return_inverse=True)
-    return Mesh(len(unique), inverse.reshape(-1)[np.concatenate(faces)]), context.multivector.antivector(unique).field()
+    return Topology(len(unique), inverse.reshape(-1)[np.concatenate(faces)]), context.multivector.antivector(unique).field()
 
 
-def spot() -> tuple[Mesh, Point]:
+def spot() -> tuple[Topology, Point]:
     """Spot the cow, by Keenan Crane, from his model repository (CC0),
     https://www.cs.cmu.edu/~kmcrane/Projects/ModelRepository/: her mesh, and her vertices upright with z up,
     centred, and scaled to reach one at her furthest."""
-    mesh, vertices = Mesh.read(SPOT, 2.0)
-    return mesh, upright >> vertices
+    topology, coordinates = shapes.surface(SPOT, 2.0)
+    vertices = context.multivector.vector(coordinates).dual().field()           # Point-[vertices]
+    return topology, upright >> vertices

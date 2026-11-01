@@ -46,7 +46,7 @@ def turning() -> tuple[core.Point, core.Point, np.ndarray, np.ndarray]:
     phases = rng.uniform(0, 2 * np.pi, len(z_coords))
     angles = TURN_AMPLITUDE * np.sin(np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)[:, None] + phases)  # [frames, vertices]
     rest_motors = (core.mv.zw * (z_coords / 2)).exp() * (core.mv.xw * (x_coords / 2)).exp()  # [vertices] Motor+
-    local_turns = (axes * (-angles / 2)).exp()                                 # [frames, vertices] Motor+
+    local_turns = (axes * (-angles / 2)).exp()                                        # [frames, vertices] Motor+
     motors = (rest_motors * local_turns).field()                               # [frames] Motor+[vertices]
     return subdivide_ribbon(motors)
 
@@ -62,13 +62,13 @@ def subdivide_ribbon(motors: core.Motor) -> tuple[core.Point, core.Point, np.nda
         core.mv.point([0.0, 0.0, AXIS_LENGTH]),
     ])                                                                         # [axes + 1] Point-
     origin = markers[0]                                                        # [] Point-
-    control_mesh = core.Mesh(N_ALONG * N_ACROSS, faces)
-    refined_mesh = control_mesh.loop_subdivided(pinned, N_LOOP_STEPS)
-    point_surface = refined_mesh.subdivision * (motors >> origin)              # [frames] Point-[refined]
-    motor_surface = core.subdivide_motors(refined_mesh, motors) >> origin      # [frames] Point-[refined]
+    control_topology = core.Topology(N_ALONG * N_ACROSS, faces)
+    refined_topology = control_topology.loop_subdivided(pinned, N_LOOP_STEPS)
+    point_surface = refined_topology.subdivision * (motors >> origin)          # [frames] Point-[refined]
+    motor_surface = core.subdivide_motors(refined_topology, motors) >> origin  # [frames] Point-[refined]
     surfaces = stack([point_surface, motor_surface], axis=1)                   # [frames, schemes] Point-[refined]
     control_frames = motors[:, None] >> markers                                # [frames, axes + 1] Point-[vertices]
-    return control_frames, surfaces, control_mesh, refined_mesh
+    return control_frames, surfaces, control_topology, refined_topology
 
 
 # --- plumbing -------------------------------------------------------------------------

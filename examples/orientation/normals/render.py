@@ -43,7 +43,7 @@ def chevron_arrows(starts: Point, ends: Point, colour: np.ndarray, width: float,
     """Arrows between points `[arrows]`: tubes `thickness` times `width` pixels across, each ending in a chevron, for
     `solids.draw` to compose among the solids."""
     n_arrows = starts.shape[0]
-    return simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_arrows), colour,
+    return simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Topology.chains([2] * n_arrows), colour,
                            thickness * width, view, gloss=solids.gloss, chevrons=np.ones(n_arrows),
                            chevron=chevron_length * thickness * width)
 

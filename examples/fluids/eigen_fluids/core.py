@@ -9,13 +9,14 @@ from collections.abc import Iterable, Iterator
 
 import numpy as np
 
+from numga import NumpyContext
 from numga.algebras import VGA3D as ga
 from numga.sparse import spdiag
-from examples import MODEL_DIR, instantiate
+from examples import MODEL_DIR
+from examples.util import shapes
+from examples.util.topology import Topology
 
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, context = mesh_module.Mesh, mesh_module.ctx
-mv = context.multivector
+mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                         # Scalar+
 # Streamfunction gradients on triangles are extrinsic planes across the gradient direction.
 Plane = ga.gatype.vector()                          # Vector+
@@ -36,12 +37,12 @@ upright = (mv.yz * (-np.pi / 4)).exp()              # [] Rotor+
 
 
 # --- math -----------------------------------------------------------------------------
-def structure_constants(mesh: Mesh, patches: Patch, gradient: GradientMap, modes: Scalar) -> Bracket:
+def structure_constants(topology: Topology, patches: Patch, gradient: GradientMap, modes: Scalar) -> Bracket:
     """Each modal Lie–Poisson structure constant is the surface integral of a mode against the Jacobian of two
     others, the wedge of their gradients read on the surface. Bound to a streamfunction and a vorticity, the
     constants give the advection rate of every mode."""
     # Each face's mean over its corners.
-    corner_mean = mesh.incidence[2, 0].mean(axis=0)                              # Scalar+[faces <- vertices]
+    corner_mean = topology.incidence[2, 0].mean(axis=0)                          # Scalar+[faces <- vertices]
     face_gradients = gradient(modes)                                             # [modes] Plane+[faces]
     # Meeting each mode's gradient with the triangle's area patch gives its area-weighted tangent velocity,
     # which pairs against another gradient to give the Jacobian integrated over the triangle.
@@ -69,11 +70,11 @@ def advect(initial: Scalar, structure: Bracket, eigenvalues: Scalar, viscosity: 
     vorticity = initial                                                          # Scalar+[modes]
     yield vorticity
     for _ in range(n_steps):
-        first = vorticity_rate(vorticity, structure, eigenvalues, viscosity)                       # Scalar+[modes]
-        second = vorticity_rate(vorticity + (dt / 2) * first, structure, eigenvalues, viscosity)   # Scalar+[modes]
-        third = vorticity_rate(vorticity + (dt / 2) * second, structure, eigenvalues, viscosity)   # Scalar+[modes]
-        fourth = vorticity_rate(vorticity + dt * third, structure, eigenvalues, viscosity)         # Scalar+[modes]
-        vorticity = vorticity + (dt / 6) * (first + 2 * second + 2 * third + fourth)               # Scalar+[modes]
+        first = vorticity_rate(vorticity, structure, eigenvalues, viscosity)     # Scalar+[modes]
+        second = vorticity_rate(vorticity + (dt / 2) * first, structure, eigenvalues, viscosity)  # Scalar+[modes]
+        third = vorticity_rate(vorticity + (dt / 2) * second, structure, eigenvalues, viscosity)  # Scalar+[modes]
+        fourth = vorticity_rate(vorticity + dt * third, structure, eigenvalues, viscosity)  # Scalar+[modes]
+        vorticity = vorticity + (dt / 6) * (first + 2 * second + 2 * third + fourth)  # Scalar+[modes]
         yield vorticity
 
 
@@ -100,13 +101,14 @@ def shear_layers(vertices: Point, dual_areas: Scalar, latitude: float, width: fl
     shift = -4 * wave_amplitude * first * second * third                         # [vertices] Scalar+
     north = (heights - np.sin(latitude) - shift) / width                         # [vertices] Scalar+
     south = (heights + np.sin(latitude) - shift) / width                         # [vertices] Scalar+
-    vorticity = (strength * ((-0.5 * north.squared()).exp() - (-0.5 * south.squared()).exp())).field()   # Scalar+[vertices]
+    vorticity = (strength * ((-0.5 * north.squared()).exp() - (-0.5 * south.squared()).exp())).field()  # Scalar+[vertices]
     return vorticity - (dual_areas * vorticity).sites.sum() / dual_areas.sites.sum()
 
 
 # --- plumbing -------------------------------------------------------------------------
-def bunny(size: float) -> tuple[Mesh, Point]:
+def bunny(size: float) -> tuple[Topology, Point]:
     """The Stanford bunny from the shared model repository, stood upright with z up, centred on its bounding
     box and scaled so that the box's longest side is `size`."""
-    mesh, vertices = Mesh.read(bunny_path, size)
-    return mesh, upright >> vertices
+    topology, coordinates = shapes.surface(bunny_path, size)
+    vertices = mv.vector(coordinates).dual().field()                            # Point-[vertices]
+    return topology, upright >> vertices

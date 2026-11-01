@@ -122,7 +122,7 @@ def draw_conduction(conductivities: Conductivity, driving: Field, fluxes: Direct
     for ax, (ellipsoid, _), flow in zip(axes, ellipsoids, flows):
         # Both arrows from the centre, the flow's within the ellipsoid, seen through its surface: each a tube ending
         # in a chevron.
-        arrows = [(simplices.tubes(stack([solids.origin, tip]), simplices.Mesh.chains([2]), colour, width, view,
+        arrows = [(simplices.tubes(stack([solids.origin, tip]), simplices.Topology.chains([2]), colour, width, view,
                                    gloss=solids.gloss, chevrons=np.ones(1), chevron=chevron), 1.0)
                   for tip, colour, (width, chevron) in
                   ((driving_tip, driving_rgb, driving_arrow), (flow, flow_rgb, flow_arrow))]
@@ -169,7 +169,7 @@ def draw_crystal(centre: Point, axial: Point, diagonal: Point, corners: Point, c
     show(axes[0], solids.draw(parts, lattice_view, background, inks=[], translucent=[], meshes=[]), lattice_view)
     show(axes[1], solids.draw([(ellipsoid[None, None], surface_colour)], conduction_view, background, inks=[],
                               translucent=[], meshes=[]), conduction_view)
-    show(axes[2], meshes.draw(points, faces, stiffness_colour, meshes.smooth(points, meshes.Mesh(len(points), faces)), stiffness_view, background,
+    show(axes[2], meshes.draw(points, faces, stiffness_colour, meshes.smooth(points, meshes.Topology(len(points), faces)), stiffness_view, background,
                               face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss),
          stiffness_view)
     return fig

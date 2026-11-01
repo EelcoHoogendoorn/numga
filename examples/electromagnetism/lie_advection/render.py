@@ -16,7 +16,7 @@ from examples.util.animation import capture
 from examples.util.wgsl import contours, flow, simplices
 from examples.util.wgsl.camera import Camera, flat_panel
 
-Mesh = core.Mesh
+Topology = core.Topology
 
 primal_colour = "#286580"
 accent_colour = "#d77542"
@@ -69,22 +69,17 @@ def plain_axes(ax: plt.Axes) -> None:
     ax.tick_params(color="0.78")
 
 
-def rim(mesh: core.Mesh) -> core.Mesh:
-    """The rim's edges, a mesh of edges over the mesh's vertices."""
-    return core.Mesh(mesh.n_vertices, mesh.edges[mesh.boundary_edges])
-
-
-def vertex_averages(mesh: core.Mesh, areas: core.Scalar, face_field: core.Scalar) -> np.ndarray:
+def vertex_averages(topology: core.Topology, areas: core.Scalar, face_field: core.Scalar) -> np.ndarray:
     """Area-weighted vertex average of a scalar face field for smooth Gouraud shading."""
-    corner_mean = mesh.incidence[2, 0].mean(axis=0)
+    corner_mean = topology.incidence[2, 0].mean(axis=0)
     vertex_field = (~corner_mean * (areas * face_field)) / (~corner_mean * areas)
     return np.asarray(vertex_field.batch().to_array())
 
 
-def disk_lines(mesh: core.Mesh, points: core.Point, camera: Camera) -> list[np.ndarray]:
+def disk_lines(topology: core.Topology, points: core.Point, camera: Camera) -> list[np.ndarray]:
     """One disk panel's faint mesh and its rim, over the magnetic flux density its picture shades."""
-    return [simplices.strokes(points, mesh, rgb(mesh_colour), charts.FRAME_PX, camera, opacity=mesh_alpha),
-            simplices.strokes(points, rim(mesh), rgb(wall_colour), charts.LINE_PX, camera)]
+    return [simplices.strokes(points, topology, rgb(mesh_colour), charts.FRAME_PX, camera, opacity=mesh_alpha),
+            simplices.strokes(points, topology.border, rgb(wall_colour), charts.LINE_PX, camera)]
 
 
 @charts.style()
@@ -97,14 +92,13 @@ def draw_cartan_ribbon(corners: core.Point, corner_forms: core.Plane,
     tails, heads = core.triangle.corners[2, 1]
     ribbons = stack((corners[tails], corners[heads], displaced[heads], displaced[tails]), axis=-1)   # [corners, 4] Point-
     middles = (core.triangle.incidence[2, 1] * (core.triangle.incidence[1, 0].mean(axis=0) * corners.field())).batch()[:, 0]  # [corners] Point-
-    edges = (core.triangle.boundary[2, 1] * (core.triangle.d[0] * corners.field())).batch()[:, 0]    # [corners] Point-
+    edges = (core.triangle.boundary[2, 1] * (core.triangle.d[0] * corners.field())).batch()[:, 0]  # [corners] Point-
     # Each edge's arrow about its middle, and each corner's velocity from it to its displaced copy, chains of two.
     edge_arrows = stack((middles - 0.16 * edges, middles + 0.16 * edges), axis=-1).reshape(-1)   # [corners * 2] Point-
-    velocity_arrows = stack((corners, displaced), axis=-1).reshape(-1)          # [corners * 2] Point-
-    arrows = Mesh.chains([2, 2, 2])
+    velocity_arrows = stack((corners, displaced), axis=-1).reshape(-1)                           # [corners * 2] Point-
+    arrows = Topology.chains([2, 2, 2])
     # Each ribbon two triangles, its outline their boundary; the triangle and its displaced copy closed chains.
-    ribbon = Mesh(4, np.array([[0, 1, 2], [0, 2, 3]]))
-    loop = np.array([0, 1, 2, 0])
+    ribbon = Topology(4, np.array([[0, 1, 2], [0, 2, 3]]))
     endpoint_vals = np.asarray(endpoint_differences.to_array())
     swept_vals = np.asarray(swept_fluxes.to_array())
     total_vals = endpoint_vals + swept_vals
@@ -123,15 +117,15 @@ def draw_cartan_ribbon(corners: core.Point, corner_forms: core.Plane,
     # Each ribbon a picture of its own, so that where ribbons overlap, both show.
     ribbon_pictures = [picture for index in range(3) for picture in (
         contours.picture(ribbons[index], ribbon, np.zeros(4), ribbon_colours[index], camera, opacity=ribbon_opacity),
-        simplices.strokes(ribbons[index], rim(ribbon), rgb(wall_colour), charts.FRAME_PX, camera, dashes=ribbon_dots,
+        simplices.strokes(ribbons[index], ribbon.border, rgb(wall_colour), charts.FRAME_PX, camera, dashes=ribbon_dots,
                           cap=simplices.Cap.BUTT, opacity=ribbon_opacity))]
     simplices.overlay(geom_ax, [
         *ribbon_pictures,
         contours.picture(corners, core.triangle, np.zeros(3), triangle_colour, camera, opacity=triangle_opacity),
-        simplices.strokes(corners[loop], Mesh.chains([4]), rgb(wall_colour), charts.LINE_PX, camera,
+        simplices.strokes(corners, core.triangle.border, rgb(wall_colour), charts.LINE_PX, camera,
                           opacity=triangle_opacity),
         flow.layer(corners, core.triangle, directions, camera, strongest, rgb(primal_colour)),
-        simplices.strokes(displaced[loop], Mesh.chains([4]), rgb(ink_colour), charts.LINE_PX, camera,
+        simplices.strokes(displaced, core.triangle.border, rgb(ink_colour), charts.LINE_PX, camera,
                           dashes=displaced_dashes, cap=simplices.Cap.BUTT),
         simplices.strokes(edge_arrows, arrows, rgb(wall_colour), edge_arrow_width, camera, chevrons=np.ones(3),
                           chevron=edge_chevron),
@@ -168,13 +162,13 @@ def flux_levels(flux_limit: float) -> tuple[contours.Level, ...]:
 
 
 @charts.style()
-def draw_advection_comparison(mesh: core.Mesh, vertices: core.Point,
+def draw_advection_comparison(topology: core.Topology, vertices: core.Point,
                               flux_density: core.Scalar, times: np.ndarray,
                               energies: core.Scalar, total_fluxes: core.Scalar) -> plt.Figure:
     """Ideal versus resistive magnetic flux advection alongside magnetic energy and total flux traces."""
-    sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)
     areas = (core.time & (sides[0] & sides[1]) / 2).norm()
-    vertex_fluxes = vertex_averages(mesh, areas, flux_density)
+    vertex_fluxes = vertex_averages(topology, areas, flux_density)
     flux_limit = float(np.percentile(np.abs(vertex_fluxes[0]), 96))
 
     # Nine tenths of the column: the two disks square at the chart's full height, the traces beside them in a
@@ -203,13 +197,13 @@ def draw_advection_comparison(mesh: core.Mesh, vertices: core.Point,
     for ax, vertex_flux in zip((left_ax, mid_ax), vertex_fluxes):
         camera = flat_panel(ax, core.ga)
         colours = flux_colours(flux_scale(vertex_flux))[:, :3]
-        simplices.overlay(ax, [contours.picture(points, mesh, vertex_flux, colours, camera,
+        simplices.overlay(ax, [contours.picture(points, topology, vertex_flux, colours, camera,
                                                 levels=flux_levels(flux_limit)),
-                               *disk_lines(mesh, points, camera)])
+                               *disk_lines(topology, points, camera)])
     return figure
 
 
-def animate_advection(mesh: core.Mesh, vertices: core.Point,
+def animate_advection(topology: core.Topology, vertices: core.Point,
                       frames: Iterable[core.Scalar]
                       ) -> Iterator[np.ndarray]:
     """Side-by-side ideal and resistive magnetic flux winding frames captured at fixed colour scale."""
@@ -217,9 +211,9 @@ def animate_advection(mesh: core.Mesh, vertices: core.Point,
     first = next(frames)
     points = vertices.batch()                                                # [vertices] Point-
 
-    sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)
     areas = (core.time & (sides[0] & sides[1]) / 2).norm()
-    first_vertex_flux = vertex_averages(mesh, areas, first)
+    first_vertex_flux = vertex_averages(topology, areas, first)
     flux_limit = float(np.percentile(np.abs(first_vertex_flux[0]), 95))
     levels = flux_levels(flux_limit)
     flux_scale = Normalize(-flux_limit, flux_limit)
@@ -232,14 +226,14 @@ def animate_advection(mesh: core.Mesh, vertices: core.Point,
         for ax in axes:
             frame_panel(ax, vertices, 0.06)
         views = [flat_panel(ax, core.ga) for ax in axes]
-        lines = [disk_lines(mesh, points, view) for view in views]
+        lines = [disk_lines(topology, points, view) for view in views]
         textures = [simplices.overlay(ax, panel_lines) for ax, panel_lines in zip(axes, lines)]
     for flux_density in chain((first,), frames):
-        vertex_fluxes = vertex_averages(mesh, areas, flux_density)
+        vertex_fluxes = vertex_averages(topology, areas, flux_density)
         for texture, view, panel_lines, vertex_flux in zip(textures, views, lines, vertex_fluxes):
             colours = flux_colours(flux_scale(vertex_flux))[:, :3]
             texture.set_data(simplices.composited(
-                [contours.picture(points, mesh, vertex_flux, colours, view, levels=levels), *panel_lines]))
+                [contours.picture(points, topology, vertex_flux, colours, view, levels=levels), *panel_lines]))
         with charts.style():
             image = capture(figure)
         yield image

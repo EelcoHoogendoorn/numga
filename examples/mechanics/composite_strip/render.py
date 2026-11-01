@@ -58,11 +58,11 @@ def animate_strips(rest: core.Direction, frames: core.Direction, across_fibres: 
     cases = np.concatenate([np.full(len(line), case) for case, line in lines])   # [fibre vertices]
     positions = np.concatenate([line for _, line in lines])            # [fibre vertices, 2]
     # The cell of the grid each vertex lies in, by its first sample, and the vertex's shares along and across it.
-    first = np.minimum(np.floor(positions).astype(int), np.array(frames.shape[2:]) - 2)   # [fibre vertices, 2]
+    first = np.minimum(np.floor(positions).astype(int), np.array(frames.shape[2:]) - 2)  # [fibre vertices, 2]
     along, across = (positions - first).T                              # [fibre vertices], [fibre vertices]
     rows, columns = first.T
     # The fibre lines as chains of edges through their vertices.
-    fibre_chains = simplices.Mesh.chains([len(line) for _, line in lines])
+    fibre_chains = simplices.Topology.chains([len(line) for _, line in lines])
 
     for grids in placed:
         points = grids.reshape(-1)                                     # [vertices] Point-

@@ -11,21 +11,19 @@ import numpy as np
 
 from numga import NumpyContext
 from numga.algebras import PGA3D as ga
-from examples import instantiate
+from examples.util.topology import Topology, SubdividedTopology
 
 ctx = NumpyContext(ga)
 mv = ctx.multivector
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, SubdividedMesh = mesh_module.Mesh, mesh_module.SubdividedMesh
 Line = ga.gatype.bivector()                         # Bivector+
 Point = ga.gatype.antivector()                      # Antivector-
 Motor = ga.gatype.rotor()                           # Rotor+
 
 
 # --- math -----------------------------------------------------------------------------
-def subdivide_motors(mesh: SubdividedMesh, motors: Motor) -> Motor:
+def subdivide_motors(topology: SubdividedTopology, motors: Motor) -> Motor:
     """Motor subdivision averages the motors at every Loop step of the mesh and normalizes each average back to a motor."""
-    for step in mesh.steps:
+    for step in topology.steps:
         motors = (step * motors).normalized()                                  # [...] Motor+[finer]
     return motors
 

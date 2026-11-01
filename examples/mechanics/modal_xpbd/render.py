@@ -44,10 +44,10 @@ def rgb(colours) -> np.ndarray:
     return np.array([to_rgb(colour) for colour in np.ravel(colours)]).reshape(np.shape(colours) + (3,))
 
 
-def bodies_mesh(n_bodies: int, n_vertices: int, edges: np.ndarray) -> simplices.Mesh:
+def bodies_topology(n_bodies: int, n_vertices: int, edges: np.ndarray) -> simplices.Topology:
     """The bars of bodies alike, their vertices numbered body by body, as one mesh of edges."""
     offsets = n_vertices * np.arange(n_bodies)
-    return simplices.Mesh(n_bodies * n_vertices, (edges[None] + offsets[:, None, None]).reshape(-1, 2))
+    return simplices.Topology(n_bodies * n_vertices, (edges[None] + offsets[:, None, None]).reshape(-1, 2))
 
 
 def mode_shapes(rest: Point, deformed: Point, edges: np.ndarray) -> plt.Figure:
@@ -65,7 +65,7 @@ def mode_shapes(rest: Point, deformed: Point, edges: np.ndarray) -> plt.Figure:
                  aspect="equal")
         axes.set_axis_off()
         panels.append(axes)
-    girder = simplices.Mesh(rest.batch().shape[0], edges)
+    girder = simplices.Topology(rest.batch().shape[0], edges)
     for i, (axes, shape) in enumerate(zip(panels, shapes)):
         camera = flat_panel(axes, ga)
         simplices.overlay(axes, [simplices.strokes(rest.batch(), girder, rgb(REST_COLOUR), REST_WIDTH, camera),
@@ -113,7 +113,7 @@ def chain_drawn(points: Point, edges: np.ndarray, reference: Point, camera: Came
     pivot = reference[0, 1:].batch()[0, 1]                                   # [] Point-
     body_colours = rgb(np.asarray(COLOURS)[np.arange(n_bodies) % len(COLOURS)])
     return simplices.composited([
-        simplices.strokes(bodies.reshape(-1), bodies_mesh(n_bodies, n_vertices, edges),
+        simplices.strokes(bodies.reshape(-1), bodies_topology(n_bodies, n_vertices, edges),
                           np.repeat(body_colours, len(edges), axis=0), CHAIN_WIDTH, camera),
         simplices.markers(pivot[None], rgb(PIVOT_COLOUR), PIVOT_RADIUS, camera)])
 
@@ -165,7 +165,7 @@ def beam(frames: Iterable[Point], edges: np.ndarray) -> Iterator[np.ndarray]:
     bodies = positions.shape[0]
     colours = rgb(np.where((np.arange(bodies) == 0) | (np.arange(bodies) == bodies - 1), FIXED_COLOUR,
                            np.asarray(COLOURS)[np.arange(bodies) % len(COLOURS)]))
-    girders = bodies_mesh(bodies, positions.shape[1], edges)
+    girders = bodies_topology(bodies, positions.shape[1], edges)
     along = (mv.x & positions).reshape(-1)
     heights = (mv.y & positions).abs().reshape(-1)
     left, right = along.min(), along.max()

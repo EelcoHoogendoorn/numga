@@ -64,14 +64,14 @@ unit_volume = core.space_mv.antipseudoscalar([1.0])                          # [
 
 
 # --- plumbing -------------------------------------------------------------------------
-def outward_wall(mesh: core.SpaceMesh) -> tuple[np.ndarray, np.ndarray]:
+def outward_wall(topology: core.Topology) -> tuple[np.ndarray, np.ndarray]:
     """The faces on the wall of a solid mesh, `[wall]`, and their corners `[wall, 3]`, wound outward. The wall is the
     boundary of the solid, the sum of its tetrahedra's outward faces: one on a wall face that runs outward as stored,
     minus one on a wall face that runs inward, nothing inside."""
-    wall = mesh.exterior(2)
-    solid = core.space_mesh_module.as_scalar(np.ones(mesh.n_elements[3])).field()
-    sense = (~mesh.d[2] * solid).batch()[wall]
-    return wall, np.where(sense[:, None] > 0, mesh.faces[wall], mesh.faces[wall][:, ::-1])
+    wall = topology.exterior[2]
+    solid = core.space_mv.scalar(np.ones(topology.n_elements[3])[..., None]).field()
+    sense = (topology.reading(wall, 2) * (~topology.d[2] * solid)).batch()
+    return wall, np.where(sense[:, None] > 0, topology.elements[2][wall], topology.elements[2][wall][:, ::-1])
 
 
 def frame_panel(ax: plt.Axes, points: core.Point, margin_ratio: float) -> Camera:
@@ -104,15 +104,15 @@ def arrows(tails: core.Point, tips: core.Point, width: float, camera: Camera) ->
     """Arrows in the accent from tails to tips `[arrows]`, each a stroke `width` pixels wide ending in a chevron: their
     picture."""
     n_arrows = tails.shape[0]
-    return simplices.strokes(stack((tails, tips), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_arrows),
+    return simplices.strokes(stack((tails, tips), axis=-1).reshape(-1), simplices.Topology.chains([2] * n_arrows),
                              accent_rgb, width, camera, chevrons=np.ones(n_arrows), chevron=chevron_length * width,
                              cap=simplices.Cap.BUTT)
 
 
 def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
-                    star_mesh: core.Mesh, star_vertices: core.Point, vertex_hat: core.Scalar) -> plt.Figure:
+                    topology: core.Topology, star_vertices: core.Point, vertex_hat: core.Scalar) -> plt.Figure:
     """The three corner hat ramps with their constant gradients, and the assembled vertex pyramid by its levels."""
-    triangle = meshes.Mesh(3, [[0, 1, 2]])
+    triangle = meshes.Topology(3, [[0, 1, 2]])
     # The hats' levels at even steps between nothing and one.
     levels = tuple(contours.Level(level, np.append(primal_rgb, 0.55), 1.0)
                    for level in np.linspace(0.0, 1.0, n_contours + 2)[1:-1])
@@ -121,7 +121,7 @@ def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
     centroid = corners.mean(axis=0)                                           # [] Point-
     rises = gradients.dual()                                                  # [corners] Point-
     lengths = rises.norm().reshape(-1)
-    reaches = rises * (0.24 / lengths.max())                  # [corners] Point-
+    reaches = rises * (0.24 / lengths.max())                                  # [corners] Point-
 
     figure, axes = charts.subplots(*row_size, ncols=4)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.04)
@@ -135,7 +135,7 @@ def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
         simplices.overlay(ax, [
             contours.picture(corners, triangle, values, hat_colours(values)[:, :3], camera, levels=levels),
             simplices.strokes(corners, triangle, ink(wall_colour), outline_width, camera),
-            simplices.strokes(corners[[tails[index], heads[index]]], simplices.Mesh.chains([2]),
+            simplices.strokes(corners[[tails[index], heads[index]]], simplices.Topology.chains([2]),
                               ink(wall_colour), edge_width, camera),
             simplices.markers(corners, ink(wall_colour), small_dot, camera),
             *ringed(corners[index][None], accent_colour, highlight_dot, camera),
@@ -147,16 +147,16 @@ def draw_hat_0forms(corners: core.Point, gradients: core.Plane,
     camera = frame_panel(ax, star_vertices, 0.14)
     # The assembled hat's gradient, a field over the star, reads in its level lines.
     simplices.overlay(ax, [
-        contours.picture(star_places, star_mesh, hat_values, hat_colours(hat_values)[:, :3], camera, levels=levels),
-        simplices.strokes(star_places, star_mesh, ink(wall_colour), mesh_width, camera, opacity=0.65),
+        contours.picture(star_places, topology, hat_values, hat_colours(hat_values)[:, :3], camera, levels=levels),
+        simplices.strokes(star_places, topology, ink(wall_colour), mesh_width, camera, opacity=0.65),
         *ringed(star_places[:1], accent_colour, highlight_dot, camera)])
     return figure
 
 
 def draw_edge_1forms(corners: core.Point, corner_forms: core.Plane,
-                     diamond: core.Mesh, diamond_vertices: core.Point, shared_corner_forms: core.Plane) -> plt.Figure:
+                     diamond: core.Topology, diamond_vertices: core.Point, shared_corner_forms: core.Plane) -> plt.Figure:
     """Whitney edge forms as feathered streaks, with each face's corner values kept separate across the seam."""
-    triangle = meshes.Mesh(3, [[0, 1, 2]])
+    triangle = meshes.Topology(3, [[0, 1, 2]])
     directions = corner_forms.dual()                                          # [corners] Point-
     reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
     # Each side, from the corner after its own to the one after that, an arrow ending in a chevron.
@@ -183,24 +183,24 @@ def draw_edge_1forms(corners: core.Point, corner_forms: core.Plane,
     diamond_corners = (diamond.incidence[2, 0] * diamond_vertices).batch()
     positions = diamond_corners.reshape(-1)
     directions = shared_corner_forms.dual().batch().reshape(-1)
-    n_faces = len(diamond.faces)
-    split_mesh = meshes.Mesh(3 * n_faces, np.arange(3 * n_faces).reshape(3, n_faces).T)
+    n_faces = diamond.n_elements[2]
+    topology = meshes.Topology(3 * n_faces, np.arange(3 * n_faces).reshape(3, n_faces).T)
     reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
     # The shared edge, from its tail to its head, an arrow ending in a chevron.
-    shared = diamond.reading(diamond.interior_edges[:1], 1)                   # Scalar+[shared <- edges]
+    shared = diamond.reading(diamond.interior[1][:1], 1)                      # Scalar+[shared <- edges]
     tail, head = (shared * (diamond.incidence[1, 0] * diamond_vertices)).batch()[:, 0]   # [] Point-, Point-
     # The corners across the shared edge, in the face on its left and in the face on its right.
-    apexes = (diamond.reading(diamond.edge_opposites[0]) * diamond_vertices).batch()   # [sides] Point-
+    apexes = (diamond.reading(diamond.facet_opposites[0]) * diamond_vertices).batch()  # [sides] Point-
     simplices.overlay(ax, [
         contours.picture(places, diamond, np.zeros(len(places)), ink(paper_colour), camera),
         simplices.strokes(places, diamond, ink(wall_colour), charts.LINE_PX, camera),
-        flow.layer(positions, split_mesh, directions, camera, reference_speed, primal_rgb),
+        flow.layer(positions, topology, directions, camera, reference_speed, primal_rgb),
         arrows(tail[None], head[None], side_width, camera),
         *ringed(apexes, primal_colour, apex_dot, camera)])
     return figure
 
 
-def draw_tet_whitney(mesh: core.SpaceMesh, vertices: core.SpacePoint, pages: core.SpacePoint,
+def draw_tet_whitney(topology: core.Topology, vertices: core.SpacePoint, pages: core.SpacePoint,
                      field_lines: core.SpacePoint) -> plt.Figure:
     """Three views of a mesh of one tetrahedron: the Whitney 1-form of its first edge by its level surfaces, triangles
     `pages` `[tet_edges, pages, 3] Point-[tets]`; the 2-form of its first face by its field lines `[corners, lines, 2]
@@ -210,12 +210,13 @@ def draw_tet_whitney(mesh: core.SpaceMesh, vertices: core.SpacePoint, pages: cor
     corners = (vertices - centroid).batch()                                   # [vertices] Point-
     places = solids.origin + solids.context.include_from_algebra(corners)     # [vertices] Point-
 
-    # The tetrahedron's first edge, the edge across it, the corner the first face form radiates from, and the face
-    # facing that corner, as vertices.
-    tet = mesh.tets[0]
-    edge, across = tet[mesh.corners[3, 1][:, 0]], tet[core.complements(mesh, 1)[0]]
-    apex, face = tet[0], tet[core.complements(mesh, 0)[0]]
-    wall, wall_faces = outward_wall(mesh)
+    # The tetrahedron's corners in its own order, about the centroid and in the drawing; and its first edge, the edge
+    # across it, the corner the first face form radiates from, and the face facing that corner, as its corners.
+    tet_corners = (topology.incidence[3, 0] * (vertices - centroid)).batch()[:, 0]   # [4] Point-
+    tet_places = solids.origin + solids.context.include_from_algebra(tet_corners)    # [4] Point-
+    edge, across = topology.corners[3, 1][:, 0], core.complements(topology, 1)[0]
+    apex, face = 0, core.complements(topology, 0)[0]
+    wall, wall_faces = outward_wall(topology)
 
     view = solids.View(solids.aim(solids.origin, tet_elevation, tet_azimuth), np.full(2, 0.86), n_tet_pixels)
     face_view = view._replace(camera=solids.aim(solids.origin, tet_elevation, face_azimuth))
@@ -224,15 +225,15 @@ def draw_tet_whitney(mesh: core.SpaceMesh, vertices: core.SpacePoint, pages: cor
     shell = meshes.samples(places, wall_faces, shell_colours, meshes.flat(places, wall_faces), view,
                            face_values=np.zeros(len(wall)), colour=meshes.plain, gloss=solids.gloss)
     # The tetrahedron's wireframe: its mesh's own edges.
-    wire = simplices.tubes(places, simplices.Mesh(len(places), mesh.edges), light_slate, 1.5, view, solids.gloss)
+    wire = simplices.tubes(places, simplices.Topology(len(places), topology.elements[1]), light_slate, 1.5, view, solids.gloss)
     # Each of the two edges an arrow, a tube ending in a chevron, as wide as a rod of its radius in the tetrahedron's
     # units; the edge across, where its sense is not shown, also a plain rod.
     active_width, opp_width = 2 * 0.024 / view.pixel, 2 * 0.020 / view.pixel
-    active_arrow = simplices.tubes(places[edge], simplices.Mesh.chains([2]), accent_rgb, active_width, view,
+    active_arrow = simplices.tubes(tet_places[edge], simplices.Topology.chains([2]), accent_rgb, active_width, view,
                                    solids.gloss, chevrons=np.ones(1), chevron=edge_chevron * active_width)
-    opp_arrow = simplices.tubes(places[across], simplices.Mesh.chains([2]), primal_rgb, opp_width, view, solids.gloss,
+    opp_arrow = simplices.tubes(tet_places[across], simplices.Topology.chains([2]), primal_rgb, opp_width, view, solids.gloss,
                                 chevrons=np.ones(1), chevron=edge_chevron * opp_width)
-    opp_rod, opp_balls = solids.edges(places[across[:1]], places[across[1:]], 0.020)
+    opp_rod, opp_balls = solids.edges(tet_places[across[:1]], tet_places[across[1:]], 0.020)
 
     # The first edge's pages about the centroid, and each page's corners among them, in each tetrahedron.
     first_pages = (pages[0] - centroid).batch()                              # [pages, 3, tets] Point-
@@ -244,7 +245,7 @@ def draw_tet_whitney(mesh: core.SpaceMesh, vertices: core.SpacePoint, pages: cor
                                   colour=meshes.plain, gloss=solids.gloss), page_opacity) for triangles in page_triangles]
     # Each page's two sides off the edge across, the form's level lines on the two faces at the first edge.
     page_sides = np.stack((page_triangles[..., :2], page_triangles[..., 1:]), axis=-2).reshape(-1, 2)
-    page_rims = simplices.tubes(page_places, simplices.Mesh(len(page_places), page_sides), accent_rgb, page_width,
+    page_rims = simplices.tubes(page_places, simplices.Topology(len(page_places), page_sides), accent_rgb, page_width,
                                 view, solids.gloss)
     panel_edge = solids.draw(
         [(opp_rod, primal_rgb), (opp_balls, primal_rgb)],
@@ -257,18 +258,17 @@ def draw_tet_whitney(mesh: core.SpaceMesh, vertices: core.SpacePoint, pages: cor
     first_lines = (field_lines[0] - centroid).batch()                        # [lines, 2, tets] Point-
     line_places = solids.origin + solids.context.include_from_algebra(first_lines.reshape(-1))   # [line_ends] Point-
     line_ends = np.arange(len(line_places)).reshape(first_lines.shape).swapaxes(1, 2).reshape(-1, 2)   # [lines * tets, 2]
-    flux_lines = simplices.tubes(line_places, simplices.Mesh(len(line_places), line_ends), primal_rgb, flux_width,
+    flux_lines = simplices.tubes(line_places, simplices.Topology(len(line_places), line_ends), primal_rgb, flux_width,
                                  face_view, solids.gloss)
     flux_tips = solids.ball(line_places[line_ends[:, 1]], flux_tip)[:, None]
     face_colours = np.broadcast_to(cream, wall_faces.shape + (3,)).copy()
-    face_colours[wall == mesh.boundary_indices[2][0, 0]] = warm_tint
+    face_colours[wall == topology.boundary_indices[2][0, 0]] = warm_tint
     face_mesh = meshes.samples(places, wall_faces, face_colours, meshes.flat(places, wall_faces), face_view,
                                face_values=np.zeros(len(wall)), colour=meshes.plain, gloss=solids.gloss)
-    apex_ball = solids.ball(places[[apex]], 0.046)[:, None]
+    apex_ball = solids.ball(tet_places[[apex]], 0.046)[:, None]
     # The face's rim: an edge from each of its corners to the next, round the face.
-    face_rim = simplices.tubes(places, simplices.Mesh(len(places), np.stack((face, np.roll(face, -1)), axis=-1)),
-                               accent_rgb, 2.8, face_view, solids.gloss)
-    face_wire = simplices.tubes(places, simplices.Mesh(len(places), mesh.edges), light_slate, 1.5, face_view,
+    face_rim = simplices.tubes(tet_places[face], core.triangle.border, accent_rgb, 2.8, face_view, solids.gloss)
+    face_wire = simplices.tubes(places, simplices.Topology(len(places), topology.elements[1]), light_slate, 1.5, face_view,
                                 solids.gloss)
     panel_face = solids.draw(
         [(flux_tips, primal_rgb), (apex_ball, accent_rgb)],
@@ -277,17 +277,17 @@ def draw_tet_whitney(mesh: core.SpaceMesh, vertices: core.SpacePoint, pages: cor
     )
 
     # Rings around the edge across the first edge, which the first edge threads.
-    edge_middle, across_middle = corners[edge].mean(axis=0), corners[across].mean(axis=0)   # [] Point-, Point-
-    across_axis = (corners[across[1]] - corners[across[0]]).normalized()      # [] Point-
+    edge_middle, across_middle = tet_corners[edge].mean(axis=0), tet_corners[across].mean(axis=0)  # [] Point-, Point-
+    across_axis = (tet_corners[across[1]] - tet_corners[across[0]]).normalized()  # [] Point-
     # Each ring starts from the edge across towards the first edge's middle, square to the edge across, and turns
     # about it in the plane square to it.
     towards = edge_middle - across_middle                                     # [] Point-
     radial = (towards - across_axis * towards.dot(across_axis)).normalized()  # [] Point-
     ring_turns = ((across_axis * unit_volume) * (-np.linspace(0.0, 2 * np.pi, n_ring_samples) / 2)).exp()   # [samples] Rotor+
     ring_points = across_middle * 0.62 + ring_radii[:, None] * (ring_turns >> radial)   # [rings, samples] Point-
-    ring_places = solids.origin + solids.context.include_from_algebra(ring_points)            # [rings, samples] Point-
+    ring_places = solids.origin + solids.context.include_from_algebra(ring_points)      # [rings, samples] Point-
     # Each ring a closed chain of edges, each edge in its ring's colour.
-    rings = simplices.tubes(ring_places.reshape(-1), simplices.Mesh.chains([n_ring_samples] * len(ring_places)),
+    rings = simplices.tubes(ring_places.reshape(-1), simplices.Topology.chains([n_ring_samples] * len(ring_places)),
                             np.repeat(np.stack(ring_colours), n_ring_samples - 1, axis=0), 3.2, view, solids.gloss)
     panel_link = solids.draw(
         [], view, background, inks=[], translucent=[],
@@ -298,7 +298,7 @@ def draw_tet_whitney(mesh: core.SpaceMesh, vertices: core.SpacePoint, pages: cor
     return image_figure(np.concatenate((panel_edge, gap, panel_face, gap, panel_link), axis=1))
 
 
-def draw_anisotropic_flow(mesh: core.Mesh, vertices: core.Point,
+def draw_anisotropic_flow(topology: core.Topology, vertices: core.Point,
                           potential: core.Scalar,
                           current: core.Point, fibre: core.Point) -> plt.Figure:
     """Isotropic and tilted-anisotropic conduction share one potential palette and current-length scale."""
@@ -307,15 +307,15 @@ def draw_anisotropic_flow(mesh: core.Mesh, vertices: core.Point,
                              for level in np.linspace(-0.85, 0.85, n_contours + 2)[1:-1])
 
     # Area-weighted vertex currents give a continuous drawing of the facewise solution.
-    sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)
     areas = ((sides[0] & sides[1]) / 2).norm()                              # Scalar+[faces]
-    corners = ~mesh.incidence[2, 0].mean(axis=0)
+    corners = ~topology.incidence[2, 0].mean(axis=0)
     vertex_current = (corners * (areas * current)) / (corners * areas)       # [cases] Point-[vertices]
     reference_speed = float(np.percentile(vertex_current.norm().batch().to_array(), 95))
     points = vertices.batch()                                                 # [vertices] Point-
     directions = vertex_current.batch()                                       # [cases, vertices] Point-
     # The disk's boundary, the mesh of its boundary's edges.
-    rim = simplices.Mesh(len(points), mesh.edges[mesh.boundary_edges])
+    rim = topology.border
 
     # Faint chords of the unit disk along the fibre, across it at even offsets: each reaches the disk's edge the
     # half-chord of its offset either way.
@@ -331,13 +331,13 @@ def draw_anisotropic_flow(mesh: core.Mesh, vertices: core.Point,
         camera = frame_panel(ax, vertices, 0.08)
         colours = potential_colours(Normalize(-1.0, 1.0)(potentials[index]))[:, :3]
         # Faint background chords indicate the tilted high-conductivity fibre orientation.
-        fibres = [simplices.strokes(chord_ends.reshape(-1), simplices.Mesh.chains([2] * len(offsets)),
+        fibres = [simplices.strokes(chord_ends.reshape(-1), simplices.Topology.chains([2] * len(offsets)),
                                     ink(fibre_colour), chord_width, camera, dashes=chord_dots, opacity=0.55)
                   ] if index == 1 else []
         simplices.overlay(ax, [
-            contours.picture(points, mesh, potentials[index], colours, camera, levels=potential_levels),
-            simplices.strokes(points, mesh, ink(mesh_colour), mesh_width, camera, opacity=0.45),
+            contours.picture(points, topology, potentials[index], colours, camera, levels=potential_levels),
+            simplices.strokes(points, topology, ink(mesh_colour), mesh_width, camera, opacity=0.45),
             *fibres,
-            flow.layer(points, mesh, directions[index], camera, reference_speed, ink(flow_colour)),
+            flow.layer(points, topology, directions[index], camera, reference_speed, ink(flow_colour)),
             simplices.strokes(points, rim, ink(wall_colour), wall_width, camera)])
     return figure

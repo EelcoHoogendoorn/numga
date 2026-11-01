@@ -57,7 +57,7 @@ def projected(longitudes_latitudes: np.ndarray) -> np.ndarray:
     return mollweide.transform(longitudes_latitudes.reshape(-1, 2)).reshape(shape)
 
 
-def graticule() -> tuple[planar.Point, simplices.Mesh]:
+def graticule() -> tuple[planar.Point, simplices.Topology]:
     """The map's meridians, between the parallels at 75 degrees, and its parallels, straight across the map: their
     points on the map, one line after another, and the chains of edges along them."""
     cap = PARALLELS[-1]
@@ -66,7 +66,7 @@ def graticule() -> tuple[planar.Point, simplices.Mesh]:
     parallels = np.stack(np.broadcast_arrays(np.array([-np.pi, np.pi])[None, :], PARALLELS[:, None]), axis=-1)   # [parallels, 2, 2]
     places = np.concatenate([meridians.reshape(-1, 2), parallels.reshape(-1, 2)])
     return (planar.mv.point(projected(places)),
-            simplices.Mesh.chains([N_MERIDIAN_SAMPLES] * len(MERIDIANS) + [2] * len(PARALLELS)))
+            simplices.Topology.chains([N_MERIDIAN_SAMPLES] * len(MERIDIANS) + [2] * len(PARALLELS)))
 
 
 def outline() -> planar.Point:
@@ -99,9 +99,9 @@ def sky_map(ax: plt.Axes, directions: core.Point, values: core.Scalar, cmap: str
     sites = projected(lonlat(zeniths))                                       # [sites, 2]
     camera = map_camera(ax)
     simplices.overlay(ax, [
-        contours.picture(sky, simplices.Mesh.grid(n_latitudes, n_longitudes), values, colours, camera),
+        contours.picture(sky, simplices.Topology.grid(n_latitudes, n_longitudes), values, colours, camera),
         simplices.strokes(lines, chains, np.ones(3), charts.FRAME_PX, camera, opacity=GRATICULE_OPACITY),
-        simplices.strokes(outline(), simplices.Mesh.chains([2 * N_OUTLINE_SAMPLES + 1]), np.zeros(3),
+        simplices.strokes(outline(), simplices.Topology.chains([2 * N_OUTLINE_SAMPLES + 1]), np.zeros(3),
                           charts.FRAME_PX, camera),
         simplices.markers(planar.mv.point(sites), ink(LABEL), SITE_RADIUS + charts.FRAME_PX, camera),
         simplices.markers(planar.mv.point(sites), ink(SITE), SITE_RADIUS, camera)])
@@ -157,9 +157,9 @@ def draw_ring(ax: plt.Axes, site: core.Rotor, arms: core.Point, ring: core.Point
     reaches = stack((0 * arms, ARM_REACH * arms), axis=-1).reshape(-1)       # [arms * 2] Point-
     n_masses = ring.shape[0]
     simplices.overlay(ax, [
-        simplices.strokes(rest, simplices.Mesh.chains([REST_SAMPLES]), ink(REST), charts.LINE_PX, camera),
-        simplices.strokes(reaches, simplices.Mesh.chains([2] * arms.shape[0]), ink(ARM), ARM_WIDTH, camera),
-        simplices.strokes(concatenate((ring, ring[:1])), simplices.Mesh.chains([n_masses + 1]), ink(RING),
+        simplices.strokes(rest, simplices.Topology.chains([REST_SAMPLES]), ink(REST), charts.LINE_PX, camera),
+        simplices.strokes(reaches, simplices.Topology.chains([2] * arms.shape[0]), ink(ARM), ARM_WIDTH, camera),
+        simplices.strokes(concatenate((ring, ring[:1])), simplices.Topology.chains([n_masses + 1]), ink(RING),
                           charts.LINE_PX, camera, opacity=0.6),
         simplices.markers(ring, ink(RING), charts.MARKER_PX / 2, camera)])
 

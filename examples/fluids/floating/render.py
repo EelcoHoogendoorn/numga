@@ -92,9 +92,9 @@ def forces_end_on(view: solids.View, placed: core.Motor, push: core.Forque, cent
     vertical lines across an end view, and the righting arm between them at the centre's height; in front of the
     body, as `onto_front` places them: the lines, the arm and the centre as solids, and the arrows as tubes, each
     ending in a chevron."""
-    gravity = onto_front(placed >> centre)                                    # [] Point-
+    gravity = onto_front(placed >> centre)                                  # [] Point-
     # The buoyancy's line meets the water surface in a point of positive weight.
-    buoyant = onto_front(((placed >> push) ^ core.water).normalized())       # [] Point-
+    buoyant = onto_front(((placed >> push) ^ core.water).normalized())      # [] Point-
     # The heights of the view's bottom and top, about the middle where its camera stands.
     bottom = (core.water & (view.camera >> solids.origin)) - view.half[1]
     # Each force line's dashes, up the whole view.
@@ -109,26 +109,27 @@ def forces_end_on(view: solids.View, placed: core.Motor, push: core.Forque, cent
     # The buoyancy up and the weight down from their starts.
     starts = stack((buoyant, gravity))                                         # [forces] Point-
     tips = starts + core.up * (np.array([1.0, -1.0]) * force * 0.6)            # [forces] Point-
-    arrows = simplices.tubes(stack((starts, tips), axis=-1).reshape(-1), simplices.Mesh.chains([2, 2]),
+    arrows = simplices.tubes(stack((starts, tips), axis=-1).reshape(-1), simplices.Topology.chains([2, 2]),
                              np.array([to_rgb(buoyancy_colour), to_rgb(weight_colour)]), arrow_width, view,
                              gloss=solids.gloss, chevrons=np.ones(2), chevron=arrow_chevron)
     # The arm reaches from the centre of gravity across to the buoyancy's vertical, at the centre's height.
-    level = core.water - mv.w * (core.water & gravity)                        # [] Plane+
+    level = core.water - mv.w * (core.water & gravity)                         # [] Plane+
     arm = solids.rods(gravity, (buoyant & core.up) ^ level, arm_radius * view.pixel)
     centre_ball = solids.ball(gravity, centre_radius * view.pixel)
     return parts + [(arm[None], (0.1, 0.1, 0.1)), (centre_ball[None, None], to_rgb(weight_colour))], arrows
 
 
-def end_on(mesh: core.Mesh, points: core.Point, view: solids.View, parts: list[tuple[solids.Quadric, np.ndarray]],
+def end_on(topology: core.Topology, points: core.Point, view: solids.View, parts: list[tuple[solids.Quadric, np.ndarray]],
            arrows: list[tuple[meshes.Samples, float]]) -> np.ndarray:
     """A body seen along its axis of heel: the triangles of its points of unit weight, the water over its lower part
     with its waterline, and parts and arrows in front of it, `[rows, columns, 3]` bytes."""
-    body = meshes.samples(points, mesh.faces, np.array(to_rgb(hull_colour)), meshes.flat(points, mesh.faces), view,
+    triangles = topology.elements[2]
+    body = meshes.samples(points, triangles, np.array(to_rgb(hull_colour)), meshes.flat(points, triangles), view,
                           face_values=np.zeros(4), colour=meshes.plain, gloss=hull_gloss)
     # The water: a box up to the surface, past the view's sides and bottom, and as long along the axis as the body,
     # centred below the view's middle, where its camera stands.
     across, up = view.half + view.pixel
-    middle = view.camera >> solids.origin                                     # [] Point-
+    middle = view.camera >> solids.origin                                   # [] Point-
     height = core.water & middle
     depth = up - height
     depths = (mv.x & points).abs().reshape(-1)
@@ -136,8 +137,8 @@ def end_on(mesh: core.Mesh, points: core.Point, view: solids.View, parts: list[t
     water = solids.boxes(solids.translator(middle - core.up * (height + depth / 2) - solids.origin),
                          stack((half_length, mv.scalar([across]), depth / 2)))
     # The waterline runs across the view, along the camera's own x, through the middle dropped onto the surface.
-    surface_middle = middle - core.up * height                                # [] Point-
-    sideways = view.camera >> mv.x.dual()                                     # [] Point-
+    surface_middle = middle - core.up * height                              # [] Point-
+    sideways = view.camera >> mv.x.dual()                                   # [] Point-
     onto_front = front_projection(points, view)                               # [] Point- <- Point-
     waterline = solids.rods(onto_front(surface_middle - sideways * across), onto_front(surface_middle + sideways * across),
                             waterline_radius * view.pixel)
@@ -153,11 +154,11 @@ def side_by_side(images: list[np.ndarray]) -> np.ndarray:
                            for image in images], axis=1)
 
 
-def in_water(mesh: core.Mesh, points: core.Point) -> np.ndarray:
+def in_water(topology: core.Topology, points: core.Point) -> np.ndarray:
     """The hull's triangles in space, of its points of unit weight, flat, the dry ones pale and the wet ones darker
     with depth, under a translucent plate of the water's surface, framed on the plate."""
     # Each triangle's depth, at its centroid, below the water surface.
-    centroids = mesh.incidence[2, 0].mean(axis=0) * points.field()            # Point-[triangles]
+    centroids = topology.incidence[2, 0].mean(axis=0) * points.field()        # Point-[triangles]
     depth = np.clip(-(core.water & centroids).batch().to_array() / deepest, 0, 1)   # [triangles]
     wet = plt.get_cmap(wet_map)(0.35 + 0.6 * depth)[:, :3]
     colours = np.where((depth > 0)[:, None], wet, to_rgb(hull_colour))       # [triangles, 3]
@@ -165,8 +166,9 @@ def in_water(mesh: core.Mesh, points: core.Point) -> np.ndarray:
     surface = mv.point([[-half_length, -half_breadth, 0], [half_length, -half_breadth, 0],
                         [half_length, half_breadth, 0], [-half_length, half_breadth, 0]])   # [corners] Point-
     view = solids.view([surface, points], 0.0, elevation, azimuth, margin, n_pixels)
-    normals = meshes.flat(points, mesh.faces)
-    hull = meshes.samples(points, mesh.faces, np.zeros(3), normals, view, face_values=colours, colour=meshes.by_face,
+    triangles = topology.elements[2]
+    normals = meshes.flat(points, triangles)
+    hull = meshes.samples(points, triangles, np.zeros(3), normals, view, face_values=colours, colour=meshes.by_face,
                           gloss=hull_gloss)
     # The water's surface, a plate a pixel thick.
     water = solids.plates(surface[None], view.pixel)                          # [1, 6] Plane+
@@ -174,16 +176,16 @@ def in_water(mesh: core.Mesh, points: core.Point) -> np.ndarray:
                        meshes=[(hull, 1.0)])
 
 
-def draw_ship(mesh: core.Mesh, vertices: core.Point, placed: core.Motor, push: core.Forque,
+def draw_ship(topology: core.Topology, vertices: core.Point, placed: core.Motor, push: core.Forque,
               centre: core.Point) -> plt.Figure:
     """The heeled hull: in space, its dry surface pale and its wet surface darker with depth, in the water;
     and seen along its axis of heel, with its weight, its buoyancy and the righting arm between them."""
     points = placed >> vertices.batch()                                      # [vertices] Point-
-    in_space = in_water(mesh, points)
+    in_space = in_water(topology, points)
     (left, right), (bottom, top) = ship_window
     view = end_view(ship_window, round(in_space.shape[0] * (right - left) / (top - bottom)))
     forces, arrows = forces_end_on(view, placed, push, centre, front_projection(points, view))
-    return image_figure(side_by_side([in_space, end_on(mesh, points, view, forces, [(arrows, 1.0)])]))
+    return image_figure(side_by_side([in_space, end_on(topology, points, view, forces, [(arrows, 1.0)])]))
 
 
 @charts.style()
@@ -210,7 +212,7 @@ def draw_curves(heels: np.ndarray, couples: core.Forque, weight: core.Scalar, st
 
 
 @charts.style()
-def draw_cubes(densities: np.ndarray, heels: np.ndarray, couples: core.Forque, fluid_weight: float, mesh: core.Mesh,
+def draw_cubes(densities: np.ndarray, heels: np.ndarray, couples: core.Forque, fluid_weight: float, topology: core.Topology,
                vertices: core.Point, shown: core.Motor, shown_densities: list[float], rests: np.ndarray) -> plt.Figure:
     """Above, cubes of a few densities at rest; below, the cube's righting couple over density and heel, blue
     turning it back upright and red over, its rests where it turns from over to back drawn thick, its
@@ -219,7 +221,7 @@ def draw_cubes(densities: np.ndarray, heels: np.ndarray, couples: core.Forque, f
     # A rest is stable where the couple turns from pushing over to pushing back as the heel grows.
     rising = np.gradient(moments, heels, axis=1) > 0
     cube_view = end_view(((-cube_window, cube_window), (-cube_window, cube_window)), n_cube_pixels)
-    cubes = side_by_side([end_on(mesh, placed >> vertices.batch(), cube_view, [], [])
+    cubes = side_by_side([end_on(topology, placed >> vertices.batch(), cube_view, [], [])
                           for placed in shown])
     # The map as wide as the cubes above it.
     figure, ax = charts.subplots(cubes.shape[1], round(0.6 * cubes.shape[1]))
@@ -238,7 +240,7 @@ def draw_cubes(densities: np.ndarray, heels: np.ndarray, couples: core.Forque, f
     return image_figure(np.concatenate([cubes, plot[:, :cubes.shape[1]]], axis=0))
 
 
-def animate_release(mesh: core.Mesh, vertices: core.Point, centres: core.Point,
+def animate_release(topology: core.Topology, vertices: core.Point, centres: core.Point,
                     frames: Iterable[tuple[core.Twist, core.Motor, core.Forque, core.Forque]], heels: np.ndarray,
                     couples: core.Forque, weight: core.Scalar) -> Iterator[np.ndarray]:
     """Each frame: the released hull with each load seen along its axis of heel, its weight from its centre of
@@ -252,7 +254,7 @@ def animate_release(mesh: core.Mesh, vertices: core.Point, centres: core.Point,
     view = end_view(end_window, n_end_pixels)
     rows = view.shape[0]
     # Where each load's marker sits in the corner of its view.
-    marker = mv.point([0.0, 0.9 * end_window[0][0], 0.85 * end_window[1][1]])   # [] Point-
+    marker = mv.point([0.0, 0.9 * end_window[0][0], 0.85 * end_window[1][1]])  # [] Point-
     # The curves set up once, as tall as the end views beside them, under the charts' style; each load's heel so far
     # and its heel now move.
     with charts.style():
@@ -278,12 +280,12 @@ def animate_release(mesh: core.Mesh, vertices: core.Point, centres: core.Point,
         trail = np.array(states)                                             # [frames, 2, loads]
         views = []
         for case, colour in enumerate(colours):
-            points = placed[case] >> vertices.batch()                            # [vertices] Point-
-            onto_front = front_projection(points, view)                          # [] Point- <- Point-
+            points = placed[case] >> vertices.batch()                        # [vertices] Point-
+            onto_front = front_projection(points, view)                       # [] Point- <- Point-
             # Which load this is, a dot in the corner in its curve's colour.
             dot = solids.ball(onto_front(marker), marker_radius * view.pixel)
             forces, arrows = forces_end_on(view, placed[case], push[case], centres[case], onto_front)
-            views.append(end_on(mesh, points, view, forces + [(dot[None, None], colour[:3])], [(arrows, 1.0)]))
+            views.append(end_on(topology, points, view, forces + [(dot[None, None], colour[:3])], [(arrows, 1.0)]))
             so_far[case].set_data(*trail[:, :, case].T)
             now[case].set_data(*trail[-1, :, case, None])
         yield side_by_side(views + [capture(figure)])

@@ -25,12 +25,12 @@ from itertools import product
 
 import numpy as np
 
+from numga import NumpyContext
 from numga.algebras import PGA3D as ga
-from examples import instantiate
 from examples.mechanics.simplex import simplex_inertia_weights
+from examples.util.topology import Topology
 
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, mv = mesh_module.Mesh, mesh_module.mv
+mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                             # Scalar+
 Plane = ga.gatype.vector()                                              # Vector+
 Point = ga.gatype.antivector()                                          # Antivector-
@@ -116,7 +116,7 @@ def stiffness(triangles: Point, heights: Scalar, weight: Scalar, centre: Point, 
     # the change of the surface, and turns the direction of the weight with it.
     tilted = surface[..., None, None, None].commutator(Tilt)            # [..., 1, 1, 1] Plane+ <- Tilt+
     pushing = (fluid_weight * -(tilted & samples) * lines).sum(axis=(-3, -2, -1))   # [...] Forque- <- Tilt+
-    weighing = weight * centre.regressive((-up).commutator(Tilt))       # [...] Forque- <- Tilt+
+    weighing = weight * centre.regressive((-up).commutator(Tilt))                   # [...] Forque- <- Tilt+
     return Tilt & (pushing + weighing)                                  # [...] Scalar+ <- (Tilt+, Tilt+)
 
 
@@ -159,7 +159,7 @@ def patch(grid: np.ndarray) -> np.ndarray:
                            np.stack([corner, across, along_v], axis=-1).reshape(-1, 3)])
 
 
-def box(sizes: np.ndarray) -> tuple[Mesh, Point]:
+def box(sizes: np.ndarray) -> tuple[Topology, Point]:
     """A box of the given sizes along x, y and z, centred on the origin: its eight corners `Point-[vertices]`, and
     two triangles on each face, wound outward."""
     # Each corner is a choice of side along x, y and z, its index the choices read as a binary number.
@@ -175,10 +175,10 @@ def box(sizes: np.ndarray) -> tuple[Mesh, Point]:
             grid[..., axis] = side
             grid[..., first], grid[..., second] = (u, v) if side else (v, u)
             faces.append(patch(grid @ np.array([4, 2, 1])))
-    return Mesh(len(sides), np.concatenate(faces)), mv.point((sides - 0.5) * sizes).field()
+    return Topology(len(sides), np.concatenate(faces)), mv.point((sides - 0.5) * sizes).field()
 
 
-def wigley(length: float, beam: float, draft: float, freeboard: float, cells: int) -> tuple[Mesh, Point]:
+def wigley(length: float, beam: float, draft: float, freeboard: float, cells: int) -> tuple[Topology, Point]:
     """A Wigley hull: below the waterline its half breadth is `beam / 2 * (1 - (2 x / length)**2) *
     (1 - (z / draft)**2)`, above it the sides rise straight to a flat deck. Its vertices `Point-[vertices]` lie on
     grids along the hull and up each side, and along the hull and across the deck, and its triangles close them."""
@@ -214,4 +214,4 @@ def wigley(length: float, beam: float, draft: float, freeboard: float, cells: in
     # The triangles of the closed hull: those not on the fin, and not collapsed into the top of a stem, where two of
     # their corners meet.
     closing = (faces >= 0).all(axis=-1) & (faces != np.roll(faces, 1, axis=-1)).all(axis=-1)
-    return Mesh(len(places), faces[closing]), mv.point(places).field()
+    return Topology(len(places), faces[closing]), mv.point(places).field()

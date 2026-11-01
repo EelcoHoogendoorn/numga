@@ -2,24 +2,23 @@
 
 import numpy as np
 
-from numga.sparse import SparseExtensor
 from examples.fluids.dec_stokes import core, scenarios
 
 
-def flow(mesh, vertices, inlet, outlet):
-    operators = core.Operators(mesh, vertices)
+def flow(topology, vertices, inlet, outlet):
+    operators = core.Operators(topology, vertices)
     ordinate = core.mv.y & vertices
     streamfunction = 1.5 * (ordinate - 4 * ordinate.squared() * ordinate / (3 * scenarios.HEIGHT**2))
-    ends = SparseExtensor.selection(core.mv.context, np.concatenate((inlet, outlet)), len(mesh.edges))
-    prescribed = ~ends * (ends * (mesh.d[0] * streamfunction))
+    ends = topology.reading(np.concatenate((inlet, outlet)), 1)
+    prescribed = ~ends * (ends * (topology.d[0] * streamfunction))
     boundary_circulation = operators.dual_patches * 0
-    result = core.stokes(operators, scenarios.VISCOSITY, prescribed, mesh.boundary_edges, boundary_circulation)
+    result = core.stokes(operators, scenarios.VISCOSITY, prescribed, topology.exterior[1], boundary_circulation)
     return operators, prescribed, result
 
 
 def test_incidence_is_topological_and_hodges_supply_geometry_and_duality():
-    mesh, vertices, *_ = scenarios.channel(8)
-    operators = core.Operators(mesh, vertices)
+    topology, vertices, *_ = scenarios.channel(8)
+    operators = core.Operators(topology, vertices)
     for derivative in (operators.d0, operators.d1):
         assert derivative.gatype == core.ga.gatype((core.Scalar, core.Scalar))
         np.testing.assert_array_equal(np.unique(derivative.cells.kernel), [-1, 1])
@@ -28,9 +27,9 @@ def test_incidence_is_topological_and_hodges_supply_geometry_and_duality():
 
     # Scaling and stretching geometry leave every oriented boundary sum unchanged.
     scale = 1.7
-    scaled = core.Operators(mesh, scale * vertices)
+    scaled = core.Operators(topology, scale * vertices)
     stretch = core.mv.x.dual() * (1.2 * core.mv.x & core.Point) + core.mv.y.dual() * (0.85 * core.mv.y & core.Point)
-    stretched = core.Operators(mesh, stretch(vertices))
+    stretched = core.Operators(topology, stretch(vertices))
     for changed in (scaled, stretched):
         np.testing.assert_array_equal(changed.d0.cells.kernel, operators.d0.cells.kernel)
         np.testing.assert_array_equal(changed.d1.cells.kernel, operators.d1.cells.kernel)
@@ -41,7 +40,7 @@ def test_incidence_is_topological_and_hodges_supply_geometry_and_duality():
     assert np.max(np.abs(stretched.edge_ratios.kernel - operators.edge_ratios.kernel)) > 0.01
 
     # Circumcentres are equidistant from each triangle's corners; dual weights are length ratios.
-    corners = mesh.incidence[2, 0] * vertices
+    corners = topology.incidence[2, 0] * vertices
     radii_squared = (corners - operators.circumcentres).norm_squared()
     np.testing.assert_allclose((radii_squared - radii_squared[0]).kernel, 0, atol=1e-11)
     ratio = operators.dual_edges.norm() / operators.edges.norm()
@@ -60,9 +59,9 @@ def test_incidence_is_topological_and_hodges_supply_geometry_and_duality():
     assert operators.inverse_star0.gatype == core.ga.gatype((core.Bivector, core.Patch))
     assert operators.curl.gatype == core.ga.gatype((core.Bivector, core.Scalar))
 
-    vertex_values = core.mv.scalar(np.cos(np.arange(mesh.n_vertices))[:, None]).field()
-    vertex_vorticity = (core.mv.xy * np.cos(np.arange(mesh.n_vertices))).field()
-    edge_values = core.mv.scalar(np.sin(np.arange(len(mesh.edges)))[:, None]).field()
+    vertex_values = core.mv.scalar(np.cos(np.arange(topology.n_vertices))[:, None]).field()
+    vertex_vorticity = (core.mv.xy * np.cos(np.arange(topology.n_vertices))).field()
+    edge_values = core.mv.scalar(np.sin(np.arange(topology.n_elements[1]))[:, None]).field()
     dual_edges = operators.star1(edge_values)
     np.testing.assert_allclose(operators.star0.solve(operators.star0(vertex_values)).kernel,
                                vertex_values.kernel, atol=1e-11)
@@ -79,7 +78,7 @@ def test_incidence_is_topological_and_hodges_supply_geometry_and_duality():
 
     # Reflecting the mesh transforms the vorticity bivector by the reflection and leaves the viscous map unchanged.
     mirror = core.mv.y
-    mirrored = core.Operators(mesh, mirror >> vertices)
+    mirrored = core.Operators(topology, mirror >> vertices)
     np.testing.assert_allclose(mirrored.curl(edge_values).kernel,
                                (mirror >> operators.curl(edge_values)).kernel, atol=1e-11)
     viscous = operators.star1.adjugate()(operators.d0_vorticity(operators.curl))
@@ -90,8 +89,8 @@ def test_incidence_is_topological_and_hodges_supply_geometry_and_duality():
 def test_straight_channel_converges_to_poiseuille_velocity_pressure_and_vorticity():
     errors = []
     for n_divisions in (8, 16):
-        mesh, vertices, inlet, outlet, _ = scenarios.plain_channel(n_divisions)
-        operators, _, (_, pressure, vorticity, velocity) = flow(mesh, vertices, inlet, outlet)
+        topology, vertices, inlet, outlet, _ = scenarios.plain_channel(n_divisions)
+        operators, _, (_, pressure, vorticity, velocity) = flow(topology, vertices, inlet, outlet)
         ordinate = core.mv.y & operators.face_centres
         exact_velocity = core.mv.x.dual() * 1.5 * (1 - 4 * ordinate.squared() / scenarios.HEIGHT**2)
         exact_pressure = -12 * scenarios.VISCOSITY * (core.mv.x & operators.circumcentres) / scenarios.HEIGHT**2
@@ -112,20 +111,20 @@ def test_straight_channel_converges_to_poiseuille_velocity_pressure_and_vorticit
 
 
 def test_obstacle_flow_balances_every_cell_and_preserves_boundary_flux():
-    mesh, vertices, inlet, outlet, walls = scenarios.channel(12)
-    operators, prescribed, (flux, pressure, vorticity, velocity) = flow(mesh, vertices, inlet, outlet)
-    np.testing.assert_allclose((mesh.d[1] * flux).kernel, 0, atol=1e-10)
-    on_boundary = SparseExtensor.selection(core.mv.context, mesh.boundary_edges, len(mesh.edges))
-    on_walls = SparseExtensor.selection(core.mv.context, walls, len(mesh.edges))
+    topology, vertices, inlet, outlet, walls = scenarios.channel(12)
+    operators, prescribed, (flux, pressure, vorticity, velocity) = flow(topology, vertices, inlet, outlet)
+    np.testing.assert_allclose((topology.d[1] * flux).kernel, 0, atol=1e-10)
+    on_boundary = topology.reading(topology.exterior[1], 1)
+    on_walls = topology.reading(walls, 1)
     np.testing.assert_allclose((on_boundary * flux).kernel, (on_boundary * prescribed).kernel, atol=1e-11)
     np.testing.assert_allclose((on_walls * flux).kernel, 0, atol=1e-11)
 
     # Summing oriented face boundaries cancels every interior edge and reads the net throughflow.
-    one = core.mv.scalar(np.ones((len(mesh.faces), 1))).field()
-    boundary = ~mesh.d[1] * one
+    one = core.mv.scalar(np.ones((topology.n_elements[2], 1))).field()
+    boundary = ~topology.d[1] * one
     outgoing = boundary * flux
-    on_inlet = SparseExtensor.selection(core.mv.context, inlet, len(mesh.edges))
-    on_outlet = SparseExtensor.selection(core.mv.context, outlet, len(mesh.edges))
+    on_inlet = topology.reading(inlet, 1)
+    on_outlet = topology.reading(outlet, 1)
     np.testing.assert_allclose((on_inlet * outgoing).sites.sum().to_array(), -scenarios.HEIGHT, atol=1e-11)
     np.testing.assert_allclose((on_outlet * outgoing).sites.sum().to_array(), scenarios.HEIGHT, atol=1e-11)
 
@@ -137,14 +136,14 @@ def test_obstacle_flow_balances_every_cell_and_preserves_boundary_flux():
 
 
 def test_reversing_mesh_edges_changes_readings_and_preserves_physical_flow():
-    mesh, vertices, inlet, outlet, _ = scenarios.channel(12)
-    _, _, result = flow(mesh, vertices, inlet, outlet)
-    reversed_mesh = core.Mesh(mesh.n_vertices, mesh.faces.copy())
-    reversed_edges = np.arange(len(mesh.edges)) % 3 == 0
-    reversed_mesh.edges[reversed_edges] = reversed_mesh.edges[reversed_edges, ::-1]
-    reversed_mesh.boundary_indices[0][reversed_edges] = reversed_mesh.boundary_indices[0][reversed_edges, ::-1]
-    reversed_mesh.face_edge_orientation[...] *= np.where(reversed_edges[reversed_mesh.face_edges], -1, 1)
-    _, _, changed = flow(reversed_mesh, vertices, inlet, outlet)
+    topology, vertices, inlet, outlet, _ = scenarios.channel(12)
+    _, _, result = flow(topology, vertices, inlet, outlet)
+    reversed_topology = core.Topology(topology.n_vertices, topology.elements[2].copy())
+    reversed_edges = np.arange(topology.n_elements[1]) % 3 == 0
+    reversed_topology.elements[1][reversed_edges] = reversed_topology.elements[1][reversed_edges, ::-1]
+    reversed_topology.boundary_indices[0][reversed_edges] = reversed_topology.boundary_indices[0][reversed_edges, ::-1]
+    reversed_topology.orientation[1][...] *= np.where(reversed_edges[reversed_topology.boundary_indices[1]], -1, 1)
+    _, _, changed = flow(reversed_topology, vertices, inlet, outlet)
 
     signs = core.mv.scalar(np.where(reversed_edges, -1, 1)[:, None]).field()
     np.testing.assert_allclose(changed[0].kernel, (result[0] * signs).kernel, atol=1e-10)

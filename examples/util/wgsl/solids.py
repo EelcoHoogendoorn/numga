@@ -611,7 +611,7 @@ def plates(corners: Point, thickness: float) -> Plane:
     corners = corners / (mv.w & corners)
     middle = corners.mean(axis=-1)                                            # [...] Point
     # The polygon's plane, the join of its first three corners, at unit weight, through its middle.
-    joined = ((corners[..., 0] & corners[..., 1] & corners[..., 2]) * flip).normalized()   # [...] Plane
+    joined = ((corners[..., 0] & corners[..., 1] & corners[..., 2]) * flip).normalized()  # [...] Plane
     face = joined - mv.w * (joined & middle)
     # Along each edge, the plane through the edge and the direction square to the polygon's plane.
     square = (face - mv.w * (face & origin)).dual()                           # [...] Point
@@ -841,7 +841,7 @@ def view(points: list[Point], reach: float, elevation: float, azimuth: float, ma
     side."""
     turn = (mv.xy * (-azimuth / 2)).exp() * (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()     # [] Motor
     # The planes through the origin square to the image's right and up, and the one across the view.
-    screen = turn >> axes                                                     # [3] Plane
+    screen = turn >> axes                                                    # [3] Plane
     seen = concatenate([(batch / (mv.w & batch)).reshape(-1) for batch in points])   # [points] Point
     # The outermost points across and up the image, where each support plane touches them, on either side.
     heights = screen[:2, None] & seen                                         # [2, points] Scalar
@@ -903,7 +903,7 @@ def traced(parts: list[tuple[Quadric, np.ndarray]], view: View, inks: list[Ink],
     encoder = tracer.device.create_command_encoder()
     # The meshes' samples in the buffers the tracer keeps for any one picture.
     buffers = mesh_buffers(view, len(meshes), lambda name, size, usage: tracer.buffer_kept(("meshes", name), size, usage))
-    sampled(encoder, [mesh for mesh, _ in meshes], view, 0, buffers)
+    sampled(encoder, [topology for topology, _ in meshes], view, 0, buffers)
     return trace(tracer, encoder, view, scene(parts, translucent, inks), buffers,
                  [opacity for _, opacity in meshes], background)
 

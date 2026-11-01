@@ -14,12 +14,12 @@ from collections.abc import Iterable, Iterator
 
 import numpy as np
 
+from numga import NumpyContext
 from numga.algebras import VGA2D as ga
 from numga.sparse import spdiag
-from examples import instantiate
+from examples.util.topology import Topology
 
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, as_scalar, mv = mesh_module.Mesh, mesh_module.as_scalar, mesh_module.mv
+mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                      # Scalar+
 Point = ga.gatype.antivector()                                   # Antivector-
 Plane = ga.gatype.vector()                                       # Vector+
@@ -31,7 +31,13 @@ Stiffness = ga.gatype((Force, Point))
 dilation_traction = Plane * (Plane & Point)                    # [] Plane+ <- (Plane+, Plane+, Point-)
 # The exterior-product term removes rotation from the gradient, leaving the two symmetric shear readings.
 direct_shear = (Plane | Plane) * Point.dual_inverse()
-shear_traction = 2 * direct_shear - (Plane | (Plane ^ Point.dual_inverse()))   # [] Plane+ <- (Plane+, Plane+, Point-)
+shear_traction = 2 * direct_shear - (Plane | (Plane ^ Point.dual_inverse()))  # [] Plane+ <- (Plane+, Plane+, Point-)
+
+
+# --- plumbing -------------------------------------------------------------------------
+def as_scalar(values: np.ndarray) -> Scalar:
+    """Numbers `[...]` as scalars `[...] Scalar+`."""
+    return mv.scalar(np.asarray(values)[..., None])
 
 
 # --- math -----------------------------------------------------------------------------
@@ -45,15 +51,15 @@ def viscous(viscosity: Scalar) -> Elastic:
     """A shear viscosity as a work form on pairs of velocity gradients: the elastic form's shear part less two thirds
     of its dilation, the stress of a liquid with no bulk viscosity in a plane-strain slice of three-dimensional space,
     so that it resists the rate of shear and not the rate of swelling."""
-    return (viscosity * (shear_traction - 2 * dilation_traction / 3)) & Point   # [...] Scalar+ <- (Plane+, Plane+, Point-, Point-)
+    return (viscosity * (shear_traction - 2 * dilation_traction / 3)) & Point  # [...] Scalar+ <- (Plane+, Plane+, Point-, Point-)
 
 
 class Operators:
     """The planet's assembled elastic and viscous response and inverse inertia, shared by every time step."""
 
-    def __init__(self, mesh: Mesh, vertices: Point, material: Elastic, viscosity: Elastic, density: Scalar):
-        self.mesh, self.vertices = mesh, vertices
-        sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)    # [corners] Point-[faces]
+    def __init__(self, topology: Topology, vertices: Point, material: Elastic, viscosity: Elastic, density: Scalar):
+        self.topology, self.vertices = topology, vertices
+        sides = topology.boundary[2, 1] * (topology.d[0] * vertices)  # [corners] Point-[faces]
         patches = (sides[0] & sides[1]) / 2                     # Patch-[faces]
         self.areas = patches.norm()                             # Scalar+[faces]
         self.corner_gradients = sides / (2 * patches)           # [corners] Plane+[faces]
@@ -61,15 +67,15 @@ class Operators:
         self.damping = self.assemble(viscosity)                 # [...] (Force+ <- Point-)[vertices <- vertices]
 
         # Each affine corner hat owns one third of its triangle's mass.
-        corner_mean = mesh.incidence[2, 0].mean(axis=0)         # Scalar+[faces <- vertices]
+        corner_mean = topology.incidence[2, 0].mean(axis=0)     # Scalar+[faces <- vertices]
         self.masses = ~corner_mean * (density * self.areas)     # [...] Scalar+[vertices]
         inverse_inertia = spdiag((1 / self.masses) * Force.dual())
         self.acceleration = -inverse_inertia(self.stiffness)    # [...] (Point- <- Point-)[vertices <- vertices]
         self.drag = -inverse_inertia(self.damping)              # [...] (Point- <- Point-)[vertices <- vertices]
 
         # Preassembled corner-hat operators read the rate of dilation and rotation directly from nodal velocities.
-        self.divergence = (spdiag(self.corner_gradients & Point) * mesh.incidence[2, 0]).sum(axis=0)               # (Scalar+ <- Point-)[faces <- vertices]
-        self.rotation = (spdiag(self.corner_gradients ^ Point.dual_inverse()) * mesh.incidence[2, 0]).sum(axis=0)  # (Bivector+ <- Point-)[faces <- vertices]
+        self.divergence = (spdiag(self.corner_gradients & Point) * topology.incidence[2, 0]).sum(axis=0)           # (Scalar+ <- Point-)[faces <- vertices]
+        self.rotation = (spdiag(self.corner_gradients ^ Point.dual_inverse()) * topology.incidence[2, 0]).sum(axis=0)  # (Bivector+ <- Point-)[faces <- vertices]
 
     def assemble(self, material: Elastic) -> Stiffness:
         """A work form on pairs of gradients, bound to each triangle's test and trial corner gradients: a form on the
@@ -77,7 +83,7 @@ class Operators:
         gradients = self.corner_gradients.batch()               # [corners, faces] Plane+
         work = material[None, None](gradients[:, None], gradients[None, :], Point, Point)
         local = (Force & Point).solve(work) * self.areas.batch()   # [corners, corners, faces] Force+ <- Point-
-        corners = self.mesh.incidence[2, 0]                     # [corners] Scalar+[faces <- vertices]
+        corners = self.topology.incidence[2, 0]                 # [corners] Scalar+[faces <- vertices]
         # The pullback: each test corner's incidence run back, the triangles' blocks, each trial corner's incidence,
         # summed over both corners of the pair.
         return (~corners[:, None] * spdiag(local.field()) * corners[None, :]).sum(axis=0).sum(axis=0)
@@ -117,7 +123,7 @@ def normal_modes(operators: Operators, count: int) -> tuple[Scalar, Point]:
     """The count lowest normal modes: their angular frequencies squared `[count]` and their shapes `[count]`,
     orthonormal in the masses. The stiffness, a map from displacements to forces, becomes a map of displacements to
     themselves through the dual that takes a force to a point, and so meets the masses on the same footing."""
-    to_points = spdiag(as_scalar(np.ones(operators.mesh.n_vertices)).field() * Force.dual())
+    to_points = spdiag(as_scalar(np.ones(operators.topology.n_vertices)).field() * Force.dual())
     return to_points(operators.stiffness).eigh(spdiag(operators.masses * Point), count)
 
 

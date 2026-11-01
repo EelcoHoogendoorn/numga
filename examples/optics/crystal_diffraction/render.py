@@ -67,7 +67,7 @@ def atoms(positions: Extensor, radius: float, camera: Camera) -> np.ndarray:
     along, rise = (plane.dual() / (plane & plane.dual()) for plane in (camera.across, camera.up))
     ends = position_limit * stack((-along, along, -rise, rise))         # [4] Antivector-
     return simplices.composited([
-        simplices.strokes(ends, simplices.Mesh.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
+        simplices.strokes(ends, simplices.Topology.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
                           cap=simplices.Cap.BUTT),
         simplices.markers(positions, atom_colour, radius, camera)])
 
@@ -81,7 +81,7 @@ def rings(reciprocal: Extensor, scale: float, camera: Camera) -> np.ndarray:
     turns = ((along ^ rise) * (-np.linspace(0, 2 * np.pi, n_around + 1) / 2)).exp()   # [around + 1] Rotor+
     circle = (turns >> along) * (scale * ring_radius * camera.pixel)          # [around + 1] Vector+
     ends = (reciprocal[:, None] + circle).reshape(-1)                         # [reflections * (around + 1)] Vector+
-    return simplices.strokes(ends, simplices.Mesh.chains([n_around + 1] * len(reciprocal)), ring_colour,
+    return simplices.strokes(ends, simplices.Topology.chains([n_around + 1] * len(reciprocal)), ring_colour,
                              scale * ring_width, camera)
 
 

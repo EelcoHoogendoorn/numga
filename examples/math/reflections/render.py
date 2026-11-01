@@ -76,7 +76,7 @@ def kaleidoscope(folded, time: float) -> np.ndarray:
     cover = np.clip((bead_sizes[::-1] - distance) / 0.02, 0.0, 1.0)
     # What shows of a bead is its cover times what the beads above it leave uncovered, and the background
     # shows where all of them leave it uncovered.
-    uncovered = np.cumprod(1 - cover, axis=-1)                                 # [..., rows, columns, beads]
+    uncovered = np.cumprod(1 - cover, axis=-1)                               # [..., rows, columns, beads]
     shown = cover * np.concatenate([np.ones_like(uncovered[..., :1]), uncovered[..., :-1]], axis=-1)
     return to_image(uncovered[..., -1:] * background + shown @ bead_colours[::-1])
 
@@ -170,7 +170,7 @@ def polytope(spinors) -> np.ndarray:
     view = solids.View((solids.mv.yz * (tilt / 2)).exp(), np.full(2, half_width), n_pixels)
     places = solids.origin + solids.context.include_from_algebra(patches)                # [vertices] Point-
     # The nearest neighbours' pairs, as a mesh of edges over the vertices.
-    neighbours = simplices.Mesh(len(places), np.stack([first, second], axis=-1))
+    neighbours = simplices.Topology(len(places), np.stack([first, second], axis=-1))
     edges = simplices.tubes(places, neighbours, even, edge_width, view, gloss=solids.gloss)
     balls = solids.ball(places, vertex_radius * view.pixel)[:, None]           # [vertices, 1] Plane+ <- Point-
     return solids.draw([(balls, vertex_colour)], view, background, inks=[], translucent=[], meshes=[(edges, 1.0)])

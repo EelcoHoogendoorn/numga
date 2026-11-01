@@ -31,12 +31,12 @@ field_radius = 0.38
 axis_width, beam_width, outline_width, glyph_width, circle_width = 1.0, 4.0, 1.0, 2.2, 0.8
 
 # --- plumbing -------------------------------------------------------------------------
-def _across(centres: Extensor, halves: Extensor) -> tuple[Extensor, simplices.Mesh]:
+def _across(centres: Extensor, halves: Extensor) -> tuple[Extensor, simplices.Topology]:
     """Strokes across glyphs `[glyphs]`, either way from each centre by its half `[glyphs]`: their ends, and an
     edge from each glyph's first end to its second."""
     n_glyphs = len(centres)
     ends = concatenate([centres - halves, centres + halves])                 # [2 * glyphs]
-    return ends, simplices.Mesh(2 * n_glyphs, np.stack([np.arange(n_glyphs), n_glyphs + np.arange(n_glyphs)], axis=-1))
+    return ends, simplices.Topology(2 * n_glyphs, np.stack([np.arange(n_glyphs), n_glyphs + np.arange(n_glyphs)], axis=-1))
 
 
 class Diagram:
@@ -68,7 +68,7 @@ class Diagram:
         # The components' discs, in the background's colour within their outlines, and the fields' circles alike:
         # each a dot over a larger dot.
         radius, field_ring = component_radius / self.camera.pixel, field_radius / self.camera.pixel
-        self.under = [simplices.strokes(self.boundaries, simplices.Mesh.chains([len(self.boundaries)]), faint_colour,
+        self.under = [simplices.strokes(self.boundaries, simplices.Topology.chains([len(self.boundaries)]), faint_colour,
                                         axis_width * self.points, self.camera, cap=simplices.Cap.BUTT)]
         self.over = [
             simplices.markers(self.components, outline_colour, radius, self.camera),
@@ -86,7 +86,7 @@ class Diagram:
         # transverse directions sweep in time: each stretch of the beam as strong.
         readings = fields[..., None] & self.swept_planes                      # [stages, 2] Scalar+
         strengths = np.clip((readings * readings).sum(axis=-1).to_array(), 0, 1)
-        beam = [simplices.strokes(self.boundaries[stage:stage + 2], simplices.Mesh.chains([2]), beam_colour,
+        beam = [simplices.strokes(self.boundaries[stage:stage + 2], simplices.Topology.chains([2]), beam_colour,
                                   beam_width * self.points, self.camera, cap=simplices.Cap.BUTT, opacity=strength)
                 for stage, strength in enumerate(strengths)]
         # The field drawn either way across its glyph's middle, above the beam, as it is, read by the planes the

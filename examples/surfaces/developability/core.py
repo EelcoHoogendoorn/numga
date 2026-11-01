@@ -37,31 +37,30 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
+from numga import NumpyContext
 from numga.algebras import VGA3D as ga
 from numga.sparse import spdiag
-from examples import instantiate
+from examples.util.topology import Topology
 
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh = mesh_module.Mesh
-mv = mesh_module.ctx.multivector
+mv = NumpyContext(ga).multivector
 
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
-Point = mesh_module.Point
+Point = ga.gatype.antivector()
 
 
 # --- math -----------------------------------------------------------------------------
-def spread(mesh: Mesh, edges: Point, angles: Scalar) -> tuple[Vector, Point]:
+def spread(topology: Topology, edges: Point, angles: Scalar) -> tuple[Vector, Point]:
     """The unit normal of each face, `Vector-[faces]`, comes with the spread of the face normals around each vertex,
     the sum of their dyads, each weighted by the face's angle at the vertex, a map on directions, `Point- <- Point-`,
     at each vertex."""
     # Two edges meet in the face's normal.
     normals = (edges[0] & edges[1]).normalized()                                # Vector-[faces]
-    around = (~mesh.incidence[2, 0] * spdiag(angles)).sum(axis=0)               # Scalar+[vertices <- faces]
+    around = (~topology.incidence[2, 0] * spdiag(angles)).sum(axis=0)           # Scalar+[vertices <- faces]
     return normals, around * (normals.dual() * (normals & Point))              # Vector-[faces], (Point- <- Point-)[vertices]
 
 
-def gradient(mesh: Mesh, edges: Point, angles: Scalar, normals: Vector, directions: Point) -> Vector:
+def gradient(topology: Topology, edges: Point, angles: Scalar, normals: Vector, directions: Point) -> Vector:
     """The energy's gradient at each vertex `Vector+[vertices]`, holds each vertex's least-spread direction
     `Point-[vertices]` fixed. A face's term at a corner is its angle there times the square of the corner's
     direction along its normal, and changes both ways. As the normal turns: for each face, the angle-
@@ -70,42 +69,42 @@ def gradient(mesh: Mesh, edges: Point, angles: Scalar, normals: Vector, directio
     moves with its two neighbours, each along the face square to the edge from the corner, over that
     edge's length, and with the corner itself against both."""
     double_areas = (edges[0] & edges[1]).norm()                                 # Scalar+[faces]
-    corner_directions = mesh.incidence[2, 0] * directions                       # [3] Point-[faces]
+    corner_directions = topology.incidence[2, 0] * directions                   # [3] Point-[faces]
     # A direction's pairing with a face's normal patch: its part along the normal.
     along = normals & corner_directions                                         # [3] Scalar-[faces]
     pulled = (corner_directions * (along * angles)).sum(axis=0)                 # Point+[faces]
-    across = 2 * (pulled - normals.dual() * (normals & pulled))                # Point+[faces]
+    across = 2 * (pulled - normals.dual() * (normals & pulled))                 # Point+[faces]
     # The direction along the face joined with the edge facing each corner: the plane they span.
     turning = (across & edges) / double_areas                                  # [3] Vector+[faces]
     # Moving an edge's two ends opposite ways along its in-plane normal opens one corner's angle and closes
     # the other's at the same rate, weighted by the difference of their squared normal components.
-    tails, heads = mesh.corners[2, 1]
+    tails, heads = topology.corners[2, 1]
     opening = (edges | normals) / edges.scalar_norm_squared() * (along[heads].squared() - along[tails].squared())  # [3] Vector+[faces]
-    return (~mesh.incidence[2, 0] * turning + ~(mesh.oriented[2, 1] * mesh.d[0]) * opening).sum(axis=0)  # Vector+[vertices]
+    return (~topology.incidence[2, 0] * turning + ~(topology.oriented[2, 1] * topology.d[0]) * opening).sum(axis=0)  # Vector+[vertices]
 
 
-def stiffness(mesh: Mesh, edges: Point, angles: Scalar) -> Scalar:
+def stiffness(topology: Topology, edges: Point, angles: Scalar) -> Scalar:
     """The energy curves at each vertex, `Scalar+[vertices]`, as sharply as this: moving a corner turns its face's normal by
     the step over the corner's height above the opposite edge, so each face around the vertex adds its
     angle there over that height squared, `(edge | edge) / double_areas**2`."""
     double_areas = (edges[0] & edges[1]).norm()                                 # Scalar+[faces]
-    return (~mesh.incidence[2, 0] * (angles * edges.scalar_norm_squared() / double_areas.squared())).sum(axis=0)
+    return (~topology.incidence[2, 0] * (angles * edges.scalar_norm_squared() / double_areas.squared())).sum(axis=0)
 
 
-def flow(mesh: Mesh, vertices: Point, step: float) -> Iterator[tuple[Point, Scalar]]:
+def flow(topology: Topology, vertices: Point, step: float) -> Iterator[tuple[Point, Scalar]]:
     """Gradient descent on the developability energy, each vertex's step the gradient over the energy's
     stiffness there, times `step`, yields at every step, without end, the vertices `Point-[vertices]` and each vertex's
     smallest eigenvalue `Scalar+[vertices]`. A step of the same size everywhere
     overshoots where triangles are small or thin, and the flow jitters there; over the stiffness, every
     vertex moves by the same share of what its faces can take."""
-    tails, heads = mesh.corners[2, 1]
+    tails, heads = topology.corners[2, 1]
     while True:
         # The edge facing each corner of each face, and the angle at each corner between the two edges meeting there.
-        edges = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                    # [3] Point-[faces]
+        edges = topology.boundary[2, 1] * (topology.d[0] * vertices)            # [3] Point-[faces]
         after, before = edges[tails], edges[heads]                              # [3] Point-[faces], [3] Point-[faces]
         angles = (-(after.dual_inverse() & before) / (after.norm() * before.norm())).arccos()   # [3] Scalar+[faces]
-        normals, spreads = spread(mesh, edges, angles)
+        normals, spreads = spread(topology, edges, angles)
         values, directions = spreads.batch().eigh()                             # [vertices, 3] Scalar+, [vertices, 3] Point-
         yield vertices, values[:, 0]
         # The gradient pairs with a step; the metric turns it into one.
-        vertices = vertices - step * (gradient(mesh, edges, angles, normals, directions[:, 0].field()) / stiffness(mesh, edges, angles)).dual()
+        vertices = vertices - step * (gradient(topology, edges, angles, normals, directions[:, 0].field()) / stiffness(topology, edges, angles)).dual()

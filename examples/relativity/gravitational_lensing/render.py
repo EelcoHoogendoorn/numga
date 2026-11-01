@@ -81,7 +81,7 @@ def figure_at(directions: core.Point, area: core.Scalar, lens: Callable[[core.Po
     figure, (source_ax, sky_ax) = plt.subplots(1, 2, figsize=(width, height), dpi=dpi, facecolor="white")
     figure.subplots_adjust(left=MARGIN / width, right=1 - MARGIN / width, bottom=MARGIN / height,
                            top=1 - MARGIN / height, wspace=2 * MARGIN / PANEL)
-    shown = pixels(sky_ax, directions.context.multivector)                     # [rows, columns] Point-
+    shown = pixels(sky_ax, directions.context.multivector)                       # [rows, columns] Point-
     norm = PowerNorm(gamma=0.65, vmin=0, vmax=1)
     images = []
     for ax, light in zip((source_ax, sky_ax), step):
@@ -93,7 +93,7 @@ def figure_at(directions: core.Point, area: core.Scalar, lens: Callable[[core.Po
     # The critical curve's straight pieces, each from its tail to its head, over the sky, with the masses' dots; the
     # caustic, the same pieces carried by the lens, over the source.
     ends = stack(critical_curve(directions, area), axis=-1).reshape(-1)        # [pieces * 2] Point-
-    pieces = simplices.Mesh.chains([2] * (ends.shape[0] // 2))
+    pieces = simplices.Topology.chains([2] * (ends.shape[0] // 2))
     sky = flat_panel(sky_ax, ends.algebra)
     simplices.overlay(sky_ax, [simplices.strokes(ends, pieces, CRITICAL, CURVE_WIDTH, sky),
                                simplices.markers(positions, MASS, MASS_RADIUS, sky)])

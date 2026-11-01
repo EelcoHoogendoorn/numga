@@ -9,6 +9,7 @@ import numpy as np
 from numga import stack
 
 from examples.fluids.eigen_fluids import core
+from examples.util import shapes
 
 mv = core.mv
 # Bounding-box size of the Stanford bunny, count of non-constant Laplace–Beltrami modes, and the modes
@@ -65,7 +66,7 @@ sphere_viscosity = 0.001
 
 
 # --- plumbing -------------------------------------------------------------------------
-def bunny() -> tuple[core.Mesh, core.Point]:
+def bunny() -> tuple[core.Topology, core.Point]:
     """The upright Stanford bunny mesh and its vertex positions."""
     return core.bunny(bunny_size)
 
@@ -85,57 +86,58 @@ def sphere_demo() -> None:
     from examples.util.animation import save_animation
     from examples.fluids.eigen_fluids import render
 
-    mesh, vertices = core.Mesh.icosphere(n_sphere_levels)
+    topology, coordinates = shapes.sphere(n_sphere_levels)
+    vertices = mv.vector(coordinates).dual().field()                            # Point-[vertices]
     # Each opposite edge and its face patch determine the corner hat gradient.
-    edges = mesh.d[0] * vertices                                                 # Point-[edges]
-    sides = mesh.boundary[2, 1] * edges                                          # [corners] Point-[faces]
+    edges = topology.d[0] * vertices                                             # Point-[edges]
+    sides = topology.boundary[2, 1] * edges                                      # [corners] Point-[faces]
     patches = (sides[0] & sides[1]) / 2                                          # Patch-[faces]
     areas = patches.norm()                                                       # Scalar+[faces]
     normals = patches / areas                                                    # Patch-[faces]
     corner_gradients = (sides | patches.inverse()) / 2                           # [corners] Plane+[faces]
-    gradient = (core.spdiag(corner_gradients * core.Scalar) * mesh.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
+    gradient = (core.spdiag(corner_gradients * core.Scalar) * topology.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
     # Each face's mean over its corners; its reverse hands each corner a third of every face around it.
-    corner_mean = mesh.incidence[2, 0].mean(axis=0)                              # Scalar+[faces <- vertices]
-    dual_areas = ~corner_mean * areas                                            # Scalar+[vertices]
+    corner_mean = topology.incidence[2, 0].mean(axis=0)                          # Scalar+[faces <- vertices]
+    dual_areas = ~corner_mean * areas                                                                         # Scalar+[vertices]
 
     # The stiffness and vertex mass determine the surface's spatial modes.
     stiffness = gradient.adjugate()(core.spdiag(areas * core.Plane.dual())(gradient))   # (Amount- <- Scalar+)[vertices <- vertices]
-    mass = core.spdiag(dual_areas * core.Scalar.dual())                          # (Amount- <- Scalar+)[vertices <- vertices]
+    mass = core.spdiag(dual_areas * core.Scalar.dual())                                 # (Amount- <- Scalar+)[vertices <- vertices]
     eigenvalues, eigenfields = stiffness.eigh(mass, n_sphere_modes + 1)          # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
     # The eigenvalues and the amplitudes of the modes are fields over the modes, which the structure constants couple.
     eigenvalues, modes = eigenvalues[1:].field(), eigenfields[1:]                # Scalar+[modes], [modes] Scalar+[vertices]
     superposition = (modes * core.Scalar).batch().field(0, 1).adjoint()         # (Scalar+ <- Scalar+)[vertices <- modes]
 
-    structure = core.structure_constants(mesh, patches, gradient, modes)         # (Scalar+ <- (Scalar+, Scalar+))[modes <- (modes, modes)]
+    structure = core.structure_constants(topology, patches, gradient, modes)     # (Scalar+ <- (Scalar+, Scalar+))[modes <- (modes, modes)]
     initial_field = core.shear_layers(vertices, dual_areas, sphere_latitude, sphere_width,
-                                     sphere_strength, sphere_wave_amplitude)     # Scalar+[vertices]
+                                     sphere_strength, sphere_wave_amplitude)                                  # Scalar+[vertices]
     start = (modes & mass(initial_field)).sites.sum().field()                    # Scalar+[modes]
     states = islice(core.advect(start, structure, eigenvalues, sphere_viscosity, sphere_dt, n_sphere_steps),
                     0, None, sphere_stride)
     frames = core.reconstruct(states, superposition, eigenvalues, gradient, normals)
-    save_animation(render.animate_flow(mesh, vertices, frames), "eigen_fluids_sphere", frame_duration_ms)
+    save_animation(render.animate_flow(topology, vertices, frames), "eigen_fluids_sphere", frame_duration_ms)
 
 
 def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.fluids.eigen_fluids import render
 
-    mesh, vertices = bunny()
+    topology, vertices = bunny()
     # Each opposite edge and its face patch determine the corner hat gradient.
-    edges = mesh.d[0] * vertices                                                 # Point-[edges]
-    sides = mesh.boundary[2, 1] * edges                                          # [corners] Point-[faces]
+    edges = topology.d[0] * vertices                                             # Point-[edges]
+    sides = topology.boundary[2, 1] * edges                                      # [corners] Point-[faces]
     patches = (sides[0] & sides[1]) / 2                                          # Patch-[faces]
     areas = patches.norm()                                                       # Scalar+[faces]
     normals = patches / areas                                                    # Patch-[faces]
     corner_gradients = (sides | patches.inverse()) / 2                           # [corners] Plane+[faces]
-    gradient = (core.spdiag(corner_gradients * core.Scalar) * mesh.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
+    gradient = (core.spdiag(corner_gradients * core.Scalar) * topology.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
     # Each face's mean over its corners; its reverse hands each corner a third of every face around it.
-    corner_mean = mesh.incidence[2, 0].mean(axis=0)                              # Scalar+[faces <- vertices]
-    dual_areas = ~corner_mean * areas                                            # Scalar+[vertices]
+    corner_mean = topology.incidence[2, 0].mean(axis=0)                          # Scalar+[faces <- vertices]
+    dual_areas = ~corner_mean * areas                                                                         # Scalar+[vertices]
 
     # The stiffness and vertex mass determine the surface's spatial modes.
     stiffness = gradient.adjugate()(core.spdiag(areas * core.Plane.dual())(gradient))   # (Amount- <- Scalar+)[vertices <- vertices]
-    mass = core.spdiag(dual_areas * core.Scalar.dual())                          # (Amount- <- Scalar+)[vertices <- vertices]
+    mass = core.spdiag(dual_areas * core.Scalar.dual())                                 # (Amount- <- Scalar+)[vertices <- vertices]
     eigenvalues, eigenfields = stiffness.eigh(mass, n_modes + 1)                 # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
     # The eigenvalues and the amplitudes of the modes are fields over the modes, which the structure constants couple.
     eigenvalues, modes = eigenvalues[1:].field(), eigenfields[1:]                # Scalar+[modes], [modes] Scalar+[vertices]
@@ -144,20 +146,20 @@ def main() -> None:
     # Meeting each mode's gradient plane with the unit tangent patch gives its divergence-free velocity on each face.
     mode_velocities = gradient(modes[shown_modes]) ^ normals                     # [shown] Point-[faces]
 
-    save_figure(render.draw_modes(mesh, vertices, modes[shown_modes], mode_velocities), "eigen_fluids_modes")
+    save_figure(render.draw_modes(topology, vertices, modes[shown_modes], mode_velocities), "eigen_fluids_modes")
 
-    structure = core.structure_constants(mesh, patches, gradient, modes)         # (Scalar+ <- (Scalar+, Scalar+))[modes <- (modes, modes)]
+    structure = core.structure_constants(topology, patches, gradient, modes)     # (Scalar+ <- (Scalar+, Scalar+))[modes <- (modes, modes)]
     start = initial_vorticity(vertices, modes, eigenvalues, mass)                # Scalar+[modes]
     inviscid = stack(tuple(core.advect(start, structure, eigenvalues, 0.0, dt, n_steps)))   # [steps + 1] Scalar+[modes]
     frames = core.reconstruct(inviscid[:n_flow_steps + 1:playback_stride], superposition, eigenvalues, gradient, normals)
-    save_animation(render.animate_flow(mesh, vertices, frames), "eigen_fluids_bunny", frame_duration_ms)
+    save_animation(render.animate_flow(topology, vertices, frames), "eigen_fluids_bunny", frame_duration_ms)
     # Gallery picture: this makes plots/eigen_fluids.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
     gallery_frames = core.reconstruct(inviscid[:int(n_gallery_steps * playback_rate) + 1:playback_stride], superposition, eigenvalues, gradient, normals)
-    save_animation(render.animate_flow(mesh, vertices, gallery_frames, n_gallery_pixels), "eigen_fluids",
+    save_animation(render.animate_flow(topology, vertices, gallery_frames, n_gallery_pixels), "eigen_fluids",
                    frame_duration_ms, n_gallery_colours)
 
     # The inviscid run of the animation, against the same start under viscosity.
-    viscous = stack(tuple(core.advect(start, structure, eigenvalues, viscosity, dt, n_steps)))   # [steps + 1] Scalar+[modes]
+    viscous = stack(tuple(core.advect(start, structure, eigenvalues, viscosity, dt, n_steps)))  # [steps + 1] Scalar+[modes]
     runs = stack((inviscid, viscous))                                            # [cases, steps + 1] Scalar+[modes]
     energies = (runs.squared() / eigenvalues).sites.sum() / 2                    # [cases, steps + 1] Scalar+
     enstrophies = runs.squared().sites.sum() / 2                                 # [cases, steps + 1] Scalar+
@@ -181,7 +183,7 @@ def main() -> None:
     # On every triangle, the Jacobian wedge pairing equals the area-weighted directional derivative.
     face_gradients = gradient(modes[:6])                                         # [subset] Plane+[faces]
     wedge_brackets = (face_gradients[:, None] ^ face_gradients[None, :]) & patches   # [subset, subset] Scalar+[faces]
-    directional = (face_gradients[:, None] & (face_gradients[None, :] ^ normals)) * areas   # [subset, subset] Scalar+[faces]
+    directional = (face_gradients[:, None] & (face_gradients[None, :] ^ normals)) * areas  # [subset, subset] Scalar+[faces]
     np.testing.assert_allclose((wedge_brackets - directional).to_array(), 0.0, atol=1e-14)
     # The Lie–Poisson structure constants are totally antisymmetric in their three modes to machine precision.
     constants = structure.kernel[..., 0, 0, 0]                                   # [modes, modes, modes]

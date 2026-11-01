@@ -9,12 +9,12 @@ from collections.abc import Iterator
 
 import numpy as np
 
+from numga import NumpyContext
 from numga.algebras import VGA2D as ga
-from numga.sparse import SparseExtensor, spdiag
-from examples import instantiate
+from numga.sparse import spdiag
+from examples.util.topology import Topology
 
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, as_scalar, mv = mesh_module.Mesh, mesh_module.as_scalar, mesh_module.mv
+mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
 Plane = ga.gatype.vector()                                                   # Vector+
 Bivector = ga.gatype.bivector()                                              # Bivector+
@@ -27,30 +27,30 @@ Point = ga.gatype.antivector()                                               # A
 class Operators:
     """An oriented triangle mesh carries the Whitney reconstruction maps and the mixed-grade Dirac–Kähler operators."""
 
-    def __init__(self, mesh: Mesh, vertices: Point):
-        self.mesh = mesh
-        self.d1 = mesh.d[1] * Scalar                                         # (Scalar+ <- Scalar+)[faces <- edges]
-        edges = mesh.d[0] * vertices                                         # Point-[edges]
-        self.sides = mesh.boundary[2, 1] * edges                             # [corners] Point-[faces]
+    def __init__(self, topology: Topology, vertices: Point):
+        self.topology = topology
+        self.d1 = topology.d[1] * Scalar                                     # (Scalar+ <- Scalar+)[faces <- edges]
+        edges = topology.d[0] * vertices                                     # Point-[edges]
+        self.sides = topology.boundary[2, 1] * edges                         # [corners] Point-[faces]
         self.patches = (self.sides[0] & self.sides[1]) / 2                   # Patch-[faces]
         self.areas = self.patches.norm()                                     # Scalar+[faces]
 
         # Dividing each opposite edge by twice the signed triangle patch gives the three constant corner gradients.
         self.corner_gradients = self.sides / (2 * self.patches)              # [corners] Plane+[faces]
-        corner_mean = mesh.incidence[2, 0].mean(axis=0)                      # Scalar+[faces <- vertices]
+        corner_mean = topology.incidence[2, 0].mean(axis=0)                  # Scalar+[faces <- vertices]
         self.whitney0 = corner_mean * Scalar                                 # (Scalar+ <- Scalar+)[faces <- vertices]
-        self.gradient = (spdiag(self.corner_gradients) * mesh.incidence[2, 0]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- vertices]
+        self.gradient = (spdiag(self.corner_gradients) * topology.incidence[2, 0]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- vertices]
 
         # At each face centroid the three barycentric hats equal 1/3, so each edge 1-form
         # reduces to one third of the difference of its endpoints' corner gradients.
-        tails, heads = mesh.corners[2, 1]
+        tails, heads = topology.corners[2, 1]
         centroid_forms = (self.corner_gradients[heads] - self.corner_gradients[tails]) / 3  # [corners] Plane+[faces]
-        self.whitney1 = (spdiag(centroid_forms) * mesh.oriented[2, 1]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- edges]
+        self.whitney1 = (spdiag(centroid_forms) * topology.oriented[2, 1]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- edges]
         self.whitney2 = spdiag(mv.xy / (mv.xy & self.patches) * Scalar)      # (Bivector+ <- Scalar+)[faces <- faces]
 
         # Multiplying the corner gradients by a full multivector unites divergence in grade 0,
         # gradient plus rotated bivector gradient in grade 1, and exterior curl in grade 2.
-        self.dirac = (spdiag(self.corner_gradients) * mesh.incidence[2, 0]).sum(axis=0) * Full  # (Full+ <- Full+)[faces <- vertices]
+        self.dirac = (spdiag(self.corner_gradients) * topology.incidence[2, 0]).sum(axis=0) * Full  # (Full+ <- Full+)[faces <- vertices]
 
         # An isotropic medium carries each face's gradient to the area-weighted velocity it drives, through the metric;
         # its inverse reads a velocity as the gradient that drives it.
@@ -59,7 +59,7 @@ class Operators:
 
         # Restricting the right factor to the even subalgebra maps scalar potentials and stream bivectors
         # together into a pure grade-1 face 1-form.
-        self.even_gradient = (spdiag(self.corner_gradients) * mesh.incidence[2, 0]).sum(axis=0) * Even  # (Plane+ <- Even+)[faces <- vertices]
+        self.even_gradient = (spdiag(self.corner_gradients) * topology.incidence[2, 0]).sum(axis=0) * Even  # (Plane+ <- Even+)[faces <- vertices]
         self.vertex_areas = ~corner_mean * self.areas                        # Scalar+[vertices]
         inverse_vertex_mass = spdiag((1 / self.vertex_areas) * Even.dual().inverse())  # (Even+ <- Even-)[vertices <- vertices]
         # Because the 2D regressive pairing flips sign on odd grades and keeps it on even grades,
@@ -79,10 +79,10 @@ class Operators:
 def harmonic_circulation(operators: Operators, inner_ring: np.ndarray,
                          interior: np.ndarray) -> tuple[Scalar, Point]:
     """The harmonic stream function is one on the inner rim and zero on the outer, and its velocity circulates around the hole."""
-    mesh = operators.mesh
-    pinned = SparseExtensor.selection(mv.context, inner_ring, mesh.n_vertices)
-    boundary_stream = ~pinned * as_scalar(np.ones(len(inner_ring))).field()  # Scalar+[vertices]
-    free = ~SparseExtensor.selection(mv.context, interior, mesh.n_vertices) * Scalar  # (Scalar+ <- Scalar+)[vertices <- interior]
+    topology = operators.topology
+    pinned = topology.reading(inner_ring)
+    boundary_stream = ~pinned * mv.scalar(np.ones(len(inner_ring))[..., None]).field()  # Scalar+[vertices]
+    free = ~topology.reading(interior) * Scalar                              # (Scalar+ <- Scalar+)[vertices <- interior]
     rhs = -free.adjugate()(operators.stream_laplacian(boundary_stream))      # Antiscalar-[interior]
     stream = boundary_stream + free(free.adjugate()(operators.stream_laplacian(free)).solve(rhs))  # Scalar+[vertices]
     return stream, operators.stream_velocity(stream)
@@ -91,8 +91,8 @@ def harmonic_circulation(operators: Operators, inner_ring: np.ndarray,
 def hodge_decomposition(operators: Operators, flow: Point,
                         interior: np.ndarray) -> tuple[Scalar, Scalar, Point, Point, Point]:
     """One mixed-grade `Even` Poisson solve on the interior recovers both the scalar potential and the stream bivector that split `flow` into its orthogonal potential, stream and harmonic parts."""
-    mesh = operators.mesh
-    free = ~SparseExtensor.selection(mv.context, interior, mesh.n_vertices) * Even  # (Even+ <- Even+)[vertices <- interior]
+    topology = operators.topology
+    free = ~topology.reading(interior) * Even                                # (Even+ <- Even+)[vertices <- interior]
     # On every interior vertex star the adjugate of the even gradient reads the flow's divergence in grade 0
     # and its circulation in grade 2, so one solve on the even subalgebra recovers both potentials together.
     readings = free.adjugate()(operators.even_gradient.adjugate()(flow))     # Even-[interior]

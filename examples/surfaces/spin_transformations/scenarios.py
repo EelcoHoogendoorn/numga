@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from examples.util import shapes
 from examples.surfaces.spin_transformations import core
 
 # How often the sphere's icosahedron is split, and how strongly its mean curvature changes along y.
@@ -22,36 +23,38 @@ N_STATES = 3
 
 
 # --- math -----------------------------------------------------------------------------
-def dipole() -> tuple[core.Mesh, core.Point, core.Scalar, core.Point]:
+def dipole() -> tuple[core.Topology, core.Point, core.Scalar, core.Point]:
     """The sphere and its vertices, the change in mean curvature on each face, growing along y, and the
     vertices after the spin transformation that makes it."""
-    mesh, vertices = core.Mesh.icosphere(N_SUBDIVISIONS)
-    centroids = mesh.incidence[2, 0].mean(axis=0) * vertices
+    topology, coordinates = shapes.sphere(N_SUBDIVISIONS)
+    vertices = core.context.multivector.vector(coordinates).dual().field()      # Point-[vertices]
+    centroids = topology.incidence[2, 0].mean(axis=0) * vertices
     # Each centroid paired with the direction y: its height along y.
     curvature_change = (centroids & core.context.multivector.y) * DIPOLE        # Scalar+[faces]
-    return mesh, vertices, curvature_change, core.spin_transform_deform(mesh, vertices, curvature_change)
+    return topology, vertices, curvature_change, core.spin_transform_deform(topology, vertices, curvature_change)
 
 
-def rounding() -> tuple[core.Mesh, list[core.Point]]:
+def rounding() -> tuple[core.Topology, list[core.Point]]:
     """Spot the cow under conformal curvature flow: her mesh, and its vertices at every step."""
-    mesh, vertices = core.spot()
-    return mesh, list(core.conformal_smooth(mesh, vertices, N_STEPS, RATE))     # [steps + 1] Point-[vertices]
+    topology, vertices = core.spot()
+    return topology, list(core.conformal_smooth(topology, vertices, N_STEPS, RATE))  # [steps + 1] Point-[vertices]
 
 
-def dirac() -> tuple[core.Mesh, core.Point, dict[int, core.Point], np.ndarray]:
+def dirac() -> tuple[core.Topology, core.Point, dict[int, core.Point], np.ndarray]:
     """The sphere and its vertices; a few of the Dirac spheres for each of the eigenvalues, the vertices
     of the surfaces spun by the Dirac operator's eigenfields; and the energies of their fields."""
-    mesh, vertices = core.Mesh.icosphere(N_DIRAC_SUBDIVISIONS)
-    energies, dirac_vertices = core.dirac_spheres(mesh, vertices, np.array(EIGENVALUES, dtype=float), N_STATES)   # [eigenvalues, states]
-    return mesh, vertices, {eigenvalue: spheres for eigenvalue, spheres in zip(EIGENVALUES, dirac_vertices)}, energies.to_array().ravel()
+    topology, coordinates = shapes.sphere(N_DIRAC_SUBDIVISIONS)
+    vertices = core.context.multivector.vector(coordinates).dual().field()      # Point-[vertices]
+    energies, dirac_vertices = core.dirac_spheres(topology, vertices, np.array(EIGENVALUES, dtype=float), N_STATES)  # [eigenvalues, states]
+    return topology, vertices, {eigenvalue: spheres for eigenvalue, spheres in zip(EIGENVALUES, dirac_vertices)}, energies.to_array().ravel()
 
 
 # --- plumbing -------------------------------------------------------------------------
-def roundness(mesh: core.Mesh, vertices: core.Point) -> float:
+def roundness(topology: core.Topology, vertices: core.Point) -> float:
     """The spread of the vertices' distances from the surface's centre, its area-weighted centroid, over
     their mean: nothing on a sphere, however its vertices crowd."""
-    centroids = mesh.incidence[2, 0].mean(axis=0) * vertices                    # Point-[faces]
-    sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                        # [3] Point-[faces]
+    centroids = topology.incidence[2, 0].mean(axis=0) * vertices                # Point-[faces]
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)                # [3] Point-[faces]
     areas = sides[1].commutator(sides[0]).norm() / 2                            # Scalar+[faces]
     middle = (centroids * areas).sites.sum() / areas.sites.sum()
     distances = (vertices - middle).norm().to_array()
@@ -62,8 +65,8 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.surfaces.spin_transformations import render
 
-    mesh, vertices, curvature_change, transformed_vertices = dipole()
-    save_figure(render.draw_dipole(mesh, vertices, curvature_change, transformed_vertices), "spin_transformation")
+    topology, vertices, curvature_change, transformed_vertices = dipole()
+    save_figure(render.draw_dipole(topology, vertices, curvature_change, transformed_vertices), "spin_transformation")
     sphere, sphere_vertices, gallery, energies = dirac()
     save_figure(render.draw_dirac(sphere, gallery, sphere_vertices), "dirac_spheres")
     spot, frames = rounding()
@@ -72,12 +75,12 @@ def main() -> None:
     # checks
     cosines = core.corner_cosines
     # No change in curvature leaves the sphere as it is, centred.
-    offset_without_change = core.spin_transform_deform(mesh, vertices, curvature_change * 0.0) - (vertices - vertices.sites.mean())
+    offset_without_change = core.spin_transform_deform(topology, vertices, curvature_change * 0.0) - (vertices - vertices.sites.mean())
     np.testing.assert_allclose(offset_without_change.kernel, 0.0, atol=1e-11)
     # The deformation keeps every corner's angle, up to the mesh's resolution, and mean curvature rises
     # where it was asked to rise.
-    np.testing.assert_allclose((cosines(mesh, transformed_vertices) - cosines(mesh, vertices)).to_array(), 0.0, atol=0.05)
-    curvature_rise = core.mean_curvature(mesh, core.recentred(transformed_vertices)) - core.mean_curvature(mesh, vertices)
+    np.testing.assert_allclose((cosines(topology, transformed_vertices) - cosines(topology, vertices)).to_array(), 0.0, atol=0.05)
+    curvature_rise = core.mean_curvature(topology, core.recentred(transformed_vertices)) - core.mean_curvature(topology, vertices)
     assert np.corrcoef(curvature_rise.to_array().ravel(), curvature_change.to_array().ravel())[0, 1] > 0.5
     # Spot rounds: the spread of the vertices' distances from her centre falls tenfold, while the angles
     # hold up to the mesh's resolution, in the median.

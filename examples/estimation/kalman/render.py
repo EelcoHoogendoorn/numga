@@ -12,7 +12,7 @@ from numga import concatenate, stack
 from examples.util.animation import capture
 from examples.util.wgsl import contours, quadrics, simplices
 from examples.util.wgsl.camera import flat_panel
-from examples.util.wgsl.simplices import Cap, Mesh
+from examples.util.wgsl.simplices import Cap, Topology
 from examples.estimation.kalman.core import Motor, Point, ga, mv
 
 TRUE_COLOUR, DEAD_COLOUR, FILTER_COLOUR, READING_COLOUR = "#1f2329", "#d0482b", "#2c6fb4", "#3a9a5b"
@@ -64,10 +64,10 @@ def animate_tracking(truth: Motor, dead: Motor, estimates: Motor, positions: Poi
     camera = flat_panel(ax, ga)
     image = simplices.overlay(ax, [np.zeros(camera.shape + (4,))])
     # A vehicle is one triangle, its outline.
-    vehicle = Mesh(3, [[0, 1, 2]])
+    vehicle = Topology(3, [[0, 1, 2]])
     # Lay the figure out once; each frame draws the trails so far, the readings, the quadric, and the vehicles.
     for step in range(len(true_path)):
-        trail = Mesh.chains([step + 1])
+        trail = Topology.chains([step + 1])
         readings_so_far = reading_points[:step + 1][fresh[:step + 1]]
         pictures = [quadrics.regions(ellipsoids[step:step + 1, None], FILTER_RGB, camera, 0.18),
                     quadrics.curves(ellipsoids[step:step + 1], 1.0 * POINT, FILTER_RGB, camera),

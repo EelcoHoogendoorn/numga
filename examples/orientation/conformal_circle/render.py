@@ -76,7 +76,7 @@ def downhill(surface: Sphere, anchor: Point, length: float) -> Point:
     sphere of radius zero that passes through infinity; its normal, wedged with the sphere at infinity, generates the
     translation along it."""
     point_sphere = anchor.dual()                                                # [...] Sphere+
-    tangent = surface - (surface & infinity) / (point_sphere & infinity) * point_sphere   # [...] Sphere+
+    tangent = surface - (surface & infinity) / (point_sphere & infinity) * point_sphere  # [...] Sphere+
     return ((tangent ^ horizon) * (length / 2)).exp() >> anchor
 
 
@@ -86,7 +86,7 @@ def arrows(starts: Point, ends: Point, colour: np.ndarray, width: float, chevron
     long, for `solids.draw` to compose among the solids."""
     n_arrows = starts.shape[0]
     return simplices.tubes(gpu_points(stack((starts, ends), axis=-1).reshape(-1)),
-                           simplices.Mesh.chains([2] * n_arrows), colour, width, view, gloss=solids.gloss,
+                           simplices.Topology.chains([2] * n_arrows), colour, width, view, gloss=solids.gloss,
                            chevrons=np.ones(n_arrows), chevron=chevron)
 
 
@@ -120,7 +120,7 @@ def panel(vertices: Point, circle: Point, globe: Point, plane: Sphere, sphere: S
     count = len(circle) - 1
     chevrons = np.zeros(count)
     chevrons[np.arange(3) * count // 3 + count // 12 + count // 18 - 1] = 1
-    curve = simplices.tubes(gpu_points(circle), simplices.Mesh.chains([len(circle)]), curve_colour, circle_width, view,
+    curve = simplices.tubes(gpu_points(circle), simplices.Topology.chains([len(circle)]), curve_colour, circle_width, view,
                             gloss=solids.gloss, chevrons=chevrons, chevron=chevron_length)
 
     # The arrows point down the surfaces' pairings with points: below the plane and into the sphere.
@@ -164,10 +164,10 @@ def animate_circle_motions(frames: Iterable[Point], fixed_points: Point) -> Iter
     ring_indices = np.linspace(0, n_radii - 1, 6, dtype=int)[1:-1]
     spoke_indices = np.linspace(0, n_angles - 1, 13, dtype=int)[:-1]
     colours = plt.get_cmap("twilight_shifted")(np.linspace(0, 1, len(spoke_indices), endpoint=False))[:, :3]
-    disk_mesh = simplices.Mesh.grid(n_radii, n_angles)
-    rim_chain = simplices.Mesh.chains([n_angles])
-    ring_chains = simplices.Mesh.chains([n_angles] * len(ring_indices))
-    spoke_chains = simplices.Mesh.chains([n_radii] * len(spoke_indices))
+    topology = simplices.Topology.grid(n_radii, n_angles)
+    rim_chain = simplices.Topology.chains([n_angles])
+    ring_chains = simplices.Topology.chains([n_angles] * len(ring_indices))
+    spoke_chains = simplices.Topology.chains([n_radii] * len(spoke_indices))
 
     figure, axes = plt.subplots(1, 2, figsize=(2 * motion_pixels / motion_dpi, motion_pixels / motion_dpi),
                                 dpi=motion_dpi)
@@ -183,7 +183,7 @@ def animate_circle_motions(frames: Iterable[Point], fixed_points: Point) -> Iter
         # Each spoke's places from the middle out, a chain of them.
         spokes = disk[np.arange(n_radii), spoke_indices[:, None]].reshape(-1)  # [spokes * radii] Point-
         ends = disk[-1, spoke_indices]                                           # [spokes] Point-
-        return [contours.picture(disk.reshape(-1), disk_mesh, np.zeros(n_radii * n_angles), to_rgb("#f5f6f8"), camera),
+        return [contours.picture(disk.reshape(-1), topology, np.zeros(n_radii * n_angles), to_rgb("#f5f6f8"), camera),
                 simplices.strokes(disk[ring_indices].reshape(-1), ring_chains, to_rgb("#b8c1cc"), 1.0, camera),
                 simplices.strokes(spokes, spoke_chains, np.repeat(colours, n_radii - 1, axis=0), 1.2, camera,
                                   opacity=0.85),

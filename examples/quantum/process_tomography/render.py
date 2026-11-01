@@ -83,7 +83,7 @@ def channel_view(sphere: solids.Point, axes) -> solids.View:
 
 def bloch_axes() -> list[tuple[solids.Quadric, np.ndarray]]:
     """The frame of the x, y and z axes: rods from the centre, each with a ball at its tip."""
-    tips = solids.origin + solids.axes.dual() * AXIS_LENGTH                    # [3] Point-
+    tips = solids.origin + solids.axes.dual() * AXIS_LENGTH                       # [3] Point-
     return [(solids.rods(solids.origin, tips, AXIS_WIDTH / 2), AXIS_COLOUR),
             (solids.ball(tips, TIP_RADIUS)[:, None], AXIS_COLOUR)]
 
@@ -120,7 +120,7 @@ def grid(points: solids.Point, colour: np.ndarray, width: float, view: solids.Vi
     at every sample."""
     latitudes, longitudes = grid_lines(points)   # [lines, longitudes + 1] Point-, [lines, latitudes + 1] Point-
     # Every grid line a chain of edges through its points, the latitudes' and then the longitudes'.
-    chains = simplices.Mesh.chains([latitudes.shape[1]] * latitudes.shape[0]
+    chains = simplices.Topology.chains([latitudes.shape[1]] * latitudes.shape[0]
                                    + [longitudes.shape[1]] * longitudes.shape[0])
     return simplices.tubes(concatenate([latitudes.reshape(-1), longitudes.reshape(-1)]), chains, colour,
                            width / view.pixel, view, gloss=solids.gloss)
@@ -167,7 +167,7 @@ def draw_experiment(prepared: Extensor, probabilities: Extensor, labels: tuple[s
     view = bloch_view(probe_axes)
     colours = np.array([to_rgb(colour) for colour in PROBE_COLOURS])
     # Joining the four probes along the edges of the tetrahedron they span makes their coverage of space visible.
-    tetrahedron = core.Mesh(len(probes), np.arange(len(probes))[None])
+    tetrahedron = core.Topology(len(probes), np.arange(len(probes))[None])
     tails, heads = (tetrahedron.incidence[1, 0] * probes.field()).batch()     # [edges] Point-, [edges] Point-
     edges = solids.rods(tails, heads, EDGE_WIDTH / 2)
     scene = solids.draw([*bloch_axes(), (edges, EDGE_COLOUR),
@@ -175,7 +175,7 @@ def draw_experiment(prepared: Extensor, probabilities: Extensor, labels: tuple[s
                          translucent=[], meshes=[])
     show_ball(probe_axes, scene, view)
     # Each probe named a little further out from the centre than the probe itself.
-    names = solids.origin + (probes - solids.origin) * 1.12                   # [preparations] Point-
+    names = solids.origin + (probes - solids.origin) * 1.12                  # [preparations] Point-
     for (x, y), name, colour in zip(view.across(names), PROBE_NAMES, PROBE_COLOURS):
         probe_axes.text(x, y, name, color=colour)
     return figure
@@ -205,7 +205,7 @@ def channel_picture(scene: Scene, faces: np.ndarray, image: solids.Point, points
     colours = np.array([to_rgb(colour) for colour in PROBE_COLOURS])
     # The reference grid and the channel's image use the same sampled directions.
     places = image[:, :-1].reshape(-1)                                       # [(latitudes + 1) * longitudes] Point-
-    shell = meshes.samples(places, faces, np.array(to_rgb(colour)), meshes.smooth(places, meshes.Mesh(len(places), faces)), view,
+    shell = meshes.samples(places, faces, np.array(to_rgb(colour)), meshes.smooth(places, meshes.Topology(len(places), faces)), view,
                            face_values=np.zeros(4), colour=meshes.plain, gloss=0.1)
     lines = grid(image, np.array(to_rgb(colour)), IMAGE_WIDTH, view)
     after = solids.ball(points, AFTER_RADIUS)[:, None]
@@ -273,7 +273,7 @@ def animate(surface: Extensor, prepared: Extensor, frames: Iterator[tuple[Extens
     each channel a panel of a width and height in pixels: the figure, the axes, the sphere, its grid and the probes as
     prepared set up once, and each frame's images drawn among them."""
     with charts.style():
-        sphere = reading(surface)                                                # [latitudes + 1, longitudes + 1] Point-
+        sphere = reading(surface)                                            # [latitudes + 1, longitudes + 1] Point-
         figure, axes = channels_figure(labels, panel)
         view = channel_view(sphere, axes[0])
         scene = channel_scene(sphere, reading(prepared), view)

@@ -9,12 +9,12 @@ from collections.abc import Iterator
 
 import numpy as np
 
+from numga import NumpyContext
 from numga.algebras import VGA3D as ga
 from numga.sparse import SparseExtensor, spdiag
-from examples import instantiate
+from examples.util.topology import Topology
 
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, as_scalar, mv = mesh_module.Mesh, mesh_module.as_scalar, mesh_module.mv
+mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
 Plane = ga.gatype.vector()                                                   # Vector+
 Bivector = ga.gatype.bivector()                                              # Bivector+
@@ -24,7 +24,7 @@ Point = ga.gatype.antivector()                                               # A
 EvenMap = ga.gatype((Even, Point))
 RateMap = ga.gatype((Bivector, Point))
 StretchMap = ga.gatype((Scalar, Point))
-triangle = Mesh(3, [[0, 1, 2]])
+triangle = Topology(3, [[0, 1, 2]])
 
 
 # --- math -----------------------------------------------------------------------------
@@ -58,7 +58,7 @@ def triangle_darboux(
 
 
 def skyrmion_winding(
-    mesh: Mesh, vertices: Point, twist_angle: float,
+    topology: Topology, vertices: Point, twist_angle: float,
 ) -> tuple[Rotor, Point, Scalar, Scalar, Scalar, Scalar]:
     """A radial rotor texture wraps the sphere of directors; its frame derivative reads the energy and swept-area density on each face."""
     vertical = mv.z.dual()                                                   # [] Point-
@@ -69,20 +69,20 @@ def skyrmion_winding(
     scalar_parts = rotors.select[0]                                          # Scalar+[vertices]
     bivector_norms = rotors.select[2].norm()                                 # Scalar+[vertices]
 
-    edges = mesh.d[0] * vertices                                             # Point-[edges]
-    sides = mesh.boundary[2, 1] * edges                                      # [corners] Point-[faces]
+    edges = topology.d[0] * vertices                                         # Point-[edges]
+    sides = topology.boundary[2, 1] * edges                                  # [corners] Point-[faces]
     patches = (sides[0] & sides[1]) / 2                                      # Patch-[faces]
     areas = patches.norm()                                                   # Scalar+[faces]
     corner_gradients = (sides | patches.inverse()) / 2                       # [corners] Plane+[faces]
 
-    face_rotors = mesh.incidence[2, 0] * rotors                              # [corners] Rotor+[faces]
+    face_rotors = topology.incidence[2, 0] * rotors                          # [corners] Rotor+[faces]
     chord_rotors = face_rotors.sum(axis=0) / 3                               # Even+[faces]
     face_differential = (face_rotors * (corner_gradients & Point)).sum(axis=0)  # (Even+ <- Point-)[faces]
-    face_darboux = 2 * chord_rotors.reverse() * face_differential            # (Even+ <- Point-)[faces]
+    face_darboux = 2 * chord_rotors.reverse() * face_differential               # (Even+ <- Point-)[faces]
     face_rates = face_darboux.select[2] / chord_rotors.scalar_norm_squared() # (Bivector+ <- Point-)[faces]
 
     # The cotangent weights turn edge readings into the direction-independent frame energy.
-    tails, heads = mesh.corners[2, 1]
+    tails, heads = topology.corners[2, 1]
     dots = -sides[tails].dot(sides[heads])                                   # [corners] Scalar+[faces]
     cotangents = dots / (2 * areas)                                          # [corners] Scalar+[faces]
     energy_density = ((cotangents / (2 * areas)) * face_rates(sides).scalar_norm_squared()).sum(axis=0)  # Scalar+[faces]
@@ -95,30 +95,30 @@ def skyrmion_winding(
 
 
 def rotor_laplacian_operators(
-    mesh: Mesh, vertices: Point,
+    topology: Topology, vertices: Point,
 ) -> tuple[SparseExtensor, SparseExtensor, Scalar, Scalar, Point]:
     """The mixed-grade Rotor coboundary, cotangent Laplacian, edge cotangent weights, face areas, and face sides on a surface mesh."""
-    edges = mesh.d[0] * vertices                                             # Point-[edges]
-    sides = mesh.boundary[2, 1] * edges                                      # [corners] Point-[faces]
+    edges = topology.d[0] * vertices                                         # Point-[edges]
+    sides = topology.boundary[2, 1] * edges                                  # [corners] Point-[faces]
     patches = (sides[0] & sides[1]) / 2                                      # Patch-[faces]
     areas = patches.norm()                                                   # Scalar+[faces]
-    tails, heads = mesh.corners[2, 1]
+    tails, heads = topology.corners[2, 1]
     dots = -sides[tails].dot(sides[heads])                                   # [corners] Scalar+[faces]
     cotangents = dots / (2 * areas)                                          # [corners] Scalar+[faces]
-    edge_weights = (~mesh.incidence[2, 1] * (cotangents / 2)).sum(axis=0)    # Scalar+[edges]
-    rotor_d0 = mesh.d[0] * Rotor                                             # (Even+ <- Even+)[edges <- vertices]
+    edge_weights = (~topology.incidence[2, 1] * (cotangents / 2)).sum(axis=0)  # Scalar+[edges]
+    rotor_d0 = topology.d[0] * Rotor                                         # (Even+ <- Even+)[edges <- vertices]
     rotor_laplacian = rotor_d0.adjoint()(spdiag(edge_weights) * rotor_d0)    # (Even+ <- Even+)[vertices <- vertices]
     return rotor_d0, rotor_laplacian, edge_weights, areas, sides
 
 
 def harmonic_rotor_frames(
-    mesh: Mesh, vertices: Point, boundary: np.ndarray, prescribed_rotors: Rotor,
+    topology: Topology, vertices: Point, boundary: np.ndarray, prescribed_rotors: Rotor,
 ) -> tuple[Even, Rotor]:
     """Pinned boundary rotors determine a linear harmonic chord field in the 4D even subalgebra, and its normalized unit rotor field."""
-    _, rotor_laplacian, _, _, _ = rotor_laplacian_operators(mesh, vertices)
-    free_vertices = mesh.interior(0)
-    free = ~mesh.reading(free_vertices) * Rotor                              # (Even+ <- Even+)[vertices <- free]
-    pinned = ~mesh.reading(boundary) * Rotor                                 # (Even+ <- Even+)[vertices <- boundary]
+    _, rotor_laplacian, _, _, _ = rotor_laplacian_operators(topology, vertices)
+    free_vertices = topology.interior[0]
+    free = ~topology.reading(free_vertices) * Rotor                          # (Even+ <- Even+)[vertices <- free]
+    pinned = ~topology.reading(boundary) * Rotor                             # (Even+ <- Even+)[vertices <- boundary]
 
     # The chord field minimizes edge energy in the even subalgebra.
     # Normalization gives unit frames, changing the variational problem in the process.
@@ -130,13 +130,13 @@ def harmonic_rotor_frames(
 
 
 def relax_rotor_frames(
-    mesh: Mesh, vertices: Point, initial_rotors: Rotor, boundary: np.ndarray,
+    topology: Topology, vertices: Point, initial_rotors: Rotor, boundary: np.ndarray,
     step_size: float, n_steps: int,
 ) -> Iterator[tuple[Rotor, Scalar]]:
     """Projected cotangent steps smooth a frame field with fixed boundary frames and unit rotors at every vertex."""
-    rotor_d0, rotor_laplacian, edge_weights, _, _ = rotor_laplacian_operators(mesh, vertices)
-    free_vertices = mesh.interior(0)
-    free = ~mesh.reading(free_vertices) * Rotor                              # (Even+ <- Even+)[vertices <- free]
+    rotor_d0, rotor_laplacian, edge_weights, _, _ = rotor_laplacian_operators(topology, vertices)
+    free_vertices = topology.interior[0]
+    free = ~topology.reading(free_vertices) * Rotor                          # (Even+ <- Even+)[vertices <- free]
     current = initial_rotors                                                 # Rotor+[vertices]
     for _ in range(n_steps + 1):
         edge_differences = rotor_d0(current)                                 # Even+[edges]

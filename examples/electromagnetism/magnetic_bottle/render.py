@@ -74,7 +74,7 @@ def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.A
     rims = solids.origin + (to_scene >> solids.context.include_from_algebra(space_slice(coil_places)))   # [coils] Point-
     bottle_axis = to_scene >> solids.context.include_from_algebra(mv.xy)      # [] Line+
     rings = meshes.circles(rims, bottle_axis, n_around_coil)                  # [coils, around + 1] Point-
-    wire = simplices.tubes(rings.reshape(-1), simplices.Mesh.chains([n_around_coil + 1] * len(heights)),
+    wire = simplices.tubes(rings.reshape(-1), simplices.Topology.chains([n_around_coil + 1] * len(heights)),
                            to_rgb(wire_colour), wire_width, view, gloss=solids.gloss)
     scene = Scene(view, np.ones(3), [], [(sheet(points, strength, view), sheet_opacity), (wire, 1.0)], inks=[],
                   translucent=[])
@@ -83,7 +83,7 @@ def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.A
         trail = tracks[max(0, end - n_trail):end]                             # [trail, particles] Point-
         # Each particle's trail a chain of edges down the steps, through the trail's points numbered as they lie.
         numbered = np.arange(np.prod(trail.shape)).reshape(trail.shape)       # [trail, particles]
-        chains = simplices.Mesh(numbered.size, np.stack([numbered[:-1], numbered[1:]], axis=-1).reshape(-1, 2))
+        chains = simplices.Topology(numbered.size, np.stack([numbered[:-1], numbered[1:]], axis=-1).reshape(-1, 2))
         trails = simplices.tubes(trail.reshape(-1), chains, np.tile(colours, (len(trail) - 1, 1)), track_width, view,
                                  gloss=solids.gloss)
         particles = solids.ball(tracks[end - 1], particle_radius * view.pixel)[:, None]

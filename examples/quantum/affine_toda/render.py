@@ -50,17 +50,17 @@ def draw_triangles(paths: Root, roots: Root, species: np.ndarray,
         n_steps = roots.shape[0]
         corners = paths[index]                                                  # [corners] Root+
         simplices.overlay(ax, [
-            simplices.strokes(rings, simplices.Mesh.chains([n_ring_samples + 1] * len(particles)),
+            simplices.strokes(rings, simplices.Topology.chains([n_ring_samples + 1] * len(particles)),
                               np.repeat(orbit_colours[particles], n_ring_samples, axis=0), ring_width, camera,
                               opacity=ring_opacity),
             simplices.markers(orbits, np.tile(orbit_colours[particles], (n_steps, 1)), orbit_dot, camera,
                               opacity=orbit_opacity),
             # Each root an arrow from the corner before it: a stroke, and a chevron at its tip.
-            simplices.strokes(corners, simplices.Mesh.chains([n_corners]), orbit_colours[species[index]],
+            simplices.strokes(corners, simplices.Topology.chains([n_corners]), orbit_colours[species[index]],
                               arrow_width, camera, chevrons=np.ones(n_corners - 1), chevron=chevron_length,
                               cap=simplices.Cap.BUTT),
             # A closed path has a zero-length dashed segment.
-            simplices.strokes(corners[[0, -1]], simplices.Mesh.chains([2]), white, gap_width, camera,
+            simplices.strokes(corners[[0, -1]], simplices.Topology.chains([2]), white, gap_width, camera,
                               dashes=gap_dashes, cap=simplices.Cap.BUTT),
             simplices.markers(corners[:1], white, start_dot, camera),
         ])

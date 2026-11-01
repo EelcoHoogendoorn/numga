@@ -87,7 +87,7 @@ def _cross(ax: plt.Axes, camera: Camera, across: str, up: str) -> np.ndarray:
     (left, right), (bottom, top) = ax.get_xlim(), ax.get_ylim()
     along, rise = (plane.dual() / (plane & plane.dual()) for plane in (camera.across, camera.up))
     ends = stack((left * along, right * along, bottom * rise, top * rise))   # [4]
-    return simplices.strokes(ends, simplices.Mesh.chains([2, 2]), np.array(to_rgb(cross_colour)), charts.FRAME_PX,
+    return simplices.strokes(ends, simplices.Topology.chains([2, 2]), np.array(to_rgb(cross_colour)), charts.FRAME_PX,
                              camera, cap=simplices.Cap.BUTT)
 
 
@@ -126,7 +126,7 @@ def magnetic_discs(stations: solids.Point, fields: core.Bivector) -> tuple[solid
     centres = solids.translator(stations - solids.origin)                       # [stations] Motor+
     # The line about which each rim turns in the field's sense, and the field's own plane through the origin,
     # square to it.
-    pivots = magnetic.normalized()                                              # [stations] Line+
+    pivots = magnetic.normalized()                                                            # [stations] Line+
     planes = pivots | solids.origin                                             # [stations] Plane-
     # A ball flattened across each plane, scaled by its radius squared, so that a field of no strength is a point.
     flattening = (1 / disc_flatness**2 - 1) * planes * (planes & solids.Point)  # [stations] Plane+ <- Point-
@@ -156,7 +156,7 @@ def wave_image(scene: Scene, modes: Modes, tau: float) -> np.ndarray:
     station_idx = np.linspace(0, n_samples - 1, n_stations, dtype=int)
     stations = axis[station_idx]                                                # [stations] Point-
     tips = stations + electric[station_idx]                                     # [stations] Point-
-    arrows = simplices.tubes(stack((stations, tips), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_stations),
+    arrows = simplices.tubes(stack((stations, tips), axis=-1).reshape(-1), simplices.Topology.chains([2] * n_stations),
                              electric_colour, arrow_width, view, gloss=solids.gloss, chevrons=np.ones(n_stations),
                              chevron=arrow_chevron)
     discs, arcs = magnetic_discs(stations[::2], field[station_idx[::2]])
@@ -165,7 +165,7 @@ def wave_image(scene: Scene, modes: Modes, tau: float) -> np.ndarray:
     # its curve's colour, each arc's last edge ending in a chevron, which shrinks with its disc.
     n_discs = arcs.shape[0]
     curve_points = concatenate([axis + electric, arcs.reshape(-1)])            # [samples + discs * arc] Point-
-    chains = simplices.Mesh.chains([n_samples] + [n_arc] * n_discs)
+    chains = simplices.Topology.chains([n_samples] + [n_arc] * n_discs)
     colours = np.repeat([electric_colour, magnetic_colour], [n_samples - 1, n_discs * (n_arc - 1)], axis=0)
     arc_ends = np.zeros((n_discs, n_arc - 1))
     arc_ends[:, -1] = 1.0
@@ -236,7 +236,7 @@ def draw_polarizations(
     units = fields / (fields & core.time).norm()                                # [modes] Bivector+
     n_modes = len(units)
     colours = np.stack((electric_colour, magnetic_colour))                      # [modes, 3]
-    pairs = simplices.Mesh.chains([2] * n_modes)
+    pairs = simplices.Topology.chains([2] * n_modes)
 
     ax.set_xlim([-1.3, 1.3])
     ax.set_ylim([-1.3, 1.3])

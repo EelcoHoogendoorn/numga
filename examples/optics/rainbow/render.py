@@ -10,17 +10,17 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack
-from examples import instantiate
-from examples.util import charts
+from examples.util import charts, shapes
 from examples.util.animation import capture
 from examples.util.wgsl import contours, pinned, room, simplices
 from examples.util.wgsl.camera import panel
 from examples.optics.rainbow import core
 
 mv = core.mv
-mesh = instantiate("examples.util.mesh", core.ga)
-# The cross-section's directions along the sunlight and up, as the drawing shows them, across and up the page.
+# The direction sunlight travels, across the page.
 sunlight = mv.x.dual()                                                        # [] Direction-
+# The planes of x and of y, upright to the page, whose duals are the directions along the sunlight and up the page.
+Upright = core.ga.gatype.from_blades("x y")                                   # Vector+
 # The colours of the background, the drop, the sunlight, light reflected once and twice inside the drop, the sky
 # and the ground; the colours of the angles' axes and tick labels.
 background = "#0b1020"
@@ -116,7 +116,7 @@ def draw_sky(sight_cosines: core.Scalar, flux: core.Scalar, wavelengths: np.ndar
     camera = panel(ax, mv.x, mv.y)._replace(pixels=len(across))
     ground = (mv.x.dual() * np.array(extent[:2])[None, :]
               + mv.y.dual() * np.array([extent[2], sun_elevation])[:, None]).reshape(-1)   # [corners] Direction-
-    seen = contours.picture(ground, simplices.Mesh.grid(2, 2), np.zeros(len(ground)), to_rgb(ground_colour), camera)
+    seen = contours.picture(ground, simplices.Topology.grid(2, 2), np.zeros(len(ground)), to_rgb(ground_colour), camera)
     sky = np.clip(sky_colour + image ** tone_exponent, 0, 1)
     pinned(ax, sky * (1 - seen[..., 3:]) + seen[..., :3] * seen[..., 3:], extent)
     return figure
@@ -134,12 +134,12 @@ def animate_sweep(swept_light: tuple[core.Direction, core.Direction, core.Direct
         return [concatenate([stack([sunward, entry]), vertices[:order + 1], ahead[order][None]])
                 for order in (1, 2)]                                          # [orders][points, rays] Direction-
 
-    def exits(paths: core.Direction) -> tuple[core.Direction, simplices.Mesh]:
+    def exits(paths: core.Direction) -> tuple[core.Direction, simplices.Topology]:
         """The light leaving the drop along each path `[points, rays]`: the ends of its last stretch, and an edge
         between them."""
         n_rays = paths.shape[1]
         ends = concatenate([paths[-2], paths[-1]])                            # [2 * rays] Direction-
-        return ends, simplices.Mesh(2 * n_rays, np.stack([np.arange(n_rays), n_rays + np.arange(n_rays)], axis=-1))
+        return ends, simplices.Topology(2 * n_rays, np.stack([np.arange(n_rays), n_rays + np.arange(n_rays)], axis=-1))
 
     swept_rays, bundle_rays = rays(*swept_light[:3]), rays(*bundle[:3])
     heights = (mv.y & offsets).to_array()                                     # [rays]
@@ -158,8 +158,9 @@ def animate_sweep(swept_light: tuple[core.Direction, core.Direction, core.Direct
         drop.set_aspect("equal")
         drop.set_axis_off()
         camera = panel(drop, mv.x, mv.y)
-        disk, places = mesh.Mesh.disk(1.0, 1, drop_sectors)
-        still = [contours.picture(places.batch(), disk, np.zeros(disk.n_vertices), to_rgb(drop_colour), camera)]
+        disk, coordinates = shapes.disk(1.0, 1, drop_sectors)
+        places = mv(Upright, coordinates).dual()                                # [vertices] Direction-
+        still = [contours.picture(places, disk, np.zeros(disk.n_vertices), to_rgb(drop_colour), camera)]
         # The bundle faint, its colours dimmed toward the background, and opaque, so that its few shades leave the
         # animation's palette to the angles' colours.
         still += [simplices.strokes(*exits(paths), bundle_share * np.array(to_rgb(colour))
@@ -189,7 +190,7 @@ def animate_sweep(swept_light: tuple[core.Direction, core.Direction, core.Direct
             lights = [(swept_rays[1][1:, frame], secondary_colour), (swept_rays[0][1:, frame], primary_colour),
                       (swept_rays[0][:2, frame], sunlight_colour)]
             drop_seen.set_data(simplices.composited(still + [
-                simplices.strokes(path, simplices.Mesh.chains([len(path)]), to_rgb(colour), light_width, camera)
+                simplices.strokes(path, simplices.Topology.chains([len(path)]), to_rgb(colour), light_width, camera)
                 for path, colour in lights]))
             for order, marker in enumerate(markers):
                 marker.set_data([swept_heights[frame]], [marks[order + 1, frame]])

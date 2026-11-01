@@ -117,13 +117,13 @@ def braids(worldlines: list[core.Point], height: float) -> plt.Figure:
         # The plane laid on z = 0 of space, and time running up, along z.
         times = solids.context.include_from_algebra(width) * np.linspace(0, height, centres.shape[0])[:, None]  # [times, 1] Scalar+
         on_plane = solids.context.include_from_algebra(following.reshape(centres.shape))  # [times, vortices] Point-
-        drawn = solids.origin + on_plane + solids.mv.z.dual() * times           # [times, vortices] Point-
+        drawn = solids.origin + on_plane + solids.mv.z.dual() * times                     # [times, vortices] Point-
         view = fitted(solids.view([drawn], 0.0, elevation, azimuth, margin, 1), ax)
         # Each vortex's strand a chain of edges up through time, through the points numbered as they lie, in its
         # vortex's colour.
         n_times, n_vortices = drawn.shape
         numbered = np.arange(n_times * n_vortices).reshape(n_times, n_vortices)
-        strands = simplices.Mesh(numbered.size, np.stack([numbered[:-1], numbered[1:]], axis=-1).reshape(-1, 2))
+        strands = simplices.Topology(numbered.size, np.stack([numbered[:-1], numbered[1:]], axis=-1).reshape(-1, 2))
         lines = simplices.tubes(drawn.reshape(-1), strands, np.tile(strand_colours[:n_vortices], (n_times - 1, 1)),
                                 strand_width, view, gloss=solids.gloss)
         show(ax, solids.draw([], view, background, inks=[], translucent=[], meshes=[(lines, 1.0)]), view)
@@ -210,7 +210,7 @@ def window(frames: Iterable[core.Vortices], middle: core.Point, half_height: flo
         # Each vortex's path so far, from where it started, which is the whole path on the first frame.
         paths = stack([travelled[0]] + travelled, axis=1)                      # [vortices, frames + 1] Point-
         n_vortices, n_points = paths.shape
-        trails = simplices.strokes(paths.reshape(-1), simplices.Mesh.chains([n_points] * n_vortices), trail_colour,
+        trails = simplices.strokes(paths.reshape(-1), simplices.Topology.chains([n_points] * n_vortices), trail_colour,
                                    trail_width, camera, opacity=trail_opacity)
         image = vorticity_image(vortices, middle, half_height, shape, scale)
         yield as_bytes(image * (1 - trails[..., 3:]) + trails[..., :3] * trails[..., 3:])

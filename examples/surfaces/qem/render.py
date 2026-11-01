@@ -14,7 +14,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import Extensor, stack
-from examples.surfaces.qem.core import Mesh, Point, mv
+from examples.surfaces.qem.core import Topology, Point, mv
 from examples.util.wgsl import image_figure, meshes, solids
 
 # Blue: shared flanking ridge triangles (faces 0, 1)
@@ -46,18 +46,18 @@ SURFACE_COLOUR = np.array(to_rgb("#8fb3c9"))
 
 
 # --- plumbing -------------------------------------------------------------------------
-def edges(mesh: Mesh, vertices: Point, width: float) -> Extensor:
+def edges(topology: Topology, vertices: Point, width: float) -> Extensor:
     """A rod quadric along each edge of the mesh."""
-    tails, heads = (mesh.incidence[1, 0] * vertices).batch()                    # [edges] Point-, Point-
+    tails, heads = (topology.incidence[1, 0] * vertices).batch()                # [edges] Point-, Point-
     return solids.rods(tails, heads, width / 2)
 
 
-def plates(mesh: Mesh, vertices: Point, thickness: float) -> Extensor:
+def plates(topology: Topology, vertices: Point, thickness: float) -> Extensor:
     """A thin plate on each triangle of the mesh, its corners in order around it."""
-    return solids.plates(stack(tuple((mesh.incidence[2, 0] * vertices).batch()), axis=-1), thickness)
+    return solids.plates(stack(tuple((topology.incidence[2, 0] * vertices).batch()), axis=-1), thickness)
 
 
-def vertex_panel(star: Mesh, vertices: Point, vertex: Point, quadric: Extensor, colours: np.ndarray,
+def vertex_panel(star: Topology, vertices: Point, vertex: Point, quadric: Extensor, colours: np.ndarray,
                  ellipsoid_colour: np.ndarray, view: solids.View) -> np.ndarray:
     """Draw a vertex with its incident triangles, the star, and the ellipsoid where its error stays small."""
     pixel = view.pixel
@@ -70,7 +70,7 @@ def vertex_panel(star: Mesh, vertices: Point, vertex: Point, quadric: Extensor, 
     return solids.draw(marks, view, background, inks=[], translucent=translucent, meshes=[])
 
 
-def collapse_panel(ridge: Mesh, vertices: Point, collapsed: Mesh, collapsed_vertices: Point, surviving_faces: np.ndarray,
+def collapse_panel(ridge: Topology, vertices: Point, collapsed: Topology, collapsed_vertices: Point, surviving_faces: np.ndarray,
                    quadric: Extensor, optimum: Point, view: solids.View) -> np.ndarray:
     """Draw the collapsed mesh around the optimal vertex and its ellipsoid, with the initial mesh faint behind."""
     pixel = view.pixel
@@ -93,7 +93,7 @@ def collapse_panel(ridge: Mesh, vertices: Point, collapsed: Mesh, collapsed_vert
 
 
 def draw_qem(
-    ridge: Mesh,
+    ridge: Topology,
     vertices: Point,
     incident_a: np.ndarray,
     incident_b: np.ndarray,
@@ -106,7 +106,7 @@ def draw_qem(
 ) -> plt.Figure:
     """Render both endpoint neighbourhoods with their error ellipsoids alongside the collapsed mesh."""
     # The triangles drawn in each panel, each a mesh of its own on the patch's vertices.
-    star_a, star_b, collapsed = (Mesh(ridge.n_vertices, ridge.faces[shown]) for shown in (incident_a, incident_b, surviving_faces))
+    star_a, star_b, collapsed = (Topology(ridge.n_vertices, ridge.elements[2][shown]) for shown in (incident_a, incident_b, surviving_faces))
     vertex_a, vertex_b = vertices.batch()[:2]                                   # [] Point-, Point-
     view = solids.view([vertices.batch()], REACH, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
     return image_figure(np.concatenate([
@@ -116,10 +116,11 @@ def draw_qem(
     ], axis=1))
 
 
-def animate_mesh(states: Iterator[tuple[Mesh, Point]], reference: Point) -> Iterator[np.ndarray]:
+def animate_mesh(states: Iterator[tuple[Topology, Point]], reference: Point) -> Iterator[np.ndarray]:
     """Render progressive mesh simplification from a camera fixed by the reference surface."""
     view = solids.view([reference.batch()], 0.0, MESH_ELEVATION, MESH_AZIMUTH, MESH_MARGIN, MESH_PIXELS).squared()
-    for mesh, vertices in states:
+    for topology, vertices in states:
         places = vertices.batch()                                               # [vertices] Point-
-        yield meshes.draw(places, mesh.faces, SURFACE_COLOUR, meshes.flat(places, mesh.faces), view, background,
+        triangles = topology.elements[2]
+        yield meshes.draw(places, triangles, SURFACE_COLOUR, meshes.flat(places, triangles), view, background,
                           face_values=np.zeros(4), colour=meshes.plain, gloss=MESH_GLOSS)

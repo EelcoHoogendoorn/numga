@@ -20,11 +20,9 @@ import numpy as np
 
 from numga import NumpyContext
 from numga.algebras import PGA3D as ga
-from examples import instantiate
+from examples.util.topology import Topology
 
 mv = NumpyContext(ga).multivector
-# Meshes over the algebra's points, such as the tetrahedron the four preparations span.
-Mesh = instantiate("examples.util.mesh", ga).Mesh
 Scalar = ga.gatype.scalar()                                                  # Scalar+
 Bivector = ga.gatype.bivector()                                              # Bivector+
 # A state is a point of the Bloch ball, of weight one; an effect is a plane, which reads states.
@@ -54,7 +52,7 @@ def noisy_gate(
     transverse = (Point - (mv.xy >> Point)) / 2                              # [] Point- <- Point-
     # A fraction loss of the way to north; an unobserved decay keeps the amplitude sqrt(1 - loss) of the coherence
     # across the field, more than the 1 - loss a mixture of decayed and untouched states would keep.
-    damping = Point + loss * (decay - Point) + (np.sqrt(1 - loss) - (1 - loss)) * transverse   # [channels] Point- <- Point-
+    damping = Point + loss * (decay - Point) + (np.sqrt(1 - loss) - (1 - loss)) * transverse  # [channels] Point- <- Point-
     rotations = (rotation_plane * (-angles / 2)).exp()                       # [channels] Rotor+
     # A map applied to another map composes them; the rotor then turns every output.
     return rotations >> damping(dephasing)                                   # [channels] Point- <- Point-

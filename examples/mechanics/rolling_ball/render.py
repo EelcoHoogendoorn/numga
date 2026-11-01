@@ -106,7 +106,7 @@ def table(path, half_width: float) -> np.ndarray:
     once, for every frame to lay the ball over."""
     weight, unit = weighing(mv.x)
     camera = Camera(mv.x, mv.y, 0 * mv.x, weight, unit, np.zeros(2), np.full(2, half_width), N_PIXELS)
-    loop = simplices.strokes(path, simplices.Mesh.chains([len(path)]), LOOP, LOOP_WIDTH, camera)
+    loop = simplices.strokes(path, simplices.Topology.chains([len(path)]), LOOP, LOOP_WIDTH, camera)
     return TABLE * (1 - loop[..., 3:]) + loop[..., :3] * loop[..., 3:]
 
 

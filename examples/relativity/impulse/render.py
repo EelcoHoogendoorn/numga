@@ -84,7 +84,7 @@ def lines_of_ends(lines: Point, colours: tuple[str, ...], width: float, **style)
     n_vertices, n_ends = lines.shape
     # The events end by end, each end's in its order along its worldline.
     by_end = lines[np.arange(n_vertices)[None, :], np.arange(n_ends)[:, None]].reshape(-1)   # [end * vertex] Point-
-    return partial(simplices.strokes, by_end, simplices.Mesh.chains([n_vertices] * n_ends),
+    return partial(simplices.strokes, by_end, simplices.Topology.chains([n_vertices] * n_ends),
                    np.repeat([ink(colour) for colour in colours], n_vertices - 1, axis=0), width, **style)
 
 
@@ -93,7 +93,7 @@ def chain(events: Point, colour: str, width: float, **style) -> partial:
     diagram's camera."""
     n_events = events.shape[-1]
     return partial(simplices.strokes, events.reshape(-1),
-                   simplices.Mesh.chains([n_events] * (int(np.prod(events.shape)) // n_events)), ink(colour), width,
+                   simplices.Topology.chains([n_events] * (int(np.prod(events.shape)) // n_events)), ink(colour), width,
                    **style)
 
 
@@ -111,7 +111,7 @@ def squares(events: Extensor, colours: np.ndarray, half_side: float, camera: Cam
     _, across, up, _ = preimage(camera, whole(events, events.algebra))
     around = across * np.array([-1, 1, 1, -1, -1]) + up * np.array([-1, -1, 1, 1, -1])   # [corners + 1] Point-
     corners = events[:, None] + around * (half_side * camera.pixel)           # [events, corners + 1] Point-
-    return simplices.strokes(corners.reshape(-1), simplices.Mesh.chains([n_corners + 1] * n_squares),
+    return simplices.strokes(corners.reshape(-1), simplices.Topology.chains([n_corners + 1] * n_squares),
                              np.repeat(np.broadcast_to(colours, (n_squares, 3)), n_corners, axis=0), charts.LINE_PX,
                              camera)
 
@@ -209,7 +209,7 @@ def barn(doors: Point) -> list[partial]:
     """The barn between its door worldlines `[vertex, door]`, faintly filled, and the worldlines dashed: layers for a
     diagram's camera."""
     n_vertices, n_doors = doors.shape
-    return [partial(contours.picture, doors.reshape(-1), contours.Mesh.grid(n_vertices, n_doors),
+    return [partial(contours.picture, doors.reshape(-1), contours.Topology.grid(n_vertices, n_doors),
                     np.zeros(n_vertices * n_doors), ink(DOOR), opacity=0.07),
             lines_of_ends(doors, (DOOR, DOOR), charts.LINE_PX, dashes=DASHED, cap=simplices.Cap.BUTT, opacity=0.65)]
 
@@ -341,12 +341,12 @@ def rope_comparison(ax, gap, y, color, title, label) -> list[partial]:
     panel's camera, with the texts."""
     ax.text(0.0, y + 0.36, title, color=color, weight="medium")
     ax.text(gap / 2, y - 0.29, label, color=color, ha="center", va="top")
-    rope = planar.mv.point([[0.0, y], [gap, y]])                                 # [2] Point-
+    rope = planar.mv.point([[0.0, y], [gap, y]])                               # [2] Point-
     ships = np.stack((ink(REAR), ink(FRONT)))                                   # [ships, 3]
     # The span from its middle out to either end, a dot at each.
     span = planar.mv.point([[gap / 2, y - 0.17], [0.0, y - 0.17], [gap / 2, y - 0.17], [gap, y - 0.17]])   # [4] Point-
-    return [partial(simplices.strokes, rope, simplices.Mesh.chains([2]), ink(color), WORLDLINE_PX),
-            partial(simplices.strokes, span, simplices.Mesh.chains([2, 2]), ink(color), charts.LINE_PX,
+    return [partial(simplices.strokes, rope, simplices.Topology.chains([2]), ink(color), WORLDLINE_PX),
+            partial(simplices.strokes, span, simplices.Topology.chains([2, 2]), ink(color), charts.LINE_PX,
                     cap=simplices.Cap.BUTT),
             partial(simplices.markers, span[1::2], ink(color), SPAN_TIP),
             partial(simplices.markers, rope, np.ones(3), SHIP_HALF_SIDE),
@@ -391,8 +391,8 @@ def draw_spaceships(tracks: Point, schedules: Point, slices: Point, final_events
     ax = axes[2]
     ax.set_title("In the final shared rest frame", pad=NOTE_PAD)
     # The attachment at the relaxed length, dotted, under both ropes.
-    relaxed = planar.mv.point([[1.0, 0.65], [1.0, 2.25]])                       # [2] Point-
-    ropes = ([partial(simplices.strokes, relaxed, simplices.Mesh.chains([2]), ink(SPAN), charts.LINE_PX,
+    relaxed = planar.mv.point([[1.0, 0.65], [1.0, 2.25]])                      # [2] Point-
+    ropes = ([partial(simplices.strokes, relaxed, simplices.Topology.chains([2]), ink(SPAN), charts.LINE_PX,
                       dashes=DOTTED, cap=simplices.Cap.BUTT)]
              + rope_comparison(ax, gaps[0], 2.05, IMPULSE, "Strain-preserving timing", "1.00 L₀ · no extension")
              + rope_comparison(ax, gaps[1], 0.82, ELASTIC, "Synchronized-clock timing",

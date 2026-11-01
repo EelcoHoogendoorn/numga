@@ -61,7 +61,7 @@ def framed(points: solids.Point, pixels: int) -> tuple[solids.View, solids.Point
 def sheet(points: solids.Point, faces: np.ndarray, colours: np.ndarray,
           view: solids.View) -> meshes.Samples:
     """Triangles over vertices, coloured at each corner `[faces, 3, 3]`, smoothly lit, at every sample of the view."""
-    return meshes.samples(points, faces, colours, meshes.smooth(points, meshes.Mesh(len(points), faces)), view, face_values=np.zeros(4),
+    return meshes.samples(points, faces, colours, meshes.smooth(points, meshes.Topology(len(points), faces)), view, face_values=np.zeros(4),
                           colour=meshes.plain, gloss=surface_gloss)
 
 
@@ -71,7 +71,7 @@ def curve_strokes(points: solids.Point, speeds: np.ndarray, fastest: float, view
     middles = (speeds[..., :-1] + speeds[..., 1:]) / 2                         # [curves, n - 1]
     shades = plt.get_cmap(speed_map)(rest_share + (fastest_share - rest_share) * middles / fastest)[..., :3]   # [curves, n - 1, 3]
     n_curves, n_vertices = points.shape
-    return simplices.tubes(points.reshape(-1), simplices.Mesh.chains([n_vertices] * n_curves), shades.reshape(-1, 3),
+    return simplices.tubes(points.reshape(-1), simplices.Topology.chains([n_vertices] * n_curves), shades.reshape(-1, 3),
                            curve_width, view, gloss=solids.gloss)
 
 
@@ -132,7 +132,7 @@ def animate_trail(curves: core.Point, speeds: core.Scalar) -> Iterator[np.ndarra
     heights = solids.axes[:, None] & paths                                     # [3, moving points] Scalar+
     lowest, highest = paths[heights.argmin(axis=-1)], paths[heights.argmax(axis=-1)]   # [3] Point-, Point-
     low, high = solids.axes & lowest, solids.axes & highest                    # [3] Scalar+, Scalar+
-    middle = solids.origin + (solids.axes.dual() * ((low + high) / 2)).sum()    # [] Point-
+    middle = solids.origin + (solids.axes.dual() * ((low + high) / 2)).sum()   # [] Point-
     half_extents = (0.5 + margin) * (high - low)
     box = solids.boxes(solids.translator(middle - solids.origin), half_extents)   # [6] Plane+
     inside = ((box & points[..., None]) <= 0).all(axis=-1)                     # [times, n]

@@ -105,7 +105,7 @@ def sheet_sides(sheets: core.Vector, view: solids.View) -> list[tuple[meshes.Sam
     for index, colour in zip(range(n_sheets), map(to_rgb, sheet_colours)):
         # The sheet's tips embedded in the drawing's projective space about its origin.
         places = (solids.origin + solids.context.include_from_algebra(space_tip(sheets[:, :, index].reshape(-1))))                     # [vertices] Point-
-        normals = meshes.smooth(places, meshes.Mesh(len(places), faces))
+        normals = meshes.smooth(places, meshes.Topology(len(places), faces))
         sides += [(meshes.samples(places, faces, grid, normals, view, face_values=np.zeros(4),
                                   colour=side_colour(np.array(colour), n_latitudes, near),
                                    gloss=0.2), 1.0) for near in (True, False)]
@@ -116,7 +116,7 @@ def surface(ax: Axes, picture: np.ndarray, view: solids.View) -> AxesImage:
     """A picture of k-space, its axes named at their tips; the image, for an animation to set its data."""
     shown = show(ax, picture, view)
     # Each axis named past its tip, along the direction square to the plane across it.
-    label_places = solids.origin + label_distance * solids.normal_direction(solids.axes)   # [axes] Point-
+    label_places = solids.origin + label_distance * solids.normal_direction(solids.axes)  # [axes] Point-
     labels(ax, view, label_places, ["$k_x$", "$k_y$", "$k_z$"], ha="center", va="center", color=axis_colour)
     return shown
 
@@ -143,9 +143,9 @@ def trace_sections(sections: core.Vector, camera: Camera) -> np.ndarray:
     its curve, the second dashed: their picture."""
     along, rise = (axis.dual() / read(axis, axis.dual()) for axis in (camera.across, camera.up))
     ends = view_limit * stack((-along, along, -rise, rise))                     # [4] Vector+
-    chain = simplices.Mesh.chains([sections.shape[0]])
+    chain = simplices.Topology.chains([sections.shape[0]])
     return simplices.composited([
-        simplices.strokes(ends, simplices.Mesh.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
+        simplices.strokes(ends, simplices.Topology.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
                           cap=simplices.Cap.BUTT),
         simplices.strokes(sections[:, 0], chain, np.array(to_rgb(sheet_colours[0])), charts.LINE_PX, camera),
         simplices.strokes(sections[:, 1], chain, np.array(to_rgb(sheet_colours[1])), charts.LINE_PX, camera,

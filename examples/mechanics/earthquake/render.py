@@ -56,14 +56,14 @@ def lambert(directions: core.Point) -> core.Point:
     return (lower - core.down * depth) / (1 + depth).square_root()            # [...] Point-
 
 
-def ball_grid(directions: core.Point) -> tuple[solids.Point, contours.Mesh]:
+def ball_grid(directions: core.Point) -> tuple[solids.Point, contours.Topology]:
     """The lower hemisphere's directions `[rings, spokes]` on the level ground of the drawing's frame, numbered ring by
     ring, and the grid between them."""
     places = drawing >> lambert(directions).reshape(-1)                      # [rings * spokes] Point-
-    return places, contours.Mesh.grid(*directions.shape)
+    return places, contours.Topology.grid(*directions.shape)
 
 
-def shade_ball(places: core.Point, grid: contours.Mesh, push: core.Scalar, view: Camera) -> np.ndarray:
+def shade_ball(places: core.Point, grid: contours.Topology, push: core.Scalar, view: Camera) -> np.ndarray:
     """The lower hemisphere at its places on the grid `ball_grid` gives, with the pushes `[rings, spokes]` shaded and
     its nodal lines, where the pushes change sign, seen by the view of its panel: `[rows, columns, 4]`, transparent
     beyond the rim."""
@@ -83,7 +83,7 @@ def frame_ball(ax) -> None:
     ax.set_axis_off()
 
 
-def ball_pictures(places: core.Point, grid: contours.Mesh, push: core.Scalar, axes: core.Point,
+def ball_pictures(places: core.Point, grid: contours.Topology, push: core.Scalar, axes: core.Point,
                   view: Camera) -> list[np.ndarray]:
     """One fault's beachball, shaded as `shade_ball` shades it; the rim of the lower hemisphere over its nodal lines;
     and its pressure and tension axes."""
@@ -91,13 +91,13 @@ def ball_pictures(places: core.Point, grid: contours.Mesh, push: core.Scalar, ax
     level = (core.horizontal * (-np.linspace(0, 2 * np.pi, n_rim) / 2)).exp() >> core.north   # [rim] Point-
     principal = drawing >> lambert(axes)[[0, 2]]                              # [2] Point-
     return [shade_ball(places, grid, push, view),
-            simplices.strokes(drawing >> level, simplices.Mesh.chains([n_rim]), np.array(to_rgb(NODAL)),
+            simplices.strokes(drawing >> level, simplices.Topology.chains([n_rim]), np.array(to_rgb(NODAL)),
                               ball_rim_width, view),
             simplices.markers(principal, np.ones(3), axis_radius + axis_rim, view),
             simplices.markers(principal, np.array([to_rgb(PRESSURE), to_rgb(TENSION)]), axis_radius, view)]
 
 
-def pin_ball(ax, places: core.Point, grid: contours.Mesh, push: core.Scalar,
+def pin_ball(ax, places: core.Point, grid: contours.Topology, push: core.Scalar,
              axes: core.Point) -> tuple[AxesImage, Camera]:
     """The beachball pinned in its panel, once the figure is laid out; the image and its camera, for an animation to
     set its data."""
@@ -144,7 +144,7 @@ def draw_fault(directions: core.Point, push: core.Scalar, normal: core.Point, sl
                view: solids.View) -> np.ndarray:
     """One fault in space: the patch of the fault, the slip of each side across it, and the lobes of
     the P waves `[rings, spokes]`, each direction drawn as far as its first motion, pushes dark and pulls pale."""
-    surface = lobes(directions, push).reshape(-1)                             # [rings * spokes] Point-
+    surface = lobes(directions, push).reshape(-1)                            # [rings * spokes] Point-
     # Each cell of the grid two triangles, by the indices of its corners.
     index = np.arange(np.prod(push.shape)).reshape(push.shape)               # [rings, spokes]
     cells = np.stack([index[:-1, :-1], index[1:, :-1], index[1:, 1:], index[:-1, 1:]], axis=-1)   # [rings - 1, spokes - 1, 4]
@@ -155,18 +155,18 @@ def draw_fault(directions: core.Point, push: core.Scalar, normal: core.Point, sl
     triangles = cells[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)             # [cells * 2, 3]
     colours = np.repeat(colours.reshape(-1, 1, 3), 2, axis=0)                 # [cells * 2, 1, 3]
     # The projective embedding: places of space, offsets from the source, as the renderer's points about its origin.
-    places = solids.origin + solids.context.include_from_algebra(surface)               # [rings * spokes] Point-
+    places = solids.origin + solids.context.include_from_algebra(surface)    # [rings * spokes] Point-
     # At the grid's poles a ring of directions gathers into one point, and along the nodal planes the lobes shrink
     # into the source: the halves of the cells there have no area, the join of their corners no weight, and are
     # left out.
     corners = places[triangles]                                               # [cells * 2, 3] Point-
     spanned = (corners[:, 0] & corners[:, 1] & corners[:, 2]).norm() > 0
-    lobe_samples = meshes.samples(places, triangles[spanned], colours[spanned], meshes.smooth(places, meshes.Mesh(len(places), triangles[spanned])),
+    lobe_samples = meshes.samples(places, triangles[spanned], colours[spanned], meshes.smooth(places, meshes.Topology(len(places), triangles[spanned])),
                                   view, face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
     # The patch: a thin disc about the source, square to the normal, reaching half the rim's width past the patch so
     # that its rim, inked where the cylinder of the patch's radius about the normal meets it, lies whole on it.
     across = solids.context.include_from_algebra(drawing >> normal)                     # [] Point-
-    faces = solids.origin + stack([-across, across]) * (patch_thickness / 2 * view.pixel)   # [2] Point-
+    faces = solids.origin + stack([-across, across]) * (patch_thickness / 2 * view.pixel)  # [2] Point-
     disc = solids.rods(faces[0], faces[1], patch + rim_width / 2 * view.pixel)[None]   # [1, 3] Plane+ <- Point-
     rim = solids.Ink(0, solids.rods(faces[0], faces[1], patch)[:1], solids.everywhere[None], np.array(to_rgb(RIM)),
                      rim_width, 1.0)
@@ -175,7 +175,7 @@ def draw_fault(directions: core.Point, push: core.Scalar, normal: core.Point, sl
     # Each slip arrow a tube ending in a chevron.
     starts, ends = (solids.origin + solids.context.include_from_algebra(points) for points in slip_arrows(normal, slip))
     n_sides = starts.shape[0]
-    arrows = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_sides),
+    arrows = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Topology.chains([2] * n_sides),
                              np.array(to_rgb(SLIP)), arrow_width, view, gloss=solids.gloss, chevrons=np.ones(n_sides),
                              chevron=chevron_length)
     arrow_colour, arrow_depth = solids.layer([], view, inks=[], translucent=[], meshes=[(arrows, 1.0)])

@@ -26,7 +26,7 @@ from numga.algebras import PGA2D
 from examples.util import charts
 from examples.util.wgsl import contours, image_figure, simplices, solids
 from examples.util.wgsl.camera import Camera, read, weighing
-from examples.util.wgsl.simplices import Cap, Mesh
+from examples.util.wgsl.simplices import Cap, Topology
 
 context = NumpyContext(PGA2D)
 mv = context.multivector
@@ -172,7 +172,7 @@ def strokes(diagram: Diagram, lines: list[Extensor], width: float, colours: np.n
     lengths = [points.shape[0] for points in lines]
     # Each edge in its polyline's colour.
     colours = np.repeat(np.broadcast_to(colours, (len(lines), 3)), np.subtract(lengths, 1), axis=0)
-    return [simplices.strokes(on_numpy(concatenate(lines)), Mesh.chains(lengths), colours, width, diagram.camera,
+    return [simplices.strokes(on_numpy(concatenate(lines)), Topology.chains(lengths), colours, width, diagram.camera,
                               dashes=dashes, cap=cap, opacity=opacity)]
 
 
@@ -181,7 +181,7 @@ def axes(diagram: Diagram) -> list[np.ndarray]:
     x0, y0 = diagram.crossing
     corner = diagram.at(x0, y0)
     ends = diagram.at(np.array([diagram.across[1], x0]), np.array([y0, diagram.up[1]]))   # [2] Point-
-    return [simplices.strokes(on_numpy(stack((stack((corner, corner)), ends), axis=-1).reshape(-1)), Mesh.chains([2, 2]),
+    return [simplices.strokes(on_numpy(stack((stack((corner, corner)), ends), axis=-1).reshape(-1)), Topology.chains([2, 2]),
                               ink, axis_width, diagram.camera, chevrons=np.ones(2), chevron=axis_chevron)]
 
 
@@ -226,21 +226,22 @@ def plotted(diagram: Diagram, picture: np.ndarray) -> np.ndarray:
     return np.concatenate((picture[..., :3], picture[..., 3:] * inside), axis=-1)
 
 
-def known(levels: Levels) -> tuple[Mesh, np.ndarray]:
+def known(levels: Levels) -> tuple[Topology, np.ndarray]:
     """The grid's triangles where the function is known at every corner, and its values `[vertices]`, nothing where
     it is not known."""
     rows, columns = levels.values.shape
-    grid = Mesh.grid(rows, columns)
+    grid = Topology.grid(rows, columns)
     values = levels.values.reshape(-1)
-    return Mesh(grid.n_vertices, grid.faces[np.isfinite(values)[grid.faces].all(axis=-1)]), np.nan_to_num(values)
+    triangles = grid.elements[2]
+    return Topology(grid.n_vertices, triangles[np.isfinite(values)[triangles].all(axis=-1)]), np.nan_to_num(values)
 
 
 def level_lines(diagram: Diagram, levels: Levels, colour: np.ndarray, width: float) -> list[np.ndarray]:
     """A function's level lines, `width` pixels wide in a colour, where it crosses each level across the grid's
     triangles, cut to the plot."""
-    mesh, values = known(levels)
+    topology, values = known(levels)
     inks = tuple(contours.Level(level, np.append(colour, 1.0), width) for level in levels.levels)
-    return [plotted(diagram, contours.picture(on_numpy(levels.grid).reshape(-1), mesh, values, np.zeros(3),
+    return [plotted(diagram, contours.picture(on_numpy(levels.grid).reshape(-1), topology, values, np.zeros(3),
                                               diagram.camera, levels=inks, opacity=0.0))]
 
 
@@ -252,10 +253,10 @@ def level_family(diagram: Diagram, levels: Levels, name: str, width: float) -> l
 def sides(diagram: Diagram, levels: Levels, inks: np.ndarray) -> np.ndarray:
     """The two sides of a function's one level, where it is known: where it lies below the level filled in the first
     ink, colour and opacity, and where above in the second `[2, 4]`, cut to the plot."""
-    mesh, values = known(levels)
+    topology, values = known(levels)
     level, = levels.levels
     bands = contours.Bands(level - 1.0, 1.0, inks)
-    return plotted(diagram, contours.picture(on_numpy(levels.grid).reshape(-1), mesh, values, np.zeros(3),
+    return plotted(diagram, contours.picture(on_numpy(levels.grid).reshape(-1), topology, values, np.zeros(3),
                                              diagram.camera, bands=(bands,), opacity=0.0))
 
 
@@ -288,7 +289,7 @@ def tangent_lines(diagram: Diagram, points: Extensor, directions: Extensor, acro
     plane, points, directions = on_numpy(diagram.planes[0]), on_numpy(points), on_numpy(directions)
     weight, unit = weighing(plane)
     # How far each point lies across, its reading over its weight, and how far its direction carries it.
-    weights = read(weight, points) + unit                                    # [...] Scalar+
+    weights = read(weight, points) + unit                                      # [...] Scalar+
     steps = (weights[..., None] * across - read(plane, points)[..., None]) / read(plane, directions)[..., None]
     return points[..., None] + directions[..., None] * steps
 
@@ -301,7 +302,7 @@ def arrows(diagram: Diagram, starts: Extensor, toward: Extensor, length: float, 
     along = toward - starts                                                  # [n] Point-
     tips = starts + along / diagram.lengths(along) * length                  # [n] Point-
     n_arrows = starts.shape[0]
-    return [simplices.strokes(stack((starts, tips), axis=-1).reshape(-1), Mesh.chains([2] * n_arrows), colour, width,
+    return [simplices.strokes(stack((starts, tips), axis=-1).reshape(-1), Topology.chains([2] * n_arrows), colour, width,
                               diagram.camera, chevrons=np.ones(n_arrows), chevron=chevron * width)]
 
 
@@ -312,15 +313,15 @@ def dashed(diagram: Diagram, points: Extensor, width: float, colour: np.ndarray,
     return strokes(diagram, [rows[row] for row in range(rows.shape[0])], width, colour, 1.0, dashes)
 
 
-def area(diagram: Diagram, points: Extensor, mesh: Mesh, colour: np.ndarray, opacity: float) -> np.ndarray:
+def area(diagram: Diagram, points: Extensor, topology: Topology, colour: np.ndarray, opacity: float) -> np.ndarray:
     """The area a mesh of triangles over points of the diagram `[vertices]` covers, in one colour."""
-    return contours.picture(on_numpy(points), mesh, np.zeros(points.shape[0]), colour, diagram.camera, opacity=opacity)
+    return contours.picture(on_numpy(points), topology, np.zeros(points.shape[0]), colour, diagram.camera, opacity=opacity)
 
 
 def between(diagram: Diagram, curve: Extensor, feet: Extensor, colour: np.ndarray, opacity: float) -> np.ndarray:
     """The area between a curve of the diagram's points `[samples]` and the points it is dropped onto `[samples]`, such
     as its feet on an axis: a strip of triangles, two between each pair of samples and their feet."""
-    return area(diagram, concatenate((curve, feet)), Mesh.grid(2, curve.shape[0]), colour, opacity)
+    return area(diagram, concatenate((curve, feet)), Topology.grid(2, curve.shape[0]), colour, opacity)
 
 
 def dots(diagram: Diagram, points: Extensor, colour: np.ndarray) -> list[np.ndarray]:

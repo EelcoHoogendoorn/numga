@@ -117,11 +117,11 @@ def dots(points: core.Antivector, colours: np.ndarray, radius: float,
     return solids.ball(solids.origin + solids.context.include_from_algebra(points), radius * view.pixel)[:, None], colours
 
 
-def chained(runs: list[tuple[solids.Point, np.ndarray]]) -> tuple[solids.Point, simplices.Mesh, np.ndarray]:
+def chained(runs: list[tuple[solids.Point, np.ndarray]]) -> tuple[solids.Point, simplices.Topology, np.ndarray]:
     """Polylines, each with its colour, as one batch of their points `[points]`, the chains of edges through them,
     and the edges' colours `[edges, 3]`, none for no polylines."""
     none = sm.point(np.zeros((0, 3)))                                          # [0] Point-
-    return (concatenate([none] + [run for run, _ in runs]), simplices.Mesh.chains([0] + [len(run) for run, _ in runs]),
+    return (concatenate([none] + [run for run, _ in runs]), simplices.Topology.chains([0] + [len(run) for run, _ in runs]),
             np.concatenate([np.zeros((0, 3))] + [np.broadcast_to(rgb, (len(run) - 1, 3)) for run, rgb in runs]))
 
 

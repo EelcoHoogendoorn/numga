@@ -33,10 +33,10 @@ def readers(vectors: core.Vector) -> Extensor:
     return stack((mv.x, mv.y)).dual()
 
 
-def loop(n_corners: int) -> simplices.Mesh:
+def loop(n_corners: int) -> simplices.Topology:
     """The closed outline through corners in their order, as a mesh of edges."""
     corners = np.arange(n_corners)
-    return simplices.Mesh(n_corners, np.stack([corners, np.roll(corners, -1)], axis=-1))
+    return simplices.Topology(n_corners, np.stack([corners, np.roll(corners, -1)], axis=-1))
 
 
 def draw_shear(
@@ -62,8 +62,8 @@ def draw_shear(
     # The camera reads this algebra's places, vectors, as they are, by the planes that read their x and y.
     camera = panel(ax, *readers(boundary))
     n_lines = np.prod(grid.shape[:-1])
-    lines = simplices.Mesh.chains([grid.shape[-1]] * n_lines)
-    square = simplices.Mesh(len(boundary), np.array([[0, 1, 2], [0, 2, 3]]))
+    lines = simplices.Topology.chains([grid.shape[-1]] * n_lines)
+    square = simplices.Topology(len(boundary), np.array([[0, 1, 2], [0, 2, 3]]))
     # Each basis vector's image an arrow from the origin: a stroke ending in a chevron.
     arrow_ends = stack((origin.broadcast_to(arrows.shape), arrows), axis=-1).reshape(-1)   # [arrows * ends] Vector+
     simplices.overlay(ax, [
@@ -73,7 +73,7 @@ def draw_shear(
                           reference_width, camera, dashes=reference_dashes),
         simplices.strokes(grid.reshape(-1), lines, grid_colour, grid_width, camera),
         simplices.strokes(boundary, loop(len(boundary)), boundary_colour, boundary_width, camera),
-        simplices.strokes(arrow_ends, simplices.Mesh.chains([2] * len(arrows)), basis_colours, arrow_width,
+        simplices.strokes(arrow_ends, simplices.Topology.chains([2] * len(arrows)), basis_colours, arrow_width,
                           camera, chevrons=np.ones(len(arrows)), chevron=arrow_chevron),
         simplices.markers(origin[None], dot_colour, dot_radius, camera)])
     return figure

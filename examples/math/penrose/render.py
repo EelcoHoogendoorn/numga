@@ -39,10 +39,10 @@ def tiles(corners: core.Antivector, colours: np.ndarray, margins: core.Scalar, c
     its colour `[faces, 3]`, with their edges."""
     chosen = np.all(margins > 0, axis=-1)                                    # [points, faces]
     n_tiles = np.count_nonzero(chosen)
-    # Each tile's four corners its own, two triangles of them, and the loop of its sides.
+    # Each tile's four corners its own, two triangles of them, and the loop of its sides, their border.
     own = np.arange(4 * n_tiles).reshape(n_tiles, 4)
-    halves = simplices.Mesh(4 * n_tiles, own[:, [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3))
-    sides = simplices.Mesh(4 * n_tiles, np.stack([own, np.roll(own, -1, axis=-1)], axis=-1).reshape(-1, 2))
+    halves = simplices.Topology(4 * n_tiles, own[:, [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3))
+    sides = halves.border
     places = corners[chosen].reshape(-1)                                     # [tiles * 4] Antivector-
     return simplices.composited([
         contours.picture(places, halves, np.zeros(4 * n_tiles), np.repeat(colours[np.nonzero(chosen)[1]], 4, axis=0),

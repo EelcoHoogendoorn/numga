@@ -6,7 +6,7 @@ import numpy as np
 
 from numga import stack
 from examples.relativity.moving_mirror.core import (
-    Mesh, Point, Plane, mv, space, time,
+    Topology, Point, Plane, mv, space, time,
 )
 
 n_triangle_subdivisions = 7
@@ -58,7 +58,7 @@ def mirror_trajectory(times: np.ndarray, length: float, wall_stroke: float,
 
 
 def spacetime_strip(space_axis: Point, time_axis: Point, n_space: int, n_time: int,
-                    wall_positions: np.ndarray, duration: float) -> tuple[Mesh, Point, float]:
+                    wall_positions: np.ndarray, duration: float) -> tuple[Topology, Point, float]:
     """A triangulated strip of spacetime between a wall at rest at the origin and a wall at `wall_positions` at each time."""
     reference_x = np.linspace(0.0, 1.0, n_space)
     times = np.linspace(0.0, duration, n_time)
@@ -76,7 +76,7 @@ def spacetime_strip(space_axis: Point, time_axis: Point, n_space: int, n_time: i
         np.stack([v00, v10, v11], axis=-1).reshape(-1, 3),
         np.stack([v00, v11, v01], axis=-1).reshape(-1, 3),
     ])
-    return Mesh(len(vertices.batch()), faces), vertices, dt
+    return Topology(len(vertices.batch()), faces), vertices, dt
 
 
 def main() -> None:
@@ -90,16 +90,16 @@ def main() -> None:
     corners, points = single_triangle(space, time, n_triangle_subdivisions)
     hats, gradients, _ = barycentric_hats(corners, points)
     edge_forms = edge_whitney_forms(corners, points)                         # [corners, samples] Plane+
-    wake_mesh, wake_vertices, _ = spacetime_strip(
+    wake_topology, wake_vertices, _ = spacetime_strip(
         space, time, n_wake_space, n_wake_time, np.ones(n_wake_time), wake_duration,
     )
-    wake_operators = Operators(wake_mesh, wake_vertices)
+    wake_operators = Operators(wake_topology, wake_vertices)
     source_event = source_x * space + source_t * time                        # [] Point-
     wake = causal_wake(wake_operators, n_wake_space, n_wake_time, source_event, source_width)
     save_figure(
         render.draw_light_cone_whitney(
             corners, points, gradients, edge_forms,
-            wake_mesh, wake_vertices, wake, source_event,
+            wake_topology, wake_vertices, wake, source_event,
         ),
         "moving_mirror_light_cone",
     )
@@ -109,17 +109,17 @@ def main() -> None:
     wall_positions = mirror_trajectory(
         mirror_times, initial_length, stroke, inflection_time, transition_time,
     )
-    mirror_mesh, mirror_vertices, dt = spacetime_strip(
+    topology, mirror_vertices, dt = spacetime_strip(
         space, time, n_mirror_space, n_mirror_time, wall_positions, mirror_duration,
     )
-    mirror_operators = Operators(mirror_mesh, mirror_vertices)
+    mirror_operators = Operators(topology, mirror_vertices)
     _, _, wave_rate, slice_energies = moving_mirror_wave(
         mirror_operators, n_mirror_space, n_mirror_time, dt,
         pulse_centre, pulse_width, wavelength,
     )
     save_figure(
         render.draw_moving_mirror_doppler(
-            mirror_mesh, mirror_vertices, n_mirror_space, n_mirror_time,
+            topology, mirror_vertices, n_mirror_space, n_mirror_time,
             wave_rate, slice_energies, before_row, after_row,
         ),
         "moving_mirror_doppler",
@@ -129,7 +129,7 @@ def main() -> None:
     frame_rows = np.linspace(4, n_mirror_time - 4, n_frames, dtype=int)
     save_animation(
         render.animate_moving_mirror(
-            mirror_mesh, mirror_vertices, n_mirror_space, n_mirror_time,
+            topology, mirror_vertices, n_mirror_space, n_mirror_time,
             wave_rate, frame_rows,
         ),
         "moving_mirror_cavity",
@@ -143,7 +143,7 @@ def main() -> None:
     np.testing.assert_allclose(gradients.sum(axis=0).kernel, 0.0, atol=1e-14)
 
     tails, heads = triangle.corners[2, 1]
-    classic_forms = (hats[tails] * gradients[heads, None] - hats[heads] * gradients[tails, None]) * triangle.face_edge_orientation.T
+    classic_forms = (hats[tails] * gradients[heads, None] - hats[heads] * gradients[tails, None]) * triangle.orientation[1].T
     np.testing.assert_allclose((edge_forms - classic_forms).kernel, 0.0, atol=1e-14)
     sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]
     midpoints = (triangle.incidence[2, 1] * (triangle.incidence[1, 0].mean(axis=0) * corners.field())).batch()[:, 0]

@@ -51,11 +51,11 @@ def rays_and_horizon(paths: core.Antivector, outline: core.Antivector, camera: C
     # The horizon a fan of triangles from the hole's centre to each side of its outline.
     n_sides = outline.shape[0] - 1
     sides = np.arange(n_sides)
-    fan = contours.Mesh(n_sides + 1, np.stack((np.zeros(n_sides, dtype=int), 1 + sides, 1 + (sides + 1) % n_sides),
+    fan = contours.Topology(n_sides + 1, np.stack((np.zeros(n_sides, dtype=int), 1 + sides, 1 + (sides + 1) % n_sides),
                                               axis=-1))
     disc = concatenate((0 * outline[:1], outline[:-1]))                      # [sides + 1] Antivector-
     return simplices.composited([
-        simplices.strokes(by_ray, simplices.Mesh.chains([n_steps] * n_rays), np.repeat(colours, n_steps - 1, axis=0),
+        simplices.strokes(by_ray, simplices.Topology.chains([n_steps] * n_rays), np.repeat(colours, n_steps - 1, axis=0),
                           ray_width, camera, opacity=ray_opacity),
         contours.picture(disc, fan, np.zeros(n_sides + 1), horizon_shade, camera)])
 
@@ -347,6 +347,6 @@ def animate_disk(image: core.Image, temperature: core.Scalar, reference: float, 
         fade = np.pi / 2 * index / loop_frames
         waves = (np.cos(fade) * clump_waves(now, image.disk_radii)
                  + np.sin(fade) * clump_waves(before, image.disk_radii))
-        light = glow * disk_emissivity(image.disk_radii, waves)[:, None]           # [crossings, 3]
+        light = glow * disk_emissivity(image.disk_radii, waves)[:, None]            # [crossings, 3]
         disk = scattered(light, image.disk_pixels, height * width)
         yield np.round(np.clip(exposed(disk, reference) + sky, 0, 1) * 255).astype(np.uint8).reshape(height, width, 3)

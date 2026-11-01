@@ -3,7 +3,7 @@ walls and its vertices the nodes of the section's midline, the nodes' places, an
 
 import numpy as np
 
-from examples.mechanics.bending.core import Mesh, Point, Scalar, mv, point
+from examples.mechanics.bending.core import Topology, Point, Scalar, mv, point
 
 NAMES = ["I-section", "turned I-section", "Z-section", "slotted tube"]
 # The turn of each I- and Z-section in its plane, in degrees.
@@ -23,13 +23,13 @@ def slotted_tube(radius: float, opening: float, segments: int) -> tuple[Point, n
     return nodes, np.stack([np.arange(segments), np.arange(1, segments + 1)], axis=-1)
 
 
-def section(nodes: Point, ends: np.ndarray, thickness: float) -> tuple[Mesh, Point, Scalar]:
+def section(nodes: Point, ends: np.ndarray, thickness: float) -> tuple[Topology, Point, Scalar]:
     """The walls between the nodes `[nodes]` that each pair of `ends` names, as a one-dimensional mesh, the nodes
     as its vertices, `Point-[nodes]`, and every wall's thickness, `Scalar+[walls]`."""
-    return Mesh(nodes.shape[0], ends), nodes.field(), mv.scalar(np.full((len(ends), 1), thickness)).field()
+    return Topology(nodes.shape[0], ends), nodes.field(), mv.scalar(np.full((len(ends), 1), thickness)).field()
 
 
-def section_walls() -> list[tuple[Mesh, Point, Scalar]]:
+def section_walls() -> list[tuple[Topology, Point, Scalar]]:
     """The walls, the nodes and the thickness of each wall, for every section."""
     rise, half = HEIGHT / 2, FLANGE / 2
     # An I-section: the web between the flanges' middles, and each flange out to both sides.

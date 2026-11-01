@@ -7,6 +7,7 @@ from itertools import islice
 import numpy as np
 
 from examples import MODEL_DIR
+from examples.util import shapes
 from examples.surfaces.developability import core
 
 mv = core.mv
@@ -24,25 +25,26 @@ DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------
-def flowed() -> tuple[core.Mesh, list[tuple[core.Point, core.Scalar]]]:
+def flowed() -> tuple[core.Topology, list[tuple[core.Point, core.Scalar]]]:
     """The bunny with the states of its flow: the vertices and each vertex's smallest eigenvalue."""
-    mesh, vertices = bunny()
-    return mesh, list(islice(core.flow(mesh, vertices, STEP), 0, N_STEPS + 1, STRIDE))
+    topology, vertices = bunny()
+    return topology, list(islice(core.flow(topology, vertices, STEP), 0, N_STEPS + 1, STRIDE))
 
 
 # --- plumbing -------------------------------------------------------------------------
-def bunny() -> tuple[core.Mesh, core.Point]:
+def bunny() -> tuple[core.Topology, core.Point]:
     """The bunny's mesh, and its vertices upright, centred in a box of the given size."""
-    mesh, vertices = core.Mesh.read(BUNNY, SIZE)
-    return mesh, upright >> vertices
+    topology, coordinates = shapes.surface(BUNNY, SIZE)
+    vertices = mv.vector(coordinates).dual().field()                            # Point-[vertices]
+    return topology, upright >> vertices
 
 
 def main() -> None:
     from examples.util.animation import save_animation
     from examples.surfaces.developability import render
 
-    mesh, states = flowed()
-    save_animation(render.animate_flow(mesh, states), "developability_flow", DURATION_MS)
+    topology, states = flowed()
+    save_animation(render.animate_flow(topology, states), "developability_flow", DURATION_MS)
 
     # checks
     # Every kept state has less energy than the one before, and the flow takes away nearly all of it.

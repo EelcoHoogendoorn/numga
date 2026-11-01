@@ -53,10 +53,10 @@ def picture(places: list, tips: list, upto: int, view: solids.View) -> np.ndarra
     ends = stack([tip[upto - 1] for tip in tips])                               # [mixtures] Point-
     # Each path up to the time a chain of edges, each edge in its path's colour.
     trails = concatenate([place[:upto] for place in places])                    # [mixtures * upto] Point-
-    lines = simplices.tubes(trails, simplices.Mesh.chains([upto] * len(places)), np.repeat(rgb, upto - 1, axis=0),
+    lines = simplices.tubes(trails, simplices.Topology.chains([upto] * len(places)), np.repeat(rgb, upto - 1, axis=0),
                             PATH_WIDTH, view, solids.gloss)
     # Each spin's arrow a tube ending in a chevron.
-    arrows = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Mesh.chains([2] * len(places)), rgb,
+    arrows = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Topology.chains([2] * len(places)), rgb,
                              ARROW_WIDTH, view, solids.gloss, chevrons=np.ones(len(places)),
                              chevron=CHEVRON_LENGTH * ARROW_WIDTH)
     return solids.draw([], view, BACKGROUND, inks=[], translucent=[], meshes=[(lines, 1.0), (arrows, 1.0)])

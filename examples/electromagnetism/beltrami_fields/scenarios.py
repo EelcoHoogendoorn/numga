@@ -7,7 +7,7 @@ import numpy as np
 from numga import stack
 from examples.electromagnetism.beltrami_fields.core import Operators, Point, Scalar, as_scalar, mv, reconstruct, selective_decay
 
-from examples.electromagnetism.beltrami_fields.plumbing import Embedding, Mesh, flux_preserving, solid_torus
+from examples.electromagnetism.beltrami_fields.plumbing import Embedding, Topology, flux_preserving, solid_torus
 from examples.electromagnetism.beltrami_fields.numerical import coexact_helicity_eigh
 
 major_radius = 1.0
@@ -26,10 +26,10 @@ n_gallery_colours = 64
 
 
 # --- plumbing -------------------------------------------------------------------------
-def torus_cavity() -> tuple[Mesh, Point, Embedding]:
+def torus_cavity() -> tuple[Topology, Point, Embedding]:
     """A reflection-symmetric solid tetrahedral torus around the z axis and its flux-preserving edge subspace."""
-    mesh, vertices = solid_torus(major_radius, minor_radius, n_major, n_minor)
-    return mesh, vertices, flux_preserving(mesh, n_major, n_minor)
+    topology, vertices = solid_torus(major_radius, minor_radius, n_major, n_minor)
+    return topology, vertices, flux_preserving(topology, n_major, n_minor)
 
 
 def main() -> None:
@@ -37,8 +37,8 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
 
     # Curl-curl energy, metric-free helicity, and chiral Beltrami eigenmodes on a torus.
-    mesh, vertices, free = torus_cavity()
-    operators = Operators(mesh, vertices)
+    topology, vertices, free = torus_cavity()
+    operators = Operators(topology, vertices)
     free_energy = free.adjugate()(operators.stiffness(free))
     free_helicity = free.adjugate()(operators.helicity(free))
     inverse_eigenvalues, free_modes, n_null = coexact_helicity_eigh(free_energy, free_helicity)
@@ -47,7 +47,7 @@ def main() -> None:
     shown_magnetic = operators.curl(shown_modes)                             # [shown] Field+[tets]
     save_figure(
         render.draw_beltrami_eigenmodes(
-            mesh, vertices, operators.centres, operators.volumes, inverse_eigenvalues, shown_magnetic, shown_indices,
+            topology, vertices, operators.centres, operators.volumes, inverse_eigenvalues, shown_magnetic, shown_indices,
         ),
         "beltrami_eigenmodes",
     )
@@ -59,7 +59,7 @@ def main() -> None:
     times = np.linspace(0.0, relaxation_time, n_frames)
     states = selective_decay(initial_amplitudes, selected_eigenvalues, times)
     magnetic_frames = reconstruct(states, selected_modes, operators.curl)
-    relaxation = list(render.animate_relaxation(mesh, vertices, operators.centres, operators.volumes, magnetic_frames))
+    relaxation = list(render.animate_relaxation(topology, vertices, operators.centres, operators.volumes, magnetic_frames))
     save_animation(relaxation, "beltrami_relaxation", frame_duration_ms)
     # Gallery picture: this makes plots/beltrami.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
     save_animation(relaxation, "beltrami", frame_duration_ms, colors=n_gallery_colours)
@@ -71,7 +71,7 @@ def main() -> None:
 
     # Whitney reconstruction commutes with the exterior derivative: the edge forms of a potential's differences are
     # its gradient, and the curl of an edge field is the face forms of its circulations.
-    d0, d1 = mesh.d[0] * Scalar, mesh.d[1] * Scalar
+    d0, d1 = topology.d[0] * Scalar, topology.d[1] * Scalar
     test_phi = (mv.x & vertices) * 0.6 - (mv.y & vertices) * 0.9 + (mv.z & vertices) * 0.4
     np.testing.assert_allclose((operators.whitney1(d0(test_phi)) - operators.gradient(test_phi)).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose((operators.curl(shown_modes[0]) - operators.whitney2(d1(shown_modes[0]))).kernel,

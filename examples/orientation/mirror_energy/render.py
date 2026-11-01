@@ -46,7 +46,7 @@ def scenes(paths: solids.Point) -> list[Scene]:
                          circle_colour, circle_width, 1.0)
     # Each mass's closed path a chain of edges, each edge in its mass's colour.
     n_closed, n_masses = len(closed), paths.shape[2]
-    path_chains = simplices.Mesh.chains([n_closed] * n_masses)
+    path_chains = simplices.Topology.chains([n_closed] * n_masses)
     path_colours = np.repeat(mass_colours, n_closed - 1, axis=0)                            # [edges, 3]
     return [Scene(view, np.ones(3), [],
                   [(simplices.tubes(concatenate([closed[:, case, mass] for mass in range(n_masses)]), path_chains,
@@ -67,7 +67,7 @@ def case_image(scene: Scene, places: solids.Point, velocities: solids.Point, mas
     # Each velocity an arrow, a tube ending in a chevron.
     tips = places + velocity_length * velocities                                # [masses] Point-
     n_masses = len(places)
-    arrows = simplices.tubes(stack((places, tips), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_masses),
+    arrows = simplices.tubes(stack((places, tips), axis=-1).reshape(-1), simplices.Topology.chains([2] * n_masses),
                              mass_colours, arrow_width, view, gloss=solids.gloss, chevrons=np.ones(n_masses),
                              chevron=chevron_length)
     parts = [(shape, shape_colour)] + [(ball[:, None], colour) for ball, colour in zip(balls, mass_colours)]

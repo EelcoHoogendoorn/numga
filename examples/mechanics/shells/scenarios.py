@@ -38,12 +38,12 @@ def disc() -> tuple[core.Sheet, list[core.Point]]:
     """The growing disc and its points at every frame `[frames] Point-[vertices]`."""
     flat = core.lattice(DISC_SPACING, DISC_RADIUS)
     flat = flat[np.linalg.norm(flat, axis=-1) <= DISC_RADIUS + 1e-9]
-    mesh, points = core.flat_mesh(flat, DISC_SPACING)
-    tails, heads = mesh.incidence[1, 0] * points                                # Point-[edges], Point-[edges]
+    topology, points = core.flat_mesh(flat, DISC_SPACING)
+    tails, heads = topology.incidence[1, 0] * points                            # Point-[edges], Point-[edges]
     # Each edge grows with the square of its middle's distance from the centre, in disc radii.
     distance = (mv.w.dual() & ((tails + heads) / 2)).norm() / DISC_RADIUS       # Scalar+[edges]
     lengths = (tails & heads).norm() * (1 + GROWTH * distance * distance)       # Scalar+[edges]
-    sheet = core.sheet(mesh, points, lengths, 0 * (core.Line | core.Line), mv.z, DISC_THICKNESS)
+    sheet = core.sheet(topology, points, lengths, 0 * (core.Line | core.Line), mv.z, DISC_THICKNESS)
     # The flat disc lifted by small random heights, to let it leave its plane.
     heights = ROUGHNESS * np.random.default_rng(SEED).normal(size=(len(flat), 1))
     rough = mv.point(np.concatenate([flat, heights], axis=-1)).field()          # Point-[vertices]
@@ -55,14 +55,14 @@ def strip() -> tuple[core.Sheet, list[core.Point]]:
     """The pod strip and its points at every frame `[frames] Point-[vertices]`."""
     flat = core.lattice(STRIP_SPACING, STRIP_LENGTH)
     flat = flat[(np.abs(flat[:, 0]) <= STRIP_LENGTH / 2) & (np.abs(flat[:, 1]) <= STRIP_WIDTH / 2)]
-    mesh, points = core.flat_mesh(flat, STRIP_SPACING)
-    tails, heads = mesh.incidence[1, 0] * points                                # Point-[edges], Point-[edges]
+    topology, points = core.flat_mesh(flat, STRIP_SPACING)
+    tails, heads = topology.incidence[1, 0] * points                            # Point-[edges], Point-[edges]
     lengths = (tails & heads).norm()                                            # Scalar+[edges]
     # The two layers curve along lines through the centre, turned either way from the strip's axis.
     axis = mv.wx.dual()                                                         # [] Line-
     along, across = (((mv.xy * (-sense * POD_ANGLE / 2)).exp() >> axis) for sense in (1, -1))
     curvature = NATURAL_CURVATURE * ((across | core.Line) * (across | core.Line) - (along | core.Line) * (along | core.Line))
-    sheet = core.sheet(mesh, points, lengths, curvature, mv.z, STRIP_THICKNESS)
+    sheet = core.sheet(topology, points, lengths, curvature, mv.z, STRIP_THICKNESS)
     # The flat strip lifted by small random heights, to let it leave its plane.
     heights = ROUGHNESS * np.random.default_rng(SEED).normal(size=(len(flat), 1))
     rough = mv.point(np.concatenate([flat, heights], axis=-1)).field()          # Point-[vertices]
@@ -77,10 +77,10 @@ def main() -> None:
 
     disc_sheet, disc_frames = disc()
     strip_sheet, strip_frames = strip()
-    save_figure(render.draw_settled([(disc_sheet.mesh.faces, disc_frames[-1]), (strip_sheet.mesh.faces, strip_frames[-1])]),
+    save_figure(render.draw_settled([(disc_sheet.topology.elements[2], disc_frames[-1]), (strip_sheet.topology.elements[2], strip_frames[-1])]),
                 "shells_settled")
-    save_animation(render.animate(disc_sheet.mesh.faces, disc_frames), "shells_disc", render.DURATION_MS)
-    save_animation(render.animate(strip_sheet.mesh.faces, strip_frames), "shells_strip", render.DURATION_MS)
+    save_animation(render.animate(disc_sheet.topology.elements[2], disc_frames), "shells_disc", render.DURATION_MS)
+    save_animation(render.animate(strip_sheet.topology.elements[2], strip_frames), "shells_strip", render.DURATION_MS)
 
     # checks
     # The disc has left its plane and settled close to its grown lengths; the strip has left its plane too,
@@ -91,7 +91,7 @@ def main() -> None:
         total = (settled & core.forces(sheet, settled)).sites.sum()
         assert (-(total | total) - (total.dual() | total.dual())) < 1e-30
         assert np.ptp((settled & mv.z).batch().to_array()) > rise
-    tails, heads = disc_sheet.mesh.incidence[1, 0] * disc_frames[-1]
+    tails, heads = disc_sheet.topology.incidence[1, 0] * disc_frames[-1]
     strain = ((tails & heads).norm() / disc_sheet.lengths - 1).batch().to_array()
     assert np.median(np.abs(strain)) < 0.02
 

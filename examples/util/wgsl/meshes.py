@@ -12,8 +12,7 @@ from typing import NamedTuple
 
 import numpy as np
 
-from numga.sparse import SparseExtensor
-from examples import instantiate
+from examples.util import topology
 from examples.util.wgsl import Shader
 from examples.util.wgsl import solids
 from examples.util.wgsl.library import samples_per_side
@@ -21,7 +20,7 @@ from examples.util.wgsl.camera import placing
 from examples.util.wgsl.solids import (Line, Plane, Point, View, flip, ga, lamp_shading, lighting, mv, origin, steps,
                                        tangent_seen)
 
-Mesh = instantiate("examples.util.mesh", solids.ga).Mesh
+Topology = topology.Topology
 
 
 class Colour(NamedTuple):
@@ -136,16 +135,15 @@ def flat(points: Point, faces: np.ndarray) -> dict:
     return dict(a=joined, b=joined, c=joined)
 
 
-def smooth(points: Point, mesh: Mesh) -> dict:
+def smooth(points: Point, topology: Topology) -> dict:
     """At each corner, the tangent planes of the faces around its vertex summed: each face's the join of its corners,
     so that a larger face counts for more, as the picture's lighting reads only their slopes."""
-    # The mesh's incidence has scalar cells: carry them into the scene's algebra with its topology intact.
-    incidence = mesh.incidence[2, 0]
-    incidence = SparseExtensor(solids.context.include_from_algebra(incidence.cells), incidence.rows, incidence.columns, incidence.shape)
+    # The mesh's incidence holds plain numbers, which take the scene's algebra where they meet its points.
+    incidence = topology.incidence[2, 0]
     corners = incidence * points.field()                                    # [3] Point-[faces]
     joined = corners[0] & corners[1] & corners[2]                            # Patch-[faces]
     # Read incidence backwards to sum each vertex's neighbouring tangents, then forwards to its face corners.
-    tangents = incidence.sum(axis=0).reverse() * joined                      # Patch-[vertices]
+    tangents = ~incidence.sum(axis=0) * joined                               # Patch-[vertices]
     corners = (incidence * tangents).batch()                                 # [3, faces] Patch-
     return dict(a=corners[0], b=corners[1], c=corners[2])
 

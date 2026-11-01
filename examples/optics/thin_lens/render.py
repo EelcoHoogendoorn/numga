@@ -34,12 +34,12 @@ plane_colour = to_rgb("gray")
 
 
 # --- plumbing -------------------------------------------------------------------------
-def segments(starts: Crossing, stops: Crossing) -> tuple[Crossing, simplices.Mesh]:
+def segments(starts: Crossing, stops: Crossing) -> tuple[Crossing, simplices.Topology]:
     """Segments between matching starts and stops `[segments]`: their ends, and an edge from each start to its
     stop."""
     n_segments = len(starts)
     edges = np.stack([np.arange(n_segments), n_segments + np.arange(n_segments)], axis=-1)
-    return concatenate([starts, stops]), simplices.Mesh(2 * n_segments, edges)
+    return concatenate([starts, stops]), simplices.Topology(2 * n_segments, edges)
 
 
 def plane_ends(planes: Plane, half_height: float) -> tuple[Crossing, Crossing]:

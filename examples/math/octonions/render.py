@@ -96,11 +96,11 @@ def draw_fano(cycles: core.Trivector) -> plt.Figure:
     camera = flat_panel(ax, VGA2D)
     ink, dark = np.array(to_rgb(line_colour)), np.array(to_rgb(point_colour))
     simplices.overlay(ax, [
-        simplices.strokes(circle, simplices.Mesh.chains([n_around + 1]), ink, charts.LINE_PX, camera),
-        simplices.strokes(stack(sides).reshape(-1), simplices.Mesh.chains([2] * len(sides)), ink, charts.LINE_PX,
+        simplices.strokes(circle, simplices.Topology.chains([n_around + 1]), ink, charts.LINE_PX, camera),
+        simplices.strokes(stack(sides).reshape(-1), simplices.Topology.chains([2] * len(sides)), ink, charts.LINE_PX,
                           camera),
         # Each arrow a stroke along its line, as wide as the line, and a chevron at its tip.
-        simplices.strokes(arrow_ends.reshape(-1), simplices.Mesh.chains([2] * len(arrows)), ink, charts.LINE_PX,
+        simplices.strokes(arrow_ends.reshape(-1), simplices.Topology.chains([2] * len(arrows)), ink, charts.LINE_PX,
                           camera, chevrons=np.ones(len(arrows)), chevron=chevron_length),
         # Each point white within a dark ring: a dot over a larger dot.
         simplices.markers(points, dark, (point_side + charts.LINE_PX) / 2, camera),

@@ -29,30 +29,30 @@ DURATION_MS = 40
 
 # The octahedron's mesh, and three Loop steps of it, none of its vertices pinned, composed into one map from its
 # vertex sites to those of the refined mesh.
-CONTROL_MESH = core.Mesh(len(OCTAHEDRON), FACES)
-REFINED_MESH = CONTROL_MESH.loop_subdivided(np.zeros(len(OCTAHEDRON), dtype=bool), N_LOOP_STEPS)
-subdivision = REFINED_MESH.subdivision
+CONTROL_TOPOLOGY = core.Topology(len(OCTAHEDRON), FACES)
+REFINED_TOPOLOGY = CONTROL_TOPOLOGY.loop_subdivided(np.zeros(len(OCTAHEDRON), dtype=bool), N_LOOP_STEPS)
+subdivision = REFINED_TOPOLOGY.subdivision
 
 
 # --- math -----------------------------------------------------------------------------
-def weighted() -> tuple[core.Point, core.Point, core.Mesh]:
+def weighted() -> tuple[core.Point, core.Point, core.Topology]:
     """The octahedron's control meshes, subdivided surfaces, and the refined mesh across the three vertex-weight cases."""
     controls = (core.mv.point(OCTAHEDRON) * WEIGHTS).field()                   # [cases] Point-[vertices]
     surfaces = subdivision * controls                                          # [cases] Point-[refined]
-    return controls, surfaces, REFINED_MESH
+    return controls, surfaces, REFINED_TOPOLOGY
 
 
-def sweep() -> tuple[Iterator[tuple[core.Point, core.Point]], core.Mesh]:
+def sweep() -> tuple[Iterator[tuple[core.Point, core.Point]], core.Topology]:
     """Each frame's control mesh and subdivided surface as the top vertex weight sweeps from light to heavy along a log-cosine profile."""
     # Sweep from light to heavy over half the cycle; the animation plays forward and back.
     phase = np.linspace(0, np.pi, N_SWEEP_FRAMES // 2 + 1)
     top_weights = np.exp(np.log(WEIGHT_BOUNDS).mean() - np.log(WEIGHT_BOUNDS[1] / WEIGHT_BOUNDS[0]) / 2 * np.cos(phase))  # [frames]
     weights = np.where(np.arange(len(OCTAHEDRON)) == TOP_VERTEX, top_weights[:, None], 1.0)  # [frames, vertices]
     controls = ((core.mv.point(OCTAHEDRON) * weight).field() for weight in weights)
-    return ((control, subdivision * control) for control in controls), REFINED_MESH
+    return ((control, subdivision * control) for control in controls), REFINED_TOPOLOGY
 
 
-def perspective() -> tuple[core.Point, core.Point, core.Point, core.Mesh]:
+def perspective() -> tuple[core.Point, core.Point, core.Point, core.Topology]:
     """The octahedron refined before and after a central collineation, for weighted projective points and for normalised Euclidean positions."""
     rest_control = core.mv.point(OCTAHEDRON * STRETCH + OFFSET).field()        # [] Point-[vertices]
     # The central collineation shifts each point along its line through the centre in proportion to its
@@ -60,10 +60,10 @@ def perspective() -> tuple[core.Point, core.Point, core.Point, core.Mesh]:
     collineation = core.Point + centre * (axis & core.Point) * STRENGTH        # [] Point- <- Point-
     perspective_control = collineation(rest_control)                           # [] Point-[vertices]
     weighted_orders = stack([subdivision * perspective_control, collineation(subdivision * rest_control)])  # [orders] Point-[refined]
-    rest_positions = rest_control.normalized()                                  # [] Point-[vertices]
-    perspective_positions = perspective_control.normalized()                    # [] Point-[vertices]
+    rest_positions = rest_control.normalized()                                 # [] Point-[vertices]
+    perspective_positions = perspective_control.normalized()                   # [] Point-[vertices]
     positional_orders = stack([subdivision * perspective_positions, collineation(subdivision * rest_positions)])  # [orders] Point-[refined]
-    return perspective_control, weighted_orders, positional_orders, REFINED_MESH
+    return perspective_control, weighted_orders, positional_orders, REFINED_TOPOLOGY
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -71,13 +71,13 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.surfaces.projective_loop import render
 
-    controls, surfaces, refined_mesh = weighted()
-    save_figure(render.draw_weights(controls, CONTROL_MESH, surfaces, refined_mesh), "projective_loop_weights")
-    frames, refined_mesh = sweep()
-    save_animation(render.animate_weights(frames, CONTROL_MESH, refined_mesh), "projective_loop_sweep", DURATION_MS,
+    controls, surfaces, refined_topology = weighted()
+    save_figure(render.draw_weights(controls, CONTROL_TOPOLOGY, surfaces, refined_topology), "projective_loop_weights")
+    frames, refined_topology = sweep()
+    save_animation(render.animate_weights(frames, CONTROL_TOPOLOGY, refined_topology), "projective_loop_sweep", DURATION_MS,
                    forward_then_back=True)
-    control, weighted_orders, positional_orders, refined_mesh = perspective()
-    save_figure(render.draw_orders(control, CONTROL_MESH, weighted_orders, positional_orders, refined_mesh),
+    control, weighted_orders, positional_orders, refined_topology = perspective()
+    save_figure(render.draw_orders(control, CONTROL_TOPOLOGY, weighted_orders, positional_orders, refined_topology),
                 "projective_loop_perspective")
 
     # checks

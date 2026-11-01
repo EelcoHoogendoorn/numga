@@ -46,8 +46,8 @@ def disk(velocities: core.Antivector) -> core.Antivector:
 def unit(directions: core.Antivector) -> core.Antivector:
     """The part of directions and velocities in the lab's slice of space, at unit length: a spatial
     direction squares to a positive scalar."""
-    spatial = directions - (core.mv.t & directions) * core.time                 # [...] Antivector-
-    return spatial / spatial.squared().square_root()                            # [...] Antivector-
+    spatial = directions - (core.mv.t & directions) * core.time                    # [...] Antivector-
+    return spatial / spatial.squared().square_root()                               # [...] Antivector-
 
 
 def unit_spins(spins: core.Spin) -> core.Spin:
@@ -60,7 +60,7 @@ def spin_arrows(spins: core.Spin) -> core.Antivector:
     it points along x and along y, as its steps along x and along y."""
     mv = core.mv
     steps = stack((mv.x.dual(), mv.y.dual()))                                  # [2] Antivector-
-    return ((stack((mv.yz, mv.zx)) & spins[..., None]) * steps).sum(axis=-1)   # [...] Antivector-
+    return ((stack((mv.yz, mv.zx)) & spins[..., None]) * steps).sum(axis=-1)       # [...] Antivector-
 
 
 def ink(colour: str) -> np.ndarray:
@@ -74,7 +74,7 @@ def arrows(tails: core.Antivector, steps: core.Antivector, colours: np.ndarray, 
     tips = tails + steps                                                      # [arrows] Antivector-
     ends = stack((tails, tips), axis=-1).reshape(-1)                          # [arrows * 2] Antivector-
     n_arrows = tails.shape[0]
-    return simplices.strokes(ends, simplices.Mesh.chains([2] * n_arrows), colours, ARROW_WIDTH, camera,
+    return simplices.strokes(ends, simplices.Topology.chains([2] * n_arrows), colours, ARROW_WIDTH, camera,
                              chevrons=np.ones(n_arrows), chevron=CHEVRON_LENGTH, cap=simplices.Cap.BUTT)
 
 
@@ -85,7 +85,7 @@ def dots(points: core.Antivector, radius: float, camera: Camera) -> np.ndarray:
 
 def outline(points: core.Antivector, colour: str, width: float, camera: Camera, opacity: float = 1.0) -> np.ndarray:
     """The polyline through points `[points]`: its picture."""
-    return simplices.strokes(points, simplices.Mesh.chains([points.shape[0]]), ink(colour), width, camera,
+    return simplices.strokes(points, simplices.Topology.chains([points.shape[0]]), ink(colour), width, camera,
                              opacity=opacity)
 
 
@@ -119,7 +119,7 @@ def animate_two_boosts(frames: Iterable[tuple[core.Antivector, core.Antivector, 
         outline_points, tails = disk(loop), disk(corners)                      # [samples] Antivector-, [3] Antivector-
         # The triangle filled as a fan from rest, its first point, which its two straight sides leave from.
         n_samples = outline_points.shape[0]
-        fan = contours.Mesh(n_samples, np.stack((np.zeros(n_samples - 2, dtype=int), np.arange(1, n_samples - 1),
+        fan = contours.Topology(n_samples, np.stack((np.zeros(n_samples - 2, dtype=int), np.arange(1, n_samples - 1),
                                                  np.arange(2, n_samples)), axis=-1))
         shown.set_data(simplices.composited([
             edge,
@@ -144,7 +144,7 @@ def animate_orbits(loops: core.Antivector, states: Iterable[tuple[core.Antivecto
     figure, ax, camera = canvas((0, 0), orbit_half_width)
     by_orbit = outlines[np.arange(n_samples)[None, :], np.arange(n_orbits)[:, None]].reshape(-1)   # [orbits * samples] Antivector-
     beneath = [rim(camera),
-               simplices.strokes(by_orbit, simplices.Mesh.chains([n_samples] * n_orbits),
+               simplices.strokes(by_orbit, simplices.Topology.chains([n_samples] * n_orbits),
                                  np.repeat(colours, n_samples - 1, axis=0), THIN, camera, opacity=0.5),
                arrows(disk(first[0]), spin_arrows(ORBIT_ARROW * unit_spins(first[1])), ink(FAINT), camera)]
     shown = simplices.overlay(ax, beneath)

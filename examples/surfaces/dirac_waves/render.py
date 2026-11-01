@@ -12,7 +12,7 @@ from numga import stack
 from examples.surfaces.dirac_waves import core
 from examples.util.wgsl import meshes, show_pixels, solids
 
-Mesh = core.Mesh
+Topology = core.Topology
 
 # Each tile's exposure, the percentile of its first frame's amplitudes that shows at full brightness, and how many
 # times that the pulse and the standing waves show at full brightness, room for the pulse as it gathers again; the
@@ -41,60 +41,60 @@ def planes(fields: core.Even) -> np.ndarray:
     return np.abs((stack((mv.x, mv.y, mv.z)) & fields.batch()[..., None]).to_array())
 
 
-def image(mesh: Mesh, seen: tuple, corners: np.ndarray, sides: np.ndarray) -> np.ndarray:
+def image(topology: Topology, seen: tuple, corners: np.ndarray, sides: np.ndarray) -> np.ndarray:
     """The surface as an RGB image, `[pixels, pixels, 3]`: its vertices' colours at the corners of each face,
     `[corners, faces, 3]`, spread over the faces between them, joined with each face's own, and lit."""
     points, normals, frame = seen
-    return meshes.draw(points, mesh.faces, corners.transpose(1, 0, 2), normals, frame, background, face_values=sides,
+    return meshes.draw(points, topology.elements[2], corners.transpose(1, 0, 2), normals, frame, background, face_values=sides,
                        colour=colour, gloss=solids.gloss) / 255
 
 
-def view(mesh: Mesh, positions: core.Point) -> tuple:
+def view(topology: Topology, positions: core.Point) -> tuple:
     """The surface at the positions of its vertices as the camera sees it, the same for every field on it: its
     points carried into projective space, their smooth normals, and the camera framing them."""
     points = solids.origin + solids.context.include_from_algebra(positions.batch())       # [vertices] Point-
     frame = solids.view([points], 0.0, elevation, azimuth, margin, pixels)
-    return points, meshes.smooth(points, mesh), frame.squared()
+    return points, meshes.smooth(points, topology), frame.squared()
 
 
-def animate(mesh: Mesh, positions: core.Point, vertices: core.Even, faces: core.Even, columns: int,
+def animate(topology: Topology, positions: core.Point, vertices: core.Even, faces: core.Even, columns: int,
             room: float = 1.0) -> Iterator[np.ndarray]:
     """Frames of vertex and face fields `[tiles, frames] Even+[vertices]` and `[tiles, frames] Even-[faces]` on the mesh at the
     positions `Point-[vertices]`, the tiles in rows of the given count, each exposed by its first frame, `room` times over."""
     amplitudes, sides = planes(vertices), planes(faces)                       # [tiles, frames, V, 3], [tiles, frames, F, 3]
     # The vertex field at the corners of each face, read through the mesh.
-    corners = planes(mesh.incidence[2, 0] * vertices[..., None])              # [tiles, frames, corners, F, 3]
+    corners = planes(topology.incidence[2, 0] * vertices[..., None])          # [tiles, frames, corners, F, 3]
     first = np.concatenate([amplitudes[:, :1], sides[:, :1]], axis=2)         # [tiles, 1, V + F, 3]
     level = room * np.percentile(first, exposure, axis=(1, 2, 3), keepdims=True)
     corners, sides = corners / level[..., None], sides / level
     tiles, frames = corners.shape[:2]
-    seen = view(mesh, positions)
+    seen = view(topology, positions)
     for frame in range(frames):
-        pictures = np.stack([image(mesh, seen, corners[tile, frame], sides[tile, frame]) for tile in range(tiles)])
+        pictures = np.stack([image(topology, seen, corners[tile, frame], sides[tile, frame]) for tile in range(tiles)])
         pictures = np.concatenate([pictures, np.zeros((-tiles % columns,) + pictures.shape[1:])])
         rows = pictures.reshape((-1, columns) + pictures.shape[1:])           # [rows, columns, P, P, 3]
         layout = rows.transpose(0, 2, 1, 3, 4).reshape(rows.shape[0] * pixels, columns * pixels, 3)
         yield np.round(255 * layout).astype(np.uint8)
 
 
-def animate_pulse(mesh: Mesh, positions: core.Point, vertices: core.Even, faces: core.Even,
+def animate_pulse(topology: Topology, positions: core.Point, vertices: core.Even, faces: core.Even,
                   room: float = pulse_room) -> Iterator[np.ndarray]:
     """Frames of a wave's vertex and face fields `[frames] Even+[vertices]` and `[frames] Even-[faces]`, exposed by its first frame,
     `room` times over."""
-    return animate(mesh, positions, vertices[None], faces[None], 1, room)
+    return animate(topology, positions, vertices[None], faces[None], 1, room)
 
 
-def animate_modes(mesh: Mesh, positions: core.Point, vertices: core.Even, faces: core.Even,
+def animate_modes(topology: Topology, positions: core.Point, vertices: core.Even, faces: core.Even,
                   room: float = mode_room) -> Iterator[np.ndarray]:
     """Frames of standing waves' vertex and face fields `[waves, frames] Even+[vertices]` and `[waves, frames] Even-[faces]`, side
     by side, each exposed by its first frame, `room` times over."""
-    return animate(mesh, positions, vertices, faces, vertices.shape[0], room)
+    return animate(topology, positions, vertices, faces, vertices.shape[0], room)
 
 
-def still(mesh: Mesh, positions: core.Point, vertices: core.Even, faces: core.Even) -> plt.Figure:
+def still(topology: Topology, positions: core.Point, vertices: core.Even, faces: core.Even) -> plt.Figure:
     """A vertex field `Even+[vertices]` and a face field `Even-[faces]` on the surface at the positions `Point-[vertices]`, exposed
     together."""
-    picture, = animate(mesh, positions, vertices[None, None], faces[None, None], 1)
+    picture, = animate(topology, positions, vertices[None, None], faces[None, None], 1)
     figure, ax = plt.subplots(figsize=(3, 3))
     show_pixels(ax, picture)
     return figure

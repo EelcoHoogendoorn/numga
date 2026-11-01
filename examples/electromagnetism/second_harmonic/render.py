@@ -106,20 +106,20 @@ def cross(camera: Camera, limit: float) -> np.ndarray:
     camera reads as one across and one up, the duals of its planes over their own readings: its picture."""
     along, rise = (plane.dual() / (plane & plane.dual()) for plane in (camera.across, camera.up))
     ends = limit * stack((-along, along, -rise, rise))                       # [4]
-    return simplices.strokes(ends, simplices.Mesh.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
+    return simplices.strokes(ends, simplices.Topology.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
                              cap=simplices.Cap.BUTT)
 
 
 def curve(values: Extensor, colour: str, camera: Camera, **style) -> np.ndarray:
     """A curve through fields or polarizations across the beam `[samples]`, in order, as a stroke."""
-    return simplices.strokes(values, simplices.Mesh.chains([len(values)]), np.array(to_rgb(colour)), curve_width,
+    return simplices.strokes(values, simplices.Topology.chains([len(values)]), np.array(to_rgb(colour)), curve_width,
                              camera, **style)
 
 
 def arrow(value: Extensor, colour, width: float, chevron: float, camera: Camera, opacity: float = 1.0) -> np.ndarray:
     """An arrow from the origin to a field or a polarization across the beam `[]`: a stroke with a chevron of strokes
     `chevron` pixels long at its tip, covering as much as `opacity`."""
-    return simplices.strokes(stack((0 * value, value)), simplices.Mesh.chains([2]), np.array(to_rgb(colour)), width,
+    return simplices.strokes(stack((0 * value, value)), simplices.Topology.chains([2]), np.array(to_rgb(colour)), width,
                              camera, chevrons=np.ones(1), chevron=chevron, opacity=opacity)
 
 
@@ -140,7 +140,7 @@ def space_scene(view: solids.View) -> Scene:
     parts = [(solids.rods(solids.origin, tips, shaft_radius), axis_colour),
              (solids.ball(tips, tip_radius)[:, None], axis_colour),
              (solids.ball(solids.origin, centre_radius * view.pixel)[None, None], centre_colour)]
-    beam_arrow = simplices.tubes(stack((solids.origin - reach, solids.origin + reach)), simplices.Mesh.chains([2]),
+    beam_arrow = simplices.tubes(stack((solids.origin - reach, solids.origin + reach)), simplices.Topology.chains([2]),
                                  beam_colour, arrow_width, view, gloss=solids.gloss, chevrons=np.ones(1),
                                  chevron=beam_chevron)
     return Scene(view, np.ones(3), parts, [(beam_arrow, 1.0)], inks=[], translucent=[])
@@ -211,7 +211,7 @@ class ResponseView:
 
     def update(self, bonds: core.Direction, harmonic: core.Polarization) -> plt.Figure:
         # The doubled light's power, the squared size of its polarization across the beam.
-        intensity = harmonic.norm_squared().to_array()                       # [angles]
+        intensity = harmonic.norm_squared().to_array()                                # [angles]
         self.crystal.set_data(crystal_image(bonds, self.scene))
         self.response.set_data(simplices.composited(self.pumps + [
             curve(harmonic, generated_colour, self.polarizations, opacity=0.65),
@@ -234,8 +234,8 @@ def draw_response(pumps: core.Field, bonds: core.Direction, harmonic: core.Polar
 def draw_waveform(phase: np.ndarray, pump: core.Field, harmonic: core.Polarization) -> plt.Figure:
     """Signed pump and doubled-frequency field components over two pump periods."""
     cycles = phase / (2 * np.pi)                                               # [times]
-    pump_field = transverse(pump)[..., 0]                                     # [times]
-    harmonic_field = transverse_polarization(harmonic)[..., 1]                # [times]
+    pump_field = transverse(pump)[..., 0]                                      # [times]
+    harmonic_field = transverse_polarization(harmonic)[..., 1]                 # [times]
     figure, axes = charts.subplots(*waveform_size, layout="constrained")
     axes.axhline(0, color="0.85", linewidth=charts.FRAME_WIDTH, zorder=0)
     axes.plot(cycles, pump_field, color=pump_colour, label="Pump field")
@@ -295,11 +295,11 @@ def draw_growth(depths: np.ndarray, amplitude: core.Polarization) -> plt.Figure:
     paths = phase_plane.x.dual() * components[..., 0] + phase_plane.y.dual() * components[..., 1]   # [cases, slices] Antivector-
     ends = stack((phase_plane.x.dual() * extents[0], phase_plane.y.dual() * extents[1])).reshape(-1)  # [4] Antivector-
     camera = flat_panel(quadrature_axes, VGA2D)
-    traced = [simplices.strokes(path, simplices.Mesh.chains([len(path)]), np.array(to_rgb(colour)), curve_width,
+    traced = [simplices.strokes(path, simplices.Topology.chains([len(path)]), np.array(to_rgb(colour)), curve_width,
                                 camera) for path, colour in zip(paths, case_colours)]
     reached = simplices.markers(paths[:, -1], np.array([to_rgb(colour) for colour in case_colours]),
                                 charts.MARKER_PX / 2, camera)
-    simplices.overlay(quadrature_axes, [simplices.strokes(ends, simplices.Mesh.chains([2, 2]), cross_colour,
+    simplices.overlay(quadrature_axes, [simplices.strokes(ends, simplices.Topology.chains([2, 2]), cross_colour,
                                                           charts.FRAME_PX, camera, cap=simplices.Cap.BUTT),
                                         *traced, reached])
     power_axes.set(xlabel="depth in the crystal", ylabel="generated power", xlim=(0, 1), xticks=[], yticks=[])

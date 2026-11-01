@@ -40,7 +40,7 @@ def draw_bonds(ax, flake: core.Flake) -> np.ndarray:
     ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
     ax.axis("off")
     camera = flat_panel(ax, positions.algebra)
-    return simplices.strokes(positions, simplices.Mesh(len(positions), flake.first), BONDS, BOND_WIDTH, camera)
+    return simplices.strokes(positions, simplices.Topology(len(positions), flake.first), BONDS, BOND_WIDTH, camera)
 
 
 def draw_flake(flake: core.Flake) -> plt.Figure:

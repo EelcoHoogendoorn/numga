@@ -75,20 +75,20 @@ def needles(origins: core.Point, directions: core.Point, colours: np.ndarray, wi
     tips = origins + directions                                                 # [needles] Point-
     ends = solids.origin + solids.context.include_from_algebra(stack((origins, tips), axis=-1))   # [needles, 2] Point-
     n_needles = ends.shape[0]
-    return simplices.tubes(ends.reshape(-1), simplices.Mesh.chains([2] * n_needles), colours, width, frame,
+    return simplices.tubes(ends.reshape(-1), simplices.Topology.chains([2] * n_needles), colours, width, frame,
                            solids.gloss, chevrons=np.ones(n_needles), chevron=needle_chevron * width)
 
 
-def surface(mesh: core.Mesh, vertices: core.Point, colours: np.ndarray, frame: solids.View, face_values: np.ndarray,
+def surface(topology: core.Topology, vertices: core.Point, colours: np.ndarray, frame: solids.View, face_values: np.ndarray,
             colour: meshes.Colour) -> meshes.Samples:
     """A mesh at its vertices, smooth shaded, at every sample, as `meshes.samples`."""
     points = solids.origin + solids.context.include_from_algebra(vertices.batch())               # [vertices] Point-
-    return meshes.samples(points, mesh.faces, colours, meshes.smooth(points, mesh), frame, face_values=face_values,
+    return meshes.samples(points, topology.elements[2], colours, meshes.smooth(points, topology), frame, face_values=face_values,
                           colour=colour, gloss=solids.gloss)
 
 
 # --- parallel transport ---------------------------------------------------------------
-def animate_holonomy(sphere: core.Mesh, vertices: core.Point, rings: core.Vector, states: Iterable[tuple[core.Vector, core.Point]]
+def animate_holonomy(sphere: core.Topology, vertices: core.Point, rings: core.Vector, states: Iterable[tuple[core.Vector, core.Point]]
                      ) -> Iterator[np.ndarray]:
     """The unit sphere, translucent, and the three latitude circles `[steps + 1, rings]`, and each frame's points
     on them with the tangent vectors carried there `[rings]`: a trail of where the vectors have been, and where
@@ -102,7 +102,7 @@ def animate_holonomy(sphere: core.Mesh, vertices: core.Point, rings: core.Vector
     # The circles and the needles are strokes; the sphere is traced. The sphere and the circles stay put, each circle a
     # chain of edges in its ring's colour, the rings one after another.
     circles = simplices.tubes(concatenate([ring_paths[:, ring] for ring in range(n_rings)]),
-                              simplices.Mesh.chains([n_points] * n_rings),
+                              simplices.Topology.chains([n_points] * n_rings),
                               np.repeat(colours, n_points - 1, axis=0), 4 * line_width, frame, solids.gloss)
     scene = Scene(frame, background, [], [(circles, 1.0)], inks=[], translucent=ball)
     normals, carried = [], []
@@ -118,15 +118,15 @@ def animate_holonomy(sphere: core.Mesh, vertices: core.Point, rings: core.Vector
         yield scene.draw([], inks=[], translucent=[], meshes=[(now, 1.0), (trail, trail_opacity)])
 
 
-def torus_panel(torus: core.Mesh, vertices: core.Point, field: core.Point,
+def torus_panel(torus: core.Topology, vertices: core.Point, field: core.Point,
                 frame: solids.View) -> np.ndarray:
     """Symmetric streaks show the transported orientation, independent of heat amplitude."""
-    points = solids.origin + solids.context.include_from_algebra(vertices.batch())  # [vertices] Point-
-    directions = solids.context.include_from_algebra(field.batch().normalized())   # [vertices] Point-
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())               # [vertices] Point-
+    directions = solids.context.include_from_algebra(field.batch().normalized())                 # [vertices] Point-
     return flow.draw(points, torus, directions, frame, flow_colour, 1.0, downstream_fraction=0.5)
 
 
-def draw_torus_fields(torus: core.Mesh, vertices: core.Point, fields: list[core.Point]) -> plt.Figure:
+def draw_torus_fields(torus: core.Topology, vertices: core.Point, fields: list[core.Point]) -> plt.Figure:
     """The torus side by side for each tangent vector field in `fields`."""
     figure, axes = plt.subplots(1, len(fields), figsize=(3.8 * len(fields), 3.6), dpi=100)
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0)
@@ -137,7 +137,7 @@ def draw_torus_fields(torus: core.Mesh, vertices: core.Point, fields: list[core.
     return figure
 
 
-def animate_diffusion(torus: core.Mesh, vertices: core.Point, diffused: Iterable[core.Point]) -> Iterator[np.ndarray]:
+def animate_diffusion(torus: core.Topology, vertices: core.Point, diffused: Iterable[core.Point]) -> Iterator[np.ndarray]:
     """The direction of a vector heat pulse spreads across the torus as symmetric surface grain."""
     frame = square_view(transport_view, vertices, transport_margin)
     for field in diffused:
@@ -145,14 +145,14 @@ def animate_diffusion(torus: core.Mesh, vertices: core.Point, diffused: Iterable
 
 
 # --- designed fields ------------------------------------------------------------------
-def field_panel(mesh: core.Mesh, vertices: core.Point, field: core.Point, frame: solids.View) -> np.ndarray:
+def field_panel(topology: core.Topology, vertices: core.Point, field: core.Point, frame: solids.View) -> np.ndarray:
     """A unit tangent field is the grain of an opaque shaded surface."""
-    points = solids.origin + solids.context.include_from_algebra(vertices.batch())  # [vertices] Point-
-    directions = solids.context.include_from_algebra(field.batch())              # [vertices] Point-
-    return flow.draw(points, mesh, directions, frame, flow_colour, 1.0)
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())               # [vertices] Point-
+    directions = solids.context.include_from_algebra(field.batch())                              # [vertices] Point-
+    return flow.draw(points, topology, directions, frame, flow_colour, 1.0)
 
 
-def draw_fields(mesh: core.Mesh, vertices: core.Point, scenes: list[tuple[core.Point, np.ndarray, list[int]]]) -> plt.Figure:
+def draw_fields(topology: core.Topology, vertices: core.Point, scenes: list[tuple[core.Point, np.ndarray, list[int]]]) -> plt.Figure:
     """The surface side by side for each scene's field and singular faces, each panel as wide as the surface across
     x over its height, up to the widest a panel gets."""
     mv = core.mv
@@ -165,19 +165,19 @@ def draw_fields(mesh: core.Mesh, vertices: core.Point, scenes: list[tuple[core.P
     axes = np.atleast_1d(axes)
     frame = fitted(square_view(view, vertices, 0.0), axes[0])
     for axis, (field, _, _) in zip(axes, scenes):
-        show(axis, field_panel(mesh, vertices, field, frame), frame)
+        show(axis, field_panel(topology, vertices, field, frame), frame)
     return figure
 
 
-def animate_turning(mesh: core.Mesh, vertices: core.Point, fields: Iterable[core.Point]) -> Iterator[np.ndarray]:
+def animate_turning(topology: core.Topology, vertices: core.Point, fields: Iterable[core.Point]) -> Iterator[np.ndarray]:
     """The surface grain turns with the tangent field about every surface normal."""
     frame = square_view(view, vertices, 0.0)
     for field in fields:
-        yield field_panel(mesh, vertices, field, frame)
+        yield field_panel(topology, vertices, field, frame)
 
 
 # --- stripes --------------------------------------------------------------------------
-def corner_phases(mesh: core.Mesh, vertices: core.Point, lines: core.Point, stripes: core.Point, advance: core.Scalar) -> tuple[core.Scalar, np.ndarray]:
+def corner_phases(topology: core.Topology, vertices: core.Point, lines: core.Point, stripes: core.Point, advance: core.Scalar) -> tuple[core.Scalar, np.ndarray]:
     """The phase of each family at each corner of each face `[F, 3, n]`, and the whole turns it winds around
     the face `[F, n]`, for the lines of the families at every vertex `[n] Point-[V]`, their stripe fields
     `[n] Point-[V]` and the targets across every edge for each line at its head `[n] Scalar+[E]`. Each corner's
@@ -185,10 +185,10 @@ def corner_phases(mesh: core.Mesh, vertices: core.Point, lines: core.Point, stri
     around the face along the edges' targets, each corner's phase is taken nearest the one before it plus the
     target; a face around which the walk comes back off by whole turns holds a fork, and the mismatch is spread
     evenly over its three edges, as in the reference implementation of the stripe patterns paper."""
-    corners = mesh.incidence[2, 0]                                             # [3] Scalar+[faces <- vertices]
+    corners = topology.incidence[2, 0]                                         # [3] Scalar+[faces <- vertices]
     corner_lines = (corners[:, None] * lines).batch()                          # [3, n, faces] Point-
     corner_stripes = (corners[:, None] * stripes).batch()                      # [3, n, faces] Point-
-    corner_normals = (corners * core.vertex_normals(mesh, vertices)).batch()   # [3, faces] Vector-
+    corner_normals = (corners * core.vertex_normals(topology, vertices)).batch()  # [3, faces] Vector-
     # The angle from each corner's stripe field to its line: the product of the two is the turn between them in the
     # tangent plane, and its logarithm's pairing with that plane is the angle.
     between = (corner_stripes * corner_lines.reverse()).normalized()           # [3, n, faces] Rotor+
@@ -204,8 +204,8 @@ def corner_phases(mesh: core.Mesh, vertices: core.Point, lines: core.Point, stri
     local = phase[face, corner, picked] * sense                              # [faces, corners, families] Scalar+
     # The target from each corner to the next, read at the edge's head, the higher vertex. The side from a corner to
     # the next faces the corner after them, and runs along its edge where the face runs along it.
-    edge = mesh.face_edges[:, [2, 0, 1]]                                       # [F, 3]
-    forward = mesh.face_edge_orientation[:, [2, 0, 1]] > 0                     # [F, 3]
+    edge = topology.boundary_indices[1][:, [2, 0, 1]]                          # [F, 3]
+    forward = topology.orientation[1][:, [2, 0, 1]] > 0                        # [F, 3]
     head = np.where(forward, np.roll(np.arange(3), -1), np.arange(3))          # [F, 3]: the corner at the edge's head
     at_head = np.take_along_axis(picked, head[..., None], axis=1)              # [F, 3, n]
     sense_head = np.take_along_axis(sense, head[..., None], axis=1)
@@ -242,7 +242,7 @@ def crossings(corners: core.Point, phases: core.Scalar) -> core.Point:
     meeting = corners[..., None] + (following - corners)[..., None] * share   # [3, faces, levels] Point-
     # The two sides a level crosses, first and second; a level crossing none collapses onto the first corner.
     order = np.argsort(~across, axis=0, kind="stable")[:2]                    # [2, faces, levels]
-    ends = where(across, meeting, corners[:1, :, None])                        # [3, faces, levels] Point-
+    ends = where(across, meeting, corners[:1, :, None])                       # [3, faces, levels] Point-
     face, level = np.indices(order.shape[1:])
     return ends[order, face, level]                                            # [2, faces, levels] Point-
 
@@ -272,42 +272,42 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 """
 
 
-def bands_image(mesh: core.Mesh, vertices: core.Point, pattern: tuple[core.Point, core.Point, core.Scalar], frame: solids.View) -> np.ndarray:
+def bands_image(topology: core.Topology, vertices: core.Point, pattern: tuple[core.Point, core.Point, core.Scalar], frame: solids.View) -> np.ndarray:
     """The surface shaded with the stripes of every family of a pattern of lines `[n] Point-[V]`, stripe fields
     `[n] Point-[V]` and edge targets `[n] Scalar+[E]`, the given share of each stripe dark."""
-    corners, turns = corner_phases(mesh, vertices, *pattern)                   # [F, 3, n], [F, n]
+    corners, turns = corner_phases(topology, vertices, *pattern)               # [F, 3, n], [F, n]
     stripes = meshes.Colour(striped, dict(n_families=corners.shape[-1], sharpness=sharpness, bands=bands,
                                           dark_stripe=dark, light_stripe=light))
     return solids.draw([], frame, background,
                        inks=[], translucent=[],
-                       meshes=[(surface(mesh, vertices, corners.to_array(), frame, face_values=turns, colour=stripes), 1.0)])
+                       meshes=[(surface(topology, vertices, corners.to_array(), frame, face_values=turns, colour=stripes), 1.0)])
 
 
-def lines_image(mesh: core.Mesh, vertices: core.Point, pattern: tuple[core.Point, core.Point, core.Scalar], frame: solids.View) -> np.ndarray:
+def lines_image(topology: core.Topology, vertices: core.Point, pattern: tuple[core.Point, core.Point, core.Scalar], frame: solids.View) -> np.ndarray:
     """The lit surface with the middle line of every stripe of every family of a pattern drawn on it, straight
     across each face, ending in the faces where the stripes fork, standing just off the surface."""
-    corners, turns = corner_phases(mesh, vertices, *pattern)                   # [F, 3, n], [F, n]
-    places, normals = vertices.batch(), core.vertex_normals(mesh, vertices).batch()   # [vertices] Point-, Vector-
+    corners, turns = corner_phases(topology, vertices, *pattern)               # [F, 3, n], [F, n]
+    places, normals = vertices.batch(), core.vertex_normals(topology, vertices).batch()  # [vertices] Point-, Vector-
     # Off the surface by a share of its radius about the centre, so the straight segments clear it between its
     # vertices.
     radii = places.norm()
     radius = radii.max()
-    lifted = places + normals.dual() * (standoff * radius * unit_volume)        # [vertices] Point-
-    face_corners = (mesh.incidence[2, 0] * lifted.field()).batch()              # [3, faces] Point-
+    lifted = places + normals.dual() * (standoff * radius * unit_volume)                         # [vertices] Point-
+    face_corners = (topology.incidence[2, 0] * lifted.field()).batch()        # [3, faces] Point-
     # The faces where a family forks hold no middle lines of it.
     segments = concatenate([crossings(face_corners[:, turns[:, family] == 0],
                                       stack([corners[turns[:, family] == 0, corner, family] for corner in range(3)]) / (2 * np.pi)).reshape(2, -1)
                             for family in range(corners.shape[-1])], axis=1)   # [2, segments] Point-
-    drawn = solids.origin + solids.context.include_from_algebra(segments[:, (segments[1] - segments[0]).norm() > 0])   # [2, segments] Point-
-    lines = simplices.tubes(stack((drawn[0], drawn[1]), axis=-1).reshape(-1), simplices.Mesh.chains([2] * drawn.shape[1]),
+    drawn = solids.origin + solids.context.include_from_algebra(segments[:, (segments[1] - segments[0]).norm() > 0])  # [2, segments] Point-
+    lines = simplices.tubes(stack((drawn[0], drawn[1]), axis=-1).reshape(-1), simplices.Topology.chains([2] * drawn.shape[1]),
                             dark, line_width * frame.pixels / (panel_inches * panel_dpi), frame, solids.gloss)
     return solids.draw([], frame, background, inks=[], translucent=[],
-                       meshes=[(surface(mesh, vertices, light, frame, face_values=np.zeros(4), colour=meshes.plain), 1.0),
+                       meshes=[(surface(topology, vertices, light, frame, face_values=np.zeros(4), colour=meshes.plain), 1.0),
                                (lines, 1.0)])
 
 
-def pattern_figure(mesh: core.Mesh, vertices: core.Point, patterns: list[tuple[core.Point, core.Point, core.Scalar]],
-                   image: Callable[[core.Mesh, core.Point, tuple[core.Point, core.Point, core.Scalar], solids.View], np.ndarray],
+def pattern_figure(topology: core.Topology, vertices: core.Point, patterns: list[tuple[core.Point, core.Point, core.Scalar]],
+                   image: Callable[[core.Topology, core.Point, tuple[core.Point, core.Point, core.Scalar], solids.View], np.ndarray],
                    scale: float) -> plt.Figure:
     """The surface side by side for each pattern, as `image` draws it in the square view fitted to a panel, the panels
     `scale` times the side of the full size."""
@@ -317,26 +317,26 @@ def pattern_figure(mesh: core.Mesh, vertices: core.Point, patterns: list[tuple[c
     axes = np.atleast_1d(axes)
     frame = fitted(square_view(view, vertices, 0.0), axes[0])
     for axis, pattern in zip(axes, patterns):
-        show(axis, image(mesh, vertices, pattern, frame), frame)
+        show(axis, image(topology, vertices, pattern, frame), frame)
     return figure
 
 
-def draw_bands(mesh: core.Mesh, vertices: core.Point, patterns: list[tuple[core.Point, core.Point, core.Scalar]]) -> plt.Figure:
+def draw_bands(topology: core.Topology, vertices: core.Point, patterns: list[tuple[core.Point, core.Point, core.Scalar]]) -> plt.Figure:
     """The surface side by side for each pattern of lines, stripe fields and edge targets, shaded with its
     stripes."""
-    return pattern_figure(mesh, vertices, patterns, bands_image, 1.0)
+    return pattern_figure(topology, vertices, patterns, bands_image, 1.0)
 
 
-def draw_lines(mesh: core.Mesh, vertices: core.Point, patterns: list[tuple[core.Point, core.Point, core.Scalar]],
+def draw_lines(topology: core.Topology, vertices: core.Point, patterns: list[tuple[core.Point, core.Point, core.Scalar]],
                scale: float) -> plt.Figure:
     """The surface side by side for each pattern of lines, stripe fields and edge targets, with the middle lines
     of its stripes drawn on it, the panels `scale` times the side of the full size."""
-    return pattern_figure(mesh, vertices, patterns, lines_image, scale)
+    return pattern_figure(topology, vertices, patterns, lines_image, scale)
 
 
-def animate_flow(mesh: core.Mesh, vertices: core.Point, lines: core.Point, stripe_fields: Iterable[core.Point], advance: core.Scalar
+def animate_flow(topology: core.Topology, vertices: core.Point, lines: core.Point, stripe_fields: Iterable[core.Point], advance: core.Scalar
                  ) -> Iterator[np.ndarray]:
     """Frames of the stripes as the stripe field `[1] Point-[V]` turns about every normal, one frame each."""
     frame = square_view(view, vertices, 0.0)
     for stripe_field in stripe_fields:
-        yield bands_image(mesh, vertices, (lines, stripe_field, advance), frame)
+        yield bands_image(topology, vertices, (lines, stripe_field, advance), frame)

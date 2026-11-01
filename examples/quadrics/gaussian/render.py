@@ -43,7 +43,7 @@ def draw_gaussian(points: Point, density: Callable[[Point], Scalar], ellipsoid: 
     shades = plt.get_cmap("Blues")(np.clip(density(corners).to_array(), 0, 1))[..., :3]
     form = (ellipsoid(corners) & corners).to_array()                            # [rows + 1, columns + 1]
     places = corners.reshape(-1)                                                # [(rows + 1) * (columns + 1)] Point-
-    grid = contours.Mesh.grid(*form.shape)
+    grid = contours.Topology.grid(*form.shape)
     camera = flat_panel(ax, places.algebra)
     shaded = contours.picture(places, grid, form.reshape(-1), shades.reshape(-1, 3), camera)
     cloud = simplices.markers(points, SAMPLE_INK, SAMPLE_SIDE / 2, camera, opacity=SAMPLE_OPACITY)
@@ -65,5 +65,5 @@ def cross(ax, camera: Camera, across: str, up: str) -> np.ndarray:
     ax.annotate(up, (0, 1), xycoords=("data", "axes fraction"), xytext=(4, -4), textcoords="offset points",
                 ha="left", va="top", color="0.4")
     ax.set_axis_off()
-    return simplices.strokes(ends, simplices.Mesh.chains([2, 2]), CROSS_INK, charts.FRAME_PX, camera,
+    return simplices.strokes(ends, simplices.Topology.chains([2, 2]), CROSS_INK, charts.FRAME_PX, camera,
                              cap=simplices.Cap.BUTT)

@@ -14,7 +14,7 @@ from examples import instantiate
 from examples.util.animation import capture
 from examples.util.wgsl import quadrics, simplices
 from examples.util.wgsl.camera import Camera, flat_panel
-from examples.util.wgsl.simplices import Cap, Mesh
+from examples.util.wgsl.simplices import Cap, Topology
 
 # The drawings are of the lap in PGA2D.
 core = instantiate("examples.estimation.odometry.core", PGA2D)
@@ -53,7 +53,7 @@ def extent(truth: core.Motor, dead: core.Motor) -> np.ndarray:
 def path(points: Point, width: float, colour: np.ndarray, camera: Camera, dashes: tuple[float, float] = (1.0, 0.0),
          cap: Cap = Cap.PROJECTING) -> np.ndarray:
     """A polyline through points `[points]`, `width` points across."""
-    return simplices.strokes(points, Mesh.chains([len(points)]), colour, width * POINT, camera, dashes=dashes, cap=cap)
+    return simplices.strokes(points, Topology.chains([len(points)]), colour, width * POINT, camera, dashes=dashes, cap=cap)
 
 
 def disc(points: Point, width: float, colour: np.ndarray, camera: Camera) -> np.ndarray:

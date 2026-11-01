@@ -54,9 +54,9 @@ def test_regge_metric_basis_side_readings_heron_and_corner_rotors():
 
 
 def test_gauss_bonnet_curvature_defects_and_cotangent_inverse_metric():
-    mesh, vertices = scenarios.disk(1.0, 6)
-    edges = mesh.d[0] * vertices
-    midpoints = mesh.incidence[1, 0].mean(axis=0) * vertices
+    topology, vertices = scenarios.disk(1.0, 6)
+    edges = topology.d[0] * vertices
+    midpoints = topology.incidence[1, 0].mean(axis=0) * vertices
     edge_squared_lengths = (
         edges.norm_squared()
         + scenarios.radial_rates * midpoints.dot(edges).squared()
@@ -64,7 +64,7 @@ def test_gauss_bonnet_curvature_defects_and_cotangent_inverse_metric():
     )
 
     metrics, intrinsic_areas, defects, curvatures, conductivities = core.mesh_geometry(
-        mesh, vertices, edge_squared_lengths,
+        topology, vertices, edge_squared_lengths,
     )
     assert metrics.batch().gatype == core.Metric
     assert intrinsic_areas.batch().gatype == core.Scalar
@@ -75,8 +75,8 @@ def test_gauss_bonnet_curvature_defects_and_cotangent_inverse_metric():
     # Discrete Gauss-Bonnet holds to machine precision across flat, positively curved, and negatively curved metrics.
     np.testing.assert_allclose((defects.sites.sum() - 2 * np.pi * core.mv.xy).kernel, 0.0, atol=1e-12)
 
-    np.testing.assert_allclose(defects.batch()[0, mesh.interior(0)].kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose(curvatures.batch()[0, mesh.interior(0)].kernel, 0.0, atol=1e-11)
+    np.testing.assert_allclose((topology.reading(topology.interior[0]) * defects[0]).kernel, 0.0, atol=1e-13)
+    np.testing.assert_allclose((topology.reading(topology.interior[0]) * curvatures[0]).kernel, 0.0, atol=1e-11)
 
     # Scaling squared radial and circumferential distances by one plus `radial_rates` and `hoop_rates` times the squared
     # radius gives the continuum surface a Gaussian curvature of `radial_rates - 3 * hoop_rates` at its centre.
@@ -92,7 +92,7 @@ def test_gauss_bonnet_curvature_defects_and_cotangent_inverse_metric():
     # factor while leaving the area-weighted inverse metric and vertex defects invariant.
     conformal_scale = 2.7
     _, scaled_areas, scaled_defects, _, scaled_conductivities = core.mesh_geometry(
-        mesh, vertices, conformal_scale * edge_squared_lengths,
+        topology, vertices, conformal_scale * edge_squared_lengths,
     )
     np.testing.assert_allclose((scaled_areas - conformal_scale * intrinsic_areas).kernel, 0.0, atol=1e-13)
     np.testing.assert_allclose((scaled_defects - defects).kernel, 0.0, atol=1e-13)
@@ -100,30 +100,30 @@ def test_gauss_bonnet_curvature_defects_and_cotangent_inverse_metric():
 
 
 def test_intrinsic_laplace_beltrami_cotangent_equivalence_and_flow():
-    mesh, vertices = scenarios.disk(1.0, 6)
-    d0 = mesh.d[0] * core.Scalar
-    edges = mesh.d[0] * vertices
-    midpoints = mesh.incidence[1, 0].mean(axis=0) * vertices
+    topology, vertices = scenarios.disk(1.0, 6)
+    d0 = topology.d[0] * core.Scalar
+    edges = topology.d[0] * vertices
+    midpoints = topology.incidence[1, 0].mean(axis=0) * vertices
     edge_squared_lengths = (
         edges.norm_squared()
         + scenarios.radial_rates * midpoints.dot(edges).squared()
         + scenarios.hoop_rates * (midpoints & edges).norm_squared()
     )
-    metrics, intrinsic_areas, _, _, conductivities = core.mesh_geometry(mesh, vertices, edge_squared_lengths)
+    metrics, intrinsic_areas, _, _, conductivities = core.mesh_geometry(topology, vertices, edge_squared_lengths)
 
-    sides = mesh.boundary[2, 1] * edges
+    sides = topology.boundary[2, 1] * edges
     patches = (sides[0] & sides[1]) / 2
     corner_gradients = sides / (2 * patches)
-    gradient = (spdiag(corner_gradients) * mesh.incidence[2, 0]).sum(axis=0) * core.Scalar
+    gradient = (spdiag(corner_gradients) * topology.incidence[2, 0]).sum(axis=0) * core.Scalar
     conductance = gradient.adjugate()(spdiag(conductivities)(gradient))
     np.testing.assert_allclose((conductance - conductance.adjugate()).cells.kernel, 0.0, atol=1e-13)
 
     # Pulling the Regge inverse metric back through the Whitney face gradient matches the intrinsic cotangent Laplacian.
-    tails, heads = mesh.corners[2, 1]
+    tails, heads = topology.corners[2, 1]
     dots = -(metrics[:, None](sides[tails]) & sides[heads])
     cotangents = dots / (2 * intrinsic_areas[:, None])
-    unit_faces = core.as_scalar(np.ones(len(mesh.faces))).field().dual()
-    edge_cotangents = (~mesh.incidence[2, 1] * ((cotangents / 2) * unit_faces)).sum(axis=-1)
+    unit_faces = core.mv.scalar(np.ones(topology.n_elements[2])[..., None]).field().dual()
+    edge_cotangents = (~topology.incidence[2, 1] * ((cotangents / 2) * unit_faces)).sum(axis=-1)
     cotangent_laplacian = -d0.adjugate()(spdiag(edge_cotangents * core.Scalar)(d0))
     quadratic = (core.mv.x & vertices).squared() - 0.35 * (core.mv.y & vertices).squared()
     np.testing.assert_allclose(
@@ -132,23 +132,23 @@ def test_intrinsic_laplace_beltrami_cotangent_equivalence_and_flow():
     )
 
     # Steady electrode conduction balances intrinsic flux at every free vertex and bends flow by curvature.
-    boundary = mesh.exterior(0)
+    boundary = topology.exterior[0]
     abscissa = (core.mv.x & vertices).batch()
     electrodes = boundary[abscissa[boundary].norm() > scenarios.electrode_threshold]
-    pinned = mesh.reading(electrodes)
+    pinned = topology.reading(electrodes)
     prescribed = ~pinned * (pinned * (core.mv.x & vertices))
     potential, current, streamfunction = core.intrinsic_conduction(
-        mesh, vertices, conductivities, electrodes, prescribed,
+        topology, vertices, conductivities, electrodes, prescribed,
     )
 
-    free_vertices = np.setdiff1d(np.arange(mesh.n_vertices), electrodes)
-    free = ~mesh.reading(free_vertices) * core.Scalar
+    free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
+    free = ~topology.reading(free_vertices) * core.Scalar
     nodal_source = conductance(potential)
     np.testing.assert_allclose(free.adjugate()(nodal_source).kernel, 0.0, atol=1e-11)
     np.testing.assert_allclose(nodal_source.sites.sum().kernel, 0.0, atol=1e-11)
 
     # Shortening circumferential distances reduces centre current relative to lengthening them.
-    centres = mesh.incidence[2, 0].mean(axis=0) * vertices
+    centres = topology.incidence[2, 0].mean(axis=0) * vertices
     origin_face = centres.norm().batch().argmin()
     centre_speeds = current.batch()[:, origin_face].norm().to_array()
     assert centre_speeds[1] < centre_speeds[0] < centre_speeds[2]

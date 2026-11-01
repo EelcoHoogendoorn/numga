@@ -19,7 +19,7 @@ from examples.util.wgsl.simplices import view_camera
 from examples.util.wgsl.camera import Camera, extrinsic_first, flat_panel, placing, reading, whole
 from examples.util.wgsl.library import pinned, samples_per_side
 
-Mesh = meshes.Mesh
+Topology = meshes.Topology
 
 n_trace_steps = 64
 length_pixels = 102.4
@@ -232,13 +232,13 @@ def trace_shader() -> Shader:
     return Shader(f"const n_steps = {n_trace_steps}u;\n" + trace_source, solids.ga, {}, {})
 
 
-def texture(points: solids.Point, mesh: Mesh, field: solids.Point, view: solids.View,
+def texture(points: solids.Point, topology: Topology, field: solids.Point, view: solids.View,
             colours: np.ndarray, reference_speed: float, grain: str, grain_pixels: float,
             downstream_fraction: float, length: float, background: np.ndarray) -> dict:
     """The shaded surface and ink coverage share one projected field and one feathering pass."""
     surface, projected, grains = seed_shader(grain).draw_averaged(
-        view.shape, samples_per_side(), 3 * len(mesh.faces), points=points, faces=mesh.faces, field=field,
-        normals=meshes.smooth(points, mesh), noise_scale=view.pixel * grain_pixels,
+        view.shape, samples_per_side(), 3 * topology.n_elements[2], points=points, faces=topology.elements[2], field=field,
+        normals=meshes.smooth(points, topology), noise_scale=view.pixel * grain_pixels,
         colours=np.broadcast_to(colours, points.shape + (3,)), **view_camera(view).uniforms(8 * view.half.max()),
         **solids.lighting(0.06), **solids.steps(view))
     return trace_shader()(view.shape, surface=surface, flow=projected, grains=grains,
@@ -248,22 +248,22 @@ def texture(points: solids.Point, mesh: Mesh, field: solids.Point, view: solids.
                           ink_opacity=ink_opacity)
 
 
-def draw(points: solids.Point, mesh: Mesh, field: solids.Point, view: solids.View,
+def draw(points: solids.Point, topology: Topology, field: solids.Point, view: solids.View,
          colours: np.ndarray, reference_speed: float, *, downstream_fraction: float = 0.9,
          length: float = length_pixels) -> np.ndarray:
     """An opaque shaded surface with fixed seeds and magnitude-proportional feathered streaks."""
-    result = texture(points, mesh, field, view, colours, reference_speed, surface_grain, 2.2,
+    result = texture(points, topology, field, view, colours, reference_speed, surface_grain, 2.2,
                      downstream_fraction, length, np.ones(3))
     return np.round(np.clip(result["image"][..., :3], 0, 1) * 255).astype(np.uint8)
 
 
-def layer(points: Extensor, mesh: Mesh, field: Extensor, camera: Camera,
+def layer(points: Extensor, topology: Topology, field: Extensor, camera: Camera,
           reference_speed: float, colour: np.ndarray, *, downstream_fraction: float = 0.9,
           length: float = length_pixels) -> np.ndarray:
     """A transparent ink layer, at the camera's own pixels, for a flat field over a panel, the points and the field in
     their own algebra, read by its camera."""
     surface, projected, grains = planar_shader(**reading(points, camera), Field=whole(field, points.algebra)).draw_averaged(
-        camera.shape, samples_per_side(), 3 * len(mesh.faces), points=points, faces=mesh.faces, field=field,
+        camera.shape, samples_per_side(), 3 * topology.n_elements[2], points=points, faces=topology.elements[2], field=field,
         noise_scale=camera.pixel * 6.0, **camera.uniforms(1.0))
     result = trace_shader()(camera.shape, surface=surface, flow=projected, grains=grains, background=np.ones(3),
                             step_pixels=length / n_trace_steps,
@@ -276,12 +276,12 @@ def layer(points: Extensor, mesh: Mesh, field: Extensor, camera: Camera,
     return rgba
 
 
-def overlay(ax: Axes, points: Extensor, mesh: Mesh, field: Extensor,
+def overlay(ax: Axes, points: Extensor, topology: Topology, field: Extensor,
             reference_speed: float, colour: np.ndarray):
     """Draw a flat field as a transparent layer over a panel, keeping the panel's existing geometric annotations, the
     panel looking down on the plane of the points' generators x and y."""
     camera = flat_panel(ax, points.algebra)
-    rgba = layer(points, mesh, field, camera, reference_speed, colour)
+    rgba = layer(points, topology, field, camera, reference_speed, colour)
     shown = pinned(ax, rgba, (*ax.get_xlim(), *ax.get_ylim()))
     shown.set_zorder(3.5)
     return shown

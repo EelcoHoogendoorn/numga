@@ -100,7 +100,7 @@ def arrows(ends: solids.Point, colour: np.ndarray, width: float, view: solids.Vi
     ending in a chevron, in one colour: a mesh for `solids.draw` to compose among the solids, and its opacity."""
     n_arrows = ends.shape[0]
     shafts = stack((solids.origin.broadcast_to(ends.shape), ends), axis=-1).reshape(-1)   # [arrows * 2] Point-
-    return (simplices.tubes(shafts, simplices.Mesh.chains([2] * n_arrows), colour, width, view, gloss=solids.gloss,
+    return (simplices.tubes(shafts, simplices.Topology.chains([2] * n_arrows), colour, width, view, gloss=solids.gloss,
                             chevrons=np.ones(n_arrows), chevron=CHEVRON * width), 1.0)
 
 
@@ -131,7 +131,7 @@ def draw_curvature_map(
     """
     readout = -(observer & curvature(observer & edge)).dual()           # [] Antivector-
     # The acceleration at unit length: a direction within the observer's slice squares to its squared length.
-    across = readout / readout.squared().square_root()                   # [] Antivector-
+    across = readout / readout.squared().square_root()                  # [] Antivector-
     patches = (patch(observer, edge), patch(wave, across))               # [corners] Antivector-, Antivector-
     drawn = concatenate((*patches, observer[None], wave[None], readout[None]))   # [drawn] Antivector-
     widths = (solids.axes & diagram_points(drawn)[..., None]).abs().reshape(-1)
@@ -153,7 +153,7 @@ def draw_curvature_map(
     across.set_axis_off()
     ends = (page.x.dual() * (width * np.array([PANEL_WIDTH - 0.01, 1 - PANEL_WIDTH + 0.01]))
             + page.y.dual() * (height / 2))                                    # [2] Antivector-
-    simplices.overlay(across, [simplices.strokes(ends, simplices.Mesh.chains([2]), np.array(to_rgb(INK)),
+    simplices.overlay(across, [simplices.strokes(ends, simplices.Topology.chains([2]), np.array(to_rgb(INK)),
                                                  MAP_ARROW_WIDTH, flat_panel(across, VGA2D), chevrons=np.ones(1),
                                                  chevron=CHEVRON * MAP_ARROW_WIDTH, cap=simplices.Cap.BUTT)])
     return fig
@@ -214,8 +214,8 @@ def _detector(
     # The ring's radius: a separation within the slice of space squares to its squared length.
     radius = reference.squared().square_root().mean()                    # [] Scalar+
     positions = (reference + amplification * displacement) / radius     # [n_time, n_polarizations, n_beads] Antivector-
-    accelerations = amplification * acceleration / radius                # [n_time, n_polarizations, n_beads] Antivector-
-    largest = accelerations.squared().square_root().max()               # [] Scalar+
+    accelerations = amplification * acceleration / radius               # [n_time, n_polarizations, n_beads] Antivector-
+    largest = accelerations.squared().square_root().max()                # [] Scalar+
     farthest = (stack((mv.x, mv.y)) & positions[..., None]).abs().max()  # [] Scalar+
     return _Detector(
         time=np.asarray(time),
@@ -256,18 +256,18 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
     turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_rest_samples) / 2)).exp()   # [n_rest_samples] Rotor+
     rest = turns >> mv.x.dual()                                          # [n_rest_samples] Antivector-
     beneath = [
-        simplices.strokes(cross_ends, simplices.Mesh.chains([2, 2]), CROSS, charts.FRAME_PX, camera,
+        simplices.strokes(cross_ends, simplices.Topology.chains([2, 2]), CROSS, charts.FRAME_PX, camera,
                           cap=simplices.Cap.BUTT),
-        simplices.strokes(rest, simplices.Mesh.chains([n_rest_samples]), LIGHT, charts.LINE_PX, camera,
+        simplices.strokes(rest, simplices.Topology.chains([n_rest_samples]), LIGHT, charts.LINE_PX, camera,
                           dashes=REST_DOTS)]
     if static:
         tracks = data.positions[:, polarization, selected].reshape(-1)     # [n_time * tracked] Antivector-
         n_time = len(data.time)
         beneath.append(simplices.strokes(
-            tracks, simplices.Mesh(len(tracks), np.stack((np.arange(len(tracks) - len(selected)),
+            tracks, simplices.Topology(len(tracks), np.stack((np.arange(len(tracks) - len(selected)),
                                                            np.arange(len(selected), len(tracks))), axis=-1)),
             np.tile(trail_colours, (n_time - 1, 1)), charts.FRAME_PX, camera, opacity=0.22))
-    centre = 0 * mv.x.dual()                                             # [] Antivector-
+    centre = 0 * mv.x.dual()                                            # [] Antivector-
     above = [simplices.markers(centre[None], ORANGE_RGB, charts.MARKER_PX / 2, camera)]
     shown = simplices.overlay(ax, beneath + above)
     n_trail = max(2, len(data.time) // 7)
@@ -278,15 +278,15 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
         trails = data.positions[np.arange(first, frame + 1)[None, :], polarization, selected[:, None]]   # [tracked, n_trail] Antivector-
         arrows = stack((positions[arrows_at], data.tips[frame, polarization, arrows_at]), axis=-1)   # [arrows, 2] Antivector-
         shown.set_data(simplices.composited(beneath + [
-            simplices.strokes(positions, simplices.Mesh(n_beads, np.stack((np.arange(n_beads),
+            simplices.strokes(positions, simplices.Topology(n_beads, np.stack((np.arange(n_beads),
                                                                           np.roll(np.arange(n_beads), -1)), axis=-1)),
                               BLUE_RGB, charts.LINE_PX, camera, opacity=0.42),
-            simplices.strokes(trails.reshape(-1), simplices.Mesh.chains([frame + 1 - first] * len(selected)),
+            simplices.strokes(trails.reshape(-1), simplices.Topology.chains([frame + 1 - first] * len(selected)),
                               np.repeat(trail_colours, frame - first, axis=0), charts.LINE_PX, camera, opacity=0.60),
             # Each bead ringed in white.
             simplices.markers(positions, np.ones(3), charts.MARKER_PX / 2 + charts.FRAME_PX, camera),
             simplices.markers(positions, BLUE_RGB, charts.MARKER_PX / 2, camera),
-            simplices.strokes(arrows.reshape(-1), simplices.Mesh.chains([2] * len(arrows_at)), BLUE_RGB,
+            simplices.strokes(arrows.reshape(-1), simplices.Topology.chains([2] * len(arrows_at)), BLUE_RGB,
                               ARROW_WIDTH, camera, chevrons=np.ones(len(arrows_at)), chevron=CHEVRON * ARROW_WIDTH,
                               opacity=0.85, cap=simplices.Cap.BUTT),
             simplices.markers(positions[selected], np.ones(3), TRACKED_SCALE * charts.MARKER_PX / 2 + charts.FRAME_PX,

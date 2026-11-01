@@ -46,26 +46,26 @@ def pzt5a(directions: core.Plane) -> tuple[core.Elastic, core.Polarization, core
 
 
 def device():
-    mesh, vertices, poling = core.strip(length, thickness, n_length, n_thickness)
-    areas, gradients = core.triangles(mesh, vertices)
+    topology, vertices, poling = core.strip(length, thickness, n_length, n_thickness)
+    areas, gradients = core.triangles(topology, vertices)
     material = pzt5a(stack((core.mv.x, core.mv.y)))
-    blocks = core.assemble(mesh, areas, gradients, *material, poling, width)
-    return mesh, vertices, areas, gradients, poling, material, blocks
+    blocks = core.assemble(topology, areas, gradients, *material, poling, width)
+    return topology, vertices, areas, gradients, poling, material, blocks
 
 
-def actuation(mesh: core.Strip, gradients: core.Plane, blocks):
-    movement, voltage = core.boundary_maps(mesh, np.array([], dtype=int))
+def actuation(topology: core.Strip, gradients: core.Plane, blocks):
+    movement, voltage = core.boundary_maps(topology, np.array([], dtype=int))
     displacement, potential = core.equilibrium(*blocks, movement, voltage,
-                                             core.electrode_potential(mesh, applied_voltage), core.tip_load(mesh, 0))
-    axial_strain = core.axis & core.strain(mesh, displacement, gradients)(core.axis)
+                                             core.electrode_potential(topology, applied_voltage), core.tip_load(topology, 0))
+    axial_strain = core.axis & core.strain(topology, displacement, gradients)(core.axis)
     return displacement, potential, axial_strain
 
 
-def sensing(mesh: core.Strip, gradients: core.Plane, blocks):
-    movement, voltage = core.boundary_maps(mesh, mesh.top)
+def sensing(topology: core.Strip, gradients: core.Plane, blocks):
+    movement, voltage = core.boundary_maps(topology, topology.top)
     displacement, potential = core.equilibrium(*blocks, movement, voltage,
-                                             core.electrode_potential(mesh, 0), core.tip_load(mesh, applied_force))
-    axial_strain = core.axis & core.strain(mesh, displacement, gradients)(core.axis)
+                                             core.electrode_potential(topology, 0), core.tip_load(topology, applied_force))
+    axial_strain = core.axis & core.strain(topology, displacement, gradients)(core.axis)
     return displacement, potential, axial_strain
 
 
@@ -81,17 +81,17 @@ if __name__ == "__main__":
     from examples.electromagnetism.piezoelectric import render
     from examples.util.animation import save_animation, save_figure
 
-    mesh, vertices, areas, gradients, poling, material, blocks = device()
-    actuator = actuation(mesh, gradients, blocks)
-    sensor = sensing(mesh, gradients, blocks)
-    save_figure(render.draw_device(mesh, vertices, areas, *actuator, displacement_scale, applied_voltage, strain_scale),
+    topology, vertices, areas, gradients, poling, material, blocks = device()
+    actuator = actuation(topology, gradients, blocks)
+    sensor = sensing(topology, gradients, blocks)
+    save_figure(render.draw_device(topology, vertices, areas, *actuator, displacement_scale, applied_voltage, strain_scale),
                 "piezoelectric_actuator")
-    save_figure(render.draw_device(mesh, vertices, areas, *sensor, displacement_scale, 10 / voltage_unit, strain_scale),
+    save_figure(render.draw_device(topology, vertices, areas, *sensor, displacement_scale, 10 / voltage_unit, strain_scale),
                 "piezoelectric_sensor")
-    save_animation(render.animate(mesh, vertices, areas, cycle(*actuator, n_frames), displacement_scale, applied_voltage,
+    save_animation(render.animate(topology, vertices, areas, cycle(*actuator, n_frames), displacement_scale, applied_voltage,
                                   strain_scale), "piezoelectric_actuator", duration_ms)
-    save_animation(render.animate(mesh, vertices, areas, cycle(*sensor, n_frames), displacement_scale, 10 / voltage_unit,
+    save_animation(render.animate(topology, vertices, areas, cycle(*sensor, n_frames), displacement_scale, 10 / voltage_unit,
                                   strain_scale), "piezoelectric_sensor", duration_ms)
     # Gallery picture: this makes plots/piezoelectric.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-    save_animation(render.animate(mesh, vertices, areas, cycle(*actuator, n_frames), displacement_scale, applied_voltage,
+    save_animation(render.animate(topology, vertices, areas, cycle(*actuator, n_frames), displacement_scale, applied_voltage,
                                   strain_scale), "piezoelectric", duration_ms, colors=gallery_colours)

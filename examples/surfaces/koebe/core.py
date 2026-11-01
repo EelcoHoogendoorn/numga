@@ -20,11 +20,10 @@ from scipy.spatial import ConvexHull
 
 from numga import Algebra, NumpyContext, stack
 from numga.sparse import SparseExtensor, spdiag
-from examples import instantiate
+from examples.util.topology import Topology
 
 ga = Algebra("x+y+z+w-")
 mv = NumpyContext(ga).multivector
-Mesh = instantiate("examples.util.mesh", ga).Mesh
 Scalar = ga.gatype.scalar()                         # Scalar+
 # Circles on the sphere, the planes that cut it, are vectors.
 Vector = ga.gatype.vector()                         # Vector+
@@ -35,17 +34,17 @@ origin = mv.w.dual()                                # [] Point-
 
 
 # --- math -----------------------------------------------------------------------------
-def touching(mesh: Mesh, circles: Vector) -> Point:
+def touching(topology: Topology, circles: Vector) -> Point:
     """The point where the circles at the ends of each edge touch is the sum of their poles, the null point on
     the line between the apexes."""
-    return mesh.incidence[1, 0].sum(axis=0) * circles.dual()                   # [...] Point-[edges]
+    return topology.incidence[1, 0].sum(axis=0) * circles.dual()               # [...] Point-[edges]
 
 
-def face_circles(mesh: Mesh, circles: Vector) -> Vector:
+def face_circles(topology: Topology, circles: Vector) -> Vector:
     """The circle of each face, through the points where its vertices' circles touch, is orthogonal to all three:
     the dual of their wedge."""
     # The circles at each face's corners, on the last axis.
-    corners = mesh.incidence[2, 0] * circles[..., None]                        # [..., corners] Vector+[faces]
+    corners = topology.incidence[2, 0] * circles[..., None]                    # [..., corners] Vector+[faces]
     return (corners[..., 0] ^ corners[..., 1] ^ corners[..., 2]).dual()       # [...] Vector+[faces]
 
 
@@ -55,22 +54,22 @@ def apexes(circles: Vector) -> Point:
     return poles / (mv.w & poles)                                              # [...] Point-
 
 
-def koebe(mesh: Mesh, start: Vector, n_steps: int) -> Vector:
+def koebe(topology: Topology, start: Vector, n_steps: int) -> Vector:
     """The circles that square to one and touch from outside along every edge, inner product minus one, follow
     by Gauss-Newton from the start; the steps leave the maps that keep the sphere, along which nothing changes,
     where they were."""
-    n_vertices, n_edges = mesh.n_vertices, len(mesh.edges)
+    n_vertices, n_edges = topology.n_vertices, topology.n_elements[1]
     # The residuals are the vertices' followed by the edges'.
     vertex_rows = ~SparseExtensor.selection(mv.context, np.arange(n_vertices), n_vertices + n_edges)            # Scalar+[vertices + edges <- vertices]
     edge_rows = ~SparseExtensor.selection(mv.context, n_vertices + np.arange(n_edges), n_vertices + n_edges)   # Scalar+[vertices + edges <- edges]
     circles = start                                                            # Vector+[vertices]
     for _ in range(n_steps):
-        tails, heads = mesh.incidence[1, 0] * circles                          # Vector+[edges], Vector+[edges]
+        tails, heads = topology.incidence[1, 0] * circles                      # Vector+[edges], Vector+[edges]
         residual = vertex_rows * (circles.squared() - 1) + edge_rows * ((tails | heads) + 1)   # Scalar+[vertices + edges]
         # Each vertex's residual depends on its own circle, each edge's on the circle at either end, as the circle at
         # the other end reads it.
         own = spdiag(2 * circles | Vector)                                     # (Scalar+ <- Vector+)[vertices <- vertices]
-        across = (spdiag(stack([heads, tails]) | Vector) * mesh.incidence[1, 0]).sum(axis=0)   # (Scalar+ <- Vector+)[edges <- vertices]
+        across = (spdiag(stack([heads, tails]) | Vector) * topology.incidence[1, 0]).sum(axis=0)  # (Scalar+ <- Vector+)[edges <- vertices]
         jacobian = vertex_rows * own + edge_rows * across                      # (Scalar+ <- Vector+)[vertices + edges <- vertices]
         # The change that zeroes the linearised residuals, along the circles' own metric: the step commutes with
         # the maps that keep the sphere, so a boosted start gives the boosted circles.
@@ -83,9 +82,9 @@ def centre(points: Point, n_iterations: int) -> Point:
     minimises the summed logarithms of minus its inner products with them."""
     # There the points, each weighted by minus the reciprocal of its inner product with the centre, sum along
     # the centre itself: the centre is the fixed point of that weighted sum, normalized.
-    centre = origin                                                            # [] Point-
+    centre = origin                                 # [] Point-
     for _ in range(n_iterations):
-        weighted_sum = (points * (-1 / (centre | points))).sites.sum()         # [] Point-
+        weighted_sum = (points * (-1 / (centre | points))).sites.sum()  # [] Point-
         centre = weighted_sum.normalized()
     return centre
 
@@ -101,8 +100,8 @@ def spiral(n_points: int) -> Point:
 
 
 # --- the step outside the algebra -------------------------------------------------------
-def hull(offsets: Point) -> Mesh:
+def hull(offsets: Point) -> Topology:
     """The convex hull of points at offsets from the centre has triangle faces, counter-clockwise seen from
     outside, found from the offsets' pairings with the planes x, y and z."""
     coordinates = (stack((mv.x, mv.y, mv.z)) & offsets.batch()[..., None]).to_array()   # [points, 3]
-    return Mesh.closed(ConvexHull(coordinates).simplices, coordinates)
+    return Topology.closed(ConvexHull(coordinates).simplices, coordinates)

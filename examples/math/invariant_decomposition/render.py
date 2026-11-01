@@ -46,8 +46,8 @@ def plane_axes(circles: core.Antivector, parts: core.Bivector) -> tuple[Vector, 
 def plane_image(circle: core.Antivector, colour: np.ndarray, index: int, camera: Camera) -> np.ndarray:
     """A plane's circle, grey, its trace up to one moment in the plane's colour, and the point at that moment."""
     return simplices.composited([
-        simplices.strokes(circle, simplices.Mesh.chains([len(circle)]), orbit_colour, circle_width, camera),
-        simplices.strokes(circle[:index + 1], simplices.Mesh.chains([index + 1]), colour, trace_width, camera),
+        simplices.strokes(circle, simplices.Topology.chains([len(circle)]), orbit_colour, circle_width, camera),
+        simplices.strokes(circle[:index + 1], simplices.Topology.chains([index + 1]), colour, trace_width, camera),
         simplices.markers(circle[index][None], colour, point_radius, camera)])
 
 
@@ -57,7 +57,7 @@ def tangle_image(places: solids.Point, index: int, view: solids.View) -> np.ndar
     # Each segment runs from one time of the orbit to the next: purple up to the moment, grey after it.
     passed = np.arange(1, len(places)) <= index                                # [times - 1]
     colours = np.where(passed[:, None], trail_colour, orbit_colour)            # [times - 1, 3]
-    tube = simplices.tubes(places, simplices.Mesh.chains([len(places)]), colours, 2 * tube_radius, view,
+    tube = simplices.tubes(places, simplices.Topology.chains([len(places)]), colours, 2 * tube_radius, view,
                            gloss=solids.gloss)
     orbit = solids.layer([], view, inks=[], translucent=[], meshes=[(tube, 1.0)])
     moment = solids.layer([(solids.ball(places[index], marker_radius * view.pixel)[None, None], trail_colour)], view,
@@ -79,7 +79,7 @@ def layout(points: core.Antivector, circles: core.Antivector, parts: core.Bivect
     # One view framing the whole orbit, as many pixels across as the tangle's room holds.
     view = fitted(solids.view([places], 0.0, tangle_elevation, tangle_azimuth, tangle_margin, 1), tangle)
     shown = show(tangle, tangle_image(places, index, view), view)
-    across, along = plane_axes(circles, parts)                                 # [3] Vector+, [3] Vector+
+    across, along = plane_axes(circles, parts)                                         # [3] Vector+, [3] Vector+
     panel_width = (1 - tangle_width) / len(plane_colours)
     images, cameras = [], []
     for plane, colour in enumerate(plane_colours):

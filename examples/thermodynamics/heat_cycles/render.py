@@ -68,7 +68,7 @@ class Charts:
         shares = np.linspace(0, 1, n_fill)[:, None]
         enclosed = (heated * (1 - shares) + cooled * shares).reshape(-1)                  # [fill * (steps + 1)] State-
         self.enclosed = art.gas_points(temperature_of, pressure_of, enclosed)            # [...] Point-, Point-
-        self.grid = art.Mesh.grid(n_fill, self.n_steps + 1)
+        self.grid = art.Topology.grid(n_fill, self.n_steps + 1)
 
     def picture(self, diagram: art.Diagram, cycle: art.Point, enclosed: art.Point, lines: list, travelled: int,
                 labels: list, names: list) -> np.ndarray:

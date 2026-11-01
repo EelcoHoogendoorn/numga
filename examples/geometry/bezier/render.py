@@ -56,11 +56,11 @@ def draw_rays(controls: core.Point, curve: core.Point, complement: core.Point, s
     rays = solids.rods(solids.origin, solids.origin + solids.context.include_from_algebra(reaches),
                        line_width / 2 * view.pixel)                            # [corners, 3] Quadric
     # The curves in the renderer's space, each point a ray's place, and where each ray meets the unit sphere.
-    places = [solids.origin + solids.context.include_from_algebra(arc) for arc in arcs]        # [samples] Point- each
-    on_sphere_places = [solids.origin + solids.context.include_from_algebra(arc.normalized()) for arc in arcs]   # [samples] Point- each
+    places = [solids.origin + solids.context.include_from_algebra(arc) for arc in arcs]  # [samples] Point- each
+    on_sphere_places = [solids.origin + solids.context.include_from_algebra(arc.normalized()) for arc in arcs]  # [samples] Point- each
     # Both curves, chains of edges one after the other, each edge in its curve's colour.
     lengths = [len(arc) for arc in arcs]
-    chains = simplices.Mesh.chains(lengths)
+    chains = simplices.Topology.chains(lengths)
     edge_colours = np.repeat(colours, np.array(lengths) - 1, axis=0)          # [edges, 3]
     arc_strokes = simplices.tubes(concatenate(places), chains, edge_colours, line_width, view, gloss=solids.gloss)
     on_sphere = simplices.tubes(concatenate(on_sphere_places), chains, edge_colours, sphere_curve_width, view,
@@ -69,7 +69,7 @@ def draw_rays(controls: core.Point, curve: core.Point, complement: core.Point, s
     # origin, its part along the degenerate blades.
     cone = solids.context.include_from_algebra(shape)(solids.Point.restrict.degenerate())      # [] Plane+ <- Point-
     # The control polygons dotted, their corners and the origin as points.
-    dots = concatenate([dotted(polygon, dot_spacing * view.pixel) for polygon in controls])   # [dots] Point-
+    dots = concatenate([dotted(polygon, dot_spacing * view.pixel) for polygon in controls])  # [dots] Point-
     parts = [(rays, ray_colour),
              (solids.ball(solids.origin + solids.context.include_from_algebra(dots), dot_radius * view.pixel)[:, None], control_colour),
              (solids.ball(solids.origin + solids.context.include_from_algebra(corners), point_radius * view.pixel)[:, None], control_colour),

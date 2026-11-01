@@ -10,8 +10,8 @@ SpatialPlane = core.Plane.derive.within("x y z")
 
 
 def test_whitney_commutation_flux_preserving_subspace_and_chiral_beltrami_spectrum():
-    mesh, vertices, free = scenarios.torus_cavity()
-    operators = core.Operators(mesh, vertices)
+    topology, vertices, free = scenarios.torus_cavity()
+    operators = core.Operators(topology, vertices)
 
     assert operators.whitney1.gatype == core.ga.gatype((SpatialPlane, core.Scalar))
     assert operators.curl.gatype == core.ga.gatype((core.Field, core.Scalar))
@@ -21,16 +21,16 @@ def test_whitney_commutation_flux_preserving_subspace_and_chiral_beltrami_spectr
     np.testing.assert_allclose((operators.helicity - operators.helicity.adjugate()).cells.kernel, 0.0, atol=1e-14)
 
     # Whitney reconstruction commutes with the exterior derivative.
-    d0, d1 = mesh.d[0] * core.Scalar, mesh.d[1] * core.Scalar
+    d0, d1 = topology.d[0] * core.Scalar, topology.d[1] * core.Scalar
     potential = (core.mv.x & vertices) * 0.7 - (core.mv.y & vertices) * 1.1 + (core.mv.z & vertices) * 0.5
     np.testing.assert_allclose((operators.whitney1(d0(potential)) - operators.gradient(potential)).kernel, 0.0, atol=1e-12)
     free_test = free(core.as_scalar(np.sin(np.arange(free.shape[1]))).field())
     np.testing.assert_allclose((operators.curl(free_test) - operators.whitney2(d1(free_test))).kernel, 0.0, atol=1e-11)
     # Normal magnetic flux d1(free_test) vanishes identically on every boundary triangle of the torus.
-    np.testing.assert_allclose(d1(free_test).batch()[mesh.exterior(2)].kernel, 0.0, atol=1e-14)
+    np.testing.assert_allclose((topology.reading(topology.exterior[2], 2) * d1(free_test)).kernel, 0.0, atol=1e-14)
 
     # An interior vertex gradient lies in the kernel of both stiffness and free-subspace helicity.
-    interior_phi = core.as_scalar(np.arange(mesh.n_vertices) < scenarios.n_major).field()
+    interior_phi = core.as_scalar(np.arange(topology.n_vertices) < scenarios.n_major).field()
     gauge_edge = d0(interior_phi)
     np.testing.assert_allclose(operators.stiffness(gauge_edge).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose(free.adjugate()(operators.helicity(gauge_edge)).kernel, 0.0, atol=1e-13)
@@ -58,8 +58,8 @@ def test_whitney_commutation_flux_preserving_subspace_and_chiral_beltrami_spectr
 
 
 def test_selective_decay_helicity_conservation_and_woltjer_taylor_relaxation():
-    mesh, vertices, free = scenarios.torus_cavity()
-    operators = core.Operators(mesh, vertices)
+    topology, vertices, free = scenarios.torus_cavity()
+    operators = core.Operators(topology, vertices)
     inverse_eigenvalues, modes, _ = numerical.coexact_helicity_eigh(
         free.adjugate()(operators.stiffness(free)),
         free.adjugate()(operators.helicity(free)),
