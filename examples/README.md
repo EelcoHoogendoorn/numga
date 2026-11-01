@@ -121,7 +121,7 @@
 - [Dirac, Weyl and Majorana spinors](relativity/spinors/) — Three kinds of particle state occupy one real spacetime spinor space.
 - [Gravitational lensing](relativity/gravitational_lensing/) — Point masses bend sightlines to produce multiple images of a source.
 - [Geodesics through a connection of motors](relativity/motor_connection/) — Motors on the edges of a flat mesh, blended across each triangle by its Whitney forms, roll geodesics over a sphere to its antipode and particles through anti-de Sitter spacetime back to one event.
-- [Gravitational waves below the Hopf circles](relativity/hopf_projection/) — Waves of the round three-sphere that are the same all along its Hopf circles are seen without loss on the sphere below them, which tuned triangles of atoms and a fan of light cross.
+- [Gravitational waves below the Hopf circles](relativity/hopf_projection/) — Waves of the round three-sphere that are the same all along its Hopf circles are seen without loss on the sphere below them, which tuned triangles of atoms and a bundle of light cross.
 - [Kerr ray tracing in GTG](relativity/kerr/kerr.ipynb) — Gauge theory gravity transports light and polarization past a rotating black hole.
 - [Kerr ray tracing with a metric](relativity/kerr/kerr_metric.ipynb) — The metric and connection describe light and polarization in the same black-hole scene.
 - [LIGO antenna patterns](relativity/ligo/) — Detector arms respond differently to gravitational waves arriving from different directions and polarizations.

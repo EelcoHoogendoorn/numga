@@ -384,11 +384,10 @@ def burst_view(mesh: three_sphere.Mesh, vertices: three_sphere.Point, rates: thr
 
 
 def beacon_view(mesh: three_sphere.Mesh, vertices: three_sphere.Point, rates: three_sphere.Rate,
-                waves: three_sphere.Waves, frequency: float) -> tuple[Iterator[np.ndarray], three_sphere.Point, list]:
+                waves: three_sphere.Waves, frequency: float) -> Iterator[np.ndarray]:
     """The burst seen from inside the mesh by the eye over a whole turn from its release, through beacons at the
     600-cell's vertices: crystals tuned to the burst, each seen as it was when its light left it, its distance from
-    the eye before; and the beacons' middles `[beacons] Point-` and their atoms and bonds' strains as each frame sees
-    them, `(Point-[atoms], Scalar+[bonds])`."""
+    the eye before."""
     from examples.relativity.motor_connection import render
 
     eye_times = np.linspace(0, 2 * np.pi, n_burst_frames, endpoint=False)       # [frames]
@@ -412,9 +411,8 @@ def beacon_view(mesh: three_sphere.Mesh, vertices: three_sphere.Point, rates: th
                     strains[seen[frame, bond_beacons], np.arange(strains.shape[1])].field())
                    for frame in range(len(eye_times))]
     unseen = np.zeros((len(mesh.tets) * 6, 4), dtype=np.float32)
-    frames = render.inside(three_sphere, mesh, vertices, eye, waves, eye_times, unseen, no_circles(),
-                           bonds, seen_states, beacon_saturating_strain)
-    return frames, beacons, seen_states
+    return render.inside(three_sphere, mesh, vertices, eye, waves, eye_times, unseen, no_circles(),
+                         bonds, seen_states, beacon_saturating_strain)
 
 
 def stepped_squash(cell_mesh: three_sphere.Mesh, cell_vertices: three_sphere.Point, cell_rates: three_sphere.Rate,
@@ -452,7 +450,7 @@ def rolled(core: ModuleType, mesh, vertices: Extensor, rates: Extensor, starts: 
 
 
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
+    from examples.util.animation import save_animation
     from examples.relativity.motor_connection import render
 
     mesh, vertices = chart()
@@ -484,29 +482,17 @@ def main() -> None:
                            bonds, states, render.saturating_strain)
     save_animation(frames, "motor_connection_600_cell", duration_ms)
 
-    # The gate for stepping the motors: the Chern–Simons form on the edges' rates, and the stiffness it leaves on their
-    # lengths, against their expected null directions, gauge alone: the vertices' motors less the six of the whole, and
-    # the vertices' translations less the six isometries.
-    chern_simons = (three_sphere.chern_simons(cell_mesh, cell_vertices) * three_sphere.Rate).to_dense()
-    stiffness = three_sphere.length_stiffness(cell_mesh, cell_vertices, chern_simons)
-    n_vertices = cell_mesh.n_vertices
-    save_figure(render.gate([(render.spectrum(chern_simons, three_sphere.Rate), 6 * (n_vertices - 1)),
-                             (render.spectrum(stiffness, three_sphere.Scalar), 3 * n_vertices - 6)]),
-                "motor_connection_stepping_gate")
     spectrum, squash_squared, times, shares = stepped_squash(cell_mesh, cell_vertices, cell_rates, 4)
-    save_figure(render.waves(spectrum, squash_squared, times, shares, wave_swing), "motor_connection_stepped_waves")
 
     # A burst of waves on an irregular mesh of the three-sphere, seen through the decagons and through beacons across
-    # the universe, and each beacon's largest strain against its distance from the source.
+    # the universe.
     burst_mesh, burst_vertices = irregular_three_sphere()
     burst_rates = three_sphere.round_rates(burst_mesh, three_sphere.isoclinic(burst_vertices))   # Rate+[edges]
     burst_waves, burst_frequency = burst(burst_mesh, burst_vertices, burst_rates)
     save_animation(burst_view(burst_mesh, burst_vertices, burst_rates, burst_waves, burst_frequency),
                    "motor_connection_burst", duration_ms)
-    beacon_frames, beacons, seen_states = beacon_view(burst_mesh, burst_vertices, burst_rates, burst_waves,
-                                                      burst_frequency)
-    save_animation(beacon_frames, "motor_connection_beacons", duration_ms)
-    save_figure(render.beacon_strains(burst_source().dot(beacons), seen_states), "motor_connection_beacon_strains")
+    save_animation(beacon_view(burst_mesh, burst_vertices, burst_rates, burst_waves, burst_frequency),
+                   "motor_connection_beacons", duration_ms)
 
     # checks
     # Half a turn along, every path on the sphere is at the antipode.

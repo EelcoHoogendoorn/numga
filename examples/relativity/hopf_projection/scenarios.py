@@ -1,7 +1,7 @@
-"""The 600-cell's gravitational waves seen on the sphere below its Hopf circles, the guardrails' decagons: its squash
-standing, and a quadrupole travelling round the base, the squash and the squash turned an eighth of a turn a quarter
-swing behind it. The base is shaded by how much the circles above it stretch, the decagons stand on it as their base
-points, triangle gauges ring on it, tuned to the waves, and a fan of light crosses it."""
+"""The 600-cell's gravitational waves seen on the sphere below its Hopf circles, the guardrails' decagons: a quadrupole
+travelling round the base, the squash and the squash turned an eighth of a turn a quarter swing behind it. The base is
+shaded by how much the circles above it stretch, the decagons stand on it as their base points, triangle gauges ring
+on it, tuned to the waves, and a bundle of light crosses it."""
 
 from __future__ import annotations
 
@@ -147,18 +147,25 @@ def gauge_states(cell_mesh: three_sphere.Mesh, cell_vertices: three_sphere.Point
                                      atoms, at_rest, start, rolling.crystal_step, times))
 
 
-def swing_on_base(stretched: three_sphere.Plane, squeezed: three_sphere.Plane, lags: np.ndarray
-                  ) -> tuple[three_sphere.Point, three_sphere.Point, list]:
-    """One swing of the 600-cell's squash patterns, stretching space along the invariant directions the planes
-    `stretched` `[patterns] Plane+` read and squeezing it along those `squeezed` reads, each lagging by its share of
-    `lags` `[patterns]`, seen on the base: the decagons' base points `[decagons] Point-`, the light's undisturbed
-    paths `[rays, steps + 1] Point-`, and at each frame the circles' stretch at the icosphere's points
-    `Scalar+[points]`, the gauges' atoms `[atoms] Point-`, their bonds' arcs `[bonds, arc points] Point-` and strains
-    `[bonds] Scalar+`, and the light's paths `[rays, steps + 1] Point-`."""
-    cell_mesh, cell_vertices = rolling.six_hundred_cell()
+def quadrupole_history(cell_mesh: three_sphere.Mesh, cell_vertices: three_sphere.Point
+                       ) -> tuple[three_sphere.Waves, float]:
+    """The 600-cell's travelling quadrupole as a smooth field over time, and its frequency: the squash, stretching
+    space along x and squeezing it along y in the frames, and the squash turned an eighth of a turn about z, a quarter
+    swing behind it."""
+    mv = three_sphere.mv
     cell_rates = three_sphere.round_rates(cell_mesh, three_sphere.isoclinic(cell_vertices))   # Rate+[edges]
-    patterns = rolling.squash(cell_mesh, cell_vertices, cell_rates, stretched, squeezed)   # [patterns] Scalar+[edges]
-    waves, frequency = rolling.stepped_history(cell_mesh, cell_vertices, patterns, lags, swing)
+    patterns = rolling.squash(cell_mesh, cell_vertices, cell_rates, stack((mv.x, eighth >> mv.x)),
+                              stack((mv.y, eighth >> mv.y)))                     # [patterns] Scalar+[edges]
+    return rolling.stepped_history(cell_mesh, cell_vertices, patterns, np.array([0, np.pi / 2]), swing)
+
+
+def quadrupole_on_base() -> tuple[three_sphere.Point, three_sphere.Point, list]:
+    """One swing of the 600-cell's travelling quadrupole seen on the base: the decagons' base points `[decagons]
+    Point-`, the light's undisturbed paths `[rays, steps + 1] Point-`, and at each frame the circles' stretch at the
+    icosphere's points `Scalar+[points]`, the gauges' atoms `[atoms] Point-`, their bonds' arcs `[bonds, arc points]
+    Point-` and strains `[bonds] Scalar+`, and the light's paths `[rays, steps + 1] Point-`."""
+    cell_mesh, cell_vertices = rolling.six_hundred_cell()
+    waves, frequency = quadrupole_history(cell_mesh, cell_vertices)
     times = np.arange(n_frames) * 2 * np.pi / frequency / n_frames             # [frames]
     turn = rolling.circle_turn(cell_vertices, rolling.guardrail_sides)          # [] Motor+
     circling = turn.log()                                                       # [] Rate+
@@ -181,27 +188,20 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.relativity.hopf_projection import render
 
-    mv = three_sphere.mv
     sphere_mesh, sphere_points, _ = base_sphere()
-    # The squash standing, and the quadrupole travelling round the base.
-    standing = (stack((mv.x,)), stack((mv.y,)), np.zeros(1))
-    travelling = (stack((mv.x, eighth >> mv.x)), stack((mv.y, eighth >> mv.y)), np.array([0, np.pi / 2]))
-    for name, (stretched, squeezed, lags) in [("squash", standing), ("quadrupole", travelling)]:
-        decagon_bases, undisturbed, frames = swing_on_base(stretched, squeezed, lags)
-        save_animation((render.base_view(sphere_mesh, sphere_points, stretches, decagon_bases, atoms, arcs, strains,
-                                         light, rolling.wave_swing)
-                        for stretches, atoms, arcs, strains, light in frames),
-                       f"hopf_projection_{name}", rolling.duration_ms)
-        save_figure(render.response(stack([strains for *_, strains, _ in frames]), stack([light for *_, light in frames]),
-                                    undisturbed, target_strain, target_sways), f"hopf_projection_{name}_response")
+    decagon_bases, undisturbed, frames = quadrupole_on_base()
+    save_animation((render.base_view(sphere_mesh, sphere_points, stretches, decagon_bases, atoms, arcs, strains, light,
+                                     rolling.wave_swing)
+                    for stretches, atoms, arcs, strains, light in frames), "hopf_projection_quadrupole",
+                   rolling.duration_ms)
+    save_figure(render.response(stack([strains for *_, strains, _ in frames]), stack([light for *_, light in frames]),
+                                undisturbed, target_strain, target_sways), "hopf_projection_quadrupole_response")
 
     # checks
-    # The squash is the same all along each circle, between the tenth turns that carry the mesh onto itself too: a
-    # circle's stretch read at one point of it is its average round it, at the full swing.
+    # The quadrupole is the same all along each circle, between the tenth turns that carry the mesh onto itself too: a
+    # circle's stretch read at one point of it is its average round it.
     cell_mesh, cell_vertices = rolling.six_hundred_cell()
-    cell_rates = three_sphere.round_rates(cell_mesh, three_sphere.isoclinic(cell_vertices))   # Rate+[edges]
-    squashing = rolling.squash(cell_mesh, cell_vertices, cell_rates, *standing[:2])   # [1] Scalar+[edges]
-    waves, _ = rolling.stepped_history(cell_mesh, cell_vertices, squashing, standing[2], swing)
+    waves, _ = quadrupole_history(cell_mesh, cell_vertices)
     turn = rolling.circle_turn(cell_vertices, rolling.guardrail_sides)          # [] Motor+
     _, _, bases = base_sphere()
     at_one = core.stretches(waves, cell_mesh, cell_vertices, bases, bases, turn, rolling.guardrail_sides, 1, 0.0)

@@ -194,56 +194,6 @@ def geodesics(mesh: Mesh, vertices: Point, ramps: Plane, connection: Connection,
         yield positions
 
 
-# Each edge's Whitney form against each face's, integrated over a tetrahedron of positive sense, in its own order of
-# its edges, (0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3), and of its faces, each facing a corner: a twelfth, signed
-# by their senses, where the edge and the face share one corner, and nothing where they share two.
-cup = np.array([[1, 1, 0, 0], [1, 0, -1, 0], [1, 0, 0, 1], [0, -1, -1, 0], [0, -1, 0, 1], [0, 0, 1, 1]]) / 12
-
-
-def chern_simons(mesh: Mesh, vertices: Point) -> SparseExtensor:
-    """The Chern–Simons form of a connection on the edges of a mesh of tetrahedra, linearized about a flat one, as the
-    coupling of edge fields it pairs, `Scalar-[edges <- edges]`: in each tetrahedron, its edges' values against the
-    circulations of its faces, `mesh.d[1]`, weighted by `cup` and signed by the tetrahedron's sense in the embedding,
-    each pairing written once each way."""
-    corners = mesh.incidence[3, 0] * vertices                                   # [corners] Point-[tets]
-    senses = corners[0] & corners[1] & corners[2] & corners[3]                  # Scalar-[tets]
-    local = (cup[:, :, None] * senses.normalized().batch()[None, None]).field()   # [edges, faces] Scalar-[tets]
-    edges = mesh.oriented[3, 1]                                                 # [edges] Scalar+[tets <- edges]
-    faces = mesh.oriented[3, 2] * mesh.d[1]                                     # [faces] Scalar+[tets <- edges]
-    once = (~edges[:, None] * spdiag(local) * faces[None, :]).sum(axis=0).sum(axis=0)
-    return (once + ~once) / 2
-
-
-def length_reading(mesh: Mesh, vertices: Point) -> Rate:
-    """How each edge's squared length changes with its motor's departure from round, `(Scalar+ <- Rate+)[edges]`:
-    twice the chord read along the step the departure gives the chord's midpoint, on the sphere."""
-    chords = mesh.d[0] * vertices                                               # Point-[edges]
-    midpoints = (mesh.incidence[1, 0].mean(axis=0) * vertices).normalized()     # Point-[edges]
-    return 2 * chords.dot(midpoints.commutator(Rate).cast(Point))
-
-
-def edge_turns(mesh: Mesh, vertices: Point) -> Rate:
-    """Each edge's turn along itself, `Rate+[edges]`: the rate in the plane of its great circle that lengthens it by
-    one in its squared length."""
-    tails, heads = mesh.incidence[1, 0] * vertices                              # Point-[edges], Point-[edges]
-    planes = (tails & heads).dual()                                             # Rate+[edges]
-    return planes / length_reading(mesh, vertices)(planes)
-
-
-def length_stiffness(mesh: Mesh, vertices: Point, form: Rate) -> Rate:
-    """The stiffness the Chern–Simons form `(Rate- <- Rate+)[edges <- edges]`, dense, leaves on the edges' squared
-    lengths, `(Scalar- <- Scalar+)[edges <- edges]`: each edge's motor lengthened along itself, and its turns and
-    sideways steps, which change no length, slaved by the form's own stationarity, least squares leaving its null
-    directions at nothing."""
-    reading = length_reading(mesh, vertices)                                    # (Scalar+ <- Rate+)[edges]
-    along = edge_turns(mesh, vertices)                                          # Rate+[edges]
-    sideways = (Rate - along * reading).on_diagonal()                           # (Rate+ <- Rate+)[edges <- edges]
-    lengthening = (along * Scalar).on_diagonal()                                # (Rate+ <- Scalar+)[edges <- edges]
-    held = sideways.adjugate()(form(sideways))                                  # (Rate- <- Rate+)[edges <- edges]
-    lifting = lengthening + sideways(held.lstsq(-sideways.adjugate()(form(lengthening)), rcond=1e-10))
-    return lifting.adjugate()(form(lifting))
-
-
 class Space:
     """A triangulated three-sphere as its tetrahedra know it, for stepping its edges' squared lengths by Regge's
     action: each tetrahedron a piece of the round sphere for its angles, and flat for its masses. It holds their
