@@ -111,6 +111,7 @@
 - [Laplacian eigenfunction fluids](fluids/eigen_fluids/) — Whitney gradients and precomputed mode interactions evolve vortices on the Stanford bunny and shear layers on a sphere.
 - [Magnetohydrodynamics on a sphere](fluids/mhd_sphere/mhd_sphere.ipynb) — In spacetime, a frozen-in field is one whose flux function's gradient pairs to nothing with every worldline; a differential rotation winds it up until its current gathers in thin sheets and reconnects into magnetic islands.
 - [Electrokinetic transport](fluids/electrokinetics/) — Pressure and electric potential as one field in spacetime joined with a direction for volume drive flow and current through wavy charged channels, reciprocally, while the double layer's osmotic pressure and field balance across them.
+- [Rayleigh–Bénard convection](fluids/convection/) — Volume and entropy as two degenerate directions joined to planar spacetime, mass along time: gravity's commutator with a parcel pulls its mass alone, buoyancy turns a heated layer over in rolls, and a batch of Rayleigh numbers finds the onset at 1708.
 
 ## Relativity
 
