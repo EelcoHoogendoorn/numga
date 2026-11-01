@@ -30,7 +30,7 @@ def test_whitney_commutation_flux_preserving_subspace_and_chiral_beltrami_spectr
     np.testing.assert_allclose((topology.reading(topology.exterior[2], 2) * d1(free_test)).kernel, 0.0, atol=1e-14)
 
     # An interior vertex gradient lies in the kernel of both stiffness and free-subspace helicity.
-    interior_phi = core.as_scalar(np.arange(topology.n_vertices) < scenarios.n_major).field()
+    interior_phi = core.as_scalar(np.isin(np.arange(topology.n_vertices), topology.interior[0])).field()
     gauge_edge = d0(interior_phi)
     np.testing.assert_allclose(operators.stiffness(gauge_edge).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose(free.adjugate()(operators.helicity(gauge_edge)).kernel, 0.0, atol=1e-13)

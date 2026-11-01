@@ -22,7 +22,7 @@ PORT_COLOUR, FIXED_COLOUR, NEGATED_COLOUR = RIGHT_COLOUR, RIGHT_COLOUR, LEFT_COL
 CROSS_COLOUR, LABEL_COLOUR = "0.85", "0.45"
 # The spin's circle and the light cone, faint, and the cone's inside; the samples round the circle.
 RIM_COLOUR, CONE_FILL = "0.8", "0.97"
-N_RIM_SAMPLES = 120
+N_RIM_SAMPLES = 119
 # The ports: their places across, their radius and their rims' outer radius, in the panel's units; their faces and
 # rims.
 PORT_PLACES, PORT_RADIUS, RIM_RADIUS = (-0.7, 0.7), 0.45, 0.47
@@ -83,10 +83,10 @@ def animate_rotation(
         # The spin turns in the plane the camera sees, x across and z up.
         camera = panel(axis, mv.x, mv.z)
         along, rise = units(camera)
-        turns = (mv.zx * (-np.linspace(0, 2 * np.pi, N_RIM_SAMPLES) / 2)).exp()
+        turns = (mv.zx * (-np.linspace(0, 2 * np.pi, N_RIM_SAMPLES, endpoint=False) / 2)).exp()
         circle = turns >> along                                               # [rim samples] Antivector-
         beneath = [cross(axis, camera, "x", "z"),
-                   simplices.strokes(circle, simplices.Topology.chains([N_RIM_SAMPLES]), ink(RIM_COLOUR), charts.FRAME_PX,
+                   simplices.strokes(circle, simplices.Topology.loops([N_RIM_SAMPLES]), ink(RIM_COLOUR), charts.FRAME_PX,
                                      camera)]
         shown = simplices.overlay(axis, beneath)
         # The ports as lamps, each lit as bright as its output, over its face within its rim.

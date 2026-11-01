@@ -139,10 +139,10 @@ def pose_covariances(motors: Motor, ellipsoids: Quadric, spreads: Scalar, camera
     # Divided by its weight rather than normalized, which keeps the weight's sign: the outline runs out from a centre
     # of unit weight.
     centres = centres / (mv.w & centres)                                         # [cameras] Point-
-    turns = (mv.xy * (-np.linspace(0.0, 2 * np.pi, N_CURVE_SEGMENTS + 1) / 2)).exp()   # [segments + 1] Motor+
-    headings = (turns >> mv.direction([1, 0]))[:, None]                         # [segments + 1, cameras] Direction-
-    reach = (-(ellipsoids(centres) & centres) / (ellipsoids(headings) & headings)).square_root()   # [segments + 1, cameras] Scalar+
-    outlines = centres + headings * reach                                        # [segments + 1, cameras] Point-
+    turns = (mv.xy * (-np.linspace(0.0, 2 * np.pi, N_CURVE_SEGMENTS, endpoint=False) / 2)).exp()   # [segments] Motor+
+    headings = (turns >> mv.direction([1, 0]))[:, None]                         # [segments, cameras] Direction-
+    reach = (-(ellipsoids(centres) & centres) / (ellipsoids(headings) & headings)).square_root()   # [segments, cameras] Scalar+
+    outlines = centres + headings * reach                                        # [segments, cameras] Point-
     pictures = []
     for index, colour in enumerate(CAMERA_COLORS[:motors.shape[0]]):
         # The fan in the camera's frame, about its pinhole from its axis, carried out by its pose.
@@ -152,8 +152,8 @@ def pose_covariances(motors: Motor, ellipsoids: Quadric, spreads: Scalar, camera
         pinhole = motors[index] >> mv.point([0, 0])                              # [] Point-
         spokes = stack((pinhole.broadcast_to((2,)), fan[[0, -1]]), axis=1)       # [spokes, ends] Point-
         pictures += [quadrics.regions(ellipsoids[index:index + 1, None], colour, camera, 0.28),
-                     polylines(outlines[:, index][None], OUTLINE_WIDTH, colour, 0.28, camera, OUTLINE_WIDTH * DASHED,
-                               Cap.BUTT),
+                     simplices.strokes(outlines[:, index], Topology.loops([N_CURVE_SEGMENTS]), colour, OUTLINE_WIDTH,
+                                       camera, dashes=OUTLINE_WIDTH * DASHED, cap=Cap.BUTT, opacity=0.28),
                      polylines(fan[None], ARC_WIDTH, colour, 1.0, camera, ARC_WIDTH * DOTTED, Cap.BUTT),
                      polylines(spokes, SPOKE_WIDTH, colour, 1.0, camera, SPOKE_WIDTH * DOTTED, Cap.BUTT)]
     return pictures

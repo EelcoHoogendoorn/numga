@@ -90,7 +90,7 @@ def sphere(n_latitudes: int, n_longitudes: int) -> Point:
     """Pure states on a closed latitude-longitude mesh of the Bloch sphere: north, tilted down and turned about the
     field."""
     inclinations = np.linspace(0, np.pi, n_latitudes + 1)
-    azimuths = np.linspace(0, 2 * np.pi, n_longitudes + 1)
+    azimuths = np.linspace(0, 2 * np.pi, n_longitudes, endpoint=False)
     tilts = (mv.zx * (-inclinations / 2)).exp()                              # [latitudes + 1] Rotor+
-    turns = (mv.xy * (-azimuths / 2)).exp()                                  # [longitudes + 1] Rotor+
-    return turns[None, :] >> (tilts[:, None] >> north)                       # [latitudes + 1, longitudes + 1] Point-
+    turns = (mv.xy * (-azimuths / 2)).exp()                                  # [longitudes] Rotor+
+    return turns[None, :] >> (tilts[:, None] >> north)                       # [latitudes + 1, longitudes] Point-

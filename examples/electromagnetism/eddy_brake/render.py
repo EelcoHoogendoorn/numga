@@ -69,15 +69,15 @@ def magnet(centre: core.Point, width: float, field: core.Bivector, camera: Camer
     """The magnet's field, a plane of space, as a patch in that plane: its width dashed, and an arc around it ending
     in a chevron for the sense the field turns in, read by pairing the field with the patch of the disc's plane."""
     # The dashed rim: a point along x at the magnet's width, turned once around its centre.
-    around = (core.mv.xy * (-np.linspace(0, 2 * np.pi, n_magnet_rim + 1) / 2)).exp()   # [rim] Rotor+
-    outline = centre + (around >> (core.mv.x.dual() * width))                          # [rim] Point-
+    around = (core.mv.xy * (-np.linspace(0, 2 * np.pi, n_magnet_rim, endpoint=False) / 2)).exp()   # [rim] Rotor+
+    outline = centre + (around >> (core.mv.x.dual() * width))                                      # [rim] Point-
     handedness = field & core.mv.xy.dual()
     sense = np.asarray(handedness > 0, dtype=int) - np.asarray(handedness < 0, dtype=int)
     angles = field_arc_start + sense * np.linspace(0, field_arc_span, n_field_arc)
     # The arc: a point on the rim along x, turned about the magnet's centre through the angles.
     turns = (core.mv.xy * (-angles / 2)).exp()                               # [arc] Rotor+
     arc = centre + (turns >> (core.mv.x.dual() * (field_arc_reach * width)))  # [arc] Point-
-    return [simplices.strokes(outline, Topology.chains([n_magnet_rim + 1]), magnet_colour, magnet_width, camera,
+    return [simplices.strokes(outline, Topology.loops([n_magnet_rim]), magnet_colour, magnet_width, camera,
                               dashes=magnet_dashes, cap=simplices.Cap.BUTT),
             simplices.strokes(arc, Topology.chains([n_field_arc]), magnet_colour, magnet_width, camera,
                               chevrons=np.arange(n_field_arc - 1) == n_field_arc - 2, chevron=magnet_chevron)]

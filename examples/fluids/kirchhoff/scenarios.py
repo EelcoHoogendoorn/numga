@@ -65,17 +65,17 @@ def gliding() -> core.Motor:
 
 
 def outline() -> core.Point:
-    """The body's outline in the plane of its first two axes, in its own frame `[outline + 1]`: the unit
+    """The body's outline in the plane of its first two axes, in its own frame `[outline]`: the unit
     circle turned out by rotors, stretched onto the body."""
-    angles = np.linspace(0, 2 * np.pi, N_OUTLINE + 1)
-    circle = (mv.xy * (-angles / 2)).exp() >> long_axis                       # [outline + 1] Direction-
-    return core.centre + core.stretch(SEMI_AXES)(circle)                      # [outline + 1] Point-
+    angles = np.linspace(0, 2 * np.pi, N_OUTLINE, endpoint=False)
+    circle = (mv.xy * (-angles / 2)).exp() >> long_axis                       # [outline] Direction-
+    return core.centre + core.stretch(SEMI_AXES)(circle)                      # [outline] Point-
 
 
 def frames(motors: core.Motor) -> Iterator[tuple[core.Point, core.Point, core.Point]]:
-    """Per frame, every case's outline `[cases, outline + 1]`, centre `[cases]` and nose, the tip of
+    """Per frame, every case's outline `[cases, outline]`, centre `[cases]` and nose, the tip of
     its long axis `[cases]`."""
-    shape = outline()                                                         # [outline + 1] Point-
+    shape = outline()                                                         # [outline] Point-
     nose = core.centre + core.stretch(SEMI_AXES)(long_axis)                   # [] Point-
     for index in range(0, motors.shape[0], N_STEPS_PER_FRAME):
         placed = motors[index]                                                # [cases] Motor+

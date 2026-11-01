@@ -57,8 +57,8 @@ def electric_lines() -> core.Spatial:
 # experiment, copy it.
 def propagation(times: np.ndarray) -> Iterator[core.Event]:
     """Electric field lines transported along straight null rays, one set per instant."""
-    electric = electric_lines()                                               # [polars, per circle, fibre samples + 1] Spatial-
-    rays = core.robinson(electric)                                            # [polars, per circle, fibre samples + 1] Event-
+    electric = electric_lines()                                               # [polars, per circle, fibre samples] Spatial-
+    rays = core.robinson(electric)                                            # [polars, per circle, fibre samples] Event-
     # The null field's lines are carried by its energy flow: each material point follows one
     # straight light ray, even as the lines deform.
     for time in times:

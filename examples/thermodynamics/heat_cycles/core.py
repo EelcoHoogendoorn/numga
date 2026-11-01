@@ -18,6 +18,7 @@ import numpy as np
 
 from numga import Algebra
 from numga.backend.jax import JaxContext, derivative
+from examples.util.topology import Topology
 
 ga = Algebra("s0v0")
 mv = JaxContext(ga, np.float64).multivector
@@ -42,10 +43,14 @@ def lifted(entropies: Scalar, temperatures: Scalar, capacity: float) -> State:
 
 
 def strokes(fraction: Scalar, corners_entropy: Scalar, corners_temperature: Scalar, capacity: float) -> State:
-    """The states a fraction of the way along each stroke between successive corners, straight in entropy and
-    temperature: at the reservoirs' temperatures the gas takes in or gives up heat, between them it is insulated."""
-    entropies = corners_entropy[:-1] + (corners_entropy[1:] - corners_entropy[:-1]) * fraction
-    temperatures = corners_temperature[:-1] + (corners_temperature[1:] - corners_temperature[:-1]) * fraction
+    """The states a fraction of the way along each stroke `[strokes, ...]`, from each corner `[corners]` to the next
+    and from the last back to the first, straight in entropy and temperature: at the reservoirs' temperatures the gas
+    takes in or gives up heat, between them it is insulated."""
+    ends = Topology.loops([len(corners_entropy)]).incidence[1, 0]                 # [2] numbers[strokes <- corners]
+    entropy_starts, entropy_ends = (ends * corners_entropy.field()).batch()[..., None]   # [strokes, 1] Scalar+, Scalar+
+    temperature_starts, temperature_ends = (ends * corners_temperature.field()).batch()[..., None]   # [strokes, 1] Scalar+, Scalar+
+    entropies = entropy_starts + (entropy_ends - entropy_starts) * fraction
+    temperatures = temperature_starts + (temperature_ends - temperature_starts) * fraction
     return lifted(entropies, temperatures, capacity)
 
 

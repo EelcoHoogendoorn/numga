@@ -11,9 +11,9 @@ def test_emission_and_its_mirror_image():
     spins, directions, rates, _, _ = scenarios.experiment()
     original, image, built = rates.to_array()
 
-    # Around the circle the rate averages to that of unpolarized nuclei; the closing sample repeats the first.
-    np.testing.assert_allclose(original[:-1].mean(), 1, atol=1e-12)
-    np.testing.assert_allclose(image, original[::-1], atol=1e-12)
+    # Around the circle the rate averages to that of unpolarized nuclei; the mirror image runs round the other way.
+    np.testing.assert_allclose(original.mean(), 1, atol=1e-12)
+    np.testing.assert_allclose(image, original[-np.arange(scenarios.n_directions)], atol=1e-12)
     assert np.abs(built - image).max() > 1
 
     figure = render.draw_experiment(spins, directions, rates)

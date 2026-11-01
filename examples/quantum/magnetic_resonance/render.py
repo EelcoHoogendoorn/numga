@@ -39,7 +39,7 @@ ECHO_PX = (603, 281)
 # The time the echo's signal is followed for, in µs from the first pulse; the echo's view of the ball's equator, its
 # ink and its samples.
 ECHO_SPAN = 8.0
-EQUATOR_COLOUR, N_RIM_SAMPLES = np.full(3, 0.8), 120
+EQUATOR_COLOUR, N_RIM_SAMPLES = np.full(3, 0.8), 119
 
 
 def components(rho: core.State) -> np.ndarray:
@@ -188,7 +188,7 @@ def animate_echo(detunings: np.ndarray, states: Iterable[core.State], dt: float,
     across, up = 2 * mv.yz, 2 * mv.zx
     # The ball's equator: the elements these planes read one unit along x, turned about the field.
     unit = across.dual() / (across & across.dual())
-    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, N_RIM_SAMPLES) / 2)).exp()
+    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, N_RIM_SAMPLES, endpoint=False) / 2)).exp()
     equator = turns >> unit                                                   # [rim samples]
     with charts.style():
         figure, (top, trace) = charts.subplots(*ECHO_PX, ncols=2, width_ratios=(1, 1.4))
@@ -205,7 +205,7 @@ def animate_echo(detunings: np.ndarray, states: Iterable[core.State], dt: float,
         trace.spines[["top", "right"]].set_visible(False)
         figure.tight_layout()
         camera = panel(top, across, up)
-        rim = simplices.strokes(equator, simplices.Topology.chains([N_RIM_SAMPLES]), EQUATOR_COLOUR, charts.LINE_PX,
+        rim = simplices.strokes(equator, simplices.Topology.loops([N_RIM_SAMPLES]), EQUATOR_COLOUR, charts.LINE_PX,
                                 camera)
         spins = simplices.overlay(top, [rim])
         times, strength = [], []

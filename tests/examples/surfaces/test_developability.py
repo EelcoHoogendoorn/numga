@@ -18,11 +18,8 @@ def cylinder(rings: int, sectors: int) -> tuple[core.Topology, core.Point]:
     around = (mv.xy * (-angles / 2)).exp() >> mv.x.dual()           # [sectors] Point-
     height = mv.z.dual()                                             # [] Point-
     vertices = (around[None, :] + height * np.linspace(-1, 1, rings)[:, None]).reshape(-1).field()   # Point-[vertices]
-    ring, sector = np.meshgrid(np.arange(rings - 1), np.arange(sectors), indexing="ij")
-    here, along = ring * sectors + sector, ring * sectors + (sector + 1) % sectors
-    faces = np.concatenate([np.stack([here, along, along + sectors], axis=-1).reshape(-1, 3),
-                            np.stack([here, along + sectors, here + sectors], axis=-1).reshape(-1, 3)])
-    return core.Topology(rings * sectors, faces), vertices
+    # A loop of sectors swept along a chain of rings, its vertices ring after ring.
+    return core.Topology.loops([sectors]).product(core.Topology.chains([rings])), vertices
 
 
 def energy(topology: core.Topology, vertices: core.Point) -> float:

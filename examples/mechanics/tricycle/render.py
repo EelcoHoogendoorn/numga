@@ -129,8 +129,8 @@ def space(contacts: solids.Point, forward: solids.Point, centre: solids.Line, mi
     # quarter turn in the ground, from the point of the rim ahead of the hub.
     steps = wheel_steps(contacts, forward)                                                # [wheels] Point-
     sideways = steps.commutator(mv.xy)                                                    # [wheels] Point-
-    rims = meshes.circles(hubs + steps, (hubs & sideways) * solids.flip, N_RIM)          # [wheels, rim + 1] Point-
-    tyres = simplices.tubes(rims.reshape(-1), simplices.Topology.chains([rims.shape[1]] * rims.shape[0]), to_rgb(WHEEL),
+    rims = meshes.circles(hubs + steps, (hubs & sideways) * solids.flip, N_RIM)          # [wheels, rim] Point-
+    tyres = simplices.tubes(rims.reshape(-1), simplices.Topology.loops([rims.shape[1]] * rims.shape[0]), to_rgb(WHEEL),
                             RIM_WIDTH, view, gloss=solids.gloss)
     trail = simplices.tubes(middle, simplices.Topology.chains([len(middle)]), to_rgb(TRAIL), TRAIL_WIDTH, view,
                             gloss=solids.gloss)

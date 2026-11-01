@@ -29,7 +29,7 @@ n_gallery_colours = 64
 def torus_cavity() -> tuple[Topology, Point, Embedding]:
     """A reflection-symmetric solid tetrahedral torus around the z axis and its flux-preserving edge subspace."""
     topology, vertices = solid_torus(major_radius, minor_radius, n_major, n_minor)
-    return topology, vertices, flux_preserving(topology, n_major, n_minor)
+    return topology, vertices, flux_preserving(topology, n_minor)
 
 
 def main() -> None:

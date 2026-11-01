@@ -93,11 +93,11 @@ def draw_equilibrium(dispersion: core.Field, spins: core.Spin) -> Figure:
 def chart(energies: np.ndarray, axis: plt.Axes) -> tuple[solids.View, meshes.Samples, solids.Point]:
     """The view of the chart, fitted to the matplotlib axes it is shown in, its axes as arrows from the start of the
     energy axis, tubes each ending in a chevron, the energy along +x and the pair coherence in yz and zx along +y and
-    +z, and the circles of the largest coherence about the energy axis at every few levels `[circles, circle + 1]`."""
+    +z, and the circles of the largest coherence about the energy axis at every few levels `[circles, circle]`."""
     ends = energy_start + solids.axes.dual() * reaches                                      # [3] Point-
     # The circles about the energy axis, x, at every few levels, each through the point the largest coherence above it.
     levels = solids.origin + sm.x.dual() * (ENERGY_SCALE * energies[::CIRCLE_EVERY])        # [circles] Point-
-    circles = meshes.circles(levels + sm.z.dual() * CIRCLE_RADIUS, sm.yz, N_CIRCLE)        # [circles, circle + 1] Point-
+    circles = meshes.circles(levels + sm.z.dual() * CIRCLE_RADIUS, sm.yz, N_CIRCLE)        # [circles, circle] Point-
     view = fitted(solids.view([circles, energy_start, ends], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS), axis)
     # Each axis an edge from the start of the energy axis to its end.
     starts = energy_start[None].broadcast_to(ends.shape)                                    # [3] Point-
@@ -133,8 +133,8 @@ def animate_quench(
         axis = figure.add_axes((0.01, 0.08, 0.57, 0.85))
         curve = figure.add_axes((0.68, 0.22, 0.29, 0.64))
         view, axes, circles = chart(energies, axis)
-        # Each circle a closed chain of edges through its points.
-        rings = (simplices.tubes(circles.reshape(-1), simplices.Topology.chains([circles.shape[1]] * len(circles)),
+        # Each circle a loop of edges through its points.
+        rings = (simplices.tubes(circles.reshape(-1), simplices.Topology.loops([circles.shape[1]] * len(circles)),
                                  CIRCLE_COLOUR, CIRCLE_WIDTH, view, solids.gloss), CIRCLE_OPACITY)
         scene = Scene(view, np.ones(3), [], [rings, (axes, 1.0)], inks=[], translucent=[])
 

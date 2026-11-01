@@ -43,7 +43,7 @@ def points(xyz: np.ndarray) -> Point:
 
 def sphere(longitudes: int, latitudes: int) -> Point:
     """A longitude-latitude grid of points covers the unit sphere."""
-    phi, theta = np.meshgrid(np.linspace(0, 2 * np.pi, longitudes), np.linspace(0, np.pi, latitudes))
+    phi, theta = np.meshgrid(np.linspace(0, 2 * np.pi, longitudes, endpoint=False), np.linspace(0, np.pi, latitudes))
     # The pole xy turned toward x by the polar angle, then about z by the longitude.
     return (mv.xy * (-phi / 2)).exp() * (mv.zx * (-theta / 2)).exp() >> points(np.array([0, 0, 1]))
 

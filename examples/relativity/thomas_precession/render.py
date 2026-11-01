@@ -33,7 +33,7 @@ FRAME_INCHES, DPI = 10 / 3, 90
 THIN, LINE, BOLD = 1.0, 1.25, 1.6
 ARROW_WIDTH, CHEVRON_LENGTH = 2.5, 10.0
 DOT, PARTICLE = 1.9, 3.1
-N_RIM_SAMPLES = 200
+N_RIM_SAMPLES = 199
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -84,8 +84,8 @@ def dots(points: core.Antivector, radius: float, camera: Camera) -> np.ndarray:
 
 
 def outline(points: core.Antivector, colour: str, width: float, camera: Camera, opacity: float = 1.0) -> np.ndarray:
-    """The polyline through points `[points]`: its picture."""
-    return simplices.strokes(points, simplices.Topology.chains([points.shape[0]]), ink(colour), width, camera,
+    """The closed polyline through points `[points]`, the last joined back to the first: its picture."""
+    return simplices.strokes(points, simplices.Topology.loops([points.shape[0]]), ink(colour), width, camera,
                              opacity=opacity)
 
 
@@ -101,7 +101,7 @@ def canvas(centre: tuple[float, float], half_width: float) -> tuple[plt.Figure, 
 
 def rim(camera: Camera) -> np.ndarray:
     """The rim of the Poincaré disk, the speed of light: its picture."""
-    turns = (core.mv.xy * (-np.linspace(0, 2 * np.pi, N_RIM_SAMPLES) / 2)).exp()
+    turns = (core.mv.xy * (-np.linspace(0, 2 * np.pi, N_RIM_SAMPLES, endpoint=False) / 2)).exp()
     return outline(turns >> core.mv.x.dual(), FAINT, LINE, camera)
 
 

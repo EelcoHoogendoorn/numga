@@ -143,12 +143,12 @@ def trace_sections(sections: core.Vector, camera: Camera) -> np.ndarray:
     its curve, the second dashed: their picture."""
     along, rise = (axis.dual() / read(axis, axis.dual()) for axis in (camera.across, camera.up))
     ends = view_limit * stack((-along, along, -rise, rise))                     # [4] Vector+
-    chain = simplices.Topology.chains([sections.shape[0]])
+    loop = simplices.Topology.loops([sections.shape[0]])
     return simplices.composited([
         simplices.strokes(ends, simplices.Topology.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
                           cap=simplices.Cap.BUTT),
-        simplices.strokes(sections[:, 0], chain, np.array(to_rgb(sheet_colours[0])), charts.LINE_PX, camera),
-        simplices.strokes(sections[:, 1], chain, np.array(to_rgb(sheet_colours[1])), charts.LINE_PX, camera,
+        simplices.strokes(sections[:, 0], loop, np.array(to_rgb(sheet_colours[0])), charts.LINE_PX, camera),
+        simplices.strokes(sections[:, 1], loop, np.array(to_rgb(sheet_colours[1])), charts.LINE_PX, camera,
                           dashes=section_dashes, cap=simplices.Cap.BUTT)])
 
 

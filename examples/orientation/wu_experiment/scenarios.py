@@ -10,8 +10,8 @@ from examples.orientation.wu_experiment.core import Direction, Mirror, Scalar, S
 
 # The decay's asymmetry: minus one for cobalt-60, times the electrons' speed over light's, taken as 0.6.
 decay_asymmetry = -0.6
-# The directions around the plane holding the spin's axis, the last closing the loop on the first.
-n_directions = 181
+# The directions all the way around the plane holding the spin's axis.
+n_directions = 180
 
 
 # --- math -----------------------------------------------------------------------------
@@ -31,7 +31,7 @@ def experiment() -> tuple[Spin, Direction, Scalar, core.Asymmetry, Mirror]:
     spin = mv.xy.dual()                                                           # [] Spin-
     # The plane x = 0, holding the coil's axis.
     mirror = mv.x                                                                 # [] Mirror+
-    angles = np.linspace(0, 2 * np.pi, n_directions)
+    angles = np.linspace(0, 2 * np.pi, n_directions, endpoint=False)
     # Directions turned from z toward x, around the plane that holds the spin's axis.
     directions = (mv.zx * (-angles / 2)).exp() >> mv.z.dual()                     # [directions] Direction-
 

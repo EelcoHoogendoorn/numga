@@ -33,8 +33,8 @@ GOAL_NAMES = ("[101]", "[112]")
 PATH_SHADE = 0.55
 # How far each corner's name sits above its corner, in points: [001] below, the others above.
 LIFTS = (-10, 8, 8)
-EDGE_SAMPLES = 60
-RIM_SAMPLES = 181
+EDGE_SAMPLES = 59
+RIM_SAMPLES = 180
 # The windows of the stereographic disk the whole disk and the close-up show, left to right and bottom to top alike.
 DISK = (-1.02, 1.02)
 WINDOW = (-0.04, 0.46)
@@ -122,12 +122,12 @@ def picture(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], wind
 
 def triangle(camera: Camera) -> np.ndarray:
     """The standard triangle, between [001], [011] and [111], its edges arcs of great circles."""
-    shares = np.linspace(0, 1, EDGE_SAMPLES)
+    shares = np.linspace(0, 1, EDGE_SAMPLES, endpoint=False)
     # Each edge from a corner towards the next, by shares of the turn between them.
     tails, heads = (simplices.Topology.loops([len(corners)]).incidence[1, 0] * corners.field()).batch()   # [edges] Direction-, Direction-
     turns = ((heads * tails.inverse()).log()[:, None] * (shares / 2)).exp()  # [edges, samples] Rotor+
     arcs = stereographic(turns >> tails[:, None]).reshape(-1)                 # [edges * samples] Direction-
-    return simplices.strokes(arcs, simplices.Topology.chains([EDGE_SAMPLES] * len(corners)), to_rgb(EDGE_COLOUR),
+    return simplices.strokes(arcs, simplices.Topology.loops([EDGE_SAMPLES * len(corners)]), to_rgb(EDGE_COLOUR),
                              charts.LINE_PX, camera)
 
 
@@ -139,13 +139,13 @@ def draw_disk(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], pl
     picture(ax, factors, DISK)
     camera = disk_camera(ax)
     # The rim, where the disk meets the directions square to [001], turned about it.
-    angles = np.linspace(0, 2 * np.pi, RIM_SAMPLES)
+    angles = np.linspace(0, 2 * np.pi, RIM_SAMPLES, endpoint=False)
     rim = stereographic((core.mv.xy * (-angles / 2)).exp() >> core.mv.x.dual())   # [samples] Direction-
     # The planes' normals a little larger than the directions, so that the two kinds of mark read apart.
     # A plane's normal, the direction square to it, is its dual.
     normals = squares(planes.dual(), NORMAL_REACH, np.pi / 4, camera)         # [planes, corners] Direction-
     simplices.overlay(ax, [
-        simplices.strokes(rim, simplices.Topology.chains([RIM_SAMPLES]), to_rgb(EDGE_COLOUR), charts.LINE_PX, camera),
+        simplices.strokes(rim, simplices.Topology.loops([RIM_SAMPLES]), to_rgb(EDGE_COLOUR), charts.LINE_PX, camera),
         simplices.strokes(normals.reshape(-1), simplices.Topology.loops([normals.shape[1]] * normals.shape[0]),
                           to_rgb(NORMAL_COLOUR), charts.LINE_PX, camera),
         simplices.markers(stereographic(slips.reshape(-1)), to_rgb(NORMAL_COLOUR), charts.MARKER_PX / 2, camera),

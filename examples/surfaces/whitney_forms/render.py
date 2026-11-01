@@ -49,7 +49,7 @@ flux_tip = 0.026
 edge_chevron = 3.0
 # The rings about the edge across the first edge: their radii, and the samples around each.
 ring_radii = np.array([0.20, 0.31, 0.42])
-n_ring_samples = 65
+n_ring_samples = 64
 background = np.ones(3)
 cream = np.array([0.93, 0.94, 0.96])
 light_slate = np.array([0.58, 0.65, 0.70])
@@ -282,12 +282,12 @@ def draw_tet_whitney(topology: core.Topology, vertices: core.SpacePoint, pages: 
     # about it in the plane square to it.
     towards = edge_middle - across_middle                                     # [] Point-
     radial = (towards - across_axis * towards.dot(across_axis)).normalized()  # [] Point-
-    ring_turns = ((across_axis * unit_volume) * (-np.linspace(0.0, 2 * np.pi, n_ring_samples) / 2)).exp()   # [samples] Rotor+
+    ring_turns = ((across_axis * unit_volume) * (-np.linspace(0.0, 2 * np.pi, n_ring_samples, endpoint=False) / 2)).exp()   # [samples] Rotor+
     ring_points = across_middle * 0.62 + ring_radii[:, None] * (ring_turns >> radial)   # [rings, samples] Point-
     ring_places = solids.origin + solids.context.include_from_algebra(ring_points)      # [rings, samples] Point-
-    # Each ring a closed chain of edges, each edge in its ring's colour.
-    rings = simplices.tubes(ring_places.reshape(-1), simplices.Topology.chains([n_ring_samples] * len(ring_places)),
-                            np.repeat(np.stack(ring_colours), n_ring_samples - 1, axis=0), 3.2, view, solids.gloss)
+    # Each ring a closed loop of edges, each edge in its ring's colour.
+    rings = simplices.tubes(ring_places.reshape(-1), simplices.Topology.loops([n_ring_samples] * len(ring_places)),
+                            np.repeat(np.stack(ring_colours), n_ring_samples, axis=0), 3.2, view, solids.gloss)
     panel_link = solids.draw(
         [], view, background, inks=[], translucent=[],
         meshes=[(shell, 0.22), (wire, 1.0), (rings, 1.0), (active_arrow, 1.0), (opp_arrow, 1.0)],

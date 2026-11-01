@@ -15,6 +15,7 @@ import numpy as np
 
 from numga import Algebra, concatenate
 from numga.backend.context import Context
+from examples.util.topology import Topology
 
 # Supplied by examples.instantiate.
 ga: Algebra
@@ -42,56 +43,64 @@ def reckon(poses: Motor, noises: Covariance, priors: Covariance) -> Covariance:
 
 
 def pull(relative_motors: Motor, reading_twists: Twist, anchor_twists: Twist, weights: Information,
-         tails: np.ndarray, heads: np.ndarray, anchor_weights: Information) -> Forque:
+         graph: Topology, anchor_weights: Information) -> Forque:
     """The forque on every pose is the sum of those its readings' and its anchor's twists exert on it."""
     head_forques = weights(reading_twists)                                     # [..., readings] Forque-
     anchor_forques = anchor_weights(anchor_twists)                             # [..., poses] Forque-
     # A reading pulls on its head, and on its tail the opposite way carried across the relative motor.
     tail_forques = -(relative_motors >> head_forques)                          # [..., readings] Forque-
-    pose_forques = anchor_forques.at[..., heads].add(head_forques)             # [..., poses] Forque-
-    return pose_forques.at[..., tails].add(tail_forques)                       # [..., poses] Forque-
+    # The pulls on the readings' heads and tails, summed back onto the poses at those ends.
+    ends = graph.incidence[1, 0]                                               # [2] numbers[readings <- poses]
+    reading_forques = ~ends[1] * head_forques.field() + ~ends[0] * tail_forques.field()   # [...] Forque-[poses]
+    return anchor_forques + reading_forques.batch()                            # [..., poses] Forque-
 
 
-def gradient(poses: Motor, readings: Motor, weights: Information, tails: np.ndarray, heads: np.ndarray,
-             anchors: Motor, anchor_weights: Information) -> Forque:
+def gradient(poses: Motor, readings: Motor, weights: Information, graph: Topology, anchors: Motor,
+             anchor_weights: Information) -> Forque:
     """The gradient of the pose-graph objective is the forque its mismatches exert on every pose."""
-    relative_motors = poses[tails].inverse() * poses[heads]                    # [readings] Motor+
+    tails, heads = (graph.incidence[1, 0] * poses.field()).batch()             # [readings] Motor+, Motor+
+    relative_motors = tails.inverse() * heads                                  # [readings] Motor+
     reading_mismatches = (readings.inverse() * relative_motors).log() * 2      # [readings] Twist+
     anchor_mismatches = (anchors.inverse() * poses).log() * 2                  # [poses] Twist+
-    return pull(relative_motors, reading_mismatches, anchor_mismatches, weights, tails, heads, anchor_weights)
+    return pull(relative_motors, reading_mismatches, anchor_mismatches, weights, graph, anchor_weights)
 
 
-def curvature(poses: Motor, twists: Twist, weights: Information, tails: np.ndarray, heads: np.ndarray,
+def curvature(poses: Motor, twists: Twist, weights: Information, graph: Topology,
               anchor_weights: Information) -> Forque:
     """The Gauss-Newton information operator takes a twist perturbation of every pose to the forques it causes."""
+    ends = graph.incidence[1, 0]                                               # [2] numbers[readings <- poses]
+    tails, heads = (ends * poses.field()).batch()                              # [readings] Motor+, Motor+
+    relative_motors = tails.inverse() * heads                                  # [readings] Motor+
+    tail_twists = (ends[0] * twists.field()).batch()                           # [..., readings] Twist+
+    head_twists = (ends[1] * twists.field()).batch()                           # [..., readings] Twist+
     # Each reading measures the twist at its head minus the twist at its tail carried to the head.
-    relative_motors = poses[tails].inverse() * poses[heads]                    # [readings] Motor+
-    reading_twists = twists[..., heads] - (relative_motors << twists[..., tails])  # [..., readings] Twist+
-    return pull(relative_motors, reading_twists, twists, weights, tails, heads, anchor_weights)
+    reading_twists = head_twists - (relative_motors << tail_twists)            # [..., readings] Twist+
+    return pull(relative_motors, reading_twists, twists, weights, graph, anchor_weights)
 
 
-def curvature_alone(poses: Motor, weights: Information, tails: np.ndarray, heads: np.ndarray,
-                    anchor_weights: Information) -> Information:
+def curvature_alone(poses: Motor, weights: Information, graph: Topology, anchor_weights: Information) -> Information:
     """The per-pose diagonal block of the Gauss-Newton information operator is what a pose's perturbation alone causes."""
-    relative_motors = poses[tails].inverse() * poses[heads]                    # [readings] Motor+
+    ends = graph.incidence[1, 0]                                               # [2] numbers[readings <- poses]
+    tails, heads = (ends * poses.field()).batch()                              # [readings] Motor+, Motor+
+    relative_motors = tails.inverse() * heads                                  # [readings] Motor+
     # Moving a reading's head alone meets the reading's weight directly; moving its tail alone
     # meets the weight carried back across the relative motor.
     tail_weights = relative_motors >> weights(relative_motors << Twist)        # [readings] Forque- <- Twist+
-    pose_weights = anchor_weights.at[heads].add(weights)                       # [poses] Forque- <- Twist+
-    return pose_weights.at[tails].add(tail_weights)                            # [poses] Forque- <- Twist+
+    reading_weights = ~ends[1] * weights.field() + ~ends[0] * tail_weights.field()   # (Forque- <- Twist+)[poses]
+    return anchor_weights + reading_weights.batch()                            # [poses] Forque- <- Twist+
 
 
-def conjugate_gradients(poses: Motor, forques: Forque, weights: Information, tails: np.ndarray, heads: np.ndarray,
+def conjugate_gradients(poses: Motor, forques: Forque, weights: Information, graph: Topology,
                         anchor_weights: Information) -> Iterator[Twist]:
     """Preconditioned conjugate gradients yield successive twist corrections converging on the solution of the Gauss-Newton normal equations."""
-    preconditioner = curvature_alone(poses, weights, tails, heads, anchor_weights)  # [poses] Forque- <- Twist+
+    preconditioner = curvature_alone(poses, weights, graph, anchor_weights)    # [poses] Forque- <- Twist+
     correction = 0 * preconditioner.solve(forques)                             # [..., poses] Twist+
     residual = forques                                                         # [..., poses] Forque-
     direction = preconditioner.solve(residual)                                 # [..., poses] Twist+
     residual_energy = (residual & direction).sum(axis=-1)                      # [...] Scalar+
     # Conjugate gradients converge in at most as many steps as there are scalar unknowns.
     for _ in range(len(Twist.output_subspace) * len(poses)):
-        direction_forques = curvature(poses, direction, weights, tails, heads, anchor_weights)  # [..., poses] Forque-
+        direction_forques = curvature(poses, direction, weights, graph, anchor_weights)  # [..., poses] Forque-
         step = (residual_energy / (direction_forques & direction).sum(axis=-1))[..., None]
         correction = correction + direction * step                             # [..., poses] Twist+
         residual = residual - direction_forques * step                         # [..., poses] Forque-
@@ -102,34 +111,34 @@ def conjugate_gradients(poses: Motor, forques: Forque, weights: Information, tai
         yield correction
 
 
-def gauss_newton(poses: Motor, readings: Motor, weights: Information, tails: np.ndarray, heads: np.ndarray,
-                 anchors: Motor, anchor_weights: Information, damping: float,
-                 n_iterations: int) -> Iterator[Motor]:
+def gauss_newton(poses: Motor, readings: Motor, weights: Information, graph: Topology, anchors: Motor,
+                 anchor_weights: Information, damping: float, n_iterations: int) -> Iterator[Motor]:
     """Damped Gauss-Newton iterations yield the poses after each step."""
     for _ in range(n_iterations):
-        descent = -gradient(poses, readings, weights, tails, heads, anchors, anchor_weights)  # [poses] Forque-
-        *_, correction = conjugate_gradients(poses, descent, weights, tails, heads, anchor_weights)  # [poses] Twist+
+        descent = -gradient(poses, readings, weights, graph, anchors, anchor_weights)  # [poses] Forque-
+        *_, correction = conjugate_gradients(poses, descent, weights, graph, anchor_weights)  # [poses] Twist+
         poses = poses * (correction * (0.5 * damping)).exp()                   # [poses] Motor+
         yield poses
 
 
-def marginals(poses: Motor, noises: Covariance, tails: np.ndarray, heads: np.ndarray, priors: Covariance,
-              weights: Information, anchor_weights: Information) -> Covariance:
+def marginals(poses: Motor, noises: Covariance, graph: Topology, priors: Covariance, weights: Information,
+              anchor_weights: Information) -> Covariance:
     """Each pose's marginal covariance sums the pose errors that every unit mode of reading and anchor noise induces."""
-    relative_motors = poses[tails].inverse() * poses[heads]                    # [readings] Motor+
+    tails, heads = (graph.incidence[1, 0] * poses.field()).batch()             # [readings] Motor+, Motor+
+    relative_motors = tails.inverse() * heads                                  # [readings] Motor+
     noise_modes = concatenate([modes(noises), modes(priors)])                  # [sites, modes] Twist+
     unit_modes = noise_modes[..., None] * np.eye(len(noise_modes))[:, None]    # [sites, modes, sites] Twist+
-    mode_forques = pull(relative_motors, unit_modes[..., :len(tails)], unit_modes[..., len(tails):], weights, tails, heads, anchor_weights)  # [sites, modes, poses] Forque-
-    *_, pose_errors = conjugate_gradients(poses, mode_forques, weights, tails, heads, anchor_weights)  # [sites, modes, poses] Twist+
+    mode_forques = pull(relative_motors, unit_modes[..., :len(noises)], unit_modes[..., len(noises):], weights, graph, anchor_weights)  # [sites, modes, poses] Forque-
+    *_, pose_errors = conjugate_gradients(poses, mode_forques, weights, graph, anchor_weights)  # [sites, modes, poses] Twist+
     return (pose_errors * (pose_errors & Forque)).sum(axis=(0, 1))             # [poses] Twist+ <- Forque-
 
 
 def uncertainties(iterates: Iterator[Motor], uncertainty: Covariance, damping: float, noises: Covariance,
-                  tails: np.ndarray, heads: np.ndarray, priors: Covariance, weights: Information,
+                  graph: Topology, priors: Covariance, weights: Information,
                   anchor_weights: Information) -> Iterator[tuple[Motor, Covariance]]:
     """Across damped Gauss-Newton steps the poses' covariance relaxes towards their marginals; the steps yield the poses with it."""
     for poses in iterates:
-        posterior = marginals(poses, noises, tails, heads, priors, weights, anchor_weights)  # [poses] Twist+ <- Forque-
+        posterior = marginals(poses, noises, graph, priors, weights, anchor_weights)  # [poses] Twist+ <- Forque-
         uncertainty = posterior + (uncertainty - posterior) * (1 - damping)**2  # [poses] Twist+ <- Forque-
         yield poses, uncertainty
 

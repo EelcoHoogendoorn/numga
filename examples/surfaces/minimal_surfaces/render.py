@@ -63,7 +63,7 @@ def disk_paths(rim: core.Point) -> core.Point:
     each ring a point on the x-axis turned through a full turn, each spoke a rim vertex drawn in towards the centre,
     the vertex whose direction lies closest to the spoke's."""
     radius = rim.norm().sites.mean()                                         # [] Scalar+
-    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_curve_samples) / 2)).exp()   # [samples] Rotor+
+    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_curve_samples, endpoint=False) / 2)).exp()   # [samples] Rotor+
     rings = (radius * ring_shares)[:, None] * (turns >> mv.x.dual())         # [rings, samples] Point-
 
     spoke_angles = np.linspace(-np.pi, np.pi, len(meridian_colours), endpoint=False)
@@ -99,17 +99,19 @@ def surface_with_curves(
 ) -> np.ndarray:
     """A lit surface sheet overlaid with its boundary wire and its lifted domain curves."""
     curves = solids.origin + solids.context.include_from_algebra((lift * surface).batch())    # [curves, samples] Point-
-    colours = np.concatenate((np.broadcast_to(teal, (n_rings, 3)), meridian_colours))
     n_curves, n_samples = curves.shape
-    # Each curve a chain of edges, each edge in its curve's colour.
-    curve_strokes = simplices.tubes(curves.reshape(-1), simplices.Topology.chains([n_samples] * n_curves),
-                                    np.repeat(colours, n_samples - 1, axis=0), 2.0, view, solids.gloss)
+    # Each ring a closed loop of edges in teal, each spoke a chain of edges in its own colour.
+    ring_strokes = simplices.tubes(curves[:n_rings].reshape(-1), simplices.Topology.loops([n_samples] * n_rings),
+                                   teal, 2.0, view, solids.gloss)
+    spoke_strokes = simplices.tubes(curves[n_rings:].reshape(-1),
+                                    simplices.Topology.chains([n_samples] * (n_curves - n_rings)),
+                                    np.repeat(meridian_colours, n_samples - 1, axis=0), 2.0, view, solids.gloss)
     # The surface's projective embedding, once for the sheet and its wire.
     points = solids.origin + solids.context.include_from_algebra(surface.batch())               # [vertices] Point-
     base = sheet(topology, points, corner_colours, view)
     rim = boundary_lines(topology, points, 2.2, view)
     return solids.draw([], view, background, inks=[], translucent=[],
-                       meshes=[(base, 1.0), (curve_strokes, 1.0), (rim, 1.0)])
+                       meshes=[(base, 1.0), (ring_strokes, 1.0), (spoke_strokes, 1.0), (rim, 1.0)])
 
 
 def animate_plateau(

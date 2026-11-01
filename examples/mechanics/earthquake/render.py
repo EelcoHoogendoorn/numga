@@ -39,7 +39,7 @@ margin = 0.12
 # The width of the rim, and the slip arrows' width with the length of the strokes of the chevrons at their tips, in
 # pixels; the samples around the beachball's rim.
 rim_width, arrow_width, chevron_length = 2.2, 4.0, 16.0
-n_rim = 200
+n_rim = 199
 # Space is drawn east, north and up: the half turn about the level line halfway between north and east swaps the two
 # and turns down up.
 drawing = (core.down.commutator(core.north - core.east).normalized() * (np.pi / 2)).exp()   # [] Rotor+
@@ -88,10 +88,10 @@ def ball_pictures(places: core.Point, grid: contours.Topology, push: core.Scalar
     """One fault's beachball, shaded as `shade_ball` shades it; the rim of the lower hemisphere over its nodal lines;
     and its pressure and tension axes."""
     # The rim: the level directions, which the projection leaves where they are, turned from north toward east.
-    level = (core.horizontal * (-np.linspace(0, 2 * np.pi, n_rim) / 2)).exp() >> core.north   # [rim] Point-
+    level = (core.horizontal * (-np.linspace(0, 2 * np.pi, n_rim, endpoint=False) / 2)).exp() >> core.north   # [rim] Point-
     principal = drawing >> lambert(axes)[[0, 2]]                              # [2] Point-
     return [shade_ball(places, grid, push, view),
-            simplices.strokes(drawing >> level, simplices.Topology.chains([n_rim]), np.array(to_rgb(NODAL)),
+            simplices.strokes(drawing >> level, simplices.Topology.loops([n_rim]), np.array(to_rgb(NODAL)),
                               ball_rim_width, view),
             simplices.markers(principal, np.ones(3), axis_radius + axis_rim, view),
             simplices.markers(principal, np.array([to_rgb(PRESSURE), to_rgb(TENSION)]), axis_radius, view)]

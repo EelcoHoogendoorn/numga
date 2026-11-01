@@ -182,9 +182,10 @@ def layer(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, v
 
 
 def circles(rims: Point, pivots: Line, n_points: int) -> Point:
-    """Closed circles, as polylines `[..., n_points + 1]`: each point of a rim `[...]` turned a full turn about its
-    pivot `[...]`, the line through the circle's centre square to it."""
-    turns = (pivots.normalized()[..., None] * (np.linspace(0, 2 * np.pi, n_points + 1) / 2)).exp()   # [..., n + 1] Motor
+    """Closed circles, as the points of loops `[..., n_points]`: each point of a rim `[...]` turned about its pivot
+    `[...]`, the line through the circle's centre square to it, in even steps around a full turn."""
+    angles = np.linspace(0, 2 * np.pi, n_points, endpoint=False)                       # [n]
+    turns = (pivots.normalized()[..., None] * (angles / 2)).exp()                       # [..., n] Motor
     return turns >> rims[..., None]
 
 

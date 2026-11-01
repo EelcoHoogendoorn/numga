@@ -277,3 +277,13 @@ def test_loops_close_their_runs_and_a_subset_keeps_its_vertices():
     # A mask of the faces and the indices it picks give one topology.
     near = np.arange(topology.n_elements[2]) % 3 == 0
     np.testing.assert_array_equal(topology.subset(near).elements[2], topology.subset(np.flatnonzero(near)).elements[2])
+
+
+@pytest.mark.parametrize("base, path, euler", (
+    (Topology.loops([12]), Topology.chains([4]), 0), (Topology.loops([12]), Topology.loops([5]), 0),
+    (shapes.triangular_disk(1.0, 4)[0], Topology.loops([10]), 0), (shapes.sphere(1)[0], Topology.chains([3]), 2)),
+    ids=("cylinder", "torus", "solid torus", "shell"))
+def test_a_product_is_wound_coherently(base, path, euler):
+    product = base.product(path)
+    assert product.n_dim == base.n_dim + 1 and product.is_oriented and product.is_manifold
+    assert product.euler_characteristic == euler

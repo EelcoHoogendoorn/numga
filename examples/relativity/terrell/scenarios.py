@@ -65,11 +65,11 @@ def main() -> None:
     # The sphere's outline is a circle on the sky in every frame: its rays lie in one hyperplane through
     # the camera, so the join of any four of them vanishes.
     camera = core.rest_camera(frame, core.sighting(track_distance, sightings[0]))   # [cases] Antivector-
-    angles = np.linspace(0, 2 * np.pi, n_outline + 1)
-    grazing = core.outline(camera, height * up, sphere_radius, angles)              # [cases, outline + 1] Antivector-
-    outline = frame[:, None] >> core.rays(camera[:, None], grazing)                 # [cases, outline + 1] Antivector-
+    angles = np.linspace(0, 2 * np.pi, n_outline, endpoint=False)
+    grazing = core.outline(camera, height * up, sphere_radius, angles)              # [cases, outline] Antivector-
+    outline = frame[:, None] >> core.rays(camera[:, None], grazing)                 # [cases, outline] Antivector-
     # Each ray scaled to one unit of the camera's time.
-    points = outline / (mv.t & outline)                                             # [cases, outline + 1] Antivector-
+    points = outline / (mv.t & outline)                                             # [cases, outline] Antivector-
     quarter = n_outline // 4
     joined = points[:, 0] & points[:, quarter] & points[:, 2 * quarter] & points[:, 3 * quarter - 5]   # [cases] Scalar+
     np.testing.assert_allclose(joined.to_array(), 0, atol=1e-12)

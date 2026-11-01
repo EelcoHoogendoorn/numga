@@ -115,7 +115,7 @@ def expose(
 
 def section(cone: Quadric, start: Point, frame: Motor, n_samples: int) -> Point:
     """The boundary of the sensor's section of a cone, traced from a point inside it along the sensor plane."""
-    angles = np.linspace(0.0, 2 * np.pi, n_samples)
+    angles = np.linspace(0.0, 2 * np.pi, n_samples, endpoint=False)
     turns = (mv.yz * (-angles / 2)).exp()                                       # [samples] Motor+
     sensor_directions = frame >> (turns >> mv.y.dual())                         # [samples] Point-
     # The cone's form on `start + sensor_directions * step` is quadratic in the step, with these coefficients.

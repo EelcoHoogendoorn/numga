@@ -60,7 +60,7 @@ CROSS_LABEL_COLOUR = "#7b8794"
 CROSS = np.array(to_rgb("#edf0f3"))
 # The ring at rest, its samples and its dots, a dash and a gap in pixels; the accelerations' arrows: the largest's
 # length in radii of the ring, and their width in pixels.
-n_rest_samples = 200
+n_rest_samples = 199
 REST_DOTS = (1.5, 2.5)
 ARROW_REACH, ARROW_WIDTH = 0.31, 2.0
 # The page the map's arrow between the two diagrams is drawn on, in the figure's pixels, its points antivectors; the
@@ -254,12 +254,12 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
                 color=CROSS_LABEL_COLOUR)
     ax.annotate("y", (0, half_span), xytext=(0, 4), textcoords="offset points", ha="center", va="bottom",
                 color=CROSS_LABEL_COLOUR)
-    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_rest_samples) / 2)).exp()   # [n_rest_samples] Rotor+
+    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_rest_samples, endpoint=False) / 2)).exp()   # [n_rest_samples] Rotor+
     rest = turns >> mv.x.dual()                                          # [n_rest_samples] Antivector-
     beneath = [
         simplices.strokes(cross_ends, simplices.Topology.chains([2, 2]), CROSS, charts.FRAME_PX, camera,
                           cap=simplices.Cap.BUTT),
-        simplices.strokes(rest, simplices.Topology.chains([n_rest_samples]), LIGHT, charts.LINE_PX, camera,
+        simplices.strokes(rest, simplices.Topology.loops([n_rest_samples]), LIGHT, charts.LINE_PX, camera,
                           dashes=REST_DOTS)]
     if static:
         tracks = data.positions[:, polarization, selected].reshape(-1)     # [n_time * tracked] Antivector-

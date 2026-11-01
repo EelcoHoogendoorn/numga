@@ -3,6 +3,7 @@
 import numpy as np
 
 from examples.relativity.twistors import core
+from examples.util.topology import Topology
 
 
 TOLERANCE = 1e-11
@@ -170,9 +171,12 @@ def test_field_lines_follow_their_fields_along_the_energy_flow_rays():
 
 def test_two_fibres_link_once():
     curves = core.fibres(POLARS, PER_CIRCLE, FIBRE_SAMPLES)
-    first, second = curves[0, 0], curves[0, 1]
-    first_steps, second_steps = first[1:] - first[:-1], second[1:] - second[:-1]
-    first_midpoints, second_midpoints = (first[1:] + first[:-1]) / 2, (second[1:] + second[:-1]) / 2
+    # Two closed fibres: their steps, from each sample to the next and the last back to the first, and the steps'
+    # midpoints.
+    loop = Topology.loops([FIBRE_SAMPLES])
+    fibres = curves[0, :2].field()
+    first_steps, second_steps = (loop.d[0] * fibres).batch()
+    first_midpoints, second_midpoints = (loop.incidence[1, 0].mean(axis=0) * fibres).batch()
     offsets = first_midpoints[:, None] - second_midpoints[None, :]
     distance_squared = offsets.scalar_norm_squared()
     # The volume the three directions span, read by the volume of space.

@@ -4,6 +4,7 @@ import itertools
 import numpy as np
 
 from examples.thermodynamics.heat_cycles import core, render, scenarios
+from examples.util.topology import Topology
 
 round_off = 1e-12
 
@@ -24,14 +25,17 @@ def test_first_law_and_equal_circulations():
 def test_carnot_cycle_closes_and_turns_a_third_of_its_heat_into_work():
     n_steps = 16
     states, heat, work = scenarios.cycle(n_steps)
+    around = Topology.loops([len(states)])
     energy = core.energy(states, scenarios.capacity)
-    np.testing.assert_allclose((states[-1] - states[0]).kernel, 0, atol=round_off)
-    np.testing.assert_allclose((heat - work - (energy - energy[0])).kernel, 0, atol=1e-10)
+    # The steps around the loop of states sum to nothing, and each step's heat less its work is the energy's change
+    # along it.
+    np.testing.assert_allclose((around.d[0] * states.field()).batch().sum(axis=0).kernel, 0, atol=round_off)
+    np.testing.assert_allclose((heat - work - (around.d[0] * energy.field()).batch()).kernel, 0, atol=1e-10)
     np.testing.assert_allclose(scenarios.temperature_of(states[:n_steps + 1]).to_array(), scenarios.hot, atol=round_off)
     np.testing.assert_allclose(core.entropy(states[n_steps:2 * n_steps + 1]).to_array(), scenarios.entropy_span,
                                atol=round_off)
-    np.testing.assert_allclose(work[-1].to_array(), (scenarios.hot - scenarios.cold) * scenarios.entropy_span, atol=1e-10)
-    np.testing.assert_allclose((work[-1] / heat[n_steps]).to_array(), 1 - scenarios.cold / scenarios.hot, atol=1e-10)
+    np.testing.assert_allclose(work.sum().to_array(), (scenarios.hot - scenarios.cold) * scenarios.entropy_span, atol=1e-10)
+    np.testing.assert_allclose((work.sum() / heat[:n_steps].sum()).to_array(), 1 - scenarios.cold / scenarios.hot, atol=1e-10)
 
 
 def test_cycle_frames_are_drawn():

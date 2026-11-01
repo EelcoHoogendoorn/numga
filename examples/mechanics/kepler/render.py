@@ -101,8 +101,8 @@ def cross_drawn(box: tuple[float, float, float, float], camera: Camera) -> np.nd
 def frame_drawn(box: tuple[float, float, float, float], camera: Camera) -> np.ndarray:
     """A frame round a box, left, right, bottom and top, in the cross's colour and width: its picture."""
     left, right, bottom, top = box
-    corners = place(np.array([left, right, right, left, left]), np.array([bottom, bottom, top, top, bottom]))   # [5] Point-
-    return simplices.strokes(corners, simplices.Topology.chains([5]), np.array(to_rgb(CROSS_COLOUR)), charts.FRAME_PX,
+    corners = place(np.array([left, right, right, left]), np.array([bottom, bottom, top, top]))   # [4] Point-
+    return simplices.strokes(corners, simplices.Topology.loops([4]), np.array(to_rgb(CROSS_COLOUR)), charts.FRAME_PX,
                              camera)
 
 

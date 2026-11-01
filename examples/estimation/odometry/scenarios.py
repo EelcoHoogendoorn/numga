@@ -12,6 +12,7 @@ import numpy as np
 from numga import concatenate
 from numga.algebras import PGA2D, PGA3D
 from examples import instantiate
+from examples.util.topology import Topology
 
 CORE = "examples.estimation.odometry.core"
 # The steps of a lap in the plane, and of a short one in space, and the length of every step in metres.
@@ -46,51 +47,52 @@ SIGMAS = 2.0
 def damped(steps, damping: float, n_iterations: int, seed: int):
     """Damped Gauss-Newton from dead reckoning yields the poses with each pose's covariance across the iterations."""
     core = instantiate(CORE, steps.algebra)
-    truth, dead_reckoning, readings, noises, tails, heads, anchors, priors = survey(core, steps, seed)
+    truth, dead_reckoning, readings, noises, graph, anchors, priors = survey(core, steps, seed)
     weights, anchor_weights = noises.inverse(), priors.inverse()               # [readings] Forque- <- Twist+, [poses] Forque- <- Twist+
     reckoned_uncertainty = core.reckon(dead_reckoning, noises, priors)         # [poses] Twist+ <- Forque-
-    poses = core.gauss_newton(dead_reckoning, readings, weights, tails, heads, anchors, anchor_weights, damping, n_iterations)
-    iterates = core.uncertainties(poses, reckoned_uncertainty, damping, noises, tails, heads, priors, weights, anchor_weights)
+    poses = core.gauss_newton(dead_reckoning, readings, weights, graph, anchors, anchor_weights, damping, n_iterations)
+    iterates = core.uncertainties(poses, reckoned_uncertainty, damping, noises, graph, priors, weights, anchor_weights)
     return truth, dead_reckoning, reckoned_uncertainty, iterates
 
 
 def closing(steps, n_iterations: int, seed: int):
     """Full Gauss-Newton steps from dead reckoning reach the most likely poses, with their marginal covariances."""
     core = instantiate(CORE, steps.algebra)
-    truth, dead_reckoning, readings, noises, tails, heads, anchors, priors = survey(core, steps, seed)
+    truth, dead_reckoning, readings, noises, graph, anchors, priors = survey(core, steps, seed)
     weights, anchor_weights = noises.inverse(), priors.inverse()               # [readings] Forque- <- Twist+, [poses] Forque- <- Twist+
     reckoned_uncertainty = core.reckon(dead_reckoning, noises, priors)         # [poses] Twist+ <- Forque-
-    *_, poses = core.gauss_newton(dead_reckoning, readings, weights, tails, heads, anchors, anchor_weights, 1.0, n_iterations)  # [poses] Motor+
-    uncertainty = core.marginals(poses, noises, tails, heads, priors, weights, anchor_weights)  # [poses] Twist+ <- Forque-
+    *_, poses = core.gauss_newton(dead_reckoning, readings, weights, graph, anchors, anchor_weights, 1.0, n_iterations)  # [poses] Motor+
+    uncertainty = core.marginals(poses, noises, graph, priors, weights, anchor_weights)  # [poses] Twist+ <- Forque-
     return truth, dead_reckoning, reckoned_uncertainty, poses, uncertainty
 
 
 def gradients(steps, poses, seed: int):
     """The pose-graph gradient at the dead-reckoned poses and at the given poses."""
     core = instantiate(CORE, steps.algebra)
-    truth, dead_reckoning, readings, noises, tails, heads, anchors, priors = survey(core, steps, seed)
+    truth, dead_reckoning, readings, noises, graph, anchors, priors = survey(core, steps, seed)
     weights, anchor_weights = noises.inverse(), priors.inverse()               # [readings] Forque- <- Twist+, [poses] Forque- <- Twist+
-    return (core.gradient(dead_reckoning, readings, weights, tails, heads, anchors, anchor_weights),
-            core.gradient(poses, readings, weights, tails, heads, anchors, anchor_weights))
+    return (core.gradient(dead_reckoning, readings, weights, graph, anchors, anchor_weights),
+            core.gradient(poses, readings, weights, graph, anchors, anchor_weights))
 
 
 # --- plumbing -------------------------------------------------------------------------
 def survey(core: ModuleType, steps, seed: int):
-    """A simulated lap along the true steps gives the true and dead-reckoned poses, the noisy step and loop-closing readings with their covariances and endpoint indices, and every pose's anchor and prior covariance."""
+    """A simulated lap along the true steps gives the true and dead-reckoned poses, the noisy step and loop-closing readings with their covariances and the pose graph they link, and every pose's anchor and prior covariance."""
     rng = np.random.default_rng(seed)
     # Each step composes on the right in the robot's own frame; a running right product equals the
     # reverse of the running left product of the reverses.
     truth = concatenate([core.mv.rotor()[None], steps.reverse().cumprod(axis=0).reverse()])  # [poses] Motor+
-    tails = np.append(np.arange(len(steps)), 0)                                # [readings]
-    heads = np.append(np.arange(1, len(steps) + 1), len(steps))                # [readings]
+    # The readings link the poses around the lap: every step, then the last pose back to the first.
+    graph = Topology.loops([len(steps) + 1])
     noises = concatenate([core.isotropic(*READING_STD) * np.ones(len(steps)), core.isotropic(*CLOSING_STD)[None]])  # [readings] Twist+ <- Forque-
     noise_modes = core.modes(noises)                                           # [readings, modes] Twist+
     errors = (noise_modes * rng.normal(size=noise_modes.shape)).sum(axis=-1)   # [readings] Twist+
-    readings = (truth[tails].inverse() * truth[heads]) * (errors * 0.5).exp()  # [readings] Motor+
+    tails, heads = (graph.incidence[1, 0] * truth.field()).batch()             # [readings] Motor+, Motor+
+    readings = (tails.inverse() * heads) * (errors * 0.5).exp()                # [readings] Motor+
     dead_reckoning = concatenate([truth[:1], truth[0] * readings[:len(steps)].reverse().cumprod(axis=0).reverse()])  # [poses] Motor+
     anchors = concatenate([truth[:1], dead_reckoning[1:]])                     # [poses] Motor+
     priors = concatenate([core.isotropic(*KNOWN_STD)[None], core.isotropic(*VAGUE_STD) * np.ones(len(steps))])  # [poses] Twist+ <- Forque-
-    return truth, dead_reckoning, readings, noises, tails, heads, anchors, priors
+    return truth, dead_reckoning, readings, noises, graph, anchors, priors
 
 
 def lap_in_plane():

@@ -67,7 +67,7 @@ def floor() -> Point:
 def optics(camera_pose: Motor) -> tuple[Point, Point]:
     """The front and rear lens rims and the sensor chip corners are placed in the world by the camera pose."""
     # Each rim from its point on the plane x, turned about the optical axis, the camera's z.
-    rims = meshes.circles(mv.point([[0.0, 0.3, 0.0], [0.0, 0.25, -0.3]]), mv.xy, n_rim)        # [2, rim + 1] Point-
+    rims = meshes.circles(mv.point([[0.0, 0.3, 0.0], [0.0, 0.25, -0.3]]), mv.xy, n_rim)        # [2, rim] Point-
     sensor = mv.point([[-0.8, -0.6, -1.25], [0.8, -0.6, -1.25], [0.8, 0.6, -1.25], [-0.8, 0.6, -1.25]])   # [corners] Point-
     return camera_pose >> rims, camera_pose >> sensor
 
@@ -90,9 +90,9 @@ def camera_and_floor(camera_pose: Motor, view: solids.View, thickness: float) ->
     edge, edge_joints = solids.edges(tails, heads, thickness * ray_width / 2 * view.pixel)
     grid_lines = floor()                                                                                               # [lines, ends] Point-
     grid = solids.rods(grid_lines[:, 0], grid_lines[:, 1], thickness * floor_width / 2 * view.pixel)
-    # Each lens rim a chain of edges, in its lens's colour.
+    # Each lens rim a loop of edges, in its lens's colour.
     rim_colours = np.repeat([mcolors.to_rgb(front_lens_color), mcolors.to_rgb(rear_lens_color)], n_rim, axis=0)
-    lenses = simplices.tubes(rims.reshape(-1), simplices.Topology.chains([n_rim + 1] * 2), rim_colours,
+    lenses = simplices.tubes(rims.reshape(-1), simplices.Topology.loops([n_rim] * 2), rim_colours,
                              thickness * rim_width, view, gloss=solids.gloss)
     parts = [(grid, np.array(mcolors.to_rgb(floor_color))),
              (edge, np.array(mcolors.to_rgb(sensor_edge_color))), (edge_joints, np.array(mcolors.to_rgb(sensor_edge_color)))]

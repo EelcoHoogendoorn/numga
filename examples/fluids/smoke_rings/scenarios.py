@@ -153,20 +153,20 @@ def main() -> None:
 
     velocities = flying(core.ring(N_RING))                                       # [n] Point-
     surface, trefoil = wavy_surface(), knot()
-    save_figure(render.draw_surface(core.closed(surface)), "smoke_rings_surface")
-    save_animation(render.animate_curves(core.closed(trefoil), core.closed(flying(trefoil).norm())), "smoke_rings_knot",
+    save_figure(render.draw_surface(surface), "smoke_rings_surface")
+    save_animation(render.animate_curves(trefoil, flying(trefoil).norm()), "smoke_rings_knot",
                    DURATION_MS)
     stepped = discrete()
-    save_figure(render.draw_surface(core.closed(stepped[:, 1])), "smoke_rings_discrete")
+    save_figure(render.draw_surface(stepped[:, 1]), "smoke_rings_discrete")
     solitons = soliton()
     save_animation(render.animate_trail(solitons, line_speeds(solitons)),
                    "smoke_rings_soliton", DURATION_MS)
     save_figure(render.draw_turns(core.turns(solitons)), "smoke_rings_turns")
     frogs = leapfrog()
-    save_figure(render.draw_swept(core.closed(frogs)), "smoke_rings_swept")
+    save_figure(render.draw_swept(frogs), "smoke_rings_swept")
     # Each time's rings pushed by both: the induced flow couples every vertex of a time, and times are a batch.
     frog_speeds = stack([pushed(rings) for rings in frogs]).norm()               # [times, rings, n] Scalar+
-    save_animation(render.animate_curves(core.closed(frogs[::FROG_STRIDE]), core.closed(frog_speeds[::FROG_STRIDE])),
+    save_animation(render.animate_curves(frogs[::FROG_STRIDE], frog_speeds[::FROG_STRIDE]),
                    "smoke_rings_leapfrog", DURATION_MS)
 
     # checks

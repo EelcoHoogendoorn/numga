@@ -74,9 +74,9 @@ def field_lines(centres: core.Point, volumes: core.Volume, magnetic: core.Field)
 
     # Symmetrize the two outer tetrahedra of each 3-tet prism wedge to remove even/odd diagonal split alternation.
     unit_volumes = volumes / (volumes & core.time).norm()                     # Volume-[tets]
-    sites, fields = centres.batch().reshape(3, -1), (magnetic * unit_volumes).batch().reshape(3, -1)   # [3, wedges] Point-
-    sites = concatenate(((sites[0] + sites[1]) / 2, sites[2]))                # [samples] Point-
-    fields = concatenate(((fields[0] + fields[1]) / 2, fields[2]))            # [samples] Point-
+    sites, fields = centres.batch().reshape(-1, 3), (magnetic * unit_volumes).batch().reshape(-1, 3)   # [wedges, 3] Point-
+    sites = concatenate(((sites[:, 2] + sites[:, 1]) / 2, sites[:, 0]))       # [samples] Point-
+    fields = concatenate(((fields[:, 2] + fields[:, 1]) / 2, fields[:, 0]))   # [samples] Point-
 
     # Each sample's distance from the axis and height, its frame, and the field read along that frame.
     heights = mv.z & sites                                                    # [samples] Scalar+

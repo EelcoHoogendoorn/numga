@@ -73,8 +73,8 @@ def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.A
     coil_places = core.axis * heights + core.sideways * radius                # [coils] Antivector-
     rims = solids.origin + (to_scene >> solids.context.include_from_algebra(space_slice(coil_places)))   # [coils] Point-
     bottle_axis = to_scene >> solids.context.include_from_algebra(mv.xy)      # [] Line+
-    rings = meshes.circles(rims, bottle_axis, n_around_coil)                  # [coils, around + 1] Point-
-    wire = simplices.tubes(rings.reshape(-1), simplices.Topology.chains([n_around_coil + 1] * len(heights)),
+    rings = meshes.circles(rims, bottle_axis, n_around_coil)                  # [coils, around] Point-
+    wire = simplices.tubes(rings.reshape(-1), simplices.Topology.loops([n_around_coil] * len(heights)),
                            to_rgb(wire_colour), wire_width, view, gloss=solids.gloss)
     scene = Scene(view, np.ones(3), [], [(sheet(points, strength, view), sheet_opacity), (wire, 1.0)], inks=[],
                   translucent=[])

@@ -7,7 +7,7 @@ import numpy as np
 from numga import NumpyContext, concatenate
 from numga.algebras import STA as ga
 from numga.sparse import SparseExtensor, spdiag
-from examples.util.topology import Topology
+from examples.util.topology import Topology, turned
 
 ctx = NumpyContext(ga)
 mv = ctx.multivector
@@ -30,31 +30,18 @@ def solid_torus(major_radius: float, minor_radius: float, n_major: int, n_minor:
     around_tube = (mv.xz * (-minor_angles / 2)).exp()                    # [minor] Rotor+
     around_axis = (mv.xy * (-major_angles / 2)).exp()                    # [major] Rotor+
     unit = mv.x.dual()  # [] Point-
-    core_circle = around_axis >> (unit * major_radius)                   # [major] Point-
     rim_circle = unit * major_radius + (around_tube >> (unit * minor_radius))  # [minor] Point-
-    rim_points = (around_axis[:, None] >> rim_circle[None, :]).reshape(-1)  # [major * minor] Point-
-    vertices = concatenate((core_circle, rim_points)).field()            # Point-[vertices]
+    # A cross-section, its centre on the tube's core and then its rim, turned to each step around the axis.
+    section_points = concatenate(((unit * major_radius)[None], rim_circle))  # [1 + minor] Point-
+    vertices = (around_axis[:, None] >> section_points[None, :]).reshape(-1).field()   # Point-[vertices]
 
-    v = np.arange(n_minor)
-    v_next = (v + 1) % n_minor
-    cross_sorted = np.sort(np.stack([np.zeros(n_minor, dtype=int), 1 + v, 1 + v_next], axis=-1), axis=-1)
-
-    def slice_vertex(u_idx: np.ndarray, local_v: np.ndarray) -> np.ndarray:
-        return np.where(local_v == 0, u_idx, n_major + u_idx * n_minor + (local_v - 1))
-
-    u = np.arange(n_major)[:, None]
-    u_next = (u + 1) % n_major
-    even = u % 2 == 0
-    u0, u1 = np.where(even, u, u_next), np.where(even, u_next, u)
-    a, b, d = cross_sorted[:, 0][None, :], cross_sorted[:, 1][None, :], cross_sorted[:, 2][None, :]
-    a0, b0, d0 = slice_vertex(u0, a), slice_vertex(u0, b), slice_vertex(u0, d)
-    a1, b1, d1 = slice_vertex(u1, a), slice_vertex(u1, b), slice_vertex(u1, d)
-    raw_tets = np.concatenate([
-        np.stack([a0, b0, d0, d1], axis=-1).reshape(-1, 4),
-        np.stack([a0, b0, d1, b1], axis=-1).reshape(-1, 4),
-        np.stack([a0, b1, d1, a1], axis=-1).reshape(-1, 4),
-    ], axis=0)
-    topology = Topology(len(vertices.batch()), raw_tets)
+    # The cross-section, a fan of triangles about its centre, swept around the axis: each step's prism is cut from the
+    # tail of its edge, and the steps' edges run alternately backwards, so that the prisms are cut from alternate ends
+    # and the solid is its own mirror image.
+    around = Topology.loops([n_major]).elements[1]                          # [major, 2]
+    alternating = Topology(n_major, np.where(np.arange(n_major)[:, None] % 2 == 0, around, turned(around)))
+    topology = Topology.rings(1, n_minor).product(alternating)
+    raw_tets = topology.elements[-1]
     # Each tetrahedron's three edges from its first corner, joined, span six times its signed volume; where that
     # volume is negative, the tetrahedron's last two corners swap.
     raw_edges = topology.oriented[3, 1] * (topology.d[0] * vertices)        # [tet_edges] Point-[tets]
@@ -64,12 +51,14 @@ def solid_torus(major_radius: float, minor_radius: float, n_major: int, n_minor:
     return Topology(len(vertices.batch()), tets), vertices
 
 
-def flux_preserving(topology: Topology, n_major: int, n_minor: int) -> Embedding:
+def flux_preserving(topology: Topology, n_minor: int) -> Embedding:
     """The flux-preserving edge subspace of the solid torus."""
     # Interior edges plus the single closed poloidal boundary 1-form that carries net toroidal magnetic flux
     # while keeping the normal magnetic flux `d1(a)` identically zero on every boundary triangle.
-    b_edges = topology.elements[1][topology.exterior[1]]
-    d_pol = ((b_edges[:, 1] - n_major) % n_minor - (b_edges[:, 0] - n_major) % n_minor + n_minor // 2) % n_minor - n_minor // 2
+    # Each boundary edge's step around the tube, the shorter way, from its ends' places in their cross-sections: the
+    # vertices are numbered cross-section after cross-section, the centre first.
+    places = topology.elements[1][topology.exterior[1]] % (n_minor + 1)     # [boundary edges, 2]
+    d_pol = (places[:, 1] - places[:, 0] + n_minor // 2) % n_minor - n_minor // 2
     pol_edges = topology.exterior[1][d_pol != 0]
     pol_weights = d_pol[d_pol != 0].astype(float) / np.sqrt(np.sum(d_pol != 0))
     n_int = len(topology.interior[1])

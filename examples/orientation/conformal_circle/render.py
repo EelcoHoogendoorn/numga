@@ -117,10 +117,10 @@ def panel(vertices: Point, circle: Point, globe: Point, plane: Sphere, sphere: S
     planes = planes[spans > spanned * spans.max()]
     # Chevrons on the circle follow the point order around it in both views: three of its edges, a third of the way
     # round from each other, end in one.
-    count = len(circle) - 1
+    count = len(circle)
     chevrons = np.zeros(count)
     chevrons[np.arange(3) * count // 3 + count // 12 + count // 18 - 1] = 1
-    curve = simplices.tubes(gpu_points(circle), simplices.Topology.chains([len(circle)]), curve_colour, circle_width, view,
+    curve = simplices.tubes(gpu_points(circle), simplices.Topology.loops([count]), curve_colour, circle_width, view,
                             gloss=solids.gloss, chevrons=chevrons, chevron=chevron_length)
 
     # The arrows point down the surfaces' pairings with points: below the plane and into the sphere.
@@ -162,11 +162,12 @@ def animate_circle_motions(frames: Iterable[Point], fixed_points: Point) -> Iter
     first = next(frames)                                                        # [sides, radii, angles] Point-
     n_radii, n_angles = first.shape[1:]
     ring_indices = np.linspace(0, n_radii - 1, 6, dtype=int)[1:-1]
-    spoke_indices = np.linspace(0, n_angles - 1, 13, dtype=int)[:-1]
+    spoke_indices = np.linspace(0, n_angles, 12, endpoint=False, dtype=int)
     colours = plt.get_cmap("twilight_shifted")(np.linspace(0, 1, len(spoke_indices), endpoint=False))[:, :3]
-    topology = simplices.Topology.grid(n_radii, n_angles)
-    rim_chain = simplices.Topology.chains([n_angles])
-    ring_chains = simplices.Topology.chains([n_angles] * len(ring_indices))
+    # The disk's faces: a closed loop round the angles, swept out along the radii.
+    topology = simplices.Topology.loops([n_angles]).product(simplices.Topology.chains([n_radii]))
+    rim_loop = simplices.Topology.loops([n_angles])
+    ring_loops = simplices.Topology.loops([n_angles] * len(ring_indices))
     spoke_chains = simplices.Topology.chains([n_radii] * len(spoke_indices))
 
     figure, axes = plt.subplots(1, 2, figsize=(2 * motion_pixels / motion_dpi, motion_pixels / motion_dpi),
@@ -184,10 +185,10 @@ def animate_circle_motions(frames: Iterable[Point], fixed_points: Point) -> Iter
         spokes = disk[np.arange(n_radii), spoke_indices[:, None]].reshape(-1)  # [spokes * radii] Point-
         ends = disk[-1, spoke_indices]                                           # [spokes] Point-
         return [contours.picture(disk.reshape(-1), topology, np.zeros(n_radii * n_angles), to_rgb("#f5f6f8"), camera),
-                simplices.strokes(disk[ring_indices].reshape(-1), ring_chains, to_rgb("#b8c1cc"), 1.0, camera),
+                simplices.strokes(disk[ring_indices].reshape(-1), ring_loops, to_rgb("#b8c1cc"), 1.0, camera),
                 simplices.strokes(spokes, spoke_chains, np.repeat(colours, n_radii - 1, axis=0), 1.2, camera,
                                   opacity=0.85),
-                simplices.strokes(disk[-1], rim_chain, to_rgb(curve_ink), 1.5, camera),
+                simplices.strokes(disk[-1], rim_loop, to_rgb(curve_ink), 1.5, camera),
                 *fixed,
                 simplices.markers(ends, background, 2.3, camera),
                 simplices.markers(ends, colours, 1.8, camera)]

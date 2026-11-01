@@ -69,8 +69,8 @@ def draw_fano(cycles: core.Trivector) -> plt.Figure:
     ax.set(xlim=(-1.05, 1.05), ylim=(-0.75, 1.15), aspect="equal")
     ax.set_axis_off()
     radius = corner / 2
-    angles = np.linspace(0, 2 * np.pi, n_around + 1)
-    circle = (page.xy * (-angles / 2)).exp() >> (radius * page.y.dual())       # [around + 1] Antivector-
+    angles = np.linspace(0, 2 * np.pi, n_around, endpoint=False)
+    circle = (page.xy * (-angles / 2)).exp() >> (radius * page.y.dual())       # [around] Antivector-
     sides, arrows = [], []
     # Each triple a cycle, from each point to the next in the order of the product, the last back to the first.
     cycle = simplices.Topology.loops([3])
@@ -98,7 +98,7 @@ def draw_fano(cycles: core.Trivector) -> plt.Figure:
     camera = flat_panel(ax, VGA2D)
     ink, dark = np.array(to_rgb(line_colour)), np.array(to_rgb(point_colour))
     simplices.overlay(ax, [
-        simplices.strokes(circle, simplices.Topology.chains([n_around + 1]), ink, charts.LINE_PX, camera),
+        simplices.strokes(circle, simplices.Topology.loops([n_around]), ink, charts.LINE_PX, camera),
         simplices.strokes(stack(sides).reshape(-1), simplices.Topology.chains([2] * len(sides)), ink, charts.LINE_PX,
                           camera),
         # Each arrow a stroke along its line, as wide as the line, and a chevron at its tip.

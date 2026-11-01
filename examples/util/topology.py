@@ -270,7 +270,9 @@ class Topology:
         """This topology swept along a path, a topology of edges: a copy of the vertices at each of the path's vertices,
         numbered copy after copy, and each top simplex times each edge of the path cut into simplices one dimension up,
         the staircase its sorted vertices climb from the edge's tail to its head, so that neighbouring prisms share
-        their sides. A disk swept around a closed loop is a solid torus, a sphere along a path a thick shell."""
+        their sides. Each step is wound as the product of the simplex's own winding with the edge's, so that the
+        product of two coherently wound topologies is coherently wound. A disk swept around a closed loop is a solid
+        torus, a sphere along a path a thick shell, a loop along a path a cylinder."""
         simplices = np.sort(self.elements[-1], axis=-1)                         # [N, k + 1]
         width = simplices.shape[-1]
         # Step j of the staircase keeps corners 0 to j on the tail's copy and takes corners j to k on the head's.
@@ -279,8 +281,13 @@ class Topology:
         corners = places - on_head                                              # [steps, k + 2]
         tails, heads = path.elements[1].T                                       # [E], [E]
         copies = np.where(on_head, heads[:, None, None], tails[:, None, None])  # [E, steps, k + 2]
-        cells = simplices[:, None, None, corners] + self.n_vertices * copies[None]   # [N, E, steps, k + 2]
-        return Topology(self.n_vertices * path.n_vertices, cells.reshape(-1, width + 1))
+        cells = simplices[:, None, corners] + self.n_vertices * copies[None]   # [N, E, steps, k + 2]
+        # The prism's boundary-compatible winding: step j signed (-1)**j, times the simplex's own winding against its
+        # sorted order.
+        signs = simplex_parity(self.elements[-1])[:, None, None] * (-1.0) ** np.arange(width)   # [N, 1, steps]
+        wound = np.broadcast_to(signs, cells.shape[:-1]).reshape(-1) > 0      # [N E steps]
+        cells = cells.reshape(-1, width + 1)
+        return Topology(self.n_vertices * path.n_vertices, np.where(wound[:, None], cells, turned(cells)))
 
     @cached_property
     def border(self) -> Topology:

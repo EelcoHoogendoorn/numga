@@ -43,15 +43,15 @@ clump_contrast = 0.35
 # --- plumbing -------------------------------------------------------------------------
 def rays_and_horizon(paths: core.Antivector, outline: core.Antivector, camera: Camera) -> np.ndarray:
     """Rays along events `[steps, rays]`, each in its colour across the sweep from cool to warm, under the horizon
-    filled within its closed outline `[samples + 1]`, seen by the camera: their picture."""
+    filled within its closed outline `[samples]`, seen by the camera: their picture."""
     n_steps, n_rays = paths.shape
     # The events ray by ray, each ray's in its order along it.
     by_ray = paths[np.arange(n_steps)[None, :], np.arange(n_rays)[:, None]].reshape(-1)   # [rays * steps] Antivector-
     colours = plt.colormaps["coolwarm"](np.linspace(0.05, 0.95, n_rays))[:, :3]
     # The horizon a fan of triangles from the hole's centre to each side of its outline: the outline's cone.
-    n_sides = outline.shape[0] - 1
+    n_sides = outline.shape[0]
     fan = contours.Topology.loops([n_sides]).cone()
-    disc = concatenate((outline[:-1], 0 * outline[:1]))                      # [sides + 1] Antivector-
+    disc = concatenate((outline, 0 * outline[:1]))                           # [sides + 1] Antivector-
     return simplices.composited([
         simplices.strokes(by_ray, simplices.Topology.chains([n_steps] * n_rays), np.repeat(colours, n_steps - 1, axis=0),
                           ray_width, camera, opacity=ray_opacity),

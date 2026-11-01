@@ -124,9 +124,9 @@ def hopfion(event: Event) -> Faraday:
 def fibres(polars: np.ndarray, n_per_circle: int, n_fibre_samples: int) -> Spatial:
     """Linked circles tangent to the Robinson directions at time zero, sampled on nested tori."""
     azimuths = np.linspace(0, 2 * np.pi, n_per_circle, endpoint=False)
-    phases = np.linspace(-np.pi, np.pi, n_fibre_samples + 1)
+    phases = np.linspace(-np.pi, np.pi, n_fibre_samples, endpoint=False)
     starts = ((mv.zx * (-azimuths[None, :] / 2)).exp()
               * (mv.xy * (polars[:, None] / 2)).exp())                       # [polars, per circle] Even+
-    orbit = starts[..., None] * (symmetry * helicity * phases).exp()         # [polars, per circle, fibre samples + 1] Even+
+    orbit = starts[..., None] * (symmetry * helicity * phases).exp()         # [polars, per circle, fibre samples] Even+
     # Stereographic projection: the turn's plane, by the helicity a patch of space, joined across time.
     return (orbit.restrict[2] * helicity / (1 + orbit.select[0])) ^ across
