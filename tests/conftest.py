@@ -1,5 +1,5 @@
 """Test configuration: headless plotting, and a guard against running the whole suite by accident, with the one
-sanctioned way to run it, `pytest tests --full-sweep`, before a commit."""
+sanctioned way to run it, `pytest tests --full-sweep`, once, just before a merge to main the owner has authorized."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--full-sweep",
         action="store_true",
         default=False,
-        help="Run the whole suite before a commit, in one process with at most "
+        help="Run the whole suite once, just before an authorized merge to main, in one process with at most "
              f"{SWEEP_THREADS} numerical threads, leaving the machine's other cores free.",
     )
 
@@ -62,7 +62,7 @@ def pytest_collection_modifyitems(
         raise pytest.UsageError(
             f"Full test suite run blocked ({len(items)} tests collected, takes >2 minutes).\n"
             "Target a specific file or directory (e.g. 'pytest tests/examples/...').\n"
-            "Before a commit, run the whole suite as 'pytest tests --full-sweep'."
+            "Run the whole suite as 'pytest tests --full-sweep' only once, just before a merge to main the owner has authorized."
         )
 
 
