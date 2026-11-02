@@ -2,10 +2,11 @@
 
 A strip closed on itself along its length is opened at its seam to be drawn: its first column again a period further
 along, and the triangles across the seam joined to that copy. Its points are read by the planes x and y and weighed by
-their volume, `mv.v & point`, the algebra's own projective weight. The channels are drawn as the liquid between their walls; a field
-over it as colours on its triangles, a charge density or a heat from white; the flow as streaks of ink along the velocity, read by the same planes, each as
-long as the liquid there is fast and fading downstream; and the walls as strokes coloured by their charge, magenta where
-positive and green where negative. The best efficiency of slits as generators is a chart.
+their volume, `mv.v & point`, the algebra's own projective weight. The channels are drawn as the liquid between their
+walls; a field over it as colours on its triangles, a charge density or a heat from white; the flow as streaks of ink
+along the velocity, read by the same planes, each as long as the liquid there is fast and fading downstream; a
+potential as its level lines; and the walls as strokes coloured by their charge, magenta where positive and green
+where negative. The best efficiency of slits as generators is a chart.
 """
 from __future__ import annotations
 
@@ -53,8 +54,8 @@ profile_width, profile_height = 300, 220
 profile_colours = (np.array(to_rgb("#b35806")), neutral_colour)
 profile_labels = ("pressure drop", "field")
 profile_speeds = (0, 1, 1.5)
-# A strip's picture: pixels across, the room above and below its widest place, and the pixels between strips; the widths
-# of the walls and the mesh's edges; how much of a field's colour shows at its largest.
+# A strip's picture: pixels across, the room above and below its widest place, and the pixels between strips; the width
+# of the walls; how much of a field's colour shows at its largest.
 n_pixels, margin, gap_pixels = 300, 0.4, 8
 wall_width = 3.0
 field_strength = 0.85
@@ -244,9 +245,9 @@ def draw_efficiency(half_widths: np.ndarray, surface_charges: np.ndarray, effici
 
 @style()
 def draw_profiles(topology: Topology, vertices: Extensor, n_across: int, velocities: Extensor):
-    """The liquid's velocity along a straight strip against the place across it, under the pressure drop and under the
-    field `[2] Point-[faces]`, read in the triangles between the strip's first two columns of vertices at their
-    centres, and at rest on the walls; each curve labelled at the height of its top, where it runs furthest ahead of
+    """The liquid's velocity along a strip against the place across it, under the pressure drop and under the field
+    `[2] Point-[faces]`, read in the triangles between the strip's first two columns of vertices at their centres, and
+    at rest on the walls, each over its mean across that station; each curve labelled at the height of its top, where it runs furthest ahead of
     the other, the axis across ending at the walls and its zero the axis along."""
     mv = vertices.context.multivector
     columns = topology.elements[2] // n_across
@@ -259,6 +260,8 @@ def draw_profiles(topology: Topology, vertices: Extensor, n_across: int, velocit
     # The liquid at rest on the walls, which the triangles' centres stop short of.
     places = np.concatenate([[-half_width], places[order], [half_width]])
     speeds = np.pad(readings(mv.x, velocities)[:, station][:, order], ((0, 0), (1, 1)))   # [2, triangles + 2]
+    # Each over its mean across the station, the area under it over the width.
+    speeds = speeds / (np.trapezoid(speeds, places, axis=-1) / (2 * half_width))[:, None]
     figure, ax = subplots(profile_width, profile_height)
     for speed, other, colour, label in zip(speeds, speeds[::-1], profile_colours, profile_labels):
         ax.plot(places, speed, color=colour)
