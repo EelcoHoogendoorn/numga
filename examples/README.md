@@ -184,6 +184,7 @@
 - [Air conditioning](thermodynamics/property_charts/) — Cooling, condensation and reheating trace a path across the psychrometric chart.
 - [Boiling](thermodynamics/phase_change/) — A common-tangent construction determines coexisting phases and boiling at fixed pressure.
 - [Snowflake](thermodynamics/snowflake/) — A phase field with a six-fold surface energy grows a seed of ice in undercooled water into a six-armed dendrite.
+- [Cellular flame](thermodynamics/flame/) — Flames spreading from sparks through a lean mixture merge and break into cells where the fuel spreads faster than the heat.
 
 ## Symmetry
 
