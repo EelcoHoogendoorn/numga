@@ -132,6 +132,7 @@
 ## Quantum
 
 - [Magnetic resonance](quantum/magnetic_resonance/) — Driven and relaxing spins produce nutation, resonance line shapes and spin echoes.
+- [A rotating Bose–Einstein condensate](quantum/condensate/) — The condensate as a vector in a plane of its own joined to the trap's plane, the trap's turning and the wave's two bivectors kept apart: descending its energy in a rotating trap, it settles into a lattice of quantized vortices as dense as Feynman's rule asks.
 - [Graphene](quantum/graphene/) — Electron hopping produces Dirac cones, pseudospin textures and a Berry phase around each cone.
 - [Graphene edge states](quantum/kane_mele/) — Spin-orbit coupling produces boundary states in a finite graphene flake.
 - [Two spins](quantum/two_spins/) — Exchange interactions entangle a pair of spins and change their Bell correlations.
