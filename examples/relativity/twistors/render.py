@@ -110,8 +110,6 @@ def draw_fields(curves: core.Event) -> plt.Figure:
     return image_figure(draw_curves(curves, FIELD_WIDTH, space_view(FIELD_PIXELS, curves)))
 
 
-# README picture: this makes plots/twistor_hopfion.gif, tuned as a visual for the README. Don't change it; to
-# experiment, copy it.
 def animate_fields(stream: Iterable[core.Event], room: float = FIELD_ROOM) -> Iterator[np.ndarray]:
     """Field lines carried through time, seen by one camera framing the first instant's lines, `room` times over."""
     stream = iter(stream)

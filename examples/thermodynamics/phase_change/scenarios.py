@@ -11,6 +11,9 @@ from examples.thermodynamics.phase_change import core
 
 capacity, attraction, exclusion = 1.5, 9 / 8, 1 / 3
 n_newton = 8
+# The heating: the boiling temperature, the coldest and the hottest, the frames and the duration of each.
+boiling_temperature, coldest, hottest = 0.85, 0.7, 0.98
+n_frames, frame_duration_ms = 105, 40
 
 
 # --- math -----------------------------------------------------------------------------
@@ -66,23 +69,31 @@ def stage_frames(ends: core.Scalar, n_frames: int) -> np.ndarray:
     return np.round(n_frames * spans / spans.sum()).astype(int)
 
 
-if __name__ == "__main__":
+def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.thermodynamics.phase_change import render
 
-    boiling_temperature, coldest, hottest = 0.85, 0.7, 0.98
-    n_frames, frame_duration_ms = 105, 40
     save_figure(render.draw_charts(pressure_at, enthalpy_at, coexistence_at, isobar_at, boiling_temperature),
                 "phase_change_charts")
     save_animation(render.heating(pressure_at, enthalpy_at, coexistence_at, isobar_at, boiling_temperature,
                                   heating(boiling_temperature, coldest, hottest, n_frames)),
                    "phase_change", frame_duration_ms)
-    # Gallery picture: this makes plots/boiling.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the fluid boiling, its two charts beside each other, for the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.thermodynamics.phase_change import render
+
     # The gallery's cut: the pressure–volume chart and the temperature–enthalpy chart beside it, whose flat stretch is
     # the heat that boiling takes.
     gallery_columns = slice(render.cylinder_pixels, render.cylinder_pixels + 2 * render.n_columns)
-    save_animation((frame[:, gallery_columns]
-                    for frame in render.heating(pressure_at, enthalpy_at, coexistence_at, isobar_at,
-                                                boiling_temperature,
-                                                heating(boiling_temperature, coldest, hottest, n_frames))),
-                   "boiling", frame_duration_ms)
+    pin_animation((frame[:, gallery_columns]
+                   for frame in render.heating(pressure_at, enthalpy_at, coexistence_at, isobar_at,
+                                               boiling_temperature,
+                                               heating(boiling_temperature, coldest, hottest, n_frames))),
+                  "boiling", frame_duration_ms)
+
+
+if __name__ == "__main__":
+    main()

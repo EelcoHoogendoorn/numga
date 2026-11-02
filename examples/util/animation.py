@@ -3,6 +3,10 @@
 Figures and animations go to PLOT_DIR under a new, incrementing name, so a run never
 overwrites an earlier result. Each save prints the path it wrote and returns it.
 
+The pictures the repository tracks, for its README and its docs, are made by `pin_figure` and `pin_animation` alone:
+each saves as the others do and copies the result over the checkout's own `plots/<name>`, under its fixed name. Every
+call of either sits in an example's `pinned`, and `python -m examples.pinned` runs them all.
+
 Frames are written at exactly their own pixels, never enlarged and never shrunk (hard rule): a smaller picture is a
 picture rendered with fewer pixels. The one averaging is `capture`'s, supersampling within a frame's own pixels.
 
@@ -16,6 +20,7 @@ from __future__ import annotations
 import base64
 import gc
 import io
+import shutil
 import sys
 import time
 from collections.abc import Callable, Iterable, Iterator
@@ -25,7 +30,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
 
-from examples import PLOT_DIR, auto_increment_path
+from examples import PINNED_DIR, PLOT_DIR, auto_increment_path
 from examples.util.charts import DESIGN_WIDTH
 
 # How a figure is cropped to what it draws, saved and shown alike.
@@ -153,6 +158,14 @@ def save_figure(figure: plt.Figure, name: str) -> Path:
     return path
 
 
+def pin_figure(figure: plt.Figure, name: str) -> Path:
+    """Save a figure the repository tracks, as `save_figure` does, and copy it over the checkout's plots/<name>.png."""
+    pinned = PINNED_DIR / f"{name}.png"
+    shutil.copyfile(save_figure(figure, name), pinned)
+    print(f"Pinned {pinned}")
+    return pinned
+
+
 def scaled_image(encoded: bytes, kind: str, width_px: int) -> str:
     """An image element for an encoded image `width_px` wide, shown at that width's share of a DESIGN_WIDTH column
     and never wider than the column."""
@@ -178,6 +191,16 @@ def save_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, co
     save_gif(forward_and_back(frames) if forward_then_back else frames, str(path), duration_ms, colors)
     print(f"Saved {path}")
     return path
+
+
+def pin_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, colors: int = 256,
+                  forward_then_back: bool = False, stepped: bool = False) -> Path:
+    """Save an animation the repository tracks, as `save_animation` does, and copy it over the checkout's
+    plots/<name>.gif."""
+    pinned = PINNED_DIR / f"{name}.gif"
+    shutil.copyfile(save_animation(frames, name, duration_ms, colors, forward_then_back, stepped), pinned)
+    print(f"Pinned {pinned}")
+    return pinned
 
 
 def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, n_frames: int = 0,

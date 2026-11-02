@@ -45,7 +45,6 @@ playback_stride = int(stride * playback_rate)
 n_flow_steps = int(n_steps * playback_rate)
 viscosity = 0.0009
 frame_duration_ms = 40
-# Gallery picture: this makes plots/eigen_fluids.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
 # The gallery's cut of the vortices: its pixels across, the steps it spans, and the colours of its palette.
 n_gallery_pixels = 300
 n_gallery_steps = 640
@@ -153,10 +152,6 @@ def main() -> None:
     inviscid = stack(tuple(core.advect(start, structure, eigenvalues, 0.0, dt, n_steps)))   # [steps + 1] Scalar+[modes]
     frames = core.reconstruct(inviscid[:n_flow_steps + 1:playback_stride], superposition, eigenvalues, gradient, normals)
     save_animation(render.animate_flow(topology, vertices, frames), "eigen_fluids_bunny", frame_duration_ms)
-    # Gallery picture: this makes plots/eigen_fluids.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-    gallery_frames = core.reconstruct(inviscid[:int(n_gallery_steps * playback_rate) + 1:playback_stride], superposition, eigenvalues, gradient, normals)
-    save_animation(render.animate_flow(topology, vertices, gallery_frames, n_gallery_pixels), "eigen_fluids",
-                   frame_duration_ms, n_gallery_colours)
 
     # The inviscid run of the animation, against the same start under viscosity.
     viscous = stack(tuple(core.advect(start, structure, eigenvalues, viscosity, dt, n_steps)))  # [steps + 1] Scalar+[modes]
@@ -203,6 +198,37 @@ def main() -> None:
     assert np.all(np.diff(viscous_energy_trace) < 0)
     assert np.all(np.diff(viscous_enstrophy_trace) < 0)
     assert viscous_enstrophy_trace[-1] / viscous_enstrophy_trace[0] < viscous_energy_trace[-1] / viscous_energy_trace[0]
+
+
+def pinned() -> None:
+    """The picture the repository tracks: the bunny's vortices carrying one another, the gallery's cut."""
+    from examples.util.animation import pin_animation
+    from examples.fluids.eigen_fluids import render
+
+    topology, vertices = bunny()
+    # Each opposite edge and its face patch determine the corner hat gradient.
+    edges = topology.d[0] * vertices                                             # Point-[edges]
+    sides = topology.boundary[2, 1] * edges                                      # [corners] Point-[faces]
+    patches = (sides[0] & sides[1]) / 2                                          # Patch-[faces]
+    areas = patches.norm()                                                       # Scalar+[faces]
+    normals = patches / areas                                                    # Patch-[faces]
+    corner_gradients = (sides | patches.inverse()) / 2                           # [corners] Plane+[faces]
+    gradient = (core.spdiag(corner_gradients * core.Scalar) * topology.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
+    corner_mean = topology.incidence[2, 0].mean(axis=0)                          # Scalar+[faces <- vertices]
+    dual_areas = ~corner_mean * areas                                            # Scalar+[vertices]
+    stiffness = gradient.adjugate()(core.spdiag(areas * core.Plane.dual())(gradient))   # (Amount- <- Scalar+)[vertices <- vertices]
+    mass = core.spdiag(dual_areas * core.Scalar.dual())                                 # (Amount- <- Scalar+)[vertices <- vertices]
+    eigenvalues, eigenfields = stiffness.eigh(mass, n_modes + 1)                 # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
+    eigenvalues, modes = eigenvalues[1:].field(), eigenfields[1:]                # Scalar+[modes], [modes] Scalar+[vertices]
+    superposition = (modes * core.Scalar).batch().field(0, 1).adjoint()         # (Scalar+ <- Scalar+)[vertices <- modes]
+    structure = core.structure_constants(topology, patches, gradient, modes)     # (Scalar+ <- (Scalar+, Scalar+))[modes <- (modes, modes)]
+    start = initial_vorticity(vertices, modes, eigenvalues, mass)                # Scalar+[modes]
+    # The inviscid run over the gallery's steps, every frame's state as the bunny's animation plays them.
+    states = islice(core.advect(start, structure, eigenvalues, 0.0, dt, int(n_gallery_steps * playback_rate)),
+                    0, None, playback_stride)
+    frames = core.reconstruct(states, superposition, eigenvalues, gradient, normals)
+    pin_animation(render.animate_flow(topology, vertices, frames, n_gallery_pixels), "eigen_fluids", frame_duration_ms,
+                  n_gallery_colours)
 
 
 if __name__ == "__main__":

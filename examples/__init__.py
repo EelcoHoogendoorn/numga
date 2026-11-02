@@ -23,6 +23,8 @@ if TYPE_CHECKING:
 ROOT = Path(__file__).resolve().parents[1]
 PLOT_DIR = Path(os.environ.get("NUMGA_PLOTS", (ROOT if (ROOT / "pyproject.toml").exists() else Path.cwd()) / "plots"))
 PLOT_DIR.mkdir(parents=True, exist_ok=True)
+# The pictures the repository tracks, under their fixed names in the checkout's own plots.
+PINNED_DIR = ROOT / "plots"
 MODEL_DIR = Path(__file__).resolve().parent / "util" / "models"
 
 

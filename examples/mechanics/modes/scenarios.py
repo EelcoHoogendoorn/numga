@@ -16,12 +16,20 @@ def suspensions() -> list[ModeCase]:
 
 
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
+    from examples.util.animation import save_figure
     from examples.mechanics.modes import render
 
     coupled = suspensions()[1:]
     save_figure(render.draw_modes(coupled), "modes")
-    save_animation(render.animate_modes(coupled, N_FRAMES), "modes", DURATION_MS)
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the three vibration modes of the coupled suspension, for the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.mechanics.modes import render
+
+    coupled = suspensions()[1:]
+    pin_animation(render.animate_modes(coupled, N_FRAMES), "modes", DURATION_MS)
 
 
 if __name__ == "__main__":

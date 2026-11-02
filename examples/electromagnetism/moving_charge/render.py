@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
+from functools import cache
 from itertools import chain
 
 import matplotlib.pyplot as plt
@@ -15,15 +16,14 @@ from matplotlib.image import AxesImage
 from numga import stack
 
 from examples.util.animation import capture
-from examples.util.wgsl import contours, pinned, simplices
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl import Shader, contours, pinned, simplices, supersampled
+from examples.util.wgsl.camera import Camera, flat_panel, weighing
 from examples.electromagnetism.moving_charge import core
 
 # The lab's slice of space, which carries the events into the renderer's space.
-# The scales of the electric field's strength, of the magnetic field, and of the waves, compressed to within one.
+# The scales of the electric field's strength and of the magnetic field.
 electric_norm = LogNorm(0.05, 50.0)
 magnetic_norm = TwoSlopeNorm(0.0, -10.0, 10.0)
-wave_norm = TwoSlopeNorm(0.0, -1.0, 1.0)
 density_level = 5.0
 density_colour = "#ea580c"
 # Magnitudes start at white, as the signed fields do at zero.
@@ -32,6 +32,8 @@ signed_colours = plt.get_cmap("RdBu_r")
 wave_zone = 4.0
 wave_percentile = 99.0
 wave_power = 0.4
+# The entries of the signed colours a shader looks a level up in.
+n_palette_colours = 256
 charge_colour, charge_rim_colour = "#facc15", "#0f172a"
 # The figures' dots per inch, and the pixels between panels side by side.
 figure_dpi = 100
@@ -63,15 +65,6 @@ def electric_strength(field: core.Bivector) -> np.ndarray:
     mv = field.context.multivector
     time = -mv.t.dual()                                                         # [] Antivector-
     return (field & time).norm().to_array()
-
-
-def distances(events: core.Antivector) -> np.ndarray:
-    """Each event's distance from the orbit's centre in the lab's space: the size of its place, the event less the
-    lab's time as far as the lab's slice reads it."""
-    mv = events.context.multivector
-    time = -mv.t.dual()                                                         # [] Antivector-
-    places = events - time * (mv.t & events)                                    # [...] Antivector-
-    return places.squared().square_root().to_array()
 
 
 def magnetic_across(field: core.Bivector) -> np.ndarray:
@@ -163,67 +156,108 @@ def animate(frames: Iterable[tuple[core.Antivector, core.Bivector, core.Antivect
     plt.close(figure)
 
 
-def wave_limit(events: core.Antivector, field: core.Bivector) -> np.ndarray:
-    """One colour scale per case for a whole turn: the magnetic field times the distance from the
-    orbit's centre, far from the orbit; the sharpest crests of a fast charge's beam saturate."""
-    distance = distances(events)                                                 # [..., rows, columns]
-    far = np.where(distance > wave_zone, np.abs(magnetic_across(field) * distance), np.nan)
-    return np.nanpercentile(far, wave_percentile, axis=(-2, -1))                       # [...]
+# --- the waves on the GPU ---------------------------------------------------------------
+# Each sample places an event in the orbit's plane at the frame's lab time and asks a field's source, which declares
+# the lab's `time` and `orbit_field(event)`, for the field there: the magnetic field across the plane times the distance
+# from the orbit's centre, so that the outgoing waves keep their strength across the picture, coloured on a scale with
+# a power below one on its magnitude, which keeps a fast charge's narrow pulses and the field between them. The sample
+# also gives that product's size beyond the wave zone, which sets the scale.
+waves_source = """
+struct Sample {
+    colour: vec3<f32>,
+    far: f32,
+}
+var<uniform> lab_time: f32;
+var<uniform> half_height: f32;
+var<uniform> limit: f32;
+var<storage, read> palette: array<vec3<f32>>;
+
+// A level from minus one to one in the palette's colours, between its two nearest entries.
+fn coloured(level: f32) -> vec3<f32> {
+    let last = arrayLength(&palette) - 1u;
+    let entry = (clamp(level, -1.0, 1.0) + 1) / 2 * f32(last);
+    let below = u32(floor(entry));
+    return mix(palette[below], palette[min(below + 1u, last)], entry - floor(entry));
+}
+
+fn sample(place: vec2<f32>) -> Sample {
+    let event = (directions * screen(place)).sum() * half_height + time * lab_time;
+    // The distance from the orbit's centre: the size of the event's place, less the lab's time.
+    let centred = event - time * (mv.t & event);
+    let reach = centred.squared().square_root();
+    let waves = (orbit_field(event) & orbit_plane) * reach;
+    let scaled = waves / limit;
+    return Sample(coloured(sign(scaled) * pow(abs(scaled), wave_power)), select(0.0, abs(waves), reach > wave_zone));
+}
+"""
 
 
-def compressed_waves(events: core.Antivector, field: core.Bivector, limit: np.ndarray) -> np.ndarray:
-    """The magnetic field across the orbit's plane times the distance from the orbit's centre, so that
-    the outgoing waves keep their strength across the picture; a power below one on the magnitude keeps
-    a fast charge's narrow pulses and the field between them."""
-    scaled = magnetic_across(field) * distances(events) / limit[..., None, None]
-    return np.sign(scaled) * np.abs(scaled) ** wave_power
+@cache
+def waves_shader(field_source: str) -> Shader:
+    """The shader of the waves of a field's source: the directions along x and y, which place a sample, the patch of
+    the orbit's plane, which reads the magnetic field across it, and the scale's power and zone as its constants."""
+    mv = core.mv
+    return Shader(supersampled() + field_source + waves_source, core.ga,
+                  dict(Antivector=core.Antivector, Vector=core.Vector, Bivector=core.Bivector),
+                  dict(directions=stack((mv.x, mv.y)).dual(), orbit_plane=mv.xy.dual(), wave_power=wave_power,
+                       wave_zone=wave_zone))
+
+
+def orbit_view(half_width: float, n_pixels: int) -> Camera:
+    """The camera of a square picture of the orbit's plane about its centre, `half_width` to either side, reading
+    places by the planes x and y."""
+    mv = core.mv
+    weight, unit = weighing(mv.x)
+    return Camera(mv.x, mv.y, 0 * mv.x, weight, unit, np.zeros(2), np.array([half_width, half_width]), n_pixels)
+
+
+def waves(field_source: str, orbit: core.Orbit, lab_time: float, view: Camera, limit: float) -> dict[str, np.ndarray]:
+    """The waves the view sees at a lab time, each pixel the average of its samples: their colours on the scale that
+    `limit` sets, `[rows, columns, 3]`, and the sizes beyond the wave zone, `[rows, columns]`."""
+    return waves_shader(field_source)(
+        view.shape, orbit_charge=orbit.charge, orbit_radius=orbit.radius, orbit_speed=orbit.speed, lab_time=lab_time,
+        half_height=view.half[1], limit=limit, palette=signed_colours(np.linspace(0, 1, n_palette_colours))[:, :3]
+    )["image"]
+
+
+def wave_limit(field_source: str, orbit: core.Orbit, lab_time: float, view: Camera) -> float:
+    """One colour scale for a whole turn: the magnetic field times the distance from the orbit's centre, far from the
+    orbit, at a lab time; the sharpest crests of a fast charge's beam saturate."""
+    far = waves(field_source, orbit, lab_time, view, 1.0)["far"]
+    return float(np.percentile(far[far > 0], wave_percentile))
 
 
 def marked(colours: np.ndarray, charge: core.Antivector, view: Camera) -> np.ndarray:
     """A picture's colours `[rows, columns, 3]` with the charge marked over them, a dot with a dark rim, sized with
-    the picture: `[rows, columns, 4]`."""
+    the picture: its bytes `[rows, columns, 3]`."""
     places = charge.reshape(-1)                                                 # [1] Antivector-
     rim_radius, dot_radius = (charge_size + charge_rim) / 2 * view.pixels, (charge_size - charge_rim) / 2 * view.pixels
-    return simplices.composited([np.concatenate((colours, np.ones(colours.shape[:-1] + (1,))), axis=-1),
-                                 simplices.markers(places, np.array(to_rgb(charge_rim_colour)), rim_radius, view),
-                                 simplices.markers(places, np.array(to_rgb(charge_colour)), dot_radius, view)])
+    shown = simplices.composited([np.concatenate((colours, np.ones(colours.shape[:-1] + (1,))), axis=-1),
+                                  simplices.markers(places, np.array(to_rgb(charge_rim_colour)), rim_radius, view),
+                                  simplices.markers(places, np.array(to_rgb(charge_colour)), dot_radius, view)])
+    return np.round(np.clip(shown[..., :3], 0, 1) * 255).astype(np.uint8)
 
 
-def averaged(image: np.ndarray, samples: int) -> np.ndarray:
-    """A picture sampled `samples` times along each side of its pixels, `[rows * samples, columns * samples, 3]`,
-    averaged back to exactly its pixels."""
-    rows, columns = image.shape[0] // samples, image.shape[1] // samples
-    return image.reshape(rows, samples, columns, samples, 3).mean(axis=(1, 3))
-
-
-def animate_waves(frames: Iterable[tuple[core.Antivector, core.Bivector, core.Antivector]], samples: int
-                  ) -> Iterator[np.ndarray]:
-    """The waves over one turn, on the first frame's colour scale, the charge marked: one figure set up for the
-    first frame, its image's data and the charge's place set for each. The events sample each pixel `samples` times
-    along each side, and the colours are averaged back to the pixel."""
+def animate_waves(field_source: str, orbit: core.Orbit, frames: Iterable[tuple[float, core.Antivector]],
+                  half_width: float, n_pixels: int) -> Iterator[np.ndarray]:
+    """The waves of a field's source over one turn, a lab time and the charge then for each frame, on the first
+    frame's colour scale, the charge marked: a square picture `n_pixels` across, `half_width` to either side of the
+    orbit's centre."""
+    view = orbit_view(half_width, n_pixels)
     frames = iter(frames)
     first = next(frames)
-    events, field, charge = first
-    limit = wave_limit(events, field)
-    pixels = (events.shape[-2] // samples, events.shape[-1] // samples)
-    figure, (ax,) = panels(1, pixels)
-    ax.set(xlim=extent(events)[:2], ylim=extent(events)[2:])
-    view = flat_panel(ax, core.ga)
-    image = pinned(ax, np.zeros(view.shape + (4,)), extent(events))
-    ax.set_autoscale_on(False)
-    for events, field, charge in chain([first], frames):
-        waves = averaged(coloured(compressed_waves(events, field, limit), signed_colours, wave_norm), samples)
-        image.set_data(marked(waves, charge, view))
-        yield capture(figure)
-    plt.close(figure)
+    limit = wave_limit(field_source, orbit, first[0], view)
+    for lab_time, charge in chain([first], frames):
+        yield marked(waves(field_source, orbit, lab_time, view, limit)["colour"], charge, view)
 
 
-def radiation(events: core.Antivector, field: core.Bivector, charge: core.Antivector) -> Figure:
-    """The waves of circling charges side by side, one panel per case, each on its own colour scale,
-    with the charge marked."""
-    values = compressed_waves(events, field, wave_limit(events, field))         # [cases, rows, columns]
-    figure, axes = panels(len(values), events.shape[-2:])
-    for case, (ax, value) in enumerate(zip(axes, values)):
-        image = panel(ax, events, value, signed_colours, wave_norm)
-        image.set_data(marked(coloured(value, signed_colours, wave_norm), charge[case], flat_panel(ax, core.ga)))
+def radiation(field_source: str, orbits: list[core.Orbit], charge: core.Antivector, half_width: float,
+              n_pixels: int) -> Figure:
+    """The waves of circling charges at lab time zero side by side, one panel per orbit, each on its own colour scale,
+    with the charge marked where each turn starts."""
+    view = orbit_view(half_width, n_pixels)
+    figure, axes = panels(len(orbits), view.shape)
+    for ax, orbit in zip(axes, orbits):
+        limit = wave_limit(field_source, orbit, 0.0, view)
+        pinned(ax, marked(waves(field_source, orbit, 0.0, view, limit)["colour"], charge, view), view.extent)
     return figure

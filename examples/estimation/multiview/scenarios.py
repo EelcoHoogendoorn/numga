@@ -32,10 +32,9 @@ N_FREE_STEPS = 30
 FRAME_DURATION = 333
 FREE_FRAME_DURATION = 40
 # The three cameras' alignment shown at an even pace: its frames, the frames the aligned rig is held, and the depth
-# at which a camera's turn counts as much as its move, about where the landmarks are. This animation is the README's
-# (plots/multiview_convergence.gif): its misplacements in `three_cameras`, its damping and these frames are tuned as a
-# picture, a rig that visibly starts far off and settles near the end, not as a demonstration of the alignment's
-# speed; keep them, and check the picture after any change.
+# at which a camera's turn counts as much as its move, about where the landmarks are. Its misplacements in
+# `three_cameras`, its damping and these frames are tuned as a picture, a rig that visibly starts far off and settles
+# near the end, not as a demonstration of the alignment's speed.
 N_EVEN_FRAMES, N_HOLD = 108, 18
 LEVER = 1.5
 
@@ -110,8 +109,6 @@ def two_cameras() -> Iterator[tuple[Motor, Quadric, Quadric, Point]]:
     return alignment(rig(OFFSETS, TURNS), guess, damping, free_cameras)
 
 
-# README picture: this makes plots/multiview_convergence.gif, tuned as a visual for the README. Don't change it; to
-# experiment, copy it.
 def three_cameras() -> Iterator[tuple[Motor, Quadric, Quadric, Point]]:
     """The three-camera rig aligning when every camera is misplaced and all three cameras move freely."""
     # Each camera's offset scaled and shifted along x, and its turn scaled and added to, in radians.
@@ -122,8 +119,6 @@ def three_cameras() -> Iterator[tuple[Motor, Quadric, Quadric, Point]]:
     return alignment(rig(OFFSETS, TURNS), guess, damping, free_cameras)
 
 
-# README picture: this makes plots/multiview_convergence.gif, tuned as a visual for the README. Don't change it; to
-# experiment, copy it.
 def evenly(states: list, n_frames: int, n_hold: int) -> Iterator[tuple[Motor, Quadric, Quadric, Point]]:
     """A converging alignment sequence resampled at equal increments of total pinhole travel and camera rotation along the interpolating screw, then held at the final rig."""
     _, _, cones = observe(rig(OFFSETS, TURNS))
@@ -161,10 +156,6 @@ def main() -> None:
                    stepped=True)
     save_animation(render.animate_convergence(islice(two_cameras(), N_STEPS + 1)), "multiview_two_cameras", FRAME_DURATION,
                    stepped=True)
-    # README picture: this makes plots/multiview_convergence.gif, tuned as a visual for the README. Don't change it; to
-    # experiment, copy it.
-    save_animation(render.animate_convergence(evenly(list(islice(three_cameras(), N_FREE_STEPS + 1)), N_EVEN_FRAMES, N_HOLD)),
-                   "multiview_three_cameras", FREE_FRAME_DURATION)
     save_animation(render.animate_convergence(state[:4] for state in islice(jointly(), N_STEPS + 1)), "multiview_jointly",
                    FRAME_DURATION, stepped=True)
 
@@ -175,6 +166,17 @@ def main() -> None:
     _, _, cones = observe(rig(OFFSETS[:2], TURNS[:2]))
     local_centres = aligned_poses << centres[:, None]                           # [landmarks, cameras] Point-
     np.testing.assert_allclose((cones(local_centres) & local_centres).sum().to_array(), 0.0, atol=1e-12)
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the three misplaced cameras aligning at an even pace, for the README and the gallery."""
+    from itertools import islice
+
+    from examples.util.animation import pin_animation
+    from examples.estimation.multiview import render
+
+    pin_animation(render.animate_convergence(evenly(list(islice(three_cameras(), N_FREE_STEPS + 1)), N_EVEN_FRAMES, N_HOLD)),
+                  "multiview_convergence", FREE_FRAME_DURATION)
 
 
 if __name__ == "__main__":

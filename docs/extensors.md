@@ -27,7 +27,7 @@ In the selected examples below, lowercase names denote values and capitalized na
 
 **Notebook**: [`examples/geometry/scenegraph/scenegraph.ipynb`](../examples/geometry/scenegraph/scenegraph.ipynb)
 
-![A robot arm in 3D, and its picture on a camera sensor](../plots/scenegraph.gif)
+<p align="center"><img src="../plots/scenegraph.gif" alt="A robot arm in 3D, and its picture on a camera sensor" width="598" /></p>
 
 ```python
 lens = Line - (center & (Line ^ plane)) / focal_length                                            # [] Line <- Line
@@ -87,20 +87,19 @@ curvature = (cones(motion) & motion).sum(axis=0)           # [cameras] Scalar <-
 
 **Notebook**: [`examples/thermodynamics/snowflake/snowflake.ipynb`](../examples/thermodynamics/snowflake/snowflake.ipynb)
 
-![A seed of ice in undercooled water growing into a six-armed dendrite, its latent heat glowing into the cold water around it](../plots/snowflake.gif)
+<p align="center"><img src="../plots/snowflake.gif" alt="A seed of ice in undercooled water growing into a six-armed dendrite, its latent heat glowing into the cold water around it" width="300" /></p>
 
 ```python
-freezing = ice + latent_heat * heat                                                     # [] Point-
-energy = mv.h - latent_heat * mv.i                                                      # [] Plane+
-entropy_slope = mv.h / absolute_temperatures - latent_heat / absolute_melting * mv.i   # Plane+[vertices]
-push = absolute_melting * cells * (entropy_slope & freezing) * held_slope              # Scalar-[vertices]
-turn = steepness * crystal_axis                                                         # Even+[faces]
-third_power = turn ** 3                                                                 # Even+[faces]
-six_fold = third_power.scalar_product(third_power)                                      # Scalar+[faces]
+gradients = (volume & ice & heat & sides) / double_areas                              # [corners] Plane+[faces]
+heat_drives = -(gradients ^ mv.h)                                                     # [corners] Drive+[faces]
+freezing = ice + latent_heat * heat                                                   # [] Point-
+energy = mv.h - latent_heat * mv.i                                                    # [] Plane+
+entropy_slope = mv.h / absolute_temperatures - latent_heat / absolute_melting * mv.i  # Plane+[vertices]
+push = absolute_melting * cells * (entropy_slope & freezing) * held_slope             # Scalar-[vertices]
 ```
 
-* Freezing is one direction in the space of amounts, and the two laws of thermodynamics are two planes reading it: `energy & freezing == 0`, and `entropy_slope & freezing` is the entropy freezing produces, which drives the ice.
-* The six-fold anisotropy is a rotor's power: `six_fold` is `|steepness| ** 6 * cos(6 angle)`, with no angle taken, and its slope `6 * crystal_axis * turn ** 5` is written out.
+* Freezing is one direction among the amounts the water holds, ice gained and its latent heat released, and the two laws of thermodynamics are two planes reading it: `energy & freezing == 0`, so freezing makes no energy, and `entropy_slope & freezing` is the entropy it produces, which drives the ice.
+* A corner's gradient is the facing side joined with every amount, over the triangle joined with them, so it reads place and nothing a parcel holds; wedged with heat it is the drive that conducts the latent heat away from the growing tips.
 
 ---
 
@@ -147,7 +146,7 @@ spins = (states * amplitudes).sum(axis=0) >> up_spin                          # 
 
 **Notebook**: [`examples/electromagnetism/dynamo/dynamo.ipynb`](../examples/electromagnetism/dynamo/dynamo.ipynb)
 
-![Liquid metal stirred in a planet's core, its magnetic field stretched and wound into a strong field](../plots/dynamo.gif)
+<p align="center"><img src="../plots/dynamo_lines.gif" alt="A planet's liquid core seen from above, its field lines in white wound up by the stirred flow, whose streamlines run in cyan inside the core's faint surface" width="256" /></p>
 
 ```python
 motional = spdiag((velocities & Magnetic) ^ mv.t)(ball.curl)     # (Field+ <- Scalar+)[tets <- edges]
@@ -166,7 +165,7 @@ kinetic = circulating.adjugate()(momentum(circulating))          # (Amount- <- S
 
 **Notebook**: [`examples/relativity/twistors/twistors.ipynb`](../examples/relativity/twistors/twistors.ipynb)
 
-![The linked electric field lines of a pulse of light, carried along straight light rays](../plots/twistor_hopfion.gif)
+<p align="center"><img src="../plots/twistor_hopfion.gif" alt="The linked electric field lines of a pulse of light, carried along straight light rays" width="330" /></p>
 
 ```python
 representations = state_readout(Full * state_embedding)    # [] Twistor <- (Full, Twistor)
@@ -184,7 +183,7 @@ planes = ray_readout(twistors, twistors)                    # [cases] Bivector
 
 **Notebook**: [`examples/electromagnetism/beltrami_fields/beltrami_fields.ipynb`](../examples/electromagnetism/beltrami_fields/beltrami_fields.ipynb)
 
-![Tangled magnetic field lines in a torus, seen from the side and from above, settling into evenly twisted windings](../plots/beltrami.gif)
+<p align="center"><img src="../plots/beltrami.gif" alt="Tangled magnetic field lines in a torus, seen from the side and from above, settling into evenly twisted windings" width="548" /></p>
 
 ```python
 curls = 2 * (corner_gradients[tails] ^ corner_gradients[heads])     # [tet_edges] Field+[tets]
@@ -205,7 +204,7 @@ helicity = (raw_helicity + raw_helicity.adjugate()) / 2             # (Amount- <
 
 **Notebook**: [`examples/quantum/condensate/condensate.ipynb`](../examples/quantum/condensate/condensate.ipynb)
 
-![A rotating condensate in a harmonic trap settling into a lattice of quantized vortices](../plots/condensate.gif)
+<p align="center"><img src="../plots/condensate.gif" alt="A rotating condensate in a harmonic trap settling into a lattice of quantized vortices" width="300" /></p>
 
 ```python
 drags = (corners.mean(axis=0) * vertices).commutator(mv.xy)                       # Point-[F]
@@ -244,7 +243,7 @@ effective = pullback(inertia(rolling))                                 # Angular
 
 **Notebook**: [`examples/relativity/closed_universe/waves.ipynb`](../examples/relativity/closed_universe/waves.ipynb)
 
-![A gravitational wave travelling round a closed universe, its stretch drawn on a sphere, rung by strain gauges and crossed by light](../plots/closed_universe_quadrupole.gif)
+<p align="center"><img src="../plots/closed_universe_quadrupole.gif" alt="A gravitational wave travelling round a closed universe, its stretch drawn on a sphere, rung by strain gauges and crossed by light" width="300" /></p>
 
 ```python
 ramps = faces / (faces & corners)                                                     # [corners] Plane+[cells]
@@ -264,7 +263,7 @@ strains = (cell_frames.inverse() >> (cone_map * changes)(frame_steps)).cast(Stra
 
 **Notebook**: [`examples/mechanics/bending/bending.ipynb`](../examples/mechanics/bending/bending.ipynb)
 
-![A cantilever loaded off its principal axes, bending sideways as well as down](../plots/bending.gif)
+<p align="center"><img src="../plots/bending.gif" alt="A cantilever loaded off its principal axes, bending sideways as well as down" width="576" /></p>
 
 ```python
 fibres = beam_direction & samples(walls, thickness)                                                    # [walls, 2] Resultant
@@ -283,7 +282,7 @@ strains = stiffness.solve(-loads_at_stations(loads, stations))                  
 
 **Notebook**: [`examples/fluids/eigen_fluids/eigen_fluids.ipynb`](../examples/fluids/eigen_fluids/eigen_fluids.ipynb)
 
-![Vortices of opposite sense carrying one another across the surface of the Stanford bunny, with the streamlines of their flow](../plots/eigen_fluids.gif)
+<p align="center"><img src="../plots/eigen_fluids.gif" alt="Vortices of opposite sense carrying one another across the surface of the Stanford bunny, with the streamlines of their flow" width="300" /></p>
 
 ```python
 gradient = (spdiag(corner_gradients * Scalar) * mesh.incidence[2, 0]).sum(axis=0)   # (Plane+ <- Scalar+)[faces <- vertices]
@@ -304,7 +303,7 @@ advection = structure(stream, vorticity)                                        
 
 **Notebook**: [`examples/electromagnetism/superconductor/superconductor.ipynb`](../examples/electromagnetism/superconductor/superconductor.ipynb)
 
-![A rod cooled through its superconducting transition expelling the magnetic field it sat in, beside a perfect conductor freezing it in](../plots/superconductor.gif)
+<p align="center"><img src="../plots/superconductor.gif" alt="A rod cooled through its superconducting transition expelling the magnetic field it sat in, beside a perfect conductor freezing it in" width="406" /></p>
 
 ```python
 fields = gradients ^ mv.z                                                                      # [corners] Field+[faces]
@@ -323,7 +322,7 @@ kinetic = penetration ** 2 * (in_ring_areas * (currents & inertia(currents))).si
 
 **Notebook**: [`examples/quantum/process_tomography/process_tomography.ipynb`](../examples/quantum/process_tomography/process_tomography.ipynb)
 
-![Noisy quantum channels squashing and turning the ball of states, and the channels recovered from measurements](../plots/tomography.gif)
+<p align="center"><img src="../plots/tomography.gif" alt="Noisy quantum channels squashing and turning the ball of states, and the channels recovered from measurements" width="720" /></p>
 
 ```python
 effects = (mv.w + analyzers) / 4                                                                      # [outcomes] Effect+
@@ -345,7 +344,7 @@ learned_channel = (recovered_outputs * (preparation_dual & Point)).sum(axis=-1) 
 
 **Notebook**: [`examples/mechanics/elastica/elastica.ipynb`](../examples/mechanics/elastica/elastica.ipynb)
 
-![A coiled telephone cord pulled out by its handset and let go, sagging, stretching and springing back](../plots/telephone_cord.gif)
+<p align="center"><img src="../plots/telephone_cord.gif" alt="A coiled telephone cord pulled out by its handset and let go, sagging, stretching and springing back" width="600" /></p>
 
 ```python
 turns = couples * (couples & Twist) * turning                                          # [3] Forque <- Twist
@@ -366,7 +365,7 @@ load = load - deviation.commutator(load) / 2 + deviation.commutator(deviation.co
 
 **Notebook**: [`examples/electromagnetism/piezoelectric/piezoelectric.ipynb`](../examples/electromagnetism/piezoelectric/piezoelectric.ipynb)
 
-![A clamped strip of two bonded piezoelectric layers bending up and down as the voltage across its electrodes swings, one layer stretching while the other shortens](../plots/piezoelectric.gif)
+<p align="center"><img src="../plots/piezoelectric.gif" alt="A clamped strip of two bonded piezoelectric layers bending up and down as the voltage across its electrodes swings, one layer stretching while the other shortens" width="525" /></p>
 
 ```python
 stretches = (directions & Point) * (Plane & directions.dual())          # [2] Scalar+ <- (Point-, Plane+)
@@ -385,7 +384,7 @@ mixed = movement.adjugate()(coupling(voltage))                         # (Plane+
 
 **Notebook**: [`examples/optics/black_sandwich/black_sandwich.ipynb`](../examples/optics/black_sandwich/black_sandwich.ipynb)
 
-![Light through two identical stacks of a turning wave plate between crossed polarizers: the first stack passes light, the second stays dark](../plots/sandwich.gif)
+<p align="center"><img src="../plots/sandwich.gif" alt="Light through two identical stacks of a turning wave plate between crossed polarizers: the first stack passes light, the second stays dark" width="720" /></p>
 
 ```python
 field_along = (Direction & time).dual()                          # [] Field <- Direction
@@ -406,7 +405,7 @@ double_stack = sandwich(sandwich)                                # [frames] Fiel
 
 **Notebook**: [`examples/relativity/ligo/ligo.ipynb`](../examples/relativity/ligo/ligo.ipynb)
 
-![Each detector's sensitivity over the sky, turning as the wave's polarization turns](../plots/ligo.gif)
+<p align="center"><img src="../plots/ligo.gif" alt="Each detector's sensitivity over the sky, turning as the wave's polarization turns" width="720" /></p>
 
 ```python
 plus = east * (east & Point) - north * (north & Point)                       # [...] Plane+ <- Point-
@@ -424,7 +423,7 @@ rings = ring + strain_shown * overhead[:, None](ring).dual()                 # [
 
 **Notebook**: [`examples/electromagnetism/moving_charge/moving_charge.ipynb`](../examples/electromagnetism/moving_charge/moving_charge.ipynb)
 
-<p align="center"><img src="../plots/radiating_charge_fast.gif" alt="A charge circling fast, its field spiralling outward" width="420" /></p>
+<p align="center"><img src="../plots/radiating_charge_fast.gif" alt="A charge circling fast, its field spiralling outward" width="300" /></p>
 
 ```python
 at_rest = weight * mv.t * (separations | Antivector)                  # [...] Vector+ <- Antivector-
@@ -441,7 +440,7 @@ field = (Vector ^ gradients(Antivector)).trace(1, 2)                  # [...] Bi
 
 **Notebook**: [`examples/quantum/magnetic_resonance/magnetic_resonance_space.ipynb`](../examples/quantum/magnetic_resonance/magnetic_resonance_space.ipynb)
 
-![Spins fanning out in an uneven field and refocusing into an echo](../plots/resonance_echo.gif)
+<p align="center"><img src="../plots/resonance_echo.gif" alt="Spins fanning out in an uneven field and refocusing into an echo" width="603" /></p>
 
 ```python
 back = process.reverse().symmetric_reverse_product()           # [] State
@@ -478,7 +477,7 @@ vertices = handle_laplacian.solve(~T10 * H1 * turned_rest + P * targets)       #
 
 **Notebook**: [`examples/fluids/jeffery/jeffery.ipynb`](../examples/fluids/jeffery/jeffery.ipynb)
 
-![Ellipsoids tumbling in a shear flow, their tips tracing closed orbits, and an unbalanced one wandering](../plots/jeffery.gif)
+<p align="center"><img src="../plots/jeffery.gif" alt="Ellipsoids tumbling in a shear flow, their tips tracing closed orbits, and an unbalanced one wandering" width="720" /></p>
 
 ```python
 sphere = Plane.dual()                                                                            # [] Point <- Plane
@@ -497,7 +496,7 @@ spin = (Point & turning_rate(Plane)).trace(1, 2).solve((Point & flow_rate(Plane)
 
 **Notebook**: [`examples/mechanics/slip_systems/slip_systems.ipynb`](../examples/mechanics/slip_systems/slip_systems.ipynb)
 
-<p align="center"><img src="../plots/slip_systems_00.gif" alt="Pull directions in a crystal drifting as it slips, coloured by the slip system that leads" width="420" /></p>
+<p align="center"><img src="../plots/slip_systems.gif" alt="Pull directions in a crystal drifting as it slips, coloured by the slip system that leads" width="420" /></p>
 
 ```python
 directions = (planes[:, None] ^ planes[others]).normalized()                 # [planes, directions] Line
@@ -516,7 +515,7 @@ axis = (axis.commutator(move) / 2).exp() >> axis                              # 
 
 **Notebook**: [`examples/thermodynamics/phase_change/phase_change.ipynb`](../examples/thermodynamics/phase_change/phase_change.ipynb)
 
-![A fluid heated at fixed pressure, its path drawn across the dome of coexistence on the pressure–volume chart and along the flat stretch of boiling on the temperature–enthalpy chart](../plots/boiling.gif)
+<p align="center"><img src="../plots/boiling.gif" alt="A fluid heated at fixed pressure, its path drawn across the dome of coexistence on the pressure–volume chart and along the flat stretch of boiling on the temperature–enthalpy chart" width="660" /></p>
 
 ```python
 liquid_volume = mv.l & State                                                                       # [] Scalar+ <- State-
@@ -537,7 +536,7 @@ state = state - derivative(gap)(state).solve(gap(state))                        
 
 **Notebook**: [`examples/mechanics/modes/modes.ipynb`](../examples/mechanics/modes/modes.ipynb)
 
-![The three vibration modes of the coupled suspension](../plots/modes.gif)
+<p align="center"><img src="../plots/modes.gif" alt="The three vibration modes of the coupled suspension" width="603" /></p>
 
 ```python
 extension = Twist & lines                                        # [springs] Scalar <- Twist
@@ -556,7 +555,7 @@ values, modes = (Twist & stiffness).eigh(Twist & inertia)        # [modes] Scala
 
 **Notebook**: [`examples/estimation/odometry/odometry.ipynb`](../examples/estimation/odometry/odometry.ipynb)
 
-![A robot's lap: dead reckoning drifts open, while the most likely path settles onto the true one and its uncertainty ellipses shrink](../plots/odometry.gif)
+<p align="center"><img src="../plots/odometry.gif" alt="A robot's lap: dead reckoning drifts open, while the most likely path settles onto the true one and its uncertainty ellipses shrink" width="500" /></p>
 
 ```python
 weights = noises.inverse()                                            # [readings] Forque <- Twist
@@ -574,7 +573,7 @@ residual = residual - pushed * step                                   # [..., po
 
 **Notebook**: [`examples/mechanics/area_transport/area_transport.ipynb`](../examples/mechanics/area_transport/area_transport.ipynb)
 
-![A cube flattened while its layers slide, its faces' areas and its volume measured throughout](../plots/area_transport.gif)
+<p align="center"><img src="../plots/area_transport.gif" alt="A cube flattened while its layers slide, its faces' areas and its volume measured throughout" width="600" /></p>
 
 ```python
 areas = deformation.outermorphism(Patch)   # [frames] Patch <- Patch
@@ -587,23 +586,23 @@ adjugate = areas.adjugate()                # [frames] Flux <- Flux
 
 ---
 
-## 30. Radar Ranging in Projective Spacetime
+## 30. Satellite Navigation
 
-**Notebook**: [`examples/relativity/radar/radar.ipynb`](../examples/relativity/radar/radar.ipynb)
+**Notebook**: [`examples/relativity/gps/gps.ipynb`](../examples/relativity/gps/gps.ipynb)
 
-![Radar light paths and the recovered range carried through a boost and translation, with the transmitting clock's readings unchanged](../plots/radar_frames.gif)
+<p align="center"><img src="../plots/gps.gif" alt="Six satellites spreading across the sky above a receiver at Earth's pole, their signals' paths to it, and the ellipsoid of its fitted position's uncertainty, long while they bunch and shrinking as they spread" width="320" /></p>
 
 ```python
-reflection = (Event & outward) ^ reflector                    # [] Event <- Event
-returning = (Event & inward) ^ receiver                       # [] Event <- Event
-reflection = reflection / (mv.w & reflection(reference))      # [] Event <- Event
-returning = returning / (mv.w & returning(reference))          # [] Event <- Event
-echo = returning(reflection)                                 # [] Event <- Event
-received = echo(emitted)                                     # [pulses] Event
+cones = emitted | (emitted & Event)                                # [signals] Slice+ <- Event-
+difference = cones[1:] - cones[0]                                  # [signals - 1] Slice+ <- Event-
+axis = radicals[0] ^ radicals[1] ^ radicals[2]                     # [] Antibivector+
+tangent = cones(receiver[..., None])                               # [signals] Slice+
+information = (weight * readout * (readout & Step)).sum(axis=-1)   # [] Readout+ <- Step-
+covariance = information.inverse()                                 # [] Step- <- Readout+
 ```
 
-* Joining an emission to a light direction and intersecting the target gives its reflection event.
-* A motor carries events and their clock together through boosts and translations; `clock & event` keeps its reading.
+* A light cone is a map from events to planes, `emitted | (emitted & Event)`, and `event & cone(event)` is the interval. Two cones differ by a pair of planes, so three radical planes meet in a line that a cone cuts at the reception.
+* `cone(receiver)` is the tangent plane that reads a step of the reception. Positive dyads of these readings sum to the information map, whose inverse is one covariance over place and time, so the clock's uncertainty widens the position's.
 
 # References
 

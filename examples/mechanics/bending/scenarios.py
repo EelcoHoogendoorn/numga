@@ -31,7 +31,6 @@ ACROSS = [[0.4, 0.0], [-1.15, 0.0]]
 # every section's kern and one outside.
 PUSH = 1e-3
 PUSH_POINTS = [[0.03, 0.04], [0.1, 0.3]]
-# Gallery picture: this makes plots/bending.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
 # The gallery's move across: its pixels to the inch.
 GALLERY_DPI = 64
 
@@ -116,9 +115,6 @@ def main() -> None:
                                         centres[NAMES.index("Z-section")], turning, turned), "bending_turning", DURATION_MS)
     save_animation(render.animate_loads(tube, centres[NAMES.index("slotted tube")], shear_centres[NAMES.index("slotted tube")],
                                         across, down, moved), "bending_across", DURATION_MS)
-    # Gallery picture: this makes plots/bending.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-    save_animation(render.sized_loads(tube, centres[NAMES.index("slotted tube")], shear_centres[NAMES.index("slotted tube")],
-                                      across, down, moved, GALLERY_DPI), "bending", DURATION_MS, forward_then_back=True)
 
     # checks
     tips = np.array([render.flat(frames[-1] >> centre) - render.flat(centre)
@@ -144,6 +140,21 @@ def main() -> None:
         first, second = core.pulls(rigidity, points[0]), core.pulls(rigidity, points[1])
         exchanged = (first & (core.beam_direction & points[1])) - (second & (core.beam_direction & points[0]))
         assert np.abs(exchanged.to_array()).max() < 1e-12
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the slotted tube's load moved across its section, twisting it one way and then the other, for the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.mechanics.bending import render
+
+    tube = section_walls()[NAMES.index("slotted tube")]
+    topology, nodes, thickness = tube
+    centre = core.centroid(topology.incidence[1, 0] * nodes, thickness)       # [] Point-
+    down = LOAD * -up_direction                                              # [] Point-
+    across = across_points()
+    moved = cantilever(*tube, tip(across, LENGTH) & down, LENGTH, SHEAR_MODULUS)
+    pin_animation(render.sized_loads(tube, centre, core.shear_centre(*tube), across, down, moved, GALLERY_DPI), "bending",
+                  DURATION_MS, forward_then_back=True)
 
 
 if __name__ == "__main__":

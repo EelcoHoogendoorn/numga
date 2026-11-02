@@ -26,8 +26,7 @@ N_ANGLES = 360
 N_DRAWN_RINGS = 35
 N_DRAWN_ANGLES = 90
 OUTER_DISTANCE = 6.0
-# README picture: the sweep's frames and their duration make plots/wing.gif, 400 pixels across,
-# tuned as a visual for the README. Don't change them; to experiment, copy them.
+# The sweep's frames and their duration in milliseconds; the morph's frames, angle of attack and duration.
 N_FRAMES = 120
 SWEEP_DURATION_MS = 40
 N_MORPH_FRAMES = 90
@@ -66,11 +65,9 @@ def morph() -> Iterator[tuple[core.Point, core.Point, core.Bivector, core.Force,
         yield points, velocity, flux, core.lift(pitched, stream, DENSITY), images, pitched.centre
 
 
-# README picture: this makes plots/wing.gif, tuned as a visual for the README. Don't change it; to
-# experiment, copy it.
 def sweep() -> Iterator[tuple[core.Point, core.Point, core.Bivector, core.Force]]:
-    """The flow past the wing and its lift as the wing pitches up; the animation plays it forward and back."""
-    phase = (1 - np.cos(np.linspace(0, np.pi, N_FRAMES // 2 + 1))) / 2
+    """The flow past the wing and its lift as the wing pitches up and back down, one period of the pitch."""
+    phase = (1 - np.cos(np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False))) / 2
     for attack in LOWEST_ATTACK + (HIGHEST_ATTACK - LOWEST_ATTACK) * phase:
         pitched = wing(attack)
         plane = core.rings(pitched, N_DRAWN_RINGS, N_DRAWN_ANGLES, OUTER_DISTANCE)   # [rings, angles] Point-
@@ -83,9 +80,6 @@ def main() -> None:
     from examples.util.animation import save_animation
     from examples.fluids.wing import render
 
-    # README picture: this makes plots/wing.gif, tuned as a visual for the README. Don't change it; to
-    # experiment, copy it.
-    save_animation(render.animate(sweep(), SPEED), "wing", SWEEP_DURATION_MS, forward_then_back=True)
     save_animation(render.animate_marked(morph(), SPEED), "wing_morph", DURATION_MS, forward_then_back=True)
 
     # checks
@@ -117,6 +111,14 @@ def main() -> None:
     winding = (surface_tails & surface_heads).batch().sum(axis=-1)           # [] Scalar-
     force = (pressure * (steps & core.Point)).sum(axis=-1) * (winding / winding.norm())   # [] Scalar+ <- Point-
     np.testing.assert_allclose((force - (core.lift(pitched, stream, DENSITY) & core.Point)).kernel, 0.0, atol=1e-3)
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the wing pitching up and back down in the stream, for the README and the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.fluids.wing import render
+
+    pin_animation(render.animate(sweep(), SPEED), "wing", SWEEP_DURATION_MS)
 
 
 if __name__ == "__main__":

@@ -133,17 +133,36 @@ def main() -> None:
     conductivity = mv.scalar(np.where((radii < 1).reshape(-1), reynolds, reynolds * mantle_conductance)[:, None]).field()   # Scalar+[tets]
     potential = seed(topology, vertices, mv.xy * 1e-2 + mv.yz * 3e-3)            # Scalar+[edges]
     states = core.dynamo(operators, flow, conductivity, viscosity, pull, stirred, potential, dt, n_steps)
-    # The saturated dynamo, every stride-th state drawn as it comes from both views, and the whole run kept for the
-    # energies.
-    above, cutaway, kept = tee(states, 3)
-    save_animation(render.animate_lines(operators, frames(operators, flow, islice(above, n_skipped_steps, None, stride))),
-                   "dynamo_lines", frame_duration_ms, colors=n_lines_colours)
+    # The saturated dynamo, every stride-th state drawn cut away as it comes, and the whole run kept for the energies.
+    cutaway, kept = tee(states, 2)
     save_animation(render.animate(operators, mantle_radius, frames(operators, flow, islice(cutaway, n_skipped_steps, None, stride))),
                    "dynamo", frame_duration_ms, colors=n_cutaway_colours)
     amplitudes, potentials = map(stack, zip(*islice(kept, 0, None, stride)))   # [frames] Scalar+[modes], [frames] Scalar+[edges]
     kinetic = (amplitudes * amplitudes).sites.sum() / 2                          # [frames] Scalar+
     magnetic = (potentials * operators.stiffness(potentials)).sites.sum() / 2    # [frames] Amount-
     save_figure(render.draw_energies(np.arange(0, n_steps + 1, stride) * dt, kinetic, magnetic), "dynamo_energies")
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the saturated dynamo's field lines and streamlines seen from above, for the gallery."""
+    from itertools import islice
+    from examples.util.animation import pin_animation
+    from examples.electromagnetism.dynamo import render
+
+    topology, _, vertices = ball()
+    operators = core.Ball(topology, vertices)
+    fluid_topology, fluid_vertices, embedding = outer_core(topology, vertices)
+    flow = core.Flow(core.Ball(fluid_topology, fluid_vertices), embedding, n_scalar_modes, n_modes)
+    # The stirred flow, the helical flow's share in each mode.
+    stirred = flow.reading(operators.prisms.norm() * helical_flow(topology, vertices).dual())   # Scalar+[modes]
+    radii = operators.centres.squared().abs().square_root()                      # Scalar+[tets]
+    conductivity = mv.scalar(np.where((radii < 1).reshape(-1), reynolds, reynolds * mantle_conductance)[:, None]).field()   # Scalar+[tets]
+    potential = seed(topology, vertices, mv.xy * 1e-2 + mv.yz * 3e-3)            # Scalar+[edges]
+    states = core.dynamo(operators, flow, conductivity, viscosity, pull, stirred, potential, dt, n_steps)
+    # The saturated dynamo, every stride-th state drawn from above as it comes.
+    pin_animation(render.animate_lines(operators, frames(operators, flow, islice(states, n_skipped_steps, None, stride))),
+                  "dynamo_lines", frame_duration_ms, colors=n_lines_colours)
+
 
 if __name__ == "__main__":
     main()

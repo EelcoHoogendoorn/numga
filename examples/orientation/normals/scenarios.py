@@ -53,14 +53,12 @@ def pairs_in_mirror() -> tuple[Plane, Point, Axis, Spear, Plane]:
 
 
 # --- plumbing -------------------------------------------------------------------------
-def main() -> None:
-    from examples.util.animation import save_figure
+def pinned() -> None:
+    """The pictures the repository tracks: the triangle, the line and the crossing planes beside their mirror images,
+    for the orientation docs."""
+    from examples.util.animation import pin_figure
     from examples.orientation.normals import render
 
-    save_figure(render.draw_normals(*normals()), "normal_orientation")
-    save_figure(render.draw_line_in_mirror(*line_in_mirror()), "line_in_mirror")
-    save_figure(render.draw_pairs_in_mirror(*pairs_in_mirror()), "pairs_in_mirror")
-
-
-if __name__ == "__main__":
-    main()
+    pin_figure(render.draw_normals(*normals()), "normal_orientation")
+    pin_figure(render.draw_line_in_mirror(*line_in_mirror()), "line_in_mirror")
+    pin_figure(render.draw_pairs_in_mirror(*pairs_in_mirror()), "pairs_in_mirror")

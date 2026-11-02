@@ -20,7 +20,6 @@ initial_weights = np.array([0.45, 0.70, 0.85, 0.85, 0.45])                    # 
 n_frames = 46
 relaxation_time = 0.025
 frame_duration_ms = 40
-# Gallery picture: this makes plots/beltrami.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
 # The gallery's palette: the colours its frames share.
 n_gallery_colours = 64
 
@@ -59,10 +58,8 @@ def main() -> None:
     times = np.linspace(0.0, relaxation_time, n_frames)
     states = selective_decay(initial_amplitudes, selected_eigenvalues, times)
     magnetic_frames = reconstruct(states, selected_modes, operators.curl)
-    relaxation = list(render.animate_relaxation(topology, vertices, operators.centres, operators.volumes, magnetic_frames))
-    save_animation(relaxation, "beltrami_relaxation", frame_duration_ms)
-    # Gallery picture: this makes plots/beltrami.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-    save_animation(relaxation, "beltrami", frame_duration_ms, colors=n_gallery_colours)
+    save_animation(render.animate_relaxation(topology, vertices, operators.centres, operators.volumes, magnetic_frames),
+                   "beltrami_relaxation", frame_duration_ms)
 
     # checks
     amplitude_frames = stack(list(selective_decay(initial_amplitudes, selected_eigenvalues, times)))
@@ -92,6 +89,28 @@ def main() -> None:
     taylor_bound = (helicity_frames[0] * selected_eigenvalues[0] / 2).kernel[0]
     assert energy_frames[-1].kernel[0] > taylor_bound
     assert abs(energy_frames[-1].kernel[0] - taylor_bound) / taylor_bound < 0.02
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the tangled field in the torus settling into evenly twisted windings, for the gallery."""
+    from examples.electromagnetism.beltrami_fields import render
+    from examples.util.animation import pin_animation
+
+    topology, vertices, free = torus_cavity()
+    operators = Operators(topology, vertices)
+    free_energy = free.adjugate()(operators.stiffness(free))
+    free_helicity = free.adjugate()(operators.helicity(free))
+    inverse_eigenvalues, free_modes, _ = coexact_helicity_eigh(free_energy, free_helicity)
+    modes = free(free_modes)
+    # Selective modal decay with the total helicity held fixed.
+    selected_modes = modes[selected_indices]                                 # [selected] Scalar+[edges]
+    selected_eigenvalues = 1 / inverse_eigenvalues[selected_indices]         # [selected] Scalar+
+    initial_amplitudes = as_scalar(initial_weights)                          # [selected] Scalar+
+    times = np.linspace(0.0, relaxation_time, n_frames)
+    states = selective_decay(initial_amplitudes, selected_eigenvalues, times)
+    magnetic_frames = reconstruct(states, selected_modes, operators.curl)
+    pin_animation(render.animate_relaxation(topology, vertices, operators.centres, operators.volumes, magnetic_frames),
+                  "beltrami", frame_duration_ms, colors=n_gallery_colours)
 
 
 if __name__ == "__main__":

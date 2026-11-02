@@ -45,7 +45,7 @@ polarizer_angles = np.linspace(0, np.pi, n_polarizer_frames, endpoint=False)
 polarization_degree = 0.8
 n_flow_frames = n_frames
 flow_time = 50.0 * mass                                         # coordinate time the disk turns through in one loop
-# README and gallery picture: this makes plots/kerr.gif for the README and docs/extensors.md, tuned as a visual for both. Don't change it; to experiment, copy it.
+# The gallery's camera: its pixels across and down, the tangent of half its view, and its frames.
 gallery_width = 400
 gallery_height = gallery_width * 2 // 3
 gallery_half_view = np.tan(np.deg2rad(21.3))
@@ -125,12 +125,6 @@ def main() -> None:
                    "kerr_polarizer", duration_ms)
     save_animation(render.animate_disk(image, temperature, exposure_temperature, disk_flow(image, n_flow_frames), n_flow_frames, shape, sky),
                    "kerr_disk", duration_ms)
-    gallery_image, gallery_temperature, _ = camera(gallery_width, gallery_height, gallery_half_view)
-    # README and gallery picture: this makes plots/kerr.gif for the README and docs/extensors.md, tuned as a visual for both. Don't change it; to experiment, copy it.
-    save_animation(render.animate_disk(gallery_image, gallery_temperature, exposure_temperature,
-                                       disk_flow(gallery_image, n_gallery_frames), n_gallery_frames,
-                                       (gallery_height, gallery_width), sky),
-                   "kerr", duration_ms)
 
     # --- checks
     # Each pixel's light is shared at most once between the disk and the sky, all of it when its ray
@@ -143,6 +137,19 @@ def main() -> None:
     points, momenta, _ = image.disk
     tangent, _ = core.rates(points, momenta, core.mv.xy.dual() * camera_spin, mass)
     np.testing.assert_allclose((momenta & tangent).kernel, 0, atol=7e-2, rtol=0)
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the camera's view of the disk turning round the hole, for the README and the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.relativity.kerr import render
+
+    sky = render.star_texture(sky_width, sky_height, sky_seed)
+    gallery_image, gallery_temperature, _ = camera(gallery_width, gallery_height, gallery_half_view)
+    pin_animation(render.animate_disk(gallery_image, gallery_temperature, exposure_temperature,
+                                      disk_flow(gallery_image, n_gallery_frames), n_gallery_frames,
+                                      (gallery_height, gallery_width), sky),
+                  "kerr", duration_ms)
 
 
 if __name__ == "__main__":

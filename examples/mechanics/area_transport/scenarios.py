@@ -29,12 +29,7 @@ def scene(thicknesses: np.ndarray, shears: np.ndarray) -> tuple[core.Point, core
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_animation
-    from examples.mechanics.area_transport import render
-
     vertices, centres, patches, volume = scene(THICKNESSES, SHEARS)
-    save_animation(render.animate(zip(vertices, centres, patches, volume)), "area_transport", DURATION_MS,
-                   forward_then_back=True)
 
     # checks
     # The deformation and its area map scale every volume by the determinant, at the flat sheet too.
@@ -42,6 +37,17 @@ def main() -> None:
     areas, _, _ = core.transport(deformation)
     volumes = deformation(core.Point) & areas(core.Patch)                     # [frames] Scalar+ <- (Point-, Patch-)
     np.testing.assert_allclose((volumes - volume * (core.Point & core.Patch)).kernel, 0, atol=1e-12)
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the cube crushed and sheared to a flat sheet, its faces' patches carried
+    along, for the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.mechanics.area_transport import render
+
+    vertices, centres, patches, volume = scene(THICKNESSES, SHEARS)
+    pin_animation(render.animate(zip(vertices, centres, patches, volume)), "area_transport", DURATION_MS,
+                  forward_then_back=True)
 
 
 if __name__ == "__main__":

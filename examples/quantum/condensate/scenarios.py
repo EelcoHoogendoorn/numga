@@ -67,15 +67,23 @@ def counted(topology: core.Topology, vertices: core.Point, wave: core.Wave) -> n
 
 
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
+    from examples.util.animation import save_figure
     from examples.quantum.condensate import render
 
     topology, vertices, frames = settled()
     frames = list(frames)
-    save_animation(render.animate(topology, vertices, (wave.scalar_norm_squared() for wave in frames)), "condensate",
-                   frame_duration_ms, colors=n_animation_colours)
     save_figure(render.draw_count(counting_radii, counted(topology, vertices, frames[-1]),
                                   rotation * counting_radii ** 2), "condensate_count")
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the stirred cloud settling into its lattice of vortices, for the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.quantum.condensate import render
+
+    topology, vertices, frames = settled()
+    pin_animation(render.animate(topology, vertices, (wave.scalar_norm_squared() for wave in frames)), "condensate",
+                  frame_duration_ms, colors=n_animation_colours)
 
 
 if __name__ == "__main__":

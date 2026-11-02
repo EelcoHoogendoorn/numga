@@ -89,12 +89,22 @@ def main() -> None:
     isotropic = list(frozen(topology, vertices, parcels, phase, 0.0, n_isotropic_frames, stride))
     snowflake_frames = list(render.animate(topology, vertices, snowflake))
     isotropic_frames = list(render.animate(topology, vertices, isotropic))
-    save_animation(snowflake_frames, "snowflake", frame_duration_ms)
     save_animation(render.side_by_side(snowflake_frames, isotropic_frames), "snowflake_isotropic", frame_duration_ms)
     save_figure(render.draw_grown(topology, vertices, snowflake[-1][0]), "snowflake_grown")
     save_figure(render.draw_grown(topology, vertices, isotropic[-1][0]), "snowflake_isotropic_grown")
     save_figure(render.draw_entropy(dt * stride * np.arange(n_snowflake_frames),
                                     entropies(topology, vertices, snowflake)), "snowflake_entropy")
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the snowflake growing from its seed, for the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.thermodynamics.snowflake import render
+
+    topology, coordinates, vertices = dish()
+    parcels, phase = seeded(coordinates)
+    snowflake = frozen(topology, vertices, parcels, phase, anisotropy, n_snowflake_frames, stride)
+    pin_animation(render.animate(topology, vertices, snowflake), "snowflake", frame_duration_ms)
 
 
 # A preview of how symmetric the snowflake grows: each setting a change from the scenario's parameters, the edge's

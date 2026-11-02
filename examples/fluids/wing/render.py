@@ -111,8 +111,6 @@ def animate_marked(frames: Iterable[tuple[core.Point, core.Point, core.Bivector,
         yield frame(points, velocity, stream, lift, speed, critical, centre)
 
 
-# README picture: this makes plots/wing.gif, tuned as a visual for the README. Don't change it; to
-# experiment, copy it.
 def animate(frames: Iterable[tuple[core.Point, core.Point, core.Bivector, core.Force]], speed: float) -> Iterator[np.ndarray]:
     """Each frame of points, velocity, stream function and lift."""
     for points, velocity, stream, lift in frames:

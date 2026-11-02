@@ -1,7 +1,7 @@
 """Drawing for the dynamo, two ways. Seen from above, the core alone: its field lines and its flow's streamlines, with
-chevrons pointing downstream. Cut away: the ball cut open by a vertical plane through its centre, the cut face streaked
-along the flow within it, the back half of the planet's surface behind it, and the field lines of the removed half
-standing in front of it as tubes."""
+chevrons pointing downstream, inside the core's surface as a faint translucent sphere. Cut away: the ball cut open by a
+vertical plane through its centre, the cut face streaked along the flow within it, the back half of the planet's surface
+behind it, and the field lines of the removed half standing in front of it as tubes."""
 
 from __future__ import annotations
 
@@ -34,6 +34,8 @@ dark_background = np.array(to_rgb("#1b1b3a"))
 above_degrees = np.array([89.0, -30.0])
 n_lines_pixels = 256
 lines_seed_radii = np.array([0.6])
+# The core's surface around the lines, its colour and opacity.
+core_colour, core_opacity = np.array(to_rgb("#dee2e6")), 0.14
 chevron_length = 5.0
 chevron_steps = 15
 # The camera's elevation and azimuth in degrees, the reach framed around each point, the margin and the pixels across.
@@ -237,6 +239,8 @@ class Lines:
         self.stream_seeds = self.seeds                                            # [streams] Point-
         _, coordinates = shapes.sphere(n_surface_levels)
         self.frame = camera_view(drawn(mv(core.Plane, coordinates).dual()), pixels, degrees)
+        # The core's surface, the unit sphere about the centre.
+        self.surface = solids.ball(solids.origin, 1.0)[None, None]
 
     def picture(self, magnetic: core.Magnetic, velocity: core.Point) -> np.ndarray:
         """The field lines and the streamlines of one state, within the core."""
@@ -245,9 +249,10 @@ class Lines:
         lines = field_lines(self.centres, fields, self.seeds)                     # [lines, steps] Point-
         streams = field_lines(self.centres, velocity.batch(), self.stream_seeds)  # [streams, steps] Point-
         within = [(places.reshape(-1).squared().abs().square_root() < 1) for places in (lines, streams)]
-        return solids.draw([], self.frame, dark_background, inks=[], translucent=[], meshes=[
-            (line_tubes(lines, within[0], line_colour, self.frame, 0.0), 1.0),
-            (line_tubes(streams, within[1], stream_colour, self.frame, chevron_length), 1.0)])
+        return solids.draw([], self.frame, dark_background, inks=[],
+                           translucent=[(self.surface, core_colour, core_opacity)], meshes=[
+                               (line_tubes(lines, within[0], line_colour, self.frame, 0.0), 1.0),
+                               (line_tubes(streams, within[1], stream_colour, self.frame, chevron_length), 1.0)])
 
 
 def animate_lines(ball: core.Ball, states: Iterable[tuple[core.Magnetic, core.Point]]) -> Iterator[np.ndarray]:

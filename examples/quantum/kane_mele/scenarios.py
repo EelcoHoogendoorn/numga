@@ -34,7 +34,7 @@ spinor = (1 - mv.zx) * 0.5**0.5
 LAP = 50.0
 N_FRAMES = 150
 DURATION_MS = 40
-# README and gallery picture: this makes plots/kane_mele.gif for the README and docs/extensors.md, tuned as a visual for both. Don't change it; to experiment, copy it.
+# The gallery's helical edge states: their pixels across.
 GALLERY_PIXELS = 400
 
 
@@ -75,8 +75,6 @@ def main() -> None:
     save_figure(render.draw_levels(MASSES, energies, shares, 3 * 3**0.5 * SPIN_ORBIT), "kane_mele_levels")
     save_figure(render.draw_states(flake, densities), "kane_mele_states")
     save_animation(render.animate_spin(flake, spins, render.PIXELS), "kane_mele_helical", DURATION_MS)
-    # README and gallery picture: this makes plots/kane_mele.gif for the README and docs/extensors.md, tuned as a visual for both. Don't change it; to experiment, copy it.
-    save_animation(render.animate_spin(flake, spins, GALLERY_PIXELS), "kane_mele", DURATION_MS)
 
     # checks
     # The Hamiltonian is its own reverse: every coupling's reverse couples the other way.
@@ -114,6 +112,16 @@ def main() -> None:
     centres = [((half * flake.positions).sites.sum() / half.sites.sum()).normalized() for half in (up, down)]
     sines = [(mv.xy & (start & centre)).to_array().item() for centre in centres]
     assert sines[0] > 0.5 and sines[1] < -0.5
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: an electron's two spins running round the flake's edge in opposite senses, for the README and the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.quantum.kane_mele import render
+
+    flake = core.flake(SIZE, RIM)
+    _, _, spins = helical(flake)
+    pin_animation(render.animate_spin(flake, spins, GALLERY_PIXELS), "kane_mele", DURATION_MS)
 
 
 if __name__ == "__main__":
