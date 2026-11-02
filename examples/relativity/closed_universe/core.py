@@ -80,10 +80,8 @@ moving = equator ^ polar(Step)                                          # [] Rat
 pseudoscalar = mv.xyzw                                                  # [] Antiscalar+
 # The rate that turns a frame in the plane square to each step's moving rate.
 turning = moving * pseudoscalar                                         # [] Rate+ <- Point-
-# The share of the vertex moves' largest square that settles the moves of the whole sphere, and the relative size of
-# the nudges to the squared lengths that find the stiffness.
+# The share of the vertex moves' largest square that settles the moves of the whole sphere.
 settling = 1e-10
-nudge = 1e-6
 
 
 # --- math -----------------------------------------------------------------------------
@@ -157,6 +155,33 @@ class Space:
         masses = (~edges[:, None] * spdiag(local * Scalar.dual()) * edges[None, :]).sum(axis=0).sum(axis=0)   # (Amount- <- Scalar+)[edges <- edges]
         return deficits, slopes, masses
 
+    def stiffness(self, rest: Scalar) -> SparseExtensor:
+        """The change of the slopes with the squared lengths about `rest`, where every deficit vanishes, as the round
+        sphere's own chords leave none, `(Amount- <- Scalar+)[edges <- edges]`: there only the angles change, each
+        through the inverse of the cone's metric, whose change with an edge's squared length is minus the inverse, times
+        that edge's product of ramps, times the inverse, a product of the faces' pairings; and then through the
+        arccos."""
+        mesh = self.mesh
+        tails, heads = mesh.corners[3, 1]
+        off_tails, off_heads = mesh.complements[3, 1]
+        cone = self.radial * (self.radial & Point) + self.cone_map * rest       # (Plane+ <- Point-)[cells]
+        pairings = self.ramps[:, None] & cone.batch().inverse().field()(self.ramps[None, :])   # [corners, corners] Scalar+[cells]
+        # The corners off each angle's edge, down the rows, and the ends of each squared length's edge, across.
+        a, b = off_tails[:, None], off_heads[:, None]
+        t, h = tails[None, :], heads[None, :]
+        # How an angle's two faces pair with each other, and each with itself, change with each squared length.
+        between = (pairings[a, t] * pairings[b, h] + pairings[a, h] * pairings[b, t]) / 2   # [cell_edges, cell_edges] Scalar+[cells]
+        own = pairings[a, t] * pairings[a, h] / pairings[a, a] + pairings[b, t] * pairings[b, h] / pairings[b, b]
+        # The angle's change, through the arccos of the faces' pairing over the root of their own.
+        sines = (pairings[a, a] * pairings[b, b] - pairings[a, b].squared()).square_root()   # [cell_edges, 1] Scalar+[cells]
+        angle_changes = (between - pairings[a, b] * own / 2) / sines              # [cell_edges, cell_edges] Scalar+[cells]
+        # A slope is minus the deficit over the root of the arc's change with the squared chord, so its change is the
+        # angles' changes summed round the edge over that root; integrated over the volume, amounts.
+        edges = mesh.incidence[3, 1]                                            # [cell_edges] numbers[cells <- edges]
+        roots = edges * (rest * (1 - rest / 4)).square_root()                  # [cell_edges] Scalar+[cells]
+        local = angle_changes / roots[:, None]                                  # [cell_edges, cell_edges] Scalar+[cells]
+        return (~edges[:, None] * spdiag(local * Scalar.dual()) * edges[None, :]).sum(axis=0).sum(axis=0)
+
     def volumes(self, squared_lengths: Scalar) -> Scalar:
         """Each flat tetrahedron's volume from the squared lengths: the root of the determinant of its metric over the
         corner gradients' frame, a sixth of it."""
@@ -184,7 +209,7 @@ def gravitational_waves(mesh: Topology, vertices: Point) -> tuple[SparseExtensor
     chords = mesh.d[0] * vertices                                               # Point-[edges]
     rest = chords.dot(chords)                                                   # Scalar+[edges]
     _, _, masses = space.dynamics(rest)
-    stiffness = jacobian(lambda lengths: space.dynamics(lengths)[1], rest, nudge, mesh)
+    stiffness = space.stiffness(rest)
     moves = spdiag(2 * chords.dot(Point)) * mesh.d[0]                          # (Scalar+ <- Point-)[edges <- vertices]
     return stiffness, masses, OntoWaves(masses, moves)
 
@@ -630,39 +655,6 @@ fn next_leg(place: Point, heading: Step, tet: u32, entry: u32, time: f32) -> Leg
 
 
 # --- plumbing -------------------------------------------------------------------------
-def jacobian(slopes: Callable[[Scalar], Amount], rest: Scalar, nudge: float, mesh: Topology) -> SparseExtensor:
-    """The change of `slopes(lengths)`, `Amount-[edges]`, with each of the lengths about `rest`, by forward differences
-    of relative size `nudge`, as a sparse map `(Amount- <- Scalar+)[edges <- edges]`. An edge's length reaches only the
-    slopes of the edges that share a tetrahedron with it, so a group of edges no two of which reach a common edge is
-    nudged at once, and each slope's change is told apart by the one edge of the group that reaches it: a numeric
-    excursion, its columns gathered outside the algebra."""
-    from scipy.sparse import csr_matrix
-
-    n_edges = mesh.n_elements[1]
-    cell_edges = mesh.incidence_indices[3, 1]                                   # [tets, cell_edges]
-    cells = csr_matrix((np.ones(cell_edges.size), (np.repeat(np.arange(len(cell_edges)), 6), cell_edges.reshape(-1))),
-                       shape=(len(cell_edges), n_edges))
-    reaching = ((cells.T @ cells) > 0).astype(float).tocsr()                   # [edges, edges]
-    clashing = ((reaching @ reaching) > 0).tocsr()                              # [edges, edges]
-    # Each edge in turn takes the first group none of the edges it clashes with has taken.
-    groups = np.full(n_edges, -1)
-    for edge in range(n_edges):
-        taken = groups[clashing.indices[clashing.indptr[edge]:clashing.indptr[edge + 1]]]
-        groups[edge] = np.setdiff1d(np.arange(len(taken) + 1), taken)[0]
-    # The slopes, amounts, read as numbers by their duals.
-    at_rest = slopes(rest).dual().to_array()
-    sizes = nudge * rest.to_array()
-    rows, columns, values = [], [], []
-    for group in range(groups.max() + 1):
-        nudged = np.where(groups == group, sizes, 0.0)
-        changes = (slopes(rest + mv.scalar(nudged[:, None]).field()).dual().to_array() - at_rest)
-        reached, members = reaching[:, groups == group].nonzero()
-        edges = np.flatnonzero(groups == group)[members]
-        rows.append(reached), columns.append(edges), values.append(changes[reached] / sizes[edges])
-    cells = ctx.extensor(ga.gatype((Amount, Scalar)), np.concatenate(values)[:, None, None])
-    return SparseExtensor.from_indices(cells, np.concatenate(rows), np.concatenate(columns), (n_edges, n_edges))
-
-
 def picking(mesh: Topology, vertices: Point) -> Callable[[Point], np.ndarray]:
     """`[...]`: the tetrahedron holding each point of the sphere `[...] Point-`, by a query of a k-d tree built once.
     The ray from the centre to a point crosses the tetrahedron whose plane through its corners, the sum of its ramps,
