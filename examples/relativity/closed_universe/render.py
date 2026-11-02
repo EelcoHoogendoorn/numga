@@ -217,29 +217,27 @@ def edge_styles(mesh: Topology, vertices: core.Point, struts: np.ndarray, inks: 
 
 def polygon_struts(polygons: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """The sides of closed polygons of vertices `[polygons, sides]` as struts `[polygons * sides, 2]`, each polygon in
-    its own colour round the colour wheel, `[polygons * sides, 3]`."""
-    sides = np.stack([polygons, np.roll(polygons, -1, axis=-1)], axis=-1).reshape(-1, 2)
-    return sides, np.repeat(hues(len(polygons)), polygons.shape[1], axis=0)
+    its own colour round the colour wheel, `[polygons * sides, 3]`: the edges of loops through the polygons' vertices,
+    one loop to each."""
+    n_polygons, n_sides = polygons.shape
+    loops = Topology.loops([n_sides] * n_polygons).elements[1]                  # [polygons * sides, 2]
+    return polygons.reshape(-1)[loops], hues(n_polygons)[loops[:, 0] // n_sides]
 
 
 def round_values(mesh: Topology, vertices: core.Point) -> dict:
-    """What the core's walk through the round sphere reads: the tetrahedra's ramps and neighbours, the origin, the
-    rates that move it, and a leg's reach."""
-    neighbours, entries = mesh.neighbours
-    return dict(ramps=core.coframe(mesh, vertices), neighbours=neighbours, entries=entries, n_tets=mesh.n_elements[3],
-                origin=core.origin, moving=core.moving, reach=core.round_reach)
+    """What the core's walk through the round sphere reads besides the topology: the tetrahedra's ramps, the origin,
+    the rates that move it, and a leg's reach."""
+    return dict(ramps=core.coframe(mesh, vertices), origin=core.origin, moving=core.moving, reach=core.round_reach)
 
 
 def wave_values(mesh: Topology, waves: core.Waves) -> dict:
-    """What the core's walk through the waves reads: the waves' stored moments, the tetrahedra's ramps, corners and
-    neighbours, the origin, and the maps of its steps."""
-    neighbours, entries = mesh.neighbours
+    """What the core's walk through the waves reads besides the topology: the waves' stored moments, the
+    tetrahedra's ramps and corners, the origin, and the maps of its steps."""
     _, n_vertices = waves.traces.shape
-    return dict(ramps=waves.ramps, neighbours=neighbours, entries=entries, tet_vertices=mesh.elements[3],
-                strains=waves.strains, strain_rates=waves.strain_rates, traces=waves.traces, turns=waves.turns,
-                n_vertices=n_vertices, n_tets=mesh.n_elements[3], first_time=waves.first_time,
-                level_step=waves.level_step, origin=core.origin, translating=core.translating, moving=core.moving,
-                turning=core.turning, step=core.wave_step)
+    return dict(ramps=waves.ramps, tet_vertices=mesh.elements[3], strains=waves.strains,
+                strain_rates=waves.strain_rates, traces=waves.traces, turns=waves.turns, n_vertices=n_vertices,
+                first_time=waves.first_time, level_step=waves.level_step, origin=core.origin,
+                translating=core.translating, moving=core.moving, turning=core.turning, step=core.wave_step)
 
 
 def inside(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, cameras: core.Motor,
@@ -247,7 +245,8 @@ def inside(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, c
     """Frames of the view from inside a round three-sphere meshed by tetrahedra, one for each camera and time: each
     camera, a motor `[frames] Motor+`, carries the origin to the eye and the origin's steps along `x`, `y` and `z` to
     its right, up and forward, read in the isoclinic frame at the eye; each ray is walked back from the eye leg by leg
-    by the WGSL `walk`, which defines `next_leg` and its `Leg` and reads `walk_values`; the tetrahedra's edges are lit
+    by the WGSL `walk`, which defines `next_leg` and its `Leg` and reads `walk_values` beside the topology's
+    neighbours across each face, `neighbours` and `entries`, and its count `n_tets`; the tetrahedra's edges are lit
     struts, each in its colour and squared radius `styles`, `[tets * 6, 4]` in each tetrahedron's own order of its
     edges; and at each frame the atoms and bonds of `crystals`."""
     from examples.util.wgsl import Shader, supersampled
@@ -260,22 +259,24 @@ def inside(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, c
                     dict(background=inside_background))
     # The struts' ends: each tetrahedron's edges' tails and heads, in its own order of its edges.
     tails, heads = mesh.incidence[1, 0] * vertices                              # Point-[edges], Point-[edges]
-    strut_tails = stack(tuple((mesh.incidence[3, 1] * tails).batch()), axis=-1)   # [tets, 6] Point-
-    strut_heads = stack(tuple((mesh.incidence[3, 1] * heads).batch()), axis=-1)   # [tets, 6] Point-
+    strut_tails = stack(tuple((mesh.incidence[3, 1] * tails).batch()), axis=-1)   # [tets, cell_edges] Point-
+    strut_heads = stack(tuple((mesh.incidence[3, 1] * heads).batch()), axis=-1)   # [tets, cell_edges] Point-
+    neighbours, entries = mesh.neighbours
     axes = stack((mv.x, mv.y, mv.z)).dual()                                     # [3] Point-
     lamp = lamp_placement >> core.origin                                        # [] Point-
     pick = core.picking(mesh, vertices)
     half_height = float(np.tan(fov_radians / 2) * inside_shape[0] / inside_shape[1])
-    fixed = walk_values | dict(struts=styles, strut_tails=strut_tails, strut_heads=strut_heads,
-                               half_height=half_height, max_legs=max_legs, particle_ink=particle_ink,
-                               particle_radius_squared=particle_radius ** 2, bond_radius_squared=bond_radius ** 2)
+    bindings = walk_values | dict(neighbours=neighbours, entries=entries, n_tets=mesh.n_elements[3], struts=styles,
+                                  strut_tails=strut_tails, strut_heads=strut_heads, half_height=half_height,
+                                  max_legs=max_legs, particle_ink=particle_ink,
+                                  particle_radius_squared=particle_radius ** 2, bond_radius_squared=bond_radius ** 2)
     for frame, (eye_time, crystal) in enumerate(zip(eye_times, crystals)):
         camera = cameras[frame]                                                 # [] Motor+
         place = camera >> core.origin                                           # [] Point-
         view = (core.isoclinic(place).inverse() * camera) >> axes              # [3] Point-
         image = shader(inside_shape, eye_time=float(eye_time), start_place=place,
                        start_tet=int(pick(place[None])[0]), right=view[0], up=view[1], forward=view[2],
-                       light=camera >> lamp, **crystal, **fixed)["image"]
+                       light=camera >> lamp, **crystal, **bindings)["image"]
         yield np.round(np.clip(image, 0.0, 1.0) * 255).astype(np.uint8)
 
 
@@ -314,17 +315,16 @@ def helix_view(walk: str, walk_values: dict, mesh: Topology, vertices: core.Poin
                   repeat(no_crystals(mesh)))
 
 
-def waves_view(mesh: Topology, vertices: core.Point, waves: core.Waves, eye: core.Motor, eye_times: np.ndarray,
-               rails: np.ndarray, bonds: Topology, atoms: core.Point, states: Iterable[tuple[core.Point, core.Scalar]]
-               ) -> Iterator[np.ndarray]:
-    """Frames of the view from inside the round three-sphere carrying the gravitational waves `waves`, as `inside`
-    draws them through the core's walk through the waves, from the camera `eye` at each of the `eye_times`: the closed
-    polygons of edges `rails`, vertex indices `[rails, sides]`, as struts each in its own colour, every other edge a
-    thin ghost; and the crystals, their atoms at rest `atoms` and at each frame the atoms and their bonds' strains of
-    `states`, `(Point-[atoms], Scalar+[bonds])`, the bonds the edges of `bonds`, coloured by their strains."""
-    return inside(core.wave_walk_source, wave_values(mesh, waves), mesh, vertices,
-                  eye.broadcast_to(eye_times.shape), eye_times, edge_styles(mesh, vertices, *polygon_struts(rails)),
-                  crystal_frames(mesh, vertices, bonds, atoms, states))
+def waves_view(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, eye: core.Motor,
+               eye_times: np.ndarray, rails: np.ndarray, bonds: Topology, atoms: core.Point,
+               states: Iterable[tuple[core.Point, core.Scalar]]) -> Iterator[np.ndarray]:
+    """Frames of the view from inside the round three-sphere carrying gravitational waves, as `inside` draws them
+    through a walk through the waves, from the camera `eye` at each of the `eye_times`: the closed polygons of edges
+    `rails`, vertex indices `[rails, sides]`, as struts each in its own colour, every other edge a thin ghost; and the
+    crystals, their atoms at rest `atoms` and at each frame the atoms and their bonds' strains of `states`,
+    `(Point-[atoms], Scalar+[bonds])`, the bonds the edges of `bonds`, coloured by their strains."""
+    return inside(walk, walk_values, mesh, vertices, eye.broadcast_to(eye_times.shape), eye_times,
+                  edge_styles(mesh, vertices, *polygon_struts(rails)), crystal_frames(mesh, vertices, bonds, atoms, states))
 
 
 def crystal_frames(mesh: Topology, vertices: core.Point, bonds: Topology, atoms: core.Point,
