@@ -32,18 +32,19 @@ half_widths = np.geomspace(0.02, 10.0, 28)
 surface_charges = -np.geomspace(0.3, 1000.0, 32)
 n_generator_columns = 3
 
-# A dye released as a band across a straight channel of uniform wall charge, many Debye lengths wide, so that its double
-# layers are thin beside it: the channel's length, its half width and its charge per area, and its vertices along and
+# A dye released as a band across a channel of uniform wall charge, many Debye lengths wide, so that its double layers
+# are thin beside it, and narrowing to a neck midway along it: the channel's length, its mean half width, the swing of
+# its half width and its charge per area, and its vertices along and
 # across, four to a Debye length across; the band's middle along it and its width; the dye's mobility, the same for
 # either charge, and its diffusivity, that of a large molecule; the runs' drives, by their place among the experiments,
 # and the dyes' charges; the time step, the frames after the first and the steps between frames, and the frames'
 # duration in milliseconds.
-straight_length, straight_half_width, straight_charge = 120.0, 15.0, -2.0
-n_straight_stations, n_straight_across = 192, 121
-band_middle, band_width = 20.0, 4.0
-dye_mobility, dye_diffusivity = 0.4, 0.05
+capillary_length, capillary_half_width, neck_swing, capillary_charge = 60.0, 10.0, 3.0, -2.0
+n_capillary_stations, n_capillary_across = 192, 121
+band_middle, band_width = 6.0, 0.8
+dye_mobility, dye_diffusivity = 0.4, 0.02
 run_drives, dye_charges = np.array([0, 1, 1, 1]), np.array([0, 0, 1, -1])
-dye_dt, n_dye_frames, dye_stride = 0.2, 100, 3
+dye_dt, n_dye_frames, dye_stride = 0.1, 100, 3
 frame_duration_ms = 40
 
 pump, battery = mv.xv, mv.xt                                                                          # [] Drive+, Drive+
@@ -112,35 +113,42 @@ def generator_efficiency() -> core.Scalar:
     return coupling / (2 - coupling + 2 * root)
 
 
-def straight():
-    """The straight channel's strip: its topology, its vertices' places, its edges' reach past them, its lower and upper
+def capillary(swing: float):
+    """The capillary's strip, its half width swinging by `swing` about its mean, widest at the ends of its period and
+    narrowest midway along it: its topology, its vertices' places, its edges' reach past them, its lower and upper
     walls, the charge its walls put on its vertices `[vertices]`, and the charge per area along its walls `[stations]`."""
-    widths = np.full(n_straight_stations, straight_half_width)
-    wall_charges = np.full(n_straight_stations, straight_charge)
-    return (*core.strip(n_straight_stations, n_straight_across, np.array(straight_length), widths),
-            core.wall_charge(n_straight_across, np.array(straight_length), widths, wall_charges), wall_charges)
+    # Widest at the ends of the period, narrowest midway along it.
+    turns = 2 * np.pi * np.arange(n_capillary_stations) / n_capillary_stations
+    widths = capillary_half_width + swing * np.cos(turns)
+    wall_charges = np.full(n_capillary_stations, capillary_charge)
+    return (*core.strip(n_capillary_stations, n_capillary_across, np.array(capillary_length), widths),
+            core.wall_charge(n_capillary_across, np.array(capillary_length), widths, wall_charges), wall_charges)
 
 
-def dyed():
-    """The straight channel's strip, its vertices and wall charges; the drives `[experiments] Drive+`, each scaled to
-    move the liquid at a unit of speed on average, and the liquid's velocity under each `[experiments] Point-[faces]`;
-    and the dye at each frame `[frames, runs] Scalar+[vertices]`: a band of it carried by the pressure drop's flow, by
+def dyed(swing: float):
+    """The capillary's strip, its half width swinging by `swing`, its vertices and wall charges; the liquid's charge density `Scalar+[vertices]`, its double
+    layers; the drives `[experiments] Drive+`, each scaled to move the liquid at a unit of speed on average, and the
+    liquid's velocity under each, at each vertex `[experiments] Point-[vertices]` and in each triangle `[experiments]
+    Point-[faces]`; and the dye at each frame `[frames, runs] Scalar+[vertices]`: a band of it carried by the pressure drop's flow, by
     the field's electro-osmotic flow, and, charged either way, by that flow while it drifts under the field."""
-    topology, coordinates, shifts, lower, upper, charge, wall_charges = straight()
+    topology, coordinates, shifts, lower, upper, charge, wall_charges = capillary(swing)
     vertices, edges = core.placed(topology, coordinates, shifts)
     areas, sides, gradients, outflow, circulation, cells = operators(topology, edges)
     potentials = core.double_layer(outflow, cells, mv.scalar(charge[:, None]).field(), valences, bulk,
                                    n_newton_steps)
     _, _, carried, velocities, field, _ = core.transport(topology, areas, sides, gradients, circulation, cells,
                                                          potentials, valences, bulk, viscosity, mobilities,
-                                                         np.array(straight_length), lower, upper, experiments)
+                                                         np.array(capillary_length), lower, upper, experiments)
     # The volume each experiment carries along per length, read by the pressure's drive, over the channel's width, is
     # the liquid's mean speed; the flow is linear in its drive, so each is scaled to a unit of it.
-    speeds = (pump & carried) / (2 * straight_half_width)                     # [experiments] Scalar+
+    speeds = (pump & carried) / (2 * capillary_half_width)                     # [experiments] Scalar+
     band = np.exp(-((coordinates[:, 0] - band_middle) / band_width) ** 2 / 2)
     dye = np.ones(len(run_drives)) * mv.scalar(band[:, None]).field()        # [runs] Scalar+[vertices]
     velocities, field = velocities / speeds, field / speeds                  # [experiments] Point-[faces], Drive+[faces]
-    return topology, vertices, wall_charges, experiments / speeds, velocities, core.dyeing(
+    density = (valences * bulk * (-valences * potentials[..., None]).exp()).sum(axis=-1)   # Scalar+[vertices]
+    # Each vertex's velocity, its triangles' weighed by their areas.
+    flows = (~topology.incidence[2, 0].sum(axis=0) * (velocities * (areas / 3))) / cells   # [experiments] Point-[vertices]
+    return topology, vertices, wall_charges, density, flows, experiments / speeds, velocities, core.dyeing(
         topology, areas, gradients, velocities[run_drives], field[run_drives], dye_charges, dye_mobility,
         dye_diffusivity, dye, dye_dt, n_dye_frames, dye_stride)
 
@@ -173,15 +181,12 @@ if __name__ == "__main__":
 
     topology, vertices, wall_charges, density, speeds, heat, carried, osmotic, electric = channel_flows()
     save_figure(render.draw_mesh(topology, vertices, n_across, wavelength, wall_charges[0]), "electrokinetics_channel")
-    save_figure(render.draw_charge(topology, vertices, n_across, wavelength, density, wall_charges),
-                "electrokinetics_charge")
-    save_figure(render.draw_balance(topology, vertices, n_across, wavelength, osmotic, electric, wall_charges[0]),
-                "electrokinetics_balance")
-    save_figure(render.draw_flow(topology, vertices, n_across, wavelength, speeds, wall_charges),
+    save_figure(render.draw_flow(topology, vertices, n_across, wavelength, density, speeds, wall_charges),
                 "electrokinetics_flow")
     save_figure(render.draw_heat(topology, vertices, n_across, wavelength, heat, wall_charges), "electrokinetics_heat")
     save_figure(render.draw_efficiency(half_widths, surface_charges, generator_efficiency()), "electrokinetics_efficiency")
-    topology, vertices, wall_charges, _, velocities, frames = dyed()
-    save_figure(render.draw_profiles(topology, vertices, n_straight_across, velocities), "electrophoresis_profiles")
-    save_animation(render.animate_dyes(topology, vertices, n_straight_across, straight_length, wall_charges, frames),
+    topology, vertices, wall_charges, density, flows, _, velocities, frames = dyed(neck_swing)
+    save_figure(render.draw_profiles(topology, vertices, n_capillary_across, velocities), "electrophoresis_profiles")
+    save_animation(render.animate_dyes(topology, vertices, n_capillary_across, capillary_length, wall_charges, density,
+                                       flows, frames),
                    "electrophoresis", frame_duration_ms)

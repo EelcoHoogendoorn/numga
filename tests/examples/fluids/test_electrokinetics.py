@@ -19,12 +19,12 @@ mv = core.mv
 
 @pytest.fixture(scope="module")
 def dyes():
-    """The straight channel's strip, its vertices, its wall charges, its drives and the liquid's velocity under each,
-    and its dye's first and last frames."""
-    topology, vertices, wall_charges, drives, velocities, frames = scenarios.dyed()
+    """The straight capillary's strip, its vertices, its wall charges, its liquid's charge density, its drives and the liquid's
+    velocity under each, at the vertices and in the triangles, and its dye's first and last frames."""
+    topology, vertices, wall_charges, density, flows, drives, velocities, frames = scenarios.dyed(0.0)
     first = next(frames)
     *_, last = frames
-    return topology, vertices, wall_charges, drives, velocities, first, last
+    return topology, vertices, wall_charges, density, flows, drives, velocities, first, last
 
 
 def test_straight_slit_is_reciprocal_dissipative_and_poiseuille():
@@ -85,17 +85,14 @@ def test_channels_balance_across_pump_by_their_phase_and_make_the_power_spent_in
 def test_scenes_draw():
     topology, vertices, wall_charges, density, speeds, heat, _, osmotic, electric = scenarios.channel_flows()
     plt.close(render.draw_mesh(topology, vertices, scenarios.n_across, scenarios.wavelength, wall_charges[0]))
-    plt.close(render.draw_charge(topology, vertices, scenarios.n_across, scenarios.wavelength, density, wall_charges))
-    plt.close(render.draw_balance(topology, vertices, scenarios.n_across, scenarios.wavelength, osmotic, electric,
-                                  wall_charges[0]))
-    plt.close(render.draw_flow(topology, vertices, scenarios.n_across, scenarios.wavelength, speeds, wall_charges))
+    plt.close(render.draw_flow(topology, vertices, scenarios.n_across, scenarios.wavelength, density, speeds, wall_charges))
     plt.close(render.draw_heat(topology, vertices, scenarios.n_across, scenarios.wavelength, heat, wall_charges))
 
 
 def test_dyes_keep_their_totals(dyes):
     """Each run's dye keeps its total over the cells, to round-off: what one cell gains, another loses."""
-    topology, vertices, _, _, _, first, last = dyes
-    _, coordinates, shifts, *_ = scenarios.straight()
+    topology, vertices, _, _, _, _, _, first, last = dyes
+    _, coordinates, shifts, *_ = scenarios.capillary(0.0)
     _, edges = core.placed(topology, coordinates, shifts)
     *_, cells = scenarios.operators(topology, edges)
     np.testing.assert_allclose((cells * last).sites.sum().to_array(), (cells * first).sites.sum().to_array(), rtol=1e-12)
@@ -105,8 +102,8 @@ def test_charged_dyes_part_at_twice_their_drift(dyes):
     """The positive and the negative dye, carried alike by the electro-osmotic flow, part at twice the drift the field
     alone gives them, the dye's mobility times the field's push on a unit of charge; the tolerance tests the cells
     along the channel and the time steps."""
-    topology, vertices, _, drives, _, first, last = dyes
-    _, coordinates, shifts, *_ = scenarios.straight()
+    topology, vertices, _, _, _, drives, _, first, last = dyes
+    _, coordinates, shifts, *_ = scenarios.capillary(0.0)
     _, edges = core.placed(topology, coordinates, shifts)
     *_, cells = scenarios.operators(topology, edges)
     # How far each run's dye has moved along the channel on average, read by the plane x.
@@ -117,7 +114,7 @@ def test_charged_dyes_part_at_twice_their_drift(dyes):
 
 
 def test_dyes_draw(dyes):
-    topology, vertices, wall_charges, _, velocities, _, last = dyes
-    plt.close(render.draw_profiles(topology, vertices, scenarios.n_straight_across, velocities))
-    next(render.animate_dyes(topology, vertices, scenarios.n_straight_across, scenarios.straight_length, wall_charges,
-                             [last]))
+    topology, vertices, wall_charges, density, flows, _, velocities, _, last = dyes
+    plt.close(render.draw_profiles(topology, vertices, scenarios.n_capillary_across, velocities))
+    next(render.animate_dyes(topology, vertices, scenarios.n_capillary_across, scenarios.capillary_length, wall_charges,
+                             density, flows, [last]))
