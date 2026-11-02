@@ -24,7 +24,13 @@ from examples.util.wgsl import meshes, simplices, solids
 # ink and radius.
 inside_shape = (300, 400)
 fov_radians = np.radians(100.0)
-inside_step = 0.02
+# The length of a ray's steps through the waves, each read at its midpoint, short enough that the picture no longer
+# changes with it; through the round sphere a ray runs straight in each tetrahedron's chart, and a step as long as the
+# 600-cell's edges takes it to the next face.
+wave_step = 0.02
+round_step = 0.6
+# The faces a ray may cross on its way, besides its steps.
+max_crossings = 256
 inside_background = np.array([0.035, 0.04, 0.06], dtype=np.float32)
 # The guardrails' struts, each decagon in its own colour, and every other edge a thin light-grey ghost.
 rail_radius = 0.028
@@ -112,27 +118,44 @@ fn sample(place: vec2<f32>) -> Sample {
         let time = eye_time - travelled;
         let l = array<f32, 4>(ramps[base] & chart, ramps[base + 1u] & chart, ramps[base + 2u] & chart,
                               ramps[base + 3u] & chart);
-        let waves = local_waves(tet, l, time);
-        // The ray's round step, its heading less half the waves' stretch of it, and the place a step ahead, rolled along
-        // that step on its great circle by the frame at the place.
-        let steps = heading - translating(waves.strain(heading)) * 0.5;
-        let ahead = (frame(position) * ((equator ^ polar(steps)) * (-0.5 * step)).exp()) >> origin;
-        let segment = ahead / (unit & ahead) - chart;
-        let dl = array<f32, 4>(ramps[base] & segment, ramps[base + 1u] & segment, ramps[base + 2u] & segment,
-                               ramps[base + 3u] & segment);
-        // The share of the step up to the facet the ray leaves by, never the one it came in by.
+        let start_waves = local_waves(tet, l, time);
+        // The ray's round step at the start, its heading less half the waves' stretch of it, and how far along it the
+        // step goes: a step's length at most, cut at the face it leaves by, never the one it came in by.
+        let start_steps = heading - translating(start_waves.strain(heading)) * 0.5;
+        let full = (frame(position) * ((equator ^ polar(start_steps)) * (-0.5 * step)).exp()) >> origin;
+        let full_segment = full / (unit & full) - chart;
         var u_exit = 1.0;
         var exit_face = 4u;
         for (var f = 0u; f < 4u; f++) {
-            if (f != entry_face && dl[f] < -1e-9) {
-                let u_f = max(0.0, -l[f] / dl[f]);
+            let dl_f = ramps[base + f] & full_segment;
+            if (f != entry_face && dl_f < -1e-9) {
+                let u_f = max(0.0, -l[f] / dl_f);
                 if (u_f < u_exit) {
                     u_exit = u_f;
                     exit_face = f;
                 }
             }
         }
-        var best_u = u_exit;
+        // The step's length, the arc from the place to where it ends.
+        let length = acos(clamp(position.dot((chart + full_segment * u_exit).normalized()), -1.0, 1.0));
+        // The step reads the waves at its midpoint: the heading half a step on, turned by the waves at the start, and the
+        // place there, half the step's length along the start's round step, at the light's time there.
+        let start_change = heading_change(heading, connection(start_steps, start_waves), start_waves);
+        let half_heading = (heading + start_change * (0.5 * length)).normalized();
+        let half_place = (frame(position) * ((equator ^ polar(start_steps)) * (-0.25 * length)).exp()) >> origin;
+        let half_chart = half_place / (unit & half_place);
+        let half_l = array<f32, 4>(ramps[base] & half_chart, ramps[base + 1u] & half_chart,
+                                   ramps[base + 2u] & half_chart, ramps[base + 3u] & half_chart);
+        let half_waves = local_waves(tet, half_l, time - 0.5 * length);
+        let steps = half_heading - translating(half_waves.strain(half_heading)) * 0.5;
+        let change = heading_change(half_heading, connection(steps, half_waves), half_waves);
+        // The place the step ends, rolled the step's length along its round step on its great circle by the frame at the
+        // start, and the straight line to it on the chart.
+        let ahead = (frame(position) * ((equator ^ polar(steps)) * (-0.5 * length)).exp()) >> origin;
+        let segment = ahead / (unit & ahead) - chart;
+        let dl = array<f32, 4>(ramps[base] & segment, ramps[base + 1u] & segment, ramps[base + 2u] & segment,
+                               ramps[base + 3u] & segment);
+        var best_u = 1.0;
         var hit_edge = 6u;
         for (var e = 0u; e < 6u; e++) {
             let u_e = edge_test(l[opp_c[e]], l[opp_d[e]], dl[opp_c[e]], dl[opp_d[e]],
@@ -191,7 +214,7 @@ fn sample(place: vec2<f32>) -> Sample {
         }
         if (hit_bond < n_bonds) {
             let hit = (chart + segment * best_u).normalized();
-            let distance = travelled + best_u * step;
+            let distance = travelled + best_u * length;
             let fog = max(1.0 - distance / 3.14159, 0.0);
             let to_light = along(hit, light);
             let lit = bond_inks[hit_bond].xyz * (0.55 + 0.45 * max(along(hit, segment).dot(to_light), 0.0));
@@ -206,7 +229,7 @@ fn sample(place: vec2<f32>) -> Sample {
             let diff1 = max(n_tan.dot(to_light), 0.0);
             let diff2 = max(n_tan.dot(to_eye), 0.0);
             let lit = particle_ink * (0.30 + 0.50 * diff1 + 0.25 * diff2);
-            let distance = travelled + best_u * step;
+            let distance = travelled + best_u * length;
             // Brightness falls linearly with distance, to nothing at the antipode.
             let fog = max(1.0 - distance / 3.14159, 0.0);
             return mix(background, lit, fog);
@@ -228,15 +251,14 @@ fn sample(place: vec2<f32>) -> Sample {
             let halfway = along(hit, to_eye + to_light);
             let spec = pow(max(facing.dot(halfway), 0.0), 36.0);
             let lit = edge_style[tet * 6u + hit_edge].xyz * (0.22 + 0.56 * diff1 + 0.28 * diff2) + vec3<f32>(0.95, 0.97, 1.0) * (0.36 * spec);
-            let distance = travelled + best_u * step;
+            let distance = travelled + best_u * length;
             // Brightness falls linearly with distance, to nothing at the antipode.
             let fog = max(1.0 - distance / 3.14159, 0.0);
             return mix(background, lit, fog);
         }
-        let h = step * u_exit;
-        heading = headed(heading, connection(steps, waves), waves, h);
-        position = (chart + segment * u_exit).normalized();
-        travelled = travelled + h;
+        heading = (heading + change * length).normalized();
+        position = (chart + segment).normalized();
+        travelled = travelled + length;
         if (travelled > 3.14159) {
             break;
         }
@@ -304,14 +326,15 @@ def great_polygon_struts(mesh, vertices: Extensor) -> tuple[np.ndarray, np.ndarr
     return mesh.edges, hues(circle_of.max() + 1)[circle_of.reshape(-1)]
 
 
-def inside(mesh, vertices: Extensor, waves, cameras: Extensor, eye_times: np.ndarray, styles: np.ndarray,
+def inside(mesh, vertices: Extensor, waves, cameras: Extensor, eye_times: np.ndarray, styles: np.ndarray, step: float,
            crystals: Iterable[dict]) -> Iterator[np.ndarray]:
     """Frames of the view from inside a round three-sphere meshed by tetrahedra and carrying the stepped gravitational
     waves `waves`, one for each camera and time: each camera, a motor `[frames] Motor+`, carries the origin to the eye
     and the origin's steps across `x`, `y` and `z` to its right, up and forward, read in the isoclinic frame at the
     eye; the tetrahedra's edges are lit struts, each in its colour and squared radius `styles`, `[tets * 6, 4]` in
-    each tetrahedron's own order of its edges, as `edge_styles` gives them; and at each frame the atoms and bonds of
-    `crystals`, as `crystal_frames` or `no_crystals` gives them."""
+    each tetrahedron's own order of its edges, as `edge_styles` gives them; each ray stepped at most `step` at a time,
+    and never past a face; and at each frame the atoms and bonds of `crystals`, as `crystal_frames` or `no_crystals`
+    gives them."""
     from examples.util.wgsl import Shader, supersampled
 
     mv = core.mv
@@ -336,8 +359,8 @@ def inside(mesh, vertices: Extensor, waves, cameras: Extensor, eye_times: np.nda
         strain_rates=waves.strain_rates.reshape(-1), traces=waves.traces.to_array().reshape(-1).astype(np.float32),
         turns=waves.turns.reshape(-1), n_vertices=n_vertices, n_tets=len(mesh.tets), n_levels=n_levels,
         first_time=waves.first_time, level_step=waves.level_step, origin=core.origin, equator=core.equator,
-        polar=core.polar, translating=core.translating, half_height=half_height, step=inside_step,
-        max_steps=int(4 * np.pi / inside_step), edge_style=styles, particle_ink=particle_ink, particle_radius_squared=particle_radius ** 2,
+        polar=core.polar, translating=core.translating, half_height=half_height, step=step,
+        max_steps=int(np.pi / step) + max_crossings, edge_style=styles, particle_ink=particle_ink, particle_radius_squared=particle_radius ** 2,
         bond_radius_squared=bond_radius ** 2)
     for frame, (eye_time, crystal) in enumerate(zip(eye_times, crystals)):
         camera = cameras[frame]                                                 # [] Motor+

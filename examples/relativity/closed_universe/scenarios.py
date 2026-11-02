@@ -468,7 +468,7 @@ def main() -> None:
                             eye_times - crystal_distance)
     rails = render.polygon_struts(guardrails(cell_vertices, guardrail_sides))
     frames = render.inside(cell_mesh, cell_vertices, waves, eye.broadcast_to(eye_times.shape), eye_times,
-                           render.edge_styles(cell_mesh, *rails),
+                           render.edge_styles(cell_mesh, *rails), render.wave_step,
                            render.crystal_frames(cell_mesh, cell_vertices, bonds, states, render.saturating_strain))
     save_animation(frames, "closed_universe_600_cell", duration_ms)
     spectrum, squash_squared, times, shares = stepped_squash(cell_mesh, cell_vertices, cell_rates, 4)
@@ -479,7 +479,8 @@ def main() -> None:
     no_struts = np.zeros((0, 2), dtype=int), np.zeros((0, 3))
     save_animation(render.inside(irregular_mesh, irregular_vertices, round_universe(irregular_mesh, irregular_vertices),
                                  flight(core.isoclinic(middle)), np.zeros(n_flight_frames),
-                                 render.edge_styles(irregular_mesh, *no_struts), render.no_crystals(irregular_mesh)),
+                                 render.edge_styles(irregular_mesh, *no_struts), render.round_step,
+                                 render.no_crystals(irregular_mesh)),
                    "closed_universe_irregular", duration_ms)
 
     # The round universe from inside: the flight along a Boerdijk–Coxeter helix's axis, every great circle of edges in
@@ -490,11 +491,12 @@ def main() -> None:
     # Down the axis, the tunnel the helix's tetrahedra make about it, with the step across it up.
     save_animation(render.inside(cell_mesh, cell_vertices, still, flight(facing(core.isoclinic(on_axis), along,
                                                                                 across_axis)),
-                                 np.zeros(n_flight_frames), coloured_circles, render.no_crystals(cell_mesh)),
+                                 np.zeros(n_flight_frames), coloured_circles, render.round_step,
+                                 render.no_crystals(cell_mesh)),
                    "closed_universe_flight", duration_ms)
     save_animation(render.inside(cell_mesh, cell_vertices, still, pan(on_axis, along, across_axis),
                                  np.zeros(n_pan_frames), render.edge_styles(cell_mesh, *render.helix_struts(cell_mesh, rails)),
-                                 render.no_crystals(cell_mesh)),
+                                 render.round_step, render.no_crystals(cell_mesh)),
                    "closed_universe_helix", duration_ms)
 
     # The travelling quadrupole below the Hopf circles, and how its gauges and light respond.

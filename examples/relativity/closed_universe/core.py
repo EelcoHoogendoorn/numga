@@ -365,16 +365,25 @@ def light(mesh: Mesh, vertices: Point, waves: Waves, starts: Point, headings: Po
     sphere along `headings`, unit steps of the origin `[rays] Antivector-` in the isoclinic frames, set out at time
     `start`: their places `[rays] Point-` after each step of length `step`, the light's time running with it. As the
     GPU's rays do, a ray's heading turns with the connection along its round step and the slices' stretch squeezes
-    it, and it rolls along that step on its great circle."""
+    it, and it rolls along that step on its great circle, each step read at its midpoint."""
     pick = mesh.picking(vertices)
+
+    def turning_and_rolling(places: Point, heading: Point, time: float) -> tuple[Point, Point]:
+        """The heading's change per length at the places and the time, and the round step it rolls along."""
+        local, squeeze = waves.at(pick(places), places, time)                   # [rays] Rate+ <- Antivector-, Antivector- <- Antivector-
+        stepping = origin.commutator(local(Step)).cast(Stretching)              # [rays] Antivector- <- Antivector-
+        rolling = stepping.solve(heading)                                       # [rays] Antivector-
+        return (-heading.commutator(local(rolling)).cast(Step) - squeeze(heading)).cast(Step), rolling
+
     positions, headings, time = starts.normalized(), headings.cast(Step), start
     for _ in range(n_steps):
-        local, squeeze = waves.at(pick(positions), positions, time)            # [rays] Rate+ <- Antivector-, Antivector- <- Antivector-
-        stepping = origin.commutator(local(Step)).cast(Stretching)              # [rays] Antivector- <- Antivector-
-        turned = headings - headings.commutator(local(stepping.solve(headings))).cast(Step) * step
-        headings = (turned - squeeze(turned) * step).cast(Step).normalized()   # [rays] Antivector-
-        rolled = isoclinic(positions) * (moving(stepping.solve(headings)) * (-step / 2)).exp()   # [rays] Motor+
-        positions = rolled >> origin                                            # [rays] Point-
+        start_change, start_rolling = turning_and_rolling(positions, headings, time)
+        # Half a step on: the heading turned by the waves at the start, and the place rolled there along its round step.
+        half_headings = (headings + start_change * (step / 2)).cast(Step).normalized()   # [rays] Antivector-
+        half_positions = (isoclinic(positions) * (moving(start_rolling) * (-step / 4)).exp()) >> origin   # [rays] Point-
+        change, rolling = turning_and_rolling(half_positions, half_headings, time + step / 2)
+        headings = (headings + change * step).cast(Step).normalized()           # [rays] Antivector-
+        positions = (isoclinic(positions) * (moving(rolling) * (-step / 2)).exp()) >> origin   # [rays] Point-
         time += step
         yield positions
 
@@ -499,14 +508,12 @@ fn frame(place: Point) -> Motor {
     return ((1.0 + mv.xyzw) * (place / origin) + (1.0 - mv.xyzw)) * 0.5;
 }
 
-// A ray's heading, a unit step of the origin in the frames, after a step of length `h` traced back in time: turned by
-// the connection's rate, the turn kept a step of the origin, cast so, and stretched as the slices change, back in
-// time, by half the strain's rate.
-fn headed(heading: Step, rate: Rate, waves: Local, h: f32) -> Step {
-    let turned = heading - heading.commutator(rate).cast(Step) * h;
-    let reading = waves.strain_rate(turned);
-    let stretched = turned + (translating(reading) - turned * (reading & turned)) * (0.5 * h);
-    return stretched.normalized();
+// How a ray's heading, a unit step of the origin in the frames, changes per length traced back in time: turned by the
+// connection's rate, the turn kept a step of the origin, cast so, and stretched as the slices change, back in time, by
+// half the strain's rate.
+fn heading_change(heading: Step, rate: Rate, waves: Local) -> Step {
+    let reading = waves.strain_rate(heading);
+    return -heading.commutator(rate).cast(Step) + (translating(reading) - heading * (reading & heading)) * 0.5;
 }
 """
 
