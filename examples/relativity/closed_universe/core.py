@@ -208,12 +208,16 @@ class OntoWaves:
 def waves_stepped(stiffness: SparseExtensor, masses: SparseExtensor, onto_waves: OntoWaves, strains: Scalar,
                   rates: Scalar, step: float) -> Iterator[tuple[Scalar, Scalar]]:
     """The squared lengths' changes and their rates, `Scalar+[edges]` each, at every step of a leapfrog under the
-    stiffness and the masses, kept to the waves."""
+    stiffness and the masses, kept to the waves: one solve of the restoring pull a step, the rates kept half a step off
+    the changes and given at the changes' time, the mean of the half steps either side."""
+    # The stiffness's pull through the masses, kept to the waves; the rates half a step before the changes.
+    restoring = onto_waves(masses.solve(stiffness(strains)))                    # Scalar+[edges]
+    behind = rates + (step / 2) * restoring                                     # Scalar+[edges]
     while True:
-        yield strains, rates
-        rates = rates - (step / 2) * onto_waves(masses.solve(stiffness(strains)))
-        strains = strains + step * rates
-        rates = rates - (step / 2) * onto_waves(masses.solve(stiffness(strains)))
+        ahead = behind - step * restoring                                       # Scalar+[edges]
+        yield strains, (behind + ahead) / 2
+        strains, behind = strains + step * ahead, ahead
+        restoring = onto_waves(masses.solve(stiffness(strains)))
 
 
 def isoclinic(places: Point) -> Motor:
