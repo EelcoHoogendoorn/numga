@@ -46,6 +46,8 @@ Turn = ga.gatype.from_blades("ab")                                            # 
 # Unit steps across and up the trap's plane, as points from its middle.
 axis = mv.x.dual()                                                            # [] Point-
 across = mv.y.dual()                                                          # [] Point-
+# The condensate's own plane, the join of its two directions, which no step across the trap has a part along.
+wave_plane = mv.a.dual() & mv.b.dual()                                        # [] Antibivector-
 # The condensate's mobility, its inverse mass, one in these units: it turns a gradient of the wave into the flow it
 # drives.
 mobility = Plane.dual()                                                       # [] Point- <- Plane+
@@ -61,12 +63,16 @@ def assembled(topology: Topology, local: Scalar) -> SparseExtensor:
 
 # --- math -----------------------------------------------------------------------------
 def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Plane, Scalar]:
-    """Each triangle's area `Scalar+[F]`, each corner's hat gradient `[3] Plane+[F]`, the facing side
-    met with the triangle's patch, and each vertex's share of the area around it `Scalar+[V]`."""
+    """Each triangle's area `Scalar+[F]`, each corner's hat gradient `[3] Plane+[F]`, the plane through the facing
+    side and the condensate's own plane over twice the area, and each vertex's share of the area around it
+    `Scalar+[V]`."""
     sides = topology.boundary[2, 1] * (topology.d[0] * vertices)[..., None]  # [3] Point-[F]
-    patches = (sides[..., 0] & sides[..., 1]) / 2                             # Antibivector-[F]
-    areas = patches.norm()                                                    # Scalar+[F]
-    gradients = (sides | patches[..., None].inverse()) / 2                    # [3] Plane+[F]
+    # Twice a triangle's area: two of its sides joined with the condensate's own plane.
+    double_areas = (sides[..., 0] & sides[..., 1]) & wave_plane               # Scalar-[F]
+    areas = double_areas.norm() / 2                                           # Scalar+[F]
+    # A corner's hat gradient: the plane through the facing side and the condensate's own plane, over twice the
+    # area, so that it reads one from the side to the corner and nothing in the wave's plane.
+    gradients = (wave_plane & sides) / double_areas[..., None]                # [3] Plane+[F]
     return areas, gradients, (~topology.incidence[2, 0] * (areas / 3)).sum(axis=-1)
 
 
