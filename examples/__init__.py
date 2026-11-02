@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import re
 
 import numpy as np
@@ -16,10 +17,11 @@ if TYPE_CHECKING:
     from numga import Algebra
     from numga.backend.context import Context
 
-# Pictures go to the repository's plots, or, where the examples are installed rather than checked out, as in Colab,
-# to plots beside the notebook; the meshes the examples load ship with them.
+# Pictures go to the folder NUMGA_PLOTS names, where several checkouts share one; else to the repository's plots, or,
+# where the examples are installed rather than checked out, as in Colab, to plots beside the notebook. The meshes the
+# examples load ship with them.
 ROOT = Path(__file__).resolve().parents[1]
-PLOT_DIR = (ROOT if (ROOT / "pyproject.toml").exists() else Path.cwd()) / "plots"
+PLOT_DIR = Path(os.environ.get("NUMGA_PLOTS", (ROOT if (ROOT / "pyproject.toml").exists() else Path.cwd()) / "plots"))
 PLOT_DIR.mkdir(parents=True, exist_ok=True)
 MODEL_DIR = Path(__file__).resolve().parent / "util" / "models"
 
