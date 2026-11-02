@@ -5,7 +5,7 @@ import sys
 
 PROBE = """
 from numga.algebra import Algebra
-from numga.algebras import PGA2D, PGA3D, Spherical3D, VGA3D
+from numga.algebras import PGA2D, PGA3D, Spherical3D
 from examples import instantiate
 import sys
 import examples.electromagnetism.constitutive.core
@@ -136,9 +136,11 @@ import examples.relativity.twistors.core
 import examples.relativity.twistors.scenarios
 import examples.fluids.stokes_swimmer.core
 import examples.fluids.stokes_swimmer.scenarios
+import examples.fluids.saltfingers.core
+import examples.fluids.saltfingers.scenarios
 import examples.surfaces.connections.core
 import examples.surfaces.connections.scenarios
-instantiate('examples.util.mesh', VGA3D)
+import examples.util.topology
 instantiate('examples.geometry.registration.core', PGA3D)
 instantiate('examples.estimation.odometry.core', PGA2D)
 instantiate('examples.estimation.multiview.core', PGA2D)

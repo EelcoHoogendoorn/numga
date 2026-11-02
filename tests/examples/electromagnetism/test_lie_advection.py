@@ -53,8 +53,8 @@ def test_cartan_magic_formula_and_edge_world_sheets_on_moving_triangle():
 
 
 def test_world_sheets_uniform_field_preservation_and_gauge_invariance():
-    mesh, vertices = scenarios.disk(1.0, 6)
-    operators = core.Operators(mesh, vertices)
+    topology, vertices = scenarios.disk(1.0, 6)
+    operators = core.Operators(topology, vertices)
 
     assert operators.d1.gatype == core.ga.gatype((core.Scalar, core.Scalar))
     assert operators.gradient.gatype == core.ga.gatype((core.Plane.derive.within("x y"), core.Scalar))
@@ -64,7 +64,7 @@ def test_world_sheets_uniform_field_preservation_and_gauge_invariance():
     assert operators.curl_stiffness.gatype == core.ga.gatype((core.Amount, core.Scalar))
     assert operators.curl_laplacian.gatype == core.ga.gatype((core.Scalar, core.Scalar))
 
-    d0 = mesh.d[0] * core.Scalar
+    d0 = topology.d[0] * core.Scalar
     stream = core.vortex_streamfunction(vertices, scenarios.swirl_rate, scenarios.ellipticity)
     face_velocity, fixed_sheets, comoving_sheets = core.edge_world_sheets(operators, stream)
     swept_patches = fixed_sheets - comoving_sheets
@@ -108,8 +108,8 @@ def test_world_sheets_uniform_field_preservation_and_gauge_invariance():
 
 
 def test_ideal_flux_and_energy_conservation_versus_resistive_dissipation():
-    mesh, vertices = scenarios.disk(1.0, 7)
-    operators = core.Operators(mesh, vertices)
+    topology, vertices = scenarios.disk(1.0, 7)
+    operators = core.Operators(topology, vertices)
     stream = core.vortex_streamfunction(vertices, scenarios.swirl_rate, scenarios.ellipticity)
     _, fixed_sheets, comoving_sheets = core.edge_world_sheets(operators, stream)
     swept_patches = fixed_sheets - comoving_sheets
@@ -119,7 +119,7 @@ def test_ideal_flux_and_energy_conservation_versus_resistive_dissipation():
 
     # For any edge cochain, the ideal advective rate is orthogonal to S1(a), while the resistive rate is dissipative.
     rng = np.random.default_rng(7)
-    random_cochain = core.as_scalar(rng.standard_normal(len(mesh.edges))).field()
+    random_cochain = core.mv.scalar(rng.standard_normal(topology.n_elements[1])[..., None]).field()
     random_energy = (random_cochain & operators.curl_stiffness(random_cochain)).sites.sum()
     advection = spdiag(core.Magnetic & swept_patches)(operators.edge_curl)
     ideal_rate = advection(random_cochain)

@@ -69,25 +69,27 @@ def draw_fano(cycles: core.Trivector) -> plt.Figure:
     ax.set(xlim=(-1.05, 1.05), ylim=(-0.75, 1.15), aspect="equal")
     ax.set_axis_off()
     radius = corner / 2
-    angles = np.linspace(0, 2 * np.pi, n_around + 1)
-    circle = (page.xy * (-angles / 2)).exp() >> (radius * page.y.dual())       # [around + 1] Antivector-
+    angles = np.linspace(0, 2 * np.pi, n_around, endpoint=False)
+    circle = (page.xy * (-angles / 2)).exp() >> (radius * page.y.dual())       # [around] Antivector-
     sides, arrows = [], []
+    # Each triple a cycle, from each point to the next in the order of the product, the last back to the first.
+    cycle = simplices.Topology.loops([3])
     for triple in triples(cycles):
         places = stack([places_by_name[name] for name in triple])              # [3] Antivector-
-        following = places[[1, 2, 0]]                                          # [3] Antivector-
+        starts, ends = (cycle.incidence[1, 0] * places.field()).batch()        # [3] Antivector-, Antivector-
         if np.all((places.norm() - radius).abs() <= 1e-8 + 1e-5 * radius):
             # On the circle: an arrow on each arc, part of the way along the shorter turn from each point to the
             # next, pointing the way the turn runs.
-            turns = (1 + following * places.inverse()).normalized()            # [3] Rotor+
+            turns = (1 + ends * starts.inverse()).normalized()                 # [3] Rotor+
             generators = turns.log()                                            # [3] Bivector+
-            heads = (generators * arc_fraction).exp() >> places                # [3] Antivector-
+            heads = (generators * arc_fraction).exp() >> starts                # [3] Antivector-
             arrows += [arrow(head, heading) for head, heading in zip(heads, generators.commutator(heads))]
             continue
         # On a straight line: the two points furthest apart are its ends.
         spans = (places[:, None] - places[None, :]).norm()                    # [3, 3] Scalar+
         first, last = np.unravel_index(spans.reshape(-1).argmax(), (3, 3))
         sides.append(places[[first, last]])
-        for start, end in zip(places, following):
+        for start, end in zip(starts, ends):
             # Arrows on the segments the cycle runs along without passing through the third point.
             if (end - start).norm() < spans[first, last] - 1e-9:
                 arrows.append(arrow(start + segment_fraction * (end - start), end - start))
@@ -96,11 +98,11 @@ def draw_fano(cycles: core.Trivector) -> plt.Figure:
     camera = flat_panel(ax, VGA2D)
     ink, dark = np.array(to_rgb(line_colour)), np.array(to_rgb(point_colour))
     simplices.overlay(ax, [
-        simplices.strokes(circle, simplices.Mesh.chains([n_around + 1]), ink, charts.LINE_PX, camera),
-        simplices.strokes(stack(sides).reshape(-1), simplices.Mesh.chains([2] * len(sides)), ink, charts.LINE_PX,
+        simplices.strokes(circle, simplices.Topology.loops([n_around]), ink, charts.LINE_PX, camera),
+        simplices.strokes(stack(sides).reshape(-1), simplices.Topology.chains([2] * len(sides)), ink, charts.LINE_PX,
                           camera),
         # Each arrow a stroke along its line, as wide as the line, and a chevron at its tip.
-        simplices.strokes(arrow_ends.reshape(-1), simplices.Mesh.chains([2] * len(arrows)), ink, charts.LINE_PX,
+        simplices.strokes(arrow_ends.reshape(-1), simplices.Topology.chains([2] * len(arrows)), ink, charts.LINE_PX,
                           camera, chevrons=np.ones(len(arrows)), chevron=chevron_length),
         # Each point white within a dark ring: a dot over a larger dot.
         simplices.markers(points, dark, (point_side + charts.LINE_PX) / 2, camera),

@@ -6,12 +6,11 @@ from itertools import islice
 
 import numpy as np
 
-from numga import concatenate, stack
+from numga import NumpyContext, concatenate, stack
 from numga.algebras import VGA2D as ga
-from examples import instantiate
+from examples.util.topology import Topology
 
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, mv = mesh_module.Mesh, mesh_module.mv
+mv = NumpyContext(ga).multivector
 Even = ga.gatype.even()                                                      # Even+
 Point = ga.gatype.antivector()                                               # Antivector-
 
@@ -31,7 +30,7 @@ frame_duration_ms = 40
 
 
 # --- plumbing -------------------------------------------------------------------------
-def disk(radius: float, n_divisions: int) -> tuple[Mesh, Point]:
+def disk(radius: float, n_divisions: int) -> tuple[Topology, Point]:
     """The disk is triangulated into nearly equilateral triangles, with its first vertex at the origin."""
     spacing = radius / n_divisions
     indices = np.arange(-n_divisions, n_divisions + 1)
@@ -44,11 +43,11 @@ def disk(radius: float, n_divisions: int) -> tuple[Mesh, Point]:
     positions = (axes * lattice).sum(axis=-1)                                # [nodes] Point-
     positions = spacing * layers[inside] * positions.normalized()            # [nodes] Point-
     vertices = concatenate((unit[None] * 0, positions)).field()              # Point-[vertices]
-    return Mesh.triangulate(vertices), vertices
+    return Topology.triangulate(vertices), vertices
 
 
 def annulus(hole_radius: float, rim_radius: float,
-            n_rings: int) -> tuple[Mesh, Point, np.ndarray, np.ndarray]:
+            n_rings: int) -> tuple[Topology, Point, np.ndarray, np.ndarray]:
     """The perforated disk has staggered circular rings of vertices from `hole_radius` to `rim_radius`."""
     radii = np.linspace(hole_radius, rim_radius, n_rings)
     spacing = (rim_radius - hole_radius) / (n_rings - 1)
@@ -60,13 +59,14 @@ def annulus(hole_radius: float, rim_radius: float,
     angles = 2 * np.pi * (np.arange(populations.sum()) - offsets + (ring % 2) / 2) / populations[ring]
     directions = (mv.xy * (-angles / 2)).exp() >> mv.x.dual()                # [vertices] Point-
     vertices = (directions * radii[ring]).field()                            # Point-[vertices]
-    raw_mesh = Mesh.triangulate(vertices)
+    raw_topology = Topology.triangulate(vertices)
+    triangles = raw_topology.elements[2]
     # Every Delaunay triangle spanning the central hole has all three corners on the innermost ring.
-    keep = ~np.all(ring[raw_mesh.faces] == 0, axis=-1)
-    mesh = Mesh(len(vertices.batch()), raw_mesh.faces[keep])
+    keep = ~np.all(ring[triangles] == 0, axis=-1)
+    topology = raw_topology.subset(keep)
     inner_ring = np.flatnonzero(ring == 0)
     interior = np.flatnonzero((ring > 0) & (ring < n_rings - 1))
-    return mesh, vertices, inner_ring, interior
+    return topology, vertices, inner_ring, interior
 
 
 def main() -> None:
@@ -77,8 +77,8 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
 
     # 1. Mixed-grade Whitney reconstruction and the single-product Dirac-Kahler derivative on a disk.
-    disk_mesh, disk_vertices = disk(disk_radius, n_disk_divisions)
-    disk_ops = Operators(disk_mesh, disk_vertices)
+    disk_topology, disk_vertices = disk(disk_radius, n_disk_divisions)
+    disk_ops = Operators(disk_topology, disk_vertices)
     x, y = mv.x & disk_vertices, mv.y & disk_vertices                        # Scalar+[vertices], Scalar+[vertices]
     scalar_potential = 0.5 * (x.squared() - y.squared()) + 0.35 * x          # Scalar+[vertices]
     vertex_1form = (0.6 * x - 0.8 * y) * mv.x + (0.8 * x + 0.6 * y) * mv.y   # Plane+[vertices]
@@ -87,10 +87,10 @@ def main() -> None:
     scalar_gradient = disk_ops.gradient(scalar_potential)                    # Plane+[faces]
     face_dirac = disk_ops.dirac(vertex_multivector)                          # Full+[faces]
 
-    edge_midpoints = disk_mesh.incidence[1, 0].mean(axis=0) * disk_vertices  # Point-[edges]
+    edge_midpoints = disk_topology.incidence[1, 0].mean(axis=0) * disk_vertices  # Point-[edges]
     mx, my = mv.x & edge_midpoints, mv.y & edge_midpoints                    # Scalar+[edges], Scalar+[edges]
     midpoint_1form = (0.6 * mx - 0.8 * my) * mv.x + (0.8 * mx + 0.6 * my) * mv.y  # Plane+[edges]
-    edge_cochain = midpoint_1form & (disk_mesh.d[0] * disk_vertices)         # Scalar+[edges]
+    edge_cochain = midpoint_1form & (disk_topology.d[0] * disk_vertices)     # Scalar+[edges]
     face_cochain = disk_ops.d1(edge_cochain)                                 # Scalar+[faces]
     whitney_multivector = (
         disk_ops.whitney0(scalar_potential)
@@ -98,14 +98,14 @@ def main() -> None:
         + disk_ops.whitney2(face_cochain)
     )                                                                        # Full+[faces]
     save_figure(
-        render.draw_dirac_grades(disk_mesh, disk_vertices, vertex_multivector,
+        render.draw_dirac_grades(disk_topology, disk_vertices, vertex_multivector,
                                  scalar_gradient, face_dirac, whitney_multivector),
         "dirac_kahler_grades",
     )
 
     # 2. Three-way Hodge-Helmholtz decomposition of a velocity on a perforated disk.
-    mesh, vertices, inner_ring, interior = annulus(inner_radius, outer_radius, n_annulus_rings)
-    operators = Operators(mesh, vertices)
+    topology, vertices, inner_ring, interior = annulus(inner_radius, outer_radius, n_annulus_rings)
+    operators = Operators(topology, vertices)
     squared_radii = vertices.norm_squared()                                  # Scalar+[vertices]
     bubble = (squared_radii - inner_radius**2) * (outer_radius**2 - squared_radii)  # Scalar+[vertices]
     abscissa, ordinate = mv.x & vertices, mv.y & vertices                    # Scalar+[vertices], Scalar+[vertices]
@@ -119,7 +119,7 @@ def main() -> None:
     )
     save_figure(
         render.draw_hodge_decomposition(
-            mesh, vertices, total_flow, potential, potential_flow, stream_flow, harmonic_flow,
+            topology, vertices, total_flow, potential, potential_flow, stream_flow, harmonic_flow,
         ),
         "dirac_kahler_hodge",
     )
@@ -130,15 +130,15 @@ def main() -> None:
     initial_face_field = operators.even_gradient(initial_even * 0.0)         # Plane+[faces]
     sampled_frames = islice(propagate(operators, initial_even, initial_face_field, dt, n_steps), 0, None, stride)
     save_animation(
-        render.animate_dirac_waves(mesh, vertices, sampled_frames),
+        render.animate_dirac_waves(topology, vertices, sampled_frames),
         "dirac_kahler_waves",
         frame_duration_ms,
     )
 
     # checks
     # Grade-by-grade identity of the single geometric product dirac(vertex_multivector).
-    u_corners = disk_mesh.incidence[2, 0] * vertex_1form
-    omega_corners = disk_mesh.incidence[2, 0] * stream_bivector
+    u_corners = disk_topology.incidence[2, 0] * vertex_1form
+    omega_corners = disk_topology.incidence[2, 0] * stream_bivector
     div_u = (disk_ops.corner_gradients | u_corners).sum(axis=0)
     grad_phi_plus_rot_omega = disk_ops.gradient(scalar_potential) + (disk_ops.corner_gradients | omega_corners).sum(axis=0)
     curl_u = (disk_ops.corner_gradients ^ u_corners).sum(axis=0)

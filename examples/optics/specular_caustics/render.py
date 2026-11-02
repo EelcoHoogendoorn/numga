@@ -45,7 +45,7 @@ def between_samples(chart_landings: core.Horizontal, places: np.ndarray) -> core
     """The landings at places between the samples of the chart over the water, `places` `[vertices, 2]` in fractional
     rows and columns: the landings of the four samples around each place, each weighted by its bilinear share."""
     cells = np.clip(np.floor(places).astype(int), 0, np.array(chart_landings.shape) - 2)   # [vertices, 2]
-    fractions = places - cells                                               # [vertices, 2]
+    fractions = places - cells                                                             # [vertices, 2]
     samples = cells[None] + cell_corners[:, None]                            # [corners, vertices, 2]
     # A sample's share falls off linearly along the rows and along the columns from one at its place.
     shares = np.where(cell_corners[:, None], fractions[None], 1 - fractions[None]).prod(axis=-1)   # [corners, vertices]
@@ -103,7 +103,7 @@ def draw_critical(
     # receiver, a chain of their places each.
     source_curves = contour_generator(z=areas).lines(0)
     receiver_curves = concatenate([between_samples(chart_landings, curve[:, ::-1]) for curve in source_curves])
-    chains = simplices.Mesh.chains([len(curve) for curve in source_curves])
+    chains = simplices.Topology.chains([len(curve) for curve in source_curves])
     simplices.overlay(axes, [simplices.strokes(receiver_curves, chains, to_rgb(fold_colour), fold_width,
                                                panel(axes, core.mv.x, core.mv.y))])
     return figure
@@ -127,7 +127,7 @@ def draw_paths(
     # Each ray comes straight down from the incident height to where it crosses the surface, and on to the receiver.
     incoming = ray_surface + core.up * (incident_height - (core.mv.z & ray_surface))              # [rays] Direction-
     solution_incoming = solution_surface + core.up * (incident_height - (core.mv.z & solution_surface))   # [paths] Direction-
-    destinations = target.broadcast_to(solution_surface.shape)                                    # [paths] Direction-
+    destinations = target.broadcast_to(solution_surface.shape)                                            # [paths] Direction-
     fan_paths = stack((incoming, ray_surface, ray_landing), axis=1)                               # [rays, stages] Direction-
     solved_paths = stack((solution_incoming, solution_surface, destinations), axis=1)             # [paths, stages] Direction-
     # The lowest landing, up z, and the surface's extent across x.
@@ -148,14 +148,14 @@ def draw_paths(
     water = stack((feet, surface)).reshape(-1)                                                   # [2 * samples] Direction-
     n_rays, n_paths, n_stages = fan_paths.shape[0], solved_paths.shape[0], fan_paths.shape[1]
     simplices.overlay(axes, [
-        contours.picture(water, simplices.Mesh.grid(2, len(surface)), np.zeros(len(water)), to_rgb(water_colour),
+        contours.picture(water, simplices.Topology.grid(2, len(surface)), np.zeros(len(water)), to_rgb(water_colour),
                          camera),
-        simplices.strokes(fan_paths.reshape(-1), simplices.Mesh.chains([n_stages] * n_rays), to_rgb(fan_colour),
+        simplices.strokes(fan_paths.reshape(-1), simplices.Topology.chains([n_stages] * n_rays), to_rgb(fan_colour),
                           fan_width, camera, opacity=0.35),
-        simplices.strokes(surface, simplices.Mesh.chains([len(surface)]), to_rgb(surface_colour), surface_width,
+        simplices.strokes(surface, simplices.Topology.chains([len(surface)]), to_rgb(surface_colour), surface_width,
                           camera),
-        simplices.strokes(solved_paths.reshape(-1), simplices.Mesh.chains([n_stages] * n_paths), to_rgb(solved_colour),
+        simplices.strokes(solved_paths.reshape(-1), simplices.Topology.chains([n_stages] * n_paths), to_rgb(solved_colour),
                           solved_width, camera),
-        simplices.strokes(feet[[0, -1]], simplices.Mesh.chains([2]), to_rgb(receiver_colour), surface_width, camera),
+        simplices.strokes(feet[[0, -1]], simplices.Topology.chains([2]), to_rgb(receiver_colour), surface_width, camera),
         simplices.markers(target[None], to_rgb(target_colour), target_radius, camera)])
     return figure

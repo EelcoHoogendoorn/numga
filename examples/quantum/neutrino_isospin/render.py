@@ -97,7 +97,7 @@ def path_marks(path: core.Isospin, view: solids.View) -> tuple[Samples, tuple[so
     orange."""
     # The directions the isospins point along, embedded in the drawing's projective space about its origin.
     places = solids.origin + solids.context.include_from_algebra(direction_of_isospin(path))     # [steps] Point-
-    stroke = simplices.tubes(places, simplices.Mesh.chains([len(places)]), path_colour, PATH_WIDTH / view.pixel, view,
+    stroke = simplices.tubes(places, simplices.Topology.chains([len(places)]), path_colour, PATH_WIDTH / view.pixel, view,
                              gloss=solids.gloss)
     ends = (solids.ball(places[np.array([0, -1])], END_RADIUS)[:, None], np.stack([start_colour, end_colour]))
     return stroke, ends
@@ -170,7 +170,7 @@ def draw_adiabatic(steps: Iterable[tuple[core.Isospin, core.Bivector]], distance
     """The isospin following the plane as it tilts, and the flavor converting as the potential, dotted,
     falls away."""
     pairs = list(steps)
-    trajectory = stack([state for state, _ in pairs], axis=0)               # [steps] Isospin
+    trajectory = stack([state for state, _ in pairs], axis=0)                # [steps] Isospin
     figure, sphere, probabilities = panels()
     draw_probabilities(probabilities, distances, electron_probability(trajectory))
     probabilities.plot(distances, potentials / potentials.max(), color="#94a3b8", linestyle=":")

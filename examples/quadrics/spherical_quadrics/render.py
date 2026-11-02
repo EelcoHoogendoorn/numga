@@ -23,7 +23,7 @@ from examples.quadrics.spherical_quadrics.core import Plane, Point, Polarity, Sc
 from examples.util.wgsl import Shader, image_figure, supersampled
 
 # The sphere's grid the polarity's form is sampled on, for the range of its shading.
-GRID = (120, 60)
+GRID = (119, 60)
 
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; half the image's height in the sphere's
 # radii, and the pixels across and up each view.

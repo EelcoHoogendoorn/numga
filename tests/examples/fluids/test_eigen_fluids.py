@@ -12,6 +12,7 @@ import numpy as np
 from numga import stack
 
 from examples.fluids.eigen_fluids import core, render, scenarios
+from examples.util import shapes
 
 
 def test_whitney_gradients_and_spherical_harmonic_spectrum():
@@ -19,20 +20,21 @@ def test_whitney_gradients_and_spherical_harmonic_spectrum():
     plane, the induced velocity is tangent to every face, and the first three non-constant Laplace–Beltrami
     eigenvalues form the l = 1 dipole triplet near l(l + 1) = 2."""
     n_modes = 8
-    sphere, vertices = core.Mesh.icosphere(2)
+    sphere, coordinates = shapes.sphere(2)
+    vertices = core.mv.vector(coordinates).dual().field()                       # Point-[vertices]
     # Each opposite edge and its face patch determine the corner hat gradient.
     edges = sphere.d[0] * vertices                                               # Point-[edges]
     sides = sphere.boundary[2, 1] * edges                                        # [corners] Point-[faces]
     patches = (sides[0] & sides[1]) / 2                                          # Patch-[faces]
     areas = patches.norm()                                                      # Scalar+[faces]
-    normals = patches / areas                                                   # Patch-[faces]
+    normals = patches / areas                                                    # Patch-[faces]
     corner_gradients = (sides | patches.inverse()) / 2                           # [corners] Plane+[faces]
     gradient = (core.spdiag(corner_gradients * core.Scalar) * sphere.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
     corner_mean = sphere.incidence[2, 0].mean(axis=0)                            # Scalar+[faces <- vertices]
 
     # The stiffness and vertex mass determine the surface's spatial modes.
     stiffness = gradient.adjugate()(core.spdiag(areas * core.Plane.dual())(gradient))  # (Amount- <- Scalar+)[vertices <- vertices]
-    mass = core.spdiag((~corner_mean * areas) * core.Scalar.dual())           # (Amount- <- Scalar+)[vertices <- vertices]
+    mass = core.spdiag((~corner_mean * areas) * core.Scalar.dual())                    # (Amount- <- Scalar+)[vertices <- vertices]
     eigenvalues, eigenfields = stiffness.eigh(mass, n_modes + 1)          # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
     eigenvalues, modes = eigenvalues[1:], eigenfields[1:]                          # [modes] Scalar+, [modes] Scalar+[vertices]
 
@@ -53,30 +55,30 @@ def test_bunny_structure_antisymmetry_conservation_and_rendering():
     """On the Stanford bunny, the Lie–Poisson structure constants are totally antisymmetric in their three modes,
     inviscid RK4 conserves both kinetic energy and enstrophy while viscosity damps enstrophy faster than
     kinetic energy, and the figures and animation frames render."""
-    mesh, vertices = scenarios.bunny()
+    topology, vertices = scenarios.bunny()
     # Each opposite edge and its face patch determine the corner hat gradient.
-    edges = mesh.d[0] * vertices                                                 # Point-[edges]
-    sides = mesh.boundary[2, 1] * edges                                          # [corners] Point-[faces]
+    edges = topology.d[0] * vertices                                             # Point-[edges]
+    sides = topology.boundary[2, 1] * edges                                      # [corners] Point-[faces]
     patches = (sides[0] & sides[1]) / 2                                          # Patch-[faces]
     areas = patches.norm()                                                      # Scalar+[faces]
-    normals = patches / areas                                                   # Patch-[faces]
+    normals = patches / areas                                                    # Patch-[faces]
     corner_gradients = (sides | patches.inverse()) / 2                           # [corners] Plane+[faces]
-    gradient = (core.spdiag(corner_gradients * core.Scalar) * mesh.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
-    corner_mean = mesh.incidence[2, 0].mean(axis=0)                              # Scalar+[faces <- vertices]
+    gradient = (core.spdiag(corner_gradients * core.Scalar) * topology.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
+    corner_mean = topology.incidence[2, 0].mean(axis=0)                          # Scalar+[faces <- vertices]
 
     # The stiffness and vertex mass determine the surface's spatial modes.
     stiffness = gradient.adjugate()(core.spdiag(areas * core.Plane.dual())(gradient))  # (Amount- <- Scalar+)[vertices <- vertices]
-    mass = core.spdiag((~corner_mean * areas) * core.Scalar.dual())           # (Amount- <- Scalar+)[vertices <- vertices]
-    eigenvalues, eigenfields = stiffness.eigh(mass, scenarios.n_modes + 1)                # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
+    mass = core.spdiag((~corner_mean * areas) * core.Scalar.dual())                    # (Amount- <- Scalar+)[vertices <- vertices]
+    eigenvalues, eigenfields = stiffness.eigh(mass, scenarios.n_modes + 1)  # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
     eigenvalues, modes = eigenvalues[1:].field(), eigenfields[1:]                  # Scalar+[modes], [modes] Scalar+[vertices]
     superposition = (modes * core.Scalar).batch().field(0, 1).adjoint()          # (Scalar+ <- Scalar+)[vertices <- modes]
     # Meeting each mode's gradient plane with the unit tangent patch gives its divergence-free velocity on each face.
     mode_velocities = gradient(modes[scenarios.shown_modes]) ^ normals                     # [shown] Point-[faces]
 
-    structure = core.structure_constants(mesh, patches, gradient, modes)         # (Scalar+ <- (Scalar+, Scalar+))[modes <- (modes, modes)]
+    structure = core.structure_constants(topology, patches, gradient, modes)     # (Scalar+ <- (Scalar+, Scalar+))[modes <- (modes, modes)]
     start = scenarios.initial_vorticity(vertices, modes, eigenvalues, mass)                # Scalar+[modes]
     inviscid = stack(tuple(core.advect(start, structure, eigenvalues, 0.0, scenarios.dt, scenarios.n_steps)))      # [steps + 1] Scalar+[modes]
-    viscous = stack(tuple(core.advect(start, structure, eigenvalues, scenarios.viscosity, scenarios.dt, scenarios.n_steps))) # [steps + 1] Scalar+[modes]
+    viscous = stack(tuple(core.advect(start, structure, eigenvalues, scenarios.viscosity, scenarios.dt, scenarios.n_steps)))  # [steps + 1] Scalar+[modes]
 
     # Modal kinetic energy and enstrophy at every step of the inviscid and viscous runs.
     inviscid_energy = (inviscid.squared() / eigenvalues).sites.sum() / 2         # [steps + 1] Scalar+
@@ -97,14 +99,14 @@ def test_bunny_structure_antisymmetry_conservation_and_rendering():
 
     face_gradients = gradient(modes[:6])                                         # [subset] Plane+[faces]
     wedge_brackets = (face_gradients[:, None] ^ face_gradients[None, :]) & patches   # [subset, subset] Scalar+[faces]
-    directional = (face_gradients[:, None] & (face_gradients[None, :] ^ normals)) * areas   # [subset, subset] Scalar+[faces]
+    directional = (face_gradients[:, None] & (face_gradients[None, :] ^ normals)) * areas  # [subset, subset] Scalar+[faces]
     np.testing.assert_allclose((wedge_brackets - directional).to_array(), 0.0, atol=1e-14)
 
     constants = structure.kernel[..., 0, 0, 0]                                   # [modes, modes, modes]
     np.testing.assert_allclose(constants + constants.swapaxes(1, 2), 0.0, atol=1e-13)
     np.testing.assert_allclose(constants + constants.swapaxes(0, 1), 0.0, atol=1e-13)
 
-    initial_rate = core.vorticity_rate(inviscid[0], structure, eigenvalues, 0.0) # Scalar+[modes]
+    initial_rate = core.vorticity_rate(inviscid[0], structure, eigenvalues, 0.0)           # Scalar+[modes]
     np.testing.assert_allclose(((inviscid[0] / eigenvalues) * initial_rate).sites.sum().to_array(), 0.0, atol=1e-11)
     np.testing.assert_allclose((inviscid[0] * initial_rate).sites.sum().to_array(), 0.0, atol=1e-11)
 
@@ -120,8 +122,8 @@ def test_bunny_structure_antisymmetry_conservation_and_rendering():
     assert viscous_enstrophy_trace[-1] / viscous_enstrophy_trace[0] < viscous_energy_trace[-1] / viscous_energy_trace[0]
 
     times = np.arange(scenarios.n_steps + 1) * scenarios.dt
-    plt.close(render.draw_modes(mesh, vertices, modes[scenarios.shown_modes], mode_velocities))
+    plt.close(render.draw_modes(topology, vertices, modes[scenarios.shown_modes], mode_velocities))
     plt.close(render.draw_conservation(times, inviscid_energy, viscous_energy, inviscid_enstrophy,
                                        viscous_enstrophy, start, inviscid[-1], viscous[-1]))
-    frames = list(islice(render.animate_flow(mesh, vertices, zip(vorticity_frames[:2], stream_frames[:2], velocity_frames[:2])), 2))
+    frames = list(islice(render.animate_flow(topology, vertices, zip(vorticity_frames[:2], stream_frames[:2], velocity_frames[:2])), 2))
     assert len(frames) == 2 and frames[0].shape == (render.n_flow_pixels, render.n_flow_pixels, 3)

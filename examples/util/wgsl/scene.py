@@ -40,8 +40,8 @@ class Scene:
         # Buffers too small for the frame's meshes are made again, and the still meshes drawn into them once.
         if self.buffers is None or self.n_slots < n_slots:
             self.buffers, self.n_slots = mesh_buffers(self.view, n_slots, self.made), n_slots
-            sampled(encoder, [mesh for mesh, _ in self.meshes], self.view, 0, self.buffers)
-        sampled(encoder, [mesh for mesh, _ in meshes], self.view, n_still, self.buffers)
+            sampled(encoder, [topology for topology, _ in self.meshes], self.view, 0, self.buffers)
+        sampled(encoder, [topology for topology, _ in meshes], self.view, n_still, self.buffers)
         solids = scene(self.parts + list(parts), self.translucent + list(translucent), self.inks + list(inks))
         return trace(self.tracer, encoder, self.view, solids, self.buffers,
                      [opacity for _, opacity in self.meshes + list(meshes)], self.background)

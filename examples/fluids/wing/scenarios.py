@@ -10,6 +10,7 @@ import numpy as np
 from numga import stack
 
 from examples.fluids.wing import core
+from examples.util.topology import Topology
 
 # The cylinder's centre, behind and above the origin before the map: the wing's thickness and camber.
 THICKNESS = 0.1
@@ -96,20 +97,24 @@ def main() -> None:
     np.testing.assert_allclose(core.derivative(gradient).kernel, 0.0, atol=1e-12)
     # Around every ring about the wing the velocity times each step adds up to the circulation, with
     # no flux: the derivative between any two rings vanishes too.
-    next_idx = (np.arange(N_ANGLES) + 1) % N_ANGLES
-    loops = ((velocity + velocity[:, next_idx]) / 2 * (points[:, next_idx] - points)).sum(axis=-1)
+    # Each ring closed, a step from each angle to the next and the last back to the first, its two ends averaged.
+    ring = Topology.loops([N_ANGLES])
+    averaged = ring.incidence[1, 0].mean(axis=0)                             # Scalar+[steps <- angles]
+    loops = ((averaged * velocity.field()) * (ring.d[0] * points.field())).batch().sum(axis=-1)
     np.testing.assert_allclose(loops.kernel - loops.kernel[:1], 0.0, atol=1e-11)
     # Each ring's own oriented area sets the sense its sum is read in.
-    areas = (points ^ points[:, next_idx]).sum(axis=-1)                      # [rings] Bivector+
+    tails, heads = ring.incidence[1, 0][:, None] * points.field()            # [rings] Point-[steps], Point-[steps]
+    areas = (tails ^ heads).batch().sum(axis=-1)                             # [rings] Bivector+
     np.testing.assert_allclose((loops * (areas / areas.norm()) - core.circulation(pitched, stream)).kernel, 0.0, atol=1e-3)
     # The pressure on the surface, low where the flow is fast, pushes on every step: on a displacement of
     # the wing it does the pressure times the area the step sweeps, `steps & Point`, in the sense the surface
     # winds. Summed around the wing it is the Kutta–Joukowski lift, across the stream, with no drag.
     surface, surface_velocity, _, _ = core.flow(pitched, stream, core.rings(pitched, 1, N_ANGLES, 1.0)[0], trailing_edge(pitched))
-    steps = surface[next_idx] - surface                                      # [angles] Point-
+    steps = (ring.d[0] * surface.field()).batch()                            # [angles] Point-
     speed_squared = surface_velocity.dot(surface_velocity)                   # [angles] Scalar+
-    pressure = -0.5 * DENSITY * (speed_squared + speed_squared[next_idx]) / 2   # [angles] Scalar+
-    winding = (surface & surface[next_idx]).sum(axis=-1)                     # [] Scalar-
+    pressure = -0.5 * DENSITY * (averaged * speed_squared.field()).batch()   # [angles] Scalar+
+    surface_tails, surface_heads = ring.incidence[1, 0] * surface.field()    # Point-[steps], Point-[steps]
+    winding = (surface_tails & surface_heads).batch().sum(axis=-1)           # [] Scalar-
     force = (pressure * (steps & core.Point)).sum(axis=-1) * (winding / winding.norm())   # [] Scalar+ <- Point-
     np.testing.assert_allclose((force - (core.lift(pitched, stream, DENSITY) & core.Point)).kernel, 0.0, atol=1e-3)
 

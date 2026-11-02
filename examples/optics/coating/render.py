@@ -198,10 +198,10 @@ def pulse(nodes: core.Direction, slab: core.Direction, directors: core.Direction
         # Every other node's spoke, where the field shows.
         spoked = np.flatnonzero(strength > spoke_floor)[::2]
         spoke_ends = stack((stations[spoked], tips[spoked]), axis=1).reshape(-1)       # [spokes * 2] Point-
-        spokes = simplices.tubes(spoke_ends, simplices.Mesh.chains([2] * len(spoked)),
+        spokes = simplices.tubes(spoke_ends, simplices.Topology.chains([2] * len(spoked)),
                                  faded(colours, spoke_opacity * strength)[spoked], spoke_width, view, gloss=solids.gloss)
         # Each piece of the path in the colour and strength halfway along it.
         shades = faded(colours, strength)
-        path = simplices.tubes(tips, simplices.Mesh.chains([len(tips)]), (shades[:-1] + shades[1:]) / 2, path_width,
+        path = simplices.tubes(tips, simplices.Topology.chains([len(tips)]), (shades[:-1] + shades[1:]) / 2, path_width,
                                view, gloss=solids.gloss)
         yield picture.draw([], inks=[], translucent=[], meshes=[(spokes, 1.0), (path, 1.0)])

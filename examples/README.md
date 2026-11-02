@@ -109,6 +109,10 @@
 - [Stokes flow on a mesh](fluids/dec_stokes/) — Incidence and diagonal Hodge maps determine pressure and flux through a channel around an obstacle.
 - [Diffusion on a sphere of rays](fluids/projective_sphere_flow/) — Homogeneous corner weights vary rational interpolation and the polar dual while diffusion stays on a fixed sphere; the same quotient works in the affine plane.
 - [Laplacian eigenfunction fluids](fluids/eigen_fluids/) — Whitney gradients and precomputed mode interactions evolve vortices on the Stanford bunny and shear layers on a sphere.
+- [Magnetohydrodynamics on a sphere](fluids/mhd_sphere/mhd_sphere.ipynb) — In spacetime, a frozen-in field is one whose flux function's gradient pairs to nothing with every worldline; a differential rotation winds it up until its current gathers in thin sheets and reconnects into magnetic islands.
+- [Electrokinetic transport](fluids/electrokinetics/) — Pressure and electric potential as one field in spacetime joined with a direction for volume drive flow and current through wavy charged channels, reciprocally, while the double layer's osmotic pressure and field balance across them.
+- [Rayleigh–Bénard convection](fluids/convection/) — Volume and entropy as two degenerate directions joined to planar spacetime, mass along time: gravity's commutator with a parcel pulls its mass alone, buoyancy turns a heated layer over in rolls, and a batch of Rayleigh numbers finds the onset at 1708.
+- [Salt fingers](fluids/saltfingers/) — Volume, entropy and salt as three degenerate directions joined to planar spacetime, mass along time: one flux of whole parcels carries heat and salt alike, salt spreads a tenth as fast as heat, and warm salty water over cold fresh water grows fingers across its interface, which a batch of density ratios finds stop growing at the ratio of the diffusivities.
 
 ## Relativity
 
@@ -131,6 +135,7 @@
 ## Quantum
 
 - [Magnetic resonance](quantum/magnetic_resonance/) — Driven and relaxing spins produce nutation, resonance line shapes and spin echoes.
+- [A rotating Bose–Einstein condensate](quantum/condensate/) — The condensate as a vector in a plane of its own joined to the trap's plane, the trap's turning and the wave's two bivectors kept apart: descending its energy in a rotating trap, it settles into a lattice of quantized vortices as dense as Feynman's rule asks.
 - [Graphene](quantum/graphene/) — Electron hopping produces Dirac cones, pseudospin textures and a Berry phase around each cone.
 - [Graphene edge states](quantum/kane_mele/) — Spin-orbit coupling produces boundary states in a finite graphene flake.
 - [Two spins](quantum/two_spins/) — Exchange interactions entangle a pair of spins and change their Bell correlations.
@@ -156,6 +161,7 @@
 - [Magnetic bottle](electromagnetism/magnetic_bottle/) — Charged particles spiral, bounce or escape in the field between two coils.
 - [Magnetic flux advection](electromagnetism/lie_advection/) — Swept edge patches and Cartan's decomposition transport magnetic circulation and conserve total flux across a swirling conductor.
 - [Force-free Beltrami fields](electromagnetism/beltrami_fields/) — Tetrahedral Whitney forms carry magnetic energy and helicity; selective modal decay at fixed helicity reveals a force-free state inside a torus.
+- [A dynamo in a planet's core](electromagnetism/dynamo/dynamo.ipynb) — A stirred fluid shell in a conducting ball grows a seed field until the field's force on the current, the adjugate of the motional map, brakes the flow; flow and field then trade energy back and forth.
 
 ## Optics
 

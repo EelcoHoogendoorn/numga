@@ -17,7 +17,7 @@ import numpy as np
 
 from numga import Extensor
 from examples.thermodynamics import rendering as art
-from examples.util.wgsl import solids
+from examples.util.wgsl import simplices, solids
 
 Reading = Callable[[Extensor], Extensor]
 
@@ -59,7 +59,9 @@ class Charts:
                                   + art.level_family(self.entropy_temperature, lines.isobars.entropy_temperature,
                                                      "pressure", art.thin))
         self.cycle = art.gas_points(temperature_of, pressure_of, cycle)                   # [steps] Point-, Point-
-        self.n_steps = (cycle.shape[0] - 1) // 4
+        self.n_steps = cycle.shape[0] // 4
+        # The steps from each state to the next, the last back to the first.
+        self.around = art.Topology.loops([cycle.shape[0]])
         # The states the cycle encloses: at each entropy of the hot stroke, from its state to the cold stroke's at the
         # same entropy, straight across the plane of states along the adiabat between them; a grid of states, which
         # either chart carries onto the area the cycle encloses there.
@@ -68,31 +70,35 @@ class Charts:
         shares = np.linspace(0, 1, n_fill)[:, None]
         enclosed = (heated * (1 - shares) + cooled * shares).reshape(-1)                  # [fill * (steps + 1)] State-
         self.enclosed = art.gas_points(temperature_of, pressure_of, enclosed)            # [...] Point-, Point-
-        self.grid = art.Mesh.grid(n_fill, self.n_steps + 1)
+        self.grid = art.Topology.grid(n_fill, self.n_steps + 1)
 
     def picture(self, diagram: art.Diagram, cycle: art.Point, enclosed: art.Point, lines: list, travelled: int,
                 labels: list, names: list) -> np.ndarray:
         """A chart with its lines, the area the cycle `[steps]` encloses, a grid of points `[fill * (steps + 1)]`, the
         strokes faint and, as far as travelled, bold."""
         layers = [art.area(diagram, enclosed, self.grid, enclosed_colour, 0.45)] + lines
+        points = art.on_numpy(cycle)                                                      # [steps] Point-
         for stroke in range(4):
-            part = cycle[stroke * self.n_steps: (stroke + 1) * self.n_steps + 1]
-            layers += art.polylines(diagram, [part], art.thin, stroke_colours[stroke], 1.0, art.SOLID)
-            done = part[: max(0, min(travelled - stroke * self.n_steps + 1, self.n_steps + 1))]
-            layers += art.polylines(diagram, [done], art.bold, stroke_colours[stroke], 1.0, art.SOLID)
+            # The stroke's steps around the loop, and those of them travelled.
+            part = np.arange(stroke * self.n_steps, (stroke + 1) * self.n_steps)
+            done = part[: max(0, min(travelled - stroke * self.n_steps, self.n_steps))]
+            layers += [simplices.strokes(points, self.around.subset(part), stroke_colours[stroke], art.thin,
+                                         diagram.camera),
+                       simplices.strokes(points, self.around.subset(done), stroke_colours[stroke], art.bold,
+                                         diagram.camera)]
         now = cycle[travelled][None]
         return art.floated(diagram, art.picture(diagram, layers + art.dots(diagram, now, art.ink), labels), names)
 
     def pictures(self, travelled: int) -> list[np.ndarray]:
         pressure_cycle, temperature_cycle = self.cycle.volume_pressure, self.cycle.entropy_temperature
         # The net work written amid the area the cycle encloses, at the mean of its samples.
-        pressure_labels = [art.Label(pressure_cycle[:-1].mean(axis=0), "W", art.ink, art.text_size, "mm", (0, 0))]
+        pressure_labels = [art.Label(pressure_cycle.mean(axis=0), "W", art.ink, art.text_size, "mm", (0, 0))]
         # The reservoirs named at the chart's left edge, level with the strokes at their temperatures: the line
         # through a corner of the cycle along the entropy, met with that edge.
         left_edge = art.mv.x - art.mv.w * entropy_range[0]                                # [] Plane+
         reservoirs = temperature_cycle[np.array([0, 2 * self.n_steps])]                  # [2] Point-
         hot, cold = (reservoirs & art.mv.x.dual()) ^ left_edge                           # [] Point-, Point-
-        temperature_labels = [art.Label(temperature_cycle[:-1].mean(axis=0), "W", art.ink, art.text_size, "mm",
+        temperature_labels = [art.Label(temperature_cycle.mean(axis=0), "W", art.ink, art.text_size, "mm",
                                         (0, 0)),
                               art.Label(hot, "hot", art.orange, art.text_size, "lb", (4, 2)),
                               art.Label(cold, "cold", art.blue, art.text_size, "lt", (4, -2))]

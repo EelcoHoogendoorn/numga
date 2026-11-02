@@ -16,7 +16,7 @@ from examples.util.wgsl import contours, simplices
 from examples.util.wgsl.camera import flat_panel
 from examples.fluids.kirchhoff import core
 
-Mesh = simplices.Mesh
+Topology = simplices.Topology
 
 mv = core.mv
 # The colours of the three coefficients: shifting along the axis of symmetry, shifting across it, and
@@ -64,10 +64,10 @@ def draw_coefficients(aspects: np.ndarray, ratios: core.Scalar) -> plt.Figure:
 
 def animate_gliding(impulse: core.Forque,
                     frames: Iterable[tuple[core.Point, core.Point, core.Point]]) -> Iterator[np.ndarray]:
-    """Each frame of every case's outline `[cases, outline + 1]`, centre `[cases]` and nose `[cases]`: the
+    """Each frame of every case's outline `[cases, outline]`, centre `[cases]` and nose `[cases]`: the
     bodies seen from above, each in its own lane, with its path so far and its impulse."""
     frames = [tuple(points.normalized() for points in frame) for frame in frames]
-    outlines = stack([outline for outline, _, _ in frames])                  # [frames, cases, outline + 1] Point-
+    outlines = stack([outline for outline, _, _ in frames])                  # [frames, cases, outline] Point-
     centres = stack([middle for _, middle, _ in frames])                     # [frames, cases] Point-
     noses = stack([nose for _, _, nose in frames])                           # [frames, cases] Point-
     count = centres.shape[1]
@@ -81,13 +81,13 @@ def animate_gliding(impulse: core.Forque,
     # The ends of the impulse's line within the extent: where it meets the planes square to x there.
     ends = (impulse ^ (mv.x - extent * mv.w)).normalized()                    # [2] Point-
     lines = (ends + lanes[:, None]).reshape(-1)                               # [cases * 2] Point-
-    shapes = outlines + lanes[:, None]                                        # [frames, cases, outline + 1] Point-
+    shapes = outlines + lanes[:, None]                                       # [frames, cases, outline] Point-
     # Each case's path through the frames, case by case.
     tracks = stack([(centres + lanes)[:, case] for case in range(count)])    # [cases, frames] Point-
-    tips = noses + lanes                                                      # [frames, cases] Point-
-    # The body's triangles, the same in every frame, and its outline a closed chain.
-    body = Mesh.triangulate(shapes[0, 0, :-1])
-    rim = Mesh.chains([shapes.shape[-1]])
+    tips = noses + lanes                                                     # [frames, cases] Point-
+    # The body's triangles, the same in every frame, and its outline a closed loop.
+    body = Topology.triangulate(shapes[0, 0])
+    rim = Topology.loops([shapes.shape[-1]])
     height = lane * count
     # The lanes and their impulses set up once; each body, its path so far and its nose move.
     aspect = float((height / (extent[1] - extent[0])).to_array())
@@ -98,18 +98,18 @@ def animate_gliding(impulse: core.Forque,
     ax.set_aspect("equal")
     ax.set_axis_off()
     camera = flat_panel(ax, core.ga)
-    impulses = simplices.strokes(lines, Mesh.chains([2] * count), rgb(impulse_colour), impulse_width, camera,
+    impulses = simplices.strokes(lines, Topology.chains([2] * count), rgb(impulse_colour), impulse_width, camera,
                                  dashes=impulse_dashes, cap=simplices.Cap.BUTT)
     image = simplices.overlay(ax, [impulses])
     for index in range(len(frames)):
         path_ink = np.repeat([rgb(colour) for colour in path_colours], index, axis=0)   # [cases * index, 3]
         bodies = [picture for case in range(count) for picture in (
-            contours.picture(shapes[index, case, :-1], body, np.zeros(body.n_vertices), rgb(body_colours[case]),
+            contours.picture(shapes[index, case], body, np.zeros(body.n_vertices), rgb(body_colours[case]),
                              camera),
             simplices.strokes(shapes[index, case], rim, rgb(edge_colours[case]), outline_width, camera))]
         image.set_data(simplices.composited([
             impulses,
-            simplices.strokes(tracks[:, :index + 1].reshape(-1), Mesh.chains([index + 1] * count), path_ink,
+            simplices.strokes(tracks[:, :index + 1].reshape(-1), Topology.chains([index + 1] * count), path_ink,
                               path_width, camera),
             *bodies,
             simplices.markers(tips[index], np.array([rgb(colour) for colour in edge_colours]), nose_radius, camera)]))

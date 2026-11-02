@@ -29,7 +29,7 @@ def test_spacetime_barycentric_hats_edge_forms_and_lorentzian_dual():
     # Edge 1-forms match Whitney's alternating formula and satisfy Kronecker duality along the worldline edges.
     edge_forms = core.edge_whitney_forms(corners, points)
     tails, heads = core.triangle.corners[2, 1]
-    classic_forms = (hats[tails] * gradients[heads, None] - hats[heads] * gradients[tails, None]) * core.triangle.face_edge_orientation.T
+    classic_forms = (hats[tails] * gradients[heads, None] - hats[heads] * gradients[tails, None]) * core.triangle.orientation[1].T
     np.testing.assert_allclose((edge_forms - classic_forms).kernel, 0.0, atol=1e-14)
 
     sides = (core.triangle.boundary[2, 1] * (core.triangle.d[0] * corners.field())).batch()[:, 0]
@@ -50,10 +50,10 @@ def test_spacetime_barycentric_hats_edge_forms_and_lorentzian_dual():
 def test_lorentzian_wave_operator_and_causal_light_cone_wake():
     n_space, n_time = 45, 75
     duration = 0.72
-    mesh, vertices, _ = scenarios.spacetime_strip(
+    topology, vertices, _ = scenarios.spacetime_strip(
         core.space, core.time, n_space, n_time, np.ones(n_time), duration,
     )
-    operators = core.Operators(mesh, vertices)
+    operators = core.Operators(topology, vertices)
 
     assert operators.gradient.gatype == core.ga.gatype((core.Plane, core.Scalar))
     assert operators.wave_operator.gatype == core.ga.gatype((core.Amount, core.Scalar))
@@ -83,10 +83,10 @@ def test_relativistic_moving_mirror_doppler_compression_and_energy_gain():
         times, scenarios.initial_length, scenarios.stroke,
         scenarios.inflection_time, scenarios.transition_time,
     )
-    mesh, vertices, dt = scenarios.spacetime_strip(
+    topology, vertices, dt = scenarios.spacetime_strip(
         core.space, core.time, n_space, n_time, wall_positions, duration,
     )
-    operators = core.Operators(mesh, vertices)
+    operators = core.Operators(topology, vertices)
     potential, field, wave_rate, slice_energies = core.moving_mirror_wave(
         operators, n_space, n_time, dt,
         scenarios.pulse_centre, scenarios.pulse_width, scenarios.wavelength,
@@ -104,7 +104,7 @@ def test_relativistic_moving_mirror_doppler_compression_and_energy_gain():
 
     # Euler-Lagrange stationarity holds at every interior spacetime vertex.
     grid = np.arange(n_time * n_space).reshape(n_time, n_space)
-    interior = ~core.SparseExtensor.selection(core.mv.context, grid[1:-1, 1:-1].ravel(), mesh.n_vertices) * core.Scalar
+    interior = ~topology.reading(grid[1:-1, 1:-1].ravel()) * core.Scalar
     np.testing.assert_allclose(interior.adjugate()(operators.wave_operator(potential)).kernel, 0.0, atol=1e-10)
 
     # Wave energy is conserved before and after reflection and boosted by the Einstein Doppler factor across reflection.

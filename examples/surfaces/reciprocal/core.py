@@ -16,62 +16,62 @@ from __future__ import annotations
 
 import numpy as np
 
+from numga import NumpyContext
 from numga.algebras import VGA3D as ga
-from examples import instantiate
+from examples.util.topology import Topology
 
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, mv = mesh_module.Mesh, mesh_module.mv
+mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                         # Scalar+
 # A face of the terrain is a plane, a vector; the vertices are points, antivectors.
 Plane = ga.gatype.vector()                          # Vector+
-Point = mesh_module.Point                           # Antivector-
+Point = ga.gatype.antivector()                      # Antivector-
 # The point one unit above the origin: added to a point of the plane, it lifts it to unit height.
 up = mv.z.dual()                                    # [] Point-
 
 
 # --- math -----------------------------------------------------------------------------
-def slopes(mesh: Mesh, points: Point, heights: Scalar) -> Plane:
+def slopes(topology: Topology, points: Point, heights: Scalar) -> Plane:
     """The plane of each face of the terrain, through its corners at their heights, pairs with a point lifted
     to unit height, `point + up`, to the height there: it holds the slope across the plane and the height at
     the origin. It is the corners' heights times the reciprocal frame of the corners lifted to unit height, the
     three planes pairing to one with their own corner and to nothing with the other two, so it is linear in the
     heights."""
     lifted = points + up                                                       # Point-[vertices]
-    corners = mesh.incidence[2, 0] * lifted                                    # [corners] Point-[faces]
-    tails, heads = mesh.incidence[1, 0] * lifted                               # Point-[edges], Point-[edges]
+    corners = topology.incidence[2, 0] * lifted                                # [corners] Point-[faces]
+    tails, heads = topology.incidence[1, 0] * lifted                           # Point-[edges], Point-[edges]
     # Two corners meet in a vector that pairs to nothing with either; over the meet of all three, it pairs
     # to one with the third.
-    frame = (mesh.boundary[2, 1] * (tails & heads)) / (corners[0] & corners[1] & corners[2])   # [corners] Plane+[faces]
+    frame = (topology.boundary[2, 1] * (tails & heads)) / (corners[0] & corners[1] & corners[2])  # [corners] Plane+[faces]
     # The heights at each face's corners, on the last axis.
-    corner_heights = mesh.incidence[2, 0] * heights[..., None]                 # [..., corners] Scalar+[faces]
+    corner_heights = topology.incidence[2, 0] * heights[..., None]             # [..., corners] Scalar+[faces]
     return (frame * corner_heights).sum(axis=-1)                               # [...] Plane+[faces]
 
 
-def stresses(mesh: Mesh, points: Point, heights: Scalar) -> Scalar:
+def stresses(topology: Topology, points: Point, heights: Scalar) -> Scalar:
     """The stress of each interior edge is the jump in slope between the faces on either side, measured towards
     the corner across the edge, over the edge's length; it is positive in tension, where the terrain bends
     convex. Which face is called left does not matter: swapping them turns both the jump and the side the
     corner lies on."""
-    inner = mesh.interior_edges                                                # [inner]
+    inner = topology.reading(topology.interior[1], 1)                          # Scalar+[inner <- edges]
     # The faces' planes summed back onto their edges, each signed as its face runs along the edge: the plane of
     # the face on the left less that of the face on the right.
-    jump = (~mesh.d[1] * slopes(mesh, points, heights)).batch()[..., inner]    # [..., inner] Plane+
+    jump = (inner * (~topology.d[1] * slopes(topology, points, heights))).batch()  # [..., inner] Plane+
     # Each bar from its tail to its head.
-    tails, heads = (mesh.incidence[1, 0] * points).batch()[:, inner]           # [inner] Point-, [inner] Point-
+    tails, heads = (inner * (topology.incidence[1, 0] * points)).batch()       # [inner] Point-, [inner] Point-
     bars = heads - tails                                                       # [inner] Point-
     # The corner across each edge in the face on its right, as its offset square to the bar.
-    far = (mesh.reading(mesh.edge_opposites[:, 1]) * points).batch()           # [inner] Point-
+    far = (topology.reading(topology.facet_opposites[:, 1]) * points).batch()  # [inner] Point-
     corner = far - tails                                                       # [inner] Point-
-    across = corner - bars * ((bars | corner) / (bars | bars))                # [inner] Point-
+    across = corner - bars * ((bars | corner) / (bars | bars))                 # [inner] Point-
     # The jump in slope paired with that offset: how much faster the terrain rises across the bar.
     return -(jump & across) / (across.norm() * bars.norm())                    # [..., inner] Scalar+
 
 
-def folds(mesh: Mesh, points: Point, heights: Scalar) -> Scalar:
+def folds(topology: Topology, points: Point, heights: Scalar) -> Scalar:
     """The corner across each interior edge on its right lies above the plane of the face on its left by its
     fold, positive where the terrain bends convex."""
     # The plane of the face on the right passes through that corner at its height, so the fold is the jump from
     # the plane on the left to it, read at the corner lifted to unit height.
-    jump = (mesh.reading(mesh.interior_edges, 1) * (~mesh.d[1] * slopes(mesh, points, heights))).batch()   # [..., inner] Plane+
-    lifted = (mesh.reading(mesh.edge_opposites[:, 1]) * (points + up)).batch()   # [inner] Point-
+    jump = (topology.reading(topology.interior[1], 1) * (~topology.d[1] * slopes(topology, points, heights))).batch()  # [..., inner] Plane+
+    lifted = (topology.reading(topology.facet_opposites[:, 1]) * (points + up)).batch()  # [inner] Point-
     return -(jump & lifted)                                                    # [..., inner] Scalar+

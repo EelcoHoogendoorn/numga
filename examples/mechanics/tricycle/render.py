@@ -68,9 +68,9 @@ def wheel_steps(contacts: Extensor, forward: Extensor) -> Extensor:
     return (forward - contacts) * (WHEEL_RADIUS / (contacts & forward).norm())
 
 
-def pairs(n_pairs: int) -> simplices.Mesh:
+def pairs(n_pairs: int) -> simplices.Topology:
     """An edge from each of the first `n_pairs` points to the one `n_pairs` after it."""
-    return simplices.Mesh(2 * n_pairs, np.stack([np.arange(n_pairs), n_pairs + np.arange(n_pairs)], axis=-1))
+    return simplices.Topology(2 * n_pairs, np.stack([np.arange(n_pairs), n_pairs + np.arange(n_pairs)], axis=-1))
 
 
 def plane(contacts: Extensor, forward: Extensor, centre: Extensor, middle: Extensor) -> np.ndarray:
@@ -87,10 +87,10 @@ def plane(contacts: Extensor, forward: Extensor, centre: Extensor, middle: Exten
     camera = panel(ax, mv.x, mv.y)
     # Each axle on to the turning centre, the last of the points.
     froms = axles(contacts, centre)                                          # [axles] Point-
-    spokes = simplices.Mesh(len(froms) + 1, np.stack([np.arange(len(froms)), np.full(len(froms), len(froms))], -1))
+    spokes = simplices.Topology(len(froms) + 1, np.stack([np.arange(len(froms)), np.full(len(froms), len(froms))], -1))
     starts, ends = frame(contacts)                                           # [bars] Point-, Point-
     simplices.overlay(ax, [
-        simplices.strokes(middle, simplices.Mesh.chains([len(middle)]), to_rgb(TRAIL), PLANE_TRAIL_WIDTH, camera),
+        simplices.strokes(middle, simplices.Topology.chains([len(middle)]), to_rgb(TRAIL), PLANE_TRAIL_WIDTH, camera),
         simplices.strokes(concatenate([froms, centre[None]]), spokes, to_rgb(AXLE), AXLE_WIDTH, camera,
                           dashes=AXLE_DASHES, cap=simplices.Cap.BUTT),
         simplices.markers(centre[None], to_rgb(CENTRE), CENTRE_RADIUS, camera),
@@ -109,13 +109,13 @@ def space(contacts: solids.Point, forward: solids.Point, centre: solids.Line, mi
     mv = centre.context.multivector
     # Up from the ground, and where the turning centre meets the ground, as an intrinsic point of unit weight.
     up = mv.z.dual()                                                                     # [] Point-
-    foot = ((centre ^ mv.z) * mv.antipseudoscalar([1.0])).normalized()                    # [] Point-
+    foot = ((centre ^ mv.z) * mv.antipseudoscalar([1.0])).normalized()                   # [] Point-
     view = space_view(middle[-1])
     # Each axle's dashes, at the height of the hubs: stretches of one length along it from its wheel, as many as
     # fit before the turning centre.
-    froms = axles(contacts, foot)                                                         # [axles] Point-
+    froms = axles(contacts, foot)                                            # [axles] Point-
     lengths = (froms & foot).norm()                                                       # [axles] Scalar+
-    directions = (foot - froms) / lengths                                                 # [axles] Point-
+    directions = (foot - froms) / lengths                                    # [axles] Point-
     shares = [np.arange(0, length - DASH, 2 * DASH) for length in lengths.to_array()]     # [axles] of [dashes]
     starts = concatenate([start + direction * share for start, direction, share in zip(froms, directions, shares)])
     dash_ends = concatenate([start + direction * (share + DASH)
@@ -129,10 +129,10 @@ def space(contacts: solids.Point, forward: solids.Point, centre: solids.Line, mi
     # quarter turn in the ground, from the point of the rim ahead of the hub.
     steps = wheel_steps(contacts, forward)                                                # [wheels] Point-
     sideways = steps.commutator(mv.xy)                                                    # [wheels] Point-
-    rims = meshes.circles(hubs + steps, (hubs & sideways) * solids.flip, N_RIM)          # [wheels, rim + 1] Point-
-    tyres = simplices.tubes(rims.reshape(-1), simplices.Mesh.chains([rims.shape[1]] * rims.shape[0]), to_rgb(WHEEL),
+    rims = meshes.circles(hubs + steps, (hubs & sideways) * solids.flip, N_RIM)          # [wheels, rim] Point-
+    tyres = simplices.tubes(rims.reshape(-1), simplices.Topology.loops([rims.shape[1]] * rims.shape[0]), to_rgb(WHEEL),
                             RIM_WIDTH, view, gloss=solids.gloss)
-    trail = simplices.tubes(middle, simplices.Mesh.chains([len(middle)]), to_rgb(TRAIL), TRAIL_WIDTH, view,
+    trail = simplices.tubes(middle, simplices.Topology.chains([len(middle)]), to_rgb(TRAIL), TRAIL_WIDTH, view,
                             gloss=solids.gloss)
     return solids.draw(parts, view, BACKGROUND, inks=[], translucent=[], meshes=[(tyres, 1.0), (trail, 1.0)])
 

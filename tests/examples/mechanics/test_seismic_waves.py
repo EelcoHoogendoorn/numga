@@ -3,22 +3,23 @@
 import numpy as np
 import pytest
 
-from numga import stack
+from numga import NumpyContext, stack
 from numga.algebras import VGA2D, VGA3D
-from examples import instantiate
 from examples.mechanics.seismic_waves import core
+from examples.util.shapes import concentric_disk
 
 
 @pytest.fixture(scope="module")
 def disk():
-    mesh, vertices = core.Mesh.concentric_disk(np.array([0.6, 1.0]), 6)
-    centres = (mesh.incidence[2, 0].mean(axis=0) * vertices).batch()
+    topology, coordinates = concentric_disk(np.array([0.6, 1.0]), 6)
+    vertices = core.mv.vector(coordinates).dual().field()
+    centres = (topology.incidence[2, 0].mean(axis=0) * vertices).batch()
     inner = centres.norm_squared() < 0.6**2
     density = core.as_scalar(np.where(inner, 2.0, 1.0)).field()
     lame_lambda = core.as_scalar(np.where(inner, 3.0, 2.0))
     lame_mu = core.as_scalar(np.where(inner, 1.4, 1.0))
     material = core.constitutive(lame_lambda, lame_mu)
-    operators = core.Operators(mesh, vertices, material, core.viscous(core.as_scalar(0.0)), density)
+    operators = core.Operators(topology, vertices, material, core.viscous(core.as_scalar(0.0)), density)
     return operators, lame_lambda.field(), lame_mu.field()
 
 
@@ -77,18 +78,20 @@ def test_free_dynamics_preserves_momentum_with_bounded_energy(disk):
 
 @pytest.mark.parametrize("algebra", [VGA2D, VGA3D])
 def test_concentric_disk_has_oriented_faces_in_plane_and_space(algebra):
-    mesh_module = instantiate("examples.util.mesh", algebra)
-    mesh, vertices = mesh_module.Mesh.concentric_disk(np.array([0.6, 1.0]), 5)
-    corners = mesh.incidence[2, 0] * vertices
+    mv = NumpyContext(algebra).multivector
+    topology, coordinates = concentric_disk(np.array([0.6, 1.0]), 5)
+    vertices = mv(algebra.gatype.from_blades("x y"), coordinates).dual().field()
+    corners = topology.incidence[2, 0] * vertices
     patches = (corners[1] - corners[0]) & (corners[2] - corners[0])
-    assert np.all((mesh_module.mv.xy & patches) > 0)
+    assert np.all((mv.xy & patches) > 0)
     np.testing.assert_allclose(vertices.batch()[0].kernel, 0, atol=0)
 
 
 def test_inviscid_fluid_has_no_shear_restoring_force():
-    mesh, vertices = core.Mesh.concentric_disk(np.array([1.0]), 5)
+    topology, coordinates = concentric_disk(np.array([1.0]), 5)
+    vertices = core.mv.vector(coordinates).dual().field()
     fluid = core.constitutive(core.as_scalar(3.0), core.as_scalar(0.0))
-    operators = core.Operators(mesh, vertices, fluid, core.viscous(core.as_scalar(0.0)), core.as_scalar(2.0))
+    operators = core.Operators(topology, vertices, fluid, core.viscous(core.as_scalar(0.0)), core.as_scalar(2.0))
     x, y = core.mv.x & vertices, core.mv.y & vertices
     shearing = 0.1 * (core.mv.x.dual() * y + core.mv.y.dual() * x)
     np.testing.assert_allclose(operators.stiffness(shearing).kernel, 0, atol=1e-12)
@@ -98,9 +101,10 @@ def test_inviscid_fluid_has_no_shear_restoring_force():
 
 
 def test_viscous_liquid_drags_shear_but_not_rigid_motion():
-    mesh, vertices = core.Mesh.concentric_disk(np.array([1.0]), 5)
+    topology, coordinates = concentric_disk(np.array([1.0]), 5)
+    vertices = core.mv.vector(coordinates).dual().field()
     fluid = core.constitutive(core.as_scalar(3.0), core.as_scalar(0.0))
-    operators = core.Operators(mesh, vertices, fluid, core.viscous(core.as_scalar(0.1)), core.as_scalar(2.0))
+    operators = core.Operators(topology, vertices, fluid, core.viscous(core.as_scalar(0.1)), core.as_scalar(2.0))
     translation = vertices * 0 + 0.3 * core.mv.x.dual() - 0.2 * core.mv.y.dual()
     spin = vertices.commutator(0.2 * core.mv.xy)
     for rigid in (translation, spin):

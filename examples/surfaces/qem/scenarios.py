@@ -5,7 +5,8 @@ from __future__ import annotations
 import numpy as np
 
 from examples import MODEL_DIR
-from examples.surfaces.qem.core import Mesh, Point, collapse_position, mv, simplify
+from examples.util import shapes
+from examples.surfaces.qem.core import Topology, Point, collapse_position, mv, simplify
 
 # A surface patch with a sharp ridge from a corner a to a gentler end b: its vertices, a and b first, and its
 # triangles, the two flanking the ridge edge first.
@@ -34,12 +35,14 @@ INCIDENT_B = np.array([0, 1, 4, 5])
 SURVIVING_FACES = np.array([2, 3, 4, 5])
 FACE_TARGETS = np.array([3500, 1800, 900, 450, 250])
 MESH_SIZE, DURATION_MS = 2, 600
+# The origin the bunny is placed about.
+origin = mv.w.dual()                                                                    # [] Point-
 
 
 # --- math -----------------------------------------------------------------------------
 def qem():
     """The ridge edge `(a, b)` of a triangle patch collapses to its quadric-optimal vertex."""
-    ridge = Mesh(len(RIDGE_VERTICES), RIDGE_FACES)
+    ridge = Topology(len(RIDGE_VERTICES), RIDGE_FACES)
     vertices = mv.point(RIDGE_VERTICES).field()                                 # Point-[vertices]
     # Each face's supporting plane, the join of its three corners.
     corners = ridge.incidence[2, 0] * vertices                                  # [corners] Point-[faces]
@@ -59,11 +62,12 @@ def qem():
 
 
 # --- plumbing -------------------------------------------------------------------------
-def bunny() -> tuple[Mesh, Point]:
+def bunny() -> tuple[Topology, Point]:
     """The bundled Stanford bunny's triangles, and its vertices, centred and stood upright."""
-    mesh, vertices = Mesh.read(MODEL_DIR / "bunny.obj", MESH_SIZE)
+    topology, coordinates = shapes.surface(MODEL_DIR / "bunny.obj", MESH_SIZE)
+    offsets = mv.direction(coordinates).field()                                 # Direction-[vertices]
     upright = (mv.yz * (-np.pi / 4)).exp()                                      # [] Rotor+
-    return mesh, upright >> vertices
+    return topology, upright >> (origin + offsets)
 
 
 def main() -> None:
@@ -72,8 +76,8 @@ def main() -> None:
 
     scene = qem()
     save_figure(render.draw_qem(*scene), "qem_mesh_simplification")
-    mesh, vertices = bunny()
-    save_animation(render.animate_mesh(simplify(mesh, vertices, FACE_TARGETS), vertices),
+    topology, vertices = bunny()
+    save_animation(render.animate_mesh(simplify(topology, vertices, FACE_TARGETS), vertices),
                    "qem_bunny", DURATION_MS, stepped=True)
 
     # checks

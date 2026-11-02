@@ -35,11 +35,11 @@ def draw_experiment(spins: Spin, directions: Direction, rates: Scalar) -> plt.Fi
     polar = rates * directions                                                    # [cases, directions] Direction-
     limit = float((stack((mv.x, mv.z))[:, None] & polar.reshape(-1)).abs().max().to_array()) * 1.1
     n_directions = polar.shape[-1]
-    # The emission filled as triangles fanning out from the origin, first of the points, across each step of the
-    # closed curve.
+    # The emission filled as triangles fanning out from the origin, after the curve's points, across each side of the
+    # closed curve: the curve's cone.
     origin = mv.x.dual() * np.zeros(1)                                            # [1] Direction-
-    steps = np.arange(1, n_directions)
-    fan = simplices.Mesh(n_directions + 1, np.stack([np.zeros(n_directions - 1, dtype=int), steps, steps + 1], -1))
+    loop = simplices.Topology.loops([n_directions])
+    fan = loop.cone()
     axis = mv.z.dual() * np.array([-limit, limit])                                # [ends] Direction-
     # The cross's arms, a quarter turn apart, each across the wire either way, reaching as far across as up.
     arms = mv.x.dual() + mv.z.dual() * np.array([1.0, -1.0])                      # [arms] Direction-
@@ -57,14 +57,14 @@ def draw_experiment(spins: Spin, directions: Direction, rates: Scalar) -> plt.Fi
         reach = cross_share * wire_radius * camera.pixel
         cross = concatenate([inward - arms * reach, inward + arms * reach])       # [2 * arms] Direction-
         simplices.overlay(ax, [
-            contours.picture(concatenate([origin, curve]), fan, np.zeros(n_directions + 1), curve_colour, camera,
+            contours.picture(concatenate([curve, origin]), fan, np.zeros(n_directions + 1), curve_colour, camera,
                              opacity=fill_opacity),
-            simplices.strokes(curve, simplices.Mesh.chains([n_directions]), curve_colour, curve_width, camera),
-            simplices.strokes(axis, simplices.Mesh.chains([2]), axis_colour, axis_width, camera, dashes=axis_dashes,
+            simplices.strokes(curve, loop, curve_colour, curve_width, camera),
+            simplices.strokes(axis, simplices.Topology.chains([2]), axis_colour, axis_width, camera, dashes=axis_dashes,
                               cap=simplices.Cap.BUTT),
             simplices.markers(wires, coil_colour, wire_radius + wire_width / 2, camera),
             simplices.markers(wires, np.ones(3), wire_radius - wire_width / 2, camera),
-            simplices.strokes(cross, simplices.Mesh(4, np.array([[0, 2], [1, 3]])), coil_colour, wire_width, camera,
+            simplices.strokes(cross, simplices.Topology(4, np.array([[0, 2], [1, 3]])), coil_colour, wire_width, camera,
                               cap=simplices.Cap.BUTT),
             simplices.markers(outward[None], coil_colour, dot_share * wire_radius, camera)])
     return figure

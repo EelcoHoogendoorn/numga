@@ -106,7 +106,7 @@ def test_square_maps_between_other_blades_solve_batched_fields():
     # The adjugate pulls a field on the outputs' complements back: summed, its pairing with any input
     # field is that of the field with the coupling's output.
     probes = mv.bivector(rng.normal(size=(count, 3))).field()                 # Twist[count]
-    pulled = coupling.adjugate()                                              # [count, count] Line <- Twist
+    pulled = coupling.adjugate()                                                                                 # [count, count] Line <- Twist
     np.testing.assert_allclose(
         (pulled(probes) & twists[0]).batch().sum(axis=-1).kernel, (probes & lines[0]).batch().sum(axis=-1).kernel, atol=1e-10,
     )
@@ -216,3 +216,28 @@ def test_the_dense_field_map_acts_as_the_sparse_one():
     sparse = random_sparse(context, (4, 5), 9, 6) * Vector                    # (Even <- Vector)[4 <- 5]
     field = mv.vector(rng.normal(size=(5, 3))).field()                        # Vector[5]
     np.testing.assert_allclose(sparse.to_dense()(field).kernel, sparse(field).kernel, atol=1e-12)
+
+
+def test_plain_numbers_take_the_algebra_they_meet(context):
+    """A map of plain numbers belongs to no algebra: on a field it acts as its numbers made that field's scalars, in
+    any algebra; between such maps its products and reverse stay numbers; beside a type or a typed map it becomes
+    typed."""
+    # The signed incidence of a path of three vertices: two edges, each its head less its tail.
+    difference = SparseExtensor(np.array([-1.0, 1.0, -1.0, 1.0]), np.array([0, 0, 1, 1]), np.array([0, 1, 1, 2]), (2, 3))
+    rng = np.random.default_rng(3)
+    for algebra in (Algebra("x+y+"), Algebra("x+y+z+w0")):
+        mv = type(context)(algebra).multivector
+        points = mv.antivector(rng.normal(size=(3, len(algebra.signature)))).field()   # Antivector-[3]
+        edges = difference * points                                           # Antivector-[2]
+        assert edges.gatype.derive.output == points.gatype.derive.output
+        np.testing.assert_allclose(np.asarray(edges.batch().kernel), np.asarray((points.batch()[1:] - points.batch()[:-1]).kernel), atol=1e-6)
+    # Between maps of numbers: the reverse runs the couplings back, and a composition multiplies the numbers.
+    laplacian = ~difference * difference
+    assert isinstance(laplacian.cells, np.ndarray)
+    np.testing.assert_allclose(laplacian.cells, [1.0, -1.0, -1.0, 2.0, -1.0, -1.0, 1.0])
+    # Beside a type, the numbers become its scalars, as an untyped array does.
+    mv = context.multivector
+    typed = difference * context.algebra.gatype.scalar()
+    assert typed.gatype.arity == 1
+    weights = SparseExtensor.from_diagonal(mv.scalar([[2.0], [3.0]]).field())
+    assert not isinstance((weights * difference).cells, np.ndarray)

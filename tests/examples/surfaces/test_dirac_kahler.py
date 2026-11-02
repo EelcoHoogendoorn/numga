@@ -7,8 +7,8 @@ from examples.surfaces.dirac_kahler import core, scenarios
 
 
 def test_mixed_grade_whitney_reconstruction_and_dirac_kahler_product_on_disk():
-    mesh, vertices = scenarios.disk(1.0, 5)
-    operators = core.Operators(mesh, vertices)
+    topology, vertices = scenarios.disk(1.0, 5)
+    operators = core.Operators(topology, vertices)
 
     assert operators.whitney0.gatype == core.ga.gatype((core.Scalar, core.Scalar))
     assert operators.whitney1.gatype == core.ga.gatype((core.Plane, core.Scalar))
@@ -27,8 +27,8 @@ def test_mixed_grade_whitney_reconstruction_and_dirac_kahler_product_on_disk():
     face_dirac = operators.dirac(vertex_multivector)
     assert face_dirac.batch().gatype == core.Full
 
-    u_corners = mesh.incidence[2, 0] * vertex_1form
-    omega_corners = mesh.incidence[2, 0] * stream_bivector
+    u_corners = topology.incidence[2, 0] * vertex_1form
+    omega_corners = topology.incidence[2, 0] * stream_bivector
     expected_div = (operators.corner_gradients | u_corners).sum(axis=0)
     expected_grad_plus_rot = operators.gradient(scalar_potential) + (operators.corner_gradients | omega_corners).sum(axis=0)
     expected_curl = (operators.corner_gradients ^ u_corners).sum(axis=0)
@@ -42,10 +42,10 @@ def test_mixed_grade_whitney_reconstruction_and_dirac_kahler_product_on_disk():
     np.testing.assert_allclose((face_dirac.select[2] - expected_curl).kernel, 0.0, atol=1e-14)
 
     # Cochain reconstruction into a single Full multivector field on faces.
-    edge_midpoints = mesh.incidence[1, 0].mean(axis=0) * vertices
+    edge_midpoints = topology.incidence[1, 0].mean(axis=0) * vertices
     mx, my = core.mv.x & edge_midpoints, core.mv.y & edge_midpoints
     midpoint_1form = (0.7 * mx - 0.5 * my) * core.mv.x + (0.4 * mx + 0.9 * my) * core.mv.y
-    edge_cochain = midpoint_1form & (mesh.d[0] * vertices)
+    edge_cochain = midpoint_1form & (topology.d[0] * vertices)
     face_cochain = operators.d1(edge_cochain)
     whitney_multivector = (
         operators.whitney0(scalar_potential)
@@ -65,11 +65,11 @@ def test_mixed_grade_whitney_reconstruction_and_dirac_kahler_product_on_disk():
 
 
 def test_interior_decoupling_and_hodge_helmholtz_decomposition_of_a_velocity_on_annulus():
-    mesh, vertices, inner_ring, interior = scenarios.annulus(0.32, 1.0, 7)
-    operators = core.Operators(mesh, vertices)
+    topology, vertices, inner_ring, interior = scenarios.annulus(0.32, 1.0, 7)
+    operators = core.Operators(topology, vertices)
 
     # An annulus has Euler characteristic V - E + F = 0.
-    assert mesh.n_vertices - len(mesh.edges) + len(mesh.faces) == 0
+    assert topology.n_vertices - topology.n_elements[1] + topology.n_elements[2] == 0
     assert operators.potential_velocity.gatype == core.ga.gatype((core.Point, core.Scalar))
     assert operators.stream_velocity.gatype == core.ga.gatype((core.Point, core.Scalar))
 
@@ -82,13 +82,13 @@ def test_interior_decoupling_and_hodge_helmholtz_decomposition_of_a_velocity_on_
     potential_circulation = operators.stream_velocity.adjugate()(
         operators.isotropic_resistance(operators.potential_velocity(arbitrary_potential)),
     )
-    np.testing.assert_allclose(stream_divergence.batch()[interior].kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose(potential_circulation.batch()[interior].kernel, 0.0, atol=1e-13)
+    np.testing.assert_allclose((topology.reading(interior) * stream_divergence).kernel, 0.0, atol=1e-13)
+    np.testing.assert_allclose((topology.reading(interior) * potential_circulation).kernel, 0.0, atol=1e-13)
 
     # Harmonic circulation has zero interior stream Laplacian.
     harmonic_stream, true_harmonic = core.harmonic_circulation(operators, inner_ring, interior)
     np.testing.assert_allclose(
-        operators.stream_laplacian(harmonic_stream).batch()[interior].kernel, 0.0, atol=1e-13,
+        (topology.reading(interior) * operators.stream_laplacian(harmonic_stream)).kernel, 0.0, atol=1e-13,
     )
 
     # Recovery of the potential, stream and harmonic parts of a velocity on the perforated disk.
@@ -117,8 +117,8 @@ def test_interior_decoupling_and_hodge_helmholtz_decomposition_of_a_velocity_on_
 
 
 def test_skew_adjoint_dirac_kahler_wave_operators_and_boundary_mode_conversion():
-    mesh, vertices, _, _ = scenarios.annulus(0.32, 1.0, 6)
-    operators = core.Operators(mesh, vertices)
+    topology, vertices, _, _ = scenarios.annulus(0.32, 1.0, 6)
+    operators = core.Operators(topology, vertices)
 
     # Exact skew-adjoint power cancellation between even_gradient and even_divergence.
     x, y = core.mv.x & vertices, core.mv.y & vertices

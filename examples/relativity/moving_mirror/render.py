@@ -74,10 +74,10 @@ def ink(colour: str) -> np.ndarray:
     return np.array(to_rgb(colour))
 
 
-def worldsheet(events: core.Point, mesh: core.Mesh, values: np.ndarray, limit: float, camera: Camera) -> np.ndarray:
+def worldsheet(events: core.Point, topology: core.Topology, values: np.ndarray, limit: float, camera: Camera) -> np.ndarray:
     """A field on a world sheet's events coloured, as a spacetime diagram's camera sees it: its picture."""
     colours = wave_colours(Normalize(-limit, limit)(values))[:, :3]
-    return contours.picture(events, mesh, values, colours, camera)
+    return contours.picture(events, topology, values, colours, camera)
 
 
 def diagram(ax: plt.Axes, pictures: list[np.ndarray]):
@@ -113,13 +113,13 @@ def picture_length(directions: core.Point) -> core.Scalar:
 
 def light_cone_cross(origin: core.Point, arm_length: float, camera: Camera, opacity: float) -> np.ndarray:
     """Dashed null rays at 45 degrees through the event `origin`: their picture."""
-    return simplices.strokes(null_rays(origin, arm_length, arm_length).reshape(-1), simplices.Mesh.chains([2, 2]),
+    return simplices.strokes(null_rays(origin, arm_length, arm_length).reshape(-1), simplices.Topology.chains([2, 2]),
                              ink(cone_colour), charts.LINE_PX, camera, dashes=cone_dashes, cap=simplices.Cap.BUTT,
                              opacity=opacity)
 
 
 def streamlines(corners: core.Point, gradients: core.Plane, directions: core.Point,
-                seeds: core.Point) -> tuple[core.Point, core.Mesh]:
+                seeds: core.Point) -> tuple[core.Point, core.Topology]:
     """The curves through the seeds `[seeds]` along a direction field affine across the triangle, its values at the
     corners `[corners]`, up to where each first leaves the triangle, the short ones left out: their events, one curve
     after another, and the chains of edges through them. Each step is taken along the field at its own midpoint, the
@@ -137,7 +137,7 @@ def streamlines(corners: core.Point, gradients: core.Plane, directions: core.Poi
     for step in (stream_step * extent, -stream_step * extent):
         points, path = seeds, [seeds]
         for _ in range(n_stream_steps):
-            halfway = points + velocity(points) * (step / 2)                  # [seeds] Point-
+            halfway = points + velocity(points) * (step / 2)                 # [seeds] Point-
             points = points + velocity(halfway) * step
             path.append(points)
         paths.append(stack(path))                                            # [steps + 1, seeds] Point-
@@ -153,13 +153,13 @@ def streamlines(corners: core.Point, gradients: core.Plane, directions: core.Poi
     lengths = (picture_length(path[1:] - path[:-1]) * steps_kept).sum(axis=0)   # [seeds] Scalar+
     long = lengths >= min_stream_length * extent                             # [seeds]
     curves = [path[:, seed][keep] for seed, keep in enumerate(kept.T) if long[seed]]
-    return concatenate(curves), simplices.Mesh.chains([curve.shape[0] for curve in curves])
+    return concatenate(curves), simplices.Topology.chains([curve.shape[0] for curve in curves])
 
 
 @charts.style()
 def draw_light_cone_whitney(corners: core.Point, points: core.Point,
                             gradients: core.Plane,
-                            edge_forms: core.Plane, wake_mesh: core.Mesh,
+                            edge_forms: core.Plane, topology: core.Topology,
                             wake_vertices: core.Point, wake: core.Scalar,
                             source_event: core.Point) -> plt.Figure:
     """Corner hat gradient and its Lorentzian reflection, edge 1-form, and causal light-cone wake."""
@@ -189,15 +189,15 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
     tips = centroid + scale * stack((euclidean_normal, lorentz_dual))        # [2] Point-
     simplices.overlay(hat_ax, [
         contours.picture(corners, core.triangle, np.zeros(3), ink(paper_colour), camera),
-        simplices.strokes(level_ends.reshape(-1), simplices.Mesh.chains([2] * n_contours), ink(primal_colour),
+        simplices.strokes(level_ends.reshape(-1), simplices.Topology.chains([2] * n_contours), ink(primal_colour),
                           charts.LINE_PX, camera, opacity=0.55),
         simplices.strokes(corners, core.triangle, ink(wall_colour), charts.LINE_PX, camera),
-        simplices.strokes(corners[others], simplices.Mesh.chains([2]), ink(wall_colour), bold_px, camera),
+        simplices.strokes(corners[others], simplices.Topology.chains([2]), ink(wall_colour), bold_px, camera),
         light_cone_cross(centroid, 0.38, camera, 0.82),
         simplices.markers(corners, ink(wall_colour), charts.MARKER_PX / 2, camera),
         *ringed(corners[index][None], accent_colour, highlight_radius, camera),
         simplices.strokes(stack((centroid.broadcast_to((2,)), tips), axis=-1).reshape(-1),
-                          simplices.Mesh.chains([2, 2]), np.stack((ink(primal_colour), ink(accent_colour))), bold_px,
+                          simplices.Topology.chains([2, 2]), np.stack((ink(primal_colour), ink(accent_colour))), bold_px,
                           camera, cap=simplices.Cap.BUTT),
         *ringed(tips[:1], primal_colour, charts.MARKER_PX / 2, camera),
         *ringed(tips[1:], accent_colour, charts.MARKER_PX / 2, camera),
@@ -214,14 +214,14 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
     # Seeds along the edge, drawn a little in towards the centroid.
     start, end = corners[tails[edge_index]], corners[heads[edge_index]]      # [] Point-, Point-
     fractions = np.linspace(0.06, 0.94, n_streamlines)
-    seeds = (start * (1 - fractions) + end * fractions) * 0.85 + centroid * 0.15   # [seeds] Point-
+    seeds = (start * (1 - fractions) + end * fractions) * 0.85 + centroid * 0.15  # [seeds] Point-
     curves, chains = streamlines(corners, gradients, corner_field, seeds)
     simplices.overlay(edge_ax, [
         contours.picture(corners, core.triangle, np.zeros(3), ink(paper_colour), camera),
         simplices.strokes(corners, core.triangle, ink(wall_colour), charts.LINE_PX, camera),
         simplices.strokes(curves, chains, ink(primal_colour), charts.LINE_PX, camera),
         light_cone_cross(corners[edge_index], 0.42, camera, 0.82),
-        simplices.strokes(stack((start, end)), simplices.Mesh.chains([2]), ink(accent_colour), bold_px, camera),
+        simplices.strokes(stack((start, end)), simplices.Topology.chains([2]), ink(accent_colour), bold_px, camera),
         *ringed(corners[edge_index][None], primal_colour, highlight_radius, camera)])
 
     # Panel 3: Causal forward light-cone wake from a localized spacetime source event.
@@ -236,8 +236,8 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
     camera = panel(wake_ax, mv.x, mv.t)
     rays = null_rays(source_event, 0.0, 0.50).reshape(-1)                   # [rays * 2] Point-
     diagram(wake_ax, [
-        worldsheet(wake_vertices.batch(), wake_mesh, wake_vals, wake_limit, camera),
-        simplices.strokes(rays, simplices.Mesh.chains([2, 2]), ink(cone_colour), charts.LINE_PX, camera,
+        worldsheet(wake_vertices.batch(), topology, wake_vals, wake_limit, camera),
+        simplices.strokes(rays, simplices.Topology.chains([2, 2]), ink(cone_colour), charts.LINE_PX, camera,
                           dashes=cone_dashes, cap=simplices.Cap.BUTT, opacity=0.85),
         *ringed(source_event[None], accent_colour, highlight_radius, camera)])
     return figure
@@ -249,7 +249,7 @@ def strip_grid(vertices: core.Point, n_space: int, n_time: int) -> core.Point:
     return vertices.batch().reshape(n_time, n_space)                          # [times, space] Point-
 
 
-def coarse_grid(grid: core.Point, step_t: int, step_x: int) -> tuple[core.Point, core.Mesh]:
+def coarse_grid(grid: core.Point, step_t: int, step_x: int) -> tuple[core.Point, core.Topology]:
     """Coarse subset of spacetime mesh lines so the deforming moving-mirror grid is visible without clutter: every
     few rows and columns of the grid of events `[times, space]`, and the diagonals across their cells; their events,
     one line after another, and the chains of edges along them."""
@@ -260,7 +260,7 @@ def coarse_grid(grid: core.Point, step_t: int, step_x: int) -> tuple[core.Point,
     # Each diagonal joins a corner of a coarse cell to the corner opposite it.
     diagonals = stack((grid[:-step_t:step_t, :-step_x:step_x], grid[step_t::step_t, step_x::step_x]), axis=-1)   # [rows, columns, 2] Point-
     lines = concatenate((rows.reshape(-1), columns.reshape(-1), diagonals.reshape(-1)))
-    return lines, simplices.Mesh.chains([n_space] * rows.shape[0] + [n_times] * columns.shape[0]
+    return lines, simplices.Topology.chains([n_space] * rows.shape[0] + [n_times] * columns.shape[0]
                                         + [2] * (diagonals.shape[0] * diagonals.shape[1]))
 
 
@@ -270,18 +270,18 @@ def world_lines(grid: core.Point, opacity: float, camera: Camera) -> list[np.nda
     lines, chains = coarse_grid(grid, 18, 7)
     n_times = grid.shape[0]
     return [simplices.strokes(lines, chains, ink(wall_colour), charts.FRAME_PX, camera, opacity=opacity),
-            simplices.strokes(grid[:, 0], simplices.Mesh.chains([n_times]), ink(wall_colour), charts.LINE_PX, camera),
-            simplices.strokes(grid[:, -1], simplices.Mesh.chains([n_times]), ink(ink_colour), bold_px, camera)]
+            simplices.strokes(grid[:, 0], simplices.Topology.chains([n_times]), ink(wall_colour), charts.LINE_PX, camera),
+            simplices.strokes(grid[:, -1], simplices.Topology.chains([n_times]), ink(ink_colour), bold_px, camera)]
 
 
 @charts.style()
-def draw_moving_mirror_doppler(mesh: core.Mesh, vertices: core.Point,
+def draw_moving_mirror_doppler(topology: core.Topology, vertices: core.Point,
                                n_space: int, n_time: int,
                                wave_rate: core.Scalar, slice_energies: core.Scalar,
                                before_row: int, after_row: int) -> plt.Figure:
     """Spacetime moving-mirror worldsheet, incident vs. Doppler-compressed wave packets, and wave energy gain."""
     mv = vertices.context.multivector
-    grid = strip_grid(vertices, n_space, n_time)                             # [times, space] Point-
+    grid = strip_grid(vertices, n_space, n_time)                              # [times, space] Point-
     wave_rate_vals = np.asarray(wave_rate.batch().to_array())
     wave_rate_grid = wave_rate_vals.reshape(n_time, n_space)
     energies = np.asarray(slice_energies.to_array())
@@ -304,9 +304,9 @@ def draw_moving_mirror_doppler(mesh: core.Mesh, vertices: core.Point,
                  xlabel="space $x$", ylabel="time $t$")
     plain_axes(world_ax)
     camera = panel(world_ax, mv.x, mv.t)
-    diagram(world_ax, [worldsheet(vertices.batch(), mesh, wave_rate_vals, field_limit, camera)]
+    diagram(world_ax, [worldsheet(vertices.batch(), topology, wave_rate_vals, field_limit, camera)]
             + world_lines(grid, 0.14, camera)
-            + [simplices.strokes(grid[[before_row, after_row]].reshape(-1), simplices.Mesh.chains([n_space, n_space]),
+            + [simplices.strokes(grid[[before_row, after_row]].reshape(-1), simplices.Topology.chains([n_space, n_space]),
                                  np.repeat([ink(primal_colour), ink(accent_colour)], n_space - 1, axis=0),
                                  charts.LINE_PX, camera, dashes=cone_dashes, cap=simplices.Cap.BUTT)])
 
@@ -348,13 +348,13 @@ def draw_moving_mirror_doppler(mesh: core.Mesh, vertices: core.Point,
     return figure
 
 
-def animate_moving_mirror(mesh: core.Mesh, vertices: core.Point,
+def animate_moving_mirror(topology: core.Topology, vertices: core.Point,
                           n_space: int, n_time: int,
                           wave_rate: core.Scalar, frame_rows: Iterable[int]
                           ) -> Iterator[np.ndarray]:
     """Side-by-side spacetime worldsheet slice bar and live 1D relativistic moving-mirror cavity."""
     mv = vertices.context.multivector
-    grid = strip_grid(vertices, n_space, n_time)                             # [times, space] Point-
+    grid = strip_grid(vertices, n_space, n_time)                              # [times, space] Point-
     wave_rate_vals = np.asarray(wave_rate.batch().to_array())
     wave_rate_grid = wave_rate_vals.reshape(n_time, n_space)
     # Each row of events' places across the cavity, read by the plane x once, for the cavity at its moment.
@@ -379,7 +379,7 @@ def animate_moving_mirror(mesh: core.Mesh, vertices: core.Point,
                      xlabel="space $x$", ylabel="time $t$")
         plain_axes(world_ax)
         camera = panel(world_ax, mv.x, mv.t)
-        sheet = simplices.composited([worldsheet(vertices.batch(), mesh, wave_rate_vals, field_limit, camera)]
+        sheet = simplices.composited([worldsheet(vertices.batch(), topology, wave_rate_vals, field_limit, camera)]
                                      + world_lines(grid, 0.1, camera))
         world = diagram(world_ax, [sheet])
 
@@ -402,7 +402,7 @@ def animate_moving_mirror(mesh: core.Mesh, vertices: core.Point,
             x_slice, waveform = places[row], normalized_grid[row]
             wall_x = float(x_slice[-1])
             world.set_data(simplices.composited([
-                sheet, simplices.strokes(grid[row], simplices.Mesh.chains([n_space]), ink(accent_colour),
+                sheet, simplices.strokes(grid[row], simplices.Topology.chains([n_space]), ink(accent_colour),
                                          charts.LINE_PX, camera),
                 *ringed(grid[row, -1:], accent_colour, charts.MARKER_PX / 2, camera)]))
             beyond.set_x(wall_x)

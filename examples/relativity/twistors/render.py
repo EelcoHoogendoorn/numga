@@ -58,15 +58,15 @@ def space_view(pixels: int, *curves: core.Event) -> solids.View:
 
 
 def draw_curves(curves: core.Event, width: float, view: solids.View) -> np.ndarray:
-    """Each spatial curve as a stroke of a width in pixels, in its own colour."""
+    """Each closed spatial curve as a stroke of a width in pixels, in its own colour."""
     mv = curves.context.multivector
     Event = curves.algebra.gatype.antivector().derive.containing("u v")        # Antivector-
     space_slice = mv.t ^ (Event & -mv.t.dual())
     points = solids.origin + solids.context.include_from_algebra(space_slice(curves))
     n_curves, n_samples = int(np.prod(points.shape[:-1])), points.shape[-1]
-    # Each curve a chain of edges, each edge in its curve's colour.
-    lines = simplices.tubes(points.reshape(-1), simplices.Mesh.chains([n_samples] * n_curves),
-                            np.repeat(colours(n_curves), n_samples - 1, axis=0), width, view, solids.gloss)
+    # Each curve a closed loop of edges, each edge in its curve's colour.
+    lines = simplices.tubes(points.reshape(-1), simplices.Topology.loops([n_samples] * n_curves),
+                            np.repeat(colours(n_curves), n_samples, axis=0), width, view, solids.gloss)
     return solids.draw([], view, BACKGROUND, inks=[], translucent=[], meshes=[(lines, 1.0)])
 
 
@@ -86,7 +86,7 @@ def draw_incidence(events: core.Event, rays: core.Event) -> plt.Figure:
     view = fitted(solids.view([solids.origin[None], names, lines], 0.0, DIAGRAM_ELEVATION, DIAGRAM_AZIMUTH,
                               DIAGRAM_MARGIN, 1), panels[0])
     # The diagram's axes: rods from the origin along x, z and t, each with a ball at its tip.
-    axis_tips = solids.origin + solids.axes.dual() * extent                   # [3] Point-
+    axis_tips = solids.origin + solids.axes.dual() * extent                               # [3] Point-
     shafts = solids.rods(solids.origin, axis_tips, AXIS_WIDTH / 2 * view.pixel)
     heads = solids.ball(axis_tips, TIP_RADIUS * view.pixel)[:, None]
     for ax, points, line in zip(panels, positions, lines):

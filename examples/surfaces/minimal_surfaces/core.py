@@ -13,12 +13,12 @@ from collections.abc import Iterator
 
 import numpy as np
 
+from numga import NumpyContext
 from numga.algebras import VGA3D as ga
 from numga.sparse import spdiag
-from examples import instantiate
+from examples.util.topology import Topology
 
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, mv = mesh_module.Mesh, mesh_module.mv
+mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
 Point = ga.gatype.antivector()                                               # Antivector-
 # Mean curvature, measured against the triangles' own winding.
@@ -27,17 +27,17 @@ Curvature = ga.gatype.antipseudoscalar()                                     # A
 
 # --- math -----------------------------------------------------------------------------
 def relax_plateau(
-    mesh: Mesh, initial_vertices: Point, step_size: float, n_steps: int,
+    topology: Topology, initial_vertices: Point, step_size: float, n_steps: int,
 ) -> Iterator[tuple[Point, Scalar, Curvature]]:
     """The surface at each damped harmonic step towards least area, its boundary wire held, with its total area and
     its mean curvature at the vertices, zero on the wire."""
-    corners = mesh.incidence[2, 0]                                           # [corners] Scalar+[faces <- vertices]
-    interior = mesh.reading(mesh.interior(0))                                # Scalar+[interior <- vertices]
-    exterior = mesh.reading(mesh.exterior(0))                                # Scalar+[exterior <- vertices]
+    corners = topology.incidence[2, 0]                                       # [corners] Scalar+[faces <- vertices]
+    interior = topology.reading(topology.interior[0])                        # Scalar+[interior <- vertices]
+    exterior = topology.reading(topology.exterior[0])                        # Scalar+[exterior <- vertices]
     wire = exterior * initial_vertices                                       # Point-[exterior]
     vertices = initial_vertices                                              # Point-[vertices]
     for _ in range(n_steps + 1):
-        sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                 # [corners] Point-[faces]
+        sides = topology.boundary[2, 1] * (topology.d[0] * vertices)         # [corners] Point-[faces]
         patches = (sides[0] & sides[1]) / 2                                  # Patch-[faces]
         areas = patches.norm()                                               # Scalar+[faces]
         normals = patches / areas                                            # Patch-[faces]
@@ -62,16 +62,16 @@ def relax_plateau(
         vertices = (1 - step_size) * vertices + step_size * harmonic         # Point-[vertices]
 
 
-def conjugate_minimal_surface(mesh: Mesh, vertices: Point) -> tuple[Point, Point]:
+def conjugate_minimal_surface(topology: Topology, vertices: Point) -> tuple[Point, Point]:
     """The harmonic conjugate of a minimal surface, up to a translation, and the sums of the sides facing each vertex
     that it is solved from."""
-    corners = mesh.incidence[2, 0]                                           # [corners] Scalar+[faces <- vertices]
-    sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                     # [corners] Point-[faces]
+    corners = topology.incidence[2, 0]                                       # [corners] Scalar+[faces <- vertices]
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)             # [corners] Point-[faces]
     patches = (sides[0] & sides[1]) / 2                                      # Patch-[faces]
     areas = patches.norm()                                                   # Scalar+[faces]
     corner_gradients = (sides | patches.inverse()) / 2                       # [corners] Plane+[faces]
-    local_laplacian = (corner_gradients[:, None] | corner_gradients[None, :]) * areas  # [corners, corners] Scalar+[faces]
-    laplacian = (~corners[:, None] * spdiag(local_laplacian) * corners[None, :]).sum(axis=0).sum(axis=0)  # Scalar+[vertices <- vertices]
+    local_laplacian = (corner_gradients[:, None] | corner_gradients[None, :]) * areas      # [corners, corners] Scalar+[faces]
+    laplacian = (~corners[:, None] * spdiag(local_laplacian) * corners[None, :]).sum(axis=0).sum(axis=0)      # Scalar+[vertices <- vertices]
     # The corner gradients read the quarter-turned differential over each triangle as half the bare facing side:
     # the triangle's area and its normal cancel.
     boundary_flux = (~corners * sides).sum(axis=0) / 2                       # Point-[vertices]
@@ -81,13 +81,13 @@ def conjugate_minimal_surface(mesh: Mesh, vertices: Point) -> tuple[Point, Point
 
 
 def bonnet_family(
-    mesh: Mesh, vertices: Point, conjugate: Point, angles: np.ndarray,
+    topology: Topology, vertices: Point, conjugate: Point, angles: np.ndarray,
 ) -> Iterator[tuple[Point, Point]]:
     """The minimal surfaces of Bonnet's family between a minimal surface and its harmonic conjugate, one at each
     angle, each with its unit normals at the vertices, the patches of the faces around each vertex summed."""
-    corners = mesh.incidence[2, 0]
+    corners = topology.incidence[2, 0]
     for angle in angles:
-        surface = vertices * np.cos(angle) + conjugate * np.sin(angle)           # Point-[vertices]
-        sides = mesh.boundary[2, 1] * (mesh.d[0] * surface)                  # [corners] Point-[faces]
+        surface = vertices * np.cos(angle) + conjugate * np.sin(angle)       # Point-[vertices]
+        sides = topology.boundary[2, 1] * (topology.d[0] * surface)          # [corners] Point-[faces]
         normals = (~corners * (sides[0] & sides[1])).sum(axis=0).normalized()   # Patch-[vertices]
         yield surface, normals

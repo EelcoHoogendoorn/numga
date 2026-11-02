@@ -21,7 +21,7 @@ RIM, SITE = np.full(3, 0.85), np.full(3, 0.3)
 mv = planar.mv
 axes = stack((mv.x, mv.y))                                                   # [2] Plane+
 places = planar.origin + (axes.dual() * (np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]]) * 0.7)).sum(axis=-1)
-n_rim_samples = 120
+n_rim_samples = 119
 rim_radius = 0.99
 spin_height = 0.5
 # The side of each ring's panel and the room for its label below it, and the width of the spins' bars, in pixels.
@@ -59,7 +59,7 @@ def animate_ring(ratios: np.ndarray, occupation: core.Scalar) -> Iterator[np.nda
     with charts.style():
         # A ring of four sites in each panel, about 200 pixels across, over its label.
         figure = plt.figure(figsize=(ring_pixels * len(labels) / charts.DPI, (ring_pixels + label_pixels) / charts.DPI))
-        turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_rim_samples) / 2)).exp()
+        turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_rim_samples, endpoint=False) / 2)).exp()
         rim = planar.origin + (turns >> (mv.x.dual() * rim_radius))           # [rim samples] Point-
         rings = []
         for case, label in enumerate(labels):
@@ -67,7 +67,7 @@ def animate_ring(ratios: np.ndarray, occupation: core.Scalar) -> Iterator[np.nda
                                   ring_pixels / (ring_pixels + label_pixels)))
             ax.set(xlim=(-1.3, 1.3), ylim=(-1.3, 1.3), aspect="equal")
             camera = flat_panel(ax, planar.ga)
-            outline = simplices.strokes(rim, simplices.Mesh.chains([n_rim_samples]), RIM, charts.FRAME_PX, camera)
+            outline = simplices.strokes(rim, simplices.Topology.loops([n_rim_samples]), RIM, charts.FRAME_PX, camera)
             sites = simplices.markers(places, SITE, charts.MARKER_PX / 2, camera)
             rings.append((camera, outline, sites, simplices.overlay(ax, [outline, sites])))
             # The ring's label stays, its ticks and frame gone.
@@ -79,7 +79,7 @@ def animate_ring(ratios: np.ndarray, occupation: core.Scalar) -> Iterator[np.nda
         for index in range(tips.shape[1]):
             for (camera, outline, sites, shown), case_bars in zip(rings, bars[:, index]):
                 # The spin counts as bars about as wide as the sites' dots, under the sites.
-                spins = simplices.strokes(case_bars.reshape(-1), simplices.Mesh.chains([2] * n_bars), bar_colours,
+                spins = simplices.strokes(case_bars.reshape(-1), simplices.Topology.chains([2] * n_bars), bar_colours,
                                           spin_pixels, camera, cap=simplices.Cap.BUTT)
                 shown.set_data(simplices.composited([outline, spins, sites]))
             figure.canvas.draw()

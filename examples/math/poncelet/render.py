@@ -13,7 +13,7 @@ import numpy as np
 from examples.util.animation import capture
 from examples.util.wgsl import quadrics, simplices
 from examples.util.wgsl.camera import Camera, flat_panel, panel
-from examples.util.wgsl.simplices import Cap, Mesh
+from examples.util.wgsl.simplices import Cap, Topology
 from examples.math.poncelet import core
 
 mv = core.mv
@@ -58,7 +58,7 @@ def panel_pictures(planes: Camera, lines: Camera, outer: core.Quadric, inner: co
     """The ellipsoid, an inner quadric and the path of sides about it, the start orange and the last vertex ringed."""
     return [quadrics.curves(outer[None], outer_width * pixels_per_point, rgb("0.25"), planes),
             quadrics.curves(inner[None].inverse(), inner_width * pixels_per_point, rgb("#2c5d9e"), lines),
-            simplices.strokes(vertices, Mesh.chains([len(vertices)]), rgb("#c0392b"), path_width * pixels_per_point,
+            simplices.strokes(vertices, Topology.chains([len(vertices)]), rgb("#c0392b"), path_width * pixels_per_point,
                               planes, cap=Cap.PROJECTING),
             # The last vertex's ring, a white dot over a larger red one, under the start's dot, which it rings where
             # the path closes.

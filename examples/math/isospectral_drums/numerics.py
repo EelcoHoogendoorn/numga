@@ -5,10 +5,8 @@ from __future__ import annotations
 import numpy as np
 
 from numga.sparse import SparseExtensor, spdiag
-from examples import instantiate
-from examples.math.isospectral_drums.core import Point, Scalar, ga, mv
-
-Mesh = instantiate("examples.util.mesh", ga).Mesh
+from examples.util.topology import Topology
+from examples.math.isospectral_drums.core import Point, Scalar, mv
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -34,15 +32,15 @@ def _samples(n_subdivisions: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, n
     return column, row, np.concatenate((lower_faces, upper_faces)), right_corners
 
 
-def triangle(n_subdivisions: int) -> tuple[Point, Mesh]:
+def triangle(n_subdivisions: int) -> tuple[Point, Topology]:
     """The reference triangle in the sample order used by restriction maps."""
     column, row, faces, _ = _samples(n_subdivisions)
     vertices = (mv.x.dual() * (column / n_subdivisions)
                 + mv.y.dual() * (row / n_subdivisions)).field()           # Point-[samples]
-    return vertices, Mesh(len(column), faces)
+    return vertices, Topology(len(column), faces)
 
 
-def drum(tile_vertices: np.ndarray, n_lattice: int, n_subdivisions: int) -> tuple[Point, Mesh, SparseExtensor, SparseExtensor, SparseExtensor, SparseExtensor]:
+def drum(tile_vertices: np.ndarray, n_lattice: int, n_subdivisions: int) -> tuple[Point, Topology, SparseExtensor, SparseExtensor, SparseExtensor, SparseExtensor]:
     """A drum welded from a lattice of triangles, each tile three indices into the row-major square
     lattice: its vertices and mesh, its interior stencil, the maps reading and assembling its tiles, and
     the map that puts its fixed boundary back."""
@@ -69,14 +67,14 @@ def drum(tile_vertices: np.ndarray, n_lattice: int, n_subdivisions: int) -> tupl
     right_corners = np.where(winding[:, None] > 0, local_right_corners, np.array([0, 2, 1])[local_right_corners]).reshape(-1)
 
     # The fixed boundary: the vertices of the edges that border a single face; the field lives on the others.
-    mesh = Mesh(n_vertices, faces)
-    interior = mesh.interior(0)
-    read_interior = mesh.reading(interior)                                 # Scalar+[interior <- vertices]
+    topology = Topology(n_vertices, faces)
+    interior = topology.interior[0]
+    read_interior = topology.reading(interior)                             # Scalar+[interior <- vertices]
     lift = ~read_interior * Scalar                                         # (Scalar+ <- Scalar+)[vertices <- interior]
 
     # Each tile's samples read the field at their vertices, zero on the fixed boundary; welding the tiles back
     # averages the samples on each interior vertex, as many as the tiles meeting there.
-    restriction = mesh.reading(tile_nodes.reshape(-1)) * ~read_interior    # Scalar+[tile samples <- interior]
+    restriction = topology.reading(tile_nodes.reshape(-1)) * ~read_interior  # Scalar+[tile samples <- interior]
     multiplicity = ~restriction * mv.scalar(np.ones((restriction.shape[0], 1))).field()   # Scalar+[interior]
     assembly = spdiag(multiplicity.inverse()) * ~restriction * Scalar      # (Scalar+ <- Scalar+)[interior <- tile samples]
     restriction = restriction * Scalar                                     # (Scalar+ <- Scalar+)[tile samples <- interior]
@@ -84,8 +82,8 @@ def drum(tile_vertices: np.ndarray, n_lattice: int, n_subdivisions: int) -> tupl
     # Lattice neighbours are one step along a row or a column: every edge of the triangulation but the squares'
     # diagonals, each triangle's side facing its right-angled corner. They make a graph of their own; between interior
     # sites they couple both ways.
-    diagonals = mesh.face_edges[np.arange(len(faces)), right_corners]
-    lattice = Mesh(n_vertices, mesh.edges[np.setdiff1d(np.arange(mesh.n_elements[1]), diagonals)])
+    diagonals = topology.boundary_indices[1][np.arange(len(faces)), right_corners]
+    lattice = topology.subset(np.setdiff1d(np.arange(topology.n_elements[1]), diagonals), 1)
     tails, heads = (ends * ~read_interior for ends in lattice.incidence[1, 0])   # Scalar+[steps <- interior], Scalar+[steps <- interior]
     neighbors = (~tails * heads + ~heads * tails) * Scalar                 # (Scalar+ <- Scalar+)[interior <- interior]
-    return vertices, mesh, neighbors, restriction, assembly, lift
+    return vertices, topology, neighbors, restriction, assembly, lift

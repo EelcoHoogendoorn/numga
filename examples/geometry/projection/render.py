@@ -60,7 +60,7 @@ def render_shadow_scene(
     view = fitted(solids.view([body, light_corners, sun_corners, trail, point_light, sun_arrow_start, arrow_end],
                               0.0, elevation, azimuth, scene_margin, 1), ax)
     pixel = view.pixel
-    arrow = simplices.tubes(stack((sun_arrow_start, arrow_end)), simplices.Mesh.chains([2]), sun_colour, arrow_width,
+    arrow = simplices.tubes(stack((sun_arrow_start, arrow_end)), simplices.Topology.chains([2]), sun_colour, arrow_width,
                             view, gloss=solids.gloss, chevrons=np.ones(1), chevron=arrow_chevron)
     rods, joints = solids.edges(body[ends[:, 0]], body[ends[:, 1]], body_radius * pixel)
     parts = [(rods, body_colour), (joints, body_colour),
@@ -97,7 +97,7 @@ def render_stereo_scene(
     for ax in (ax_1, ax_2):
         ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
         ax.set_axis_off()
-    subject = simplices.Mesh(len(image_1), np.array(edges))
+    subject = simplices.Topology(len(image_1), np.array(edges))
     # Each rig's camera reads image points by the rig's own planes x and y, so the screen is seen as the rig sees it.
     camera_1 = panel(ax_1, rig_1 >> mv.x, rig_1 >> mv.y)
     camera_2 = panel(ax_2, rig_2 >> mv.x, rig_2 >> mv.y)
@@ -105,7 +105,7 @@ def render_stereo_scene(
     epipolar_ends = screen_line_ends(rig_2, epipolar_lines_2, widths.max())   # [corners, ends] Point-
     simplices.overlay(ax_2, [
         simplices.strokes(image_2, subject, subject_colour, subject_width, camera_2),
-        simplices.strokes(epipolar_ends.reshape(-1), simplices.Mesh.chains([2] * len(image_2)), epipolar_colour,
+        simplices.strokes(epipolar_ends.reshape(-1), simplices.Topology.chains([2] * len(image_2)), epipolar_colour,
                           epipolar_width, camera_2, opacity=epipolar_opacity),
         simplices.markers(image_2, epipolar_colour, corner_radius, camera_2)])
 

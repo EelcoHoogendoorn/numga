@@ -11,7 +11,7 @@ from matplotlib import colormaps, patheffects
 from matplotlib.colors import Normalize, to_rgb
 from matplotlib.projections.geo import MollweideAxes
 
-from numga import concatenate, stack
+from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import contours, planar, simplices
@@ -25,7 +25,7 @@ from examples.relativity.ligo import core
 SIGNED, SENSITIVE = "RdBu_r", "magma"
 SITE, LABEL, RING, REST, ARM = "#22d3ee", "#0f172a", "#0369a1", "#cbd5e1", "#f97316"
 ARM_REACH = 1.25
-REST_SAMPLES = 200
+REST_SAMPLES = 199
 RING_LIMIT = 1.5
 MAP_PX, ROW_PX, NETWORK_PX = 760, 140, (600, 160)
 SITE_RADIUS, ARM_WIDTH = charts.MARKER_PX, 2 * charts.LINE_PX
@@ -57,7 +57,7 @@ def projected(longitudes_latitudes: np.ndarray) -> np.ndarray:
     return mollweide.transform(longitudes_latitudes.reshape(-1, 2)).reshape(shape)
 
 
-def graticule() -> tuple[planar.Point, simplices.Mesh]:
+def graticule() -> tuple[planar.Point, simplices.Topology]:
     """The map's meridians, between the parallels at 75 degrees, and its parallels, straight across the map: their
     points on the map, one line after another, and the chains of edges along them."""
     cap = PARALLELS[-1]
@@ -66,16 +66,16 @@ def graticule() -> tuple[planar.Point, simplices.Mesh]:
     parallels = np.stack(np.broadcast_arrays(np.array([-np.pi, np.pi])[None, :], PARALLELS[:, None]), axis=-1)   # [parallels, 2, 2]
     places = np.concatenate([meridians.reshape(-1, 2), parallels.reshape(-1, 2)])
     return (planar.mv.point(projected(places)),
-            simplices.Mesh.chains([N_MERIDIAN_SAMPLES] * len(MERIDIANS) + [2] * len(PARALLELS)))
+            simplices.Topology.chains([N_MERIDIAN_SAMPLES] * len(MERIDIANS) + [2] * len(PARALLELS)))
 
 
 def outline() -> planar.Point:
-    """The map's rim, the meridian at the antimeridian on both sides, up the left and down the right, closed: its points
-    on the map."""
+    """The map's rim, the meridian at the antimeridian on both sides, up the left and down the right: its points on the
+    map, a closed loop of them."""
     latitudes = np.linspace(-np.pi / 2, np.pi / 2, N_OUTLINE_SAMPLES)
     left = np.stack(np.broadcast_arrays(-np.pi, latitudes), axis=-1)
     right = np.stack(np.broadcast_arrays(np.pi, latitudes[::-1]), axis=-1)
-    return planar.mv.point(projected(np.concatenate([left, right, left[:1]])))
+    return planar.mv.point(projected(np.concatenate([left, right])))
 
 
 def map_camera(ax: plt.Axes) -> Camera:
@@ -99,9 +99,9 @@ def sky_map(ax: plt.Axes, directions: core.Point, values: core.Scalar, cmap: str
     sites = projected(lonlat(zeniths))                                       # [sites, 2]
     camera = map_camera(ax)
     simplices.overlay(ax, [
-        contours.picture(sky, simplices.Mesh.grid(n_latitudes, n_longitudes), values, colours, camera),
+        contours.picture(sky, simplices.Topology.grid(n_latitudes, n_longitudes), values, colours, camera),
         simplices.strokes(lines, chains, np.ones(3), charts.FRAME_PX, camera, opacity=GRATICULE_OPACITY),
-        simplices.strokes(outline(), simplices.Mesh.chains([2 * N_OUTLINE_SAMPLES + 1]), np.zeros(3),
+        simplices.strokes(outline(), simplices.Topology.loops([2 * N_OUTLINE_SAMPLES]), np.zeros(3),
                           charts.FRAME_PX, camera),
         simplices.markers(planar.mv.point(sites), ink(LABEL), SITE_RADIUS + charts.FRAME_PX, camera),
         simplices.markers(planar.mv.point(sites), ink(SITE), SITE_RADIUS, camera)])
@@ -151,16 +151,15 @@ def draw_ring(ax: plt.Axes, site: core.Rotor, arms: core.Point, ring: core.Point
     # East and north at the site: the site's frame carries the planes y and z there, which the camera reads by.
     camera = panel(ax, site >> mv.y, site >> mv.z)
     # The ring at rest: the unit direction east turned all the way round through north.
-    turns = (mv.yz * (-np.linspace(0, 2 * np.pi, REST_SAMPLES) / 2)).exp()   # [samples] Rotor+
+    turns = (mv.yz * (-np.linspace(0, 2 * np.pi, REST_SAMPLES, endpoint=False) / 2)).exp()   # [samples] Rotor+
     rest = site >> (turns >> mv.y.dual())                                    # [samples] Point-
     # Each arm from the site out to its drawn reach.
     reaches = stack((0 * arms, ARM_REACH * arms), axis=-1).reshape(-1)       # [arms * 2] Point-
     n_masses = ring.shape[0]
     simplices.overlay(ax, [
-        simplices.strokes(rest, simplices.Mesh.chains([REST_SAMPLES]), ink(REST), charts.LINE_PX, camera),
-        simplices.strokes(reaches, simplices.Mesh.chains([2] * arms.shape[0]), ink(ARM), ARM_WIDTH, camera),
-        simplices.strokes(concatenate((ring, ring[:1])), simplices.Mesh.chains([n_masses + 1]), ink(RING),
-                          charts.LINE_PX, camera, opacity=0.6),
+        simplices.strokes(rest, simplices.Topology.loops([REST_SAMPLES]), ink(REST), charts.LINE_PX, camera),
+        simplices.strokes(reaches, simplices.Topology.chains([2] * arms.shape[0]), ink(ARM), ARM_WIDTH, camera),
+        simplices.strokes(ring, simplices.Topology.loops([n_masses]), ink(RING), charts.LINE_PX, camera, opacity=0.6),
         simplices.markers(ring, ink(RING), charts.MARKER_PX / 2, camera)])
 
 

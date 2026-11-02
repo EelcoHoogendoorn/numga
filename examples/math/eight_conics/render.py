@@ -16,7 +16,7 @@ from examples.util.animation import capture
 from examples.util.wgsl import simplices
 from examples.util.wgsl.quadrics import curves
 from examples.util.wgsl.camera import Camera, flat_panel
-from examples.util.wgsl.simplices import Cap, Mesh
+from examples.util.wgsl.simplices import Cap, Topology
 from examples.math.eight_conics import core
 
 # The eighth quadric, its three neighbours, and the other four; the contact points of a single pair.
@@ -77,7 +77,7 @@ def marks(points: core.Point, colours: np.ndarray, camera: Camera) -> list[np.nd
 
 def contact_strokes(ends: core.Point, colour: np.ndarray, opacity: float, camera: Camera) -> np.ndarray:
     """A contact plane as a dashed segment between its ends `[ends]`."""
-    return simplices.strokes(ends, Mesh.chains([2]), colour, plane_width, camera, dashes=plane_dashes, cap=Cap.BUTT,
+    return simplices.strokes(ends, Topology.chains([2]), colour, plane_width, camera, dashes=plane_dashes, cap=Cap.BUTT,
                              opacity=opacity)
 
 

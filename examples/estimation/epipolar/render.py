@@ -12,6 +12,7 @@ import numpy as np
 
 from numga import concatenate
 from examples.estimation.epipolar.core import Motor, Point, mv
+from examples.util.topology import Topology
 from examples.util.wgsl import solids
 
 # Camera 1, blue, camera 2 where it is, grey, and where the search puts it, green; the true landmarks, grey.
@@ -39,7 +40,9 @@ def camera_edges(pose: Motor) -> tuple[Point, Point]:
     local = mv.point(np.concatenate([[[0.0, 0.0, 0.0]], np.c_[corners, np.full(4, camera_depth)]]))
     vertices = display >> (pose >> local)                                    # [vertices] Point-
     eye, ring = vertices[:1], vertices[1:]
-    return concatenate([eye.broadcast_to(ring.shape), ring]), concatenate([ring, ring[np.roll(np.arange(4), -1)]])
+    # The screen's rim, each corner joined to the next.
+    tails, heads = (Topology.loops([4]).incidence[1, 0] * ring.field()).batch()   # [corners] Point-, Point-
+    return concatenate([eye.broadcast_to(ring.shape), tails]), concatenate([ring, heads])
 
 
 def animate_reconstruction(landmarks: Point, edges: np.ndarray, true_motor: Motor,

@@ -94,20 +94,20 @@ def icosahedron():
         [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
         [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
     ])
-    return core.Mesh(len(positions), faces), mv.point(positions).field()
+    return core.Topology(len(positions), faces), mv.point(positions).field()
 
 
 def test_repeated_collapses_preserve_closed_mesh_and_original_plane_error():
-    mesh, vertices = icosahedron()
-    initial_corners = mesh.incidence[2, 0] * vertices
+    topology, vertices = icosahedron()
+    initial_corners = topology.incidence[2, 0] * vertices
     initial_planes = (initial_corners[0] & initial_corners[1] & initial_corners[2]).normalized()
-    clusters = [{index} for index in range(mesh.n_vertices)]
+    clusters = [{index} for index in range(topology.n_vertices)]
     targets = (18, 16, 14, 12)
-    snapshots = list(core.simplify(mesh, vertices, targets))
-    assert [len(mesh.faces) for mesh, _ in snapshots] == [20, *targets]
+    snapshots = list(core.simplify(topology, vertices, targets))
+    assert [topology.n_elements[2] for topology, _ in snapshots] == [20, *targets]
 
-    for (old_mesh, old_vertices), (new_mesh, new_vertices) in zip(snapshots, snapshots[1:]):
-        old_faces, new_faces = old_mesh.faces, new_mesh.faces
+    for (old_topology, old_vertices), (new_topology, new_vertices) in zip(snapshots, snapshots[1:]):
+        old_faces, new_faces = old_topology.elements[2], new_topology.elements[2]
         old_vertices, new_vertices = old_vertices.batch(), new_vertices.batch()
         np.testing.assert_allclose((mv.w & new_vertices).to_array(), 1, atol=1e-12)
         assert np.isfinite(new_vertices.kernel).all()
@@ -116,9 +116,9 @@ def test_repeated_collapses_preserve_closed_mesh_and_original_plane_error():
         assert len(np.unique(np.sort(new_faces, axis=1), axis=0)) == len(new_faces)
         assert np.all(np.diff(np.sort(new_faces, axis=1), axis=1) > 0)
         # Every edge lies between two faces, and the surface is a sphere.
-        faces_at_edges = ~new_mesh.incidence[2, 1].sum(axis=0) * core.as_scalar(np.ones(len(new_faces))).field()
+        faces_at_edges = ~new_topology.incidence[2, 1].sum(axis=0) * mv.scalar(np.ones(len(new_faces))[..., None]).field()
         np.testing.assert_array_equal(faces_at_edges.to_array(), 2)
-        assert new_mesh.n_vertices - len(new_mesh.edges) + len(new_faces) == 2
+        assert new_topology.n_vertices - new_topology.n_elements[1] + len(new_faces) == 2
 
         # Unmoved vertices identify the two merged clusters even after compact renumbering.
         equal = np.all(old_vertices.kernel[:, None, :] == new_vertices.kernel[None, :, :], axis=-1)
@@ -138,8 +138,8 @@ def test_repeated_collapses_preserve_closed_mesh_and_original_plane_error():
         mapped_faces = old_to_new[old_faces]
         surviving_mask = np.all(np.diff(np.sort(mapped_faces, axis=1), axis=1) > 0, axis=1)
         assert set(map(tuple, np.sort(mapped_faces[surviving_mask], axis=1))) == set(map(tuple, np.sort(new_faces, axis=1)))
-        old_corners = core.Mesh(old_mesh.n_vertices, old_faces[surviving_mask]).incidence[2, 0] * old_vertices.field()
-        new_corners = core.Mesh(new_mesh.n_vertices, mapped_faces[surviving_mask]).incidence[2, 0] * new_vertices.field()
+        old_corners = old_topology.subset(surviving_mask).incidence[2, 0] * old_vertices.field()
+        new_corners = core.Topology(new_topology.n_vertices, mapped_faces[surviving_mask]).incidence[2, 0] * new_vertices.field()
         old_planes = old_corners[0] & old_corners[1] & old_corners[2]
         new_planes = new_corners[0] & new_corners[1] & new_corners[2]
         assert np.all((old_planes | new_planes) > 0)
@@ -147,8 +147,8 @@ def test_repeated_collapses_preserve_closed_mesh_and_original_plane_error():
         # The replacement vertex minimizes all initial planes inherited by its cluster, including
         # multiplicities: each initial face counts once for each of its corners in the cluster.
         # Rebuilding quadrics from the current triangles loses this condition.
-        in_cluster = core.as_scalar(np.isin(np.arange(mesh.n_vertices), list(merged_cluster))).field()
-        multiplicities = mesh.incidence[2, 0].sum(axis=0) * in_cluster                  # Scalar+[faces]
+        in_cluster = mv.scalar(np.isin(np.arange(topology.n_vertices), list(merged_cluster))[..., None]).field()
+        multiplicities = topology.incidence[2, 0].sum(axis=0) * in_cluster              # Scalar+[faces]
         optimum = new_vertices[added_indices[0]]
         step = 1e-4
         directions = mv.point(np.eye(3)) - mv.point([0, 0, 0])

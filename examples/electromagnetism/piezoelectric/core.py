@@ -10,15 +10,16 @@ from __future__ import annotations
 
 import numpy as np
 
+from numga import NumpyContext
 from numga.algebras import STA2D as ga
 from numga.sparse import SparseExtensor, spdiag
 
-from examples import instantiate
+from examples.util.topology import Topology
 from examples.electromagnetism.piezoelectric.numerical import solve_coupled
 
 # The spacetime of the strip's plane, x+y+t-: two positive spatial directions, one negative time direction.
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, ctx, mv = mesh_module.Mesh, mesh_module.ctx, mesh_module.mv
+ctx = NumpyContext(ga)
+mv = ctx.multivector
 Scalar = ga.gatype.scalar()
 # Spatial planes read positions, displacements and polarization, their intrinsic complements.
 Plane = ga.gatype.from_blades("x y")
@@ -36,11 +37,11 @@ pole = mv.y.dual()
 
 
 # --- math -----------------------------------------------------------------------------
-def triangles(mesh: Mesh, vertices: Point) -> tuple[Scalar, Plane]:
+def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Plane]:
     """Each triangle's area, `Scalar+[faces]`, and each of its corners' shape-function gradients,
     `[corners] Plane+[faces]`."""
     # The side facing each corner, signed as the triangle's winding runs along it.
-    sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)                         # [corners] Point-[faces]
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)                 # [corners] Point-[faces]
     # Twice a triangle's signed area: its two sides joined, read against time, intrinsic as a winding is.
     double_area = (sides[0] & sides[1]) & time                                    # Scalar-[faces]
     # A corner's shape function rises from zero along the facing side to one at the corner: its gradient is the
@@ -50,10 +51,10 @@ def triangles(mesh: Mesh, vertices: Point) -> tuple[Scalar, Plane]:
     return double_area.norm() / 2, gradients
 
 
-def strain(mesh: Mesh, displacement: Point, gradients: Plane) -> Strain:
+def strain(topology: Topology, displacement: Point, gradients: Plane) -> Strain:
     """The symmetric displacement gradient on each triangle, `[faces]`, as a map from directions to stretch readings:
     a map per triangle, so read on the batch of triangles, where the adjugate acts on each map."""
-    movement = (mesh.incidence[2, 0] * displacement).batch()                      # [..., corners, faces] Point-
+    movement = (topology.incidence[2, 0] * displacement).batch()                  # [..., corners, faces] Point-
     gradient = (movement.dual_inverse() * (gradients.batch() & Point)).sum(axis=-2)
     return (gradient + gradient.adjugate()) / 2
 
@@ -96,7 +97,7 @@ def enthalpy(strain: Strain, electric: Field, elastic: Elastic, polarization: Po
     return stored - (field & (polarized & time)) - (field & (induced & time)) / 2
 
 
-def assemble(mesh: Mesh, areas: Scalar, gradients: Plane, elastic: Elastic, polarization: Polarization,
+def assemble(topology: Topology, areas: Scalar, gradients: Plane, elastic: Elastic, polarization: Polarization,
              permittivity: Permittivity, poling: Scalar, width: float
              ) -> tuple[SparseExtensor, SparseExtensor, SparseExtensor]:
     """The three blocks of electric enthalpy, as maps to the work-duals of the nodal fields."""
@@ -115,7 +116,7 @@ def assemble(mesh: Mesh, areas: Scalar, gradients: Plane, elastic: Elastic, pola
     electric_cells = -electric[:, None].adjugate()(permittivity(electric[None]) & time)
 
     weights = width * areas.batch()
-    corners = mesh.incidence[2, 0]                                                # [corners] Scalar+[faces <- vertices]
+    corners = topology.incidence[2, 0]                                            # [corners] Scalar+[faces <- vertices]
     # The pullback onto the nodes: each test corner's incidence run back, the triangles' blocks, each trial corner's
     # incidence, summed over both corners of the pair.
     return tuple((~corners[:, None] * spdiag((cells * weights).field()) * corners[None, :]).sum(axis=0).sum(axis=0)
@@ -137,7 +138,7 @@ def equilibrium(mechanical: SparseExtensor, coupling: SparseExtensor, dielectric
 
 
 # --- plumbing -------------------------------------------------------------------------
-class Strip(Mesh):
+class Strip(Topology):
     """A triangulated strip's mesh, with the vertices of its clamped edge, its tip, its bottom and top electrodes and
     its bonded interface."""
 
@@ -163,32 +164,32 @@ def strip(length: float, thickness: float, n_length: int, n_thickness: int) -> t
     faces = np.stack((first, second), axis=-2).reshape(-1, 3)
     layer = np.broadcast_to(np.where(np.arange(n_thickness) < n_thickness // 2, -1, 1), lower_left.shape)
     poling = mv.scalar(np.repeat(layer.reshape(-1), 2)[:, None]).field()
-    mesh = Strip(nodes.size, faces, nodes[0], nodes[-1], nodes[:, 0], nodes[:, -1], nodes[:, n_thickness // 2])
-    return mesh, vertices, poling
+    topology = Strip(nodes.size, faces, nodes[0], nodes[-1], nodes[:, 0], nodes[:, -1], nodes[:, n_thickness // 2])
+    return topology, vertices, poling
 
 
-def boundary_maps(mesh: Strip, floating: np.ndarray) -> tuple[SparseExtensor, SparseExtensor]:
+def boundary_maps(topology: Strip, floating: np.ndarray) -> tuple[SparseExtensor, SparseExtensor]:
     """Free displacement nodes and potential groups; the named electrode shares one free voltage."""
-    free_movement = np.setdiff1d(np.arange(mesh.n_vertices), mesh.clamped)
+    free_movement = np.setdiff1d(np.arange(topology.n_vertices), topology.clamped)
     # Each free displacement is put back at its vertex.
-    movement = ~mesh.reading(free_movement) * Point
-    interior = np.setdiff1d(np.arange(mesh.n_vertices), np.concatenate((mesh.top, mesh.bottom)))
+    movement = ~topology.reading(free_movement) * Point
+    interior = np.setdiff1d(np.arange(topology.n_vertices), np.concatenate((topology.top, topology.bottom)))
     potential_nodes = np.concatenate((interior, floating))
     # Each interior node reads a voltage of its own, and the floating electrode's nodes all read the one after them.
     groups = np.concatenate((np.arange(len(interior)), np.full(len(floating), len(interior))))
     n_voltages = len(interior) + int(len(floating) > 0)
-    voltage = ~mesh.reading(potential_nodes) * SparseExtensor.selection(ctx, groups, n_voltages) * Scalar
+    voltage = ~topology.reading(potential_nodes) * SparseExtensor.selection(ctx, groups, n_voltages) * Scalar
     return movement, voltage
 
 
-def electrode_potential(mesh: Strip, voltage: float) -> Scalar:
-    values = np.zeros(mesh.n_vertices)
-    values[mesh.top] = voltage
+def electrode_potential(topology: Strip, voltage: float) -> Scalar:
+    values = np.zeros(topology.n_vertices)
+    values[topology.top] = voltage
     return mv.scalar(values[:, None]).field()
 
 
-def tip_load(mesh: Strip, force: float) -> Plane:
-    weights = np.zeros(mesh.n_vertices)
-    weights[mesh.tip] = 1
-    weights[mesh.tip[[0, -1]]] = 0.5
+def tip_load(topology: Strip, force: float) -> Plane:
+    weights = np.zeros(topology.n_vertices)
+    weights[topology.tip] = 1
+    weights[topology.tip[[0, -1]]] = 0.5
     return (mv.y * (force * weights / weights.sum())).field()

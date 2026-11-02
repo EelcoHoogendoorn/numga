@@ -42,7 +42,7 @@ def animate_tracking(states: Iterable, room: float = VIEW_ROOM) -> Iterator[np.n
     for boxes, target, tip in chain([first], states):
         # The tip's path up to this frame's tip.
         path.append(tip)
-        trail = simplices.tubes(stack(path), simplices.Mesh.chains([len(path)]), TARGET_COLOUR, TRAIL_WIDTH, view,
+        trail = simplices.tubes(stack(path), simplices.Topology.chains([len(path)]), TARGET_COLOUR, TRAIL_WIDTH, view,
                                 gloss=solids.gloss)
         ball = solids.ball(target, TARGET_RADIUS * view.pixel)[None, None]      # [1, 1] Plane+ <- Point-
         # Each link a solid bounded by the planes of its box's faces, through its corners.

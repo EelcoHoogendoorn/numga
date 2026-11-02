@@ -40,11 +40,11 @@ def draw_diagram(simple_roots: Vector, ranks: np.ndarray, names: tuple[str, ...]
     # A bracket under the first stage's six nodes.
     bracket = layout.point([[0, -0.3], [0, -0.4], [4, -0.4], [4, -0.3]])       # [corners] Point-
     simplices.overlay(ax, [
-        simplices.strokes(nodes, simplices.Mesh(len(positions), np.stack([first, second], axis=-1)), edge_colours,
+        simplices.strokes(nodes, simplices.Topology(len(positions), np.stack([first, second], axis=-1)), edge_colours,
                           charts.LINE_PX, camera, opacity=diagram_opacity),
         simplices.markers(nodes, np.array(to_rgb(background)), node_radius + charts.FRAME_PX, camera),
         simplices.markers(nodes, family_colours[stages], node_radius, camera),
-        simplices.strokes(bracket, simplices.Mesh.chains([4]), family_colours[0], charts.FRAME_PX, camera)])
+        simplices.strokes(bracket, simplices.Topology.chains([4]), family_colours[0], charts.FRAME_PX, camera)])
     for index, position in enumerate(positions):
         ax.text(*position, str(index + 1), color=background, fontsize=charts.points(charts.TICK_PX), ha="center",
                 va="center", zorder=4)
@@ -85,7 +85,7 @@ def draw_nested_roots(root_systems: tuple[Vector, ...], horizontal: Vector, vert
     # The camera reads roots, vectors, as they are, along the drawing plane's two directions: `root & horizontal.dual()`
     # is `horizontal | root`. The edges a faint haze, a frame's width.
     camera = panel(ax, horizontal.dual(), vertical.dual())
-    neighbours = simplices.Mesh(len(roots), np.stack([first, second], axis=-1))
+    neighbours = simplices.Topology(len(roots), np.stack([first, second], axis=-1))
     simplices.overlay(ax, [
         simplices.strokes(roots, neighbours, family_colours[edge_stages], charts.FRAME_PX, camera,
                           opacity=haze_opacity),

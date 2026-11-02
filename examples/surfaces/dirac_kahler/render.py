@@ -62,10 +62,10 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 
 
 # --- plumbing -------------------------------------------------------------------------
-def at_vertices(mesh: core.Mesh, field: Extensor) -> Extensor:
+def at_vertices(topology: core.Topology, field: Extensor) -> Extensor:
     """Face fields averaged at each vertex over the faces at it, for drawing `X[faces]` as `X[vertices]`."""
-    corners = ~mesh.incidence[2, 0].sum(axis=0)                                # Scalar+[vertices <- faces]
-    ones = field.context.multivector.scalar(np.ones((len(mesh.faces), 1))).field()   # Scalar+[faces]
+    corners = ~topology.incidence[2, 0].sum(axis=0)                            # Scalar+[vertices <- faces]
+    ones = field.context.multivector.scalar(np.ones((topology.n_elements[2], 1))).field()  # Scalar+[faces]
     return (corners * field) / (corners * ones)
 
 
@@ -82,14 +82,14 @@ def frame_panel(ax: plt.Axes, vertices: core.Point) -> None:
     ax.set_axis_off()
 
 
-def level_curves(mesh: core.Mesh, vertices: core.Point, potential: core.Scalar, camera: Camera) -> np.ndarray:
+def level_curves(topology: core.Topology, vertices: core.Point, potential: core.Scalar, camera: Camera) -> np.ndarray:
     """Sparse level curves distinguish crossing a potential from following a stream potential: their picture."""
     values = np.asarray(potential.batch().to_array())
     bound = np.abs(values).max()
     # An even count of levels at even steps across four fifths of the bound either side of zero, none at zero.
     spacing = 1.6 * bound / (n_contours - 1)
     levels = contours.Lines(spacing, spacing / 2, np.append(to_rgb(contour_colour), 0.7), 1.0)
-    return contours.picture(vertices.batch(), mesh, values, np.zeros(3), camera, lines=(levels,), opacity=0.0)
+    return contours.picture(vertices.batch(), topology, values, np.zeros(3), camera, lines=(levels,), opacity=0.0)
 
 
 def panel_figure() -> tuple[plt.Figure, np.ndarray]:
@@ -99,60 +99,60 @@ def panel_figure() -> tuple[plt.Figure, np.ndarray]:
     return figure, axes.reshape(-1)
 
 
-def draw_dirac_grades(mesh: core.Mesh, vertices: core.Point,
+def draw_dirac_grades(topology: core.Topology, vertices: core.Point,
                       vertex_multivector: core.Full, scalar_gradient: core.Plane, face_dirac: core.Full,
                       whitney_multivector: core.Full) -> plt.Figure:
     """The scalar and circulating parts, their sum, and a Whitney reconstruction share a streak-length scale."""
     fields = stack((scalar_gradient.dual(), (face_dirac.select[1] - scalar_gradient).dual(),
                     face_dirac.select[1].dual(), whitney_multivector.select[1].dual()))
-    return field_panels(mesh, vertices, fields, (flow_colours[1], flow_colours[2], flow_colours[0], flow_colours[3]),
+    return field_panels(topology, vertices, fields, (flow_colours[1], flow_colours[2], flow_colours[0], flow_colours[3]),
                         0, vertex_multivector.select[0])
 
 
-def field_panels(mesh: core.Mesh, vertices: core.Point, fields: core.Point, colours: tuple[str, ...],
+def field_panels(topology: core.Topology, vertices: core.Point, fields: core.Point, colours: tuple[str, ...],
                  contoured: int, potential: core.Scalar) -> plt.Figure:
     """Face fields interpolated for drawing on identical panels with one magnitude scale, each over a quiet domain
     under its boundary; the level curves of a potential under the flow of one panel."""
-    directions = at_vertices(mesh, fields).batch()
+    directions = at_vertices(topology, fields).batch()
     points = vertices.batch()
     reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
     figure, axes = panel_figure()
     # A quiet domain, and its boundary, the mesh of its boundary's edges, leave the flow paths as the main drawing.
-    rim = simplices.Mesh(len(points), mesh.edges[mesh.boundary_edges])
+    rim = topology.border
     for index, (ax, field, colour) in enumerate(zip(axes, directions, colours)):
         frame_panel(ax, vertices)
         camera = flat_panel(ax, points.algebra)
-        levels = [level_curves(mesh, vertices, potential, camera)] if index == contoured else []
-        simplices.overlay(ax, [contours.picture(points, mesh, np.zeros(len(points)), np.array(to_rgb(domain_colour)),
+        levels = [level_curves(topology, vertices, potential, camera)] if index == contoured else []
+        simplices.overlay(ax, [contours.picture(points, topology, np.zeros(len(points)), np.array(to_rgb(domain_colour)),
                                                 camera)]
                           + levels
-                          + [flow.layer(points, mesh, field, camera, reference_speed, np.array(to_rgb(colour))),
+                          + [flow.layer(points, topology, field, camera, reference_speed, np.array(to_rgb(colour))),
                              simplices.strokes(points, rim, np.array(to_rgb(wall_colour)), wall_width, camera)])
     return figure
 
 
-def draw_hodge_decomposition(mesh: core.Mesh, vertices: core.Point,
+def draw_hodge_decomposition(topology: core.Topology, vertices: core.Point,
                              total_flow: core.Point, potential: core.Scalar, potential_flow: core.Point,
                              stream_flow: core.Point, harmonic_flow: core.Point) -> plt.Figure:
     """The total velocity separates into source-to-sink paths, local eddies, and circulation around the hole."""
     fields = stack((total_flow, potential_flow, stream_flow, harmonic_flow))
-    return field_panels(mesh, vertices, fields, flow_colours, 1, potential)
+    return field_panels(topology, vertices, fields, flow_colours, 1, potential)
 
 
-def wave_relief(mesh: core.Mesh, vertices: core.Point, heights: core.Scalar, channels: list[core.Scalar],
+def wave_relief(topology: core.Topology, vertices: core.Point, heights: core.Scalar, channels: list[core.Scalar],
                 colour: meshes.Colour, view: solids.View) -> np.ndarray:
     """Signed wave amplitude `Scalar+[vertices]` lifts a neutral annulus out of the drawing plane, coloured by the
     channels `Scalar+[vertices]` at the corners of its faces; both grade panels share its height and contour
     spacing."""
     # The annulus raised along z by its heights, and its rim, the mesh of its boundary's edges, raised and at rest.
     rest = solids.origin + solids.context.include_from_algebra(vertices.batch())                # [vertices] Point-
-    elevated = rest + sm.z.dual() * solids.context.include_from_algebra((relief_height * heights).batch())   # [vertices] Point-
-    rim = simplices.Mesh(len(rest), mesh.edges[mesh.boundary_edges])
+    elevated = rest + sm.z.dual() * solids.context.include_from_algebra((relief_height * heights).batch())  # [vertices] Point-
+    rim = topology.border
     # The channels at each corner of each face, faces first, for the shader.
-    corner_values = np.stack([(mesh.incidence[2, 0] * channel).batch().to_array() for channel in channels],
+    corner_values = np.stack([(topology.incidence[2, 0] * channel).batch().to_array() for channel in channels],
                              axis=-1).transpose(1, 0, 2)                       # [faces, corners, channels]
-    surface = meshes.samples(elevated, mesh.faces, corner_values,
-                              meshes.smooth(elevated, mesh), view,
+    surface = meshes.samples(elevated, topology.elements[2], corner_values,
+                              meshes.smooth(elevated, topology), view,
                               face_values=np.zeros(1), colour=colour, gloss=0.14)
     edge = simplices.tubes(elevated, rim, np.array([0.24, 0.32, 0.35]), 1.25, view, solids.gloss)
     # A faint undisturbed rim gives height a fixed reference through crests and troughs.
@@ -161,7 +161,7 @@ def wave_relief(mesh: core.Mesh, vertices: core.Point, heights: core.Scalar, cha
                        meshes=[(surface, 1.0), (edge, 1.0), (baseline, 0.35)])
 
 
-def animate_dirac_waves(mesh: core.Mesh, vertices: core.Point,
+def animate_dirac_waves(topology: core.Topology, vertices: core.Point,
                         frames: Iterable[tuple[core.Even, core.Plane]]) -> Iterator[np.ndarray]:
     """Signed scalar and bivector reliefs flank a combined RGB field: red scalar, green 1-form, blue bivector."""
     mv = vertices.context.multivector
@@ -174,12 +174,12 @@ def animate_dirac_waves(mesh: core.Mesh, vertices: core.Point,
     separator = np.full((n_panel_pixels, panel_gap, 3), 255, dtype=np.uint8)
     for even_state, face_field in chain(((first_even, first_face_field),), frames):
         scalar = even_state.select[0] / amplitude_scale                       # Scalar+[vertices]
-        bivector = (even_state.select[2] & mv.xy.dual()) / amplitude_scale     # Scalar+[vertices]
-        vertex_speed = at_vertices(mesh, face_field.norm()) / amplitude_scale  # Scalar+[vertices]
+        bivector = (even_state.select[2] & mv.xy.dual()) / amplitude_scale    # Scalar+[vertices]
+        vertex_speed = at_vertices(topology, face_field.norm()) / amplitude_scale  # Scalar+[vertices]
         # The size of the three together sets the combined panel's height and brightness.
-        amplitude = (scalar.squared() + vertex_speed.squared() + bivector.squared()).square_root()   # Scalar+[vertices]
-        scalar_image = wave_relief(mesh, vertices, scalar, [scalar], scalar_surface, view)
-        mixed_image = wave_relief(mesh, vertices, amplitude, [scalar, vertex_speed, bivector, amplitude],
+        amplitude = (scalar.squared() + vertex_speed.squared() + bivector.squared()).square_root()  # Scalar+[vertices]
+        scalar_image = wave_relief(topology, vertices, scalar, [scalar], scalar_surface, view)
+        mixed_image = wave_relief(topology, vertices, amplitude, [scalar, vertex_speed, bivector, amplitude],
                                   mixed_surface, view)
-        bivector_image = wave_relief(mesh, vertices, bivector, [bivector], bivector_surface, view)
+        bivector_image = wave_relief(topology, vertices, bivector, [bivector], bivector_surface, view)
         yield np.concatenate((scalar_image, separator, mixed_image, separator, bivector_image), axis=1)

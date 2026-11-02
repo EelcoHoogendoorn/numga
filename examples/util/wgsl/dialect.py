@@ -1202,14 +1202,13 @@ class Compiler:
         return self.operation(name, lambda x, *xs: getattr(x, name)(*xs), [base] + arguments, line)
 
     def exponential(self, line: int, base: Value, scope: list[dict]) -> Value:
-        """The exponential of a value: where its square is a scalar, a turn, a boost or a translation, by
-        the trigonometric, hyperbolic or linear series its square selects; otherwise, as numga's default,
-        by scaling and squaring."""
-        if base.text is None:
-            return self.constant(base.constant.exp())
+        """The exponential of a value whose square is a scalar: a turn, a boost or a translation, by
+        the trigonometric, hyperbolic or linear series its square selects."""
         square = self.method(line, base, "squared", [], scope)
         if not self.is_scalar(square):
-            return self.scaled_and_squared(line, base, scope)
+            raise self.error(line, f"the shader exponentiates only values that square to a scalar, not a {base.type}")
+        if base.text is None:
+            return self.constant(base.constant.exp())
         key = ("exp", base.type)
         if key not in self.helpers:
             name = f"ga_exp_{len(self.helpers)}"
@@ -1222,32 +1221,6 @@ class Compiler:
                     f"    let s = {square_inside.text};\n    let r = {size};\n"
                     f"    let c = {even};\n    let k = {odd};\n    return {result.text};\n}}\n")
             self.helpers[key] = (name, code, result.type)
-        name, _, kind = self.helpers[key]
-        return Value(f"{name}({self.text(base)})", kind)
-
-    def scaled_and_squared(self, line: int, base: Value, scope: list[dict]) -> Value:
-        """The exponential of any value as numga's default takes it: the eighth-order Taylor step of the value
-        scaled down by 2**8, by Horner, squared eight times; such as a double rotation of four dimensions."""
-        key = ("exp", base.type)
-        if key not in self.helpers:
-            name = f"ga_exp_{len(self.helpers)}"
-            n_squarings, order = 8, 8
-            one = Value("1.0", _ABSTRACT, 1.0)
-            scaled = self.binary(line, "*", Value("a", base.type), Value(repr(0.5 ** n_squarings), _ABSTRACT, 0.5 ** n_squarings))
-            lines = [f"    let x = {scaled.text};"]
-            x = Value("x", scaled.type)
-            step = self.binary(line, "+", one, self.binary(line, "/", x, Value(repr(float(order)), _ABSTRACT, float(order))))
-            for k in range(order - 1, 0, -1):
-                lines.append(f"    let taylor_{k} = {step.text};")
-                current = Value(f"taylor_{k}", step.type)
-                step = self.binary(line, "+", one, self.binary(line, "/", self.binary(line, "*", x, current),
-                                                                 Value(repr(float(k)), _ABSTRACT, float(k))))
-            for k in range(n_squarings):
-                lines.append(f"    let squared_{k} = {step.text};")
-                step = self.method(line, Value(f"squared_{k}", step.type), "squared", [], scope)
-            code = (f"fn {name}(a: {self.wgsl(base.type)}) -> {self.wgsl(step.type)} {{\n" + "\n".join(lines)
-                    + f"\n    return {step.text};\n}}\n")
-            self.helpers[key] = (name, code, step.type)
         name, _, kind = self.helpers[key]
         return Value(f"{name}({self.text(base)})", kind)
 

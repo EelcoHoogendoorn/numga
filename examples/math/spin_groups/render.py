@@ -43,7 +43,7 @@ def orbit_samples(orbits: solids.Point, width: float, view: solids.View) -> mesh
     every sample."""
     n_orbits, n_points = int(np.prod(orbits.shape[:-1])), orbits.shape[-1]
     # Each orbit a chain of edges through its points, each edge in its orbit's colour.
-    chains = simplices.Mesh.chains([n_points] * n_orbits)
+    chains = simplices.Topology.chains([n_points] * n_orbits)
     shades = np.repeat(colours(orbits.shape[:2]).reshape(-1, 3), n_points - 1, axis=0)   # [edges, 3]
     return simplices.tubes(orbits.reshape(-1), chains, shades, width, view, gloss=solids.gloss)
 

@@ -116,7 +116,7 @@ def draw_transfer(asymmetries: np.ndarray, transferred: core.Scalar, names: tupl
 DIALS = (0, 2, 3, 5)
 # The side of each dial, and the room for the row labels on the left and the column labels below, in pixels.
 dial_pixels, label_pixels, foot_pixels = 100, 50, 30
-n_rim_samples = 120
+n_rim_samples = 119
 mv = planar.mv
 axes = stack((mv.x, mv.y))                                                   # [2] Plane+
 # The rim's and the triplet share's inks, the tip's, and how much the traced path covers.
@@ -139,13 +139,13 @@ def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitud
     # Each configuration's amplitude as a move on its dial, its cosine part across and its sine part up: numbers of
     # the chart, read out of the dimer's algebra.
     readings = stack((cosine_amplitudes, sine_amplitudes), axis=-1).to_array()   # [cases, times, configurations, 2]
-    triplet_readings = stack((triplet_cosine, triplet_sine), axis=-1).to_array()  # [cases, times, configurations, 2]
+    triplet_readings = stack((triplet_cosine, triplet_sine), axis=-1).to_array() # [cases, times, configurations, 2]
     n_times = readings.shape[1]
     # The amplitudes of the configurations shown, a dial's in a row, its times along it.
     shown = (np.arange(count)[:, None, None], np.arange(n_times)[None, None, :], np.array(DIALS)[None, :, None])
     ends = centres[..., None] + (axes.dual() * readings[shown]).sum(axis=-1)   # [cases, dials, times] Point-
-    starts = centres[..., None] + (axes.dual() * triplet_readings[shown]).sum(axis=-1)   # [cases, dials, times] Point-
-    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_rim_samples) / 2)).exp()
+    starts = centres[..., None] + (axes.dual() * triplet_readings[shown]).sum(axis=-1)  # [cases, dials, times] Point-
+    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_rim_samples, endpoint=False) / 2)).exp()
     rims = centres[..., None] + (turns >> mv.x.dual())                         # [cases, dials, rim samples] Point-
     width, height = label_pixels + dial_pixels * columns, dial_pixels * count + foot_pixels
     colour = np.array(to_rgb(COLOURS[0]))
@@ -158,9 +158,9 @@ def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitud
         camera = flat_panel(ax, planar.ga)
         # The dials' rims and the traced paths faint, as thin as the frames.
         faces = simplices.composited([
-            simplices.strokes(rims.reshape(-1), simplices.Mesh.chains([n_rim_samples] * n_dials), RIM,
+            simplices.strokes(rims.reshape(-1), simplices.Topology.loops([n_rim_samples] * n_dials), RIM,
                               charts.FRAME_PX, camera),
-            simplices.strokes(ends.reshape(-1), simplices.Mesh.chains([n_times] * n_dials), colour, charts.FRAME_PX,
+            simplices.strokes(ends.reshape(-1), simplices.Topology.chains([n_times] * n_dials), colour, charts.FRAME_PX,
                               camera, opacity=TRACE_OPACITY)])
         simplices.overlay(ax, [faces])
         # The arrows and their tips over the faces, drawn anew each frame.
@@ -175,11 +175,11 @@ def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitud
         # The labels are drawn once; each frame draws only the dials over them, the arrows on their faces.
         figure.canvas.draw()
         background = figure.canvas.copy_from_bbox(figure.bbox)
-        arrows = simplices.Mesh.chains([3] * n_dials)
+        arrows = simplices.Topology.chains([3] * n_dials)
         shares = np.tile(np.stack((TRIPLET, colour)), (n_dials, 1))
         for index in range(n_times):
             figure.canvas.restore_region(background)
-            tips = ends[..., index]                                            # [cases, dials] Point-
+            tips = ends[..., index]                                             # [cases, dials] Point-
             shafts = stack((centres, starts[..., index], tips), axis=-1)       # [cases, dials, 3] Point-
             arrows_shown.set_data(simplices.composited([
                 simplices.strokes(shafts.reshape(-1), arrows, shares, charts.LINE_PX, camera),

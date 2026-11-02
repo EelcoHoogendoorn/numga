@@ -17,7 +17,7 @@ duration_ms = 40
 # loop, and the samples along each side of the triangle of velocities.
 n_boost_frames = 120
 MIN_RAPIDITY, MAX_RAPIDITY = 0.8, 2.0
-n_edge_samples = 32
+n_edge_samples = 31
 # Lorentz factors of the circular orbits, their steps around, and the steps between frames.
 orbit_gammas = np.array([1.25, 1.5, 1.75])
 n_orbit_steps = 450
@@ -39,7 +39,7 @@ ring_electric = 0.0
 n_ring_turns = 3
 n_ring_turn_steps = 300
 ring_stride = 6
-n_ring_samples = 128
+n_ring_samples = 127
 # The muon's spin, turning in zx, across its first momentum along y.
 muon_spin = mv.zx.dual()                                                        # [] Spin-
 # The electric fields swept at two Lorentz factors, the magic one last, over a fixed time in the lab.
@@ -153,7 +153,7 @@ def main() -> None:
     # The swell alone; the animation plays it forward and back.
     swell = (1 - np.cos(np.linspace(0, np.pi, n_boost_frames // 2 + 1))) / 2
     rapidities = MIN_RAPIDITY + (MAX_RAPIDITY - MIN_RAPIDITY) * swell
-    fractions = np.linspace(0, 1, n_edge_samples)
+    fractions = np.linspace(0, 1, n_edge_samples, endpoint=False)
     save_animation(render.animate_two_boosts(two_boosts(rapidities, fractions)), "thomas_two_boosts", duration_ms,
                    forward_then_back=True)
     velocities = orbit_velocities(orbit_gammas, n_orbit_steps)
@@ -167,7 +167,7 @@ def main() -> None:
     save_animation(render.animate_box(box_half_width, walls, bouncing(positions, path, box_spin)), "thomas_box", duration_ms)
     magic = np.sqrt(1 + 1 / muon_anomaly)
     radius = core.ring_radius(magic, ring_magnetic, ring_electric)
-    outline = (mv.xy * (-np.linspace(0, 2 * np.pi, n_ring_samples) / 2)).exp() >> (radius * mv.x.dual())
+    outline = (mv.xy * (-np.linspace(0, 2 * np.pi, n_ring_samples, endpoint=False) / 2)).exp() >> (radius * mv.x.dual())
     states = ring(magic, ring_magnetic, ring_electric, muon_anomaly, n_ring_turns, n_ring_turn_steps, ring_stride)
     save_animation(render.animate_ring(outline, states), "thomas_storage_ring", duration_ms)
     ratios = anomalous_rates(sweep_gammas[:, None], ring_magnetic, electric_fields, muon_anomaly, sweep_lab_duration, n_sweep_steps)

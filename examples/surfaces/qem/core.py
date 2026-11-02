@@ -11,13 +11,13 @@ from collections.abc import Iterator
 
 import numpy as np
 
+from numga import NumpyContext
 from numga.algebras import PGA3D
-from examples import instantiate
+from examples.util.topology import Topology
 from examples.surfaces.qem import plumbing
 
 ga = PGA3D
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, as_scalar, mv = mesh_module.Mesh, mesh_module.as_scalar, mesh_module.mv
+mv = NumpyContext(ga).multivector
 
 Point = ga.gatype.antivector()                      # Antivector-
 Plane = ga.gatype.vector()                          # Vector+
@@ -38,47 +38,47 @@ def collapse_position(quadric: Quadric, midpoint: Point) -> Point:
     return midpoint + correction                                                # [...] Point-
 
 
-def simplify(mesh: Mesh, vertices: Point, targets: np.ndarray) -> Iterator[tuple[Mesh, Point]]:
+def simplify(topology: Topology, vertices: Point, targets: np.ndarray) -> Iterator[tuple[Topology, Point]]:
     """Yield a closed triangle mesh and its QEM contractions at descending face-count targets.
 
     The initial face planes remain the reference surface: every merged vertex retains the
     sum of its initial vertices' quadrics. Each pass contracts separate neighbourhoods,
     choosing the least errors first and preserving the topology and the sense of each face.
     """
-    corners = mesh.incidence[2, 0] * vertices                                   # [corners] Point-[faces]
+    corners = topology.incidence[2, 0] * vertices                               # [corners] Point-[faces]
     planes = (corners[0] & corners[1] & corners[2]).normalized()                # Plane-[faces]
     face_quadrics = planes * (planes & Point)                                   # (Plane+ <- Point-)[faces]
     # Each vertex's quadric sums those of the faces at it.
-    quadrics = ~mesh.incidence[2, 0].sum(axis=0) * face_quadrics                # (Plane+ <- Point-)[vertices]
-    yield mesh, vertices
+    quadrics = ~topology.incidence[2, 0].sum(axis=0) * face_quadrics            # (Plane+ <- Point-)[vertices]
+    yield topology, vertices
 
     for target in targets:
-        while len(mesh.faces) > target:
-            ends = mesh.incidence[1, 0]                                         # [ends] Scalar+[edges <- vertices]
+        while topology.n_elements[2] > target:
+            ends = topology.incidence[1, 0]                                     # [ends] Scalar+[edges <- vertices]
             edge_quadrics = ends.sum(axis=0) * quadrics                         # (Plane+ <- Point-)[edges]
             midpoints = ends.mean(axis=0) * vertices                            # Point-[edges]
             # Each edge's least squares is its own, solved on the batch of edges.
-            optima = collapse_position(edge_quadrics.batch(), midpoints.batch()).field()   # Point-[edges]
+            optima = collapse_position(edge_quadrics.batch(), midpoints.batch()).field()  # Point-[edges]
             errors = edge_quadrics(optima) & optima                             # Scalar+[edges]
 
             # Test every surviving triangle in an edge's neighbourhood with that edge
             # contracted. Its plane must keep its sense and a nonzero area.
-            corners = mesh.incidence[2, 0] * vertices                           # [corners] Point-[faces]
+            corners = topology.incidence[2, 0] * vertices                       # [corners] Point-[faces]
             tail, head = ends * vertices                                        # Point-[edges], Point-[edges]
             # The side facing each corner, running with the face: joined with a point, the plane through it.
-            facing_sides = mesh.boundary[2, 1] * (tail & head)                  # [corners] Line-[faces]
-            at_edges, at_corners = plumbing.trials(mesh)
+            facing_sides = topology.boundary[2, 1] * (tail & head)              # [corners] Line-[faces]
+            at_edges, at_corners = plumbing.trials(topology)
             old_planes = at_corners.sum(axis=0) * (corners[0] & corners[1] & corners[2])    # Plane-[trials]
-            new_planes = (at_corners * facing_sides).sum(axis=0) & (at_edges * optima)     # Plane-[trials]
+            new_planes = (at_corners * facing_sides).sum(axis=0) & (at_edges * optima)      # Plane-[trials]
             valid_trials = (old_planes.scalar_product(new_planes) > 0) & (new_planes.squared() > old_planes.squared() * 1e-12)
-            failures = ~at_edges * as_scalar(~valid_trials).field()             # Scalar+[edges]
-            chosen_edges = plumbing.select_edges(mesh, errors, failures <= 0, max(1, (len(mesh.faces) - target) // 2))
+            failures = ~at_edges * mv.scalar((~valid_trials)[..., None]).field()  # Scalar+[edges]
+            chosen_edges = plumbing.select_edges(topology, errors, failures <= 0, max(1, (topology.n_elements[2] - target) // 2))
             if not len(chosen_edges):
-                raise ValueError(f"No legal contraction remains at {len(mesh.faces)} faces before target {target}.")
+                raise ValueError(f"No legal contraction remains at {topology.n_elements[2]} faces before target {target}.")
 
             # The chosen stars do not share changed faces, so their independent
             # contractions can be applied together without invalidating the face tests.
-            mesh, kept, merged = plumbing.contract(mesh, chosen_edges)
+            topology, kept, merged = plumbing.contract(topology, chosen_edges)
             vertices = kept * vertices + merged * optima                        # Point-[vertices]
             quadrics = kept * quadrics + merged * edge_quadrics                 # (Plane+ <- Point-)[vertices]
-        yield mesh, vertices
+        yield topology, vertices

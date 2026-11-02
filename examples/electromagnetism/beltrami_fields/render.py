@@ -56,15 +56,6 @@ def length(directions: core.Point) -> core.Scalar:
     return (directions & core.time).norm()
 
 
-def outward_wall(mesh: core.Mesh) -> tuple[np.ndarray, np.ndarray]:
-    """The faces on the wall of a solid mesh, `[wall]`, and their corners `[wall, 3]`, wound outward. The wall is the
-    boundary of the solid, the sum of its tetrahedra's outward faces: one on a wall face that runs outward as stored,
-    minus one on a wall face that runs inward, nothing inside."""
-    wall = mesh.exterior(2)
-    sense = (~mesh.d[2] * core.as_scalar(np.ones(mesh.n_elements[3])).field()).to_array()[wall]
-    return wall, np.where(sense[:, None] > 0, mesh.faces[wall], mesh.faces[wall][:, ::-1])
-
-
 def field_lines(centres: core.Point, volumes: core.Volume, magnetic: core.Field) -> tuple[core.Point, np.ndarray]:
     """Smooth, strictly confined magnetic field lines inside the torus `[lines, steps]`, and the shell each starts on
     `[lines]`, traced by RK4 through the field smoothed around the axis and across the tube and tapered off the wall.
@@ -75,7 +66,7 @@ def field_lines(centres: core.Point, volumes: core.Volume, magnetic: core.Field)
     # The seeds: points on circles around the tube's core, turned about the axis.
     shells = np.repeat(np.arange(len(n_seeds)), n_seeds)                      # [lines]
     # Each shell's seeds evenly spaced around the tube and around the axis alike.
-    spacing = np.concatenate([np.arange(count) * (2 * np.pi / count) for count in n_seeds])   # [lines]
+    spacing = np.concatenate([np.arange(count) * (2 * np.pi / count) for count in n_seeds])  # [lines]
     around_tube = (mv.xz * (-(seed_angles_around_tube[shells] + spacing) / 2)).exp()   # [lines] Rotor+
     around_axis = (mv.xy * (-(seed_angles_around_axis[shells] + spacing) / 2)).exp()   # [lines] Rotor+
     outward = mv.x.dual()                                                     # [] Point-
@@ -83,9 +74,9 @@ def field_lines(centres: core.Point, volumes: core.Volume, magnetic: core.Field)
 
     # Symmetrize the two outer tetrahedra of each 3-tet prism wedge to remove even/odd diagonal split alternation.
     unit_volumes = volumes / (volumes & core.time).norm()                     # Volume-[tets]
-    sites, fields = centres.batch().reshape(3, -1), (magnetic * unit_volumes).batch().reshape(3, -1)   # [3, wedges] Point-
-    sites = concatenate(((sites[0] + sites[1]) / 2, sites[2]))                # [samples] Point-
-    fields = concatenate(((fields[0] + fields[1]) / 2, fields[2]))            # [samples] Point-
+    sites, fields = centres.batch().reshape(-1, 3), (magnetic * unit_volumes).batch().reshape(-1, 3)   # [wedges, 3] Point-
+    sites = concatenate(((sites[:, 2] + sites[:, 1]) / 2, sites[:, 0]))       # [samples] Point-
+    fields = concatenate(((fields[:, 2] + fields[:, 1]) / 2, fields[:, 0]))   # [samples] Point-
 
     # Each sample's distance from the axis and height, its frame, and the field read along that frame.
     heights = mv.z & sites                                                    # [samples] Scalar+
@@ -117,8 +108,8 @@ def field_lines(centres: core.Point, volumes: core.Volume, magnetic: core.Field)
         offset = points - outward * tube_major                                # [senses, lines] Point-
         reach = length(offset)                                                # [senses, lines] Scalar+
         tube_out = offset / reach                                             # [senses, lines] Point-
-        share = (reach / tube_minor).clip(0, 1)                              # [senses, lines] Scalar+
-        out = field | tube_out                                               # [senses, lines] Scalar+
+        share = (reach / tube_minor).clip(0, 1)                               # [senses, lines] Scalar+
+        out = field | tube_out                                                # [senses, lines] Scalar+
         tapered = out * (0.5 * np.pi * share).cos().squared() - wall_pull * share**3 * typical
         field = field + tube_out * (tapered - out)                            # [senses, lines] Point-
         return field / (field.squared() + (speed_floor * typical).squared()).square_root()
@@ -149,15 +140,16 @@ def palette_blend(twist: np.ndarray, shell: np.ndarray) -> np.ndarray:
     return np.clip(blended, 0.0, 1.0)
 
 
-def render_torus_field(mesh: core.Mesh, vertices: core.Point, lines: core.Point, shells: np.ndarray,
+def render_torus_field(topology: core.Topology, vertices: core.Point, lines: core.Point, shells: np.ndarray,
                        view: solids.View) -> np.ndarray:
     """Continuous 3D magnetic field-line tubes `[lines, steps]` inside a smooth translucent toroidal cavity, each
     coloured by its shell `[lines]`."""
     # The torus's events, sliced by the observer, embedded in the renderer's projective space about its origin.
     torus_pts = solids.origin + solids.context.include_from_algebra(space_slice(vertices).batch())
-    _, b_faces = outward_wall(mesh)
-    shell_colours = np.broadcast_to(cream, b_faces.shape + (3,))
-    shell = meshes.samples(torus_pts, b_faces, shell_colours, meshes.smooth(torus_pts, meshes.Mesh(len(torus_pts), b_faces)), view,
+    # The cavity's wall, the solid's border, wound outward.
+    wall = topology.border
+    shell_colours = np.broadcast_to(cream, wall.elements[2].shape + (3,))
+    shell = meshes.samples(torus_pts, wall.elements[2], shell_colours, meshes.smooth(torus_pts, wall), view,
                            face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
 
     starts, ends = lines[:, :-1], lines[:, 1:]                                # [lines, segments] Point-
@@ -168,7 +160,7 @@ def render_torus_field(mesh: core.Mesh, vertices: core.Point, lines: core.Point,
     scene_lines = solids.origin + solids.context.include_from_algebra(space_slice(lines).batch())
     # Each field line a chain of edges through its steps.
     n_lines, n_steps = scene_lines.shape
-    chains = simplices.Mesh.chains([n_steps] * n_lines)
+    chains = simplices.Topology.chains([n_steps] * n_lines)
     tubes = simplices.tubes(scene_lines.reshape(-1), chains, seg_colours.reshape(-1, 3), line_width, view,
                             gloss=solids.gloss)
 
@@ -177,7 +169,7 @@ def render_torus_field(mesh: core.Mesh, vertices: core.Point, lines: core.Point,
 
 
 @charts.style()
-def draw_beltrami_eigenmodes(mesh: core.Mesh, vertices: core.Point, centres: core.Point,
+def draw_beltrami_eigenmodes(topology: core.Topology, vertices: core.Point, centres: core.Point,
                              volumes: core.Volume, inverse_eigenvalues: core.Scalar, mode_magnetic: core.Field,
                              shown_indices: np.ndarray) -> plt.Figure:
     """The chiral Beltrami spectrum beside 3D field-line renders of the Taylor state and a higher-order mode."""
@@ -186,8 +178,8 @@ def draw_beltrami_eigenmodes(mesh: core.Mesh, vertices: core.Point, centres: cor
     indices = np.arange(n_modes)
 
     view = solids.View(solids.aim(solids.origin, torus_elevation, torus_azimuth), np.full(2, 1.38), n_torus_pixels)
-    taylor_img = render_torus_field(mesh, vertices, *field_lines(centres, volumes, mode_magnetic[0]), view)
-    excited_img = render_torus_field(mesh, vertices, *field_lines(centres, volumes, mode_magnetic[1]), view)
+    taylor_img = render_torus_field(topology, vertices, *field_lines(centres, volumes, mode_magnetic[0]), view)
+    excited_img = render_torus_field(topology, vertices, *field_lines(centres, volumes, mode_magnetic[1]), view)
 
     width, height = charts.DESIGN_WIDTH, n_torus_pixels
     figure = plt.figure(figsize=(width / charts.DPI, height / charts.DPI))
@@ -221,7 +213,7 @@ def draw_beltrami_eigenmodes(mesh: core.Mesh, vertices: core.Point, centres: cor
     return figure
 
 
-def animate_relaxation(mesh: core.Mesh, vertices: core.Point, centres: core.Point,
+def animate_relaxation(topology: core.Topology, vertices: core.Point, centres: core.Point,
                        volumes: core.Volume, magnetic_frames: Iterable[core.Field]) -> Iterator[np.ndarray]:
     """Oblique and axial 3D views of magnetic field lines relaxing toward the coherent Taylor state."""
     oblique_view = solids.View(solids.aim(solids.origin, torus_elevation, torus_azimuth), np.full(2, 1.38), n_anim_pixels)
@@ -229,6 +221,6 @@ def animate_relaxation(mesh: core.Mesh, vertices: core.Point, centres: core.Poin
     separator = np.full((n_anim_pixels, 8, 3), 255, dtype=np.uint8)
     for magnetic in magnetic_frames:
         lines, shells = field_lines(centres, volumes, magnetic)
-        left = render_torus_field(mesh, vertices, lines, shells, oblique_view)
-        right = render_torus_field(mesh, vertices, lines, shells, axial_view)
+        left = render_torus_field(topology, vertices, lines, shells, oblique_view)
+        right = render_torus_field(topology, vertices, lines, shells, axial_view)
         yield np.concatenate((left, separator, right), axis=1)

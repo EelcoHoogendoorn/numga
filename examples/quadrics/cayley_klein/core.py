@@ -14,6 +14,7 @@ import numpy as np
 
 from numga import Extensor, NumpyContext
 from numga.algebras import PGA2D
+from examples.util.topology import Topology
 
 ga = PGA2D
 ctx = NumpyContext(ga)
@@ -51,14 +52,17 @@ def triangle(absolute: Polarity, vertices: Point) -> tuple[Plane, Scalar, Scalar
     # A triangle: its sides are joins of consecutive vertices, batched, and the angle at
     # each vertex is between the two sides leaving it. Gauss-Bonnet gives the area as the
     # angle defect.
-    neighbours = vertices[[1, 2, 0]]
+    outline = Topology.loops([3])
+    tails, heads = outline.incidence[1, 0] * vertices.field()              # Point-[sides], Point-[sides]
+    # Each vertex is the tail of the side leaving it and the head of the side arriving at it.
+    leaving, arriving = ~outline.incidence[1, 0]                           # Scalar+[vertices <- sides], Scalar+[vertices <- sides]
     # The triangle's winding, an intrinsic scalar: the joins leaving each vertex, times it, are planes, which the
     # absolute reads, and one factor on both planes of an angle leaves the angle as it is.
     winding = vertices[0] & vertices[1] & vertices[2]                      # [] Scalar-
-    to_next = (vertices & neighbours) * winding                            # [3] Plane+
-    to_prev = (vertices & vertices[[2, 0, 1]]) * winding                   # [3] Plane+
+    to_next = (leaving * ((tails & heads) * winding)).batch()              # [3] Plane+
+    to_prev = (arriving * ((heads & tails) * winding)).batch()             # [3] Plane+
     angles = invariant(angle_pairing, to_next, to_prev).clip(-1.0, 1.0).arccos()
-    lengths = invariant(distance_pairing, vertices, neighbours).clip(1.0, np.inf).arccosh()
+    lengths = invariant(distance_pairing, tails, heads).clip(1.0, np.inf).arccosh().batch()
     area = np.pi - angles.sum()
     return to_next, angles, lengths, area
 

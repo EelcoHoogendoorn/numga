@@ -11,14 +11,15 @@ import numpy as np
 
 from numga import stack
 from examples.math.pascal import core
+from examples.util.topology import Topology
 
 # The ellipsoid the five points lie on: its semi-axes along x and y, and its centre.
 semi_axes = np.array([1.6, 1.0])
 centre = np.array([0.3, -0.1])
 # Where the five points lie on it, by angle.
 five_angles = np.array([0.4, 1.44, 4.12, 4.77, 6.08])
-# The next corner of each corner of a hexagon.
-next_corner = np.array([1, 2, 3, 4, 5, 0])
+# The hexagon's outline, each corner joined to the next and the last back to the first.
+outline = Topology.loops([6])
 # The frames of the turn, the frame shown as a still, and the duration of a frame in milliseconds.
 n_frames = 180
 still = 3 * n_frames // 5
@@ -44,7 +45,8 @@ def run(five: core.Point, angles: np.ndarray) -> tuple[core.Quadric, core.Point,
     sixth = sixth.normalized()                                                 # [angles] Point-
     hexagon = stack([five[index].broadcast_to(sixth.shape) for index in range(5)] + [sixth], axis=-1)   # [angles, 6] Point-
     # Each side the join of a corner and the next; opposite sides meet in the three crossings.
-    sides = hexagon & hexagon[..., next_corner]                                # [angles, 6] Line-
+    tails, heads = outline.incidence[1, 0][:, None] * hexagon.field()          # [angles] Point-[sides], Point-[sides]
+    sides = (tails & heads).batch()                                            # [angles, 6] Line-
     crossing = sides[..., :3] ^ sides[..., 3:]                                 # [angles, 3] Crossing+
     return shape, hexagon, sides, crossing, crossing[..., 0] & crossing[..., 2]   # ..., [angles] Line-
 

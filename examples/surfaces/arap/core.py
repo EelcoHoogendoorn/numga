@@ -11,16 +11,14 @@ from collections.abc import Iterable, Iterator
 
 import numpy as np
 
-from numga import stack
+from numga import NumpyContext, stack
 from numga.algebras import VGA3D
 from numga.sparse import spdiag
-from examples import instantiate
+from examples.util.topology import Topology
 from examples.surfaces.spin_transformations.core import corner_cosines, cube
 
 ga = VGA3D
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, as_scalar = mesh_module.Mesh, mesh_module.as_scalar
-mv = mesh_module.ctx.multivector
+mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                         # Scalar+
 Point = ga.gatype.antivector()                      # Antivector-
 Rotor = ga.gatype.rotor()                           # Rotor+
@@ -28,7 +26,7 @@ Rotor = ga.gatype.rotor()                           # Rotor+
 
 # --- math -----------------------------------------------------------------------------
 def deform(
-    mesh: Mesh,
+    topology: Topology,
     rest_vertices: Point,
     handles: np.ndarray,
     poses: Iterable[Point],
@@ -38,21 +36,21 @@ def deform(
     """For each handle pose, the as-rigid-as-possible vertices after `n_iterations` alternating steps
     warm-started from the previous pose, the Laplacian-edited vertices, and the energy at each iteration."""
     # Incidence operators: oriented edge differences from tail to head, and midpoint averages across each edge.
-    T10 = mesh.d[0]                                                                 # Scalar+[edges <- vertices]
-    A10 = mesh.incidence[1, 0].mean(axis=0)                                         # Scalar+[edges <- vertices]
+    T10 = topology.d[0]                                                             # Scalar+[edges <- vertices]
+    A10 = topology.incidence[1, 0].mean(axis=0)                                     # Scalar+[edges <- vertices]
 
     rest_edges = T10 * rest_vertices                                                # Point-[edges]
     # The directed edge opposite each corner of each face, its corner cotangent from the inner product
     # over the spanned plane norm, and each edge's cotangent weight summed from its opposite corners.
-    triangle_edges = mesh.boundary[2, 1] * rest_edges                               # [corners] Point-[faces]
-    tails, heads = mesh.corners[2, 1]
+    triangle_edges = topology.boundary[2, 1] * rest_edges                           # [corners] Point-[faces]
+    tails, heads = topology.corners[2, 1]
     next_edges, prev_edges = triangle_edges[tails], triangle_edges[heads]           # [corners] Point-[faces], Point-[faces]
     cotangents = -(next_edges.dual_inverse() & prev_edges) / next_edges.commutator(prev_edges).norm()  # [corners] Scalar+[faces]
-    cotangent_weights = (~mesh.incidence[2, 1] * (cotangents / 2)).sum(axis=0)     # Scalar+[edges]
+    cotangent_weights = (~topology.incidence[2, 1] * (cotangents / 2)).sum(axis=0) # Scalar+[edges]
 
     # Diagonal weights for the edge cotangents and the handle penalty stiffness.
     H1 = spdiag(cotangent_weights)                                                  # Scalar+[edges <- edges]
-    P = spdiag(as_scalar(handles * stiffness).field())                              # Scalar+[vertices <- vertices]
+    P = spdiag(mv.scalar((handles * stiffness)[..., None]).field())                 # Scalar+[vertices <- vertices]
 
     # The cotangent Laplacian on vertex positions with the handle penalty added.
     handle_laplacian = (~T10 * H1 * T10 + P) * Point                                # (Point- <- Point-)[vertices <- vertices]
@@ -80,7 +78,7 @@ def deform(
 
 
 # --- plumbing -------------------------------------------------------------------------
-def bar(n_divisions: int, length: float) -> tuple[Mesh, Point]:
+def bar(n_divisions: int, length: float) -> tuple[Topology, Point]:
     """A closed square bar along x with cross-section width 2 and the given length, stretched from a subdivided cube."""
     box, corners = cube(n_divisions)
     return box, corners + (mv.x & corners) * mv.x.dual() * (length / 2 - 1)

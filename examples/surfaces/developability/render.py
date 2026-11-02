@@ -93,20 +93,20 @@ def camera() -> tuple[core.Extensor, core.Point]:
     return turn, (turn >> core.mv.z.dual()) * distance
 
 
-def draw(mesh: core.Mesh, vertices: core.Point) -> np.ndarray:
+def draw(topology: core.Topology, vertices: core.Point) -> np.ndarray:
     """One surface on the background, every face shaded flat by the light falling on it, `[rows, columns, 3]`."""
     turn, eye = camera()
     # Drawn at every sample of each pixel, as many to a side as the traced pictures take, and averaged on the GPU: the
     # colour premultiplied by each pixel's coverage, the background showing through the rest.
-    drawn, = shader().draw_averaged(frame_shape, samples_per_side(), 3 * len(mesh.faces),
-                                    points=vertices.batch(), faces=mesh.faces, turn=turn, eye=eye,
+    drawn, = shader().draw_averaged(frame_shape, samples_per_side(), 3 * topology.n_elements[2],
+                                    points=vertices.batch(), faces=topology.elements[2], turn=turn, eye=eye,
                                     lamp=light_direction.normalized(), half_view=half_view, colour=surface_colour,
                                     ambient=ambient)
     shown = drawn[..., :3] + (1 - drawn[..., 3:]) * background
     return np.round(np.clip(shown, 0, 1) * 255).astype(np.uint8)
 
 
-def animate_flow(mesh: core.Mesh, states: Iterable[tuple[core.Point, core.Scalar]]) -> Iterator[np.ndarray]:
+def animate_flow(topology: core.Topology, states: Iterable[tuple[core.Point, core.Scalar]]) -> Iterator[np.ndarray]:
     """Frames of a surface flowing towards developable patches."""
     for vertices, _ in states:
-        yield draw(mesh, vertices)
+        yield draw(topology, vertices)

@@ -58,7 +58,7 @@ def haloed_cross(ax, camera: Camera, across: str, up: str) -> None:
     # The cross's two lines from edge to edge of the panel, the momenta along x and along y at its limits.
     limits = np.array([ax.get_xlim(), ax.get_ylim()])                          # [2, ends]
     ends = (stack((mv.x, mv.y))[:, None] * limits).reshape(-1)                 # [4] Wavevector+
-    cross = simplices.strokes(ends, simplices.Mesh.chains([2, 2]), CROSS_COLOUR, charts.FRAME_PX, camera,
+    cross = simplices.strokes(ends, simplices.Topology.chains([2, 2]), CROSS_COLOUR, charts.FRAME_PX, camera,
                               cap=simplices.Cap.BUTT)
     simplices.overlay(ax, [cross]).set_zorder(1.5)
     halo = [patheffects.withStroke(linewidth=HALO_WIDTH, foreground="white")]
@@ -73,7 +73,7 @@ def draw_field(momenta: core.Wavevector, field: core.Field) -> plt.Figure:
     """The pseudospin field over the momentum plane: its length as shade, vanishing at the six
     corners of the zone, and its direction in the plane as streaks running downstream, which turn once around each
     corner."""
-    mesh = meshes.Mesh.grid(*momenta.shape)
+    topology = meshes.Topology.grid(*momenta.shape)
     mv = momenta.context.multivector
     # The momenta as they are, read by the displacements along x and y.
     places = momenta.reshape(-1)                                                # [samples] Wavevector+
@@ -81,7 +81,7 @@ def draw_field(momenta: core.Wavevector, field: core.Field) -> plt.Figure:
     # The field's direction, its parts in the planes yz and zx, pairings with those planes' patches, drawn as a
     # momentum along x and y.
     parts = field.normalized().reshape(-1)[:, None] & stack((mv.yz.dual(), mv.zx.dual()))   # [samples, 2] Scalar+
-    directions = (stack((mv.x, mv.y)) * parts).sum(axis=-1)                    # [samples] Wavevector+
+    directions = (stack((mv.x, mv.y)) * parts).sum(axis=-1)                     # [samples] Wavevector+
     # The zone and its six corners, and room for the cross's names.
     figure, ax = charts.subplots(340, 340, layout="constrained")
     # The zone's reach along x and y, read by pairing with the displacements along them.
@@ -90,8 +90,8 @@ def draw_field(momenta: core.Wavevector, field: core.Field) -> plt.Figure:
     ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
     camera = panel(ax, mv.x.dual(), mv.y.dual())
     colours = plt.get_cmap("viridis")(strength / strength.max())[:, :3]
-    simplices.overlay(ax, [contours.picture(places, mesh, strength, colours, camera)]).set_zorder(1)
-    simplices.overlay(ax, [flow.layer(places, mesh, directions, camera, 1.0, FIELD_STREAK_COLOUR)]).set_zorder(2)
+    simplices.overlay(ax, [contours.picture(places, topology, strength, colours, camera)]).set_zorder(1)
+    simplices.overlay(ax, [flow.layer(places, topology, directions, camera, 1.0, FIELD_STREAK_COLOUR)]).set_zorder(2)
     haloed_cross(ax, camera, "momentum x", "momentum y")
     return figure
 
@@ -142,7 +142,7 @@ def draw_bands(momenta: core.Wavevector, values: core.Scalar) -> plt.Figure:
     # The frame's arrows: rods from the corner, each with a ball at its tip.
     shafts = solids.rods(frame_corner, frame_tips, AXIS_WIDTH / 2 * view.pixel)
     heads = solids.ball(frame_tips, TIP_RADIUS * view.pixel)[:, None]
-    bands = [(meshes.samples(places, faces, shade, meshes.smooth(places, meshes.Mesh(len(places), faces)), view, face_values=np.zeros(4),
+    bands = [(meshes.samples(places, faces, shade, meshes.smooth(places, meshes.Topology(len(places), faces)), view, face_values=np.zeros(4),
                              colour=meshes.plain, gloss=0.2), 1.0)
              for places, shade in sheets]
     show(ax, solids.draw([(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR)], view, np.ones(3), inks=[], translucent=[],
@@ -175,7 +175,7 @@ def draw_textures(pseudospins_at: Callable[[core.Wavevector], core.Pseudospin], 
     parts = stack((core.mv.yz, core.mv.zx)) & pseudospins[..., None]            # [valleys, rows, columns, 2] Scalar+
     directions = (stack((core.mv.x, core.mv.y)) * parts).sum(axis=-1)          # [valleys, rows, columns] Wavevector+
     # The momenta of the pixels as they are, a grid over the momentum plane.
-    mesh = meshes.Mesh.grid(side, side)
+    topology = meshes.Topology.grid(side, side)
     places = pixels.reshape(-1)                                                     # [pixels] Wavevector+
     for ax, height, drawn in zip(panels, heights, directions):
         colours = TEXTURE_MAP((height + 1) / 2)[..., :3]
@@ -185,7 +185,7 @@ def draw_textures(pseudospins_at: Callable[[core.Wavevector], core.Pseudospin], 
         camera = panel(ax, core.mv.x.dual(), core.mv.y.dual())
         # The part in the plane as streaks running downstream, as long as that part: specks where the pseudospin
         # stands along z.
-        simplices.overlay(ax, [flow.layer(places, mesh, drawn.reshape(-1), camera, 1.0, STREAK_COLOUR)]).set_zorder(2)
+        simplices.overlay(ax, [flow.layer(places, topology, drawn.reshape(-1), camera, 1.0, STREAK_COLOUR)]).set_zorder(2)
         haloed_cross(ax, camera, "momentum x", "momentum y")
     return figure
 

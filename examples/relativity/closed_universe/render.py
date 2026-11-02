@@ -11,11 +11,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import hsv_to_rgb
 from numga import Extensor, stack
-from numga.algebras import VGA3D
 
-from examples import instantiate
 from examples.relativity.closed_universe import core
-from examples.util import charts
+from examples.util.topology import Topology, lookup_simplices
 from examples.util.wgsl import meshes, simplices, solids
 
 
@@ -274,17 +272,16 @@ fn sample(place: vec2<f32>) -> Sample {
 """
 
 
-def edge_styles(mesh, struts: np.ndarray, inks: np.ndarray) -> np.ndarray:
+def edge_styles(mesh: Topology, struts: np.ndarray, inks: np.ndarray) -> np.ndarray:
     """Each edge of each tetrahedron's colour and squared strut radius, `[tets * 6, 4]`, in the tetrahedron's own order
     of its edges: the edges `struts`, vertex pairs `[struts, 2]`, thick struts in their inks `[struts, 3]`, and every
     other edge a thin ghost."""
-    styles = np.tile(np.append(ghost_ink, ghost_radius ** 2), (len(mesh.edges), 1)).astype(np.float32)
-    # Each strut's edge, found by its two ends in either order.
-    ends = {tuple(sorted(edge)): index for index, edge in enumerate(mesh.edges.tolist())}
-    chosen = np.array([ends[tuple(sorted(strut))] for strut in struts.tolist()], dtype=int)
+    edges = mesh.elements[1]                                                    # [edges, 2]
+    styles = np.tile(np.append(ghost_ink, ghost_radius ** 2), (len(edges), 1)).astype(np.float32)
+    # Each strut's edge, and each tetrahedron's six, found by their ends.
+    chosen = lookup_simplices(edges, np.sort(struts, axis=-1))                  # [struts]
     styles[chosen] = np.concatenate([inks, np.full((len(struts), 1), rail_radius ** 2)], axis=-1)
-    edge_ids = core.mesh_module.as_scalar(np.arange(len(mesh.edges))).field()
-    tet_edges = np.rint((mesh.incidence[3, 1] * edge_ids).to_array()).astype(int).T   # [tets, 6]
+    tet_edges = lookup_simplices(edges, np.sort(mesh.elements[3][:, mesh.corners[3, 1].T], axis=-1))   # [tets, 6]
     return styles[tet_edges.reshape(-1)]
 
 
@@ -300,20 +297,20 @@ def polygon_struts(polygons: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return sides, np.repeat(hues(len(polygons)), polygons.shape[1], axis=0)
 
 
-def helix_struts(mesh, rails: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def helix_struts(mesh: Topology, rails: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """A Boerdijk–Coxeter helix's edges as struts, `[struts, 2]`, with their inks, `[struts, 3]`: its rails, closed
     polygons of vertices `[rails, sides]`, each in its own colour, and the rungs between them, every other edge with
     both ends on the rails, light."""
     sides, side_inks = polygon_struts(rails)
-    on_rails = np.isin(mesh.edges, rails).all(axis=-1)                          # [edges]
-    side_ends = {tuple(sorted(side)) for side in sides.tolist()}
-    is_side = np.array([tuple(sorted(edge)) in side_ends for edge in mesh.edges.tolist()])   # [edges]
-    rungs = mesh.edges[on_rails & ~is_side]                                     # [rungs, 2]
+    edges = mesh.elements[1]                                                    # [edges, 2]
+    on_rails = np.isin(edges, rails).all(axis=-1)                               # [edges]
+    is_side = np.isin(np.arange(len(edges)), lookup_simplices(edges, np.sort(sides, axis=-1)))   # [edges]
+    rungs = edges[on_rails & ~is_side]                                          # [rungs, 2]
     return (np.concatenate([sides, rungs]),
             np.concatenate([side_inks, np.broadcast_to(rung_ink, (len(rungs), 3))]))
 
 
-def great_polygon_struts(mesh, vertices: Extensor) -> tuple[np.ndarray, np.ndarray]:
+def great_polygon_struts(mesh: Topology, vertices: Extensor) -> tuple[np.ndarray, np.ndarray]:
     """Every edge of a mesh as a strut, `[edges, 2]`, coloured by the great circle it runs along, the colours round the
     colour wheel, `[edges, 3]`: an edge's great circle is the join of its ends, read by the planes across each pair of
     directions, up to its sense."""
@@ -323,10 +320,10 @@ def great_polygon_struts(mesh, vertices: Extensor) -> tuple[np.ndarray, np.ndarr
     readings = (stack((mv.xy, mv.xz, mv.xw, mv.yz, mv.yw, mv.zw)) & circles[:, None]).to_array()   # [edges, 6]
     signs = np.sign(readings[np.arange(len(readings)), np.abs(readings).round(9).argmax(axis=-1)])
     _, circle_of = np.unique(np.round(readings * signs[:, None], 6), axis=0, return_inverse=True)
-    return mesh.edges, hues(circle_of.max() + 1)[circle_of.reshape(-1)]
+    return mesh.elements[1], hues(circle_of.max() + 1)[circle_of.reshape(-1)]
 
 
-def inside(mesh, vertices: Extensor, waves, cameras: Extensor, eye_times: np.ndarray, styles: np.ndarray, step: float,
+def inside(mesh: Topology, vertices: Extensor, waves, cameras: Extensor, eye_times: np.ndarray, styles: np.ndarray, step: float,
            crystals: Iterable[dict]) -> Iterator[np.ndarray]:
     """Frames of the view from inside a round three-sphere meshed by tetrahedra and carrying the stepped gravitational
     waves `waves`, one for each camera and time: each camera, a motor `[frames] Motor+`, carries the origin to the eye
@@ -345,19 +342,19 @@ def inside(mesh, vertices: Extensor, waves, cameras: Extensor, eye_times: np.nda
                     dict(background=inside_background))
     ramps = waves.ramps                                                         # [corners] Plane+[tets]
     neighbours, entries = mesh.neighbours
-    _, _, steps = core.invariant_generators()                                   # [3] Antivector-
+    _, steps = core.invariant_generators()                                      # [3] Antivector-
     steps = steps.cast(core.Step)
     # The lamp, up and to the left of each eye.
     lamp = (mv.yw * 0.4 + mv.xw * -0.3).exp() >> core.origin                  # [] Point-
-    pick = mesh.picking(vertices)
+    pick = core.picking(mesh, vertices)
     half_height = float(np.tan(fov_radians / 2) * inside_shape[0] / inside_shape[1])
     n_levels, n_vertices = waves.traces.shape
     fixed = dict(
         ramps=stack(tuple(ramps.batch()), axis=-1).reshape(-1), neighbours=neighbours.astype(np.uint32).reshape(-1),
         entries=entries.astype(np.uint32).reshape(-1),
-        tet_vertices=mesh.tets.astype(np.uint32).reshape(-1), strains=waves.strains.reshape(-1),
+        tet_vertices=mesh.elements[3].astype(np.uint32).reshape(-1), strains=waves.strains.reshape(-1),
         strain_rates=waves.strain_rates.reshape(-1), traces=waves.traces.to_array().reshape(-1).astype(np.float32),
-        turns=waves.turns.reshape(-1), n_vertices=n_vertices, n_tets=len(mesh.tets), n_levels=n_levels,
+        turns=waves.turns.reshape(-1), n_vertices=n_vertices, n_tets=mesh.n_elements[3], n_levels=n_levels,
         first_time=waves.first_time, level_step=waves.level_step, origin=core.origin, equator=core.equator,
         polar=core.polar, translating=core.translating, half_height=half_height, step=step,
         max_steps=int(np.pi / step) + max_crossings, edge_style=styles, particle_ink=particle_ink, particle_radius_squared=particle_radius ** 2,
@@ -372,9 +369,10 @@ def inside(mesh, vertices: Extensor, waves, cameras: Extensor, eye_times: np.nda
         yield np.round(np.clip(image, 0.0, 1.0) * 255).astype(np.uint8)
 
 
-def crystal_frames(mesh, vertices: Extensor, bonds, states: list, saturating: float) -> Iterator[dict]:
+def crystal_frames(mesh: Topology, vertices: Extensor, bonds: Topology, states: list, saturating: float
+                   ) -> Iterator[dict]:
     """The crystals at each frame as the view from inside draws them: the atoms of `states`, `(Point-[atoms],
-    Scalar+[bonds])` per frame, balls, and their `bonds`, a graph `Mesh`, segments coloured by their strains, blue
+    Scalar+[bonds])` per frame, balls, and the edges of `bonds`, segments coloured by their strains, blue
     squeezed and red stretched, saturating at the strain `saturating`; each listed in the tetrahedra near it."""
     first_atoms, _ = states[0]
     lists = nearby(mesh, vertices, first_atoms, bonds)
@@ -384,19 +382,19 @@ def crystal_frames(mesh, vertices: Extensor, bonds, states: list, saturating: fl
         inks = strain_inks(0.5 + 0.5 * np.clip(strains.to_array() / saturating, -1, 1)).astype(np.float32)
         yield dict(particles=atoms.batch().normalized(), n_particles=atoms.batch().shape[0],
                    bond_tails=tails.batch().normalized(), bond_heads=heads.batch().normalized(), bond_inks=inks,
-                   n_bonds=len(bonds.edges), **lists)
+                   n_bonds=bonds.n_elements[1], **lists)
 
 
-def no_crystals(mesh) -> Iterator[dict]:
+def no_crystals(mesh: Topology) -> Iterator[dict]:
     """No crystals at any frame: no atoms, no bonds, and none listed in any tetrahedron."""
     nothing = core.mv.vector(np.zeros((0, 4))).dual()                           # [0] Point-
-    unlisted, starts = np.zeros(0, dtype=np.uint32), np.zeros(len(mesh.tets) + 1, dtype=np.uint32)
+    unlisted, starts = np.zeros(0, dtype=np.uint32), np.zeros(mesh.n_elements[3] + 1, dtype=np.uint32)
     return repeat(dict(particles=nothing, n_particles=0, bond_tails=nothing, bond_heads=nothing,
                        bond_inks=np.zeros((0, 4), dtype=np.float32), n_bonds=0, particle_starts=starts,
                        tet_particles=unlisted, bond_starts=starts, tet_bonds=unlisted))
 
 
-def nearby(mesh, vertices: Extensor, atoms: Extensor, bonds) -> dict[str, np.ndarray]:
+def nearby(mesh: Topology, vertices: Extensor, atoms: Extensor, bonds: Topology) -> dict[str, np.ndarray]:
     """For each tetrahedron, the atoms and the bonds near enough to it to be drawn in it, as lists one after another
     with each tetrahedron's start, `[tets + 1]` and `[listed]` for each: an atom within the tetrahedron's reach of its
     middle, the farthest of its corners, plus the atom's radius and room for its motion, and a bond whose middle is
@@ -412,11 +410,11 @@ def nearby(mesh, vertices: Extensor, atoms: Extensor, bonds) -> dict[str, np.nda
         coordinates = (spanning & points[..., None]).to_array()
         return coordinates / np.linalg.norm(coordinates, axis=-1, keepdims=True)
 
-    corners = directions(vertices.batch())[mesh.tets]                           # [tets, 4, 4]
+    corners = directions(vertices.batch())[mesh.elements[3]]                    # [tets, 4, 4]
     middles = directions((mesh.incidence[3, 0].mean(axis=0) * vertices).batch())   # [tets, 4]
     reach = np.arccos(np.clip(np.einsum("tk,tck->tc", middles, corners), -1, 1)).max(axis=-1)   # [tets]
     places = directions(atoms.batch())                                          # [atoms, 4]
-    tails, heads = places[bonds.edges[:, 0]], places[bonds.edges[:, 1]]        # [bonds, 4], [bonds, 4]
+    tails, heads = places[bonds.elements[1][:, 0]], places[bonds.elements[1][:, 1]]   # [bonds, 4], [bonds, 4]
     bond_middles = (tails + heads) / np.linalg.norm(tails + heads, axis=-1, keepdims=True)   # [bonds, 4]
     half_lengths = np.arccos(np.clip((tails * heads).sum(axis=-1), -1, 1)) / 2   # [bonds]
     tree = cKDTree(middles)
@@ -432,7 +430,7 @@ def nearby(mesh, vertices: Extensor, atoms: Extensor, bonds) -> dict[str, np.nda
         kept = angles <= reach[tets] + radii[indices]
         tets, indices = tets[kept], indices[kept]
         order = np.lexsort((indices, tets))
-        starts = np.searchsorted(tets[order], np.arange(len(mesh.tets) + 1))
+        starts = np.searchsorted(tets[order], np.arange(mesh.n_elements[3] + 1))
         return starts.astype(np.uint32), indices[order].astype(np.uint32)
 
     particle_starts, tet_particles = listed(places, np.full(len(places), particle_radius + motion_room))
@@ -442,9 +440,8 @@ def nearby(mesh, vertices: Extensor, atoms: Extensor, bonds) -> dict[str, np.nda
 
 
 # --- the sphere below the Hopf circles, seen from outside ---------------------------------------------------------------
-# The algebra of the space the base is drawn in, and its meshes; the picture's pixels across, half its width in the
-# scene, and the camera's elevation and azimuth; the view, and its background.
-flat = instantiate("examples.util.mesh", VGA3D)
+# The picture's pixels across, half its width in the scene, and the camera's elevation and azimuth; the view, and its
+# background.
 base_pixels = 300
 base_half = 1.15
 base_elevation, base_azimuth = 0.45, 2.75
@@ -460,27 +457,11 @@ atom_ink = np.array([0.25, 0.25, 0.25])
 light_ink = np.array([0.1, 0.1, 0.1])
 
 
-def in_space(steps: core.Point) -> flat.Point:
-    """Unit steps of the three-sphere's origin, `[n] Point-`, as points of the algebra of space, read by pairing with
-    the planes across x, y and z: a stopgap until the steps embed in the renderer's space."""
-    coordinates = (stack((core.mv.x, core.mv.y, core.mv.z), axis=-1)
-                   & steps[..., None]).to_array()                               # [n, 3]
-    return flat.mv.vector(coordinates).dual()
-
-
 def lying(steps: core.Point, height: float) -> solids.Point:
-    """Points of the base `[...] Point-` in the scene, raised above the sphere by `height` pixels."""
-    return solids.origin + solids.context.include_from_algebra(in_space(steps)) * (1 + height * outside.pixel)
-
-
-def on_screen(steps: core.Point) -> tuple[np.ndarray, np.ndarray]:
-    """Points of the base `[...] Point-` on the screen, in pixels across and up from its middle, `[..., 2]`, and
-    whether each faces the viewer, `[...]`: in front of the plane through the sphere's middle across the view, which
-    the camera looks down along its own -z."""
-    places = lying(steps, 0.0)                                                  # [...] Point-
-    seen_by_camera = outside.camera << places                                   # [...] Point-
-    depths = ((solids.mv.z & seen_by_camera) / (solids.mv.w & seen_by_camera)).to_array()
-    return outside.across(places) / outside.pixel, depths > 0
+    """Points of the base, unit steps of the three-sphere's origin `[...] Point-`, in the scene, raised above the
+    sphere by `height` pixels: each step the offset of its point from the scene's origin, as the algebra of the
+    three-sphere includes in the scene's by the steps' complements, the planes through the origin."""
+    return solids.origin + solids.context.include_from_algebra(steps) * (1 + height * outside.pixel)
 
 
 def inks(stretches: core.Scalar, saturating: float) -> np.ndarray:
@@ -488,26 +469,26 @@ def inks(stretches: core.Scalar, saturating: float) -> np.ndarray:
     return plt.get_cmap(strain_map)(0.5 + 0.5 * np.clip(stretches.to_array().reshape(-1) / saturating, -1, 1))[:, :3]
 
 
-def base_view(sphere_mesh: flat.Mesh, sphere_points: flat.Point, stretches: core.Scalar, decagon_bases: core.Point,
+def base_view(sphere_mesh: Topology, sphere_points: core.Point, stretches: core.Scalar, decagon_bases: core.Point,
               atoms: core.Point, arcs: core.Point, strains: core.Scalar, light: core.Point, saturating: float
               ) -> np.ndarray:
-    """The base from outside: the icosphere coloured by how much the circles above its points stretch,
-    `Scalar+[points]`, the decagons' base points `[decagons] Point-` in hues around the decagons, the gauges' atoms
-    `[atoms] Point-` and their bonds' arcs `[bonds, arc points] Point-` coloured by their strains `[bonds] Scalar+`,
-    and the light's paths `[rays, steps + 1] Point-`, all on the base."""
+    """The base from outside: the icosphere on the base's points `[points] Point-`, coloured by how much the circles
+    above them stretch, `Scalar+[points]`, the decagons' base points `[decagons] Point-` in hues around the decagons,
+    the gauges' atoms `[atoms] Point-` and their bonds' arcs `[bonds, arc points] Point-` coloured by their strains
+    `[bonds] Scalar+`, and the light's paths `[rays, steps + 1] Point-`, all on the base."""
     pixel = outside.pixel
 
-    points = solids.origin + solids.context.include_from_algebra(sphere_points.batch())   # [points] Point-
-    faces = sphere_mesh.faces
-    normals = meshes.smooth(points, meshes.Mesh(points.shape[0], faces))
+    points = lying(sphere_points, 0.0)                                          # [points] Point-
+    faces = sphere_mesh.elements[2]
+    normals = meshes.smooth(points, sphere_mesh)
     surface = meshes.samples(points, faces, inks(stretches, saturating)[faces], normals, outside, np.zeros(3),
                              meshes.plain, solids.gloss)
     n_bonds, n_arc_points = arcs.shape
-    bonds = simplices.tubes(lying(arcs.reshape(-1), bond_width / 2), simplices.Mesh.chains([n_arc_points] * n_bonds),
+    bonds = simplices.tubes(lying(arcs.reshape(-1), bond_width / 2), Topology.chains([n_arc_points] * n_bonds),
                             np.repeat(inks(strains, saturating), n_arc_points - 1, axis=0), bond_width, outside,
                             solids.gloss)
     n_rays, n_path_points = light.shape
-    rays = simplices.tubes(lying(light.reshape(-1), light_width / 2), simplices.Mesh.chains([n_path_points] * n_rays),
+    rays = simplices.tubes(lying(light.reshape(-1), light_width / 2), Topology.chains([n_path_points] * n_rays),
                            light_ink, light_width, outside, solids.gloss)
     dot_inks = hues(decagon_bases.shape[0])
     parts = [(solids.ball(lying(decagon_bases, 0.0), dot_radius * pixel)[:, None], dot_inks),
@@ -516,40 +497,3 @@ def base_view(sphere_mesh: flat.Mesh, sphere_points: flat.Point, stretches: core
     return solids.draw(parts, outside, base_background, inks=[], translucent=[],
                        meshes=[(surface, 1.0), (bonds, 1.0), (rays, 1.0)])
 
-
-# --- the gauges' and the light's response -----------------------------------------------------------------------------
-response_width, response_height = 520, 230
-
-
-@charts.style()
-def response(strains: core.Scalar, light: core.Point, undisturbed: core.Point, target_strain: float,
-             target_sways: tuple[float, float]) -> plt.Figure:
-    """The gauges' and the light's response over a swing, against what they are tuned to show: each bond's strain
-    from one end of its swing to the other, from its strains at each frame `[frames, bonds] Scalar+`, largest first,
-    against `target_strain`; and each ray's largest sway on the screen from its undisturbed path, among its points
-    that face the viewer, from its paths at each frame `[frames, rays, steps + 1] Point-` and undisturbed `[rays,
-    steps + 1] Point-`, as a share of the picture, against the band `target_sways`."""
-    figure, (gauges, rays) = charts.subplots(response_width, response_height, ncols=2)
-    readings = strains.to_array().reshape(strains.shape)                       # [frames, bonds]
-    swings = np.sort(readings.max(axis=0) - readings.min(axis=0))[::-1]        # [bonds]
-    gauges.bar(np.arange(len(swings)), swings, width=1.0, color="#d0453b")
-    gauges.axhline(target_strain, color="0.3", linewidth=charts.FRAME_WIDTH, linestyle=(0, (3, 2)))
-    gauges.set_xticks([])
-    gauges.set_yticks([0, target_strain, round(swings.max(), 2)])
-    gauges.set_xlabel("bonds, largest first")
-    gauges.set_ylabel("bond strain, peak to peak")
-    disturbed, facing = on_screen(light)                                        # [frames, rays, steps + 1, 2], [frames, rays, steps + 1]
-    calm, _ = on_screen(undisturbed)                                            # [rays, steps + 1, 2]
-    sways = np.linalg.norm(disturbed - calm[None], axis=-1) * facing / base_pixels   # [frames, rays, steps + 1]
-    largest = sways.max(axis=(0, 2))                                            # [rays]
-    rays.axhspan(*target_sways, color="0.9")
-    rays.bar(np.arange(len(largest)), largest, width=0.7, color="#3b6fb6")
-    rays.set_xticks([])
-    rays.set_yticks([0, *target_sways, round(largest.max(), 2)])
-    rays.set_xlabel("rays, across the bundle")
-    rays.set_ylabel("ray sway, share of picture")
-    for ax in (gauges, rays):
-        ax.axhline(0, color="0.6", linewidth=charts.FRAME_WIDTH)
-        ax.spines[["top", "right"]].set_visible(False)
-    figure.tight_layout()
-    return figure

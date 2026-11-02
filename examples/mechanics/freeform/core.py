@@ -18,12 +18,11 @@ import numpy as np
 
 from numga import NumpyContext, stack
 from numga.algebras import VGA3D as ga
-from examples import instantiate
 from examples.mechanics.freeform.weights import kernels
+from examples.util.topology import Topology
 
 mv = NumpyContext(ga).multivector
-Mesh = instantiate("examples.util.mesh", ga).Mesh
-tetrahedron = Mesh(4, [[0, 1, 2, 3]])
+tetrahedron = Topology(4, [[0, 1, 2, 3]])
 Scalar = ga.gatype.scalar()
 # Points and displacements are antivectors; gradients and forces are covectors, vectors.
 Antivector = ga.gatype.antivector()
@@ -118,5 +117,5 @@ def potential(state: Antivector, sampling: Sampling, gradients: Vector,
     # collects every local force onto the affine controls.
     applied = sampling.field(0).adjugate()(
         ((clamp * displacement.dual() - load) * sample_volumes).field()
-    )                                                           # Vector+[controls]
+    )                                                              # Vector+[controls]
     return energy, elastic + applied

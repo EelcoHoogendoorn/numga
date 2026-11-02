@@ -110,5 +110,5 @@ def sphere(n_latitudes: int, n_longitudes: int) -> Vector:
 
 def circle(n_samples: int) -> Vector:
     """A circle of unit wavefronts, turned in the xz plane."""
-    angles = np.linspace(0, 2 * np.pi, n_samples)
+    angles = np.linspace(0, 2 * np.pi, n_samples, endpoint=False)
     return (mv.zx * (-angles / 2)).exp() >> mv.z                              # [samples] Vector+

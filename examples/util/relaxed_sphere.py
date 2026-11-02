@@ -1,10 +1,11 @@
-"""Round meshes of spheres of any dimension: points in orbits of a finite group of rotations, relaxed on the unit
-sphere until the simplices between them are as round as the orbits allow.
+"""Round meshes of the two-sphere and the three-sphere: points in orbits of a finite group of rotations, relaxed on
+the unit sphere by optimal Delaunay steps, which round the simplices between them as far as the orbits allow.
 
 A mesh of the sphere is the convex hull of points on it: seen from the centre its facets are the sphere's simplices,
 the triangles of the two-sphere and the tetrahedra of the three-sphere, and the poles of their planes are its dual
-vertices, the simplices' circumcentres. Each step turns every point toward the average of its simplices' poles, each
-weighted by its share of the hull: the optimal Delaunay step, which rounds the simplices around the point.
+vertices, the simplices' circumcentres. Each step moves every free point toward the average of its simplices' poles,
+each weighted by its share of the hull, and puts it back on the sphere: the optimal Delaunay step, which rounds the
+simplices around the point.
 
 The points come in orbits of the group: an orbit of anchors held still, and a few seeds in as many copies as the
 group has rotations. Only the seeds move, their copies with them, so the mesh keeps the group's symmetry exactly. On
@@ -20,18 +21,17 @@ from functools import reduce
 from operator import and_
 
 import numpy as np
-from scipy.spatial import ConvexHull
+from scipy.spatial import ConvexHull, cKDTree
 
 from numga import Algebra, concatenate, stack
 from numga.backend.context import Context
-from examples import instantiate
+from examples.util.topology import Topology
 
-# Supplied by examples.instantiate: the algebra of the space around the sphere, of any dimension, every generator
-# squaring to one.
+# Supplied by examples.instantiate: the algebra of the space around the sphere, three or four dimensions, every
+# generator squaring to one.
 ga: Algebra
 ctx: Context
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, mv = mesh_module.Mesh, mesh_module.mv
+mv = ctx.multivector
 Scalar = ga.gatype.scalar()                         # Scalar+
 # Points and their directions from the centre are antivectors; planes through the centre, and the ramps across the
 # simplices, vectors.
@@ -87,7 +87,7 @@ def orbit_points(turns: Rotor, anchors: Point, seeds: Point) -> Point:
     return concatenate([anchors, copies.reshape(-1)]).field()
 
 
-def ramps(mesh: Mesh, points: Point) -> Plane:
+def ramps(mesh: Topology, points: Point) -> Plane:
     """Each corner's ramp across its simplex, `[corners] Plane+[simplices]`: the plane through the centre and the
     corners across from it, their join, scaled to read one at the corner and so nothing at the others."""
     corners = mesh.incidence[-1, 0] * points                                    # [corners] Point-[simplices]
@@ -95,83 +95,94 @@ def ramps(mesh: Mesh, points: Point) -> Plane:
     return facets / (facets & corners)
 
 
-def optimal_delaunay_step(mesh: Mesh, points: Point, poles: Point, turns: Rotor, anchors: Point, seeds: Point,
+def optimal_delaunay_step(mesh: Topology, points: Point, turns: Rotor, anchors: Point, seeds: Point,
                           pull: float) -> Point:
-    """The seeds `[seeds] Point-` turned by `pull` of the way toward the average of their simplices' poles, each
-    simplex weighted by its share of the hull, the points in `orbit_points`' order."""
+    """The seeds `[seeds] Point-` moved `pull` of the way toward the average of their simplices' poles, each simplex
+    weighted by its share of the hull, and put back on the sphere, the points in `orbit_points`' order."""
+    # The pole of each simplex is the dual of the plane that reads one at every corner, the sum of their ramps.
+    poles = ramps(mesh, points).sum(axis=0).dual().normalized()                 # Point-[simplices]
     # Each simplex's share of the whole, the join of its corners over the sum of all of them.
     cones = reduce(and_, mesh.incidence[-1, 0] * points)                        # Scalar-[simplices]
     shares = cones / cones.sites.sum()                                          # Scalar+[simplices]
-    pulled = (~mesh.incidence[-1, 0] * (shares * poles.normalized())).sum(axis=0).normalized()   # Point-[points]
-    own = pulled.batch()[anchors.shape[0] + turns.shape[0] * np.arange(seeds.shape[0])]   # [seeds] Point-
-    return (seeds + pull * (own - seeds)).normalized()
+    averages = (~mesh.incidence[-1, 0] * (shares * poles)).sum(axis=0).normalized()   # Point-[points]
+    # The seeds themselves, the first of each of their orbits.
+    seed_sites = anchors.shape[0] + turns.shape[0] * np.arange(seeds.shape[0])  # [seeds]
+    seed_averages = (mesh.reading(seed_sites) * averages).batch()               # [seeds] Point-
+    return (seeds + pull * (seed_averages - seeds)).normalized()
 
 
-def relaxed(turns: Rotor, anchors: Point, seeds: Point, n_steps: int, pull: float
-            ) -> Iterator[tuple[Mesh, Point, Point]]:
-    """The mesh, its points and its simplices' poles at each step of the optimal Delaunay relaxation of the seeds."""
+def relaxed(turns: Rotor, anchors: Point, seeds: Point, n_steps: int, pull: float) -> Iterator[tuple[Topology, Point]]:
+    """The mesh and its points at each step of the optimal Delaunay relaxation of the seeds, from the start."""
     for _ in range(n_steps):
         points = orbit_points(turns, anchors, seeds)                            # Point-[points]
         mesh = hull(points)
-        # The pole of each simplex is the dual of the plane that reads one at every corner, the sum of their ramps.
-        poles = ramps(mesh, points).sum(axis=0).dual()                          # Point-[simplices]
-        yield mesh, points, poles
-        seeds = optimal_delaunay_step(mesh, points, poles, turns, anchors, seeds, pull)
+        yield mesh, points
+        seeds = optimal_delaunay_step(mesh, points, turns, anchors, seeds, pull)
 
 
-def facet_cosines(mesh: Mesh, points: Point) -> Scalar:
+def facet_cosines(mesh: Topology, points: Point) -> Scalar:
     """The cosine of the angle between each two facets of each simplex, `[pairs] Scalar+[simplices]`, on the
     simplices between the points' directions: a triangle's corner angles, a tetrahedron's dihedral angles. A
     corner's ramp, less its part across the simplex's own plane, rises square to the facet across from it."""
     corner_ramps = ramps(mesh, points.normalized())                             # [corners] Plane+[simplices]
-    own = corner_ramps.sum(axis=0)                                              # Plane+[simplices]
-    rises = ((corner_ramps ^ own) | own).normalized()                           # [corners] Plane+[simplices]
+    simplex_planes = corner_ramps.sum(axis=0)                                   # Plane+[simplices]
+    rises = ((corner_ramps ^ simplex_planes) | simplex_planes).normalized()     # [corners] Plane+[simplices]
     # The facets across from two corners meet at the angle whose cosine is minus that of their rises.
     tails, heads = mesh.corners[-1, 1]
     return -(rises[tails] | rises[heads])
 
 
-def valences(mesh: Mesh) -> Scalar:
+def valences(mesh: Topology) -> Scalar:
     """How many simplices meet at each point, `Scalar+[points]`: one for each simplex, summed back to its corners."""
     simplices = mv.scalar(np.ones((mesh.n_elements[-1], 1))).field()            # Scalar+[simplices]
     return (~mesh.incidence[-1, 0] * simplices).sum(axis=0)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def hull(points: Point) -> Mesh:
+# Points or rotors closer than this, read by their coordinates, are one.
+same = 1e-6
+
+
+def coordinates_of(values) -> np.ndarray:
+    """`[..., dimensions]`: points' coordinates, read by pairing with the planes across each direction, outside the
+    algebra."""
+    return (mv.vector(np.eye(ga.n_dimensions)) & values[..., None]).to_array()
+
+
+def hull(points: Point) -> Topology:
     """The convex hull of points around the centre, its facets wound outward, which scipy finds from the points'
     coordinates, one step outside the algebra."""
-    # Each point read by pairing it with the planes across each direction.
-    coordinates = (mv.vector(np.eye(ga.n_dimensions)) & points.batch()[..., None]).to_array()   # [points, dimensions]
-    return Mesh.closed(ConvexHull(coordinates).simplices, coordinates)
+    coordinates = coordinates_of(points.batch())                                # [points, dimensions]
+    return Topology.closed(ConvexHull(coordinates).simplices, coordinates)
 
 
 def unique_up_to_sign(rotors: Rotor) -> np.ndarray:
-    """The indices of the rotors `[n]` that differ, one of each, a rotor and its negative being one rotation, outside
-    the algebra."""
-    coefficients = np.asarray(rotors.kernel)
-    signs = np.sign(coefficients[np.arange(len(coefficients)), np.argmax(np.abs(coefficients) > 1e-9, axis=1)])
-    _, kept = np.unique(np.round(coefficients * signs[:, None], 8), axis=0, return_index=True)
-    return np.sort(kept)
+    """The indices of the rotors `[n]` that differ, one of each, a rotor and its negative being one rotation, by a
+    nearest-neighbour query of their coefficients outside the algebra."""
+    coefficients = np.asarray(rotors.kernel)                                    # [n, components]
+    signs = np.sign(coefficients[np.arange(len(coefficients)), np.argmax(np.abs(coefficients) > same, axis=1)])
+    signed = coefficients * signs[:, None]
+    # A rotor is kept unless an earlier one lies within `same` of it.
+    pairs = cKDTree(signed).query_pairs(same, output_type="ndarray")            # [pairs, 2]
+    return np.setdiff1d(np.arange(len(signed)), pairs.max(axis=-1))
 
 
 def orbit_representatives(turns: Rotor, candidates: Point) -> Point:
-    """One point of each orbit the candidates `[n]` fall into, `[orbits] Point-`, read by pairing with the planes
-    across each direction, outside the algebra: each candidate in turn, unless the orbit of one kept holds it."""
-    axes = mv.vector(np.eye(ga.n_dimensions))                                   # [dimensions] Plane+
-    coordinates = (axes & candidates[..., None]).to_array()                     # [n, dimensions]
-    orbits = (axes & (turns[None] >> candidates[:, None])[..., None]).to_array()   # [n, rotations, dimensions]
+    """One point of each orbit the candidates `[n]` fall into, `[orbits] Point-`, outside the algebra: each candidate
+    in turn, unless the orbit of one kept holds it."""
+    coordinates = coordinates_of(candidates)                                    # [n, dimensions]
+    orbits = coordinates_of(turns[None] >> candidates[:, None])                 # [n, rotations, dimensions]
     kept, covered = [], np.zeros(len(coordinates), dtype=bool)
     for index in range(len(coordinates)):
         if not covered[index]:
             kept.append(index)
-            covered |= (np.abs(coordinates[:, None] - orbits[index][None]).max(axis=-1) < 1e-6).any(axis=-1)
+            covered |= (np.abs(coordinates[:, None] - orbits[index][None]).max(axis=-1) < same).any(axis=-1)
     return candidates[np.array(kept)]
 
 
 def unique_points(points: Point) -> Point:
-    """The points `[n]` that differ, one of each, read by pairing with the planes across each direction, outside the
+    """The points `[n]` that differ, one of each, by a nearest-neighbour query of their coordinates outside the
     algebra."""
-    coordinates = (mv.vector(np.eye(ga.n_dimensions)) & points[..., None]).to_array()   # [n, dimensions]
-    _, kept = np.unique(np.round(coordinates, 8), axis=0, return_index=True)
-    return points[np.sort(kept)]
+    coordinates = coordinates_of(points)                                        # [n, dimensions]
+    pairs = cKDTree(coordinates).query_pairs(same, output_type="ndarray")       # [pairs, 2]
+    return points[np.setdiff1d(np.arange(len(coordinates)), pairs.max(axis=-1))]

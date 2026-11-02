@@ -11,6 +11,7 @@ import numpy as np
 
 from numga import stack
 from examples.mechanics.foucault import core
+from examples.util.topology import Topology
 from examples.util.wgsl import solids
 
 SWING_COLOUR = "#d06c36"
@@ -66,7 +67,8 @@ def globe(earth: core.Rotor, vertical: core.Point, swing: core.Point, north: cor
     # The swing through the middle of the floor, both ways, and north from its edge outwards.
     swing_rod = solids.rods(swing_ends[0], swing_ends[1], SWING_RADIUS * view.pixel)
     compass = solids.rods(compass_ends[0], compass_ends[1], COMPASS_RADIUS * view.pixel)
-    edges, joints = solids.edges(tile, tile[[1, 2, 3, 0]], EDGE_RADIUS * view.pixel)
+    tails, heads = (Topology.loops([4]).incidence[1, 0] * tile.field()).batch()   # [corners] Point-, Point-
+    edges, joints = solids.edges(tails, heads, EDGE_RADIUS * view.pixel)
     floor_colour, swing_colour, compass_colour, edge_colour = (np.array(to_rgb(colour)) for colour in
                                                                (FLOOR_COLOUR, SWING_COLOUR, COMPASS_COLOUR, FLOOR_EDGE_COLOUR))
     parts = [(floor, floor_colour), (swing_rod[None], swing_colour), (compass[None], compass_colour), (edges, edge_colour),

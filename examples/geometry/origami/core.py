@@ -12,6 +12,7 @@ import numpy as np
 
 from numga import NumpyContext, stack
 from numga.algebras import PGA3D
+from examples.util.topology import Topology
 
 ga = PGA3D
 mv = NumpyContext(ga).multivector
@@ -56,14 +57,16 @@ class Paper:
         already on a crease there despite round-off from preceding half-turns.
         """
         faces = self.faces()
-        next_corners = np.concatenate([np.roll(face, -1) for face in faces])
-        distances = crease & self.points                                        # [corners] Scalar+
+        # Each face's outline: every corner's outgoing edge runs to the next corner of its face, the last back to the
+        # first.
+        tails, heads = (Topology.loops(self.counts).incidence[1, 0] * self.points.field()).batch()   # [corners] Point-, Point-
+        distances = crease & stack([tails, heads])                              # [ends, corners] Scalar+
         negative, positive = distances < -tolerance, distances > tolerance
-        crossing = (negative & positive[next_corners]) | (positive & negative[next_corners])
+        crossing = (negative[0] & positive[1]) | (positive[0] & negative[1])
 
         # Pair each corner with the intersection of its outgoing edge and the crease plane.
         # Only crossing edges are evaluated, so parallel edges never require division.
-        cuts = (self.points[crossing] & self.points[next_corners[crossing]]) ^ crease  # [crossings] Point-
+        cuts = (tails[crossing] & heads[crossing]) ^ crease                     # [crossings] Point-
         cuts = cuts / (mv.w & cuts)                                             # [crossings] Point-
         corners_and_cuts = stack([self.points, self.points.at[crossing].set(cuts)], axis=-1)  # [corners, pair] Point-
         vertex_mask = np.stack([np.ones_like(crossing), crossing], axis=-1)

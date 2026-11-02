@@ -32,7 +32,7 @@ COLOURS = ("#0284c7", "#10b981", "#e11d48")
 # Mohr's circles: the outer one's colour and the inner ones' and the cross's, the samples round each circle, and the
 # inner circles' dots, a dot and a gap, in pixels.
 outer_colour, inner_colour = np.array(to_rgb("#1e293b")), np.array(to_rgb("#94a3b8"))
-n_circle = 181
+n_circle = 180
 circle_dots = (1.5, 2.0)
 # The principal directions are drawn out to this distance from the centre, just past the cube; the room the view of
 # a turning frame leaves around the first frame's cube and arrows, for them to move in.
@@ -77,9 +77,9 @@ def arrows(starts: core.Point, offsets: core.Point, colour: np.ndarray, view: so
     lengths = offsets.norm()                                                   # [arrows] Scalar+
     shown = lengths > view.pixel
     tails = solids.origin + solids.context.include_from_algebra(starts[shown])         # [shown] Point-
-    tips = tails + solids.context.include_from_algebra(offsets[shown])                  # [shown] Point-
+    tips = tails + solids.context.include_from_algebra(offsets[shown])                 # [shown] Point-
     n_shown = tails.shape[0]
-    return simplices.tubes(stack((tails, tips), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_shown), colour,
+    return simplices.tubes(stack((tails, tips), axis=-1).reshape(-1), simplices.Topology.chains([2] * n_shown), colour,
                            thickness * arrow_width, view, gloss=solids.gloss, chevrons=np.ones(n_shown),
                            chevron=thickness * chevron_length)
 
@@ -152,14 +152,14 @@ def circles_drawn(ax, values: core.Scalar, camera: Camera) -> list[np.ndarray]:
     # Each circle between two principal stresses, the outer one first: about their mean on the axis of normal
     # traction, out to half their difference, turned all the way round in the plane of the diagram.
     lows, highs = stresses[[0, 0, 1]], stresses[[2, 1, 2]]                    # [circles] Scalar+, [circles] Scalar+
-    turns = (core.mv.xy * (-np.linspace(0, 2 * np.pi, n_circle) / 2)).exp()  # [samples] Rotor+
+    turns = (core.mv.xy * (-np.linspace(0, 2 * np.pi, n_circle, endpoint=False) / 2)).exp()   # [samples] Rotor+
     rims = x.dual() * ((lows + highs) / 2)[:, None] + (turns >> x.dual() * ((highs - lows) / 2)[:, None])   # [circles, samples] Point-
     (left, right), (bottom, top) = ax.get_xlim(), ax.get_ylim()
     cross = mohr_place(np.array([left, right, 0, 0]), np.array([0, 0, bottom, top]))   # [4] Point-
-    return [simplices.strokes(rims[0], simplices.Mesh.chains([n_circle]), outer_colour, charts.LINE_PX, camera),
-            simplices.strokes(rims[1:].reshape(-1), simplices.Mesh.chains([n_circle] * 2), inner_colour,
+    return [simplices.strokes(rims[0], simplices.Topology.loops([n_circle]), outer_colour, charts.LINE_PX, camera),
+            simplices.strokes(rims[1:].reshape(-1), simplices.Topology.loops([n_circle] * 2), inner_colour,
                               charts.FRAME_PX, camera, dashes=circle_dots, cap=simplices.Cap.BUTT),
-            simplices.strokes(cross, simplices.Mesh.chains([2, 2]), inner_colour, charts.FRAME_PX, camera,
+            simplices.strokes(cross, simplices.Topology.chains([2, 2]), inner_colour, charts.FRAME_PX, camera,
                               cap=simplices.Cap.BUTT),
             simplices.markers(x.dual() * stresses, outer_colour, charts.MARKER_PX / 2, camera)]
 
@@ -179,7 +179,7 @@ def diameter_drawn(ends: core.Point, colour: str, camera: Camera) -> list[np.nda
     ink = np.array(to_rgb(colour))
     rim = charts.LINE_PX / 2
     # The ring a white dot over a larger one in the diameter's colour.
-    return [simplices.strokes(ends, simplices.Mesh.chains([2]), ink, charts.LINE_PX, camera),
+    return [simplices.strokes(ends, simplices.Topology.chains([2]), ink, charts.LINE_PX, camera),
             simplices.markers(ends[:1], ink, charts.MARKER_PX / 2, camera),
             simplices.markers(ends[1:], ink, charts.MARKER_PX / 2 + rim, camera),
             simplices.markers(ends[1:], np.ones(3), charts.MARKER_PX / 2 - rim, camera)]

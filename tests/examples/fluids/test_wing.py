@@ -3,6 +3,7 @@
 import numpy as np
 
 from examples.fluids.wing import core, scenarios
+from examples.util.topology import Topology
 
 
 def test_the_velocity_has_no_derivative_and_the_wing_lifts_by_its_circulation():
@@ -27,10 +28,11 @@ def test_the_velocity_has_no_derivative_and_the_wing_lifts_by_its_circulation():
     # The pressure around the surface, each step's swept area in the sense the surface winds, is the
     # Kutta–Joukowski lift, with no drag.
     surface, surface_velocity, _, _ = core.flow(pitched, stream, core.rings(pitched, 1, scenarios.N_ANGLES, 1.0)[0], edge)
-    next_idx = (np.arange(scenarios.N_ANGLES) + 1) % scenarios.N_ANGLES
-    steps = surface[next_idx] - surface
+    ring = Topology.loops([scenarios.N_ANGLES])
+    steps = (ring.d[0] * surface.field()).batch()
     speed_squared = surface_velocity.dot(surface_velocity)
-    pressure = -0.5 * scenarios.DENSITY * (speed_squared + speed_squared[next_idx]) / 2
-    winding = (surface & surface[next_idx]).sum(axis=-1)
+    pressure = -0.5 * scenarios.DENSITY * (ring.incidence[1, 0].mean(axis=0) * speed_squared.field()).batch()
+    surface_tails, surface_heads = ring.incidence[1, 0] * surface.field()
+    winding = (surface_tails & surface_heads).batch().sum(axis=-1)
     force = (pressure * (steps & core.Point)).sum(axis=-1) * (winding / winding.norm())
     np.testing.assert_allclose((force - (core.lift(pitched, stream, scenarios.DENSITY) & core.Point)).kernel, 0.0, atol=1e-3)

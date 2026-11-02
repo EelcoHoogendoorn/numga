@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import concatenate, stack
+from numga import NumpyContext, concatenate, stack
 from numga.algebras import VGA2D as ga
 from numga.sparse import spdiag
-from examples import instantiate
+from examples.util.topology import Topology
 
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, mv = mesh_module.Mesh, mesh_module.mv
+mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
 Point = ga.gatype.antivector()                                               # Antivector-
 
@@ -43,7 +42,7 @@ def single_triangle(n_subdivisions: int) -> tuple[Point, Point]:
     return corners, triangle_samples(corners, n_subdivisions)
 
 
-def disk(radius: float, n_divisions: int) -> tuple[Mesh, Point]:
+def disk(radius: float, n_divisions: int) -> tuple[Topology, Point]:
     """The disk is triangulated into nearly equilateral triangles, with its first vertex at the origin."""
     spacing = radius / n_divisions
     indices = np.arange(-n_divisions, n_divisions + 1)
@@ -56,7 +55,7 @@ def disk(radius: float, n_divisions: int) -> tuple[Mesh, Point]:
     positions = (axes * lattice).sum(axis=-1)                                # [nodes] Point-
     positions = spacing * layers[inside] * positions.normalized()            # [nodes] Point-
     vertices = concatenate((unit[None] * 0, positions)).field()              # Point-[vertices]
-    return Mesh.triangulate(vertices), vertices
+    return Topology.triangulate(vertices), vertices
 
 
 def main() -> None:
@@ -78,9 +77,9 @@ def main() -> None:
     )
 
     # 2. Intrinsic Gaussian curvature defects and Gauss-Bonnet from edge lengths on a disk.
-    mesh, vertices = disk(disk_radius, n_disk_divisions)
-    edges = mesh.d[0] * vertices                                             # Point-[edges]
-    midpoints = mesh.incidence[1, 0].mean(axis=0) * vertices                 # Point-[edges]
+    topology, vertices = disk(disk_radius, n_disk_divisions)
+    edges = topology.d[0] * vertices                                         # Point-[edges]
+    midpoints = topology.incidence[1, 0].mean(axis=0) * vertices             # Point-[edges]
     # The dot reading measures radial motion times radius; the join measures swept area,
     # hence circumferential motion times radius. Their squares choose the two length responses.
     edge_squared_lengths = (
@@ -88,26 +87,26 @@ def main() -> None:
         + radial_rates * midpoints.dot(edges).squared()
         + hoop_rates * (midpoints & edges).norm_squared()
     )                                                                        # [cases] Scalar+[edges]
-    centres = mesh.incidence[2, 0].mean(axis=0) * vertices                   # Point-[faces]
+    centres = topology.incidence[2, 0].mean(axis=0) * vertices               # Point-[faces]
     metrics, intrinsic_areas, defects, curvatures, conductivities = mesh_geometry(
-        mesh, vertices, edge_squared_lengths,
+        topology, vertices, edge_squared_lengths,
     )
     save_figure(
-        render.draw_curvature_defects(mesh, vertices, centres, metrics, curvatures),
+        render.draw_curvature_defects(topology, vertices, centres, metrics, curvatures),
         "regge_curvature_defects",
     )
 
     # 3. Steady conduction across flat, radially stretched, and circumferentially stretched geometry.
-    boundary = mesh.exterior(0)
+    boundary = topology.exterior[0]
     abscissa = (mv.x & vertices).batch()                                     # [vertices] Scalar+
     electrodes = boundary[abscissa[boundary].norm() > electrode_threshold]
-    pinned = mesh.reading(electrodes)
+    pinned = topology.reading(electrodes)
     prescribed = ~pinned * (pinned * (mv.x & vertices))                      # Scalar+[vertices]
     potential, current, streamfunction = intrinsic_conduction(
-        mesh, vertices, conductivities, electrodes, prescribed,
+        topology, vertices, conductivities, electrodes, prescribed,
     )
     save_figure(
-        render.draw_intrinsic_flow(mesh, vertices, potential, current),
+        render.draw_intrinsic_flow(topology, vertices, potential, current),
         "regge_intrinsic_laplacian",
     )
 
@@ -129,19 +128,19 @@ def main() -> None:
     np.testing.assert_allclose((corner_rotors[0] * corner_rotors[1] * corner_rotors[2]).kernel, [-1.0, 0.0], atol=1e-14)
 
     np.testing.assert_allclose((defects.sites.sum() - 2 * np.pi * mv.xy).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose(defects.batch()[0, mesh.interior(0)].kernel, 0.0, atol=1e-13)
+    np.testing.assert_allclose((topology.reading(topology.interior[0]) * defects[0]).kernel, 0.0, atol=1e-13)
     assert (curvatures.batch()[1, 0] & mv.xy.dual()) > 0
     assert (curvatures.batch()[2, 0] & mv.xy.dual()) < 0
 
     inverse_conductivities = intrinsic_areas * metrics.batch().inverse().field()
     np.testing.assert_allclose((conductivities - inverse_conductivities).kernel, 0.0, atol=1e-13)
 
-    face_sides = mesh.boundary[2, 1] * edges
+    face_sides = topology.boundary[2, 1] * edges
     face_patches = (face_sides[0] & face_sides[1]) / 2
-    gradient = (spdiag(face_sides / (2 * face_patches)) * mesh.incidence[2, 0]).sum(axis=0) * Scalar
+    gradient = (spdiag(face_sides / (2 * face_patches)) * topology.incidence[2, 0]).sum(axis=0) * Scalar
     conductance = gradient.adjugate()(spdiag(conductivities)(gradient))
-    free_vertices = np.setdiff1d(np.arange(mesh.n_vertices), electrodes)
-    free = ~mesh.reading(free_vertices) * Scalar
+    free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
+    free = ~topology.reading(free_vertices) * Scalar
     np.testing.assert_allclose(free.adjugate()(conductance(potential)).kernel, 0.0, atol=1e-11)
 
 

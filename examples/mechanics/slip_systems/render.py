@@ -33,8 +33,8 @@ GOAL_NAMES = ("[101]", "[112]")
 PATH_SHADE = 0.55
 # How far each corner's name sits above its corner, in points: [001] below, the others above.
 LIFTS = (-10, 8, 8)
-EDGE_SAMPLES = 60
-RIM_SAMPLES = 181
+EDGE_SAMPLES = 59
+RIM_SAMPLES = 180
 # The windows of the stereographic disk the whole disk and the close-up show, left to right and bottom to top alike.
 DISK = (-1.02, 1.02)
 WINDOW = (-0.04, 0.46)
@@ -70,11 +70,11 @@ def on_disk(directions: core.Direction) -> np.ndarray:
 
 
 def squares(directions: core.Direction, reach: float, turn: float, camera: Camera) -> core.Direction:
-    """Closed squares about where directions lie on the stereographic disk, their corners in turn and the first
-    again, `[marks, corners + 1]`: `reach` pixels from each direction's bisector with [001] at unit reading along it,
-    the first corner turned `turn` from x in the plane across [001]."""
-    angles = turn + np.pi / 2 * np.arange(5)                                  # [corners + 1]
-    corners = (core.mv.xy * (-angles / 2)).exp() >> core.mv.x.dual()         # [corners + 1] Direction-
+    """Squares about where directions lie on the stereographic disk, their corners in turn, `[marks, corners]`:
+    `reach` pixels from each direction's bisector with [001] at unit reading along it, the first corner turned `turn`
+    from x in the plane across [001]."""
+    angles = turn + np.pi / 2 * np.arange(4)                                  # [corners]
+    corners = (core.mv.xy * (-angles / 2)).exp() >> core.mv.x.dual()         # [corners] Direction-
     bisector = stereographic(directions)                                      # [marks] Direction-
     places = bisector / (core.mv.z & bisector)                                # [marks] Direction-
     return places[:, None] + corners * (reach * camera.pixel)
@@ -113,7 +113,7 @@ def shades(factors: core.Scalar) -> np.ndarray:
 def picture(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], window: tuple[float, float]):
     """The colours of the systems over a square window of the disk, one pull direction per pixel of the room the
     axes get, held pixel for pixel, white beyond the rim; the image."""
-    directions = lifted(window, min(room(ax)))                                # [rows, columns] Direction-
+    directions = lifted(window, min(room(ax)))                               # [rows, columns] Direction-
     # The reflection lifts a pixel inside the rim to a direction of the lower half, the opposite of its pull, and a
     # pixel beyond the rim to one of the upper half: there the disk ends.
     beyond = ((core.mv.z & directions) > 0)[..., None]
@@ -122,11 +122,12 @@ def picture(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], wind
 
 def triangle(camera: Camera) -> np.ndarray:
     """The standard triangle, between [001], [011] and [111], its edges arcs of great circles."""
-    shares = np.linspace(0, 1, EDGE_SAMPLES)
+    shares = np.linspace(0, 1, EDGE_SAMPLES, endpoint=False)
     # Each edge from a corner towards the next, by shares of the turn between them.
-    turns = ((corners[[1, 2, 0]] * corners.inverse()).log()[:, None] * (shares / 2)).exp()   # [edges, samples] Rotor+
-    arcs = stereographic(turns >> corners[:, None]).reshape(-1)               # [edges * samples] Direction-
-    return simplices.strokes(arcs, simplices.Mesh.chains([EDGE_SAMPLES] * len(corners)), to_rgb(EDGE_COLOUR),
+    tails, heads = (simplices.Topology.loops([len(corners)]).incidence[1, 0] * corners.field()).batch()   # [edges] Direction-, Direction-
+    turns = ((heads * tails.inverse()).log()[:, None] * (shares / 2)).exp()  # [edges, samples] Rotor+
+    arcs = stereographic(turns >> tails[:, None]).reshape(-1)                 # [edges * samples] Direction-
+    return simplices.strokes(arcs, simplices.Topology.loops([EDGE_SAMPLES * len(corners)]), to_rgb(EDGE_COLOUR),
                              charts.LINE_PX, camera)
 
 
@@ -138,14 +139,14 @@ def draw_disk(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], pl
     picture(ax, factors, DISK)
     camera = disk_camera(ax)
     # The rim, where the disk meets the directions square to [001], turned about it.
-    angles = np.linspace(0, 2 * np.pi, RIM_SAMPLES)
+    angles = np.linspace(0, 2 * np.pi, RIM_SAMPLES, endpoint=False)
     rim = stereographic((core.mv.xy * (-angles / 2)).exp() >> core.mv.x.dual())   # [samples] Direction-
     # The planes' normals a little larger than the directions, so that the two kinds of mark read apart.
     # A plane's normal, the direction square to it, is its dual.
-    normals = squares(planes.dual(), NORMAL_REACH, np.pi / 4, camera)         # [planes, corners + 1] Direction-
+    normals = squares(planes.dual(), NORMAL_REACH, np.pi / 4, camera)         # [planes, corners] Direction-
     simplices.overlay(ax, [
-        simplices.strokes(rim, simplices.Mesh.chains([RIM_SAMPLES]), to_rgb(EDGE_COLOUR), charts.LINE_PX, camera),
-        simplices.strokes(normals.reshape(-1), simplices.Mesh.chains([normals.shape[1]] * normals.shape[0]),
+        simplices.strokes(rim, simplices.Topology.loops([RIM_SAMPLES]), to_rgb(EDGE_COLOUR), charts.LINE_PX, camera),
+        simplices.strokes(normals.reshape(-1), simplices.Topology.loops([normals.shape[1]] * normals.shape[0]),
                           to_rgb(NORMAL_COLOUR), charts.LINE_PX, camera),
         simplices.markers(stereographic(slips.reshape(-1)), to_rgb(NORMAL_COLOUR), charts.MARKER_PX / 2, camera),
         triangle(camera)])
@@ -163,9 +164,9 @@ def draw_close(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar]) -
         ax.annotate(name, goal, xytext=(0, 9), textcoords="offset points", ha="center", va="center",
                     color=EDGE_COLOUR)
     camera = disk_camera(ax)
-    diamonds = squares(goals, GOAL_REACH, 0.0, camera)                        # [goals, corners + 1] Direction-
+    diamonds = squares(goals, GOAL_REACH, 0.0, camera)                        # [goals, corners] Direction-
     return [triangle(camera), simplices.strokes(diamonds.reshape(-1),
-                                                simplices.Mesh.chains([diamonds.shape[1]] * diamonds.shape[0]),
+                                                simplices.Topology.loops([diamonds.shape[1]] * diamonds.shape[0]),
                                                 to_rgb(EDGE_COLOUR), charts.LINE_PX, camera)]
 
 
@@ -177,7 +178,7 @@ def paths(camera: Camera, axes: core.Direction, amounts: core.Scalar, count: int
     n_starts = axes.shape[1]
     # Each start's places in turn, a chain of them.
     tracks = stereographic(axes[np.arange(count), np.arange(n_starts)[:, None]])   # [starts, steps + 1] Direction-
-    return [simplices.strokes(tracks.reshape(-1), simplices.Mesh.chains([count] * n_starts),
+    return [simplices.strokes(tracks.reshape(-1), simplices.Topology.chains([count] * n_starts),
                               np.moveaxis(mixed, 1, 0).reshape(-1, 3) * PATH_SHADE, charts.LINE_PX, camera),
             simplices.markers(tracks[:, count - 1], to_rgb(PATH_COLOUR), charts.MARKER_PX / 2, camera)]
 

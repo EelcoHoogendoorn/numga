@@ -23,7 +23,7 @@ from examples import instantiate
 from examples.util.animation import capture
 from examples.util.wgsl import contours, quadrics, simplices
 from examples.util.wgsl.camera import Camera, flat_panel
-from examples.util.wgsl.simplices import Cap, Mesh
+from examples.util.wgsl.simplices import Cap, Topology
 
 # The figures draw PGA2D geometry, from above.
 core = instantiate("examples.estimation.multiview.core", PGA2D)
@@ -79,7 +79,7 @@ def polylines(points: Point, width: float, colour: np.ndarray, opacity: float, c
               dashes: tuple[float, float] = (1.0, 0.0), cap: Cap = Cap.PROJECTING) -> np.ndarray:
     """Polylines through points `[n, k]`, `width` pixels across."""
     size, n_points = points.shape
-    return simplices.strokes(points.reshape(-1), Mesh.chains([n_points] * size), colour, width, camera, dashes=dashes,
+    return simplices.strokes(points.reshape(-1), Topology.chains([n_points] * size), colour, width, camera, dashes=dashes,
                              cap=cap, opacity=opacity)
 
 
@@ -90,7 +90,7 @@ def cones(motors: Motor, world_cones: Quadric, camera: Camera) -> list[np.ndarra
     # The squared reach of a pixel at each depth, as a quadric: a dyad of the focal plane.
     reaches = (focal_planes * PIXEL_ANGLE) * ((focal_planes * PIXEL_ANGLE) & Point)   # [cameras] Plane+ <- Point-
     # In front of each focal plane: where it pairs positively with the point, the half-plane's form negative there.
-    fronts = -(focal_planes * (mv.w & Point) + mv.w * (focal_planes & Point)) / 2   # [cameras] Plane+ <- Point-
+    fronts = -(focal_planes * (mv.w & Point) + mv.w * (focal_planes & Point)) / 2     # [cameras] Plane+ <- Point-
     sights = world_cones - reaches                                               # [landmarks, cameras] Plane+ <- Point-
     return [quadrics.regions(stack((sights[:, index], fronts[index].broadcast_to(sights.shape[:1])), axis=-1),
                              colour, camera, 0.30)
@@ -119,9 +119,9 @@ def cameras(motors: Motor, camera: Camera) -> list[np.ndarray]:
     local_marks = concatenate((pinhole[None], sensor_ends, axis_end[None]))      # [marks] Point-
     marks = motors[:, None] >> local_marks                                       # [cameras, marks] Point-
     camera_colours = CAMERA_COLORS[:motors.shape[0]]
-    wedge = Mesh(3, [[0, 1, 2]])
+    wedge = Topology(3, [[0, 1, 2]])
     wedges = [[contours.picture(marks[index, :3], wedge, np.zeros(3), colour, camera, opacity=0.18),
-               polylines(marks[index:index + 1, [0, 1, 2, 0]], EDGE_WIDTH, colour, 0.18, camera),
+               simplices.strokes(marks[index, :3], Topology.loops([3]), colour, EDGE_WIDTH, camera, opacity=0.18),
                polylines(marks[index][np.array([[0, 1], [0, 2]])], RAY_WIDTH, colour, 0.6, camera)]
               for index, colour in enumerate(camera_colours)]
     sensors = [[polylines(marks[index:index + 1, [1, 2]], SENSOR_WIDTH, colour, 1.0, camera),
@@ -139,21 +139,21 @@ def pose_covariances(motors: Motor, ellipsoids: Quadric, spreads: Scalar, camera
     # Divided by its weight rather than normalized, which keeps the weight's sign: the outline runs out from a centre
     # of unit weight.
     centres = centres / (mv.w & centres)                                         # [cameras] Point-
-    turns = (mv.xy * (-np.linspace(0.0, 2 * np.pi, N_CURVE_SEGMENTS + 1) / 2)).exp()   # [segments + 1] Motor+
-    headings = (turns >> mv.direction([1, 0]))[:, None]                         # [segments + 1, cameras] Direction-
-    reach = (-(ellipsoids(centres) & centres) / (ellipsoids(headings) & headings)).square_root()   # [segments + 1, cameras] Scalar+
-    outlines = centres + headings * reach                                        # [segments + 1, cameras] Point-
+    turns = (mv.xy * (-np.linspace(0.0, 2 * np.pi, N_CURVE_SEGMENTS, endpoint=False) / 2)).exp()   # [segments] Motor+
+    headings = (turns >> mv.direction([1, 0]))[:, None]                         # [segments, cameras] Direction-
+    reach = (-(ellipsoids(centres) & centres) / (ellipsoids(headings) & headings)).square_root()   # [segments, cameras] Scalar+
+    outlines = centres + headings * reach                                        # [segments, cameras] Point-
     pictures = []
     for index, colour in enumerate(CAMERA_COLORS[:motors.shape[0]]):
         # The fan in the camera's frame, about its pinhole from its axis, carried out by its pose.
         fan_angles = spreads[index] * np.linspace(-1, 1, N_CURVE_SEGMENTS + 1)     # [segments + 1] Scalar+
-        fan_turns = (mv.xy * (-fan_angles / 2)).exp()                            # [segments + 1] Motor+
+        fan_turns = (mv.xy * (-fan_angles / 2)).exp()                                  # [segments + 1] Motor+
         fan = motors[index] >> (fan_turns >> mv.point([0, ARC_RADIUS]))          # [segments + 1] Point-
         pinhole = motors[index] >> mv.point([0, 0])                              # [] Point-
         spokes = stack((pinhole.broadcast_to((2,)), fan[[0, -1]]), axis=1)       # [spokes, ends] Point-
         pictures += [quadrics.regions(ellipsoids[index:index + 1, None], colour, camera, 0.28),
-                     polylines(outlines[:, index][None], OUTLINE_WIDTH, colour, 0.28, camera, OUTLINE_WIDTH * DASHED,
-                               Cap.BUTT),
+                     simplices.strokes(outlines[:, index], Topology.loops([N_CURVE_SEGMENTS]), colour, OUTLINE_WIDTH,
+                                       camera, dashes=OUTLINE_WIDTH * DASHED, cap=Cap.BUTT, opacity=0.28),
                      polylines(fan[None], ARC_WIDTH, colour, 1.0, camera, ARC_WIDTH * DOTTED, Cap.BUTT),
                      polylines(spokes, SPOKE_WIDTH, colour, 1.0, camera, SPOKE_WIDTH * DOTTED, Cap.BUTT)]
     return pictures

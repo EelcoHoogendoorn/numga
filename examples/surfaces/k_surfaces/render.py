@@ -14,11 +14,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import concatenate
-from examples import instantiate
 from examples.surfaces.k_surfaces import core
+from examples.util.topology import Topology
 from examples.util.wgsl import compose, image_figure, meshes, solids
-
-Mesh = instantiate("examples.util.mesh", core.ga).Mesh
 
 # The pictures' pixels across and up; the bending saddle's at a share of them per side, its widths in pixels scaled
 # with it, and drawn with every so many of the grid's lines.
@@ -67,15 +65,15 @@ def grid_colour(front: np.ndarray, back: np.ndarray, width: float) -> meshes.Col
 
 
 # --- plumbing
-def mesh(n_rows: int, n_columns: int, spacing: int) -> tuple[Mesh, np.ndarray]:
+def topology(n_rows: int, n_columns: int, spacing: int) -> tuple[Topology, np.ndarray]:
     """Triangles and their edge ink at the edge opposite each corner, with the diagonal of each quad left
     unmarked, and of the grid's lines inside every `spacing`-th row and column."""
     indices = np.arange(n_rows * n_columns).reshape(n_rows, n_columns)
     quads = np.stack([indices[:-1, :-1], indices[1:, :-1],
                      indices[1:, 1:], indices[:-1, 1:]], axis=-1).reshape(-1, 4)
-    grid = Mesh(n_rows * n_columns, quads[:, [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3))
+    grid = Topology(n_rows * n_columns, quads[:, [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3))
     # Of each face, whether the edge opposite each corner lies on the grid's boundary.
-    boundary = np.isin(grid.face_edges, grid.boundary_edges)                    # [faces, corners]
+    boundary = np.isin(grid.boundary_indices[1], grid.exterior[1])              # [faces, corners]
     # Of each quad's two triangles, the edges opposite their corners: the next row and this column, then the next
     # column and this row, each drawn where its line is.
     rows, columns = np.meshgrid(np.arange(n_rows - 1), np.arange(n_columns - 1), indexing="ij")
@@ -101,21 +99,21 @@ def viewport(points: core.Point, view_elevation: float, view_azimuth: float, n_p
     return view._replace(half=landscape(view.half))
 
 
-def sheet(points: core.Point, topology: Mesh, ink: np.ndarray, colour: meshes.Colour,
+def sheet(points: core.Point, topology: Topology, ink: np.ndarray, colour: meshes.Colour,
           view: solids.View) -> meshes.Samples:
     """One sheet `[rows, columns] Point-`, lit on both sides, at every sample, as `meshes.samples`."""
     places = solids.origin + solids.context.include_from_algebra(points.reshape(-1))      # [vertices] Point-
-    return meshes.samples(places, topology.faces, np.zeros(3), meshes.smooth(places, topology), view, face_values=ink,
+    return meshes.samples(places, topology.elements[2], np.zeros(3), meshes.smooth(places, topology), view, face_values=ink,
                           colour=colour, gloss=solids.gloss)
 
 
-def picture(points: core.Point, topology: Mesh, ink: np.ndarray, view: solids.View, scale: float) -> np.ndarray:
+def picture(points: core.Point, topology: Topology, ink: np.ndarray, view: solids.View, scale: float) -> np.ndarray:
     """One gridded sheet, its lines' width in pixels scaled by `scale`."""
     return solids.draw([], view, background, inks=[], translucent=[],
                        meshes=[(sheet(points, topology, ink, grid_colour(front_colour, back_colour, scale * edge_width), view), 1.0)])
 
 
-def partner_picture(partner: core.Point, source: core.Point, topology: Mesh, ink: np.ndarray, view: solids.View) -> np.ndarray:
+def partner_picture(partner: core.Point, source: core.Point, topology: Topology, ink: np.ndarray, view: solids.View) -> np.ndarray:
     """Two translucent sheets with common tangents and marked corresponding points."""
     n_rows, n_columns = source.shape
     row_margin, column_margin = n_rows // 6, n_columns // 6
@@ -139,7 +137,7 @@ def partner_picture(partner: core.Point, source: core.Point, topology: Mesh, ink
 def frames(states: Iterable[core.Point], reference: core.Point) -> Iterator[np.ndarray]:
     """Draw each point grid with the camera fixed by a reference grid of the same rows and columns, at the saddle's
     share of the pixels and of its grid's lines."""
-    topology, ink = mesh(*reference.shape[-2:], saddle_line_spacing)
+    topology, ink = topology(*reference.shape[-2:], saddle_line_spacing)
     view = viewport(reference, elevation, azimuth, round(saddle_scale * n_width))
     for state in states:
         yield picture(state, topology, ink, view, saddle_scale)
@@ -147,7 +145,7 @@ def frames(states: Iterable[core.Point], reference: core.Point) -> Iterator[np.n
 
 def partner_frames(states: Iterable[core.Point], source: core.Point, reference: core.Point) -> list[np.ndarray]:
     """Draw a partner family against one source net and one fixed camera."""
-    topology, ink = mesh(*source.shape, 1)
+    topology, ink = topology(*source.shape, 1)
     view = viewport(reference, elevation, azimuth, n_width)
     return [partner_picture(state, source, topology, ink, view) for state in states]
 
@@ -156,8 +154,8 @@ def partner_orbit(partner: core.Point, source: core.Point, azimuths: np.ndarray,
                   ) -> Iterator[np.ndarray]:
     """Orbit a fixed pair, framed with one scale fitted to every view; azimuths and elevation in degrees, the
     azimuth measured from x."""
-    topology, ink = mesh(*source.shape, 1)
-    points = concatenate([source.reshape(-1), partner.reshape(-1)])            # [vertices] Point-
+    topology, ink = topology(*source.shape, 1)
+    points = concatenate([source.reshape(-1), partner.reshape(-1)])                       # [vertices] Point-
     view_elevation, view_azimuths = np.radians(orbit_elevation), np.radians(azimuths + 90)
     views = [viewport(points, view_elevation, view_azimuth, n_width) for view_azimuth in view_azimuths]
     half = np.max([view.half for view in views], axis=0)

@@ -24,18 +24,18 @@ NET_WIDTH, AXIS_WIDTH, TIP_RADIUS = 2.4, 3.0, 4.0
 
 
 # --- plumbing -------------------------------------------------------------------------
-def panel(frames: core.Point, surface: core.Point, control_mesh: core.Mesh, refined_mesh: core.Mesh,
+def panel(frames: core.Point, surface: core.Point, control_topology: core.Topology, refined_topology: core.Topology,
           view: solids.View) -> np.ndarray:
     """Render a smooth-shaded surface `[refined] Point-` with its dashed control net and control-frame arrows
     `[axes + 1] Point-[vertices]`, each frame's origin followed by its axes' tips, each arrow a rod with a ball at its
     tip."""
     pixel = view.pixel
-    faces = refined_mesh.faces
-    sheet = meshes.samples(surface, faces, SURFACE_COLOUR, meshes.smooth(surface, refined_mesh), view, face_values=np.zeros(4),
+    faces = refined_topology.elements[2]
+    sheet = meshes.samples(surface, faces, SURFACE_COLOUR, meshes.smooth(surface, refined_topology), view, face_values=np.zeros(4),
                            colour=meshes.plain, gloss=solids.gloss)
     origins, tips = frames[0], frames[1:].batch()                              # Point-[vertices], [axes, vertices] Point-
     # Cut each edge of the control net into equal pieces, one fewer than twice the dash count, so every other piece is a dash.
-    starts, ends = (control_mesh.incidence[1, 0] * origins).batch()            # [edges] Point-, Point-
+    starts, ends = (control_topology.incidence[1, 0] * origins).batch()        # [edges] Point-, Point-
     share = np.linspace(0, 1, 2 * N_DASHES).reshape(N_DASHES, 2)               # [dashes, ends]
     dashes = starts[:, None, None] * (1 - share) + ends[:, None, None] * share  # [edges, dashes, ends] Point-
     shafts = solids.rods(origins.batch()[None], tips, AXIS_WIDTH / 2 * pixel)   # [axes, vertices, 3] Plane+ <- Point-
@@ -46,12 +46,12 @@ def panel(frames: core.Point, surface: core.Point, control_mesh: core.Mesh, refi
     return solids.draw(marks, view, background, inks=[], translucent=[], meshes=[(sheet, 1.0)])
 
 
-def animate(control_frames: core.Point, surfaces: core.Point, control_mesh: core.Mesh, refined_mesh: core.Mesh
+def animate(control_frames: core.Point, surfaces: core.Point, control_topology: core.Topology, refined_topology: core.Topology
             ) -> Iterator[np.ndarray]:
     """Yield side-by-side panels of the point-subdivided and motor-subdivided surfaces with their control net and
     frames, `[frames, axes + 1] Point-[vertices]` and `[frames, schemes] Point-[refined]`, for each animation frame."""
     surfaces = surfaces.batch()                                                # [frames, schemes, refined] Point-
     view = solids.view([control_frames.batch(), surfaces], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
     for index in range(len(surfaces)):
-        yield np.concatenate([panel(control_frames[index], surface, control_mesh, refined_mesh, view)
+        yield np.concatenate([panel(control_frames[index], surface, control_topology, refined_topology, view)
                               for surface in surfaces[index]], axis=1)

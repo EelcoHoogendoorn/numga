@@ -11,7 +11,7 @@ from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 
 from numga import stack
 from examples.math.isospectral_drums.core import Point, Scalar, ga, mv
-from examples.math.isospectral_drums.numerics import Mesh
+from examples.math.isospectral_drums.numerics import Topology
 from examples.util.wgsl import Shader, contours, simplices
 from examples.util.wgsl.camera import flat_panel
 
@@ -47,21 +47,21 @@ def amplitudes(field: Scalar) -> np.ndarray:
     return np.asarray(field.batch().to_array())
 
 
-def welded(corners: Point) -> tuple[Mesh, Point]:
+def welded(corners: Point) -> tuple[Topology, Point]:
     """The mesh of tiles `[tiles, corners]` whose separate tiles carry separate copies of a shared corner, each set of
     copies, at no distance from each other, welded into one vertex, and the welded vertices `[vertices]`."""
     copies = corners.reshape(-1)                                               # [copies] Point-
     together = (copies[:, None] - copies[None]).norm() < 1e-9                  # [copies, copies]
     # Each copy welded into the first copy at its place.
     welds, firsts, vertices = np.unique(together.argmax(axis=0), return_index=True, return_inverse=True)
-    return Mesh(len(welds), vertices.reshape(corners.shape)), copies[firsts]
+    return Topology(len(welds), vertices.reshape(corners.shape)), copies[firsts]
 
 
 def draw_tiles(tiles: Point) -> plt.Figure:
     """The two polygonal drums, with matching colours for their seven constituent triangles."""
     n_tiles = tiles.shape[1]
     # Each tile its own three corners, so that it takes its own colour.
-    pieces = simplices.Mesh(3 * n_tiles, np.arange(3 * n_tiles).reshape(n_tiles, 3))
+    pieces = simplices.Topology(3 * n_tiles, np.arange(3 * n_tiles).reshape(n_tiles, 3))
     figure, axes = plt.subplots(1, len(tiles), figsize=(8, 3.7), facecolor="white")
     figure.subplots_adjust(0, 0, 1, 1, wspace=0.07)
     # Each drum framed about its middle, every one as wide as the widest drum is along x or y, with a margin.
@@ -73,13 +73,12 @@ def draw_tiles(tiles: Point) -> plt.Figure:
         ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
         ax.set_axis_off()
         camera = flat_panel(ax, ga)
-        mesh, welds = welded(drum)
+        topology, welds = welded(drum)
         simplices.overlay(ax, [
             contours.picture(drum.reshape(-1), pieces, np.zeros(3 * n_tiles), np.repeat(tile_colours, 3, axis=0),
                              camera),
             simplices.strokes(drum.reshape(-1), pieces, np.ones(3), seam_width, camera),
-            simplices.strokes(welds, simplices.Mesh(mesh.n_vertices, mesh.edges[mesh.boundary_edges]), outline,
-                              rim_width, camera)])
+            simplices.strokes(welds, topology.border, outline, rim_width, camera)])
     return figure
 
 
@@ -167,8 +166,8 @@ class Membrane:
         # The outline is whole on the drum's perimeter, and half on each side of a seam between two tiles.
         n_tiles = corners.shape[0]
         tiling, _ = welded(corners)
-        perimeter = np.isin(tiling.face_edges, tiling.boundary_edges)                      # [tiles, corners]
-        self.rims = np.where(perimeter, outline_width, outline_width / 2)               # [tiles, corners]
+        perimeter = np.isin(tiling.boundary_indices[1], tiling.exterior[1])                # [tiles, corners]
+        self.rims = np.where(perimeter, outline_width, outline_width / 2)                  # [tiles, corners]
         self.owners = np.repeat(np.arange(n_tiles), len(triangles) // n_tiles).astype(np.uint32)
 
     def draw(self, field: np.ndarray, exposure: float) -> np.ndarray:
@@ -183,7 +182,7 @@ class Membrane:
 
 
 def frames(
-    vertices: tuple[Point, Point], meshes: tuple[Mesh, Mesh], tiles: Point,
+    vertices: tuple[Point, Point], meshes: tuple[Topology, Topology], tiles: Point,
     fields: Iterable[tuple[Scalar, Scalar]], exposure: float,
 ) -> Iterator[np.ndarray]:
     """Two flat displacement maps sharing a fixed scale and colour range, each with the outlines of its
@@ -191,21 +190,21 @@ def frames(
     # Both drums at one scale, the wider along x or y filling most of its picture.
     widest = stack([(high - low).max() for low, high in map(extent, vertices)]).max()   # [] Scalar+
     scale = float((0.91 * pixels / widest).to_array())
-    membranes = tuple(Membrane(value, mesh.faces, drum, scale) for value, mesh, drum in zip(vertices, meshes, tiles))
+    membranes = tuple(Membrane(value, topology.elements[2], drum, scale) for value, topology, drum in zip(vertices, meshes, tiles))
     for pair in fields:
         yield np.concatenate([membrane.draw(amplitudes(field), exposure) for membrane, field in zip(membranes, pair)],
                              axis=1)
 
 
-def draw_pieces(vertices: Point, mesh: Mesh, pieces: Scalar, exposure: float) -> plt.Figure:
+def draw_pieces(vertices: Point, topology: Topology, pieces: Scalar, exposure: float) -> plt.Figure:
     """Signed source contributions and their sum on the same reference triangle."""
     values = amplitudes(pieces)
     # The triangle framed about its middle, as wide as it is wide along x or y, with a margin.
     low, high = extent(vertices)                                               # [2] Scalar+, [2] Scalar+
     centre, half_span = (low + high) / 2, (high - low).max() * 1.05 / 2       # [2] Scalar+, [] Scalar+
-    limits = stack((centre - half_span, centre + half_span), axis=-1).to_array()   # [2, 2]
+    limits = stack((centre - half_span, centre + half_span), axis=-1).to_array()       # [2, 2]
     places = vertices.batch()                                                 # [vertices] Point-
-    rim = simplices.Mesh(mesh.n_vertices, mesh.edges[mesh.boundary_edges])
+    rim = topology.border
     figure, axes = plt.subplots(1, len(values), figsize=(10, 2.5), facecolor="white")
     figure.subplots_adjust(0, 0, 1, 1, wspace=0.08)
     for ax, field in zip(axes, values):
@@ -214,6 +213,6 @@ def draw_pieces(vertices: Point, mesh: Mesh, pieces: Scalar, exposure: float) ->
         camera = flat_panel(ax, ga)
         shades = colours(Normalize(-exposure, exposure)(field))[:, :3]
         nodal_lines = contours.Level(0.0, nodal_ink, nodal_width)
-        simplices.overlay(ax, [contours.picture(places, mesh, field, shades, camera, levels=(nodal_lines,)),
+        simplices.overlay(ax, [contours.picture(places, topology, field, shades, camera, levels=(nodal_lines,)),
                                simplices.strokes(places, rim, outline, piece_rim_width, camera)])
     return figure

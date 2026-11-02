@@ -69,45 +69,45 @@ def panel_image(images: list[np.ndarray]) -> np.ndarray:
 class DiskDrawing:
     """Fixed topology and framing for an extruded drawing of a two-dimensional solid."""
 
-    def __init__(self, mesh: core.Mesh, vertices: core.Point, regions: np.ndarray):
-        self.mesh = mesh
+    def __init__(self, topology: core.Topology, vertices: core.Point, regions: np.ndarray):
+        self.topology = topology
         self.regions = regions
         self.reference = vertices
         radius = float(vertices.batch().norm().max().to_array())
         self.view = solids.View(solids.aim(solids.origin, view_elevation, view_azimuth),
                                 np.full(2, 1.12 * radius), n_pixels)
-        # The outline: the free surface, and the edges between a liquid and a solid triangle around the core.
-        sides = regions[mesh.edge_faces]                                          # [interior edges, 2]
-        interface = mesh.interior_edges[sides[:, 0] != sides[:, 1]]
-        self.rim = mesh.edges[np.concatenate((mesh.boundary_edges, interface))]
-        self.outline = simplices.Mesh(mesh.n_vertices, self.rim)
+        # The outline: the free surface, and the interior edges between a liquid and a solid triangle around the core,
+        # where the region jumps along the dual edge across them.
+        jumps = (topology.dual.d[0] * core.as_scalar(regions).field()).batch().to_array()   # [edges]
+        interface = np.intersect1d(topology.interior[1], np.flatnonzero(jumps))
+        self.outline = topology.subset(np.concatenate((topology.exterior[1], interface)), 1)
         # The markers: the vertices of the free surface nearest points turned evenly around it, from the top.
-        surface_vertices = mesh.exterior(0)
+        surface_vertices = topology.exterior[0]
         angles = np.linspace(0, 2 * np.pi, n_markers, endpoint=False) + np.pi / 2
         targets = (core.mv.xy * (-angles / 2)).exp() >> (core.mv.x.dual() * radius)   # [markers] Point-
-        surface_points = vertices.batch()[surface_vertices]                       # [surface] Point-
+        surface_points = (topology.reading(surface_vertices) * vertices).batch()  # [surface] Point-
         nearest = (surface_points[:, None] - targets[None]).norm_squared().argmin(axis=0)
         self.markers = surface_vertices[nearest]
-        self.corner_mean = mesh.incidence[2, 0].mean(axis=0)                      # Scalar+[faces <- vertices]
-        self.vertex_shares = ~self.corner_mean * core.as_scalar(np.ones(len(mesh.faces))).field()   # Scalar+[vertices]
+        self.corner_mean = topology.incidence[2, 0].mean(axis=0)                  # Scalar+[faces <- vertices]
+        self.vertex_shares = ~self.corner_mean * core.as_scalar(np.ones(topology.n_elements[2])).field()  # Scalar+[vertices]
         # The motion stays in the plane, so the top keeps the normals of its reference.
-        self.top_normals = meshes.flat(top_middle + solids.context.include_from_algebra(vertices.batch()), mesh.faces)
+        self.top_normals = meshes.flat(top_middle + solids.context.include_from_algebra(vertices.batch()), topology.elements[2])
 
     def draw(self, places: core.Point, panels: list[tuple[np.ndarray, meshes.Colour]],
              motion: list[meshes.Samples], markers: list[tuple[solids.Quadric, np.ndarray]]) -> list[np.ndarray]:
         """One image per panel of values and colouring on the same deformed section: the top carries the field
         readings; the shallow side wall only gives the section a visible edge."""
         points = top_middle + solids.context.include_from_algebra(places.batch())           # [vertices] Point-
-        top_start, top_end = points[self.rim[:, 0]], points[self.rim[:, 1]]       # [rim] Point-, Point-
+        top_start, top_end = (self.outline.incidence[1, 0] * points.field()).batch()   # [rim] Point-, Point-
         bottom_start, bottom_end = top_start - up * display_thickness, top_end - up * display_thickness
         wall_points = stack((top_start, top_end, bottom_start, bottom_end), axis=1).reshape(-1)   # [rim * 4] Point-
         wall_faces = (np.array([[0, 2, 1], [1, 2, 3]])[None]
-                      + 4 * np.arange(len(self.rim))[:, None, None]).reshape(-1, 3)
+                      + 4 * np.arange(self.outline.n_elements[1])[:, None, None]).reshape(-1, 3)
         wall = meshes.samples(wall_points, wall_faces, wall_colour,
-                              meshes.smooth(wall_points, meshes.Mesh(len(wall_points), wall_faces)), self.view,
+                              meshes.smooth(wall_points, meshes.Topology(len(wall_points), wall_faces)), self.view,
                               face_values=np.zeros(1), colour=meshes.plain, gloss=0.06)
         rim = simplices.tubes(points, self.outline, outline_colour, 1.0, self.view, gloss=solids.gloss)
-        tops = [meshes.samples(points, self.mesh.faces, values[self.mesh.faces], self.top_normals, self.view,
+        tops = [meshes.samples(points, self.topology.elements[2], values[self.topology.elements[2]], self.top_normals, self.view,
                                face_values=self.regions[:, None], colour=surface, gloss=0.0)
                 for values, surface in panels]
         return [solids.draw(markers, self.view, background, inks=[], translucent=[],
@@ -119,28 +119,28 @@ class DiskDrawing:
         return ((~self.corner_mean * readings) / self.vertex_shares).batch().to_array()[:, None]
 
 
-def draw_materials(mesh: core.Mesh, vertices: core.Point, regions: np.ndarray) -> plt.Figure:
+def draw_materials(topology: core.Topology, vertices: core.Point, regions: np.ndarray) -> plt.Figure:
     """The mesh, the liquid core and the solid shell around it, before anything moves."""
-    drawing = DiskDrawing(mesh, vertices, regions)
-    image, = drawing.draw(vertices, [(np.zeros((mesh.n_vertices, 1)), material_surface)], [], [])
+    drawing = DiskDrawing(topology, vertices, regions)
+    image, = drawing.draw(vertices, [(np.zeros((topology.n_vertices, 1)), material_surface)], [], [])
     return image_figure(image)
 
 
-def animate_waves(mesh: core.Mesh, vertices: core.Point, regions: np.ndarray,
+def animate_waves(topology: core.Topology, vertices: core.Point, regions: np.ndarray,
                   frames: Iterable[tuple[core.Point, core.Scalar, core.Scalar]], moon: core.Point, moon_radius: float,
                   displacement_scale: float, dilation_scale: float, vorticity_scale: float) -> Iterator[np.ndarray]:
     """The rate of dilation on the left and the vorticity on the right, signed, each at its own fixed scale, with the
     moon `[frames]` that strikes the planet."""
-    drawing = DiskDrawing(mesh, vertices, regions)
+    drawing = DiskDrawing(topology, vertices, regions)
     history = deque(maxlen=n_trail_frames)
     for (displacement, dilation_rate, vorticity), moon_place in zip(frames, moon):
         places = vertices + displacement_scale * displacement                      # Point-[vertices]
-        history.append(places.batch()[drawing.markers])
+        history.append((topology.reading(drawing.markers) * places).batch())
         # The beads follow material points of the free surface; their short tails trace its motion.
         trail_places = solids.context.include_from_algebra(stack(list(history), axis=1))   # [markers, trail] Point-
-        trajectory = top_middle + up * 0.009 + trail_places                       # [markers, trail] Point-
+        trajectory = top_middle + up * 0.009 + trail_places                                # [markers, trail] Point-
         # Each marker's tail a chain of edges through its trail, each edge greyer the older it is.
-        tail_chains = simplices.Mesh.chains([len(history)] * n_markers)
+        tail_chains = simplices.Topology.chains([len(history)] * n_markers)
         age = np.tile(np.linspace(0.72, 0.12, len(history) - 1), n_markers)       # [edges]
         tails = simplices.tubes(trajectory.reshape(-1), tail_chains, np.repeat(age[:, None], 3, axis=-1), 1.0,
                                 drawing.view, gloss=solids.gloss)
@@ -152,12 +152,12 @@ def animate_waves(mesh: core.Mesh, vertices: core.Point, regions: np.ndarray,
 
 
 
-def animate_modes(mesh: core.Mesh, vertices: core.Point, regions: np.ndarray,
+def animate_modes(topology: core.Topology, vertices: core.Point, regions: np.ndarray,
                   frames: Iterable[tuple[core.Point, core.Scalar, core.Scalar]],
                   displacement_scale: float) -> Iterator[np.ndarray]:
     """The ball moved by each wave in turn, its dilation on the left and its rotation on the right, both on the scale
     of the larger of the two in the frame, so that a wave of either kind shows at full strength and in its proportion."""
-    drawing = DiskDrawing(mesh, vertices, regions)
+    drawing = DiskDrawing(topology, vertices, regions)
     for displacement, dilation, rotation in frames:
         places = vertices + displacement_scale * displacement                      # Point-[vertices]
         dilations, rotations = dilation.batch().to_array(), rotation.batch().to_array()   # [faces], [faces]

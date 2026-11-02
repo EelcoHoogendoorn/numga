@@ -70,40 +70,42 @@ def camera_view(points: solids.Point, n_pixels: int) -> solids.View:
     return solids.view([points], surface_reach, elevation, azimuth, margin, n_pixels).squared()
 
 
-def surface_panel(mesh: core.Mesh, points: solids.Point, smooth_normals: dict, frame: solids.View,
+def surface_panel(topology: core.Topology, points: solids.Point, smooth_normals: dict, frame: solids.View,
                 field: core.Scalar, stream: core.Scalar, velocity: core.Point,
                 field_scale: float, stream_scale: float, n_contours: float) -> np.ndarray:
     """One GPU-rendered panel of the surface coloured by `field` with uniform-width streamline contours of `stream`."""
-    scaled_field = field.to_array() / field_scale                                # [vertices]
-    scaled_stream = (stream.to_array() / stream_scale) * n_contours              # [vertices]
+    channels = (field / field_scale, stream * (n_contours / stream_scale))       # Scalar+[vertices], Scalar+[vertices]
     face_speed = ((velocity.norm().to_array() / stream_scale) * n_contours)[:, None]   # [faces, 1]
-    corner_values = np.stack([scaled_field, scaled_stream], axis=-1)[mesh.faces] # [faces, 3, 2]
-    surface = meshes.samples(points, mesh.faces, corner_values, smooth_normals, frame,
+    triangles = topology.elements[2]
+    # Each channel at the corners of each face, faces first, for the shader.
+    corner_values = np.stack([(topology.incidence[2, 0] * channel).batch().to_array() for channel in channels],
+                             axis=-1).transpose(1, 0, 2)                          # [faces, 3, 2]
+    surface = meshes.samples(points, triangles, corner_values, smooth_normals, frame,
                              face_values=face_speed, colour=streamline_shader, gloss=solids.gloss)
     return solids.draw([], frame, background, inks=[], translucent=[], meshes=[(surface, 1.0)])
 
 
-def draw_surface(mesh: core.Mesh, vertices: core.Point) -> Figure:
+def draw_surface(topology: core.Topology, vertices: core.Point) -> Figure:
     """The bare surface, plainly lit, from the camera of the modes."""
     points = solids.origin + solids.context.include_from_algebra(vertices.batch())       # [vertices] Point-
     frame = camera_view(points, n_mode_pixels)
-    surface = meshes.samples(points, mesh.faces, surface_colour, meshes.smooth(points, mesh), frame,
+    surface = meshes.samples(points, topology.elements[2], surface_colour, meshes.smooth(points, topology), frame,
                              face_values=np.zeros(1), colour=meshes.plain, gloss=solids.gloss)
     return image_figure(solids.draw([], frame, background, inks=[], translucent=[], meshes=[(surface, 1.0)]))
 
 
-def draw_modes(mesh: core.Mesh, vertices: core.Point, modes: core.Scalar,
+def draw_modes(topology: core.Topology, vertices: core.Point, modes: core.Scalar,
                mode_velocities: core.Point) -> Figure:
     """The Stanford bunny side by side for each selected Laplace–Beltrami streamfunction mode and its streamlines."""
     points = solids.origin + solids.context.include_from_algebra(vertices.batch())       # [vertices] Point-
-    smooth_normals = meshes.smooth(points, mesh)
+    smooth_normals = meshes.smooth(points, topology)
     frame = camera_view(points, n_mode_pixels)
     panels = []
     for mode, velocity in zip(modes, mode_velocities):
         values = np.abs(mode.to_array())
         field_scale = float(np.percentile(values, vorticity_exposure))
         stream_scale = float(np.percentile(values, stream_exposure))
-        panels.append(surface_panel(mesh, points, smooth_normals, frame, mode, mode, velocity,
+        panels.append(surface_panel(topology, points, smooth_normals, frame, mode, mode, velocity,
                                   field_scale, stream_scale, n_mode_contours))
     return image_figure(np.concatenate(panels, axis=1))
 
@@ -142,30 +144,30 @@ def draw_conservation(times: np.ndarray, inviscid_energy: core.Scalar, viscous_e
     return figure
 
 
-def animate_flow(mesh: core.Mesh, vertices: core.Point, states: Iterable[tuple[core.Scalar, core.Scalar, core.Point]],
+def animate_flow(topology: core.Topology, vertices: core.Point, states: Iterable[tuple[core.Scalar, core.Scalar, core.Point]],
                  n_pixels: int = n_flow_pixels) -> Iterator[np.ndarray]:
     """Vorticity colours and velocity streaks use fixed scales from the initial state."""
     states = iter(states)
     first = next(states)
     field_scale = float(np.percentile(np.abs(first[0].to_array()), vorticity_exposure))
     # The face velocities reach vertices by an area-weighted mean, then lose their normal part.
-    sides = mesh.boundary[2, 1] * (mesh.d[0] * vertices)
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)
     patches = (sides[0] & sides[1]) / 2                                         # Patch-[faces]
     areas = patches.norm()                                                     # Scalar+[faces]
-    corners = ~mesh.incidence[2, 0].mean(axis=0)
+    corners = ~topology.incidence[2, 0].mean(axis=0)
     dual_areas = corners * areas                                                # Scalar+[vertices]
     normals = (corners * patches).normalized()                                  # Patch-[vertices]
     at_vertices = core.spdiag(1 / dual_areas) * corners * core.spdiag(areas)
     tangential = core.Point - normals.dual() * (normals & core.Point)            # (Point- <- Point-)[vertices]
     initial_velocity = tangential(at_vertices * first[2])                       # Point-[vertices]
     reference_speed = float(np.percentile(initial_velocity.norm().batch().to_array(), 95))
-    points = solids.origin + solids.context.include_from_algebra(vertices.batch())   # [vertices] Point-
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())       # [vertices] Point-
     frame = camera_view(points, n_pixels)
     for vorticity, stream, velocity in chain((first,), states):
         tangent = tangential(at_vertices * velocity)                            # Point-[vertices]
-        directions = solids.context.include_from_algebra(tangent.batch())       # [vertices] Point-
+        directions = solids.context.include_from_algebra(tangent.batch())                # [vertices] Point-
         level = np.clip(vorticity.to_array() / field_scale, -1, 1)
         tone = np.where(level[:, None] >= 0, positive_colour, negative_colour)
         weight = (np.abs(level)**0.72 * 0.88)[:, None]
         colours = surface_colour * (1 - weight) + tone * weight
-        yield flow.draw(points, mesh, directions, frame, colours, reference_speed)
+        yield flow.draw(points, topology, directions, frame, colours, reference_speed)

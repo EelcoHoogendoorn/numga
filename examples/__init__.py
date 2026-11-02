@@ -57,7 +57,7 @@ def auto_increment_path(path: Path | str) -> Path:
 
 # The executed copies by module, algebra and kind of context, each beside the algebra it was made for, which keeps that
 # algebra alive and so its identity unique.
-instances: dict[tuple[str, int, type], tuple[Algebra, ModuleType]] = {}
+_instances: dict[tuple[str, int, type], tuple[Algebra, ModuleType]] = {}
 
 
 def instantiate(module: str, ga: Algebra, context: type[Context] = NumpyContext) -> ModuleType:
@@ -72,11 +72,11 @@ def instantiate(module: str, ga: Algebra, context: type[Context] = NumpyContext)
     their values do not mix. The copy is not registered in sys.modules.
     """
     key = (module, id(ga), context)
-    if key not in instances:
+    if key not in _instances:
         spec = importlib.util.find_spec(module)
         instance = importlib.util.module_from_spec(spec)
         instance.ga = ga
         instance.ctx = context(ga, dtype=np.float64)
         spec.loader.exec_module(instance)
-        instances[key] = (ga, instance)
-    return instances[key][1]
+        _instances[key] = (ga, instance)
+    return _instances[key][1]

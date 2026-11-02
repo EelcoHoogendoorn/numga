@@ -38,18 +38,17 @@ def scenes(paths: solids.Point) -> list[Scene]:
     as faint strokes, set up once for the masses to be drawn among, all in one view."""
     corners = np.stack(np.meshgrid(*[[-1.0, 1.0]] * 3, indexing="ij"), axis=-1).reshape(-1, 3)
     view = solids.view([solids.mv.point(corners)], 0.0, elevation, azimuth, margin, n_pixels)
-    closed = concatenate([paths, paths[:1]])                                    # [times + 1, cases, masses] Point-
     sphere = solids.ball(solids.origin, 1.0)[None, None]
     # The great circles where the planes x, y and z through the centre cut the sphere, the first translucent part,
     # after the shape and each mass's ball.
     circles = solids.Ink(paths.shape[2] + 1, solids.half_space(solids.axes), solids.everywhere[None],
                          circle_colour, circle_width, 1.0)
-    # Each mass's closed path a chain of edges, each edge in its mass's colour.
-    n_closed, n_masses = len(closed), paths.shape[2]
-    path_chains = simplices.Mesh.chains([n_closed] * n_masses)
-    path_colours = np.repeat(mass_colours, n_closed - 1, axis=0)                            # [edges, 3]
+    # Each mass's closed path a loop of edges, each edge in its mass's colour.
+    n_times, n_masses = len(paths), paths.shape[2]
+    path_loops = simplices.Topology.loops([n_times] * n_masses)
+    path_colours = np.repeat(mass_colours, n_times, axis=0)                                 # [edges, 3]
     return [Scene(view, np.ones(3), [],
-                  [(simplices.tubes(concatenate([closed[:, case, mass] for mass in range(n_masses)]), path_chains,
+                  [(simplices.tubes(concatenate([paths[:, case, mass] for mass in range(n_masses)]), path_loops,
                                     path_colours, path_width, view, gloss=solids.gloss), path_opacity)],
                   inks=[circles], translucent=[(sphere, sphere_colour, sphere_opacity)])
             for case in range(paths.shape[1])]
@@ -60,14 +59,15 @@ def case_image(scene: Scene, places: solids.Point, velocities: solids.Point, mas
     velocities `[masses]`, among the scene's sphere and paths."""
     view = scene.view
     # Joining the masses makes the reflected shape visible throughout the turn.
-    shape = solids.rods(places, places[np.roll(np.arange(len(places)), -1)], shape_radius * view.pixel)
+    tails, heads = (simplices.Topology.loops([len(places)]).incidence[1, 0] * places.field()).batch()   # [masses] Point-, Point-
+    shape = solids.rods(tails, heads, shape_radius * view.pixel)
     # Each mass a ball whose area goes with its mass.
     balls = [solids.ball(places[mass:mass + 1], mass_radius * np.sqrt(masses[mass]) * view.pixel)
              for mass in range(len(places))]
     # Each velocity an arrow, a tube ending in a chevron.
     tips = places + velocity_length * velocities                                # [masses] Point-
     n_masses = len(places)
-    arrows = simplices.tubes(stack((places, tips), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_masses),
+    arrows = simplices.tubes(stack((places, tips), axis=-1).reshape(-1), simplices.Topology.chains([2] * n_masses),
                              mass_colours, arrow_width, view, gloss=solids.gloss, chevrons=np.ones(n_masses),
                              chevron=chevron_length)
     parts = [(shape, shape_colour)] + [(ball[:, None], colour) for ball, colour in zip(balls, mass_colours)]

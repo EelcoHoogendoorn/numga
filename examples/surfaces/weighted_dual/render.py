@@ -47,13 +47,13 @@ def arcs(starts: solids.Point, ends: solids.Point) -> tuple[solids.Quadric, soli
     return solids.half_space((solids.origin & starts & ends) * solids.flip), solids.half_space(across)
 
 
-def draw_complex(mesh: core.Mesh, points: core.Point, duals: core.Point) -> plt.Figure:
+def draw_complex(topology: core.Topology, points: core.Point, duals: core.Point) -> plt.Figure:
     """In space, the polyhedron of the points and its polar dual; on the sphere, both projected from the
     centre."""
-    return image_figure(picture(mesh, points, duals))
+    return image_figure(picture(topology, points, duals))
 
 
-def picture(mesh: core.Mesh, points: core.Point, duals: core.Point) -> np.ndarray:
+def picture(topology: core.Topology, points: core.Point, duals: core.Point) -> np.ndarray:
     """The two panels side by side: in space, the hull, opaque, with its edges, the dual's edges between the poles
     where a face of the dual bounding them faces the viewer, and each vertex on a stretch of its ray from the centre;
     on the sphere, the arcs of both."""
@@ -63,7 +63,7 @@ def picture(mesh: core.Mesh, points: core.Point, duals: core.Point) -> np.ndarra
     vertices = solids.origin + solids.context.include_from_algebra(points.batch())             # [points] Point-
     # The hull, folded or not, as one cone from the centre over each face, so that it is solid wherever its faces
     # are: the centre, then the face's corners.
-    corners = solids.origin + solids.context.include_from_algebra((mesh.incidence[2, 0] * points).batch())   # [corners, faces] Point-
+    corners = solids.origin + solids.context.include_from_algebra((topology.incidence[2, 0] * points).batch())  # [corners, faces] Point-
     cones = stack([solids.origin.broadcast_to(corners.shape[1:]), *corners], axis=-1)   # [faces, 4] Point-
     hull = solids.polyhedra(cones, CONE_FACES)                                 # [faces, 4] Plane+
     # Each vertex coloured by its distance from the sphere, blue inside, grey on it, red outside, on a stretch of
@@ -71,24 +71,24 @@ def picture(mesh: core.Mesh, points: core.Point, duals: core.Point) -> np.ndarra
     distance = points.norm().batch().to_array()                                # [points]
     rays = points.normalized()                                                 # Point-[points]
     # Where the rays meet the sphere, at both ends of each edge, in the renderer's space.
-    ray_ends = solids.origin + solids.context.include_from_algebra((mesh.incidence[1, 0] * rays).batch())   # [ends, edges] Point-
+    ray_ends = solids.origin + solids.context.include_from_algebra((topology.incidence[1, 0] * rays).batch())  # [ends, edges] Point-
     colours = plt.get_cmap(DISTANCE_MAP)((distance - 1 + DISTANCE_RANGE) / (2 * DISTANCE_RANGE))[:, :3]
     # The face of the dual polar to a vertex faces along the vertex's ray; a dual edge, across a primal edge, is
     # drawn where either of the two faces it bounds, those polar to the edge's ends, faces the viewer: where a ray's
     # end lies on the viewer's side of the camera's plane z, through the centre the camera aims at.
     facing = view.camera >> sm.z                                               # [] Plane+
     front = ((facing & ray_ends) > 0).any(axis=0)                              # [edges]
-    tails, heads = solids.origin + solids.context.include_from_algebra((mesh.incidence[1, 0] * points).batch())   # [edges] Point-, Point-
+    tails, heads = solids.origin + solids.context.include_from_algebra((topology.incidence[1, 0] * points).batch())  # [edges] Point-, Point-
     # The poles of the faces on either side of each edge, the ends of its dual edge.
-    beside = mesh.reading(mesh.edge_faces.T, 2)                                # [sides] Scalar+[edges <- faces]
-    left, right = solids.origin + solids.context.include_from_algebra((beside * duals).batch())   # [edges] Point-, Point-
+    beside = topology.dual.incidence[1, 0]                                     # [ends] Scalar+[edges <- faces]
+    dual_tails, dual_heads = solids.origin + solids.context.include_from_algebra((beside * duals).batch())                   # [edges] Point-, Point-
     primal_rods, primal_joints = solids.edges(tails, heads, EDGE_WIDTH / 2 * pixel)
-    dual_rods, dual_joints = solids.edges(left[front], right[front], EDGE_WIDTH / 2 * pixel)
-    ray_offsets = solids.context.include_from_algebra(rays.batch())                             # [points] Point-
+    dual_rods, dual_joints = solids.edges(dual_tails[front], dual_heads[front], EDGE_WIDTH / 2 * pixel)
+    ray_offsets = solids.context.include_from_algebra(rays.batch())                            # [points] Point-
     # A stretch of each ray about the sphere, an edge from inside it to outside.
     ray_spans = stack((solids.origin + ray_offsets * (1 - RAY_SPAN), solids.origin + ray_offsets * (1 + RAY_SPAN)),
                       axis=-1)                                                 # [points, 2] Point-
-    ray_strokes = simplices.tubes(ray_spans.reshape(-1), simplices.Mesh.chains([2] * len(ray_offsets)), RAY_COLOUR,
+    ray_strokes = simplices.tubes(ray_spans.reshape(-1), simplices.Topology.chains([2] * len(ray_offsets)), RAY_COLOUR,
                                   RAY_WIDTH, view, solids.gloss)
     parts = [(hull, HULL_COLOUR), (primal_rods, PRIMAL_COLOUR), (primal_joints, PRIMAL_COLOUR),
              (dual_rods, DUAL_COLOUR), (dual_joints, DUAL_COLOUR),
@@ -104,7 +104,7 @@ def picture(mesh: core.Mesh, points: core.Point, duals: core.Point) -> np.ndarra
     return np.concatenate([space, image], axis=1)
 
 
-def animate(frames: Iterable[tuple[core.Mesh, core.Point, core.Point]]) -> Iterator[np.ndarray]:
+def animate(frames: Iterable[tuple[core.Topology, core.Point, core.Point]]) -> Iterator[np.ndarray]:
     """The complex at every frame, from one view."""
     for geometry in frames:
         yield picture(*geometry)

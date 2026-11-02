@@ -57,7 +57,7 @@ def oscillator(position: solids.Scalar, warmth: float) -> np.ndarray:
     coil = centres + ((mv.yz * (coil_angles / 2)).exp() >> mv.direction([0, 0, 0.13]))   # [coil] Point-
     corners = mv.point([[x, y, z] for x in (-2.95, 2.5) for y in (-0.65, 0.65) for z in (0.1, 1.4)])
     view = solids.view([corners], 0.0, np.radians(18), np.radians(-12), 0.04, apparatus_pixels)
-    spring = simplices.tubes(coil, simplices.Mesh.chains([len(coil)]), art.ink, 1.6, view, solids.gloss)
+    spring = simplices.tubes(coil, simplices.Topology.chains([len(coil)]), art.ink, 1.6, view, solids.gloss)
     return solids.draw([(floor, art.grey), (wall, art.grey), (body, art.blue), (rod, art.grey),
                         (damper, art.thermal_colour(warmth))], view, art.white, inks=[], translucent=[],
                        meshes=[(spring, 1.0)])
@@ -105,8 +105,8 @@ class Charts:
                 + art.dots(self.hill, hill_path[-1:], art.orange))
         # The curve's name at the chart's right edge, level with the curve's end: the line through that end along the
         # mechanical energy, met with the edge.
-        right_edge = art.mv.x - art.mv.w * mechanical_range[1]                           # [] Plane+
-        curve_name = (self.curve[-1] & art.mv.x.dual()) ^ right_edge                    # [] Point-
+        right_edge = art.mv.x - art.mv.w * mechanical_range[1]                             # [] Plane+
+        curve_name = (self.curve[-1] & art.mv.x.dual()) ^ right_edge                     # [] Point-
         hill_labels = [art.Label(curve_name, "E = const", art.families["entropy"], art.text_size, "rb", (0, 4))]
         names = [art.Floating(art.crossings(self.entropy, 6), "S = const", art.families["entropy"], art.text_size,
                               "lt")]

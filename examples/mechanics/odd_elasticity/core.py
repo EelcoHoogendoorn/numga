@@ -17,12 +17,11 @@ import numpy as np
 from numga import NumpyContext, stack
 from numga.algebras import VGA2D
 from numga.sparse import SparseExtensor, spdiag
-from examples import instantiate
+from examples.util.topology import Topology
 
 ga = VGA2D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
-Mesh = instantiate("examples.util.mesh", ga).Mesh
 Scalar = ga.gatype.scalar()                                                  # Scalar+
 # Positions and displacements are antivectors; a force is a vector, read by its pairing with a displacement.
 Displacement = ga.gatype.antivector()                                        # Antivector-
@@ -38,7 +37,7 @@ directions = stack((mv.x, mv.y)).dual()                                      # [
 
 
 # --- plumbing -------------------------------------------------------------------------
-def triangular_patch(n_columns: int, n_rows: int, spacing: float) -> tuple[Mesh, Displacement]:
+def triangular_patch(n_columns: int, n_rows: int, spacing: float) -> tuple[Topology, Displacement]:
     """A triangular lattice with free edges: its triangles, whose edges are the bonds, and its positions."""
     columns, rows = np.meshgrid(np.arange(n_columns), np.arange(n_rows))
     positions = spacing * (
@@ -56,7 +55,7 @@ def triangular_patch(n_columns: int, n_rows: int, spacing: float) -> tuple[Mesh,
     over_plain_row = np.stack((lower_left, lower_right, upper_left, lower_right, upper_right, upper_left), axis=-1)
     shifted = (np.arange(n_rows - 1) % 2 == 1)[:, None, None]
     triangles = np.where(shifted, over_shifted_row, over_plain_row).reshape(-1, 3)
-    return Mesh(n_columns * n_rows, triangles), positions
+    return Topology(n_columns * n_rows, triangles), positions
 
 
 # --- math -----------------------------------------------------------------------------
@@ -64,7 +63,7 @@ def bond_response(direction: Displacement, actuation_plane: Bivector, stiffness:
     """The restoring and sideways force caused by a bond's endpoint displacement."""
     # The unit force along the bond, which reads a displacement's component along it.
     unit_force = direction.dual_inverse()                                    # Force+
-    push = -stiffness * unit_force + activity * (unit_force | actuation_plane)   # Force+
+    push = -stiffness * unit_force + activity * (unit_force | actuation_plane)  # Force+
     return push * (unit_force & Displacement)                                # Force+ <- Displacement-
 
 

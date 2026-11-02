@@ -7,18 +7,18 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import Algebra
+from numga import Algebra, NumpyContext
 from numga.sparse import SparseExtensor, spdiag
-from examples import instantiate
+from examples.util.topology import Topology
 
-mesh_module = instantiate("examples.util.mesh", Algebra("x+t-"))
-ga, Mesh, mv = mesh_module.ga, mesh_module.Mesh, mesh_module.mv
+ga = Algebra("x+t-")
+mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
 Plane = ga.gatype.vector()                                                   # Vector+
 Point = ga.gatype.antivector()                                               # Antivector-
 Patch = ga.gatype.antibivector()                                             # Antibivector-
 Amount = ga.gatype.antiscalar()                                              # Antiscalar-
-triangle = Mesh(3, [[0, 1, 2]])
+triangle = Topology(3, [[0, 1, 2]])
 
 # Unit spatial and future-timelike displacements, which pair to one with `mv.x` and `mv.t`.
 space, time = mv.x.dual(), -mv.t.dual()                                      # [] Point-, Point-
@@ -48,24 +48,24 @@ def edge_whitney_forms(corners: Point, points: Point) -> Plane:
 class Operators:
     """The gradient, the Lorentzian wave operator, and the face-to-vertex averaging on a spacetime mesh."""
 
-    def __init__(self, mesh: Mesh, vertices: Point):
-        self.mesh, self.vertices = mesh, vertices
-        edges = mesh.d[0] * vertices                                         # Point-[edges]
-        sides = mesh.boundary[2, 1] * edges                                  # [corners] Point-[faces]
+    def __init__(self, topology: Topology, vertices: Point):
+        self.topology, self.vertices = topology, vertices
+        edges = topology.d[0] * vertices                                     # Point-[edges]
+        sides = topology.boundary[2, 1] * edges                              # [corners] Point-[faces]
         patches = (sides[0] & sides[1]) / 2                                  # Patch-[faces]
         self.areas = patches.norm()                                          # Scalar+[faces]
 
         # Each corner hat's gradient is constant across its spacetime triangle; assembling by corner
         # maps vertex potentials to piecewise-constant face 1-forms without any metric.
         corner_gradients = sides / (2 * patches)                             # [corners] Plane+[faces]
-        self.gradient = (spdiag(corner_gradients) * mesh.incidence[2, 0]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- vertices]
+        self.gradient = (spdiag(corner_gradients) * topology.incidence[2, 0]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- vertices]
 
         # The Lorentzian dual supplies the timelike minus sign; pulling it back through
         # the gradient gives a wave operator with null characteristic directions.
         self.wave_operator = self.gradient.adjugate()(spdiag(self.areas * Plane.dual())(self.gradient))   # (Amount- <- Scalar+)[vertices <- vertices]
 
         # Area-weighted averaging from faces to vertices reconstructs smooth nodal fields for slicing.
-        self.to_vertices = ~mesh.incidence[2, 0].sum(axis=0)                 # Scalar+[vertices <- faces]
+        self.to_vertices = ~topology.incidence[2, 0].sum(axis=0)             # Scalar+[vertices <- faces]
 
 
 def causal_wake(operators: Operators, n_space: int, n_time: int,
@@ -75,12 +75,12 @@ def causal_wake(operators: Operators, n_space: int, n_time: int,
     delay = mv.t & displacements                                             # [vertices] Scalar+
     distance_squared = (mv.x & displacements).squared() + delay.squared()    # [vertices] Scalar+
     # A time-derivative Gaussian source radiates two sharp pulses along the forward 45-degree null rays.
-    profile = (delay / source_width) * (-(distance_squared / (2 * source_width**2))).exp()   # [vertices] Scalar+
+    profile = (delay / source_width) * (-(distance_squared / (2 * source_width**2))).exp()  # [vertices] Scalar+
     source = (profile * operators.areas.sites.mean()).field().dual()         # Amount-[vertices]
 
     grid = np.arange(n_time * n_space).reshape(n_time, n_space)
-    interior = ~SparseExtensor.selection(mv.context, grid[1:-1, 1:-1].ravel(), operators.mesh.n_vertices) * Scalar   # (Scalar+ <- Scalar+)[vertices <- interior]
-    future = ~SparseExtensor.selection(mv.context, grid[2:, 1:-1].ravel(), operators.mesh.n_vertices) * Scalar   # (Scalar+ <- Scalar+)[vertices <- future]
+    interior = ~operators.topology.reading(grid[1:-1, 1:-1].ravel()) * Scalar  # (Scalar+ <- Scalar+)[vertices <- interior]
+    future = ~operators.topology.reading(grid[2:, 1:-1].ravel()) * Scalar    # (Scalar+ <- Scalar+)[vertices <- future]
     # The first two rows and the walls stay zero; each interior equation fixes the next time row.
     return future(interior.adjugate()(operators.wave_operator(future)).solve(interior.adjugate()(source)))   # Scalar+[vertices]
 
@@ -89,31 +89,31 @@ def moving_mirror_wave(operators: Operators, n_space: int, n_time: int, dt: floa
                        pulse_centre: float, pulse_width: float, wavelength: float
                        ) -> tuple[Scalar, Plane, Scalar, Scalar]:
     """The scalar potential, spacetime gradient, time derivative, and slice energies of a pulse reflecting off a moving mirror."""
-    mesh, vertices = operators.mesh, operators.vertices
+    topology, vertices = operators.topology, operators.vertices
     # Pairing with the null plane `mv.x - mv.t` reads the phase of the right-moving wave at every event.
     phase = ((mv.x - mv.t) & vertices).batch() - pulse_centre                # [vertices] Scalar+
     envelope = (-(phase / pulse_width).squared()).exp()                      # [vertices] Scalar+
     carrier = (2 * np.pi * phase / wavelength).cos()                         # [vertices] Scalar+
 
     grid = np.arange(n_time * n_space).reshape(n_time, n_space)
-    seed = SparseExtensor.selection(mv.context, grid[:2, 1:-1].ravel(), mesh.n_vertices)   # Scalar+[seed <- vertices]
-    initial = ~seed * (seed * (envelope * carrier).field())                  # Scalar+[vertices]
+    seed = topology.reading(grid[:2, 1:-1].ravel())                          # Scalar+[seed <- vertices]
+    initial = ~seed * (seed * (envelope * carrier).field())                                                  # Scalar+[vertices]
 
-    interior = ~SparseExtensor.selection(mv.context, grid[1:-1, 1:-1].ravel(), mesh.n_vertices) * Scalar   # (Scalar+ <- Scalar+)[vertices <- interior]
-    future = ~SparseExtensor.selection(mv.context, grid[2:, 1:-1].ravel(), mesh.n_vertices) * Scalar   # (Scalar+ <- Scalar+)[vertices <- future]
+    interior = ~topology.reading(grid[1:-1, 1:-1].ravel()) * Scalar          # (Scalar+ <- Scalar+)[vertices <- interior]
+    future = ~topology.reading(grid[2:, 1:-1].ravel()) * Scalar              # (Scalar+ <- Scalar+)[vertices <- future]
     rhs = -interior.adjugate()(operators.wave_operator(initial))             # Amount-[interior]
-    potential = initial + future(interior.adjugate()(operators.wave_operator(future)).solve(rhs))   # Scalar+[vertices]
+    potential = initial + future(interior.adjugate()(operators.wave_operator(future)).solve(rhs))            # Scalar+[vertices]
 
     field = operators.gradient(potential)                                    # Plane+[faces]
     face_rate = field & time                                                 # Scalar+[faces]
-    wave_rate = (operators.to_vertices * (operators.areas * face_rate)) / (operators.to_vertices * operators.areas)   # Scalar+[vertices]
+    wave_rate = (operators.to_vertices * (operators.areas * face_rate)) / (operators.to_vertices * operators.areas)  # Scalar+[vertices]
 
     # Reflecting the Lorentzian dual across the observer's slice mv.t flips the temporal sign,
     # turning the Lagrangian density into the positive-definite Hamiltonian wave energy density.
     energy_density = -(field & (mv.t >> Plane.dual()(field))) / 2            # Scalar+[faces]
     # Each face lies in the time slab of its earliest corner; the reverse of reading each
     # face's slab sums the faces into the slabs.
-    slab_indices = mesh.faces.min(axis=-1) // n_space                        # [faces]
+    slab_indices = topology.elements[2].min(axis=-1) // n_space              # [faces]
     to_slabs = ~SparseExtensor.selection(mv.context, slab_indices, n_time - 1)   # Scalar+[layers <- faces]
     slice_energies = (to_slabs * (operators.areas * energy_density)).batch() / dt   # [layers] Scalar+
     return potential, field, wave_rate, slice_energies

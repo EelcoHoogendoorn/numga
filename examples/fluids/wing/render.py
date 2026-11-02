@@ -8,15 +8,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import TwoSlopeNorm, to_rgb, to_rgba
 
-from numga import Extensor, concatenate, stack
+from numga import stack
 
-from examples import instantiate
 from examples.util.animation import capture
+from examples.util.topology import Topology
 from examples.util.wgsl import contours, simplices
 from examples.util.wgsl.camera import Camera, flat_panel, panel
 from examples.fluids.wing import core
-
-Mesh = instantiate("examples.util.mesh", core.ga).Mesh
 
 window = (-3.2, 3.2, -1.8, 1.8)
 pressure_range = (-3.0, 1.0)
@@ -57,22 +55,17 @@ def draw(ax, points: core.Point, velocity: core.Point, stream: core.Bivector, li
          marks: list = ()) -> None:
     """The pressure coefficient around the wing at the points, the streamlines, the wing, its lift, and the marks
     `[(points, colour)]`."""
-    # Each ring closed, its first angle repeated at the end, so no seam is left unpainted.
-    def closed(values: Extensor) -> Extensor:
-        return concatenate([values, values[:, :1]], axis=1)
-
-    ring_points = closed(points)                                             # [rings, angles + 1] Point-
-    speed_squared = closed(velocity.dot(velocity)).to_array()
+    speed_squared = velocity.dot(velocity).to_array()
     # The pressure coefficient: low where the flow is fast.
     pressure = 1 - speed_squared / speed**2
     colours = plt.get_cmap("RdBu")(TwoSlopeNorm(0.0, *pressure_range)(pressure))[..., :3]
     # The stream function's values, its pairings with the unit scalar.
-    stream_values = closed(stream & core.mv.scalar([1])).to_array()
+    stream_values = (stream & core.mv.scalar([1])).to_array()
     ax.set(xlim=window[:2], ylim=window[2:], xticks=[], yticks=[])
     ax.set_aspect("equal")
-    # The rings, numbered ring by ring, a grid around the wing.
-    mesh = contours.Mesh.grid(*ring_points.shape)
-    places = ring_points.reshape(-1)                                         # [rings * (angles + 1)] Point-
+    # The rings, numbered ring by ring, each a loop of its angles, swept out from the wing.
+    topology = Topology.loops([points.shape[1]]).product(Topology.chains([points.shape[0]]))
+    places = points.reshape(-1)                                              # [rings * angles] Point-
     streamlines = contours.Lines(stream_spacing, 0.0, stream_ink, stream_width)
     camera = flat_panel(ax, core.ga)
     # The wing filled by the triangles of its outline's hull, under the flow, whose rings start at the wing's surface
@@ -83,10 +76,10 @@ def draw(ax, points: core.Point, velocity: core.Point, stream: core.Bivector, li
     push = lift * lift_scale                                                 # [] Force+
     forces = panel(ax, core.mv.x.dual(), core.mv.y.dual())
     simplices.overlay(ax, [
-        contours.picture(outline, Mesh.triangulate(outline), np.zeros(len(outline)), rgb(wing_colour), camera),
-        contours.picture(places, mesh, stream_values.reshape(-1), colours.reshape(-1, 3), camera,
+        contours.picture(outline, Topology.triangulate(outline), np.zeros(len(outline)), rgb(wing_colour), camera),
+        contours.picture(places, topology, stream_values.reshape(-1), colours.reshape(-1, 3), camera,
                          lines=(streamlines,)),
-        simplices.strokes(stack((0 * push, push)), Mesh.chains([2]), rgb(lift_colour), lift_width, forces,
+        simplices.strokes(stack((0 * push, push)), Topology.chains([2]), rgb(lift_colour), lift_width, forces,
                           chevrons=np.ones(1), chevron=lift_chevron),
         *[picture for spots, colour in marks
           for picture in marked(spots, colour, mark_radius, mark_rim, camera)]])
@@ -147,9 +140,9 @@ def bipolar(grid: core.Point, grid_images: core.Point, circle: core.Point, circl
         n_curves, n_samples = curves.shape
         # The marks and their reflections through the origin.
         simplices.overlay(ax, [
-            simplices.strokes(curves.reshape(-1), Mesh.chains([n_samples] * n_curves), rgb("#94a3b8"), grid_width,
+            simplices.strokes(curves.reshape(-1), Topology.loops([n_samples] * n_curves), rgb("#94a3b8"), grid_width,
                               camera),
-            simplices.strokes(outline, Mesh.chains([len(outline)]), rgb(wing_colour), outline_width, camera),
+            simplices.strokes(outline, Topology.loops([len(outline)]), rgb(wing_colour), outline_width, camera),
             *marked(stack([marks, -marks]), mark_colour, map_mark_radius, map_mark_rim, camera)])
         # The panel keeps its frame around the picture.
         ax.set_axis_on()

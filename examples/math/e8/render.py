@@ -53,7 +53,7 @@ def draw_roots(roots: Vector, horizontal: Vector, vertical: Vector) -> plt.Figur
     # The camera reads roots, vectors, as they are, along the drawing plane's two directions: `root & horizontal.dual()`
     # is `horizontal | root`.
     camera = panel(ax, horizontal.dual(), vertical.dual())
-    neighbours = simplices.Mesh(len(flat), np.stack([first, second], axis=-1))
+    neighbours = simplices.Topology(len(flat), np.stack([first, second], axis=-1))
     simplices.overlay(ax, [
         simplices.strokes(flat, neighbours, edge_colours, edge_width, camera, opacity=edge_opacity),
         simplices.markers(flat, colours, root_radius, camera)])
@@ -78,9 +78,9 @@ def animate_planes(turning_roots: Iterable[Vector], roots: Vector, horizontal: V
     fade = np.linspace(0.12, 0.85, n_trail)[:, None]                           # [trail, 1]
     background_colour = np.array(to_rgb(background))
     trail_colours = (background_colour + fade * (orbit_colours[:, None] - background_colour)).reshape(-1, 3)
-    trail_chains = simplices.Mesh.chains([n_trail + 1] * n_orbits)
+    trail_chains = simplices.Topology.chains([n_trail + 1] * n_orbits)
     # A full turn of each plane in small steps, which carries every root's part in it round its circle.
-    orbit_chains = simplices.Mesh.chains([n_around + 1] * n_orbits)
+    orbit_loops = simplices.Topology.loops([n_around] * n_orbits)
     seeds = turning[:, 0]                                                      # [orbits] Vector+
 
     figure, axes = plt.subplots(1, n_planes, figsize=(4.4, 1.14), facecolor=background)
@@ -95,11 +95,11 @@ def animate_planes(turning_roots: Iterable[Vector], roots: Vector, horizontal: V
     for index, camera in enumerate(cameras):
         step = (planes[index] * (-np.pi / n_around)).exp()                     # [] Rotor+
         turned = [seeds]
-        for _ in range(n_around):
+        for _ in range(n_around - 1):
             turned.append(step >> turned[-1])
-        circles = stack(turned, axis=-1)                                       # [orbits, around + 1] Vector+
+        circles = stack(turned, axis=-1)                                       # [orbits, around] Vector+
         backdrops.append([
-            simplices.strokes(circles.reshape(-1), orbit_chains, np.repeat(orbit_colours, n_around, axis=0),
+            simplices.strokes(circles.reshape(-1), orbit_loops, np.repeat(orbit_colours, n_around, axis=0),
                               orbit_width, camera, opacity=orbit_opacity),
             simplices.markers(roots.reshape(-1), np.tile(orbit_colours, (roots.shape[0], 1)),
                               faint_root_radius, camera, opacity=faint_root_opacity)])

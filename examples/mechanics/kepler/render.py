@@ -94,21 +94,21 @@ def cross_drawn(box: tuple[float, float, float, float], camera: Camera) -> np.nd
     chart's frame, which it stands in for: its picture."""
     left, right, bottom, top = box
     ends = place(np.array([left, right, 0, 0]), np.array([0, 0, bottom, top]))   # [4] Point-
-    return simplices.strokes(ends, simplices.Mesh.chains([2, 2]), np.array(to_rgb(CROSS_COLOUR)), charts.FRAME_PX,
+    return simplices.strokes(ends, simplices.Topology.chains([2, 2]), np.array(to_rgb(CROSS_COLOUR)), charts.FRAME_PX,
                              camera, cap=simplices.Cap.BUTT)
 
 
 def frame_drawn(box: tuple[float, float, float, float], camera: Camera) -> np.ndarray:
     """A frame round a box, left, right, bottom and top, in the cross's colour and width: its picture."""
     left, right, bottom, top = box
-    corners = place(np.array([left, right, right, left, left]), np.array([bottom, bottom, top, top, bottom]))   # [5] Point-
-    return simplices.strokes(corners, simplices.Mesh.chains([5]), np.array(to_rgb(CROSS_COLOUR)), charts.FRAME_PX,
+    corners = place(np.array([left, right, right, left]), np.array([bottom, bottom, top, top]))   # [4] Point-
+    return simplices.strokes(corners, simplices.Topology.loops([4]), np.array(to_rgb(CROSS_COLOUR)), charts.FRAME_PX,
                              camera)
 
 
 def path_drawn(path: core.Point, colour: str, width: float, camera: Camera, opacity: float = 1.0) -> np.ndarray:
     """A path `[samples]` as a stroke."""
-    return simplices.strokes(path, simplices.Mesh.chains([len(path)]), np.array(to_rgb(colour)), width, camera,
+    return simplices.strokes(path, simplices.Topology.chains([len(path)]), np.array(to_rgb(colour)), width, camera,
                              opacity=opacity)
 
 

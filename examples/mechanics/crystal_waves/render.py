@@ -43,7 +43,7 @@ def cross_drawn(limit: float, camera: Camera) -> np.ndarray:
     it stands in for: its picture."""
     x, y, _ = core.axes
     ends = limit * stack((-x.dual(), x.dual(), -y.dual(), y.dual()))         # [4] Antivector-
-    return simplices.strokes(ends, simplices.Mesh.chains([2, 2]), np.array(to_rgb(CROSS_COLOUR)), charts.FRAME_PX,
+    return simplices.strokes(ends, simplices.Topology.chains([2, 2]), np.array(to_rgb(CROSS_COLOUR)), charts.FRAME_PX,
                              camera, cap=simplices.Cap.BUTT)
 
 

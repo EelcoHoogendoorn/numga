@@ -51,12 +51,12 @@ def squares(points: Point, colour: str, area: float, turn: float, camera: Camera
     """Points as squares of the area, in square points, each four strokes in their colour, the first corner turned
     `turn` from the direction the camera reads as one across: an eighth of a turn for a square along the picture's
     rows and columns, none for a diamond."""
-    # The direction read as one across, turned to each corner and round to the first again, half a diagonal long.
-    along = camera.across.dual() / read(camera.across, camera.across.dual())  # [] Point-
-    turns = (mv.xy * (-(turn + np.pi / 2 * np.arange(5)) / 2)).exp()        # [corners + 1] Rotor+
-    corners = (turns >> along) * (np.sqrt(2 * area) / 2 * POINT * camera.pixel)   # [corners + 1] Point-
-    places = (points / (mv.w & points))[:, None] + corners                   # [points, corners + 1] Point-
-    return simplices.strokes(places.reshape(-1), simplices.Mesh.chains([5] * len(points)), rgb(colour),
+    # The direction read as one across, turned to each of the four corners, half a diagonal long.
+    along = camera.across.dual() / read(camera.across, camera.across.dual())   # [] Point-
+    turns = (mv.xy * (-(turn + np.pi / 2 * np.arange(4)) / 2)).exp()        # [corners] Rotor+
+    corners = (turns >> along) * (np.sqrt(2 * area) / 2 * POINT * camera.pixel)   # [corners] Point-
+    places = (points / (mv.w & points))[:, None] + corners                   # [points, corners] Point-
+    return simplices.strokes(places.reshape(-1), simplices.Topology.loops([4] * len(points)), rgb(colour),
                              FRAME * POINT, camera)
 
 

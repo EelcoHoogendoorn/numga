@@ -85,8 +85,8 @@ def test_lattice_motion_is_covariant_and_has_the_expected_strain_dissipation(sti
     n_columns, n_rows = 5, 4
     n_sites = n_columns * n_rows
     spacing = 0.8
-    mesh, positions = core.triangular_patch(n_columns, n_rows, spacing)
-    incidence = mesh.d[0]
+    topology, positions = core.triangular_patch(n_columns, n_rows, spacing)
+    incidence = topology.d[0]
     bonds = incidence * positions
     directions = bonds.normalized()
     gradient = incidence * Displacement
@@ -122,8 +122,8 @@ def test_purely_active_evolution_preserves_the_strain_quadratic():
     n_columns, n_rows = 5, 4
     n_sites = n_columns * n_rows
     n_steps, dt = 25, 0.04
-    mesh, positions = core.triangular_patch(n_columns, n_rows, 1)
-    incidence = mesh.d[0]
+    topology, positions = core.triangular_patch(n_columns, n_rows, 1)
+    incidence = topology.d[0]
     directions = (incidence * positions).normalized()
     drags = mv.scalar([[1]] * n_sites).field()
     generator = core.evolution(incidence, core.bond_response(directions, mv.xy, 0, 1.2), drags)

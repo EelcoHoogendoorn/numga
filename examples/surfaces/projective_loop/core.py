@@ -9,10 +9,9 @@ from __future__ import annotations
 
 from numga import NumpyContext
 from numga.algebras import PGA3D as ga
-from examples import instantiate
+from examples.util.topology import Topology
 
 ctx = NumpyContext(ga)
 mv = ctx.multivector
-Mesh = instantiate("examples.util.mesh", ga).Mesh
 Point = ga.gatype.antivector()                      # Antivector-
 

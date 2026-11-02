@@ -22,7 +22,7 @@ PORT_COLOUR, FIXED_COLOUR, NEGATED_COLOUR = RIGHT_COLOUR, RIGHT_COLOUR, LEFT_COL
 CROSS_COLOUR, LABEL_COLOUR = "0.85", "0.45"
 # The spin's circle and the light cone, faint, and the cone's inside; the samples round the circle.
 RIM_COLOUR, CONE_FILL = "0.8", "0.97"
-N_RIM_SAMPLES = 120
+N_RIM_SAMPLES = 119
 # The ports: their places across, their radius and their rims' outer radius, in the panel's units; their faces and
 # rims.
 PORT_PLACES, PORT_RADIUS, RIM_RADIUS = (-0.7, 0.7), 0.45, 0.47
@@ -54,7 +54,7 @@ def cross(ax: plt.Axes, camera: Camera, across: str, up: str) -> np.ndarray:
     ax.annotate(up, (0, 1), xycoords=("data", "axes fraction"), xytext=(0, 4), textcoords="offset points",
                 ha="center", va="bottom", color=LABEL_COLOUR)
     ax.set_axis_off()
-    return simplices.strokes(ends, simplices.Mesh.chains([2, 2]), ink(CROSS_COLOUR), charts.FRAME_PX, camera,
+    return simplices.strokes(ends, simplices.Topology.chains([2, 2]), ink(CROSS_COLOUR), charts.FRAME_PX, camera,
                              cap=simplices.Cap.BUTT)
 
 
@@ -83,10 +83,10 @@ def animate_rotation(
         # The spin turns in the plane the camera sees, x across and z up.
         camera = panel(axis, mv.x, mv.z)
         along, rise = units(camera)
-        turns = (mv.zx * (-np.linspace(0, 2 * np.pi, N_RIM_SAMPLES) / 2)).exp()
+        turns = (mv.zx * (-np.linspace(0, 2 * np.pi, N_RIM_SAMPLES, endpoint=False) / 2)).exp()
         circle = turns >> along                                               # [rim samples] Antivector-
         beneath = [cross(axis, camera, "x", "z"),
-                   simplices.strokes(circle, simplices.Mesh.chains([N_RIM_SAMPLES]), ink(RIM_COLOUR), charts.FRAME_PX,
+                   simplices.strokes(circle, simplices.Topology.loops([N_RIM_SAMPLES]), ink(RIM_COLOUR), charts.FRAME_PX,
                                      camera)]
         shown = simplices.overlay(axis, beneath)
         # The ports as lamps, each lit as bright as its output, over its face within its rim.
@@ -99,7 +99,7 @@ def animate_rotation(
         for direction, intensities in zip(spin, np.clip(stack((bright, dark), axis=-1).to_array(), 0, 1)):
             arrow = stack((0 * direction, direction))                         # [2] Antivector-
             shown.set_data(simplices.composited(beneath + [
-                simplices.strokes(arrow, simplices.Mesh.chains([2]), ink(INK), SPIN_WIDTH, camera,
+                simplices.strokes(arrow, simplices.Topology.chains([2]), ink(INK), SPIN_WIDTH, camera,
                                   chevrons=np.ones(1), chevron=CHEVRON_LENGTH * SPIN_WIDTH, cap=simplices.Cap.BUTT)]))
             lit.set_data(simplices.composited(faces + [
                 simplices.markers(centres[port][None], ink(PORT_COLOUR), PORT_RADIUS / lamps.pixel, lamps,
@@ -131,10 +131,10 @@ def draw_chirality(
     arrows = stack((0 * tips, tips), axis=-1).reshape(-1)                      # [currents * 2] Antivector-
     colours = np.stack([ink(colour) for colour in (LEFT_COLOUR, RIGHT_COLOUR, INK)])
     simplices.overlay(ax, [
-        contours.picture(cone, simplices.Mesh(3, np.array([[0, 1, 2]])), np.zeros(3), ink(CONE_FILL), camera),
+        contours.picture(cone, simplices.Topology(3, np.array([[0, 1, 2]])), np.zeros(3), ink(CONE_FILL), camera),
         lines,
-        simplices.strokes(cone, simplices.Mesh.chains([3]), ink(RIM_COLOUR), charts.FRAME_PX, camera),
-        simplices.strokes(arrows, simplices.Mesh.chains([2] * 3), colours, CURRENT_WIDTH, camera,
+        simplices.strokes(cone, simplices.Topology.chains([3]), ink(RIM_COLOUR), charts.FRAME_PX, camera),
+        simplices.strokes(arrows, simplices.Topology.chains([2] * 3), colours, CURRENT_WIDTH, camera,
                           chevrons=np.ones(3), chevron=CHEVRON_LENGTH * CURRENT_WIDTH, cap=simplices.Cap.BUTT)])
     return figure
 

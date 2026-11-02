@@ -414,7 +414,9 @@ class Shader:
                 unused.discard(binding.name)
             elif binding.kind == "storage" and binding.name in values:
                 element = self.layout.resolve(template(binding.type)[1][0])
-                resource = self.buffer(key + ("storage", binding.name), self.layout.array(element, values[binding.name]))
+                # An empty array binds one element of nothing, which the shader, told it holds nothing, never reads.
+                data = self.layout.array(element, values[binding.name]) or bytes(self.layout.stride(element))
+                resource = self.buffer(key + ("storage", binding.name), data)
                 unused.discard(binding.name)
             elif binding.kind == "storage":
                 element = self.layout.resolve(template(binding.type)[1][0])
@@ -483,10 +485,8 @@ class Shader:
         """The storage buffer kept for a role, holding data, bound to just its length."""
         import wgpu
         buffer = self.buffer_kept(role, len(data), wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
-        # An empty array binds the least buffer there is, which the shader, told it holds nothing, never reads.
-        if data:
-            self.device.queue.write_buffer(buffer, 0, data)
-        return {"buffer": buffer, "offset": 0, "size": max(len(data), 16)}
+        self.device.queue.write_buffer(buffer, 0, data)
+        return {"buffer": buffer, "offset": 0, "size": len(data)}
 
     def surface(self, role: tuple, shape: tuple[int, int], format: str, usage: int) -> Any:
         """The texture kept for a role and an image's shape, rows and columns, made on the first call that needs it."""

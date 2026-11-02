@@ -60,9 +60,9 @@ def main() -> None:
     from examples.quantum.process_tomography import render
 
     measured, learned = tomography()
-    surface = core.sphere(N_LATITUDES, N_LONGITUDES)                         # [latitudes + 1, longitudes + 1] Point-
+    surface = core.sphere(N_LATITUDES, N_LONGITUDES)                         # [latitudes + 1, longitudes] Point-
     transformed = learned[:, None](prepared)                                 # [channels, preparations] Point-
-    outputs = learned[:, None, None](surface)                                # [channels, latitudes + 1, longitudes + 1] Point-
+    outputs = learned[:, None, None](surface)                                # [channels, latitudes + 1, longitudes] Point-
     reading = render.ball_positions
 
     save_figure(render.draw_experiment(prepared, measured, LABELS, reading), "process_tomography_measurements")

@@ -26,20 +26,20 @@ quarter about its base point, it is the strain of the base itself.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from functools import reduce
 from operator import and_
 
 import numpy as np
 
-from numga import Algebra, stack
+from numga import Algebra, NumpyContext, stack
 from numga.sparse import SparseExtensor, spdiag
-from examples import instantiate
+from examples.util.topology import Topology, lookup_simplices
 
 # The algebra of the round three-sphere: four directions squaring to one, `w` the origin's own.
 ga = Algebra("x+y+z+w+")
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, mv, ctx = mesh_module.Mesh, mesh_module.mv, mesh_module.ctx
+ctx = NumpyContext(ga)
+mv = ctx.multivector
 Scalar = ga.gatype.scalar()                         # Scalar+
 # The corners' ramps, gradients and the polar planes of directions: vectors, extrinsic; those through the origin.
 Plane = ga.gatype.vector()                          # Vector+
@@ -72,7 +72,7 @@ polar = translating.inverse()                                           # [] Vec
 
 
 # --- math -----------------------------------------------------------------------------
-def coframe(mesh: Mesh, vertices: Point) -> Plane:
+def coframe(mesh: Topology, vertices: Point) -> Plane:
     """Each corner's ramp across its simplex, `[corners] Plane+[simplices]`: the plane through the facet across from
     the corner, the join of the facet's corners, scaled to read one at the corner and so nothing on the facet."""
     corners = mesh.incidence[-1, 0] * vertices                                  # [corners] Point-[simplices]
@@ -80,7 +80,7 @@ def coframe(mesh: Mesh, vertices: Point) -> Plane:
     return facets / (facets & corners)
 
 
-def round_rates(mesh: Mesh, frames: Motor) -> Rate:
+def round_rates(mesh: Topology, frames: Motor) -> Rate:
     """The rate of each edge, `Rate+[edges]`, for a round sphere of unit radius rolled on itself, from frames at the
     vertices, `Motor+[vertices]`, motors that carry the origin to each vertex: the tail's inverse times the head's, so
     that around any loop they cancel and the connection is flat. Any frames will do, and the rates are smallest where
@@ -96,7 +96,7 @@ class Space:
     ramps and centred corner gradients, `[corners] Plane+[cells]`, their hyperplanes, and the maps from squared edge
     lengths to the metrics of the cone over each from the centre and of the flat tetrahedron."""
 
-    def __init__(self, mesh: Mesh, vertices: Point) -> None:
+    def __init__(self, mesh: Topology, vertices: Point) -> None:
         corners = mesh.incidence[3, 0] * vertices                               # [corners] Point-[cells]
         ramps = coframe(mesh, vertices)                                         # [corners] Plane+[cells]
         # The tetrahedron's hyperplane, one on each of its points; less a quarter of it, the ramps vanish on the
@@ -162,7 +162,7 @@ class Space:
         return metrics, metrics.batch().inverse().field()
 
 
-def gravitational_waves(mesh: Mesh, vertices: Point) -> tuple[SparseExtensor, SparseExtensor, OntoWaves]:
+def gravitational_waves(mesh: Topology, vertices: Point) -> tuple[SparseExtensor, SparseExtensor, OntoWaves]:
     """The linear gravitational waves of a triangulated three-sphere at rest, as the stiffness and the masses on its
     edges' squared lengths, sparse maps `(Scalar+ <- Scalar+)[edges <- edges]` coupling the edges that share a
     tetrahedron, and the projection onto the waves. The stiffness is that of Regge's potential with each tetrahedron
@@ -207,13 +207,11 @@ def waves_stepped(stiffness: SparseExtensor, masses: SparseExtensor, onto_waves:
         rates = rates - (step / 2) * onto_waves(masses.solve(stiffness(strains)))
 
 
-def invariant_generators() -> tuple[Rate, Rate, Point]:
+def invariant_generators() -> tuple[Rate, Point]:
     """The round three-sphere's generators along its three invariant directions `x`, `y`, `z` at the origin, `[3]`
-    each: the rates that move the origin along them, the turns square to them, each rate times the extrinsic
-    pseudoscalar, and the unit steps themselves."""
+    each: the rates that move the origin along them, and the unit steps themselves."""
     steps = stack((mv.x, mv.y, mv.z)).dual()                                    # [3] Antivector-
-    moving = equator ^ polar(steps.cast(Step))                                 # [3] Rate+
-    return moving, moving * mv.xyzw, steps
+    return equator ^ polar(steps.cast(Step)), steps
 
 
 def isoclinic(places: Point) -> Motor:
@@ -225,7 +223,7 @@ def isoclinic(places: Point) -> Motor:
     return ((1 + pseudoscalar) * (places.normalized() / origin) + (1 - pseudoscalar)) / 2
 
 
-def strain_field(mesh: Mesh, space: Space, ramps: Plane, frames: Motor, changes: Scalar) -> tuple[Strain, Turning]:
+def strain_field(mesh: Topology, space: Space, ramps: Plane, frames: Motor, changes: Scalar) -> tuple[Strain, Turning]:
     """The strain of a change of the squared edge lengths, `Scalar+[edges]`, as a smooth field on the origin's steps:
     at each vertex the average of its tetrahedra's strains, `Strain[vertices]`, each the change of the metric of the
     cone over it from the centre, read on the steps its isoclinic frame at its middle, `Motor+[tets]`, carries out to
@@ -233,8 +231,8 @@ def strain_field(mesh: Mesh, space: Space, ramps: Plane, frames: Motor, changes:
     curl of the strain, `Turning[tets]`. What reads nothing on the steps, along the origin itself, is cast away."""
     carried = frames >> Step                                                    # (Point- <- Antivector-)[tets]
     strains = (frames.inverse() >> (space.cone_map * changes)(carried)).cast(Strain)   # (Vector+ <- Antivector-)[tets]
-    shares = ~mesh.incidence[3, 0]                                              # [corners] Scalar+[vertices <- tets]
-    counts = (shares * mesh_module.as_scalar(np.ones(len(mesh.tets))).field()).sum(axis=0)   # Scalar+[vertices]
+    shares = ~mesh.incidence[3, 0]                                              # [corners] numbers[vertices <- tets]
+    counts = (shares * mv.scalar(np.ones((mesh.n_elements[3], 1))).field()).sum(axis=0)   # Scalar+[vertices]
     at_vertices = (shares * strains).sum(axis=0) / counts                       # (Vector+ <- Antivector-)[vertices]
     # Each corner's ramp read on the carried steps, and the strain at each corner: their wedge, summed over the
     # corners, is the strain's change across the tetrahedron turned into the plane it turns in.
@@ -263,7 +261,7 @@ class Waves:
     time, a tetrahedron's corners blend by the place's barycentric weights and the two nearest moments by their
     nearness."""
 
-    def __init__(self, mesh: Mesh, vertices: Point, changes: list, change_rates: list, first_time: float,
+    def __init__(self, mesh: Topology, vertices: Point, changes: list, change_rates: list, first_time: float,
                  level_step: float) -> None:
         self.mesh, self.first_time, self.level_step = mesh, first_time, level_step
         self.ramps = coframe(mesh, vertices)                                    # [corners] Plane+[tets]
@@ -275,14 +273,14 @@ class Waves:
         self.strain_rates = stack([strain_field(mesh, space, self.ramps, frames, rate)[0].batch() for rate in change_rates])
         self.traces = translating(self.strains).trace()                          # [levels, vertices] Scalar+
 
-    def fields(self, faces: np.ndarray, places: Point, time: float) -> tuple[Strain, Strain, Scalar, Turning]:
-        """The waves' fields at the places `[places] Point-` on the sphere, in the tetrahedra `faces`, at a time: the
+    def fields(self, cells: np.ndarray, places: Point, time: float) -> tuple[Strain, Strain, Scalar, Turning]:
+        """The waves' fields at the places `[places] Point-` on the sphere, in the tetrahedra `cells`, at a time: the
         strain, its rate and its trace, blended over the corners and the two nearest moments, and the tetrahedra's
         turn, each `[places]`."""
         level = np.clip((time - self.first_time) / self.level_step, 0, len(self.traces) - 1.000001)
         early, share = int(level), level - int(level)
-        corners = self.mesh.tets[faces].T                                       # [corners, places]
-        ramps = self.ramps.batch()[:, faces]                                    # [corners, places] Plane+
+        corners = self.mesh.elements[3][cells].T                                # [corners, places]
+        ramps = self.ramps.batch()[:, cells]                                    # [corners, places] Plane+
         weights = (ramps & places[None]) / (ramps.sum(axis=0) & places)         # [corners, places] Scalar+
 
         def blended(values):
@@ -290,14 +288,14 @@ class Waves:
             between = values[early] * (1 - share) + values[early + 1] * share   # [vertices]
             return (weights * between[corners]).sum(axis=0)                     # [places]
 
-        turn = self.turns[early, faces] * (1 - share) + self.turns[early + 1, faces] * share   # [places] Bivector+ <- Antivector-
+        turn = self.turns[early, cells] * (1 - share) + self.turns[early + 1, cells] * share   # [places] Bivector+ <- Antivector-
         return blended(self.strains), blended(self.strain_rates), blended(self.traces), turn
 
-    def at(self, faces: np.ndarray, places: Point, time: float) -> tuple[Rolling, Stretching]:
-        """The connection at the places `[places] Point-` on the sphere, in the tetrahedra `faces`, at a time: the rate
+    def at(self, cells: np.ndarray, places: Point, time: float) -> tuple[Rolling, Stretching]:
+        """The connection at the places `[places] Point-` on the sphere, in the tetrahedra `cells`, at a time: the rate
         the frames roll by along each round step there, `[places] Rate+ <- Antivector-`; and the squeeze of a step
         there, half the strain's rate read back as a step, `[places] Antivector- <- Antivector-`."""
-        strain, strain_rate, trace, turn = self.fields(faces, places, time)
+        strain, strain_rate, trace, turn = self.fields(cells, places, time)
         # A round step, stretched by the strain, moves the origin; turned less twice the strain plus half its trace, it
         # turns the frame square to it; and the strain's change adds its turn.
         stretch = translating(strain(Step))                                     # [places] Antivector- <- Antivector-
@@ -305,38 +303,38 @@ class Waves:
         return local, translating(strain_rate) / 2
 
 
-def bond_steps(bonds: Mesh, positions: Point) -> Point:
+def bond_steps(bonds: Topology, positions: Point) -> Point:
     """Each bond's round step, `Antivector-[bonds]`, a step of the origin: its head carried back by its tail's
     isoclinic frame, less the origin it is beside."""
     tails, heads = bonds.incidence[1, 0] * positions                            # Point-[bonds], Point-[bonds]
     return (isoclinic(tails).inverse() >> heads).cast(Step)
 
 
-def proper_separations(local: Rolling, bonds: Mesh, positions: Point) -> Point:
+def proper_separations(local: Rolling, bonds: Topology, positions: Point) -> Point:
     """Each bond's proper separation, `Antivector-[bonds]`, a step of the origin in the frames: the step the connection
     at the bond's tail, `(Rate+ <- Antivector-)[particles]`, moves the origin by along the bond's round step."""
-    tails = bonds.incidence[1, 0][0]                                            # Scalar+[bonds <- particles]
+    tails = bonds.incidence[1, 0][0]                                            # numbers[bonds <- particles]
     return origin.commutator((tails * local)(bond_steps(bonds, positions))).cast(Step)
 
 
-def massive(mesh: Mesh, vertices: Point, waves: Waves, bonds: Mesh, rest: Scalar, stiffness: Scalar, damping: Scalar,
+def massive(mesh: Topology, vertices: Point, waves: Waves, bonds: Topology, rest: Scalar, stiffness: Scalar, damping: Scalar,
             holding: float, starts: Point, velocities: Point, start: float, step: float, times: np.ndarray
             ) -> Iterator[tuple[Point, Scalar]]:
     """Massive particles through a round three-sphere carrying the gravitational waves `waves`, held by springs along
-    `bonds`, a graph `Mesh` over the particles, of rest proper lengths `rest`, stiffness `stiffness` and damping
+    `bonds`, a graph over the particles, of rest proper lengths `rest`, stiffness `stiffness` and damping
     `damping` over unit masses, `Scalar+[bonds]` each, and each held to its start by a spring of stiffness `holding`,
     damped critically: from `starts` `Point-[particles]` on the sphere with velocities `velocities`, steps of the
     origin `Antivector-[particles]` in the isoclinic frames, at time `start`, stepped by `step` of time with symplectic
     Euler, their positions and the bonds' proper strains `Scalar+[bonds]` at each of the `times`. A particle's velocity
     turns with the connection along its motion, the slices' stretch squeezes it, and its bonds pull it along their
     proper separations; it rolls along its round step on its great circle."""
-    pick = mesh.picking(vertices)
+    pick = picking(mesh, vertices)
     homes = starts.batch().normalized()                                         # [particles] Point-
     positions, velocities, lengths, time = homes, velocities.batch().cast(Step), rest, start
     for target in times:
         while time < target - step / 2:
-            faces = pick(positions)                                             # [particles]
-            local, squeeze = waves.at(faces, positions, time)                   # [particles] Rate+ <- Antivector-, Antivector- <- Antivector-
+            cells = pick(positions)                                             # [particles]
+            local, squeeze = waves.at(cells, positions, time)                   # [particles] Rate+ <- Antivector-, Antivector- <- Antivector-
             proper = proper_separations(local.field(), bonds, positions.field())   # Antivector-[bonds]
             previous, lengths = lengths, proper.dot(proper).square_root()       # Scalar+[bonds], Scalar+[bonds]
             # Springs and dashpots along the proper separations, pulling a stretched bond's ends together.
@@ -359,14 +357,14 @@ def massive(mesh: Mesh, vertices: Point, waves: Waves, bonds: Mesh, rest: Scalar
         yield positions.field(), lengths / rest - 1
 
 
-def light(mesh: Mesh, vertices: Point, waves: Waves, starts: Point, headings: Point, start: float, step: float,
+def light(mesh: Topology, vertices: Point, waves: Waves, starts: Point, headings: Point, start: float, step: float,
           n_steps: int) -> Iterator[Point]:
     """Rays of light through a round three-sphere carrying the waves `waves`, from `starts` `[rays] Point-` on the
     sphere along `headings`, unit steps of the origin `[rays] Antivector-` in the isoclinic frames, set out at time
     `start`: their places `[rays] Point-` after each step of length `step`, the light's time running with it. As the
     GPU's rays do, a ray's heading turns with the connection along its round step and the slices' stretch squeezes
     it, and it rolls along that step on its great circle, each step read at its midpoint."""
-    pick = mesh.picking(vertices)
+    pick = picking(mesh, vertices)
 
     def turning_and_rolling(places: Point, heading: Point, time: float) -> tuple[Point, Point]:
         """The heading's change per length at the places and the time, and the round step it rolls along."""
@@ -413,13 +411,13 @@ def round_circles(bases: Point, turn: Motor, n_turns: int, n_samples: int) -> Po
     return (circling * shares[:, None]).exp() >> lifts(bases, circling)[None]
 
 
-def stretches(waves: Waves, mesh: Mesh, vertices: Point, bases: Point, directions: Point, turn: Motor, n_turns: int,
+def stretches(waves: Waves, mesh: Topology, vertices: Point, bases: Point, directions: Point, turn: Motor, n_turns: int,
               n_samples: int, time: float) -> Scalar:
     """How much lengths stretch along steps of the origin `directions` in the frames, at the circles above the base
     points, averaged round each, at a time, `Scalar+[bases]`: half the strain's reading of the step on itself."""
     places = round_circles(bases, turn, n_turns, n_samples)                    # [samples, bases] Point-
-    faces = mesh.picking(vertices)(places.reshape(-1))                         # [samples * bases]
-    strain, _, _, _ = waves.fields(faces, places.reshape(-1), time)            # [samples * bases] Vector+ <- Antivector-
+    cells = picking(mesh, vertices)(places.reshape(-1))                        # [samples * bases]
+    strain, _, _, _ = waves.fields(cells, places.reshape(-1), time)            # [samples * bases] Vector+ <- Antivector-
     along = directions[None].broadcast_to(places.shape).reshape(-1)            # [samples * bases] Antivector-
     readings = (strain(along) & along) / (2 * along.dot(along))                 # [samples * bases] Scalar+
     return readings.reshape(places.shape).sum(axis=0) / n_samples
@@ -519,7 +517,7 @@ fn heading_change(heading: Step, rate: Rate, waves: Local) -> Step {
 
 
 # --- plumbing -------------------------------------------------------------------------
-def jacobian(slopes, rest: Scalar, nudge: float, mesh: Mesh) -> Scalar:
+def jacobian(slopes, rest: Scalar, nudge: float, mesh: Topology) -> Scalar:
     """The change of `slopes(lengths)`, `Scalar+[edges]`, with each of the lengths about `rest`, by forward differences
     of relative size `nudge`, as a sparse map `(Scalar+ <- Scalar+)[edges <- edges]`. An edge's length reaches only the
     slopes of the edges that share a tetrahedron with it, so a group of edges no two of which reach a common edge is
@@ -528,8 +526,8 @@ def jacobian(slopes, rest: Scalar, nudge: float, mesh: Mesh) -> Scalar:
     from scipy.sparse import csr_matrix
 
     n_edges = mesh.n_elements[1]
-    edge_ids = mesh_module.as_scalar(np.arange(n_edges)).field()
-    cell_edges = np.rint((mesh.incidence[3, 1] * edge_ids).to_array()).astype(int).reshape(6, -1).T   # [tets, 6]
+    # Each tetrahedron's six edges, found by their ends.
+    cell_edges = lookup_simplices(mesh.elements[1], np.sort(mesh.elements[3][:, mesh.corners[3, 1].T], axis=-1))   # [tets, 6]
     cells = csr_matrix((np.ones(cell_edges.size), (np.repeat(np.arange(len(cell_edges)), 6), cell_edges.reshape(-1))),
                        shape=(len(cell_edges), n_edges))
     reaching = ((cells.T @ cells) > 0).astype(float).tocsr()                   # [edges, edges]
@@ -544,12 +542,28 @@ def jacobian(slopes, rest: Scalar, nudge: float, mesh: Mesh) -> Scalar:
     rows, columns, values = [], [], []
     for group in range(groups.max() + 1):
         nudged = np.where(groups == group, sizes, 0.0)
-        changes = (slopes(rest + mesh_module.as_scalar(nudged).field()).to_array() - at_rest)
+        changes = (slopes(rest + mv.scalar(nudged[:, None]).field()).to_array() - at_rest)
         reached, members = reaching[:, groups == group].nonzero()
         edges = np.flatnonzero(groups == group)[members]
         rows.append(reached), columns.append(edges), values.append(changes[reached] / sizes[edges])
     cells = ctx.extensor(ga.gatype((Scalar, Scalar)), np.concatenate(values)[:, None, None])
     return SparseExtensor.from_indices(cells, np.concatenate(rows), np.concatenate(columns), (n_edges, n_edges))
+
+
+def picking(mesh: Topology, vertices: Point) -> Callable[[Point], np.ndarray]:
+    """`[points]`: the tetrahedron holding each point of the sphere, by a single query of a k-d tree built once. The
+    ray from the centre to a point crosses the tetrahedron whose plane through its corners, the sum of its ramps,
+    reads the point the most. Lifted out by the root of how much each plane's squared size falls short of the
+    largest, the planes lie nearest a point in the order they read it, so one query finds the tetrahedron. Planes are
+    read by pairing with the unit steps along the four directions, points with the planes across them."""
+    from scipy.spatial import cKDTree
+
+    across = mv.vector(np.eye(4))                                               # [4] Plane+
+    radial = coframe(mesh, vertices).sum(axis=0).batch()                        # [tets] Plane+
+    planes = (radial[:, None] & across.dual()[None]).to_array()                 # [tets, 4]
+    sizes = (planes ** 2).sum(axis=-1)                                          # [tets]
+    tree = cKDTree(np.concatenate([planes, np.sqrt(sizes.max() - sizes)[:, None]], axis=-1))
+    return lambda points: tree.query(np.pad((across & points.batch()[:, None]).to_array(), ((0, 0), (0, 1))))[1]
 
 
 def largest(value: SparseExtensor) -> float:

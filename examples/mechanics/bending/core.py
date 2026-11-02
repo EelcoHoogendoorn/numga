@@ -39,13 +39,12 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import concatenate
+from numga import NumpyContext, concatenate
 from numga.algebras import PGA3D as ga
-from examples import instantiate
 from examples.mechanics.simplex import barycentric_samples, simplex_inertia_weights
+from examples.util.topology import Topology
 
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, mv = mesh_module.Mesh, mesh_module.mv
+mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Point = ga.gatype.antivector()
 Twist = ga.gatype.bivector()
@@ -108,32 +107,32 @@ def bending(walls: Point, thickness: Scalar, modulus: float) -> Bending:
     return tensions.sites.sum().sum(axis=0)                                 # [] Resultant <- Strain
 
 
-def warping(mesh: Mesh, nodes: Point, thickness: Scalar, pole: Point) -> Warped:
+def warping(topology: Topology, nodes: Point, thickness: Scalar, pole: Point) -> Warped:
     """The fibres weighted by their warping seen from the pole, summed over the walls: the pull of
     fibres stretched in proportion to the area that the line from the pole sweeps along the walls."""
-    walls = mesh.incidence[1, 0] * nodes                                    # [ends] Point-[walls]
+    walls = topology.incidence[1, 0] * nodes                                # [ends] Point-[walls]
     tail, head = walls                                                      # Point-[walls], Point-[walls]
     # The lines through the walls' ends added up along the walls to each node, up to one line for all nodes: the
     # smallest field of lines whose steps along the walls are the walls' lines.
-    paths = (mesh.d[0] * WallLine).lstsq(tail & head)                       # WallLine-[nodes]
+    paths = (topology.d[0] * WallLine).lstsq(tail & head)                   # WallLine-[nodes]
     # Joined with the pole, a wall's line is the area that the line from the pole sweeps along it.
     warpings = beam_direction & pole & paths                                # Scalar-[nodes]
     # Each wall's length, the size of the line through its two ends.
     wall_lengths = (tail & head).norm()                                     # Scalar+[walls]
     shares = (wall_lengths * thickness).square_root()                       # Scalar+[walls]
-    end_warpings = mesh.incidence[1, 0] * warpings                          # [ends] Scalar-[walls]
+    end_warpings = topology.incidence[1, 0] * warpings                      # [ends] Scalar-[walls]
     along = barycentric_samples(simplex_inertia_weights(2), end_warpings) * shares   # [samples] Scalar-[walls]
     return (along * (beam_direction & samples(walls, thickness))).sites.sum().sum(axis=0)  # [] Warped
 
 
-def shear_centre(mesh: Mesh, nodes: Point, thickness: Scalar) -> Point:
+def shear_centre(topology: Topology, nodes: Point, thickness: Scalar) -> Point:
     """The pole whose warping no bending strain sees: its warped fibres pull with no couple across the
     beam. The warping is linear in the pole, so moving the pole from the centroid by a shift adds the
     warping seen from the shift itself, and one solve finds the shift that cancels the centroid's couples."""
-    centre = centroid(mesh.incidence[1, 0] * nodes, thickness)              # [] Point-
-    couples_per_shift = warping(mesh, nodes, thickness, Shift).cast(Couples)   # [] Couples <- Shift
-    centroid_couples = warping(mesh, nodes, thickness, centre).cast(Couples)   # [] Couples+
-    return centre - couples_per_shift.solve(centroid_couples)                  # [] Point-
+    centre = centroid(topology.incidence[1, 0] * nodes, thickness)  # [] Point-
+    couples_per_shift = warping(topology, nodes, thickness, Shift).cast(Couples)  # [] Couples <- Shift
+    centroid_couples = warping(topology, nodes, thickness, centre).cast(Couples)  # [] Couples+
+    return centre - couples_per_shift.solve(centroid_couples)  # [] Point-
 
 
 def twisting(walls: Point, thickness: Scalar, shear_modulus: float) -> Scalar:
@@ -145,11 +144,11 @@ def twisting(walls: Point, thickness: Scalar, shear_modulus: float) -> Scalar:
     return shear_modulus * (wall_lengths * thickness**3 / 3).sites.sum()    # [] Scalar+
 
 
-def stiffness(mesh: Mesh, nodes: Point, thickness: Scalar, modulus: float, shear_modulus: float) -> Stiffness:
+def stiffness(topology: Topology, nodes: Point, thickness: Scalar, modulus: float, shear_modulus: float) -> Stiffness:
     """The whole stiffness of the section, a sum of dyads of lines: the fibres' pulls for stretch and
     bending; the line at infinity of the section's plane for the twist, which as a load is a couple
     about the beam; and for each wall, a force along it through the shear centre for a slide along it."""
-    walls = mesh.incidence[1, 0] * nodes                                    # [ends] Point-[walls]
+    walls = topology.incidence[1, 0] * nodes                                # [ends] Point-[walls]
     tail, head = walls                                                      # Point-[walls], Point-[walls]
     fibres = beam_direction & samples(walls, thickness)                     # [samples] Resultant-[walls]
     pulling = (modulus * fibres * (Twist & fibres)).sites.sum().sum(axis=0)  # [] Resultant <- Twist+
@@ -157,10 +156,10 @@ def stiffness(mesh: Mesh, nodes: Point, thickness: Scalar, modulus: float, shear
     # Each wall's length, the size of the line through its two ends.
     wall_lengths = (tail & head).norm()                                     # Scalar+[walls]
     # Each wall's direction.
-    along = (mesh.d[0] * nodes) / wall_lengths                              # Point-[walls]
-    slides = shear_centre(mesh, nodes, thickness) & along                   # Forque-[walls]
-    sliding = (shear_modulus * wall_lengths * thickness * slides * (slides & Twist)).sites.sum()  # [] Forque- <- Twist+
-    return pulling + torsion + sliding                                      # [] Forque- <- Twist+
+    along = (topology.d[0] * nodes) / wall_lengths                          # Point-[walls]
+    slides = shear_centre(topology, nodes, thickness) & along               # Forque-[walls]
+    sliding = (shear_modulus * wall_lengths * thickness * slides * (slides & Twist)).sites.sum()            # [] Forque- <- Twist+
+    return pulling + torsion + sliding                                                                      # [] Forque- <- Twist+
 
 
 def loads_at_stations(loads: Forque, stations: np.ndarray) -> Forque:

@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import stack
+from numga import NumpyContext, stack
 from numga.algebras import VGA3D as ga
-from examples import instantiate
+from examples.util import shapes
+from examples.util.topology import Topology
 
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, mv = mesh_module.Mesh, mesh_module.mv
+mv = NumpyContext(ga).multivector
 Rotor = ga.gatype.rotor()                                                    # Rotor+
 Point = ga.gatype.antivector()                                               # Antivector-
+# The planes of x and of y, upright to the disks, whose duals are the directions across and up them.
+Upright = ga.gatype.from_blades("x y")                                       # Vector+
 
 n_triangle_subdivisions = 6
 n_fine_levels = 4
@@ -38,7 +40,7 @@ def triangle_samples(corners: Point, n_subdivisions: int) -> Point:
     return (corners * weights).sum(axis=-1)                                  # [samples] Point-
 
 
-def single_triangle(n_subdivisions: int, n_fine_levels: int) -> tuple[Point, Point, Mesh, Point, Rotor]:
+def single_triangle(n_subdivisions: int, n_fine_levels: int) -> tuple[Point, Point, Topology, Point, Rotor]:
     """A tilted 3D triangle, its interior sample lattice, a fine surface mesh, and three corner rotors."""
     ex, ey, ez = mv.x.dual(), mv.y.dual(), mv.z.dual()                       # [] Point-, [] Point-, [] Point-
     corners = stack((
@@ -52,19 +54,20 @@ def single_triangle(n_subdivisions: int, n_fine_levels: int) -> tuple[Point, Poi
         (mv.zx * (-1.35 / 2) - mv.xy * (0.65 / 2)).exp(),
     ))                                                                       # [corners] Rotor+
     # The triangle split at its edges' midpoints, for drawing the field smoothly across it.
-    fine_mesh, fine_vertices = Mesh(3, np.array([[0, 1, 2]])).midpoint_split(corners.field(), n_fine_levels)
-    return corners, triangle_samples(corners, n_subdivisions), fine_mesh, fine_vertices, corner_rotors
+    topology, fine_vertices = Topology(3, np.array([[0, 1, 2]])).midpoint_split(corners.field(), n_fine_levels)
+    return corners, triangle_samples(corners, n_subdivisions), topology, fine_vertices, corner_rotors
 
 
 def saddle_surface(
     radius: float, n_divisions: int, arch_height: float,
-) -> tuple[Mesh, Point, np.ndarray, Rotor, Rotor]:
+) -> tuple[Topology, Point, np.ndarray, Rotor, Rotor]:
     """A curved 3D saddle mesh with boundary indices, three boundary frame prescriptions, and a twisted initial field."""
-    mesh, flat_vertices = Mesh.triangular_disk(radius, n_divisions)
+    topology, flat_coordinates = shapes.triangular_disk(radius, n_divisions)
+    flat_vertices = mv(Upright, flat_coordinates).dual().field()                # Point-[vertices]
     vertical = mv.z.dual()                                                   # [] Point-
     x_coord, y_coord = mv.x & flat_vertices, mv.y & flat_vertices            # Scalar+[vertices], Scalar+[vertices]
     vertices = flat_vertices + arch_height * (x_coord.squared() - y_coord.squared()) * vertical  # Point-[vertices]
-    boundary = mesh.exterior(0)
+    boundary = topology.exterior[0]
 
     prescribed_rotors = (
         (-boundary_tilt_rates / 2) * flat_vertices.commutator(vertical)
@@ -80,7 +83,7 @@ def saddle_surface(
         )
     ).exp()                                                                  # Rotor+[vertices]
     initial_rotors = interior_twist * prescribed_rotors.batch()[1].field()   # Rotor+[vertices]
-    return mesh, vertices, boundary, prescribed_rotors, initial_rotors
+    return topology, vertices, boundary, prescribed_rotors, initial_rotors
 
 
 def main() -> None:
@@ -92,7 +95,7 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
 
     # 1. Mixed-grade rotor interpolation and the Darboux-Whitney identity on a 3D triangle.
-    corners, points, fine_mesh, fine_vertices, corner_rotors = single_triangle(
+    corners, points, fine_topology, fine_vertices, corner_rotors = single_triangle(
         n_triangle_subdivisions, n_fine_levels,
     )
     _, unit_rotors, darboux, whitney_rates, chord_stretch, _, whitney_forms = triangle_darboux(
@@ -101,40 +104,41 @@ def main() -> None:
     fine_chords, _, _, _, _, _, _ = triangle_darboux(corners, fine_vertices.batch(), corner_rotors)
     save_figure(
         render.draw_darboux_whitney(
-            corners, points, fine_mesh, fine_vertices, fine_chords.scalar_norm_squared().field(),
+            corners, points, fine_topology, fine_vertices, fine_chords.scalar_norm_squared().field(),
             corner_rotors, unit_rotors, whitney_rates,
         ),
         "frame_fields_darboux",
     )
 
     # 2. A disk wraps the sphere of directors once.
-    skyrmion_mesh, skyrmion_vertices = Mesh.triangular_disk(disk_radius, n_skyrmion_divisions)
+    skyrmion_topology, skyrmion_coordinates = shapes.triangular_disk(disk_radius, n_skyrmion_divisions)
+    skyrmion_vertices = mv(Upright, skyrmion_coordinates).dual().field()        # Point-[vertices]
     _, directors, scalar_parts, bivector_norms, _, solid_angles = skyrmion_winding(
-        skyrmion_mesh, skyrmion_vertices, skyrmion_twist,
+        skyrmion_topology, skyrmion_vertices, skyrmion_twist,
     )
     save_figure(
-        render.draw_skyrmion(skyrmion_mesh, skyrmion_vertices, directors),
+        render.draw_skyrmion(skyrmion_topology, skyrmion_vertices, directors),
         "frame_fields_skyrmion",
     )
 
     # 3. Normalize harmonic chords, then smooth a separate field under the unit-rotor constraint.
-    saddle_mesh, saddle_vertices, boundary, prescribed_rotors, initial_rotors = saddle_surface(
+    saddle_topology, saddle_vertices, boundary, prescribed_rotors, initial_rotors = saddle_surface(
         disk_radius, n_saddle_divisions, saddle_height,
     )
     harmonic_chords, harmonic_rotors = harmonic_rotor_frames(
-        saddle_mesh, saddle_vertices, boundary, prescribed_rotors,
+        saddle_topology, saddle_vertices, boundary, prescribed_rotors,
     )
     save_figure(
-        render.draw_rotor_frames(saddle_mesh, saddle_vertices, harmonic_rotors),
+        render.draw_rotor_frames(saddle_topology, saddle_vertices, harmonic_rotors),
         "frame_fields_frames",
     )
 
     relaxation_states = relax_rotor_frames(
-        saddle_mesh, saddle_vertices, initial_rotors, boundary,
+        saddle_topology, saddle_vertices, initial_rotors, boundary,
         relaxation_step_size, n_relaxation_steps,
     )
     save_animation(
-        render.animate_relaxation(saddle_mesh, saddle_vertices, relaxation_states),
+        render.animate_relaxation(saddle_topology, saddle_vertices, relaxation_states),
         "frame_fields_relaxation",
         frame_duration_ms,
         forward_then_back=True,
@@ -147,7 +151,7 @@ def main() -> None:
 
     sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]
     patch = (sides[0] & sides[1]) / 2
-    radial_whitney = (((points[:, None] - corners) | patch.inverse()) / 2) * triangle.face_edge_orientation
+    radial_whitney = (((points[:, None] - corners) | patch.inverse()) / 2) * triangle.orientation[1]
     np.testing.assert_allclose((whitney_forms - radial_whitney).kernel, 0.0, atol=1e-14)
 
     skyrmion_charge = solid_angles.sites.sum() / (4 * np.pi)
@@ -156,14 +160,14 @@ def main() -> None:
         (scalar_parts.squared() + bivector_norms.squared()).kernel, 1.0, atol=1e-14,
     )
 
-    _, rotor_laplacian, _, _, _ = rotor_laplacian_operators(saddle_mesh, saddle_vertices)
-    free_vertices = saddle_mesh.interior(0)
-    free = ~saddle_mesh.reading(free_vertices) * Rotor
+    _, rotor_laplacian, _, _, _ = rotor_laplacian_operators(saddle_topology, saddle_vertices)
+    free_vertices = saddle_topology.interior[0]
+    free = ~saddle_topology.reading(free_vertices) * Rotor
     np.testing.assert_allclose(free.adjoint()(rotor_laplacian(harmonic_chords)).kernel, 0.0, atol=1e-11)
 
     relaxation_energies = stack([
         energy for _, energy in relax_rotor_frames(
-            saddle_mesh, saddle_vertices, initial_rotors, boundary,
+            saddle_topology, saddle_vertices, initial_rotors, boundary,
             relaxation_step_size, n_relaxation_steps,
         )
     ])                                                                      # [steps + 1] Scalar+

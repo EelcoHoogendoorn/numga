@@ -5,15 +5,15 @@ import pytest
 
 from numga import NumpyContext
 from numga.algebras import VGA3D, PGA2D
-from examples import instantiate
 from examples.fluids.projective_sphere_flow import scenarios
+from examples.util import shapes
+from examples.util.topology import Topology
 
 
 @pytest.mark.parametrize("ga", [VGA3D, PGA2D])
 def test_projective_readings_and_quotient_derivative(ga):
     mv = NumpyContext(ga).multivector
-    Mesh = instantiate("examples.util.mesh", ga).Mesh
-    triangle = Mesh(3, [[0, 1, 2]])
+    triangle = Topology(3, [[0, 1, 2]])
     corners = mv.antivector([[1, 0, 1], [0, 1, 1], [-0.5, -0.2, 1]])
     scales = np.array([0.35, 2.2, 1.1])
     lifted = (corners * scales).field()
@@ -55,26 +55,27 @@ def test_projective_readings_and_quotient_derivative(ga):
 
 def test_fixed_sphere_diffusion_with_unequal_vertex_scales():
     core = scenarios.core
-    mesh, vertices = core.Mesh.icosphere(scenarios.n_levels)
+    topology, coordinates = shapes.sphere(scenarios.n_levels)
+    vertices = scenarios.mv.vector(coordinates).dual().field()                  # Point-[vertices]
     grid, barycentric = scenarios.triangle_grid(scenarios.n_quadrature_divisions)
-    quadrature = (grid.incidence[2, 0].mean(axis=0) * core.as_scalar(barycentric).field()).batch()
-    corners = mesh.incidence[2, 0] * vertices
+    quadrature = (grid.incidence[2, 0].mean(axis=0) * core.mv.scalar(barycentric[..., None]).field()).batch()
+    corners = topology.incidence[2, 0] * vertices
     chords = (corners[:, None] * quadrature).sum(axis=0)
     samples = chords.normalized()
     measures = (corners[0] & corners[1] & corners[2]).norm() / (2 * quadrature.shape[-1] * chords.norm() ** 3)
     source = 2 * (core.mv.z & samples)
-    reference, _, _ = core.diffusion(mesh, vertices, samples, measures, source, core.Plane.dual())
-    common_scale, _, _ = core.diffusion(mesh, 3.2 * vertices, samples, measures, source, core.Plane.dual())
+    reference, _, _ = core.diffusion(topology, vertices, samples, measures, source, core.Plane.dual())
+    common_scale, _, _ = core.diffusion(topology, 3.2 * vertices, samples, measures, source, core.Plane.dual())
     np.testing.assert_allclose((common_scale - reference).to_array(), 0, atol=1e-11)
 
     for radius in [0.4, 2.5]:
-        scales = np.ones(mesh.n_vertices)
+        scales = np.ones(topology.n_vertices)
         scales[0] = radius
-        lifted = vertices * core.as_scalar(scales).field()
-        potential, _, _ = core.diffusion(mesh, lifted, samples, measures, source, core.Plane.dual())
+        lifted = vertices * core.mv.scalar(scales[..., None]).field()
+        potential, _, _ = core.diffusion(topology, lifted, samples, measures, source, core.Plane.dual())
         # The height is the known physical solution, an eigenfunction of the sphere's Laplacian, at this coarse resolution.
         np.testing.assert_allclose((potential - (core.mv.z & vertices)).to_array(), 0, atol=0.08)
         assert np.max(np.abs((potential - reference).to_array())) > 1e-3
     zero_source = source * 0
-    equilibrium, _, _ = core.diffusion(mesh, vertices, samples, measures, zero_source, core.Plane.dual())
+    equilibrium, _, _ = core.diffusion(topology, vertices, samples, measures, zero_source, core.Plane.dual())
     np.testing.assert_allclose(equilibrium.to_array(), 0, atol=1e-12)

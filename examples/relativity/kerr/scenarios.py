@@ -66,7 +66,7 @@ def scene() -> tuple[core.Antivector, core.Antivector]:
     # A constant oblate radius cuts the equatorial plane in this circle.
     horizon = mass + np.sqrt(mass**2 - spins**2)
     radius = np.sqrt(horizon**2 + spins**2)
-    angles = np.linspace(0, 2 * np.pi, n_ring_samples + 1)
+    angles = np.linspace(0, 2 * np.pi, n_ring_samples, endpoint=False)
     turns = (core.mv.xy * (-angles / 2)).exp()
     horizons = (turns >> x) * radius[:, None]
     return paths, horizons

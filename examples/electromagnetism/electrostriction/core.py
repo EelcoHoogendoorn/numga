@@ -22,10 +22,9 @@ import numpy as np
 from numga.algebras import STA as ga
 from numga.backend.jax import JaxContext, derivative
 from numga.sparse import SparseExtensor
-from examples import instantiate
+from examples.util.topology import Topology
 
 mv = JaxContext(ga).multivector
-Mesh = instantiate("examples.util.mesh", ga, JaxContext).Mesh
 Scalar = ga.gatype.scalar()                                # Scalar+
 Vector = ga.gatype.vector()                                # Vector+
 # Positions, displacements and dipoles are directions in the plane, antivectors; the electric field
@@ -56,7 +55,7 @@ class Lattice:
     def bond_ends(self) -> SparseExtensor:
         """Each bond's second particle less its first, from the particles to the bonds."""
         n_particles = self.rest.gatype.site_shape[0]
-        return Mesh(n_particles, self.bonds).d[0]
+        return Topology(n_particles, self.bonds).d[0]
 
     @property
     def lengths(self) -> Scalar:

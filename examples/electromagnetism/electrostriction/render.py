@@ -15,7 +15,7 @@ from examples.util.wgsl import simplices
 from examples.util.wgsl.camera import flat_panel
 from examples.electromagnetism.electrostriction.core import Field, Point, Scalar, field_along
 
-Mesh = simplices.Mesh
+Topology = simplices.Topology
 
 rest_colour = np.array([0xc4, 0xcb, 0xd0]) / 255
 bond_colour = np.array([0x28, 0x65, 0x80]) / 255
@@ -55,7 +55,7 @@ def draw_rest(rest: Point, bonds: np.ndarray) -> plt.Figure:
     figure, ax, _ = lattice_axes(rest)
     camera = flat_panel(ax, rest.algebra)
     sites = rest.batch()
-    simplices.overlay(ax, [simplices.strokes(sites, Mesh(len(sites), bonds), bond_colour, bond_width, camera),
+    simplices.overlay(ax, [simplices.strokes(sites, Topology(len(sites), bonds), bond_colour, bond_width, camera),
                            simplices.markers(sites, bond_colour, particle_radius, camera)])
     return figure
 
@@ -70,9 +70,9 @@ class LatticeView:
         self.camera = flat_panel(ax, rest.algebra)
         sites = rest.batch()
         n_particles = len(sites)
-        self.bonds = Mesh(n_particles, bonds)
+        self.bonds = Topology(n_particles, bonds)
         # Each dipole a chain of two points, its tail and its head, about its particle.
-        self.arrows = Mesh.chains([2] * n_particles)
+        self.arrows = Topology.chains([2] * n_particles)
         # The applied field's arrow, centred below the lattice.
         mv = rest.context.multivector
         self.anchor = mv.y.dual() * (-half_size[1] - field_gap / 2)                     # [] Point-
@@ -86,14 +86,14 @@ class LatticeView:
         # Each arrow a stroke with a chevron at its tip.
         dipole_ends = stack((sites - arrows / 2, sites + arrows / 2), axis=-1).reshape(-1)
         # The applied field drawn along the direction whose field it is.
-        applied_arrow = field_along.solve(applied) * self.field_scale                     # [] Point-
+        applied_arrow = field_along.solve(applied) * self.field_scale                   # [] Point-
         applied_ends = stack((self.anchor - applied_arrow / 2, self.anchor + applied_arrow / 2))
         self.image.set_data(simplices.composited(self.reference + [
             simplices.strokes(sites, self.bonds, bond_colour, bond_width, self.camera),
             simplices.markers(sites, bond_colour, particle_radius, self.camera),
             simplices.strokes(dipole_ends, self.arrows, dipole_colour, dipole_width, self.camera,
                               chevrons=np.ones(len(sites)), chevron=dipole_chevron),
-            simplices.strokes(applied_ends, Mesh.chains([2]), applied_colour, applied_width, self.camera,
+            simplices.strokes(applied_ends, Topology.chains([2]), applied_colour, applied_width, self.camera,
                               chevrons=np.ones(1), chevron=applied_chevron)]))
         return self.figure
 

@@ -43,7 +43,7 @@ def chevron_arrows(starts: Point, ends: Point, colour: np.ndarray, width: float,
     """Arrows between points `[arrows]`: tubes `thickness` times `width` pixels across, each ending in a chevron, for
     `solids.draw` to compose among the solids."""
     n_arrows = starts.shape[0]
-    return simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Mesh.chains([2] * n_arrows), colour,
+    return simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Topology.chains([2] * n_arrows), colour,
                            thickness * width, view, gloss=solids.gloss, chevrons=np.ones(n_arrows),
                            chevron=chevron_length * thickness * width)
 
@@ -53,8 +53,9 @@ def polygons(corners: Point, view: solids.View, thickness: float
     """Flat polygons of corners `[polygons, corners]`: plates a pixel thick, bounded by planes `[polygons,
     corners + 2]`, and their rims, rods `[polygons * corners, 3]` and the balls joining them `[polygons * corners * 2,
     1]`, the rims' width a share `thickness` of the one set above."""
-    following = corners[:, np.roll(np.arange(corners.shape[1]), -1)]          # [polygons, corners] Point-
-    rims, joints = solids.edges(corners.reshape(-1), following.reshape(-1), thickness * rim_width / 2 * view.pixel)
+    outlines = simplices.Topology.loops([corners.shape[1]] * corners.shape[0])
+    tails, heads = (outlines.incidence[1, 0] * corners.reshape(-1).field()).batch()   # [polygons * corners] Point-, Point-
+    rims, joints = solids.edges(tails, heads, thickness * rim_width / 2 * view.pixel)
     return solids.plates(corners, view.pixel), rims, joints
 
 
@@ -98,7 +99,7 @@ def draw_normals(vertices: Point, side: Plane, winding: Surface, mirror: Plane) 
     sheets = [(mirror_plates, mirror_colour, mirror_opacity), (triangles, face_colour, face_opacity)]
 
     # Follow the supplied vertex order, so reflection visibly reverses the winding.
-    edges = vertices[:, np.roll(np.arange(vertices.shape[1]), -1)] - vertices  # [scenes, vertices] Point-
+    edges = (simplices.Topology.loops([vertices.shape[1]]).d[0] * vertices.field()).batch()   # [scenes, edges] Point-
     edge_arrows = chevron_arrows((vertices + edges * 0.25).reshape(-1), (vertices + edges * 0.75).reshape(-1),
                                  winding_colour, edge_arrow_width, view, 1.0)
     side_arrows = chevron_arrows(centres, tips[0], side_colour, normal_width, view, 1.0)

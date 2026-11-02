@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import concatenate
+from numga import NumpyContext, concatenate
 from numga.algebras import VGA2D as ga
-from examples import instantiate
+from examples.util.topology import Topology
 
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, Point, Scalar, mv = mesh_module.Mesh, mesh_module.Point, mesh_module.Scalar, mesh_module.mv
+mv = NumpyContext(ga).multivector
+Scalar = ga.gatype.scalar()                                                  # Scalar+
+Point = ga.gatype.antivector()                                               # Antivector-
 
 LENGTH, HEIGHT = 6.0, 2.0
 OBSTACLE_CENTRE = (2.5, 0.2)
@@ -52,20 +53,21 @@ def channel_vertices(n_divisions: int) -> tuple[Point, Point, np.ndarray, np.nda
 
 
 def triangulate(vertices: Point, hole: np.ndarray, inlet: np.ndarray, outlet: np.ndarray
-                ) -> tuple[Mesh, Point, np.ndarray, np.ndarray, np.ndarray]:
+                ) -> tuple[Topology, Point, np.ndarray, np.ndarray, np.ndarray]:
     """Delaunay connectivity with a polygonal hole and the three sets of boundary edges."""
-    delaunay = Mesh.triangulate(vertices)
+    delaunay = Topology.triangulate(vertices)
     # The obstacle's boundary edges are present in the triangulation; its interior consists
     # exactly of triangles with all three corners on that boundary.
-    mesh = Mesh(delaunay.n_vertices, delaunay.faces[~np.isin(delaunay.faces, hole).all(axis=1)])
-    boundary = mesh.boundary_edges
-    inlet_edges = boundary[np.isin(mesh.edges[boundary], inlet).all(axis=1)]
-    outlet_edges = boundary[np.isin(mesh.edges[boundary], outlet).all(axis=1)]
+    triangles = delaunay.elements[2]
+    topology = delaunay.subset(~np.isin(triangles, hole).all(axis=1))
+    edges, boundary = topology.elements[1], topology.exterior[1]
+    inlet_edges = boundary[np.isin(edges[boundary], inlet).all(axis=1)]
+    outlet_edges = boundary[np.isin(edges[boundary], outlet).all(axis=1)]
     wall_edges = np.setdiff1d(boundary, np.concatenate((inlet_edges, outlet_edges)))
-    return mesh, vertices, inlet_edges, outlet_edges, wall_edges
+    return topology, vertices, inlet_edges, outlet_edges, wall_edges
 
 
-def channel(n_divisions: int) -> tuple[Mesh, Point, np.ndarray, np.ndarray, np.ndarray]:
+def channel(n_divisions: int) -> tuple[Topology, Point, np.ndarray, np.ndarray, np.ndarray]:
     """A Delaunay mesh of the channel around the circular obstacle, with its boundary edges."""
     boundary, interior, inlet, outlet = channel_vertices(n_divisions)
     spacing = HEIGHT / n_divisions
@@ -83,7 +85,7 @@ def channel(n_divisions: int) -> tuple[Mesh, Point, np.ndarray, np.ndarray, np.n
     return triangulate(vertices, hole, inlet, outlet)
 
 
-def plain_channel(n_divisions: int) -> tuple[Mesh, Point, np.ndarray, np.ndarray, np.ndarray]:
+def plain_channel(n_divisions: int) -> tuple[Topology, Point, np.ndarray, np.ndarray, np.ndarray]:
     """The same channel without the obstacle, for its parabolic-flow solution."""
     boundary, interior, inlet, outlet = channel_vertices(n_divisions)
     vertices = concatenate((boundary, interior)).field()
@@ -91,29 +93,28 @@ def plain_channel(n_divisions: int) -> tuple[Mesh, Point, np.ndarray, np.ndarray
 
 
 def main() -> None:
-    from numga.sparse import SparseExtensor
     from examples.fluids.dec_stokes.core import Operators, stokes
     from examples.fluids.dec_stokes import render
     from examples.util.animation import save_figure
 
-    mesh, vertices, inlet, outlet, walls = channel(N_DIVISIONS)
-    operators = Operators(mesh, vertices)
+    topology, vertices, inlet, outlet, walls = channel(N_DIVISIONS)
+    operators = Operators(topology, vertices)
 
     # The inlet and outlet carry the same parabolic flow. Its integral between each
     # edge's ends gives the edge flux; the solid walls carry no normal flow.
     ordinate = mv.y & vertices                                               # Scalar+[vertices]
     streamfunction = 1.5 * MEAN_SPEED * (ordinate - 4 * ordinate.squared() * ordinate / (3 * HEIGHT**2))  # Scalar+[vertices]
-    ends = SparseExtensor.selection(mesh_module.ctx, np.concatenate((inlet, outlet)), len(mesh.edges))
-    prescribed_flux = ~ends * (ends * (mesh.d[0] * streamfunction))          # Scalar+[edges]
+    ends = topology.reading(np.concatenate((inlet, outlet)), 1)
+    prescribed_flux = ~ends * (ends * (topology.d[0] * streamfunction))      # Scalar+[edges]
     boundary_circulation = operators.dual_patches * 0                        # Patch-[vertices]
     flux, pressure, vorticity, velocity = stokes(operators, VISCOSITY, prescribed_flux,
-                                                 mesh.boundary_edges, boundary_circulation)
-    streamfunction = (mesh.d[0] * Scalar).lstsq(flux)                        # Scalar+[vertices]
+                                                 topology.exterior[1], boundary_circulation)
+    streamfunction = (topology.d[0] * Scalar).lstsq(flux)                    # Scalar+[vertices]
 
-    save_figure(render.draw_mesh(mesh, vertices), "dec_stokes_mesh")
-    save_figure(render.draw_complex(mesh, vertices, operators.circumcentres, operators.dual_edges), "dec_stokes_complex")
-    save_figure(render.draw_fields(mesh, vertices, pressure, vorticity, streamfunction), "dec_stokes_fields")
-    save_figure(render.draw_flow(mesh, vertices, pressure, velocity), "dec_stokes_flow")
+    save_figure(render.draw_mesh(topology, vertices), "dec_stokes_mesh")
+    save_figure(render.draw_complex(topology, vertices, operators.circumcentres, operators.dual_edges), "dec_stokes_complex")
+    save_figure(render.draw_fields(topology, vertices, pressure, vorticity, streamfunction), "dec_stokes_fields")
+    save_figure(render.draw_flow(topology, vertices, pressure, velocity), "dec_stokes_flow")
 
 
 if __name__ == "__main__":

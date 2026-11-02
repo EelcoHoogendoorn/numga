@@ -23,7 +23,7 @@ margin, n_pixels = 0.25, 300
 ellipsoid_opacity, patch_opacity = 0.19, 0.22
 patch_thickness, centre_radius, contact_radius = 1.0, 3.0, 4.0
 # The tangent normals that sample the ellipsoid for framing, along each meridian and around the pole.
-n_latitudes, n_longitudes = 33, 65
+n_latitudes, n_longitudes = 33, 64
 # The patch's half side, as a share of the ellipsoid's widest extent along x, y and z, and its corners in its plane.
 patch_share = 0.22
 square_across, square_up = np.array([-1, 1, 1, -1]), np.array([-1, -1, 1, 1])
@@ -36,7 +36,7 @@ def surface(quadric: DualQuadric) -> Point:
     """The ellipsoid sampled by its contact points, the tangent normal swept over a sphere: z turned towards x by the
     latitude, then about z by the longitude."""
     latitudes = np.linspace(0, np.pi, n_latitudes)[:, None]
-    longitudes = np.linspace(0, 2 * np.pi, n_longitudes)[None, :]
+    longitudes = np.linspace(0, 2 * np.pi, n_longitudes, endpoint=False)[None, :]
     meridian = (mv.zx * (-latitudes / 2)).exp() >> mv.z                      # [latitudes, 1] Plane+
     normals = (mv.xy * (-longitudes / 2)).exp() >> meridian                  # [latitudes, longitudes] Plane+
     return quadric(support_plane(quadric, normals, mv.w))

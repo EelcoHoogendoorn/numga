@@ -41,18 +41,17 @@ def test_barycentric_hats_and_edge_whitney_forms_on_single_triangle_and_diamond(
         np.testing.assert_allclose(readings.kernel, np.eye(3)[..., None], atol=1e-14)
 
     # Across the shared edge of a two-triangle diamond, tangential readings match while normal readings jump.
-    mesh, vertices, _ = scenarios.edge_diamond(6)
-    diamond = core.Operators(mesh, vertices)
-    tails, heads = mesh.incidence[1, 0] * vertices
-    shared_tail, = tails.batch()[mesh.interior_edges]
-    shared_head, = heads.batch()[mesh.interior_edges]
+    topology, vertices, _ = scenarios.edge_diamond(6)
+    diamond = core.Operators(topology, vertices)
+    shared = topology.reading(topology.interior[1], 1)                         # Scalar+[1 <- edges]
+    shared_tail, shared_head = (shared * (topology.incidence[1, 0] * vertices)).batch()[:, 0]   # [] Point-, Point-
     shared_edge = shared_head - shared_tail
     fractions = np.linspace(0.1, 0.9, 7)
     seam_points = shared_tail * (1 - fractions) + shared_head * fractions
     # The forms of the shared edge on each face, signed by the sense in which the face runs along it.
     seam_forms = (seam_points[:, None] - diamond.corners[None, :]) / (2 * diamond.patches)
-    seam_whitney1 = (spdiag(seam_forms) * mesh.boundary[2, 1]).sum(axis=1) * core.Scalar
-    shared_circulation = core.as_scalar(np.isin(np.arange(len(mesh.edges)), mesh.interior_edges)).field()
+    seam_whitney1 = (spdiag(seam_forms) * topology.boundary[2, 1]).sum(axis=1) * core.Scalar
+    shared_circulation = ~shared * core.mv.scalar([[1.0]]).field()            # Scalar+[edges]
     seams = seam_whitney1(shared_circulation)
     np.testing.assert_allclose((seams & shared_edge).kernel, 1.0, atol=1e-14)
     left_seam, right_seam = seams.batch()[:, 0], seams.batch()[:, 1]
@@ -61,10 +60,10 @@ def test_barycentric_hats_and_edge_whitney_forms_on_single_triangle_and_diamond(
 
 
 def test_tetrahedral_whitney_0_1_2_forms_and_opposite_edge_helicity():
-    mesh, vertices, points = scenarios.single_tetrahedron(6)
-    corners = mesh.incidence[3, 0] * vertices
-    hats, gradients, face_patches, volume = core.tetrahedral_hats(mesh, vertices, points)
-    corner_hats, _, _, _ = core.tetrahedral_hats(mesh, vertices, corners)
+    topology, vertices, points = scenarios.single_tetrahedron(6)
+    corners = topology.incidence[3, 0] * vertices
+    hats, gradients, face_patches, volume = core.tetrahedral_hats(topology, vertices, points)
+    corner_hats, _, _, _ = core.tetrahedral_hats(topology, vertices, corners)
 
     assert hats.batch().gatype == core.SpaceScalar
     assert gradients.batch().gatype == core.SpacePlane
@@ -85,38 +84,38 @@ def test_tetrahedral_whitney_0_1_2_forms_and_opposite_edge_helicity():
     np.testing.assert_allclose((reconstructed_gradient - true_gradient).kernel, 0.0, atol=1e-13)
 
     # Edge 1-forms match Whitney's alternating formula, have constant curl, and read one along their own edge only.
-    edge_forms, edge_curls = core.tetrahedral_edge_forms(mesh, vertices, points)
-    tails, heads = mesh.corners[3, 1]
+    edge_forms, edge_curls = core.tetrahedral_edge_forms(topology, vertices, points)
+    tails, heads = topology.corners[3, 1]
     alternating_edge_forms = hats[tails] * gradients[heads, None] - hats[heads] * gradients[tails, None]
     alternating_curls = 2 * (gradients[tails] ^ gradients[heads])
     np.testing.assert_allclose((edge_forms - alternating_edge_forms).kernel, 0.0, atol=1e-13)
     np.testing.assert_allclose((edge_curls - alternating_curls).kernel, 0.0, atol=1e-13)
 
-    edges = mesh.oriented[3, 1] * (mesh.d[0] * vertices)
+    edges = topology.oriented[3, 1] * (topology.d[0] * vertices)
     for fraction in (0.2, 0.5, 0.85):
         edge_points = corners[tails] * (1 - fraction) + corners[heads] * fraction
-        readings, _ = core.tetrahedral_edge_forms(mesh, vertices, edge_points)
+        readings, _ = core.tetrahedral_edge_forms(topology, vertices, edge_points)
         np.testing.assert_allclose((readings & edges[None, :]).kernel, np.eye(6)[..., None, None], atol=1e-13)
 
     # Face 2-forms match Whitney's formula one grade up and read the flux through their own face only.
-    face_forms = core.tetrahedral_face_forms(mesh, vertices, points)
-    first, second, third = core.complements(mesh, 0).T
+    face_forms = core.tetrahedral_face_forms(topology, vertices, points)
+    first, second, third = core.complements(topology, 0).T
     alternating_face_forms = 2 * (hats[first] * (gradients[second, None] ^ gradients[third, None])
                                   + hats[second] * (gradients[third, None] ^ gradients[first, None])
                                   + hats[third] * (gradients[first, None] ^ gradients[second, None]))
     np.testing.assert_allclose((face_forms - alternating_face_forms).kernel, 0.0, atol=1e-13)
 
-    face_centres = mesh.incidence[3, 2] * (mesh.incidence[2, 0].mean(axis=0) * vertices)
-    face_readings = core.tetrahedral_face_forms(mesh, vertices, face_centres) & face_patches[None, :]
+    face_centres = topology.incidence[3, 2] * (topology.incidence[2, 0].mean(axis=0) * vertices)
+    face_readings = core.tetrahedral_face_forms(topology, vertices, face_centres) & face_patches[None, :]
     np.testing.assert_allclose(face_readings.kernel, np.eye(4)[..., None, None], atol=1e-13)
 
     # The volume pairing of edge forms with curls is the same for a sheared, stretched tetrahedron, and links only
     # opposite edges, with the sense of the tetrahedron's corners in the order the two edges list them, over six.
-    tet_helicity = core.tetrahedral_helicity(mesh, vertices)
-    deformed_helicity = core.tetrahedral_helicity(mesh, scenarios.deformed_tetrahedron())
+    tet_helicity = core.tetrahedral_helicity(topology, vertices)
+    deformed_helicity = core.tetrahedral_helicity(topology, scenarios.deformed_tetrahedron())
     assert tet_helicity.batch().gatype == core.SpaceScalar
     np.testing.assert_allclose((tet_helicity - deformed_helicity).kernel, 0.0, atol=1e-13)
-    edge_corners = mesh.corners[3, 1].T
+    edge_corners = topology.corners[3, 1].T
     edge_pairs = np.concatenate(np.broadcast_arrays(edge_corners[:, None], edge_corners[None, :]), axis=-1)
     disjoint = (edge_corners[:, None, :, None] != edge_corners[None, :, None, :]).all(axis=(-1, -2))
     linking = np.where(disjoint, core.simplex_parity(edge_pairs), 0) / 6
@@ -124,8 +123,8 @@ def test_tetrahedral_whitney_0_1_2_forms_and_opposite_edge_helicity():
 
 
 def test_cochain_complex_and_exact_midpoint_quadrature_including_obtuse_triangles():
-    mesh, vertices = scenarios.disk(1.0, 5)
-    operators = core.Operators(mesh, vertices)
+    topology, vertices = scenarios.disk(1.0, 5)
+    operators = core.Operators(topology, vertices)
 
     assert operators.d0.gatype == core.ga.gatype((core.Scalar, core.Scalar))
     assert operators.d1.gatype == core.ga.gatype((core.Scalar, core.Scalar))
@@ -141,7 +140,7 @@ def test_cochain_complex_and_exact_midpoint_quadrature_including_obtuse_triangle
         (operators.whitney1(operators.d0(potential)) - operators.gradient(potential)).kernel,
         0.0, atol=1e-14,
     )
-    cochain = operators.d0(potential) + core.as_scalar(np.cos(np.arange(len(mesh.edges)))).field()
+    cochain = operators.d0(potential) + core.mv.scalar(np.cos(np.arange(topology.n_elements[1]))[..., None]).field()
     np.testing.assert_allclose(
         (operators.curl(cochain) - operators.whitney2(operators.d1(cochain))).kernel,
         0.0, atol=1e-12,
@@ -162,7 +161,7 @@ def test_cochain_complex_and_exact_midpoint_quadrature_including_obtuse_triangle
     barycentric_interior = np.array([[2 / 3, 1 / 6, 1 / 6], [1 / 6, 2 / 3, 1 / 6], [1 / 6, 1 / 6, 2 / 3]])
     interior_points = (operators.corners[None, :] * barycentric_interior).sum(axis=1)
     interior_forms = (interior_points[:, None] - operators.corners[None, :]) / (2 * operators.patches)
-    interior_whitney1 = (spdiag(interior_forms) * mesh.boundary[2, 1]).sum(axis=1) * core.Scalar
+    interior_whitney1 = (spdiag(interior_forms) * topology.boundary[2, 1]).sum(axis=1) * core.Scalar
     weights = spdiag(((operators.areas / 3) * conductivity)[..., None])
     interior_conductances = interior_whitney1.adjugate()(weights(interior_whitney1)).sum(axis=-1)
     np.testing.assert_allclose((edge_conductances - interior_conductances).cells.kernel, 0.0, atol=1e-14)
@@ -176,52 +175,52 @@ def test_cochain_complex_and_exact_midpoint_quadrature_including_obtuse_triangle
     )
 
     # On the obtuse diamond, circumcentric DEC's shared-edge weight is negative while Whitney's 1-form mass is positive-definite.
-    obtuse_mesh, obtuse_vertices = scenarios.obtuse_diamond()
-    obtuse_ops = core.Operators(obtuse_mesh, obtuse_vertices)
-    tails, heads = obtuse_mesh.corners[2, 1]
+    obtuse_topology, obtuse_vertices = scenarios.obtuse_diamond()
+    obtuse_ops = core.Operators(obtuse_topology, obtuse_vertices)
+    tails, heads = obtuse_topology.corners[2, 1]
     next_sides, prev_sides = obtuse_ops.sides[tails], obtuse_ops.sides[heads]
     cotangents = -next_sides.dot(prev_sides) / (2 * obtuse_ops.areas)
-    unit_amount = core.as_scalar(np.ones(len(obtuse_mesh.faces))).field().dual()
-    cotangent_weights = (~obtuse_mesh.incidence[2, 1] * ((cotangents / 2) * unit_amount)).sum(axis=0)
+    unit_amount = core.mv.scalar(np.ones(obtuse_topology.n_elements[2])[..., None]).field().dual()
+    cotangent_weights = (~obtuse_topology.incidence[2, 1] * ((cotangents / 2) * unit_amount)).sum(axis=0)
     assert (cotangent_weights.batch()[0] & core.mv.scalar([1.0])).to_array() < -1.0
 
     obtuse_edge_conductance = core.edge_conductance(obtuse_ops, core.Plane.dual())
-    for edge in range(len(obtuse_mesh.edges)):
-        unit_edge = core.as_scalar(np.arange(len(obtuse_mesh.edges)) == edge).field()
+    for edge in range(obtuse_topology.n_elements[1]):
+        unit_edge = core.mv.scalar((np.arange(obtuse_topology.n_elements[1]) == edge)[..., None]).field()
         assert -(obtuse_edge_conductance(unit_edge) & unit_edge).sites.sum() > 0
 
 
 def test_isotropic_and_anisotropic_conduction_patch_test_and_flux_balance():
-    mesh, vertices = scenarios.disk(1.0, 6)
-    operators = core.Operators(mesh, vertices)
+    topology, vertices = scenarios.disk(1.0, 6)
+    operators = core.Operators(topology, vertices)
     fibre = (core.mv.xy * (-scenarios.fibre_angle / 2)).exp() >> core.mv.x.dual()
     quarter_turn = (core.mv.xy * (-np.pi / 4)).exp()
     directions = stack((fibre, quarter_turn >> fibre))
     conductivity = (directions * (core.Plane & directions) * scenarios.principal_conductivities).sum(axis=-1)
 
     # Linear patch test: prescribing a linear potential on the entire boundary recovers it everywhere for any conductivity.
-    boundary = mesh.exterior(0)
+    boundary = topology.exterior[0]
     applied_field = 1.25 * core.mv.x - 0.6 * core.mv.y
     exact_potential = applied_field & vertices
-    rim = mesh.reading(boundary)
+    rim = topology.reading(boundary)
     prescribed_rim = ~rim * (rim * exact_potential)
     potential, current, _ = core.conduction(operators, conductivity, boundary, prescribed_rim)
     np.testing.assert_allclose(potential.batch()[0].kernel, exact_potential.kernel, atol=1e-13)
     np.testing.assert_allclose(potential.batch()[1].kernel, exact_potential.kernel, atol=1e-13)
     expected_current = -conductivity(applied_field)
-    np.testing.assert_allclose(current.batch()[0].kernel, np.broadcast_to(expected_current[0].kernel, (len(mesh.faces), 2)), atol=1e-12)
-    np.testing.assert_allclose(current.batch()[1].kernel, np.broadcast_to(expected_current[1].kernel, (len(mesh.faces), 2)), atol=1e-12)
+    np.testing.assert_allclose(current.batch()[0].kernel, np.broadcast_to(expected_current[0].kernel, (topology.n_elements[2], 2)), atol=1e-12)
+    np.testing.assert_allclose(current.batch()[1].kernel, np.broadcast_to(expected_current[1].kernel, (topology.n_elements[2], 2)), atol=1e-12)
 
     # Electrode solve balances flux at every free vertex and conserves total current between the two electrodes.
     abscissa = (core.mv.x & vertices).batch()
     electrodes = boundary[abscissa[boundary].norm() > scenarios.electrode_threshold]
-    pinned = mesh.reading(electrodes)
+    pinned = topology.reading(electrodes)
     prescribed = ~pinned * (pinned * (core.mv.x & vertices))
     potential, current, streamfunction = core.conduction(operators, conductivity, electrodes, prescribed)
 
     conductance = operators.gradient.adjugate()(spdiag(operators.areas * conductivity)(operators.gradient))
-    free_vertices = np.setdiff1d(np.arange(mesh.n_vertices), electrodes)
-    free = ~mesh.reading(free_vertices) * core.Scalar
+    free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
+    free = ~topology.reading(free_vertices) * core.Scalar
     nodal_source = conductance(potential)
     np.testing.assert_allclose(free.adjugate()(nodal_source).kernel, 0.0, atol=1e-11)
     np.testing.assert_allclose(nodal_source.sites.sum().kernel, 0.0, atol=1e-11)

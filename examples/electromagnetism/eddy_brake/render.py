@@ -16,7 +16,7 @@ from examples.util.wgsl import contours, simplices
 from examples.util.wgsl.camera import Camera, flat_panel
 from examples.electromagnetism.eddy_brake import core
 
-Mesh, as_scalar = core.Mesh, core.as_scalar
+Topology, as_scalar = core.Topology, core.as_scalar
 
 animation_dpi = 90
 fibre_reach = 0.94
@@ -69,17 +69,17 @@ def magnet(centre: core.Point, width: float, field: core.Bivector, camera: Camer
     """The magnet's field, a plane of space, as a patch in that plane: its width dashed, and an arc around it ending
     in a chevron for the sense the field turns in, read by pairing the field with the patch of the disc's plane."""
     # The dashed rim: a point along x at the magnet's width, turned once around its centre.
-    around = (core.mv.xy * (-np.linspace(0, 2 * np.pi, n_magnet_rim + 1) / 2)).exp()   # [rim] Rotor+
-    outline = centre + (around >> (core.mv.x.dual() * width))                          # [rim] Point-
+    around = (core.mv.xy * (-np.linspace(0, 2 * np.pi, n_magnet_rim, endpoint=False) / 2)).exp()   # [rim] Rotor+
+    outline = centre + (around >> (core.mv.x.dual() * width))                                      # [rim] Point-
     handedness = field & core.mv.xy.dual()
     sense = np.asarray(handedness > 0, dtype=int) - np.asarray(handedness < 0, dtype=int)
     angles = field_arc_start + sense * np.linspace(0, field_arc_span, n_field_arc)
     # The arc: a point on the rim along x, turned about the magnet's centre through the angles.
     turns = (core.mv.xy * (-angles / 2)).exp()                               # [arc] Rotor+
     arc = centre + (turns >> (core.mv.x.dual() * (field_arc_reach * width)))  # [arc] Point-
-    return [simplices.strokes(outline, Mesh.chains([n_magnet_rim + 1]), magnet_colour, magnet_width, camera,
+    return [simplices.strokes(outline, Topology.loops([n_magnet_rim]), magnet_colour, magnet_width, camera,
                               dashes=magnet_dashes, cap=simplices.Cap.BUTT),
-            simplices.strokes(arc, Mesh.chains([n_field_arc]), magnet_colour, magnet_width, camera,
+            simplices.strokes(arc, Topology.chains([n_field_arc]), magnet_colour, magnet_width, camera,
                               chevrons=np.arange(n_field_arc - 1) == n_field_arc - 2, chevron=magnet_chevron)]
 
 
@@ -121,10 +121,10 @@ def rotation_marker(mark: core.Point, camera: Camera) -> list[np.ndarray]:
             simplices.markers(mark, knob_colour, knob_radius, camera)]
 
 
-def at_vertices(mesh: Mesh, areas: core.Scalar, field: Extensor) -> Extensor:
+def at_vertices(topology: Topology, areas: core.Scalar, field: Extensor) -> Extensor:
     """Face fields averaged at each vertex, weighted by the faces' areas `Scalar+[faces]`, for drawing `[...] X[faces]`
     as `[...] X[vertices]`."""
-    third = mesh.incidence[2, 0].mean(axis=0)
+    third = topology.incidence[2, 0].mean(axis=0)
     return (~third * (areas * field)) / (~third * areas)
 
 
@@ -132,7 +132,7 @@ def fibre_strokes(threads: core.Point, shown: np.ndarray, camera: Camera) -> np.
     """The guide curves `[curves, samples] Point-` that a panel shows, `shown` `[curves]`, as strokes."""
     visible = threads[np.flatnonzero(shown)]                               # [shown curves, samples] Point-
     n_shown, n_samples = visible.shape
-    return simplices.strokes(visible.reshape(-1), Mesh.chains([n_samples] * n_shown), fibre_colour, fibre_width,
+    return simplices.strokes(visible.reshape(-1), Topology.chains([n_samples] * n_shown), fibre_colour, fibre_width,
                              camera, opacity=fibre_opacity)
 
 
@@ -144,12 +144,7 @@ def disc_panel(figure: plt.Figure, index: int, count: int, extent: float) -> plt
     return ax
 
 
-def rim(mesh: Mesh) -> Mesh:
-    """The rim's edges, a mesh of edges over the mesh's vertices."""
-    return Mesh(mesh.n_vertices, mesh.edges[mesh.boundary_edges])
-
-
-def draw(mesh: Mesh, points: core.Point, areas: core.Scalar, response: core.Response, streamfunction: core.Scalar,
+def draw(topology: Topology, points: core.Point, areas: core.Scalar, response: core.Response, streamfunction: core.Scalar,
          centre: core.Point, width: float, field: core.Bivector) -> plt.Figure:
     """The materials' solved currents on the mesh at its points, their strength on one colour scale and their paths
     the contours of their streamfunctions `[cases] Scalar+[vertices]`, and the magnet's field, `field` at its centre, as
@@ -157,12 +152,12 @@ def draw(mesh: Mesh, points: core.Point, areas: core.Scalar, response: core.Resp
     # Separate contour steps keep the weak material cases legible; colours share one magnitude scale.
     streams = scalars(streamfunction)                                       # [cases, vertices]
     spacings = np.abs(streams).max(axis=-1) / current_levels                # [cases]
-    magnitude = scalars(at_vertices(mesh, areas, response.current).squared().square_root())   # [cases, vertices]
+    magnitude = scalars(at_vertices(topology, areas, response.current).squared().square_root())  # [cases, vertices]
     current_scale = PowerNorm(current_gamma, vmin=0, vmax=magnitude.max())
     extent = float(points.squared().square_root().batch().max().to_array())
     places = points.batch()                                                 # [vertices] Point-
 
-    outline = rim(mesh)
+    outline = topology.border
     figure, panels = plt.subplots(1, len(magnitude), figsize=(3 * len(magnitude), 3.15),
                                   squeeze=False, layout="constrained")
     for ax, stream, spacing, speed in zip(panels[0], streams, spacings, magnitude):
@@ -173,18 +168,18 @@ def draw(mesh: Mesh, points: core.Point, areas: core.Scalar, response: core.Resp
         # The paths halfway between the multiples of the step, so that none runs along the rim, where the
         # streamfunction vanishes.
         paths = contours.Lines(spacing, spacing / 2, path_ink, 1.0)
-        simplices.overlay(ax, [contours.picture(places, mesh, stream, colours, camera, lines=(paths,)),
+        simplices.overlay(ax, [contours.picture(places, topology, stream, colours, camera, lines=(paths,)),
                                simplices.strokes(places, outline, rim_colour, rim_width, camera),
                                *magnet(centre, width, field, camera)])
     return figure
 
 
-def draw_modes(mesh: Mesh, points: core.Point, streamfunctions: core.Scalar) -> plt.Figure:
+def draw_modes(topology: Topology, points: core.Point, streamfunctions: core.Scalar) -> plt.Figure:
     """Streamfunctions of current patterns `[cases, patterns] Scalar+[vertices]`, a row of patterns per
     material: current circulates along their contours, opposite ways around warm and cool peaks."""
     values = scalars(streamfunctions)                                      # [cases, patterns, vertices]
     extent = float(points.squared().square_root().batch().max().to_array())
-    outline = rim(mesh)
+    outline = topology.border
     places = points.batch()                                                 # [vertices] Point-
     rows, columns = values.shape[:2]
     figure, panels = plt.subplots(rows, columns, figsize=(2 * columns, 2 * rows),
@@ -198,12 +193,12 @@ def draw_modes(mesh: Mesh, points: core.Point, streamfunctions: core.Scalar) -> 
             # Levels at equal steps between the extremes, one of them through zero.
             colours = mode_colours((stream / largest + 1) / 2)[:, :3]
             levels = contours.Lines(2 * largest / (mode_levels + 1), 0.0, mode_ink, 1.0)
-            simplices.overlay(ax, [contours.picture(places, mesh, stream, colours, camera, lines=(levels,)),
+            simplices.overlay(ax, [contours.picture(places, topology, stream, colours, camera, lines=(levels,)),
                                    simplices.strokes(places, outline, rim_colour, rim_width, camera)])
     return figure
 
 
-def animate(mesh: Mesh, points: core.Point, areas: core.Scalar, frames: Iterable[core.Motion], centre: core.Point,
+def animate(topology: Topology, points: core.Point, areas: core.Scalar, frames: Iterable[core.Motion], centre: core.Point,
             width: float, field: core.Bivector, fibres: tuple[core.Point, ...], shown: np.ndarray,
             room: float = current_room) -> Iterator[np.ndarray]:
     """Batched rotating materials and their currents, the currents' paths the contours of their streamfunctions, with
@@ -213,21 +208,21 @@ def animate(mesh: Mesh, points: core.Point, areas: core.Scalar, frames: Iterable
     states = iter(frames)
     first = next(states)
     peak = room * scalars((first.orientation >> first.current).squared().square_root()).max()
-    stream_top = room * np.abs(scalars(first.streamfunction)).max(axis=-1)     # [cases]
-    yield from currents(mesh, points, areas, chain([first], states), centre, width, field, fibres, shown, peak,
+    stream_top = room * np.abs(scalars(first.streamfunction)).max(axis=-1)  # [cases]
+    yield from currents(topology, points, areas, chain([first], states), centre, width, field, fibres, shown, peak,
                         stream_top)
 
 
-def animate_induction(mesh: Mesh, points: core.Point, areas: core.Scalar, frames: Iterable[core.Motion],
+def animate_induction(topology: Topology, points: core.Point, areas: core.Scalar, frames: Iterable[core.Motion],
                       centre: core.Point, width: float, field: core.Bivector, fibres: tuple[core.Point, ...],
                       shown: np.ndarray, peak: float = induction_current_peak) -> Iterator[np.ndarray]:
     """Rotating materials whose currents build up from none, drawn as `animate` draws them: the colours on a fixed
     magnitude scale up to `peak`, so that the currents fade in as they grow, and each panel's contour values widened
     with its current."""
-    yield from currents(mesh, points, areas, frames, centre, width, field, fibres, shown, peak, np.zeros(len(shown)))
+    yield from currents(topology, points, areas, frames, centre, width, field, fibres, shown, peak, np.zeros(len(shown)))
 
 
-def currents(mesh: Mesh, points: core.Point, areas: core.Scalar, states: Iterable[core.Motion], centre: core.Point,
+def currents(topology: Topology, points: core.Point, areas: core.Scalar, states: Iterable[core.Motion], centre: core.Point,
              width: float, field: core.Bivector, fibres: tuple[core.Point, ...], shown: np.ndarray, peak: float,
              stream_top: np.ndarray) -> Iterator[np.ndarray]:
     """The currents' frames, from a colour scale up to `peak` and contour values up to `stream_top` per case, each
@@ -237,7 +232,7 @@ def currents(mesh: Mesh, points: core.Point, areas: core.Scalar, states: Iterabl
     # Each family's curves on the panels that show it.
     family = np.concatenate([np.full(len(curves), index) for index, curves in enumerate(fibres)])
     shown_curves = shown[:, family]                                           # [cases, curves]
-    outline = rim(mesh)
+    outline = topology.border
 
     figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=animation_dpi)
     panels = [disc_panel(figure, i, len(shown), extent) for i in range(len(shown))]
@@ -248,15 +243,15 @@ def currents(mesh: Mesh, points: core.Point, areas: core.Scalar, states: Iterabl
         # The current belongs to material faces; turning it into the laboratory frame keeps its strength.
         strength = state.current.squared().square_root()                      # [cases] Scalar+[faces]
         magnitude = scalars(strength)                                         # [cases, faces]
-        stream = scalars(state.streamfunction)                                # [cases, vertices]
+        stream = scalars(state.streamfunction)                              # [cases, vertices]
         # The scales widened where this state's current exceeds them.
         peak, stream_top = max(peak, magnitude.max()), np.maximum(stream_top, np.abs(stream).max(axis=-1))
         # Separate contour steps keep the weak material cases legible; a disc still without current has no levels.
-        spacings = np.where(stream_top > 0, stream_top, 1.0) / current_levels   # [cases]
+        spacings = np.where(stream_top > 0, stream_top, 1.0) / current_levels  # [cases]
         alpha = np.divide(magnitude.max(axis=-1), peak, out=np.zeros(len(magnitude)),
                           where=peak > 0) ** streamline_gamma
         current_scale = PowerNorm(current_gamma, vmin=0, vmax=peak)
-        speed = scalars(at_vertices(mesh, areas, strength))                   # [cases, vertices]
+        speed = scalars(at_vertices(topology, areas, strength))             # [cases, vertices]
         places = state.vertices.batch()                                       # [cases, vertices] Point-
         threads = state.orientation[:, None, None] >> guides                  # [cases, curves, samples] Point-
         marks = rotation_marks(state.orientation, extent)                     # [cases] Point-
@@ -265,7 +260,7 @@ def currents(mesh: Mesh, points: core.Point, areas: core.Scalar, states: Iterabl
             ink = np.append(path_ink[:3], alpha[i])
             paths = contours.Lines(spacings[i], spacings[i] / 2, ink, 1.0)
             texture.set_data(simplices.composited([
-                contours.picture(places[i], mesh, stream[i], colours, view, lines=(paths,)),
+                contours.picture(places[i], topology, stream[i], colours, view, lines=(paths,)),
                 fibre_strokes(threads[i], shown_curves[i], view),
                 simplices.strokes(places[i], outline, rim_colour, rim_width, view),
                 *magnets[i], *rotation_marker(marks[i:i + 1], view)]))
@@ -273,7 +268,7 @@ def currents(mesh: Mesh, points: core.Point, areas: core.Scalar, states: Iterabl
     plt.close(figure)
 
 
-def animate_heat(mesh: Mesh, points: core.Point, areas: core.Scalar, frames: Iterable[core.Motion], centre: core.Point,
+def animate_heat(topology: Topology, points: core.Point, areas: core.Scalar, frames: Iterable[core.Motion], centre: core.Point,
                  width: float, field: core.Bivector, fibres: tuple[core.Point, ...], shown: np.ndarray,
                  peak: float = braking_heat_peak) -> Iterator[np.ndarray]:
     """Accumulated heat per area, carried by the moving material faces on one fixed scale up to `peak`."""
@@ -283,7 +278,7 @@ def animate_heat(mesh: Mesh, points: core.Point, areas: core.Scalar, frames: Ite
     # Each family's curves on the panels that show it.
     family = np.concatenate([np.full(len(curves), index) for index, curves in enumerate(fibres)])
     shown_curves = shown[:, family]                                           # [cases, curves]
-    outline = rim(mesh)
+    outline = topology.border
 
     figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=animation_dpi)
     panels = [disc_panel(figure, i, len(shown), extent) for i in range(len(shown))]
@@ -292,7 +287,7 @@ def animate_heat(mesh: Mesh, points: core.Point, areas: core.Scalar, frames: Ite
     textures = [simplices.overlay(ax, [np.zeros(view.shape + (4,))]) for ax, view in zip(panels, views)]
     for state in frames:
         # Face heat is energy. Dividing by each material face's area gives the density to colour.
-        densities = scalars(at_vertices(mesh, areas, state.heat / areas))     # [cases, vertices]
+        densities = scalars(at_vertices(topology, areas, state.heat / areas))  # [cases, vertices]
         places = state.vertices.batch()                                       # [cases, vertices] Point-
         threads = state.orientation[:, None, None] >> guides                  # [cases, curves, samples] Point-
         marks = rotation_marks(state.orientation, extent)                     # [cases] Point-
@@ -300,7 +295,7 @@ def animate_heat(mesh: Mesh, points: core.Point, areas: core.Scalar, frames: Ite
             # The display mesh moves with the material; its colours interpolate face heat, with no level lines.
             colours = heat_colours(heat_scale(densities[i]))[:, :3]
             texture.set_data(simplices.composited([
-                contours.picture(places[i], mesh, densities[i], colours, view),
+                contours.picture(places[i], topology, densities[i], colours, view),
                 fibre_strokes(threads[i], shown_curves[i], view),
                 simplices.strokes(places[i], outline, rim_colour, rim_width, view),
                 *magnets[i], *rotation_marker(marks[i:i + 1], view)]))
@@ -308,8 +303,8 @@ def animate_heat(mesh: Mesh, points: core.Point, areas: core.Scalar, frames: Ite
     plt.close(figure)
 
 
-def animate_induction_heat(mesh: Mesh, points: core.Point, areas: core.Scalar, frames: Iterable[core.Motion],
+def animate_induction_heat(topology: Topology, points: core.Point, areas: core.Scalar, frames: Iterable[core.Motion],
                            centre: core.Point, width: float, field: core.Bivector, fibres: tuple[core.Point, ...],
                            shown: np.ndarray, peak: float = induction_heat_peak) -> Iterator[np.ndarray]:
     """The heat of the discs spun up from rest, drawn as `animate_heat` draws it, on its fixed scale up to `peak`."""
-    yield from animate_heat(mesh, points, areas, frames, centre, width, field, fibres, shown, peak)
+    yield from animate_heat(topology, points, areas, frames, centre, width, field, fibres, shown, peak)

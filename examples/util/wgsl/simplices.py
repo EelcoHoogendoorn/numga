@@ -11,7 +11,7 @@ with a chevron or a dot at its tip, a square four strokes. In a lit 3D scene the
 from the segment gives the tube's normal, from the camera's own planes, and how far its surface comes toward the
 viewer, so tubes cross the other surfaces where they truly do. Nothing of it depends on the scene's dimension or
 signature: the same program draws the edges of a polyline in the plane, of a graph in space or of a world line in a
-spacetime diagram. The topology is a `Mesh`: its edges are the strokes, whatever its dimension, so a polyline is a
+spacetime diagram. The topology is a `Topology`: its edges are the strokes, whatever its dimension, so a polyline is a
 chain of edges and a surface's wireframe its own edges.
 """
 from __future__ import annotations
@@ -30,7 +30,7 @@ from examples.util.wgsl.runner import device
 from examples.util.wgsl.camera import Camera, flat_panel, placing, read, reading
 from examples.util.wgsl.library import samples_per_side
 
-Mesh = meshes.Mesh
+Topology = meshes.Topology
 
 
 class Cap(IntEnum):
@@ -328,7 +328,7 @@ def travelled(points: Extensor, edges: np.ndarray, camera: Camera) -> np.ndarray
     return totals - lengths - np.maximum.accumulate(np.where(starts, totals - lengths, 0))
 
 
-def strokes(points: Extensor, mesh: Mesh, colours: np.ndarray, width: float, camera: Camera,
+def strokes(points: Extensor, topology: Topology, colours: np.ndarray, width: float, camera: Camera,
             chevrons: np.ndarray = np.zeros(1), chevron: float = 0.0, dashes: tuple[float, float] = (1.0, 0.0),
             cap: Cap = Cap.ROUND, opacity: float = 1.0) -> Layer:
     """The mesh's edges as strokes `width` pixels wide over its points, each in its colour `[edges, 3]`, read by the
@@ -338,7 +338,7 @@ def strokes(points: Extensor, mesh: Mesh, colours: np.ndarray, width: float, cam
     zero, each dash and each open end ended by the cap; `opacity` how much the strokes cover."""
     side = samples_per_side()
     rows, columns = camera.shape
-    edges = np.asarray(mesh.edges, dtype=np.uint32)
+    edges = np.asarray(topology.elements[1], dtype=np.uint32)
     # No edges, such as a trail not yet begun, draw nothing: a clear picture.
     if len(edges) == 0:
         return np.zeros(camera.shape + (4,))
@@ -346,7 +346,7 @@ def strokes(points: Extensor, mesh: Mesh, colours: np.ndarray, width: float, cam
         points=points, edges=edges,
         colours=np.broadcast_to(colours, (len(edges), 3)),
         travelled=travelled(points, edges, camera) * side, chevrons=np.broadcast_to(chevrons, len(edges)).astype(float),
-        open_ends=np.isin(edges, mesh.exterior(0)).astype(float),
+        open_ends=np.isin(edges, topology.exterior[0]).astype(float),
         follows=following(edges),
         samples=np.array([columns * side, rows * side], dtype=float), radius=width * side / 2,
         chevron=chevron_reach(chevron) * side, dashes=np.array(dashes) * side, cap=float(cap), opacity=opacity,
@@ -362,7 +362,7 @@ def view_camera(view) -> Camera:
                   view.pixels)
 
 
-def tubes(points: Extensor, mesh: Mesh, colours: np.ndarray, width: float, view, gloss: float = 0.0,
+def tubes(points: Extensor, topology: Topology, colours: np.ndarray, width: float, view, gloss: float = 0.0,
           chevrons: np.ndarray = np.zeros(1), chevron: float = 0.0, dashes: tuple[float, float] = (1.0, 0.0)):
     """The mesh's edges as tubes `width` pixels across among the solids and meshes of a lit 3D scene, its points of the
     solids' algebra, each edge in its colour `[edges, 3]`, at every sample of the view's pixels, for `solids.draw` and
@@ -373,14 +373,14 @@ def tubes(points: Extensor, mesh: Mesh, colours: np.ndarray, width: float, view,
     camera = view_camera(view)
     side = samples_per_side()
     rows, columns = camera.shape
-    edges = np.asarray(mesh.edges, dtype=np.uint32)
+    edges = np.asarray(topology.elements[1], dtype=np.uint32)
     return Samples(tube_shader(), 6 * len(edges), dict(
         points=points, edges=edges, colours=np.broadcast_to(colours, (len(edges), 3)),
         travelled=travelled(points, edges, camera) * side, chevrons=np.broadcast_to(chevrons, len(edges)).astype(float),
         samples=np.array([columns * side, rows * side], dtype=float), radius=width * side / 2,
         chevron=chevron_reach(chevron) * side, dashes=np.array(dashes) * side, scene_pixel=view.pixel,
         oversampling=float(side), cap=float(Cap.ROUND), opacity=1.0,
-        open_ends=np.isin(edges, mesh.exterior(0)).astype(float),
+        open_ends=np.isin(edges, topology.exterior[0]).astype(float),
         follows=following(edges),
         **camera.uniforms(8 * view.half.max()), **solids.lighting(gloss)))
 
@@ -585,8 +585,8 @@ def overlay(ax: Axes, pictures: list[np.ndarray]):
     return pinned(ax, composited(pictures), (*ax.get_xlim(), *ax.get_ylim()))
 
 
-def stroke_overlay(ax: Axes, points: Extensor, mesh: Mesh, colours: np.ndarray, width: float):
+def stroke_overlay(ax: Axes, points: Extensor, topology: Topology, colours: np.ndarray, width: float):
     """The mesh's edges drawn as strokes into a panel at its own pixels, the panel looking down on the plane of the
     points' generators x and y; the image, for an animation to set its data."""
     camera = flat_panel(ax, points.algebra)
-    return pinned(ax, strokes(points, mesh, colours, width, camera), (*ax.get_xlim(), *ax.get_ylim()))
+    return pinned(ax, strokes(points, topology, colours, width, camera), (*ax.get_xlim(), *ax.get_ylim()))

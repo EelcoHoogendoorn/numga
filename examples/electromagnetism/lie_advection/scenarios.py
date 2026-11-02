@@ -6,13 +6,12 @@ from itertools import islice
 
 import numpy as np
 
-from numga import concatenate, stack
+from numga import NumpyContext, concatenate, stack
 from numga.algebras import STA2D as ga
 from numga.sparse import spdiag
-from examples import instantiate
+from examples.util.topology import Topology
 
-mesh_module = instantiate("examples.util.mesh", ga)
-Mesh, as_scalar, mv = mesh_module.Mesh, mesh_module.as_scalar, mesh_module.mv
+mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
 Bivector = ga.gatype.bivector()                                              # Bivector+
 Magnetic = Bivector.derive.within("x y")                                     # Bivector+
@@ -49,7 +48,7 @@ def single_triangle() -> Point:
     return corners
 
 
-def disk(radius: float, n_divisions: int) -> tuple[Mesh, Point]:
+def disk(radius: float, n_divisions: int) -> tuple[Topology, Point]:
     """A circular disk of nearly equilateral triangles with its first vertex at the origin."""
     spacing = radius / n_divisions
     indices = np.arange(-n_divisions, n_divisions + 1)
@@ -62,7 +61,7 @@ def disk(radius: float, n_divisions: int) -> tuple[Mesh, Point]:
     positions = (axes * lattice).sum(axis=-1)                                # [nodes] Point-
     positions = spacing * layers[inside] * positions / positions.squared().square_root()  # [nodes] Point-
     vertices = concatenate((unit[None] * 0, positions)).field()              # Point-[vertices]
-    return Mesh.triangulate(vertices), vertices
+    return Topology.triangulate(vertices), vertices
 
 
 def main() -> None:
@@ -77,7 +76,7 @@ def main() -> None:
     corners = single_triangle()
     sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]  # [corners] Point-
     patch = (sides[0] & sides[1]) / 2                                        # [] Patch-
-    gradients = (time & sides) / (2 * (time & patch))                        # [corners] Plane+
+    gradients = (time & sides) / (2 * (time & patch))                                  # [corners] Plane+
     endpoint_differences, swept_fluxes, _, face_bivector = cartan_decomposition(
         corners, corner_forms, corner_velocities,
     )
@@ -88,8 +87,8 @@ def main() -> None:
     )
 
     # 2. Flux winding and resistive diffusion on a disk.
-    mesh, vertices = disk(disk_radius, n_disk_divisions)
-    operators = Operators(mesh, vertices)
+    topology, vertices = disk(disk_radius, n_disk_divisions)
+    operators = Operators(topology, vertices)
     stream = vortex_streamfunction(vertices, swirl_rate, ellipticity)        # Scalar+[vertices]
     face_velocity, fixed_sheets, comoving_sheets = edge_world_sheets(operators, stream)  # Point-[faces], Patch-[edges], Patch-[edges]
     start_cochain = initial_cochain(operators, lobe_centres, lobe_strengths, lobe_radius)  # Scalar+[edges]
@@ -111,7 +110,7 @@ def main() -> None:
     final_flux_density = operators.flux_density(cochain)                     # [cases] Scalar+[faces]
     times = np.arange(n_steps + 1) * dt
     save_figure(
-        render.draw_advection_comparison(mesh, vertices, final_flux_density,
+        render.draw_advection_comparison(topology, vertices, final_flux_density,
                                          times, energies, total_fluxes),
         "lie_advection_snapshots",
     )
@@ -120,7 +119,7 @@ def main() -> None:
     sampled_states = islice(advect(batched_start, rate, dt, n_steps), 0, None, n_steps_per_frame)
     frames = (operators.flux_density(state) for state in sampled_states)
     save_animation(
-        render.animate_advection(mesh, vertices, frames),
+        render.animate_advection(topology, vertices, frames),
         "lie_advection_flow",
         frame_duration_ms,
     )
@@ -148,7 +147,7 @@ def main() -> None:
     np.testing.assert_allclose(((endpoint_differences + swept_fluxes) - material_rates).kernel, 0.0, atol=1e-13)
 
     # Across every mesh edge, the swept patch area equals minus the streamfunction difference.
-    d0 = mesh.d[0] * Scalar
+    d0 = topology.d[0] * Scalar
     np.testing.assert_allclose(((mv.xy & mesh_swept_patches) + d0(stream)).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose((operators.gradient(stream) & face_velocity).kernel, 0.0, atol=1e-12)
 

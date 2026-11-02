@@ -13,7 +13,7 @@ from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import quadrics, simplices
 from examples.util.wgsl.camera import Camera, flat_panel
-from examples.util.wgsl.simplices import Cap, Mesh
+from examples.util.wgsl.simplices import Cap, Topology
 from examples.estimation.pose_diffusion.core import Covariance, Motor, Plane, Point, Spread, Twist, ga, mv, origin
 
 ELLIPSOID_RGB = np.array(mcolors.to_rgb("#c0392b"))
@@ -52,9 +52,9 @@ def pictures(poses: Motor, predicted: Covariance, limit: Covariance, extent: flo
     headings = (shown >> bow).normalized() - positions                          # [shown] Point-
     arrows = stack((positions - headings / 2, positions + headings / 2), axis=-1)   # [shown, ends] Point-
     return [
-        simplices.strokes(cross.reshape(-1), Mesh.chains([2, 2]), CROSS_RGB, charts.FRAME_PX, camera, cap=Cap.BUTT),
+        simplices.strokes(cross.reshape(-1), Topology.chains([2, 2]), CROSS_RGB, charts.FRAME_PX, camera, cap=Cap.BUTT),
         quadrics.regions(steady_quadric[:, None], ELLIPSOID_RGB, camera, 0.14),
-        simplices.strokes(arrows.reshape(-1), Mesh.chains([2] * len(shown)), ARROW_RGB, ARROW_WIDTH, camera,
+        simplices.strokes(arrows.reshape(-1), Topology.chains([2] * len(shown)), ARROW_RGB, ARROW_WIDTH, camera,
                           chevrons=np.ones(len(shown)), chevron=ARROW_CHEVRON),
         quadrics.curves(steady_quadric, 1.0 * POINT, ELLIPSOID_RGB, camera, 0.45),
         quadrics.curves(predicted_quadric, 1.4 * POINT, ELLIPSOID_RGB, camera),

@@ -28,8 +28,8 @@ def draw_triangles(paths: Root, roots: Root, species: np.ndarray,
     coxeter_plane = horizontal ^ vertical                                       # [] Bivector+
     radii = (roots[0] | coxeter_plane).scalar_norm_squared().square_root()     # [species] Scalar+
     # A unit ring in the Coxeter plane, turned from the horizontal around a closed loop.
-    turns = (coxeter_plane * (-np.linspace(0, 2 * np.pi, n_ring_samples + 1) / 2)).exp()   # [samples + 1] Rotor+
-    ring = turns >> horizontal                                                 # [samples + 1] Root+
+    turns = (coxeter_plane * (-np.linspace(0, 2 * np.pi, n_ring_samples, endpoint=False) / 2)).exp()   # [samples] Rotor+
+    ring = turns >> horizontal                                                 # [samples] Root+
     # The view reaches past the farthest vertex or orbit across or up.
     drawing_plane = stack((horizontal, vertical))                               # [2] Root+
     reach = max((drawing_plane | paths[..., None]).abs().max().to_array(),
@@ -45,22 +45,22 @@ def draw_triangles(paths: Root, roots: Root, species: np.ndarray,
         # `root & horizontal.dual()` is `horizontal | root`.
         camera = panel(ax, horizontal.dual(), vertical.dual())
         particles = np.unique(species[index])
-        rings = (radii[particles, None] * ring[None, :]).reshape(-1)            # [particles * (samples + 1)] Root+
+        rings = (radii[particles, None] * ring[None, :]).reshape(-1)            # [particles * samples] Root+
         orbits = roots[:, particles].reshape(-1)                                # [steps * particles] Root+
         n_steps = roots.shape[0]
         corners = paths[index]                                                  # [corners] Root+
         simplices.overlay(ax, [
-            simplices.strokes(rings, simplices.Mesh.chains([n_ring_samples + 1] * len(particles)),
+            simplices.strokes(rings, simplices.Topology.loops([n_ring_samples] * len(particles)),
                               np.repeat(orbit_colours[particles], n_ring_samples, axis=0), ring_width, camera,
                               opacity=ring_opacity),
             simplices.markers(orbits, np.tile(orbit_colours[particles], (n_steps, 1)), orbit_dot, camera,
                               opacity=orbit_opacity),
             # Each root an arrow from the corner before it: a stroke, and a chevron at its tip.
-            simplices.strokes(corners, simplices.Mesh.chains([n_corners]), orbit_colours[species[index]],
+            simplices.strokes(corners, simplices.Topology.chains([n_corners]), orbit_colours[species[index]],
                               arrow_width, camera, chevrons=np.ones(n_corners - 1), chevron=chevron_length,
                               cap=simplices.Cap.BUTT),
             # A closed path has a zero-length dashed segment.
-            simplices.strokes(corners[[0, -1]], simplices.Mesh.chains([2]), white, gap_width, camera,
+            simplices.strokes(corners[[0, -1]], simplices.Topology.chains([2]), white, gap_width, camera,
                               dashes=gap_dashes, cap=simplices.Cap.BUTT),
             simplices.markers(corners[:1], white, start_dot, camera),
         ])

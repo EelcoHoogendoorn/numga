@@ -23,10 +23,10 @@ background = np.ones(3)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def checker(bar_mesh: core.Mesh, rest_vertices: core.Point, cell: np.ndarray) -> np.ndarray:
+def checker(topology: core.Topology, rest_vertices: core.Point, cell: np.ndarray) -> np.ndarray:
     """Per-face checkerboard colours from the parity of the grid cell containing each triangle's centroid at rest."""
     mv = core.mv
-    centroids = bar_mesh.incidence[2, 0].mean(axis=0) * rest_vertices                # Point-[faces]
+    centroids = topology.incidence[2, 0].mean(axis=0) * rest_vertices                # Point-[faces]
     # The planes of the checkerboard's grid, one cell apart: a point's pairings with them count the cells it lies across.
     cell_planes = stack((mv.x, mv.y, mv.z)) / cell                                  # [3] Vector+
     parity = np.floor((cell_planes & centroids.batch()[..., None]).to_array()).astype(int).sum(axis=-1) % 2
@@ -46,18 +46,18 @@ def picture(vertices: core.Point, faces: np.ndarray, colours: np.ndarray, view: 
                        colour=meshes.by_face, gloss=solids.gloss)
 
 
-def side_by_side(bar_mesh: core.Mesh, rest_vertices: core.Point, shapes: list[core.Point],
+def side_by_side(topology: core.Topology, rest_vertices: core.Point, shapes: list[core.Point],
                  cell: np.ndarray) -> plt.Figure:
     """Render the bar in each of the given shapes side by side, checkered by where each triangle sat at rest."""
-    colours = checker(bar_mesh, rest_vertices, cell)
+    colours = checker(topology, rest_vertices, cell)
     view = box_view(n_pixels)
-    return image_figure(np.concatenate([picture(shape, bar_mesh.faces, colours, view) for shape in shapes], axis=1))
+    return image_figure(np.concatenate([picture(shape, topology.elements[2], colours, view) for shape in shapes], axis=1))
 
 
-def animate(bar_mesh: core.Mesh, rest_vertices: core.Point, shapes: Iterable[core.Point],
+def animate(topology: core.Topology, rest_vertices: core.Point, shapes: Iterable[core.Point],
             cell: np.ndarray) -> Iterator[np.ndarray]:
     """Yield one rendered frame per shape of the bar, checkered by where each triangle sat at rest."""
-    colours = checker(bar_mesh, rest_vertices, cell)
+    colours = checker(topology, rest_vertices, cell)
     view = box_view(n_pixels)
     for shape in shapes:
-        yield picture(shape, bar_mesh.faces, colours, view)
+        yield picture(shape, topology.elements[2], colours, view)

@@ -74,9 +74,9 @@ def draw_curls(centres: core.Point) -> plt.Figure:
     # The clamp across the whole panel, along the plane z = 0 where the strip is held.
     clamp = mv.point([[0, height, 0] for height in ax.get_ylim()])           # [ends] Point-
     simplices.overlay(ax, [
-        simplices.strokes(centres.reshape(-1), simplices.Mesh.chains([n_points] * n_curls),
+        simplices.strokes(centres.reshape(-1), simplices.Topology.chains([n_points] * n_curls),
                           np.repeat(colours, n_points - 1, axis=0), PLANE_ROD_WIDTH, camera),
-        simplices.strokes(clamp, simplices.Mesh.chains([2]), PIN, PLANE_CLAMP_WIDTH, camera, cap=simplices.Cap.BUTT)])
+        simplices.strokes(clamp, simplices.Topology.chains([2]), PIN, PLANE_CLAMP_WIDTH, camera, cap=simplices.Cap.BUTT)])
     return figure
 
 
@@ -84,8 +84,8 @@ def rod_pictures(curve: core.Point, ax: plt.Axes, camera: Camera) -> list[np.nda
     """One of Euler's elastica `[pieces + 1]`: the line of thrust across the panel, the rod, and its pins at its two
     ends."""
     thrust = mv.point([[0, 0, along] for along in ax.get_xlim()])            # [ends] Point-
-    return [simplices.strokes(thrust, simplices.Mesh.chains([2]), THRUST, THRUST_WIDTH, camera),
-            simplices.strokes(curve, simplices.Mesh.chains([len(curve)]), ROD, PLANE_ROD_WIDTH, camera),
+    return [simplices.strokes(thrust, simplices.Topology.chains([2]), THRUST, THRUST_WIDTH, camera),
+            simplices.strokes(curve, simplices.Topology.chains([len(curve)]), ROD, PLANE_ROD_WIDTH, camera),
             simplices.markers(curve[[0, -1]], PIN, PIN_RADIUS, camera)]
 
 
@@ -166,9 +166,9 @@ def wires(curves: core.Point, ribbons: core.Point, view: solids.View) -> list[tu
     corners = np.stack([index[:, :-1, 0], index[:, 1:, 0], index[:, 1:, 1], index[:, :-1, 1]], axis=-1)
     faces = corners[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
     edges = ribbons.reshape(-1)                                              # [vertices] Point-
-    strips = meshes.samples(edges, faces, RIBBON, meshes.smooth(edges, meshes.Mesh(len(edges), faces)), view, face_values=np.zeros(4),
+    strips = meshes.samples(edges, faces, RIBBON, meshes.smooth(edges, meshes.Topology(len(edges), faces)), view, face_values=np.zeros(4),
                             colour=meshes.plain, gloss=solids.gloss)
-    rods = simplices.tubes(curves.reshape(-1), simplices.Mesh.chains([curves.shape[1]] * curves.shape[0]), ROD,
+    rods = simplices.tubes(curves.reshape(-1), simplices.Topology.chains([curves.shape[1]] * curves.shape[0]), ROD,
                            ROD_WIDTH, view, gloss=solids.gloss)
     return [(strips, 1.0), (rods, 1.0)]
 

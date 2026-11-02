@@ -58,13 +58,14 @@ def on_face(nodus: core.Point, suns: core.Point) -> np.ndarray:
         & (north > north_range[0]) & (north < north_range[1])
 
 
-def sunlit_chains(suns: core.Point) -> simplices.Mesh:
+def sunlit_chains(suns: core.Point) -> simplices.Topology:
     """The shadow paths of a batch of suns as chains of edges along its last axis, an edge kept where the sun is up at
     both its ends; the face's camera cuts them at the dial's edges."""
     n_samples = suns.shape[-1]
-    chains = simplices.Mesh.chains([n_samples] * (np.prod(suns.shape) // n_samples))
-    up = ((core.dial & suns) > 0).reshape(-1)
-    return simplices.Mesh(chains.n_vertices, chains.edges[up[chains.edges].all(axis=-1)])
+    chains = simplices.Topology.chains([n_samples] * (np.prod(suns.shape) // n_samples))
+    # The dial's reading of the sun at both ends of each edge, positive where it is up.
+    readings = core.dial & (chains.incidence[1, 0] * suns.reshape(-1).field())   # [ends] Scalar+[edges]
+    return chains.subset((readings > 0).all(axis=0), 1)
 
 
 def shadow_strokes(nodus: core.Point, suns: core.Point, colours: np.ndarray, width: float, camera: Camera,
@@ -88,7 +89,7 @@ def draw_face(ax: plt.Axes, nodus: core.Point, foot: core.Point, seasons: np.nda
     ax.set_axis_off()
     camera = flat_panel(ax, core.ga)
     # Each season's path in its colour, one per edge of its run.
-    season_edges = sunlit_chains(days).edges[:, 0] // days.shape[-1]          # [edges]
+    season_edges = sunlit_chains(days).elements[1][:, 0] // days.shape[-1]    # [edges]
     paths = shadow_strokes(nodus, days, season_colours(seasons)[season_edges, :3], season_width, camera,
                            faint_opacity if faint else 1.0)
     # The hour lines thin, a frame's width, under the seasons' paths.
@@ -103,7 +104,7 @@ def draw_face(ax: plt.Axes, nodus: core.Point, foot: core.Point, seasons: np.nda
     # The gnomon's edge seen from above, bold and square at its ends: from the foot of the style to the point of the
     # dial below the nodus.
     below_nodus = nodus - core.up * (core.dial & nodus)                        # [] Point-
-    base = simplices.strokes(stack([foot, below_nodus]), simplices.Mesh.chains([2]), np.array(to_rgb(gnomon_colour)),
+    base = simplices.strokes(stack([foot, below_nodus]), simplices.Topology.chains([2]), np.array(to_rgb(gnomon_colour)),
                              base_width, camera, cap=simplices.Cap.BUTT)
     return camera, [lines, paths, base]
 
@@ -152,12 +153,12 @@ def day_path(nodus: core.Point, foot: core.Point, day: core.Point) -> solids.Ink
 def dial_in_space(nodus: core.Point, foot: core.Point) -> list[tuple[solids.Quadric, np.ndarray]]:
     """Build the dial plate and the triangular gnomon as solids in space."""
     # The plate's box, its top face the dial's, carried from the origin to its middle.
-    middle = dial_corners.mean(axis=0) - solids.mv.z.dual() * (plate_thickness / 2)   # [] Point-
+    middle = dial_corners.mean(axis=0) - solids.mv.z.dual() * (plate_thickness / 2)  # [] Point-
     half_extents = np.array([np.ptp(east_range) / 2, np.ptp(north_range) / 2, plate_thickness / 2])
     slab = solids.boxes(solids.translator(middle - solids.origin), half_extents)[None]  # [1, 6] Plane+
     # The gnomon's triangle joins the foot of the style, the nodus, and the point of the dial below the nodus.
     below_nodus = nodus - core.up * (core.dial & nodus)                        # [] Point-
-    corners = solids.origin + solids.context.include_from_algebra(stack([foot, nodus, below_nodus]))   # [corners] Point-
+    corners = solids.origin + solids.context.include_from_algebra(stack([foot, nodus, below_nodus]))       # [corners] Point-
     gnomon = solids.plates(corners[None], gnomon_thickness)                    # [1, 5] Plane+
     return [(slab, np.array(to_rgb(dial_colour))), (gnomon, np.array(to_rgb(gnomon_colour)))]
 
@@ -165,7 +166,7 @@ def dial_in_space(nodus: core.Point, foot: core.Point) -> list[tuple[solids.Quad
 def sunlight(nodus: core.Point, foot: core.Point, rays: core.Point, day: core.Point,
              view: solids.View) -> tuple[list[tuple[solids.Quadric, np.ndarray]], list[solids.Ink]]:
     """Build the daytime sun rays clipped to the walls above the dial plate and the inked shadow conic on the dial."""
-    ray_starts, shadow_points = daylight(nodus, rays)                          # [daytime] Point-, Point-
+    ray_starts, shadow_points = daylight(nodus, rays)                           # [daytime] Point-, Point-
     # Each ray is clipped where it leaves the space above the dial, at the walls standing on its edges, so that a ray
     # whose shadow moves off the dial shortens at its edge rather than vanishing.
     sides = stack([-solids.mv.x, solids.mv.x, -solids.mv.y, solids.mv.y])      # [4] Plane+

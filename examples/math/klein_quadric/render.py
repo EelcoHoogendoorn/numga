@@ -69,7 +69,7 @@ def picture(lines: core.Bivector, rulings: core.Bivector, transversals: core.Biv
     # The hyperboloid's two families of lines, faint: strokes, which the tracer composites sample by sample, where
     # traced rods would each be searched through every layer of the translucent crowd.
     ruling_ends = [chords(family, hyperboloid_radius) for family in rulings]
-    hyperboloid = [(simplices.tubes(ends.reshape(-1), simplices.Mesh.chains([2] * len(ends)), colour, 2 * ruling_radius,
+    hyperboloid = [(simplices.tubes(ends.reshape(-1), simplices.Topology.chains([2] * len(ends)), colour, 2 * ruling_radius,
                                     view, gloss=solids.gloss),
                     # A traced rod is crossed twice, a stroke once: its nearest surface hides what both would.
                     1 - (1 - ruling_opacity) ** 2) for ends, colour in zip(ruling_ends, ruling_colours)]

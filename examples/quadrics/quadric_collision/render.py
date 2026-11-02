@@ -78,7 +78,7 @@ def plane_ends(plane: Plane, reach: float) -> Point:
     unit = plane.normalized()                                                  # [] Plane+
     foot = unit ^ (unit | origin)                                              # [] Point-
     # The meet of two planes is extrinsic; the intrinsic scalar one makes the direction a point like the foot.
-    direction = (unit ^ infinity) * unit_volume                               # [] Point-
+    direction = (unit ^ infinity) * unit_volume                                # [] Point-
     return stack((foot - direction * reach, foot + direction * reach))
 
 
@@ -111,8 +111,8 @@ def animate_collision(
     up = across * aspect
     # The grid's points numbered row by row, one row for each step up.
     grid = (middle + mv.x.dual() * across[None, :] + mv.y.dual() * up[:, None]).reshape(-1)   # [points] Point-
-    mesh = contours.Mesh.grid(resolution, resolution)
-    places = grid                                                              # [points] Point-
+    topology = contours.Topology.grid(resolution, resolution)
+    places = grid                                                                             # [points] Point-
     # The panel's limits, at the grid's first and last corners.
     xlim, ylim = np.stack((xy(grid[0]), xy(grid[-1])), axis=-1)
     bottom, top = min(determinants.min(), 0.0), max(determinants.max(), 0.0)
@@ -151,15 +151,15 @@ def animate_collision(
         first_form = ellipsoid_form(first_ellipsoid, grid)                    # [points]
         first_ink = np.array(to_rgba(first_colours[1]))
         second_ink = np.array(to_rgba(second_colours[1]))
-        first_fill = contours.picture(places, mesh, first_form, np.zeros(3), camera,
+        first_fill = contours.picture(places, topology, first_form, np.zeros(3), camera,
                                       bands=(inside(first_colours[0], ellipsoid_opacity),), opacity=0.0)
-        first_outline = contours.picture(places, mesh, first_form, np.zeros(3), camera,
+        first_outline = contours.picture(places, topology, first_form, np.zeros(3), camera,
                                          levels=(contours.Level(0.0, first_ink, charts.LINE_PX),), opacity=0.0)
         near = first_ellipsoid(first_tangent)                                  # [] Point-
         first_centre = dots(first_ellipsoid(infinity)[None], first_colours[1], centre_radius, camera)
         near_point = dots(near[None], first_colours[1], charts.MARKER_PX / 2, camera)
         # The tangent planes thin guides, a frame's width, under the midplane.
-        tangent_strokes = simplices.Mesh.chains([2])
+        tangent_strokes = simplices.Topology.chains([2])
         first_guide = simplices.strokes(plane_ends(first_tangent, reach), tangent_strokes, first_ink[:3],
                                         charts.FRAME_PX, camera, dashes=tangent_dashes, cap=simplices.Cap.BUTT)
 
@@ -167,16 +167,16 @@ def animate_collision(
              maximum) in chain([first_state], states):
             line_colour, edge_colour, fill_colour, fill_alpha = apart_colours if maximum > 0 else overlap_colours
             second_form = ellipsoid_form(placed_second, grid)                 # [points]
-            second_fill = contours.picture(places, mesh, second_form, np.zeros(3), camera,
+            second_fill = contours.picture(places, topology, second_form, np.zeros(3), camera,
                                            bands=(inside(second_colours[0], ellipsoid_opacity),), opacity=0.0)
-            second_outline = contours.picture(places, mesh, second_form, np.zeros(3), camera,
+            second_outline = contours.picture(places, topology, second_form, np.zeros(3), camera,
                                               levels=(contours.Level(0.0, second_ink, charts.LINE_PX),), opacity=0.0)
             # The blend at the peak is drawn where each point lies on its own polar plane, and filled on the side the
             # sign of its determinant selects: within the hyperboloid's branches, and inside the bridging ellipsoid.
-            side = (grid & peak(grid)).to_array() * np.sign(maximum.to_array())   # [points]
-            blend_fill = contours.picture(places, mesh, side, np.zeros(3), camera,
+            side = (grid & peak(grid)).to_array() * np.sign(maximum.to_array())  # [points]
+            blend_fill = contours.picture(places, topology, side, np.zeros(3), camera,
                                           bands=(inside(fill_colour, fill_alpha),), opacity=0.0)
-            blend_edge = contours.picture(places, mesh, side, np.zeros(3), camera,
+            blend_edge = contours.picture(places, topology, side, np.zeros(3), camera,
                                           levels=(contours.Level(0.0, np.array(to_rgba(edge_colour)),
                                                                  blend_edge_width),), opacity=0.0)
             second_guide = simplices.strokes(plane_ends(second_tangent, reach), tangent_strokes, second_ink[:3],

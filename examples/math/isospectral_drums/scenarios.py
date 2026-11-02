@@ -9,7 +9,7 @@ import numpy as np
 from numga import concatenate, stack
 from numga.sparse import SparseExtensor
 from examples.math.isospectral_drums.core import Point, Scalar, context, mv, tile_mixing
-from examples.math.isospectral_drums.numerics import Mesh, drum, triangle
+from examples.math.isospectral_drums.numerics import Topology, drum, triangle
 
 n_lattice = 4
 source_indices = np.array([
@@ -46,7 +46,7 @@ n_colours = 32
 
 
 # --- math -----------------------------------------------------------------------------
-def drums() -> tuple[Point, tuple[Point, Point], tuple[Mesh, Mesh], Scalar, Scalar, SparseExtensor,
+def drums() -> tuple[Point, tuple[Point, Point], tuple[Topology, Topology], Scalar, Scalar, SparseExtensor,
                      SparseExtensor, SparseExtensor, SparseExtensor, SparseExtensor, SparseExtensor]:
     """The two drums' tiles `[drums, tiles, corners]`, vertices and meshes, the source drum's standing waves and their
     squared frequencies `[modes]`, the two wave operators, the transplantation, the restriction of the source field
@@ -54,9 +54,9 @@ def drums() -> tuple[Point, tuple[Point, Point], tuple[Mesh, Mesh], Scalar, Scal
     offsets = np.arange(n_lattice)
     lattice = (mv.x.dual() * offsets[None, :] + mv.y.dual() * offsets[:, None]).reshape((-1,))  # [lattice vertices] Point-
     tiles = stack((lattice[source_indices], lattice[target_indices]))   # [drums, tiles, corners] Point-
-    source_vertices, source_mesh, source_neighbors, source_restriction, _, source_lift = drum(
+    source_vertices, source_topology, source_neighbors, source_restriction, _, source_lift = drum(
         source_indices, n_lattice, n_subdivisions)
-    target_vertices, target_mesh, target_neighbors, _, target_assembly, target_lift = drum(
+    target_vertices, target_topology, target_neighbors, _, target_assembly, target_lift = drum(
         target_indices, n_lattice, n_subdivisions)
     spacing = 1 / n_subdivisions
     source_laplacian = (4 * Scalar - source_neighbors) / spacing**2    # (Scalar+ <- Scalar+)[source sites <- source sites]
@@ -68,9 +68,9 @@ def drums() -> tuple[Point, tuple[Point, Point], tuple[Mesh, Mesh], Scalar, Scal
     transplant = target_assembly(mixing(source_restriction))          # (Scalar+ <- Scalar+)[target sites <- source sites]
 
     # Inserting a zero boundary preserves the interior field's inner product.
-    measure = source_lift.adjoint()(source_lift)                     # (Scalar+ <- Scalar+)[source sites <- source sites]
+    measure = source_lift.adjoint()(source_lift)                       # (Scalar+ <- Scalar+)[source sites <- source sites]
     eigenvalues, modes = source_laplacian.eigh(measure, n_modes)       # [modes] Scalar+, [modes] Scalar+[source sites]
-    return (tiles, (source_vertices, target_vertices), (source_mesh, target_mesh), modes / spacing, eigenvalues,
+    return (tiles, (source_vertices, target_vertices), (source_topology, target_topology), modes / spacing, eigenvalues,
             source_laplacian, target_laplacian, transplant, source_restriction, source_lift, target_lift)
 
 
@@ -104,15 +104,15 @@ def main() -> None:
     source_pieces = read_tile(source_restriction(modes[mixed_modes[-1]] * mix_amplitudes[-1]))   # [tiles] Scalar+[samples]
     contributions = source_pieces[contributors[target_tile]] * signs[target_tile]  # [terms] Scalar+[samples]
     pieces = concatenate((contributions, contributions.sum(axis=0)[None]), axis=0)  # [terms + 1] Scalar+[samples]
-    local_vertices, local_mesh = triangle(n_subdivisions)
-    save_figure(render.draw_pieces(local_vertices, local_mesh, pieces, exposure), "isospectral_drums_pieces")
+    local_vertices, topology = triangle(n_subdivisions)
+    save_figure(render.draw_pieces(local_vertices, topology, pieces, exposure), "isospectral_drums_pieces")
 
     save_animation(render.frames(vertices, meshes, tiles, vibration(modes, eigenvalues, transplant, source_lift, target_lift),
                                  exposure), "isospectral_drums", duration_ms, colors=n_colours)
 
     # checks
     # The transplant carries the wave operator across, so each standing wave goes to one of the same frequency.
-    commutator = target_laplacian(transplant) - transplant(source_laplacian)   # (Scalar+ <- Scalar+)[target sites <- source sites]
+    commutator = target_laplacian(transplant) - transplant(source_laplacian)  # (Scalar+ <- Scalar+)[target sites <- source sites]
     np.testing.assert_allclose(commutator(modes).to_array(), 0, atol=1e-6)
 
 

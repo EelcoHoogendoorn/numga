@@ -64,12 +64,12 @@ def iterates(chains, residual, catenary, pins) -> plt.Figure:
     # Earlier iterates lighter, each in its shade along its edges.
     shades = EARLY + np.linspace(0, 1, n_iterates)[:-1, None] * (LATE - EARLY)   # [iterates - 1, 3]
     simplices.overlay(shape, [
-        simplices.strokes(lines[:-1].reshape(-1), simplices.Mesh.chains([n_points] * (n_iterates - 1)),
+        simplices.strokes(lines[:-1].reshape(-1), simplices.Topology.chains([n_points] * (n_iterates - 1)),
                           np.repeat(shades, n_points - 1, axis=0), charts.LINE_PX, camera),
         # The catenary dashed and twice as wide as the chains, so that it shows under the last.
-        simplices.strokes(catenary, simplices.Mesh.chains([len(catenary)]), CATENARY, 2 * charts.LINE_PX, camera,
+        simplices.strokes(catenary, simplices.Topology.chains([len(catenary)]), CATENARY, 2 * charts.LINE_PX, camera,
                           dashes=CATENARY_DASHES, cap=simplices.Cap.BUTT),
-        simplices.strokes(lines[-1], simplices.Mesh.chains([n_points]), CHAIN, charts.LINE_PX, camera),
+        simplices.strokes(lines[-1], simplices.Topology.chains([n_points]), CHAIN, charts.LINE_PX, camera),
         simplices.markers(lines[-1], CHAIN, BEAD_RADIUS, camera),
         simplices.markers(ends, PIN, BEAD_RADIUS, camera)])
     return figure

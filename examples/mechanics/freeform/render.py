@@ -7,7 +7,7 @@ from collections.abc import Iterable, Iterator
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.mechanics.freeform.geometry import Antivector, Mesh
+from examples.mechanics.freeform.geometry import Antivector, Topology
 from examples.util.wgsl import image_figure, meshes, solids
 
 n_pixels = 230
@@ -23,23 +23,23 @@ def viewport(points: solids.Point) -> solids.View:
     return solids.view([points], 0.0, elevation, azimuth, margin, n_pixels).squared()
 
 
-def picture(points: solids.Point, mesh: Mesh, view: solids.View) -> np.ndarray:
+def picture(points: solids.Point, topology: Topology, view: solids.View) -> np.ndarray:
     """The surface, smooth shaded by normals blended across each face from its vertices."""
-    return meshes.draw(points, mesh.faces, surface, meshes.smooth(points, mesh), view, background, face_values=np.zeros(4),
+    return meshes.draw(points, topology.elements[2], surface, meshes.smooth(points, topology), view, background, face_values=np.zeros(4),
                        colour=meshes.plain, gloss=solids.gloss)
 
 
-def frames(vertices: Iterable[Antivector], mesh: Mesh) -> Iterator[np.ndarray]:
+def frames(vertices: Iterable[Antivector], topology: Topology) -> Iterator[np.ndarray]:
     """Draw a sequence of surfaces of the mesh's triangles with a camera fixed by the first frame."""
     # The projective embedding: places of space, offsets from its origin, as the renderer's points about its own.
     states = [solids.origin + solids.context.include_from_algebra(state) for state in vertices]
     view = viewport(states[0])
     for state in states:
-        yield picture(state, mesh, view)
+        yield picture(state, topology, view)
 
 
-def draw(vertices: Antivector, mesh: Mesh) -> plt.Figure:
+def draw(vertices: Antivector, topology: Topology) -> plt.Figure:
     """One surface of the mesh's triangles without axes or margins."""
     # The projective embedding: places of space, offsets from its origin, as the renderer's points about its own.
     points = solids.origin + solids.context.include_from_algebra(vertices)               # [vertices] Point-
-    return image_figure(picture(points, mesh, viewport(points)))
+    return image_figure(picture(points, topology, viewport(points)))
