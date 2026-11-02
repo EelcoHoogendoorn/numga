@@ -57,6 +57,8 @@ Rotation = ga.gatype.from_blades("xy")                                        # 
 resisting = patch * (Rotation & patch)                                        # [] Patch- <- Bivector+
 # A velocity read as the plane that takes its circulation along a path: its run along and across, read back.
 circulating = (stack((mv.x, mv.y)) * (stack((mv.x, mv.y)) & Point)).sum(axis=0)   # [] Plane+ <- Point-
+# A gradient read along and across as the flux it drives down itself at a unit diffusivity: Fick's law.
+spreading = (stack((axis, across)) * (Plane & stack((axis, across)))).sum(axis=0)  # [] Point- <- Plane+
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -203,9 +205,8 @@ def equilibrium_pushes(topology: Topology, areas: Scalar, gradients: Plane, cell
     return pushes[0], pushes[1]
 
 
-def dyeing(topology: Topology, areas: Scalar, gradients: Plane, stiffness: SparseExtensor, velocities: Point,
-           field: Drive, charges: np.ndarray, mobility: float, diffusivity: float, dye: Scalar, dt: float,
-           n_frames: int, stride: int) -> Iterator[Scalar]:
+def dyeing(topology: Topology, areas: Scalar, gradients: Plane, velocities: Point, field: Drive, charges: np.ndarray,
+           mobility: float, diffusivity: float, dye: Scalar, dt: float, n_frames: int, stride: int) -> Iterator[Scalar]:
     """The dye over the channel `[...] Scalar+[vertices]`, this dye and then `n_frames` frames every `stride` steps of
     `dt`, in each run `[...]`: carried by the liquid at its velocity `[...] Point-[faces]` and drifting under the whole
     drive `[...] Drive+[faces]` by the charge it holds `[...]`, at this mobility, while it spreads at this diffusivity;
@@ -219,7 +220,10 @@ def dyeing(topology: Topology, areas: Scalar, gradients: Plane, stiffness: Spars
     carrying = assembled(topology, towards[..., :, None] * np.full(3, 1 / 3))   # Scalar+[..., vertices <- vertices]
     # The overlaps of the corners' hats over each triangle, whose sum over a vertex's triangles is its cell.
     overlaps = assembled(topology, areas[..., None, None] * (np.ones((3, 3)) + np.eye(3)) / 12)
-    changing = diffusivity * stiffness - carrying                            # Scalar+[..., vertices <- vertices]
+    # How much each cell loses to its neighbours as the dye spreads: each hat's gradient reading the flux another's
+    # drives down itself.
+    diffusion = assembled(topology, areas[..., None, None] * (gradients[..., :, None] & spreading(gradients[..., None, :])))
+    changing = diffusivity * diffusion - carrying                            # Scalar+[..., vertices <- vertices]
     # Each step halfway implicit: half a step forward from the dye before it, and half a step back from the dye after it.
     forward = overlaps / dt - changing / 2                                   # Scalar+[..., vertices <- vertices]
     backward = (overlaps / dt + changing / 2) * Scalar                       # (Scalar+ <- Scalar+)[..., vertices <- vertices]

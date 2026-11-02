@@ -128,10 +128,10 @@ def dyed():
     the field's electro-osmotic flow, and, charged either way, by that flow while it drifts under the field."""
     topology, coordinates, shifts, lower, upper, charge, wall_charges = straight()
     vertices, edges = core.placed(topology, coordinates, shifts)
-    areas, sides, gradients, stiffness, cells = operators(topology, edges)
-    potentials = core.double_layer(stiffness, cells, mv.scalar(charge[:, None]).field(), valences, bulk,
+    areas, sides, gradients, outflow, circulation, cells = operators(topology, edges)
+    potentials = core.double_layer(outflow, cells, mv.scalar(charge[:, None]).field(), valences, bulk,
                                    n_newton_steps)
-    _, _, carried, velocities, field, _ = core.transport(topology, areas, sides, gradients, stiffness, cells,
+    _, _, carried, velocities, field, _ = core.transport(topology, areas, sides, gradients, circulation, cells,
                                                          potentials, valences, bulk, viscosity, mobilities,
                                                          np.array(straight_length), lower, upper, experiments)
     # The volume each experiment carries along per length, read by the pressure's drive, over the channel's width, is
@@ -141,7 +141,7 @@ def dyed():
     dye = np.ones(len(run_drives)) * mv.scalar(band[:, None]).field()        # [runs] Scalar+[vertices]
     velocities, field = velocities / speeds, field / speeds                  # [experiments] Point-[faces], Drive+[faces]
     return topology, vertices, wall_charges, experiments / speeds, velocities, core.dyeing(
-        topology, areas, gradients, stiffness, velocities[run_drives], field[run_drives], dye_charges, dye_mobility,
+        topology, areas, gradients, velocities[run_drives], field[run_drives], dye_charges, dye_mobility,
         dye_diffusivity, dye, dye_dt, n_dye_frames, dye_stride)
 
 
