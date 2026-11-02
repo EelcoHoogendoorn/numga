@@ -2,13 +2,15 @@
 
 A strip closed on itself along its length is opened at its seam to be drawn: its first column again a period further
 along, and the triangles across the seam joined to that copy. Its points are read by the planes x and y and weighed by
-their volume, `mv.v & point`, the algebra's own projective weight. The mesh is drawn as strokes of its edges; a field
-over it as colours on its triangles, a charge density or a heat from white, a velocity along the strip red where it
-runs with the field and blue against; streamlines as the stream function's level lines; and the walls as strokes
-coloured by their charge, magenta where positive and green where negative. The best efficiency of slits as generators
-is a chart.
+their volume, `mv.v & point`, the algebra's own projective weight. The channels are drawn as the liquid between their
+walls; a field over it as colours on its triangles, a charge density or a heat from white; the flow as streaks of ink
+along the velocity, read by the same planes, each as long as the liquid there is fast and fading downstream; a
+potential as its level lines; and the walls as strokes coloured by their charge, magenta where positive and green
+where negative. The best efficiency of slits as generators is a chart.
 """
 from __future__ import annotations
+
+from collections.abc import Iterator
 
 import numpy as np
 from matplotlib import colormaps
@@ -17,29 +19,45 @@ from matplotlib.colors import to_rgb
 from numga import concatenate
 from numga.extensor import Extensor
 from examples.util.charts import style, subplots
-from examples.util.wgsl import contours, image_figure, simplices
+from examples.util.wgsl import contours, flow, image_figure, simplices
 from examples.util.wgsl.camera import Camera
 
 Topology = simplices.Topology
 wall_colour = np.array(to_rgb("#3b4a57"))
-mesh_colour = np.array(to_rgb("#9aa5ae"))
+# The liquid in a picture of the channels themselves.
+liquid_colour = np.array(to_rgb("#eef1f4"))
 positive_colour, negative_colour = np.array(to_rgb("#c51b7d")), np.array(to_rgb("#4d9221"))
-stream_colour = np.array(to_rgb("#2b2f33"))
-velocity_map, efficiency_map, heat_map, charge_map, push_map = (
-    colormaps[name] for name in ("RdBu_r", "Blues", "Oranges", "PiYG_r", "PuOr_r"))
+streak_colour = np.array(to_rgb("#2b2f33"))
+# How much of the streaks' ink shows, so that the colours beneath read through it.
+streak_ink = 0.6
+# A neutral dye's colour; a charged dye takes its charge's colour, as the walls do; the dye pumped through the
+# channels.
+neutral_colour = np.array(to_rgb("#1f4e79"))
+pumped_colour = neutral_colour
+# The room above and below a dyed channel's walls, as a share of its half width; the share of a band's starting
+# strength at which a dye shows its full colour, about what a thin band keeps once it has spread.
+dye_margin, dye_full = 0.06, 0.4
+# How much of the charge's colour shows in a dyed channel, a faint glow of its double layers; the level lines of its
+# potential, so many over the field's fall along the window, their colour, opacity and width.
+glow_strength = 0.5
+n_equipotentials = 16
+equipotential_colour, equipotential_ink, equipotential_width = np.array(to_rgb("#3b4a57")), 0.6, 1.5
+efficiency_map, heat_map, charge_map = (colormaps[name] for name in ("Blues", "Oranges", "PiYG_r"))
 # The share of the efficiency's colour map used, light to mid blue, so that its labels read on it; its labelled levels.
 efficiency_shades = (0.03, 0.6)
 efficiency_levels = np.array([0.01, 0.02, 0.04, 0.06])
 # The chart's pixels.
 efficiency_width, efficiency_height = 320, 260
-# A strip's picture: pixels across, the room above and below its widest place, and the pixels between strips; the widths
-# of the walls, the mesh's edges and the streamlines; the streamlines' spacing in units of volume flow; how much of a
-# field's colour shows at its largest.
+# The velocity profiles' chart: its pixels, its curves' colours and labels, the pressure drop's flow and the field's, and
+# the speeds marked along it, nothing, the mean and Poiseuille's peak at half again the mean.
+profile_width, profile_height = 300, 220
+profile_colours = (np.array(to_rgb("#b35806")), neutral_colour)
+profile_labels = ("pressure drop", "field")
+profile_speeds = (0, 1, 1.5)
+# A strip's picture: pixels across, the room above and below its widest place, and the pixels between strips; the width
+# of the walls; how much of a field's colour shows at its largest.
 n_pixels, margin, gap_pixels = 300, 0.4, 8
-wall_width, mesh_width, stream_width = 3.0, 1.5, 1.5
-# A mesh's picture gets the pixels its rows of vertices need to show apart, within these bounds.
-row_pixels, mesh_pixels = 4.0, (300, 700)
-stream_spacing = 0.06
+wall_width = 3.0
 field_strength = 0.85
 
 
@@ -93,6 +111,20 @@ def shaded(points: Extensor, faces: Topology, values: np.ndarray, colours: np.nd
     return contours.picture(points, faces, values, colours, camera)
 
 
+def equipotential_lines(points: Extensor, faces: Topology, potentials: Extensor, falls: Extensor, n_across: int,
+                        camera: Camera) -> list[np.ndarray]:
+    """The level lines of the potentials over opened strips `[strips] Scalar+[vertices]`, which fall by `falls`
+    `[strips] Scalar+` over the period, the copy at the seam a period's fall further along: every so much of the
+    largest fall, half a spacing off nothing, so that a potential that hardly varies draws none; a layer a strip."""
+    drops = falls.to_array().reshape(-1)                                       # [strips]
+    values = potentials.to_array().reshape(len(drops), -1)                     # [strips, vertices]
+    levels = np.concatenate([values, values[:, :n_across] - drops[:, None]], axis=-1)   # [strips, vertices + across]
+    spacing = np.abs(drops).max() / n_equipotentials
+    lines = contours.Lines(spacing, spacing / 2, np.append(equipotential_colour, equipotential_ink), equipotential_width)
+    return [contours.picture(points, faces, level, np.zeros((len(level), 3)), camera, lines=(lines,), opacity=0.0)
+            for level in levels]
+
+
 def stacked(images: list[np.ndarray]):
     """Pictures one above the other, a gap between them, as a figure."""
     gap = np.full((gap_pixels, images[0].shape[1], 3), 255, dtype=np.uint8)
@@ -104,67 +136,92 @@ def closing(values: np.ndarray, n_across: int) -> np.ndarray:
     return np.concatenate([values, values[..., :n_across]], axis=-1)
 
 
-def draw_mesh(topology: Topology, vertices: Extensor, n_across: int, period: float, wall_charges: np.ndarray):
-    """A strip's triangles as strokes of their edges, between its walls coloured by their charge `[columns]`."""
-    points, faces = unrolled(topology, vertices, n_across, period)
-    # The narrowest place's rows of vertices, their spacing across.
-    spacing = 2 * np.abs(readings(vertices.context.multivector.y, vertices)).reshape(-1, n_across)[:, 0].min() / (n_across - 1)
-    camera = strip_camera(vertices, period, int(np.clip(row_pixels * period / spacing, *mesh_pixels)))
-    layers = [simplices.strokes(points, faces, mesh_colour, mesh_width, camera),
-              wall_strokes(points, n_across, wall_charges, camera)]
-    return image_figure(on_white(simplices.composited(layers)))
-
-
-def draw_charge(topology: Topology, vertices: Extensor, n_across: int, period: float, charge: Extensor,
-                wall_charges: np.ndarray):
-    """Strips one above the other, each coloured by its liquid's charge density `[strips] Scalar+[vertices]`, magenta
-    where positive and green where negative on one scale for all, between walls coloured by their charge
-    `[strips, columns]`."""
+def draw_channels(topology: Topology, vertices: Extensor, n_across: int, period: float, wall_charges: np.ndarray):
+    """The channels one above the other, each the liquid between its walls, the walls coloured by their charge
+    `[strips, columns]`, magenta where positive and green where negative."""
     points, faces = unrolled(topology, vertices, n_across, period)
     camera = strip_camera(vertices, period, n_pixels)
+    n_points = points.shape[0]
+    liquid = shaded(points, faces, np.zeros(n_points), np.tile(liquid_colour, (n_points, 1)), camera)
+    return stacked([on_white(simplices.composited([liquid, wall_strokes(points, n_across, wall_charge, camera)]))
+                    for wall_charge in wall_charges])
+
+
+def liquids(points: Extensor, faces: Topology, n_across: int, charge: Extensor, speeds: Extensor,
+            potentials: Extensor, falls: Extensor, camera: Camera) -> list[list[np.ndarray]]:
+    """Each opened strip's liquid as layers: coloured by its charge density `[strips] Scalar+[vertices]`, magenta where
+    positive and green where negative on one scale for all, streaked along its velocity `[strips] Point-[vertices]`, a
+    streak as long as the liquid there is fast and fading the way it goes, on one scale for all, and crossed by the
+    level lines of the potential its drive sets up `[strips] Scalar+[vertices]`, which falls by `falls` over the
+    period."""
+    mv = points.context.multivector
     densities = closing(charge.batch().to_array(), n_across)
     largest = np.abs(densities).max()
-    return stacked([on_white(simplices.composited([
-        shaded(points, faces, density, 1 - field_strength * (1 - charge_map(0.5 + density / (2 * largest))[:, :3]),
-               camera),
-        wall_strokes(points, n_across, wall_charge, camera)]))
-        for density, wall_charge in zip(densities, wall_charges)])
+    fastest = np.abs(readings(mv.x, speeds)).max()
+    # The velocities as they are, with the first column's again at its copy across the seam, read by the camera's
+    # planes in the streaks' shader; a streak is as long as the liquid there is fast, the fastest's a set length.
+    velocities = speeds.batch()                                                # [strips, vertices] Point-
+    closed = concatenate([velocities, velocities[:, :n_across]], axis=-1)     # [strips, vertices + across] Point-
+    return [[shaded(points, faces, density, 1 - field_strength * (1 - charge_map(0.5 + density / (2 * largest))[:, :3]),
+                    camera),
+             flow.layer(points, faces, velocity, camera, fastest, streak_colour) * np.array([1, 1, 1, streak_ink]),
+             lines]
+            for density, velocity, lines in zip(densities, closed,
+                                                equipotential_lines(points, faces, potentials, falls, n_across, camera))]
 
 
-def draw_flow(topology: Topology, vertices: Extensor, n_across: int, period: float, speeds: Extensor,
-              stream: Extensor, wall_charges: np.ndarray):
-    """Strips one above the other, each coloured by its liquid's velocity along it `[strips] Point-[vertices]`, on one
-    scale for all, with the stream function's level lines `[strips] Scalar+[vertices]` and walls coloured by their
-    charge `[strips, columns]`."""
-    mv = vertices.context.multivector
+def draw_flow(topology: Topology, vertices: Extensor, n_across: int, period: float, charge: Extensor,
+              speeds: Extensor, potentials: Extensor, falls: Extensor, wall_charges: np.ndarray):
+    """Strips one above the other, each its liquid as `liquids` draws it, its charge density `[strips]
+    Scalar+[vertices]`, its velocity `[strips] Point-[vertices]` and the level lines of the potential its drive sets up
+    `[strips] Scalar+[vertices]`, which falls by `falls` `[strips] Scalar+` over the period, between walls coloured by
+    their charge `[strips, columns]`."""
     points, faces = unrolled(topology, vertices, n_across, period)
     camera = strip_camera(vertices, period, n_pixels)
-    along = closing(readings(mv.x, speeds), n_across)
-    streams = closing(stream.batch().to_array(), n_across)
-    fastest = np.abs(along).max()
-    lines = contours.Lines(stream_spacing, stream_spacing / 2, np.append(stream_colour, 1.0), stream_width)
-    images = []
-    for speed, level, wall_charge in zip(along, streams, wall_charges):
-        colours = 1 - field_strength * (1 - velocity_map(0.5 + speed / (2 * fastest))[:, :3])
-        images.append(on_white(simplices.composited([
-            shaded(points, faces, speed, colours, camera),
-            contours.picture(points, faces, level, colours, camera, lines=(lines,), opacity=0.0),
-            wall_strokes(points, n_across, wall_charge, camera)])))
-    return stacked(images)
+    return stacked([on_white(simplices.composited(layers + [wall_strokes(points, n_across, wall_charge, camera)]))
+                    for layers, wall_charge in zip(liquids(points, faces, n_across, charge, speeds, potentials, falls,
+                                                           camera), wall_charges)])
+
+
+def animate_pumping(topology: Topology, vertices: Extensor, n_across: int, period: float, charge: Extensor,
+                    speeds: Extensor, potentials: Extensor, falls: Extensor, wall_charges: np.ndarray,
+                    frames) -> Iterator[np.ndarray]:
+    """The dye the battery pumps through the channels at every frame as it comes `[strips] Scalar+[vertices]`, strips
+    one above the other, each its liquid as `liquids` draws it under the dye, from nothing where there is none to its
+    colour, between walls coloured by their charge `[strips, columns]`."""
+    points, faces = unrolled(topology, vertices, n_across, period)
+    camera = strip_camera(vertices, period, n_pixels)
+    backgrounds = [on_white(simplices.composited(layers)) / 255
+                   for layers in liquids(points, faces, n_across, charge, speeds, potentials, falls, camera)]
+    walls = [wall_strokes(points, n_across, wall_charge, camera) for wall_charge in wall_charges]
+    gap = np.full((gap_pixels, camera.shape[1], 3), 255, dtype=np.uint8)
+    for dye in frames:
+        shares = np.clip(closing(dye.to_array(), n_across), 0, 1)             # [strips, vertices + across]
+        pictures = []
+        for share, background, wall in zip(shares, backgrounds, walls):
+            # The dye takes away from the light what its colour lacks, by its share.
+            filtering = shaded(points, faces, np.zeros(len(share)), 1 - share[:, None] * (1 - pumped_colour), camera)
+            seen = background * (filtering[..., :3] + (1 - filtering[..., 3:]))   # [rows, columns, 3]
+            opaque = np.concatenate([seen, np.ones(seen.shape[:-1] + (1,))], axis=-1)
+            pictures += [on_white(simplices.composited([opaque, wall])), gap]
+        yield np.concatenate(pictures[:-1])
 
 
 def draw_heat(topology: Topology, vertices: Extensor, n_across: int, period: float, heat: Extensor,
-              wall_charges: np.ndarray):
+              potentials: Extensor, falls: Extensor, wall_charges: np.ndarray):
     """Strips one above the other, each coloured by the heat made in it `[strips] Scalar+[vertices]`, from white for
-    none to orange for the most in any, between walls coloured by their charge `[strips, columns]`."""
+    none to orange for the most in any, and crossed by the level lines of the potential its drive sets up `[strips]
+    Scalar+[vertices]`, which falls by `falls` `[strips] Scalar+` over the period, between walls coloured by their
+    charge `[strips, columns]`."""
     points, faces = unrolled(topology, vertices, n_across, period)
     camera = strip_camera(vertices, period, n_pixels)
     values = closing(heat.batch().to_array(), n_across)
     hottest = values.max()
     return stacked([on_white(simplices.composited([
         shaded(points, faces, value, heat_map(value / hottest)[:, :3], camera),
-        wall_strokes(points, n_across, wall_charge, camera)]))
-        for value, wall_charge in zip(values, wall_charges)])
+        lines, wall_strokes(points, n_across, wall_charge, camera)]))
+        for value, lines, wall_charge in zip(values, equipotential_lines(points, faces, potentials, falls, n_across, camera),
+                                            wall_charges)])
 
 
 @style()
@@ -186,19 +243,81 @@ def draw_efficiency(half_widths: np.ndarray, surface_charges: np.ndarray, effici
     return figure
 
 
-def draw_balance(topology: Topology, vertices: Extensor, n_across: int, period: float, osmotic: Extensor,
-                 electric: Extensor, wall_charges: np.ndarray):
-    """One channel three times, on one square-root scale: coloured by the push across it of its double layer's osmotic
-    pressure `Point-[vertices]`, of its own field, and of the two together, orange where the push is up the picture and
-    purple where down, between walls coloured by their charge `[columns]`."""
+@style()
+def draw_profiles(topology: Topology, vertices: Extensor, n_across: int, velocities: Extensor):
+    """The liquid's velocity along a strip against the place across it, under the pressure drop and under the field
+    `[2] Point-[faces]`, read in the triangles between the strip's first two columns of vertices at their centres, and
+    at rest on the walls, each over its mean across that station; each curve labelled at the height of its top, where it runs furthest ahead of
+    the other, the axis across ending at the walls and its zero the axis along."""
     mv = vertices.context.multivector
+    columns = topology.elements[2] // n_across
+    station = (columns.min(axis=-1) == 0) & (columns.max(axis=-1) == 1)
+    # Each triangle's centre, the mean of its corners.
+    centres = topology.incidence[2, 0].mean(axis=0) * vertices                  # Point-[faces]
+    places = readings(mv.y, centres)[station]
+    order = np.argsort(places)
+    half_width = np.abs(readings(mv.y, vertices)).max()
+    # The liquid at rest on the walls, which the triangles' centres stop short of.
+    places = np.concatenate([[-half_width], places[order], [half_width]])
+    speeds = np.pad(readings(mv.x, velocities)[:, station][:, order], ((0, 0), (1, 1)))   # [2, triangles + 2]
+    # Each over its mean across the station, the area under it over the width.
+    speeds = speeds / (np.trapezoid(speeds, places, axis=-1) / (2 * half_width))[:, None]
+    figure, ax = subplots(profile_width, profile_height)
+    for speed, other, colour, label in zip(speeds, speeds[::-1], profile_colours, profile_labels):
+        ax.plot(places, speed, color=colour)
+        # Aligned away from the nearer wall, so that the label stays within the chart.
+        ahead = np.argmax(speed - other)
+        alignment = ("left", "center", "right")[np.digitize(places[ahead], [-half_width / 2, half_width / 2])]
+        ax.annotate(label, (places[ahead], speed.max()), xytext=(0, 4), textcoords="offset points", ha=alignment,
+                    va="bottom", color=colour)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.spines["bottom"].set_position(("data", 0))
+    ax.set(xlim=(-half_width, half_width), ylim=(0, 1.15 * speeds.max()), xticks=[-half_width, 0, half_width],
+           yticks=profile_speeds, xlabel="across / Debye length", ylabel="velocity / mean")
+    figure.tight_layout(pad=0.4)
+    return figure
+
+
+def animate_dyes(topology: Topology, vertices: Extensor, n_across: int, period: float, wall_charges: np.ndarray,
+                 charge: Extensor, flows: Extensor, potentials: Extensor, falls: Extensor, frames) -> Iterator[np.ndarray]:
+    """The dye in a channel at every frame as it comes `[runs] Scalar+[vertices]`, two strips one above the other: a
+    neutral dye carried by a pressure drop's flow, and below it the same dye carried by a field's electro-osmotic flow
+    together with a positive and a negative dye, in their charges' colours, drifting under the field as well. Each
+    strip is the liquid: faintly coloured by its charge density `Scalar+[vertices]`, its double layers, streaked along
+    its velocity under the strip's drive `[strips] Point-[vertices]`, and crossed by the level lines of the potential
+    the drive sets up `[strips] Scalar+[vertices]`, which falls by `falls` `[strips] Scalar+` over the period, both on
+    one scale for both strips; over it each dye from nothing where there is none to its colour, and the walls,
+    coloured by their charge `[stations]`."""
     points, faces = unrolled(topology, vertices, n_across, period)
-    camera = strip_camera(vertices, period, n_pixels)
-    across = [closing(readings(mv.y, push), n_across) for push in (osmotic, electric, osmotic + electric)]
-    largest = np.abs(across[0]).max()
-    # On a square-root scale, so that the layer's reach shows beside its peak at the walls.
-    shades = [np.sign(push) * np.sqrt(np.abs(push) / largest) for push in across]
-    return stacked([on_white(simplices.composited([
-        shaded(points, faces, push, 1 - field_strength * (1 - push_map(0.5 + shade / 2)[:, :3]), camera),
-        wall_strokes(points, n_across, wall_charges, camera)]))
-        for push, shade in zip(across, shades)])
+    # The room above and below the walls, a share of the channel's width, so that the walls' strokes show whole.
+    mv = vertices.context.multivector
+    widest = np.abs(readings(mv.y, vertices)).max()
+    camera = Camera(mv.x, mv.y, 0 * mv.x, mv.v, 0.0, np.array([period / 2, 0.0]),
+                    np.array([period / 2, widest * (1 + dye_margin)]), n_pixels)
+    walls = wall_strokes(points, n_across, wall_charges, camera)
+    colours = np.array([neutral_colour, neutral_colour, positive_colour, negative_colour])   # [runs, 3]
+    panels = [[0], [1, 2, 3]]
+    density = closing(charge.to_array(), n_across)                              # [vertices + across]
+    glow = 1 - glow_strength * (1 - charge_map(0.5 + density / (2 * np.abs(density).max()))[:, :3])
+    fastest = np.abs(readings(mv.x, flows)).max()
+    velocities = flows.batch()                                                  # [strips, vertices] Point-
+    closed = concatenate([velocities, velocities[:, :n_across]], axis=-1)      # [strips, vertices + across] Point-
+    # Each strip's liquid, its charge's glow under its flow's streaks and its potential's level lines, laid over white
+    # once.
+    liquids = [on_white(simplices.composited([
+        shaded(points, faces, density, glow, camera),
+        flow.layer(points, faces, velocity, camera, fastest, streak_colour) * np.array([1, 1, 1, streak_ink]),
+        lines])) / 255
+        for velocity, lines in zip(closed, equipotential_lines(points, faces, potentials, falls, n_across, camera))]
+    gap = np.full((gap_pixels, camera.shape[1], 3), 255, dtype=np.uint8)
+    for dye in frames:
+        shares = np.clip(closing(dye.to_array(), n_across) / dye_full, 0, 1)  # [runs, vertices + across]
+        pictures = []
+        for runs, liquid in zip(panels, liquids):
+            # Each dye takes away from the light what its colour lacks, by its share.
+            passing = np.clip(1 - (shares[runs, :, None] * (1 - colours[runs, None, :])).sum(axis=0), 0, 1)
+            filtering = shaded(points, faces, np.zeros(len(passing)), passing, camera)
+            seen = liquid * (filtering[..., :3] + (1 - filtering[..., 3:]))     # [rows, columns, 3]
+            opaque = np.concatenate([seen, np.ones(seen.shape[:-1] + (1,))], axis=-1)
+            pictures += [on_white(simplices.composited([opaque, walls])), gap]
+        yield np.concatenate(pictures[:-1])

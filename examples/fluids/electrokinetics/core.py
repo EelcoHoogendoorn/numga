@@ -25,6 +25,8 @@ one; the viscosity is one.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import numpy as np
 
 from numga import Algebra, NumpyContext, stack
@@ -55,6 +57,8 @@ Rotation = ga.gatype.from_blades("xy")                                        # 
 resisting = patch * (Rotation & patch)                                        # [] Patch- <- Bivector+
 # A velocity read as the plane that takes its circulation along a path: its run along and across, read back.
 circulating = (stack((mv.x, mv.y)) * (stack((mv.x, mv.y)) & Point)).sum(axis=0)   # [] Plane+ <- Point-
+# A gradient read along and across as the flux it drives down itself at a unit diffusivity: Fick's law.
+spreading = (stack((axis, across)) * (Plane & stack((axis, across)))).sum(axis=0)  # [] Point- <- Plane+
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -199,3 +203,32 @@ def equilibrium_pushes(topology: Topology, areas: Scalar, gradients: Plane, cell
         drive = -(((corners * pressure[..., None]) * gradients).sum(axis=-1) ^ label)   # [...] Bivector+[faces]
         pushes.append((~corners.sum(axis=0) * (drive.commutator(parcels) * (areas / 3))) / cells)
     return pushes[0], pushes[1]
+
+
+def dyeing(topology: Topology, areas: Scalar, gradients: Plane, velocities: Point, field: Drive, charges: np.ndarray,
+           mobility: float, diffusivity: float, dye: Scalar, dt: float, n_frames: int, stride: int) -> Iterator[Scalar]:
+    """The dye over the channel `[...] Scalar+[vertices]`, this dye and then `n_frames` frames every `stride` steps of
+    `dt`, in each run `[...]`: carried by the liquid at its velocity `[...] Point-[faces]` and drifting under the whole
+    drive `[...] Drive+[faces]` by the charge it holds `[...]`, at this mobility, while it spreads at this diffusivity;
+    each step halfway implicit, so that the dye moves at its own pace."""
+    # A dye molecule is a parcel of charge without volume, a point at infinity along time: the drive pushes it by the
+    # charge it holds, and it drifts at its mobility through the liquid that carries it.
+    drifts = velocities + mobility * field.commutator(charges * time)        # [...] Point-[faces]
+    # How much of a triangle's dye each corner's cell gains per unit time, the drift read by the corner's hat gradient,
+    # from each corner's share of the triangle's dye.
+    towards = areas[..., None] * (gradients & drifts[..., None])             # [..., corners] Scalar+[faces]
+    carrying = assembled(topology, towards[..., :, None] * np.full(3, 1 / 3))   # Scalar+[..., vertices <- vertices]
+    # The overlaps of the corners' hats over each triangle, whose sum over a vertex's triangles is its cell.
+    overlaps = assembled(topology, areas[..., None, None] * (np.ones((3, 3)) + np.eye(3)) / 12)
+    # How much each cell loses to its neighbours as the dye spreads: each hat's gradient reading the flux another's
+    # drives down itself.
+    diffusion = assembled(topology, areas[..., None, None] * (gradients[..., :, None] & spreading(gradients[..., None, :])))
+    changing = diffusivity * diffusion - carrying                            # Scalar+[..., vertices <- vertices]
+    # Each step halfway implicit: half a step forward from the dye before it, and half a step back from the dye after it.
+    forward = overlaps / dt - changing / 2                                   # Scalar+[..., vertices <- vertices]
+    backward = (overlaps / dt + changing / 2) * Scalar                       # (Scalar+ <- Scalar+)[..., vertices <- vertices]
+    yield dye
+    for _ in range(n_frames):
+        for _ in range(stride):
+            dye = backward.solve(forward * dye)
+        yield dye
