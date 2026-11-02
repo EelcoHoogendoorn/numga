@@ -86,9 +86,10 @@ def fluxon(events: Point, rapidity: np.ndarray, sense: float) -> Turn:
     resting kink, a turn by `4 * arctan(exp(x))` of its distance along x, read at each event from a frame boosted by
     the rapidity."""
     # The resting frame's events: the events boosted back by the rapidity, read by the plane x.
-    resting = mv.x & ((mv.xt * (-np.asarray(rapidity) / 2)).exp() >> events)   # [...] Scalar+[places]
-    angles = 4 * np.arctan(np.exp(sense * resting.to_array()))               # [..., places]
-    return (mv.ab * (-angles / 2)).exp().field()
+    resting = mv.x & ((mv.xt * (-rapidity / 2)).exp() >> events)            # [...] Scalar+[places]
+    # The kink turns by four times the arctangent of the exponential of that distance.
+    angles = 4 * (sense * resting).exp().arctan()                             # [...] Scalar+[places]
+    return (mv.ab * (-angles / 2)).exp()
 
 
 def evolving(tension: SparseExtensor, tunnelling: Scalar, phases: Phase, rates: Rate, dt: float, n_steps: int,

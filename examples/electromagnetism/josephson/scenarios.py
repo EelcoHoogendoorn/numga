@@ -28,13 +28,13 @@ rapidities = np.array([0.0, 0.4, 0.8, 1.2, 1.6])
 start, strip_dt, n_running = -12.0, 0.02, 800
 # The ring: a square junction's side and its places to a side, the ring's radius, the time step, the steps and the
 # steps between frames.
-square_side, n_square, ring_radius = 24.0, 161, 8.0
-ring_dt, n_ring_steps, ring_stride = 0.05, 480, 4
+square_side, n_square, ring_radius = 24.0, 97, 8.0
+ring_dt, n_ring_steps, ring_stride = 0.1, 240, 2
 # The reflection: a junction's width and height and its places across and up, the line's tilt from the y axis in
 # radians, its starting distance from the middle and rapidity, the time step, the steps and the steps between frames.
-wide, high, n_wide, n_high = 32.0, 16.0, 213, 107
+wide, high, n_wide, n_high = 32.0, 16.0, 129, 65
 tilt, line_start, line_rapidity = 0.35, 4.0, 0.9
-line_dt, n_line_steps, line_stride = 0.05, 720, 4
+line_dt, n_line_steps, line_stride = 0.1, 360, 2
 frame_duration_ms = 40
 
 
@@ -98,9 +98,11 @@ def collapsing():
     tunnelling current at each frame, the bias direction wedged with the phase, `[frames] Rate+[places]`."""
     topology, places = core.junction(n_square, n_square, square_side, square_side)
     vertices, gradients, tension = operators(topology, places)
-    # The resting kink across the ring, by the distance from its middle less its radius.
-    angles = 4 * np.arctan(np.exp(np.hypot(places[:, 0], places[:, 1]) - ring_radius))   # [places]
-    phases = ((mv.ab * (-angles / 2)).exp() >> mv.a).field()                 # Phase+[places]
+    # The resting kink across the ring, by each place's distance from the middle less the ring's radius: four times the
+    # arctangent of its exponential.
+    distances = vertices.squared().abs().square_root()                        # Scalar+[places]
+    angles = 4 * (distances - ring_radius).exp().arctan()                     # Scalar+[places]
+    phases = (mv.ab * (-angles / 2)).exp() >> mv.a                            # Phase+[places]
     frames = core.evolving(tension, everywhere(places), phases, 0 * (mv.a ^ phases), ring_dt, n_ring_steps, ring_stride)
     return topology, vertices, (mv.a ^ phases for phases in frames)
 
