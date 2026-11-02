@@ -16,7 +16,6 @@ from matplotlib import colormaps
 from matplotlib.colors import to_rgb
 from matplotlib.figure import Figure
 
-from numga import concatenate
 from numga.extensor import Extensor
 from examples.util.charts import style, subplots
 from examples.util.wgsl import contours, image_figure, simplices
@@ -33,9 +32,8 @@ temperature_map = colormaps["RdBu_r"]
 n_pixels, margin = 320, 0.04
 wall_width, mesh_width, stream_width = 2.5, 1.0, 1.0
 stream_spacing = 1.5
-# The chart's pixels, and the onset of convection between rigid walls marked on it.
+# The chart's pixels.
 chart_width, chart_height = 300, 220
-critical_rayleigh = 1708
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -90,30 +88,14 @@ def animate(topology: Topology, vertices: Extensor, opening: Extensor, period: f
 
 
 @style()
-def draw_turnover(times: np.ndarray, sizes: Extensor, shown: float) -> Figure:
-    """The flow's squared size over the layer `[frames] Scalar+` against time on a logarithmic scale, from the moment the
-    animation starts marked: a straight rise while the rolls grow, then the swings as they overshoot and settle."""
+def draw_turnover(times: np.ndarray, sizes: Extensor) -> Figure:
+    """The flow's squared size over the layer `[frames] Scalar+` against time on a logarithmic scale: a straight rise
+    while the rolls grow, then the swings as they overshoot and settle."""
     figure, ax = subplots(chart_width, chart_height)
-    ax.axvline(shown, color=axis_colour, linewidth=0.8, linestyle=":")
     ax.semilogy(times, sizes.to_array(), color=growth_colour)
     ax.set_xlim(times[0], times[-1])
     ax.set_xticks([times[0], times[-1]], [f"{times[0]:g}", f"{times[-1]:g}"])
     ax.set_xlabel("time")
     ax.set_ylabel("flow")
-    figure.tight_layout(pad=0.4)
-    return figure
-
-
-@style()
-def draw_onset(rayleighs: np.ndarray, growth: Extensor) -> Figure:
-    """The growth rate of a small disturbance `[rayleighs] Scalar+` against the Rayleigh number, with its zero, and the
-    onset between rigid walls marked."""
-    figure, ax = subplots(chart_width, chart_height)
-    ax.axhline(0, color=axis_colour, linewidth=0.8)
-    ax.axvline(critical_rayleigh, color=axis_colour, linewidth=0.8, linestyle=":")
-    ax.plot(rayleighs, growth.to_array(), "o-", color=growth_colour)
-    ax.set_xticks([rayleighs[0], critical_rayleigh, rayleighs[-1]])
-    ax.set_xlabel("Rayleigh number")
-    ax.set_ylabel("growth rate")
     figure.tight_layout(pad=0.4)
     return figure

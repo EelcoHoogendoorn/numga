@@ -111,8 +111,8 @@
 - [Laplacian eigenfunction fluids](fluids/eigen_fluids/) — Whitney gradients and precomputed mode interactions evolve vortices on the Stanford bunny and shear layers on a sphere.
 - [Magnetohydrodynamics on a sphere](fluids/mhd_sphere/mhd_sphere.ipynb) — In spacetime, a frozen-in field is one whose flux function's gradient pairs to nothing with every worldline; a differential rotation winds it up until its current gathers in thin sheets and reconnects into magnetic islands.
 - [Electrokinetic transport](fluids/electrokinetics/) — Pressure and electric potential as one field in spacetime joined with a direction for volume drive flow and current through wavy charged channels, reciprocally, while the double layer's osmotic pressure and field balance across them.
-- [Rayleigh–Bénard convection](fluids/convection/) — Volume and entropy as two degenerate directions joined to planar spacetime, mass along time: gravity's commutator with a parcel pulls its mass alone, buoyancy turns a heated layer over in rolls, and a batch of Rayleigh numbers finds the onset at 1708.
-- [Salt fingers](fluids/saltfingers/) — Volume, entropy and salt as three degenerate directions joined to planar spacetime, mass along time: one flux of whole parcels carries heat and salt alike, salt spreads a tenth as fast as heat, and warm salty water over cold fresh water grows fingers across its interface, which a batch of density ratios finds stop growing at the ratio of the diffusivities.
+- [Rayleigh–Bénard convection](fluids/convection/) — Volume and entropy as two degenerate directions joined to planar spacetime, mass along time: gravity's commutator with a parcel pulls its mass alone, buoyancy turns a heated layer over in rolls.
+- [Salt fingers](fluids/saltfingers/) — Volume, entropy and salt as three degenerate directions joined to planar spacetime, mass along time: one flux of whole parcels carries heat and salt alike, salt spreads a tenth as fast as heat, and warm salty water over cold fresh water grows fingers across its interface.
 
 ## Relativity
 
@@ -159,6 +159,7 @@
 - [Induced dipoles](electromagnetism/induced_dipoles/) — Atoms polarize in response to an applied field and to one another's dipoles.
 - [Electrostriction](electromagnetism/electrostriction/) — An elastic lattice deforms while its induced dipoles reach electrical and mechanical equilibrium.
 - [Eddy-current braking](electromagnetism/eddy_brake/) — Directional conductivity determines currents and braking torque in a rotating disc.
+- [The Meissner effect](electromagnetism/superconductor/) — A superconductor's canonical momentum is the spacetime gradient of one phase, so its exterior derivative vanishes: London's two equations in one, which expel a field from a rod cooled in it where a perfect conductor freezes the field in, and integrate around a ring to whole flux quanta.
 - [Second-harmonic generation](electromagnetism/second_harmonic/) — A crystal's quadratic field response generates light at twice the driving frequency.
 - [Magnetic bottle](electromagnetism/magnetic_bottle/) — Charged particles spiral, bounce or escape in the field between two coils.
 - [Magnetic flux advection](electromagnetism/lie_advection/) — Swept edge patches and Cartan's decomposition transport magnetic circulation and conserve total flux across a swirling conductor.

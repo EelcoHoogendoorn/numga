@@ -1,5 +1,4 @@
-"""Drawing for salt fingers: the tank's temperature and salinity, at the start and over time, and the growth of a
-disturbance against the density ratio as a chart.
+"""Drawing for salt fingers: the tank's temperature and salinity, at the start and over time.
 
 A tank closed on itself along its length is drawn opened at its seam, its first column again a period further along.
 Its points are read by the planes x and y and weighed by
@@ -13,24 +12,19 @@ from collections.abc import Iterable, Iterator
 
 import numpy as np
 from matplotlib import colormaps
-from matplotlib.colors import to_rgb
 from matplotlib.figure import Figure
 
 from numga.extensor import Extensor
-from examples.util.charts import style, subplots
 from examples.util.wgsl import contours, image_figure, simplices
 from examples.util.wgsl.camera import Camera
 
 Topology = simplices.Topology
-growth_colour, axis_colour = np.array(to_rgb("#1d4ed8")), np.array(to_rgb("#6b7280"))
 temperature_map, salinity_map = colormaps["RdBu_r"], colormaps["BrBG_r"]
 # The tank's picture: pixels across, the room around it in depths, the rows between the two fields, and the walls'
 # width; the share of each colour map the fields span, short of its darkest ends.
 n_pixels, margin, n_gap = 320, 0.03, 6
 wall_width = 2.5
 span = 0.8
-# The chart's pixels.
-chart_width, chart_height = 300, 220
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -85,18 +79,3 @@ def animate(topology: Topology, vertices: Extensor, opening: Extensor, period: f
     for _, temperature, salinity in frames:
         yield stacked(field(topology, vertices, camera, (opening * temperature).to_array(), temperature_map),
                       field(topology, vertices, camera, (opening * salinity).to_array(), salinity_map))
-
-
-@style()
-def draw_growth(ratios: np.ndarray, growth: Extensor, salt_diffusivity: float) -> Figure:
-    """The growth rate of a small disturbance `[ratios] Scalar+` against the density ratio, with its zero, and the
-    ratio of the diffusivities marked, beyond which no disturbance grows."""
-    figure, ax = subplots(chart_width, chart_height)
-    ax.axhline(0, color=axis_colour, linewidth=0.8)
-    ax.axvline(1 / salt_diffusivity, color=axis_colour, linewidth=0.8, linestyle=":")
-    ax.plot(ratios, growth.to_array(), "o-", color=growth_colour)
-    ax.set_xticks([ratios[0], 1 / salt_diffusivity, ratios[-1]])
-    ax.set_xlabel("density ratio")
-    ax.set_ylabel("growth rate")
-    figure.tight_layout(pad=0.4)
-    return figure
