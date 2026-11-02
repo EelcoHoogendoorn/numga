@@ -29,6 +29,7 @@ EXAMPLES = (
     "mechanics.bending",
     "fluids.eigen_fluids",
     "electromagnetism.superconductor",
+    "fluids.superfluid",
     "quantum.process_tomography",
     "mechanics.elastica",
     "electromagnetism.piezoelectric",

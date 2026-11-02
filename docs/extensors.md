@@ -316,7 +316,29 @@ kinetic = penetration ** 2 * (in_ring_areas * (currents & inertia(currents))).si
 
 ---
 
-## 16. Laplacian Eigenfunction Fluids
+## 16. Superfluid Helium: Heat That Travels as a Wave
+
+**Notebook**: [`examples/fluids/superfluid/superfluid.ipynb`](../examples/fluids/superfluid/superfluid.ipynb)
+
+<p align="center"><img src="../plots/superfluid.gif" alt="A pulse of heat in superfluid helium travelling out as a wave of temperature" width="320" /></p>
+
+```python
+heating = mv.s - entropies * mv.m                                             # [temperatures] Potential+
+stiffnesses = (first_sounds ** 2 / densities) * (mv.m * (mv.m & Amount)) + (
+    temperatures / (heat_capacities * densities)) * (heating * (heating & Amount))   # [temperatures] Potential+ <- Amount-
+potentials = stiffness(amounts)                                       # Potential+[vertices]
+drive = -(gradients ^ (corners * potentials[..., None])).sum(axis=-1)   # Drive+[faces]
+velocities = velocities + dt * freedom * drive.commutator(liquid_parcels)   # [components] Point-[faces]
+flux = velocities.regressive(liquid_parcels).sum(axis=-1)            # Flux-[faces]
+```
+
+* One temperature gradient, two equal and opposite pushes: `drive.commutator(parcels)` sends the normal fluid away from the heat and the superfluid toward it, and the heat moves on as a wave, second sound.
+* Energy conserved by construction: what `gradient ^ flux` takes from the cells is what the drive gives the flow.
+* The liquid's stiffness is two dyads, compression `mv.m * (mv.m & Amount)` and heating `heating * (heating & Amount)`, so it is symmetric by construction, as Maxwell's relations require.
+
+---
+
+## 17. Laplacian Eigenfunction Fluids
 
 **Notebook**: [`examples/fluids/eigen_fluids/eigen_fluids.ipynb`](../examples/fluids/eigen_fluids/eigen_fluids.ipynb)
 
@@ -337,7 +359,7 @@ advection = structure(stream, vorticity)                                        
 
 ---
 
-## 17. Quantum Process Tomography in the Projective Bloch Ball
+## 18. Quantum Process Tomography in the Projective Bloch Ball
 
 **Notebook**: [`examples/quantum/process_tomography/process_tomography.ipynb`](../examples/quantum/process_tomography/process_tomography.ipynb)
 
@@ -359,7 +381,7 @@ learned_channel = (recovered_outputs * (preparation_dual & Point)).sum(axis=-1) 
 
 ---
 
-## 18. Euler Elastica
+## 19. Euler Elastica
 
 **Notebook**: [`examples/mechanics/elastica/elastica.ipynb`](../examples/mechanics/elastica/elastica.ipynb)
 
@@ -380,7 +402,7 @@ load = load - deviation.commutator(load) / 2 + deviation.commutator(deviation.co
 
 ---
 
-## 19. Piezoelectric Bimorph
+## 20. Piezoelectric Bimorph
 
 **Notebook**: [`examples/electromagnetism/piezoelectric/piezoelectric.ipynb`](../examples/electromagnetism/piezoelectric/piezoelectric.ipynb)
 
@@ -399,7 +421,7 @@ mixed = movement.adjugate()(coupling(voltage))                         # (Plane+
 
 ---
 
-## 20. Black Polarization Sandwiches
+## 21. Black Polarization Sandwiches
 
 **Notebook**: [`examples/optics/black_sandwich/black_sandwich.ipynb`](../examples/optics/black_sandwich/black_sandwich.ipynb)
 
@@ -420,7 +442,7 @@ double_stack = sandwich(sandwich)                                # [frames] Fiel
 
 ---
 
-## 21. Gravitational-Wave Antenna Patterns
+## 22. Gravitational-Wave Antenna Patterns
 
 **Notebook**: [`examples/relativity/ligo/ligo.ipynb`](../examples/relativity/ligo/ligo.ipynb)
 
@@ -438,7 +460,7 @@ rings = ring + strain_shown * overhead[:, None](ring).dual()                 # [
 
 ---
 
-## 22. Moving Charges
+## 23. Moving Charges
 
 **Notebook**: [`examples/electromagnetism/moving_charge/moving_charge.ipynb`](../examples/electromagnetism/moving_charge/moving_charge.ipynb)
 
@@ -455,7 +477,7 @@ field = (Vector ^ gradients(Antivector)).trace(1, 2)                  # [...] Bi
 
 ---
 
-## 23. Magnetic Resonance
+## 24. Magnetic Resonance
 
 **Notebook**: [`examples/quantum/magnetic_resonance/magnetic_resonance_space.ipynb`](../examples/quantum/magnetic_resonance/magnetic_resonance_space.ipynb)
 
@@ -473,7 +495,7 @@ sample_echo = echo.mean(axis=-1)                               # [delays] State 
 
 ---
 
-## 24. Jeffery Orbits
+## 25. Jeffery Orbits
 
 **Notebook**: [`examples/fluids/jeffery/jeffery.ipynb`](../examples/fluids/jeffery/jeffery.ipynb)
 
@@ -492,7 +514,7 @@ spin = (Point & turning_rate(Plane)).trace(1, 2).solve((Point & flow_rate(Plane)
 
 ---
 
-## 25. Slip in Metal Crystals
+## 26. Slip in Metal Crystals
 
 **Notebook**: [`examples/mechanics/slip_systems/slip_systems.ipynb`](../examples/mechanics/slip_systems/slip_systems.ipynb)
 
@@ -511,7 +533,7 @@ axis = (axis.commutator(move) / 2).exp() >> axis                              # 
 
 ---
 
-## 26. Boiling at Fixed Pressure
+## 27. Boiling at Fixed Pressure
 
 **Notebook**: [`examples/thermodynamics/phase_change/phase_change.ipynb`](../examples/thermodynamics/phase_change/phase_change.ipynb)
 
@@ -532,7 +554,7 @@ state = state - derivative(gap)(state).solve(gap(state))                        
 
 ---
 
-## 27. Vibration Modes of a Suspended Plate
+## 28. Vibration Modes of a Suspended Plate
 
 **Notebook**: [`examples/mechanics/modes/modes.ipynb`](../examples/mechanics/modes/modes.ipynb)
 
@@ -551,7 +573,7 @@ values, modes = (Twist & stiffness).eigh(Twist & inertia)        # [modes] Scala
 
 ---
 
-## 28. The Most Likely Trajectory from Odometry
+## 29. The Most Likely Trajectory from Odometry
 
 **Notebook**: [`examples/estimation/odometry/odometry.ipynb`](../examples/estimation/odometry/odometry.ipynb)
 
@@ -569,7 +591,7 @@ residual = residual - pushed * step                                   # [..., po
 
 ---
 
-## 29. Area Transport through a Collapse
+## 30. Area Transport through a Collapse
 
 **Notebook**: [`examples/mechanics/area_transport/area_transport.ipynb`](../examples/mechanics/area_transport/area_transport.ipynb)
 
@@ -586,7 +608,7 @@ adjugate = areas.adjugate()                # [frames] Flux <- Flux
 
 ---
 
-## 30. Satellite Navigation
+## 31. Satellite Navigation
 
 **Notebook**: [`examples/relativity/gps/gps.ipynb`](../examples/relativity/gps/gps.ipynb)
 
