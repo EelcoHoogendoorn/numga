@@ -1,18 +1,30 @@
 """Electrokinetic transport on a mesh of triangles: a straight slit's response is reciprocal, dissipative and
 Poiseuille's, the best efficiency of slits as generators is van der Heyden et al.'s, the double layer's osmotic
 pressure and field balance across the channels, the channels pump as their charge's wave lies against their width's
-and make exactly the battery's power into heat, and the scenes draw."""
+and make exactly the battery's power into heat, a dye carried along a straight channel keeps its total and, charged,
+parts by its charge at twice its drift under the field, and the scenes draw."""
 
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pytest
 from scipy.integrate import quad
 from scipy.optimize import minimize_scalar
 
 from examples.fluids.electrokinetics import core, render, scenarios
 
 mv = core.mv
+
+
+@pytest.fixture(scope="module")
+def dyes():
+    """The straight channel's strip, its vertices, its wall charges, its drives and the liquid's velocity under each,
+    and its dye's first and last frames."""
+    topology, vertices, wall_charges, drives, velocities, frames = scenarios.dyed()
+    first = next(frames)
+    *_, last = frames
+    return topology, vertices, wall_charges, drives, velocities, first, last
 
 
 def test_straight_slit_is_reciprocal_dissipative_and_poiseuille():
@@ -78,3 +90,34 @@ def test_scenes_draw():
                                   wall_charges[0]))
     plt.close(render.draw_flow(topology, vertices, scenarios.n_across, scenarios.wavelength, speeds, wall_charges))
     plt.close(render.draw_heat(topology, vertices, scenarios.n_across, scenarios.wavelength, heat, wall_charges))
+
+
+def test_dyes_keep_their_totals(dyes):
+    """Each run's dye keeps its total over the cells, to round-off: what one cell gains, another loses."""
+    topology, vertices, _, _, _, first, last = dyes
+    _, coordinates, shifts, *_ = scenarios.straight()
+    _, edges = core.placed(topology, coordinates, shifts)
+    *_, cells = scenarios.operators(topology, edges)
+    np.testing.assert_allclose((cells * last).sites.sum().to_array(), (cells * first).sites.sum().to_array(), rtol=1e-12)
+
+
+def test_charged_dyes_part_at_twice_their_drift(dyes):
+    """The positive and the negative dye, carried alike by the electro-osmotic flow, part at twice the drift the field
+    alone gives them, the dye's mobility times the field's push on a unit of charge; the tolerance tests the cells
+    along the channel and the time steps."""
+    topology, vertices, _, drives, _, first, last = dyes
+    _, coordinates, shifts, *_ = scenarios.straight()
+    _, edges = core.placed(topology, coordinates, shifts)
+    *_, cells = scenarios.operators(topology, edges)
+    # How far each run's dye has moved along the channel on average, read by the plane x.
+    travelled = (cells * (mv.x & vertices) * (last - first)).sites.sum() / (cells * first).sites.sum()   # [runs] Scalar+
+    duration = scenarios.n_dye_frames * scenarios.dye_stride * scenarios.dye_dt
+    drift = scenarios.dye_mobility * (mv.x & drives[1].commutator(core.time))                          # [] Scalar+
+    np.testing.assert_allclose((travelled[2] - travelled[3]).to_array(), (2 * duration * drift).to_array(), rtol=1e-3)
+
+
+def test_dyes_draw(dyes):
+    topology, vertices, wall_charges, _, velocities, _, last = dyes
+    plt.close(render.draw_profiles(topology, vertices, scenarios.n_straight_across, velocities))
+    next(render.animate_dyes(topology, vertices, scenarios.n_straight_across, scenarios.straight_length, wall_charges,
+                             [last]))

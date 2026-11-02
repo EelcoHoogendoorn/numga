@@ -10,6 +10,8 @@ positive and green where negative. The best efficiency of slits as generators is
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import numpy as np
 from matplotlib import colormaps
 from matplotlib.colors import to_rgb
@@ -25,6 +27,10 @@ wall_colour = np.array(to_rgb("#3b4a57"))
 mesh_colour = np.array(to_rgb("#9aa5ae"))
 positive_colour, negative_colour = np.array(to_rgb("#c51b7d")), np.array(to_rgb("#4d9221"))
 streak_colour = np.array(to_rgb("#2b2f33"))
+# A neutral dye's colour; a charged dye takes its charge's colour, as the walls do.
+neutral_colour = np.array(to_rgb("#1f4e79"))
+# The room above and below a dyed channel's walls, as a share of its half width.
+dye_margin = 0.06
 velocity_map, efficiency_map, heat_map, charge_map, push_map = (
     colormaps[name] for name in ("RdBu_r", "Blues", "Oranges", "PiYG_r", "PuOr_r"))
 # The share of the efficiency's colour map used, light to mid blue, so that its labels read on it; its labelled levels.
@@ -32,6 +38,12 @@ efficiency_shades = (0.03, 0.6)
 efficiency_levels = np.array([0.01, 0.02, 0.04, 0.06])
 # The chart's pixels.
 efficiency_width, efficiency_height = 320, 260
+# The velocity profiles' chart: its pixels, its curves' colours and labels, the pressure drop's flow and the field's, and
+# the speeds marked along it, nothing, the mean and Poiseuille's peak at half again the mean.
+profile_width, profile_height = 300, 220
+profile_colours = (np.array(to_rgb("#b35806")), neutral_colour)
+profile_labels = ("pressure drop", "field")
+profile_speeds = (0, 1, 1.5)
 # A strip's picture: pixels across, the room above and below its widest place, and the pixels between strips; the widths
 # of the walls and the mesh's edges; how much of a field's colour shows at its largest.
 n_pixels, margin, gap_pixels = 300, 0.4, 8
@@ -202,3 +214,64 @@ def draw_balance(topology: Topology, vertices: Extensor, n_across: int, period: 
         shaded(points, faces, push, 1 - field_strength * (1 - push_map(0.5 + shade / 2)[:, :3]), camera),
         wall_strokes(points, n_across, wall_charges, camera)]))
         for push, shade in zip(across, shades)])
+
+
+@style()
+def draw_profiles(topology: Topology, vertices: Extensor, n_across: int, velocities: Extensor):
+    """The liquid's velocity along a straight strip against the place across it, under the pressure drop and under the
+    field `[2] Point-[faces]`, read in the triangles between the strip's first two columns of vertices at their
+    centres, and at rest on the walls; each curve labelled at the height of its top, where it runs furthest ahead of
+    the other, the axis across ending at the walls and its zero the axis along."""
+    mv = vertices.context.multivector
+    columns = topology.elements[2] // n_across
+    station = (columns.min(axis=-1) == 0) & (columns.max(axis=-1) == 1)
+    # Each triangle's centre, the mean of its corners.
+    centres = topology.incidence[2, 0].mean(axis=0) * vertices                  # Point-[faces]
+    places = readings(mv.y, centres)[station]
+    order = np.argsort(places)
+    half_width = np.abs(readings(mv.y, vertices)).max()
+    # The liquid at rest on the walls, which the triangles' centres stop short of.
+    places = np.concatenate([[-half_width], places[order], [half_width]])
+    speeds = np.pad(readings(mv.x, velocities)[:, station][:, order], ((0, 0), (1, 1)))   # [2, triangles + 2]
+    figure, ax = subplots(profile_width, profile_height)
+    for speed, other, colour, label in zip(speeds, speeds[::-1], profile_colours, profile_labels):
+        ax.plot(places, speed, color=colour)
+        # Aligned away from the nearer wall, so that the label stays within the chart.
+        ahead = np.argmax(speed - other)
+        alignment = ("left", "center", "right")[np.digitize(places[ahead], [-half_width / 2, half_width / 2])]
+        ax.annotate(label, (places[ahead], speed.max()), xytext=(0, 4), textcoords="offset points", ha=alignment,
+                    va="bottom", color=colour)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.spines["bottom"].set_position(("data", 0))
+    ax.set(xlim=(-half_width, half_width), ylim=(0, 1.15 * speeds.max()), xticks=[-half_width, 0, half_width],
+           yticks=profile_speeds, xlabel="across / Debye length", ylabel="velocity / mean")
+    figure.tight_layout(pad=0.4)
+    return figure
+
+
+def animate_dyes(topology: Topology, vertices: Extensor, n_across: int, period: float, wall_charges: np.ndarray,
+                 frames) -> Iterator[np.ndarray]:
+    """The dye in a straight channel at every frame as it comes `[runs] Scalar+[vertices]`, three strips one above the
+    other: a neutral dye carried by a pressure drop's flow, the same by a field's electro-osmotic flow, and a positive
+    and a negative dye, in their charges' colours, carried by that flow and drifting under the field; each dye from
+    white where there is none to its colour where the band starts, between the walls, coloured by their charge
+    `[stations]`."""
+    points, faces = unrolled(topology, vertices, n_across, period)
+    # The room above and below the walls, a share of the channel's width, so that the walls' strokes show whole.
+    mv = vertices.context.multivector
+    widest = np.abs(readings(mv.y, vertices)).max()
+    camera = Camera(mv.x, mv.y, 0 * mv.x, mv.v, 0.0, np.array([period / 2, 0.0]),
+                    np.array([period / 2, widest * (1 + dye_margin)]), n_pixels)
+    walls = wall_strokes(points, n_across, wall_charges, camera)
+    colours = np.array([neutral_colour, neutral_colour, positive_colour, negative_colour])   # [runs, 3]
+    panels = [[0], [1], [2, 3]]
+    gap = np.full((gap_pixels, camera.shape[1], 3), 255, dtype=np.uint8)
+    for dye in frames:
+        shares = np.clip(closing(dye.to_array(), n_across), 0, 1)             # [runs, vertices + across]
+        pictures = []
+        for runs in panels:
+            # Each dye takes away from white what its colour lacks, by its share.
+            shown = 1 - (shares[runs, :, None] * (1 - colours[runs, None, :])).sum(axis=0)   # [vertices + across, 3]
+            pictures += [on_white(simplices.composited([shaded(points, faces, np.zeros(len(shown)),
+                                                               np.clip(shown, 0, 1), camera), walls])), gap]
+        yield np.concatenate(pictures[:-1])

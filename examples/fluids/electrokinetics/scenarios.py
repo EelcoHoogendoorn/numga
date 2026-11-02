@@ -32,6 +32,20 @@ half_widths = np.geomspace(0.02, 10.0, 28)
 surface_charges = -np.geomspace(0.3, 1000.0, 32)
 n_generator_columns = 3
 
+# A dye released as a band across a straight channel of uniform wall charge, many Debye lengths wide, so that its double
+# layers are thin beside it: the channel's length, its half width and its charge per area, and its vertices along and
+# across, four to a Debye length across; the band's middle along it and its width; the dye's mobility, the same for
+# either charge, and its diffusivity, that of a large molecule; the runs' drives, by their place among the experiments,
+# and the dyes' charges; the time step, the frames after the first and the steps between frames, and the frames'
+# duration in milliseconds.
+straight_length, straight_half_width, straight_charge = 120.0, 15.0, -2.0
+n_straight_stations, n_straight_across = 192, 121
+band_middle, band_width = 20.0, 4.0
+dye_mobility, dye_diffusivity = 0.4, 0.05
+run_drives, dye_charges = np.array([0, 1, 1, 1]), np.array([0, 0, 1, -1])
+dye_dt, n_dye_frames, dye_stride = 0.2, 100, 3
+frame_duration_ms = 40
+
 pump, battery = mv.xv, mv.xt                                                                          # [] Drive+, Drive+
 experiments = stack((pump, battery))                                                                  # [experiments] Drive+
 
@@ -98,6 +112,39 @@ def generator_efficiency() -> core.Scalar:
     return coupling / (2 - coupling + 2 * root)
 
 
+def straight():
+    """The straight channel's strip: its topology, its vertices' places, its edges' reach past them, its lower and upper
+    walls, the charge its walls put on its vertices `[vertices]`, and the charge per area along its walls `[stations]`."""
+    widths = np.full(n_straight_stations, straight_half_width)
+    wall_charges = np.full(n_straight_stations, straight_charge)
+    return (*core.strip(n_straight_stations, n_straight_across, np.array(straight_length), widths),
+            core.wall_charge(n_straight_across, np.array(straight_length), widths, wall_charges), wall_charges)
+
+
+def dyed():
+    """The straight channel's strip, its vertices and wall charges; the drives `[experiments] Drive+`, each scaled to
+    move the liquid at a unit of speed on average, and the liquid's velocity under each `[experiments] Point-[faces]`;
+    and the dye at each frame `[frames, runs] Scalar+[vertices]`: a band of it carried by the pressure drop's flow, by
+    the field's electro-osmotic flow, and, charged either way, by that flow while it drifts under the field."""
+    topology, coordinates, shifts, lower, upper, charge, wall_charges = straight()
+    vertices, edges = core.placed(topology, coordinates, shifts)
+    areas, sides, gradients, stiffness, cells = operators(topology, edges)
+    potentials = core.double_layer(stiffness, cells, mv.scalar(charge[:, None]).field(), valences, bulk,
+                                   n_newton_steps)
+    _, _, carried, velocities, field, _ = core.transport(topology, areas, sides, gradients, stiffness, cells,
+                                                         potentials, valences, bulk, viscosity, mobilities,
+                                                         np.array(straight_length), lower, upper, experiments)
+    # The volume each experiment carries along per length, read by the pressure's drive, over the channel's width, is
+    # the liquid's mean speed; the flow is linear in its drive, so each is scaled to a unit of it.
+    speeds = (pump & carried) / (2 * straight_half_width)                     # [experiments] Scalar+
+    band = np.exp(-((coordinates[:, 0] - band_middle) / band_width) ** 2 / 2)
+    dye = np.ones(len(run_drives)) * mv.scalar(band[:, None]).field()        # [runs] Scalar+[vertices]
+    velocities, field = velocities / speeds, field / speeds                  # [experiments] Point-[faces], Drive+[faces]
+    return topology, vertices, wall_charges, experiments / speeds, velocities, core.dyeing(
+        topology, areas, gradients, stiffness, velocities[run_drives], field[run_drives], dye_charges, dye_mobility,
+        dye_diffusivity, dye, dye_dt, n_dye_frames, dye_stride)
+
+
 def channel_flows():
     """The channels' strip and walls, their liquid's charge density `[channels] Scalar+[vertices]`, its velocity at
     each vertex `[channels] Point-[vertices]`, the heat made `[channels] Scalar+[vertices]`, what each carries
@@ -121,7 +168,7 @@ def channel_flows():
 
 
 if __name__ == "__main__":
-    from examples.util.animation import save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.fluids.electrokinetics import render
 
     topology, vertices, wall_charges, density, speeds, heat, carried, osmotic, electric = channel_flows()
@@ -134,3 +181,7 @@ if __name__ == "__main__":
                 "electrokinetics_flow")
     save_figure(render.draw_heat(topology, vertices, n_across, wavelength, heat, wall_charges), "electrokinetics_heat")
     save_figure(render.draw_efficiency(half_widths, surface_charges, generator_efficiency()), "electrokinetics_efficiency")
+    topology, vertices, wall_charges, _, velocities, frames = dyed()
+    save_figure(render.draw_profiles(topology, vertices, n_straight_across, velocities), "electrophoresis_profiles")
+    save_animation(render.animate_dyes(topology, vertices, n_straight_across, straight_length, wall_charges, frames),
+                   "electrophoresis", frame_duration_ms)
