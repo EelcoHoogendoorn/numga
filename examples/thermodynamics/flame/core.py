@@ -19,7 +19,8 @@ with the reaction to nothing, `(mv.h + mv.f) & reaction == 0`: burning only move
 drive is minus the gradient of a potential wedged with the amount it pushes: the temperature's, wedged with heat, and
 the fuel's own amount's, wedged with fuel, each mapped to its amount's flux at its own rate. The energy a parcel holds
 changes only where the two spread unlike, and that is what gathers energy into the bulges and drains it from the
-creases.
+creases. A triangle's area stays intrinsic, like the join that measures it, and so does what a cell holds; dividing by
+the cell gives back a rate.
 
 Lengths are in units of the flame's thickness, heat's diffusivity over the speed of a flat flame, times in units of the
 time such a flame takes to cross its thickness, and temperatures in units of the rise burning a parcel's fuel brings, so
@@ -45,6 +46,8 @@ ga = Algebra("x+y+") * Algebra("v0f0h0")
 mv = JaxContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 Point = ga.gatype.antivector()                                                # Antivector-
+# An amount a cell holds, intrinsic like the join that measures its area: the area, or the heat or fuel in it.
+Amount = ga.gatype.antipseudoscalar()                                         # Antipseudoscalar-
 Plane = ga.gatype.vector()                                                    # Vector+
 # The planes reading a place's run across the plane and up it.
 Upright = ga.gatype.from_blades("x y")                                        # Vector+
@@ -63,19 +66,19 @@ energy = mv.h + mv.f                                                          # 
 
 
 # --- math -----------------------------------------------------------------------------
-def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Plane, Scalar]:
-    """Each triangle's area `Scalar+[faces]`, each corner's hat gradient `[corners] Plane+[faces]`, the plane through
+def triangles(topology: Topology, vertices: Point) -> tuple[Amount, Plane, Amount]:
+    """Each triangle's area `Scalar-[faces]`, each corner's hat gradient `[corners] Plane+[faces]`, the plane through
     the facing side, along volume, fuel and heat, over twice the area, so that it reads one from the side to the corner,
-    and each vertex's share of the area around it `Scalar+[vertices]`."""
+    and each vertex's share of the area around it `Scalar-[vertices]`."""
     sides = topology.boundary[2, 1] * (topology.d[0] * vertices)              # [corners] Point-[faces]
     # Twice a triangle's area: two of its sides joined, at unit volume, fuel and heat.
     double_areas = (((sides[0] & sides[1]) & volume) & fuel) & heat           # Scalar-[faces]
-    areas = double_areas.norm() / 2                                           # Scalar+[faces]
+    areas = double_areas / 2                                                  # Scalar-[faces]
     gradients = (volume & fuel & heat & sides) / double_areas                 # [corners] Plane+[faces]
     return areas, gradients, (~topology.incidence[2, 0] * (areas / 3)).sum(axis=0)
 
 
-def burning(topology: Topology, areas: Scalar, gradients: Plane, cells: Scalar, fuel_diffusivity: float,
+def burning(topology: Topology, areas: Amount, gradients: Plane, cells: Amount, fuel_diffusivity: float,
             prefactor: float, activation: float, unburnt_temperature: float, parcels: Point, dt: float, n_frames: int,
             n_stride: int) -> Iterator[tuple[Point, Scalar]]:
     """The mixture's parcels `Point-[vertices]`, and the rate their fuel burns at per volume `Scalar+[vertices]`, at
@@ -93,10 +96,10 @@ def burning(topology: Topology, areas: Scalar, gradients: Plane, cells: Scalar, 
     diffusivity = fuel_diffusivity * (fuel_sweeps * (fuel_sweeps & Drive)).sum(axis=0)   # [] Flux- <- Drive+
     # What a flux carries out of each corner's cell: its hat gradient wedged with the flux, read for its heat or its
     # fuel, gathered onto the vertices.
-    local = areas * (mv.h & (gradients[:, None] ^ conductivity(heat_drives[None, :])))   # [corners, corners] Scalar+[faces]
-    conduction = (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Scalar+[vertices <- vertices]
-    local = areas * (mv.f & (gradients[:, None] ^ diffusivity(fuel_drives[None, :])))   # [corners, corners] Scalar+[faces]
-    diffusion = (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Scalar+[vertices <- vertices]
+    local = areas * (mv.h & (gradients[:, None] ^ conductivity(heat_drives[None, :])))   # [corners, corners] Scalar-[faces]
+    conduction = (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Scalar-[vertices <- vertices]
+    local = areas * (mv.f & (gradients[:, None] ^ diffusivity(fuel_drives[None, :])))   # [corners, corners] Scalar-[faces]
+    diffusion = (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Scalar-[vertices <- vertices]
 
     def burnt(parcels: Point) -> Scalar:
         """The fuel each parcel burns over a step `Scalar+[vertices]`: its temperature, the unburnt mixture's raised by

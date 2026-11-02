@@ -27,8 +27,11 @@ angle taken. With a double well tilted towards ice by the undercooling, that mak
 derivative at each vertex drives the freezing. The derivative of an anisotropic gradient energy is notoriously fiddly,
 its cross terms coming from the normal's dependence on the gradient; here it is written out: the six-fold term's slope
 with respect to the steepness is a rotor's fifth power, `6 * crystal_axis * turn ** 5`, the Cahn-Hoffman vector of
-materials science, and each vertex's share is its hat's drive paired with the flux the energy's slope drives. The
-stepping is jitted and scanned by JAX.
+materials science, and each vertex's share is its hat's drive paired with the energy's slope, a flux. The turn is the
+one place the plane's own metric enters, as an angle needs it; its slope comes out as a plane, which the material map
+makes a flux, right here since the isotropic map is that metric itself. A triangle's area stays intrinsic, like the
+join that measures it, and so does what a cell holds; dividing by the cell gives back a rate. The stepping is jitted
+and scanned by JAX.
 """
 
 from __future__ import annotations
@@ -51,6 +54,8 @@ jax.config.update("jax_enable_x64", True)
 ga = Algebra("x+y+") * Algebra("v0i0h0")
 mv = JaxContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
+# An amount a cell holds, intrinsic like the join that measures its area: the area, or the energy in it.
+Amount = ga.gatype.antipseudoscalar()                                         # Antipseudoscalar-
 Point = ga.gatype.antivector()                                                # Antivector-
 Plane = ga.gatype.vector()                                                    # Vector+
 Drive = ga.gatype.from_blades("xi yi xh yh")                                  # Bivector+
@@ -65,30 +70,31 @@ heat = mv.h.dual()                                                            # 
 
 
 # --- math -----------------------------------------------------------------------------
-def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Plane, Scalar]:
-    """Each triangle's area `Scalar+[faces]`, each corner's hat gradient `[corners] Plane+[faces]`, the plane through
+def triangles(topology: Topology, vertices: Point) -> tuple[Amount, Plane, Amount]:
+    """Each triangle's area `Scalar-[faces]`, each corner's hat gradient `[corners] Plane+[faces]`, the plane through
     the facing side, along volume, ice and heat, over twice the area, so that it reads one from the side to the corner,
-    and each vertex's share of the area around it `Scalar+[vertices]`."""
+    and each vertex's share of the area around it `Scalar-[vertices]`."""
     sides = topology.boundary[2, 1] * (topology.d[0] * vertices)              # [corners] Point-[faces]
     # Twice a triangle's area: two of its sides joined, at unit volume, ice and heat.
     double_areas = (((sides[0] & sides[1]) & volume) & ice) & heat            # Scalar-[faces]
-    areas = double_areas.norm() / 2                                           # Scalar+[faces]
+    areas = double_areas / 2                                                  # Scalar-[faces]
     gradients = (volume & ice & heat & sides) / double_areas                  # [corners] Plane+[faces]
     return areas, gradients, (~topology.incidence[2, 0] * (areas / 3)).sum(axis=0)
 
 
-def free_energy_slope(topology: Topology, areas: Scalar, gradients: Plane, cells: Scalar, gradient: Extensor,
+def free_energy_slope(topology: Topology, areas: Amount, gradients: Plane, cells: Amount, gradient: Extensor,
                       spreading: Extensor, crystal_axis: Plane, mean_width: float, anisotropy: float,
                       regularization: float, tilt_strength: float, tilt_steepness: float, melting_temperature: float,
-                      fraction: Scalar, temperatures: Scalar) -> Scalar:
-    """The derivative of the ice's free energy with respect to its fraction at each vertex `Scalar+[vertices]`, at this
+                      fraction: Scalar, temperatures: Scalar) -> Amount:
+    """The derivative of the ice's free energy with respect to its fraction at each vertex `Scalar-[vertices]`, at this
     ice fraction and these temperatures `Scalar+[vertices]`, with this field's gradient `(Plane+ <- Scalar+)[faces <-
-    vertices]` and the material map `Flux- <- Drive+`: the gradient energy's share, each hat's drive paired with the flux
-    the energy's slope drives, and the double well's slope."""
+    vertices]` and the material map `Flux- <- Drive+`: the gradient energy's share, each hat's drive paired with the
+    energy's slope, a flux, and the double well's slope."""
     steepness = gradient(fraction)                                            # Plane+[faces]
-    # The ice's drive paired with the flux it drives: the edge's squared steepness.
+    # The ice's drive and the flux it drives; paired, the edge's squared steepness, whose slope is twice the flux.
     drive = -(steepness ^ mv.i)                                               # Drive+[faces]
-    squared_steepness = drive & spreading(drive)                              # Scalar+[faces]
+    flux = spreading(drive)                                                   # Flux-[faces]
+    squared_steepness = drive & flux                                          # Scalar+[faces]
     # The turn from the crystal's axis to the edge's normal, scaled by the steepness: the scalar part of its sixth power,
     # its third power against itself, is the steepness to the sixth times the six-fold cos(6 angle).
     turn = steepness * crystal_axis                                           # Even+[faces]
@@ -96,38 +102,40 @@ def free_energy_slope(topology: Topology, areas: Scalar, gradients: Plane, cells
     six_fold = third_power.scalar_product(third_power)                        # Scalar+[faces]
     reach = squared_steepness + regularization ** 2                           # Scalar+[faces]
     widths = mean_width * (1 + anisotropy * six_fold / reach ** 3)            # Scalar+[faces]
-    # The six-fold term's slope with respect to the steepness, a rotor's fifth power, and the widths' change as the edge
-    # turns; the gradient energy's slope, the widths squared times the steepness and that change times the steepness
-    # squared.
+    # The six-fold term's slope with respect to the steepness, a rotor's fifth power: a plane, measured in the plane's
+    # metric, and the flux the material map, that same metric here, makes of it.
     slope = 6 * crystal_axis * turn ** 5                                      # Plane+[faces]
-    turning = mean_width * anisotropy * (slope / reach ** 3 - 6 * six_fold * steepness / reach ** 4)   # Plane+[faces]
-    pull = widths ** 2 * steepness + squared_steepness * widths * turning     # Plane+[faces]
-    # Each vertex's share of the gradient energy's change: its hat's drive paired with the flux the slope drives.
+    slope_flux = spreading(-(slope ^ mv.i))                                   # Flux-[faces]
+    # The widths' change as the edge turns; the gradient energy's slope, the widths squared times the flux and that
+    # change times the steepness squared.
+    turning = mean_width * anisotropy * (slope_flux / reach ** 3 - 6 * six_fold * flux / reach ** 4)   # Flux-[faces]
+    pull = widths ** 2 * flux + squared_steepness * widths * turning          # Flux-[faces]
+    # Each vertex's share of the gradient energy's change: its hat's drive paired with the energy's slope.
     hat_drives = -(gradients ^ mv.i)                                          # [corners] Drive+[faces]
-    shares = (~topology.incidence[2, 0] * (areas * (hat_drives & spreading(-(pull ^ mv.i))))).sum(axis=0)
+    shares = (~topology.incidence[2, 0] * (areas * (hat_drives & pull))).sum(axis=0)   # Scalar-[vertices]
     # The double well's slope, tilted toward ice by the undercooling.
     tilt = tilt_strength / np.pi * (tilt_steepness * (melting_temperature - temperatures)).arctan()   # Scalar+[vertices]
     well_slope = fraction * (1 - fraction) * (1 - 2 * fraction) / 2 - tilt * fraction * (1 - fraction)
     return shares + cells * well_slope
 
 
-def operators(topology: Topology, areas: Scalar, gradients: Plane) -> tuple[Extensor, Extensor, Extensor]:
+def operators(topology: Topology, areas: Amount, gradients: Plane) -> tuple[Extensor, Extensor, Extensor]:
     """A field's gradient across each triangle `(Plane+ <- Scalar+)[faces <- vertices]`, its corners' values on their
     hats' gradients; the material map taking a drive to the flux it drives `Flux- <- Drive+`, the same for heat and ice,
     each of the plane's directions swept through the amount, read by the drive and driving along it; and the heat each
-    vertex's cell loses to each vertex's warmth `Scalar+[vertices <- vertices]`, its hat's drive conducted, read for its
+    vertex's cell loses to each vertex's warmth `Scalar-[vertices <- vertices]`, its hat's drive conducted, read for its
     heat."""
     corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
     gradient = (spdiag(gradients) * corners).sum(axis=0) * Scalar             # (Plane+ <- Scalar+)[faces <- vertices]
     sweeps = stack((directions & heat, directions & ice))                    # [amounts, 2] Flux-
     spreading = (sweeps * (sweeps & Drive)).sum(axis=-1).sum(axis=0)          # [] Flux- <- Drive+
     heat_drives = -(gradients ^ mv.h)                                         # [corners] Drive+[faces]
-    local = areas * (mv.h & (gradients[:, None] ^ spreading(heat_drives[None, :])))   # [corners, corners] Scalar+[faces]
+    local = areas * (mv.h & (gradients[:, None] ^ spreading(heat_drives[None, :])))   # [corners, corners] Scalar-[faces]
     conduction = (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)
     return gradient, spreading, conduction
 
 
-def growth(topology: Topology, areas: Scalar, gradients: Plane, cells: Scalar, parcels: Point, crystal_axis: Plane,
+def growth(topology: Topology, areas: Amount, gradients: Plane, cells: Amount, parcels: Point, crystal_axis: Plane,
            relaxation_time: float, mean_width: float, anisotropy: float, regularization: float,
            tilt_strength: float, tilt_steepness: float, melting_temperature: float, latent_heat: float,
            dt: float, n_frames: int, stride: int) -> Iterator[Point]:
@@ -146,7 +154,7 @@ def growth(topology: Topology, areas: Scalar, gradients: Plane, cells: Scalar, p
         fraction, temperatures = mv.i & parcels, mv.h & parcels               # Scalar+[vertices], Scalar+[vertices]
         slope = free_energy_slope(topology, areas, gradients, cells, gradient, spreading, crystal_axis, mean_width,
                                   anisotropy, regularization, tilt_strength, tilt_steepness, melting_temperature,
-                                  fraction, temperatures)                     # Scalar+[vertices]
+                                  fraction, temperatures)                     # Scalar-[vertices]
         frozen = -slope / (relaxation_time * cells)                           # Scalar+[vertices]
         conducted = -(conduction * temperatures) / cells                      # Scalar+[vertices]
         return parcels + dt * (frozen * freezing + conducted * heat), None
