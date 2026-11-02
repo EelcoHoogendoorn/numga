@@ -152,16 +152,17 @@ def dyed(swing: float):
     # The potential each drive sets up, the applied one falling steadily along the channel and the one the liquid adds,
     # and how far it falls over the channel's length.
     along = mv.x & experiments.commutator(core.time)                         # [experiments] Scalar+
-    potentials = (added - along * (mv.x & vertices)) / speeds               # [experiments] Scalar+[vertices]
+    drive_potentials = (added - along * (mv.x & vertices)) / speeds         # [experiments] Scalar+[vertices]
     falls = along * capillary_length / speeds                                # [experiments] Scalar+
-    return topology, vertices, wall_charges, density, flows, potentials, falls, experiments / speeds, velocities, core.dyeing(
+    return topology, vertices, wall_charges, density, flows, drive_potentials, falls, experiments / speeds, velocities, core.dyeing(
         topology, areas, gradients, velocities[run_drives], field[run_drives], dye_charges, dye_mobility,
         dye_diffusivity, dye, dye_dt, n_dye_frames, dye_stride)
 
 
 def channel_flows():
     """The channels' strip and walls, their liquid's charge density `[channels] Scalar+[vertices]`, its velocity at
-    each vertex `[channels] Point-[vertices]`, the heat made `[channels] Scalar+[vertices]`, what each carries
+    each vertex `[channels] Point-[vertices]`, the potential the battery sets up `[channels] Scalar+[vertices]` and how
+    far it falls over a wavelength `[channels] Scalar+`, the heat made `[channels] Scalar+[vertices]`, what each carries
     `[channels] Flux-`, and the first channel's double layer's own pushes on the liquid, its osmotic pressure's and its
     field's, `Point-[vertices]` each."""
     topology, coordinates, shifts, lower, upper, charge, wall_charges = channels()
@@ -171,28 +172,36 @@ def channel_flows():
     potentials = core.double_layer(outflow, cells, charge, valences, bulk, n_newton_steps)
     density = (valences * bulk * (-valences * potentials[..., None]).exp()).sum(axis=-1)            # [channels] Scalar+[vertices]
     drives = battery * np.ones(len(phases))                                                          # [channels] Drive+
-    stream, _, carried, velocities, field, conductivity = core.transport(
+    stream, added, carried, velocities, field, conductivity = core.transport(
         topology, areas, sides, gradients, circulation, cells, potentials, valences, bulk, viscosity, mobilities,
         np.array(wavelength), lower, upper, drives)
     viscous, joule = core.entropy_production(topology, areas, circulation, cells, viscosity, stream, field, conductivity)
     # Each vertex's velocity, its triangles' weighed by their areas.
     speeds = (~topology.incidence[2, 0].sum(axis=0) * (velocities * (areas / 3))) / cells             # [channels] Point-[vertices]
     osmotic, electric = core.equilibrium_pushes(topology, areas, gradients, cells, potentials[0], valences, bulk)
-    return topology, vertices, wall_charges, density, speeds, viscous + joule, carried, osmotic, electric
+    # The potential the battery sets up, its steady fall along the channel and what the liquid adds, and its fall over
+    # a wavelength.
+    along = mv.x & battery.commutator(core.time)                                                    # [] Scalar+
+    drive_potentials = added - along * (mv.x & vertices)                                            # [channels] Scalar+[vertices]
+    falls = along * wavelength * np.ones(len(phases))                                               # [channels] Scalar+
+    return (topology, vertices, wall_charges, density, speeds, drive_potentials, falls, viscous + joule, carried, osmotic,
+            electric)
 
 
 if __name__ == "__main__":
     from examples.util.animation import save_animation, save_figure
     from examples.fluids.electrokinetics import render
 
-    topology, vertices, wall_charges, density, speeds, heat, carried, osmotic, electric = channel_flows()
+    topology, vertices, wall_charges, density, speeds, drive_potentials, falls, heat, carried, osmotic, electric = channel_flows()
     save_figure(render.draw_mesh(topology, vertices, n_across, wavelength, wall_charges[0]), "electrokinetics_channel")
-    save_figure(render.draw_flow(topology, vertices, n_across, wavelength, density, speeds, wall_charges),
+    save_figure(render.draw_flow(topology, vertices, n_across, wavelength, density, speeds, drive_potentials, falls,
+                                 wall_charges),
                 "electrokinetics_flow")
-    save_figure(render.draw_heat(topology, vertices, n_across, wavelength, heat, wall_charges), "electrokinetics_heat")
+    save_figure(render.draw_heat(topology, vertices, n_across, wavelength, heat, drive_potentials, falls, wall_charges),
+                "electrokinetics_heat")
     save_figure(render.draw_efficiency(half_widths, surface_charges, generator_efficiency()), "electrokinetics_efficiency")
-    topology, vertices, wall_charges, density, flows, potentials, falls, _, velocities, frames = dyed(neck_swing)
+    topology, vertices, wall_charges, density, flows, drive_potentials, falls, _, velocities, frames = dyed(neck_swing)
     save_figure(render.draw_profiles(topology, vertices, n_capillary_across, velocities), "electrophoresis_profiles")
     save_animation(render.animate_dyes(topology, vertices, n_capillary_across, capillary_length, wall_charges, density,
-                                       flows, potentials, falls, frames),
+                                       flows, drive_potentials, falls, frames),
                    "electrophoresis", frame_duration_ms)

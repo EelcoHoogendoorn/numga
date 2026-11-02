@@ -69,7 +69,7 @@ def test_channels_balance_across_pump_by_their_phase_and_make_the_power_spent_in
     """Across the channels the double layer's osmotic pressure and its field push the liquid equally and oppositely,
     up to the triangles' resolution of its edge; the channels pump along the field in step, against it half a wave
     behind, and all but nothing a quarter wave behind; and the heat their liquid makes is the battery's power."""
-    topology, vertices, wall_charges, density, speeds, heat, carried, osmotic, electric = scenarios.channel_flows()
+    topology, vertices, wall_charges, density, speeds, _, _, heat, carried, osmotic, electric = scenarios.channel_flows()
     across_osmotic = (mv.y & osmotic).to_array()
     across_net = (mv.y & (osmotic + electric)).to_array()
     assert np.abs(across_net).max() < 0.1 * np.abs(across_osmotic).max()
@@ -84,10 +84,12 @@ def test_channels_balance_across_pump_by_their_phase_and_make_the_power_spent_in
 
 
 def test_scenes_draw():
-    topology, vertices, wall_charges, density, speeds, heat, _, osmotic, electric = scenarios.channel_flows()
+    topology, vertices, wall_charges, density, speeds, drive_potentials, falls, heat, _, _, _ = scenarios.channel_flows()
     plt.close(render.draw_mesh(topology, vertices, scenarios.n_across, scenarios.wavelength, wall_charges[0]))
-    plt.close(render.draw_flow(topology, vertices, scenarios.n_across, scenarios.wavelength, density, speeds, wall_charges))
-    plt.close(render.draw_heat(topology, vertices, scenarios.n_across, scenarios.wavelength, heat, wall_charges))
+    plt.close(render.draw_flow(topology, vertices, scenarios.n_across, scenarios.wavelength, density, speeds,
+                               drive_potentials, falls, wall_charges))
+    plt.close(render.draw_heat(topology, vertices, scenarios.n_across, scenarios.wavelength, heat, drive_potentials,
+                               falls, wall_charges))
 
 
 def test_dyes_keep_their_totals(dyes):
