@@ -79,12 +79,12 @@ def cooling(topology: Topology, areas: Scalar, gradients: Plane, cells: Scalar, 
     """The potential and the supercurrent `[...] Scalar+[vertices]` every `stride` steps of `dt`, of a rod `inside`
     `Scalar+[vertices]` whose superfluid's share of its electrons is `superfluid` at each step, under an applied field
     of these sizes `[steps]`, held on the outer border `outer` by the potential `applied * heights`; its superfluid's
-    momentum answers the potential's departure from `reference` `[...] Scalar+[vertices]`: nothing for a
+    momentum responds to the potential's departure from `reference` `[...] Scalar+[vertices]`: nothing for a
     superconductor, whose canonical momentum has no part along z, and the potential when its superfluid formed for a
     perfect conductor, whose momentum only follows the electric field."""
     free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), outer))   # Scalar+[free <- vertices]
     # The magnetic field of a potential rising by one at each corner, through the plane its gradient sweeps along z, and
-    # the potential's stiffness, Ampère's law: each field read against the excitation the vacuum answers another with.
+    # the potential's stiffness, Ampère's law: each field read against the vacuum's excitation of another.
     fields = gradients ^ mv.z                                                 # [..., corners] Field+[faces]
     stiffness = assembled(topology, (fields[..., :, None] & Field.dual()(fields[..., None, :])) * areas[..., None, None])
     # The normal electrons' conduction over a step, in the rod's cells.

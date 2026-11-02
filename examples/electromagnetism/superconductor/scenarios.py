@@ -1,5 +1,6 @@
 """The Meissner effect: a rod cooled through its transition in a field across it, then the field switched off, as a
-superconductor and as a perfect conductor side by side; and the field's decay into the cooled superconductor.
+superconductor and as a perfect conductor side by side; the field's decay into the cooled superconductor; and a ring
+holding whole flux quanta, and the flux it keeps once cooled in a field and let go.
 
 The superfluid's share of the electrons below the transition follows the two-fluid model's empirical law,
 `1 - (temperature / transition) ** 4`, as in the Stockholm lecture notes on the two-fluid model and the London equations.
@@ -57,8 +58,8 @@ def cooled():
     inside = mv.scalar(in_rod[:, None] * 1.0).field()                         # Scalar+[vertices]
     heights = mv.scalar(places[:, 1:2]).field()                               # Scalar+[vertices]
     superfluid, applied = schedule()
-    # The superconductor's superfluid answers the potential itself; the perfect conductor's, its change since the rod
-    # cooled in the unit field.
+    # The superconductor's superfluid responds to the potential itself; the perfect conductor's, to its change since the
+    # rod cooled in the unit field.
     reference = mv.scalar(np.stack([0 * places[:, 1], places[:, 1]])[..., None]).field()   # [2] Scalar+[vertices]
     return topology, vertices, in_rod, core.cooling(topology, areas, gradients, cells, inside, topology.exterior[0],
                                                      heights, penetration, superfluid, applied, reference, dt, stride)
@@ -75,21 +76,22 @@ def ring() -> tuple[core.Topology, np.ndarray, np.ndarray, np.ndarray, np.ndarra
             topology.exterior[0])
 
 
-def penetrating(topology: core.Topology, vertices: core.Point, potential: core.Scalar) -> tuple[np.ndarray, np.ndarray]:
-    """The depth below the rod's surface `[triangles]` and the field's strength `[triangles]` in the triangles along
-    the rod's upper radius, from the potential `Scalar+[vertices]`."""
+def penetrating(topology: core.Topology, vertices: core.Point, potential: core.Scalar) -> tuple[core.Scalar, core.Scalar]:
+    """The depth below the rod's surface `[triangles] Scalar+` and the field's strength `[triangles] Scalar+` in the
+    triangles along the rod's upper radius, from the potential `Scalar+[vertices]`."""
     corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
     _, gradients, _ = core.triangles(topology, vertices)
     # The magnetic field, the potential's gradient wedged with its direction, a bivector in planes through z.
     field = (gradients ^ ((corners * potential[..., None]) * mv.z)).sum(axis=-1)   # Field+[faces]
+    # Each triangle's middle, its distance from the rod's axis, and the triangles along the upper radius inside the rod.
     centroids = corners.mean(axis=0) * vertices                               # Point-[faces]
-    across, up = (mv.x & centroids).to_array(), (mv.y & centroids).to_array()
-    radii = np.hypot(across, up)
-    along = (np.abs(across) < radial_width) & (up > 0) & (radii < 1)
-    return 1 - radii[along], field.norm().to_array()[along]
+    radii = centroids.squared().square_root()                                 # Scalar+[faces]
+    along = ((mv.x & centroids).abs() < radial_width) & ((mv.y & centroids) > 0) & (radii < 1)   # [faces]
+    return (1 - radii).batch()[along], field.norm().batch()[along]
 
 
-def kept_quanta(topology, areas, gradients, cells, in_ring, hole_faces, in_hole, rim) -> np.ndarray:
+def kept_quanta(topology: core.Topology, areas: core.Scalar, gradients: core.Plane, cells: core.Scalar,
+                in_ring: np.ndarray, hole_faces: np.ndarray, in_hole: np.ndarray, rim: np.ndarray) -> np.ndarray:
     """The fluxoid a ring keeps when cooled in each of the cooling fields `[fields]`: of the candidates, the one whose
     field costs the least, its departure from the applied field and its current's kinetic energy together."""
     corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
@@ -112,7 +114,7 @@ def main() -> None:
     topology, vertices, in_rod, frames = cooled()
     save_figure(render.draw_rod(topology, vertices, in_rod), "superconductor_rod")
     frames = list(frames)
-    save_animation(render.animate(topology, vertices, in_rod, frames, penetration), "superconductor",
+    save_animation(render.animate(topology, vertices, in_rod, penetration, frames), "superconductor",
                    frame_duration_ms)
     # The superconductor at the end of its hold in the field.
     held = frames[(n_normal + n_cooling + n_held - 1) // stride][0][0]

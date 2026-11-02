@@ -74,8 +74,8 @@ def draw_rod(topology: Topology, vertices: Extensor, in_rod: np.ndarray) -> Figu
     return image_figure(on_white(simplices.composited(layers)))
 
 
-def animate(topology: Topology, vertices: Extensor, in_rod: np.ndarray, frames: Iterable[tuple[Extensor, Extensor]],
-            penetration: float) -> Iterator[np.ndarray]:
+def animate(topology: Topology, vertices: Extensor, in_rod: np.ndarray, penetration: float,
+            frames: Iterable[tuple[Extensor, Extensor]]) -> Iterator[np.ndarray]:
     """The rod at every frame of its potential and supercurrent `[2] Scalar+[vertices]` as it comes, the
     superconductor left and the perfect conductor right: coloured by the supercurrent, with the field lines and the
     rod's edge over it."""
@@ -97,15 +97,16 @@ def animate(topology: Topology, vertices: Extensor, in_rod: np.ndarray, frames: 
 
 
 @style()
-def draw_penetration(depths: np.ndarray, strengths: np.ndarray, penetration: float) -> Figure:
-    """The field's strength in the triangles along a radius `[triangles]`, against their depth below the rod's surface
-    `[triangles]` in penetration depths, on a logarithmic axis, beside London's exponential decay from the shallowest
-    triangle's strength."""
+def draw_penetration(depths: Extensor, strengths: Extensor, penetration: float) -> Figure:
+    """The field's strength in the triangles along a radius `[triangles] Scalar+`, against their depth below the rod's
+    surface `[triangles] Scalar+` in penetration depths, on a logarithmic axis, beside London's exponential decay from
+    the shallowest triangle's strength."""
     figure, ax = subplots(chart_width, chart_height)
-    order = np.argsort(depths)
-    scaled = depths[order] / penetration
-    ax.plot(scaled, strengths[order], "o", color=measured_colour, fillstyle="none")
-    ax.plot(scaled, strengths[order][0] * np.exp(-(scaled - scaled[0])), color=london_colour)
+    depth_values, strength_values = depths.to_array(), strengths.to_array()
+    order = np.argsort(depth_values)
+    scaled = depth_values[order] / penetration
+    ax.plot(scaled, strength_values[order], "o", color=measured_colour, fillstyle="none")
+    ax.plot(scaled, strength_values[order][0] * np.exp(-(scaled - scaled[0])), color=london_colour)
     ax.set_yscale("log")
     ax.set_xlabel("depth / penetration depth")
     ax.set_ylabel("field / applied field")
