@@ -243,7 +243,7 @@ def inside(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, c
            eye_times: np.ndarray, styles: np.ndarray, crystals: Iterable[dict]) -> Iterator[np.ndarray]:
     """Frames of the view from inside a round three-sphere meshed by tetrahedra, one for each camera and time: each
     camera, a motor `[frames] Motor+`, carries the origin to the eye and the origin's steps along `x`, `y` and `z` to
-    its right, up and forward, read in the isoclinic frame at the eye; each ray is walked back from the eye leg by leg
+    its right, up and forward, read in the frame at the eye; each ray is walked back from the eye leg by leg
     by the WGSL `walk`, which defines `next_leg` and its `Leg` and reads `walk_values` beside the topology's
     neighbours across each face, `neighbours` and `entries`, and its count `n_tets`; the tetrahedra's edges are lit
     struts, each in its colour and squared radius `styles`, `[tets * 6, 4]` in each tetrahedron's own order of its
@@ -272,7 +272,7 @@ def inside(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, c
     for frame, (eye_time, crystal) in enumerate(zip(eye_times, crystals)):
         camera = cameras[frame]                                                 # [] Motor+
         place = camera >> core.origin                                           # [] Point-
-        view = (core.isoclinic(place).inverse() * camera) >> axes              # [3] Point-
+        view = (core.frame(place).inverse() * camera) >> axes                  # [3] Point-
         image = shader(inside_shape, eye_time=float(eye_time), start_place=place,
                        start_tet=int(pick(place[None])[0]), right=view[0], up=view[1], forward=view[2],
                        light=camera >> lamp, **crystal, **bindings)["image"]
