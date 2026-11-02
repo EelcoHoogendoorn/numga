@@ -10,7 +10,7 @@ of the lengths' motion, and what moving the vertices alone would change is no wa
 squash, stretches the whole sphere along one direction and squeezes it along another.
 
 The algebra is that of four directions squaring to one, its points antivectors on the unit sphere and the origin the
-pole of its equator, the plane `w`. Each point carries its isoclinic frame, `isoclinic(place)`, the motor that carries
+pole of its equator, the plane `w`. Each point carries its frame, `frame(place)`, the motor that carries
 the origin there by turning alike in two square planes, smooth everywhere, and a step of the origin read in these
 frames is a direction anywhere. A strain is the change of the metric on such steps, a map from a step to the plane
 that reads its stretch, blended across each tetrahedron from its corners. A ray rolls its frame along its step: the
@@ -76,7 +76,7 @@ polar = translating.inverse()                                           # [] Pla
 # The rate that moves the origin along each of its steps, the meet of the equator with the step's polar plane.
 moving = equator ^ polar(Step)                                          # [] Rate+ <- Point-
 # The extrinsic pseudoscalar, which takes a rate to the rate in the plane square to it: the halves of the rates it
-# keeps and the halves it flips turn alike in two square planes, the first as the isoclinic frames do.
+# keeps and the halves it flips turn alike in two square planes, the first as the frames do.
 pseudoscalar = mv.xyzw                                                  # [] Antiscalar+
 # The rate that turns a frame in the plane square to each step's moving rate.
 turning = moving * pseudoscalar                                         # [] Rate+ <- Point-
@@ -220,8 +220,8 @@ def waves_stepped(stiffness: SparseExtensor, masses: SparseExtensor, onto_waves:
         restoring = onto_waves(masses.solve(stiffness(strains)))
 
 
-def isoclinic(places: Point) -> Motor:
-    """The isoclinic frames at places on the round three-sphere, `Motor+`: the motors that carry the origin to each
+def frame(places: Point) -> Motor:
+    """The frames at places on the round three-sphere, `Motor+`: the motors that carry the origin to each
     by turning alike in the plane of the great circle between them and in the plane square to it, the half of the
     quotient of the place by the origin that the pseudoscalar keeps, with one in the other half. They are smooth
     everywhere, and in them a free path's heading keeps still along its great circle."""
@@ -229,16 +229,16 @@ def isoclinic(places: Point) -> Motor:
 
 
 def round_steps(graph: Topology, places: Point) -> Point:
-    """Each edge's round step, `Point-[edges]`, a step of the origin: its head carried back by its tail's isoclinic
+    """Each edge's round step, `Point-[edges]`, a step of the origin: its head carried back by its tail's
     frame, less the origin it is beside."""
     tails, heads = graph.incidence[1, 0] * places                               # Point-[edges], Point-[edges]
-    return (isoclinic(tails).inverse() >> heads).cast(Step)
+    return (frame(tails).inverse() >> heads).cast(Step)
 
 
 def strain_field(mesh: Topology, space: Space, ramps: Plane, frames: Motor, changes: Scalar) -> tuple[Strain, Turning]:
     """The strain of a change of the squared edge lengths, `Scalar+[edges]`, as a smooth field on the origin's steps:
     at each vertex the average of its tetrahedra's strains, `Strain[vertices]`, each the change of the metric of the
-    cone over it from the centre, read on the steps its isoclinic frame at its middle, `Motor+[tets]`, carries out to
+    cone over it from the centre, read on the steps its frame at its middle, `Motor+[tets]`, carries out to
     it, and carried back; and in each tetrahedron the turn the strain's change from corner to corner adds, half the
     curl of the strain, `Turning[tets]`."""
     frame_steps = frames >> Step                                                # (Point- <- Point-)[tets]
@@ -256,7 +256,7 @@ def strain_field(mesh: Topology, space: Space, ramps: Plane, frames: Motor, chan
 
 class Waves:
     """Stepped gravitational waves of a round three-sphere triangulated by `mesh` on `vertices`, as a smooth field over
-    its tetrahedra and over time, read in the isoclinic frames: at each of the stored moments, from `first_time` every
+    its tetrahedra and over time, read in the frames: at each of the stored moments, from `first_time` every
     `level_step`, the strain of the squared edge lengths' changes `changes` at the vertices, its rate from
     `change_rates`, its trace, and each tetrahedron's turn from the strain's change across it. Read at a place and a
     time, a tetrahedron's corners blend by the place's barycentric weights and the two nearest moments by their
@@ -266,7 +266,7 @@ class Waves:
                  level_step: float) -> None:
         self.mesh, self.first_time, self.level_step = mesh, first_time, level_step
         self.ramps = coframe(mesh, vertices)                                    # [corners] Plane+[tets]
-        frames = isoclinic(mesh.incidence[3, 0].mean(axis=0) * vertices)      # Motor+[tets]
+        frames = frame(mesh.incidence[3, 0].mean(axis=0) * vertices)          # Motor+[tets]
         space = Space(mesh, vertices)
         fields = [strain_field(mesh, space, self.ramps, frames, change) for change in changes]
         self.strains = stack([strain.batch() for strain, _ in fields])           # [levels, vertices] Plane+ <- Point-
@@ -322,7 +322,7 @@ def massive(pick: Callable[[Point], np.ndarray], waves: Waves, bonds: Topology, 
     the edges of `bonds`, over the particles, of rest proper lengths `rest`, stiffness `stiffness` and damping
     `damping` over unit masses, `Scalar+[bonds]` each, and each held to its start by a spring of stiffness `holding`,
     damped critically: from `starts` `Point-[particles]` on the sphere with velocities `velocities`, steps of the
-    origin `Point-[particles]` in the isoclinic frames, at time `start`, stepped by `step` of time with symplectic
+    origin `Point-[particles]` in the frames, at time `start`, stepped by `step` of time with symplectic
     Euler, their positions and the bonds' proper strains `Scalar+[bonds]` at each of the `times`. A particle's velocity
     turns with the connection along its motion, the slices' stretch squeezes it, and its bonds pull it along their
     proper separations; it rolls along its round step on its great circle."""
@@ -338,7 +338,7 @@ def massive(pick: Callable[[Point], np.ndarray], waves: Waves, bonds: Topology, 
             pulls = (stiffness * (lengths - rest) + damping * (lengths - previous_lengths) / step) / lengths   # Scalar+[bonds]
             forces = -(~bonds.d[0] * (pulls * proper)).batch()                  # [particles] Point-
             # Each particle pulled toward its home, a free particle at rest where it started, and its motion damped.
-            home_steps = (isoclinic(positions).inverse() >> homes).cast(Step)  # [particles] Point-
+            home_steps = (frame(positions).inverse() >> homes).cast(Step)      # [particles] Point-
             forces = forces + holding * home_steps - 2 * np.sqrt(holding) * velocities
             # The connection and the squeeze at each particle as a batch, for the solve, which takes no field of maps.
             local, squeeze = local.batch(), squeeze.batch()                     # [particles] Rate+ <- Point-, Point- <- Point-
@@ -350,7 +350,7 @@ def massive(pick: Callable[[Point], np.ndarray], waves: Waves, bonds: Topology, 
             carried_velocities = velocities - velocities.commutator(local(motion)).cast(Step) * step
             velocities = carried_velocities - squeeze(carried_velocities) * step + forces * step   # [particles] Point-
             # Rolled along the round step of its velocity, on its great circle from the frame at its place.
-            rolls = isoclinic(positions) * (moving(stepping.solve(velocities)) * (-step / 2)).exp()   # [particles] Motor+
+            rolls = frame(positions) * (moving(stepping.solve(velocities)) * (-step / 2)).exp()       # [particles] Motor+
             positions = rolls >> origin                                         # [particles] Point-
             time += step
         yield positions.field(), lengths / rest - 1
@@ -360,7 +360,7 @@ def light(pick: Callable[[Point], np.ndarray], waves: Waves, starts: Point, head
           step: float, n_steps: int) -> Iterator[Point]:
     """Rays of light through a round three-sphere carrying the waves `waves`, the tetrahedra holding places found by
     `pick`, from `starts` `[rays] Point-` on the sphere along `headings`, unit steps of the origin `[rays] Point-` in
-    the isoclinic frames, set out at time `start`: their places `[rays] Point-` after each step of length `step`, the
+    the frames, set out at time `start`: their places `[rays] Point-` after each step of length `step`, the
     light's time running with it. As the GPU's rays do, a ray's heading turns with the connection along its round step
     and the slices' stretch squeezes it, and it rolls along that step on its great circle, each step read at its
     midpoint."""
@@ -379,11 +379,11 @@ def light(pick: Callable[[Point], np.ndarray], waves: Waves, starts: Point, head
         start_change, start_rolling = turning_and_rolling(positions, headings, time)
         # Half a step on: the heading turned by the waves at the start, and the place rolled there along its round step.
         half_headings = (headings + start_change * (step / 2)).normalized()     # [rays] Point-
-        half_rolls = isoclinic(positions) * (moving(start_rolling) * (-step / 4)).exp()   # [rays] Motor+
+        half_rolls = frame(positions) * (moving(start_rolling) * (-step / 4)).exp()       # [rays] Motor+
         half_positions = half_rolls >> origin                                   # [rays] Point-
         change, rolling = turning_and_rolling(half_positions, half_headings, time + step / 2)
         headings = (headings + change * step).normalized()                      # [rays] Point-
-        rolls = isoclinic(positions) * (moving(rolling) * (-step / 2)).exp()    # [rays] Motor+
+        rolls = frame(positions) * (moving(rolling) * (-step / 2)).exp()        # [rays] Motor+
         positions = rolls >> origin                                             # [rays] Point-
         time += step
         yield positions
@@ -391,9 +391,9 @@ def light(pick: Callable[[Point], np.ndarray], waves: Waves, starts: Point, head
 
 def base_points(places: Point, circling: Rate) -> Point:
     """The base point below each place, `Point-`: the direction its circle runs in under the rate `circling`, read in
-    the isoclinic frame at the place, a unit step of the origin, the same all along the circle."""
+    the frame at the place, a unit step of the origin, the same all along the circle."""
     circle_directions = places.commutator(circling)                            # Point-
-    return (isoclinic(places).inverse() >> circle_directions).cast(Step).normalized()
+    return (frame(places).inverse() >> circle_directions).cast(Step).normalized()
 
 
 def crossing(bases: Point, directions: Point) -> Point:
@@ -434,7 +434,7 @@ def stretches(waves: Waves, pick: Callable[[Point], np.ndarray], bases: Point, d
 
 
 # A ray's legs on the GPU, in numga's dialect, through a round three-sphere meshed by tetrahedra: from a place on the
-# sphere along a heading, a unit step of the origin in the isoclinic frame there, across the tetrahedron the place is
+# sphere along a heading, a unit step of the origin in the frame there, across the tetrahedron the place is
 # in, having entered it by a face, four where it starts inside, at a time. On a tetrahedron's chart, the plane through
 # its corners, a great circle runs straight and the barycentric weights change evenly along it: each leg ends where the
 # weight of the corner across from a face runs out first, never the face it entered by, and the next leg starts in the
@@ -463,7 +463,7 @@ struct Leg {
     entry: u32,
 }
 
-// The isoclinic frame at a place on the round sphere: the motor that carries the origin to it, turning alike in the
+// The frame at a place on the round sphere: the motor that carries the origin to it, turning alike in the
 // plane of the great circle between them and in the plane square to it, the half of the quotient of the place by the
 // origin that the pseudoscalar keeps, with one in the other half.
 fn frame(place: Point) -> Motor {

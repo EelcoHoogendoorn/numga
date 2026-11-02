@@ -29,6 +29,9 @@ n_steps = 2400
 n_skipped_steps = 1200
 stride = 10
 frame_duration_ms = 40
+# The colours of the palettes of the cutaway and of the lines seen from above.
+n_cutaway_colours = 64
+n_lines_colours = 32
 # The core's slowest scalar modes the flow's modes are built from, the flow's modes, the fluid's viscosity, and the
 # rate at which the stirring pulls the flow back toward the helical flow.
 n_scalar_modes = 80
@@ -134,9 +137,9 @@ def main() -> None:
     # energies.
     above, cutaway, kept = tee(states, 3)
     save_animation(render.animate_lines(operators, frames(operators, flow, islice(above, n_skipped_steps, None, stride))),
-                   "dynamo_lines", frame_duration_ms)
+                   "dynamo_lines", frame_duration_ms, colors=n_lines_colours)
     save_animation(render.animate(operators, mantle_radius, frames(operators, flow, islice(cutaway, n_skipped_steps, None, stride))),
-                   "dynamo", frame_duration_ms)
+                   "dynamo", frame_duration_ms, colors=n_cutaway_colours)
     amplitudes, potentials = map(stack, zip(*islice(kept, 0, None, stride)))   # [frames] Scalar+[modes], [frames] Scalar+[edges]
     kinetic = (amplitudes * amplitudes).sites.sum() / 2                          # [frames] Scalar+
     magnetic = (potentials * operators.stiffness(potentials)).sites.sum() / 2    # [frames] Amount-

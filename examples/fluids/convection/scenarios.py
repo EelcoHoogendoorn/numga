@@ -20,12 +20,13 @@ density, prandtl, expansion = 1.0, 7.0, 1e-3
 reference_temperature, heat_capacity = 300.0, 2e13
 # The layer turning over: its Rayleigh number, its length, its vertices along and up, its time step, the steps, the
 # steps between frames, and the steps before the rolls show, run but not shown; the disturbance's size and its seed;
-# the frames' duration in milliseconds.
+# the frames' duration in milliseconds, and the colours of their palette.
 rayleigh = 2e4
 period, n_along, n_across = 4.0, 96, 25
 dt, n_steps, n_stride, n_unshown = 5e-4, 300, 2, 80
 disturbance, seed = 1e-2, 1
 frame_duration_ms = 40
+n_animation_colours = 24
 
 
 def conducting(heights: core.Scalar, size: float) -> core.Scalar:
@@ -59,7 +60,8 @@ def main() -> None:
     # Shown once the rolls begin to show, and kept whole for the flow's growth and the budget.
     animation_states, kept_states = tee(states)
     animation_frames = islice(animation_states, n_unshown // n_stride, None)
-    save_animation(render.animate(opened, vertices, opening, period, animation_frames), "convection", frame_duration_ms)
+    save_animation(render.animate(opened, vertices, opening, period, animation_frames), "convection", frame_duration_ms,
+                   colors=n_animation_colours)
     streams, _, budgets = zip(*kept_states)
     times = np.arange(0, n_steps + 1, n_stride) * dt
     # The flow's squared size over the layer, frame after frame from the still start.
@@ -68,7 +70,7 @@ def main() -> None:
     # The budget frame after frame, and what it leaves unaccounted, as a share of the energy dissipated over the run:
     # the kinetic and potential energy, with the energy dissipated and less the potential energy the heat moved,
     # against the still start's.
-    kinetic, potential, dissipated, conducted, produced = map(stack, zip(*budgets))   # [frames] Scalar+ each
+    kinetic, potential, dissipated, conducted, produced = map(stack, zip(*budgets))   # [frames] Scalar+, Scalar+, Scalar+, Scalar+, Scalar+
     accounted = kinetic + potential + dissipated - conducted                  # [frames] Scalar+
     save_figure(render.draw_budget(times, kinetic - kinetic[0], potential - potential[0], dissipated, conducted,
                                    (accounted - accounted[0]) / dissipated[-1], produced), "convection_budget")

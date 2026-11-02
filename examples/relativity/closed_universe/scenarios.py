@@ -53,6 +53,8 @@ n_relax_steps = 60
 relax_pull = 0.5
 
 duration_ms = 40
+# The colours of the quadrupole's palette, seen from outside.
+n_quadrupole_colours = 96
 # The round universe from inside. A Boerdijk–Coxeter helix of the 600-cell is a column of thirty tetrahedra stacked
 # face to face round a great circle, its axis, its vertices on three of the decagons, those over one face of the
 # icosahedron their base points make: flown along its axis once round in so many frames, every great circle of the
@@ -98,24 +100,24 @@ n_ringing_swings = 4
 
 # --- math -----------------------------------------------------------------------------
 def six_hundred_cell() -> tuple[Topology, core.Point]:
-    """The round three-sphere's mesh, the 600-cell, the stock shape carried by its first vertex's isoclinic frame back
+    """The round three-sphere's mesh, the 600-cell, the stock shape carried by its first vertex's frame back
     so that the vertex is the origin, and placed by its turn. A 600-cell with a vertex at the origin is closed under
-    the turns its vertices' isoclinic frames make, so each turn that carries the origin to a vertex carries the
+    the turns its vertices' frames make, so each turn that carries the origin to a vertex carries the
     vertices onto themselves."""
     topology, coordinates = shapes.cell_600()
     vertices = mv.vector(coordinates).dual()                                    # [vertices] Point-
-    centred = core.isoclinic(vertices[0]).inverse() >> vertices                 # [vertices] Point-
+    centred = core.frame(vertices[0]).inverse() >> vertices                     # [vertices] Point-
     return topology, cell_placement >> centred.field()
 
 
 def circle_turn(vertices: core.Point, n_sides: int) -> core.Motor:
     """The turn along the Hopf circles that the 600-cell's vertices lie on in great polygons of so many sides, `[]
-    Motor+`: the isoclinic motor that carries the origin, before the placement, to the vertex that share of a whole
+    Motor+`: the motor that carries the origin, before the placement, to the vertex that share of a whole
     turn from it, which carries the vertices onto themselves."""
     unplaced = (cell_placement.inverse() >> vertices).batch()                  # [vertices] Point-
     # The vertex whose reading by the origin's equator, the cosine of its angle from the origin, is that share's.
     target = unplaced[((core.equator & unplaced) - np.cos(2 * np.pi / n_sides)).abs().argmin()]   # [] Point-
-    return cell_placement * core.isoclinic(target) * cell_placement.inverse()
+    return cell_placement * core.frame(target) * cell_placement.inverse()
 
 
 def guardrails(vertices: core.Point, n_sides: int) -> np.ndarray:
@@ -130,10 +132,10 @@ def guardrails(vertices: core.Point, n_sides: int) -> np.ndarray:
 
 def great_circles(mesh: Topology, vertices: core.Point) -> np.ndarray:
     """The great circles the 600-cell's edges run along, decagons of vertex indices `[circles, sides]`: each edge's the
-    orbit of its tail under the turn that carries the tail to its head, the isoclinic frame at the head by the inverse
+    orbit of its tail under the turn that carries the tail to its head, the frame at the head by the inverse
     of the one at the tail, which carries the vertices onto themselves; each circle once."""
     tails, heads = mesh.incidence[1, 0] * vertices                              # Point-[edges], Point-[edges]
-    turns = (core.isoclinic(heads) * core.isoclinic(tails).inverse()).batch()   # [edges] Motor+
+    turns = (core.frame(heads) * core.frame(tails).inverse()).batch()           # [edges] Motor+
     tail_indices = mesh.elements[1][:, 0]                                       # [edges]
     circles = orbits(vertices, turns, n_guardrail_sides)[np.arange(len(tail_indices)), :, tail_indices]   # [edges, sides]
     _, firsts = np.unique(np.sort(circles, axis=-1), axis=0, return_index=True)
@@ -264,7 +266,7 @@ def helix(cell_vertices: core.Point) -> tuple[np.ndarray, core.Point, core.Point
     """A Boerdijk–Coxeter helix of the 600-cell: its rails, the decagons over the first face of the icosahedron their
     base points make, `[corners, sides]` vertex indices; a point on its axis, the circle above the face's middle, `[]
     Point-`; and at that point the axis's direction and a step across it toward the middle of the face's first side,
-    unit steps of the origin in the isoclinic frame there, `[] Point-` each."""
+    unit steps of the origin in the frame there, `[] Point-` each."""
     circling = circle_turn(cell_vertices, n_guardrail_sides).log()             # [] Rate+
     bases = decagon_bases(cell_vertices, circling)                              # [decagons] Point-
     icosahedron = base_hull(bases)
@@ -298,10 +300,10 @@ def pan(axis_point: core.Point, axis_direction: core.Point, side_direction: core
     """The cameras panned once round a helix's axis, `[frames] Motor+`: from the pan's distance across the axis
     from a point on it, toward the side, looking back at it with the axis up, rolled in its own plane `xy`, each
     carried along the axis by the turn in its plane, which keeps every point square to that plane."""
-    station = core.isoclinic(axis_point) * (core.moving(side_direction) * (-pan_distance / 2)).exp()   # [] Motor+
+    station = core.frame(axis_point) * (core.moving(side_direction) * (-pan_distance / 2)).exp()       # [] Motor+
     start = facing(station, -side_direction, axis_direction) * (mv.xy * (pan_roll / 2)).exp()   # [] Motor+
     # The turn along the axis: the rate that moves the point on it along its direction, carried there.
-    axis_rate = core.isoclinic(axis_point) >> core.moving(axis_direction)       # [] Rate+
+    axis_rate = core.frame(axis_point) >> core.moving(axis_direction)           # [] Rate+
     angles = np.linspace(0, 2 * np.pi, n_pan_frames, endpoint=False)           # [frames]
     return (axis_rate * (-angles / 2)).exp() * start
 
@@ -327,7 +329,7 @@ def triangle_gauges(bases: core.Point, circling: core.Rate) -> tuple[Topology, c
     cosines = core.polar(middles) & atom_bases                                  # [corners] Scalar+[faces]
     directions = (atom_bases - middles * cosines).normalized()                  # [corners] Point-[faces]
     moves = (core.moving(core.crossing(middles, directions)) * (-cosines.arccos() / 4)).exp()   # [corners] Motor+[faces]
-    face_atoms = (core.isoclinic(core.lifts(middles, circling)) * moves) >> core.origin   # [corners] Point-[faces]
+    face_atoms = (core.frame(core.lifts(middles, circling)) * moves) >> core.origin       # [corners] Point-[faces]
     # The atoms three to a face, face after face.
     atoms = stack(tuple(face_atoms.batch()), axis=-1).reshape(-1)               # [atoms] Point-
     return Topology.loops([3] * hull.n_elements[2]), atoms.field()
@@ -458,7 +460,7 @@ def main() -> None:
     round_walk, cell_walk_values = core.round_walk_source, render.round_values(cell_mesh, cell_vertices)
     rails, axis_point, axis_direction, side_direction = helix(cell_vertices)
     save_animation(render.polygon_view(round_walk, cell_walk_values, cell_mesh, cell_vertices,
-                                       flight(facing(core.isoclinic(axis_point), axis_direction, side_direction)),
+                                       flight(facing(core.frame(axis_point), axis_direction, side_direction)),
                                        great_circles(cell_mesh, cell_vertices)),
                    "closed_universe_flight", duration_ms)
     save_animation(render.helix_view(round_walk, cell_walk_values, cell_mesh, cell_vertices,
@@ -468,7 +470,7 @@ def main() -> None:
     irregular_mesh, irregular_vertices = irregular_three_sphere()
     middle = (irregular_mesh.incidence[3, 0].mean(axis=0) * irregular_vertices).batch()[0].normalized()   # [] Point-
     save_animation(render.plain_view(round_walk, render.round_values(irregular_mesh, irregular_vertices),
-                                     irregular_mesh, irregular_vertices, flight(core.isoclinic(middle))),
+                                     irregular_mesh, irregular_vertices, flight(core.frame(middle))),
                    "closed_universe_irregular", duration_ms)
 
     # The travelling quadrupole below the Hopf circles.
@@ -478,7 +480,7 @@ def main() -> None:
     sphere_mesh, sphere_points = base_sphere()
     save_animation((render.base_view(sphere_mesh, sphere_points, bases, *frame)
                     for frame in quadrupole_frames(pick, quadrupole, quadrupole_frequency, turn, bases, sphere_points)),
-                   "closed_universe_quadrupole", duration_ms)
+                   "closed_universe_quadrupole", duration_ms, colors=n_quadrupole_colours)
 
     # checks
     # The stepped waves have no growing mode, the squash is their slowest, a fiftieth short of the continuum's eight on

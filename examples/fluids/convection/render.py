@@ -31,15 +31,18 @@ kinetic_colour, potential_colour = np.array(to_rgb("#1d4ed8")), np.array(to_rgb(
 dissipated_colour, conducted_colour = np.array(to_rgb("#6b7280")), np.array(to_rgb("#d97706"))
 entropy_colour, residual_colour = np.array(to_rgb("#15803d")), np.array(to_rgb("#2b2f33"))
 temperature_map = colormaps["RdBu_r"]
+# The temperature's bands, centred on evenly spaced levels from the ceiling's to the floor's, an odd count so that the
+# well-mixed middle is one band, white.
+n_bands = 7
 # The layer's picture: pixels across and the room around it in depths; the widths of the walls, the mesh's edges and the
 # streamlines; the streamlines' spacing in units of the stream function, the same in every frame, so that how close
 # they lie shows how strongly the liquid flows.
 n_pixels, margin = 320, 0.04
 wall_width, mesh_width, stream_width = 2.5, 1.0, 1.0
-stream_spacing = 1.5
+stream_spacing = 3.0
 # The charts' pixels, and the range of the budget's residual as a share of the energy dissipated, from below round-off
 # to well above it, marked at a part in a trillion and at its top.
-chart_width, chart_height, budget_height = 300, 220, 340
+chart_width, chart_height, budget_height = 300, 220, 376
 residual_range, residual_marks = (1e-15, 1e-10), (1e-12, 1e-10)
 # The residual's dots, in pixels across.
 residual_dot = 4
@@ -82,19 +85,23 @@ def draw_layer(topology: Topology, vertices: Extensor, period: float) -> Figure:
 def animate(topology: Topology, vertices: Extensor, opening: Extensor, period: float,
             frames: Iterable[tuple[Extensor, Extensor, object]]) -> Iterator[np.ndarray]:
     """The open layer at every frame of the closed layer's stream function and temperature `Scalar+[vertices]` as it
-    comes, with the budget it leaves undrawn, read on the open layer by `opening`: coloured by its temperature, red
-    above the middle's and blue below, with streamlines at a fixed spacing of the stream function, between its floor
-    and ceiling."""
+    comes, with the budget it leaves undrawn, read on the open layer by `opening`: coloured by its temperature in
+    bands, red above the middle's and blue below, with streamlines at a fixed spacing of the stream function, between
+    its floor and ceiling."""
     camera = layer_camera(vertices, period)
     boundaries = [walls(topology, vertices, camera)]
     lines = contours.Lines(stream_spacing, stream_spacing / 2, np.append(stream_colour, 1.0), stream_width)
+    # Each band in the colour of the temperature at its middle, flat across it, so that a frame changes only where
+    # the bands' edges and the streamlines move.
+    spacing = 1 / (n_bands - 1)
+    middles = np.linspace(-0.5, 0.5, n_bands)
+    bands = contours.Bands(-0.5 - spacing / 2, spacing, temperature_map(0.5 + middles))
     for stream, temperature, _ in frames:
         values = (opening * temperature).to_array()
         levels = (opening * stream).to_array()
-        colours = temperature_map(np.clip(0.5 + values, 0, 1))[:, :3]
         yield on_white(simplices.composited([
-            contours.picture(vertices, topology, values, colours, camera),
-            contours.picture(vertices, topology, levels, colours, camera, lines=(lines,), opacity=0.0)] + boundaries))
+            contours.picture(vertices, topology, values, np.ones(3), camera, bands=(bands,)),
+            contours.picture(vertices, topology, levels, np.ones(3), camera, lines=(lines,), opacity=0.0)] + boundaries))
 
 
 @style()
@@ -120,9 +127,12 @@ def draw_budget(times: np.ndarray, kinetic: Extensor, potential: Extensor, dissi
     dissipated, on a logarithmic scale; below, the entropy produced."""
     figure, (energies, unaccounted, entropy) = subplots(chart_width, budget_height, nrows=3, sharex=True,
                                                          gridspec_kw=dict(height_ratios=(2, 1, 1)))
-    for values, colour in ((kinetic, kinetic_colour), (potential, potential_colour), (dissipated, dissipated_colour),
-                           (-conducted, conducted_colour)):
-        energies.plot(times, values.to_array(), color=colour)
+    for values, colour, label in ((kinetic, kinetic_colour, "kinetic"), (potential, potential_colour, "potential"),
+                                  (dissipated, dissipated_colour, "dissipated"),
+                                  (-conducted, conducted_colour, "moved by heat")):
+        energies.plot(times, values.to_array(), color=colour, label=label)
+    energies.legend(frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1), ncol=2, handlelength=1.2,
+                    columnspacing=1.0, labelspacing=0.2, borderaxespad=0.1)
     energies.axhline(0, color=axis_colour, linewidth=FRAME_WIDTH)
     energies.set_yticks([])
     energies.set_ylabel("energy")

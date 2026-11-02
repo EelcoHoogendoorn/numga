@@ -17,13 +17,15 @@ density, prandtl, expansion = 1.0, 7.0, 1e-3
 salt_diffusivity = 0.1
 # The fingers: the heat's Rayleigh number, the density ratio, the tank's length, its vertices along and up, and the
 # interface's thickness; the time step, the steps, the steps between frames, and the frames while the interface is
-# still flat, not drawn; the disturbance's size and its seed; the frames' duration in milliseconds.
+# still flat, not drawn; the disturbance's size and its seed; the frames' duration in milliseconds, and the colours of
+# their palette.
 rayleigh, ratio = 5e5, 2.0
 period, n_along, n_across = 2.0, 136, 69
 thickness = 0.05
 dt, n_steps, n_stride, n_flat = 6e-5, 360, 2, 34
 disturbance, seed = 4e-2, 1
 frame_duration_ms = 40
+n_animation_colours = 32
 
 
 def layered(heights: core.Scalar, size: float) -> tuple[core.Scalar, core.Scalar]:
@@ -56,7 +58,8 @@ def main() -> None:
 
     closed, opened, opening, vertices, temperature, salinity, frames = fingers()
     save_figure(render.draw_tank(opened, vertices, opening, period, temperature, salinity), "saltfingers_tank")
-    save_animation(render.animate(opened, vertices, opening, period, frames), "saltfingers", frame_duration_ms)
+    save_animation(render.animate(opened, vertices, opening, period, frames), "saltfingers", frame_duration_ms,
+                   colors=n_animation_colours)
 
 
 if __name__ == "__main__":

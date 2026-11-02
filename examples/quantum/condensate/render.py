@@ -2,7 +2,8 @@
 atoms crowd and white where there are none, so that its vortices show as white holes; and its vortices' count against
 the radius they lie within as a chart, beside Feynman's rule.
 
-The trap's places are read by the planes x and y; a place is a direction from the trap's middle, so its weight is one.
+The trap's vertices are read by the planes x and y; a vertex is a direction from the trap's middle, so its weight is
+one.
 """
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ Topology = simplices.Topology
 density_map = colormaps["Blues"]
 counted_colour, feynman_colour = np.array(to_rgb("#1d4ed8")), np.array(to_rgb("#c2410c"))
 # The picture's pixels across and the radius it frames, in oscillator lengths; the share of the colour map at the
-# densest place of each frame.
+# densest vertex of each frame.
 n_pixels, framed = 300, 7.5
 deepest = 0.95
 # The chart's pixels.
@@ -35,12 +36,12 @@ def on_white(picture: np.ndarray) -> np.ndarray:
     return np.round(np.clip(shown, 0, 1) * 255).astype(np.uint8)
 
 
-def animate(topology: Topology, places: Extensor, densities: Iterable[Extensor]) -> Iterator[np.ndarray]:
-    """The trap at every frame of the condensate's density `Scalar+[places]` as it comes, from white for none to deep
-    blue at the frame's densest place."""
-    mv = places.context.multivector
+def animate(topology: Topology, vertices: Extensor, densities: Iterable[Extensor]) -> Iterator[np.ndarray]:
+    """The trap at every frame of the condensate's density `Scalar+[V]` as it comes, from white for none to deep
+    blue at the frame's densest vertex."""
+    mv = vertices.context.multivector
     camera = Camera(mv.x, mv.y, 0 * mv.x, 0 * mv.x, 1.0, np.zeros(2), np.array([framed, framed]), n_pixels)
-    points = places.batch()
+    points = vertices.batch()
     for density in densities:
         values = density.to_array()
         colours = density_map(deepest * values / values.max())[:, :3]

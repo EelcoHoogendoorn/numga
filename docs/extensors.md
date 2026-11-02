@@ -83,7 +83,28 @@ curvature = (cones(motion) & motion).sum(axis=0)           # [cameras] Scalar <-
 
 ---
 
-## 4. Potential Flow past a Joukowski Wing
+## 4. Snowflake Growth
+
+**Notebook**: [`examples/thermodynamics/snowflake/snowflake.ipynb`](../examples/thermodynamics/snowflake/snowflake.ipynb)
+
+![A seed of ice in undercooled water growing into a six-armed dendrite, its latent heat glowing into the cold water around it](../plots/snowflake.gif)
+
+```python
+freezing = ice + latent_heat * heat                                                     # [] Point-
+energy = mv.h - latent_heat * mv.i                                                      # [] Plane+
+entropy_slope = mv.h / absolute_temperatures - latent_heat / absolute_melting * mv.i   # Plane+[vertices]
+push = absolute_melting * cells * (entropy_slope & freezing) * held_slope              # Scalar-[vertices]
+turn = steepness * crystal_axis                                                         # Even+[faces]
+third_power = turn ** 3                                                                 # Even+[faces]
+six_fold = third_power.scalar_product(third_power)                                      # Scalar+[faces]
+```
+
+* Freezing is one direction in the space of amounts, and the two laws of thermodynamics are two planes reading it: `energy & freezing == 0`, and `entropy_slope & freezing` is the entropy freezing produces, which drives the ice.
+* The six-fold anisotropy is a rotor's power: `six_fold` is `|steepness| ** 6 * cos(6 angle)`, with no angle taken, and its slope `6 * crystal_axis * turn ** 5` is written out.
+
+---
+
+## 5. Potential Flow past a Joukowski Wing
 
 **Notebook**: [`examples/fluids/wing/wing.ipynb`](../examples/fluids/wing/wing.ipynb)
 
@@ -102,7 +123,7 @@ potential_gradient = (velocity | Point)(jacobian.inverse())                     
 
 ---
 
-## 5. Edge States of a Graphene Flake
+## 6. Edge States of a Graphene Flake
 
 **Notebook**: [`examples/quantum/kane_mele/kane_mele.ipynb`](../examples/quantum/kane_mele/kane_mele.ipynb)
 
@@ -122,7 +143,26 @@ spins = (states * amplitudes).sum(axis=0) >> up_spin                          # 
 
 ---
 
-## 6. Twistors and Linked Light
+## 7. A Dynamo in a Planet's Core
+
+**Notebook**: [`examples/electromagnetism/dynamo/dynamo.ipynb`](../examples/electromagnetism/dynamo/dynamo.ipynb)
+
+![Liquid metal stirred in a planet's core, its magnetic field stretched and wound into a strong field](../plots/dynamo.gif)
+
+```python
+motional = spdiag((velocities & Magnetic) ^ mv.t)(ball.curl)     # (Field+ <- Scalar+)[tets <- edges]
+conductance = ball.electric.adjugate()(current(ball.electric))   # (Amount- <- Scalar+)[edges <- edges]
+drive = ball.electric.adjugate()(current(motional))              # (Amount- <- Scalar+)[edges <- edges]
+kinetic = circulating.adjugate()(momentum(circulating))          # (Amount- <- Scalar+)[edges <- edges]
+```
+
+* The moving fluid reads the magnetic plane as an electric field, `(velocity & magnetic) ^ mv.t`: the plane met with the velocity, swept through time.
+* The field's force on the fluid is that motional map's adjugate applied to the current, so the energy the field gains is the energy the flow loses.
+* The field is the curl of a potential on the edges: it has no sources, however it grows.
+
+---
+
+## 8. Twistors and Linked Light
 
 **Notebook**: [`examples/relativity/twistors/twistors.ipynb`](../examples/relativity/twistors/twistors.ipynb)
 
@@ -140,7 +180,7 @@ planes = ray_readout(twistors, twistors)                    # [cases] Bivector
 
 ---
 
-## 7. Beltrami Fields
+## 9. Beltrami Fields
 
 **Notebook**: [`examples/electromagnetism/beltrami_fields/beltrami_fields.ipynb`](../examples/electromagnetism/beltrami_fields/beltrami_fields.ipynb)
 
@@ -161,7 +201,26 @@ helicity = (raw_helicity + raw_helicity.adjugate()) / 2             # (Amount- <
 
 ---
 
-## 8. The Rattleback
+## 10. A Rotating Bose–Einstein Condensate
+
+**Notebook**: [`examples/quantum/condensate/condensate.ipynb`](../examples/quantum/condensate/condensate.ipynb)
+
+![A rotating condensate in a harmonic trap settling into a lattice of quantized vortices](../plots/condensate.gif)
+
+```python
+drags = (corners.mean(axis=0) * vertices).commutator(mv.xy)                       # Point-[F]
+along = (areas / 3)[..., None, None] * (drags[..., None, None] & gradients[..., None, :])
+stepping = (spdiag((cells / step + cells * potential) * Wave) + assembled(kinetic * Wave) +
+            assembled(rotation * along * (Wave * mv.ab)))                         # (Wave+ <- Wave+)[V <- V]
+turns = (ends[..., 0] * ends[..., 1]).normalized().log()                          # Turn+[E]
+```
+
+* Two turnings in two planes, kept apart: the trap drags each point a quarter turn in its plane, `point.commutator(mv.xy)`, and the wave turns in its own, `wave * mv.ab`; the rotation's energy pairs the drag with the wave's gradient.
+* A vortex is a triangle round which the wave turns once: the logarithms of the rotors between neighbouring waves, summed round its edges, counted against Feynman's rule.
+
+---
+
+## 11. The Rattleback
 
 **Notebook**: [`examples/mechanics/rattleback/rattleback.ipynb`](../examples/mechanics/rattleback/rattleback.ipynb)
 
@@ -181,7 +240,27 @@ effective = pullback(inertia(rolling))                                 # Angular
 
 ---
 
-## 9. Bending and Twisting of Thin-Walled Beams
+## 12. Gravitational Waves of a Closed Universe
+
+**Notebook**: [`examples/relativity/closed_universe/waves.ipynb`](../examples/relativity/closed_universe/waves.ipynb)
+
+![A gravitational wave travelling round a closed universe, its stretch drawn on a sphere, rung by strain gauges and crossed by light](../plots/closed_universe_quadrupole.gif)
+
+```python
+ramps = faces / (faces & corners)                                                     # [corners] Plane+[cells]
+cone = radial * (radial & Point) + cone_map * squared_lengths                         # (Plane+ <- Point-)[cells]
+pairings = ramps[:, None] & cone.batch().inverse().field()(ramps[None, :])            # [corners, corners] Scalar+[cells]
+restoring = onto_waves(masses.solve(stiffness(strains)))                              # Scalar+[edges]
+strains = (cell_frames.inverse() >> (cone_map * changes)(frame_steps)).cast(Strain)   # (Plane+ <- Point-)[cells]
+```
+
+* Regge calculus on curved tetrahedra: each tetrahedron's metric is a map from points to planes, `cone`, and the angles between its faces are its ramps paired through that map's inverse.
+* The kinetic term is the inertia of space, `masses`, a map from the rates of the squared lengths to their momenta.
+* The closed universe carries a frame everywhere at once. Read in it, a wave is a strain field, and a stretch is the strain read against the metric it changes, `strain(step) & step`.
+
+---
+
+## 13. Bending and Twisting of Thin-Walled Beams
 
 **Notebook**: [`examples/mechanics/bending/bending.ipynb`](../examples/mechanics/bending/bending.ipynb)
 
@@ -200,7 +279,7 @@ strains = stiffness.solve(-loads_at_stations(loads, stations))                  
 
 ---
 
-## 10. Laplacian Eigenfunction Fluids
+## 14. Laplacian Eigenfunction Fluids
 
 **Notebook**: [`examples/fluids/eigen_fluids/eigen_fluids.ipynb`](../examples/fluids/eigen_fluids/eigen_fluids.ipynb)
 
@@ -221,7 +300,26 @@ advection = structure(stream, vorticity)                                        
 
 ---
 
-## 11. Quantum Process Tomography in the Projective Bloch Ball
+## 15. The Meissner Effect
+
+**Notebook**: [`examples/electromagnetism/superconductor/superconductor.ipynb`](../examples/electromagnetism/superconductor/superconductor.ipynb)
+
+![A rod cooled through its superconducting transition expelling the magnetic field it sat in, beside a perfect conductor freezing it in](../plots/superconductor.gif)
+
+```python
+fields = gradients ^ mv.z                                                                      # [corners] Field+[faces]
+local = (fields[..., :, None] & Field.dual()(fields[..., None, :])) * areas[..., None, None]   # [corners, corners] Scalar+[faces]
+londons = spdiag(cells * inside * share / penetration ** 2)                                    # Scalar+[vertices <- vertices]
+currents = ring_gradients ^ mv.xy.dual()                                                       # [corners] Current-[faces]
+kinetic = penetration ** 2 * (in_ring_areas * (currents & inertia(currents))).sites.sum()     # [candidates, fields] Scalar+
+```
+
+* London's two equations are two parts of one closure in spacetime, `gradient ^ (momentum + charge * potential) == 0`: its part through time makes a perfect conductor, its part in space expels the field.
+* Around a ring the same closure counts whole turns, the fluxoid, so a ring cooled in a field keeps none, one or two flux quanta.
+
+---
+
+## 16. Quantum Process Tomography in the Projective Bloch Ball
 
 **Notebook**: [`examples/quantum/process_tomography/process_tomography.ipynb`](../examples/quantum/process_tomography/process_tomography.ipynb)
 
@@ -243,7 +341,7 @@ learned_channel = (recovered_outputs * (preparation_dual & Point)).sum(axis=-1) 
 
 ---
 
-## 12. Euler Elastica
+## 17. Euler Elastica
 
 **Notebook**: [`examples/mechanics/elastica/elastica.ipynb`](../examples/mechanics/elastica/elastica.ipynb)
 
@@ -264,7 +362,7 @@ load = load - deviation.commutator(load) / 2 + deviation.commutator(deviation.co
 
 ---
 
-## 13. Piezoelectric Bimorph
+## 18. Piezoelectric Bimorph
 
 **Notebook**: [`examples/electromagnetism/piezoelectric/piezoelectric.ipynb`](../examples/electromagnetism/piezoelectric/piezoelectric.ipynb)
 
@@ -283,7 +381,7 @@ mixed = movement.adjugate()(coupling(voltage))                         # (Plane+
 
 ---
 
-## 14. Black Polarization Sandwiches
+## 19. Black Polarization Sandwiches
 
 **Notebook**: [`examples/optics/black_sandwich/black_sandwich.ipynb`](../examples/optics/black_sandwich/black_sandwich.ipynb)
 
@@ -304,7 +402,7 @@ double_stack = sandwich(sandwich)                                # [frames] Fiel
 
 ---
 
-## 15. Gravitational-Wave Antenna Patterns
+## 20. Gravitational-Wave Antenna Patterns
 
 **Notebook**: [`examples/relativity/ligo/ligo.ipynb`](../examples/relativity/ligo/ligo.ipynb)
 
@@ -322,7 +420,7 @@ rings = ring + strain_shown * overhead[:, None](ring).dual()                 # [
 
 ---
 
-## 16. Moving Charges
+## 21. Moving Charges
 
 **Notebook**: [`examples/electromagnetism/moving_charge/moving_charge.ipynb`](../examples/electromagnetism/moving_charge/moving_charge.ipynb)
 
@@ -339,7 +437,7 @@ field = (Vector ^ gradients(Antivector)).trace(1, 2)                  # [...] Bi
 
 ---
 
-## 17. Magnetic Resonance
+## 22. Magnetic Resonance
 
 **Notebook**: [`examples/quantum/magnetic_resonance/magnetic_resonance_space.ipynb`](../examples/quantum/magnetic_resonance/magnetic_resonance_space.ipynb)
 
@@ -357,7 +455,7 @@ sample_echo = echo.mean(axis=-1)                               # [delays] State 
 
 ---
 
-## 18. As Rigid As Possible
+## 23. As Rigid As Possible
 
 **Notebook**: [`examples/surfaces/arap/arap.ipynb`](../examples/surfaces/arap/arap.ipynb)
 
@@ -376,7 +474,7 @@ vertices = handle_laplacian.solve(~T10 * H1 * turned_rest + P * targets)       #
 
 ---
 
-## 19. Jeffery Orbits
+## 24. Jeffery Orbits
 
 **Notebook**: [`examples/fluids/jeffery/jeffery.ipynb`](../examples/fluids/jeffery/jeffery.ipynb)
 
@@ -395,7 +493,7 @@ spin = (Point & turning_rate(Plane)).trace(1, 2).solve((Point & flow_rate(Plane)
 
 ---
 
-## 20. Slip in Metal Crystals
+## 25. Slip in Metal Crystals
 
 **Notebook**: [`examples/mechanics/slip_systems/slip_systems.ipynb`](../examples/mechanics/slip_systems/slip_systems.ipynb)
 
@@ -414,7 +512,7 @@ axis = (axis.commutator(move) / 2).exp() >> axis                              # 
 
 ---
 
-## 21. Boiling at Fixed Pressure
+## 26. Boiling at Fixed Pressure
 
 **Notebook**: [`examples/thermodynamics/phase_change/phase_change.ipynb`](../examples/thermodynamics/phase_change/phase_change.ipynb)
 
@@ -435,7 +533,7 @@ state = state - derivative(gap)(state).solve(gap(state))                        
 
 ---
 
-## 22. Vibration Modes of a Suspended Plate
+## 27. Vibration Modes of a Suspended Plate
 
 **Notebook**: [`examples/mechanics/modes/modes.ipynb`](../examples/mechanics/modes/modes.ipynb)
 
@@ -454,7 +552,7 @@ values, modes = (Twist & stiffness).eigh(Twist & inertia)        # [modes] Scala
 
 ---
 
-## 23. The Most Likely Trajectory from Odometry
+## 28. The Most Likely Trajectory from Odometry
 
 **Notebook**: [`examples/estimation/odometry/odometry.ipynb`](../examples/estimation/odometry/odometry.ipynb)
 
@@ -472,7 +570,7 @@ residual = residual - pushed * step                                   # [..., po
 
 ---
 
-## 24. Area Transport through a Collapse
+## 29. Area Transport through a Collapse
 
 **Notebook**: [`examples/mechanics/area_transport/area_transport.ipynb`](../examples/mechanics/area_transport/area_transport.ipynb)
 
@@ -489,7 +587,7 @@ adjugate = areas.adjugate()                # [frames] Flux <- Flux
 
 ---
 
-## 25. Radar Ranging in Projective Spacetime
+## 30. Radar Ranging in Projective Spacetime
 
 **Notebook**: [`examples/relativity/radar/radar.ipynb`](../examples/relativity/radar/radar.ipynb)
 

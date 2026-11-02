@@ -27,10 +27,13 @@ surface_colour = np.array(to_rgb("#dee2e6"))
 line_colour = np.array(to_rgb("#f1f3f5"))
 stream_colour = np.array(to_rgb("#15aabf"))
 background = np.ones(3)
-# The lines' own picture: the core alone on a dark ground, seen from above, its elevation and azimuth in degrees; the
-# chevrons on the streamlines, their length in pixels and the steps between them.
+# The lines' own picture: the core alone on a dark ground, seen from above, its elevation and azimuth in degrees, its
+# pixels across, and the one radius its field lines and streamlines are seeded at; the chevrons on the streamlines,
+# their length in pixels and the steps between them.
 dark_background = np.array(to_rgb("#1b1b3a"))
 above_degrees = np.array([89.0, -30.0])
+n_lines_pixels = 256
+lines_seed_radii = np.array([0.6])
 chevron_length = 5.0
 chevron_steps = 15
 # The camera's elevation and azimuth in degrees, the reach framed around each point, the margin and the pixels across.
@@ -230,8 +233,8 @@ class Lines:
     def __init__(self, ball: core.Ball, pixels: int, degrees: np.ndarray):
         self.centres = ball.centres.batch()                                       # [tets] Point-
         _, coordinates = shapes.sphere(n_seed_levels)
-        self.seeds = mv(core.Plane, (seed_radii[:, None, None] * coordinates).reshape(-1, 3)).dual()   # [lines] Point-
-        self.stream_seeds = mv(core.Plane, (stream_seed_radii[:, None, None] * coordinates).reshape(-1, 3)).dual()   # [streams] Point-
+        self.seeds = mv(core.Plane, (lines_seed_radii[:, None, None] * coordinates).reshape(-1, 3)).dual()   # [lines] Point-
+        self.stream_seeds = self.seeds                                            # [streams] Point-
         _, coordinates = shapes.sphere(n_surface_levels)
         self.frame = camera_view(drawn(mv(core.Plane, coordinates).dual()), pixels, degrees)
 
@@ -249,7 +252,7 @@ class Lines:
 
 def animate_lines(ball: core.Ball, states: Iterable[tuple[core.Magnetic, core.Point]]) -> Iterator[np.ndarray]:
     """The field lines and streamlines at every frame as it comes, seen from above."""
-    lines = Lines(ball, n_pixels, above_degrees)
+    lines = Lines(ball, n_lines_pixels, above_degrees)
     for magnetic, velocity in states:
         yield lines.picture(magnetic, velocity)
 
