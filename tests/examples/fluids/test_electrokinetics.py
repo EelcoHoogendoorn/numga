@@ -19,12 +19,13 @@ mv = core.mv
 
 @pytest.fixture(scope="module")
 def dyes():
-    """The straight capillary's strip, its vertices, its wall charges, its liquid's charge density, its drives and the liquid's
-    velocity under each, at the vertices and in the triangles, and its dye's first and last frames."""
-    topology, vertices, wall_charges, density, flows, drives, velocities, frames = scenarios.dyed(0.0)
+    """The straight capillary's strip, its vertices, its wall charges, its liquid's charge density, the liquid's velocity
+    at the vertices, the potential each drive sets up and its fall, the drives, the liquid's velocity in the triangles,
+    and its dye's first and last frames."""
+    topology, vertices, wall_charges, density, flows, potentials, falls, drives, velocities, frames = scenarios.dyed(0.0)
     first = next(frames)
     *_, last = frames
-    return topology, vertices, wall_charges, density, flows, drives, velocities, first, last
+    return topology, vertices, wall_charges, density, flows, potentials, falls, drives, velocities, first, last
 
 
 def test_straight_slit_is_reciprocal_dissipative_and_poiseuille():
@@ -91,7 +92,7 @@ def test_scenes_draw():
 
 def test_dyes_keep_their_totals(dyes):
     """Each run's dye keeps its total over the cells, to round-off: what one cell gains, another loses."""
-    topology, vertices, _, _, _, _, _, first, last = dyes
+    topology, vertices, _, _, _, _, _, _, _, first, last = dyes
     _, coordinates, shifts, *_ = scenarios.capillary(0.0)
     _, edges = core.placed(topology, coordinates, shifts)
     *_, cells = scenarios.operators(topology, edges)
@@ -102,7 +103,7 @@ def test_charged_dyes_part_at_twice_their_drift(dyes):
     """The positive and the negative dye, carried alike by the electro-osmotic flow, part at twice the drift the field
     alone gives them, the dye's mobility times the field's push on a unit of charge; the tolerance tests the cells
     along the channel and the time steps."""
-    topology, vertices, _, _, _, drives, _, first, last = dyes
+    topology, vertices, _, _, _, _, _, drives, _, first, last = dyes
     _, coordinates, shifts, *_ = scenarios.capillary(0.0)
     _, edges = core.placed(topology, coordinates, shifts)
     *_, cells = scenarios.operators(topology, edges)
@@ -114,7 +115,7 @@ def test_charged_dyes_part_at_twice_their_drift(dyes):
 
 
 def test_dyes_draw(dyes):
-    topology, vertices, wall_charges, density, flows, _, velocities, _, last = dyes
+    topology, vertices, wall_charges, density, flows, potentials, falls, _, velocities, _, last = dyes
     plt.close(render.draw_profiles(topology, vertices, scenarios.n_capillary_across, velocities))
     next(render.animate_dyes(topology, vertices, scenarios.n_capillary_across, scenarios.capillary_length, wall_charges,
-                             density, flows, [last]))
+                             density, flows, potentials, falls, [last]))

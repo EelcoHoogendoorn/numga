@@ -128,15 +128,16 @@ def capillary(swing: float):
 def dyed(swing: float):
     """The capillary's strip, its half width swinging by `swing`, its vertices and wall charges; the liquid's charge density `Scalar+[vertices]`, its double
     layers; the drives `[experiments] Drive+`, each scaled to move the liquid at a unit of speed on average, and the
-    liquid's velocity under each, at each vertex `[experiments] Point-[vertices]` and in each triangle `[experiments]
-    Point-[faces]`; and the dye at each frame `[frames, runs] Scalar+[vertices]`: a band of it carried by the pressure drop's flow, by
+    liquid's velocity under each, at each vertex `[experiments] Point-[vertices]`; the potential each sets up
+    `[experiments] Scalar+[vertices]` and how far it falls over the channel's length `[experiments] Scalar+`; the
+    liquid's velocity in each triangle `[experiments] Point-[faces]`; and the dye at each frame `[frames, runs] Scalar+[vertices]`: a band of it carried by the pressure drop's flow, by
     the field's electro-osmotic flow, and, charged either way, by that flow while it drifts under the field."""
     topology, coordinates, shifts, lower, upper, charge, wall_charges = capillary(swing)
     vertices, edges = core.placed(topology, coordinates, shifts)
     areas, sides, gradients, outflow, circulation, cells = operators(topology, edges)
     potentials = core.double_layer(outflow, cells, mv.scalar(charge[:, None]).field(), valences, bulk,
                                    n_newton_steps)
-    _, _, carried, velocities, field, _ = core.transport(topology, areas, sides, gradients, circulation, cells,
+    _, added, carried, velocities, field, _ = core.transport(topology, areas, sides, gradients, circulation, cells,
                                                          potentials, valences, bulk, viscosity, mobilities,
                                                          np.array(capillary_length), lower, upper, experiments)
     # The volume each experiment carries along per length, read by the pressure's drive, over the channel's width, is
@@ -148,7 +149,12 @@ def dyed(swing: float):
     density = (valences * bulk * (-valences * potentials[..., None]).exp()).sum(axis=-1)   # Scalar+[vertices]
     # Each vertex's velocity, its triangles' weighed by their areas.
     flows = (~topology.incidence[2, 0].sum(axis=0) * (velocities * (areas / 3))) / cells   # [experiments] Point-[vertices]
-    return topology, vertices, wall_charges, density, flows, experiments / speeds, velocities, core.dyeing(
+    # The potential each drive sets up, the applied one falling steadily along the channel and the one the liquid adds,
+    # and how far it falls over the channel's length.
+    along = mv.x & experiments.commutator(core.time)                         # [experiments] Scalar+
+    potentials = (added - along * (mv.x & vertices)) / speeds               # [experiments] Scalar+[vertices]
+    falls = along * capillary_length / speeds                                # [experiments] Scalar+
+    return topology, vertices, wall_charges, density, flows, potentials, falls, experiments / speeds, velocities, core.dyeing(
         topology, areas, gradients, velocities[run_drives], field[run_drives], dye_charges, dye_mobility,
         dye_diffusivity, dye, dye_dt, n_dye_frames, dye_stride)
 
@@ -185,8 +191,8 @@ if __name__ == "__main__":
                 "electrokinetics_flow")
     save_figure(render.draw_heat(topology, vertices, n_across, wavelength, heat, wall_charges), "electrokinetics_heat")
     save_figure(render.draw_efficiency(half_widths, surface_charges, generator_efficiency()), "electrokinetics_efficiency")
-    topology, vertices, wall_charges, density, flows, _, velocities, frames = dyed(neck_swing)
+    topology, vertices, wall_charges, density, flows, potentials, falls, _, velocities, frames = dyed(neck_swing)
     save_figure(render.draw_profiles(topology, vertices, n_capillary_across, velocities), "electrophoresis_profiles")
     save_animation(render.animate_dyes(topology, vertices, n_capillary_across, capillary_length, wall_charges, density,
-                                       flows, frames),
+                                       flows, potentials, falls, frames),
                    "electrophoresis", frame_duration_ms)

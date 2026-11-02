@@ -33,8 +33,11 @@ neutral_colour = np.array(to_rgb("#1f4e79"))
 # The room above and below a dyed channel's walls, as a share of its half width; the share of a band's starting
 # strength at which a dye shows its full colour, about what a thin band keeps once it has spread.
 dye_margin, dye_full = 0.06, 0.4
-# How much of the charge's colour shows in a dyed channel, a faint glow of its double layers.
+# How much of the charge's colour shows in a dyed channel, a faint glow of its double layers; the level lines of its
+# potential, so many over the field's fall along the window, their colour, opacity and width.
 glow_strength = 0.5
+n_equipotentials = 16
+equipotential_colour, equipotential_ink, equipotential_width = np.array(to_rgb("#3b4a57")), 0.6, 1.5
 efficiency_map, heat_map, charge_map = (colormaps[name] for name in ("Blues", "Oranges", "PiYG_r"))
 # The share of the efficiency's colour map used, light to mid blue, so that its labels read on it; its labelled levels.
 efficiency_shades = (0.03, 0.6)
@@ -219,13 +222,15 @@ def draw_profiles(topology: Topology, vertices: Extensor, n_across: int, velocit
 
 
 def animate_dyes(topology: Topology, vertices: Extensor, n_across: int, period: float, wall_charges: np.ndarray,
-                 charge: Extensor, flows: Extensor, frames) -> Iterator[np.ndarray]:
+                 charge: Extensor, flows: Extensor, potentials: Extensor, falls: Extensor, frames) -> Iterator[np.ndarray]:
     """The dye in a channel at every frame as it comes `[runs] Scalar+[vertices]`, two strips one above the other: a
     neutral dye carried by a pressure drop's flow, and below it the same dye carried by a field's electro-osmotic flow
     together with a positive and a negative dye, in their charges' colours, drifting under the field as well. Each
-    strip is the liquid: faintly coloured by its charge density `Scalar+[vertices]`, its double layers, and streaked
-    along its velocity under the strip's drive `[strips] Point-[vertices]`, on one scale for both; over it each dye
-    from nothing where there is none to its colour, and the walls, coloured by their charge `[stations]`."""
+    strip is the liquid: faintly coloured by its charge density `Scalar+[vertices]`, its double layers, streaked along
+    its velocity under the strip's drive `[strips] Point-[vertices]`, and crossed by the level lines of the potential
+    the drive sets up `[strips] Scalar+[vertices]`, which falls by `falls` `[strips] Scalar+` over the period, both on
+    one scale for both strips; over it each dye from nothing where there is none to its colour, and the walls,
+    coloured by their charge `[stations]`."""
     points, faces = unrolled(topology, vertices, n_across, period)
     # The room above and below the walls, a share of the channel's width, so that the walls' strokes show whole.
     mv = vertices.context.multivector
@@ -240,11 +245,21 @@ def animate_dyes(topology: Topology, vertices: Extensor, n_across: int, period: 
     fastest = np.abs(readings(mv.x, flows)).max()
     velocities = flows.batch()                                                  # [strips, vertices] Point-
     closed = concatenate([velocities, velocities[:, :n_across]], axis=-1)      # [strips, vertices + across] Point-
-    # Each strip's liquid, its charge's glow under its flow's streaks, laid over white once.
+    # The potentials, the copy at the seam a period's fall further along, and level lines every so much of the fall,
+    # half a spacing off nothing, so that a potential that hardly varies draws none.
+    drops = falls.to_array().reshape(-1)                                       # [strips]
+    values = potentials.to_array()                                             # [strips, vertices]
+    levels = np.concatenate([values, values[:, :n_across] - drops[:, None]], axis=-1)   # [strips, vertices + across]
+    spacing = np.abs(drops).max() / n_equipotentials
+    equipotentials = contours.Lines(spacing, spacing / 2,
+                                    np.append(equipotential_colour, equipotential_ink), equipotential_width)
+    # Each strip's liquid, its charge's glow under its flow's streaks and its potential's level lines, laid over white
+    # once.
     liquids = [on_white(simplices.composited([
         shaded(points, faces, density, glow, camera),
-        flow.layer(points, faces, velocity, camera, fastest, streak_colour) * np.array([1, 1, 1, streak_ink])])) / 255
-        for velocity in closed]
+        flow.layer(points, faces, velocity, camera, fastest, streak_colour) * np.array([1, 1, 1, streak_ink]),
+        contours.picture(points, faces, level, np.zeros((len(level), 3)), camera, lines=(equipotentials,), opacity=0.0)]))
+        / 255 for velocity, level in zip(closed, levels)]
     gap = np.full((gap_pixels, camera.shape[1], 3), 255, dtype=np.uint8)
     for dye in frames:
         shares = np.clip(closing(dye.to_array(), n_across) / dye_full, 0, 1)  # [runs, vertices + across]
