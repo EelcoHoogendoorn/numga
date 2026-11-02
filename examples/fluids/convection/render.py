@@ -110,6 +110,21 @@ def animate(topology: Topology, vertices: Extensor, n_across: int, period: float
 
 
 @style()
+def draw_turnover(times: np.ndarray, sizes: Extensor, shown: float) -> Figure:
+    """The flow's squared size over the layer `[frames] Scalar+` against time on a logarithmic scale, from the moment the
+    animation starts marked: a straight rise while the rolls grow, then the swings as they overshoot and settle."""
+    figure, ax = subplots(chart_width, chart_height)
+    ax.axvline(shown, color=axis_colour, linewidth=0.8, linestyle=":")
+    ax.semilogy(times, sizes.to_array(), color=growth_colour)
+    ax.set_xlim(times[0], times[-1])
+    ax.set_xticks([times[0], times[-1]], [f"{times[0]:g}", f"{times[-1]:g}"])
+    ax.set_xlabel("time")
+    ax.set_ylabel("flow")
+    figure.tight_layout(pad=0.4)
+    return figure
+
+
+@style()
 def draw_onset(rayleighs: np.ndarray, growth: Extensor) -> Figure:
     """The growth rate of a small disturbance `[rayleighs] Scalar+` against the Rayleigh number, with its zero, and the
     onset between rigid walls marked."""

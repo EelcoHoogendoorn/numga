@@ -3,10 +3,11 @@ against the Rayleigh number around the onset of convection."""
 
 from __future__ import annotations
 
-from itertools import islice
+from itertools import islice, tee
 
 import numpy as np
 
+from numga import stack
 from examples.fluids.convection import core
 
 mv = core.mv
@@ -19,7 +20,7 @@ density, prandtl, expansion = 1.0, 7.0, 1e-3
 # the frames' duration in milliseconds.
 rayleigh = 2e4
 period, n_along, n_across = 4.0, 96, 25
-dt, n_steps, stride, n_unshown = 5e-4, 360, 3, 48
+dt, n_steps, stride, n_unshown = 5e-4, 300, 2, 80
 disturbance, seed = 1e-2, 1
 frame_duration_ms = 40
 # The onset: the Rayleigh numbers swept, the layer's length one wavelength of the first rolls to grow between rigid
@@ -38,15 +39,15 @@ def conducting(places: np.ndarray, size: float) -> np.ndarray:
 
 
 def turning_over():
-    """The layer's stream function and temperature over time `Scalar+[vertices]` each, from the still layer disturbed,
-    once its rolls begin to show."""
+    """The layer, each vertex's share of it, and its stream function and temperature over time `Scalar+[vertices]` each,
+    from the still layer disturbed."""
     topology, places, shifts, floor, ceiling = core.layer(n_along, n_across, period)
     vertices, edges = core.placed(topology, places, shifts)
     areas, sides, gradients, cells = core.triangles(topology, edges)
     temperature = mv.scalar(conducting(places, disturbance)[:, None]).field()
-    return topology, vertices, islice(core.convecting(
+    return topology, vertices, cells, core.convecting(
         topology, areas, sides, gradients, cells, topology.interior[0], density, prandtl, expansion,
-        np.array(rayleigh * prandtl / expansion), temperature, dt, n_steps, stride), n_unshown // stride, None)
+        np.array(rayleigh * prandtl / expansion), temperature, dt, n_steps, stride)
 
 
 def onset() -> core.Scalar:
@@ -70,9 +71,15 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.fluids.convection import render
 
-    topology, vertices, frames = turning_over()
+    topology, vertices, cells, states = turning_over()
     save_figure(render.draw_layer(topology, vertices, n_across, period), "convection_layer")
-    save_animation(render.animate(topology, vertices, n_across, period, frames), "convection", frame_duration_ms)
+    # Shown once the rolls begin to show, and kept whole for the flow's growth.
+    drawn, kept = tee(states)
+    save_animation(render.animate(topology, vertices, n_across, period, islice(drawn, n_unshown // stride, None)),
+                   "convection", frame_duration_ms)
+    # The flow's squared size over the layer, frame after frame from the still start.
+    sizes = stack(tuple((stream * cells * stream).sites.sum() for stream, _ in kept))   # [frames] Scalar+
+    save_figure(render.draw_turnover(np.arange(0, n_steps + 1, stride) * dt, sizes, n_unshown * dt), "convection_turnover")
     save_figure(render.draw_onset(onset_rayleighs, onset()), "convection_onset")
 
 

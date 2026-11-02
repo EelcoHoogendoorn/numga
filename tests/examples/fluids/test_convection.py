@@ -19,7 +19,7 @@ def test_onset_between_rigid_plates():
 
 
 def test_layer_turns_over_and_mixes_its_middle():
-    topology, vertices, frames = scenarios.turning_over()
+    topology, vertices, _, frames = scenarios.turning_over()
     frames = list(frames)
     _, places, _, _, _ = core.layer(scenarios.n_along, scenarios.n_across, scenarios.period)
     temperatures = frames[-1][1].to_array()
