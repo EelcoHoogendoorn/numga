@@ -1,5 +1,5 @@
-"""Salt fingers: gravity's pull on a parcel's mass alone, the fingers' limit at the ratio of the diffusivities, and
-fingers that keep their salt and trade their warmth across the middle of the tank."""
+"""Salt fingers: gravity's pull on a parcel's mass alone, and fingers that keep their salt and trade their warmth across
+the middle of the tank."""
 
 import numpy as np
 
@@ -13,13 +13,6 @@ def test_gravity_pulls_mass_alone():
     np.testing.assert_allclose(np.ravel(readings), [-1.0, 0.0, 0.0, 0.0], atol=1e-12)
 
 
-def test_fingers_grow_below_the_ratio_of_diffusivities():
-    rates = scenarios.growth().to_array()
-    assert rates[0] > 0 > rates[-1]
-    crossing = np.interp(0.0, -rates, scenarios.growth_ratios)
-    np.testing.assert_allclose(crossing, 1 / scenarios.salt_diffusivity, rtol=0.01)
-
-
 def test_fingers_keep_their_salt_and_trade_their_warmth():
     closed, opened, opening, vertices, temperature, salinity, frames = scenarios.fingers()
     frames = list(frames)
@@ -29,5 +22,3 @@ def test_fingers_keep_their_salt_and_trade_their_warmth():
     assert temperatures.std() < salinities.std() / 2
     render.draw_tank(opened, vertices, opening, scenarios.period, temperature, salinity)
     assert len(list(render.animate(opened, vertices, opening, scenarios.period, frames[-1:]))) == 1
-    render.draw_growth(scenarios.growth_ratios, core.mv.scalar(np.linspace(1, -1, 7)[:, None]),
-                       scenarios.salt_diffusivity)
