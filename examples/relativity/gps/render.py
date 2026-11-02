@@ -10,6 +10,7 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack
 from examples.relativity.gps import core
+from examples.util import shapes
 from examples.util.wgsl import image_figure, simplices, solids
 
 BLUE, ORANGE, EARTH, GRID, INK = (
@@ -18,6 +19,13 @@ BLUE, ORANGE, EARTH, GRID, INK = (
 WHITE = np.ones(3)
 N_PIXELS = 320
 ELEVATION, AZIMUTH = np.radians([22, 32])
+# The animation's margin at each edge, as a share of half the larger extent of all it frames.
+MARGIN = 0.2
+# A satellite's body, a cube, and its two solar panels on either side of it along the polar axis: their half extents,
+# and the panels' offset from the body, in Earth radii.
+BODY = np.full(3, 0.065)
+PANEL = np.array([0.105, 0.065, 0.012])
+PANEL_OFFSET = 0.19
 
 
 def earth_grid() -> solids.Ink:
@@ -31,26 +39,50 @@ def earth_grid() -> solids.Ink:
                       solids.everywhere[None].broadcast_to(planes.shape), GRID, 0.9, 0.65)
 
 
-def constellation(emitted: core.Event, receiver: core.Event, orbit_radius: float) -> tuple[solids.View, list, list]:
-    """The view at a fixed orbital scale, the solids of Earth, the transmitting satellites and the receiver, and the
-    signals' paths to it."""
-    mv = emitted.context.multivector
-    Event = emitted.algebra.gatype.antivector()                               # Antivector-
+def sliced(events: core.Event) -> solids.Point:
+    """Events as the observer at rest sees them, in the projective algebra of space."""
+    mv = events.context.multivector
+    Event = events.algebra.gatype.antivector()                                # Antivector-
     # The observer sees the point where its time line meets the spatial slice.
     space_slice = mv.t ^ (Event & -mv.t.dual())
-    # The projective embedding of the satellites and the receiver as the observer slices them: the projective algebra
-    # of spacetime holds the one of space.
-    satellite_points = solids.context.include_from_algebra(space_slice(emitted))
-    receiver_point = solids.context.include_from_algebra(space_slice(receiver))
-    centre = solids.origin + (receiver_point - solids.origin) * (orbit_radius * 0.3)
-    camera = solids.aim(centre, ELEVATION, AZIMUTH)
-    view = solids.View(camera, np.full(2, orbit_radius * 0.95), N_PIXELS)
+    # The projective embedding of the events as the observer slices them: the projective algebra of spacetime holds
+    # the one of space.
+    return solids.context.include_from_algebra(space_slice(events))
+
+
+def fixed_view(receiver: core.Event, orbit_radius: float) -> solids.View:
+    """The stills' view, at a fixed orbital scale."""
+    centre = solids.origin + (sliced(receiver) - solids.origin) * (orbit_radius * 0.3)
+    return solids.View(solids.aim(centre, ELEVATION, AZIMUTH), np.full(2, orbit_radius * 0.95), N_PIXELS)
+
+
+def swing_view(states: list) -> solids.View:
+    """The animation's view, framing Earth and, over every frame, the satellites with their panels and the fitted
+    position's semi-axes as diameters through it."""
+    emitted = stack([transmissions for transmissions, _, _, _ in states])     # [frames, satellites] Event-
+    estimates = stack([estimate for _, _, estimate, _ in states])             # [frames] Event-
+    semi_axes = stack([axes for _, _, _, axes in states])                     # [frames, 3] Event-
+    # Points on Earth's surface, the vertices of a finely split icosahedron.
+    _, coordinates = shapes.sphere(2)
+    earth = solids.mv.point(coordinates)                                      # [vertices] Point-
+    # Each satellite's span, from tip to tip of its panels along the polar axis.
+    span = solids.mv.x.dual() * ((PANEL_OFFSET + PANEL[0]) * np.array([-1, 1]))   # [2] Point-
+    tips = sliced(emitted)[..., None] + span                                  # [frames, satellites, 2] Point-
+    centres, reach = sliced(estimates)[:, None], sliced(semi_axes)            # [frames, 1] Point-, [frames, 3] Point-
+    ends = concatenate((centres - reach, centres + reach), axis=-1)           # [frames, 6] Point-
+    return solids.view([earth, tips, ends], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
+
+
+def constellation(emitted: core.Event, receiver: core.Event, view: solids.View) -> tuple[list, list]:
+    """The solids of Earth, the transmitting satellites and the receiver, and the signals' paths to it."""
+    satellite_points = sliced(emitted)
+    receiver_point = sliced(receiver)
 
     # The symbols show each satellite's central body and pair of solar panels.
-    bodies = solids.boxes(solids.translator(satellite_points - solids.origin), np.array([0.065, 0.065, 0.065]))
-    panel_offsets = solids.mv.x.dual() * np.array([-0.19, 0.19])
+    bodies = solids.boxes(solids.translator(satellite_points - solids.origin), BODY)
+    panel_offsets = solids.mv.x.dual() * np.array([-PANEL_OFFSET, PANEL_OFFSET])
     panels = solids.boxes(solids.translator(satellite_points[:, None] + panel_offsets - solids.origin),
-                          np.array([0.105, 0.065, 0.012])).reshape(-1, 6)
+                          PANEL).reshape(-1, 6)
     parts = [(solids.ball(solids.origin, 1)[None, None], EARTH),
              (bodies, ORANGE), (panels, BLUE),
              (solids.ball(receiver_point, 2.7 * view.pixel)[None, None], ORANGE)]
@@ -58,26 +90,23 @@ def constellation(emitted: core.Event, receiver: core.Event, orbit_radius: float
     signals = stack((satellite_points, receiver_point.broadcast_to(satellite_points.shape)), axis=-1)   # [satellites, 2] Point-
     rays = [(simplices.tubes(signals.reshape(-1), simplices.Topology.chains([2] * len(satellite_points)), BLUE, 0.9, view,
                              solids.gloss), 0.35)]
-    return view, parts, rays
+    return parts, rays
 
 
-def constellation_image(emitted: core.Event, receiver: core.Event, orbit_radius: float) -> np.ndarray:
-    """Earth, transmitting satellites and their paths to the receiver, at a fixed orbital scale."""
-    view, parts, rays = constellation(emitted, receiver, orbit_radius)
+def constellation_image(emitted: core.Event, receiver: core.Event, view: solids.View) -> np.ndarray:
+    """Earth, transmitting satellites and their paths to the receiver."""
+    parts, rays = constellation(emitted, receiver, view)
     return solids.draw(parts, view, WHITE, inks=[earth_grid()], translucent=[], meshes=rays)
 
 
 def solution_image(emitted: core.Event, receiver: core.Event, estimate: core.Event, semi_axes: core.Event,
-                   orbit_radius: float) -> np.ndarray:
+                   view: solids.View) -> np.ndarray:
     """The constellation with the fitted reception, its position's one-standard-deviation ellipsoid about it, and the
     ellipsoid's semi-axes `[3]` as diameters through it."""
-    mv = estimate.context.multivector
-    Event = estimate.algebra.gatype.antivector()                              # Antivector-
-    space_slice = mv.t ^ (Event & -mv.t.dual())
-    view, parts, rays = constellation(emitted, receiver, orbit_radius)
-    # The projective embedding of the sliced estimate, and of its semi-axes, directions at infinity.
-    centre = solids.context.include_from_algebra(space_slice(estimate))       # [] Point-
-    reach = solids.context.include_from_algebra(space_slice(semi_axes))       # [3] Point-
+    parts, rays = constellation(emitted, receiver, view)
+    # The sliced estimate, and its semi-axes, directions at infinity.
+    centre = sliced(estimate)                                                 # [] Point-
+    reach = sliced(semi_axes)                                                 # [3] Point-
     # The semi-axes' dyads sum to the spatial covariance, the dual quadric of the ellipsoid about the origin; its
     # inverse bounds the ellipsoid, moved to the fitted position.
     dual = (reach * (solids.Plane & reach)).sum(axis=0) - solids.origin * (solids.Plane & solids.origin)   # [] Point- <- Plane+
@@ -91,17 +120,19 @@ def solution_image(emitted: core.Event, receiver: core.Event, estimate: core.Eve
 
 def draw_constellation(emitted: core.Event, receiver: core.Event, orbit_radius: float) -> plt.Figure:
     """The satellite arrangement before solving for the receiver."""
-    return image_figure(constellation_image(emitted, receiver, orbit_radius))
+    return image_figure(constellation_image(emitted, receiver, fixed_view(receiver, orbit_radius)))
 
 
 def draw_solution(emitted: core.Event, receiver: core.Event, estimate: core.Event, semi_axes: core.Event,
                   orbit_radius: float) -> plt.Figure:
     """The satellite geometry with the estimated position and its uncertainty, given by the semi-axes of its
     ellipsoid."""
-    return image_figure(solution_image(emitted, receiver, estimate, semi_axes, orbit_radius))
+    return image_figure(solution_image(emitted, receiver, estimate, semi_axes, fixed_view(receiver, orbit_radius)))
 
 
-def animate_geometry(states: Iterable, orbit_radius: float) -> Iterator[np.ndarray]:
-    """A stream of satellite arrangements and their fitted position uncertainty, the view held fixed."""
+def animate_geometry(states: Iterable) -> Iterator[np.ndarray]:
+    """A stream of satellite arrangements and their fitted position uncertainty, the view held fixed on all of them."""
+    states = list(states)
+    view = swing_view(states)
     for emitted, receiver, estimate, semi_axes in states:
-        yield solution_image(emitted, receiver, estimate, semi_axes, orbit_radius)
+        yield solution_image(emitted, receiver, estimate, semi_axes, view)

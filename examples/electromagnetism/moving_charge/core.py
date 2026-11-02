@@ -153,6 +153,92 @@ def retarded(orbit: Orbit, events: Antivector) -> Scalar:
     return times
 
 
+# The circling charge's field at an event in numga's shader dialect, for pictures that ask for it at every sample of
+# every pixel: the worldline, the retarded time and the derivative of the potential's gradient, as above. The gradient
+# is a sum of vectors, each times a form that reads the step, `rest_slice * (distance_change & step)`, and the
+# derivative of each such term wedges its form with its vector, `distance_change ^ rest_slice`, which is what the trace
+# of `Vector ^ gradients(Antivector)` sums to.
+orbit_field_source = f"""
+// One unit along the lab's time, the steps of the retarded time's search, and pi.
+const time = -mv.t.dual();
+const n_settle_steps = {n_settle_steps}u;
+const n_newton_steps = {n_newton_steps}u;
+const pi = {np.pi!r};
+// The orbit: its charge, its radius, and its speed as a fraction of the speed of light.
+var<uniform> orbit_charge: f32;
+var<uniform> orbit_radius: f32;
+var<uniform> orbit_speed: f32;
+
+struct Worldline {{
+    position: Antivector,
+    tangent: Antivector,
+    bend: Antivector,
+}}
+
+// The circling charge at a lab time, its change per unit lab time, and that change's change.
+fn worldline(lab_time: f32) -> Worldline {{
+    // The angular rate.
+    let turning = orbit_speed / orbit_radius;
+    // The offset turned in the orbit's plane, and moving under that turn by its commutator with the plane.
+    let offset = (mv.xy * (-0.5 * turning * lab_time)).exp() >> (mv.x.dual() * orbit_radius);
+    let tangent = time + turning * offset.commutator(mv.xy);
+    let bend = turning * (tangent - time).commutator(mv.xy);
+    return Worldline(lab_time * time + offset, tangent, bend);
+}}
+
+struct Light {{
+    shortfall: f32,
+    rate: f32,
+    reach: f32,
+}}
+
+// How far light from the charge at a lab time falls short of the event, its rate, and the distance it covers.
+fn light(event: Antivector, lab_time: f32) -> Light {{
+    let charge = worldline(lab_time);
+    let ray = event - charge.position;
+    let across = ray - (mv.t & ray) * time;
+    let reach = (across | across).square_root();
+    return Light((mv.t & event) - lab_time - reach, 1 - (across | charge.tangent) / reach, reach);
+}}
+
+// The lab time at which the charge sent the light that reaches the event: a few steps that move the time back by the
+// distance light covers, which always close in, then Newton's steps.
+fn retarded(event: Antivector) -> f32 {{
+    var emitted = mv.t & event;
+    for (var index = 0u; index < n_settle_steps; index++) {{
+        emitted = (mv.t & event) - light(event, emitted).reach;
+    }}
+    for (var index = 0u; index < n_newton_steps; index++) {{
+        let seen = light(event, emitted);
+        emitted = emitted + seen.shortfall / seen.rate;
+    }}
+    return emitted;
+}}
+
+// The field at an event: the derivative of the circling charge's potential.
+fn orbit_field(event: Antivector) -> Bivector {{
+    let charge = worldline(retarded(event));
+    // The charge's velocity and acceleration in its own time, and the light ray from it to the event.
+    let dilation = 1 / sqrt(1 - orbit_speed * orbit_speed);
+    let velocity = dilation * charge.tangent;
+    let acceleration = dilation * dilation * charge.bend;
+    let ray = event - charge.position;
+    // The charge's own slice of space, which reads its velocity as one, and how it turns with the acceleration.
+    let rest_slice = -velocity.dual();
+    let slice_change = -acceleration.dual();
+    // The distance as the charge saw it when it sent the light.
+    let rest_distance = rest_slice & ray;
+    // What a step moves the emission by, and the distance: forms, the slices that read the step.
+    let emission = -ray.dual() / rest_distance;
+    let distance_change = rest_slice + ((slice_change & ray) - 1) * emission;
+    let weight = orbit_charge / (4 * pi) / rest_distance;
+    // The potential's gradient takes a step to
+    // `-weight * (slice_change * (emission & step) - rest_slice * (distance_change & step) / rest_distance)`.
+    return -weight * ((emission ^ slice_change) - (distance_change ^ rest_slice) / rest_distance);
+}}
+"""
+
+
 def _profile(charge: Charge, events: Antivector) -> tuple[Antivector, Scalar, Scalar]:
     """The spatial separation from the charge in its rest frame, the field per unit separation, and
     that weight's change per unit of `separation | step`."""

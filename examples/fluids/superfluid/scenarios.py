@@ -43,6 +43,8 @@ pulse_rise = 1e-3
 courant = 0.5
 n_steps, stride = 1400, 14
 frame_duration_ms = 40
+# The colours of the gallery's heat pulse.
+n_pinned_colours = 32
 pulse_temperature_share, pulse_pressure_share = 0.2, 0.1
 # The steady heater's warming of its chamber on average, in kelvin per millisecond, and the multiple of the chamber's
 # last warming, and of its fountain pressure, at which the heater's colours saturate.
@@ -114,6 +116,24 @@ def chambers(coordinates: np.ndarray, cells: core.Scalar) -> core.Scalar:
     cold = coordinates[:, 0] > wall_middle + wall_half_thickness
     hot_cells, cold_cells = (cells * core.mv.scalar(chamber[:, None] * 1.0).field() for chamber in (hot, cold))
     return hot_cells / hot_cells.sites.sum() - cold_cells / cold_cells.sites.sum()
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: a pulse of heat travelling out as a wave of temperature, second sound, for
+    the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.fluids.superfluid import render
+
+    topology, coordinates, in_powder, rise = scene()
+    vertices = (core.mass + core.axis * coordinates[:, 0] + core.across * coordinates[:, 1]).field()
+    liquid = stiffness(at)
+    parcels, _ = components(at)
+    fountain_per_kelvin = densities[at] * entropies[at]
+    readings = ((liquid(amounts) & core.entropy, liquid(amounts) & parcels.sum(axis=-1))
+                for amounts in pulse(topology, vertices, in_powder, rise))
+    pin_animation(render.animate(topology, vertices, in_powder, readings, pulse_temperature_share * pulse_rise,
+                                 pulse_pressure_share * fountain_per_kelvin * pulse_rise),
+                  "superfluid", frame_duration_ms, colors=n_pinned_colours)
 
 
 def main() -> None:

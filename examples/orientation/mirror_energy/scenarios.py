@@ -26,7 +26,7 @@ def rotating_masses() -> tuple[Point, Point, np.ndarray, Scalar]:
 
 
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
+    from examples.util.animation import save_figure
     from examples.orientation.mirror_energy import render
 
     positions, velocities, masses, energies = rotating_masses()
@@ -34,7 +34,15 @@ def main() -> None:
         print(label)
         print(energy.coefficient_table())
     save_figure(render.draw_motion(positions, velocities, masses), "mirror_energy")
-    save_animation(render.animate_motion(positions, velocities, masses), "mirror_energy", frame_duration_ms)
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the turning masses beside their mirror image, for the orientation docs."""
+    from examples.util.animation import pin_animation
+    from examples.orientation.mirror_energy import render
+
+    positions, velocities, masses, energies = rotating_masses()
+    pin_animation(render.animate_motion(positions, velocities, masses), "mirror_energy", frame_duration_ms)
 
 
 if __name__ == "__main__":

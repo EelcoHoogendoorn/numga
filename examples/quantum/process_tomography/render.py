@@ -37,7 +37,7 @@ REACH, MARGIN, N_PIXELS = 1.45, 0.2, 700
 # and of the predictions, a few dozen points about a diagonal.
 PANEL = (260, 305)
 EXPERIMENT, PREDICTIONS = (charts.DESIGN_WIDTH, 250), (300, 300)
-# Gallery picture: this makes plots/tomography.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+# The width and height in pixels of each channel's panel in the gallery's animation.
 GALLERY_PANEL = (240, 285)
 # The grid lines drawn, every few of the sampled latitudes and longitudes; the widths of the sphere's grid lines and
 # an image's, the edges and the axes' shafts, and the radii of the balls at the axes' tips and of the probes alone,

@@ -26,7 +26,7 @@ STEEPNESS = 30
 N_STEPS = 500
 N_FRAMES = 88
 DURATION_MS = 40
-# Gallery picture: this makes plots/slip_systems.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+# The gallery's paths: their figure's pixels across.
 GALLERY_PIXELS = 420
 
 
@@ -85,9 +85,6 @@ def main() -> None:
     schmid = partial(core.schmid, planes=planes, directions=slips)
     save_figure(render.draw_chart(schmid, planes, slips, axes, amounts), "slip_systems")
     save_animation(render.animate_paths(schmid, axes, amounts, N_FRAMES), "slip_systems_paths", DURATION_MS)
-    # Gallery picture: this makes plots/slip_systems.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-    save_animation(render.animate_paths_sized(schmid, axes, amounts, N_FRAMES, GALLERY_PIXELS), "slip_systems",
-                   DURATION_MS)
 
     # checks
     values = factors.to_array()                                          # [rows, columns, planes, directions]
@@ -101,6 +98,18 @@ def main() -> None:
     assert (np.sort(ends, axis=-1) @ target > 0.999).all()
     carried = np.sort(np.abs(amounts.to_array()).sum(axis=0).reshape(len(STARTS), -1), axis=-1)   # [starts, systems]
     assert (carried[:, -2:].sum(axis=-1) / carried.sum(axis=-1) > 0.95).all()
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the pulls' axes slipping through the standard triangle, for the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.mechanics.slip_systems import render
+
+    directions, factors, planes, slips = chart()
+    axes, amounts = paths()
+    schmid = partial(core.schmid, planes=planes, directions=slips)
+    pin_animation(render.animate_paths_sized(schmid, axes, amounts, N_FRAMES, GALLERY_PIXELS), "slip_systems",
+                  DURATION_MS)
 
 
 if __name__ == "__main__":

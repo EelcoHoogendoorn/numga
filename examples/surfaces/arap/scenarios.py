@@ -53,11 +53,7 @@ def far_end_pose(vertices: core.Point, angle: float) -> core.Point:
 
 
 def main() -> None:
-    from examples.util.animation import save_animation
-    from examples.surfaces.arap import render
-
     topology, rest_vertices, rigid_frames, laplacian_frames, handles, target_pose, last_energies = bending()
-    save_animation(render.animate(topology, rest_vertices, rigid_frames, CELL), "arap_bending", DURATION_MS)
 
     # checks
     # At the final frame the energy decreases at every iteration and the handles match their target pose.
@@ -72,6 +68,15 @@ def main() -> None:
     # Left at rest, the bar remains unchanged.
     (rest_result, _, _), = core.deform(topology, rest_vertices, handles, [rest_vertices], STIFFNESS, 2)
     np.testing.assert_allclose((rest_result - rest_vertices).kernel, 0.0, atol=1e-9)
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the bar bent a quarter turn up as rigidly as possible, for the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.surfaces.arap import render
+
+    topology, rest_vertices, rigid_frames, laplacian_frames, handles, target_pose, last_energies = bending()
+    pin_animation(render.animate(topology, rest_vertices, rigid_frames, CELL), "arap_bending", DURATION_MS)
 
 
 if __name__ == "__main__":

@@ -67,14 +67,21 @@ def uncertainty(n_frames: int) -> Iterator[tuple[core.Event, core.Event, core.Ev
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
     from examples.relativity.gps import render
-    from examples.util.animation import save_animation, save_figure
+    from examples.util.animation import save_figure
 
     emitted, estimate, covariance = positioning(PHASE)
     save_figure(render.draw_constellation(emitted, receiver, ORBIT_RADIUS), "gps_constellation")
     save_figure(render.draw_solution(emitted, receiver, estimate, core.position_spread(covariance), ORBIT_RADIUS),
                 "gps_positioning")
-    save_animation(render.animate_geometry(uncertainty(N_FRAMES), ORBIT_RADIUS),
-                   "gps_uncertainty", DURATION_MS, forward_then_back=True)
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the position's uncertainty shrinking as the satellites spread across the
+    sky, for the gallery."""
+    from examples.relativity.gps import render
+    from examples.util.animation import pin_animation
+
+    pin_animation(render.animate_geometry(uncertainty(N_FRAMES)), "gps", DURATION_MS, forward_then_back=True)
 
 
 if __name__ == "__main__":

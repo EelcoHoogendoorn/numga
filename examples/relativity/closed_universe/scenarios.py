@@ -442,18 +442,6 @@ def main() -> None:
 
     cell_mesh, cell_vertices = six_hundred_cell()
     pick = core.picking(cell_mesh, cell_vertices)
-    # The squash, stretching space along x and squeezing it along y in the frames, alone; seen from the eye, whose
-    # light at each frame left the crystals their distance before.
-    squashing = squash(cell_mesh, cell_vertices, stack((mv.x,)), stack((mv.y,)))   # [patterns] Scalar+[edges]
-    waves, frequency = stepped_history(cell_mesh, cell_vertices, squashing, squash_lags, wave_swing, 0.0)
-    eye_times = np.arange(n_wave_frames) * 2 * np.pi / frequency / n_wave_frames   # [frames]
-    bonds, atoms = crystals(crystal_places())
-    states = crystal_states(pick, waves, frequency, bonds, atoms, eye_times - crystal_distance)
-    save_animation(render.waves_view(core.wave_walk_source, render.wave_values(cell_mesh, waves), cell_mesh,
-                                     cell_vertices, eye, eye_times, guardrails(cell_vertices, n_guardrail_sides),
-                                     bonds, atoms, states),
-                   "closed_universe_600_cell", duration_ms)
-
     # The round universe from inside: the flight along a Boerdijk–Coxeter helix's axis, down the tunnel the helix's
     # tetrahedra make about it with the step across it up, every great circle of edges in its own colour; and the
     # helix panned past, its rails in colour.
@@ -473,15 +461,6 @@ def main() -> None:
                                      irregular_mesh, irregular_vertices, flight(core.frame(middle))),
                    "closed_universe_irregular", duration_ms)
 
-    # The travelling quadrupole below the Hopf circles.
-    quadrupole, quadrupole_frequency = quadrupole_history(cell_mesh, cell_vertices)
-    turn = circle_turn(cell_vertices, n_guardrail_sides)                        # [] Motor+
-    bases = decagon_bases(cell_vertices, turn.log())                            # [decagons] Point-
-    sphere_mesh, sphere_points = base_sphere()
-    save_animation((render.base_view(sphere_mesh, sphere_points, bases, *frame)
-                    for frame in quadrupole_frames(pick, quadrupole, quadrupole_frequency, turn, bases, sphere_points)),
-                   "closed_universe_quadrupole", duration_ms, colors=n_quadrupole_colours)
-
     # checks
     # The stepped waves have no growing mode, the squash is their slowest, a fiftieth short of the continuum's eight on
     # edges a fifth of a half turn long, and the squash, a wave of the 600-cell by its symmetry, rings at the
@@ -499,10 +478,42 @@ def main() -> None:
     assert (deficits.abs() < 1e-12).all()
     # The quadrupole is the same all along each circle, between the tenth turns that carry the mesh onto itself too: a
     # circle's stretch read at one point of it is its average round it.
+    quadrupole, _ = quadrupole_history(cell_mesh, cell_vertices)
+    turn = circle_turn(cell_vertices, n_guardrail_sides)                        # [] Motor+
+    _, sphere_points = base_sphere()
     at_one = core.stretches(quadrupole, pick, sphere_points, sphere_points, turn, n_guardrail_sides, 1, 0.0)
     averaged = core.stretches(quadrupole, pick, sphere_points, sphere_points, turn, n_guardrail_sides,
                               n_circle_samples, 0.0)
     assert ((at_one - averaged).abs() < 1e-6 * np.abs(averaged.to_array()).max()).all()
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the quadrupole travelling round the base below the Hopf circles, for the
+    gallery, and the waves seen from inside, for the README."""
+    from examples.util.animation import pin_animation
+    from examples.relativity.closed_universe import render
+
+    cell_mesh, cell_vertices = six_hundred_cell()
+    pick = core.picking(cell_mesh, cell_vertices)
+    quadrupole, quadrupole_frequency = quadrupole_history(cell_mesh, cell_vertices)
+    turn = circle_turn(cell_vertices, n_guardrail_sides)                        # [] Motor+
+    bases = decagon_bases(cell_vertices, turn.log())                            # [decagons] Point-
+    sphere_mesh, sphere_points = base_sphere()
+    pin_animation((render.base_view(sphere_mesh, sphere_points, bases, *frame)
+                   for frame in quadrupole_frames(pick, quadrupole, quadrupole_frequency, turn, bases, sphere_points)),
+                  "closed_universe_quadrupole", duration_ms, colors=n_quadrupole_colours)
+
+    # The squash, stretching space along x and squeezing it along y in the frames, alone; seen from the eye, whose
+    # light at each frame left the crystals their distance before.
+    squashing = squash(cell_mesh, cell_vertices, stack((mv.x,)), stack((mv.y,)))   # [patterns] Scalar+[edges]
+    waves, frequency = stepped_history(cell_mesh, cell_vertices, squashing, squash_lags, wave_swing, 0.0)
+    eye_times = np.arange(n_wave_frames) * 2 * np.pi / frequency / n_wave_frames   # [frames]
+    bonds, atoms = crystals(crystal_places())
+    states = crystal_states(pick, waves, frequency, bonds, atoms, eye_times - crystal_distance)
+    pin_animation(render.waves_view(core.wave_walk_source, render.wave_values(cell_mesh, waves), cell_mesh,
+                                    cell_vertices, eye, eye_times, guardrails(cell_vertices, n_guardrail_sides),
+                                    bonds, atoms, states),
+                  "closed_universe_inside", duration_ms)
 
 
 if __name__ == "__main__":

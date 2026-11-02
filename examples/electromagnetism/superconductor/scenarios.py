@@ -108,14 +108,12 @@ def kept_quanta(topology: core.Topology, areas: core.Scalar, gradients: core.Pla
 
 
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
+    from examples.util.animation import save_figure
     from examples.electromagnetism.superconductor import render
 
     topology, vertices, in_rod, frames = cooled()
     save_figure(render.draw_rod(topology, vertices, in_rod), "superconductor_rod")
     frames = list(frames)
-    save_animation(render.animate(topology, vertices, in_rod, penetration, frames), "superconductor",
-                   frame_duration_ms)
     # The superconductor at the end of its hold in the field.
     held = frames[(n_normal + n_cooling + n_held - 1) // stride][0][0]
     save_figure(render.draw_penetration(*penetrating(topology, vertices, held), penetration), "superconductor_depth")
@@ -130,6 +128,15 @@ def main() -> None:
     left = core.ring_fields(topology, areas, gradients, in_ring, hole_faces, in_hole, rim, penetration, kept,
                             0 * kept)                                         # [fields] Scalar+[vertices]
     save_figure(render.draw_staircase(cooling_fields, (left * cells).sites.sum()), "superconductor_staircase")
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the rod cooled in the field as a superconductor and as a perfect conductor side by side, for the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.electromagnetism.superconductor import render
+
+    topology, vertices, in_rod, frames = cooled()
+    pin_animation(render.animate(topology, vertices, in_rod, penetration, frames), "superconductor", frame_duration_ms)
 
 
 if __name__ == "__main__":

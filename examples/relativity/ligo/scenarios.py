@@ -23,10 +23,11 @@ N_FRAMES = 96
 N_MASSES = 24
 STRAIN_SHOWN = 0.3
 DURATION_MS = 40
-# The polarization animation's size, in pixels.
+# The polarization animation's size, in pixels, and the gallery's, with the gallery's colours, enough for the response's
+# bands, the ring's and the site's inks and their edges.
 POLARIZATION_SIZE = (600, 200)
-# Gallery picture: this makes plots/ligo.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
 GALLERY_SIZE = (720, 240)
+N_GALLERY_COLOURS = 48
 
 
 # --- math -----------------------------------------------------------------------------
@@ -85,9 +86,6 @@ def main() -> None:
     save_figure(render.draw_network(directions, network, alike, zeniths, NAMES), "ligo_network")
     save_animation(render.animate_polarization(directions, responses, sites[0], arms[0], rings, NAMES[0], POLARIZATION_SIZE),
                    "ligo_polarization", DURATION_MS)
-    # Gallery picture: this makes plots/ligo.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-    save_animation(render.animate_polarization(directions, responses, sites[0], arms[0], rings, NAMES[0], GALLERY_SIZE),
-                   "ligo", DURATION_MS)
 
     # checks
     # Straight overhead each detector the sensitivity is one, the arms lying across the wave, and nowhere
@@ -106,6 +104,20 @@ def main() -> None:
     # The two detectors are built nearly opposite: over most of the sky they read a wave with opposite
     # signs.
     assert np.mean(alike < -0.5) > 0.9
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: Hanford's response as the wave's polarization turns, for the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.relativity.ligo import render
+
+    sites, arms = detectors()
+    frames = sky()
+    directions = frames >> core.mv.x.dual()                                  # [latitudes, longitudes] Point-
+    angles = np.linspace(0, np.pi, N_FRAMES, endpoint=False)
+    responses, rings = polarization(sites[0], arms[0], frames, angles)       # [frames, latitudes, longitudes] Scalar+, [frames, masses] Point-
+    pin_animation(render.animate_polarization(directions, responses, sites[0], arms[0], rings, NAMES[0], GALLERY_SIZE),
+                  "ligo", DURATION_MS, colors=N_GALLERY_COLOURS)
 
 
 if __name__ == "__main__":

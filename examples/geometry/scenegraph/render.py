@@ -227,8 +227,6 @@ def draw_scenegraph(world_vertices: Point, projected_pixels: Point, camera_pose:
     return fig
 
 
-# README picture: this makes plots/scenegraph.gif, tuned as a visual for the README. Don't change it; to
-# experiment, copy it.
 def animate_scenegraph(frames: Iterable) -> Iterator[np.ndarray]:
     """Yield RGB frames of the side-by-side 3D scene and sensor photograph across the trajectory."""
     frames = list(frames)

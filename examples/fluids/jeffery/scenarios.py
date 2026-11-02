@@ -37,7 +37,7 @@ N_STEPS_PER_FRAME = 2
 # The heights at which the flow is drawn, all where it moves, and the duration of a frame.
 HEIGHTS = np.array([-3.0, -2.0, -1.0, 1.0, 2.0, 3.0])
 DURATION_MS = 40
-# Gallery picture: this makes plots/jeffery.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+# The gallery's tumbling bodies: their pixels across.
 GALLERY_PIXELS = 240
 
 
@@ -61,16 +61,12 @@ def frames(rotors: core.Rotor) -> Iterator[tuple[core.Rotor, core.Point]]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
+    from examples.util.animation import save_figure
     from examples.fluids.jeffery import render
 
     rotors = tumbling()                                                      # [steps + 1, bodies, starts] Rotor+
     trails = rotors >> x.dual()                                              # [steps + 1, bodies, starts] Point-
-    heights = y.dual() * HEIGHTS                                             # [heights] Point-
     save_figure(render.draw_orbits(trails), "jeffery_orbits")
-    # Gallery picture: this makes plots/jeffery.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-    save_animation(render.animate_tumbling(core.stretch(SEMI_AXES), heights, flow(heights), frames(rotors),
-                                           GALLERY_PIXELS), "jeffery", DURATION_MS)
 
     # checks
     # The rotors stay unit over the whole span: the bodies stay rigid.
@@ -87,6 +83,17 @@ def main() -> None:
     np.testing.assert_allclose(constant / constant[0], 1.0, rtol=2e-2)
     # The rod spends most of its time near the flow's direction: there its spin nearly vanishes.
     assert np.mean(np.abs(flowing.to_array()) > 0.8 * np.sin(TILTS)) > 0.5
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the three bodies tumbling in the shear flow, for the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.fluids.jeffery import render
+
+    rotors = tumbling()                                                      # [steps + 1, bodies, starts] Rotor+
+    heights = y.dual() * HEIGHTS                                             # [heights] Point-
+    pin_animation(render.animate_tumbling(core.stretch(SEMI_AXES), heights, flow(heights), frames(rotors),
+                                          GALLERY_PIXELS), "jeffery", DURATION_MS)
 
 
 if __name__ == "__main__":

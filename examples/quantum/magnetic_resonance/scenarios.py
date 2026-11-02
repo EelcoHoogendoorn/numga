@@ -82,7 +82,7 @@ def echo_decay(n_spins: int, spread: float, dt: float, n_doublings: int, seed: i
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
+    from examples.util.animation import save_figure
     from examples.quantum.magnetic_resonance import render
 
     history, steady_states, last = nutation(NUTATION_DETUNINGS, NUTATION_DRIVE, NUTATION_SECONDS, NUTATION_DT, NUTATION_EVERY)
@@ -92,7 +92,6 @@ def main() -> None:
     detunings, ensemble = echo(N_SPINS, SPREAD, DELAY, ECHO_SECONDS, ECHO_DT, ECHO_EVERY, SEED)
     frame_time = ECHO_DT * ECHO_EVERY
     save_figure(render.draw_echo(ensemble, frame_time, DELAY, T2), "resonance_echo")
-    save_animation(render.animate_echo(detunings, ensemble, frame_time, DELAY, T2, FRAME_STRIDE), "resonance_echo", FRAME_DURATION)
     times, echo_states, decay_states = echo_decay(N_SPINS, SPREAD, ECHO_DT, N_DOUBLINGS, SEED)
     save_figure(render.draw_decays(times, echo_states, decay_states, T2), "resonance_echo_decay")
 
@@ -117,6 +116,16 @@ def main() -> None:
     # spread of the field.
     spins = 2 * echo_states.select[2]
     np.testing.assert_allclose(np.hypot((mv.yz & spins).to_array(), (mv.zx & spins).to_array()), np.exp(-times / T2), rtol=1e-5)
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the spin echo, the ensemble fanning out and refocusing, for the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.quantum.magnetic_resonance import render
+
+    detunings, ensemble = echo(N_SPINS, SPREAD, DELAY, ECHO_SECONDS, ECHO_DT, ECHO_EVERY, SEED)
+    frame_time = ECHO_DT * ECHO_EVERY
+    pin_animation(render.animate_echo(detunings, ensemble, frame_time, DELAY, T2, FRAME_STRIDE), "resonance_echo", FRAME_DURATION)
 
 
 if __name__ == "__main__":

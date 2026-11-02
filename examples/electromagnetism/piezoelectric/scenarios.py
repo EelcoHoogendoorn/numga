@@ -22,7 +22,6 @@ n_length, n_thickness = 180, 12
 applied_voltage, applied_force = 100 / voltage_unit, 0.06 / force_unit
 n_frames, duration_ms = 90, 40
 displacement_scale, strain_scale = 100, 2e-5
-# Gallery picture: this makes plots/piezoelectric.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
 # The gallery's actuator: the colours of its palette.
 gallery_colours = 64
 
@@ -77,7 +76,7 @@ def cycle(displacement: core.Point, potential: core.Scalar, axial_strain: core.S
         yield displacement * amplitude, potential * amplitude, axial_strain * amplitude
 
 
-if __name__ == "__main__":
+def main() -> None:
     from examples.electromagnetism.piezoelectric import render
     from examples.util.animation import save_animation, save_figure
 
@@ -92,6 +91,18 @@ if __name__ == "__main__":
                                   strain_scale), "piezoelectric_actuator", duration_ms)
     save_animation(render.animate(topology, vertices, areas, cycle(*sensor, n_frames), displacement_scale, 10 / voltage_unit,
                                   strain_scale), "piezoelectric_sensor", duration_ms)
-    # Gallery picture: this makes plots/piezoelectric.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-    save_animation(render.animate(topology, vertices, areas, cycle(*actuator, n_frames), displacement_scale, applied_voltage,
-                                  strain_scale), "piezoelectric", duration_ms, colors=gallery_colours)
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the bimorph driven through its electrodes, for the gallery."""
+    from examples.electromagnetism.piezoelectric import render
+    from examples.util.animation import pin_animation
+
+    topology, vertices, areas, gradients, poling, material, blocks = device()
+    actuator = actuation(topology, gradients, blocks)
+    pin_animation(render.animate(topology, vertices, areas, cycle(*actuator, n_frames), displacement_scale, applied_voltage,
+                                 strain_scale), "piezoelectric", duration_ms, colors=gallery_colours)
+
+
+if __name__ == "__main__":
+    main()

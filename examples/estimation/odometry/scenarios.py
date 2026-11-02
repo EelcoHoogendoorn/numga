@@ -113,7 +113,7 @@ def lap_in_space():
 
 
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
+    from examples.util.animation import save_figure
     from examples.estimation.odometry import render
 
     # Dead reckoning drifts half a metre over the lap.
@@ -121,11 +121,6 @@ def main() -> None:
     truth, dead_reckoning, reckoned_uncertainty, poses, uncertainty = closing(lap_in_plane(), N_FULL_STEPS, SEED)
     reckoned_ellipsoids = plane.ellipsoids(dead_reckoning, reckoned_uncertainty, SIGMAS)  # [poses] Plane+ <- Point-
     save_figure(render.draw(truth, dead_reckoning, reckoned_ellipsoids, poses, plane.ellipsoids(poses, uncertainty, SIGMAS)), "odometry")
-    # Closing the lap three tenths of the way at a time.
-    *_, iterates = damped(lap_in_plane(), DAMPING, N_DAMPED_STEPS, SEED)
-    save_animation(render.animate(truth, dead_reckoning, reckoned_ellipsoids,
-                                  ((poses, plane.ellipsoids(poses, uncertainty, SIGMAS)) for poses, uncertainty in iterates)),
-                   "odometry", FRAME_DURATION, stepped=True)
 
     # checks
     # The gradient falls a millionfold from dead reckoning to the most likely poses, in the plane and, with
@@ -134,6 +129,20 @@ def main() -> None:
     for steps, most_likely in ((lap_in_plane(), poses), (lap_in_space(), poses_in_space)):
         dead_gradient, optimum_gradient = gradients(steps, most_likely, SEED)
         np.testing.assert_allclose(optimum_gradient.kernel, 0.0, atol=1e-6 * np.abs(dead_gradient.kernel).max())
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the lap closing from dead reckoning by damped steps, for the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.estimation.odometry import render
+
+    plane = instantiate(CORE, PGA2D)
+    # Closing the lap three tenths of the way at a time.
+    truth, dead_reckoning, reckoned_uncertainty, iterates = damped(lap_in_plane(), DAMPING, N_DAMPED_STEPS, SEED)
+    reckoned_ellipsoids = plane.ellipsoids(dead_reckoning, reckoned_uncertainty, SIGMAS)  # [poses] Plane+ <- Point-
+    pin_animation(render.animate(truth, dead_reckoning, reckoned_ellipsoids,
+                                 ((poses, plane.ellipsoids(poses, uncertainty, SIGMAS)) for poses, uncertainty in iterates)),
+                  "odometry", FRAME_DURATION, stepped=True)
 
 
 if __name__ == "__main__":

@@ -24,15 +24,13 @@ duration_ms = 40
 orbit_charge = 1.0
 orbit_radius = 1.0
 # A slow and a fast orbit, as fractions of the speed of light, with the names of their animations; their pictures'
-# pixels a side, each pixel sampled twice along each side and averaged back, the colours of their palettes, and the
-# frames of a turn.
+# pixels a side, the frames of a turn, and the colours of their palettes.
 orbit_speeds = np.array([0.5, 0.9])
 orbit_names = ("slow", "fast")
 orbit_half_width = 10.0
-n_orbit_pixels = 240
-samples_per_pixel = 2
-n_orbit_colours = 32
+n_orbit_pixels = 300
 n_orbit_frames = 90
+n_orbit_colours = 32
 # The coarser window the checks sample.
 n_check_columns = 30
 n_check_rows = 20
@@ -56,19 +54,25 @@ def speed_up() -> Iterator[tuple[core.Antivector, core.Bivector, core.Antivector
         yield events, field, current
 
 
-def circling(orbit: core.Orbit, n_samples: int) -> Iterator[tuple[core.Antivector, core.Bivector, core.Antivector]]:
-    """Over one turn: the events in the orbit's plane at each lab time, the field there, and the
-    charge."""
-    plane = core.grid(orbit_half_width, orbit_half_width, n_samples, n_samples)   # [rows, columns] Antivector-
+def circling(orbit: core.Orbit) -> Iterator[tuple[float, core.Antivector]]:
+    """Over one turn: each lab time, and the charge then; the pictures ask for the field at each of their samples."""
     period = 2 * np.pi * orbit.radius / orbit.speed
     for time in period * np.arange(n_orbit_frames) / n_orbit_frames:
-        events = plane + core.time * time                                    # [rows, columns] Antivector-
-        field = core.field(core.orbit_potential_gradient(orbit, events))     # [rows, columns] Bivector+
         position, _, _ = core.worldline(orbit, core.mv.scalar([time]))       # [1] Antivector-
-        yield events, field, position
+        yield time, position
 
 
 # --- plumbing -------------------------------------------------------------------------
+def pinned() -> None:
+    """The picture the repository tracks: the fast charge's waves over one turn, for the docs' gallery."""
+    from examples.util.animation import pin_animation
+    from examples.electromagnetism.moving_charge import render
+
+    orbit = core.Orbit(orbit_charge, orbit_radius, orbit_speeds[-1])
+    frames = render.animate_waves(core.orbit_field_source, orbit, circling(orbit), orbit_half_width, n_orbit_pixels)
+    pin_animation(frames, "radiating_charge_fast", duration_ms, colors=n_orbit_colours)
+
+
 def main() -> None:
     from examples.util.animation import save_animation
     from examples.electromagnetism.moving_charge import render
@@ -77,7 +81,7 @@ def main() -> None:
     save_animation(render.animate(speed_up()), "moving_charge", duration_ms, forward_then_back=True)
     for name, speed in zip(orbit_names, orbit_speeds):
         orbit = core.Orbit(orbit_charge, orbit_radius, speed)
-        frames = render.animate_waves(circling(orbit, n_orbit_pixels * samples_per_pixel), samples_per_pixel)
+        frames = render.animate_waves(core.orbit_field_source, orbit, circling(orbit), orbit_half_width, n_orbit_pixels)
         save_animation(frames, f"radiating_charge_{name}", duration_ms, colors=n_orbit_colours)
 
     # checks

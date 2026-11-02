@@ -15,7 +15,7 @@ Meeting that requirement requires an operation that has a notion of 'orientation
 
 Two pictures show what a physical mirror does to a line, and everything after them builds on these two. For these pictures, we choose points oriented by their weights and planes oriented by their positive sides.
 
-![Two points on a line lying in a mirror, and two planes crossing in that line, before and after the mirror](../plots/pairs_in_mirror.png)
+<p align="center"><img src="../plots/pairs_in_mirror.png" alt="Two points on a line lying in a mirror, and two planes crossing in that line, before and after the mirror" width="353" /></p>
 
 *Figure: a vertical mirror, the pale sheet, and a line lying in it. Top: a red point and a blue point on the line. Bottom: a red plane and a blue plane crossing in the line, each at half a right angle to the mirror. Left: the scene. Right: its mirror image.*
 
@@ -57,7 +57,7 @@ The meet and the join have the same grade and the same coefficients up to scale,
 
 Geometric algebra reflects an element `x` in a mirror plane `m` with the sandwich product `m * x * m.inverse()`, applied to every element in the same way. The sandwich commutes with the geometric product, and with the outer and inner products built from it, so it negates the meet as it should. It does not commute with the regressive product: the sandwich of a join is minus the join of the sandwiches, so it negates the join as well, which a mirror containing the line must leave unchanged:
 
-![Two points in a mirror and the line through them: the line, its mirror image, and the sandwich product's result](../plots/line_in_mirror_01.png)
+<p align="center"><img src="../plots/line_in_mirror.png" alt="Two points in a mirror and the line through them: the line, its mirror image, and the sandwich product's result" width="603" /></p>
 
 *Figure: two points lying in a mirror, the pale sheet, and the line through them, with an arrow for its intrinsic orientation. Left: the line. Middle: its mirror image, with its direction unchanged. Right: the result of reflecting with the sandwich product directly; the points are unchanged, but the line is turned around.*
 
@@ -92,7 +92,7 @@ mirror >> (red ^ blue)                                 # Bivector+
 
 The line is one example. Every element of the algebra can carry either orientation, intrinsic or extrinsic, and a mirror treats the two differently whatever the element is. A triangle shows it for a plane:
 
-![A triangle's positive side, and the order of its corners, before and after a vertical mirror](../plots/normal_orientation.png)
+<p align="center"><img src="../plots/normal_orientation.png" alt="A triangle's positive side, and the order of its corners, before and after a vertical mirror" width="603" /></p>
 
 *Figure: a triangle lying in a horizontal plane, and its mirror image in a vertical mirror. Left: the plane's positive side, which stays above both triangles. Right: the order of the corners, which the mirror reverses.*
 
@@ -155,7 +155,7 @@ In matrix notation a plane's side transforms with the inverse transpose of a lin
 
 Mirroring a system together with its measuring apparatus should preserve every reading. Kinetic energy gives one test: a spinning body and its mirror image turn opposite ways but have the same energy:
 
-![A body of three masses turning, and its mirror image turning the other way with the same kinetic energy](../plots/mirror_energy.gif)
+<p align="center"><img src="../plots/mirror_energy.gif" alt="A body of three masses turning, and its mirror image turning the other way with the same kinetic energy" width="600" /></p>
 
 *Figure: a body of three masses turns, and its mirror image turns the other way. Colours identify matching masses, marker sizes show the masses, and arrows show their velocities.*
 

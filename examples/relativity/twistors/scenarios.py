@@ -53,8 +53,6 @@ def electric_lines() -> core.Spatial:
     return electric_turn >> congruence()
 
 
-# README picture: this makes plots/twistor_hopfion.gif, tuned as a visual for the README. Don't change it; to
-# experiment, copy it.
 def propagation(times: np.ndarray) -> Iterator[core.Event]:
     """Electric field lines transported along straight null rays, one set per instant."""
     electric = electric_lines()                                               # [polars, per circle, fibre samples] Spatial-
@@ -67,17 +65,13 @@ def propagation(times: np.ndarray) -> Iterator[core.Event]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
+    from examples.util.animation import save_figure
     from examples.relativity.twistors import render
 
-    n_frames, duration_ms = 96, 40
     twistors, events, rays = incidence()
     save_figure(render.draw_incidence(events, rays), "twistor_incidence")
     save_figure(render.draw_congruence(congruence()), "twistor_robinson")
     save_figure(render.draw_fields(electric_lines()), "twistor_hopfion")
-    # README picture: this makes plots/twistor_hopfion.gif, tuned as a visual for the README. Don't change it; to
-    # experiment, copy it.
-    save_animation(render.animate_fields(propagation(np.linspace(-1.25, 1.25, n_frames))), "twistor_hopfion", duration_ms)
 
     # --- checks
     # The recovered ray meets the events it came from, at rest and boosted.
@@ -91,6 +85,17 @@ def main() -> None:
     flux = field >> core.time
     np.testing.assert_allclose(field.squared().kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose((flux / (mv.t & flux) - core.robinson(lines)).kernel, 0.0, atol=1e-10)
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the Hopfion's linked electric field lines carried along its light rays, for the README and the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.relativity.twistors import render
+
+    # The frames, their duration in milliseconds, and the colours they are drawn in.
+    n_frames, duration_ms, n_colours = 96, 40, 32
+    pin_animation(render.animate_fields(propagation(np.linspace(-1.25, 1.25, n_frames))), "twistor_hopfion", duration_ms,
+                  colors=n_colours)
 
 
 if __name__ == "__main__":

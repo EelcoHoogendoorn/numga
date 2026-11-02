@@ -8,7 +8,8 @@ from examples.optics.black_sandwich.core import (
     Direction, Field, OpticalMap, field_along, mv, polarizer, through_pair, time,
 )
 
-# Gallery picture: this makes plots/sandwich.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+# The duration of a frame, and the gallery's sandwich: its dots per inch.
+duration_ms = 40
 gallery_dpi = 720 / 9.2
 
 
@@ -40,13 +41,9 @@ def main() -> None:
     from examples.util.animation import save_animation
     from examples.optics.black_sandwich import render
 
-    duration_ms = 40
     fields, plate_axes, input_axis, output_axis, sandwich = rotating_plate()
     save_animation(render.frames(fields, plate_axes, input_axis, output_axis), "black_sandwich", duration_ms,
                    forward_then_back=True)
-    # Gallery picture: this makes plots/sandwich.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-    save_animation(render.sized_frames(fields, plate_axes, input_axis, output_axis, gallery_dpi), "sandwich",
-                   duration_ms, forward_then_back=True)
 
     # checks
     # One stack passes the whole field at some plate angle, yet two in succession pass none.
@@ -54,6 +51,16 @@ def main() -> None:
     np.testing.assert_allclose(passed.max(), 1, atol=1e-12)
     np.testing.assert_allclose(sandwich(sandwich).kernel, 0, atol=1e-12)
     np.testing.assert_allclose(fields[:, 4:].kernel, 0, atol=1e-12)
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the plates turning between crossed polarizers, for the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.optics.black_sandwich import render
+
+    fields, plate_axes, input_axis, output_axis, sandwich = rotating_plate()
+    pin_animation(render.sized_frames(fields, plate_axes, input_axis, output_axis, gallery_dpi), "sandwich",
+                  duration_ms, forward_then_back=True)
 
 
 if __name__ == "__main__":

@@ -106,11 +106,17 @@ def draw_cavity(topology: Topology, vertices: Extensor, in_powder: np.ndarray) -
     return image_figure(on_white(simplices.composited(layers)))
 
 
+# The flat bands each rise is drawn in, from falling fully to rising fully: an odd count, so that one band holds no rise.
+n_bands = 9
+band_spacing = 2 / (n_bands - 1)
+band_middles = np.linspace(-1, 1, n_bands)
+
+
 def animate(topology: Topology, vertices: Extensor, in_powder: np.ndarray, frames: Iterable[tuple[Extensor, Extensor]],
             warmest: float, highest: float) -> Iterator[np.ndarray]:
     """The cavity twice at every frame as it comes, coloured above by its rise of temperature and below by its rise of
-    pressure `Scalar+[vertices]` each, saturating at these rises of temperature and of pressure, with the powder's
-    `[faces]` edges and the walls drawn over them."""
+    pressure `Scalar+[vertices]` each, in flat bands, saturating at these rises of temperature and of pressure, with
+    the powder's `[faces]` edges and the walls drawn over them."""
     camera = cavity_camera(vertices)
     points = vertices.batch()
     over = [powder_edge(vertices, topology, in_powder, camera), walls(vertices, topology, camera)]
@@ -118,10 +124,11 @@ def animate(topology: Topology, vertices: Extensor, in_powder: np.ndarray, frame
     for warmth, pressure in frames:
         pictures = []
         for field, scale, shades in ((warmth, warmest, temperature_map), (pressure, highest, pressure_map)):
-            values = field.batch().to_array()
-            colours = shades(0.5 + np.clip(values / scale, -1, 1) / 2)[:, :3]
+            shares = np.clip(field.batch().to_array() / scale, -1, 1)
+            bands = contours.Bands(-1 - band_spacing / 2, band_spacing, shades(0.5 + band_middles / 2))
             pictures.append(on_white(simplices.composited(
-                [contours.picture(points, topology, values, colours, camera)] + over)))
+                [contours.picture(points, topology, shares, shades(0.5 + shares / 2)[:, :3], camera,
+                                  bands=(bands,))] + over)))
         yield np.concatenate([pictures[0], gap, pictures[1]])
 
 

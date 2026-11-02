@@ -36,11 +36,11 @@ CAMERA_COLORS = np.array([mcolors.to_rgb(colour) for colour in ("#0284c7", "#ec4
 SPLAT_COLOR = np.array([0.98, 0.48, 0.04])
 X_RANGE = (-1.25, 1.25)
 Y_RANGE = (-0.30, 2.95)
-# README picture: the rows of pixels down the scene set plots/multiview_convergence.gif, about 300 pixels a side, tuned as
-# a visual for the README; to experiment, copy them.
+# The pixels along the longer side of what a figure draws.
 PIXELS = 300
-# The room an animation leaves around its first state's cameras, in metres, where they lie outside the scene drawn.
-CAMERA_ROOM = 0.35
+# The room an animation leaves on every side of its first state's cameras and landmarks, a share of the longer side of
+# what they span: the picture's margin, and room for the cameras and landmarks to move as they align.
+ROOM = 0.25
 # Angular half-width of a pixel, the cone radius per unit depth.
 PIXEL_ANGLE = 0.035         # rad
 # The cameras' wedges, how far in front of the pinhole their sensors lie and how wide they open, and how far their axes
@@ -65,13 +65,14 @@ def coordinates(points: Point) -> np.ndarray:
     return (stack((mv.x, mv.y)) & (points / (mv.w & points))[..., None]).to_array()
 
 
-def canvas(x_range: tuple[float, float]) -> tuple[plt.Figure, plt.Axes, Camera]:
-    """A figure `PIXELS` rows down the scene's heights and as many square pixels across `x_range`, its axes on them, and
-    the camera its pictures are read by."""
-    n_columns = round(PIXELS * (x_range[1] - x_range[0]) / (Y_RANGE[1] - Y_RANGE[0]))
-    figure = plt.figure(figsize=(n_columns / 100, PIXELS / 100), dpi=100)
+def canvas(x_range: tuple[float, float], y_range: tuple[float, float] = Y_RANGE) -> tuple[plt.Figure, plt.Axes, Camera]:
+    """A figure `PIXELS` pixels along the longer of `x_range` and `y_range` and as many square pixels along the other,
+    its axes on them, and the camera its pictures are read by."""
+    spans = np.array([x_range[1] - x_range[0], y_range[1] - y_range[0]])
+    n_columns, n_rows = np.round(PIXELS * spans / spans.max()).astype(int)
+    figure = plt.figure(figsize=(n_columns / 100, n_rows / 100), dpi=100)
     ax = figure.add_axes((0, 0, 1, 1))
-    ax.set(xlim=x_range, ylim=Y_RANGE)
+    ax.set(xlim=x_range, ylim=y_range)
     return figure, ax, flat_panel(ax, PGA2D)
 
 
@@ -106,10 +107,9 @@ def splats(motors: Motor, fused_splats: Quadric, points: Point, camera: Camera) 
     return [quadrics.regions((fused_splats - unit_weight * levels)[:, None], SPLAT_COLOR, camera, 0.95)]
 
 
-def cameras(motors: Motor, camera: Camera) -> list[np.ndarray]:
-    """The field-of-view wedge, bounding sight lines, sensor, and dashed optical axis for each camera."""
-    # In the camera's frame: the pinhole, the sensor's ends, where the sight lines turned the half field either way
-    # from the axis meet the sensor in front of the pinhole, and the axis's end past the sensor.
+def camera_marks(motors: Motor) -> Point:
+    """Each camera's pinhole, its sensor's ends, where the sight lines turned the half field either way from the axis
+    meet the sensor in front of the pinhole, and its axis's end past the sensor, `[cameras, marks] Point`."""
     pinhole, axis = mv.point([0, 0]), mv.direction([0, 1])                       # [] Point-, Direction-
     sensor = mv.y - WEDGE_DEPTH * mv.w                                           # [] Plane+
     half_fields = np.array([-HALF_FIELD, HALF_FIELD])
@@ -117,7 +117,12 @@ def cameras(motors: Motor, camera: Camera) -> list[np.ndarray]:
     sensor_ends = (sensor ^ (pinhole & (sight_turns >> axis))).normalized()      # [ends] Point-
     axis_end = pinhole + axis * (WEDGE_DEPTH * AXIS_REACH)                       # [] Point-
     local_marks = concatenate((pinhole[None], sensor_ends, axis_end[None]))      # [marks] Point-
-    marks = motors[:, None] >> local_marks                                       # [cameras, marks] Point-
+    return motors[:, None] >> local_marks                                        # [cameras, marks] Point-
+
+
+def cameras(motors: Motor, camera: Camera) -> list[np.ndarray]:
+    """The field-of-view wedge, bounding sight lines, sensor, and dashed optical axis for each camera."""
+    marks = camera_marks(motors)                                                 # [cameras, marks] Point-
     camera_colours = CAMERA_COLORS[:motors.shape[0]]
     wedge = Topology(3, [[0, 1, 2]])
     wedges = [[contours.picture(marks[index, :3], wedge, np.zeros(3), colour, camera, opacity=0.18),
@@ -191,18 +196,18 @@ def draw_reconstruction_with_covariance(
     return figure
 
 
-# README picture: this also draws plots/multiview_convergence.gif, tuned as a visual for the README; a change here changes
-# that picture, so check it after any change, and to experiment, copy this instead.
 def animate_convergence(
-    states: Iterable[tuple[Motor, Quadric, Quadric, Point]], room: float = CAMERA_ROOM,
+    states: Iterable[tuple[Motor, Quadric, Quadric, Point]], room: float = ROOM,
 ) -> Iterator[np.ndarray]:
-    """Yield RGB frames of the reconstruction across the scene, widened to hold the first state's cameras with `room` around them."""
+    """Yield RGB frames of the reconstruction, framed on the first state's cameras and triangulated landmarks with `room`
+    around them, a share of the longer side of what they span."""
     states = iter(states)
     first = next(states)
-    centres = mv.x & (first[0] >> mv.w.dual())                                # [cameras] Scalar+
-    left = (centres.min() - room).clip(-np.inf, X_RANGE[0])
-    right = (centres.max() + room).clip(X_RANGE[1], np.inf)
-    figure, ax, camera = canvas(tuple(stack((left, right)).to_array()))
+    first_motors, _, _, first_points = first
+    drawn = coordinates(concatenate((camera_marks(first_motors).reshape(-1), first_points)))   # [marks + landmarks, 2]
+    low, high = drawn.min(axis=0), drawn.max(axis=0)
+    margin = room * (high - low).max()
+    figure, ax, camera = canvas((low[0] - margin, high[0] + margin), (low[1] - margin, high[1] + margin))
     image = simplices.overlay(ax, [np.zeros(camera.shape + (4,))])
     for motors, world_cones, fused_splats, points in chain([first], states):
         image.set_data(simplices.composited(cones(motors, world_cones, camera)

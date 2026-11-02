@@ -78,11 +78,19 @@ def main() -> None:
               for combined in core.powers(learned, N_USES))
     save_animation(render.animate(surface, prepared, frames, LABELS, reading, render.PANEL), "process_tomography",
                    FRAME_DURATION)
-    # Gallery picture: this makes plots/tomography.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the learned channels applied again and again to the ball of states, for the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.quantum.process_tomography import render
+
+    _, learned = tomography()
+    surface = core.sphere(N_LATITUDES, N_LONGITUDES)                         # [latitudes + 1, longitudes] Point-
     frames = ((combined[:, None, None](surface), combined[:, None](prepared))
               for combined in core.powers(learned, N_USES))
-    save_animation(render.animate(surface, prepared, frames, LABELS, reading, render.GALLERY_PANEL), "tomography",
-                   FRAME_DURATION)
+    pin_animation(render.animate(surface, prepared, frames, LABELS, render.ball_positions, render.GALLERY_PANEL),
+                  "tomography", FRAME_DURATION)
 
 
 if __name__ == "__main__":

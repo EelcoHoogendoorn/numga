@@ -18,6 +18,13 @@ from examples.fluids.wing import core
 
 window = (-3.2, 3.2, -1.8, 1.8)
 pressure_range = (-3.0, 1.0)
+pressure_map = plt.get_cmap("RdBu")
+# The pitching wing's pressure in flat bands, centred on levels a step apart, one of them the free stream's, white: a
+# frame changes only where the bands' edges and the streamlines move.
+pressure_step = 0.25
+pressure_levels = np.arange(pressure_range[0], pressure_range[1] + pressure_step / 2, pressure_step)
+pressure_bands = contours.Bands(pressure_range[0] - pressure_step / 2, pressure_step,
+                                pressure_map(TwoSlopeNorm(0.0, *pressure_range)(pressure_levels)))
 # The streamlines: the stream function's levels a step apart, one through zero, and their ink and width in pixels.
 stream_spacing = 0.3
 stream_ink = np.array(to_rgba("#334155"))
@@ -52,13 +59,13 @@ def marked(marks: core.Point, colour: str, radius: float, rim: float, camera: Ca
 
 
 def draw(ax, points: core.Point, velocity: core.Point, stream: core.Bivector, lift: core.Force, speed: float,
-         marks: list = ()) -> None:
-    """The pressure coefficient around the wing at the points, the streamlines, the wing, its lift, and the marks
-    `[(points, colour)]`."""
+         marks: list = (), bands: tuple[contours.Bands, ...] = ()) -> None:
+    """The pressure coefficient around the wing at the points, smooth or in `bands`, the streamlines, the wing, its
+    lift, and the marks `[(points, colour)]`."""
     speed_squared = velocity.dot(velocity).to_array()
     # The pressure coefficient: low where the flow is fast.
     pressure = 1 - speed_squared / speed**2
-    colours = plt.get_cmap("RdBu")(TwoSlopeNorm(0.0, *pressure_range)(pressure))[..., :3]
+    colours = pressure_map(TwoSlopeNorm(0.0, *pressure_range)(pressure))[..., :3]
     # The stream function's values, its pairings with the unit scalar.
     stream_values = (stream & core.mv.scalar([1])).to_array()
     ax.set(xlim=window[:2], ylim=window[2:], xticks=[], yticks=[])
@@ -77,8 +84,9 @@ def draw(ax, points: core.Point, velocity: core.Point, stream: core.Bivector, li
     forces = panel(ax, core.mv.x.dual(), core.mv.y.dual())
     simplices.overlay(ax, [
         contours.picture(outline, Topology.triangulate(outline), np.zeros(len(outline)), rgb(wing_colour), camera),
-        contours.picture(places, topology, stream_values.reshape(-1), colours.reshape(-1, 3), camera,
-                         lines=(streamlines,)),
+        contours.picture(places, topology, pressure.reshape(-1), colours.reshape(-1, 3), camera, bands=bands),
+        contours.picture(places, topology, stream_values.reshape(-1), np.ones(3), camera, lines=(streamlines,),
+                         opacity=0.0),
         simplices.strokes(stack((0 * push, push)), Topology.chains([2]), rgb(lift_colour), lift_width, forces,
                           chevrons=np.ones(1), chevron=lift_chevron),
         *[picture for spots, colour in marks
@@ -111,17 +119,15 @@ def animate_marked(frames: Iterable[tuple[core.Point, core.Point, core.Bivector,
         yield frame(points, velocity, stream, lift, speed, critical, centre)
 
 
-# README picture: this makes plots/wing.gif, tuned as a visual for the README. Don't change it; to
-# experiment, copy it.
 def animate(frames: Iterable[tuple[core.Point, core.Point, core.Bivector, core.Force]], speed: float) -> Iterator[np.ndarray]:
-    """Each frame of points, velocity, stream function and lift."""
+    """Each frame of points, velocity, stream function and lift, the pressure in flat bands."""
     for points, velocity, stream, lift in frames:
         yield plain_frame(points, velocity, stream, lift, speed)
 
 
 def plain_frame(points: core.Point, velocity: core.Point, stream: core.Bivector, lift: core.Force, speed: float) -> np.ndarray:
     result = plt.figure(figsize=(8, 4.6), dpi=frame_dpi, layout="constrained")
-    draw(result.subplots(), points, velocity, stream, lift, speed)
+    draw(result.subplots(), points, velocity, stream, lift, speed, bands=(pressure_bands,))
     pixels = capture(result)
     plt.close(result)
     return pixels

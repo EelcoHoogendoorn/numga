@@ -47,9 +47,13 @@ PITCH_RATES = np.array([0, 0.1])
 TIME_STEP = 0.04
 N_STEPS = 250
 ROCKING_DURATION = 8
-# Gallery picture: this makes plots/rattleback.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-# The gallery's reversal: its pixels across.
-GALLERY_PIXELS = 260
+# The gallery's reversal: its pixels across; the step each frame takes, in seconds, and how long a frame is shown, in
+# milliseconds, so that it plays at one and a half times its pace, nearer a real, smaller rattleback's; and the times in
+# seconds it runs between, from the rocking's start to the spin clearly reversed.
+GALLERY_PIXELS = 420
+GALLERY_TIME_STEP = 0.06
+GALLERY_DURATION_MS = 40
+GALLERY_SPAN = (0.4, 7.2)
 
 
 # --- math -----------------------------------------------------------------------------
@@ -149,8 +153,6 @@ def main() -> None:
     save_figure(render.draw_setup(built, samples, placements[0, 1]), "rattleback_body")
     save_animation(render.frames(placements[:n_rocking_steps + 1, 0], built, samples), "rattleback_rocking", duration_ms)
     save_animation(render.frames(placements[:, 1], built, samples), "rattleback_reversal", duration_ms)
-    # Gallery picture: this makes plots/rattleback.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-    save_animation(render.sized_frames(placements[:, 1], built, samples, GALLERY_PIXELS), "rattleback", duration_ms)
 
     # checks
     # The tipped body spins up from rest, the spinning one reverses, and the energy is kept.
@@ -158,6 +160,17 @@ def main() -> None:
     assert abs(spun[0, 0]) < 1e-11 and spun[-1, 0] > 1.4
     assert spun[0, 1] < -1.4 and spun[-1, 1] > 1.4
     np.testing.assert_allclose((energies / energies[0]).to_array(), 1, rtol=1e-2)
+
+
+def pinned() -> None:
+    """The pictures the repository tracks: the rattleback spun the unfavourable way, reversing, for the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.mechanics.rattleback import render
+
+    first, last = (round(time / GALLERY_TIME_STEP) for time in GALLERY_SPAN)
+    built, samples, placements, _, _ = launches(GALLERY_TIME_STEP, last)
+    pin_animation(render.sized_frames(placements[first:, 1], built, samples, GALLERY_PIXELS), "rattleback",
+                  GALLERY_DURATION_MS)
 
 
 if __name__ == "__main__":
