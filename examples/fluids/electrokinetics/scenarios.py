@@ -47,6 +47,13 @@ run_drives, dye_charges = np.array([0, 1, 1, 1]), np.array([0, 0, 1, -1])
 dye_dt, n_dye_frames, dye_stride = 0.1, 100, 3
 frame_duration_ms = 40
 
+# Dye stripes pumped through the channels by the battery, which is scaled so that the first channel pumps at a unit of
+# speed: their spacing along the channels and how sharp they are, the dye's diffusivity, and the time step, the frames
+# after the first and the steps between frames, half a wavelength's travel at that speed.
+stripe_spacing, stripe_sharpness = 8.0, 8
+pumped_diffusivity = 0.005
+pumped_dt, n_pumped_frames, pumped_stride = 0.02, 100, 4
+
 pump, battery = mv.xv, mv.xt                                                                          # [] Drive+, Drive+
 experiments = stack((pump, battery))                                                                  # [experiments] Drive+
 
@@ -163,8 +170,9 @@ def channel_flows():
     """The channels' strip and walls, their liquid's charge density `[channels] Scalar+[vertices]`, its velocity at
     each vertex `[channels] Point-[vertices]`, the potential the battery sets up `[channels] Scalar+[vertices]` and how
     far it falls over a wavelength `[channels] Scalar+`, the heat made `[channels] Scalar+[vertices]`, what each carries
-    `[channels] Flux-`, and the first channel's double layer's own pushes on the liquid, its osmotic pressure's and its
-    field's, `Point-[vertices]` each."""
+    `[channels] Flux-`, the first channel's double layer's own pushes on the liquid, its osmotic pressure's and its
+    field's, `Point-[vertices]` each, and the stripes of dye the battery pumps through the channels at each frame
+    `[frames, channels] Scalar+[vertices]`."""
     topology, coordinates, shifts, lower, upper, charge, wall_charges = channels()
     vertices, edges = core.placed(topology, coordinates, shifts)
     areas, sides, gradients, outflow, circulation, cells = operators(topology, edges)
@@ -184,21 +192,31 @@ def channel_flows():
     along = mv.x & battery.commutator(core.time)                                                    # [] Scalar+
     drive_potentials = added - along * (mv.x & vertices)                                            # [channels] Scalar+[vertices]
     falls = along * wavelength * np.ones(len(phases))                                               # [channels] Scalar+
+    # Neutral dye in stripes across the channels, carried by the liquid at the battery's pace, scaled so that the first
+    # channel's mean speed, its volume per length read by the pump over its mean width, is one.
+    first_speed = (pump & carried[0]) / (2 * mean_half_width)                                       # [] Scalar+
+    stripes = ((1 + np.cos(2 * np.pi * coordinates[:, 0] / stripe_spacing)) / 2) ** stripe_sharpness
+    dye = np.ones(len(phases)) * mv.scalar(stripes[:, None]).field()                                # [channels] Scalar+[vertices]
+    pumped = core.dyeing(topology, areas, gradients, velocities / first_speed, field / first_speed, np.zeros(len(phases)),
+                         dye_mobility, pumped_diffusivity, dye, pumped_dt, n_pumped_frames, pumped_stride)
     return (topology, vertices, wall_charges, density, speeds, drive_potentials, falls, viscous + joule, carried, osmotic,
-            electric)
+            electric, pumped)
 
 
 if __name__ == "__main__":
     from examples.util.animation import save_animation, save_figure
     from examples.fluids.electrokinetics import render
 
-    topology, vertices, wall_charges, density, speeds, drive_potentials, falls, heat, carried, osmotic, electric = channel_flows()
+    (topology, vertices, wall_charges, density, speeds, drive_potentials, falls, heat, carried, osmotic, electric,
+     pumped) = channel_flows()
     save_figure(render.draw_channels(topology, vertices, n_across, wavelength, wall_charges), "electrokinetics_channels")
     save_figure(render.draw_flow(topology, vertices, n_across, wavelength, density, speeds, drive_potentials, falls,
                                  wall_charges),
                 "electrokinetics_flow")
     save_figure(render.draw_heat(topology, vertices, n_across, wavelength, heat, drive_potentials, falls, wall_charges),
                 "electrokinetics_heat")
+    save_animation(render.animate_pumping(topology, vertices, n_across, wavelength, density, speeds, drive_potentials,
+                                          falls, wall_charges, pumped), "electrokinetics_pumping", frame_duration_ms)
     save_figure(render.draw_efficiency(half_widths, surface_charges, generator_efficiency()), "electrokinetics_efficiency")
     topology, vertices, wall_charges, density, flows, drive_potentials, falls, _, velocities, frames = dyed(neck_swing)
     save_figure(render.draw_profiles(topology, vertices, n_capillary_across, velocities), "electrophoresis_profiles")
