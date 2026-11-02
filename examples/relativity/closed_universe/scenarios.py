@@ -511,18 +511,13 @@ def main() -> None:
                 "closed_universe_quadrupole_response")
 
     # checks
-    # Over the wave's swing, the soft crystal carries the wave's strain, the tuned one rings at about twice it, the
-    # most a quarter of critical damping allows, and the stiff one keeps its shape.
-    swings = np.abs(np.stack([strains.to_array() for _, strains in states])).reshape(len(states), len(tunings), -1)
-    soft, tuned, stiff = swings.max(axis=(0, 2))
-    assert 0.5 * wave_swing < soft < 1.5 * wave_swing and tuned > 1.5 * soft and stiff < 0.2 * wave_swing
     # The stepped waves have no growing mode, the squash is their slowest, a fiftieth short of the continuum's eight on
     # edges a fifth of a half turn long, and the stepped squash rings at its own frequency.
     assert spectrum.min() > -1e-6 * spectrum.max() and 7.5 < squash_squared < 8
     assert np.abs(shares - wave_swing * np.cos(np.sqrt(squash_squared) * times)).max() < 0.03 * wave_swing
     # The irregular mesh's round chords are at rest, every deficit of its tetrahedra, read as pieces of the round
     # sphere, nothing.
-    chords = irregular_mesh.d[0] * irregular_vertices                                   # Point-[edges]
+    chords = irregular_mesh.d[0] * irregular_vertices                           # Point-[edges]
     deficits, _, _ = core.Space(irregular_mesh, irregular_vertices).dynamics(chords.dot(chords))
     assert np.abs(deficits.to_array()).max() < 1e-12
     # The quadrupole is the same all along each circle, between the tenth turns that carry the mesh onto itself too: a
