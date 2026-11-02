@@ -1,5 +1,5 @@
-"""Test configuration: headless plotting, and a guard against running the whole suite by accident, with the one
-sanctioned way to run it, `pytest tests --full-sweep`, before a commit."""
+"""Test configuration: headless plotting, and a guard that keeps a run to the tests a change could break. The whole
+suite runs once, just before a push to main, declared as `pytest tests --full-sweep=push-to-main`."""
 
 from __future__ import annotations
 
@@ -10,6 +10,15 @@ import pytest
 
 # Numerical threads a full sweep may use, so that it never saturates the machine.
 SWEEP_THREADS = 4
+# The one occasion for the whole suite, the value --full-sweep takes; a bare --full-sweep is refused.
+SWEEP_OCCASION = "push-to-main"
+# More tests than any change's own: a run this broad is a sweep, however its targets are spelled.
+MAX_TESTS = 200
+
+TEST_ROOT = Path(__file__).parent.resolve()
+TARGETED = ("Run the tests the change could break, by file or test function "
+            "(e.g. 'pytest tests/examples/electromagnetism/test_constitutive.py'); "
+            "the whole suite runs only once, just before a push to main.")
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -23,52 +32,34 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
     parser.addoption(
         "--full-sweep",
-        action="store_true",
-        default=False,
-        help="Run the whole suite before a commit, in one process with at most "
-             f"{SWEEP_THREADS} numerical threads, leaving the machine's other cores free.",
+        choices=(SWEEP_OCCASION,),
+        default=None,
+        help=f"'--full-sweep={SWEEP_OCCASION}' runs the whole suite, once, just before a push to main, in one process "
+             f"with at most {SWEEP_THREADS} numerical threads, leaving the machine's other cores free.",
     )
 
 
-@pytest.hookimpl(trylast=True)
-def pytest_collection_modifyitems(
-    session: pytest.Session, config: pytest.Config, items: list[pytest.Item]
-) -> None:
-    """Block full test suite runs unless --full-sweep is passed."""
-    if config.getoption("--full-sweep", False):
+def pytest_collection(session: pytest.Session) -> None:
+    """Refuse a target holding the whole suite, the tests folder or one above it, before anything is collected."""
+    config = session.config
+    if config.getoption("--full-sweep", None):
         return
+    here = config.invocation_params.dir
+    for target in config.args:
+        if TEST_ROOT.is_relative_to((here / target.split("::")[0]).resolve()):
+            raise pytest.UsageError(f"'{target}' holds the whole suite, with or without -k or -m. {TARGETED}")
 
-    test_root = Path(__file__).parent.resolve()
-    repo_root = test_root.parent.resolve()
 
-    # Check whether the targets resolve to the full test root or repository roots
-    targets = [arg for arg in config.args if not arg.startswith("-")]
-    targets_all = False
-    if not targets:
-        targets_all = True
-    else:
-        for t in targets:
-            try:
-                p = Path(t).resolve()
-                if p in {test_root, repo_root}:
-                    targets_all = True
-                    break
-            except Exception:
-                pass
-
-    has_filter = bool(config.option.keyword or config.option.markexpr)
-
-    if (targets_all and not has_filter) or len(items) > 200:
-        raise pytest.UsageError(
-            f"Full test suite run blocked ({len(items)} tests collected, takes >2 minutes).\n"
-            "Target a specific file or directory (e.g. 'pytest tests/examples/...').\n"
-            "Before a commit, run the whole suite as 'pytest tests --full-sweep'."
-        )
+@pytest.hookimpl(trylast=True)
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Refuse a run of more tests than any change's own, counted after -k and -m have deselected."""
+    if not config.getoption("--full-sweep", None) and len(items) > MAX_TESTS:
+        raise pytest.UsageError(f"{len(items)} tests collected, more than any change's own ({MAX_TESTS}). {TARGETED}")
 
 
 def pytest_configure(config: pytest.Config) -> None:
     """Only force headless Agg backend if --show-plot was not passed; cap numerical threads for a full sweep."""
-    if config.getoption("--full-sweep", False):
+    if config.getoption("--full-sweep", None):
         # Set before numpy is imported, so that its linear algebra starts with this many threads.
         for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
             os.environ.setdefault(name, str(SWEEP_THREADS))

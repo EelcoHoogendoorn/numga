@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import re
 
 import numpy as np
-from functools import lru_cache
 from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING
@@ -17,10 +17,11 @@ if TYPE_CHECKING:
     from numga import Algebra
     from numga.backend.context import Context
 
-# Pictures go to the repository's plots, or, where the examples are installed rather than checked out, as in Colab,
-# to plots beside the notebook; the meshes the examples load ship with them.
+# Pictures go to the folder NUMGA_PLOTS names, where several checkouts share one; else to the repository's plots, or,
+# where the examples are installed rather than checked out, as in Colab, to plots beside the notebook. The meshes the
+# examples load ship with them.
 ROOT = Path(__file__).resolve().parents[1]
-PLOT_DIR = (ROOT if (ROOT / "pyproject.toml").exists() else Path.cwd()) / "plots"
+PLOT_DIR = Path(os.environ.get("NUMGA_PLOTS", (ROOT if (ROOT / "pyproject.toml").exists() else Path.cwd()) / "plots"))
 PLOT_DIR.mkdir(parents=True, exist_ok=True)
 MODEL_DIR = Path(__file__).resolve().parent / "util" / "models"
 
@@ -56,19 +57,28 @@ def auto_increment_path(path: Path | str) -> Path:
         counter += 1
 
 
-@lru_cache(maxsize=None)
+# The executed copies by module, algebra and kind of context, each beside the algebra it was made for, which keeps that
+# algebra alive and so its identity unique.
+_instances: dict[tuple[str, int, type], tuple[Algebra, ModuleType]] = {}
+
+
 def instantiate(module: str, ga: Algebra, context: type[Context] = NumpyContext) -> ModuleType:
     """A copy of a module written against an algebra `ga` and a context `ctx` that it does not define
     itself.
 
     The module declares `ga: Algebra` and `ctx: Context`, and derives its types and constants from
     them at top level. The context is of the given kind, NumPy unless another is asked for, in double
-    precision. Each algebra and kind of context gets its own executed copy, so instances coexist and
-    nothing is rebound after loading. The copy is not registered in sys.modules.
+    precision. Each algebra and kind of context gets its own executed copy, made on the first request
+    and kept, so instances coexist and nothing is rebound after loading. The copies are kept by the
+    algebra itself, not by its signature: two algebras of one signature are equal but distinct, and
+    their values do not mix. The copy is not registered in sys.modules.
     """
-    spec = importlib.util.find_spec(module)
-    instance = importlib.util.module_from_spec(spec)
-    instance.ga = ga
-    instance.ctx = context(ga, dtype=np.float64)
-    spec.loader.exec_module(instance)
-    return instance
+    key = (module, id(ga), context)
+    if key not in _instances:
+        spec = importlib.util.find_spec(module)
+        instance = importlib.util.module_from_spec(spec)
+        instance.ga = ga
+        instance.ctx = context(ga, dtype=np.float64)
+        spec.loader.exec_module(instance)
+        _instances[key] = (ga, instance)
+    return _instances[key][1]

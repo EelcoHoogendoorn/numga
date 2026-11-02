@@ -130,6 +130,14 @@ class OverSites(_Queries):
     def is_endomorphism(self) -> bool:
         return self._gatype.arity == 1 and self.is_square
 
+    @cached_property
+    def is_correlation(self) -> bool:
+        """A map from a space to its dual over the same sites, as from a field of scalars to a field of
+        amounts: its eigenvectors exist only against a second correlation."""
+        gatype = self._gatype
+        sites = dict(gatype.fields)
+        return gatype.is_correlation and sites.get(0) == sites.get(1)
+
     def is_map_system(self, rhs: GAType) -> bool:
         """A map whose output takes the right-hand side's output, either side ranging over sites."""
         return self._gatype.arity == 1 and rhs.output_subspace.support_is_subset_of(self._gatype.output_subspace)

@@ -50,12 +50,14 @@ def kernels(queries: Antivector, centers: Antivector, radius: float) -> tuple[Ev
 def modes(evaluation: Evaluation, gradient: Gradient, sample_volumes: np.ndarray,
           lame_lambda: np.ndarray, lame_mu: np.ndarray, n_modes: int) -> tuple[Scalar, Scalar]:
     """The lowest scalar skinning modes, orthonormal under volume integration."""
-    # Assembling over the quadrature sites integrates all pairs of nodal responses together.
+    # Assembling over the quadrature sites integrates all pairs of nodal responses together, each pulled back to the
+    # nodes by the adjugate: the mass reads values against the samples' volumes, amounts, and the stiffness reads
+    # gradients against the flux an isotropic material drives.
     values_at_samples = evaluation.field(0)                      # Scalar+[samples] <- Scalar+[nodes]
     gradients_at_samples = gradient.field(0)                     # Vector+[samples] <- Scalar+[nodes]
-    mass = values_at_samples.adjoint()((evaluation * sample_volumes).field(0))  # Scalar+[nodes] <- Scalar+[nodes]
-    stiffness = gradients_at_samples.adjoint()(
-        (gradient * sample_volumes * (lame_lambda + 4 * lame_mu)).field(0)
-    )                                                            # Scalar+[nodes] <- Scalar+[nodes]
+    mass = values_at_samples.adjugate()((sample_volumes * Scalar.dual()(evaluation)).field(0))   # (Antiscalar- <- Scalar+)[nodes <- nodes]
+    # The flux the material drives along each nodal response's gradient, isotropic, over each sample's volume.
+    fluxes = sample_volumes * (lame_lambda + 4 * lame_mu) * Vector.dual()(gradient)   # [samples] (Antivector- <- Scalar+)[nodes]
+    stiffness = gradients_at_samples.adjugate()(fluxes.field(0))                       # (Antiscalar- <- Scalar+)[nodes <- nodes]
     eigenvalues, fields = stiffness.eigh(mass)                    # [nodes] Scalar+, Scalar+[nodes]
     return eigenvalues[:n_modes], fields[:n_modes]

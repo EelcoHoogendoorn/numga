@@ -106,6 +106,19 @@ class SparseExtensor:
         on = self.rows == self.columns
         return _scatter(self.cells[..., on], self.rows[on], self.shape[0]).field()
 
+    def to_dense(self) -> Extensor:
+        """The field map the cells make, `X[rows] <- Y[columns]`, each coupling at its pair of sites and zero where
+        none couples: the dense counterpart, for what only a dense field map does, such as `eigh` without a metric,
+        `eig`, `pinv`, or `solve` and `lstsq` with maps on the right. Its cells are maps, of a type; a map of plain
+        numbers takes one first, `map * Scalar`."""
+        cell_type = self.gatype
+        kernel = np.asarray(self.cells.kernel)
+        leading = kernel.shape[:self.cells.ndim - 1]
+        dense = np.zeros(leading + self.shape + kernel.shape[self.cells.ndim:], dtype=kernel.dtype)
+        dense[(slice(None),) * len(leading) + (self.rows, self.columns)] = kernel
+        context = self.cells.context
+        return context.extensor(cell_type, context.xp.asarray(dense)).field(0, 1)
+
     @property
     def gatype(self) -> GAType:
         """The coupling cells' type, by which the operations dispatch; the sites are `shape`. Plain numbers have
@@ -475,10 +488,12 @@ def lstsq(value: SparseExtensor, rhs: Extensor) -> Extensor:
     gauge, such as a translation, is left at zero."""
     from scipy.sparse.linalg import lsqr
 
-    return _per_map(value, rhs, lambda case, blocks, right: np.stack([
-        lsqr(_matrix(value, blocks), column, atol=0.0, btol=0.0, iter_lim=10 * value.shape[1] * len(value.cells.axes[1]))[0]
-        for column in right
-    ]))
+    def least(case: tuple[int, ...], blocks: np.ndarray, right: np.ndarray) -> np.ndarray:
+        system = _matrix(value, blocks)
+        return np.stack([lsqr(system, column, atol=0.0, btol=0.0,
+                              iter_lim=10 * value.shape[1] * len(value.cells.axes[1]))[0] for column in right])
+
+    return _per_map(value, rhs, least)
 
 
 @SparseExtensor.eigh.register(lambda cell_type, other: cell_type.is_endomorphism or cell_type.is_correlation)

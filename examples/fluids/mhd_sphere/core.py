@@ -35,8 +35,6 @@ Patch = ga.gatype.antibivector()                    # Antibivector-
 Amount = ga.gatype.antiscalar()                     # Antiscalar-
 GradientMap = ga.gatype((Plane, Scalar))
 VelocityMap = ga.gatype((Point, Scalar))
-# The observer's direction of time.
-time = -mv.t.dual()                                 # [] Point-
 
 
 class Surface(NamedTuple):
@@ -105,10 +103,10 @@ def rate(surface: Surface, state: Scalar, viscosity: float, resistivity: float) 
     vorticity_rate = (bracket(surface, stream, vorticity) - bracket(surface, flux, current)
                       - viscosity * laplacian(surface, vorticity))              # Scalar+[vertices]
     # Frozen in, the flux function's spacetime gradient pairs to nothing with each worldline, time joined with the
-    # velocity: its rate along time balances its change along the velocity, here over each triangle's area.
+    # velocity: its rate along time is minus its change along the velocity, here over each triangle's area.
     # Resistivity lets it slip by the current.
     flows = surface.gradient(stream) ^ surface.patches                          # Point-[faces]
-    frozen = -(surface.gradient(flux) & flows) / (mv.t & time)                   # Scalar+[faces]
+    frozen = -(surface.gradient(flux) & flows)                                   # Scalar+[faces]
     flux_rate = surface.lumped * frozen - resistivity * current                  # Scalar+[vertices]
     return stack((vorticity_rate, flux_rate))                                    # [2] Scalar+[vertices]
 

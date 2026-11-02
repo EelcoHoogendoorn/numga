@@ -209,6 +209,15 @@ def test_reading_a_field_indexes_it_and_keeps_its_type(context):
     np.testing.assert_array_equal(read.batch().kernel, rotors.batch()[np.array([[3, 0], [1, 1]])].kernel)
 
 
+def test_the_dense_field_map_acts_as_the_sparse_one():
+    context = NumpyContext(Algebra("x+y+z+"))
+    mv, Vector = context.multivector, context.algebra.gatype.vector()
+    rng = np.random.default_rng(5)
+    sparse = random_sparse(context, (4, 5), 9, 6) * Vector                    # (Even <- Vector)[4 <- 5]
+    field = mv.vector(rng.normal(size=(5, 3))).field()                        # Vector[5]
+    np.testing.assert_allclose(sparse.to_dense()(field).kernel, sparse(field).kernel, atol=1e-12)
+
+
 def test_plain_numbers_take_the_algebra_they_meet(context):
     """A map of plain numbers belongs to no algebra: on a field it acts as its numbers made that field's scalars, in
     any algebra; between such maps its products and reverse stay numbers; beside a type or a typed map it becomes

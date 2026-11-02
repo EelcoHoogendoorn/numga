@@ -1,5 +1,5 @@
-"""Drawing for magnetohydrodynamics on a sphere: the current density on a lit sphere, with the field lines, the
-flux function's contours, drawn at an even width across it."""
+"""Drawing for magnetohydrodynamics on a sphere: the current density on a lit sphere, in flat steps, with the field
+lines, the flux function's contours, drawn at an even width across it."""
 
 from __future__ import annotations
 
@@ -24,33 +24,35 @@ view_degrees = np.array([24.0, -30.0])
 surface_reach = 0.04
 margin = 0.04
 n_pixels = 300
-# How many field lines span the first frame's range of the flux function, their half width and feather, and the
-# current that saturates the colour: the brightest percent of the winding run's current sheets.
-n_field_lines = 14.0
+# How many field lines span the first frame's range of the flux function, and their half width; the current that
+# saturates the colour, the brightest percent of the winding run's current sheets, and the steps the current's strength
+# is shown in, each way.
+n_field_lines = 7.0
 line_half_width = 0.012
-line_feather = 0.005
 current_scale = 29.0
+n_current_steps = 8.0
 background = np.ones(3)
 # The colours of the kinetic and magnetic energy curves, and of the axes.
 kinetic_colour = "#1971c2"
 magnetic_colour = "#d9480f"
 axis_colour = "0.8"
 
-# WGSL fragment colouring: the surface shaded by the first vertex channel (`values.x`, the current), and field lines
-# of even width from the phase of the second (`values.y`, the flux function) divided by the face's field strength
-# (`face_values.x`).
+# WGSL fragment colouring: the surface coloured by the first vertex channel (`values.x`, the current), in flat steps of
+# its strength, so that weak currents leave the surface plain, and field lines of even width from the phase of the
+# second (`values.y`, the flux function) divided by the face's field strength (`face_values.x`), their edges smoothed
+# by the samples of each pixel alone.
 field_line_shader = meshes.Colour("""
 fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {
     let level = clamp(values.x, -1.0, 1.0);
     let tone = select(negative_colour, positive_colour, level >= 0.0);
-    let base = mix(surface_colour, tone, pow(abs(level), 0.7) * 0.9);
+    let strength = round(abs(level) * steps) / steps;
+    let base = mix(surface_colour, tone, pow(strength, 0.7) * 0.9);
     let wave = abs(fract(values.y + 0.5) - 0.5);
     let distance = wave / max(face_values.x, 1e-5);
-    let line = smoothstep(half_width + feather, half_width - feather, distance);
-    return vec4<f32>(mix(base, line_colour, 0.75 * line), 1.0);
+    return vec4<f32>(select(base, line_colour, distance < half_width), 1.0);
 }
 """, dict(surface_colour=surface_colour, positive_colour=positive_colour, negative_colour=negative_colour,
-          line_colour=line_colour, half_width=line_half_width, feather=line_feather))
+          line_colour=line_colour, half_width=line_half_width, steps=n_current_steps))
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -77,7 +79,7 @@ def animate(topology: core.Topology, vertices: core.Point,
                                  axis=-1).transpose(1, 0, 2)                      # [faces, 3, 2]
         face_strength = (strength.to_array() / line_spacing)[:, None]            # [faces, 1]
         surface = meshes.samples(points, topology.elements[2], corner_values, smooth_normals, frame,
-                                 face_values=face_strength, colour=field_line_shader, gloss=solids.gloss)
+                                 face_values=face_strength, colour=field_line_shader, gloss=0.0)
         yield solids.draw([], frame, background, inks=[], translucent=[], meshes=[(surface, 1.0)])
 
 

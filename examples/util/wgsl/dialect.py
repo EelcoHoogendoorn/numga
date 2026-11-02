@@ -945,7 +945,7 @@ class Compiler:
             if value.type == _ABSTRACT and target == self.scalar:
                 return self.text(value)
             if isinstance(value.type, GAType) and self.embeds(value.type, target):
-                return self.text(self.operation("cast", lambda x: self.cast(x, target), [value], line))
+                return self.text(self.operation(f"cast_{self.wgsl(target)}", lambda x: self.cast(x, target), [value], line))
             raise self.error(line, f"a {value.type} is not a {target}; cast it with .cast()")
         if isinstance(value.type, GAType) and value.type != self.scalar:
             raise self.error(line, f"a {value.type} is not a {target}")
@@ -1054,7 +1054,8 @@ class Compiler:
             return self.state(line, symbol, left, right)
         if symbol == "/" and (algebra or left.text is None):
             if not self.is_scalar(right) and not (right.text is None and right.type == _ABSTRACT):
-                raise self.error(line, f"cannot divide by a {right.type}")
+                # A versor divides as numga divides it, by its inverse, its reverse over its reverse product.
+                return self.binary(line, "*", left, self.method(line, right, "inverse", [], []))
             reciprocal = (self.constant(1 / right.constant) if right.type == _ABSTRACT and right.text is not None
                           else Value(f"(1.0 / {self.text(right)})", self.scalar))
             return self.binary(line, "*", left, reciprocal)
@@ -1173,7 +1174,7 @@ class Compiler:
             target = self.types[nodes[0].id]
             if base.text is None:
                 return self.constant(self.cast(base.constant, target))
-            return self.operation("cast", lambda x: self.cast(x, target), [base], line)
+            return self.operation(f"cast_{self.wgsl(target)}", lambda x: self.cast(x, target), [base], line)
         arguments = [self.value(argument, scope) for argument in nodes]
         if self.is_scalar(base):
             if name in _SCALAR_FUNCTIONS:
