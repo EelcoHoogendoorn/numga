@@ -80,7 +80,7 @@ def operators(topology: core.Topology, edges: core.Point):
     double_areas, sides, gradients = core.triangles(topology, edges)
     areas = double_areas.norm() / 2                                                                   # [...] Scalar+[faces]
     # A potential rising by one at a corner drives the field down its hat's gradient, through time, and the vacuum
-    # answers each drive with its excitation, its push on a unit charge swept through time, the permittivity one: each
+    # gives each drive its excitation, its push on a unit charge swept through time, the permittivity one: each
     # hat's drive reading every other's excitation over the triangle is the field's outflow.
     pushes = -(gradients ^ mv.t)                                                                      # [..., corners] Drive+[faces]
     excitations = pushes.commutator(core.time).regressive(core.time)                                  # [..., corners] Flux-[faces]
