@@ -16,12 +16,13 @@ mv = core.mv
 density, prandtl, expansion = 1.0, 7.0, 1e-3
 # The layer turning over: its Rayleigh number, its length, its vertices along and up, its time step, the steps, the
 # steps between frames, and the steps before the rolls show, run but not shown; the disturbance's size and its seed;
-# the frames' duration in milliseconds.
+# the frames' duration in milliseconds, and the colours of their palette.
 rayleigh = 2e4
 period, n_along, n_across = 4.0, 96, 25
 dt, n_steps, n_stride, n_unshown = 5e-4, 300, 2, 80
 disturbance, seed = 1e-2, 1
 frame_duration_ms = 40
+n_animation_colours = 24
 
 
 def conducting(heights: core.Scalar, size: float) -> core.Scalar:
@@ -54,7 +55,8 @@ def main() -> None:
     # Shown once the rolls begin to show, and kept whole for the flow's growth.
     animation_states, growth_states = tee(states)
     animation_frames = islice(animation_states, n_unshown // n_stride, None)
-    save_animation(render.animate(opened, vertices, opening, period, animation_frames), "convection", frame_duration_ms)
+    save_animation(render.animate(opened, vertices, opening, period, animation_frames), "convection", frame_duration_ms,
+                   colors=n_animation_colours)
     # The flow's squared size over the layer, frame after frame from the still start.
     sizes = stack(tuple((liquid.cells * stream.squared()).sites.sum() for stream, _ in growth_states))   # [frames] Scalar+
     times = np.arange(0, n_steps + 1, n_stride) * dt

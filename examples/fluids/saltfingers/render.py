@@ -21,10 +21,12 @@ from examples.util.wgsl.camera import Camera
 Topology = simplices.Topology
 temperature_map, salinity_map = colormaps["RdBu_r"], colormaps["BrBG_r"]
 # The tank's picture: pixels across, the room around it in depths, the rows between the two fields, and the walls'
-# width; the share of each colour map the fields span, short of its darkest ends.
+# width; the share of each colour map the fields span, short of its darkest ends, and the bands each field is drawn in,
+# centred on evenly spaced levels from the bottom's to the top's, an odd count so that the middle is one band, white.
 n_pixels, margin, n_gap = 320, 0.03, 6
 wall_width = 2.5
 span = 0.8
+n_bands = 9
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -44,16 +46,20 @@ def tank_camera(vertices: Extensor, period: float) -> Camera:
 
 def field(topology: Topology, points: Extensor, camera: Camera, values: np.ndarray, colour_map) -> np.ndarray:
     """A field at the open tank's vertices `[vertices]`, a half above the middle's at the top and below at the bottom,
-    coloured by its map, between the floor and the ceiling, the edges of the border that run along the tank, in the
-    colours of what they hold, as bytes `[rows, columns, 3]`."""
+    coloured by its map in bands, between the floor and the ceiling, the edges of the border that run along the tank,
+    in the colours of what they hold, as bytes `[rows, columns, 3]`."""
     border = topology.border
     tails, heads = border.incidence[1, 0] * points                              # Point-[border], Point-[border]
     heights = (points.context.multivector.y & tails).to_array()                 # [border]
     level = np.isclose(heights, (points.context.multivector.y & heads).to_array())   # [border]
     wall_colours = colour_map(0.5 + span * (heights[level] - 0.5))[:, :3]       # [walls, 3]
     walls = simplices.strokes(points, border.subset(level, 1), wall_colours, wall_width, camera)
-    colours = colour_map(np.clip(0.5 + span * values, 0, 1))[:, :3]
-    return on_white(simplices.composited([contours.picture(points, topology, values, colours, camera), walls]))
+    # Each band in the colour of the field at its middle, flat across it.
+    spacing = 1 / (n_bands - 1)
+    middles = np.linspace(-0.5, 0.5, n_bands)
+    bands = contours.Bands(-0.5 - spacing / 2, spacing, colour_map(0.5 + span * middles))
+    return on_white(simplices.composited([contours.picture(points, topology, values, np.ones(3), camera, bands=(bands,)),
+                                          walls]))
 
 
 def stacked(top: np.ndarray, bottom: np.ndarray) -> np.ndarray:

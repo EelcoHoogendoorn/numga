@@ -19,9 +19,11 @@ radius, n_rings = 8.0, 48
 repulsion, rotation = 200.0, 0.9
 # The still cloud's width, the noise stirring its amplitude and its angle, and the noise's seed.
 cloud_width, amplitude_noise, angle_noise, seed = 4.5, 0.05, 0.3, 0
-# The descent's step, its steps and the steps between frames; the frames' duration in milliseconds.
+# The descent's step, its steps and the steps between frames; the frames' duration in milliseconds, and the colours of
+# their palette, the density map's one hue family in a few dozen shades.
 step, n_steps, stride = 0.05, 1200, 12
 frame_duration_ms = 40
+n_animation_colours = 64
 # The radii within which the vortices are counted, and the share of a whole turn that makes a triangle a vortex.
 counting_radii = np.linspace(0.0, 6.0, 61)
 vortex_share = 0.5
@@ -71,7 +73,7 @@ def main() -> None:
     topology, vertices, frames = settled()
     frames = list(frames)
     save_animation(render.animate(topology, vertices, (wave.scalar_norm_squared() for wave in frames)), "condensate",
-                   frame_duration_ms)
+                   frame_duration_ms, colors=n_animation_colours)
     save_figure(render.draw_count(counting_radii, counted(topology, vertices, frames[-1]),
                                   rotation * counting_radii ** 2), "condensate_count")
 

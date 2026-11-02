@@ -26,12 +26,15 @@ mesh_colour = np.array(to_rgb("#9aa5ae"))
 stream_colour = np.array(to_rgb("#2b2f33"))
 growth_colour, axis_colour = np.array(to_rgb("#1d4ed8")), np.array(to_rgb("#6b7280"))
 temperature_map = colormaps["RdBu_r"]
+# The temperature's bands, centred on evenly spaced levels from the ceiling's to the floor's, an odd count so that the
+# well-mixed middle is one band, white.
+n_bands = 7
 # The layer's picture: pixels across and the room around it in depths; the widths of the walls, the mesh's edges and the
 # streamlines; the streamlines' spacing in units of the stream function, the same in every frame, so that how close
 # they lie shows how strongly the liquid flows.
 n_pixels, margin = 320, 0.04
 wall_width, mesh_width, stream_width = 2.5, 1.0, 1.0
-stream_spacing = 1.5
+stream_spacing = 3.0
 # The chart's pixels.
 chart_width, chart_height = 300, 220
 
@@ -73,18 +76,22 @@ def draw_layer(topology: Topology, vertices: Extensor, period: float) -> Figure:
 def animate(topology: Topology, vertices: Extensor, opening: Extensor, period: float,
             frames: Iterable[tuple[Extensor, Extensor]]) -> Iterator[np.ndarray]:
     """The open layer at every frame of the closed layer's stream function and temperature `Scalar+[vertices]` as it
-    comes, read on the open layer by `opening`: coloured by its temperature, red above the middle's and blue below,
-    with streamlines at a fixed spacing of the stream function, between its floor and ceiling."""
+    comes, read on the open layer by `opening`: coloured by its temperature in bands, red above the middle's and blue
+    below, with streamlines at a fixed spacing of the stream function, between its floor and ceiling."""
     camera = layer_camera(vertices, period)
     boundaries = [walls(topology, vertices, camera)]
     lines = contours.Lines(stream_spacing, stream_spacing / 2, np.append(stream_colour, 1.0), stream_width)
+    # Each band in the colour of the temperature at its middle, flat across it, so that a frame changes only where
+    # the bands' edges and the streamlines move.
+    spacing = 1 / (n_bands - 1)
+    middles = np.linspace(-0.5, 0.5, n_bands)
+    bands = contours.Bands(-0.5 - spacing / 2, spacing, temperature_map(0.5 + middles))
     for stream, temperature in frames:
         values = (opening * temperature).to_array()
         levels = (opening * stream).to_array()
-        colours = temperature_map(np.clip(0.5 + values, 0, 1))[:, :3]
         yield on_white(simplices.composited([
-            contours.picture(vertices, topology, values, colours, camera),
-            contours.picture(vertices, topology, levels, colours, camera, lines=(lines,), opacity=0.0)] + boundaries))
+            contours.picture(vertices, topology, values, np.ones(3), camera, bands=(bands,)),
+            contours.picture(vertices, topology, levels, np.ones(3), camera, lines=(lines,), opacity=0.0)] + boundaries))
 
 
 @style()

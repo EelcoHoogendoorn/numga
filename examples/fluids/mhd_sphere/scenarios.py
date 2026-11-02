@@ -17,13 +17,15 @@ n_levels = 5
 # The differential rotation's strength, and the strength of the field it winds up.
 rotation = 1.0
 field_strength = 0.25
-# Viscosity and resistivity, the Runge–Kutta step, the steps run and the stride between frames, and the frame duration.
+# Viscosity and resistivity, the Runge–Kutta step, the steps run and the stride between frames, the frame duration, and
+# the colours of the animation's palette.
 viscosity = 1e-3
 resistivity = 1e-3
 dt = 0.02
 n_steps = 450
 stride = 4
 frame_duration_ms = 40
+n_animation_colours = 32
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -69,7 +71,8 @@ def main() -> None:
     start = winding(surface, vertices)                                           # [2] Scalar+[vertices]
     # Every stride-th state, drawn as it comes and kept for the energies.
     drawn, kept = tee(islice(core.evolve(surface, start, viscosity, resistivity, dt, n_steps), 0, None, stride))
-    save_animation(render.animate(topology, vertices, frames(surface, drawn)), "mhd_sphere", frame_duration_ms)
+    save_animation(render.animate(topology, vertices, frames(surface, drawn)), "mhd_sphere", frame_duration_ms,
+                   colors=n_animation_colours)
     states = stack(tuple(kept))                                                  # [frames, 2] Scalar+[vertices]
     kinetic, magnetic = energies(surface, states)                                # [frames] Amount-, [frames] Amount-
     save_figure(render.draw_energies(np.arange(0, n_steps + 1, stride) * dt, kinetic, magnetic), "mhd_sphere_energies")

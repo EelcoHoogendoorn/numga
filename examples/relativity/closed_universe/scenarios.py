@@ -53,6 +53,8 @@ n_relax_steps = 60
 relax_pull = 0.5
 
 duration_ms = 40
+# The colours of the quadrupole's palette, seen from outside.
+n_quadrupole_colours = 96
 # The round universe from inside. A Boerdijk–Coxeter helix of the 600-cell is a column of thirty tetrahedra stacked
 # face to face round a great circle, its axis, its vertices on three of the decagons, those over one face of the
 # icosahedron their base points make: flown along its axis once round in so many frames, every great circle of the
@@ -478,7 +480,7 @@ def main() -> None:
     sphere_mesh, sphere_points = base_sphere()
     save_animation((render.base_view(sphere_mesh, sphere_points, bases, *frame)
                     for frame in quadrupole_frames(pick, quadrupole, quadrupole_frequency, turn, bases, sphere_points)),
-                   "closed_universe_quadrupole", duration_ms)
+                   "closed_universe_quadrupole", duration_ms, colors=n_quadrupole_colours)
 
     # checks
     # The stepped waves have no growing mode, the squash is their slowest, a fiftieth short of the continuum's eight on
