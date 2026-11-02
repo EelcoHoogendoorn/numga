@@ -60,13 +60,25 @@ def channels() -> tuple[core.Topology, np.ndarray, np.ndarray, np.ndarray, np.nd
 
 
 def operators(topology: core.Topology, edges: core.Point):
-    """A strip's triangles, their areas' sizes, sides and hat gradients, its stiffness, the field's outflow from each
-    vertex's cell, and its cells' areas."""
+    """A strip's triangles, their areas' sizes, sides and hat gradients; the field's outflow from each vertex's cell
+    under each vertex's potential, and the circulation around each vertex's cell of each vertex's stream function; and
+    its cells' areas."""
     double_areas, sides, gradients = core.triangles(topology, edges)
     areas = double_areas.norm() / 2                                                                   # [...] Scalar+[faces]
-    stiffness = core.assembled(topology, (gradients[..., :, None] | gradients[..., None, :]) * areas[..., None, None])
+    # A potential rising by one at a corner drives the field down its hat's gradient, through time, and the vacuum
+    # answers each drive with its excitation, its push on a unit charge swept through time, the permittivity one: each
+    # hat's drive reading every other's excitation over the triangle is the field's outflow.
+    pushes = -(gradients ^ mv.t)                                                                      # [..., corners] Drive+[faces]
+    excitations = pushes.commutator(core.time).regressive(core.time)                                  # [..., corners] Flux-[faces]
+    outflow = core.assembled(topology, (pushes[..., :, None] & excitations[..., None, :]) * areas[..., None, None])
+    # A stream function rising by one at a corner moves the liquid along the facing side; each corner's velocity, read
+    # as the plane of its circulation and paired with every other's over the triangle, is its circulation around the
+    # other's cell.
+    velocities = sides / (2 * areas[..., None])                                                       # [..., corners] Point-[faces]
+    circulation = core.assembled(topology, (core.circulating(velocities[..., :, None]) & velocities[..., None, :])
+                                 * areas[..., None, None])
     cells = ~topology.incidence[2, 0].sum(axis=0) * (areas / 3)                                       # [...] Scalar+[vertices]
-    return areas, sides, gradients, stiffness, cells
+    return areas, sides, gradients, outflow, circulation, cells
 
 
 # --- math -----------------------------------------------------------------------------
@@ -74,10 +86,10 @@ def generator_efficiency() -> core.Scalar:
     """Each slit's best efficiency as a generator `[widths, charges] Scalar+`, at the load that gives the most."""
     topology, coordinates, shifts, lower, upper, charge, lengths = generators()
     vertices, edges = core.placed(topology, coordinates, shifts)
-    areas, sides, gradients, stiffness, cells = operators(topology, edges)
+    areas, sides, gradients, outflow, circulation, cells = operators(topology, edges)
     charge = mv.scalar(charge[..., None]).field()
-    potentials = core.double_layer(stiffness, cells, charge, valences, bulk, n_newton_steps)
-    _, _, carried, *_ = core.transport(topology, areas, sides, gradients, stiffness, cells, potentials, valences, bulk,
+    potentials = core.double_layer(outflow, cells, charge, valences, bulk, n_newton_steps)
+    _, _, carried, *_ = core.transport(topology, areas, sides, gradients, circulation, cells, potentials, valences, bulk,
                                        viscosity, mobilities, lengths, lower, upper, experiments[:, None, None])
     readings = experiments[:, None, None, None] & carried[None]                                      # [drives, experiments, widths, charges] Scalar+
     coupling = readings[0, 1].squared() / (readings[0, 0] * readings[1, 1])                          # [widths, charges] Scalar+
@@ -93,15 +105,15 @@ def channel_flows():
     pressure's and its field's, `Point-[vertices]` each."""
     topology, coordinates, shifts, lower, upper, charge, wall_charges = channels()
     vertices, edges = core.placed(topology, coordinates, shifts)
-    areas, sides, gradients, stiffness, cells = operators(topology, edges)
+    areas, sides, gradients, outflow, circulation, cells = operators(topology, edges)
     charge = mv.scalar(charge[..., None]).field()
-    potentials = core.double_layer(stiffness, cells, charge, valences, bulk, n_newton_steps)
+    potentials = core.double_layer(outflow, cells, charge, valences, bulk, n_newton_steps)
     density = (valences * bulk * (-valences * potentials[..., None]).exp()).sum(axis=-1)            # [channels] Scalar+[vertices]
     drives = battery * np.ones(len(phases))                                                          # [channels] Drive+
     stream, _, carried, velocities, field, conductivity = core.transport(
-        topology, areas, sides, gradients, stiffness, cells, potentials, valences, bulk, viscosity, mobilities,
+        topology, areas, sides, gradients, circulation, cells, potentials, valences, bulk, viscosity, mobilities,
         np.array(wavelength), lower, upper, drives)
-    viscous, joule = core.entropy_production(topology, areas, stiffness, cells, viscosity, stream, field, conductivity)
+    viscous, joule = core.entropy_production(topology, areas, circulation, cells, viscosity, stream, field, conductivity)
     # Each vertex's velocity, its triangles' weighed by their areas.
     speeds = (~topology.incidence[2, 0].sum(axis=0) * (velocities * (areas / 3))) / cells             # [channels] Point-[vertices]
     osmotic, electric = core.equilibrium_pushes(topology, areas, gradients, cells, potentials[0], valences, bulk)

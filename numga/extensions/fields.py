@@ -212,10 +212,12 @@ def eigvalsh_field(value: Extensor) -> Extensor:
     return _scalars(value, value.context.xp.linalg.eigvalsh(_flattened(value, first, second)[0], UPLO="L"))
 
 
-@Extensor.eigh.register(lambda value, metric: value.over_sites.is_square and value.axis_roles.same_as(metric), fields=True)
+@Extensor.eigh.register(lambda value, metric: (value.over_sites.is_square or value.over_sites.is_correlation)
+                        and value.axis_roles.same_as(metric), fields=True)
 def eigh_field_metric(value: Extensor, metric: Extensor) -> tuple[Extensor, Extensor]:
     """The modes of `value(x) == eigenvalue * metric(x)`, for a Hermitian value and a positive-definite
-    metric over the same field: ascending eigenvalues, and modes orthonormal in the metric."""
+    metric over the same field, both maps of a space to itself or both correlations, maps of a space to
+    its dual: ascending eigenvalues, and modes orthonormal in the metric."""
     xp = value.context.xp
     first, second = _square_axes(value)
     matrix, _, columns = _flattened(value, first, second)
@@ -225,7 +227,8 @@ def eigh_field_metric(value: Extensor, metric: Extensor) -> tuple[Extensor, Exte
     return _scalars(value, values), _modes(value, second, columns, xp.linalg.solve(_conjugate_transpose(xp, lower), vectors))
 
 
-@Extensor.eigvalsh.register(lambda value, metric: value.over_sites.is_square and value.axis_roles.same_as(metric), fields=True)
+@Extensor.eigvalsh.register(lambda value, metric: (value.over_sites.is_square or value.over_sites.is_correlation)
+                            and value.axis_roles.same_as(metric), fields=True)
 def eigvalsh_field_metric(value: Extensor, metric: Extensor) -> Extensor:
     return eigh_field_metric(value, metric)[0]
 

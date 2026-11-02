@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import Algebra, NumpyContext
+from numga import Algebra, NumpyContext, stack
 from numga.sparse import SparseExtensor, spdiag
 
 from examples.util.topology import Topology
@@ -53,6 +53,8 @@ volume = mv.v.dual()                                                          # 
 patch = axis & across                                                         # [] Patch-
 Rotation = ga.gatype.from_blades("xy")                                        # Bivector+
 resisting = patch * (Rotation & patch)                                        # [] Patch- <- Bivector+
+# A velocity read as the plane that takes its circulation along a path: its run along and across, read back.
+circulating = (stack((mv.x, mv.y)) * (stack((mv.x, mv.y)) & Point)).sum(axis=0)   # [] Plane+ <- Point-
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -113,24 +115,24 @@ def assembled(topology: Topology, local: Scalar) -> SparseExtensor:
     return (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=-1).sum(axis=-1)
 
 
-def double_layer(stiffness: SparseExtensor, cells: Scalar, wall_charge: Scalar, valences: np.ndarray,
+def double_layer(outflow: SparseExtensor, cells: Scalar, wall_charge: Scalar, valences: np.ndarray,
                  bulk: np.ndarray, n_steps: int) -> Scalar:
     """The potential over the channel `[...] Scalar+[vertices]`, where the field's outflow from each vertex's cell,
-    `stiffness`, balances the cell's charge, that of its ions in their Boltzmann distribution and, on the walls, the
+    `outflow`, balances the cell's charge, that of its ions in their Boltzmann distribution and, on the walls, the
     walls' own: Gauss's law, solved by a damped Newton's method from the bulk's potential."""
     potential = 0 * wall_charge                                               # [...] Scalar+[vertices]
     for _ in range(n_steps):
         concentrations = bulk * (-valences * potential[..., None]).exp()      # [..., species] Scalar+[vertices]
-        residual = stiffness * potential - cells * (valences * concentrations).sum(axis=-1) - wall_charge
+        residual = outflow * potential - cells * (valences * concentrations).sum(axis=-1) - wall_charge
         # The charge a cell loses as its potential rises, by its ions' squared valences.
         susceptibility = (valences ** 2 * concentrations).sum(axis=-1)        # [...] Scalar+[vertices]
-        step = ((stiffness + spdiag(cells * susceptibility)) * Scalar).solve(residual)   # [...] Scalar+[vertices]
+        step = ((outflow + spdiag(cells * susceptibility)) * Scalar).solve(residual)     # [...] Scalar+[vertices]
         # Newton's step, held below a thermal volt so that no Boltzmann factor changes by much more than e at once.
         potential = potential - step.tanh()
     return potential
 
 
-def transport(topology: Topology, areas: Scalar, sides: Point, gradients: Plane, stiffness: SparseExtensor,
+def transport(topology: Topology, areas: Scalar, sides: Point, gradients: Plane, circulation: SparseExtensor,
               cells: Scalar, potential: Scalar, valences: np.ndarray, bulk: np.ndarray, viscosity: float,
               mobilities: np.ndarray, periods: np.ndarray, lower: np.ndarray, upper: np.ndarray, drives: Drive
               ) -> tuple[Scalar, Scalar, Flux, Point, Drive, Scalar]:
@@ -149,8 +151,8 @@ def transport(topology: Topology, areas: Scalar, sides: Point, gradients: Plane,
     flows = sides / 2                                                         # [..., corners] Point-[faces]
     pushes = -(gradients ^ mv.t)                                              # [..., corners] Bivector+[faces]
     conducts = pushes.commutator(time).regressive(time)                       # [..., corners] Flux-[faces]
-    # Viscosity resists a flow by its vorticity, the stream function's outflow over each vertex's cell.
-    viscous = viscosity * stiffness * spdiag(1 / cells) * stiffness           # Scalar+[..., vertices <- vertices]
+    # Viscosity resists a flow by its vorticity, its circulation around each vertex's cell over the cell's area.
+    viscous = viscosity * circulation * spdiag(1 / cells) * circulation       # Scalar+[..., vertices <- vertices]
     # A potential's drive reads what a flow carries, and what the ions conduct under another potential's drive.
     carried = flows & parcels[..., None]                                      # [..., corners] Flux-[faces]
     coupling = assembled(topology, carried[..., :, None] & pushes[..., None, :])
@@ -167,15 +169,16 @@ def transport(topology: Topology, areas: Scalar, sides: Point, gradients: Plane,
     return stream, added, (flux * areas).sites.sum() / periods, velocities, field, conductivity
 
 
-def entropy_production(topology: Topology, areas: Scalar, stiffness: SparseExtensor, cells: Scalar, viscosity: float,
+def entropy_production(topology: Topology, areas: Scalar, circulation: SparseExtensor, cells: Scalar, viscosity: float,
                        stream: Scalar, field: Drive, conductivity: Scalar) -> tuple[Scalar, Scalar]:
     """The heat the liquid makes per volume at each vertex, the temperature times the entropy it produces, under the
     flow `[...] Scalar+[vertices]` and the whole drive in each triangle `[...] Drive+[faces]`: by its turning, the
     rate read by the viscous moment that resists it, and by its ions' drift, the drive read by the current it conducts;
     `[...] Scalar+[vertices]` each."""
     corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
-    # The liquid's turning: the stream function's outflow over each vertex's cell, a rate in the plane of the flow.
-    rotation = mv.xy * ((stiffness * stream) / cells)                         # [...] Bivector+[vertices]
+    # The liquid's turning: its circulation around each vertex's cell over the cell's area, a rate in the plane of the
+    # flow.
+    rotation = mv.xy * ((circulation * stream) / cells)                       # [...] Bivector+[vertices]
     viscous = rotation & (viscosity * resisting(rotation))                    # [...] Scalar+[vertices]
     joule = field & (conductivity * field.commutator(time).regressive(time))  # [...] Scalar+[faces]
     return viscous, (~corners.sum(axis=0) * (joule * areas / 3)) / cells

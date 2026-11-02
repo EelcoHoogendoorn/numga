@@ -34,7 +34,7 @@ def test_turned_sides_area_gradient_and_plateau_relaxation():
 
     # Vertex sum of turned sides matches both the first variation of total area and the cotangent Laplacian pull.
     corners = topology.incidence[2, 0]
-    local_laplacian = (corner_gradients[:, None] | corner_gradients[None, :]) * areas
+    local_laplacian = (corner_gradients[:, None] & turned_sides[None, :]) / 2
     laplacian = (~corners[:, None] * spdiag(local_laplacian) * corners[None, :]).sum(axis=0).sum(axis=0)
     area_pull = (~corners * turned_sides).sum(axis=0) / 2
     area_gradient = (~corners * (areas * corner_gradients)).sum(axis=0)

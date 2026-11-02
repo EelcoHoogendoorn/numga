@@ -2,9 +2,9 @@ r"""Minimal surfaces relax from triangle meshes, and their harmonic conjugates a
 
 A soap film settles where no small displacement of its interior can shrink its area, and there its mean curvature vanishes. Turning every small piece of a minimal surface a quarter turn in its own tangent plane leaves the pieces fitting together into a second minimal surface, its harmonic conjugate, and turning them by any other angle gives Bonnet's family between the two.
 
-The quarter turn in a triangle's plane is the commutator with the plane, `sides.commutator(normals.dual())`. It is both the area gradient, whose sums at the vertices are the cotangent Laplacian's pull `laplacian * vertices`, and the turned differential that integrates to the conjugate. The corner gradients read that differential over each triangle as half the bare facing side, and the sums of those sides cancel at every interior vertex, where neighbouring triangles run their shared edge in opposite senses, so the conjugate is solved from the boundary alone, following Pinkall and Polthier (1993), https://doi.org/10.1080/10586458.1993.10504266.
+The quarter turn in a triangle's plane is the commutator with the plane, `sides.commutator(normals.dual())`. It is both the area gradient, whose sums at the vertices are the cotangent Laplacian's pull `laplacian * vertices`, the Laplacian itself being each corner's hat gradient reading the area gradient at another, and the turned differential that integrates to the conjugate. The corner gradients read that differential over each triangle as half the bare facing side, and the sums of those sides cancel at every interior vertex, where neighbouring triangles run their shared edge in opposite senses, so the conjugate is solved from the boundary alone, following Pinkall and Polthier (1993), https://doi.org/10.1080/10586458.1993.10504266.
 
-In the vector notation of differential geometry, the area gradient at corner $i$ of a triangle $T$ is $\nabla_{p_i} A_T = \frac{1}{2} N_T \times e_i$, the cotangent Laplacian is $(L X)_i = \frac{1}{2}\sum_{j} (\cot \alpha_{ij} + \cot \beta_{ij})(X_i - X_j) = -2 H_i A_i N_i$, the conjugate integrates $dX^* = N \times dX$, and Bonnet's family is $X_\theta = \cos\theta\, X + \sin\theta\, X^*$.
+In the vector notation of differential geometry, the area gradient at corner $i$ of a triangle $T$ is $\nabla_{p_i} A_T = \frac{1}{2} N_T \times e_i$, the cotangent Laplacian is $(L X)_i = \frac{1}{2}\sum_{j} (\cot \alpha_{ij} + \cot \beta_{ij})(X_i - X_j) = -2 H_i A_i N_i$, with entries $L_{ij} = \sum_T A_T\,\nabla\phi_i\cdot\nabla\phi_j$ over the hat functions $\phi_i$, the conjugate integrates $dX^* = N \times dX$, and Bonnet's family is $X_\theta = \cos\theta\, X + \sin\theta\, X^*$.
 """
 
 from __future__ import annotations
@@ -43,12 +43,12 @@ def relax_plateau(
         normals = patches / areas                                            # Patch-[faces]
         # Each corner's hat rises from zero along the facing side to one at the corner.
         corner_gradients = (sides | patches.inverse()) / 2                   # [corners] Plane+[faces]
-        # Each triangle's corner gradients paired with one another over its area, pulled back to the vertices
-        # through both corners of each pair.
-        local_laplacian = (corner_gradients[:, None] | corner_gradients[None, :]) * areas  # [corners, corners] Scalar+[faces]
-        laplacian = (~corners[:, None] * spdiag(local_laplacian) * corners[None, :]).sum(axis=0).sum(axis=0)  # Scalar+[vertices <- vertices]
         # A quarter turn in each triangle's plane makes each facing side twice its corner's area gradient.
         turned_sides = sides.commutator(normals.dual())                      # [corners] Point-[faces]
+        # The cotangent Laplacian: each corner's hat gradient reads the area gradient at every other corner, half its
+        # turned facing side, pulled back to the vertices through both corners of each pair.
+        local_laplacian = (corner_gradients[:, None] & turned_sides[None, :]) / 2  # [corners, corners] Scalar+[faces]
+        laplacian = (~corners[:, None] * spdiag(local_laplacian) * corners[None, :]).sum(axis=0).sum(axis=0)  # Scalar+[vertices <- vertices]
         area_pull = interior * (~corners * turned_sides).sum(axis=0) / 2     # Point-[interior]
         # A vertex's area pull is twice its mean curvature times its third of the patches around it.
         vertex_patches = interior * (~corners.mean(axis=0) * patches)        # Patch-[interior]
@@ -69,8 +69,10 @@ def conjugate_minimal_surface(topology: Topology, vertices: Point) -> tuple[Poin
     sides = topology.boundary[2, 1] * (topology.d[0] * vertices)             # [corners] Point-[faces]
     patches = (sides[0] & sides[1]) / 2                                      # Patch-[faces]
     areas = patches.norm()                                                   # Scalar+[faces]
+    normals = patches / areas                                                # Patch-[faces]
     corner_gradients = (sides | patches.inverse()) / 2                       # [corners] Plane+[faces]
-    local_laplacian = (corner_gradients[:, None] | corner_gradients[None, :]) * areas      # [corners, corners] Scalar+[faces]
+    turned_sides = sides.commutator(normals.dual())                          # [corners] Point-[faces]
+    local_laplacian = (corner_gradients[:, None] & turned_sides[None, :]) / 2   # [corners, corners] Scalar+[faces]
     laplacian = (~corners[:, None] * spdiag(local_laplacian) * corners[None, :]).sum(axis=0).sum(axis=0)      # Scalar+[vertices <- vertices]
     # The corner gradients read the quarter-turned differential over each triangle as half the bare facing side:
     # the triangle's area and its normal cancel.
