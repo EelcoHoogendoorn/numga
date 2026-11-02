@@ -85,7 +85,7 @@ def test_channels_balance_across_pump_by_their_phase_and_make_the_power_spent_in
 
 def test_scenes_draw():
     topology, vertices, wall_charges, density, speeds, drive_potentials, falls, heat, _, _, _ = scenarios.channel_flows()
-    plt.close(render.draw_mesh(topology, vertices, scenarios.n_across, scenarios.wavelength, wall_charges[0]))
+    plt.close(render.draw_channels(topology, vertices, scenarios.n_across, scenarios.wavelength, wall_charges))
     plt.close(render.draw_flow(topology, vertices, scenarios.n_across, scenarios.wavelength, density, speeds,
                                drive_potentials, falls, wall_charges))
     plt.close(render.draw_heat(topology, vertices, scenarios.n_across, scenarios.wavelength, heat, drive_potentials,

@@ -2,7 +2,7 @@
 
 A strip closed on itself along its length is opened at its seam to be drawn: its first column again a period further
 along, and the triangles across the seam joined to that copy. Its points are read by the planes x and y and weighed by
-their volume, `mv.v & point`, the algebra's own projective weight. The mesh is drawn as strokes of its edges; a field
+their volume, `mv.v & point`, the algebra's own projective weight. The channels are drawn as the liquid between their walls; a field
 over it as colours on its triangles, a charge density or a heat from white; the flow as streaks of ink along the velocity, read by the same planes, each as
 long as the liquid there is fast and fading downstream; and the walls as strokes coloured by their charge, magenta where
 positive and green where negative. The best efficiency of slits as generators is a chart.
@@ -23,7 +23,8 @@ from examples.util.wgsl.camera import Camera
 
 Topology = simplices.Topology
 wall_colour = np.array(to_rgb("#3b4a57"))
-mesh_colour = np.array(to_rgb("#9aa5ae"))
+# The liquid in a picture of the channels themselves.
+liquid_colour = np.array(to_rgb("#eef1f4"))
 positive_colour, negative_colour = np.array(to_rgb("#c51b7d")), np.array(to_rgb("#4d9221"))
 streak_colour = np.array(to_rgb("#2b2f33"))
 # How much of the streaks' ink shows, so that the colours beneath read through it.
@@ -53,9 +54,7 @@ profile_speeds = (0, 1, 1.5)
 # A strip's picture: pixels across, the room above and below its widest place, and the pixels between strips; the widths
 # of the walls and the mesh's edges; how much of a field's colour shows at its largest.
 n_pixels, margin, gap_pixels = 300, 0.4, 8
-wall_width, mesh_width = 3.0, 1.5
-# A mesh's picture gets the pixels its rows of vertices need to show apart, within these bounds.
-row_pixels, mesh_pixels = 4.0, (300, 700)
+wall_width = 3.0
 field_strength = 0.85
 
 
@@ -134,15 +133,15 @@ def closing(values: np.ndarray, n_across: int) -> np.ndarray:
     return np.concatenate([values, values[..., :n_across]], axis=-1)
 
 
-def draw_mesh(topology: Topology, vertices: Extensor, n_across: int, period: float, wall_charges: np.ndarray):
-    """A strip's triangles as strokes of their edges, between its walls coloured by their charge `[columns]`."""
+def draw_channels(topology: Topology, vertices: Extensor, n_across: int, period: float, wall_charges: np.ndarray):
+    """The channels one above the other, each the liquid between its walls, the walls coloured by their charge
+    `[strips, columns]`, magenta where positive and green where negative."""
     points, faces = unrolled(topology, vertices, n_across, period)
-    # The narrowest place's rows of vertices, their spacing across.
-    spacing = 2 * np.abs(readings(vertices.context.multivector.y, vertices)).reshape(-1, n_across)[:, 0].min() / (n_across - 1)
-    camera = strip_camera(vertices, period, int(np.clip(row_pixels * period / spacing, *mesh_pixels)))
-    layers = [simplices.strokes(points, faces, mesh_colour, mesh_width, camera),
-              wall_strokes(points, n_across, wall_charges, camera)]
-    return image_figure(on_white(simplices.composited(layers)))
+    camera = strip_camera(vertices, period, n_pixels)
+    n_points = points.shape[0]
+    liquid = shaded(points, faces, np.zeros(n_points), np.tile(liquid_colour, (n_points, 1)), camera)
+    return stacked([on_white(simplices.composited([liquid, wall_strokes(points, n_across, wall_charge, camera)]))
+                    for wall_charge in wall_charges])
 
 
 def draw_flow(topology: Topology, vertices: Extensor, n_across: int, period: float, charge: Extensor,

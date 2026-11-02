@@ -193,7 +193,7 @@ if __name__ == "__main__":
     from examples.fluids.electrokinetics import render
 
     topology, vertices, wall_charges, density, speeds, drive_potentials, falls, heat, carried, osmotic, electric = channel_flows()
-    save_figure(render.draw_mesh(topology, vertices, n_across, wavelength, wall_charges[0]), "electrokinetics_channel")
+    save_figure(render.draw_channels(topology, vertices, n_across, wavelength, wall_charges), "electrokinetics_channels")
     save_figure(render.draw_flow(topology, vertices, n_across, wavelength, density, speeds, drive_potentials, falls,
                                  wall_charges),
                 "electrokinetics_flow")
