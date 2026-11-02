@@ -23,10 +23,10 @@ def test_straight_slit_is_reciprocal_dissipative_and_poiseuille():
     topology, coordinates, shifts, lower, upper = core.strip(n_columns, scenarios.n_across, np.array(length), widths)
     charge = core.wall_charge(scenarios.n_across, np.array(length), widths, np.full(n_columns, -2.5))
     _, edges = core.placed(topology, coordinates, shifts)
-    areas, sides, gradients, stiffness, cells = scenarios.operators(topology, edges)
-    potential = core.double_layer(stiffness, cells, mv.scalar(charge[..., None]).field(), scenarios.valences,
+    areas, sides, gradients, outflow, circulation, cells = scenarios.operators(topology, edges)
+    potential = core.double_layer(outflow, cells, mv.scalar(charge[..., None]).field(), scenarios.valences,
                                   scenarios.bulk, scenarios.n_newton_steps)
-    *_, carried, _, _, _ = core.transport(topology, areas, sides, gradients, stiffness, cells, potential,
+    *_, carried, _, _, _ = core.transport(topology, areas, sides, gradients, circulation, cells, potential,
                                           scenarios.valences, scenarios.bulk, scenarios.viscosity, scenarios.mobilities,
                                           np.array(length), lower, upper, scenarios.experiments)
     table = (scenarios.experiments[:, None] & carried[None, :]).to_array().reshape(2, 2)

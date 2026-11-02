@@ -149,7 +149,7 @@ def main() -> None:
     turned_sides = sides.commutator(normals.dual())                               # [corners] Point-[faces]
     np.testing.assert_allclose((turned_sides - 2 * areas * corner_gradients.dual()).kernel, 0.0, atol=1e-13)
 
-    local_laplacian = (corner_gradients[:, None] | corner_gradients[None, :]) * areas  # [corners, corners] Scalar+[faces]
+    local_laplacian = (corner_gradients[:, None] & turned_sides[None, :]) / 2   # [corners, corners] Scalar+[faces]
     laplacian = (~corners[:, None] * spdiag(local_laplacian) * corners[None, :]).sum(axis=0).sum(axis=0)  # Scalar+[vertices <- vertices]
     area_pull = (~corners * turned_sides).sum(axis=0) / 2                                                         # Point-[vertices]
     area_gradient = (~corners * (areas * corner_gradients)).sum(axis=0)      # Plane+[vertices]

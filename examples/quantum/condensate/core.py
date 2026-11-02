@@ -46,6 +46,9 @@ Turn = ga.gatype.from_blades("ab")                                            # 
 # Unit steps across and up the trap's plane, as places from its middle.
 axis = mv.x.dual()                                                            # [] Point-
 across = mv.y.dual()                                                          # [] Point-
+# The condensate's mobility, its inverse mass, one in these units: it turns a gradient of the wave into the flow it
+# drives.
+mobility = Plane.dual()                                                       # [] Point- <- Plane+
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -74,7 +77,8 @@ def settling(topology: Topology, places: Point, areas: Scalar, gradients: Plane,
     triangles with these areas, hat gradients and cells: the kinetic energy, the trap and the rotation's drag taken
     implicitly, the repulsion explicitly."""
     corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- places]
-    kinetic = (gradients[..., :, None] | gradients[..., None, :]) * areas[..., None, None] / 2
+    # The kinetic energy: each hat's gradient read against the flow another's drives, over the triangle.
+    kinetic = (gradients[..., :, None] & mobility(gradients[..., None, :])) * areas[..., None, None] / 2
     # The rotation drags each triangle's middle a quarter turn in the trap's plane; the wave's change along the drag is
     # the drag paired with each corner's hat gradient, times the corner's wave, shared out to the corners' cells.
     drags = (corners.mean(axis=0) * places).commutator(mv.xy)                 # Point-[faces]

@@ -131,11 +131,11 @@ def test_harmonic_rotor_frames_and_projected_relaxation():
     patches = (sides[0] & sides[1]) / 2
     corner_gradients = (sides | patches.inverse()) / 2
     gradient = (spdiag(corner_gradients) * topology.incidence[2, 0]).sum(axis=0) * core.Scalar
-    whitney_stiffness = gradient.adjoint()(spdiag(areas) * gradient)
-    scalar_laplacian = ~topology.d[0] * (spdiag(edge_weights) * topology.d[0])
+    whitney_stiffness = gradient.adjugate()(spdiag(areas * core.Plane.dual())(gradient))   # (Amount- <- Scalar+)[vertices <- vertices]
+    scalar_laplacian = ~topology.d[0] * (spdiag(edge_weights * core.Scalar.dual()) * topology.d[0])   # (Amount- <- Scalar+)[vertices <- vertices]
     test_scalar = (core.mv.x & vertices).squared() - 0.4 * (core.mv.z & vertices)
     np.testing.assert_allclose(
-        (whitney_stiffness(test_scalar) - scalar_laplacian * test_scalar).kernel,
+        (whitney_stiffness(test_scalar) - scalar_laplacian(test_scalar)).kernel,
         0.0, atol=1e-14,
     )
 
