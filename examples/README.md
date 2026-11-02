@@ -123,7 +123,9 @@
 - [Dirac electron](relativity/dirac/) — A spacetime spinor carries the electron's density, current and spin through its action as a map.
 - [Dirac, Weyl and Majorana spinors](relativity/spinors/) — Three kinds of particle state occupy one real spacetime spinor space.
 - [Gravitational lensing](relativity/gravitational_lensing/) — Point masses bend sightlines to produce multiple images of a source.
-- [Gravitational waves of a closed universe](relativity/closed_universe/) — A three-sphere meshed by tetrahedra carries Regge's gravitational waves, seen from inside along rays rolled in its isoclinic frames and on the sphere below its Hopf circles, where tuned crystals and triangles of atoms ring.
+- [Inside a closed universe](relativity/closed_universe/rendering.ipynb) — Rays walked from tetrahedron to tetrahedron, straight across each one's chart, show the round three-sphere from inside, through the 600-cell and an irregular mesh.
+- [Gravitational waves of a closed universe](relativity/closed_universe/waves.ipynb) — Regge calculus on the 600-cell rings the closed universe's slowest wave past soft, tuned and stiff crystals, seen from inside through the waves.
+- [Gravitational waves below the Hopf circles](relativity/closed_universe/hopf_projection.ipynb) — A travelling quadrupole, the same all along the Hopf circles, stretches the sphere below them, rings triangles of atoms and bends a bundle of light.
 - [Kerr ray tracing in GTG](relativity/kerr/kerr.ipynb) — Gauge theory gravity transports light and polarization past a rotating black hole.
 - [Kerr ray tracing with a metric](relativity/kerr/kerr_metric.ipynb) — The metric and connection describe light and polarization in the same black-hole scene.
 - [LIGO antenna patterns](relativity/ligo/) — Detector arms respond differently to gravitational waves arriving from different directions and polarizations.
