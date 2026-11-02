@@ -158,6 +158,7 @@
 - [Magnetic bottle](electromagnetism/magnetic_bottle/) — Charged particles spiral, bounce or escape in the field between two coils.
 - [Magnetic flux advection](electromagnetism/lie_advection/) — Swept edge patches and Cartan's decomposition transport magnetic circulation and conserve total flux across a swirling conductor.
 - [Force-free Beltrami fields](electromagnetism/beltrami_fields/) — Tetrahedral Whitney forms carry magnetic energy and helicity; selective modal decay at fixed helicity reveals a force-free state inside a torus.
+- [A dynamo in a planet's core](electromagnetism/dynamo/dynamo.ipynb) — A stirred fluid shell in a conducting ball grows a seed field until the field's force on the current, the adjugate of the motional map, brakes the flow; flow and field then trade energy back and forth.
 
 ## Optics
 
