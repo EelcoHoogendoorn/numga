@@ -23,9 +23,11 @@ N_FRAMES = 96
 N_MASSES = 24
 STRAIN_SHOWN = 0.3
 DURATION_MS = 40
-# The polarization animation's size, in pixels, and the gallery's.
+# The polarization animation's size, in pixels, and the gallery's, with the gallery's colours, enough for the response's
+# bands, the ring's and the site's inks and their edges.
 POLARIZATION_SIZE = (600, 200)
 GALLERY_SIZE = (720, 240)
+N_GALLERY_COLOURS = 48
 
 
 # --- math -----------------------------------------------------------------------------
@@ -115,7 +117,7 @@ def pinned() -> None:
     angles = np.linspace(0, np.pi, N_FRAMES, endpoint=False)
     responses, rings = polarization(sites[0], arms[0], frames, angles)       # [frames, latitudes, longitudes] Scalar+, [frames, masses] Point-
     pin_animation(render.animate_polarization(directions, responses, sites[0], arms[0], rings, NAMES[0], GALLERY_SIZE),
-                  "ligo", DURATION_MS)
+                  "ligo", DURATION_MS, colors=N_GALLERY_COLOURS)
 
 
 if __name__ == "__main__":

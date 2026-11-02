@@ -23,23 +23,23 @@ In the selected examples below, lowercase names denote values and capitalized na
 
 ---
 
-## 1. A Scenegraph, a Robot Arm and a Camera, as One Map
+## 1. Multi-View Reconstruction and Camera Alignment
 
-**Notebook**: [`examples/geometry/scenegraph/scenegraph.ipynb`](../examples/geometry/scenegraph/scenegraph.ipynb)
+**Notebook**: [`examples/estimation/multiview/multiview_reconstruction.ipynb`](../examples/estimation/multiview/multiview_reconstruction.ipynb)
 
-<p align="center"><img src="../plots/scenegraph.gif" alt="A robot arm in 3D, and its picture on a camera sensor" width="598" /></p>
+<p align="center"><img src="../plots/multiview_convergence.gif" alt="Three cameras aligned step by step, with their sight cones and the splats they fuse into" width="300" /></p>
 
 ```python
-lens = Line - (center & (Line ^ plane)) / focal_length                                            # [] Line <- Line
-rear_lens = rear_placement >> thin_lens(origin, front_plane, focal_rear)(rear_placement << Line)   # [] Line <- Line
-to_sensor = Line ^ sensor_plane                                                                   # [] Point <- Line
-camera = to_sensor(rear_lens(front_lens(incoming_rays)))                                          # [] Point <- Point
-local_to_pixel = world_to_pixel(bodies_to_world)                                                  # [bodies] Point <- Point
+back_projection = camera.adjugate()                        # [] Plane <- Plane
+cones = back_projection(discs(camera))                     # [landmarks, cameras] Plane <- Point
+splats = (poses >> cones(poses << Point)).sum(axis=-1)     # [landmarks] Plane <- Point
+motion = -Twist.commutator(seen)                           # [landmarks, cameras] Point <- Twist
+curvature = (cones(motion) & motion).sum(axis=0)           # [cameras] Scalar <- (Twist, Twist)
 ```
 
-* A thin lens is a map from rays to rays, `Line - (center & (Line ^ plane)) / focal_length`.
-* A motor moves a lens as it moves any map, `rear_placement >> lens(rear_placement << Line)`.
-* Calling a map on a map composes them, so each part gets one map from points to pixels.
+* A camera has no inverse, but its adjugate maps a pixel's uncertainty disc to a cone of sight.
+* Views combine by adding cones, `(poses >> cones(poses << Point)).sum(axis=-1)`.
+* The cost's curvature over camera motions is `cones(motion) & motion`; no Jacobian is formed.
 
 ---
 
@@ -63,27 +63,7 @@ overlap_gradient = geometry.null_gradient.adjugate()(momentum)                # 
 
 ---
 
-## 3. Multi-View Reconstruction and Camera Alignment
-
-**Notebook**: [`examples/estimation/multiview/multiview_reconstruction.ipynb`](../examples/estimation/multiview/multiview_reconstruction.ipynb)
-
-<p align="center"><img src="../plots/multiview_convergence.gif" alt="Three cameras aligned step by step, with their sight cones and the splats they fuse into" width="300" /></p>
-
-```python
-back_projection = camera.adjugate()                        # [] Plane <- Plane
-cones = back_projection(discs(camera))                     # [landmarks, cameras] Plane <- Point
-splats = (poses >> cones(poses << Point)).sum(axis=-1)     # [landmarks] Plane <- Point
-motion = -Twist.commutator(seen)                           # [landmarks, cameras] Point <- Twist
-curvature = (cones(motion) & motion).sum(axis=0)           # [cameras] Scalar <- (Twist, Twist)
-```
-
-* A camera has no inverse, but its adjugate maps a pixel's uncertainty disc to a cone of sight.
-* Views combine by adding cones, `(poses >> cones(poses << Point)).sum(axis=-1)`.
-* The cost's curvature over camera motions is `cones(motion) & motion`; no Jacobian is formed.
-
----
-
-## 4. Snowflake Growth
+## 3. Snowflake Growth
 
 **Notebook**: [`examples/thermodynamics/snowflake/snowflake.ipynb`](../examples/thermodynamics/snowflake/snowflake.ipynb)
 
@@ -100,6 +80,25 @@ push = absolute_melting * cells * (entropy_slope & freezing) * held_slope       
 
 * Freezing is one direction among the amounts the water holds, ice gained and its latent heat released, and the two laws of thermodynamics are two planes reading it: `energy & freezing == 0`, so freezing makes no energy, and `entropy_slope & freezing` is the entropy it produces, which drives the ice.
 * A corner's gradient is the facing side joined with every amount, over the triangle joined with them, so it reads place and nothing a parcel holds; wedged with heat it is the drive that conducts the latent heat away from the growing tips.
+
+---
+
+## 4. A Rotating Bose–Einstein Condensate
+
+**Notebook**: [`examples/quantum/condensate/condensate.ipynb`](../examples/quantum/condensate/condensate.ipynb)
+
+<p align="center"><img src="../plots/condensate.gif" alt="A rotating condensate in a harmonic trap settling into a lattice of quantized vortices" width="300" /></p>
+
+```python
+drags = (corners.mean(axis=0) * vertices).commutator(mv.xy)                       # Point-[F]
+along = (areas / 3)[..., None, None] * (drags[..., None, None] & gradients[..., None, :])
+stepping = (spdiag((cells / step + cells * potential) * Wave) + assembled(kinetic * Wave) +
+            assembled(rotation * along * (Wave * mv.ab)))                         # (Wave+ <- Wave+)[V <- V]
+turns = (ends[..., 0] * ends[..., 1]).normalized().log()                          # Turn+[E]
+```
+
+* Two turnings in two planes, kept apart: the trap drags each point a quarter turn in its plane, `point.commutator(mv.xy)`, and the wave turns in its own, `wave * mv.ab`; the rotation's energy pairs the drag with the wave's gradient.
+* A vortex is a triangle round which the wave turns once: the logarithms of the rotors between neighbouring waves, summed round its edges, counted against Feynman's rule.
 
 ---
 
@@ -122,7 +121,66 @@ potential_gradient = (velocity | Point)(jacobian.inverse())                     
 
 ---
 
-## 6. Edge States of a Graphene Flake
+## 6. A Dynamo in a Planet's Core
+
+**Notebook**: [`examples/electromagnetism/dynamo/dynamo.ipynb`](../examples/electromagnetism/dynamo/dynamo.ipynb)
+
+<p align="center"><img src="../plots/dynamo_lines.gif" alt="A planet's liquid core seen from above, its field lines in white wound up by the stirred flow, whose streamlines run in cyan inside the core's faint surface" width="256" /></p>
+
+```python
+motional = spdiag((velocities & Magnetic) ^ mv.t)(ball.curl)     # (Field+ <- Scalar+)[tets <- edges]
+conductance = ball.electric.adjugate()(current(ball.electric))   # (Amount- <- Scalar+)[edges <- edges]
+drive = ball.electric.adjugate()(current(motional))              # (Amount- <- Scalar+)[edges <- edges]
+kinetic = circulating.adjugate()(momentum(circulating))          # (Amount- <- Scalar+)[edges <- edges]
+```
+
+* The moving fluid reads the magnetic plane as an electric field, `(velocity & magnetic) ^ mv.t`: the plane met with the velocity, swept through time.
+* The field's force on the fluid is that motional map's adjugate applied to the current, so the energy the field gains is the energy the flow loses.
+* The field is the curl of a potential on the edges: it has no sources, however it grows.
+
+---
+
+## 7. The Rattleback
+
+**Notebook**: [`examples/mechanics/rattleback/rattleback.ipynb`](../examples/mechanics/rattleback/rattleback.ipynb)
+
+<p align="center"><img src="../plots/rattleback.gif" alt="A wooden rattleback spun the wrong way, rocking, stopping and spinning back" width="420" /></p>
+
+```python
+height = (normal & shape(normal)).square_root()                        # Scalar
+support = -shape(normal) / height                                      # Direction
+rolling = ((centre + support) * origin.inverse() / 2).exp() >> Spin   # Rate <- Spin
+pullback = rolling.adjugate()                                          # AngularMomentum <- Forque
+effective = pullback(inertia(rolling))                                 # AngularMomentum <- Spin
+```
+
+* Rolling is a spin carried to the contact point, a map `Rate <- Spin`.
+* Its adjugate removes the contact reaction: `pullback(force) & spin == force & rolling(spin)`.
+* The constrained inertia is the free one pulled back, `pullback(inertia(rolling))`, with no Lagrange multiplier.
+
+---
+
+## 8. Gravitational Waves of a Closed Universe
+
+**Notebook**: [`examples/relativity/closed_universe/waves.ipynb`](../examples/relativity/closed_universe/waves.ipynb)
+
+<p align="center"><img src="../plots/closed_universe_quadrupole.gif" alt="A gravitational wave travelling round a closed universe, its stretch drawn on a sphere, rung by strain gauges and crossed by light" width="300" /></p>
+
+```python
+ramps = faces / (faces & corners)                                                     # [corners] Plane+[cells]
+cone = radial * (radial & Point) + cone_map * squared_lengths                         # (Plane+ <- Point-)[cells]
+pairings = ramps[:, None] & cone.batch().inverse().field()(ramps[None, :])            # [corners, corners] Scalar+[cells]
+restoring = onto_waves(masses.solve(stiffness(strains)))                              # Scalar+[edges]
+strains = (cell_frames.inverse() >> (cone_map * changes)(frame_steps)).cast(Strain)   # (Plane+ <- Point-)[cells]
+```
+
+* Regge calculus on curved tetrahedra: each tetrahedron's metric is a map from points to planes, `cone`, and the angles between its faces are its ramps paired through that map's inverse.
+* The kinetic term is the inertia of space, `masses`, a map from the rates of the squared lengths to their momenta.
+* The closed universe carries a frame everywhere at once. Read in it, a wave is a strain field, and a stretch is the strain read against the metric it changes, `strain(step) & step`.
+
+---
+
+## 9. Edge States of a Graphene Flake
 
 **Notebook**: [`examples/quantum/kane_mele/kane_mele.ipynb`](../examples/quantum/kane_mele/kane_mele.ipynb)
 
@@ -142,44 +200,7 @@ spins = (states * amplitudes).sum(axis=0) >> up_spin                          # 
 
 ---
 
-## 7. A Dynamo in a Planet's Core
-
-**Notebook**: [`examples/electromagnetism/dynamo/dynamo.ipynb`](../examples/electromagnetism/dynamo/dynamo.ipynb)
-
-<p align="center"><img src="../plots/dynamo_lines.gif" alt="A planet's liquid core seen from above, its field lines in white wound up by the stirred flow, whose streamlines run in cyan inside the core's faint surface" width="256" /></p>
-
-```python
-motional = spdiag((velocities & Magnetic) ^ mv.t)(ball.curl)     # (Field+ <- Scalar+)[tets <- edges]
-conductance = ball.electric.adjugate()(current(ball.electric))   # (Amount- <- Scalar+)[edges <- edges]
-drive = ball.electric.adjugate()(current(motional))              # (Amount- <- Scalar+)[edges <- edges]
-kinetic = circulating.adjugate()(momentum(circulating))          # (Amount- <- Scalar+)[edges <- edges]
-```
-
-* The moving fluid reads the magnetic plane as an electric field, `(velocity & magnetic) ^ mv.t`: the plane met with the velocity, swept through time.
-* The field's force on the fluid is that motional map's adjugate applied to the current, so the energy the field gains is the energy the flow loses.
-* The field is the curl of a potential on the edges: it has no sources, however it grows.
-
----
-
-## 8. Twistors and Linked Light
-
-**Notebook**: [`examples/relativity/twistors/twistors.ipynb`](../examples/relativity/twistors/twistors.ipynb)
-
-<p align="center"><img src="../plots/twistor_hopfion.gif" alt="The linked electric field lines of a pulse of light, carried along straight light rays" width="330" /></p>
-
-```python
-representations = state_readout(Full * state_embedding)    # [] Twistor <- (Full, Twistor)
-family = representations(points[0] * points[1])            # [] Twistor <- Twistor
-states, _, _ = family.svd()
-planes = ray_readout(twistors, twistors)                    # [cases] Bivector
-```
-
-* One extensor, `Twistor <- (Full, Twistor)`, holds the action of every multivector on twistors.
-* A twistor paired with itself, `ray_readout(twistor, twistor)`, is its light ray.
-
----
-
-## 9. Beltrami Fields
+## 10. Beltrami Fields
 
 **Notebook**: [`examples/electromagnetism/beltrami_fields/beltrami_fields.ipynb`](../examples/electromagnetism/beltrami_fields/beltrami_fields.ipynb)
 
@@ -200,62 +221,42 @@ helicity = (raw_helicity + raw_helicity.adjugate()) / 2             # (Amount- <
 
 ---
 
-## 10. A Rotating Bose–Einstein Condensate
+## 11. A Scenegraph, a Robot Arm and a Camera, as One Map
 
-**Notebook**: [`examples/quantum/condensate/condensate.ipynb`](../examples/quantum/condensate/condensate.ipynb)
+**Notebook**: [`examples/geometry/scenegraph/scenegraph.ipynb`](../examples/geometry/scenegraph/scenegraph.ipynb)
 
-<p align="center"><img src="../plots/condensate.gif" alt="A rotating condensate in a harmonic trap settling into a lattice of quantized vortices" width="300" /></p>
+<p align="center"><img src="../plots/scenegraph.gif" alt="A robot arm in 3D, and its picture on a camera sensor" width="598" /></p>
 
 ```python
-drags = (corners.mean(axis=0) * vertices).commutator(mv.xy)                       # Point-[F]
-along = (areas / 3)[..., None, None] * (drags[..., None, None] & gradients[..., None, :])
-stepping = (spdiag((cells / step + cells * potential) * Wave) + assembled(kinetic * Wave) +
-            assembled(rotation * along * (Wave * mv.ab)))                         # (Wave+ <- Wave+)[V <- V]
-turns = (ends[..., 0] * ends[..., 1]).normalized().log()                          # Turn+[E]
+lens = Line - (center & (Line ^ plane)) / focal_length                                            # [] Line <- Line
+rear_lens = rear_placement >> thin_lens(origin, front_plane, focal_rear)(rear_placement << Line)   # [] Line <- Line
+to_sensor = Line ^ sensor_plane                                                                   # [] Point <- Line
+camera = to_sensor(rear_lens(front_lens(incoming_rays)))                                          # [] Point <- Point
+local_to_pixel = world_to_pixel(bodies_to_world)                                                  # [bodies] Point <- Point
 ```
 
-* Two turnings in two planes, kept apart: the trap drags each point a quarter turn in its plane, `point.commutator(mv.xy)`, and the wave turns in its own, `wave * mv.ab`; the rotation's energy pairs the drag with the wave's gradient.
-* A vortex is a triangle round which the wave turns once: the logarithms of the rotors between neighbouring waves, summed round its edges, counted against Feynman's rule.
+* A thin lens is a map from rays to rays, `Line - (center & (Line ^ plane)) / focal_length`.
+* A motor moves a lens as it moves any map, `rear_placement >> lens(rear_placement << Line)`.
+* Calling a map on a map composes them, so each part gets one map from points to pixels.
 
 ---
 
-## 11. The Rattleback
+## 12. As Rigid As Possible
 
-**Notebook**: [`examples/mechanics/rattleback/rattleback.ipynb`](../examples/mechanics/rattleback/rattleback.ipynb)
+**Notebook**: [`examples/surfaces/arap/arap.ipynb`](../examples/surfaces/arap/arap.ipynb)
 
-<p align="center"><img src="../plots/rattleback.gif" alt="A wooden rattleback spun the wrong way, rocking, stopping and spinning back" width="420" /></p>
-
-```python
-height = (normal & shape(normal)).square_root()                        # Scalar
-support = -shape(normal) / height                                      # Direction
-rolling = ((centre + support) * origin.inverse() / 2).exp() >> Spin   # Rate <- Spin
-pullback = rolling.adjugate()                                          # AngularMomentum <- Forque
-effective = pullback(inertia(rolling))                                 # AngularMomentum <- Spin
-```
-
-* Rolling is a spin carried to the contact point, a map `Rate <- Spin`.
-* Its adjugate removes the contact reaction: `pullback(force) & spin == force & rolling(spin)`.
-* The constrained inertia is the free one pulled back, `pullback(inertia(rolling))`, with no Lagrange multiplier.
-
----
-
-## 12. Gravitational Waves of a Closed Universe
-
-**Notebook**: [`examples/relativity/closed_universe/waves.ipynb`](../examples/relativity/closed_universe/waves.ipynb)
-
-<p align="center"><img src="../plots/closed_universe_quadrupole.gif" alt="A gravitational wave travelling round a closed universe, its stretch drawn on a sphere, rung by strain gauges and crossed by light" width="300" /></p>
+<p align="center"><img src="../plots/arap_bending.gif" alt="A bar held at one end and bent a quarter turn up, keeping its shape as it bends" width="400" /></p>
 
 ```python
-ramps = faces / (faces & corners)                                                     # [corners] Plane+[cells]
-cone = radial * (radial & Point) + cone_map * squared_lengths                         # (Plane+ <- Point-)[cells]
-pairings = ramps[:, None] & cone.batch().inverse().field()(ramps[None, :])            # [corners, corners] Scalar+[cells]
-restoring = onto_waves(masses.solve(stiffness(strains)))                              # Scalar+[edges]
-strains = (cell_frames.inverse() >> (cone_map * changes)(frame_steps)).cast(Strain)   # (Plane+ <- Point-)[cells]
+edges = T10 * vertices                                                         # Point[E]
+forms = ~A10 * H1 * edges.dot(Even >> rest)                                    # Scalar[V] <- (Even, Even)
+rotors = forms.batch().eigh()[1][..., -1].field()                              # Even[V]
+turned_rest = (A10 * (rotors >> Point))(rest)                                  # Point[E]
+vertices = handle_laplacian.solve(~T10 * H1 * turned_rest + P * targets)       # Point[V]
 ```
 
-* Regge calculus on curved tetrahedra: each tetrahedron's metric is a map from points to planes, `cone`, and the angles between its faces are its ramps paired through that map's inverse.
-* The kinetic term is the inertia of space, `masses`, a map from the rates of the squared lengths to their momenta.
-* The closed universe carries a frame everywhere at once. Read in it, a wave is a strain field, and a stretch is the strain read against the metric it changes, `strain(step) & step`.
+* How well a rotor fits a vertex's edges is a form on rotors; the best rotor is its top eigenvector.
+* `rotors >> Point` turns rotors into maps, which carry the rest edges.
 
 ---
 
@@ -278,24 +279,21 @@ strains = stiffness.solve(-loads_at_stations(loads, stations))                  
 
 ---
 
-## 14. Laplacian Eigenfunction Fluids
+## 14. Twistors and Linked Light
 
-**Notebook**: [`examples/fluids/eigen_fluids/eigen_fluids.ipynb`](../examples/fluids/eigen_fluids/eigen_fluids.ipynb)
+**Notebook**: [`examples/relativity/twistors/twistors.ipynb`](../examples/relativity/twistors/twistors.ipynb)
 
-<p align="center"><img src="../plots/eigen_fluids.gif" alt="Vortices of opposite sense carrying one another across the surface of the Stanford bunny, with the streamlines of their flow" width="300" /></p>
+<p align="center"><img src="../plots/twistor_hopfion.gif" alt="The linked electric field lines of a pulse of light, carried along straight light rays" width="330" /></p>
 
 ```python
-gradient = (spdiag(corner_gradients * Scalar) * mesh.incidence[2, 0]).sum(axis=0)   # (Plane+ <- Scalar+)[faces <- vertices]
-stiffness = gradient.adjugate()(spdiag(areas * Plane.dual())(gradient))            # (Amount- <- Scalar+)[vertices <- vertices]
-eigenvalues, eigenfields = stiffness.eigh(mass, n_modes + 1)                       # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
-flows = face_gradients ^ patches                                                   # [modes] Point-[faces]
-jacobians = face_gradients[:, None] & flows[None, :]                               # [modes, modes] Scalar+[faces]
-structure = structure_constants(mesh, patches, gradient, modes)                    # (Scalar+ <- (Scalar+, Scalar+))[modes <- (modes, modes)]
-advection = structure(stream, vorticity)                                           # Scalar+[modes]
+representations = state_readout(Full * state_embedding)    # [] Twistor <- (Full, Twistor)
+family = representations(points[0] * points[1])            # [] Twistor <- Twistor
+states, _, _ = family.svd()
+planes = ray_readout(twistors, twistors)                    # [cases] Bivector
 ```
 
-* The flow along a stream function's level lines is its gradient joined with the tangent patch, `gradient ^ patch`, with no normal vector and no quarter turn.
-* The Jacobian of two fields is `gradient & (gradient ^ patch)`, with no metric, so all of advection is one map of two arguments over the modes, `structure(stream, vorticity)`.
+* One extensor, `Twistor <- (Full, Twistor)`, holds the action of every multivector on twistors.
+* A twistor paired with itself, `ray_readout(twistor, twistor)`, is its light ray.
 
 ---
 
@@ -318,7 +316,28 @@ kinetic = penetration ** 2 * (in_ring_areas * (currents & inertia(currents))).si
 
 ---
 
-## 16. Quantum Process Tomography in the Projective Bloch Ball
+## 16. Laplacian Eigenfunction Fluids
+
+**Notebook**: [`examples/fluids/eigen_fluids/eigen_fluids.ipynb`](../examples/fluids/eigen_fluids/eigen_fluids.ipynb)
+
+<p align="center"><img src="../plots/eigen_fluids.gif" alt="Vortices of opposite sense carrying one another across the surface of the Stanford bunny, with the streamlines of their flow" width="300" /></p>
+
+```python
+gradient = (spdiag(corner_gradients * Scalar) * mesh.incidence[2, 0]).sum(axis=0)   # (Plane+ <- Scalar+)[faces <- vertices]
+stiffness = gradient.adjugate()(spdiag(areas * Plane.dual())(gradient))            # (Amount- <- Scalar+)[vertices <- vertices]
+eigenvalues, eigenfields = stiffness.eigh(mass, n_modes + 1)                       # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
+flows = face_gradients ^ patches                                                   # [modes] Point-[faces]
+jacobians = face_gradients[:, None] & flows[None, :]                               # [modes, modes] Scalar+[faces]
+structure = structure_constants(mesh, patches, gradient, modes)                    # (Scalar+ <- (Scalar+, Scalar+))[modes <- (modes, modes)]
+advection = structure(stream, vorticity)                                           # Scalar+[modes]
+```
+
+* The flow along a stream function's level lines is its gradient joined with the tangent patch, `gradient ^ patch`, with no normal vector and no quarter turn.
+* The Jacobian of two fields is `gradient & (gradient ^ patch)`, with no metric, so all of advection is one map of two arguments over the modes, `structure(stream, vorticity)`.
+
+---
+
+## 17. Quantum Process Tomography in the Projective Bloch Ball
 
 **Notebook**: [`examples/quantum/process_tomography/process_tomography.ipynb`](../examples/quantum/process_tomography/process_tomography.ipynb)
 
@@ -340,7 +359,7 @@ learned_channel = (recovered_outputs * (preparation_dual & Point)).sum(axis=-1) 
 
 ---
 
-## 17. Euler Elastica
+## 18. Euler Elastica
 
 **Notebook**: [`examples/mechanics/elastica/elastica.ipynb`](../examples/mechanics/elastica/elastica.ipynb)
 
@@ -361,7 +380,7 @@ load = load - deviation.commutator(load) / 2 + deviation.commutator(deviation.co
 
 ---
 
-## 18. Piezoelectric Bimorph
+## 19. Piezoelectric Bimorph
 
 **Notebook**: [`examples/electromagnetism/piezoelectric/piezoelectric.ipynb`](../examples/electromagnetism/piezoelectric/piezoelectric.ipynb)
 
@@ -380,7 +399,7 @@ mixed = movement.adjugate()(coupling(voltage))                         # (Plane+
 
 ---
 
-## 19. Black Polarization Sandwiches
+## 20. Black Polarization Sandwiches
 
 **Notebook**: [`examples/optics/black_sandwich/black_sandwich.ipynb`](../examples/optics/black_sandwich/black_sandwich.ipynb)
 
@@ -401,7 +420,7 @@ double_stack = sandwich(sandwich)                                # [frames] Fiel
 
 ---
 
-## 20. Gravitational-Wave Antenna Patterns
+## 21. Gravitational-Wave Antenna Patterns
 
 **Notebook**: [`examples/relativity/ligo/ligo.ipynb`](../examples/relativity/ligo/ligo.ipynb)
 
@@ -419,7 +438,7 @@ rings = ring + strain_shown * overhead[:, None](ring).dual()                 # [
 
 ---
 
-## 21. Moving Charges
+## 22. Moving Charges
 
 **Notebook**: [`examples/electromagnetism/moving_charge/moving_charge.ipynb`](../examples/electromagnetism/moving_charge/moving_charge.ipynb)
 
@@ -436,7 +455,7 @@ field = (Vector ^ gradients(Antivector)).trace(1, 2)                  # [...] Bi
 
 ---
 
-## 22. Magnetic Resonance
+## 23. Magnetic Resonance
 
 **Notebook**: [`examples/quantum/magnetic_resonance/magnetic_resonance_space.ipynb`](../examples/quantum/magnetic_resonance/magnetic_resonance_space.ipynb)
 
@@ -451,25 +470,6 @@ sample_echo = echo.mean(axis=-1)                               # [delays] State 
 
 * Relaxation is a map on states written as its formula, a sandwich minus an anticommutator.
 * A pulse sequence is a composition: `waiting(turn(waiting(tip)))` is the spin echo.
-
----
-
-## 23. As Rigid As Possible
-
-**Notebook**: [`examples/surfaces/arap/arap.ipynb`](../examples/surfaces/arap/arap.ipynb)
-
-<p align="center"><img src="../plots/arap_bending.gif" alt="A bar held at one end and bent a quarter turn up, keeping its shape as it bends" width="400" /></p>
-
-```python
-edges = T10 * vertices                                                         # Point[E]
-forms = ~A10 * H1 * edges.dot(Even >> rest)                                    # Scalar[V] <- (Even, Even)
-rotors = forms.batch().eigh()[1][..., -1].field()                              # Even[V]
-turned_rest = (A10 * (rotors >> Point))(rest)                                  # Point[E]
-vertices = handle_laplacian.solve(~T10 * H1 * turned_rest + P * targets)       # Point[V]
-```
-
-* How well a rotor fits a vertex's edges is a form on rotors; the best rotor is its top eigenvector.
-* `rotors >> Point` turns rotors into maps, which carry the rest edges.
 
 ---
 

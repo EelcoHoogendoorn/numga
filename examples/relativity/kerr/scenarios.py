@@ -45,11 +45,12 @@ polarizer_angles = np.linspace(0, np.pi, n_polarizer_frames, endpoint=False)
 polarization_degree = 0.8
 n_flow_frames = n_frames
 flow_time = 50.0 * mass                                         # coordinate time the disk turns through in one loop
-# The gallery's camera: its pixels across and down, the tangent of half its view, and its frames.
+# The gallery's camera: its pixels across and down, the tangent of half its view, its frames and its colours.
 gallery_width = 400
 gallery_height = gallery_width * 2 // 3
 gallery_half_view = np.tan(np.deg2rad(21.3))
 n_gallery_frames = n_flow_frames
+n_gallery_colours = 64
 
 
 # --- math -----------------------------------------------------------------------------
@@ -149,7 +150,7 @@ def pinned() -> None:
     pin_animation(render.animate_disk(gallery_image, gallery_temperature, exposure_temperature,
                                       disk_flow(gallery_image, n_gallery_frames), n_gallery_frames,
                                       (gallery_height, gallery_width), sky),
-                  "kerr", duration_ms)
+                  "kerr", duration_ms, colors=n_gallery_colours)
 
 
 if __name__ == "__main__":

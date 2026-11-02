@@ -92,8 +92,10 @@ def pinned() -> None:
     from examples.util.animation import pin_animation
     from examples.relativity.twistors import render
 
-    n_frames, duration_ms = 96, 40
-    pin_animation(render.animate_fields(propagation(np.linspace(-1.25, 1.25, n_frames))), "twistor_hopfion", duration_ms)
+    # The frames, their duration in milliseconds, and the colours they are drawn in.
+    n_frames, duration_ms, n_colours = 96, 40, 32
+    pin_animation(render.animate_fields(propagation(np.linspace(-1.25, 1.25, n_frames))), "twistor_hopfion", duration_ms,
+                  colors=n_colours)
 
 
 if __name__ == "__main__":

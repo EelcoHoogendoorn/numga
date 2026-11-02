@@ -26,9 +26,11 @@ N_ANGLES = 360
 N_DRAWN_RINGS = 35
 N_DRAWN_ANGLES = 90
 OUTER_DISTANCE = 6.0
-# The sweep's frames and their duration in milliseconds; the morph's frames, angle of attack and duration.
+# The sweep's frames, their duration in milliseconds and its colours, enough for its pressure bands, the streamlines
+# over them and the lift's green; the morph's frames, angle of attack and duration.
 N_FRAMES = 120
 SWEEP_DURATION_MS = 40
+N_SWEEP_COLOURS = 64
 N_MORPH_FRAMES = 90
 MORPH_ATTACK = np.deg2rad(8.0)
 DURATION_MS = 40
@@ -118,7 +120,7 @@ def pinned() -> None:
     from examples.util.animation import pin_animation
     from examples.fluids.wing import render
 
-    pin_animation(render.animate(sweep(), SPEED), "wing", SWEEP_DURATION_MS)
+    pin_animation(render.animate(sweep(), SPEED), "wing", SWEEP_DURATION_MS, colors=N_SWEEP_COLOURS)
 
 
 if __name__ == "__main__":

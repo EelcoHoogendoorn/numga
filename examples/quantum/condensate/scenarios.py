@@ -6,6 +6,8 @@ gives it for a rotating bucket of superfluid helium.
 
 from __future__ import annotations
 
+from itertools import islice
+
 import numpy as np
 
 from examples.quantum.condensate import core
@@ -19,9 +21,12 @@ radius, n_rings = 8.0, 48
 repulsion, rotation = 200.0, 0.9
 # The still cloud's width, the noise stirring its amplitude and its angle, and the noise's seed.
 cloud_width, amplitude_noise, angle_noise, seed = 4.5, 0.05, 0.3, 0
-# The descent's step, its steps and the steps between frames; the frames' duration in milliseconds, and the colours of
-# their palette, the density map's one hue family in a few dozen shades.
-step, n_steps, stride = 0.05, 1200, 12
+# The descent's step, its steps to the settled lattice the vortices are counted in, and the steps between frames; the
+# frames drawn, over the first half of the descent, where the vortices come in and draw together into the lattice and
+# then barely move; the frames' duration in milliseconds, and the colours of their palette, the density map's one hue
+# family in a few dozen shades.
+step, n_steps, stride = 0.05, 1200, 6
+n_drawn_frames = n_steps // 2 // stride + 1
 frame_duration_ms = 40
 n_animation_colours = 64
 # The radii within which the vortices are counted, and the share of a whole turn that makes a triangle a vortex.
@@ -82,7 +87,9 @@ def pinned() -> None:
     from examples.quantum.condensate import render
 
     topology, vertices, frames = settled()
-    pin_animation(render.animate(topology, vertices, (wave.scalar_norm_squared() for wave in frames)), "condensate",
+    # The frames over the vortices' coming in and settling.
+    drawn = islice(frames, n_drawn_frames)
+    pin_animation(render.animate(topology, vertices, (wave.scalar_norm_squared() for wave in drawn)), "condensate",
                   frame_duration_ms, colors=n_animation_colours)
 
 

@@ -47,8 +47,13 @@ PITCH_RATES = np.array([0, 0.1])
 TIME_STEP = 0.04
 N_STEPS = 250
 ROCKING_DURATION = 8
-# The gallery's reversal: its pixels across.
+# The gallery's reversal: its pixels across; the step each frame takes, in seconds, and how long a frame is shown, in
+# milliseconds, so that it plays at one and a half times its pace, nearer a real, smaller rattleback's; and the times in
+# seconds it runs between, from the rocking's start to the spin clearly reversed.
 GALLERY_PIXELS = 420
+GALLERY_TIME_STEP = 0.06
+GALLERY_DURATION_MS = 40
+GALLERY_SPAN = (0.4, 7.2)
 
 
 # --- math -----------------------------------------------------------------------------
@@ -162,9 +167,10 @@ def pinned() -> None:
     from examples.util.animation import pin_animation
     from examples.mechanics.rattleback import render
 
-    duration_ms = round(TIME_STEP * 1000)
-    built, samples, placements, _, _ = launches(TIME_STEP, N_STEPS)
-    pin_animation(render.sized_frames(placements[:, 1], built, samples, GALLERY_PIXELS), "rattleback", duration_ms)
+    first, last = (round(time / GALLERY_TIME_STEP) for time in GALLERY_SPAN)
+    built, samples, placements, _, _ = launches(GALLERY_TIME_STEP, last)
+    pin_animation(render.sized_frames(placements[first:, 1], built, samples, GALLERY_PIXELS), "rattleback",
+                  GALLERY_DURATION_MS)
 
 
 if __name__ == "__main__":

@@ -38,6 +38,9 @@ MAP_HALF, MAP_MARGIN = np.array([2 * np.sqrt(2), np.sqrt(2)]), 1.02
 MERIDIANS, PARALLELS = np.radians(np.arange(-150, 151, 30)), np.radians(np.arange(-75, 76, 15))
 GRATICULE_OPACITY = 0.25
 N_MERIDIAN_SAMPLES, N_OUTLINE_SAMPLES = 31, 121
+# The polarization animation's response in flat bands, centred on evenly spaced levels from -1 to 1, an odd count so
+# that no response is one band, white: a frame changes only where the bands' edges move.
+N_RESPONSE_BANDS = 9
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -87,10 +90,10 @@ def map_camera(ax: plt.Axes) -> Camera:
 
 
 def sky_map(ax: plt.Axes, directions: core.Point, values: core.Scalar, cmap: str, low: float, high: float,
-            zeniths: core.Point, names: list[str]) -> None:
+            zeniths: core.Point, names: list[str], bands: tuple[contours.Bands, ...] = ()) -> None:
     """One map over the sky `[latitudes, longitudes]`, each direction at the place the Mollweide projection gives its
-    longitude and latitude, coloured between its corners, with a faint graticule and its outline, and a disc over each
-    site, with its name."""
+    longitude and latitude, coloured between its corners, or filled in `bands`, with a faint graticule and its outline,
+    and a disc over each site, with its name."""
     n_latitudes, n_longitudes = directions.shape
     sky = planar.mv.point(projected(lonlat(directions))).reshape(-1)          # [latitudes * longitudes] Point-
     values = values.to_array().reshape(-1)
@@ -99,7 +102,8 @@ def sky_map(ax: plt.Axes, directions: core.Point, values: core.Scalar, cmap: str
     sites = projected(lonlat(zeniths))                                       # [sites, 2]
     camera = map_camera(ax)
     simplices.overlay(ax, [
-        contours.picture(sky, simplices.Topology.grid(n_latitudes, n_longitudes), values, colours, camera),
+        contours.picture(sky, simplices.Topology.grid(n_latitudes, n_longitudes), values, colours, camera,
+                         bands=bands),
         simplices.strokes(lines, chains, np.ones(3), charts.FRAME_PX, camera, opacity=GRATICULE_OPACITY),
         simplices.strokes(outline(), simplices.Topology.loops([2 * N_OUTLINE_SAMPLES]), np.zeros(3),
                           charts.FRAME_PX, camera),
@@ -171,7 +175,10 @@ def ink(colour: str) -> np.ndarray:
 def animate_polarization(directions: core.Point, responses: core.Scalar, site: core.Rotor, arms: core.Point,
                          rings: core.Point, name: str, size: tuple[int, int]) -> list[np.ndarray]:
     """Each frame, in a figure `size` pixels wide and high: the ring stretched by the plus strain at the
-    polarization angle, beside the detector's response to it over the sky."""
+    polarization angle, beside the detector's response to it over the sky, in flat bands."""
+    spacing = 2 / (N_RESPONSE_BANDS - 1)
+    middles = np.linspace(-1, 1, N_RESPONSE_BANDS)
+    bands = contours.Bands(-1 - spacing / 2, spacing, colormaps[SIGNED](Normalize(-1, 1)(middles)))
 
     @charts.style()
     def frame(index: int) -> np.ndarray:
@@ -180,7 +187,7 @@ def animate_polarization(directions: core.Point, responses: core.Scalar, site: c
         ax = figure.add_subplot(1, 2, 2)
         figure.subplots_adjust(left=0.01, right=0.99, bottom=0.03, top=0.97, wspace=0.05)
         draw_ring(ring_ax, site, arms, rings[index])
-        sky_map(ax, directions, responses[index], SIGNED, -1, 1, site[None] >> core.mv.x.dual(), [name])
+        sky_map(ax, directions, responses[index], SIGNED, -1, 1, site[None] >> core.mv.x.dual(), [name], (bands,))
         pixels = capture(figure)
         plt.close(figure)
         return pixels
