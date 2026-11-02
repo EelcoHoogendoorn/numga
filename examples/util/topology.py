@@ -111,6 +111,14 @@ def lookup_simplices(table: np.ndarray, query: np.ndarray) -> np.ndarray:
     return rows.reshape(-1)[len(table):].reshape(query.shape[:-1])
 
 
+def local_complements(n: int, m: int) -> np.ndarray:
+    """`[n - m, k]`: the local corners of an n-simplex off each of its m-simplices, in the order of `incidence[n, m]`,
+    increasing: on a tet's edges, the two corners of the edge across from each."""
+    # Whether each corner is on each m-simplex: sorted stably, the corners off it come first, in increasing order.
+    on = (np.arange(n + 1)[:, None, None] == local_corners(n, m)[None]).any(axis=1)   # [corners, k]
+    return np.argsort(on, axis=0, kind="stable")[:n - m]
+
+
 def local_corners(n: int, m: int) -> np.ndarray:
     """`[m + 1, k]`: the local corners of each m-simplex of an n-simplex, in the order of `incidence[n, m]`: its
     corners themselves, the facets facing them, or between the two, the m-simplices in the order of their corners."""
@@ -221,6 +229,20 @@ class Topology:
         `incidence[n, m]`. Unpacks directly along axis 0: on edges, `tails, heads = topology.corners[n, 1]`, and on a tet's
         faces, `first, second, third = topology.corners[3, 2]`."""
         return ByDimensions(self.n_dim, local_corners)
+
+    @cached_property
+    def incidence_indices(self) -> ByDimensions:
+        """`incidence_indices[n, m]`, `[N, k]`: the index in `elements[m]` of each m-simplex of each n-simplex, in the
+        order of `incidence[n, m]`, the numbers that map reads by: a tet's six edges, `topology.incidence_indices[3, 1]`.
+        Each table is built on first use."""
+        return ByDimensions(self.n_dim, self._local)
+
+    @cached_property
+    def complements(self) -> ByDimensions:
+        """`complements[n, m]`, `[n - m, k]`: the local corners of each n-simplex off each of its m-simplices, in the
+        order of `incidence[n, m]`. Unpacks along axis 0: on a tet's edges, the corners of the edge across from each,
+        `off_tails, off_heads = topology.complements[3, 1]`; on a triangle's corners, the side facing each."""
+        return ByDimensions(self.n_dim, local_complements)
 
     def _local(self, n: int, m: int) -> np.ndarray:
         """`[N, k]`: the index in `elements[m]` of each m-simplex of each n-simplex, in the order of

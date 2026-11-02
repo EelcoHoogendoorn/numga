@@ -18,7 +18,7 @@ import gc
 import io
 import sys
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -216,6 +216,20 @@ def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, n_
     shown.update(HTML(scaled_image(path.read_bytes(), "gif", images[0].width)))
     print(f"Saved {path}")
 
+
+def show_states(states: Iterable, animate: Callable[..., Iterable[np.ndarray]], *arguments, name: str, duration_ms: int,
+                n_frames: int = 0, stepped: bool = False) -> list:
+    """Show a run's states as `animate`, called with `arguments` and the states, draws them, each frame as it comes, as
+    `show_animation` shows frames, and hand back the states drawn, for what is read off them afterwards."""
+    kept = []
+
+    def passing() -> Iterator:
+        for state in states:
+            kept.append(state)
+            yield state
+
+    show_animation(animate(*arguments, passing()), name, duration_ms, n_frames=n_frames, stepped=stepped)
+    return kept
 
 def show_figure(figure: plt.Figure) -> None:
     """Show a figure in a notebook as the PNG `save_figure` writes, at its width's share of the column."""

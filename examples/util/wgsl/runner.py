@@ -414,7 +414,9 @@ class Shader:
                 unused.discard(binding.name)
             elif binding.kind == "storage" and binding.name in values:
                 element = self.layout.resolve(template(binding.type)[1][0])
-                resource = self.buffer(key + ("storage", binding.name), self.layout.array(element, values[binding.name]))
+                # An empty array binds one element of nothing, which the shader, told it holds nothing, never reads.
+                data = self.layout.array(element, values[binding.name]) or bytes(self.layout.stride(element))
+                resource = self.buffer(key + ("storage", binding.name), data)
                 unused.discard(binding.name)
             elif binding.kind == "storage":
                 element = self.layout.resolve(template(binding.type)[1][0])
