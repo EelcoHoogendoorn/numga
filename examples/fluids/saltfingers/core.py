@@ -1,5 +1,5 @@
-"""Salt fingers in a tank of warm salty water over cold fresh water, on a mesh of triangles, in planar spacetime joined
-with three directions, for the volume, the entropy and the salt a parcel of water holds.
+"""Salt fingers in a tank of warm salty water over cold fresh water, on a mesh of triangles, in the plane joined with
+four directions, for the volume, the mass, the entropy and the salt a parcel of water holds.
 
 Warm water is light and salty water heavy, and with enough heat on top the tank is stably stratified, lighter water
 over heavier. It still turns over, in narrow fingers: a salty parcel pushed down loses its warmth to its cooler
@@ -7,16 +7,17 @@ neighbours sideways far faster than it loses its salt, comes out heavier than th
 parcel pushed up warms and keeps rising. The density ratio, the heat's share of the density difference over the salt's,
 is above one where the tank is stable, and fingers grow as long as it stays below the ratio of the two diffusivities.
 
-The algebra is planar spacetime, x+y+t-, joined with three degenerate directions, for volume, entropy and salt:
-x+y+t-v0s0n0. A parcel is a point weighed by its volume, `mv.v.dual()`, offset along time by its mass, along the
-entropy's direction by its entropy and along the salt's by its salt; a unit volume holds a little less mass the more
+The algebra is the plane, x+y+, joined with four degenerate directions, for volume, mass, entropy and salt:
+x+y+v0m0s0n0. A parcel is a point weighed by its volume, `mv.v.dual()`, offset along the mass's direction by its mass,
+along the entropy's by its entropy and along the salt's by its salt; a unit volume holds a little less mass the more
 entropy it holds and a little more the more salt. A drive is minus the gradient of a potential wedged with what it acts
-on, and pairs with the flux of that quantity: gravity's drive, wedged with time, pulls on the mass alone, and the
-difference between parcels' masses is their buoyancy; the temperature's drive, wedged with entropy, and the salt's,
-wedged with salt, are each mapped to their amount's flux, at its own rate. The flow carries whole parcels, and the
-entropy and the salt it carries out of a cell are what the planes `mv.s` and `mv.n` read off that one flux. The water's
-flow is a stream function on the vertices; its mass resists the flow's change and its viscosity the flow's turning, and
-the pressure, which only keeps the flow from filling or emptying any cell, does no work on it and drops out.
+on, and pairs with the flux of that quantity: gravity's drive, the geopotential's gradient wedged with mass, pulls on
+the mass alone, and the difference between parcels' masses is their buoyancy; the temperature's drive, wedged with
+entropy, and the salt's, wedged with salt, are each mapped to their amount's flux, at its own rate. The flow carries
+whole parcels, and the entropy and the salt it carries out of a cell are what the planes `mv.s` and `mv.n` read off
+that one flux. The water's flow is a stream function on the vertices; its mass resists the flow's change and its
+viscosity the flow's turning, and the pressure, which only keeps the flow from filling or emptying any cell, does no
+work on it and drops out.
 
 Lengths are in units of the tank's depth, times in units of the time heat takes to conduct across it, and temperature
 and salinity in units of their differences between the top and the bottom; the density is one, and the heat a unit of
@@ -35,25 +36,25 @@ from numga.sparse import SparseExtensor, spdiag
 
 from examples.util.topology import Topology
 
-# Planar spacetime, and the volume, the entropy and the salt a parcel holds, each a direction of its own with no metric.
-spacetime = Algebra("x+y+t-")
-ga = spacetime * Algebra("v0s0n0")
+# The plane, and the volume, the mass, the entropy and the salt a parcel holds, each a direction of its own with no
+# metric.
+ga = Algebra("x+y+") * Algebra("v0m0s0n0")
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 Point = ga.gatype.antivector()                                                # Antivector-
 Plane = ga.gatype.vector()                                                    # Vector+
 # The planes reading a place's run along the tank and up it.
 Upright = ga.gatype.from_blades("x y")                                        # Vector+
-Drive = ga.gatype.from_blades("xt yt xv yv xs ys xn yn")                      # Bivector+
+Drive = ga.gatype.from_blades("xv yv xm ym xs ys xn yn")                      # Bivector+
 Flux = ga.gatype.antibivector()                                               # Antibivector-
 # The tank's two directions, along its length and up its depth, and the planes reading a direction's run along each.
 length = mv.x.dual()                                                          # [] Point-
 height = mv.y.dual()                                                          # [] Point-
 directions = stack((length, height))                                          # [2] Point-
 readings = stack((mv.x, mv.y))                                                # [2] Plane+
-time = -mv.t.dual()                                                           # [] Point-
-# A unit of volume, the weight of a place, a unit of entropy and a unit of salt.
+# A unit of volume, the weight of a place, a unit of mass, a unit of entropy and a unit of salt.
 volume = mv.v.dual()                                                          # [] Point-
+mass = mv.m.dual()                                                            # [] Point-
 entropy = mv.s.dual()                                                         # [] Point-
 salt = mv.n.dual()                                                            # [] Point-
 
@@ -106,12 +107,12 @@ def forms(closed: Topology, opened: Topology, vertices: Point, density: float, v
     function's kinetic and viscous forms, and the conduction of heat and the spreading of salt, each the outflow of the
     flux its drive drives."""
     sides = opened.boundary[2, 1] * (opened.d[0] * vertices)                  # [corners] Point-[faces]
-    # Twice a triangle's area: two of its sides joined, read through time, at unit volume, entropy and salt.
-    double_areas = ((((sides[0] & sides[1]) & time) & volume) & entropy) & salt   # Scalar-[faces]
+    # Twice a triangle's area: two of its sides joined, at unit volume, mass, entropy and salt.
+    double_areas = ((((sides[0] & sides[1]) & volume) & mass) & entropy) & salt   # Scalar-[faces]
     areas = double_areas.norm() / 2                                           # Scalar+[faces]
-    # A corner's hat gradient: the plane through the facing side, along time, volume, entropy and salt, over twice
+    # A corner's hat gradient: the plane through the facing side, along volume, mass, entropy and salt, over twice
     # the area, so that it reads one from the side to the corner.
-    gradients = (time & volume & entropy & salt & sides) / double_areas       # [corners] Plane+[faces]
+    gradients = (volume & mass & entropy & salt & sides) / double_areas       # [corners] Plane+[faces]
     corners = closed.incidence[2, 0]                                          # [corners] Scalar+[faces <- vertices]
     # Each vertex's share of the area around it, and each triangle's mean over its corners.
     cells = (~corners * (areas / 3)).sum(axis=0)                              # Scalar+[vertices]
@@ -164,7 +165,7 @@ def fingering(water: Forms, interior: SparseExtensor, density: float, expansion:
     # The temperature and the salinity the walls hold.
     wall_temperature = temperature - ~interior * (interior * temperature)     # [...] Scalar+[vertices]
     wall_salinity = salinity - ~interior * (interior * salinity)              # [...] Scalar+[vertices]
-    pull = -(gravity * mv.yt)                                                 # [] Drive+
+    pull = -(gravity * mv.ym)                                                 # [] Drive+
     stream = 0 * temperature                                                  # [...] Scalar+[vertices]
     for step in range(n_steps + 1):
         if step % n_stride == 0:
@@ -173,7 +174,7 @@ def fingering(water: Forms, interior: SparseExtensor, density: float, expansion:
         # and their entropy and salt.
         warmth = water.corner_mean * temperature                              # [...] Scalar+[faces]
         saltiness = water.corner_mean * salinity                              # [...] Scalar+[faces]
-        parcels = (volume + (density - expansion * warmth + contraction * saltiness) * time + warmth * entropy
+        parcels = (volume + (density - expansion * warmth + contraction * saltiness) * mass + warmth * entropy
                    + saltiness * salt)                                        # [...] Point-[faces]
         # Gravity's drive does work on each corner's flow by pulling on the mass it carries.
         load = (~water.corners * (pull & (water.flows & parcels[..., None]))).sum(axis=-1)   # [...] Scalar+[vertices]

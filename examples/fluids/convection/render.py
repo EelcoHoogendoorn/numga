@@ -1,5 +1,5 @@
 """Drawing for Rayleigh-Bénard convection: the layer of triangles, the layer's temperature and streamlines over time,
-and the growth of a disturbance against the Rayleigh number as a chart.
+and as charts the flow's growth and the layer's energy budget.
 
 A layer closed on itself along its length is drawn opened at its seam, its first column again a period further along.
 Its points are read by the planes x and y and weighed by their volume, `mv.v & point`, the algebra's own projective
@@ -17,7 +17,7 @@ from matplotlib.colors import to_rgb
 from matplotlib.figure import Figure
 
 from numga.extensor import Extensor
-from examples.util.charts import style, subplots
+from examples.util.charts import FRAME_WIDTH, points, style, subplots
 from examples.util.wgsl import contours, image_figure, simplices
 from examples.util.wgsl.camera import Camera
 
@@ -25,6 +25,11 @@ Topology = simplices.Topology
 mesh_colour = np.array(to_rgb("#9aa5ae"))
 stream_colour = np.array(to_rgb("#2b2f33"))
 growth_colour, axis_colour = np.array(to_rgb("#1d4ed8")), np.array(to_rgb("#6b7280"))
+# The budget's terms: the kinetic and the potential energy, the energy dissipated, the potential energy the heat moved,
+# and the entropy produced.
+kinetic_colour, potential_colour = np.array(to_rgb("#1d4ed8")), np.array(to_rgb("#b91c1c"))
+dissipated_colour, conducted_colour = np.array(to_rgb("#6b7280")), np.array(to_rgb("#d97706"))
+entropy_colour, residual_colour = np.array(to_rgb("#15803d")), np.array(to_rgb("#2b2f33"))
 temperature_map = colormaps["RdBu_r"]
 # The layer's picture: pixels across and the room around it in depths; the widths of the walls, the mesh's edges and the
 # streamlines; the streamlines' spacing in units of the stream function, the same in every frame, so that how close
@@ -32,8 +37,12 @@ temperature_map = colormaps["RdBu_r"]
 n_pixels, margin = 320, 0.04
 wall_width, mesh_width, stream_width = 2.5, 1.0, 1.0
 stream_spacing = 1.5
-# The chart's pixels.
-chart_width, chart_height = 300, 220
+# The charts' pixels, and the range of the budget's residual as a share of the energy dissipated, from below round-off
+# to well above it, marked at a part in a trillion and at its top.
+chart_width, chart_height, budget_height = 300, 220, 340
+residual_range, residual_marks = (1e-15, 1e-10), (1e-12, 1e-10)
+# The residual's dots, in pixels across.
+residual_dot = 4
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -71,14 +80,15 @@ def draw_layer(topology: Topology, vertices: Extensor, period: float) -> Figure:
 
 
 def animate(topology: Topology, vertices: Extensor, opening: Extensor, period: float,
-            frames: Iterable[tuple[Extensor, Extensor]]) -> Iterator[np.ndarray]:
+            frames: Iterable[tuple[Extensor, Extensor, object]]) -> Iterator[np.ndarray]:
     """The open layer at every frame of the closed layer's stream function and temperature `Scalar+[vertices]` as it
-    comes, read on the open layer by `opening`: coloured by its temperature, red above the middle's and blue below,
-    with streamlines at a fixed spacing of the stream function, between its floor and ceiling."""
+    comes, with the budget it leaves undrawn, read on the open layer by `opening`: coloured by its temperature, red
+    above the middle's and blue below, with streamlines at a fixed spacing of the stream function, between its floor
+    and ceiling."""
     camera = layer_camera(vertices, period)
     boundaries = [walls(topology, vertices, camera)]
     lines = contours.Lines(stream_spacing, stream_spacing / 2, np.append(stream_colour, 1.0), stream_width)
-    for stream, temperature in frames:
+    for stream, temperature, _ in frames:
         values = (opening * temperature).to_array()
         levels = (opening * stream).to_array()
         colours = temperature_map(np.clip(0.5 + values, 0, 1))[:, :3]
@@ -98,4 +108,40 @@ def draw_turnover(times: np.ndarray, sizes: Extensor) -> Figure:
     ax.set_xlabel("time")
     ax.set_ylabel("flow")
     figure.tight_layout(pad=0.4)
+    return figure
+
+
+@style()
+def draw_budget(times: np.ndarray, kinetic: Extensor, potential: Extensor, dissipated: Extensor, conducted: Extensor,
+                residual: Extensor, produced: Extensor) -> Figure:
+    """The layer's energy budget against time `[frames] Scalar+` each, in three charts kept in step: above, the
+    changes of the kinetic and the potential energy since the start, the energy dissipated, and minus the potential
+    energy the heat moved, which add up to nothing; in the middle, what they leave unaccounted as a share of the energy
+    dissipated, on a logarithmic scale; below, the entropy produced."""
+    figure, (energies, unaccounted, entropy) = subplots(chart_width, budget_height, nrows=3, sharex=True,
+                                                         gridspec_kw=dict(height_ratios=(2, 1, 1)))
+    for values, colour in ((kinetic, kinetic_colour), (potential, potential_colour), (dissipated, dissipated_colour),
+                           (-conducted, conducted_colour)):
+        energies.plot(times, values.to_array(), color=colour)
+    energies.axhline(0, color=axis_colour, linewidth=FRAME_WIDTH)
+    energies.set_yticks([])
+    energies.set_ylabel("energy")
+    unaccounted.semilogy(times, np.abs(residual.to_array()), "o", color=residual_colour,
+                         markersize=points(residual_dot), markeredgewidth=0)
+    unaccounted.set_ylim(*residual_range)
+    unaccounted.set_yticks(residual_marks, [f"$10^{{{np.log10(mark):.0f}}}$" for mark in residual_marks])
+    unaccounted.minorticks_off()
+    unaccounted.set_ylabel("residual")
+    entropy.plot(times, produced.to_array(), color=entropy_colour)
+    entropy.set_ylim(0, None)
+    entropy.set_yticks([])
+    entropy.set_ylabel("entropy")
+    entropy.set_xlim(times[0], times[-1])
+    entropy.set_xticks([times[0], times[-1]], [f"{times[0]:g}", f"{times[-1]:g}"])
+    entropy.set_xlabel("time")
+    for ax in (energies, unaccounted, entropy):
+        ax.spines[["top", "right"]].set_visible(False)
+    energies.spines["bottom"].set_visible(False)
+    figure.align_ylabels()
+    figure.tight_layout(pad=0.4, h_pad=0.3)
     return figure

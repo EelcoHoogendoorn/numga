@@ -7,8 +7,8 @@ from examples.fluids.saltfingers import core, render, scenarios
 
 
 def test_gravity_pulls_mass_alone():
-    pull = -core.mv.yt                                                        # [] Drive+
-    parts = (core.time, core.volume, core.entropy, core.salt)
+    pull = -core.mv.ym                                                        # [] Drive+
+    parts = (core.mass, core.volume, core.entropy, core.salt)
     readings = [(core.mv.y & pull.commutator(part)).to_array() for part in parts]
     np.testing.assert_allclose(np.ravel(readings), [-1.0, 0.0, 0.0, 0.0], atol=1e-12)
 
