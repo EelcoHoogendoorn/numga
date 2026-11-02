@@ -21,7 +21,7 @@ salt_diffusivity = 0.1
 rayleigh, ratio = 5e5, 2.0
 period, n_along, n_across = 2.0, 136, 69
 thickness = 0.05
-dt, n_steps, n_stride, n_flat = 2e-5, 1080, 6, 34
+dt, n_steps, n_stride, n_flat = 6e-5, 360, 2, 34
 disturbance, seed = 4e-2, 1
 frame_duration_ms = 40
 
