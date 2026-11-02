@@ -1,8 +1,8 @@
 """Drawing for salt fingers: the tank's temperature and salinity, at the start and over time, and the growth of a
 disturbance against the density ratio as a chart.
 
-A tank closed on itself along its length is opened at its seam to be drawn: its first column again a period further
-along, and the triangles across the seam joined to that copy. Its points are read by the planes x and y and weighed by
+A tank closed on itself along its length is drawn opened at its seam, its first column again a period further along.
+Its points are read by the planes x and y and weighed by
 their volume, `mv.v & point`, the algebra's own projective weight. The temperature is drawn above the salinity, the same
 tank in step: the temperature red above the middle's and blue below, the salinity brown above the middle's and green
 below, with the walls strokes in the colours of what they hold.
@@ -16,7 +16,6 @@ from matplotlib import colormaps
 from matplotlib.colors import to_rgb
 from matplotlib.figure import Figure
 
-from numga import concatenate
 from numga.extensor import Extensor
 from examples.util.charts import style, subplots
 from examples.util.wgsl import contours, image_figure, simplices
@@ -41,24 +40,6 @@ def on_white(picture: np.ndarray) -> np.ndarray:
     return np.round(np.clip(shown, 0, 1) * 255).astype(np.uint8)
 
 
-def unrolled(topology: Topology, vertices: Extensor, n_across: int, period: float) -> tuple[Extensor, Topology]:
-    """A tank closed on itself, opened at its seam for drawing: its vertices `Point-[vertices]` with its first column
-    again a period further along, and its triangles, those across the seam joined to that copy."""
-    faces = topology.elements[2]
-    n_vertices = topology.n_vertices
-    columns = faces // n_across
-    across_seam = (columns.max(axis=-1) - columns.min(axis=-1) > 1)[:, None] & (columns == 0)
-    faces = np.where(across_seam, n_vertices + faces % n_across, faces)
-    points = vertices.batch()                                                  # [vertices] Point-
-    first = points[:n_across] + vertices.context.multivector.x.dual() * period  # [across] Point-
-    return concatenate([points, first]), Topology(n_vertices + n_across, faces)
-
-
-def closing(values: np.ndarray, n_across: int) -> np.ndarray:
-    """Values at a tank's vertices `[vertices]`, with its first column's again for the copy at the seam."""
-    return np.concatenate([values, values[:n_across]])
-
-
 def tank_camera(vertices: Extensor, period: float) -> Camera:
     """The camera looking at the tank side on, `n_pixels` across: points read by the planes x and y, weighed by their
     volume."""
@@ -67,20 +48,18 @@ def tank_camera(vertices: Extensor, period: float) -> Camera:
                   np.array([period / 2 + margin, 0.5 + margin]), n_pixels)
 
 
-def field(points: Extensor, faces: Topology, n_across: int, camera: Camera, values: np.ndarray,
-          colour_map) -> np.ndarray:
-    """A field at the tank's vertices `[vertices]`, a half above the middle's at the top and below at the bottom,
-    coloured by its map, between the floor and the ceiling in the colours of what they hold, as bytes
-    `[rows, columns, 3]`."""
-    shown = closing(values, n_across)
-    rows = points.reshape(-1, n_across)
-    n_points = rows.shape[0]
-    wall_colours = np.concatenate([np.repeat(np.array(colour_map(0.5 - span / 2))[None, :3], n_points - 1, axis=0),
-                                   np.repeat(np.array(colour_map(0.5 + span / 2))[None, :3], n_points - 1, axis=0)])
-    walls = simplices.strokes(concatenate([rows[:, 0], rows[:, -1]]), Topology.chains([n_points, n_points]),
-                              wall_colours, wall_width, camera)
-    colours = colour_map(np.clip(0.5 + span * shown, 0, 1))[:, :3]
-    return on_white(simplices.composited([contours.picture(points, faces, shown, colours, camera), walls]))
+def field(topology: Topology, points: Extensor, camera: Camera, values: np.ndarray, colour_map) -> np.ndarray:
+    """A field at the open tank's vertices `[vertices]`, a half above the middle's at the top and below at the bottom,
+    coloured by its map, between the floor and the ceiling, the edges of the border that run along the tank, in the
+    colours of what they hold, as bytes `[rows, columns, 3]`."""
+    border = topology.border
+    tails, heads = border.incidence[1, 0] * points                              # Point-[border], Point-[border]
+    heights = (points.context.multivector.y & tails).to_array()                 # [border]
+    level = np.isclose(heights, (points.context.multivector.y & heads).to_array())   # [border]
+    wall_colours = colour_map(0.5 + span * (heights[level] - 0.5))[:, :3]       # [walls, 3]
+    walls = simplices.strokes(points, border.subset(level, 1), wall_colours, wall_width, camera)
+    colours = colour_map(np.clip(0.5 + span * values, 0, 1))[:, :3]
+    return on_white(simplices.composited([contours.picture(points, topology, values, colours, camera), walls]))
 
 
 def stacked(top: np.ndarray, bottom: np.ndarray) -> np.ndarray:
@@ -89,24 +68,23 @@ def stacked(top: np.ndarray, bottom: np.ndarray) -> np.ndarray:
 
 
 # --- drawing --------------------------------------------------------------------------
-def draw_tank(topology: Topology, vertices: Extensor, n_across: int, period: float, temperature: Extensor,
+def draw_tank(topology: Topology, vertices: Extensor, opening: Extensor, period: float, temperature: Extensor,
               salinity: Extensor) -> Figure:
-    """The tank's temperature above its salinity `Scalar+[vertices]`."""
-    points, faces = unrolled(topology, vertices, n_across, period)
+    """The open tank's temperature above its salinity, the closed tank's `Scalar+[vertices]` read on it by
+    `opening`."""
     camera = tank_camera(vertices, period)
-    return image_figure(stacked(field(points, faces, n_across, camera, temperature.to_array(), temperature_map),
-                                field(points, faces, n_across, camera, salinity.to_array(), salinity_map)))
+    return image_figure(stacked(field(topology, vertices, camera, (opening * temperature).to_array(), temperature_map),
+                                field(topology, vertices, camera, (opening * salinity).to_array(), salinity_map)))
 
 
-def animate(topology: Topology, vertices: Extensor, n_across: int, period: float,
+def animate(topology: Topology, vertices: Extensor, opening: Extensor, period: float,
             frames: Iterable[tuple[Extensor, Extensor, Extensor]]) -> Iterator[np.ndarray]:
-    """The tank at every frame of its stream function, temperature and salinity `Scalar+[vertices]` as it comes: its
-    temperature above its salinity."""
-    points, faces = unrolled(topology, vertices, n_across, period)
+    """The open tank at every frame of the closed tank's stream function, temperature and salinity `Scalar+[vertices]`
+    as it comes, read on the open tank by `opening`: its temperature above its salinity."""
     camera = tank_camera(vertices, period)
     for _, temperature, salinity in frames:
-        yield stacked(field(points, faces, n_across, camera, temperature.to_array(), temperature_map),
-                      field(points, faces, n_across, camera, salinity.to_array(), salinity_map))
+        yield stacked(field(topology, vertices, camera, (opening * temperature).to_array(), temperature_map),
+                      field(topology, vertices, camera, (opening * salinity).to_array(), salinity_map))
 
 
 @style()

@@ -21,14 +21,13 @@ def test_fingers_grow_below_the_ratio_of_diffusivities():
 
 
 def test_fingers_keep_their_salt_and_trade_their_warmth():
-    topology, vertices, temperature, salinity, frames = scenarios.fingers()
+    closed, opened, opening, vertices, temperature, salinity, frames = scenarios.fingers()
     frames = list(frames)
-    _, places, _ = core.tank(scenarios.n_along, scenarios.n_across, scenarios.period)
-    middle = np.isclose(places[:, 1], 0.5)
-    _, temperatures, salinities = (value.to_array()[middle] for value in frames[-1])
+    middle = np.isclose((core.mv.y & vertices).to_array(), 0.5)
+    _, temperatures, salinities = ((opening * value).to_array()[middle] for value in frames[-1])
     assert np.ptp(salinities) > 0.9
     assert temperatures.std() < salinities.std() / 2
-    render.draw_tank(topology, vertices, scenarios.n_across, scenarios.period, temperature, salinity)
-    assert next(render.animate(topology, vertices, scenarios.n_across, scenarios.period, frames[-1:])).shape[-1] == 3
+    render.draw_tank(opened, vertices, opening, scenarios.period, temperature, salinity)
+    assert len(list(render.animate(opened, vertices, opening, scenarios.period, frames[-1:]))) == 1
     render.draw_growth(scenarios.growth_ratios, core.mv.scalar(np.linspace(1, -1, 7)[:, None]),
                        scenarios.salt_diffusivity)
