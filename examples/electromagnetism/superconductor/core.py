@@ -44,9 +44,11 @@ Scalar = ga.gatype.scalar()                                                   # 
 Plane = ga.gatype.from_blades("x y z")                                        # Vector+
 # The points of space, each the direction from the origin to it.
 Point = Plane.dual().output_gatype                                            # Antivector-
-Patch = ga.gatype.antibivector()                                              # Antibivector-
 # The magnetic field across the rod, in the planes through z.
 Field = ga.gatype.from_blades("xz yz")                                        # Bivector+
+# The rod's direction and time's, along which nothing changes.
+rod_direction = mv.z.dual()                                                   # [] Point-
+time = -mv.t.dual()                                                           # [] Antivector-
 # A current: a direction of flow swept through time.
 Current = ga.gatype.antivector()                                              # Antivector-
 # The superfluid's inertia, per squared penetration depth: a current read along each direction of space, in the metal's
@@ -64,12 +66,16 @@ def assembled(topology: Topology, local: Scalar) -> SparseExtensor:
 
 # --- math -----------------------------------------------------------------------------
 def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Plane, Scalar]:
-    """Each triangle's area `Scalar+[faces]`, each corner's hat gradient `[corners] Plane+[faces]`, the facing side
-    met with the triangle's patch, and each vertex's share of the area around it `Scalar+[vertices]`."""
+    """Each triangle's area `Scalar+[faces]`, each corner's hat gradient `[corners] Plane+[faces]`, the plane through
+    the facing side, the rod's direction and time over twice the area, and each vertex's share of the area around it
+    `Scalar+[vertices]`."""
     sides = topology.boundary[2, 1] * (topology.d[0] * vertices)[..., None]  # [corners] Point-[faces]
-    patches = (sides[..., 0] & sides[..., 1]) / 2                             # Patch-[faces]
-    areas = patches.squared().square_root()                                   # Scalar+[faces]
-    gradients = (sides | patches[..., None].inverse()) / 2                    # [corners] Plane+[faces]
+    # Twice a triangle's area: two of its sides joined, swept along the rod and through time.
+    double_areas = ((sides[..., 0] & sides[..., 1]) & rod_direction) & time   # Scalar-[faces]
+    areas = double_areas.norm() / 2                                           # Scalar+[faces]
+    # A corner's hat gradient: the plane through the facing side, along the rod and through time, over twice the area,
+    # so that it reads one from the side to the corner.
+    gradients = (rod_direction & time & sides) / double_areas[..., None]      # [corners] Plane+[faces]
     return areas, gradients, (~topology.incidence[2, 0] * (areas / 3)).sum(axis=-1)
 
 
