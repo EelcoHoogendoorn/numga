@@ -6,7 +6,8 @@ entropy and has no viscosity, and a normal fluid, which carries the rest of the 
 cannot spread through it by diffusing: a warm place pushes its normal fluid out and draws superfluid in, and the
 counterflow runs on as a wave of temperature, second sound. Where a fine powder holds the normal fluid still, only
 the superfluid moves, and the same heat drives it through the powder as a wave of pressure and temperature together,
-fourth sound, ten times faster.
+fourth sound, ten times faster. The normal fluid's viscosity, its conduction of heat and the mutual friction between the
+two fluids are left out, so nothing damps the motion.
 
 The algebra is the plane, x+y+, joined with two degenerate directions, one for mass and one for entropy: x+y+m0s0. A
 parcel is a point weighed by both, `mass * mv.m.dual() + entropy * mv.s.dual()`, and a superfluid parcel's entropy is
