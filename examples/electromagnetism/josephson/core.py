@@ -49,6 +49,8 @@ Turn = (mv.ab * 0.0).exp().gatype                                             # 
 axis = mv.x.dual()                                                            # [] Point-
 across = mv.y.dual()                                                          # [] Point-
 time = -mv.t.dual()                                                           # [] Point-
+# A gradient of the phase read as the supercurrent it drives along the junction, one in these units.
+supercurrent = Plane.dual()                                                   # [] Point- <- Plane+
 
 
 # --- plumbing -------------------------------------------------------------------------

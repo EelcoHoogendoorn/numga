@@ -43,7 +43,9 @@ def operators(topology: core.Topology, places: np.ndarray):
     `Scalar+[places <- places]`."""
     vertices = (core.axis * places[:, 0] + core.across * places[:, 1]).field()   # Point-[places]
     areas, gradients, cells = core.triangles(topology, vertices)
-    stiffness = core.assembled(topology, (gradients[..., :, None] | gradients[..., None, :]) * areas[..., None, None])
+    # Each hat's gradient read against the supercurrent another's drives, over the triangle.
+    local = (gradients[..., :, None] & core.supercurrent(gradients[..., None, :])) * areas[..., None, None]
+    stiffness = core.assembled(topology, local)                                # Scalar+[places <- places]
     return vertices, gradients, spdiag(1 / cells) * stiffness
 
 
