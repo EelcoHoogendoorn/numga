@@ -24,9 +24,12 @@ fov_radians = np.radians(100.0)
 max_legs = 1024
 inside_background = np.array([0.035, 0.04, 0.06], dtype=np.float32)
 # The struts' radii, as shares of the mesh's mean edge, in lengths on the tetrahedra's charts: a coloured strut, and
-# every other edge a thin light-grey ghost. A helix's rungs, between its rails.
+# every other edge a thin light-grey ghost, none in the view of the waves, where the rails and the crystals carry the
+# space. A helix's rungs, between its rails.
 rail_share = 0.014
-ghost_ink, ghost_share = np.array([0.72, 0.75, 0.80], dtype=np.float32), 0.003
+# A bead's radius as a multiple of a coloured strut's.
+bead_scale = 2.0
+ghost_ink, ghost_share, wave_ghost_share = np.array([0.72, 0.75, 0.80], dtype=np.float32), 0.003, 0.0
 rung_ink = np.array([0.85, 0.87, 0.90])
 # The atoms' ink and radius, the bonds' radius, and the strain that saturates their colour, blue squeezed, red
 # stretched, from the colour map that colours every strain and stretch.
@@ -51,6 +54,8 @@ var<uniform> light: Point;
 var<storage, read> struts: array<vec4<f32>>;
 var<storage, read> strut_tails: array<Point>;
 var<storage, read> strut_heads: array<Point>;
+var<storage, read> beads: array<vec4<f32>>;
+var<storage, read> bead_places: array<Point>;
 var<storage, read> particles: array<Point>;
 var<uniform> n_particles: u32;
 var<storage, read> particle_starts: array<u32>;
@@ -109,6 +114,27 @@ fn sample(pixel: vec2<f32>) -> Sample {
                     nearest = share;
                     hit_strut = edge;
                     strut_normal = radial_offset + radial_segment * share;
+                }
+            }
+        }
+        // The beads at the tetrahedron's corners, balls about its corners on its chart, each in its colour and squared
+        // radius.
+        var hit_bead = 4u;
+        var bead_normal = leg.chart;
+        for (var corner = 0u; corner < 4u; corner++) {
+            let index = tet * 4u + corner;
+            let offset = leg.chart - bead_places[index];
+            let a = leg.segment.dot(leg.segment);
+            let b = offset.dot(leg.segment);
+            let c = offset.dot(offset) - beads[index].w;
+            let disc = b * b - a * c;
+            if (c > 0.0 && disc >= 0.0 && a > 0.0) {
+                let share = (-b - sqrt(disc)) / a;
+                if (share >= 0.0 && share < nearest) {
+                    nearest = share;
+                    hit_strut = 6u;
+                    hit_bead = corner;
+                    bead_normal = offset + leg.segment * share;
                 }
             }
         }
@@ -171,6 +197,15 @@ fn sample(pixel: vec2<f32>) -> Sample {
                       + 0.25 * max(normal.dot(to_eye), 0.0));
             return faded(lit, distance);
         }
+        if (hit_bead < 4u) {
+            let to_eye = -tangent(hit, leg.segment);
+            let normal = tangent(hit, bead_normal);
+            let halfway = tangent(hit, to_eye + to_light);
+            let glint = pow(max(normal.dot(halfway), 0.0), 36.0);
+            let lit = beads[tet * 4u + hit_bead].xyz * (0.22 + 0.56 * max(normal.dot(to_light), 0.0)
+                      + 0.28 * max(normal.dot(to_eye), 0.0)) + vec3<f32>(0.95, 0.97, 1.0) * (0.36 * glint);
+            return faded(lit, distance);
+        }
         if (hit_strut < 6u) {
             let to_eye = -tangent(hit, leg.segment);
             let normal = tangent(hit, strut_normal);
@@ -195,23 +230,47 @@ fn sample(pixel: vec2<f32>) -> Sample {
 """
 
 
+# No struts and no beads: the vertex pairs or vertices, and their inks, of none.
+no_struts = np.zeros((0, 2), dtype=int), np.zeros((0, 3))
+no_beads = np.zeros(0, dtype=int), np.zeros((0, 3))
+
+
 def hues(n: int) -> np.ndarray:
     """So many colours evenly round the colour wheel, `[n, 3]`."""
     return hsv_to_rgb(np.stack([np.arange(n) / n, np.full(n, 0.75), np.full(n, 0.95)], axis=-1))
 
 
-def edge_styles(mesh: Topology, vertices: core.Point, struts: np.ndarray, inks: np.ndarray) -> np.ndarray:
-    """Each edge of each tetrahedron's colour and squared strut radius, `[tets * 6, 4]`, in the tetrahedron's own order
-    of its edges: the edges `struts`, vertex pairs `[struts, 2]`, thick struts in their inks `[struts, 3]`, and every
-    other edge a thin ghost, each as thick as its share of the mesh's mean edge."""
+def edge_styles(mesh: Topology, vertices: core.Point, struts: np.ndarray, inks: np.ndarray, ghosts: float
+                ) -> np.ndarray:
+    """Each edge's colour and squared strut radius, `[edges, 4]`: the edges `struts`, vertex pairs `[struts, 2]`, thick
+    struts in their inks `[struts, 3]`, and every other edge a thin ghost, `ghosts` of the mesh's mean edge thick, and
+    so not drawn where that is nothing."""
     chords = mesh.d[0] * vertices                                               # Point-[edges]
     mean_edge = chords.dot(chords).square_root().to_array().mean()
     edges = mesh.elements[1]                                                    # [edges, 2]
-    styles = np.tile(np.append(ghost_ink, (ghost_share * mean_edge) ** 2), (len(edges), 1)).astype(np.float32)
+    styles = np.tile(np.append(ghost_ink, (ghosts * mean_edge) ** 2), (len(edges), 1)).astype(np.float32)
     # Each strut's edge, found by its ends.
     styles[lookup_simplices(edges, np.sort(struts, axis=-1))] = np.concatenate(
         [inks, np.full((len(struts), 1), (rail_share * mean_edge) ** 2)], axis=-1)
-    return styles[mesh.incidence_indices[3, 1].reshape(-1)]
+    return styles
+
+
+def bead_styles(mesh: Topology, vertices: core.Point, beads: np.ndarray, inks: np.ndarray) -> np.ndarray:
+    """Each vertex's bead, its colour and squared radius, `[vertices, 4]`: the vertices `beads`, `[beads]`, balls in
+    their inks `[beads, 3]`, `bead_scale` times as thick as a coloured strut, and no bead at any other vertex."""
+    chords = mesh.d[0] * vertices                                               # Point-[edges]
+    mean_edge = chords.dot(chords).square_root().to_array().mean()
+    styles = np.zeros((mesh.n_vertices, 4), dtype=np.float32)
+    radii_squared = np.full((len(beads), 1), (bead_scale * rail_share * mean_edge) ** 2)
+    styles[beads] = np.concatenate([inks, radii_squared], axis=-1)
+    return styles
+
+
+def polygon_beads(polygons: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """The corners of closed polygons of vertices `[polygons, sides]` as beads `[polygons * sides]`, each polygon in its
+    own colour round the colour wheel, `[polygons * sides, 3]`, as `polygon_struts` colours its sides."""
+    n_polygons, n_sides = polygons.shape
+    return polygons.reshape(-1), np.repeat(hues(n_polygons), n_sides, axis=0)
 
 
 def polygon_struts(polygons: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -240,14 +299,16 @@ def wave_values(mesh: Topology, waves: core.Waves) -> dict:
 
 
 def inside(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, cameras: core.Motor,
-           eye_times: np.ndarray, styles: np.ndarray, crystals: Iterable[dict]) -> Iterator[np.ndarray]:
+           eye_times: np.ndarray, styles: np.ndarray, beads: np.ndarray, crystals: Iterable[dict]
+           ) -> Iterator[np.ndarray]:
     """Frames of the view from inside a round three-sphere meshed by tetrahedra, one for each camera and time: each
     camera, a motor `[frames] Motor+`, carries the origin to the eye and the origin's steps along `x`, `y` and `z` to
     its right, up and forward, read in the frame at the eye; each ray is walked back from the eye leg by leg
     by the WGSL `walk`, which defines `next_leg` and its `Leg` and reads `walk_values` beside the topology's
-    neighbours across each face, `neighbours` and `entries`, and its count `n_tets`; the tetrahedra's edges are lit
-    struts, each in its colour and squared radius `styles`, `[tets * 6, 4]` in each tetrahedron's own order of its
-    edges; and at each frame the atoms and bonds of `crystals`."""
+    neighbours across each face, `neighbours` and `entries`, and its count `n_tets`; the edges are lit struts, each in
+    its colour and squared radius `styles`, `[edges, 4]`; the vertices are lit beads, each in its colour and squared
+    radius `beads`, `[vertices, 4]`, none where that is nothing; and at each frame the atoms and bonds of
+    `crystals`."""
     from examples.util.wgsl import Shader, supersampled
 
     mv = core.mv
@@ -260,13 +321,18 @@ def inside(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, c
     tails, heads = mesh.incidence[1, 0] * vertices                              # Point-[edges], Point-[edges]
     strut_tails = stack(tuple((mesh.incidence[3, 1] * tails).batch()), axis=-1)   # [tets, cell_edges] Point-
     strut_heads = stack(tuple((mesh.incidence[3, 1] * heads).batch()), axis=-1)   # [tets, cell_edges] Point-
+    # The beads' places at each tetrahedron's corners, in its own order of its corners.
+    bead_places = stack(tuple((mesh.incidence[3, 0] * vertices).batch()), axis=-1)   # [tets, corners] Point-
     neighbours, entries = mesh.neighbours
     axes = stack((mv.x, mv.y, mv.z)).dual()                                     # [3] Point-
     lamp = lamp_placement >> core.origin                                        # [] Point-
     pick = core.picking(mesh, vertices)
     half_height = float(np.tan(fov_radians / 2) * inside_shape[0] / inside_shape[1])
-    bindings = walk_values | dict(neighbours=neighbours, entries=entries, n_tets=mesh.n_elements[3], struts=styles,
-                                  strut_tails=strut_tails, strut_heads=strut_heads, half_height=half_height,
+    bindings = walk_values | dict(neighbours=neighbours, entries=entries, n_tets=mesh.n_elements[3],
+                                  struts=styles[mesh.incidence_indices[3, 1].reshape(-1)], strut_tails=strut_tails,
+                                  strut_heads=strut_heads, beads=beads[mesh.incidence_indices[3, 0].reshape(-1)],
+                                  bead_places=bead_places,
+                                  half_height=half_height,
                                   max_legs=max_legs, particle_ink=particle_ink,
                                   particle_radius_squared=particle_radius ** 2, bond_radius_squared=bond_radius ** 2)
     for frame, (eye_time, crystal) in enumerate(zip(eye_times, crystals)):
@@ -283,9 +349,9 @@ def plain_view(walk: str, walk_values: dict, mesh: Topology, vertices: core.Poin
                ) -> Iterator[np.ndarray]:
     """Frames of the view from inside the round three-sphere, as `inside` draws them, along the cameras `[frames]
     Motor+`, every edge a thin ghost."""
-    no_struts = np.zeros((0, 2), dtype=int), np.zeros((0, 3))
     return inside(walk, walk_values, mesh, vertices, cameras, np.zeros(cameras.shape[0]),
-                  edge_styles(mesh, vertices, *no_struts), repeat(no_crystals(mesh)))
+                  edge_styles(mesh, vertices, *no_struts, ghost_share), bead_styles(mesh, vertices, *no_beads),
+                  repeat(no_crystals(mesh)))
 
 
 def polygon_view(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, cameras: core.Motor,
@@ -294,7 +360,8 @@ def polygon_view(walk: str, walk_values: dict, mesh: Topology, vertices: core.Po
     Motor+`: the closed polygons of edges, vertex indices `[polygons, sides]`, as struts each in its own colour round
     the colour wheel, every other edge a thin ghost."""
     return inside(walk, walk_values, mesh, vertices, cameras, np.zeros(cameras.shape[0]),
-                  edge_styles(mesh, vertices, *polygon_struts(polygons)), repeat(no_crystals(mesh)))
+                  edge_styles(mesh, vertices, *polygon_struts(polygons), ghost_share),
+                  bead_styles(mesh, vertices, *no_beads), repeat(no_crystals(mesh)))
 
 
 def helix_view(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, cameras: core.Motor,
@@ -309,9 +376,9 @@ def helix_view(walk: str, walk_values: dict, mesh: Topology, vertices: core.Poin
     is_side = np.isin(np.arange(len(edges)), lookup_simplices(edges, np.sort(sides, axis=-1)))   # [edges]
     rungs = edges[on_rails & ~is_side]                                          # [rungs, 2]
     styles = edge_styles(mesh, vertices, np.concatenate([sides, rungs]),
-                         np.concatenate([side_inks, np.broadcast_to(rung_ink, (len(rungs), 3))]))
+                         np.concatenate([side_inks, np.broadcast_to(rung_ink, (len(rungs), 3))]), ghost_share)
     return inside(walk, walk_values, mesh, vertices, cameras, np.zeros(cameras.shape[0]), styles,
-                  repeat(no_crystals(mesh)))
+                  bead_styles(mesh, vertices, *no_beads), repeat(no_crystals(mesh)))
 
 
 def waves_view(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, eye: core.Motor,
@@ -319,11 +386,13 @@ def waves_view(walk: str, walk_values: dict, mesh: Topology, vertices: core.Poin
                states: Iterable[tuple[core.Point, core.Scalar]]) -> Iterator[np.ndarray]:
     """Frames of the view from inside the round three-sphere carrying gravitational waves, as `inside` draws them
     through a walk through the waves, from the camera `eye` at each of the `eye_times`: the closed polygons of edges
-    `rails`, vertex indices `[rails, sides]`, as struts each in its own colour, every other edge a thin ghost; and the
+    `rails`, vertex indices `[rails, sides]`, as struts each in its own colour, and no other edge; and the
     crystals, their atoms at rest `atoms` and at each frame the atoms and their bonds' strains of `states`,
     `(Point-[atoms], Scalar+[bonds])`, the bonds the edges of `bonds`, coloured by their strains."""
     return inside(walk, walk_values, mesh, vertices, eye.broadcast_to(eye_times.shape), eye_times,
-                  edge_styles(mesh, vertices, *polygon_struts(rails)), crystal_frames(mesh, vertices, bonds, atoms, states))
+                  edge_styles(mesh, vertices, *polygon_struts(rails), wave_ghost_share),
+                  bead_styles(mesh, vertices, *polygon_beads(rails)),
+                  crystal_frames(mesh, vertices, bonds, atoms, states))
 
 
 def crystal_frames(mesh: Topology, vertices: core.Point, bonds: Topology, atoms: core.Point,
