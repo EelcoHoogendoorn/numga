@@ -95,10 +95,13 @@ def kept_quanta(topology, areas, gradients, cells, in_ring, hole_faces, in_hole,
     corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
     fields = core.ring_fields(topology, areas, gradients, in_ring, hole_faces, in_hole, rim, penetration,
                               candidate_quanta[:, None], cooling_fields[None, :])   # [candidates, fields] Scalar+[vertices]
+    # The supercurrent in each triangle: the field strength's gradient wedged with a unit axial field's excitation.
     slopes = (gradients * (corners * fields[..., None])).sum(axis=-1)         # [candidates, fields] Plane+[faces]
+    currents = slopes ^ mv.xy.dual()                                          # [candidates, fields] Current-[faces]
     ring_areas = mv.scalar(in_ring[:, None] * 1.0).field() * areas            # Scalar+[faces]
     departure = fields - cooling_fields[None, :]                              # [candidates, fields] Scalar+[vertices]
-    costs = (cells * departure * departure).sites.sum() + penetration ** 2 * (ring_areas * (slopes | slopes)).sites.sum()
+    kinetic = penetration ** 2 * (ring_areas * (currents & core.inertia(currents))).sites.sum()   # [candidates, fields] Scalar+
+    costs = (cells * departure * departure).sites.sum() + kinetic
     return candidate_quanta[costs.argmin(axis=0)]
 
 

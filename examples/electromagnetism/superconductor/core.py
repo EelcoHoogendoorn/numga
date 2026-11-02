@@ -47,6 +47,11 @@ Point = Plane.dual().output_gatype                                            # 
 Patch = ga.gatype.antibivector()                                              # Antibivector-
 # The magnetic field across the rod, in the planes through z.
 Field = ga.gatype.from_blades("xz yz")                                        # Bivector+
+# A current: a direction of flow swept through time.
+Current = ga.gatype.antivector()                                              # Antivector-
+# The superfluid's inertia, per squared penetration depth: a current read along each direction of space, in the metal's
+# rest frame, into the momentum that carries it.
+inertia = (stack((mv.x, mv.y, mv.z)) * (Current & stack((mv.x, mv.y, mv.z)))).sum(axis=0)   # [] Plane+ <- Current-
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -78,7 +83,10 @@ def cooling(topology: Topology, areas: Scalar, gradients: Plane, cells: Scalar, 
     superconductor, whose canonical momentum has no part along z, and the potential when its superfluid formed for a
     perfect conductor, whose momentum only follows the electric field."""
     free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), outer))   # Scalar+[free <- vertices]
-    stiffness = assembled(topology, (gradients[..., :, None] | gradients[..., None, :]) * areas[..., None, None])
+    # The magnetic field of a potential rising by one at each corner, through the plane its gradient sweeps along z, and
+    # the potential's stiffness, Ampère's law: each field read against the excitation the vacuum answers another with.
+    fields = gradients ^ mv.z                                                 # [..., corners] Field+[faces]
+    stiffness = assembled(topology, (fields[..., :, None] & Field.dual()(fields[..., None, :])) * areas[..., None, None])
     # The normal electrons' conduction over a step, in the rod's cells.
     conducting = spdiag(cells * inside / dt)                                  # Scalar+[vertices <- vertices]
     potential = applied[0] * heights + 0 * reference                          # [...] Scalar+[vertices]
@@ -103,8 +111,12 @@ def ring_fields(topology: Topology, areas: Scalar, gradients: Plane, in_ring: np
     whose flux, and the circulation of the current along the hole's edge, add up to the fluxoid."""
     corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
     ring = mv.scalar(in_ring[:, None] * 1.0).field()                          # Scalar+[faces]
-    # London's screening on the ring alone: its stiffness, times the squared penetration depth, with its cells.
-    local = (gradients[..., :, None] | gradients[..., None, :]) * (ring * areas)[..., None, None]
+    # The supercurrent a field's strength rising by one at each corner carries by Ampère's law, the hat's gradient
+    # wedged with the excitation of a unit field along the axis.
+    currents = gradients ^ mv.xy.dual()                                       # [corners] Current-[faces]
+    # London's screening on the ring alone: the supercurrent's kinetic energy, each current read against the momentum
+    # another carries, times the squared penetration depth, with the field's own energy in the cells.
+    local = (currents[..., :, None] & inertia(currents[..., None, :])) * (ring * areas)[..., None, None]
     screening = penetration ** 2 * (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=-1).sum(axis=-1) + (
         spdiag((~corners * (ring * areas / 3)).sum(axis=-1)))                 # Scalar+[vertices <- vertices]
     on_rim = np.isin(np.arange(topology.n_vertices), rim)                     # [vertices]
