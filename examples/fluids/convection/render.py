@@ -1,9 +1,9 @@
 """Drawing for Rayleigh-Bénard convection: the layer of triangles, the layer's temperature and streamlines over time,
 and the growth of a disturbance against the Rayleigh number as a chart.
 
-A layer closed on itself along its length is opened at its seam to be drawn: its first column again a period further
-along, and the triangles across the seam joined to that copy. Its points are read by the planes x and y and weighed by
-their volume, `mv.v & point`, the algebra's own projective weight. The temperature is red above the middle's and blue
+A layer closed on itself along its length is drawn opened at its seam, its first column again a period further along.
+Its points are read by the planes x and y and weighed by their volume, `mv.v & point`, the algebra's own projective
+weight. The temperature is red above the middle's and blue
 below, the streamlines are the stream function's level lines, and the floor and the ceiling are strokes in the colours
 of their temperatures.
 """
@@ -28,10 +28,11 @@ stream_colour = np.array(to_rgb("#2b2f33"))
 growth_colour, axis_colour = np.array(to_rgb("#1d4ed8")), np.array(to_rgb("#6b7280"))
 temperature_map = colormaps["RdBu_r"]
 # The layer's picture: pixels across and the room around it in depths; the widths of the walls, the mesh's edges and the
-# streamlines; the streamlines' spacing in units of the stream function, a share of its largest value in each frame.
+# streamlines; the streamlines' spacing in units of the stream function, the same in every frame, so that how close
+# they lie shows how strongly the liquid flows.
 n_pixels, margin = 320, 0.04
-wall_width, mesh_width, stream_width = 2.5, 0.75, 1.0
-n_streamlines = 8
+wall_width, mesh_width, stream_width = 2.5, 1.0, 1.0
+stream_spacing = 1.5
 # The chart's pixels, and the onset of convection between rigid walls marked on it.
 chart_width, chart_height = 300, 220
 critical_rayleigh = 1708
@@ -44,24 +45,6 @@ def on_white(picture: np.ndarray) -> np.ndarray:
     return np.round(np.clip(shown, 0, 1) * 255).astype(np.uint8)
 
 
-def unrolled(topology: Topology, vertices: Extensor, n_across: int, period: float) -> tuple[Extensor, Topology]:
-    """A layer closed on itself, opened at its seam for drawing: its vertices `Point-[vertices]` with its first column
-    again a period further along, and its triangles, those across the seam joined to that copy."""
-    faces = topology.elements[2]
-    n_vertices = topology.n_vertices
-    columns = faces // n_across
-    across_seam = (columns.max(axis=-1) - columns.min(axis=-1) > 1)[:, None] & (columns == 0)
-    faces = np.where(across_seam, n_vertices + faces % n_across, faces)
-    points = vertices.batch()                                                  # [vertices] Point-
-    first = points[:n_across] + vertices.context.multivector.x.dual() * period  # [across] Point-
-    return concatenate([points, first]), Topology(n_vertices + n_across, faces)
-
-
-def closing(values: np.ndarray, n_across: int) -> np.ndarray:
-    """Values at a layer's vertices `[vertices]`, with its first column's again for the copy at the seam."""
-    return np.concatenate([values, values[:n_across]])
-
-
 def layer_camera(vertices: Extensor, period: float) -> Camera:
     """The camera looking at the layer side on, `n_pixels` across: points read by the planes x and y, weighed by their
     volume."""
@@ -70,43 +53,40 @@ def layer_camera(vertices: Extensor, period: float) -> Camera:
                   np.array([period / 2 + margin, 0.5 + margin]), n_pixels)
 
 
-def walls(points: Extensor, n_across: int, camera: Camera):
-    """The floor and the ceiling, opened at the seam `[columns + 1, across] Point-`, in the colours of their
-    temperatures."""
-    rows = points.reshape(-1, n_across)
-    n_points = rows.shape[0]
-    colours = np.concatenate([np.repeat(np.array(temperature_map(1.0))[None, :3], n_points - 1, axis=0),
-                              np.repeat(np.array(temperature_map(0.0))[None, :3], n_points - 1, axis=0)])
-    return simplices.strokes(concatenate([rows[:, 0], rows[:, -1]]), Topology.chains([n_points, n_points]), colours,
-                             wall_width, camera)
+def walls(topology: Topology, points: Extensor, camera: Camera):
+    """The floor and the ceiling, the edges of the open layer's border that run along it, each in the colour of its
+    temperature, warm at the floor and cool at the ceiling."""
+    border = topology.border
+    tails, heads = border.incidence[1, 0] * points                              # Point-[border], Point-[border]
+    heights = (points.context.multivector.y & tails).to_array()                 # [border]
+    level = np.isclose(heights, (points.context.multivector.y & heads).to_array())   # [border]
+    colours = temperature_map(1 - heights[level])[:, :3]                       # [walls, 3]
+    return simplices.strokes(points, border.subset(level, 1), colours, wall_width, camera)
 
 
 # --- drawing --------------------------------------------------------------------------
-def draw_layer(topology: Topology, vertices: Extensor, n_across: int, period: float) -> Figure:
-    """The layer's triangles as strokes of their edges, between its warm floor and cool ceiling."""
-    points, faces = unrolled(topology, vertices, n_across, period)
+def draw_layer(topology: Topology, vertices: Extensor, period: float) -> Figure:
+    """The open layer's triangles as strokes of their edges, between its warm floor and cool ceiling."""
     camera = layer_camera(vertices, period)
-    layers = [simplices.strokes(points, faces, mesh_colour, mesh_width, camera), walls(points, n_across, camera)]
+    layers = [simplices.strokes(vertices, topology, mesh_colour, mesh_width, camera), walls(topology, vertices, camera)]
     return image_figure(on_white(simplices.composited(layers)))
 
 
-def animate(topology: Topology, vertices: Extensor, n_across: int, period: float,
+def animate(topology: Topology, vertices: Extensor, opening: Extensor, period: float,
             frames: Iterable[tuple[Extensor, Extensor]]) -> Iterator[np.ndarray]:
-    """The layer at every frame of its stream function and temperature `Scalar+[vertices]` as it comes: coloured by its
-    temperature, red above the middle's and blue below, with streamlines spaced by a share of the frame's strongest
-    flow, between its floor and ceiling."""
-    points, faces = unrolled(topology, vertices, n_across, period)
+    """The open layer at every frame of the closed layer's stream function and temperature `Scalar+[vertices]` as it
+    comes, read on the open layer by `opening`: coloured by its temperature, red above the middle's and blue below,
+    with streamlines at a fixed spacing of the stream function, between its floor and ceiling."""
     camera = layer_camera(vertices, period)
-    over = [walls(points, n_across, camera)]
+    boundaries = [walls(topology, vertices, camera)]
+    lines = contours.Lines(stream_spacing, stream_spacing / 2, np.append(stream_colour, 1.0), stream_width)
     for stream, temperature in frames:
-        values = closing(temperature.to_array(), n_across)
-        levels = closing(stream.to_array(), n_across)
+        values = (opening * temperature).to_array()
+        levels = (opening * stream).to_array()
         colours = temperature_map(np.clip(0.5 + values, 0, 1))[:, :3]
-        spacing = max(np.abs(levels).max(), 1e-12) / n_streamlines
-        lines = contours.Lines(spacing, spacing / 2, np.append(stream_colour, 1.0), stream_width)
         yield on_white(simplices.composited([
-            contours.picture(points, faces, values, colours, camera),
-            contours.picture(points, faces, levels, colours, camera, lines=(lines,), opacity=0.0)] + over))
+            contours.picture(vertices, topology, values, colours, camera),
+            contours.picture(vertices, topology, levels, colours, camera, lines=(lines,), opacity=0.0)] + boundaries))
 
 
 @style()

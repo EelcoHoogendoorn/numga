@@ -19,12 +19,12 @@ def test_onset_between_rigid_plates():
 
 
 def test_layer_turns_over_and_mixes_its_middle():
-    topology, vertices, _, frames = scenarios.turning_over()
+    closed, opened, opening, vertices, areas, frames = scenarios.turning_over()
     frames = list(frames)
-    _, places, _, _, _ = core.layer(scenarios.n_along, scenarios.n_across, scenarios.period)
-    temperatures = frames[-1][1].to_array()
-    drop = temperatures[np.isclose(places[:, 1], 0.25)].mean() - temperatures[np.isclose(places[:, 1], 0.75)].mean()
+    heights = (core.mv.y & vertices).to_array()
+    temperatures = (opening * frames[-1][1]).to_array()
+    drop = temperatures[np.isclose(heights, 0.25)].mean() - temperatures[np.isclose(heights, 0.75)].mean()
     assert abs(drop) < 0.05
-    render.draw_layer(topology, vertices, scenarios.n_across, scenarios.period)
-    assert next(render.animate(topology, vertices, scenarios.n_across, scenarios.period, frames[-1:])).shape[-1] == 3
+    render.draw_layer(opened, vertices, scenarios.period)
+    assert len(list(render.animate(opened, vertices, opening, scenarios.period, frames[-1:]))) == 1
     render.draw_onset(scenarios.onset_rayleighs, core.mv.scalar(np.linspace(-1, 1, 5)[:, None]))
