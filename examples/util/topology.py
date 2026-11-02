@@ -114,7 +114,9 @@ def lookup_simplices(table: np.ndarray, query: np.ndarray) -> np.ndarray:
 def local_complements(n: int, m: int) -> np.ndarray:
     """`[n - m, k]`: the local corners of an n-simplex off each of its m-simplices, in the order of `incidence[n, m]`,
     increasing: on a tet's edges, the two corners of the edge across from each."""
-    return np.array([[corner for corner in range(n + 1) if corner not in on] for on in local_corners(n, m).T]).T
+    # Whether each corner is on each m-simplex: sorted stably, the corners off it come first, in increasing order.
+    on = (np.arange(n + 1)[:, None, None] == local_corners(n, m)[None]).any(axis=1)   # [corners, k]
+    return np.argsort(on, axis=0, kind="stable")[:n - m]
 
 
 def local_corners(n: int, m: int) -> np.ndarray:
@@ -227,6 +229,13 @@ class Topology:
         `incidence[n, m]`. Unpacks directly along axis 0: on edges, `tails, heads = topology.corners[n, 1]`, and on a tet's
         faces, `first, second, third = topology.corners[3, 2]`."""
         return ByDimensions(self.n_dim, local_corners)
+
+    @cached_property
+    def incidence_indices(self) -> ByDimensions:
+        """`incidence_indices[n, m]`, `[N, k]`: the index in `elements[m]` of each m-simplex of each n-simplex, in the
+        order of `incidence[n, m]`, the numbers that map reads by: a tet's six edges, `topology.incidence_indices[3, 1]`.
+        Each table is built on first use."""
+        return ByDimensions(self.n_dim, self._local)
 
     @cached_property
     def complements(self) -> ByDimensions:

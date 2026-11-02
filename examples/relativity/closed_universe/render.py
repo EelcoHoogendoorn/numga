@@ -208,11 +208,10 @@ def edge_styles(mesh: Topology, vertices: core.Point, struts: np.ndarray, inks: 
     mean_edge = chords.dot(chords).square_root().to_array().mean()
     edges = mesh.elements[1]                                                    # [edges, 2]
     styles = np.tile(np.append(ghost_ink, (ghost_share * mean_edge) ** 2), (len(edges), 1)).astype(np.float32)
-    # Each strut's edge, and each tetrahedron's six, found by their ends.
+    # Each strut's edge, found by its ends.
     styles[lookup_simplices(edges, np.sort(struts, axis=-1))] = np.concatenate(
         [inks, np.full((len(struts), 1), (rail_share * mean_edge) ** 2)], axis=-1)
-    tet_edges = lookup_simplices(edges, np.sort(mesh.elements[3][:, mesh.corners[3, 1].T], axis=-1))   # [tets, 6]
-    return styles[tet_edges.reshape(-1)]
+    return styles[mesh.incidence_indices[3, 1].reshape(-1)]
 
 
 def polygon_struts(polygons: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -420,14 +419,14 @@ def inks(stretches: core.Scalar) -> np.ndarray:
 
 def base_view(sphere_mesh: Topology, sphere_points: core.Point, decagon_bases: core.Point, stretches: core.Scalar,
               atoms: core.Point, arcs: core.Point, strains: core.Scalar, light: core.Point) -> np.ndarray:
-    """The base from outside: the icosphere on the base's points `[points] Point-`, the decagons' base points
+    """The base from outside: the icosphere on the base's points `Point-[points]`, the decagons' base points
     `[decagons] Point-` in hues around the decagons; and at a frame the icosphere coloured by how much the circles
     above its points stretch, `Scalar+[points]`, the gauges' atoms `[atoms] Point-` and their bonds' arcs `[bonds, arc
     points] Point-` coloured by their strains `[bonds] Scalar+`, and the light's paths `[rays, steps + 1] Point-`, all
     on the base."""
     pixel = outside.pixel
 
-    points = lying(sphere_points, 0.0)                                          # [points] Point-
+    points = lying(sphere_points.batch(), 0.0)                                  # [points] Point-
     faces = sphere_mesh.elements[2]
     normals = meshes.smooth(points, sphere_mesh)
     surface = meshes.samples(points, faces, inks(stretches)[faces], normals, outside, np.zeros(3), meshes.plain,

@@ -98,12 +98,14 @@ n_ringing_swings = 4
 
 # --- math -----------------------------------------------------------------------------
 def six_hundred_cell() -> tuple[Topology, core.Point]:
-    """The round three-sphere's mesh, the 600-cell: the hull of the origin's orbit under the binary icosahedral group,
-    the hundred and twenty turns alike in two square planes that the icosahedron's turns give, placed by its turn. The
-    orbit is closed under the turns its points' isoclinic frames make, so each turn that carries the origin to a vertex
-    carries the vertices onto themselves."""
-    unplaced = sphere_mesher.binary_icosahedral_turns() >> core.origin           # [vertices] Point-
-    return sphere_mesher.hull(unplaced), cell_placement >> unplaced.field()
+    """The round three-sphere's mesh, the 600-cell, the stock shape carried by its first vertex's isoclinic frame back
+    so that the vertex is the origin, and placed by its turn. A 600-cell with a vertex at the origin is closed under
+    the turns its vertices' isoclinic frames make, so each turn that carries the origin to a vertex carries the
+    vertices onto themselves."""
+    topology, coordinates = shapes.cell_600()
+    vertices = mv.vector(coordinates).dual()                                    # [vertices] Point-
+    centred = core.isoclinic(vertices[0]).inverse() >> vertices                 # [vertices] Point-
+    return topology, cell_placement >> centred.field()
 
 
 def circle_turn(vertices: core.Point, n_sides: int) -> core.Motor:
@@ -308,7 +310,7 @@ def base_sphere() -> tuple[Topology, core.Point]:
     """The icosphere drawn as the base, and its points as unit steps of the three-sphere's origin, `Point-[points]`,
     the duals of the planes through the origin with the icosphere's coordinates."""
     topology, coordinates = shapes.sphere(n_icosphere_levels)
-    return topology, mv(core.Through, coordinates).dual()
+    return topology, mv(core.Through, coordinates).dual().field()
 
 
 def triangle_gauges(bases: core.Point, circling: core.Rate) -> tuple[Topology, core.Point]:
