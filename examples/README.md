@@ -163,6 +163,7 @@
 - [Electrostriction](electromagnetism/electrostriction/) — An elastic lattice deforms while its induced dipoles reach electrical and mechanical equilibrium.
 - [Eddy-current braking](electromagnetism/eddy_brake/) — Directional conductivity determines currents and braking torque in a rotating disc.
 - [The Meissner effect](electromagnetism/superconductor/) — A superconductor's canonical momentum is the spacetime gradient of one phase, so its exterior derivative vanishes: London's two equations in one, which expel a field from a rod cooled in it where a perfect conductor freezes the field in, and integrate around a ring to whole flux quanta.
+- [Fluxons in a Josephson junction](electromagnetism/josephson/) — The phase difference as a direction in a plane joined to the junction's spacetime: one wedge is the tunnelling torque and the field's tension, a boost makes a moving fluxon from a resting one, and lines of flux contract as Lorentz says, collapse as rings and reflect from the junction's edge as antifluxons.
 - [Second-harmonic generation](electromagnetism/second_harmonic/) — A crystal's quadratic field response generates light at twice the driving frequency.
 - [Magnetic bottle](electromagnetism/magnetic_bottle/) — Charged particles spiral, bounce or escape in the field between two coils.
 - [Magnetic flux advection](electromagnetism/lie_advection/) — Swept edge patches and Cartan's decomposition transport magnetic circulation and conserve total flux across a swirling conductor.
