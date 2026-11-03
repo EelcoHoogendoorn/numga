@@ -1,5 +1,5 @@
-"""A rubber band lifting a weight by heat: each vertex holding its entropy, each triangle's temperature and forces the
-two parts of one energy's change, its pull proportional to its temperature, warming as it is stretched and cooling as
+"""A rubber band lifting a weight by heat: each vertex one point, its place and its entropy, its force and temperature
+the two parts of one plane, the energy's change, its pull proportional to its temperature, warming as it is stretched and cooling as
 it is let go, and the energy kept without drift."""
 
 import numpy as np
@@ -14,10 +14,9 @@ def test_pull_is_proportional_to_temperature():
     # the entropies raised by the heat capacity times the logarithm of two.
     stretched = rest + 0.5 * (core.mv.y & rest) * core.up                     # Point-[vertices]
     support = topology.reading(np.flatnonzero((core.mv.y & rest).to_array() == 0))
-    unheld = core.mv.scalar(np.zeros((topology.n_vertices, 1))).field()
-    pulls = [(support * (~band.corners * core.potentials(band, stretched, unheld + band.heat_capacity * band.cells
-                                                         * warmer)[1]).sum(axis=0)).sites.sum() & core.up
-             for warmer in (0.0, np.log(2))]
+    held_potentials = [support * core.potentials(band, stretched + band.heat_capacity * band.cells * warmer
+                                                 * core.entropy)[1] for warmer in (0.0, np.log(2))]   # Plane+[held]
+    pulls = [((plane & core.entropy) * core.mv.s - plane).sites.sum() & core.up for plane in held_potentials]
     np.testing.assert_allclose((pulls[1] / pulls[0]).to_array(), 2.0, rtol=1e-12)
     # The band pulls the support down.
     assert pulls[0].to_array() < 0
@@ -46,10 +45,10 @@ def test_pulled_band_warms_and_let_go_cools():
     # Pulled, the band warms above the room's temperature, most at its top, where it stretches most; let go, it cools
     # below it.
     changes = np.array([(temperatures - scenarios.room_temperature).sites.mean().to_array()
-                        for _, _, temperatures, *_ in states])
+                        for _, temperatures, *_ in states])
     let_go = len(changes) // 2
     assert changes[:let_go].max() > 0 > changes[let_go:].min()
-    pulled = states[np.argmax(changes)][2].to_array() - scenarios.room_temperature
+    pulled = states[np.argmax(changes)][1].to_array() - scenarios.room_temperature
     rows = (core.mv.y & states[0][0]).to_array()
     assert pulled[rows > np.median(rows)].mean() > pulled[rows < np.median(rows)].mean()
 
@@ -59,8 +58,8 @@ def test_scenes_draw():
     render.draw_band(topology, in_weight, rest)
     warmth = core.mv.scalar(np.full((topology.n_vertices, 1), scenarios.room_temperature)).field()
     frames = render.animate(topology, in_weight, scenarios.lamp, scenarios.room_temperature, scenarios.lamp_temperature,
-                            [(rest, 0 * warmth, warmth, 1.0, None)])
+                            [(rest, warmth, 1.0, None)])
     assert next(frames).shape[-1] == 3
     pulled = render.animate_pulled(topology, in_weight, scenarios.room_temperature, scenarios.pull_swing,
-                                   scenarios.pull_drop, [(rest, 0 * warmth, warmth, 0.0, None)])
+                                   scenarios.pull_drop, [(rest, warmth, 0.0, None)])
     assert next(pulled).shape[-1] == 3

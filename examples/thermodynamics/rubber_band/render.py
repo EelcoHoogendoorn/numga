@@ -77,8 +77,8 @@ def draw_band(topology: Topology, in_weight: np.ndarray, places: core.Point):
 
 
 def animate(topology: Topology, in_weight: np.ndarray, lamp: core.Point, coolest: float, hottest: float,
-            states: Iterable[tuple[core.Point, core.Scalar, core.Scalar, float, object]]) -> Iterator[np.ndarray]:
-    """The band at each state as it comes, at its places `Point-[vertices]`, the entropies they hold left undrawn, coloured by its temperatures
+            states: Iterable[tuple[core.Point, core.Scalar, float, object]]) -> Iterator[np.ndarray]:
+    """The band at each state as it comes, at its points `Point-[vertices]`, read for their places, coloured by its temperatures
     `Scalar+[vertices]` from the coolest to the hottest, the weight's triangles `[faces]` dark; and the lamp at its
     place, glowing while it is on; the budget is left undrawn. The picture is framed on the first state, the band at
     its longest."""
@@ -91,7 +91,7 @@ def animate(topology: Topology, in_weight: np.ndarray, lamp: core.Point, coolest
     camera = framing([first[0], support, glow])
     radii = glow_reach / camera.pixel * np.linspace(1 / n_glow, 1, n_glow)[::-1]   # [glow]
     fixed = simplices.strokes(support, Topology.chains([2]), support_colour, support_width, camera)
-    for places, _, temperatures, lit, _ in chain([first], states):
+    for places, temperatures, lit, _ in chain([first], states):
         warmth = temperatures.to_array()                                      # [vertices]
         colours = band_colours((warmth - coolest) / (hottest - coolest))[:, :3]
         bulb = bulb_colours[0] + lit * (bulb_colours[1] - bulb_colours[0])
@@ -106,8 +106,8 @@ def animate(topology: Topology, in_weight: np.ndarray, lamp: core.Point, coolest
 
 
 def animate_pulled(topology: Topology, in_weight: np.ndarray, room_temperature: float, swing: float, drop: float,
-                   states: Iterable[tuple[core.Point, core.Scalar, core.Scalar, float, object]]) -> Iterator[np.ndarray]:
-    """The band pulled by hand at each state as it comes, at its places `Point-[vertices]`, the entropies they hold left undrawn, coloured by how much
+                   states: Iterable[tuple[core.Point, core.Scalar, float, object]]) -> Iterator[np.ndarray]:
+    """The band pulled by hand at each state as it comes, at its points `Point-[vertices]`, read for their places, coloured by how much
     warmer or cooler than the room its temperatures `Scalar+[vertices]` are, red to this swing above and blue to it
     below, the weight's triangles `[faces]` dark. The picture is framed on the first state and that state lowered by
     this drop, about as far as the hand pulls the weight down."""
@@ -118,7 +118,7 @@ def animate_pulled(topology: Topology, in_weight: np.ndarray, room_temperature: 
     band, weight = topology.subset(~in_weight), topology.subset(in_weight)
     camera = framing([first[0], first[0] - drop * mv.y.dual(), support])
     fixed = simplices.strokes(support, Topology.chains([2]), support_colour, support_width, camera)
-    for places, _, temperatures, _, _ in chain([first], states):
+    for places, temperatures, _, _ in chain([first], states):
         change = (temperatures.to_array() - room_temperature) / swing         # [vertices]
         colours = change_colours(np.clip(0.5 + change / 2, 0, 1))[:, :3]
         yield on_white(simplices.composited([

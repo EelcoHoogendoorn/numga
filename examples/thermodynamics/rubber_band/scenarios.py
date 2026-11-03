@@ -83,32 +83,31 @@ def hanging_band() -> tuple[Topology, core.Point, np.ndarray, core.Band]:
     return topology, rest, in_weight, band
 
 
-def settled(band: core.Band, rest: core.Point, n_vertices: int) -> tuple[core.Point, core.Scalar]:
-    """The band let go at rest under the weight at the room's temperature and settled with the lamp off: its places
-    `Point-[vertices]` and the entropies they hold `Scalar+[vertices]`."""
-    unheld = mv.scalar(np.zeros((n_vertices, 1))).field()                     # Scalar+[vertices]
-    *_, (places, entropies, *_) = core.heating(band, rest, unheld, lamp, lamp_heat, reach, np.zeros(n_settling),
-                                               np.zeros(n_settling), dt, n_settling)
-    return places, entropies
+def settled(band: core.Band, rest: core.Point) -> core.Point:
+    """The band let go at rest under the weight at the room's temperature, holding no entropy beyond the room's, and
+    settled with the lamp off: its points `Point-[vertices]`, each its place and the entropy it holds."""
+    *_, (points, *_) = core.heating(band, rest, lamp, lamp_heat, reach, np.zeros(n_settling), np.zeros(n_settling), dt,
+                                    n_settling)
+    return points
 
 
-def engine() -> tuple[Topology, np.ndarray, Iterator[tuple[core.Point, core.Scalar, core.Scalar, float, core.Budget]]]:
+def engine() -> tuple[Topology, np.ndarray, Iterator[tuple[core.Point, core.Scalar, float, core.Budget]]]:
     """The engine's run: the band's triangles, which are the weight's, and its states, from the band settled under the
     weight at room temperature, the lamp on and then off."""
     topology, rest, in_weight, band = hanging_band()
     exposure = np.concatenate([np.ones(n_lit), np.zeros(n_dark)])
-    return topology, in_weight, core.heating(band, *settled(band, rest, topology.n_vertices), lamp, lamp_heat, reach,
-                                             exposure, np.zeros_like(exposure), dt, n_stride)
+    return topology, in_weight, core.heating(band, settled(band, rest), lamp, lamp_heat, reach, exposure,
+                                             np.zeros_like(exposure), dt, n_stride)
 
 
-def pull() -> tuple[Topology, np.ndarray, Iterator[tuple[core.Point, core.Scalar, core.Scalar, float, core.Budget]]]:
+def pull() -> tuple[Topology, np.ndarray, Iterator[tuple[core.Point, core.Scalar, float, core.Budget]]]:
     """The band pulled by hand, with the lamp off: its triangles, which are the weight's, and its states, from the band
     settled under the weight, the hand's pull ramped up, held, let go and the band left."""
     topology, rest, in_weight, band = hanging_band()
     ramp = (1 - np.cos(np.pi * np.arange(n_ramp) / n_ramp)) / 2
     pulling = np.concatenate([ramp, np.ones(n_hold), ramp[::-1], np.zeros(n_hold)])
-    return topology, in_weight, core.heating(band, *settled(band, rest, topology.n_vertices), lamp, lamp_heat, reach,
-                                             np.zeros_like(pulling), pulling, dt, n_stride)
+    return topology, in_weight, core.heating(band, settled(band, rest), lamp, lamp_heat, reach, np.zeros_like(pulling),
+                                             pulling, dt, n_stride)
 
 
 def main() -> None:
