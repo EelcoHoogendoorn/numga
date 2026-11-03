@@ -66,6 +66,33 @@ def solve(value: Extensor, rhs: Extensor) -> Extensor:
     return _result(value, gatype, solution.reshape(batch_shape + gatype.structural_shape))
 
 
+@Extensor.nullspace.register(
+    lambda t, w: t.arity == 1 and w.arity == 0 and len(t.subspaces[1]) == len(t.subspaces[0]) + 1
+)
+def nullspace(value: Extensor, weight: Extensor) -> Extensor:
+    """The input the map takes to nothing, scaled so that the weight reads one on it:
+    `A(A.nullspace(w)) == 0` and `w & A.nullspace(w) == 1`.
+
+    A map with one more input dimension than output leaves one direction unread, the point where its
+    row planes meet; the weight fixes that direction's scale, as a point's weight does in projective
+    geometry. It is the homogeneous equation `A(x) == 0` solved in the weight's chart: the balance of
+    a drift against the forces on it, read in the frame whose time the weight is. Both batches
+    broadcast.
+    """
+    context = binding_context(value.context, (weight.context,))
+    value, weight = context.lower(value), context.lower(weight)
+    reading = weight & value.gatype.derive.axis(1)                            # Scalar <- Input
+    batch_shape = np.broadcast_shapes(value.shape, reading.shape)
+    value, reading = value.broadcast_to(batch_shape), reading.broadcast_to(batch_shape)
+    xp = context.xp
+    # The map's rows and the weight's reading as one square system: nothing on the rows, one on the reading.
+    system = xp.concatenate([value._kernel, reading._kernel], axis=-2)
+    unit = xp.concatenate([xp.zeros_like(value._kernel[..., :, :1]), xp.ones_like(reading._kernel[..., :, :1])], axis=-2)
+    solution = xp.linalg.solve(system, unit)[..., 0]
+    gatype = value.algebra.gatype.oriented((value.axes[1],), (value.gatype.input_orientations[0],))
+    return _result(value, gatype, solution)
+
+
 @Extensor.adjugate.register(GATypePattern.map())
 def adjugate(value: Extensor) -> Extensor:
     """The map on complements that incidence carries over: A.adjugate()(c) & x == c & A(x).

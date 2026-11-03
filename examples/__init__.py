@@ -72,8 +72,10 @@ def instantiate(module: str, ga: Algebra, context: type[Context] = NumpyContext)
     them at top level. The context is of the given kind, NumPy unless another is asked for, in double
     precision. Each algebra and kind of context gets its own executed copy, made on the first request
     and kept, so instances coexist and nothing is rebound after loading. The copies are kept by the
-    algebra itself, not by its signature: two algebras of one signature are equal but distinct, and
-    their values do not mix. The copy is not registered in sys.modules.
+    algebra itself, which its construction interns, so that an algebra built again, by a notebook
+    beside the core that imports this, is the same object with the same copy; an algebra with
+    factories of its own, such as the stock PGA3D, stays apart from the plain construction of its
+    signature. The copy is not registered in sys.modules.
     """
     key = (module, id(ga), context)
     if key not in _instances:

@@ -172,6 +172,19 @@ def test_product_algebra_requires_disjoint_generator_names() -> None:
         Algebra("x+") * Algebra("x-")
 
 
+def test_equal_constructions_are_one_algebra_whose_values_mix() -> None:
+    from numga import NumpyContext
+    from numga.algebras import PGA3D
+
+    # A notebook and the core it imports from build the algebra apart and still share it, products included.
+    first, second = Algebra("x+y+") * Algebra("s0"), Algebra("x+y+") * Algebra("s0")
+    assert first is second and Algebra("a+b+c+") is Algebra((3, 0, 0))
+    mixed = NumpyContext(first).multivector.x + NumpyContext(second).multivector.y
+    np.testing.assert_array_equal(mixed.kernel, [1.0, 1.0])
+    # An algebra with factories of its own, the stock PGA3D with its points, stays apart from its plain signature.
+    assert PGA3D is not Algebra("w0x+y+z+") and PGA3D == Algebra("w0x+y+z+")
+
+
 def test_vectorized_blade_operations_and_compatibility_api() -> None:
     algebra = Algebra("x+y-z0")
     blades = np.arange(algebra.blade_count, dtype=algebra.blade_dtype)
