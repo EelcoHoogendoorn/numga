@@ -192,6 +192,7 @@
 - [Boiling](thermodynamics/phase_change/) — A common-tangent construction determines coexisting phases and boiling at fixed pressure.
 - [Snowflake](thermodynamics/snowflake/) — A phase field with a six-fold surface energy grows a seed of ice in undercooled water into a six-armed dendrite.
 - [Cellular flame](thermodynamics/flame/) — Flames spreading from sparks through a lean mixture merge and break into cells where the fuel spreads faster than the heat.
+- [Rubber band heat engine](thermodynamics/rubber_band/) — A rubber band warmed by a lamp pulls harder and lifts a weight, its pull and the heat its motion moves read off one pairing.
 
 ## Symmetry
 
