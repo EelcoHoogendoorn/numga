@@ -64,6 +64,8 @@ import examples.mechanics.crystal_waves.scenarios
 import examples.mechanics.manipulability.core
 import examples.mechanics.kepler.core
 import examples.mechanics.kepler.scenarios
+import examples.mechanics.articulated.core
+import examples.mechanics.articulated.scenarios
 import examples.mechanics.tricycle.scenarios
 import examples.mechanics.modes.core
 import examples.mechanics.modal_xpbd.scenarios

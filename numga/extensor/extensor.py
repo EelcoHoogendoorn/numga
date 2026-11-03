@@ -897,14 +897,34 @@ def concatenate(extensors: Iterable[Extensor], axis: int = 0) -> Extensor:
     return Extensor.concatenate(extensors, axis=axis)
 
 
-def where(condition: Any, if_true: Extensor, if_false: Extensor) -> Extensor:
+def _branch(value: Extensor | int, other: Extensor) -> Extensor:
+    """A branch of `where`: an extensor as it is, or a plain zero as the zero of the other branch's type."""
+    if isinstance(value, Extensor):
+        return value
+    if value != 0:
+        raise TypeError(f"where takes extensors or a plain zero, not {value!r}")
+    return other.context.extensor(other.gatype.derive.structural, other.context.xp.zeros_like(other.kernel))
+
+
+def where(condition: Any, if_true: Extensor | int, if_false: Extensor | int) -> Extensor:
     """Each element of `if_true` where the condition, an array over the batch axes, holds, and of `if_false` where it
     does not, as `np.where`: a value not chosen never reaches the result, as it would through a blend by a mask, so
-    an element may hold anything, a 0/0 included, where it is not chosen."""
+    an element may hold anything, a 0/0 included, where it is not chosen. On fields the condition ranges over the batch
+    axes and then the sites, as a field's comparison gives it, `where(depths > 0, ...)`, choosing site by site; whole
+    fields are chosen by a condition over the batch axes with the sites' axes added, `where(mask[..., None], ...)`.
+    Either branch may be a plain zero, the other branch's type's zero, `where(depths > 0, stiffness, 0)`."""
+    if_true, if_false = _branch(if_true, if_false), _branch(if_false, if_true)
     context = binding_context(if_true.context, (if_false.context,))
     values = (context.lower(if_true), context.lower(if_false))
     gatype = _stacked_type(values)
     kernels = tuple(_embed_kernel(context, value, gatype.subspaces) for value in values)
     mask = context.xp.asarray(condition)
-    mask = context.xp.reshape(mask, mask.shape + (1,) * len(gatype.structural_shape))
+    # The sites of the values' output, which lead the structural shape: the condition's last axes, on a field, each of
+    # the sites' size or of one, broadcast across them.
+    sites = tuple(size for axis, size in gatype.fields if axis == 0)
+    if mask.ndim < len(sites) or not all(size in (1, site)
+                                         for size, site in zip(mask.shape[mask.ndim - len(sites):], sites)):
+        raise ValueError(f"where on a field of sites {sites} takes a condition over the batch axes and the sites, "
+                         f"not one of shape {mask.shape}")
+    mask = context.xp.reshape(mask, mask.shape + (1,) * (len(gatype.structural_shape) - len(sites)))
     return Extensor._from_prepared_kernel(context, gatype, context.xp.where(mask, *kernels))

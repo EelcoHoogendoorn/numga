@@ -317,6 +317,30 @@ def test_where_selects_per_element_and_unions_layouts():
                                              + mv.z * np.array([0.0, 1.0]))).kernel, 0)
 
 
+def test_where_chooses_site_by_site_on_a_field():
+    # A field's comparison holds site by site, over the batch axes and the sites; where chooses by it at every site.
+    context = NumpyContext(Algebra("x+y+z+"))
+    mv = context.multivector
+    heights = mv.scalar([[[-1.0], [2.0], [3.0]], [[1.0], [-2.0], [0.5]]]).field()     # [2] Scalar[3]
+    arrows = mv.vector(np.arange(18.0).reshape(2, 3, 3)).field()                       # [2] Vector[3]
+    chosen = where(heights > 0, arrows, -arrows)                                       # [2] Vector[3]
+    np.testing.assert_array_equal(chosen.kernel, np.where(heights.kernel > 0, arrows.kernel, -arrows.kernel))
+    # Whole fields are chosen by a condition over the batch axes with the sites' axis added; without it, the condition
+    # does not range over the sites, and is refused rather than guessed at.
+    whole = where(np.array([True, False])[:, None], arrows, -arrows)                   # [2] Vector[3]
+    np.testing.assert_array_equal(whole.kernel, arrows.kernel * np.array([1, -1])[:, None, None])
+    with pytest.raises(ValueError):
+        where(np.array([True, False]), arrows, -arrows)
+    # A field without batch axes is chosen site by site for every case of a batched condition.
+    springs = mv.scalar([[2.0], [3.0], [4.0]]).field()                                 # Scalar[3]
+    stiffened = where(heights > 0, springs, 0)                                         # [2] Scalar[3]
+    np.testing.assert_array_equal(stiffened.kernel, np.where(heights.kernel > 0, springs.kernel, 0))
+    # A plain zero stands for the zero of the other branch's type, a map's as well as a value's.
+    maps = springs * context.algebra.gatype.vector()                                   # (Vector <- Vector)[3]
+    np.testing.assert_array_equal(where(heights > 0, 0, maps).kernel,
+                                  np.where(heights.kernel[..., None] > 0, 0, maps.kernel))
+
+
 def test_numpy_context_rejects_lossy_numeric_kind_changes():
     algebra = Algebra("x+y+")
     value = NumpyContext(algebra).extensor(algebra.gatype.even(), [1, 2])

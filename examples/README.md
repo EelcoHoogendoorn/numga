@@ -69,6 +69,7 @@
 - [Flexible bodies, rigidly joined](mechanics/modal_xpbd/) — Low vibration modes let connected girders bend while their point constraints stay closed.
 - [Robot arm kinematics](mechanics/robot_arm/) — Joint motors and carried axes determine gripper motion, joint torques and target tracking.
 - [Arm manipulability](mechanics/manipulability/) — Joint axes determine the gripper's velocity and force ellipsoids as the arm changes pose.
+- [Articulated robot dynamics](mechanics/articulated/) — Brax's humanoid in reduced coordinates: inverse and forward dynamics, its mass matrix pulled back through the map from hinge speeds to link rates, and an implicit step with the ground's contact as extra inertia, as it drops limp onto the ground; compiled with JAX.
 - [Spinning top](mechanics/spinning_top/) — A top built from ellipsoids moves in contact with a concave bowl.
 - [Chiral tippe top](mechanics/tippe_top/tippe_top.ipynb) — A hollow ellipsoid rises onto its tip for one spin direction while the opposite spin stays upright.
 - [Riccati feedback](mechanics/riccati/riccati.ipynb) — Optimal feedback docks a vessel with three thrusters while balancing accuracy and effort.

@@ -111,13 +111,12 @@ class SparseExtensor:
         none couples: the dense counterpart, for what only a dense field map does, such as `eigh` without a metric,
         `eig`, `pinv`, or `solve` and `lstsq` with maps on the right. Its cells are maps, of a type; a map of plain
         numbers takes one first, `map * Scalar`."""
-        cell_type = self.gatype
-        kernel = np.asarray(self.cells.kernel)
-        leading = kernel.shape[:self.cells.ndim - 1]
-        dense = np.zeros(leading + self.shape + kernel.shape[self.cells.ndim:], dtype=kernel.dtype)
-        dense[(slice(None),) * len(leading) + (self.rows, self.columns)] = kernel
-        context = self.cells.context
-        return context.extensor(cell_type, context.xp.asarray(dense)).field(0, 1)
+        cell_type, cells = self.gatype, self.cells
+        context = cells.context
+        # Set functionally on the backend's own arrays, so that a traced map, as under JAX's jit, densifies too.
+        zeros = context.xp.zeros(cells.shape[:-1] + self.shape + cells.structural_shape, dtype=cells.dtype)
+        dense = context.extensor(cell_type, zeros).at[..., self.rows, self.columns].set(cells)
+        return context.extensor(cell_type, dense.kernel).field(0, 1)
 
     @property
     def gatype(self) -> GAType:
