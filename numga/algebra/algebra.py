@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import weakref
 from dataclasses import dataclass, field
 from operator import index
 from typing import TYPE_CHECKING, Callable, Iterable, NamedTuple, Sequence
@@ -78,7 +79,30 @@ class ProductTable:
         return self.blades.shape
 
 
-@dataclass(frozen=True, slots=True, init=False)
+def _describe(spec: AlgebraDescription | str | tuple[int, int, int]) -> AlgebraDescription:
+    """The description an algebra's specification names: a description as it is, compact notation parsed, or a
+    ``(p, q, r)`` tuple of signature counts."""
+    if isinstance(spec, AlgebraDescription):
+        description = spec
+    elif isinstance(spec, str):
+        description = AlgebraDescription.parse(spec)
+    elif isinstance(spec, tuple) and len(spec) == 3:
+        description = AlgebraDescription.from_pqr(*spec)
+    else:
+        raise TypeError(
+            "Algebra expects an AlgebraDescription, compact string, or (p, q, r) tuple"
+        )
+    if description.dimension > 64:
+        raise ValueError("the bit-mask implementation supports at most 64 generators")
+    return description
+
+
+# The algebras built so far, by their description and factories, kept while anything holds them: constructing an
+# algebra again gives the same object, so that the values of two constructions mix.
+_interned: "weakref.WeakValueDictionary[tuple, Algebra]" = weakref.WeakValueDictionary()
+
+
+@dataclass(frozen=True, slots=True, init=False, weakref_slot=True)
 class Algebra:
     """An immutable geometric algebra with canonical integer bit blades.
 
@@ -86,6 +110,11 @@ class Algebra:
     such as ``"x+y+z+w0"``, or a ``(p, q, r)`` tuple. A signature tuple is
     intentionally not accepted by this shorthand; use :meth:`from_signature`
     when the tuple contains metric entries rather than signature counts.
+
+    Equal constructions are one object: an algebra is interned by its description and
+    its factories, so ``Algebra("x+y+") is Algebra("x+y+")`` and the values made in the
+    two mix, while an algebra given its own factories, such as the stock ``PGA3D``, stays
+    distinct from the plain construction of its signature.
     """
 
     description: AlgebraDescription
@@ -95,6 +124,22 @@ class Algebra:
     _operator_factory: OperatorFactory = field(compare=False, repr=False)
     _multivector_factory: Callable[[Context], MultivectorFactory] = field(compare=False, repr=False)
 
+    def __new__(
+        cls,
+        spec: AlgebraDescription | str | tuple[int, int, int],
+        *,
+        subspace_factory: Callable[[Algebra], SubSpaceFactory] | None = None,
+        gatype_factory: Callable[[Algebra], GATypeFactory] | None = None,
+        multivector_factory: Callable[[Context], MultivectorFactory] | None = None,
+    ) -> "Algebra":
+        key = (_describe(spec), subspace_factory, gatype_factory, multivector_factory)
+        try:
+            return _interned[key]
+        except KeyError:
+            instance = object.__new__(cls)
+            _interned[key] = instance
+            return instance
+
     def __init__(
         self,
         spec: AlgebraDescription | str | tuple[int, int, int],
@@ -103,19 +148,13 @@ class Algebra:
         gatype_factory: Callable[[Algebra], GATypeFactory] | None = None,
         multivector_factory: Callable[[Context], MultivectorFactory] | None = None,
     ) -> None:
-        if isinstance(spec, AlgebraDescription):
-            description = spec
-        elif isinstance(spec, str):
-            description = AlgebraDescription.parse(spec)
-        elif isinstance(spec, tuple) and len(spec) == 3:
-            description = AlgebraDescription.from_pqr(*spec)
-        else:
-            raise TypeError(
-                "Algebra expects an AlgebraDescription, compact string, or (p, q, r) tuple"
-            )
-        if description.dimension > 64:
-            raise ValueError("the bit-mask implementation supports at most 64 generators")
-        object.__setattr__(self, "description", description)
+        # An interned algebra handed back by `__new__` is built already.
+        try:
+            self.description
+            return
+        except AttributeError:
+            pass
+        object.__setattr__(self, "description", _describe(spec))
 
         # Construction namespaces are owned by the algebra, so their flyweight
         # pools have the same natural lifetime. This is separate from the

@@ -73,6 +73,7 @@ class Extensor:
     solve = ExtensionMethod("solve", takes="a map between spaces of equal dimension, or a form, with a right-hand side its output takes")
     lstsq = ExtensionMethod("lstsq", takes="a map or a form, with a right-hand side its output takes and an optional metric form", operand_counts=(2, 3))
     pinv = ExtensionMethod("pinv", takes="a map")
+    nullspace = ExtensionMethod("nullspace", takes="a map with one more input dimension than output, and a reading on its input to scale the null direction by")
     adjugate = ExtensionMethod("adjugate", takes="a map")
     adjoint = ExtensionMethod("adjoint", takes="a map")
     cholesky = ExtensionMethod("cholesky", takes="a map from a space to itself, or a square form")
