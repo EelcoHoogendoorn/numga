@@ -1,5 +1,5 @@
 """A rubber band lifting a weight by heat: the band held by its top row, the weight its lowest rows, and a lamp beside
-it switched on and then off."""
+it switched on and then off; and the same band pulled down by hand, warming as it stretches, on the same timeline."""
 
 from __future__ import annotations
 
@@ -35,19 +35,23 @@ lamp_heat = 2 * cooling * (lamp_temperature - room_temperature)
 lamp_across, lamp_up = -1.2, -2.4
 lamp = lamp_across * core.across + lamp_up * core.up                          # [] Point-
 # The run: its time step; the steps the band settles under the weight with the lamp off, run but not shown; the steps
-# the lamp is on and then off; the steps between frames; the frames' duration in milliseconds, and the colours of their
-# palette.
+# the lamp is on and then off, as many each; the steps between frames, and the frames' duration in milliseconds.
 dt = 0.025
 n_settling, n_lit, n_dark, n_stride = 3000, 2000, 2000, 40
 frame_duration_ms = 40
-n_animation_colours = 64
 # The pull: a hand pulling the weight down as hard as its weight again, in a quick ramp, held while the band's warmth
-# leaks to the room, let go as quickly, and the band left to warm back; the steps of each, the ramp's in a few of the
-# weight's bounces, the holds in about a warming time; the colours' reach either side of the room's temperature, and how
-# far the hand pulls the weight down, which the picture leaves room for.
+# leaks to the room, let go as quickly, and the band left to warm back, on the lamp's timeline: the hand pulls as the
+# lamp comes on and lets go as it goes off. The steps of the ramp, in a few of the weight's bounces, and of the holds,
+# the rest of the lamp's time on and off; the colours' reach either side of the room's temperature, about a thousandth
+# of the lamp's, and how far the hand pulls the weight down, which the picture leaves room for.
 hand_pull = 1.0
-n_ramp, n_hold = 160, 800
+n_ramp = 160
+n_hold = n_lit - n_ramp
 pull_swing, pull_drop = 6e-4, 0.9
+# Each step's exposure to the lamp, on and then off, and the hand's pull, ramped up, held, let go and the band left.
+exposure = np.concatenate([np.ones(n_lit), np.zeros(n_dark)])
+ramp = (1 - np.cos(np.pi * np.arange(n_ramp) / n_ramp)) / 2
+pulling = np.concatenate([ramp, np.ones(n_hold), ramp[::-1], np.zeros(n_hold)])
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -86,40 +90,47 @@ def hanging_band() -> tuple[Topology, core.Point, np.ndarray, core.Band]:
 def settled(band: core.Band, rest: core.Point) -> core.Point:
     """The band let go at rest under the weight at the room's temperature, holding no entropy beyond the room's, and
     settled with the lamp off: its points `Point-[vertices]`, each its place and the entropy it holds."""
-    *_, (points, *_) = core.heating(band, rest, lamp, lamp_heat, reach, np.zeros(n_settling), np.zeros(n_settling), dt,
-                                    n_settling)
+    *_, (points, *_) = core.run(band, rest, lamp, lamp_heat, reach, np.zeros(n_settling), np.zeros(n_settling), dt,
+                                n_settling)
     return points
 
 
-def engine() -> tuple[Topology, np.ndarray, Iterator[tuple[core.Point, core.Scalar, float, core.Budget]]]:
+def engine() -> tuple[Topology, np.ndarray, Iterator[tuple[core.Point, core.Scalar, float]]]:
     """The engine's run: the band's triangles, which are the weight's, and its states, from the band settled under the
     weight at room temperature, the lamp on and then off."""
     topology, rest, in_weight, band = hanging_band()
-    exposure = np.concatenate([np.ones(n_lit), np.zeros(n_dark)])
-    return topology, in_weight, core.heating(band, settled(band, rest), lamp, lamp_heat, reach, exposure,
-                                             np.zeros_like(exposure), dt, n_stride)
+    return topology, in_weight, core.run(band, settled(band, rest), lamp, lamp_heat, reach, exposure,
+                                         np.zeros_like(exposure), dt, n_stride)
 
 
-def pull() -> tuple[Topology, np.ndarray, Iterator[tuple[core.Point, core.Scalar, float, core.Budget]]]:
+def pull() -> tuple[Topology, np.ndarray, Iterator[tuple[core.Point, core.Scalar, float]]]:
     """The band pulled by hand, with the lamp off: its triangles, which are the weight's, and its states, from the band
     settled under the weight, the hand's pull ramped up, held, let go and the band left."""
     topology, rest, in_weight, band = hanging_band()
-    ramp = (1 - np.cos(np.pi * np.arange(n_ramp) / n_ramp)) / 2
-    pulling = np.concatenate([ramp, np.ones(n_hold), ramp[::-1], np.zeros(n_hold)])
-    return topology, in_weight, core.heating(band, settled(band, rest), lamp, lamp_heat, reach, np.zeros_like(pulling),
-                                             pulling, dt, n_stride)
+    return topology, in_weight, core.run(band, settled(band, rest), lamp, lamp_heat, reach, np.zeros_like(pulling),
+                                         pulling, dt, n_stride)
+
+
+def engine_and_pull() -> tuple[Topology, np.ndarray, Iterator[tuple[tuple[core.Point, core.Scalar, float],
+                                                                    tuple[core.Point, core.Scalar, float]]]]:
+    """The engine's run and the pull's on one timeline: the band's triangles, which are the weight's, and at each frame
+    the two runs' states, the lamp's and the hand's, both from the same band settled under the weight at room
+    temperature, the hand pulling as the lamp comes on and letting go as it goes off."""
+    topology, rest, in_weight, band = hanging_band()
+    start = settled(band, rest)
+    lamp_run = core.run(band, start, lamp, lamp_heat, reach, exposure, np.zeros_like(exposure), dt, n_stride)
+    hand_run = core.run(band, start, lamp, lamp_heat, reach, np.zeros_like(pulling), pulling, dt, n_stride)
+    return topology, in_weight, zip(lamp_run, hand_run)
 
 
 def main() -> None:
     from examples.util.animation import save_animation
     from examples.thermodynamics.rubber_band import render
 
-    topology, in_weight, states = engine()
-    save_animation(render.animate(topology, in_weight, lamp, room_temperature, lamp_temperature, states),
-                   "rubber_band", frame_duration_ms, colors=n_animation_colours)
-    topology, in_weight, states = pull()
-    save_animation(render.animate_pulled(topology, in_weight, room_temperature, pull_swing, pull_drop, states),
-                   "rubber_band_pulled", frame_duration_ms, colors=n_animation_colours)
+    topology, in_weight, states = engine_and_pull()
+    save_animation(render.animate_together(topology, in_weight, lamp, room_temperature, lamp_temperature, pull_swing,
+                                           pull_drop, states),
+                   "rubber_band_lamp_and_pull", frame_duration_ms)
 
 
 if __name__ == "__main__":

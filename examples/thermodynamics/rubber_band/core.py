@@ -140,11 +140,10 @@ def band(topology: Topology, rest: Point, held: np.ndarray, material: Elastic, s
                 cooling, room_temperature, pull, drag, hand)
 
 
-def potentials(band: Band, points: Point) -> tuple[Scalar, Plane]:
-    """Each triangle's temperature over the room's `Scalar+[faces]`, and each vertex's potentials `Plane+[vertices]`,
-    its triangles' internal energy's change as its point moves: minus the force on it in the plane, and its
-    temperature along the entropy; for the vertices at these points `Point-[vertices]`, each its place and the entropy
-    it holds. A triangle's free energy is its temperature over the room's times its stretch's elastic energy at the
+def potentials(band: Band, points: Point) -> Plane:
+    """Each vertex's potentials `Plane+[vertices]`, its triangles' internal energy's change as its point moves: minus
+    the force on it in the plane, and its temperature along the entropy; for the vertices at these points
+    `Point-[vertices]`, each its place and the entropy it holds. A triangle's free energy is its temperature over the room's times its stretch's elastic energy at the
     room's, and its heat capacity's; its entropy, spread from its corners by their hats, is its heat's less the
     stretch's elastic energy over the room's temperature, so that it warms as it stretches at fixed entropy, and its
     forces are its elastic blocks scaled by its warmth."""
@@ -161,63 +160,65 @@ def potentials(band: Band, points: Point) -> tuple[Scalar, Plane]:
     # Each vertex's temperature, its triangles' around it by their areas, its cell's share, and the forces on it.
     temperatures = band.room_temperature * (~band.corner_mean * (band.areas * warmth)) / band.cells   # Scalar+[vertices]
     forces = (~band.corners * (warmth * springs)).sum(axis=0)                 # Force+[vertices]
-    return warmth, temperatures * mv.s - forces
+    return temperatures * mv.s - forces
 
 
-class Budget(NamedTuple):
-    """The band's energy at a state, `[] Scalar+` each: the vertices' kinetic energy, their potential energy in
-    gravity, the band's internal energy, its heat; and, over the steps that led to it, the heat the lamp and the room
-    put in, the energy the air's drag dissipated, and the work the hand did on the weight."""
-    kinetic: Scalar
-    potential: Scalar
-    thermal: Scalar
-    heated: Scalar
-    dissipated: Scalar
-    handed: Scalar
+def move(band: Band, points: Point, velocities: Point, forces: Force, pulled: float, dt: float) -> tuple[Point, Point]:
+    """The band's points and velocities `Point-[vertices]` a step of `dt` on from these, moved at fixed entropy by
+    position Verlet under these forces of its stretch `Force+[vertices]`, taken at the middle of the move, gravity and
+    the hand pulling the weight as much as `pulled`, from none to full; the held top row stays still."""
+    # The kick by the forces against the drag of the mean of the velocities before and after it, and the step by that
+    # mean.
+    loads = forces + band.masses * band.pull + pulled * band.hand             # Force+[vertices]
+    kicked = band.freeing * (((1 - band.drag * dt / 2) * velocities + dt * (loads / band.masses).dual())
+                             / (1 + band.drag * dt / 2))                      # Point-[vertices]
+    return points + dt * (velocities + kicked) / 2, kicked
 
 
-def heating(band: Band, points: Point, lamp: Point, lamp_heat: float, reach: float, exposure: np.ndarray,
-            pulling: np.ndarray, dt: float, n_stride: int) -> Iterator[tuple[Point, Scalar, float, Budget]]:
+def exchange(band: Band, points: Point, temperatures: Scalar, lamp: Point, lamp_heat: float, reach: float, lit: float,
+             dt: float) -> Scalar:
+    """The entropy `Scalar+[vertices]` each vertex gains from the heat the lamp, lit as much as `lit`, from none to
+    full, the room and the conduction move into its cell over a step of `dt`, the vertices at these points
+    `Point-[vertices]` and these temperatures `Scalar+[vertices]`; the lamp at its place puts in this heat per area and
+    time where it shines brightest, half as much this reach away."""
+    # The lamp's exposure falls off with the square of the distance from it, from the point's place, the point without
+    # its entropy.
+    offsets = points - (mv.s & points) * entropy - lamp                       # Point-[vertices]
+    exposures = 1 / (1 + (offsets.dual_inverse() & offsets) / reach ** 2)     # Scalar+[vertices]
+    exchanged = dt * band.cells * (lit * lamp_heat * exposures
+                                   - band.cooling * (temperatures - band.room_temperature))   # Scalar+[vertices]
+    conducted = -dt * (band.conduction * temperatures)                        # Scalar+[vertices]
+    # The heat warms a cell by itself over the cell's heat capacity, and its entropy grows by the heat capacity times
+    # the logarithm of the warmer temperature over the cooler.
+    capacities = band.heat_capacity * band.cells                              # Scalar+[vertices]
+    return capacities * (1 + (exchanged + conducted) / (capacities * temperatures)).log()
+
+
+def step(band: Band, points: Point, velocities: Point, lamp: Point, lamp_heat: float, reach: float, lit: float,
+         pulled: float, dt: float) -> tuple[Point, Point]:
+    """The band's points and velocities `Point-[vertices]` a step of `dt` on from these: a move at fixed entropy, and
+    the heat the lamp, lit as much as `lit`, the room and the conduction move over it carrying each point along the
+    entropy, the hand pulling as much as `pulled`; the lamp as `exchange` takes it."""
+    # The potentials at the middle of the move, one plane per vertex: minus the force in the plane, which moves the
+    # band, and the temperature along the entropy, at which the heat moves.
+    middle = points + dt / 2 * velocities                                     # Point-[vertices]
+    middle_potentials = potentials(band, middle)                              # Plane+[vertices]
+    temperatures = middle_potentials & entropy                                # Scalar+[vertices]
+    forces = temperatures * mv.s - middle_potentials                          # Force+[vertices]
+    points, velocities = move(band, points, velocities, forces, pulled, dt)
+    gained = exchange(band, middle, temperatures, lamp, lamp_heat, reach, lit, dt)   # Scalar+[vertices]
+    return points + gained * entropy, velocities
+
+
+def run(band: Band, points: Point, lamp: Point, lamp_heat: float, reach: float, exposure: np.ndarray,
+        pulling: np.ndarray, dt: float, n_stride: int) -> Iterator[tuple[Point, Scalar, float]]:
     """The band's points `Point-[vertices]`, each its place and the entropy it holds, their temperatures
-    `Scalar+[vertices]`, whether the lamp is on, and the budget, every `n_stride` steps of `dt`, one step for each of
-    the lamp's exposures and the hand's pulls `[steps]`, each from none to full, from the band still at these points;
-    the lamp at its place puts in this heat per area and time where it shines brightest, half as much this reach
-    away."""
-    masses, capacities = band.masses, band.heat_capacity * band.cells
+    `Scalar+[vertices]` and whether the lamp is on, at the start and after every `n_stride` steps of `dt`, one step for
+    each of the lamp's exposures and the hand's pulls `[steps]`, each from none to full, from the band still at these
+    points; the lamp as `exchange` takes it."""
     velocities = 0 * points                                                   # Point-[vertices]
-    heated = dissipated = handed = 0 * band.cells.sites.sum()                 # [] Scalar+
-    # Each step's exposure and pull, and the last again, so that the state after the last step is yielded too.
-    for step, (lit, pulled) in enumerate(zip(np.append(exposure, exposure[-1]), np.append(pulling, pulling[-1]))):
-        if step % n_stride == 0:
-            warmth, vertex_potentials = potentials(band, points)              # Scalar+[faces], Plane+[vertices]
-            kinetic = (masses * (velocities.dual_inverse() & velocities)).sites.sum() / 2   # [] Scalar+
-            potential = -(masses * (band.pull & points)).sites.sum()          # [] Scalar+
-            thermal = band.heat_capacity * band.room_temperature * (band.areas * warmth).sites.sum()   # [] Scalar+
-            yield points, vertex_potentials & entropy, lit, Budget(kinetic, potential, thermal, heated, dissipated,
-                                                                   handed)
-        # The move at fixed entropy: the potentials at the middle of the move, whose part in the plane is minus the
-        # force; the kick by it, gravity and the hand against the drag of the mean of the velocities before and after
-        # it, and the step by that mean.
-        middle = points + dt / 2 * velocities                                 # Point-[vertices]
-        _, vertex_potentials = potentials(band, middle)                       # Plane+[vertices]
-        temperatures = vertex_potentials & entropy                            # Scalar+[vertices]
-        forces = temperatures * mv.s - vertex_potentials + masses * band.pull + pulled * band.hand   # Force+[vertices]
-        kicked = band.freeing * (((1 - band.drag * dt / 2) * velocities + dt * (forces / masses).dual())
-                                 / (1 + band.drag * dt / 2))                  # Point-[vertices]
-        steps = dt * (velocities + kicked) / 2                                # Point-[vertices]
-        # The heat the lamp, the room and the conduction move into each vertex's cell over the step, at its temperature
-        # at the middle of the move; the lamp's exposure falls off with the square of the distance from it, from the
-        # point's place, the point without its entropy.
-        offsets = middle - (mv.s & middle) * entropy - lamp                   # Point-[vertices]
-        exposures = 1 / (1 + (offsets.dual_inverse() & offsets) / reach ** 2)   # Scalar+[vertices]
-        exchanged = dt * band.cells * (lit * lamp_heat * exposures
-                                       - band.cooling * (temperatures - band.room_temperature))   # Scalar+[vertices]
-        conducted = -dt * (band.conduction * temperatures)                    # Scalar+[vertices]
-        # The heat warms a cell by itself over the cell's heat capacity, and its entropy grows by the heat capacity
-        # times the logarithm of the warmer temperature over the cooler: the point moves along the entropy.
-        gained = capacities * (1 + (exchanged + conducted) / (capacities * temperatures)).log()   # Scalar+[vertices]
-        points = points + steps + gained * entropy
-        velocities = kicked
-        heated = heated + exchanged.sites.sum()
-        dissipated = dissipated + band.drag * (masses * (steps.dual_inverse() & steps)).sites.sum() / dt
-        handed = handed + pulled * (band.hand & steps).sites.sum()
+    yield points, potentials(band, points) & entropy, exposure[0]
+    for exposures, pulls in zip(exposure.reshape(-1, n_stride), pulling.reshape(-1, n_stride)):
+        for lit, pulled in zip(exposures, pulls):
+            points, velocities = step(band, points, velocities, lamp, lamp_heat, reach, lit, pulled, dt)
+        yield points, potentials(band, points) & entropy, exposures[-1]
