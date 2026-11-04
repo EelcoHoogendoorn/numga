@@ -4,10 +4,11 @@ bands tinted; and beside it, as the bias sweeps, the current against the voltage
 cross-section, the silicon tinted by its electrons, blue, and its holes, red, its surface beneath the oxide drawn as a
 band of its own tint, the oxide grey under the dark gate, the contacts' metal dark; and beside it the drain's current
 against its voltage, an output curve traced for each gate voltage as the drain sweeps. The solar cell: a window of its
-cross-section about a finger, tiled by its period, the silicon tinted warm by the light's generation and white in the
-fingers' shadow, its top layer and its back layer bands of their own tints, the fingers dark on the surface, and the
-holes' flow streaked over it; beside it, as the light comes on and the bias rises, the current it delivers against its
-voltage, and as its fingers spread, its power against their spacing; and its power against the spacing as a chart.
+cross-section about the middle of a gap between two fingers, tiled by its period, the silicon tinted warm by the
+light's generation and white in the fingers' shadow, its top layer and its back layer bands of their own tints, the
+fingers dark on the surface, and the holes' flow streaked over it; beside it, as the light comes on and the bias rises,
+the current it delivers against its voltage, and as its fingers spread, its power against their spacing; and its power
+against the spacing as a chart.
 
 The bar's vertices are read by the plane x, the cross-sections' by the planes x and y; the energies, densities,
 currents, voltages and powers come as scalars, read off the states by the example's own functions, and the holes' flow
@@ -25,12 +26,13 @@ from matplotlib.collections import PolyCollection
 from matplotlib.colors import to_rgb
 from matplotlib.figure import Figure
 
+from numga import concatenate
 from numga.extensor import Extensor
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.topology import Topology
 from examples.util.wgsl import contours, flow, pinned, simplices
-from examples.util.wgsl.camera import Camera, panel
+from examples.util.wgsl.camera import Camera, offset_panel
 
 # The band edges' colour, the electrons' and the holes', the faint junction's, and the curves traced in the dark and
 # under light; the bands' tints where they hold carriers at the doping's density, fading to white at the intrinsic one.
@@ -47,8 +49,9 @@ edge_width = 1.5 * charts.LINE_WIDTH
 band_width_px, band_height_px = 340, 240
 curve_width_px = 240
 # The room the labels at the band diagram's ends take, as a share of the bar's length, and the voltages' ticks, in
-# volts apart.
-label_room, tick_volts = 0.16, 0.2
+# volts apart; the room the current's chart leaves past the sweep's ends, as a share of its range, for the dot there and
+# the voltage's label.
+label_room, tick_volts, sweep_room = 0.16, 0.2, 0.08
 
 
 def band_panel(axis: plt.Axes, places: np.ndarray, window: tuple[float, float], intrinsic: float
@@ -150,7 +153,8 @@ def animate_sweep(vertices: Extensor, bands_of: Callable[[Extensor], Extensor],
         draw = band_panel(band_axis, places, window, intrinsic)
         # The current against the voltage: axes through nothing, and the voltage's ticks in volts, but at nothing, where
         # the current's axis crosses.
-        curve_axis.set(xlim=voltages, ylim=currents, yticks=[])
+        room = sweep_room * (voltages[1] - voltages[0])
+        curve_axis.set(xlim=(voltages[0] - room, voltages[1] + room), ylim=currents, yticks=[])
         ticks = np.arange(np.ceil(voltages[0] / volt / tick_volts), np.floor(voltages[1] / volt / tick_volts) + 1)
         ticks = ticks[ticks != 0] * tick_volts
         curve_axis.set_xticks(ticks * volt, [f"{tick:.1f}" for tick in ticks])
@@ -181,7 +185,7 @@ def animate_sweep(vertices: Extensor, bands_of: Callable[[Extensor], Extensor],
 # --- the MOSFET's cross-section --------------------------------------------------------
 # The silicon's tints where it holds electrons and holes at their full densities, fading to white where it holds none;
 # the oxide's grey and the metal's of the gate and the contacts.
-electron_tint, hole_tint = np.array(to_rgb("#3a78b8")), np.array(to_rgb("#e3b4b4"))
+electron_tint, hole_tint = np.array(to_rgb("#3a78b8")), np.array(to_rgb("#dca2a2"))
 oxide_colour, metal_colour = np.array(to_rgb("#d4d7da")), np.array(to_rgb("#3b4a57"))
 # The silicon's surface beneath the oxide, a band of its own tint, the channel being far thinner than a pixel; the
 # gate's and the body contact's strokes; in pixels.
@@ -205,7 +209,7 @@ def section_axes(axis: plt.Axes, vertices: Extensor) -> Camera:
     axis.set(xlim=(across.min() - margin, across.max() + margin), ylim=(up.min() - margin, up.max() + margin))
     axis.set_aspect("equal")
     axis.set_axis_off()
-    return panel(axis, mv.x, mv.y)
+    return offset_panel(axis, mv.x, mv.y)
 
 
 def tints(electrons: np.ndarray, holes: np.ndarray, full: np.ndarray) -> np.ndarray:
@@ -219,13 +223,19 @@ def silicon_layers(topology: Topology, vertices: Extensor, semiconductor: Extens
                    holes: np.ndarray, full: np.ndarray, camera: Camera) -> list:
     """The silicon tinted by its electrons and holes `[vertices]` each, and its surface beneath the oxide and the
     contacts as a band of the same tint: the silicon's border where it meets the oxide's triangles."""
+    mv = vertices.context.multivector
     points = vertices.batch()
     silicon = semiconductor.batch().to_array().reshape(-1) > 0                # [simplices]
-    border = topology.subset(silicon).border
-    surface = border.subset(np.isin(border.elements[-1], topology.elements[-1][~silicon]).all(axis=-1))
+    border = topology.subset(silicon, -1).border
+    surface = border.subset(np.isin(border.elements[-1], topology.elements[-1][~silicon]).all(axis=-1), -1)
     colours = tints(electrons, holes, full)                                   # [vertices, 3]
-    return [contours.picture(points, topology.subset(silicon), np.zeros(topology.n_vertices), colours, camera),
-            simplices.strokes(points, surface, colours[surface.elements[-1]].mean(axis=1), surface_width, camera)]
+    # The band: the surface swept down from the oxide by its width, a copy of the vertices lowered, tinted as the
+    # surface is at each vertex and between them in turn.
+    band = surface.product(Topology.chains([2]))
+    lowered = points - surface_width * camera.pixel * mv.y.dual()
+    return [contours.picture(points, topology.subset(silicon, -1), np.zeros(topology.n_vertices), colours, camera),
+            contours.picture(concatenate([points, lowered]), band, np.zeros(band.n_vertices),
+                             np.concatenate([colours, colours]), camera)]
 
 
 def device_layers(topology: Topology, vertices: Extensor, semiconductor: Extensor, contacts: list[np.ndarray],
@@ -239,12 +249,12 @@ def device_layers(topology: Topology, vertices: Extensor, semiconductor: Extenso
     metal = oxide & np.isin(topology.elements[-1], np.concatenate([source, drain])).all(axis=-1)   # [simplices]
     # The gate and the body contact: the border's edges whose ends they hold.
     border = topology.border
-    gate_edges, body_edges = (border.subset(np.isin(border.elements[-1], contact).all(axis=-1))
+    gate_edges, body_edges = (border.subset(np.isin(border.elements[-1], contact).all(axis=-1), -1)
                               for contact in (gate, body))
     n_vertices = topology.n_vertices
-    return [contours.picture(points, topology.subset(oxide & ~metal), np.zeros(n_vertices),
+    return [contours.picture(points, topology.subset(oxide & ~metal, -1), np.zeros(n_vertices),
                              np.broadcast_to(oxide_colour, (n_vertices, 3)), camera),
-            contours.picture(points, topology.subset(metal), np.zeros(n_vertices),
+            contours.picture(points, topology.subset(metal, -1), np.zeros(n_vertices),
                              np.broadcast_to(metal_colour, (n_vertices, 3)), camera),
             simplices.strokes(points, gate_edges, metal_colour, gate_width, camera),
             simplices.strokes(points, body_edges, metal_colour, body_width, camera)]
@@ -332,9 +342,11 @@ streak_colour, streak_ink, cell_streak_length = np.array(to_rgb("#1d2228")), 0.4
 # The fingers' and the back contact's strokes, in pixels, and the room above the surface for the fingers, as a share of
 # the depth.
 finger_stroke, back_stroke, finger_room = 6.0, 3.0, 0.05
-# The window the fingers spread in: its pixels across and up, and its half width in Debye lengths; a chart's pixels
-# across beside it; and the period alone, its pixels across.
-window_width_px, window_height_px, window_half_width = 400, 230, 160.0
+# The windows of the cell, each about the middle of a gap between two fingers: their pixels across, and the cell's
+# window's half width before its fingers spread, in Debye lengths; the window they spread in reaches past the two
+# fingers beside its middle at their widest spacing by this factor of their distance from it. A chart's pixels across
+# beside a window; and the period alone, its pixels across.
+window_width_px, window_half_width, spreading_room = 400, 160.0, 1.08
 cell_chart_px, period_width_px = 240, 400
 # The current's chart: its voltages' ticks, in volts apart; the power's chart's pixels; the factor its range of
 # spacings reaches past the spacings either way, and the factor the charts' ranges reach past what they show.
@@ -342,13 +354,15 @@ cell_tick_volts = 0.2
 power_size, spacing_margin, chart_margin = (320, 220), 1.08, 1.12
 
 
-def copies(vertices: Extensor, finger_spacing: float, half_width: float) -> list[Extensor]:
-    """The vertices of the periods tiling the window this far either way of a finger's middle, each one finger spacing
-    on from the one before, `[copies] Point-[vertices]`: the period is mirrored at its fingers' middles and at its own,
-    so that its mirror image across a finger is itself, a spacing on."""
+def copies(vertices: Extensor, finger_spacing: float, middle: float, half_width: float) -> list[Extensor]:
+    """The vertices of the periods tiling a window this far either way of its middle, each one finger spacing on from
+    the one before, `[copies] Point-[vertices]`, the window's middle at nothing and `middle` across from a finger's
+    middle: the period is mirrored at its fingers' middles and at its own, so that its mirror image across a finger is
+    itself, a spacing on."""
     mv = vertices.context.multivector
-    first, last = int(np.floor(-half_width / finger_spacing)), int(np.ceil(half_width / finger_spacing)) - 1
-    return [vertices + (copy * finger_spacing) * mv.x.dual() for copy in range(first, last + 1)]
+    first = int(np.floor((middle - half_width) / finger_spacing))
+    last = int(np.ceil((middle + half_width) / finger_spacing)) - 1
+    return [vertices + (copy * finger_spacing - middle) * mv.x.dual() for copy in range(first, last + 1)]
 
 
 def framed(axis: plt.Axes, vertices: Extensor, left: float, right: float) -> Camera:
@@ -360,7 +374,7 @@ def framed(axis: plt.Axes, vertices: Extensor, left: float, right: float) -> Cam
     axis.set(xlim=(left, right), ylim=(up.min() - room, up.max() + room))
     axis.set_aspect("equal")
     axis.set_axis_off()
-    return panel(axis, mv.x, mv.y)
+    return offset_panel(axis, mv.x, mv.y)
 
 
 def at_vertices(topology: Topology, values: Extensor) -> Extensor:
@@ -406,7 +420,7 @@ def cell_metal(topology: Topology, vertices: Extensor, contacts: list[np.ndarray
     points = vertices.batch()
     finger, back = contacts
     border = topology.border
-    finger_edges, back_edges = (border.subset(np.isin(border.elements[-1], contact).all(axis=-1))
+    finger_edges, back_edges = (border.subset(np.isin(border.elements[-1], contact).all(axis=-1), -1)
                                 for contact in (finger, back))
     # The fingers stand on the surface: their strokes raised by half their width.
     raised = points + (finger_stroke / 2) * camera.pixel * mv.y.dual()
@@ -426,11 +440,11 @@ def streaks(topology: Topology, vertices: Extensor, holes: Extensor, reference_f
 
 def window_picture(topology: Topology, vertices: Extensor, dopants: Extensor, contacts: list[np.ndarray],
                    generation: Extensor, full_generation: float, holes: Extensor, reference_flow: float,
-                   finger_spacing: float, camera: Camera) -> np.ndarray:
-    """The window tiled by the periods at their vertices `Point-[vertices]`, its fingers this far apart: each period
-    tinted as `cell_tints` tints it, the holes' flow `Point-[simplices]` streaked over it, and its contacts over all:
-    colour `[rows, columns, 3]`."""
-    tiles = copies(vertices, finger_spacing, window_half_width)
+                   finger_spacing: float, half_width: float, camera: Camera) -> np.ndarray:
+    """The window this far either way of the middle of a gap tiled by the periods at their vertices `Point-[vertices]`,
+    its fingers this far apart: each period tinted as `cell_tints` tints it, the holes' flow `Point-[simplices]`
+    streaked over it, and its contacts over all: colour `[rows, columns, 3]`."""
+    tiles = copies(vertices, finger_spacing, finger_spacing / 2, half_width)
     tints = [layer for tile in tiles for layer in cell_tints(topology, tile, dopants, generation, full_generation,
                                                              camera)]
     flows = [streaks(topology, tile, holes, reference_flow, camera) for tile in tiles]
@@ -441,13 +455,17 @@ def window_picture(topology: Topology, vertices: Extensor, dopants: Extensor, co
 @charts.style()
 def draw_cell(topology: Topology, vertices: Extensor, dopants: Extensor, contacts: list[np.ndarray],
               generation: Extensor, finger_spacing: float) -> Figure:
-    """The solar cell before anything flows: the window tiled by its periods at their vertices `Point-[vertices]`, its
-    fingers this far apart, each period tinted as `cell_tints` tints it, with its contacts."""
-    figure, axis = charts.subplots(window_width_px, window_height_px)
+    """The solar cell before anything flows: the window about the middle of a gap tiled by its periods at their
+    vertices `Point-[vertices]`, its fingers this far apart, each period tinted as `cell_tints` tints it, with its
+    contacts."""
+    mv = vertices.context.multivector
+    up = (mv.y & vertices.batch()).to_array()
+    height_px = round(window_width_px * (1 + 2 * finger_room) * np.ptp(up) / (2 * window_half_width))
+    figure, axis = charts.subplots(window_width_px, height_px)
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
     camera = framed(axis, vertices, -window_half_width, window_half_width)
     full_generation = float(generation.batch().to_array().max())
-    tiles = copies(vertices, finger_spacing, window_half_width)
+    tiles = copies(vertices, finger_spacing, finger_spacing / 2, window_half_width)
     layers = [layer for tile in tiles for layer in cell_tints(topology, tile, dopants, generation, full_generation,
                                                               camera) + cell_metal(topology, tile, contacts, camera)]
     pinned(axis, on_white(simplices.composited(layers)), (*axis.get_xlim(), *axis.get_ylim()))
@@ -468,7 +486,7 @@ def draw_period(topology: Topology, vertices: Extensor, dopants: Extensor, conta
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
     camera = framed(axis, vertices, -half, half)
     full_generation = float(generation.batch().to_array().max())
-    tiles = copies(vertices, finger_spacing, half)
+    tiles = copies(vertices, finger_spacing, 0.0, half)
     picture = simplices.composited(
         [layer for tile in tiles for layer in cell_tints(topology, tile, dopants, generation, full_generation, camera)]
         + [streaks(topology, tile, holes, reference_flow, camera) for tile in tiles]
@@ -477,13 +495,21 @@ def draw_period(topology: Topology, vertices: Extensor, dopants: Extensor, conta
     return figure
 
 
-def cell_figure() -> tuple[plt.Figure, plt.Axes, plt.Axes]:
-    """The figure of the solar cell's window, and a chart beside it."""
-    figure, (cell_axis, chart_axis) = charts.subplots(
-        window_width_px + cell_chart_px, window_height_px, ncols=2,
-        gridspec_kw=dict(width_ratios=(window_width_px, cell_chart_px)))
+def cell_figure(vertices: Extensor, half_width: float) -> tuple[plt.Figure, Camera, plt.Axes, plt.Axes]:
+    """The figure of the solar cell's window this far either way of its middle, its panel as high as the window at the
+    panel's width, the camera that draws into the panel, the panel, and a chart beside it."""
+    mv = vertices.context.multivector
+    up = (mv.y & vertices.batch()).to_array()
+    width_px = window_width_px + cell_chart_px
+    figure, (cell_axis, chart_axis) = charts.subplots(width_px, window_width_px, ncols=2,
+                                                      gridspec_kw=dict(width_ratios=(window_width_px, cell_chart_px)))
     figure.subplots_adjust(left=0.0, right=0.97, bottom=0.1, top=0.95, wspace=0.08)
-    return figure, cell_axis, chart_axis
+    # The panel keeps its shares of the figure's width and height: the figure is as high as makes the panel's height
+    # the window's at the panel's width.
+    panel = cell_axis.get_position()
+    height_px = round(width_px * panel.width * (1 + 2 * finger_room) * np.ptp(up) / (2 * half_width) / panel.height)
+    figure.set_size_inches(width_px / charts.DPI, height_px / charts.DPI)
+    return figure, framed(cell_axis, vertices, -half_width, half_width), cell_axis, chart_axis
 
 
 def current_axes(axis: plt.Axes, voltage_window: tuple[float, float], current_window: tuple[float, float],
@@ -531,17 +557,18 @@ def animate_lighting(topology: Topology, vertices: Extensor, dopants: Extensor, 
     full_generation = float(generation.batch().to_array().max())
     largest = float(full_current.to_array())
     with charts.style():
-        figure, cell_axis, curve_axis = cell_figure()
+        figure, camera, cell_axis, curve_axis = cell_figure(vertices, window_half_width)
         current_axes(curve_axis, (0.0, chart_margin * highest_bias), ((1 - chart_margin) * largest,
                                                                       chart_margin * largest), volt)
         trace, = curve_axis.plot([], [], color=lit_colour)
-        dot, = curve_axis.plot([], [], "o", color=dot_colour)
-        camera = framed(cell_axis, vertices, -window_half_width, window_half_width)
+        # The dot whole at no bias, on the chart's edge.
+        dot, = curve_axis.plot([], [], "o", color=dot_colour, clip_on=False)
         shown = pinned(cell_axis, np.ones(camera.shape + (3,)), (*cell_axis.get_xlim(), *cell_axis.get_ylim()))
         readings = []
         for share, potentials in zip(shares, states):
             shown.set_data(window_picture(topology, vertices, dopants, contacts, share * generation, full_generation,
-                                          holes_of(potentials), reference_flow, finger_spacing, camera))
+                                          holes_of(potentials), reference_flow, finger_spacing, window_half_width,
+                                          camera))
             readings.append([float(reading.to_array()) for reading in terminal_of(potentials)])
             trace.set_data(*np.transpose(readings))
             dot.set_data([readings[-1][0]], [readings[-1][1]])
@@ -555,26 +582,32 @@ def animate_spreading(topology: Topology, dopants: Extensor, contacts: list[np.n
                       finger_spacings: np.ndarray, full_power: Extensor,
                       states: Iterable[tuple[Extensor, Extensor]]) -> Iterator[np.ndarray]:
     """The solar cell at each state as it comes, its vertices and its potentials at each of these spacings of its
-    fingers `[frames]`: the window tiled by its periods, as `window_picture` draws it, the holes' flow read off the
-    state by `holes_of`; and beside it its power per length of surface `[] Scalar+` against the spacing, read off the
-    spacing and the state by `power_of`, traced as it goes, to a little past the full power `[] Scalar+`."""
+    fingers `[frames]`: the window tiled by its periods, as `window_picture` draws it, wide enough to hold the two
+    fingers beside its middle at the widest spacing, the holes' flow read off the state by `holes_of`; and beside it
+    its power per length of surface `[] Scalar+` against the spacing, read off the spacing and the state by
+    `power_of`, traced as it goes, to a little past the full power `[] Scalar+`, the most so far marked."""
     full_generation = float(generation.batch().to_array().max())
     states = iter(states)
     first = next(states)
+    half_width = spreading_room * finger_spacings[-1] / 2
     with charts.style():
-        figure, cell_axis, power_axis = cell_figure()
+        # The window's depth is the same at every spacing: the first state's vertices frame it.
+        figure, camera, cell_axis, power_axis = cell_figure(first[0], half_width)
         spacing_axes(power_axis, finger_spacings, (0.0, chart_margin * float(full_power.to_array())))
         trace, = power_axis.plot([], [], color=lit_colour)
+        # The most power so far, a ring under the dot until the power falls past it, and left at the best spacing.
+        best, = power_axis.plot([], [], "o", color=dot_colour, fillstyle="none")
         dot, = power_axis.plot([], [], "o", color=dot_colour)
-        # The window's depth is the same at every spacing: the first state's vertices frame it.
-        camera = framed(cell_axis, first[0], -window_half_width, window_half_width)
         shown = pinned(cell_axis, np.ones(camera.shape + (3,)), (*cell_axis.get_xlim(), *cell_axis.get_ylim()))
         powers = []
         for finger_spacing, (vertices, potentials) in zip(finger_spacings, chain([first], states)):
             shown.set_data(window_picture(topology, vertices, dopants, contacts, generation, full_generation,
-                                          holes_of(vertices, potentials), reference_flow, finger_spacing, camera))
+                                          holes_of(vertices, potentials), reference_flow, finger_spacing, half_width,
+                                          camera))
             powers.append(float(power_of(finger_spacing, vertices, potentials).to_array()))
             trace.set_data(finger_spacings[:len(powers)], powers)
+            most = int(np.argmax(powers))
+            best.set_data([finger_spacings[most]], [powers[most]])
             dot.set_data([finger_spacing], [powers[-1]])
             yield capture(figure)
         plt.close(figure)
@@ -583,12 +616,12 @@ def animate_spreading(topology: Topology, dopants: Extensor, contacts: list[np.n
 @charts.style()
 def draw_power(finger_spacings: np.ndarray, powers: Extensor) -> Figure:
     """The power the solar cell delivers per length of surface at each spacing of its fingers `[spacings] Scalar+`,
-    against the spacing on a logarithmic scale, the highest marked."""
+    against the spacing on a logarithmic scale, the highest marked by a ring, as the fingers' spreading marks it."""
     figure, axis = charts.subplots(*power_size)
     powers = powers.to_array().reshape(-1)                                    # [spacings]
     axis.plot(finger_spacings, powers, color=lit_colour)
     best = powers.argmax()
-    axis.plot([finger_spacings[best]], [powers[best]], "o", color=dot_colour)
+    axis.plot([finger_spacings[best]], [powers[best]], "o", color=dot_colour, fillstyle="none")
     spacing_axes(axis, finger_spacings, (0.0, chart_margin * powers.max()))
     figure.tight_layout(pad=0.4)
     return figure

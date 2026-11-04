@@ -25,8 +25,8 @@ diode = instantiate("examples.thermodynamics.semiconductor_devices.core", Algebr
 mosfet = instantiate("examples.thermodynamics.semiconductor_devices.core", Algebra("x+y+t-") * Algebra("n0p0q0l0"))
 solar_cell = instantiate("examples.thermodynamics.semiconductor_devices.core", Algebra("x+y+t-") * Algebra("n0p0q0l0"))
 # The planes that read a place along the bar, and across and up the cross-section.
-Along = diode.ga.gatype.from_blades("x")                                      # Vector+
-Upright = mosfet.ga.gatype.from_blades("x y")                                 # Vector+
+Along = diode.Plane.derive.within(Algebra("x+"))                              # Vector+
+Upright = mosfet.Plane.derive.within(Algebra("x+y+"))                         # Vector+
 
 # Silicon at room temperature: its intrinsic density, a millionth of the doping, the band gap in thermal units, 1.12 eV
 # at 300 K, the electrons' and the holes' mobilities, and the permittivity.
@@ -96,10 +96,10 @@ coarsest_cell_down, coarsest_finger = 8.0, 1.5
 n_gap_columns = 24
 # How little the last of Newton's steps changes the chemical potentials, for the solar cell.
 cell_tolerance = 1e-3
-# The fingers' spacings swept, from a few fingers' widths to several bases' depths, each the same share apart; at the
+# The fingers' spacings swept, from a few fingers' widths to three bases' depths, each the same share apart; at the
 # first spacing, the frames over which the light comes on, the bias at open circuit, in thermal units, and the frames
 # over which the bias rises to it; and how far apart the biases about each spacing's last maximum of power lie.
-finger_spacings = np.geomspace(40.0, 640.0, 50)
+finger_spacings = np.geomspace(40.0, 480.0, 50)
 n_light_frames, highest_bias, n_bias_frames, bias_step = 12, 26.15, 40, 1.5
 
 
@@ -336,7 +336,7 @@ def switching(topology: Topology, vertices: mosfet.Point, permittivities: mosfet
     raised = np.concatenate([np.zeros((len(gates), len(source))), np.repeat(drains[:, None], len(drain), 1),
                              np.zeros((len(gates), len(body))), np.repeat(gates[:, None], len(gate), 1)],
                             axis=-1)                                          # [frames, held]
-    holding = topology.reading(held)                                          # Scalar+[held <- vertices]
+    holding = topology.reading(held, 0)                                       # Scalar+[held <- vertices]
     wired = holding * neutral + (mv.t * raised).field()                       # [frames] Potentials+[held]
     dark = np.zeros(len(gates)) * mv.scalar(np.ones((topology.n_vertices, 1))).field()   # [frames] Scalar+[vertices]
     states = mosfet.run(topology, volumes, driving, outflow, permittivities, semiconductor, dopants, neutral, held,
@@ -369,7 +369,7 @@ def cell_contacts(topology: Topology, neutral: solar_cell.Potentials, contacts: 
     the back's in turn: neutral silicon's at their doping, the fingers' electric potential raised by the bias."""
     finger, back = contacts
     raised = np.concatenate([np.repeat(biases[:, None], len(finger), 1), np.zeros((len(biases), len(back)))], axis=-1)
-    return topology.reading(np.concatenate(contacts)) * neutral + (solar_cell.mv.t * raised).field()
+    return topology.reading(np.concatenate(contacts), 0) * neutral + (solar_cell.mv.t * raised).field()
 
 
 def solar_steady(topology: Topology, dopants: solar_cell.Point, neutral: solar_cell.Potentials,

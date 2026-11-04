@@ -206,7 +206,7 @@ def test_power_peaks_between_shade_and_resistance(lit_cell):
                        for finger_spacing, (vertices, potentials) in zip(finger_spacings, spread)])
     best = powers.argmax()
     assert 0 < best < len(powers) - 1
-    assert powers[0] < 0.75 * powers[best] and powers[-1] < 0.75 * powers[best]
+    assert powers[0] < 0.9 * powers[best] and powers[-1] < 0.9 * powers[best]
 
 
 def test_shadow_makes_no_pairs(lit_cell):

@@ -76,7 +76,7 @@ Scalar = ga.gatype.scalar()                                                   # 
 Point = ga.gatype.antivector()                                                # Antivector-
 Plane = ga.gatype.vector()                                                    # Vector+
 # The potentials, the electric potential along t and the carriers' chemical potentials along n and p.
-Potentials = ga.gatype.from_blades("t n p")                                   # Vector+
+Potentials = Plane.derive.within(Algebra("t-n0p0"))                           # Vector+
 # A unit of charge, along time; an electron, a unit of the electrons' count with a negative charge, and a hole, a unit
 # of the holes' count with a positive one; a unit of heat, and of the light's energy.
 time = -mv.t.dual()                                                           # [] Point-
@@ -151,7 +151,7 @@ def conductances(topology: Topology, driving: SparseExtensor, semiconductor: Sca
     map makes `(Drive+ <- Potentials+)[simplices <- vertices]`: each carrier swept along the drift a drive puts it to,
     times its mobility `[carriers]` and its density, the mean of the simplex's corners', where the simplex is
     semiconductor `Scalar+[simplices]`, one, and none where it holds no carriers."""
-    Drive = driving.cells.gatype.derive.output
+    Drive = ga.gatype(driving.cells)
     corner_mean = topology.incidence[-1, 0].mean(axis=0)                      # Scalar+[simplices <- vertices]
     densities = corner_mean * carrier_densities(potentials, intrinsic)        # [carriers] Scalar+[simplices]
     return (semiconductor * densities * mobilities * Drive.commutator(carriers).regressive(carriers)).sum(axis=0)
@@ -181,8 +181,8 @@ def run(topology: Topology, volumes: Scalar, driving: SparseExtensor, outflow: S
     changing the chemical potentials at a vertex by not much more than `limit`, until one changes none by more than
     `tolerance`; at an infinite step, the steady state."""
     corner_mean = topology.incidence[-1, 0].mean(axis=0)                      # Scalar+[simplices <- vertices]
-    holding = topology.reading(held)                                          # Scalar+[held <- vertices]
-    free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), held))   # Scalar+[free <- vertices]
+    holding = topology.reading(held, 0)                                       # Scalar+[held <- vertices]
+    free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), held), 0)   # Scalar+[free <- vertices]
     # Each vertex's cell of the semiconductor, which holds the carriers: a share of each simplex around it, one over the
     # simplex's count of corners.
     cells = ~corner_mean * (volumes * semiconductor)                          # Scalar+[vertices]
@@ -190,7 +190,7 @@ def run(topology: Topology, volumes: Scalar, driving: SparseExtensor, outflow: S
     # force a drive puts on it, and its flux is the carrier swept along that drift, the same in every direction: each
     # carrier's conductance per unit of its density, where a simplex is semiconductor. A unit of charge swept so is the
     # field's displacement.
-    Drive = driving.cells.gatype.derive.output
+    Drive = ga.gatype(driving.cells)
     drifting = Drive.commutator(carriers).regressive(carriers)                # [carriers] Flux- <- Drive+
     conducting = (semiconductor * mobilities) * drifting                      # [carriers] (Flux- <- Drive+)[simplices]
     displacement = permittivities * Drive.commutator(time).regressive(time)   # (Flux- <- Drive+)[simplices]
@@ -249,8 +249,8 @@ def terminal(topology: Topology, volumes: Scalar, driving: SparseExtensor, outfl
     conductance = conductances(topology, driving, semiconductor, potentials, intrinsic, mobilities)
     outflowing = outflow(volumes * conductance(driving(potentials)))          # Point-[vertices]
     levels = potentials & electron                                            # Scalar+[vertices]
-    rise = (topology.reading(grounded) * levels).sites.mean() - (topology.reading(raised) * levels).sites.mean()
-    return rise, -(topology.reading(grounded) * (mv.t & outflowing)).sites.sum()
+    rise = (topology.reading(grounded, 0) * levels).sites.mean() - (topology.reading(raised, 0) * levels).sites.mean()
+    return rise, -(topology.reading(grounded, 0) * (mv.t & outflowing)).sites.sum()
 
 
 def entropy_production(topology: Topology, volumes: Scalar, driving: SparseExtensor, semiconductor: Scalar,
