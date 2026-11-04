@@ -356,9 +356,9 @@ drifting = hall.inverse() * (mobilities * push)                           # [...
 carrying = (densities * drifting.regressive(parcels)).sum(axis=-1)       # [...] Flux- <- Drive+
 ```
 
-* `Drive.commutator(parcels)`, the commutator with every drive the type `Drive` holds, is a map: each carrier's push for every drive at once, charge down the electrochemical potential and entropy down the temperature, with no coefficient written out.
-* `hall.inverse() * (mobilities * push)`: a scalar plus a bivector multiplying that map turns and shortens every push by the carrier's Hall angle at once, a rotor acting on a whole map.
-* The whole push on a moving carrier is one commutator, `(magnetic + drive).commutator(parcel + valence * velocity)`, and the field's part spends no power.
+* `hall.inverse() * (mobilities * push)`: a scalar plus a bivector multiplying the push map turns every push through the carrier's Hall angle at once, a rotor acting on a whole map.
+* Reversing the field reverses each carrier's rotor, `hall.reverse()`, and turns the conductor's response into its adjugate, `responses.adjugate()`: Onsager–Casimir reciprocity as one identity between maps.
+* A carrier is one parcel, `valences * (time + entropies_per_charge * entropy)`, so Seebeck's voltage and Peltier's heat read the same entropy per charge, and Kelvin's relation holds by construction.
 
 ---
 
