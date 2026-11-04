@@ -175,10 +175,15 @@ def test_scenes_draw():
     ring_topology, ring_vertices, inner, outer = scenarios.ring()
     render.draw_conductors(bar_topology, bar_vertices, (left, right), ring_topology, ring_vertices, (inner, outer),
                            scenarios.bar_resolution, scenarios.ring_resolution)
-    for animate, topology, vertices, high, low, span, resolution in (
-            (render.animate_bars, bar_topology, bar_vertices, left, right, scenarios.length, scenarios.bar_resolution),
-            (render.animate_rings, ring_topology, ring_vertices, inner, outer, 1 - scenarios.inner_radius,
-             scenarios.ring_resolution)):
-        states = scenarios.states(topology, vertices, high, low, span, scenarios.magnetic[:1], scenarios.densities[:1])
-        frame = next(animate(topology, vertices, (high, low), scenarios.magnetic[0], resolution, states))
-        assert frame.shape[-1] == 3
+    conductors = (bar_topology, bar_vertices, (left, right), ring_topology, ring_vertices, (inner, outer),
+                  scenarios.bar_resolution, scenarios.ring_resolution)
+    # The first frame of the sweep, and the conductors in no field, where the field's patch is a point.
+    first, unturned = (next(zip(field,
+                                scenarios.states(bar_topology, bar_vertices, left, right, scenarios.length, field,
+                                                 scenarios.densities[:1]),
+                                scenarios.states(ring_topology, ring_vertices, inner, outer,
+                                                 1 - scenarios.inner_radius, field, scenarios.densities[:1])))
+                       for field in (scenarios.magnetic[:1], 0 * scenarios.magnetic[:1]))
+    for animate, frames in ((render.animate_current_driven, [first]), (render.animate_heat_driven, [first, unturned])):
+        for frame in animate(*conductors, first, frames):
+            assert frame.shape[-1] == 3

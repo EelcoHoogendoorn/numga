@@ -1,17 +1,20 @@
 """Drawing for galvanomagnetic and thermomagnetic effects: the bar and the ring with their contacts, the flux of each
-kind of carrier turned by the field, the conductors in their steady states as the carriers' balance is swept, and the
-bar's voltages against the balance as a chart.
+kind of carrier turned by the field, the bar, standing up, and the ring side by side in their steady states, both
+driven by the current or both by heat, the magnetic field between them, as the carriers' balance or the field is swept,
+and the bar's voltages against the balance as a chart.
 
-The conductors' points are read by the planes x and y and weighed by `mv.s & point`, the algebra's own projective
-weight. A conductor is tinted by its temperature, interpolated across the triangles by their corners' hats, on one
-palette: grey in equilibrium, towards red where it is warmer and towards blue where it is cooler, red and blue reached
-at the electric reach where it is driven by a current, and at its contacts' temperatures where it is driven by heat.
+The conductors' points are read by the planes x and y, turned a quarter turn for the bar standing up, and weighed by
+`mv.s & point`, the algebra's own projective weight. A conductor is tinted by its temperature, interpolated across the
+triangles by their corners' hats, on one palette: grey in equilibrium, towards red where it is warmer and towards blue
+where it is cooler, red and blue reached at the electric reach where it is driven by a current, and at its contacts'
+temperatures where it is driven by heat.
 Over the tint run the level lines of the electrochemical potential, and each kind of carrier's drift, one velocity to a
 triangle, as a texture of streaks feathered along it, the electrons' white and the holes' black, a streak as long as
-the drift there is fast against the median drift in the first state of the current-driven conductor, its ink the
+the drift there is fast against the median drift of the current-driven conductor in a reference state, its ink the
 kind's share of the carriers against the larger share, so that the more numerous kind is inked in full. The contacts
-are gold. The magnetic field, a plane of space, is a disc in that plane, beside the bar's right end and in the ring's
-hole, with an arc around its rim ending in a chevron for the sense it turns in.
+are gold. The magnetic field, a plane of space, is a disc in that plane, between the bar and the ring, its area growing
+with the field's strength, so that a field of no strength is a point, with an arc around its rim ending in a chevron
+for the sense it turns in.
 
 The fluxes are read as offsets from the origin through the planes that read charge, `mv.xt` and `mv.yt`, and through
 those that read entropy, `mv.xs` and `mv.ys`; the electric field through the planes each axis sweeps through time,
@@ -20,7 +23,6 @@ those that read entropy, `mv.xs` and `mv.ys`; the electric field through the pla
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
-from itertools import chain
 
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap, to_rgb
@@ -37,6 +39,10 @@ from examples.thermodynamics.magnetotransport import core
 Topology = simplices.Topology
 mv = core.mv
 State = tuple[np.ndarray, core.Potential, core.Spatial, core.Potential, core.Spatial]
+# A frame: the magnetic field, and the bar's state and the ring's in it; and one drive's part of a state, the densities
+# of the carriers, the potentials and each kind's velocity.
+Frame = tuple[core.Magnetic, State, State]
+Driven = tuple[np.ndarray, core.Potential, core.Spatial]
 # The conductors' colours, from cooler than equilibrium through its grey to warmer, by orange to red, and the change of
 # temperature at which they reach red and blue in a conductor driven by a current, the Ettingshausen effect's; their
 # fill at rest, their outline's colour and width, and their contacts' colour and width, in pixels.
@@ -59,19 +65,22 @@ n_levels = 6
 streak_colours = np.array([to_rgb("#f8f8f8"), to_rgb("#15181c")])
 streak_grains, streak_speck, streak_ink = np.array([20.0, 23.0]), 1.4, 1.0
 bar_streak_length, ring_streak_length = 45.0, 40.0
-# The magnetic field's disc: its colour and opacity; beside the bar, its radius in widths and its gap from the bar; in
-# the ring's hole, the share of the hole's radius its arc leaves free; its rim's arc: how far outside the disc it runs,
-# as a share of the disc's radius, where around the rim it starts, from the direction along the bar, and how far it
-# runs, as angles, its samples, its width and its chevron's strokes' length, in pixels.
+# The magnetic field's disc: its colour and opacity, and its radius in the bar's widths at the reference field; its
+# rim's arc: how far outside the disc it runs, as a share of the disc's radius, where around the rim it starts, from the
+# direction along the bar, and how far it runs, as angles, its samples, its width and its chevron's strokes' length, in
+# pixels.
 magnetic_colour, patch_opacity = np.array(to_rgb("dodgerblue")), 0.8
-patch_reach, patch_gap = 0.22, 0.2
-hole_margin = 0.15
+patch_reach = 0.22
 arc_reach = 1.25
 arc_start, arc_span = np.radians(-60.0), np.radians(240.0)
 n_arc = 32
 arc_width, arc_chevron = 1.8, 8.0
-# The pictures' room around a conductor, in its units, and the white gap between pictures set together, in pixels.
+# The pictures' room around a conductor or the field's patch, in its units, and the white gap between pictures set side
+# by side, in pixels.
 margin, gap = 0.08, 8
+# The bar's picture turned a quarter turn, so that the bar stands up it: the picture's planes x and y, turned by this
+# rotor, read along the bar up the picture and across the bar across it, the picture turned and not mirrored.
+upright = (mv.xy * (np.pi / 4)).exp()                                         # [] Rotor+
 # The turns' diagram: each panel's pixels and the readings it spans across and up, the field's colour, the arrows'
 # widths and their chevrons' strokes' length in pixels, the electrons' arrow's colour, darker than their streaks so
 # that it shows on white, the flux at compensation's colour, and the dots of the path the flux runs along as the
@@ -112,15 +121,22 @@ def tinted(temperatures: np.ndarray, reach: float) -> np.ndarray:
     return temperature_colours(np.clip(0.5 + temperatures / (2 * reach), 0, 1))[:, :3]
 
 
-def framing(vertices: core.Point, beside: float, resolution: float) -> Camera:
-    """The camera looking down on a conductor and this much room beside it, past its reach along the picture, with the
-    margin around them, at this resolution in pixels to the conductor's unit: points read by the planes x and y,
-    weighed by their weight along s."""
-    along, across = readings(mv.x, vertices), readings(mv.y, vertices)
-    low = np.array([along.min(), across.min()]) - margin
-    high = np.array([along.max() + beside, across.max()]) + margin
-    return Camera(mv.x, mv.y, 0 * mv.x, mv.s, 0.0, (low + high) / 2, (high - low) / 2,
+def framing(vertices: core.Point, across: core.Plane, up: core.Plane, resolution: float) -> Camera:
+    """The camera looking down on a conductor, its points read across the picture by the plane `across` and up it by
+    the plane `up` and weighed by their weight along s, with the margin around it, at this resolution in pixels to the
+    conductor's unit."""
+    shown = np.stack([readings(across, vertices), readings(up, vertices)], axis=-1)   # [vertices, 2]
+    low, high = shown.min(axis=0) - margin, shown.max(axis=0) + margin
+    return Camera(across, up, 0 * mv.x, mv.s, 0.0, (low + high) / 2, (high - low) / 2,
                   round((high - low)[0] * resolution))
+
+
+def patch_framing(height: int, resolution: float) -> Camera:
+    """The camera on the magnetic field's patch about the origin, its points read by the planes x and y and weighed by
+    their weight along s: as wide as the patch's arc at the reference field with the margin either side of it, and
+    `height` pixels tall, at this resolution in pixels to the bar's width."""
+    pixels = round(2 * (arc_reach * patch_reach + margin) * resolution)
+    return Camera(mv.x, mv.y, 0 * mv.x, mv.s, 0.0, np.zeros(2), np.array([pixels, height]) / (2 * resolution), pixels)
 
 
 def outline(topology: Topology, vertices: core.Point, contacts: tuple[np.ndarray, np.ndarray], camera: Camera) -> list:
@@ -131,15 +147,22 @@ def outline(topology: Topology, vertices: core.Point, contacts: tuple[np.ndarray
             simplices.strokes(points, topology.subset(on_contacts, 1), contact_colour, contact_width, camera)]
 
 
-def field_patch(centre: core.Point, magnetic: core.Magnetic, radius: float, camera: Camera) -> list:
-    """The magnetic field `[] Bivector+`, a plane of space: a disc about the centre in that plane, this radius, and an
-    arc around its rim ending in a chevron, running the way the field turns."""
-    angles = arc_start + np.linspace(0, arc_span, n_arc)                      # [arc]
-    # The rim's places, the direction along the bar turned in the field's own plane, so the arc runs the field's way.
-    turns = (magnetic.normalized() * (-angles / 2)).exp()                     # [arc] Rotor+
-    arc = centre + arc_reach * radius * (turns >> core.axis)                  # [arc] Point-
+def field_patch(centre: core.Point, magnetic: core.Magnetic, reference: core.Magnetic, radius: float,
+                camera: Camera) -> list:
+    """The magnetic field `[] Bivector+`, a plane of space, against a reference field `[] Bivector+` in that plane: a
+    disc about the centre in that plane, this radius at the reference field, its area growing with the field's strength
+    so that a field of no strength is a point, and an arc around its rim ending in a chevron, running the way the field
+    turns."""
+    # The field's share of the reference, negative where it turns the other way, and the disc's radius.
+    share = (magnetic.scalar_product(~reference) / reference.scalar_norm_squared()).to_array()
+    size = radius * np.sqrt(np.abs(share))
+    angles = np.sign(share) * (arc_start + np.linspace(0, arc_span, n_arc))   # [arc]
+    # The rim's places, the direction along the bar turned in the reference's own plane, the other way round where the
+    # field turns the other way, so the arc runs the field's way.
+    turns = (reference.normalized() * (-angles / 2)).exp()                    # [arc] Rotor+
+    arc = centre + arc_reach * size * (turns >> core.axis)                    # [arc] Point-
     ending = np.arange(n_arc - 1) == n_arc - 2                                # [arc edges]
-    return [simplices.markers(stack([centre]), magnetic_colour, radius / camera.pixel, camera, opacity=patch_opacity),
+    return [simplices.markers(stack([centre]), magnetic_colour, size / camera.pixel, camera, opacity=patch_opacity),
             simplices.strokes(arc, Topology.chains([n_arc]), magnetic_colour, arc_width, camera, chevrons=ending,
                               chevron=arc_chevron)]
 
@@ -162,6 +185,19 @@ def voltage(potentials: core.Potential, contacts: tuple[np.ndarray, np.ndarray])
     """The voltage between a conductor's contacts `Potential+[vertices]`, the first less the second."""
     values = potential_of(potentials, core.time)
     return values[contacts[0][0]] - values[contacts[1][0]]
+
+
+def row(pictures: list[np.ndarray]) -> np.ndarray:
+    """Pictures side by side `[rows, columns, 3]`, left to right, each set level with the middle of the tallest on
+    white."""
+    height = max(picture.shape[0] for picture in pictures)
+    levelled = []
+    for picture in pictures:
+        room = np.full((height, picture.shape[1], 3), 255, dtype=np.uint8)
+        above = (height - picture.shape[0]) // 2
+        room[above:above + picture.shape[0]] = picture
+        levelled.append(room)
+    return np.concatenate(levelled, axis=1)
 
 
 def layers(topology: Topology, vertices: core.Point, contacts: tuple[np.ndarray, np.ndarray],
@@ -187,26 +223,34 @@ def layers(topology: Topology, vertices: core.Point, contacts: tuple[np.ndarray,
             *outline(topology, vertices, contacts, camera)]
 
 
-def drawn(topology: Topology, vertices: core.Point, contacts: tuple[np.ndarray, np.ndarray], patch: list,
-          streak_length: float, camera: Camera, states: Iterable[State]) -> Iterator[tuple[np.ndarray, np.ndarray]]:
-    """A conductor at each state as it comes, driven by a current and by heat, each as `layers` draws it with the
-    field's patch: the current-driven one's tint reaching red and blue at the electric reach and the heat-driven one's
-    at its contacts' temperatures, its level lines splitting each drive's voltage between the contacts in the first
-    state into equal steps, and its streaks measured against the median drift in the first state driven by the
-    current."""
-    states = iter(states)
-    first = next(states)
-    _, first_electric, first_drifts, first_thermal, _ = first
-    reaches = electric_reach, abs(potential_of(first_thermal, core.entropy)[contacts[0][0]])
-    spacings = [abs(voltage(potentials, contacts)) / n_levels for potentials in (first_electric, first_thermal)]
-    reference_speed = np.median(speeds(first_drifts))
-    for densities, electric, electric_drifts, thermal, thermal_drifts in chain([first], states):
-        shares = densities / densities.max()
-        yield tuple(on_white(simplices.composited(
-            layers(topology, vertices, contacts, potentials, velocities, shares, reach, spacing, reference_speed,
-                   streak_length, camera) + patch))
-            for potentials, velocities, reach, spacing in zip((electric, thermal), (electric_drifts, thermal_drifts),
-                                                              reaches, spacings))
+def side_by_side(bar_topology: Topology, bar_vertices: core.Point, bar_contacts: tuple[np.ndarray, np.ndarray],
+                 ring_topology: Topology, ring_vertices: core.Point, ring_contacts: tuple[np.ndarray, np.ndarray],
+                 bar_resolution: float, ring_resolution: float, reference: core.Magnetic,
+                 scales: list[tuple[float, float, float]], frames: Iterable[tuple[core.Magnetic, Driven, Driven]]
+                 ) -> Iterator[np.ndarray]:
+    """The bar, standing up, and the ring side by side at each frame as it comes, each under one drive, as `layers`
+    draws it on its scales, its tint's reach, its level lines' spacing and its streaks' reference speed, the bar's
+    first; and between them the frame's magnetic field `[] Bivector+`, drawn once against the reference field `[]
+    Bivector+` about the origin of a strip as tall as the taller of them; at these resolutions in pixels to a width and
+    to an outer radius, the patch's at the bar's."""
+    bar_camera = framing(bar_vertices, upright >> mv.x, upright >> mv.y, bar_resolution)
+    ring_camera = framing(ring_vertices, mv.x, mv.y, ring_resolution)
+    patch_camera = patch_framing(max(bar_camera.shape[0], ring_camera.shape[0]), bar_resolution)
+    # Each conductor's mesh, contacts and camera, and its streaks' length at the reference speed.
+    views = ((bar_topology, bar_vertices, bar_contacts, bar_camera, bar_streak_length),
+             (ring_topology, ring_vertices, ring_contacts, ring_camera, ring_streak_length))
+    for magnetic, *driven in frames:
+        pictures = []
+        for view, (reach, spacing, reference_speed), (densities, potentials, velocities) in zip(views, scales, driven):
+            topology, vertices, contacts, camera, streak_length = view
+            shares = densities / densities.max()
+            pictures.append(on_white(simplices.composited(
+                layers(topology, vertices, contacts, potentials, velocities, shares, reach, spacing, reference_speed,
+                       streak_length, camera))))
+        bar, ring = pictures
+        patch = on_white(simplices.composited(field_patch(core.entropy, magnetic, reference, patch_reach,
+                                                          patch_camera)))
+        yield row([bar, patch, ring])
 
 
 # --- drawing --------------------------------------------------------------------------
@@ -218,43 +262,47 @@ def draw_conductors(bar_topology: Topology, bar_vertices: core.Point, bar_contac
     pictures = []
     for topology, vertices, contacts, resolution in ((bar_topology, bar_vertices, bar_contacts, bar_resolution),
                                                      (ring_topology, ring_vertices, ring_contacts, ring_resolution)):
-        camera = framing(vertices, 0.0, resolution)
+        camera = framing(vertices, mv.x, mv.y, resolution)
         fill = contours.picture(vertices.batch(), topology, np.zeros(topology.n_vertices), rest_colour, camera)
         pictures.append(on_white(simplices.composited([fill, *outline(topology, vertices, contacts, camera)])))
-    # The bar set level with the ring's middle.
-    height = pictures[1].shape[0]
-    above = (height - pictures[0].shape[0]) // 2
-    bar = np.full((height, pictures[0].shape[1], 3), 255, dtype=np.uint8)
-    bar[above:above + pictures[0].shape[0]] = pictures[0]
-    return image_figure(np.concatenate([bar, np.full((height, gap, 3), 255, np.uint8), pictures[1]], axis=1))
+    bar, ring = pictures
+    return image_figure(row([bar, np.full((1, gap, 3), 255, dtype=np.uint8), ring]))
 
 
-def animate_bars(topology: Topology, vertices: core.Point, contacts: tuple[np.ndarray, np.ndarray],
-                 magnetic: core.Magnetic, resolution: float, states: Iterable[State]) -> Iterator[np.ndarray]:
-    """The bar at each state as it comes, driven by a current above and by heat below, as `drawn` draws them, with the
-    magnetic field `[] Bivector+` beside each bar's right end, at this resolution in pixels to a width."""
-    camera = framing(vertices, patch_gap + 2 * arc_reach * patch_reach, resolution)
-    # The patch's centre, a place of unit weight beside the bar's right end, on its middle line.
-    beside = readings(mv.x, vertices).max() + patch_gap + arc_reach * patch_reach
-    patch = field_patch(core.entropy + beside * core.axis, magnetic, patch_reach, camera)
-    spacer = np.full((gap, camera.shape[1], 3), 255, dtype=np.uint8)
-    for electric, thermal in drawn(topology, vertices, contacts, patch, bar_streak_length, camera, states):
-        yield np.concatenate([electric, spacer, thermal], axis=0)
+def animate_current_driven(bar_topology: Topology, bar_vertices: core.Point,
+                           bar_contacts: tuple[np.ndarray, np.ndarray], ring_topology: Topology,
+                           ring_vertices: core.Point, ring_contacts: tuple[np.ndarray, np.ndarray],
+                           bar_resolution: float, ring_resolution: float, reference: Frame, frames: Iterable[Frame]
+                           ) -> Iterator[np.ndarray]:
+    """The bar, standing up, and the ring side by side at each frame as it comes, both driven by the current, as
+    `side_by_side` draws them on the scales of the reference frame: the tint reaching red and blue at the electric
+    reach, the level lines splitting the voltage between the contacts into equal steps, and the streaks measured
+    against the median drift."""
+    field, *conductors = reference
+    scales = [(electric_reach, abs(voltage(electric, contacts)) / n_levels, np.median(speeds(drifts)))
+              for (_, electric, drifts, _, _), contacts in zip(conductors, (bar_contacts, ring_contacts))]
+    driven = ((magnetic, *[(densities, electric, drifts) for densities, electric, drifts, _, _ in states])
+              for magnetic, *states in frames)
+    return side_by_side(bar_topology, bar_vertices, bar_contacts, ring_topology, ring_vertices, ring_contacts,
+                        bar_resolution, ring_resolution, field, scales, driven)
 
 
-def animate_rings(topology: Topology, vertices: core.Point, contacts: tuple[np.ndarray, np.ndarray],
-                  magnetic: core.Magnetic, resolution: float, states: Iterable[State]) -> Iterator[np.ndarray]:
-    """The ring at each state as it comes, driven by a current on the left and by heat on the right, as `drawn` draws
-    them, with the magnetic field `[] Bivector+` in each ring's hole, its arc reaching the hole's radius less the
-    margin, at this resolution in pixels to an outer radius."""
-    camera = framing(vertices, 0.0, resolution)
-    # The hole's radius, the inner rim's nearest vertex's distance from the ring's centre, the origin.
-    rim = topology.reading(contacts[0], 0) * vertices                            # Point-[inner]
-    hole_radius = np.hypot(readings(mv.x, rim), readings(mv.y, rim)).min()
-    patch = field_patch(core.entropy, magnetic, hole_radius * (1 - hole_margin) / arc_reach, camera)
-    spacer = np.full((camera.shape[0], gap, 3), 255, dtype=np.uint8)
-    for electric, thermal in drawn(topology, vertices, contacts, patch, ring_streak_length, camera, states):
-        yield np.concatenate([electric, spacer, thermal], axis=1)
+def animate_heat_driven(bar_topology: Topology, bar_vertices: core.Point, bar_contacts: tuple[np.ndarray, np.ndarray],
+                        ring_topology: Topology, ring_vertices: core.Point,
+                        ring_contacts: tuple[np.ndarray, np.ndarray], bar_resolution: float, ring_resolution: float,
+                        reference: Frame, frames: Iterable[Frame]) -> Iterator[np.ndarray]:
+    """The bar, standing up, and the ring side by side at each frame as it comes, both driven by heat, as
+    `side_by_side` draws them on the scales of the reference frame: the tint reaching red and blue at the contacts'
+    temperatures, the level lines splitting the voltage between the contacts into equal steps, and the streaks
+    measured against the median drift driven by the current."""
+    field, *conductors = reference
+    scales = [(abs(potential_of(thermal, core.entropy)[contacts[0][0]]), abs(voltage(thermal, contacts)) / n_levels,
+               np.median(speeds(drifts)))
+              for (_, _, drifts, thermal, _), contacts in zip(conductors, (bar_contacts, ring_contacts))]
+    driven = ((magnetic, *[(densities, thermal, drifts) for densities, _, _, thermal, drifts in states])
+              for magnetic, *states in frames)
+    return side_by_side(bar_topology, bar_vertices, bar_contacts, ring_topology, ring_vertices, ring_contacts,
+                        bar_resolution, ring_resolution, field, scales, driven)
 
 
 @charts.style()
