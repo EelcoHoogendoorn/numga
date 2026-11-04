@@ -20,6 +20,7 @@ import numpy as np
 from numga import stack
 
 from examples.thermodynamics.magnetotransport import core
+from examples.util import shapes
 from examples.util.topology import Topology
 
 mv = core.mv
@@ -87,7 +88,8 @@ def bar() -> tuple[Topology, core.Point, np.ndarray, np.ndarray, np.ndarray, np.
     minus = at(places, np.array([[middle + 0.5, -0.5], [middle, 0.5]]))
     # The places as the vertices of a mesh, each of unit weight along the entropy.
     vertices = (core.entropy + mv(core.Upright, places).dual()).field()     # Point-[vertices]
-    return Topology.triangulate(vertices), vertices, left, right, plus, minus
+    topology, _ = shapes.delaunay(places)
+    return topology, vertices, left, right, plus, minus
 
 
 def ring() -> tuple[Topology, core.Point, np.ndarray, np.ndarray]:
@@ -103,9 +105,11 @@ def ring() -> tuple[Topology, core.Point, np.ndarray, np.ndarray]:
     # Each place the direction along x turned to its angle and stretched to its circle's radius, from the centre.
     vertices = (core.entropy + radii[:, None] * (turns >> core.axis)).reshape(-1).field()   # Point-[vertices]
     inner, outer = np.arange(n_sectors), np.arange(n_sectors) + n_rings * n_sectors
-    filled = Topology.triangulate(vertices)
+    # The places read along and across, for the triangulation's one numeric step.
+    readings = (stack((mv.x, mv.y)) & vertices.batch()[..., None]).to_array().reshape(-1, 2)   # [vertices, 2]
+    filled, _ = shapes.delaunay(readings)
     in_hole = np.isin(filled.elements[2], inner).all(axis=-1)                # [faces]
-    return filled.subset(~in_hole), vertices, inner, outer
+    return filled.subset(~in_hole, 2), vertices, inner, outer
 
 
 def states(topology: Topology, vertices: core.Point, high: np.ndarray, low: np.ndarray, span: float,
@@ -130,7 +134,7 @@ def bar_readings(topology: Topology, plus: np.ndarray, minus: np.ndarray, states
     electric = stack([potentials for _, potentials, _, _, _ in states])      # [frames] Potential+[vertices]
     thermal = stack([potentials for _, _, _, potentials, _ in states])       # [frames] Potential+[vertices]
     # A voltmeter across each pair of the bar's probes: the potential at its plus probe less that at its minus probe.
-    voltmeters = topology.reading(plus) - topology.reading(minus)            # Scalar+[pairs <- vertices]
+    voltmeters = topology.reading(plus, 0) - topology.reading(minus, 0)            # Scalar+[pairs <- vertices]
     electric_voltages = (voltmeters * (electric & core.time)).batch() / current   # [frames, pairs] Scalar+
     thermal_voltages = (voltmeters * (thermal & core.time)).batch()         # [frames, pairs] Scalar+
     # Driven by heat, the differences of temperature between the probes, along the bar the upstream one the warmer.
@@ -144,7 +148,7 @@ def ring_resistances(topology: Topology, high: np.ndarray, low: np.ndarray, stat
     """The ring's resistance at each of its states `[frames] Scalar+`: driven by the current, the voltage between its
     contacts per current."""
     electric = stack([potentials for _, potentials, _, _, _ in states])      # [frames] Potential+[vertices]
-    voltmeter = topology.reading(high[:1]) - topology.reading(low[:1])       # Scalar+[1 <- vertices]
+    voltmeter = topology.reading(high[:1], 0) - topology.reading(low[:1], 0)       # Scalar+[1 <- vertices]
     return (voltmeter * (electric & core.time)).batch()[:, 0] / current
 
 

@@ -149,12 +149,12 @@ def steady(topology: Topology, areas: Scalar, gradients: Plane, response: Respon
     # The two drives at the contacts, a unit fall of the electrochemical potential and a unit fall of the temperature
     # from `high` to `low`, nothing elsewhere; and the reading of the free vertices.
     held = towards_high * stack((mv.t, mv.s)) / 2                             # [drives] Potential+[vertices]
-    free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), np.concatenate([high, low])))
+    free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), np.concatenate([high, low])), 0)
     losing = outflow(topology, areas, gradients, response)                    # (Parcel- <- Potential+)[vertices <- vertices]
     loose = free * losing * ~free                                             # (Parcel- <- Potential+)[free <- free]
     potentials = held + ~free * loose.solve(-(free * losing(held)))           # [drives] Potential+[vertices]
     # The charge entering the conductor at the high contact, what the contact's cells lose to the rest.
-    currents = mv.t & (topology.reading(high) * losing(potentials)).sites.sum()   # [drives] Scalar+
+    currents = mv.t & (topology.reading(high, 0) * losing(potentials)).sites.sum()   # [drives] Scalar+
     # Driven by a current: the fall of the potential scaled to pass it. Driven by heat: the fall of temperature, less
     # the fall of the potential that passes its current back, scaled to the difference of temperature.
     electric, thermal = potentials

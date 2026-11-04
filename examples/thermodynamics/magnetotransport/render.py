@@ -31,7 +31,7 @@ from numga import concatenate, stack
 from numga.extensor import Extensor
 from examples.util import charts
 from examples.util.wgsl import contours, flow, image_figure, simplices
-from examples.util.wgsl.camera import Camera, panel
+from examples.util.wgsl.camera import Camera, offset_panel
 from examples.thermodynamics.magnetotransport import core
 
 Topology = simplices.Topology
@@ -158,13 +158,6 @@ def speeds(velocities: core.Spatial) -> np.ndarray:
     return np.hypot(readings(mv.x, velocities), readings(mv.y, velocities))
 
 
-def arrows_view(ax, across: Extensor, up: Extensor) -> Camera:
-    """The camera of a diagram's panel, reading its arrows by the planes `across` and `up` as offsets from the origin,
-    each of unit weight, rather than as places weighed by the entropy."""
-    # The shared camera infers the weighing plane from blade names; this goes once cameras are declared by their planes.
-    return panel(ax, across, up)._replace(weight=0 * across, unit=1.0)
-
-
 def voltage(potentials: core.Potential, contacts: tuple[np.ndarray, np.ndarray]) -> float:
     """The voltage between a conductor's contacts `Potential+[vertices]`, the first less the second."""
     values = potential_of(potentials, core.time)
@@ -256,7 +249,7 @@ def animate_rings(topology: Topology, vertices: core.Point, contacts: tuple[np.n
     margin, at this resolution in pixels to an outer radius."""
     camera = framing(vertices, 0.0, resolution)
     # The hole's radius, the inner rim's nearest vertex's distance from the ring's centre, the origin.
-    rim = topology.reading(contacts[0]) * vertices                            # Point-[inner]
+    rim = topology.reading(contacts[0], 0) * vertices                            # Point-[inner]
     hole_radius = np.hypot(readings(mv.x, rim), readings(mv.y, rim)).min()
     patch = field_patch(core.entropy, magnetic, hole_radius * (1 - hole_margin) / arc_reach, camera)
     spacer = np.full((camera.shape[0], gap, 3), 255, dtype=np.uint8)
@@ -281,8 +274,8 @@ def draw_turns(drive: core.Drive, fluxes: core.Flux) -> Figure:
     compensated = (electrons + holes) / 2                                     # [] Flux-
     arrows = stack((0 * fluxes, fluxes), axis=-1).reshape(-1)                # [ends * 2] Flux-
     for ax, planes in zip(axes, ((mv.xt, mv.yt), (mv.xs, mv.ys))):
-        field_view = arrows_view(ax, core.axis & core.time, core.across & core.time)
-        flux_view = arrows_view(ax, *planes)
+        field_view = offset_panel(ax, core.axis & core.time, core.across & core.time)
+        flux_view = offset_panel(ax, *planes)
         simplices.overlay(ax, [
             simplices.strokes(stack((0 * drive, drive)), Topology.chains([2]), electric_colour, arrow_width,
                               field_view, chevrons=np.ones(1), chevron=arrow_chevron),
