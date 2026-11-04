@@ -200,7 +200,8 @@ def animate_pumping(topology: Topology, vertices: Extensor, n_across: int, perio
         pictures = []
         for share, background, wall in zip(shares, backgrounds, walls):
             # The dye takes away from the light what its colour lacks, by its share.
-            filtering = shaded(points, faces, np.zeros(len(share)), 1 - share[:, None] * (1 - pumped_colour), camera)
+            filtering = simplices.composited([
+                shaded(points, faces, np.zeros(len(share)), 1 - share[:, None] * (1 - pumped_colour), camera)])
             seen = background * (filtering[..., :3] + (1 - filtering[..., 3:]))   # [rows, columns, 3]
             opaque = np.concatenate([seen, np.ones(seen.shape[:-1] + (1,))], axis=-1)
             pictures += [on_white(simplices.composited([opaque, wall])), gap]
@@ -316,7 +317,7 @@ def animate_dyes(topology: Topology, vertices: Extensor, n_across: int, period: 
         for runs, liquid in zip(panels, liquids):
             # Each dye takes away from the light what its colour lacks, by its share.
             passing = np.clip(1 - (shares[runs, :, None] * (1 - colours[runs, None, :])).sum(axis=0), 0, 1)
-            filtering = shaded(points, faces, np.zeros(len(passing)), passing, camera)
+            filtering = simplices.composited([shaded(points, faces, np.zeros(len(passing)), passing, camera)])
             seen = liquid * (filtering[..., :3] + (1 - filtering[..., 3:]))     # [rows, columns, 3]
             opaque = np.concatenate([seen, np.ones(seen.shape[:-1] + (1,))], axis=-1)
             pictures += [on_white(simplices.composited([opaque, walls])), gap]

@@ -59,7 +59,7 @@ def disk_camera(vertices: Extensor) -> Camera:
 def rod_edge(vertices: Extensor, topology: Topology, in_rod: np.ndarray, camera: Camera):
     """The rod's edge as strokes: the border of the triangles whose corners all lie in it `[vertices]`."""
     whole = in_rod[topology.elements[2]].all(axis=-1)
-    return simplices.strokes(vertices.batch(), topology.subset(whole).border, edge_colour, edge_width, camera)
+    return simplices.strokes(vertices.batch(), topology.subset(whole, -1).border, edge_colour, edge_width, camera)
 
 
 # --- drawing --------------------------------------------------------------------------
@@ -68,7 +68,7 @@ def draw_rod(topology: Topology, vertices: Extensor, in_rod: np.ndarray) -> Figu
     camera = disk_camera(vertices)
     points = vertices.batch()
     whole = in_rod[topology.elements[2]].all(axis=-1)
-    layers = [contours.picture(points, topology.subset(whole), np.zeros(topology.n_vertices), rod_colour, camera),
+    layers = [contours.picture(points, topology.subset(whole, -1), np.zeros(topology.n_vertices), rod_colour, camera),
               simplices.strokes(points, topology, mesh_colour, mesh_width, camera),
               rod_edge(vertices, topology, in_rod, camera)]
     return image_figure(on_white(simplices.composited(layers)))

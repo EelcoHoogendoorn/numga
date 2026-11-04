@@ -18,7 +18,7 @@ from examples.util import charts
 from examples.util.animation import capture
 from examples.mechanics.stress import core
 from examples.util.wgsl import fitted, show, simplices, solids
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, offset_panel
 from examples.util.wgsl.meshes import Samples
 from examples.util.wgsl.scene import Scene
 
@@ -206,7 +206,7 @@ def draw_frames(views: tuple[core.Point, core.Point, core.Point, core.Point, cor
     for frame, ax in enumerate(cubes):
         show(ax, draw_cube(corners[frame], centres[frame], normal[frame], shear[frame], principal[frame], seen), seen)
     # Mohr's circles, and each frame's diameter in its colour.
-    camera = flat_panel(circles, core.ga)
+    camera = offset_panel(circles, core.mv.x, core.mv.y)
     simplices.overlay(circles, circles_drawn(circles, values, camera) + [
         picture for frame, colour in zip(range(count), COLOURS * count)
         for picture in diameter_drawn(diameter(normal[frame], shear[frame]), colour, camera)])
@@ -227,7 +227,7 @@ def animate_turning(values: core.Scalar, frames: Iterable[tuple[core.Point, core
         scene = Scene(seen, background, ghost(seen, turning_thickness), [], inks=[], translucent=[])
         picture = show(cube_ax, np.zeros((*seen.shape, 3), dtype=np.uint8), seen)
         draw_circles(circles, values)
-        camera = flat_panel(circles, core.ga)
+        camera = offset_panel(circles, core.mv.x, core.mv.y)
         backdrop = circles_drawn(circles, values, camera)
         diagram = simplices.overlay(circles, backdrop)
     for corners, centres, normal, shear, principal in chain([first], frames):

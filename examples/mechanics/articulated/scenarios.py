@@ -150,7 +150,7 @@ def humanoid_tree() -> tuple[core.Tree, SparseExtensor]:
     `numbers[parts <- links]`."""
     topology, carriers, _, n_generations = humanoid()
     tree = core.tree(topology, carriers[np.concatenate([capsule_bodies, capsule_bodies, sphere_bodies])], n_generations)
-    return tree, topology.reading(carriers[np.concatenate([capsule_bodies, sphere_bodies])])
+    return tree, topology.reading(carriers[np.concatenate([capsule_bodies, sphere_bodies])], 0)
 
 
 def robot() -> tuple[core.Tree, core.Robot]:

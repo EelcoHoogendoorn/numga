@@ -18,8 +18,9 @@ from matplotlib.axes import Axes
 from numga.extensor import Extensor
 from numga.gatype import GAType
 from examples.util.wgsl import Shader, meshes, pinned
-from examples.util.wgsl.camera import Camera, flat_panel, placing, reading
+from examples.util.wgsl.camera import Camera, placing, reading
 from examples.util.wgsl.library import level_lines, samples_per_side
+from examples.util.wgsl.simplices import Layer, composited
 
 Topology = meshes.Topology
 
@@ -123,17 +124,16 @@ def shader(Point: GAType, Plane: GAType) -> Shader:
 
 def picture(points: Extensor, topology: Topology, values: np.ndarray, colours: np.ndarray, camera: Camera,
             lines: tuple[Lines, ...] = (), levels: tuple[Level, ...] = (), bands: tuple[Bands, ...] = (),
-            opacity: float = 1.0) -> np.ndarray:
+            opacity: float = 1.0) -> Layer:
     """The field `[vertices]` in its colours `[vertices, 3]`, covering by `opacity`, over the mesh at its points, its
-    bands filled and its lines and levels drawn over them, in that order: `[rows, columns, 4]`, colour and coverage,
-    transparent where no triangle lies."""
+    bands filled and its lines and levels drawn over them, in that order: a layer of colour and coverage, transparent
+    where no triangle lies."""
     side = samples_per_side()
     # No faces cover nothing: a clear picture.
     if topology.n_elements[2] == 0:
         return np.zeros(camera.shape + (4,))
     lines, levels, bands = lines or (no_lines,), levels or (no_level,), bands or (no_bands,)
     starts = np.cumsum([0] + [len(band.colours) for band in bands[:-1]])
-    from examples.util.wgsl.simplices import Layer
     return Layer(shader(**reading(points, camera)), camera.shape, 3 * topology.n_elements[2], dict(
         points=points, faces=topology.elements[2],
         values=np.asarray(values, dtype=np.float32), colours=np.broadcast_to(colours, (len(values), 3)),
@@ -146,11 +146,10 @@ def picture(points: Extensor, topology: Topology, values: np.ndarray, colours: n
         band_colours=np.concatenate([band.colours for band in bands])))
 
 
-def overlay(ax: Axes, points: Extensor, topology: Topology, values: np.ndarray, colours: np.ndarray,
+def overlay(ax: Axes, points: Extensor, topology: Topology, values: np.ndarray, colours: np.ndarray, camera: Camera,
             lines: tuple[Lines, ...] = (), levels: tuple[Level, ...] = (), bands: tuple[Bands, ...] = (),
             opacity: float = 1.0):
-    """The field drawn into a panel at its own pixels, as `picture` draws it, the panel looking down on the plane of
-    the points' generators x and y; the image, for an animation to set its data."""
-    camera = flat_panel(ax, points.algebra)
-    image = picture(points, topology, values, colours, camera, lines, levels, bands, opacity)
+    """The field drawn into a panel at its own pixels, as `picture` draws it, read by the panel's camera; the image,
+    for an animation to set its data."""
+    image = composited([picture(points, topology, values, colours, camera, lines, levels, bands, opacity)])
     return pinned(ax, image, (*ax.get_xlim(), *ax.get_ylim()))

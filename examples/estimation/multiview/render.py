@@ -22,7 +22,7 @@ from numga.algebras import PGA2D
 from examples import instantiate
 from examples.util.animation import capture
 from examples.util.wgsl import contours, quadrics, simplices
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, panel
 from examples.util.wgsl.simplices import Cap, Topology
 
 # The figures draw PGA2D geometry, from above.
@@ -73,7 +73,7 @@ def canvas(x_range: tuple[float, float], y_range: tuple[float, float] = Y_RANGE)
     figure = plt.figure(figsize=(n_columns / 100, n_rows / 100), dpi=100)
     ax = figure.add_axes((0, 0, 1, 1))
     ax.set(xlim=x_range, ylim=y_range)
-    return figure, ax, flat_panel(ax, PGA2D)
+    return figure, ax, panel(ax, mv.x, mv.y, mv.w)
 
 
 def polylines(points: Point, width: float, colour: np.ndarray, opacity: float, camera: Camera,

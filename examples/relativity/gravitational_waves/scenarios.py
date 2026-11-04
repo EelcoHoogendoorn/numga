@@ -430,10 +430,9 @@ def orbits(vertices: core.Point, turns: core.Motor, n_sides: int) -> np.ndarray:
 def base_hull(steps: core.Point) -> Topology:
     """The hull of unit steps of the origin `[n] Point-`, a closed surface of triangles on them, found from their
     coordinates outside the algebra: for the decagons' base points, the icosahedron."""
-    from scipy.spatial import ConvexHull
-
     coordinates = (stack((mv.x, mv.y, mv.z)) & steps[:, None]).to_array()      # [n, 3]
-    return Topology.closed(ConvexHull(coordinates).simplices, coordinates)
+    topology, _ = shapes.convex_boundary(coordinates)
+    return topology
 
 
 def main() -> None:

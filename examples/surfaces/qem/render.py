@@ -106,7 +106,7 @@ def draw_qem(
 ) -> plt.Figure:
     """Render both endpoint neighbourhoods with their error ellipsoids alongside the collapsed mesh."""
     # The triangles drawn in each panel, each a mesh of its own on the patch's vertices.
-    star_a, star_b, collapsed = (ridge.subset(shown) for shown in (incident_a, incident_b, surviving_faces))
+    star_a, star_b, collapsed = (ridge.subset(shown, -1) for shown in (incident_a, incident_b, surviving_faces))
     vertex_a, vertex_b = vertices.batch()[:2]                                   # [] Point-, Point-
     view = solids.view([vertices.batch()], REACH, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
     return image_figure(np.concatenate([

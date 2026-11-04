@@ -88,7 +88,7 @@ def cooling(topology: Topology, areas: Scalar, gradients: Plane, cells: Scalar, 
     momentum responds to the potential's departure from `reference` `[...] Scalar+[vertices]`: nothing for a
     superconductor, whose canonical momentum has no part along z, and the potential when its superfluid formed for a
     perfect conductor, whose momentum only follows the electric field."""
-    free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), outer))   # Scalar+[free <- vertices]
+    free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), outer), 0)   # Scalar+[free <- vertices]
     # The magnetic field of a potential rising by one at each corner, through the plane its gradient sweeps along z, and
     # the potential's stiffness, Ampère's law: each field read against the vacuum's excitation of another.
     fields = gradients ^ mv.z                                                 # [..., corners] Field+[faces]
@@ -126,7 +126,7 @@ def ring_fields(topology: Topology, areas: Scalar, gradients: Plane, in_ring: np
     screening = penetration ** 2 * (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=-1).sum(axis=-1) + (
         spdiag((~corners * (ring * areas / 3)).sum(axis=-1)))                 # Scalar+[vertices <- vertices]
     on_rim = np.isin(np.arange(topology.n_vertices), rim)                     # [vertices]
-    free = topology.reading(np.flatnonzero(~(in_hole | on_rim)))              # Scalar+[free <- vertices]
+    free = topology.reading(np.flatnonzero(~(in_hole | on_rim)), 0)           # Scalar+[free <- vertices]
     hole, edge = (mv.scalar(chosen[:, None] * 1.0).field() for chosen in (in_hole, on_rim))   # Scalar+[vertices] each
     # The fields of a unit field in the hole with none at the rim, and of a unit field at the rim with none in the hole.
     units = stack([hole, edge])                                               # [2] Scalar+[vertices]

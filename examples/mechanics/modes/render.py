@@ -94,7 +94,7 @@ def _new_figure(cases: list[ModeCase], header: float, top: float, hspace: float)
 
 def _draw_mode(ax: plt.Axes, case: ModeCase, mode: int):
     """Draw one mode panel and return its phase-update function."""
-    camera = panel(ax, mv.x, mv.y)
+    camera = panel(ax, mv.x, mv.y, mv.w)
     _, rim = plate(len(case.body))
     reference = simplices.strokes(case.body, rim, GHOST, GHOST_WIDTH, camera, dashes=GHOST_DOTS)
 
@@ -157,5 +157,5 @@ def render_setup(
     ax.set_aspect("equal")
     ax.set_axis_off()
     fig.tight_layout()
-    simplices.overlay(ax, suspension(panel(ax, mv.x, mv.y), body, anchors, attachments))
+    simplices.overlay(ax, suspension(panel(ax, mv.x, mv.y, mv.w), body, anchors, attachments))
     return fig

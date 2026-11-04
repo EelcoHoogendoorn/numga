@@ -60,7 +60,7 @@ def test_boundary_integral_matches_oriented_face_area(built):
 def test_triangular_disk_has_regular_interior_and_resolved_circular_boundary(divisions: int):
     radius = 0.1
     topology, vertices = placed(shapes.triangular_disk(radius, divisions), Upright)
-    boundary, interior = topology.reading(topology.exterior[0]), topology.reading(topology.interior[0])
+    boundary, interior = topology.reading(topology.exterior[0], 0), topology.reading(topology.interior[0], 0)
     # Each vertex's degree: every edge at it, summed back onto its ends.
     degrees = ~topology.incidence[1, 0].sum(axis=0) * as_scalar(np.ones(topology.n_elements[1])).field()   # Scalar+[vertices]
     lengths = (topology.d[0] * vertices).norm().kernel[:, 0]
@@ -142,7 +142,8 @@ def test_closed_mesh_is_wound_outward_whatever_the_given_winding(built):
     # Turn a scattered half of the faces, then all of them: either way the closed mesh recovers the outward winding.
     scattered = np.where((np.arange(len(faces)) % 3 == 0)[:, None], faces[:, [1, 0, 2]], faces)
     for given in (scattered, faces[:, [1, 0, 2]]):
-        wound = Topology.closed(given, coordinates).elements[2]
+        closed, _ = shapes.closed(given, coordinates)
+        wound = closed.elements[2]
         same_corners = np.sort(wound, axis=-1) == np.sort(faces, axis=-1)
         same_sense = np.any([np.all(np.roll(faces, shift, axis=-1) == wound, axis=-1) for shift in range(3)], axis=0)
         assert same_corners.all() and same_sense.all()
@@ -232,8 +233,10 @@ def test_the_600_cell_is_its_600_tetrahedra():
     assert topology.n_elements[3] == 600
 
 
-@pytest.mark.parametrize("solid, euler, border_euler", ((shapes.ball(1, 2), 1, 2), (shapes.solid_torus(1.0, 0.3, 10, 2), 0, 0)),
-                         ids=("ball", "solid torus"))
+@pytest.mark.parametrize("solid, euler, border_euler", (
+    (shapes.ball(1, 2), 1, 2), (shapes.solid_torus(1.0, 0.3, 10, 2), 0, 0), (shapes.box([np.linspace(0.0, 1.0, 3)] * 3), 1, 2),
+    (shapes.delaunay(np.random.default_rng(0).uniform(-1.0, 1.0, (40, 3))), 1, 2)),
+    ids=("ball", "solid torus", "box", "delaunay"))
 def test_a_solids_border_is_the_surface_of_its_name(solid, euler, border_euler):
     topology, coordinates = solid
     assert topology.n_dim == 3 and topology.is_manifold and not topology.is_closed
@@ -276,7 +279,7 @@ def test_loops_close_their_runs_and_a_subset_keeps_its_vertices():
     assert truss.n_elements[1] == len(topology.interior[1])
     # A mask of the faces and the indices it picks give one topology.
     near = np.arange(topology.n_elements[2]) % 3 == 0
-    np.testing.assert_array_equal(topology.subset(near).elements[2], topology.subset(np.flatnonzero(near)).elements[2])
+    np.testing.assert_array_equal(topology.subset(near, -1).elements[2], topology.subset(np.flatnonzero(near), -1).elements[2])
 
 
 @pytest.mark.parametrize("base, path, euler", (

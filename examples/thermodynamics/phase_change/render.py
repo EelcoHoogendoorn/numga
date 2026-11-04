@@ -93,10 +93,11 @@ class Charts:
 
     def __init__(self, pressure_at: PressureAt, enthalpy_at: EnthalpyAt, coexistence_at: CoexistenceAt,
                  isobar_at: IsobarAt, temperature: float) -> None:
-        self.pressure_volume = art.Diagram(volume_range, pressure_range, (0.0, 0.0), n_rows, n_columns, ("V", "p"))
+        self.pressure_volume = art.Diagram(volume_range, pressure_range, (0.0, 0.0), n_rows, n_columns, ("V", "p"),
+                                           (art.mv.x, art.mv.y), (art.mv.w, 0.0))
         self.temperature_enthalpy = art.Diagram(enthalpy_range, temperature_range,
                                                 (enthalpy_range[0], temperature_range[0]), n_rows, n_columns,
-                                                ("H", "T"))
+                                                ("H", "T"), (art.mv.x, art.mv.y), (art.mv.w, 0.0))
         # The dome: the coexisting volumes up to the critical point, read in the algebra the states come in.
         coexisting_dome = coexistence_at(dome_sample_temperatures)
         mv = coexisting_dome.context.multivector
@@ -118,7 +119,8 @@ class Charts:
         self.isotherm_lines = isotherms(mv, pressure_at, isotherm_temperatures)     # [isotherms, samples] Point-
         # The phase diagram: the saturation curve, and lines of equal volume, straight in temperature.
         self.pressure_temperature = art.Diagram(phase_temperature_range, phase_pressure_range,
-                                                (phase_temperature_range[0], 0.0), n_rows, n_columns, ("T", "p"))
+                                                (phase_temperature_range[0], 0.0), n_rows, n_columns, ("T", "p"),
+                                                (art.mv.x, art.mv.y), (art.mv.w, 0.0))
         self.saturation_curve = concatenate([art.chart_points(temperatures, levels),
                                              art.chart_points(critical_temperature, critical_pressure)[None]])
         isochore_temperatures = np.linspace(*phase_temperature_range, 60)

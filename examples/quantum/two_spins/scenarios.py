@@ -100,9 +100,9 @@ def main() -> None:
     state, reached = singlet()
     print("Bell combination of the singlet:", reached.to_array())
     angles, first, second, bells, states = swap(N_FRAMES)
-    save_figure(render.draw_exchange(angles, bells, first, render.SPIN_PLANES), "two_spins")
+    save_figure(render.draw_exchange(angles, bells, first, render.plane_reading), "two_spins")
     planes, probability, steered, measured_states = steering(N_FRAMES, N_AROUND, N_DOWN)
-    save_animation(render.animate_steering(planes, probability, steered, render.SPIN_PLANES), "two_spins_steering", DURATION_MS)
+    save_animation(render.animate_steering(planes, probability, steered, render.plane_reading), "two_spins_steering", DURATION_MS)
     fields = np.linspace(0.0, MAX_FIELD, N_FIELDS)
     four_first, four_second = core.spin_planes(four)                           # [states] FirstPlanes+, SecondPlanes+
     energies = field_sweep(fields, EXCHANGE_RATE)                              # [fields, states] Scalar+

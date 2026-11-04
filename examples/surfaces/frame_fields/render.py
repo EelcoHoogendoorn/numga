@@ -187,7 +187,7 @@ def draw_skyrmion(topology: core.Topology, vertices: core.Point, directors: core
     rings = concentric_paths(vertices)                                        # [ribbons, samples] Point-
     # The meridians run out to the boundary vertices nearest in direction to evenly spaced turns of x about the
     # vertical.
-    rim = (topology.reading(topology.exterior[0]) * vertices).batch()         # [rim] Point-
+    rim = (topology.reading(topology.exterior[0], 0) * vertices).batch()      # [rim] Point-
     headings = (mv.xy * (-np.linspace(-np.pi, np.pi, n_meridians, endpoint=False) / 2)).exp() >> mv.x.dual()   # [meridians] Point-
     ends = rim[headings[:, None].dot(rim.normalized()[None]).argmax(axis=-1)]                                  # [meridians] Point-
     meridians = ends[:, None] * np.linspace(0, 1, n_curve_samples)            # [meridians, samples] Point-

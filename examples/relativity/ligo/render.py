@@ -15,7 +15,7 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import contours, planar, simplices
-from examples.util.wgsl.camera import Camera, flat_panel, panel
+from examples.util.wgsl.camera import Camera, offset_panel, panel
 from examples.relativity.ligo import core
 
 # Colour maps for signed responses, for sensitivities and for likeness; the colours of the sites, the
@@ -86,7 +86,7 @@ def map_camera(ax: plt.Axes) -> Camera:
     half = MAP_MARGIN * MAP_HALF
     ax.set(xlim=(-half[0], half[0]), ylim=(-half[1], half[1]), aspect="equal")
     ax.set_axis_off()
-    return flat_panel(ax, planar.ga)
+    return panel(ax, planar.mv.x, planar.mv.y, planar.mv.w)
 
 
 def sky_map(ax: plt.Axes, directions: core.Point, values: core.Scalar, cmap: str, low: float, high: float,
@@ -153,7 +153,7 @@ def draw_ring(ax: plt.Axes, site: core.Rotor, arms: core.Point, ring: core.Point
     ax.set(xlim=(-RING_LIMIT, RING_LIMIT), ylim=(-RING_LIMIT, RING_LIMIT), aspect="equal")
     ax.set_axis_off()
     # East and north at the site: the site's frame carries the planes y and z there, which the camera reads by.
-    camera = panel(ax, site >> mv.y, site >> mv.z)
+    camera = offset_panel(ax, site >> mv.y, site >> mv.z)
     # The ring at rest: the unit direction east turned all the way round through north.
     turns = (mv.yz * (-np.linspace(0, 2 * np.pi, REST_SAMPLES, endpoint=False) / 2)).exp()   # [samples] Rotor+
     rest = site >> (turns >> mv.y.dual())                                    # [samples] Point-

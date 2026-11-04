@@ -6,16 +6,18 @@ from itertools import islice
 
 import numpy as np
 
-from numga import NumpyContext, concatenate, stack
+from numga import NumpyContext, stack
 from numga.algebras import STA2D as ga
 from numga.sparse import spdiag
-from examples.util.topology import Topology
+from examples.util import shapes
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
 Bivector = ga.gatype.bivector()                                              # Bivector+
 Magnetic = Bivector.derive.within("x y")                                     # Bivector+
 Point = ga.gatype.antivector()                                               # Antivector-
+# The planes of x and of y, whose duals are the directions across and up the disk.
+Upright = ga.gatype.from_blades("x y")                                       # Vector+
 
 horizontal, vertical = mv.x.dual(), mv.y.dual()                              # [] Point-, Point-
 ribbon_step = 0.55
@@ -48,22 +50,6 @@ def single_triangle() -> Point:
     return corners
 
 
-def disk(radius: float, n_divisions: int) -> tuple[Topology, Point]:
-    """A circular disk of nearly equilateral triangles with its first vertex at the origin."""
-    spacing = radius / n_divisions
-    indices = np.arange(-n_divisions, n_divisions + 1)
-    columns, rows = np.meshgrid(indices, indices, indexing="ij")
-    layers = np.maximum.reduce((abs(columns), abs(rows), abs(columns + rows)))
-    inside = (layers > 0) & (layers <= n_divisions)
-    lattice = np.stack((columns[inside], rows[inside]), axis=-1)             # [nodes, axes]
-    unit = mv.x.dual()                                                       # [] Point-
-    axes = stack((unit, (mv.xy * (-np.pi / 6)).exp() >> unit))               # [axes] Point-
-    positions = (axes * lattice).sum(axis=-1)                                # [nodes] Point-
-    positions = spacing * layers[inside] * positions / positions.squared().square_root()  # [nodes] Point-
-    vertices = concatenate((unit[None] * 0, positions)).field()              # Point-[vertices]
-    return Topology.triangulate(vertices), vertices
-
-
 def main() -> None:
     from examples.electromagnetism.lie_advection.core import (
         Operators, advect, cartan_decomposition, edge_world_sheets,
@@ -87,7 +73,8 @@ def main() -> None:
     )
 
     # 2. Flux winding and resistive diffusion on a disk.
-    topology, vertices = disk(disk_radius, n_disk_divisions)
+    topology, coordinates = shapes.hexagonal_disk(disk_radius, n_disk_divisions)
+    vertices = mv(Upright, coordinates).dual().field()                       # Point-[vertices]
     operators = Operators(topology, vertices)
     stream = vortex_streamfunction(vertices, swirl_rate, ellipticity)        # Scalar+[vertices]
     face_velocity, fixed_sheets, comoving_sheets = edge_world_sheets(operators, stream)  # Point-[faces], Patch-[edges], Patch-[edges]

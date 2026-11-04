@@ -12,7 +12,7 @@ from examples.util import charts
 from examples.mechanics.crystal_waves import core
 from examples.mechanics.crystal_waves.scenarios import MODES
 from examples.util.wgsl import pinned, room, simplices
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, offset_panel
 
 MODE_COLOURS = ("#c0392b", "#2e86c1", "#7d3c98")
 CROSS_COLOUR, LABEL_COLOUR = "0.85", "0.4"
@@ -87,7 +87,7 @@ def draw_wave_fronts(velocities: core.Vector, names: list[str]) -> plt.Figure:
                for mode, colour in zip(MODES, MODE_COLOURS)]
     figure.legend(handles=handles, loc="outside lower center", ncol=len(MODES), frameon=False)
     for ax, velocity, limit in zip(np.atleast_1d(row), velocities, limits):
-        camera = flat_panel(ax, core.ga)
+        camera = offset_panel(ax, core.mv.x, core.mv.y)
         # Small dots, so that the sampled headings read as curves, each wave over the slower ones.
         simplices.overlay(ax, [cross_drawn(limit, camera)] + [
             simplices.markers(velocity[:, mode], np.array(to_rgb(colour)), DOT_PX / 2, camera)

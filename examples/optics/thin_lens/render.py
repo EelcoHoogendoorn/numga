@@ -83,7 +83,7 @@ def draw_lenses(subject: Point, imaging: Line, image: Crossing, focusing: Line, 
     for ax in axes:
         ax.autoscale_view()
     for ax, (legs, elements) in zip(axes, drawn):
-        camera = panel(ax, mv.x, mv.y)
+        camera = panel(ax, mv.x, mv.y, mv.w)
         simplices.overlay(ax, [simplices.strokes(*leg, to_rgb(colour), ray_width, camera) for leg, colour in legs]
                           + [simplices.strokes(*element, plane_colour, plane_width, camera) for element in elements])
     return fig
@@ -137,7 +137,8 @@ def animate_train(states) -> Iterator[np.ndarray]:
     ax.set_xlim(-1.3, 4.7); ax.set_ylim(-1.5, 3.2); ax.set_aspect("equal")
     states = iter(states)
     first = next(states)
-    camera = panel(ax, first[0].context.multivector.x, first[0].context.multivector.y)
+    mv = first[0].context.multivector
+    camera = panel(ax, mv.x, mv.y, mv.w)
     image = simplices.overlay(ax, [scene(camera, *first)])
     yield capture(fig)
     for state in states:

@@ -120,7 +120,7 @@ def band(topology: Topology, rest: Point, held: np.ndarray, material: Elastic, s
     areas, gradients = triangles(topology, rest)
     corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
     corner_mean = corners.mean(axis=0)                                        # Scalar+[faces <- vertices]
-    free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), held))
+    free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), held), 0)
     # Each corner's hat owns a third of its triangle: its cell and its mass.
     cells = ~corner_mean * areas                                              # Scalar+[vertices]
     masses = ~corner_mean * (densities * areas)                               # Scalar+[vertices]

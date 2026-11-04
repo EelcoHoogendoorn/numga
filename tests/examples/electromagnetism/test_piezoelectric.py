@@ -111,8 +111,8 @@ def test_actuation_and_short_circuit_sensing_are_reciprocal(device):
     fixed = np.array([], dtype=int)
     actuator, _, _ = solve(topology, blocks, VOLTAGE, 0, fixed)
     _, _, sensor_charge = solve(topology, blocks, 0, FORCE, fixed)
-    tip = topology.reading(topology.tip)
-    top = topology.reading(topology.top)
+    tip = topology.reading(topology.tip, 0)
+    top = topology.reading(topology.top, 0)
     weights = np.ones(len(topology.tip))
     weights[[0, -1]] = 0.5
     tip_motion = ((core.mv.y & (tip * actuator)) * core.mv.scalar(weights[:, None]).field()).sites.sum() / weights.sum()
@@ -129,21 +129,21 @@ def test_floating_electrode_is_equipotential_and_conserves_charge(device):
     n_vertices = topology.n_vertices
     interior = np.setdiff1d(np.arange(n_vertices), np.concatenate((topology.bottom, topology.top)))
     free = np.setdiff1d(np.arange(n_vertices), topology.clamped)
-    top = topology.reading(topology.top)
+    top = topology.reading(topology.top, 0)
     voltage = (top * potential).sites.mean()
 
     assert np.abs(voltage.kernel).max() > 1e-6
     np.testing.assert_allclose((top * potential - voltage).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose((topology.reading(topology.bottom) * potential).kernel, 0, atol=1e-12)
+    np.testing.assert_allclose((topology.reading(topology.bottom, 0) * potential).kernel, 0, atol=1e-12)
     np.testing.assert_allclose((core.mv.scalar([1]) & (top * charges)).sites.sum().kernel, 0, atol=1e-11)
-    np.testing.assert_allclose((topology.reading(interior) * charges).kernel, 0, atol=1e-11)
+    np.testing.assert_allclose((topology.reading(interior, 0) * charges).kernel, 0, atol=1e-11)
     np.testing.assert_allclose(charges.sites.sum().kernel, 0, atol=1e-11)
 
     # The clamp carries the applied force; all other nodes are in mechanical equilibrium.
     load = core.tip_load(topology, FORCE)
     reaction = mechanical(displacement) + coupling(potential) - load
-    np.testing.assert_allclose((topology.reading(free) * reaction).kernel, 0, atol=1e-11)
-    np.testing.assert_allclose((topology.reading(topology.clamped) * displacement).kernel, 0, atol=1e-12)
+    np.testing.assert_allclose((topology.reading(free, 0) * reaction).kernel, 0, atol=1e-11)
+    np.testing.assert_allclose((topology.reading(topology.clamped, 0) * displacement).kernel, 0, atol=1e-12)
     np.testing.assert_allclose((reaction.sites.sum() + load.sites.sum()).kernel, 0, atol=1e-11)
 
 
@@ -205,7 +205,7 @@ def test_refinement_approaches_the_slender_bimorph_response(material):
         areas, gradients = core.triangles(topology, vertices)
         blocks = core.assemble(topology, areas, gradients, *material, poling, WIDTH)
         displacement, _, _ = solve(topology, blocks, VOLTAGE, 0, np.array([], dtype=int))
-        tip = topology.reading(topology.tip)
+        tip = topology.reading(topology.tip, 0)
         weights = np.ones(len(topology.tip))
         weights[[0, -1]] = 0.5
         tip_motion = ((core.mv.y & (tip * displacement)) * core.mv.scalar(weights[:, None]).field()).sites.sum() / weights.sum()

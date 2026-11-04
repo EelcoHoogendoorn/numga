@@ -7,8 +7,11 @@ with the plane at infinity; in a vector algebra, or a chart whose generators are
 from the origin, its weight one; another plane gives a central projection, such as a view of the three-sphere along w.
 The regressive product needs no metric, so the reading is the same in every signature: one shader source, compiled per
 algebra, reads points of a projective plane or space, a vector space or spacetime alike, and the scene is never carried
-into another algebra to be drawn. A planar picture reads by the planes x and y; a spacetime diagram by x and t; a view
-of space by planes a motor turns.
+into another algebra to be drawn. Whoever draws names the planes, the one that weighs a point included, since neither
+an algebra's names nor its signature say which plane does what: the one degenerate generator of a joint algebra may
+carry an amount, such as entropy, rather than weigh points. A picture of a projective plane reads by
+`panel(ax, mv.x, mv.y, mv.w)`; a spacetime diagram, its events offsets of weight one, by `offset_panel(ax, mv.x, mv.t)`;
+a view of space by planes a motor turns.
 """
 from __future__ import annotations
 
@@ -99,37 +102,26 @@ def preimage(camera: Camera, Point: GAType) -> tuple[Extensor, Extensor, Extenso
     return origin, across, up, toward
 
 
-def plane(algebra, name: str) -> Extensor:
-    """The plane of a generator of an algebra, by its name, the reading along that generator."""
-    from numga import NumpyContext
-    return getattr(NumpyContext(algebra).multivector, name)
-
-
-def weighing(across: Extensor) -> tuple[Extensor, float]:
-    """A point's weight, read by planes like `across`, as a plane and a constant: the pairing with the plane at infinity
-    where one generator alone of the planes' algebra is degenerate, as in a projective algebra; one where none is, or
-    all are, as in a vector algebra or a chart."""
-    algebra = across.algebra
-    degenerate = [name for name, square in zip(algebra.basis_names, algebra.signature) if square == 0]
-    if len(degenerate) == 1 and len(algebra.signature) > 1:
-        return plane(algebra, degenerate[0]), 0.0
-    return 0 * across, 1.0
-
-
-def panel(ax: Axes, across: Extensor, up: Extensor) -> Camera:
-    """The camera of a matplotlib panel, reading its points by the planes `across` and `up`, weighed as their algebra
-    weighs points, its limits the readings it spans, as many pixels across as the panel's room holds."""
+def limits(ax: Axes) -> tuple[np.ndarray, np.ndarray]:
+    """The readings across and up at the middle of a matplotlib panel's limits, and half its width and height in
+    them."""
     left, right = ax.get_xlim()
     bottom, top = ax.get_ylim()
-    weight, unit = weighing(across)
-    camera = Camera(across, up, 0 * across, weight, unit, np.array([left + right, bottom + top]) / 2,
-                    np.array([right - left, top - bottom]) / 2, 300)
-    return fitted(camera, ax)
+    return np.array([left + right, bottom + top]) / 2, np.array([right - left, top - bottom]) / 2
 
 
-def flat_panel(ax: Axes, algebra) -> Camera:
-    """The camera of a panel looking down on the plane of an algebra's generators x and y."""
-    return panel(ax, plane(algebra, "x"), plane(algebra, "y"))
+def panel(ax: Axes, across: Extensor, up: Extensor, weight: Extensor) -> Camera:
+    """The camera of a matplotlib panel reading its points by the planes `across` and `up` over their weight, their
+    pairing with the plane `weight`, such as a projective algebra's plane at infinity; its limits the readings it spans,
+    as many pixels across as the panel's room holds."""
+    return fitted(Camera(across, up, 0 * across, weight, 0.0, *limits(ax), 300), ax)
+
+
+def offset_panel(ax: Axes, across: Extensor, up: Extensor) -> Camera:
+    """The camera of a matplotlib panel reading its points by the planes `across` and `up`, each point an offset from
+    the origin of weight one, as a vector algebra's points are; its limits the readings it spans, as many pixels across
+    as the panel's room holds."""
+    return fitted(Camera(across, up, 0 * across, 0 * across, 1.0, *limits(ax), 300), ax)
 
 
 def extrinsic_first(Plane: GAType) -> bool:

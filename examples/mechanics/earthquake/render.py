@@ -15,7 +15,7 @@ from numga import concatenate, stack, where
 from examples.util.animation import capture
 from examples.mechanics.earthquake import core
 from examples.util.wgsl import compose, contours, fitted, meshes, show, simplices, solids
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, offset_panel
 
 # Pushes shaded, pulls left white; the nodal lines, the pressure and tension axes, the slip.
 PUSH, PULL = "#1e293b", "#f8fafc"
@@ -101,7 +101,7 @@ def pin_ball(ax, places: core.Point, grid: contours.Topology, push: core.Scalar,
              axes: core.Point) -> tuple[AxesImage, Camera]:
     """The beachball pinned in its panel, once the figure is laid out; the image and its camera, for an animation to
     set its data."""
-    view = flat_panel(ax, core.ga)
+    view = offset_panel(ax, core.mv.x, core.mv.y)
     return simplices.overlay(ax, ball_pictures(places, grid, push, axes, view)), view
 
 

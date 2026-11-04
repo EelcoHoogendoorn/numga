@@ -13,7 +13,7 @@ from numga import stack
 from examples.quantum.graphene import core
 from examples.util import charts
 from examples.util.wgsl import contours, fitted, flow, meshes, pinned, room, show, simplices, solids
-from examples.util.wgsl.camera import Camera, panel
+from examples.util.wgsl.camera import Camera, offset_panel
 
 COLOURS = ("#2e86c1", "#7d3c98", "#c0392b", "#d68910")
 # The size of the names on the bands' chart, in points.
@@ -88,7 +88,7 @@ def draw_field(momenta: core.Wavevector, field: core.Field) -> plt.Figure:
     readings = stack((mv.x.dual(), mv.y.dual()))[:, None] & places              # [2, samples] Scalar+
     limits = stack((readings.min(axis=-1), readings.max(axis=-1)), axis=-1).to_array()
     ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
-    camera = panel(ax, mv.x.dual(), mv.y.dual())
+    camera = offset_panel(ax, mv.x.dual(), mv.y.dual())
     colours = plt.get_cmap("viridis")(strength / strength.max())[:, :3]
     simplices.overlay(ax, [contours.picture(places, topology, strength, colours, camera)]).set_zorder(1)
     simplices.overlay(ax, [flow.layer(places, topology, directions, camera, 1.0, FIELD_STREAK_COLOUR)]).set_zorder(2)
@@ -182,7 +182,7 @@ def draw_textures(pseudospins_at: Callable[[core.Wavevector], core.Pseudospin], 
         pinned(ax, np.round(colours * 255).astype(np.uint8), (-extent, extent, -extent, extent))
         ax.set(xlim=(-extent, extent), ylim=(-extent, extent))
         # The momenta read by the displacements along x and y.
-        camera = panel(ax, core.mv.x.dual(), core.mv.y.dual())
+        camera = offset_panel(ax, core.mv.x.dual(), core.mv.y.dual())
         # The part in the plane as streaks running downstream, as long as that part: specks where the pseudospin
         # stands along z.
         simplices.overlay(ax, [flow.layer(places, topology, drawn.reshape(-1), camera, 1.0, STREAK_COLOUR)]).set_zorder(2)
