@@ -61,7 +61,8 @@ fn sample(place: vec2<f32>) -> Sample {
     }
     // The direction under the pixel: the sphere's point in the camera's frame, turned out.
     let direction = turn >> (foot + mv.z.dual() * sqrt(1 - squared));
-    let power = rotary(direction, direction) / limit;
+    // The rotary power, handed, read as the number it is in the frame's own sense for the colour table.
+    let power: f32 = rotary(direction, direction) / limit;
     let entries = f32(textureDimensions(colours).x);
     let colour = textureSampleLevel(colours, filtered, vec2<f32>(((power + 1) / 2 * (entries - 1) + 0.5) / entries, 0.5), 0.0).rgb;
     // The sphere's normal is the direction itself; the glint where it bisects the lamp and the viewer.

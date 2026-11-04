@@ -97,10 +97,10 @@ fn cover(distance: f32) -> f32 {
 }
 
 // The share of a pixel a line `width` across the view covers about where a value vanishes, from the value at a point
-// and its change as the point steps right and up across the view: the value over that change is how far across the
-// view the point lies from the line.
-fn ink(value: f32, change: Plane, width: f32) -> f32 {
-    return cover(width / 2 - abs(value) / change.norm());
+// and the size of its change as the point steps right and up across the view: the value over that size is how far
+// across the view the point lies from the line.
+fn ink(value: f32, change: f32, width: f32) -> f32 {
+    return cover(width / 2 - abs(value) / change);
 }
 
 // The oval's ink at a seen point: where the form `point & conic(point)` vanishes, its gradient twice the polar, on
@@ -108,7 +108,7 @@ fn ink(value: f32, change: Plane, width: f32) -> f32 {
 fn oval(seen: Seen) -> f32 {
     let polar = conic(seen.point);
     let change = 2 * (right.dual_inverse() * (polar & seen.rightward) + up.dual_inverse() * (polar & seen.upward));
-    return select(0.0, ink(seen.point & polar, change, oval_width), seen.point.dot(centre) > 0);
+    return select(0.0, ink(seen.point & polar, change.norm(), oval_width), seen.point.dot(centre) > 0);
 }
 
 // The share of a pixel a disc about a place covers at a point of the sphere, round on the screen: by their offset
@@ -166,7 +166,7 @@ fn side(beneath: vec3<f32>, seen: Seen) -> vec3<f32> {
         let arc = arcs[index];
         let circle = arc.start & arc.end;
         let between = ((arc.start & point) | circle) > 0 && ((point & arc.end) | circle) > 0;
-        let line = ink(circle & point, right.dual_inverse() * (circle & seen.rightward) + up.dual_inverse() * (circle & seen.upward), geodesic_width);
+        let line = ink(circle & point, (right.dual_inverse() * (circle & seen.rightward) + up.dual_inverse() * (circle & seen.upward)).norm(), geodesic_width);
         colour = mix(colour, arc.colour, select(0.0, line, between));
     }
     // Where the form vanishes: the oval on the centre's side, and across it the antipodal loop in dashes, by the
@@ -174,8 +174,8 @@ fn side(beneath: vec3<f32>, seen: Seen) -> vec3<f32> {
     let spoke = centre & point;
     let reference = centre & toward;
     let dash = fract(atan2((spoke ^ reference) | centre, spoke | reference) * dashes_per_turn) < 0.5;
-    let twin = select(0.0, antipode_opacity * ink(form, change, antipode_width), dash);
-    colour = mix(colour, oval_colour, select(twin, ink(form, change, oval_width), point.dot(centre) > 0));
+    let twin = select(0.0, antipode_opacity * ink(form, change.norm(), antipode_width), dash);
+    colour = mix(colour, oval_colour, select(twin, ink(form, change.norm(), oval_width), point.dot(centre) > 0));
     // The marks, each over a darker rim.
     for (var index = 0u; index < arrayLength(&marks); index++) {
         let mark = marks[index];
@@ -244,7 +244,7 @@ fn side(beneath: vec3<f32>, seen: Seen) -> vec3<f32> {
     for (var index = 0u; index < arrayLength(&circles); index++) {
         let circle = circles[index];
         let change = right.dual_inverse() * (circle.plane & seen.rightward) + up.dual_inverse() * (circle.plane & seen.upward);
-        colour = mix(colour, circle.colour, circle.opacity * ink(circle.plane & point, change, circle_width));
+        colour = mix(colour, circle.colour, circle.opacity * ink(circle.plane & point, change.norm(), circle_width));
     }
     colour = mix(colour, oval_colour, oval(seen));
     for (var index = 0u; index < arrayLength(&arrows); index++) {
@@ -277,7 +277,7 @@ fn side(beneath: vec3<f32>, seen: Seen) -> vec3<f32> {
     var colour = mix(beneath, sheet_colour * lit(point), sheet_opacity);
     for (var index = 0u; index < arrayLength(&levels); index++) {
         let level = levels[index];
-        colour = mix(colour, level.colour, ink((point & polar) - level.value, change, polhode_width));
+        colour = mix(colour, level.colour, ink((point & polar) - level.value, change.norm(), polhode_width));
     }
     return mix(colour, oval_colour, oval(seen));
 }

@@ -12,7 +12,7 @@ import numpy as np
 from numga import stack
 
 from examples import instantiate
-from examples.relativity.closed_universe import core
+from examples.relativity.gravitational_waves import core
 from examples.util import shapes
 from examples.util.topology import Topology
 
@@ -438,7 +438,7 @@ def base_hull(steps: core.Point) -> Topology:
 
 def main() -> None:
     from examples.util.animation import save_animation
-    from examples.relativity.closed_universe import render
+    from examples.relativity.gravitational_waves import render
 
     cell_mesh, cell_vertices = six_hundred_cell()
     pick = core.picking(cell_mesh, cell_vertices)
@@ -450,16 +450,16 @@ def main() -> None:
     save_animation(render.polygon_view(round_walk, cell_walk_values, cell_mesh, cell_vertices,
                                        flight(facing(core.frame(axis_point), axis_direction, side_direction)),
                                        great_circles(cell_mesh, cell_vertices)),
-                   "closed_universe_flight", duration_ms)
+                   "gravitational_waves_flight", duration_ms)
     save_animation(render.helix_view(round_walk, cell_walk_values, cell_mesh, cell_vertices,
                                      pan(axis_point, axis_direction, side_direction), rails),
-                   "closed_universe_helix", duration_ms)
+                   "gravitational_waves_helix", duration_ms)
     # The irregular mesh, flown through straight ahead from the middle of its first tetrahedron.
     irregular_mesh, irregular_vertices = irregular_three_sphere()
     middle = (irregular_mesh.incidence[3, 0].mean(axis=0) * irregular_vertices).batch()[0].normalized()   # [] Point-
     save_animation(render.plain_view(round_walk, render.round_values(irregular_mesh, irregular_vertices),
                                      irregular_mesh, irregular_vertices, flight(core.frame(middle))),
-                   "closed_universe_irregular", duration_ms)
+                   "gravitational_waves_irregular", duration_ms)
 
     # checks
     # The stepped waves have no growing mode, the squash is their slowest, a fiftieth short of the continuum's eight on
@@ -491,7 +491,7 @@ def pinned() -> None:
     """The pictures the repository tracks: the quadrupole travelling round the base below the Hopf circles, for the
     gallery, and the waves seen from inside, for the README."""
     from examples.util.animation import pin_animation
-    from examples.relativity.closed_universe import render
+    from examples.relativity.gravitational_waves import render
 
     cell_mesh, cell_vertices = six_hundred_cell()
     pick = core.picking(cell_mesh, cell_vertices)
@@ -501,19 +501,21 @@ def pinned() -> None:
     sphere_mesh, sphere_points = base_sphere()
     pin_animation((render.base_view(sphere_mesh, sphere_points, bases, *frame)
                    for frame in quadrupole_frames(pick, quadrupole, quadrupole_frequency, turn, bases, sphere_points)),
-                  "closed_universe_quadrupole", duration_ms, colors=n_quadrupole_colours)
+                  "gravitational_waves_quadrupole", duration_ms, colors=n_quadrupole_colours)
 
-    # The squash, stretching space along x and squeezing it along y in the frames, alone; seen from the eye, whose
-    # light at each frame left the crystals their distance before.
+    # The squash, stretching space along x and squeezing it along y in the frames, alone; seen from the eye, each ray
+    # meeting the crystals as they were when its light passed, from moments kept a step of the stored waves apart from
+    # half a turn before the first frame, the farthest a ray runs back; drawn without the grey edges, for the file's size.
     squashing = squash(cell_mesh, cell_vertices, stack((mv.x,)), stack((mv.y,)))   # [patterns] Scalar+[edges]
     waves, frequency = stepped_history(cell_mesh, cell_vertices, squashing, squash_lags, wave_swing, 0.0)
     eye_times = np.arange(n_wave_frames) * 2 * np.pi / frequency / n_wave_frames   # [frames]
+    kept_times = np.arange(eye_times[0] - np.pi, eye_times[-1] + waves.level_step, waves.level_step)   # [kept]
     bonds, atoms = crystals(crystal_places())
-    states = crystal_states(pick, waves, frequency, bonds, atoms, eye_times - crystal_distance)
+    states = crystal_states(pick, waves, frequency, bonds, atoms, kept_times)
     pin_animation(render.waves_view(core.wave_walk_source, render.wave_values(cell_mesh, waves), cell_mesh,
                                     cell_vertices, eye, eye_times, guardrails(cell_vertices, n_guardrail_sides),
-                                    bonds, atoms, states),
-                  "closed_universe_inside", duration_ms)
+                                    bonds, kept_times, states, render.wave_ghost_share),
+                  "gravitational_waves_inside", duration_ms)
 
 
 if __name__ == "__main__":

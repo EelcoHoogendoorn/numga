@@ -7,7 +7,10 @@ Antivector)`. Operators bind as they do in Python. Every nullary or unary type l
 coefficients, and every operation on such values to a function whose body is numga's own: numga
 evaluates the operation once over coefficients that are polynomials in the operands' coefficients, and
 the polynomials are the function. Values known when the shader compiles, blades, types and module
-constants, fold into those functions as numbers. `f32` is the algebra's scalar. A struct whose members
+constants, fold into those functions as numbers. A scalar of either orientation is an `f32`, the number it is,
+stored against plus one; it keeps its orientation while the shader computes with it in the algebra, so that a
+plane joined from points over their join with a fourth, `facet / (facet & corner)`, is extrinsic as numga makes it,
+and is taken as a plain number by WGSL's own functions and comparisons and where an `f32` is stored. A struct whose members
 are values of the algebra, numbers or vectors of numbers adds, subtracts and scales member by member, as
 a state of an integrator does, or the light a pixel's samples average.
 
@@ -36,6 +39,7 @@ from typing import Any, Callable, Mapping
 
 import numpy as np
 
+from numga import Orientation
 from numga.backend.context import Context
 from numga.backend.numpy import NumpyContext
 from numga.extensor import Extensor
@@ -662,7 +666,7 @@ def template(text: str) -> tuple[str, list[str]]:
 class Value:
     """An expression's WGSL text and type, and, for one known when the shader compiles, its value.
 
-    The type is a GAType, the algebra's scalar standing for f32, or the text of any other WGSL type.
+    The type is a GAType, a scalar of either orientation standing for f32, or the text of any other WGSL type.
     A value known at compile time is an Extensor, or a number of type `abstract`; it has text only when
     it is a number."""
     text: str | None
@@ -728,14 +732,18 @@ class Compiler:
         self.given = constants
         self.context = SymbolicContext(algebra)
         self.scalar = algebra.gatype.scalar()
+        # The scalar of each orientation, an f32 at run time either way, stored against plus one.
+        self.scalars = {Orientation.extrinsic: self.scalar,
+                        Orientation.intrinsic: algebra.gatype(algebra.subspace.scalar(), orientation=Orientation.intrinsic)}
         self.names = {}                                                         # dict[GAType, str]
         self.types = {"f32": self.scalar}                                       # dict[str, GAType]
         self.aliases = []                                                       # list[str]
         self.native_aliases = {}                                                # dict[str, str]
         for name, gatype in types.items():
-            self.types[name] = gatype
-            if gatype == self.scalar:
+            if self.is_number(gatype):
+                self.types[name] = self.number_type(gatype)
                 continue
+            self.types[name] = gatype
             if gatype in self.names:
                 self.aliases.append(f"alias {name} = {self.names[gatype]};")
             else:
@@ -773,7 +781,7 @@ class Compiler:
     def wgsl(self, kind: Any) -> str:
         """The WGSL name of a type, naming a struct for a type of the algebra the shader never named."""
         if isinstance(kind, GAType):
-            if kind == self.scalar:
+            if self.is_number(kind):
                 return "f32"
             if kind not in self.names:
                 self.names[kind] = f"GA{len(self.names)}"
@@ -787,7 +795,15 @@ class Compiler:
         return isinstance(kind, GAType)
 
     def is_scalar(self, value: Value) -> bool:
-        return value.type == self.scalar or value.type == _ABSTRACT
+        return value.type == _ABSTRACT or self.is_number(value.type)
+
+    def is_number(self, kind: Any) -> bool:
+        """A type of the algebra that is a number at run time: a scalar of either orientation."""
+        return isinstance(kind, GAType) and kind.arity == 0 and kind.is_scalar
+
+    def number_type(self, kind: GAType) -> GAType:
+        """The scalar of a scalar type's orientation, as the shader holds it, stored against plus one."""
+        return self.scalars[kind.orientation]
 
     def is_state(self, kind: Any) -> bool:
         """A struct that adds and scales member by member: its members values of the algebra, or numbers
@@ -861,15 +877,22 @@ class Compiler:
         if isinstance(value, Extensor):
             value = self.context.lower(value)
             if value.gatype.is_scalar and value.gatype.arity == 0:
-                return Value(None, _ABSTRACT, float(np.asarray(self.as_scalar(value).kernel).ravel()[0]))
+                number = self.as_scalar(value)
+                if number.gatype == self.scalar:
+                    return Value(None, _ABSTRACT, float(np.asarray(number.kernel).ravel()[0]))
+                return Value(None, number.gatype, number)
             return Value(None, value.gatype, value)
         return Value(literal(value), _ABSTRACT, float(value))
 
     def as_scalar(self, value: Extensor) -> Extensor:
-        """A scalar of either orientation as the number it is, an `f32`: one stored against minus one
+        """A scalar as the number it is, an `f32`, in its own orientation: one stored against minus one
         restated against plus one."""
         sign = -1 if value.gatype.is_reoriented_scalar else 1
-        return self.context.extensor(self.scalar, sign * np.asarray(value.kernel))
+        return self.context.extensor(self.number_type(value.gatype), sign * np.asarray(value.kernel))
+
+    def number(self, value: Value) -> float:
+        """The number a scalar known when the shader compiles is, of either orientation."""
+        return value.constant if value.type == _ABSTRACT else float(np.asarray(value.constant.kernel).ravel()[0])
 
     def text(self, value: Value) -> str:
         """WGSL for a value, spelling out a compile-time one as its coefficients."""
@@ -892,7 +915,7 @@ class Compiler:
         shape = tuple(len(subspace) for subspace in kind.subspaces)
         kernel = np.empty(shape, dtype=object)
         for index, position in enumerate(np.ndindex(shape)):
-            kernel[position] = Polynomial.variable(name if kind == self.scalar else f"{name}.c{index}")
+            kernel[position] = Polynomial.variable(name if self.is_number(kind) else f"{name}.c{index}")
         return self.context.extensor(kind, kernel)
 
     def operation(self, label: str, compute: Callable, operands: list[Value], line: int) -> Value:
@@ -928,7 +951,7 @@ class Compiler:
                                    for index, operand in enumerate(operands) if operand.text is not None)
             components = [polynomial_text(Polynomial.lift(c) if not isinstance(c, Polynomial) else c)
                           for c in np.asarray(result.kernel).ravel()]
-            body = components[0] if kind == self.scalar else (
+            body = components[0] if self.is_number(kind) else (
                 f"{self.wgsl(kind)}(\n        " + ",\n        ".join(components) + ")")
             code = f"fn {name}({parameters}) -> {self.wgsl(kind)} {{\n    return {body};\n}}\n"
             self.helpers[key] = (name, code, kind)
@@ -942,12 +965,16 @@ class Compiler:
         if target is None or value.type == target:
             return self.text(value)
         if isinstance(target, GAType):
-            if value.type == _ABSTRACT and target == self.scalar:
-                return self.text(value)
+            if self.is_number(target) and self.is_scalar(value):
+                # Where an f32 is stored, a number of either orientation is the number it is; where a scalar of
+                # the other orientation is, it is none.
+                if target == self.scalar:
+                    return self.text(value)
+                raise self.error(line, f"a {value.type} is not a {target}")
             if isinstance(value.type, GAType) and self.embeds(value.type, target):
                 return self.text(self.operation(f"cast_{self.wgsl(target)}", lambda x: self.cast(x, target), [value], line))
             raise self.error(line, f"a {value.type} is not a {target}; cast it with .cast()")
-        if isinstance(value.type, GAType) and value.type != self.scalar:
+        if isinstance(value.type, GAType) and not self.is_number(value.type):
             raise self.error(line, f"a {value.type} is not a {target}")
         return self.text(value)
 
@@ -1045,6 +1072,10 @@ class Compiler:
             return self.batched(line, symbol, left, right)
         algebra = any(isinstance(side.type, GAType) and (side.type != self.scalar or side.text is None)
                       for side in (left, right))
+        if symbol not in _OPERATORS and symbol != "/" and all(not isinstance(side.type, GAType) or self.is_number(side.type)
+                                                              for side in (left, right)):
+            # Numbers of either orientation compare as the numbers they are.
+            algebra = False
         if symbol == "**":
             exponent = right.constant
             if right.type == _ABSTRACT and float(exponent).is_integer() and exponent >= 1:
@@ -1056,8 +1087,14 @@ class Compiler:
             if not self.is_scalar(right) and not (right.text is None and right.type == _ABSTRACT):
                 # A versor divides as numga divides it, by its inverse, its reverse over its reverse product.
                 return self.binary(line, "*", left, self.method(line, right, "inverse", [], []))
-            reciprocal = (self.constant(1 / right.constant) if right.type == _ABSTRACT and right.text is not None
-                          else Value(f"(1.0 / {self.text(right)})", self.scalar))
+            # The reciprocal of a number keeps its orientation, as numga's does.
+            if right.type == _ABSTRACT and right.text is not None:
+                reciprocal = self.constant(1 / right.constant)
+            elif right.text is None and right.type != _ABSTRACT:
+                reciprocal = self.constant(right.constant.inverse())
+            else:
+                reciprocal = Value(f"(1.0 / {self.text(right)})",
+                                   self.scalar if right.type == _ABSTRACT else right.type)
             return self.binary(line, "*", left, reciprocal)
         if algebra and symbol in _OPERATORS:
             return self.operation({"+": "add", "-": "subtract", "*": "product", "&": "regressive",
@@ -1180,7 +1217,7 @@ class Compiler:
             if name in _SCALAR_FUNCTIONS:
                 if base.text is None or base.type == _ABSTRACT and base.text is None:
                     return self.constant(getattr(np, {"square_root": "sqrt", "arccos": "arccos", "arcsin": "arcsin",
-                                                      "arctan": "arctan"}.get(name, name))(base.constant))
+                                                      "arctan": "arctan"}.get(name, name))(self.number(base)))
                 return Value(f"{_SCALAR_FUNCTIONS[name]}({self.text(base)})", self.scalar)
             if name == "inverse":
                 return self.binary(line, "/", Value("1.0", _ABSTRACT, 1.0), base)
@@ -1231,7 +1268,7 @@ class Compiler:
         if name in _MEASURING and measured:
             raise self.error(node.line, f"{name} of a {measured[0]} measures numbers that a value of the algebra would "
                                         f"hold: hold them as one, and write {_MEASURING[name]}")
-        if name == "select" and isinstance(arguments[0].type, GAType) and arguments[0].type != self.scalar:
+        if name == "select" and isinstance(arguments[0].type, GAType) and not self.is_number(arguments[0].type):
             # A choice between two values of the algebra, of the first one's type, by a condition.
             kind = arguments[0].type
             key = ("select", kind)
@@ -1244,8 +1281,11 @@ class Compiler:
             return Value(f"{helper}({self.text(arguments[0])}, {self.coerce(arguments[1], kind, node.line)}, "
                          f"{self.text(arguments[2])})", kind)
         for argument in arguments:
-            if isinstance(argument.type, GAType) and argument.type != self.scalar:
+            if isinstance(argument.type, GAType) and not self.is_number(argument.type):
                 raise self.error(node.line, f"{name} does not take a {argument.type}")
+        # WGSL's own functions take numbers of either orientation as the numbers they are.
+        arguments = [Value(self.text(argument), self.scalar) if isinstance(argument.type, GAType) and argument.type != self.scalar
+                     else argument for argument in arguments]
         texts = ", ".join(self.text(argument) for argument in arguments)
         concrete = [argument.type for argument in arguments if argument.type != _ABSTRACT]
         if name in _ELEMENTWISE:
@@ -1406,8 +1446,8 @@ class Compiler:
             members = ",\n".join(f"    {name}: {self.wgsl(kind)}" for name, kind in self.uniforms)
             structs.append(f"struct Uniforms {{\n{members},\n}};\n")
             self.bindings.insert(0, Binding(0, "uniforms", "uniforms", "Uniforms"))
-            for index, binding in enumerate(self.bindings):
-                binding.index = index
+        for index, binding in enumerate(self.bindings):
+            binding.index = index
         declarations = []
         for binding in self.bindings:
             space = {"uniforms": "<storage, read>", "storage": f"<storage, {binding.access}>"}.get(binding.kind, "")

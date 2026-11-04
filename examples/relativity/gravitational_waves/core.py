@@ -320,16 +320,17 @@ class Waves:
         turns = (self.turns[early] * (1 - share) + self.turns[early + 1] * share).field()   # (Rate+ <- Point-)[tets]
         return blended(self.strains), blended(self.strain_rates), blended(self.traces), picked[..., 0] * turns
 
-    def at(self, cells: np.ndarray, places: Point, time: float) -> tuple[Rolling, Stretching]:
+    def at(self, cells: np.ndarray, places: Point, time: float) -> tuple[Rolling, Stretching, Stretching]:
         """The connection at the places `[...] Point-[sites]` on the sphere, in the tetrahedra `cells`, at a time: the
-        rate the frames roll by along each round step there, `[...] (Rate+ <- Point-)[sites]`; and the squeeze of a
-        step there, half the strain's rate read back as a step, `[...] (Point- <- Point-)[sites]`."""
+        rate the frames roll by along each round step there, `[...] (Rate+ <- Point-)[sites]`; the stretch of a step
+        there, the strain read back as a step, and its squeeze, half the strain's rate read back as a step, `[...]
+        (Point- <- Point-)[sites]` each."""
         strain, strain_rate, trace, turn = self.fields(cells, places, time)
         # A round step, stretched by the strain, moves the origin; turned less twice the strain plus half its trace, it
         # turns the frame square to it; and the strain's change adds its turn.
         stretch = translating(strain(Step))                                     # [...] (Point- <- Point-)[sites]
         local = moving(Step + stretch / 2) + turning(Step - 2 * stretch + Step * (trace / 2)) + turn(Step)
-        return local, translating(strain_rate) / 2
+        return local, stretch, translating(strain_rate) / 2
 
 
 def proper_separations(local: Rolling, bonds: Topology, positions: Point) -> Point:
@@ -356,7 +357,7 @@ def massive(pick: Callable[[Point], np.ndarray], waves: Waves, bonds: Topology, 
     for target in times:
         while time < target - step / 2:
             places = positions.field()                                          # Point-[particles]
-            local, squeeze = waves.at(pick(positions), places, time)            # (Rate+ <- Point-)[particles], (Point- <- Point-)[particles]
+            local, stretch, squeeze = waves.at(pick(positions), places, time)   # (Rate+ <- Point-)[particles], (Point- <- Point-)[particles], (Point- <- Point-)[particles]
             proper = proper_separations(local, bonds, places)                   # Point-[bonds]
             previous_lengths, lengths = lengths, proper.dot(proper).square_root()   # Scalar+[bonds], Scalar+[bonds]
             # Springs and dashpots along the proper separations, pulling a stretched bond's ends together.
@@ -365,17 +366,17 @@ def massive(pick: Callable[[Point], np.ndarray], waves: Waves, bonds: Topology, 
             # Each particle pulled toward its home, a free particle at rest where it started, and its motion damped.
             home_steps = (frame(positions).inverse() >> homes).cast(Step)      # [particles] Point-
             forces = forces + holding * home_steps - 2 * np.sqrt(holding) * velocities
-            # The connection and the squeeze at each particle as a batch, for the solve, which takes no field of maps.
-            local, squeeze = local.batch(), squeeze.batch()                     # [particles] Rate+ <- Point-, Point- <- Point-
-            # The step each round step moves the origin by: a velocity's round step is the one it moves the origin by.
-            stepping = origin.commutator(local(Step)).cast(Stretching)          # [particles] Point- <- Point-
-            motion = stepping.solve(velocities)                                 # [particles] Point-
+            # The connection, the stretch and the squeeze at each particle as a batch, as the velocities are.
+            local, stretch, squeeze = local.batch(), stretch.batch(), squeeze.batch()   # [particles] Rate+ <- Point-, Point- <- Point-, Point- <- Point-
+            # The round step a velocity takes, less half the waves' stretch of it, as the GPU takes it.
+            motion = velocities - stretch(velocities) / 2                       # [particles] Point-
             # The velocity turned by the connection along the motion, squeezed by the slices' stretch and pushed by the
             # springs; the turn's step part only, cast so.
             carried_velocities = velocities - velocities.commutator(local(motion)).cast(Step) * step
             velocities = carried_velocities - squeeze(carried_velocities) * step + forces * step   # [particles] Point-
             # Rolled along the round step of its velocity, on its great circle from the frame at its place.
-            rolls = frame(positions) * (moving(stepping.solve(velocities)) * (-step / 2)).exp()       # [particles] Motor+
+            rolling = velocities - stretch(velocities) / 2                      # [particles] Point-
+            rolls = frame(positions) * (moving(rolling) * (-step / 2)).exp()    # [particles] Motor+
             positions = rolls >> origin                                         # [particles] Point-
             time += step
         yield positions.field(), lengths / rest - 1
@@ -392,11 +393,11 @@ def light(pick: Callable[[Point], np.ndarray], waves: Waves, starts: Point, head
 
     def turning_and_rolling(places: Point, heading: Point, time: float) -> tuple[Point, Point]:
         """The heading's change per length at the places and the time, and the round step it rolls along."""
-        local, squeeze = waves.at(pick(places), places.field(), time)           # (Rate+ <- Point-)[rays], (Point- <- Point-)[rays]
-        # A batch for the solve, which takes no field of maps.
-        local, squeeze = local.batch(), squeeze.batch()                         # [rays] Rate+ <- Point-, Point- <- Point-
-        stepping = origin.commutator(local(Step)).cast(Stretching)              # [rays] Point- <- Point-
-        rolling = stepping.solve(heading)                                       # [rays] Point-
+        local, stretch, squeeze = waves.at(pick(places), places.field(), time)  # (Rate+ <- Point-)[rays], (Point- <- Point-)[rays], (Point- <- Point-)[rays]
+        # A batch, as the headings are.
+        local, stretch, squeeze = local.batch(), stretch.batch(), squeeze.batch()   # [rays] Rate+ <- Point-, Point- <- Point-, Point- <- Point-
+        # The round step the heading takes, less half the waves' stretch of it, as the GPU's rays take it.
+        rolling = heading - stretch(heading) / 2                                # [rays] Point-
         return -heading.commutator(local(rolling)).cast(Step) - squeeze(heading), rolling
 
     positions, time = starts, start
@@ -469,11 +470,20 @@ def stretches(waves: Waves, pick: Callable[[Point], np.ndarray], bases: Point, d
 # end, and the tetrahedron and face the next leg starts in.
 round_reach = 0.6
 
-round_walk_source = """
-var<storage, read> ramps: array<Plane>;
-var<storage, read> neighbours: array<u32>;
-var<storage, read> entries: array<u32>;
-var<uniform> n_tets: u32;
+# The mesh as a walk reads it, one struct to a tetrahedron: across the face facing each corner the neighbour and the
+# face it is entered by there, and the ramp of each corner.
+tet_struct_source = """
+struct Tet {
+    neighbours: vec4<u32>,
+    entries: vec4<u32>,
+    ramps: array<Plane, 4>,
+}
+"""
+tets_source = tet_struct_source + """
+var<storage, read> tets: array<Tet>;
+"""
+
+round_walk_source = tets_source + """
 var<uniform> origin: Point;
 var<uniform> moving: Moving;
 var<uniform> reach: f32;
@@ -498,7 +508,7 @@ fn frame(place: Point) -> Motor {
 fn next_leg(place: Point, heading: Step, tet: u32, entry: u32, time: f32) -> Leg {
     // The tetrahedron's chart, the plane that reads one at each corner; the place on it, and the straight line on it
     // to where the ray's great circle is a reach on.
-    let unit = ramps[tet] + ramps[n_tets + tet] + ramps[2u * n_tets + tet] + ramps[3u * n_tets + tet];
+    let unit = tets[tet].ramps[0] + tets[tet].ramps[1] + tets[tet].ramps[2] + tets[tet].ramps[3];
     let chart = place / (unit & place);
     let reach_end = (frame(place) * (moving(heading) * (-0.5 * reach)).exp()) >> origin;
     let segment = reach_end / (unit & reach_end) - chart;
@@ -507,9 +517,9 @@ fn next_leg(place: Point, heading: Step, tet: u32, entry: u32, time: f32) -> Leg
     var share = 1.0;
     var exit = 4u;
     for (var corner = 0u; corner < 4u; corner++) {
-        let change = ramps[corner * n_tets + tet] & segment;
+        let change = tets[tet].ramps[corner] & segment;
         if (corner != entry && change < 0.0) {
-            let run_out = max(-(ramps[corner * n_tets + tet] & chart) / change, 0.0);
+            let run_out = max(-(tets[tet].ramps[corner] & chart) / change, 0.0);
             if (run_out < share) {
                 share = run_out;
                 exit = corner;
@@ -519,8 +529,8 @@ fn next_leg(place: Point, heading: Step, tet: u32, entry: u32, time: f32) -> Leg
     let end = (chart + segment * share).normalized();
     var this_leg = Leg(unit, chart, segment * share, acos(clamp(place.dot(end), -1.0, 1.0)), heading, tet, 4u);
     if (exit < 4u) {
-        this_leg.tet = neighbours[tet * 4u + exit];
-        this_leg.entry = entries[tet * 4u + exit];
+        this_leg.tet = tets[tet].neighbours[exit];
+        this_leg.entry = tets[tet].entries[exit];
     }
     return this_leg;
 }
@@ -530,14 +540,21 @@ fn next_leg(place: Point, heading: Step, tet: u32, entry: u32, time: f32) -> Leg
 # waves at the start, and the place there, at the light's time there, running back from the eye's. The waves at a
 # place in a tetrahedron, at a time, blend its corners' strains, their rates and traces by the place's barycentric
 # weights and the two nearest stored moments by their nearness, with the tetrahedron's turn. The connection along a
-# round step and a heading's change follow `Waves.at` and `light`.
+# round step and a heading's change follow `Waves.at` and `light`. The walk is two sources: the stored moments and
+# how the waves are read from them, `wave_tables_source`, and the legs through whatever waves `local_waves` gives,
+# `wave_legs_source`, which the exact slowest wave, `quadrupole_source`, drives as well.
 wave_step = 0.02
 
-wave_walk_source = """
-var<storage, read> ramps: array<Plane>;
-var<storage, read> neighbours: array<u32>;
-var<storage, read> entries: array<u32>;
-var<storage, read> tet_vertices: array<u32>;
+# The walk through the stored moments reads each tetrahedron's corners too, the vertices whose waves it blends.
+wave_tables_source = """
+struct Tet {
+    corners: vec4<u32>,
+    neighbours: vec4<u32>,
+    entries: vec4<u32>,
+    ramps: array<Plane, 4>,
+}
+
+var<storage, read> tets: array<Tet>;
 var<storage, read> strains: array<Strain>;
 var<storage, read> strain_rates: array<Strain>;
 var<storage, read> traces: array<f32>;
@@ -546,6 +563,55 @@ var<uniform> n_vertices: u32;
 var<uniform> n_tets: u32;
 var<uniform> first_time: f32;
 var<uniform> level_step: f32;
+
+fn local_waves(tet: u32, place: Point, time: f32) -> Local {
+    let level = (time - first_time) / level_step;
+    let early = u32(floor(level));
+    let share = level - floor(level);
+    let now = early * n_vertices;
+    let later = now + n_vertices;
+    let unit = tets[tet].ramps[0] + tets[tet].ramps[1] + tets[tet].ramps[2] + tets[tet].ramps[3];
+    // A variable starts at nothing.
+    var waves: Local;
+    for (var corner = 0u; corner < 4u; corner++) {
+        let vertex = tets[tet].corners[corner];
+        let weight = (tets[tet].ramps[corner] & place) / (unit & place);
+        let early_weight = weight * (1.0 - share);
+        let late_weight = weight * share;
+        waves.strain = waves.strain + strains[now + vertex] * early_weight + strains[later + vertex] * late_weight;
+        waves.strain_rate = waves.strain_rate + strain_rates[now + vertex] * early_weight
+                            + strain_rates[later + vertex] * late_weight;
+        waves.trace = waves.trace + traces[now + vertex] * early_weight + traces[later + vertex] * late_weight;
+    }
+    waves.turn = turns[early * n_tets + tet] * (1.0 - share) + turns[(early + 1u) * n_tets + tet] * share;
+    return waves;
+}
+"""
+
+# The slowest gravitational wave of the round three-sphere, exact: the squash read in the frames, the same everywhere,
+# stretching the steps along x and squeezing those along y, as a quadrupole on the sphere of steps; on the Einstein
+# static universe it swings as a cosine at the root of eight. Its strain changes the squared length of a step by
+# `strain(step) & step`, twice the swing times the difference of the step's squared shares along x and y, so that at
+# the swing the lengths along x stretch by that share; it is traceless, and constant in the frames it turns none.
+quadrupole_frequency = np.sqrt(8.0)
+
+quadrupole_source = tets_source + """
+var<uniform> swing: f32;
+
+// The quadrupole on the origin's steps: the plane that reads a step's stretch along x less its squeeze along y.
+const quadrupole = (mv.x * (mv.x & Step) - mv.y * (mv.y & Step)).cast(Strain);
+
+fn local_waves(tet: u32, place: Point, time: f32) -> Local {
+    let phase = frequency * time;
+    // A variable starts at nothing: no trace and no turn.
+    var waves: Local;
+    waves.strain = quadrupole * (2.0 * swing * cos(phase));
+    waves.strain_rate = quadrupole * (-2.0 * swing * frequency * sin(phase));
+    return waves;
+}
+"""
+
+wave_legs_source = """
 var<uniform> origin: Point;
 var<uniform> translating: Translating;
 var<uniform> moving: Moving;
@@ -569,29 +635,6 @@ struct Local {
     turn: Turning,
 }
 
-fn local_waves(tet: u32, place: Point, time: f32) -> Local {
-    let level = (time - first_time) / level_step;
-    let early = u32(floor(level));
-    let share = level - floor(level);
-    let now = early * n_vertices;
-    let later = now + n_vertices;
-    let unit = ramps[tet] + ramps[n_tets + tet] + ramps[2u * n_tets + tet] + ramps[3u * n_tets + tet];
-    // A variable starts at nothing.
-    var waves: Local;
-    for (var corner = 0u; corner < 4u; corner++) {
-        let vertex = tet_vertices[tet * 4u + corner];
-        let weight = (ramps[corner * n_tets + tet] & place) / (unit & place);
-        let early_weight = weight * (1.0 - share);
-        let late_weight = weight * share;
-        waves.strain = waves.strain + strains[now + vertex] * early_weight + strains[later + vertex] * late_weight;
-        waves.strain_rate = waves.strain_rate + strain_rates[now + vertex] * early_weight
-                            + strain_rates[later + vertex] * late_weight;
-        waves.trace = waves.trace + traces[now + vertex] * early_weight + traces[later + vertex] * late_weight;
-    }
-    waves.turn = turns[early * n_tets + tet] * (1.0 - share) + turns[(early + 1u) * n_tets + tet] * share;
-    return waves;
-}
-
 // The connection along a round step of the origin: stretched by the strain, the step moves the origin; turned less
 // twice the strain plus half its trace, it turns the frame square to it; and the strain's change adds its turn.
 fn connection(steps: Step, waves: Local) -> Rate {
@@ -608,9 +651,8 @@ fn round_step(heading: Step, waves: Local) -> Step {
 // How a heading changes per length traced back in time: turned by the connection along its round step, the turn kept
 // a step of the origin, cast so, and stretched as the slices change, back in time, by half the strain's rate.
 fn heading_change(heading: Step, waves: Local) -> Step {
-    let reading = waves.strain_rate(heading);
     return -heading.commutator(connection(round_step(heading, waves), waves)).cast(Step)
-           + (translating(reading) - heading * (reading & heading)) * 0.5;
+           + translating(waves.strain_rate(heading)) * 0.5;
 }
 
 fn frame(place: Point) -> Motor {
@@ -618,7 +660,7 @@ fn frame(place: Point) -> Motor {
 }
 
 fn next_leg(place: Point, heading: Step, tet: u32, entry: u32, time: f32) -> Leg {
-    let unit = ramps[tet] + ramps[n_tets + tet] + ramps[2u * n_tets + tet] + ramps[3u * n_tets + tet];
+    let unit = tets[tet].ramps[0] + tets[tet].ramps[1] + tets[tet].ramps[2] + tets[tet].ramps[3];
     let chart = place / (unit & place);
     let start_waves = local_waves(tet, place, time);
     // A step along the round step at the start, and the share of it where the first corner's weight runs out.
@@ -627,9 +669,9 @@ fn next_leg(place: Point, heading: Step, tet: u32, entry: u32, time: f32) -> Leg
     var share = 1.0;
     var exit = 4u;
     for (var corner = 0u; corner < 4u; corner++) {
-        let change = ramps[corner * n_tets + tet] & step_segment;
+        let change = tets[tet].ramps[corner] & step_segment;
         if (corner != entry && change < 0.0) {
-            let run_out = max(-(ramps[corner * n_tets + tet] & chart) / change, 0.0);
+            let run_out = max(-(tets[tet].ramps[corner] & chart) / change, 0.0);
             if (run_out < share) {
                 share = run_out;
                 exit = corner;
@@ -646,12 +688,17 @@ fn next_leg(place: Point, heading: Step, tet: u32, entry: u32, time: f32) -> Leg
     var this_leg = Leg(unit, chart, leg_end / (unit & leg_end) - chart, length,
                        (heading + heading_change(half_heading, half_waves) * length).normalized(), tet, 4u);
     if (exit < 4u) {
-        this_leg.tet = neighbours[tet * 4u + exit];
-        this_leg.entry = entries[tet * 4u + exit];
+        this_leg.tet = tets[tet].neighbours[exit];
+        this_leg.entry = tets[tet].entries[exit];
     }
     return this_leg;
 }
 """
+
+# The walk through the stepped waves, and through the exact slowest wave, whose `frequency` is a constant given from
+# Python, `quadrupole_frequency`.
+wave_walk_source = wave_tables_source + wave_legs_source
+quadrupole_walk_source = quadrupole_source + wave_legs_source
 
 
 # --- plumbing -------------------------------------------------------------------------
