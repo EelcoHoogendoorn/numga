@@ -9,7 +9,7 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from numga import NumpyContext
+from numga import Algebra, NumpyContext
 from numga.algebras import STA2D as ga
 from numga.sparse import spdiag
 from examples.util.topology import Topology
@@ -19,7 +19,7 @@ Scalar = ga.gatype.scalar()                                                  # S
 Plane = ga.gatype.vector()                                                   # Vector+
 Bivector = ga.gatype.bivector()                                              # Bivector+
 # The magnetic field, a plane of space.
-Magnetic = Bivector.derive.within("x y")                                     # Bivector+
+Magnetic = Bivector.derive.within(Algebra("x+y+"))                           # Bivector+
 Point = ga.gatype.antivector()                                               # Antivector-
 Patch = ga.gatype.antibivector()                                             # Antibivector-
 Amount = ga.gatype.antiscalar()                                              # Antiscalar-

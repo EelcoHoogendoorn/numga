@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import concatenate, stack
+from numga import Algebra, concatenate, stack
 from examples.util import charts, shapes
 from examples.util.animation import capture
 from examples.util.wgsl import contours, pinned, room, simplices
@@ -20,7 +20,7 @@ mv = core.mv
 # The direction sunlight travels, across the page.
 sunlight = mv.x.dual()                                                        # [] Direction-
 # The planes of x and of y, upright to the page, whose duals are the directions along the sunlight and up the page.
-Upright = core.ga.gatype.from_blades("x y")                                   # Vector+
+Upright = core.ga.gatype.vector().derive.within(Algebra("x+y+"))              # Vector+
 # The colours of the background, the drop, the sunlight, light reflected once and twice inside the drop, the sky
 # and the ground; the colours of the angles' axes and tick labels.
 background = "#0b1020"

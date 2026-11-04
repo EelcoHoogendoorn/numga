@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
-from numga import NumpyContext, stack
+from numga import Algebra, NumpyContext, stack
 from numga.algebras import STA
 
 from examples.relativity.gravitational_waves import core, render, scenarios
@@ -22,8 +22,8 @@ from examples.util.wgsl import Shader, sampled
 # The spacetime algebra at the eye, in which the camera's sightlines are boosted.
 spacetime = NumpyContext(STA).multivector
 # The rates that turn the view, the planes through the eye, and the turns they make, rotors about it.
-Turn = core.Rate.derive.within("x y z")                                          # Bivector+
-Aim = core.Motor.derive.within("x y z")                                          # Rotor+
+Turn = core.Rate.derive.within(Algebra("x+y+z+"))                                # Bivector+
+Aim = core.Motor.derive.within(Algebra("x+y+z+"))                                # Rotor+
 
 # The wave's period, and the seconds of the page's clock it lasts, at the pace of the animations; the camera's fastest
 # speed, as a share of the light's; and the longest a frame's step runs in the page's seconds, however long the frame

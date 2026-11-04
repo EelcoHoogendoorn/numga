@@ -21,5 +21,5 @@ Plane = ga.gatype.vector()                                                      
 Surface = ga.gatype.antitrivector()                                             # Antitrivector-
 # A line oriented along itself, as the join of two points is, and one oriented around itself, as the meet of two
 # planes is: a spear and an axis, in Dorst's names.
-Spear = (Point & Point).output_gatype                                           # Antibivector-
-Axis = (Plane ^ Plane).output_gatype                                            # Bivector+
+Spear = ga.gatype(Point & Point)                                                # Antibivector-
+Axis = ga.gatype(Plane ^ Plane)                                                 # Bivector+

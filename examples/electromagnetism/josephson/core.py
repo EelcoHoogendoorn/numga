@@ -41,8 +41,8 @@ mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 Plane = ga.gatype.vector()                                                    # Vector+
 Point = ga.gatype.antivector()                                                # Antivector-
-Phase = ga.gatype.from_blades("a b")                                          # Vector+
-Rate = ga.gatype.from_blades("ab")                                            # Bivector+
+Phase = Plane.derive.within(Algebra("a+b+"))                                  # Vector+
+Rate = ga.gatype.bivector().derive.within(Algebra("a+b+"))                    # Bivector+
 # A turn of the phase plane, which takes the bias direction to a phase.
 Turn = (mv.ab * 0.0).exp().gatype                                             # Rotor+
 # Unit steps along the junction's plane and a unit of time, as events from the origin.

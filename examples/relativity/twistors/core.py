@@ -16,22 +16,24 @@ import numpy as np
 
 from numga import Algebra, NumpyContext
 
-ga = Algebra("x+y+z+t-u+v-")
+# Spacetime, and a further positive and negative direction that give its conformal algebra.
+spacetime = Algebra("x+y+z+t-")
+ga = spacetime * Algebra("u+v-")
 mv = NumpyContext(ga).multivector
 exact = ga.exact.multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 Full = ga.gatype.full()
-Intrinsic = (Full * ga.gatype.antiscalar()).output_gatype
+Intrinsic = ga.gatype(Full * ga.gatype.antiscalar())
 # Points, light rays and the twistors of rays are intrinsic, like all geometry.
 Point = ga.gatype.antivector()                                               # Antivector-
 Ray = ga.gatype.antibivector()                                               # Antibivector-
-Event = Point.derive.containing("u v")                                       # Antivector-
-Spatial = Point.derive.containing("t u v")                                   # Antivector-
-Faraday = Bivector.derive.within("x y z t")                                  # Bivector+
-ExtrinsicTwistor = Full.derive.within("y z u")                               # Full+
-Twistor = Intrinsic.derive.within("y z u")                                   # Full-
+Event = Vector.derive.within(spacetime).derive.dual                          # Antivector-
+Spatial = Vector.derive.within(Algebra("x+y+z+")).derive.dual                # Antivector-
+Faraday = Bivector.derive.within(spacetime)                                  # Bivector+
+ExtrinsicTwistor = Full.derive.within(Algebra("y+z+u+"))                     # Full+
+Twistor = Intrinsic.derive.within(Algebra("y+z+u+"))                         # Full-
 # The handedness of the pulse and of the fibres it is carried along.
 Helicity = ga.gatype.antipseudoscalar()                                 # Antipseudoscalar-
 

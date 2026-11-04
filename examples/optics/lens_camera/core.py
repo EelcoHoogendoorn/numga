@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import NumpyContext, stack
+from numga import Algebra, NumpyContext, stack
 from numga.algebras import PGA3D
 from numga.gatype.traits import Versor
 
@@ -28,8 +28,8 @@ ctx = NumpyContext(ga)
 mv = ctx.multivector
 Point = ga.gatype.antivector()                                                  # Antivector-
 Plane = ga.gatype.vector()                                                      # Vector+
-SensorPoint = Point.derive.containing("x")                                      # Antivector-
-SensorPlane = Plane.derive.within("y z w")                                      # Vector+
+SensorPlane = Plane.derive.within(Algebra("w0y+z+"))                            # Vector+
+SensorPoint = SensorPlane.derive.dual                                           # Antivector-
 # Lines are joins of points.
 Line = ga.gatype.antibivector()                                                 # Antibivector-
 Motor = ga.gatype.rotor()                                                       # Rotor+

@@ -30,7 +30,7 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from numga import NumpyContext
+from numga import Algebra, NumpyContext
 from numga.algebras import VGA3D as ga
 from numga.gatype import GAType
 from numga.sparse import SparseExtensor
@@ -43,7 +43,7 @@ Spin = ga.gatype.antibivector()                                                #
 Point = ga.gatype.antivector()                                                 # Antivector-
 Even = ga.gatype.even()                                                        # Even+
 # The spinors with spin up along z.
-Up = Even.derive.within("x y")                                                 # Even+
+Up = Even.derive.within(Algebra("x+y+"))                                       # Even+
 # The spin of the spinor one, spin up: the patch of the plane xy.
 up_spin = mv.xy.dual()                                                         # [] Spin-
 

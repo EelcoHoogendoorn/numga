@@ -46,10 +46,10 @@ Scalar = ga.gatype.scalar()                         # Scalar+
 Amount = ga.gatype.antiscalar()                     # Antiscalar-
 # The corners' ramps, gradients and the polar planes of directions: vectors, extrinsic; those through the origin.
 Plane = ga.gatype.vector()                          # Vector+
-Through = Plane.derive.within("x y z")              # Vector+
+Through = Plane.derive.within(Algebra("x+y+z+"))    # Vector+
 # Points of the sphere and the origin's steps: antivectors.
 Point = ga.gatype.antivector()                      # Antivector-
-Step = Point.derive.containing("w")                 # Antivector-
+Step = Through.derive.dual                          # Antivector-
 # The rates that move and turn the frames, and the motors they generate.
 Rate = ga.gatype.bivector()                         # Bivector+
 Motor = ga.gatype.rotor()                           # Rotor+
@@ -64,7 +64,7 @@ Turning = ga.gatype((Rate, Step))                   # Bivector+ <- Antivector-
 Rolling = ga.gatype((Rate, Step))                   # Bivector+ <- Antivector-
 Stretching = ga.gatype((Step, Step))                # Antivector- <- Antivector-
 # The rates that move the origin along its steps, in the planes through it.
-Moving = ga.gatype((Rate.derive.containing("w"), Step))   # Bivector+ <- Antivector-
+Moving = ga.gatype((Rate.derive.touching(Algebra("w+")), Step))   # Bivector+ <- Antivector-
 
 # The plane `w`, the origin's equator, and the origin, its pole.
 equator = mv.w                                      # [] Plane+

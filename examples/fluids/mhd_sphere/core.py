@@ -17,7 +17,7 @@ from typing import NamedTuple
 
 import numpy as np
 
-from numga import NumpyContext, stack
+from numga import Algebra, NumpyContext, stack
 from numga.algebras import STA as ga
 from numga.sparse import SparseExtensor, spdiag
 from examples.util.topology import Topology
@@ -25,10 +25,10 @@ from examples.util.topology import Topology
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                         # Scalar+
 # The planes of space, which read a point's coordinates; a function's gradient on a triangle is one.
-Plane = ga.gatype.from_blades("x y z")              # Vector+
+Plane = ga.gatype.vector().derive.within(Algebra("x+y+z+"))  # Vector+
 # The points of space, each the direction from the origin to it; the sphere's points, its edges and the fluid's
 # velocities are points too.
-Point = Plane.dual().output_gatype                  # Antivector-
+Point = Plane.derive.dual                           # Antivector-
 # A triangle's patch, the join of two of its edges.
 Patch = ga.gatype.antibivector()                    # Antibivector-
 # A function integrated over each vertex's share of the surface is an amount.

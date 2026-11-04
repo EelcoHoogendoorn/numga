@@ -38,14 +38,16 @@ from examples.util.topology import Topology
 
 # The plane, and the volume, the mass, the entropy and the salt a parcel holds, each a direction of its own with no
 # metric.
-ga = Algebra("x+y+") * Algebra("v0m0s0n0")
+space = Algebra("x+y+")
+amounts = Algebra("v0m0s0n0")
+ga = space * amounts
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 Point = ga.gatype.antivector()                                                # Antivector-
 Plane = ga.gatype.vector()                                                    # Vector+
 # The planes reading a place's run along the tank and up it.
-Upright = ga.gatype.from_blades("x y")                                        # Vector+
-Drive = ga.gatype.from_blades("xv yv xm ym xs ys xn yn")                      # Bivector+
+Upright = Plane.derive.within(space)                                          # Vector+
+Drive = ga.gatype.bivector().derive.touching(space, amounts)                  # Bivector+
 Flux = ga.gatype.antibivector()                                               # Antibivector-
 # The tank's two directions, along its length and up its depth, and the planes reading a direction's run along each.
 length = mv.x.dual()                                                          # [] Point-
