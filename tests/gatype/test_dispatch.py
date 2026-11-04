@@ -32,7 +32,8 @@ def test_generic_trait_patterns_dispatch_across_algebras():
 
 def test_concrete_pattern_specializes_generic_pattern_for_its_algebra():
     local = Algebra("x+y+")
-    foreign = Algebra("x+y+")
+    # A different algebra of the same signature: equal descriptions build one algebra.
+    foreign = Algebra("u+v+")
     dispatch = GATypeDispatch("mixed", None, 1, takes="a value")
 
     @dispatch.register(local.gatype.even())
