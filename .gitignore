@@ -24,6 +24,7 @@ dist/
 !/plots/kerr.gif
 !/plots/ligo.gif
 !/plots/line_in_mirror.png
+!/plots/magnetotransport.gif
 !/plots/mirror_energy.gif
 !/plots/modes.gif
 !/plots/multiview_convergence.gif
