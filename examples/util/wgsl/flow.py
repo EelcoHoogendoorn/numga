@@ -95,6 +95,8 @@ var<storage, read> points: array<Point>;
 var<storage, read> faces: array<vec3<u32>>;
 var<storage, read> field: array<Field>;
 var<uniform> noise_scale: f32;
+// A speck's radius, as a share of a cell, its ink fading over the outer seven sixteenths of it.
+var<uniform> speck: f32;
 
 fn hash(place: vec3<f32>) -> f32 {
     var p = fract(place * 0.1031);
@@ -113,7 +115,7 @@ struct Shade {
     @location(2) grain: vec4<f32>,
 }
 
-// Jittered specks, one to a cell of the picture's readings, `noise_scale` across, an eighth of a cell in radius.
+// Jittered specks, one to a cell of the picture's readings, `noise_scale` across, `speck` of a cell in radius.
 fn seed(place: Point) -> f32 {
     let reading = vec2<f32>(paired(screen_across, place), paired(screen_up, place)) / weight_of(place) / noise_scale;
     let cell = floor(reading);
@@ -124,7 +126,7 @@ fn seed(place: Point) -> f32 {
             let jitter = vec2<f32>(hash(vec3<f32>(neighbour, 19.1)), hash(vec3<f32>(neighbour, 53.4)));
             let away = reading - neighbour - jitter;
             let distance = sqrt(away.x * away.x + away.y * away.y);
-            ink = max(ink, 1.0 - smoothstep(0.09, 0.16, distance));
+            ink = max(ink, 1.0 - smoothstep(0.5625 * speck, speck, distance));
         }
     }
     return ink;
@@ -259,12 +261,14 @@ def draw(points: solids.Point, topology: Topology, field: solids.Point, view: so
 
 def layer(points: Extensor, topology: Topology, field: Extensor, camera: Camera,
           reference_speed: float, colour: np.ndarray, *, downstream_fraction: float = 0.9,
-          length: float = length_pixels) -> np.ndarray:
+          length: float = length_pixels, grain_pixels: float = 6.0, speck_pixels: float = 0.96,
+          ink_opacity: float = ink_opacity) -> np.ndarray:
     """A transparent ink layer, at the camera's own pixels, for a flat field over a panel, the points and the field in
-    their own algebra, read by its camera."""
+    their own algebra, read by its camera; its seeds one to a cell `grain_pixels` across, each a speck `speck_pixels`
+    in radius, and its ink covering by `ink_opacity`."""
     surface, projected, grains = planar_shader(**reading(points, camera), Field=whole(field, points.algebra)).draw_averaged(
         camera.shape, samples_per_side(), 3 * topology.n_elements[2], points=points, faces=topology.elements[2], field=field,
-        noise_scale=camera.pixel * 6.0, **camera.uniforms(1.0))
+        noise_scale=camera.pixel * grain_pixels, speck=speck_pixels / grain_pixels, **camera.uniforms(1.0))
     result = trace_shader()(camera.shape, surface=surface, flow=projected, grains=grains, background=np.ones(3),
                             step_pixels=length / n_trace_steps,
                             reference_speed=max(reference_speed, np.finfo(np.float32).tiny),

@@ -194,6 +194,7 @@
 - [Snowflake](thermodynamics/snowflake/) — A phase field with a six-fold surface energy grows a seed of ice in undercooled water into a six-armed dendrite.
 - [Cellular flame](thermodynamics/flame/) — Flames spreading from sparks through a lean mixture merge and break into cells where the fuel spreads faster than the heat.
 - [Rubber band heat engine](thermodynamics/rubber_band/) — A rubber band warmed by a lamp pulls harder and lifts a weight, its pull and the heat its motion moves read off one pairing.
+- [Galvanomagnetic and thermomagnetic effects](thermodynamics/magnetotransport/) — Electrons and holes drift through a conductor in a magnetic field each turned by its own rotor, the inverse of one less the mobility times the field: one sum of turned drifts, read for charge and for entropy, gives a Hall voltage that vanishes at compensation exactly where the Nernst voltage peaks, along a bar and around a Corbino ring, as the balance of the carriers runs from electrons only to holes only.
 
 ## Symmetry
 
