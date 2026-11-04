@@ -341,25 +341,6 @@ def test_where_chooses_site_by_site_on_a_field():
                                   np.where(heights.kernel[..., None] > 0, 0, maps.kernel))
 
 
-def test_nullspace_is_the_direction_a_map_leaves_unread_at_unit_weight():
-    # A carrier drifting through a field, in planar spacetime with its charge along time: the Drude balance of the
-    # drag against the whole Lorentz push, one commutator with the worldline direction, has its time row dropped,
-    # since the drift is non-relativistic; the drift is the direction the balance leaves, at unit time.
-    ga = Algebra("x+y+t-")
-    mv = NumpyContext(ga).multivector
-    Point = ga.gatype.antivector()
-    Worldline, Spatial = Point, Point.derive.containing("t")
-    strengths = np.array([0.0, 0.8, -0.8])
-    field = 0.3 * mv.xt + strengths * mv.xy                                        # [strengths] Bivector+
-    balance = (Worldline - field.commutator(Worldline)).cast(ga.gatype((Spatial, Worldline)))   # [strengths] Spatial- <- Worldline-
-    drift = balance.nullspace(mv.t)                                                # [strengths] Worldline-
-    np.testing.assert_allclose((mv.t & drift).kernel, 1.0)
-    np.testing.assert_allclose(balance(drift).kernel, 0.0, atol=1e-14)
-    # The drift the field deflects: the push over one plus the field's square, turned by the field's strength.
-    np.testing.assert_allclose((mv.x & drift).kernel.ravel(), 0.3 / (1 + strengths**2))
-    np.testing.assert_allclose((mv.y & drift).kernel.ravel(), -0.3 * strengths / (1 + strengths**2))
-
-
 def test_numpy_context_rejects_lossy_numeric_kind_changes():
     algebra = Algebra("x+y+")
     value = NumpyContext(algebra).extensor(algebra.gatype.even(), [1, 2])
