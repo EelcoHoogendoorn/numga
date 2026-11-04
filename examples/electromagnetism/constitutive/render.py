@@ -16,7 +16,7 @@ from examples.util import charts
 from examples.util.animation import capture
 from examples.electromagnetism.constitutive import core
 from examples.util.wgsl import fitted, show, simplices, solids
-from examples.util.wgsl.camera import Camera, panel
+from examples.util.wgsl.camera import Camera, offset_panel
 from examples.util.wgsl.scene import Scene
 
 Modes = tuple[np.ndarray, core.Bivector]
@@ -246,7 +246,7 @@ def draw_polarizations(
     ax.figure.tight_layout()
     # The fields read as they are, by the planes x and y sweep through time: `swept_plane & field`, the electric
     # field along each.
-    plane = panel(ax, *core.swept_planes[:2])
+    plane = offset_panel(ax, *core.swept_planes[:2])
     # Each mode's line through the origin, dotted, under its arrow from the origin, a stroke with a chevron at its tip.
     simplices.overlay(ax, [
         _cross(ax, plane, "$x$", "$y$"),

@@ -13,7 +13,7 @@ from numga import stack
 from examples.util.animation import capture
 from examples.surfaces.reciprocal import core
 from examples.util.wgsl import fitted, meshes, show, simplices, solids
-from examples.util.wgsl.camera import flat_panel, panel
+from examples.util.wgsl.camera import offset_panel
 
 TERRAIN_COLOUR = np.array(to_rgb("#9fb7c4"))
 BOUNDARY_COLOUR = np.full(3, 0.65)
@@ -95,10 +95,10 @@ def panels(topology: core.Topology, points: core.Point, framing: solids.View
     plane = figure.add_axes((0.5, 0.05, 0.5, 0.9))
     plane.set(xlim=(-REACH, REACH), ylim=(-REACH, REACH), aspect="equal")
     plane.set_axis_off()
-    camera = flat_panel(plane, places.algebra)
+    camera = offset_panel(plane, core.mv.x, core.mv.y)
     # The reciprocal vertices, the faces' slopes, read as they are by the directions along x and y: how fast each face
     # rises along each, its place in the diagram.
-    slope_camera = panel(plane, core.mv.x.dual(), core.mv.y.dual())
+    slope_camera = offset_panel(plane, core.mv.x.dual(), core.mv.y.dual())
     boundary = simplices.strokes(places, rim, RIM_COLOUR, LINE_WIDTH, camera)
     truss = simplices.overlay(plane, [boundary])
 

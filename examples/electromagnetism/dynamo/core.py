@@ -18,23 +18,25 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from numga import NumpyContext, stack
+from numga import Algebra, NumpyContext, stack
 from numga.algebras import STA as ga
 from numga.sparse import SparseExtensor, spdiag
 from examples.util.topology import Topology
 
 mv = NumpyContext(ga).multivector
+# Space, within spacetime: the directions x, y and z.
+space = Algebra("x+y+z+")
 Scalar = ga.gatype.scalar()                         # Scalar+
 # The planes of space, which read a point's coordinates; a function's gradient in a tetrahedron is one.
-Plane = ga.gatype.from_blades("x y z")              # Vector+
+Plane = ga.gatype.vector().derive.within(space)     # Vector+
 # The points of space, each the direction from the origin to it; edges, velocities and currents are points too.
-Point = Plane.dual().output_gatype                  # Antivector-
+Point = Plane.derive.dual                           # Antivector-
 # Electric and magnetic fields, planes through time and planes of space.
 Field = ga.gatype.bivector()                        # Bivector+
 # The magnetic field alone, a plane of space.
-Magnetic = Field.derive.within("x y z")             # Bivector+
+Magnetic = Field.derive.within(space)               # Bivector+
 # A rotation rate, or the fluid's vorticity: a plane of space.
-Rate = Field.derive.within("x y z")                 # Bivector+
+Rate = Field.derive.within(space)                   # Bivector+
 # A function integrated over a share of the ball is an amount.
 Amount = ga.gatype.antiscalar()                     # Antiscalar-
 # The observer's direction of time.

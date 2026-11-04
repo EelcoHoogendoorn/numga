@@ -38,14 +38,16 @@ from examples.util.topology import Topology
 
 # The plane, and the volume, the mass, the entropy and the salt a parcel holds, each a direction of its own with no
 # metric.
-ga = Algebra("x+y+") * Algebra("v0m0s0n0")
+space = Algebra("x+y+")
+amounts = Algebra("v0m0s0n0")
+ga = space * amounts
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 Point = ga.gatype.antivector()                                                # Antivector-
 Plane = ga.gatype.vector()                                                    # Vector+
 # The planes reading a place's run along the tank and up it.
-Upright = ga.gatype.from_blades("x y")                                        # Vector+
-Drive = ga.gatype.from_blades("xv yv xm ym xs ys xn yn")                      # Bivector+
+Upright = Plane.derive.within(space)                                          # Vector+
+Drive = ga.gatype.bivector().derive.touching(space, amounts)                  # Bivector+
 Flux = ga.gatype.antibivector()                                               # Antibivector-
 # The tank's two directions, along its length and up its depth, and the planes reading a direction's run along each.
 length = mv.x.dual()                                                          # [] Point-
@@ -71,8 +73,8 @@ def tank(n_along: int, n_across: int, period: float) -> tuple[Topology, Topology
     opened = Topology.chains([n_across]).product(Topology.chains([n_along + 1]))
     places = np.stack(np.meshgrid(np.arange(n_along + 1) / n_along * period, np.linspace(0, 1, n_across),
                                   indexing="ij"), axis=-1)
-    closing = opened.reading(np.arange(closed.n_vertices))                   # numbers[closed <- opened]
-    opening = closed.reading(np.arange(opened.n_vertices) % closed.n_vertices)   # numbers[opened <- closed]
+    closing = opened.reading(np.arange(closed.n_vertices), 0)                # numbers[closed <- opened]
+    opening = closed.reading(np.arange(opened.n_vertices) % closed.n_vertices, 0)   # numbers[opened <- closed]
     return closed, opened, closing, opening, places.reshape(-1, 2)
 
 

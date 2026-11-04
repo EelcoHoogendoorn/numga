@@ -59,7 +59,7 @@ def outer_core(topology: core.Topology, vertices: core.Point) -> tuple[core.Topo
     fluid = ((radii > inner_radius) & (radii < 1)).reshape(-1)                   # [tets]
     simplices = topology.elements[3][fluid]                                      # [fluid, 4]
     first, last = simplices.min(), simplices.max()
-    fluid_vertices = topology.reading(np.arange(first, last + 1)) * vertices     # Point-[fluid vertices]
+    fluid_vertices = topology.reading(np.arange(first, last + 1), 0) * vertices  # Point-[fluid vertices]
     return core.Topology(last + 1 - first, simplices - first), fluid_vertices, ~topology.reading(np.flatnonzero(fluid), 3)
 
 

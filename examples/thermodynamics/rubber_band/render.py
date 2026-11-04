@@ -93,9 +93,9 @@ def draw_band(topology: Topology, in_weight: np.ndarray, places: core.Point):
     support = scenery(places, 0.0)
     camera = framing([places, support], pixels_per_width, margin)
     return image_figure(on_white(simplices.composited([
-        contours.picture(places, topology.subset(~in_weight), np.zeros(topology.n_vertices),
+        contours.picture(places, topology.subset(~in_weight, -1), np.zeros(topology.n_vertices),
                          temperature_colours(0.5)[:3], camera),
-        contours.picture(places, topology.subset(in_weight), np.zeros(topology.n_vertices), weight_colour, camera),
+        contours.picture(places, topology.subset(in_weight, -1), np.zeros(topology.n_vertices), weight_colour, camera),
         simplices.strokes(places, topology, outline_colour, edge_width, camera),
         simplices.strokes(support, Topology.chains([2]), support_colour, support_width, camera)])))
 
@@ -110,7 +110,7 @@ def animate(topology: Topology, in_weight: np.ndarray, lamp: core.Point, room_te
     first = next(states)
     mv = lamp.context.multivector
     support = scenery(lamp, 0.0)
-    band, weight = topology.subset(~in_weight), topology.subset(in_weight)
+    band, weight = topology.subset(~in_weight, -1), topology.subset(in_weight, -1)
     glow = lamp + glow_reach * stack((mv.x.dual(), -mv.x.dual(), mv.y.dual(), -mv.y.dual()))   # [4] Point-
     camera = framing([first[0], support, glow], pixels_per_width, margin)
     radii = glow_reach / camera.pixel * np.linspace(1 / n_glow, 1, n_glow)[::-1]   # [glow]
@@ -135,7 +135,7 @@ def animate_pulled(topology: Topology, in_weight: np.ndarray, room_temperature: 
     first = next(states)
     mv = first[0].context.multivector
     support = scenery(first[0], 0.0)
-    band, weight = topology.subset(~in_weight), topology.subset(in_weight)
+    band, weight = topology.subset(~in_weight, -1), topology.subset(in_weight, -1)
     camera = framing([first[0], first[0] - drop * mv.y.dual(), support], pixels_per_width, margin)
     fixed = simplices.strokes(support, Topology.chains([2]), support_colour, support_width, camera)
     for places, temperatures, _ in chain([first], states):
@@ -159,7 +159,7 @@ def animate_together(topology: Topology, in_weight: np.ndarray, lamp: core.Point
     # The pulled band's places moved across beside the lamp's band, for the picture alone.
     beside = pulled_across * mv.x.dual()                                      # [] Point-
     support = scenery(lamp, pulled_across)
-    band, weight = topology.subset(~in_weight), topology.subset(in_weight)
+    band, weight = topology.subset(~in_weight, -1), topology.subset(in_weight, -1)
     glow = lamp + glow_reach * stack((mv.x.dual(), -mv.x.dual(), mv.y.dual(), -mv.y.dual()))   # [4] Point-
     pulled_start = first[1][0] + beside                                       # Point-[vertices]
     camera = framing([first[0][0], pulled_start, pulled_start - drop * mv.y.dual(), support, glow],

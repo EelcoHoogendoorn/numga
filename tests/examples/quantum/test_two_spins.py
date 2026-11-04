@@ -26,7 +26,7 @@ def test_scenarios_pass_their_checks_and_draw():
     np.testing.assert_allclose(bells.to_array()[[0, middle, -1]], [2.0, 2 * np.sqrt(2), 2.0], atol=1e-7)
     np.testing.assert_allclose((first[-1] + mv.xy).kernel, 0.0, atol=1e-7)
     np.testing.assert_allclose((second[-1] - mv.XY).kernel, 0.0, atol=1e-7)
-    for figure in (render.draw_state(first[0], second[0], render.SPIN_PLANES), render.draw_exchange(angles, bells, first, render.SPIN_PLANES)):
+    for figure in (render.draw_state(first[0], second[0], render.plane_reading), render.draw_exchange(angles, bells, first, render.plane_reading)):
         assert isinstance(figure, plt.Figure)
         plt.close(figure)
 
@@ -40,7 +40,7 @@ def test_steering_passes_its_checks_and_draws():
     np.testing.assert_allclose((probability - 0.5 * (1 + planes.dot(first))).kernel, 0.0, atol=1e-11)
     backwards = (second + correlations.adjoint()(planes)) / (1 + planes.dot(first))
     np.testing.assert_allclose((steered - backwards).kernel, 0.0, atol=1e-9)
-    assert len(list(render.animate_steering(planes, probability, steered, render.SPIN_PLANES))) == 5
+    assert len(list(render.animate_steering(planes, probability, steered, render.plane_reading))) == 5
 
 
 def test_field_and_qubit_scenes_pass_their_checks_and_draw():

@@ -9,18 +9,19 @@ Drag to fly the camera around the hole, scroll to move it in or out, `[` and `]`
 stop or restart the disk, `s` the spin's sweep, and `e` the exposure's following of the brightest light, as in the
 window of `viewer`.
 
-    python -m examples.relativity.kerr.web            # writes kerr_webgpu.html beside this file
+GitHub Pages serves the page from the repository, so it is written only when asked:
+
+    python -c "from examples.relativity.kerr.web import page; page()"   # writes kerr_webgpu.html beside this file
 """
 
 from __future__ import annotations
 
-import base64
-import json
 from pathlib import Path
 
 import numpy as np
 
 from examples.relativity.kerr import core, gpu, render, scenarios, viewer
+from examples.util.wgsl.page import encoded, packed, write_page
 from examples.util.wgsl.runner import coefficients
 
 mv = core.mv
@@ -101,26 +102,11 @@ PAGE = Path(__file__).parent / "kerr_webgpu.html"
 
 
 # --- plumbing -------------------------------------------------------------------------
-def packed(tracer, values: dict) -> tuple[bytes, dict]:
-    """The uniform block as the runner packs it, and where each uniform begins in it."""
-    data, offsets = bytearray(), {}
-    for name, kind in tracer.program.uniforms:
-        alignment, _ = tracer.layout.size(kind)
-        data += bytes(-len(data) % alignment)
-        offsets[name] = len(data)
-        data += tracer.layout.pack(kind, values[name])
-    return bytes(data) + bytes(-len(data) % 16), offsets
-
-
 def half_floats(image: np.ndarray) -> dict:
     """An image `[rows, columns, channels]` as a half-float RGBA texture, the alpha one."""
     padded = np.ones(image.shape[:2] + (4,), dtype=np.float16)
     padded[..., :image.shape[2]] = image
     return dict(width=padded.shape[1], height=padded.shape[0], data=encoded(padded.tobytes()))
-
-
-def encoded(data: bytes) -> str:
-    return base64.b64encode(data).decode("ascii")
 
 
 def contents() -> dict:
@@ -157,11 +143,6 @@ def contents() -> dict:
                       gamma=render.display_gamma, saturation=render.colour_saturation))
 
 
-def main() -> None:
-    template = (Path(__file__).parent / "web_template.html").read_text()
-    PAGE.write_text(template.replace("/*CONTENTS*/null", json.dumps(contents())))
-    print(f"wrote {PAGE.name}, {PAGE.stat().st_size / 1e3:.0f} kB")
-
-
-if __name__ == "__main__":
-    main()
+def page() -> None:
+    """Write the page beside this file, where GitHub Pages serves it."""
+    write_page(Path(__file__).parent / "web_template.html", PAGE, contents())

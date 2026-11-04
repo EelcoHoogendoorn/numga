@@ -78,7 +78,7 @@ def mesh_geometry(topology: Topology, vertices: Point, edge_squared_lengths: Sca
     corner_mean = topology.incidence[2, 0].mean(axis=0)                      # Scalar+[faces <- vertices]
     vertex_areas = ~corner_mean * intrinsic_areas                            # [...] Scalar+[vertices]
     # A flat surface turns through a full turn around an interior vertex, and through half of one at the rim.
-    rim = topology.reading(topology.exterior[0])                             # Scalar+[rim <- vertices]
+    rim = topology.reading(topology.exterior[0], 0)                          # Scalar+[rim <- vertices]
     full_turns = (mv.xy * np.full(topology.n_vertices, 2 * np.pi)).field()        # Bivector+[vertices]
     target_turns = full_turns - ~rim * (rim * full_turns) / 2                     # Bivector+[vertices]
     defects = target_turns - (~topology.incidence[2, 0] * corner_turns).sum(axis=-1)  # [...] Bivector+[vertices]
@@ -105,7 +105,7 @@ def intrinsic_conduction(topology: Topology, vertices: Point, conductivities: Co
     # The adjugate carries each triangle's current response back to its vertex potentials.
     conductance = gradient.adjugate()(spdiag(conductivities)(gradient))      # [cases] (Amount- <- Scalar+)[vertices <- vertices]
     free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
-    free = ~topology.reading(free_vertices) * Scalar                         # (Scalar+ <- Scalar+)[vertices <- free]
+    free = ~topology.reading(free_vertices, 0) * Scalar                      # (Scalar+ <- Scalar+)[vertices <- free]
     rhs = -free.adjugate()(conductance(prescribed))                          # [cases] Amount-[free]
     potential = prescribed + free(free.adjugate()(conductance(free)).solve(rhs))  # [cases] Scalar+[vertices]
     integrated_flux = -conductivities(gradient(potential))                   # [cases] Point-[faces]
@@ -115,7 +115,7 @@ def intrinsic_conduction(topology: Topology, vertices: Point, conductivities: Co
     # gives the area-weighted reference gradient of the streamfunction whose level curves follow the intrinsic flow.
     quarter_turn = (mv.xy * (-np.pi / 4)).exp()                              # [] Rotor+
     laplacian = gradient.adjugate()(spdiag(areas * Plane.dual())(gradient))  # (Amount- <- Scalar+)[vertices <- vertices]
-    unpinned = ~topology.reading(np.arange(1, topology.n_vertices)) * Scalar # (Scalar+ <- Scalar+)[vertices <- unpinned]
+    unpinned = ~topology.reading(np.arange(1, topology.n_vertices), 0) * Scalar # (Scalar+ <- Scalar+)[vertices <- unpinned]
     stream_rhs = unpinned.adjugate()(gradient.adjugate()(quarter_turn >> integrated_flux))  # [cases] Amount-[unpinned]
     streamfunction = unpinned(unpinned.adjugate()(laplacian(unpinned)).solve(stream_rhs))  # [cases] Scalar+[vertices]
     return potential, current, streamfunction

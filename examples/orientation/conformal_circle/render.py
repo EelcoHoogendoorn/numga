@@ -176,7 +176,7 @@ def animate_circle_motions(frames: Iterable[Point], fixed_points: Point) -> Iter
     for ax in axes:
         ax.set(xlim=(-1.12, 1.12), ylim=(-1.12, 1.12), aspect="equal")
         ax.set_axis_off()
-    cameras = [panel_camera(ax, mv.x, mv.y)._replace(weight=-horizon, unit=0.0) for ax in axes]
+    cameras = [panel_camera(ax, mv.x, mv.y, -horizon) for ax in axes]
 
     def pictures(disk: Point, camera: Camera, fixed: list[np.ndarray]) -> list[np.ndarray]:
         """The disk `[radii, angles]` filled, its rings and its spokes, each spoke in its colour, its rim, the

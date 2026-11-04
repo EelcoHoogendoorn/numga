@@ -12,7 +12,7 @@ from numga import concatenate, stack
 
 from examples.util.animation import capture
 from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, offset_panel
 from examples.relativity.kerr import core
 
 # The spin sweep's resolution: its thin rays need no more. The rays' width in pixels and how much they cover, and the
@@ -66,7 +66,7 @@ def animate_rays(paths: core.Antivector, horizons: core.Antivector,
     ax.set_axis_off()
     figure.canvas.draw()
     figure.set_layout_engine("none")
-    camera = flat_panel(ax, paths.algebra)
+    camera = offset_panel(ax, core.mv.x, core.mv.y)
     picture = simplices.overlay(ax, [np.zeros(camera.shape + (4,))])
 
     for spin in range(paths.shape[1]):
@@ -83,7 +83,7 @@ def draw_ray_comparison(paths: tuple[core.Antivector, core.Antivector], horizon:
         ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
         ax.set_axis_off()
     for ax, path in zip(axes, paths):
-        simplices.overlay(ax, [rays_and_horizon(path, horizon, flat_panel(ax, path.algebra))])
+        simplices.overlay(ax, [rays_and_horizon(path, horizon, offset_panel(ax, core.mv.x, core.mv.y))])
     return figure
 
 

@@ -25,7 +25,7 @@ from itertools import product
 
 import numpy as np
 
-from numga import NumpyContext
+from numga import Algebra, NumpyContext
 from numga.algebras import PGA3D as ga
 from examples.mechanics.simplex import simplex_inertia_weights
 from examples.util.topology import Topology
@@ -38,7 +38,7 @@ Twist = ga.gatype.bivector()                                            # Bivect
 Forque = ga.gatype.antibivector()                                       # Antibivector-
 Motor = ga.gatype.rotor()                                               # Rotor+
 # Turns about horizontal lines through the origin: heel and trim.
-Tilt = Twist.derive.nondegenerate.derive.containing("z")                # Bivector+
+Tilt = Twist.derive.nondegenerate.derive.touching(Algebra("z+"))        # Bivector+
 # The energy of a small tilt.
 Stiffness = ga.gatype((Scalar, Tilt, Tilt))                             # Scalar+ <- (Tilt+, Tilt+)
 

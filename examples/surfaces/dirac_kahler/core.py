@@ -80,9 +80,9 @@ def harmonic_circulation(operators: Operators, inner_ring: np.ndarray,
                          interior: np.ndarray) -> tuple[Scalar, Point]:
     """The harmonic stream function is one on the inner rim and zero on the outer, and its velocity circulates around the hole."""
     topology = operators.topology
-    pinned = topology.reading(inner_ring)
+    pinned = topology.reading(inner_ring, 0)
     boundary_stream = ~pinned * mv.scalar(np.ones(len(inner_ring))[..., None]).field()  # Scalar+[vertices]
-    free = ~topology.reading(interior) * Scalar                              # (Scalar+ <- Scalar+)[vertices <- interior]
+    free = ~topology.reading(interior, 0) * Scalar                           # (Scalar+ <- Scalar+)[vertices <- interior]
     rhs = -free.adjugate()(operators.stream_laplacian(boundary_stream))      # Antiscalar-[interior]
     stream = boundary_stream + free(free.adjugate()(operators.stream_laplacian(free)).solve(rhs))  # Scalar+[vertices]
     return stream, operators.stream_velocity(stream)
@@ -92,7 +92,7 @@ def hodge_decomposition(operators: Operators, flow: Point,
                         interior: np.ndarray) -> tuple[Scalar, Scalar, Point, Point, Point]:
     """One mixed-grade `Even` Poisson solve on the interior recovers both the scalar potential and the stream bivector that split `flow` into its orthogonal potential, stream and harmonic parts."""
     topology = operators.topology
-    free = ~topology.reading(interior) * Even                                # (Even+ <- Even+)[vertices <- interior]
+    free = ~topology.reading(interior, 0) * Even                             # (Even+ <- Even+)[vertices <- interior]
     # On every interior vertex star the adjugate of the even gradient reads the flow's divergence in grade 0
     # and its circulation in grade 2, so one solve on the even subalgebra recovers both potentials together.
     readings = free.adjugate()(operators.even_gradient.adjugate()(flow))     # Even-[interior]

@@ -4,6 +4,7 @@ import numpy as np
 
 from numga.sparse import spdiag
 from examples.surfaces.regge_calculus import core, scenarios
+from examples.util import shapes
 
 
 def test_regge_metric_basis_side_readings_heron_and_corner_rotors():
@@ -54,7 +55,8 @@ def test_regge_metric_basis_side_readings_heron_and_corner_rotors():
 
 
 def test_gauss_bonnet_curvature_defects_and_cotangent_inverse_metric():
-    topology, vertices = scenarios.disk(1.0, 6)
+    topology, coordinates = shapes.hexagonal_disk(1.0, 6)
+    vertices = scenarios.mv.vector(coordinates).dual().field()
     edges = topology.d[0] * vertices
     midpoints = topology.incidence[1, 0].mean(axis=0) * vertices
     edge_squared_lengths = (
@@ -75,8 +77,8 @@ def test_gauss_bonnet_curvature_defects_and_cotangent_inverse_metric():
     # Discrete Gauss-Bonnet holds to machine precision across flat, positively curved, and negatively curved metrics.
     np.testing.assert_allclose((defects.sites.sum() - 2 * np.pi * core.mv.xy).kernel, 0.0, atol=1e-12)
 
-    np.testing.assert_allclose((topology.reading(topology.interior[0]) * defects[0]).kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose((topology.reading(topology.interior[0]) * curvatures[0]).kernel, 0.0, atol=1e-11)
+    np.testing.assert_allclose((topology.reading(topology.interior[0], 0) * defects[0]).kernel, 0.0, atol=1e-13)
+    np.testing.assert_allclose((topology.reading(topology.interior[0], 0) * curvatures[0]).kernel, 0.0, atol=1e-11)
 
     # Scaling squared radial and circumferential distances by one plus `radial_rates` and `hoop_rates` times the squared
     # radius gives the continuum surface a Gaussian curvature of `radial_rates - 3 * hoop_rates` at its centre.
@@ -100,7 +102,8 @@ def test_gauss_bonnet_curvature_defects_and_cotangent_inverse_metric():
 
 
 def test_intrinsic_laplace_beltrami_cotangent_equivalence_and_flow():
-    topology, vertices = scenarios.disk(1.0, 6)
+    topology, coordinates = shapes.hexagonal_disk(1.0, 6)
+    vertices = scenarios.mv.vector(coordinates).dual().field()
     d0 = topology.d[0] * core.Scalar
     edges = topology.d[0] * vertices
     midpoints = topology.incidence[1, 0].mean(axis=0) * vertices
@@ -135,14 +138,14 @@ def test_intrinsic_laplace_beltrami_cotangent_equivalence_and_flow():
     boundary = topology.exterior[0]
     abscissa = (core.mv.x & vertices).batch()
     electrodes = boundary[abscissa[boundary].norm() > scenarios.electrode_threshold]
-    pinned = topology.reading(electrodes)
+    pinned = topology.reading(electrodes, 0)
     prescribed = ~pinned * (pinned * (core.mv.x & vertices))
     potential, current, streamfunction = core.intrinsic_conduction(
         topology, vertices, conductivities, electrodes, prescribed,
     )
 
     free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
-    free = ~topology.reading(free_vertices) * core.Scalar
+    free = ~topology.reading(free_vertices, 0) * core.Scalar
     nodal_source = conductance(potential)
     np.testing.assert_allclose(free.adjugate()(nodal_source).kernel, 0.0, atol=1e-11)
     np.testing.assert_allclose(nodal_source.sites.sum().kernel, 0.0, atol=1e-11)

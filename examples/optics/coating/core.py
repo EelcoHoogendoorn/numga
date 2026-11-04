@@ -19,7 +19,7 @@ from itertools import accumulate
 
 import numpy as np
 
-from numga import NumpyContext, Orientation, stack
+from numga import Algebra, NumpyContext, Orientation, stack
 from numga.algebras import STA as ga
 from numga.sparse import SparseExtensor
 from examples.util.topology import Topology
@@ -34,7 +34,7 @@ Antibivector = ga.gatype.antibivector()                         # Antibivector-
 # Directions, the optic axes and the places along a line, are antivectors, intrinsic.
 Direction = ga.gatype.antivector()                              # Antivector-
 # The tangential electric field: the observer's temporal planes across the layer, xt and yt.
-Polarization = Bivector.derive.within("x y t").derive.containing("t")   # Bivector+
+Polarization = Bivector.derive.touching(Algebra("x+y+"), Algebra("t-"))   # Bivector+
 Boundary = ga.gatype(ga.subspace("x y txz tyz"), orientation=Orientation.extrinsic)   # Odd+
 Constitutive = ga.gatype((Antibivector, Bivector))              # Antibivector- <- Bivector+
 Inverse = ga.gatype((Bivector, Antibivector))                   # Bivector+ <- Antibivector-

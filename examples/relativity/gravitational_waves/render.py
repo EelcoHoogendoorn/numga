@@ -12,7 +12,8 @@ import numpy as np
 from matplotlib.colors import hsv_to_rgb
 from numga import stack
 
-from examples.relativity.closed_universe import core
+from examples.relativity.gravitational_waves import core
+from examples.util import charts
 from examples.util.topology import Topology, lookup_simplices
 from examples.util.wgsl import meshes, simplices, solids
 
@@ -24,8 +25,8 @@ fov_radians = np.radians(100.0)
 max_legs = 1024
 inside_background = np.array([0.035, 0.04, 0.06], dtype=np.float32)
 # The struts' radii, as shares of the mesh's mean edge, in lengths on the tetrahedra's charts: a coloured strut, and
-# every other edge a thin light-grey ghost, none in the view of the waves, where the rails and the crystals carry the
-# space. A helix's rungs, between its rails.
+# every other edge a thin light-grey ghost, none in the pinned picture of the waves, for its file's size. A helix's
+# rungs, between its rails.
 rail_share = 0.014
 # A bead's radius as a multiple of a coloured strut's.
 bead_scale = 2.0
@@ -36,39 +37,51 @@ rung_ink = np.array([0.85, 0.87, 0.90])
 particle_ink, particle_radius = np.array([1.0, 0.86, 0.35], dtype=np.float32), 0.012
 bond_radius, saturating_strain = 0.005, 0.15
 strain_map = "coolwarm"
-# How far an atom may move from where it starts and still be drawn in the tetrahedra listed for it.
-motion_room = 0.03
 # The lamp, up and to the left of each eye: the motor that carries the origin to it, before the camera.
 lamp_placement = (core.mv.yw * 0.4 - core.mv.xw * 0.3).exp()                  # [] Motor+
+# The algebra's types as the shader of the view from inside names them.
+inside_types = dict(Point=core.Point, Plane=core.Plane, Rate=core.Rate, Step=core.Step, Motor=core.Motor,
+                    Strain=core.Strain, Turning=core.Turning, Rolling=core.Rolling, Moving=core.Moving,
+                    Translating=core.Translating)
 
-inside_source = """
+# A tetrahedron as the view from inside draws it: the place and the bead of each of its corners, an ink and a squared
+# radius, and the strut along each of its edges, the same, in its own order of them; and the corners at the ends of
+# each edge, in that order, as the topology gives them.
+cell_edges = ", ".join(f"vec2<u32>({tail}u, {head}u)" for tail, head in Topology(4, [[0, 1, 2, 3]]).corners[3, 1].T)
+cell_source = """
+struct Cell {
+    places: array<Point, 4>,
+    beads: array<vec4<f32>, 4>,
+    struts: array<vec4<f32>, 6>,
+}
+
+const cell_edges = array<vec2<u32>, 6>(""" + cell_edges + """);
+"""
+
+inside_source = cell_source + """
 var<uniform> start_place: Point;
 var<uniform> start_tet: u32;
 var<uniform> right: Step;
 var<uniform> up: Step;
 var<uniform> forward: Step;
 var<uniform> eye_time: f32;
-var<uniform> half_height: f32;
 var<uniform> max_legs: u32;
 var<uniform> light: Point;
-var<storage, read> struts: array<vec4<f32>>;
-var<storage, read> strut_tails: array<Point>;
-var<storage, read> strut_heads: array<Point>;
-var<storage, read> beads: array<vec4<f32>>;
-var<storage, read> bead_places: array<Point>;
-var<storage, read> particles: array<Point>;
 var<uniform> n_particles: u32;
-var<storage, read> particle_starts: array<u32>;
-var<storage, read> tet_particles: array<u32>;
-var<storage, read> bond_starts: array<u32>;
-var<storage, read> tet_bonds: array<u32>;
 var<uniform> particle_ink: vec3<f32>;
 var<uniform> particle_radius_squared: f32;
-var<storage, read> bond_tails: array<Point>;
-var<storage, read> bond_heads: array<Point>;
-var<storage, read> bond_inks: array<vec4<f32>>;
 var<uniform> n_bonds: u32;
 var<uniform> bond_radius_squared: f32;
+
+// A bond as the view sees it at a time: its atoms' places and its ink. The crystals' atoms and bonds at a time,
+// `atom_at` and `bond_at`, and the direction a pixel looks along, `sightline`, come with the view.
+struct BondSeen {
+    tail: Point,
+    head: Point,
+    ink: vec3<f32>,
+}
+
+var<storage, read> cells: array<Cell>;
 
 alias Sample = vec3<f32>;
 
@@ -77,36 +90,105 @@ fn tangent(place: Point, toward: Point) -> Point {
     return (toward - place * place.dot(toward)).normalized();
 }
 
+// Where along a leg it first meets a ball about a point of the sphere, as a share of the leg, the point scaled onto the
+// leg's chart from the chart's side of the sphere; two, more than all of it, where it misses.
+fn ball_share(leg: Leg, centre: Point, radius_squared: f32) -> f32 {
+    let reading = leg.plane & centre;
+    if (reading <= 0.0) {
+        return 2.0;
+    }
+    let offset = leg.chart - centre / reading;
+    let a = leg.segment.dot(leg.segment);
+    let b = offset.dot(leg.segment);
+    let c = offset.dot(offset) - radius_squared;
+    let disc = b * b - a * c;
+    if (c <= 0.0 || disc < 0.0) {
+        return 2.0;
+    }
+    let share = (-b - sqrt(disc)) / a;
+    return select(2.0, share, share >= 0.0);
+}
+
+// Where along a leg it passes nearest a point of the sphere, as a share of the leg, the point scaled onto the leg's
+// chart from the chart's side of the sphere; the leg's start for a point on the far side.
+fn ball_nearest(leg: Leg, centre: Point) -> f32 {
+    let reading = leg.plane & centre;
+    let offset = leg.chart - centre / reading;
+    let along = clamp(-offset.dot(leg.segment) / leg.segment.dot(leg.segment), 0.0, 1.0);
+    return select(0.0, along, reading > 0.0);
+}
+
+// Where along a leg it passes nearest a bond's segment between its atoms, as a share of the leg, the atoms scaled onto
+// the leg's chart from the chart's side of the sphere; the leg's start for a bond with an atom on the far side.
+fn bond_nearest(leg: Leg, bond: BondSeen) -> f32 {
+    let tail_reading = leg.plane & bond.tail;
+    let head_reading = leg.plane & bond.head;
+    let tail = bond.tail / tail_reading;
+    let bond_span = bond.head / head_reading - tail;
+    let offset = leg.chart - tail;
+    let a = leg.segment.dot(leg.segment);
+    let b = leg.segment.dot(bond_span);
+    let c = bond_span.dot(bond_span);
+    let d = leg.segment.dot(offset);
+    let e = bond_span.dot(offset);
+    let s = clamp((a * e - b * d) / max(a * c - b * b, 1e-20), 0.0, 1.0);
+    return select(0.0, clamp((b * s - d) / a, 0.0, 1.0), tail_reading > 0.0 && head_reading > 0.0);
+}
+
+// Where along a leg, short of the share `reach`, it comes within a bond's radius of the bond's segment between its
+// atoms scaled onto the leg's chart from the chart's side of the sphere, as a share of the leg; two where it does not.
+fn bond_share(leg: Leg, bond: BondSeen, reach: f32) -> f32 {
+    let tail_reading = leg.plane & bond.tail;
+    let head_reading = leg.plane & bond.head;
+    if (tail_reading <= 0.0 || head_reading <= 0.0) {
+        return 2.0;
+    }
+    let tail = bond.tail / tail_reading;
+    let bond_span = bond.head / head_reading - tail;
+    let offset = leg.chart - tail;
+    let a = leg.segment.dot(leg.segment);
+    let b = leg.segment.dot(bond_span);
+    let c = bond_span.dot(bond_span);
+    let d = leg.segment.dot(offset);
+    let e = bond_span.dot(offset);
+    let s = clamp((a * e - b * d) / max(a * c - b * b, 1e-20), 0.0, 1.0);
+    let u_b = clamp((b * s - d) / a, 0.0, reach);
+    let gap = offset + leg.segment * u_b - bond_span * s;
+    return select(2.0, u_b, gap.dot(gap) < bond_radius_squared && u_b < reach);
+}
+
 // A lit colour seen from a distance along the ray, its brightness falling linearly to nothing at the antipode.
 fn faded(lit: Sample, distance: f32) -> Sample {
     return mix(background, lit, max(1.0 - distance / 3.14159, 0.0));
 }
 
 fn sample(pixel: vec2<f32>) -> Sample {
-    let screen_place = screen(pixel) * half_height;
-    var heading = (forward + right * screen_place.x + up * screen_place.y).normalized();
+    // The direction the pixel looks along, read along the eye's right, up and forward.
+    let sight = sightline(pixel);
+    var heading = (forward * sight.z + right * sight.x + up * sight.y).normalized();
     var place = start_place;
     var tet = start_tet;
     var entry = 4u;
     var travelled = 0.0;
     for (var k = 0u; k < max_legs; k++) {
         // The ray runs back in time: here it is the light that passed the eye's time less the distance travelled.
-        let leg = next_leg(place, heading, tet, entry, eye_time - travelled);
+        let leg_time = eye_time - travelled;
+        let leg = next_leg(place, heading, tet, entry, leg_time);
         // The struts about the tetrahedron's edges, tubes about each edge's line on the chart: where the leg first
         // comes within a strut's radius of the line, from the parts of its offset and its segment square to the edge.
         var nearest = 1.0;
         var hit_strut = 6u;
         var strut_normal = leg.chart;
         for (var edge = 0u; edge < 6u; edge++) {
-            let index = tet * 6u + edge;
-            let tail = strut_tails[index];
-            let edge_span = strut_heads[index] - tail;
+            let ends = cell_edges[edge];
+            let tail = cells[tet].places[ends.x];
+            let edge_span = cells[tet].places[ends.y] - tail;
             let offset = leg.chart - tail;
             let radial_offset = offset - edge_span * (offset.dot(edge_span) / edge_span.dot(edge_span));
             let radial_segment = leg.segment - edge_span * (leg.segment.dot(edge_span) / edge_span.dot(edge_span));
             let a = radial_segment.dot(radial_segment);
             let b = radial_offset.dot(radial_segment);
-            let c = radial_offset.dot(radial_offset) - struts[index].w;
+            let c = radial_offset.dot(radial_offset) - cells[tet].struts[edge].w;
             let disc = b * b - a * c;
             if (c > 0.0 && disc >= 0.0 && a > 0.0) {
                 let share = (-b - sqrt(disc)) / a;
@@ -122,11 +204,10 @@ fn sample(pixel: vec2<f32>) -> Sample {
         var hit_bead = 4u;
         var bead_normal = leg.chart;
         for (var corner = 0u; corner < 4u; corner++) {
-            let index = tet * 4u + corner;
-            let offset = leg.chart - bead_places[index];
+            let offset = leg.chart - cells[tet].places[corner];
             let a = leg.segment.dot(leg.segment);
             let b = offset.dot(leg.segment);
-            let c = offset.dot(offset) - beads[index].w;
+            let c = offset.dot(offset) - cells[tet].beads[corner].w;
             let disc = b * b - a * c;
             if (c > 0.0 && disc >= 0.0 && a > 0.0) {
                 let share = (-b - sqrt(disc)) / a;
@@ -138,60 +219,45 @@ fn sample(pixel: vec2<f32>) -> Sample {
                 }
             }
         }
-        // The atoms near the tetrahedron, balls about their places scaled onto its chart, where the leg comes nearest.
+        // The atoms and the bonds as they were when the light that reaches the eye passed them, the time back along
+        // the leg running one for one with its length: each met as it was when the light passed the leg's point
+        // nearest it, and where it is met, met again as it was when the light passed that meeting, which for crystals
+        // this slow settles at once.
         var hit_particle = n_particles;
-        for (var listed = particle_starts[tet]; listed < particle_starts[tet + 1u]; listed++) {
-            let i = tet_particles[listed];
-            let reading = leg.plane & particles[i];
-            if (reading > 0.0) {
-                let offset = leg.chart - particles[i] / reading;
-                let a = leg.segment.dot(leg.segment);
-                let b = offset.dot(leg.segment);
-                let c = offset.dot(offset) - particle_radius_squared;
-                let disc = b * b - a * c;
-                if (c > 0.0 && disc >= 0.0) {
-                    let share = (-b - sqrt(disc)) / a;
-                    if (share >= 0.0 && share < nearest) {
-                        nearest = share;
-                        hit_particle = i;
-                    }
-                }
+        var particle_time = leg_time;
+        for (var i = 0u; i < n_particles; i++) {
+            let near_time = leg_time - ball_nearest(leg, atom_at(i, leg_time)) * leg.length;
+            let first = ball_share(leg, atom_at(i, near_time), particle_radius_squared);
+            let seen_time = select(near_time, leg_time - first * leg.length, first <= 1.0);
+            let share = select(first, ball_share(leg, atom_at(i, seen_time), particle_radius_squared), first <= 1.0);
+            if (share < nearest) {
+                nearest = share;
+                hit_particle = i;
+                particle_time = seen_time;
             }
         }
-        // The bonds near the tetrahedron, segments between their ends scaled onto its chart, where the leg comes
-        // nearest.
         var hit_bond = n_bonds;
-        for (var listed = bond_starts[tet]; listed < bond_starts[tet + 1u]; listed++) {
-            let i = tet_bonds[listed];
-            let tail_reading = leg.plane & bond_tails[i];
-            let head_reading = leg.plane & bond_heads[i];
-            if (tail_reading > 0.0 && head_reading > 0.0) {
-                let tail = bond_tails[i] / tail_reading;
-                let bond_span = bond_heads[i] / head_reading - tail;
-                let offset = leg.chart - tail;
-                let a = leg.segment.dot(leg.segment);
-                let b = leg.segment.dot(bond_span);
-                let c = bond_span.dot(bond_span);
-                let d = leg.segment.dot(offset);
-                let e = bond_span.dot(offset);
-                let s = clamp((a * e - b * d) / max(a * c - b * b, 1e-20), 0.0, 1.0);
-                let u_b = clamp((b * s - d) / a, 0.0, nearest);
-                let gap = offset + leg.segment * u_b - bond_span * s;
-                if (gap.dot(gap) < bond_radius_squared && u_b < nearest) {
-                    nearest = u_b;
-                    hit_bond = i;
-                }
+        var bond_time = leg_time;
+        for (var i = 0u; i < n_bonds; i++) {
+            let near_time = leg_time - bond_nearest(leg, bond_at(i, leg_time)) * leg.length;
+            let first = bond_share(leg, bond_at(i, near_time), nearest);
+            let seen_time = select(near_time, leg_time - first * leg.length, first <= 1.0);
+            let share = select(first, bond_share(leg, bond_at(i, seen_time), nearest), first <= 1.0);
+            if (share < nearest) {
+                nearest = share;
+                hit_bond = i;
+                bond_time = seen_time;
             }
         }
         let hit = (leg.chart + leg.segment * nearest).normalized();
         let distance = travelled + nearest * leg.length;
         let to_light = tangent(hit, light);
         if (hit_bond < n_bonds) {
-            return faded(bond_inks[hit_bond].xyz * (0.55 + 0.45 * max(tangent(hit, leg.segment).dot(to_light), 0.0)),
+            return faded(bond_at(hit_bond, bond_time).ink * (0.55 + 0.45 * max(tangent(hit, leg.segment).dot(to_light), 0.0)),
                          distance);
         }
         if (hit_particle < n_particles) {
-            let normal = tangent(hit, hit - particles[hit_particle].normalized());
+            let normal = tangent(hit, hit - atom_at(hit_particle, particle_time).normalized());
             let to_eye = -tangent(hit, leg.segment);
             let lit = particle_ink * (0.30 + 0.50 * max(normal.dot(to_light), 0.0)
                       + 0.25 * max(normal.dot(to_eye), 0.0));
@@ -202,7 +268,7 @@ fn sample(pixel: vec2<f32>) -> Sample {
             let normal = tangent(hit, bead_normal);
             let halfway = tangent(hit, to_eye + to_light);
             let glint = pow(max(normal.dot(halfway), 0.0), 36.0);
-            let lit = beads[tet * 4u + hit_bead].xyz * (0.22 + 0.56 * max(normal.dot(to_light), 0.0)
+            let lit = cells[tet].beads[hit_bead].xyz * (0.22 + 0.56 * max(normal.dot(to_light), 0.0)
                       + 0.28 * max(normal.dot(to_eye), 0.0)) + vec3<f32>(0.95, 0.97, 1.0) * (0.36 * glint);
             return faded(lit, distance);
         }
@@ -212,7 +278,7 @@ fn sample(pixel: vec2<f32>) -> Sample {
             let facing = normal * select(-1.0, 1.0, normal.dot(to_eye) >= 0.0);
             let halfway = tangent(hit, to_eye + to_light);
             let glint = pow(max(facing.dot(halfway), 0.0), 36.0);
-            let lit = struts[tet * 6u + hit_strut].xyz * (0.22 + 0.56 * max(facing.dot(to_light), 0.0)
+            let lit = cells[tet].struts[hit_strut].xyz * (0.22 + 0.56 * max(facing.dot(to_light), 0.0)
                       + 0.28 * max(facing.dot(to_eye), 0.0)) + vec3<f32>(0.95, 0.97, 1.0) * (0.36 * glint);
             return faded(lit, distance);
         }
@@ -226,6 +292,59 @@ fn sample(pixel: vec2<f32>) -> Sample {
         }
     }
     return background;
+}
+"""
+
+
+# A camera at rest: each pixel looks along the screen's direction through it.
+rest_sight_source = """
+var<uniform> half_height: f32;
+
+fn sightline(pixel: vec2<f32>) -> vec3<f32> {
+    let across = screen(pixel) * half_height;
+    return vec3<f32>(across, 1.0);
+}
+"""
+
+# The crystals as they were when a leg's light passed, as the page sees them: their atoms' places and their bonds'
+# inks kept at `n_kept` moments `kept_step` apart from `kept_start`, the two kept about a time blended by their nearness.
+crystals_kept_source = """
+struct Bond {
+    tail: u32,
+    head: u32,
+}
+
+var<storage, read> bonds: array<Bond>;
+var<storage, read> history: array<Point>;
+var<storage, read> inks: array<vec4<f32>>;
+var<uniform> kept_start: f32;
+var<uniform> kept_step: f32;
+var<uniform> n_kept: u32;
+
+// The two kept moments about a time, and the later's share.
+struct Moments {
+    early: u32,
+    late: u32,
+    share: f32,
+}
+
+fn moments(time: f32) -> Moments {
+    let level = clamp((time - kept_start) / kept_step, 0.0, f32(n_kept - 1u));
+    let early = u32(floor(level));
+    return Moments(early, min(early + 1u, n_kept - 1u), level - floor(level));
+}
+
+fn atom_at(i: u32, time: f32) -> Point {
+    let kept = moments(time);
+    return (history[kept.early * n_particles + i] * (1.0 - kept.share)
+            + history[kept.late * n_particles + i] * kept.share).normalized();
+}
+
+fn bond_at(i: u32, time: f32) -> BondSeen {
+    let kept = moments(time);
+    let bond = bonds[i];
+    let ink = mix(inks[kept.early * n_bonds + i], inks[kept.late * n_bonds + i], kept.share);
+    return BondSeen(atom_at(bond.tail, time), atom_at(bond.head, time), ink.xyz);
 }
 """
 
@@ -245,8 +364,7 @@ def edge_styles(mesh: Topology, vertices: core.Point, struts: np.ndarray, inks: 
     """Each edge's colour and squared strut radius, `[edges, 4]`: the edges `struts`, vertex pairs `[struts, 2]`, thick
     struts in their inks `[struts, 3]`, and every other edge a thin ghost, `ghosts` of the mesh's mean edge thick, and
     so not drawn where that is nothing."""
-    chords = mesh.d[0] * vertices                                               # Point-[edges]
-    mean_edge = chords.dot(chords).square_root().to_array().mean()
+    mean_edge = mean_chord(mesh, vertices)
     edges = mesh.elements[1]                                                    # [edges, 2]
     styles = np.tile(np.append(ghost_ink, (ghosts * mean_edge) ** 2), (len(edges), 1)).astype(np.float32)
     # Each strut's edge, found by its ends.
@@ -255,11 +373,16 @@ def edge_styles(mesh: Topology, vertices: core.Point, struts: np.ndarray, inks: 
     return styles
 
 
+def mean_chord(mesh: Topology, vertices: core.Point) -> float:
+    """The mesh's mean edge, a chord's length, the scale of the struts' and beads' radii."""
+    chords = mesh.d[0] * vertices                                               # Point-[edges]
+    return float(chords.dot(chords).square_root().to_array().mean())
+
+
 def bead_styles(mesh: Topology, vertices: core.Point, beads: np.ndarray, inks: np.ndarray) -> np.ndarray:
     """Each vertex's bead, its colour and squared radius, `[vertices, 4]`: the vertices `beads`, `[beads]`, balls in
     their inks `[beads, 3]`, `bead_scale` times as thick as a coloured strut, and no bead at any other vertex."""
-    chords = mesh.d[0] * vertices                                               # Point-[edges]
-    mean_edge = chords.dot(chords).square_root().to_array().mean()
+    mean_edge = mean_chord(mesh, vertices)
     styles = np.zeros((mesh.n_vertices, 4), dtype=np.float32)
     radii_squared = np.full((len(beads), 1), (bead_scale * rail_share * mean_edge) ** 2)
     styles[beads] = np.concatenate([inks, radii_squared], axis=-1)
@@ -289,13 +412,13 @@ def round_values(mesh: Topology, vertices: core.Point) -> dict:
 
 
 def wave_values(mesh: Topology, waves: core.Waves) -> dict:
-    """What the core's walk through the waves reads besides the topology: the waves' stored moments, the
-    tetrahedra's ramps and corners, the origin, and the maps of its steps."""
+    """What the core's walk through the waves reads besides the topology: the waves' stored moments and their counts
+    of vertices and tetrahedra, the tetrahedra's ramps, the origin, and the maps of its steps."""
     _, n_vertices = waves.traces.shape
-    return dict(ramps=waves.ramps, tet_vertices=mesh.elements[3], strains=waves.strains,
-                strain_rates=waves.strain_rates, traces=waves.traces, turns=waves.turns, n_vertices=n_vertices,
-                first_time=waves.first_time, level_step=waves.level_step, origin=core.origin,
-                translating=core.translating, moving=core.moving, turning=core.turning, step=core.wave_step)
+    return dict(ramps=waves.ramps, strains=waves.strains, strain_rates=waves.strain_rates, traces=waves.traces,
+                turns=waves.turns, n_vertices=n_vertices, n_tets=mesh.n_elements[3], first_time=waves.first_time,
+                level_step=waves.level_step, origin=core.origin, translating=core.translating, moving=core.moving,
+                turning=core.turning, step=core.wave_step)
 
 
 def inside(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, cameras: core.Motor,
@@ -304,37 +427,26 @@ def inside(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, c
     """Frames of the view from inside a round three-sphere meshed by tetrahedra, one for each camera and time: each
     camera, a motor `[frames] Motor+`, carries the origin to the eye and the origin's steps along `x`, `y` and `z` to
     its right, up and forward, read in the frame at the eye; each ray is walked back from the eye leg by leg
-    by the WGSL `walk`, which defines `next_leg` and its `Leg` and reads `walk_values` beside the topology's
-    neighbours across each face, `neighbours` and `entries`, and its count `n_tets`; the edges are lit struts, each in
-    its colour and squared radius `styles`, `[edges, 4]`; the vertices are lit beads, each in its colour and squared
-    radius `beads`, `[vertices, 4]`, none where that is nothing; and at each frame the atoms and bonds of
-    `crystals`."""
+    by the WGSL `walk`, which defines `next_leg` and its `Leg` and the `Tet` of the tetrahedra `tets`, of the members
+    `tet_table` gives, with the ramps of the corners `walk_values["ramps"]`, `[corners] Plane+[tets]`, and reads the
+    rest of `walk_values`; the edges are lit struts, each in its colour and squared radius `styles`, `[edges, 4]`; the
+    vertices are lit beads, each in its colour and squared radius `beads`, `[vertices, 4]`, none where that is nothing;
+    and at each frame the atoms and bonds of `crystals`, each as it was when a leg's light passed it."""
     from examples.util.wgsl import Shader, supersampled
 
     mv = core.mv
-    shader = Shader(supersampled() + walk + inside_source, core.ga,
-                    dict(Point=core.Point, Plane=core.Plane, Rate=core.Rate, Step=core.Step, Motor=core.Motor,
-                         Strain=core.Strain, Turning=core.Turning, Rolling=core.Rolling, Moving=core.Moving,
-                         Translating=core.Translating),
-                    dict(background=inside_background))
-    # The struts' ends: each tetrahedron's edges' tails and heads, in its own order of its edges.
-    tails, heads = mesh.incidence[1, 0] * vertices                              # Point-[edges], Point-[edges]
-    strut_tails = stack(tuple((mesh.incidence[3, 1] * tails).batch()), axis=-1)   # [tets, cell_edges] Point-
-    strut_heads = stack(tuple((mesh.incidence[3, 1] * heads).batch()), axis=-1)   # [tets, cell_edges] Point-
-    # The beads' places at each tetrahedron's corners, in its own order of its corners.
-    bead_places = stack(tuple((mesh.incidence[3, 0] * vertices).batch()), axis=-1)   # [tets, corners] Point-
-    neighbours, entries = mesh.neighbours
+    shader = Shader(supersampled() + walk + inside_source + rest_sight_source + crystals_kept_source, core.ga,
+                    inside_types, dict(background=inside_background))
     axes = stack((mv.x, mv.y, mv.z)).dual()                                     # [3] Point-
     lamp = lamp_placement >> core.origin                                        # [] Point-
     pick = core.picking(mesh, vertices)
     half_height = float(np.tan(fov_radians / 2) * inside_shape[0] / inside_shape[1])
-    bindings = walk_values | dict(neighbours=neighbours, entries=entries, n_tets=mesh.n_elements[3],
-                                  struts=styles[mesh.incidence_indices[3, 1].reshape(-1)], strut_tails=strut_tails,
-                                  strut_heads=strut_heads, beads=beads[mesh.incidence_indices[3, 0].reshape(-1)],
-                                  bead_places=bead_places,
-                                  half_height=half_height,
-                                  max_legs=max_legs, particle_ink=particle_ink,
-                                  particle_radius_squared=particle_radius ** 2, bond_radius_squared=bond_radius ** 2)
+    walk_bindings = {name: value for name, value in walk_values.items() if name != "ramps"}
+    bindings = walk_bindings | dict(tets=tet_table(mesh, walk_values["ramps"]),
+                                    cells=cell_table(mesh, vertices, styles, beads),
+                                    half_height=half_height, max_legs=max_legs, particle_ink=particle_ink,
+                                    particle_radius_squared=particle_radius ** 2,
+                                    bond_radius_squared=bond_radius ** 2)
     for frame, (eye_time, crystal) in enumerate(zip(eye_times, crystals)):
         camera = cameras[frame]                                                 # [] Motor+
         place = camera >> core.origin                                           # [] Point-
@@ -345,13 +457,31 @@ def inside(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, c
         yield np.round(np.clip(image, 0.0, 1.0) * 255).astype(np.uint8)
 
 
+def tet_table(mesh: Topology, ramps: core.Plane) -> dict:
+    """The tetrahedra as a walk reads them, by member of its `Tet`, which takes those it declares: each one's corners
+    in its own order, across the face facing each corner the neighbour and the face it is entered by there, and the
+    ramps of its corners, `[corners] Plane+[tets]`."""
+    neighbours, entries = mesh.neighbours
+    return dict(corners=mesh.incidence_indices[3, 0], neighbours=neighbours, entries=entries,
+                ramps=stack(tuple(ramps.batch()), axis=-1))
+
+
+def cell_table(mesh: Topology, vertices: core.Point, styles: np.ndarray, beads: np.ndarray) -> dict:
+    """The tetrahedra as the view from inside draws them, by member of its `Cell`: the places of each one's corners and
+    their beads, of the vertices' `beads`, `[vertices, 4]`, and the struts along its edges, of the edges' `styles`,
+    `[edges, 4]`, in its own order of them."""
+    corners = mesh.incidence[3, 0] * vertices                                   # [corners] Point-[tets]
+    return dict(places=stack(tuple(corners.batch()), axis=-1), beads=beads[mesh.incidence_indices[3, 0]],
+                struts=styles[mesh.incidence_indices[3, 1]])
+
+
 def plain_view(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, cameras: core.Motor
                ) -> Iterator[np.ndarray]:
     """Frames of the view from inside the round three-sphere, as `inside` draws them, along the cameras `[frames]
     Motor+`, every edge a thin ghost."""
     return inside(walk, walk_values, mesh, vertices, cameras, np.zeros(cameras.shape[0]),
                   edge_styles(mesh, vertices, *no_struts, ghost_share), bead_styles(mesh, vertices, *no_beads),
-                  repeat(no_crystals(mesh)))
+                  repeat(no_crystals))
 
 
 def polygon_view(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, cameras: core.Motor,
@@ -361,7 +491,7 @@ def polygon_view(walk: str, walk_values: dict, mesh: Topology, vertices: core.Po
     the colour wheel, every other edge a thin ghost."""
     return inside(walk, walk_values, mesh, vertices, cameras, np.zeros(cameras.shape[0]),
                   edge_styles(mesh, vertices, *polygon_struts(polygons), ghost_share),
-                  bead_styles(mesh, vertices, *no_beads), repeat(no_crystals(mesh)))
+                  bead_styles(mesh, vertices, *no_beads), repeat(no_crystals))
 
 
 def helix_view(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, cameras: core.Motor,
@@ -378,81 +508,69 @@ def helix_view(walk: str, walk_values: dict, mesh: Topology, vertices: core.Poin
     styles = edge_styles(mesh, vertices, np.concatenate([sides, rungs]),
                          np.concatenate([side_inks, np.broadcast_to(rung_ink, (len(rungs), 3))]), ghost_share)
     return inside(walk, walk_values, mesh, vertices, cameras, np.zeros(cameras.shape[0]), styles,
-                  bead_styles(mesh, vertices, *no_beads), repeat(no_crystals(mesh)))
+                  bead_styles(mesh, vertices, *no_beads), repeat(no_crystals))
 
 
 def waves_view(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, eye: core.Motor,
-               eye_times: np.ndarray, rails: np.ndarray, bonds: Topology, atoms: core.Point,
-               states: Iterable[tuple[core.Point, core.Scalar]]) -> Iterator[np.ndarray]:
+               eye_times: np.ndarray, rails: np.ndarray, bonds: Topology, kept_times: np.ndarray,
+               states: Iterable[tuple[core.Point, core.Scalar]], ghosts: float = ghost_share) -> Iterator[np.ndarray]:
     """Frames of the view from inside the round three-sphere carrying gravitational waves, as `inside` draws them
     through a walk through the waves, from the camera `eye` at each of the `eye_times`: the closed polygons of edges
-    `rails`, vertex indices `[rails, sides]`, as struts each in its own colour, and no other edge; and the
-    crystals, their atoms at rest `atoms` and at each frame the atoms and their bonds' strains of `states`,
-    `(Point-[atoms], Scalar+[bonds])`, the bonds the edges of `bonds`, coloured by their strains."""
+    `rails`, vertex indices `[rails, sides]`, as struts each in its own colour, and every other edge a ghost `ghosts`
+    of the mesh's mean edge thick, none where that is nothing; and the crystals, each as it was when a leg's light
+    passed it, from their atoms and their bonds' strains of `states`, `(Point-[atoms], Scalar+[bonds])` at each of the
+    `kept_times`, the bonds the edges of `bonds`, coloured by their strains."""
     return inside(walk, walk_values, mesh, vertices, eye.broadcast_to(eye_times.shape), eye_times,
-                  edge_styles(mesh, vertices, *polygon_struts(rails), wave_ghost_share),
+                  edge_styles(mesh, vertices, *polygon_struts(rails), ghosts),
                   bead_styles(mesh, vertices, *polygon_beads(rails)),
-                  crystal_frames(mesh, vertices, bonds, atoms, states))
+                  crystal_frames(bonds, kept_times, states, eye_times))
 
 
-def crystal_frames(mesh: Topology, vertices: core.Point, bonds: Topology, atoms: core.Point,
-                   states: Iterable[tuple[core.Point, core.Scalar]]) -> Iterator[dict]:
-    """The crystals at each frame as the view from inside draws them: the atoms of `states`, `(Point-[atoms],
-    Scalar+[bonds])` per frame, balls, and the edges of `bonds`, segments coloured by their strains, blue squeezed and
-    red stretched; each listed in the tetrahedra near the atoms at rest, `atoms`."""
-    lists = nearby(mesh, vertices, atoms, bonds)
-    for positions, strains in states:
-        tails, heads = bonds.incidence[1, 0] * positions                       # Point-[bonds], Point-[bonds]
-        inks = plt.get_cmap(strain_map)(0.5 + 0.5 * np.clip(strains.to_array() / saturating_strain, -1, 1))
-        yield dict(particles=positions.batch().normalized(), n_particles=positions.batch().shape[0],
-                   bond_tails=tails.batch().normalized(), bond_heads=heads.batch().normalized(),
-                   bond_inks=inks.astype(np.float32), n_bonds=bonds.n_elements[1], **lists)
+def crystal_frames(bonds: Topology, kept_times: np.ndarray, states: Iterable[tuple[core.Point, core.Scalar]],
+                   eye_times: np.ndarray) -> Iterator[dict]:
+    """The crystals at each of the `eye_times` as the view from inside draws them, each as it was when a leg's light
+    passed it: every moment of `states`, `(Point-[atoms], Scalar+[bonds])` at each of the `kept_times`, evenly spaced,
+    up to the first at or past the frame's time, drawn from the states as the frames need them; their atoms balls, and
+    the edges of `bonds` segments between them coloured by their strains, blue squeezed and red stretched."""
+    tails, heads = bonds.elements[1].T
+    states = iter(states)
+    places, inks = [], []
+    for eye_time in eye_times:
+        while len(places) < len(kept_times) and (not places or kept_times[len(places) - 1] < eye_time):
+            positions, strains = next(states)
+            places.append(positions.batch().normalized())
+            inks.append(plt.get_cmap(strain_map)(0.5 + 0.5 * np.clip(strains.to_array() / saturating_strain, -1, 1)))
+        yield dict(bonds=dict(tail=tails, head=heads), history=stack(places).reshape(-1),
+                   inks=np.concatenate(inks).reshape(-1, 4).astype(np.float32), kept_start=float(kept_times[0]),
+                   kept_step=float(kept_times[1] - kept_times[0]), n_kept=len(places), n_particles=bonds.n_vertices,
+                   n_bonds=bonds.n_elements[1])
 
 
-def no_crystals(mesh: Topology) -> dict:
-    """No crystals: no atoms, no bonds, and none listed in any tetrahedron."""
-    nothing = core.mv.vector(np.zeros((0, 4))).dual()                           # [0] Point-
-    unlisted, starts = np.zeros(0, dtype=np.uint32), np.zeros(mesh.n_elements[3] + 1, dtype=np.uint32)
-    return dict(particles=nothing, n_particles=0, bond_tails=nothing, bond_heads=nothing,
-                bond_inks=np.zeros((0, 4), dtype=np.float32), n_bonds=0, particle_starts=starts,
-                tet_particles=unlisted, bond_starts=starts, tet_bonds=unlisted)
+# No crystals: no atoms and no bonds, and one moment of nothing kept.
+no_crystals = dict(bonds=dict(tail=np.zeros(0, dtype=np.uint32), head=np.zeros(0, dtype=np.uint32)),
+                   history=core.mv.vector(np.zeros((0, 4))).dual(), inks=np.zeros((0, 4), dtype=np.float32),
+                   kept_start=0.0, kept_step=1.0, n_kept=1, n_particles=0, n_bonds=0)
 
 
-def nearby(mesh: Topology, vertices: core.Point, atoms: core.Point, bonds: Topology) -> dict[str, np.ndarray]:
-    """For each tetrahedron, the atoms and the bonds near enough to it to be drawn in it, as lists one after another
-    with each tetrahedron's start, `[tets + 1]` and `[listed]` for each: an atom within the tetrahedron's reach of its
-    middle, the farthest of its corners, plus the atom's radius and room for its motion, and a bond whose middle is
-    that near plus half its length. The angles are the algebra's; the lists are gathered outside it, by a k-d tree
-    over the middles' coordinates, read by pairing with the planes across the four directions."""
-    from scipy.spatial import cKDTree
+# The chart of the crystals' signed volumes: its size, and each crystal's colour, the soft, the tuned and the stiff one.
+volume_chart_px = (480, 220)
+crystal_inks = ["#4c72b0", "#dd8452", "#55a868"]
 
-    coordinate_planes = core.mv.vector(np.eye(4))                               # [4] Plane+
-    middles = (mesh.incidence[3, 0].mean(axis=0) * vertices).normalized().batch()   # [tets] Point-
-    corners = (mesh.incidence[3, 0] * vertices).batch()                         # [corners, tets] Point-
-    reach = middles[None].dot(corners).arccos().to_array().max(axis=0)          # [tets]
-    tails, heads = bonds.incidence[1, 0] * atoms                                # Point-[bonds], Point-[bonds]
-    places = atoms.batch()                                                      # [atoms] Point-
-    bond_middles = (tails + heads).normalized().batch()                        # [bonds] Point-
-    half_lengths = (tails.dot(heads).arccos() / 2).to_array()                  # [bonds]
-    tree = cKDTree((coordinate_planes & middles[:, None]).to_array())
 
-    def listed(centres: core.Point, radii: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Each tetrahedron's start and the listed indices of the centres `[n] Point-` within its reach plus their
-        radii `[n]`."""
-        widest = reach.max() + radii.max()
-        candidates = tree.query_ball_point((coordinate_planes & centres[:, None]).to_array(), 2 * np.sin(widest / 2))
-        tets, indices = np.array([(tet, index) for index, near in enumerate(candidates) for tet in near],
-                                 dtype=np.int64).reshape(-1, 2).T
-        kept = middles[tets].dot(centres[indices]).arccos() <= reach[tets] + radii[indices]
-        tets, indices = tets[kept], indices[kept]
-        order = np.lexsort((indices, tets))
-        starts = np.searchsorted(tets[order], np.arange(mesh.n_elements[3] + 1))
-        return starts.astype(np.uint32), indices[order].astype(np.uint32)
-
-    particle_starts, tet_particles = listed(places, np.full(places.shape[0], particle_radius + motion_room))
-    bond_starts, tet_bonds = listed(bond_middles, half_lengths + bond_radius + motion_room)
-    return dict(particle_starts=particle_starts, tet_particles=tet_particles, bond_starts=bond_starts,
-                tet_bonds=tet_bonds)
+@charts.style()
+def crystal_volumes(times: np.ndarray, volumes: core.Scalar, names: list[str]) -> plt.Figure:
+    """Each crystal's signed volume, the join of its corners, against its volume at rest, at each of the `times`:
+    `[times] Scalar-[crystals]`, one curve for each crystal of `names`; below nothing, the crystal is inside out."""
+    shares = (volumes / volumes[0]).batch().to_array().reshape(len(times), -1)   # [times, crystals]
+    figure, ax = charts.subplots(*volume_chart_px)
+    ax.axhline(0, color="0.6", linewidth=charts.FRAME_WIDTH)
+    for share, name, ink in zip(shares.T, names, crystal_inks):
+        ax.plot(times, share, color=ink, label=name)
+    ax.set(xlabel="time", ylabel="volume / rest", xlim=(times[0], times[-1]))
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.legend(frameon=False, loc="lower left")
+    figure.tight_layout(pad=0.3)
+    return figure
 
 
 # --- the sphere below the Hopf circles, seen from outside ---------------------------------------------------------------

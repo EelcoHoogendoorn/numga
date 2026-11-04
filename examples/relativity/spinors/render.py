@@ -12,7 +12,7 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, panel
+from examples.util.wgsl.camera import Camera, offset_panel
 from examples.relativity.spinors import core
 
 RIGHT_COLOUR, LEFT_COLOUR, INK = "#267fa9", "#d17c24", "#263b51"
@@ -81,7 +81,7 @@ def animate_rotation(
         for centre, label in zip(PORT_PLACES, ("sum port", "difference port")):
             ports.text(centre, -0.7, label, ha="center")
         # The spin turns in the plane the camera sees, x across and z up.
-        camera = panel(axis, mv.x, mv.z)
+        camera = offset_panel(axis, mv.x, mv.z)
         along, rise = units(camera)
         turns = (mv.zx * (-np.linspace(0, 2 * np.pi, N_RIM_SAMPLES, endpoint=False) / 2)).exp()
         circle = turns >> along                                               # [rim samples] Antivector-
@@ -90,7 +90,7 @@ def animate_rotation(
                                      camera)]
         shown = simplices.overlay(axis, beneath)
         # The ports as lamps, each lit as bright as its output, over its face within its rim.
-        lamps = panel(ports, mv.x, mv.z)
+        lamps = offset_panel(ports, mv.x, mv.z)
         centres = stack([place * along for place in PORT_PLACES])             # [ports] Antivector-
         rim = RIM_RADIUS / lamps.pixel
         faces = [simplices.markers(centres, ink(PORT_RIM), rim, lamps),
@@ -122,7 +122,7 @@ def draw_chirality(
                                           ("left", "right", "Dirac"), (LEFT_COLOUR, RIGHT_COLOUR, INK)):
         ax.annotate(name, xy=(across, up), xytext=(7, 3), textcoords="offset points", color=colour)
     ax.set(xlim=(-extent, extent), ylim=(0, extent), aspect="equal")
-    camera = panel(ax, mv.z, mv.t)
+    camera = offset_panel(ax, mv.z, mv.t)
     lines = cross(ax, camera, "z", "t")
     along, rise = units(camera)
     # The light cone's upper half: the null directions either way along z, from the origin.

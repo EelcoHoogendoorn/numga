@@ -61,7 +61,9 @@ fn sample(place: vec2<f32>) -> Sample {
     }
     // The direction under the pixel: the sphere's point in the camera's frame, turned out.
     let direction = turn >> (foot + mv.z.dual() * sqrt(1 - squared));
-    let power = rotary(direction, direction) / limit;
+    // The rotary power, handed, read in the frame's own sense, the join of its directions, as a number for the colour
+    // table.
+    let power = rotary(direction, direction) * sense / limit;
     let entries = f32(textureDimensions(colours).x);
     let colour = textureSampleLevel(colours, filtered, vec2<f32>(((power + 1) / 2 * (entries - 1) + 0.5) / entries, 0.5), 0.0).rgb;
     // The sphere's normal is the direction itself; the glint where it bisects the lamp and the viewer.
@@ -178,7 +180,8 @@ def draw_crystal(centre: Point, axial: Point, diagonal: Point, corners: Point, c
 @cache
 def sphere_shader(rotary: object) -> Shader:
     """The sphere's shader, for rotary powers of a type: a scalar of two directions."""
-    return Shader(supersampled() + sphere_source, ga, dict(Rotary=rotary, Rotor=ga.gatype.rotor(), Field=Field, Direction=Direction), dict(frame=stack((mv.x, mv.y, mv.z)).dual()))
+    return Shader(supersampled() + sphere_source, ga, dict(Rotary=rotary, Rotor=ga.gatype.rotor(), Field=Field, Direction=Direction),
+                  dict(frame=stack((mv.x, mv.y, mv.z)).dual(), sense=mv.x.dual() & mv.y.dual() & mv.z.dual()))
 
 
 def draw_optical_activity(rotary: Gyration) -> plt.Figure:

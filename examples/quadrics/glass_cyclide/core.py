@@ -13,22 +13,24 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import NumpyContext
+from numga import Algebra, NumpyContext
 from numga.algebras import CGA3D
 
 ga = CGA3D
 mv = NumpyContext(ga).multivector
+# Flat space: x, y and z.
+space = Algebra("x+y+z+")
 Scalar = ga.gatype.scalar()                                  # Scalar+
 # Spheres and planes are vectors, planes through the origin those within x y z. Points are null antivectors, and
 # directions of flat space the antivectors square to planes through the origin, those containing w and e. Motors move
 # and turn space conformally.
 Sphere = ga.gatype.vector()                                  # Vector+
-OriginPlane = Sphere.derive.within("x y z")                  # Vector+
+OriginPlane = Sphere.derive.within(space)                    # Vector+
 Point = ga.gatype.antivector()                               # Antivector-
-Direction = Point.derive.containing("w e")                   # Antivector-
+Direction = OriginPlane.derive.dual                          # Antivector-
 Motor = ga.gatype.rotor()                                    # Rotor+
 # A camera only turns: a rotor of flat space.
-Rotation = Motor.derive.within("x y z")                      # Rotor+
+Rotation = Motor.derive.within(space)                        # Rotor+
 Quadric = ga.gatype((Sphere, Point))
 # The origin and the point at infinity; the plane at infinity, whose pairing with a point is its weight.
 origin = (mv.w.dual() + mv.e.dual()) / 2                     # [] Point-

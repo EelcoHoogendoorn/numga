@@ -139,21 +139,36 @@ class OverSites(_Queries):
         return gatype.is_correlation and sites.get(0) == sites.get(1)
 
     def is_map_system(self, rhs: GAType) -> bool:
-        """A map whose output takes the right-hand side's output, either side ranging over sites."""
-        return self._gatype.arity == 1 and rhs.output_subspace.support_is_subset_of(self._gatype.output_subspace)
+        """A map with sites whose output takes the right-hand side's output, the right-hand side ranging
+        over sites or not."""
+        gatype = self._gatype
+        return gatype.arity == 1 and gatype.has_fields and rhs.output_subspace.support_is_subset_of(gatype.output_subspace)
 
     def is_form_system(self, rhs: GAType) -> bool:
-        """A scalar form of two axes against a scalar-valued extensor ending in the form's last axis."""
+        """A scalar form of two axes with sites against a scalar-valued extensor ending in the form's last
+        axis."""
         gatype = self._gatype
         scalar = gatype.algebra.subspace.scalar()
         return (
             gatype.arity == 2
+            and gatype.has_fields
             and gatype.output_subspace.same_support(scalar)
             and rhs.arity >= 1
             and rhs.output_subspace.same_support(scalar)
             and 0 not in dict(rhs.fields)
             and rhs.subspaces[-1].same_support(gatype.subspaces[2])
             and dict(rhs.fields).get(rhs.arity) == dict(gatype.fields).get(2)
+        )
+
+    def is_site_by_site_system(self, rhs: GAType) -> bool:
+        """A map, or a form against a scalar-valued extensor ending in its last axis, without sites, against
+        a right-hand side with sites: the same system at every site. A form's right-hand side ranges over
+        sites in its output or in its last axis, not both, as either gives its sites to the solution's
+        output."""
+        gatype = self._gatype
+        sites = dict(rhs.fields)
+        return not gatype.has_fields and rhs.has_fields and (
+            gatype.arity == 1 or gatype.form.is_system(rhs) and not (0 in sites and rhs.arity in sites)
         )
 
 

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import NumpyContext, concatenate, stack
+from numga import NumpyContext, stack
 from numga.algebras import VGA2D as ga
 from numga.sparse import spdiag
-from examples.util.topology import Topology
+from examples.util import shapes
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
@@ -42,22 +42,6 @@ def single_triangle(n_subdivisions: int) -> tuple[Point, Point]:
     return corners, triangle_samples(corners, n_subdivisions)
 
 
-def disk(radius: float, n_divisions: int) -> tuple[Topology, Point]:
-    """The disk is triangulated into nearly equilateral triangles, with its first vertex at the origin."""
-    spacing = radius / n_divisions
-    indices = np.arange(-n_divisions, n_divisions + 1)
-    columns, rows = np.meshgrid(indices, indices, indexing="ij")
-    layers = np.maximum.reduce((abs(columns), abs(rows), abs(columns + rows)))
-    inside = (layers > 0) & (layers <= n_divisions)
-    lattice = np.stack((columns[inside], rows[inside]), axis=-1)             # [nodes, axes]
-    unit = mv.x.dual()                                                       # [] Point-
-    axes = stack((unit, (mv.xy * (-np.pi / 6)).exp() >> unit))               # [axes] Point-
-    positions = (axes * lattice).sum(axis=-1)                                # [nodes] Point-
-    positions = spacing * layers[inside] * positions.normalized()            # [nodes] Point-
-    vertices = concatenate((unit[None] * 0, positions)).field()              # Point-[vertices]
-    return Topology.triangulate(vertices), vertices
-
-
 def main() -> None:
     from examples.surfaces.regge_calculus.core import (
         intrinsic_conduction, mesh_geometry, regge_metric_basis, triangle, triangle_geometry,
@@ -77,7 +61,8 @@ def main() -> None:
     )
 
     # 2. Intrinsic Gaussian curvature defects and Gauss-Bonnet from edge lengths on a disk.
-    topology, vertices = disk(disk_radius, n_disk_divisions)
+    topology, coordinates = shapes.hexagonal_disk(disk_radius, n_disk_divisions)
+    vertices = mv.vector(coordinates).dual().field()                         # Point-[vertices]
     edges = topology.d[0] * vertices                                         # Point-[edges]
     midpoints = topology.incidence[1, 0].mean(axis=0) * vertices             # Point-[edges]
     # The dot reading measures radial motion times radius; the join measures swept area,
@@ -100,7 +85,7 @@ def main() -> None:
     boundary = topology.exterior[0]
     abscissa = (mv.x & vertices).batch()                                     # [vertices] Scalar+
     electrodes = boundary[abscissa[boundary].norm() > electrode_threshold]
-    pinned = topology.reading(electrodes)
+    pinned = topology.reading(electrodes, 0)
     prescribed = ~pinned * (pinned * (mv.x & vertices))                      # Scalar+[vertices]
     potential, current, streamfunction = intrinsic_conduction(
         topology, vertices, conductivities, electrodes, prescribed,
@@ -128,7 +113,7 @@ def main() -> None:
     np.testing.assert_allclose((corner_rotors[0] * corner_rotors[1] * corner_rotors[2]).kernel, [-1.0, 0.0], atol=1e-14)
 
     np.testing.assert_allclose((defects.sites.sum() - 2 * np.pi * mv.xy).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose((topology.reading(topology.interior[0]) * defects[0]).kernel, 0.0, atol=1e-13)
+    np.testing.assert_allclose((topology.reading(topology.interior[0], 0) * defects[0]).kernel, 0.0, atol=1e-13)
     assert (curvatures.batch()[1, 0] & mv.xy.dual()) > 0
     assert (curvatures.batch()[2, 0] & mv.xy.dual()) < 0
 
@@ -140,7 +125,7 @@ def main() -> None:
     gradient = (spdiag(face_sides / (2 * face_patches)) * topology.incidence[2, 0]).sum(axis=0) * Scalar
     conductance = gradient.adjugate()(spdiag(conductivities)(gradient))
     free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
-    free = ~topology.reading(free_vertices) * Scalar
+    free = ~topology.reading(free_vertices, 0) * Scalar
     np.testing.assert_allclose(free.adjugate()(conductance(potential)).kernel, 0.0, atol=1e-11)
 
 

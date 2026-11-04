@@ -55,18 +55,21 @@ import numpy as np
 
 from numga import Algebra, NumpyContext
 
-ga = Algebra("x+y+z+X+Y+Z+")
+# The space of each spin, and the algebra of the pair.
+first_space = Algebra("x+y+z+")
+second_space = Algebra("X+Y+Z+")
+ga = first_space * second_space
 context = NumpyContext(ga)
 mv = context.multivector
 one = mv.scalar([1.0])
 Scalar = ga.gatype.scalar()                                                    # Scalar+
 # The planes of each spin.
-FirstPlanes = ga.gatype.bivector().derive.within("x y z")                      # Bivector+
-SecondPlanes = ga.gatype.bivector().derive.within("X Y Z")                     # Bivector+
+FirstPlanes = ga.gatype.bivector().derive.within(first_space)                  # Bivector+
+SecondPlanes = ga.gatype.bivector().derive.within(second_space)                # Bivector+
 # The state of one spin, and of the pair: a product of the two spins' states.
-FirstSpinor = ga.gatype.even().derive.within("x y z")                          # Even+
-SecondSpinor = ga.gatype.even().derive.within("X Y Z")                         # Even+
-Spinor = (FirstSpinor * SecondSpinor).output_gatype                            # Even+
+FirstSpinor = ga.gatype.even().derive.within(first_space)                      # Even+
+SecondSpinor = ga.gatype.even().derive.within(second_space)                    # Even+
+Spinor = ga.gatype(FirstSpinor * SecondSpinor)                                 # Even+
 Correlation = ga.gatype((FirstPlanes, SecondPlanes))                           # FirstPlanes+ <- SecondPlanes+
 # The correlator, and the reference spin, which every state carries to its own spin.
 correlator = 0.5 * (one - mv.xy * mv.XY)                                       # [] Spinor+

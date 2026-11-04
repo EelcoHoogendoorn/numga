@@ -16,7 +16,7 @@ Scalar = ga.gatype.scalar()                                                # Sca
 Even = ga.gatype.even()                                                    # Even+
 Full = ga.gatype.full()                                                    # Full+
 # One independent blade from each group of blades the ideal identifies.
-State = Full.derive.within("b c d f j")                                    # Full+
+State = Full.derive.within(Algebra("b+c+d+f+j+"))                          # Full+
 StateMap = ga.gatype((State, State))                                       # State+ <- State+
 
 # These commuting square-one elements select a minimal left ideal with 32 real coefficients.

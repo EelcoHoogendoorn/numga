@@ -8,7 +8,7 @@ from numga import stack
 from examples.math.e8.render import background, orbit_colours, draw_roots
 from examples.quantum.affine_toda.core import Root
 from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import panel
+from examples.util.wgsl.camera import offset_panel
 
 # The samples around each orbit's ring.
 n_ring_samples = 120
@@ -43,7 +43,7 @@ def draw_triangles(paths: Root, roots: Root, species: np.ndarray,
     for index, ax in enumerate(axes):
         # Roots are read as they are, by the hyperplanes that complement the drawing plane's two vectors:
         # `root & horizontal.dual()` is `horizontal | root`.
-        camera = panel(ax, horizontal.dual(), vertical.dual())
+        camera = offset_panel(ax, horizontal.dual(), vertical.dual())
         particles = np.unique(species[index])
         rings = (radii[particles, None] * ring[None, :]).reshape(-1)            # [particles * samples] Root+
         orbits = roots[:, particles].reshape(-1)                                # [steps * particles] Root+

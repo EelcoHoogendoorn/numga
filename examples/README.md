@@ -126,9 +126,9 @@
 - [Dirac electron](relativity/dirac/) — A spacetime spinor carries the electron's density, current and spin through its action as a map.
 - [Dirac, Weyl and Majorana spinors](relativity/spinors/) — Three kinds of particle state occupy one real spacetime spinor space.
 - [Gravitational lensing](relativity/gravitational_lensing/) — Point masses bend sightlines to produce multiple images of a source.
-- [Inside a closed universe](relativity/closed_universe/rendering.ipynb) — Rays walked from tetrahedron to tetrahedron, straight across each one's chart, show the round three-sphere from inside, through the 600-cell and an irregular mesh.
-- [Gravitational waves of a closed universe](relativity/closed_universe/waves.ipynb) — Regge calculus on the 600-cell rings the closed universe's slowest wave past soft, tuned and stiff crystals, seen from inside through the waves.
-- [Gravitational waves below the Hopf circles](relativity/closed_universe/hopf_projection.ipynb) — A travelling quadrupole, the same all along the Hopf circles, stretches the sphere below them, rings triangles of atoms and bends a bundle of light.
+- [Inside a closed universe](relativity/gravitational_waves/rendering.ipynb) — Rays walked from tetrahedron to tetrahedron, straight across each one's chart, show the round three-sphere from inside, through the 600-cell and an irregular mesh.
+- [Gravitational waves of a closed universe](relativity/gravitational_waves/waves.ipynb) — Regge calculus on the 600-cell rings the closed universe's slowest wave past soft, tuned and stiff crystals, seen from inside through the waves.
+- [Gravitational waves below the Hopf circles](relativity/gravitational_waves/hopf_projection.ipynb) — A travelling quadrupole, the same all along the Hopf circles, stretches the sphere below them, rings triangles of atoms and bends a bundle of light.
 - [Kerr ray tracing in GTG](relativity/kerr/kerr.ipynb) — Gauge theory gravity transports light and polarization past a rotating black hole.
 - [Kerr ray tracing with a metric](relativity/kerr/kerr_metric.ipynb) — The metric and connection describe light and polarization in the same black-hole scene.
 - [LIGO antenna patterns](relativity/ligo/) — Detector arms respond differently to gravitational waves arriving from different directions and polarizations.
@@ -194,6 +194,7 @@
 - [Snowflake](thermodynamics/snowflake/) — A phase field with a six-fold surface energy grows a seed of ice in undercooled water into a six-armed dendrite.
 - [Cellular flame](thermodynamics/flame/) — Flames spreading from sparks through a lean mixture merge and break into cells where the fuel spreads faster than the heat.
 - [Rubber band heat engine](thermodynamics/rubber_band/) — A rubber band warmed by a lamp pulls harder and lifts a weight, its pull and the heat its motion moves read off one pairing.
+- [Galvanomagnetic and thermomagnetic effects](thermodynamics/magnetotransport/) — Electrons and holes drift through a conductor in a magnetic field each turned by its own rotor, the inverse of one less the mobility times the field: one sum of turned drifts, read for charge and for entropy, gives a Hall voltage that vanishes at compensation exactly where the Nernst voltage peaks, along a bar and around a Corbino ring, as the balance of the carriers runs from electrons only to holes only.
 - [Semiconductor devices](thermodynamics/semiconductor_devices/) — Electrons and holes drift and diffuse under one drive, on a mesh of simplices of any dimension: a p–n junction forms, follows Shockley's diode law under a bias and runs recombination backward under light as a solar cell; a MOSFET's gate gathers a channel whose current saturates as it pinches off near the drain; and a solar cell's holes rise to its junction and run along its thin top layer to the nearest finger, its power peaking at the fingers' spacing that balances their shade against the top layer's resistance.
 
 ## Symmetry

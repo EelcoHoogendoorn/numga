@@ -8,7 +8,7 @@ import numpy as np
 
 from numga import stack
 from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl.camera import offset_panel
 
 atom_colour = np.array([0.15, 0.15, 0.18])
 dipole_colour = np.array([0.80, 0.25, 0.20])
@@ -43,7 +43,7 @@ def clusters(positions, dipoles, isolated) -> plt.Figure:
     for ax, site, arrow in zip(axes, positions, arrows):
         ax.set(xlim=(-half_width, half_width), ylim=(-half_width, half_width), aspect="equal")
         ax.axis("off")
-        camera = flat_panel(ax, positions.algebra)
+        camera = offset_panel(ax, mv.x, mv.y)
         isolated_ends = stack((site - reference / 2, site + reference / 2), axis=-1).reshape(-1)
         dipole_ends = stack((site - arrow / 2, site + arrow / 2), axis=-1).reshape(-1)
         simplices.overlay(ax, [

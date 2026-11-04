@@ -13,7 +13,7 @@ from numga import concatenate, stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import contours, pinned, simplices
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, panel
 from examples.quadrics.quadric_collision.core import (
     Plane, Point, Polarity, Quadric, Scalar, infinity, mv, origin, tangent_plane,
 )
@@ -141,7 +141,7 @@ def animate_collision(
         # The pair as one picture over the panel, at its own pixels, laid anew each frame from its layers: the fills
         # under the outlines, under the planes, under the centres, the witness and the contact points. The first
         # ellipsoid's layers are drawn once.
-        camera = flat_panel(ax_pair, places.algebra)
+        camera = panel(ax_pair, mv.x, mv.y, infinity)
         pair = pinned(ax_pair, np.zeros(camera.shape + (4,)), (*ax_pair.get_xlim(), *ax_pair.get_ylim()))
         # The planes run on past the panel's corners either way from their feet: a plane's foot lies no farther from
         # the origin than its points in the panel, so twice the farthest corner's distance, the length of its join

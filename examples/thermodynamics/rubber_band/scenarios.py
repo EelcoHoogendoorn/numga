@@ -8,6 +8,7 @@ from collections.abc import Iterator
 import numpy as np
 
 from examples.thermodynamics.rubber_band import core
+from examples.util import shapes
 from examples.util.topology import Topology
 
 mv = core.mv
@@ -72,9 +73,8 @@ def lattice(n_across: int, n_rows: int) -> np.ndarray:
 def hanging_band() -> tuple[Topology, core.Point, np.ndarray, core.Band]:
     """The band at rest: its triangles, the band's above the weight's, its places at rest `Point-[vertices]`, which of
     its triangles are the weight's `[faces]`, and the band and its room."""
-    coordinates = lattice(n_across, n_band_rows + n_weight_rows)             # [vertices, 2]
+    topology, coordinates = shapes.delaunay(lattice(n_across, n_band_rows + n_weight_rows))
     rest = mv(core.Upright, coordinates).dual().field()                       # Point-[vertices]
-    topology = Topology.triangulate(rest)
     # The weight's triangles, those wholly below the band's rows, denser and stiffer; the held top row.
     band_length = n_band_rows * np.sqrt(3) / 2 / (n_across - 1)
     in_weight = coordinates[topology.elements[2]][..., 1].max(axis=-1) < -band_length + 1e-9   # [faces]

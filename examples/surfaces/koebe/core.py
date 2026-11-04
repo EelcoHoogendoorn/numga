@@ -16,10 +16,10 @@ the algebra; the centred one has the touching points balanced about the centre o
 from __future__ import annotations
 
 import numpy as np
-from scipy.spatial import ConvexHull
 
 from numga import Algebra, NumpyContext, stack
 from numga.sparse import SparseExtensor, spdiag
+from examples.util import shapes
 from examples.util.topology import Topology
 
 ga = Algebra("x+y+z+w-")
@@ -104,4 +104,5 @@ def hull(offsets: Point) -> Topology:
     """The convex hull of points at offsets from the centre has triangle faces, counter-clockwise seen from
     outside, found from the offsets' pairings with the planes x, y and z."""
     coordinates = (stack((mv.x, mv.y, mv.z)) & offsets.batch()[..., None]).to_array()   # [points, 3]
-    return Topology.closed(ConvexHull(coordinates).simplices, coordinates)
+    topology, _ = shapes.convex_boundary(coordinates)
+    return topology

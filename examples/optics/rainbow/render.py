@@ -9,18 +9,18 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import concatenate, stack
+from numga import Algebra, concatenate, stack
 from examples.util import charts, shapes
 from examples.util.animation import capture
 from examples.util.wgsl import contours, pinned, room, simplices
-from examples.util.wgsl.camera import panel
+from examples.util.wgsl.camera import offset_panel
 from examples.optics.rainbow import core
 
 mv = core.mv
 # The direction sunlight travels, across the page.
 sunlight = mv.x.dual()                                                        # [] Direction-
 # The planes of x and of y, upright to the page, whose duals are the directions along the sunlight and up the page.
-Upright = core.ga.gatype.from_blades("x y")                                   # Vector+
+Upright = core.ga.gatype.vector().derive.within(Algebra("x+y+"))              # Vector+
 # The colours of the background, the drop, the sunlight, light reflected once and twice inside the drop, the sky
 # and the ground; the colours of the angles' axes and tick labels.
 background = "#0b1020"
@@ -113,10 +113,11 @@ def draw_sky(sight_cosines: core.Scalar, flux: core.Scalar, wavelengths: np.ndar
     ax.set_ylim(extent[2], extent[3])
     # The ground, below the horizon at the sun's height, over the sky, the picture's own pixels read by the planes of
     # the chart.
-    camera = panel(ax, mv.x, mv.y)._replace(pixels=len(across))
+    camera = offset_panel(ax, mv.x, mv.y)._replace(pixels=len(across))
     ground = (mv.x.dual() * np.array(extent[:2])[None, :]
               + mv.y.dual() * np.array([extent[2], sun_elevation])[:, None]).reshape(-1)   # [corners] Direction-
-    seen = contours.picture(ground, simplices.Topology.grid(2, 2), np.zeros(len(ground)), to_rgb(ground_colour), camera)
+    seen = simplices.composited([
+        contours.picture(ground, simplices.Topology.grid(2, 2), np.zeros(len(ground)), to_rgb(ground_colour), camera)])
     sky = np.clip(sky_colour + image ** tone_exponent, 0, 1)
     pinned(ax, sky * (1 - seen[..., 3:]) + seen[..., :3] * seen[..., 3:], extent)
     return figure
@@ -157,7 +158,7 @@ def animate_sweep(swept_light: tuple[core.Direction, core.Direction, core.Direct
         drop.set_ylim(-ray_length * 0.9, ray_length * 0.9)
         drop.set_aspect("equal")
         drop.set_axis_off()
-        camera = panel(drop, mv.x, mv.y)
+        camera = offset_panel(drop, mv.x, mv.y)
         disk, coordinates = shapes.disk(1.0, 1, drop_sectors)
         places = mv(Upright, coordinates).dual()                                # [vertices] Direction-
         still = [contours.picture(places, disk, np.zeros(disk.n_vertices), to_rgb(drop_colour), camera)]

@@ -15,7 +15,7 @@ from matplotlib.colors import to_rgb
 from numga import Extensor, concatenate, stack
 from examples.util.animation import capture
 from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import panel
+from examples.util.wgsl.camera import offset_panel
 from examples.optics.black_sandwich import core
 
 background_colour = "#fbfaf7"
@@ -60,8 +60,8 @@ class Diagram:
         ax = self.figure.add_axes((0, 0, 1, 1), facecolor=background_colour)
         ax.set(xlim=(-0.5, 14.3), ylim=(-0.75, 1.85), aspect="equal")
         ax.set_axis_off()
-        self.camera = panel(ax, mv.x, mv.y)
-        self.field_camera = panel(ax, *self.swept_planes)
+        self.camera = offset_panel(ax, mv.x, mv.y)
+        self.field_camera = offset_panel(ax, *self.swept_planes)
         # Each polarizer's axis drawn either way across its middle, its glyph placed on the polarizer.
         polarizer_axes = stack((input_axis, output_axis, input_axis, output_axis))          # [polarizers] Direction-
         polarizers = _across(self.components[[0, 2, 3, 5]], polarizer_axes * (0.8 * component_radius))

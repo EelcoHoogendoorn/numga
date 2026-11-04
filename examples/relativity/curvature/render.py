@@ -23,7 +23,7 @@ from examples.util.animation import capture
 from examples.relativity.curvature import core
 from examples.relativity.curvature.core import Antivector, Curvature, Scalar, mv
 from examples.util.wgsl import labels, show, simplices, solids
-from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl.camera import offset_panel
 from examples.util.wgsl.meshes import Samples
 
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
@@ -155,8 +155,9 @@ def draw_curvature_map(
     ends = (page.x.dual() * (width * np.array([PANEL_WIDTH - 0.01, 1 - PANEL_WIDTH + 0.01]))
             + page.y.dual() * (height / 2))                                    # [2] Antivector-
     simplices.overlay(across, [simplices.strokes(ends, simplices.Topology.chains([2]), np.array(to_rgb(INK)),
-                                                 MAP_ARROW_WIDTH, flat_panel(across, VGA2D), chevrons=np.ones(1),
-                                                 chevron=CHEVRON * MAP_ARROW_WIDTH, cap=simplices.Cap.BUTT)])
+                                                 MAP_ARROW_WIDTH, offset_panel(across, page.x, page.y),
+                                                 chevrons=np.ones(1), chevron=CHEVRON * MAP_ARROW_WIDTH,
+                                                 cap=simplices.Cap.BUTT)])
     return fig
 
 
@@ -246,7 +247,7 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
     selected = np.arange(0, n_beads, max(1, n_beads // 4))[:4]
     arrows_at = np.arange(0, n_beads, max(1, n_beads // 8))
     trail_colours = np.array([to_rgb(colour) for colour in tracking_colours[:len(selected)]])
-    camera = flat_panel(ax, mv.x.algebra)
+    camera = offset_panel(ax, mv.x, mv.y)
     # The cross through the centre, across the whole view but for room for its names at its ends.
     half_span = 0.9 * ax.get_xlim()[1]
     cross_ends = half_span * stack((-mv.x.dual(), mv.x.dual(), -mv.y.dual(), mv.y.dual()))   # [4] Antivector-

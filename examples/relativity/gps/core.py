@@ -18,14 +18,14 @@ mv = NumpyContext(ga).multivector
 Event = ga.gatype.antivector()
 Slice = ga.gatype.vector()
 Scalar = ga.gatype.scalar()
-Readout = ga.gatype.from_blades("x y z t")
-Step = Readout.dual().gatype.derive.output
+Readout = Slice.derive.nondegenerate
+Step = Readout.derive.dual
 Cone = ga.gatype((Slice, Event))
 Information = ga.gatype((Readout, Step))
 Covariance = ga.gatype((Step, Readout))
 Orbit = ga.gatype.bivector()
 # The position readouts, the planes across x, y and z.
-Spatial = ga.gatype.from_blades("x y z")
+Spatial = Slice.derive.within(Algebra("x+y+z+"))
 
 origin = mv.w.dual()
 across = mv.x.dual()

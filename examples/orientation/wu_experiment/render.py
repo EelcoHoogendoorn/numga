@@ -9,7 +9,7 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack
 from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import panel
+from examples.util.wgsl.camera import offset_panel
 from examples.orientation.wu_experiment.core import Direction, Scalar, Spin
 
 coil_radius = 0.55
@@ -49,7 +49,7 @@ def draw_experiment(spins: Spin, directions: Direction, rates: Scalar) -> plt.Fi
     for ax, sense, curve in zip(panels, senses, polar):
         ax.set(xlim=(-limit, limit), ylim=(-limit, limit), aspect="equal")
         ax.set_axis_off()
-        camera = panel(ax, mv.x, mv.z)
+        camera = offset_panel(ax, mv.x, mv.z)
         # With x to the right and z up, +y runs into the page: a current counterclockwise seen from above goes
         # into the page at +x and comes out of it at -x.
         inward, outward = mv.x.dual() * (np.sign(sense) * coil_radius), mv.x.dual() * (-np.sign(sense) * coil_radius)

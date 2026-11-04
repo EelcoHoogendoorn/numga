@@ -25,7 +25,7 @@ mv = JaxContext(ga, dtype=np.float64).multivector
 Scalar = ga.gatype.scalar()                                         # Scalar+
 Ambient = ga.gatype.antivector()                                    # Antivector-
 # The states of entropy and volume, a subspace of the five quantities.
-State = (mv.s.dual() + mv.v.dual()).gatype.derive.output            # Antivector-
+State = ga.gatype(mv.s.dual() + mv.v.dual())                        # Antivector-
 ContactElement = ga.gatype.vector()                                 # Vector+
 
 # The contact reading's derivative: the temperature's change wedged with the entropy's, against the pressure's with the

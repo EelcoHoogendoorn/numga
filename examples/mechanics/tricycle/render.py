@@ -84,7 +84,7 @@ def plane(contacts: Extensor, forward: Extensor, centre: Extensor, middle: Exten
     ax.set(xlim=across, ylim=up, aspect="equal")
     ax.axis("off")
     figure.tight_layout()
-    camera = panel(ax, mv.x, mv.y)
+    camera = panel(ax, mv.x, mv.y, mv.w)
     # Each axle on to the turning centre, the last of the points.
     froms = axles(contacts, centre)                                          # [axles] Point-
     spokes = simplices.Topology(len(froms) + 1, np.stack([np.arange(len(froms)), np.full(len(froms), len(froms))], -1))

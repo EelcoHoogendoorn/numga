@@ -10,22 +10,22 @@
          display: flex; flex-direction: column; align-items: center; gap: 10px; }
   canvas { display: block; cursor: grab; touch-action: none; }
   canvas:active { cursor: grabbing; }
+  canvas[hidden] { display: none; }
+  #about { margin: 0; max-width: 480px; text-align: center; }
   #help, #note { color: #8a8a93; text-align: center; }
   #status { color: #8a8a93; font-variant-numeric: tabular-nums; min-height: 1.5em; max-width: 480px; text-align: center; }
   #fallback { display: block; }
   #fallback[hidden] { display: none; }
   a, kbd { font: inherit; color: #c9c9cf; }
-  button { font: inherit; color: #0b0b0d; background: #c9c9cf; border: 0; border-radius: 6px; padding: 6px 18px; cursor: pointer; }
-  button[hidden] { display: none; }
 </style>
 </head>
 <body>
+<p id="about">The hot disk of gas around a spinning black hole, its light bent around the hole's dark shadow.</p>
 <canvas id="view"></canvas>
 <img id="fallback" hidden alt="The black hole's disk, traced ahead of time" src="../../../plots/kerr.gif" width="400" height="266">
 <div id="help">Drag to fly around the hole · scroll to move in or out · <kbd>[</kbd> <kbd>]</kbd> step ·
   <kbd>space</kbd> disk · <kbd>s</kbd> spin · <kbd>e</kbd> exposure</div>
 <div id="status">Starting WebGPU…</div>
-<button id="start" hidden>Start tracing</button>
 <div id="note">The shader is written in <a href="https://github.com/EelcoHoogendoorn/numga">numga</a>:
   run <a href="https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/relativity/kerr/kerr_gpu.ipynb">the GPU notebook</a> or
   <a href="https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/relativity/kerr/kerr.ipynb">the physics notebook</a> in Colab</div>
@@ -39,30 +39,29 @@ const begun = performance.now();
 const step = text => { status.textContent = `${text} (${((performance.now() - begun) / 1000).toFixed(1)} s)`; };
 const bytes = text => Uint8Array.from(atob(text), character => character.charCodeAt(0));
 
-// Where the page cannot trace, the scene traced ahead of time, in place of the canvas.
+// Where the page cannot trace, or stops, the scene traced ahead of time in place of the canvas, and why.
 function unavailable(text) {
   document.getElementById("view").hidden = true;
   document.getElementById("help").hidden = true;
   document.getElementById("fallback").hidden = false;
-  status.textContent = text;
+  status.textContent = "The live view needs a browser with WebGPU; here is the scene traced ahead of time. " + text;
 }
 
 async function start() {
   if (!navigator.gpu) {
     return unavailable("This browser has WebGPU switched off or lacks it. In Firefox it may need dom.webgpu.enabled set in " +
-                       "about:config; recent Chrome and Edge have it on most systems. Meanwhile, the same scene traced ahead of time:");
+                       "about:config; recent Chrome and Edge have it on most systems.");
   }
   step("Asking for the GPU…");
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
   if (!adapter) {
-    return unavailable("WebGPU is on, but found no GPU it can use; on Linux it needs working Vulkan drivers. " +
-                       "Meanwhile, the same scene traced ahead of time:");
+    return unavailable("WebGPU is on, but found no GPU it can use; on Linux it needs working Vulkan drivers.");
   }
   const device = await adapter.requestDevice({ requiredLimits: {
     maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
     maxBufferSize: adapter.limits.maxBufferSize } });
-  device.addEventListener("uncapturederror", event => { status.textContent = "WebGPU: " + event.error.message; });
-  device.lost.then(info => { status.textContent = "The GPU was lost: " + (info.message || info.reason); });
+  device.addEventListener("uncapturederror", event => unavailable("WebGPU: " + event.error.message));
+  device.lost.then(info => unavailable("The GPU was lost: " + (info.message || info.reason)));
 
   // The canvas as wide as the page's design, or as the screen where that is narrower, so that the browser never
   // shrinks it; the image traces at the screen's own pixels behind it, or at a share of them when frames come slower
@@ -97,7 +96,7 @@ async function start() {
   step("Compiling the shader…");
   const tracerModule = device.createShaderModule({ code: C.code });
   for (const message of (await tracerModule.getCompilationInfo()).messages) {
-    if (message.type === "error") { status.textContent = "Shader: " + message.message; return; }
+    if (message.type === "error") return unavailable("Shader: " + message.message);
   }
   const layout = device.createBindGroupLayout({ entries: C.bindings.map(binding => {
     const entry = { binding: binding.index, visibility: GPUShaderStage.COMPUTE };
@@ -262,19 +261,16 @@ async function start() {
     }
     requestAnimationFrame(frame);
   }
-  // Nothing is traced until asked: the tracing runs on this device's GPU.
+  // The first frame a second after everything is ready, so that the page shows itself before the tracing begins.
   step("Ready");
-  const button = document.getElementById("start");
-  button.hidden = false;
-  button.addEventListener("click", () => {
-    button.hidden = true;
+  setTimeout(() => {
     step("Tracing the first frame…");
     last = performance.now();
     requestAnimationFrame(frame);
-  }, { once: true });
+  }, 1000);
 }
 
-start().catch(error => unavailable("The page could not start WebGPU (" + String(error) + "). The same scene traced ahead of time:"));
+start().catch(error => unavailable("The page could not start WebGPU (" + String(error) + ")."));
 </script>
 </body>
 </html>

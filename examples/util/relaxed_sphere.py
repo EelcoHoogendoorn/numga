@@ -21,10 +21,11 @@ from functools import reduce
 from operator import and_
 
 import numpy as np
-from scipy.spatial import ConvexHull, cKDTree
+from scipy.spatial import cKDTree
 
 from numga import Algebra, concatenate, stack
 from numga.backend.context import Context
+from examples.util import shapes
 from examples.util.topology import Topology
 
 # Supplied by examples.instantiate: the algebra of the space around the sphere, three or four dimensions, every
@@ -107,7 +108,7 @@ def optimal_delaunay_step(mesh: Topology, points: Point, turns: Rotor, anchors: 
     averages = (~mesh.incidence[-1, 0] * (shares * poles)).sum(axis=0).normalized()   # Point-[points]
     # The seeds themselves, the first of each of their orbits.
     seed_sites = anchors.shape[0] + turns.shape[0] * np.arange(seeds.shape[0])  # [seeds]
-    seed_averages = (mesh.reading(seed_sites) * averages).batch()               # [seeds] Point-
+    seed_averages = (mesh.reading(seed_sites, 0) * averages).batch()            # [seeds] Point-
     return (seeds + pull * (seed_averages - seeds)).normalized()
 
 
@@ -153,7 +154,8 @@ def hull(points: Point) -> Topology:
     """The convex hull of points around the centre, its facets wound outward, which scipy finds from the points'
     coordinates, one step outside the algebra."""
     coordinates = coordinates_of(points.batch())                                # [points, dimensions]
-    return Topology.closed(ConvexHull(coordinates).simplices, coordinates)
+    topology, _ = shapes.convex_boundary(coordinates)
+    return topology
 
 
 def unique_up_to_sign(rotors: Rotor) -> np.ndarray:

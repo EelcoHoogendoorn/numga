@@ -7,14 +7,20 @@ Antivector)`. Operators bind as they do in Python. Every nullary or unary type l
 coefficients, and every operation on such values to a function whose body is numga's own: numga
 evaluates the operation once over coefficients that are polynomials in the operands' coefficients, and
 the polynomials are the function. Values known when the shader compiles, blades, types and module
-constants, fold into those functions as numbers. `f32` is the algebra's scalar. A struct whose members
+constants, fold into those functions as numbers. A scalar of either orientation is an `f32`, the number it is,
+stored against plus one; it keeps its orientation while the shader computes with it in the algebra, so that a
+plane joined from points over their join with a fourth, `facet / (facet & corner)`, is extrinsic as numga makes it,
+and is taken as a plain number by WGSL's own functions and comparisons and where an `f32` is stored. A struct whose members
 are values of the algebra, numbers or vectors of numbers adds, subtracts and scales member by member, as
 a state of an integrator does, or the light a pixel's samples average.
 
-A value of the algebra passes from the vertex stage to the fragment stage as a member of the struct between them,
-`@location(2) @interpolate(perspective, sample) normal: Plane`: its coefficients cross as vectors of numbers, four to
-a location from the one it names, each interpolated as the others are, so the fragment stage reads the value blended
-linearly across the triangle.
+A value of the algebra passes from the vertex stage to the fragment stage as a member of the struct the vertex stage
+returns, `@interpolate(perspective, sample) normal: Plane`, which says how it is interpolated and not where it crosses:
+the dialect places what the struct carries. Its numbers, the coefficients of a value of the algebra of any type and
+size as much as a number or a vector of them, pack four to a location with those of the other members of their kind
+interpolated alike, in the order the struct declares them, and reassemble in the fragment stage, which reads each
+member blended linearly across the triangle. The struct's builtins keep their places; only the sixteen locations
+WebGPU grants between the stages limit what crosses.
 
 Constants come from Python by name, as module-scope `const` declarations: an integer as a `u32`, a number as an
 `f32`, an array of two to four numbers, such as a colour, as a vector of `f32`, and a value of the algebra folded
@@ -36,6 +42,7 @@ from typing import Any, Callable, Mapping
 
 import numpy as np
 
+from numga import Orientation
 from numga.backend.context import Context
 from numga.backend.numpy import NumpyContext
 from numga.extensor import Extensor
@@ -662,7 +669,7 @@ def template(text: str) -> tuple[str, list[str]]:
 class Value:
     """An expression's WGSL text and type, and, for one known when the shader compiles, its value.
 
-    The type is a GAType, the algebra's scalar standing for f32, or the text of any other WGSL type.
+    The type is a GAType, a scalar of either orientation standing for f32, or the text of any other WGSL type.
     A value known at compile time is an Extensor, or a number of type `abstract`; it has text only when
     it is a number."""
     text: str | None
@@ -674,10 +681,13 @@ _MV = "mv"
 _ABSTRACT = "abstract"
 # A batch of values known when the shader compiles, or computed from them, held value by value.
 _BATCH = "batch"
-# Methods of the scalar that are not polynomials, by their WGSL builtin.
-_SCALAR_FUNCTIONS = {"square_root": "sqrt", "exp": "exp", "log": "log", "cos": "cos", "sin": "sin",
-                     "tan": "tan", "arccos": "acos", "arcsin": "asin", "arctan": "atan", "abs": "abs",
-                     "sign": "sign", "floor": "floor", "cosh": "cosh", "sinh": "sinh", "tanh": "tanh"}
+# numga's functions of a number that are not polynomials, by the WGSL builtin that computes each on the number it is.
+_SCALAR_FUNCTIONS = {"square_root": "sqrt", "inverse_square_root": "inverseSqrt", "exp": "exp", "log": "log",
+                     "cos": "cos", "sin": "sin", "tan": "tan", "arccos": "acos", "arcsin": "asin", "arctan": "atan",
+                     "cosh": "cosh", "sinh": "sinh", "tanh": "tanh", "abs": "abs", "clip": "clamp"}
+# The locations between the vertex and fragment stages, four numbers each, that WebGPU grants every device by default,
+# its `maxInterStageShaderVariables`.
+_LOCATIONS = 16
 # WGSL builtins whose result has the type of their arguments, and those that reduce to a component.
 _ELEMENTWISE = {"abs", "sqrt", "exp", "exp2", "log", "log2", "sin", "cos", "tan", "asin", "acos", "atan",
                 "atan2", "sinh", "cosh", "tanh", "pow", "min", "max", "clamp", "mix", "smoothstep", "step",
@@ -728,14 +738,18 @@ class Compiler:
         self.given = constants
         self.context = SymbolicContext(algebra)
         self.scalar = algebra.gatype.scalar()
+        # The scalar of each orientation, an f32 at run time either way, stored against plus one.
+        self.scalars = {Orientation.extrinsic: self.scalar,
+                        Orientation.intrinsic: algebra.gatype(algebra.subspace.scalar(), orientation=Orientation.intrinsic)}
         self.names = {}                                                         # dict[GAType, str]
         self.types = {"f32": self.scalar}                                       # dict[str, GAType]
         self.aliases = []                                                       # list[str]
         self.native_aliases = {}                                                # dict[str, str]
         for name, gatype in types.items():
-            self.types[name] = gatype
-            if gatype == self.scalar:
+            if self.is_number(gatype):
+                self.types[name] = self.number_type(gatype)
                 continue
+            self.types[name] = gatype
             if gatype in self.names:
                 self.aliases.append(f"alias {name} = {self.names[gatype]};")
             else:
@@ -750,8 +764,9 @@ class Compiler:
         self.stages = {}                                                        # dict[str, str]
         self.targets = 0
         self.member_attributes = {}                                             # dict[str, list[list[str]]]
-        # The values of the algebra each struct between shader stages carries, by member.
-        self.carried = {}                                                       # dict[str, dict[str, GAType]]
+        # How each struct the vertex stage returns crosses to the fragment stage: its fields, and where each member's
+        # numbers lie among them.
+        self.crossing = {}                                                      # dict[str, tuple[list, dict[str, list[str]]]]
 
     def error(self, line: int, message: str) -> SyntaxError:
         return SyntaxError(f"line {line}: {message}")
@@ -773,7 +788,7 @@ class Compiler:
     def wgsl(self, kind: Any) -> str:
         """The WGSL name of a type, naming a struct for a type of the algebra the shader never named."""
         if isinstance(kind, GAType):
-            if kind == self.scalar:
+            if self.is_number(kind):
                 return "f32"
             if kind not in self.names:
                 self.names[kind] = f"GA{len(self.names)}"
@@ -787,60 +802,106 @@ class Compiler:
         return isinstance(kind, GAType)
 
     def is_scalar(self, value: Value) -> bool:
-        return value.type == self.scalar or value.type == _ABSTRACT
+        return value.type == _ABSTRACT or self.is_number(value.type)
+
+    def is_number(self, kind: Any) -> bool:
+        """A type of the algebra that is a number at run time: a scalar of either orientation."""
+        return isinstance(kind, GAType) and kind.arity == 0 and kind.is_scalar
+
+    def number_type(self, kind: GAType) -> GAType:
+        """The scalar of a scalar type's orientation, as the shader holds it, stored against plus one."""
+        return self.scalars[kind.orientation]
 
     def is_state(self, kind: Any) -> bool:
         """A struct that adds and scales member by member: its members values of the algebra, or numbers
         and vectors of numbers."""
-        return kind in self.structs and kind not in self.carried and all(
+        return kind in self.structs and kind not in self.crossing and all(
             isinstance(member, GAType) or template(member)[0] in ("vec2", "vec3", "vec4")
             for _, member in self.structs[kind])
 
-    def chunks(self, kind: GAType) -> list[str]:
-        """The vectors of numbers a value of the algebra crosses between shader stages as: its coefficients, four to
-        a vector, the last holding what remains."""
-        size = int(np.prod([len(subspace) for subspace in kind.subspaces]))
-        return [f"vec{count}<f32>" if count > 1 else "f32" for count in
-                [min(4, size - start) for start in range(0, size, 4)]]
+    # --- between shader stages
+    def numbers(self, kind: Any, line: int) -> tuple[str, int]:
+        """The kind of number a member of a struct between shader stages holds, and how many: a value of the algebra
+        its coefficients, a vector its components."""
+        if isinstance(kind, GAType):
+            return "f32", 1 if self.is_number(kind) else int(np.prod([len(subspace) for subspace in kind.subspaces]))
+        name, arguments = template(kind)
+        if name in ("f32", "f16", "i32", "u32"):
+            return name, 1
+        if name in ("vec2", "vec3", "vec4") and arguments[0] in ("f32", "f16", "i32", "u32"):
+            return arguments[0], int(name[3])
+        raise self.error(line, f"a struct between shader stages carries numbers, vectors of them and values of the "
+                               f"algebra, not a {kind}")
 
-    def lifted(self, kind: GAType, parts: list[str]) -> Value:
-        """A value of the algebra from the vectors of numbers it crossed between shader stages as."""
-        key = ("lift", kind)
-        if key not in self.helpers:
-            name = f"ga_lift_{len(self.helpers)}"
-            chunks = self.chunks(kind)
-            parameters = ", ".join(f"a{index}: {chunk}" for index, chunk in enumerate(chunks))
-            components = [f"a{index}" if chunk == "f32" else f"a{index}.{axis}" for index, chunk in enumerate(chunks)
-                          for axis in "xyzw"[:int(chunk[3]) if chunk != "f32" else 1]]
-            code = (f"fn {name}({parameters}) -> {self.wgsl(kind)} {{\n"
-                    f"    return {self.wgsl(kind)}({', '.join(components)});\n}}\n")
-            self.helpers[key] = (name, code, kind)
-        name, _, _ = self.helpers[key]
-        return Value(f"{name}({', '.join(parts)})", kind)
+    def place(self, name: str, line: int) -> None:
+        """Lay out a struct the vertex stage returns for the fragment stage: its builtins as they are, and the numbers
+        of its other members packed four to a location, in the order the struct declares them, those of one kind of
+        number interpolated alike together, so that a value of any size crosses whole."""
+        fields, places, runs = [], {}, {}
+        for attributes, (member, kind) in zip(self.member_attributes[name], self.structs[name]):
+            if any(attribute.startswith("@builtin") for attribute in attributes):
+                fields.append((attributes, member, self.wgsl(kind), None))
+                continue
+            if any(attribute.startswith("@location") for attribute in attributes):
+                raise self.error(line, f"{name} crosses between shader stages, and the dialect places what it "
+                                       f"carries: its {member} names no @location")
+            number, count = self.numbers(kind, line)
+            runs.setdefault((number, tuple(attributes)), []).extend((member, index) for index in range(count))
+        locations = 0
+        for (number, attributes), run in runs.items():
+            for start in range(0, len(run), 4):
+                # A location holds up to four numbers of one kind, a vector of them where it holds more than one.
+                held = run[start:start + 4]
+                field = f"ga_location{locations}"
+                fields.append(([f"@location({locations})", *attributes], field,
+                               f"vec{len(held)}<{number}>" if len(held) > 1 else number, held))
+                for axis, (member, _) in zip("xyzw", held):
+                    places.setdefault(member, []).append(f"{field}.{axis}" if len(held) > 1 else field)
+                locations += 1
+        if locations > _LOCATIONS:
+            raise TypeError(f"line {line}: {name} carries {sum(len(run) for run in runs.values())} numbers between "
+                            f"shader stages, which fill {locations} locations, and WebGPU grants {_LOCATIONS}")
+        self.crossing[name] = (fields, places)
 
-    def lowered(self, kind: GAType, value: str) -> list[str]:
-        """WGSL for the vectors of numbers a value of the algebra crosses between shader stages as."""
-        chunks, start, found = self.chunks(kind), 0, []
-        for chunk in chunks:
-            count = int(chunk[3]) if chunk != "f32" else 1
-            coefficients = ", ".join(f"{value}.c{index}" for index in range(start, start + count))
-            found.append(f"{chunk}({coefficients})")
-            start += count
-        return found
+    def component(self, kind: Any, value: str, index: int) -> str:
+        """WGSL for one number of a value: a coefficient of a value of the algebra, a component of a vector, or the
+        number itself."""
+        if isinstance(kind, GAType) and not self.is_number(kind):
+            return f"{value}.c{index}"
+        if isinstance(kind, str) and template(kind)[0] in ("vec2", "vec3", "vec4"):
+            return f"{value}.{'xyzw'[index]}"
+        return value
 
     def carrying(self, name: str) -> str:
-        """The function building a struct between shader stages from its members, values of the algebra as
-        they are, each lowered to the vectors of numbers it crosses as."""
+        """The function building a struct between shader stages from its members, as the struct declares them: its
+        builtins as they are, and the other members' numbers gathered into the locations they cross in."""
         key = ("carry", name)
         if key not in self.helpers:
             helper = f"ga_carry_{len(self.helpers)}"
-            members = self.structs[name]
-            parameters = ", ".join(f"{member}: {self.wgsl(kind)}" for member, kind in members)
-            arguments = ", ".join(", ".join(self.lowered(kind, member)) if member in self.carried[name] else member
-                                  for member, kind in members)
-            code = f"fn {helper}({parameters}) -> {name} {{\n    return {name}({arguments});\n}}\n"
+            members = dict(self.structs[name])
+            parameters = ", ".join(f"{member}: {self.wgsl(kind)}" for member, kind in self.structs[name])
+            arguments = []
+            for _, field, kind, held in self.crossing[name][0]:
+                numbers = [self.component(members[member], member, index) for member, index in held or []]
+                arguments.append(field if held is None else numbers[0] if len(numbers) == 1 else
+                                 f"{kind}({', '.join(numbers)})")
+            code = f"fn {helper}({parameters}) -> {name} {{\n    return {name}({', '.join(arguments)});\n}}\n"
             self.helpers[key] = (helper, code, name)
         return self.helpers[key][0]
+
+    def lifted(self, name: str, member: str, carried: Value) -> Value:
+        """A member of a struct between shader stages, read in the fragment stage from the numbers it crossed as."""
+        key = ("lift", name, member)
+        if key not in self.helpers:
+            helper = f"ga_lift_{len(self.helpers)}"
+            kind = dict(self.structs[name])[member]
+            numbers = [f"carried.{place}" for place in self.crossing[name][1][member]]
+            alone = self.is_number(kind) or isinstance(kind, str) and kind in ("f16", "i32", "u32")
+            body = numbers[0] if alone else f"{self.wgsl(kind)}({', '.join(numbers)})"
+            code = f"fn {helper}(carried: {name}) -> {self.wgsl(kind)} {{\n    return {body};\n}}\n"
+            self.helpers[key] = (helper, code, kind)
+        helper, _, kind = self.helpers[key]
+        return Value(f"{helper}({self.text(carried)})", kind)
 
     def element(self, kind: Any) -> Any:
         """The element type of an array, the component type of a vector, a matrix's column."""
@@ -861,15 +922,22 @@ class Compiler:
         if isinstance(value, Extensor):
             value = self.context.lower(value)
             if value.gatype.is_scalar and value.gatype.arity == 0:
-                return Value(None, _ABSTRACT, float(np.asarray(self.as_scalar(value).kernel).ravel()[0]))
+                number = self.as_scalar(value)
+                if number.gatype == self.scalar:
+                    return Value(None, _ABSTRACT, float(np.asarray(number.kernel).ravel()[0]))
+                return Value(None, number.gatype, number)
             return Value(None, value.gatype, value)
         return Value(literal(value), _ABSTRACT, float(value))
 
     def as_scalar(self, value: Extensor) -> Extensor:
-        """A scalar of either orientation as the number it is, an `f32`: one stored against minus one
+        """A scalar as the number it is, an `f32`, in its own orientation: one stored against minus one
         restated against plus one."""
         sign = -1 if value.gatype.is_reoriented_scalar else 1
-        return self.context.extensor(self.scalar, sign * np.asarray(value.kernel))
+        return self.context.extensor(self.number_type(value.gatype), sign * np.asarray(value.kernel))
+
+    def number(self, value: Value) -> float:
+        """The number a scalar known when the shader compiles is, of either orientation."""
+        return value.constant if value.type == _ABSTRACT else float(np.asarray(value.constant.kernel).ravel()[0])
 
     def text(self, value: Value) -> str:
         """WGSL for a value, spelling out a compile-time one as its coefficients."""
@@ -892,7 +960,7 @@ class Compiler:
         shape = tuple(len(subspace) for subspace in kind.subspaces)
         kernel = np.empty(shape, dtype=object)
         for index, position in enumerate(np.ndindex(shape)):
-            kernel[position] = Polynomial.variable(name if kind == self.scalar else f"{name}.c{index}")
+            kernel[position] = Polynomial.variable(name if self.is_number(kind) else f"{name}.c{index}")
         return self.context.extensor(kind, kernel)
 
     def operation(self, label: str, compute: Callable, operands: list[Value], line: int) -> Value:
@@ -902,7 +970,9 @@ class Compiler:
             numbers = [operand.constant if operand.type != _ABSTRACT else operand.constant for operand in operands]
             try:
                 return self.constant(compute(*numbers))
-            except TypeError:
+            # A bare number known when the shader compiles has no such method: numga computes it on the scalar the
+            # number is, or refuses it.
+            except (TypeError, AttributeError):
                 pass
         # Numbers enter as parameters, so one function serves every number.
         operands = [Value(self.text(operand), self.scalar) if operand.type == _ABSTRACT else operand
@@ -928,7 +998,7 @@ class Compiler:
                                    for index, operand in enumerate(operands) if operand.text is not None)
             components = [polynomial_text(Polynomial.lift(c) if not isinstance(c, Polynomial) else c)
                           for c in np.asarray(result.kernel).ravel()]
-            body = components[0] if kind == self.scalar else (
+            body = components[0] if self.is_number(kind) else (
                 f"{self.wgsl(kind)}(\n        " + ",\n        ".join(components) + ")")
             code = f"fn {name}({parameters}) -> {self.wgsl(kind)} {{\n    return {body};\n}}\n"
             self.helpers[key] = (name, code, kind)
@@ -942,12 +1012,16 @@ class Compiler:
         if target is None or value.type == target:
             return self.text(value)
         if isinstance(target, GAType):
-            if value.type == _ABSTRACT and target == self.scalar:
-                return self.text(value)
+            if self.is_number(target) and self.is_scalar(value):
+                # Where an f32 is stored, a number of either orientation is the number it is; where a scalar of
+                # the other orientation is, it is none.
+                if target == self.scalar:
+                    return self.text(value)
+                raise self.error(line, f"a {value.type} is not a {target}")
             if isinstance(value.type, GAType) and self.embeds(value.type, target):
                 return self.text(self.operation(f"cast_{self.wgsl(target)}", lambda x: self.cast(x, target), [value], line))
             raise self.error(line, f"a {value.type} is not a {target}; cast it with .cast()")
-        if isinstance(value.type, GAType) and value.type != self.scalar:
+        if isinstance(value.type, GAType) and not self.is_number(value.type):
             raise self.error(line, f"a {value.type} is not a {target}")
         return self.text(value)
 
@@ -1027,10 +1101,8 @@ class Compiler:
             members = dict(self.structs[base.type])
             if node.name not in members:
                 raise self.error(node.line, f"{base.type} has no member {node.name!r}")
-            if node.name in self.carried.get(base.type, {}):
-                kind = members[node.name]
-                return self.lifted(kind, [f"{self.text(base)}.{node.name}_{index}"
-                                          for index in range(len(self.chunks(kind)))])
+            if base.type in self.crossing and node.name in self.crossing[base.type][1]:
+                return self.lifted(base.type, node.name, base)
             return Value(f"{self.text(base)}.{node.name}", members[node.name])
         name, arguments = template(base.type)
         if name.startswith("vec"):
@@ -1045,6 +1117,10 @@ class Compiler:
             return self.batched(line, symbol, left, right)
         algebra = any(isinstance(side.type, GAType) and (side.type != self.scalar or side.text is None)
                       for side in (left, right))
+        if symbol not in _OPERATORS and symbol != "/" and all(not isinstance(side.type, GAType) or self.is_number(side.type)
+                                                              for side in (left, right)):
+            # Numbers of either orientation compare as the numbers they are.
+            algebra = False
         if symbol == "**":
             exponent = right.constant
             if right.type == _ABSTRACT and float(exponent).is_integer() and exponent >= 1:
@@ -1056,8 +1132,14 @@ class Compiler:
             if not self.is_scalar(right) and not (right.text is None and right.type == _ABSTRACT):
                 # A versor divides as numga divides it, by its inverse, its reverse over its reverse product.
                 return self.binary(line, "*", left, self.method(line, right, "inverse", [], []))
-            reciprocal = (self.constant(1 / right.constant) if right.type == _ABSTRACT and right.text is not None
-                          else Value(f"(1.0 / {self.text(right)})", self.scalar))
+            # The reciprocal of a number keeps its orientation, as numga's does.
+            if right.type == _ABSTRACT and right.text is not None:
+                reciprocal = self.constant(1 / right.constant)
+            elif right.text is None and right.type != _ABSTRACT:
+                reciprocal = self.constant(right.constant.inverse())
+            else:
+                reciprocal = Value(f"(1.0 / {self.text(right)})",
+                                   self.scalar if right.type == _ABSTRACT else right.type)
             return self.binary(line, "*", left, reciprocal)
         if algebra and symbol in _OPERATORS:
             return self.operation({"+": "add", "-": "subtract", "*": "product", "&": "regressive",
@@ -1067,7 +1149,7 @@ class Compiler:
             raise self.error(line, f"{symbol!r} does not take a {left.type} and a {right.type}")
         if left.type == _ABSTRACT and right.type == _ABSTRACT and symbol in ("+", "-", "*", "/"):
             number = _OPERATORS.get(symbol, operator.truediv)(left.constant, right.constant)
-            return Value(f"({left.text} {symbol} {right.text})", _ABSTRACT, number)
+            return Value(f"({self.text(left)} {symbol} {self.text(right)})", _ABSTRACT, number)
         kind = "bool" if symbol in ("==", "!=", "<", ">", "<=", ">=", "&&", "||") else (
             right.type if left.type == _ABSTRACT or (left.type == self.scalar and str(right.type).startswith("vec"))
             else left.type)
@@ -1149,7 +1231,7 @@ class Compiler:
                 members = self.structs[name]
                 arguments = ", ".join(self.coerce(self.value(argument, scope), member, node.line)
                                       for argument, (_, member) in zip(node.arguments, members))
-                built = self.carrying(name) if name in self.carried else name
+                built = self.carrying(name) if name in self.crossing else name
                 return Value(f"{built}({arguments})", name)
             if name in self.types and name != "f32":
                 # A type applied to a value is its identity map applied: an embedding or a projection.
@@ -1178,16 +1260,9 @@ class Compiler:
         arguments = [self.value(argument, scope) for argument in nodes]
         if self.is_scalar(base):
             if name in _SCALAR_FUNCTIONS:
-                if base.text is None or base.type == _ABSTRACT and base.text is None:
-                    return self.constant(getattr(np, {"square_root": "sqrt", "arccos": "arccos", "arcsin": "arcsin",
-                                                      "arctan": "arctan"}.get(name, name))(base.constant))
-                return Value(f"{_SCALAR_FUNCTIONS[name]}({self.text(base)})", self.scalar)
+                return self.scalar_function(line, base, name, arguments)
             if name == "inverse":
                 return self.binary(line, "/", Value("1.0", _ABSTRACT, 1.0), base)
-            if name == "clip":
-                return Value(f"clamp({self.text(base)}, {self.text(arguments[0])}, {self.text(arguments[1])})", self.scalar)
-            if name == "inverse_square_root":
-                return Value(f"inverseSqrt({self.text(base)})", self.scalar)
         if name == "norm":
             return self.method(line, self.method(line, base, "symmetric_reverse_product", [], scope), "square_root", [], scope)
         if name == "normalized":
@@ -1200,6 +1275,25 @@ class Compiler:
         if name == "exp":
             return self.exponential(line, base, scope)
         return self.operation(name, lambda x, *xs: getattr(x, name)(*xs), [base] + arguments, line)
+
+    def scalar_function(self, line: int, base: Value, name: str, arguments: list[Value]) -> Value:
+        """numga's function of a number, its result in the orientation numga gives it: computed by WGSL's builtin on the
+        number it is, folded where the number and every argument are known when the shader compiles, and refused where
+        numga refuses the number."""
+        known = [argument.text is None or argument.type == _ABSTRACT for argument in arguments]
+        # numga's own function of a number of the operand's type: the number itself where it is known, any other
+        # number of its type where it is not, which gives the result's type all the same.
+        number = self.number(base) if base.text is None else 0.5
+        numeric = NumpyContext(self.algebra).extensor(self.scalar if base.type == _ABSTRACT else base.type, [number])
+        try:
+            result = getattr(numeric, name)(*(self.number(argument) if given else 0.0
+                                              for argument, given in zip(arguments, known)))
+        except Exception as failure:
+            raise self.error(line, f"numga cannot {name} on ({base.type}): {failure}") from failure
+        if base.text is None and all(known):
+            return self.constant(result)
+        texts = ", ".join(self.text(operand) for operand in [base] + arguments)
+        return Value(f"{_SCALAR_FUNCTIONS[name]}({texts})", self.number_type(result.gatype))
 
     def exponential(self, line: int, base: Value, scope: list[dict]) -> Value:
         """The exponential of a value whose square is a scalar: a turn, a boost or a translation, by
@@ -1231,7 +1325,7 @@ class Compiler:
         if name in _MEASURING and measured:
             raise self.error(node.line, f"{name} of a {measured[0]} measures numbers that a value of the algebra would "
                                         f"hold: hold them as one, and write {_MEASURING[name]}")
-        if name == "select" and isinstance(arguments[0].type, GAType) and arguments[0].type != self.scalar:
+        if name == "select" and isinstance(arguments[0].type, GAType) and not self.is_number(arguments[0].type):
             # A choice between two values of the algebra, of the first one's type, by a condition.
             kind = arguments[0].type
             key = ("select", kind)
@@ -1244,8 +1338,11 @@ class Compiler:
             return Value(f"{helper}({self.text(arguments[0])}, {self.coerce(arguments[1], kind, node.line)}, "
                          f"{self.text(arguments[2])})", kind)
         for argument in arguments:
-            if isinstance(argument.type, GAType) and argument.type != self.scalar:
+            if isinstance(argument.type, GAType) and not self.is_number(argument.type):
                 raise self.error(node.line, f"{name} does not take a {argument.type}")
+        # WGSL's own functions take numbers of either orientation as the numbers they are.
+        arguments = [Value(self.text(argument), self.scalar) if isinstance(argument.type, GAType) and argument.type != self.scalar
+                     else argument for argument in arguments]
         texts = ", ".join(self.text(argument) for argument in arguments)
         concrete = [argument.type for argument in arguments if argument.type != _ABSTRACT]
         if name in _ELEMENTWISE:
@@ -1354,9 +1451,10 @@ class Compiler:
         if isinstance(node, Assignment):
             if isinstance(node.target, Name) and node.target.id == "_":
                 return f"_ = {self.text(self.value(node.value, scope))}"
-            if (isinstance(node.target, Member) and node.target.name in
-                    self.carried.get(self.value(node.target.object, scope).type, {})):
-                raise self.error(node.line, f"build a struct carrying {node.target.name} between stages whole")
+            carrier = self.value(node.target.object, scope).type if isinstance(node.target, Member) else None
+            if carrier in self.crossing and node.target.name in self.crossing[carrier][1]:
+                raise self.error(node.line, f"{carrier} crosses between shader stages packed: build it whole, its "
+                                            f"{node.target.name} with the rest")
             target = self.value(node.target, scope)
             value = self.value(node.value, scope)
             if node.operator != "=" and (isinstance(target.type, GAType) or self.is_state(target.type)):
@@ -1385,12 +1483,12 @@ class Compiler:
             if isinstance(item, Struct):
                 self.structs[item.name] = [(member, self.resolve(kind)) for _, member, kind in item.members]
                 self.member_attributes[item.name] = [attributes for attributes, _, _ in item.members]
-                for attributes, (member, kind) in zip(self.member_attributes[item.name], self.structs[item.name]):
-                    if (isinstance(kind, GAType) and kind != self.scalar
-                            and any(attribute.startswith("@location") for attribute in attributes)):
-                        self.carried.setdefault(item.name, {})[member] = kind
             elif isinstance(item, Function):
                 self.functions[item.name] = ([self.resolve(kind) for _, _, kind in item.parameters], self.resolve(item.result))
+        for item in items:
+            # What the vertex stage returns crosses to the fragment stage, placed by the dialect.
+            if isinstance(item, Function) and "@vertex" in item.attributes and self.functions[item.name][1] in self.structs:
+                self.place(self.functions[item.name][1], item.line)
         constants = [line for name, value in self.given.items() for line in self.given_constant(name, value)]
         for item in items:
             if isinstance(item, Declaration):
@@ -1406,8 +1504,8 @@ class Compiler:
             members = ",\n".join(f"    {name}: {self.wgsl(kind)}" for name, kind in self.uniforms)
             structs.append(f"struct Uniforms {{\n{members},\n}};\n")
             self.bindings.insert(0, Binding(0, "uniforms", "uniforms", "Uniforms"))
-            for index, binding in enumerate(self.bindings):
-                binding.index = index
+        for index, binding in enumerate(self.bindings):
+            binding.index = index
         declarations = []
         for binding in self.bindings:
             space = {"uniforms": "<storage, read>", "storage": f"<storage, {binding.access}>"}.get(binding.kind, "")
@@ -1428,23 +1526,11 @@ class Compiler:
                        self.stages.get("vertex"), self.stages.get("fragment"), self.targets)
 
     def struct_code(self, name: str, members: list) -> str:
-        attributes = self.member_attributes.get(name, [[] for _ in members])
-        fields, taken = [], set()
-        for attribute, (member, kind) in zip(attributes, members):
-            if member not in self.carried.get(name, {}):
-                fields.append((attribute, member, self.wgsl(kind)))
-                continue
-            # A value of the algebra takes a location for each vector of numbers it crosses as, from the one it names.
-            first = int(next(entry for entry in attribute if entry.startswith("@location"))[len("@location("):-1])
-            others = [entry for entry in attribute if not entry.startswith("@location")]
-            fields.extend(([f"@location({first + index})"] + others, f"{member}_{index}", chunk)
-                          for index, chunk in enumerate(self.chunks(kind)))
-        for attribute, member, _ in fields:
-            for entry in attribute:
-                if entry.startswith("@location"):
-                    if entry in taken:
-                        raise SyntaxError(f"struct {name}: {member} takes {entry}, which another member holds")
-                    taken.add(entry)
+        if name in self.crossing:
+            fields = [(attributes, field, kind) for attributes, field, kind, _ in self.crossing[name][0]]
+        else:
+            attributes = self.member_attributes.get(name, [[] for _ in members])
+            fields = [(attribute, member, self.wgsl(kind)) for attribute, (member, kind) in zip(attributes, members)]
         lines = "\n".join(f"    {' '.join(attribute + [member])}: {kind}," for attribute, member, kind in fields)
         return f"struct {name} {{\n{lines}\n}};\n"
 

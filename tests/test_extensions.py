@@ -126,7 +126,8 @@ def test_opaque_gatype_predicates_are_a_prioritized_low_level_tier():
     assert rotor.strategy() == "optimized"
     assert calls == [rotor.gatype]
 
-    other = Algebra("x+y+z+w0")
+    # A different algebra of the same signature: equal descriptions build one algebra.
+    other = Algebra("a+b+c+d0")
     other_value = NumpyContext(other).extensor(other.gatype.even(), [1] * 8)
     assert other_value.strategy() == "generic"
 

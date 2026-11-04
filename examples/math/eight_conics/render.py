@@ -15,7 +15,7 @@ from numga import stack
 from examples.util.animation import capture
 from examples.util.wgsl import simplices
 from examples.util.wgsl.quadrics import curves
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, panel
 from examples.util.wgsl.simplices import Cap, Topology
 from examples.math.eight_conics import core
 
@@ -87,7 +87,7 @@ def canvas(bounds: np.ndarray) -> tuple[plt.Figure, plt.Axes, Camera]:
     axes.set(xlim=bounds[:, 0], ylim=bounds[:, 1], aspect="equal")
     axes.set_axis_off()
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
-    return figure, axes, flat_panel(axes, core.ga)
+    return figure, axes, panel(axes, core.mv.x, core.mv.y, core.mv.w)
 
 
 def draw_double_contact(base: core.Quadric, touching: core.Quadric, contact_plane: core.Plane, contacts: core.Point) -> plt.Figure:

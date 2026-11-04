@@ -43,7 +43,7 @@ def test_turned_sides_area_gradient_and_plateau_relaxation():
 
     # Finite-difference check against the exact triangle-area sum, at the first interior vertex.
     displacement = 1e-7 * (0.4 * core.mv.x.dual() - 0.7 * core.mv.z.dual())
-    step = ~topology.reading(topology.interior[0][:1]) * (displacement * np.ones(1)).field()
+    step = ~topology.reading(topology.interior[0][:1], 0) * (displacement * np.ones(1)).field()
     plus_sides = topology.boundary[2, 1] * (topology.d[0] * (initial_vertices + step))
     minus_sides = topology.boundary[2, 1] * (topology.d[0] * (initial_vertices - step))
     plus_area = ((plus_sides[0] & plus_sides[1]).norm() / 2).sites.sum()
@@ -57,7 +57,7 @@ def test_turned_sides_area_gradient_and_plateau_relaxation():
     relaxation_areas = stack([area for _, area, _ in states])
     assert np.all(relaxation_areas[1:] < relaxation_areas[:-1])
 
-    exterior = topology.reading(topology.exterior[0])
+    exterior = topology.reading(topology.exterior[0], 0)
     for vertices, _, _ in states:
         np.testing.assert_allclose((exterior * (vertices - initial_vertices)).kernel, 0.0, atol=1e-14)
     initial_mean_square_curvature = states[0][2].squared().sites.mean()
@@ -70,7 +70,7 @@ def test_conjugate_minimal_surface_interior_cancellation_and_enneper():
     conjugate, boundary_flux = core.conjugate_minimal_surface(topology, enneper)
 
     # The sides facing each vertex sum to zero at every interior vertex.
-    np.testing.assert_allclose((topology.reading(topology.interior[0]) * boundary_flux).kernel, 0.0, atol=1e-14)
+    np.testing.assert_allclose((topology.reading(topology.interior[0], 0) * boundary_flux).kernel, 0.0, atol=1e-14)
 
     # Recovered conjugate matches the exact analytical Weierstrass-Enneper conjugate up to translation.
     centred_conjugate = (conjugate.batch() - conjugate.batch().mean(axis=0)).field()
@@ -79,7 +79,7 @@ def test_conjugate_minimal_surface_interior_cancellation_and_enneper():
 
     # Applying the conjugate construction a second time turns differentials by pi, negating the interior surface.
     second_conjugate, second_flux = core.conjugate_minimal_surface(topology, exact_conjugate)
-    np.testing.assert_allclose((topology.reading(topology.interior[0]) * second_flux).kernel, 0.0, atol=1e-14)
+    np.testing.assert_allclose((topology.reading(topology.interior[0], 0) * second_flux).kernel, 0.0, atol=1e-14)
     centred_second = (second_conjugate.batch() - second_conjugate.batch().mean(axis=0)).field()
     centred_enneper = (enneper.batch() - enneper.batch().mean(axis=0)).field()
     np.testing.assert_allclose((centred_second + centred_enneper).kernel, 0.0, atol=2e-2)
@@ -89,7 +89,7 @@ def test_bonnet_isometric_family_catenoid_to_helicoid():
     topology, catenoid, exact_helicoid, _, _ = scenarios.slit_catenoid(1.15, 0.85 * np.pi, 22, 44)
     helicoid, boundary_flux = core.conjugate_minimal_surface(topology, catenoid)
 
-    interior = topology.reading(topology.interior[0])
+    interior = topology.reading(topology.interior[0], 0)
     np.testing.assert_allclose((interior * boundary_flux).kernel, 0.0, atol=1e-14)
     centred_helicoid = (helicoid.batch() - helicoid.batch().mean(axis=0)).field()
     centred_exact = (exact_helicoid.batch() - exact_helicoid.batch().mean(axis=0)).field()

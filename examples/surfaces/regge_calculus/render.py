@@ -7,9 +7,9 @@ import numpy as np
 from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 
 from numga import stack
-from examples.util import charts
+from examples.util import charts, shapes
 from examples.util.wgsl import contours, flow, simplices
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, offset_panel
 from examples.surfaces.regge_calculus import core
 
 primal_colour = "#286580"
@@ -85,8 +85,8 @@ def spaced_faces(centres: core.Point, max_radius: float, min_separation: float) 
 def draw_metric_basis(corners: core.Point, points: core.Point,
                       basis: core.Metric, metric: core.Metric) -> plt.Figure:
     """The three hyperbolic Regge edge metric basis forms and their sum into a positive-definite metric ellipse."""
-    # The samples triangulated, for the pictures of the forms across them.
-    topology = core.Topology.triangulate(points)
+    # The samples triangulated, for the pictures of the forms across them, from their readings across and up.
+    topology, _ = shapes.delaunay((stack((core.mv.x, core.mv.y)) & points.batch()[..., None]).to_array())
     places = points.batch()                                                   # [samples] Point-
     centroid = corners.mean()                                                  # [] Point-
     offsets = points - centroid
@@ -107,7 +107,7 @@ def draw_metric_basis(corners: core.Point, points: core.Point,
     for index in range(3):
         ax = axes[index]
         frame_panel(ax, corners, 0.22)
-        camera = flat_panel(ax, places.algebra)
+        camera = offset_panel(ax, core.mv.x, core.mv.y)
         values = basis_forms[index]
         colours = diverging_colours(Normalize(-basis_bound, basis_bound)(values))[:, :3]
         simplices.overlay(ax, [
@@ -120,7 +120,7 @@ def draw_metric_basis(corners: core.Point, points: core.Point,
 
     ax = axes[3]
     frame_panel(ax, corners, 0.22)
-    camera = flat_panel(ax, places.algebra)
+    camera = offset_panel(ax, core.mv.x, core.mv.y)
     max_metric = metric_form.max()
     ellipse_levels = np.linspace(0.03 * max_metric, 0.28 * max_metric, 4)
     ellipses = tuple(contours.Level(level, np.append(to_rgb(accent_colour), 1.0), 1.9) for level in ellipse_levels)
@@ -141,7 +141,7 @@ def draw_curvature_defects(topology: core.Topology, vertices: core.Point, centre
     """Vertex curvature shades the fixed reference disks, with equal-length displacement contours at sampled faces."""
     mv = vertices.context.multivector
     # The curvature at the interior vertices, and nothing on the boundary, where the disk is cut off.
-    interior = topology.reading(topology.interior[0])                         # Scalar+[interior <- vertices]
+    interior = topology.reading(topology.interior[0], 0)                      # Scalar+[interior <- vertices]
     curvature_values = np.asarray(((~interior * (interior * curvatures)).batch() & mv.xy.dual()).to_array())
     points = vertices.batch()                                                 # [vertices] Point-
     bound = np.abs(curvature_values).max()
@@ -182,7 +182,7 @@ def draw_curvature_defects(topology: core.Topology, vertices: core.Point, centre
 
     for case_index, ax in enumerate(axes):
         frame_panel(ax, vertices, 0.08)
-        camera = flat_panel(ax, points.algebra)
+        camera = offset_panel(ax, core.mv.x, core.mv.y)
         field = curvature_values[case_index]
         # Each face's ellipse its own clear picture, filled translucent inside and outlined in its colour: the fills
         # under the reference circles, the outlines over them.
@@ -227,7 +227,7 @@ def draw_intrinsic_flow(topology: core.Topology, vertices: core.Point,
 
     for index, ax in enumerate(axes):
         frame_panel(ax, vertices, 0.08)
-        camera = flat_panel(ax, points.algebra)
+        camera = offset_panel(ax, core.mv.x, core.mv.y)
         colours = diverging_colours(Normalize(-1.0, 1.0)(potentials[index]))[:, :3]
         simplices.overlay(ax, [
             contours.picture(points, topology, potentials[index], colours, camera, levels=potential_levels),

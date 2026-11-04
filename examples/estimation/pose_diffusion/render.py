@@ -12,7 +12,7 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import quadrics, simplices
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, panel
 from examples.util.wgsl.simplices import Cap, Topology
 from examples.estimation.pose_diffusion.core import Covariance, Motor, Plane, Point, Spread, Twist, ga, mv, origin
 
@@ -69,7 +69,7 @@ def draw_cloud(ax, poses: Motor, predicted: Covariance, limit: Covariance, exten
     ax.set_ylim(-extent, extent)
     ax.set_aspect("equal")
     ax.set_axis_off()
-    camera = flat_panel(ax, ga)
+    camera = panel(ax, mv.x, mv.y, mv.w)
     image = simplices.overlay(ax, pictures(poses, predicted, limit, extent, camera))
     ax.text(extent, 0, "forward", ha="right", va="top", color="0.4")
     ax.text(0, extent, "sideways ", ha="right", va="bottom", color="0.4", rotation=90, rotation_mode="anchor")

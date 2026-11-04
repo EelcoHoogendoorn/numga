@@ -69,12 +69,12 @@ def drum(tile_vertices: np.ndarray, n_lattice: int, n_subdivisions: int) -> tupl
     # The fixed boundary: the vertices of the edges that border a single face; the field lives on the others.
     topology = Topology(n_vertices, faces)
     interior = topology.interior[0]
-    read_interior = topology.reading(interior)                             # Scalar+[interior <- vertices]
+    read_interior = topology.reading(interior, 0)                          # Scalar+[interior <- vertices]
     lift = ~read_interior * Scalar                                         # (Scalar+ <- Scalar+)[vertices <- interior]
 
     # Each tile's samples read the field at their vertices, zero on the fixed boundary; welding the tiles back
     # averages the samples on each interior vertex, as many as the tiles meeting there.
-    restriction = topology.reading(tile_nodes.reshape(-1)) * ~read_interior  # Scalar+[tile samples <- interior]
+    restriction = topology.reading(tile_nodes.reshape(-1), 0) * ~read_interior  # Scalar+[tile samples <- interior]
     multiplicity = ~restriction * mv.scalar(np.ones((restriction.shape[0], 1))).field()   # Scalar+[interior]
     assembly = spdiag(multiplicity.inverse()) * ~restriction * Scalar      # (Scalar+ <- Scalar+)[interior <- tile samples]
     restriction = restriction * Scalar                                     # (Scalar+ <- Scalar+)[tile samples <- interior]

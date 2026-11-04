@@ -226,7 +226,7 @@ def conduction(operators: Operators, conductivity: Conductivity,
     # Pulling the area-weighted conductivity back through the face gradient gives the vertex conductance.
     conductance = operators.gradient.adjugate()(spdiag(operators.areas * conductivity)(operators.gradient))  # [cases] (Amount- <- Scalar+)[vertices <- vertices]
     free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
-    free = ~topology.reading(free_vertices) * Scalar                         # (Scalar+ <- Scalar+)[vertices <- free]
+    free = ~topology.reading(free_vertices, 0) * Scalar                      # (Scalar+ <- Scalar+)[vertices <- free]
     rhs = -free.adjugate()(conductance(prescribed))                          # [cases] Amount-[free]
     potential = prescribed + free(free.adjugate()(conductance(free)).solve(rhs))  # [cases] Scalar+[vertices]
     current = -conductivity(operators.gradient(potential))                   # [cases] Point-[faces]
@@ -235,7 +235,7 @@ def conduction(operators: Operators, conductivity: Conductivity,
     # the target gradient of the streamfunction whose level curves follow the current paths.
     quarter_turn = (mv.xy * (-np.pi / 4)).exp()                              # [] Rotor+
     laplacian = operators.gradient.adjugate()(spdiag(operators.areas * Plane.dual())(operators.gradient))  # (Amount- <- Scalar+)[vertices <- vertices]
-    unpinned = ~topology.reading(np.arange(1, topology.n_vertices)) * Scalar # (Scalar+ <- Scalar+)[vertices <- unpinned]
+    unpinned = ~topology.reading(np.arange(1, topology.n_vertices), 0) * Scalar # (Scalar+ <- Scalar+)[vertices <- unpinned]
     stream_rhs = unpinned.adjugate()(operators.gradient.adjugate()(operators.areas * (quarter_turn >> current)))  # [cases] Amount-[unpinned]
     streamfunction = unpinned(unpinned.adjugate()(laplacian(unpinned)).solve(stream_rhs))  # [cases] Scalar+[vertices]
     return potential, current, streamfunction

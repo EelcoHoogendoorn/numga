@@ -10,9 +10,9 @@ import numpy as np
 
 from examples.util import charts
 from examples.util.wgsl import quadrics, simplices
-from examples.util.wgsl.camera import Camera, flat_panel, panel, read
+from examples.util.wgsl.camera import Camera, panel, read
 from numga import stack
-from examples.quadrics.cayley_klein.core import Line, Plane, Point, Polarity, Scalar, ga, mv
+from examples.quadrics.cayley_klein.core import Line, Plane, Point, Polarity, Scalar, mv
 
 BOX = (-1.2, 1.9, -1.2, 1.6)
 # The pixels of a point the marks' areas and the strokes' widths below are given in, a point at 120 dots per inch;
@@ -38,8 +38,8 @@ def cameras(ax: plt.Axes) -> tuple[Camera, Camera]:
     origin = mv.w.dual()                                                       # [] Point-
     # The lines through the origin along y and along x, which read a meet's place across and up, and the line at
     # infinity, which reads its weight.
-    lines = panel(ax, mv.y.dual() & origin, origin & mv.x.dual())._replace(weight=mv.x.dual() & mv.y.dual())
-    return flat_panel(ax, ga), lines
+    lines = panel(ax, mv.y.dual() & origin, origin & mv.x.dual(), mv.x.dual() & mv.y.dual())
+    return panel(ax, mv.x, mv.y, mv.w), lines
 
 
 def marks(points: Point, colour: str, area: float, camera: Camera) -> np.ndarray:

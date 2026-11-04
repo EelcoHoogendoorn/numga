@@ -16,6 +16,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import Extensor, stack
+from examples.quantum.two_spins import core
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import fitted, labels, meshes, show, simplices, solids
@@ -42,30 +43,27 @@ CHEVRON_LENGTH = 4.0
 
 
 class Reading(NamedTuple):
-    """How a spin is read: the unit elements of the first and the second spin's own space, by name, and what the
-    size of a spin read so is called."""
-    first: str
-    second: str
+    """How a spin is read: the unit elements `[3]` of the first and the second spin's own space, in the spins'
+    algebra, and what the size of a spin read so is called."""
+    first: Extensor
+    second: Extensor
     size: str
 
 
-# A spin read as the plane it turns in, and, in the twin notebook of space, as a Bloch vector.
-SPIN_PLANES = Reading("yz zx xy", "YZ ZX XY", "size of each spin's plane")
-BLOCH_VECTORS = Reading("x y z", "X Y Z", "each Bloch vector's length")
+# A spin of the core's algebra read as the plane it turns in, by the unit planes yz, zx and xy of its own space.
+plane_reading = Reading(stack((core.mv.yz, core.mv.zx, core.mv.xy)), stack((core.mv.YZ, core.mv.ZX, core.mv.XY)),
+                        "size of each spin's plane")
 
 
-def coordinates(spins: Extensor, names: str) -> np.ndarray:
-    """The coordinates `[..., 3]` of spins along the named unit elements of their own algebra: their dot products
-    with them."""
-    mv = spins.context.multivector
-    units = stack([getattr(mv, name) for name in names.split()])
+def coordinates(spins: Extensor, units: Extensor) -> np.ndarray:
+    """The coordinates `[..., 3]` of spins along unit elements `[3]` of their own algebra: their dot products with
+    them."""
     return units.dot(spins[..., None]).to_array()
 
 
-def gpu_points(spins: Extensor, names: str) -> solids.Point:
-    """Draw each copy's named spin-plane readings along the same three scene directions."""
-    mv = spins.context.multivector
-    units = stack([getattr(mv, name) for name in names.split()])
+def gpu_points(spins: Extensor, units: Extensor) -> solids.Point:
+    """Draw each copy's spin readings along unit elements `[3]` of its own algebra along the same three scene
+    directions."""
     readings = units.dot(spins[..., None])
     return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
 

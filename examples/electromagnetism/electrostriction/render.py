@@ -12,7 +12,7 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl.camera import offset_panel
 from examples.electromagnetism.electrostriction.core import Field, Point, Scalar, field_along
 
 Topology = simplices.Topology
@@ -53,7 +53,8 @@ def lattice_axes(rest: Point) -> tuple[plt.Figure, plt.Axes, Scalar]:
 def draw_rest(rest: Point, bonds: np.ndarray) -> plt.Figure:
     """The reference lattice: its particles and the bonds between them."""
     figure, ax, _ = lattice_axes(rest)
-    camera = flat_panel(ax, rest.algebra)
+    mv = rest.context.multivector
+    camera = offset_panel(ax, mv.x, mv.y)
     sites = rest.batch()
     simplices.overlay(ax, [simplices.strokes(sites, Topology(len(sites), bonds), bond_colour, bond_width, camera),
                            simplices.markers(sites, bond_colour, particle_radius, camera)])
@@ -67,14 +68,14 @@ class LatticeView:
     def __init__(self, rest: Point, bonds: np.ndarray, dipole_scale: float, field_scale: float) -> None:
         self.dipole_scale, self.field_scale = dipole_scale, field_scale
         self.figure, ax, half_size = lattice_axes(rest)
-        self.camera = flat_panel(ax, rest.algebra)
+        mv = rest.context.multivector
+        self.camera = offset_panel(ax, mv.x, mv.y)
         sites = rest.batch()
         n_particles = len(sites)
         self.bonds = Topology(n_particles, bonds)
         # Each dipole a chain of two points, its tail and its head, about its particle.
         self.arrows = Topology.chains([2] * n_particles)
         # The applied field's arrow, centred below the lattice.
-        mv = rest.context.multivector
         self.anchor = mv.y.dual() * (-half_size[1] - field_gap / 2)                     # [] Point-
         self.reference = [simplices.strokes(sites, self.bonds, rest_colour, rest_width, self.camera,
                                             dashes=rest_dashes),

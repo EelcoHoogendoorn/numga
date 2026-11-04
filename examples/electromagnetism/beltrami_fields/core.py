@@ -9,6 +9,7 @@ from collections.abc import Iterable, Iterator
 
 import numpy as np
 
+from numga import Algebra
 from numga.algebras import STA as ga
 from numga.sparse import spdiag
 from examples.electromagnetism.beltrami_fields.plumbing import Topology, as_scalar, mv, time
@@ -16,7 +17,7 @@ from examples.electromagnetism.beltrami_fields.plumbing import Topology, as_scal
 Scalar = ga.gatype.scalar()          # Scalar+
 Plane = ga.gatype.vector()           # Vector+
 # The magnetic field, a plane of space.
-Field = ga.gatype.bivector().derive.within("x y z")  # Bivector+
+Field = ga.gatype.bivector().derive.within(Algebra("x+y+z+"))  # Bivector+
 Point = ga.gatype.antivector()        # Antivector-
 Patch = ga.gatype.antibivector()      # Antibivector-
 Volume = ga.gatype.antitrivector()    # Antitrivector-

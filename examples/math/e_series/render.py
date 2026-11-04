@@ -10,7 +10,7 @@ from examples.math.e8.core import Vector
 from examples.math.e8.render import background, orbit_colours
 from examples.util import charts
 from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import flat_panel, panel
+from examples.util.wgsl.camera import offset_panel, panel
 
 family_colours = orbit_colours[[5, 0, 3]]
 # The diagram is laid out in a plane of its own.
@@ -35,7 +35,7 @@ def draw_diagram(simple_roots: Vector, ranks: np.ndarray, names: tuple[str, ...]
     ax.set(xlim=(-0.35, 6.35), ylim=(-0.8, 1.2), aspect="equal")
     ax.set_axis_off()
     figure.subplots_adjust(0.025, 0.025, 0.975, 0.975)
-    camera = flat_panel(ax, PGA2D)
+    camera = panel(ax, layout.x, layout.y, layout.w)
     nodes = layout.point(positions)                                            # [roots] Point-
     # A bracket under the first stage's six nodes.
     bracket = layout.point([[0, -0.3], [0, -0.4], [4, -0.4], [4, -0.3]])       # [corners] Point-
@@ -84,7 +84,7 @@ def draw_nested_roots(root_systems: tuple[Vector, ...], horizontal: Vector, vert
     figure.subplots_adjust(0.01, 0.06, 0.99, 0.995)
     # The camera reads roots, vectors, as they are, along the drawing plane's two directions: `root & horizontal.dual()`
     # is `horizontal | root`. The edges a faint haze, a frame's width.
-    camera = panel(ax, horizontal.dual(), vertical.dual())
+    camera = offset_panel(ax, horizontal.dual(), vertical.dual())
     neighbours = simplices.Topology(len(roots), np.stack([first, second], axis=-1))
     simplices.overlay(ax, [
         simplices.strokes(roots, neighbours, family_colours[edge_stages], charts.FRAME_PX, camera,

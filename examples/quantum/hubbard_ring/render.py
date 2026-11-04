@@ -11,7 +11,7 @@ from matplotlib.colors import to_rgb
 from examples.quantum.hubbard_ring import core
 from examples.util import charts
 from examples.util.wgsl import planar, simplices
-from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl.camera import panel
 from numga import stack
 
 UP, DOWN, LEVELS = "#c0392b", "#2e86c1", "#7d3c98"
@@ -66,7 +66,7 @@ def animate_ring(ratios: np.ndarray, occupation: core.Scalar) -> Iterator[np.nda
             ax = figure.add_axes((case / len(labels), label_pixels / (ring_pixels + label_pixels), 1 / len(labels),
                                   ring_pixels / (ring_pixels + label_pixels)))
             ax.set(xlim=(-1.3, 1.3), ylim=(-1.3, 1.3), aspect="equal")
-            camera = flat_panel(ax, planar.ga)
+            camera = panel(ax, planar.mv.x, planar.mv.y, planar.mv.w)
             outline = simplices.strokes(rim, simplices.Topology.loops([n_rim_samples]), RIM, charts.FRAME_PX, camera)
             sites = simplices.markers(places, SITE, charts.MARKER_PX / 2, camera)
             rings.append((camera, outline, sites, simplices.overlay(ax, [outline, sites])))

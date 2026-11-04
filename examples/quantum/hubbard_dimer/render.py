@@ -11,7 +11,7 @@ from matplotlib.colors import to_rgb
 from examples.quantum.hubbard_dimer import core
 from examples.util import charts
 from examples.util.wgsl import planar, simplices
-from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl.camera import panel
 from numga import stack
 
 COLOURS = ("#7d3c98", "#2e86c1", "#c0392b")
@@ -155,7 +155,7 @@ def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitud
         ax = figure.add_axes((label_pixels / width, foot_pixels / height, columns * dial_pixels / width,
                               count * dial_pixels / height))
         ax.set(xlim=(0, columns * span), ylim=(0, count * span), aspect="equal")
-        camera = flat_panel(ax, planar.ga)
+        camera = panel(ax, planar.mv.x, planar.mv.y, planar.mv.w)
         # The dials' rims and the traced paths faint, as thin as the frames.
         faces = simplices.composited([
             simplices.strokes(rims.reshape(-1), simplices.Topology.loops([n_rim_samples] * n_dials), RIM,

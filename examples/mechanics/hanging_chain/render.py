@@ -10,7 +10,7 @@ from numga import Extensor, concatenate, stack
 
 from examples.util import charts
 from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl.camera import offset_panel
 
 EARLY = np.array([0.80, 0.80, 0.82])
 LATE = np.array([0.15, 0.15, 0.18])
@@ -59,7 +59,8 @@ def iterates(chains, residual, catenary, pins) -> plt.Figure:
     shape.axis("off")
     figure.tight_layout()
 
-    camera = flat_panel(shape, chains.context.algebra)
+    mv = chains.context.multivector
+    camera = offset_panel(shape, mv.x, mv.y)
     n_points = n_beads + 2
     # Earlier iterates lighter, each in its shade along its edges.
     shades = EARLY + np.linspace(0, 1, n_iterates)[:-1, None] * (LATE - EARLY)   # [iterates - 1, 3]

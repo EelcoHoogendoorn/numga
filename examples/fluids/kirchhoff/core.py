@@ -44,11 +44,11 @@ Scalar = ga.gatype.scalar()                                # Scalar+
 Plane = ga.gatype.vector()                                 # Vector+
 Point = ga.gatype.antivector()                             # Antivector-
 # Offsets, and the velocities of points, are points at infinity: antivectors with intrinsic orientation.
-Direction = Point.derive.containing("w")                   # Antivector-
+Direction = Point.derive.degenerate                        # Antivector-
 Twist = ga.gatype.bivector()                               # Bivector+
 Forque = ga.gatype.antibivector()                          # Antibivector-
 # Couples are forques along a line at infinity: the momentum of a turn.
-Couple = Forque.derive.containing("w")                     # Antibivector-
+Couple = Forque.derive.degenerate                          # Antibivector-
 Motor = ga.gatype.rotor()                                  # Rotor+
 # A stretch, carrying the unit sphere onto the body.
 Stretch = ga.gatype((Direction, Direction))                # Direction- <- Direction-

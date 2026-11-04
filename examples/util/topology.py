@@ -22,8 +22,10 @@ Whitney maps or anything else that reads the vertices, however many examples com
 promise to be self-contained expressions of their geometry, so each example writes those few lines itself, in view,
 in the algebra; shared helpers would hide exactly the part an example exists to show. Repetition of geometry across
 examples is intended and is not to be factored back into this module. What belongs here is what knows only the
-simplex arrays: incidences, the maps that index by them, and subdivision of the connectivity. Placing vertices is not
-the topology's: `examples.util.shapes` gives stock shapes, a sphere, a torus, disks, for an example to place.
+simplex arrays: incidences, the maps that index by them, and subdivision of the connectivity. A topology never takes
+coordinates, extensors or an algebra: placing vertices is not the topology's, and neither is making a mesh from them.
+`examples.util.shapes` meshes points by their coordinates, a Delaunay mesh, the boundary of a convex hull, a bounded
+domain or a subdivision, and gives stock shapes, a sphere, a torus, disks, for an example to place.
 
 A topology belongs to no algebra. Its maps hold plain numbers, which become scalars of whatever algebra they meet, as an
 untyped array does beside an extensor: `topology.incidence[2, 0] * vertices` reads the corners of the faces of points
@@ -38,8 +40,6 @@ from operator import mul
 
 import numpy as np
 
-from numga import concatenate, stack
-from numga.extensor import Extensor
 from numga.sparse import SparseExtensor
 
 
@@ -276,10 +276,10 @@ class Topology:
         """`interior[k]`: indices of the k-simplices off the border, for each dimension: all but those of `exterior[k]`."""
         return tuple(np.setdiff1d(np.arange(count), on_border) for count, on_border in zip(self.n_elements, self.exterior))
 
-    def subset(self, chosen: np.ndarray, k: int = -1) -> Topology:
-        """The topology of the chosen k-simplices, the top ones unless asked otherwise, a boolean mask over them or their
-        indices, on the same vertices, so that every field on this topology's vertices reads on it unchanged: the
-        interior edges of a surface as a truss, `topology.subset(topology.interior[1], 1)`, or a region of its faces."""
+    def subset(self, chosen: np.ndarray, k: int) -> Topology:
+        """The topology of the chosen k-simplices, a boolean mask over them or their indices, on the same vertices, so
+        that every field on this topology's vertices reads on it unchanged: the interior edges of a surface as a truss,
+        `topology.subset(topology.interior[1], 1)`, or a region of its top simplices, `topology.subset(region, -1)`."""
         return Topology(self.n_vertices, self.elements[k][chosen])
 
     def cone(self) -> Topology:
@@ -380,16 +380,6 @@ class Topology:
         return int(np.sum((-1) ** np.arange(self.n_dim + 1) * counts))
 
     @classmethod
-    def closed(cls, simplices: np.ndarray, coordinates: np.ndarray) -> Topology:
-        """A closed topology of the top simplices `[N, k + 1]` on vertices at the coordinates `[V, k + 1]`, whatever sense
-        the simplices come in: wound coherently, and counter-clockwise seen from outside, so that the volume they
-        enclose is positive. The winding is settled on the coordinates, at construction, before they become points."""
-        wound = coherent(simplices)
-        # The enclosed volume: the cone each simplex spans from the origin, its corners' determinant, summed.
-        volume = np.linalg.det(coordinates[wound]).sum()
-        return cls(len(coordinates), np.where(volume < 0, turned(wound), wound))
-
-    @classmethod
     def rings(cls, n_rings: int, n_sectors: int) -> Topology:
         """A disk of rings: a centre vertex, then `n_rings` rings of `n_sectors` vertices each, numbered ring by ring;
         a fan of triangles about the centre, and two triangles to each cell between neighbouring rings, all wound
@@ -415,13 +405,6 @@ class Topology:
         faces = np.concatenate([np.stack([v00, v10, v11], axis=-1).reshape(-1, 3),
                                 np.stack([v00, v11, v01], axis=-1).reshape(-1, 3)])
         return cls(n_major * n_minor, faces)
-
-    @classmethod
-    def delaunay(cls, coordinates: np.ndarray) -> Topology:
-        """Delaunay topology of points in a plane, given by their coordinates `[V, 2]`, with counter-clockwise
-        faces."""
-        from scipy.spatial import Delaunay
-        return cls(len(coordinates), Delaunay(coordinates).simplices)
 
     @classmethod
     def chains(cls, lengths: list[int]) -> Topology:
@@ -459,18 +442,10 @@ class Topology:
         cells = np.stack((vertices[:-1, :-1], vertices[:-1, 1:], vertices[1:, 1:], vertices[1:, :-1]), axis=-1)
         return cls(n_rows * n_columns, cells[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3))
 
-    @classmethod
-    def triangulate(cls, vertices: Extensor) -> Topology:
-        """Delaunay topology for vertices `[V]` in the plane of x and y of their own algebra, with counter-clockwise
-        faces."""
-        # Positions read by pairing with the planes across x and up y, in the vertices' own algebra.
-        mv = vertices.context.multivector
-        return cls.delaunay((stack((mv.x, mv.y)) & vertices.batch()[..., None]).to_array())
-
-    def reading(self, indices: np.ndarray, k: int = 0) -> SparseExtensor:
-        """`numbers[..., n <- k-simplices]`: the map reading a field on the k-simplices, the vertices unless asked
-        otherwise, at each of the given ones `[..., n]`; its reverse adds values at them back onto the simplices. On
-        the interior edges, `topology.reading(topology.interior[1], 1)`."""
+    def reading(self, indices: np.ndarray, k: int) -> SparseExtensor:
+        """`numbers[..., n <- k-simplices]`: the map reading a field on the k-simplices at each of the given ones
+        `[..., n]`; its reverse adds values at them back onto the simplices. At the border's vertices,
+        `topology.reading(topology.exterior[0], 0)`; on the interior edges, `topology.reading(topology.interior[1], 1)`."""
         return selection(indices, self.n_elements[k])
 
     def loop(self, pinned: np.ndarray) -> SparseExtensor:
@@ -510,17 +485,6 @@ class Topology:
         middle = self.n_vertices + self.boundary_indices[1]                     # [F, 3]
         corners = np.stack([self.elements[2], np.roll(middle, 1, axis=1), np.roll(middle, -1, axis=1)], axis=-1)   # [F, 3, 3]
         return np.concatenate([middle, corners.reshape(-1, 3)])
-
-    def midpoint_split(self, vertices: Extensor, n_levels: int) -> tuple[Topology, Extensor]:
-        """The topology with every face split in four at the midpoints of its edges, `n_levels` times over, and its
-        vertices: the coarse vertices followed, level by level, by the midpoints, halfway along each edge, so that
-        the refined mesh lies exactly on the coarse one."""
-        topology = self
-        for _ in range(n_levels):
-            midpoints = topology.incidence[1, 0].mean(axis=0) * vertices   # Point-[E]
-            vertices = concatenate([vertices.batch(), midpoints.batch()]).field()  # Point-[V + E]
-            topology = Topology(len(vertices.batch()), topology.split_faces)
-        return topology, vertices
 
     def loop_subdivided(self, pinned: np.ndarray, n_steps: int) -> SubdividedTopology:
         """The topology after `n_steps` Loop steps of this one, the vertices pinned `[V]` staying where they are.
@@ -647,7 +611,7 @@ class DualTopology:
             return SparseExtensor.from_indices(cells, facets.ravel(), owners.ravel(), (self.n_elements[1], self.n_elements[0]))
         return ByDimensions(self.n_dim, ends)
 
-    def reading(self, indices: np.ndarray, k: int = 0) -> SparseExtensor:
+    def reading(self, indices: np.ndarray, k: int) -> SparseExtensor:
         """`numbers[..., n <- dual k-cells]`: the map reading a field on the dual k-cells at each of the given ones
         `[..., n]`; on the dual edges across the interior facets, `topology.dual.reading(topology.interior[-2], 1)`."""
         return selection(indices, self.n_elements[k])

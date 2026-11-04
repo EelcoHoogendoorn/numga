@@ -16,7 +16,7 @@ from examples.util.animation import capture
 from examples.quantum.magnetic_resonance import core
 from examples.util import charts
 from examples.util.wgsl import labels, show, simplices, solids
-from examples.util.wgsl.camera import panel
+from examples.util.wgsl.camera import offset_panel
 
 COLOURS = ("#c0392b", "#7d3c98", "#2e86c1")
 SPHERE_COLOUR, SPHERE_OPACITY = np.array([0.70, 0.76, 0.86]), 0.09
@@ -204,7 +204,7 @@ def animate_echo(detunings: np.ndarray, states: Iterable[core.State], dt: float,
         trace.set(ylim=(0, 1.05), xticks=[], yticks=[], xlabel="time", ylabel="mean transverse spin")
         trace.spines[["top", "right"]].set_visible(False)
         figure.tight_layout()
-        camera = panel(top, across, up)
+        camera = offset_panel(top, across, up)
         rim = simplices.strokes(equator, simplices.Topology.loops([N_RIM_SAMPLES]), EQUATOR_COLOUR, charts.LINE_PX,
                                 camera)
         spins = simplices.overlay(top, [rim])

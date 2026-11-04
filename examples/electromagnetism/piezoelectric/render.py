@@ -12,7 +12,7 @@ from numga import concatenate, stack
 from examples.electromagnetism.piezoelectric import core
 from examples.util.animation import capture
 from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, offset_panel
 
 Topology = core.Topology
 
@@ -107,11 +107,11 @@ class DeviceView:
                         middle - half_height, middle + half_height)).to_array()
         ax.set(xlim=limits[:2], ylim=limits[2:], aspect="equal")
         ax.set_axis_off()
-        self.view = flat_panel(ax, core.ga)
+        self.view = offset_panel(ax, core.mv.x, core.mv.y)
         # The clamp, twice the strip's thickness, its face along the strip's clamped edge.
-        foot, head = (topology.reading(topology.clamped[[0, -1]]) * vertices).batch()   # [] Point-, [] Point-
+        foot, head = (topology.reading(topology.clamped[[0, -1]], 0) * vertices).batch()   # [] Point-, [] Point-
         low, high = foot - (head - foot) / 2, head + (head - foot) / 2          # [] Point-, [] Point-
-        outline = topology.reading(np.concatenate((topology.bottom, topology.tip, topology.top[::-1])))   # Scalar+[outline <- vertices]
+        outline = topology.reading(np.concatenate((topology.bottom, topology.tip, topology.top[::-1])), 0)   # Scalar+[outline <- vertices]
         rest_outline = (outline * vertices).batch()                             # [outline] Point-
         self.under = [chain(rest_outline, rest_colour, rest_width, self.view, dashes=rest_dashes),
                       *clamp(low, high, core.axis * (0.025 * length), self.view)]
@@ -128,7 +128,7 @@ class DeviceView:
         places = deformed.batch()                                               # [vertices] Point-
         body = contours.picture(places, self.topology, strain, strain_colours(self.strain_norm(strain))[:, :3], self.view)
 
-        top, bottom = self.topology.reading(self.topology.top), self.topology.reading(self.topology.bottom)
+        top, bottom = self.topology.reading(self.topology.top, 0), self.topology.reading(self.topology.bottom, 0)
         electrode_potential = stack(((top * potential).sites.mean(), (bottom * potential).sites.mean())).to_array()
         # The two electrode colours read their voltage difference, independent of the potential's zero.
         electrode_potential -= electrode_potential.mean()
@@ -137,8 +137,8 @@ class DeviceView:
 
         # The poling arrows, across the strip from electrode to electrode: up in the upper layer, a quarter of the way
         # down from the top, and down in the lower layer, a quarter of the way up from the bottom.
-        upper = (self.topology.reading(self.topology.top[self.poles]) * deformed).batch()     # [poles] Point-
-        lower = (self.topology.reading(self.topology.bottom[self.poles]) * deformed).batch()  # [poles] Point-
+        upper = (self.topology.reading(self.topology.top[self.poles], 0) * deformed).batch()  # [poles] Point-
+        lower = (self.topology.reading(self.topology.bottom[self.poles], 0) * deformed).batch()  # [poles] Point-
         separation = upper - lower                                                  # [poles] Point-
         across = separation / separation.squared().square_root()                    # [poles] Point-
         centres = concatenate((0.75 * upper + 0.25 * lower, 0.25 * upper + 0.75 * lower))   # [arrows] Point-
@@ -150,11 +150,11 @@ class DeviceView:
 
         self.image.set_data(simplices.composited(self.under + [
             body,
-            chain((self.topology.reading(self.topology.interface) * deformed).batch(), interface_colour, bond_width,
+            chain((self.topology.reading(self.topology.interface, 0) * deformed).batch(), interface_colour, bond_width,
                   self.view),
-            chain((self.topology.reading(self.topology.tip) * deformed).batch(), interface_colour, end_width, self.view),
+            chain((self.topology.reading(self.topology.tip, 0) * deformed).batch(), interface_colour, end_width, self.view),
             self.face,
-            simplices.strokes((self.topology.reading(np.concatenate((self.topology.top, self.topology.bottom))) * deformed).batch(),
+            simplices.strokes((self.topology.reading(np.concatenate((self.topology.top, self.topology.bottom)), 0) * deformed).batch(),
                               self.electrodes, electrode_ink, electrode_width, self.view),
             poling_arrows]))
         return self.figure
@@ -172,19 +172,19 @@ def draw_mesh(topology: core.Strip, vertices: core.Point) -> plt.Figure:
     figure.subplots_adjust(0, 0, 1, 1)
     ax.set(xlim=limits[:2], ylim=limits[2:], aspect="equal")
     ax.set_axis_off()
-    camera = flat_panel(ax, core.ga)
+    camera = offset_panel(ax, core.mv.x, core.mv.y)
     places = vertices.batch()                                                   # [vertices] Point-
-    foot, head = (topology.reading(topology.clamped[[0, -1]]) * vertices).batch()   # [] Point-, [] Point-
+    foot, head = (topology.reading(topology.clamped[[0, -1]], 0) * vertices).batch()   # [] Point-, [] Point-
     margin = 0.12 * (head - foot)                                               # [] Point-
     # The electrodes and the interface run in order along the strip.
     simplices.overlay(ax, [
         *clamp(foot - margin, head + margin, core.axis * (0.12 * thickness), camera),
         simplices.strokes(places, topology, rgb(rest_colour), mesh_width, camera),
-        *[chain((topology.reading(nodes) * vertices).batch(), colour, width, camera, cap=simplices.Cap.BUTT)
+        *[chain((topology.reading(nodes, 0) * vertices).batch(), colour, width, camera, cap=simplices.Cap.BUTT)
           for nodes, colour, width in ((topology.top, extension_colour, mesh_electrode_width),
                                        (topology.bottom, compression_colour, mesh_electrode_width),
                                        (topology.interface, interface_colour, mesh_interface_width))],
-        simplices.markers((topology.reading(topology.clamped) * vertices).batch(), rgb(interface_colour), clamped_radius,
+        simplices.markers((topology.reading(topology.clamped, 0) * vertices).batch(), rgb(interface_colour), clamped_radius,
                           camera)])
     return figure
 

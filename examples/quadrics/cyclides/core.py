@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import NumpyContext
+from numga import Algebra, NumpyContext
 from numga.algebras import CGA3D
 
 ga = CGA3D
@@ -33,7 +33,7 @@ Scalar = ga.gatype.scalar()                   # Scalar+
 # quadric maps a point to its polar sphere.
 Sphere = ga.gatype.vector()                   # Vector+
 Point = ga.gatype.antivector()                # Antivector-
-Direction = Point.derive.containing("w e")    # Antivector-
+Direction = Sphere.derive.within(Algebra("x+y+z+")).derive.dual  # Antivector-
 Motor = ga.gatype.rotor()                     # Rotor+
 Quadric = ga.gatype((Sphere, Point))
 

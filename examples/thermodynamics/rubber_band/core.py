@@ -43,7 +43,9 @@ from numga.sparse import SparseExtensor, spdiag
 from examples.util.topology import Topology
 
 # The plane, and the entropy the band holds, a direction of its own with no metric.
-ga = Algebra("x+y+") * Algebra("s0")
+space = Algebra("x+y+")
+amounts = Algebra("s0")
+ga = space * amounts
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 Point = ga.gatype.antivector()                                                # Antivector-
@@ -51,8 +53,8 @@ Plane = ga.gatype.vector()                                                    # 
 Force = ga.gatype.vector()                                                    # Vector+
 Elastic = ga.gatype((Scalar, Plane, Plane, Point, Point))
 # The planes reading a place's run across the band and up, and a temperature's drive, a slope wedged with the entropy.
-Upright = ga.gatype.from_blades("x y")                                        # Vector+
-Drive = ga.gatype.from_blades("xs ys")                                        # Bivector+
+Upright = Plane.derive.within(space)                                          # Vector+
+Drive = ga.gatype.bivector().derive.touching(space, amounts)                  # Bivector+
 # The plane's two directions, across and up, and a unit of entropy.
 across = mv.x.dual()                                                          # [] Point-
 up = mv.y.dual()                                                              # [] Point-
@@ -120,7 +122,7 @@ def band(topology: Topology, rest: Point, held: np.ndarray, material: Elastic, s
     areas, gradients = triangles(topology, rest)
     corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
     corner_mean = corners.mean(axis=0)                                        # Scalar+[faces <- vertices]
-    free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), held))
+    free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), held), 0)
     # Each corner's hat owns a third of its triangle: its cell and its mass.
     cells = ~corner_mean * areas                                              # Scalar+[vertices]
     masses = ~corner_mean * (densities * areas)                               # Scalar+[vertices]

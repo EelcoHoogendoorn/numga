@@ -95,7 +95,8 @@ def test_subspace_comparison_lift_preserves_algebra_and_arity_boundaries() -> No
     from numga.algebra import Algebra
 
     algebra = Algebra("x+y+")
-    foreign = Algebra("x+y+")
+    # A different algebra of the same signature: equal descriptions build one algebra.
+    foreign = Algebra("u+v+")
     vector = algebra.gatype.vector()
     foreign_vector = foreign.subspace.vector()
     vector_map = algebra.gatype((vector, vector))

@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Closed universe</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 16px; background: #0b0b0d; color: #c9c9cf; font: 14px/1.5 system-ui, sans-serif;
+         display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  canvas { display: block; cursor: grab; touch-action: none; }
+  canvas:active { cursor: grabbing; }
+  canvas[hidden] { display: none; }
+  #about { margin: 0; max-width: 480px; text-align: center; }
+  #help, #note { color: #8a8a93; text-align: center; }
+  #status { color: #8a8a93; font-variant-numeric: tabular-nums; min-height: 1.5em; max-width: 480px; text-align: center; }
+  #fallback { display: block; }
+  #fallback[hidden] { display: none; }
+  a, kbd { font: inherit; color: #c9c9cf; }
+</style>
+</head>
+<body>
+<p id="about">A flight through a closed universe, a space that curves back on itself, as a gravitational wave stretches and squeezes it around three small crystals.</p>
+<canvas id="view"></canvas>
+<img id="fallback" hidden alt="The closed universe's slowest wave seen from inside, traced ahead of time" src="../../../plots/gravitational_waves_inside.gif" width="400" height="300">
+<div id="help">Arrows or drag turn · <kbd>a</kbd> <kbd>d</kbd> roll · <kbd>w</kbd> <kbd>s</kbd> faster, slower · scroll speed ·
+  <kbd>space</kbd> stop · <kbd>p</kbd> hold time · <kbd>r</kbd> start again · <kbd>[</kbd> <kbd>]</kbd> leg</div>
+<div id="status">Starting WebGPU…</div>
+<div id="note">The shaders are written in <a href="https://github.com/EelcoHoogendoorn/numga">numga</a>:
+  run <a href="https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/relativity/gravitational_waves/waves.ipynb">the waves notebook</a> or
+  <a href="https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/relativity/gravitational_waves/rendering.ipynb">the rendering notebook</a> in Colab</div>
+<script>
+// Filled in by examples/relativity/gravitational_waves/web.py: the compiled shaders and everything they read.
+const C = /*CONTENTS*/null;
+
+const status = document.getElementById("status");
+// Each step of starting up, shown as it begins, with the seconds the steps before it took.
+const begun = performance.now();
+const step = text => { status.textContent = `${text} (${((performance.now() - begun) / 1000).toFixed(1)} s)`; };
+const bytes = text => Uint8Array.from(atob(text), character => character.charCodeAt(0));
+// A part of the state the advance pass carries, its bytes as many times as it has levels.
+const tiled = part => {
+  const level = bytes(part.data), all = new Uint8Array(level.length * part.tiles);
+  for (let tile = 0; tile < part.tiles; tile++) all.set(level, tile * level.length);
+  return all;
+};
+// A table the file holds, unpacked: each member's numbers, indices as unsigned 16-bit integers and every other number
+// as a 32-bit float, widened to 32 bits at its offset in every element, the members the setup makes left at nothing.
+const unpacked = table => {
+  const words = new Uint32Array(table.count * table.stride / 4), floats = new Float32Array(words.buffer);
+  for (const column of table.columns) {
+    const data = bytes(column.data);
+    const numbers = column.kind === "u16" ? new Uint16Array(data.buffer) : new Float32Array(data.buffer);
+    const target = column.kind === "u16" ? words : floats;
+    for (let element = 0; element < table.count; element++) {
+      for (let index = 0; index < column.width; index++) {
+        target[element * table.stride / 4 + column.offset / 4 + index] = numbers[element * column.width + index];
+      }
+    }
+  }
+  return new Uint8Array(words.buffer);
+};
+
+// Where the page cannot trace, or stops, the scene traced ahead of time in place of the canvas, and why: the first
+// error, whole, with the stage it stopped, which explains whatever follows; and the frames stop.
+let failed = false;
+function fail(text) {
+  if (failed) return;
+  failed = true;
+  document.getElementById("view").hidden = true;
+  document.getElementById("help").hidden = true;
+  document.getElementById("fallback").hidden = false;
+  status.textContent = "The live view needs a browser with WebGPU; here is the scene traced ahead of time. " + text;
+}
+
+async function start() {
+  if (!navigator.gpu) {
+    return fail("This browser has WebGPU switched off or lacks it. In Firefox it may need dom.webgpu.enabled set in " +
+                "about:config; recent Chrome and Edge have it on most systems.");
+  }
+  step("Asking for the GPU…");
+  const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+  if (!adapter) {
+    return fail("WebGPU is on, but found no GPU it can use; on Linux it needs working Vulkan drivers.");
+  }
+  // The device at WebGPU's own limits: each shader binds at most seven storage buffers in a stage, within the eight
+  // WebGPU guarantees.
+  const device = await adapter.requestDevice({ label: "closed universe" });
+  device.addEventListener("uncapturederror", event => fail("WebGPU, outside any stage the page names: " + event.error.message));
+  device.lost.then(info => fail(`The GPU was lost (${info.reason}): ${info.message}`));
+  // A stage of the work, run inside error scopes, so that its error, or the rejection of its promise, names the stage.
+  const stage = async (what, make) => {
+    device.pushErrorScope("internal");
+    device.pushErrorScope("out-of-memory");
+    device.pushErrorScope("validation");
+    let made, rejected;
+    try { made = await make(); } catch (error) { rejected = error; }
+    const errors = [await device.popErrorScope(), await device.popErrorScope(), await device.popErrorScope()];
+    const error = errors.find(found => found) || rejected;
+    if (error) throw new Error(`${what}: ${error.message}`);
+    return made;
+  };
+
+  // The canvas as wide as the page's design, or as the screen where that is narrower, so that the browser never
+  // shrinks it; the image traces at the screen's own pixels behind it, or at a share of them when frames come slower
+  // than about 24 a second, the share growing back when they come faster than about 40. A third of them at the start,
+  // so that a slow GPU's first frames come quickly.
+  const canvas = document.getElementById("view");
+  const ratio = window.devicePixelRatio || 1;
+  // The pixels of the largest canvas the page draws, which the image's buffer holds.
+  const largest = [Math.round(C.size[0] * ratio), Math.round(C.size[1] * ratio)];
+  let full = largest, share = 0.35, columns = full[0], rows = full[1], paced = performance.now(), frameTime = 1 / 30;
+  const resize = () => {
+    columns = Math.max(1, Math.round(full[0] * share));
+    rows = Math.max(1, Math.round(full[1] * share));
+    canvas.width = columns;
+    canvas.height = rows;
+  };
+  const fit = () => {
+    const width = Math.min(C.size[0], document.documentElement.clientWidth - 32);
+    const height = width * C.size[1] / C.size[0];
+    canvas.style.width = width + "px";
+    canvas.style.height = height + "px";
+    full = [Math.min(Math.round(width * ratio), largest[0]), Math.min(Math.round(height * ratio), largest[1])];
+    resize();
+  };
+  fit();
+  window.addEventListener("resize", fit);
+  const context = canvas.getContext("webgpu");
+  const format = navigator.gpu.getPreferredCanvasFormat();
+  await stage("configuring the canvas", () => context.configure({ device, format, alphaMode: "opaque" }));
+
+  // The three shaders, each with its bindings as the runner lays them out and its uniforms, where it has any, as one
+  // block: the tetrahedra's ramps made once, the camera and the gauges advanced each frame, and the tracer.
+  step("Compiling the shaders…");
+  const programs = {};
+  for (const [name, program] of Object.entries(C.shaders)) {
+    const module = await stage(`compiling the ${name} shader`, () => device.createShaderModule({ label: `${name} shader`, code: program.code }));
+    const error = (await module.getCompilationInfo()).messages.find(message => message.type === "error");
+    if (error) throw new Error(`compiling the ${name} shader, at line ${error.lineNum}, column ${error.linePos}: ${error.message}`);
+    // Each binding as the shader declares it: a storage buffer read only or read and written, in the compute stage,
+    // at least an element's bytes, or the block's.
+    const layout = await stage(`the ${name} shader's bind group layout`, () => device.createBindGroupLayout({
+      label: `${name} layout`, entries: program.bindings.map(binding => ({
+        binding: binding.index, visibility: GPUShaderStage.COMPUTE,
+        buffer: { type: binding.writable ? "storage" : "read-only-storage", minBindingSize: binding.least } })) }));
+    const pipelineLayout = await stage(`the ${name} shader's pipeline layout`, () => device.createPipelineLayout({
+      label: `${name} pipeline layout`, bindGroupLayouts: [layout] }));
+    const pipelines = [];
+    for (const [entry, size] of program.entry_points) {
+      pipelines.push([await stage(`the ${name} shader's pipeline, ${entry}`, () => device.createComputePipelineAsync({
+        label: `${name} ${entry}`, layout: pipelineLayout, compute: { module, entryPoint: entry } })), size]);
+    }
+    const block = bytes(program.uniforms);
+    const uniforms = program.bindings.some(binding => binding.kind === "uniforms") ?
+      await stage(`the ${name} shader's uniform block`, () => device.createBuffer({
+        label: `${name} uniforms`, size: block.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST })) : null;
+    programs[name] = { program, layout, pipelines, block, uniforms, view: new DataView(block.buffer) };
+  }
+
+  // The storage arrays, each made once and shared by name between the shaders: the tables the file holds, the state
+  // the advance pass carries, the arrays the GPU alone writes, and the image, which the tracer writes.
+  step("Loading the mesh…");
+  const usage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC;
+  const buffers = {};
+  await stage("the storage arrays", async () => {
+    const loaded = (name, contents) => {
+      buffers[name] = device.createBuffer({ label: name, size: contents.byteLength, usage });
+      device.queue.writeBuffer(buffers[name], 0, contents);
+    };
+    for (const [name, table] of Object.entries(C.tables)) loaded(name, unpacked(table));
+    for (const [name, part] of Object.entries(C.state)) loaded(name, tiled(part));
+    for (const [name, size] of Object.entries(C.outputs)) buffers[name] = device.createBuffer({ label: name, size, usage });
+    buffers.sightlines = device.createBuffer({ label: "sightlines", size: largest[0] * largest[1] * C.sight_stride, usage });
+    buffers.image = device.createBuffer({ label: "image", size: largest[0] * largest[1] * C.stride, usage });
+  });
+  const groups = {};
+  for (const [name, { program, layout, uniforms }] of Object.entries(programs)) {
+    groups[name] = await stage(`the ${name} shader's bind group`, () => device.createBindGroup({
+      label: `${name} group`, layout, entries: program.bindings.map(binding => ({
+        binding: binding.index, resource: { buffer: binding.kind === "uniforms" ? uniforms : buffers[binding.name] } })) }));
+  }
+  const dispatch = (encoder, name, across, down) => {
+    for (const [pipeline, size] of programs[name].pipelines) {
+      const pass = encoder.beginComputePass({ label: name });
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, groups[name]);
+      pass.dispatchWorkgroups(Math.ceil(across / size[0]), Math.ceil(down / size[1]));
+      pass.end();
+    }
+  };
+
+  // The struts' and beads' styles and the tetrahedra's ramps, made once on the GPU from the mesh.
+  await stage("making the mesh's styles and ramps", async () => {
+    const encoder = device.createCommandEncoder({ label: "setup" });
+    dispatch(encoder, "setup", C.start.setup_invocations, 1);
+    device.queue.submit([encoder.finish()]);
+    await device.queue.onSubmittedWorkDone();
+  });
+
+  // The traced light drawn into the canvas, and the camera's speed read back for the status line.
+  const displayModule = await stage("compiling the display shader", () => device.createShaderModule({ label: "display shader", code: C.display }));
+  const draw = await stage("the display's pipeline", () => device.createRenderPipelineAsync({ label: "display", layout: "auto",
+    vertex: { module: displayModule, entryPoint: "vertex" },
+    fragment: { module: displayModule, entryPoint: "fragment", targets: [{ format }] },
+    primitive: { topology: "triangle-list" } }));
+  const viewBuffer = await stage("the display's view", () => device.createBuffer({ label: "view", size: 16,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }));
+  const drawGroup = await stage("the display's bind group", () => device.createBindGroup({ label: "display group",
+    layout: draw.getBindGroupLayout(0), entries: [
+      { binding: 0, resource: { buffer: buffers.image } }, { binding: 1, resource: { buffer: viewBuffer } }] }));
+  const done = await stage("the speed's readback", () => device.createBuffer({ label: "speed readback", size: 4,
+    usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST }));
+
+  // The keys held and the pointer's drag since the last frame, which the frame turns into the advance pass's
+  // uniforms: the camera's thrust, its turn and roll, the brake; the wave's time, held by `p`; and a ray's leg.
+  const held = new Set();
+  const state = { leg: C.start.leg, holding: false, dragged: [0, 0], scrolled: 0, speed: 0 };
+  let dragging = null;
+  canvas.addEventListener("pointerdown", event => { dragging = [event.clientX, event.clientY]; canvas.setPointerCapture(event.pointerId); });
+  canvas.addEventListener("pointerup", () => { dragging = null; });
+  canvas.addEventListener("pointermove", event => {
+    if (!dragging) return;
+    state.dragged[0] += event.clientX - dragging[0];
+    state.dragged[1] += event.clientY - dragging[1];
+    dragging = [event.clientX, event.clientY];
+  });
+  canvas.addEventListener("wheel", event => { event.preventDefault(); state.scrolled -= event.deltaY; }, { passive: false });
+  const restart = () => {
+    for (const [name, part] of Object.entries(C.state)) device.queue.writeBuffer(buffers[name], 0, tiled(part));
+  };
+  window.addEventListener("keydown", event => {
+    if (event.key === "[") state.leg = Math.max(state.leg / 2, C.limits.finest);
+    else if (event.key === "]") state.leg = Math.min(state.leg * 2, C.limits.coarsest);
+    else if (event.key === "p") state.holding = !state.holding;
+    else if (event.key === "r") restart();
+    else held.add(event.key);
+    if (event.key === " " || event.key.startsWith("Arrow")) event.preventDefault();
+  });
+  window.addEventListener("keyup", event => { held.delete(event.key); });
+  window.addEventListener("blur", () => { held.clear(); });
+
+  const setNumber = (name, uniform, number) => programs[name].view.setFloat32(programs[name].program.offsets[uniform], number, true);
+  let last = performance.now(), drawn = 0;
+
+  async function frame() {
+    if (failed) return;
+    // The frame's seconds, held under the longest a frame's step may run, so that a stall or a tab in the background
+    // never takes the camera or the gauges in one leap.
+    const now = performance.now(), seconds = Math.min((now - last) / 1000, C.start.longest_frame_seconds);
+    last = now;
+    frameTime += 0.2 * (seconds - frameTime);
+    if (now - paced > 500) {
+      const wanted = frameTime > 1 / 24 ? Math.max(share * 0.85, 0.3) : frameTime < 1 / 40 ? Math.min(share * 1.1, 1) : share;
+      if (Math.abs(wanted - share) > 1e-3) { share = wanted; resize(); }
+      paced = now;
+    }
+    // The camera's clock runs at the animations' pace, a period of the wave in so many seconds, unless held; the
+    // lattice's time runs on from it on the GPU. The keys held through the frame give the camera its thrust and its
+    // turn, the drag and the scroll what they gathered.
+    const dt = state.holding ? 0 : seconds * C.start.period / C.start.seconds_per_period;
+    const sign = (plus, minus) => (held.has(plus) ? 1 : 0) - (held.has(minus) ? 1 : 0);
+    const thrusting = sign("w", "s"), braking = held.has(" ");
+    setNumber("advance", "dt", dt);
+    setNumber("advance", "thrust", C.limits.thrust * seconds * thrusting + C.limits.scroll * state.scrolled);
+    setNumber("advance", "roll", C.limits.turn_per_second * seconds * sign("d", "a"));
+    setNumber("advance", "yaw", C.limits.turn_per_second * seconds * sign("ArrowRight", "ArrowLeft") + C.limits.turn_per_point * state.dragged[0]);
+    setNumber("advance", "pitch", C.limits.turn_per_second * seconds * sign("ArrowUp", "ArrowDown") - C.limits.turn_per_point * state.dragged[1]);
+    setNumber("advance", "braking", braking ? 1 : 0);
+    state.dragged = [0, 0];
+    state.scrolled = 0;
+    // The sightlines and the tracer at their own pixels, the tracer with its legs.
+    setNumber("tracer", "step", state.leg);
+    for (const name of ["sight", "tracer"]) {
+      programs[name].view.setUint32(programs[name].program.offsets.pixels, columns, true);
+      programs[name].view.setUint32(programs[name].program.offsets.pixels + 4, rows, true);
+    }
+
+    // The camera and the gauges advanced, the camera's state copied into the uniforms of the shaders that read it, the
+    // sightlines boosted, the image traced, drawn, and the speed read back; the first frame named on its own, the
+    // frames after it by their count.
+    try {
+      await stage(drawn === 0 ? "the first frame" : `frame ${drawn + 1}`, async () => {
+        for (const name of ["advance", "sight", "tracer"]) device.queue.writeBuffer(programs[name].uniforms, 0, programs[name].block);
+        device.queue.writeBuffer(viewBuffer, 0, new Uint32Array([columns, C.stride / 4, 0, 0]));
+        const encoder = device.createCommandEncoder({ label: "frame" });
+        dispatch(encoder, "advance", 1, 1);
+        for (const [name, copies] of Object.entries(C.copies)) {
+          for (const [from, to, size] of copies) encoder.copyBufferToBuffer(buffers.camera, from, programs[name].uniforms, to, size);
+        }
+        dispatch(encoder, "sight", columns, rows);
+        dispatch(encoder, "tracer", columns, rows);
+        const drawing = encoder.beginRenderPass({ label: "display", colorAttachments: [{ view: context.getCurrentTexture().createView(),
+          loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] });
+        drawing.setPipeline(draw);
+        drawing.setBindGroup(0, drawGroup);
+        drawing.draw(3);
+        drawing.end();
+        encoder.copyBufferToBuffer(buffers.camera, C.speed_offset, done, 0, 4);
+        device.queue.submit([encoder.finish()]);
+        // One frame on the GPU at a time, waited for by reading back the camera's speed.
+        await done.mapAsync(GPUMapMode.READ);
+        state.speed = new Float32Array(done.getMappedRange())[0];
+        done.unmap();
+      });
+    } catch (error) {
+      return fail("WebGPU stopped at " + error.message);
+    }
+    drawn += 1;
+    // The line, every frame: the speed along the view at this frame, marked while a key changes it, then the pace.
+    const marked = braking ? " ■ stopping" : thrusting > 0 ? " ▲ faster" : thrusting < 0 ? " ▼ slower" : "";
+    status.textContent = `speed ${state.speed.toFixed(2)} of light's${marked} · ${(1 / frameTime).toFixed(0)} frames a second at ` +
+                         `${columns} × ${rows} pixels · leg ${state.leg.toPrecision(2)}` + (state.holding ? " · time held" : "");
+    requestAnimationFrame(frame);
+  }
+  // The first frame a second after everything is ready, so that the page shows itself before the tracing begins.
+  step("Ready");
+  setTimeout(() => {
+    step("Tracing the first frame…");
+    last = performance.now();
+    requestAnimationFrame(frame);
+  }, 1000);
+}
+
+start().catch(error => fail("WebGPU stopped at " + error.message));
+</script>
+</body>
+</html>

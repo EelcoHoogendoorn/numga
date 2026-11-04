@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from examples.surfaces.reciprocal import core
+from examples.util import shapes
 
 # The grid: its vertices per side across the square from -1 to 1, how far its interior vertices are nudged,
 # and the seed of the nudges.
@@ -27,8 +28,9 @@ def grid() -> tuple[core.Topology, core.Point, core.Scalar]:
     coords = np.stack(np.meshgrid(across, across, indexing="ij"), axis=-1).reshape(-1, 2)   # [vertices, 2]
     inside = (np.abs(coords) < 1).all(axis=-1)
     coords[inside] += JITTER * np.random.default_rng(GRID_SEED).normal(size=(inside.sum(), 2))
+    topology, coords = shapes.delaunay(coords)
     points = core.mv.antivector(np.concatenate([coords, np.zeros((len(coords), 1))], axis=-1)).field()   # Point-[vertices]
-    return core.Topology.triangulate(points), points, points.scalar_norm_squared() / 2  # Scalar+[vertices]
+    return topology, points, points.scalar_norm_squared() / 2  # Scalar+[vertices]
 
 
 def breathing() -> tuple[core.Topology, core.Point, core.Scalar]:
@@ -69,7 +71,7 @@ def main() -> None:
     pulls = (bars * core.stresses(topology, points, breaths)).field()          # [frames] Point-[inner]
     bar_ends = inner * topology.d[0]                                           # Scalar+[inner <- vertices]
     net = -(~bar_ends * pulls)                                                 # [frames] Point-[vertices]
-    assert ((topology.reading(topology.interior[0]) * net).norm() < 1e-10).all()
+    assert ((topology.reading(topology.interior[0], 0) * net).norm() < 1e-10).all()
     # On the paraboloid the stresses are the cotangent weights and the reciprocal vertices the circumcentres.
     edges = topology.boundary[2, 1] * (topology.d[0] * points)                 # [3] Point-[faces]
     tails, heads = topology.corners[2, 1]

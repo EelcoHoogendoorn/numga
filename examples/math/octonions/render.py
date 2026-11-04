@@ -11,7 +11,7 @@ from numga.algebras import VGA2D
 from examples.math.octonions import core
 from examples.util import charts
 from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl.camera import offset_panel
 
 line_colour = "#287fa0"
 point_colour = "0.15"
@@ -95,7 +95,7 @@ def draw_fano(cycles: core.Trivector) -> plt.Figure:
                 arrows.append(arrow(start + segment_fraction * (end - start), end - start))
     points = stack(list(places_by_name.values()))                              # [points] Antivector-
     arrow_ends = stack(arrows)                                                 # [arrows, ends] Antivector-
-    camera = flat_panel(ax, VGA2D)
+    camera = offset_panel(ax, page.x, page.y)
     ink, dark = np.array(to_rgb(line_colour)), np.array(to_rgb(point_colour))
     simplices.overlay(ax, [
         simplices.strokes(circle, simplices.Topology.loops([n_around]), ink, charts.LINE_PX, camera),

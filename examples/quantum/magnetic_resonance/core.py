@@ -38,7 +38,7 @@ Bivector = ga.gatype.bivector()                                     # Bivector+
 # A spin: the patch of the plane it turns in, intrinsic.
 Spin = ga.gatype.antibivector()                                     # Antibivector-
 # A spin's state: half the antiscalar, its trace, plus the spin.
-State = (Spin + ga.gatype.antiscalar()).output_gatype               # Antibivector- + Antiscalar-
+State = ga.gatype(Spin + ga.gatype.antiscalar())                    # Antibivector- + Antiscalar-
 Rates = ga.gatype((State, State))                                   # State- <- State-
 # What becomes of each state over a stretch of time.
 Evolution = ga.gatype((State, State))                               # State- <- State-

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import NumpyContext
+from numga import Algebra, NumpyContext
 from numga.algebras import STA2D as ga
 from numga.sparse import SparseExtensor, spdiag
 
@@ -22,10 +22,10 @@ ctx = NumpyContext(ga)
 mv = ctx.multivector
 Scalar = ga.gatype.scalar()
 # Spatial planes read positions, displacements and polarization, their intrinsic complements.
-Plane = ga.gatype.from_blades("x y")
-Point = Plane.dual().output_gatype
+Plane = ga.gatype.vector().derive.within(Algebra("x+y+"))
+Point = Plane.derive.dual
 # Electric fields are extrinsic planes through time; charge is an intrinsic amount.
-Field = ga.gatype.from_blades("xt yt")
+Field = ga.gatype.bivector().derive.touching(Algebra("t-"))
 Amount = ga.gatype.antiscalar()
 Strain = ga.gatype((Plane, Point))
 Elastic = ga.gatype((Scalar, Point, Plane, Point, Plane))
@@ -172,13 +172,13 @@ def boundary_maps(topology: Strip, floating: np.ndarray) -> tuple[SparseExtensor
     """Free displacement nodes and potential groups; the named electrode shares one free voltage."""
     free_movement = np.setdiff1d(np.arange(topology.n_vertices), topology.clamped)
     # Each free displacement is put back at its vertex.
-    movement = ~topology.reading(free_movement) * Point
+    movement = ~topology.reading(free_movement, 0) * Point
     interior = np.setdiff1d(np.arange(topology.n_vertices), np.concatenate((topology.top, topology.bottom)))
     potential_nodes = np.concatenate((interior, floating))
     # Each interior node reads a voltage of its own, and the floating electrode's nodes all read the one after them.
     groups = np.concatenate((np.arange(len(interior)), np.full(len(floating), len(interior))))
     n_voltages = len(interior) + int(len(floating) > 0)
-    voltage = ~topology.reading(potential_nodes) * SparseExtensor.selection(ctx, groups, n_voltages) * Scalar
+    voltage = ~topology.reading(potential_nodes, 0) * SparseExtensor.selection(ctx, groups, n_voltages) * Scalar
     return movement, voltage
 
 

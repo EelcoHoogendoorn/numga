@@ -15,7 +15,7 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import room, simplices
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, offset_panel
 from examples.mechanics.kepler import core
 
 EXACT_COLOUR = "#626c76"
@@ -66,7 +66,7 @@ def framed(ax: plt.Axes, path: core.Point, margin: float) -> Camera:
     middle = (low + high) / 2
     ax.set(xlim=(middle[0] - half[0], middle[0] + half[0]), ylim=(middle[1] - half[1], middle[1] + half[1]),
            aspect="equal")
-    return flat_panel(ax, core.ga)
+    return offset_panel(ax, core.mv.x, core.mv.y)
 
 
 def centre_drawn(radius: float, camera: Camera) -> list[np.ndarray]:
@@ -167,7 +167,7 @@ def draw_comparison(reference: core.State, physical: core.State, regularized: co
     figure.legend(handles=handles, loc="outside lower center", ncol=3, frameon=False)
     for case in range(cases):
         for row, ax in enumerate(panels[:, case]):
-            camera = flat_panel(ax, core.ga)
+            camera = offset_panel(ax, core.mv.x, core.mv.y)
             # The periapsis detail framed, so that it reads as a close-up rather than as the path running on.
             frame = [frame_drawn(boxes[row, case], camera)] if row == 1 else []
             simplices.overlay(ax, [cross_drawn(boxes[row, case], camera)]

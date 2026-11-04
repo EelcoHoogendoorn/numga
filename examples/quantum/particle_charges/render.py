@@ -10,7 +10,7 @@ from numga import NumpyContext, stack
 from numga.algebras import VGA2D
 from examples.quantum.particle_charges.core import Scalar
 from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl.camera import offset_panel
 
 background = "#fbfaf7"
 particle_colours = np.array([to_rgb(colour) for colour in ("#d6453d", "#3a9a5b", "#2f6fc0", "#d9a227")])
@@ -66,7 +66,7 @@ def draw_connections(
     for panel, ax in enumerate(axes[0]):
         response = responses[panel]
         connected = np.stack(np.nonzero(np.triu(response > 1e-10, k=1)), axis=-1)   # [connections, 2]
-        camera = flat_panel(ax, diagram.x.algebra)
+        camera = offset_panel(ax, diagram.x, diagram.y)
         simplices.overlay(ax, [
             simplices.strokes(places, simplices.Topology(len(places), connected), connection_colours[panel],
                               connection_width, camera, opacity=connection_opacity),

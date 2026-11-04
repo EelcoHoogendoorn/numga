@@ -60,7 +60,7 @@ def stresses(topology: Topology, points: Point, heights: Scalar) -> Scalar:
     tails, heads = (inner * (topology.incidence[1, 0] * points)).batch()       # [inner] Point-, [inner] Point-
     bars = heads - tails                                                       # [inner] Point-
     # The corner across each edge in the face on its right, as its offset square to the bar.
-    far = (topology.reading(topology.facet_opposites[:, 1]) * points).batch()  # [inner] Point-
+    far = (topology.reading(topology.facet_opposites[:, 1], 0) * points).batch()  # [inner] Point-
     corner = far - tails                                                       # [inner] Point-
     across = corner - bars * ((bars | corner) / (bars | bars))                 # [inner] Point-
     # The jump in slope paired with that offset: how much faster the terrain rises across the bar.
@@ -73,5 +73,5 @@ def folds(topology: Topology, points: Point, heights: Scalar) -> Scalar:
     # The plane of the face on the right passes through that corner at its height, so the fold is the jump from
     # the plane on the left to it, read at the corner lifted to unit height.
     jump = (topology.reading(topology.interior[1], 1) * (~topology.d[1] * slopes(topology, points, heights))).batch()  # [..., inner] Plane+
-    lifted = (topology.reading(topology.facet_opposites[:, 1]) * (points + up)).batch()  # [inner] Point-
+    lifted = (topology.reading(topology.facet_opposites[:, 1], 0) * (points + up)).batch()  # [inner] Point-
     return -(jump & lifted)                                                    # [..., inner] Scalar+

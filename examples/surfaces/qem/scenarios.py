@@ -51,7 +51,7 @@ def qem():
     # planes, gives the squared distance. Each vertex's error quadric sums the dyads of its triangles' planes.
     dyads = face_planes * (face_planes & Point)                                 # (Plane+ <- Point-)[faces]
     quadrics = ~ridge.incidence[2, 0].sum(axis=0) * dyads                       # (Plane+ <- Point-)[vertices]
-    ends = ridge.reading(RIDGE_EDGE)                                            # Scalar+[ends <- vertices]
+    ends = ridge.reading(RIDGE_EDGE, 0)                                         # Scalar+[ends <- vertices]
     quadric_a, quadric_b = (ends * quadrics).batch()                            # [] Plane+ <- Point-, Plane+ <- Point-
     # Contracting the edge adds the endpoints' quadrics; the best vertex is its unit-weight minimum.
     edge_quadric = quadric_a + quadric_b                                        # [] Plane+ <- Point-
@@ -85,7 +85,7 @@ def main() -> None:
     # undercuts that of both endpoints.
     ridge, vertices, _, _, _, _, edge_quadric, optimum, _, _ = scene
     assert edge_quadric(optimum).norm() < 1e-9
-    endpoints = (ridge.reading(RIDGE_EDGE) * vertices).batch()                  # [ends] Point-
+    endpoints = (ridge.reading(RIDGE_EDGE, 0) * vertices).batch()               # [ends] Point-
     assert np.all((edge_quadric(optimum) & optimum) < (edge_quadric(endpoints) & endpoints))
 
 

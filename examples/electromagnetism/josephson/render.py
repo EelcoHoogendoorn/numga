@@ -59,7 +59,7 @@ def animate(topology: Topology, vertices: Extensor, currents: Iterable[Extensor]
     for current in currents:
         values = np.asarray(current.batch().kernel)[..., 0]
         colours = current_map(0.5 + current_share * np.clip(values, -1, 1) / 2)[:, :3]
-        yield on_white(contours.picture(points, topology, values, colours, camera))
+        yield on_white(simplices.composited([contours.picture(points, topology, values, colours, camera)]))
 
 
 @style()

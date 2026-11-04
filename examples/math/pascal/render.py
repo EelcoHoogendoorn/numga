@@ -12,7 +12,7 @@ import numpy as np
 
 from examples.util.animation import capture
 from examples.util.wgsl import quadrics, simplices
-from examples.util.wgsl.camera import Camera, flat_panel, panel
+from examples.util.wgsl.camera import Camera, panel
 from examples.util.wgsl.simplices import Topology
 from examples.math.pascal import core
 
@@ -49,8 +49,8 @@ def canvas() -> tuple[plt.Figure, plt.Axes, Camera, Camera]:
     origin = mv.w.dual()                                                       # [] Point-
     # The lines through the origin along y and along x, which read a crossing's place across and up, and the line at
     # infinity, which reads its weight.
-    lines = panel(ax, mv.y.dual() & origin, origin & mv.x.dual())._replace(weight=mv.x.dual() & mv.y.dual())
-    return figure, ax, flat_panel(ax, core.ga), lines
+    lines = panel(ax, mv.y.dual() & origin, origin & mv.x.dual(), mv.x.dual() & mv.y.dual())
+    return figure, ax, panel(ax, mv.x, mv.y, mv.w), lines
 
 
 def pictures(planes: Camera, lines: Camera, shape: core.Quadric, hexagon: core.Point, sides: core.Line,

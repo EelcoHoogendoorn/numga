@@ -11,9 +11,9 @@ import numpy as np
 from numga import concatenate, stack
 from examples.util.animation import capture
 from examples.util.wgsl import contours, quadrics, simplices
-from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl.camera import panel
 from examples.util.wgsl.simplices import Cap, Topology
-from examples.estimation.kalman.core import Motor, Point, ga, mv
+from examples.estimation.kalman.core import Motor, Point, mv
 
 TRUE_COLOUR, DEAD_COLOUR, FILTER_COLOUR, READING_COLOUR = "#1f2329", "#d0482b", "#2c6fb4", "#3a9a5b"
 FILTER_RGB = np.array(mcolors.to_rgb(FILTER_COLOUR))
@@ -61,7 +61,7 @@ def animate_tracking(truth: Motor, dead: Motor, estimates: Motor, positions: Poi
     fig = plt.figure(figsize=(WIDTH, WIDTH * aspect), dpi=100)
     ax = fig.add_axes([0, 0, 1, 1])
     ax.set(xlim=limits[0], ylim=limits[1])
-    camera = flat_panel(ax, ga)
+    camera = panel(ax, mv.x, mv.y, mv.w)
     image = simplices.overlay(ax, [np.zeros(camera.shape + (4,))])
     # A vehicle is one triangle, its outline.
     vehicle = Topology(3, [[0, 1, 2]])

@@ -17,7 +17,7 @@ from examples.util import charts
 from examples.util.animation import capture
 from examples.electromagnetism.second_harmonic import core
 from examples.util.wgsl import fitted, labels, show, simplices, solids
-from examples.util.wgsl.camera import Camera, flat_panel, panel
+from examples.util.wgsl.camera import Camera, offset_panel
 from examples.util.wgsl.scene import Scene
 
 # The observer sees the point where its time line meets the spatial slice.
@@ -97,8 +97,8 @@ def screens(axes: plt.Axes) -> tuple[Camera, Camera]:
     """The cameras of the screen across the beam, y - x to the right and z up, each reading values as they are: fields
     by the polarizations along those directions, `horizontal_polarization & field`, and polarizations by the fields
     along them, `horizontal_field & polarization`."""
-    return (panel(axes, core.horizontal_polarization, core.vertical_polarization),
-            panel(axes, core.horizontal_field, core.vertical_field))
+    return (offset_panel(axes, core.horizontal_polarization, core.vertical_polarization),
+            offset_panel(axes, core.horizontal_field, core.vertical_field))
 
 
 def cross(camera: Camera, limit: float) -> np.ndarray:
@@ -294,7 +294,7 @@ def draw_growth(depths: np.ndarray, amplitude: core.Polarization) -> plt.Figure:
     components = vertical.to_array()                                          # [cases, slices, quadratures]
     paths = phase_plane.x.dual() * components[..., 0] + phase_plane.y.dual() * components[..., 1]   # [cases, slices] Antivector-
     ends = stack((phase_plane.x.dual() * extents[0], phase_plane.y.dual() * extents[1])).reshape(-1)  # [4] Antivector-
-    camera = flat_panel(quadrature_axes, VGA2D)
+    camera = offset_panel(quadrature_axes, phase_plane.x, phase_plane.y)
     traced = [simplices.strokes(path, simplices.Topology.chains([len(path)]), np.array(to_rgb(colour)), curve_width,
                                 camera) for path, colour in zip(paths, case_colours)]
     reached = simplices.markers(paths[:, -1], np.array([to_rgb(colour) for colour in case_colours]),

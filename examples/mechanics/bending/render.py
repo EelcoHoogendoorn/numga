@@ -22,7 +22,7 @@ from numga import concatenate, stack
 from examples.util.animation import capture
 from examples.mechanics.bending import core
 from examples.util.wgsl import contours, fitted, image_figure, meshes, show, simplices, solids
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, panel
 
 mv = core.mv
 # Colours of the beam, of the straight beam, of the load, of the neutral axis, of the principal axes,
@@ -130,7 +130,7 @@ def section_panel(ax, limit: float) -> tuple[Camera, float]:
     ax.set_ylim(-limit, limit)
     ax.set_aspect("equal")
     ax.set_axis_off()
-    return flat_panel(ax, core.ga), ax.figure.dpi / 72
+    return panel(ax, mv.x, mv.y, mv.w), ax.figure.dpi / 72
 
 
 def centres_drawn(centre: core.Point, shear: core.Point, scale: float, camera: Camera) -> list[np.ndarray]:

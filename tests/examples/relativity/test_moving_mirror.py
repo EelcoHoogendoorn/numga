@@ -104,7 +104,7 @@ def test_relativistic_moving_mirror_doppler_compression_and_energy_gain():
 
     # Euler-Lagrange stationarity holds at every interior spacetime vertex.
     grid = np.arange(n_time * n_space).reshape(n_time, n_space)
-    interior = ~topology.reading(grid[1:-1, 1:-1].ravel()) * core.Scalar
+    interior = ~topology.reading(grid[1:-1, 1:-1].ravel(), 0) * core.Scalar
     np.testing.assert_allclose(interior.adjugate()(operators.wave_operator(potential)).kernel, 0.0, atol=1e-10)
 
     # Wave energy is conserved before and after reflection and boosted by the Einstein Doppler factor across reflection.

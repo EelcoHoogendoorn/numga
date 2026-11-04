@@ -16,7 +16,7 @@ from numga.extensor import Extensor
 from numga.gatype import GAType
 from examples.util.wgsl import Shader, meshes, solids
 from examples.util.wgsl.simplices import view_camera
-from examples.util.wgsl.camera import Camera, extrinsic_first, flat_panel, placing, reading, whole
+from examples.util.wgsl.camera import Camera, extrinsic_first, placing, reading, whole
 from examples.util.wgsl.library import pinned, samples_per_side
 
 Topology = meshes.Topology
@@ -42,11 +42,11 @@ fn hash(place: vec3<f32>) -> f32 {
 
 struct Corner {
     @builtin(position) position: vec4<f32>,
-    @location(0) normal: Tangent,
-    @location(1) tangent: Point,
-    @location(2) place: Point,
-    @location(3) depth: f32,
-    @location(4) colour: vec3<f32>,
+    normal: Tangent,
+    tangent: Point,
+    place: Point,
+    depth: f32,
+    colour: vec3<f32>,
 }
 struct Shade {
     @location(0) colour: vec4<f32>,
@@ -95,6 +95,8 @@ var<storage, read> points: array<Point>;
 var<storage, read> faces: array<vec3<u32>>;
 var<storage, read> field: array<Field>;
 var<uniform> noise_scale: f32;
+// A speck's radius, as a share of a cell, its ink fading over the outer seven sixteenths of it.
+var<uniform> speck: f32;
 
 fn hash(place: vec3<f32>) -> f32 {
     var p = fract(place * 0.1031);
@@ -102,12 +104,10 @@ fn hash(place: vec3<f32>) -> f32 {
     return fract((p.x + p.y) * p.z);
 }
 
-// The field and the place at each corner as the picture reads them, numbers whatever the algebra, so that values of
-// any size cross to the fragments alike.
 struct Corner {
     @builtin(position) position: vec4<f32>,
-    @location(0) projected: vec2<f32>,
-    @location(1) place: vec2<f32>,
+    tangent: Field,
+    place: Point,
 }
 struct Shade {
     @location(0) colour: vec4<f32>,
@@ -115,9 +115,9 @@ struct Shade {
     @location(2) grain: vec4<f32>,
 }
 
-// Jittered specks, one to a cell of the picture's readings, `noise_scale` across, an eighth of a cell in radius.
-fn seed(place: vec2<f32>) -> f32 {
-    let reading = place / noise_scale;
+// Jittered specks, one to a cell of the picture's readings, `noise_scale` across, `speck` of a cell in radius.
+fn seed(place: Point) -> f32 {
+    let reading = vec2<f32>(paired(screen_across, place), paired(screen_up, place)) / weight_of(place) / noise_scale;
     let cell = floor(reading);
     var ink = 0.0;
     for (var y = -1; y <= 1; y++) {
@@ -126,7 +126,7 @@ fn seed(place: vec2<f32>) -> f32 {
             let jitter = vec2<f32>(hash(vec3<f32>(neighbour, 19.1)), hash(vec3<f32>(neighbour, 53.4)));
             let away = reading - neighbour - jitter;
             let distance = sqrt(away.x * away.x + away.y * away.y);
-            ink = max(ink, 1.0 - smoothstep(0.09, 0.16, distance));
+            ink = max(ink, 1.0 - smoothstep(0.5625 * speck, speck, distance));
         }
     }
     return ink;
@@ -136,18 +136,15 @@ fn seed(place: vec2<f32>) -> f32 {
 fn place(@builtin(vertex_index) index: u32) -> Corner {
     let face = faces[index / 3];
     let vertex = face[index % 3];
-    let point = points[vertex];
-    let tangent = field[vertex];
-    // The field's change of place in the picture, in the readings, and the place's readings across and up.
-    let projected = vec2<f32>(field_paired(screen_across, tangent), field_paired(screen_up, tangent));
-    let place = vec2<f32>(paired(screen_across, point), paired(screen_up, point)) / weight_of(point);
-    return Corner(clip(point), projected, place);
+    return Corner(clip(points[vertex]), field[vertex], points[vertex]);
 }
 
 @fragment
 fn shade(corner: Corner) -> Shade {
-    // The field's change of place, rows counted down.
-    return Shade(vec4<f32>(1.0), vec4<f32>(corner.projected * vec2<f32>(1, -1), 0, 0), vec4<f32>(seed(corner.place)));
+    // The field's change of place in the picture, in the readings, rows counted down.
+    let projected = vec2<f32>(field_paired(screen_across, corner.tangent), field_paired(screen_up, corner.tangent))
+                    * vec2<f32>(1, -1);
+    return Shade(vec4<f32>(1.0), vec4<f32>(projected, 0, 0), vec4<f32>(seed(corner.place)));
 }
 """
 
@@ -264,12 +261,14 @@ def draw(points: solids.Point, topology: Topology, field: solids.Point, view: so
 
 def layer(points: Extensor, topology: Topology, field: Extensor, camera: Camera,
           reference_speed: float, colour: np.ndarray, *, downstream_fraction: float = 0.9,
-          length: float = length_pixels) -> np.ndarray:
+          length: float = length_pixels, grain_pixels: float = 6.0, speck_pixels: float = 0.96,
+          ink_opacity: float = ink_opacity) -> np.ndarray:
     """A transparent ink layer, at the camera's own pixels, for a flat field over a panel, the points and the field in
-    their own algebra, read by its camera."""
+    their own algebra, read by its camera; its seeds one to a cell `grain_pixels` across, each a speck `speck_pixels`
+    in radius, and its ink covering by `ink_opacity`."""
     surface, projected, grains = planar_shader(**reading(points, camera), Field=whole(field, points.algebra)).draw_averaged(
         camera.shape, samples_per_side(), 3 * topology.n_elements[2], points=points, faces=topology.elements[2], field=field,
-        noise_scale=camera.pixel * 6.0, **camera.uniforms(1.0))
+        noise_scale=camera.pixel * grain_pixels, speck=speck_pixels / grain_pixels, **camera.uniforms(1.0))
     result = trace_shader()(camera.shape, surface=surface, flow=projected, grains=grains, background=np.ones(3),
                             step_pixels=length / n_trace_steps,
                             reference_speed=max(reference_speed, np.finfo(np.float32).tiny),
@@ -281,11 +280,10 @@ def layer(points: Extensor, topology: Topology, field: Extensor, camera: Camera,
     return rgba
 
 
-def overlay(ax: Axes, points: Extensor, topology: Topology, field: Extensor,
+def overlay(ax: Axes, points: Extensor, topology: Topology, field: Extensor, camera: Camera,
             reference_speed: float, colour: np.ndarray):
-    """Draw a flat field as a transparent layer over a panel, keeping the panel's existing geometric annotations, the
-    panel looking down on the plane of the points' generators x and y."""
-    camera = flat_panel(ax, points.algebra)
+    """Draw a flat field as a transparent layer over a panel, read by the panel's camera, keeping the panel's existing
+    geometric annotations."""
     rgba = layer(points, topology, field, camera, reference_speed, colour)
     shown = pinned(ax, rgba, (*ax.get_xlim(), *ax.get_ylim()))
     shown.set_zorder(3.5)

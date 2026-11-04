@@ -57,8 +57,9 @@ class Charts:
     def __init__(self, temperature_of: Reading, pressure_of: Reading, blades) -> None:
         self.temperature_of, self.pressure_of = temperature_of, pressure_of
         self.entropy_temperature = art.Diagram(entropy_range, temperature_range, (entropy_range[0], 0.0), n_rows,
-                                               n_columns, ("S", "T"))
-        self.volume_pressure = art.Diagram(volume_range, pressure_range, (0.0, 0.0), n_rows, n_columns, ("V", "p"))
+                                               n_columns, ("S", "T"), (art.mv.x, art.mv.y), (art.mv.w, 0.0))
+        self.volume_pressure = art.Diagram(volume_range, pressure_range, (0.0, 0.0), n_rows, n_columns, ("V", "p"),
+                                           (art.mv.x, art.mv.y), (art.mv.w, 0.0))
         lines = art.gas_lines(temperature_of, pressure_of, blades, state_entropies, state_volumes,
                               art.GasLines(isochores, isobars, isotherms, adiabats))
         self.lines = lines
@@ -69,7 +70,8 @@ class Charts:
         self.pressure_lines = (art.level_family(self.volume_pressure, lines.isotherms.volume_pressure, "temperature",
                                                 art.thin)
                                + art.family(self.volume_pressure, lines.adiabats.volume_pressure, "entropy", art.thin))
-        self.heat_temperature = art.Diagram(heat_range, temperature_range, (0.0, 0.0), n_rows, n_columns, ("Q", "T"))
+        self.heat_temperature = art.Diagram(heat_range, temperature_range, (0.0, 0.0), n_rows, n_columns, ("Q", "T"),
+                                            (art.mv.x, art.mv.y), (art.mv.w, 0.0))
 
     def points(self, states: Extensor) -> art.GasPoints:
         return art.gas_points(self.temperature_of, self.pressure_of, states)

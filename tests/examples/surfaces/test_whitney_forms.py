@@ -6,6 +6,7 @@ import numpy as np
 from numga import stack
 from numga.sparse import spdiag
 from examples.surfaces.whitney_forms import core, scenarios
+from examples.util import shapes
 
 
 def test_barycentric_hats_and_edge_whitney_forms_on_single_triangle_and_diamond():
@@ -123,7 +124,8 @@ def test_tetrahedral_whitney_0_1_2_forms_and_opposite_edge_helicity():
 
 
 def test_cochain_complex_and_exact_midpoint_quadrature_including_obtuse_triangles():
-    topology, vertices = scenarios.disk(1.0, 5)
+    topology, coordinates = shapes.hexagonal_disk(1.0, 5)
+    vertices = scenarios.mv.vector(coordinates).dual().field()
     operators = core.Operators(topology, vertices)
 
     assert operators.d0.gatype == core.ga.gatype((core.Scalar, core.Scalar))
@@ -191,7 +193,8 @@ def test_cochain_complex_and_exact_midpoint_quadrature_including_obtuse_triangle
 
 
 def test_isotropic_and_anisotropic_conduction_patch_test_and_flux_balance():
-    topology, vertices = scenarios.disk(1.0, 6)
+    topology, coordinates = shapes.hexagonal_disk(1.0, 6)
+    vertices = scenarios.mv.vector(coordinates).dual().field()
     operators = core.Operators(topology, vertices)
     fibre = (core.mv.xy * (-scenarios.fibre_angle / 2)).exp() >> core.mv.x.dual()
     quarter_turn = (core.mv.xy * (-np.pi / 4)).exp()
@@ -202,7 +205,7 @@ def test_isotropic_and_anisotropic_conduction_patch_test_and_flux_balance():
     boundary = topology.exterior[0]
     applied_field = 1.25 * core.mv.x - 0.6 * core.mv.y
     exact_potential = applied_field & vertices
-    rim = topology.reading(boundary)
+    rim = topology.reading(boundary, 0)
     prescribed_rim = ~rim * (rim * exact_potential)
     potential, current, _ = core.conduction(operators, conductivity, boundary, prescribed_rim)
     np.testing.assert_allclose(potential.batch()[0].kernel, exact_potential.kernel, atol=1e-13)
@@ -214,13 +217,13 @@ def test_isotropic_and_anisotropic_conduction_patch_test_and_flux_balance():
     # Electrode solve balances flux at every free vertex and conserves total current between the two electrodes.
     abscissa = (core.mv.x & vertices).batch()
     electrodes = boundary[abscissa[boundary].norm() > scenarios.electrode_threshold]
-    pinned = topology.reading(electrodes)
+    pinned = topology.reading(electrodes, 0)
     prescribed = ~pinned * (pinned * (core.mv.x & vertices))
     potential, current, streamfunction = core.conduction(operators, conductivity, electrodes, prescribed)
 
     conductance = operators.gradient.adjugate()(spdiag(operators.areas * conductivity)(operators.gradient))
     free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
-    free = ~topology.reading(free_vertices) * core.Scalar
+    free = ~topology.reading(free_vertices, 0) * core.Scalar
     nodal_source = conductance(potential)
     np.testing.assert_allclose(free.adjugate()(nodal_source).kernel, 0.0, atol=1e-11)
     np.testing.assert_allclose(nodal_source.sites.sum().kernel, 0.0, atol=1e-11)
