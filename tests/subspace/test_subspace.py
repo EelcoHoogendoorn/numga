@@ -62,7 +62,8 @@ def test_subspace_addition_is_canonical_support_union() -> None:
     assert vector + scalar is scalar_vector
     assert vector + vector is vector
 
-    foreign = Algebra("x+y+z+").subspace.vector()
+    # A different algebra of the same signature: equal descriptions build one algebra.
+    foreign = Algebra("u+v+w+").subspace.vector()
     with pytest.raises(ValueError, match="different algebras"):
         _ = vector + foreign
 
