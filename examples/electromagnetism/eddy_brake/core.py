@@ -21,7 +21,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from numga import NumpyContext, stack
+from numga import Algebra, NumpyContext, stack
 from numga.algebras import STA2D
 from numga.sparse import SparseExtensor, spdiag
 from examples.util.topology import Topology
@@ -35,9 +35,11 @@ Bivector = ga.gatype.bivector()                            # Bivector+
 Rotor = ga.gatype.rotor()                                  # Rotor+
 
 mv = NumpyContext(ga).multivector
+# The planes of x and of y, whose duals are the directions across the disc.
+Spatial = Vector.derive.within(Algebra("x+y+"))            # Vector+
 # The electric field, a plane through time; currents, directions in the disc like its edges.
-Field = Bivector.derive.containing("t")                    # Bivector+
-Current = Point.derive.containing("t")                     # Antivector-
+Field = Bivector.derive.touching(Algebra("t-"))            # Bivector+
+Current = Spatial.derive.dual                              # Antivector-
 # Fluxes and charges: amounts, intrinsic, paired with voltages and potentials into power.
 Amount = ga.gatype.antiscalar()                            # Antiscalar-
 # A force's moment: what pairs with a spin into power, intrinsic.

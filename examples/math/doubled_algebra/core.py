@@ -16,8 +16,8 @@ ga = Algebra("x+y+u-v-")
 context = NumpyContext(ga)
 mv = context.multivector
 Full = ga.gatype.full()                                     # Full+
-State = Full.derive.within("x y")                           # Full+
-Vector = ga.gatype.vector().derive.within("x y")            # Vector+
+State = Full.derive.within(Algebra("x+y+"))                 # Full+
+Vector = ga.gatype.vector().derive.within(Algebra("x+y+"))  # Vector+
 StateMap = ga.gatype((State, State))                        # State+ <- State+
 n_state_components = len(State.output_subspace)
 

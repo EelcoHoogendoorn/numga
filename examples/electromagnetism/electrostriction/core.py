@@ -19,6 +19,7 @@ from dataclasses import dataclass
 import jax
 import numpy as np
 
+from numga import Algebra
 from numga.algebras import STA as ga
 from numga.backend.jax import JaxContext, derivative
 from numga.sparse import SparseExtensor
@@ -29,8 +30,8 @@ Scalar = ga.gatype.scalar()                                # Scalar+
 Vector = ga.gatype.vector()                                # Vector+
 # Positions, displacements and dipoles are directions in the plane, antivectors; the electric field
 # there is a bivector through time, its planes xt and yt.
-Point = ga.gatype.antivector().derive.containing("z t")    # Antivector-
-Field = ga.gatype.bivector().derive.within("x y t").derive.containing("t")    # Bivector+
+Point = Vector.derive.within(Algebra("x+y+")).derive.dual  # Antivector-
+Field = ga.gatype.bivector().derive.touching(Algebra("x+y+"), Algebra("t-"))  # Bivector+
 Response = ga.gatype((Field, Point))                       # Field+ <- Point-
 
 # The direction in time of an observer at rest with the lattice, which pairs to one with `mv.t`; the

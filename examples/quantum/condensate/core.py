@@ -41,8 +41,8 @@ mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 Plane = ga.gatype.vector()                                                    # Vector+
 Point = ga.gatype.antivector()                                                # Antivector-
-Wave = ga.gatype.from_blades("a b")                                           # Vector+
-Turn = ga.gatype.from_blades("ab")                                            # Bivector+
+Wave = Plane.derive.within(Algebra("a+b+"))                                   # Vector+
+Turn = ga.gatype.bivector().derive.within(Algebra("a+b+"))                    # Bivector+
 # Unit steps across and up the trap's plane, as points from its middle.
 axis = mv.x.dual()                                                            # [] Point-
 across = mv.y.dual()                                                          # [] Point-

@@ -27,11 +27,11 @@ from numga.algebras import VGA3D as space
 
 ga = Algebra("a-b-c-d-e-f-g-")
 mv = NumpyContext(ga).multivector
-Octonion = ga.gatype.from_blades("1 a b c d e f g")                 # Scalar+ + Vector+
+Octonion = ga.gatype(ga.gatype.scalar() + ga.gatype.vector())       # Scalar+ + Vector+
 Bivector = ga.gatype.bivector()                                     # Bivector+
 Trivector = ga.gatype.trivector()                                   # Trivector+
 # An octonion as a whole multivector of space, Cl(3, 0).
-SpaceOctonion = space.gatype.from_blades("1 x y z yz zx xy xyz")    # Full+
+SpaceOctonion = space.gatype.full()                                 # Full+
 
 # Each oriented triple closes under the product, `a` times `b` giving `c`; with the scalar, it multiplies as
 # the even part of space does.

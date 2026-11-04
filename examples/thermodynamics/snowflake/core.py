@@ -65,14 +65,16 @@ from examples.util.topology import Topology
 jax.config.update("jax_enable_x64", True)
 
 # The plane, and the volume, the ice and the heat a parcel holds, each a direction of its own with no metric.
-ga = Algebra("x+y+") * Algebra("v0i0h0")
+space = Algebra("x+y+")
+amounts = Algebra("v0i0h0")
+ga = space * amounts
 mv = JaxContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 # An amount a cell holds, intrinsic like the join that measures its area: the area, or the energy in it.
 Amount = ga.gatype.antipseudoscalar()                                         # Antipseudoscalar-
 Point = ga.gatype.antivector()                                                # Antivector-
 Plane = ga.gatype.vector()                                                    # Vector+
-Drive = ga.gatype.from_blades("xi yi xh yh")                                  # Bivector+
+Drive = ga.gatype.bivector().derive.touching(space, Algebra("i0h0"))          # Bivector+
 across = mv.x.dual()                                                          # [] Point-
 up = mv.y.dual()                                                              # [] Point-
 # The plane's two directions, across and up.

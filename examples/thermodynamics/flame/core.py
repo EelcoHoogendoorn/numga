@@ -42,7 +42,9 @@ from examples.util.topology import Topology
 jax.config.update("jax_enable_x64", True)
 
 # The plane, and the volume, the fuel and the heat a parcel holds, each a direction of its own with no metric.
-ga = Algebra("x+y+") * Algebra("v0f0h0")
+space = Algebra("x+y+")
+amounts = Algebra("v0f0h0")
+ga = space * amounts
 mv = JaxContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 Point = ga.gatype.antivector()                                                # Antivector-
@@ -50,8 +52,8 @@ Point = ga.gatype.antivector()                                                # 
 Amount = ga.gatype.antipseudoscalar()                                         # Antipseudoscalar-
 Plane = ga.gatype.vector()                                                    # Vector+
 # The planes reading a place's run across the plane and up it.
-Upright = ga.gatype.from_blades("x y")                                        # Vector+
-Drive = ga.gatype.from_blades("xf yf xh yh")                                  # Bivector+
+Upright = Plane.derive.within(space)                                          # Vector+
+Drive = ga.gatype.bivector().derive.touching(space, Algebra("f0h0"))          # Bivector+
 Flux = ga.gatype.antibivector()                                               # Antibivector-
 # The plane's two directions, across and up.
 directions = stack((mv.x.dual(), mv.y.dual()))                                # [2] Point-

@@ -6,7 +6,7 @@ from itertools import islice
 
 import numpy as np
 
-from numga import NumpyContext, stack
+from numga import Algebra, NumpyContext, stack
 from numga.algebras import STA2D as ga
 from numga.sparse import spdiag
 from examples.util import shapes
@@ -14,10 +14,10 @@ from examples.util import shapes
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
 Bivector = ga.gatype.bivector()                                              # Bivector+
-Magnetic = Bivector.derive.within("x y")                                     # Bivector+
+Magnetic = Bivector.derive.within(Algebra("x+y+"))                           # Bivector+
 Point = ga.gatype.antivector()                                               # Antivector-
 # The planes of x and of y, whose duals are the directions across and up the disk.
-Upright = ga.gatype.from_blades("x y")                                       # Vector+
+Upright = ga.gatype.vector().derive.within(Algebra("x+y+"))                  # Vector+
 
 horizontal, vertical = mv.x.dual(), mv.y.dual()                              # [] Point-, Point-
 ribbon_step = 0.55
