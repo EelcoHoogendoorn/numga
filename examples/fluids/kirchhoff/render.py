@@ -12,8 +12,9 @@ from matplotlib.colors import to_rgb
 from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
+from examples.util.shapes import delaunay
 from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl.camera import panel
 from examples.fluids.kirchhoff import core
 
 Topology = simplices.Topology
@@ -85,8 +86,8 @@ def animate_gliding(impulse: core.Forque,
     # Each case's path through the frames, case by case.
     tracks = stack([(centres + lanes)[:, case] for case in range(count)])    # [cases, frames] Point-
     tips = noses + lanes                                                     # [frames, cases] Point-
-    # The body's triangles, the same in every frame, and its outline a closed loop.
-    body = Topology.triangulate(shapes[0, 0])
+    # The body's triangles, the same in every frame, from its outline read across and up, and its outline a closed loop.
+    body, _ = delaunay((stack((mv.x, mv.y)) & shapes[0, 0].batch()[..., None]).to_array())
     rim = Topology.loops([shapes.shape[-1]])
     height = lane * count
     # The lanes and their impulses set up once; each body, its path so far and its nose move.
@@ -97,7 +98,7 @@ def animate_gliding(impulse: core.Forque,
     ax.set_ylim(*stack((-lane / 2, height - lane / 2)).to_array())
     ax.set_aspect("equal")
     ax.set_axis_off()
-    camera = flat_panel(ax, core.ga)
+    camera = panel(ax, mv.x, mv.y, mv.w)
     impulses = simplices.strokes(lines, Topology.chains([2] * count), rgb(impulse_colour), impulse_width, camera,
                                  dashes=impulse_dashes, cap=simplices.Cap.BUTT)
     image = simplices.overlay(ax, [impulses])

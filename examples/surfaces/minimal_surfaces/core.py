@@ -32,8 +32,8 @@ def relax_plateau(
     """The surface at each damped harmonic step towards least area, its boundary wire held, with its total area and
     its mean curvature at the vertices, zero on the wire."""
     corners = topology.incidence[2, 0]                                       # [corners] Scalar+[faces <- vertices]
-    interior = topology.reading(topology.interior[0])                        # Scalar+[interior <- vertices]
-    exterior = topology.reading(topology.exterior[0])                        # Scalar+[exterior <- vertices]
+    interior = topology.reading(topology.interior[0], 0)                     # Scalar+[interior <- vertices]
+    exterior = topology.reading(topology.exterior[0], 0)                     # Scalar+[exterior <- vertices]
     wire = exterior * initial_vertices                                       # Point-[exterior]
     vertices = initial_vertices                                              # Point-[vertices]
     for _ in range(n_steps + 1):

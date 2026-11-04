@@ -12,7 +12,7 @@ from matplotlib.colors import LogNorm, to_rgb, to_rgba
 from numga import stack
 from examples.util.animation import capture
 from examples.util.wgsl import contours, pinned, simplices
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, offset_panel
 from examples.mechanics.tides import core
 
 STARS = to_rgb("#0f172a")
@@ -38,7 +38,7 @@ def density(ax: Axes, points: core.Point, mass_density: core.Scalar) -> np.ndarr
     ax.set_aspect("equal")
     places = points.reshape(-1)                                              # [rows * columns] Point-
     return contours.picture(places, contours.Topology.grid(*values.shape), values.reshape(-1), colours.reshape(-1, 3),
-                            flat_panel(ax, core.ga))
+                            offset_panel(ax, core.mv.x, core.mv.y))
 
 
 def rim_at(centre: core.Point, rim: core.Form, half_size: core.Scalar, grid: contours.Topology,
@@ -70,10 +70,10 @@ def animate(points: core.Point, mass_density: core.Scalar,
     background = density(whole, points, mass_density)
     # The stars over the density, and the rim's picture, pinned once, their data and the rim's extent set for each
     # frame; the panels keep their frames around them.
-    whole_camera = flat_panel(whole, core.ga)
+    whole_camera = offset_panel(whole, core.mv.x, core.mv.y)
     stars_seen = simplices.overlay(whole, [background])
     whole.set_axis_on()
-    rims = pinned(near, np.zeros(flat_panel(near, core.ga).shape + (4,)), (-1, 1, -1, 1))
+    rims = pinned(near, np.zeros(offset_panel(near, core.mv.x, core.mv.y).shape + (4,)), (-1, 1, -1, 1))
     near.set_axis_on()
     rim_grid = contours.Topology.grid(RIM_PIXELS, RIM_PIXELS)
     for stars, centre, rim in states:
@@ -87,7 +87,7 @@ def animate(points: core.Point, mass_density: core.Scalar,
         window = stack([middle - half_size, middle + half_size], axis=-1).to_array().reshape(-1)
         rims.set_extent(window)
         near.set(xlim=window[:2], ylim=window[2:])
-        near_camera = flat_panel(near, core.ga)
+        near_camera = offset_panel(near, core.mv.x, core.mv.y)
         rims.set_data(simplices.composited([
             rim_at(centre, rim, half_size, rim_grid, near_camera),
             simplices.markers(stars.positions, STARS, NEAR_STAR_RADIUS, near_camera)]))

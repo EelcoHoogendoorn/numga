@@ -10,7 +10,7 @@ from numga.extensor import stack
 
 from examples.util.animation import capture
 from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import panel
+from examples.util.wgsl.camera import offset_panel
 from examples.math.e8.core import Vector
 
 background = "#101219"
@@ -52,7 +52,7 @@ def draw_roots(roots: Vector, horizontal: Vector, vertical: Vector) -> plt.Figur
     figure.subplots_adjust(0, 0, 1, 1)
     # The camera reads roots, vectors, as they are, along the drawing plane's two directions: `root & horizontal.dual()`
     # is `horizontal | root`.
-    camera = panel(ax, horizontal.dual(), vertical.dual())
+    camera = offset_panel(ax, horizontal.dual(), vertical.dual())
     neighbours = simplices.Topology(len(flat), np.stack([first, second], axis=-1))
     simplices.overlay(ax, [
         simplices.strokes(flat, neighbours, edge_colours, edge_width, camera, opacity=edge_opacity),
@@ -90,7 +90,7 @@ def animate_planes(turning_roots: Iterable[Vector], roots: Vector, horizontal: V
     figure.subplots_adjust(0, 0, 1, 1, wspace=0.025)
     # Each plane's camera reads roots as they are, along its two directions.
     across, up = horizontal.dual(), vertical.dual()                             # [planes] Antivector-
-    cameras = [panel(ax, across[index], up[index]) for index, ax in enumerate(axes)]
+    cameras = [offset_panel(ax, across[index], up[index]) for index, ax in enumerate(axes)]
     backdrops = []
     for index, camera in enumerate(cameras):
         step = (planes[index] * (-np.pi / n_around)).exp()                     # [] Rotor+

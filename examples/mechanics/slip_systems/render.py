@@ -83,7 +83,7 @@ def squares(directions: core.Direction, reach: float, turn: float, camera: Camer
 def disk_camera(ax: plt.Axes) -> Camera:
     """The camera of a panel of the stereographic disk: a direction read across and up by the planes x and y, over
     its reading along [001], a central projection from the origin onto the plane across [001]."""
-    return panel(ax, core.mv.x, core.mv.y)._replace(weight=core.mv.z, unit=0.0)
+    return panel(ax, core.mv.x, core.mv.y, core.mv.z)
 
 
 def lifted(window: tuple[float, float], pixels: int) -> core.Direction:

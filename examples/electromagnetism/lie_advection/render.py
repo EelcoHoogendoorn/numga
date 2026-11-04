@@ -14,7 +14,7 @@ from examples.electromagnetism.lie_advection import core
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import contours, flow, simplices
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, offset_panel
 
 Topology = core.Topology
 
@@ -107,7 +107,7 @@ def draw_cartan_ribbon(corners: core.Point, corner_forms: core.Plane,
     figure, (geom_ax, bar_ax) = charts.subplots(600, 270, ncols=2, width_ratios=(1, 1.2), layout="constrained")
 
     frame_panel(geom_ax, stack((corners, displaced)), 0.16)
-    camera = flat_panel(geom_ax, corners.algebra)
+    camera = offset_panel(geom_ax, core.mv.x, core.mv.y)
     flux_scale = max(np.abs(swept_vals).max(), 1e-8)
     ribbon_colours = flux_colours(0.5 + 0.42 * swept_vals / flux_scale)[:, :3]   # [corners, 3]
     # The form across the triangle as streaks, their length its strength: its values at the corners, interpolated by
@@ -195,7 +195,7 @@ def draw_advection_comparison(topology: core.Topology, vertices: core.Point,
     points = vertices.batch()                                                # [vertices] Point-
     flux_scale = Normalize(-flux_limit, flux_limit)
     for ax, vertex_flux in zip((left_ax, mid_ax), vertex_fluxes):
-        camera = flat_panel(ax, core.ga)
+        camera = offset_panel(ax, core.mv.x, core.mv.y)
         colours = flux_colours(flux_scale(vertex_flux))[:, :3]
         simplices.overlay(ax, [contours.picture(points, topology, vertex_flux, colours, camera,
                                                 levels=flux_levels(flux_limit)),
@@ -225,7 +225,7 @@ def animate_advection(topology: core.Topology, vertices: core.Point,
         figure.subplots_adjust(left=0.015, right=0.985, bottom=0.02, top=0.98, wspace=0.04)
         for ax in axes:
             frame_panel(ax, vertices, 0.06)
-        views = [flat_panel(ax, core.ga) for ax in axes]
+        views = [offset_panel(ax, core.mv.x, core.mv.y) for ax in axes]
         lines = [disk_lines(topology, points, view) for view in views]
         textures = [simplices.overlay(ax, panel_lines) for ax, panel_lines in zip(axes, lines)]
     for flux_density in chain((first,), frames):

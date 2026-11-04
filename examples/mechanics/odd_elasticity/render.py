@@ -11,7 +11,7 @@ from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 from numga import concatenate, stack
 from examples.util.animation import capture
 from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import panel
+from examples.util.wgsl.camera import offset_panel
 from examples.mechanics.odd_elasticity import core
 
 BACKGROUND = "#fbfaf7"
@@ -58,7 +58,7 @@ def bond_frames(
 
     figure = plt.figure(figsize=(6.2, 2.9), dpi=50, facecolor=BACKGROUND)
     ax = _scene(figure, bounds, (0.02, 0.02, 0.96, 0.96))
-    camera = panel(ax, core.mv.x, core.mv.y)
+    camera = offset_panel(ax, core.mv.x, core.mv.y)
     # The swept area, a fan from the rest position over the path so far.
     swept_corners = concatenate([reference[None], positions])                # [steps + 1] Displacement-
     n_steps = len(positions)
@@ -102,7 +102,7 @@ def patch_frames(
 
     figure = plt.figure(figsize=(5.2, 3.6), dpi=50, facecolor=BACKGROUND)
     ax = _scene(figure, bounds, (0.02, 0.02, 0.96, 0.96))
-    camera = panel(ax, core.mv.x, core.mv.y)
+    camera = offset_panel(ax, core.mv.x, core.mv.y)
     rest = simplices.strokes(reference, topology, REFERENCE, 1.0, camera)
     forces_topology = _arrows(len(boundary))
     image = simplices.overlay(ax, [rest])
@@ -128,7 +128,7 @@ def wave_frames(
     """Moving bonds coloured by signed extension, with one particle's short trajectory marked."""
     figure = plt.figure(figsize=(6.5, 3.7), dpi=50, facecolor=BACKGROUND)
     ax = _scene(figure, _bounds([reference], 0.035), (0.015, 0.015, 0.97, 0.97))
-    camera = panel(ax, core.mv.x, core.mv.y)
+    camera = offset_panel(ax, core.mv.x, core.mv.y)
     rest = simplices.strokes(reference, topology, REFERENCE, 1.0, camera)
     strain = Normalize(-extension_scale, extension_scale)
     image = simplices.overlay(ax, [rest])

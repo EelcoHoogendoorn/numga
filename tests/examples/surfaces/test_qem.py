@@ -36,7 +36,7 @@ def test_edge_collapse_minimizes_joint_error():
 
     # Flanking planes pass through both edge endpoints a and b:
     flank_planes = face_planes[[0, 1]]
-    vertex_a, vertex_b = (ridge.reading(scenarios.RIDGE_EDGE) * vertices).batch()
+    vertex_a, vertex_b = (ridge.reading(scenarios.RIDGE_EDGE, 0) * vertices).batch()
     np.testing.assert_allclose((flank_planes & vertex_a).to_array(), 0.0, atol=1e-12)
     np.testing.assert_allclose((flank_planes & vertex_b).to_array(), 0.0, atol=1e-12)
 
@@ -138,7 +138,7 @@ def test_repeated_collapses_preserve_closed_mesh_and_original_plane_error():
         mapped_faces = old_to_new[old_faces]
         surviving_mask = np.all(np.diff(np.sort(mapped_faces, axis=1), axis=1) > 0, axis=1)
         assert set(map(tuple, np.sort(mapped_faces[surviving_mask], axis=1))) == set(map(tuple, np.sort(new_faces, axis=1)))
-        old_corners = old_topology.subset(surviving_mask).incidence[2, 0] * old_vertices.field()
+        old_corners = old_topology.subset(surviving_mask, -1).incidence[2, 0] * old_vertices.field()
         new_corners = core.Topology(new_topology.n_vertices, mapped_faces[surviving_mask]).incidence[2, 0] * new_vertices.field()
         old_planes = old_corners[0] & old_corners[1] & old_corners[2]
         new_planes = new_corners[0] & new_corners[1] & new_corners[2]

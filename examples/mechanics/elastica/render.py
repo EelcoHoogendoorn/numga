@@ -59,7 +59,7 @@ def frame_plane(ax: plt.Axes, low: np.ndarray, high: np.ndarray) -> Camera:
     along the unbent rod and up by the planes z and y."""
     ax.set(xlim=(low[0] - MARGIN, high[0] + MARGIN), ylim=(low[1] - MARGIN, high[1] + MARGIN), aspect="equal")
     ax.set_axis_off()
-    return panel(ax, mv.z, mv.y)
+    return panel(ax, mv.z, mv.y, mv.w)
 
 
 def draw_curls(centres: core.Point) -> plt.Figure:

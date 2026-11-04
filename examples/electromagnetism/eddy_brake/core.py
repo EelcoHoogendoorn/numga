@@ -198,7 +198,7 @@ def closed_currents(disc: Disc) -> tuple[SparseExtensor, SparseExtensor]:
     interior edge.
     """
     interior = disc.topology.interior[0]
-    embedder = ~disc.topology.reading(interior) * Scalar  # Scalar+[vertices <- interior]
+    embedder = ~disc.topology.reading(interior, 0) * Scalar  # Scalar+[vertices <- interior]
     edges = disc.triangle_edges.cast(Current)                              # [3] Current-[faces]
     current = (spdiag(edges / (2 * disc.triangle_areas) * Scalar) * disc.topology.incidence[2, 0]).sum(axis=0)(embedder)  # (Current- <- Scalar+)[faces <- interior]
     return embedder, current

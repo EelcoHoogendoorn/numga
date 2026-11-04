@@ -37,6 +37,7 @@ import numpy as np
 from numga import NumpyContext, stack
 from numga.algebras import PGA3D as ga
 from numga.sparse import SparseExtensor
+from examples.util import shapes
 from examples.util.topology import Topology
 
 mv = NumpyContext(ga).multivector
@@ -143,7 +144,7 @@ def sheet(topology: Topology, points: Point, lengths: Scalar, curvature: Curvatu
     # Every hinge's two ends, as the face on its left winds them, then the corner across it in that face and in
     # the other.
     hinge_ends = topology.reading(topology.interior[1], 1) * topology.incidence[1, 0]   # [2] Scalar+[hinges <- vertices]
-    hinge_corners = topology.reading(topology.facet_opposites.T)                 # [2] Scalar+[hinges <- vertices]
+    hinge_corners = topology.reading(topology.facet_opposites.T, 0)              # [2] Scalar+[hinges <- vertices]
     ends, tips = hinge_ends * points                                             # Point-[hinges], Point-[hinges]
     across, opposite = hinge_corners * points                                    # Point-[hinges], Point-[hinges]
     line = ends & tips                                                           # Line-[hinges]
@@ -177,11 +178,11 @@ def flat_mesh(coords: np.ndarray, spacing: float) -> tuple[Topology, Point]:
     """The Delaunay triangulation of points in the xy plane `[vertices, 2]`, its faces counter-clockwise, without the
     slivers along straight rows of the boundary, and its vertices."""
     points = mv.point(np.concatenate([coords, np.zeros((len(coords), 1))], axis=-1)).field()   # Point-[vertices]
-    delaunay = Topology.triangulate(points)
+    delaunay, _ = shapes.delaunay(coords)
     # The plane through a face's corners has twice the face's area as its norm, all but nothing for a sliver.
     corners = delaunay.incidence[2, 0] * points                                  # [corners] Point-[faces]
     kept = (corners[0] & corners[1] & corners[2]).norm().batch() > 1e-6 * spacing ** 2
-    return delaunay.subset(kept), points
+    return delaunay.subset(kept, -1), points
 
 
 def lattice(spacing: float, radius: float) -> np.ndarray:

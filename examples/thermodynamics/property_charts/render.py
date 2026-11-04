@@ -69,7 +69,7 @@ class Chart:
         # The air's states read by the planes of temperature and of water content, this in grams per kg of dry air.
         across, up = mv.t, mv.w * grams_per_kilogram                                           # [] Plane+, Plane+
         self.diagram = art.Diagram(temperature_range, water_range, (temperature_range[0], 0.0), n_rows, n_columns,
-                                   ("T", "w"), (across, up))
+                                   ("T", "w"), (across, up), (0 * across, 1.0))
         grid = mv.t.dual() * grid_temperatures[None, :] + mv.w.dual() * grid_water[:, None]
         relative = np.asarray(relative_humidity_of(grid).to_array())
         humidities = art.Levels(grid, relative, humidity_levels)

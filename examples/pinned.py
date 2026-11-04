@@ -25,7 +25,7 @@ EXAMPLES = (
     "electromagnetism.beltrami_fields",
     "quantum.condensate",
     "mechanics.rattleback",
-    "relativity.closed_universe",
+    "relativity.gravitational_waves",
     "mechanics.bending",
     "fluids.eigen_fluids",
     "electromagnetism.superconductor",

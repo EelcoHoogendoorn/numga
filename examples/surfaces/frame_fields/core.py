@@ -117,8 +117,8 @@ def harmonic_rotor_frames(
     """Pinned boundary rotors determine a linear harmonic chord field in the 4D even subalgebra, and its normalized unit rotor field."""
     _, rotor_laplacian, _, _, _ = rotor_laplacian_operators(topology, vertices)
     free_vertices = topology.interior[0]
-    free = ~topology.reading(free_vertices) * Rotor                          # (Even+ <- Even+)[vertices <- free]
-    pinned = ~topology.reading(boundary) * Rotor                             # (Even+ <- Even+)[vertices <- boundary]
+    free = ~topology.reading(free_vertices, 0) * Rotor                       # (Even+ <- Even+)[vertices <- free]
+    pinned = ~topology.reading(boundary, 0) * Rotor                          # (Even+ <- Even+)[vertices <- boundary]
 
     # The chord field minimizes edge energy in the even subalgebra.
     # Normalization gives unit frames, changing the variational problem in the process.
@@ -136,7 +136,7 @@ def relax_rotor_frames(
     """Projected cotangent steps smooth a frame field with fixed boundary frames and unit rotors at every vertex."""
     rotor_d0, rotor_laplacian, edge_weights, _, _ = rotor_laplacian_operators(topology, vertices)
     free_vertices = topology.interior[0]
-    free = ~topology.reading(free_vertices) * Rotor                          # (Even+ <- Even+)[vertices <- free]
+    free = ~topology.reading(free_vertices, 0) * Rotor                       # (Even+ <- Even+)[vertices <- free]
     current = initial_rotors                                                 # Rotor+[vertices]
     for _ in range(n_steps + 1):
         edge_differences = rotor_d0(current)                                 # Even+[edges]

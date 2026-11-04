@@ -17,7 +17,7 @@ from examples.util import charts
 from examples.util.animation import capture
 from examples.electromagnetism.fresnel import core
 from examples.util.wgsl import fitted, labels, meshes, show, simplices, solids
-from examples.util.wgsl.camera import Camera, panel, read
+from examples.util.wgsl.camera import Camera, offset_panel, read
 from examples.util.wgsl.scene import Scene
 
 sheet_colours = ("#2563eb", "#ea580c")
@@ -134,7 +134,7 @@ def section_axes(ax: Axes) -> None:
 def section_camera(ax: Axes) -> Camera:
     """The camera of the sections' plane, reading the wavevectors by the directions of space x across and z up,
     `wavevector & axis`."""
-    return panel(ax, core.axes[0], core.axes[2])
+    return offset_panel(ax, core.axes[0], core.axes[2])
 
 
 def trace_sections(sections: core.Vector, camera: Camera) -> np.ndarray:

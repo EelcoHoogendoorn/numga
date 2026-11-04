@@ -9,7 +9,7 @@ from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 from numga import stack
 from examples.util import charts
 from examples.util.wgsl import contours, flow, image_figure, meshes, simplices, solids
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, offset_panel
 from examples.surfaces.whitney_forms import core
 
 primal_colour = "#286580"
@@ -86,7 +86,7 @@ def frame_panel(ax: plt.Axes, points: core.Point, margin_ratio: float) -> Camera
     limits = stack((centre - half_span, centre + half_span), axis=-1).to_array()
     ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
     ax.set_axis_off()
-    return flat_panel(ax, points.algebra)
+    return offset_panel(ax, mv.x, mv.y)
 
 
 def ink(colour: str) -> np.ndarray:
@@ -190,7 +190,7 @@ def draw_edge_1forms(corners: core.Point, corner_forms: core.Plane,
     shared = diamond.reading(diamond.interior[1][:1], 1)                      # Scalar+[shared <- edges]
     tail, head = (shared * (diamond.incidence[1, 0] * diamond_vertices)).batch()[:, 0]   # [] Point-, Point-
     # The corners across the shared edge, in the face on its left and in the face on its right.
-    apexes = (diamond.reading(diamond.facet_opposites[0]) * diamond_vertices).batch()  # [sides] Point-
+    apexes = (diamond.reading(diamond.facet_opposites[0], 0) * diamond_vertices).batch()  # [sides] Point-
     simplices.overlay(ax, [
         contours.picture(places, diamond, np.zeros(len(places)), ink(paper_colour), camera),
         simplices.strokes(places, diamond, ink(wall_colour), charts.LINE_PX, camera),

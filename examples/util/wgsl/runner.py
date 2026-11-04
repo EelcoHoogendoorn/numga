@@ -172,9 +172,11 @@ class Layout:
 
     def array(self, kind: Any, value: Any) -> bytes:
         """A runtime-sized array's bytes: a batch of the algebra's type, or an array of numbers whose
-        last axis is the element's components."""
+        last axis is the element's components. A member of a struct that is an array of a fixed length of the
+        algebra's type takes a batch whose last axis runs along that array."""
         if isinstance(value, Extensor):
-            return coefficients(value, kind)
+            form, detail = self.shape(kind)
+            return coefficients(value, self.resolve(detail[0]) if form == "array" else kind)
         if kind in self.program.structs:
             # A struct's members by name, each a batch along the array, laid column by column at their offsets.
             stride = self.stride(kind)
@@ -184,7 +186,7 @@ class Layout:
             data = np.zeros((count, stride), dtype=np.uint8)
             for column, (_, member_type), offset in zip(columns, self.program.structs[kind], self.offsets(kind)):
                 _, size = self.size(member_type)
-                data[:, offset:offset + size] = column.reshape(count, -1)[:, :size]
+                data[:, offset:offset + size] = column.reshape(count, self.stride(member_type))[:, :size]
             return data.tobytes()
         # The element's components, by its type, each padded to the array's stride.
         _, size = self.size(kind)

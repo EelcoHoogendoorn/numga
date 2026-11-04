@@ -13,7 +13,7 @@ from matplotlib.colors import to_rgb
 from numga import concatenate, stack
 from examples.util import charts
 from examples.util.wgsl import flow as ink, simplices
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, panel
 from examples.util.animation import capture
 from examples.fluids.stokes_swimmer import core
 
@@ -129,7 +129,7 @@ def draw_summary(
     topology = ink.Topology.grid(*grid.shape)
     points, directions = grid.reshape(-1), flow[0].reshape(-1)
     reference_speed = float(directions.dual().norm().max().to_array())
-    camera = flat_panel(ax_flow, core.ga)
+    camera = panel(ax_flow, core.mv.x, core.mv.y, core.mv.w)
     simplices.overlay(ax_flow, [
         ink.layer(points, topology, directions, camera, reference_speed, rgb(flow_colour)),
         _trail(positions[:, 0], summary_trail_width * charts.DPI / 72, camera),
@@ -167,7 +167,7 @@ def animate_swimmers(
     for ax in axes:
         ax.set(xlim=(left, right), ylim=(-water_half_height, water_half_height), aspect="equal")
         ax.set_axis_off()
-    views = [flat_panel(ax, core.ga) for ax in axes]
+    views = [panel(ax, core.mv.x, core.mv.y, core.mv.w) for ax in axes]
     textures = [simplices.overlay(ax, [np.zeros(view.shape + (4,))]) for ax, view in zip(axes, views)]
     for frame, fields in enumerate(chain((first,), flows)):
         directions = fields.reshape(fields.shape[0], -1)

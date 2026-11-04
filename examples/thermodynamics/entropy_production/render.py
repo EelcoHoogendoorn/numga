@@ -63,9 +63,11 @@ class Charts:
         mv = state.context.multivector
         self.entropy_of, self.transfer, self.mv = entropy_of, transfer, mv
         self.energies = art.Diagram(energy_range, energy_range, (0.0, 0.0), n_rows, n_columns, ("U_a", "U_b"),
-                                    (mv.a, mv.b))
-        self.cooling = art.Diagram(time_range, temperature_range, (0.0, 0.0), n_rows, n_columns, ("t", "T"))
-        self.hill = art.Diagram(energy_range, entropy_range, (0.0, entropy_range[0]), n_rows, n_columns, ("U_a", "S"))
+                                    (mv.a, mv.b), (0 * mv.a, 1.0))
+        self.cooling = art.Diagram(time_range, temperature_range, (0.0, 0.0), n_rows, n_columns, ("t", "T"),
+                                   (art.mv.x, art.mv.y), (art.mv.w, 0.0))
+        self.hill = art.Diagram(energy_range, entropy_range, (0.0, entropy_range[0]), n_rows, n_columns, ("U_a", "S"),
+                                (art.mv.x, art.mv.y), (art.mv.w, 0.0))
         grid = mv.a.dual() * grid_energies[None, :] + mv.b.dual() * grid_energies[:, None]
         grid_entropy = np.asarray(entropy_of(grid).to_array())
         self.levels = art.Levels(grid, grid_entropy, entropy_levels)

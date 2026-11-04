@@ -13,7 +13,7 @@ def test_pull_is_proportional_to_temperature():
     # The band stretched to half again its length, its pull on the support at the room's temperature and at twice it,
     # the entropies raised by the heat capacity times the logarithm of two.
     stretched = rest + 0.5 * (core.mv.y & rest) * core.up                     # Point-[vertices]
-    support = topology.reading(np.flatnonzero((core.mv.y & rest).to_array() == 0))
+    support = topology.reading(np.flatnonzero((core.mv.y & rest).to_array() == 0), 0)
     held_potentials = [support * core.potentials(band, stretched + band.heat_capacity * band.cells * warmer
                                                  * core.entropy) for warmer in (0.0, np.log(2))]   # Plane+[held]
     pulls = [((plane & core.entropy) * core.mv.s - plane).sites.sum() & core.up for plane in held_potentials]
@@ -54,7 +54,7 @@ def test_engine_lifts_the_weight_and_lets_it_down():
     topology, in_weight, states = scenarios.engine()
     states = list(states)
     # The weight rises at every frame while the lamp is on, and is lower at the end than when the lamp went off.
-    weight = topology.reading(np.unique(topology.elements[2][in_weight]))
+    weight = topology.reading(np.unique(topology.elements[2][in_weight]), 0)
     heights = np.array([(core.mv.y & (weight * places)).sites.mean().to_array() for places, *_ in states])
     lit = np.array([lit for *_, lit in states]) > 0
     assert np.all(np.diff(heights[lit]) > 0)

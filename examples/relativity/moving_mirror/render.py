@@ -14,7 +14,7 @@ from examples.relativity.moving_mirror import core
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, panel
+from examples.util.wgsl.camera import Camera, offset_panel
 
 primal_colour = "#286580"
 accent_colour = "#d77542"
@@ -180,7 +180,7 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
     levels = np.linspace(0.0, 1.0, n_contours + 2)[1:-1]
     level_ends = corners[index] + (1 - levels[:, None]) * (corners[others] - corners[index])   # [levels, 2] Point-
     frame_panel(hat_ax, corners, 0.22)
-    camera = panel(hat_ax, mv.x, mv.t)
+    camera = offset_panel(hat_ax, mv.x, mv.t)
     # The Euclidean normal -(mv.t >> gradients.dual()) beside the Lorentzian dual gradients.dual(), both drawn from
     # the centroid at the scale that draws the Lorentzian dual a fixed length.
     lorentz_dual = gradients[index].dual()                                   # [] Point-
@@ -206,7 +206,7 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
     # Panel 2: Spacetime edge Whitney 1-form circulating around its opposite corner.
     edge_index = 0
     frame_panel(edge_ax, corners, 0.22)
-    camera = panel(edge_ax, mv.x, mv.t)
+    camera = offset_panel(edge_ax, mv.x, mv.t)
     # The edge form is affine across the triangle; its dual at the corners, the samples where their own hats reach
     # one, sets it everywhere.
     sample_hats = 1 + (gradients[:, None] & (points[None, :] - corners[:, None]))   # [corners, samples] Scalar+
@@ -233,7 +233,7 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
                 xticks=[0.0, 0.5, 1.0], yticks=[0.0, round(duration, 2)],
                 xlabel="space $x$", ylabel="time $t$")
     plain_axes(wake_ax)
-    camera = panel(wake_ax, mv.x, mv.t)
+    camera = offset_panel(wake_ax, mv.x, mv.t)
     rays = null_rays(source_event, 0.0, 0.50).reshape(-1)                   # [rays * 2] Point-
     diagram(wake_ax, [
         worldsheet(wake_vertices.batch(), topology, wake_vals, wake_limit, camera),
@@ -303,7 +303,7 @@ def draw_moving_mirror_doppler(topology: core.Topology, vertices: core.Point,
                          round(float(row_times[after_row]), 2), round(duration, 2)],
                  xlabel="space $x$", ylabel="time $t$")
     plain_axes(world_ax)
-    camera = panel(world_ax, mv.x, mv.t)
+    camera = offset_panel(world_ax, mv.x, mv.t)
     diagram(world_ax, [worldsheet(vertices.batch(), topology, wave_rate_vals, field_limit, camera)]
             + world_lines(grid, 0.14, camera)
             + [simplices.strokes(grid[[before_row, after_row]].reshape(-1), simplices.Topology.chains([n_space, n_space]),
@@ -378,7 +378,7 @@ def animate_moving_mirror(topology: core.Topology, vertices: core.Point,
                      xticks=[0.0, 1.0], yticks=[0.0, round(duration, 2)],
                      xlabel="space $x$", ylabel="time $t$")
         plain_axes(world_ax)
-        camera = panel(world_ax, mv.x, mv.t)
+        camera = offset_panel(world_ax, mv.x, mv.t)
         sheet = simplices.composited([worldsheet(vertices.batch(), topology, wave_rate_vals, field_limit, camera)]
                                      + world_lines(grid, 0.1, camera))
         world = diagram(world_ax, [sheet])

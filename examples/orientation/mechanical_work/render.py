@@ -50,7 +50,7 @@ class WorkView:
         across, up = stack([lower, upper], axis=-1).to_array()
         ax.set(xlim=across, ylim=up, aspect="equal")
         ax.set_axis_off()
-        self.camera = panel(ax, mv.x, mv.y)
+        self.camera = panel(ax, mv.x, mv.y, mv.w)
         # The mirror, the plane x = 0, from the bottom of the view to its top: the origin moved up as far as each.
         mirror = mv.w.dual() + mv.y.dual() * stack([lower[1], upper[1]])       # [ends] Point-
         # Each handle's path, closed: its places in turn, a loop of them.

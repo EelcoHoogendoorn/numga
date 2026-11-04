@@ -13,7 +13,7 @@ from numga.algebras import PGA2D
 from examples import instantiate
 from examples.util.animation import capture
 from examples.util.wgsl import quadrics, simplices
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, panel
 from examples.util.wgsl.simplices import Cap, Topology
 
 # The drawings are of the lap in PGA2D.
@@ -88,7 +88,7 @@ def framed(limits: np.ndarray) -> tuple[plt.Figure, plt.Axes, Camera]:
     ax.set_axis_off()
     figure.tight_layout()
     ax.set(xlim=limits[0], ylim=limits[1])
-    return figure, ax, flat_panel(ax, PGA2D)
+    return figure, ax, panel(ax, mv.x, mv.y, mv.w)
 
 
 def draw_lap(truth: core.Motor, dead: core.Motor, reckoned_ellipsoids, linked_poses: core.Motor) -> plt.Figure:
