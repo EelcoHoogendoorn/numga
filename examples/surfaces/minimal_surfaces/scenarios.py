@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import stack
+from numga import Algebra, stack
 from numga.sparse import spdiag
 from examples.util import shapes
 from examples.surfaces.minimal_surfaces.core import (
@@ -14,7 +14,7 @@ from examples.surfaces.minimal_surfaces.core import (
 )
 
 # The planes of x and of y, upright to the disks, whose duals are the directions across and up them.
-Upright = ga.gatype.from_blades("x y")                                       # Vector+
+Upright = ga.gatype.vector().derive.within(Algebra("x+y+"))                  # Vector+
 
 disk_radius = 1.0
 n_disk_divisions = 10

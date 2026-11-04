@@ -51,8 +51,7 @@ def colours(count: int) -> np.ndarray:
 def space_view(pixels: int, *curves: core.Event) -> solids.View:
     """A view framing every spatial curve, `pixels` across."""
     mv = curves[0].context.multivector
-    Event = curves[0].algebra.gatype.antivector().derive.containing("u v")     # Antivector-
-    space_slice = mv.t ^ (Event & -mv.t.dual())
+    space_slice = mv.t ^ (core.Event & -mv.t.dual())
     points = [solids.origin + solids.context.include_from_algebra(space_slice(batch)) for batch in curves]
     return solids.view(points, 0.0, ELEVATION, AZIMUTH, MARGIN, pixels)
 
@@ -60,8 +59,7 @@ def space_view(pixels: int, *curves: core.Event) -> solids.View:
 def draw_curves(curves: core.Event, width: float, view: solids.View) -> np.ndarray:
     """Each closed spatial curve as a stroke of a width in pixels, in its own colour."""
     mv = curves.context.multivector
-    Event = curves.algebra.gatype.antivector().derive.containing("u v")        # Antivector-
-    space_slice = mv.t ^ (Event & -mv.t.dual())
+    space_slice = mv.t ^ (core.Event & -mv.t.dual())
     points = solids.origin + solids.context.include_from_algebra(space_slice(curves))
     n_curves, n_samples = int(np.prod(points.shape[:-1])), points.shape[-1]
     # Each curve a closed loop of edges, each edge in its curve's colour.

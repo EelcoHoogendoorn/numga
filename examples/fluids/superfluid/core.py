@@ -37,15 +37,17 @@ from numga.extensor import Extensor
 from examples.util.topology import Topology
 
 # The plane, and the mass and the entropy a parcel holds, each a direction of its own with no metric.
-ga = Algebra("x+y+") * Algebra("m0s0")
+space = Algebra("x+y+")
+amounts = Algebra("m0s0")
+ga = space * amounts
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 Point = ga.gatype.antivector()                                                # Antivector-
 Plane = ga.gatype.vector()                                                    # Vector+
 # What a parcel holds, the points that span the plane; the potentials that read it.
-Amount = Point.derive.containing("x y")                                       # Antivector-
-Potential = Plane.derive.within("m s")                                        # Vector+
-Drive = ga.gatype.from_blades("xm ym xs ys")                                  # Bivector+
+Amount = Plane.derive.within(amounts).derive.dual                             # Antivector-
+Potential = Plane.derive.within(amounts)                                      # Vector+
+Drive = ga.gatype.bivector().derive.touching(space, amounts)                  # Bivector+
 Flux = ga.gatype.antibivector()                                               # Antibivector-
 axis = mv.x.dual()                                                            # [] Point-
 across = mv.y.dual()                                                          # [] Point-

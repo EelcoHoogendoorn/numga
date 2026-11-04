@@ -12,7 +12,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 from scipy.spatial import cKDTree
 
-from numga import concatenate, stack
+from numga import Algebra, concatenate, stack
 from numga.extensor import Extensor
 from examples.electromagnetism.dynamo import core
 from examples.util import shapes
@@ -77,7 +77,7 @@ unit = mv.antipseudoscalar([1.0])
 # The cut's turn, and the plane of x and z turned with it: the cut, which reads a point's depth toward the camera.
 turn = (mv.xy * (-np.radians(cut_degrees) / 2)).exp()                             # [] Rotor+
 cut = turn >> mv.y                                                                # [] Plane+
-Across = core.ga.gatype.from_blades("x z")                                        # Vector+
+Across = core.Plane.derive.within(Algebra("x+z+"))                                # Vector+
 # A direction's part within the cut, its part along the cut's normal taken away.
 in_cut = core.Point - cut.dual() * (cut & core.Point)                             # [] Point- <- Point-
 

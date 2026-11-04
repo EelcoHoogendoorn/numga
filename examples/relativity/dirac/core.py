@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import NumpyContext, concatenate
+from numga import Algebra, NumpyContext, concatenate
 from numga.algebras import STA as ga
 
 mv = NumpyContext(ga).multivector
@@ -44,7 +44,7 @@ Antivector = ga.gatype.antivector()                 # Antivector-
 # A spin is the patch of the plane it turns in, intrinsic.
 Spin = ga.gatype.antibivector()                     # Antibivector-
 # Vectors in the observer's space, perpendicular to the time axis.
-Spatial = Vector.derive.within("x y z")             # Vector+
+Spatial = Vector.derive.within(Algebra("x+y+z+"))   # Vector+
 # The plane-wave Dirac equation.
 Hamiltonian = ga.gatype((Even, Even))               # Even+ <- Even+
 # What a spinor does to bivectors beyond its frame's extension.

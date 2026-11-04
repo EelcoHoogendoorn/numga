@@ -6,6 +6,7 @@ from collections.abc import Callable, Iterable
 from functools import lru_cache, wraps
 from typing import TYPE_CHECKING
 
+import numga
 from numga.flyweight import FlyweightFactory
 from numga.subspace import SubSpace
 
@@ -20,6 +21,7 @@ from .traits import (
 
 if TYPE_CHECKING:
     from numga.algebra import Algebra
+    from numga.extensor import Extensor
 
 
 class GATypeFactory(FlyweightFactory[GAType]):
@@ -56,14 +58,24 @@ class GATypeFactory(FlyweightFactory[GAType]):
 
     def __call__(
         self,
-        subspaces: SubSpace | GAType | Iterable[SubSpace | GAType],
+        subspaces: SubSpace | GAType | Iterable[SubSpace | GAType] | Extensor,
         traits: TraitSet = EMPTY_TRAITS,
         fields: tuple[tuple[int, int], ...] = (),
         *,
         orientation: Orientation | None = None,
     ) -> GAType:
         """The type over these axes, output first. A nullary GAType axis carries its orientation; bare
-        subspace axes take `orientation`, which they require: a subspace is a layout and has none."""
+        subspace axes take `orientation`, which they require: a subspace is a layout and has none.
+
+        An extensor expression gives the type of what it produces, with the orientation its construction gives:
+        `ga.gatype(FirstSpinor * SecondSpinor)` for the products of two spinors, `ga.gatype(Spin + Antiscalar)` for
+        the sums of a spin and an antiscalar."""
+        if isinstance(subspaces, numga.extensor.Extensor):
+            if traits != EMPTY_TRAITS or fields or orientation is not None:
+                raise TypeError("an expression's type is what its construction gives: no traits, fields or orientation")
+            if subspaces.algebra is not self.algebra:
+                raise ValueError("the expression belongs to another algebra than this factory's")
+            return subspaces.output_gatype
         if isinstance(subspaces, (SubSpace, GAType)):
             raw_axes = (subspaces,)
         else:

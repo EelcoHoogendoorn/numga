@@ -31,7 +31,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from numga import NumpyContext, concatenate, where
+from numga import Algebra, NumpyContext, concatenate, where
 from numga.algebras import STA as ga
 from numga.extensor import Extensor
 
@@ -41,12 +41,12 @@ Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 Antivector = ga.gatype.antivector()
 # The hole's spin per unit mass: intrinsic, the patch of the plane it turns in, a plane through time.
-Spin = ga.gatype.antibivector().derive.containing("t")
+Spin = Bivector.derive.within(Algebra("x+y+z+")).derive.dual
 Rotor = ga.gatype.rotor()
-# Directions on the camera's screen, along its own x and y: the antivectors that hold both t and z.
-Screen = Antivector.derive.containing("t z")
 # The camera's slices x and y, which read screen directions: vectors, extrinsic.
-ScreenSlice = Vector.derive.within("x y")
+ScreenSlice = Vector.derive.within(Algebra("x+y+"))
+# Directions on the camera's screen, along its own x and y: the antivectors that hold both t and z.
+Screen = ScreenSlice.derive.dual
 ScreenFrame = ga.gatype((Antivector, Screen))                # Antivector- <- Screen
 # The light's polarization covariance, from the slices that read the screen to screen directions.
 Coherency = ga.gatype((Screen, ScreenSlice))                 # Screen <- ScreenSlice

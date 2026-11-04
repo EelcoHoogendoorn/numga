@@ -45,11 +45,12 @@ The `anti` constructors select both complementary grade and intrinsic orientatio
 | `mv.point(coordinates)`, `mv.direction(coordinates)`, in `PGA2D` and `PGA3D` | intrinsic |
 | `mv(gatype, values)` | the orientation of `gatype` |
 
-A type taken from an expression carries the orientation its construction produces. Narrowing a type with `.within`, `.containing`, `.degenerate` or `.nondegenerate` keeps its orientation. Constructing one directly from a subspace requires an explicit orientation:
+A type taken from an expression carries the orientation its construction produces. Narrowing a type with `.derive.within(part)`, `.derive.touching(*parts)`, `.derive.without(part)`, `.derive.degenerate` or `.derive.nondegenerate` keeps its orientation, a part being an algebra whose generators it shares by name and square; `.derive.dual` is the complementary type, its orientation flipped. Constructing one directly from a subspace requires an explicit orientation:
 
 ```python
-Line = (Point & Point).output_gatype                         # Antibivector-
-Resultant = Antibivector.derive.within("x y w")               # Antibivector-
+Line = ga.gatype(Point & Point)                              # Antibivector-
+Strain = Bivector.derive.touching(Algebra("z+"))             # Bivector+
+Resultant = Strain.derive.dual                               # Antibivector-
 Spatial = ga.gatype(ga.subspace("x y z"), orientation=Orientation.extrinsic)  # Vector+
 ```
 

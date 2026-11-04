@@ -59,20 +59,23 @@ from examples.util.topology import Topology
 
 # Planar spacetime, and the entropy a parcel holds, a direction of its own with no metric.
 ga = Algebra("x+y+t-") * Algebra("s0")
+# The plane of space, and what a parcel holds, charge along time and entropy.
+space = Algebra("x+y+")
+amounts = Algebra("t-s0")
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 Point = ga.gatype.antivector()                                                # Antivector-
 Plane = ga.gatype.vector()                                                    # Vector+
 # What a parcel holds, charge along time and entropy, the points that span the plane; and a direction through space.
-Parcel = Point.derive.containing("x y")                                       # Antivector-
-Spatial = Point.derive.containing("t s")                                      # Antivector-
+Parcel = Plane.derive.within(amounts).derive.dual                             # Antivector-
+Spatial = Plane.derive.within(space).derive.dual                              # Antivector-
 # The planes reading a place's run along the conductor and across it; the potentials, the electrochemical potential
 # along t and the temperature along s; their drive; the magnetic field, a plane of space; a flux; a carrier's velocity
 # per drive; and the response, the map from a drive to the flux it drives.
-Upright = ga.gatype.from_blades("x y")                                        # Vector+
-Potential = Plane.derive.within("t s")                                        # Vector+
-Drive = ga.gatype.from_blades("xt yt xs ys")                                  # Bivector+
-Magnetic = ga.gatype.from_blades("xy")                                        # Bivector+
+Upright = Plane.derive.within(space)                                          # Vector+
+Potential = Plane.derive.within(amounts)                                      # Vector+
+Drive = ga.gatype.bivector().derive.touching(space, amounts)                  # Bivector+
+Magnetic = ga.gatype.bivector().derive.within(space)                          # Bivector+
 Flux = ga.gatype.antibivector()                                               # Antibivector-
 Drifting = ga.gatype((Spatial, Drive))                                        # Antivector- <- Bivector+
 Response = ga.gatype((Flux, Drive))                                           # Antibivector- <- Bivector+

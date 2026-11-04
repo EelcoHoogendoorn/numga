@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import NumpyContext, concatenate
+from numga import Algebra, NumpyContext, concatenate
 from numga.algebras import PGA3D as ga
 from examples.mechanics.simplex import barycentric_samples, simplex_inertia_weights
 from examples.util.topology import Topology
@@ -53,17 +53,17 @@ Forque = ga.gatype.antibivector()
 Motor = ga.gatype.rotor()
 Plane = ga.gatype.vector()
 # Lines in the section's plane.
-Strain = Twist.derive.containing("z")
+Strain = Twist.derive.touching(Algebra("z+"))
 # Lines in the section's plane as joins of its points, such as the line through a wall's ends.
-WallLine = Forque.derive.containing("z")
+WallLine = Strain.derive.flipped_orientation
 # Lines along the beam, and couples across it.
-Resultant = Forque.derive.within("x y w")
+Resultant = Strain.derive.dual
 # The fibres' pulls weighted by a warping, a swept area signed by the sense of the sweep: resultants of the
 # other orientation, and their couples across the beam.
-Warped = Twist.derive.within("x y w")
-Couples = Warped.derive.containing("w")
+Warped = Resultant.derive.flipped_orientation
+Couples = Warped.derive.touching(Algebra("w0"))
 # The shifts of a pole across the beam: points at infinity in the section's plane.
-Shift = ga.gatype.antivector().derive.containing("w z")
+Shift = Plane.derive.within(Algebra("x+y+")).derive.dual
 # A bending strain to the resultant of the fibres' pulls.
 Bending = ga.gatype((Resultant, Strain))                   # Resultant <- Strain
 # Any strain to the forque of everything the section exerts.
@@ -194,5 +194,5 @@ def pulls(bending: Bending, points: Point) -> Strain:
 # --- plumbing -------------------------------------------------------------------------
 def point(coordinates: np.ndarray) -> Point:
     """Points of the section at coordinates `[..., 2]`: across and up."""
-    return (mv(Plane.derive.within("x y"), coordinates) + mv.w).dual()
+    return (mv(Plane.derive.within(Algebra("x+y+")), coordinates) + mv.w).dual()
 

@@ -6,7 +6,7 @@ from numbers import Number
 
 from functools import cached_property, lru_cache
 from types import NotImplementedType
-from typing import TYPE_CHECKING, Iterable, Tuple
+from typing import TYPE_CHECKING, Callable, Iterable, Tuple
 
 import numpy as np
 
@@ -14,6 +14,7 @@ import numga
 from numga.algebra.self_product import grade_transform_signs, symmetric_product_support
 from numga.subspace import SubSpace
 
+from .errors import GATypeError
 from .metric import Metric
 from .orientation import Orientation
 from .queries import Form, OverSites, SelfProducts, AxisRoles
@@ -624,6 +625,20 @@ def _generator_mask(algebra, generators: str) -> int:
     return span
 
 
+def _part_mask(algebra: Algebra, part: Algebra | str) -> int:
+    """The generators of a part among an algebra's, matched by name and square, as one mask; a string names basis
+    vectors directly."""
+    if isinstance(part, str):
+        return _generator_mask(algebra, part)
+    span = 0
+    for name, square in zip(part.basis_names, part.signature):
+        if name not in algebra.basis_names or algebra.signature[algebra.basis_names.index(name)] != square:
+            raise GATypeError(f"{part} is no subalgebra of {algebra}: its generator {name} is not one of "
+                              f"{algebra}'s with the same square")
+        span |= 1 << algebra.basis_names.index(name)
+    return span
+
+
 def _comparison_gatype(value: object, like: GAType) -> GAType | None:
     """The other side of a comparison with `like`. Comparisons are by support and traits, so a bare
     subspace compares as the nullary type over it with `like`'s own orientation: nothing is assumed."""
@@ -751,25 +766,59 @@ class Derivations:
         space = gatype.output_subspace.nondegenerate()
         return gatype.algebra.gatype.oriented((space,) + gatype.input_subspaces, gatype.orientations)
 
-    @lru_cache(maxsize=None)
-    def within(self, generators: str) -> GAType:
-        """The output's blades built from these basis vectors alone, such as `"x y z"`, with its
-        orientation, retaining every input axis."""
+    def _restricted(self, keep: Callable[[int], bool]) -> GAType:
+        """The output's blades that `keep` accepts, with its orientation, retaining every input axis."""
 
         gatype = self._gatype
-        span = _generator_mask(gatype.algebra, generators)
-        space = gatype.output_subspace.restrict(mask for mask in gatype.output_subspace.masks if not mask & ~span)
+        space = gatype.output_subspace.restrict(mask for mask in gatype.output_subspace.masks if keep(mask))
         return gatype.algebra.gatype.oriented((space,) + gatype.input_subspaces, gatype.orientations)
+
+    @lru_cache(maxsize=None)
+    def within(self, part: Algebra | str) -> GAType:
+        """The output's blades built from the generators of a part alone, with its orientation, retaining every input
+        axis: `Plane.derive.within(space)` for the planes of space in spacetime, `Even.derive.within(first_space)` for
+        the rotations of the first of two copies of space. A part is an algebra whose generators are this algebra's, by
+        name and with the same square; the scalar lies within every part."""
+
+        span = _part_mask(self._gatype.algebra, part)
+        return self._restricted(lambda mask: not mask & ~span)
+
+    @lru_cache(maxsize=None)
+    def touching(self, part: Algebra, *parts: Algebra) -> GAType:
+        """The output's blades with a generator in each part named, with its orientation, retaining every input axis:
+        `Bivector.derive.touching(space, amounts)` for the drives, a plane of space wedged with an amount,
+        `Bivector.derive.touching(Algebra("t-"))` for the planes through time."""
+
+        spans = tuple(_part_mask(self._gatype.algebra, each) for each in (part, *parts))
+        return self._restricted(lambda mask: all(mask & span for span in spans))
+
+    @lru_cache(maxsize=None)
+    def without(self, part: Algebra) -> GAType:
+        """The output's blades with no generator in a part, with its orientation, retaining every input axis:
+        `Bivector.derive.without(Algebra("t-"))` for the bivectors of space alone in spacetime."""
+
+        span = _part_mask(self._gatype.algebra, part)
+        return self._restricted(lambda mask: not mask & span)
 
     @lru_cache(maxsize=None)
     def containing(self, generators: str) -> GAType:
         """The output's blades that contain every one of these basis vectors, such as `"z"`, with its
         orientation, retaining every input axis."""
 
+        span = _generator_mask(self._gatype.algebra, generators)
+        return self._restricted(lambda mask: mask & span == span)
+
+    @cached_property
+    def dual(self) -> GAType:
+        """The complementary type: the complements of the output's blades, oriented the other way, retaining every
+        input axis. It is the type of what the dual gives, so `Plane.derive.dual` is the type of `Plane.dual()`; in
+        spacetime the directions of space are `Plane.derive.within(space).derive.dual`."""
+
         gatype = self._gatype
-        span = _generator_mask(gatype.algebra, generators)
-        space = gatype.output_subspace.restrict(mask for mask in gatype.output_subspace.masks if mask & span == span)
-        return gatype.algebra.gatype.oriented((space,) + gatype.input_subspaces, gatype.orientations)
+        algebra = gatype.algebra
+        space = algebra.subspace.from_masks(algebra.complement(mask) for mask in gatype.output_subspace.masks)
+        orientations = (gatype.orientation.flipped,) + gatype.input_orientations
+        return algebra.gatype.oriented((space,) + gatype.input_subspaces, orientations)
 
     @cached_property
     def flipped_orientation(self) -> GAType:
