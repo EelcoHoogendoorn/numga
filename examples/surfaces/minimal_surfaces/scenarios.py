@@ -161,7 +161,7 @@ def main() -> None:
 
     # The sums of the sides facing each vertex cancel in the interior.
     for topology, flux in ((plateau_topology, plateau_flux), (enneper_topology, enneper_flux), (catenoid_topology, catenoid_flux)):
-        np.testing.assert_allclose((topology.reading(topology.interior[0]) * flux).kernel, 0.0, atol=1e-14)
+        np.testing.assert_allclose((topology.reading(topology.interior[0], 0) * flux).kernel, 0.0, atol=1e-14)
 
     # The recovered conjugates match the exact ones up to a translation.
     centred_enneper = (enneper_conjugate.batch() - enneper_conjugate.batch().mean(axis=0)).field()

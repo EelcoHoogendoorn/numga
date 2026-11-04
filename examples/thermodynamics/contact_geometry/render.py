@@ -60,8 +60,10 @@ class Chart:
 def charts(family: Extensor, changed_family: Extensor, points: Extensor, tangents: Extensor,
            changed_points: Extensor, changed_tangents: Extensor) -> tuple[Chart, Chart]:
     mv = family.context.multivector
-    energy = art.Diagram(entropy_range, energy_range, (0.0, 0.0), n_rows, n_columns, ("S", "U"), (mv.s, mv.u))
-    free = art.Diagram(temperature_range, free_energy_range, (0.0, 0.0), n_rows, n_columns, ("T", "F"), (mv.s, mv.u))
+    energy = art.Diagram(entropy_range, energy_range, (0.0, 0.0), n_rows, n_columns, ("S", "U"), (mv.s, mv.u),
+                         (0 * mv.s, 1.0))
+    free = art.Diagram(temperature_range, free_energy_range, (0.0, 0.0), n_rows, n_columns, ("T", "F"), (mv.s, mv.u),
+                       (0 * mv.s, 1.0))
     return (Chart(energy, family, points, tangents, "F"),
             Chart(free, changed_family, changed_points, changed_tangents, "U"))
 
@@ -94,7 +96,8 @@ def draw(family: Extensor, changed_family: Extensor, points: Extensor, tangents:
 def draw_energy(family: Extensor, points: Extensor, tangents: Extensor):
     """The energy chart alone, with the tangent at the middle of the section."""
     mv = family.context.multivector
-    energy = art.Diagram(entropy_range, energy_range, (0.0, 0.0), n_rows, n_columns, ("S", "U"), (mv.s, mv.u))
+    energy = art.Diagram(entropy_range, energy_range, (0.0, 0.0), n_rows, n_columns, ("S", "U"), (mv.s, mv.u),
+                         (0 * mv.s, 1.0))
     chart = Chart(energy, family, points, tangents, "F")
     middle = points.shape[0] // 2
     return art.figure(chart.picture(points[middle], tangents[middle], chart.section[:middle + 1]))

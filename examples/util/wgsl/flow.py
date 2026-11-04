@@ -16,7 +16,7 @@ from numga.extensor import Extensor
 from numga.gatype import GAType
 from examples.util.wgsl import Shader, meshes, solids
 from examples.util.wgsl.simplices import view_camera
-from examples.util.wgsl.camera import Camera, extrinsic_first, flat_panel, placing, reading, whole
+from examples.util.wgsl.camera import Camera, extrinsic_first, placing, reading, whole
 from examples.util.wgsl.library import pinned, samples_per_side
 
 Topology = meshes.Topology
@@ -42,11 +42,11 @@ fn hash(place: vec3<f32>) -> f32 {
 
 struct Corner {
     @builtin(position) position: vec4<f32>,
-    @location(0) normal: Tangent,
-    @location(1) tangent: Point,
-    @location(2) place: Point,
-    @location(3) depth: f32,
-    @location(4) colour: vec3<f32>,
+    normal: Tangent,
+    tangent: Point,
+    place: Point,
+    depth: f32,
+    colour: vec3<f32>,
 }
 struct Shade {
     @location(0) colour: vec4<f32>,
@@ -106,8 +106,8 @@ fn hash(place: vec3<f32>) -> f32 {
 
 struct Corner {
     @builtin(position) position: vec4<f32>,
-    @location(0) tangent: Field,
-    @location(1) place: Point,
+    tangent: Field,
+    place: Point,
 }
 struct Shade {
     @location(0) colour: vec4<f32>,
@@ -280,11 +280,10 @@ def layer(points: Extensor, topology: Topology, field: Extensor, camera: Camera,
     return rgba
 
 
-def overlay(ax: Axes, points: Extensor, topology: Topology, field: Extensor,
+def overlay(ax: Axes, points: Extensor, topology: Topology, field: Extensor, camera: Camera,
             reference_speed: float, colour: np.ndarray):
-    """Draw a flat field as a transparent layer over a panel, keeping the panel's existing geometric annotations, the
-    panel looking down on the plane of the points' generators x and y."""
-    camera = flat_panel(ax, points.algebra)
+    """Draw a flat field as a transparent layer over a panel, read by the panel's camera, keeping the panel's existing
+    geometric annotations."""
     rgba = layer(points, topology, field, camera, reference_speed, colour)
     shown = pinned(ax, rgba, (*ax.get_xlim(), *ax.get_ylim()))
     shown.set_zorder(3.5)

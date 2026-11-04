@@ -85,7 +85,7 @@ class DiskDrawing:
         surface_vertices = topology.exterior[0]
         angles = np.linspace(0, 2 * np.pi, n_markers, endpoint=False) + np.pi / 2
         targets = (core.mv.xy * (-angles / 2)).exp() >> (core.mv.x.dual() * radius)   # [markers] Point-
-        surface_points = (topology.reading(surface_vertices) * vertices).batch()  # [surface] Point-
+        surface_points = (topology.reading(surface_vertices, 0) * vertices).batch()  # [surface] Point-
         nearest = (surface_points[:, None] - targets[None]).norm_squared().argmin(axis=0)
         self.markers = surface_vertices[nearest]
         self.corner_mean = topology.incidence[2, 0].mean(axis=0)                  # Scalar+[faces <- vertices]
@@ -135,7 +135,7 @@ def animate_waves(topology: core.Topology, vertices: core.Point, regions: np.nda
     history = deque(maxlen=n_trail_frames)
     for (displacement, dilation_rate, vorticity), moon_place in zip(frames, moon):
         places = vertices + displacement_scale * displacement                      # Point-[vertices]
-        history.append((topology.reading(drawing.markers) * places).batch())
+        history.append((topology.reading(drawing.markers, 0) * places).batch())
         # The beads follow material points of the free surface; their short tails trace its motion.
         trail_places = solids.context.include_from_algebra(stack(list(history), axis=1))   # [markers, trail] Point-
         trajectory = top_middle + up * 0.009 + trail_places                                # [markers, trail] Point-

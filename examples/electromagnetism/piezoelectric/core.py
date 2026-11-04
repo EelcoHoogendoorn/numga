@@ -172,13 +172,13 @@ def boundary_maps(topology: Strip, floating: np.ndarray) -> tuple[SparseExtensor
     """Free displacement nodes and potential groups; the named electrode shares one free voltage."""
     free_movement = np.setdiff1d(np.arange(topology.n_vertices), topology.clamped)
     # Each free displacement is put back at its vertex.
-    movement = ~topology.reading(free_movement) * Point
+    movement = ~topology.reading(free_movement, 0) * Point
     interior = np.setdiff1d(np.arange(topology.n_vertices), np.concatenate((topology.top, topology.bottom)))
     potential_nodes = np.concatenate((interior, floating))
     # Each interior node reads a voltage of its own, and the floating electrode's nodes all read the one after them.
     groups = np.concatenate((np.arange(len(interior)), np.full(len(floating), len(interior))))
     n_voltages = len(interior) + int(len(floating) > 0)
-    voltage = ~topology.reading(potential_nodes) * SparseExtensor.selection(ctx, groups, n_voltages) * Scalar
+    voltage = ~topology.reading(potential_nodes, 0) * SparseExtensor.selection(ctx, groups, n_voltages) * Scalar
     return movement, voltage
 
 

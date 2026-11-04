@@ -13,8 +13,8 @@ dist/
 !/plots/beltrami.gif
 !/plots/bending.gif
 !/plots/boiling.gif
-!/plots/closed_universe_inside.gif
-!/plots/closed_universe_quadrupole.gif
+!/plots/gravitational_waves_inside.gif
+!/plots/gravitational_waves_quadrupole.gif
 !/plots/condensate.gif
 !/plots/dynamo_lines.gif
 !/plots/eigen_fluids.gif

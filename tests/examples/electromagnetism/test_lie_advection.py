@@ -5,6 +5,7 @@ import numpy as np
 from numga import stack
 from numga.sparse import spdiag
 from examples.electromagnetism.lie_advection import core, scenarios
+from examples.util import shapes
 
 
 def test_cartan_magic_formula_and_edge_world_sheets_on_moving_triangle():
@@ -53,7 +54,8 @@ def test_cartan_magic_formula_and_edge_world_sheets_on_moving_triangle():
 
 
 def test_world_sheets_uniform_field_preservation_and_gauge_invariance():
-    topology, vertices = scenarios.disk(1.0, 6)
+    topology, coordinates = shapes.hexagonal_disk(1.0, 6)
+    vertices = scenarios.mv(scenarios.Upright, coordinates).dual().field()
     operators = core.Operators(topology, vertices)
 
     assert operators.d1.gatype == core.ga.gatype((core.Scalar, core.Scalar))
@@ -108,7 +110,8 @@ def test_world_sheets_uniform_field_preservation_and_gauge_invariance():
 
 
 def test_ideal_flux_and_energy_conservation_versus_resistive_dissipation():
-    topology, vertices = scenarios.disk(1.0, 7)
+    topology, coordinates = shapes.hexagonal_disk(1.0, 7)
+    vertices = scenarios.mv(scenarios.Upright, coordinates).dual().field()
     operators = core.Operators(topology, vertices)
     stream = core.vortex_streamfunction(vertices, scenarios.swirl_rate, scenarios.ellipticity)
     _, fixed_sheets, comoving_sheets = core.edge_world_sheets(operators, stream)

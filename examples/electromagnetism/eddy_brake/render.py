@@ -13,7 +13,7 @@ from numga import concatenate
 from numga.extensor import Extensor
 from examples.util.animation import capture
 from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, offset_panel
 from examples.electromagnetism.eddy_brake import core
 
 Topology, as_scalar = core.Topology, core.as_scalar
@@ -163,7 +163,7 @@ def draw(topology: Topology, points: core.Point, areas: core.Scalar, response: c
     for ax, stream, spacing, speed in zip(panels[0], streams, spacings, magnitude):
         ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
         ax.set_axis_off()
-        camera = flat_panel(ax, core.ga)
+        camera = offset_panel(ax, core.mv.x, core.mv.y)
         colours = current_colours(current_scale(speed))[:, :3]
         # The paths halfway between the multiples of the step, so that none runs along the rim, where the
         # streamfunction vanishes.
@@ -189,7 +189,7 @@ def draw_modes(topology: Topology, points: core.Point, streamfunctions: core.Sca
             largest = np.abs(stream).max()
             ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
             ax.set_axis_off()
-            camera = flat_panel(ax, core.ga)
+            camera = offset_panel(ax, core.mv.x, core.mv.y)
             # Levels at equal steps between the extremes, one of them through zero.
             colours = mode_colours((stream / largest + 1) / 2)[:, :3]
             levels = contours.Lines(2 * largest / (mode_levels + 1), 0.0, mode_ink, 1.0)
@@ -236,7 +236,7 @@ def currents(topology: Topology, points: core.Point, areas: core.Scalar, states:
 
     figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=animation_dpi)
     panels = [disc_panel(figure, i, len(shown), extent) for i in range(len(shown))]
-    views = [flat_panel(ax, core.ga) for ax in panels]
+    views = [offset_panel(ax, core.mv.x, core.mv.y) for ax in panels]
     magnets = [magnet(centre, width, field, view) for view in views]
     textures = [simplices.overlay(ax, [np.zeros(view.shape + (4,))]) for ax, view in zip(panels, views)]
     for state in states:
@@ -282,7 +282,7 @@ def animate_heat(topology: Topology, points: core.Point, areas: core.Scalar, fra
 
     figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=animation_dpi)
     panels = [disc_panel(figure, i, len(shown), extent) for i in range(len(shown))]
-    views = [flat_panel(ax, core.ga) for ax in panels]
+    views = [offset_panel(ax, core.mv.x, core.mv.y) for ax in panels]
     magnets = [magnet(centre, width, field, view) for view in views]
     textures = [simplices.overlay(ax, [np.zeros(view.shape + (4,))]) for ax, view in zip(panels, views)]
     for state in frames:

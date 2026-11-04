@@ -27,7 +27,7 @@ from numga.extensor import Extensor
 from numga.gatype import GAType
 from examples.util.wgsl import Shader, meshes, pinned
 from examples.util.wgsl.runner import device
-from examples.util.wgsl.camera import Camera, flat_panel, placing, read, reading
+from examples.util.wgsl.camera import Camera, placing, read, reading
 from examples.util.wgsl.library import samples_per_side
 
 Topology = meshes.Topology
@@ -68,13 +68,13 @@ struct Corner {
     @builtin(position) position: vec4<f32>,
     // The edge's ends on the picture, in samples from its top left; its colour; its distance along its chain and
     // whether it ends in a chevron; its ends' depths along the view.
-    @location(0) @interpolate(flat) ends: vec4<f32>,
-    @location(1) @interpolate(flat) colour: vec3<f32>,
-    @location(2) @interpolate(flat) chain: vec2<f32>,
-    @location(3) @interpolate(flat) depths: vec2<f32>,
+    @interpolate(flat) ends: vec4<f32>,
+    @interpolate(flat) colour: vec3<f32>,
+    @interpolate(flat) chain: vec2<f32>,
+    @interpolate(flat) depths: vec2<f32>,
     // The edge's run in the camera's frame, across, up and toward the viewer, in the scene's units; and which edge.
-    @location(4) @interpolate(flat) run: vec3<f32>,
-    @location(5) @interpolate(flat) edge: u32,
+    @interpolate(flat) run: vec3<f32>,
+    @interpolate(flat) edge: u32,
 }
 
 // A place in clip space as samples from the picture's top left.
@@ -252,9 +252,9 @@ var<uniform> opacity: f32;
 
 struct Corner {
     @builtin(position) position: vec4<f32>,
-    @location(0) @interpolate(flat) middle: vec2<f32>,
-    @location(1) @interpolate(flat) colour: vec3<f32>,
-    @location(2) @interpolate(flat) radius: f32,
+    @interpolate(flat) middle: vec2<f32>,
+    @interpolate(flat) colour: vec3<f32>,
+    @interpolate(flat) radius: f32,
 }
 
 @vertex
@@ -555,8 +555,8 @@ def compositor() -> Compositor:
 
 class Layer:
     """A picture of a panel to be drawn on the GPU: a shader's triangles over the camera's pixels, `rows, columns`,
-    drawn when the panel's pictures are composited, sample by sample over the ones before it. Read as an array, it is
-    composited alone: colour and coverage `[rows, columns, 4]`."""
+    drawn when the panel's pictures are composited, sample by sample over the ones before it. Its own colour and
+    coverage `[rows, columns, 4]` are its picture composited alone, `composited([layer])`."""
 
     def __init__(self, shader: Shader, size: tuple[int, int], n_vertices: int, values: dict) -> None:
         self.shader, self.size, self.n_vertices, self.values = shader, size, n_vertices, values
@@ -564,13 +564,6 @@ class Layer:
     @property
     def shape(self) -> tuple[int, int, int]:
         return self.size + (4,)
-
-    def __array__(self, dtype=None, copy=None) -> np.ndarray:
-        image = composited([self])
-        return image if dtype is None else image.astype(dtype)
-
-    def __getitem__(self, key) -> np.ndarray:
-        return np.asarray(self)[key]
 
 
 def composited(pictures: list) -> np.ndarray:
@@ -583,10 +576,3 @@ def overlay(ax: Axes, pictures: list[np.ndarray]):
     """Pictures of a panel, as its camera draws them, laid over each other in order and pinned into the panel at its
     own pixels, clear where none covers; the image, for an animation to set its data."""
     return pinned(ax, composited(pictures), (*ax.get_xlim(), *ax.get_ylim()))
-
-
-def stroke_overlay(ax: Axes, points: Extensor, topology: Topology, colours: np.ndarray, width: float):
-    """The mesh's edges drawn as strokes into a panel at its own pixels, the panel looking down on the plane of the
-    points' generators x and y; the image, for an animation to set its data."""
-    camera = flat_panel(ax, points.algebra)
-    return pinned(ax, strokes(points, topology, colours, width, camera), (*ax.get_xlim(), *ax.get_ylim()))

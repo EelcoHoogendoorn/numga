@@ -1,13 +1,16 @@
 """Linear systems over fields: a field map, or a bilinear form over fields, solved as one coupled
-system over every pair of a site and a blade."""
+system over every pair of a site and a blade; a map or form without sites, solved against a field, is
+the same system at every site."""
 
 from __future__ import annotations
 
+from functools import partial
 from math import prod
 
 import numpy as np
 
 from numga.extensor import Extensor
+from numga.extensor.fields import _aligned
 from numga.gatype import GAType
 
 from numga.extensions._linalg import _result, _scalars
@@ -50,6 +53,39 @@ def solve_field_form(value: Extensor, rhs: Extensor) -> Extensor:
 def lstsq_field_form(value: Extensor, rhs: Extensor, *, rcond: float = 1e-15) -> Extensor:
     """Least-squares version of the field form solve, with lstsq's cutoff on singular values."""
     return _solve(value, 2, 1, rhs, rhs.arity, _least_squares(value, rcond))
+
+
+@Extensor.solve.register(lambda value, rhs: value.over_sites.is_site_by_site_system(rhs), fields=True)
+def solve_site_by_site(value: Extensor, rhs: Extensor) -> Extensor:
+    """Solve a map or form without sites against a right-hand side with sites: the same system at every
+    site, as it applies there, so that A.solve(A(y)) == y for a field y. A form solved against a form on
+    a field, a gradient as a derivative gives it, gives the field it pairs with at every site."""
+    return _site_by_site(value, rhs, Extensor.solve)
+
+
+@Extensor.lstsq.register(lambda value, rhs: value.over_sites.is_site_by_site_system(rhs), fields=True)
+def lstsq_site_by_site(value: Extensor, rhs: Extensor, *, rcond: float = 1e-15) -> Extensor:
+    """Least-squares version of the solve at every site, with lstsq's cutoff on each site's singular
+    values."""
+    return _site_by_site(value, rhs, partial(Extensor.lstsq, rcond=rcond))
+
+
+def _site_by_site(value: Extensor, rhs: Extensor, solve) -> Extensor:
+    """The solution of a system without sites against a right-hand side with sites, its sites read as
+    trailing batch axes, as the batch axes of the system broadcast over them, and read as sites again."""
+    sites = rhs.gatype.site_shape
+    solution = solve(_aligned(value, (), sites), rhs.batch())
+    # Each axis of the right-hand side gives its sites to the axis of the solution it becomes: a map's
+    # axes keep their places, and a form's last axis becomes the solution's output.
+    places = [0 if value.arity == 2 and axis == rhs.arity else axis for axis, _ in rhs.gatype.fields]
+    order = sorted(range(len(places)), key=places.__getitem__)
+    batch = solution.shape[:solution.ndim - len(sites)]
+    kernel = solution.context.xp.transpose(
+        solution.kernel, _batch_axes(batch) + tuple(len(batch) + site for site in order)
+        + tuple(range(solution.ndim, solution.kernel.ndim)),
+    )
+    fields = tuple((places[site], sites[site]) for site in order)
+    return Extensor._from_prepared_kernel(solution.context, solution.gatype.derive.with_fields(fields), kernel)
 
 
 def _exactly(value: Extensor):

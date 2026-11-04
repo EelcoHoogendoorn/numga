@@ -13,7 +13,7 @@ from examples.util.animation import capture
 from examples.geometry.sundial import core
 from numga import concatenate, stack
 from examples.util.wgsl import fitted, show, simplices, solids
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, offset_panel
 
 # The part of the dial drawn, east and north of the point below the nodus.
 east_range = (-4.5, 4.5)
@@ -87,7 +87,7 @@ def draw_face(ax: plt.Axes, nodus: core.Point, foot: core.Point, seasons: np.nda
     gnomon's base along the noon line: the face's camera and its pictures, the numerals written over them."""
     ax.set(xlim=east_range, ylim=north_range, aspect="equal")
     ax.set_axis_off()
-    camera = flat_panel(ax, core.ga)
+    camera = offset_panel(ax, core.mv.x, core.mv.y)
     # Each season's path in its colour, one per edge of its run.
     season_edges = sunlit_chains(days).elements[1][:, 0] // days.shape[-1]    # [edges]
     paths = shadow_strokes(nodus, days, season_colours(seasons)[season_edges, :3], season_width, camera,

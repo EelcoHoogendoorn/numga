@@ -4,10 +4,12 @@ import numpy as np
 
 from numga import stack
 from examples.surfaces.dirac_kahler import core, scenarios
+from examples.util import shapes
 
 
 def test_mixed_grade_whitney_reconstruction_and_dirac_kahler_product_on_disk():
-    topology, vertices = scenarios.disk(1.0, 5)
+    topology, coordinates = shapes.hexagonal_disk(1.0, 5)
+    vertices = scenarios.mv.vector(coordinates).dual().field()
     operators = core.Operators(topology, vertices)
 
     assert operators.whitney0.gatype == core.ga.gatype((core.Scalar, core.Scalar))
@@ -82,13 +84,13 @@ def test_interior_decoupling_and_hodge_helmholtz_decomposition_of_a_velocity_on_
     potential_circulation = operators.stream_velocity.adjugate()(
         operators.isotropic_resistance(operators.potential_velocity(arbitrary_potential)),
     )
-    np.testing.assert_allclose((topology.reading(interior) * stream_divergence).kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose((topology.reading(interior) * potential_circulation).kernel, 0.0, atol=1e-13)
+    np.testing.assert_allclose((topology.reading(interior, 0) * stream_divergence).kernel, 0.0, atol=1e-13)
+    np.testing.assert_allclose((topology.reading(interior, 0) * potential_circulation).kernel, 0.0, atol=1e-13)
 
     # Harmonic circulation has zero interior stream Laplacian.
     harmonic_stream, true_harmonic = core.harmonic_circulation(operators, inner_ring, interior)
     np.testing.assert_allclose(
-        (topology.reading(interior) * operators.stream_laplacian(harmonic_stream)).kernel, 0.0, atol=1e-13,
+        (topology.reading(interior, 0) * operators.stream_laplacian(harmonic_stream)).kernel, 0.0, atol=1e-13,
     )
 
     # Recovery of the potential, stream and harmonic parts of a velocity on the perforated disk.

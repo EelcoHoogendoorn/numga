@@ -12,7 +12,7 @@ import numpy as np
 
 from examples.util.animation import capture
 from examples.util.wgsl import quadrics, simplices
-from examples.util.wgsl.camera import Camera, flat_panel, panel
+from examples.util.wgsl.camera import Camera, panel
 from examples.util.wgsl.simplices import Cap, Topology
 from examples.math.poncelet import core
 
@@ -48,8 +48,8 @@ def canvas() -> tuple[plt.Figure, list[tuple[plt.Axes, Camera, Camera]]]:
         ax.set(xlim=box[:, 0], ylim=box[:, 1])
         # The lines through the origin along y and along x, which read a pole's place across and up, and the line at
         # infinity, which reads its weight.
-        lines = panel(ax, mv.y.dual() & origin, origin & mv.x.dual())._replace(weight=mv.x.dual() & mv.y.dual())
-        panels.append((ax, flat_panel(ax, core.ga), lines))
+        lines = panel(ax, mv.y.dual() & origin, origin & mv.x.dual(), mv.x.dual() & mv.y.dual())
+        panels.append((ax, panel(ax, mv.x, mv.y, mv.w), lines))
     return figure, panels
 
 

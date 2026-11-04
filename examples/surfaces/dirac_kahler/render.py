@@ -14,7 +14,7 @@ from numga.extensor import Extensor
 from examples.surfaces.dirac_kahler import core
 from examples.util import charts
 from examples.util.wgsl import contours, flow, meshes, simplices, solids
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, offset_panel
 
 sm = solids.mv
 
@@ -121,7 +121,7 @@ def field_panels(topology: core.Topology, vertices: core.Point, fields: core.Poi
     rim = topology.border
     for index, (ax, field, colour) in enumerate(zip(axes, directions, colours)):
         frame_panel(ax, vertices)
-        camera = flat_panel(ax, points.algebra)
+        camera = offset_panel(ax, core.mv.x, core.mv.y)
         levels = [level_curves(topology, vertices, potential, camera)] if index == contoured else []
         simplices.overlay(ax, [contours.picture(points, topology, np.zeros(len(points)), np.array(to_rgb(domain_colour)),
                                                 camera)]

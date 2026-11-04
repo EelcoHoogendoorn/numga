@@ -47,6 +47,8 @@ curvature = (cones(motion) & motion).sum(axis=0)           # [cameras] Scalar <-
 
 **Notebook**: [`examples/relativity/kerr/kerr.ipynb`](../examples/relativity/kerr/kerr.ipynb)
 
+**Explore it live**: [the black hole](https://eelcohoogendoorn.github.io/numga/examples/relativity/kerr/kerr_webgpu.html)
+
 <p align="center"><img src="../plots/kerr.gif" alt="The hot disk of gas around a rotating black hole, bent around its shadow as it orbits" width="400" /></p>
 
 ```python
@@ -162,9 +164,11 @@ effective = pullback(inertia(rolling))                                 # Angular
 
 ## 8. Gravitational Waves of a Closed Universe
 
-**Notebook**: [`examples/relativity/closed_universe/waves.ipynb`](../examples/relativity/closed_universe/waves.ipynb)
+**Notebook**: [`examples/relativity/gravitational_waves/waves.ipynb`](../examples/relativity/gravitational_waves/waves.ipynb)
 
-<p align="center"><img src="../plots/closed_universe_quadrupole.gif" alt="A gravitational wave travelling round a closed universe, its stretch drawn on a sphere, rung by strain gauges and crossed by light" width="300" /></p>
+**Explore it live**: [the gravitational wave](https://eelcohoogendoorn.github.io/numga/examples/relativity/gravitational_waves/gravitational_waves_webgpu.html)
+
+<p align="center"><img src="../plots/gravitational_waves_quadrupole.gif" alt="A gravitational wave travelling round a closed universe, its stretch drawn on a sphere, rung by strain gauges and crossed by light" width="300" /></p>
 
 ```python
 ramps = faces / (faces & corners)                                                     # [corners] Plane+[cells]

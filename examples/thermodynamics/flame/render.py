@@ -69,7 +69,7 @@ def burning_paper(points: Extensor, topology: Topology, camera: Camera, heat: np
     base = (1 - charred) * unburnt_colour + charred * ((1 - smouldering) * burnt_colour + smouldering * ember_colour)
     flame = glow_map(glow_start + (glow_end - glow_start) * glow[:, 0])[:, :3]
     colours = (1 - glow) * base + glow * flame
-    return on_white(contours.picture(points, topology, charred[:, 0], colours, camera))
+    return on_white(simplices.composited([contours.picture(points, topology, charred[:, 0], colours, camera)]))
 
 
 # --- drawing --------------------------------------------------------------------------
@@ -77,7 +77,7 @@ def energy_picture(points: Extensor, topology: Topology, camera: Camera, held: n
     """The energy the mixture's parcels hold beyond the mean unburnt mixture's `[vertices]`, red where more and blue
     where less, as bytes `[rows, columns, 3]`."""
     colours = energy_map(np.clip(0.5 + span / 2 * held / energy_span, 0, 1))[:, :3]
-    return on_white(contours.picture(points, topology, held, colours, camera))
+    return on_white(simplices.composited([contours.picture(points, topology, held, colours, camera)]))
 
 
 def draw_start(topology: Topology, vertices: Extensor, radius: float, energy: Extensor, parcels: Extensor) -> Figure:

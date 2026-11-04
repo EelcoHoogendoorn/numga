@@ -98,7 +98,7 @@ def draw_setup(
     handles = [Line2D([], [], marker="o", linestyle="none", color=THRUSTER_COLOUR, label="Thrusters"),
                Line2D([], [], marker="o", linestyle="none", color=SITE_COLOUR, label="Tracking points")]
     axes.legend(handles=handles, loc="upper right", frameon=False)
-    camera = panel(axes, core.mv.x, core.mv.y)
+    camera = panel(axes, core.mv.x, core.mv.y, core.mv.w)
     surface, _ = _hulls(1, len(hull))
     simplices.overlay(axes, [
         contours.picture(hull, surface, np.zeros(len(hull)), to_rgb(BODY_COLOUR), camera, opacity=0.16),
@@ -121,7 +121,7 @@ def draw_approaches(hull: core.Point, poses: core.Motor, labels: tuple[str, ...]
     for axes, label in zip(panels[0], labels):
         _axes(axes, limits, label)
     for case, axes in enumerate(panels[0]):
-        camera = panel(axes, core.mv.x, core.mv.y)
+        camera = panel(axes, core.mv.x, core.mv.y, core.mv.w)
         # Equal distances along the path keep the ghost hulls apart near the final pose: each step's length, the
         # size of the line through the centres before and after it.
         steps = (centers[:-1, case] & centers[1:, case]).norm().to_array()   # [times - 1] float
@@ -160,7 +160,7 @@ def draw_costs(values: core.StateCost, labels: tuple[str, ...]) -> plt.Figure:
     for axes, label in zip(panels[0], labels):
         _axes(axes, limits, label)
     for case, axes in enumerate(panels[0]):
-        camera = panel(axes, core.mv.x, core.mv.y)
+        camera = panel(axes, core.mv.x, core.mv.y, core.mv.w)
         # The same contour value makes the accumulated cost comparable at different horizons.
         simplices.overlay(axes, [
             contours.picture(points.reshape(-1), grid, costs[index, case].to_array().reshape(-1), np.zeros(3), camera,
@@ -208,7 +208,7 @@ def animate(
             _axes(axes, limits, label)
         figure.canvas.draw()
         figure.set_layout_engine("none")
-    cameras = [panel(axes, core.mv.x, core.mv.y) for axes in panels[0]]
+    cameras = [panel(axes, core.mv.x, core.mv.y, core.mv.w) for axes in panels[0]]
     guides = [[_target(camera, hull),
                simplices.strokes(trajectories[:, case], simplices.Topology.chains([len(trajectories)]), to_rgb(BODY_COLOUR),
                                  LINE_WIDTH, camera, opacity=0.3)]

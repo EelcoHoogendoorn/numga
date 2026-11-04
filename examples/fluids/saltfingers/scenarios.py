@@ -47,7 +47,7 @@ def fingers():
     vertices = (core.volume + mv(core.Upright, places).dual()).field()          # Point-[opened vertices]
     water = core.forms(closed, opened, vertices, density, prandtl, salt_diffusivity)
     temperature, salinity = layered(closing * (mv.y & vertices), disturbance)  # Scalar+[vertices], Scalar+[vertices]
-    frames = core.fingering(water, closed.reading(closed.interior[0]), density, expansion, np.array(expansion / ratio),
+    frames = core.fingering(water, closed.reading(closed.interior[0], 0), density, expansion, np.array(expansion / ratio),
                             rayleigh * prandtl / expansion, temperature, salinity, dt, n_steps, n_stride)
     return closed, opened, opening, vertices, temperature, salinity, islice(frames, n_flat, None)
 

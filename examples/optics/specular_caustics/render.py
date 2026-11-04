@@ -12,7 +12,7 @@ from scipy.ndimage import gaussian_filter
 
 from numga import concatenate, stack
 from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import panel
+from examples.util.wgsl.camera import offset_panel
 from examples.optics.specular_caustics import core
 
 dpi = 100
@@ -105,7 +105,7 @@ def draw_critical(
     receiver_curves = concatenate([between_samples(chart_landings, curve[:, ::-1]) for curve in source_curves])
     chains = simplices.Topology.chains([len(curve) for curve in source_curves])
     simplices.overlay(axes, [simplices.strokes(receiver_curves, chains, to_rgb(fold_colour), fold_width,
-                                               panel(axes, core.mv.x, core.mv.y))])
+                                               offset_panel(axes, core.mv.x, core.mv.y))])
     return figure
 
 
@@ -141,7 +141,7 @@ def draw_paths(
     axes = figure.add_axes((0, 0, 1, 1))
     axes.set(xlim=(left, right), ylim=(bottom, incident_height), aspect="equal")
     axes.set_axis_off()
-    camera = panel(axes, core.mv.x, core.mv.z)
+    camera = offset_panel(axes, core.mv.x, core.mv.z)
     # The water, between the receiver and the surface: the surface's samples, and below each its foot on the
     # receiver, a strip of triangles between the two rows.
     feet = surface - core.up * ((core.mv.z & surface) - lower)                                   # [samples] Direction-

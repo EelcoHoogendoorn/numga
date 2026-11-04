@@ -6,8 +6,9 @@ from itertools import islice
 
 import numpy as np
 
-from numga import NumpyContext, concatenate, stack
+from numga import NumpyContext, stack
 from numga.algebras import VGA2D as ga
+from examples.util import shapes
 from examples.util.topology import Topology
 
 mv = NumpyContext(ga).multivector
@@ -30,22 +31,6 @@ frame_duration_ms = 40
 
 
 # --- plumbing -------------------------------------------------------------------------
-def disk(radius: float, n_divisions: int) -> tuple[Topology, Point]:
-    """The disk is triangulated into nearly equilateral triangles, with its first vertex at the origin."""
-    spacing = radius / n_divisions
-    indices = np.arange(-n_divisions, n_divisions + 1)
-    columns, rows = np.meshgrid(indices, indices, indexing="ij")
-    layers = np.maximum.reduce((abs(columns), abs(rows), abs(columns + rows)))
-    inside = (layers > 0) & (layers <= n_divisions)
-    lattice = np.stack((columns[inside], rows[inside]), axis=-1)             # [nodes, axes]
-    unit = mv.x.dual()                                                       # [] Point-
-    axes = stack((unit, (mv.xy * (-np.pi / 6)).exp() >> unit))               # [axes] Point-
-    positions = (axes * lattice).sum(axis=-1)                                # [nodes] Point-
-    positions = spacing * layers[inside] * positions.normalized()            # [nodes] Point-
-    vertices = concatenate((unit[None] * 0, positions)).field()              # Point-[vertices]
-    return Topology.triangulate(vertices), vertices
-
-
 def annulus(hole_radius: float, rim_radius: float,
             n_rings: int) -> tuple[Topology, Point, np.ndarray, np.ndarray]:
     """The perforated disk has staggered circular rings of vertices from `hole_radius` to `rim_radius`."""
@@ -59,11 +44,12 @@ def annulus(hole_radius: float, rim_radius: float,
     angles = 2 * np.pi * (np.arange(populations.sum()) - offsets + (ring % 2) / 2) / populations[ring]
     directions = (mv.xy * (-angles / 2)).exp() >> mv.x.dual()                # [vertices] Point-
     vertices = (directions * radii[ring]).field()                            # Point-[vertices]
-    raw_topology = Topology.triangulate(vertices)
+    # Their Delaunay mesh, from their readings across and up by the planes x and y, one step outside the algebra.
+    raw_topology, _ = shapes.delaunay((stack((mv.x, mv.y)) & vertices.batch()[..., None]).to_array())
     triangles = raw_topology.elements[2]
     # Every Delaunay triangle spanning the central hole has all three corners on the innermost ring.
     keep = ~np.all(ring[triangles] == 0, axis=-1)
-    topology = raw_topology.subset(keep)
+    topology = raw_topology.subset(keep, -1)
     inner_ring = np.flatnonzero(ring == 0)
     interior = np.flatnonzero((ring > 0) & (ring < n_rings - 1))
     return topology, vertices, inner_ring, interior
@@ -77,7 +63,8 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
 
     # 1. Mixed-grade Whitney reconstruction and the single-product Dirac-Kahler derivative on a disk.
-    disk_topology, disk_vertices = disk(disk_radius, n_disk_divisions)
+    disk_topology, disk_coordinates = shapes.hexagonal_disk(disk_radius, n_disk_divisions)
+    disk_vertices = mv.vector(disk_coordinates).dual().field()               # Point-[vertices]
     disk_ops = Operators(disk_topology, disk_vertices)
     x, y = mv.x & disk_vertices, mv.y & disk_vertices                        # Scalar+[vertices], Scalar+[vertices]
     scalar_potential = 0.5 * (x.squared() - y.squared()) + 0.35 * x          # Scalar+[vertices]

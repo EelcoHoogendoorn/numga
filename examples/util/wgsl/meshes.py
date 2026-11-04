@@ -56,11 +56,11 @@ var<storage, read> normals: array<Corners>;
 // Interpolated at every sample of a pixel, so its colour is supersampled along with its edges.
 struct Corner {
     @builtin(position) position: vec4<f32>,
-    @location(0) @interpolate(perspective, sample) values: vec4<f32>,
-    @location(1) @interpolate(flat) face_values: vec4<f32>,
-    @location(2) @interpolate(perspective, sample) normal: Tangent,
-    @location(3) @interpolate(perspective, sample) corner: vec3<f32>,
-    @location(4) @interpolate(perspective, sample) depth: f32,
+    @interpolate(perspective, sample) values: vec4<f32>,
+    @interpolate(flat) face_values: vec4<f32>,
+    @interpolate(perspective, sample) normal: Tangent,
+    @interpolate(perspective, sample) corner: vec3<f32>,
+    @interpolate(perspective, sample) depth: f32,
 }
 
 // A pixel's colour, and its depth along the view in the depth target's first channel.

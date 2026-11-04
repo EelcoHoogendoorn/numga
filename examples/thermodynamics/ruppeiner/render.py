@@ -71,10 +71,11 @@ class Charts:
     def __init__(self, metric_of: Function, curvature_of: Function, pressure_of: Function, mv) -> None:
         self.metric_of, self.pressure_of, self.mv = metric_of, pressure_of, mv
         self.plane = art.Diagram(volume_range, temperature_range, (0.0, temperature_range[0]), n_rows, n_columns,
-                                 ("V", "T"), (mv.v, mv.t))
+                                 ("V", "T"), (mv.v, mv.t), (0 * mv.v, 1.0))
         # The camera of the chart the ellipses are conics of, framed as the plane's own.
-        self.conic_camera = self.plane.reading(art.mv.x, art.mv.y)
-        self.isotherm = art.Diagram(volume_range, pressure_range, (0.0, 0.0), n_rows, n_columns, ("V", "p"))
+        self.conic_camera = self.plane.reading(art.mv.x, art.mv.y, art.mv.w, 0.0)
+        self.isotherm = art.Diagram(volume_range, pressure_range, (0.0, 0.0), n_rows, n_columns, ("V", "p"),
+                                    (art.mv.x, art.mv.y), (art.mv.w, 0.0))
         grid = mv.v.dual() * grid_volumes[None, :] + mv.t.dual() * grid_temperatures[:, None]
         # The mechanical part of the cost, its value on a variation of the volume alone; the spinodal where it vanishes.
         mechanical = metric_of(grid)(mv.v.dual()) & mv.v.dual()                   # [temperatures, volumes] Scalar+
@@ -159,7 +160,8 @@ def scaling(states: Extensor, curvature_of: Function):
     mv = states.context.multivector
     distance = np.log10((mv.t & states).to_array() - 1)
     curvature = np.log10(curvature_of(states).to_array())
-    diagram = art.Diagram((-3.0, 0.0), (-0.5, 5.5), (-3.0, -0.5), n_rows, n_columns, ("log(T - 1)", "log R"))
+    diagram = art.Diagram((-3.0, 0.0), (-0.5, 5.5), (-3.0, -0.5), n_rows, n_columns, ("log(T - 1)", "log R"),
+                          (art.mv.x, art.mv.y), (art.mv.w, 0.0))
     # The line falling as the inverse square, through a point a little above the curve's first.
     through, falling = art.chart_points(distance[0], curvature[0] + 0.4), art.chart_directions(1.0, -2.0)
     reference = art.tangent_lines(diagram, through, falling, np.linspace(-3.0, 0.0, 60))   # [samples] Point-

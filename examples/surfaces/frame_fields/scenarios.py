@@ -42,19 +42,17 @@ def triangle_samples(corners: Point, n_subdivisions: int) -> Point:
 
 def single_triangle(n_subdivisions: int, n_fine_levels: int) -> tuple[Point, Point, Topology, Point, Rotor]:
     """A tilted 3D triangle, its interior sample lattice, a fine surface mesh, and three corner rotors."""
-    ex, ey, ez = mv.x.dual(), mv.y.dual(), mv.z.dual()                       # [] Point-, [] Point-, [] Point-
-    corners = stack((
-        ex * 0.0 + ey * 0.0 + ez * 0.05,
-        ex * 1.15 + ey * 0.14 - ez * 0.12,
-        ex * 0.36 + ey * 0.98 + ez * 0.24,
-    ))                                                                       # [corners] Point-
+    # The corners across x, y and z.
+    corner_coordinates = np.array([[0.0, 0.0, 0.05], [1.15, 0.14, -0.12], [0.36, 0.98, 0.24]])   # [corners, 3]
+    corners = mv.vector(corner_coordinates).dual()                           # [corners] Point-
     corner_rotors = stack((
         (mv.xy * (-0.35 / 2) + mv.yz * (0.25 / 2)).exp(),
         (mv.yz * (-1.25 / 2) + mv.zx * (0.55 / 2)).exp(),
         (mv.zx * (-1.35 / 2) - mv.xy * (0.65 / 2)).exp(),
     ))                                                                       # [corners] Rotor+
     # The triangle split at its edges' midpoints, for drawing the field smoothly across it.
-    topology, fine_vertices = Topology(3, np.array([[0, 1, 2]])).midpoint_split(corners.field(), n_fine_levels)
+    topology, fine_coordinates = shapes.midpoint_split(Topology(3, [[0, 1, 2]]), corner_coordinates, n_fine_levels)
+    fine_vertices = mv.vector(fine_coordinates).dual().field()               # Point-[vertices]
     return corners, triangle_samples(corners, n_subdivisions), topology, fine_vertices, corner_rotors
 
 
@@ -162,7 +160,7 @@ def main() -> None:
 
     _, rotor_laplacian, _, _, _ = rotor_laplacian_operators(saddle_topology, saddle_vertices)
     free_vertices = saddle_topology.interior[0]
-    free = ~saddle_topology.reading(free_vertices) * Rotor
+    free = ~saddle_topology.reading(free_vertices, 0) * Rotor
     np.testing.assert_allclose(free.adjoint()(rotor_laplacian(harmonic_chords)).kernel, 0.0, atol=1e-11)
 
     relaxation_energies = stack([

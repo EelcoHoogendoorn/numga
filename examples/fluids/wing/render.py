@@ -10,10 +10,11 @@ from matplotlib.colors import TwoSlopeNorm, to_rgb, to_rgba
 
 from numga import stack
 
+from examples.util import shapes
 from examples.util.animation import capture
 from examples.util.topology import Topology
 from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, flat_panel, panel
+from examples.util.wgsl.camera import Camera, offset_panel
 from examples.fluids.wing import core
 
 window = (-3.2, 3.2, -1.8, 1.8)
@@ -74,16 +75,17 @@ def draw(ax, points: core.Point, velocity: core.Point, stream: core.Bivector, li
     topology = Topology.loops([points.shape[1]]).product(Topology.chains([points.shape[0]]))
     places = points.reshape(-1)                                              # [rings * angles] Point-
     streamlines = contours.Lines(stream_spacing, 0.0, stream_ink, stream_width)
-    camera = flat_panel(ax, core.ga)
+    camera = offset_panel(ax, core.mv.x, core.mv.y)
     # The wing filled by the triangles of its outline's hull, under the flow, whose rings start at the wing's surface
     # and cover all of the hull outside it.
     outline = points[0]                                                      # [angles] Point-
+    hull, _ = shapes.delaunay((stack((core.mv.x, core.mv.y)) & outline.batch()[..., None]).to_array())
     # The lift from the origin, as it is, read along the directions x and y: `lift & mv.x.dual()` is `mv.x | lift`, its
     # share along x; a stroke ending in a chevron.
     push = lift * lift_scale                                                 # [] Force+
-    forces = panel(ax, core.mv.x.dual(), core.mv.y.dual())
+    forces = offset_panel(ax, core.mv.x.dual(), core.mv.y.dual())
     simplices.overlay(ax, [
-        contours.picture(outline, Topology.triangulate(outline), np.zeros(len(outline)), rgb(wing_colour), camera),
+        contours.picture(outline, hull, np.zeros(len(outline)), rgb(wing_colour), camera),
         contours.picture(places, topology, pressure.reshape(-1), colours.reshape(-1, 3), camera, bands=bands),
         contours.picture(places, topology, stream_values.reshape(-1), np.ones(3), camera, lines=(streamlines,),
                          opacity=0.0),
@@ -142,7 +144,7 @@ def bipolar(grid: core.Point, grid_images: core.Point, circle: core.Point, circl
             result.subplots(1, 2), (grid, grid_images), (circle, circle_image), (critical, 2 * critical)):
         ax.set(xlim=window[:2], ylim=window[2:], xticks=[], yticks=[])
         ax.set_aspect("equal")
-        camera = flat_panel(ax, core.ga)
+        camera = offset_panel(ax, core.mv.x, core.mv.y)
         n_curves, n_samples = curves.shape
         # The marks and their reflections through the origin.
         simplices.overlay(ax, [

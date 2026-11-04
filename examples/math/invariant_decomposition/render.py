@@ -12,7 +12,7 @@ from matplotlib.colors import to_rgb
 from examples.math.invariant_decomposition import core
 from examples.util.animation import capture
 from examples.util.wgsl import compose, fitted, show, simplices, solids
-from examples.util.wgsl.camera import Camera, panel
+from examples.util.wgsl.camera import Camera, offset_panel
 
 # The planes that read a point along a direction of space.
 Vector = core.ga.gatype.vector()                                               # Vector+
@@ -89,7 +89,7 @@ def layout(points: core.Antivector, circles: core.Antivector, parts: core.Bivect
         ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
         ax.set_axis_off()
         # The plane's camera reads the circle by the planes along its two directions.
-        cameras.append(panel(ax, across[plane], along[plane]))
+        cameras.append(offset_panel(ax, across[plane], along[plane]))
         images.append(simplices.overlay(ax, [plane_image(circles[plane], colour, index, cameras[plane])]))
 
     def move(moment: int) -> None:

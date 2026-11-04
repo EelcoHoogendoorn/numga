@@ -11,7 +11,7 @@ from numga.extensor import Extensor
 
 from examples.math.doubled_algebra import core
 from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import panel
+from examples.util.wgsl.camera import offset_panel
 
 reference_colour, grid_colour, boundary_colour, fill_colour, dot_colour = (
     np.array(to_rgb(colour)) for colour in ("#cbd2d8", "#3885a0", "#cc793e", "#fff1df", "#3b4146"))
@@ -54,7 +54,7 @@ def draw_shear(
     ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
     ax.set_axis_off()
     # The camera reads this algebra's places, vectors, as they are, by the planes that read their x and y.
-    camera = panel(ax, *readers(boundary))
+    camera = offset_panel(ax, *readers(boundary))
     n_lines = np.prod(grid.shape[:-1])
     lines = simplices.Topology.chains([grid.shape[-1]] * n_lines)
     square = simplices.Topology(len(boundary), np.array([[0, 1, 2], [0, 2, 3]]))
