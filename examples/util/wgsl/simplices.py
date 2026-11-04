@@ -68,13 +68,13 @@ struct Corner {
     @builtin(position) position: vec4<f32>,
     // The edge's ends on the picture, in samples from its top left; its colour; its distance along its chain and
     // whether it ends in a chevron; its ends' depths along the view.
-    @location(0) @interpolate(flat) ends: vec4<f32>,
-    @location(1) @interpolate(flat) colour: vec3<f32>,
-    @location(2) @interpolate(flat) chain: vec2<f32>,
-    @location(3) @interpolate(flat) depths: vec2<f32>,
+    @interpolate(flat) ends: vec4<f32>,
+    @interpolate(flat) colour: vec3<f32>,
+    @interpolate(flat) chain: vec2<f32>,
+    @interpolate(flat) depths: vec2<f32>,
     // The edge's run in the camera's frame, across, up and toward the viewer, in the scene's units; and which edge.
-    @location(4) @interpolate(flat) run: vec3<f32>,
-    @location(5) @interpolate(flat) edge: u32,
+    @interpolate(flat) run: vec3<f32>,
+    @interpolate(flat) edge: u32,
 }
 
 // A place in clip space as samples from the picture's top left.
@@ -252,9 +252,9 @@ var<uniform> opacity: f32;
 
 struct Corner {
     @builtin(position) position: vec4<f32>,
-    @location(0) @interpolate(flat) middle: vec2<f32>,
-    @location(1) @interpolate(flat) colour: vec3<f32>,
-    @location(2) @interpolate(flat) radius: f32,
+    @interpolate(flat) middle: vec2<f32>,
+    @interpolate(flat) colour: vec3<f32>,
+    @interpolate(flat) radius: f32,
 }
 
 @vertex

@@ -69,8 +69,8 @@ var<storage, read> band_colours: array<vec4<f32>>;
 
 struct Corner {
     @builtin(position) position: vec4<f32>,
-    @location(0) value: f32,
-    @location(1) colour: vec3<f32>,
+    value: f32,
+    colour: vec3<f32>,
 }
 
 @vertex

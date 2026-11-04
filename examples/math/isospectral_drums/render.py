@@ -107,9 +107,9 @@ struct Tile {
 // Interpolated at every sample of a pixel, so the colour and the inked lines are supersampled with the edges.
 struct Corner {
     @builtin(position) position: vec4<f32>,
-    @location(0) @interpolate(perspective, sample) value: f32,
-    @location(1) @interpolate(perspective, sample) shares: vec3<f32>,
-    @location(2) @interpolate(flat) rim: vec3<f32>,
+    @interpolate(perspective, sample) value: f32,
+    @interpolate(perspective, sample) shares: vec3<f32>,
+    @interpolate(flat) rim: vec3<f32>,
 }
 
 @vertex
@@ -120,8 +120,8 @@ fn place(@builtin(vertex_index) index: u32) -> Corner {
     // The point's share of each of its tile's corners: the area it spans with the other two, over the tile's. Each
     // is nothing on the edge opposite its corner and grows evenly away from it.
     let area = (tile.b - tile.a) & (tile.c - tile.a);
-    let shares = vec3<f32>((tile.b - point) & (tile.c - point), (tile.c - point) & (tile.a - point),
-                           (tile.a - point) & (tile.b - point)) / area;
+    let shares = vec3<f32>(((tile.b - point) & (tile.c - point)) / area, ((tile.c - point) & (tile.a - point)) / area,
+                           ((tile.a - point) & (tile.b - point)) / area);
     let offset = point - centre;
     return Corner(vec4<f32>((mv.x & offset) * scale, (mv.y & offset) * scale, 0.5, 1.0), values[face[index % 3]],
                   shares, tile.rim);

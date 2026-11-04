@@ -42,11 +42,11 @@ fn hash(place: vec3<f32>) -> f32 {
 
 struct Corner {
     @builtin(position) position: vec4<f32>,
-    @location(0) normal: Tangent,
-    @location(1) tangent: Point,
-    @location(2) place: Point,
-    @location(3) depth: f32,
-    @location(4) colour: vec3<f32>,
+    normal: Tangent,
+    tangent: Point,
+    place: Point,
+    depth: f32,
+    colour: vec3<f32>,
 }
 struct Shade {
     @location(0) colour: vec4<f32>,
@@ -104,8 +104,8 @@ fn hash(place: vec3<f32>) -> f32 {
 
 struct Corner {
     @builtin(position) position: vec4<f32>,
-    @location(0) tangent: Field,
-    @location(1) place: Point,
+    tangent: Field,
+    place: Point,
 }
 struct Shade {
     @location(0) colour: vec4<f32>,

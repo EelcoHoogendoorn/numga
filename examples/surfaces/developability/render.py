@@ -47,7 +47,7 @@ const far = 100.0;
 // A corner of a face on the image, and its face's colour, the same at every corner.
 struct Corner {
     @builtin(position) position: vec4<f32>,
-    @location(0) @interpolate(flat) colour: vec3<f32>,
+    @interpolate(flat) colour: vec3<f32>,
 }
 
 @vertex

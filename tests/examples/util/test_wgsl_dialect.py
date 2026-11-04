@@ -1,12 +1,16 @@
 """numga's WGSL dialect computes with scalars of either orientation as numga does: in a shader, a quotient, a product
-or a reciprocal has numga's value and numga's orientation, which decides where it may be stored."""
+or a reciprocal has numga's value and numga's orientation, which decides where it may be stored, and a function of a
+number has numga's orientation, or is refused where numga refuses the number. A value of the algebra of any size crosses
+from the vertex stage to the fragment stage whole."""
+
+from itertools import product
 
 import numpy as np
 import pytest
 
 pytest.importorskip("wgpu")
 
-from numga import Algebra, NumpyContext
+from numga import Algebra, GATypeError, NumpyContext, Orientation, stack
 
 from examples.util.wgsl import Shader
 
@@ -82,3 +86,81 @@ def test_a_quotient_of_the_other_orientation_is_not_stored():
                            "var<storage, read_write> facets_over_readings: array<Plane>;")
     with pytest.raises(SyntaxError):
         Shader(wrong, ga, types, {})
+
+
+# The product of two planes, a scalar and a bivector, seven coefficients, carried from the vertices of a triangle over
+# the whole picture to its fragments with a point after it, and the point turned by it there, read by the planes x, y,
+# z and w.
+crossing_source = """
+var<uniform> first: Plane;
+var<uniform> second: Plane;
+var<uniform> place: Point;
+
+struct Corner {
+    @builtin(position) position: vec4<f32>,
+    turn: Turn,
+    place: Point,
+}
+
+@vertex
+fn spread(@builtin(vertex_index) index: u32) -> Corner {
+    let corner = array<vec2<f32>, 3>(vec2<f32>(-1, -1), vec2<f32>(3, -1), vec2<f32>(-1, 3))[index];
+    return Corner(vec4<f32>(corner, 0.5, 1.0), first * second, place);
+}
+
+@fragment
+fn shade(corner: Corner) -> @location(0) vec4<f32> {
+    let moved = corner.turn >> corner.place;
+    return vec4<f32>(mv.x & moved, mv.y & moved, mv.z & moved, mv.w & moved);
+}
+"""
+
+
+def test_a_value_of_seven_coefficients_crosses_between_stages():
+    random = np.random.default_rng(5)
+    first, second = mv.vector(random.normal(size=(2, 4)))                      # [] Plane+, Plane+
+    place = mv.vector(random.normal(size=4)).dual()                             # [] Point-
+    turn = first * second                                                       # [] Even+
+    shader = Shader(crossing_source, ga, types | dict(Turn=turn.gatype), {}, targets=("rgba32float",))
+    image, = shader.draw((4, 4), 3, first=first, second=second, place=place)
+    expected = (stack((mv.x, mv.y, mv.z, mv.w)) & (turn >> place)).to_array()   # [4]
+    assert np.abs(image - expected).max() <= SINGLE_PRECISION * np.abs(expected).max()
+
+
+# numga's functions of a number, with the bounds of the one that takes them, and two that numga has not.
+functions = dict(square_root=(), inverse_square_root=(), exp=(), log=(), sin=(), cos=(), tan=(), arcsin=(), arccos=(),
+                 arctan=(), sinh=(), cosh=(), tanh=(), abs=(), inverse=(), clip=(0.0, 1.0), sign=(), floor=())
+# A number of either orientation, by the name of a uniform of it.
+numbers = dict(extrinsic=ga.gatype.scalar(), intrinsic=ga.gatype.antipseudoscalar())
+
+
+def test_functions_of_numbers_have_numgas_orientation():
+    disagreements = []
+    for (name, bounds), orientation, given in product(functions.items(), numbers, (False, True)):
+        number = mv(numbers[orientation], [0.5])                                # [] Scalar+ or Scalar-
+        try:
+            result = getattr(number, name)(*bounds).gatype.orientation.value
+        except (GATypeError, AttributeError):
+            result = None
+        # The function of a number read at run time, or given when the shader compiles, added to a number of the
+        # orientation numga gives its result: numga adds only numbers of one orientation.
+        source = f"""
+var<uniform> extrinsic: f32;
+var<uniform> intrinsic: Intrinsic;
+{"" if given else "var<uniform> number: Number;"}
+var<storage, read_write> results: array<f32>;
+
+@compute @workgroup_size(1)
+fn main() {{
+    results[0] = number.{name}({", ".join(map(str, bounds))}) + {result or "extrinsic"};
+}}
+"""
+        try:
+            Shader(source, ga, dict(Intrinsic=numbers["intrinsic"], Number=numbers[orientation]),
+                   dict(number=number) if given else {})
+            taken = True
+        except SyntaxError:
+            taken = False
+        if taken != (result is not None):
+            disagreements.append((name, orientation, "given" if given else "read"))
+    assert not disagreements

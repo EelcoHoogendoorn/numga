@@ -51,7 +51,7 @@ var<uniform> step_up: Point;
 
 struct Corner {
     @builtin(position) position: vec4<f32>,
-    @location(0) @interpolate(flat) index: u32,
+    @interpolate(flat) index: u32,
 }
 
 // Each quadric a pair of triangles over the whole picture.

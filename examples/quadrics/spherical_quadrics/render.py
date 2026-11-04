@@ -166,7 +166,7 @@ fn side(beneath: vec3<f32>, seen: Seen) -> vec3<f32> {
         let arc = arcs[index];
         let circle = arc.start & arc.end;
         let between = ((arc.start & point) | circle) > 0 && ((point & arc.end) | circle) > 0;
-        let line = ink(circle & point, (right.dual_inverse() * (circle & seen.rightward) + up.dual_inverse() * (circle & seen.upward)).norm(), geodesic_width);
+        let line = ink((circle & point).norm(), (right.dual_inverse() * (circle & seen.rightward) + up.dual_inverse() * (circle & seen.upward)).norm(), geodesic_width);
         colour = mix(colour, arc.colour, select(0.0, line, between));
     }
     // Where the form vanishes: the oval on the centre's side, and across it the antipodal loop in dashes, by the
@@ -227,7 +227,7 @@ fn barb(place: Point, direction: Point, length: f32, point: Point) -> f32 {
 // and the chevron at its tip.
 fn arrow_share(arrow: Arrow, point: Point) -> f32 {
     let along = atan2(-(point | arrow.pole), -(point | arrow.start));
-    let off = abs((arrow.start & arrow.pole) & point);
+    let off = ((arrow.start & arrow.pole) & point).norm();
     let stroke = select(0.0, cover(shaft_width / 2 - off), along > 0 && along < arrow_length);
     // The chevron's two strokes run back from the tip against the arrow's heading across the view, the great circle's
     // tangent at the tip toward the pole, turned out to either side; on an arrow short across the view, shorter.
