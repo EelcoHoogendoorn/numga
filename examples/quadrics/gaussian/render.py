@@ -11,7 +11,7 @@ from collections.abc import Callable
 from examples.quadrics.gaussian.core import Point, Polarity, Scalar, mv
 from examples.util import charts
 from examples.util.wgsl import contours, room, simplices
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, panel
 
 # The box the fit is shown over, along x and y, and the figure's width in pixels, for one cloud and one ellipse.
 BOX = np.array([[-5.0, -5.0], [6.0, 4.0]])
@@ -44,7 +44,7 @@ def draw_gaussian(points: Point, density: Callable[[Point], Scalar], ellipsoid: 
     form = (ellipsoid(corners) & corners).to_array()                            # [rows + 1, columns + 1]
     places = corners.reshape(-1)                                                # [(rows + 1) * (columns + 1)] Point-
     grid = contours.Topology.grid(*form.shape)
-    camera = flat_panel(ax, places.algebra)
+    camera = panel(ax, mv.x, mv.y, mv.w)
     shaded = contours.picture(places, grid, form.reshape(-1), shades.reshape(-1, 3), camera)
     cloud = simplices.markers(points, SAMPLE_INK, SAMPLE_SIDE / 2, camera, opacity=SAMPLE_OPACITY)
     # The ellipsoid alone, over the cloud and the cross: its zero level on a clear picture.

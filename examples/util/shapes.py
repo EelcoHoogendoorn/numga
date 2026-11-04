@@ -1,25 +1,34 @@
-"""Stock shapes: the topology of a disk, a sphere, a torus, a ball, a solid torus, a regular polytope's surface or a
-surface read from a file, with the coordinates of its vertices `[V, d]`, for an example to place in its own algebra
-in one visible line, `vertices = mv.vector(coordinates).dual()`: the points dual to the planes with those coordinates.
+"""This module makes meshes from geometry. Each function gives the topology of a shape together with the coordinates
+of its vertices `[V, d]`, which an example places in its own algebra in one visible line,
+`vertices = mv.vector(coordinates).dual()`, the points dual to the planes with those coordinates. A topology is
+combinatorial only, so every mesh made from coordinates is made here.
+
+Points given by their coordinates are meshed by their Delaunay simplices, triangles in the plane and tetrahedra in
+space, or by the facets of their convex hull, which tile a sphere through points on it; a closed surface given by its
+simplices is wound to face out, and a mesh of triangles is split at the midpoints of its edges. The stock shapes are
+made the same way: bounded domains, a box, disks, a ball and a solid torus, and closed surfaces, a sphere, a torus, a
+regular polytope's surface and a surface read from a file.
 
 A name says the dimension: a disk, a sphere and a torus are surfaces of triangles, a ball and a solid torus solids of
-tetrahedra, and a solid's border is the surface of that name; a polytope is the surface of its hull, triangles in
-space and tetrahedra in four dimensions. Each shape is built here in an algebra of its own, the vector algebra of the
-dimension it lives in, its generators unnamed: its turns are rotors in the planes its basis planes span, a polytope's
-vertices the orbit of a point under reflections in its mirrors, and the coordinates are read off at the end by pairing
-with its basis planes. A solid's tetrahedra are wound to positive volume, a surface's triangles to face out.
+tetrahedra, and a solid's border is the surface of that name; a box fills as many dimensions as it has axes, a
+rectangle of triangles in the plane and a cuboid of tetrahedra in space; a polytope is the surface of its hull,
+triangles in space and tetrahedra in four dimensions. Each shape is built here in an algebra of its own, the vector
+algebra of the dimension it lives in, its generators unnamed: its turns are rotors in the planes its basis planes span,
+a polytope's vertices the orbit of a point under reflections in its mirrors, and the coordinates are read off at the
+end by pairing with its basis planes. A domain's simplices are wound to positive volume, a surface's triangles to face
+out.
 """
 
 from __future__ import annotations
 
-from functools import cache
+from functools import cache, reduce
 from pathlib import Path
 
 import numpy as np
 
-from numga import Algebra, NumpyContext, concatenate, stack
+from numga import Algebra, NumpyContext, concatenate
 from numga.extensor import Extensor
-from examples.util.topology import Topology, turned
+from examples.util.topology import Topology, coherent, turned
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -45,9 +54,9 @@ def placed(coordinates: np.ndarray) -> Extensor:
     return algebra(coordinates.shape[-1]).vector(coordinates).dual()
 
 
-def read(points: Extensor) -> np.ndarray:
-    """`[..., n_dim]`: points' coordinates, read by pairing them with the planes of their vector algebra."""
-    readers = planes(len(points.algebra.signature))
+def read(points: Extensor, readers: Extensor) -> np.ndarray:
+    """`[..., n_dim]`: points' coordinates, read by pairing them with the planes `readers` `[n_dim]` of their vector
+    algebra."""
     return np.moveaxis((readers.reshape(readers.shape + (1,) * points.ndim) & points).to_array(), 0, -1)
 
 
@@ -56,14 +65,63 @@ def sizes(points: Extensor) -> Extensor:
     return points.squared().abs().square_root()
 
 
-def outward(topology: Topology, coordinates: np.ndarray) -> Topology:
-    """A solid's top simplices each wound to positive volume: its edges from its first corner a right-handed frame."""
-    simplices = topology.elements[-1]
-    edges = coordinates[simplices[:, 1:]] - coordinates[simplices[:, :1]]       # [N, n_dim, n_dim]
-    return Topology(topology.n_vertices, np.where((np.linalg.det(edges) > 0)[:, None], simplices, turned(simplices)))
+def outward(simplices: np.ndarray, coordinates: np.ndarray) -> Topology:
+    """The topology of top simplices `[N, n + 1]` filling the space of their vertices at the coordinates `[V, n]`, each
+    wound to positive volume: its edges from its first corner a right-handed frame, counter-clockwise in the plane."""
+    edges = coordinates[simplices[:, 1:]] - coordinates[simplices[:, :1]]       # [N, n, n]
+    return Topology(len(coordinates), np.where((np.linalg.det(edges) > 0)[:, None], simplices, turned(simplices)))
 
 
-# --- surfaces -------------------------------------------------------------------------
+# --- meshing --------------------------------------------------------------------------
+def delaunay(coordinates: np.ndarray) -> tuple[Topology, np.ndarray]:
+    """The Delaunay mesh of points at the coordinates `[V, n]`, in any dimension: their convex hull filled with the
+    simplices whose circumspheres have none of the points inside, triangles in the plane and tetrahedra in space, each
+    wound to positive volume. Its topology and the coordinates."""
+    from scipy.spatial import Delaunay
+    return outward(Delaunay(coordinates).simplices, coordinates), coordinates
+
+
+def closed(simplices: np.ndarray, coordinates: np.ndarray) -> tuple[Topology, np.ndarray]:
+    """A closed surface of the top simplices `[N, k + 1]` on vertices at the coordinates `[V, k + 1]`, whatever sense
+    the simplices come in, wound coherently and to face out, so that the volume it encloses is positive. Its topology
+    and the coordinates."""
+    wound = coherent(simplices)
+    # The enclosed volume: the cone each simplex spans from the origin, its corners' determinant, summed.
+    volume = np.linalg.det(coordinates[wound]).sum()
+    return Topology(len(coordinates), np.where(volume < 0, turned(wound), wound)), coordinates
+
+
+def hull(coordinates: np.ndarray) -> tuple[Topology, np.ndarray]:
+    """The surface of the convex hull of points at the coordinates `[V, n]`, triangles in space and tetrahedra in four
+    dimensions, wound to face out: of points on a sphere, the sphere tiled by the simplices between them. Its topology
+    and the coordinates."""
+    from scipy.spatial import ConvexHull
+    return closed(ConvexHull(coordinates).simplices, coordinates)
+
+
+def midpoint_split(topology: Topology, coordinates: np.ndarray, n_levels: int) -> tuple[Topology, np.ndarray]:
+    """A mesh of triangles on vertices at the coordinates `[V, n]` with every triangle split in four at the midpoints
+    of its edges, `n_levels` times over, so that the finer mesh lies exactly on the coarse one. Its topology and
+    coordinates, the coarse vertices followed, level by level, by the midpoints, halfway along each edge."""
+    points = placed(coordinates).field()                                        # Point-[V]
+    for _ in range(n_levels):
+        midpoints = topology.incidence[1, 0].mean(axis=0) * points             # Point-[E]
+        points = concatenate([points.batch(), midpoints.batch()]).field()      # Point-[V + E]
+        topology = Topology(len(points.batch()), topology.split_faces)
+    return topology, read(points.batch(), planes(coordinates.shape[-1]))
+
+
+# --- domains --------------------------------------------------------------------------
+def box(axes: list[np.ndarray]) -> tuple[Topology, np.ndarray]:
+    """The box a grid of coordinates along each axis `[axes][steps]` spans, filled with simplices in as many dimensions
+    as it has axes: a rectangle of triangles in the plane, a cuboid of tetrahedra in space. Each cell of the grid is
+    cut along the staircase from its lowest corner to its highest, as `Topology.product` cuts a prism, and each
+    simplex wound to positive volume. Its topology and coordinates `[V, n]`, the first axis running fastest."""
+    grid = reduce(Topology.product, [Topology.chains([len(steps)]) for steps in axes])
+    coordinates = np.stack(np.meshgrid(*axes[::-1], indexing="ij")[::-1], axis=-1).reshape(-1, len(axes))
+    return outward(grid.elements[-1], coordinates), coordinates
+
+
 def disk(radius: float, n_rings: int, n_sectors: int) -> tuple[Topology, np.ndarray]:
     """A flat disk of triangles, `n_rings` concentric rings of `n_sectors` vertices about its centre, wound from x
     toward y: its topology and the coordinates of its vertices `[V, 2]`."""
@@ -72,7 +130,27 @@ def disk(radius: float, n_rings: int, n_sectors: int) -> tuple[Topology, np.ndar
     spokes = turns >> directions(2)[0]                                          # [sectors] Point-
     rings = spokes[None, :] * np.linspace(radius / n_rings, radius, n_rings)[:, None]   # [rings, sectors] Point-
     points = concatenate([spokes[:1] * 0, rings.reshape(-1)])                  # [V] Point-
-    return Topology.rings(n_rings, n_sectors), read(points)
+    return Topology.rings(n_rings, n_sectors), read(points, planes(2))
+
+
+def hexagonal_disk(radius: float, divisions: int) -> tuple[Topology, np.ndarray]:
+    """A circular disk of nearly equilateral triangles, its first vertex at the centre: a triangular lattice in
+    `divisions` hexagonal rings about the centre, each ring drawn out onto the circle of its radius so that every
+    interior vertex keeps six neighbours, and the Delaunay mesh of its points. Its topology and coordinates `[V, 2]`."""
+    across, up = planes(2)
+    spacing = radius / divisions
+    indices = np.arange(-divisions, divisions + 1)
+    columns, rows = np.meshgrid(indices, indices, indexing="ij")
+    layers = np.maximum.reduce((abs(columns), abs(rows), abs(columns + rows)))
+    inside = (layers > 0) & (layers <= divisions)
+    lattice = np.stack((columns[inside], rows[inside]), axis=-1)               # [nodes, lattice axes]
+    # The lattice's two axes, the first direction and that turned a sixth of a turn toward the second.
+    unit = directions(2)[0]                                                      # [] Point-
+    lattice_axes = concatenate([unit[None], (((across ^ up) * (-np.pi / 6)).exp() >> unit)[None]])
+    positions = (lattice_axes * lattice).sum(axis=-1)                           # [nodes] Point-
+    # Map complete hexagonal rings to circles, keeping their six-neighbour topology.
+    positions = spacing * layers[inside] * positions / sizes(positions)
+    return delaunay(read(concatenate((unit[None] * 0, positions)), planes(2)))
 
 
 def concentric_disk(boundaries: np.ndarray, divisions: int) -> tuple[Topology, np.ndarray]:
@@ -94,31 +172,17 @@ def concentric_disk(boundaries: np.ndarray, divisions: int) -> tuple[Topology, n
     offsets = np.repeat(np.cumsum(populations) - populations, populations)
     angles = 2 * np.pi * (np.arange(populations.sum()) - offsets + (ring % 2) / 2) / populations[ring]
     spokes = ((across ^ up) * (-angles / 2)).exp() >> directions(2)[0]         # [nodes] Point-
-    coordinates = read(concatenate((spokes[:1] * 0, spokes * radii[ring])))
-    return Topology.delaunay(coordinates), coordinates
+    return delaunay(read(concatenate((spokes[:1] * 0, spokes * radii[ring])), planes(2)))
 
 
 def triangular_disk(radius: float, divisions: int) -> tuple[Topology, np.ndarray]:
-    """A circular disk of nearly equilateral triangles with six-neighbour interior vertices: its topology and
-    coordinates `[V, 2]`."""
-    across, up = planes(2)
-    spacing = radius / divisions
+    """A circular disk of nearly equilateral triangles with six-neighbour interior vertices: the hexagonal disk with
+    its triangles evened out. Its topology and coordinates `[V, 2]`."""
     relaxation_steps = 20
     relaxation_rate = 0.1
-    indices = np.arange(-divisions, divisions + 1)
-    columns, rows = np.meshgrid(indices, indices, indexing="ij")
-    layers = np.maximum.reduce((abs(columns), abs(rows), abs(columns + rows)))
-    inside = (layers > 0) & (layers <= divisions)
-    lattice = np.stack((columns[inside], rows[inside]), axis=-1)               # [nodes, lattice axes]
-    # The lattice's two axes, the first direction and that turned a sixth of a turn toward the second.
-    unit = directions(2)[0]                                                      # [] Point-
-    lattice_axes = concatenate([unit[None], (((across ^ up) * (-np.pi / 6)).exp() >> unit)[None]])
-    positions = (lattice_axes * lattice).sum(axis=-1)                           # [nodes] Point-
-    # Map complete hexagonal rings to circles, keeping their six-neighbour topology.
-    positions = spacing * layers[inside] * positions / sizes(positions)
-    vertices = concatenate((unit[None] * 0, positions)).field()                # Point-[V]
-    topology = Topology.delaunay(read(vertices.batch()))
-    boundary = np.flatnonzero(layers[inside] == divisions) + 1
+    topology, coordinates = hexagonal_disk(radius, divisions)
+    vertices = placed(coordinates).field()                                     # Point-[V]
+    boundary = topology.exterior[0]
 
     # Equal edge springs even out the circular map's distortion. Rim vertices can slide along the circle; the
     # incidence's reverse sums edge forces at each vertex.
@@ -131,46 +195,10 @@ def triangular_disk(radius: float, divisions: int) -> tuple[Topology, np.ndarray
         positions = (vertices - relaxation_rate * (~topology.d[0] * force)).batch()   # [V] Point-
         positions = positions.at[boundary].set(radius * positions[boundary] / sizes(positions[boundary]))
         vertices = positions.field()
-        topology = Topology.delaunay(read(positions))
-    return topology, read(vertices.batch())
+        topology, _ = delaunay(read(positions, planes(2)))
+    return topology, read(vertices.batch(), planes(2))
 
 
-def sphere(levels: int) -> tuple[Topology, np.ndarray]:
-    """The unit sphere, a surface of triangles: an icosahedron with each face split in four the given number of times,
-    each edge's midpoint pushed out onto the sphere. Its topology and coordinates `[V, 3]`."""
-    topology, coordinates = icosahedron()
-    points = placed(coordinates / np.linalg.norm(coordinates, axis=-1, keepdims=True)).field()   # Point-[V]
-    for _ in range(levels):
-        midpoints = topology.incidence[1, 0].mean(axis=0) * points              # Point-[E]
-        finer = concatenate([points.batch(), midpoints.batch()])               # [V + E] Point-
-        topology, points = Topology(len(finer), topology.split_faces), (finer / sizes(finer)).field()
-    return topology, read(points.batch())
-
-
-def torus(major_radius: float, minor_radius: float, n_major: int, n_minor: int) -> tuple[Topology, np.ndarray]:
-    """A closed torus around z, a surface of triangles: a circle in the plane of x and z about x at the major radius,
-    turned around the plane of x and y. Its topology and coordinates `[V, 3]`."""
-    across, up, out = planes(3)
-    around_tube = ((across ^ out) * (-np.linspace(0.0, 2 * np.pi, n_minor, endpoint=False) / 2)).exp()   # [minor] Rotor+
-    around_axis = ((across ^ up) * (-np.linspace(0.0, 2 * np.pi, n_major, endpoint=False) / 2)).exp()   # [major] Rotor+
-    unit = directions(3)[0]                                                      # [] Point-
-    tube = unit * major_radius + (around_tube >> (unit * minor_radius))         # [minor] Point-
-    return Topology.torus(n_major, n_minor), read((around_axis[:, None] >> tube[None, :]).reshape(-1))
-
-
-def surface(path: Path, size: float) -> tuple[Topology, np.ndarray]:
-    """A closed surface of triangles from a Wavefront OBJ file, its vertices and triangles only, centred on its bounding
-    box and scaled so that the box's longest side is `size`, wound to face out whatever winding the file gives. Its
-    topology and coordinates `[V, 3]`."""
-    rows = [line.split() for line in path.read_text().splitlines()]
-    places = np.array([row[1:4] for row in rows if row[:1] == ["v"]], dtype=float)
-    faces = np.array([[word.split("/")[0] for word in row[1:4]] for row in rows if row[:1] == ["f"]], dtype=int) - 1
-    middle, extent = (places.max(axis=0) + places.min(axis=0)) / 2, np.ptp(places, axis=0).max()
-    coordinates = (places - middle) * size / extent
-    return Topology.closed(faces, coordinates), coordinates
-
-
-# --- solids ---------------------------------------------------------------------------
 def ball(levels: int, n_layers: int) -> tuple[Topology, np.ndarray]:
     """The unit ball, a solid of tetrahedra: the sphere of the given level in `n_layers` shells, the innermost coned to
     the centre, each next one swept from the one inside it. Its border is that sphere. Its topology and coordinates
@@ -182,8 +210,7 @@ def ball(levels: int, n_layers: int) -> tuple[Topology, np.ndarray]:
     cone = shell.cone().elements[-1]                                             # the apex is the shell's next vertex
     cone = np.where(cone == shell.n_vertices, -1, cone) + 1
     layers = shell.product(Topology.chains([n_layers])).elements[-1] + 1
-    solid = Topology(len(coordinates), np.concatenate([cone, layers]))
-    return outward(solid, coordinates), coordinates
+    return outward(np.concatenate([cone, layers]), coordinates), coordinates
 
 
 def solid_torus(major_radius: float, minor_radius: float, n_major: int, divisions: int) -> tuple[Topology, np.ndarray]:
@@ -195,9 +222,44 @@ def solid_torus(major_radius: float, minor_radius: float, n_major: int, division
     # The disk's coordinates across x and z, about x at the major radius.
     disk_points = directions(3)[0] * major_radius + placed(np.stack([flat[:, 0], np.zeros(len(flat)), flat[:, 1]], axis=-1))
     around_axis = ((across ^ up) * (-np.linspace(0.0, 2 * np.pi, n_major, endpoint=False) / 2)).exp()   # [major] Rotor+
-    coordinates = read((around_axis[:, None] >> disk_points[None, :]).reshape(-1))
+    coordinates = read((around_axis[:, None] >> disk_points[None, :]).reshape(-1), planes(3))
     loop = Topology.loops([n_major])
-    return outward(section.product(loop), coordinates), coordinates
+    return outward(section.product(loop).elements[-1], coordinates), coordinates
+
+
+# --- closed surfaces ------------------------------------------------------------------
+def sphere(levels: int) -> tuple[Topology, np.ndarray]:
+    """The unit sphere, a surface of triangles: an icosahedron with each face split in four the given number of times,
+    each edge's midpoint pushed out onto the sphere. Its topology and coordinates `[V, 3]`."""
+    topology, coordinates = icosahedron()
+    coordinates = coordinates / np.linalg.norm(coordinates, axis=-1, keepdims=True)
+    for _ in range(levels):
+        topology, finer = midpoint_split(topology, coordinates, 1)
+        points = placed(finer)                                                  # [V + E] Point-
+        coordinates = read(points / sizes(points), planes(3))
+    return topology, coordinates
+
+
+def torus(major_radius: float, minor_radius: float, n_major: int, n_minor: int) -> tuple[Topology, np.ndarray]:
+    """A closed torus around z, a surface of triangles: a circle in the plane of x and z about x at the major radius,
+    turned around the plane of x and y. Its topology and coordinates `[V, 3]`."""
+    across, up, out = planes(3)
+    around_tube = ((across ^ out) * (-np.linspace(0.0, 2 * np.pi, n_minor, endpoint=False) / 2)).exp()   # [minor] Rotor+
+    around_axis = ((across ^ up) * (-np.linspace(0.0, 2 * np.pi, n_major, endpoint=False) / 2)).exp()   # [major] Rotor+
+    unit = directions(3)[0]                                                      # [] Point-
+    tube = unit * major_radius + (around_tube >> (unit * minor_radius))         # [minor] Point-
+    return Topology.torus(n_major, n_minor), read((around_axis[:, None] >> tube[None, :]).reshape(-1), planes(3))
+
+
+def surface(path: Path, size: float) -> tuple[Topology, np.ndarray]:
+    """A closed surface of triangles from a Wavefront OBJ file, its vertices and triangles only, centred on its bounding
+    box and scaled so that the box's longest side is `size`, wound to face out whatever winding the file gives. Its
+    topology and coordinates `[V, 3]`."""
+    rows = [line.split() for line in path.read_text().splitlines()]
+    places = np.array([row[1:4] for row in rows if row[:1] == ["v"]], dtype=float)
+    faces = np.array([[word.split("/")[0] for word in row[1:4]] for row in rows if row[:1] == ["f"]], dtype=int) - 1
+    middle, extent = (places.max(axis=0) + places.min(axis=0)) / 2, np.ptp(places, axis=0).max()
+    return closed(faces, (places - middle) * size / extent)
 
 
 # --- regular polytopes ----------------------------------------------------------------
@@ -209,7 +271,7 @@ def polytope(schlafli: tuple[int, ...]) -> tuple[Topology, np.ndarray]:
     point on every mirror but the first, at unit distance. Every other mirror is square to the rest of its kind and
     factored first, so that they are basis planes: the icosahedron's vertices lie at `(1, 0, golden)`, its cyclic
     turns and their mirror images. Its topology and coordinates `[V, n]`."""
-    from scipy.spatial import ConvexHull, cKDTree
+    from scipy.spatial import cKDTree
     n_dim = len(schlafli) + 1
     orders = np.full((n_dim, n_dim), 2)
     orders[np.arange(n_dim - 1), np.arange(1, n_dim)] = orders[np.arange(1, n_dim), np.arange(n_dim - 1)] = schlafli
@@ -225,13 +287,13 @@ def polytope(schlafli: tuple[int, ...]) -> tuple[Topology, np.ndarray]:
     found = (seed / np.linalg.norm(seed))[None]                                 # [points, n_dim]
     frontier = found
     while len(frontier):
-        reflected = read(mirrors[:, None] >> placed(frontier)[None]).reshape(-1, n_dim)
+        reflected = read(mirrors[:, None] >> placed(frontier)[None], planes(n_dim)).reshape(-1, n_dim)
         fresh = reflected[np.isinf(cKDTree(found).query(reflected, distance_upper_bound=1e-6)[0])]
         # The fresh points that come out of several reflections at once, kept once.
         repeats = cKDTree(fresh).query_pairs(1e-6, output_type="ndarray")[:, 1]
         frontier = np.delete(fresh, repeats, axis=0)
         found = np.concatenate([found, frontier])
-    return Topology.closed(ConvexHull(found).simplices, found), found
+    return hull(found)
 
 
 def tetrahedron() -> tuple[Topology, np.ndarray]:

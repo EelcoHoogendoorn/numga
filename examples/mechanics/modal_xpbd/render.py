@@ -12,7 +12,7 @@ from numga.algebras import PGA2D as ga
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, panel
 
 Point = ga.gatype.antivector()  # Antivector-
 
@@ -66,8 +66,9 @@ def mode_shapes(rest: Point, deformed: Point, edges: np.ndarray) -> plt.Figure:
         axes.set_axis_off()
         panels.append(axes)
     girder = simplices.Topology(rest.batch().shape[0], edges)
+    mv = rest.context.multivector
     for i, (axes, shape) in enumerate(zip(panels, shapes)):
-        camera = flat_panel(axes, ga)
+        camera = panel(axes, mv.x, mv.y, mv.w)
         simplices.overlay(axes, [simplices.strokes(rest.batch(), girder, rgb(REST_COLOUR), REST_WIDTH, camera),
                                  simplices.strokes(shape, girder, rgb(COLOURS[i % len(COLOURS)]), MODE_WIDTH,
                                                    camera)])
@@ -102,7 +103,7 @@ def chain_scene(edges: np.ndarray, reference: Point, lower: Point,
     axes.set(xlim=(mv.x & corners).to_array(), ylim=(mv.y & corners).to_array())
     axes.set_aspect("equal")
     axes.set_axis_off()
-    return figure, axes, flat_panel(axes, ga)
+    return figure, axes, panel(axes, mv.x, mv.y, mv.w)
 
 
 def chain_drawn(points: Point, edges: np.ndarray, reference: Point, camera: Camera) -> np.ndarray:
@@ -175,7 +176,7 @@ def beam(frames: Iterable[Point], edges: np.ndarray) -> Iterator[np.ndarray]:
     axes.set(xlim=stack((left - beyond, right + beyond)).to_array(), ylim=stack((-extent, extent)).to_array())
     axes.set_aspect("equal")
     axes.set_axis_off()
-    camera = flat_panel(axes, ga)
+    camera = panel(axes, mv.x, mv.y, mv.w)
     image = simplices.overlay(axes, [np.zeros(camera.shape + (4,))])
     for points in chain([first], frames):
         image.set_data(simplices.strokes(points[0].batch().reshape(-1), girders, np.repeat(colours, len(edges), axis=0),

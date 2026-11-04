@@ -65,7 +65,7 @@ def walls(vertices: Extensor, topology: Topology, camera: Camera):
 def powder_edge(vertices: Extensor, topology: Topology, in_powder: np.ndarray, camera: Camera):
     """The border of the powder's triangles `[faces]` as strokes, the walls drawn over it leaving its edge into the open
     liquid."""
-    return simplices.strokes(vertices.batch(), topology.subset(in_powder).border, edge_colour, edge_width, camera)
+    return simplices.strokes(vertices.batch(), topology.subset(in_powder, -1).border, edge_colour, edge_width, camera)
 
 
 # --- drawing --------------------------------------------------------------------------
@@ -99,7 +99,7 @@ def draw_cavity(topology: Topology, vertices: Extensor, in_powder: np.ndarray) -
     """The cavity's triangles as strokes of their edges, over the powder `[faces]` in pale tan, within its walls."""
     camera = cavity_camera(vertices)
     points = vertices.batch()
-    layers = [contours.picture(points, topology.subset(in_powder), np.zeros(topology.n_vertices), powder_colour,
+    layers = [contours.picture(points, topology.subset(in_powder, -1), np.zeros(topology.n_vertices), powder_colour,
                                camera),
               simplices.strokes(points, topology, mesh_colour, mesh_width, camera),
               walls(vertices, topology, camera)]

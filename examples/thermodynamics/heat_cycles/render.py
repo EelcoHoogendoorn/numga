@@ -45,9 +45,10 @@ class Charts:
     """The two charts' lines and the cycle on them, sampled once, and the drawing of the gas's state on them."""
 
     def __init__(self, temperature_of: Reading, pressure_of: Reading, cycle: Extensor) -> None:
-        self.volume_pressure = art.Diagram(volume_range, pressure_range, (0.0, 0.0), n_rows, n_columns, ("V", "p"))
+        self.volume_pressure = art.Diagram(volume_range, pressure_range, (0.0, 0.0), n_rows, n_columns, ("V", "p"),
+                                           (art.mv.x, art.mv.y), (art.mv.w, 0.0))
         self.entropy_temperature = art.Diagram(entropy_range, temperature_range, (entropy_range[0], 0.0), n_rows,
-                                               n_columns, ("S", "T"))
+                                               n_columns, ("S", "T"), (art.mv.x, art.mv.y), (art.mv.w, 0.0))
         lines = art.gas_lines(temperature_of, pressure_of, cycle.context.multivector, state_entropies, state_volumes,
                               art.GasLines(isochores, isobars, isotherms, adiabats))
         self.lines = lines
@@ -82,9 +83,9 @@ class Charts:
             # The stroke's steps around the loop, and those of them travelled.
             part = np.arange(stroke * self.n_steps, (stroke + 1) * self.n_steps)
             done = part[: max(0, min(travelled - stroke * self.n_steps, self.n_steps))]
-            layers += [simplices.strokes(points, self.around.subset(part), stroke_colours[stroke], art.thin,
+            layers += [simplices.strokes(points, self.around.subset(part, -1), stroke_colours[stroke], art.thin,
                                          diagram.camera),
-                       simplices.strokes(points, self.around.subset(done), stroke_colours[stroke], art.bold,
+                       simplices.strokes(points, self.around.subset(done, -1), stroke_colours[stroke], art.bold,
                                          diagram.camera)]
         now = cycle[travelled][None]
         return art.floated(diagram, art.picture(diagram, layers + art.dots(diagram, now, art.ink), labels), names)

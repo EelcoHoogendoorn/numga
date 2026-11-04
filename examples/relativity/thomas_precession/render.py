@@ -15,7 +15,7 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, flat_panel
+from examples.util.wgsl.camera import Camera, offset_panel
 from examples.relativity.thomas_precession import core
 
 INK, FAINT, FILL, SPIN = "#1e293b", "#cbd5e1", "#dbeafe", "#ea580c"
@@ -96,7 +96,7 @@ def canvas(centre: tuple[float, float], half_width: float) -> tuple[plt.Figure, 
            aspect="equal")
     ax.set_axis_off()
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
-    return figure, ax, flat_panel(ax, core.mv.x.algebra)
+    return figure, ax, offset_panel(ax, core.mv.x, core.mv.y)
 
 
 def rim(camera: Camera) -> np.ndarray:

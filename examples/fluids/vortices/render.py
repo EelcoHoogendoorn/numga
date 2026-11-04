@@ -15,7 +15,7 @@ from numga import stack
 
 from examples.fluids.vortices import core
 from examples.util.wgsl import Shader, fitted, pinned, show, simplices, solids, supersampled
-from examples.util.wgsl.camera import Camera, weighing
+from examples.util.wgsl.camera import Camera
 
 # Fields: the figures' resolution, and the pixels between two panels side by side.
 dpi = 100
@@ -197,12 +197,11 @@ def window(frames: Iterable[core.Vortices], middle: core.Point, half_height: flo
     """The vorticity on one fixed window of the plane, frame by frame, each vortex trailing the path it has taken,
     stroked over it."""
     rows, columns = shape
-    # The window's camera reads the vortices' places as they are, by the lines x and y, about its middle, half its
-    # height above and below it and as far to either side as its columns of square pixels reach.
+    # The window's camera reads the vortices' places as they are, offsets of weight one, by the lines x and y, about
+    # its middle, half its height above and below it and as far to either side as its columns of square pixels reach.
     across, up = core.mv.x, core.mv.y
-    weight, unit = weighing(across)
     middle_readings = np.array([(across & middle).to_array(), (up & middle).to_array()])
-    camera = Camera(across, up, 0 * across, weight, unit, middle_readings,
+    camera = Camera(across, up, 0 * across, 0 * across, 1.0, middle_readings,
                     np.array([half_height * columns / rows, half_height]), columns)
     travelled = []
     for vortices in frames:

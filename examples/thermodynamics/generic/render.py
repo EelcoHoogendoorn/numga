@@ -69,9 +69,11 @@ class Charts:
 
     def __init__(self, energies_of: Callable, surface_entropy_of: Callable, mv) -> None:
         self.phase = art.Diagram(position_range, momentum_range, (0.0, 0.0), chart_rows, chart_columns, ("q", "p"),
-                                 (mv.q, mv.p))
-        self.rising = art.Diagram(time_range, entropy_range, (0.0, 0.0), chart_rows, chart_columns, ("t", "S"))
-        self.hill = art.Diagram(mechanical_range, entropy_range, (0.0, 0.0), chart_rows, chart_columns, ("E_mech", "S"))
+                                 (mv.q, mv.p), (0 * mv.q, 1.0))
+        self.rising = art.Diagram(time_range, entropy_range, (0.0, 0.0), chart_rows, chart_columns, ("t", "S"),
+                                  (art.mv.x, art.mv.y), (art.mv.w, 0.0))
+        self.hill = art.Diagram(mechanical_range, entropy_range, (0.0, 0.0), chart_rows, chart_columns, ("E_mech", "S"),
+                                (art.mv.x, art.mv.y), (art.mv.w, 0.0))
         grid = mv.q.dual() * grid_positions[None, :] + mv.p.dual() * grid_momenta[:, None]
         # The entropy, known where the store's energy is positive.
         self.entropy = art.Levels(grid, np.asarray(surface_entropy_of(grid).to_array()), entropy_levels)

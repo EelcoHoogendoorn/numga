@@ -159,7 +159,7 @@ class Cutaway:
         sphere, coordinates = shapes.sphere(n_surface_levels)
         surface_points = mv(core.Plane, radius * coordinates).dual()             # [surface vertices] Point-
         behind = np.all(((cut & surface_points) < 0)[sphere.elements[2]], axis=-1)
-        self.surface, self.surface_points = sphere.subset(behind), surface_points
+        self.surface, self.surface_points = sphere.subset(behind, -1), surface_points
         _, coordinates = shapes.sphere(n_seed_levels)
         seeds = mv(core.Plane, (seed_radii[:, None, None] * coordinates).reshape(-1, 3)).dual()   # [seeds] Point-
         self.seeds = seeds[(cut & seeds) > 0.1]                                   # [lines] Point-
@@ -210,7 +210,7 @@ class Cutaway:
                             meshes=[(self.bare_face(), 1.0), (self.shell(), 1.0)]) / 255
         # The flow within the cut, inked on the fluid's part of the face as streaks that fade downstream.
         within, moving = self.within(velocity)                                    # [disk vertices] Point-, [disk vertices]
-        fluid = self.disk.subset(np.all(moving[self.disk.elements[2]], axis=-1))
+        fluid = self.disk.subset(np.all(moving[self.disk.elements[2]], axis=-1), -1)
         streaks = flow.texture(drawn(self.disk_points), fluid, solids.context.include_from_algebra(within),
                                self.frame, np.ones(3), reference_speed, flow.surface_grain, grain_pixels,
                                upstream_share, streak_pixels, np.ones(3))["coverage"]   # [rows, columns, 1]

@@ -18,7 +18,7 @@ from matplotlib.axes import Axes
 from numga.extensor import Extensor
 from numga.gatype import GAType
 from examples.util.wgsl import Shader, meshes, pinned
-from examples.util.wgsl.camera import Camera, flat_panel, placing, reading
+from examples.util.wgsl.camera import Camera, placing, reading
 from examples.util.wgsl.library import level_lines, samples_per_side
 
 Topology = meshes.Topology
@@ -146,11 +146,10 @@ def picture(points: Extensor, topology: Topology, values: np.ndarray, colours: n
         band_colours=np.concatenate([band.colours for band in bands])))
 
 
-def overlay(ax: Axes, points: Extensor, topology: Topology, values: np.ndarray, colours: np.ndarray,
+def overlay(ax: Axes, points: Extensor, topology: Topology, values: np.ndarray, colours: np.ndarray, camera: Camera,
             lines: tuple[Lines, ...] = (), levels: tuple[Level, ...] = (), bands: tuple[Bands, ...] = (),
             opacity: float = 1.0):
-    """The field drawn into a panel at its own pixels, as `picture` draws it, the panel looking down on the plane of
-    the points' generators x and y; the image, for an animation to set its data."""
-    camera = flat_panel(ax, points.algebra)
+    """The field drawn into a panel at its own pixels, as `picture` draws it, read by the panel's camera; the image,
+    for an animation to set its data."""
     image = picture(points, topology, values, colours, camera, lines, levels, bands, opacity)
     return pinned(ax, image, (*ax.get_xlim(), *ax.get_ylim()))

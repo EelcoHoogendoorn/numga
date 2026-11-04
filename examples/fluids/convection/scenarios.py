@@ -46,7 +46,7 @@ def turning_over():
     liquid = core.forms(closed, opened, vertices, density, prandtl)
     temperature = conducting(closing * (mv.y & vertices), disturbance)          # Scalar+[vertices]
     return opened, opening, vertices, liquid, core.convecting(
-        liquid, closed.reading(closed.interior[0]), closing * vertices, density, expansion,
+        liquid, closed.reading(closed.interior[0], 0), closing * vertices, density, expansion,
         np.array(rayleigh * prandtl / expansion), reference_temperature, heat_capacity, temperature, dt, n_steps,
         n_stride)
 

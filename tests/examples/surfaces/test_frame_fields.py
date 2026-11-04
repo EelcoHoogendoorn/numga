@@ -90,7 +90,7 @@ def test_skyrmion_topological_charge_and_cotangent_trace():
         (scalar_parts.squared() + bivector_norms.squared()).kernel, 1.0, atol=1e-14,
     )
     np.testing.assert_allclose(scalar_parts.batch()[0].kernel, 1.0, atol=1e-14)
-    boundary = topology.reading(topology.exterior[0])
+    boundary = topology.reading(topology.exterior[0], 0)
     np.testing.assert_allclose((boundary * scalar_parts).kernel, 0.0, atol=1e-13)
     np.testing.assert_allclose((core.mv.z & directors.batch()[0]).kernel, 1.0, atol=1e-14)
     np.testing.assert_allclose((core.mv.z & (boundary * directors)).kernel, -1.0, atol=1e-13)
@@ -147,10 +147,10 @@ def test_harmonic_rotor_frames_and_projected_relaxation():
 
     # The chord field satisfies the linear Laplace equation; normalized frames preserve boundary values.
     free_vertices = topology.interior[0]
-    free = ~topology.reading(free_vertices) * core.Rotor
+    free = ~topology.reading(free_vertices, 0) * core.Rotor
     np.testing.assert_allclose(free.adjoint()(rotor_laplacian(harmonic_chords)).kernel, 0.0, atol=1e-11)
     np.testing.assert_allclose(
-        (topology.reading(boundary) * (harmonic_rotors - prescribed_rotors)).kernel,
+        (topology.reading(boundary, 0) * (harmonic_rotors - prescribed_rotors)).kernel,
         0.0, atol=1e-13,
     )
     np.testing.assert_allclose(harmonic_rotors.scalar_norm_squared().kernel, 1.0, atol=1e-14)
@@ -162,6 +162,6 @@ def test_harmonic_rotor_frames_and_projected_relaxation():
     for step_rotors, _ in trajectory:
         np.testing.assert_allclose(step_rotors.scalar_norm_squared().kernel, 1.0, atol=1e-14)
         np.testing.assert_allclose(
-            (topology.reading(boundary) * (step_rotors - initial_rotors)).kernel,
+            (topology.reading(boundary, 0) * (step_rotors - initial_rotors)).kernel,
             0.0, atol=1e-14,
         )

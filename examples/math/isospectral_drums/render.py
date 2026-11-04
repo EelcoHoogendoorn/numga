@@ -13,7 +13,7 @@ from numga import stack
 from examples.math.isospectral_drums.core import Point, Scalar, ga, mv
 from examples.math.isospectral_drums.numerics import Topology
 from examples.util.wgsl import Shader, contours, simplices
-from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl.camera import offset_panel
 
 pixels = 260
 # Displacement one way blue, the other orange, and rest a light neutral; the tiles' outlines.
@@ -72,7 +72,7 @@ def draw_tiles(tiles: Point) -> plt.Figure:
         limits = stack((centre - half_span, centre + half_span), axis=-1).to_array()   # [2, 2]
         ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
         ax.set_axis_off()
-        camera = flat_panel(ax, ga)
+        camera = offset_panel(ax, mv.x, mv.y)
         topology, welds = welded(drum)
         simplices.overlay(ax, [
             contours.picture(drum.reshape(-1), pieces, np.zeros(3 * n_tiles), np.repeat(tile_colours, 3, axis=0),
@@ -210,7 +210,7 @@ def draw_pieces(vertices: Point, topology: Topology, pieces: Scalar, exposure: f
     for ax, field in zip(axes, values):
         ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
         ax.set_axis_off()
-        camera = flat_panel(ax, ga)
+        camera = offset_panel(ax, mv.x, mv.y)
         shades = colours(Normalize(-exposure, exposure)(field))[:, :3]
         nodal_lines = contours.Level(0.0, nodal_ink, nodal_width)
         simplices.overlay(ax, [contours.picture(places, topology, field, shades, camera, levels=(nodal_lines,)),

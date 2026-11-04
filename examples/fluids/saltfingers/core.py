@@ -71,8 +71,8 @@ def tank(n_along: int, n_across: int, period: float) -> tuple[Topology, Topology
     opened = Topology.chains([n_across]).product(Topology.chains([n_along + 1]))
     places = np.stack(np.meshgrid(np.arange(n_along + 1) / n_along * period, np.linspace(0, 1, n_across),
                                   indexing="ij"), axis=-1)
-    closing = opened.reading(np.arange(closed.n_vertices))                   # numbers[closed <- opened]
-    opening = closed.reading(np.arange(opened.n_vertices) % closed.n_vertices)   # numbers[opened <- closed]
+    closing = opened.reading(np.arange(closed.n_vertices), 0)                # numbers[closed <- opened]
+    opening = closed.reading(np.arange(opened.n_vertices) % closed.n_vertices, 0)   # numbers[opened <- closed]
     return closed, opened, closing, opening, places.reshape(-1, 2)
 
 

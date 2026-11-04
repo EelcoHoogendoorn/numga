@@ -19,7 +19,7 @@ from numga import Extensor, stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.wgsl import pinned, simplices
-from examples.util.wgsl.camera import Camera, panel, read
+from examples.util.wgsl.camera import Camera, offset_panel, read
 
 position_limit = 7.8
 brightness_floor = 1e-4
@@ -57,7 +57,7 @@ def framing(ax: Axes, positions: Extensor) -> Camera:
     ax.set(xlim=(-position_limit, position_limit), ylim=(-position_limit, position_limit))
     ax.set_axis_off()
     mv = positions.context.multivector
-    return panel(ax, mv.x, mv.y)
+    return offset_panel(ax, mv.x, mv.y)
 
 
 def atoms(positions: Extensor, radius: float, camera: Camera) -> np.ndarray:
@@ -101,7 +101,7 @@ def diffraction(ax: Axes, reciprocal: Extensor, transfers: Extensor, brightness:
     image.set(cmap="magma", norm=LogNorm(vmin=brightness_floor, vmax=1))
     ax.set(xlim=extent[:2], ylim=extent[2:])
     # The wavevectors read by the points one along x and along y, as the brightness's samples are.
-    camera = panel(ax, mv.x.dual(), mv.y.dual())
+    camera = offset_panel(ax, mv.x.dual(), mv.y.dual())
     return image, simplices.overlay(ax, [rings(reciprocal, scale, camera)]), camera
 
 

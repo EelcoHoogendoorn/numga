@@ -25,7 +25,7 @@ from numga import Extensor, NumpyContext, concatenate, stack
 from numga.algebras import PGA2D
 from examples.util import charts
 from examples.util.wgsl import contours, image_figure, simplices, solids
-from examples.util.wgsl.camera import Camera, read, weighing
+from examples.util.wgsl.camera import Camera, read
 from examples.util.wgsl.simplices import Cap, Topology
 
 context = NumpyContext(PGA2D)
@@ -100,15 +100,18 @@ def chart_directions(across: Scalar, up: Scalar) -> Point:
 @dataclass(frozen=True)
 class Diagram:
     """A diagram of one quantity across against another up: the range of each shown, the values at which the axes
-    cross, the picture's rows and columns of pixels, the names of the two quantities, and the planes that read them off
-    the points it shows, a state algebra's where they are readings of a state and the chart's otherwise."""
+    cross, the picture's rows and columns of pixels, the names of the two quantities, the planes that read them off the
+    points it shows, and the plane and the constant that weigh a point, `weight & point + unit`: a state algebra's
+    planes, its states offsets of weight one, where the quantities are readings of a state, and otherwise the chart's,
+    its points weighed by its plane at infinity."""
     across: tuple[float, float]
     up: tuple[float, float]
     crossing: tuple[float, float]
     rows: int
     columns: int
     names: tuple[str, str]
-    planes: tuple[Extensor, Extensor] = field(default=(mv.x, mv.y), compare=False)
+    planes: tuple[Extensor, Extensor] = field(compare=False)
+    weighing: tuple[Extensor, float] = field(compare=False)
 
     @cached_property
     def scales(self) -> np.ndarray:
@@ -116,11 +119,11 @@ class Diagram:
         width, height = self.columns - left_margin - right_margin, self.rows - bottom_margin - top_margin
         return np.array([width / (self.across[1] - self.across[0]), height / (self.up[1] - self.up[0])])
 
-    def reading(self, across: Extensor, up: Extensor) -> Camera:
+    def reading(self, across: Extensor, up: Extensor, weight: Extensor, unit: float) -> Camera:
         """The camera of the picture reading points by the planes `across` and `up`, each at its quantity's scale, in
-        pixels, its bottom left corner the starts of the two ranges less the margins."""
-        across, up = on_numpy(across), on_numpy(up)
-        weight, unit = weighing(across)
+        pixels, over their weight, `weight & point + unit`; its bottom left corner the starts of the two ranges less the
+        margins."""
+        across, up, weight = on_numpy(across), on_numpy(up), on_numpy(weight)
         half = np.array([self.columns, self.rows]) / 2
         corner = np.array([self.across[0], self.up[0]]) * self.scales - np.array([left_margin, bottom_margin])
         return Camera(across * self.scales[0], up * self.scales[1], 0 * across, weight, unit, corner + half, half,
@@ -128,17 +131,17 @@ class Diagram:
 
     @cached_property
     def camera(self) -> Camera:
-        """The camera of the picture reading the diagram's points by its own planes."""
-        return self.reading(*self.planes)
+        """The camera of the picture reading the diagram's points by its own planes, weighed as its points are."""
+        return self.reading(*self.planes, *self.weighing)
 
     def at(self, across: Scalar, up: Scalar) -> Extensor:
         """The points of the diagram's algebra its planes read as values of its two quantities `[...]`: its origin, the
         point its weight plane reads as one, moved by each value along the direction its plane reads as one, the
         plane's complement over its reading of it."""
         planes = [on_numpy(plane) for plane in self.planes]
-        weight, _ = weighing(planes[0])
+        weight, _ = self.weighing
         steps = [plane.dual() / read(plane, plane.dual()) for plane in planes]
-        return weight.dual() + steps[0] * across + steps[1] * up
+        return on_numpy(weight).dual() + steps[0] * across + steps[1] * up
 
     def pixels(self, points: Extensor) -> np.ndarray:
         """The pixels right and up from the picture's bottom left corner at which points `[...]` lie, `[..., 2]`, read
@@ -233,7 +236,7 @@ def known(levels: Levels) -> tuple[Topology, np.ndarray]:
     grid = Topology.grid(rows, columns)
     values = levels.values.reshape(-1)
     triangles = grid.elements[2]
-    return grid.subset(np.isfinite(values)[triangles].all(axis=-1)), np.nan_to_num(values)
+    return grid.subset(np.isfinite(values)[triangles].all(axis=-1), -1), np.nan_to_num(values)
 
 
 def level_lines(diagram: Diagram, levels: Levels, colour: np.ndarray, width: float) -> list[np.ndarray]:
@@ -287,7 +290,8 @@ def tangent_lines(diagram: Diagram, points: Extensor, directions: Extensor, acro
     `[samples]`, `[..., samples]`: each point moved along its direction by the change of that quantity over the
     direction's, as the diagram's plane across reads them."""
     plane, points, directions = on_numpy(diagram.planes[0]), on_numpy(points), on_numpy(directions)
-    weight, unit = weighing(plane)
+    weight, unit = diagram.weighing
+    weight = on_numpy(weight)
     # How far each point lies across, its reading over its weight, and how far its direction carries it.
     weights = read(weight, points) + unit                                      # [...] Scalar+
     steps = (weights[..., None] * across - read(plane, points)[..., None]) / read(plane, directions)[..., None]

@@ -17,7 +17,7 @@ from numga import Extensor, stack
 
 from examples.util import charts
 from examples.util.wgsl import contours, planar, simplices
-from examples.util.wgsl.camera import Camera, flat_panel, panel, preimage, whole
+from examples.util.wgsl.camera import Camera, offset_panel, panel, preimage, whole
 from examples.relativity.impulse.core import Point, mv
 
 REAR, FRONT, IMPULSE = "#2475ba", "#db7220", "#258e59"
@@ -124,7 +124,7 @@ def length_bar(ends: Point, colour: str, opacity: float) -> partial:
 def diagram(ax: plt.Axes, layers: list[partial]) -> None:
     """A spacetime diagram's layers, in their order, drawn by the camera of its panel, which reads events by the planes
     x across and t up, over the panel's grid and under its texts; the panel's frame, ticks and labels stay."""
-    camera = panel(ax, mv.x, mv.t)
+    camera = offset_panel(ax, mv.x, mv.t)
     simplices.overlay(ax, [layer(camera=camera) for layer in layers]).set_zorder(DRAWING_ZORDER)
     ax.set_axis_on()
 
@@ -418,6 +418,6 @@ def draw_spaceships(tracks: Point, schedules: Point, slices: Point, final_events
                   color="#59616c", linespacing=1.6)
     for ax, drawn in zip(axes[:2], layers):
         diagram(ax, drawn)
-    camera = flat_panel(axes[2], planar.ga)
+    camera = panel(axes[2], planar.mv.x, planar.mv.y, planar.mv.w)
     simplices.overlay(axes[2], [layer(camera=camera) for layer in ropes]).set_zorder(DRAWING_ZORDER)
     return fig

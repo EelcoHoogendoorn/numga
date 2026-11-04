@@ -12,10 +12,10 @@ the weights that keep every dual edge positive form a convex cone, found by a li
 from __future__ import annotations
 
 import numpy as np
-from scipy.spatial import ConvexHull
 
 from numga import NumpyContext, concatenate, stack
 from numga.algebras import VGA3D as ga
+from examples.util import shapes
 from examples.util.topology import Topology
 
 mv = NumpyContext(ga).multivector
@@ -53,7 +53,7 @@ def dual_lengths(topology: Topology, points: Point) -> Scalar:
     inner = topology.reading(topology.interior[1], 1)                          # Scalar+[inner <- edges]
     tails, heads = (inner * (topology.incidence[1, 0] * points)).batch()       # [inner] Point-, [inner] Point-
     wall = tails & heads                                                       # [inner] Plane-
-    toward = wall & (topology.reading(topology.facet_opposites[:, 1]) * points).batch()  # [inner] Scalar-
+    toward = wall & (topology.reading(topology.facet_opposites[:, 1], 0) * points).batch()  # [inner] Scalar-
     # The poles summed back onto their faces' edges, each signed as its face runs along the edge, are the pole on
     # the left less the pole on the right: the step across each edge from left to right is their negative.
     crossing = -(inner * (~topology.d[1] * poles(topology, points))).batch()   # [inner] Point-
@@ -69,7 +69,7 @@ def folds(topology: Topology, directions: Point, weights: Scalar) -> Scalar:
     centre."""
     inner = topology.reading(topology.interior[1], 1)                          # Scalar+[inner <- edges]
     # Each edge's ends, then the vertices across it on its left and on its right.
-    ends, across = inner * topology.incidence[1, 0], topology.reading(topology.facet_opposites.T)  # [2] Scalar+[inner <- points], [2] Scalar+[inner <- points]
+    ends, across = inner * topology.incidence[1, 0], topology.reading(topology.facet_opposites.T, 0)  # [2] Scalar+[inner <- points], [2] Scalar+[inner <- points]
     tail, head = (ends * directions).batch()                                   # [inner] Point-, [inner] Point-
     left, right = (across * directions).batch()                                # [inner] Point-, [inner] Point-
     face = tail & head & left                                                    # [inner] Scalar-
@@ -105,7 +105,8 @@ def hull(points: Point) -> Topology:
     scipy finds from the points' coordinates, one step outside the algebra."""
     # Each point read by pairing it with the planes across x, y and z.
     coordinates = (stack((mv.x, mv.y, mv.z), axis=-1) & points.batch()[..., None]).to_array()   # [points, 3]
-    return Topology.closed(ConvexHull(coordinates).simplices, coordinates)
+    topology, _ = shapes.hull(coordinates)
+    return topology
 
 
 def timing(frames: int) -> np.ndarray:

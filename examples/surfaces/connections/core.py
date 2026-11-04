@@ -216,7 +216,7 @@ def trivial_connection(topology: Topology, normals: Vector, indices: np.ndarray,
     `[faces]` and every generator, a closed loop of vertices, by nothing; they come with the circulation of edge
     turns around the faces and generators and its target."""
     corner_normals = (topology.incidence[2, 0] * normals).batch()  # [corners, faces] Vector-
-    loop_normals = [(topology.reading(loop[:, None]) * normals).batch() for loop in generators]  # [generators] list of [steps, 1] Vector-
+    loop_normals = [(topology.reading(loop[:, None], 0) * normals).batch() for loop in generators]  # [generators] list of [steps, 1] Vector-
     curvature = loop_turn(corner_normals)                                         # [faces] Scalar+
     # Around each generator, the extra turns undo the surface's own holonomy.
     undone = [-loop_turn(along) for along in loop_normals]                        # [generators] list of [1] Scalar+
@@ -236,8 +236,8 @@ def carried_out(topology: Topology, vertices: Point, normals: Vector, angles: Sc
     covariant = (spdiag(turns >> Point) * topology.boundary[1, 0]).sum(axis=0)    # (Point- <- Point-)[edges <- vertices]
     # Each tree edge's covariant derivative, in the row of the vertex it reaches.
     tree_edges = topology.reading(tree, 1)                                      # Scalar+[vertices - 1 <- edges]
-    along_tree = ~topology.reading(children) * (tree_edges * covariant)         # (Point- <- Point-)[vertices <- vertices]
-    first = topology.reading(np.array([0]))                                      # Scalar+[1 <- vertices]
+    along_tree = ~topology.reading(children, 0) * (tree_edges * covariant)      # (Point- <- Point-)[vertices <- vertices]
+    first = topology.reading(np.array([0]), 0)                                   # Scalar+[1 <- vertices]
     first_edge = topology.reading(np.array([0]), 1)                              # Scalar+[1 <- edges]
     # The direction across the first edge, in the tangent plane: the plane through the normal and the edge's
     # direction, which is that direction as an antivector.

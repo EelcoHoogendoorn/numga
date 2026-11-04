@@ -79,8 +79,8 @@ def causal_wake(operators: Operators, n_space: int, n_time: int,
     source = (profile * operators.areas.sites.mean()).field().dual()         # Amount-[vertices]
 
     grid = np.arange(n_time * n_space).reshape(n_time, n_space)
-    interior = ~operators.topology.reading(grid[1:-1, 1:-1].ravel()) * Scalar  # (Scalar+ <- Scalar+)[vertices <- interior]
-    future = ~operators.topology.reading(grid[2:, 1:-1].ravel()) * Scalar    # (Scalar+ <- Scalar+)[vertices <- future]
+    interior = ~operators.topology.reading(grid[1:-1, 1:-1].ravel(), 0) * Scalar  # (Scalar+ <- Scalar+)[vertices <- interior]
+    future = ~operators.topology.reading(grid[2:, 1:-1].ravel(), 0) * Scalar    # (Scalar+ <- Scalar+)[vertices <- future]
     # The first two rows and the walls stay zero; each interior equation fixes the next time row.
     return future(interior.adjugate()(operators.wave_operator(future)).solve(interior.adjugate()(source)))   # Scalar+[vertices]
 
@@ -96,11 +96,11 @@ def moving_mirror_wave(operators: Operators, n_space: int, n_time: int, dt: floa
     carrier = (2 * np.pi * phase / wavelength).cos()                         # [vertices] Scalar+
 
     grid = np.arange(n_time * n_space).reshape(n_time, n_space)
-    seed = topology.reading(grid[:2, 1:-1].ravel())                          # Scalar+[seed <- vertices]
+    seed = topology.reading(grid[:2, 1:-1].ravel(), 0)                       # Scalar+[seed <- vertices]
     initial = ~seed * (seed * (envelope * carrier).field())                                                  # Scalar+[vertices]
 
-    interior = ~topology.reading(grid[1:-1, 1:-1].ravel()) * Scalar          # (Scalar+ <- Scalar+)[vertices <- interior]
-    future = ~topology.reading(grid[2:, 1:-1].ravel()) * Scalar              # (Scalar+ <- Scalar+)[vertices <- future]
+    interior = ~topology.reading(grid[1:-1, 1:-1].ravel(), 0) * Scalar       # (Scalar+ <- Scalar+)[vertices <- interior]
+    future = ~topology.reading(grid[2:, 1:-1].ravel(), 0) * Scalar           # (Scalar+ <- Scalar+)[vertices <- future]
     rhs = -interior.adjugate()(operators.wave_operator(initial))             # Amount-[interior]
     potential = initial + future(interior.adjugate()(operators.wave_operator(future)).solve(rhs))            # Scalar+[vertices]
 

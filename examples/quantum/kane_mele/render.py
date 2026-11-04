@@ -14,7 +14,7 @@ from examples.util.animation import capture
 from examples.quantum.kane_mele import core
 from examples.util import charts
 from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import flat_panel
+from examples.util.wgsl.camera import offset_panel
 
 # The bonds' shade and width in pixels, the sublattices' shades, and the largest dot's radius, at the densest atom, as
 # a share of the panel's width.
@@ -39,7 +39,7 @@ def draw_bonds(ax, flake: core.Flake) -> np.ndarray:
     limits = stack((low - spare, high + spare), axis=-1).to_array()
     ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
     ax.axis("off")
-    camera = flat_panel(ax, positions.algebra)
+    camera = offset_panel(ax, core.mv.x, core.mv.y)
     return simplices.strokes(positions, simplices.Topology(len(positions), flake.first), BONDS, BOND_WIDTH, camera)
 
 
@@ -50,7 +50,7 @@ def draw_flake(flake: core.Flake) -> plt.Figure:
     shades = np.array([to_rgb(shade) for shade in SUBLATTICES])[(flake.sublattice < 0).astype(int)]
     positions = flake.positions.batch()                                       # [atoms] Point-
     # The atoms' dots, the area of a twelfth of the densest's.
-    camera = flat_panel(ax, positions.algebra)
+    camera = offset_panel(ax, core.mv.x, core.mv.y)
     atoms = simplices.markers(positions, shades, DOT * camera.pixels * np.sqrt(1 / 12), camera)
     simplices.overlay(ax, [bonds, atoms])
     return figure
@@ -81,7 +81,7 @@ def draw_states(flake: core.Flake, densities: core.Scalar) -> plt.Figure:
     for ax, value in zip(axes[0], values):
         bonds = draw_bonds(ax, flake)
         scaled = value / value.max()
-        camera = flat_panel(ax, positions.algebra)
+        camera = offset_panel(ax, core.mv.x, core.mv.y)
         # Each dot's area in proportion to its density.
         dots = simplices.markers(positions, plt.get_cmap("magma_r")(scaled)[:, :3],
                                  DOT * camera.pixels * np.sqrt(scaled), camera)
@@ -104,7 +104,7 @@ def animate_spin(flake: core.Flake, spins: core.Spin, pixels: int) -> Iterator[n
     figure, ax = plt.subplots(figsize=(INCHES, INCHES), dpi=pixels / INCHES)
     bonds = draw_bonds(ax, flake)
     positions = flake.positions.batch()                                       # [atoms] Point-
-    camera = flat_panel(ax, positions.algebra)
+    camera = offset_panel(ax, core.mv.x, core.mv.y)
     shown = simplices.overlay(ax, [bonds])
     for spin in spins:
         areas, shades = spin_dots(spin)

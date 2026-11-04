@@ -13,7 +13,7 @@ from numga import concatenate, stack
 from examples.util import charts, shapes
 from examples.util.animation import capture
 from examples.util.wgsl import contours, pinned, room, simplices
-from examples.util.wgsl.camera import panel
+from examples.util.wgsl.camera import offset_panel
 from examples.optics.rainbow import core
 
 mv = core.mv
@@ -113,7 +113,7 @@ def draw_sky(sight_cosines: core.Scalar, flux: core.Scalar, wavelengths: np.ndar
     ax.set_ylim(extent[2], extent[3])
     # The ground, below the horizon at the sun's height, over the sky, the picture's own pixels read by the planes of
     # the chart.
-    camera = panel(ax, mv.x, mv.y)._replace(pixels=len(across))
+    camera = offset_panel(ax, mv.x, mv.y)._replace(pixels=len(across))
     ground = (mv.x.dual() * np.array(extent[:2])[None, :]
               + mv.y.dual() * np.array([extent[2], sun_elevation])[:, None]).reshape(-1)   # [corners] Direction-
     seen = contours.picture(ground, simplices.Topology.grid(2, 2), np.zeros(len(ground)), to_rgb(ground_colour), camera)
@@ -157,7 +157,7 @@ def animate_sweep(swept_light: tuple[core.Direction, core.Direction, core.Direct
         drop.set_ylim(-ray_length * 0.9, ray_length * 0.9)
         drop.set_aspect("equal")
         drop.set_axis_off()
-        camera = panel(drop, mv.x, mv.y)
+        camera = offset_panel(drop, mv.x, mv.y)
         disk, coordinates = shapes.disk(1.0, 1, drop_sectors)
         places = mv(Upright, coordinates).dual()                                # [vertices] Direction-
         still = [contours.picture(places, disk, np.zeros(disk.n_vertices), to_rgb(drop_colour), camera)]

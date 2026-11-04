@@ -124,7 +124,7 @@ def animate_plateau(
     centre = states[-1][0].sites.mean()                                      # [] Point-
     surfaces = [vertices - centre for vertices, _, _ in states]              # [frames] Point-[vertices]
     view = square_view(plateau_view, surfaces, 0.12)
-    lift = lifting(topology, flat_vertices, disk_paths(topology.reading(topology.exterior[0]) * flat_vertices))
+    lift = lifting(topology, flat_vertices, disk_paths(topology.reading(topology.exterior[0], 0) * flat_vertices))
     # The tint's scale: most of the domed surface's curvature reaches full coral.
     scale = max(float(np.percentile(np.abs(states[0][2].batch().to_array()), 95)), 1e-6)
     for surface, (_, _, curvature) in zip(surfaces, states):
@@ -140,7 +140,7 @@ def conjugate_pair(topology: core.Topology, flat_vertices: core.Point, vertices:
     curves."""
     surfaces = [vertices - vertices.sites.mean(), conjugate - conjugate.sites.mean()]   # [2] Point-[vertices]
     view = square_view(conjugate_view, surfaces, 0.12)
-    lift = lifting(topology, flat_vertices, disk_paths(topology.reading(topology.exterior[0]) * flat_vertices))
+    lift = lifting(topology, flat_vertices, disk_paths(topology.reading(topology.exterior[0], 0) * flat_vertices))
     left, right = (surface_with_curves(topology, lift, surface, surface_colour, view) for surface in surfaces)
     return np.concatenate((left, np.full((pixels, 8, 3), 255, dtype=np.uint8), right), axis=1)
 
@@ -168,11 +168,11 @@ def animate_bonnet(
     view = square_view(bonnet_view, [surface for surface, _ in frames], 0.14)
 
     n_heights, n_azimuths = len(rings), len(meridians)
-    ring_reading = topology.reading(rings[np.linspace(2, n_heights - 3, 5, dtype=int)])  # Scalar+[rings, azimuths <- vertices]
-    meridian_reading = topology.reading(meridians[np.linspace(3, n_azimuths - 4, 6, dtype=int)])  # Scalar+[meridians, heights <- vertices]
+    ring_reading = topology.reading(rings[np.linspace(2, n_heights - 3, 5, dtype=int)], 0)  # Scalar+[rings, azimuths <- vertices]
+    meridian_reading = topology.reading(meridians[np.linspace(3, n_azimuths - 4, 6, dtype=int)], 0)  # Scalar+[meridians, heights <- vertices]
     # Pins where a sparse set of rings crosses a sparse set of meridians.
     pin_rings = rings[np.linspace(3, n_heights - 4, 3, dtype=int)]
-    pin_reading = topology.reading(pin_rings[:, np.linspace(5, n_azimuths - 6, 4, dtype=int)].reshape(-1))  # Scalar+[pins <- vertices]
+    pin_reading = topology.reading(pin_rings[:, np.linspace(5, n_azimuths - 6, 4, dtype=int)].reshape(-1), 0)  # Scalar+[pins <- vertices]
 
     for surface, normals in frames:
         ring_curves = solids.origin + solids.context.include_from_algebra((ring_reading * surface).batch())   # [rings, azimuths] Point-

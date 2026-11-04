@@ -17,7 +17,7 @@ from numga import stack
 
 from examples.util.animation import capture
 from examples.util.wgsl import Shader, contours, pinned, simplices, supersampled
-from examples.util.wgsl.camera import Camera, flat_panel, weighing
+from examples.util.wgsl.camera import Camera, offset_panel
 from examples.electromagnetism.moving_charge import core
 
 # The lab's slice of space, which carries the events into the renderer's space.
@@ -143,7 +143,7 @@ def animate(frames: Iterable[tuple[core.Antivector, core.Bivector, core.Antivect
     # The strength and the charge's outline over the grid of events, from its first to its last.
     corners = coordinates(events[[0, -1], [0, -1]])                            # [2, 2]
     left.set(xlim=corners[:, 0], ylim=corners[:, 1])
-    view = flat_panel(left, core.ga)
+    view = offset_panel(left, core.mv.x, core.mv.y)
     strength = pinned(left, np.zeros(view.shape + (4,)), (*corners[:, 0], *corners[:, 1]))
     left.set_autoscale_on(False)
     places = events.reshape(-1)                                              # [rows * columns] Antivector-
@@ -205,10 +205,9 @@ def waves_shader(field_source: str) -> Shader:
 
 def orbit_view(half_width: float, n_pixels: int) -> Camera:
     """The camera of a square picture of the orbit's plane about its centre, `half_width` to either side, reading
-    places by the planes x and y."""
+    places, offsets of weight one, by the planes x and y."""
     mv = core.mv
-    weight, unit = weighing(mv.x)
-    return Camera(mv.x, mv.y, 0 * mv.x, weight, unit, np.zeros(2), np.array([half_width, half_width]), n_pixels)
+    return Camera(mv.x, mv.y, 0 * mv.x, 0 * mv.x, 1.0, np.zeros(2), np.array([half_width, half_width]), n_pixels)
 
 
 def waves(field_source: str, orbit: core.Orbit, lab_time: float, view: Camera, limit: float) -> dict[str, np.ndarray]:

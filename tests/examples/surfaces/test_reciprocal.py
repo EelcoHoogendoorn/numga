@@ -18,7 +18,7 @@ def test_bars_are_in_tension_at_convex_creases_and_every_interior_vertex_balance
     pulls = (bars * stresses).field()                                          # [frames] Point-[inner]
     bar_ends = inner * topology.d[0]                                           # Scalar+[inner <- vertices]
     net = -(~bar_ends * pulls)                                                 # [frames] Point-[vertices]
-    assert ((topology.reading(topology.interior[0]) * net).norm() < 1e-10).all()
+    assert ((topology.reading(topology.interior[0], 0) * net).norm() < 1e-10).all()
     # The jump in slope across each bar, the faces' planes summed back onto their edges, pairs to nothing with it.
     duals = (core.slopes(topology, points, heights) ^ core.mv.z) * core.mv.z                         # [frames] Plane+[faces]
     assert np.abs(((inner * (~topology.d[1] * duals)).batch() & bars).to_array()).max() < 1e-10

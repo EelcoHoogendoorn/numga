@@ -116,14 +116,14 @@ def tree(topology: Topology, carriers: np.ndarray, n_generations: int) -> Tree:
     A link's rate is its parent's plus its own joint's, so the path to each link is its own joint, then its parent's
     path: the series `~heads + parents * ~heads + ...`, which ends after as many generations as the tree has."""
     # Each joint's two ends, tail then head, each read on its own, so that every map keeps only the couplings it has.
-    tails, heads = (topology.reading(ends) for ends in topology.elements[1].T)
+    tails, heads = (topology.reading(ends, 0) for ends in topology.elements[1].T)
     # The value of each link's parent, at the link: zero at the root, which has none.
     parents = ~heads * tails                                                 # numbers[links <- links]
     paths = ~heads
     for _ in range(n_generations - 1):
         paths = ~heads + parents * paths
     root = np.setdiff1d(np.arange(topology.n_vertices), topology.elements[1][:, 1])
-    return Tree(topology.reading(root), tails, heads, paths, topology.reading(carriers), n_generations)
+    return Tree(topology.reading(root, 0), tails, heads, paths, topology.reading(carriers, 0), n_generations)
 
 
 @partial(jax.jit, static_argnames=("tree",))

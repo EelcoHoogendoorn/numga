@@ -27,7 +27,7 @@ from numga.extensor import Extensor
 from numga.gatype import GAType
 from examples.util.wgsl import Shader, meshes, pinned
 from examples.util.wgsl.runner import device
-from examples.util.wgsl.camera import Camera, flat_panel, placing, read, reading
+from examples.util.wgsl.camera import Camera, placing, read, reading
 from examples.util.wgsl.library import samples_per_side
 
 Topology = meshes.Topology
@@ -583,10 +583,3 @@ def overlay(ax: Axes, pictures: list[np.ndarray]):
     """Pictures of a panel, as its camera draws them, laid over each other in order and pinned into the panel at its
     own pixels, clear where none covers; the image, for an animation to set its data."""
     return pinned(ax, composited(pictures), (*ax.get_xlim(), *ax.get_ylim()))
-
-
-def stroke_overlay(ax: Axes, points: Extensor, topology: Topology, colours: np.ndarray, width: float):
-    """The mesh's edges drawn as strokes into a panel at its own pixels, the panel looking down on the plane of the
-    points' generators x and y; the image, for an animation to set its data."""
-    camera = flat_panel(ax, points.algebra)
-    return pinned(ax, strokes(points, topology, colours, width, camera), (*ax.get_xlim(), *ax.get_ylim()))

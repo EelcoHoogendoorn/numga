@@ -17,7 +17,7 @@ import numpy as np
 from numga import NumpyContext, stack
 from numga.algebras import VGA3D
 from examples.util.wgsl import Shader, simplices, supersampled
-from examples.util.wgsl.camera import Camera, weighing
+from examples.util.wgsl.camera import Camera
 
 mv = NumpyContext(VGA3D).multivector
 
@@ -104,8 +104,8 @@ def shader() -> Shader:
 def table(path, half_width: float) -> np.ndarray:
     """The table from above with the loop on it, `[pixels, pixels, 3]` in [0, 1], within `half_width` of its middle: drawn
     once, for every frame to lay the ball over."""
-    weight, unit = weighing(mv.x)
-    camera = Camera(mv.x, mv.y, 0 * mv.x, weight, unit, np.zeros(2), np.full(2, half_width), N_PIXELS)
+    # The table's places, offsets of weight one, read by the planes x and y.
+    camera = Camera(mv.x, mv.y, 0 * mv.x, 0 * mv.x, 1.0, np.zeros(2), np.full(2, half_width), N_PIXELS)
     loop = simplices.strokes(path, simplices.Topology.chains([len(path)]), LOOP, LOOP_WIDTH, camera)
     return TABLE * (1 - loop[..., 3:]) + loop[..., :3] * loop[..., 3:]
 

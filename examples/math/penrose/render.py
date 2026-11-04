@@ -10,7 +10,7 @@ from matplotlib.colors import to_rgb
 
 from examples.util.animation import capture
 from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, panel
+from examples.util.wgsl.camera import Camera, offset_panel
 from examples.math.penrose import core
 
 # The colours of thick and thin tiles, and of their edges.
@@ -30,7 +30,7 @@ def canvas(reading: core.Plane, extent: float, side: float) -> tuple[plt.Figure,
     ax.set_ylim(-extent, extent)
     ax.set_aspect("equal")
     ax.set_axis_off()
-    return figure, ax, panel(ax, reading[0], reading[1])
+    return figure, ax, offset_panel(ax, reading[0], reading[1])
 
 
 def tiles(corners: core.Antivector, colours: np.ndarray, margins: core.Scalar, camera: Camera,

@@ -98,9 +98,10 @@ def render_stereo_scene(
         ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
         ax.set_axis_off()
     subject = simplices.Topology(len(image_1), np.array(edges))
-    # Each rig's camera reads image points by the rig's own planes x and y, so the screen is seen as the rig sees it.
-    camera_1 = panel(ax_1, rig_1 >> mv.x, rig_1 >> mv.y)
-    camera_2 = panel(ax_2, rig_2 >> mv.x, rig_2 >> mv.y)
+    # Each rig's camera reads image points by the rig's own planes x and y, over their weight, so the screen is seen as
+    # the rig sees it.
+    camera_1 = panel(ax_1, rig_1 >> mv.x, rig_1 >> mv.y, mv.w)
+    camera_2 = panel(ax_2, rig_2 >> mv.x, rig_2 >> mv.y, mv.w)
     simplices.overlay(ax_1, [simplices.strokes(image_1, subject, subject_colour, subject_width, camera_1)])
     epipolar_ends = screen_line_ends(rig_2, epipolar_lines_2, widths.max())   # [corners, ends] Point-
     simplices.overlay(ax_2, [
