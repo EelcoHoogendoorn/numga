@@ -3,7 +3,8 @@ electrons only, a doped semiconductor, through compensation, a semimetal such as
 driven by a current and, apart, by heat. Driven by a current, the bar's Hall voltage falls through nothing at
 compensation and comes back reversed, while its resistance along it peaks; driven by heat, its Nernst voltage grows
 from nothing at either end to its largest at compensation. The ring's carriers spiral, and heat drives a current around
-it where the Hall voltage would vanish.
+it where the Hall voltage would vanish. At compensation, driven by heat, the field is also swept from one sense through
+nothing to the other, and the Nernst voltage and the ring's circulating current reverse with it.
 
 Electrons and holes share one mobility and one entropy per carrier, so that compensation, the Hall voltage's zero and
 the Nernst voltage's peak fall at one balance. The carriers' and the lattice's constants are of order one, in units
@@ -46,15 +47,22 @@ frame_duration_ms = 40
 balances = -np.cos(np.linspace(0, np.pi, n_frames))                          # [frames]
 densities = np.stack([(1 - balances) / 2, (1 + balances) / 2], axis=-1)     # [frames, kinds]
 magnetic = np.full(n_frames, strength) * mv.xy                               # [frames] Bivector+
+# The field reversed, at compensation: its strength swept from the scenario's through nothing to the reversed in a
+# cosine, so that it dwells at either sense, and half the carriers of each kind in every frame; and the gallery's
+# palette, the colours its frames share.
+reversal = strength * np.cos(np.linspace(0, np.pi, n_frames)) * mv.xy        # [frames] Bivector+
+compensation = np.full_like(densities, 0.5)                                  # [frames, kinds]
+n_gallery_colours = 64
 # The bar: its length in widths, its rows of triangles across, an even count so that the bar mirrors in its middle
 # line, and its columns of places along, so that the triangles are nearly equilateral and a column falls at every
-# tenth of a width; and its pictures' pixels to a width.
+# tenth of a width.
 length, n_rows, n_columns = 3.0, 12, 30
-bar_resolution = 80
 # The ring: its inner radius in its outer, its rings of triangles from rim to rim and its places around each circle of
-# places; and its pictures' pixels to an outer radius.
+# places; its pictures' pixels to an outer radius, and the bar's to a width, so that the bar's length matches the
+# ring's diameter.
 inner_radius, n_rings, n_sectors = 0.4, 6, 48
 ring_resolution = 110
+bar_resolution = 2 * ring_resolution / length
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -167,12 +175,23 @@ def main() -> None:
     ring_topology, ring_vertices, inner, outer = ring()
     save_figure(render.draw_conductors(bar_topology, bar_vertices, (left, right), ring_topology, ring_vertices,
                                        (inner, outer), bar_resolution, ring_resolution), "magnetotransport_conductors")
-    bar_states = list(states(bar_topology, bar_vertices, left, right, length, magnetic, densities))
-    save_animation(render.animate_bars(bar_topology, bar_vertices, (left, right), magnetic[0], bar_resolution,
-                                       bar_states), "magnetotransport", frame_duration_ms)
-    ring_states = list(states(ring_topology, ring_vertices, inner, outer, 1 - inner_radius, magnetic, densities))
-    save_animation(render.animate_rings(ring_topology, ring_vertices, (inner, outer), magnetic[0], ring_resolution,
-                                        ring_states), "magnetotransport_corbino", frame_duration_ms)
+    # The bar and the ring at each balance, drawn side by side, the bar standing up, driven by the current and driven by
+    # heat, on the scales of the first frame, electrons only.
+    conductors = (bar_topology, bar_vertices, (left, right), ring_topology, ring_vertices, (inner, outer),
+                  bar_resolution, ring_resolution)
+    frames = list(zip(magnetic, states(bar_topology, bar_vertices, left, right, length, magnetic, densities),
+                      states(ring_topology, ring_vertices, inner, outer, 1 - inner_radius, magnetic, densities)))
+    save_animation(render.animate_current_driven(*conductors, frames[0], frames), "magnetotransport_charge",
+                   frame_duration_ms)
+    save_animation(render.animate_heat_driven(*conductors, frames[0], frames), "magnetotransport_heat",
+                   frame_duration_ms)
+    # At compensation, driven by heat, the field reversed, on the same scales.
+    reversed_frames = zip(reversal, states(bar_topology, bar_vertices, left, right, length, reversal, compensation),
+                          states(ring_topology, ring_vertices, inner, outer, 1 - inner_radius, reversal, compensation))
+    save_animation(render.animate_heat_driven(*conductors, frames[0], reversed_frames), "magnetotransport_reversed",
+                   frame_duration_ms)
+    bar_states = [bar_state for _, bar_state, _ in frames]
+    ring_states = [ring_state for _, _, ring_state in frames]
     resistance, hall, seebeck, nernst, righi_leduc = bar_readings(bar_topology, plus, minus, bar_states)
     save_figure(render.draw_readings(balances, resistance, hall, seebeck, nernst, righi_leduc),
                 "magnetotransport_readings")
@@ -192,6 +211,21 @@ def main() -> None:
     assert righi_leduc.to_array()[middle // 2] * righi_leduc.to_array()[-1 - middle // 2] < 0
     np.testing.assert_allclose(ring_resistances(ring_topology, inner, outer, ring_states).to_array(),
                                (1 + strength ** 2) * np.log(1 / inner_radius) / (2 * np.pi), rtol=1e-2)
+
+
+def pinned() -> None:
+    """The picture the repository tracks: the bar, standing up, and the ring side by side, both driven by heat, as the
+    carriers' balance runs from electrons only to holes only, for the gallery."""
+    from examples.util.animation import pin_animation
+    from examples.thermodynamics.magnetotransport import render
+
+    bar_topology, bar_vertices, left, right, _, _ = bar()
+    ring_topology, ring_vertices, inner, outer = ring()
+    frames = list(zip(magnetic, states(bar_topology, bar_vertices, left, right, length, magnetic, densities),
+                      states(ring_topology, ring_vertices, inner, outer, 1 - inner_radius, magnetic, densities)))
+    pin_animation(render.animate_heat_driven(bar_topology, bar_vertices, (left, right), ring_topology, ring_vertices,
+                                             (inner, outer), bar_resolution, ring_resolution, frames[0], frames),
+                  "magnetotransport", frame_duration_ms, colors=n_gallery_colours)
 
 
 if __name__ == "__main__":
