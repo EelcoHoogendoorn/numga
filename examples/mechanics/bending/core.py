@@ -55,12 +55,12 @@ Plane = ga.gatype.vector()
 # Lines in the section's plane.
 Strain = Twist.derive.touching(Algebra("z+"))
 # Lines in the section's plane as joins of its points, such as the line through a wall's ends.
-WallLine = Twist.derive.within(Algebra("w0x+y+")).derive.dual
+WallLine = Strain.derive.flipped_orientation
 # Lines along the beam, and couples across it.
-Resultant = Forque.derive.within(Algebra("w0x+y+"))
+Resultant = Strain.derive.dual
 # The fibres' pulls weighted by a warping, a swept area signed by the sense of the sweep: resultants of the
 # other orientation, and their couples across the beam.
-Warped = Twist.derive.within(Algebra("w0x+y+"))
+Warped = Resultant.derive.flipped_orientation
 Couples = Warped.derive.touching(Algebra("w0"))
 # The shifts of a pole across the beam: points at infinity in the section's plane.
 Shift = Plane.derive.within(Algebra("x+y+")).derive.dual
