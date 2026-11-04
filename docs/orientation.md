@@ -3,7 +3,7 @@
 Every `GAType` carries an orientation, `Orientation.extrinsic` or `Orientation.intrinsic`, on its output and on each input. Constructors set it, operations propagate it, sums and bindings check it, and the transform `>>` uses it to pick the sign of a reflection. Type comments use `+` for extrinsic and `-` for intrinsic. This page lists the rules; [Why orientation](why_orientation.md) explains why they are needed.
 
 ```python
-from numga import NumpyContext, Orientation
+from numga import Algebra, NumpyContext, Orientation
 from numga.algebras import PGA3D
 ```
 
