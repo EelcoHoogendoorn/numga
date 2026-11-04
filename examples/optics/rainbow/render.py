@@ -116,7 +116,8 @@ def draw_sky(sight_cosines: core.Scalar, flux: core.Scalar, wavelengths: np.ndar
     camera = offset_panel(ax, mv.x, mv.y)._replace(pixels=len(across))
     ground = (mv.x.dual() * np.array(extent[:2])[None, :]
               + mv.y.dual() * np.array([extent[2], sun_elevation])[:, None]).reshape(-1)   # [corners] Direction-
-    seen = contours.picture(ground, simplices.Topology.grid(2, 2), np.zeros(len(ground)), to_rgb(ground_colour), camera)
+    seen = simplices.composited([
+        contours.picture(ground, simplices.Topology.grid(2, 2), np.zeros(len(ground)), to_rgb(ground_colour), camera)])
     sky = np.clip(sky_colour + image ** tone_exponent, 0, 1)
     pinned(ax, sky * (1 - seen[..., 3:]) + seen[..., :3] * seen[..., 3:], extent)
     return figure

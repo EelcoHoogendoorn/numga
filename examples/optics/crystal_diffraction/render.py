@@ -132,6 +132,6 @@ def animate(frames: Iterable[tuple[Extensor, Extensor, Extensor]], transfers: Ex
         for positions, reciprocal, brightness in frames:
             atoms_seen.set_data(atoms(positions, movie_scale * atom_radius, atom_camera))
             image.set_data(brightness.to_array()[::-1])
-            rings_seen.set_data(rings(reciprocal, movie_scale, ring_camera))
+            rings_seen.set_data(simplices.composited([rings(reciprocal, movie_scale, ring_camera)]))
             yield capture(figure)
         plt.close(figure)

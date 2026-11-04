@@ -106,7 +106,8 @@ def table(path, half_width: float) -> np.ndarray:
     once, for every frame to lay the ball over."""
     # The table's places, offsets of weight one, read by the planes x and y.
     camera = Camera(mv.x, mv.y, 0 * mv.x, 0 * mv.x, 1.0, np.zeros(2), np.full(2, half_width), N_PIXELS)
-    loop = simplices.strokes(path, simplices.Topology.chains([len(path)]), LOOP, LOOP_WIDTH, camera)
+    loop = simplices.composited([simplices.strokes(path, simplices.Topology.chains([len(path)]), LOOP, LOOP_WIDTH,
+                                                   camera)])
     return TABLE * (1 - loop[..., 3:]) + loop[..., :3] * loop[..., 3:]
 
 

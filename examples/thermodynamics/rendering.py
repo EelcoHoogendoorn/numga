@@ -244,8 +244,9 @@ def level_lines(diagram: Diagram, levels: Levels, colour: np.ndarray, width: flo
     triangles, cut to the plot."""
     topology, values = known(levels)
     inks = tuple(contours.Level(level, np.append(colour, 1.0), width) for level in levels.levels)
-    return [plotted(diagram, contours.picture(on_numpy(levels.grid).reshape(-1), topology, values, np.zeros(3),
-                                              diagram.camera, levels=inks, opacity=0.0))]
+    return [plotted(diagram, simplices.composited([
+        contours.picture(on_numpy(levels.grid).reshape(-1), topology, values, np.zeros(3), diagram.camera,
+                         levels=inks, opacity=0.0)]))]
 
 
 def level_family(diagram: Diagram, levels: Levels, name: str, width: float) -> list[np.ndarray]:
@@ -259,8 +260,9 @@ def sides(diagram: Diagram, levels: Levels, inks: np.ndarray) -> np.ndarray:
     topology, values = known(levels)
     level, = levels.levels
     bands = contours.Bands(level - 1.0, 1.0, inks)
-    return plotted(diagram, contours.picture(on_numpy(levels.grid).reshape(-1), topology, values, np.zeros(3),
-                                             diagram.camera, bands=(bands,), opacity=0.0))
+    return plotted(diagram, simplices.composited([
+        contours.picture(on_numpy(levels.grid).reshape(-1), topology, values, np.zeros(3), diagram.camera,
+                         bands=(bands,), opacity=0.0)]))
 
 
 def crossings(levels: Levels, every: int) -> Extensor:

@@ -150,7 +150,7 @@ def animate(frames: Iterable[tuple[core.Antivector, core.Bivector, core.Antivect
     topology = contours.Topology.grid(*events.shape[-2:])
     magnetic = panel(right, events, magnetic_across(field), signed_colours, magnetic_norm)
     for _, field, current in chain([(events, field, current)], states):
-        strength.set_data(outlined(places, topology, field, current, view))
+        strength.set_data(simplices.composited([outlined(places, topology, field, current, view)]))
         magnetic.set_data(coloured(magnetic_across(field), signed_colours, magnetic_norm))
         yield capture(figure)
     plt.close(figure)

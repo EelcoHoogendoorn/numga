@@ -555,8 +555,8 @@ def compositor() -> Compositor:
 
 class Layer:
     """A picture of a panel to be drawn on the GPU: a shader's triangles over the camera's pixels, `rows, columns`,
-    drawn when the panel's pictures are composited, sample by sample over the ones before it. Read as an array, it is
-    composited alone: colour and coverage `[rows, columns, 4]`."""
+    drawn when the panel's pictures are composited, sample by sample over the ones before it. Its own colour and
+    coverage `[rows, columns, 4]` are its picture composited alone, `composited([layer])`."""
 
     def __init__(self, shader: Shader, size: tuple[int, int], n_vertices: int, values: dict) -> None:
         self.shader, self.size, self.n_vertices, self.values = shader, size, n_vertices, values
@@ -564,13 +564,6 @@ class Layer:
     @property
     def shape(self) -> tuple[int, int, int]:
         return self.size + (4,)
-
-    def __array__(self, dtype=None, copy=None) -> np.ndarray:
-        image = composited([self])
-        return image if dtype is None else image.astype(dtype)
-
-    def __getitem__(self, key) -> np.ndarray:
-        return np.asarray(self)[key]
 
 
 def composited(pictures: list) -> np.ndarray:

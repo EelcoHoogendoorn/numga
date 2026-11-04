@@ -104,5 +104,5 @@ def hull(offsets: Point) -> Topology:
     """The convex hull of points at offsets from the centre has triangle faces, counter-clockwise seen from
     outside, found from the offsets' pairings with the planes x, y and z."""
     coordinates = (stack((mv.x, mv.y, mv.z)) & offsets.batch()[..., None]).to_array()   # [points, 3]
-    topology, _ = shapes.hull(coordinates)
+    topology, _ = shapes.convex_boundary(coordinates)
     return topology

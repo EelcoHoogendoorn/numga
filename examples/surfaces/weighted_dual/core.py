@@ -105,7 +105,7 @@ def hull(points: Point) -> Topology:
     scipy finds from the points' coordinates, one step outside the algebra."""
     # Each point read by pairing it with the planes across x, y and z.
     coordinates = (stack((mv.x, mv.y, mv.z), axis=-1) & points.batch()[..., None]).to_array()   # [points, 3]
-    topology, _ = shapes.hull(coordinates)
+    topology, _ = shapes.convex_boundary(coordinates)
     return topology
 
 

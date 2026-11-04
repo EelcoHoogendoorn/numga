@@ -4,14 +4,14 @@ of its vertices `[V, d]`, which an example places in its own algebra in one visi
 combinatorial only, so every mesh made from coordinates is made here.
 
 Points given by their coordinates are meshed by their Delaunay simplices, triangles in the plane and tetrahedra in
-space, or by the facets of their convex hull, which tile a sphere through points on it; a closed surface given by its
-simplices is wound to face out, and a mesh of triangles is split at the midpoints of its edges. The stock shapes are
-made the same way: bounded domains, a box, disks, a ball and a solid torus, and closed surfaces, a sphere, a torus, a
-regular polytope's surface and a surface read from a file.
+space, or by the facets of their convex hull, which tile its boundary, a sphere through points on it; a closed surface
+given by its simplices is wound to face out, and a mesh of triangles is split at the midpoints of its edges. The stock
+shapes are made the same way: bounded domains, a box, disks, a ball and a solid torus, and closed surfaces, a sphere, a
+torus, a regular polytope's surface and a surface read from a file.
 
 A name says the dimension: a disk, a sphere and a torus are surfaces of triangles, a ball and a solid torus solids of
 tetrahedra, and a solid's border is the surface of that name; a box fills as many dimensions as it has axes, a
-rectangle of triangles in the plane and a cuboid of tetrahedra in space; a polytope is the surface of its hull,
+rectangle of triangles in the plane and a cuboid of tetrahedra in space; a polytope is the boundary of its convex hull,
 triangles in space and tetrahedra in four dimensions. Each shape is built here in an algebra of its own, the vector
 algebra of the dimension it lives in, its generators unnamed: its turns are rotors in the planes its basis planes span,
 a polytope's vertices the orbit of a point under reflections in its mirrors, and the coordinates are read off at the
@@ -91,10 +91,10 @@ def closed(simplices: np.ndarray, coordinates: np.ndarray) -> tuple[Topology, np
     return Topology(len(coordinates), np.where(volume < 0, turned(wound), wound)), coordinates
 
 
-def hull(coordinates: np.ndarray) -> tuple[Topology, np.ndarray]:
-    """The surface of the convex hull of points at the coordinates `[V, n]`, triangles in space and tetrahedra in four
-    dimensions, wound to face out: of points on a sphere, the sphere tiled by the simplices between them. Its topology
-    and the coordinates."""
+def convex_boundary(coordinates: np.ndarray) -> tuple[Topology, np.ndarray]:
+    """The boundary of the convex hull of points in convex position at the coordinates `[V, n]`, tiled by its facets
+    as simplices, triangles in space and tetrahedra in four dimensions, wound to face out: of points on a sphere, the
+    sphere tiled by the simplices between them. Its topology and the coordinates."""
     from scipy.spatial import ConvexHull
     return closed(ConvexHull(coordinates).simplices, coordinates)
 
@@ -264,13 +264,13 @@ def surface(path: Path, size: float) -> tuple[Topology, np.ndarray]:
 
 # --- regular polytopes ----------------------------------------------------------------
 def polytope(schlafli: tuple[int, ...]) -> tuple[Topology, np.ndarray]:
-    """The regular polytope of a Schläfli symbol, `(3, 5)` the icosahedron, `(3, 3, 5)` the 600-cell, as the surface of
-    its hull: triangles in space, tetrahedra in four dimensions, wound to face out. Its vertices are the orbit of one
-    point under the reflections in the mirrors of its symmetry group: mirrors whose normals meet at the angles the
-    symbol names, pi over each entry between neighbours and square otherwise, a Cholesky factor of their cosines; the
-    point on every mirror but the first, at unit distance. Every other mirror is square to the rest of its kind and
-    factored first, so that they are basis planes: the icosahedron's vertices lie at `(1, 0, golden)`, its cyclic
-    turns and their mirror images. Its topology and coordinates `[V, n]`."""
+    """The regular polytope of a Schläfli symbol, `(3, 5)` the icosahedron, `(3, 3, 5)` the 600-cell, as the boundary
+    of its convex hull: triangles in space, tetrahedra in four dimensions, wound to face out. Its vertices are the
+    orbit of one point under the reflections in the mirrors of its symmetry group: mirrors whose normals meet at the
+    angles the symbol names, pi over each entry between neighbours and square otherwise, a Cholesky factor of their
+    cosines; the point on every mirror but the first, at unit distance. Every other mirror is square to the rest of its
+    kind and factored first, so that they are basis planes: the icosahedron's vertices lie at `(1, 0, golden)`, its
+    cyclic turns and their mirror images. Its topology and coordinates `[V, n]`."""
     from scipy.spatial import cKDTree
     n_dim = len(schlafli) + 1
     orders = np.full((n_dim, n_dim), 2)
@@ -293,7 +293,7 @@ def polytope(schlafli: tuple[int, ...]) -> tuple[Topology, np.ndarray]:
         repeats = cKDTree(fresh).query_pairs(1e-6, output_type="ndarray")[:, 1]
         frontier = np.delete(fresh, repeats, axis=0)
         found = np.concatenate([found, frontier])
-    return hull(found)
+    return convex_boundary(found)
 
 
 def tetrahedron() -> tuple[Topology, np.ndarray]:

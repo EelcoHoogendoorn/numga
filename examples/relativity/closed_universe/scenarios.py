@@ -431,7 +431,7 @@ def base_hull(steps: core.Point) -> Topology:
     """The hull of unit steps of the origin `[n] Point-`, a closed surface of triangles on them, found from their
     coordinates outside the algebra: for the decagons' base points, the icosahedron."""
     coordinates = (stack((mv.x, mv.y, mv.z)) & steps[:, None]).to_array()      # [n, 3]
-    topology, _ = shapes.hull(coordinates)
+    topology, _ = shapes.convex_boundary(coordinates)
     return topology
 
 

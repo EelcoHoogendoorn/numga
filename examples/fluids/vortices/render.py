@@ -209,7 +209,8 @@ def window(frames: Iterable[core.Vortices], middle: core.Point, half_height: flo
         # Each vortex's path so far, from where it started, which is the whole path on the first frame.
         paths = stack([travelled[0]] + travelled, axis=1)                      # [vortices, frames + 1] Point-
         n_vortices, n_points = paths.shape
-        trails = simplices.strokes(paths.reshape(-1), simplices.Topology.chains([n_points] * n_vortices), trail_colour,
-                                   trail_width, camera, opacity=trail_opacity)
+        trails = simplices.composited([
+            simplices.strokes(paths.reshape(-1), simplices.Topology.chains([n_points] * n_vortices), trail_colour,
+                              trail_width, camera, opacity=trail_opacity)])
         image = vorticity_image(vortices, middle, half_height, shape, scale)
         yield as_bytes(image * (1 - trails[..., 3:]) + trails[..., :3] * trails[..., 3:])

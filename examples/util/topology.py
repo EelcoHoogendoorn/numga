@@ -24,8 +24,8 @@ in the algebra; shared helpers would hide exactly the part an example exists to 
 examples is intended and is not to be factored back into this module. What belongs here is what knows only the
 simplex arrays: incidences, the maps that index by them, and subdivision of the connectivity. A topology never takes
 coordinates, extensors or an algebra: placing vertices is not the topology's, and neither is making a mesh from them.
-`examples.util.shapes` meshes points by their coordinates, a Delaunay mesh, a sphere's hull, a bounded domain or a
-subdivision, and gives stock shapes, a sphere, a torus, disks, for an example to place.
+`examples.util.shapes` meshes points by their coordinates, a Delaunay mesh, the boundary of a convex hull, a bounded
+domain or a subdivision, and gives stock shapes, a sphere, a torus, disks, for an example to place.
 
 A topology belongs to no algebra. Its maps hold plain numbers, which become scalars of whatever algebra they meet, as an
 untyped array does beside an extensor: `topology.incidence[2, 0] * vertices` reads the corners of the faces of points

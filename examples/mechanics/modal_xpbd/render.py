@@ -179,8 +179,9 @@ def beam(frames: Iterable[Point], edges: np.ndarray) -> Iterator[np.ndarray]:
     camera = panel(axes, mv.x, mv.y, mv.w)
     image = simplices.overlay(axes, [np.zeros(camera.shape + (4,))])
     for points in chain([first], frames):
-        image.set_data(simplices.strokes(points[0].batch().reshape(-1), girders, np.repeat(colours, len(edges), axis=0),
-                                         BEAM_WIDTH, camera))
+        image.set_data(simplices.composited([
+            simplices.strokes(points[0].batch().reshape(-1), girders, np.repeat(colours, len(edges), axis=0),
+                              BEAM_WIDTH, camera)]))
         yield capture(figure)
     plt.close(figure)
 

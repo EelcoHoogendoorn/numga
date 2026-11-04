@@ -154,7 +154,7 @@ def hull(points: Point) -> Topology:
     """The convex hull of points around the centre, its facets wound outward, which scipy finds from the points'
     coordinates, one step outside the algebra."""
     coordinates = coordinates_of(points.batch())                                # [points, dimensions]
-    topology, _ = shapes.hull(coordinates)
+    topology, _ = shapes.convex_boundary(coordinates)
     return topology
 
 
