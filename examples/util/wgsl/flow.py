@@ -102,10 +102,12 @@ fn hash(place: vec3<f32>) -> f32 {
     return fract((p.x + p.y) * p.z);
 }
 
+// The field and the place at each corner as the picture reads them, numbers whatever the algebra, so that values of
+// any size cross to the fragments alike.
 struct Corner {
     @builtin(position) position: vec4<f32>,
-    @location(0) tangent: Field,
-    @location(1) place: Point,
+    @location(0) projected: vec2<f32>,
+    @location(1) place: vec2<f32>,
 }
 struct Shade {
     @location(0) colour: vec4<f32>,
@@ -114,8 +116,8 @@ struct Shade {
 }
 
 // Jittered specks, one to a cell of the picture's readings, `noise_scale` across, an eighth of a cell in radius.
-fn seed(place: Point) -> f32 {
-    let reading = vec2<f32>(paired(screen_across, place), paired(screen_up, place)) / weight_of(place) / noise_scale;
+fn seed(place: vec2<f32>) -> f32 {
+    let reading = place / noise_scale;
     let cell = floor(reading);
     var ink = 0.0;
     for (var y = -1; y <= 1; y++) {
@@ -134,15 +136,18 @@ fn seed(place: Point) -> f32 {
 fn place(@builtin(vertex_index) index: u32) -> Corner {
     let face = faces[index / 3];
     let vertex = face[index % 3];
-    return Corner(clip(points[vertex]), field[vertex], points[vertex]);
+    let point = points[vertex];
+    let tangent = field[vertex];
+    // The field's change of place in the picture, in the readings, and the place's readings across and up.
+    let projected = vec2<f32>(field_paired(screen_across, tangent), field_paired(screen_up, tangent));
+    let place = vec2<f32>(paired(screen_across, point), paired(screen_up, point)) / weight_of(point);
+    return Corner(clip(point), projected, place);
 }
 
 @fragment
 fn shade(corner: Corner) -> Shade {
-    // The field's change of place in the picture, in the readings, rows counted down.
-    let projected = vec2<f32>(field_paired(screen_across, corner.tangent), field_paired(screen_up, corner.tangent))
-                    * vec2<f32>(1, -1);
-    return Shade(vec4<f32>(1.0), vec4<f32>(projected, 0, 0), vec4<f32>(seed(corner.place)));
+    // The field's change of place, rows counted down.
+    return Shade(vec4<f32>(1.0), vec4<f32>(corner.projected * vec2<f32>(1, -1), 0, 0), vec4<f32>(seed(corner.place)));
 }
 """
 

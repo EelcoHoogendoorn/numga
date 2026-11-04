@@ -194,6 +194,7 @@
 - [Snowflake](thermodynamics/snowflake/) — A phase field with a six-fold surface energy grows a seed of ice in undercooled water into a six-armed dendrite.
 - [Cellular flame](thermodynamics/flame/) — Flames spreading from sparks through a lean mixture merge and break into cells where the fuel spreads faster than the heat.
 - [Rubber band heat engine](thermodynamics/rubber_band/) — A rubber band warmed by a lamp pulls harder and lifts a weight, its pull and the heat its motion moves read off one pairing.
+- [Semiconductor devices](thermodynamics/semiconductor_devices/) — Electrons and holes drift and diffuse under one drive, on a mesh of simplices of any dimension: a p–n junction forms, follows Shockley's diode law under a bias and runs recombination backward under light as a solar cell; a MOSFET's gate gathers a channel whose current saturates as it pinches off near the drain; and a solar cell's holes rise to its junction and run along its thin top layer to the nearest finger, its power peaking at the fingers' spacing that balances their shade against the top layer's resistance.
 
 ## Symmetry
 
