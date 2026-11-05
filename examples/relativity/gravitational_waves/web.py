@@ -31,7 +31,7 @@ limit.
 
 The camera flies as an airplane does, along its own forward axis: the arrow keys turn it up, down, left and right, or a
 drag does, `a` and `d` roll it, `w` and `s` speed it up and slow it down, scrolling adds speed, space stops it, `p`
-holds time, `r` returns to the start, and `[` and `]` halve and double a ray's legs, which the slider also sets.
+holds time, `r` returns to the start, and `[` and `]` halve and double a ray's legs.
 
 GitHub Pages serves the page from the repository, so it is written only when asked; the module's own run traces the
 page's passes here, as the page runs them, into animations in the plots; and a comparison times the tracer with each
