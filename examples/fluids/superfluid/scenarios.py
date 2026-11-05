@@ -73,9 +73,10 @@ def sounds() -> tuple[core.Scalar, core.Scalar]:
         stiffness(slice(None)), parcels[..., :1], masses[..., :1])
 
 
-def scene() -> tuple[core.Topology, np.ndarray, np.ndarray, np.ndarray]:
-    """The cavity: its topology, its vertices' places across and up `[vertices, 2]`, whether each triangle lies in the
-    powder `[faces]`, and the heater's pulse of temperature at each vertex `[vertices]`."""
+def scene(n_columns: int = n_columns, n_rows: int = n_rows) -> tuple[core.Topology, np.ndarray, np.ndarray, np.ndarray]:
+    """The cavity, `n_columns` vertices across and `n_rows` up: its topology, its vertices' places across and up
+    `[vertices, 2]`, whether each triangle lies in the powder `[faces]`, and the heater's pulse of temperature at each
+    vertex `[vertices]`."""
     topology, coordinates = core.cavity(n_columns, n_rows, width, height)
     centroids_across = coordinates[topology.elements[2], 0].mean(axis=-1)
     distances_squared = ((coordinates - heater) ** 2).sum(axis=-1)

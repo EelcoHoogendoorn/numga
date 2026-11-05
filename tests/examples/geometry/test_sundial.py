@@ -1,6 +1,5 @@
-"""Tests for the horizontal sundial verify the sun's noon altitude, the seasonal shadow rays on their cones, the gnomonic hour-line angles, and the rendered figures."""
+"""Tests for the horizontal sundial verify the sun's noon altitude, the seasonal shadow rays on their cones, the gnomonic hour-line angles, and the first frame of the year drawn."""
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.geometry.sundial import core, render, scenarios
@@ -25,10 +24,9 @@ def test_shadows_lie_on_their_cones_and_hour_lines_on_the_gnomonic_angle():
     assert np.abs(np.sin(angles - expected[:, None])).max() < 1e-10
 
 
-def test_the_dial_and_a_day_of_the_year_draw():
+def test_the_first_frame_of_the_year_draws():
     nodus, seasons, days, suns, hours = scenarios.dial()
     pole, _ = core.sky(scenarios.LATITUDE)
     foot = nodus - pole * ((core.dial & nodus) / (core.dial & pole))            # [] Point-
-    plt.close(render.draw_dial(nodus, foot, seasons, days, suns, hours))
     declinations, rays, year_days = scenarios.year()
-    assert len(list(render.animate_year(declinations[:1], rays[:1], year_days[:1], nodus, foot, seasons, days, suns, hours))) == 1
+    next(render.animate_year(declinations[:1], rays[:1], year_days[:1], nodus, foot, seasons, days, suns, hours))

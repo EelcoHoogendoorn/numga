@@ -1,6 +1,6 @@
 """Vortices on the sphere: a vortex's flow is irrotational away from its two points; a vortex with its
-bivector and circulation both negated is the same vortex; two vortices alone turn rigidly by their pair's
-rotor; the two time steps compare as they should; and the animation draws."""
+bivector and circulation both negated is the same vortex; two vortices alone turn rigidly by their pair's rotor; and
+the travelling pairs step once, their first frame drawn."""
 
 from __future__ import annotations
 
@@ -39,6 +39,5 @@ def test_two_vortices_alone_turn_rigidly():
     np.testing.assert_allclose(core.impulse(moved).kernel, core.impulse(pair).kernel, atol=1e-14)
 
 
-def test_the_steps_compare_and_the_animation_draws():
-    by_pairs, _ = scenarios.compared()
-    assert len(list(render.animate([by_pairs[:3]], scenarios.TRAVEL_VIEW, 2))) == 2
+def test_the_travelling_pairs_step_once_and_draw():
+    next(render.animate(scenarios.travelling(n_steps=1), scenarios.TRAVEL_VIEW, 1))

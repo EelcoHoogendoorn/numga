@@ -19,14 +19,14 @@ DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------
-def sweep() -> tuple[core.Point, core.Point, core.Point, core.Conic]:
-    """As the middle weight sweeps out and back, the quadratic curve, its complementary arc, and the cone of their conic turn from an ellipse through a parabola to a hyperbola."""
-    phase = np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)
+def sweep(n_frames: int = N_FRAMES, n_samples: int = N_SAMPLES) -> tuple[core.Point, core.Point, core.Point, core.Conic]:
+    """As the middle weight sweeps out and back over `n_frames` frames, the quadratic curve and its complementary arc, sampled at `n_samples + 1` points, and the cone of their conic turn from an ellipse through a parabola to a hyperbola."""
+    phase = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)
     middle = np.exp(np.log(SWEEP).mean() - np.log(SWEEP[1] / SWEEP[0]) / 2 * np.cos(phase))   # [frames]
     weights = np.stack([np.ones_like(middle), middle, np.ones_like(middle)], axis=-1)         # [frames, controls]
     # Points (x, y) at unit weight in the plane z = 1 are the duals of x * mv.x + y * mv.y + mv.z.
     controls = (core.mv.x * QUADRATIC_POINTS[:, 0] + core.mv.y * QUADRATIC_POINTS[:, 1] + core.mv.z).dual()  # [controls] Point-
-    parameters = np.linspace(0.0, 1.0, N_SAMPLES + 1)                                         # [samples + 1]
+    parameters = np.linspace(0.0, 1.0, n_samples + 1)                                         # [samples + 1]
     weighted_controls = stack([controls * weights, controls * core.complementary(weights)], axis=1)  # [frames, arcs, controls] Point-
     curves = core.blend(controls, weights, parameters)                                        # [frames, samples + 1] Point-
     complements = core.blend(controls, core.complementary(weights), parameters)               # [frames, samples + 1] Point-

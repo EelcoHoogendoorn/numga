@@ -42,14 +42,14 @@ GALLERY_PIXELS = 240
 
 
 # --- math -----------------------------------------------------------------------------
-def tumbling() -> core.Rotor:
-    """Each body's orientation from each start over the time span `[steps + 1, bodies, starts]`."""
+def tumbling(n_steps: int = N_PERIODS * N_STEPS_PER_PERIOD) -> core.Rotor:
+    """Each body's orientation from each start over `n_steps` steps of the time span `[steps + 1, bodies, starts]`."""
     stretches = core.stretch(SEMI_AXES)                                      # [bodies] Point- <- Point-
     # Each start turns the long axis from the flow towards the normal of the vortex plane, to its tilt from it.
     starts = ((x ^ z) * (-(np.pi / 2 - TILTS) / 2)).exp()                    # [starts] Rotor+
     starts = starts[None].broadcast_to((len(SEMI_AXES), len(TILTS)))         # [bodies, starts] Rotor+
     return stack(list(core.tumble(starts, stretches[:, None], flow, PERIOD / N_STEPS_PER_PERIOD,
-                                  N_PERIODS * N_STEPS_PER_PERIOD)))          # [steps + 1, bodies, starts] Rotor+
+                                  n_steps)))                                 # [steps + 1, bodies, starts] Rotor+
 
 
 def frames(rotors: core.Rotor) -> Iterator[tuple[core.Rotor, core.Point]]:

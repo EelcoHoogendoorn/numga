@@ -53,10 +53,10 @@ def heeled(degrees: np.ndarray) -> core.Motor:
     return (mv.yz * (-np.radians(degrees) / 2)).exp()
 
 
-def ship() -> tuple[core.Topology, core.Point, core.Scalar, core.Point]:
-    """The hull, its mesh and its vertices; its weight, the water it displaces upright at its waterline; and its
-    centre of gravity at each height `[loads]`."""
-    topology, vertices = core.wigley(LENGTH, BEAM, DRAFT, FREEBOARD, N_CELLS)  # Point-[vertices]
+def ship(n_cells: int = N_CELLS) -> tuple[core.Topology, core.Point, core.Scalar, core.Point]:
+    """The hull, its mesh, `n_cells` cells deep below the waterline, and its vertices; its weight, the water it
+    displaces upright at its waterline; and its centre of gravity at each height `[loads]`."""
+    topology, vertices = core.wigley(LENGTH, BEAM, DRAFT, FREEBOARD, n_cells)  # Point-[vertices]
     hull = topology.incidence[2, 0] * vertices                               # [corners] Point-[triangles]
     upright, _ = core.buoyancy(hull, core.water, FLUID_WEIGHT)               # [] Forque-
     centres = mv.point([[0, 0, height] for height in CENTRE_HEIGHTS])        # [loads] Point-
