@@ -1,5 +1,6 @@
-"""Test configuration: headless plotting, and a guard that keeps a run to the tests a change could break. The whole
-suite runs once, just before a push to main, declared as `pytest tests --full-sweep=push-to-main`."""
+"""Test configuration: double precision for JAX, headless plotting, and a guard that keeps a run to the tests a change
+could break. The whole suite runs once, just before a push to main, declared as
+`pytest tests --full-sweep=push-to-main`."""
 
 from __future__ import annotations
 
@@ -7,6 +8,9 @@ import os
 from pathlib import Path
 
 import pytest
+
+# One precision for JAX across the whole suite, double, read by JAX when it is first imported; no test switches it.
+os.environ["JAX_ENABLE_X64"] = "1"
 
 # Numerical threads a full sweep may use, so that it never saturates the machine.
 SWEEP_THREADS = 4
