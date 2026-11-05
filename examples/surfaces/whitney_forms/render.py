@@ -58,8 +58,8 @@ gold = np.array([0.95, 0.68, 0.16])
 teal = np.array([0.08, 0.68, 0.56])
 primal_rgb, accent_rgb = np.array(to_rgb(primal_colour)), np.array(to_rgb(accent_colour))
 ring_colours = (gold, accent_rgb, teal)
-# The unit volume of space, an intrinsic scalar: a direction times it is the plane square to it, the plane a turn about
-# it turns in.
+# The intrinsic scalar one: the join of points, intrinsic, times it is the line through them, extrinsic, which a turn
+# turns about.
 unit_volume = core.space_mv.antipseudoscalar([1.0])                          # [] Antipseudoscalar-
 
 
@@ -214,8 +214,8 @@ def draw_tet_whitney(topology: core.Topology, vertices: core.SpacePoint, pages: 
     # across it, the corner the first face form radiates from, and the face facing that corner, as its corners.
     tet_corners = (topology.incidence[3, 0] * (vertices - centroid)).batch()[:, 0]   # [4] Point-
     tet_places = solids.origin + solids.context.include_from_algebra(tet_corners)    # [4] Point-
-    edge, across = topology.corners[3, 1][:, 0], core.complements(topology, 1)[0]
-    apex, face = 0, core.complements(topology, 0)[0]
+    edge, across = topology.corners[3, 1][:, 0], topology.complements[3, 1][:, 0]
+    apex, face = 0, topology.complements[3, 0][:, 0]
     wall, wall_faces = outward_wall(topology)
 
     view = solids.View(solids.aim(solids.origin, tet_elevation, tet_azimuth), np.full(2, 0.86), n_tet_pixels)
@@ -275,16 +275,21 @@ def draw_tet_whitney(topology: core.Topology, vertices: core.SpacePoint, pages: 
         meshes=[(face_mesh, 0.30), (face_wire, 1.0), (face_rim, 1.0), (flux_lines, 1.0)],
     )
 
-    # Rings around the edge across the first edge, which the first edge threads.
+    # Rings around the edge across the first edge, which the first edge threads, about a centre between the edge across
+    # and the centroid: each starts from it towards the first edge's middle, square to the edge across, and turns about
+    # the line through it along the edge across.
     edge_middle, across_middle = tet_corners[edge].mean(axis=0), tet_corners[across].mean(axis=0)  # [] Point-, Point-
-    across_axis = (tet_corners[across[1]] - tet_corners[across[0]]).normalized()  # [] Point-
-    # Each ring starts from the edge across towards the first edge's middle, square to the edge across, and turns
-    # about it in the plane square to it.
-    towards = edge_middle - across_middle                                     # [] Point-
-    radial = (towards - across_axis * towards.dot(across_axis)).normalized()  # [] Point-
-    ring_turns = ((across_axis * unit_volume) * (-np.linspace(0.0, 2 * np.pi, n_ring_samples, endpoint=False) / 2)).exp()   # [samples] Rotor+
-    ring_points = across_middle * 0.62 + ring_radii[:, None] * (ring_turns >> radial)   # [rings, samples] Point-
-    ring_places = solids.origin + solids.context.include_from_algebra(ring_points)      # [rings, samples] Point-
+    ring_centre = centroid + across_middle * 0.62                            # [] Point-
+    across_step = tet_corners[across[1]] - tet_corners[across[0]]            # [] Point-
+    ring_axis = (ring_centre & across_step).normalized()                     # [] Line-
+    # The first edge's middle, as the edge across's middle sees it, carried along the edge across into the plane through
+    # the centre square to it; its weight divided out, which `.normalized()` would leave signed.
+    seen = ((ring_centre + edge_middle - across_middle) & across_step) ^ (ring_centre | ring_axis)   # [] Point-
+    start = seen / (core.space_mv.w & seen)                                  # [] Point-
+    radial = (start - ring_centre) / (ring_centre & start).norm()            # [] Point-
+    ring_turns = ((ring_axis * unit_volume) * (-np.linspace(0.0, 2 * np.pi, n_ring_samples, endpoint=False) / 2)).exp()   # [samples] Motor+
+    ring_points = ring_centre + ring_radii[:, None] * (ring_turns >> radial)  # [rings, samples] Point-
+    ring_places = solids.origin + solids.context.include_from_algebra(ring_points - centroid)   # [rings, samples] Point-
     # Each ring a closed loop of edges, each edge in its ring's colour.
     rings = simplices.tubes(ring_places.reshape(-1), simplices.Topology.loops([n_ring_samples] * len(ring_places)),
                             np.repeat(np.stack(ring_colours), n_ring_samples, axis=0), 3.2, view, solids.gloss)

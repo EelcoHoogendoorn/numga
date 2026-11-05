@@ -2,15 +2,19 @@
 
 The triangle's signed patch defines both corner gradients and edge forms. Their reconstruction maps let a material conductivity act on local fields, with the adjugate carrying its response back to the mesh.
 
-One dimension up, in the algebra of space, a tetrahedron's signed volume does the same for its corner gradients, its edge forms and its face forms; pairing each edge form with each curl through that volume links only opposite edges.
+One dimension up, in projective space, a tetrahedron's forms of every degree are one quotient: the join of the corners off a simplex over its join with the simplex's own corners. Pairing each edge form with each curl through the tetrahedron's volume links only opposite edges.
 """
 
 from __future__ import annotations
 
+from functools import reduce
+from operator import and_
+
 import numpy as np
 
 from numga import NumpyContext, stack
-from numga.algebras import VGA2D as ga, VGA3D as space
+from numga.algebras import VGA2D as ga, PGA3D as space
+from numga.extensor import Extensor
 from numga.sparse import SparseExtensor, spdiag
 from examples.util.topology import Topology, simplex_parity
 
@@ -22,14 +26,13 @@ Point = ga.gatype.antivector()                                               # A
 Conductivity = ga.gatype((Point, Plane))
 triangle = Topology(3, [[0, 1, 2]])
 
-# The tetrahedron, in the algebra of space.
+# The tetrahedron, in projective space: its corners are points of weight one, so that their joins are the planes, lines
+# and points through them.
 space_mv = NumpyContext(space).multivector
 SpaceScalar = space.gatype.scalar()                                          # Scalar+
 SpacePlane = space.gatype.vector()                                           # Vector+
 SpaceBivector = space.gatype.bivector()                                      # Bivector+
 SpacePoint = space.gatype.antivector()                                       # Antivector-
-SpacePatch = space.gatype.antibivector()                                     # Antibivector-
-Volume = space.gatype.antitrivector()                                        # Antitrivector-
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -79,66 +82,33 @@ def edge_whitney_forms(corners: Point, points: Point) -> Plane:
     return (points[None, :] - corners[:, None]) / (2 * patch)                # [corners, samples] Plane+
 
 
-def tetrahedral_hats(topology: Topology, vertices: SpacePoint, points: SpacePoint
-                     ) -> tuple[SpaceScalar, SpacePlane, SpacePatch, Volume]:
-    """The barycentric hat values at `points` `[samples] Point-[tets]`, the constant corner gradients, the outward face
-    patches, and the signed volume of each tetrahedron."""
-    corners = topology.incidence[3, 0] * vertices                            # [corners] Point-[tets]
-    # Each tetrahedron's edges in its own vertex order; the first three run from its first corner.
-    edges = topology.oriented[3, 1] * (topology.d[0] * vertices)             # [tet_edges] Point-[tets]
-    volume = (edges[0] & edges[1] & edges[2]) / 6                            # Volume-[tets]
-    # Each face's patch, half the join of two of its sides, read as the face facing each corner, outward.
-    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)             # [face_corners] Point-[faces]
-    face_patches = topology.boundary[3, 2] * ((sides[0] & sides[1]) / 2)     # [corners] Patch-[tets]
-    # The outward patch reads a step from a corner across to its face as three times the volume, and the hat falls
-    # by one along that step: its gradient is the patch turned inward, over three times the volume.
-    gradients = -face_patches / (3 * volume)                                 # [corners] Plane+[tets]
-    hats = 1 + (gradients[:, None] & (points[None, :] - corners[:, None]))   # [corners, samples] Scalar+[tets]
-    return hats, gradients, face_patches, volume
-
-
-def tetrahedral_edge_forms(topology: Topology, vertices: SpacePoint, points: SpacePoint
-                           ) -> tuple[SpacePlane, SpaceBivector]:
-    """The six edge Whitney 1-forms at `points` `[samples] Point-[tets]`, circulating around each edge's opposite
-    edge, and their constant curls."""
-    corners = topology.incidence[3, 0] * vertices                            # [corners] Point-[tets]
-    edges = topology.oriented[3, 1] * (topology.d[0] * vertices)             # [tet_edges] Point-[tets]
-    volume = (edges[0] & edges[1] & edges[2]) / 6                            # Volume-[tets]
-    # The edge across each edge, run so that the two together run the tetrahedron's own sense.
-    opposite_tails, opposite_heads = complements(topology, 1).T
-    opposite_edges = corners[opposite_heads] - corners[opposite_tails]       # [tet_edges] Point-[tets]
-    # The patch the opposite edge sweeps to a point vanishes along that edge and, over six times the volume, reads
-    # one along the edge itself; its curl is the opposite edge over three times the volume, a plane of space.
-    forms = (opposite_edges[:, None] & (points[None, :] - corners[opposite_tails, None])) / (6 * volume)  # [tet_edges, samples] Plane+[tets]
-    curls = opposite_edges / (3 * volume)                                    # [tet_edges] Bivector+[tets]
-    return forms, curls
-
-
-def tetrahedral_face_forms(topology: Topology, vertices: SpacePoint, points: SpacePoint) -> SpaceBivector:
-    """The four face Whitney 2-forms at `points` `[samples] Point-[tets]`, radiating from each face's opposite
-    corner."""
-    corners = topology.incidence[3, 0] * vertices                            # [corners] Point-[tets]
-    edges = topology.oriented[3, 1] * (topology.d[0] * vertices)             # [tet_edges] Point-[tets]
-    volume = (edges[0] & edges[1] & edges[2]) / 6                            # Volume-[tets]
-    # Along the three faces at a corner the displacement from that corner lies in the face, while across the face
-    # facing it, it joins the face's outward patch to three times the volume.
-    return (points[None, :] - corners[:, None]) / (3 * volume)               # [corners, samples] Bivector+[tets]
+def tetrahedral_forms(topology: Topology, vertices: SpacePoint, m: int) -> Extensor:
+    """The Whitney m-forms of each tetrahedron's m-simplices, `[k] (m + 1)-vector+[tets]`, each in the sense its
+    m-simplex is stored: the join of the corners off the m-simplex over its join with the m-simplex's own corners. It
+    reads one on its own m-simplex's join and nothing on another's, which repeats a corner off its own, and its value
+    at a point `p` is `forms & p`: the ramp's height for a corner, for an edge the plane the edge across spans with
+    the point, for a face the line from the corner it faces through the point."""
+    # The corners off each m-simplex joined; the order they are joined in stands above and below the line alike, and
+    # cancels.
+    complements = reduce(and_, topology.off[3, m] * vertices)                # [k] (m + 1)-vector-[tets]
+    # Each m-simplex's own corners joined in the order it is stored, the one sense the form keeps.
+    spans = reduce(and_, topology.on[3, m] * vertices)                       # [k] (3 - m)-vector-[tets]
+    return complements / (complements & spans)
 
 
 def tetrahedral_edge_pages(topology: Topology, vertices: SpacePoint, n_pages: int) -> SpacePoint:
     """Level surfaces of the six edge Whitney 1-forms, `n_pages` of each at even steps of its unit circulation along
-    its edge: the triangles the opposite edge spans with points of the edge, each the opposite edge's tail, the point and
-    the opposite edge's head, `[tet_edges, pages, 3] Point-[tets]`."""
+    its edge: the triangles the edge across spans with points of the edge, each the edge across's first corner, the
+    point and its second, `[tet_edges, pages, 3] Point-[tets]`."""
     corners = topology.incidence[3, 0] * vertices                            # [corners] Point-[tets]
     tails, heads = topology.corners[3, 1]
-    opposite_tails, opposite_heads = complements(topology, 1).T
+    opposite_tails, opposite_heads = topology.complements[3, 1]
     # The form reads its own edge evenly, so pages through evenly spaced points of the edge lie equal shares of its
     # circulation apart.
     fractions = np.arange(1, n_pages + 1) / (n_pages + 1)                    # [pages]
     points = corners[tails, None] * (1 - fractions) + corners[heads, None] * fractions   # [tet_edges, pages] Point-[tets]
-    # The form at a point is the patch the opposite edge sweeps to it: it reads nothing along the opposite edge, nor
-    # along any step within the triangle that edge spans with the point, so the triangle lies in the form's kernel
-    # throughout, a level surface of the form.
+    # The form at a point is the plane the edge across spans with it, so the triangle that edge spans with the point
+    # lies in the form's kernel throughout, a level surface of the form.
     opposite_tail = corners[opposite_tails, None].broadcast_to(points.shape)             # [tet_edges, pages] Point-[tets]
     opposite_head = corners[opposite_heads, None].broadcast_to(points.shape)             # [tet_edges, pages] Point-[tets]
     return stack((opposite_tail, points, opposite_head), axis=-1)
@@ -150,25 +120,25 @@ def tetrahedral_face_lines(topology: Topology, vertices: SpacePoint, n_cuts: int
     corners = topology.incidence[3, 0] * vertices                            # [corners] Point-[tets]
     # The corners of the face facing each corner, and the middles of its equal parts: the form's flux through its face
     # is even, so each line through them carries an equal share of the unit flux.
-    facets = corners[complements(topology, 0)]                               # [corners, 3] Point-[tets]
+    facets = corners[topology.complements[3, 0].T]                           # [corners, 3] Point-[tets]
     crossings = (facets[:, None] * part_middles(n_cuts)).sum(axis=-1)        # [corners, lines] Point-[tets]
-    # The form at a point is the step to it from the corner the face faces, over three times the volume, and reads no
-    # flux through any patch along that step: its kernel runs along the step, so its field lines run straight out of
-    # that corner.
+    # The form at a point is the line from the corner the face faces through the point, and reads no flux through any
+    # patch along it: its field lines run straight out of that corner.
     return stack((corners[:, None].broadcast_to(crossings.shape), crossings), axis=-1)
 
 
 def tetrahedral_helicity(topology: Topology, vertices: SpacePoint) -> SpaceScalar:
-    """The signed-volume pairing of each edge's Whitney 1-form with each edge's curl, made symmetric: it links only
-    opposite edges, the same for every tetrahedron of the same sense, `[tet_edges, tet_edges] Scalar+[tets]`."""
+    """The volume pairing of each edge's Whitney 1-form with each edge's curl, made symmetric: it links only opposite
+    edges, the same for every tetrahedron of the same sense, `[tet_edges, tet_edges] Scalar+[tets]`."""
     corners = topology.incidence[3, 0] * vertices                            # [corners] Point-[tets]
-    _, gradients, _, volume = tetrahedral_hats(topology, vertices, corners)  # [corners, corners] Scalar+[tets], [corners] Plane+[tets], [corners] Patch-[tets], Volume-[tets]
-    _, curls = tetrahedral_edge_forms(topology, vertices, corners)           # [tet_edges, corners] Plane+[tets], [tet_edges] Bivector+[tets]
-    # At the centroid every hat is a quarter, so each edge form is a quarter of the difference of its ends'
-    # gradients; a linear form against a constant curl integrates exactly there.
-    tails, heads = topology.corners[3, 1]
-    centroid_forms = (gradients[heads] - gradients[tails]) / 4               # [tet_edges] Plane+[tets]
+    forms = tetrahedral_forms(topology, vertices, 1)                         # [tet_edges] Bivector+[tets]
+    # A form's curl reads two steps as twice the form does, constant; the form itself is linear across the
+    # tetrahedron, so against a constant curl it integrates exactly at the centroid.
+    curls = 2 * forms                                                        # [tet_edges] Bivector+[tets]
+    centroid_forms = forms & corners.mean(axis=0)                            # [tet_edges] Plane+[tets]
     densities = ((centroid_forms[:, None] ^ curls[None, :]) + (centroid_forms[None, :] ^ curls[:, None])) / 2  # [tet_edges, tet_edges] Trivector+[tets]
+    # The tetrahedron's volume, the join of its edges from its first corner in its own order, over six.
+    volume = reduce(and_, corners[1:] - corners[0]) / 6                      # Vector-[tets]
     return densities & volume                                                # [tet_edges, tet_edges] Scalar+[tets]
 
 

@@ -1,6 +1,9 @@
 """Barycentric hats, edge Whitney 1-forms, the forms on a tetrahedron, exact midpoint quadrature, and anisotropic
 conduction."""
 
+from functools import reduce
+from operator import and_
+
 import numpy as np
 
 from numga import stack
@@ -62,53 +65,42 @@ def test_barycentric_hats_and_edge_whitney_forms_on_single_triangle_and_diamond(
 
 def test_tetrahedral_whitney_0_1_2_forms_and_opposite_edge_helicity():
     topology, vertices, points = scenarios.single_tetrahedron(6)
-    corners = topology.incidence[3, 0] * vertices
-    hats, gradients, face_patches, volume = core.tetrahedral_hats(topology, vertices, points)
-    corner_hats, _, _, _ = core.tetrahedral_hats(topology, vertices, corners)
+    forms = [core.tetrahedral_forms(topology, vertices, m) for m in range(3)]
+    ramps, edge_forms, face_forms = forms
+    hats = ramps[:, None] & points[None, :]
 
+    assert ramps.batch().gatype == core.SpacePlane
     assert hats.batch().gatype == core.SpaceScalar
-    assert gradients.batch().gatype == core.SpacePlane
-    assert face_patches.batch().gatype == core.SpacePatch
-    assert volume.batch().gatype == core.Volume
-    np.testing.assert_allclose(corner_hats.kernel, np.eye(4)[..., None, None], atol=1e-13)
+    assert (edge_forms[:, None] & points[None, :]).batch().gatype == core.SpacePlane
+    assert (face_forms[:, None] & points[None, :]).batch().gatype.refines(core.SpaceBivector)
+    # Each degree's forms read one on their own simplex's join, in the sense it is stored, and nothing on the others.
+    for m, degree_forms in enumerate(forms):
+        spans = reduce(and_, topology.on[3, m] * vertices)
+        np.testing.assert_allclose((degree_forms[:, None] & spans[None, :]).kernel,
+                                   np.eye(spans.shape[0])[..., None, None], atol=1e-13)
     np.testing.assert_allclose(hats.sum(axis=0).kernel, 1.0, atol=1e-13)
-    np.testing.assert_allclose(gradients.sum(axis=0).kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose(face_patches.sum(axis=0).kernel, 0.0, atol=1e-13)
 
     # Barycentric interpolation reproduces any affine potential in space and its gradient exactly.
-    true_gradient = 1.3 * core.space_mv.x - 0.75 * core.space_mv.y + 0.55 * core.space_mv.z
-    corner_values = 0.4 + (true_gradient & corners)
-    sample_values = 0.4 + (true_gradient & points)
+    true_ramp = 1.3 * core.space_mv.x - 0.75 * core.space_mv.y + 0.55 * core.space_mv.z + 0.4 * core.space_mv.w
+    corners = topology.incidence[3, 0] * vertices
+    corner_values = true_ramp & corners
     interpolated = (corner_values[:, None] * hats).sum(axis=0)
-    reconstructed_gradient = (corner_values * gradients).sum(axis=0)
-    np.testing.assert_allclose(interpolated.kernel, sample_values.kernel, atol=1e-13)
-    np.testing.assert_allclose((reconstructed_gradient - true_gradient).kernel, 0.0, atol=1e-13)
+    np.testing.assert_allclose(interpolated.kernel, (true_ramp & points).kernel, atol=1e-13)
+    np.testing.assert_allclose(((corner_values * ramps).sum(axis=0) - true_ramp).kernel, 0.0, atol=1e-13)
 
-    # Edge 1-forms match Whitney's alternating formula, have constant curl, and read one along their own edge only.
-    edge_forms, edge_curls = core.tetrahedral_edge_forms(topology, vertices, points)
+    # Whitney's formulas from the ramps: the edge forms, and the face forms, which read one on the join of a face's
+    # corners, twice the face.
     tails, heads = topology.corners[3, 1]
-    alternating_edge_forms = hats[tails] * gradients[heads, None] - hats[heads] * gradients[tails, None]
-    alternating_curls = 2 * (gradients[tails] ^ gradients[heads])
-    np.testing.assert_allclose((edge_forms - alternating_edge_forms).kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose((edge_curls - alternating_curls).kernel, 0.0, atol=1e-13)
-
-    edges = topology.oriented[3, 1] * (topology.d[0] * vertices)
-    for fraction in (0.2, 0.5, 0.85):
-        edge_points = corners[tails] * (1 - fraction) + corners[heads] * fraction
-        readings, _ = core.tetrahedral_edge_forms(topology, vertices, edge_points)
-        np.testing.assert_allclose((readings & edges[None, :]).kernel, np.eye(6)[..., None, None], atol=1e-13)
-
-    # Face 2-forms match Whitney's formula one grade up and read the flux through their own face only.
-    face_forms = core.tetrahedral_face_forms(topology, vertices, points)
-    first, second, third = core.complements(topology, 0).T
-    alternating_face_forms = 2 * (hats[first] * (gradients[second, None] ^ gradients[third, None])
-                                  + hats[second] * (gradients[third, None] ^ gradients[first, None])
-                                  + hats[third] * (gradients[first, None] ^ gradients[second, None]))
-    np.testing.assert_allclose((face_forms - alternating_face_forms).kernel, 0.0, atol=1e-13)
-
-    face_centres = topology.incidence[3, 2] * (topology.incidence[2, 0].mean(axis=0) * vertices)
-    face_readings = core.tetrahedral_face_forms(topology, vertices, face_centres) & face_patches[None, :]
-    np.testing.assert_allclose(face_readings.kernel, np.eye(4)[..., None, None], atol=1e-13)
+    alternating_edge_forms = hats[tails] * ramps[heads, None] - hats[heads] * ramps[tails, None]
+    np.testing.assert_allclose(((edge_forms[:, None] & points[None, :]) - alternating_edge_forms).kernel, 0.0, atol=1e-13)
+    first, second, third = topology.corners[3, 2]
+    alternating_face_forms = 2 * (hats[first] * (ramps[second, None] ^ ramps[third, None])
+                                  + hats[second] * (ramps[third, None] ^ ramps[first, None])
+                                  + hats[third] * (ramps[first, None] ^ ramps[second, None]))
+    np.testing.assert_allclose((2 * (face_forms[:, None] & points[None, :]) - alternating_face_forms).kernel, 0.0, atol=1e-13)
+    # Without a point, each form is the wedge of the ramps at its simplex's corners.
+    np.testing.assert_allclose((edge_forms - (ramps[tails] ^ ramps[heads])).kernel, 0.0, atol=1e-13)
+    np.testing.assert_allclose((face_forms - (ramps[first] ^ ramps[second] ^ ramps[third])).kernel, 0.0, atol=1e-13)
 
     # The volume pairing of edge forms with curls is the same for a sheared, stretched tetrahedron, and links only
     # opposite edges, with the sense of the tetrahedron's corners in the order the two edges list them, over six.
