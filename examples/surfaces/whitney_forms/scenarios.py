@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from functools import reduce
+from operator import and_
+
 import numpy as np
 
 from numga import NumpyContext, stack
@@ -74,22 +77,20 @@ def tetrahedron_samples(corners: SpacePoint, n_subdivisions: int) -> SpacePoint:
 
 def single_tetrahedron(n_subdivisions: int) -> tuple[Topology, SpacePoint, SpacePoint]:
     """A mesh of one positively oriented scalene tetrahedron in space, its vertices, and its interior sample points."""
-    x, y, z = space_mv.x.dual(), space_mv.y.dual(), space_mv.z.dual()        # [] Point-, [] Point-, [] Point-
-    vertices = stack((-x * 0.56 - y * 0.38 - z * 0.34,
-                      x * 0.62 - y * 0.28 - z * 0.34,
-                      -x * 0.05 + y * 0.68 - z * 0.34,
-                      x * 0.03 + y * 0.02 + z * 0.66)).field()               # Point-[vertices]
+    vertices = space_mv.point([[-0.56, -0.38, -0.34],
+                               [0.62, -0.28, -0.34],
+                               [-0.05, 0.68, -0.34],
+                               [0.03, 0.02, 0.66]]).field()                  # Point-[vertices]
     topology = Topology(4, [[0, 1, 2, 3]])
     return topology, vertices, tetrahedron_samples(topology.incidence[3, 0] * vertices, n_subdivisions)
 
 
 def deformed_tetrahedron() -> SpacePoint:
     """The vertices of a strongly sheared, stretched and shifted tetrahedron of the same sense, `Point-[vertices]`."""
-    x, y, z = space_mv.x.dual(), space_mv.y.dual(), space_mv.z.dual()        # [] Point-, [] Point-, [] Point-
-    return stack((x * 0.40 - y * 1.10 + z * 0.25,
-                  x * 2.30 - y * 0.35 - z * 0.15,
-                  x * 0.85 + y * 1.65 + z * 0.55,
-                  x * 1.15 + y * 0.20 + z * 2.45)).field()                   # Point-[vertices]
+    return space_mv.point([[0.40, -1.10, 0.25],
+                           [2.30, -0.35, -0.15],
+                           [0.85, 1.65, 0.55],
+                           [1.15, 0.20, 2.45]]).field()                      # Point-[vertices]
 
 
 def obtuse_diamond() -> tuple[Topology, Point]:
@@ -106,8 +107,7 @@ def obtuse_diamond() -> tuple[Topology, Point]:
 def main() -> None:
     from examples.surfaces.whitney_forms.core import (
         Operators, barycentric_hats, complements, conduction, edge_conductance, edge_whitney_forms, simplex_parity,
-        tetrahedral_edge_forms, tetrahedral_edge_pages, tetrahedral_face_forms, tetrahedral_face_lines, tetrahedral_hats,
-        tetrahedral_helicity, triangle,
+        tetrahedral_edge_pages, tetrahedral_face_lines, tetrahedral_forms, tetrahedral_helicity, triangle,
     )
     from examples.surfaces.whitney_forms import render
     from examples.util.animation import save_figure
@@ -141,9 +141,8 @@ def main() -> None:
 
     # 3. Whitney 0-, 1- and 2-forms on a tetrahedron, and the volume pairing that links opposite edges.
     tetrahedron, tet_vertices, tet_points = single_tetrahedron(n_tet_subdivisions)
-    tet_hats, tet_gradients, face_patches, _ = tetrahedral_hats(tetrahedron, tet_vertices, tet_points)
-    tet_edge_forms, tet_curls = tetrahedral_edge_forms(tetrahedron, tet_vertices, tet_points)
-    tet_face_forms = tetrahedral_face_forms(tetrahedron, tet_vertices, tet_points)
+    # The forms of each degree, one quotient each: the corners' ramps, the edges' forms and the faces' forms.
+    ramps, tet_edge_forms, tet_face_forms = (tetrahedral_forms(tetrahedron, tet_vertices, m) for m in range(3))  # [corners] Plane+[tets], [tet_edges] Bivector+[tets], [corners] Trivector+[tets]
     tet_pages = tetrahedral_edge_pages(tetrahedron, tet_vertices, n_pages)     # [tet_edges, pages, 3] Point-[tets]
     tet_lines = tetrahedral_face_lines(tetrahedron, tet_vertices, n_face_cuts)  # [corners, lines, 2] Point-[tets]
     save_figure(
@@ -195,32 +194,25 @@ def main() -> None:
     seam_whitney1 = (spdiag(seam_forms) * diamond_topology.boundary[2, 1]).sum(axis=0) * Scalar
     np.testing.assert_allclose((seam_whitney1(shared_circulation) & shared_edge).kernel, 1.0, atol=1e-14)
 
-    tet_corners = tetrahedron.incidence[3, 0] * tet_vertices
-    corner_tet_hats, _, _, _ = tetrahedral_hats(tetrahedron, tet_vertices, tet_corners)
-    np.testing.assert_allclose(corner_tet_hats.kernel, np.eye(4)[..., None, None], atol=1e-13)
+    # Each degree's forms read one on their own simplex's join, in the sense it is stored, and nothing on the others.
+    for m, forms in enumerate((ramps, tet_edge_forms, tet_face_forms)):
+        spans = reduce(and_, tetrahedron.on[3, m] * tet_vertices)
+        np.testing.assert_allclose((forms[:, None] & spans[None, :]).kernel, np.eye(spans.shape[0])[..., None, None], atol=1e-13)
+    tet_hats = ramps[:, None] & tet_points[None, :]
     np.testing.assert_allclose(tet_hats.sum(axis=0).kernel, 1.0, atol=1e-13)
-    np.testing.assert_allclose(tet_gradients.sum(axis=0).kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose(face_patches.sum(axis=0).kernel, 0.0, atol=1e-13)
 
+    # Whitney's formulas from the ramps: the edge forms, and the face forms, which read one on the join of a face's
+    # corners, twice the face; without a point, each form is the wedge of the ramps at its simplex's corners.
     tails, heads = tetrahedron.corners[3, 1]
-    alternating_edge_forms = tet_hats[tails] * tet_gradients[heads, None] - tet_hats[heads] * tet_gradients[tails, None]
-    alternating_curls = 2 * (tet_gradients[tails] ^ tet_gradients[heads])
-    np.testing.assert_allclose((tet_edge_forms - alternating_edge_forms).kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose((tet_curls - alternating_curls).kernel, 0.0, atol=1e-13)
-
-    tet_edges = tetrahedron.oriented[3, 1] * (tetrahedron.d[0] * tet_vertices)
-    edge_midpoints = tetrahedron.incidence[3, 1] * (tetrahedron.incidence[1, 0].mean(axis=0) * tet_vertices)
-    midpoint_edge_forms, _ = tetrahedral_edge_forms(tetrahedron, tet_vertices, edge_midpoints)
-    np.testing.assert_allclose((midpoint_edge_forms & tet_edges[None, :]).kernel, np.eye(6)[..., None, None], atol=1e-13)
-
-    first, second, third = complements(tetrahedron, 0).T
-    alternating_face_forms = 2 * (tet_hats[first] * (tet_gradients[second, None] ^ tet_gradients[third, None])
-                                  + tet_hats[second] * (tet_gradients[third, None] ^ tet_gradients[first, None])
-                                  + tet_hats[third] * (tet_gradients[first, None] ^ tet_gradients[second, None]))
-    np.testing.assert_allclose((tet_face_forms - alternating_face_forms).kernel, 0.0, atol=1e-13)
-    face_centres = tetrahedron.incidence[3, 2] * (tetrahedron.incidence[2, 0].mean(axis=0) * tet_vertices)
-    centre_face_forms = tetrahedral_face_forms(tetrahedron, tet_vertices, face_centres)
-    np.testing.assert_allclose((centre_face_forms & face_patches[None, :]).kernel, np.eye(4)[..., None, None], atol=1e-13)
+    alternating_edge_forms = tet_hats[tails] * ramps[heads, None] - tet_hats[heads] * ramps[tails, None]
+    np.testing.assert_allclose(((tet_edge_forms[:, None] & tet_points[None, :]) - alternating_edge_forms).kernel, 0.0, atol=1e-13)
+    np.testing.assert_allclose((tet_edge_forms - (ramps[tails] ^ ramps[heads])).kernel, 0.0, atol=1e-13)
+    first, second, third = tetrahedron.corners[3, 2]
+    alternating_face_forms = 2 * (tet_hats[first] * (ramps[second, None] ^ ramps[third, None])
+                                  + tet_hats[second] * (ramps[third, None] ^ ramps[first, None])
+                                  + tet_hats[third] * (ramps[first, None] ^ ramps[second, None]))
+    np.testing.assert_allclose((2 * (tet_face_forms[:, None] & tet_points[None, :]) - alternating_face_forms).kernel, 0.0, atol=1e-13)
+    np.testing.assert_allclose((tet_face_forms - (ramps[first] ^ ramps[second] ^ ramps[third])).kernel, 0.0, atol=1e-13)
 
     tet_helicity = tetrahedral_helicity(tetrahedron, tet_vertices)
     deformed_helicity = tetrahedral_helicity(tetrahedron, deformed_tetrahedron())

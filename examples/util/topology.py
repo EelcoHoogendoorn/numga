@@ -244,6 +244,29 @@ class Topology:
         `off_tails, off_heads = topology.complements[3, 1]`; on a triangle's corners, the side facing each."""
         return ByDimensions(self.n_dim, local_complements)
 
+    @cached_property
+    def on(self) -> ByDimensions:
+        """`on[n, m]`, `[m + 1, k] numbers[n-simplices <- vertices]`: the corners of each m-simplex of each n-simplex, in
+        the order of `incidence[n, m]`, each m-simplex's corners in the order it is stored, increasing, so that their
+        join runs the m-simplex the way a value on it in `elements[m]` is read. With `off`, the corners of a simplex
+        off each of its m-simplices, every Whitney form is one quotient, the complement over its join with the
+        m-simplex, `complements / (complements & spans)`, with `spans = reduce(and_, topology.on[n, m] * vertices)`;
+        the m-simplex's own sense is the only one it keeps. Each map is built on first use."""
+        def stored(n: int, m: int) -> SparseExtensor:
+            corners = np.sort(self.elements[n][:, local_corners(n, m)], axis=1)   # [N, m + 1, k]
+            return selection(corners.transpose(1, 2, 0), self.n_vertices)
+        return ByDimensions(self.n_dim, stored)
+
+    @cached_property
+    def off(self) -> ByDimensions:
+        """`off[n, m]`, `[n - m, k] numbers[n-simplices <- vertices]`: the corners of each n-simplex off each of its
+        m-simplices, in the order of `incidence[n, m]`, the corners of `complements[n, m]`. Their join stands in a
+        Whitney form's numerator and its denominator alike, `complements / (complements & spans)` with
+        `complements = reduce(and_, topology.off[n, m] * vertices, outside)`, so their order cancels; whatever the
+        forms read nothing along off the simplex, `outside`, starts the join. Each map is built on first use."""
+        return ByDimensions(self.n_dim, lambda n, m: selection(
+            self.elements[n][:, local_complements(n, m)].transpose(1, 2, 0), self.n_vertices))
+
     def _local(self, n: int, m: int) -> np.ndarray:
         """`[N, k]`: the index in `elements[m]` of each m-simplex of each n-simplex, in the order of
         `incidence[n, m]`."""
