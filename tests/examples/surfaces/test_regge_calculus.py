@@ -127,7 +127,7 @@ def test_intrinsic_laplace_beltrami_cotangent_equivalence_and_flow():
     cotangents = dots / (2 * intrinsic_areas[:, None])
     unit_faces = core.mv.scalar(np.ones(topology.n_elements[2])[..., None]).field().dual()
     edge_cotangents = (~topology.incidence[2, 1] * ((cotangents / 2) * unit_faces)).sum(axis=-1)
-    cotangent_laplacian = -d0.adjugate()(spdiag(edge_cotangents * core.Scalar)(d0))
+    cotangent_laplacian = d0.adjugate()(spdiag(edge_cotangents * core.Scalar)(d0))
     quadratic = (core.mv.x & vertices).squared() - 0.35 * (core.mv.y & vertices).squared()
     np.testing.assert_allclose(
         (conductance(quadratic) - cotangent_laplacian(quadratic)).kernel,

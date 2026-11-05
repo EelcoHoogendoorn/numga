@@ -451,8 +451,9 @@ def clifford_conjugate_maps(value: SparseExtensor) -> SparseExtensor:
 
 @SparseExtensor.adjugate.register(lambda cell_type: cell_type.arity == 1)
 def adjugate(value: SparseExtensor) -> SparseExtensor:
-    """Every map cell's adjugate, the couplings run back: `S.adjugate()(c) & x` summed over the
-    elements equals `c & S(x)` summed."""
+    """Every map cell's adjugate, the couplings run back: summed over the elements, each pairing read
+    with its extrinsic factor first carries over as for one map, `S.adjugate()(c) & x` summed equal
+    to `c & S(x)` summed between intrinsic spaces."""
     return _transposed(value, value.cells.adjugate())
 
 

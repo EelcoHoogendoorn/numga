@@ -252,7 +252,7 @@ def main() -> None:
     obtuse_ops = Operators(obtuse_topology, obtuse_vertices)
     obtuse_edge_conductance = edge_conductance(obtuse_ops, Plane.dual())
     shared_cochain = mv.scalar(np.isin(np.arange(obtuse_topology.n_elements[1]), obtuse_topology.interior[1])[..., None]).field()
-    assert -(obtuse_edge_conductance(shared_cochain) & shared_cochain).sites.sum() > 0
+    assert (obtuse_edge_conductance(shared_cochain) & shared_cochain).sites.sum() > 0
 
     free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
     free = ~topology.reading(free_vertices, 0) * Scalar

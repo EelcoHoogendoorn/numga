@@ -62,9 +62,9 @@ class Operators:
         self.even_gradient = (spdiag(self.corner_gradients) * topology.incidence[2, 0]).sum(axis=0) * Even  # (Plane+ <- Even+)[faces <- vertices]
         self.vertex_areas = ~corner_mean * self.areas                        # Scalar+[vertices]
         inverse_vertex_mass = spdiag((1 / self.vertex_areas) * Even.dual().inverse())  # (Even+ <- Even-)[vertices <- vertices]
-        # Because the 2D regressive pairing flips sign on odd grades and keeps it on even grades,
-        # the adjugate of the even gradient is already the skew-adjoint partner that conserves wave energy.
-        self.even_divergence = inverse_vertex_mass(self.even_gradient.adjugate()(self.isotropic_medium))  # (Even+ <- Plane+)[vertices <- faces]
+        # The divergence is minus the even gradient's adjugate through the medium, as integrating by parts
+        # makes it: the skew-adjoint partner that conserves wave energy.
+        self.even_divergence = -inverse_vertex_mass(self.even_gradient.adjugate()(self.isotropic_medium))  # (Even+ <- Plane+)[vertices <- faces]
 
         # A velocity is built from a potential through the medium, and from a stream function without a metric:
         # meeting its gradient with the patch gives the area-weighted velocity along its level curves.
