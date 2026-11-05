@@ -144,7 +144,7 @@ def population(rng: np.random.Generator, candidates: int, sizes: tuple[float, fl
     half_widths = 10 ** rng.uniform(np.log10(sizes[0]), np.log10(sizes[1]), size=(candidates, 3))
     rate = rng.normal(size=(candidates, 6)) * np.array([0.3, 0.3, 0.3, 0.6, 0.6, 0.6])
     rate[np.arange(candidates), np.argsort(half_widths, axis=-1)[:, 1]] = rng.choice([-5.0, 5.0], size=candidates)
-    place = S3.mv.antivector(rng.normal(size=(candidates, 4)))
+    place = S3.mv.vector(rng.normal(size=(candidates, 4))).dual()
     spin = S3.mv.bivector(rng.normal(size=(candidates, 6)) * np.array([1.0, 1.0, 1.0, 0.0, 0.0, 0.0]))
     color = render.hues(rng.permutation(candidates) / candidates)
     dual = S3.ellipsoid(half_widths)
