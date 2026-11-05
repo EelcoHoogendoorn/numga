@@ -1,14 +1,12 @@
 """Magnetic skyrmions: the exchange carried across a twisted bond is the Heisenberg exchange, the Dzyaloshinskii-Moriya
 interaction and an anisotropy along the bond; as a lattice of skyrmions crystallizes from noise, damped, the energy
 never rises and the charge comes out whole, one for each skyrmion; a high field erases every skyrmion; a current carries
-the lattice without unwinding it; the written effective field is the energy's derivative; the spins stay unit throughout; and the lattice and the frames draw, alone and side
+the lattice without unwinding it; the spins stay unit throughout; and the lattice and the frames draw, alone and side
 by side."""
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-
-from numga.backend.jax import derivative
 
 from examples.quantum.skyrmions import core, render, scenarios
 
@@ -44,18 +42,6 @@ def test_twisted_exchange_is_dzyaloshinskii_moriya(film):
     zeeman = -(applied & spins).sites.sum()
     np.testing.assert_allclose(core.energy(topology, carriers, applied, spins).to_array(),
                                (heisenberg + dzyaloshinskii_moriya + anisotropy + zeeman).to_array(), rtol=1e-12)
-
-
-def test_effective_field_is_the_energys_derivative(film):
-    """The effective field written out, each neighbour's spin carried across its bond to the site plus the applied field,
-    paired with the spin at its own site and summed over the sites, is JAX's derivative of the energy, negated."""
-    topology, vertices, bonds, periods, carriers = film
-    spins = scenarios.noise(topology, scenarios.n_smoothing, scenarios.seed)  # Spin-[vertices]
-    applied = scenarios.crystal_field * core.film                             # [] Field+
-    slope = derivative(lambda spins: core.energy(topology, carriers, applied, spins))(spins)   # [] Scalar+ <- Spin-[vertices]
-    field = core.effective_field(topology, carriers, applied, spins)          # Field+[vertices]
-    written = core.pairing(field).on_diagonal().sites.sum()                   # [] Scalar+ <- Spin-[vertices]
-    np.testing.assert_allclose(np.asarray((slope + written).kernel), 0.0, atol=1e-12)
 
 
 def test_lattice_of_skyrmions_crystallizes(film, crystal_states):

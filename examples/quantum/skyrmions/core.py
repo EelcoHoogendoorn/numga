@@ -22,7 +22,7 @@ The effective field on a spin is written out: the applied field, plus on every b
 the bond's other end exerts, once carried across the bond, a tail's spin to the head by `carriers >> tails` and a head's
 back to the tail by `carriers << heads`, the sandwich that undoes it. The energy is bilinear in the spins, so that sum
 is the energy's derivative with respect to each spin, paired back through `pairing = Field & Spin`, the Zeeman energy's
-own pairing; the tests confirm it against JAX's derivative. Each spin precesses in its field's plane; Gilbert's damping
+own pairing. Each spin precesses in its field's plane; Gilbert's damping
 adds that plane's quarter turn about the spin, `turning.commutator(spins.dual())`, which turns the spin toward its
 field; a current carries the texture along, turning each spin in the plane through it and its change along the drift;
 and a thermal field kicks it. Every step turns every spin by a rotor, so the spins stay unit by construction. A
