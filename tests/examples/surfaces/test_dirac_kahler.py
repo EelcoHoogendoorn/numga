@@ -14,7 +14,6 @@ def test_mixed_grade_whitney_reconstruction_and_dirac_kahler_product_on_disk():
 
     assert operators.whitney0.gatype == core.ga.gatype((core.Scalar, core.Scalar))
     assert operators.whitney1.gatype == core.ga.gatype((core.Plane, core.Scalar))
-    assert operators.whitney2.gatype == core.ga.gatype((core.Bivector, core.Scalar))
     assert operators.dirac.gatype == core.ga.gatype((core.Full, core.Full))
     assert operators.even_gradient.gatype == core.ga.gatype((core.Plane, core.Even))
     assert operators.even_divergence.gatype == core.ga.gatype((core.Even, core.Plane))

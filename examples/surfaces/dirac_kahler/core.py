@@ -46,7 +46,7 @@ class Operators:
         tails, heads = topology.corners[2, 1]
         centroid_forms = (self.corner_gradients[heads] - self.corner_gradients[tails]) / 3  # [corners] Plane+[faces]
         self.whitney1 = (spdiag(centroid_forms) * topology.oriented[2, 1]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- edges]
-        self.whitney2 = spdiag(mv.xy / (mv.xy & self.patches) * Scalar)      # (Bivector+ <- Scalar+)[faces <- faces]
+        self.whitney2 = mv.xy / (mv.xy & self.patches) * Scalar              # (Bivector+ <- Scalar+)[faces]
 
         # Multiplying the corner gradients by a full multivector unites divergence in grade 0,
         # gradient plus rotated bivector gradient in grade 1, and exterior curl in grade 2.

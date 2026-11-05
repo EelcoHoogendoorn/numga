@@ -201,7 +201,7 @@ class Operators:
         # gradients, matching the constant Whitney 2-form of unit integral over the face patch.
         curls = 2 * (self.corner_gradients[tails] ^ self.corner_gradients[heads])  # [corners] Bivector+[faces]
         self.curl = (spdiag(curls) * topology.oriented[2, 1]).sum(axis=0) * Scalar  # (Bivector+ <- Scalar+)[faces <- edges]
-        self.whitney2 = spdiag(mv.xy / (mv.xy & self.patches) * Scalar)      # (Bivector+ <- Scalar+)[faces <- faces]
+        self.whitney2 = mv.xy / (mv.xy & self.patches) * Scalar              # (Bivector+ <- Scalar+)[faces]
 
         # Evaluating the linear Whitney 1-forms at the three edge midpoints integrates
         # quadratic products over every triangle exactly.

@@ -39,6 +39,10 @@ Magnetic = Field.derive.within(space)               # Bivector+
 Rate = Field.derive.within(space)                   # Bivector+
 # A function integrated over a share of the ball is an amount.
 Amount = ga.gatype.antiscalar()                     # Antiscalar-
+# Intrinsic planes, the joins of points: the current a field drives is a point swept through time.
+Patch = Field.derive.dual                           # Antibivector-
+# Ohm's law, from a field to the current it drives.
+Conduction = ga.gatype((Patch, Field))              # Patch- <- Field+
 # The observer's direction of time.
 time = -mv.t.dual()                                 # [] Point-
 # The electric field along a direction: the plane it sweeps through time, met with the dual.
@@ -77,17 +81,17 @@ class Ball:
         self.stiffness = self.curl.adjugate()(vacuum(self.curl))                 # (Amount- <- Scalar+)[edges <- edges]
 
 
-def ohm(ball: Ball, conductivity: Scalar) -> SparseExtensor:
+def ohm(ball: Ball, conductivity: Scalar) -> Conduction:
     """Ohm's law in each tetrahedron: the current a field drives, the field read back along the direction it points,
     swept through time and weighted by the volume, so that a field paired with it is the heat it makes."""
-    return spdiag(ball.prisms.norm() * conductivity * (along.inverse() & time))  # (Patch- <- Field+)[tets <- tets]
+    return ball.prisms.norm() * conductivity * (along.inverse() & time)        # (Patch- <- Field+)[tets]
 
 
 def induction(ball: Ball, velocities: Point, conductivity: Scalar) -> tuple[SparseExtensor, SparseExtensor]:
     """The two forms of the potential's induction law, both on the edges: the conductance, which a changing potential
     meets, and the drive, the moving fluid's electric field pushing current along each edge. A potential `A` changes by
     `conductance(dA/dt) == drive(A) - stiffness(A)`."""
-    current = ohm(ball, conductivity)                                            # (Patch- <- Field+)[tets <- tets]
+    current = ohm(ball, conductivity)                                            # (Patch- <- Field+)[tets]
     conductance = ball.electric.adjugate()(current(ball.electric))               # (Amount- <- Scalar+)[edges <- edges]
     # The moving fluid reads the magnetic plane as an electric field: met with the velocity, swept through time.
     motional = ((velocities & Magnetic) ^ mv.t)(ball.curl)                       # (Field+ <- Scalar+)[tets <- edges]
@@ -158,7 +162,7 @@ def dynamo(ball: Ball, flow: Flow, conductivity: Scalar, viscosity: float, pull:
     Adams–Bashforth under the flow's departure from it. The current of that step brakes the flow
     halfway through it; the flow is stepped by Crank–Nicolson under viscosity and the stirring's pull and by
     Adams–Bashforth as it carries itself."""
-    current = ohm(ball, conductivity)                                            # (Patch- <- Field+)[tets <- tets]
+    current = ohm(ball, conductivity)                                            # (Patch- <- Field+)[tets]
     stirred = flow.velocity(flow.circulation(amplitudes))                       # Point-[tets]
     conductance, drive = induction(ball, stirred, conductivity)
     growth = drive - ball.stiffness                                              # (Amount- <- Scalar+)[edges <- edges]

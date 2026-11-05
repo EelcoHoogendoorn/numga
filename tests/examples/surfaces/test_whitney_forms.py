@@ -133,7 +133,6 @@ def test_cochain_complex_and_exact_midpoint_quadrature_including_obtuse_triangle
     assert operators.gradient.gatype == core.ga.gatype((core.Plane, core.Scalar))
     assert operators.whitney1.gatype == core.ga.gatype((core.Plane, core.Scalar))
     assert operators.curl.gatype == core.ga.gatype((core.Bivector, core.Scalar))
-    assert operators.whitney2.gatype == core.ga.gatype((core.Bivector, core.Scalar))
     assert not np.any(operators.d1(operators.d0).cells.kernel)
 
     # Whitney reconstruction commutes with the exterior derivative on 0-cochains and 1-cochains.

@@ -209,14 +209,12 @@ def project(bodies: Bodies, constraints: Constraints, previous_amplitudes: Scala
     mobility = spdiag(response * compliance)                               # [..., modes] Scalar+[bodies <- bodies]
     # Each constraint's own compliance over the step squared, as a map from force to gap.
     constraint_compliance = constraints.compliance / dt**2 * Force.dual()  # (Displacement- <- Force+)[constraints]
-    # Each body's inverse inertia, from forque to twist.
-    inverse_inertias = bodies.inverse_inertia                              # [...] (Twist+ <- Forque-)[bodies]
     # The adjugate reads the work pairing backwards: `rigid.adjugate()(force) & twist == force & rigid(twist)`
     # for every force and twist, so it turns forces at the anchors, extrinsic, into the forques they exert on the
     # bodies, intrinsic. This is the principle of virtual work, with no transpose and no metric.
     # The change in the gaps for forces at the constraints: through the bodies' rigid motion, through
     # their modes, summed over the modes, and through the constraints' own compliance.
-    system = rigid(inverse_inertias(rigid.adjugate())) + (modal * (mobility * modal_load)).sum(axis=-1) + constraint_compliance  # [...] (Displacement- <- Force+)[constraints <- constraints]
+    system = rigid(bodies.inverse_inertia(rigid.adjugate())) + (modal * (mobility * modal_load)).sum(axis=-1) + constraint_compliance  # [...] (Displacement- <- Force+)[constraints <- constraints]
     # The reactions at the constraints that close every gap, given how far the modes move on their own.
     # They are position-level, force times the step squared, so through an inverse inertia they give a
     # displacement.
