@@ -100,7 +100,8 @@ def sphere_demo() -> None:
     dual_areas = ~corner_mean * areas                                                                         # Scalar+[vertices]
 
     # The stiffness and vertex mass determine the surface's spatial modes.
-    stiffness = gradient.adjugate()(core.spdiag(areas * core.Plane.dual())(gradient))   # (Amount- <- Scalar+)[vertices <- vertices]
+    medium = areas * core.Plane.dual()                                           # (Point- <- Plane+)[faces]
+    stiffness = gradient.adjugate()(medium(gradient))                            # (Amount- <- Scalar+)[vertices <- vertices]
     mass = core.spdiag(dual_areas * core.Scalar.dual())                                 # (Amount- <- Scalar+)[vertices <- vertices]
     eigenvalues, eigenfields = stiffness.eigh(mass, n_sphere_modes + 1)          # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
     # The eigenvalues and the amplitudes of the modes are fields over the modes, which the structure constants couple.
@@ -135,7 +136,8 @@ def main() -> None:
     dual_areas = ~corner_mean * areas                                                                         # Scalar+[vertices]
 
     # The stiffness and vertex mass determine the surface's spatial modes.
-    stiffness = gradient.adjugate()(core.spdiag(areas * core.Plane.dual())(gradient))   # (Amount- <- Scalar+)[vertices <- vertices]
+    medium = areas * core.Plane.dual()                                           # (Point- <- Plane+)[faces]
+    stiffness = gradient.adjugate()(medium(gradient))                            # (Amount- <- Scalar+)[vertices <- vertices]
     mass = core.spdiag(dual_areas * core.Scalar.dual())                                 # (Amount- <- Scalar+)[vertices <- vertices]
     eigenvalues, eigenfields = stiffness.eigh(mass, n_modes + 1)                 # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
     # The eigenvalues and the amplitudes of the modes are fields over the modes, which the structure constants couple.
@@ -216,7 +218,8 @@ def pinned() -> None:
     gradient = (core.spdiag(corner_gradients * core.Scalar) * topology.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
     corner_mean = topology.incidence[2, 0].mean(axis=0)                          # Scalar+[faces <- vertices]
     dual_areas = ~corner_mean * areas                                            # Scalar+[vertices]
-    stiffness = gradient.adjugate()(core.spdiag(areas * core.Plane.dual())(gradient))   # (Amount- <- Scalar+)[vertices <- vertices]
+    medium = areas * core.Plane.dual()                                           # (Point- <- Plane+)[faces]
+    stiffness = gradient.adjugate()(medium(gradient))                            # (Amount- <- Scalar+)[vertices <- vertices]
     mass = core.spdiag(dual_areas * core.Scalar.dual())                                 # (Amount- <- Scalar+)[vertices <- vertices]
     eigenvalues, eigenfields = stiffness.eigh(mass, n_modes + 1)                 # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
     eigenvalues, modes = eigenvalues[1:].field(), eigenfields[1:]                # Scalar+[modes], [modes] Scalar+[vertices]

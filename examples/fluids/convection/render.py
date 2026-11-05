@@ -20,7 +20,9 @@ from numga.extensor import Extensor
 from examples.util.charts import FRAME_WIDTH, points, style, subplots
 from examples.util.wgsl import contours, image_figure, simplices
 from examples.util.wgsl.camera import Camera
+from examples.fluids.convection import core
 
+mv = core.mv
 Topology = simplices.Topology
 mesh_colour = np.array(to_rgb("#9aa5ae"))
 stream_colour = np.array(to_rgb("#2b2f33"))
@@ -55,10 +57,9 @@ def on_white(picture: np.ndarray) -> np.ndarray:
     return np.round(np.clip(shown, 0, 1) * 255).astype(np.uint8)
 
 
-def layer_camera(vertices: Extensor, period: float) -> Camera:
+def layer_camera(period: float) -> Camera:
     """The camera looking at the layer side on, `n_pixels` across: points read by the planes x and y, weighed by their
     volume."""
-    mv = vertices.context.multivector
     return Camera(mv.x, mv.y, 0 * mv.x, mv.v, 0.0, np.array([period / 2, 0.5]),
                   np.array([period / 2 + margin, 0.5 + margin]), n_pixels)
 
@@ -68,8 +69,8 @@ def walls(topology: Topology, points: Extensor, camera: Camera):
     temperature, warm at the floor and cool at the ceiling."""
     border = topology.border
     tails, heads = border.incidence[1, 0] * points                              # Point-[border], Point-[border]
-    heights = (points.context.multivector.y & tails).to_array()                 # [border]
-    level = np.isclose(heights, (points.context.multivector.y & heads).to_array())   # [border]
+    heights = (mv.y & tails).to_array()                                         # [border]
+    level = np.isclose(heights, (mv.y & heads).to_array())                      # [border]
     colours = temperature_map(1 - heights[level])[:, :3]                       # [walls, 3]
     return simplices.strokes(points, border.subset(level, 1), colours, wall_width, camera)
 
@@ -77,7 +78,7 @@ def walls(topology: Topology, points: Extensor, camera: Camera):
 # --- drawing --------------------------------------------------------------------------
 def draw_layer(topology: Topology, vertices: Extensor, period: float) -> Figure:
     """The open layer's triangles as strokes of their edges, between its warm floor and cool ceiling."""
-    camera = layer_camera(vertices, period)
+    camera = layer_camera(period)
     layers = [simplices.strokes(vertices, topology, mesh_colour, mesh_width, camera), walls(topology, vertices, camera)]
     return image_figure(on_white(simplices.composited(layers)))
 
@@ -88,7 +89,7 @@ def animate(topology: Topology, vertices: Extensor, opening: Extensor, period: f
     comes, with the budget it leaves undrawn, read on the open layer by `opening`: coloured by its temperature in
     bands, red above the middle's and blue below, with streamlines at a fixed spacing of the stream function, between
     its floor and ceiling."""
-    camera = layer_camera(vertices, period)
+    camera = layer_camera(period)
     boundaries = [walls(topology, vertices, camera)]
     lines = contours.Lines(stream_spacing, stream_spacing / 2, np.append(stream_colour, 1.0), stream_width)
     # Each band in the colour of the temperature at its middle, flat across it, so that a frame changes only where

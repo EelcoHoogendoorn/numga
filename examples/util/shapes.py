@@ -60,11 +60,6 @@ def read(points: Extensor, readers: Extensor) -> np.ndarray:
     return np.moveaxis((readers.reshape(readers.shape + (1,) * points.ndim) & points).to_array(), 0, -1)
 
 
-def sizes(points: Extensor) -> Extensor:
-    """Each offset's size: the root of its square's size."""
-    return points.squared().abs().square_root()
-
-
 def outward(simplices: np.ndarray, coordinates: np.ndarray) -> Topology:
     """The topology of top simplices `[N, n + 1]` filling the space of their vertices at the coordinates `[V, n]`, each
     wound to positive volume: its edges from its first corner a right-handed frame, counter-clockwise in the plane."""
@@ -149,7 +144,7 @@ def hexagonal_disk(radius: float, divisions: int) -> tuple[Topology, np.ndarray]
     lattice_axes = concatenate([unit[None], (((across ^ up) * (-np.pi / 6)).exp() >> unit)[None]])
     positions = (lattice_axes * lattice).sum(axis=-1)                           # [nodes] Point-
     # Map complete hexagonal rings to circles, keeping their six-neighbour topology.
-    positions = spacing * layers[inside] * positions / sizes(positions)
+    positions = spacing * layers[inside] * positions / positions.antinorm()
     return delaunay(read(concatenate((unit[None] * 0, positions)), planes(2)))
 
 
@@ -187,13 +182,13 @@ def triangular_disk(radius: float, divisions: int) -> tuple[Topology, np.ndarray
     # Equal edge springs even out the circular map's distortion. Rim vertices can slide along the circle; the
     # incidence's reverse sums edge forces at each vertex.
     sides = (topology.boundary[2, 1] * (topology.d[0] * vertices)).batch()     # [corners, F] Point-
-    area = sizes(sides[0] & sides[1]).sum() / 2
+    area = (sides[0] & sides[1]).antinorm().sum() / 2
     target = (4 * area / (np.sqrt(3) * topology.n_elements[2])).square_root()
     for _ in range(relaxation_steps):
         edges = topology.d[0] * vertices                                         # Point-[E]
-        force = edges * (1 - target / sizes(edges))                             # Point-[E]
+        force = edges * (1 - target / edges.antinorm())                          # Point-[E]
         positions = (vertices - relaxation_rate * (~topology.d[0] * force)).batch()   # [V] Point-
-        positions = positions.at[boundary].set(radius * positions[boundary] / sizes(positions[boundary]))
+        positions = positions.at[boundary].set(radius * positions[boundary] / positions[boundary].antinorm())
         vertices = positions.field()
         topology, _ = delaunay(read(positions, planes(2)))
     return topology, read(vertices.batch(), planes(2))
@@ -236,7 +231,7 @@ def sphere(levels: int) -> tuple[Topology, np.ndarray]:
     for _ in range(levels):
         topology, finer = midpoint_split(topology, coordinates, 1)
         points = placed(finer)                                                  # [V + E] Point-
-        coordinates = read(points / sizes(points), planes(3))
+        coordinates = read(points / points.antinorm(), planes(3))
     return topology, coordinates
 
 

@@ -59,7 +59,7 @@ def draw_flows(left: core.Euclidean, right: core.Euclidean, knotted: core.Euclid
     knots, one on each torus."""
     # The orbits seen along w: the stereographic projection put them in the space of x, y and z, which their slice by
     # w states, and the projective embedding places that space about the scene's origin.
-    w = left.context.multivector.w
+    w = core.mv.w
     drawn = [solids.origin + solids.context.include_from_algebra(w ^ (orbits & w.dual()))
              for orbits in (left, right, knotted)]
     figure = plt.figure(figsize=(9, 3.1))
@@ -78,7 +78,7 @@ def animate_flows(left: core.Euclidean, right: core.Euclidean, knotted: core.Euc
     a few points ride along each knot. The three panels side by side, seen by one camera."""
     # The orbits seen along w: the stereographic projection put them in the space of x, y and z, which their slice by
     # w states, and the projective embedding places that space about the scene's origin.
-    w = left.context.multivector.w
+    w = core.mv.w
     drawn = [solids.origin + solids.context.include_from_algebra(w ^ (orbits & w.dual()))
              for orbits in (left, right, knotted)]
     frame = view(frame_pixels, drawn)

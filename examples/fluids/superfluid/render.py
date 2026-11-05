@@ -18,7 +18,9 @@ from numga.extensor import Extensor
 from examples.util.charts import style, subplots
 from examples.util.wgsl import contours, image_figure, simplices
 from examples.util.wgsl.camera import Camera
+from examples.fluids.superfluid import core
 
+mv = core.mv
 Topology = simplices.Topology
 wall_colour = np.array(to_rgb("#3b4a57"))
 mesh_colour = np.array(to_rgb("#9aa5ae"))
@@ -50,7 +52,6 @@ def readings(plane: Extensor, values: Extensor) -> np.ndarray:
 def cavity_camera(vertices: Extensor) -> Camera:
     """The camera looking down on the cavity, `n_pixels` across: points read by the planes x and y, weighed by their
     mass."""
-    mv = vertices.context.multivector
     across, up = readings(mv.x, vertices), readings(mv.y, vertices)
     middle = np.array([across.max() + across.min(), up.max() + up.min()]) / 2
     half = np.array([across.max() - across.min(), up.max() - up.min()]) / 2 + margin

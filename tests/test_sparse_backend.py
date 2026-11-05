@@ -67,6 +67,32 @@ def test_a_sparse_map_densifies_inside_a_compiled_function(backend):
     np.testing.assert_allclose(applied.kernel, expected.kernel, atol=1e-12)
 
 
+def test_a_field_of_maps_composes_and_sums_as_its_diagonal_inside_a_compiled_function(backend):
+    # A strip of two triangles: the pullback of a field of maps on the faces, `(Antivector- <- Vector+)[faces]`, through a
+    # map from a scalar at each vertex to a plane on each face, plus a field of maps on the vertices, as written and with
+    # each field placed on its diagonal by hand.
+    from numga.sparse import SparseExtensor, spdiag
+    context_type, compile = backend
+    mv, Scalar, Vector = context_type(PGA3D).multivector, PGA3D.gatype.scalar(), PGA3D.gatype.vector()
+    rng = np.random.default_rng(4)
+    faces = np.array([[0, 1, 2], [2, 1, 3]])
+    slopes = mv.vector(rng.normal(size=(2, 3, 4))) * Scalar                   # [faces, corners] Vector+ <- Scalar+
+    conductivity = mv.scalar(rng.uniform(1, 2, size=(2, 1))).field() * Vector.dual()   # (Antivector- <- Vector+)[faces]
+    capacity = mv.scalar(rng.uniform(1, 2, size=(4, 1))).field() * Scalar.dual()      # (Antiscalar- <- Scalar+)[vertices]
+
+    def system(slopes, conductivity, capacity):
+        gradient = SparseExtensor.from_columns(faces, slopes, 4)
+        return (gradient.adjugate()(conductivity(gradient)) + capacity).cells
+
+    def by_hand(slopes, conductivity, capacity):
+        gradient = SparseExtensor.from_columns(faces, slopes, 4)
+        return (gradient.adjugate()(spdiag(conductivity)(gradient)) + spdiag(capacity)).cells
+
+    implicit, explicit = compile(system)(slopes, conductivity, capacity), compile(by_hand)(slopes, conductivity, capacity)
+    assert implicit.gatype == explicit.gatype
+    np.testing.assert_allclose(implicit.kernel, explicit.kernel, atol=1e-12)
+
+
 def test_sparse_binding_splices_open_inputs_and_preserves_empty_batches(backend):
     context_type, compile = backend
     vector = PGA3D.gatype.vector()

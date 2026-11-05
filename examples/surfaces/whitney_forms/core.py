@@ -171,7 +171,7 @@ class Operators:
         # gradients, matching the constant Whitney 2-form of unit integral over the face patch.
         curls = 2 * (self.corner_gradients[tails] ^ self.corner_gradients[heads])  # [corners] Bivector+[faces]
         self.curl = (spdiag(curls) * topology.oriented[2, 1]).sum(axis=0) * Scalar  # (Bivector+ <- Scalar+)[faces <- edges]
-        self.whitney2 = spdiag(mv.xy / (mv.xy & self.patches) * Scalar)      # (Bivector+ <- Scalar+)[faces <- faces]
+        self.whitney2 = mv.xy / (mv.xy & self.patches) * Scalar              # (Bivector+ <- Scalar+)[faces]
 
         # Evaluating the linear Whitney 1-forms at the three edge midpoints integrates
         # quadratic products over every triangle exactly.
@@ -184,7 +184,7 @@ def edge_conductance(operators: Operators, conductivity: Conductivity) -> Sparse
     """The 1-form conductance operator on edges, integrated exactly over each triangle from its three edge midpoints."""
     # Each midpoint carries one third of the triangle's area; pulling the material map back
     # through the midpoint evaluation maps and summing over the three midpoints is exact for quadratics.
-    weights = spdiag(((operators.areas / 3) * conductivity)[..., None])      # [..., midpoints] (Point- <- Plane+)[faces <- faces]
+    weights = ((operators.areas / 3) * conductivity)[..., None]              # [..., midpoints] (Point- <- Plane+)[faces]
     return operators.midpoint_whitney1.adjugate()(weights(operators.midpoint_whitney1)).sum(axis=-1)  # [...] (Amount- <- Scalar+)[edges <- edges]
 
 
@@ -194,7 +194,8 @@ def conduction(operators: Operators, conductivity: Conductivity,
     """Steady potential, face current, and streamfunction for prescribed electrode potentials."""
     topology = operators.topology
     # Pulling the area-weighted conductivity back through the face gradient gives the vertex conductance.
-    conductance = operators.gradient.adjugate()(spdiag(operators.areas * conductivity)(operators.gradient))  # [cases] (Amount- <- Scalar+)[vertices <- vertices]
+    medium = operators.areas * conductivity                                  # [cases] (Point- <- Plane+)[faces]
+    conductance = operators.gradient.adjugate()(medium(operators.gradient))  # [cases] (Amount- <- Scalar+)[vertices <- vertices]
     free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
     free = ~topology.reading(free_vertices, 0) * Scalar                      # (Scalar+ <- Scalar+)[vertices <- free]
     rhs = -free.adjugate()(conductance(prescribed))                          # [cases] Amount-[free]
@@ -204,7 +205,8 @@ def conduction(operators: Operators, conductivity: Conductivity,
     # Turning the face current by a quarter turn gives, through the unit isotropic conductivity `Plane.dual()`,
     # the target gradient of the streamfunction whose level curves follow the current paths.
     quarter_turn = (mv.xy * (-np.pi / 4)).exp()                              # [] Rotor+
-    laplacian = operators.gradient.adjugate()(spdiag(operators.areas * Plane.dual())(operators.gradient))  # (Amount- <- Scalar+)[vertices <- vertices]
+    isotropic_medium = operators.areas * Plane.dual()                        # (Point- <- Plane+)[faces]
+    laplacian = operators.gradient.adjugate()(isotropic_medium(operators.gradient))  # (Amount- <- Scalar+)[vertices <- vertices]
     unpinned = ~topology.reading(np.arange(1, topology.n_vertices), 0) * Scalar # (Scalar+ <- Scalar+)[vertices <- unpinned]
     stream_rhs = unpinned.adjugate()(operators.gradient.adjugate()(operators.areas * (quarter_turn >> current)))  # [cases] Amount-[unpinned]
     streamfunction = unpinned(unpinned.adjugate()(laplacian(unpinned)).solve(stream_rhs))  # [cases] Scalar+[vertices]

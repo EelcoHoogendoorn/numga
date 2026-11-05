@@ -16,7 +16,7 @@ import numpy as np
 
 from numga import NumpyContext, stack
 from numga.algebras import VGA2D
-from numga.sparse import SparseExtensor, spdiag
+from numga.sparse import SparseExtensor
 from examples.util.topology import Topology
 
 ga = VGA2D
@@ -82,9 +82,9 @@ def evolution(incidence: SparseExtensor, response: Response, drags: Scalar) -> S
     """The particles' velocities from their displacements, overdamped: no inertia, every force met by drag."""
     gradient = incidence * Displacement                                      # (Displacement- <- Displacement-)[bonds <- sites]
     # Drag turns each particle's force into its velocity, along the force's metric direction.
-    mobility = spdiag(Force.dual() / drags)                                  # (Velocity- <- Force+)[sites <- sites]
+    mobility = Force.dual() / drags                                          # (Velocity- <- Force+)[sites]
     # Relative endpoint motion goes to each bond; equal opposite forces return to its endpoints.
-    return mobility(gradient.adjugate()(spdiag(response)(gradient)))         # (Velocity- <- Displacement-)[sites <- sites]
+    return mobility(gradient.adjugate()(response(gradient)))                 # (Velocity- <- Displacement-)[sites <- sites]
 
 
 def rk4_step(generator: SparseExtensor, displacement: Displacement, dt: float) -> Displacement:

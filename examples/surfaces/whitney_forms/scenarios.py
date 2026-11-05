@@ -232,7 +232,7 @@ def main() -> None:
     np.testing.assert_allclose((operators.curl(test_cochain) - operators.whitney2(operators.d1(test_cochain))).kernel, 0.0, atol=1e-12)
 
     edge_conductances = edge_conductance(operators, conductivity)
-    conductance = operators.gradient.adjugate()(spdiag(operators.areas * conductivity)(operators.gradient))
+    conductance = operators.gradient.adjugate()((operators.areas * conductivity)(operators.gradient))
     quadratic_potential = (mv.x & vertices).squared() - 0.5 * (mv.y & vertices)
     np.testing.assert_allclose(
         (operators.d0.adjugate()(edge_conductances(operators.d0(quadratic_potential))) - conductance(quadratic_potential)).kernel,
@@ -244,7 +244,7 @@ def main() -> None:
     obtuse_ops = Operators(obtuse_topology, obtuse_vertices)
     obtuse_edge_conductance = edge_conductance(obtuse_ops, Plane.dual())
     shared_cochain = mv.scalar(np.isin(np.arange(obtuse_topology.n_elements[1]), obtuse_topology.interior[1])[..., None]).field()
-    assert -(obtuse_edge_conductance(shared_cochain) & shared_cochain).sites.sum() > 0
+    assert (obtuse_edge_conductance(shared_cochain) & shared_cochain).sites.sum() > 0
 
     free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
     free = ~topology.reading(free_vertices, 0) * Scalar

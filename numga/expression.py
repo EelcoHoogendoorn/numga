@@ -111,7 +111,7 @@ geometric_product = Product(
 )
 wedge = Product("wedge", OperatorFactory.wedge, "The exterior product.")
 scalar_product = Product("scalar_product", OperatorFactory.scalar_product, "The scalar part of the geometric product.")
-dot = Product("dot", OperatorFactory.dot, "The dot product, the scalar part of the product with the right operand reversed.")
+dot = Product("dot", OperatorFactory.dot, "The dot product, the metric on every grade, of intrinsic operands read through their duals.")
 inner = Product("inner", OperatorFactory.inner, "The inner product, the grade |r - s| part of the product.")
 bivector_product = Product("bivector_product", OperatorFactory.bivector_product, "The bivector part of the geometric product.")
 trivector_product = Product("trivector_product", OperatorFactory.trivector_product, "The trivector part of the geometric product.")

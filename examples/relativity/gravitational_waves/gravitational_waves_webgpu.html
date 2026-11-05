@@ -25,7 +25,8 @@
 <canvas id="view"></canvas>
 <img id="fallback" hidden alt="The closed universe's slowest wave seen from inside, traced ahead of time" src="../../../plots/gravitational_waves_inside.gif" width="400" height="300">
 <div id="help">Arrows or drag turn · <kbd>a</kbd> <kbd>d</kbd> roll · <kbd>w</kbd> <kbd>s</kbd> faster, slower · scroll speed ·
-  <kbd>space</kbd> stop · <kbd>p</kbd> hold time · <kbd>r</kbd> start again · <kbd>[</kbd> <kbd>]</kbd> leg</div>
+  <kbd>space</kbd> stop · <kbd>p</kbd> hold time · <kbd>r</kbd> start again · <kbd>[</kbd> <kbd>]</kbd> leg ·
+  <kbd>-</kbd> <kbd>=</kbd> wave · <kbd>c</kbd> crystals</div>
 <div id="status">Starting WebGPU…</div>
 <div id="note">The shaders are written in <a href="https://github.com/EelcoHoogendoorn/numga">numga</a>:
   run <a href="https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/relativity/gravitational_waves/waves.ipynb">the waves notebook</a> or
@@ -214,9 +215,15 @@ async function start() {
     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST }));
 
   // The keys held and the pointer's drag since the last frame, which the frame turns into the advance pass's
-  // uniforms: the camera's thrust, its turn and roll, the brake; the wave's time, held by `p`; and a ray's leg.
+  // uniforms: the camera's thrust, its turn and roll, the brake; the wave's time, held by `p`; and a ray's leg. The
+  // wave's swing as compiled, which `-` and `=` scale in tenths from none to the most, and the crystals the tracer
+  // draws, which `c` hides while they go on swinging.
+  const swing = programs.tracer.view.getFloat32(programs.tracer.program.offsets.swing, true);
+  const nCrystals = programs.tracer.view.getUint32(programs.tracer.program.offsets.n_crystals, true);
+  const waveStep = 0.1, mostWave = 4;
   const held = new Set();
-  const state = { leg: C.start.leg, holding: false, dragged: [0, 0], scrolled: 0, speed: 0 };
+  const state = { leg: C.start.leg, holding: false, wave: 1, crystals: true, dragged: [0, 0], scrolled: 0,
+                  speed: 0 };
   let dragging = null;
   canvas.addEventListener("pointerdown", event => { dragging = [event.clientX, event.clientY]; canvas.setPointerCapture(event.pointerId); });
   canvas.addEventListener("pointerup", () => { dragging = null; });
@@ -235,6 +242,9 @@ async function start() {
     else if (event.key === "]") state.leg = Math.min(state.leg * 2, C.limits.coarsest);
     else if (event.key === "p") state.holding = !state.holding;
     else if (event.key === "r") restart();
+    else if (event.key === "-") state.wave = Math.max(Math.round(state.wave / waveStep) - 1, 0) * waveStep;
+    else if (event.key === "=" || event.key === "+") state.wave = Math.min(Math.round(state.wave / waveStep) + 1, mostWave / waveStep) * waveStep;
+    else if (event.key === "c") state.crystals = !state.crystals;
     else held.add(event.key);
     if (event.key === " " || event.key.startsWith("Arrow")) event.preventDefault();
   });
@@ -272,6 +282,9 @@ async function start() {
     state.scrolled = 0;
     // The sightlines and the tracer at their own pixels, the tracer with its legs.
     setNumber("tracer", "step", state.leg);
+    // The wave's swing, scaled, in both passes that feel it; the crystals drawn or not, stepped either way.
+    for (const name of ["advance", "tracer"]) setNumber(name, "swing", swing * state.wave);
+    programs.tracer.view.setUint32(programs.tracer.program.offsets.n_crystals, state.crystals ? nCrystals : 0, true);
     for (const name of ["sight", "tracer"]) {
       programs[name].view.setUint32(programs[name].program.offsets.pixels, columns, true);
       programs[name].view.setUint32(programs[name].program.offsets.pixels + 4, rows, true);
@@ -314,7 +327,8 @@ async function start() {
     const marked = braking ? " ■ stopping" : thrusting > 0 ? " ▲ faster" : thrusting < 0 ? " ▼ slower" : "";
     const padded = (number, digits) => String(number).padStart(digits, "\u2007");
     status.textContent = `speed ${state.speed.toFixed(2)} of light's${marked}` + (state.holding ? " · time held" : "") +
-                         `\nleg ${state.leg.toFixed(3)} · ${padded((1 / frameTime).toFixed(0), 3)} frames a second at ` +
+                         (state.crystals ? "" : " · crystals hidden") +
+                         `\nwave ×${state.wave.toFixed(1)} · leg ${state.leg.toFixed(3)} · ${padded((1 / frameTime).toFixed(0), 3)} frames a second at ` +
                          `${padded(columns, String(full[0]).length)} × ${padded(rows, String(full[1]).length)} pixels`;
     requestAnimationFrame(frame);
   }

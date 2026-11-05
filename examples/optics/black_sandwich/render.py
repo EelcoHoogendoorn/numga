@@ -18,6 +18,7 @@ from examples.util.wgsl import simplices
 from examples.util.wgsl.camera import offset_panel
 from examples.optics.black_sandwich import core
 
+mv = core.mv
 background_colour = "#fbfaf7"
 beam_colour, outline_colour, polarizer_colour, plate_colour, faint_colour = (
     to_rgb(colour) for colour in ("#2b8cbe", "#8a949c", "#35434d", "#db663d", "#d9dcda"))
@@ -44,7 +45,6 @@ class Diagram:
     fields' circles drawn once; and its picture at each state, the beam, the plates' axis and the fields."""
 
     def __init__(self, input_axis: core.Direction, output_axis: core.Direction, dpi: float) -> None:
-        mv = input_axis.context.multivector
         self.points = dpi / 72
         # The planes the transverse directions sweep in the observer's time, which read a field as it is, its parts
         # along x and y.

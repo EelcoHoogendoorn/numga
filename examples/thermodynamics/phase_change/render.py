@@ -21,6 +21,7 @@ from examples.thermodynamics import rendering as art
 from examples.thermodynamics.phase_change import core
 from examples.util.wgsl import solids
 
+mv = core.mv
 PressureAt = Callable[[core.Scalar, np.ndarray], core.Scalar]
 EnthalpyAt = Callable[[core.Scalar, np.ndarray], core.Scalar]
 CoexistenceAt = Callable[[np.ndarray], core.State]
@@ -61,7 +62,6 @@ def isobar(isobar_at: IsobarAt, enthalpy_at: EnthalpyAt, coexisting: core.State,
            ) -> art.Point:
     """The isobar at a saturation pressure on the temperature–enthalpy chart `[samples]`: the liquid squeezed toward
     its excluded volume up to boiling, the fluid boiling, and the vapour expanding beyond."""
-    mv = coexisting.context.multivector
     liquid, vapour = mv.l & coexisting, mv.g & coexisting
     # The liquid's volumes crowd toward the excluded volume, the vapour's spread out, each by equal ratios.
     squeezed = exclusion + (liquid - exclusion) * np.geomspace(0.05, 1, n_samples)
@@ -100,7 +100,6 @@ class Charts:
                                                 ("H", "T"), (art.mv.x, art.mv.y), (art.mv.w, 0.0))
         # The dome: the coexisting volumes up to the critical point, read in the algebra the states come in.
         coexisting_dome = coexistence_at(dome_sample_temperatures)
-        mv = coexisting_dome.context.multivector
         liquid_dome, vapour_dome = mv.l & coexisting_dome, mv.g & coexisting_dome
         temperatures = dome_sample_temperatures
         levels = art.context.include_from_algebra(pressure_at(liquid_dome, temperatures))                         # [dome]

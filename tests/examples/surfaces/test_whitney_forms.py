@@ -125,7 +125,6 @@ def test_cochain_complex_and_exact_midpoint_quadrature_including_obtuse_triangle
     assert operators.gradient.gatype == core.ga.gatype((core.Plane, core.Scalar))
     assert operators.whitney1.gatype == core.ga.gatype((core.Plane, core.Scalar))
     assert operators.curl.gatype == core.ga.gatype((core.Bivector, core.Scalar))
-    assert operators.whitney2.gatype == core.ga.gatype((core.Bivector, core.Scalar))
     assert not np.any(operators.d1(operators.d0).cells.kernel)
 
     # Whitney reconstruction commutes with the exterior derivative on 0-cochains and 1-cochains.
@@ -156,12 +155,12 @@ def test_cochain_complex_and_exact_midpoint_quadrature_including_obtuse_triangle
     interior_points = (operators.corners[None, :] * barycentric_interior).sum(axis=1)
     interior_forms = (interior_points[:, None] - operators.corners[None, :]) / (2 * operators.patches)
     interior_whitney1 = (spdiag(interior_forms) * topology.boundary[2, 1]).sum(axis=1) * core.Scalar
-    weights = spdiag(((operators.areas / 3) * conductivity)[..., None])
+    weights = ((operators.areas / 3) * conductivity)[..., None]
     interior_conductances = interior_whitney1.adjugate()(weights(interior_whitney1)).sum(axis=-1)
     np.testing.assert_allclose((edge_conductances - interior_conductances).cells.kernel, 0.0, atol=1e-14)
     np.testing.assert_allclose((edge_conductances - edge_conductances.adjugate()).cells.kernel, 0.0, atol=1e-14)
 
-    conductance = operators.gradient.adjugate()(spdiag(operators.areas * conductivity)(operators.gradient))
+    conductance = operators.gradient.adjugate()((operators.areas * conductivity)(operators.gradient))
     quadratic = (core.mv.x & vertices).squared() - 0.4 * (core.mv.y & vertices).squared()
     np.testing.assert_allclose(
         (operators.d0.adjugate()(edge_conductances(operators.d0(quadratic))) - conductance(quadratic)).kernel,
@@ -181,7 +180,7 @@ def test_cochain_complex_and_exact_midpoint_quadrature_including_obtuse_triangle
     obtuse_edge_conductance = core.edge_conductance(obtuse_ops, core.Plane.dual())
     for edge in range(obtuse_topology.n_elements[1]):
         unit_edge = core.mv.scalar((np.arange(obtuse_topology.n_elements[1]) == edge)[..., None]).field()
-        assert -(obtuse_edge_conductance(unit_edge) & unit_edge).sites.sum() > 0
+        assert (obtuse_edge_conductance(unit_edge) & unit_edge).sites.sum() > 0
 
 
 def test_isotropic_and_anisotropic_conduction_patch_test_and_flux_balance():
@@ -213,7 +212,7 @@ def test_isotropic_and_anisotropic_conduction_patch_test_and_flux_balance():
     prescribed = ~pinned * (pinned * (core.mv.x & vertices))
     potential, current, streamfunction = core.conduction(operators, conductivity, electrodes, prescribed)
 
-    conductance = operators.gradient.adjugate()(spdiag(operators.areas * conductivity)(operators.gradient))
+    conductance = operators.gradient.adjugate()((operators.areas * conductivity)(operators.gradient))
     free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
     free = ~topology.reading(free_vertices, 0) * core.Scalar
     nodal_source = conductance(potential)

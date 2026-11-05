@@ -20,6 +20,7 @@ from examples.util.wgsl import contours, image_figure, simplices
 from examples.util.wgsl.camera import Camera
 from examples.thermodynamics.rubber_band import core
 
+mv = core.mv
 Topology = simplices.Topology
 # The bands' colours, from cooler than the room through the room's grey to warmer, by orange to red; the outline's,
 # the support's and the weight's.
@@ -55,17 +56,16 @@ def tinted(temperatures: core.Scalar, room_temperature: float, reach: float) -> 
     return temperature_colours(np.clip(0.5 + change / 2, 0, 1))[:, :3]
 
 
-def scenery(points: core.Point, beside: float) -> core.Point:
+def scenery(beside: float) -> core.Point:
     """The support, a bar across the top of the band at the origin and of one this many band widths across from it,
-    `[2] Point-`, in the algebra of these points."""
-    across = points.context.multivector.x.dual()
+    `[2] Point-`."""
+    across = mv.x.dual()
     return stack((-support_reach * across, (beside + support_reach) * across))
 
 
 def framing(scenes: list[core.Point], resolution: float, room: float) -> Camera:
     """The camera looking at these points with this room around them, in band widths, at this resolution, in pixels to
     a band width: points read by the planes x and y of their algebra, each of weight one."""
-    mv = scenes[0].context.multivector
     xs = np.concatenate([(mv.x & points).to_array().ravel() for points in scenes])
     ys = np.concatenate([(mv.y & points).to_array().ravel() for points in scenes])
     low = np.array([xs.min(), ys.min()]) - room
@@ -90,7 +90,7 @@ def hanging(places: core.Point, topology: Topology, band: Topology, weight: Topo
 def draw_band(topology: Topology, in_weight: np.ndarray, places: core.Point):
     """The band at rest at its places `Point-[vertices]`, the weight's triangles `[faces]` dark, its triangles' edges
     over it, hanging from the support."""
-    support = scenery(places, 0.0)
+    support = scenery(0.0)
     camera = framing([places, support], pixels_per_width, margin)
     return image_figure(on_white(simplices.composited([
         contours.picture(places, topology.subset(~in_weight, -1), np.zeros(topology.n_vertices),
@@ -108,8 +108,7 @@ def animate(topology: Topology, in_weight: np.ndarray, lamp: core.Point, room_te
     its longest."""
     states = iter(states)
     first = next(states)
-    mv = lamp.context.multivector
-    support = scenery(lamp, 0.0)
+    support = scenery(0.0)
     band, weight = topology.subset(~in_weight, -1), topology.subset(in_weight, -1)
     glow = lamp + glow_reach * stack((mv.x.dual(), -mv.x.dual(), mv.y.dual(), -mv.y.dual()))   # [4] Point-
     camera = framing([first[0], support, glow], pixels_per_width, margin)
@@ -133,8 +132,7 @@ def animate_pulled(topology: Topology, in_weight: np.ndarray, room_temperature: 
     that state lowered by this drop, about as far as the hand pulls the weight down."""
     states = iter(states)
     first = next(states)
-    mv = first[0].context.multivector
-    support = scenery(first[0], 0.0)
+    support = scenery(0.0)
     band, weight = topology.subset(~in_weight, -1), topology.subset(in_weight, -1)
     camera = framing([first[0], first[0] - drop * mv.y.dual(), support], pixels_per_width, margin)
     fixed = simplices.strokes(support, Topology.chains([2]), support_colour, support_width, camera)
@@ -155,10 +153,9 @@ def animate_together(topology: Topology, in_weight: np.ndarray, lamp: core.Point
     pulled band also lowered by this drop, about as far as the hand pulls the weight down."""
     states = iter(states)
     first = next(states)
-    mv = lamp.context.multivector
     # The pulled band's places moved across beside the lamp's band, for the picture alone.
     beside = pulled_across * mv.x.dual()                                      # [] Point-
-    support = scenery(lamp, pulled_across)
+    support = scenery(pulled_across)
     band, weight = topology.subset(~in_weight, -1), topology.subset(in_weight, -1)
     glow = lamp + glow_reach * stack((mv.x.dual(), -mv.x.dual(), mv.y.dual(), -mv.y.dual()))   # [4] Point-
     pulled_start = first[1][0] + beside                                       # Point-[vertices]

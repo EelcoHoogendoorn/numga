@@ -158,8 +158,8 @@ def test_annular_fibres_lose_mesh_orientation_bias_under_uniform_refinement():
         # response so this check measures spatial discretization, without a modal cutoff.
         embedder, current = core.closed_currents(disc)
         resistivity = conductivity.batch().inverse().field()
-        swept = core.spdiag(core.as_scalar(np.ones(disc.topology.n_elements[2])).field() * (core.Current & core.time))(current)
-        resistance = swept.adjugate()(core.spdiag(disc.triangle_areas * resistivity)(current))
+        swept = (core.Current & core.time)(current)
+        resistance = swept.adjugate()((disc.triangle_areas * resistivity)(current))
         # Pull the stationary laboratory magnet into each orientation's material frame.
         centres = turns << (core.mv.x * offset).dual()
         magnetic = (core.mv.xy * strength * (-(disc.face_centers - centres).squared() / (2 * width ** 2)).exp())
@@ -190,9 +190,9 @@ def test_isotropic_material_recovers_the_cotangent_stiffness():
     radius, rings, sectors, conductance = 0.1, 6, 36, 2.5
     disc = placed(shapes.disk(radius, rings, sectors))
     face_ones = core.as_scalar(np.ones(disc.topology.n_elements[2])).field()
-    gradient = core.spdiag(face_ones * (core.Vector ^ core.mv.t))(disc.reconstruction)(disc.topology.d[0] * core.Scalar)
+    gradient = (core.Vector ^ core.mv.t)(disc.reconstruction)(disc.topology.d[0] * core.Scalar)
     outflow = gradient.adjugate()(core.spdiag(face_ones * (core.Current & core.time)))
-    material = core.spdiag(disc.triangle_areas * conducting(conductance * equal_principal))
+    material = disc.triangle_areas * conducting(conductance * equal_principal)
     balance = outflow(material(gradient))
     # Each edge's cotangent weight, half the cotangents of the angles facing it: at each corner, one edge's slice
     # read along the other, over the size of the plane they span.
@@ -221,9 +221,8 @@ def test_free_rotation_converts_kinetic_energy_into_heat_with_closed_currents():
 
     energy = stack([state.heat.sites.sum() + inertia / 2 * state.spin.scalar_norm_squared() for state in states])
     speed = stack([-(core.mv.xy | state.spin) for state in states])
-    face_ones = core.as_scalar(np.ones(disc.topology.n_elements[2])).field()
-    reconstruction = core.spdiag(face_ones * (core.Vector ^ core.mv.t))(disc.reconstruction)
-    swept_currents = core.spdiag(face_ones * (core.Current & core.time))
+    reconstruction = (core.Vector ^ core.mv.t)(disc.reconstruction)
+    swept_currents = core.Current & core.time
     flux = stack([reconstruction.adjugate()(swept_currents(disc.triangle_areas * state.current)) for state in states])
     np.testing.assert_allclose((energy - energy[0]).kernel, 0, atol=1e-12)
     np.testing.assert_allclose((~disc.topology.d[0] * flux).kernel, 0, atol=1e-9)
@@ -408,8 +407,7 @@ def test_inductive_currents_exchange_energy_with_rotation_and_remain_closed():
     modes = core.current_modes(disc, conductivity, permeability, count)
     magnetic = (core.mv.xy * strength * (-(disc.face_centers - (core.mv.x * offset).dual()).squared() / (2 * width ** 2)).exp())
     electric = disc.face_centers.commutator(core.mv.xy).regressive(magnetic) ^ core.mv.t
-    face_ones = core.as_scalar(np.ones(disc.topology.n_elements[2])).field()
-    swept = core.spdiag(face_ones * (core.Current & core.time))(modes.current)
+    swept = (core.Current & core.time)(modes.current)
     amplitudes = -preparation_time * modes.reading(swept.adjugate()(disc.triangle_areas * electric)) * stored_current
     orientation = (core.mv.xy * np.zeros(len(speeds))).exp()
     heat = (disc.triangle_areas * 0).broadcast_to(conductivity.shape)
