@@ -48,6 +48,8 @@ slab_start = 18000.0
 pulse_start = 10000.0
 pulse_width = 1000.0
 light_travel = 27000.0
+# The steps of the run, light crossing a node spacing over the Courant number in each, and the frames kept.
+n_steps = round(light_travel / (courant * node_spacing))
 n_frames = 168
 # The pulse's carriers turning with and against the helix.
 hand_signs = np.array([1.0, -1.0])
@@ -168,8 +170,8 @@ def pulse(at: np.ndarray) -> core.Bivector:
     return envelope * cases
 
 
-def time_domain() -> tuple[core.Direction, core.Direction, core.Direction, core.Bivector, core.Scalar, core.Scalar,
-                           core.Scalar]:
+def time_domain(n_steps: int = n_steps, n_frames: int = n_frames) -> tuple[
+        core.Direction, core.Direction, core.Direction, core.Bivector, core.Scalar, core.Scalar, core.Scalar]:
     """The pulse through the positively twisted helix, stepped in time.
 
     The result holds the nodes, as displacements along the line from its start, the slab's nodes and optic
@@ -189,9 +191,8 @@ def time_domain() -> tuple[core.Direction, core.Direction, core.Direction, core.
     electric = pulse(positions)
     magnetic = surrounding_index * (core.real.t.inverse() | (core.real.z ^ pulse(positions + node_spacing / 2 + interval / (2 * surrounding_index))))
     before = line.energy(electric, magnetic).sum(axis=-1)
-    steps = round(light_travel / interval)
-    stride = steps // n_frames
-    states = list(islice(line.evolve(electric, magnetic, interval, steps), stride - 1, None, stride))
+    stride = n_steps // n_frames
+    states = list(islice(line.evolve(electric, magnetic, interval, n_steps), stride - 1, None, stride))
     electric, magnetic = stack([e for e, _ in states]), stack([m for _, m in states])  # [frames, cases, nodes] Bivector+, Bivector+
 
     energy = line.energy(electric[-1], magnetic[-1])                                  # [cases, nodes] Scalar+

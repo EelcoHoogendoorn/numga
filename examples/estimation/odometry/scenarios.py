@@ -93,11 +93,11 @@ def survey(core: ModuleType, steps, seed: int):
     return truth, dead_reckoning, readings, noises, tails, heads, anchors, priors
 
 
-def lap_in_plane():
-    """The true step motors of a closed lap of `N_PLANE_STEPS` steps in the plane."""
+def lap_in_plane(n_steps: int = N_PLANE_STEPS):
+    """The true step motors of a closed lap of `n_steps` steps in the plane."""
     mv = instantiate(CORE, PGA2D).mv
-    phase = 2 * np.pi * np.arange(N_PLANE_STEPS) / N_PLANE_STEPS
-    turn = mv.xy * (1 + TURN_VARIATION * np.sin(2 * phase)) * 2 * np.pi / N_PLANE_STEPS  # [steps] Twist+
+    phase = 2 * np.pi * np.arange(n_steps) / n_steps
+    turn = mv.xy * (1 + TURN_VARIATION * np.sin(2 * phase)) * 2 * np.pi / n_steps  # [steps] Twist+
     slip = mv.yw * SLIP * np.cos(2 * phase)                                    # [steps] Twist+
     return ((turn + slip + mv.xw * STEP_LENGTH) * 0.5).exp()                   # [steps] Motor+
 

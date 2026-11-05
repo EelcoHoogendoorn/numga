@@ -44,14 +44,16 @@ def launch() -> tuple[core.Antivector, core.Antivector]:
     return core.across * launch_offsets, (time + launch_speed * direction) / np.sqrt(1 - launch_speed**2)
 
 
-def flights(pieces: core.Antivector, midpoints: core.Antivector) -> tuple[core.Antivector, core.Antivector]:
+def flights(pieces: core.Antivector, midpoints: core.Antivector,
+            n_steps: int = n_steps) -> tuple[core.Antivector, core.Antivector]:
     """The particles' events and velocities at every step `[steps, particles]`."""
     history = islice(core.evolve(*launch(), pieces, midpoints, coil_current, proper_step), n_steps)
     events, velocities = zip(*history)
     return stack(list(events)), stack(list(velocities))
 
 
-def section(pieces: core.Antivector, midpoints: core.Antivector) -> tuple[core.Antivector, core.Scalar]:
+def section(pieces: core.Antivector, midpoints: core.Antivector,
+            n_grid: int = n_grid) -> tuple[core.Antivector, core.Scalar]:
     """Points of the plane through the axis, on a grid over the view `[across, along]`, and the field's
     strength at each."""
     axis_points = axis * np.linspace(-view_half_length, view_half_length, 2 * n_grid)         # [along] Antivector-
