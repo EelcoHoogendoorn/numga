@@ -111,8 +111,7 @@ geometric_product = Product(
 )
 wedge = Product("wedge", OperatorFactory.wedge, "The exterior product.")
 scalar_product = Product("scalar_product", OperatorFactory.scalar_product, "The scalar part of the geometric product.")
-dot = Product("dot", OperatorFactory.dot, "The dot product, the scalar part of the product with the right operand reversed.")
-antidot = Product("antidot", OperatorFactory.antidot, "The antidot product, the dot product of the operands' duals.")
+dot = Product("dot", OperatorFactory.dot, "The dot product, the metric on every grade, of intrinsic operands read through their duals.")
 inner = Product("inner", OperatorFactory.inner, "The inner product, the grade |r - s| part of the product.")
 bivector_product = Product("bivector_product", OperatorFactory.bivector_product, "The bivector part of the geometric product.")
 trivector_product = Product("trivector_product", OperatorFactory.trivector_product, "The trivector part of the geometric product.")
@@ -139,7 +138,7 @@ reverse_transform = VersorAction(
 )
 
 PRODUCTS = (
-    geometric_product, wedge, scalar_product, dot, antidot, inner, bivector_product, trivector_product, commutator,
+    geometric_product, wedge, scalar_product, dot, inner, bivector_product, trivector_product, commutator,
     anticommutator, left_contraction, right_contraction, left_interior, right_interior, regressive,
 )
 

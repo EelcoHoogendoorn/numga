@@ -118,7 +118,7 @@ def smoothed(points: core.Point, centres: core.Point, fields: Extensor) -> Exten
     with distance."""
     near = nearest(points, centres)                                               # [..., neighbours]
     offsets = points[..., None] - centres[near]                                   # [..., neighbours] Point-
-    weights = (-offsets.antidot(offsets) / smoothing_reach**2).exp()              # [..., neighbours] Scalar+
+    weights = (-offsets.dot(offsets) / smoothing_reach**2).exp()              # [..., neighbours] Scalar+
     return (weights * fields[near]).sum(axis=-1) / weights.sum(axis=-1)
 
 
@@ -131,7 +131,7 @@ def field_lines(centres: core.Point, fields: core.Point, seeds: core.Point) -> c
 
     def direction(points: core.Point) -> core.Point:
         field = smoothed(points, centres, fields) * senses                        # [senses, lines] Point-
-        return field / (field.antidot(field) + floor).square_root()
+        return field / (field.dot(field) + floor).square_root()
 
     points = stack((seeds, seeds))                                                # [senses, lines] Point-
     traced = [points]

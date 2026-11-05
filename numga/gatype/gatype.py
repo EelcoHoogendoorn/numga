@@ -556,9 +556,6 @@ class GAType:
     def dot(self, other: GAType | Extensor) -> Extensor:
         return numga.expression.dot(self, other)
 
-    def antidot(self, other: GAType | Extensor) -> Extensor:
-        return numga.expression.antidot(self, other)
-
     def commutator(self, other: GAType | Extensor) -> Extensor:
         return numga.expression.commutator(self, other)
 

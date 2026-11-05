@@ -42,10 +42,10 @@ def norm(value: Extensor) -> Extensor:
 
 @Extensor.antinorm.register(GATypePattern(arity=0))
 def antinorm(value: Extensor) -> Extensor:
-    """Square root of the antidot of a value with itself, as the norm is of its reverse product: the size of an
-    antivector, a point or a direction, as its dual measures it, and NaN where that antidot is negative, as for a
-    timelike direction in the spacetime x+y+z+t-."""
-    return value.antidot(value).square_root()
+    """Square root of a value's dot with itself, as the norm is of its reverse product: of an intrinsic value, a point
+    or a direction, its size as its dual measures it, and NaN where that dot is negative, as for a timelike direction
+    in the spacetime x+y+z+t-."""
+    return value.dot(value).square_root()
 
 
 @Extensor.normalized.register(lambda g: g.entails(ReverseProductZero))

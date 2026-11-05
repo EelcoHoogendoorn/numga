@@ -653,15 +653,12 @@ class Extensor:
         return numga.expression.scalar_product(self, other)
 
     def dot(self, other: Extensor | GAType) -> Extensor:
-        """The metric on every grade: the scalar part of `self * other.reverse()`, positive on every blade
-        of a Euclidean signature."""
+        """The metric on every grade, read as the operands' orientation reads them: of extrinsic values the scalar part
+        of `self * other.reverse()`, positive on every blade of a Euclidean signature, and of intrinsic values, points,
+        directions and their joins, that of their duals, so that a direction's dot with itself is its length squared
+        in space, in a spacetime and in a projective algebra alike. An extrinsic value and an intrinsic one pair by
+        the regressive product instead, and their dot is refused."""
         return numga.expression.dot(self, other)
-
-    def antidot(self, other: Extensor | GAType) -> Extensor:
-        """The metric on the duals, `self.dual().dot(other.dual())`, as one operator: in a non-degenerate algebra the
-        dot times the antiscalar's reverse product, and in a projective one complementary to the dot, so that of an
-        antivector point the reverse product is the weight and the antidot the bulk."""
-        return numga.expression.antidot(self, other)
 
     def inner(self, other: Extensor | GAType) -> Extensor:
         return numga.expression.inner(self, other)

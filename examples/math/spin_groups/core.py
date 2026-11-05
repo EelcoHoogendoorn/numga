@@ -72,7 +72,7 @@ def linking(first: Euclidean, second: Euclidean) -> Antitrivector:
     separation = middle_first[:, None] - middle_second[None, :]                  # [segments, segments] Antivector-
     # The volume the separation spans with the two segments, their join.
     volume = separation & step_first[:, None] & step_second[None, :]             # [segments, segments] Antitrivector-
-    # In this algebra an antivector squares to minus its length squared, and its antidot is its length squared.
+    # In this algebra an antivector squares to minus its length squared, and its dot, read through its dual, is its length squared.
     length = separation.antinorm()                                               # [segments, segments] Scalar+
     return (volume / length ** 3).sum() / (4 * np.pi)                            # [] Antitrivector-
 
