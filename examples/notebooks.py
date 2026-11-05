@@ -217,8 +217,8 @@ def main(arguments: list[str]) -> None:
                         help="the time each notebook may take (default 20)")
     parser.add_argument("--memory", type=float, default=4, metavar="GB",
                         help="each notebook's memory cap under capped.py (default 4)")
-    parser.add_argument("--cpu", type=float, default=0.5, metavar="CORES",
-                        help="each notebook's CPU budget under capped.py (default 0.5)")
+    parser.add_argument("--cpu", type=float, default=1, metavar="CORES",
+                        help="each notebook's CPU budget under capped.py (default 1)")
     options = parser.parse_args(arguments)
 
     everything = notebooks()
@@ -248,6 +248,8 @@ def main(arguments: list[str]) -> None:
     except KeyboardInterrupt:
         print("  interrupted, and not recorded", flush=True)
     summary(records)
+    # Failing when any notebook did not run, so that a run of them tests that they all do.
+    sys.exit(any(record["status"] != "ran" for record in records))
 
 
 if __name__ == "__main__":
