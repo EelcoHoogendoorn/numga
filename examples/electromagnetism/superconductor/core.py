@@ -124,7 +124,7 @@ def ring_fields(topology: Topology, areas: Scalar, gradients: Plane, in_ring: np
     # another carries, times the squared penetration depth, with the field's own energy in the cells.
     local = (currents[..., :, None] & inertia(currents[..., None, :])) * (ring * areas)[..., None, None]
     screening = penetration ** 2 * (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=-1).sum(axis=-1) + (
-        spdiag((~corners * (ring * areas / 3)).sum(axis=-1)))                 # Scalar+[vertices <- vertices]
+        (~corners * (ring * areas / 3)).sum(axis=-1))                         # Scalar+[vertices <- vertices]
     on_rim = np.isin(np.arange(topology.n_vertices), rim)                     # [vertices]
     free = topology.reading(np.flatnonzero(~(in_hole | on_rim)), 0)           # Scalar+[free <- vertices]
     hole, edge = (mv.scalar(chosen[:, None] * 1.0).field() for chosen in (in_hole, on_rim))   # Scalar+[vertices] each

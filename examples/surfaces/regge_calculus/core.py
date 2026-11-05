@@ -103,7 +103,7 @@ def intrinsic_conduction(topology: Topology, vertices: Point, conductivities: Co
     gradient = (spdiag(corner_gradients) * topology.incidence[2, 0]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- vertices]
 
     # The adjugate carries each triangle's current response back to its vertex potentials.
-    conductance = gradient.adjugate()(spdiag(conductivities)(gradient))      # [cases] (Amount- <- Scalar+)[vertices <- vertices]
+    conductance = gradient.adjugate()(conductivities(gradient))              # [cases] (Amount- <- Scalar+)[vertices <- vertices]
     free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
     free = ~topology.reading(free_vertices, 0) * Scalar                      # (Scalar+ <- Scalar+)[vertices <- free]
     rhs = -free.adjugate()(conductance(prescribed))                          # [cases] Amount-[free]
@@ -114,7 +114,8 @@ def intrinsic_conduction(topology: Topology, vertices: Point, conductivities: Co
     # Because the area-integrated flux is divergence-free on the reference mesh, turning it by a quarter turn
     # gives the area-weighted reference gradient of the streamfunction whose level curves follow the intrinsic flow.
     quarter_turn = (mv.xy * (-np.pi / 4)).exp()                              # [] Rotor+
-    laplacian = gradient.adjugate()(spdiag(areas * Plane.dual())(gradient))  # (Amount- <- Scalar+)[vertices <- vertices]
+    medium = areas * Plane.dual()                                            # (Point- <- Plane+)[faces]
+    laplacian = gradient.adjugate()(medium(gradient))                        # (Amount- <- Scalar+)[vertices <- vertices]
     unpinned = ~topology.reading(np.arange(1, topology.n_vertices), 0) * Scalar # (Scalar+ <- Scalar+)[vertices <- unpinned]
     stream_rhs = unpinned.adjugate()(gradient.adjugate()(quarter_turn >> integrated_flux))  # [cases] Amount-[unpinned]
     streamfunction = unpinned(unpinned.adjugate()(laplacian(unpinned)).solve(stream_rhs))  # [cases] Scalar+[vertices]

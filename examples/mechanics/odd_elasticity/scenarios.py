@@ -6,7 +6,6 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from numga.sparse import spdiag
 from examples.mechanics.odd_elasticity import core
 
 mv = core.mv
@@ -83,7 +82,7 @@ def shear_cycle(n_steps: int) -> tuple[Displacement, core.Topology, Iterator[tup
     # Summing the same bond forces over the finite patch reveals its boundary loads.
     gradient = topology.d[0] * Displacement                                   # (Displacement- <- Displacement-)[bonds <- sites]
     edge_response = core.bond_response(gradient(reference).normalized(), actuation_plane, STIFFNESS, ACTIVITY)   # (Force+ <- Displacement-)[bonds]
-    patch_response = gradient.adjugate()(spdiag(edge_response)(gradient))     # (Force+ <- Displacement-)[sites <- sites]
+    patch_response = gradient.adjugate()(edge_response(gradient))             # (Force+ <- Displacement-)[sites <- sites]
     patch_motion = strain(Shear, reference)                                   # (Displacement- <- Shear-)[sites]
     patch_forces = patch_response(patch_motion)                               # (Force+ <- Shear-)[sites]
     cycle = SHEAR_AMPLITUDE * turns(n_steps)                                  # [steps + 1] Shear-

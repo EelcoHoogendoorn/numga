@@ -146,7 +146,7 @@ def inverse_dynamics(tree: Tree, robot: Robot, motors: Motor, rate: Rate, speeds
     # Each joint's axis where its parent link has carried it.
     axes = (tree.tails * motors) >> robot.axes                               # Rate+[joints]
     joint_rates = tree.paths * spdiag(axes * Scalar)                         # (Rate+ <- Scalar+)[links <- joints]
-    inertia = spdiag(motors >> robot.inertias(motors << Rate))               # (Forque- <- Rate+)[links <- links]
+    inertia = motors >> robot.inertias(motors << Rate)                       # (Forque- <- Rate+)[links]
     # Out from the body. A joint's axis turns with its child link, so its speed adds the velocity product,
     # `rate.commutator(axis) * speed`, to the acceleration of that link and of every link beyond it.
     rates = joint_rates(speeds) + rate                                       # Rate+[links]
@@ -167,7 +167,7 @@ def pullback(joint_rates: SparseExtensor, link_maps: Inertia) -> tuple[Inertia, 
     joints' per rate of the body, `Amount[joints] <- Rate`, whose adjugate is the body's per speed of the joints; and the
     joints' own, `(Amount <- Scalar)[joints <- joints]`, coupling two joints only where one lies on the other's path."""
     return (link_maps.sites.sum(), joint_rates.adjugate()(link_maps),
-            joint_rates.adjugate()(spdiag(link_maps)(joint_rates)))
+            joint_rates.adjugate()(link_maps(joint_rates)))
 
 
 def mass_matrix(tree: Tree, robot: Robot, motors: Motor) -> tuple[Inertia, Extensor, SparseExtensor]:
@@ -206,7 +206,7 @@ def own_loads(tree: Tree, robot: Robot, physics: Physics, motors: Motor, rates: 
     inertias = motors >> robot.inertias(motors << Rate)                      # (Forque- <- Rate+)[links]
     # Each hinge's maps from its angle and its speed to its generalized force, an amount.
     stiffness, damping = physics.hinge_stiffness * Scalar.dual(), physics.hinge_damping * Scalar.dual()
-    forces = -(spdiag(stiffness)(angles + speeds * dt) + spdiag(damping)(speeds))   # Amount-[joints]
+    forces = -(stiffness(angles + speeds * dt) + damping(speeds))            # Amount-[joints]
     return weights, inertias, forces, damping * dt + stiffness * dt**2
 
 
@@ -243,7 +243,7 @@ def ground_contact(tree: Tree, ground: Ground, motors: Motor, rates: Rate, dt: f
     springs = along * where(depths > 0, ground.stiffness, 0)                 # (Point- <- Point-)[balls]
     damping = lowest.regressive(dampers(lowest.commutator(Rate)))            # (Forque- <- Rate+)[balls]
     stiffness = lowest.regressive(springs(lowest.commutator(Rate)))          # (Forque- <- Rate+)[balls]
-    forques = (forces & lowest) - spdiag(stiffness)(ball_rates) * dt         # Forque-[balls]
+    forques = (forces & lowest) - stiffness(ball_rates) * dt                 # Forque-[balls]
     return ~tree.balls * forques, ~tree.balls * (damping * dt + stiffness * dt**2)
 
 
@@ -253,7 +253,7 @@ def stop_loads(stops: Stops, angles: Scalar, speeds: Scalar, dt: float) -> tuple
     # How far each joint lies past its stops, and the stops' stiffness where it does, none where it does not.
     past = (angles - stops.high).clip(0, np.inf) + (angles - stops.low).clip(-np.inf, 0)   # Scalar+[joints]
     pressed = where(past.abs() > 0, stops.stiffness * Scalar.dual(), 0)      # (Amount- <- Scalar+)[joints]
-    return -spdiag(pressed)(past + speeds * dt), pressed * dt**2
+    return -pressed(past + speeds * dt), pressed * dt**2
 
 
 def drop_loads(tree: Tree, robot: Robot, physics: Physics, ground: Ground, stops: Stops, motors: Motor, rates: Rate,
@@ -274,7 +274,7 @@ def energy(tree: Tree, robot: Robot, physics: Physics, ground: Ground, stops: St
     axes = (tree.tails * motors) >> robot.axes                               # Rate+[joints]
     rates = (tree.paths * spdiag(axes * Scalar))(state.speeds) + state.rate  # Rate+[links]
     link_inertias = motors >> robot.inertias(motors << Rate)                 # (Forque- <- Rate+)[links]
-    kinetic = (spdiag(link_inertias)(rates) & rates).sites.sum() / 2
+    kinetic = (link_inertias(rates) & rates).sites.sum() / 2
     # Gravity's dual is the level plane scaled by gravity's strength: its pairing with a mass point is the work of
     # lifting that mass to it from the plane through the origin.
     lifted = (physics.gravity.dual() & (motors >> robot.mass_points)).sites.sum()
@@ -300,7 +300,7 @@ def step(tree: Tree, robot: Robot, state: State, dt: float, loads: Loads) -> Sta
     body_bias, joint_bias = inverse_dynamics(tree, robot, motors, state.rate, state.speeds, state.rate * 0,
                                              state.speeds * 0, forques)
     whole, coupling, joints = pullback(joint_rates, link_maps)
-    rate_change, speed_changes = solved(whole, coupling, joints + spdiag(joint_maps), -body_bias * dt,
+    rate_change, speed_changes = solved(whole, coupling, joints + joint_maps, -body_bias * dt,
                                         (forces - joint_bias) * dt)
     rate, speeds = state.rate + rate_change, state.speeds + speed_changes
     # The body turns about its new rate over the step, `motor' == rate * motor / 2`.
