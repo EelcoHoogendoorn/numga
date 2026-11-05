@@ -33,7 +33,7 @@ def test_whitney_gradients_and_spherical_harmonic_spectrum():
     corner_mean = sphere.incidence[2, 0].mean(axis=0)                            # Scalar+[faces <- vertices]
 
     # The stiffness and vertex mass determine the surface's spatial modes.
-    stiffness = gradient.adjugate()(core.spdiag(areas * core.Plane.dual())(gradient))  # (Amount- <- Scalar+)[vertices <- vertices]
+    stiffness = gradient.adjugate()((areas * core.Plane.dual())(gradient))       # (Amount- <- Scalar+)[vertices <- vertices]
     mass = core.spdiag((~corner_mean * areas) * core.Scalar.dual())                    # (Amount- <- Scalar+)[vertices <- vertices]
     eigenvalues, eigenfields = stiffness.eigh(mass, n_modes + 1)          # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
     eigenvalues, modes = eigenvalues[1:], eigenfields[1:]                          # [modes] Scalar+, [modes] Scalar+[vertices]
@@ -67,7 +67,7 @@ def test_bunny_structure_antisymmetry_conservation_and_rendering():
     corner_mean = topology.incidence[2, 0].mean(axis=0)                          # Scalar+[faces <- vertices]
 
     # The stiffness and vertex mass determine the surface's spatial modes.
-    stiffness = gradient.adjugate()(core.spdiag(areas * core.Plane.dual())(gradient))  # (Amount- <- Scalar+)[vertices <- vertices]
+    stiffness = gradient.adjugate()((areas * core.Plane.dual())(gradient))       # (Amount- <- Scalar+)[vertices <- vertices]
     mass = core.spdiag((~corner_mean * areas) * core.Scalar.dual())                    # (Amount- <- Scalar+)[vertices <- vertices]
     eigenvalues, eigenfields = stiffness.eigh(mass, scenarios.n_modes + 1)  # [modes + 1] Scalar+, [modes + 1] Scalar+[vertices]
     eigenvalues, modes = eigenvalues[1:].field(), eigenfields[1:]                  # Scalar+[modes], [modes] Scalar+[vertices]

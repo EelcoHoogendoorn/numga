@@ -21,7 +21,9 @@ from numga.extensor import Extensor
 from examples.util.charts import style, subplots
 from examples.util.wgsl import contours, simplices
 from examples.util.wgsl.camera import Camera
+from examples.electromagnetism.josephson import core
 
+mv = core.mv
 Topology = simplices.Topology
 current_map = colormaps["RdBu_r"]
 measured_colour, lorentz_colour = np.array(to_rgb("#1d4ed8")), np.array(to_rgb("#c2410c"))
@@ -44,7 +46,6 @@ def on_white(picture: np.ndarray) -> np.ndarray:
 
 def junction_camera(vertices: Extensor) -> Camera:
     """The camera looking down on the junction, framing it, `n_pixels` across its longer side."""
-    mv = vertices.context.multivector
     points = vertices.batch()
     across, up = (mv.x & points).to_array(), (mv.y & points).to_array()
     half = np.array([np.abs(across).max(), np.abs(up).max()])
@@ -84,7 +85,6 @@ def draw_contraction(speeds: np.ndarray, before: Extensor, after: Extensor) -> F
 def animate_pendula(pivots: Extensor, frames: Iterable[Extensor]) -> Iterator[np.ndarray]:
     """The row of pendula at every frame of their phase directions `Phase+[pendula]` as it comes, each from its pivot
     on the junction's axis `[pendula] Point-` to its tip, coloured by the tunnelling current, under the axis."""
-    mv = pivots.context.multivector
     n_pendula = len(pivots)
     along = (mv.x & pivots).to_array()
     camera = Camera(mv.x + skew * mv.b, -mv.a, 0 * mv.x, 0 * mv.x, 1.0, np.array([along.mean(), 0.0]),

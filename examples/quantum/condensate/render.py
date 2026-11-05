@@ -18,7 +18,9 @@ from numga.extensor import Extensor
 from examples.util.charts import style, subplots
 from examples.util.wgsl import contours, simplices
 from examples.util.wgsl.camera import Camera
+from examples.quantum.condensate import core
 
+mv = core.mv
 Topology = simplices.Topology
 density_map = colormaps["Blues"]
 counted_colour, feynman_colour = np.array(to_rgb("#1d4ed8")), np.array(to_rgb("#c2410c"))
@@ -39,7 +41,6 @@ def on_white(picture: np.ndarray) -> np.ndarray:
 def animate(topology: Topology, vertices: Extensor, densities: Iterable[Extensor]) -> Iterator[np.ndarray]:
     """The trap at every frame of the condensate's density `Scalar+[V]` as it comes, from white for none to deep
     blue at the frame's densest vertex."""
-    mv = vertices.context.multivector
     camera = Camera(mv.x, mv.y, 0 * mv.x, 0 * mv.x, 1.0, np.zeros(2), np.array([framed, framed]), n_pixels)
     points = vertices.batch()
     for density in densities:

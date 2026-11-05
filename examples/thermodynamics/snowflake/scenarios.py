@@ -44,16 +44,17 @@ def dish() -> tuple[Topology, np.ndarray, core.Point]:
     return topology, coordinates, vertices
 
 
-def seed_phase(coordinates: np.ndarray) -> np.ndarray:
-    """The phase at the start at places across and up `[vertices, 2]`, `[vertices]`: ice within the seed's radius of
-    the middle, with a smooth edge."""
-    return (1 + np.tanh((seed_radius - np.hypot(*coordinates.T)) / seed_edge)) / 2
+def seed_phase(coordinates: np.ndarray) -> core.Scalar:
+    """The phase at the start at places across and up `[vertices, 2]`, `Scalar+[vertices]`: ice within the seed's
+    radius of the middle, with a smooth edge."""
+    phase = (1 + np.tanh((seed_radius - np.hypot(*coordinates.T)) / seed_edge)) / 2   # [vertices]
+    return mv.scalar(phase[:, None]).field()
 
 
 def seeded(coordinates: np.ndarray) -> tuple[core.Point, core.Scalar]:
     """The water's parcels `Point-[vertices]` and the phase `Scalar+[vertices]` at the start: the seed's phase, and
     parcels of unit volume holding the ice it gives, with no heat, the water at the cold water's temperature."""
-    phase = mv.scalar(seed_phase(coordinates)[:, None]).field()               # Scalar+[vertices]
+    phase = seed_phase(coordinates)                                           # Scalar+[vertices]
     return core.volume + core.ice * core.held_ice(phase) + 0 * core.heat, phase
 
 

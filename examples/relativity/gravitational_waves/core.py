@@ -536,14 +536,18 @@ fn next_leg(place: Point, heading: Step, tet: u32, entry: u32, time: f32) -> Leg
 }
 """
 
-# Through the waves a leg is at most a step long, read at its midpoint: the heading half a step on, turned by the
-# waves at the start, and the place there, at the light's time there, running back from the eye's. The waves at a
-# place in a tetrahedron, at a time, blend its corners' strains, their rates and traces by the place's barycentric
-# weights and the two nearest stored moments by their nearness, with the tetrahedron's turn. The connection along a
-# round step and a heading's change follow `Waves.at` and `light`. The walk is two sources: the stored moments and
-# how the waves are read from them, `wave_tables_source`, and the legs through whatever waves `local_waves` gives,
-# `wave_legs_source`, which the exact slowest wave, `quadrupole_source`, drives as well.
-wave_step = 0.02
+# Through the waves a leg is at most a step long, and along it the ray is rolled in as few equal rolls as keep each at
+# most a step over `n_rolls`, each read at its midpoint as `light` reads its steps: the heading half a roll on, turned
+# by the waves at the roll's start, and the place there, at the light's time there, running back from the eye's. The
+# leg runs straight on the chart to where its rolls end, so that a leg as long as a tetrahedron, whose tests of what it
+# meets cost far more than its rolls, still ends where the bending ray does. The waves at a place in a tetrahedron, at
+# a time, blend its corners' strains, their rates and traces by the place's barycentric weights and the two nearest
+# stored moments by their nearness, with the tetrahedron's turn. The connection along a round step and a heading's
+# change follow `Waves.at` and `light`. The walk is two sources: the stored moments and how the waves are read from
+# them, `wave_tables_source`, and the legs through whatever waves `local_waves` gives, `wave_legs_source`, which the
+# exact slowest wave, `quadrupole_source`, drives as well.
+wave_step = 0.16
+n_rolls = 8
 
 # The walk through the stored moments reads each tetrahedron's corners too, the vertices whose waves it blends.
 wave_tables_source = """
@@ -617,6 +621,7 @@ var<uniform> translating: Translating;
 var<uniform> moving: Moving;
 var<uniform> turning: Rolling;
 var<uniform> step: f32;
+var<uniform> n_rolls: u32;
 
 struct Leg {
     plane: Plane,
@@ -679,14 +684,24 @@ fn next_leg(place: Point, heading: Step, tet: u32, entry: u32, time: f32) -> Leg
         }
     }
     let length = acos(clamp(place.dot((chart + step_segment * share).normalized()), -1.0, 1.0));
-    // The heading and the place half the leg on, and the waves there.
-    let half_heading = (heading + heading_change(heading, start_waves) * (0.5 * length)).normalized();
-    let half_place = (frame(place) * (moving(round_step(heading, start_waves)) * (-0.25 * length)).exp()) >> origin;
-    let half_waves = local_waves(tet, half_place, time - 0.5 * length);
-    // The leg rolled its length along the round step half way, from the frame at the start.
-    let leg_end = (frame(place) * (moving(round_step(half_heading, half_waves)) * (-0.5 * length)).exp()) >> origin;
-    var this_leg = Leg(unit, chart, leg_end / (unit & leg_end) - chart, length,
-                       (heading + heading_change(half_heading, half_waves) * length).normalized(), tet, 4u);
+    // The leg rolled in as few equal rolls as keep each at most a step over `n_rolls`; in each, the heading and the
+    // place half the roll on, and the waves there, and the roll along the round step half way, from the frame at the
+    // roll's start.
+    let n_leg_rolls = max(u32(ceil(f32(n_rolls) * share)), 1u);
+    let roll = length / f32(n_leg_rolls);
+    var leg_end = place;
+    var end_heading = heading;
+    for (var k = 0u; k < n_leg_rolls; k++) {
+        let roll_time = time - roll * f32(k);
+        let roll_waves = local_waves(tet, leg_end, roll_time);
+        let half_heading = (end_heading + heading_change(end_heading, roll_waves) * (0.5 * roll)).normalized();
+        let half_place = (frame(leg_end) * (moving(round_step(end_heading, roll_waves)) * (-0.25 * roll)).exp())
+                         >> origin;
+        let half_waves = local_waves(tet, half_place, roll_time - 0.5 * roll);
+        leg_end = (frame(leg_end) * (moving(round_step(half_heading, half_waves)) * (-0.5 * roll)).exp()) >> origin;
+        end_heading = (end_heading + heading_change(half_heading, half_waves) * roll).normalized();
+    }
+    var this_leg = Leg(unit, chart, leg_end / (unit & leg_end) - chart, length, end_heading, tet, 4u);
     if (exit < 4u) {
         this_leg.tet = tets[tet].neighbours[exit];
         this_leg.entry = tets[tet].entries[exit];

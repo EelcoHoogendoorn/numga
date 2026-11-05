@@ -55,7 +55,7 @@ def outer_core(topology: core.Topology, vertices: core.Point) -> tuple[core.Topo
     which run without a gap among the ball's, shell after shell, those vertices, and the map placing a field on its
     tetrahedra among the ball's."""
     centres = topology.incidence[3, 0].mean(axis=0) * vertices                   # Point-[tets]
-    radii = centres.squared().abs().square_root()                                # Scalar+[tets]
+    radii = centres.antinorm()                                                   # Scalar+[tets]
     fluid = ((radii > inner_radius) & (radii < 1)).reshape(-1)                   # [tets]
     simplices = topology.elements[3][fluid]                                      # [fluid, 4]
     first, last = simplices.min(), simplices.max()
@@ -69,7 +69,7 @@ def spheromak(points: core.Point, degree: int, root: float) -> core.Point:
     field, its curl `root` times itself, tangent to the ball's surface, where the spherical Bessel function of that
     degree has the root. It sweeps out along the radius by the Legendre pattern, along the meridians by the slope of the
     radial profile, and turns about z as strongly as the profile."""
-    radii = points.squared().abs().square_root()                                 # Scalar+[...]
+    radii = points.antinorm()                                                    # Scalar+[...]
     cosines = (mv.z & points) / radii                                            # Scalar+[...]
     # The sine and cosine of the radial phase, read off a turn by it.
     phases = (mv.xy * (root * radii)).exp()                                      # Rotor+[...]
@@ -98,9 +98,9 @@ def helical_flow(topology: core.Topology, vertices: core.Point) -> core.Point:
     # The flow at each tetrahedron's centroid, none of which lies at the centre where the radius vanishes.
     centres = topology.incidence[3, 0].mean(axis=0) * vertices                   # Point-[tets]
     flow = spheromak(centres, 1, first_root) + (onto_x >> spheromak(~onto_x >> centres, 2, second_root))   # Point-[tets]
-    inside = mv.scalar((centres.squared().abs().square_root() < 1)[:, None]).field()   # Scalar+[tets]
+    inside = mv.scalar((centres.antinorm() < 1)[:, None]).field()                # Scalar+[tets]
     flow = flow * inside                                                         # Point-[tets]
-    return flow / flow.squared().abs().square_root().batch().max()
+    return flow / flow.antinorm().batch().max()
 
 
 def seed(topology: core.Topology, vertices: core.Point, field: core.Field) -> core.Scalar:
@@ -129,7 +129,7 @@ def main() -> None:
     save_figure(render.draw_modes(operators, mantle_radius, flow.velocity(flow.modes[shown_modes])), "dynamo_modes")
     # The stirred flow, the helical flow's share in each mode.
     stirred = flow.reading(operators.prisms.norm() * helical_flow(topology, vertices).dual())   # Scalar+[modes]
-    radii = operators.centres.squared().abs().square_root()                      # Scalar+[tets]
+    radii = operators.centres.antinorm()                                         # Scalar+[tets]
     conductivity = mv.scalar(np.where((radii < 1).reshape(-1), reynolds, reynolds * mantle_conductance)[:, None]).field()   # Scalar+[tets]
     potential = seed(topology, vertices, mv.xy * 1e-2 + mv.yz * 3e-3)            # Scalar+[edges]
     states = core.dynamo(operators, flow, conductivity, viscosity, pull, stirred, potential, dt, n_steps)
@@ -155,7 +155,7 @@ def pinned() -> None:
     flow = core.Flow(core.Ball(fluid_topology, fluid_vertices), embedding, n_scalar_modes, n_modes)
     # The stirred flow, the helical flow's share in each mode.
     stirred = flow.reading(operators.prisms.norm() * helical_flow(topology, vertices).dual())   # Scalar+[modes]
-    radii = operators.centres.squared().abs().square_root()                      # Scalar+[tets]
+    radii = operators.centres.antinorm()                                         # Scalar+[tets]
     conductivity = mv.scalar(np.where((radii < 1).reshape(-1), reynolds, reynolds * mantle_conductance)[:, None]).field()   # Scalar+[tets]
     potential = seed(topology, vertices, mv.xy * 1e-2 + mv.yz * 3e-3)            # Scalar+[edges]
     states = core.dynamo(operators, flow, conductivity, viscosity, pull, stirred, potential, dt, n_steps)

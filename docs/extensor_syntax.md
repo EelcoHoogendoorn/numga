@@ -223,7 +223,7 @@ Operate directly on linear transformations while preserving input/output GATypes
   ```python
   pose_covariance = curvature.pinv()                 # Twist <- Twist
   ```
-* **`.adjugate()`**: The map on complements that the regressive product carries over, `T.adjugate()(c) & x == c & T(x)`, from the complement of the output to the complement of the input. It needs no metric and exists for singular maps; for an outermorphism it is the determinant times the inverse on the complementary grade, as the adjugate of a matrix.
+* **`.adjugate()`**: The map on complements that the regressive product carries over, from the complement of the output to the complement of the input, each pairing read with its extrinsic factor first: `T.adjugate()(c) & x == c & T(x)` between intrinsic spaces, `x & T.adjugate()(c) == T(x) & c` between extrinsic ones. It needs no metric and exists for singular maps; for an outermorphism it is the determinant times the inverse on the complementary grade, as the adjugate of a matrix.
   ```python
   readout = shift.adjugate()                         # Line <- Plane, from Point <- Twist in PGA3D
   ```
@@ -232,10 +232,10 @@ Operate directly on linear transformations while preserving input/output GATypes
   undo = (rotor >> Vector).adjoint()                 # Vector <- Vector, rotor << Vector
   ```
 * **`.det()`**: Determinant of a square endomorphism (`Space <- Space`).
-* **`.trace()`** / **`.trace(first, second)`**: Pairs two axes through the regressive product and drops both. The output is axis 0 and the inputs are axes 1 to n, in order of appearance in the expression. An axis carries an index unless it is a scalar output, and the axes may be left unnamed exactly when two carry one: a map `Space <- Space`, or a form on two inputs. Two inputs pair when their spaces are complementary, through `&`. The output pairs with an input of its own space, as if met with its complement first; on `Space <- Space` this is the matrix trace. Lifting the map to a form and tracing the form is the same thing, spelled out:
+* **`.trace()`** / **`.trace(first, second)`**: Pairs two axes through the regressive product and drops both. The output is axis 0 and the inputs are axes 1 to n, in order of appearance in the expression. An axis carries an index unless it is a scalar output, and the axes may be left unnamed exactly when two carry one: a map `Space <- Space`, or a form on two inputs. Two inputs pair when their spaces are complementary, through `&` read with the extrinsic factor first. The output pairs with an input of its own space, as if met with its complement first; on `Space <- Space` this is the matrix trace. Lifting the map to a form and tracing the form is the same thing, spelled out:
   ```python
   trace = f.trace()                                                # [] Scalar
-  lifted = (Antivector & f).trace()                                # [] Scalar: the same, f lifted to a form
+  lifted = (f & Antivector).trace()                                # [] Scalar: the same, f lifted to a form
   ricci = Vector.commutator(R(Vector.wedge(Vector))).trace(0, 2)   # [] Scalar <- (Vector, Vector)
   incidence_trace = (Plane & f(Point)).trace()                     # [] Scalar: f.trace(), in PGA
   ```
@@ -331,4 +331,12 @@ Nullary extensors are multivectors and scalars: extensors taking no arguments. T
   * `motor.motor_split()`: Decomposes a motor into translator and rotor components (`motor_translator()`, `motor_rotor()`).
   * `motor.normalized()` / `mv.norm()`: Gauge normalization, to `motor * motor.reverse() == 1`, and Study/geometric norms.
 
+* **`.dot(other)`**: The metric on every grade, between two values of one orientation: extrinsic values by the signature, the scalar part of `a * ~b`, and intrinsic values, points, directions and their joins, through their duals, `a.dual().dot(b.dual())`, so that a direction's dot with itself is its length squared in space, in a spacetime and in a projective algebra alike. An extrinsic value and an intrinsic one have no dot, and are refused: they pair by `&`. On types it is the metric form:
+  ```python
+  length_form = Point.dot(Point)                     # Scalar <- (Point, Point)
+  ```
+* **`.norm()`** / **`.normalized()`** / **`.antinorm()`**: Two sizes. `norm` is the root of the reverse product, `x * ~x`, and `normalized` divides by it: a projective point's norm is its weight, and `.normalized()` gives it weight one. `antinorm` is the root of a value's dot with itself, its size through its dual: a projective point's bulk, the weight times its distance from the origin, and a direction's length in every algebra.
+  ```python
+  length = (head - tail).antinorm()                  # [] Scalar: an edge's length, in PGA as in the algebra of space
+  ```
 * **`.inverse()`**: On an arity-0 multivector, `.inverse()` is the Clifford / geometric product inverse, `x * x.inverse() == 1`. On an arity-1 extensor, it is the operator inverse under map composition: `T.inverse()(T)` is the identity map.

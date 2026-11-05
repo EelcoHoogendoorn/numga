@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from numga import concatenate, stack, where
 from numga.multivector.factory import MultivectorFactory
-from examples.relativity.radar.core import Event, Scalar, Slice
+from examples.relativity.radar.core import Event, Scalar, Slice, mv
 from examples.util.wgsl import contours, simplices
 from examples.util.wgsl.camera import Camera
 
@@ -36,7 +36,6 @@ FRAME_WINDOW = Window((-4, 6), (-2.65, 10.15), 620)
 
 def coordinates(events: Event) -> np.ndarray:
     """Position and coordinate time of events of unit weight `[..., 2]`, read only at the drawing boundary."""
-    mv = events.context.multivector
     return (stack((mv.x, mv.t)) & events[..., None]).to_array()
 
 
@@ -97,7 +96,6 @@ def written(camera: Camera, layers: list[np.ndarray], labels: list, mv: Multivec
 def exchange_frames(worldlines: Event, emitted: Event, reflected: Event, received: Event,
                     n_frames: int):
     """Light pulses advancing through the diagram; their completed paths stay visible."""
-    mv = emitted.context.multivector
     camera = diagram_camera(EXCHANGE_WINDOW, mv)
     starts, ends = concatenate((emitted, reflected)), concatenate((reflected, received))   # [paths] Event-, Event-
     n_pulses = len(emitted)
@@ -132,7 +130,6 @@ def reconstruction(worldlines: Event, emitted: Event, reflected: Event, received
                    window: Window) -> np.ndarray:
     """The radar assignment for the middle pulse, with every recovered reflection marked and the middle one's clock
     readings, radar time and range written beside it."""
-    mv = emitted.context.multivector
     camera = diagram_camera(window, mv)
     index = len(emitted) // 2
     triangle = stack((emitted[index], reflected[index], received[index]))   # [corners] Event-

@@ -17,7 +17,9 @@ import numpy as np
 
 from numga import Extensor, stack
 from examples.thermodynamics import rendering as art
+from examples.thermodynamics.contact_geometry import core
 
+mv = core.mv
 # The charts' size in pixels and their ranges: entropy and energy, temperature and Helmholtz energy.
 n_rows, n_columns = 300, 330
 entropy_range, energy_range = (-0.8, 1.25), (0.0, 3.4)
@@ -59,7 +61,6 @@ class Chart:
 
 def charts(family: Extensor, changed_family: Extensor, points: Extensor, tangents: Extensor,
            changed_points: Extensor, changed_tangents: Extensor) -> tuple[Chart, Chart]:
-    mv = family.context.multivector
     energy = art.Diagram(entropy_range, energy_range, (0.0, 0.0), n_rows, n_columns, ("S", "U"), (mv.s, mv.u),
                          (0 * mv.s, 1.0))
     free = art.Diagram(temperature_range, free_energy_range, (0.0, 0.0), n_rows, n_columns, ("T", "F"), (mv.s, mv.u),
@@ -95,7 +96,6 @@ def draw(family: Extensor, changed_family: Extensor, points: Extensor, tangents:
 
 def draw_energy(family: Extensor, points: Extensor, tangents: Extensor):
     """The energy chart alone, with the tangent at the middle of the section."""
-    mv = family.context.multivector
     energy = art.Diagram(entropy_range, energy_range, (0.0, 0.0), n_rows, n_columns, ("S", "U"), (mv.s, mv.u),
                          (0 * mv.s, 1.0))
     chart = Chart(energy, family, points, tangents, "F")

@@ -43,13 +43,14 @@ def disk() -> tuple[core.Topology, np.ndarray]:
     return shapes.concentric_disk(np.array([radius]), n_rings)
 
 
-def hot_spot(coordinates: np.ndarray) -> np.ndarray:
-    """The share of the mixture burnt at the start at each place `[vertices]`: all of it within any of the sparks, their
-    edges roughened by noise, and none around them."""
+def hot_spot(coordinates: np.ndarray) -> core.Scalar:
+    """The share of the mixture burnt at the start at each place `Scalar+[vertices]`: all of it within any of the
+    sparks, their edges roughened by noise, and none around them."""
     rng = np.random.default_rng(seed)
     edges = spark_radii + roughness * rng.standard_normal((len(coordinates), 1))   # [vertices, sparks]
     reaches = np.linalg.norm(coordinates[:, None] - spark_places, axis=-1)    # [vertices, sparks]
-    return (0.5 * (1 - np.tanh((reaches - edges) / kernel_edge))).max(axis=-1)
+    burnt = (0.5 * (1 - np.tanh((reaches - edges) / kernel_edge))).max(axis=-1)   # [vertices]
+    return mv.scalar(burnt[:, None]).field()
 
 
 def spreading() -> tuple[core.Topology, core.Point, Iterator[tuple[core.Point, core.Scalar]]]:
@@ -59,7 +60,7 @@ def spreading() -> tuple[core.Topology, core.Point, Iterator[tuple[core.Point, c
     topology, coordinates = disk()
     vertices = (core.volume + mv(core.Upright, coordinates).dual()).field()  # Point-[vertices]
     areas, gradients, cells = core.triangles(topology, vertices)
-    burnt = mv.scalar(hot_spot(coordinates)[:, None]).field()                 # Scalar+[vertices]
+    burnt = hot_spot(coordinates)                                             # Scalar+[vertices]
     parcels = core.volume + core.heat * burnt + core.fuel * (1 - burnt)      # Point-[vertices]
     frames = core.burning(topology, areas, gradients, cells, 1 / lewis, prefactor, activation, unburnt_temperature,
                           parcels, dt, n_frames, n_stride)

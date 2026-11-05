@@ -86,7 +86,7 @@ def main() -> None:
     # metric vanish.
     values, _ = core.principal_axes(moment)                                   # [faults, 3] Scalar+
     np.testing.assert_allclose(values.sum(axis=-1).to_array(), 0.0, atol=1e-14)
-    np.testing.assert_allclose((moment(core.Point) & core.Point).det(core.Point.dual().dot(core.Point.dual())).to_array(), 0.0, atol=1e-14)
+    np.testing.assert_allclose((moment(core.Point) & core.Point).det(core.Point.dot(core.Point)).to_array(), 0.0, atol=1e-14)
     np.testing.assert_allclose(values.to_array(), np.array([-MOMENT, 0.0, MOMENT]) * np.ones((len(STRIKES), 1)), atol=1e-13)
     # The slip's couple alone would turn the ground, by the plane of shear; the double couple does not.
     single = auxiliaries * (planes & core.Point)                              # [faults] Moment

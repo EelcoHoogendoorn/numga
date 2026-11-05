@@ -21,7 +21,9 @@ from numga.extensor import Extensor
 from examples.util.charts import style, subplots
 from examples.util.wgsl import contours, flow, image_figure, simplices
 from examples.util.wgsl.camera import Camera
+from examples.fluids.electrokinetics import core
 
+mv = core.mv
 Topology = simplices.Topology
 wall_colour = np.array(to_rgb("#3b4a57"))
 # The liquid in a picture of the channels themselves.
@@ -82,14 +84,13 @@ def unrolled(topology: Topology, vertices: Extensor, n_across: int, period: floa
     across_seam = (columns.max(axis=-1) - columns.min(axis=-1) > 1)[:, None] & (columns == 0)
     faces = np.where(across_seam, n_vertices + faces % n_across, faces)
     points = vertices.batch()                                                  # [vertices] Point-
-    first = points[:n_across] + vertices.context.multivector.x.dual() * period  # [across] Point-
+    first = points[:n_across] + mv.x.dual() * period                            # [across] Point-
     return concatenate([points, first]), Topology(n_vertices + n_across, faces)
 
 
 def strip_camera(vertices: Extensor, period: float, pixels: int) -> Camera:
     """The camera looking down on a strip, `pixels` across: points read by the planes x and y, weighed by their
     volume."""
-    mv = vertices.context.multivector
     widest = np.abs(readings(mv.y, vertices)).max()
     return Camera(mv.x, mv.y, 0 * mv.x, mv.v, 0.0, np.array([period / 2, 0.0]),
                   np.array([period / 2, widest + margin]), pixels)
@@ -154,7 +155,6 @@ def liquids(points: Extensor, faces: Topology, n_across: int, charge: Extensor, 
     streak as long as the liquid there is fast and fading the way it goes, on one scale for all, and crossed by the
     level lines of the potential its drive sets up `[strips] Scalar+[vertices]`, which falls by `falls` over the
     period."""
-    mv = points.context.multivector
     densities = closing(charge.batch().to_array(), n_across)
     largest = np.abs(densities).max()
     fastest = np.abs(readings(mv.x, speeds)).max()
@@ -250,7 +250,6 @@ def draw_profiles(topology: Topology, vertices: Extensor, n_across: int, velocit
     `[2] Point-[faces]`, read in the triangles between the strip's first two columns of vertices at their centres, and
     at rest on the walls, each over its mean across that station; each curve labelled at the height of its top, where it runs furthest ahead of
     the other, the axis across ending at the walls and its zero the axis along."""
-    mv = vertices.context.multivector
     columns = topology.elements[2] // n_across
     station = (columns.min(axis=-1) == 0) & (columns.max(axis=-1) == 1)
     # Each triangle's centre, the mean of its corners.
@@ -291,7 +290,6 @@ def animate_dyes(topology: Topology, vertices: Extensor, n_across: int, period: 
     coloured by their charge `[stations]`."""
     points, faces = unrolled(topology, vertices, n_across, period)
     # The room above and below the walls, a share of the channel's width, so that the walls' strokes show whole.
-    mv = vertices.context.multivector
     widest = np.abs(readings(mv.y, vertices)).max()
     camera = Camera(mv.x, mv.y, 0 * mv.x, mv.v, 0.0, np.array([period / 2, 0.0]),
                     np.array([period / 2, widest * (1 + dye_margin)]), n_pixels)

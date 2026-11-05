@@ -162,8 +162,8 @@ def fingering(water: Forms, interior: SparseExtensor, density: float, expansion:
     # Each step's implicit maps, solved with the walls held: the flow's inertia with its viscosity, the cells' heat
     # with its conduction, and their salt with its slower spreading.
     flow_step = holding(water.kinetic / dt + water.viscous, interior)
-    heat_step = holding(spdiag(water.cells / dt) + water.conduction, interior)
-    salt_step = holding(spdiag(water.cells / dt) + water.diffusion, interior)
+    heat_step = holding(water.cells / dt + water.conduction, interior)
+    salt_step = holding(water.cells / dt + water.diffusion, interior)
     # The temperature and the salinity the walls hold.
     wall_temperature = temperature - ~interior * (interior * temperature)     # [...] Scalar+[vertices]
     wall_salinity = salinity - ~interior * (interior * salinity)              # [...] Scalar+[vertices]

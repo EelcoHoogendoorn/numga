@@ -44,7 +44,8 @@ def test_camera_steps_along_its_forward_axis_through_the_round_sphere():
     # by the speed times the lattice's time over the frame, its clock's tick dilated.
     speed, dt = 0.6, 0.05
     controls = [dict(dt=dt, thrust=speed, roll=0.0, yaw=0.0, pitch=0.0, braking=0.0)]
-    _, _, camera = next(web.flight(iter(controls), (4, 6), render.ghost_share, scenarios.eye, 0.0))
+    _, _, camera = next(web.flight(iter(controls), (4, 6), render.ghost_share, scenarios.eye, 0.0, web.start_leg,
+                                   core.n_rolls))
     step = dt / np.sqrt(1 - speed ** 2)
     moved = scenarios.eye * (core.moving(mv.z.dual() * speed) * (-step / 2)).exp()   # [] Motor+
     assert np.abs(np.asarray((camera["motor"] - moved).kernel)).max() < SINGLE_PRECISION
@@ -96,22 +97,25 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
 
 def test_light_takes_the_gpus_step():
-    # Through a strain held still, light traced back in time and light sent forward take the same step: a GPU leg from
-    # the middle of a tetrahedron ends where `core.light`'s step of the leg's length ends, both rolling along the same
-    # first-order round step from the same turned heading.
+    # Through a strain held still, light traced back in time and light sent forward take the same steps: a GPU leg
+    # from the middle of a tetrahedron, short of its faces, ends where `core.light`'s steps end, as many as the leg's
+    # rolls and each a roll long, both rolling along the same first-order round steps from the same turned headings.
     mesh, vertices = scenarios.six_hundred_cell()
     changes = 0.1 * scenarios.squash(mesh, vertices, stack((mv.x,)), stack((mv.y,)))[0]   # Scalar+[edges]
     still = core.Waves(mesh, vertices, [changes, changes], [0 * changes, 0 * changes], 0.0, 1.0)
     middle = (mesh.incidence[3, 0].mean(axis=0) * vertices).batch()[0].normalized()   # [] Point-
     heading = (mv.x.dual() + 0.6 * mv.y.dual() - 0.3 * mv.z.dual()).cast(core.Step).normalized()   # [] Point-
     walk_values = render.wave_values(mesh, still)
-    values = {name: value for name, value in walk_values.items() if name != "ramps"}
+    # A leg shorter than the way from the tetrahedron's middle to its faces, rolled in as many rolls as a whole step.
+    inside_leg = 0.08
+    values = {name: value for name, value in walk_values.items() if name != "ramps"} | dict(step=inside_leg)
     traced = Shader(core.wave_walk_source + leg_source, core.ga, render.inside_types, {})(
         (1, 1), tets=render.tet_table(mesh, walk_values["ramps"]), start_place=middle, start_heading=heading,
         start_tet=0, start_time=0.5, **values)["ends"]
     length = float(traced["length"].reshape(-1)[0])
-    place = next(core.light(core.picking(mesh, vertices), still, middle[None], heading[None], 0.5, length, 1))[0]
-    assert np.abs(np.asarray((traced["place"].reshape(()) - place).kernel)).max() < LEG_PRECISION
+    *_, place = core.light(core.picking(mesh, vertices), still, middle[None], heading[None], 0.5,
+                           length / core.n_rolls, core.n_rolls)
+    assert np.abs(np.asarray((traced["place"].reshape(()) - place[0]).kernel)).max() < LEG_PRECISION
 
 
 # Where an atom of a crystal is seen at times, as a view reads it from the moments its crystals keep.

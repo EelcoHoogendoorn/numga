@@ -53,9 +53,8 @@ ray_rotation = 0.5 * (mv.w.dual() & Direction).dual()
 ray_linear = ray_rotation.commutator(origin) * 2
 ray_quadratic = ray_rotation.commutator(ray_linear) * 2
 # Times 1 + u ** 2, with u = np.tan(t / 2): origin + ray_linear(d) * 2 * u + ray_bend(d, d) * u ** 2, the bend the
-# antipode. The origin in it carries the squared length of d, minus d | d: a direction is an antivector, and
-# antivectors here square to minus their squared length.
-ray_bend = ray_quadratic * 2 - origin * (Direction | Direction)
+# antipode. The origin in it carries the squared length of d, its dot with itself, read through its dual.
+ray_bend = ray_quadratic * 2 + origin * Direction.dot(Direction)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -72,7 +71,7 @@ def sensor(shape: tuple[int, int], fov: float) -> Direction:
     """Unit pixel directions at the eye, looking along -x with z up, row-major."""
     right, up = pixel_grid(shape, fov)
     rays = -mv.x.dual() + mv.y.dual() * right + mv.z.dual() * up                # [pixels] Direction-
-    return rays / (rays | rays).abs().square_root()
+    return rays / rays.antinorm()
 
 
 def nearest_angle(coefficients: list[Scalar]) -> np.ndarray:

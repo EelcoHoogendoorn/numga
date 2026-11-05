@@ -104,14 +104,15 @@ def errors(landmarks: Point, reconstructed_landmarks: Point, true_motor: Motor,
     axes = stack((mv.x, mv.y, mv.z))                                          # [axes] Plane+
     alignment = (estimated_motor >> axes).normalized() | (true_motor >> axes).normalized()  # [axes] Scalar+
     origin = mv.w.dual()                                                      # [] Point-
-    true_baseline = origin & (true_motor >> origin)                           # [] Line-
-    estimated_baseline = origin & (estimated_motor >> origin)                 # [] Line-
-    agreement = true_baseline.normalized().dot(estimated_baseline.normalized())  # [] Scalar+
-    scale = true_baseline.norm() / estimated_baseline.norm()                  # [] Scalar+
+    # Each baseline, the step from camera 1 to camera 2: a direction, whose dot with itself is its length squared.
+    true_baseline = (true_motor >> origin) - origin                           # [] Point-
+    estimated_baseline = (estimated_motor >> origin) - origin                 # [] Point-
+    agreement = true_baseline.dot(estimated_baseline) / (true_baseline.antinorm() * estimated_baseline.antinorm())  # [] Scalar+
+    scale = true_baseline.antinorm() / estimated_baseline.antinorm()          # [] Scalar+
     unit_landmarks = reconstructed_landmarks / (mv.w & reconstructed_landmarks)  # [landmarks] Point-
-    # The difference of two unit points is a direction; its length is the norm of its dual plane.
-    displacements = ((unit_landmarks * scale + origin * (1.0 - scale)) - landmarks).dual()  # [landmarks] Plane+
-    return alignment, agreement, displacements.norm_squared().mean(axis=0).square_root()
+    # The difference of two unit points is a direction too.
+    displacements = (unit_landmarks * scale + origin * (1.0 - scale)) - landmarks  # [landmarks] Point-
+    return alignment, agreement, displacements.dot(displacements).mean(axis=0).square_root()
 
 
 # --- plumbing --------------------------------------------------------------

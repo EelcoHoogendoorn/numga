@@ -43,7 +43,7 @@ InverseInertia = ga.gatype((Bivector, AntiBivector))
 N_GOLDEN_STEPS = 12
 
 # The poles of the basis planes, and the last of them, the centre of every body in its own frame.
-basis = mv.antivector(np.eye(ga.dimension)).normalized()   # [dimension] Point-
+basis = mv.vector(np.eye(ga.dimension)).dual().normalized()   # [dimension] Point-
 origin = basis[-1]                                 # [] Point-
 
 

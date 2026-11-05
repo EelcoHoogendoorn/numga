@@ -21,13 +21,13 @@ the covariant derivative, a sparse map of ambient direction fields `(Point- <- P
 that turns each edge's tail vector into its head's tangent plane and subtracts it from the head's
 vector. Reading each edge's difference by the plane across it, `Point.dual()`, weighted by the edge's cotangent
 ratio `H1`, and pulling that back to the vertices by the adjugate gives the connection Laplacian
-`L = covariant.adjugate()(spdiag(H1 * Point.dual())(covariant))`, the energy's gradient: a form that takes a
+`L = covariant.adjugate()((H1 * Point.dual())(covariant))`, the energy's gradient: a form that takes a
 tangent field to the force that smooths it. Because each edge's rotor carries
 the tail's normal onto the head's normal, `covariant` and `L` never mix tangent vectors with normal
 vectors: any tangent field stays perpendicular to the vertex normals everywhere, with no local
 two-dimensional coordinate charts or reference edges chosen at the vertices. With the surface's own
 transport, one backward-Euler step `(M0 + time * L).solve(M0(source))`, with the vertex areas a form too,
-`M0 = spdiag(areas * Point.dual())`, diffuses a single
+`M0 = areas * Point.dual()`, diffuses a single
 tangent vector across the surface along all paths at once, the vector heat method, and normalizing
 the diffused vectors recovers parallel transport from the source to every vertex. Adding a stiff
 weight along the normals lifts the normal bundle out of the low spectrum, so the lowest eigenfields of
@@ -179,7 +179,7 @@ def connection(topology: Topology, transports: Rotor, weights: Scalar) -> tuple[
     # Each end's vector carried to the head, signed by the edge's boundary: the head's less the tail's.
     covariant = (spdiag(transports >> Point) * topology.boundary[1, 0]).sum(axis=0)  # (Point- <- Point-)[edges <- vertices]
     # Each edge's difference read by the plane across it, weighted, and pulled back to the vertices by the adjugate.
-    laplacian = covariant.adjugate()(spdiag(weights * Point.dual())(covariant))  # (Plane+ <- Point-)[vertices <- vertices]
+    laplacian = covariant.adjugate()((weights * Point.dual())(covariant))        # (Plane+ <- Point-)[vertices <- vertices]
     return covariant, laplacian
 
 
@@ -193,7 +193,7 @@ def low_modes(laplacian: SparseExtensor, normals: Vector, areas: Scalar, normal_
     # the normal's patch.
     normal_part = (unit_normals.dual() * (unit_normals & Point)).field()        # (Point- <- Point-)[vertices]
     # Its energy, the part read by the plane across it, stiffly weighted.
-    normal_penalty = spdiag(normal_stiffness * Point.dual()(normal_part))       # (Plane+ <- Point-)[vertices <- vertices]
+    normal_penalty = normal_stiffness * Point.dual()(normal_part)               # (Plane+ <- Point-)[vertices]
     return (laplacian + normal_penalty).eigh(spdiag(areas * Point.dual()), count)   # [count] Scalar+, [count] Point-[vertices]
 
 
@@ -203,7 +203,7 @@ def heat_transport(laplacian: SparseExtensor, areas: Scalar, source: Point, step
     surface's own transport and the vertex areas `Scalar+[vertices]`, carry a tangent field `source` across the
     mesh; they yield the diffused field and the unit field at each step."""
     # The vertex areas as a form, each field's direction read by the plane across it.
-    mass = spdiag(areas * Point.dual())                                         # (Plane+ <- Point-)[vertices <- vertices]
+    mass = areas * Point.dual()                                                 # (Plane+ <- Point-)[vertices]
     step_operator = mass + step_time * laplacian                                # (Plane+ <- Point-)[vertices <- vertices]
     field = source                                                              # Point-[vertices]
     for _ in range(steps):
@@ -284,7 +284,7 @@ def cross_stripes(topology: Topology, vertices: Point, normals: Vector, areas: S
     covariant = (~edge_lines * on_lines).sum(axis=0)                             # (Point- <- Point-)[edges * 2 <- vertices * 2]
     # Each line's site takes its edge's weight, and its vertex's normal and area.
     weights = (~edge_lines * cotangent_weights(topology, vertices, regular)).sum(axis=0)  # Scalar+[edges * 2]
-    laplacian = covariant.adjugate()(spdiag(weights * Point.dual())(covariant))  # (Plane+ <- Point-)[vertices * 2 <- vertices * 2]
+    laplacian = covariant.adjugate()((weights * Point.dual())(covariant))        # (Plane+ <- Point-)[vertices * 2 <- vertices * 2]
     _, stripe_fields = low_modes(laplacian, (~vertex_lines * normals).sum(axis=0),
                                  (~vertex_lines * areas).sum(axis=0), normal_stiffness, 1)
     stripe = vertex_lines * stripe_fields[0]                                     # [2] Point-[vertices]

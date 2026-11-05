@@ -100,7 +100,7 @@ def collapsing():
     vertices, gradients, tension = operators(topology, places)
     # The resting kink across the ring, by each place's distance from the middle less the ring's radius: four times the
     # arctangent of its exponential.
-    distances = vertices.squared().abs().square_root()                        # Scalar+[places]
+    distances = vertices.antinorm()                                           # Scalar+[places]
     angles = 4 * (distances - ring_radius).exp().arctan()                     # Scalar+[places]
     phases = (mv.ab * (-angles / 2)).exp() >> mv.a                            # Phase+[places]
     frames = core.evolving(tension, everywhere(places), phases, 0 * (mv.a ^ phases), ring_dt, n_ring_steps, ring_stride)

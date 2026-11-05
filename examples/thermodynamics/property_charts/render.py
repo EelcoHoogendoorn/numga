@@ -21,7 +21,9 @@ import numpy as np
 from numga import Extensor, stack
 from examples.thermodynamics import rendering as art
 from examples.util.wgsl import solids
+from examples.thermodynamics.property_charts import core
 
+mv = core.mv
 Function = Callable[[Extensor], Extensor]
 
 # The chart's size in pixels, its ranges, temperature in degrees and water content in grams per kg of dry air, and the
@@ -110,7 +112,6 @@ def conditioning(relative_humidity_of: Function, enthalpy_of: Function, path: Ex
                  directions: Extensor, passing: Iterator[Extensor]) -> Iterator[np.ndarray]:
     """The apparatus and the chart at each state of the air along its path."""
     first = next(passing)
-    mv = first.context.multivector
     chart = Chart(relative_humidity_of, enthalpy_of, mv)
     temperatures, water = mv.t & path, mv.w & path
     path, states, toward = (art.on_numpy(values) for values in (path, states, states + directions))
@@ -124,5 +125,5 @@ def conditioning(relative_humidity_of: Function, enthalpy_of: Function, path: Ex
 
 def draw_chart(relative_humidity_of: Function, enthalpy_of: Function, states: Extensor, directions: Extensor):
     """The chart with the directions the air moves in at the inlet and at the coil's outlet."""
-    chart = Chart(relative_humidity_of, enthalpy_of, states.context.multivector)
+    chart = Chart(relative_humidity_of, enthalpy_of, mv)
     return art.figure(chart.picture(states[:1], 0, states, states + directions))

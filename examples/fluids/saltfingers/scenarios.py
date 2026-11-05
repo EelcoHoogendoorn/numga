@@ -33,7 +33,7 @@ def layered(heights: core.Scalar, size: float) -> tuple[core.Scalar, core.Scalar
     at the top and below at the bottom, changing across an interface of this thickness, with a disturbance of the
     salinity of this size inside the interface."""
     rng = np.random.default_rng(seed)
-    noise = heights.context.multivector.scalar(rng.standard_normal((len(heights.batch()), 1))).field()   # Scalar+[vertices]
+    noise = mv.scalar(rng.standard_normal((len(heights.batch()), 1))).field()   # Scalar+[vertices]
     profile = ((heights - 0.5) / thickness).tanh()                            # Scalar+[vertices]
     return profile / 2, profile / 2 + size * (1 - profile.squared()) * noise
 
