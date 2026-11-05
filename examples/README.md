@@ -102,6 +102,7 @@
 - [Joukowski wing](fluids/wing/) — A potential flow bends around a wing with vanishing divergence and curl outside it.
 - [Leapfrogging vortices](fluids/vortices/) — Planar vortices move one another through the velocity fields they induce.
 - [Jeffery orbits](fluids/jeffery/) — Rigid ellipsoids tumble in a shear flow according to their shape and orientation.
+- [Nematic liquid crystals](fluids/liquid_crystals/) — A bivector derivative reads orientational torque; half-charge defects relax and move under active stress.
 - [Hydrostatic stability](fluids/floating/) — Water pressure determines restoring loads on floating bodies from small tilts to capsizing.
 - [Kirchhoff's equations](fluids/kirchhoff/) — Added fluid inertia changes the motion of an ellipsoid through still ideal fluid.
 - [Smoke rings](fluids/smoke_rings/) — Vortex filaments evolve under their own curvature and the flow induced by neighbouring rings.

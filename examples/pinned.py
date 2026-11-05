@@ -28,6 +28,7 @@ EXAMPLES = (
     "relativity.gravitational_waves",
     "mechanics.bending",
     "fluids.eigen_fluids",
+    "fluids.liquid_crystals",
     "electromagnetism.superconductor",
     "fluids.superfluid",
     "thermodynamics.magnetotransport",

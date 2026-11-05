@@ -204,13 +204,13 @@ def pin_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, col
 
 
 def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, n_frames: int = 0,
-                   forward_then_back: bool = False, stepped: bool = False) -> None:
+                   forward_then_back: bool = False, stepped: bool = False, colors: int = 256) -> None:
     """Show RGB frames in a notebook as they come, each in place of the one before with how many have come, then the
     whole animation looping, as the GIF it is saved as: PLOT_DIR/<name>.gif, or the next free <name>_NN.gif, as
     `save_animation` writes it, at their own pixels. The count under each frame says how many are
     expected where `n_frames` is given. With `forward_then_back`, the loop plays the frames forward and then back.
     A smooth process is shown at SMOOTH_DURATION_MS a frame; `stepped` declares the frames a sequence of discrete
-    steps, which may each be shown longer."""
+    steps, which may each be shown longer. The saved animation uses a palette of `colors`."""
     check_frame_duration(duration_ms, stepped)
     from IPython.display import HTML, display
 
@@ -235,13 +235,13 @@ def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, n_
     if forward_then_back:
         images = forward_and_back(images)
     path = auto_increment_path(PLOT_DIR / f"{name}.gif")
-    save_gif([np.asarray(image) for image in images], str(path), duration_ms, 256)
+    save_gif([np.asarray(image) for image in images], str(path), duration_ms, colors)
     shown.update(HTML(scaled_image(path.read_bytes(), "gif", images[0].width)))
     print(f"Saved {path}")
 
 
 def show_states(states: Iterable, animate: Callable[..., Iterable[np.ndarray]], *arguments, name: str, duration_ms: int,
-                n_frames: int = 0, stepped: bool = False) -> list:
+                n_frames: int = 0, stepped: bool = False, colors: int = 256) -> list:
     """Show a run's states as `animate`, called with `arguments` and the states, draws them, each frame as it comes, as
     `show_animation` shows frames, and hand back the states drawn, for what is read off them afterwards."""
     kept = []
@@ -251,7 +251,7 @@ def show_states(states: Iterable, animate: Callable[..., Iterable[np.ndarray]], 
             kept.append(state)
             yield state
 
-    show_animation(animate(*arguments, passing()), name, duration_ms, n_frames=n_frames, stepped=stepped)
+    show_animation(animate(*arguments, passing()), name, duration_ms, n_frames=n_frames, stepped=stepped, colors=colors)
     return kept
 
 def show_figure(figure: plt.Figure) -> None:

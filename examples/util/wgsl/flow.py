@@ -90,10 +90,7 @@ fn seed(place: Point) -> f32 {
 
 # The seeds of a flat field in the points' own algebra, placed by its camera: no lighting, its field, as it is, read
 # across and up the picture by the camera's planes, its specks jittered on cells of the picture's own readings.
-planar_source = """
-var<storage, read> points: array<Point>;
-var<storage, read> faces: array<vec3<u32>>;
-var<storage, read> field: array<Field>;
+planar_grain = """
 var<uniform> noise_scale: f32;
 // A speck's radius, as a share of a cell, its ink fading over the outer seven sixteenths of it.
 var<uniform> speck: f32;
@@ -102,17 +99,6 @@ fn hash(place: vec3<f32>) -> f32 {
     var p = fract(place * 0.1031);
     p += p.x * (p.y + 33.33) + p.y * (p.z + 33.33) + p.z * (p.x + 33.33);
     return fract((p.x + p.y) * p.z);
-}
-
-struct Corner {
-    @builtin(position) position: vec4<f32>,
-    tangent: Field,
-    place: Point,
-}
-struct Shade {
-    @location(0) colour: vec4<f32>,
-    @location(1) flow: vec4<f32>,
-    @location(2) grain: vec4<f32>,
 }
 
 // Jittered specks, one to a cell of the picture's readings, `noise_scale` across, `speck` of a cell in radius.
@@ -132,6 +118,24 @@ fn seed(place: Point) -> f32 {
     return ink;
 }
 
+"""
+
+planar_source = """
+var<storage, read> points: array<Point>;
+var<storage, read> faces: array<vec3<u32>>;
+var<storage, read> field: array<Field>;
+struct Corner {
+    @builtin(position) position: vec4<f32>,
+    tangent: Field,
+    place: Point,
+}
+struct Shade {
+    @location(0) colour: vec4<f32>,
+    @location(1) flow: vec4<f32>,
+    @location(2) grain: vec4<f32>,
+}
+
+""" + planar_grain + """
 @vertex
 fn place(@builtin(vertex_index) index: u32) -> Corner {
     let face = faces[index / 3];
@@ -167,18 +171,33 @@ fn reading(texture: texture_2d<f32>, place: vec2<f32>) -> vec4<f32> {
     return textureSampleLevel(texture, smooth, place / vec2<f32>(pixels), 0.0);
 }
 
+fn tangent(sample: vec4<f32>) -> vec2<f32> {
+    if (!line_field) { return sample.xy; }
+    // A line's doubled-angle image interpolates without a choice of end. Recover one end only while tracing.
+    let strength = length(sample.xy);
+    let axis = select(vec2<f32>(sample.y, strength - sample.x),
+                      vec2<f32>(strength + sample.x, sample.y), sample.x >= 0.0);
+    return strength * axis / max(length(axis), 0.000001);
+}
+
+fn same_end(candidate: vec2<f32>, previous: vec2<f32>) -> vec2<f32> {
+    return select(candidate, -candidate, line_field && dot(candidate, previous) < 0.0);
+}
+
 fn stroke(start: vec2<f32>, sense: f32) -> f32 {
     var place = start;
     var previous = reading(flow, place);
+    var direction = tangent(previous);
     var ink = reading(grains, place).a;
     // Gathering upstream finds the seeds whose plumes extend downstream to this pixel.
     let reach = select(downstream_fraction, 1.0 - downstream_fraction, sense > 0.0);
     let step = sense * reach * step_pixels / reference_speed;
     for (var index = 0u; index < n_steps; index++) {
-        let midpoint = place + step * previous.xy / 2.0;
+        let midpoint = place + step * direction / 2.0;
         let middle = reading(flow, midpoint);
         if (reading(surface, midpoint).a < 0.98 || abs(middle.w - previous.w) > depth_limit) { break; }
-        place += step * middle.xy;
+        let halfway = same_end(tangent(middle), direction);
+        place += step * halfway;
         let sample = reading(flow, place);
         if (any(place < vec2<f32>(0.0)) || any(place >= vec2<f32>(pixels))) { break; }
         if (reading(surface, place).a < 0.98 || abs(sample.w - previous.w) > depth_limit) { break; }
@@ -187,6 +206,7 @@ fn stroke(start: vec2<f32>, sense: f32) -> f32 {
         // Coverage grows with length; averaging would wash a seed out as it spreads.
         ink = max(ink, feather * reading(grains, place).a);
         previous = sample;
+        direction = same_end(tangent(sample), halfway);
     }
     return ink;
 }
@@ -230,8 +250,10 @@ fn field_paired(plane: Plane, field: Field) -> f32 {{
 
 
 @cache
-def trace_shader() -> Shader:
-    return Shader(f"const n_steps = {n_trace_steps}u;\n" + trace_source, solids.ga, {}, {})
+def trace_shader(line_field: bool) -> Shader:
+    """Feathering along vectors or unoriented axes, the latter stored as their doubled-angle image."""
+    settings = f"const n_steps = {n_trace_steps}u;\nconst line_field = {str(line_field).lower()};\n"
+    return Shader(settings + trace_source, solids.ga, {}, {})
 
 
 def texture(points: solids.Point, topology: Topology, field: solids.Point, view: solids.View,
@@ -243,7 +265,7 @@ def texture(points: solids.Point, topology: Topology, field: solids.Point, view:
         normals=meshes.smooth(points, topology), noise_scale=view.pixel * grain_pixels,
         colours=np.broadcast_to(colours, points.shape + (3,)), **view_camera(view).uniforms(8 * view.half.max()),
         **solids.lighting(0.06), **solids.steps(view))
-    return trace_shader()(view.shape, surface=surface, flow=projected, grains=grains,
+    return trace_shader(False)(view.shape, surface=surface, flow=projected, grains=grains,
                           background=background, step_pixels=length / n_trace_steps,
                           reference_speed=max(reference_speed, np.finfo(np.float32).tiny),
                           downstream_fraction=downstream_fraction, depth_limit=6 * view.pixel,
@@ -269,7 +291,7 @@ def layer(points: Extensor, topology: Topology, field: Extensor, camera: Camera,
     surface, projected, grains = planar_shader(**reading(points, camera), Field=whole(field, points.algebra)).draw_averaged(
         camera.shape, samples_per_side(), 3 * topology.n_elements[2], points=points, faces=topology.elements[2], field=field,
         noise_scale=camera.pixel * grain_pixels, speck=speck_pixels / grain_pixels, **camera.uniforms(1.0))
-    result = trace_shader()(camera.shape, surface=surface, flow=projected, grains=grains, background=np.ones(3),
+    result = trace_shader(False)(camera.shape, surface=surface, flow=projected, grains=grains, background=np.ones(3),
                             step_pixels=length / n_trace_steps,
                             reference_speed=max(reference_speed, np.finfo(np.float32).tiny),
                             downstream_fraction=downstream_fraction, depth_limit=6 * camera.pixel,

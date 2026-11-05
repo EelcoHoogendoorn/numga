@@ -383,7 +383,26 @@ advection = structure(stream, vorticity)                                        
 
 ---
 
-## 19. Quantum Process Tomography in the Projective Bloch Ball
+## 19. Nematic Liquid Crystals
+
+**Notebook**: [`examples/fluids/liquid_crystals/liquid_crystals.ipynb`](../examples/fluids/liquid_crystals/liquid_crystals.ipynb)
+
+<p align="center"><img src="../plots/liquid_crystals.gif" alt="Molecular axes bending around many interacting half-charge defects in an active liquid-crystal film" width="300" /></p>
+
+```python
+order = strength * (directors * (directors.dual_inverse() & Point) - Point / 2)  # (Point- <- Point-)[vertices]
+tangent = order.commutator(Turn) - order(Point.commutator(Turn))               # (Point- <- (Point-, Turn+))[vertices]
+slope = -molecular(tangent).batch().trace(0, 1).field()                         # (Scalar+ <- Turn+)[vertices]
+turned = rotor >> order(rotor << Point)                                       # (Point- <- Point-)[vertices]
+```
+
+* The dyad `directors * (directors.dual_inverse() & Point)` is unchanged when a molecular axis reverses; head–tail symmetry is built into the alignment map.
+* `rotor >> order(rotor << Point)` preserves the alignment's eigenvalues, so orientational relaxation preserves the degree of order without renormalization.
+* The rotational energy slope, `-molecular(tangent).batch().trace(0, 1).field()`, differentiates the alignment map directly, without extracting or differentiating its principal directions.
+
+---
+
+## 20. Quantum Process Tomography in the Projective Bloch Ball
 
 **Notebook**: [`examples/quantum/process_tomography/process_tomography.ipynb`](../examples/quantum/process_tomography/process_tomography.ipynb)
 
@@ -405,7 +424,7 @@ learned_channel = (recovered_outputs * (preparation_dual & Point)).sum(axis=-1) 
 
 ---
 
-## 20. Euler Elastica
+## 21. Euler Elastica
 
 **Notebook**: [`examples/mechanics/elastica/elastica.ipynb`](../examples/mechanics/elastica/elastica.ipynb)
 
@@ -426,7 +445,7 @@ load = load - deviation.commutator(load) / 2 + deviation.commutator(deviation.co
 
 ---
 
-## 21. Piezoelectric Bimorph
+## 22. Piezoelectric Bimorph
 
 **Notebook**: [`examples/electromagnetism/piezoelectric/piezoelectric.ipynb`](../examples/electromagnetism/piezoelectric/piezoelectric.ipynb)
 
@@ -445,7 +464,7 @@ mixed = movement.adjugate()(coupling(voltage))                         # (Plane+
 
 ---
 
-## 22. Black Polarization Sandwiches
+## 23. Black Polarization Sandwiches
 
 **Notebook**: [`examples/optics/black_sandwich/black_sandwich.ipynb`](../examples/optics/black_sandwich/black_sandwich.ipynb)
 
@@ -466,7 +485,7 @@ double_stack = sandwich(sandwich)                                # [frames] Fiel
 
 ---
 
-## 23. Gravitational-Wave Antenna Patterns
+## 24. Gravitational-Wave Antenna Patterns
 
 **Notebook**: [`examples/relativity/ligo/ligo.ipynb`](../examples/relativity/ligo/ligo.ipynb)
 
@@ -484,7 +503,7 @@ rings = ring + strain_shown * overhead[:, None](ring).dual()                 # [
 
 ---
 
-## 24. Moving Charges
+## 25. Moving Charges
 
 **Notebook**: [`examples/electromagnetism/moving_charge/moving_charge.ipynb`](../examples/electromagnetism/moving_charge/moving_charge.ipynb)
 
@@ -501,7 +520,7 @@ field = (Vector ^ gradients(Antivector)).trace(1, 2)                  # [...] Bi
 
 ---
 
-## 25. Magnetic Resonance
+## 26. Magnetic Resonance
 
 **Notebook**: [`examples/quantum/magnetic_resonance/magnetic_resonance_space.ipynb`](../examples/quantum/magnetic_resonance/magnetic_resonance_space.ipynb)
 
@@ -519,7 +538,7 @@ sample_echo = echo.mean(axis=-1)                               # [delays] State 
 
 ---
 
-## 26. Jeffery Orbits
+## 27. Jeffery Orbits
 
 **Notebook**: [`examples/fluids/jeffery/jeffery.ipynb`](../examples/fluids/jeffery/jeffery.ipynb)
 
@@ -538,7 +557,7 @@ spin = (Point & turning_rate(Plane)).trace(1, 2).solve((Point & flow_rate(Plane)
 
 ---
 
-## 27. Slip in Metal Crystals
+## 28. Slip in Metal Crystals
 
 **Notebook**: [`examples/mechanics/slip_systems/slip_systems.ipynb`](../examples/mechanics/slip_systems/slip_systems.ipynb)
 
@@ -557,7 +576,7 @@ axis = (axis.commutator(move) / 2).exp() >> axis                              # 
 
 ---
 
-## 28. Boiling at Fixed Pressure
+## 29. Boiling at Fixed Pressure
 
 **Notebook**: [`examples/thermodynamics/phase_change/phase_change.ipynb`](../examples/thermodynamics/phase_change/phase_change.ipynb)
 
@@ -578,7 +597,7 @@ state = state - derivative(gap)(state).solve(gap(state))                        
 
 ---
 
-## 29. Vibration Modes of a Suspended Plate
+## 30. Vibration Modes of a Suspended Plate
 
 **Notebook**: [`examples/mechanics/modes/modes.ipynb`](../examples/mechanics/modes/modes.ipynb)
 
@@ -597,7 +616,7 @@ values, modes = (Twist & stiffness).eigh(Twist & inertia)        # [modes] Scala
 
 ---
 
-## 30. The Most Likely Trajectory from Odometry
+## 31. The Most Likely Trajectory from Odometry
 
 **Notebook**: [`examples/estimation/odometry/odometry.ipynb`](../examples/estimation/odometry/odometry.ipynb)
 
@@ -615,7 +634,7 @@ residual = residual - pushed * step                                   # [..., po
 
 ---
 
-## 31. Area Transport through a Collapse
+## 32. Area Transport through a Collapse
 
 **Notebook**: [`examples/mechanics/area_transport/area_transport.ipynb`](../examples/mechanics/area_transport/area_transport.ipynb)
 
@@ -632,7 +651,7 @@ adjugate = areas.adjugate()                # [frames] Flux <- Flux
 
 ---
 
-## 32. Satellite Navigation
+## 33. Satellite Navigation
 
 **Notebook**: [`examples/relativity/gps/gps.ipynb`](../examples/relativity/gps/gps.ipynb)
 
