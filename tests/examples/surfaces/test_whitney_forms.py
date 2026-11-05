@@ -189,7 +189,7 @@ def test_cochain_complex_and_exact_midpoint_quadrature_including_obtuse_triangle
     obtuse_edge_conductance = core.edge_conductance(obtuse_ops, core.Plane.dual())
     for edge in range(obtuse_topology.n_elements[1]):
         unit_edge = core.mv.scalar((np.arange(obtuse_topology.n_elements[1]) == edge)[..., None]).field()
-        assert -(obtuse_edge_conductance(unit_edge) & unit_edge).sites.sum() > 0
+        assert (obtuse_edge_conductance(unit_edge) & unit_edge).sites.sum() > 0
 
 
 def test_isotropic_and_anisotropic_conduction_patch_test_and_flux_balance():

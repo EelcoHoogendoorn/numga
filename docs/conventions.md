@@ -59,11 +59,25 @@ n >> x == sign(x) * n * x.involute() * n
 
 ## Maps
 
-**Adjugate.** `T.adjugate()` is defined by
+**Adjugate.** `T.adjugate()` is defined by the two pairings it carries, each read with its extrinsic factor first, as every reading is:
 
 ```python
-T.adjugate()(c) & x == c & T(x)
+T.adjugate()(c) & x == c & T(x)    # intrinsic <- intrinsic
+x & T.adjugate()(c) == T(x) & c    # extrinsic <- extrinsic
+T.adjugate()(c) & x == T(x) & c    # extrinsic <- intrinsic
+x & T.adjugate()(c) == c & T(x)    # intrinsic <- extrinsic
 ```
+
+The order matters in an even dimension. Swapping the factors of a pairing of complementary grades costs the sign of moving one of them across the pseudoscalar: nothing in an odd dimension, and the grade involute in an even one, where the complement of an odd grade is odd.
+
+```python
+b & a == a & b                  # n odd
+b & a == a.involute() & b       # n even
+```
+
+A blade's complement can be taken on its left or on its right, and in an even dimension the two differ on odd grades. The adjugate with the complement on the left of both pairings, `L(c) & x == c & T(x)`, reads the extrinsic factor first only where both spaces of `T` are intrinsic; `T.adjugate()` is `L` with the involute on each extrinsic side, on its output where the input of `T` is extrinsic and on its input where the output of `T` is extrinsic. The two differ by a sign where exactly one extrinsic side has an odd grade, in an even dimension only: for a gradient `Vector <- Scalar` in the plane, `L == -T.adjugate()`. Read extrinsic first, in every dimension the adjugate is its own inverse, `T.adjugate().adjugate() == T`, and composes backwards, `T(S).adjugate() == S.adjugate()(T.adjugate())`; a form symmetric under the reading is its own adjugate, as the Euclidean metric on vectors, `Vector.dual()`, is; and a positive form pulls back to a positive one, as in `G.adjugate()(Vector.dual()(G))` for a gradient `G` from scalars to vectors. `L` makes that metric minus its own adjugate, and that pullback negative, in every even dimension.
+
+The involute in the sandwich `n >> x` is the sign of moving a vector across `x`, `n ^ x == x.involute() ^ n`, in every dimension; the pseudoscalar moves across `x` the same way in an even dimension only, and so the pairing pays the involute there alone. A sandwich keeps the pairing in either order, `(V >> a) & (V >> b) == a & b`, and keeps grades, so its adjugate is the reverse sandwich, `(V >> Space).adjugate()(c) == V << c`. The adjoint has no sides: the scalar product commutes in every grade.
 
 **Adjoint.** `T.adjoint()` is defined by
 
@@ -71,7 +85,7 @@ T.adjugate()(c) & x == c & T(x)
 T.adjoint()(b).scalar_product(a) == b.scalar_product(T(a))
 ```
 
-**Trace.** For inputs `x` and `y` from complementary spaces, `T.trace(1, 2)` is the trace of the map `M` with `T(x, y) == M(x) & y`; for the output against an input, it is the trace of the map.
+**Trace.** For inputs `x` and `y` from complementary spaces, `T.trace(1, 2)` is the trace of the map `M` with `T(x, y)` the pairing of `M(x)` and `y` read with its extrinsic factor first, `M(x) & y`, or `y & M(x)` where only `y` is extrinsic; so a form traces alike with its inputs in either order. For the output against an input, it is the trace of the map.
 
 **Contraction.** For inputs `x` and `y` from one space, `T.contract(1, 2)` is the trace of the map `M` with `T(x, y) == M(x).dot(y)`; for the output against an input, it is the trace of the map.
 

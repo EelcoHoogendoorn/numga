@@ -144,7 +144,10 @@ def test_adjugate_carries_incidence_for_singular_batched_maps(context):
 
 
 @pytest.mark.parametrize("output,domain", [("antivector", "bivector"), ("even", "vector")])
-def test_adjugate_twice_carries_the_pairing_signs(output, domain):
+def test_adjugate_reads_extrinsic_first_and_applied_twice_is_the_map(output, domain):
+    """In PGA3D, from extrinsic twists to intrinsic points, `x & A.adjugate()(c) == c & A(x)`, and from extrinsic
+    vectors to extrinsic even elements, `x & A.adjugate()(c) == A(x) & c`: each pairing takes its extrinsic factor
+    first, and applied twice the adjugate is the map."""
     ga = Algebra("x+y+z+w0")
     context = NumpyContext(ga)
     output, domain = getattr(ga.gatype, output)(), getattr(ga.gatype, domain)()
@@ -153,9 +156,11 @@ def test_adjugate_twice_carries_the_pairing_signs(output, domain):
     covectors = context.extensor(output, np.random.default_rng(7).normal(size=sizes[0])).dual()
     values = context.extensor(domain, np.random.default_rng(8).normal(size=sizes[1]))
     scalar = ga.subspace.scalar()
-    np.testing.assert_allclose((operator.adjugate()(covectors) & values).cast(scalar).kernel,
-                               (covectors & operator(values)).cast(scalar).kernel, atol=1e-12)
-    np.testing.assert_allclose(operator.adjugate().adjugate().kernel, -operator.kernel, atol=1e-12)
+    images = operator(values)
+    reading = covectors & images if covectors.gatype.orientation is Orientation.extrinsic else images & covectors
+    np.testing.assert_allclose((values & operator.adjugate()(covectors)).cast(scalar).kernel,
+                               reading.cast(scalar).kernel, atol=1e-12)
+    np.testing.assert_allclose(operator.adjugate().adjugate().kernel, operator.kernel, atol=1e-12)
 
 
 def test_exact_solve_binds_the_exact_inverse():

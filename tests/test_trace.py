@@ -66,16 +66,34 @@ def test_metric_raised_trace_and_relative_det_are_frame_independent():
 
 @pytest.mark.parametrize("signature", ["x+y+", "x+y+z+", "t+x-y-z-", "x+y+z+w0"])
 def test_pairing_the_output_is_lifting_the_map_to_a_form(signature):
-    """`trace` on the output is the trace of the map met with its complement, and `contract` on the
-    output is the same trace: the pairing and its inverse cancel, so neither needs an inverse
-    metric, and both hold in degenerate signatures."""
+    """`trace` on the output is the trace of the map met with its complement, read with the extrinsic
+    factor first, and `contract` on the output is the same trace: the pairing and its inverse cancel,
+    so neither needs an inverse metric, and both hold in degenerate signatures."""
     ga = Algebra(signature)
     mv = NumpyContext(ga).multivector
     vector, antivector = ga.gatype.vector(), ga.gatype.antivector()
     basis = mv.vector(np.eye(len(ga.subspace.vector())))
     f = random_map(mv, basis, vector, np.random.default_rng(3))
-    np.testing.assert_allclose((antivector & f).trace().kernel, f.trace().kernel, atol=1e-12)
+    np.testing.assert_allclose((f & antivector).trace().kernel, f.trace().kernel, atol=1e-12)
     np.testing.assert_allclose(f.contract().kernel, f.trace().kernel, atol=1e-12)
+
+
+@pytest.mark.parametrize("signature", ["x+y+", "x+y+z+", "t+x-y-z-", "x+y+z+w0"])
+def test_the_trace_of_a_form_reads_its_two_inputs_extrinsic_first_in_either_order(signature):
+    """Two inputs of complementary spaces and opposite orientations pair with the extrinsic factor
+    first, so a form traces the same with its inputs in either order, in every dimension; the lift
+    `a & f(v)`, which reads the intrinsic factor first, carries the swap sign of the pairing,
+    `(-1) ** (n - 1)` on vectors."""
+    ga = Algebra(signature)
+    context = NumpyContext(ga)
+    scalar, vector, antivector = ga.gatype.scalar(), ga.gatype.vector(), ga.gatype.antivector()
+    n = ga.n_dimensions
+    coefficients = np.random.default_rng(6).normal(size=(1, n, n))
+    form = context.extensor(ga.gatype((scalar, vector, antivector)), coefficients)
+    reordered = context.extensor(ga.gatype((scalar, antivector, vector)), coefficients.transpose(0, 2, 1))
+    np.testing.assert_allclose(reordered.trace().kernel, form.trace().kernel, atol=1e-12)
+    f = random_map(context.multivector, context.multivector.vector(np.eye(n)), vector, np.random.default_rng(7))
+    np.testing.assert_allclose((antivector & f).trace().kernel, (-1) ** (n - 1) * f.trace().kernel, atol=1e-12)
 
 
 @pytest.mark.parametrize("signature", ["x+y+", "x+y+z+", "t+x-y-z-"])
