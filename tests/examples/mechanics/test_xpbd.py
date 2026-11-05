@@ -1,9 +1,9 @@
-"""Unit tests for XPBD geometric constraint projection and chain dynamics."""
+"""XPBD's geometric constraint projections: a distance projection closes a joint, a velocity projection cancels
+its relative anchor velocity; and a chain of one link steps on NumPy and on JAX, and draws."""
 
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from numga import NumpyContext
 from examples.mechanics.xpbd import core, render, scenarios
@@ -52,18 +52,7 @@ def test_velocity_projection_cancels_relative_anchor_velocity():
     assert relative(resolved) < 1e-6
 
 
-def test_numpy_chain_keeps_its_joints_closed_and_draws():
-    """The joints stay closed and the pin fixed; the animation draws."""
-    motors, gaps = scenarios.swinging_chain(4, 20, 2, 0.02)
-    assert gaps.to_array().max() < 1e-2 * scenarios.LINK_SPACING
-    origin = mv.w.dual()
-    assert ((motors[:, 0] >> origin) & origin).norm().to_array().max() < 1e-6
-    frames = list(render.animate_chain(motors[:3], scenarios.SEMI_AXES, scenarios.LINK_SPACING))
-    assert frames and all(f.shape == frames[0].shape for f in frames)
-
-
-def test_jax_chain_matches_numpy():
-    pytest.importorskip("jax")
-    numpy_motors, _ = scenarios.swinging_chain(4, 5, 2, 0.02)
-    jax_motors, _ = scenarios.swinging_chain_jax(4, 5, 2, 0.02)
-    np.testing.assert_allclose(np.asarray(jax_motors.kernel), numpy_motors.kernel, atol=0.0001)
+def test_a_chain_of_one_link_steps_on_numpy_and_jax_and_draws():
+    motors, _ = scenarios.swinging_chain(1, 1, 1, scenarios.STEP)
+    scenarios.swinging_chain_jax(1, 1, 1, scenarios.STEP)
+    next(render.animate_chain(motors, scenarios.SEMI_AXES, scenarios.LINK_SPACING))

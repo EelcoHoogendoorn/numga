@@ -18,10 +18,11 @@ DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------
-def day() -> tuple[core.Rotor, core.Point, core.Point, core.Point, core.Point]:
-    """For the pendulum in Paris at every frame of a day: the rotor of the earth's turn so far, and the line
-    the pendulum swings along on its floor; with the site's vertical, north and east at the start of the day."""
-    turns = np.linspace(0, 2 * np.pi, N_FRAMES + 1)                              # [frames + 1]
+def day(n_frames: int = N_FRAMES) -> tuple[core.Rotor, core.Point, core.Point, core.Point, core.Point]:
+    """For the pendulum in Paris at every one of n_frames frames of a day: the rotor of the earth's turn so far, and
+    the line the pendulum swings along on its floor; with the site's vertical, north and east at the start of the
+    day."""
+    turns = np.linspace(0, 2 * np.pi, n_frames + 1)                              # [frames + 1]
     vertical, north, east = core.compass(LATITUDES[PARIS])
     earth = (core.equator * (-turns / 2)).exp()                               # [frames + 1] Rotor+
     return earth, core.swing(LATITUDES[PARIS], turns), vertical, north, east

@@ -38,23 +38,25 @@ def lift(n_samples: int, n_revolutions: int) -> tuple[core.Point, core.Spinor]:
     return (spinors >> core.mv.x.dual())[:, FEATURED_CASE], spinors[:, FEATURED_CASE]
 
 
-def passage() -> tuple[core.State, core.State, core.State]:
+def passage(n_steps: int = N_STEPS,
+            n_reference_samples: int = N_REFERENCE_SAMPLES) -> tuple[core.State, core.State, core.State]:
     start, orbit = initial_orbit()                                       # [cases] State, BoundOrbit
-    parameter = np.linspace(0, np.pi, N_REFERENCE_SAMPLES + 1)[:, None] / orbit.frequency  # [reference_samples + 1, cases] Scalar+
+    parameter = np.linspace(0, np.pi, n_reference_samples + 1)[:, None] / orbit.frequency  # [reference_samples + 1, cases] Scalar+
     reference = orbit.sample(parameter)                                  # [reference_samples + 1, cases] State
-    physical = core.State.collect(core.physical_verlet(start, GRAVITY, PERIOD / N_STEPS, N_STEPS))  # [steps + 1, cases] State
+    physical = core.State.collect(core.physical_verlet(start, GRAVITY, PERIOD / n_steps, n_steps))  # [steps + 1, cases] State
     regularized = core.State.collect(core.regularized_verlet(
-        orbit, start.time, np.pi / orbit.frequency / N_STEPS, N_STEPS))      # [steps + 1, cases] State
+        orbit, start.time, np.pi / orbit.frequency / n_steps, n_steps))      # [steps + 1, cases] State
     return reference, physical, regularized
 
 
-def convergence() -> tuple[core.Scalar, core.Scalar]:
+def convergence(step_counts: np.ndarray = STEP_COUNTS,
+                n_clock_iterations: int = N_CLOCK_ITERATIONS) -> tuple[core.Scalar, core.Scalar]:
     start, orbit = initial_orbit()                                       # [cases] State, BoundOrbit
     # Every resolution advances both second-order methods through one nominal orbit.
     physical = stack([orbit.position_error(core.State.collect(core.physical_verlet(
-        start, GRAVITY, PERIOD / count, count)), N_CLOCK_ITERATIONS) for count in STEP_COUNTS])  # [counts, cases] Scalar+
+        start, GRAVITY, PERIOD / count, count)), n_clock_iterations) for count in step_counts])  # [counts, cases] Scalar+
     regularized = stack([orbit.position_error(core.State.collect(core.regularized_verlet(
-        orbit, start.time, np.pi / orbit.frequency / count, count)), N_CLOCK_ITERATIONS) for count in STEP_COUNTS])  # [counts, cases] Scalar+
+        orbit, start.time, np.pi / orbit.frequency / count, count)), n_clock_iterations) for count in step_counts])  # [counts, cases] Scalar+
     return physical / SEMIMAJOR_AXIS, regularized / SEMIMAJOR_AXIS
 
 

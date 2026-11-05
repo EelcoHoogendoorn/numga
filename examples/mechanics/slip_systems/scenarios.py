@@ -31,13 +31,13 @@ GALLERY_PIXELS = 420
 
 
 # --- math -----------------------------------------------------------------------------
-def chart() -> tuple[core.Direction, core.Scalar, core.Plane, core.Direction]:
-    """Pull directions over the upper half of the sphere, laid out on the stereographic disk `[rows, columns]`,
-    each system's Schmid factor for each `[rows, columns, planes, directions]`, and the slip planes and slip
-    directions."""
+def chart(n_samples: int = N_SAMPLES) -> tuple[core.Direction, core.Scalar, core.Plane, core.Direction]:
+    """Pull directions over the upper half of the sphere, n_samples across, laid out on the stereographic disk
+    `[rows, columns]`, each system's Schmid factor for each `[rows, columns, planes, directions]`, and the slip planes
+    and slip directions."""
     # Each point of the chart, the plane across [001], lifts to the direction that projects onto it: [001]
     # reflected in the mirror through [001] plus the point.
-    across = np.linspace(-1, 1, N_SAMPLES)
+    across = np.linspace(-1, 1, n_samples)
     offsets = core.mv.x * across + core.mv.y * across[:, None]                 # [rows, columns] Vector+
     directions = (core.mv.z + offsets).normalized() >> core.mv.z.dual()       # [rows, columns] Direction-
     atoms = core.mv.vector(ATOMS).dual()                                      # [atoms] Direction-
@@ -46,22 +46,23 @@ def chart() -> tuple[core.Direction, core.Scalar, core.Plane, core.Direction]:
     return directions, core.schmid(directions, planes, slips), planes, slips
 
 
-def rotation(axis: core.Direction, planes: core.Plane, slips: core.Direction) -> Iterator[tuple[core.Direction, core.Scalar]]:
-    """Each pull's axis after every slip step, and how much each system slipped in the step: every system
-    slips in the sense the pull drives it, at a rate rising steeply with its Schmid factor."""
-    for _ in range(N_STEPS):
+def rotation(axis: core.Direction, planes: core.Plane, slips: core.Direction,
+             n_steps: int = N_STEPS) -> Iterator[tuple[core.Direction, core.Scalar]]:
+    """Each pull's axis after every one of n_steps slip steps, and how much each system slipped in the step: every
+    system slips in the sense the pull drives it, at a rate rising steeply with its Schmid factor."""
+    for _ in range(n_steps):
         amounts = power_law(core.schmid(axis, planes, slips))                  # [starts, planes, directions] Scalar-
         axis = core.slipped(axis, planes, slips, amounts)
         yield axis, amounts                                                   # [starts] Direction-
 
 
-def paths() -> tuple[core.Direction, core.Scalar]:
-    """The pulls' axes at every step `[steps + 1, starts]`, and how much each system slipped in each step
-    `[steps, starts, planes, directions]`."""
+def paths(n_steps: int = N_STEPS) -> tuple[core.Direction, core.Scalar]:
+    """The pulls' axes at every one of n_steps steps `[steps + 1, starts]`, and how much each system slipped in each
+    step `[steps, starts, planes, directions]`."""
     atoms = core.mv.vector(ATOMS).dual()                                      # [atoms] Direction-
     slips = core.slip_directions(atoms)                                       # [planes, directions] Direction-
     starts = core.mv.vector(STARTS).normalized().dual()                       # [starts] Direction-
-    axes, amounts = zip(*rotation(starts, core.slip_planes(atoms, slips), slips))
+    axes, amounts = zip(*rotation(starts, core.slip_planes(atoms, slips), slips, n_steps))
     return stack([starts, *axes]), stack(amounts)
 
 

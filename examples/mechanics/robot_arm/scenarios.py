@@ -40,9 +40,9 @@ def arm():
     return axis, tip_home, axis * REST_ANGLES                                  # [joints] Twist+, [] Point-, [joints] Twist+
 
 
-def loop_targets() -> Point:
-    """Targets along a tilted loop in front of the arm."""
-    phase = np.linspace(0.0, 2 * np.pi, N_FRAMES, endpoint=False)
+def loop_targets(n_frames: int = N_FRAMES) -> Point:
+    """n_frames targets along a tilted loop in front of the arm."""
+    phase = np.linspace(0.0, 2 * np.pi, n_frames, endpoint=False)
     return mv.point(LOOP_CENTRE + LOOP_RADII * np.stack([np.sin(phase), np.cos(phase), np.sin(2 * phase)], axis=-1))
 
 
@@ -70,10 +70,11 @@ def homing() -> tuple[Scalar, Scalar]:
     return (target & tip).norm(), (joints | axis) / (axis | axis)
 
 
-def tracking() -> Iterator[tuple]:
-    """Home onto the loop, then follow it: per target the link boxes, the target and the tip."""
+def tracking(n_frames: int = N_FRAMES) -> Iterator[tuple]:
+    """Home onto the loop, then follow it through n_frames targets: per target the link boxes, the target and the
+    tip."""
     axis, tip_home, rest = arm()
-    targets = loop_targets()
+    targets = loop_targets(n_frames)
     boxes_home = link_boxes(len(REST_ANGLES), LINK_WIDTH, LINK_DEPTH)
     joints, _, _ = core.inverse_kinematics(rest, axis, tip_home, targets[0], N_HOMING_STEPS)
     for _, link_motors, target, tip in core.track(joints, axis, tip_home, targets, N_TRACKING_STEPS):

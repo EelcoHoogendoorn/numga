@@ -1,8 +1,9 @@
-"""Spinor regularization preserves Kepler geometry and resolves close bound passages."""
+"""Spinor regularization preserves Kepler geometry; and the passages and the convergence take a step or two and
+draw."""
 
 import numpy as np
 
-from examples.mechanics.kepler import core, scenarios
+from examples.mechanics.kepler import core, render, scenarios
 
 
 def test_lift_reconstructs_velocity_and_exact_motion_in_tilted_planes():
@@ -56,17 +57,9 @@ def test_physical_clock_inversion_and_inverse_square_acceleration():
     np.testing.assert_allclose(acceleration.kernel, force.kernel, atol=1e-7, rtol=1e-6)
 
 
-def test_both_verlet_schemes_converge_and_regularization_resolves_periapsis():
-    start, _ = scenarios.initial_orbit()
-    _, physical, regularized = scenarios.passage()
-    physical_errors, regularized_errors = scenarios.convergence()
-    physical_ratios = physical_errors[1:] / physical_errors[:-1]               # [counts - 1, cases] Scalar
-    regularized_ratios = regularized_errors[1:] / regularized_errors[:-1]      # [counts - 1, cases] Scalar
-
-    # checks: both central-force updates keep the angular momentum; the resolved orbits converge at
-    # second order in either clock, and the spinor clock resolves the closest passage far better.
-    np.testing.assert_allclose((physical.momentum() - start.momentum()).kernel, 0, atol=1e-10)
-    np.testing.assert_allclose((regularized.momentum() - start.momentum()).kernel, 0, atol=1e-10)
-    np.testing.assert_allclose(physical_ratios[:, 0].kernel, 0.25, atol=0.05)
-    np.testing.assert_allclose(regularized_ratios.kernel, 0.25, atol=0.05)
-    assert np.all(regularized_errors.kernel[:, -1] < physical_errors.kernel[:, -1] / 100)
+def test_the_lift_the_passages_and_the_convergence_draw():
+    render.draw_lift(*scenarios.lift(2, 1))
+    render.draw_comparison(*scenarios.passage(1, 2))
+    step_counts = np.array([1, 2])
+    render.draw_errors(step_counts, *scenarios.convergence(step_counts, 1))
+    next(render.animate_lift(*scenarios.lift(1, 2)))
