@@ -24,6 +24,13 @@ TARGETED = ("Run the tests the change could break, by file or test function "
             "(e.g. 'pytest tests/examples/electromagnetism/test_constitutive.py'); "
             "the whole suite runs only once, just before a push to main.")
 
+# Every run adds each test's seconds, setup, call and teardown, to a record kept by test id in the workspace that holds
+# this checkout, beside the checkouts; a checkout with no workspace archive beside it keeps no record.
+DURATIONS = TEST_ROOT.parents[1] / "archive" / "test_durations.json"
+# This run's seconds by test id and phase, and the run's time, checkout and load, as the record gets them.
+_seconds: dict[str, dict[str, object]] = {}
+_run: dict[str, object] = {}
+
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     """Register CLI flags for test execution."""
@@ -74,6 +81,38 @@ def pytest_configure(config: pytest.Config) -> None:
             matplotlib.use("Agg")
         except ImportError:
             pass
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """Note when the run starts, from which checkout, and the machine's load before the run adds its own."""
+    import time
+    _run.update(at=time.strftime("%Y-%m-%dT%H:%M:%S"), checkout=TEST_ROOT.parent.name, load=round(os.getloadavg()[0], 2))
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    """Note the seconds of each phase of a test, and its outcome: the call's, or a setup's that skipped or failed."""
+    phases = _seconds.setdefault(report.nodeid, {})
+    phases[report.when] = round(report.duration, 4)
+    if report.when == "call" or report.outcome != "passed":
+        phases.setdefault("outcome", report.outcome)
+
+
+def pytest_sessionfinish(session: pytest.Session) -> None:
+    """Add this run's seconds to the record, under a lock, so that runs in other checkouts may finish alongside."""
+    if not _seconds or not DURATIONS.parent.is_dir():
+        return
+    import fcntl
+    import json
+    with os.fdopen(os.open(DURATIONS, os.O_RDWR | os.O_CREAT), "r+") as record:
+        fcntl.flock(record, fcntl.LOCK_EX)
+        text = record.read()
+        kept = json.loads(text) if text else {}
+        for nodeid, phases in _seconds.items():
+            kept.setdefault(nodeid, []).append({**_run, **phases})
+        record.seek(0)
+        record.truncate()
+        # One test a line, its runs in the order they happened.
+        record.write("{\n" + ",\n".join(f"{json.dumps(nodeid)}: {json.dumps(runs)}" for nodeid, runs in sorted(kept.items())) + "\n}\n")
 
 
 @pytest.fixture(autouse=True)
