@@ -13,7 +13,8 @@
   canvas[hidden] { display: none; }
   #about { margin: 0; max-width: 480px; text-align: center; }
   #help, #note { color: #8a8a93; text-align: center; }
-  #status { color: #8a8a93; font-variant-numeric: tabular-nums; min-height: 1.5em; max-width: 480px; text-align: center; }
+  #status { color: #8a8a93; font-variant-numeric: tabular-nums; min-height: 3em; max-width: 480px; text-align: left;
+            white-space: pre-line; }
   #fallback { display: block; }
   #fallback[hidden] { display: none; }
   a, kbd { font: inherit; color: #c9c9cf; }
@@ -25,7 +26,6 @@
 <img id="fallback" hidden alt="The closed universe's slowest wave seen from inside, traced ahead of time" src="../../../plots/gravitational_waves_inside.gif" width="400" height="300">
 <div id="help">Arrows or drag turn · <kbd>a</kbd> <kbd>d</kbd> roll · <kbd>w</kbd> <kbd>s</kbd> faster, slower · scroll speed ·
   <kbd>space</kbd> stop · <kbd>p</kbd> hold time · <kbd>r</kbd> start again · <kbd>[</kbd> <kbd>]</kbd> leg</div>
-<input id="leg" type="range" min="0" step="any" aria-label="leg">
 <div id="status">Starting WebGPU…</div>
 <div id="note">The shaders are written in <a href="https://github.com/EelcoHoogendoorn/numga">numga</a>:
   run <a href="https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/relativity/gravitational_waves/waves.ipynb">the waves notebook</a> or
@@ -217,11 +217,6 @@ async function start() {
   // uniforms: the camera's thrust, its turn and roll, the brake; the wave's time, held by `p`; and a ray's leg.
   const held = new Set();
   const state = { leg: C.start.leg, holding: false, dragged: [0, 0], scrolled: 0, speed: 0 };
-  // The leg's slider, evenly in halvings from the finest leg to the coarsest, kept in step with `[` and `]`.
-  const slider = document.getElementById("leg"), halvings = leg => Math.log2(leg / C.limits.finest);
-  slider.max = halvings(C.limits.coarsest);
-  slider.value = halvings(state.leg);
-  slider.oninput = () => { state.leg = C.limits.finest * 2 ** slider.valueAsNumber; };
   let dragging = null;
   canvas.addEventListener("pointerdown", event => { dragging = [event.clientX, event.clientY]; canvas.setPointerCapture(event.pointerId); });
   canvas.addEventListener("pointerup", () => { dragging = null; });
@@ -241,7 +236,6 @@ async function start() {
     else if (event.key === "p") state.holding = !state.holding;
     else if (event.key === "r") restart();
     else held.add(event.key);
-    slider.value = halvings(state.leg);
     if (event.key === " " || event.key.startsWith("Arrow")) event.preventDefault();
   });
   window.addEventListener("keyup", event => { held.delete(event.key); });
@@ -314,10 +308,14 @@ async function start() {
       return fail("WebGPU stopped at " + error.message);
     }
     drawn += 1;
-    // The line, every frame: the speed along the view at this frame, marked while a key changes it, then the pace.
+    // The two lines, every frame: the speed along the view at this frame, marked while a key changes it, and time if
+    // held; then the leg and the pace, each number padded to its widest, so that the lines never wrap anew and, set
+    // flush left, the marks come and go without moving anything.
     const marked = braking ? " ■ stopping" : thrusting > 0 ? " ▲ faster" : thrusting < 0 ? " ▼ slower" : "";
-    status.textContent = `speed ${state.speed.toFixed(2)} of light's${marked} · ${(1 / frameTime).toFixed(0)} frames a second at ` +
-                         `${columns} × ${rows} pixels · leg ${state.leg.toPrecision(2)}` + (state.holding ? " · time held" : "");
+    const padded = (number, digits) => String(number).padStart(digits, "\u2007");
+    status.textContent = `speed ${state.speed.toFixed(2)} of light's${marked}` + (state.holding ? " · time held" : "") +
+                         `\nleg ${state.leg.toFixed(3)} · ${padded((1 / frameTime).toFixed(0), 3)} frames a second at ` +
+                         `${padded(columns, String(full[0]).length)} × ${padded(rows, String(full[1]).length)} pixels`;
     requestAnimationFrame(frame);
   }
   // The first frame a second after everything is ready, so that the page shows itself before the tracing begins.
