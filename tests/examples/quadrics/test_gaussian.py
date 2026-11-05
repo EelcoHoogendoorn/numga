@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
+from functools import partial
+
 import numpy as np
 
 from examples.quadrics.gaussian import render, scenarios
-from functools import partial
-
 from examples.quadrics.gaussian.core import density, fit_gaussian, mv
 
 
@@ -26,7 +25,6 @@ def test_density_peaks_at_the_mean_and_level_matches_the_covariance():
     np.testing.assert_allclose(level.to_array()[1:], mahalanobis - 1.0, atol=1e-9)
 
 
-def test_scenario_renders():
+def test_the_fit_draws():
     points, precision, ellipsoid = scenarios.gaussian()
-    figure = render.draw_gaussian(points, partial(density, precision), ellipsoid)
-    assert isinstance(figure, plt.Figure)
+    render.draw_gaussian(points, partial(density, precision), ellipsoid)

@@ -1,10 +1,8 @@
 """The Hopf fibration: the fibre over a spin is the top eigenspace of the spin paired with the Hopf
-form, any two fibres link once, a carried spinor turns by half the solid angle, and the
-scenarios draw."""
+form, any two fibres link once, and a carried spinor turns by half the solid angle."""
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.math.hopf import core, render, scenarios
@@ -37,11 +35,8 @@ def test_a_spinor_carried_around_a_loop_turns_by_half_the_solid_angle():
     np.testing.assert_allclose((carried[-1] - start_fibre[0] * (core.mv.xy * -half_solid_angle).exp()).kernel, 0.0, atol=1e-3)
 
 
-def test_scenarios_draw():
-    loop, carried, start_fibre = scenarios.lift(2.2, 200)
-    figures = (render.draw_tori(*scenarios.tori(np.pi * np.array([0.8, 0.5]), 5, 120)),
-               render.draw_lift(loop, core.stereographic(carried), core.stereographic(start_fibre)))
-    for figure in figures:
-        assert isinstance(figure, plt.Figure)
-        plt.close(figure)
-    assert len(list(render.animate_sweep(scenarios.sweep(scenarios.spiral_polars, 1, 3, 60)))) == 3
+def test_the_tori_the_lift_and_one_frame_of_the_sweep_draw():
+    render.draw_tori(*scenarios.tori(scenarios.polars[:1], 2, 8))
+    loop, carried, start_fibre = scenarios.lift(scenarios.loop_polar, 8)
+    render.draw_lift(loop, core.stereographic(carried), core.stereographic(start_fibre))
+    next(render.animate_sweep(scenarios.sweep(scenarios.spiral_polars, 1, 1, 8)))

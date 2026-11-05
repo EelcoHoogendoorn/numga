@@ -31,8 +31,8 @@ wire = core.Wire.chain(N_SITES, HOPPING, PAIRING)
 
 
 # --- math -----------------------------------------------------------------------------
-def formation() -> tuple[np.ndarray, core.Scalar, core.Scalar]:
-    chemical_potentials = np.linspace(OUTSIDE, INSIDE, N_SPECTRAL_SAMPLES)
+def formation(n_samples: int = N_SPECTRAL_SAMPLES) -> tuple[np.ndarray, core.Scalar, core.Scalar]:
+    chemical_potentials = np.linspace(OUTSIDE, INSIDE, n_samples)
     potential = core.gate(SITES, LEFT, RIGHT, chemical_potentials[:, None], OUTSIDE, WIDTH)   # [potentials] Scalar+[sites]
     energies, modes = wire.modes(wire.generator(potential), N_ENERGIES)   # [potentials, modes] Scalar+, Majorana+[sites]
     # Averaging the two quadratures removes the arbitrary eigenvector orientation.
@@ -46,20 +46,20 @@ def gate_at(progress: np.ndarray) -> core.Scalar:
     return core.gate(SITES, left[:, None], RIGHT, INSIDE, OUTSIDE, WIDTH)
 
 
-def moving() -> tuple[np.ndarray, core.Scalar, core.Majorana, core.Majorana, core.Scalar]:
-    progress = np.arange(N_STEPS // STEPS_PER_FRAME + 1) * STEPS_PER_FRAME / N_STEPS
+def moving(n_steps: int = N_STEPS) -> tuple[np.ndarray, core.Scalar, core.Majorana, core.Majorana, core.Scalar]:
+    progress = np.arange(n_steps // STEPS_PER_FRAME + 1) * STEPS_PER_FRAME / n_steps
     potentials = gate_at(progress)                                  # [frames] Scalar+[sites]
     _, modes = wire.modes(wire.generator(potentials), 2)            # [frames, modes] Majorana+[sites]
     localized = wire.localized(modes)                               # [frames, ends] Majorana+[sites]
 
-    midpoint_potentials = gate_at((np.arange(N_STEPS) + 0.5) / N_STEPS)   # [steps] Scalar+[sites]
+    midpoint_potentials = gate_at((np.arange(n_steps) + 0.5) / n_steps)   # [steps] Scalar+[sites]
     history = stack(core.transport(wire, localized[0, 0], midpoint_potentials, DURATIONS, STEPS_PER_FRAME))   # [frames, speeds] Majorana+[sites]
     share = core.boundary_share(modes[:, None], history)            # [frames, speeds] Scalar+
     return progress, potentials, history, localized[:, 0], share
 
 
-def overlap() -> tuple[core.Scalar, core.Scalar, core.Majorana]:
-    potentials = core.gate(SITES, RIGHT - SEPARATIONS[:, None], RIGHT, INSIDE, OUTSIDE, WIDTH)   # [separations] Scalar+[sites]
+def overlap(separations: np.ndarray = SEPARATIONS) -> tuple[core.Scalar, core.Scalar, core.Majorana]:
+    potentials = core.gate(SITES, RIGHT - separations[:, None], RIGHT, INSIDE, OUTSIDE, WIDTH)   # [separations] Scalar+[sites]
     energies, modes = wire.modes(wire.generator(potentials), 2)    # [separations, modes] Scalar+, Majorana+[sites]
     return energies.mean(axis=-1), potentials, wire.localized(modes)
 

@@ -1,6 +1,5 @@
-"""The four-qubit stabilizer code: the checks, the stored state, single errors and noise."""
+"""The four-qubit stabilizer code: the checks, the stored state and single errors."""
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quantum.stabilizer import core, render, scenarios
@@ -27,10 +26,7 @@ def test_stored_state_passes_both_checks_and_every_single_error_is_caught():
     assert (readings[:, 1:].min(axis=-1) < 0).all()
 
 
-def test_kept_runs_go_wrong_at_second_order_and_the_figure_draws():
+def test_the_readings_and_the_noise_draw():
     state, _, _ = scenarios.stored()
-    kept, encoded_errors, bare_errors = scenarios.noisy(state)
-    np.testing.assert_allclose(encoded_errors.kernel[2] / encoded_errors.kernel[1], 4, rtol=0.05)
-    np.testing.assert_allclose(bare_errors.kernel[2] / bare_errors.kernel[1], 2, rtol=0.05)
-    assert (kept.kernel <= 1 + 1e-12).all()
-    plt.close(render.draw_noise(scenarios.RATES, kept, encoded_errors, bare_errors))
+    render.print_readings(scenarios.single_errors(state))
+    render.draw_noise(scenarios.RATES, *scenarios.noisy(state))

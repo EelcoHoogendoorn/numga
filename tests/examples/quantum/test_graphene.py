@@ -1,11 +1,10 @@
 """Graphene: the Hamiltonian squares to the field's length, transport around a circle turns a frame
-by the solid angle it encloses, and the scenarios draw."""
+by the solid angle it encloses."""
 
 from __future__ import annotations
 
 from functools import partial
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quantum.graphene import core, render, scenarios
@@ -32,12 +31,10 @@ def test_transport_around_a_circle_of_latitude_turns_by_the_enclosed_solid_angle
     np.testing.assert_allclose(holonomy.select[0].to_array(), np.cos(np.pi * (1 - np.cos(theta))), atol=1e-3)
 
 
-def test_scenarios_draw():
-    radii, gaps = np.linspace(0.01, 0.4, 5), np.array([0.0, 0.5])
-    momenta, field, energies = scenarios.bands(4.5, 21, 0.0)
-    for figure in (render.draw_field(momenta, field),
-                   render.draw_bands(momenta, energies),
-                   render.draw_textures(partial(scenarios.upper_pseudospins, gap=0.3), 0.5),
-                   render.draw_berry(radii, gaps, *scenarios.berry(radii, gaps, 200))):
-        assert isinstance(figure, plt.Figure)
-        plt.close(figure)
+def test_the_scenes_draw_at_a_few_samples():
+    momenta, field, energies = scenarios.bands(scenarios.ZONE_EXTENT, 3, scenarios.GAPLESS)
+    render.draw_field(momenta, field)
+    render.draw_bands(momenta, energies)
+    render.draw_textures(partial(scenarios.upper_pseudospins, gap=scenarios.TEXTURE_GAP), scenarios.VALLEY_EXTENT)
+    radii, gaps = scenarios.RADII[:2], scenarios.GAPS[:2]
+    render.draw_berry(radii, gaps, *scenarios.berry(radii, gaps, 4))

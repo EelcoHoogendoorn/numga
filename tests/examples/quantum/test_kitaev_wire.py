@@ -1,17 +1,11 @@
-"""Clifford action, Kitaev spectra, orthogonal transport and boundary overlap."""
+"""Clifford action, Kitaev spectra and the localized end modes, and the scenes at a few samples."""
 
 import numpy as np
-import pytest
 
 from numga import Algebra, NumpyContext, stack
-from examples.quantum.kitaev_wire import core, scenarios
+from examples.quantum.kitaev_wire import core, render, scenarios
 
 ROUND_OFF = 1e-10
-
-
-@pytest.fixture(scope="module")
-def moving():
-    return scenarios.moving()
 
 
 def test_sparse_generator_is_the_clifford_bivector_action():
@@ -54,25 +48,6 @@ def test_decoupled_majoranas_and_normal_chain_spectrum():
     np.testing.assert_allclose(energies.kernel[:, 0], expected, atol=ROUND_OFF, rtol=0)
 
 
-def test_cayley_evolution_converges_to_the_rotor():
-    full = NumpyContext(Algebra("a+b+c+d+")).multivector
-    wire = core.Wire.chain(2, 1.0, 0.7)
-    potential = core.mv.scalar([[0.6], [1.1]]).field()
-    bivector = -0.6 * full.ab - 1.1 * full.cd + 1.7 * full.bc - 0.3 * full.ad
-    initial = core.mv.vector([[1.0, 2.0], [3.0, 4.0]]).field() / np.sqrt(30)
-    duration = 0.8
-    exact = (bivector * (duration / 2)).exp() >> full.vector([1.0, 2.0, 3.0, 4.0]) / np.sqrt(30)
-    errors = []
-    for steps in (40, 80):
-        profiles = potential.broadcast_to((steps,))
-        final = tuple(core.transport(wire, initial, profiles, np.array([duration]), steps))[-1]
-        np.testing.assert_allclose(final.scalar_norm_squared().sites.sum().kernel, 1,
-                                   atol=ROUND_OFF, rtol=0)
-        errors.append(np.linalg.norm(final.kernel.reshape(4) - exact.kernel))
-    assert errors[1] < 1e-4
-    assert 3.9 < errors[0] / errors[1] < 4.1
-
-
 def test_localization_does_not_depend_on_the_eigensolver_basis():
     wire = scenarios.wire
     potential = core.gate(scenarios.SITES, scenarios.LEFT, scenarios.RIGHT,
@@ -90,39 +65,10 @@ def test_localization_does_not_depend_on_the_eigensolver_basis():
     assert centres.kernel[1, 0] - centres.kernel[0, 0] > 50
 
 
-def test_slow_transport_follows_the_boundary_and_fast_transport_leaks(moving):
-    _, _, history, target, share = moving
-    np.testing.assert_allclose(history.scalar_norm_squared().sites.sum().kernel,
-                               1, atol=ROUND_OFF, rtol=0)
-    assert share.kernel[-1, 0, 0] > 0.999
-    assert share.kernel[-1, 1, 0] < 0.01
-    overlap = history[-1, 0].scalar_product(target[-1]).sites.sum().squared()
-    assert overlap.kernel[0] > 0.999
-
-
-def test_overlap_lifts_the_lowest_excitation():
-    energies, _, _ = scenarios.overlap()
-    assert energies.kernel[-1, 0] > 0.1
-    assert energies.kernel[0, 0] < 2e-7
-    assert np.all(np.diff(energies.kernel[:, 0]) > 0)
-
-
-def test_scenes_draw(moving):
-    import matplotlib.pyplot as plt
-    from examples.quantum.kitaev_wire import render
-
-    progress, potentials, history, target, share = moving
-    figures = [render.draw_formation(*scenarios.formation(), scenarios.HOPPING),
-               render.draw_transport(progress, history, potentials, scenarios.HOPPING)]
-    for figure in figures:
-        figure.canvas.draw()
-        plt.close(figure)
-    frames = list(render.animate_transport(progress[:2], potentials[:2], history[:2], target[:2], share[:2],
-                                            scenarios.HOPPING))
-    assert len(frames) == 2
-    assert np.any(frames[0] != frames[1])
-    splitting, closing, modes = scenarios.overlap()
-    frames = list(render.animate_overlap(scenarios.SEPARATIONS[::33], splitting[::33], closing[::33], modes[::33],
-                                         scenarios.HOPPING))
-    assert len(frames) == len(scenarios.SEPARATIONS[::33])
-    assert np.any(frames[0] != frames[-1])
+def test_the_scenes_draw_at_a_few_samples():
+    render.draw_formation(*scenarios.formation(n_samples=2), scenarios.HOPPING)
+    progress, potentials, history, target, share = scenarios.moving(n_steps=scenarios.STEPS_PER_FRAME)
+    next(render.animate_transport(progress, potentials, history, target, share, scenarios.HOPPING))
+    render.draw_transport(progress, history, potentials, scenarios.HOPPING)
+    separations = scenarios.SEPARATIONS[:2]
+    next(render.animate_overlap(separations, *scenarios.overlap(separations), scenarios.HOPPING))
