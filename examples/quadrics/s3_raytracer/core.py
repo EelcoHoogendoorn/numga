@@ -18,20 +18,19 @@ the antipode of the eye, and the farthest ellipsoid looms larger than the middle
 
 from __future__ import annotations
 
-from functools import partial
-
 import numpy as np
 
 from numga import Algebra, NumpyContext
 from numga.gatype.traits import Versor
-from numga.subspace import SubSpaceFactory
 
-ga = Algebra("x+y+z+w+", subspace_factory=partial(SubSpaceFactory, default="1 x y z w yz zx xy xw yw zw yzw zxw xyw zyx xyzw"))
+ga = Algebra("x+y+z+w+")
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 Scalar = ga.gatype.scalar()                         # Scalar+
 Point = ga.gatype.antivector()                      # Antivector-
-ScreenPoint = ga.gatype.vector().derive.within(Algebra("x+y+z+")).derive.dual
+# A direction seen from the origin: the dual of a plane through it, spanned by x, y and z.
+ScreenPlane = ga.gatype.vector().derive.within(Algebra("x+y+z+"))  # Vector+
+ScreenPoint = ScreenPlane.derive.dual                             # Antivector-
 ScreenConic = ga.gatype((ga.gatype.scalar(), ScreenPoint, ScreenPoint))
 ScreenPolar = ga.gatype((ga.gatype.scalar(), ScreenPoint))
 Plane = ga.gatype.vector()                          # Vector+
@@ -51,13 +50,13 @@ origin = unit(mv.w.dual())
 
 def direction(coords: np.ndarray) -> Point:
     """A point a quarter turn from the origin: the direction (x, y, z) seen from it."""
-    return mv(ScreenPoint, coords).normalized()
+    return mv(ScreenPlane, coords).dual().normalized()
 
 
 def pixel_chart(fov: float, shape: tuple[int, int]) -> ScreenPoint:
     """Homogeneous screen points (1, u, v) of a pinhole grid looking along +x from the origin."""
     v, u = np.meshgrid(np.linspace(1.0, -1.0, shape[0]) * shape[0] / shape[1], np.linspace(-1.0, 1.0, shape[1]), indexing="ij")
-    axes = mv(ScreenPoint, np.eye(3))                                          # [3] ScreenPoint-
+    axes = mv(ScreenPlane, np.eye(3)).dual()                                   # [3] ScreenPoint-
     return axes[0] + axes[1] * (np.tan(fov / 2) * u.ravel()) + axes[2] * (np.tan(fov / 2) * v.ravel())
 
 

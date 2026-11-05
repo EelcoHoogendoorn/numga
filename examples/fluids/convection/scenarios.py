@@ -33,7 +33,7 @@ def conducting(heights: core.Scalar, size: float) -> core.Scalar:
     """The still layer's temperature at vertices of these heights `Scalar+[vertices]`, a half degree above the
     middle's at the floor and below at the ceiling, with a disturbance of this size inside it."""
     rng = np.random.default_rng(seed)
-    noise = heights.context.multivector.scalar(rng.standard_normal((len(heights.batch()), 1))).field()   # Scalar+[vertices]
+    noise = mv.scalar(rng.standard_normal((len(heights.batch()), 1))).field()   # Scalar+[vertices]
     return 0.5 - heights + size * heights * (1 - heights) * noise
 
 

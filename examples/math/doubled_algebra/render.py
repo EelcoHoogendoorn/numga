@@ -7,12 +7,12 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack
-from numga.extensor import Extensor
 
 from examples.math.doubled_algebra import core
 from examples.util.wgsl import contours, simplices
 from examples.util.wgsl.camera import offset_panel
 
+mv = core.mv
 reference_colour, grid_colour, boundary_colour, fill_colour, dot_colour = (
     np.array(to_rgb(colour)) for colour in ("#cbd2d8", "#3885a0", "#cc793e", "#fff1df", "#3b4146"))
 basis_colours = np.array([to_rgb("#168b82"), to_rgb("#8050ad")])
@@ -26,11 +26,9 @@ arrow_chevron, dot_radius = 10.0, 2.2
 
 
 # --- plumbing -------------------------------------------------------------------------
-def readers(vectors: core.Vector) -> Extensor:
-    """The planes that read a vector's x and y coefficients, `[2]`: the directions along x and y, which a vector
-    pairs with first, `vector & mv.x.dual()` being `mv.x | vector`."""
-    mv = vectors.context.multivector
-    return stack((mv.x, mv.y)).dual()
+# The planes that read a vector's x and y coefficients: the directions along x and y, which a vector pairs with
+# first, `vector & mv.x.dual()` being `mv.x | vector`.
+readers = stack((mv.x, mv.y)).dual()                                           # [2] Antivector-
 
 
 def draw_shear(
@@ -45,7 +43,7 @@ def draw_shear(
     framed = concatenate([reference_grid.reshape(-1), grid.reshape(-1), reference_boundary, boundary, arrows,
                           origin[None]])                                       # [places] Vector+
     # The extent of everything drawn, read by the planes that read x and y, with a margin about it.
-    readings = readers(framed)[:, None] & framed                               # [2, places] Scalar+
+    readings = readers[:, None] & framed                                       # [2, places] Scalar+
     lower, upper = readings.min(axis=-1), readings.max(axis=-1)                # [2] Scalar+, [2] Scalar+
     margin = (upper - lower).max() * 0.08                                      # [] Scalar+
     limits = stack((lower - margin, upper + margin), axis=-1).to_array()      # [2, 2]
@@ -54,7 +52,7 @@ def draw_shear(
     ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
     ax.set_axis_off()
     # The camera reads this algebra's places, vectors, as they are, by the planes that read their x and y.
-    camera = offset_panel(ax, *readers(boundary))
+    camera = offset_panel(ax, *readers)
     n_lines = np.prod(grid.shape[:-1])
     lines = simplices.Topology.chains([grid.shape[-1]] * n_lines)
     square = simplices.Topology(len(boundary), np.array([[0, 1, 2], [0, 2, 3]]))
