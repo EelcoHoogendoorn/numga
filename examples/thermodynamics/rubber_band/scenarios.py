@@ -87,9 +87,10 @@ def hanging_band() -> tuple[Topology, core.Point, np.ndarray, core.Band]:
     return topology, rest, in_weight, band
 
 
-def settled(band: core.Band, rest: core.Point) -> core.Point:
+def settled(band: core.Band, rest: core.Point, n_settling: int = n_settling) -> core.Point:
     """The band let go at rest under the weight at the room's temperature, holding no entropy beyond the room's, and
-    settled with the lamp off: its points `Point-[vertices]`, each its place and the entropy it holds."""
+    settled with the lamp off for these many steps: its points `Point-[vertices]`, each its place and the entropy it
+    holds."""
     *_, (points, *_) = core.run(band, rest, lamp, lamp_heat, reach, np.zeros(n_settling), np.zeros(n_settling), dt,
                                 n_settling)
     return points
@@ -111,13 +112,14 @@ def pull() -> tuple[Topology, np.ndarray, Iterator[tuple[core.Point, core.Scalar
                                          pulling, dt, n_stride)
 
 
-def engine_and_pull() -> tuple[Topology, np.ndarray, Iterator[tuple[tuple[core.Point, core.Scalar, float],
-                                                                    tuple[core.Point, core.Scalar, float]]]]:
+def engine_and_pull(n_settling: int = n_settling) -> tuple[Topology, np.ndarray,
+                                                          Iterator[tuple[tuple[core.Point, core.Scalar, float],
+                                                                         tuple[core.Point, core.Scalar, float]]]]:
     """The engine's run and the pull's on one timeline: the band's triangles, which are the weight's, and at each frame
     the two runs' states, the lamp's and the hand's, both from the same band settled under the weight at room
-    temperature, the hand pulling as the lamp comes on and letting go as it goes off."""
+    temperature for these many steps, the hand pulling as the lamp comes on and letting go as it goes off."""
     topology, rest, in_weight, band = hanging_band()
-    start = settled(band, rest)
+    start = settled(band, rest, n_settling)
     lamp_run = core.run(band, start, lamp, lamp_heat, reach, exposure, np.zeros_like(exposure), dt, n_stride)
     hand_run = core.run(band, start, lamp, lamp_heat, reach, np.zeros_like(pulling), pulling, dt, n_stride)
     return topology, in_weight, zip(lamp_run, hand_run)
