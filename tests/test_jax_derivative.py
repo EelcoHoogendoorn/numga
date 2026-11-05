@@ -27,10 +27,10 @@ def test_the_gradient_is_a_form_that_pairs_a_step_to_the_change():
         moved = generator.exp() >> mv.zyx
         return (moved - mv.zyx).dual().norm_squared()
 
-    gradient = derivative(misfit)(twist)
+    gradient = jax.jit(derivative(misfit))(twist)
     assert gradient.gatype == PGA3D.gatype((PGA3D.gatype.scalar(), PGA3D.gatype.bivector()))
-    _, change = jax.jvp(lambda kernel: misfit(twist.context.extensor(twist.gatype, kernel)).kernel,
-                        (twist.kernel,), (step.kernel,))
+    _, change = jax.jit(lambda: jax.jvp(lambda kernel: misfit(twist.context.extensor(twist.gatype, kernel)).kernel,
+                                        (twist.kernel,), (step.kernel,)))()
     np.testing.assert_allclose(gradient(step).kernel, change, atol=1e-6)
 
 
@@ -42,12 +42,12 @@ def test_the_second_derivative_is_a_symmetric_bilinear_form():
     def spread(b):
         return (b.exp() >> mv.x).scalar_product(mv.z) ** 2
 
-    curvature = derivative(derivative(spread))(generator)
+    curvature = jax.jit(derivative(derivative(spread)))(generator)
     assert curvature.gatype.arity == 2
     np.testing.assert_allclose(curvature(first, second).kernel, curvature(second, first).kernel, atol=1e-6)
     # Against the change of the gradient along one step, paired with the other:
     gradient = lambda kernel: derivative(spread)(generator.context.extensor(generator.gatype, kernel))(second).kernel
-    _, change = jax.jvp(gradient, (generator.kernel,), (first.kernel,))
+    _, change = jax.jit(lambda: jax.jvp(gradient, (generator.kernel,), (first.kernel,)))()
     np.testing.assert_allclose(curvature(second, first).kernel, change, atol=1e-6)
 
 
@@ -68,8 +68,8 @@ def test_default_vector_exp_derivatives_at_zero(algebra):
     zero = mv.vector(np.zeros(algebra.dimension))
     steps = mv.vector(np.eye(algebra.dimension))
 
-    tangent = derivative(lambda value: value.exp())(zero)
-    curvature = derivative(derivative(lambda value: value.exp()))(zero)
+    tangent = jax.jit(derivative(lambda value: value.exp()))(zero)
+    curvature = jax.jit(derivative(derivative(lambda value: value.exp())))(zero)
 
     np.testing.assert_allclose((tangent(steps) - steps).kernel, 0, atol=1e-6)
     np.testing.assert_allclose(
@@ -77,7 +77,7 @@ def test_default_vector_exp_derivatives_at_zero(algebra):
          - steps[:, None].anticommutator(steps[None, :])).kernel,
         0, atol=1e-6,
     )
-    gradient = jax.grad(lambda value: value.exp().scalar_product(mv.x + mv.y).kernel.sum())(zero)
+    gradient = jax.jit(jax.grad(lambda value: value.exp().scalar_product(mv.x + mv.y).kernel.sum()))(zero)
     np.testing.assert_allclose((gradient - mv.x - mv.y).kernel, 0, atol=1e-6)
 
 

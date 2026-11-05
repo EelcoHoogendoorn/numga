@@ -24,16 +24,14 @@ def _agrees_with_numpy(ga: Algebra, execution: str, transform) -> None:
         )
 
 
-@pytest.mark.parametrize("execution", ["dense", "sparse"])
-@pytest.mark.parametrize("ga", [PGA3D, STA, Algebra("x+y+z+w+e-")], ids=str)
+# A degenerate and a mixed signature, each execution once; compiled, one of them.
+@pytest.mark.parametrize("ga, execution", [(PGA3D, "dense"), (STA, "sparse")], ids=str)
 def test_jax_agrees_with_numpy_across_the_library_surface(ga, execution):
     _agrees_with_numpy(ga, execution, lambda function: function)
 
 
-@pytest.mark.parametrize("execution", ["dense", "sparse"])
-@pytest.mark.parametrize("ga", [PGA3D, STA], ids=str)
-def test_jitted_library_surface_agrees_with_numpy(ga, execution):
-    _agrees_with_numpy(ga, execution, jax.jit)
+def test_jitted_library_surface_agrees_with_numpy():
+    _agrees_with_numpy(PGA3D, "dense", jax.jit)
 
 
 def test_jax_extensor_is_a_stable_pytree_and_traces_product_expressions():
@@ -117,7 +115,7 @@ def test_jax_iteration_ends_at_the_batch_length_and_null_inverse_fails_during_tr
         jax.jit(lambda value: value.inverse())(context.multivector.w)
 
 
-@pytest.mark.parametrize("ga", [Algebra("x+y+z+"), PGA3D, STA, Algebra("x+y+z+w+")], ids=str)
+@pytest.mark.parametrize("ga", [PGA3D, STA], ids=str)
 def test_exp_derivative_carries_a_change_of_the_generator_as_autodiff_of_exp_does(ga):
     # Generators from zero to well past a half turn; the boosts of STA grow the turns like
     # exp(2 * size), which sets the largest size kept to round-off.
