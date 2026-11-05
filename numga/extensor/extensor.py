@@ -38,6 +38,7 @@ class Extensor:
     inverse = ExtensionMethod("inverse", takes="a value, or a map between spaces of equal dimension")
     norm_squared = ExtensionMethod("norm_squared", takes="a value", output_orientation=Orientation.extrinsic)
     norm = ExtensionMethod("norm", takes="a value", output_orientation=Orientation.extrinsic)
+    antinorm = ExtensionMethod("antinorm", takes="a value", output_orientation=Orientation.extrinsic)
     normalized = ExtensionMethod("normalized", takes="a value")
     square_root = ExtensionMethod("square_root", takes="a value", input_orientation=Orientation.extrinsic)
     inverse_square_root = ExtensionMethod("inverse_square_root", takes="a value", input_orientation=Orientation.extrinsic)
@@ -656,8 +657,11 @@ class Extensor:
         return numga.expression.scalar_product(self, other)
 
     def dot(self, other: Extensor | GAType) -> Extensor:
-        """The metric on every grade: the scalar part of `self * other.reverse()`, positive on every blade
-        of a Euclidean signature."""
+        """The metric on every grade, read as the operands' orientation reads them: of extrinsic values the scalar part
+        of `self * other.reverse()`, positive on every blade of a Euclidean signature, and of intrinsic values, points,
+        directions and their joins, that of their duals, so that a direction's dot with itself is its length squared
+        in space, in a spacetime and in a projective algebra alike. An extrinsic value and an intrinsic one pair by
+        the regressive product instead, and their dot is refused."""
         return numga.expression.dot(self, other)
 
     def inner(self, other: Extensor | GAType) -> Extensor:

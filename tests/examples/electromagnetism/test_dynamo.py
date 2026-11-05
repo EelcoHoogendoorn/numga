@@ -51,7 +51,7 @@ def test_the_force_on_a_current_has_the_power_of_its_motional_field():
 
 def test_the_stirred_flow_grows_a_field_without_sources_and_the_pictures_draw():
     topology, vertices, ball, flow = ball_and_flow()
-    radii = ball.centres.squared().abs().square_root()
+    radii = ball.centres.antinorm()
     conductivity = mv.scalar(np.where((radii < 1).reshape(-1), scenarios.reynolds,
                                       scenarios.reynolds * scenarios.mantle_conductance)[:, None]).field()
     stirred = flow.reading(ball.prisms.norm() * scenarios.helical_flow(topology, vertices).dual())

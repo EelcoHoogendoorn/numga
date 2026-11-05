@@ -122,11 +122,11 @@ def draw_lines(detunings: np.ndarray, drives: np.ndarray, steady_states: core.St
 def transverse_length(states: core.State) -> np.ndarray:
     """The length of each state's transverse Bloch vector, what a pick-up coil sees of it: its spin part less that
     part turned a half turn in the magnet's plane xy, which keeps the part along the field and reverses the rest,
-    in the algebra of spacetime as in that of space; its size whichever sign its square has in the algebra."""
+    in the algebra of spacetime as in that of space; its size that of the plane it turns in, its dual."""
     mv = states.context.multivector
     spins = states.select.antibivector()                                 # [...] Spin-
     transverse = spins - (mv.xy >> spins)                                # [...] Spin-
-    return transverse.scalar_norm_squared().abs().square_root().to_array()
+    return transverse.antinorm().to_array()
 
 
 def signal(ensemble: core.State) -> np.ndarray:
