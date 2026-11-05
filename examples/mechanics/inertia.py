@@ -19,7 +19,7 @@ def cloud(context: NumpyContext, seed: int) -> tuple[Extensor, np.ndarray]:
     ga, mv = context.algebra, context.multivector
     rng = np.random.default_rng(seed)
     n_points = 80
-    points = mv.antivector(rng.normal(size=(n_points, ga.dimension))).normalized()
+    points = mv.vector(rng.normal(size=(n_points, ga.dimension))).dual().normalized()
     placement = mv.bivector(rng.normal(size=len(ga.subspace.bivector())) * 0.3).exp()
     return placement >> points, rng.uniform(0.5, 1.5, size=n_points)
 
@@ -93,7 +93,7 @@ def main(signature: str, seed: int) -> tuple[Extensor, Extensor]:
     points, masses = cloud(ctx, seed)
     reference = mv.vector(np.eye(ga.dimension))
     reference = reference[reference.norm().argsort()[::-1]]
-    point_basis = mv.antivector(np.eye(ga.dimension))
+    point_basis = mv.vector(np.eye(ga.dimension)).dual()
     second_moments = 2.0 ** np.arange(ga.dimension)
     rng = np.random.default_rng(seed + 1)
     placement = mv.bivector(rng.normal(size=len(Bivector.output_subspace)) * 0.2).exp()

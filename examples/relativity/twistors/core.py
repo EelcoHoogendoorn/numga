@@ -55,7 +55,7 @@ selection = readout(Intrinsic * extrinsic_embedding)                         # [
 volume = representations(exact.xyztuv)                                       # [] Twistor- <- Twistor-
 
 # A pairing of two twistors that conformal rotors preserve, across the unit intrinsic volume.
-pairing = 8 * exact.yz.scalar_product(embedding.reverse() * exact.antiscalar([1]) * extrinsic_embedding)   # [] Scalar+ <- (Twistor-, ExtrinsicTwistor+)
+pairing = 8 * exact.yz.scalar_product(embedding.reverse() * exact.scalar([1]).dual() * extrinsic_embedding)   # [] Scalar+ <- (Twistor-, ExtrinsicTwistor+)
 # A twistor paired with each ray's action is a form on rays; contracting turns it into the ray itself.
 # On a null twistor the result is its light ray, the join of its events.
 ray_readout = (Ray * pairing(Twistor, incidence(Ray.reverse(), Twistor))).contract(1, 3)   # [] Ray- <- (Twistor-, Twistor-)

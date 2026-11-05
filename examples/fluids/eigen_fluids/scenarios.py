@@ -19,7 +19,7 @@ n_modes = 128
 shown_modes = np.array([0, 7, 31, 119])
 # Opposing vortex dipoles distributed across the bunny's shoulder, chest, flank, haunch, neck, and back,
 # spectrally tapered so they collide, exchange partners, and swirl across the whole surface without Gibbs ringing.
-vortex_centres = mv.antivector([
+vortex_centres = mv.vector([
     [0.35, -0.54, -0.03],
     [0.40, -0.69, -0.29],
     [-0.08, -0.52, 0.03],
@@ -32,7 +32,7 @@ vortex_centres = mv.antivector([
     [-0.14, 0.28, -0.08],
     [-0.48, 0.26, -0.14],
     [0.06, 0.47, -0.30],
-])                                                  # [vortices] Point-
+]).dual()                                           # [vortices] Point-
 vortex_strengths = np.array([75, -75, -75, 75, 70, -70, -65, 65, 72, -72, 68, -68])
 vortex_radius = 0.12
 eigenvalue_cutoff = 140.0

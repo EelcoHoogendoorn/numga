@@ -182,7 +182,7 @@ def test_a_pencil_of_forms_has_the_eigenpairs_of_its_numbers():
     context = NumpyContext(Algebra("x+y+t-"))
     mv, Scalar = context.multivector, context.algebra.gatype.scalar()
     # A form on scalar fields maps them to amounts, the pseudoscalars they pair with.
-    Amount = context.algebra.gatype.pseudoscalar().derive.flipped_orientation
+    unit_amount = mv.scalar([1.0]).dual()
     count = 6
     boundary = SparseExtensor(
         mv.scalar(np.tile([[-1.0], [1.0]], (count - 1, 1))),
@@ -190,7 +190,7 @@ def test_a_pencil_of_forms_has_the_eigenpairs_of_its_numbers():
     )
     laplacian = ~boundary * boundary
     weights = SparseExtensor.from_diagonal(mv.scalar(np.linspace(1.0, 2.0, count)[:, None]).field())
-    to_amount = SparseExtensor.from_diagonal(mv.scalar(np.ones((count, 1))).field() * (mv(Amount, [1.0]) * Scalar))
+    to_amount = SparseExtensor.from_diagonal(mv.scalar(np.ones((count, 1))).field() * (unit_amount * Scalar))
     stiffness, mass = to_amount(laplacian * Scalar), to_amount(weights * Scalar)  # [count] Amount <- [count] Scalar
     values, modes = stiffness.eigh(mass, 3)
     numbers, _ = (laplacian * Scalar).eigh(weights * Scalar, 3)
@@ -227,7 +227,7 @@ def test_plain_numbers_take_the_algebra_they_meet(context):
     rng = np.random.default_rng(3)
     for algebra in (Algebra("x+y+"), Algebra("x+y+z+w0")):
         mv = type(context)(algebra).multivector
-        points = mv.antivector(rng.normal(size=(3, len(algebra.signature)))).field()   # Antivector-[3]
+        points = mv.vector(rng.normal(size=(3, len(algebra.signature)))).dual().field()   # Antivector-[3]
         edges = difference * points                                           # Antivector-[2]
         assert edges.gatype.derive.output == points.gatype.derive.output
         np.testing.assert_allclose(np.asarray(edges.batch().kernel), np.asarray((points.batch()[1:] - points.batch()[:-1]).kernel), atol=1e-6)

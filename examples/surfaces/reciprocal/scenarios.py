@@ -29,7 +29,7 @@ def grid() -> tuple[core.Topology, core.Point, core.Scalar]:
     inside = (np.abs(coords) < 1).all(axis=-1)
     coords[inside] += JITTER * np.random.default_rng(GRID_SEED).normal(size=(inside.sum(), 2))
     topology, coords = shapes.delaunay(coords)
-    points = core.mv.antivector(np.concatenate([coords, np.zeros((len(coords), 1))], axis=-1)).field()   # Point-[vertices]
+    points = core.mv.vector(np.concatenate([coords, np.zeros((len(coords), 1))], axis=-1)).dual().field()   # Point-[vertices]
     return topology, points, points.scalar_norm_squared() / 2  # Scalar+[vertices]
 
 

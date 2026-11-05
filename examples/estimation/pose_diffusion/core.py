@@ -34,7 +34,7 @@ origin = mv.w.dual()                                # [] Point-
 def covariance(gusts: Gusts) -> Covariance:
     """The noise covariance added per second by white-noise gusts."""
     # White noise has unit variance along each axis of an orthonormal line frame, so each axis adds its gust dyad.
-    frame = mv.antibivector(np.eye(3))                                              # [axes] Line-
+    frame = mv.bivector(np.eye(3)).dual()                                           # [axes] Line-
     return (gusts(frame) * (gusts(frame) & Line)).sum(axis=0)                       # [] Twist+ <- Line-
 
 

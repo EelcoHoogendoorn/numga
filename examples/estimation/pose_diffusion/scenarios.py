@@ -47,7 +47,7 @@ def diffuse(
     predicted = noise * 0.0                                                     # [] Twist+ <- Line-
     for count in range(int(seconds / dt)):
         # White noise integrated over the step, and the dynamics acting on the covariance's twist output and line input.
-        white = mv.antibivector(rng.normal(size=(n_bodies, 3))) * np.sqrt(dt)   # [bodies] Line-
+        white = mv.bivector(rng.normal(size=(n_bodies, 3))).dual() * np.sqrt(dt)   # [bodies] Line-
         errors = errors + dynamics(errors) * dt + gusts(white)                  # [bodies] Twist+
         growth = dynamics(predicted) + predicted(dynamics.adjugate()) + noise   # [] Twist+ <- Line-
         predicted = predicted + growth * dt                                     # [] Twist+ <- Line-

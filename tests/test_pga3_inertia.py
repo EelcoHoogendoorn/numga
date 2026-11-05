@@ -10,12 +10,12 @@ def test_inertia_from_points_is_independent_of_their_storage_layout():
     spaces = PGA3D.subspace
     mv = NumpyContext(PGA3D).multivector
 
-    # Point coordinates read directly as (x, y, z, 1) in this default layout.
-    points = mv.antivector([
+    # Points at (x, y, z) of unit weight: the duals of the planes (x, y, z, 1).
+    points = mv.vector([
         [1, 0, 0, 1], [-1, 0, 0, 1],
         [0, 1, 0, 1], [0, -1, 0, 1],
         [0, 0, 1, 1], [0, 0, -1, 1],
-    ])
+    ]).dual()
 
     per_point = points.regressive(points.commutator(PGA3D.gatype.bivector()))
     inertia = per_point.sum(axis=0)

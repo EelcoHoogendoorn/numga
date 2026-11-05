@@ -13,8 +13,8 @@ SAMPLES = 24
 def conformal_rotors(rng: np.random.Generator) -> core.Full:
     """Random rotations, boosts, translations and special conformal transformations, composed."""
     mv = core.mv
-    translations = mv(core.Event, rng.normal(size=(SAMPLES, 4)) * 0.2)
-    special = mv(core.Event, rng.normal(size=(SAMPLES, 4)) * 0.2)
+    translations = mv(core.Event.derive.dual, rng.normal(size=(SAMPLES, 4)) * 0.2).dual()
+    special = mv(core.Event.derive.dual, rng.normal(size=(SAMPLES, 4)) * 0.2).dual()
     return (
         (mv.xy * rng.normal(size=SAMPLES) * 0.2).exp()
         * (mv.xt * rng.normal(size=SAMPLES) * 0.2).exp()
@@ -28,7 +28,7 @@ def test_clifford_action_and_hermitian_pairing_follow_conformal_rotors():
     mv = core.mv
     first = mv(core.Full, rng.normal(size=(SAMPLES, 64)) * 0.2)
     second = mv(core.Full, rng.normal(size=(SAMPLES, 64)) * 0.2)
-    states = mv(core.Twistor, rng.normal(size=(SAMPLES, 8)))
+    states = mv(core.Twistor.derive.dual, rng.normal(size=(SAMPLES, 8))).dual()
     partners = mv(core.ExtrinsicTwistor, rng.normal(size=(SAMPLES, 8)))
     # The same left multiplication on twistors of the other orientation.
     extrinsic = (8 * core.Full).cast(core.ExtrinsicTwistor)(core.Full * (core.ExtrinsicTwistor * core.projector))
@@ -61,8 +61,8 @@ def test_clifford_action_and_hermitian_pairing_follow_conformal_rotors():
 def test_shared_twistor_recovers_a_null_ray_and_transforms_with_its_events():
     rng = np.random.default_rng(822)
     mv = core.mv
-    events = mv(core.Event, rng.normal(size=(SAMPLES, 4)))
-    spatial = mv(core.Spatial, rng.normal(size=(SAMPLES, 3)))
+    events = mv(core.Event.derive.dual, rng.normal(size=(SAMPLES, 4))).dual()
+    spatial = mv(core.Spatial.derive.dual, rng.normal(size=(SAMPLES, 3))).dual()
     directions = core.time + spatial / spatial.squared().square_root()
     separation = rng.uniform(0.2, 1.5, size=SAMPLES)
     first = core.point(events)
@@ -99,7 +99,7 @@ def test_shared_twistor_recovers_a_null_ray_and_transforms_with_its_events():
 
 def test_robinson_twistors_stay_orthogonal_along_straight_future_null_rays():
     rng = np.random.default_rng(823)
-    events = core.mv(core.Event, rng.normal(size=(SAMPLES, 4)))
+    events = core.mv(core.Event.derive.dual, rng.normal(size=(SAMPLES, 4))).dual()
     twistors = core.selection(core.point(events), core.robinson_twistor)
     extrinsic_volume = (8 * core.Full).cast(core.ExtrinsicTwistor)(
         core.Full * (core.ExtrinsicTwistor * core.projector))(core.exact.xyztuv)
