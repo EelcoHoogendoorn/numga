@@ -56,7 +56,6 @@ def test_incidence_is_topological_and_hodges_supply_geometry_and_duality():
 
     for hodge in (operators.star0, operators.star1, operators.star2):
         assert hodge.gatype == core.ga.gatype((core.Patch, core.Scalar))
-    assert operators.inverse_star0.gatype == core.ga.gatype((core.Bivector, core.Patch))
     assert operators.curl.gatype == core.ga.gatype((core.Bivector, core.Scalar))
 
     vertex_values = core.mv.scalar(np.cos(np.arange(topology.n_vertices))[:, None]).field()

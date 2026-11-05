@@ -132,7 +132,7 @@ def double_layer(outflow: SparseExtensor, cells: Scalar, wall_charge: Scalar, va
         residual = outflow * potential - cells * (valences * concentrations).sum(axis=-1) - wall_charge
         # The charge a cell loses as its potential rises, by its ions' squared valences.
         susceptibility = (valences ** 2 * concentrations).sum(axis=-1)        # [...] Scalar+[vertices]
-        step = ((outflow + spdiag(cells * susceptibility)) * Scalar).solve(residual)     # [...] Scalar+[vertices]
+        step = ((outflow + cells * susceptibility) * Scalar).solve(residual)             # [...] Scalar+[vertices]
         # Newton's step, held below a thermal volt so that no Boltzmann factor changes by much more than e at once.
         potential = potential - step.tanh()
     return potential

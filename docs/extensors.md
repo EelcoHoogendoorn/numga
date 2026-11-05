@@ -545,15 +545,17 @@ spin = (Point & turning_rate(Plane)).trace(1, 2).solve((Point & flow_rate(Plane)
 <p align="center"><img src="../plots/slip_systems.gif" alt="Pull directions in a crystal drifting as it slips, coloured by the slip system that leads" width="420" /></p>
 
 ```python
-directions = (planes[:, None] ^ planes[others]).normalized()                 # [planes, directions] Line
-tension = axis * (Plane & axis)                                               # [...] Direction <- Plane
-factors = directions.dot(tension(axis[..., None, None])(planes[:, None]))    # [..., planes, directions] Scalar
-moves = amounts * directions * (planes[:, None] & axis[..., None, None])     # [..., planes, directions] Direction
-axis = (axis.commutator(move) / 2).exp() >> axis                              # [...] Direction
+winding = (atoms[1] - atoms[0]) & (atoms[2] - atoms[0]) & (atoms[3] - atoms[0])   # [] Scalar-
+planes = ((directions[:, 0] & directions[:, 1]) * winding).normalized()          # [planes] Plane+
+forces = axis.dual_inverse()[..., None] * (planes & axis[..., None])            # [..., planes] Force+
+factors = forces[..., None] & directions                                        # [..., planes, directions] Scalar+
+moves = amounts * directions * (planes[:, None] & axis[..., None, None])       # [..., planes, directions] Direction-
+move = moves.sum(axis=-1).sum(axis=-1)                                          # [...] Direction-
+axis = (axis.commutator(move) / 2).exp() >> axis                                # [...] Direction-
 ```
 
-* A pull is a stress, a map from planes to tractions, `axis * (Plane & axis)`.
-* Slip directions are where dense planes meet, `plane ^ other`.
+* A pull puts on each plane the force along its axis, `axis.dual_inverse() * (planes & axis)`, and the Schmid factor is that force read on a slip direction, `forces & directions`.
+* A slip plane is the join of two slip directions, its side given by the winding of the atoms.
 
 ---
 

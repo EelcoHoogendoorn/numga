@@ -40,6 +40,14 @@ def norm(value: Extensor) -> Extensor:
     return value.norm_squared().square_root()
 
 
+@Extensor.antinorm.register(GATypePattern(arity=0))
+def antinorm(value: Extensor) -> Extensor:
+    """Square root of a value's dot with itself, as the norm is of its reverse product: of an intrinsic value, a point
+    or a direction, its size as its dual measures it, and NaN where that dot is negative, as for a timelike direction
+    in the spacetime x+y+z+t-."""
+    return value.dot(value).square_root()
+
+
 @Extensor.normalized.register(lambda g: g.entails(ReverseProductZero))
 def null_normalized(value: Extensor) -> NoReturn:
     raise ValueError("cannot normalize a structurally zero reverse product")

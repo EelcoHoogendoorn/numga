@@ -62,7 +62,8 @@ class Operators:
 
         # The Lorentzian dual supplies the timelike minus sign; pulling it back through
         # the gradient gives a wave operator with null characteristic directions.
-        self.wave_operator = self.gradient.adjugate()(spdiag(self.areas * Plane.dual())(self.gradient))   # (Amount- <- Scalar+)[vertices <- vertices]
+        medium = self.areas * Plane.dual()                                     # (Point- <- Plane+)[faces]
+        self.wave_operator = self.gradient.adjugate()(medium(self.gradient))   # (Amount- <- Scalar+)[vertices <- vertices]
 
         # Area-weighted averaging from faces to vertices reconstructs smooth nodal fields for slicing.
         self.to_vertices = ~topology.incidence[2, 0].sum(axis=0)             # Scalar+[vertices <- faces]

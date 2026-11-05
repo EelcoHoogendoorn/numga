@@ -22,7 +22,9 @@ from numga import Extensor, stack
 from numga.backend.jax import derivative
 from examples.thermodynamics import rendering as art
 from examples.util.wgsl import solids
+from examples.thermodynamics.entropy_production import core
 
+mv = core.mv
 # The charts' size in pixels and their ranges: the two energies, and body a's energy against the entropy.
 n_rows, n_columns = 300, 310
 energy_range = (0.0, 4.3)
@@ -60,7 +62,6 @@ class Charts:
     """The two charts' fixed lines, sampled once from the entropy, and the drawing of the state on them."""
 
     def __init__(self, entropy_of: Callable[[Extensor], Extensor], transfer: Extensor, state: Extensor) -> None:
-        mv = state.context.multivector
         self.entropy_of, self.transfer, self.mv = entropy_of, transfer, mv
         self.energies = art.Diagram(energy_range, energy_range, (0.0, 0.0), n_rows, n_columns, ("U_a", "U_b"),
                                     (mv.a, mv.b), (0 * mv.a, 1.0))

@@ -13,6 +13,7 @@ from examples.relativity.gps import core
 from examples.util import shapes
 from examples.util.wgsl import image_figure, simplices, solids
 
+mv = core.mv
 BLUE, ORANGE, EARTH, GRID, INK = (
     np.array(to_rgb(colour)) for colour in
     ("#3196b4", "#de9439", "#c7dce3", "#8faeb9", "#485961"))
@@ -41,10 +42,8 @@ def earth_grid() -> solids.Ink:
 
 def sliced(events: core.Event) -> solids.Point:
     """Events as the observer at rest sees them, in the projective algebra of space."""
-    mv = events.context.multivector
-    Event = events.algebra.gatype.antivector()                                # Antivector-
     # The observer sees the point where its time line meets the spatial slice.
-    space_slice = mv.t ^ (Event & -mv.t.dual())
+    space_slice = mv.t ^ (core.Event & -mv.t.dual())
     # The projective embedding of the events as the observer slices them: the projective algebra of spacetime holds
     # the one of space.
     return solids.context.include_from_algebra(space_slice(events))

@@ -16,6 +16,7 @@ from examples.util.animation import capture
 from examples.util.wgsl import contours, simplices
 from examples.util.wgsl.camera import Camera, offset_panel
 
+mv = core.mv
 primal_colour = "#286580"
 accent_colour = "#d77542"
 ink_colour = "#173c4b"
@@ -52,7 +53,6 @@ cone_dashes = (5.5, 2.5)
 def frame_panel(ax: plt.Axes, events: core.Point, margin_ratio: float) -> None:
     """Square equal-aspect viewport around the events `[events]`, read across by the plane x and up by t, with no axes
     or ticks."""
-    mv = events.context.multivector
     readings = stack((mv.x, mv.t))[:, None] & events                          # [2, events] Scalar+
     low, high = readings.min(axis=-1), readings.max(axis=-1)                  # [2] Scalar+, Scalar+
     centre = (low + high) / 2
@@ -98,7 +98,6 @@ def ringed(events: core.Point, colour: str, radius: float, camera: Camera) -> li
 def null_rays(event: core.Point, before: float, after: float) -> core.Point:
     """The two null rays through an event, at 45 degrees, from a reach `before` into its past to a reach `after` into
     its future, `[rays, 2]`: future time plus or minus space."""
-    mv = event.context.multivector
     space, time = mv.x.dual(), -mv.t.dual()                                  # [] Point-, Point-
     nulls = stack((time - space, time + space))                              # [rays] Point-
     return stack((event - before * nulls, event + after * nulls), axis=1)    # [rays, 2] Point-
@@ -107,7 +106,6 @@ def null_rays(event: core.Point, before: float, after: float) -> core.Point:
 def picture_length(directions: core.Point) -> core.Scalar:
     """The length a direction is drawn at, with space and time at equal scales: the root of the sum of the squares of
     its readings by `mv.x` and `mv.t`, the picture's own Euclidean measure, not spacetime's."""
-    mv = directions.context.multivector
     return ((mv.x & directions).squared() + (mv.t & directions).squared()).square_root()
 
 
@@ -163,7 +161,6 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
                             wake_vertices: core.Point, wake: core.Scalar,
                             source_event: core.Point) -> plt.Figure:
     """Corner hat gradient and its Lorentzian reflection, edge 1-form, and causal light-cone wake."""
-    mv = corners.context.multivector
     centroid = corners.mean(axis=0)                                          # [] Point-
 
     figure = plt.figure(figsize=(cone_width_px / charts.DPI, cone_height_px / charts.DPI))
@@ -280,7 +277,6 @@ def draw_moving_mirror_doppler(topology: core.Topology, vertices: core.Point,
                                wave_rate: core.Scalar, slice_energies: core.Scalar,
                                before_row: int, after_row: int) -> plt.Figure:
     """Spacetime moving-mirror worldsheet, incident vs. Doppler-compressed wave packets, and wave energy gain."""
-    mv = vertices.context.multivector
     grid = strip_grid(vertices, n_space, n_time)                              # [times, space] Point-
     wave_rate_vals = np.asarray(wave_rate.batch().to_array())
     wave_rate_grid = wave_rate_vals.reshape(n_time, n_space)
@@ -353,7 +349,6 @@ def animate_moving_mirror(topology: core.Topology, vertices: core.Point,
                           wave_rate: core.Scalar, frame_rows: Iterable[int]
                           ) -> Iterator[np.ndarray]:
     """Side-by-side spacetime worldsheet slice bar and live 1D relativistic moving-mirror cavity."""
-    mv = vertices.context.multivector
     grid = strip_grid(vertices, n_space, n_time)                              # [times, space] Point-
     wave_rate_vals = np.asarray(wave_rate.batch().to_array())
     wave_rate_grid = wave_rate_vals.reshape(n_time, n_space)

@@ -21,7 +21,9 @@ import numpy as np
 from numga import Extensor, stack
 from examples.thermodynamics import rendering as art
 from examples.util.wgsl import solids
+from examples.thermodynamics.state_space import core
 
+mv = core.mv
 Reading = Callable[[Extensor], Extensor]
 
 # The charts' size in pixels and their ranges: entropy and temperature, volume and pressure.
@@ -128,14 +130,13 @@ def heating(temperature_of: Reading, pressure_of: Reading,
     """Each stage of the heating as it comes, the two cylinders' states `[cylinders]`, latched then loaded, their
     heating directions and the heat each has taken in: the cylinders beside the three charts."""
     first = next(stages)
-    blades = first[0].context.multivector
-    charts, path, heats, temperatures = Charts(temperature_of, pressure_of, blades), [], [], []
+    charts, path, heats, temperatures = Charts(temperature_of, pressure_of, mv), [], [], []
     for states, directions, heat in chain([first], stages):
         path.append(charts.points(states))
         heats.append(heat)
         temperatures.append(art.context.include_from_algebra(temperature_of(states)))
         toward = charts.points(states + directions * arrow_step)
-        heights = solids.context.include_from_algebra(blades.v & states) * height_per_volume
+        heights = solids.context.include_from_algebra(mv.v & states) * height_per_volume
         pictures = [art.gas_cylinder(heights[case], float((temperatures[-1][case] / temperature_range[1]).to_array()), case == 0,
                                      solids.mv.scalar([volume_range[1] * height_per_volume]), cylinder_pixels) for case in range(2)]
         yield art.beside(pictures + charts.pictures(path, toward, True)
@@ -144,13 +145,13 @@ def heating(temperature_of: Reading, pressure_of: Reading,
 
 def draw_charts(temperature_of: Reading, pressure_of: Reading, states: Extensor):
     """The two charts with the cylinders' states."""
-    charts = Charts(temperature_of, pressure_of, states.context.multivector)
+    charts = Charts(temperature_of, pressure_of, mv)
     here = charts.points(states)
     return art.figure(art.beside(charts.pictures([here], here, False)))
 
 
 def draw_directions(temperature_of: Reading, pressure_of: Reading, states: Extensor, directions: Extensor):
     """The two charts with the cylinders' states and arrows along their heating directions."""
-    charts = Charts(temperature_of, pressure_of, states.context.multivector)
+    charts = Charts(temperature_of, pressure_of, mv)
     return art.figure(art.beside(charts.pictures([charts.points(states)],
                                                  charts.points(states + directions * arrow_step), True)))

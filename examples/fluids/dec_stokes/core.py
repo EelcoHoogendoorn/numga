@@ -71,7 +71,7 @@ class Operators:
         self.star0 = spdiag(self.dual_patches * Scalar)                      # (Patch- <- Scalar+)[vertices <- vertices]
         self.star1 = spdiag(self.edge_ratios * Scalar)                       # (Patch- <- Scalar+)[edges <- edges]
         self.star2 = spdiag(self.face_patches.inverse() * Scalar)            # (Patch- <- Scalar+)[faces <- faces]
-        self.inverse_star0 = spdiag(Patch.dual_inverse() / self.dual_areas)  # (Bivector+ <- Patch-)[vertices <- vertices]
+        self.inverse_star0 = Patch.dual_inverse() / self.dual_areas          # (Bivector+ <- Patch-)[vertices]
 
         # The adjugate sums dual-edge circulation around each dual cell.
         # Dividing by that cell's area gives the vertex vorticity bivector directly.

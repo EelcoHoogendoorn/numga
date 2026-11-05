@@ -8,13 +8,33 @@ real coefficients. Numerical methods require a concrete NumPy/JAX context.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Any
 
 import numpy as np
 
 from numga.backend.context import binding_context
 from numga.extensor import Extensor
-from numga.gatype import GAType
+from numga.gatype import GAType, Orientation
+
+
+@lru_cache(maxsize=None)
+def _reading(first: GAType, second: GAType) -> Extensor:
+    """The exact regressive pairing of two complementary nullary types, a form on (first, second) read with the
+    extrinsic factor first, as every reading is: `first & second`, and `second & first` where only the second is
+    extrinsic. Swapping the factors of a pairing of complementary grades costs nothing in an odd dimension and the
+    grade involute in an even one, so there the order is part of what is read. Two factors of one orientation are
+    read in the order given."""
+    algebra = first.algebra
+    scalar = algebra.subspace.scalar()
+    if first.orientation is Orientation.extrinsic or second.orientation is Orientation.intrinsic:
+        return (first & second).cast(scalar)
+    swapped = (second & first).cast(scalar)                                    # Scalar <- (second, first)
+    return algebra.operator.build(
+        (scalar, first.output_subspace, second.output_subspace),
+        (swapped.gatype.orientation, first.orientation, second.orientation),
+        swapped._kernel.values.transpose(0, 2, 1),
+    )
 
 
 def _result(value: Extensor, gatype: GAType, kernel: Any) -> Extensor:
