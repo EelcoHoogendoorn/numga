@@ -204,6 +204,26 @@ class OperatorFactory:
         reverses = grade_transform_signs(self.algebra, "reverse", right.output_subspace.masks)
         return Extensor(self.algebra.exact, product.gatype, SymbolicKernel(product._kernel._values * reverses))
 
+    def antidot(self, left: GAType, right: GAType) -> Extensor:
+        """The antidot product: the dot product of the duals, ``left.dual().dot(right.dual())``, with the metric dual
+        of a non-degenerate algebra and the complement of a degenerate one. In a non-degenerate algebra it is the dot
+        product times one sign, the antiscalar's own reverse product, on every grade alike: the two agree in the
+        algebra of space and are opposite in a spacetime. In a projective algebra the two are complementary, and of an
+        antivector point the reverse product measures the weight and the antidot the bulk, the weight times the
+        distance from the origin. The name follows the anti-operations of Lengyel's projective geometric algebra."""
+        return self._antidot(self._operand_gatype(left), self._operand_gatype(right))
+
+    @lru_cache(maxsize=None)
+    def _antidot(self, left: GAType, right: GAType) -> Extensor:
+        left_dual, right_dual = self.dual(left), self.dual(right)
+        # The duals are signed permutations of blades, so the dot composed with them is the dot's own kernel,
+        # its slices permuted and signed: one operator of the dot's size on the operands' own layouts.
+        composed = self._dot(left_dual.gatype.derive.output, right_dual.gatype.derive.output).bind(
+            {0: left_dual, 1: right_dual},
+        )
+        gatype = rules.MULTIPLIED.result((left, right), composed.axes)
+        return Extensor(self.algebra.exact, gatype, composed.kernel)
+
     def bivector_product(self, left: GAType, right: GAType) -> Extensor:
         return self._grade_product(self._operand_gatype(left), self._operand_gatype(right), 2)
 

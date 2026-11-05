@@ -118,7 +118,7 @@ def smoothed(points: core.Point, centres: core.Point, fields: Extensor) -> Exten
     with distance."""
     near = nearest(points, centres)                                               # [..., neighbours]
     offsets = points[..., None] - centres[near]                                   # [..., neighbours] Point-
-    weights = (-offsets.squared().abs() / smoothing_reach**2).exp()               # [..., neighbours] Scalar+
+    weights = (-offsets.antidot(offsets) / smoothing_reach**2).exp()              # [..., neighbours] Scalar+
     return (weights * fields[near]).sum(axis=-1) / weights.sum(axis=-1)
 
 
@@ -127,11 +127,11 @@ def field_lines(centres: core.Point, fields: core.Point, seeds: core.Point) -> c
     equal length along the smoothed field's direction, slowing to a stop where the field fades, as a flow does at the
     fluid's edge."""
     senses = np.array([-1.0, 1.0])[:, None]                                       # [senses, 1]
-    floor = (softening * fields.squared().abs().square_root().max())**2
+    floor = (softening * fields.antinorm().max())**2
 
     def direction(points: core.Point) -> core.Point:
         field = smoothed(points, centres, fields) * senses                        # [senses, lines] Point-
-        return field / (field.squared().abs() + floor).square_root()
+        return field / (field.antidot(field) + floor).square_root()
 
     points = stack((seeds, seeds))                                                # [senses, lines] Point-
     traced = [points]
@@ -171,13 +171,13 @@ class Cutaway:
     def tubes(self, lines: core.Point, colour: np.ndarray) -> meshes.Samples:
         """Lines `[lines, steps] Point-` as tubes, kept within the removed half of the planet, in front of the cut."""
         places = lines.reshape(-1)                                                # [lines * steps] Point-
-        inside = (places.squared().abs().square_root() < self.radius) & ((cut & places) > 0)   # [lines * steps]
+        inside = (places.antinorm() < self.radius) & ((cut & places) > 0)         # [lines * steps]
         return line_tubes(lines, inside, colour, self.frame, 0.0)
 
     def face(self, fields: core.Point) -> meshes.Samples:
         """The cut face coloured by the strength of a field of directions `Point-[tets]`, as a share of its strongest
         across the face, and the back half of the planet's surface behind it."""
-        strength = smoothed(self.disk_points, self.centres, fields).squared().abs().square_root().to_array()   # [disk vertices]
+        strength = smoothed(self.disk_points, self.centres, fields).antinorm().to_array()   # [disk vertices]
         levels = strength / strength.max()
         return meshes.samples(drawn(self.disk_points), self.disk.elements[2], levels[self.disk.elements[2]][..., None],
                               meshes.flat(drawn(self.disk_points), self.disk.elements[2]), self.frame,
@@ -198,7 +198,7 @@ class Cutaway:
     def within(self, velocity: core.Point) -> core.Point:
         """The flow within the cut at the face's vertices, `Point-[disk vertices]`, and whether each lies in the fluid,
         its nearest tetrahedron moving."""
-        moving = velocity.batch()[self.nearest_tets].squared().abs() > 0         # [disk vertices]
+        moving = velocity.batch()[self.nearest_tets].antinorm() > 0               # [disk vertices]
         return in_cut(smoothed(self.disk_points, self.centres, velocity.batch())), moving
 
     def picture(self, magnetic: core.Magnetic, velocity: core.Point, reference_speed: float) -> np.ndarray:
@@ -248,7 +248,7 @@ class Lines:
         fields = (magnetic.batch() ^ mv.t) * unit                                 # [tets] Point-
         lines = field_lines(self.centres, fields, self.seeds)                     # [lines, steps] Point-
         streams = field_lines(self.centres, velocity.batch(), self.stream_seeds)  # [streams, steps] Point-
-        within = [(places.reshape(-1).squared().abs().square_root() < 1) for places in (lines, streams)]
+        within = [(places.reshape(-1).antinorm() < 1) for places in (lines, streams)]
         return solids.draw([], self.frame, dark_background, inks=[],
                            translucent=[(self.surface, core_colour, core_opacity)], meshes=[
                                (line_tubes(lines, within[0], line_colour, self.frame, 0.0), 1.0),
@@ -275,7 +275,7 @@ def animate(ball: core.Ball, radius: float, states: Iterable[tuple[core.Magnetic
     states = iter(states)
     first = next(states)
     within, moving = cutaway.within(first[1])
-    reference_speed = float(np.percentile(within.squared().abs().square_root().to_array()[moving], reference_percentile))
+    reference_speed = float(np.percentile(within.antinorm().to_array()[moving], reference_percentile))
     for magnetic, velocity in chain((first,), states):
         yield cutaway.picture(magnetic, velocity, reference_speed)
 

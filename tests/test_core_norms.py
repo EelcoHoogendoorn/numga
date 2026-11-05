@@ -172,3 +172,91 @@ def test_dot_is_the_gram_determinant_of_the_factors_on_every_grade(signature, gr
     assert a.dot(a).to_array() > 0
     Blade = algebra.gatype.oriented((a.subspace,), (a.gatype.orientation,))
     np.testing.assert_allclose(Blade.dot(Blade)(a, b).to_array(), a.dot(b).to_array(), rtol=1e-12)
+
+
+@pytest.mark.parametrize("signature, blade, scale, reverse_product, antidot", [
+    ("x+y+z+t-", "x", 3, -9, 9),
+    ("x+y+z+t-", "t", 1, 1, -1),
+    ("x+y+z+", "x", 3, 9, 9),
+    ("x+y+z+w0", "x", 3, 0, 9),
+    ("x+y+z+w0", "w", 1, 1, 0),
+])
+def test_a_point_measured_by_its_reverse_product_and_by_its_antidot(signature, blade, scale, reverse_product, antidot):
+    """A point is an antivector, the dual of the plane it lies in: its reverse product measures it by the metric on
+    antivectors, which in a spacetime is opposite to the metric on vectors and in a projective algebra reads only its
+    weight, while its antidot measures it by its dual, the vector."""
+    mv = NumpyContext(Algebra(signature)).multivector
+    point = (scale * getattr(mv, blade)).dual()
+
+    np.testing.assert_allclose(point.scalar_norm_squared().to_array(), reverse_product)
+    np.testing.assert_allclose(point.dot(point).to_array(), reverse_product)
+    np.testing.assert_allclose(point.antidot(point).to_array(), antidot)
+    with np.errstate(invalid="ignore"):
+        np.testing.assert_allclose(point.antinorm().to_array(), np.sqrt(antidot))
+
+
+@pytest.mark.parametrize("signature", ["x+y+z+t-", "x+y+z+", "x+y+z+w0", "x+y+w0", "x+y-z-"])
+def test_antidot_is_the_symmetric_dot_of_the_duals_as_a_value_and_as_a_form(signature):
+    algebra = Algebra(signature)
+    mv = NumpyContext(algebra).multivector
+    Multivector = algebra.gatype.multivector()
+    a, b = mv.multivector(np.random.default_rng(5).normal(size=(2, 4, len(algebra.subspace.full()))))
+
+    np.testing.assert_allclose(a.antidot(b).to_array(), a.dual().dot(b.dual()).to_array(), atol=1e-13)
+    np.testing.assert_allclose(a.antidot(b).to_array(), b.antidot(a).to_array(), atol=1e-13)
+    np.testing.assert_allclose(Multivector.antidot(Multivector)(a, b).to_array(), a.antidot(b).to_array(), atol=1e-13)
+
+
+def test_antidot_is_the_dot_on_antivectors_in_the_algebra_of_space():
+    algebra = Algebra("x+y+z+")
+    mv = NumpyContext(algebra).multivector
+    Antivector = algebra.gatype.antivector()
+    a, b = mv.vector(np.random.default_rng(6).normal(size=(2, 5, 3))).dual()
+
+    np.testing.assert_allclose(a.antidot(b).to_array(), a.dot(b).to_array(), atol=1e-13)
+    np.testing.assert_allclose(Antivector.antidot(Antivector)(a, b).to_array(), a.dot(b).to_array(), atol=1e-13)
+    np.testing.assert_allclose(a.antinorm().to_array(), a.norm().to_array(), atol=1e-13)
+
+
+@pytest.mark.parametrize(
+    "signature, grade", [("x+y+z+t-", grade) for grade in range(5)] + [("x+y+t-", grade) for grade in range(4)],
+)
+def test_antidot_is_the_dot_times_the_antiscalar_reverse_product_on_every_grade_of_a_spacetime(signature, grade):
+    algebra = Algebra(signature)
+    mv = NumpyContext(algebra).multivector
+    KVector = algebra.gatype.k_vector(grade)
+    a, b = mv(KVector, np.random.default_rng(grade).normal(size=(2, 4, len(KVector.output_subspace))))
+    antiscalar = mv.antiscalar([1])
+
+    np.testing.assert_allclose(antiscalar.scalar_norm_squared().to_array(), -1)
+    np.testing.assert_allclose(
+        a.antidot(b).to_array(), (antiscalar.scalar_norm_squared() * a.dot(b)).to_array(), atol=1e-13,
+    )
+
+
+def test_a_projective_point_has_its_weight_as_norm_and_its_bulk_as_antinorm():
+    """A point of weight w at position p is the dual of the plane `w * (p + mv.w)`: its norm is |w|, its antinorm the
+    bulk |w| |p|, and their quotient the distance from the origin."""
+    algebra = Algebra("x+y+z+w0")
+    mv = NumpyContext(algebra).multivector
+    rng = np.random.default_rng(7)
+    positions, weights = rng.normal(size=(6, 3)), rng.uniform(0.5, 2, size=6) * rng.choice([-1, 1], size=6)
+    points = (mv.vector(np.column_stack((positions, np.ones(6)))) * weights).dual()
+
+    np.testing.assert_allclose(points.norm().to_array(), np.abs(weights), atol=1e-13)
+    np.testing.assert_allclose(points.antinorm().to_array(), np.abs(weights) * np.linalg.norm(positions, axis=-1), atol=1e-13)
+    np.testing.assert_allclose(
+        (points.antinorm() / points.norm()).to_array(), np.linalg.norm(positions, axis=-1), atol=1e-13,
+    )
+
+
+def test_the_antidot_of_an_event_is_its_interval_and_the_antinorm_of_a_spatial_point_its_distance():
+    algebra = Algebra("x+y+z+t-")
+    mv = NumpyContext(algebra).multivector
+    rng = np.random.default_rng(8)
+    positions, times = rng.normal(size=(5, 3)), rng.normal(size=5)
+    events = mv.vector(np.column_stack((positions, times))).dual()
+    spatial = mv.vector(np.column_stack((positions, np.zeros(5)))).dual()
+
+    np.testing.assert_allclose(events.antidot(events).to_array(), (positions ** 2).sum(-1) - times ** 2, atol=1e-13)
+    np.testing.assert_allclose(spatial.antinorm().to_array(), np.linalg.norm(positions, axis=-1), atol=1e-13)
