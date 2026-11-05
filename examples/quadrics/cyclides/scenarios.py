@@ -231,10 +231,10 @@ def flat_camera(position: Direction, target: Direction) -> Motor:
     along -x. Great circles through the eye are the chart's straight lines through the origin, so the view is the
     flat tracer's."""
     sight = target - position
-    forward = sight / (sight | sight).abs().square_root()
+    forward = sight / sight.antinorm()
     # z, less its part along forward.
     upright = mv.z.dual() - (mv.z.dual() | forward) * forward.inverse()
-    up = upright / (upright | upright).abs().square_root()
+    up = upright / upright.antinorm()
     # The turn of -x onto forward, then of z onto up.
     aim = (1 + forward * (-mv.x.dual()).inverse()).normalized()
     roll = (1 + up * (aim >> mv.z.dual()).inverse()).normalized()

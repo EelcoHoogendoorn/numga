@@ -131,7 +131,7 @@ The [crystal-wave example](../examples/mechanics/crystal_waves/core.py) construc
 ```python
 christoffel = crystal(heading, Antivector, heading)       # Vector <- Antivector
 wave_form = christoffel(Antivector) & Antivector          # Scalar <- (Antivector, Antivector)
-length_form = Antivector.dual().dot(Antivector.dual())    # Scalar <- (Antivector, Antivector)
+length_form = Antivector.dot(Antivector)                  # Scalar <- (Antivector, Antivector)
 values, polarizations = wave_form.eigh(length_form)
 ```
 

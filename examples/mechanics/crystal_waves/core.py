@@ -63,7 +63,7 @@ def waves(crystal: Stiffness, heading: Vector) -> tuple[Scalar, Antivector]:
     displacements, has the three waves as eigenpairs, slowest first.
     """
     christoffel = crystal(heading, Antivector, heading)              # [...] Vector+ <- Antivector-
-    return (christoffel(Antivector) & Antivector).eigh(Antivector.dual().dot(Antivector.dual()))   # [..., 3] Scalar+, [..., 3] Antivector-
+    return (christoffel(Antivector) & Antivector).eigh(Antivector.dot(Antivector))                 # [..., 3] Scalar+, [..., 3] Antivector-
 
 
 def energy_flow(crystal: Stiffness, heading: Vector, polarization: Antivector, density: np.ndarray) -> Antivector:
