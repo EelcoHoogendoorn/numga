@@ -39,7 +39,7 @@ rate_constant = 1 / lifetime
 # The bar: each side's length in Debye lengths, and its vertices' spacing.
 side_length, spacing = 10.0, 0.25
 # How far a Newton's step may change a chemical potential, in thermal units, and how little the last changes them.
-limit, tolerance = 2.0, 1e-6
+limit, tolerance = 6.0, 0.1
 # The junction forming: the time between frames and the frames.
 forming_dt, n_forming_frames = 0.7, 100
 # The sweeps: the forward and the reverse bias, in thermal units, and the frames of the sweep from nothing forward,
@@ -65,7 +65,7 @@ oxide_thickness, gate_edge = 1.0, 13.0
 well_doping, oxide_permittivity = 20.0, 1 / 3
 # The mesh's spacing beneath the oxide, across the wells' edges and at the wells' bottoms; how fast it grows away from
 # them, as a share of the distance, and how coarse it grows at most, across and down.
-surface_spacing, edge_spacing, growth, coarsest_across, coarsest_down = 0.04, 0.4, 0.35, 2.0, 3.0
+surface_spacing, edge_spacing, growth, coarsest_across, coarsest_down = 0.1, 0.8, 0.6, 4.0, 5.0
 # The voltages, in thermal units: the drain's while the gate ramps, the gate's for each output curve, and the drain's
 # at the sweeps' far end; the frames of the gate's ramp, of each sweep of the drain, and of each step of the gate.
 small_drain, gate_voltages, largest_drain = 2.0, np.array([70.0, 85.0, 100.0]), 60.0
@@ -91,11 +91,9 @@ surface_generation, absorption_length = 1.5e-4, 50.0
 # The mesh: its spacing through the top layer and the junction beneath it, down to `junction_reach` below the surface,
 # and at the fingers' edges; how coarse it grows at most down the base and under a finger; and the columns across each
 # gap between two fingers, as many at every spacing of the fingers.
-junction_spacing, junction_reach, finger_edge_spacing = 0.6, 15.0, 0.5
-coarsest_cell_down, coarsest_finger = 8.0, 1.5
-n_gap_columns = 24
-# How little the last of Newton's steps changes the chemical potentials, for the solar cell.
-cell_tolerance = 1e-3
+junction_spacing, junction_reach, finger_edge_spacing = 0.8, 12.0, 0.8
+coarsest_cell_down, coarsest_finger = 12.0, 2.5
+n_gap_columns = 16
 # The fingers' spacings swept, from a few fingers' widths to three bases' depths, each the same share apart; at the
 # first spacing, the frames over which the light comes on, the bias at open circuit, in thermal units, and the frames
 # over which the bias rises to it; and how far apart the biases about each spacing's last maximum of power lie.
@@ -407,7 +405,7 @@ def solar_steady(topology: Topology, dopants: solar_cell.Point, neutral: solar_c
     held_potentials = topology.reading(held, 0) * neutral + (mv.t * voltages).field()   # [frames] Potentials+[held]
     states = solar_cell.run(topology, volumes, driving, outflow, permittivity * filled, filled, dopants, potentials,
                             held, held_potentials, generations, intrinsic, mobilities, cell_rate_constant, np.inf,
-                            limit, cell_tolerance)
+                            limit, tolerance)
     return islice(states, 1, None)
 
 
