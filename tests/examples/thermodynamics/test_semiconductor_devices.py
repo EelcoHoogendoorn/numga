@@ -23,10 +23,9 @@ def runs():
     formed = list(scenarios.forming(topology, vertices, dopants, ends, slab, wired))
     biases = scenarios.sweep()
     dark = list(scenarios.biased(topology, vertices, dopants, ends, wired, formed[-1], biases, np.zeros(len(biases))))
-    lighting = np.linspace(1 / scenarios.n_lighting_frames, 1, scenarios.n_lighting_frames)
-    generations = scenarios.generation_rate * np.concatenate([lighting, np.ones(len(biases))])
-    lit = list(scenarios.biased(topology, vertices, dopants, ends, wired, dark[-1],
-                                np.concatenate([0 * lighting, biases]), generations))
+    lit_biases, shares = scenarios.lit_sweep()
+    generations = scenarios.generation_rate * shares
+    lit = list(scenarios.biased(topology, vertices, dopants, ends, wired, dark[-1], lit_biases, generations))
     return topology, vertices, ends, formed, dark, lit, np.concatenate([[0.0], generations])
 
 

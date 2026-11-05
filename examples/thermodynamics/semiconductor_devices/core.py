@@ -232,9 +232,9 @@ def run(topology: Topology, volumes: Scalar, driving: SparseExtensor, outflow: S
             # Newton's step scaled down at each vertex where it would change the chemical potentials there by much
             # more than the limit: the densities follow them exponentially, and a full step from far off overshoots by
             # powers of e. The residual is linear in the electric potential, whose change needs no holding back.
-            steps = (counts & change).abs().sum(axis=0)                       # Scalar+[vertices]
-            potentials = potentials + change / (1 + steps / limit)
-            if steps.max() < tolerance:
+            changes = (counts & change).abs().sum(axis=0)                     # Scalar+[vertices]
+            potentials = potentials + change / (1 + changes / limit)
+            if changes.max() < tolerance:
                 break
         yield potentials
 
