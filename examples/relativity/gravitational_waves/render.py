@@ -58,7 +58,16 @@ struct Cell {
 const cell_edges = array<vec2<u32>, 6>(""" + cell_edges + """);
 """
 
-inside_source = cell_source + """
+# A crystal's ball on the sphere, which every moment kept of its atoms lies in: its centre, and its reach, the arc out
+# to the farthest of them.
+ball_source = """
+struct Ball {
+    centre: Point,
+    reach: f32,
+}
+"""
+
+inside_source = cell_source + ball_source + """
 var<uniform> start_place: Point;
 var<uniform> start_tet: u32;
 var<uniform> right: Step;
@@ -72,6 +81,7 @@ var<uniform> particle_ink: vec3<f32>;
 var<uniform> particle_radius_squared: f32;
 var<uniform> n_bonds: u32;
 var<uniform> bond_radius_squared: f32;
+var<uniform> n_crystals: u32;
 
 // A bond as the view sees it at a time: its atoms' places and its ink. The crystals' atoms and bonds at a time,
 // `atom_at` and `bond_at`, and the direction a pixel looks along, `sightline`, come with the view.
@@ -82,6 +92,8 @@ struct BondSeen {
 }
 
 var<storage, read> cells: array<Cell>;
+// Each crystal's ball; the atoms and the bonds come crystal by crystal, as many to each.
+var<storage, read> balls: array<Ball>;
 
 alias Sample = vec3<f32>;
 
@@ -116,6 +128,17 @@ fn ball_nearest(leg: Leg, centre: Point) -> f32 {
     let offset = leg.chart - centre / reading;
     let along = clamp(-offset.dot(leg.segment) / leg.segment.dot(leg.segment), 0.0, 1.0);
     return select(0.0, along, reading > 0.0);
+}
+
+// How near a leg comes to a point of the sphere, the cosine of the least arc between them. Along the leg's line on its
+// chart, the cosine of the arc from the line's point to the point rises while its rate, of the sign of a number linear
+// along the line, lasts, and falls after: the nearest is at the share where that number runs out, held to the leg.
+fn nearest_cosine(leg: Leg, centre: Point) -> f32 {
+    let start = centre.dot(leg.chart);
+    let along = centre.dot(leg.segment);
+    let share = clamp((along * leg.chart.dot(leg.chart) - start * leg.chart.dot(leg.segment))
+                      / (start * leg.segment.dot(leg.segment) - along * leg.chart.dot(leg.segment)), 0.0, 1.0);
+    return centre.dot((leg.chart + leg.segment * share).normalized());
 }
 
 // Where along a leg it passes nearest a bond's segment between its atoms, as a share of the leg, the atoms scaled onto
@@ -222,31 +245,43 @@ fn sample(pixel: vec2<f32>) -> Sample {
         // The atoms and the bonds as they were when the light that reaches the eye passed them, the time back along
         // the leg running one for one with its length: each met as it was when the light passed the leg's point
         // nearest it, and where it is met, met again as it was when the light passed that meeting, which for crystals
-        // this slow settles at once.
+        // this slow settles at once. A crystal's atoms and bonds are met only by a leg that comes within its ball's
+        // reach of the ball's centre, the reach widened by the most arc an atom's ball or a bond's tube spans about its
+        // place: their radius on the chart over the chart's distance from the sphere's centre, one over the size of
+        // the chart's plane.
+        let widening = sqrt(max(particle_radius_squared, bond_radius_squared)) * leg.plane.norm();
         var hit_particle = n_particles;
         var particle_time = leg_time;
-        for (var i = 0u; i < n_particles; i++) {
-            let near_time = leg_time - ball_nearest(leg, atom_at(i, leg_time)) * leg.length;
-            let first = ball_share(leg, atom_at(i, near_time), particle_radius_squared);
-            let seen_time = select(near_time, leg_time - first * leg.length, first <= 1.0);
-            let share = select(first, ball_share(leg, atom_at(i, seen_time), particle_radius_squared), first <= 1.0);
-            if (share < nearest) {
-                nearest = share;
-                hit_particle = i;
-                particle_time = seen_time;
-            }
-        }
         var hit_bond = n_bonds;
         var bond_time = leg_time;
-        for (var i = 0u; i < n_bonds; i++) {
-            let near_time = leg_time - bond_nearest(leg, bond_at(i, leg_time)) * leg.length;
-            let first = bond_share(leg, bond_at(i, near_time), nearest);
-            let seen_time = select(near_time, leg_time - first * leg.length, first <= 1.0);
-            let share = select(first, bond_share(leg, bond_at(i, seen_time), nearest), first <= 1.0);
-            if (share < nearest) {
-                nearest = share;
-                hit_bond = i;
-                bond_time = seen_time;
+        for (var crystal = 0u; crystal < n_crystals; crystal++) {
+            if (nearest_cosine(leg, balls[crystal].centre) < cos(balls[crystal].reach + widening)) {
+                continue;
+            }
+            for (var i = crystal * n_particles / n_crystals; i < (crystal + 1u) * n_particles / n_crystals; i++) {
+                let near_time = leg_time - ball_nearest(leg, atom_at(i, leg_time)) * leg.length;
+                let first = ball_share(leg, atom_at(i, near_time), particle_radius_squared);
+                let seen_time = select(near_time, leg_time - first * leg.length, first <= 1.0);
+                let share = select(first, ball_share(leg, atom_at(i, seen_time), particle_radius_squared),
+                                   first <= 1.0);
+                if (share < nearest) {
+                    nearest = share;
+                    hit_particle = i;
+                    particle_time = seen_time;
+                    // A bond met before lies behind this atom.
+                    hit_bond = n_bonds;
+                }
+            }
+            for (var i = crystal * n_bonds / n_crystals; i < (crystal + 1u) * n_bonds / n_crystals; i++) {
+                let near_time = leg_time - bond_nearest(leg, bond_at(i, leg_time)) * leg.length;
+                let first = bond_share(leg, bond_at(i, near_time), nearest);
+                let seen_time = select(near_time, leg_time - first * leg.length, first <= 1.0);
+                let share = select(first, bond_share(leg, bond_at(i, seen_time), nearest), first <= 1.0);
+                if (share < nearest) {
+                    nearest = share;
+                    hit_bond = i;
+                    bond_time = seen_time;
+                }
             }
         }
         let hit = (leg.chart + leg.segment * nearest).normalized();
@@ -413,12 +448,13 @@ def round_values(mesh: Topology, vertices: core.Point) -> dict:
 
 def wave_values(mesh: Topology, waves: core.Waves) -> dict:
     """What the core's walk through the waves reads besides the topology: the waves' stored moments and their counts
-    of vertices and tetrahedra, the tetrahedra's ramps, the origin, and the maps of its steps."""
+    of vertices and tetrahedra, the tetrahedra's ramps, the origin, the maps of its steps, and a leg's longest and the
+    rolls a leg that long takes."""
     _, n_vertices = waves.traces.shape
     return dict(ramps=waves.ramps, strains=waves.strains, strain_rates=waves.strain_rates, traces=waves.traces,
                 turns=waves.turns, n_vertices=n_vertices, n_tets=mesh.n_elements[3], first_time=waves.first_time,
                 level_step=waves.level_step, origin=core.origin, translating=core.translating, moving=core.moving,
-                turning=core.turning, step=core.wave_step)
+                turning=core.turning, step=core.wave_step, n_rolls=core.n_rolls)
 
 
 def inside(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, cameras: core.Motor,
@@ -531,7 +567,8 @@ def crystal_frames(bonds: Topology, kept_times: np.ndarray, states: Iterable[tup
     """The crystals at each of the `eye_times` as the view from inside draws them, each as it was when a leg's light
     passed it: every moment of `states`, `(Point-[atoms], Scalar+[bonds])` at each of the `kept_times`, evenly spaced,
     up to the first at or past the frame's time, drawn from the states as the frames need them; their atoms balls, and
-    the edges of `bonds` segments between them coloured by their strains, blue squeezed and red stretched."""
+    the edges of `bonds` segments between them coloured by their strains, blue squeezed and red stretched; and the
+    crystals, the tetrahedra of `bonds`, each in its ball over the moments kept."""
     tails, heads = bonds.elements[1].T
     states = iter(states)
     places, inks = [], []
@@ -540,16 +577,29 @@ def crystal_frames(bonds: Topology, kept_times: np.ndarray, states: Iterable[tup
             positions, strains = next(states)
             places.append(positions.batch().normalized())
             inks.append(plt.get_cmap(strain_map)(0.5 + 0.5 * np.clip(strains.to_array() / saturating_strain, -1, 1)))
-        yield dict(bonds=dict(tail=tails, head=heads), history=stack(places).reshape(-1),
+        kept = stack(places)                                                    # [kept, atoms] Point-
+        yield dict(bonds=dict(tail=tails, head=heads), history=kept.reshape(-1),
                    inks=np.concatenate(inks).reshape(-1, 4).astype(np.float32), kept_start=float(kept_times[0]),
                    kept_step=float(kept_times[1] - kept_times[0]), n_kept=len(places), n_particles=bonds.n_vertices,
-                   n_bonds=bonds.n_elements[1])
+                   n_bonds=bonds.n_elements[1], n_crystals=bonds.n_elements[3],
+                   balls=crystal_balls(bonds, kept.field()))
 
 
-# No crystals: no atoms and no bonds, and one moment of nothing kept.
+def crystal_balls(bonds: Topology, kept: core.Point) -> dict:
+    """Each crystal's ball on the sphere, by member of the view's `Ball`, the crystals the tetrahedra of `bonds`: the
+    ball that every moment kept of its atoms, `[kept] Point-[atoms]`, lies in, about the middle of its atoms over the
+    moments and out to the farthest of them."""
+    corners = bonds.incidence[3, 0][:, None] * kept                             # [corners, kept] Point-[crystals]
+    centres = corners.sum(axis=0).sum(axis=0).normalized()                      # Point-[crystals]
+    arcs = centres.dot(corners).arccos()                                        # [corners, kept] Scalar+[crystals]
+    return dict(centre=centres.batch(), reach=arcs.batch().to_array().max(axis=(0, 1)))
+
+
+# No crystals: no atoms, no bonds and no balls, and one moment of nothing kept.
 no_crystals = dict(bonds=dict(tail=np.zeros(0, dtype=np.uint32), head=np.zeros(0, dtype=np.uint32)),
                    history=core.mv.vector(np.zeros((0, 4))).dual(), inks=np.zeros((0, 4), dtype=np.float32),
-                   kept_start=0.0, kept_step=1.0, n_kept=1, n_particles=0, n_bonds=0)
+                   kept_start=0.0, kept_step=1.0, n_kept=1, n_particles=0, n_bonds=0, n_crystals=0,
+                   balls=dict(centre=core.mv.vector(np.zeros((0, 4))).dual(), reach=np.zeros(0, dtype=np.float32)))
 
 
 # The chart of the crystals' signed volumes: its size, and each crystal's colour, the soft, the tuned and the stiff one.
@@ -569,6 +619,33 @@ def crystal_volumes(times: np.ndarray, volumes: core.Scalar, names: list[str]) -
     ax.set(xlabel="time", ylabel="volume / rest", xlim=(times[0], times[-1]))
     ax.spines[["top", "right"]].set_visible(False)
     ax.legend(frameon=False, loc="lower left")
+    figure.tight_layout(pad=0.3)
+    return figure
+
+
+# The chart of the tracer's time a frame: its size, and the names and inks of the crystals met only within their
+# balls, met on every leg, and of no crystals.
+bounds_chart_px = (420, 130)
+bound_kinds = ["with the bound", "without the bound", "no crystals"]
+bound_inks = ["#dd8452", "#4c72b0", "#999999"]
+
+
+@charts.style()
+def bounded_crystals(milliseconds: np.ndarray, pixels: tuple[int, int]) -> plt.Figure:
+    """The tracer's milliseconds a frame at `pixels`, rows and columns, `[kinds]`, as bars from nothing, each with its
+    time: each crystal's atoms and bonds met only by the legs that come within its ball, met by every leg, and no
+    crystals at all."""
+    figure, ax = charts.subplots(*bounds_chart_px)
+    bars = np.arange(len(bound_kinds))                                          # [kinds]
+    ax.barh(bars, milliseconds, height=0.6, color=bound_inks)
+    for bar, ms in zip(bars, milliseconds):
+        ax.annotate(f"{ms:.0f} ms", (ms, bar), textcoords="offset points", xytext=(4, 0), va="center")
+    rows, columns = pixels
+    ax.set(yticks=bars, yticklabels=bound_kinds, xlim=(0, 1.25 * milliseconds.max()),
+           xlabel=f"ms a frame at {columns} × {rows}")
+    ax.invert_yaxis()
+    ax.tick_params(axis="y", length=0)
+    ax.spines[["top", "right"]].set_visible(False)
     figure.tight_layout(pad=0.3)
     return figure
 
