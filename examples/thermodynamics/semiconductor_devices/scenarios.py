@@ -19,11 +19,13 @@ from numga.sparse import SparseExtensor
 from examples import instantiate
 from examples.util.topology import Topology
 
-# The bar's line in spacetime, and the cross-section's plane, each joined with the electrons, the holes, the heat and
-# the light; the solar cell's cross-section lies in the MOSFET's plane, and so shares its copy of the core.
-diode = instantiate("examples.thermodynamics.semiconductor_devices.core", Algebra("x+t-") * Algebra("n0p0q0l0"))
-mosfet = instantiate("examples.thermodynamics.semiconductor_devices.core", Algebra("x+y+t-") * Algebra("n0p0q0l0"))
-solar_cell = instantiate("examples.thermodynamics.semiconductor_devices.core", Algebra("x+y+t-") * Algebra("n0p0q0l0"))
+# The bar's line in spacetime, and the cross-section's plane, each with a degenerate w that weighs a place, joined with
+# the electrons, the holes, the heat and the light; the solar cell's cross-section lies in the MOSFET's plane, and so
+# shares its copy of the core.
+diode = instantiate("examples.thermodynamics.semiconductor_devices.core", Algebra("x+t-w0") * Algebra("n0p0q0l0"))
+mosfet = instantiate("examples.thermodynamics.semiconductor_devices.core", Algebra("x+y+t-w0") * Algebra("n0p0q0l0"))
+solar_cell = instantiate("examples.thermodynamics.semiconductor_devices.core",
+                         Algebra("x+y+t-w0") * Algebra("n0p0q0l0"))
 # The planes that read a place along the bar, and across and up the cross-section.
 Along = diode.Plane.derive.within(Algebra("x+"))                              # Vector+
 Upright = mosfet.Plane.derive.within(Algebra("x+y+"))                         # Vector+
@@ -102,14 +104,16 @@ n_light_frames, highest_bias, n_bias_frames, bias_step = 12, 26.15, 40, 1.5
 
 
 # --- plumbing -------------------------------------------------------------------------
-def bar() -> tuple[Topology, diode.Point, np.ndarray]:
-    """The bar: its chain of edges, its vertices `Point-[vertices]`, and the doping at each `[vertices]`, the acceptors'
-    negative charge on the p side, left, and the donors' positive one on the n side, right, in units of the doping."""
+def bar() -> tuple[Topology, diode.Point, np.ndarray, np.ndarray]:
+    """The bar: its chain of edges, its vertices `Point-[vertices]`, points of weight one, the doping at each
+    `[vertices]`, the acceptors' negative charge on the p side, left, and the donors' positive one on the n side, right,
+    in units of the doping, and its two ends, the p end and the n end `[ends]`."""
     n_vertices = int(round(2 * side_length / spacing))
     # The junction midway between two vertices.
     places = (np.arange(n_vertices) - (n_vertices - 1) / 2) * spacing
-    vertices = diode.mv(Along, places[:, None]).dual().field()
-    return Topology.chains([n_vertices]), vertices, np.sign(places)
+    # Each vertex the dual of its place along the bar and a unit along w, a point of weight one.
+    vertices = (diode.mv(Along, places[:, None]) + diode.mv.w).dual().field()   # Point-[vertices]
+    return Topology.chains([n_vertices]), vertices, np.sign(places), np.array([0, n_vertices - 1])
 
 
 def slabs(doping: np.ndarray) -> np.ndarray:
@@ -266,6 +270,13 @@ def cell_voltages(contacts: list[np.ndarray], biases: np.ndarray) -> np.ndarray:
     return np.concatenate([np.repeat(biases[:, None], len(fingers), 1), np.zeros((len(biases), len(back)))], axis=-1)
 
 
+def held_and_free(contacts: list[np.ndarray], n_vertices: int) -> tuple[np.ndarray, np.ndarray]:
+    """The vertices these contacts hold, each contact's in turn `[held]`, and the rest of the `n_vertices`, free
+    `[free]`."""
+    held = np.concatenate(contacts)                                           # [held]
+    return held, np.setdiff1d(np.arange(n_vertices), held)
+
+
 def peak(biases: np.ndarray, powers: solar_cell.Scalar) -> tuple[int, float]:
     """The frame of the highest of these powers `[frames] Scalar+` but the first and the last, one at each bias
     `[frames]`, and the bias of the peak of the parabola through it and its neighbours, the maximum power's, no further
@@ -284,14 +295,13 @@ def junction() -> tuple[Topology, diode.Point, diode.Point, np.ndarray, diode.Po
     potentials at no electric potential `Potentials+[vertices]`, and the potentials at its ends once the wire has
     closed `Potentials+[ends]`."""
     mv = diode.mv
-    topology, vertices, doping = bar()
+    topology, vertices, doping, ends = bar()
     chemical = slabs(doping)                                                  # [carriers, vertices]
     # The slabs at no electric potential, of the potentials' whole type as they start a run.
     slab = (mv.n * chemical[0] + mv.p * chemical[1]).retyped(diode.Potentials).field()   # Potentials+[vertices]
     # The wire brings the p end to the n end's Fermi level: its electric potential falls by the built-in voltage, the
     # sum of the majority carriers' chemical potentials at the two ends.
     built_in = chemical[1, 0] + chemical[0, -1]
-    ends = np.array([0, topology.n_vertices - 1])
     wired = topology.reading(ends, 0) * slab + (mv.t * bar_voltages(-built_in)).field()   # Potentials+[ends]
     return topology, vertices, (diode.time * doping).field(), ends, slab, wired
 
@@ -306,12 +316,13 @@ def silicon(topology: Topology) -> tuple[diode.Scalar, diode.Scalar]:
 def forming(topology: Topology, vertices: diode.Point, dopants: diode.Point, ends: np.ndarray,
             slab: diode.Potentials, wired: diode.Potentials) -> Iterator[diode.Potentials]:
     """The potentials at each frame as the junction forms, from the slabs as they touch, in the dark."""
-    volumes, driving, outflow = diode.simplices(topology, vertices)
+    volumes, driving, outflow = diode.simplices(topology, vertices, Along)
     permittivities, semiconductor = silicon(topology)
+    held, free = held_and_free([ends], topology.n_vertices)                   # [held], [free]
     dark = np.zeros(n_forming_frames) * diode.mv.scalar(np.ones((topology.n_vertices, 1))).field()
-    return diode.run(topology, volumes, driving, outflow, permittivities, semiconductor, dopants, slab, ends,
-                     np.ones(n_forming_frames) * wired, dark, intrinsic, mobilities, rate_constant, forming_dt, limit,
-                     tolerance)
+    return diode.run(topology, volumes, driving, outflow, permittivities, semiconductor, dopants, slab,
+                     topology.reading(held, 0), topology.reading(free, 0), np.ones(n_forming_frames) * wired, dark,
+                     intrinsic, mobilities, rate_constant, forming_dt, limit, tolerance)
 
 
 def biased(topology: Topology, vertices: diode.Point, dopants: diode.Point, ends: np.ndarray, wired: diode.Potentials,
@@ -319,12 +330,14 @@ def biased(topology: Topology, vertices: diode.Point, dopants: diode.Point, ends
     """The steady potentials at each frame, from these settled ones, under each frame's bias `[frames]`, raising the p
     end's electric potential, and its light's generation `[frames]`, the same along the bar."""
     mv = diode.mv
-    volumes, driving, outflow = diode.simplices(topology, vertices)
+    volumes, driving, outflow = diode.simplices(topology, vertices, Along)
     permittivities, semiconductor = silicon(topology)
+    held, free = held_and_free([ends], topology.n_vertices)                   # [held], [free]
     contacts = wired + (mv.t * bar_voltages(biases)).field()                  # [frames] Potentials+[ends]
     lit = generations * mv.scalar(np.ones((topology.n_vertices, 1))).field()     # [frames] Scalar+[vertices]
-    return diode.run(topology, volumes, driving, outflow, permittivities, semiconductor, dopants, settled, ends,
-                     contacts, lit, intrinsic, mobilities, rate_constant, np.inf, limit, tolerance)
+    return diode.run(topology, volumes, driving, outflow, permittivities, semiconductor, dopants, settled,
+                     topology.reading(held, 0), topology.reading(free, 0), contacts, lit, intrinsic, mobilities,
+                     rate_constant, np.inf, limit, tolerance)
 
 
 def transistor() -> tuple[Topology, mosfet.Point, mosfet.Scalar, mosfet.Scalar, mosfet.Point, mosfet.Potentials,
@@ -336,7 +349,8 @@ def transistor() -> tuple[Topology, mosfet.Point, mosfet.Scalar, mosfet.Scalar, 
     source, the drain, the body and the gate."""
     mv = mosfet.mv
     topology, coordinates, oxide, doping, contacts = section()
-    vertices = mv(Upright, coordinates).dual().field()                       # Point-[vertices]
+    # Each vertex the dual of its place across and up and a unit along w, a point of weight one.
+    vertices = (mv(Upright, coordinates) + mv.w).dual().field()              # Point-[vertices]
     permittivities = mv.scalar(np.where(oxide, oxide_permittivity, permittivity)[:, None]).field()
     semiconductor = mv.scalar(np.where(oxide, 0.0, 1.0)[:, None]).field()     # Scalar+[simplices]
     # With the Fermi level at nothing, each carrier's electrochemical potential is nothing, so that the electric
@@ -359,15 +373,17 @@ def switching(topology: Topology, vertices: mosfet.Point, permittivities: mosfet
     frame's gate and drain voltage `[frames]` each, raising the electric potential of the gate and of the drain, the
     source and the body at nothing."""
     mv = mosfet.mv
-    volumes, driving, outflow = mosfet.simplices(topology, vertices)
-    held = np.concatenate(contacts)                                           # [held]
+    volumes, driving, outflow = mosfet.simplices(topology, vertices, Upright)
+    held, free = held_and_free(contacts, topology.n_vertices)                 # [held], [free]
+    holding = topology.reading(held, 0)                                       # Scalar+[held <- vertices]
     # The contacts hold their potentials at no voltage, the drain's voltage and the gate's raising their electric
     # potential.
     voltages = transistor_voltages(contacts, gates, drains)                   # [frames, held]
-    wired = topology.reading(held, 0) * neutral + (mv.t * voltages).field()   # [frames] Potentials+[held]
+    wired = holding * neutral + (mv.t * voltages).field()                     # [frames] Potentials+[held]
     dark = np.zeros(len(gates)) * mv.scalar(np.ones((topology.n_vertices, 1))).field()   # [frames] Scalar+[vertices]
-    states = mosfet.run(topology, volumes, driving, outflow, permittivities, semiconductor, dopants, neutral, held,
-                        wired, dark, intrinsic, mobilities, rate_constant, np.inf, limit, tolerance)
+    states = mosfet.run(topology, volumes, driving, outflow, permittivities, semiconductor, dopants, neutral, holding,
+                        topology.reading(free, 0), wired, dark, intrinsic, mobilities, rate_constant, np.inf, limit,
+                        tolerance)
     # The neutral silicon the run starts from is no steady state.
     return islice(states, 1, None)
 
@@ -381,7 +397,8 @@ def solar_period(finger_spacing: float) -> tuple[Topology, solar_cell.Point, sol
     fingers' shadow."""
     mv = solar_cell.mv
     topology, coordinates, doping, shaded, contacts = period_grid(finger_spacing)
-    vertices = mv(Upright, coordinates).dual().field()                       # Point-[vertices]
+    # Each vertex the dual of its place across and up and a unit along w, a point of weight one.
+    vertices = (mv(Upright, coordinates) + mv.w).dual().field()              # Point-[vertices]
     chemical = slabs(doping)                                                  # [carriers, vertices]
     neutral = (mv.t * chemical[0] + mv.n * chemical[0] + mv.p * chemical[1]).field()   # Potentials+[vertices]
     # The light falls by a factor e over each absorption length below the surface, where the plane y reads nothing.
@@ -400,12 +417,13 @@ def solar_steady(topology: Topology, dopants: solar_cell.Point, neutral: solar_c
     electric potential raised by the bias."""
     mv = solar_cell.mv
     filled = mv.scalar(np.ones((topology.n_elements[-1], 1))).field()        # Scalar+[simplices]
-    held = np.concatenate(contacts)                                           # [held]
+    held, free = held_and_free(contacts, topology.n_vertices)                 # [held], [free]
+    holding = topology.reading(held, 0)                                       # Scalar+[held <- vertices]
     voltages = cell_voltages(contacts, biases)                                # [frames, held]
-    held_potentials = topology.reading(held, 0) * neutral + (mv.t * voltages).field()   # [frames] Potentials+[held]
+    held_potentials = holding * neutral + (mv.t * voltages).field()           # [frames] Potentials+[held]
     states = solar_cell.run(topology, volumes, driving, outflow, permittivity * filled, filled, dopants, potentials,
-                            held, held_potentials, generations, intrinsic, mobilities, cell_rate_constant, np.inf,
-                            limit, tolerance)
+                            holding, topology.reading(free, 0), held_potentials, generations, intrinsic, mobilities,
+                            cell_rate_constant, np.inf, limit, tolerance)
     return islice(states, 1, None)
 
 
@@ -441,8 +459,8 @@ def spreading(topology: Topology, dopants: solar_cell.Point, neutral: solar_cell
     the spacing's own, and the peak of the parabola through their powers the next spacing's bias."""
     mv = solar_cell.mv
     for finger_spacing in finger_spacings:
-        vertices = mv(Upright, cell_places(finger_spacing)).dual().field()   # Point-[vertices]
-        maps = solar_cell.simplices(topology, vertices)
+        vertices = (mv(Upright, cell_places(finger_spacing)) + mv.w).dual().field()   # Point-[vertices]
+        maps = solar_cell.simplices(topology, vertices, Upright)
         biases = bias + bias_step * np.array([-1.0, 0.0, 1.0])               # [trials]
         lower, potentials, upper = solar_steady(topology, dopants, neutral, contacts, *maps, potentials, biases,
                                                 np.ones(len(biases)) * generation)
@@ -467,15 +485,16 @@ def solar_animations() -> None:
     reference_flow = surface_generation * absorption_length
 
     def holes_of(vertices: solar_cell.Point, potentials: solar_cell.Potentials) -> solar_cell.Point:
-        return solar_cell.flows(topology, solar_cell.simplices(topology, vertices)[1], filled, potentials, intrinsic,
-                                mobilities)[1]
+        return solar_cell.flows(topology, solar_cell.simplices(topology, vertices, Upright)[1], filled, potentials,
+                                intrinsic, mobilities)[1]
 
     def power_of(finger_spacing: float, vertices: solar_cell.Point,
                  potentials: solar_cell.Potentials) -> solar_cell.Scalar:
-        return solar_power(topology, contacts, *solar_cell.simplices(topology, vertices), finger_spacing, potentials)
+        return solar_power(topology, contacts, *solar_cell.simplices(topology, vertices, Upright), finger_spacing,
+                           potentials)
 
     biases, shares = lighting_biases()
-    maps = solar_cell.simplices(topology, vertices)
+    maps = solar_cell.simplices(topology, vertices, Upright)
     lit = list(solar_steady(topology, dopants, neutral, contacts, *maps, neutral, biases, shares * generation))
     # The current's scale, the pairs the light makes in the period each time, which the junction gathers nearly all of.
     cells = ~topology.incidence[-1, 0].mean(axis=0) * maps[0]                 # Scalar+[vertices]
@@ -508,7 +527,7 @@ def diode_animations() -> None:
     from examples.thermodynamics.semiconductor_devices import render
 
     topology, vertices, dopants, ends, slab, wired = junction()
-    volumes, driving, outflow = diode.simplices(topology, vertices)
+    volumes, driving, outflow = diode.simplices(topology, vertices, Along)
     _, semiconductor = silicon(topology)
     # The band diagram's energies, the carriers' densities, and the voltage and current across the bar, as functions
     # of the potentials.
@@ -543,7 +562,7 @@ def mosfet_animations() -> None:
     save_figure(render.draw_section(topology, vertices, semiconductor, dopants, contacts, full_densities),
                 "mosfet_section")
     gates, drains, curves = schedule()
-    volumes, driving, outflow = mosfet.simplices(topology, vertices)
+    volumes, driving, outflow = mosfet.simplices(topology, vertices, Upright)
     # The carriers' densities, and the drain's voltage and current, as functions of the potentials.
     densities_of = partial(mosfet.carrier_densities, intrinsic=intrinsic)
     source, drain, _, _ = contacts

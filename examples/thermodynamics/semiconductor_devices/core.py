@@ -16,27 +16,28 @@ own, the solar cell. A gate, a conductor held at its voltage across an oxide tha
 the surface beneath it: past a threshold they form a channel joining two electron-rich wells, which a drain voltage
 drives a current along.
 
-The algebra is space and time, x+t- along a bar or x+y+t- across a cross-section, joined with four degenerate
-directions, for electrons, holes, heat and light, n0p0q0l0; the module is instantiated per algebra. Charge rides time:
-a unit of charge is `-mv.t.dual()`, an electron is a unit along n with a negative charge, a hole a unit along p with a
-positive one, and the dopants' fixed charge lies along time alone. The potentials at each vertex are one plane, the
-electric potential along t and the carriers' chemical potentials along n and p, and it reads each carrier's
-electrochemical potential, its quasi-Fermi level, `potentials & electron`. A field over space varies across each simplex
-by its corners' hats: a corner's hat gradient is the facet facing the corner joined with time and every amount, over
-the same join closed by the step to the corner. The potentials' drive, `-(gradients ^ potentials)`, pushes each carrier
-by what it holds, drift and diffusion in one; a carrier drifts along the force its drive puts on it,
+The algebra is space and time, with a degenerate w that weighs a place, x+t-w0 along a bar or x+y+t-w0 across a
+cross-section, joined with four degenerate directions, for electrons, holes, heat and light, n0p0q0l0; the module is
+instantiated per algebra. Charge rides time: a unit of charge is `-mv.t.dual()`, an electron is a unit along n with a
+negative charge, a hole a unit along p with a positive one, and the dopants' fixed charge lies along time alone. The
+potentials at each vertex are one plane, the electric potential along t and the carriers' chemical potentials along n
+and p, and it reads each carrier's electrochemical potential, its quasi-Fermi level, `potentials & electron`. Each
+vertex is a point of weight one, and a field over space varies across each simplex by its corners' ramps: a corner's
+ramp is the join of the corners off it with time and every amount, over that join closed by the corner itself, and its
+gradient is what it reads across space. The potentials' drive, `-(gradients ^ potentials)`, pushes each carrier by what
+it holds, drift and diffusion in one; a carrier drifts along the force its drive puts on it,
 `drive.commutator(carrier)`, and its flux, the carrier swept along that drift, `drive.commutator(carrier).regressive(
 carrier)`, times its mobility and density, is a material map the same in every direction. The same map on a unit of
-charge, times the permittivity, makes the drive the field's displacement. The adjugate of the map that makes the
-drive reads a flux back across the regressive product with the amount on the left; involuted, so that the potentials
-read its amounts from the left as they read every other, `potentials & amount.involute() == amount & potentials`, it
-gathers the fluxes into what flows out of each cell. Gauss's law, the field's outflow from each cell against the charge
-it holds, joins the carriers' balance along time, where that balance only repeats itself. Each step is implicit, solved
-by Newton's method until its step is small, whose map is the carriers' capacitance and the response of their fluxes and
-of the field gathered the same way. A contact holds the potentials at its vertices: an ohmic contact all three, at the
-neutral semiconductor's chemical potentials, and a gate all three too, the electric potential at the gate's voltage
-and the carriers' idle, its vertices on the oxide alone, where no carriers are; the oxide carries the field's
-displacement and holds no carriers, its simplices of no semiconductor.
+charge, times the permittivity, makes the drive the field's displacement. The adjugate of the map that makes the drive
+reads a flux back across the regressive product, the potentials first, as a reading does, `potentials &
+driving.adjugate()(flux) == driving(potentials) & flux`, so that the potentials read what it gathers as they read every
+amount; it gathers the fluxes into what flows out of each cell. Gauss's law, the field's outflow from each cell against
+the charge it holds, joins the carriers' balance along time, where that balance only repeats itself. Each step is
+implicit, solved by Newton's method until its step is small, whose map is the carriers' capacitance and the response of
+their fluxes and of the field gathered the same way. A contact holds the potentials at its vertices: an ohmic contact
+all three, at the neutral semiconductor's chemical potentials, and a gate all three too, the electric potential at the
+gate's voltage and the carriers' idle, its vertices on the oxide alone, where no carriers are; the oxide carries the
+field's displacement and holds no carriers, its simplices of no semiconductor.
 
 Recombination is a direction among the amounts, `gap * heat - (electron + hole)`, at the rate mass action gives,
 `rate_constant * (electrons * holes - intrinsic ** 2)`; absorption is its reverse with its energy drawn from the light,
@@ -60,15 +61,16 @@ from operator import and_
 import numpy as np
 
 from numga import Algebra, stack
+from numga.gatype import GAType
 from numga.backend.context import Context
 from numga.sparse import SparseExtensor, spdiag
 
 from examples.util.topology import Topology
 
-# Supplied by examples.instantiate: space and time joined with the electrons, the holes, the heat and the light a cell
-# holds or trades, each a direction of its own with no metric; and the context to compute in. Space is the example's
-# to place its vertices in, and the planes that read a place there its to name; the core reads space through the
-# vertices alone.
+# Supplied by examples.instantiate: space and time, with a degenerate w that weighs a place, joined with the electrons,
+# the holes, the heat and the light a cell holds or trades, each a direction of its own with no metric; and the context
+# to compute in. Space is the example's to place its vertices in, points of weight one, and the planes that read a place
+# there its to name; the core reads space through the vertices and those planes.
 ga: Algebra
 ctx: Context
 mv = ctx.multivector
@@ -97,31 +99,30 @@ unread = time & counts[0] & counts[1] & heat & light                          # 
 
 
 # --- math -----------------------------------------------------------------------------
-def simplices(topology: Topology, vertices: Point) -> tuple[Scalar, SparseExtensor, SparseExtensor]:
+def simplices(topology: Topology, vertices: Point, Space: GAType) -> tuple[Scalar, SparseExtensor, SparseExtensor]:
     """Each simplex's volume `Scalar+[simplices]`; the drive across each simplex of the potentials on its corners
-    `(Drive+ <- Potentials+)[simplices <- vertices]`, minus their slope, their corners' values on their hats'
+    `(Drive+ <- Potentials+)[simplices <- vertices]`, minus their slope, their corners' values on their ramps'
     gradients, wedged with what each acts on; and what flows out of each vertex's cell of what flows in the simplices
-    about it `(Point- <- Flux-)[vertices <- simplices]`, the drive's map read backwards."""
+    about it `(Point- <- Flux-)[vertices <- simplices]`, the drive's map read backwards: at these vertices, points of
+    weight one, the gradients read across space by the planes `Space`."""
     corners = topology.incidence[-1, 0] * vertices                            # [corners] Point-[simplices]
-    # The corners of the facet facing each corner, the first of them a step from the corner.
-    facing = corners[topology.complements[-1, 0]]                             # [facet corners, corners] Point-[simplices]
-    steps = corners - facing[0]                                               # [corners] Point-[simplices]
-    # The facet facing each corner, joined with time and every amount; over the same join closed by the step to the
-    # corner, it is the gradient that reads one from the facet to the corner.
-    facets = reduce(and_, facing[1:] - facing[0], unread)                     # [corners] Plane-[simplices]
-    gradients = facets / (facets & steps)                                     # [corners] Plane+[simplices]
-    # A simplex's volume: the join of its edges from its first corner, with time and every amount, over the factorial
-    # of its dimension, an ordinary number for the integrals to weigh by.
-    joins = reduce(and_, corners[1:] - corners[0], unread)                    # Scalar-[simplices]
+    # Each corner's ramp, which reads one at the corner and nothing at the others: the join of the corners off it, with
+    # time and every amount, over that join closed by the corner; the join's order cancels between the two.
+    complements = reduce(and_, topology.off[-1, 0] * vertices, unread)        # [corners] Plane-[simplices]
+    ramps = complements / (complements & corners)                             # [corners] Plane+[simplices]
+    # A ramp's gradient, what it reads across space, its value at the origin, read along w, dropped.
+    gradients = ramps.cast(Space)                                             # [corners] Plane+[simplices]
+    # A simplex's volume: the join of its corners, with time and every amount, over the factorial of its dimension, an
+    # ordinary number for the integrals to weigh by.
+    joins = reduce(and_, corners, unread)                                     # Scalar-[simplices]
     volumes = joins.norm() / math.factorial(topology.n_dim)                   # Scalar+[simplices]
     slopes = (spdiag(gradients) * topology.incidence[-1, 0]).sum(axis=0)      # Plane+[simplices <- vertices]
     driving = -(slopes ^ Potentials)                                          # (Drive+ <- Potentials+)[simplices <- vertices]
-    # The drive's adjugate reads a flux back across the regressive product with the amount on the left,
-    # `driving.adjugate()(flux) & potentials == flux & driving(potentials)`, where the potentials read an amount from
-    # the left, as `potentials & electron` does; an amount read from the right is its grade involute read from the left,
-    # `amount & potentials == potentials & amount.involute()`. So involuted, the adjugate gathers each flux into what
-    # flows out of the cells of its simplex's corners.
-    return volumes, driving, driving.adjugate().involute()
+    # The drive's adjugate reads a flux back across the regressive product, the potentials first, as a reading does,
+    # `potentials & driving.adjugate()(flux) == driving(potentials) & flux`, so that the potentials read what it gathers
+    # as they read every amount, `potentials & electron`: it gathers each flux into what flows out of the cells of its
+    # simplex's corners.
+    return volumes, driving, driving.adjugate()
 
 
 def carrier_densities(potentials: Potentials, intrinsic: float) -> Scalar:
@@ -169,20 +170,19 @@ def flows(topology: Topology, driving: SparseExtensor, semiconductor: Scalar, po
 
 
 def run(topology: Topology, volumes: Scalar, driving: SparseExtensor, outflow: SparseExtensor, permittivities: Scalar,
-        semiconductor: Scalar, dopants: Point, potentials: Potentials, held: np.ndarray, contacts: Potentials,
-        generations: Scalar, intrinsic: float, mobilities: np.ndarray, rate_constant: float, dt: float,
-        limit: float, tolerance: float) -> Iterator[Potentials]:
+        semiconductor: Scalar, dopants: Point, potentials: Potentials, holding: SparseExtensor, free: SparseExtensor,
+        contacts: Potentials, generations: Scalar, intrinsic: float, mobilities: np.ndarray, rate_constant: float,
+        dt: float, limit: float, tolerance: float) -> Iterator[Potentials]:
     """The potentials `Potentials+[vertices]` from these, and after each frame's step of `dt`, in a device of these
     dopants `Point-[vertices]`, its simplices of these permittivities `Scalar+[simplices]`, semiconductor where
-    `semiconductor` `Scalar+[simplices]` is one and holding no carriers where it is nothing: the vertices `held` at that
-    frame's potentials of the contacts `[frames] Potentials+[held]`, the light making that frame's generation of pairs
-    per volume and time at each vertex `[frames] Scalar+[vertices]`; the carriers of these mobilities `[carriers]` at
-    this intrinsic density, recombining at this rate constant. Each step is implicit, solved by Newton's steps, each
+    `semiconductor` `Scalar+[simplices]` is one and holding no carriers where it is nothing: the vertices `holding`
+    reads `Scalar+[held <- vertices]` at that frame's potentials of the contacts `[frames] Potentials+[held]`, and the
+    rest, which `free` reads `Scalar+[free <- vertices]`, free; the light making that frame's generation of pairs per
+    volume and time at each vertex `[frames] Scalar+[vertices]`; the carriers of these mobilities `[carriers]` at this
+    intrinsic density, recombining at this rate constant. Each step is implicit, solved by Newton's steps, each
     changing the chemical potentials at a vertex by not much more than `limit`, until one changes none by more than
     `tolerance`; at an infinite step, the steady state."""
     corner_mean = topology.incidence[-1, 0].mean(axis=0)                      # Scalar+[simplices <- vertices]
-    holding = topology.reading(held, 0)                                       # Scalar+[held <- vertices]
-    free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), held), 0)   # Scalar+[free <- vertices]
     # Each vertex's cell of the semiconductor, which holds the carriers: a share of each simplex around it, one over the
     # simplex's count of corners.
     cells = ~corner_mean * (volumes * semiconductor)                          # Scalar+[vertices]
@@ -218,15 +218,15 @@ def run(topology: Topology, volumes: Scalar, driving: SparseExtensor, outflow: S
             # of the carriers' fluxes and of the field through the drive, and of the fluxes through the densities
             # on each simplex, by each carrier's flux per unit of its density, gathered into each cell's outflow; and
             # recombination's, by the pairs' dyad.
-            capacitance = spdiag(cells * (densities * (carriers / dt - charges) * (Potentials & counts)).sum(axis=0))
-            through_drive = spdiag(volumes * (conductance + displacement))(driving)
+            capacitance = cells * (densities * (carriers / dt - charges) * (Potentials & counts)).sum(axis=0)
+            through_drive = (volumes * (conductance + displacement))(driving)
             through_densities = (spdiag(volumes * conducting(drive)) * corner_mean
                                  * spdiag(densities * (Potentials & counts))).sum(axis=0)
-            recombining = spdiag(cells * rate_constant * densities[0] * densities[1] * (pairs * (Potentials & pairs)))
+            recombining = cells * rate_constant * densities[0] * densities[1] * (pairs * (Potentials & pairs))
             newton = capacitance + recombining + outflow(through_drive + through_densities)
             # Each carrier's balance taken per carrier, over its density, the charge's as it is: a carrier far scarcer
             # than the other, by many powers of e, still weighs alike in the solve.
-            per_carrier = spdiag(time * (mv.t & Point) + (counts * (counting & Point) / densities).sum(axis=0))
+            per_carrier = time * (mv.t & Point) + (counts * (counting & Point) / densities).sum(axis=0)
             solving = free * per_carrier(newton) * ~free                      # (Point- <- Potentials+)[free <- free]
             change = -(~free * solving.solve(free * per_carrier(residual)))   # Potentials+[vertices]
             # Newton's step scaled down at each vertex where it would change the chemical potentials there by much
