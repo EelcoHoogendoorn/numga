@@ -170,7 +170,7 @@ def convecting(liquid: Forms, interior: SparseExtensor, places: Point, density: 
     # Each half step's implicit maps, solved with the walls held: the flow's inertia with its viscosity, and the cells'
     # heat with its conduction.
     flow_step = holding(liquid.kinetic / (dt / 2) + liquid.viscous, interior)
-    heat_step = holding(spdiag(liquid.cells / (dt / 2)) + liquid.conduction, interior)
+    heat_step = holding(liquid.cells / (dt / 2) + liquid.conduction, interior)
     # A field's values at the free vertices, nothing at the walls, and the temperature the walls hold.
     held = ~interior * interior                                               # Scalar+[vertices <- vertices]
     wall_temperature = temperature - held * temperature                       # [...] Scalar+[vertices]

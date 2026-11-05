@@ -70,11 +70,10 @@ class Ball:
         curls = 2 * (corner_gradients[tails] ^ corner_gradients[heads])          # [tet_edges] Magnetic+[tets]
         self.curl = (spdiag(curls * Scalar) * topology.oriented[3, 1]).sum(axis=0)   # (Magnetic+ <- Scalar+)[tets <- edges]
         # Each edge's potential changing in time sets up an electric field, its Whitney form swept through time.
-        ones = mv.scalar(np.ones((topology.n_elements[3], 1))).field()          # Scalar+[tets]
-        sweep = spdiag(ones * (Plane ^ mv.t))                                    # (Field+ <- Plane+)[tets <- tets]
+        sweep = Plane ^ mv.t                                                     # [] Field+ <- Plane+
         self.electric = sweep(self.whitney)                                      # (Field+ <- Scalar+)[tets <- edges]
         # Twice the magnetic energy: the field paired with its dual over each volume, pulled back to the edges.
-        vacuum = spdiag(self.prisms.norm() * Magnetic.dual())                    # (Patch- <- Magnetic+)[tets <- tets]
+        vacuum = self.prisms.norm() * Magnetic.dual()                            # (Patch- <- Magnetic+)[tets]
         self.stiffness = self.curl.adjugate()(vacuum(self.curl))                 # (Amount- <- Scalar+)[edges <- edges]
 
 
@@ -91,7 +90,7 @@ def induction(ball: Ball, velocities: Point, conductivity: Scalar) -> tuple[Spar
     current = ohm(ball, conductivity)                                            # (Patch- <- Field+)[tets <- tets]
     conductance = ball.electric.adjugate()(current(ball.electric))               # (Amount- <- Scalar+)[edges <- edges]
     # The moving fluid reads the magnetic plane as an electric field: met with the velocity, swept through time.
-    motional = spdiag((velocities & Magnetic) ^ mv.t)(ball.curl)                 # (Field+ <- Scalar+)[tets <- edges]
+    motional = ((velocities & Magnetic) ^ mv.t)(ball.curl)                       # (Field+ <- Scalar+)[tets <- edges]
     drive = ball.electric.adjugate()(current(motional))                          # (Amount- <- Scalar+)[edges <- edges]
     return conductance, drive
 
@@ -106,16 +105,15 @@ class Flow:
 
     def __init__(self, fluid: Ball, embedding: SparseExtensor, n_scalar_modes: int, n_modes: int):
         topology, volumes = fluid.topology, fluid.prisms.norm()                 # Scalar+[fluid]
-        ones = mv.scalar(np.ones((topology.n_elements[3], 1))).field()          # Scalar+[fluid]
-        circulating = spdiag(ones * Plane.dual())(fluid.whitney)                 # (Point- <- Scalar+)[fluid <- edges]
-        momentum = spdiag(volumes * Point.dual())                                # (Plane+ <- Point-)[fluid <- fluid]
+        circulating = Plane.dual()(fluid.whitney)                                # (Point- <- Scalar+)[fluid <- edges]
+        momentum = volumes * Point.dual()                                        # (Plane+ <- Point-)[fluid]
         kinetic = circulating.adjugate()(momentum(circulating))                  # (Amount- <- Scalar+)[edges <- edges]
         # The fluid flowing into each vertex's share of the fluid, and the stiffness of a pressure pushing it down its
         # gradient, with the pressure's free constant pinned at the first vertex.
         inflow = ~topology.d[0] * kinetic                                        # (Amount- <- Scalar+)[vertices <- edges]
         pressure = inflow * topology.d[0]                                        # (Amount- <- Scalar+)[vertices <- vertices]
         reference = mv.scalar((np.arange(topology.n_vertices) == 0)[:, None]).field()   # Scalar+[vertices]
-        pinned = pressure + spdiag(pressure.diagonal() * reference)              # (Amount- <- Scalar+)[vertices <- vertices]
+        pinned = pressure + pressure.diagonal() * reference                      # (Amount- <- Scalar+)[vertices <- vertices]
         shares = spdiag((~topology.incidence[3, 0].mean(axis=0) * volumes) * Scalar.dual())   # (Amount- <- Scalar+)[vertices <- vertices]
         _, scalar_modes = pressure.eigh(shares, n_scalar_modes + 1)              # [scalar + 1] Scalar+[vertices]
         # Each scalar mode but the constant, at the edges' midpoints, times each edge's reach along each axis.
@@ -148,7 +146,7 @@ def advected(ball: Ball, flow: Flow, stirred: Point, amplitudes: Scalar, potenti
     circulations = flow.circulation(amplitudes)                                 # Scalar+[edges]
     velocity, vorticity = flow.velocity(circulations), flow.vorticity(circulations)   # Point-[tets], Rate+[tets]
     # The moving fluid reads the magnetic plane as an electric field: met with the velocity, swept through time.
-    departure = spdiag((Point & ball.curl(potential)) ^ mv.t)(velocity - stirred)   # Field+[tets]
+    departure = ((Point & ball.curl(potential)) ^ mv.t)(velocity - stirred)         # Field+[tets]
     return departure, flow.reading(-(ball.prisms.norm() * (velocity & vorticity)))
 
 

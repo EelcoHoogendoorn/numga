@@ -240,7 +240,7 @@ def main() -> None:
     np.testing.assert_allclose((operators.curl(test_cochain) - operators.whitney2(operators.d1(test_cochain))).kernel, 0.0, atol=1e-12)
 
     edge_conductances = edge_conductance(operators, conductivity)
-    conductance = operators.gradient.adjugate()(spdiag(operators.areas * conductivity)(operators.gradient))
+    conductance = operators.gradient.adjugate()((operators.areas * conductivity)(operators.gradient))
     quadratic_potential = (mv.x & vertices).squared() - 0.5 * (mv.y & vertices)
     np.testing.assert_allclose(
         (operators.d0.adjugate()(edge_conductances(operators.d0(quadratic_potential))) - conductance(quadratic_potential)).kernel,

@@ -55,13 +55,13 @@ class Operators:
         # An isotropic medium carries each face's gradient to the area-weighted velocity it drives, through the metric;
         # its inverse reads a velocity as the gradient that drives it.
         self.isotropic_medium = spdiag(self.areas * Plane.dual())            # (Point- <- Plane+)[faces <- faces]
-        self.isotropic_resistance = spdiag(Plane.dual().inverse() / self.areas)  # (Plane+ <- Point-)[faces <- faces]
+        self.isotropic_resistance = Plane.dual().inverse() / self.areas      # (Plane+ <- Point-)[faces]
 
         # Restricting the right factor to the even subalgebra maps scalar potentials and stream bivectors
         # together into a pure grade-1 face 1-form.
         self.even_gradient = (spdiag(self.corner_gradients) * topology.incidence[2, 0]).sum(axis=0) * Even  # (Plane+ <- Even+)[faces <- vertices]
         self.vertex_areas = ~corner_mean * self.areas                        # Scalar+[vertices]
-        inverse_vertex_mass = spdiag((1 / self.vertex_areas) * Even.dual().inverse())  # (Even+ <- Even-)[vertices <- vertices]
+        inverse_vertex_mass = (1 / self.vertex_areas) * Even.dual().inverse()  # (Even+ <- Even-)[vertices]
         # Because the 2D regressive pairing flips sign on odd grades and keeps it on even grades,
         # the adjugate of the even gradient is already the skew-adjoint partner that conserves wave energy.
         self.even_divergence = inverse_vertex_mass(self.even_gradient.adjugate()(self.isotropic_medium))  # (Even+ <- Plane+)[vertices <- faces]
@@ -70,7 +70,7 @@ class Operators:
         # meeting its gradient with the patch gives the area-weighted velocity along its level curves.
         # Applying the medium to the even gradient produces both parts at once on `potential - stream * mv.xy`.
         self.potential_velocity = self.isotropic_medium(self.gradient)       # (Point- <- Scalar+)[faces <- vertices]
-        self.stream_velocity = spdiag(Plane ^ self.patches)(self.gradient)   # (Point- <- Scalar+)[faces <- vertices]
+        self.stream_velocity = (Plane ^ self.patches)(self.gradient)         # (Point- <- Scalar+)[faces <- vertices]
         self.even_velocity = self.isotropic_medium(self.even_gradient)       # (Point- <- Even+)[faces <- vertices]
         self.stream_laplacian = self.stream_velocity.adjugate()(self.isotropic_resistance(self.stream_velocity))  # (Antiscalar- <- Scalar+)[vertices <- vertices]
         self.even_laplacian = self.even_gradient.adjugate()(self.even_velocity)  # (Even- <- Even+)[vertices <- vertices]

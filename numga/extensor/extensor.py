@@ -432,6 +432,10 @@ class Extensor:
             return self.bind(*operands)
         if len(operands) == 1:
             operand = operands[0]
+            if not isinstance(operand, Extensor):
+                # An operand numga does not know, a sparse extensor among them, takes the map, as it takes the
+                # reflected operators.
+                return operand._applied_by(self)
             execute = unary_application(
                 type(self), self._context, self._gatype,
                 operand._context, operand._gatype,

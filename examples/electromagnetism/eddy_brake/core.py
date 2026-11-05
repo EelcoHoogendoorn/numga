@@ -224,13 +224,12 @@ class Streamlines:
 def streamlines(disc: Disc, conductivity: Conductivity) -> Streamlines:
     """The streamfunctions of a material's face currents, from the closed currents of streamfunctions zero on the rim."""
     embedder, current = closed_currents(disc)
-    face_ones = as_scalar(np.ones(disc.topology.n_elements[2])).field()
     # Each face's conductance, its area times the material's map there, a field whether or not the material varies
     # over the faces, inverted face by face.
     inverse_conductance = (disc.triangle_areas * conductivity).batch().inverse().field()  # [cases] (Field+ <- Current-)[faces]
     # The heat each closed current makes with a face current: the closed current swept through time, paired with
     # the field the face current takes in the material, over each face's area.
-    pairing = spdiag(face_ones * (Current & time))(current).adjugate()(spdiag(disc.triangle_areas ** 2 * inverse_conductance))
+    pairing = (Current & time)(current).adjugate()(spdiag(disc.triangle_areas ** 2 * inverse_conductance))
     return Streamlines(embedder, pairing, pairing(current))
 
 
@@ -238,13 +237,12 @@ def current_modes(disc: Disc, conductivity: Conductivity,
                   permeability: float, n_modes: int) -> CurrentModes:
     """The slowest inductive current patterns of a conducting disc, with an insulating rim."""
     embedder, current = closed_currents(disc)
-    face_ones = as_scalar(np.ones(disc.topology.n_elements[2])).field()
     # Each face's material map is inverted on its own, as a batch of independent maps.
     resistivity = conductivity.batch().inverse().field()  # [cases] (Field+ <- Current-)[faces]
     # The resistance pairs each current's field with every current swept through time: a form on
     # streamfunctions.
-    swept = spdiag(face_ones * (Current & time))(current)                 # (Vector- <- Scalar+)[faces <- interior]
-    resistance = swept.adjugate()(spdiag(disc.triangle_areas * resistivity)(current))  # [cases] (Amount- <- Scalar+)[interior <- interior]
+    swept = (Current & time)(current)                                     # (Vector- <- Scalar+)[faces <- interior]
+    resistance = swept.adjugate()((disc.triangle_areas * resistivity)(current))  # [cases] (Amount- <- Scalar+)[interior <- interior]
     # Pull each face block back immediately, keeping only the smaller streamfunction map.
     blocks = magnetic_coupling_blocks(disc.corners, disc.triangle_edges, permeability, n_magnetic_block_faces)
     # Each current's vector potential, read along every current through the current map's pairing transpose.
@@ -274,8 +272,7 @@ def periodic_drive(disc: Disc, modes: CurrentModes, centre: Point, plane: Bivect
     body_plane = orientation << plane    # [cases] Bivector+
     velocity = disc.face_centers.commutator(body_plane)                  # [cases] Point-[faces]
     electric = (velocity & magnetic) ^ mv.t                             # [samples, cases] Field+[faces]
-    face_ones = as_scalar(np.ones(disc.topology.n_elements[2])).field()  # Scalar+[faces]
-    swept = spdiag(face_ones * (Current & time))(modes.current)           # (Vector- <- Scalar+)[faces <- interior]
+    swept = (Current & time)(modes.current)                               # (Vector- <- Scalar+)[faces <- interior]
     values = modes.reading(swept.adjugate()(disc.triangle_areas * electric))   # [samples, cases] Scalar+[modes]
     harmonics = np.arange(1, n_harmonics + 1)
     phase = angles[:, None] * harmonics                                 # [samples, harmonics]
@@ -303,11 +300,11 @@ def solve(disc: Disc, magnetic: Bivector, spin: Bivector,
 
     # Face-averaged Whitney vectors reconstruct edge circulations at each triangle's centroid; swept
     # through time they are the field there, on which the conductivity map acts.
-    reconstruction = spdiag(face_ones * (Vector ^ mv.t))(disc.reconstruction)   # (Field+ <- Scalar+)[faces <- edges]
+    reconstruction = (Vector ^ mv.t)(disc.reconstruction)                  # (Field+ <- Scalar+)[faces <- edges]
     derivative = disc.topology.d[0] * Scalar                               # Scalar+[edges <- vertices]
     gradient = reconstruction(derivative)                                  # (Field+ <- Scalar+)[faces <- vertices]
     drive = reconstruction(emf)                                            # Field+[faces]
-    material = spdiag(disc.triangle_areas * conductivity)                   # (Current- <- Field+)[faces <- faces]
+    material = disc.triangle_areas * conductivity                           # (Current- <- Field+)[faces]
     # The charge each potential's current leaves at each vertex: the field map's pairing transpose,
     # against the currents swept through time.
     outflow = gradient.adjugate()(swept_currents)                          # (Amount- <- Current-)[vertices <- faces]
@@ -317,7 +314,7 @@ def solve(disc: Disc, magnetic: Bivector, spin: Bivector,
     # no edge voltage or current and is not an electrical contact to the disc.
     # A least-squares solve of the singular balance finds the same currents at many times the cost.
     reference = as_scalar(np.arange(disc.topology.n_vertices) == 0).field()  # Scalar+[vertices]
-    gauge = spdiag(balance.diagonal() * reference)                         # (Amount- <- Scalar+)[vertices <- vertices]
+    gauge = balance.diagonal() * reference                                 # (Amount- <- Scalar+)[vertices]
     potential = (balance + gauge).solve(outflow(material(drive)))  # Scalar+[vertices]
     voltage = emf - derivative(potential)                                     # Scalar+[edges]
     electric = reconstruction(voltage)                                     # Field+[faces]

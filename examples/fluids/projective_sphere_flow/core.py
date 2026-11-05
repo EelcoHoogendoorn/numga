@@ -41,13 +41,13 @@ def diffusion(topology: Topology, vertices: Point, samples: Point, measures: Sca
     gradient = (spdiag(gradients * Scalar) * topology.incidence[2, 0]).sum(axis=1)  # [samples] (Plane+ <- Scalar+)[faces <- vertices]
 
     # The gradient's adjugate pulls the physical material response back to the vertex potentials, integrated on the surface.
-    response = spdiag(measures * conductivity)                       # [samples] (Point- <- Plane+)[faces <- faces]
+    response = measures * conductivity                               # [samples] (Point- <- Plane+)[faces]
     stiffness = gradient.adjugate()(response(gradient)).sum(axis=0)  # (Amount- <- Scalar+)[vertices <- vertices]
     load = interpolation.adjugate()((measures * source).dual()).sum(axis=0)  # Amount-[vertices]
     mass = interpolation.adjugate()(measures.dual()).sum(axis=0)             # Amount-[vertices]
     # A closed surface admits a solution only for balanced sources; remove the quadrature mean.
     load = load - mass * (load.dual_inverse().sites.sum() / mass.dual_inverse().sites.sum())
-    pin = spdiag(mv.scalar((np.arange(topology.n_vertices) == 0)[..., None]).field() * Scalar.dual())  # (Amount- <- Scalar+)[vertices <- vertices]
+    pin = mv.scalar((np.arange(topology.n_vertices) == 0)[..., None]).field() * Scalar.dual()  # (Amount- <- Scalar+)[vertices]
     potential = (stiffness + pin).solve(load)                        # Scalar+[vertices]
     potential = potential - (potential & mass).sites.sum() / mass.dual_inverse().sites.sum()
     numerator = (reciprocals * (topology.incidence[2, 0] * potential)).sum(axis=0)  # Plane+[faces]

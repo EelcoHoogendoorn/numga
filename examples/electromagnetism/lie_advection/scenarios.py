@@ -8,7 +8,6 @@ import numpy as np
 
 from numga import Algebra, NumpyContext, stack
 from numga.algebras import STA2D as ga
-from numga.sparse import spdiag
 from examples.util import shapes
 
 mv = NumpyContext(ga).multivector
@@ -84,7 +83,7 @@ def main() -> None:
     # A fixed edge's reading changes by the field on its world sheet; ideal Ohm's law zeroes the field on the
     # comoving sheet, leaving the patch of space between the two, which the magnetic plane alone reads.
     mesh_swept_patches = fixed_sheets - comoving_sheets                      # Patch-[edges]
-    advection = spdiag(Magnetic & mesh_swept_patches)(operators.edge_curl)   # (Scalar+ <- Scalar+)[edges <- edges]
+    advection = (Magnetic & mesh_swept_patches)(operators.edge_curl)         # (Scalar+ <- Scalar+)[edges <- edges]
     rate = advection - operators.curl_laplacian * resistivities[:, None]     # [cases] (Scalar+ <- Scalar+)[edges <- edges]
 
     # Retain scalar diagnostics and the final state; the mesh fields stream through one at a time.
