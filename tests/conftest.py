@@ -59,6 +59,9 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 def pytest_configure(config: pytest.Config) -> None:
     """Only force headless Agg backend if --show-plot was not passed; cap numerical threads for a full sweep."""
+    # Every test run takes the machine's lock for heavy runs, where there is one, and waits for a run that holds it.
+    from examples import hold_heavy_run_lock
+    hold_heavy_run_lock("pytest " + " ".join(config.invocation_params.args))
     if config.getoption("--full-sweep", None):
         # Set before numpy is imported, so that its linear algebra starts with this many threads.
         for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
