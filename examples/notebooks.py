@@ -215,10 +215,10 @@ def main(arguments: list[str]) -> None:
     parser.add_argument("--list", action="store_true", help="print the selection without running it")
     parser.add_argument("--timeout", type=float, default=20, metavar="MINUTES",
                         help="the time each notebook may take (default 20)")
-    parser.add_argument("--memory", type=float, default=4, metavar="GB",
-                        help="each notebook's memory cap under capped.py (default 4)")
-    parser.add_argument("--cpu", type=float, default=1, metavar="CORES",
-                        help="each notebook's CPU budget under capped.py (default 1)")
+    parser.add_argument("--memory", type=float, default=8, metavar="GB",
+                        help="each notebook's memory cap under capped.py (default 8)")
+    parser.add_argument("--cpu", type=float, default=0.75 * os.cpu_count(), metavar="CORES",
+                        help="each notebook's CPU budget under capped.py (default three quarters of the cores)")
     options = parser.parse_args(arguments)
 
     everything = notebooks()
