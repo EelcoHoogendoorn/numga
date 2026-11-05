@@ -4,6 +4,7 @@ import numpy as np
 
 from numga.backend.jax import derivative
 from examples.fluids.liquid_crystals import core, scenarios
+from examples.fluids.liquid_crystals import render
 
 
 def test_bivector_derivative_is_the_work_of_the_restoring_couple():
@@ -91,3 +92,18 @@ def test_rotational_mobility_dissipates_energy_at_fixed_order():
     changing = order.commutator(angular_velocity) - order(core.Point.commutator(angular_velocity))
     assert (cells * slope(angular_velocity)).sites.sum() < 0
     np.testing.assert_allclose(order(changing).batch().trace().kernel, 0, atol=1e-8)
+
+
+def test_defect_readout_follows_a_zero_across_triangles():
+    topology, vertices = scenarios.film(9, 2.0)
+    centres = core.mv.vector([[0.03, 0.11], [0.23, 0.11], [0.43, 0.11], [0.63, 0.11]]).dual()
+    first = core.alignment(core.mv.x.dual(), 1.0)
+    turn = (core.mv.xy * (-np.pi / 8)).exp()
+    second = turn >> first(turn << core.Point)
+    for centre in centres:
+        relative = vertices - centre
+        order = first * (core.mv.x & relative) + second * (core.mv.y & relative)
+        positions, charges = render.defect_positions(topology, vertices, order)
+        assert len(positions) == 1
+        np.testing.assert_allclose((positions[0] - centre).norm().to_array(), 0, atol=1e-12)
+        np.testing.assert_allclose(charges.norm().to_array(), 0.5, atol=1e-12)

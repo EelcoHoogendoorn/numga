@@ -100,24 +100,36 @@ def texture(topology: Topology, points: core.Point, camera: Camera, order: core.
     return rgba
 
 
-def frame(topology: Topology, vertices: core.Point, camera: Camera, order: core.Order) -> np.ndarray:
-    """The molecular axes and degree of order, with one tightly cropped row per case."""
+def defect_positions(topology: Topology, vertices: core.Point, order: core.Order) -> tuple[core.Point, core.Scalar]:
+    """Defect positions are the zeros of the linearly interpolated alignment inside charged triangles."""
     mv = vertices.context.multivector
+    winding = core.windings(topology, order, mv.x.dual()).scalar_product(~mv.xy)
+    charged = np.flatnonzero(winding.norm() > 0.25)
+    tails, heads = topology.incidence[1, 0] * order(mv.x.dual())
+    # The opposite sides of the triangle of field values give the barycentric weights of its zero.
+    weights = (topology.boundary[2, 1] * (tails & heads)).batch()[:, charged]
+    hats = weights / weights.sum(axis=0)
+    corners = (topology.incidence[2, 0] * vertices).batch()[:, charged]
+    return (corners * hats).sum(axis=0), winding.batch()[charged]
+
+
+def frame(topology: Topology, vertices: core.Point, camera: Camera, order: core.Order,
+          marker_radius: float = defect_radius) -> np.ndarray:
+    """The molecular axes and degree of order, with one tightly cropped row per case."""
     points = vertices.batch()
-    middles = (topology.incidence[2, 0].mean(axis=0) * vertices).batch()
     panels = []
     for state in order:
+        zeros, charges = defect_positions(topology, vertices, state)
         state = state.batch()
         strength = (2 * state(state).trace()).square_root()
         amount = np.clip(strength.to_array(), 0, 1)
         tint = 1 - (1 - amount[:, None]) * np.array([0.40, 0.24, 0.06])
-        winding = core.windings(topology, state.field(), mv.x.dual()).scalar_product(~mv.xy).to_array()
-        defect_colours = np.where((winding > 0)[:, None], np.array([0.80, 0.30, 0.12]),
+        defect_colours = np.where((charges > 0)[:, None], np.array([0.80, 0.30, 0.12]),
                                  np.array([0.12, 0.36, 0.72]))
-        radii = defect_radius * (np.abs(winding) > 0.25)
         layers = [contours.picture(points, topology, amount, tint, camera),
-                  texture(topology, points, camera, state),
-                  simplices.markers(middles, defect_colours, radii, camera)]
+                  texture(topology, points, camera, state)]
+        if marker_radius > 0 and len(zeros):
+            layers.append(simplices.markers(zeros, defect_colours, marker_radius, camera))
         picture = simplices.composited(layers)
         panels.append(np.round(255 * np.clip(picture[..., :3] + 1 - picture[..., 3:], 0, 1)).astype(np.uint8))
     spacer = np.full((gap, camera.shape[1], 3), 255, dtype=np.uint8)
@@ -127,10 +139,10 @@ def frame(topology: Topology, vertices: core.Point, camera: Camera, order: core.
 
 
 def animate(topology: Topology, vertices: core.Point, camera: Camera,
-            states: Iterable[core.Order]) -> Iterator[np.ndarray]:
+            states: Iterable[core.Order], marker_radius: float = defect_radius) -> Iterator[np.ndarray]:
     """The film's molecular axes at each state, streamed in the order computed."""
     for order in states:
-        yield frame(topology, vertices, camera, order)
+        yield frame(topology, vertices, camera, order, marker_radius)
 
 
 def draw_setup(topology: Topology, vertices: core.Point, order: core.Order) -> Figure:

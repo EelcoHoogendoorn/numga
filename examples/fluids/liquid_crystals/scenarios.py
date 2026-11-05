@@ -59,6 +59,8 @@ def dense() -> None:
 
     save_animation(render.animate(topology, vertices, render.dense_camera, passing()),
                    "liquid_crystals_dense", frame_duration_ms, render.n_colours)
+    save_animation(render.animate(topology, vertices, render.dense_camera, states, marker_radius=0),
+                   "liquid_crystals_dense_texture", frame_duration_ms, render.n_colours)
     energies = stack([core.free_energy(stiffness, cells, elastic, bulk, state) for state in states])
     save_figure(render.draw_energy(np.arange(n_frames) * time_step * n_dense_substeps, energies),
                 "liquid_crystals_dense_energy")
