@@ -331,4 +331,12 @@ Nullary extensors are multivectors and scalars: extensors taking no arguments. T
   * `motor.motor_split()`: Decomposes a motor into translator and rotor components (`motor_translator()`, `motor_rotor()`).
   * `motor.normalized()` / `mv.norm()`: Gauge normalization, to `motor * motor.reverse() == 1`, and Study/geometric norms.
 
+* **`.dot(other)`**: The metric on every grade, between two values of one orientation: extrinsic values by the signature, the scalar part of `a * ~b`, and intrinsic values, points, directions and their joins, through their duals, `a.dual().dot(b.dual())`, so that a direction's dot with itself is its length squared in space, in a spacetime and in a projective algebra alike. An extrinsic value and an intrinsic one have no dot, and are refused: they pair by `&`. On types it is the metric form:
+  ```python
+  length_form = Point.dot(Point)                     # Scalar <- (Point, Point)
+  ```
+* **`.norm()`** / **`.normalized()`** / **`.antinorm()`**: Two sizes. `norm` is the root of the reverse product, `x * ~x`, and `normalized` divides by it: a projective point's norm is its weight, and `.normalized()` gives it weight one. `antinorm` is the root of a value's dot with itself, its size through its dual: a projective point's bulk, the weight times its distance from the origin, and a direction's length in every algebra.
+  ```python
+  length = (head - tail).antinorm()                  # [] Scalar: an edge's length, in PGA as in the algebra of space
+  ```
 * **`.inverse()`**: On an arity-0 multivector, `.inverse()` is the Clifford / geometric product inverse, `x * x.inverse() == 1`. On an arity-1 extensor, it is the operator inverse under map composition: `T.inverse()(T)` is the identity map.

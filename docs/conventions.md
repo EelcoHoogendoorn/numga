@@ -33,7 +33,13 @@ antiscalar == antipseudoscalar * pseudoscalar
 a ^ b == (a & b) * antiscalar
 ```
 
-**Dot.** `a.dot(b)` is the scalar part of `a * ~b`.
+**Dot.** `a.dot(b)` takes two values of one orientation. Of two extrinsic values it is the scalar part of `a * ~b`; two intrinsic values are measured through their duals,
+
+```python
+a.dot(b) == a.dual().dot(b.dual())    # a, b intrinsic
+```
+
+so that a direction's dot with itself is its length squared in space, in a spacetime and in a projective algebra alike. An extrinsic value and an intrinsic one have no dot; they pair by `&`.
 
 **Dual.** The dual flips the orientation. In a nondegenerate algebra it is the product with the unit volume,
 
@@ -41,7 +47,7 @@ a ^ b == (a & b) * antiscalar
 b.dual() == b.reverse() * antiscalar
 ```
 
-and so reads the metric: `a & b.dual() == a.dot(b)` for every `a` of `b`'s grade. In a degenerate algebra the product gives the dual of every blade of non-null basis directions, but sends a blade with a null direction to zero; such a blade has a rule of its own, pairing with its dual to the square of its other directions, as `w & w.dual() == 1` and `(y ^ w) & (y ^ w).dual() == y.dot(y)`. `a.dual_inverse()` is the dual's inverse.
+and so reads the metric: `a & b.dual() == a.dot(b)` for extrinsic `a` and `b` of one grade. In a degenerate algebra the product gives the dual of every blade of non-null basis directions, but sends a blade with a null direction to zero; such a blade has a rule of its own, pairing with its dual to the square of its other directions, as `w & w.dual() == 1` and `(y ^ w) & (y ^ w).dual() == y.dot(y)`. `a.dual_inverse()` is the dual's inverse.
 
 **Inner product.** For `a` of grade `r` and `b` of grade `s`,
 
@@ -87,7 +93,7 @@ T.adjoint()(b).scalar_product(a) == b.scalar_product(T(a))
 
 **Trace.** For inputs `x` and `y` from complementary spaces, `T.trace(1, 2)` is the trace of the map `M` with `T(x, y)` the pairing of `M(x)` and `y` read with its extrinsic factor first, `M(x) & y`, or `y & M(x)` where only `y` is extrinsic; so a form traces alike with its inputs in either order. For the output against an input, it is the trace of the map.
 
-**Contraction.** For inputs `x` and `y` from one space, `T.contract(1, 2)` is the trace of the map `M` with `T(x, y) == M(x).dot(y)`; for the output against an input, it is the trace of the map.
+**Contraction.** For inputs `x` and `y` from one space, `T.contract(1, 2)` is the trace of the map `M` with `T(x, y) == M(x).scalar_product(y.reverse())`, the metric the norm follows, which is `M(x).dot(y)` on an extrinsic space; for the output against an input, it is the trace of the map.
 
 **Outermorphism.** `T.outermorphism` is defined by
 
@@ -97,13 +103,16 @@ T(p & q) == T(p) & T(q)    # antivectors to antivectors
 T(a ^ b) == T(a) & T(b)    # vectors to antivectors
 ```
 
-**Spectra of forms.** For symmetric forms `F` and `G`, `F.eigh(G)` solves `F(v) == eigenvalue * G(v)`; without a partner, `G` is the dot form of `F`'s space.
+**Spectra of forms.** For symmetric forms `F` and `G`, `F.eigh(G)` solves `F(v) == eigenvalue * G(v)`; without a partner, `G` is the metric the norm follows on `F`'s space, `Space.scalar_product(Space.reverse())`, which is its dot form where the space is extrinsic.
 
 ## Norms
 
-**Norm.** `x.norm()` and `x.normalized()` are defined by
+**Norm and antinorm.** `x.norm()` and `x.normalized()` follow the reverse product, and `x.antinorm()` the dot:
 
 ```python
 x.norm() * x.norm() == x * ~x
 x.normalized() == x.norm().inverse() * x
+x.antinorm() * x.antinorm() == x.dot(x)
 ```
+
+They are two sizes of an intrinsic value. Of a projective point the norm is its weight, so that `.normalized()` gives it weight one, and the antinorm its bulk, the weight times its distance from the origin; of a direction the antinorm is its length in every algebra, so that `(p - q).antinorm()` is the distance between two points of weight one. Each is NaN where the measure under its root is negative: the norm of a spatial direction in a spacetime, the antinorm of a timelike one.
