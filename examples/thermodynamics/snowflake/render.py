@@ -18,7 +18,9 @@ from numga.extensor import Extensor
 from examples.util import charts
 from examples.util.wgsl import contours, image_figure, simplices
 from examples.util.wgsl.camera import Camera
+from examples.thermodynamics.snowflake import core
 
+mv = core.mv
 Topology = simplices.Topology
 # The water's tint from cold to the melting temperature, the ice's fill and its edge.
 water_map = LinearSegmentedColormap.from_list("water", ["#0b1a2e", "#1d3a5f", "#4f7cab"])
@@ -46,7 +48,6 @@ def on_white(picture: np.ndarray) -> np.ndarray:
 def layers(topology: Topology, points: Extensor, parcels: Extensor, camera: Camera) -> list:
     """The ice of these parcels `Point-[vertices]` over the water's tint, at the dish's points `[vertices] Point-`: the
     layers of the picture."""
-    mv = points.context.multivector
     # The ice where its fraction passes a half, the water below clear, and the edge where it does.
     ice_band = contours.Bands(-0.5, 1.0, np.array([np.zeros(4), ice_colour]))
     edge = contours.Level(0.5, edge_colour, edge_width)
@@ -56,18 +57,16 @@ def layers(topology: Topology, points: Extensor, parcels: Extensor, camera: Came
             contours.picture(points, topology, fractions, tint, camera, levels=(edge,), bands=(ice_band,), opacity=0.0)]
 
 
-def framed(points: Extensor, half: float) -> Camera:
-    """The camera looking down on the dish's points `[vertices] Point-` by the planes x and y, weighed by `mv.v`, this
-    half width either way from the middle."""
-    mv = points.context.multivector
+def framed(half: float) -> Camera:
+    """The camera looking down on the dish by the planes x and y, weighed by `mv.v`, this half width either way from
+    the middle."""
     return Camera(mv.x, mv.y, 0 * mv.x, mv.v, 0.0, np.zeros(2), np.array([half, half]), n_pixels)
 
 
 def dish_camera(vertices: Extensor) -> Camera:
     """The camera on the dish at its vertices `Point-[vertices]`, spanning its share of the dish's radius."""
-    mv = vertices.context.multivector
     points = vertices.batch()
-    return framed(points, view_share * np.abs((mv.x & points).to_array()).max())
+    return framed(view_share * np.abs((mv.x & points).to_array()).max())
 
 
 def animate(topology: Topology, vertices: Extensor,
@@ -94,7 +93,7 @@ def draw_seed(topology: Topology, vertices: Extensor, parcels: Extensor) -> Figu
     """The seed of ice in these parcels `Point-[vertices]` close up, in the dish's triangles at its vertices
     `Point-[vertices]`."""
     points = vertices.batch()
-    camera = framed(points, seed_half)
+    camera = framed(seed_half)
     strokes = simplices.strokes(points, topology, mesh_colour, mesh_width, camera, opacity=mesh_opacity)
     return image_figure(on_white(simplices.composited(layers(topology, points, parcels, camera) + [strokes])))
 
