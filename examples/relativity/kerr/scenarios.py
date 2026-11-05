@@ -54,7 +54,7 @@ n_gallery_colours = 64
 
 
 # --- math -----------------------------------------------------------------------------
-def scene() -> tuple[core.Antivector, core.Antivector]:
+def scene(n_steps: int = n_steps) -> tuple[core.Antivector, core.Antivector]:
     """Rays sent along x past the hole, one sweep of its spin, and the horizon's cut through the
     equatorial plane at each spin."""
     x, y = core.mv.x.dual(), core.mv.y.dual()
@@ -73,7 +73,7 @@ def scene() -> tuple[core.Antivector, core.Antivector]:
     return paths, horizons
 
 
-def camera(width: int, height: int, view: float) -> tuple[core.Image, core.Scalar, core.Scalar]:
+def camera(width: int, height: int, view: float, n_steps: int = n_camera_steps) -> tuple[core.Image, core.Scalar, core.Scalar]:
     """The camera's view, `width` by `height` pixels, `view` the tangent of half its angle from top to
     bottom, resolved ray by ray; each disk crossing's observed temperature, `[crossings] Scalar`; and
     the power its emission passes through each analyzer, `[analyzers, crossings] Scalar`."""
@@ -87,7 +87,7 @@ def camera(width: int, height: int, view: float) -> tuple[core.Image, core.Scala
     def opacity(event: core.Antivector, momentum: core.Vector, radius: core.Scalar) -> core.Scalar:
         depth = core.disk_depth(radius, inner_radius, disk_outer_radius, inner_depth)
         return core.disk_opacity(event, momentum, depth, core.mv.z, core.mv.xy, spin, mass)
-    image, _ = core.resolve((position, momentum, screen), spin, mass, camera_step_fraction, n_camera_steps,
+    image, _ = core.resolve((position, momentum, screen), spin, mass, camera_step_fraction, n_steps,
                             core.polarized_rates, core.mv.z, inner_radius, disk_outer_radius, opacity, escape_radius,
                             capture_radius)
     points, momenta, screens = image.disk

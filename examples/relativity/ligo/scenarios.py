@@ -37,10 +37,10 @@ def detectors() -> tuple[core.Rotor, core.Point]:
     return sites, core.arms(sites, np.radians(AZIMUTHS))
 
 
-def sky() -> core.Rotor:
+def sky(n_samples: int = N_SKY_SAMPLES) -> core.Rotor:
     """The frame of each direction on the sky: its first axis to the direction, the others across."""
-    latitudes = np.radians(np.linspace(-90, 90, N_SKY_SAMPLES))
-    longitudes = np.radians(np.linspace(-180, 180, 2 * N_SKY_SAMPLES - 1))
+    latitudes = np.radians(np.linspace(-90, 90, n_samples))
+    longitudes = np.radians(np.linspace(-180, 180, 2 * n_samples - 1))
     return core.place(latitudes[:, None], longitudes)                        # [latitudes, longitudes] Rotor+
 
 

@@ -56,11 +56,11 @@ def centred() -> tuple[core.Topology, core.Vector]:
     return topology, centring >> circles
 
 
-def boosted() -> tuple[core.Topology, core.Vector]:
+def boosted(n_frames: int = N_FRAMES) -> tuple[core.Topology, core.Vector]:
     """The centred circles are carried by boosts whose plane through w turns once about the z axis, tilted
     towards it, with a rapidity rising and falling twice per turn."""
     topology, circles = centred()
-    turn_angles = np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)          # [frames]
+    turn_angles = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)          # [frames]
     tilted_plane = (core.mv.zx * (TILT / 2)).exp() >> core.mv.xw              # [] Bivector+
     boost_planes = (core.mv.xy * (-turn_angles / 2)).exp() >> tilted_plane     # [frames] Bivector+
     rotors = (boost_planes * (RAPIDITY * np.sin(turn_angles) ** 2 / 2)).exp()  # [frames] Rotor+

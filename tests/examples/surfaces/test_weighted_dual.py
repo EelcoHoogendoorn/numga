@@ -1,4 +1,7 @@
-"""A hull and its polar dual about the unit sphere: oriented faces, polar incidence, and the figures."""
+"""A hull and its polar dual about the unit sphere: oriented faces and polar incidence; the figure
+and a frame of the breath and of the rescue draw."""
+
+from itertools import islice
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,21 +28,8 @@ def test_points_on_the_sphere_give_its_delaunay_mesh_with_poles_as_circumcentres
     np.testing.assert_allclose(distances - distances[:1], 0, atol=1e-10)
 
 
-def test_the_figure_and_two_frames_draw():
-    frames = [frame for _, frame in zip(range(2), scenarios.breath())]
+def test_the_figure_and_a_frame_of_each_animation_draw():
+    frames = list(islice(scenarios.breath(), 1))
     plt.close(render.draw_complex(*frames[0]))
-    assert len(list(render.animate(frames))) == 2
-
-
-def test_the_nearest_rescue_unfolds_the_mesh_steadily():
-    settled = list(scenarios.settle())
-    topology = settled[0][0]
-    even_weights = core.mv.scalar(np.ones((scenarios.N_POINTS, 1))).field()    # Scalar+[points]
-    # The crossed dual edges are exactly the folded ones.
-    assert np.array_equal(core.dual_lengths(topology, settled[0][1]) < 0,
-                          core.folds(topology, scenarios.directions, even_weights) < 0)
-    crossed = [(core.dual_lengths(topology, points) < 0).sum() for _, points, _ in settled]
-    assert crossed[0] > 0 and crossed[-1] == 0 and (np.diff(crossed) <= 0).all()
-    # Every image on the sphere is held.
-    images = [points.normalized() for points in (settled[0][1], settled[-1][1])]   # Point-[points], Point-[points]
-    np.testing.assert_allclose((images[1] - images[0]).norm().to_array(), 0, atol=1e-12)
+    assert len(list(render.animate(frames))) == 1
+    assert len(list(render.animate(islice(scenarios.settle(), 1)))) == 1

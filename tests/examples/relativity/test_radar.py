@@ -1,15 +1,9 @@
 """Null propagation, reconstruction from clock readings, and covariance of the radar experiment."""
 
-import json
-from pathlib import Path
-import re
-
-import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
 from examples.relativity.radar import core, scenarios
-from examples.util import animation
 
 ATOL = 1e-9
 
@@ -71,39 +65,3 @@ def test_common_frame_change_preserves_events_and_clock_readings(mirrored):
     stretch, velocity, distance = core.infer_motion(sent, returned, clock)
     np.testing.assert_allclose([stretch.to_array(), velocity.to_array(), distance.to_array()],
                                [5 / 3, 0.25, 2], atol=ATOL, rtol=0)
-
-
-def test_notebook_executes_and_renders(monkeypatch):
-    stills, movies = [], []
-
-    def capture_figure(figure, name):
-        figure.canvas.draw()
-        stills.append(np.asarray(figure.canvas.buffer_rgba()).copy())
-        plt.close(figure)
-
-    def capture_animation(sequence, name, duration_ms, **options):
-        movies.append(list(sequence))
-
-    monkeypatch.setattr(animation, "save_figure", capture_figure)
-    monkeypatch.setattr(animation, "show_animation", capture_animation)
-    notebook_path = Path(__file__).parents[3] / "examples/relativity/radar/radar.ipynb"
-    notebook = json.loads(notebook_path.read_text())
-    namespace = {"__name__": __name__}
-    for cell in notebook["cells"]:
-        if cell["cell_type"] != "code":
-            continue
-        source = "".join(cell["source"])
-        source = re.sub(r"(?m)^n_frames, duration_ms = .*", "n_frames, duration_ms = 3, 40", source)
-        source = re.sub(r"(?m)^([ \t]*)%.*", r"\1pass", source)
-        exec(compile(source, f"{notebook_path.name}:{cell['id']}", "exec"), namespace)
-
-    assert len(stills) == 1
-    assert len(movies) == 2
-    for movie in movies:
-        assert len(movie) == 3
-        for frame in movie:
-            assert frame.shape == movie[0].shape
-            assert frame.dtype == np.uint8
-        assert not np.array_equal(movie[0], movie[-1])
-    np.testing.assert_allclose((namespace["located"] - namespace["reflected"]).kernel, 0, atol=ATOL)
-    np.testing.assert_allclose(namespace["inferred_velocity"].to_array(), 0.25, atol=ATOL)

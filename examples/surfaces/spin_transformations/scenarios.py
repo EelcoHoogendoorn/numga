@@ -23,10 +23,10 @@ N_STATES = 3
 
 
 # --- math -----------------------------------------------------------------------------
-def dipole() -> tuple[core.Topology, core.Point, core.Scalar, core.Point]:
+def dipole(n_subdivisions: int = N_SUBDIVISIONS) -> tuple[core.Topology, core.Point, core.Scalar, core.Point]:
     """The sphere and its vertices, the change in mean curvature on each face, growing along y, and the
     vertices after the spin transformation that makes it."""
-    topology, coordinates = shapes.sphere(N_SUBDIVISIONS)
+    topology, coordinates = shapes.sphere(n_subdivisions)
     vertices = core.context.multivector.vector(coordinates).dual().field()      # Point-[vertices]
     centroids = topology.incidence[2, 0].mean(axis=0) * vertices
     # Each centroid paired with the direction y: its height along y.
@@ -40,12 +40,12 @@ def rounding() -> tuple[core.Topology, list[core.Point]]:
     return topology, list(core.conformal_smooth(topology, vertices, N_STEPS, RATE))  # [steps + 1] Point-[vertices]
 
 
-def dirac() -> tuple[core.Topology, core.Point, dict[int, core.Point], np.ndarray]:
+def dirac(n_subdivisions: int = N_DIRAC_SUBDIVISIONS, n_states: int = N_STATES) -> tuple[core.Topology, core.Point, dict[int, core.Point], np.ndarray]:
     """The sphere and its vertices; a few of the Dirac spheres for each of the eigenvalues, the vertices
     of the surfaces spun by the Dirac operator's eigenfields; and the energies of their fields."""
-    topology, coordinates = shapes.sphere(N_DIRAC_SUBDIVISIONS)
+    topology, coordinates = shapes.sphere(n_subdivisions)
     vertices = core.context.multivector.vector(coordinates).dual().field()      # Point-[vertices]
-    energies, dirac_vertices = core.dirac_spheres(topology, vertices, np.array(EIGENVALUES, dtype=float), N_STATES)  # [eigenvalues, states]
+    energies, dirac_vertices = core.dirac_spheres(topology, vertices, np.array(EIGENVALUES, dtype=float), n_states)  # [eigenvalues, states]
     return topology, vertices, {eigenvalue: spheres for eigenvalue, spheres in zip(EIGENVALUES, dirac_vertices)}, energies.to_array().ravel()
 
 

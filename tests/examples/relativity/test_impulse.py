@@ -1,7 +1,6 @@
-"""Geometric invariants of finite velocity steps and their composition, and the three figures."""
+"""Geometric invariants of finite velocity steps and their composition, and the three scenes, which run their checks and draw."""
 
 from __future__ import annotations
-
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -64,8 +63,7 @@ def test_one_impulse_matches_a_single_velocity_step(final_rapidity):
     np.testing.assert_allclose(velocity(train_directions), velocity(directions), atol=ATOL)
 
 
-@pytest.mark.parametrize("name", ["impulse", "ladder", "spaceships"])
-def test_figures_draw(name):
-    """Each scenario runs its checks and draws a figure."""
-    geometry = getattr(scenarios, name)()
-    assert isinstance(getattr(render, f"draw_{name}")(*geometry), plt.Figure)
+def test_the_scenes_draw():
+    plt.close(render.draw_impulse(*scenarios.impulse()))
+    plt.close(render.draw_ladder(*scenarios.ladder()))
+    plt.close(render.draw_spaceships(*scenarios.spaceships()))
