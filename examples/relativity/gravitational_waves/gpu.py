@@ -58,7 +58,8 @@ n_strain_inks = 33
 # `frame(eye) * exp(-(moving + turning)(step) / 2)` is the frame at the rolled eye. The crystals' atoms step as
 # `core.massive` steps them, all crystals in the lattice's time, and the moments the light carries back are kept: at
 # each level of the wave's step, and at the frame's end, the atoms' places and the bonds' inks are written into a ring
-# of levels that reaches as far back as light takes to cross the universe.
+# of levels that reaches as far back as light takes to cross the universe. About each crystal a ball is kept that every
+# moment of it the ring holds lies in, so that a ray meeting the crystal at any time its light passed meets the ball.
 advance_source = """
 var<uniform> dt: f32;
 var<uniform> thrust: f32;
@@ -76,6 +77,7 @@ var<storage, read_write> atoms: array<Atom>;
 var<storage, read_write> springs: array<Spring>;
 var<storage, read_write> history: array<Point>;
 var<storage, read_write> inks: array<vec4<f32>>;
+var<storage, read_write> balls: array<Ball>;
 
 // The camera: its motor and its speed along its own forward axis in the lattice's frame, the lattice's time at it,
 // the tetrahedron holding the eye, and what the tracer reads of it, the eye, its axes in the frame there, and the lamp
@@ -240,11 +242,35 @@ fn crystals(from: f32, to: f32) {
     record(newest + 1u);
 }
 
+// A crystal's ball over every moment of it the ring holds: about the middle of its atoms over the levels, and out to
+// the farthest of them.
+fn kept_ball(crystal: u32) -> Ball {
+    // A variable starts at nothing, as a function begins.
+    var middle: Point;
+    for (var level = 0u; level < n_levels; level++) {
+        for (var k = 0u; k < atoms_each; k++) {
+            middle = middle + history[(level * n_crystals + crystal) * atoms_each + k];
+        }
+    }
+    let centre = middle.normalized();
+    var reach = 0.0;
+    for (var level = 0u; level < n_levels; level++) {
+        for (var k = 0u; k < atoms_each; k++) {
+            let cosine = centre.dot(history[(level * n_crystals + crystal) * atoms_each + k]);
+            reach = max(reach, acos(clamp(cosine, -1.0, 1.0)));
+        }
+    }
+    return Ball(centre, reach);
+}
+
 @compute @workgroup_size(1)
 fn advance(@builtin(global_invocation_id) id: vec3<u32>) {
     let from = camera[0].clock;
     camera[0] = camera_step(camera[0]);
     crystals(from, camera[0].clock);
+    for (var crystal = 0u; crystal < n_crystals; crystal++) {
+        balls[crystal] = kept_ball(crystal);
+    }
 }
 """
 
@@ -353,8 +379,8 @@ def tracer_shader(bonds: Topology) -> Shader:
 def advance_shader(bonds: Topology) -> Shader:
     """The camera's and the crystals' step through the same waves, for crystals of so many atoms and bonds each."""
     n_crystals = len(scenarios.tunings)
-    return Shader(core.quadrupole_walk_source + strain_inks_source() + bond_ends_source(bonds) + advance_source,
-                  core.ga, render.inside_types | dict(Turn=Turn, Aim=Aim),
+    return Shader(core.quadrupole_walk_source + render.ball_source + strain_inks_source() + bond_ends_source(bonds)
+                  + advance_source, core.ga, render.inside_types | dict(Turn=Turn, Aim=Aim),
                   dict(frequency=core.quadrupole_frequency, atoms_each=bonds.n_vertices // n_crystals,
                        bonds_each=bonds.n_elements[1] // n_crystals, n_strain_inks=n_strain_inks,
                        max_levels_a_frame=max_levels_a_frame) | ring)

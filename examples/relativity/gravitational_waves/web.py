@@ -25,19 +25,22 @@ crystals, slow, keep springs without contraction or dilation of their own.
 The file holds the shaders, the 600-cell's vertices, its tetrahedra's corners and neighbours, and the rail each vertex
 lies on, the indices as unsigned 16-bit integers; the tetrahedra's ramps, and the places, beads and struts the view
 draws in each, are made on the GPU when the page loads. Nothing is computed on a server, and no picture is sent; the
-image traces at fewer pixels when frames come slower than the GPU can keep up with. Each shader binds at most seven
-storage buffers in a stage, its uniforms' block among them, within the eight WebGPU guarantees, so the page asks for no
+image traces at fewer pixels when frames come slower than the GPU can keep up with. Each shader binds at most eight
+storage buffers in a stage, its uniforms' block among them, as many as WebGPU guarantees, so the page asks for no
 limit.
 
 The camera flies as an airplane does, along its own forward axis: the arrow keys turn it up, down, left and right, or a
 drag does, `a` and `d` roll it, `w` and `s` speed it up and slow it down, scrolling adds speed, space stops it, `p`
-holds time, `r` returns to the start, and `[` and `]` halve and double a ray's legs.
+holds time, `r` returns to the start, and `[` and `]` halve and double a ray's legs, which the slider also sets.
 
 GitHub Pages serves the page from the repository, so it is written only when asked; the module's own run traces the
-page's passes here, as the page runs them, into animations in the plots:
+page's passes here, as the page runs them, into animations in the plots; and a comparison times the tracer with each
+crystal's atoms and bonds met only by the legs that come within its ball, met by every leg, and with no crystals, into
+the plots too:
 
     python -c "from examples.relativity.gravitational_waves.web import page; page()"   # writes the page beside this file
     python -m examples.relativity.gravitational_waves.web                                # the page's runs, into the plots
+    python -c "from examples.relativity.gravitational_waves.web import bounded_crystals; bounded_crystals()"   # the bound
 """
 
 from __future__ import annotations
@@ -62,8 +65,9 @@ mv = core.mv
 
 # The page's image, in points, traced at the screen's pixels behind them, or fewer when frames come slowly.
 image_points = (480, 320)
-# A ray's legs at the start, in arcs of the sphere, and the lengths `[` and `]` move between.
-start_leg, finest_leg, coarsest_leg = 0.05, 0.0125, 0.4
+# A ray's legs at the start, in arcs of the sphere, each rolled in `core.n_rolls` rolls a leg that long, and the lengths
+# `[` and `]` move between.
+start_leg, finest_leg, coarsest_leg = 0.35, 0.0125, 0.4
 # The camera's speeds, as shares of the light's: how fast thrust adds speed a second held, and how much a scroll's notch
 # adds; how fast the arrow keys turn and roll the view a second, and a drag a point.
 thrust_per_second, speed_per_scroll = 0.4, 0.0005
@@ -201,8 +205,8 @@ def crystals_start(bonds: Topology, atoms: core.Point, frames: core.Motor, frequ
     """The crystals at the start, as the advance pass holds them: the atoms, their places at rest in their crystals and
     their velocities; their springs, the rest lengths, the stiffnesses and dampings, the tuned crystal's stiffness putting
     the swing the squash drives at the wave's frequency, as `crystal_states` tunes them, and the lengths, which start
-    at rest; and a level of the ring of kept moments, the atoms' places and the bonds' inks, at no strain, which every
-    level holds at the start."""
+    at rest; a level of the ring of kept moments, the atoms' places and the bonds' inks, at no strain, which every
+    level holds at the start; and each crystal's ball about those moments."""
     n_crystals = len(scenarios.tunings)
     stiffnesses = frequency ** 2 / 2 * scenarios.tunings                        # [crystals]
     dampings = scenarios.critical_share * np.sqrt(2 * stiffnesses)              # [crystals]
@@ -213,7 +217,7 @@ def crystals_start(bonds: Topology, atoms: core.Point, frames: core.Motor, frequ
     return dict(atoms=dict(place=atoms.batch(), velocity=crystal_velocities(frames, atoms)),
                 springs=dict(rest=rest, stiffness=np.repeat(stiffnesses, n_bonds // n_crystals),
                              damping=np.repeat(dampings, n_bonds // n_crystals), length=rest),
-                history=atoms.batch(), inks=unstrained)
+                history=atoms.batch(), inks=unstrained, balls=render.crystal_balls(bonds, atoms[None]))
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -306,9 +310,10 @@ def scene(ghosts: float, eye: core.Motor, swing: float) -> dict:
     lamp = render.lamp_placement >> core.origin                                 # [] Point-
     start_tet = int(core.picking(mesh, vertices)(place[None])[0])
     walk = dict(origin=core.origin, translating=core.translating, moving=core.moving, turning=core.turning, step=start_leg,
-                swing=swing)
+                n_rolls=core.n_rolls, swing=swing)
     tracer = walk | dict(
-        n_particles=bonds.n_vertices, n_bonds=bonds.n_elements[1], particle_ink=render.particle_ink,
+        n_particles=bonds.n_vertices, n_bonds=bonds.n_elements[1], n_crystals=frames.shape[0],
+        particle_ink=render.particle_ink,
         particle_radius_squared=render.particle_radius ** 2, bond_radius_squared=render.bond_radius ** 2,
         max_legs=render.max_legs, eye_time=0.0, pixels=list(image_points), start_place=place, start_tet=start_tet,
         right=view[0], up=view[1], forward=view[2], light=eye >> lamp)
@@ -379,22 +384,23 @@ def page() -> None:
     write_page(Path(__file__).parent / "web_template.html", page_path, contents())
 
 
-def flight(controls: Iterator[dict], shape: tuple[int, int], ghosts: float, eye: core.Motor, swing: float
-           ) -> Iterator[tuple[np.ndarray, core.Point, dict]]:
+def flight(controls: Iterator[dict], shape: tuple[int, int], ghosts: float, eye: core.Motor, swing: float, leg: float,
+           n_rolls: int) -> Iterator[tuple[np.ndarray, core.Point, dict]]:
     """Frames of the page's view as the page traces them, `[rows, columns, 3]` bytes each, the crystals' atoms then,
     `[atoms] Point-`, and the camera's state then, by member of its `Camera`, one for each frame's `controls`, the keys
     as the page turns them into the advance pass's uniforms: `dt`, `thrust`, `roll`, `yaw`, `pitch` and `braking`, from
     the camera `eye` through the exact wave at the swing `swing`, with the edges off the guardrails ghosts `ghosts` of
-    the mean edge thick. The passes run on the GPU as the page runs them, on the same buffers: the mesh's styles and
-    ramps are made once, then each frame the camera and the crystals advance, the camera's state is copied into the
-    other shaders' uniforms, the sightlines are boosted, and the tracer draws."""
+    the mean edge thick, and a ray's legs at most `leg` long, rolled in `n_rolls` rolls a leg that long. The passes run
+    on the GPU as the page runs them, on the same buffers: the mesh's styles and ramps are made once, then each frame
+    the camera and the crystals advance, the camera's state is copied into the other shaders' uniforms, the sightlines
+    are boosted, and the tracer draws."""
     import wgpu
 
     values = scene(ghosts, eye, swing)
     shaders = values["shaders"]
     device = shaders["tracer"].device
     rows, columns = shape
-    values["tracer"] = values["tracer"] | dict(pixels=[columns, rows])
+    values["tracer"] = values["tracer"] | dict(pixels=[columns, rows], step=leg, n_rolls=n_rolls)
     values["sight"] = values["sight"] | dict(pixels=[columns, rows])
     usage = wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST | wgpu.BufferUsage.COPY_SRC
     stride = shaders["tracer"].layout.stride(element(shaders["tracer"], "image"))
@@ -517,7 +523,7 @@ def crystals_in_the_wave() -> None:
 
     def frames() -> Iterator[np.ndarray]:
         for image, places, _ in flight(still_controls(), crystal_shape, render.wave_ghost_share, scenarios.eye,
-                                       wave_swing):
+                                       wave_swing, start_leg, core.n_rolls):
             states.append(places)
             yield image
 
@@ -542,7 +548,8 @@ def aberration() -> None:
 
     held = dict(dt=0.0, roll=0.0, yaw=0.0, pitch=0.0, braking=0.0)
     at_rest, moving = [image for image, _, _ in flight(iter([held | dict(thrust=0.0), held | dict(thrust=aberration_speed)]),
-                                                       flight_shape, render.ghost_share, scenarios.eye, wave_swing)]
+                                                       flight_shape, render.ghost_share, scenarios.eye, wave_swing,
+                                                       start_leg, core.n_rolls)]
     gap = np.full((flight_shape[0], 4, 3), 128, dtype=np.uint8)
     save_figure(image_figure(np.concatenate([at_rest, gap, moving], axis=1)), "gravitational_waves_web_aberration")
 
@@ -571,11 +578,79 @@ def close_ups() -> None:
         controls = [dict(dt=dt, thrust=crystal_drifts[crystal] * (frame == 0), roll=0.0, yaw=0.0, pitch=0.0,
                          braking=0.0) for frame in range(n_close_up_frames)]
         run = [image for image, _, _ in flight(iter(controls), flight_shape, render.ghost_share,
-                                               frames[crystal] * behind, wave_swing)]
+                                               frames[crystal] * behind, wave_swing, start_leg, core.n_rolls)]
         save_animation(run, "gravitational_waves_web_close_up", scenarios.duration_ms)
         images.append(run[-1])
     gap = np.full((flight_shape[0], 4, 3), 128, dtype=np.uint8)
     save_figure(image_figure(np.concatenate([images[0], gap, images[1]], axis=1)), "gravitational_waves_web_close_ups")
+
+
+# The bound compared: the page's view held still from views ahead of the eye, to its right, behind it and to its left,
+# each a quarter of the wave's period later, traced at the page's leg and full pixels on a screen of two device pixels
+# a point, the least time of so many traces taken.
+compared_pixels = (2 * image_points[1], 2 * image_points[0])
+compared_yaws = np.pi / 2 * np.arange(4)                                         # [views]
+n_timed = 4
+
+
+def held_views(cameras: core.Motor, eye_times: np.ndarray, changed: dict) -> np.ndarray:
+    """The tracer's seconds a frame, `[views]`, for the page's view held still from each of the `cameras`, `[views]
+    Motor+`, at each of the `eye_times`, traced at the pixels `compared_pixels`, the crystals at their start and the
+    tracer's values changed by `changed`: the least of `n_timed` traces less the least of as many that take no leg,
+    which upload and read back alike."""
+    import time
+
+    values = scene(render.ghost_share, scenarios.eye, wave_swing)
+    shaders = values["shaders"]
+    mesh, vertices = scenarios.six_hundred_cell()
+    made = shaders["setup"]((1, values["n_setup"]), **values["tables"])
+    sightlines = shaders["sight"](compared_pixels, **values["sight"])["sightlines"]
+    pick = core.picking(mesh, vertices)
+    axes = stack((mv.x, mv.y, mv.z)).dual()                                     # [3] Point-
+    lamp = render.lamp_placement >> core.origin                                 # [] Point-
+    # Every level of the ring holds the crystals at their start, as the page fills it, and the balls are theirs.
+    stored = dict(history=stack([values["state"]["history"]] * gpu.n_levels).reshape(-1),
+                  inks=np.tile(values["state"]["inks"], (gpu.n_levels, 1)), balls=values["state"]["balls"])
+    seconds = []
+    for camera, eye_time in zip(cameras, eye_times):
+        place = camera >> core.origin                                           # [] Point-
+        view = (core.frame(place).inverse() * camera) >> axes                   # [3] Point-
+        bound = values["tracer"] | made | stored | dict(
+            sightlines=sightlines, eye_time=float(eye_time), start_place=place, start_tet=int(pick(place[None])[0]),
+            right=view[0], up=view[1], forward=view[2], light=camera >> lamp) | changed
+
+        def least(timed: dict) -> float:
+            """The least seconds of `n_timed` traces of the view with the values `timed`."""
+            times = []
+            for _ in range(n_timed):
+                begun = time.perf_counter()
+                shaders["tracer"](compared_pixels, **(bound | timed))
+                times.append(time.perf_counter() - begun)
+            return min(times)
+
+        seconds.append(least({}) - least(dict(max_legs=0)))
+    return np.array(seconds)
+
+
+def bounded_crystals() -> None:
+    """The tracer's time a frame at the page's leg and full pixels, each crystal's atoms and bonds met only by the legs
+    that come within its ball, met by every leg, and no crystals at all, into a chart in the plots; and the page's
+    scripted flight, the crystals behind their balls, into the plots."""
+    from examples.util.animation import save_animation, save_figure
+
+    cameras = scenarios.eye * ((mv.zx * compared_yaws) * -0.5).exp()            # [views] Motor+
+    eye_times = np.arange(len(compared_yaws)) * gpu.wave_period / len(compared_yaws)   # [views]
+    bonds, atoms = scenarios.crystals(scenarios.crystal_places())
+    balls = render.crystal_balls(bonds, atoms[None])
+    # Balls that hold the whole sphere, which every leg meets.
+    everywhere = dict(centre=balls["centre"], reach=np.full_like(balls["reach"], np.pi))
+    seconds = [held_views(cameras, eye_times, changed)
+               for changed in ({}, dict(balls=everywhere), dict(n_particles=0, n_bonds=0, n_crystals=0))]
+    milliseconds = np.array([1000 * views.mean() for views in seconds])       # [kinds]
+    save_figure(render.bounded_crystals(milliseconds, compared_pixels), "gravitational_waves_web_bounds")
+    save_animation((image for image, _, _ in flight(scripted_controls(), flight_shape, render.wave_ghost_share,
+                                                    scenarios.eye, wave_swing, start_leg, core.n_rolls)),
+                   "gravitational_waves_web_flight", scenarios.duration_ms)
 
 
 def main() -> None:
@@ -584,7 +659,7 @@ def main() -> None:
     from examples.util.animation import save_animation
 
     save_animation((image for image, _, _ in flight(scripted_controls(), flight_shape, render.wave_ghost_share,
-                                                    scenarios.eye, wave_swing)),
+                                                    scenarios.eye, wave_swing, start_leg, core.n_rolls)),
                    "gravitational_waves_web_flight", scenarios.duration_ms)
     aberration()
     close_ups()
