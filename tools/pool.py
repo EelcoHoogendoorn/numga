@@ -11,7 +11,8 @@ has compressed or swapped out, where the resident set does not; elsewhere its re
 equal its cores, and it runs at low priority.
 
 A job the watchdog kills has not failed: it needed more memory than it reserved. It runs again with twice the memory,
-and again, up to the budget's whole memory, beyond which it fails with the memory it reached. A job run under a key
+and again. A job that asks for more than the whole budget, as it starts or by doubling, fails at once, and never
+waits; only a job that fits the budget but not its free remainder waits. A job run under a key
 learns the memory it finally needed, and starts with it the next time.
 
 The pool lives in a directory every checkout on the machine shares, `~/.cache/numga/pool` unless NUMGA_POOL names
@@ -73,6 +74,8 @@ NICENESS = 10
 RUSAGE_WORDS, FOOTPRINT_WORD = 16, 9
 # The characters of a command that name its job.
 NAME_LENGTH = 100
+# The exit status of a job that asks for more than the whole budget.
+TOO_LARGE = 1
 
 # This process's reservation, once it holds one, its watchdog, and the library that reads macOS's footprints.
 _held: dict = {}
@@ -282,12 +285,17 @@ def release() -> None:
 
 def run(command: list[str], cores: int, memory: float, what: str, key: str) -> int:
     """Run a command as one job of the pool, and return its exit status. Where the watchdog kills the command for
-    exceeding its reservation, it runs again with twice the memory, up to the budget's whole memory. With a `key`,
-    the job starts with the memory it learned under that key, where that is more, and learns the memory it finally
-    ran with. Outside the pool, or inside a job, the command just runs."""
+    exceeding its reservation, it runs again with twice the memory. With a `key`, the job starts with the memory it
+    learned under that key, where that is more, and learns the memory it finally ran with. A job that asks for more
+    than the whole budget, at the start or by doubling, fails at once, and never waits. Outside the pool, or inside a
+    job, the command just runs."""
     if not active():
         return subprocess.run(command).returncode
     start = max(memory, learned().get(key, 0.0)) if key else memory
+    if cores > CORES or start > budget_memory():
+        print(f"pool: {what} asks for {cores} cores and {start:g} GB, more than the pool's whole budget of {CORES} "
+              f"cores and {budget_memory():.0f} GB", file=sys.stderr, flush=True)
+        return TOO_LARGE
     hold(cores, start, what)
     while True:
         started = time.time()
@@ -300,10 +308,11 @@ def run(command: list[str], cores: int, memory: float, what: str, key: str) -> i
             if key and _held["memory"] > start:
                 learn(key, _held["memory"])
             return status
-        if _held["memory"] >= budget_memory():
-            print(f"pool: {what} needs more memory than the pool's whole budget", file=sys.stderr, flush=True)
-            return status
-        resize(min(2 * _held["memory"], budget_memory()))
+        if 2 * _held["memory"] > budget_memory():
+            print(f"pool: {what} needs more than its {_held['memory']:g} GB, and twice that is more than the pool's "
+                  f"whole budget of {budget_memory():.0f} GB", file=sys.stderr, flush=True)
+            return TOO_LARGE
+        resize(2 * _held["memory"])
         print(f"pool: {what} runs again with {_held['memory']:g} GB", file=sys.stderr, flush=True)
 
 
