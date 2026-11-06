@@ -217,7 +217,7 @@ def main(arguments: list[str]) -> None:
                         help="the time each notebook may take (default 20)")
     parser.add_argument("--cores", type=int, default=1, help="the cores each notebook reserves in the pool (default 1)")
     parser.add_argument("--memory", type=float, default=4, metavar="GB",
-                        help="the memory each notebook reserves in the pool, up to 8 GB (default 4)")
+                        help="the memory each notebook reserves in the pool, up to 16 GB (default 4)")
     options = parser.parse_args(arguments)
 
     everything = notebooks()
