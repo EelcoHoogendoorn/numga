@@ -10,10 +10,10 @@ fingers dark on the surface, and the holes' flow streaked over it; beside it, as
 the current it delivers against its voltage, and as its fingers spread, its power against their spacing; and its power
 against the spacing as a chart.
 
-The bar's vertices are read by the plane x, the cross-sections' by the planes x and y; the energies, densities,
-currents, voltages and powers come as scalars, read off the states by the example's own functions, and the holes' flow
-as a direction in each simplex. The band diagram and the curves are charts; the cross-sections are drawn on the GPU in
-their own algebra.
+The bar's vertices are read by the plane x, the cross-sections' by the planes x and y over their weight, which the plane
+w reads; the energies, densities, currents, voltages and powers come as scalars, read off the states by the example's
+own functions, and the holes' flow as a direction in each simplex. The band diagram and the curves are charts; the
+cross-sections are drawn on the GPU in their own algebra.
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ from examples.util import charts
 from examples.util.animation import capture
 from examples.util.topology import Topology
 from examples.util.wgsl import contours, flow, pinned, simplices
-from examples.util.wgsl.camera import Camera, offset_panel
+from examples.util.wgsl.camera import Camera, panel
 
 # The band edges' colour, the electrons' and the holes', the faint junction's, and the curves traced in the dark and
 # under light; the bands' tints where they hold carriers at the doping's density, fading to white at the intrinsic one.
@@ -200,8 +200,9 @@ outputs_width_px = 250
 
 
 def section_axes(axis: plt.Axes, vertices: Extensor) -> Camera:
-    """The cross-section's panel over its vertices `Point-[vertices]`, read by the planes x and y, the whole section in
-    view with a thin margin, and the camera that draws into it at its own pixels."""
+    """The cross-section's panel over its vertices `Point-[vertices]`, read by the planes x and y over their weight, the
+    plane w's reading, the whole section in view with a thin margin, and the camera that draws into it at its own
+    pixels."""
     mv = vertices.context.multivector
     points = vertices.batch()
     across, up = (mv.x & points).to_array(), (mv.y & points).to_array()
@@ -209,7 +210,7 @@ def section_axes(axis: plt.Axes, vertices: Extensor) -> Camera:
     axis.set(xlim=(across.min() - margin, across.max() + margin), ylim=(up.min() - margin, up.max() + margin))
     axis.set_aspect("equal")
     axis.set_axis_off()
-    return offset_panel(axis, mv.x, mv.y)
+    return panel(axis, mv.x, mv.y, mv.w)
 
 
 def tints(electrons: np.ndarray, holes: np.ndarray, full: np.ndarray) -> np.ndarray:
@@ -366,15 +367,16 @@ def copies(vertices: Extensor, finger_spacing: float, middle: float, half_width:
 
 
 def framed(axis: plt.Axes, vertices: Extensor, left: float, right: float) -> Camera:
-    """The panel over the solar cell from `left` to `right` across, read by the planes x and y, its whole depth in view
-    with room above for the fingers, and the camera that draws into it at its own pixels."""
+    """The panel over the solar cell from `left` to `right` across, read by the planes x and y over the weight the plane
+    w reads, its whole depth in view with room above for the fingers, and the camera that draws into it at its own
+    pixels."""
     mv = vertices.context.multivector
     up = (mv.y & vertices.batch()).to_array()
     room = finger_room * (up.max() - up.min())
     axis.set(xlim=(left, right), ylim=(up.min() - room, up.max() + room))
     axis.set_aspect("equal")
     axis.set_axis_off()
-    return offset_panel(axis, mv.x, mv.y)
+    return panel(axis, mv.x, mv.y, mv.w)
 
 
 def at_vertices(topology: Topology, values: Extensor) -> Extensor:
