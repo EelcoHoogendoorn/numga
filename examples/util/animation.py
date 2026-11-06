@@ -207,10 +207,10 @@ def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, n_
                    forward_then_back: bool = False, stepped: bool = False, colors: int = 256) -> None:
     """Show RGB frames in a notebook as they come, each in place of the one before with how many have come, then the
     whole animation looping, as the GIF it is saved as: PLOT_DIR/<name>.gif, or the next free <name>_NN.gif, as
-    `save_animation` writes it, at their own pixels. The count under each frame says how many are
-    expected where `n_frames` is given. With `forward_then_back`, the loop plays the frames forward and then back.
+    `save_animation` writes it, at their own pixels, in a palette of `colors`. The count under each frame says how many
+    are expected where `n_frames` is given. With `forward_then_back`, the loop plays the frames forward and then back.
     A smooth process is shown at SMOOTH_DURATION_MS a frame; `stepped` declares the frames a sequence of discrete
-    steps, which may each be shown longer. The saved animation uses a palette of `colors`."""
+    steps, which may each be shown longer."""
     check_frame_duration(duration_ms, stepped)
     from IPython.display import HTML, display
 
@@ -243,7 +243,8 @@ def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, n_
 def show_states(states: Iterable, animate: Callable[..., Iterable[np.ndarray]], *arguments, name: str, duration_ms: int,
                 n_frames: int = 0, stepped: bool = False, colors: int = 256) -> list:
     """Show a run's states as `animate`, called with `arguments` and the states, draws them, each frame as it comes, as
-    `show_animation` shows frames, and hand back the states drawn, for what is read off them afterwards."""
+    `show_animation` shows frames, in a palette of `colors`, and hand back the states drawn, for what is read off them
+    afterwards."""
     kept = []
 
     def passing() -> Iterator:
@@ -251,7 +252,8 @@ def show_states(states: Iterable, animate: Callable[..., Iterable[np.ndarray]], 
             kept.append(state)
             yield state
 
-    show_animation(animate(*arguments, passing()), name, duration_ms, n_frames=n_frames, stepped=stepped, colors=colors)
+    show_animation(animate(*arguments, passing()), name, duration_ms, n_frames=n_frames, stepped=stepped,
+                   colors=colors)
     return kept
 
 def show_figure(figure: plt.Figure) -> None:

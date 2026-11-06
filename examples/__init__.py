@@ -5,9 +5,23 @@ from __future__ import annotations
 import importlib.util
 import os
 import re
+import sys
+from pathlib import Path
+
+# A module of the examples run as a program, `python -m examples.<...>`, a scenario's main, runs as one job of the
+# machine's pool for heavy runs, where the checkout has it (`tools/pool.py`), one core and 4 GB unless it declares
+# more: this process becomes the pool's command, which runs the program again inside the job, and again with more
+# memory should it need it, which the module then learns.
+_arguments = getattr(sys, "orig_argv", [])
+_module = _arguments[_arguments.index("-m") + 1] if "-m" in _arguments[:-1] else ""
+_pool = Path(__file__).resolve().parents[1] / "tools" / "pool.py"
+# Inside a job, the program runs here.
+if _module.startswith("examples.") and _pool.exists() and "NUMGA_POOL_JOB" not in os.environ:
+    _program = f"python {' '.join(_arguments[_arguments.index('-m'):])} in {_pool.parents[1].name}"
+    os.execv(sys.executable, [sys.executable, "-I", str(_pool), "run", "--what", _program, "--learn", _module, "--",
+                              sys.executable, *_arguments[1:]])
 
 import numpy as np
-from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING
 

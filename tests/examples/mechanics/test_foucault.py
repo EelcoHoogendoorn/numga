@@ -1,5 +1,5 @@
 """Foucault's pendulum: the swing turns by the felt part of the earth's turn, clockwise in the north, and a
-direction carried around the latitude circle comes back turned the same way."""
+direction carried around the latitude circle comes back turned the same way; and a frame of the day draws."""
 
 import numpy as np
 
@@ -18,5 +18,4 @@ def test_a_day_turns_each_swing_by_the_sine_of_its_latitude_clockwise_and_the_ho
 
 
 def test_a_frame_of_the_day_draws():
-    earth, swings, vertical, north, east = scenarios.day()
-    assert len(list(render.animate_day(earth[:2], swings[:2], vertical, north, east))) == 1
+    list(render.animate_day(*scenarios.day(1)))

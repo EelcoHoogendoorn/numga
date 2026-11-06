@@ -33,16 +33,16 @@ def layered(heights: core.Scalar, size: float) -> tuple[core.Scalar, core.Scalar
     at the top and below at the bottom, changing across an interface of this thickness, with a disturbance of the
     salinity of this size inside the interface."""
     rng = np.random.default_rng(seed)
-    noise = heights.context.multivector.scalar(rng.standard_normal((len(heights.batch()), 1))).field()   # Scalar+[vertices]
+    noise = mv.scalar(rng.standard_normal((len(heights.batch()), 1))).field()   # Scalar+[vertices]
     profile = ((heights - 0.5) / thickness).tanh()                            # Scalar+[vertices]
     return profile / 2, profile / 2 + size * (1 - profile.squared()) * noise
 
 
-def fingers():
-    """The tank, closed and opened at its seam, with the map reading the closed tank's fields on the open one, the open
-    one's vertices `Point-[vertices]`, the temperature and salinity at the start `Scalar+[vertices]`, the two layers at
-    rest, and the tank's stream function, temperature and salinity over time `Scalar+[vertices]` each, from just before
-    the fingers show."""
+def fingers(n_along: int = n_along, n_across: int = n_across, n_flat: int = n_flat):
+    """The tank, `n_along` vertices along and `n_across` up, closed and opened at its seam, with the map reading the
+    closed tank's fields on the open one, the open one's vertices `Point-[vertices]`, the temperature and salinity at
+    the start `Scalar+[vertices]`, the two layers at rest, and the tank's stream function, temperature and salinity
+    over time `Scalar+[vertices]` each, after the first `n_flat` frames, from just before the fingers show."""
     closed, opened, closing, opening, places = core.tank(n_along, n_across, period)
     vertices = (core.volume + mv(core.Upright, places).dual()).field()          # Point-[opened vertices]
     water = core.forms(closed, opened, vertices, density, prandtl, salt_diffusivity)

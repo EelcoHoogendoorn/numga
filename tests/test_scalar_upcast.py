@@ -35,7 +35,7 @@ def test_arrays_scale_maps_and_broadcast_against_batches():
     scaled_map = (motion >> P) * weights
     assert scaled_map.arity == 1 and scaled_map.shape == (5,)
     np.testing.assert_allclose(scaled_map.kernel, weights[:, None, None] * (motion >> P).kernel)
-    points = mv.antivector(np.random.default_rng(0).normal(size=(5, 3)))
+    points = mv.vector(np.random.default_rng(0).normal(size=(5, 3))).dual()
     np.testing.assert_allclose((points * weights).kernel, points.kernel * weights[:, None])
 
 

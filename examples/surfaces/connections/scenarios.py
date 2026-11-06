@@ -72,12 +72,12 @@ DURATION_MS = 40
 Pattern = tuple[core.Point, core.Point, core.Scalar]
 
 
-def holonomy() -> tuple[core.Topology, core.Point, core.Vector, core.Point]:
+def holonomy(sphere_levels: int = SPHERE_LEVELS, n_ring_steps: int = N_RING_STEPS) -> tuple[core.Topology, core.Point, core.Vector, core.Point]:
     """The unit sphere and its vertices come with three latitude circles on it, as their normals
     `[steps + 1, rings] Vector-`, and a meridian tangent vector at the start of each, `[rings] Point-`."""
-    topology, coordinates = shapes.sphere(SPHERE_LEVELS)
+    topology, coordinates = shapes.sphere(sphere_levels)
     vertices = mv.vector(coordinates).dual().field()                            # Point-[vertices]
-    rings, starts = core.latitude_rings(COLATITUDES, N_RING_STEPS)              # [steps + 1, rings] Vector-, [rings] Point-
+    rings, starts = core.latitude_rings(COLATITUDES, n_ring_steps)              # [steps + 1, rings] Vector-, [rings] Point-
     return topology, vertices, rings, starts
 
 
@@ -86,11 +86,12 @@ def carried_around(rings: core.Vector, starts: core.Point, stride: int) -> Itera
     yield from islice(zip(rings, core.transported(rings, starts)), None, None, stride)
 
 
-def torus_fields() -> tuple[core.Topology, core.Point, core.Point, core.Point, core.Point, core.Scalar, core.SparseExtensor]:
+def torus_fields(n_major: int = N_HEAT_MAJOR, n_minor: int = N_HEAT_MINOR, n_heat_steps: int = N_HEAT_STEPS,
+                 n_modes: int = N_MODES) -> tuple[core.Topology, core.Point, core.Point, core.Point, core.Point, core.Scalar, core.SparseExtensor]:
     """Vector heat parallel transport and the smoothest global tangent fields on a torus: the torus and its
     vertices, the diffused waves `[steps] Point-[vertices]`, the unit transported field `Point-[vertices]`, the
     harmonic modes `[modes] Point-[vertices]` with their energies, and the covariant derivative."""
-    topology, coordinates = shapes.torus(MAJOR_RADIUS, MINOR_RADIUS, N_HEAT_MAJOR, N_HEAT_MINOR)
+    topology, coordinates = shapes.torus(MAJOR_RADIUS, MINOR_RADIUS, n_major, n_minor)
     vertices = mv.vector(coordinates).dual().field()                            # Point-[vertices]
     unit_normals = core.vertex_normals(topology, vertices)                     # Vector-[vertices]
     areas = core.vertex_areas(topology, vertices)                              # Scalar+[vertices]
@@ -106,8 +107,8 @@ def torus_fields() -> tuple[core.Topology, core.Point, core.Point, core.Point, c
     # The surface's own transport: no extra turn on any edge.
     no_turns = core.as_scalar(np.zeros(topology.n_elements[1])).field()                                  # Scalar+[edges]
     covariant, laplacian = core.connection(topology, core.adjusted_transport(topology, unit_normals, no_turns), weights)
-    waves, units = zip(*core.heat_transport(laplacian, areas, source, STEP_TIME, N_HEAT_STEPS))
-    energies, modes = core.low_modes(laplacian, unit_normals, areas, NORMAL_STIFFNESS, N_MODES)
+    waves, units = zip(*core.heat_transport(laplacian, areas, source, STEP_TIME, n_heat_steps))
+    energies, modes = core.low_modes(laplacian, unit_normals, areas, NORMAL_STIFFNESS, n_modes)
     return topology, vertices, stack(waves), units[-1], modes, energies, covariant
 
 
@@ -122,11 +123,11 @@ def design(topology: core.Topology, normals: core.Vector, areas: core.Scalar, we
     return angles, (field / field.norm()).field(), energies, circulation(angles) - target
 
 
-def field_spheres() -> tuple[core.Topology, core.Point, list[tuple[core.Point, np.ndarray, list[int]]], list[core.Scalar],
+def field_spheres(sphere_levels: int = SPHERE_LEVELS) -> tuple[core.Topology, core.Point, list[tuple[core.Point, np.ndarray, list[int]]], list[core.Scalar],
                              list[core.Scalar]]:
     """The sphere and its vertices; for each scene its unit parallel field, singular faces and their indices; and each
     design's circulation residual and the energies of its two parallel fields."""
-    topology, coordinates = shapes.sphere(SPHERE_LEVELS)
+    topology, coordinates = shapes.sphere(sphere_levels)
     vertices = mv.vector(coordinates).dual().field()                            # Point-[vertices]
     normals, areas = core.vertex_normals(topology, vertices), core.vertex_areas(topology, vertices)
     weights = core.cotangent_weights(topology, vertices, core.as_scalar(np.ones(topology.n_elements[2])).field())
@@ -196,9 +197,9 @@ def along(topology: core.Topology, vertices: core.Point, normals: core.Vector, a
     return field, (stripe / stripe.norm()).field(), advance, energies
 
 
-def stripe_spheres() -> tuple[core.Topology, core.Point, list[Pattern], list[core.Scalar]]:
+def stripe_spheres(sphere_levels: int = STRIPE_SPHERE_LEVELS) -> tuple[core.Topology, core.Point, list[Pattern], list[core.Scalar]]:
     """The sphere and its vertices, and for each scene the stripes along its field and its quarter turn, with their energies."""
-    topology, coordinates = shapes.sphere(STRIPE_SPHERE_LEVELS)
+    topology, coordinates = shapes.sphere(sphere_levels)
     vertices = mv.vector(coordinates).dual().field()                            # Point-[vertices]
     normals, areas = core.vertex_normals(topology, vertices), core.vertex_areas(topology, vertices)
     weights = core.cotangent_weights(topology, vertices, core.as_scalar(np.ones(topology.n_elements[2])).field())
@@ -222,10 +223,10 @@ def stripe_tori() -> tuple[core.Topology, core.Point, list[Pattern], list[core.S
     return topology, vertices, *map(list, zip(*scenes))
 
 
-def crosses() -> tuple[core.Topology, core.Point, list[Pattern], list[core.Scalar]]:
+def crosses(sphere_levels: int = STRIPE_SPHERE_LEVELS) -> tuple[core.Topology, core.Point, list[Pattern], list[core.Scalar]]:
     """The sphere and its vertices, and for each set of corners the two families of stripes across its cross field, with
     the connection's extra turns on the edges."""
-    topology, coordinates = shapes.sphere(STRIPE_SPHERE_LEVELS)
+    topology, coordinates = shapes.sphere(sphere_levels)
     vertices = mv.vector(coordinates).dual().field()                            # Point-[vertices]
     normals, areas = core.vertex_normals(topology, vertices), core.vertex_areas(topology, vertices)
     indices = [face_indices(topology, nearest_faces(topology, vertices, mv.vector(corners)), index)

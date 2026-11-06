@@ -70,10 +70,11 @@ def generators() -> tuple[core.Topology, np.ndarray, np.ndarray, np.ndarray, np.
             core.wall_charge(n_across, lengths, widths, charges), lengths)
 
 
-def channels() -> tuple[core.Topology, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """The channels' strip, one for all three: its topology, its vertices' places, its edges' reach past them, its
-    lower and upper walls, the charge their walls put on its vertices `[channels, vertices]`, and the charge per area
-    along their walls `[channels, stations]`."""
+def channels(n_stations: int = n_stations, n_across: int = n_across
+             ) -> tuple[core.Topology, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """The channels' strip, one for all three, `n_stations` columns along and `n_across` vertices across: its
+    topology, its vertices' places, its edges' reach past them, its lower and upper walls, the charge their walls put
+    on its vertices `[channels, vertices]`, and the charge per area along their walls `[channels, stations]`."""
     turns = 2 * np.pi * np.arange(n_stations) / n_stations
     widths = mean_half_width + half_width_swing * np.sin(turns)
     wall_charges = charge_swing * np.sin(turns + phases[:, None])                                     # [channels, stations]
@@ -166,14 +167,14 @@ def dyed(swing: float):
         dye_diffusivity, dye, dye_dt, n_dye_frames, dye_stride)
 
 
-def channel_flows():
-    """The channels' strip and walls, their liquid's charge density `[channels] Scalar+[vertices]`, its velocity at
-    each vertex `[channels] Point-[vertices]`, the potential the battery sets up `[channels] Scalar+[vertices]` and how
-    far it falls over a wavelength `[channels] Scalar+`, the heat made `[channels] Scalar+[vertices]`, what each carries
-    `[channels] Flux-`, the first channel's double layer's own pushes on the liquid, its osmotic pressure's and its
-    field's, `Point-[vertices]` each, and the stripes of dye the battery pumps through the channels at each frame
-    `[frames, channels] Scalar+[vertices]`."""
-    topology, coordinates, shifts, lower, upper, charge, wall_charges = channels()
+def channel_flows(n_stations: int = n_stations, n_across: int = n_across):
+    """The channels' strip, `n_stations` columns along and `n_across` vertices across, and walls, their liquid's
+    charge density `[channels] Scalar+[vertices]`, its velocity at each vertex `[channels] Point-[vertices]`, the
+    potential the battery sets up `[channels] Scalar+[vertices]` and how far it falls over a wavelength
+    `[channels] Scalar+`, the heat made `[channels] Scalar+[vertices]`, what each carries `[channels] Flux-`, the first
+    channel's double layer's own pushes on the liquid, its osmotic pressure's and its field's, `Point-[vertices]` each,
+    and the stripes of dye the battery pumps through the channels at each frame `[frames, channels] Scalar+[vertices]`."""
+    topology, coordinates, shifts, lower, upper, charge, wall_charges = channels(n_stations, n_across)
     vertices, edges = core.placed(topology, coordinates, shifts)
     areas, sides, gradients, outflow, circulation, cells = operators(topology, edges)
     charge = mv.scalar(charge[..., None]).field()

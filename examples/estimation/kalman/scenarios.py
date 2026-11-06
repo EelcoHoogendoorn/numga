@@ -48,13 +48,14 @@ def drive(initial: Motor, increments: Twist, motion_noise: Covariance, measureme
         yield truth, dead, estimate, sigma, reading
 
 
-def tracking() -> tuple[Motor, Motor, Motor, Covariance, Motor]:
+def tracking(n_readings: int = N_READINGS,
+             n_steps_per_reading: int = N_STEPS_PER_READING) -> tuple[Motor, Motor, Motor, Covariance, Motor]:
     """The meandering drive's states are the true, dead-reckoned, estimated and read poses, with the filter's covariance."""
-    times = np.arange(N_READINGS * N_STEPS_PER_READING) * DT
+    times = np.arange(n_readings * n_steps_per_reading) * DT
     # Body-frame command: drive 1 m/s along +x (the generator -mv.wx moves along +x) while the turn rate
     # wanders, so the path meanders instead of retracing itself.
     turn = TURN_AMPLITUDE * np.sin(TURN_FREQUENCY * times)
-    increments = ((mv.xy * turn - mv.wx) * DT).reshape(N_READINGS, N_STEPS_PER_READING)  # [readings, steps] Twist+
+    increments = ((mv.xy * turn - mv.wx) * DT).reshape(n_readings, n_steps_per_reading)  # [readings, steps] Twist+
     motion_noise = covariance(*(np.array(MOTION_NOISE) * np.sqrt(DT)))          # [] Twist+ <- Line-
     measurement_noise = covariance(*MEASUREMENT_NOISE)                          # [] Twist+ <- Line-
     states = drive(mv.rotor(), increments, motion_noise, measurement_noise, np.random.default_rng(SEED))

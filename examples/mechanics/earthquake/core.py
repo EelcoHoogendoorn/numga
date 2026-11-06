@@ -90,7 +90,7 @@ def radiation(moment: Moment, directions: Point) -> tuple[Scalar, Point]:
 def principal_axes(moment: Moment) -> tuple[Scalar, Point]:
     """The principal values and axes, from pressure through the null axis to tension: the eigenvectors
     of the moment's reading of directions, against the metric, the dot of the planes across them."""
-    return (moment(Point) & Point).eigh(Point.dual().dot(Point.dual()))      # [..., 3] Scalar+, [..., 3] Point-
+    return (moment(Point) & Point).eigh(Point.dot(Point))                    # [..., 3] Scalar+, [..., 3] Point-
 
 
 def fault_planes(moment: Moment) -> tuple[Plane, Plane]:

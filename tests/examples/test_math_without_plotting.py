@@ -106,6 +106,8 @@ import examples.quantum.kitaev_wire.core
 import examples.quantum.kitaev_wire.scenarios
 import examples.quantum.magnetic_resonance.core
 import examples.quantum.magnetic_resonance.scenarios
+import examples.quantum.skyrmions.core
+import examples.quantum.skyrmions.scenarios
 import examples.quantum.process_tomography.core
 import examples.quantum.process_tomography.scenarios
 import examples.quantum.superconductivity.core

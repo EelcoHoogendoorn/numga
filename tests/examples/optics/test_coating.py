@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from numga import stack
-from examples.optics.coating import core
+from examples.optics.coating import core, render, scenarios
 
 
 round_off = 1e-10
@@ -342,13 +342,6 @@ def test_selected_circular_wave_decays_through_the_twisted_reflector():
     assert 0.9 < penetration.kernel[1, 0] < 1.1
 
 
-def test_stepped_pulse_keeps_its_energy_and_returns_the_hand_turning_with_the_helix():
-    from examples.optics.coating import scenarios
-    _, _, _, _, before, reflected, transmitted = scenarios.time_domain()
-    # The leapfrog's energy, measured once the pulses have left the helix: a method-accuracy check, within the
-    # grid's dispersion of a pulse this short.
-    np.testing.assert_allclose(((reflected + transmitted) / before).kernel, 1, atol=5e-3)
-    # Turning with the helix comes back, turning against it passes, as the reflectance band says, all but the part
-    # of the short pulse's spectrum outside the band.
-    fractions = (reflected / before).kernel[:, 0]
-    assert fractions[0] > 0.95 and fractions[1] < 0.01
+def test_one_step_of_the_pulse_draws():
+    nodes, slab, directors, pulses, *_ = scenarios.time_domain(n_steps=1, n_frames=1)
+    next(render.pulse(nodes, slab, directors, pulses[:, 2]))

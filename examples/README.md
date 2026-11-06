@@ -142,6 +142,7 @@
 
 - [Magnetic resonance](quantum/magnetic_resonance/) — Driven and relaxing spins produce nutation, resonance line shapes and spin echoes.
 - [A rotating Bose–Einstein condensate](quantum/condensate/) — The condensate as a vector in a plane of its own joined to the trap's plane, the trap's turning and the wave's two bivectors kept apart: descending its energy in a rotating trap, it settles into a lattice of quantized vortices as dense as Feynman's rule asks.
+- [Magnetic skyrmions](quantum/skyrmions/) — Exchange carried across each bond by a rotor twisted about it is the Dzyaloshinskii–Moriya interaction: on a triangular lattice the spins crystallize into a lattice of skyrmions, vanish into a ferromagnet and give way to a spiral as the field is swept, and drift at the skyrmion Hall angle under a current.
 - [Graphene](quantum/graphene/) — Electron hopping produces Dirac cones, pseudospin textures and a Berry phase around each cone.
 - [Graphene edge states](quantum/kane_mele/) — Spin-orbit coupling produces boundary states in a finite graphene flake.
 - [Two spins](quantum/two_spins/) — Exchange interactions entangle a pair of spins and change their Bell correlations.
@@ -238,4 +239,4 @@
 
 Run an example from the repository root with `python -m examples.<topic>.<name>.scenarios`.
 
-Notebooks sit next to their examples. Open one in Jupyter from inside the repository, or use the Open in Colab badge at its top.
+Notebooks sit next to their examples. Open one in Jupyter from inside the repository, or use the Open in Colab badge at its top. `python -m tools.notebooks` runs them as many at once as the machine's pool for heavy runs admits (`tools/pool.py`), all of them or those whose paths hold a string, that use a module (`--touching examples.util.topology`) or that a change touched (`--changed main`); `--list` shows the selection without running it.

@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from itertools import islice
-
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.mechanics.stress import core, render, scenarios
@@ -21,8 +18,6 @@ def test_isotropic_stress_is_lames_formula():
 
 
 def test_scenes_draw():
-    figure = render.draw_frames(*scenarios.frames())
-    assert isinstance(figure, plt.Figure)
-    plt.close(figure)
-    _, values = scenarios.frames()
-    assert len(list(render.animate_turning(values, islice(scenarios.turning(), 1)))) == 1
+    seen, values = scenarios.frames()
+    render.draw_frames(seen, values)
+    list(render.animate_turning(values, scenarios.turning(1)))

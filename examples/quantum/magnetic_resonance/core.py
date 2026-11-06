@@ -44,7 +44,7 @@ Rates = ga.gatype((State, State))                                   # State- <- 
 Evolution = ga.gatype((State, State))                               # State- <- State-
 Rotor = ga.gatype.rotor()                                           # Rotor+
 one = mv.scalar([1.0])                                              # [] Scalar+
-antiscalar = mv.antiscalar([1.0])                                   # [] Antiscalar-
+antiscalar = one.dual()                                             # [] Antiscalar-
 # The lab at rest: its slice of space, the plane the magnet's field turns spins in, and the plane the drive turns
 # them in.
 observer = mv.t                                                     # [] Vector+

@@ -23,7 +23,9 @@ from numga import Extensor, stack
 from numga.backend.jax import derivative
 from examples.thermodynamics import rendering as art
 from examples.util.wgsl import quadrics
+from examples.thermodynamics.ruppeiner import core
 
+mv = core.mv
 Function = Callable[[Extensor], Extensor]
 
 # The charts' size in pixels and their ranges: volume and temperature, volume and pressure.
@@ -44,7 +46,6 @@ tangent_span = 0.35
 
 def chart_points(states: Extensor) -> art.Point:
     """States on the chart of temperature up against volume across, read by pairing `[...]`."""
-    mv = states.context.multivector
     return art.chart_points(art.context.include_from_algebra(mv.v & states), art.context.include_from_algebra(mv.t & states))
 
 
@@ -53,7 +54,7 @@ def cost_quadrics(metric_of: Function, states: Extensor) -> art.Quadric:
     the chart's two readings less their values at the state pair a chart point with its variation's volume and
     temperature, weighed by the metric's entries, its image of each of those variations paired with the other. Here
     the metric leaves the fluid's algebra for the chart's."""
-    mv, Point = states.context.multivector, art.Point
+    Point = art.Point
     form = metric_of(states)                                                    # [...] Gradient+ <- State-
     steps = stack((mv.v.dual(), mv.t.dual()))                                 # [quantities] State-
     entries = art.context.include_from_algebra(form[..., None, None](steps[:, None]) & steps[None, :])
@@ -141,7 +142,7 @@ def fluctuations(metric_of: Function, curvature_of: Function, pressure_of: Funct
                  states: Iterator[Extensor]) -> Iterator[np.ndarray]:
     """The two charts at each state as it comes."""
     first = next(states)
-    charts = Charts(metric_of, curvature_of, pressure_of, first.context.multivector)
+    charts = Charts(metric_of, curvature_of, pressure_of, mv)
     path = []
     for state in chain([first], states):
         path.append(art.on_numpy(state))
@@ -150,14 +151,13 @@ def fluctuations(metric_of: Function, curvature_of: Function, pressure_of: Funct
 
 def draw_landscape(metric_of: Function, curvature_of: Function, pressure_of: Function, state: Extensor):
     """The plane of temperature and volume with its ellipses, curvature and spinodal, and a state's ellipse."""
-    charts = Charts(metric_of, curvature_of, pressure_of, state.context.multivector)
+    charts = Charts(metric_of, curvature_of, pressure_of, mv)
     return art.figure(charts.pictures(state, [art.on_numpy(state)])[0])
 
 
 def scaling(states: Extensor, curvature_of: Function):
     """The scalar curvature against the distance above the critical temperature, both on logarithmic scales, beside a
     dashed line falling as the inverse square."""
-    mv = states.context.multivector
     distance = np.log10((mv.t & states).to_array() - 1)
     curvature = np.log10(curvature_of(states).to_array())
     diagram = art.Diagram((-3.0, 0.0), (-0.5, 5.5), (-3.0, -0.5), n_rows, n_columns, ("log(T - 1)", "log R"),

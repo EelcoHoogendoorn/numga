@@ -90,13 +90,13 @@ class Operators:
 
         # The vacuum takes each face's field to the excitation it causes, weighted by the face's area; pulled
         # back through the curl, it gives the curl stiffness, from edge readings to the edge currents.
-        vacuum = spdiag(self.areas * Magnetic.dual())                        # (Patch- <- Magnetic+)[faces <- faces]
+        vacuum = self.areas * Magnetic.dual()                                # (Patch- <- Magnetic+)[faces]
         self.curl_stiffness = self.curl.adjugate()(vacuum(self.curl))        # (Amount- <- Scalar+)[edges <- edges]
         # A unit resistance on each interior edge turns its current into the resistive electric field, a plane
         # through time, read on the edge's world sheet: a rate of its reading. Restricting the response to
         # interior edges keeps boundary circulation fixed under resistivity.
         interior = ~topology.reading(topology.interior[1], 1) * Scalar       # (Scalar+ <- Scalar+)[edges <- interior]
-        unit_resistance = spdiag(mv.scalar(np.ones(len(topology.interior[1]))[..., None]).field() * Amount.dual_inverse())  # (Scalar+ <- Amount-)[interior <- interior]
+        unit_resistance = Amount.dual_inverse()                              # [] Scalar+ <- Amount-
         self.curl_laplacian = interior(unit_resistance(interior.adjugate()(self.curl_stiffness)))  # (Scalar+ <- Scalar+)[edges <- edges]
 
 

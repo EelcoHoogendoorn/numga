@@ -179,9 +179,10 @@ def adjoint_field_map(value: Extensor) -> Extensor:
 
 @Extensor.adjugate.register(lambda value: value.arity == 1, fields=True)
 def adjugate_field_map(value: Extensor) -> Extensor:
-    """The map on complements that incidence carries over, summed over the sites:
-    `A.adjugate()(c) & x` summed equals `c & A(x)` summed. Each block's adjugate, the sites of the
-    output and the input exchanged."""
+    """The map on complements that incidence carries over, summed over the sites, each pairing read
+    with its extrinsic factor first as for one map: `A.adjugate()(c) & x` summed equals `c & A(x)`
+    summed between intrinsic spaces. Each block's adjugate, the sites of the output and the input
+    exchanged."""
     return _exchanged(value, value.batch().adjugate())
 
 

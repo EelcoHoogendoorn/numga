@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 
 from examples.mechanics.odd_elasticity import core
-from numga.sparse import spdiag
 
 mv, Displacement = core.mv, core.Displacement
 x, y = core.directions
@@ -100,7 +99,7 @@ def test_lattice_motion_is_covariant_and_has_the_expected_strain_dissipation(sti
     # The gradient of half the sum of squared bond extensions reads the extensions
     # back as longitudinal nodal loads. Sideways activity does no work against it.
     along = directions.dual_inverse()
-    strain_map = gradient.adjugate()(spdiag(along * (along & Displacement))(gradient))
+    strain_map = gradient.adjugate()((along * (along & Displacement))(gradient))
     strain_gradient = strain_map(displacement)
     strain_rate = strain_gradient & velocity
     passive_decay = -stiffness * strain_gradient.scalar_norm_squared()

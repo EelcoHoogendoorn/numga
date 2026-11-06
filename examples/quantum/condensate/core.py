@@ -91,7 +91,7 @@ def settling(topology: Topology, vertices: Point, areas: Scalar, gradients: Plan
     along = (areas / 3)[..., None, None] * (drags[..., None, None] & gradients[..., None, :])
     # One implicit step, a map of waves factored once: the cells' wave over the step, the kinetic energy, the trap,
     # and the rotation's drag turned a quarter in the condensate's plane.
-    stepping = (spdiag((cells / step + cells * trap) * Wave) + assembled(topology, kinetic * Wave) +
+    stepping = ((cells / step + cells * trap) * Wave + assembled(topology, kinetic * Wave) +
                 assembled(topology, rotation * along * (Wave * mv.ab)))       # (Wave+ <- Wave+)[V <- V]
     for index in range(n_steps + 1):
         if index % stride == 0:

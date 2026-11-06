@@ -136,7 +136,7 @@ def test_wedged_normals_follow_a_mirror_without_normal_specific_rules():
 
 def test_sandwich_shift_operators_are_the_sandwich_from_either_side():
     mv = NumpyContext(PGA3D).multivector
-    points = mv.antivector([1, 2, 3, 1])
+    points = mv.vector([1, 2, 3, 1]).dual()
     Line = PGA3D.gatype.bivector()
 
     motor = mv.bivector([0.2, -0.1, 0.3, 0.5, -0.25, 0.1]).exp()

@@ -67,9 +67,9 @@ class Operators:
         # Magnetic energy pulls the vacuum, which takes each tetrahedron's field to the excitation it causes
         # weighted by its volume, back through the curl; magnetic helicity pulls the metric-free volume
         # pairing back through the centroid 1-form and the curl.
-        vacuum = spdiag(self.prisms.norm() * Field.dual())                   # (Patch- <- Field+)[tets <- tets]
+        vacuum = self.prisms.norm() * Field.dual()                           # (Patch- <- Field+)[tets]
         self.stiffness = self.curl.adjugate()(vacuum(self.curl))             # (Amount- <- Scalar+)[edges <- edges]
-        volume_weights = spdiag(Plane ^ self.volumes)                        # (Patch- <- Plane+)[tets <- tets]
+        volume_weights = Plane ^ self.volumes                                # (Patch- <- Plane+)[tets]
         raw_helicity = self.curl.adjugate()(volume_weights(self.whitney1))   # (Amount- <- Scalar+)[edges <- edges]
         self.helicity = (raw_helicity + raw_helicity.adjugate()) / 2         # (Amount- <- Scalar+)[edges <- edges]
 

@@ -60,11 +60,6 @@ def read(points: Extensor, readers: Extensor) -> np.ndarray:
     return np.moveaxis((readers.reshape(readers.shape + (1,) * points.ndim) & points).to_array(), 0, -1)
 
 
-def sizes(points: Extensor) -> Extensor:
-    """Each offset's size: the root of its square's size."""
-    return points.squared().abs().square_root()
-
-
 def outward(simplices: np.ndarray, coordinates: np.ndarray) -> Topology:
     """The topology of top simplices `[N, n + 1]` filling the space of their vertices at the coordinates `[V, n]`, each
     wound to positive volume: its edges from its first corner a right-handed frame, counter-clockwise in the plane."""
@@ -149,7 +144,7 @@ def hexagonal_disk(radius: float, divisions: int) -> tuple[Topology, np.ndarray]
     lattice_axes = concatenate([unit[None], (((across ^ up) * (-np.pi / 6)).exp() >> unit)[None]])
     positions = (lattice_axes * lattice).sum(axis=-1)                           # [nodes] Point-
     # Map complete hexagonal rings to circles, keeping their six-neighbour topology.
-    positions = spacing * layers[inside] * positions / sizes(positions)
+    positions = spacing * layers[inside] * positions / positions.antinorm()
     return delaunay(read(concatenate((unit[None] * 0, positions)), planes(2)))
 
 
@@ -187,13 +182,13 @@ def triangular_disk(radius: float, divisions: int) -> tuple[Topology, np.ndarray
     # Equal edge springs even out the circular map's distortion. Rim vertices can slide along the circle; the
     # incidence's reverse sums edge forces at each vertex.
     sides = (topology.boundary[2, 1] * (topology.d[0] * vertices)).batch()     # [corners, F] Point-
-    area = sizes(sides[0] & sides[1]).sum() / 2
+    area = (sides[0] & sides[1]).antinorm().sum() / 2
     target = (4 * area / (np.sqrt(3) * topology.n_elements[2])).square_root()
     for _ in range(relaxation_steps):
         edges = topology.d[0] * vertices                                         # Point-[E]
-        force = edges * (1 - target / sizes(edges))                             # Point-[E]
+        force = edges * (1 - target / edges.antinorm())                          # Point-[E]
         positions = (vertices - relaxation_rate * (~topology.d[0] * force)).batch()   # [V] Point-
-        positions = positions.at[boundary].set(radius * positions[boundary] / sizes(positions[boundary]))
+        positions = positions.at[boundary].set(radius * positions[boundary] / positions[boundary].antinorm())
         vertices = positions.field()
         topology, _ = delaunay(read(positions, planes(2)))
     return topology, read(vertices.batch(), planes(2))
@@ -236,7 +231,7 @@ def sphere(levels: int) -> tuple[Topology, np.ndarray]:
     for _ in range(levels):
         topology, finer = midpoint_split(topology, coordinates, 1)
         points = placed(finer)                                                  # [V + E] Point-
-        coordinates = read(points / sizes(points), planes(3))
+        coordinates = read(points / points.antinorm(), planes(3))
     return topology, coordinates
 
 
@@ -249,6 +244,29 @@ def torus(major_radius: float, minor_radius: float, n_major: int, n_minor: int) 
     unit = directions(3)[0]                                                      # [] Point-
     tube = unit * major_radius + (around_tube >> (unit * minor_radius))         # [minor] Point-
     return Topology.torus(n_major, n_minor), read((around_axis[:, None] >> tube[None, :]).reshape(-1), planes(3))
+
+
+def flat_torus(n_rings: int, n_sites: int) -> tuple[Topology, np.ndarray, np.ndarray, np.ndarray]:
+    """The plane's triangular lattice wrapped into a torus, `n_rings` rings of `n_sites` sites each, every triangle
+    equilateral with unit sides: each ring a unit step along from the last, each site a unit step around from the last,
+    a third of a turn from along, so that each cell's diagonal is a unit step too. The lattice repeats over the rhombus
+    its two periods span, `n_rings` steps along and `n_sites` steps around. Where an edge crosses the wrap no placement
+    gives its step as the difference of its ends' places, so the edges' steps come beside the places. Its topology, the
+    sites' coordinates `[V, 2]` in the rhombus, each edge's step from its tail to its head `[E, 2]`, one of the
+    lattice's three unit steps, and the two periods `[2, 2]`."""
+    across, up = planes(2)
+    along = directions(2)[0]                                                     # [] Point-
+    around = ((across ^ up) * (-np.pi / 3)).exp() >> along                       # [] Point-
+    topology = Topology.torus(n_rings, n_sites)
+    rings, sites = np.divmod(np.arange(topology.n_vertices), n_sites)           # [V], [V]
+    # Each edge's count of steps along and around, the short way across the wrap.
+    tails, heads = topology.elements[1].T
+    ring_steps = (rings[heads] - rings[tails] + 1) % n_rings - 1               # [E]
+    site_steps = (sites[heads] - sites[tails] + 1) % n_sites - 1               # [E]
+    coordinates = read(along * rings + around * sites, planes(2))              # [V, 2]
+    steps = read(along * ring_steps + around * site_steps, planes(2))          # [E, 2]
+    periods = concatenate((along[None] * n_rings, around[None] * n_sites))      # [2] Point-
+    return topology, coordinates, steps, read(periods, planes(2))
 
 
 def surface(path: Path, size: float) -> tuple[Topology, np.ndarray]:

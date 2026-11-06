@@ -61,17 +61,17 @@ def surface(topology: Topology, vertices: Point) -> Surface:
     areas = patches.squared().square_root()                                      # Scalar+[faces]
     corner_gradients = (sides | patches.inverse()) / 2                           # [corners] Plane+[faces]
     gradient = (spdiag(corner_gradients * Scalar) * topology.incidence[2, 0]).sum(axis=0)   # (Plane+ <- Scalar+)[faces <- vertices]
-    velocity = spdiag(Plane ^ (patches / areas))(gradient)                     # (Point- <- Scalar+)[faces <- vertices]
+    velocity = (Plane ^ (patches / areas))(gradient)                           # (Point- <- Scalar+)[faces <- vertices]
     # Each corner's share of the faces around it, and the map handing each vertex its share of a face integral.
     corner_mean = topology.incidence[2, 0].mean(axis=0)                          # Scalar+[faces <- vertices]
     dual_areas = ~corner_mean * areas                                            # Scalar+[vertices]
     lumped = spdiag(1 / dual_areas) * ~corner_mean                               # Scalar+[vertices <- faces]
-    momentum = spdiag(areas * Point.dual())                                  # (Plane+ <- Point-)[faces <- faces]
+    momentum = areas * Point.dual()                                          # (Plane+ <- Point-)[faces]
     stiffness = velocity.adjugate()(momentum(velocity))                          # (Amount- <- Scalar+)[vertices <- vertices]
     mass = spdiag(dual_areas * Scalar.dual())                                    # (Amount- <- Scalar+)[vertices <- vertices]
     # A stream function's constant is free; pinning the first vertex to zero fixes it and leaves every velocity as it is.
     reference = mv.scalar((np.arange(topology.n_vertices) == 0)[:, None]).field()   # Scalar+[vertices]
-    pinned = stiffness + spdiag(stiffness.diagonal() * reference)                # (Amount- <- Scalar+)[vertices <- vertices]
+    pinned = stiffness + stiffness.diagonal() * reference                        # (Amount- <- Scalar+)[vertices <- vertices]
     return Surface(topology, patches, gradient, velocity, lumped, stiffness, mass, pinned)
 
 

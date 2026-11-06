@@ -55,7 +55,7 @@ z  0  0  0
 
 The construction gives `adjugate(wavevector) & position == wavevector & deformation(position)` for every position and wavevector.
 
-For other input and output grades, the adjugate uses the same pairing with complementary grades and opposite orientations. It runs from complements of outputs to complements of inputs. Because `&` pairs every basis blade with its complement without using the inner product, the adjugate exists even when basis vectors square to zero and even when the deformation itself cannot be inverted.
+For other input and output grades, the adjugate uses the same pairing with complementary grades and opposite orientations, each pairing read with its extrinsic factor first, as `wavevector & position` is. It runs from complements of outputs to complements of inputs. Because `&` pairs every basis blade with its complement without using the inner product, the adjugate exists even when basis vectors square to zero and even when the deformation itself cannot be inverted.
 
 In the notation of projective geometric algebra, which writes the regressive product as $\vee$, the identity reads as $\operatorname{adj} T(k) \vee p = k \vee T(p)$.
 

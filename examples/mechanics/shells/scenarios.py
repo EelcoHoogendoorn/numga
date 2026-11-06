@@ -34,11 +34,12 @@ SEED = 0
 
 
 # --- math -----------------------------------------------------------------------------
-def disc() -> tuple[core.Sheet, list[core.Point]]:
-    """The growing disc and its points at every frame `[frames] Point-[vertices]`."""
-    flat = core.lattice(DISC_SPACING, DISC_RADIUS)
+def disc(spacing: float = DISC_SPACING, n_frames: int = N_FRAMES,
+         n_steps_per_frame: int = N_STEPS_PER_FRAME) -> tuple[core.Sheet, list[core.Point]]:
+    """The growing disc, its vertices spacing apart, and its points at every frame `[frames] Point-[vertices]`."""
+    flat = core.lattice(spacing, DISC_RADIUS)
     flat = flat[np.linalg.norm(flat, axis=-1) <= DISC_RADIUS + 1e-9]
-    topology, points = core.flat_mesh(flat, DISC_SPACING)
+    topology, points = core.flat_mesh(flat, spacing)
     tails, heads = topology.incidence[1, 0] * points                            # Point-[edges], Point-[edges]
     # Each edge grows with the square of its middle's distance from the centre, in disc radii.
     distance = (mv.w.dual() & ((tails + heads) / 2)).norm() / DISC_RADIUS       # Scalar+[edges]
@@ -47,15 +48,16 @@ def disc() -> tuple[core.Sheet, list[core.Point]]:
     # The flat disc lifted by small random heights, to let it leave its plane.
     heights = ROUGHNESS * np.random.default_rng(SEED).normal(size=(len(flat), 1))
     rough = mv.point(np.concatenate([flat, heights], axis=-1)).field()          # Point-[vertices]
-    frames = list(core.relax(sheet, rough, DISC_STEP, DAMPING, N_FRAMES, N_STEPS_PER_FRAME))
+    frames = list(core.relax(sheet, rough, DISC_STEP, DAMPING, n_frames, n_steps_per_frame))
     return sheet, frames
 
 
-def strip() -> tuple[core.Sheet, list[core.Point]]:
-    """The pod strip and its points at every frame `[frames] Point-[vertices]`."""
-    flat = core.lattice(STRIP_SPACING, STRIP_LENGTH)
+def strip(spacing: float = STRIP_SPACING, n_frames: int = N_FRAMES,
+          n_steps_per_frame: int = N_STEPS_PER_FRAME) -> tuple[core.Sheet, list[core.Point]]:
+    """The pod strip, its vertices spacing apart, and its points at every frame `[frames] Point-[vertices]`."""
+    flat = core.lattice(spacing, STRIP_LENGTH)
     flat = flat[(np.abs(flat[:, 0]) <= STRIP_LENGTH / 2) & (np.abs(flat[:, 1]) <= STRIP_WIDTH / 2)]
-    topology, points = core.flat_mesh(flat, STRIP_SPACING)
+    topology, points = core.flat_mesh(flat, spacing)
     tails, heads = topology.incidence[1, 0] * points                            # Point-[edges], Point-[edges]
     lengths = (tails & heads).norm()                                            # Scalar+[edges]
     # The two layers curve along lines through the centre, turned either way from the strip's axis.
@@ -66,7 +68,7 @@ def strip() -> tuple[core.Sheet, list[core.Point]]:
     # The flat strip lifted by small random heights, to let it leave its plane.
     heights = ROUGHNESS * np.random.default_rng(SEED).normal(size=(len(flat), 1))
     rough = mv.point(np.concatenate([flat, heights], axis=-1)).field()          # Point-[vertices]
-    frames = list(core.relax(sheet, rough, STRIP_STEP, DAMPING, N_FRAMES, N_STEPS_PER_FRAME))
+    frames = list(core.relax(sheet, rough, STRIP_STEP, DAMPING, n_frames, n_steps_per_frame))
     return sheet, frames
 
 

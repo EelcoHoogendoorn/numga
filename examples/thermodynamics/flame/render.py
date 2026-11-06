@@ -23,7 +23,9 @@ from matplotlib.figure import Figure
 from numga.extensor import Extensor
 from examples.util.wgsl import contours, image_figure, simplices
 from examples.util.wgsl.camera import Camera
+from examples.thermodynamics.flame import core
 
+mv = core.mv
 Topology = simplices.Topology
 unburnt_colour, burnt_colour = np.array(to_rgb("#f4efe4")), np.array(to_rgb("#1c0a06"))
 ember_colour = np.array(to_rgb("#9a2a0c"))
@@ -51,10 +53,9 @@ def side_by_side(left: np.ndarray, right: np.ndarray) -> np.ndarray:
     return np.concatenate([left, np.full((left.shape[0], n_gap, 3), 255, dtype=np.uint8), right], axis=1)
 
 
-def disk_camera(vertices: Extensor, radius: float) -> Camera:
+def disk_camera(radius: float) -> Camera:
     """The camera looking down on a disk of this radius, `n_pixels` across: points read by the planes x and y, weighed
     by their volume."""
-    mv = vertices.context.multivector
     return Camera(mv.x, mv.y, 0 * mv.x, mv.v, 0.0, np.zeros(2), np.full(2, radius * (1 + margin)), n_pixels)
 
 
@@ -83,8 +84,7 @@ def energy_picture(points: Extensor, topology: Topology, camera: Camera, held: n
 def draw_start(topology: Topology, vertices: Extensor, radius: float, energy: Extensor, parcels: Extensor) -> Figure:
     """The disk of this radius with the mixture's parcels `Point-[vertices]` at the start, before anything burns: the
     sparks charred dark in the pale unburnt mixture, beside the energy the plane `energy` `[] Plane+` reads off them."""
-    mv = vertices.context.multivector
-    camera = disk_camera(vertices, radius)
+    camera = disk_camera(radius)
     points = vertices.batch()
     heat = np.asarray((mv.h & parcels).to_array())
     held = np.asarray((energy & parcels).to_array()) - 1
@@ -97,8 +97,7 @@ def animate(topology: Topology, vertices: Extensor, radius: float, energy: Exten
     """The disk of this radius at every frame of the mixture's parcels `Point-[vertices]` and the rate their fuel burns
     at `Scalar+[vertices]` as they come: the flame, as a sheet of paper burns, beside the energy the plane `energy`
     `[] Plane+` reads off the parcels, red above the mean unburnt mixture's and blue below."""
-    mv = vertices.context.multivector
-    camera = disk_camera(vertices, radius)
+    camera = disk_camera(radius)
     points = vertices.batch()
     for parcels, burning in frames:
         heat = np.asarray((mv.h & parcels).to_array())

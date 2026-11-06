@@ -14,6 +14,7 @@ from examples.util.animation import capture
 from examples.relativity.twistors import core
 from examples.util.wgsl import fitted, image_figure, labels, show, simplices, solids
 
+mv = core.mv
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
 AXIS_COLOUR = np.array([0.6, 0.62, 0.66])
 BACKGROUND = np.ones(3)
@@ -36,7 +37,6 @@ AXIS_REACH, LABEL_DISTANCE = 1.12, 1.24
 # --- plumbing -----------------------------------------------------------------------
 def diagram_points(events: core.Event) -> solids.Point:
     """Draw x, z and time along the scene's x, y and z: an explicit diagram, with Euclidean picture distances."""
-    mv = events.context.multivector
     readings = stack((mv.x, mv.z, mv.t)) & events[..., None]
     return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
 
@@ -50,7 +50,6 @@ def colours(count: int) -> np.ndarray:
 
 def space_view(pixels: int, *curves: core.Event) -> solids.View:
     """A view framing every spatial curve, `pixels` across."""
-    mv = curves[0].context.multivector
     space_slice = mv.t ^ (core.Event & -mv.t.dual())
     points = [solids.origin + solids.context.include_from_algebra(space_slice(batch)) for batch in curves]
     return solids.view(points, 0.0, ELEVATION, AZIMUTH, MARGIN, pixels)
@@ -58,7 +57,6 @@ def space_view(pixels: int, *curves: core.Event) -> solids.View:
 
 def draw_curves(curves: core.Event, width: float, view: solids.View) -> np.ndarray:
     """Each closed spatial curve as a stroke of a width in pixels, in its own colour."""
-    mv = curves.context.multivector
     space_slice = mv.t ^ (core.Event & -mv.t.dual())
     points = solids.origin + solids.context.include_from_algebra(space_slice(curves))
     n_curves, n_samples = int(np.prod(points.shape[:-1])), points.shape[-1]

@@ -25,7 +25,9 @@ import numpy as np
 from numga import Extensor, stack
 from examples.thermodynamics import rendering as art
 from examples.util.wgsl import simplices, solids
+from examples.thermodynamics.generic import core
 
+mv = core.mv
 # The charts' size in pixels and their ranges: position and momentum, time and entropy, mechanical energy and entropy.
 chart_rows, chart_columns = 300, 310
 position_range, momentum_range = (-2.6, 2.6), (-4.6, 4.6)
@@ -121,7 +123,6 @@ def damping(energies_of: Callable, surface_entropy_of: Callable, states: Iterato
             frame_time: float) -> Iterator[np.ndarray]:
     """The oscillator and the three charts at each state as it comes, the states a frame time apart."""
     first = next(states)
-    mv = first.context.multivector
     charts = Charts(energies_of, surface_entropy_of, mv)
     path, entropies, mechanical = [], [], []
     start = stack(energies_of(first))

@@ -1,26 +1,10 @@
-"""Pose filtering on the motor manifold in PGA2D keeps the filtered trajectory close to the truth and preserves covariance symmetry."""
+"""Pose filtering on the motor manifold in PGA2D preserves covariance symmetry."""
 
 from __future__ import annotations
 
 import numpy as np
 
 from examples.estimation.kalman import core, render, scenarios
-
-
-def test_filter_beats_dead_reckoning_and_animates():
-    """Sparse noisy pose readings keep the filtered path far closer to the truth than the
-    dead-reckoned one, and the animation draws."""
-    origin = core.mv.w.dual()
-    truth, dead, estimates, covariances, readings = scenarios.tracking()
-    positions = estimates >> origin
-    ellipsoids = core.position_ellipsoid(estimates, covariances, positions, scenarios.SIGMAS)
-    true_positions = truth >> origin
-    dead_error = (true_positions & (dead >> origin)).norm()
-    filtered_error = (true_positions & positions).norm()
-    assert filtered_error.mean(axis=0) < 0.25 * dead_error.mean(axis=0)
-
-    frames = list(render.animate_tracking(truth[:3], dead[:3], estimates[:3], positions[:3], ellipsoids[:3], readings[:3]))
-    assert len(frames) == 3 and all(frame.shape == frames[0].shape for frame in frames)
 
 
 def test_covariance_stays_symmetric():
@@ -35,3 +19,10 @@ def test_covariance_stays_symmetric():
         np.testing.assert_allclose(sigma.adjugate().kernel, sigma.kernel, atol=1e-14)
     estimate, sigma = core.update(estimate, sigma, ((mv.xy * 0.2 - mv.wx) * 0.5).exp(), core.covariance(0.3, 0.1))
     np.testing.assert_allclose(sigma.adjugate().kernel, sigma.kernel, atol=1e-14)
+
+
+def test_one_reading_draws():
+    truth, dead, estimates, covariances, readings = scenarios.tracking(n_readings=1, n_steps_per_reading=1)
+    positions = estimates >> core.mv.w.dual()
+    ellipsoids = core.position_ellipsoid(estimates, covariances, positions, scenarios.SIGMAS)
+    next(render.animate_tracking(truth, dead, estimates, positions, ellipsoids, readings))

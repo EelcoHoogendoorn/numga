@@ -61,7 +61,7 @@ def everywhere(places: np.ndarray) -> core.Scalar:
     return mv.scalar(np.ones((len(places), 1))).field()
 
 
-def meeting():
+def meeting(n_along: int = n_along):
     """A fluxon and an antifluxon running into each other along the strip, their turns composed so that their phases
     add: the pendula's pivots, every so many places along the strip's middle `[pendula] Point-`, and their phase
     directions at each frame `[frames] Phase+[pendula]`."""
@@ -78,7 +78,7 @@ def meeting():
     return vertices.batch()[shown], (phases.batch()[shown] for phases in frames)
 
 
-def contracting() -> tuple[np.ndarray, core.Scalar, core.Scalar]:
+def contracting(n_along: int = n_along, n_running: int = n_running) -> tuple[np.ndarray, core.Scalar, core.Scalar]:
     """The boosted fluxons' speeds `[rapidities]`, and the squared strength of their field in each triangle
     `[rapidities] Scalar+[faces]` at the start and after their run."""
     topology, places = core.junction(n_along, n_strip_rows, strip_length, strip_height)
@@ -93,21 +93,21 @@ def contracting() -> tuple[np.ndarray, core.Scalar, core.Scalar]:
     return np.tanh(rapidities), strengths[0], strengths[-1]
 
 
-def collapsing():
+def collapsing(n_square: int = n_square):
     """The ring of flux at rest, collapsing: the square junction's topology, its places `Point-[places]`, and the
     tunnelling current at each frame, the bias direction wedged with the phase, `[frames] Rate+[places]`."""
     topology, places = core.junction(n_square, n_square, square_side, square_side)
     vertices, gradients, tension = operators(topology, places)
     # The resting kink across the ring, by each place's distance from the middle less the ring's radius: four times the
     # arctangent of its exponential.
-    distances = vertices.squared().abs().square_root()                        # Scalar+[places]
+    distances = vertices.antinorm()                                           # Scalar+[places]
     angles = 4 * (distances - ring_radius).exp().arctan()                     # Scalar+[places]
     phases = (mv.ab * (-angles / 2)).exp() >> mv.a                            # Phase+[places]
     frames = core.evolving(tension, everywhere(places), phases, 0 * (mv.a ^ phases), ring_dt, n_ring_steps, ring_stride)
     return topology, vertices, (mv.a ^ phases for phases in frames)
 
 
-def reflecting():
+def reflecting(n_wide: int = n_wide, n_high: int = n_high):
     """The oblique fluxon line running into the junction's edge: the junction's topology, its places `Point-[places]`,
     and the tunnelling current at each frame `[frames] Rate+[places]`."""
     topology, places = core.junction(n_wide, n_high, wide, high)
