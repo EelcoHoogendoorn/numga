@@ -163,7 +163,7 @@ def run(notebook: Path, timeout: float, cores: int, memory: float) -> dict:
     in how many seconds."""
     jupyter = [str(Path(sys.executable).parent / "jupyter"), "execute", notebook.name]
     job = [sys.executable, "-I", str(POOL), "run", "--cores", str(cores), "--memory", str(memory),
-           "--what", f"notebook {notebook} in {ROOT.name}", "--"]
+           "--what", f"notebook {notebook.name} in {ROOT.name}", "--"]
     # No window for any figure.
     environment = os.environ | {"MPLBACKEND": "Agg"}
     start = time.perf_counter()
