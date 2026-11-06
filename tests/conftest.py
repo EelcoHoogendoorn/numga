@@ -4,7 +4,10 @@ pool. The whole suite runs once, just before a push to main, declared as `pytest
 
 from __future__ import annotations
 
+import fcntl
+import json
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -13,10 +16,14 @@ import pytest
 os.environ["JAX_ENABLE_X64"] = "1"
 
 # Under the machine's pool (`examples/pool.py`), a run's tests run in workers, each one job of the pool, of one core and
-# 1 GB unless NUMGA_POOL_CORES or NUMGA_POOL_MEMORY ask otherwise; a test that needs more memory declares it with
-# `@pytest.mark.memory(gb)`, which its worker reserves while it runs. The process that spreads the tests over the
-# workers runs none of them and reserves nothing.
+# 1 GB unless NUMGA_POOL_CORES or NUMGA_POOL_MEMORY ask otherwise. The process that spreads the tests over the workers
+# runs none of them and reserves nothing.
 WORKER_CORES, WORKER_MEMORY = 1, 1
+# A test whose worker the pool kills for exceeding its reservation goes back into the queue with twice the memory,
+# up to the pool's whole budget, and the memory it then needs is learned for later runs, which reserve it up front;
+# `@pytest.mark.memory(gb=4)` declares a test's need instead. Each such retry replaces a worker, which xdist counts
+# against its limit of restarts.
+WORKER_RESTARTS = 100
 # The one occasion for the whole suite, the value --full-sweep takes; a bare --full-sweep is refused.
 SWEEP_OCCASION = "push-to-main"
 # More tests than any change's own: a run this broad is a sweep, however its targets are spelled.
@@ -30,9 +37,17 @@ TARGETED = ("Run the tests the change could break, by file or test function "
 # Every run adds each test's seconds, setup, call and teardown, to a record kept by test id in the workspace that holds
 # this checkout, beside the checkouts; a checkout with no workspace archive beside it keeps no record.
 DURATIONS = TEST_ROOT.parents[1] / "archive" / "test_durations.json"
+# The memory in GB each test has learned it needs, more than a worker reserves, kept beside the durations.
+MEMORY = TEST_ROOT.parents[1] / "archive" / "test_memory.json"
 # This run's seconds by test id and phase, and the run's time, checkout and load, as the record gets them.
 _seconds: dict[str, dict[str, object]] = {}
 _run: dict[str, object] = {}
+# The memory record as last read, with the time it was written; and the memory each test of this run reserved beyond a
+# worker's own.
+_learned: dict[str, object] = {"written": None, "amounts": {}}
+_needed: dict[str, float] = {}
+# When this run started, before which no kill of the pool's is this run's.
+LOADED = time.time()
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -70,6 +85,8 @@ def pytest_cmdline_main(config: pytest.Config) -> None:
         files = sum(1 if path.is_file() else len(list(path.rglob("test_*.py"))) for path in targets)
         config.option.numprocesses = max(1, min(files, pool.room(*pool.requested(WORKER_CORES, WORKER_MEMORY))))
         os.environ.update(pool.threads(pool.requested(WORKER_CORES, WORKER_MEMORY)[0]))
+        if config.option.maxworkerrestart is None:
+            config.option.maxworkerrestart = WORKER_RESTARTS
 
 
 @pytest.hookimpl(optionalhook=True)
@@ -126,13 +143,13 @@ def runs_tests(config: pytest.Config) -> bool:
 def pytest_configure(config: pytest.Config) -> None:
     """A process that runs tests takes its reservation in the machine's pool, where there is one, and waits until the
     pool admits it; headless unless --show-plots."""
-    config.addinivalue_line("markers", "memory(gb): the memory a test needs, more than its worker reserves")
+    config.addinivalue_line("markers", "memory(gb): the memory in GB a test needs, more than its worker reserves")
     if runs_tests(config):
         from examples import pool
         checkout = TEST_ROOT.parent.name
         worker = getattr(config, "workerinput", {}).get("workerid")
         pool.hold(*pool.requested(WORKER_CORES, WORKER_MEMORY), what=f"pytest {worker or 'run'} in {checkout}",
-                  run=run_name(os.getppid() if worker else os.getpid()), report=False)
+                  run=run_name(os.getppid() if worker else os.getpid()), report=False, spared=False)
     if not config.getoption("--show-plots", False):
         os.environ.setdefault("MPLBACKEND", "Agg")
         try:
@@ -144,30 +161,92 @@ def pytest_configure(config: pytest.Config) -> None:
 
 def pytest_sessionstart(session: pytest.Session) -> None:
     """Note when the run starts, from which checkout, and the machine's load before the run adds its own."""
-    import time
     _run.update(at=time.strftime("%Y-%m-%dT%H:%M:%S"), checkout=TEST_ROOT.parent.name, load=round(os.getloadavg()[0], 2))
 
 
 def pytest_runtest_logreport(report: pytest.TestReport) -> None:
-    """Note the seconds of each phase of a test, and its outcome: the call's, or a setup's that skipped or failed."""
+    """Note the seconds of each phase of a test, and its outcome: the call's, or a setup's that skipped or failed; and
+    the memory it reserved beyond a worker's own."""
+    _needed.update((report.nodeid, value) for key, value in report.user_properties if key == "memory")
     phases = _seconds.setdefault(report.nodeid, {})
     phases[report.when] = round(report.duration, 4)
     if report.when == "call" or report.outcome != "passed":
         phases.setdefault("outcome", report.outcome)
 
 
+def learned() -> dict[str, float]:
+    """The memory in GB each test has learned it needs, read again whenever the record has changed."""
+    written = MEMORY.stat().st_mtime_ns if MEMORY.exists() else None
+    if written != _learned["written"]:
+        _learned.update(written=written, amounts=json.loads(MEMORY.read_text()) if written else {})
+    return _learned["amounts"]
+
+
+def learn(nodeid: str, memory: float) -> None:
+    """Record the memory in GB a test needs, under a lock, beside what other runs have recorded."""
+    with os.fdopen(os.open(MEMORY, os.O_RDWR | os.O_CREAT), "r+") as record:
+        fcntl.flock(record, fcntl.LOCK_EX)
+        text = record.read()
+        amounts = {**(json.loads(text) if text else {}), nodeid: memory}
+        record.seek(0)
+        record.truncate()
+        record.write("{\n" + ",\n".join(f"{json.dumps(key)}: {value:g}" for key, value in sorted(amounts.items()))
+                     + "\n}\n")
+
+
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_protocol(item: pytest.Item, nextitem: pytest.Item | None):
-    """Name each test to the pool's watchdog, and hold the memory a test declares while it runs; afterwards the
-    worker keeps what it still holds, at least its own reservation."""
+    """Name each test to the pool's watchdog, and hold the memory a test needs while it runs, the memory its marker
+    declares or else the memory it has learned; afterwards the worker keeps what it still holds, at least its own
+    reservation."""
     from examples import pool
     pool.doing(item.nodeid)
+    default = pool.requested(WORKER_CORES, WORKER_MEMORY)[1]
     declared = item.get_closest_marker("memory")
-    if declared:
-        pool.resize(declared.args[0])
+    needed = declared.kwargs["gb"] if declared else learned().get(item.nodeid, default)
+    if needed > default:
+        item.user_properties.append(("memory", needed))
+        pool.grow_to(needed)
     yield
-    if declared:
-        pool.resize(max(pool.requested(WORKER_CORES, WORKER_MEMORY)[1], pool.resident(os.getpid())))
+    if needed > default:
+        pool.shrink_to(default)
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_handlecrashitem(crashitem: str, report: pytest.TestReport, sched) -> None:
+    """A test whose worker the pool killed for exceeding its reservation has not failed: it goes back into the queue
+    with twice the memory, which it learns, until it passes or its reservation reaches the pool's whole budget, where
+    it fails with the memory it reached."""
+    from examples import pool
+    if not pool.active() or not MEMORY.parent.is_dir():
+        return
+    killed = [kill for kill in pool.kills(run_name(os.getpid()))
+              if kill["doing"] == crashitem and kill["time"] >= LOADED]
+    if not killed:
+        return
+    reached, reserved = killed[-1]["footprint"], killed[-1]["reserved"]
+    if reserved >= pool.budget_memory():
+        report.longrepr = (f"{crashitem} needs more memory than the pool's whole budget: the pool killed it at "
+                           f"{reached:.1f} GB, with {reserved:g} GB reserved")
+        return
+    learn(crashitem, pool.doubled(reserved))
+    sched.mark_test_pending(crashitem)
+    report.outcome = "rerun"
+
+
+def pytest_report_teststatus(report: pytest.TestReport, config: pytest.Config):
+    """A test the pool sent back into the queue with more memory is a rerun, not a failure."""
+    if report.outcome == "rerun":
+        return "rerun", "R", ("RERUN", {"yellow": True})
+    return None
+
+
+def pytest_terminal_summary(terminalreporter) -> None:
+    """Name every test of the run that needed more memory than a worker reserves, with the memory it reserved."""
+    if _needed:
+        terminalreporter.write_sep("-", "tests that needed more memory than a worker reserves")
+        for nodeid, memory in sorted(_needed.items()):
+            terminalreporter.write_line(f"{memory:>5g} GB  {nodeid}")
 
 
 def pytest_sessionfinish(session: pytest.Session) -> None:
@@ -175,8 +254,6 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
     worker leaves the record to the process that spread the tests, which hears every test's report."""
     if not _seconds or not DURATIONS.parent.is_dir() or hasattr(session.config, "workerinput"):
         return
-    import fcntl
-    import json
     with os.fdopen(os.open(DURATIONS, os.O_RDWR | os.O_CREAT), "r+") as record:
         fcntl.flock(record, fcntl.LOCK_EX)
         text = record.read()
