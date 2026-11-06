@@ -135,6 +135,11 @@ def run_name(spreader: int) -> str:
     return f"pytest in {TEST_ROOT.parent.name}, pid {spreader}"
 
 
+def job_name(worker: str) -> str:
+    """The name in the pool of a process that runs tests, by its worker id, or `run` for a run in one process."""
+    return f"pytest {worker} in {TEST_ROOT.parent.name}"
+
+
 def runs_tests(config: pytest.Config) -> bool:
     """Whether this process runs tests: a worker, or a run in one process; not the process that spreads them."""
     return hasattr(config, "workerinput") or not getattr(config.option, "tx", None)
@@ -146,9 +151,8 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "memory(gb): the memory in GB a test needs, more than its worker reserves")
     if runs_tests(config):
         from examples import pool
-        checkout = TEST_ROOT.parent.name
         worker = getattr(config, "workerinput", {}).get("workerid")
-        pool.hold(*pool.requested(WORKER_CORES, WORKER_MEMORY), what=f"pytest {worker or 'run'} in {checkout}",
+        pool.hold(*pool.requested(WORKER_CORES, WORKER_MEMORY), what=job_name(worker or "run"),
                   run=run_name(os.getppid() if worker else os.getpid()), report=False, spared=False)
     if not config.getoption("--show-plots", False):
         os.environ.setdefault("MPLBACKEND", "Agg")
@@ -196,9 +200,8 @@ def learn(nodeid: str, memory: float) -> None:
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_protocol(item: pytest.Item, nextitem: pytest.Item | None):
-    """Name each test to the pool's watchdog, and hold the memory a test needs while it runs, the memory its marker
-    declares or else the memory it has learned; afterwards the worker keeps what it still holds, at least its own
-    reservation."""
+    """Name each test to the pool's watchdog, and hold the memory a test needs, the memory its marker declares or else
+    the memory it has learned; a worker keeps what it has grown to, since what its tests leave behind stays."""
     from examples import pool
     pool.doing(item.nodeid)
     default = pool.requested(WORKER_CORES, WORKER_MEMORY)[1]
@@ -208,8 +211,6 @@ def pytest_runtest_protocol(item: pytest.Item, nextitem: pytest.Item | None):
         item.user_properties.append(("memory", needed))
         pool.grow_to(needed)
     yield
-    if needed > default:
-        pool.shrink_to(default)
 
 
 @pytest.hookimpl(optionalhook=True)
@@ -220,12 +221,14 @@ def pytest_handlecrashitem(crashitem: str, report: pytest.TestReport, sched) -> 
     from examples import pool
     if not pool.active() or not MEMORY.parent.is_dir():
         return
-    killed = [kill for kill in pool.kills(run_name(os.getpid()))
-              if kill["doing"] == crashitem and kill["time"] >= LOADED]
+    # The pool's record names the worker it killed; the test xdist names as the one the worker was running is the
+    # one sent back.
+    worker = job_name(report.node.gateway.id)
+    killed = [kill for kill in pool.kills(run_name(os.getpid())) if kill["what"] == worker and kill["time"] >= LOADED]
     if not killed:
         return
     reached, reserved = killed[-1]["footprint"], killed[-1]["reserved"]
-    if reserved >= pool.budget_memory():
+    if reserved >= pool.MEMORY:
         report.longrepr = (f"{crashitem} needs more memory than the pool's whole budget: the pool killed it at "
                            f"{reached:.1f} GB, with {reserved:g} GB reserved")
         return

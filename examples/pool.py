@@ -1,8 +1,8 @@
 """A machine-wide pool of cores and memory that every heavy run shares: each test worker, each notebook, each module
 of the examples run as a program, and any command run through it, is one job of the pool.
 
-The pool's budget is three quarters of the machine, of its cores and of its physical memory, so that the machine stays
-usable beside it. A job reserves cores and memory before it starts. It waits while an earlier job is still waiting,
+The pool's budget is three quarters of the machine's cores and 16 GB of memory, so that the machine stays usable
+beside it. A job reserves cores and memory before it starts. It waits while an earlier job is still waiting,
 while the budget's free remainder does not fit it, or while the machine's available memory, which counts every other
 program, falls short of what the job reserves, plus a margin, beyond what the running jobs have reserved and not yet
 used. A watchdog holds each job to its reservation: it polls the memory of the job's whole process tree, and kills
@@ -57,8 +57,9 @@ CORES_REQUESTED, MEMORY_REQUESTED = "NUMGA_POOL_CORES", "NUMGA_POOL_MEMORY"
 LEGACY_LOCK, LEGACY_LOCK_HELD = "NUMGA_HEAVY_RUN_LOCK", "NUMGA_HEAVY_RUN_LOCK_HELD"
 
 GB = 2 ** 30
-# The budget's cores; its memory, three quarters of the physical memory, is `budget_memory()`.
+# The budget: three quarters of the machine's cores, and its memory in GB, which is also the most one job reserves.
 CORES = max(1, 3 * (os.cpu_count() or 1) // 4)
+MEMORY = 16
 # Memory the machine keeps available beyond every reservation.
 MARGIN = 1
 # How often a waiting job asks again, and how often a watchdog reads its job's memory and, less often, its tree.
@@ -79,12 +80,6 @@ _held: dict = {}
 _watchdog: list[subprocess.Popen] = []
 _legacy_locks: list = []
 _libraries: list = []
-
-
-def budget_memory() -> float:
-    """The budget's memory in GB, three quarters of the machine's physical memory, and the most one job reserves."""
-    import psutil
-    return 0.75 * psutil.virtual_memory().total / GB
 
 
 def active() -> bool:
@@ -197,8 +192,8 @@ def _shortfall(jobs: list[dict], job: dict) -> str:
     if cores + job["cores"] > CORES:
         return f"{cores} of {CORES} cores reserved"
     memory = sum(other["memory"] for other in others)
-    if memory + job["memory"] > budget_memory():
-        return f"{memory:g} of {budget_memory():.0f} GB reserved"
+    if memory + job["memory"] > MEMORY:
+        return f"{memory:g} of {MEMORY} GB reserved"
     unused = sum(max(0.0, other["memory"] - footprint(other["pid"])) for other in others)
     wanted = max(0.0, job["memory"] - footprint(job["pid"])) + MARGIN
     available = _available() - unused
@@ -211,7 +206,7 @@ def room(cores: int, memory: float) -> int:
     """How many jobs of `cores` cores and `memory` GB the pool would admit now, beside every job holding or waiting."""
     jobs = read()
     by_cores = (CORES - sum(job["cores"] for job in jobs)) // cores
-    by_budget = (budget_memory() - sum(job["memory"] for job in jobs)) // memory
+    by_budget = (MEMORY - sum(job["memory"] for job in jobs)) // memory
     unused = sum(max(0.0, job["memory"] - footprint(job["pid"])) for job in jobs)
     by_machine = (_available() - unused - MARGIN) // memory
     return max(0, int(min(by_cores, by_budget, by_machine)))
@@ -228,9 +223,8 @@ def hold(cores: int, memory: float, what: str, run: str, report: bool, spared: b
     Outside the pool, or inside a job, nothing happens."""
     if not active():
         return
-    if not (1 <= cores <= CORES and 0 < memory <= budget_memory()):
-        raise ValueError(f"a job reserves 1 to {CORES} cores and up to {budget_memory():.0f} GB, "
-                         f"not {cores} and {memory:g}")
+    if not (1 <= cores <= CORES and 0 < memory <= MEMORY):
+        raise ValueError(f"a job reserves 1 to {CORES} cores and up to {MEMORY} GB, not {cores} and {memory:g}")
     import psutil
     _share_legacy_lock(what)
     me = psutil.Process()
@@ -273,8 +267,8 @@ def _wait(candidate, admit, wanted: str) -> float:
 def resize(memory: float) -> None:
     """Change the memory this process's job holds to `memory` GB: more waits until the pool admits it, less is
     immediate. The watchdog holds the job to the larger of the two while they change."""
-    if not 0 < memory <= budget_memory():
-        raise ValueError(f"a job reserves up to {budget_memory():.0f} GB, not {memory:g}")
+    if not 0 < memory <= MEMORY:
+        raise ValueError(f"a job reserves up to {MEMORY} GB, not {memory:g}")
     if memory > _held["memory"]:
         _wait(lambda found: {**found, "memory": memory}, lambda found: found.update(memory=memory), f"{memory:g} GB")
         _tell("memory", f"{memory:g}")
@@ -286,15 +280,9 @@ def resize(memory: float) -> None:
 
 
 def grow_to(memory: float) -> None:
-    """Hold at least `memory` GB, waiting until the pool admits more where the job holds less."""
+    """Hold at least `memory` GB from now on, waiting until the pool admits more where the job holds less."""
     if _held and memory > _held["memory"]:
         resize(memory)
-
-
-def shrink_to(memory: float) -> None:
-    """Hold `memory` GB, or as much as the job's processes cost, whichever is more."""
-    if _held:
-        resize(max(memory, footprint(_held["pid"])))
 
 
 def doing(text: str) -> None:
@@ -349,7 +337,7 @@ def run(command: list[str], cores: int, memory: float, what: str) -> int:
             status = process.wait()
         if not _held or not [kill for kill in kills(what) if kill["pid"] == _held["pid"] and kill["time"] >= start]:
             return status
-        if _held["memory"] >= budget_memory():
+        if _held["memory"] >= MEMORY:
             print(f"pool: {what} needs more memory than the pool's whole budget", file=sys.stderr, flush=True)
             return status
         resize(doubled(_held["memory"]))
@@ -358,7 +346,7 @@ def run(command: list[str], cores: int, memory: float, what: str) -> int:
 
 def doubled(memory: float) -> float:
     """The next reservation of a job killed at `memory` GB: twice as much, up to the ceiling."""
-    return min(2 * memory, budget_memory())
+    return min(2 * memory, MEMORY)
 
 
 def kills(run: str) -> list[dict]:
@@ -440,7 +428,7 @@ def status() -> None:
     jobs = read()
     held = [job for job in jobs if job["admitted"]]
     print(f"{sum(job['cores'] for job in held)} of {CORES} cores and {sum(job['memory'] for job in held):g} of "
-          f"{budget_memory():.0f} GB reserved; {_available():.1f} GB available on the machine")
+          f"{MEMORY} GB reserved; {_available():.1f} GB available on the machine")
     for job in jobs:
         state = "holds" if job["admitted"] else "waits"
         print(f"{state} {job['cores']} cores {job['memory']:>4g} GB, using {footprint(job['pid']):5.2f} GB, "
@@ -482,7 +470,6 @@ def chart(path: Path, name: str) -> None:
     runs = list(dict.fromkeys(job["run"] for sample in samples for job in sample["jobs"]))
     jobs = list(dict.fromkeys((job["pid"], job["run"]) for sample in samples for job in sample["jobs"]))
     colours = dict(zip(runs, matplotlib.colormaps["tab10"].colors))
-    budget = budget_memory()
 
     def total(run: str, key: str) -> list[float]:
         return [sum(job[key] for job in sample["jobs"] if job["run"] == run and job["admitted"]) for sample in samples]
@@ -506,10 +493,10 @@ def chart(path: Path, name: str) -> None:
                               step="post")
         memory_axes.plot(minutes, [sample["available"] for sample in samples], color="grey",
                          label="available on the machine")
-        memory_axes.axhline(budget, color="black", linestyle="--")
+        memory_axes.axhline(MEMORY, color="black", linestyle="--")
         memory_axes.set_ylabel("GB reserved, held")
-        memory_axes.set_ylim(0, budget * 1.3)
-        memory_axes.set_yticks([0, round(budget)])
+        memory_axes.set_ylim(0, MEMORY * 1.3)
+        memory_axes.set_yticks([0, MEMORY])
         memory_axes.legend(loc="upper left", frameon=False)
         for pid, run in jobs:
             jobs_axes.plot(minutes, own(pid, "memory"), color=colours[run], linestyle=":", drawstyle="steps-post")
