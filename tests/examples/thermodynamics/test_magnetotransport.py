@@ -11,7 +11,7 @@ from examples.thermodynamics.magnetotransport import core, render, scenarios
 
 mv = core.mv
 # The carriers' constants, as the core's functions take them.
-carriers = (scenarios.valences, scenarios.entropies_per_charge, scenarios.mobilities)
+carriers = scenarios.carriers
 # The densities of the carriers at compensation; and the field ramped up from nothing to the scenario's strength.
 compensated = np.full(2, 0.5)                                                # [kinds]
 strengths = np.linspace(0.0, scenarios.strength, 5)                          # [strengths]
@@ -20,7 +20,7 @@ strengths = np.linspace(0.0, scenarios.strength, 5)                          # [
 def ramp(topology: core.Topology, vertices: core.Point, high: np.ndarray, low: np.ndarray, span: float,
          densities: np.ndarray) -> list:
     """A conductor's steady states as the field is ramped up, at these densities of the carriers `[kinds]`."""
-    return list(scenarios.states(topology, vertices, high, low, span, strengths * mv.xy,
+    return list(scenarios.states(topology, vertices, high, low, span, strengths * mv.xy, carriers,
                                  np.broadcast_to(densities, (len(strengths), 2))))
 
 
@@ -107,9 +107,10 @@ def test_scenes_run_and_draw():
     ring_topology, ring_vertices, inner, outer = scenarios.ring(n_rings=2, n_sectors=8)
     field, densities = scenarios.magnetic[:1], scenarios.densities[:1]
     first = next(zip(field,
-                     scenarios.states(bar_topology, bar_vertices, left, right, scenarios.length, field, densities),
+                     scenarios.states(bar_topology, bar_vertices, left, right, scenarios.length, field, carriers,
+                                      densities),
                      scenarios.states(ring_topology, ring_vertices, inner, outer, 1 - scenarios.inner_radius, field,
-                                      densities)))
+                                      carriers, densities)))
     resolution = 20
     next(render.animate_heat_driven(bar_topology, bar_vertices, (left, right), ring_topology, ring_vertices,
                                     (inner, outer), resolution, resolution, first, [first]))

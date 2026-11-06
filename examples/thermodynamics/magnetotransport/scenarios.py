@@ -4,7 +4,11 @@ driven by a current and, apart, by heat. Driven by a current, the bar's Hall vol
 compensation and comes back reversed, while its resistance along it peaks; driven by heat, its Nernst voltage grows
 from nothing at either end to its largest at compensation. The ring's carriers spiral, and heat drives a current around
 it where the Hall voltage would vanish. At compensation, driven by heat, the field is also swept from one sense through
-nothing to the other, and the Nernst voltage and the ring's circulating current reverse with it.
+nothing to the other, and the Nernst voltage and the ring's circulating current reverse with it. A magnetized
+conductor with no field, its carriers spin-up and spin-down electrons turned opposite ways by their spins' scattering,
+is swept the same way from all spin up through none to all spin down, driven by the current: its Hall voltage, the
+anomalous Hall effect, follows the magnetization through nothing and back reversed, and unmagnetized the two spins part
+to opposite sides with no voltage across, the spin Hall effect, while its resistance along it peaks.
 
 Electrons and holes share one mobility and one entropy per carrier, so that compensation, the Hall voltage's zero and
 the Nernst voltage's peak fall at one balance. The carriers' and the lattice's constants are of order one, in units
@@ -33,6 +37,9 @@ States = Iterator[tuple[np.ndarray, core.Potential, core.Spatial, core.Potential
 valences = np.array([-1, 1])
 entropies_per_charge = np.array([-1.0, 1.0])
 mobilities = np.array([1.0, 1.0])
+# Their scattering takes no account of their spins, so it turns neither: no skew.
+skews = np.zeros(2)
+carriers = (valences, entropies_per_charge, mobilities, skews)
 conductivity = 1.5
 # The magnetic field's strength, the tangent of the Hall angle.
 strength = 2.0
@@ -52,6 +59,18 @@ magnetic = np.full(n_frames, strength) * mv.xy                               # [
 # palette, the colours its frames share.
 reversal = strength * np.cos(np.linspace(0, np.pi, n_frames)) * mv.xy        # [frames] Bivector+
 compensation = np.full_like(densities, 0.5)                                  # [frames, kinds]
+# The magnetized conductor's carriers, spin-up and spin-down electrons, alike in charge, entropy per charge and
+# mobility, their scattering turning them opposite ways in their spins' plane by an angle of this tangent, of order one
+# as the field's strength is; its magnetization, the spin-up electrons' share less the spin-down's, swept from all up to all down in
+# a cosine with no field, and each spin's density.
+spin_valences = np.array([-1, -1])
+spin_entropies_per_charge = np.array([-1.0, -1.0])
+spin_mobilities = np.array([1.0, 1.0])
+spin_skews = np.array([1.0, -1.0])
+spin_carriers = (spin_valences, spin_entropies_per_charge, spin_mobilities, spin_skews)
+magnetizations = np.cos(np.linspace(0, np.pi, n_frames))                     # [frames]
+spin_densities = np.stack([(1 + magnetizations) / 2, (1 - magnetizations) / 2], axis=-1)   # [frames, kinds]
+no_field = np.zeros(n_frames) * mv.xy                                         # [frames] Bivector+
 n_gallery_colours = 64
 # The bar: its length in widths, its rows of triangles across, an even count so that the bar mirrors in its middle
 # line, and its columns of places along, so that the triangles are nearly equilateral and a column falls at every
@@ -123,14 +142,15 @@ def ring(n_rings: int = n_rings, n_sectors: int = n_sectors) -> tuple[Topology, 
 
 
 def states(topology: Topology, vertices: core.Point, high: np.ndarray, low: np.ndarray, span: float,
-           magnetic: core.Magnetic, densities: np.ndarray) -> States:
+           magnetic: core.Magnetic, carriers: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+           densities: np.ndarray) -> States:
     """The conductor's steady states, its vertices at these places `Point-[vertices]` and its contacts `high` `[high]`
     and `low` `[low]` this span apart, at each frame's magnetic field `[frames] Bivector+` and densities of the carriers
-    `[frames, kinds]`, as `core.sweep` gives them, driven by the current and by the fall of temperature over the
-    span."""
+    `[frames, kinds]`, the carriers' valences, entropies per charge, mobilities and skews `[kinds]` each, as
+    `core.sweep` gives them, driven by the current and by the fall of temperature over the span."""
     areas, gradients = core.triangles(topology, vertices)
-    return core.sweep(topology, areas, gradients, high, low, current, temperature_fall * span, magnetic, valences,
-                      entropies_per_charge, mobilities, densities, conductivity)
+    return core.sweep(topology, areas, gradients, high, low, current, temperature_fall * span, magnetic, *carriers,
+                      densities, conductivity)
 
 
 def bar_readings(topology: Topology, plus: np.ndarray, minus: np.ndarray, states: list
@@ -165,7 +185,7 @@ def ring_resistances(topology: Topology, high: np.ndarray, low: np.ndarray, stat
 def end_fluxes() -> core.Flux:
     """The flux a unit electric field along the bar drives `[ends] Flux-`, with electrons only and with holes only."""
     ends = np.eye(2)                                                          # [ends, kinds]
-    return core.response(strength * mv.xy, valences, entropies_per_charge, mobilities, ends, conductivity)(mv.xt)
+    return core.response(strength * mv.xy, *carriers, ends, conductivity)(mv.xt)
 
 
 def main() -> None:
@@ -181,22 +201,36 @@ def main() -> None:
     # heat, on the scales of the first frame, electrons only.
     conductors = (bar_topology, bar_vertices, (left, right), ring_topology, ring_vertices, (inner, outer),
                   bar_resolution, ring_resolution)
-    frames = list(zip(magnetic, states(bar_topology, bar_vertices, left, right, length, magnetic, densities),
-                      states(ring_topology, ring_vertices, inner, outer, 1 - inner_radius, magnetic, densities)))
+    frames = list(zip(magnetic,
+                      states(bar_topology, bar_vertices, left, right, length, magnetic, carriers, densities),
+                      states(ring_topology, ring_vertices, inner, outer, 1 - inner_radius, magnetic, carriers,
+                             densities)))
     save_animation(render.animate_current_driven(*conductors, frames[0], frames), "magnetotransport_charge",
                    frame_duration_ms)
     save_animation(render.animate_heat_driven(*conductors, frames[0], frames), "magnetotransport_heat",
                    frame_duration_ms)
     # At compensation, driven by heat, the field reversed, on the same scales.
-    reversed_frames = zip(reversal, states(bar_topology, bar_vertices, left, right, length, reversal, compensation),
-                          states(ring_topology, ring_vertices, inner, outer, 1 - inner_radius, reversal, compensation))
+    reversed_frames = zip(reversal,
+                          states(bar_topology, bar_vertices, left, right, length, reversal, carriers, compensation),
+                          states(ring_topology, ring_vertices, inner, outer, 1 - inner_radius, reversal, carriers,
+                                 compensation))
     save_animation(render.animate_heat_driven(*conductors, frames[0], reversed_frames), "magnetotransport_reversed",
                    frame_duration_ms)
     bar_states = [bar_state for _, bar_state, _ in frames]
     ring_states = [ring_state for _, _, ring_state in frames]
     resistance, hall, seebeck, nernst, righi_leduc = bar_readings(bar_topology, plus, minus, bar_states)
-    save_figure(render.draw_readings(balances, resistance, hall, seebeck, nernst, righi_leduc),
+    save_figure(render.draw_readings(balances, resistance, hall, seebeck, nernst, righi_leduc, render.balance_names),
                 "magnetotransport_readings")
+    # The magnetized conductor with no field, as its magnetization is swept, on the same scales.
+    spin_frames = list(zip(no_field, states(bar_topology, bar_vertices, left, right, length, no_field, spin_carriers,
+                                            spin_densities),
+                           states(ring_topology, ring_vertices, inner, outer, 1 - inner_radius, no_field,
+                                  spin_carriers, spin_densities)))
+    save_animation(render.animate_current_driven(*conductors, frames[0], spin_frames), "magnetotransport_spin",
+                   frame_duration_ms)
+    spin_resistance, spin_hall, _, spin_nernst, _ = bar_readings(bar_topology, plus, minus,
+                                                                 [bar_state for _, bar_state, _ in spin_frames])
+    save_figure(render.draw_spin_readings(magnetizations, spin_resistance, spin_hall), "magnetotransport_spin_readings")
 
     # checks
     # With one kind of carrier the bar's resistance along it is a square's with no field and its Hall resistance the
@@ -213,6 +247,20 @@ def main() -> None:
     assert righi_leduc.to_array()[middle // 2] * righi_leduc.to_array()[-1 - middle // 2] < 0
     np.testing.assert_allclose(ring_resistances(ring_topology, inner, outer, ring_states).to_array(),
                                (1 + strength ** 2) * np.log(1 / inner_radius) / (2 * np.pi), rtol=1e-2)
+    # With no field, the magnetized bar's Hall resistance is the skew with all spins up and its negative with all down,
+    # as one kind's in a field of that tangent, and nothing unmagnetized, where the resistance along it is largest, the
+    # two spins parted to opposite sides with no Hall voltage to hold them. Driven by heat nothing turns: both spins
+    # carry the same entropy per charge, so their own Seebeck voltage holds both still, and the Nernst signal is
+    # nothing at every magnetization.
+    np.testing.assert_allclose(spin_hall.to_array()[[0, -1]], spin_skews, rtol=2e-2)
+    assert abs(spin_hall.to_array()[middle]) < 1e-12
+    assert spin_resistance.to_array().argmax() == middle
+    assert np.abs(spin_nernst.to_array()).max() < 1e-10
+    # Onsager-Casimir with the magnetization: reversing it, each spin's density swapped, turns the response into its
+    # adjugate, as reversing the field does.
+    spin_responses = core.response(no_field, *spin_carriers, spin_densities, conductivity)   # [frames] Flux- <- Drive+
+    np.testing.assert_allclose(spin_responses[::-1].kernel, spin_responses.adjugate().kernel,
+                               atol=1e-12 * np.abs(spin_responses.kernel).max())
 
 
 def pinned() -> None:
@@ -223,8 +271,10 @@ def pinned() -> None:
 
     bar_topology, bar_vertices, left, right, _, _ = bar()
     ring_topology, ring_vertices, inner, outer = ring()
-    frames = list(zip(magnetic, states(bar_topology, bar_vertices, left, right, length, magnetic, densities),
-                      states(ring_topology, ring_vertices, inner, outer, 1 - inner_radius, magnetic, densities)))
+    frames = list(zip(magnetic,
+                      states(bar_topology, bar_vertices, left, right, length, magnetic, carriers, densities),
+                      states(ring_topology, ring_vertices, inner, outer, 1 - inner_radius, magnetic, carriers,
+                             densities)))
     pin_animation(render.animate_heat_driven(bar_topology, bar_vertices, (left, right), ring_topology, ring_vertices,
                                              (inner, outer), bar_resolution, ring_resolution, frames[0], frames),
                   "magnetotransport", frame_duration_ms, colors=n_gallery_colours)

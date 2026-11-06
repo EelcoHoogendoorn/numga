@@ -93,8 +93,12 @@ sweep_dots = (1.5, 3.0)
 # The readings' chart, three panels stacked over one axis of the balance: its pixels, the curves' colours, and the
 # balances named on its axis.
 chart_size = (430, 460)
+spin_chart_size = (430, 170)
 along_colour, across_colour, heat_colour = "#4f5966", "#c2410c", "#1d4ed8"
-balance_ticks, balance_names = [-1, 0, 1], ["electrons", "compensated", "holes"]
+# The balances named on its axis, the carriers' or the magnetization's.
+balance_ticks = [-1, 0, 1]
+balance_names = ["electrons", "compensated", "holes"]
+magnetization_names = ["spin down", "unmagnetized", "spin up"]
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -338,11 +342,11 @@ def draw_turns(drive: core.Drive, fluxes: core.Flux) -> Figure:
 
 @charts.style()
 def draw_readings(balances: np.ndarray, resistance: core.Scalar, hall: core.Scalar, seebeck: core.Scalar,
-                  nernst: core.Scalar, righi_leduc: core.Scalar) -> Figure:
+                  nernst: core.Scalar, righi_leduc: core.Scalar, names: list[str]) -> Figure:
     """The bar's readings against the balance of its carriers `[frames] Scalar+` each, in panels stacked over one axis
-    of the balance: driven by a current, its resistance along it and its Hall resistance, at the top; driven by heat,
-    its Seebeck and its Nernst signal, in the middle, and its Righi-Leduc signal, at the bottom; each curve named at
-    its end."""
+    of the balance, its ends and middle named by these names: driven by a current, its resistance along it and its Hall
+    resistance, at the top; driven by heat, its Seebeck and its Nernst signal, in the middle, and its Righi-Leduc
+    signal, at the bottom; each curve named at its end."""
     figure, axes = charts.subplots(*chart_size, nrows=3, sharex=True)
     for ax, curves, label, spacing in zip(axes, (((resistance, along_colour, "along"), (hall, across_colour, "Hall")),
                                                  ((seebeck, along_colour, "Seebeck"), (nernst, across_colour, "Nernst")),
@@ -357,6 +361,25 @@ def draw_readings(balances: np.ndarray, resistance: core.Scalar, hall: core.Scal
         ax.spines[["top", "right", "bottom"]].set_visible(False)
         ax.set(xlim=(balances[0], balances[-1]), ylabel=label)
         ax.yaxis.set_major_locator(MultipleLocator(spacing))
-    axes[-1].set(xticks=balance_ticks, xticklabels=balance_names)
+    axes[-1].set(xticks=balance_ticks, xticklabels=names)
+    figure.tight_layout(pad=0.4)
+    return figure
+
+
+@charts.style()
+def draw_spin_readings(magnetizations: np.ndarray, resistance: core.Scalar, hall: core.Scalar) -> Figure:
+    """The magnetized bar's readings driven by a current, with no field, against its magnetization `[frames] Scalar+`
+    each: its resistance along it and its Hall resistance, each curve named at its end."""
+    figure, ax = charts.subplots(*spin_chart_size)
+    for values, colour, name in ((resistance, along_colour, "along"), (hall, across_colour, "Hall")):
+        shown = values.to_array().reshape(-1)
+        ax.plot(magnetizations, shown, color=colour)
+        ax.annotate(name, (magnetizations[-1], shown[-1]), xytext=(4, 0), textcoords="offset points", va="center",
+                    color=colour)
+    ax.axhline(0.0, color="#555555", linewidth=charts.FRAME_WIDTH)
+    ax.spines[["top", "right", "bottom"]].set_visible(False)
+    ax.set(xlim=(magnetizations[0], magnetizations[-1]), ylabel="resistance", xticks=balance_ticks,
+           xticklabels=magnetization_names)
+    ax.yaxis.set_major_locator(MultipleLocator(1))
     figure.tight_layout(pad=0.4)
     return figure
