@@ -15,11 +15,11 @@ importing numga loads all of it: following them would make nearly every notebook
 naming a module of the checkout counts as importing it, as `instantiate` takes one. A module touched selects the
 notebooks that use it or a module inside it.
 
-Each notebook runs as `jupyter execute`, which writes nothing into the notebook, with its numerical threads at one,
-under `notes/capped.py` where a workspace above the checkout holds one. Its outcome, ran, failed or timed out, its
-seconds and, for a failure, the cell it failed in and the last lines of the error, goes into that workspace's
-`archive/notebook_runs.json` as it comes, under the checkout, its commit and the time the run started, and a summary
-is printed at the end, or at Ctrl-C.
+Each notebook runs as `jupyter execute`, which writes nothing into the notebook, as one job of the machine's pool
+(`examples/pool.py`), of one core and 4 GB unless `--cores` or `--memory` ask for more, where the machine has one. Its
+outcome, ran, failed or timed out, its seconds and, for a failure, the cell it failed in and the last lines of the
+error, goes into `archive/notebook_runs.json` of the workspace that holds the checkout, as it comes, under the
+checkout, its commit and the time the run started, and a summary is printed at the end, or at Ctrl-C.
 """
 
 from __future__ import annotations
@@ -43,12 +43,10 @@ import psutil
 ROOT = Path(__file__).resolve().parents[1]
 # The shared modules of the examples, whose imports a notebook's uses do not follow.
 SHARED = ROOT / "examples" / "util"
-# The workspace a checkout sits in, with its memory cap and its archive.
-CAPPED = ROOT.parent / "notes" / "capped.py"
+# The machine's pool, run as a script, which needs nothing of the examples; the archive of the workspace a checkout
+# sits in.
+POOL = Path(__file__).resolve().parent / "pool.py"
 LOG = ROOT.parent / "archive" / "notebook_runs.json"
-# Every run on one core: its numerical threads, and JAX's; and no window for any figure.
-ONE_CORE = {"OMP_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1", "VECLIB_MAXIMUM_THREADS": "1", "MPLBACKEND": "Agg"}
-JAX_ONE_CORE = "--xla_cpu_multi_thread_eigen=false"
 # The lines of a failure's output its record keeps.
 ERROR_LINES = 12
 # Where the error nbclient reports quotes the source of the cell it failed in.
@@ -151,7 +149,7 @@ def failure(notebook: Path, output: str) -> dict:
     """What a failed run's output says: the cell it failed in, counted from one as the notebook's cells stand, where
     the error names one, and the error's last lines."""
     text = COLOURS.sub("", output)
-    lines = [line for line in text.splitlines() if line.strip() and not line.startswith("capped: peak")]
+    lines = [line for line in text.splitlines() if line.strip() and not line.startswith("pool: ")]
     record = {"error": "\n".join(lines[-ERROR_LINES:])}
     quoted = FAILED_CELL.search(text)
     sources = ["".join(cell["source"]) for cell in json.loads((ROOT / notebook).read_text())["cells"]]
@@ -160,15 +158,17 @@ def failure(notebook: Path, output: str) -> dict:
     return record
 
 
-def run(notebook: Path, timeout: float, memory: float, cpu: float) -> dict:
-    """Execute a notebook from its own folder, and say how it went: ran, failed or timed out, in how many seconds."""
+def run(notebook: Path, timeout: float, cores: int, memory: float) -> dict:
+    """Execute a notebook from its own folder, as one job of the pool, and say how it went: ran, failed or timed out,
+    in how many seconds."""
     jupyter = [str(Path(sys.executable).parent / "jupyter"), "execute", notebook.name]
-    capped = [sys.executable, str(CAPPED), str(memory), "--cpu", str(cpu), "--"]
-    command = [*capped, *jupyter] if CAPPED.exists() else jupyter
-    environment = os.environ | ONE_CORE | {"XLA_FLAGS": f"{os.environ.get('XLA_FLAGS', '')} {JAX_ONE_CORE}".strip()}
+    job = [sys.executable, "-I", str(POOL), "run", "--cores", str(cores), "--memory", str(memory),
+           "--what", f"notebook {notebook} in {ROOT.name}", "--"]
+    # No window for any figure.
+    environment = os.environ | {"MPLBACKEND": "Agg"}
     start = time.perf_counter()
     # A session of its own, so that Ctrl-C reaches only the runner, which then stops the notebook's whole tree.
-    process = subprocess.Popen(command, cwd=ROOT / notebook.parent, env=environment, text=True,
+    process = subprocess.Popen([*job, *jupyter], cwd=ROOT / notebook.parent, env=environment, text=True,
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
     try:
         output, _ = process.communicate(timeout=timeout)
@@ -215,10 +215,9 @@ def main(arguments: list[str]) -> None:
     parser.add_argument("--list", action="store_true", help="print the selection without running it")
     parser.add_argument("--timeout", type=float, default=20, metavar="MINUTES",
                         help="the time each notebook may take (default 20)")
-    parser.add_argument("--memory", type=float, default=8, metavar="GB",
-                        help="each notebook's memory cap under capped.py (default 8)")
-    parser.add_argument("--cpu", type=float, default=0.75 * os.cpu_count(), metavar="CORES",
-                        help="each notebook's CPU budget under capped.py (default three quarters of the cores)")
+    parser.add_argument("--cores", type=int, default=1, help="the cores each notebook reserves in the pool (default 1)")
+    parser.add_argument("--memory", type=float, default=4, metavar="GB",
+                        help="the memory each notebook reserves in the pool, up to 8 GB (default 4)")
     options = parser.parse_args(arguments)
 
     everything = notebooks()
@@ -241,7 +240,7 @@ def main(arguments: list[str]) -> None:
     try:
         for index, notebook in enumerate(selection, 1):
             print(f"[{index}/{len(selection)}] {notebook}", end="", flush=True)
-            records.append(run(notebook, 60 * options.timeout, options.memory, options.cpu))
+            records.append(run(notebook, 60 * options.timeout, options.cores, options.memory))
             print(f"  {records[-1]['status']} in {records[-1]['seconds']:.0f} s", flush=True)
             if LOG.parent.is_dir():
                 write_log(key, records)
