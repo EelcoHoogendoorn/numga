@@ -54,9 +54,10 @@ def noise(topology: Topology, n_smoothing: int, seed: int) -> core.Spin:
 
 
 # --- math -----------------------------------------------------------------------------
-def film() -> tuple[Topology, core.Point, core.Point, core.Point, core.Rotor]:
-    """The lattice's topology, its sites `Point-[vertices]`, its bonds `Point-[edges]`, the periods over which it
-    repeats `[2] Point-`, and the bonds' rotors `Rotor+[edges]`, each turning a spin about its own bond by the twist."""
+def film(n_cells: int) -> tuple[Topology, core.Point, core.Point, core.Point, core.Rotor]:
+    """The lattice of `n_cells` sites along each of its periods: its topology, its sites `Point-[vertices]`, its bonds
+    `Point-[edges]`, the periods over which it repeats `[2] Point-`, and the bonds' rotors `Rotor+[edges]`, each turning
+    a spin about its own bond by the twist."""
     topology, coordinates, steps, spans = shapes.flat_torus(n_cells, n_cells)
     vertices = mv(Upright, coordinates).dual().field()                        # Point-[vertices]
     bonds = mv(Upright, steps).dual().field()                                 # Point-[edges]
@@ -115,7 +116,7 @@ def transient_preview(time_steps: np.ndarray, noise_seed: int) -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.quantum.skyrmions import render
 
-    topology, vertices, bonds, periods, carriers = film()
+    topology, vertices, bonds, periods, carriers = film(n_cells)
     n_frames = len(time_steps)
     states = list(run(topology, bonds, carriers, noise(topology, n_smoothing, noise_seed),
                       np.full(n_frames, crystal_field), np.zeros(n_frames), time_steps, 0.0))
@@ -136,7 +137,7 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.quantum.skyrmions import render
 
-    topology, vertices, bonds, periods, carriers = film()
+    topology, vertices, bonds, periods, carriers = film(n_cells)
     save_figure(render.draw_lattice(topology, vertices, bonds, periods), "skyrmions_lattice")
     crystal_states = list(crystallizing(topology, bonds, carriers))
     save_animation(render.animate(topology, vertices, bonds, periods, crystal_states), "skyrmions_crystallizing",
