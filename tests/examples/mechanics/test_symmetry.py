@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.mechanics.symmetry import core, render, scenarios
@@ -30,9 +29,6 @@ def test_figures_draw():
     responses, _, driving, fluxes = scenarios.heat_conduction()
     centre, axial, diagonal, corners, stiffness, conductivity, _ = scenarios.crystal_lattice()
     rotary, _ = scenarios.optical_activity()
-    figures = [render.draw_conduction(responses, driving, fluxes),
-               render.draw_crystal(centre, axial, diagonal, corners, conductivity, stiffness),
-               render.draw_optical_activity(rotary)]
-    assert all(isinstance(figure, plt.Figure) for figure in figures)
-    for figure in figures:
-        plt.close(figure)
+    render.draw_conduction(responses, driving, fluxes)
+    render.draw_crystal(centre, axial, diagonal, corners, conductivity, stiffness)
+    render.draw_optical_activity(rotary)

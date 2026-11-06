@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quadrics.quadrics import render, scenarios
@@ -18,9 +17,6 @@ def test_support_planes_are_tangent_and_face_their_normal():
     np.testing.assert_allclose((tangents | normals.normalized()).to_array(), (normals.normalized() | normals.normalized()).to_array(), atol=1e-12)
 
 
-def test_scenarios_render():
-    for figure in (
-        render.draw_polar_reciprocity(*scenarios.polar_reciprocity()),
-        render.draw_motor_transport(*scenarios.motor_transport()),
-    ):
-        assert isinstance(figure, plt.Figure)
+def test_the_scenes_draw():
+    render.draw_polar_reciprocity(*scenarios.polar_reciprocity())
+    render.draw_motor_transport(*scenarios.motor_transport())

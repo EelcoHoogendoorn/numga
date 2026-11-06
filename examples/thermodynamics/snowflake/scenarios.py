@@ -36,9 +36,9 @@ n_snowflake_frames, n_isotropic_frames = 75, 111
 frame_duration_ms = 40
 
 
-def dish() -> tuple[Topology, np.ndarray, core.Point]:
-    """The dish of water: its topology, its vertices' places across and up `[vertices, 2]`, and its vertices, places of
-    unit volume `Point-[vertices]`."""
+def dish(n_divisions: int = n_divisions) -> tuple[Topology, np.ndarray, core.Point]:
+    """The dish of water, its mesh of these many radial intervals: its topology, its vertices' places across and up
+    `[vertices, 2]`, and its vertices, places of unit volume `Point-[vertices]`."""
     topology, coordinates = shapes.concentric_disk(np.array([dish_radius]), n_divisions)
     vertices = (core.volume + core.across * coordinates[:, 0] + core.up * coordinates[:, 1]).field()
     return topology, coordinates, vertices

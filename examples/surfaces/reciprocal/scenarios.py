@@ -33,12 +33,12 @@ def grid() -> tuple[core.Topology, core.Point, core.Scalar]:
     return topology, points, points.scalar_norm_squared() / 2  # Scalar+[vertices]
 
 
-def breathing() -> tuple[core.Topology, core.Point, core.Scalar]:
+def breathing(n_frames: int = N_FRAMES) -> tuple[core.Topology, core.Point, core.Scalar]:
     """The grid's mesh and points come with their heights at every frame of one breath about the paraboloid, each
     with its own phase."""
     topology, points, heights = grid()
     phases = np.random.default_rng(PHASE_SEED).uniform(0, 2 * np.pi, topology.n_vertices)
-    times = np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)[:, None]
+    times = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)[:, None]
     swings = core.mv.scalar((AMPLITUDE * np.sin(times + phases))[..., None]).field()   # [frames] Scalar+[vertices]
     return topology, points, heights + swings                                          # [frames] Scalar+[vertices]
 

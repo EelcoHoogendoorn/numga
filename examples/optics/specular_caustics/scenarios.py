@@ -41,7 +41,7 @@ n_iterations = 3
 
 
 # --- math -----------------------------------------------------------------------------
-def water() -> tuple[Horizontal, float, Wavevector]:
+def water(n_rays: int = n_rays) -> tuple[Horizontal, float, Wavevector]:
     """One jittered ray per cell over the water, the area each ray carries, and the wavevectors."""
     spacing = 2 * source_halfwidth / n_rays
     samples = (np.arange(n_rays) + 0.5) * spacing - source_halfwidth
@@ -60,7 +60,7 @@ def caustics(positions: Horizontal, wavevectors: Wavevector) -> Iterator[Horizon
         yield receiver(positions, wavevectors, amplitudes, phases + phase_rates * time, depth, index_ratio)
 
 
-def folds(wavevectors: Wavevector) -> tuple[Horizontal, Scalar]:
+def folds(wavevectors: Wavevector, n_derivative: int = n_derivative) -> tuple[Horizontal, Scalar]:
     """The landings of a grid over the water, and the area the ray map gives each patch of it."""
     chart_samples = np.linspace(-source_halfwidth, source_halfwidth, n_derivative)
     chart = x * chart_samples[None, :] + y * chart_samples[:, None]           # [rows, columns] Horizontal-

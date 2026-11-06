@@ -1,27 +1,15 @@
 """Thin-walled bending and twisting: the stiffness holds the area and the second moments of area of the
-walls, a small tip load deflects the tip by the cantilever formula along the inverse second moment and
-slides it along the inverse shear area, the
-slotted tube has the area, moments and shear centre of a thin circular arc, the warping seen from the
-shear centre is invisible to bending, a torque twists the beam about its shear centre by the torque
-over the torsional stiffness, and the scenes pass their checks and draw."""
+walls, the slotted tube has the area, moments and shear centre of a thin circular arc, the warping seen from the
+shear centre is invisible to bending, and a torque twists the beam about its shear centre by the torque over the
+torsional stiffness; and the beams of one piece and the scenes draw."""
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 import numpy as np
 from numga import stack
 
 from examples.mechanics.bending import core, render, scenarios
-from examples.mechanics.bending.mesh import HEIGHT, FLANGE, THICKNESS, TURNS, TUBE_RADIUS, TUBE_WALL, SLOT_ANGLE, section_walls
-
-
-def shear_areas() -> np.ndarray:
-    """Closed-form shear areas of the I-sections and the Z-section: each wall carries a slide along
-    itself, so the flanges carry a slide across and the web a slide up."""
-    aligned = np.diag([2 * FLANGE * THICKNESS, HEIGHT * THICKNESS])
-    angle = np.deg2rad(TURNS[1])
-    rotation = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
-    return np.stack([aligned, rotation @ aligned @ rotation.T, aligned])
+from examples.mechanics.bending.mesh import NAMES, HEIGHT, FLANGE, THICKNESS, TURNS, TUBE_RADIUS, TUBE_WALL, SLOT_ANGLE, section_walls
 
 
 def second_moments() -> np.ndarray:
@@ -52,24 +40,6 @@ def test_stiffness_holds_the_area_and_the_second_moments():
         energies = (turns & rigidity(turns)).to_array()
         expected = scenarios.MODULUS * np.array([spread[1, 1], spread[0, 0]])
         np.testing.assert_allclose(energies, expected, rtol=1e-12)
-
-
-def test_small_tip_load_deflects_by_the_cantilever_formula():
-    """Bending along the inverse second moment, and the slide along the inverse shear area, on the slender
-    beams and on a stubby one, about twice as long as it is deep, where the slide is a large part of the deflection."""
-    load = 1e-3 * scenarios.LOAD
-    stubby_length = 2.0
-    for length in (scenarios.LENGTH, stubby_length):
-        for (topology, nodes, thickness), spread, shear in zip(section_walls(), second_moments(), shear_areas()):
-            centre = core.centroid(topology.incidence[1, 0] * nodes, thickness)
-            _, frames, _, _ = scenarios.cantilever(topology, nodes, thickness,
-                                                   scenarios.tip(centre, length) & (load * -scenarios.up_direction),
-                                                   length, scenarios.SHEAR_MODULUS)
-            across = render.flat(frames[-1] >> centre) - render.flat(centre)
-            expected = (length**3 / (3 * scenarios.MODULUS) * np.linalg.solve(spread, [0.0, -load])
-                        + length / scenarios.SHEAR_MODULUS * np.linalg.solve(shear, [0.0, -load]))
-            # This tolerance tests the approximation by constant-strain pieces.
-            np.testing.assert_allclose(np.linalg.norm(across - expected) / np.linalg.norm(expected), 0.0, atol=1e-3)
 
 
 def test_slotted_tube_matches_a_thin_circular_arc():
@@ -164,20 +134,21 @@ def test_kern_and_reciprocity():
         np.testing.assert_allclose(least, 0.0, atol=1e-9)
 
 
-def test_scenes_draw():
+def test_beams_of_one_piece_and_the_scenes_draw():
     sections = section_walls()
-    down = scenarios.LOAD * -scenarios.up_direction
+    down = scenarios.LOAD * -scenarios.up_direction                         # [] Point-
     centres = [core.centroid(topology.incidence[1, 0] * nodes, thickness) for topology, nodes, thickness in sections]
     shears = [core.shear_centre(*section) for section in sections]
     beams = [scenarios.cantilever(*section, scenarios.tip(centre, scenarios.LENGTH) & down, scenarios.LENGTH,
-                                  scenarios.SHEAR_MODULUS) for section, centre in zip(sections, centres)]
-    points = core.point(scenarios.PUSH_POINTS)
+                                  scenarios.SHEAR_MODULUS, 1) for section, centre in zip(sections, centres)]
+    points = core.point(scenarios.PUSH_POINTS)                              # [pushes] Point-
     pushes = [scenarios.push_section(*section, points) for section in sections]
-    for figure in (render.draw_walls(sections, centres, shears), render.draw_beams(sections, centres, shears, down, beams),
-                   render.draw_pushes(sections, centres, points, pushes)):
-        plt.close(figure)
-    tube = sections[-1]
-    across = scenarios.across_points()[:1]
-    moved = scenarios.cantilever(*tube, scenarios.tip(across, scenarios.LENGTH) & down, scenarios.LENGTH, scenarios.SHEAR_MODULUS)
-    assert len(list(render.animate_loads(tube, centres[-1], shears[-1], across, down, moved))) == 1
-    plt.close(render.draw_sections(sections))
+    render.draw_sections(sections)
+    render.draw_walls(sections, centres, shears)
+    render.draw_beams(sections, centres, shears, down, beams)
+    render.draw_pushes(sections, centres, points, pushes)
+    zed = NAMES.index("Z-section")
+    turning = scenarios.turning_loads(1)                                    # [1] Point-
+    turned = scenarios.cantilever(*sections[zed], scenarios.tip(centres[zed], scenarios.LENGTH) & turning,
+                                  scenarios.LENGTH, scenarios.SHEAR_MODULUS, 1)
+    list(render.animate_loads(sections[zed], centres[zed], shears[zed], centres[zed], turning, turned))

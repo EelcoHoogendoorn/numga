@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from examples.quantum.hubbard_dimer import core, scenarios
+from examples.quantum.hubbard_dimer import core, render, scenarios
 
 
 ROUND_OFF_TOLERANCE = 1e-10
@@ -138,12 +138,6 @@ def test_large_repulsion_approaches_localized_spin_exchange(exchange_history):
     assert relative_gap_error < EXCHANGE_RELATIVE_ERROR
 
 
-def test_the_dials_draw(exchange_history):
-    from examples.quantum.hubbard_dimer import render
-    parts = [part[:, :3] for part in exchange_history]
-    assert len(list(render.animate_dials(list(scenarios.NAMES), *scenarios.dials(parts)))) == 3
-
-
 def test_a_field_difference_keeps_up_down_and_freezes_the_swap():
     field = core.field_difference
     np.testing.assert_allclose((field(core.mv.ad) - core.mv.ad).kernel, 0, atol=ROUND_OFF_TOLERANCE, rtol=0)
@@ -165,3 +159,18 @@ def test_strong_repulsion_holds_one_electron_per_site_until_the_asymmetry_outwei
     assert transferred[0, 1] > 1.9
     assert transferred[-1, 1] < 0.1
     assert transferred[-1, 2] > 1.9
+
+
+def test_the_scenes_draw_at_a_few_samples():
+    hopping, repulsions, phase = scenarios.HOPPING, scenarios.REPULSIONS, scenarios.PHASE[:2]
+    energies, gap = scenarios.spectrum(scenarios.SWEEP)
+    render.draw_spectrum(scenarios.SWEEP, hopping, energies, gap, scenarios.PERTURBATIVE, scenarios.STRONG_REPULSION)
+    probabilities, _, _ = scenarios.ground_states(repulsions)
+    render.draw_ground_states(scenarios.NAMES, repulsions / hopping, probabilities)
+    parts = scenarios.exchange(repulsions, phase)
+    render.draw_exchange(phase, core.probabilities(parts[0]) + core.probabilities(parts[1]), scenarios.SPIN_ONLY[:2])
+    next(render.animate_dials(list(scenarios.NAMES), *scenarios.dials(list(parts))))
+    asymmetries = scenarios.ASYMMETRIES[:2]
+    render.draw_transfer(asymmetries / hopping, scenarios.charge_transfer(repulsions, asymmetries), scenarios.NAMES,
+                         repulsions / hopping)
+    scenarios.field_exchange(scenarios.FIELD_RATIOS, phase)

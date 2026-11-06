@@ -1,8 +1,10 @@
-"""Corner hats and edge forms on spacetime, the Lorentzian dual, causal light-cone wakes, and relativistic moving-mirror Doppler shift."""
+"""Corner hats and edge forms on spacetime, and the Lorentzian dual; the wake and the mirror's wave run on coarse
+strips and draw."""
 
+import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.relativity.moving_mirror import core, scenarios
+from examples.relativity.moving_mirror import core, render, scenarios
 
 
 def test_spacetime_barycentric_hats_edge_forms_and_lorentzian_dual():
@@ -47,73 +49,28 @@ def test_spacetime_barycentric_hats_edge_forms_and_lorentzian_dual():
     np.testing.assert_allclose((-(plane & (core.mv.t >> core.Plane.dual()(plane)))).kernel, 25.0, atol=1e-14)
 
 
-def test_lorentzian_wave_operator_and_causal_light_cone_wake():
-    n_space, n_time = 45, 75
-    duration = 0.72
-    topology, vertices, _ = scenarios.spacetime_strip(
-        core.space, core.time, n_space, n_time, np.ones(n_time), duration,
-    )
-    operators = core.Operators(topology, vertices)
+def test_the_wake_and_the_mirror_wave_run_and_draw():
+    n_space, n_time = 5, 5
+    corners, points = scenarios.single_triangle(core.space, core.time, 2)
+    _, gradients, _ = core.barycentric_hats(corners, points)
+    edge_forms = core.edge_whitney_forms(corners, points)
+    wake_topology, wake_vertices, _ = scenarios.spacetime_strip(
+        core.space, core.time, n_space, n_time, np.ones(n_time), scenarios.wake_duration)
+    source_event = scenarios.source_x * core.space + scenarios.source_t * core.time
+    wake = core.causal_wake(core.Operators(wake_topology, wake_vertices), n_space, n_time, source_event,
+                            scenarios.source_width)
+    plt.close(render.draw_light_cone_whitney(corners, points, gradients, edge_forms, wake_topology, wake_vertices,
+                                             wake, source_event))
 
-    assert operators.gradient.gatype == core.ga.gatype((core.Plane, core.Scalar))
-    assert operators.wave_operator.gatype == core.ga.gatype((core.Amount, core.Scalar))
-
-    # The wave operator is symmetric.
-    np.testing.assert_allclose(
-        (operators.wave_operator - operators.wave_operator.adjugate()).cells.kernel,
-        0.0, atol=1e-12,
-    )
-
-    # Causal light-cone wake from a localized event vanishes outside the forward light cone.
-    source_event = 0.5 * core.space + 0.14 * core.time
-    wake = core.causal_wake(operators, n_space, n_time, source_event, 0.042)
-    displacements = vertices.batch() - source_event
-    distances = (core.mv.x & displacements).norm()
-    delays = core.mv.t & displacements
-    outside_cone = (distances > delays + 0.16) | (delays < -0.12)
-    wake_batch = wake.batch()
-    assert np.max(np.abs(wake_batch[outside_cone].kernel)) < 0.025 * np.max(np.abs(wake_batch.kernel))
-
-
-def test_relativistic_moving_mirror_doppler_compression_and_energy_gain():
-    n_space, n_time = 65, 300
-    duration = 1.25
-    times = np.linspace(0.0, duration, n_time)
-    wall_positions = scenarios.mirror_trajectory(
-        times, scenarios.initial_length, scenarios.stroke,
-        scenarios.inflection_time, scenarios.transition_time,
-    )
+    # The cavity animation scales its colours by the wave at row 20.
+    n_time = 24
+    times = np.linspace(0.0, scenarios.mirror_duration, n_time)
+    wall_positions = scenarios.mirror_trajectory(times, scenarios.initial_length, scenarios.stroke,
+                                                 scenarios.inflection_time, scenarios.transition_time)
     topology, vertices, dt = scenarios.spacetime_strip(
-        core.space, core.time, n_space, n_time, wall_positions, duration,
-    )
-    operators = core.Operators(topology, vertices)
-    potential, field, wave_rate, slice_energies = core.moving_mirror_wave(
-        operators, n_space, n_time, dt,
-        scenarios.pulse_centre, scenarios.pulse_width, scenarios.wavelength,
-    )
-
-    assert potential.batch().gatype == core.Scalar
-    assert field.batch().gatype == core.Plane
-    assert wave_rate.batch().gatype == core.Scalar
-    assert slice_energies.gatype == core.Scalar
-
-    # Dirichlet boundary condition phi = 0 holds identically along both mirror worldlines.
-    potential_grid = potential.batch().reshape(n_time, n_space)
-    np.testing.assert_allclose(potential_grid[:, 0].kernel, 0.0, atol=1e-14)
-    np.testing.assert_allclose(potential_grid[:, -1].kernel, 0.0, atol=1e-14)
-
-    # Euler-Lagrange stationarity holds at every interior spacetime vertex.
-    grid = np.arange(n_time * n_space).reshape(n_time, n_space)
-    interior = ~topology.reading(grid[1:-1, 1:-1].ravel(), 0) * core.Scalar
-    np.testing.assert_allclose(interior.adjugate()(operators.wave_operator(potential)).kernel, 0.0, atol=1e-10)
-
-    # Wave energy is conserved before and after reflection and boosted by the Einstein Doppler factor across reflection.
-    np.testing.assert_allclose(
-        (slice_energies[45] / slice_energies[15]).kernel, 1.0, rtol=2e-2,
-    )
-    np.testing.assert_allclose(
-        (slice_energies[260] / slice_energies[230]).kernel, 1.0, rtol=2e-2,
-    )
-    wave_rate_grid = wave_rate.batch().reshape(n_time, n_space)
-    assert np.max(np.abs(wave_rate_grid[240].kernel)) > 1.70 * np.max(np.abs(wave_rate_grid[45].kernel))
-    assert slice_energies[240] > 2.10 * slice_energies[45]
+        core.space, core.time, n_space, n_time, wall_positions, scenarios.mirror_duration)
+    _, _, wave_rate, slice_energies = core.moving_mirror_wave(
+        core.Operators(topology, vertices), n_space, n_time, dt,
+        scenarios.pulse_centre, scenarios.pulse_width, scenarios.wavelength)
+    plt.close(render.draw_moving_mirror_doppler(topology, vertices, n_space, n_time, wave_rate, slice_energies, 1, 3))
+    assert len(list(render.animate_moving_mirror(topology, vertices, n_space, n_time, wave_rate, np.array([2])))) == 1

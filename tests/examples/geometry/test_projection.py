@@ -1,4 +1,4 @@
-"""Unit tests for projective cameras in PGA3D."""
+"""Unit tests for projective cameras in PGA3D, and the scene's figure drawn."""
 
 from __future__ import annotations
 
@@ -159,8 +159,5 @@ def test_stereo_correspondence_and_epipolar_lines_vanish():
     np.testing.assert_allclose((epipolar_lines_2 & image_2).kernel, 0.0, atol=1e-12)
 
 
-def test_scenario_renders():
-    """The scenario's geometry renders as a figure."""
-    figure = render.draw_projection(*scenarios.projection())
-    assert isinstance(figure, plt.Figure)
-    plt.close(figure)
+def test_the_scene_draws():
+    plt.close(render.draw_projection(*scenarios.projection()))

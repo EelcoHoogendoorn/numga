@@ -234,9 +234,9 @@ def dropped() -> core.State:
     return drop(np.array([drop_height]), np.array([drop_tilt]), np.array([drop_spin]))
 
 
-def fall(state: core.State) -> Iterator[Point]:
-    """The humanoids dropped onto the ground from a state: the centre of every ball at each frame, `[robots, balls]`,
-    the capsules' starts, then their ends, then the spheres, from the drop on."""
+def fall(state: core.State, n_frames: int = n_frames, n_steps: int = n_steps) -> Iterator[Point]:
+    """The humanoids dropped onto the ground from a state: the centre of every ball at each of n_frames frames, n_steps
+    steps apart, `[robots, balls]`, the capsules' starts, then their ends, then the spheres, from the drop on."""
     tree, robot_data = robot()
     loads = drop_loads(tree, robot_data)
     _, _, _, centres, _ = home_pose()

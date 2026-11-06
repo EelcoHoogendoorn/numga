@@ -3,7 +3,6 @@ every start on the ellipsoid, and about the quadric of a shrunk pentagon they mi
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.math.poncelet import render, scenarios
@@ -17,9 +16,7 @@ def test_paths_close_about_the_inscribed_pentagons_quadric_and_miss_about_the_sh
     assert gap[1].min() > 1e-2
 
 
-def test_scenes_draw():
-    scenes = list(scenarios.turn(5))
-    figure = render.draw(*scenes[0])
-    assert isinstance(figure, plt.Figure)
-    plt.close(figure)
-    assert len(list(render.animate(scenes))) == 5
+def test_one_frame_of_the_turn_draws():
+    scenes = list(scenarios.turn(1))
+    render.draw(*scenes[0])
+    next(render.animate(scenes))

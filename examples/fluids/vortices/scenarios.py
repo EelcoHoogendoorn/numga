@@ -100,14 +100,14 @@ def worldlines(vortices: core.Vortices, dt: float, n_steps: int) -> core.Point:
     return stack(list(stepped()))                                            # [steps + 1, vortices] Point-
 
 
-def braids() -> list[core.Point]:
+def braids(n_ring_steps: int = N_RING_STEPS, n_leapfrog_steps: int = N_LEAPFROG_STEPS) -> list[core.Point]:
     """The worldlines `[steps + 1, vortices] Point` of a ring of equal vortices, turning rigidly about its
-    centre, and of the leapfrogging pairs."""
+    centre, over `n_ring_steps` steps, and of the leapfrogging pairs, over `n_leapfrog_steps`."""
     turns = (core.mv.xy * (-np.pi * np.arange(N_RING) / N_RING)).exp()       # [vortices] Rotor+
     ring = core.Vortices(turns >> (core.mv.x.dual() * RING_RADIUS), core.mv.xy * RING_CIRCULATIONS, RING_CORE, core.mv.vector([[0.0, 0.0]]).dual())
     pairs = leapfrog().vortices
-    turning = worldlines(ring, WORLDLINE_DT, N_RING_STEPS)                   # [steps + 1, vortices] Point-
-    passing = worldlines(pairs, WORLDLINE_DT, N_LEAPFROG_STEPS)              # [steps + 1, vortices] Point-
+    turning = worldlines(ring, WORLDLINE_DT, n_ring_steps)                   # [steps + 1, vortices] Point-
+    passing = worldlines(pairs, WORLDLINE_DT, n_leapfrog_steps)              # [steps + 1, vortices] Point-
 
     return [turning, passing]
 

@@ -23,7 +23,7 @@ RESPONSE_NAMES = ("collective response", "fixed pairing field")
 
 
 # --- math -----------------------------------------------------------------------------
-def quench(ratio: float) -> tuple[core.Condensate, core.Spin, core.Spin, np.ndarray, core.Spin]:
+def quench(ratio: float, n_steps: int = N_STEPS) -> tuple[core.Condensate, core.Spin, core.Spin, np.ndarray, core.Spin]:
     dispersion = core.energy_levels(N_LEVELS, CUTOFF)
     # The coherence, read by pairing with the planes yz and zx, gives the gap in those planes; the occupation does
     # not contribute to pairing.
@@ -32,13 +32,13 @@ def quench(ratio: float) -> tuple[core.Condensate, core.Spin, core.Spin, np.ndar
     after = core.Condensate(dispersion, ratio * before.pairing)
     initial = before.equilibrium(core.mv.yz, N_EQUILIBRIUM_ITERATIONS)
     equilibrium = after.equilibrium(core.mv.yz, N_EQUILIBRIUM_ITERATIONS)
-    history = stack(core.evolution(initial, after.rate, DT, N_STEPS, STEPS_PER_FRAME, N_MIDPOINT_ITERATIONS))
-    times = np.arange(N_STEPS // STEPS_PER_FRAME + 1) * STEPS_PER_FRAME * DT
+    history = stack(core.evolution(initial, after.rate, DT, n_steps, STEPS_PER_FRAME, N_MIDPOINT_ITERATIONS))
+    times = np.arange(n_steps // STEPS_PER_FRAME + 1) * STEPS_PER_FRAME * DT
     return after, initial, equilibrium, times, history
 
 
 def response(
-    model: core.Condensate, equilibrium: core.Spin, disturbance: core.Spin,
+    model: core.Condensate, equilibrium: core.Spin, disturbance: core.Spin, n_steps: int = N_STEPS,
 ) -> core.Spin:
     local, feedback = model.response(equilibrium)
     # Batch the full response and the approximation that holds the pairing field fixed.
@@ -48,7 +48,7 @@ def response(
     def rate(delta: core.Spin) -> core.Spin:
         return local(delta) + feedbacks(delta.sites.mean())
 
-    return stack(core.evolution(disturbance, rate, DT, N_STEPS, STEPS_PER_FRAME, N_MIDPOINT_ITERATIONS))
+    return stack(core.evolution(disturbance, rate, DT, n_steps, STEPS_PER_FRAME, N_MIDPOINT_ITERATIONS))
 
 
 # --- plumbing -------------------------------------------------------------------------

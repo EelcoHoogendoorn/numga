@@ -37,9 +37,9 @@ dt, n_frames, n_stride, n_unshown = 0.001, 101, 83, 2
 frame_duration_ms = 40
 
 
-def disk() -> tuple[core.Topology, np.ndarray]:
-    """The disk of mixture, triangles in staggered rings: its topology and its vertices' places across and up
-    `[vertices, 2]`."""
+def disk(n_rings: int = n_rings) -> tuple[core.Topology, np.ndarray]:
+    """The disk of mixture, triangles in these many staggered rings: its topology and its vertices' places across and
+    up `[vertices, 2]`."""
     return shapes.concentric_disk(np.array([radius]), n_rings)
 
 
@@ -53,11 +53,12 @@ def hot_spot(coordinates: np.ndarray) -> core.Scalar:
     return mv.scalar(burnt[:, None]).field()
 
 
-def spreading() -> tuple[core.Topology, core.Point, Iterator[tuple[core.Point, core.Scalar]]]:
-    """The disk's topology and vertices `Point-[vertices]`, and the mixture's parcels `Point-[vertices]` and the rate
-    their fuel burns at `Scalar+[vertices]` at each frame, as the flame spreads from the sparks, once the noise on their
-    edges has smoothed out."""
-    topology, coordinates = disk()
+def spreading(n_rings: int = n_rings, n_frames: int = n_frames, n_stride: int = n_stride
+              ) -> tuple[core.Topology, core.Point, Iterator[tuple[core.Point, core.Scalar]]]:
+    """The disk's topology and vertices `Point-[vertices]`, in these many rings, and the mixture's parcels
+    `Point-[vertices]` and the rate their fuel burns at `Scalar+[vertices]` at each of these many frames, these many
+    steps apart, as the flame spreads from the sparks, once the noise on their edges has smoothed out."""
+    topology, coordinates = disk(n_rings)
     vertices = (core.volume + mv(core.Upright, coordinates).dual()).field()  # Point-[vertices]
     areas, gradients, cells = core.triangles(topology, vertices)
     burnt = hot_spot(coordinates)                                             # Scalar+[vertices]

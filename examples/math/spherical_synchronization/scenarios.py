@@ -29,7 +29,7 @@ duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------
-def synchronization() -> Iterator[tuple[Point, Cut]]:
+def synchronization(n_particles: int = n_particles, n_steps: int = n_steps) -> Iterator[tuple[Point, Cut]]:
     """The population's directions and the grid's cuts at the start and after each step, both carried by
     the one transformation the population's own attraction drives."""
     golden_angle = np.pi * (3 - np.sqrt(5))

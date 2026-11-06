@@ -1,12 +1,8 @@
 """Penrose tilings: each face is a tile as often as its area, thick against thin in the golden ratio,
-the tiles of a patch follow it, sliding the cut within itself selects the same faces, and the scenes
-draw."""
+the tiles of a patch follow it, and sliding the cut within itself selects the same faces."""
 
 from __future__ import annotations
 
-from itertools import islice
-
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.math.penrose import core, render, scenarios
@@ -43,14 +39,11 @@ def test_sliding_the_cut_within_itself_selects_the_same_faces():
     np.testing.assert_allclose(difference.to_array(), 0, atol=1e-11)
 
 
-def test_scenes_draw():
+def test_the_tiling_and_one_frame_of_the_phasons_draw():
     frames = core.reciprocal(scenarios.cut)
-    centres, corners = scenarios.faces(scenarios.along)
+    centres, corners = scenarios.faces(scenarios.along, lattice_radius=1)
     areas, _ = core.shadows(scenarios.along)
     reading = scenarios.view(scenarios.along)
-    margins = core.margins(scenarios.shift, centres, frames)
-    figure = render.draw_tiling(reading, corners, areas, margins, scenarios.extent)
-    assert isinstance(figure, plt.Figure)
-    plt.close(figure)
-    flips = islice(scenarios.flips(scenarios.phasons(scenarios.across), centres, frames), 2)
-    assert len(list(render.animate_flips(reading, corners, areas, flips, scenarios.extent))) == 2
+    render.draw_tiling(reading, corners, areas, core.margins(scenarios.shift, centres, frames), scenarios.extent)
+    flips = scenarios.flips(scenarios.phasons(scenarios.across, n_frames=1), centres, frames)
+    next(render.animate_flips(reading, corners, areas, flips, scenarios.extent))

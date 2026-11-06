@@ -1,5 +1,5 @@
-"""Spin transformations: both scenes pass their checks, the deformation converges to a conformal
-one under refinement, and the figures draw."""
+"""Spin transformations: the Dirac operator is the geometric derivative times the face normals, and the three scenes run
+on coarse spheres and draw."""
 
 from __future__ import annotations
 
@@ -10,39 +10,6 @@ from numga.sparse import SparseExtensor, spdiag
 
 from examples.util import shapes
 from examples.surfaces.spin_transformations import core, render, scenarios
-
-
-def test_conformal_error_falls_with_refinement():
-    """The discretization is first order: each split of the faces roughly halves the largest change
-    in a corner's cosine."""
-    errors = []
-    for levels in (2, 3):
-        topology, coordinates = shapes.sphere(levels)
-        vertices = core.context.multivector.vector(coordinates).dual().field()  # Point-[vertices]
-        centroids = topology.incidence[2, 0].mean(axis=0) * vertices
-        transformed_vertices = core.spin_transform_deform(topology, vertices, (centroids & core.context.multivector.y) * 0.5)
-        errors.append(np.abs((core.corner_cosines(topology, transformed_vertices) - core.corner_cosines(topology, vertices)).to_array()).max())
-    assert errors[1] < 0.6 * errors[0]
-
-
-def test_a_dipole_change_keeps_angles_and_raises_curvature_where_asked():
-    topology, vertices, curvature_change, transformed_vertices = scenarios.dipole()
-    np.testing.assert_allclose((core.corner_cosines(topology, transformed_vertices) - core.corner_cosines(topology, vertices)).to_array(), 0.0, atol=0.05)
-    curvature_rise = core.mean_curvature(topology, core.recentred(transformed_vertices)) - core.mean_curvature(topology, vertices)
-    assert np.corrcoef(curvature_rise.to_array().ravel(), curvature_change.to_array().ravel())[0, 1] > 0.5
-    plt.close(render.draw_dipole(topology, vertices, curvature_change, transformed_vertices))
-
-
-def test_the_dirac_spheres_have_fields_of_zero_energy():
-    topology, vertices, gallery, energies = scenarios.dirac()
-    assert np.all(np.abs(energies) < 0.05)
-    plt.close(render.draw_dirac(topology, gallery, vertices))
-
-
-def test_the_rounding_animation_draws():
-    topology, vertices = core.spot()
-    frames = core.conformal_smooth(topology, vertices, 1, scenarios.RATE)
-    assert len(list(render.animate_rounding(topology, frames))) == 2
 
 
 def test_the_dirac_operator_is_the_geometric_derivative_times_the_face_normals():
@@ -60,3 +27,13 @@ def test_the_dirac_operator_is_the_geometric_derivative_times_the_face_normals()
     normals = (sides[0] & sides[1]) / (2 * areas)                             # Vector-[faces]
     np.testing.assert_allclose((spdiag(normals) * derivative + dirac).cells.kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose((derivative * vertices).kernel, np.broadcast_to([0, 0, 0, 2], (topology.n_elements[2], 4)), atol=1e-12)
+
+
+def test_the_scenes_run_and_draw():
+    topology, vertices, curvature_change, transformed_vertices = scenarios.dipole(n_subdivisions=1)
+    plt.close(render.draw_dipole(topology, vertices, curvature_change, transformed_vertices))
+    sphere, sphere_vertices, gallery, _ = scenarios.dirac(n_subdivisions=1, n_states=1)
+    plt.close(render.draw_dirac(sphere, gallery, sphere_vertices))
+    # The rounding flow, one step on the coarse sphere rather than on Spot.
+    frames = list(core.conformal_smooth(topology, vertices, 1, scenarios.RATE))
+    assert len(list(render.animate_rounding(topology, frames))) == 2

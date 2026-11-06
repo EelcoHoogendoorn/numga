@@ -42,13 +42,14 @@ def tip(points: core.Point, length: float) -> core.Point:
 
 
 def cantilever(topology: core.Topology, nodes: core.Point, thickness: core.Scalar, loads: core.Forque, length: float,
-               shear_modulus: float) -> tuple[core.Twist, core.Motor, core.Strain, core.Scalar]:
-    """A cantilever of a length, under load lines at its tip, batched over loads: the strain of each piece
-    `[..., pieces]`, the frame of each cross-section `[..., pieces + 1]`, the principal bending axes `[2]`,
-    and the stress at the clamp at the ends of the section's walls `[..., ends] Scalar+[walls]`."""
-    step = length / N_PIECES
+               shear_modulus: float, n_pieces: int = N_PIECES
+               ) -> tuple[core.Twist, core.Motor, core.Strain, core.Scalar]:
+    """A cantilever of a length cut into n_pieces pieces, under load lines at its tip, batched over loads: the strain
+    of each piece `[..., pieces]`, the frame of each cross-section `[..., pieces + 1]`, the principal bending axes
+    `[2]`, and the stress at the clamp at the ends of the section's walls `[..., ends] Scalar+[walls]`."""
+    step = length / n_pieces
     # The middle of each piece.
-    stations = (np.arange(N_PIECES) + 0.5) * step                             # [pieces]
+    stations = (np.arange(n_pieces) + 0.5) * step                             # [pieces]
     walls = topology.incidence[1, 0] * nodes                                # [ends] Point-[walls]
     rigidity = core.bending(walls, thickness, MODULUS)                      # [] Resultant <- Strain
     whole = core.stiffness(topology, nodes, thickness, MODULUS, shear_modulus)  # [] Forque- <- Twist+
@@ -63,16 +64,16 @@ def cantilever(topology: core.Topology, nodes: core.Point, thickness: core.Scala
     return strains, frames, axes[:2], stress
 
 
-def turning_loads() -> core.Point:
-    """The tip load turning once around the beam, in the plane of the section."""
-    angles = np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)               # [frames]
+def turning_loads(n_frames: int = N_FRAMES) -> core.Point:
+    """The tip load turning once around the beam over n_frames frames, in the plane of the section."""
+    angles = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)               # [frames]
     return (mv.xy * (-angles / 2)).exp() >> (LOAD * -up_direction)           # [frames] Point-
 
 
-def across_points() -> core.Point:
-    """The points the slotted tube's load goes through as it moves across the section."""
+def across_points(n_frames: int = N_FRAMES) -> core.Point:
+    """The points the slotted tube's load goes through as it moves across the section over n_frames frames."""
     start, end = core.point(ACROSS)                                          # [] Point-, Point-
-    fractions = np.linspace(0, 1, N_FRAMES)                                    # [frames]
+    fractions = np.linspace(0, 1, n_frames)                                    # [frames]
     return start * (1 - fractions) + end * fractions                         # [frames] Point-
 
 

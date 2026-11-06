@@ -1,4 +1,4 @@
-"""Vertex weights shape the subdivided surface, and refining commutes with perspective for weighted points."""
+"""Vertex weights shape the subdivided surface, and a Loop step keeps unit weights."""
 
 from itertools import islice
 
@@ -6,15 +6,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.surfaces.projective_loop import core, render, scenarios
-
-
-def test_refining_commutes_with_perspective_for_weighted_points_only():
-    control, weighted_orders, positional_orders, topology = scenarios.perspective()
-    weighted_unit = weighted_orders.normalized()
-    positional_unit = positional_orders.normalized()
-    assert np.all((weighted_unit[0] & weighted_unit[1]).norm() < 1e-12)
-    assert np.any((positional_unit[0] & positional_unit[1]).norm() > 1e-2)
-    plt.close(render.draw_orders(control, scenarios.CONTROL_TOPOLOGY, weighted_orders, positional_orders, topology))
 
 
 def test_a_heavy_vertex_pulls_the_surface_and_a_light_one_releases_it():

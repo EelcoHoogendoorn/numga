@@ -27,10 +27,10 @@ SCENES = {name: instantiate("examples.mechanics.tricycle.core", ga) for name, ga
 
 
 # --- math -----------------------------------------------------------------------------
-def run(core):
-    """The drive in the core's algebra: per step the wheels' contacts with the ground and the points ahead
-    of them, the turning centre, and the middle of the rear axle, all in the ground's frame."""
-    steering = BIAS + SWING * np.sin(2 * np.pi * N_SWINGS * np.arange(N_STEPS) / N_STEPS)   # [steps]
+def run(core, n_steps: int = N_STEPS):
+    """The drive in the core's algebra, over n_steps steps: per step the wheels' contacts with the ground and the
+    points ahead of them, the turning centre, and the middle of the rear axle, all in the ground's frame."""
+    steering = BIAS + SWING * np.sin(2 * np.pi * N_SWINGS * np.arange(n_steps) / n_steps)   # [steps]
     rear, front, steer = core.axles(WHEELBASE, steering)                        # [] Plane+, [steps] Plane+, [steps] Motor+
     poses = core.drive(rear, front, STEP)                                       # [steps] Motor+
     contacts, forward = core.wheels(WHEELBASE, TRACK, steer)                    # [wheels] Point-, [steps, wheels] Point-
@@ -41,10 +41,11 @@ def run(core):
     return contacts, forward, centres, middle
 
 
-def moments(contacts, forward, centres, middle, n_frames: int) -> Iterator[tuple]:
-    """Per frame, the wheels, the points ahead of them and the turning centre at that moment, and the trail
-    of the middle of the rear axle so far, from the first step on, so that every trail is a line."""
-    for step in np.linspace(1, N_STEPS - 1, n_frames).astype(int):
+def moments(contacts, forward, centres, middle, n_frames: int, n_steps: int = N_STEPS) -> Iterator[tuple]:
+    """Per frame of a drive of n_steps steps, the wheels, the points ahead of them and the turning centre at that
+    moment, and the trail of the middle of the rear axle so far, from the first step on, so that every trail is a
+    line."""
+    for step in np.linspace(1, n_steps - 1, n_frames).astype(int):
         yield contacts[step], forward[step], centres[step], middle[:step + 1]
 
 

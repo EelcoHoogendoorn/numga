@@ -61,7 +61,7 @@ inductive_magnet_field = core.mv.xy * inductive_field_strength             # [] 
 
 
 # --- math -----------------------------------------------------------------------------
-def materials() -> tuple[core.Disc, core.Conductivity]:
+def materials(n_divisions: int = n_divisions) -> tuple[core.Disc, core.Conductivity]:
     """The disc and its three material fields, each with the same mean conductivity."""
     topology, coordinates = shapes.concentric_disk(material_radii, n_divisions)
     points = core.mv(core.Spatial, coordinates).dual().field()              # Point-[vertices]
@@ -106,7 +106,9 @@ def materials_braking(disc: core.Disc, conductivity: core.Conductivity) -> Itera
                         conductivity, inertia, orientation, spin, heat, time_step, n_steps)
 
 
-def inductive_materials(disc: core.Disc, conductivity: core.Conductivity) -> Iterator[core.InductiveMotion]:
+def inductive_materials(disc: core.Disc, conductivity: core.Conductivity, n_modes: int = n_modes,
+                        n_harmonics: int = n_harmonics, n_inductive_steps: int = n_inductive_steps,
+                        n_substeps: int = n_substeps) -> Iterator[core.InductiveMotion]:
     """Current build-up and magnetic braking, with inductive memory on the rotating discs."""
     modes = core.current_modes(disc, conductivity, permeability, n_modes)
     orientation = core.mv.rotor().broadcast_to(conductivity.shape)            # [cases] Rotor+

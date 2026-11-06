@@ -84,11 +84,13 @@ def at(places: np.ndarray, wanted: np.ndarray) -> np.ndarray:
 
 
 # --- scenes ---------------------------------------------------------------------------
-def bar() -> tuple[Topology, core.Point, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """The Hall bar: its triangles, its vertices' places `Point-[vertices]`, the vertices of its contact at its left
-    end `[across]` and at its right end `[across]`, and its probes in pairs, a voltmeter's plus and minus terminals:
-    along its lower side a width apart about its middle, plus upstream, and across its middle, plus below; the plus
-    probes `[pairs]` and the minus probes `[pairs]`."""
+def bar(n_rows: int = n_rows, n_columns: int = n_columns
+        ) -> tuple[Topology, core.Point, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """The Hall bar, these many rows of triangles across and spacings of places along: its triangles, its vertices'
+    places `Point-[vertices]`, the vertices of its contact at its left end `[across]` and at its right end `[across]`,
+    and its probes in pairs, a voltmeter's plus and minus terminals: along its lower side a width apart about its
+    middle, plus upstream, and across its middle, plus below; the plus probes `[pairs]` and the minus probes
+    `[pairs]`."""
     places = lattice(length, n_rows, n_columns)                              # [vertices, 2]
     left, right = (np.flatnonzero(places[:, 0] == end) for end in (0, length))
     middle = length / 2
@@ -100,7 +102,7 @@ def bar() -> tuple[Topology, core.Point, np.ndarray, np.ndarray, np.ndarray, np.
     return topology, vertices, left, right, plus, minus
 
 
-def ring() -> tuple[Topology, core.Point, np.ndarray, np.ndarray]:
+def ring(n_rings: int = n_rings, n_sectors: int = n_sectors) -> tuple[Topology, core.Point, np.ndarray, np.ndarray]:
     """The Corbino ring, of unit outer radius about the origin: its triangles, its vertices' places `Point-[vertices]`,
     and the vertices of its contact along its inner rim `[around]` and along its outer rim `[around]`. Its places lie
     on `n_rings + 1` circles from the inner rim to the outer, `n_sectors` on each, alternate circles turned by half a

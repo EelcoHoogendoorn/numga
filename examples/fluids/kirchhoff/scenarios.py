@@ -58,10 +58,10 @@ def launch() -> tuple[core.Inertia, core.Forque, core.Motor]:
     return inertia, impulse, starts
 
 
-def gliding() -> core.Motor:
-    """Each case's placement over the time span `[steps + 1, cases]`."""
+def gliding(n_steps: int = N_STEPS) -> core.Motor:
+    """Each case's placement over `n_steps` steps of the time span `[steps + 1, cases]`."""
     inertia, impulse, starts = launch()
-    return stack(list(core.glide(starts, impulse, inertia, DT, N_STEPS)))     # [steps + 1, cases] Motor+
+    return stack(list(core.glide(starts, impulse, inertia, DT, n_steps)))     # [steps + 1, cases] Motor+
 
 
 def outline() -> core.Point:

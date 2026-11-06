@@ -32,8 +32,8 @@ initial = (mv.xw * .4 + mv.yw * .5 + mv.xy * .35) * np.ones(N_CASES)   # [cases]
 
 
 # --- math -----------------------------------------------------------------------------
-def docking() -> tuple[core.StateCost, core.Feedback, core.Twist, core.Scalar]:
-    """Costs for one through N_STEPS remaining actions, then the policy, errors, and commands."""
+def docking(n_steps: int = N_STEPS) -> tuple[core.StateCost, core.Feedback, core.Twist, core.Scalar]:
+    """Costs for one through n_steps remaining actions, then the policy, errors, and commands."""
     # Joining a mount to its ideal direction gives its line of force, including the lever arm.
     thrusters = mounts & directions                                    # [thrusters] Forque-
     authority = (thrusters * (thrusters & Twist) / THRUSTER_WEIGHTS).sum(axis=0)   # [] Forque- <- Twist+
@@ -55,8 +55,8 @@ def docking() -> tuple[core.StateCost, core.Feedback, core.Twist, core.Scalar]:
 
     # From the deadline back, where whatever error is left is priced LANDING_WEIGHT times as stiffly.
     costs, gains = zip(*core.riccati(state_cost * LANDING_WEIGHT * np.ones(N_CASES), dynamics, actuation, state_cost,
-                                     effort_cost, N_STEPS))
-    # The costs of horizons of one step through N_STEPS.
+                                     effort_cost, n_steps))
+    # The costs of horizons of one step through n_steps.
     values = stack(costs)                                              # [steps, cases] Scalar+ <- (Twist+, Twist+)
     feedbacks = stack(gains)[::-1]                                     # [steps, cases] Forque- <- Twist+
     errors = stack(tuple(core.rollout(initial, dynamics, actuation, feedbacks)))   # [steps + 1, cases] Twist+

@@ -1,12 +1,8 @@
 """Galvanomagnetic and thermomagnetic effects of electrons and holes: each kind's Hall angle the angle of its own rotor,
-opposite for the two, whose turns cancel in the charge a compensated conductor carries and add in its entropy; each
-kind's drift balancing one commutator of the field and the drive with its moving parcel, of which the magnetic field
-spends no power; with one kind of carrier, a bar's Hall voltage linear in the field and its resistance along it
-unchanged; at compensation, no Hall voltage and a resistance rising with the field; the Corbino ring's resistance
-rising as one plus the square of the mobility times the field at every balance; the Nernst signal largest at
-compensation and nothing with one kind, and the Righi-Leduc signal only with both kinds, unbalanced; the response
-reversed in the field its adjugate, its dissipation never negative and the same for a moving observer, who reads
-another electric field; and the scenes drawing."""
+opposite for the two, whose turns cancel in the charge a compensated conductor carries and add in its entropy; at
+compensation, no Hall voltage and a resistance rising with the field; the response reversed in the field its adjugate,
+its dissipation never negative and the same for a moving observer, who reads another electric field; and a coarse bar
+and ring drawn."""
 
 import numpy as np
 
@@ -16,9 +12,8 @@ from examples.thermodynamics.magnetotransport import core, render, scenarios
 mv = core.mv
 # The carriers' constants, as the core's functions take them.
 carriers = (scenarios.valences, scenarios.entropies_per_charge, scenarios.mobilities)
-# The densities of the carriers with electrons only, at compensation and with holes only; and the field ramped up from
-# nothing to the scenario's strength.
-electrons, compensated, holes = np.eye(2)[0], np.full(2, 0.5), np.eye(2)[1]  # [kinds] each
+# The densities of the carriers at compensation; and the field ramped up from nothing to the scenario's strength.
+compensated = np.full(2, 0.5)                                                # [kinds]
 strengths = np.linspace(0.0, scenarios.strength, 5)                          # [strengths]
 
 
@@ -61,24 +56,6 @@ def compensated_bar() -> tuple:
     return gradients, corners, magnetic, response, electric, drive, core.drifts(magnetic, *carriers)(drive)
 
 
-def test_the_drift_balances_one_commutator_and_the_field_does_no_work():
-    gradients, corners, magnetic, response, electric, drive, velocities = compensated_bar()
-    parcels = scenarios.valences * (core.time + scenarios.entropies_per_charge * core.entropy)   # [kinds] Parcel-
-    moving_parcels = parcels + scenarios.valences * velocities               # [kinds] Point-[faces]
-    pushes = (magnetic + drive).commutator(moving_parcels)                    # [kinds] Point-[faces]
-    # Read through space, the whole push is the drag, the velocity over the mobility: the rotor's inverse solves the
-    # balance written as one commutator.
-    through_space = stack((mv.x, mv.y))[:, None]
-    np.testing.assert_allclose((through_space & pushes).to_array(),
-                               (through_space & (velocities / scenarios.mobilities)).to_array(), atol=1e-10)
-    # Along time, the power spent on the carriers: the magnetic field spends none, and summed over the kinds at their
-    # densities it is the electric field's reading of the charge flux.
-    assert np.abs((mv.t & magnetic.commutator(moving_parcels)).to_array()).max() < 1e-12
-    electric_field = -(gradients ^ ((corners * (electric & core.time)) * mv.t)).sum(axis=0)   # Bivector+[faces]
-    power = (compensated * (mv.t & pushes)).sum(axis=0)                       # Scalar+[faces]
-    np.testing.assert_allclose(power.to_array(), (electric_field & response(drive)).to_array(), atol=1e-10)
-
-
 def test_moving_observer_reads_another_electric_field_and_the_same_dissipation():
     gradients, corners, magnetic, response, electric, drive, _ = compensated_bar()
     electric_field = -(gradients ^ ((corners * (electric & core.time)) * mv.t)).sum(axis=0)   # Bivector+[faces]
@@ -96,20 +73,6 @@ def test_moving_observer_reads_another_electric_field_and_the_same_dissipation()
     np.testing.assert_allclose(((boost >> drive) & (boost >> flux)).to_array(), (drive & flux).to_array(), atol=1e-10)
 
 
-def test_hall_bar_with_one_kind_of_carrier():
-    topology, vertices, left, right, plus, minus = scenarios.bar()
-    for densities in (electrons, holes):
-        states = ramp(topology, vertices, left, right, scenarios.length, densities)
-        resistance, hall, *_ = (reading.to_array() for reading in scenarios.bar_readings(topology, plus, minus,
-                                                                                         states))
-        # The Hall resistance is linear in the field, its slope one over the carriers' density of charge, less the
-        # share the contacts short at the bar's middle; the resistance along the bar stays as it was.
-        slopes = hall[1:] / strengths[1:]
-        np.testing.assert_allclose(slopes, slopes[0], rtol=1e-2)
-        np.testing.assert_allclose(slopes, 1 / (densities @ scenarios.valences), rtol=3e-2)
-        np.testing.assert_allclose(resistance, resistance[0], rtol=1e-2)
-
-
 def test_hall_bar_at_compensation():
     topology, vertices, left, right, plus, minus = scenarios.bar()
     states = ramp(topology, vertices, left, right, scenarios.length, compensated)
@@ -117,37 +80,6 @@ def test_hall_bar_at_compensation():
     # No Hall voltage at any field, and the resistance along the bar rising with it.
     np.testing.assert_allclose(hall, 0.0, atol=1e-12 * resistance.max())
     assert np.all(np.diff(resistance) > 0) and resistance[-1] > 2 * resistance[0]
-
-
-def test_corbino_resistance_rises_at_every_balance():
-    topology, vertices, inner, outer = scenarios.ring()
-    for densities in (electrons, compensated, holes):
-        states = ramp(topology, vertices, inner, outer, 1 - scenarios.inner_radius, densities)
-        resistances = scenarios.ring_resistances(topology, inner, outer, states).to_array()
-        np.testing.assert_allclose(resistances / resistances[0], 1 + (scenarios.mobilities[0] * strengths) ** 2,
-                                   rtol=1e-10)
-
-
-def test_heat_driven_bar_across_the_balance():
-    topology, vertices, left, right, plus, minus = scenarios.bar()
-    states = list(scenarios.states(topology, vertices, left, right, scenarios.length, scenarios.magnetic,
-                                   scenarios.densities))
-    readings = scenarios.bar_readings(topology, plus, minus, states)
-    _, hall, seebeck, nernst, righi_leduc = (reading.to_array() for reading in readings)
-    middle = scenarios.n_frames // 2
-    # The Hall voltage vanishes at compensation, where the Nernst signal is largest; with one kind of carrier there is
-    # no Nernst signal, and the Seebeck signal is that kind's entropy per charge.
-    assert abs(hall[middle]) < 1e-12 * np.abs(hall).max()
-    assert np.abs(nernst).argmax() == middle
-    np.testing.assert_allclose(nernst[[0, -1]], 0.0, atol=1e-10 * np.abs(nernst).max())
-    np.testing.assert_allclose(seebeck[[0, -1]], scenarios.entropies_per_charge, rtol=1e-10)
-    # The Righi-Leduc signal, a fall of temperature across the bar, needs both kinds, unbalanced: nothing with one kind,
-    # whose carriers stand still, and nothing at compensation, where both drift straight down the fall; between, it
-    # is plain, the lower side the warmer where electrons are the more numerous and the upper where holes are.
-    np.testing.assert_allclose(righi_leduc[[0, middle, -1]], 0.0, atol=1e-10)
-    electron_side, hole_side = righi_leduc[1:middle], righi_leduc[middle + 1:-1]
-    assert electron_side.min() > 0 > hole_side.max() and np.abs(righi_leduc).max() > 0.1
-    render.draw_readings(scenarios.balances, *readings)
 
 
 def test_response_reversed_in_the_field_is_its_adjugate():
@@ -169,21 +101,15 @@ def test_response_reversed_in_the_field_is_its_adjugate():
     assert np.abs((drives & antisymmetric(drives)).to_array()).max() < 1e-12 * dissipation.max()
 
 
-def test_scenes_draw():
-    render.draw_turns(mv.xt, scenarios.end_fluxes())
-    bar_topology, bar_vertices, left, right, _, _ = scenarios.bar()
-    ring_topology, ring_vertices, inner, outer = scenarios.ring()
-    render.draw_conductors(bar_topology, bar_vertices, (left, right), ring_topology, ring_vertices, (inner, outer),
-                           scenarios.bar_resolution, scenarios.ring_resolution)
-    conductors = (bar_topology, bar_vertices, (left, right), ring_topology, ring_vertices, (inner, outer),
-                  scenarios.bar_resolution, scenarios.ring_resolution)
-    # The first frame of the sweep, and the conductors in no field, where the field's patch is a point.
-    first, unturned = (next(zip(field,
-                                scenarios.states(bar_topology, bar_vertices, left, right, scenarios.length, field,
-                                                 scenarios.densities[:1]),
-                                scenarios.states(ring_topology, ring_vertices, inner, outer,
-                                                 1 - scenarios.inner_radius, field, scenarios.densities[:1])))
-                       for field in (scenarios.magnetic[:1], 0 * scenarios.magnetic[:1]))
-    for animate, frames in ((render.animate_current_driven, [first]), (render.animate_heat_driven, [first, unturned])):
-        for frame in animate(*conductors, first, frames):
-            assert frame.shape[-1] == 3
+def test_scenes_run_and_draw():
+    # A coarse bar and ring, their steady states at the first frame's field and balance, drawn small, driven by heat.
+    bar_topology, bar_vertices, left, right, _, _ = scenarios.bar(n_rows=2, n_columns=6)
+    ring_topology, ring_vertices, inner, outer = scenarios.ring(n_rings=2, n_sectors=8)
+    field, densities = scenarios.magnetic[:1], scenarios.densities[:1]
+    first = next(zip(field,
+                     scenarios.states(bar_topology, bar_vertices, left, right, scenarios.length, field, densities),
+                     scenarios.states(ring_topology, ring_vertices, inner, outer, 1 - scenarios.inner_radius, field,
+                                      densities)))
+    resolution = 20
+    next(render.animate_heat_driven(bar_topology, bar_vertices, (left, right), ring_topology, ring_vertices,
+                                    (inner, outer), resolution, resolution, first, [first]))

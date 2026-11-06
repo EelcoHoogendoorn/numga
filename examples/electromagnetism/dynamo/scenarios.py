@@ -43,7 +43,7 @@ pull = 1.0
 
 
 # --- plumbing -------------------------------------------------------------------------
-def ball() -> tuple[core.Topology, np.ndarray, core.Point]:
+def ball(n_levels: int = n_levels, n_shells: int = n_shells) -> tuple[core.Topology, np.ndarray, core.Point]:
     """The ball of core and mantle: its topology, its vertices' coordinates and the vertices, directions of space."""
     topology, coordinates = shapes.ball(n_levels, n_shells)
     coordinates = mantle_radius * coordinates

@@ -1,4 +1,4 @@
-"""Finite-horizon optimality, physical thruster work, and docking trajectories."""
+"""Finite-horizon optimality, physical thruster work, docking trajectories, and the docking of one step drawn."""
 
 import numpy as np
 
@@ -112,23 +112,13 @@ def test_thruster_commands_reproduce_the_feedback_forque_and_geometric_work():
     np.testing.assert_allclose((power - (thrusters & trials)).kernel, 0, atol=1e-10)
 
 
-def test_docking_figures_and_animation_draw_without_saving():
-    import matplotlib.pyplot as plt
-
+def test_a_docking_of_one_step_draws():
     from examples.mechanics.riccati import render
 
-    values, _, errors, commands = scenarios.docking()
-    poses = (errors * -0.5).exp()
-    figures = (
-        render.draw_setup(scenarios.hull, scenarios.mounts, scenarios.directions,
-                          scenarios.tracking_points),
-        render.draw_approaches(scenarios.hull, poses, scenarios.LABELS),
-        render.draw_costs(values, scenarios.LABELS),
-    )
-    for figure in figures:
-        figure.canvas.draw()
-        plt.close(figure)
-    frames = list(render.animate(scenarios.hull, scenarios.mounts, scenarios.directions, poses[:2],
-                                 commands[:2], scenarios.LABELS, scenarios.ARROW_SCALE))
-    assert frames[0].ndim == 3 and frames[0].shape == frames[1].shape
-    assert not np.array_equal(frames[0], frames[1])
+    values, _, errors, commands = scenarios.docking(1)
+    poses = (errors * -0.5).exp()                                            # [steps + 1, cases] Motor+
+    render.draw_setup(scenarios.hull, scenarios.mounts, scenarios.directions, scenarios.tracking_points)
+    render.draw_approaches(scenarios.hull, poses, scenarios.LABELS)
+    render.draw_costs(values, scenarios.LABELS)
+    next(render.animate(scenarios.hull, scenarios.mounts, scenarios.directions, poses, commands, scenarios.LABELS,
+                        scenarios.ARROW_SCALE))

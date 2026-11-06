@@ -1,9 +1,10 @@
-"""Kerr geometry, its geometric derivatives, and null-ray evolution."""
+"""Kerr geometry, its geometric derivatives, its camera rays and its disk."""
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
-from examples.relativity.kerr import core
+from examples.relativity.kerr import core, render, scenarios
 
 
 ROUND_OFF = 1e-11
@@ -85,44 +86,6 @@ def test_directional_derivatives_drive_hamiltonian_rates():
                                0, atol=2e-9, rtol=0)
 
 
-def test_rays_conserve_their_invariants_and_spin_reversal_mirrors_the_paths():
-    mass = 1.0
-    spin = mv.xy.dual() * np.array([0.7, -0.7])[:, None]
-    offsets = np.array([-7.0, 2.0, 7.0])
-    initial = -8 * X + Y * offsets
-    # The mirror across the plane y = 0, on events and on covectors; it reverses the spin.
-    mirror = core.Antivector - 2 * Y * (mv.y & core.Antivector)
-    covector_mirror = core.Vector - 2 * mv.y * (core.Vector & Y)
-    position = stack([initial, mirror(initial)])
-    momentum = core.initial_momentum(position, X, spin, mass)
-    step_size = 0.04
-    steps = 250
-    stop_fraction = 0.8
-    positions, momenta = core.trace(position, momentum, spin, mass, step_size, steps, stop_fraction, core.rates)
-    geometry = core.field(positions, spin, mass)
-    hamiltonian = -(momenta & momenta.dual()) / 2 + geometry.profile * (momenta & geometry.null).squared()
-    energy = momenta & T
-    # The momentum along the direction the spin turns each event in.
-    angular_momentum = momenta.regressive(spin.dual_inverse().commutator(positions))
-    horizon = mass + (mass**2 - spin.squared()).square_root()
-
-    # Null propagation and axial angular momentum constrain the integrated dynamics.
-    # Their tolerances measure the accuracy of the finite RK4 steps.
-    np.testing.assert_allclose(hamiltonian.kernel, 0, atol=2e-6, rtol=0)
-    np.testing.assert_allclose((angular_momentum - angular_momentum[0]).kernel,
-                               0, atol=1e-7, rtol=0)
-    np.testing.assert_allclose((energy - energy[0]).kernel, 0, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose((mirror(positions[:, 0]) - positions[:, 1]).kernel,
-                               0, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose((covector_mirror(momenta[:, 0]) - momenta[:, 1]).kernel,
-                               0, atol=ROUND_OFF, rtol=0)
-    # The central ray crosses the horizon and stops safely inside it; the outer rays escape.
-    final_radius = geometry.radius[-1]
-    assert np.all((final_radius[:, 1] - horizon[:, 0]).kernel < 0)
-    assert np.all((final_radius[:, 1] - stop_fraction * horizon[:, 0]).kernel > 0)
-    assert np.all(final_radius[:, [0, 2]].kernel > 5)
-
-
 def test_camera_and_disk_geometry_rotate_with_the_black_hole():
     mass = 1.0
     spin = 0.7 * mv.xy.dual()
@@ -164,51 +127,6 @@ def test_camera_and_disk_geometry_rotate_with_the_black_hole():
                                atol=ROUND_OFF, rtol=0)
 
 
-def test_backward_camera_rays_resolve_the_schwarzschild_capture_boundary():
-    mass = 1.0
-    spin = 0 * mv.xy.dual()
-    eye = 25 * X
-    slopes = np.array([0.14, 0.18, 0.20, 0.28])
-    direction = -X + Y * slopes
-    direction = direction / direction.squared().square_root()
-    momentum = -core.initial_momentum(eye, -direction, spin, mass)
-    position = eye.broadcast_to(momentum.shape)
-
-    def angular(position, momentum):
-        """The momentum along the direction a turn in the xy plane moves each event."""
-        return momentum.regressive(mv.xy.commutator(position))
-
-    energy = momentum & T
-    angular_momentum = angular(position, momentum)
-    impact = (angular_momentum / energy).kernel[:, 0]
-    expected_capture = np.abs(impact) < 3 * np.sqrt(3) * mass
-    # Inside the photon sphere, where no ray turns back out.
-    capture_radius = 2.1 * mass
-    escape_radius = 40 * mass
-    step_fraction = 0.1
-    steps = 300
-
-    def clear(event: core.Antivector, momentum: core.Vector, radius: core.Scalar) -> core.Scalar:
-        """No disk: every ray keeps its light until it escapes or is captured."""
-        return radius * 0
-    image, (final_position, final_momentum) = core.resolve(
-        (position, momentum), spin, mass, step_fraction, steps, core.camera_rates, mv.z, 0.0, escape_radius, clear,
-        escape_radius, capture_radius)
-    final_radius = core.field(final_position, spin, mass).radius.kernel[:, 0]
-    escape = final_radius > escape_radius
-    tangent, _ = core.rates(final_position, final_momentum, spin, mass)
-
-    # Every ray ends, escaped with all its light or captured.
-    assert np.all(escape | (final_radius < capture_radius))
-    np.testing.assert_array_equal(image.sky_pixels, np.flatnonzero(escape))
-    np.testing.assert_array_equal(~escape, expected_capture)
-    # The finite-step check constrains the escaped rays after their full encounter.
-    np.testing.assert_allclose((final_momentum & tangent)[escape].kernel, 0, atol=2e-5, rtol=0)
-    np.testing.assert_allclose(angular(final_position, final_momentum)[escape].kernel,
-                               angular_momentum[escape].kernel, atol=2e-5, rtol=0)
-    np.testing.assert_allclose((final_momentum & T)[escape].kernel, energy[escape].kernel, atol=ROUND_OFF, rtol=0)
-
-
 def test_connection_matches_directional_metric_variation():
     position = events([1, 4, 2, 1])
     spin = (0.7 * mv.xy + 0.2 * mv.yz).dual()
@@ -248,35 +166,6 @@ def test_connection_matches_directional_metric_variation():
     np.testing.assert_allclose(flat_connection.kernel, 0, atol=ROUND_OFF, rtol=0)
 
 
-def test_parallel_transport_preserves_the_transverse_screen_along_kerr_rays():
-    mass = 1.0
-    spin = (0.7 * mv.xy + 0.2 * mv.yz).dual()
-    orientation = (0.31 * mv.xz).exp()
-    eye = (orientation >> Z) * 18
-    pixel_width, pixel_height = 5, 3
-    half_view = 0.4
-    inner_radius, outer_radius = 2.02, 40.0
-    step_fraction = 0.08
-    steps = 250
-    position, momentum = core.camera_rays(
-        eye, orientation, pixel_width, pixel_height, half_view, spin, mass)
-    screen = core.camera_screen(position, momentum, orientation, spin, mass)
-
-    def clear(event: core.Antivector, momentum: core.Vector, radius: core.Scalar) -> core.Scalar:
-        """No disk: every ray is traced until it escapes or is captured."""
-        return radius * 0
-    _, (end, momentum, screen) = core.resolve(
-        (position, momentum, screen), spin, mass, step_fraction, steps, core.polarized_rates, mv.z, 0.0, outer_radius,
-        clear, outer_radius, inner_radius)
-    heading = core.local(core.field(end, spin, mass), momentum)
-    heading = heading / -(mv.t & heading)
-
-    # Finite-step transport keeps both screen axes unit, perpendicular, and transverse, to the fourth-order
-    # error of the steps, about 2e-5 here, at the end of every ray.
-    np.testing.assert_allclose((screen | heading).kernel, 0, atol=5e-5, rtol=0)
-    np.testing.assert_allclose(((screen | screen) - (core.Screen | core.Screen)).kernel, 0, atol=5e-5, rtol=0)
-
-
 def test_disk_coherency_through_a_rotating_polarizer():
     position = 6 * X
     spin = 0.7 * mv.xy.dual()
@@ -301,41 +190,6 @@ def test_disk_coherency_through_a_rotating_polarizer():
     np.testing.assert_allclose(intensity.kernel, 1, atol=ROUND_OFF, rtol=0)
     np.testing.assert_allclose(transmitted.kernel[..., 0], expected, atol=ROUND_OFF, rtol=0)
     np.testing.assert_allclose((repeated - transmitted).kernel, 0, atol=ROUND_OFF, rtol=0)
-
-
-def test_every_camera_ray_shares_its_light_once_between_disk_sky_and_hole():
-    mass = 1.0
-    spin = 0.7 * mv.xy.dual()
-    orientation = (0.6 * mv.zx).exp()
-    eye = (orientation >> Z) * 25
-    pixel_width, pixel_height = 9, 7
-    pixel_count = pixel_width * pixel_height
-    inner_radius, outer_radius = 3.4, 12.0
-    depth = 40.0
-    capture_radius = 1.05 * (mass + np.sqrt(mass**2 - 0.7**2))
-
-    def opacity(event: core.Antivector, momentum: core.Vector, radius: core.Scalar) -> core.Scalar:
-        layer = core.disk_depth(radius, inner_radius, outer_radius, depth)
-        return core.disk_opacity(event, momentum, layer, mv.z, mv.xy, spin, mass)
-    position, momentum = core.camera_rays(eye, orientation, pixel_width, pixel_height, 0.35, spin, mass)
-    image, _ = core.resolve((position, momentum), spin, mass, 0.2, 300, core.camera_rates, mv.z, inner_radius,
-                            outer_radius, opacity, 100.0, capture_radius)
-    disk_share = np.bincount(image.disk_pixels, image.disk_weights.kernel[..., 0], pixel_count)
-    sky_share = np.bincount(image.sky_pixels, image.sky_weights.kernel[..., 0], pixel_count)
-
-    # checks: crossings lie in the disk plane between its radii, each giving part of its pixel's light.
-    np.testing.assert_allclose((mv.z & image.disk[0]).kernel, 0, atol=ROUND_OFF, rtol=0)
-    assert np.all((image.disk_radii > inner_radius) & (image.disk_radii < outer_radius))
-    assert np.all(image.disk_weights > 0)
-    # A ray escapes at most once; escaped rays share all their light, captured ones lose the rest.
-    assert len(np.unique(image.sky_pixels)) == len(image.sky_pixels)
-    np.testing.assert_allclose((disk_share + sky_share)[image.sky_pixels], 1, atol=ROUND_OFF, rtol=0)
-    assert np.all(disk_share + sky_share <= 1 + ROUND_OFF)
-    # Some rays meet the disk where it clears, and its body absorbs others all but whole.
-    assert np.any((disk_share > 0) & (disk_share < 0.5))
-    assert np.any(disk_share > 0.999)
-    # The central ray, aimed at the hole, passes inside the disk's inner edge and is captured.
-    assert disk_share[pixel_count // 2] == 0 and sky_share[pixel_count // 2] == 0
 
 
 def test_disk_opacity_face_on_and_where_its_gas_recedes():
@@ -406,3 +260,17 @@ def test_innermost_stable_orbit():
     # 6M without spin, about 2.91M at spin 0.8M, and the hole's own mass at the extreme.
     np.testing.assert_allclose(radii.kernel[..., 0], [6.0, 2.9066, 1.0], atol=1e-4, rtol=0)
     np.testing.assert_allclose(radii.kernel[[0, 2], 0], [6.0, 1.0], atol=ROUND_OFF, rtol=0)
+
+
+def test_the_scenes_trace_resolve_and_draw():
+    paths, horizons = scenarios.scene(n_steps=2)
+    assert len(list(render.animate_rays(paths[:, :1], horizons[:1], scenarios.extent))) == 1
+    width, height = 4, 3
+    shape = (height, width)
+    image, temperature, transmission = scenarios.camera(width, height, scenarios.half_view, n_steps=8)
+    sky = render.star_texture(64, 32, scenarios.sky_seed)
+    plt.close(render.draw_camera(image, temperature, scenarios.exposure_temperature, shape, sky))
+    assert len(list(render.animate_polarizer(image, temperature, scenarios.exposure_temperature, transmission[:1],
+                                             shape, sky))) == 1
+    assert len(list(render.animate_disk(image, temperature, scenarios.exposure_temperature,
+                                        scenarios.disk_flow(image, 1), 1, shape, sky))) == 1

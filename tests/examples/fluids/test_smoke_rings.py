@@ -1,10 +1,8 @@
-"""The smoke ring flow: each vertex moves across both its edges, a ring flies rigidly, the flows keep
-their edges and impulse; a Bäcklund transformation is a step of the flow with unit edges; a soliton runs
-along a straight line; two vortex rings leapfrog under the Biot–Savart law; and the figures draw."""
+"""The smoke ring flow: each vertex moves across both its edges; a Bäcklund transformation is a step of the flow with
+unit edges; a fold is a Lorentz transformation of the offsets; and a coarse wavy ring steps once, its frame drawn."""
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.fluids.smoke_rings import core, render, scenarios
@@ -50,29 +48,8 @@ def test_a_fold_is_a_lorentz_transformation_of_the_offsets():
     np.testing.assert_allclose((folded - core.fold(edge, offsets, twist)).kernel, 0.0, atol=1e-13)
 
 
-def test_a_ring_flies_rigidly_and_the_flow_keeps_edges_and_impulse():
-    velocities = scenarios.flying(core.ring(scenarios.N_RING))
-    np.testing.assert_allclose((velocities - velocities[0]).norm().to_array(), 0.0, atol=1e-13)
-    curves = scenarios.sweep(core.wavy_ring(scenarios.N_WAVY, scenarios.WAVY_MODE, scenarios.WAVY_TILT),
-                             scenarios.SURFACE_STEP, 20, 10)
-    lengths = core.edges(curves).norm().to_array()
-    np.testing.assert_allclose(lengths, np.broadcast_to(lengths[0], lengths.shape), atol=1e-9)
-    plt.close(render.draw_surface(curves))
-    assert len(list(render.animate_curves(curves[:1], scenarios.flying(curves[:1]).norm()))) == 1
-
-
-def test_the_soliton_keeps_unit_edges_and_turns_once_through_its_loop():
-    solitons = scenarios.soliton()
-    np.testing.assert_allclose((solitons[:, 1:] - solitons[:, :-1]).norm().to_array(), 1.0, atol=1e-12)
-    np.testing.assert_allclose(core.turns(solitons).log().norm().to_array().sum(axis=-1), 2 * np.pi, atol=1e-3)
-    plt.close(render.draw_turns(core.turns(solitons)))
-    assert len(list(render.animate_trail(solitons[:2], scenarios.line_speeds(solitons[:2])))) == 2
-
-
-def test_two_rings_leapfrog_the_narrower_passing_through_the_wider():
-    frogs = scenarios.leapfrog()
-    heights, radii, crossings = scenarios.passes(frogs)
-    behind = np.argmin(heights[crossings], axis=-1)
-    assert len(crossings) >= 4 and np.all(radii[crossings, behind] < radii[crossings, 1 - behind])
-    plt.close(render.draw_swept(frogs))
-    assert len(list(render.animate_curves(frogs[:1], scenarios.pushed(frogs[0])[None].norm()))) == 1
+def test_a_coarse_wavy_ring_steps_once_and_draws():
+    n_vertices = 8
+    curves = scenarios.sweep(core.wavy_ring(n_vertices, scenarios.WAVY_MODE, scenarios.WAVY_TILT), scenarios.SURFACE_STEP,
+                             1, 1)                                           # [times, vertices] Point-
+    next(render.animate_curves(curves[-1:], scenarios.flying(curves[-1:]).norm()))

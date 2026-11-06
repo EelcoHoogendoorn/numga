@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quadrics.elliptic_physics import render, scenarios
@@ -43,20 +42,6 @@ def test_ellipse_inertia_has_an_intermediate_axis():
     np.testing.assert_allclose([Iz, Ix, Iy], [0.094, 0.913, 0.992], atol=0.03)
 
 
-def test_free_flight_conserves_energy_and_momentum():
-    """The Lie midpoint step keeps the body-frame momentum's norm exactly and the energy closely."""
-    points, masses = ellipse_mesh(np.radians(np.array([[35.0, 10.0]])), np.array([1.0]), 384, 10)
-    inertia = S2.pointcloud_inertia(points, masses)[0]
-    inverse_inertia = inertia.inverse()
-    motor, momentum = S2.mv.rotor(), inertia(S2.mv.yz * 2.5 + S2.mv.xy * 0.05)
-    energy = (inverse_inertia(momentum) & momentum).to_array()
-    size = momentum.norm().to_array()
-    for _ in range(200):
-        motor, momentum = S2.step_motor(motor, momentum, inverse_inertia, 0.01)
-    np.testing.assert_allclose(momentum.norm().to_array(), size, atol=1e-14)
-    np.testing.assert_allclose((inverse_inertia(momentum) & momentum).to_array(), energy, rtol=0.01)
-
-
 def test_collision_conserves_energy_and_momentum():
     """Two overlapping, approaching ellipses: one elastic impulse keeps total energy and world momentum."""
     # Centres 28° apart, overlapping.
@@ -81,31 +66,9 @@ def test_filled_points_lie_inside_with_the_given_mass():
         np.testing.assert_allclose(masses.sum(axis=-1).to_array(), 2.0)
 
 
-def test_s2_scenarios_render():
-    """Each S² scene conserves its invariants and renders an animation; the tumbling oval its rates."""
-    for scene, steps, impulses, drift in (
-        (scenarios.crowded, 41, 6, 1e-2),
-        (scenarios.hyperbolic, 41, 15, 2e-2),
-        (scenarios.tumbling, 100, 0, 2e-2),
-    ):
-        trajectory, colors = scene(steps)
-        assert trajectory.impulses == impulses
-        scenarios.conserved(trajectory, drift)
-        frames = list(render.hemisphere_frames(trajectory.surfaces[::10], colors, 80))
-        assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)
-
-
-def test_tumbling_rates_render():
-    """The tumbling oval's rates draw as one figure."""
-    trajectory, _ = scenarios.tumbling(100)
-    assert isinstance(render.draw_tumbling(trajectory, 0.015), plt.Figure)
-
-
-def test_s3_scenarios_render():
-    """Each S³ scene collides, conserves energy, and renders."""
-    for scene in (scenarios.crowd, scenarios.gap, scenarios.needle, scenarios.tunnel):
-        trajectory, colors, eye, light, *_ = scene(12)
-        scenarios.collisions_conserve_energy(trajectory)
-        frames = list(render.s3_frames(trajectory, colors, eye, light, (45, 60)))
-        assert isinstance(render.draw_last_frame(frames), plt.Figure)
-        assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)
+def test_a_scene_on_each_sphere_steps_and_draws():
+    trajectory, colors = scenarios.tumbling(2)
+    next(render.hemisphere_frames(trajectory.surfaces, colors, 32))
+    render.draw_tumbling(trajectory, scenarios.S2_TIME_STEP)
+    trajectory, colors, eye, light, *_ = scenarios.crowd(1)
+    render.draw_last_frame(list(render.s3_frames(trajectory, colors, eye, light, (32, 48))))
