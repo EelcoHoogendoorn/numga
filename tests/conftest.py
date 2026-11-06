@@ -1,10 +1,15 @@
-"""Test configuration: double precision for JAX, headless plotting, and a guard that keeps a run to the tests a change
-could break. The whole suite runs once, just before a push to main, declared as
-`pytest tests --full-sweep=push-to-main`."""
+"""Test configuration: double precision for JAX, headless plotting, a guard that keeps a run to the tests a change
+could break, and the machine's pool for heavy runs (`tools/pool.py`, where the checkout has it), in which a test run
+is one job. The whole suite runs once, just before a push to main, declared as `pytest tests --full-sweep=push-to-main`:
+every test file then runs as a job of its own, as many at once as the pool admits."""
 
 from __future__ import annotations
 
+import ast
+import json
 import os
+import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -12,14 +17,19 @@ import pytest
 # One precision for JAX across the whole suite, double, read by JAX when it is first imported; no test switches it.
 os.environ["JAX_ENABLE_X64"] = "1"
 
-# Numerical threads a test run may use: the budget every heavy run shares, three quarters of the machine's cores.
-THREADS = max(1, int(0.75 * (os.cpu_count() or 1)))
+# A test run, and in the full sweep each test file, is one job of the pool: one core and 1 GB unless the file declares
+# more, `pytestmark = pytest.mark.memory(gb=4)`. A job the pool kills for exceeding its memory runs again with twice
+# as much, and a file learns the memory it finally needed, which later runs reserve up front.
+JOB_CORES, JOB_MEMORY = 1, 1
 # The one occasion for the whole suite, the value --full-sweep takes; a bare --full-sweep is refused.
 SWEEP_OCCASION = "push-to-main"
 # More tests than any change's own: a run this broad is a sweep, however its targets are spelled.
 MAX_TESTS = 200
 
 TEST_ROOT = Path(__file__).parent.resolve()
+# The machine's pool for heavy runs, development tooling beside the package, which a checkout has and an installed
+# copy of the tests does not.
+POOL = TEST_ROOT.parent / "tools" / "pool.py"
 TARGETED = ("Run the tests the change could break, by file or test function "
             "(e.g. 'pytest tests/examples/electromagnetism/test_constitutive.py'); "
             "the whole suite runs only once, just before a push to main.")
@@ -45,19 +55,96 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--full-sweep",
         choices=(SWEEP_OCCASION,),
         default=None,
-        help=f"'--full-sweep={SWEEP_OCCASION}' runs the whole suite, once, just before a push to main, in one process.",
+        help=f"'--full-sweep={SWEEP_OCCASION}' runs the whole suite, once, just before a push to main.",
     )
 
 
-def pytest_collection(session: pytest.Session) -> None:
-    """Refuse a target holding the whole suite, the tests folder or one above it, before anything is collected."""
-    config = session.config
-    if config.getoption("--full-sweep", None):
-        return
+@pytest.hookimpl(tryfirst=True)
+def pytest_cmdline_main(config: pytest.Config) -> int | None:
+    """Refuse a target holding the whole suite, the tests folder or one above it, before anything is collected. Then,
+    under the pool, run the full sweep, a job for each test file; or make this run one job, as this process becomes
+    the pool's command, which runs it again inside the job. Inside a job, or without the pool, the run goes on here."""
     here = config.invocation_params.dir
-    for target in config.args:
-        if TEST_ROOT.is_relative_to((here / target.split("::")[0]).resolve()):
+    targets = [(here / target.split("::")[0]).resolve() for target in config.args]
+    sweeping = config.getoption("--full-sweep", None)
+    for target, path in zip(config.args, targets):
+        if not sweeping and TEST_ROOT.is_relative_to(path):
             raise pytest.UsageError(f"'{target}' holds the whole suite, with or without -k or -m. {TARGETED}")
+    if not POOL.exists():
+        return None
+    from tools import pool
+    if not pool.active():
+        return None
+    files = sorted({file for path in targets for file in ([path] if path.is_file() else path.rglob("test_*.py"))})
+    if sweeping:
+        return sweep(files)
+    # A run of one file learns the memory it needs under the file's name.
+    key = str(files[0].relative_to(TEST_ROOT.parent)) if len(files) == 1 else ""
+    memory = max((declared(file) for file in files), default=JOB_MEMORY)
+    what = f"pytest {' '.join(config.invocation_params.args)} in {TEST_ROOT.parent.name}"
+    os.execv(sys.executable, [sys.executable, "-I", pool.__file__, "run", "--cores", str(JOB_CORES), "--memory",
+                              f"{memory:g}", "--what", what, "--learn", key, "--", sys.executable, *sys.orig_argv[1:]])
+
+
+def declared(file: Path) -> float:
+    """The memory in GB a test file declares it needs, `pytestmark = pytest.mark.memory(gb=4)`, or a job's own."""
+    for node in ast.parse(file.read_text()).body:
+        if isinstance(node, ast.Assign) and "pytestmark" in [ast.unparse(target) for target in node.targets]:
+            for call in ast.walk(node.value):
+                if isinstance(call, ast.Call) and ast.unparse(call.func) == "pytest.mark.memory":
+                    return max(JOB_MEMORY, *(float(ast.literal_eval(keyword.value)) for keyword in call.keywords))
+    return JOB_MEMORY
+
+
+def sweep(files: list[Path]) -> int:
+    """Run every test file as a job of the pool, `pytest -q <file>` in a process of its own, as many at once as the
+    pool admits and the longest first, by the seconds recorded for them; print each file's outcome as it finishes,
+    then the output of every file that failed, the files that needed more memory than a job's own, those that
+    reserve at least twice what they used, and the counts. The exit status counts failures only: a file the pool ran
+    again with more memory has not failed."""
+    from tools import pool
+    checkout = TEST_ROOT.parent
+    recorded = json.loads(DURATIONS.read_text()) if DURATIONS.exists() else {}
+    seconds = {}
+    for nodeid, runs in recorded.items():
+        file = nodeid.split("::")[0]
+        seconds[file] = seconds.get(file, 0) + sum(runs[-1].get(phase, 0) for phase in ("setup", "call", "teardown"))
+    keys = sorted((str(file.relative_to(checkout)) for file in files), key=lambda key: -seconds.get(key, 0))
+    jobs = [{"command": [sys.executable, "-m", "pytest", "-q", f"--full-sweep={SWEEP_OCCASION}", key], "cwd": checkout,
+             "cores": JOB_CORES, "memory": declared(checkout / key), "what": f"pytest {key} in {checkout.name}",
+             "key": key, "timeout": float("inf")} for key in keys]
+    counts: dict[str, int] = {}
+    failed, reran, results = {}, [], []
+    for index, (job, status, output) in enumerate(pool.batch(jobs, f"pytest tests in {checkout.name}"), 1):
+        # Pytest's own last line, "12 passed, 1 failed in 3.21s", before the pool's.
+        last = ([line for line in output.splitlines() if re.search(r" in [\d.]+s\b", line)] or [""])[-1]
+        for count, outcome in re.findall(r"(\d+) (passed|failed|errors?|skipped|xfailed|xpassed)", last):
+            counts[outcome] = counts.get(outcome, 0) + int(count)
+        reran += [job["key"]] if "pool: killed" in output else []
+        # A file with no test left after deselection has not failed.
+        if status not in (pytest.ExitCode.OK, pytest.ExitCode.NO_TESTS_COLLECTED):
+            failed[job["key"]] = output
+        result = pool.outcome(output)
+        results.append((job["key"], result))
+        print(f"[{index}/{len(jobs)}] {'failed' if job['key'] in failed else 'passed':<7}{result['seconds']:>6.1f} s "
+              f"{result['peak']:5.2f} GB  {job['key']}", flush=True)
+    for key, output in failed.items():
+        print(f"\n{'=' * 30} {key}\n{output}")
+    learned = pool.learned()
+    needs = {key: max(declared(checkout / key), learned.get(key, 0.0)) for key in keys}
+    heavy = {key: memory for key, memory in sorted(needs.items()) if memory > JOB_MEMORY}
+    if heavy:
+        print(f"\nfiles that reserve more than a job's {JOB_MEMORY} GB, declared or learned; ran again where marked:")
+    for key, memory in heavy.items():
+        print(f"{memory:>5g} GB  {key}{'  (ran again)' if key in reran else ''}")
+    lowerable = pool.oversized(results, JOB_MEMORY)
+    if lowerable:
+        print("\nfiles that reserve at least twice the memory they used:")
+    for line in lowerable:
+        print(line)
+    print(", ".join(f"{count} {outcome}" for outcome, count in counts.items()) + f"; {len(failed)} of {len(jobs)} "
+          f"files failed, {len(reran)} ran again with more memory")
+    return pytest.ExitCode.TESTS_FAILED if failed else pytest.ExitCode.OK
 
 
 @pytest.hookimpl(trylast=True)
@@ -68,13 +155,8 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    """Hold the machine's lock for heavy runs, within the budget every heavy run shares; headless unless --show-plots."""
-    # Set before numpy is imported, so that its linear algebra starts with this many threads.
-    for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
-        os.environ.setdefault(name, str(THREADS))
-    # Every test run takes the machine's lock for heavy runs, where there is one, and waits for a run that holds it.
-    from examples import hold_heavy_run_lock
-    hold_heavy_run_lock("pytest " + " ".join(config.invocation_params.args))
+    """The memory marker, which a test file declares at its top for the pool to read; headless unless --show-plots."""
+    config.addinivalue_line("markers", "memory(gb): the memory in GB a test file needs, more than a job's own")
     if not config.getoption("--show-plots", False):
         os.environ.setdefault("MPLBACKEND", "Agg")
         try:
@@ -103,7 +185,6 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
     if not _seconds or not DURATIONS.parent.is_dir():
         return
     import fcntl
-    import json
     with os.fdopen(os.open(DURATIONS, os.O_RDWR | os.O_CREAT), "r+") as record:
         fcntl.flock(record, fcntl.LOCK_EX)
         text = record.read()
