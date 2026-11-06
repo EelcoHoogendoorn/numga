@@ -181,20 +181,7 @@ momentum = inertia(rate)                                     # Antibivector-
 
 The [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipynb) example animates the body, and the [mechanical work](../examples/orientation/mechanical_work/mechanical_work.ipynb) example does the same for the power a push delivers to a crank.
 
-Every such reading pairs an extrinsic value with an intrinsic one by the regressive product, `momentum & rate` above, `field & spin`, `force & displacement`: an arrow through a stack of sheets, which needs no metric and which a mirror leaves alone. Reading the extrinsic factor first also fixes the adjugate, the map read backwards across such a pairing. Read the same way on both of its sides, for a map between intrinsic spaces `A.adjugate()(c) & x == c & A(x)`, it is its own inverse in every dimension, a symmetric form is its own adjugate, and a positive material pulled back through a gradient stays positive, with no sign that depends on the dimension.
-
-## Measuring an intrinsic value
-
-A metric measures two values of one orientation. Two extrinsic values are measured as written, by the signature; two intrinsic values are measured through their duals, so that a direction's length squared is positive in space, in a spacetime and in a projective algebra alike. An extrinsic value and an intrinsic one are not measured against each other at all: they pair by `&`. An intrinsic value then has two sizes: its norm, by the reverse product, which of a projective point is its weight, and its antinorm, by the metric through its dual, which of a direction is its length:
-
-```python
-far, near = mv.point([[3.0, 4.0, 0.0], [0.0, 0.0, 0.0]])  # Antivector-, Antivector-
-step = far - near                                        # Antivector-, a direction
-# 25: the step's length squared, measured through its dual.
-step.dot(step)                                           # Scalar+
-# 5, the step's length; the far point's weight, 1, and its bulk, 5.
-step.antinorm(), far.norm(), far.antinorm()              # Scalar+, Scalar+, Scalar+
-```
+Every such reading pairs an extrinsic value with an intrinsic one by the regressive product, `momentum & rate` above, `field & spin`, `force & displacement`: an arrow through a stack of sheets, which needs no metric and which a mirror leaves alone.
 
 ## What orientation rules out
 
@@ -210,10 +197,6 @@ The exponential of an intrinsic element would require such a sum: its even power
 momentum.exp()           # GATypeError: 'exp' takes extrinsic elements; got intrinsic bivector
 ```
 
-```python
-rate.dot(momentum)       # GATypeError: dot takes operands of one orientation; an extrinsic value and an intrinsic one pair by the regressive product
-```
-
 For the complete rules governing what can be written in code, see the companion [Orientation in numga](../docs/orientation.md).
 
 ## The rules
@@ -222,10 +205,10 @@ The two requirements leave a short set of rules, which [Orientation in numga](..
 
 1. **Types go by orientation, not by grade.** An intrinsic plane, the join of three points, follows the intrinsic rules as a point does; an extrinsic point, the meet of three planes, follows the extrinsic ones.
 2. **A reflection acts by orientation.** It takes an extrinsic value to `m * x.involute() * m.inverse()` and an intrinsic one to the negative of that; a rotation, an even number of reflections, carries no sign.
-3. **Readings pair an extrinsic value with an intrinsic one, the extrinsic first**, and the adjugate and the trace read their pairings the same way.
-4. **A metric measures one orientation at a time**, intrinsic values through their duals.
+3. **Readings pair an extrinsic value with an intrinsic one, the extrinsic first**, and the adjugate, the map read backwards across a pairing, and the trace read their pairings the same way, so that no sign depends on the dimension.
+4. **A metric measures one orientation at a time**, intrinsic values through their duals, so that a direction's length squared is positive in every algebra; an extrinsic value and an intrinsic one are paired, never measured against each other.
 5. **The primitive products stay plain.** The geometric, outer and regressive products and the commutators act on the coefficients as the algebra defines them, and their results' orientations follow from their inputs'.
-6. **An intrinsic value has two sizes**, its norm and its antinorm.
+6. **An intrinsic value has two sizes**, its norm, of a projective point its weight, and its antinorm, of a direction its length.
 
 ## Further reading
 
