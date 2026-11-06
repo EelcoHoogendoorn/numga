@@ -4,7 +4,7 @@ driven by the current or both by heat, the magnetic field between them, as the c
 and the bar's voltages against the balance as a chart.
 
 The conductors' points are read by the planes x and y, turned a quarter turn for the bar standing up, and weighed by
-`mv.s & point`, the algebra's own projective weight. A conductor is tinted by its temperature, interpolated across the
+`mv.w & point`, their weight as places. A conductor is tinted by its temperature, interpolated across the
 triangles by their corners' hats, on one palette: grey in equilibrium, towards red where it is warmer and towards blue
 where it is cooler, red and blue reached at the electric reach where it is driven by a current, and at its contacts'
 temperatures where it is driven by heat.
@@ -127,20 +127,20 @@ def tinted(temperatures: np.ndarray, reach: float) -> np.ndarray:
 
 def framing(vertices: core.Point, across: core.Plane, up: core.Plane, resolution: float) -> Camera:
     """The camera looking down on a conductor, its points read across the picture by the plane `across` and up it by
-    the plane `up` and weighed by their weight along s, with the margin around it, at this resolution in pixels to the
+    the plane `up` and weighed by their weight along w, with the margin around it, at this resolution in pixels to the
     conductor's unit."""
     shown = np.stack([readings(across, vertices), readings(up, vertices)], axis=-1)   # [vertices, 2]
     low, high = shown.min(axis=0) - margin, shown.max(axis=0) + margin
-    return Camera(across, up, 0 * mv.x, mv.s, 0.0, (low + high) / 2, (high - low) / 2,
+    return Camera(across, up, 0 * mv.x, mv.w, 0.0, (low + high) / 2, (high - low) / 2,
                   round((high - low)[0] * resolution))
 
 
 def patch_framing(height: int, resolution: float) -> Camera:
     """The camera on the magnetic field's patch about the origin, its points read by the planes x and y and weighed by
-    their weight along s: as wide as the patch's arc at the reference field with the margin either side of it, and
+    their weight along w: as wide as the patch's arc at the reference field with the margin either side of it, and
     `height` pixels tall, at this resolution in pixels to the bar's width."""
     pixels = round(2 * (arc_reach * patch_reach + margin) * resolution)
-    return Camera(mv.x, mv.y, 0 * mv.x, mv.s, 0.0, np.zeros(2), np.array([pixels, height]) / (2 * resolution), pixels)
+    return Camera(mv.x, mv.y, 0 * mv.x, mv.w, 0.0, np.zeros(2), np.array([pixels, height]) / (2 * resolution), pixels)
 
 
 def outline(topology: Topology, vertices: core.Point, contacts: tuple[np.ndarray, np.ndarray], camera: Camera) -> list:
@@ -252,7 +252,7 @@ def side_by_side(bar_topology: Topology, bar_vertices: core.Point, bar_contacts:
                 layers(topology, vertices, contacts, potentials, velocities, shares, reach, spacing, reference_speed,
                        streak_length, camera))))
         bar, ring = pictures
-        patch = on_white(simplices.composited(field_patch(core.entropy, magnetic, reference, patch_reach,
+        patch = on_white(simplices.composited(field_patch(core.origin, magnetic, reference, patch_reach,
                                                           patch_camera)))
         yield row([bar, patch, ring])
 

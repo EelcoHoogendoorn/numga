@@ -32,9 +32,9 @@ carrier's energy, which Drude's model leaves out. The spins are counted by state
 they stay along the axis; the two share one electrochemical potential, the limit in which spins relax to balance faster
 than anything else here happens.
 
-The algebra is planar spacetime, x+y+t-, joined with one degenerate direction for entropy: x+y+t-s0. A unit of charge
-is a direction along time, `-mv.t.dual()`, and a unit of entropy `mv.s.dual()`, which is also the weight of a place; a
-carrier's parcel holds both, `valence * (time + entropy_per_charge * entropy)`. The potentials are one vector, the
+The algebra is planar projective spacetime, x+y+t-w0, its degenerate w weighing a place, joined with one degenerate
+direction for entropy: x+y+t-w0s0. A unit of charge is a direction along time, `-mv.t.dual()`, and a unit of entropy
+`mv.s.dual()`; a carrier's parcel holds both, `valence * (time + entropy_per_charge * entropy)`. The potentials are one vector, the
 electrochemical potential along t and the temperature along s, and their drive is minus their gradient wedged with
 them. The magnetic field is a plane of space, `strength * mv.xy`, and with the drive it pushes a moving carrier by one
 commutator, `(magnetic + drive).commutator(parcel + valence * velocity)`: through space the drive's push on the parcel
@@ -70,8 +70,9 @@ from numga.sparse import SparseExtensor, spdiag
 
 from examples.util.topology import Topology
 
-# Planar spacetime, and the entropy a parcel holds, a direction of its own with no metric.
-ga = Algebra("x+y+t-") * Algebra("s0")
+# Planar projective spacetime, its degenerate w weighing a place, and the entropy a parcel holds, a direction of its
+# own with no metric.
+ga = Algebra("x+y+t-w0") * Algebra("s0")
 # The plane of space, and what a parcel holds, charge along time and entropy.
 space = Algebra("x+y+")
 amounts = Algebra("t-s0")
@@ -94,22 +95,29 @@ Drifting = ga.gatype((Spatial, Drive))                                        # 
 Response = ga.gatype((Flux, Drive))                                           # Antibivector- <- Bivector+
 axis = mv.x.dual()                                                            # [] Point-
 across = mv.y.dual()                                                          # [] Point-
-# A unit of charge, a direction along time, and a unit of entropy, the weight of a place.
+# A unit of charge, a direction along time, and a unit of entropy; and the origin, a place of weight one.
 time = -mv.t.dual()                                                           # [] Parcel-
 entropy = mv.s.dual()                                                         # [] Parcel-
+origin = mv.w.dual()                                                          # [] Point-
 # The plane the carriers' spins turn in, the conductor's own, for spins along its axis.
 spin_plane = mv.xy                                                            # [] Bivector+
 
 
 # --- math -----------------------------------------------------------------------------
 def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Plane]:
-    """Each triangle's area `Scalar+[faces]`, and each corner's hat gradient `[corners] Plane+[faces]`, the plane
-    through the facing side, along time and at unit entropy, over twice the area, so that it reads one from the side to
-    the corner."""
-    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)              # [corners] Point-[faces]
-    # Twice a triangle's area: two of its sides joined, read through time at unit entropy.
-    double_areas = ((sides[0] & sides[1]) & time) & entropy                   # Scalar-[faces]
-    return double_areas.norm() / 2, (time & entropy & sides) / double_areas
+    """Each triangle's area `Scalar+[faces]`, and each corner's hat gradient `[corners] Plane+[faces]`, at these
+    vertices, points of weight one: what the corner's ramp reads across space, the ramp reading one at the corner and
+    nothing along the facing side."""
+    corners = topology.incidence[2, 0] * vertices                             # [corners] Point-[faces]
+    facing = topology.off[2, 0] * vertices                                    # [2, corners] Point-[faces]
+    # Each corner's ramp: the facing side, joined with time and entropy, along which the potentials do not vary off the
+    # mesh, over that join closed by the corner.
+    sides = facing[0] & facing[1]                                             # [corners] Antibivector-[faces]
+    ramps = (sides & time & entropy) / (sides & time & entropy & corners)     # [corners] Plane+[faces]
+    # Twice a triangle's area: its corners joined, along time and entropy.
+    double_areas = corners[0] & corners[1] & corners[2] & time & entropy      # Scalar-[faces]
+    # A ramp's gradient, what it reads across space, its value at the origin, read along w, dropped.
+    return double_areas.norm() / 2, ramps.cast(Upright)
 
 
 def drifts(magnetic: Magnetic, valences: np.ndarray, entropies_per_charge: np.ndarray, mobilities: np.ndarray,

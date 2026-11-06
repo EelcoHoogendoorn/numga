@@ -115,8 +115,8 @@ def bar(n_rows: int = n_rows, n_columns: int = n_columns
     middle = length / 2
     plus = at(places, np.array([[middle - 0.5, -0.5], [middle, -0.5]]))
     minus = at(places, np.array([[middle + 0.5, -0.5], [middle, 0.5]]))
-    # The places as the vertices of a mesh, each of unit weight along the entropy.
-    vertices = (core.entropy + mv(core.Upright, places).dual()).field()     # Point-[vertices]
+    # The places as the vertices of a mesh, each the dual of its place and a unit along w, a point of weight one.
+    vertices = (mv(core.Upright, places) + mv.w).dual().field()             # Point-[vertices]
     topology, _ = shapes.delaunay(places)
     return topology, vertices, left, right, plus, minus
 
@@ -132,7 +132,7 @@ def ring(n_rings: int = n_rings, n_sectors: int = n_sectors) -> tuple[Topology, 
     angles = 2 * np.pi * (np.arange(n_sectors) + staggers) / n_sectors        # [circles, sectors]
     turns = (mv.xy * (-angles / 2)).exp()                                     # [circles, sectors] Rotor+
     # Each place the direction along x turned to its angle and stretched to its circle's radius, from the centre.
-    vertices = (core.entropy + radii[:, None] * (turns >> core.axis)).reshape(-1).field()   # Point-[vertices]
+    vertices = (core.origin + radii[:, None] * (turns >> core.axis)).reshape(-1).field()    # Point-[vertices]
     inner, outer = np.arange(n_sectors), np.arange(n_sectors) + n_rings * n_sectors
     # The places read along and across, for the triangulation's one numeric step.
     readings = (stack((mv.x, mv.y)) & vertices.batch()[..., None]).to_array().reshape(-1, 2)   # [vertices, 2]
