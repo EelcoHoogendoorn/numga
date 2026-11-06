@@ -1,8 +1,8 @@
-"""A machine-wide pool of cores and memory that every heavy run shares: each test worker, each notebook, each module
-of the examples run as a program, and any command run through it, is one job of the pool.
+"""A pool of cores and memory that every heavy run on the machine shares: each test file, each notebook, each module of
+the examples run as a program, and any command run through it, is one job of the pool.
 
-The pool's budget is three quarters of the machine's cores and 16 GB of memory, so that the machine stays usable
-beside it. A job reserves cores and memory before it starts. It waits while an earlier job is still waiting,
+The pool's budget is three quarters of the machine's cores and two thirds of its memory, so that the machine stays
+usable beside it. A job reserves cores and memory before it starts. It waits while an earlier job is still waiting,
 while the budget's free remainder does not fit it, or while the machine's available memory, which counts every other
 program, falls short of what the job reserves, plus a margin, beyond what the running jobs have reserved and not yet
 used. A watchdog holds each job to its reservation: it polls the memory of the job's whole process tree, and kills
@@ -11,26 +11,26 @@ costs the machine: on macOS its physical footprint, as Activity Monitor shows it
 has compressed or swapped out, where the resident set does not; elsewhere its resident set. A job's numerical threads
 equal its cores, and it runs at low priority.
 
-A job the watchdog kills has not failed: it needed more memory than it reserved. A command run through the pool runs
-again with twice the memory, and again, up to the pool's whole budget, the ceiling, beyond which it fails with the
-memory it reached. The watchdog writes each kill to the pool's record of kills, from which the test runner retries a
-test in the same way (`tests/conftest.py`).
+A job the watchdog kills has not failed: it needed more memory than it reserved. It runs again with twice the memory,
+and again, up to the budget's whole memory, beyond which it fails with the memory it reached. A job run under a key
+learns the memory it finally needed, and starts with it the next time.
 
-The reservations live in a state file in the directory NUMGA_POOL names, written under a lock; a reservation whose
-process no longer exists is dropped whenever the file is read, so a crash never leaks one. A process inside a job,
-the kernel of a notebook or a subprocess of a test, belongs to that job and reserves nothing of its own. Where
-NUMGA_POOL is not set, as in Colab or CI, nothing is reserved and nothing waits.
+The pool lives in a directory every checkout on the machine shares, `~/.cache/numga/pool` unless NUMGA_POOL names
+another: its reservations, written under a lock, its record of kills and the memory its jobs have learned. A
+reservation whose process no longer exists is dropped whenever the file is read, so a crash never leaks one. A process
+inside a job, the kernel of a notebook or a subprocess of a test, belongs to that job and reserves nothing of its own.
+Without psutil, nothing is reserved and nothing waits.
 
 The module uses only the standard library and psutil, imported where the pool is used, and runs as a script as well
 as a module of the examples:
 
-    python -m examples.pool run [--cores N] [--memory GB] -- <command>   # any command, as one job
-    python -m examples.pool status                                        # the jobs holding and waiting
-    python -m examples.pool trace <file> [--seconds S | --until-idle]     # the pool, sampled twice a second
-    python -m examples.pool chart <file>                                  # a trace drawn to the shared plots
+    python -m examples.pool run [--cores N] [--memory GB] [--learn KEY] -- <command>   # any command, as one job
+    python -m examples.pool status                                                      # the jobs holding and waiting
+    python -m examples.pool trace <file> [--seconds S | --until-idle]                   # the pool, twice a second
+    python -m examples.pool chart <file>                                                # a trace, drawn
 
 A job declares more than its default with `--cores` and `--memory`, or with NUMGA_POOL_CORES and NUMGA_POOL_MEMORY in
-its environment, up to the ceiling.
+its environment; NUMGA_POOL_BUDGET_CORES and NUMGA_POOL_BUDGET_MEMORY set the budget.
 """
 
 from __future__ import annotations
@@ -39,31 +39,33 @@ import argparse
 import atexit
 import contextlib
 import fcntl
+import importlib.util
 import json
 import os
 import select
 import subprocess
 import sys
+import threading
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
-POOL = "NUMGA_POOL"
-# Set inside a job, to the process that holds its reservation.
-JOB = "NUMGA_POOL_JOB"
+# The pool's directory; set inside a job, to the process that holds its reservation; the run a batch's jobs belong to;
+# a job's own cores and memory.
+POOL, JOB, GROUP = "NUMGA_POOL", "NUMGA_POOL_JOB", "NUMGA_POOL_GROUP"
 CORES_REQUESTED, MEMORY_REQUESTED = "NUMGA_POOL_CORES", "NUMGA_POOL_MEMORY"
-# Runs from checkouts that predate the pool take this lock exclusively, one at a time; a job of the pool holds it
-# shared, so that the two kinds of run exclude each other while jobs of the pool run side by side. A process that
-# such a run started already holds it.
-LEGACY_LOCK, LEGACY_LOCK_HELD = "NUMGA_HEAVY_RUN_LOCK", "NUMGA_HEAVY_RUN_LOCK_HELD"
+CORES_BUDGETED, MEMORY_BUDGETED = "NUMGA_POOL_BUDGET_CORES", "NUMGA_POOL_BUDGET_MEMORY"
+DIRECTORY = Path.home() / ".cache" / "numga" / "pool"
 
 GB = 2 ** 30
-# The budget: three quarters of the machine's cores, and its memory in GB, which is also the most one job reserves.
-CORES = max(1, 3 * (os.cpu_count() or 1) // 4)
-MEMORY = 16
+# The budget: three quarters of the machine's cores; its memory, two thirds of the machine's, is `budget_memory()`,
+# and is also the most one job reserves.
+CORES = int(os.environ.get(CORES_BUDGETED, max(1, 3 * (os.cpu_count() or 1) // 4)))
 # Memory the machine keeps available beyond every reservation.
 MARGIN = 1
-# How often a waiting job asks again, and how often a watchdog reads its job's memory and, less often, its tree.
-WAIT_SECONDS, WATCH_SECONDS, TREE_SECONDS = 0.5, 0.1, 1.0
+# How often a waiting job asks again, how often a watchdog reads its job's memory and, less often, its tree, and how
+# often a batch looks whether its last job has been admitted.
+WAIT_SECONDS, WATCH_SECONDS, TREE_SECONDS, BATCH_SECONDS = 0.5, 0.1, 1.0, 0.1
 # How often a trace samples the pool, how long an empty pool ends a trace that waits for it, and how many samples a
 # chart of it keeps before the first job and after the last.
 TRACE_SECONDS, IDLE_SECONDS, CHART_MARGIN = 0.5, 10, 4
@@ -75,16 +77,22 @@ RUSAGE_WORDS, FOOTPRINT_WORD = 16, 9
 # The characters of a command that name its job.
 NAME_LENGTH = 100
 
-# This process's reservation, once it holds one, its watchdog, and the lock of runs outside the pool it shares.
+# This process's reservation, once it holds one, its watchdog, and the library that reads macOS's footprints.
 _held: dict = {}
 _watchdog: list[subprocess.Popen] = []
-_legacy_locks: list = []
 _libraries: list = []
 
 
+def budget_memory() -> float:
+    """The budget's memory in GB, two thirds of the machine's, which is also the most one job reserves."""
+    import psutil
+    return float(os.environ.get(MEMORY_BUDGETED, 2 * psutil.virtual_memory().total / 3 / GB))
+
+
 def active() -> bool:
-    """Whether a job started here takes a reservation of its own: the pool is set, and this is not inside a job."""
-    return bool(os.environ.get(POOL)) and JOB not in os.environ
+    """Whether a job started here takes a reservation of its own: psutil is there to watch it, and this is not inside
+    a job."""
+    return JOB not in os.environ and importlib.util.find_spec("psutil") is not None
 
 
 def requested(cores: int, memory: float) -> tuple[int, float]:
@@ -103,7 +111,7 @@ def threads(cores: int) -> dict[str, str]:
 # --- the state file
 
 def _directory() -> Path:
-    directory = Path(os.environ[POOL])
+    directory = Path(os.environ.get(POOL, DIRECTORY))
     directory.mkdir(parents=True, exist_ok=True)
     return directory
 
@@ -192,8 +200,8 @@ def _shortfall(jobs: list[dict], job: dict) -> str:
     if cores + job["cores"] > CORES:
         return f"{cores} of {CORES} cores reserved"
     memory = sum(other["memory"] for other in others)
-    if memory + job["memory"] > MEMORY:
-        return f"{memory:g} of {MEMORY} GB reserved"
+    if memory + job["memory"] > budget_memory():
+        return f"{memory:g} of {budget_memory():.0f} GB reserved"
     unused = sum(max(0.0, other["memory"] - footprint(other["pid"])) for other in others)
     wanted = max(0.0, job["memory"] - footprint(job["pid"])) + MARGIN
     available = _available() - unused
@@ -206,7 +214,7 @@ def room(cores: int, memory: float) -> int:
     """How many jobs of `cores` cores and `memory` GB the pool would admit now, beside every job holding or waiting."""
     jobs = read()
     by_cores = (CORES - sum(job["cores"] for job in jobs)) // cores
-    by_budget = (MEMORY - sum(job["memory"] for job in jobs)) // memory
+    by_budget = (budget_memory() - sum(job["memory"] for job in jobs)) // memory
     unused = sum(max(0.0, job["memory"] - footprint(job["pid"])) for job in jobs)
     by_machine = (_available() - unused - MARGIN) // memory
     return max(0, int(min(by_cores, by_budget, by_machine)))
@@ -214,22 +222,18 @@ def room(cores: int, memory: float) -> int:
 
 # --- holding a reservation
 
-def hold(cores: int, memory: float, what: str, run: str, report: bool, spared: bool) -> None:
+def hold(cores: int, memory: float, what: str) -> None:
     """Reserve `cores` cores and `memory` GB for this process and everything it starts, waiting until the pool admits
-    them, and hold them until the process ends, under a watchdog; with `report`, the watchdog prints the peak at the
-    end, and with `spared` it kills only the processes below this one, which then may run its command again. From
-    then on the process's numerical threads are its cores, set here for whatever it imports later and every process
-    it starts, and it runs at low priority. `run` names the run the job belongs to, such as the test run of a worker.
-    Outside the pool, or inside a job, nothing happens."""
-    if not active():
-        return
-    if not (1 <= cores <= CORES and 0 < memory <= MEMORY):
-        raise ValueError(f"a job reserves 1 to {CORES} cores and up to {MEMORY} GB, not {cores} and {memory:g}")
+    them, and hold them until the process ends, under a watchdog that kills the processes below this one should they
+    exceed them. From then on the process's numerical threads are its cores, set here for every process it starts,
+    and it runs at low priority."""
+    if not (1 <= cores <= CORES and 0 < memory <= budget_memory()):
+        raise ValueError(f"a job reserves 1 to {CORES} cores and up to {budget_memory():.0f} GB, "
+                         f"not {cores} and {memory:g}")
     import psutil
-    _share_legacy_lock(what)
     me = psutil.Process()
-    job = {"pid": me.pid, "started": me.create_time(), "cores": cores, "memory": memory, "what": what, "run": run,
-           "since": time.time(), "admitted": False}
+    job = {"pid": me.pid, "started": me.create_time(), "cores": cores, "memory": memory, "what": what,
+           "group": os.environ.get(GROUP, what), "since": time.time(), "admitted": False}
     atexit.register(release)
     with _ledger() as jobs:
         jobs.append(job)
@@ -238,8 +242,7 @@ def hold(cores: int, memory: float, what: str, run: str, report: bool, spared: b
     if waited:
         print(f"pool: {what} admitted after {waited:.0f} s", file=sys.stderr, flush=True)
     # The watchdog starts before this process lowers its priority, and so keeps its own.
-    _watchdog.append(subprocess.Popen([sys.executable, "-I", __file__, "watch", str(me.pid), str(memory), what, run,
-                                       *(["--report"] if report else []), *(["--spared"] if spared else [])],
+    _watchdog.append(subprocess.Popen([sys.executable, "-I", __file__, "watch", str(me.pid), str(memory), what],
                                       stdin=subprocess.PIPE))
     os.environ.update(threads(cores))
     os.environ[JOB] = str(me.pid)
@@ -267,8 +270,6 @@ def _wait(candidate, admit, wanted: str) -> float:
 def resize(memory: float) -> None:
     """Change the memory this process's job holds to `memory` GB: more waits until the pool admits it, less is
     immediate. The watchdog holds the job to the larger of the two while they change."""
-    if not 0 < memory <= MEMORY:
-        raise ValueError(f"a job reserves up to {MEMORY} GB, not {memory:g}")
     if memory > _held["memory"]:
         _wait(lambda found: {**found, "memory": memory}, lambda found: found.update(memory=memory), f"{memory:g} GB")
         _tell("memory", f"{memory:g}")
@@ -277,17 +278,6 @@ def resize(memory: float) -> None:
         with _ledger() as jobs:
             next(job for job in jobs if job["pid"] == _held["pid"]).update(memory=memory)
     _held["memory"] = memory
-
-
-def grow_to(memory: float) -> None:
-    """Hold at least `memory` GB from now on, waiting until the pool admits more where the job holds less."""
-    if _held and memory > _held["memory"]:
-        resize(memory)
-
-
-def doing(text: str) -> None:
-    """Tell this process's watchdog what the job is doing now, to name it should the watchdog kill the job."""
-    _tell("doing", text)
 
 
 def _tell(key: str, value: str) -> None:
@@ -308,69 +298,94 @@ def release() -> None:
     _watchdog.clear()
 
 
-def _share_legacy_lock(what: str) -> None:
-    """Hold the lock of runs that predate the pool, shared, until this process ends: wait while such a run holds it."""
-    path = os.environ.get(LEGACY_LOCK)
-    if not path or os.environ.get(LEGACY_LOCK_HELD) == "1" or Path(path).is_dir():
-        return
-    lock = open(path, "a+")
-    try:
-        fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
-    except BlockingIOError:
-        lock.seek(0)
-        print(f"pool: {what} waits for a run outside the pool: {lock.read().strip()}", file=sys.stderr, flush=True)
-        fcntl.flock(lock, fcntl.LOCK_SH)
-    _legacy_locks.append(lock)
-
-
-def run(command: list[str], cores: int, memory: float, what: str) -> int:
+def run(command: list[str], cores: int, memory: float, what: str, key: str) -> int:
     """Run a command as one job of the pool, and return its exit status. Where the watchdog kills the command for
-    exceeding its reservation, it runs again with twice the memory, up to the ceiling. Outside the pool, or inside a
-    job, the command just runs."""
-    hold(cores, memory, what, what, report=True, spared=True)
+    exceeding its reservation, it runs again with twice the memory, up to the budget's whole memory. With a `key`,
+    the job starts with the memory it learned under that key, where that is more, and learns the memory it finally
+    ran with. Outside the pool, or inside a job, the command just runs."""
+    if not active():
+        return subprocess.run(command).returncode
+    start = max(memory, learned().get(key, 0.0)) if key else memory
+    hold(cores, start, what)
     while True:
-        start = time.time()
+        started = time.time()
         process = subprocess.Popen(command)
         try:
             status = process.wait()
         except KeyboardInterrupt:
             status = process.wait()
-        if not _held or not [kill for kill in kills(what) if kill["pid"] == _held["pid"] and kill["time"] >= start]:
+        if not [kill for kill in kills() if kill["pid"] == _held["pid"] and kill["time"] >= started]:
+            if key and _held["memory"] > start:
+                learn(key, _held["memory"])
             return status
-        if _held["memory"] >= MEMORY:
+        if _held["memory"] >= budget_memory():
             print(f"pool: {what} needs more memory than the pool's whole budget", file=sys.stderr, flush=True)
             return status
-        resize(doubled(_held["memory"]))
+        resize(min(2 * _held["memory"], budget_memory()))
         print(f"pool: {what} runs again with {_held['memory']:g} GB", file=sys.stderr, flush=True)
 
 
-def doubled(memory: float) -> float:
-    """The next reservation of a job killed at `memory` GB: twice as much, up to the ceiling."""
-    return min(2 * memory, MEMORY)
-
-
-def kills(run: str) -> list[dict]:
-    """The jobs of a run the watchdogs killed, in the order they were killed: each job's pid, what it did, the memory
-    it reached and the memory it reserved, and when."""
+def kills() -> list[dict]:
+    """The jobs the watchdogs killed, in the order they were killed: each job's pid, its name, the memory it reached
+    and the memory it reserved, and when."""
     path = _directory() / "kills.jsonl"
-    records = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
-    return [record for record in records if record["run"] == run]
+    return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+
+def learned() -> dict[str, float]:
+    """The memory in GB each key has learned its job needs."""
+    path = _directory() / "memory.json"
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+def learn(key: str, memory: float) -> None:
+    """Record the memory in GB a key's job needs, beside what other jobs have recorded."""
+    with _ledger():
+        amounts = {**learned(), key: memory}
+        written = _directory() / f"memory.{os.getpid()}.json"
+        lines = [f"{json.dumps(name)}: {value:g}" for name, value in sorted(amounts.items())]
+        written.write_text("{\n" + ",\n".join(lines) + "\n}\n")
+        os.replace(written, _directory() / "memory.json")
+
+
+def batch(jobs: list[dict], group: str) -> Iterator[tuple[dict, int, str]]:
+    """Run commands as jobs of the pool, as many at once as it admits, and yield each job with its exit status and
+    output as it finishes. A job is a dict of its `command`, the folder `cwd` it runs in, its `cores` and `memory`,
+    its name `what` and its `key`; `group` names the run they make together. A new job starts once the last one
+    started has been admitted, so that the batch waits in the pool's queue with one job at a time; inside a job, or
+    without psutil, the jobs run one by one."""
+    pending, running, outputs = list(jobs), {}, {}
+    while pending or running:
+        admitted = {job["pid"] for job in read() if job["admitted"]} if active() else set()
+        last = list(running)[-1:]
+        if pending and all(process.pid in admitted for process in last) and (active() or not running):
+            job = pending.pop(0)
+            command = [sys.executable, "-I", __file__, "run", "--cores", str(job["cores"]), "--memory",
+                       f"{job['memory']:g}", "--what", job["what"], "--learn", job["key"], "--", *job["command"]]
+            process = subprocess.Popen(command, cwd=job["cwd"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                       text=True, env=os.environ | {GROUP: group})
+            running[process] = job
+            # Each output is read as it comes, so that no job stalls on a full pipe.
+            threading.Thread(target=lambda process=process: outputs.update({process: process.communicate()[0]}),
+                             daemon=True).start()
+        for process in [process for process in running if process in outputs]:
+            yield running.pop(process), process.returncode, outputs.pop(process)
+        time.sleep(BATCH_SECONDS)
 
 
 # --- the watchdog
 
-def watch(pid: int, memory: float, what: str, run: str, report: bool, spared: bool) -> None:
-    """Hold the job of process `pid` to `memory` GB: the moment the memory of its whole process tree exceeds
-    that, write the kill to the pool's record of kills, and kill the tree, or with `spared` everything below the job's
-    own process, which may then run its command again. The job tells its watchdog, a line at a time on its input, a
-    new reservation (`memory 4`) or what it is doing (`doing <text>`); the input closing, or the job's process ending,
-    ends the watch."""
+def watch(pid: int, memory: float, what: str) -> None:
+    """Hold the job of process `pid` to `memory` GB: the moment the memory of its whole process tree exceeds that,
+    write the kill to the pool's record of kills, and kill every process below the job's own, which may then run its
+    command again. The job tells its watchdog a new reservation, a line at a time on its input (`memory 4`); the
+    input closing, or the job's process ending, ends the watch."""
     import psutil
     try:
         job = psutil.Process(pid)
     except psutil.NoSuchProcess:
         return
-    limit, activity, peak = memory, "", 0.0
+    limit, peak = memory, 0.0
     tree, refreshed = [job], 0.0
     pending = b""
     while True:
@@ -381,11 +396,7 @@ def watch(pid: int, memory: float, what: str, run: str, report: bool, spared: bo
                 break
             *lines, pending = (pending + data).split(b"\n")
             for line in lines:
-                key, _, value = line.decode().partition(" ")
-                if key == "memory":
-                    limit = float(value)
-                else:
-                    activity = value
+                limit = float(line.decode().partition(" ")[2])
         now = time.monotonic()
         try:
             if now - refreshed > TREE_SECONDS:
@@ -401,24 +412,19 @@ def watch(pid: int, memory: float, what: str, run: str, report: bool, spared: bo
                 total += _cost(member)
         peak = max(peak, total / GB)
         if total > limit * GB:
-            record = {"pid": pid, "run": run, "what": what, "doing": activity, "footprint": total / GB,
-                      "reserved": limit, "time": time.time()}
+            record = {"pid": pid, "what": what, "footprint": total / GB, "reserved": limit, "time": time.time()}
             with open(_directory() / "kills.jsonl", "a") as kills_file:
                 kills_file.write(json.dumps(record) + "\n")
             # The tree is gathered again, so that a process started since the last look is killed too.
             with contextlib.suppress(psutil.NoSuchProcess):
                 tree = [job, *(member for member in job.children(recursive=True) if member.pid != os.getpid())]
-            for member in reversed(tree[1:] if spared else tree):
+            for member in reversed(tree[1:]):
                 with contextlib.suppress(psutil.NoSuchProcess):
                     member.kill()
-            during = f" during {activity}" if activity else ""
-            print(f"\npool: killed {what}{during} at {total / GB:.2f} GB, over its reservation of {limit:g} GB",
+            print(f"\npool: killed {what} at {total / GB:.2f} GB, over its reservation of {limit:g} GB",
                   file=sys.stderr, flush=True)
-            if not spared:
-                sys.exit(1)
             tree = [job]
-    if report:
-        print(f"pool: {what} peaked at {peak:.2f} GB of its {limit:g} GB", file=sys.stderr, flush=True)
+    print(f"pool: {what} peaked at {peak:.2f} GB of its {limit:g} GB", file=sys.stderr, flush=True)
 
 
 # --- looking at the pool
@@ -428,7 +434,7 @@ def status() -> None:
     jobs = read()
     held = [job for job in jobs if job["admitted"]]
     print(f"{sum(job['cores'] for job in held)} of {CORES} cores and {sum(job['memory'] for job in held):g} of "
-          f"{MEMORY} GB reserved; {_available():.1f} GB available on the machine")
+          f"{budget_memory():.0f} GB reserved; {_available():.1f} GB available on the machine")
     for job in jobs:
         state = "holds" if job["admitted"] else "waits"
         print(f"{state} {job['cores']} cores {job['memory']:>4g} GB, using {footprint(job['pid']):5.2f} GB, "
@@ -454,9 +460,9 @@ def trace(path: Path, seconds: float, until_idle: bool) -> None:
 
 
 def chart(path: Path, name: str) -> None:
-    """Draw a trace into the shared plots, from a little before its first job to a little after its last: the cores
-    and the memory each run reserved, stacked, against the budget, with the memory its jobs held and the memory the
-    machine had available; and each job's own memory against its reservation."""
+    """Draw a trace into the examples' plots, from a little before its first job to a little after its last: the
+    cores and the memory each run reserved, stacked, against the budget, with the memory its jobs held and the memory
+    the machine had available; and each job's own memory against its reservation."""
     import matplotlib
     matplotlib.use("Agg")
     from examples.util import charts
@@ -467,12 +473,13 @@ def chart(path: Path, name: str) -> None:
     samples = samples[max(0, busy[0] - CHART_MARGIN):busy[-1] + CHART_MARGIN + 1]
     start = samples[0]["time"]
     minutes = [(sample["time"] - start) / 60 for sample in samples]
-    runs = list(dict.fromkeys(job["run"] for sample in samples for job in sample["jobs"]))
-    jobs = list(dict.fromkeys((job["pid"], job["run"]) for sample in samples for job in sample["jobs"]))
+    runs = list(dict.fromkeys(job["group"] for sample in samples for job in sample["jobs"]))
+    jobs = list(dict.fromkeys((job["pid"], job["group"]) for sample in samples for job in sample["jobs"]))
     colours = dict(zip(runs, matplotlib.colormaps["tab10"].colors))
 
     def total(run: str, key: str) -> list[float]:
-        return [sum(job[key] for job in sample["jobs"] if job["run"] == run and job["admitted"]) for sample in samples]
+        return [sum(job[key] for job in sample["jobs"] if job["group"] == run and job["admitted"])
+                for sample in samples]
 
     def own(pid: int, key: str) -> list[float]:
         return [next((job[key] for job in sample["jobs"] if job["pid"] == pid and job["admitted"]), float("nan"))
@@ -493,10 +500,10 @@ def chart(path: Path, name: str) -> None:
                               step="post")
         memory_axes.plot(minutes, [sample["available"] for sample in samples], color="grey",
                          label="available on the machine")
-        memory_axes.axhline(MEMORY, color="black", linestyle="--")
+        memory_axes.axhline(budget_memory(), color="black", linestyle="--")
         memory_axes.set_ylabel("GB reserved, held")
-        memory_axes.set_ylim(0, MEMORY * 1.3)
-        memory_axes.set_yticks([0, MEMORY])
+        memory_axes.set_ylim(0, budget_memory() * 1.3)
+        memory_axes.set_yticks([0, round(budget_memory())])
         memory_axes.legend(loc="upper left", frameon=False)
         for pid, run in jobs:
             jobs_axes.plot(minutes, own(pid, "memory"), color=colours[run], linestyle=":", drawstyle="steps-post")
@@ -519,22 +526,21 @@ def main(arguments: list[str]) -> None:
     running.add_argument("--memory", type=float, default=memory, metavar="GB",
                          help=f"memory the job reserves, up to the pool's budget (default {memory:g})")
     running.add_argument("--what", help="the job's name in the pool (default: the command)")
+    running.add_argument("--learn", default="", metavar="KEY",
+                         help="start with the memory learned under this key, and learn the memory finally needed")
     running.add_argument("command", nargs=argparse.REMAINDER)
     commands.add_parser("status", help="print the jobs holding and waiting")
     tracing = commands.add_parser("trace", help="sample the pool to a file twice a second")
     tracing.add_argument("path", type=Path)
     tracing.add_argument("--seconds", type=float, default=float("inf"))
     tracing.add_argument("--until-idle", action="store_true", help="stop once the pool has held jobs and is empty")
-    charting = commands.add_parser("chart", help="draw a trace into the shared plots")
+    charting = commands.add_parser("chart", help="draw a trace into the examples' plots")
     charting.add_argument("path", type=Path)
     charting.add_argument("--name", default="pool")
     watching = commands.add_parser("watch")
     watching.add_argument("pid", type=int)
     watching.add_argument("memory", type=float)
     watching.add_argument("what")
-    watching.add_argument("run")
-    watching.add_argument("--report", action="store_true")
-    watching.add_argument("--spared", action="store_true")
     options = parser.parse_args(arguments)
     if options.action == "run":
         command = options.command[1:] if options.command[:1] == ["--"] else options.command
@@ -542,7 +548,7 @@ def main(arguments: list[str]) -> None:
             parser.error("a command must follow --")
         # A command is named by its first words, on one line.
         named = " ".join(" ".join(command).split())
-        sys.exit(run(command, options.cores, options.memory, options.what or named[:NAME_LENGTH]))
+        sys.exit(run(command, options.cores, options.memory, options.what or named[:NAME_LENGTH], options.learn))
     elif options.action == "status":
         status()
     elif options.action == "trace":
@@ -550,7 +556,7 @@ def main(arguments: list[str]) -> None:
     elif options.action == "chart":
         chart(options.path, options.name)
     else:
-        watch(options.pid, options.memory, options.what, options.run, options.report, options.spared)
+        watch(options.pid, options.memory, options.what)
 
 
 if __name__ == "__main__":

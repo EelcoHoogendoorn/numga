@@ -10,8 +10,8 @@ from pathlib import Path
 
 # A module of the examples run as a program, `python -m examples.<...>`, a scenario's main, runs as one job of the
 # machine's pool, one core and 4 GB unless it declares more: this process becomes the pool's command, which runs the
-# program again inside the job, and again with more memory should it need it. The notebook runner makes each notebook
-# a job, and the pool's own command its command.
+# program again inside the job, and again with more memory should it need it, which the module then learns. The
+# notebook runner makes each notebook a job, and the pool's own command its command.
 _arguments = getattr(sys, "orig_argv", [])
 _module = _arguments[_arguments.index("-m") + 1] if "-m" in _arguments[:-1] else ""
 if _module.startswith("examples.") and _module not in ("examples.pool", "examples.notebooks"):
@@ -21,7 +21,8 @@ if _module.startswith("examples.") and _module not in ("examples.pool", "example
         _checkout = Path(__file__).resolve().parents[1].name
         _program = f"python {' '.join(_arguments[_arguments.index('-m'):])} in {_checkout}"
         os.execv(sys.executable, [sys.executable, "-I", pool.__file__, "run", "--cores", str(_cores), "--memory",
-                                  str(_memory), "--what", _program, "--", sys.executable, *_arguments[1:]])
+                                  str(_memory), "--what", _program, "--learn", _module, "--", sys.executable,
+                                  *_arguments[1:]])
 
 import numpy as np
 from types import ModuleType

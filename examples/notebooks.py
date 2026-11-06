@@ -16,9 +16,9 @@ naming a module of the checkout counts as importing it, as `instantiate` takes o
 notebooks that use it or a module inside it.
 
 Each notebook runs as `jupyter execute`, which writes nothing into the notebook, as one job of the machine's pool
-(`examples/pool.py`), of one core and 4 GB unless `--cores` or `--memory` ask for more, where the machine has one. Its
-outcome, ran, failed or timed out, its seconds and, for a failure, the cell it failed in and the last lines of the
-error, goes into `archive/notebook_runs.json` of the workspace that holds the checkout, as it comes, under the
+(`examples/pool.py`), of one core and 4 GB unless `--cores` or `--memory` ask for more, or it has learned it needs
+more. Its outcome, ran, failed or timed out, its seconds and, for a failure, the cell it failed in and the last lines
+of the error, goes into `archive/notebook_runs.json` of the workspace that holds the checkout, as it comes, under the
 checkout, its commit and the time the run started, and a summary is printed at the end, or at Ctrl-C.
 """
 
@@ -163,7 +163,7 @@ def run(notebook: Path, timeout: float, cores: int, memory: float) -> dict:
     in how many seconds."""
     jupyter = [str(Path(sys.executable).parent / "jupyter"), "execute", notebook.name]
     job = [sys.executable, "-I", str(POOL), "run", "--cores", str(cores), "--memory", str(memory),
-           "--what", f"notebook {notebook.name} in {ROOT.name}", "--"]
+           "--what", f"notebook {notebook.name} in {ROOT.name}", "--learn", str(notebook), "--"]
     # No window for any figure.
     environment = os.environ | {"MPLBACKEND": "Agg"}
     start = time.perf_counter()
@@ -217,7 +217,7 @@ def main(arguments: list[str]) -> None:
                         help="the time each notebook may take (default 20)")
     parser.add_argument("--cores", type=int, default=1, help="the cores each notebook reserves in the pool (default 1)")
     parser.add_argument("--memory", type=float, default=4, metavar="GB",
-                        help="the memory each notebook reserves in the pool, up to 16 GB (default 4)")
+                        help="the memory each notebook reserves in the pool, at least (default 4)")
     options = parser.parse_args(arguments)
 
     everything = notebooks()
