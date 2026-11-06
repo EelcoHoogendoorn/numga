@@ -40,6 +40,9 @@ var<uniform> camera: Rotor;
 var<uniform> half_height: f32;
 var<storage, read> particles: array<Particle>;
 var<storage, read> cuts: array<Cut>;
+// How many cuts there are: a loop bounded by the array's own length, inlined for both sides of the sphere, crashes
+// Mesa's software Vulkan driver.
+var<uniform> n_cuts: u32;
 // Widths across the view, in the sphere's radii.
 var<uniform> line_half_width: f32;
 var<uniform> dot_radius: f32;
@@ -89,7 +92,7 @@ fn inked_cuts(beneath: vec3<f32>, across: vec2<f32>, depth: f32) -> vec3<f32> {
     let rightward = right - toward * (across.x / depth);
     let upward = up - toward * (across.y / depth);
     var colour = beneath;
-    for (var index = 0u; index < arrayLength(&cuts); index++) {
+    for (var index = 0u; index < n_cuts; index++) {
         let cut = cuts[index];
         let change = right.dual_inverse() * (cut & rightward) + up.dual_inverse() * (cut & upward);
         if (abs(cut & point) < line_half_width * change.norm()) {
@@ -163,7 +166,7 @@ def picture(population: Point, cuts: Cut) -> np.ndarray:
     pixel = 2 * half_width / pixels
     colours = particle_colours[np.arange(population.shape[-1]) % len(particle_colours)]
     traced = shader()((pixels, pixels), camera=camera, half_height=half_width,
-                      particles=dict(place=population, colour=colours), cuts=cuts,
+                      particles=dict(place=population, colour=colours), cuts=cuts, n_cuts=np.uint32(cuts.shape[0]),
                       line_half_width=line_width / 2 * pixel, dot_radius=dot_radius * pixel,
                       rim_width=rim_width * pixel, outline_half_width=outline_width / 2 * pixel)["image"]
     return np.round(np.clip(traced, 0, 1) * 255).astype(np.uint8)
