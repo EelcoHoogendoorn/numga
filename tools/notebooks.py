@@ -17,7 +17,7 @@ naming a module of the checkout counts as importing it, as `instantiate` takes o
 notebooks that use it or a module inside it.
 
 Each notebook runs as `jupyter execute`, which writes nothing into the notebook, as one job of the machine's pool
-(`tools/pool.py`), of one core and 4 GB unless `--cores` or `--memory` ask for more, or it has learned it needs
+(`tools/pool.py`), of one core and 1 GB unless `--cores` or `--memory` ask for more, or it has learned it needs
 more. Its outcome, ran, failed or timed out, its seconds, the most memory it used and the memory it held, and, for a
 failure, the cell it failed in and the last lines of the error, goes into `archive/notebook_runs.json` of the
 workspace that holds the checkout, as it comes, under the checkout, its commit and the time the run started. A
@@ -195,8 +195,8 @@ def main(arguments: list[str]) -> None:
     parser.add_argument("--timeout", type=float, default=20, metavar="MINUTES",
                         help="the time each notebook may take (default 20)")
     parser.add_argument("--cores", type=int, default=1, help="the cores each notebook reserves in the pool (default 1)")
-    parser.add_argument("--memory", type=float, default=4, metavar="GB",
-                        help="the memory each notebook reserves in the pool, at least (default 4)")
+    parser.add_argument("--memory", type=float, default=1, metavar="GB",
+                        help="the memory each notebook reserves in the pool, at least (default 1)")
     options = parser.parse_args(arguments)
 
     everything = notebooks()

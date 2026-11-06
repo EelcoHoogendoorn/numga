@@ -65,7 +65,7 @@ def grid_colour(front: np.ndarray, back: np.ndarray, width: float) -> meshes.Col
 
 
 # --- plumbing
-def topology(n_rows: int, n_columns: int, spacing: int) -> tuple[Topology, np.ndarray]:
+def sheet_grid(n_rows: int, n_columns: int, spacing: int) -> tuple[Topology, np.ndarray]:
     """Triangles and their edge ink at the edge opposite each corner, with the diagonal of each quad left
     unmarked, and of the grid's lines inside every `spacing`-th row and column."""
     indices = np.arange(n_rows * n_columns).reshape(n_rows, n_columns)
@@ -137,7 +137,7 @@ def partner_picture(partner: core.Point, source: core.Point, topology: Topology,
 def frames(states: Iterable[core.Point], reference: core.Point) -> Iterator[np.ndarray]:
     """Draw each point grid with the camera fixed by a reference grid of the same rows and columns, at the saddle's
     share of the pixels and of its grid's lines."""
-    topology, ink = topology(*reference.shape[-2:], saddle_line_spacing)
+    topology, ink = sheet_grid(*reference.shape[-2:], saddle_line_spacing)
     view = viewport(reference, elevation, azimuth, round(saddle_scale * n_width))
     for state in states:
         yield picture(state, topology, ink, view, saddle_scale)
@@ -145,7 +145,7 @@ def frames(states: Iterable[core.Point], reference: core.Point) -> Iterator[np.n
 
 def partner_frames(states: Iterable[core.Point], source: core.Point, reference: core.Point) -> list[np.ndarray]:
     """Draw a partner family against one source net and one fixed camera."""
-    topology, ink = topology(*source.shape, 1)
+    topology, ink = sheet_grid(*source.shape, 1)
     view = viewport(reference, elevation, azimuth, n_width)
     return [partner_picture(state, source, topology, ink, view) for state in states]
 
@@ -154,7 +154,7 @@ def partner_orbit(partner: core.Point, source: core.Point, azimuths: np.ndarray,
                   ) -> Iterator[np.ndarray]:
     """Orbit a fixed pair, framed with one scale fitted to every view; azimuths and elevation in degrees, the
     azimuth measured from x."""
-    topology, ink = topology(*source.shape, 1)
+    topology, ink = sheet_grid(*source.shape, 1)
     points = concatenate([source.reshape(-1), partner.reshape(-1)])                       # [vertices] Point-
     view_elevation, view_azimuths = np.radians(orbit_elevation), np.radians(azimuths + 90)
     views = [viewport(points, view_elevation, view_azimuth, n_width) for view_azimuth in view_azimuths]
