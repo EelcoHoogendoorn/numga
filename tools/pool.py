@@ -2,10 +2,9 @@
 the examples run as a program, and any command run through it, is one job of the pool.
 
 The pool's budget is three quarters of the machine's cores and two thirds of its memory, so that the machine stays
-usable beside it. A job reserves cores and memory before it starts. It waits while an earlier job is still waiting,
-while the budget's free remainder does not fit it, or while the machine's available memory, which counts every other
-program, falls short of what the job reserves, plus a margin, beyond what the running jobs have reserved and not yet
-used. A watchdog holds each job to its reservation: it polls the memory of the job's whole process tree, and kills
+usable beside it. A job reserves cores and memory before it starts, and waits while an earlier job is still waiting
+or while the budget, less what the other jobs have reserved, does not fit it; what the jobs actually use plays no
+part. A watchdog holds each job to its reservation: it polls the memory of the job's whole process tree, and kills
 the tree the moment it exceeds what the job reserved, naming the job and the amount. A process's memory is what it
 costs the machine: on macOS its physical footprint, as Activity Monitor shows it, which counts the pages the system
 has compressed or swapped out, where the resident set does not; elsewhere its resident set. A job's numerical threads
@@ -61,8 +60,6 @@ GB = 2 ** 30
 # The budget: three quarters of the machine's cores; its memory, two thirds of the machine's, is `budget_memory()`,
 # and is also the most one job reserves.
 CORES = int(os.environ.get(CORES_BUDGETED, max(1, 3 * (os.cpu_count() or 1) // 4)))
-# Memory the machine keeps available beyond every reservation.
-MARGIN = 1
 # How often a waiting job asks again, how often a watchdog reads its job's memory and, less often, its tree, and how
 # often a batch looks whether its last job has been admitted.
 WAIT_SECONDS, WATCH_SECONDS, TREE_SECONDS, BATCH_SECONDS = 0.5, 0.1, 1.0, 0.1
@@ -190,8 +187,8 @@ def _available() -> float:
 
 
 def _shortfall(jobs: list[dict], job: dict) -> str:
-    """Why a job cannot hold its reservation now, or nothing when it can: an earlier job still waiting, the budget's
-    free remainder, or the machine's available memory beside what the holding jobs have reserved and not yet used."""
+    """Why a job cannot hold its reservation now, or nothing when it can: an earlier job still waiting, or the budget,
+    less what the other jobs hold, too small for it."""
     index = next(index for index, other in enumerate(jobs) if other["pid"] == job["pid"])
     others = [other for other in jobs if other["pid"] != job["pid"] and other["admitted"]]
     if not job["admitted"] and any(not other["admitted"] for other in jobs[:index]):
@@ -202,22 +199,7 @@ def _shortfall(jobs: list[dict], job: dict) -> str:
     memory = sum(other["memory"] for other in others)
     if memory + job["memory"] > budget_memory():
         return f"{memory:g} of {budget_memory():.0f} GB reserved"
-    unused = sum(max(0.0, other["memory"] - footprint(other["pid"])) for other in others)
-    wanted = max(0.0, job["memory"] - footprint(job["pid"])) + MARGIN
-    available = _available() - unused
-    if available < wanted:
-        return f"{available:.1f} GB available beyond the reservations, {wanted:.1f} GB wanted"
     return ""
-
-
-def room(cores: int, memory: float) -> int:
-    """How many jobs of `cores` cores and `memory` GB the pool would admit now, beside every job holding or waiting."""
-    jobs = read()
-    by_cores = (CORES - sum(job["cores"] for job in jobs)) // cores
-    by_budget = (budget_memory() - sum(job["memory"] for job in jobs)) // memory
-    unused = sum(max(0.0, job["memory"] - footprint(job["pid"])) for job in jobs)
-    by_machine = (_available() - unused - MARGIN) // memory
-    return max(0, int(min(by_cores, by_budget, by_machine)))
 
 
 # --- holding a reservation
