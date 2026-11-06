@@ -38,7 +38,7 @@ The dual acts linearly on sums and takes grade $k$ to grade $n-k$ in an algebra 
 z
 ```
 
-There is also a change of orientation. The basis vector `x` is extrinsic; `x.dual()` is intrinsic. In three dimensions this intrinsic grade-two element is an antivector. Complementary grade and complementary orientation are both part of its type. [Why orientation](../../why_orientation.md) shows the geometric distinction through reflections.
+There is also a change of orientation. The basis vector `x` is extrinsic; `x.dual()` is intrinsic. In three dimensions this intrinsic grade-two element is an antivector. Complementary grade and complementary orientation are both part of its type. [Why orientation](../../../articles/orientation.md) shows the geometric distinction through reflections.
 
 Use the inverse dual to return to the starting element:
 

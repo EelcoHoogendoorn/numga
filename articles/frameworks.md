@@ -2,7 +2,7 @@
 
 This document compares geometric algebra and extensors with linear algebra, tensors, exterior algebra and differential forms. It is intended for readers familiar with these frameworks who want to understand how they relate: which objects and operations they share, which are special cases of broader constructions, and where additional structure is needed. The aim is to show how familiar mathematics fits into the combined algebra, and what follows from having its objects, products and maps available together.
 
-Background on [extensors](multiple_lenses.md), [syntax](extensor_syntax.md), [conventions](conventions.md) and [orientation](why_orientation.md) is developed separately.
+Background on [extensors](multiple_lenses.md), [syntax](../docs/extensor_syntax.md), [conventions](../docs/conventions.md) and [orientation](orientation.md) is developed separately.
 
 ## The containment relationships
 
@@ -48,7 +48,7 @@ A.adjoint()(b).scalar_product(a) == b.scalar_product(A(a))
 A.adjugate()(c) & a == c & A(a)
 ```
 
-The first uses the scalar product. The second uses the complementary pairing, each side read with its extrinsic factor first, as written here for a map between intrinsic spaces, and runs from complements of the outputs to complements of the inputs; this is the [adjugate](tutorial/extensors/10-the-adjugate.md) used in the examples. The transpose represents the dual map in dual bases, and in orthonormal Euclidean bases it also represents the one-vector adjoint. Keeping the pairing explicit records which of these operations is intended and which spaces the resulting map acts on. [Linear Algebra Done Right](https://linear.axler.net/LADR4e.pdf), §§3F and 7A, develops the dual-map and adjoint constructions.
+The first uses the scalar product. The second uses the complementary pairing, each side read with its extrinsic factor first, as written here for a map between intrinsic spaces, and runs from complements of the outputs to complements of the inputs; this is the [adjugate](../docs/tutorial/extensors/10-the-adjugate.md) used in the examples. The transpose represents the dual map in dual bases, and in orthonormal Euclidean bases it also represents the one-vector adjoint. Keeping the pairing explicit records which of these operations is intended and which spaces the resulting map acts on. [Linear Algebra Done Right](https://linear.axler.net/LADR4e.pdf), §§3F and 7A, develops the dual-map and adjoint constructions.
 
 The complementary pairing remains available with a degenerate metric. It also lets a singular map pull measurements back: a camera can carry an image condition back into the scene without an inverse camera. The cofactor construction follows from extending a map to the appropriate exterior grade. The [normals case](common_practice.md#surface-normals-under-deformation) develops the relation to area transport.
 
@@ -72,7 +72,7 @@ An antisymmetric pair of tensor arguments can be represented by one bivector arg
 
 Symmetric tensors remain symmetric maps: a symmetric product of two vectors does not become a new grade. Tensor notation is particularly concise for stating permutation symmetries among many arguments. Extensor expressions are particularly direct when the symmetry follows from a geometric construction, as it does for sums of quadratic spring energies. The grades and the symmetries of the map perform different jobs.
 
-Tensor transformation laws also retain their meaning. Each argument and output has a space, and moving the map composes the corresponding action with those spaces. An extensor built from geometric ingredients transforms with its ingredients under motions preserving its products. The [moving-maps tutorial](tutorial/extensors/08-moving-maps.md) develops that relationship; the [multiple-lenses account](multiple_lenses.md#2-the-geometric-lens-meaning-from-construction) explains why the transformation law follows from the construction.
+Tensor transformation laws also retain their meaning. Each argument and output has a space, and moving the map composes the corresponding action with those spaces. An extensor built from geometric ingredients transforms with its ingredients under motions preserving its products. The [moving-maps tutorial](../docs/tutorial/extensors/08-moving-maps.md) develops that relationship; the [multiple-lenses account](multiple_lenses.md#2-the-geometric-lens-meaning-from-construction) explains why the transformation law follows from the construction.
 
 ### Reference and physical metrics
 
@@ -95,7 +95,7 @@ Exterior algebra is contained in GA as its wedge-product structure. All its grad
 
 An exterior form is also a special case of an extensor. An alternating form on several vectors is a linear scalar-valued map on their exterior power: a two-form measures a bivector, and a higher form measures the corresponding higher-grade element. The complementary pairing represents these scalar evaluations without a metric. The Hodge star is a further map supplied by the metric and orientation.
 
-Differential forms are fields of these alternating forms. Their exterior derivative, pullback and integration retain their roles in conservation laws. Twisted forms record the orientation behavior needed by quantities such as charge and flux. Intrinsic and extrinsic orientations carry the corresponding distinction through geometric expressions; [orientation](why_orientation.md) develops it, and [Bossavit's treatment of computational electromagnetism](https://www.jpier.org/ac_api/download.php?id=00080102) gives the connection to forms and oriented meshes.
+Differential forms are fields of these alternating forms. Their exterior derivative, pullback and integration retain their roles in conservation laws. Twisted forms record the orientation behavior needed by quantities such as charge and flux. Intrinsic and extrinsic orientations carry the corresponding distinction through geometric expressions; [orientation](orientation.md) develops it, and [Bossavit's treatment of computational electromagnetism](https://www.jpier.org/ac_api/download.php?id=00080102) gives the connection to forms and oriented meshes.
 
 ### Exterior and metric structure in applications
 
@@ -193,4 +193,4 @@ GA and extensors provide a unified algebra for the objects and maps of a geometr
 
 An alternating tensor, a cross product, a reciprocity pairing and a spinor action each need their own motivation and conventions when introduced separately. Their shared construction in GA makes those relationships part of the algebra, and extensors extend them to arbitrary multilinear maps. The model can move from its objects to its laws and transformations without acquiring a separate language for each construction.
 
-The [multiple-lenses account](multiple_lenses.md) develops the relationship between geometric construction and multilinear maps. The [orientation discussion](why_orientation.md) develops how those constructions behave under reflections.
+The [multiple-lenses account](multiple_lenses.md) develops the relationship between geometric construction and multilinear maps. The [orientation discussion](orientation.md) develops how those constructions behave under reflections.

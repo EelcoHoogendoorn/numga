@@ -1,6 +1,6 @@
 # Orientation in numga
 
-Every `GAType` carries an orientation, `Orientation.extrinsic` or `Orientation.intrinsic`, on its output and on each input. Constructors set it, operations propagate it, sums and bindings check it, and the transform `>>` uses it to pick the sign of a reflection. Type comments use `+` for extrinsic and `-` for intrinsic. This page lists the rules; [Why orientation](why_orientation.md) explains why they are needed.
+Every `GAType` carries an orientation, `Orientation.extrinsic` or `Orientation.intrinsic`, on its output and on each input. Constructors set it, operations propagate it, sums and bindings check it, and the transform `>>` uses it to pick the sign of a reflection. Type comments use `+` for extrinsic and `-` for intrinsic. This page lists the rules; [Why orientation](../articles/orientation.md) explains why they are needed.
 
 ```python
 from numga import Algebra, NumpyContext, Orientation
@@ -71,6 +71,7 @@ Reading `extrinsic` as + and `intrinsic` as −:
 | `versor >> x`, `versor << x` | `x`'s orientation |
 | `exp`, `log` and their variants, square roots, `arccos`, `arccosh` | extrinsic input required |
 | norms, Study norms, `cos`, `cosh` | extrinsic output |
+| `a.dot(b)`, `a.antinorm()` | equal orientations required; extrinsic output |
 | `sin`, `tan`, `sinh`, `tanh`, `arcsin`, `arctan`, `arcsinh`, `arctanh` | unchanged |
 
 For an intrinsic scalar, an odd function keeps the sign change under a mirror; an even function removes it. A norm is extrinsic, so dividing by it preserves the element's orientation:
@@ -115,6 +116,19 @@ Multiplication by a fixed pseudoscalar follows the geometric product's orientati
 
 The three operations line up. Multiplying by the intrinsic scalar one keeps every coefficient and flips only the orientation: a cast between extrinsic and intrinsic. Multiplying by the extrinsic pseudoscalar complements the grade and keeps the orientation. The dual does both: in a non-degenerate algebra it is the reverse times the intrinsic pseudoscalar, `a.dual() == a.reverse() * antiscalar`, at every grade. The reverse is what makes an extrinsic element's outer product with a dual its dot product with the dualized element, `b ^ a.dual() == b.dot(a) * antiscalar`; without it the sign flips on bivectors and trivectors, which square to minus their size. In a degenerate algebra the pseudoscalar squares to zero and no product with it gives the dual, which remains the complement of the blade layout.
 
+## Metric products and sizes
+
+The dot measures two values of one orientation. Two extrinsic values are measured as written, by the signature; two intrinsic values are measured through their duals, `a.dot(b) == a.dual().dot(b.dual())`, so that a direction's dot with itself is its length squared in space, in a spacetime and in a projective algebra alike. An extrinsic value and an intrinsic one have no dot: they pair by the regressive product, extrinsic first. The inner product `|` and `scalar_product` are primitive products and stay plain, their orientations the product of the signs.
+
+An intrinsic value has two sizes. `norm()` and `normalized()` follow the reverse product: of a projective point the norm is its weight, and `.normalized()` gives it weight one. `antinorm()` follows the dot: of a direction it is its length in every algebra, and of a projective point its bulk, the weight times the distance from the origin:
+
+```python
+far, near = mv.point([[3, 4, 0], [0, 0, 0]])                # Antivector-, Antivector-
+step = far - near                                           # Antivector-
+step.dot(step)                                              # Scalar+, 25
+step.antinorm(), far.norm(), far.antinorm()                 # Scalar+, Scalar+, Scalar+: 5, 1, 5
+```
+
 ## Maps
 
 Each axis of a map carries its own orientation. The inertia of three unit masses takes an extrinsic rate of motion to an intrinsic momentum:
@@ -145,6 +159,8 @@ momentum: Antibivector = inertia(rate)                        # Antibivector-
 | `f.contract(i, j)` pairing two inputs | the same space with an invertible metric required; output orientation multiplied by the metric pairing's orientation |
 | `f.outermorphism(Type)` | `Type` must match products of the map's inputs; products of its outputs determine the result |
 
+The adjugate reads both of its pairings with the extrinsic factor first, as a reading does: `A.adjugate()(c) & x == c & A(x)` between intrinsic spaces, and `x & A.adjugate()(c) == A(x) & c` between extrinsic ones; the trace pairs two inputs the same way. So in every dimension the adjugate applied twice is the map, a symmetric form is its own adjugate, and a positive form pulled back through a map, `G.adjugate()(material(G))`, is positive.
+
 Pairing two inputs leaves the other axes unchanged. The inertia above is a correlation between two orientations of the same blade space, so its unary trace is intrinsic. Its adjugate has the same type as the inertia: swapping and then complementing the axes and flipping their orientations gives `intrinsic bivector <- extrinsic bivector` again.
 
 `det`, `eig`, `eigh` and `cholesky` accept endomorphisms or square scalar-valued forms. Inertia is neither, but pairing its output with a second rate gives its energy form:
@@ -167,6 +183,7 @@ rate + momentum                  # GATypeError: orientations differ
 inertia(momentum)                # GATypeError: input requires extrinsic orientation
 inertia.solve(rate)              # GATypeError: right-hand side requires intrinsic orientation
 momentum.exp()                   # GATypeError: exp requires extrinsic orientation
+rate.dot(momentum)               # GATypeError: dot takes operands of one orientation
 inertia.eigh()                   # GATypeError: requires an endomorphism or a square form
 ga.gatype(ga.subspace.vector())  # TypeError: a subspace has no orientation
 ```

@@ -1,6 +1,6 @@
 # Why orientation
 
-This document motivates the notion of orientation in geometric algebra. It starts from a requirement on transformations of space: a transformation should commute with the constructions of the algebra, so that transforming the ingredients of a construction and building from them gives the same result as building first and transforming the result. In particular, it investigates the case of a reflection, the transformation that produces a mirror image. For a reflection `reflect`, the requirement applies to every product of the algebra, the geometric, outer, inner and regressive products alike:
+This article motivates the notion of orientation in geometric algebra from two requirements, one geometric and one physical, and follows what they imply for how the algebra and its types are set up. The motivation is not algebraic: nothing in the products asks for orientation. The geometric requirement is on transformations of space: a transformation should commute with the constructions of the algebra, so that transforming the ingredients of a construction and building from them gives the same result as building first and transforming the result. For a reflection `reflect`, the transformation that produces a mirror image, it applies to every product of the algebra, the geometric, outer, inner and regressive products alike:
 
 ```python
 reflect(a * b) == reflect(a) * reflect(b)
@@ -9,7 +9,7 @@ reflect(a | b) == reflect(a) | reflect(b)
 reflect(a & b) == reflect(a) & reflect(b)
 ```
 
-Meeting that requirement requires an operation that has a notion of 'orientation', a term this document sets out to define. The examples are written in numga, whose rules for orientation are listed in [Orientation in numga](orientation.md).
+The physical requirement is on readings: a system and its measuring apparatus, mirrored together, give every reading unchanged, an energy, a power, a count of the sheets an arrow pierces, while a handed quantity, a signed volume or a handed material constant, changes sign, and nothing else does. Meeting the two requires a notion of orientation, a term this article sets out to define, and fixes how each operation treats it; the rules are gathered at the end. Two further aims shape the algebra's conventions beyond orientation, and decide a choice where they meet it: the same lines, with the same signs, in every dimension and signature, and a compact vocabulary, one symbol per operation wherever the requirements allow. The examples are written in numga, whose rules for orientation are listed in [Orientation in numga](../docs/orientation.md).
 
 ## What a physical mirror does
 
@@ -147,7 +147,7 @@ The intrinsic point needs no choice about the added direction: its weight stays 
 
 Every element can carry either intrinsic or extrinsic orientation. Once the orientations of the inputs are chosen, the operation determines the orientation of the result.
 
-The dual exchanges the two kinds. It takes an element to its complement, and what lay within the element lies around the complement: an intrinsic element's dual is extrinsic, and the other way round. The regressive product is the outer product taken on the volume complements and taken back with the inverse complement, so it carries one exchange more than the outer product, which is why joining two intrinsic points gives an intrinsic line. [Orientation in numga](orientation.md) lists the rule for every product.
+The dual exchanges the two kinds. It takes an element to its complement, and what lay within the element lies around the complement: an intrinsic element's dual is extrinsic, and the other way round. The regressive product is the outer product taken on the volume complements and taken back with the inverse complement, so it carries one exchange more than the outer product, which is why joining two intrinsic points gives an intrinsic line. [Orientation in numga](../docs/orientation.md) lists the rule for every product.
 
 In matrix notation a plane's side transforms with the inverse transpose of a linear map and a triangle's area normal with its cofactor matrix, which differs by the sign of the determinant, $-1$ for a mirror. In exterior calculus the two kinds are called outer and inner orientation (Tonti, Bossavit, Schouten), corresponding to untwisted and twisted differential forms.
 
@@ -181,6 +181,21 @@ momentum = inertia(rate)                                     # Antibivector-
 
 The [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipynb) example animates the body, and the [mechanical work](../examples/orientation/mechanical_work/mechanical_work.ipynb) example does the same for the power a push delivers to a crank.
 
+Every such reading pairs an extrinsic value with an intrinsic one by the regressive product, `momentum & rate` above, `field & spin`, `force & displacement`: an arrow through a stack of sheets, which needs no metric and which a mirror leaves alone. Reading the extrinsic factor first also fixes the adjugate, the map read backwards across such a pairing. Read the same way on both of its sides, for a map between intrinsic spaces `A.adjugate()(c) & x == c & A(x)`, it is its own inverse in every dimension, a symmetric form is its own adjugate, and a positive material pulled back through a gradient stays positive, with no sign that depends on the dimension.
+
+## Measuring an intrinsic value
+
+A metric measures two values of one orientation. Two extrinsic values are measured as written, by the signature; two intrinsic values are measured through their duals, so that a direction's length squared is positive in space, in a spacetime and in a projective algebra alike. An extrinsic value and an intrinsic one are not measured against each other at all: they pair by `&`. An intrinsic value then has two sizes: its norm, by the reverse product, which of a projective point is its weight, and its antinorm, by the metric through its dual, which of a direction is its length:
+
+```python
+far, near = mv.point([[3.0, 4.0, 0.0], [0.0, 0.0, 0.0]])  # Antivector-, Antivector-
+step = far - near                                        # Antivector-, a direction
+# 25: the step's length squared, measured through its dual.
+step.dot(step)                                           # Scalar+
+# 5, the step's length; the far point's weight, 1, and its bulk, 5.
+step.antinorm(), far.norm(), far.antinorm()              # Scalar+, Scalar+, Scalar+
+```
+
 ## What orientation rules out
 
 Two examples illustrate what orientation rules out. The rate of turning and momentum above have different orientations, so they cannot be added:
@@ -195,7 +210,22 @@ The exponential of an intrinsic element would require such a sum: its even power
 momentum.exp()           # GATypeError: 'exp' takes extrinsic elements; got intrinsic bivector
 ```
 
-For the complete rules governing what can be written in code, see the companion [Orientation in numga](orientation.md).
+```python
+rate.dot(momentum)       # GATypeError: dot takes operands of one orientation; an extrinsic value and an intrinsic one pair by the regressive product
+```
+
+For the complete rules governing what can be written in code, see the companion [Orientation in numga](../docs/orientation.md).
+
+## The rules
+
+The two requirements leave a short set of rules, which [Orientation in numga](../docs/orientation.md) states for every operation:
+
+1. **Types go by orientation, not by grade.** An intrinsic plane, the join of three points, follows the intrinsic rules as a point does; an extrinsic point, the meet of three planes, follows the extrinsic ones.
+2. **A reflection acts by orientation.** It takes an extrinsic value to `m * x.involute() * m.inverse()` and an intrinsic one to the negative of that; a rotation, an even number of reflections, carries no sign.
+3. **Readings pair an extrinsic value with an intrinsic one, the extrinsic first**, and the adjugate and the trace read their pairings the same way.
+4. **A metric measures one orientation at a time**, intrinsic values through their duals.
+5. **The primitive products stay plain.** The geometric, outer and regressive products and the commutators act on the coefficients as the algebra defines them, and their results' orientations follow from their inputs'.
+6. **An intrinsic value has two sizes**, its norm and its antinorm.
 
 ## Further reading
 

@@ -2,7 +2,7 @@
 
 This document compares common approaches to applied problems with the constructions that arise naturally in geometric algebra and extensors. Each case describes how the problem is usually formulated, develops the geometric construction, and examines the practical consequences for modelling and computation. The comparisons focus on what becomes simpler, which choices and conventions become explicit, and where mistakes can arise. Together, they show how a choice of mathematical language shapes the work of building and solving a model.
 
-The [framework comparison](frameworks.md) develops the relation to linear algebra, tensors and forms. The snippets use the [extensor syntax](extensor_syntax.md), [conventions](conventions.md) and [orientation rules](orientation.md) documented separately.
+The [framework comparison](frameworks.md) develops the relation to linear algebra, tensors and forms. The snippets use the [extensor syntax](../docs/extensor_syntax.md), [conventions](../docs/conventions.md) and [orientation rules](../docs/orientation.md) documented separately.
 
 ## Maps and numerical methods
 
@@ -37,7 +37,7 @@ The types carry the distinction through the products, compositions and solves. A
 
 A surface normal can describe a chosen positive side or encode the area and winding of a patch. Graphics commonly stores either as three coefficients. Under an invertible linear deformation, a side covector uses the inverse transpose; an area normal uses the cofactor matrix. They differ by the determinant, including its sign under a reflection. Reed develops the distinction through [areas](https://www.reedbeta.com/blog/normals-inverse-transpose-part-1/) and [dual spaces](https://www.reedbeta.com/blog/normals-inverse-transpose-part-2/).
 
-The [normals example](../examples/orientation/normals/core.py) gives the side and winding different orientations. Reflecting a triangle carries its chosen side and its ordered vertices consistently, even when their normal coefficients acquire different signs. For a general deformation, the outermorphism carries the patch forward. The [adjugate](tutorial/extensors/10-the-adjugate.md) is the dual map on complementary spaces, defined, for a map between intrinsic spaces such as a deformation, by `T.adjugate()(c) & x == c & T(x)`, each pairing read with its extrinsic factor first. It carries a plane condition backward:
+The [normals example](../examples/orientation/normals/core.py) gives the side and winding different orientations. Reflecting a triangle carries its chosen side and its ordered vertices consistently, even when their normal coefficients acquire different signs. For a general deformation, the outermorphism carries the patch forward. The [adjugate](../docs/tutorial/extensors/10-the-adjugate.md) is the dual map on complementary spaces, defined, for a map between intrinsic spaces such as a deformation, by `T.adjugate()(c) & x == c & T(x)`, each pairing read with its extrinsic factor first. It carries a plane condition backward:
 
 ```python
 input_plane = deformation.adjugate()(output_plane)       # Plane
@@ -100,7 +100,7 @@ The [constitutive example](../examples/electromagnetism/constitutive/core.py) ex
 moving_medium = boost >> rest_medium(boost << Bivector)  # Antibivector <- Bivector
 ```
 
-The same composition moves an inertia between body and space frames. Applying a motion to the output alone, to the input alone, or to both produces different maps, as the [moving-maps tutorial](tutorial/extensors/08-moving-maps.md) shows. The expression records which frame supplies each argument, reducing the need to reconstruct that information from matrix order. A boost also carries the [moving charge's field gradient](../examples/electromagnetism/moving_charge/core.py), whose type is `Bivector <- Antivector`.
+The same composition moves an inertia between body and space frames. Applying a motion to the output alone, to the input alone, or to both produces different maps, as the [moving-maps tutorial](../docs/tutorial/extensors/08-moving-maps.md) shows. The expression records which frame supplies each argument, reducing the need to reconstruct that information from matrix order. A boost also carries the [moving charge's field gradient](../examples/electromagnetism/moving_charge/core.py), whose type is `Bivector <- Antivector`.
 
 In matrix notation a map moved by a change of frame has the form $A_{\mathrm{out}}TA_{\mathrm{in}}^{-1}$. The matrices on the two sides represent the actions on their respective spaces; they need not be the same matrix.
 
@@ -190,7 +190,7 @@ The [Thomas-precession example](../examples/relativity/thomas_precession/core.py
 
 Vector notation assigns a determinant sign to axial vectors so that angular momentum and magnetic quantities transform correctly under reflection. A separate rule is needed whenever an oriented plane is represented by its normal arrow.
 
-The [orientation examples](why_orientation.md) retain the geometry and its orientation on the type. A rotation plane, a directed line and a surface's positive side can therefore respond differently to the same mirror. The reflection operation propagates those differences through the calculation. This moves the sign bookkeeping into the algebra's operations and permits the result to be checked by reflecting the complete scene.
+The [orientation examples](orientation.md) retain the geometry and its orientation on the type. A rotation plane, a directed line and a surface's positive side can therefore respond differently to the same mirror. The reflection operation propagates those differences through the calculation. This moves the sign bookkeeping into the algebra's operations and permits the result to be checked by reflecting the complete scene.
 
 ### Quaternion conventions
 

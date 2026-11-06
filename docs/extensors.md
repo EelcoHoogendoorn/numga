@@ -12,7 +12,7 @@ Geometric relationships deserve to be first-class objects alongside the objects 
 
 # Companion documents
 
-* [`multiple_lenses.md`](multiple_lenses.md): the three perspectives developed in detail, from maps built from expressions to their geometric meaning and multilinear structure.
+* [`multiple_lenses.md`](../articles/multiple_lenses.md): the three perspectives developed in detail, from maps built from expressions to their geometric meaning and multilinear structure.
 * [`extensor_syntax.md`](extensor_syntax.md): the syntax and the extension methods, as a reference sheet.
 * [`internals.md`](internals.md): what the library builds from an expression, and what runs when values are supplied.
 * [Complete index of 155 worked examples](../examples/README.md).
