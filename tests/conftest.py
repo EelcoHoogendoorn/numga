@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-# Numerical threads a full sweep may use, so that it never saturates the machine.
-SWEEP_THREADS = 4
+# Numerical threads a test run may use: the budget every heavy run shares, three quarters of the machine's cores.
+THREADS = max(1, int(0.75 * (os.cpu_count() or 1)))
 # The one occasion for the whole suite, the value --full-sweep takes; a bare --full-sweep is refused.
 SWEEP_OCCASION = "push-to-main"
 # More tests than any change's own: a run this broad is a sweep, however its targets are spelled.
@@ -34,8 +34,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--full-sweep",
         choices=(SWEEP_OCCASION,),
         default=None,
-        help=f"'--full-sweep={SWEEP_OCCASION}' runs the whole suite, once, just before a push to main, in one process "
-             f"with at most {SWEEP_THREADS} numerical threads, leaving the machine's other cores free.",
+        help=f"'--full-sweep={SWEEP_OCCASION}' runs the whole suite, once, just before a push to main, in one process.",
     )
 
 
@@ -58,11 +57,13 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    """Only force headless Agg backend if --show-plot was not passed; cap numerical threads for a full sweep."""
-    if config.getoption("--full-sweep", None):
-        # Set before numpy is imported, so that its linear algebra starts with this many threads.
-        for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
-            os.environ.setdefault(name, str(SWEEP_THREADS))
+    """Hold the machine's lock for heavy runs, within the budget every heavy run shares; headless unless --show-plots."""
+    # Set before numpy is imported, so that its linear algebra starts with this many threads.
+    for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+        os.environ.setdefault(name, str(THREADS))
+    # Every test run takes the machine's lock for heavy runs, where there is one, and waits for a run that holds it.
+    from examples import hold_heavy_run_lock
+    hold_heavy_run_lock("pytest " + " ".join(config.invocation_params.args))
     if not config.getoption("--show-plots", False):
         os.environ.setdefault("MPLBACKEND", "Agg")
         try:

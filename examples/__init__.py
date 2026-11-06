@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib.util
 import os
 import re
+import sys
+import time
 
 import numpy as np
 from pathlib import Path
@@ -26,6 +28,42 @@ PLOT_DIR.mkdir(parents=True, exist_ok=True)
 # The pictures the repository tracks, under their fixed names in the checkout's own plots.
 PINNED_DIR = ROOT / "plots"
 MODEL_DIR = Path(__file__).resolve().parent / "util" / "models"
+
+
+# One heavy run at a time on the machine. Where NUMGA_HEAVY_RUN_LOCK names a lock file, as the workspace's settings do,
+# a scenario, a notebook run or a test run takes it before it starts, and a second one waits until the first is done;
+# a run started inside one that holds it, its kernels and subprocesses, already holds it. Elsewhere nothing waits.
+HEAVY_RUN_LOCK = os.environ.get("NUMGA_HEAVY_RUN_LOCK")
+_heavy_run_lock = None
+
+
+def hold_heavy_run_lock(what: str) -> None:
+    """Wait for, then hold until this process ends, the machine's lock for heavy runs, if there is one."""
+    global _heavy_run_lock
+    if not HEAVY_RUN_LOCK or os.environ.get("NUMGA_HEAVY_RUN_LOCK_HELD") == "1" or _heavy_run_lock is not None:
+        return
+    import fcntl
+    lock = open(HEAVY_RUN_LOCK, "a+")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock.seek(0)
+        print(f"waiting for the heavy run holding {HEAVY_RUN_LOCK}: {lock.read().strip()}", file=sys.stderr)
+        fcntl.flock(lock, fcntl.LOCK_EX)
+    lock.seek(0)
+    lock.truncate()
+    lock.write(f"pid {os.getpid()}, since {time.strftime('%H:%M:%S')}: {what}\n")
+    lock.flush()
+    os.environ["NUMGA_HEAVY_RUN_LOCK_HELD"] = "1"
+    _heavy_run_lock = lock
+
+
+# A module of the examples run as a program, `python -m examples.<...>`, a scenario's main or the notebook runner, is
+# a heavy run.
+_arguments = getattr(sys, "orig_argv", [])
+_module = _arguments[_arguments.index("-m") + 1] if "-m" in _arguments[:-1] else ""
+if _module.startswith("examples."):
+    hold_heavy_run_lock(" ".join(_arguments[_arguments.index("-m"):]))
 
 
 def auto_increment_path(path: Path | str) -> Path:
