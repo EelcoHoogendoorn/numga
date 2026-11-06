@@ -110,7 +110,8 @@ def sweep(files: list[Path]) -> int:
     counts: dict[str, int] = {}
     failed, reran = {}, []
     for index, (job, status, output) in enumerate(pool.batch(jobs, f"pytest tests in {checkout.name}"), 1):
-        last = output.strip().splitlines()[-1] if output.strip() else ""
+        # Pytest's own last line, "12 passed, 1 failed in 3.21s", before the pool's.
+        last = ([line for line in output.splitlines() if re.search(r" in [\d.]+s\b", line)] or [""])[-1]
         for count, outcome in re.findall(r"(\d+) (passed|failed|errors?|skipped|xfailed|xpassed)", last):
             counts[outcome] = counts.get(outcome, 0) + int(count)
         reran += [job["key"]] if "pool: killed" in output else []
@@ -122,12 +123,13 @@ def sweep(files: list[Path]) -> int:
         print(f"\n{'=' * 30} {key}\n{output}")
     learned = pool.learned()
     needs = {key: max(declared(checkout / key), learned.get(key, 0.0)) for key in keys}
-    print(f"\nfiles that needed more memory than a job's {JOB_MEMORY} GB, ran again where marked:")
-    for key, memory in sorted(needs.items()):
-        if memory > JOB_MEMORY:
-            print(f"{memory:>5g} GB  {key}{'  (ran again)' if key in reran else ''}")
-    print(", ".join(f"{count} {outcome}" for outcome, count in counts.items()) + f"; {len(failed)} files failed, "
-          f"{len(reran)} ran again with more memory")
+    heavy = {key: memory for key, memory in sorted(needs.items()) if memory > JOB_MEMORY}
+    if heavy:
+        print(f"\nfiles that needed more memory than a job's {JOB_MEMORY} GB, ran again where marked:")
+    for key, memory in heavy.items():
+        print(f"{memory:>5g} GB  {key}{'  (ran again)' if key in reran else ''}")
+    print(", ".join(f"{count} {outcome}" for outcome, count in counts.items()) + f"; {len(failed)} of {len(jobs)} "
+          f"files failed, {len(reran)} ran again with more memory")
     return pytest.ExitCode.TESTS_FAILED if failed else pytest.ExitCode.OK
 
 

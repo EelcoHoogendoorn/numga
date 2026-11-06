@@ -111,7 +111,7 @@ def threads(cores: int) -> dict[str, str]:
 # --- the state file
 
 def _directory() -> Path:
-    directory = Path(os.environ.get(POOL, DIRECTORY))
+    directory = Path(os.environ.get(POOL) or DIRECTORY)
     directory.mkdir(parents=True, exist_ok=True)
     return directory
 
