@@ -1,7 +1,7 @@
 """Test configuration: double precision for JAX, headless plotting, a guard that keeps a run to the tests a change
-could break, and the machine's pool for heavy runs (`examples/pool.py`), in which a test run is one job. The whole
-suite runs once, just before a push to main, declared as `pytest tests --full-sweep=push-to-main`: every test file
-then runs as a job of its own, as many at once as the pool admits."""
+could break, and the machine's pool for heavy runs (`tools/pool.py`, where the checkout has it), in which a test run
+is one job. The whole suite runs once, just before a push to main, declared as `pytest tests --full-sweep=push-to-main`:
+every test file then runs as a job of its own, as many at once as the pool admits."""
 
 from __future__ import annotations
 
@@ -27,6 +27,9 @@ SWEEP_OCCASION = "push-to-main"
 MAX_TESTS = 200
 
 TEST_ROOT = Path(__file__).parent.resolve()
+# The machine's pool for heavy runs, development tooling beside the package, which a checkout has and an installed
+# copy of the tests does not.
+POOL = TEST_ROOT.parent / "tools" / "pool.py"
 TARGETED = ("Run the tests the change could break, by file or test function "
             "(e.g. 'pytest tests/examples/electromagnetism/test_constitutive.py'); "
             "the whole suite runs only once, just before a push to main.")
@@ -67,7 +70,9 @@ def pytest_cmdline_main(config: pytest.Config) -> int | None:
     for target, path in zip(config.args, targets):
         if not sweeping and TEST_ROOT.is_relative_to(path):
             raise pytest.UsageError(f"'{target}' holds the whole suite, with or without -k or -m. {TARGETED}")
-    from examples import pool
+    if not POOL.exists():
+        return None
+    from tools import pool
     if not pool.active():
         return None
     files = sorted({file for path in targets for file in ([path] if path.is_file() else path.rglob("test_*.py"))})
@@ -96,7 +101,7 @@ def sweep(files: list[Path]) -> int:
     pool admits and the longest first, by the seconds recorded for them; print each file's outcome as it finishes,
     then the output of every file that failed, the files that needed more memory than a job's own, and the counts.
     The exit status counts failures only: a file the pool ran again with more memory has not failed."""
-    from examples import pool
+    from tools import pool
     checkout = TEST_ROOT.parent
     recorded = json.loads(DURATIONS.read_text()) if DURATIONS.exists() else {}
     seconds = {}

@@ -24,10 +24,10 @@ Without psutil, nothing is reserved and nothing waits.
 The module uses only the standard library and psutil, imported where the pool is used, and runs as a script as well
 as a module of the examples:
 
-    python -m examples.pool run [--cores N] [--memory GB] [--learn KEY] -- <command>   # any command, as one job
-    python -m examples.pool status                                                      # the jobs holding and waiting
-    python -m examples.pool trace <file> [--seconds S | --until-idle]                   # the pool, twice a second
-    python -m examples.pool chart <file>                                                # a trace, drawn
+    python -m tools.pool run [--cores N] [--memory GB] [--learn KEY] -- <command>   # any command, as one job
+    python -m tools.pool status                                                      # the jobs holding and waiting
+    python -m tools.pool trace <file> [--seconds S | --until-idle]                   # the pool, twice a second
+    python -m tools.pool chart <file>                                                # a trace, drawn
 
 A job declares more than its default with `--cores` and `--memory`, or with NUMGA_POOL_CORES and NUMGA_POOL_MEMORY in
 its environment; NUMGA_POOL_BUDGET_CORES and NUMGA_POOL_BUDGET_MEMORY set the budget.

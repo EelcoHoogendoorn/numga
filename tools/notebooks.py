@@ -2,11 +2,11 @@
 each went. A notebook takes as long as it takes, often a minute or more, so a run of them all is never a gate before a
 commit or a push: it is done every once in a while, and a selection after work on what those notebooks use.
 
-    python -m examples.notebooks                                         # every notebook
-    python -m examples.notebooks wing fluids/vortices                    # those whose paths hold any of the strings
-    python -m examples.notebooks --touching examples.util.topology numga.sparse
-    python -m examples.notebooks --changed main                          # their folder or a module they use changed
-    python -m examples.notebooks --list --touching jax                   # the selection, without running it
+    python -m tools.notebooks                                         # every notebook
+    python -m tools.notebooks wing fluids/vortices                    # those whose paths hold any of the strings
+    python -m tools.notebooks --touching examples.util.topology numga.sparse
+    python -m tools.notebooks --changed main                          # their folder or a module they use changed
+    python -m tools.notebooks --list --touching jax                   # the selection, without running it
 
 A notebook uses the modules its cells import, and those that the examples' own modules among them import in turn, read
 from the source without running any. The imports of the shared modules in `examples/util` are not followed, but for
@@ -16,7 +16,7 @@ naming a module of the checkout counts as importing it, as `instantiate` takes o
 notebooks that use it or a module inside it.
 
 Each notebook runs as `jupyter execute`, which writes nothing into the notebook, as one job of the machine's pool
-(`examples/pool.py`), of one core and 4 GB unless `--cores` or `--memory` ask for more, or it has learned it needs
+(`tools/pool.py`), of one core and 4 GB unless `--cores` or `--memory` ask for more, or it has learned it needs
 more. Its outcome, ran, failed or timed out, its seconds and, for a failure, the cell it failed in and the last lines
 of the error, goes into `archive/notebook_runs.json` of the workspace that holds the checkout, as it comes, under the
 checkout, its commit and the time the run started, and a summary is printed at the end, or at Ctrl-C.
