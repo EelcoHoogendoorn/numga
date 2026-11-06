@@ -86,8 +86,8 @@ def test_a_call_with_fewer_operands_binds_the_leading_axes():
     mv = NumpyContext(PGA3D).multivector
     Point = PGA3D.gatype.antivector()
     join = Point & Point                                     # Line <- (Point, Point)
-    origin = mv.antivector([0.0, 0.0, 0.0, 1.0])
-    target = mv.antivector([1.0, 2.0, 3.0, 1.0])
+    origin = mv.vector([0.0, 0.0, 0.0, 1.0]).dual()
+    target = mv.vector([1.0, 2.0, 3.0, 1.0]).dual()
 
     ray = join(origin)                                       # Line <- Point
 

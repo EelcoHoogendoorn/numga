@@ -38,7 +38,7 @@ def polarity(eigenvalues: np.ndarray) -> Polarity:
 
 def points(xyz: np.ndarray) -> Point:
     """Points at `(..., 3)` coordinates lie on the basis points yz, zx and xy."""
-    return mv(Point, xyz)
+    return mv(Plane, xyz).dual()
 
 
 def sphere(longitudes: int, latitudes: int) -> Point:

@@ -7,7 +7,7 @@ from examples.relativity.twistors import core
 
 def test_hopfion_is_null_and_its_energy_follows_the_robinson_congruence():
     rng = np.random.default_rng(41)
-    events = core.mv(core.Event, rng.uniform(-2, 2, (128, 4)))
+    events = core.mv(core.Event.derive.dual, rng.uniform(-2, 2, (128, 4))).dual()
     field = core.hopfion(events)
     # The field's flux along the observer's time: its energy along time, its flow across space.
     flux = field >> core.time
@@ -24,8 +24,8 @@ def test_hopfion_is_null_and_its_energy_follows_the_robinson_congruence():
 
 def test_hopfion_satisfies_vacuum_maxwell_equations():
     rng = np.random.default_rng(73)
-    events = core.mv(core.Event, rng.uniform(-2, 2, (128, 4)))
-    steps = core.mv(core.Event, np.eye(4))
+    events = core.mv(core.Event.derive.dual, rng.uniform(-2, 2, (128, 4))).dual()
+    steps = core.mv(core.Event.derive.dual, np.eye(4)).dual()
     reciprocal = steps / steps.scalar_norm_squared()
     step_size = 1e-4
     centers = events[:, None]

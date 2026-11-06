@@ -59,9 +59,9 @@ def test_the_gradient_is_the_energys_derivative():
     for vertex, axis in zip(rng.integers(len(points), size=6), rng.integers(3, size=6)):
         nudge = np.zeros_like(points)
         nudge[vertex, axis] = epsilon
-        ahead, behind = (energy(topology, mv.antivector(points + sign * nudge).field()) for sign in (1, -1))
+        ahead, behind = (energy(topology, mv.vector(points + sign * nudge).dual().field()) for sign in (1, -1))
         # The gradient paired with a unit step along the axis; the tolerance tests the central difference.
-        along = (gradient[vertex] & mv.antivector(np.eye(3)[axis])).to_array()
+        along = (gradient[vertex] & mv.vector(np.eye(3)[axis]).dual()).to_array()
         np.testing.assert_allclose((ahead - behind) / (2 * epsilon), along, rtol=1e-6, atol=1e-8)
 
 

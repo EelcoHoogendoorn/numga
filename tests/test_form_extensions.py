@@ -221,14 +221,14 @@ def test_pairing_solve_induces_the_plane_map_of_a_point_map(context):
     ga = context.algebra
     mv = context.multivector
     Point, Plane = ga.gatype.antivector(), ga.gatype.vector()
-    pinhole = mv.antivector([0.0, 0.0, 1.0])
+    pinhole = mv.vector([0.0, 0.0, 1.0]).dual()
     screen = mv.vector([0.0, 1.0, -1.0])
     projection = (pinhole & Point) ^ screen                       # Point <- Point, rank two
     induced = (Plane & Point).solve(Plane & projection)          # Plane <- Plane
     assert induced.axes == (Plane.output_subspace, Plane.output_subspace)
     rng = np.random.default_rng(8)
     line = mv.vector(rng.normal(size=3))
-    point = mv.antivector(rng.normal(size=3))
+    point = mv.vector(rng.normal(size=3)).dual()
     np.testing.assert_allclose((induced(line) & point).kernel, (line & projection(point)).kernel, atol=2e-5)
 
 

@@ -12,7 +12,7 @@ from examples.mechanics import lie_integrators as lie
 from examples.mechanics.spinning_top import core
 
 mv = core.mv
-up = core.mv(core.Direction, np.array([0.0, 0.0, 1.0]))
+up = core.mv.direction([0.0, 0.0, 1.0])
 GRAVITY = 9.81
 STATIC_FRICTION = 0.4
 # The top's stem and tip: the stem's semi-axes, how far its centre sits above the disc's, its mass, the
@@ -92,7 +92,7 @@ def spin(setup: Setup, seconds: float, dt: float, n_steps_per_frame: int
     def forces(motor: core.Motor, rate: core.Rate) -> core.Forque:
         """The weight, a force line down through the centre of mass, and the air's drag, opposing
         the momentum; in the body frame."""
-        weight = motor << ((motor >> origin) & core.mv(core.Direction, np.array([0.0, 0.0, -GRAVITY * mass])))
+        weight = motor << ((motor >> origin) & core.mv.direction([0.0, 0.0, -GRAVITY * mass]))
         return weight - inertia(rate) * setup.drag
 
     def substep(state: tuple[core.Motor, core.Rate], _: None) -> tuple[tuple[core.Motor, core.Rate], None]:

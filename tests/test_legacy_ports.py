@@ -22,7 +22,7 @@ def test_decompositions_and_motor_approximations_reconstruct(signature):
     line, scale = b.decompose_polar()
     np.testing.assert_allclose((line * scale - b).kernel, 0, atol=1e-14)
     motor = b.exp()
-    origin = mv.antivector([.1] * (ga.dimension - 1) + [1])
+    origin = mv.vector([.1] * (ga.dimension - 1) + [1]).dual()
     translation, rotation = motor.motor_split(origin)
     np.testing.assert_allclose((translation * rotation - motor).kernel, 0, atol=1e-10)
     np.testing.assert_allclose((rotation >> origin).kernel, origin.kernel, atol=1e-10)

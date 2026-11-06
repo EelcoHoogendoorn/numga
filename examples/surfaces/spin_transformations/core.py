@@ -169,7 +169,7 @@ def cube(divisions: int) -> tuple[Topology, Point]:
             faces.append(side + len(coords) * len(u))
             coords.append(point)
     unique, inverse = np.unique(np.round(np.concatenate(coords), 9), axis=0, return_inverse=True)
-    return Topology(len(unique), inverse.reshape(-1)[np.concatenate(faces)]), context.multivector.antivector(unique).field()
+    return Topology(len(unique), inverse.reshape(-1)[np.concatenate(faces)]), context.multivector.vector(unique).dual().field()
 
 
 def spot() -> tuple[Topology, Point]:

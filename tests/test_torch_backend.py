@@ -29,7 +29,7 @@ def test_gradients_flow_through_extensor_expressions():
 
     def loss(coefficients):
         motor = context.multivector.bivector(coefficients).exp()
-        return ((motor >> points) & context.multivector.antivector([1.0, 2.0, 3.0, 4.0])).kernel.sum()
+        return ((motor >> points) & context.multivector.vector([1.0, 2.0, 3.0, 4.0]).dual()).kernel.sum()
 
     assert torch.autograd.gradcheck(loss, (bivector,))
 

@@ -29,7 +29,7 @@ def test_ideal_gas_equilibrium_is_legendrian():
 
 @pytest.mark.parametrize("change", [core.helmholtz, core.enthalpy])
 def test_legendre_change_preserves_contact_away_from_equilibrium(change):
-    points = mv.antivector([[0.4, -0.6, 0.7, 1.1, 1.8], [1.9, 0.8, 1.6, 0.5, 0.7]])
+    points = mv.vector([[0.4, -0.6, 0.7, 1.1, 1.8], [1.9, 0.8, 1.6, 0.5, 0.7]]).dual()
     pullback = core.contact_element(change(points)) & derivative(change)(points)
     gibbs = core.helmholtz(core.enthalpy(points))
     np.testing.assert_allclose((pullback - (core.contact_element(points) & core.Ambient)).kernel, 0, atol=round_off)

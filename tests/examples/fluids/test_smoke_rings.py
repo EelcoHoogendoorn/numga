@@ -38,8 +38,8 @@ def test_a_fold_is_a_lorentz_transformation_of_the_offsets():
     """Folding an offset about the quad's diagonal is the Lorentz rotor of the edge, a boost along the
     direction the edge's point stands for and a turn about it, acting on the offset's null paravector."""
     rng = np.random.default_rng(0)
-    edge = core.mv.antivector(rng.normal(size=3)).normalized()
-    offsets = core.mv.antivector(rng.normal(size=(6, 3))).normalized()
+    edge = core.mv.vector(rng.normal(size=3)).dual().normalized()
+    offsets = core.mv.vector(rng.normal(size=(6, 3))).dual().normalized()
     parameter = 0.3
     # The turn's angle flips with the parameter under a mirror: intrinsic, as the parameter is.
     rapidity, angle = np.log(1 + 4 / parameter**2) / 2, core.mv(core.Parameter, [-np.arctan(2 / parameter)])

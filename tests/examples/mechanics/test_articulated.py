@@ -42,7 +42,7 @@ def test_forward_dynamics_undoes_inverse_dynamics():
     rate, acceleration = (mv.bivector(rng.normal(size=(5, 6))) for _ in range(2))
     speeds, accelerations = random_joints(5), random_joints(5)
     # Any forques on the links from outside.
-    external = mv.antibivector(rng.normal(size=(5, n_links, 6))).field()        # [robots] Forque-[links]
+    external = mv.bivector(rng.normal(size=(5, n_links, 6))).dual().field()     # [robots] Forque-[links]
     forque, forces = core.inverse_dynamics(tree, robot, motors, rate, speeds, acceleration, accelerations, external)
     # The body's forque is one more load on the body's link.
     loaded = external + ~tree.body * forque[..., None].field()

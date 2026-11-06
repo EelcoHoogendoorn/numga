@@ -18,6 +18,8 @@ ga: Algebra
 ctx: Context
 mv = ctx.multivector
 Point = ga.gatype.antivector()                      # Antivector-
+# The planes through the origin that read a point's coordinates; the plane w reads its weight.
+Spatial = ga.gatype.from_blades("x y z")             # Vector+
 Bivector = ga.gatype.bivector()                     # Bivector+
 Motor = ga.gatype.rotor()                           # Rotor+
 
@@ -44,7 +46,7 @@ def fit_motor(source: Point, target: Point) -> Motor:
 def cloud(n_points: int, spread: np.ndarray, rng: np.random.Generator) -> Point:
     """The cloud's points are spread anisotropically, by the given spread along each coordinate."""
     coords = rng.normal(size=(n_points, ga.dimension - 1)) * spread
-    return mv.antivector(np.column_stack((coords, np.ones(n_points)))).normalized()
+    return (mv(Spatial, coords) + mv.w).dual().normalized()
 
 
 def jitter(points: Point, sigma: float, rng: np.random.Generator) -> Point:
