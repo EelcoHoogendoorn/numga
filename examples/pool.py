@@ -19,7 +19,7 @@ as a module of the examples:
 
     python -m examples.pool run [--cores N] [--memory GB] -- <command>   # any command, as one job
     python -m examples.pool status                                        # the jobs holding and waiting
-    python -m examples.pool trace <file> [--seconds S | --until-idle]     # the pool, sampled once a second
+    python -m examples.pool trace <file> [--seconds S | --until-idle]     # the pool, sampled twice a second
     python -m examples.pool chart <file>                                  # a trace drawn to the shared plots
 
 A job declares more than its default with `--cores` and `--memory`, or with NUMGA_POOL_CORES and NUMGA_POOL_MEMORY in
@@ -57,8 +57,9 @@ MAX_MEMORY = 8
 MARGIN = 1
 # How often a waiting job asks again, and how often a watchdog reads its job's memory and, less often, its tree.
 WAIT_SECONDS, WATCH_SECONDS, TREE_SECONDS = 0.5, 0.1, 1.0
-# How long an empty pool ends a trace that waits for it.
-IDLE_SECONDS = 10
+# How often a trace samples the pool, how long an empty pool ends a trace that waits for it, and how many samples a
+# chart of it keeps before the first job and after the last.
+TRACE_SECONDS, IDLE_SECONDS, CHART_MARGIN = 0.5, 10, 4
 THREADS = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "MKL_NUM_THREADS",
            "NUMEXPR_NUM_THREADS")
 NICENESS = 10
@@ -104,10 +105,12 @@ def _directory() -> Path:
 
 
 def _alive(job: dict) -> bool:
-    """Whether a job's process still exists: its pid, started when the job's was, not a later process given the pid."""
+    """Whether a job's process still runs: its pid, started when the job's was, not a later process given the pid,
+    nor one that has ended and waits for its parent to collect its exit status."""
     import psutil
     try:
-        return psutil.Process(job["pid"]).create_time() == job["started"]
+        process = psutil.Process(job["pid"])
+        return process.create_time() == job["started"] and process.status() != psutil.STATUS_ZOMBIE
     except psutil.NoSuchProcess:
         return False
 
@@ -371,9 +374,9 @@ def status() -> None:
 
 
 def trace(path: Path, seconds: float, until_idle: bool) -> None:
-    """Append the pool's state to a file once a second, a line of JSON each: the time, the machine's available memory,
-    and each job with its resident memory; for `seconds`, or with `until_idle` until the pool has held jobs and then
-    been empty for IDLE_SECONDS."""
+    """Append the pool's state to a file every TRACE_SECONDS, a line of JSON each: the time, the machine's available
+    memory, and each job with its resident memory; for `seconds`, or with `until_idle` until the pool has held jobs
+    and then been empty for IDLE_SECONDS."""
     start = time.time()
     seen, idle_since = False, None
     with open(path, "a") as file:
@@ -385,49 +388,63 @@ def trace(path: Path, seconds: float, until_idle: bool) -> None:
             idle_since = None if jobs else (idle_since or time.time())
             if until_idle and seen and idle_since and time.time() - idle_since > IDLE_SECONDS:
                 return
-            time.sleep(1)
+            time.sleep(TRACE_SECONDS)
 
 
 def chart(path: Path, name: str) -> None:
-    """Draw a trace into the shared plots: the cores and the memory each run reserved, stacked, against the budget,
-    the memory its jobs held, and the memory the machine had available."""
+    """Draw a trace into the shared plots, from a little before its first job to a little after its last: the cores
+    and the memory each run reserved, stacked, against the budget, with the memory its jobs held and the memory the
+    machine had available; and each job's own memory against its reservation."""
     import matplotlib
     matplotlib.use("Agg")
     from examples.util import charts
     from examples.util.animation import save_figure
 
     samples = [json.loads(line) for line in path.read_text().splitlines()]
+    busy = [index for index, sample in enumerate(samples) if sample["jobs"]]
+    samples = samples[max(0, busy[0] - CHART_MARGIN):busy[-1] + CHART_MARGIN + 1]
     start = samples[0]["time"]
     minutes = [(sample["time"] - start) / 60 for sample in samples]
     runs = list(dict.fromkeys(job["run"] for sample in samples for job in sample["jobs"]))
+    jobs = list(dict.fromkeys((job["pid"], job["run"]) for sample in samples for job in sample["jobs"]))
+    colours = dict(zip(runs, matplotlib.colormaps["tab10"].colors))
+    budget = budget_memory()
 
     def total(run: str, key: str) -> list[float]:
         return [sum(job[key] for job in sample["jobs"] if job["run"] == run and job["admitted"]) for sample in samples]
 
+    def own(pid: int, key: str) -> list[float]:
+        return [next((job[key] for job in sample["jobs"] if job["pid"] == pid and job["admitted"]), float("nan"))
+                for sample in samples]
+
     with charts.style():
-        figure, (cores_axes, memory_axes) = charts.subplots(560, 440, nrows=2, sharex=True)
-        colours = matplotlib.colormaps["tab10"].colors
-        cores_axes.stackplot(minutes, *(total(run, "cores") for run in runs), colors=colours, step="post",
+        figure, (cores_axes, memory_axes, jobs_axes) = charts.subplots(560, 600, nrows=3, sharex=True)
+        cores_axes.stackplot(minutes, *(total(run, "cores") for run in runs), colors=colours.values(), step="post",
                              labels=runs)
         cores_axes.axhline(CORES, color="black", linestyle="--")
         cores_axes.set_ylabel("cores reserved")
-        cores_axes.set_ylim(0, CORES * 1.25)
+        cores_axes.set_ylim(0, CORES * 1.6)
         cores_axes.set_yticks([0, CORES])
-        memory_axes.stackplot(minutes, *(total(run, "memory") for run in runs), colors=colours, alpha=0.35,
+        cores_axes.legend(loc="upper left", frameon=False)
+        memory_axes.stackplot(minutes, *(total(run, "memory") for run in runs), colors=colours.values(), alpha=0.35,
                               step="post")
-        memory_axes.stackplot(minutes, *(total(run, "resident") for run in runs), colors=colours, step="post")
+        memory_axes.stackplot(minutes, *(total(run, "resident") for run in runs), colors=colours.values(),
+                              step="post")
         memory_axes.plot(minutes, [sample["available"] for sample in samples], color="grey",
                          label="available on the machine")
-        budget = budget_memory()
         memory_axes.axhline(budget, color="black", linestyle="--")
-        memory_axes.set_ylabel("GB reserved, and held")
-        memory_axes.set_ylim(0, budget * 1.25)
+        memory_axes.set_ylabel("GB reserved, held")
+        memory_axes.set_ylim(0, budget * 1.3)
         memory_axes.set_yticks([0, round(budget)])
-        memory_axes.set_xlabel("minutes")
-        memory_axes.set_xlim(0, minutes[-1])
-        cores_axes.legend(loc="upper left", ncols=2, frameon=False)
         memory_axes.legend(loc="upper left", frameon=False)
-        for axes in (cores_axes, memory_axes):
+        for pid, run in jobs:
+            jobs_axes.plot(minutes, own(pid, "memory"), color=colours[run], linestyle=":", drawstyle="steps-post")
+            jobs_axes.plot(minutes, own(pid, "resident"), color=colours[run])
+        jobs_axes.set_ylabel("GB of each job")
+        jobs_axes.set_ylim(0, None)
+        jobs_axes.set_xlabel("minutes")
+        jobs_axes.set_xlim(0, minutes[-1])
+        for axes in (cores_axes, memory_axes, jobs_axes):
             axes.spines[["top", "right"]].set_visible(False)
         save_figure(figure, name)
 
@@ -443,7 +460,7 @@ def main(arguments: list[str]) -> None:
     running.add_argument("--what", help="the job's name in the pool (default: the command)")
     running.add_argument("command", nargs=argparse.REMAINDER)
     commands.add_parser("status", help="print the jobs holding and waiting")
-    tracing = commands.add_parser("trace", help="sample the pool to a file once a second")
+    tracing = commands.add_parser("trace", help="sample the pool to a file twice a second")
     tracing.add_argument("path", type=Path)
     tracing.add_argument("--seconds", type=float, default=float("inf"))
     tracing.add_argument("--until-idle", action="store_true", help="stop once the pool has held jobs and is empty")
