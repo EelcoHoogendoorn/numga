@@ -1,6 +1,7 @@
-"""Run the example notebooks, all of them or a selection, each from its own folder and one at a time, and record how
-each went. A notebook takes as long as it takes, often a minute or more, so a run of them all is never a gate before a
-commit or a push: it is done every once in a while, and a selection after work on what those notebooks use.
+"""Run the example notebooks, all of them or a selection, each from its own folder and as many at once as the
+machine's pool admits, and record how each went. A notebook takes as long as it takes, often a minute or more, so a
+run of them all is never a gate before a commit or a push: it is done every once in a while, and a selection after
+work on what those notebooks use.
 
     python -m tools.notebooks                                         # every notebook
     python -m tools.notebooks wing fluids/vortices                    # those whose paths hold any of the strings
@@ -17,16 +18,16 @@ notebooks that use it or a module inside it.
 
 Each notebook runs as `jupyter execute`, which writes nothing into the notebook, as one job of the machine's pool
 (`tools/pool.py`), of one core and 4 GB unless `--cores` or `--memory` ask for more, or it has learned it needs
-more. Its outcome, ran, failed or timed out, its seconds and, for a failure, the cell it failed in and the last lines
-of the error, goes into `archive/notebook_runs.json` of the workspace that holds the checkout, as it comes, under the
-checkout, its commit and the time the run started, and a summary is printed at the end, or at Ctrl-C.
+more. Its outcome, ran, failed or timed out, its seconds, the most memory it used and the memory it held, and, for a
+failure, the cell it failed in and the last lines of the error, goes into `archive/notebook_runs.json` of the
+workspace that holds the checkout, as it comes, under the checkout, its commit and the time the run started. A
+summary is printed at the end, or at Ctrl-C, with the notebooks that reserve at least twice the memory they used.
 """
 
 from __future__ import annotations
 
 import argparse
 import ast
-import contextlib
 import datetime
 import functools
 import importlib.util
@@ -35,17 +36,14 @@ import os
 import re
 import subprocess
 import sys
-import time
 from pathlib import Path
 
-import psutil
+from tools import pool
 
 ROOT = Path(__file__).resolve().parents[1]
 # The shared modules of the examples, whose imports a notebook's uses do not follow.
 SHARED = ROOT / "examples" / "util"
-# The machine's pool, run as a script, which needs nothing of the examples; the archive of the workspace a checkout
-# sits in.
-POOL = Path(__file__).resolve().parent / "pool.py"
+# The archive of the workspace a checkout sits in.
 LOG = ROOT.parent / "archive" / "notebook_runs.json"
 # The lines of a failure's output its record keeps.
 ERROR_LINES = 12
@@ -134,17 +132,6 @@ def module_of(path: Path) -> str:
     return ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
 
 
-def stop(process: subprocess.Popen) -> None:
-    """Kill a run and everything it started, the kernel too, which jupyter starts in a session of its own."""
-    with contextlib.suppress(psutil.NoSuchProcess):
-        root = psutil.Process(process.pid)
-        # The tree is gathered before anything is killed: a killed parent's children are no longer found below it.
-        for member in [*reversed(root.children(recursive=True)), root]:
-            with contextlib.suppress(psutil.NoSuchProcess):
-                member.kill()
-    process.communicate()
-
-
 def failure(notebook: Path, output: str) -> dict:
     """What a failed run's output says: the cell it failed in, counted from one as the notebook's cells stand, where
     the error names one, and the error's last lines."""
@@ -158,29 +145,14 @@ def failure(notebook: Path, output: str) -> dict:
     return record
 
 
-def run(notebook: Path, timeout: float, cores: int, memory: float) -> dict:
-    """Execute a notebook from its own folder, as one job of the pool, and say how it went: ran, failed or timed out,
-    in how many seconds."""
-    jupyter = [str(Path(sys.executable).parent / "jupyter"), "execute", notebook.name]
-    job = [sys.executable, "-I", str(POOL), "run", "--cores", str(cores), "--memory", str(memory),
-           "--what", f"notebook {notebook.name} in {ROOT.name}", "--learn", str(notebook), "--"]
-    # No window for any figure.
-    environment = os.environ | {"MPLBACKEND": "Agg"}
-    start = time.perf_counter()
-    # A session of its own, so that Ctrl-C reaches only the runner, which then stops the notebook's whole tree.
-    process = subprocess.Popen([*job, *jupyter], cwd=ROOT / notebook.parent, env=environment, text=True,
-                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
-    try:
-        output, _ = process.communicate(timeout=timeout)
-        status = "ran" if process.returncode == 0 else "failed"
-    except subprocess.TimeoutExpired:
-        stop(process)
-        output, status = "", "timed out"
-    except KeyboardInterrupt:
-        stop(process)
-        raise
-    record = {"path": str(notebook), "status": status, "seconds": round(time.perf_counter() - start, 1)}
-    return (record | failure(notebook, output)) if status == "failed" else record
+def record(notebook: Path, status: int, output: str) -> dict:
+    """How a notebook's run went, by its job's exit status and output: ran, failed or timed out, in how many seconds,
+    with the most memory it used and the memory it held; for a failure, where and how it failed."""
+    result = pool.outcome(output)
+    state = {0: "ran", pool.TIMED_OUT: "timed out"}.get(status, "failed")
+    entry = {"path": str(notebook), "status": state, "seconds": round(result["seconds"], 1),
+             "peak": round(result["peak"], 2), "memory": result["reserved"]}
+    return (entry | failure(notebook, output)) if state == "failed" else entry
 
 
 def write_log(key: str, records: list[dict]) -> None:
@@ -190,8 +162,9 @@ def write_log(key: str, records: list[dict]) -> None:
     LOG.write_text(json.dumps(runs, indent=1) + "\n")
 
 
-def summary(records: list[dict]) -> None:
-    """A table of the notebooks run, then each failure's error, then the counts."""
+def summary(records: list[dict], default: float) -> None:
+    """A table of the notebooks run, then each failure's error, the notebooks that reserve more than `default` GB and
+    at least twice what they used, and the counts."""
     print()
     for record in records:
         print(f"{record['status']:<10}{record['seconds']:>7.0f} s  {record['path']}")
@@ -199,9 +172,15 @@ def summary(records: list[dict]) -> None:
         if record["status"] == "failed":
             where = f", cell {record['cell']}" if "cell" in record else ""
             print(f"\n{record['path']}{where}\n    " + record["error"].replace("\n", "\n    "))
+    lowerable = pool.oversized([(record["path"], {"reserved": record["memory"], "peak": record["peak"]})
+                                for record in records], default)
+    if lowerable:
+        print("\nnotebooks that reserve at least twice the memory they used:")
+    for line in lowerable:
+        print(line)
     counts = [f"{sum(record['status'] == status for record in records)} {status}"
               for status in ("ran", "failed", "timed out")]
-    print(f"\n{', '.join(counts)} in {sum(record['seconds'] for record in records):.0f} s")
+    print(f"\n{', '.join(counts)}, {sum(record['seconds'] for record in records):.0f} s of runs")
 
 
 def main(arguments: list[str]) -> None:
@@ -236,17 +215,23 @@ def main(arguments: list[str]) -> None:
     commit = subprocess.run(["git", "-C", str(ROOT), "describe", "--always", "--dirty", "--exclude=*"],
                             capture_output=True, text=True, check=True).stdout.strip()
     key = f"{ROOT.name} {commit} {datetime.datetime.now().isoformat(timespec='seconds')}"
+    # No window for any figure.
+    os.environ["MPLBACKEND"] = "Agg"
+    jupyter = str(Path(sys.executable).parent / "jupyter")
+    jobs = [{"command": [jupyter, "execute", notebook.name], "cwd": ROOT / notebook.parent, "cores": options.cores,
+             "memory": options.memory, "what": f"notebook {notebook.name} in {ROOT.name}", "key": str(notebook),
+             "timeout": 60 * options.timeout, "notebook": notebook} for notebook in selection]
     records = []
     try:
-        for index, notebook in enumerate(selection, 1):
-            print(f"[{index}/{len(selection)}] {notebook}", end="", flush=True)
-            records.append(run(notebook, 60 * options.timeout, options.cores, options.memory))
-            print(f"  {records[-1]['status']} in {records[-1]['seconds']:.0f} s", flush=True)
+        for index, (job, status, output) in enumerate(pool.batch(jobs, f"notebooks in {ROOT.name}"), 1):
+            records.append(record(job["notebook"], status, output))
+            print(f"[{index}/{len(selection)}] {records[-1]['status']:<10}{records[-1]['seconds']:>6.0f} s "
+                  f"{records[-1]['peak']:5.2f} GB  {job['notebook']}", flush=True)
             if LOG.parent.is_dir():
                 write_log(key, records)
     except KeyboardInterrupt:
-        print("  interrupted, and not recorded", flush=True)
-    summary(records)
+        print("interrupted; the notebooks still running are not recorded", flush=True)
+    summary(records, options.memory)
     # Failing when any notebook did not run, so that a run of them tests that they all do.
     sys.exit(any(record["status"] != "ran" for record in records))
 

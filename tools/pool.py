@@ -42,6 +42,7 @@ import fcntl
 import importlib.util
 import json
 import os
+import re
 import select
 import subprocess
 import sys
@@ -74,8 +75,8 @@ NICENESS = 10
 RUSAGE_WORDS, FOOTPRINT_WORD = 16, 9
 # The characters of a command that name its job.
 NAME_LENGTH = 100
-# The exit status of a job that asks for more than the whole budget.
-TOO_LARGE = 1
+# The exit status of a job that asks for more than the whole budget, and of one stopped at its time limit.
+TOO_LARGE, TIMED_OUT = 1, 124
 
 # This process's reservation, once it holds one, its watchdog, and the library that reads macOS's footprints.
 _held: dict = {}
@@ -228,7 +229,7 @@ def hold(cores: int, memory: float, what: str) -> None:
         print(f"pool: {what} admitted after {waited:.0f} s", file=sys.stderr, flush=True)
     # The watchdog starts before this process lowers its priority, and so keeps its own.
     _watchdog.append(subprocess.Popen([sys.executable, "-I", __file__, "watch", str(me.pid), str(memory), what],
-                                      stdin=subprocess.PIPE))
+                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True))
     os.environ.update(threads(cores))
     os.environ[JOB] = str(me.pid)
     os.nice(NICENESS)
@@ -267,53 +268,102 @@ def resize(memory: float) -> None:
 
 def _tell(key: str, value: str) -> None:
     for watchdog in _watchdog:
-        watchdog.stdin.write(f"{key} {value}\n".encode())
+        watchdog.stdin.write(f"{key} {value}\n")
         watchdog.stdin.flush()
 
 
-def release() -> None:
-    """Give back this process's reservation, and stop its watchdog."""
+def release() -> float:
+    """Give back this process's reservation and stop its watchdog; the most memory in GB the job used."""
     if not _held:
-        return
+        return 0.0
     with _ledger() as jobs:
         jobs[:] = [job for job in jobs if job["pid"] != _held["pid"]]
-    for watchdog in _watchdog:
-        watchdog.stdin.close()
+    peaks = [float(watchdog.communicate()[0] or 0) for watchdog in _watchdog]
     _held.clear()
     _watchdog.clear()
+    return max(peaks, default=0.0)
 
 
-def run(command: list[str], cores: int, memory: float, what: str, key: str) -> int:
-    """Run a command as one job of the pool, and return its exit status. Where the watchdog kills the command for
+def run(command: list[str], cores: int, memory: float, what: str, key: str, timeout: float) -> int:
+    """Run a command as one job of the pool, and return its exit status; at the end, say how long it ran, the most
+    memory it used and the memory it held, in a line `outcome` reads. Where the watchdog kills the command for
     exceeding its reservation, it runs again with twice the memory. With a `key`, the job starts with the memory it
     learned under that key, where that is more, and learns the memory it finally ran with. A job that asks for more
-    than the whole budget, at the start or by doubling, fails at once, and never waits. Outside the pool, or inside a
-    job, the command just runs."""
+    than the whole budget, at the start or by doubling, fails at once, and never waits; one that runs longer than
+    `timeout` seconds is stopped, with the status TIMED_OUT. Outside the pool, or inside a job, the command just
+    runs."""
     if not active():
-        return subprocess.run(command).returncode
+        try:
+            return subprocess.run(command, timeout=timeout if timeout < float("inf") else None).returncode
+        except subprocess.TimeoutExpired:
+            return TIMED_OUT
     start = max(memory, learned().get(key, 0.0)) if key else memory
     if cores > CORES or start > budget_memory():
         print(f"pool: {what} asks for {cores} cores and {start:g} GB, more than the pool's whole budget of {CORES} "
               f"cores and {budget_memory():.0f} GB", file=sys.stderr, flush=True)
         return TOO_LARGE
     hold(cores, start, what)
+    began = time.time()
+    status, finished = _attempts(command, what, timeout)
+    if key and finished and _held["memory"] > start:
+        learn(key, _held["memory"])
+    reserved = _held["memory"]
+    peak = release()
+    print(f"pool: {what} ran in {time.time() - began:.1f} s, peaked at {peak:.2f} GB of its {reserved:g} GB",
+          file=sys.stderr, flush=True)
+    return status
+
+
+def _attempts(command: list[str], what: str, timeout: float) -> tuple[int, bool]:
+    """Run the command of this process's job, again with twice the memory each time the watchdog kills it, within
+    `timeout` seconds; its exit status, and whether it ran to its end within its reservation."""
+    deadline = time.time() + timeout
     while True:
         started = time.time()
         process = subprocess.Popen(command)
         try:
-            status = process.wait()
+            status = process.wait(timeout=max(0.0, deadline - time.time()))
+        except subprocess.TimeoutExpired:
+            _stop(process)
+            print(f"pool: {what} stopped after {timeout:g} s", file=sys.stderr, flush=True)
+            return TIMED_OUT, False
         except KeyboardInterrupt:
             status = process.wait()
         if not [kill for kill in kills() if kill["pid"] == _held["pid"] and kill["time"] >= started]:
-            if key and _held["memory"] > start:
-                learn(key, _held["memory"])
-            return status
+            return status, True
         if 2 * _held["memory"] > budget_memory():
             print(f"pool: {what} needs more than its {_held['memory']:g} GB, and twice that is more than the pool's "
                   f"whole budget of {budget_memory():.0f} GB", file=sys.stderr, flush=True)
-            return TOO_LARGE
+            return TOO_LARGE, False
         resize(2 * _held["memory"])
         print(f"pool: {what} runs again with {_held['memory']:g} GB", file=sys.stderr, flush=True)
+
+
+def _stop(process: subprocess.Popen) -> None:
+    """Kill a command and everything it started."""
+    import psutil
+    with contextlib.suppress(psutil.NoSuchProcess):
+        root = psutil.Process(process.pid)
+        # The tree is gathered before anything is killed: a killed parent's children are no longer found below it.
+        for member in [*reversed(root.children(recursive=True)), root]:
+            with contextlib.suppress(psutil.NoSuchProcess):
+                member.kill()
+    process.wait()
+
+
+def outcome(output: str) -> dict[str, float]:
+    """What a job's output says of its run: the seconds it ran, the most memory in GB it used, and the memory it held
+    at the end."""
+    found = re.findall(r"^pool: .* ran in ([\d.]+) s, peaked at ([\d.]+) GB of its ([\d.]+) GB$", output, re.M)
+    seconds, peak, reserved = map(float, found[-1]) if found else (0.0, 0.0, 0.0)
+    return {"seconds": seconds, "peak": peak, "reserved": reserved}
+
+
+def oversized(results: list[tuple[str, dict[str, float]]], default: float) -> list[str]:
+    """The lines naming every job that reserved more than `default` GB, declared or learned, and at least twice the
+    memory it used, so that its reservation may be lowered."""
+    return [f"{name} reserves {result['reserved']:g} GB, used {result['peak']:.1f}" for name, result in results
+            if result["reserved"] > default and result["reserved"] >= 2 * result["peak"]]
 
 
 def kills() -> list[dict]:
@@ -342,9 +392,9 @@ def learn(key: str, memory: float) -> None:
 def batch(jobs: list[dict], group: str) -> Iterator[tuple[dict, int, str]]:
     """Run commands as jobs of the pool, as many at once as it admits, and yield each job with its exit status and
     output as it finishes. A job is a dict of its `command`, the folder `cwd` it runs in, its `cores` and `memory`,
-    its name `what` and its `key`; `group` names the run they make together. A new job starts once the last one
-    started has been admitted, so that the batch waits in the pool's queue with one job at a time; inside a job, or
-    without psutil, the jobs run one by one."""
+    its name `what`, its `key` and its `timeout` in seconds; `group` names the run they make together. A new job
+    starts once the last one started has been admitted, so that the batch waits in the pool's queue with one job at a
+    time; inside a job, or without psutil, the jobs run one by one."""
     pending, running, outputs = list(jobs), {}, {}
     while pending or running:
         admitted = {job["pid"] for job in read() if job["admitted"]} if active() else set()
@@ -352,7 +402,8 @@ def batch(jobs: list[dict], group: str) -> Iterator[tuple[dict, int, str]]:
         if pending and all(process.pid in admitted for process in last) and (active() or not running):
             job = pending.pop(0)
             command = [sys.executable, "-I", __file__, "run", "--cores", str(job["cores"]), "--memory",
-                       f"{job['memory']:g}", "--what", job["what"], "--learn", job["key"], "--", *job["command"]]
+                       f"{job['memory']:g}", "--what", job["what"], "--learn", job["key"], "--timeout",
+                       str(job["timeout"]), "--", *job["command"]]
             process = subprocess.Popen(command, cwd=job["cwd"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                        text=True, env=os.environ | {GROUP: group})
             running[process] = job
@@ -415,7 +466,7 @@ def watch(pid: int, memory: float, what: str) -> None:
             print(f"\npool: killed {what} at {total / GB:.2f} GB, over its reservation of {limit:g} GB",
                   file=sys.stderr, flush=True)
             tree = [job]
-    print(f"pool: {what} peaked at {peak:.2f} GB of its {limit:g} GB", file=sys.stderr, flush=True)
+    print(peak, flush=True)
 
 
 # --- looking at the pool
@@ -519,6 +570,8 @@ def main(arguments: list[str]) -> None:
     running.add_argument("--what", help="the job's name in the pool (default: the command)")
     running.add_argument("--learn", default="", metavar="KEY",
                          help="start with the memory learned under this key, and learn the memory finally needed")
+    running.add_argument("--timeout", type=float, default=float("inf"), metavar="SECONDS",
+                         help="stop the command after this long")
     running.add_argument("command", nargs=argparse.REMAINDER)
     commands.add_parser("status", help="print the jobs holding and waiting")
     tracing = commands.add_parser("trace", help="sample the pool to a file twice a second")
@@ -539,7 +592,8 @@ def main(arguments: list[str]) -> None:
             parser.error("a command must follow --")
         # A command is named by its first words, on one line.
         named = " ".join(" ".join(command).split())
-        sys.exit(run(command, options.cores, options.memory, options.what or named[:NAME_LENGTH], options.learn))
+        sys.exit(run(command, options.cores, options.memory, options.what or named[:NAME_LENGTH], options.learn,
+                     options.timeout))
     elif options.action == "status":
         status()
     elif options.action == "trace":

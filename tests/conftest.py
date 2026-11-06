@@ -99,8 +99,9 @@ def declared(file: Path) -> float:
 def sweep(files: list[Path]) -> int:
     """Run every test file as a job of the pool, `pytest -q <file>` in a process of its own, as many at once as the
     pool admits and the longest first, by the seconds recorded for them; print each file's outcome as it finishes,
-    then the output of every file that failed, the files that needed more memory than a job's own, and the counts.
-    The exit status counts failures only: a file the pool ran again with more memory has not failed."""
+    then the output of every file that failed, the files that needed more memory than a job's own, those that
+    reserve at least twice what they used, and the counts. The exit status counts failures only: a file the pool ran
+    again with more memory has not failed."""
     from tools import pool
     checkout = TEST_ROOT.parent
     recorded = json.loads(DURATIONS.read_text()) if DURATIONS.exists() else {}
@@ -111,9 +112,9 @@ def sweep(files: list[Path]) -> int:
     keys = sorted((str(file.relative_to(checkout)) for file in files), key=lambda key: -seconds.get(key, 0))
     jobs = [{"command": [sys.executable, "-m", "pytest", "-q", f"--full-sweep={SWEEP_OCCASION}", key], "cwd": checkout,
              "cores": JOB_CORES, "memory": declared(checkout / key), "what": f"pytest {key} in {checkout.name}",
-             "key": key} for key in keys]
+             "key": key, "timeout": float("inf")} for key in keys]
     counts: dict[str, int] = {}
-    failed, reran = {}, []
+    failed, reran, results = {}, [], []
     for index, (job, status, output) in enumerate(pool.batch(jobs, f"pytest tests in {checkout.name}"), 1):
         # Pytest's own last line, "12 passed, 1 failed in 3.21s", before the pool's.
         last = ([line for line in output.splitlines() if re.search(r" in [\d.]+s\b", line)] or [""])[-1]
@@ -123,16 +124,24 @@ def sweep(files: list[Path]) -> int:
         # A file with no test left after deselection has not failed.
         if status not in (pytest.ExitCode.OK, pytest.ExitCode.NO_TESTS_COLLECTED):
             failed[job["key"]] = output
-        print(f"[{index}/{len(jobs)}] {'failed' if job['key'] in failed else 'passed':<7}{job['key']}", flush=True)
+        result = pool.outcome(output)
+        results.append((job["key"], result))
+        print(f"[{index}/{len(jobs)}] {'failed' if job['key'] in failed else 'passed':<7}{result['seconds']:>6.1f} s "
+              f"{result['peak']:5.2f} GB  {job['key']}", flush=True)
     for key, output in failed.items():
         print(f"\n{'=' * 30} {key}\n{output}")
     learned = pool.learned()
     needs = {key: max(declared(checkout / key), learned.get(key, 0.0)) for key in keys}
     heavy = {key: memory for key, memory in sorted(needs.items()) if memory > JOB_MEMORY}
     if heavy:
-        print(f"\nfiles that needed more memory than a job's {JOB_MEMORY} GB, ran again where marked:")
+        print(f"\nfiles that reserve more than a job's {JOB_MEMORY} GB, declared or learned; ran again where marked:")
     for key, memory in heavy.items():
         print(f"{memory:>5g} GB  {key}{'  (ran again)' if key in reran else ''}")
+    lowerable = pool.oversized(results, JOB_MEMORY)
+    if lowerable:
+        print("\nfiles that reserve at least twice the memory they used:")
+    for line in lowerable:
+        print(line)
     print(", ".join(f"{count} {outcome}" for outcome, count in counts.items()) + f"; {len(failed)} of {len(jobs)} "
           f"files failed, {len(reran)} ran again with more memory")
     return pytest.ExitCode.TESTS_FAILED if failed else pytest.ExitCode.OK
