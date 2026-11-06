@@ -69,7 +69,7 @@ class Operators:
         # Each affine corner hat owns one third of its triangle's mass.
         corner_mean = topology.incidence[2, 0].mean(axis=0)     # Scalar+[faces <- vertices]
         self.masses = ~corner_mean * (density * self.areas)     # [...] Scalar+[vertices]
-        inverse_inertia = spdiag((1 / self.masses) * Force.dual())
+        inverse_inertia = (1 / self.masses) * Force.dual()
         self.acceleration = -inverse_inertia(self.stiffness)    # [...] (Point- <- Point-)[vertices <- vertices]
         self.drag = -inverse_inertia(self.damping)              # [...] (Point- <- Point-)[vertices <- vertices]
 
@@ -123,7 +123,7 @@ def normal_modes(operators: Operators, count: int) -> tuple[Scalar, Point]:
     """The count lowest normal modes: their angular frequencies squared `[count]` and their shapes `[count]`,
     orthonormal in the masses. The stiffness, a map from displacements to forces, becomes a map of displacements to
     themselves through the dual that takes a force to a point, and so meets the masses on the same footing."""
-    to_points = spdiag(as_scalar(np.ones(operators.topology.n_vertices)).field() * Force.dual())
+    to_points = Force.dual()
     return to_points(operators.stiffness).eigh(spdiag(operators.masses * Point), count)
 
 

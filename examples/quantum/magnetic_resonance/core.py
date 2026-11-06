@@ -38,13 +38,13 @@ Bivector = ga.gatype.bivector()                                     # Bivector+
 # A spin: the patch of the plane it turns in, intrinsic.
 Spin = ga.gatype.antibivector()                                     # Antibivector-
 # A spin's state: half the antiscalar, its trace, plus the spin.
-State = (Spin + ga.gatype.antiscalar()).output_gatype               # Antibivector- + Antiscalar-
+State = ga.gatype(Spin + ga.gatype.antiscalar())                    # Antibivector- + Antiscalar-
 Rates = ga.gatype((State, State))                                   # State- <- State-
 # What becomes of each state over a stretch of time.
 Evolution = ga.gatype((State, State))                               # State- <- State-
 Rotor = ga.gatype.rotor()                                           # Rotor+
 one = mv.scalar([1.0])                                              # [] Scalar+
-antiscalar = mv.antiscalar([1.0])                                   # [] Antiscalar-
+antiscalar = one.dual()                                             # [] Antiscalar-
 # The lab at rest: its slice of space, the plane the magnet's field turns spins in, and the plane the drive turns
 # them in.
 observer = mv.t                                                     # [] Vector+

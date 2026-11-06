@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quadrics.cayley_klein import render, scenarios
@@ -85,6 +84,5 @@ def test_sphere_quadric_contains_the_points_at_its_radius():
     np.testing.assert_allclose(on_sphere.regressive(sphere(on_sphere)).kernel, 0.0, atol=1e-12)
 
 
-def test_scenario_renders():
-    figure = render.draw_hyperbolic_space(*scenarios.hyperbolic_space())
-    assert isinstance(figure, plt.Figure)
+def test_the_hyperbolic_scene_draws():
+    render.draw_hyperbolic_space(*scenarios.hyperbolic_space())

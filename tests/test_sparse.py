@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from numga import Algebra, NumpyContext
-from numga.sparse import SparseExtensor
+from numga.sparse import SparseExtensor, spdiag
 
 
 @pytest.fixture(params=["numpy", "jax"])
@@ -182,7 +182,7 @@ def test_a_pencil_of_forms_has_the_eigenpairs_of_its_numbers():
     context = NumpyContext(Algebra("x+y+t-"))
     mv, Scalar = context.multivector, context.algebra.gatype.scalar()
     # A form on scalar fields maps them to amounts, the pseudoscalars they pair with.
-    Amount = context.algebra.gatype.pseudoscalar().derive.flipped_orientation
+    unit_amount = mv.scalar([1.0]).dual()
     count = 6
     boundary = SparseExtensor(
         mv.scalar(np.tile([[-1.0], [1.0]], (count - 1, 1))),
@@ -190,7 +190,7 @@ def test_a_pencil_of_forms_has_the_eigenpairs_of_its_numbers():
     )
     laplacian = ~boundary * boundary
     weights = SparseExtensor.from_diagonal(mv.scalar(np.linspace(1.0, 2.0, count)[:, None]).field())
-    to_amount = SparseExtensor.from_diagonal(mv.scalar(np.ones((count, 1))).field() * (mv(Amount, [1.0]) * Scalar))
+    to_amount = SparseExtensor.from_diagonal(mv.scalar(np.ones((count, 1))).field() * (unit_amount * Scalar))
     stiffness, mass = to_amount(laplacian * Scalar), to_amount(weights * Scalar)  # [count] Amount <- [count] Scalar
     values, modes = stiffness.eigh(mass, 3)
     numbers, _ = (laplacian * Scalar).eigh(weights * Scalar, 3)
@@ -227,7 +227,7 @@ def test_plain_numbers_take_the_algebra_they_meet(context):
     rng = np.random.default_rng(3)
     for algebra in (Algebra("x+y+"), Algebra("x+y+z+w0")):
         mv = type(context)(algebra).multivector
-        points = mv.antivector(rng.normal(size=(3, len(algebra.signature)))).field()   # Antivector-[3]
+        points = mv.vector(rng.normal(size=(3, len(algebra.signature)))).dual().field()   # Antivector-[3]
         edges = difference * points                                           # Antivector-[2]
         assert edges.gatype.derive.output == points.gatype.derive.output
         np.testing.assert_allclose(np.asarray(edges.batch().kernel), np.asarray((points.batch()[1:] - points.batch()[:-1]).kernel), atol=1e-6)
@@ -241,3 +241,59 @@ def test_plain_numbers_take_the_algebra_they_meet(context):
     assert typed.gatype.arity == 1
     weights = SparseExtensor.from_diagonal(mv.scalar([[2.0], [3.0]]).field())
     assert not isinstance((weights * difference).cells, np.ndarray)
+
+
+def strip(context):
+    """A strip of two triangles, `[faces, corners]` over four vertices: a map from a scalar at each vertex to a vector
+    on each face, as a gradient is, and maps at each face and each vertex, as a conductivity and a capacity are."""
+    mv, Scalar, Vector = context.multivector, context.algebra.gatype.scalar(), context.algebra.gatype.vector()
+    rng = np.random.default_rng(8)
+    faces = np.array([[0, 1, 2], [2, 1, 3]])
+    gradient = SparseExtensor.from_columns(faces, mv.vector(rng.normal(size=(2, 3, 3))) * Scalar, 4)   # (Vector+ <- Scalar+)[faces <- vertices]
+    conductivity = mv.scalar(rng.uniform(1, 2, size=(2, 1))).field() * Vector.dual()   # (Antivector- <- Vector+)[faces]
+    capacity = mv.scalar(rng.uniform(1, 2, size=(4, 1))).field() * Scalar.dual()      # (Antiscalar- <- Scalar+)[vertices]
+    return gradient, conductivity, capacity
+
+
+def assert_same_map(implicit, explicit):
+    """The same sparse map: its type, its couplings and its cells."""
+    assert implicit.gatype == explicit.gatype and implicit.shape == explicit.shape
+    np.testing.assert_array_equal(implicit.rows, explicit.rows)
+    np.testing.assert_array_equal(implicit.columns, explicit.columns)
+    np.testing.assert_allclose(np.asarray(implicit.cells.kernel), np.asarray(explicit.cells.kernel), atol=1e-12)
+
+
+def test_a_field_of_maps_acts_as_its_diagonal_where_it_is_the_map_that_acts(context):
+    gradient, conductivity, capacity = strip(context)
+    mv, Vector = context.multivector, context.algebra.gatype.vector()
+    # Called on a sparse map, a field of maps composes with the cells at its sites, as it acts on a field; so the
+    # pullback of the conductivity reads as written, and a map without sites is the same at every site.
+    conductance = gradient.adjugate()(conductivity(gradient))                 # (Antiscalar- <- Scalar+)[vertices <- vertices]
+    assert_same_map(conductance, gradient.adjugate()(spdiag(conductivity)(gradient)))
+    assert_same_map(Vector.dual()(gradient), spdiag(mv.scalar(np.ones((2, 1))).field() * Vector.dual())(gradient))
+    # Added to a square sparse map, from either side, a field of maps sits on the diagonal, as it applies.
+    assert_same_map(conductance + capacity, conductance + spdiag(capacity))
+    assert_same_map(capacity - conductance, spdiag(capacity) - conductance)
+    # So does a field of values, beside a map of plain numbers.
+    difference = SparseExtensor(np.array([-1.0, 1.0, -1.0, 1.0]), np.array([0, 0, 1, 1]), np.array([0, 1, 1, 2]), (2, 3))
+    weights = mv.scalar([[2.0], [3.0], [4.0]]).field()                        # Scalar+[vertices]
+    assert_same_map(~difference * difference + weights, ~difference * difference + spdiag(weights))
+    # The site counts are checked: the conductivity lives on the faces, not on the vertices.
+    with pytest.raises(ValueError):
+        conductance + conductivity
+    with pytest.raises(ValueError):
+        conductivity(conductance)
+
+
+def test_the_diagonal_of_a_field_of_maps_is_solved_where_it_is_asked_for():
+    pytest.importorskip("scipy")
+    context = NumpyContext(Algebra("x+y+z+"))
+    gradient, conductivity, capacity = strip(context)
+    temperatures = context.multivector.scalar(np.random.default_rng(9).normal(size=(4, 1))).field()   # Scalar+[vertices]
+    system = gradient.adjugate()(conductivity(gradient)) + capacity          # (Antiscalar- <- Scalar+)[vertices <- vertices]
+    np.testing.assert_allclose(system.solve(system(temperatures)).kernel, temperatures.kernel, atol=1e-12)
+    # A field of maps solved against a field gives the one scalar that it spreads to the field best; its diagonal,
+    # asked for, inverts the map at every site.
+    assert not capacity.lstsq(capacity(temperatures)).gatype.fields
+    np.testing.assert_allclose(spdiag(capacity).solve(capacity(temperatures)).kernel, temperatures.kernel, atol=1e-12)
+    np.testing.assert_allclose(capacity.on_diagonal().solve(capacity(temperatures)).kernel, temperatures.kernel, atol=1e-12)

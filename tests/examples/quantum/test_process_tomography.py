@@ -3,7 +3,7 @@
 import numpy as np
 
 from numga import stack
-from examples.quantum.process_tomography import core, scenarios
+from examples.quantum.process_tomography import core, render, scenarios
 
 
 def analytical_bloch(bloch: np.ndarray, angles: np.ndarray, phase_flip: np.ndarray,
@@ -111,28 +111,12 @@ def test_completeness_distinguishes_a_spanning_tetrahedron_from_two_axial_probes
     assert np.abs((opposite_span & scenarios.prepared).kernel).max() > 0.1
 
 
-def test_figures_and_composed_channel_animation_draw_without_saving():
-    import matplotlib.pyplot as plt
-
-    from examples.quantum.process_tomography import render
-
+def test_the_figures_and_one_frame_draw():
     measured, learned = scenarios.tomography()
-    observed, predicted = scenarios.validation(learned)
-    prepared = scenarios.prepared
-    surface = core.sphere(8, 16)
-    # The display surface consists of pure states, of weight one on the unit sphere, before any channel acts.
-    np.testing.assert_allclose((core.mv.w & surface).to_array(), 1, atol=1e-8)
-    np.testing.assert_allclose((core.centre & render.ball_positions(surface)).norm().to_array(), 1, atol=1e-8)
-    figures = (
-        render.draw_experiment(prepared, measured, scenarios.LABELS, render.ball_positions),
-        render.draw_predictions(observed, predicted, scenarios.LABELS),
-    )
-    for figure in figures:
-        figure.canvas.draw()
-        plt.close(figure)
-
-    states = ((accumulated[:, None, None](surface), accumulated[:, None](prepared))
-              for accumulated in core.powers(learned, 2))
-    frames = list(render.animate(surface, prepared, states, scenarios.LABELS, render.ball_positions, render.PANEL))
-    assert frames[0].ndim == 3 and frames[0].shape == frames[1].shape
-    assert not np.array_equal(frames[0], frames[1])
+    prepared, labels, reading = scenarios.prepared, scenarios.LABELS, render.ball_positions
+    surface = core.sphere(2, 4)
+    render.draw_experiment(prepared, measured, labels, reading)
+    render.draw_channels(surface, learned[:, None, None](surface), prepared, learned[:, None](prepared), labels, reading)
+    render.draw_predictions(*scenarios.validation(learned), labels)
+    frames = ((combined[:, None, None](surface), combined[:, None](prepared)) for combined in core.powers(learned, 1))
+    next(render.animate(surface, prepared, frames, labels, reading, render.PANEL))

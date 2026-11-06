@@ -17,7 +17,7 @@ from typing import NamedTuple
 
 import numpy as np
 
-from numga import NumpyContext, stack
+from numga import Algebra, NumpyContext, stack
 from numga.algebras import STA as ga
 from numga.sparse import SparseExtensor, spdiag
 from examples.util.topology import Topology
@@ -25,10 +25,10 @@ from examples.util.topology import Topology
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                         # Scalar+
 # The planes of space, which read a point's coordinates; a function's gradient on a triangle is one.
-Plane = ga.gatype.from_blades("x y z")              # Vector+
+Plane = ga.gatype.vector().derive.within(Algebra("x+y+z+"))  # Vector+
 # The points of space, each the direction from the origin to it; the sphere's points, its edges and the fluid's
 # velocities are points too.
-Point = Plane.dual().output_gatype                  # Antivector-
+Point = Plane.derive.dual                           # Antivector-
 # A triangle's patch, the join of two of its edges.
 Patch = ga.gatype.antibivector()                    # Antibivector-
 # A function integrated over each vertex's share of the surface is an amount.
@@ -61,17 +61,17 @@ def surface(topology: Topology, vertices: Point) -> Surface:
     areas = patches.squared().square_root()                                      # Scalar+[faces]
     corner_gradients = (sides | patches.inverse()) / 2                           # [corners] Plane+[faces]
     gradient = (spdiag(corner_gradients * Scalar) * topology.incidence[2, 0]).sum(axis=0)   # (Plane+ <- Scalar+)[faces <- vertices]
-    velocity = spdiag(Plane ^ (patches / areas))(gradient)                     # (Point- <- Scalar+)[faces <- vertices]
+    velocity = (Plane ^ (patches / areas))(gradient)                           # (Point- <- Scalar+)[faces <- vertices]
     # Each corner's share of the faces around it, and the map handing each vertex its share of a face integral.
     corner_mean = topology.incidence[2, 0].mean(axis=0)                          # Scalar+[faces <- vertices]
     dual_areas = ~corner_mean * areas                                            # Scalar+[vertices]
     lumped = spdiag(1 / dual_areas) * ~corner_mean                               # Scalar+[vertices <- faces]
-    momentum = spdiag(areas * Point.dual())                                  # (Plane+ <- Point-)[faces <- faces]
+    momentum = areas * Point.dual()                                          # (Plane+ <- Point-)[faces]
     stiffness = velocity.adjugate()(momentum(velocity))                          # (Amount- <- Scalar+)[vertices <- vertices]
     mass = spdiag(dual_areas * Scalar.dual())                                    # (Amount- <- Scalar+)[vertices <- vertices]
     # A stream function's constant is free; pinning the first vertex to zero fixes it and leaves every velocity as it is.
     reference = mv.scalar((np.arange(topology.n_vertices) == 0)[:, None]).field()   # Scalar+[vertices]
-    pinned = stiffness + spdiag(stiffness.diagonal() * reference)                # (Amount- <- Scalar+)[vertices <- vertices]
+    pinned = stiffness + stiffness.diagonal() * reference                        # (Amount- <- Scalar+)[vertices <- vertices]
     return Surface(topology, patches, gradient, velocity, lumped, stiffness, mass, pinned)
 
 

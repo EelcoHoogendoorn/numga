@@ -60,7 +60,7 @@ def cases() -> tuple:
     random = np.random.default_rng(3)
     corners = mv.vector(random.normal(size=(n_cases, 4, 4))).dual()            # [cases, corners] Point-
     planes = mv.vector(random.normal(size=(n_cases, 4)))                         # [cases] Plane+
-    amounts = mv(Amount, random.normal(size=(n_cases, 1)))                     # [cases] Amount-
+    amounts = mv.scalar(random.normal(size=(n_cases, 1))).dual()               # [cases] Amount-
     return corners, planes, amounts
 
 

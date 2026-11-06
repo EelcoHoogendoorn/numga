@@ -41,22 +41,22 @@ frame_duration_ms = 40
 
 
 # --- plumbing -------------------------------------------------------------------------
-def quadrature_grid() -> core.Point:
-    """Midpoints of equal-volume boxes covering the solid."""
+def quadrature_grid(sample_spacing: float = sample_spacing) -> core.Point:
+    """Midpoints of equal-volume boxes covering the solid, sample_spacing apart."""
     coordinates = [np.arange(low, high, sample_spacing) + sample_spacing / 2
                    for low, high in zip(sample_lower, sample_upper)]
     return core.mv.point(np.stack(np.meshgrid(*coordinates, indexing="ij"), axis=-1).reshape(-1, 3))
 
 
 # --- math -----------------------------------------------------------------------------
-def body() -> core.Body:
-    """The four quadrics and the uniform material they enclose."""
+def body(sample_spacing: float = sample_spacing) -> core.Body:
+    """The four quadrics and the uniform material they enclose, sampled sample_spacing apart."""
     cavity_turn = (core.mv.yz * (-cavity_tilt / 2)).exp() * (core.mv.xy * (-cavity_angle / 2)).exp()
     shell = core.ellipsoid(core.origin, core.axes, shell_semiaxes)
     cavity = core.ellipsoid(cavity_centre, cavity_turn >> core.axes, cavity_semiaxes)
     stem = core.ellipsoid(stem_centre, core.axes, stem_semiaxes)
     tip = core.ellipsoid(tip_centre, core.axes, tip_radius * np.ones(3))
-    return core.build(shell, cavity, stem, tip, quadrature_grid(), sample_spacing**3)
+    return core.build(shell, cavity, stem, tip, quadrature_grid(sample_spacing), sample_spacing**3)
 
 
 def main() -> None:

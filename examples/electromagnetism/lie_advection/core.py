@@ -9,7 +9,7 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from numga import NumpyContext
+from numga import Algebra, NumpyContext
 from numga.algebras import STA2D as ga
 from numga.sparse import spdiag
 from examples.util.topology import Topology
@@ -19,7 +19,7 @@ Scalar = ga.gatype.scalar()                                                  # S
 Plane = ga.gatype.vector()                                                   # Vector+
 Bivector = ga.gatype.bivector()                                              # Bivector+
 # The magnetic field, a plane of space.
-Magnetic = Bivector.derive.within("x y")                                     # Bivector+
+Magnetic = Bivector.derive.within(Algebra("x+y+"))                           # Bivector+
 Point = ga.gatype.antivector()                                               # Antivector-
 Patch = ga.gatype.antibivector()                                             # Antibivector-
 Amount = ga.gatype.antiscalar()                                              # Antiscalar-
@@ -90,13 +90,13 @@ class Operators:
 
         # The vacuum takes each face's field to the excitation it causes, weighted by the face's area; pulled
         # back through the curl, it gives the curl stiffness, from edge readings to the edge currents.
-        vacuum = spdiag(self.areas * Magnetic.dual())                        # (Patch- <- Magnetic+)[faces <- faces]
+        vacuum = self.areas * Magnetic.dual()                                # (Patch- <- Magnetic+)[faces]
         self.curl_stiffness = self.curl.adjugate()(vacuum(self.curl))        # (Amount- <- Scalar+)[edges <- edges]
         # A unit resistance on each interior edge turns its current into the resistive electric field, a plane
         # through time, read on the edge's world sheet: a rate of its reading. Restricting the response to
         # interior edges keeps boundary circulation fixed under resistivity.
         interior = ~topology.reading(topology.interior[1], 1) * Scalar       # (Scalar+ <- Scalar+)[edges <- interior]
-        unit_resistance = spdiag(mv.scalar(np.ones(len(topology.interior[1]))[..., None]).field() * Amount.dual_inverse())  # (Scalar+ <- Amount-)[interior <- interior]
+        unit_resistance = Amount.dual_inverse()                              # [] Scalar+ <- Amount-
         self.curl_laplacian = interior(unit_resistance(interior.adjugate()(self.curl_stiffness)))  # (Scalar+ <- Scalar+)[edges <- edges]
 
 

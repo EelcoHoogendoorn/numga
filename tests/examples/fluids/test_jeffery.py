@@ -1,11 +1,8 @@
-"""Jeffery orbits: the spin solve agrees with Jeffery's formula in the body's frame, a needle's axis
-moves as a line of fluid, and the scenes draw."""
+"""Jeffery orbits: the spin solve agrees with Jeffery's formula in the body's frame, a needle's axis moves as a line of
+fluid, and the bodies tumble one step, their first frame drawn."""
 
 from __future__ import annotations
 
-from itertools import islice
-
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.fluids.jeffery import core, render, scenarios
@@ -41,11 +38,9 @@ def test_needle_axis_moves_with_the_fluid():
     np.testing.assert_allclose(axis.commutator(spin).kernel, (along - axis * axis.dot(along)).kernel, atol=1e-6)
 
 
-def test_scenes_draw():
-    rotors = scenarios.tumbling()
-    figure = render.draw_orbits(rotors >> x.dual())
-    assert isinstance(figure, plt.Figure)
-    plt.close(figure)
-    heights = y.dual() * scenarios.HEIGHTS
-    first = islice(scenarios.frames(rotors), 2)
-    assert len(list(render.animate_tumbling(core.stretch(scenarios.SEMI_AXES), heights, scenarios.flow(heights), first, scenarios.GALLERY_PIXELS))) == 2
+def test_the_bodies_tumble_one_step_and_draw():
+    n_pixels = 48
+    rotors = scenarios.tumbling(n_steps=1)                                   # [steps + 1, bodies, starts] Rotor+
+    heights = y.dual() * scenarios.HEIGHTS                                   # [heights] Point-
+    next(render.animate_tumbling(core.stretch(scenarios.SEMI_AXES), heights, scenarios.flow(heights),
+                                 scenarios.frames(rotors), n_pixels))

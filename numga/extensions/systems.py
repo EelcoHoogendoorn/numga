@@ -17,7 +17,7 @@ from numga.binding import AxisTransform, AxisTransformKind
 from numga.extensor import Extensor
 from numga.gatype import GAType, GATypeError, GATypePattern
 
-from numga.extensions._linalg import _linear_system, _result, _scalars
+from numga.extensions._linalg import _linear_system, _reading, _result, _scalars
 
 
 @Extensor.inverse.register(lambda t: t.maps_equal_dimensions)
@@ -68,33 +68,39 @@ def solve(value: Extensor, rhs: Extensor) -> Extensor:
 
 @Extensor.adjugate.register(GATypePattern.map())
 def adjugate(value: Extensor) -> Extensor:
-    """The map on complements that incidence carries over: A.adjugate()(c) & x == c & A(x).
+    """The map on complements that incidence carries over, each pairing read with its extrinsic factor first.
 
-    The input is the complement of A's output and the output the complement of A's input, paired
-    through the scalar part of the regressive product, with the complement on the left. It needs no
-    metric and does not depend on the scale of the pseudoscalar, so it exists in degenerate algebras
-    and for singular A. For an outermorphism it is the adjugate in the classical sense: the
-    determinant times the inverse of the outermorphism on the complementary grade.
+    The input is the complement of A's output and the output the complement of A's input, each oppositely
+    oriented, as a dual is, so that it pairs with its space to an ordinary number through the scalar part of the
+    regressive product. Both pairings take the extrinsic factor first, as every reading does:
+    `A.adjugate()(c) & x == c & A(x)` for a map between intrinsic spaces, `x & A.adjugate()(c) == A(x) & c`
+    between extrinsic ones, `A.adjugate()(c) & x == A(x) & c` from intrinsic to extrinsic, and
+    `x & A.adjugate()(c) == c & A(x)` from extrinsic to intrinsic. Swapping the factors of a pairing of
+    complementary grades costs nothing in an odd dimension and the grade involute in an even one, so there the
+    order is part of the definition, built into the exact pairings, which the types key. Read so, in every
+    dimension the adjugate applied twice is A, a form symmetric under the reading is its own adjugate, a positive
+    form pulled back, `G.adjugate()(M(G))`, is positive, and `A(B).adjugate() == B.adjugate()(A.adjugate())`.
 
-    Applied twice it returns A up to the swap signs of the two pairings: c & x and x & c differ by a
-    sign in even dimensions for odd grades, so in PGA3D the adjugate of the adjugate of a
-    `Point <- Twist` is its negative. A map into the complement of its own input has an adjugate of
-    its own type, and is symmetric when it equals its adjugate up to that swap sign.
+    It needs no metric and does not depend on the scale of the pseudoscalar, so it exists in degenerate algebras
+    and for singular A. For an outermorphism it is the adjugate in the classical sense: the determinant times the
+    inverse of the outermorphism on the complementary grade. A map into the complement of its own input has an
+    adjugate of its own type, and is symmetric when it equals its adjugate.
     """
-    on_input, output_complement = _adjugate_pairing(value.gatype)
-    return on_input.solve((output_complement & value).cast(value.algebra.subspace.scalar()))
+    on_input, on_output = _adjugate_pairings(value.gatype)
+    return on_input.solve(on_output.bind({1: value}))
 
 
 @lru_cache(maxsize=None)
-def _adjugate_pairing(gatype: GAType) -> tuple[Extensor, GAType]:
-    """The exact pairing form on a map's input, and the complement of its output. A complement is
-    oppositely oriented, as a dual is, so that it pairs with its space to an ordinary number."""
-    algebra = gatype.algebra
-    output, input = gatype.subspaces
-    output_orientation, input_orientation = gatype.orientations
-    input_complement = algebra.gatype.oriented((input.complement(),), (input_orientation.flipped,))
-    on_input = (input_complement & gatype.derive.axis(1)).cast(algebra.subspace.scalar())
-    return on_input, algebra.gatype.oriented((output.complement(),), (output_orientation.flipped,))
+def _adjugate_pairings(gatype: GAType) -> tuple[Extensor, Extensor]:
+    """The exact readings of a map's input and of its output by their complements, each a form taking the
+    complement first."""
+    return tuple(_reading(_complement(space), space) for space in (gatype.derive.axis(1), gatype.derive.output))
+
+
+def _complement(space: GAType) -> GAType:
+    """The complementary space, oppositely oriented, as a dual is, so that it pairs with the space to an ordinary
+    number."""
+    return space.algebra.gatype.oriented((space.output_subspace.complement(),), (space.orientation.flipped,))
 
 
 @Extensor.adjoint.register(GATypePattern.map())

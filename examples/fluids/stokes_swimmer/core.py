@@ -42,7 +42,7 @@ Motor = ga.gatype.rotor()                                                       
 # A force is a plane through the origin, extrinsic, read by its pairing with a velocity or a displacement, an ideal
 # point, `force & direction`.
 Force = ga.gatype.vector().derive.nondegenerate                                 # Vector+
-Direction = Force.dual().output_gatype                                          # Antivector-
+Direction = Force.derive.dual                                                   # Antivector-
 Mobility = ga.gatype((Direction, Force))                                        # Direction- <- Force+
 
 origin = mv.w.dual()                                                            # [] Point-

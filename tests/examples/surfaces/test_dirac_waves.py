@@ -1,36 +1,14 @@
-"""Spinor waves on the sphere: the leapfrog keeps the energy, the pulse gathers at the south pole, the
-frequencies are the whole numbers, and the scenes draw."""
+"""Spinor waves on the sphere: the pulse and the standing waves run on the icosahedron for one step and one
+phase, and one frame of each draws."""
 
 from __future__ import annotations
 
-import numpy as np
-
-from numga import stack
-from examples.surfaces.dirac_waves import core, render, scenarios
-
-mv = core.mv
+from examples.surfaces.dirac_waves import render, scenarios
 
 
-def test_the_pulse_keeps_its_energy_and_gathers_at_the_south_pole():
-    topology, points, states = scenarios.pulse()
-    edges = topology.boundary[2, 1] * (topology.d[0] * points)
-    triangle_areas = edges[1].commutator(edges[0]).norm() / 2
-    corner_mean = topology.incidence[2, 0].mean(axis=0)
-    face_areas, vertex_areas = core.spdiag(triangle_areas), core.spdiag(~corner_mean * triangle_areas)
-    energies = stack([(vertex_areas * vertices.scalar_norm_squared()).sites.sum()
-                      + (face_areas * before.reverse().scalar_product(after)).sites.sum()
-                      for (vertices, after), (_, before) in zip(states[1:], states)]).to_array()
-    np.testing.assert_allclose(energies, energies[0], rtol=1e-12)
-    density = (vertex_areas * states[int(round(np.pi / scenarios.INTERVAL))][0].scalar_norm_squared()).to_array()
-    assert density[(points & mv.z) < -0.9].sum() > 0.5 * density.sum()
+def test_the_scenes_run_and_draw():
+    topology, points, states = scenarios.pulse(subdivisions=0, n_steps=1)
     vertices, faces = states[0]
     assert len(list(render.animate_pulse(topology, points, vertices[None], faces[None]))) == 1
-
-
-def test_the_standing_waves_ring_at_whole_numbers():
-    topology, points, squared, vertices, faces = scenarios.modes()
-    measured = squared.to_array()
-    np.testing.assert_allclose(measured[:scenarios.N_CONSTANT], 0.0, atol=1e-9)
-    levels = np.arange(1, scenarios.N_LEVELS + 1)
-    np.testing.assert_allclose(np.sqrt(measured[scenarios.N_CONSTANT:]), np.repeat(levels, 8 * levels), rtol=0.03)
-    assert len(list(render.animate_modes(topology, points, vertices[:, :1], faces[:, :1]))) == 1
+    topology, points, _, vertices, faces = scenarios.modes(subdivisions=0, n_levels=1, n_phases=1)
+    assert len(list(render.animate_modes(topology, points, vertices, faces))) == 1

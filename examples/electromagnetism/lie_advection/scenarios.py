@@ -6,18 +6,17 @@ from itertools import islice
 
 import numpy as np
 
-from numga import NumpyContext, stack
+from numga import Algebra, NumpyContext, stack
 from numga.algebras import STA2D as ga
-from numga.sparse import spdiag
 from examples.util import shapes
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
 Bivector = ga.gatype.bivector()                                              # Bivector+
-Magnetic = Bivector.derive.within("x y")                                     # Bivector+
+Magnetic = Bivector.derive.within(Algebra("x+y+"))                           # Bivector+
 Point = ga.gatype.antivector()                                               # Antivector-
 # The planes of x and of y, whose duals are the directions across and up the disk.
-Upright = ga.gatype.from_blades("x y")                                       # Vector+
+Upright = ga.gatype.vector().derive.within(Algebra("x+y+"))                  # Vector+
 
 horizontal, vertical = mv.x.dual(), mv.y.dual()                              # [] Point-, Point-
 ribbon_step = 0.55
@@ -84,7 +83,7 @@ def main() -> None:
     # A fixed edge's reading changes by the field on its world sheet; ideal Ohm's law zeroes the field on the
     # comoving sheet, leaving the patch of space between the two, which the magnetic plane alone reads.
     mesh_swept_patches = fixed_sheets - comoving_sheets                      # Patch-[edges]
-    advection = spdiag(Magnetic & mesh_swept_patches)(operators.edge_curl)   # (Scalar+ <- Scalar+)[edges <- edges]
+    advection = (Magnetic & mesh_swept_patches)(operators.edge_curl)         # (Scalar+ <- Scalar+)[edges <- edges]
     rate = advection - operators.curl_laplacian * resistivities[:, None]     # [cases] (Scalar+ <- Scalar+)[edges <- edges]
 
     # Retain scalar diagnostics and the final state; the mesh fields stream through one at a time.

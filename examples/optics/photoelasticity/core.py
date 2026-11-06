@@ -20,18 +20,18 @@ absorption, reflection and ray bending are neglected.
 
 import numpy as np
 
-from numga import NumpyContext
+from numga import Algebra, NumpyContext
 from numga.algebras import STA as ga
 
 # Each coefficient holds a pair of amplitudes, the field now and a quarter period later: complex numbers,
 # on which a delay by an angle of the period, `np.exp(1j * angle)`, turns every pair alike.
 mv = NumpyContext(ga, dtype=np.complex128).multivector
 Scalar = ga.gatype.scalar()                                # Scalar+
-# Directions in the plate: positions, and the tractions across cuts.
-Planar = ga.gatype.antivector().derive.containing("z t")   # Antivector-
-Traction = Planar                                          # Antivector-
 # Cuts through the plate: planes, extrinsic, which read how far a direction crosses them.
-Cut = ga.gatype.vector().derive.within("x y")              # Vector+
+Cut = ga.gatype.vector().derive.within(Algebra("x+y+"))    # Vector+
+# Directions in the plate: positions, and the tractions across cuts.
+Planar = Cut.derive.dual                                   # Antivector-
+Traction = Planar                                          # Antivector-
 Stress = ga.gatype((Traction, Cut))                        # Traction- <- Cut+
 # The electric field, and the optical components as maps on it.
 Field = ga.gatype.bivector()                               # Bivector+

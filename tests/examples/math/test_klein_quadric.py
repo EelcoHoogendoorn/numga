@@ -3,7 +3,6 @@ fourth line crosses the quadric of the other three, real or complex."""
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.math.klein_quadric import core, render, scenarios
@@ -34,9 +33,7 @@ def test_the_transversals_meet_all_four_lines_and_pass_through_the_crossings():
     np.testing.assert_allclose(off.min(axis=-1), 0.0, atol=1e-10)
 
 
-def test_scenes_draw():
-    scenes = list(scenarios.swing(4, 12))
-    figure = render.draw(*scenes[0])
-    assert isinstance(figure, plt.Figure)
-    plt.close(figure)
-    assert len(list(render.animate(scenes, len(scenes)))) == 4
+def test_one_frame_of_the_swing_draws():
+    scenes = list(scenarios.swing(1, 3))
+    render.draw(*scenes[0])
+    next(render.animate(scenes, 1))

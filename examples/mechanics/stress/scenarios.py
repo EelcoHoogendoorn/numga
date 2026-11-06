@@ -39,18 +39,18 @@ def frames() -> tuple[tuple[core.Point, core.Point, core.Point, core.Point, core
     return core.views(strain, stress, directions, rotors), values
 
 
-def turns() -> core.Rotor:
-    """The frames turning half a turn in the shear plane from the principal frame `[frames]`."""
+def turns(n_frames: int = N_FRAMES) -> core.Rotor:
+    """The n_frames frames turning half a turn in the shear plane from the principal frame `[frames]`."""
     _, _, _, _, principal = material()
-    angles = np.linspace(0.0, np.pi, N_FRAMES, endpoint=False)
+    angles = np.linspace(0.0, np.pi, n_frames, endpoint=False)
     return ((x ^ y) * (-angles / 2)).exp() * principal                        # [frames] Rotor+
 
 
-def turning() -> Iterator[tuple[core.Point, core.Point, core.Point, core.Point, core.Point]]:
-    """Per frame, the cube seen from a frame turning in the shear plane."""
+def turning(n_frames: int = N_FRAMES) -> Iterator[tuple[core.Point, core.Point, core.Point, core.Point, core.Point]]:
+    """Per frame of n_frames, the cube seen from a frame turning in the shear plane."""
     strain, stress, _, directions, _ = material()
-    rotors = turns()                                                          # [frames] Rotor+
-    for frame in range(N_FRAMES):
+    rotors = turns(n_frames)                                                  # [frames] Rotor+
+    for frame in range(n_frames):
         yield core.views(strain, stress, directions, rotors[frame])
 
 

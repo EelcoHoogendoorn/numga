@@ -23,9 +23,9 @@ DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------
-def bending():
+def bending(n_divisions: int = N_DIVISIONS, n_frames: int = N_FRAMES, n_iterations: int = N_ITERATIONS):
     """The bar bent across the handle poses by as-rigid-as-possible iteration and by Laplacian editing."""
-    topology, rest_vertices = core.bar(N_DIVISIONS, LENGTH)
+    topology, rest_vertices = core.bar(n_divisions, LENGTH)
     axial_position = mv.x & rest_vertices                                           # Scalar+[vertices]
     near_end = axial_position < -LENGTH / 2 + MARGIN                                # [vertices]
     far_end = axial_position > LENGTH / 2 - MARGIN                                  # [vertices]
@@ -33,9 +33,9 @@ def bending():
     far_weight = mv.scalar(far_end[..., None]).field()                              # Scalar+[vertices]
     poses = [
         rest_vertices + far_weight * (far_end_pose(rest_vertices, angle) - rest_vertices)  # Point-[vertices]
-        for angle in np.linspace(0.0, BEND_ANGLE, N_FRAMES + 1)[1:]
+        for angle in np.linspace(0.0, BEND_ANGLE, n_frames + 1)[1:]
     ]
-    frames = list(core.deform(topology, rest_vertices, handles, poses, STIFFNESS, N_ITERATIONS))
+    frames = list(core.deform(topology, rest_vertices, handles, poses, STIFFNESS, n_iterations))
     rigid_frames = stack([rigid_vertices for rigid_vertices, _, _ in frames])       # [frames] Point-[vertices]
     laplacian_frames = stack([laplacian_vertices for _, laplacian_vertices, _ in frames])  # [frames] Point-[vertices]
     return topology, rest_vertices, rigid_frames, laplacian_frames, handles, poses[-1], frames[-1][2]

@@ -42,8 +42,8 @@ mv = NumpyContext(ga).multivector
 Point = ga.gatype.antivector()                                                 # Antivector-
 Plane = ga.gatype.vector()                                                     # Vector+
 # A chord is the join of two points, a line oriented along itself; a pole is the meet of two planes.
-Chord = (Point & Point).output_gatype                                          # Antibivector-
-Pole = (Plane ^ Plane).output_gatype                                           # Bivector+
+Chord = ga.gatype(Point & Point)                                               # Antibivector-
+Pole = ga.gatype(Plane ^ Plane)                                                # Bivector+
 Quadric = ga.gatype((Plane, Point))                                            # Plane+ <- Point-
 Envelope = ga.gatype((Pole, Chord))                                            # Pole+ <- Chord-
 Motor = ga.gatype.rotor()                                                      # Rotor+

@@ -43,7 +43,7 @@ context = NumpyContext(ga)
 mv = context.multivector
 positive_names, negative_names = "xyzwvu", "tsr"
 # The points of the four Euclidean directions x y z w: the antivectors that contain all five others.
-Euclidean = ga.gatype.antivector().derive.containing("v u t s r")   # Antivector-
+Euclidean = ga.gatype.vector().derive.within(Algebra("x+y+z+w+")).derive.dual   # Antivector-
 Antitrivector = ga.gatype.antitrivector()                           # Antitrivector-
 
 # The pseudoscalar of the four Euclidean directions commutes with their bivectors and squares to one:
@@ -72,8 +72,8 @@ def linking(first: Euclidean, second: Euclidean) -> Antitrivector:
     separation = middle_first[:, None] - middle_second[None, :]                  # [segments, segments] Antivector-
     # The volume the separation spans with the two segments, their join.
     volume = separation & step_first[:, None] & step_second[None, :]             # [segments, segments] Antitrivector-
-    # In this algebra an antivector squares to minus its length squared.
-    length = separation.scalar_norm_squared().abs().square_root()                # [segments, segments] Scalar+
+    # In this algebra an antivector squares to minus its length squared, and its dot, read through its dual, is its length squared.
+    length = separation.antinorm()                                               # [segments, segments] Scalar+
     return (volume / length ** 3).sum() / (4 * np.pi)                            # [] Antitrivector-
 
 
@@ -82,8 +82,9 @@ def signature(p: int, q: int) -> tuple[GAType, GAType, Extensor, Extensor]:
     """The first p positive and q negative directions: their bivectors and even multivectors as
     types, the product of the positive ones, and their pseudoscalar."""
     names = positive_names[:p] + negative_names[:q]
-    Bivector = ga.gatype.bivector().derive.within(" ".join(names))
-    Even = ga.gatype.even().derive.within(" ".join(names))
+    directions = Algebra.from_pqr(p, q, 0, names)
+    Bivector = ga.gatype.bivector().derive.within(directions)
+    Even = ga.gatype.even().derive.within(directions)
     positives = getattr(mv, positive_names[:p])
     pseudoscalar = getattr(mv, names)
     return Bivector, Even, positives, pseudoscalar

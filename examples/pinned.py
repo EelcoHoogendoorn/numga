@@ -30,6 +30,7 @@ EXAMPLES = (
     "fluids.eigen_fluids",
     "electromagnetism.superconductor",
     "fluids.superfluid",
+    "thermodynamics.magnetotransport",
     "quantum.process_tomography",
     "mechanics.elastica",
     "electromagnetism.piezoelectric",

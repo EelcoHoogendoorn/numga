@@ -27,27 +27,27 @@ N_PHASES = 25
 
 
 # --- math -----------------------------------------------------------------------------
-def pulse() -> tuple[core.Topology, core.Point, list[tuple[core.Even, core.Even]]]:
+def pulse(subdivisions: int = SUBDIVISIONS, n_steps: int = N_STEPS) -> tuple[core.Topology, core.Point, list[tuple[core.Even, core.Even]]]:
     """A bump of the xy plane at the north pole spreads over the sphere: the sphere and its points, with the vertex
     and face fields at every step, `Even+[vertices]` and `Even-[faces]`."""
-    topology, coordinates = shapes.sphere(SUBDIVISIONS)
+    topology, coordinates = shapes.sphere(subdivisions)
     points = mv.vector(coordinates).dual().field()                              # Point-[vertices]
     start = ((points - mv.z.dual()).norm_squared() * (-0.5 / WIDTH**2)).exp() * mv.xy   # Even+[vertices]
-    return topology, points, list(islice(core.spread(topology, points, start, INTERVAL), N_STEPS))
+    return topology, points, list(islice(core.spread(topology, points, start, INTERVAL), n_steps))
 
 
-def modes() -> tuple[core.Topology, core.Point, core.Scalar, core.Even, core.Even]:
+def modes(subdivisions: int = SUBDIVISIONS, n_levels: int = N_LEVELS, n_phases: int = N_PHASES) -> tuple[core.Topology, core.Point, core.Scalar, core.Even, core.Even]:
     """The standing waves of the first few frequencies, one of each, swing over their periods: the sphere and its
     points, the frequencies squared of all the waves found, and the vertex and face fields
     `[frequencies, phases] Even+[vertices]` and `[frequencies, phases] Even-[faces]`."""
-    topology, coordinates = shapes.sphere(SUBDIVISIONS)
+    topology, coordinates = shapes.sphere(subdivisions)
     points = mv.vector(coordinates).dual().field()                              # Point-[vertices]
-    sizes = N_CONSTANT + 8 * np.cumsum(np.arange(N_LEVELS + 1))               # [levels + 1]
+    sizes = N_CONSTANT + 8 * np.cumsum(np.arange(n_levels + 1))               # [levels + 1]
     # Of each frequency's waves, the part of a bump on the equator they hold, in all three planes: every
     # frequency drawn the same way round.
     probe = ((points - mv.x.dual()).norm_squared() * (-0.5 / WIDTH**2)).exp() * (mv.yz + mv.zx + mv.xy)  # Even+[vertices]
-    frequencies = np.arange(1, N_LEVELS + 1)
-    phases = np.linspace(0.0, 2 * np.pi, N_PHASES, endpoint=False)
+    frequencies = np.arange(1, n_levels + 1)
+    phases = np.linspace(0.0, 2 * np.pi, n_phases, endpoint=False)
     squared, vertices, faces = core.modes(topology, points, sizes, probe, frequencies, phases)
     return topology, points, squared, vertices, faces
 

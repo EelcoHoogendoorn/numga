@@ -18,7 +18,9 @@ import numpy as np
 from numga import Extensor
 from examples.thermodynamics import rendering as art
 from examples.util.wgsl import simplices, solids
+from examples.thermodynamics.heat_cycles import core
 
+mv = core.mv
 Reading = Callable[[Extensor], Extensor]
 
 # The charts' size in pixels and their ranges: volume and pressure, entropy and temperature.
@@ -49,7 +51,7 @@ class Charts:
                                            (art.mv.x, art.mv.y), (art.mv.w, 0.0))
         self.entropy_temperature = art.Diagram(entropy_range, temperature_range, (entropy_range[0], 0.0), n_rows,
                                                n_columns, ("S", "T"), (art.mv.x, art.mv.y), (art.mv.w, 0.0))
-        lines = art.gas_lines(temperature_of, pressure_of, cycle.context.multivector, state_entropies, state_volumes,
+        lines = art.gas_lines(temperature_of, pressure_of, mv, state_entropies, state_volumes,
                               art.GasLines(isochores, isobars, isotherms, adiabats))
         self.lines = lines
         self.pressure_lines = (art.level_family(self.volume_pressure, lines.isotherms.volume_pressure, "temperature",
@@ -122,14 +124,13 @@ def animate_cycle(temperature_of: Reading, pressure_of: Reading, cycle: Extensor
                   running: Iterator[Extensor]) -> Iterator[np.ndarray]:
     """The piston and the two charts at each state of the gas as it runs around the cycle."""
     charts = Charts(temperature_of, pressure_of, cycle)
-    blades = cycle.context.multivector
-    volumes = blades.v & cycle
+    volumes = mv.v & cycle
     largest = solids.context.include_from_algebra(volumes.max())
     temperatures = temperature_of(cycle)
     cold, hot = temperatures.min(), temperatures.max()
     for travelled, state in enumerate(running):
         warmth = float(((temperature_of(state) - cold) / (hot - cold)).to_array())
-        piston = art.gas_cylinder(solids.context.include_from_algebra(blades.v & state) * height_per_volume, warmth, False,
+        piston = art.gas_cylinder(solids.context.include_from_algebra(mv.v & state) * height_per_volume, warmth, False,
                                   largest * height_per_volume, cylinder_pixels)
         yield art.beside([piston] + charts.pictures(travelled))
 

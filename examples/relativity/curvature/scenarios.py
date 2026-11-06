@@ -37,7 +37,7 @@ def curvature_map() -> tuple[core.Curvature, core.Antivector, core.Antivector, c
     return plus, time_direction, travel, mv.x.dual()
 
 
-def detector() -> tuple[np.ndarray, np.ndarray, core.Antivector, core.Antivector, core.Antivector]:
+def detector(n_samples: int = n_samples) -> tuple[np.ndarray, np.ndarray, core.Antivector, core.Antivector, core.Antivector]:
     """A ring of beads through the packet in the plus, cross and circular polarizations: the samples, the
     profiles of each polarization `[times, polarizations, 2]`, the rest separations, and the displacements
     and accelerations, integrated from rest."""
@@ -56,7 +56,7 @@ def detector() -> tuple[np.ndarray, np.ndarray, core.Antivector, core.Antivector
     return time, profiles[:, None] * polarization_weights, reference, displacement, acceleration
 
 
-def doppler() -> tuple[np.ndarray, core.Scalar]:
+def doppler(n_observers: int = n_observers) -> tuple[np.ndarray, core.Scalar]:
     """The tidal amplitude of the unit plus wave as seen by observers boosted along the wave."""
     plus, _ = core.polarizations()
     rapidities = np.linspace(-max_rapidity, max_rapidity, n_observers)

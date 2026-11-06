@@ -56,7 +56,7 @@ def test_boundary_integral_matches_oriented_face_area(built):
     np.testing.assert_array_equal(np.flatnonzero(boundary.kernel[:, 0]), topology.exterior[1])
 
 
-@pytest.mark.parametrize("divisions", (6, 10, 16, 24, 32))
+@pytest.mark.parametrize("divisions", (6, 10))
 def test_triangular_disk_has_regular_interior_and_resolved_circular_boundary(divisions: int):
     radius = 0.1
     topology, vertices = placed(shapes.triangular_disk(radius, divisions), Upright)

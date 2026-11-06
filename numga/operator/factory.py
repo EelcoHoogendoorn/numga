@@ -13,6 +13,7 @@ from numga.gatype import rules
 from numga.gatype.rules import OperationRule
 from numga.extensor import Extensor
 from numga.gatype import GAType, Orientation, UnorientedSubspace
+from numga.gatype.errors import GATypeError
 from numga.gatype.traits import EMPTY_TRAITS, BladeProduct, Identity, TraitSet
 from numga.operator.kernel import SymbolicKernel
 from numga.subspace import SubSpace
@@ -191,11 +192,26 @@ class OperatorFactory:
         return self._grade_product(self._operand_gatype(left), self._operand_gatype(right), 0)
 
     def dot(self, left: GAType, right: GAType) -> Extensor:
-        """The dot product: the scalar part of ``left * reverse(right)``. On blades of one grade it is the
-        determinant of the dot products of their vector factors, the metric extended to every grade: in a
-        Euclidean signature positive on every blade, zero between grades, and on a value with itself its
-        ``scalar_norm_squared``."""
-        return self._dot(self._operand_gatype(left), self._operand_gatype(right))
+        """The dot product, the metric extended to every grade, read as the operands' orientation reads them. Of two
+        extrinsic operands it is the scalar part of ``left * reverse(right)``: on blades of one grade the determinant of
+        the dot products of their vector factors, in a Euclidean signature positive on every blade, zero between
+        grades, and on a value with itself its ``scalar_norm_squared``. Of two intrinsic operands, points, directions
+        and their joins, it is that of their duals, ``left.dual().dot(right.dual())``, with the metric dual of a
+        non-degenerate algebra and the complement of a degenerate one. In a non-degenerate algebra the two readings
+        differ by one sign, the antiscalar's own reverse product: they agree in the algebra of space and are opposite
+        in a spacetime, where a spatial direction's dot with itself is its length squared as in space. In a projective
+        algebra they are complementary: of a point the reverse product measures the weight and the dot the bulk, the
+        weight times the distance from the origin, and of a direction the dot is its length squared. An intrinsic
+        operand and an extrinsic one have no metric between them; they pair by the regressive product."""
+        left, right = self._operand_gatype(left), self._operand_gatype(right)
+        if left.orientation is not right.orientation:
+            raise GATypeError(
+                f"dot takes operands of one orientation; got {left.orientation.name} and {right.orientation.name}: "
+                "an extrinsic value and an intrinsic one pair by the regressive product, extrinsic & intrinsic"
+            )
+        if left.orientation is Orientation.extrinsic:
+            return self._dot(left, right)
+        return self._dual_dot(left, right)
 
     @lru_cache(maxsize=None)
     def _dot(self, left: GAType, right: GAType) -> Extensor:
@@ -203,6 +219,19 @@ class OperatorFactory:
         # The scalar product with every blade of the right operand reversed: its slices by their reverse signs.
         reverses = grade_transform_signs(self.algebra, "reverse", right.output_subspace.masks)
         return Extensor(self.algebra.exact, product.gatype, SymbolicKernel(product._kernel._values * reverses))
+
+    @lru_cache(maxsize=None)
+    def _dual_dot(self, left: GAType, right: GAType) -> Extensor:
+        """The dot of two intrinsic operands: the dot of their duals, as one operator on their own layouts. A map's
+        output is read through its dual, as a value is, and its inputs carry over as the product's do."""
+        left_dual, right_dual = self.dual(left.derive.output), self.dual(right.derive.output)
+        # The duals are signed permutations of blades, so the dot composed with them is the dot's own kernel,
+        # its slices permuted and signed: one operator of the dot's size on the operands' own layouts.
+        composed = self._dot(left_dual.gatype.derive.output, right_dual.gatype.derive.output).bind(
+            {0: left_dual, 1: right_dual},
+        )
+        gatype = rules.MULTIPLIED.result((left, right), composed.axes)
+        return Extensor(self.algebra.exact, gatype, composed.kernel)
 
     def bivector_product(self, left: GAType, right: GAType) -> Extensor:
         return self._grade_product(self._operand_gatype(left), self._operand_gatype(right), 2)

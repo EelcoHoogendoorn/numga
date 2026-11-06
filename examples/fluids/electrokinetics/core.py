@@ -38,12 +38,14 @@ from examples.fluids.electrokinetics.numerical import solve_coupled
 # Planar spacetime, and the volume a flow carries, a direction of its own with no metric.
 spacetime = Algebra("x+y+t-")
 ga = spacetime * Algebra("v0")
+# The plane of the channel.
+space = Algebra("x+y+")
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 Point = ga.gatype.antivector()                                                # Antivector-
 Plane = ga.gatype.vector()                                                    # Vector+
 # A drive: the field, the electric potential's gradient wedged with time, and the pressure's, wedged with volume.
-Drive = ga.gatype.from_blades("xt yt xv yv")                                  # Bivector+
+Drive = ga.gatype.bivector().derive.touching(space, Algebra("t-v0"))          # Bivector+
 Flux = ga.gatype.antibivector()                                               # Antibivector-
 axis = mv.x.dual()                                                            # [] Point-
 across = mv.y.dual()                                                          # [] Point-
@@ -53,7 +55,7 @@ volume = mv.v.dual()                                                          # 
 # The patch the plane of the flow spans, and the liquid's local turning in it read back as the moment that resists it,
 # per unit of viscosity.
 patch = axis & across                                                         # [] Patch-
-Rotation = ga.gatype.from_blades("xy")                                        # Bivector+
+Rotation = ga.gatype.bivector().derive.within(space)                          # Bivector+
 resisting = patch * (Rotation & patch)                                        # [] Patch- <- Bivector+
 # A velocity read as the plane that takes its circulation along a path: its run along and across, read back.
 circulating = (stack((mv.x, mv.y)) * (stack((mv.x, mv.y)) & Point)).sum(axis=0)   # [] Plane+ <- Point-
@@ -130,7 +132,7 @@ def double_layer(outflow: SparseExtensor, cells: Scalar, wall_charge: Scalar, va
         residual = outflow * potential - cells * (valences * concentrations).sum(axis=-1) - wall_charge
         # The charge a cell loses as its potential rises, by its ions' squared valences.
         susceptibility = (valences ** 2 * concentrations).sum(axis=-1)        # [...] Scalar+[vertices]
-        step = ((outflow + spdiag(cells * susceptibility)) * Scalar).solve(residual)     # [...] Scalar+[vertices]
+        step = ((outflow + cells * susceptibility) * Scalar).solve(residual)             # [...] Scalar+[vertices]
         # Newton's step, held below a thermal volt so that no Boltzmann factor changes by much more than e at once.
         potential = potential - step.tanh()
     return potential

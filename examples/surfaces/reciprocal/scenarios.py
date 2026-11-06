@@ -29,16 +29,16 @@ def grid() -> tuple[core.Topology, core.Point, core.Scalar]:
     inside = (np.abs(coords) < 1).all(axis=-1)
     coords[inside] += JITTER * np.random.default_rng(GRID_SEED).normal(size=(inside.sum(), 2))
     topology, coords = shapes.delaunay(coords)
-    points = core.mv.antivector(np.concatenate([coords, np.zeros((len(coords), 1))], axis=-1)).field()   # Point-[vertices]
+    points = core.mv.vector(np.concatenate([coords, np.zeros((len(coords), 1))], axis=-1)).dual().field()   # Point-[vertices]
     return topology, points, points.scalar_norm_squared() / 2  # Scalar+[vertices]
 
 
-def breathing() -> tuple[core.Topology, core.Point, core.Scalar]:
+def breathing(n_frames: int = N_FRAMES) -> tuple[core.Topology, core.Point, core.Scalar]:
     """The grid's mesh and points come with their heights at every frame of one breath about the paraboloid, each
     with its own phase."""
     topology, points, heights = grid()
     phases = np.random.default_rng(PHASE_SEED).uniform(0, 2 * np.pi, topology.n_vertices)
-    times = np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)[:, None]
+    times = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)[:, None]
     swings = core.mv.scalar((AMPLITUDE * np.sin(times + phases))[..., None]).field()   # [frames] Scalar+[vertices]
     return topology, points, heights + swings                                          # [frames] Scalar+[vertices]
 

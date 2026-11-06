@@ -52,8 +52,6 @@ inductive_elapsed = 0.07                           # s
 n_inductive_steps = 105
 inductive_time_step = inductive_elapsed / n_inductive_steps
 n_substeps = 4
-# The planes of x and of y, whose duals are the directions across the disc.
-Spatial = core.ga.gatype.from_blades("x y")                                # Vector+
 # The magnet's centre, and its field there in the runs without induction, on the straight-fibre disc, and with
 # induction.
 centre = (core.mv.x * magnet_offset).dual()                                # [] Point-
@@ -63,10 +61,10 @@ inductive_magnet_field = core.mv.xy * inductive_field_strength             # [] 
 
 
 # --- math -----------------------------------------------------------------------------
-def materials() -> tuple[core.Disc, core.Conductivity]:
+def materials(n_divisions: int = n_divisions) -> tuple[core.Disc, core.Conductivity]:
     """The disc and its three material fields, each with the same mean conductivity."""
     topology, coordinates = shapes.concentric_disk(material_radii, n_divisions)
-    points = core.mv(Spatial, coordinates).dual().field()                   # Point-[vertices]
+    points = core.mv(core.Spatial, coordinates).dual().field()              # Point-[vertices]
     disc = core.disc(topology, points)
     principal = thickness * np.stack((radial_conductivity, circumferential_conductivity), axis=-1)  # [cases, axes]
     # Fibres occupy an annulus; the centre and rim conduct equally in both directions.
@@ -85,7 +83,7 @@ def scene(disc: core.Disc, conductivity: core.Conductivity) -> core.Response:
 def spin_down() -> tuple[core.Disc, Iterator[core.Motion]]:
     """A disc with straight fibres, released to slow under its own magnetic drag."""
     topology, coordinates = shapes.triangular_disk(radius, n_divisions)
-    points = core.mv(Spatial, coordinates).dual().field()                   # Point-[vertices]
+    points = core.mv(core.Spatial, coordinates).dual().field()              # Point-[vertices]
     disc = core.disc(topology, points)
     directions = stack((core.mv.x.dual(), core.mv.y.dual()))                 # [axes] Current-
     principal = thickness * np.array([along_conductivity, across_conductivity])
@@ -108,7 +106,9 @@ def materials_braking(disc: core.Disc, conductivity: core.Conductivity) -> Itera
                         conductivity, inertia, orientation, spin, heat, time_step, n_steps)
 
 
-def inductive_materials(disc: core.Disc, conductivity: core.Conductivity) -> Iterator[core.InductiveMotion]:
+def inductive_materials(disc: core.Disc, conductivity: core.Conductivity, n_modes: int = n_modes,
+                        n_harmonics: int = n_harmonics, n_inductive_steps: int = n_inductive_steps,
+                        n_substeps: int = n_substeps) -> Iterator[core.InductiveMotion]:
     """Current build-up and magnetic braking, with inductive memory on the rotating discs."""
     modes = core.current_modes(disc, conductivity, permeability, n_modes)
     orientation = core.mv.rotor().broadcast_to(conductivity.shape)            # [cases] Rotor+

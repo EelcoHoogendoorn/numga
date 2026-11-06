@@ -14,7 +14,7 @@ from examples.util.topology import Topology
 def test_projective_readings_and_quotient_derivative(ga):
     mv = NumpyContext(ga).multivector
     triangle = Topology(3, [[0, 1, 2]])
-    corners = mv.antivector([[1, 0, 1], [0, 1, 1], [-0.5, -0.2, 1]])
+    corners = mv.vector([[1, 0, 1], [0, 1, 1], [-0.5, -0.2, 1]]).dual()
     scales = np.array([0.35, 2.2, 1.1])
     lifted = (corners * scales).field()
     tails, heads = triangle.incidence[1, 0] * lifted

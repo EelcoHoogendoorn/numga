@@ -40,14 +40,16 @@ from numga.sparse import SparseExtensor, spdiag
 from examples.util.topology import Topology
 
 # The plane, and the volume, the mass and the entropy a parcel holds, each a direction of its own with no metric.
-ga = Algebra("x+y+") * Algebra("v0m0s0")
+space = Algebra("x+y+")
+amounts = Algebra("v0m0s0")
+ga = space * amounts
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 Point = ga.gatype.antivector()                                                # Antivector-
 Plane = ga.gatype.vector()                                                    # Vector+
 # The planes reading a place's run along the layer and up it.
-Upright = ga.gatype.from_blades("x y")                                        # Vector+
-Drive = ga.gatype.from_blades("xv yv xm ym xs ys")                            # Bivector+
+Upright = Plane.derive.within(space)                                          # Vector+
+Drive = ga.gatype.bivector().derive.touching(space, amounts)                  # Bivector+
 Flux = ga.gatype.antibivector()                                               # Antibivector-
 # The layer's two directions, along its length and up its depth, and the planes reading a direction's run along each.
 length = mv.x.dual()                                                          # [] Point-
@@ -168,7 +170,7 @@ def convecting(liquid: Forms, interior: SparseExtensor, places: Point, density: 
     # Each half step's implicit maps, solved with the walls held: the flow's inertia with its viscosity, and the cells'
     # heat with its conduction.
     flow_step = holding(liquid.kinetic / (dt / 2) + liquid.viscous, interior)
-    heat_step = holding(spdiag(liquid.cells / (dt / 2)) + liquid.conduction, interior)
+    heat_step = holding(liquid.cells / (dt / 2) + liquid.conduction, interior)
     # A field's values at the free vertices, nothing at the walls, and the temperature the walls hold.
     held = ~interior * interior                                               # Scalar+[vertices <- vertices]
     wall_temperature = temperature - held * temperature                       # [...] Scalar+[vertices]

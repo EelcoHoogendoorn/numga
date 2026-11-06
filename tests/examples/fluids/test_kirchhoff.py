@@ -1,11 +1,9 @@
 """Kirchhoff's equations: the fluid's inertia from the confocal family matches Lamb's coefficients,
-turning a body about its axis of symmetry moves no fluid, and the scenes draw."""
+the inertia is symmetric and moves with the body, turning a body about its axis of symmetry moves no fluid, and the
+bodies glide one step, their first frame drawn."""
 
 from __future__ import annotations
 
-from itertools import islice
-
-import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
@@ -49,10 +47,7 @@ def test_turning_about_the_axis_of_symmetry_moves_no_fluid():
     np.testing.assert_allclose(((y ^ z) & fluid(y ^ z)).to_array(), 0, atol=1e-12)
 
 
-def test_scenes_draw():
-    figure = render.draw_coefficients(scenarios.ASPECTS, scenarios.coefficients())
-    assert isinstance(figure, plt.Figure)
-    plt.close(figure)
-    motors = scenarios.gliding()
+def test_the_bodies_glide_one_step_and_draw():
+    motors = scenarios.gliding(n_steps=1)                                    # [steps + 1, cases] Motor+
     _, impulse, _ = scenarios.launch()
-    assert len(list(render.animate_gliding(impulse, islice(scenarios.frames(motors), 2)))) == 2
+    next(render.animate_gliding(impulse, scenarios.frames(motors)))

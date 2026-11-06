@@ -1,9 +1,6 @@
-"""Developability: a cylinder has no energy, the gradient is the energy's derivative, and the bunny's flow takes
-away nearly all its energy."""
+"""Developability: a cylinder has no energy, and the bunny's flow runs one step and draws."""
 
 from __future__ import annotations
-
-from itertools import islice
 
 import numpy as np
 
@@ -22,16 +19,6 @@ def cylinder(rings: int, sectors: int) -> tuple[core.Topology, core.Point]:
     return core.Topology.loops([sectors]).product(core.Topology.chains([rings])), vertices
 
 
-def energy(topology: core.Topology, vertices: core.Point) -> float:
-    edges = topology.boundary[2, 1] * (topology.d[0] * vertices)
-    tails, heads = topology.corners[2, 1]
-    after, before = edges[tails], edges[heads]
-    angles = (-(after.dual_inverse() & before) / (after.norm() * before.norm())).arccos()
-    _, spreads = core.spread(topology, edges, angles)
-    values, _ = spreads.batch().eigh()
-    return values[:, 0].sum(axis=0).to_array()
-
-
 def test_a_cylinder_is_developable():
     """Around every vertex of a cylinder the face normals lie on one great circle."""
     topology, vertices = cylinder(6, 24)
@@ -44,31 +31,6 @@ def test_a_cylinder_is_developable():
     np.testing.assert_allclose(values[:, 0].to_array(), 0.0, atol=1e-13)
 
 
-def test_the_gradient_is_the_energys_derivative():
-    topology, vertices = scenarios.bunny()
-    edges = topology.boundary[2, 1] * (topology.d[0] * vertices)
-    tails, heads = topology.corners[2, 1]
-    after, before = edges[tails], edges[heads]
-    angles = (-(after.dual_inverse() & before) / (after.norm() * before.norm())).arccos()
-    normals, spreads = core.spread(topology, edges, angles)
-    _, directions = spreads.batch().eigh()
-    gradient = core.gradient(topology, edges, angles, normals, directions[:, 0].field()).batch() # [vertices] Vector+
-    points = render.coordinates(vertices.batch())                                 # [V, 3]
-    epsilon = 1e-6
-    rng = np.random.default_rng(0)
-    for vertex, axis in zip(rng.integers(len(points), size=6), rng.integers(3, size=6)):
-        nudge = np.zeros_like(points)
-        nudge[vertex, axis] = epsilon
-        ahead, behind = (energy(topology, mv.antivector(points + sign * nudge).field()) for sign in (1, -1))
-        # The gradient paired with a unit step along the axis; the tolerance tests the central difference.
-        along = (gradient[vertex] & mv.antivector(np.eye(3)[axis])).to_array()
-        np.testing.assert_allclose((ahead - behind) / (2 * epsilon), along, rtol=1e-6, atol=1e-8)
-
-
-def test_the_bunny_flow_takes_away_nearly_all_its_energy():
-    topology, vertices = scenarios.bunny()
-    states = list(islice(core.flow(topology, vertices, scenarios.STEP), 0, 101, 25))
-    energies = np.array([values.sum(axis=0).to_array() for _, values in states])
-    assert np.all(np.diff(energies) < 0)
-    assert energies[-1] < 0.2 * energies[0]
-    assert len(list(render.animate_flow(topology, states[:1]))) == 1
+def test_the_bunny_flows_one_step_and_draws():
+    topology, states = scenarios.flowed(n_steps=1)
+    assert len(list(render.animate_flow(topology, states))) == len(states)

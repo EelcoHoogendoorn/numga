@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import signal
-import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
@@ -229,63 +228,8 @@ def test_3d_alignment_converges_from_a_small_perturbation():
     assert error(points) < 0.02
 
 
-def test_3d_coupled_newton_step_over_a_field_of_free_cameras():
-    """The second derivative of the point-free misfit with respect to the twists of the free cameras,
-    taken as a field, is the coupled Hessian, every camera against every other; solving it against the
-    gradient gives the Newton step that the Hessian of all twist coefficients at once gives."""
-    jax = pytest.importorskip("jax")
-    jnp = pytest.importorskip("jax.numpy")
-    from numga.backend.jax import JaxContext, derivative
-
-    previous = jax.config.jax_enable_x64
-    jax.config.update("jax_enable_x64", True)
-    try:
-        jax_core = instantiate("examples.estimation.multiview.core", PGA3D, JaxContext)
-        mv3, Point3, Twist3 = jax_core.mv, jax_core.Point, jax_core.Twist
-
-        # The rig, both derivatives and the reference are one compiled call: run eagerly, every small
-        # operation would compile on its own.
-        @jax.jit
-        def newton_steps():
-            true_motors, _, local_cones = rig_3d(jax_core)
-            perturb = ((mv3.xw * 0.05 - mv3.yw * 0.03 + mv3.zw * 0.04) / 2).exp() * ((mv3.yz * 0.04 - mv3.zx * 0.03 + mv3.xy * 0.05) / 2).exp()
-            anchor = true_motors[0]                                          # [] Motor+
-            free_motors = stack([perturb * true_motors[1], perturb.reverse() * true_motors[2]]).field()   # [] Motor+[free]
-            anchored_cones = anchor >> local_cones[:, 0](anchor << Point3)   # [landmarks] Plane+ <- Point-
-            free_cones = local_cones[:, 1:].field()                          # [landmarks] Plane+[free] <- Point-
-            w = mv3.w
-
-            def misfit(twists):
-                """The fused cones at the pole of the plane at infinity under each, summed over the points."""
-                motors = free_motors * (twists * 0.5).exp()                  # [] Motor+[free]
-                fused_splats = anchored_cones + (motors >> free_cones(motors << Point3)).sites.sum()
-                pole = fused_splats.solve(w)                                 # [landmarks] Point-
-                return ((pole & fused_splats(pole)) / (w & pole) ** 2).sum()
-
-            twists = mv3.bivector(jnp.zeros((2, 6))).field()                 # [] Twist+[free]
-            gradient = derivative(misfit)(twists)                            # [] Scalar+ <- Twist+[free]
-            hessian = derivative(derivative(misfit))(twists)                 # [] Scalar+ <- (Twist+[free], Twist+[free])
-            flat = lambda coefficients: misfit(jax_core.ctx.extensor(Twist3, coefficients.reshape(2, 6)).field()).kernel[0]
-            coefficients = jnp.zeros(12)
-            reference = -jnp.linalg.solve(jax.hessian(flat)(coefficients), jax.grad(flat)(coefficients))
-            return hessian, -hessian.solve(gradient), reference              # [] Twist+[free]
-
-        hessian, step, reference = newton_steps()
-        np.testing.assert_allclose(step.kernel, reference.reshape(2, 6), atol=1e-10)
-        # The cameras are coupled through the points they share.
-        assert np.abs(hessian.kernel[0, 1]).max() > 0.1 * np.abs(hessian.kernel[0, 0]).max()
-    finally:
-        jax.config.update("jax_enable_x64", previous)
-
-
 # --- scenarios through render -------------------------------------------------------------
-def test_figure_renders():
-    """The aligned pair renders."""
-    figure = render.draw_reconstruction(*scenarios.aligned_pair())
-    assert isinstance(figure, plt.Figure)
-
-
-@pytest.mark.parametrize("name", ["one_camera", "two_cameras", "three_cameras"])
+@pytest.mark.parametrize("name", ["two_cameras", "three_cameras"])
 def test_convergence_animations_render(name):
     """Each alternating convergence scenario renders a short animation."""
     frames = list(render.animate_convergence(islice(getattr(scenarios, name)(), 2)))

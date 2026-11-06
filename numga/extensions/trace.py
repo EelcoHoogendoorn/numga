@@ -4,13 +4,14 @@ Axes are numbered with the output as axis 0 and the inputs as axes 1 to n, in th
 kernel's axes. A axis carries an index unless it is a scalar output: a form `Scalar <- (V, V)` has
 two, a map `V <- V` has two, and so the two axes may be left unnamed exactly when there are two.
 
-`trace` pairs through the regressive product: two inputs of complementary spaces through `&`, and
-the output, lifted to an input by meeting it with its complement, against an input of its own space.
-`contract` pairs through the inner product: two inputs of one space through the space's metric, and
-the output, lifted by `Space | value`, against an input of its own space. Either lift is a spelling
-of the same thing: `f.trace() == (Antivector & f).trace(1, 2)` and `f.contract() ==
-(Vector | f).contract(1, 2)`. On an output the pairing and its inverse cancel, so both give the
-matrix trace, and need neither metric nor orientation.
+`trace` pairs through the regressive product: two inputs of complementary spaces through `&`, read
+with the extrinsic factor first, and the output, lifted to an input by meeting it with its
+complement, against an input of its own space. `contract` pairs through the inner product: two
+inputs of one space through the space's metric, and the output, lifted by `Space | value`, against
+an input of its own space. Either lift is a spelling of the same thing: `f.trace() ==
+(f & Antivector).trace(1, 2)` and `f.contract() == (Vector | f).contract(1, 2)`. On an output the
+pairing and its inverse cancel, so both give the matrix trace, and need neither metric nor
+orientation.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from functools import lru_cache
 import numpy as np
 
 from numga.extensor import Extensor
+from numga.extensions._linalg import _reading
 from numga.gatype import GAType, Orientation
 from numga.operator.kernel import SymbolicKernel
 
@@ -34,11 +36,13 @@ def trace_unnamed(value: Extensor) -> Extensor:
 def trace(value: Extensor, first: int, second: int) -> Extensor:
     """Pair two axes through the regressive product and sum over them.
 
-    Two inputs of complementary spaces pair through `&`: the sum of `value(e_k, e^k)` over the
-    blades `e_k` of the first and the blades `e^k` of the second with `e_l & e^k` one for `l == k`
-    and zero otherwise. The output pairs with an input of its own space, as if met with its
-    complement first; on `Space <- Space` this is the matrix trace. In PGA,
-    `(Plane & f(Point)).trace(1, 2) == f.trace()`.
+    Two inputs of complementary spaces pair through `&`, read with the extrinsic factor first: the
+    sum of `value(e_k, e^k)` over the blades `e_k` of the first and the blades `e^k` of the second
+    with `e_l & e^k`, or `e^k & e_l` where only the second is extrinsic, one for `l == k` and zero
+    otherwise. Swapping the factors costs the grade involute in an even dimension, so read so, the
+    trace of a form with two inputs of opposite orientations does not depend on their order. The
+    output pairs with an input of its own space, as if met with its complement first; on
+    `Space <- Space` this is the matrix trace. In PGA, `(Plane & f(Point)).trace(1, 2) == f.trace()`.
     """
     first, second = value.gatype.axis_roles.paired(first, second)
     if first == 0:
@@ -120,8 +124,7 @@ def _incidence_reciprocal(first_axis: GAType, second_axis: GAType) -> Extensor:
     meets in one, and every other blade of the first in zero."""
     first, second = first_axis.output_subspace, second_axis.output_subspace
     algebra = first.algebra
-    incidence = algebra.operator.regressive(first_axis, second_axis)           # Scalar <- (first, second)
-    pairing = incidence.cast(algebra.subspace.scalar())._kernel.values[0]       # [first blades, second blades]
+    pairing = _reading(first_axis, second_axis)._kernel.values[0]                # [first blades, second blades]
     if pairing.shape[0] != pairing.shape[1] or np.linalg.matrix_rank(pairing) < len(first):
         raise TypeError(f"trace pairs inputs of complementary spaces; {first} and {second} pair through the metric: contract them")
     return algebra.operator.build(

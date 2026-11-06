@@ -1,5 +1,5 @@
 """Gravitational-wave antenna patterns: a detector's sensitivity agrees with the closed form for a
-detector at the pole, and the figures draw."""
+detector at the pole, and the figures draw on a coarse sky."""
 
 from __future__ import annotations
 
@@ -26,11 +26,12 @@ def test_sensitivity_is_the_closed_form_for_a_detector_at_the_pole():
 
 def test_figures_draw():
     sites, arms = scenarios.detectors()
-    frames = scenarios.sky()
+    frames = scenarios.sky(n_samples=5)
     directions, zeniths = frames >> core.mv.x.dual(), sites >> core.mv.x.dual()
     to_plus, to_cross = scenarios.patterns(arms, frames)
     sensitivities = core.sensitivity(to_plus, to_cross)
     plt.close(render.draw_patterns(directions, to_plus, to_cross, sensitivities, zeniths, scenarios.NAMES))
     plt.close(render.draw_network(directions, sensitivities[0], sensitivities[1], zeniths, scenarios.NAMES))
     responses, rings = scenarios.polarization(sites[0], arms[0], frames, np.zeros(1))
-    assert len(render.animate_polarization(directions, responses, sites[0], arms[0], rings, scenarios.NAMES[0], scenarios.POLARIZATION_SIZE)) == 1
+    assert len(render.animate_polarization(directions, responses, sites[0], arms[0], rings, scenarios.NAMES[0],
+                                           scenarios.POLARIZATION_SIZE)) == 1

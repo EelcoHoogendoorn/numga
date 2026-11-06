@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
@@ -26,7 +25,6 @@ def test_the_oval_has_a_constant_focal_sum_and_its_tangents_lie_on_the_dual():
     np.testing.assert_allclose((tangents & dual(tangents)).to_array(), 0.0, atol=1e-12)
 
 
-def test_scenario_renders():
+def test_the_conic_draws():
     curve, foci, sample, _, tangents, conic, _ = scenarios.spherical_conic()
-    figure = render.draw_spherical_conic(curve, foci, sample, tangents, conic)
-    assert isinstance(figure, plt.Figure)
+    render.draw_spherical_conic(curve, foci, sample, tangents, conic)

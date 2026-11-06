@@ -1,9 +1,7 @@
-"""Magnetic resonance: the generator is the Bloch equations, and the scenarios pass their checks
-and draw."""
+"""Magnetic resonance: the generator is the Bloch equations."""
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
@@ -24,13 +22,13 @@ def test_generator_is_the_bloch_equations():
     np.testing.assert_allclose(change, expected, atol=1e-12)
 
 
-def test_scenarios_pass_their_checks_and_draw():
-    detunings, drives = np.linspace(-2.0, 2.0, 9), np.array([0.1, 1.0])
-    history, settled, _ = scenarios.nutation(np.array([0.0, 0.5]), 1.0, 60.0, 0.05, 20)
-    detuned, ensemble = scenarios.echo(40, 2.0, 2.5, 6.0, 0.01, 20, 1)
-    for figure in (render.draw_nutation(history, settled),
-                   render.draw_lines(detunings, drives, scenarios.lines(detunings, drives)[0]),
-                   render.draw_echo(ensemble, 0.2, 2.5, scenarios.T2),
-                   render.draw_decays(*scenarios.echo_decay(40, 2.0, 0.01, 8, 1), scenarios.T2)):
-        assert isinstance(figure, plt.Figure)
-        plt.close(figure)
+def test_the_scenes_draw_at_a_few_steps():
+    dt = scenarios.ECHO_DT
+    history, settled, _ = scenarios.nutation(scenarios.NUTATION_DETUNINGS[:1], scenarios.NUTATION_DRIVE,
+                                             scenarios.NUTATION_DT, scenarios.NUTATION_DT, 1)
+    render.draw_nutation(history, settled)
+    detunings, drives = scenarios.LINE_DETUNINGS[:2], scenarios.LINE_DRIVES[:1]
+    render.draw_lines(detunings, drives, scenarios.lines(detunings, drives)[0])
+    _, ensemble = scenarios.echo(2, scenarios.SPREAD, dt, 2 * dt, dt, 1, scenarios.SEED)
+    render.draw_echo(ensemble, dt, dt, scenarios.T2)
+    render.draw_decays(*scenarios.echo_decay(2, scenarios.SPREAD, dt, 2, scenarios.SEED), scenarios.T2)

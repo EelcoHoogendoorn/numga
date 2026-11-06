@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from numga import Algebra
 from numga.algebras import VGA3D as ga
 from numga.backend.jax import JaxContext
 
@@ -20,8 +21,8 @@ Scalar = ga.gatype.scalar()                                     # Scalar+
 # Positions and directions are intrinsic antivectors; wavevectors and planes are extrinsic vectors.
 Direction = ga.gatype.antivector()                              # Antivector-
 Plane = ga.gatype.vector()                                      # Vector+
-Horizontal = Direction.derive.containing("z")                   # Antivector-
-Wavevector = Plane.derive.within("x y")                         # Vector+
+Wavevector = Plane.derive.within(Algebra("x+y+"))               # Vector+
+Horizontal = Wavevector.derive.dual                             # Antivector-
 
 # The direction straight up.
 up = mv.z.dual()

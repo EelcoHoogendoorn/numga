@@ -34,7 +34,7 @@ counting_radii = np.linspace(0.0, 6.0, 61)
 vortex_share = 0.5
 
 
-def trap() -> tuple[core.Topology, np.ndarray]:
+def trap(n_rings: int = n_rings) -> tuple[core.Topology, np.ndarray]:
     """The trap's disk of triangles in rings: its topology and its vertices across and up `[V, 2]`."""
     return shapes.concentric_disk(np.array([radius]), n_rings)
 
@@ -48,10 +48,10 @@ def still_cloud(coordinates: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return amplitudes, angle_noise * rng.standard_normal(len(coordinates))
 
 
-def settled():
+def settled(n_rings: int = n_rings, n_steps: int = n_steps, stride: int = stride):
     """The trap's topology, its vertices `Point-[V]`, and the condensate at each frame of its descent `[frames]
     Wave+[V]`."""
-    topology, coordinates = trap()
+    topology, coordinates = trap(n_rings)
     vertices = (core.axis * coordinates[:, 0] + core.across * coordinates[:, 1]).field()   # Point-[V]
     potential = mv.scalar((0.5 * (coordinates ** 2).sum(axis=-1))[:, None]).field()   # Scalar+[V]
     amplitudes, angles = still_cloud(coordinates)

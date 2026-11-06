@@ -13,6 +13,13 @@ field on the left pairs with the output sites instead, `f * S`. A product of two
 multiplies their cells along the paths through shared sites. A map cell is applied, `S(field)`, and
 composes, `S(T)`. These operations preserve the arguments of maps carried by the field.
 
+A field of maps acts as its diagonal where it is the map that acts. Called on a sparse map, it composes with the cells
+at its sites, site by site, as it acts on a field: `F(S) == spdiag(F)(S)`. Added to a square sparse map, a field of maps
+or of values sits on the diagonal, as it applies: `(S + F)(f) == S(f) + F(f)`. A map or value without sites is the same
+at every site. In a product, and as what a sparse map is called on, a field of maps is a field like any other, its
+elements gathered and summed by the couplings; its diagonal there, and in a solve or an inverse, is asked for,
+`spdiag(F)` or `F.on_diagonal()`.
+
 An operation that reverses the order of the cells' products runs the couplings the other way: the
 reverse and the Clifford conjugate of multivector cells, so that `~(S * f) == ~f * ~S`, and the
 adjoint and adjugate of map cells. The others act cell by cell: the involute, grade selection, and
@@ -193,6 +200,11 @@ class SparseExtensor:
     def __call__(self, operand):
         return self.apply(operand)
 
+    def _applied_by(self, value: Extensor) -> SparseExtensor:
+        """A map called on this one, acting as it acts on a field: a field of maps over the output sites composes with
+        the cells at its sites, site by site, and a map without sites is the same at every site."""
+        return _diagonal(value, self.shape[0], _context(value))(self)
+
     def __getitem__(self, index) -> SparseExtensor:
         """The maps at an index of the leading axes, which hold separate maps of one pattern:
         `S[..., None]` gives the maps an axis to broadcast against the batch of a field."""
@@ -202,8 +214,9 @@ class SparseExtensor:
 
     # --- sums ----------------------------------------------------------------------------------
     def __add__(self, other: SparseExtensor | Extensor | GAType) -> SparseExtensor:
-        """The sum of two maps of the same sites; a map or value without sites is the same at every
-        site, on the diagonal, as it applies: `(Vector + S)(f) == f + S(f)`."""
+        """The sum of two maps of the same sites; a field over the sites is on the diagonal, each element
+        at its own site, and a map or value without sites the same at every site, as each applies:
+        `(F + S)(f) == F(f) + S(f)` and `(Vector + S)(f) == f + S(f)`."""
         if not isinstance(other, SparseExtensor):
             other = _on_diagonal(_meeting(self, other), other)
         if self.shape != other.shape:
@@ -241,14 +254,22 @@ class SparseExtensor:
 
 
 def _on_diagonal(value: SparseExtensor, other: Extensor | GAType) -> SparseExtensor:
-    """A map or value without sites, the same at every site of a square sparse map, on its diagonal."""
+    """A field or a value added to a square sparse map, on its diagonal."""
     if value.shape[0] != value.shape[1]:
-        raise TypeError(f"a value without sites has no diagonal in a sparse map of shape {value.shape}")
+        raise TypeError(f"a value has no diagonal in a sparse map of shape {value.shape}")
     promoted = operands.linear(value.cells.context, other)
     if promoted is None:
         raise TypeError(f"cannot add {type(other).__name__} to a sparse extensor")
-    other = value.cells.context.lower(promoted)
-    return SparseExtensor.from_diagonal(other[..., None].broadcast_to(other.shape + (value.shape[0],)).field())
+    return _diagonal(promoted, value.shape[0], value.cells.context)
+
+
+def _diagonal(value: Extensor, sites: int, context) -> SparseExtensor:
+    """A value on the site diagonal: a field each element at its own site, and a value without sites, lowered into the
+    context, the same at every one of the sites."""
+    if not value.gatype.fields:
+        value = context.lower(value)
+        value = value[..., None].broadcast_to(value.shape + (sites,)).field()
+    return SparseExtensor.from_diagonal(value)
 
 
 # A sparse extensor with a field on its diagonal, each element its own cell.
@@ -268,11 +289,11 @@ def _typed(value: SparseExtensor, context) -> SparseExtensor:
 
 
 def _context(other: object):
-    """The context of what a map of plain numbers meets: a field's or a typed map's own, or for a type, its
-    algebra's on NumPy."""
+    """The context of what a map of plain numbers meets: a field's or a typed map's own, or for a type or a value held
+    exactly, its algebra's on NumPy."""
     if isinstance(other, SparseExtensor):
         return other.cells.context
-    if isinstance(other, GAType):
+    if isinstance(other, GAType) or other.context.is_exact:
         from numga.backend.numpy import NumpyContext
         return NumpyContext(other.algebra)
     return other.context
@@ -451,8 +472,9 @@ def clifford_conjugate_maps(value: SparseExtensor) -> SparseExtensor:
 
 @SparseExtensor.adjugate.register(lambda cell_type: cell_type.arity == 1)
 def adjugate(value: SparseExtensor) -> SparseExtensor:
-    """Every map cell's adjugate, the couplings run back: `S.adjugate()(c) & x` summed over the
-    elements equals `c & S(x)` summed."""
+    """Every map cell's adjugate, the couplings run back: summed over the elements, each pairing read
+    with its extrinsic factor first carries over as for one map, `S.adjugate()(c) & x` summed equal
+    to `c & S(x)` summed between intrinsic spaces."""
     return _transposed(value, value.cells.adjugate())
 
 

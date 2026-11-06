@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import NumpyContext, stack
+from numga import Algebra, NumpyContext, stack
 from numga.algebras import VGA3D as ga
 from examples.util import shapes
 from examples.util.topology import Topology
@@ -13,7 +13,7 @@ mv = NumpyContext(ga).multivector
 Rotor = ga.gatype.rotor()                                                    # Rotor+
 Point = ga.gatype.antivector()                                               # Antivector-
 # The planes of x and of y, upright to the disks, whose duals are the directions across and up them.
-Upright = ga.gatype.from_blades("x y")                                       # Vector+
+Upright = ga.gatype.vector().derive.within(Algebra("x+y+"))                  # Vector+
 
 n_triangle_subdivisions = 6
 n_fine_levels = 4

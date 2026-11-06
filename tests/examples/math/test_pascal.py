@@ -4,7 +4,6 @@ point is the quadric."""
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.math.pascal import core, render, scenarios
@@ -22,9 +21,7 @@ def test_the_crossings_of_opposite_sides_lie_on_one_line_and_pascal_is_the_quadr
     np.testing.assert_allclose(ratio, ratio[0], rtol=1e-11)
 
 
-def test_scenes_draw():
-    scenes = list(scenarios.turn(6))
-    figure = render.draw(*scenes[0])
-    assert isinstance(figure, plt.Figure)
-    plt.close(figure)
-    assert len(list(render.animate(scenes))) == 6
+def test_one_frame_of_the_turn_draws():
+    scenes = list(scenarios.turn(1))
+    render.draw(*scenes[0])
+    next(render.animate(scenes))

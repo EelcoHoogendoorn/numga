@@ -37,7 +37,7 @@ def test_correlations_extend_through_each_side_s_own_product(ga):
     n = ga.dimension
     polarity = context.extensor(ga.gatype((Plane, Point)), rng.normal(size=(n, n)))
     spread = context.extensor(ga.gatype((Point, Plane)), rng.normal(size=(n, n)))
-    p, q = (mv.antivector(rng.normal(size=n)) for _ in range(2))
+    p, q = (mv.vector(rng.normal(size=n)).dual() for _ in range(2))
     a, b = (mv.vector(rng.normal(size=n)) for _ in range(2))
 
     np.testing.assert_allclose(polarity.outermorphism((p & q).gatype)(p & q).kernel, (polarity(p) ^ polarity(q)).kernel, atol=1e-12)
@@ -51,7 +51,7 @@ def test_a_planar_correlation_breaks_the_tie_between_products_by_orientation():
     context, rng = NumpyContext(ga), np.random.default_rng(3)
     mv, Vector, Antivector = context.multivector, ga.gatype.vector(), ga.gatype.antivector()
     polarity = context.extensor(ga.gatype((Vector, Antivector)), rng.normal(size=(2, 2)))
-    p, q = (mv.antivector(rng.normal(size=2)) for _ in range(2))
+    p, q = (mv.vector(rng.normal(size=2)).dual() for _ in range(2))
 
     np.testing.assert_allclose(polarity.outermorphism((p & q).gatype)(p & q).kernel, (polarity(p) ^ polarity(q)).kernel, atol=1e-12)
 
@@ -63,7 +63,7 @@ def test_point_maps_extend_through_the_join():
     Point, Line, Plane = PGA3D.gatype.antivector(), PGA3D.gatype.antibivector(), PGA3D.gatype.antitrivector()
     Volume = PGA3D.gatype.antiquadvector()
     T = random_map(context, Point, rng)
-    p, q, r = (mv.antivector(rng.normal(size=4)) for _ in range(3))
+    p, q, r = (mv.vector(rng.normal(size=4)).dual() for _ in range(3))
 
     np.testing.assert_allclose(T.outermorphism(Line)(p & q).kernel, (T(p) & T(q)).kernel, atol=1e-12)
     np.testing.assert_allclose(T.outermorphism(Plane)(p & q & r).kernel, (T(p) & T(q) & T(r)).kernel, atol=1e-12)

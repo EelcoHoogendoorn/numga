@@ -12,7 +12,7 @@ from collections.abc import Iterator
 import numpy as np
 
 from numga import NumpyContext
-from numga.algebras import PGA3D
+from numga.algebras import PGA3D, VGA3D
 from examples.util.topology import Topology
 from examples.surfaces.qem import plumbing
 
@@ -23,8 +23,8 @@ Point = ga.gatype.antivector()                      # Antivector-
 Plane = ga.gatype.vector()                          # Vector+
 # A quadric: the polar plane of each point.
 Quadric = ga.gatype((Plane, Point))
-Spatial = ga.gatype.from_blades("x y z")            # Vector+
-Direction = Spatial.dual().output_gatype            # Antivector-
+Spatial = Plane.derive.within(VGA3D)                # Vector+
+Direction = Spatial.derive.dual                     # Antivector-
 
 
 # --- math -----------------------------------------------------------------------------

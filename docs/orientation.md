@@ -3,7 +3,7 @@
 Every `GAType` carries an orientation, `Orientation.extrinsic` or `Orientation.intrinsic`, on its output and on each input. Constructors set it, operations propagate it, sums and bindings check it, and the transform `>>` uses it to pick the sign of a reflection. Type comments use `+` for extrinsic and `-` for intrinsic. This page lists the rules; [Why orientation](why_orientation.md) explains why they are needed.
 
 ```python
-from numga import NumpyContext, Orientation
+from numga import Algebra, NumpyContext, Orientation
 from numga.algebras import PGA3D
 ```
 
@@ -45,11 +45,12 @@ The `anti` constructors select both complementary grade and intrinsic orientatio
 | `mv.point(coordinates)`, `mv.direction(coordinates)`, in `PGA2D` and `PGA3D` | intrinsic |
 | `mv(gatype, values)` | the orientation of `gatype` |
 
-A type taken from an expression carries the orientation its construction produces. Narrowing a type with `.within`, `.containing`, `.degenerate` or `.nondegenerate` keeps its orientation. Constructing one directly from a subspace requires an explicit orientation:
+A type taken from an expression carries the orientation its construction produces. Narrowing a type with `.derive.within(part)`, `.derive.touching(*parts)`, `.derive.without(part)`, `.derive.degenerate` or `.derive.nondegenerate` keeps its orientation, a part being an algebra whose generators it shares by name and square; `.derive.dual` is the complementary type, its orientation flipped. Constructing one directly from a subspace requires an explicit orientation:
 
 ```python
-Line = (Point & Point).output_gatype                         # Antibivector-
-Resultant = Antibivector.derive.within("x y w")               # Antibivector-
+Line = ga.gatype(Point & Point)                              # Antibivector-
+Strain = Bivector.derive.touching(Algebra("z+"))             # Bivector+
+Resultant = Strain.derive.dual                               # Antibivector-
 Spatial = ga.gatype(ga.subspace("x y z"), orientation=Orientation.extrinsic)  # Vector+
 ```
 
@@ -112,7 +113,7 @@ In a non-degenerate algebra, normalized versor transformations commute with the 
 
 Multiplication by a fixed pseudoscalar follows the geometric product's orientation rule. With the extrinsic pseudoscalar, `a * mv.pseudoscalar([1])` keeps `a`'s orientation; with the intrinsic one, `a * mv.antiscalar([1])` flips it. Either is an element that transforms along with the rest of the scene. Where a complement is meant, use `.dual()`.
 
-The three operations line up. Multiplying by the intrinsic scalar one keeps every coefficient and flips only the orientation: a cast between extrinsic and intrinsic. Multiplying by the extrinsic pseudoscalar complements the grade and keeps the orientation. The dual does both: in a non-degenerate algebra it is the reverse times the intrinsic pseudoscalar, `a.dual() == a.reverse() * antiscalar`, at every grade. The reverse is what makes an element's outer product with a dual its dot product with the dualized element, `b ^ a.dual() == b.dot(a) * antiscalar`; without it the sign flips on bivectors and trivectors, which square to minus their size. In a degenerate algebra the pseudoscalar squares to zero and no product with it gives the dual, which remains the complement of the blade layout.
+The three operations line up. Multiplying by the intrinsic scalar one keeps every coefficient and flips only the orientation: a cast between extrinsic and intrinsic. Multiplying by the extrinsic pseudoscalar complements the grade and keeps the orientation. The dual does both: in a non-degenerate algebra it is the reverse times the intrinsic pseudoscalar, `a.dual() == a.reverse() * antiscalar`, at every grade. The reverse is what makes an extrinsic element's outer product with a dual its dot product with the dualized element, `b ^ a.dual() == b.dot(a) * antiscalar`; without it the sign flips on bivectors and trivectors, which square to minus their size. In a degenerate algebra the pseudoscalar squares to zero and no product with it gives the dual, which remains the complement of the blade layout.
 
 ## Maps
 

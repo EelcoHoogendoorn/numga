@@ -79,10 +79,10 @@ def rings() -> list[core.Pivot]:
     return [ring(size) for size in RING_COUNTS]
 
 
-def travelling() -> list[core.Pivot]:
-    """A dipole and two leapfrogging pairs travelling around the equator: their pivots
+def travelling(n_steps: int = TRAVEL_STEPS) -> list[core.Pivot]:
+    """A dipole and two leapfrogging pairs travelling around the equator over `n_steps` steps: their pivots
     `[steps + 1, vortices] Pivot`."""
-    return [history(core.Vortices(turned(np.pi / 2 - angles, np.zeros(len(angles))), circulations, PAIR_CORE), midpoint, TRAVEL_STEPS)
+    return [history(core.Vortices(turned(np.pi / 2 - angles, np.zeros(len(angles))), circulations, PAIR_CORE), midpoint, n_steps)
             for angles, circulations in ((DIPOLE_ANGLES, DIPOLE_CIRCULATIONS), (LEAPFROG_ANGLES, LEAPFROG_CIRCULATIONS))]
 
 

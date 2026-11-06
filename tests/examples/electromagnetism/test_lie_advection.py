@@ -3,7 +3,6 @@
 import numpy as np
 
 from numga import stack
-from numga.sparse import spdiag
 from examples.electromagnetism.lie_advection import core, scenarios
 from examples.util import shapes
 
@@ -81,7 +80,7 @@ def test_world_sheets_uniform_field_preservation_and_gauge_invariance():
         (operators.curl(uniform_cochain) - uniform_strength * core.mv.xy).kernel,
         0.0, atol=1e-12,
     )
-    advection = spdiag(core.Magnetic & swept_patches)(operators.edge_curl)
+    advection = (core.Magnetic & swept_patches)(operators.edge_curl)
     uniform_rate = advection(uniform_cochain)
     np.testing.assert_allclose(
         (uniform_rate + uniform_strength * d0(stream)).kernel,
@@ -124,7 +123,7 @@ def test_ideal_flux_and_energy_conservation_versus_resistive_dissipation():
     rng = np.random.default_rng(7)
     random_cochain = core.mv.scalar(rng.standard_normal(topology.n_elements[1])[..., None]).field()
     random_energy = (random_cochain & operators.curl_stiffness(random_cochain)).sites.sum()
-    advection = spdiag(core.Magnetic & swept_patches)(operators.edge_curl)
+    advection = (core.Magnetic & swept_patches)(operators.edge_curl)
     ideal_rate = advection(random_cochain)
     np.testing.assert_allclose(
         ((ideal_rate & operators.curl_stiffness(random_cochain)).sites.sum() / random_energy).kernel,

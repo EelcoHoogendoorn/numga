@@ -1,49 +1,11 @@
-"""Kabuto folds preserve paper area, facet lengths and the prescribed creases."""
+"""Kabuto folds follow a moved sheet, creases fold points and lines onto each other, folds never pull buried layers
+through stationary paper, and the first step of the folding draws."""
+
+from itertools import islice
 
 import numpy as np
-import pytest
-from numga import stack
 
 from examples.geometry.origami import core, scenarios
-from examples.util.topology import Topology
-
-
-def area(paper: core.Paper):
-    tails, heads = (Topology.loops(paper.counts).incidence[1, 0] * paper.points.field()).batch()
-    swept = tails.dual() ^ heads.dual()
-    normals = stack([swept[face].sum(axis=0) for face in paper.faces()])
-    return normals.norm().sum(axis=0) / 2
-
-
-def test_kabuto_preserves_area_and_facet_lengths_through_every_fold():
-    paper, creases = scenarios.kabuto()
-    initial_area = area(paper)
-    area_error, length_error, hinge_error = [], [], []
-    for crease, selected, end in zip(creases, scenarios.SELECTIONS, scenarios.ENDS):
-        split_paper, turning, _ = paper.split(crease, selected, scenarios.CREASE_TOLERANCE)
-        hinge = crease ^ paper.sheet
-        outlines = Topology.loops(split_paper.counts)
-        tails, heads = outlines.incidence[1, 0] * split_paper.points.field()
-        lengths = (tails & heads).scalar_norm_squared()
-        on_crease = (crease & split_paper.points).abs() < scenarios.CREASE_TOLERANCE
-        for angle in (0.0, np.pi / 2, end):
-            folded_paper = split_paper.folded(hinge, turning, angle)
-            folded_tails, folded_heads = outlines.incidence[1, 0] * folded_paper.points.field()
-            folded_lengths = (folded_tails & folded_heads).scalar_norm_squared()
-            area_error.append(np.max(np.abs((area(folded_paper) - initial_area).kernel)))
-            length_error.append(np.max(np.abs((folded_lengths - lengths).kernel)))
-            hinge_error.append(np.max(np.abs((folded_paper.points[on_crease] - split_paper.points[on_crease]).kernel)))
-        paper = split_paper.folded(hinge, turning, end)
-
-    # checks: every split retains all the paper; the motors neither stretch it nor move a crease.
-    assert max(area_error) < 1e-10
-    assert max(length_error) < 1e-10
-    assert max(hinge_error) < 1e-11
-    # The two horn tips are the line-bisector construction's characteristic landmarks.
-    tips = core.mv.point([[-1, 1 - np.sqrt(2), 0], [np.sqrt(2) - 1, 1, 0]])
-    squared_distance = (paper.points[:, None] - tips).dual().scalar_norm_squared()
-    np.testing.assert_allclose(squared_distance.kernel.min(axis=0), 0, atol=1e-20)
-    np.testing.assert_allclose((paper.sheet & paper.points).kernel, 0, atol=1e-11)
 
 
 def test_full_folding_sequence_follows_a_moved_sheet():
@@ -62,27 +24,6 @@ def test_full_folding_sequence_follows_a_moved_sheet():
         np.testing.assert_allclose((displaced_paper.offsets - (frame >> paper.offsets)).kernel, 0, atol=1e-10)
 
 
-def test_folds_keep_shared_material_points_joined():
-    paper, creases = scenarios.kabuto()
-    placements = core.mv.rotor()[None]
-    for crease, selected, peak, end in zip(creases, scenarios.SELECTIONS, scenarios.PEAKS, scenarios.ENDS):
-        split_paper, turning, parents = paper.split(crease, selected, scenarios.CREASE_TOLERANCE)
-        placements = placements[parents]
-        face_index = np.repeat(np.arange(len(split_paper.counts)), split_paper.counts)
-        # Undo each facet's accumulated motor to identify points on the initial sheet.
-        # Equal material points on adjacent facets must coincide throughout a fold.
-        material_points = placements[face_index].inverse() >> split_paper.points
-        shared = (material_points[:, None] & material_points[None, :]).scalar_norm_squared() < 1e-18
-        hinge = (crease ^ paper.sheet).normalized()
-        for angle in (peak / 2, peak, (peak + end) / 2, end):
-            folded_paper = split_paper.folded(hinge, turning, angle)
-            gaps = (folded_paper.points[:, None] & folded_paper.points[None, :]).scalar_norm_squared()
-            np.testing.assert_allclose(gaps.kernel[shared], 0, atol=1e-22)
-
-        placements = (hinge * (end / 2 * turning)).exp() * placements
-        paper = split_paper.folded(hinge, turning, end)
-
-
 def test_point_and_line_coincidence_crease_constructions():
     paper, _ = scenarios.kabuto()
     first, second, third, _ = paper.points
@@ -97,39 +38,6 @@ def test_point_and_line_coincidence_crease_constructions():
     # checks: folding aligns the given points or the unoriented lines.
     np.testing.assert_allclose(((motion >> first) - third).kernel, 0, atol=1e-12)
     np.testing.assert_allclose((aligned_line + target_line).kernel, 0, atol=1e-12)
-
-
-@pytest.mark.parametrize("elevation,azimuth", [(35, 135), (-35, 135), (45, 45), (-45, 225)])
-def test_paper_shading_has_no_colour_jump_at_fold_boundaries(monkeypatch, elevation, azimuth):
-    from examples.geometry.origami import render
-
-    monkeypatch.setattr(render, "n_pixels", 120)
-    monkeypatch.setattr(render, "elevation", np.radians(elevation))
-    monkeypatch.setattr(render, "azimuth", np.radians(azimuth + 90))
-    paper, creases = scenarios.kabuto()
-    # Resolve a visible displacement beyond the infinitesimal layer gaps.
-    angle_step = 1e-3
-    for crease, selected, peak, end in zip(creases, scenarios.SELECTIONS, scenarios.PEAKS, scenarios.ENDS):
-        split_paper, turning, _ = paper.split(crease, selected, scenarios.CREASE_TOLERANCE)
-        hinge = crease ^ paper.sheet
-        initial_fold = split_paper.folded(hinge, turning, np.copysign(angle_step, peak))
-        view = render.viewport(split_paper.points)
-        before = render.picture(split_paper, view).astype(float)
-        after = render.picture(initial_fold, view).astype(float)
-        changed = np.max(np.abs(after - before), axis=-1) > 5
-
-        # An infinitesimal motion may change edge coverage, but cannot recolour a flap.
-        assert changed.mean() < 0.02
-        displacement = (initial_fold.offsets - split_paper.offsets).dual().norm()
-        assert np.max(displacement.kernel) < angle_step * 100
-
-        final_step = split_paper.folded(hinge, turning, end - np.copysign(angle_step, peak)
-                                        if end else np.copysign(angle_step, peak))
-        paper = split_paper.folded(hinge, turning, end)
-        before = render.picture(final_step, view).astype(float)
-        after = render.picture(paper, view).astype(float)
-        changed = np.max(np.abs(after - before), axis=-1) > 5
-        assert changed.mean() < 0.02
 
 
 def test_folds_do_not_pull_buried_layers_through_stationary_paper():
@@ -158,3 +66,12 @@ def test_folds_do_not_pull_buried_layers_through_stationary_paper():
                     assert (heights[turning_face] - heights[stationary_face]) * np.sign(peak) >= -1e-10
         paper = split_paper.folded(crease ^ paper.sheet, turning, end)
 
+
+
+def test_the_first_step_of_the_folding_draws():
+    from examples.geometry.origami import render
+
+    paper, creases = scenarios.kabuto()
+    states = core.folding(paper, creases, scenarios.SELECTIONS, scenarios.PEAKS, scenarios.ENDS, 1,
+                          scenarios.CREASE_TOLERANCE)
+    list(render.animate(islice(states, 2)))

@@ -11,7 +11,7 @@ angle-ply stacks. It describes the interior response, without the boundary layer
 
 import numpy as np
 
-from numga import NumpyContext, stack
+from numga import Algebra, NumpyContext, stack
 from numga.extensor import Extensor
 from numga.algebras import VGA3D as ga
 
@@ -21,7 +21,7 @@ Scalar = ga.gatype.scalar()
 Direction = ga.gatype.antivector()                             # Antivector-
 along_x, along_y, along_z = mv.x.dual(), mv.y.dual(), mv.z.dual()   # [] Direction-, Direction-, Direction-
 # Both state components are dimensionless: axial strain and thickness times twist per length.
-State = ga.gatype.from_blades("1 yz")
+State = ga.gatype.even().derive.within(Algebra("y+z+"))
 Measurement = ga.gatype((Scalar, State))                      # Scalar+ <- State
 Energy = ga.gatype((Scalar, State, State))                    # Scalar+ <- (State, State)
 # Strain is the change of the metric: a form on pairs of directions, as a map a correlation from a direction to the

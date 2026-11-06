@@ -42,17 +42,17 @@ def schedule() -> tuple[np.ndarray, np.ndarray]:
     return 1 - np.minimum(temperatures, 1) ** 4, applied
 
 
-def rod() -> tuple[core.Topology, np.ndarray, np.ndarray]:
+def rod(divisions: int = divisions) -> tuple[core.Topology, np.ndarray, np.ndarray]:
     """The disk around the rod, in rings with one on the rod's edge: its topology, its vertices' places in the plane
     z = 0 `[vertices, 3]`, and which of them lie in the rod `[vertices]`."""
     topology, places = shapes.concentric_disk(np.array([1.0, half]), divisions)
     return topology, np.column_stack([places, 0 * places[:, 0]]), np.linalg.norm(places, axis=-1) <= 1.0 + 1e-9
 
 
-def cooled():
+def cooled(divisions: int = divisions):
     """The rod's potential and supercurrent over time, `[2] Scalar+[vertices]` each, as a superconductor and as a
     perfect conductor."""
-    topology, places, in_rod = rod()
+    topology, places, in_rod = rod(divisions)
     vertices = mv(core.Plane, places).dual().field()                          # Point-[vertices]
     areas, gradients, cells = core.triangles(topology, vertices)
     inside = mv.scalar(in_rod[:, None] * 1.0).field()                         # Scalar+[vertices]
@@ -65,7 +65,7 @@ def cooled():
                                                      heights, penetration, superfluid, applied, reference, dt, stride)
 
 
-def ring() -> tuple[core.Topology, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def ring(ring_divisions: int = ring_divisions) -> tuple[core.Topology, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """The ring around its hole, in rings of triangles with one on the hole's edge: its topology, its vertices' places
     in the plane z = 0 `[vertices, 3]`, which triangles lie in the ring and which in the hole `[faces]` each, which
     vertices lie in the hole or on its edge `[vertices]`, and the rim's vertices."""

@@ -1,8 +1,7 @@
 """Hydrostatic stability: a box's buoyancy, metacentric heights and righting arm agree with their closed
 forms, a cube floats face up exactly outside the band of densities between (3 - sqrt(3)) / 6 and
-(3 + sqrt(3)) / 6, and the figures draw."""
+(3 + sqrt(3)) / 6, and a coarse hull is released, stepped one frame and drawn."""
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.fluids.floating import core, render, scenarios
@@ -52,20 +51,11 @@ def test_cube_floats_face_up_outside_the_band_of_densities():
     assert np.array_equal(upright > 0, [True, False, False, True])
 
 
-def test_figures_draw():
-    topology, vertices, weight, centres = scenarios.ship()
-    hull = topology.incidence[2, 0] * vertices
-    couples, stiffness = scenarios.righting_curves(hull, weight, centres)
-    placed, push = scenarios.shown_ship(hull, weight)
-    cube_topology, cube_vertices, weights, cube_couples = scenarios.cubes()
-    rests = scenarios.stable_heels(cube_couples[np.searchsorted(scenarios.DENSITIES, scenarios.SHOWN_DENSITIES)])
-    shown = scenarios.resting(cube_topology.incidence[2, 0] * cube_vertices, scenarios.SHOWN_DENSITIES, rests)
-    for figure in (render.draw_ship(topology, vertices, placed, push, centres[scenarios.SHOWN_LOAD]),
-                   render.draw_curves(scenarios.HEELS, couples, weight, stiffness),
-                   render.draw_cubes(scenarios.DENSITIES, scenarios.CUBE_HEELS, cube_couples, scenarios.FLUID_WEIGHT,
-                                     cube_topology, cube_vertices, shown, scenarios.SHOWN_DENSITIES, rests)):
-        plt.close(figure)
+def test_a_coarse_hull_is_released_and_draws():
+    topology, vertices, weight, centres = scenarios.ship(n_cells=2)
+    hull = topology.incidence[2, 0] * vertices                               # [corners] Point-[triangles]
+    couples, _ = scenarios.righting_curves(hull, weight, centres)
     frames = scenarios.released(hull, weight, centres[scenarios.RELEASED])
-    first = [next(frames)]
-    assert len(list(render.animate_release(topology, vertices, centres[scenarios.RELEASED], first, scenarios.HEELS,
-                                           couples[:, scenarios.RELEASED], weight))) == 1
+    next(frames)
+    next(render.animate_release(topology, vertices, centres[scenarios.RELEASED], [next(frames)], scenarios.HEELS,
+                                couples[:, scenarios.RELEASED], weight))

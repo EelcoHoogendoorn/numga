@@ -26,10 +26,10 @@ AXIS_LENGTH = 0.3
 
 
 # --- math -----------------------------------------------------------------------------
-def winding() -> tuple[core.Point, core.Point, np.ndarray, np.ndarray]:
+def winding(n_frames: int = N_FRAMES) -> tuple[core.Point, core.Point, np.ndarray, np.ndarray]:
     """The control frames and the point- and motor-subdivided surfaces across one wind-up of the ribbon."""
     z_coords, x_coords = grid()
-    twist_angles = TWIST_ANGLE * (1 - np.cos(np.linspace(0, np.pi, N_FRAMES // 2 + 1))) / 2  # [frames]
+    twist_angles = TWIST_ANGLE * (1 - np.cos(np.linspace(0, np.pi, n_frames // 2 + 1))) / 2  # [frames]
     twist_profile = ((z_coords + LENGTH / 2) / LENGTH) ** 2                    # [vertices]
     # Place each frame on the flat ribbon along z and across x, then twist around the z axis.
     rest_motors = (core.mv.zw * (z_coords / 2)).exp() * (core.mv.xw * (x_coords / 2)).exp()  # [vertices] Motor+

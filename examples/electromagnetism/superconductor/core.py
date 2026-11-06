@@ -32,7 +32,7 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from numga import NumpyContext, stack
+from numga import Algebra, NumpyContext, stack
 from numga.algebras import STA as ga
 from numga.sparse import SparseExtensor, spdiag
 
@@ -41,11 +41,11 @@ from examples.util.topology import Topology
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 # The planes of space, which read a point's coordinates; a function's gradient on a triangle is one.
-Plane = ga.gatype.from_blades("x y z")                                        # Vector+
+Plane = ga.gatype.vector().derive.within(Algebra("x+y+z+"))                   # Vector+
 # The points of space, each the direction from the origin to it.
-Point = Plane.dual().output_gatype                                            # Antivector-
+Point = Plane.derive.dual                                                     # Antivector-
 # The magnetic field across the rod, in the planes through z.
-Field = ga.gatype.from_blades("xz yz")                                        # Bivector+
+Field = ga.gatype.bivector().derive.touching(Algebra("x+y+"), Algebra("z+"))  # Bivector+
 # The rod's direction and time's, along which nothing changes.
 rod_direction = mv.z.dual()                                                   # [] Point-
 time = -mv.t.dual()                                                           # [] Antivector-
@@ -124,7 +124,7 @@ def ring_fields(topology: Topology, areas: Scalar, gradients: Plane, in_ring: np
     # another carries, times the squared penetration depth, with the field's own energy in the cells.
     local = (currents[..., :, None] & inertia(currents[..., None, :])) * (ring * areas)[..., None, None]
     screening = penetration ** 2 * (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=-1).sum(axis=-1) + (
-        spdiag((~corners * (ring * areas / 3)).sum(axis=-1)))                 # Scalar+[vertices <- vertices]
+        (~corners * (ring * areas / 3)).sum(axis=-1))                         # Scalar+[vertices <- vertices]
     on_rim = np.isin(np.arange(topology.n_vertices), rim)                     # [vertices]
     free = topology.reading(np.flatnonzero(~(in_hole | on_rim)), 0)           # Scalar+[free <- vertices]
     hole, edge = (mv.scalar(chosen[:, None] * 1.0).field() for chosen in (in_hole, on_rim))   # Scalar+[vertices] each

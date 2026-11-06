@@ -41,8 +41,8 @@ mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 Plane = ga.gatype.vector()                                                    # Vector+
 Point = ga.gatype.antivector()                                                # Antivector-
-Wave = ga.gatype.from_blades("a b")                                           # Vector+
-Turn = ga.gatype.from_blades("ab")                                            # Bivector+
+Wave = Plane.derive.within(Algebra("a+b+"))                                   # Vector+
+Turn = ga.gatype.bivector().derive.within(Algebra("a+b+"))                    # Bivector+
 # Unit steps across and up the trap's plane, as points from its middle.
 axis = mv.x.dual()                                                            # [] Point-
 across = mv.y.dual()                                                          # [] Point-
@@ -91,7 +91,7 @@ def settling(topology: Topology, vertices: Point, areas: Scalar, gradients: Plan
     along = (areas / 3)[..., None, None] * (drags[..., None, None] & gradients[..., None, :])
     # One implicit step, a map of waves factored once: the cells' wave over the step, the kinetic energy, the trap,
     # and the rotation's drag turned a quarter in the condensate's plane.
-    stepping = (spdiag((cells / step + cells * trap) * Wave) + assembled(topology, kinetic * Wave) +
+    stepping = ((cells / step + cells * trap) * Wave + assembled(topology, kinetic * Wave) +
                 assembled(topology, rotation * along * (Wave * mv.ab)))       # (Wave+ <- Wave+)[V <- V]
     for index in range(n_steps + 1):
         if index % stride == 0:

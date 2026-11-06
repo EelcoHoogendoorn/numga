@@ -1,0 +1,240 @@
+"""Run the example notebooks, all of them or a selection, each from its own folder and as many at once as the
+machine's pool admits, and record how each went. A notebook takes as long as it takes, often a minute or more, so a
+run of them all is never a gate before a commit or a push: it is done every once in a while, and a selection after
+work on what those notebooks use.
+
+    python -m tools.notebooks                                         # every notebook
+    python -m tools.notebooks wing fluids/vortices                    # those whose paths hold any of the strings
+    python -m tools.notebooks --touching examples.util.topology numga.sparse
+    python -m tools.notebooks --changed main                          # their folder or a module they use changed
+    python -m tools.notebooks --list --touching jax                   # the selection, without running it
+
+A notebook uses the modules its cells import, and those that the examples' own modules among them import in turn, read
+from the source without running any. The imports of the shared modules in `examples/util` are not followed, but for
+those of their packages' `__init__`, which runs whenever anything inside is imported, and neither are numga's, since
+importing numga loads all of it: following them would make nearly every notebook use nearly every module. A string
+naming a module of the checkout counts as importing it, as `instantiate` takes one. A module touched selects the
+notebooks that use it or a module inside it.
+
+Each notebook runs as `jupyter execute`, which writes nothing into the notebook, as one job of the machine's pool
+(`tools/pool.py`), of one core and 1 GB unless `--cores` or `--memory` ask for more, or it has learned it needs
+more. Its outcome, ran, failed or timed out, its seconds, the most memory it used and the memory it held, and, for a
+failure, the cell it failed in and the last lines of the error, goes into `archive/notebook_runs.json` of the
+workspace that holds the checkout, as it comes, under the checkout, its commit and the time the run started. A
+summary is printed at the end, or at Ctrl-C, with the notebooks that reserve at least twice the memory they used.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import datetime
+import functools
+import importlib.util
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+from tools import pool
+
+ROOT = Path(__file__).resolve().parents[1]
+# The shared modules of the examples, whose imports a notebook's uses do not follow.
+SHARED = ROOT / "examples" / "util"
+# The archive of the workspace a checkout sits in.
+LOG = ROOT.parent / "archive" / "notebook_runs.json"
+# The lines of a failure's output its record keeps.
+ERROR_LINES = 12
+# Where the error nbclient reports quotes the source of the cell it failed in.
+FAILED_CELL = re.compile(r"An error occurred while executing the following cell:\n-{18}\n(.*?)\n-{18}\n", re.S)
+COLOURS = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def notebooks() -> list[Path]:
+    """Every notebook of the examples, by its path in the checkout."""
+    return sorted(path.relative_to(ROOT) for path in (ROOT / "examples").rglob("*.ipynb")
+                  if ".ipynb_checkpoints" not in path.parts)
+
+
+def source(module: str) -> Path:
+    """The file a module of the checkout is read from, a package's `__init__.py`; for any other module it does not
+    exist."""
+    path = ROOT.joinpath(*module.split("."))
+    return path / "__init__.py" if path.is_dir() else path.with_suffix(".py")
+
+
+def imported(code: str, package: str) -> set[str]:
+    """The modules a piece of code imports, by their full names, its relative imports read inside `package`: those an
+    `import` or a `from` names, the names a `from` takes that are modules, and the strings that name a module of the
+    checkout; and the packages of each, whose `__init__` runs first."""
+    names = set()
+    for node in ast.walk(ast.parse(code)):
+        if isinstance(node, ast.Import):
+            names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            module = importlib.util.resolve_name("." * node.level + (node.module or ""), package)
+            names.add(module)
+            names.update(f"{module}.{alias.name}" for alias in node.names if source(f"{module}.{alias.name}").exists())
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str) \
+                and all(part.isidentifier() for part in node.value.split(".")) and source(node.value).exists():
+            names.add(node.value)
+    return {".".join(name.split(".")[:end]) for name in names for end in range(1, name.count(".") + 2)}
+
+
+@functools.cache
+def module_imports(module: str) -> frozenset[str]:
+    """The modules a module of the checkout imports."""
+    path = source(module)
+    package = module if path.name == "__init__.py" else module.rpartition(".")[0]
+    return frozenset(imported(path.read_text(), package))
+
+
+def cell_code(cell: dict) -> str:
+    """A code cell as Python, its IPython magics and shell lines read as `pass`."""
+    lines = "".join(cell["source"]).splitlines()
+    return "\n".join(re.sub(r"^(\s*)[%!].*", r"\1pass", line) for line in lines)
+
+
+def uses(notebook: Path) -> set[str]:
+    """The modules a notebook uses: those its cells import, and those that the examples' own modules among them, and
+    the packages of the shared ones, import in turn."""
+    cells = json.loads((ROOT / notebook).read_text())["cells"]
+    found = set().union(*(imported(cell_code(cell), "") for cell in cells if cell["cell_type"] == "code"))
+    pending = list(found)
+    while pending:
+        module = pending.pop()
+        path = source(module)
+        followed = module.partition(".")[0] == "examples" and (SHARED not in path.parents or path.name == "__init__.py")
+        if followed and path.exists():
+            new = module_imports(module) - found
+            found |= new
+            pending.extend(new)
+    return found
+
+
+def touches(modules: set[str], touched: list[str]) -> bool:
+    """Whether any of the modules is one of the touched modules or lies inside one."""
+    return any(module == name or module.startswith(f"{name}.") for module in modules for name in touched)
+
+
+def changed(ref: str) -> list[Path]:
+    """The tracked files of the checkout that differ from a git ref, committed or not."""
+    differences = subprocess.run(["git", "-C", str(ROOT), "diff", "--name-only", ref],
+                                 capture_output=True, text=True, check=True)
+    return [Path(line) for line in differences.stdout.splitlines()]
+
+
+def module_of(path: Path) -> str:
+    """The module a Python file of the checkout holds."""
+    parts = path.with_suffix("").parts
+    return ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
+
+
+def failure(notebook: Path, output: str) -> dict:
+    """What a failed run's output says: the cell it failed in, counted from one as the notebook's cells stand, where
+    the error names one, and the error's last lines."""
+    text = COLOURS.sub("", output)
+    lines = [line for line in text.splitlines() if line.strip() and not line.startswith("pool: ")]
+    record = {"error": "\n".join(lines[-ERROR_LINES:])}
+    quoted = FAILED_CELL.search(text)
+    sources = ["".join(cell["source"]) for cell in json.loads((ROOT / notebook).read_text())["cells"]]
+    if quoted and quoted[1] in sources:
+        record["cell"] = sources.index(quoted[1]) + 1
+    return record
+
+
+def record(notebook: Path, status: int, output: str) -> dict:
+    """How a notebook's run went, by its job's exit status and output: ran, failed or timed out, in how many seconds,
+    with the most memory it used and the memory it held; for a failure, where and how it failed."""
+    result = pool.outcome(output)
+    state = {0: "ran", pool.TIMED_OUT: "timed out"}.get(status, "failed")
+    entry = {"path": str(notebook), "status": state, "seconds": round(result["seconds"], 1),
+             "peak": round(result["peak"], 2), "memory": result["reserved"]}
+    return (entry | failure(notebook, output)) if state == "failed" else entry
+
+
+def write_log(key: str, records: list[dict]) -> None:
+    """Put a run's records into the workspace's log of notebook runs, under the run's key."""
+    runs = json.loads(LOG.read_text()) if LOG.exists() else {}
+    runs[key] = records
+    LOG.write_text(json.dumps(runs, indent=1) + "\n")
+
+
+def summary(records: list[dict], default: float) -> None:
+    """A table of the notebooks run, then each failure's error, the notebooks that reserve more than `default` GB and
+    at least twice what they used, and the counts."""
+    print()
+    for record in records:
+        print(f"{record['status']:<10}{record['seconds']:>7.0f} s  {record['path']}")
+    for record in records:
+        if record["status"] == "failed":
+            where = f", cell {record['cell']}" if "cell" in record else ""
+            print(f"\n{record['path']}{where}\n    " + record["error"].replace("\n", "\n    "))
+    lowerable = pool.oversized([(record["path"], {"reserved": record["memory"], "peak": record["peak"]})
+                                for record in records], default)
+    if lowerable:
+        print("\nnotebooks that reserve at least twice the memory they used:")
+    for line in lowerable:
+        print(line)
+    counts = [f"{sum(record['status'] == status for record in records)} {status}"
+              for status in ("ran", "failed", "timed out")]
+    print(f"\n{', '.join(counts)}, {sum(record['seconds'] for record in records):.0f} s of runs")
+
+
+def main(arguments: list[str]) -> None:
+    """Select the notebooks the arguments ask for, and list them or run them."""
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("patterns", nargs="*", help="select the notebooks whose paths hold any of these strings")
+    parser.add_argument("--touching", nargs="+", default=[], metavar="MODULE",
+                        help="select the notebooks that use any of these modules, such as examples.util.topology")
+    parser.add_argument("--changed", metavar="REF",
+                        help="select the notebooks whose folder or a module they use changed since this git ref")
+    parser.add_argument("--list", action="store_true", help="print the selection without running it")
+    parser.add_argument("--timeout", type=float, default=20, metavar="MINUTES",
+                        help="the time each notebook may take (default 20)")
+    parser.add_argument("--cores", type=int, default=1, help="the cores each notebook reserves in the pool (default 1)")
+    parser.add_argument("--memory", type=float, default=1, metavar="GB",
+                        help="the memory each notebook reserves in the pool, at least (default 1)")
+    options = parser.parse_args(arguments)
+
+    everything = notebooks()
+    changes = changed(options.changed) if options.changed else []
+    touched = [*options.touching, *(module_of(path) for path in changes if path.suffix == ".py")]
+    chosen = [notebook for notebook in everything
+              if any(pattern in str(notebook) for pattern in options.patterns)
+              or any(notebook.parent in path.parents for path in changes)
+              or touched and touches(uses(notebook), touched)]
+    selection = chosen if options.patterns or options.touching or options.changed else everything
+    if options.list:
+        print("\n".join(map(str, selection)))
+        print(f"{len(selection)} of {len(everything)} notebooks")
+        return
+
+    commit = subprocess.run(["git", "-C", str(ROOT), "describe", "--always", "--dirty", "--exclude=*"],
+                            capture_output=True, text=True, check=True).stdout.strip()
+    key = f"{ROOT.name} {commit} {datetime.datetime.now().isoformat(timespec='seconds')}"
+    # No window for any figure.
+    os.environ["MPLBACKEND"] = "Agg"
+    jupyter = str(Path(sys.executable).parent / "jupyter")
+    jobs = [{"command": [jupyter, "execute", notebook.name], "cwd": ROOT / notebook.parent, "cores": options.cores,
+             "memory": options.memory, "what": f"notebook {notebook.name} in {ROOT.name}", "key": str(notebook),
+             "timeout": 60 * options.timeout, "notebook": notebook} for notebook in selection]
+    records = []
+    try:
+        for index, (job, status, output) in enumerate(pool.batch(jobs, f"notebooks in {ROOT.name}"), 1):
+            records.append(record(job["notebook"], status, output))
+            print(f"[{index}/{len(selection)}] {records[-1]['status']:<10}{records[-1]['seconds']:>6.0f} s "
+                  f"{records[-1]['peak']:5.2f} GB  {job['notebook']}", flush=True)
+            if LOG.parent.is_dir():
+                write_log(key, records)
+    except KeyboardInterrupt:
+        print("interrupted; the notebooks still running are not recorded", flush=True)
+    summary(records, options.memory)
+    # Failing when any notebook did not run, so that a run of them tests that they all do.
+    sys.exit(any(record["status"] != "ran" for record in records))
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

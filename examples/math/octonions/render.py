@@ -46,8 +46,7 @@ def xy(points: Antivector) -> np.ndarray:
 def triples(cycles: core.Trivector) -> list[str]:
     """The three basis vectors of each cycle, in the order its product runs: `a` times `b` is `c` for abc."""
     names = cycles.gatype.output_subspace.blade_names
-    mv = cycles.context.multivector
-    blades = stack([getattr(mv, name) for name in names])                      # [blades] Trivector+
+    blades = stack([getattr(core.mv, name) for name in names])                 # [blades] Trivector+
     # A cycle's coefficient on each basis trivector, by its scalar product with the blade's reverse.
     coefficients = (cycles[:, None].scalar_product(blades.reverse()) / blades.scalar_norm_squared()).to_array()
     blade = np.abs(coefficients).argmax(axis=-1)

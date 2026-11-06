@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import NumpyContext
+from numga import Algebra, NumpyContext
 from numga.algebras import STA2D as ga
 from numga.sparse import SparseExtensor, spdiag
 
@@ -22,10 +22,10 @@ ctx = NumpyContext(ga)
 mv = ctx.multivector
 Scalar = ga.gatype.scalar()
 # Spatial planes read positions, displacements and polarization, their intrinsic complements.
-Plane = ga.gatype.from_blades("x y")
-Point = Plane.dual().output_gatype
+Plane = ga.gatype.vector().derive.within(Algebra("x+y+"))
+Point = Plane.derive.dual
 # Electric fields are extrinsic planes through time; charge is an intrinsic amount.
-Field = ga.gatype.from_blades("xt yt")
+Field = ga.gatype.bivector().derive.touching(Algebra("t-"))
 Amount = ga.gatype.antiscalar()
 Strain = ga.gatype((Plane, Point))
 Elastic = ga.gatype((Scalar, Point, Plane, Point, Plane))

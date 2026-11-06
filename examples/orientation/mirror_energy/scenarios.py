@@ -15,7 +15,7 @@ def rotating_masses() -> tuple[Point, Point, np.ndarray, Scalar]:
     """Three masses on the unit sphere turning in the plane `mv.xy`, and their mirror image in the plane `mv.x`: their
     positions and velocities over one turn, the masses, and the kinetic energies of the turning body, reflected, rebuilt
     and sandwiched."""
-    points = mv.point([[1, 0, 0], [0, 0.8, 0.6], [-0.6, 0, -0.8]])             # [masses] Point-
+    points = mv.vector([[1, 0, 0], [0, 0.8, 0.6], [-0.6, 0, -0.8]]).dual()     # [masses] Point-
     masses = np.array([1, 1.5, 0.5])
     rate = mv.xy                                                                # [] Rate+
     mirror = mv.x                                                               # [] Plane+
