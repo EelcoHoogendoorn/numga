@@ -237,4 +237,4 @@
 
 Run an example from the repository root with `python -m examples.<topic>.<name>.scenarios`.
 
-Notebooks sit next to their examples. Open one in Jupyter from inside the repository, or use the Open in Colab badge at its top. `python -m examples.notebooks` runs them one at a time, all of them or those whose paths hold a string, that use a module (`--touching examples.util.topology`) or that a change touched (`--changed main`); `--list` shows the selection without running it.
+Notebooks sit next to their examples. Open one in Jupyter from inside the repository, or use the Open in Colab badge at its top. `python -m tools.notebooks` runs them as many at once as the machine's pool for heavy runs admits (`tools/pool.py`), all of them or those whose paths hold a string, that use a module (`--touching examples.util.topology`) or that a change touched (`--changed main`); `--list` shows the selection without running it.
