@@ -142,6 +142,8 @@ import examples.fluids.saltfingers.core
 import examples.fluids.saltfingers.scenarios
 import examples.thermodynamics.magnetotransport.core
 import examples.thermodynamics.magnetotransport.scenarios
+import examples.thermodynamics.thermocouple.core
+import examples.thermodynamics.thermocouple.scenarios
 import examples.surfaces.connections.core
 import examples.surfaces.connections.scenarios
 import examples.util.topology
