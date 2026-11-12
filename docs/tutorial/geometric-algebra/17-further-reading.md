@@ -18,7 +18,7 @@ Applications run from geometry and mechanics to relativity and quantum physics. 
 - [Two mirrors](../../../examples/math/reflections/kaleidoscope.ipynb), whose product is a turn by twice the angle between them.
 - [A ball rolled around a loop](../../../examples/mechanics/rolling_ball/rolling_ball.ipynb), whose orientation is the product of the turns of its steps.
 - [Foucault's pendulum](../../../examples/mechanics/foucault/foucault.ipynb), where the part of the earth's turn that lies in the floor's plane turns the swing.
-- [Close Kepler passages](../../../examples/mechanics/kepler/kepler.ipynb), where a position is a spinor times its own reverse.
+- [Close Kepler passages](../../../examples/mechanics/kepler/kepler.ipynb), where a spinor times its reverse is the distance from the attracting centre, and its sandwich places the orbiting body.
 - [Tilings in three signatures](../../../examples/math/reflections/tilings.ipynb), where one construction tiles the sphere, the Euclidean plane and the hyperbolic plane.
 - [Koebe polyhedra](../../../examples/surfaces/koebe/koebe.ipynb), where a circle on the sphere is a single vector.
 

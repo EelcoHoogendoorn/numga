@@ -1,146 +1,81 @@
 # Orientation in numga
 
-Every `GAType` carries an orientation, `Orientation.extrinsic` or `Orientation.intrinsic`, on its output and on each input. Constructors set it, operations propagate it, sums and bindings check it, and the transform `>>` uses it to pick the sign of a reflection. Type comments use `+` for extrinsic and `-` for intrinsic. This page lists the rules; [Why orientation](../articles/orientation.md) explains why they are needed.
+Every `GAType` carries an orientation, `Orientation.extrinsic` (`+` in type comments) or `Orientation.intrinsic` (`-`), on its output and on each input. Constructors assign it, operations propagate and check it statically, and `>>` uses it to reflect extrinsic and intrinsic elements with the appropriate sign. [Why orientation](../articles/orientation.md) motivates the two orientations from geometric and physical requirements, and [Conventions](conventions.md) states the defining identities.
 
 ```python
 from numga import Algebra, NumpyContext, Orientation
 from numga.algebras import PGA3D
-```
 
-## Constructing types
-
-Every element can carry either orientation. Named constructors choose a convention: `bivector()` is extrinsic and has grade two; `antibivector()` is intrinsic and has the complementary grade, algebra dimension minus two. In `PGA3D`, whose algebra has four dimensions, both are grade two:
-
-```python
 ga = PGA3D
 mv = NumpyContext(ga).multivector
 
-Bivector = ga.gatype.bivector()                 # Bivector+
-Antibivector = ga.gatype.antibivector()          # Antibivector-
+Plane = ga.gatype.vector()                                     # Vector+
+Point = ga.gatype.antivector()                                 # Antivector-
+
+mirror = mv.x                                                  # [] Vector+
+red, blue = mv.x + mv.y, mv.y - mv.x                           # [] Vector+, [] Vector+
+ends = mv.point([[0.0, 0.0, -0.5], [0.0, 0.0, 0.5]])           # [points] Antivector-
+
+# Swapping the two planes negates their meet; leaving the two points in the mirror preserves their join.
+mirror >> (red ^ blue)                                         # [] Bivector+
+mirror >> (ends[0] & ends[1])                                  # [] Antibivector-
+# Complementary orientations pair to an extrinsic scalar.
+red & ends[0]                                                  # [] Scalar+
 ```
 
-To change only orientation, use `.derive.flipped_orientation`. It keeps the same blades:
+## Propagation and static checks
 
-```python
-Plane = ga.gatype.vector()                                 # Vector+
-Surface = Plane.derive.flipped_orientation                  # Vector-
-Point = ga.gatype.antivector()                              # Antivector-
-Scalar = ga.gatype.scalar()                                # Scalar+
-IntrinsicScalar = Scalar.derive.flipped_orientation        # Scalar-
-```
-
-The `anti` constructors select both complementary grade and intrinsic orientation. In particular, `antiscalar()` is an intrinsic pseudoscalar, and `antipseudoscalar()` an intrinsic scalar, the type of `IntrinsicScalar` above.
-
-| Type constructor | Orientation |
-| --- | --- |
-| `scalar`, `vector`, `bivector`, `trivector`, `pseudoscalar`, `even`, `odd`, `rotor`, `motor`, `multivector` | extrinsic |
-| `antiscalar`, `antivector`, `antibivector`, `antitrivector`, `antiquadvector`, `antipseudoscalar` | intrinsic |
-| `point`, in `Spherical3D` | intrinsic |
-
-| Value construction | Orientation |
-| --- | --- |
-| `mv.vector([...])` and the other named constructors | as the type constructor of that name |
-| basis blades `mv.x`, `mv.xy`, ..., and `mv.blade(mask)` | extrinsic |
-| plain numbers in an expression | extrinsic scalars |
-| `mv.point(coordinates)`, `mv.direction(coordinates)`, in `PGA2D` and `PGA3D` | intrinsic |
-| `mv(gatype, values)` | the orientation of `gatype` |
-
-A type taken from an expression carries the orientation its construction produces. Narrowing a type with `.derive.within(part)`, `.derive.touching(*parts)`, `.derive.without(part)`, `.derive.degenerate` or `.derive.nondegenerate` keeps its orientation, a part being an algebra whose generators it shares by name and square; `.derive.dual` is the complementary type, its orientation flipped. Constructing one directly from a subspace requires an explicit orientation:
-
-```python
-Line = ga.gatype(Point & Point)                              # Antibivector-
-Strain = Bivector.derive.touching(Algebra("z+"))             # Bivector+
-Resultant = Strain.derive.dual                               # Antibivector-
-Spatial = ga.gatype(ga.subspace("x y z"), orientation=Orientation.extrinsic)  # Vector+
-```
-
-`ga.gatype((Output, Input))` builds a map type from types that carry their own orientations, and refuses an `orientation=` argument. A printed type names the orientation of every axis: `intrinsic bivector <- extrinsic bivector` maps extrinsic bivectors to intrinsic ones. On a map type, `.derive.flipped_orientation` flips only the output.
-
-## Propagation
-
-Reading `extrinsic` as + and `intrinsic` as −:
+Writing `+` for `extrinsic` and `-` for `intrinsic`, operations propagate and restrict orientation as follows:
 
 | Operation | Result orientation |
 | --- | --- |
-| `a * b`, `a ^ b`, `a \| b`, `a.commutator(b)`, `a.anticommutator(b)` | the product of the signs |
+| `a * b`, `a ^ b`, `a \| b`, `a.scalar_product(b)`, `a.commutator(b)`, `a.anticommutator(b)` | product of the signs |
 | `a & b` | minus the product of the signs |
 | `a.dual()`, `a.dual_inverse()` | flipped |
 | `a + b`, `a - b`, `stack`, `concatenate` | equal orientations required; that orientation |
-| `~a`, `a.involute()`, `-a`, `s * a` with `s` an extrinsic scalar | unchanged |
-| `a.inverse()`, `a.normalized()` of an element | unchanged |
+| `~a`, `a.involute()`, `-a`, `a.inverse()`, `a.normalized()`, `s * a` with `s` extrinsic | unchanged |
 | `versor >> x`, `versor << x` | `x`'s orientation |
-| `exp`, `log` and their variants, square roots, `arccos`, `arccosh` | extrinsic input required |
-| norms, Study norms, `cos`, `cosh` | extrinsic output |
 | `a.dot(b)`, `a.antinorm()` | equal orientations required; extrinsic output |
+| `a.norm()`, Study norms, `cos`, `cosh` | extrinsic output |
 | `sin`, `tan`, `sinh`, `tanh`, `arcsin`, `arctan`, `arcsinh`, `arctanh` | unchanged |
+| `exp`, `log` and variants, square roots, `arccos`, `arccosh` | extrinsic input required |
 
-For an intrinsic scalar, an odd function keeps the sign change under a mirror; an even function removes it. A norm is extrinsic, so dividing by it preserves the element's orientation:
-
-```python
-value: IntrinsicScalar = mv(IntrinsicScalar, [0.5])  # Scalar-
-value.sin()                                        # Scalar-
-value.cos()                                        # Scalar+
-value.norm()                                       # Scalar+
-value.normalized()                                 # Scalar-
-```
-
-## Reflection
-
-`versor >> x`, or `versor.transform(x)`, uses the versor's reverse. For it to act as the composition of reflections in its vector factors, that reverse must equal its inverse: the reverse product must be +1. The formulas below assume this normalization. For a mirror `m` squaring to +1:
-
-| | `m >> x` |
-| --- | --- |
-| extrinsic `x` | `m * x.involute() * m.inverse()` |
-| intrinsic `x` | `-m * x.involute() * m.inverse()` |
-
-A product of k vectors applies k reflections, so the grade involution and the intrinsic sign each enter k times: for an even versor they cancel, and its action is the sandwich `v * x * v.inverse()` whatever the orientation. `versor << x`, or `versor.reverse_transform(x)`, applies the reverse action.
-
-These transformations commute with every product, the geometric, outer, inner and regressive products and the commutator and anticommutator alike: `m >> (a | b) == (m >> a) | (m >> b)`, and `m >> (a & b) == (m >> a) & (m >> b)`. Extrinsic scalars are invariant under reflections, and intrinsic scalars change sign.
-
-## The dual
-
-The dual complements the blade layout and flips orientation. `.dual_inverse()` reverses this operation, also flipping orientation. The regressive product uses volume complements, which agree with `.dual()` in the `PGA3D` algebra used here:
+Sums, differences, stacks and concatenations require matching orientations on every axis; binding checks each input's orientation, and `solve` checks the right-hand side against the output's. Power-series functions such as `exp` require extrinsic input because an intrinsic element's even powers are extrinsic while its odd powers are intrinsic, whereas odd scalar functions such as `sin` keep the mirror sign on `Scalar-` and even ones such as `cos` remove it. Mismatches raise `GATypeError`, a subclass of `TypeError`, before any kernel runs:
 
 ```python
-Join = ga.gatype((Line, Point, Point))                         # Antibivector- <- (Antivector-, Antivector-)
+Bivector = ga.gatype.bivector()                                # Bivector+
+Antibivector = ga.gatype.antibivector()                        # Antibivector-
+inertia = ends.regressive(ends.commutator(Bivector)).sum(axis=0)  # [] Antibivector- <- Bivector+
+rate = mv.xy                                                   # [] Bivector+
+momentum = inertia(rate)                                       # [] Antibivector-
 
-join: Join = Point & Point                                    # Antibivector- <- (Antivector-, Antivector-)
-join_from_duals: Join = (Point.dual() ^ Point.dual()).dual_inverse()  # Antibivector- <- (Antivector-, Antivector-)
+rate + momentum                  # GATypeError: orientations differ
+inertia(momentum)                # GATypeError: input requires extrinsic orientation
+inertia.solve(rate)              # GATypeError: right-hand side requires intrinsic orientation
+momentum.exp()                   # GATypeError: exp requires extrinsic orientation
+rate.dot(momentum)               # GATypeError: dot takes operands of one orientation
+inertia.eigh()                   # GATypeError: requires an endomorphism or a square form
 ```
 
-These are the same map. The three orientation flips leave one net flip, which gives `&` its propagation rule. In a nondegenerate signature, `.dual()` carries metric signs that the volume complement does not; the formula with `.dual()` is therefore not a signature-independent definition of `&`.
+## Reflections, pairings and sizes
 
-In a non-degenerate algebra, normalized versor transformations commute with the dual: `m >> a.dual() == (m >> a).dual()`. In a degenerate algebra the complement remains defined, but this identity need not hold; in PGA, for example, the dual does not commute with translations.
+`versor >> x` (or `versor.transform(x)`) uses the versor's reverse and assumes unit normalization (`versor * ~versor == +1`). For a unit mirror `m`, an extrinsic `x` maps to `m * x.involute() * m.inverse()` and an intrinsic `x` to `-m * x.involute() * m.inverse()`. Across `k` vector factors the grade involution and the intrinsic sign each enter `k` times, so an even versor acts as `v * x * v.inverse()` on both orientations; `versor << x` (or `versor.reverse_transform(x)`) applies the reverse action. Normalized versor transformations commute with `*`, `^`, `|`, `&`, `commutator` and `anticommutator`; extrinsic scalars stay invariant under reflection while intrinsic scalars negate.
 
-Multiplication by a fixed pseudoscalar follows the geometric product's orientation rule. With the extrinsic pseudoscalar, `a * mv.pseudoscalar([1])` keeps `a`'s orientation; with the intrinsic one, `a * mv.antiscalar([1])` flips it. Either is an element that transforms along with the rest of the scene. Where a complement is meant, use `.dual()`.
-
-The three operations line up. Multiplying by the intrinsic scalar one keeps every coefficient and flips only the orientation: a cast between extrinsic and intrinsic. Multiplying by the extrinsic pseudoscalar complements the grade and keeps the orientation. The dual does both: in a non-degenerate algebra it is the reverse times the intrinsic pseudoscalar, `a.dual() == a.reverse() * antiscalar`, at every grade. The reverse is what makes an extrinsic element's outer product with a dual its dot product with the dualized element, `b ^ a.dual() == b.dot(a) * antiscalar`; without it the sign flips on bivectors and trivectors, which square to minus their size. In a degenerate algebra the pseudoscalar squares to zero and no product with it gives the dual, which remains the complement of the blade layout.
-
-## Metric products and sizes
-
-The dot measures two values of one orientation. Two extrinsic values are measured as written, by the signature; two intrinsic values are measured through their duals, `a.dot(b) == a.dual().dot(b.dual())`, so that a direction's dot with itself is its length squared in space, in a spacetime and in a projective algebra alike. An extrinsic value and an intrinsic one have no dot: they pair by the regressive product, extrinsic first. The inner product `|` and `scalar_product` are primitive products and stay plain, their orientations the product of the signs.
-
-An intrinsic value has two sizes. `norm()` and `normalized()` follow the reverse product: of a projective point the norm is its weight, and `.normalized()` gives it weight one. `antinorm()` follows the dot: of a direction it is its length in every algebra, and of a projective point its bulk, the weight times the distance from the origin:
+Complementary elements pair by the regressive product, extrinsic first (`rate & momentum`), producing `Scalar+`. `.dot()` measures two elements of a single orientation, measuring intrinsic values through their duals (`a.dot(b) == a.dual().dot(b.dual())`) so that a direction's squared length is positive across spatial, spacetime and projective algebras alike. An intrinsic value therefore has two sizes: `.norm()` follows the reverse product (giving a projective point's weight, so `.normalized()` sets weight one while preserving `-`), whereas `.antinorm()` follows `.dot()` (giving a direction's length and a projective point's bulk):
 
 ```python
-far, near = mv.point([[3, 4, 0], [0, 0, 0]])                # Antivector-, Antivector-
-step = far - near                                           # Antivector-
-step.dot(step)                                              # Scalar+, 25
-step.antinorm(), far.norm(), far.antinorm()                 # Scalar+, Scalar+, Scalar+: 5, 1, 5
+far, near = mv.point([[3, 4, 0], [0, 0, 0]])                   # [] Antivector-, [] Antivector-
+step = far - near                                              # [] Antivector-
+# Squared length 25, Euclidean length 5, unit weight 1, and bulk 5.
+step.dot(step)                                                 # [] Scalar+
+step.antinorm(), far.norm(), far.antinorm()                    # [] Scalar+, [] Scalar+, [] Scalar+
 ```
 
-## Maps
+`.dual()` complements the blade layout and flips orientation, and `.dual_inverse()` reverses it. In `PGA3D`, `(Point.dual() ^ Point.dual()).dual_inverse()` equals `Point & Point`, its three orientation flips leaving one net flip; in nondegenerate signatures `.dual()` carries metric signs (`a.dual() == a.reverse() * antiscalar`, [Conventions](conventions.md#products)) and commutes with normalized versors, whereas in degenerate algebras such as PGA it does not commute with translations. Multiplying by a fixed pseudoscalar (`a * mv.pseudoscalar([1])` or `a * mv.antiscalar([1])`) follows `*` instead and transforms as a scene element; a blade complement is written with `.dual()`.
 
-Each axis of a map carries its own orientation. The inertia of three unit masses takes an extrinsic rate of motion to an intrinsic momentum:
+## Maps and forms
 
-```python
-Inertia = ga.gatype((Antibivector, Bivector))                   # Antibivector- <- Bivector+
-
-points: Point = mv.point([[1, 0, 0], [0, 1, 0], [0, 0, 1]])    # [points] Antivector-
-inertia: Inertia = points.regressive(points.commutator(Bivector)).sum(axis=0)  # Antibivector- <- Bivector+
-rate: Bivector = mv.xy                                       # Bivector+
-momentum: Antibivector = inertia(rate)                        # Antibivector-
-```
+Each axis of a map carries its own orientation, printed output first (`intrinsic bivector <- extrinsic bivector`). In `PGA3D`, `inertia` above maps `Bivector+` to `Antibivector-`, a duality map between the two orientations of the grade-two space, so its unary trace is `Scalar-`, while swapping, complementing and flipping both axes leaves `inertia.adjugate()` with the same type `Antibivector- <- Bivector+`.
 
 | Property | Meaning |
 | --- | --- |
@@ -154,54 +89,45 @@ momentum: Antibivector = inertia(rate)                        # Antibivector-
 | --- | --- |
 | `f.inverse()`, `f.adjoint()` | axes swapped, each keeping its orientation |
 | `f.adjugate()` | axes swapped and complemented, each orientation flipped |
-| `f.trace()`, `f.contract()` on a unary map | same input and output blade support required; scalar orientation is the product of their signs |
+| `f.trace()`, `f.contract()` on a unary map | matching input and output blade support required; scalar orientation is the product of their signs |
 | `f.trace(i, j)` pairing two inputs | complementary spaces required; output orientation multiplied by the regressive pairing's orientation |
-| `f.contract(i, j)` pairing two inputs | the same space with an invertible metric required; output orientation multiplied by the metric pairing's orientation |
-| `f.outermorphism(Type)` | `Type` must match products of the map's inputs; products of its outputs determine the result |
+| `f.contract(i, j)` pairing two inputs | one space with an invertible metric required; output orientation multiplied by the metric pairing's orientation |
+| `f.outermorphism(Type)` | `Type` matches products of the map's inputs; products of its outputs determine the result |
 
-The adjugate reads both of its pairings with the extrinsic factor first, as a reading does: `A.adjugate()(c) & x == c & A(x)` between intrinsic spaces, and `x & A.adjugate()(c) == A(x) & c` between extrinsic ones; the trace pairs two inputs the same way. So in every dimension the adjugate applied twice is the map, a symmetric form is its own adjugate, and a positive form pulled back through a map, `G.adjugate()(material(G))`, is positive.
+Both `adjugate` and two-input `trace` read their pairings extrinsic first ([Conventions](conventions.md#maps)), so `f.adjugate().adjugate() == f` and positive forms pull back to positive forms in every dimension.
 
-Pairing two inputs leaves the other axes unchanged. The inertia above is a correlation between two orientations of the same blade space, so its unary trace is intrinsic. Its adjugate has the same type as the inertia: swapping and then complementing the axes and flipping their orientations gives `intrinsic bivector <- extrinsic bivector` again.
-
-`det`, `eig`, `eigh` and `cholesky` accept endomorphisms or square scalar-valued forms. Inertia is neither, but pairing its output with a second rate gives its energy form:
+`det`, `eig`, `eigh` and `cholesky` accept endomorphisms or square scalar-valued forms. Pairing a duality map's output with a second input builds its symmetric form:
 
 ```python
-EnergyForm = ga.gatype((Scalar, Bivector, Bivector))           # Scalar+ <- (Bivector+, Bivector+)
-
-kinetic: EnergyForm = Bivector & inertia(Bivector)            # Scalar+ <- (Bivector+, Bivector+)
-energy: Scalar = kinetic(rate, rate) / 2                      # Scalar+
+kinetic = Bivector & inertia(Bivector)                         # [] Scalar+ <- (Bivector+, Bivector+)
+energy = kinetic(rate, rate) / 2                               # [] Scalar+
 ```
 
-A form's eigenvalues are measured against a metric form. Omitted, that metric is the input type's own metric; supplied explicitly, it must be a square form on the same input type. For `elastic.eigh(kinetic)`, `elastic` and `kinetic` are the stiffness and inertia forms, and `kinetic` must be positive definite. Two unary correlations must first be paired into forms this way.
+`form.eigh(partner)` measures eigenvalues against `partner` (defaulting to the input type's own metric when omitted). Two duality maps such as stiffness and inertia are paired into forms before calling `elastic.eigh(kinetic)`, with `kinetic` positive definite.
 
-## What is refused
+## Constructing and deriving types
 
-Sums, differences, stacks and concatenations need matching orientations on every axis; binding needs the input's orientation, and `solve` needs the output's. Mismatches raise `GATypeError`, a subclass of `TypeError`, before any kernel runs:
+Named constructors set both grade and orientation. Plain names and basis blades are extrinsic, while `anti` constructors select the complementary grade (`n - k`) and intrinsic orientation (`antiscalar` is grade `n` with `-`, and `antipseudoscalar` is grade `0` with `-`):
+
+| Construction | Orientation |
+| --- | --- |
+| `scalar`, `vector`, `bivector`, `trivector`, `pseudoscalar`, `even`, `odd`, `rotor`, `motor`, `multivector` | extrinsic (`+`) |
+| basis blades (`mv.x`, `mv.xy`, `mv.blade(mask)`) and plain numbers | extrinsic (`+`) |
+| `antiscalar`, `antivector`, `antibivector`, `antitrivector`, `antiquadvector`, `antipseudoscalar` | intrinsic (`-`) |
+| `mv.point(...)`, `mv.direction(...)` in `PGA2D` / `PGA3D`, and `point` in `Spherical3D` | intrinsic (`-`) |
+| `mv(gatype, values)` and `ga.gatype(expression)` | inherited from `gatype` or `expression` |
+
+`ga.gatype((Output, Input))` builds a map type from types that already carry orientations and refuses `orientation=`. Narrowing a type with `.derive.within(part)`, `.derive.touching(*parts)`, `.derive.without(part)`, `.derive.degenerate` or `.derive.nondegenerate` keeps its orientation (`part` being an algebra sharing generator names and squares); `.derive.flipped_orientation` flips only orientation (the output's on a map); `.derive.dual` complements blades and flips orientation; and constructing directly from a raw `SubSpace` requires an explicit `orientation=`:
 
 ```python
-rate + momentum                  # GATypeError: orientations differ
-inertia(momentum)                # GATypeError: input requires extrinsic orientation
-inertia.solve(rate)              # GATypeError: right-hand side requires intrinsic orientation
-momentum.exp()                   # GATypeError: exp requires extrinsic orientation
-rate.dot(momentum)               # GATypeError: dot takes operands of one orientation
-inertia.eigh()                   # GATypeError: requires an endomorphism or a square form
-ga.gatype(ga.subspace.vector())  # TypeError: a subspace has no orientation
+Surface = Plane.derive.flipped_orientation                     # Vector-
+Line = ga.gatype(Point & Point)                                # Antibivector-
+Strain = Bivector.derive.touching(Algebra("z+"))               # Bivector+
+Resultant = Strain.derive.dual                                 # Antibivector-
+Inertia = ga.gatype((Antibivector, Bivector))                  # Antibivector- <- Bivector+
+Spatial = ga.gatype(ga.subspace("x y z"), orientation=Orientation.extrinsic)  # Vector+
+ga.gatype(ga.subspace.vector())                                # TypeError: a subspace has no orientation
 ```
-
-The restriction on `exp` follows from addition: an intrinsic element's even powers are extrinsic and its odd powers intrinsic, so the series would mix orientations in a sum. `log`, the exponential and logarithm variants, square roots, `arccos` and `arccosh` also require extrinsic input.
-
-## Extension methods
-
-An extension method declares the orientations it accepts and produces:
-
-```python
-from numga.extension import ExtensionMethod
-
-ExtensionMethod("exp", takes="a value", input_orientation=Orientation.extrinsic)
-ExtensionMethod("norm", takes="a value", output_orientation=Orientation.extrinsic)
-```
-
-An input declaration is checked before dispatch, and a mismatch raises `GATypeError`. An output declaration sets the result's orientation. A method with neither keeps the orientation its implementation produces.
 
 ## Examples
 

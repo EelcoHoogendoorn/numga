@@ -64,4 +64,4 @@ The product determines what the map takes in and what it returns: here a vector 
 
 In index notation, with each bivector named by the basis vector it lacks, the inner product reads as $a_i b_i$, the linear form `a | Vector` as $a_i$, and the bilinear form `Vector | Vector` as $\delta_{ij}$. The outer product reads as $\epsilon_{ijk} a_j b_k$, the map `a ^ Vector` as $\epsilon_{ijk} a_j$, and the bilinear map `Vector ^ Vector` as $\epsilon_{ijk}$.
 
-Example: [as-rigid-as-possible surface deformation](../../../examples/surfaces/arap/arap.ipynb), where `rotors >> Vector` maps each vertex's edges to their rotated directions.
+Example: [as-rigid-as-possible surface deformation](../../../examples/surfaces/arap/arap.ipynb), where `rotors >> Point` maps each vertex's edges to their rotated directions.

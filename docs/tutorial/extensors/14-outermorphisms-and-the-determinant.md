@@ -50,18 +50,31 @@ zx   0   0   0
 xy   0   0   0
 ```
 
-The adjugate is the determinant times the inverse of the outermorphism on bivectors:
+The determinant times the inverse of the outermorphism on bivectors carries the same coefficients as the adjugate:
 
 ```python
-A.adjugate() - A.det() * A.outermorphism(Bivector).inverse()
+A.det() * A.outermorphism(Bivector).inverse()
 ```
 
 ```text
     yz  zx  xy
-yz   0   0   0
-zx   0   0   0
-xy   0   0   0
+yz   5   8  12
+zx   5  11  15
+xy   6  12  19
 ```
+
+```python
+A.adjugate()
+```
+
+```text
+    yz  zx  xy
+yz   5   8  12
+zx   5  11  15
+xy   6  12  19
+```
+
+The outermorphism acts on extrinsic wedges `a ^ c`, while the adjugate acts on the intrinsic grade-two complements paired with vectors by `&`.
 
 In matrix notation, with each bivector named by the basis vector it lacks, the outermorphism on bivectors reads as the cofactor matrix $C$ of $A$, the outermorphism on the pseudoscalar as $\det A$, and the relation with the adjugate as Cramer's rule, $\det(A)\, C^{-1} = A^T$.
 

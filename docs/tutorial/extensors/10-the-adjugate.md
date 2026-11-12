@@ -3,18 +3,13 @@
 A phase measurement on deformed positions can be read as a measurement on the positions before deformation. The adjugate carries the wavevector backward, preserving that reading for every position. Positions are intrinsic antivectors and wavevectors extrinsic vectors; their regressive product gives the phase:
 
 ```python
-from numga import NumpyContext
-from numga.algebras import VGA3D
+Position = Antivector                             # Antivector-
+Wavevector = Vector                               # Vector+
 
-ga = VGA3D
-mv = NumpyContext(ga).multivector
-Position = ga.gatype.antivector()                 # intrinsic
-Wavevector = ga.gatype.vector()                  # extrinsic
-
-displacement = mv.antivector([1, 2, 3])
-deformation_axis = mv.vector([4, 5, 6])
+displacement = (1 * x + 2 * y + 3 * z).dual()
+deformation_axis = 4 * x + 5 * y + 6 * z
 deformation = Position + displacement * (deformation_axis & Position)
-wavevector = mv.z
+wavevector = z
 
 # Find the wavevector reading the same phase on every undeformed position.
 input_wavevector = (Wavevector & Position).solve(wavevector & deformation)
@@ -33,8 +28,8 @@ The pairing `Wavevector & Position` identifies a wavevector with its phase measu
 ```
 
 ```text
-  yz  zx  xy
-1  0   0   0
+   yz  zx  xy
+1   0   0   0
 ```
 
 In particular, `wavevector & deformation(position) == 0` says that the image position lies on the zero-phase plane. The same condition on its input is `input_wavevector & position == 0`. A plane condition on the outputs has become a plane condition on the inputs.

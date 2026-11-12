@@ -1,6 +1,6 @@
 # Conventions
 
-The definitions numga's operations rest on, each by the identity that defines it. The [tutorials](tutorial/) motivate them; [orientation](orientation.md) and [extensor syntax](extensor_syntax.md) give the full rules and interface.
+This page collects the identities that define numga's operations. The [geometric algebra](tutorial/geometric-algebra/00-introduction.md) and [extensor](tutorial/extensors/00-introduction.md) tutorials motivate them; [orientation](orientation.md) and [extensor syntax](extensor_syntax.md) give the full rules and interface.
 
 ## Orientation
 
@@ -81,7 +81,9 @@ b & a == a & b                  # n odd
 b & a == a.involute() & b       # n even
 ```
 
-A blade's complement can be taken on its left or on its right, and in an even dimension the two differ on odd grades. The adjugate with the complement on the left of both pairings, `L(c) & x == c & T(x)`, reads the extrinsic factor first only where both spaces of `T` are intrinsic; `T.adjugate()` is `L` with the involute on each extrinsic side, on its output where the input of `T` is extrinsic and on its input where the output of `T` is extrinsic. The two differ by a sign where exactly one extrinsic side has an odd grade, in an even dimension only: for a gradient `Vector <- Scalar` in the plane, `L == -T.adjugate()`. Read extrinsic first, in every dimension the adjugate is its own inverse, `T.adjugate().adjugate() == T`, and composes backwards, `T(S).adjugate() == S.adjugate()(T.adjugate())`; a form symmetric under the reading is its own adjugate, as the Euclidean metric on vectors, `Vector.dual()`, is; and a positive form pulls back to a positive one, as in `G.adjugate()(Vector.dual()(G))` for a gradient `G` from scalars to vectors. `L` makes that metric minus its own adjugate, and that pullback negative, in every even dimension.
+Read extrinsic first, in every dimension the adjugate is its own inverse, `T.adjugate().adjugate() == T`, and composes backwards, `T(S).adjugate() == S.adjugate()(T.adjugate())`; a form symmetric under the reading is its own adjugate, as the Euclidean metric on vectors, `Vector.dual()`, is; and a positive form pulls back to a positive one, as in `G.adjugate()(Vector.dual()(G))` for a gradient `G` of type `Vector+ <- Scalar+`.
+
+A blade's complement can be taken on its left or on its right, and in an even dimension the two differ on odd grades. A single-formula operator that always keeps the complement on the left, `L(c) & x == c & T(x)`, reads the extrinsic factor first only where both spaces of `T` are intrinsic; `T.adjugate()` equals `L` composed with the grade involute on each extrinsic side (on its output when the input of `T` is extrinsic, and on its input when the output of `T` is extrinsic). The two differ by a sign in even dimensions whenever `T` has an odd number of odd-grade extrinsic sides: for a planar gradient `Vector+ <- Scalar+`, `L == -T.adjugate()`, making `Vector.dual()` minus its own adjugate and `L` of `G` with `Vector.dual()` negative in every even dimension.
 
 The involute in the sandwich `n >> x` is the sign of moving a vector across `x`, `n ^ x == x.involute() ^ n`, in every dimension; the pseudoscalar moves across `x` the same way in an even dimension only, and so the pairing pays the involute there alone. A sandwich keeps the pairing in either order, `(V >> a) & (V >> b) == a & b`, and keeps grades, so its adjugate is the reverse sandwich, `(V >> Space).adjugate()(c) == V << c`. The adjoint has no sides: the scalar product commutes in every grade.
 
@@ -91,16 +93,16 @@ The involute in the sandwich `n >> x` is the sign of moving a vector across `x`,
 T.adjoint()(b).scalar_product(a) == b.scalar_product(T(a))
 ```
 
-**Trace.** For inputs `x` and `y` from complementary spaces, `T.trace(1, 2)` is the trace of the map `M` with `T(x, y)` the pairing of `M(x)` and `y` read with its extrinsic factor first, `M(x) & y`, or `y & M(x)` where only `y` is extrinsic; so a form traces alike with its inputs in either order. For the output against an input, it is the trace of the map.
+**Trace.** For inputs `x` and `y` from complementary spaces, `T.trace(1, 2)` is the trace of the map `M` defined by `T(x, y) == M(x) & y`, or `T(x, y) == y & M(x)` when only `y` is extrinsic, so a form traces to the same value with its inputs in either order. Paired between the output and an input of the same space, it is the trace of the map.
 
-**Contraction.** For inputs `x` and `y` from one space, `T.contract(1, 2)` is the trace of the map `M` with `T(x, y) == M(x).scalar_product(y.reverse())`, the metric the norm follows, which is `M(x).dot(y)` on an extrinsic space; for the output against an input, it is the trace of the map.
+**Contraction.** For inputs `x` and `y` from one space, `T.contract(1, 2)` is the trace of the map `M` defined by `T(x, y) == M(x).scalar_product(y.reverse())`, the metric that `norm()` follows, which equals `M(x).dot(y)` on an extrinsic space. Paired between the output and an input of the same space, it is the trace of the map.
 
-**Outermorphism.** `T.outermorphism` is defined by
+**Outermorphism.** `T.outermorphism(Grade)` extends a map between vectors and antivectors to `Grade` by
 
 ```python
-T(a ^ b) == T(a) ^ T(b)    # vectors to vectors
-T(p & q) == T(p) & T(q)    # antivectors to antivectors
-T(a ^ b) == T(a) & T(b)    # vectors to antivectors
+T.outermorphism(Bivector)(a ^ b) == T(a) ^ T(b)        # vectors to vectors
+T.outermorphism(Antibivector)(p & q) == T(p) & T(q)    # antivectors to antivectors
+T.outermorphism(Antibivector)(a ^ b) == T(a) & T(b)    # vectors to antivectors
 ```
 
 **Spectra of forms.** For symmetric forms `F` and `G`, `F.eigh(G)` solves `F(v) == eigenvalue * G(v)`; without a partner, `G` is the metric the norm follows on `F`'s space, `Space.scalar_product(Space.reverse())`, which is its dot form where the space is extrinsic.
@@ -115,4 +117,4 @@ x.normalized() == x.norm().inverse() * x
 x.antinorm() * x.antinorm() == x.dot(x)
 ```
 
-They are two sizes of an intrinsic value. Of a projective point the norm is its weight, so that `.normalized()` gives it weight one, and the antinorm its bulk, the weight times its distance from the origin; of a direction the antinorm is its length in every algebra, so that `(p - q).antinorm()` is the distance between two points of weight one. Each is NaN where the measure under its root is negative: the norm of a spatial direction in a spacetime, the antinorm of a timelike one.
+They are two sizes of an intrinsic value. Of a projective point the norm is its weight, so that `.normalized()` gives it weight one, and the antinorm is its bulk, the weight times its distance from the origin; of a direction the antinorm is its length in every algebra, so that `(p - q).antinorm()` is the distance between two points of weight one. Each is NaN where the measure under its root is negative, such as the norm of a spatial direction in spacetime or the antinorm of a timelike one.

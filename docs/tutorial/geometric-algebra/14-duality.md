@@ -40,7 +40,7 @@ z
 
 There is also a change of orientation. The basis vector `x` is extrinsic; `x.dual()` is intrinsic. In three dimensions this intrinsic grade-two element is an antivector. Complementary grade and complementary orientation are both part of its type. [Why orientation](../../../articles/orientation.md) shows the geometric distinction through reflections.
 
-Use the inverse dual to return to the starting element:
+The inverse dual returns to the starting element:
 
 ```python
 direction = x.dual()
@@ -51,7 +51,7 @@ direction.dual_inverse() - x
 0
 ```
 
-Complementarity tells us which spaces pair; a dual map chooses how a particular element is sent into the complementary space. In a nondegenerate algebra, numga's `.dual()` is the metric dual, carrying the metric's signs as well as the blade complement. With the positive Euclidean signature used here, it agrees with the volume complement. In the standard projective algebras, whose metric is degenerate, `.dual()` remains invertible as a blade complement; it does not invert the degenerate metric. The [signature chapter](16-signature.md) introduces these other algebras.
+Complementarity determines which spaces pair; a dual map chooses how a particular element is sent into the complementary space. In a nondegenerate algebra, numga's `.dual()` is the metric dual, carrying the metric's signs as well as the blade complement. With the positive Euclidean signature used here, it agrees with the volume complement. In the standard projective algebras, whose metric is degenerate, `.dual()` remains invertible as a blade complement; it does not invert the degenerate metric. The [signature chapter](16-signature.md) introduces these other algebras.
 
 The [regressive product](15-the-regressive-product.md) uses volume complements to pair elements without needing a metric.
 

@@ -2,7 +2,7 @@
 
 A map has the type of its output, so the operations of the algebra act on that output. A product of two maps takes their arguments independently and multiplies their outputs.
 
-For example, taking the dual of the map `a ^ Vector` takes the dual of its output, the bivector $a \wedge v$, and gives a map from vectors to vectors:
+For example, taking the dual of the map `a ^ Vector` complements its bivector output to grade one, with intrinsic orientation:
 
 ```python
 a = 1 * x + 2 * y + 3 * z
@@ -67,4 +67,4 @@ The product of the map `a ^ Vector` with itself takes two vector arguments. Eval
 
 In matrix notation, a linear operation $D$ on the output of a map $A$ reads as the product $D A$, taking $v$ to $D(A v)$.
 
-Example: [light's wave surface in a crystal](../../../examples/electromagnetism/fresnel/fresnel.ipynb), where `(wavevector ^ medium(field)).dual()` is the wave condition as a function of the field.
+Example: [light's wave surface in a crystal](../../../examples/electromagnetism/fresnel/fresnel.ipynb), where `k ^ material(k ^ Vector)` is the wave map from the potential to the current.

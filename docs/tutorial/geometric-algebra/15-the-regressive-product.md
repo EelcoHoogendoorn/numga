@@ -56,4 +56,4 @@ The result is $-3 b$, a multiple of $b$, the vector the two bivectors share.
 
 The volume complement needs neither lengths nor an inverse metric, so `&` has the same definition in a spacetime or projective algebra. A metric dual can have different signs from the volume complement; the formula using `.dual()` above relies on the Euclidean signature.
 
-Example: [a pose from a point, a line and a plane](../../../examples/geometry/three_point_pose/three_point_pose.ipynb), where joins and meets of points, lines and planes recover a rigid motion.
+Example: [a pose from a point, a line and a plane](../../../examples/geometry/three_point_pose/three_point_pose.ipynb), where the joins of three marker points into a line and a plane recover a rigid motion.
