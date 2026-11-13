@@ -12,4 +12,5 @@ def test_salt_runs_and_draws():
     topology, vertices, sites, frames = scenarios.refrigerator(n_along=3, n_across=3)
     render.draw_crystal(topology, vertices, sites, scenarios.bath_temperature, scenarios.load_temperature)
     list(render.animate_crystal(topology, vertices, sites, scenarios.bath_temperature, scenarios.load_temperature,
-                                scenarios.highest_field, scenarios.moment, islice(frames, 2)))
+                                scenarios.highest_field, *scenarios.corners(), *scenarios.lines(),
+                                islice(frames, 2)))

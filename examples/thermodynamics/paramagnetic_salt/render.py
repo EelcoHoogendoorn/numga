@@ -1,16 +1,15 @@
-"""Drawing for adiabatic demagnetization in a crystal: the slab tinted by its temperature, the magnet's field as the gap
-around it, a wash as deep as the field is strong and a rim turning the way the field turns, the bath and the load as
-bars at its ends, touching it while linked, and its magnetization as patches on a coarse lattice of its sites; under it
-the temperature along its middle, against the place along it; and the salt's equation of state and the ideal cycle on
-the temperature-entropy chart as charts.
+"""Drawing for adiabatic demagnetization in a crystal: the slab tinted by its temperature, a spin at each of its sites,
+a dot where it lies along the field and a ring where it lies against it, the magnet's field as a wash of the gap around
+it, and the bath and the load as bars at its ends, touching it while linked; beside it the chart of entropy and
+temperature, with the line of the magnet's field and the crystal's states on it; and the salt's equation of state and
+the ideal cycle on the temperature-entropy chart as charts.
 
-The field and the magnetization are patches of one plane of space, the slab's own. A spin's patch is a disc in that
-plane, its area growing with the magnetization's share of saturation, with an arc around its rim ending in a chevron for
-the sense its spins turn in: read by pairing the magnet's plane with the magnetization. The field fills the magnet's
-gap, read by pairing it with a unit magnetization, `field & spin`, against the highest field. The crystal's places are
-read by the planes x and y and weighed by w. Its tint runs evenly in the logarithm of the temperature between fixed
-limits, deep blue through pale yellow to deep red, so that a decade reads as a gradient; the profile under it is read
-off the same states, by `potentials & entropy`."""
+The field and the spins are patches of one plane of space, the slab's own. A spin lies along the field or against it,
+read by pairing the magnet's plane with it, `core.magnet_plane & spins`. The field fills the magnet's gap, read by
+pairing it with a unit magnetization, `field & spin`, against the highest field. The crystal's places are read by the
+planes x and y and weighed by w. Its tint runs evenly in the logarithm of the temperature between fixed limits, blue
+through pale yellow to red, mixed with white so that the spins read on it; the chart's entropies and temperatures are
+read off the same states, by `mv.s & states` and `potentials & entropy`."""
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
@@ -32,29 +31,29 @@ from examples.util.panels import image_figure
 from examples.thermodynamics.paramagnetic_salt import core
 
 mv = core.mv
-# The crystal's tint, evenly in the logarithm of the temperature between these limits.
+# The crystal's tint, evenly in the logarithm of the temperature between these limits, and its share of white.
 temperature_colours = colormaps["RdYlBu_r"]
-coldest, warmest = 3e-4, 5.0
-# The magnet's gap around the crystal, in the crystal's widths, its wash's colour and its depth at the highest field;
-# its rim's width at the highest field, and its chevrons' strokes' length, in pixels.
+coldest, warmest, paleness = 3e-4, 5.0, 0.5
+# The magnet's gap around the crystal, in the crystal's widths: its colour, its wash's depth at the highest field and
+# its outline's width, in pixels.
 gap_low, gap_high = np.array([-0.3, -0.22]), np.array([2.3, 1.22])
-field_colour, wash_depth = np.array(to_rgb("dodgerblue")), 0.4
-rim_width, rim_chevron = 4.0, 9.0
+magnet_colour, magnet_depth, magnet_outline = np.array(to_rgb("#3a9a6b")), 0.6, 1.5
 # The crystal's outline and its triangles' edges, their colour and widths, and the reservoirs' bars' width, their
 # outline's width, in the outline's colour, and their gap from the crystal while open, in pixels.
 outline_colour, outline_width, edge_width = np.array(to_rgb("#3d4148")), 1.5, 1.0
 bar_width, bar_outline, bar_gap = 5.0, 1.5, 7.0
-# The magnetization's patches: their colour, how much a filled disc covers, its radius at saturation in the crystal's
-# widths; the rim's arc: how far outside the disc it runs, as a share of the disc's radius, where around the rim it
-# starts and how far it runs, as angles, its samples, its width and its chevron's strokes' length in pixels, the
-# chevron no longer than this share of the disc's radius.
-patch_colour, patch_opacity, patch_radius = np.array(to_rgb("#2b2140")), 0.3, 0.12
-arc_reach, arc_start, arc_span, n_arc = 1.25, np.radians(-60.0), np.radians(240.0), 24
-arc_width, arc_chevron, chevron_share = 1.6, 6.0, 0.8
-# The scene's span in the crystal's widths, across and up, and its pixels to a width; the profile's height in pixels,
-# its line's colour, the reservoirs' lines' colour and the axes' colour, and the temperatures named on it.
-scene_low, scene_high, pixels_per_width = np.array([-0.4, -0.3]), np.array([2.4, 1.3]), 150
-profile_height, profile_colour, reservoir_colour, axis_colour = 130, "#1d2228", "0.6", "#555555"
+# A spin: its dot's colour and radius, and, on one against the field, the paler dot over it and the width of the rim
+# that leaves, in pixels.
+spin_colour, against_colour, spin_radius, spin_rim = np.array(to_rgb("#2b2140")), np.ones(3), 4.5, 1.7
+# The scene's span in the crystal's widths, across and up, and its pixels to a width.
+scene_low, scene_high, pixels_per_width = np.array([-0.36, -0.28]), np.array([2.36, 1.28]), 110
+# The chart beside the scene: its width in pixels, the ideal cycle's colour on it, the width of the line of the magnet's
+# field, the dots of the crystal's states, their size, colour and rim, and the ranges of entropy and temperature shown.
+chart_width, ideal_colour, field_line_px = 280, "0.6", 2.5
+state_dot, state_colour, state_rim = 7.0, "#1d2228", "white"
+chart_entropy_range, chart_temperature_range = (0.0, 0.76), (3e-4, 6.0)
+# The equation of state's line's colour, and the temperatures named on the charts.
+profile_colour = "#1d2228"
 named_temperatures, temperature_names = [1e-3, 1e-2, 1e-1, 1.0], ["1 mK", "10 mK", "100 mK", "1 K"]
 # The temperature-entropy chart: the ideal cycle's colour, the lines of equal field's and their names', and their
 # offset from the lines' warmest ends; the cycle's and the lines' widths, in pixels; the ranges of entropy and
@@ -112,61 +111,61 @@ def bars(points: Extensor, end_edges: list[Topology], linked: np.ndarray, colour
                           simplices.strokes(points + distance * direction, edges, colour, bar_width, camera))]
 
 
-def gap(share: float, washed: bool, camera: Camera) -> list:
-    """The magnet's gap around the crystal at this share of the highest field: a wash as deep as the share where
-    `washed`, and its rim, as wide as the share, each side ending in a chevron running the way the field turns."""
+def scene(topology: Topology, points: Extensor, end_vertices: list[np.ndarray], end_edges: list[Topology],
+          sites: np.ndarray, reservoir_colours: np.ndarray, highest_field: float, salt_potentials: core.Potential,
+          field: core.Magnetic, links: core.Scalar, spins: core.Spin, camera: Camera) -> np.ndarray:
+    """The crystal at its points `[vertices] Point-` in one frame, as bytes: the magnet's gap around it, outlined and
+    washed, its depth the square root of the field's share of the highest, so that a field of a few hundredths of the
+    highest still shows and no field leaves it white; the slab tinted, palely, by its temperatures; the reservoirs'
+    bars, touching it while linked; and a spin at each site `[sites]`, a dot where it lies along the field and a ring
+    where it lies against it, read by pairing the magnet's plane with the spin."""
+    temperatures = (salt_potentials & core.entropy).batch().to_array().ravel()   # [vertices]
+    linked = links.batch().to_array().ravel() > 0                             # [vertices]
+    against = (core.magnet_plane & spins).batch().to_array().ravel()[sites] < 0   # [sites]
+    depth = magnet_depth * np.sqrt(float(((field & core.spin) / highest_field).to_array()))
     corners = place(np.array([gap_low[0], gap_high[0], gap_high[0], gap_low[0]]),
                     np.array([gap_low[1], gap_low[1], gap_high[1], gap_high[1]]))   # [4] Point-
-    width = rim_width * share
-    rim = simplices.strokes(corners, Topology.loops([4]), field_colour, width, camera, chevrons=np.ones(4),
-                            chevron=rim_chevron * np.sqrt(share))
-    wash = contours.picture(corners, Topology(4, [[0, 1, 2], [0, 2, 3]]), np.zeros(4), field_colour, camera,
-                            opacity=wash_depth * share)
-    return [wash, rim] if washed else [rim]
+    return on_white(drawing.composited([
+        contours.picture(corners, Topology(4, [[0, 1, 2], [0, 2, 3]]), np.zeros(4), 1 - depth * (1 - magnet_colour),
+                         camera),
+        simplices.strokes(corners, Topology.loops([4]), magnet_colour, magnet_outline, camera),
+        contours.picture(points, topology, np.zeros(topology.n_vertices),
+                         paleness + (1 - paleness) * tinted(temperatures), camera),
+        simplices.strokes(points, topology.border, outline_colour, outline_width, camera),
+        *bars(points, end_edges, np.array([linked[vertices].any() for vertices in end_vertices]), reservoir_colours,
+              camera),
+        simplices.markers(points[sites], spin_colour, spin_radius, camera),
+        simplices.markers(points[sites][against], against_colour, spin_radius - spin_rim, camera)]))
 
 
-def patches(middles: Extensor, shares: np.ndarray, filled: bool, camera: Camera) -> list:
-    """The magnetization's patches at these middles `[sites] Point-`, at these shares of saturation `[sites]`, negative
-    where they turn the other way: discs of the magnet's plane, filled where `filled`, their area growing with the
-    share, each with an arc around its rim ending in a chevron, running the way its spins turn."""
-    sizes = patch_radius * np.sqrt(np.abs(shares))                            # [sites]
-    angles = np.sign(shares)[:, None] * (arc_start + np.linspace(0, arc_span, n_arc))   # [sites, arc]
-    # Each rim's places, the direction across turned in the magnet's plane, the other way round where the patch turns
-    # the other way.
-    turns = (core.magnet_plane * (-angles / 2)).exp()                         # [sites, arc] Rotor+
-    rims = middles[:, None] + (arc_reach * sizes[:, None]) * (turns >> mv.x.dual())   # [sites, arc] Point-
-    ending = np.tile(np.arange(n_arc - 1) == n_arc - 2, len(shares))          # [sites * arc edges]
-    chevrons = simplices.strokes(rims.reshape(-1), Topology.chains([n_arc] * len(shares)), patch_colour, arc_width,
-                                 camera, chevrons=ending, chevron=min(arc_chevron, chevron_share * sizes.min() /
-                                                                       camera.pixel))
-    discs = simplices.markers(middles, patch_colour, sizes / camera.pixel, camera, opacity=patch_opacity)
-    return [discs, chevrons] if filled else [chevrons]
+def chart(height: int, corner_entropies: core.Scalar, corner_temperatures: core.Scalar, line_states: core.State,
+          line_potentials: core.Potential):
+    """The chart of entropy and temperature, this many pixels high, the entropy up and the logarithm of the temperature
+    across: the lines of the highest and the lowest field `[lines, samples] State-` with their potentials, and the ideal
+    cycle through its corners `[corners] Scalar+`, all faint; and, empty, the line of the magnet's field and the dots of
+    the crystal's states, for each frame to set through `chart_readings`. The figure, the line and the dots."""
+    corner_s, corner_t = corner_entropies.to_array(), corner_temperatures.to_array()   # [corners], [corners]
+    figure = plt.figure(figsize=(chart_width / charts.DPI, height / charts.DPI), dpi=charts.DPI)
+    ax = figure.add_axes((0.2, 0.27, 0.75, 0.69))
+    for states, salt_potentials in zip(line_states, line_potentials):
+        ax.plot(*chart_readings(states, salt_potentials)[::-1], color=line_colour)
+    ax.plot(np.append(corner_t, corner_t[0]), np.append(corner_s, corner_s[0]), color=ideal_colour)
+    ax.set_xscale("log")
+    ax.set_xticks(named_temperatures, temperature_names)
+    ax.xaxis.set_minor_locator(plt.NullLocator())
+    ax.set_yticks([0, np.log(2)], ["0", "ln 2"])
+    ax.set(xlim=chart_temperature_range, ylim=chart_entropy_range, xlabel="temperature", ylabel="entropy per spin")
+    ax.spines[["top", "right"]].set_visible(False)
+    field_line, = ax.plot([], [], color=magnet_colour, linewidth=charts.points(field_line_px))
+    dots, = ax.plot([], [], "o", color=state_colour, markersize=charts.points(state_dot), markeredgecolor=state_rim,
+                    markeredgewidth=charts.points(1.0))
+    return figure, field_line, dots
 
 
-def profile_figure(width: int, along: np.ndarray, bath_temperature: float, load_temperature: float):
-    """The profile's figure, this many pixels wide, its axes spanning the scene's span across so that a place along the
-    crystal `along` `[profile]` stands under the crystal's own; the logarithm of the temperature up, the reservoirs'
-    temperatures as faint lines across the crystal, named beyond its far end; and its line, empty."""
-    figure = plt.figure(figsize=(width / charts.DPI, profile_height / charts.DPI), dpi=charts.DPI)
-    ax = figure.add_axes((0, 0.06, 1, 0.92))
-    ax.set_xlim(scene_low[0], scene_high[0])
-    ax.set_yscale("log")
-    ax.set_ylim(coldest, warmest)
-    for temperature, name in ((bath_temperature, "bath"), (load_temperature, "load")):
-        ax.plot([along.min(), along.max()], [temperature] * 2, "--", color=reservoir_colour,
-                linewidth=charts.FRAME_WIDTH)
-        ax.annotate(name, (along.max(), temperature), textcoords="offset points", xytext=(6, 0), va="center",
-                    color=reservoir_colour)
-    # The temperature axis at the crystal's near end, its ticks named to its left, beyond the crystal.
-    ax.spines[["top", "right", "bottom"]].set_visible(False)
-    ax.spines["left"].set_position(("data", along.min()))
-    ax.spines["left"].set_color(axis_colour)
-    ax.set_xticks([])
-    ax.set_yticks(named_temperatures, temperature_names)
-    ax.yaxis.set_minor_locator(plt.NullLocator())
-    ax.patch.set_alpha(0)
-    line, = ax.plot([], [], color=profile_colour, linewidth=charts.LINE_WIDTH)
-    return figure, line
+def chart_readings(states: core.State, salt_potentials: core.Potential) -> tuple[np.ndarray, np.ndarray]:
+    """The entropies and the temperatures `[...]` of these states with their potentials, read by pairing: the entropy
+    by the plane along s, the temperature by a unit of entropy."""
+    return (mv.s & states).to_array(), (salt_potentials & core.entropy).to_array()
 
 
 # --- drawing --------------------------------------------------------------------------
@@ -215,8 +214,8 @@ def draw_cycle(corner_entropies: core.Scalar, corner_temperatures: core.Scalar, 
 
 def draw_crystal(topology: Topology, vertices: Extensor, sites: np.ndarray, bath_temperature: float,
                  load_temperature: float) -> Figure:
-    """The crystal at rest at its vertices `Point-[vertices]`, its triangles' edges over its fill, the sites of the
-    magnetization's patches `[sites]` marked, and the bath's and the load's bars at its ends, open, tinted by these
+    """The crystal at rest at its vertices `Point-[vertices]`, its triangles' edges over its fill, the sites its spins
+    are drawn at `[sites]` marked, and the bath's and the load's bars at its ends, open, tinted by these
     temperatures."""
     points = vertices.batch()                                                 # [vertices] Point-
     _, end_edges = ends(topology, points)
@@ -226,40 +225,35 @@ def draw_crystal(topology: Topology, vertices: Extensor, sites: np.ndarray, bath
         simplices.strokes(points, topology, outline_colour, edge_width, camera),
         *bars(points, end_edges, np.zeros(2, dtype=bool), tinted(np.array([bath_temperature, load_temperature])),
               camera),
-        simplices.markers(points[sites], patch_colour, 3.0, camera)])))
+        simplices.markers(points[sites], spin_colour, 3.0, camera)])))
 
 
 def animate_crystal(topology: Topology, vertices: Extensor, sites: np.ndarray, bath_temperature: float,
-                    load_temperature: float, highest_field: float, moment: float,
-                    frames: Iterable[tuple[core.State, core.Potential, core.Magnetic, core.Scalar]],
-                    washed: bool = True, filled: bool = False) -> Iterator[np.ndarray]:
+                    load_temperature: float, highest_field: float, corner_entropies: core.Scalar,
+                    corner_temperatures: core.Scalar, line_states: core.State, line_potentials: core.Potential,
+                    frames: Iterable[tuple[core.State, core.Potential, core.Magnetic, core.Scalar, core.Spin,
+                                           core.State, core.Potential]]) -> Iterator[np.ndarray]:
     """The crystal at its vertices `Point-[vertices]` at each frame as it comes, its states `State-[vertices]`, its
-    potentials `Potential+[vertices]`, the magnet's field `[] Magnetic+` and the links `Scalar+[vertices]`: the slab
-    tinted by its temperatures, the magnet's gap around it, washed where `washed`, the reservoirs' bars at its ends, the
-    bath's and the load's tinted by their temperatures and touching it while linked, and the magnetization's patches at
-    its sites `[sites]`, filled where `filled`; and under it the temperature along its middle."""
+    potentials `Potential+[vertices]`, the magnet's field `[] Magnetic+`, the links `Scalar+[vertices]`, a spin of each
+    cell `Spin-[vertices]` and the salt's states at the magnet's field `[samples] State-` with their potentials: the
+    scene as `scene` draws it, its spins at these sites `[sites]`, and beside it, as high, the chart of entropy and
+    temperature as `chart` draws it, with the line of the magnet's field and, as dots on it, the states along the
+    crystal's middle."""
     points = vertices.batch()                                                 # [vertices] Point-
     end_vertices, end_edges = ends(topology, points)
     reservoir_colours = tinted(np.array([bath_temperature, load_temperature]))   # [ends, 3]
     camera = scene_camera()
-    unmarked = np.zeros(topology.n_vertices)
-    # The middle row of the crystal, in order along it, for the profile.
-    along, up = (mv.x & points).to_array().ravel(), (mv.y & points).to_array().ravel()   # [vertices], [vertices]
-    middle = np.flatnonzero(np.isclose(up, (up.min() + up.max()) / 2))
-    middle = middle[np.argsort(along[middle])]                                # [profile]
+    up = (mv.y & points).to_array().ravel()                                   # [vertices]
+    # The row of vertices nearest the crystal's middle, for the chart's dots.
+    middle = np.flatnonzero(np.isclose(up, up[np.argmin(np.abs(up - (up.min() + up.max()) / 2))]))
     with charts.style():
-        figure, line = profile_figure(camera.pixels, along[middle], bath_temperature, load_temperature)
-        for states, salt_potentials, field, links in frames:
-            temperatures = (salt_potentials & core.entropy).batch().to_array().ravel()   # [vertices]
-            shares = ((core.magnet_plane & states) / moment).batch().to_array().ravel()  # [vertices]
-            linked = links.batch().to_array().ravel() > 0                     # [vertices]
-            scene = on_white(drawing.composited([
-                *gap(float(((field & core.spin) / highest_field).to_array()), washed, camera),
-                contours.picture(points, topology, unmarked, tinted(temperatures), camera),
-                simplices.strokes(points, topology.border, outline_colour, outline_width, camera),
-                *bars(points, end_edges, np.array([linked[vertices].any() for vertices in end_vertices]),
-                      reservoir_colours, camera),
-                *patches(points[sites], shares[sites], filled, camera)]))
-            line.set_data(along[middle], temperatures[middle])
-            yield np.concatenate([scene, capture(figure)], axis=0)
+        figure, field_line, dots = chart(camera.shape[0], corner_entropies, corner_temperatures, line_states,
+                                         line_potentials)
+        for states, salt_potentials, field, links, spins, field_states, field_potentials in frames:
+            field_line.set_data(*chart_readings(field_states, field_potentials)[::-1])
+            entropies, temperatures = chart_readings(states.batch(), salt_potentials.batch())
+            dots.set_data(temperatures[middle], entropies[middle])
+            yield np.concatenate([scene(topology, points, end_vertices, end_edges, sites, reservoir_colours,
+                                        highest_field, salt_potentials, field, links, spins, camera),
+                                  capture(figure)], axis=1)
         plt.close(figure)

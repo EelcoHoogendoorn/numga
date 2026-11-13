@@ -22,7 +22,7 @@ mv = core.mv
 # The spins: each an electron's, its moment a Bohr magneton, 0.672 kelvin per tesla with Boltzmann's constant one; the
 # lattice's heat capacity per spin, a little against the spins' entropy, and its reference temperature, the bath's, at
 # which it holds no entropy.
-moment, heat_capacity = 0.6717, 0.03
+moment, heat_capacity = 0.6717, 0.003
 bath_temperature, load_temperature = 1.0, 0.01
 reference = bath_temperature
 # The magnet's highest field, at the bath's temperature, and its lowest, at the load's; the halvings that find the
@@ -37,21 +37,26 @@ n_line_samples = 80
 line_temperatures = np.geomspace([0.45, 5e-4], [1.6, 1.6], n_line_samples, axis=-1)   # [lines, samples]
 # The crystal: its length in widths, and its vertices along it and across; its lattice's conductivity, and the
 # conductance of a link to a reservoir per length of the crystal's end.
-length, n_along, n_across = 2.0, 13, 7
+length, n_along, n_across = 2.0, 17, 9
 conductivity, link_conductance = 3.0, 100.0
+# The spins drawn on the crystal, one at each vertex inside it: the seed of their draws; and the moment times the field
+# over the temperature at the samples of the line of the magnet's field on the chart, from the chart's warmest at the
+# lowest field to spins all but saturated.
+spin_seed = 0
+line_ratios = np.geomspace(1e-4, 15.0, n_line_samples)                        # [samples]
 # The run's phases, in order: magnetized with the bath linked, held while the bath takes the warmth, demagnetized
 # isolated, demagnetized with the load linked, held while the load's heat fills the crystal in, and magnetized
 # isolated. The corners each runs between; its reservoir, none, the bath or the load; its frames; the time it takes;
 # each frame's time over the one before, the holds slicing their relaxation evenly; and the steps each frame takes.
-# The phases in contact ramp the field fast against the crystal's conduction, so that the end away from the reservoir
-# warms or cools nearly as if isolated, and take their frames where the crystal changes along its length; those
-# isolated, which change it alike everywhere, take few.
+# The phases in contact ramp the field faster than the crystal's conduction carries the heat, so that the end away from
+# the reservoir warms or cools well ahead of the end in contact, and take their frames where the crystal changes along
+# its length; those isolated, which change it alike everywhere, take fewer.
 phase_starts, phase_ends = np.array([0, 1, 1, 2, 3, 3]), np.array([1, 1, 2, 3, 3, 0])
 phase_reservoirs = np.array([1, 1, 0, 2, 2, 0])
-n_phase_frames = np.array([18, 24, 10, 18, 18, 10])
-phase_times = np.array([0.015, 0.8, 0.02, 0.01, 0.09, 0.02])
+n_phase_frames = np.array([22, 20, 16, 20, 12, 8])
+phase_times = np.array([0.3, 0.6, 0.02, 0.1, 0.045, 0.02])
 phase_growths = np.array([1.0, 1.06, 1.0, 1.0, 1.03, 1.0])
-n_phase_steps = np.array([3, 3, 4, 3, 3, 4])
+n_phase_steps = np.array([3, 3, 4, 5, 5, 4])
 frame_duration_ms = 40
 
 
@@ -125,12 +130,9 @@ def reservoirs(coordinates: np.ndarray) -> np.ndarray:
     return np.where(coordinates[:, 0] < length / 2, bath_temperature, load_temperature)
 
 
-def sites(coordinates: np.ndarray) -> np.ndarray:
-    """The vertices `[sites]` the magnetization's patches are drawn at, of the crystal at these places `[vertices, 2]`:
-    every other vertex along it and across it, from the second, each the middle of a square of cells."""
-    ticks = np.unique(coordinates[:, 0]), np.unique(coordinates[:, 1])
-    picked = [np.isin(values, steps[1::2]) for values, steps in zip(coordinates.T, ticks)]
-    return np.flatnonzero(picked[0] & picked[1])
+def spin_draws(n_vertices: int) -> np.ndarray:
+    """A draw for the spin drawn at each vertex `[vertices]`, a number between none and one, the same on every call."""
+    return np.random.default_rng(spin_seed).random(n_vertices)
 
 
 # --- scenes ---------------------------------------------------------------------------
@@ -147,13 +149,29 @@ def crystal(n_along: int = n_along, n_across: int = n_across) -> tuple[Topology,
     return topology, vertices, cells, core.conduction(topology, areas, gradients, conductivity), coordinates
 
 
+def pictured(frames: Iterator[tuple[core.State, core.Potential, core.Magnetic, core.Scalar]], draws: core.Scalar
+             ) -> Iterator[tuple[core.State, core.Potential, core.Magnetic, core.Scalar, core.Spin, core.State,
+                                 core.Potential]]:
+    """Each of these frames with what the picture draws of it besides: one spin of each cell `Spin-[vertices]`, drawn
+    from the cell's two populations by these draws `Scalar+[vertices]`, and the line of the magnet's field on the
+    chart, the salt's states held at that field from the chart's warmest to spins all but saturated `[samples] State-`,
+    and their potentials."""
+    for states, salt_potentials, field, links in frames:
+        line_temperatures = moment * (field & core.spin) / mv.scalar(line_ratios[:, None])   # [samples] Scalar+
+        line_states = core.state_at(field, line_temperatures, moment, heat_capacity, reference)   # [samples] State-
+        yield (states, salt_potentials, field, links, core.drawn_spins(states, draws, moment), line_states,
+               core.potentials(line_states, moment, heat_capacity, reference))
+
+
 def refrigerator(n_along: int = n_along, n_across: int = n_across
                  ) -> tuple[Topology, core.Point, np.ndarray,
-                            Iterator[tuple[core.State, core.Potential, core.Magnetic, core.Scalar]]]:
+                            Iterator[tuple[core.State, core.Potential, core.Magnetic, core.Scalar, core.Spin,
+                                           core.State, core.Potential]]]:
     """The crystal's run around the cycle, of these many vertices along and across: its triangles, its vertices
-    `Point-[vertices]`, the sites of the magnetization's patches `[sites]`, and its states, potentials, the magnet's
-    field and the links at each frame, from the crystal at the bath's temperature throughout in the field of the cycle's
-    first corner."""
+    `Point-[vertices]`, the vertices inside it, where its spins are drawn `[sites]`, and at each frame its states,
+    potentials, the magnet's field and the links, with a spin of each cell and the line of the magnet's field as
+    `pictured` adds them, from the crystal at the bath's temperature throughout in the field of the cycle's first
+    corner."""
     topology, vertices, cells, conducting, coordinates = crystal(n_along, n_across)
     starts, ends, within, conductances, durations, n_steps = timeline(coordinates)
     fields = core.magnet(corner_fields(), starts, ends, within)               # [steps] Magnetic+
@@ -162,8 +180,10 @@ def refrigerator(n_along: int = n_along, n_across: int = n_across
     # The crystal at the bath's temperature at every vertex, in the field of the cycle's first corner.
     warm = mv.scalar(np.full((len(coordinates), 1), bath_temperature)).field()   # Scalar+[vertices]
     start = core.state_at(corner_fields()[0], warm, moment, heat_capacity, reference)   # State-[vertices]
-    return topology, vertices, sites(coordinates), core.run(cells, conducting, start, fields, links, held,
-                                                            durations, n_steps, moment, heat_capacity, reference)
+    draws = mv.scalar(spin_draws(topology.n_vertices)[:, None]).field()      # Scalar+[vertices]
+    frames = core.run(cells, conducting, start, fields, links, held, durations, n_steps, moment, heat_capacity,
+                      reference)
+    return topology, vertices, topology.interior[0], pictured(frames, draws)
 
 
 def main() -> None:
@@ -172,29 +192,13 @@ def main() -> None:
 
     save_figure(render.draw_equation_of_state(*equation_of_state(), moment), "paramagnetic_salt_state")
     save_figure(render.draw_cycle(*corners(), *lines()), "paramagnetic_salt_ideal_cycle")
-    topology, vertices, _, _, coordinates = crystal()
-    save_figure(render.draw_crystal(topology, vertices, sites(coordinates), bath_temperature, load_temperature),
+    topology, vertices, _, _, _ = crystal()
+    save_figure(render.draw_crystal(topology, vertices, topology.interior[0], bath_temperature, load_temperature),
                 "paramagnetic_salt_slab")
-    topology, vertices, patch_sites, frames = refrigerator()
-    save_animation(render.animate_crystal(topology, vertices, patch_sites, bath_temperature, load_temperature,
-                                          highest_field, moment, frames), "paramagnetic_salt_crystal",
+    topology, vertices, spin_sites, frames = refrigerator()
+    save_animation(render.animate_crystal(topology, vertices, spin_sites, bath_temperature, load_temperature,
+                                          highest_field, *corners(), *lines(), frames), "paramagnetic_salt_crystal",
                    frame_duration_ms)
-
-
-def depiction_previews() -> None:
-    """Short previews of the ways of drawing the field and the magnetization on the crystal, each its own animation of
-    the run, every third frame drawn: the field as a wash over the magnet's gap behind the crystal, its depth the
-    field's strength, or as the gap's rim alone, as wide as the field is strong; the magnetization as filled patches or
-    as their rims alone."""
-    from itertools import islice
-    from examples.util.animation import save_animation
-    from examples.thermodynamics.paramagnetic_salt import render
-
-    for name, washed, filled in (("wash_filled", True, True), ("wash_rims", True, False), ("rim_filled", False, True)):
-        topology, vertices, patch_sites, frames = refrigerator()
-        save_animation(render.animate_crystal(topology, vertices, patch_sites, bath_temperature, load_temperature,
-                                              highest_field, moment, islice(frames, 0, None, 3), washed=washed,
-                                              filled=filled), f"paramagnetic_salt_preview_{name}", frame_duration_ms)
 
 
 if __name__ == "__main__":

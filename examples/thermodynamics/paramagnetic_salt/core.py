@@ -135,6 +135,17 @@ def state_at(field: Magnetic, temperature: Scalar, moment: float, heat_capacity:
     return moment * shares * spin + entropies * entropy
 
 
+def drawn_spins(states: State, draws: Scalar, moment: float) -> Spin:
+    """One spin of each cell `Spin-[vertices]`, drawn from the two populations of these states `State-[vertices]`: a
+    two-level spin lies along the field or against it, a patch of the magnet's plane turning one way or the other, and
+    of a cell's spins `(1 + shares) / 2` lie along it. Each spin keeps its draw `Scalar+[vertices]`, a number between
+    none and one, and lies along the field while its draw is under that population: a spin of a low draw nearly always,
+    one of a high draw only near saturation, so that the spins turn over one at a time as the states change."""
+    shares = (magnet_plane & states) / moment                                 # Scalar+[vertices]
+    along = draws < (1 + shares) / 2
+    return moment * where(along, spin, -spin)
+
+
 def corner_fields(bath_temperature: float, load_temperature: float, highest_field: float, lowest_field: float,
                   moment: float, heat_capacity: float, reference: float, n_halvings: int) -> Magnetic:
     """The fields at the ideal cycle's corners `[corners] Magnetic+`, of a salt in perfect contact with its reservoirs:
