@@ -22,7 +22,7 @@ def test_material_field_and_pulse_step():
         rate = (potential - previous) / scenarios.frame_step
         field = (hat_fields * (corners * potential)).sum(axis=0)
         magnetization = permanent + core.magnetic_response(field) - response(field)
-        pole_charge = (~corners * (areas * (pole_readings & magnetization))).sum(axis=0)
+        pole_charge = (corners.adjugate() * (areas * (pole_readings & magnetization))).sum(axis=0)
         pole_density = pole_charge / cells
         mean_rate = (mass * rate).sites.sum() / mass.sites.sum()
         current = conductivity * core.electric_response(-(rate - mean_rate) * core.mv.zt)

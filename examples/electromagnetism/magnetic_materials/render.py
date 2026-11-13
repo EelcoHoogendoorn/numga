@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import numpy as np
 from examples.util import charts
-from examples.util.wgsl import contours, image_figure, simplices
-from examples.util.wgsl.camera import Camera
+from numga.render import Camera, contours, drawing
+from examples.util.panels import image_figure
 from examples.electromagnetism.magnetic_materials import core
 
 mv = core.mv
@@ -55,7 +55,7 @@ def animate(topology, vertices, fractions, coils, peak_drive, states):
             colours = colours * (1 - opacity) + ink * opacity
         layers = [contours.picture(points, topology, potential.batch().to_array(), colours, camera, lines=lines),
                   contours.picture(points, topology, material, np.zeros(3), camera, levels=levels, opacity=0.)]
-        image = simplices.composited(layers)
+        image = drawing.composited(layers)
         rgb = image[..., :3] * image[..., 3:] + background * (1 - image[..., 3:])
         yield np.round(np.clip(rgb, 0, 1) * 255).astype(np.uint8)
 

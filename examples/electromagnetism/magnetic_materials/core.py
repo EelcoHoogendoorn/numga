@@ -33,7 +33,7 @@ def medium(topology, vertices: Point, permeability: Scalar, conductivity: Scalar
     mean = corners.mean(axis=0)
     spans = reduce(and_, corners * vertices, unread)
     areas = spans.norm() / 2
-    cells = ~mean * areas
+    cells = mean.adjugate() * areas
     facing = topology.off[2, 0] * vertices
     complements = facing[0] & facing[1] & unread
     hats = complements / (complements & (corners * vertices))
@@ -42,31 +42,31 @@ def medium(topology, vertices: Point, permeability: Scalar, conductivity: Scalar
     hat_fields = gradients ^ mv.z
     response = magnetic_response / (mean * permeability)
     local = areas * (hat_fields[:, None] & response(hat_fields[None, :]))
-    stiffness = (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)
-    source = (~corners * (areas * (hat_fields & (mean * remanence)))).sum(axis=0)
+    stiffness = (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)
+    source = (corners.adjugate() * (areas * (hat_fields & (mean * remanence)))).sum(axis=0)
     mass = cells * conductivity
-    extension = ~topology.reading(topology.interior[0], 0)
+    extension = topology.reading(topology.interior[0], 0).adjugate()
     return areas, cells, gradients, response, stiffness, source, mass, extension
 
 
 def evolution(stiffness, source: Scalar, mass: Scalar, extension, coil: Scalar,
               drive: np.ndarray, step: float):
     """Evolve one spatial potential under a coil pulse, with the magnet always present."""
-    initial = (~extension * stiffness * extension) * Scalar
-    potential = extension * initial.solve(~extension * (source + coil * drive[0]))
+    initial = (extension.adjugate() * stiffness * extension) * Scalar
+    potential = extension * initial.solve(extension.adjugate() * (source + coil * drive[0]))
     yield potential
     storage = spdiag(mass / step)
-    implicit = (~extension * (storage + stiffness / 2) * extension) * Scalar
+    implicit = (extension.adjugate() * (storage + stiffness / 2) * extension) * Scalar
     explicit = storage - stiffness / 2
     # An isolated conductor redistributes charge until its net current along z vanishes.
     # Its uniform electric reading is determined alongside the spatial potential.
-    uniform = extension * implicit.solve(~extension * (mass / step))
+    uniform = extension * implicit.solve(extension.adjugate() * (mass / step))
     total_mass = mass.sites.sum()
     denominator = 1 - (mass * uniform).sites.sum() / total_mass
     for previous, following in zip(drive[:-1], drive[1:]):
         load = source + coil * ((previous + following) / 2)
         mean_potential = (mass * potential).sites.sum() / total_mass
-        particular = extension * implicit.solve(~extension * (explicit * potential + load - mass * mean_potential / step))
+        particular = extension * implicit.solve(extension.adjugate() * (explicit * potential + load - mass * mean_potential / step))
         mean_following = (mass * particular).sites.sum() / total_mass / denominator
         potential = particular + uniform * mean_following
         yield potential

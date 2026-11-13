@@ -80,7 +80,7 @@ def run(across: int, up: int, frames: int, name: str):
             field = (hat_fields * (corners * potential)).sum(axis=0)
             magnetization = permanent + core.magnetic_response(field) - response(field)
             # Moment flux through each cell's boundary gives its equivalent magnetic pole charge.
-            pole_charge = (~corners * (areas * (pole_readings & magnetization))).sum(axis=0)
+            pole_charge = (corners.adjugate() * (areas * (pole_readings & magnetization))).sum(axis=0)
             pole_density = pole_charge / cells
             mean_rate = (mass * rate).sites.sum() / mass.sites.sum()
             electric = -(rate - mean_rate) * core.mv.zt
