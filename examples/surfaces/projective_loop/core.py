@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from numga import NumpyContext
 from numga.algebras import PGA3D as ga
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 ctx = NumpyContext(ga)
 mv = ctx.multivector

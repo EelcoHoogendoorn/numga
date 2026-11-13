@@ -10,8 +10,9 @@ from matplotlib.colors import to_rgb
 
 from examples.quantum.hubbard_ring import core
 from examples.util import charts
-from examples.util.wgsl import planar, simplices
-from examples.util.wgsl.camera import panel
+from numga.topology import Topology
+from numga.render import planar, simplices
+from examples.util.panels import overlay, panel
 from numga import stack
 
 UP, DOWN, LEVELS = "#c0392b", "#2e86c1", "#7d3c98"
@@ -67,9 +68,9 @@ def animate_ring(ratios: np.ndarray, occupation: core.Scalar) -> Iterator[np.nda
                                   ring_pixels / (ring_pixels + label_pixels)))
             ax.set(xlim=(-1.3, 1.3), ylim=(-1.3, 1.3), aspect="equal")
             camera = panel(ax, planar.mv.x, planar.mv.y, planar.mv.w)
-            outline = simplices.strokes(rim, simplices.Topology.loops([n_rim_samples]), RIM, charts.FRAME_PX, camera)
+            outline = simplices.strokes(rim, Topology.loops([n_rim_samples]), RIM, charts.FRAME_PX, camera)
             sites = simplices.markers(places, SITE, charts.MARKER_PX / 2, camera)
-            rings.append((camera, outline, sites, simplices.overlay(ax, [outline, sites])))
+            rings.append((camera, outline, sites, overlay(ax, [outline, sites])))
             # The ring's label stays, its ticks and frame gone.
             ax.set_axis_on()
             ax.set(xticks=[], yticks=[])
@@ -79,7 +80,7 @@ def animate_ring(ratios: np.ndarray, occupation: core.Scalar) -> Iterator[np.nda
         for index in range(tips.shape[1]):
             for (camera, outline, sites, shown), case_bars in zip(rings, bars[:, index]):
                 # The spin counts as bars about as wide as the sites' dots, under the sites.
-                spins = simplices.strokes(case_bars.reshape(-1), simplices.Topology.chains([2] * n_bars), bar_colours,
+                spins = simplices.strokes(case_bars.reshape(-1), Topology.chains([2] * n_bars), bar_colours,
                                           spin_pixels, camera, cap=simplices.Cap.BUTT)
                 shown.set_data(simplices.composited([outline, spins, sites]))
             figure.canvas.draw()

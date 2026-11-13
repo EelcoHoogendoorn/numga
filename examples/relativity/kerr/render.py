@@ -11,8 +11,9 @@ from matplotlib.colors import to_rgb
 from numga import concatenate, stack
 
 from examples.util.animation import capture
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, offset_panel
+from numga.topology import Topology
+from numga.render import Camera, contours, simplices
+from examples.util.panels import offset_panel, overlay
 from examples.relativity.kerr import core
 
 # The spin sweep's resolution: its thin rays need no more. The rays' width in pixels and how much they cover, and the
@@ -50,10 +51,10 @@ def rays_and_horizon(paths: core.Antivector, outline: core.Antivector, camera: C
     colours = plt.colormaps["coolwarm"](np.linspace(0.05, 0.95, n_rays))[:, :3]
     # The horizon a fan of triangles from the hole's centre to each side of its outline: the outline's cone.
     n_sides = outline.shape[0]
-    fan = contours.Topology.loops([n_sides]).cone()
+    fan = Topology.loops([n_sides]).cone()
     disc = concatenate((outline, 0 * outline[:1]))                           # [sides + 1] Antivector-
     return simplices.composited([
-        simplices.strokes(by_ray, simplices.Topology.chains([n_steps] * n_rays), np.repeat(colours, n_steps - 1, axis=0),
+        simplices.strokes(by_ray, Topology.chains([n_steps] * n_rays), np.repeat(colours, n_steps - 1, axis=0),
                           ray_width, camera, opacity=ray_opacity),
         contours.picture(disc, fan, np.zeros(n_sides + 1), horizon_shade, camera)])
 
@@ -67,7 +68,7 @@ def animate_rays(paths: core.Antivector, horizons: core.Antivector,
     figure.canvas.draw()
     figure.set_layout_engine("none")
     camera = offset_panel(ax, core.mv.x, core.mv.y)
-    picture = simplices.overlay(ax, [np.zeros(camera.shape + (4,))])
+    picture = overlay(ax, [np.zeros(camera.shape + (4,))])
 
     for spin in range(paths.shape[1]):
         picture.set_data(rays_and_horizon(paths[:, spin], horizons[spin], camera))
@@ -83,7 +84,7 @@ def draw_ray_comparison(paths: tuple[core.Antivector, core.Antivector], horizon:
         ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
         ax.set_axis_off()
     for ax, path in zip(axes, paths):
-        simplices.overlay(ax, [rays_and_horizon(path, horizon, offset_panel(ax, core.mv.x, core.mv.y))])
+        overlay(ax, [rays_and_horizon(path, horizon, offset_panel(ax, core.mv.x, core.mv.y))])
     return figure
 
 

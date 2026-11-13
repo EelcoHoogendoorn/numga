@@ -13,8 +13,9 @@ from numga import concatenate, stack
 from examples.relativity.moving_mirror import core
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, offset_panel
+from numga.topology import Topology
+from numga.render import Camera, contours, simplices
+from examples.util.panels import offset_panel, overlay
 
 mv = core.mv
 primal_colour = "#286580"
@@ -83,7 +84,7 @@ def worldsheet(events: core.Point, topology: core.Topology, values: np.ndarray, 
 def diagram(ax: plt.Axes, pictures: list[np.ndarray]):
     """A spacetime diagram's pictures laid over each other into its panel, under the panel's frame, which stays; the
     image, for an animation to set its data."""
-    shown = simplices.overlay(ax, pictures)
+    shown = overlay(ax, pictures)
     shown.set_zorder(1)
     ax.set_axis_on()
     return shown
@@ -111,7 +112,7 @@ def picture_length(directions: core.Point) -> core.Scalar:
 
 def light_cone_cross(origin: core.Point, arm_length: float, camera: Camera, opacity: float) -> np.ndarray:
     """Dashed null rays at 45 degrees through the event `origin`: their picture."""
-    return simplices.strokes(null_rays(origin, arm_length, arm_length).reshape(-1), simplices.Topology.chains([2, 2]),
+    return simplices.strokes(null_rays(origin, arm_length, arm_length).reshape(-1), Topology.chains([2, 2]),
                              ink(cone_colour), charts.LINE_PX, camera, dashes=cone_dashes, cap=simplices.Cap.BUTT,
                              opacity=opacity)
 
@@ -151,7 +152,7 @@ def streamlines(corners: core.Point, gradients: core.Plane, directions: core.Poi
     lengths = (picture_length(path[1:] - path[:-1]) * steps_kept).sum(axis=0)   # [seeds] Scalar+
     long = lengths >= min_stream_length * extent                             # [seeds]
     curves = [path[:, seed][keep] for seed, keep in enumerate(kept.T) if long[seed]]
-    return concatenate(curves), simplices.Topology.chains([curve.shape[0] for curve in curves])
+    return concatenate(curves), Topology.chains([curve.shape[0] for curve in curves])
 
 
 @charts.style()
@@ -184,17 +185,17 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
     euclidean_normal = -(mv.t >> lorentz_dual)                               # [] Point-
     scale = 0.28 / picture_length(lorentz_dual)                              # [] Scalar+
     tips = centroid + scale * stack((euclidean_normal, lorentz_dual))        # [2] Point-
-    simplices.overlay(hat_ax, [
+    overlay(hat_ax, [
         contours.picture(corners, core.triangle, np.zeros(3), ink(paper_colour), camera),
-        simplices.strokes(level_ends.reshape(-1), simplices.Topology.chains([2] * n_contours), ink(primal_colour),
+        simplices.strokes(level_ends.reshape(-1), Topology.chains([2] * n_contours), ink(primal_colour),
                           charts.LINE_PX, camera, opacity=0.55),
         simplices.strokes(corners, core.triangle, ink(wall_colour), charts.LINE_PX, camera),
-        simplices.strokes(corners[others], simplices.Topology.chains([2]), ink(wall_colour), bold_px, camera),
+        simplices.strokes(corners[others], Topology.chains([2]), ink(wall_colour), bold_px, camera),
         light_cone_cross(centroid, 0.38, camera, 0.82),
         simplices.markers(corners, ink(wall_colour), charts.MARKER_PX / 2, camera),
         *ringed(corners[index][None], accent_colour, highlight_radius, camera),
         simplices.strokes(stack((centroid.broadcast_to((2,)), tips), axis=-1).reshape(-1),
-                          simplices.Topology.chains([2, 2]), np.stack((ink(primal_colour), ink(accent_colour))), bold_px,
+                          Topology.chains([2, 2]), np.stack((ink(primal_colour), ink(accent_colour))), bold_px,
                           camera, cap=simplices.Cap.BUTT),
         *ringed(tips[:1], primal_colour, charts.MARKER_PX / 2, camera),
         *ringed(tips[1:], accent_colour, charts.MARKER_PX / 2, camera),
@@ -213,12 +214,12 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
     fractions = np.linspace(0.06, 0.94, n_streamlines)
     seeds = (start * (1 - fractions) + end * fractions) * 0.85 + centroid * 0.15  # [seeds] Point-
     curves, chains = streamlines(corners, gradients, corner_field, seeds)
-    simplices.overlay(edge_ax, [
+    overlay(edge_ax, [
         contours.picture(corners, core.triangle, np.zeros(3), ink(paper_colour), camera),
         simplices.strokes(corners, core.triangle, ink(wall_colour), charts.LINE_PX, camera),
         simplices.strokes(curves, chains, ink(primal_colour), charts.LINE_PX, camera),
         light_cone_cross(corners[edge_index], 0.42, camera, 0.82),
-        simplices.strokes(stack((start, end)), simplices.Topology.chains([2]), ink(accent_colour), bold_px, camera),
+        simplices.strokes(stack((start, end)), Topology.chains([2]), ink(accent_colour), bold_px, camera),
         *ringed(corners[edge_index][None], primal_colour, highlight_radius, camera)])
 
     # Panel 3: Causal forward light-cone wake from a localized spacetime source event.
@@ -234,7 +235,7 @@ def draw_light_cone_whitney(corners: core.Point, points: core.Point,
     rays = null_rays(source_event, 0.0, 0.50).reshape(-1)                   # [rays * 2] Point-
     diagram(wake_ax, [
         worldsheet(wake_vertices.batch(), topology, wake_vals, wake_limit, camera),
-        simplices.strokes(rays, simplices.Topology.chains([2, 2]), ink(cone_colour), charts.LINE_PX, camera,
+        simplices.strokes(rays, Topology.chains([2, 2]), ink(cone_colour), charts.LINE_PX, camera,
                           dashes=cone_dashes, cap=simplices.Cap.BUTT, opacity=0.85),
         *ringed(source_event[None], accent_colour, highlight_radius, camera)])
     return figure
@@ -257,7 +258,7 @@ def coarse_grid(grid: core.Point, step_t: int, step_x: int) -> tuple[core.Point,
     # Each diagonal joins a corner of a coarse cell to the corner opposite it.
     diagonals = stack((grid[:-step_t:step_t, :-step_x:step_x], grid[step_t::step_t, step_x::step_x]), axis=-1)   # [rows, columns, 2] Point-
     lines = concatenate((rows.reshape(-1), columns.reshape(-1), diagonals.reshape(-1)))
-    return lines, simplices.Topology.chains([n_space] * rows.shape[0] + [n_times] * columns.shape[0]
+    return lines, Topology.chains([n_space] * rows.shape[0] + [n_times] * columns.shape[0]
                                         + [2] * (diagonals.shape[0] * diagonals.shape[1]))
 
 
@@ -267,8 +268,8 @@ def world_lines(grid: core.Point, opacity: float, camera: Camera) -> list[np.nda
     lines, chains = coarse_grid(grid, 18, 7)
     n_times = grid.shape[0]
     return [simplices.strokes(lines, chains, ink(wall_colour), charts.FRAME_PX, camera, opacity=opacity),
-            simplices.strokes(grid[:, 0], simplices.Topology.chains([n_times]), ink(wall_colour), charts.LINE_PX, camera),
-            simplices.strokes(grid[:, -1], simplices.Topology.chains([n_times]), ink(ink_colour), bold_px, camera)]
+            simplices.strokes(grid[:, 0], Topology.chains([n_times]), ink(wall_colour), charts.LINE_PX, camera),
+            simplices.strokes(grid[:, -1], Topology.chains([n_times]), ink(ink_colour), bold_px, camera)]
 
 
 @charts.style()
@@ -302,7 +303,7 @@ def draw_moving_mirror_doppler(topology: core.Topology, vertices: core.Point,
     camera = offset_panel(world_ax, mv.x, mv.t)
     diagram(world_ax, [worldsheet(vertices.batch(), topology, wave_rate_vals, field_limit, camera)]
             + world_lines(grid, 0.14, camera)
-            + [simplices.strokes(grid[[before_row, after_row]].reshape(-1), simplices.Topology.chains([n_space, n_space]),
+            + [simplices.strokes(grid[[before_row, after_row]].reshape(-1), Topology.chains([n_space, n_space]),
                                  np.repeat([ink(primal_colour), ink(accent_colour)], n_space - 1, axis=0),
                                  charts.LINE_PX, camera, dashes=cone_dashes, cap=simplices.Cap.BUTT)])
 
@@ -397,7 +398,7 @@ def animate_moving_mirror(topology: core.Topology, vertices: core.Point,
             x_slice, waveform = places[row], normalized_grid[row]
             wall_x = float(x_slice[-1])
             world.set_data(simplices.composited([
-                sheet, simplices.strokes(grid[row], simplices.Topology.chains([n_space]), ink(accent_colour),
+                sheet, simplices.strokes(grid[row], Topology.chains([n_space]), ink(accent_colour),
                                          charts.LINE_PX, camera),
                 *ringed(grid[row, -1:], accent_colour, charts.MARKER_PX / 2, camera)]))
             beyond.set_x(wall_x)

@@ -11,8 +11,9 @@ from numga import stack
 from examples.util import charts
 from examples.mechanics.crystal_waves import core
 from examples.mechanics.crystal_waves.scenarios import MODES
-from examples.util.wgsl import pinned, room, simplices
-from examples.util.wgsl.camera import Camera, offset_panel
+from numga.topology import Topology
+from numga.render import Camera, simplices
+from examples.util.panels import offset_panel, overlay, pinned, room
 
 MODE_COLOURS = ("#c0392b", "#2e86c1", "#7d3c98")
 CROSS_COLOUR, LABEL_COLOUR = "0.85", "0.4"
@@ -43,7 +44,7 @@ def cross_drawn(limit: float, camera: Camera) -> np.ndarray:
     it stands in for: its picture."""
     x, y, _ = core.axes
     ends = limit * stack((-x.dual(), x.dual(), -y.dual(), y.dual()))         # [4] Antivector-
-    return simplices.strokes(ends, simplices.Topology.chains([2, 2]), np.array(to_rgb(CROSS_COLOUR)), charts.FRAME_PX,
+    return simplices.strokes(ends, Topology.chains([2, 2]), np.array(to_rgb(CROSS_COLOUR)), charts.FRAME_PX,
                              camera, cap=simplices.Cap.BUTT)
 
 
@@ -89,7 +90,7 @@ def draw_wave_fronts(velocities: core.Vector, names: list[str]) -> plt.Figure:
     for ax, velocity, limit in zip(np.atleast_1d(row), velocities, limits):
         camera = offset_panel(ax, core.mv.x, core.mv.y)
         # Small dots, so that the sampled headings read as curves, each wave over the slower ones.
-        simplices.overlay(ax, [cross_drawn(limit, camera)] + [
+        overlay(ax, [cross_drawn(limit, camera)] + [
             simplices.markers(velocity[:, mode], np.array(to_rgb(colour)), DOT_PX / 2, camera)
             for mode, colour in zip(range(len(MODES)), MODE_COLOURS)])
     return figure

@@ -12,9 +12,9 @@ import numpy as np
 
 from numga import Algebra, NumpyContext
 from numga.algebras import STA2D as ga
-from numga.sparse import SparseExtensor, spdiag
+from numga.sparse import Sparse, SparseExtensor, spdiag
 
-from examples.util.topology import Topology
+from numga.topology import Topology
 from examples.electromagnetism.piezoelectric.numerical import solve_coupled
 
 # The spacetime of the strip's plane, x+y+t-: two positive spatial directions, one negative time direction.
@@ -119,7 +119,7 @@ def assemble(topology: Topology, areas: Scalar, gradients: Plane, elastic: Elast
     corners = topology.incidence[2, 0]                                            # [corners] Scalar+[faces <- vertices]
     # The pullback onto the nodes: each test corner's incidence run back, the triangles' blocks, each trial corner's
     # incidence, summed over both corners of the pair.
-    return tuple((~corners[:, None] * spdiag((cells * weights).field()) * corners[None, :]).sum(axis=0).sum(axis=0)
+    return tuple((corners[:, None].adjugate() * spdiag((cells * weights).field()) * corners[None, :]).sum(axis=0).sum(axis=0)
                  for cells in (elastic_cells, mixed_cells, electric_cells))
 
 
@@ -172,13 +172,13 @@ def boundary_maps(topology: Strip, floating: np.ndarray) -> tuple[SparseExtensor
     """Free displacement nodes and potential groups; the named electrode shares one free voltage."""
     free_movement = np.setdiff1d(np.arange(topology.n_vertices), topology.clamped)
     # Each free displacement is put back at its vertex.
-    movement = ~topology.reading(free_movement, 0) * Point
+    movement = topology.reading(free_movement, 0).adjugate() * Point
     interior = np.setdiff1d(np.arange(topology.n_vertices), np.concatenate((topology.top, topology.bottom)))
     potential_nodes = np.concatenate((interior, floating))
     # Each interior node reads a voltage of its own, and the floating electrode's nodes all read the one after them.
     groups = np.concatenate((np.arange(len(interior)), np.full(len(floating), len(interior))))
     n_voltages = len(interior) + int(len(floating) > 0)
-    voltage = ~topology.reading(potential_nodes, 0) * SparseExtensor.selection(ctx, groups, n_voltages) * Scalar
+    voltage = topology.reading(potential_nodes, 0).adjugate() * Sparse.selection(groups, n_voltages) * Scalar
     return movement, voltage
 
 

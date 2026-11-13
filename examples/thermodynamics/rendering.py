@@ -24,9 +24,9 @@ from PIL import Image, ImageDraw, ImageFont
 from numga import Extensor, NumpyContext, concatenate, stack
 from numga.algebras import PGA2D
 from examples.util import charts
-from examples.util.wgsl import contours, image_figure, simplices, solids
-from examples.util.wgsl.camera import Camera, read
-from examples.util.wgsl.simplices import Cap, Topology
+from numga.topology import Topology
+from numga.render import Camera, Cap, contours, read, simplices, solids
+from examples.util.panels import image_figure
 
 context = NumpyContext(PGA2D)
 mv = context.multivector

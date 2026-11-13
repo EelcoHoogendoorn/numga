@@ -14,8 +14,9 @@ from numga import stack
 
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, offset_panel
+from numga.topology import Topology
+from numga.render import Camera, contours, simplices
+from examples.util.panels import offset_panel, overlay
 from examples.relativity.thomas_precession import core
 
 INK, FAINT, FILL, SPIN = "#1e293b", "#cbd5e1", "#dbeafe", "#ea580c"
@@ -74,7 +75,7 @@ def arrows(tails: core.Antivector, steps: core.Antivector, colours: np.ndarray, 
     tips = tails + steps                                                      # [arrows] Antivector-
     ends = stack((tails, tips), axis=-1).reshape(-1)                          # [arrows * 2] Antivector-
     n_arrows = tails.shape[0]
-    return simplices.strokes(ends, simplices.Topology.chains([2] * n_arrows), colours, ARROW_WIDTH, camera,
+    return simplices.strokes(ends, Topology.chains([2] * n_arrows), colours, ARROW_WIDTH, camera,
                              chevrons=np.ones(n_arrows), chevron=CHEVRON_LENGTH, cap=simplices.Cap.BUTT)
 
 
@@ -85,7 +86,7 @@ def dots(points: core.Antivector, radius: float, camera: Camera) -> np.ndarray:
 
 def outline(points: core.Antivector, colour: str, width: float, camera: Camera, opacity: float = 1.0) -> np.ndarray:
     """The closed polyline through points `[points]`, the last joined back to the first: its picture."""
-    return simplices.strokes(points, simplices.Topology.loops([points.shape[0]]), ink(colour), width, camera,
+    return simplices.strokes(points, Topology.loops([points.shape[0]]), ink(colour), width, camera,
                              opacity=opacity)
 
 
@@ -112,14 +113,14 @@ def animate_two_boosts(frames: Iterable[tuple[core.Antivector, core.Antivector, 
     # The disk set up once, the triangle and its arrows drawn for each frame.
     figure, ax, camera = canvas(TRIANGLE_CENTRE, TRIANGLE_HALF_WIDTH)
     edge = rim(camera)
-    shown = simplices.overlay(ax, [edge])
+    shown = overlay(ax, [edge])
     # The straight boost from rest keeps the rocket's x axis along the lab's.
     straight_axis = DISK_ARROW * core.mv.x.dual()                             # [] Antivector-
     for loop, corners, axes in frames:
         outline_points, tails = disk(loop), disk(corners)                      # [samples] Antivector-, [3] Antivector-
         # The triangle filled as a fan from rest, its first point, which its two straight sides leave from.
         n_samples = outline_points.shape[0]
-        fan = contours.Topology(n_samples, np.stack((np.zeros(n_samples - 2, dtype=int), np.arange(1, n_samples - 1),
+        fan = Topology(n_samples, np.stack((np.zeros(n_samples - 2, dtype=int), np.arange(1, n_samples - 1),
                                                  np.arange(2, n_samples)), axis=-1))
         shown.set_data(simplices.composited([
             edge,
@@ -144,10 +145,10 @@ def animate_orbits(loops: core.Antivector, states: Iterable[tuple[core.Antivecto
     figure, ax, camera = canvas((0, 0), orbit_half_width)
     by_orbit = outlines[np.arange(n_samples)[None, :], np.arange(n_orbits)[:, None]].reshape(-1)   # [orbits * samples] Antivector-
     beneath = [rim(camera),
-               simplices.strokes(by_orbit, simplices.Topology.chains([n_samples] * n_orbits),
+               simplices.strokes(by_orbit, Topology.chains([n_samples] * n_orbits),
                                  np.repeat(colours, n_samples - 1, axis=0), THIN, camera, opacity=0.5),
                arrows(disk(first[0]), spin_arrows(ORBIT_ARROW * unit_spins(first[1])), ink(FAINT), camera)]
-    shown = simplices.overlay(ax, beneath)
+    shown = overlay(ax, beneath)
     for velocities, spins in chain([first], states):
         points = disk(velocities)                                              # [orbits] Antivector-
         shown.set_data(simplices.composited(beneath + [
@@ -164,12 +165,12 @@ def animate_box(half_width: float, walls: core.Antivector, states: Iterable[tupl
     # each a closed loop of four.
     quarters = (core.mv.xy * (-np.arange(4) * np.pi / 4)).exp()                 # [corners] Rotor+
     corners = quarters >> (half_width * (core.mv.x.dual() + core.mv.y.dual()))  # [corners] Antivector-
-    square = simplices.Topology.loops([4])
+    square = Topology.loops([4])
     # The box and the diamond set up once; the spin and the particle drawn for each frame.
     figure, ax, camera = canvas((0, 0), 1.15 * half_width)
     beneath = [simplices.strokes(walls, square, ink(FAINT), THIN, camera),
                simplices.strokes(corners, square, ink(INK), BOLD, camera)]
-    shown = simplices.overlay(ax, beneath)
+    shown = overlay(ax, beneath)
     for position, spin in states:
         shown.set_data(simplices.composited(beneath + [
             arrows(position[None], spin_arrows(SCENE_ARROW * half_width * unit_spins(spin))[None], ink(SPIN), camera),
@@ -187,7 +188,7 @@ def animate_ring(ring: core.Antivector, states: Iterable[tuple[core.Antivector, 
     # The ring set up once; the momentum, the spin and the particle drawn for each frame.
     figure, ax, camera = canvas((0, 0), float((1.3 * radius).to_array()))
     beneath = [outline(ring, FAINT, BOLD, camera)]
-    shown = simplices.overlay(ax, beneath)
+    shown = overlay(ax, beneath)
     for position, velocity, spin in states:
         shown.set_data(simplices.composited(beneath + [
             arrows(position[None], (SCENE_ARROW * radius * unit(velocity))[None], ink(line_colours[0]), camera),

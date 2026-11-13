@@ -21,9 +21,9 @@ from numga.algebras import PGA2D
 
 from examples import instantiate
 from examples.util.animation import capture
-from examples.util.wgsl import contours, quadrics, simplices
-from examples.util.wgsl.camera import Camera, panel
-from examples.util.wgsl.simplices import Cap, Topology
+from numga.topology import Topology
+from numga.render import Camera, Cap, contours, quadrics, simplices
+from examples.util.panels import overlay, panel
 
 # The figures draw PGA2D geometry, from above.
 core = instantiate("examples.estimation.multiview.core", PGA2D)
@@ -167,21 +167,21 @@ def pose_covariances(motors: Motor, ellipsoids: Quadric, spreads: Scalar, camera
 def draw_rig(motors: Motor) -> plt.Figure:
     """Draw the camera rig."""
     figure, ax, camera = canvas(X_RANGE)
-    simplices.overlay(ax, cameras(motors, camera))
+    overlay(ax, cameras(motors, camera))
     return figure
 
 
 def draw_cones(motors: Motor, world_cones: Quadric) -> plt.Figure:
     """Draw the cameras and their sight cones through the scene points."""
     figure, ax, camera = canvas(X_RANGE)
-    simplices.overlay(ax, cones(motors, world_cones, camera) + cameras(motors, camera))
+    overlay(ax, cones(motors, world_cones, camera) + cameras(motors, camera))
     return figure
 
 
 def draw_reconstruction(motors: Motor, world_cones: Quadric, fused_splats: Quadric, points: Point) -> plt.Figure:
     """Draw the sight cones fused into splats around the reconstructed landmarks."""
     figure, ax, camera = canvas(X_RANGE)
-    simplices.overlay(ax, cones(motors, world_cones, camera) + splats(motors, fused_splats, points, camera)
+    overlay(ax, cones(motors, world_cones, camera) + splats(motors, fused_splats, points, camera)
                       + cameras(motors, camera))
     return figure
 
@@ -191,7 +191,7 @@ def draw_reconstruction_with_covariance(
 ) -> plt.Figure:
     """Draw the reconstruction with each camera's position uncertainty ellipsoid and heading spread."""
     figure, ax, camera = canvas(X_RANGE)
-    simplices.overlay(ax, cones(motors, world_cones, camera) + splats(motors, fused_splats, points, camera)
+    overlay(ax, cones(motors, world_cones, camera) + splats(motors, fused_splats, points, camera)
                       + cameras(motors, camera) + pose_covariances(motors, ellipsoids, spreads, camera))
     return figure
 
@@ -208,7 +208,7 @@ def animate_convergence(
     low, high = drawn.min(axis=0), drawn.max(axis=0)
     margin = room * (high - low).max()
     figure, ax, camera = canvas((low[0] - margin, high[0] + margin), (low[1] - margin, high[1] + margin))
-    image = simplices.overlay(ax, [np.zeros(camera.shape + (4,))])
+    image = overlay(ax, [np.zeros(camera.shape + (4,))])
     for motors, world_cones, fused_splats, points in chain([first], states):
         image.set_data(simplices.composited(cones(motors, world_cones, camera)
                                             + splats(motors, fused_splats, points, camera) + cameras(motors, camera)))

@@ -11,9 +11,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.util.animation import capture
-from examples.util.wgsl import quadrics, simplices
-from examples.util.wgsl.camera import Camera, panel
-from examples.util.wgsl.simplices import Topology
+from numga.topology import Topology
+from numga.render import Camera, quadrics, simplices
+from examples.util.panels import overlay, panel
 from examples.math.pascal import core
 
 mv = core.mv
@@ -73,14 +73,14 @@ def draw(shape: core.Quadric, hexagon: core.Point, sides: core.Line, crossing: c
     """Six points on a quadric as a hexagon, its opposite sides in matching colours, and the three
     points where they meet on one line."""
     figure, ax, planes, lines = canvas()
-    simplices.overlay(ax, pictures(planes, lines, shape, hexagon, sides, crossing, pascal_line))
+    overlay(ax, pictures(planes, lines, shape, hexagon, sides, crossing, pascal_line))
     return figure
 
 
 def animate(scenes: list[tuple[core.Quadric, core.Point, core.Line, core.Crossing, core.Line]]) -> Iterator[np.ndarray]:
     """One frame per scene."""
     figure, ax, planes, lines = canvas()
-    image = simplices.overlay(ax, pictures(planes, lines, *scenes[0]))
+    image = overlay(ax, pictures(planes, lines, *scenes[0]))
     for scene in scenes:
         image.set_data(simplices.composited(pictures(planes, lines, *scene)))
         yield capture(figure)

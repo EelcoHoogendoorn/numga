@@ -36,7 +36,7 @@ from numga import Algebra, NumpyContext, stack
 from numga.algebras import STA as ga
 from numga.sparse import SparseExtensor, spdiag
 
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
@@ -61,7 +61,7 @@ def assembled(topology: Topology, local: Scalar) -> SparseExtensor:
     """A form on each triangle's corners `[corners, corners] Scalar+[faces]` gathered onto the vertices it joins,
     `Scalar+[vertices <- vertices]`."""
     corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
-    return (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=-1).sum(axis=-1)
+    return (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=-1).sum(axis=-1)
 
 
 # --- math -----------------------------------------------------------------------------
@@ -76,7 +76,7 @@ def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Plane, Scala
     # A corner's hat gradient: the plane through the facing side, along the rod and through time, over twice the area,
     # so that it reads one from the side to the corner.
     gradients = (rod_direction & time & sides) / double_areas[..., None]      # [corners] Plane+[faces]
-    return areas, gradients, (~topology.incidence[2, 0] * (areas / 3)).sum(axis=-1)
+    return areas, gradients, (topology.incidence[2, 0].adjugate() * (areas / 3)).sum(axis=-1)
 
 
 def cooling(topology: Topology, areas: Scalar, gradients: Plane, cells: Scalar, inside: Scalar, outer: np.ndarray,
@@ -100,9 +100,9 @@ def cooling(topology: Topology, areas: Scalar, gradients: Plane, cells: Scalar, 
         # The superfluid's charge squared over its mass, its share of the electrons over the squared penetration depth.
         londons = spdiag(cells * inside * share / penetration ** 2)           # Scalar+[vertices <- vertices]
         held = field * heights                                                # Scalar+[vertices]
-        solving = (free * (conducting + stiffness + londons) * ~free) * Scalar
+        solving = (free * (conducting + stiffness + londons) * free.adjugate()) * Scalar
         right = conducting * potential + londons * reference - (conducting + stiffness + londons) * held
-        potential = held + ~free * solving.solve(free * right)                # [...] Scalar+[vertices]
+        potential = held + free.adjugate() * solving.solve(free * right)      # [...] Scalar+[vertices]
         if step % stride == 0:
             yield potential, -(inside * share / penetration ** 2) * (potential - reference)
 
@@ -123,14 +123,14 @@ def ring_fields(topology: Topology, areas: Scalar, gradients: Plane, in_ring: np
     # London's screening on the ring alone: the supercurrent's kinetic energy, each current read against the momentum
     # another carries, times the squared penetration depth, with the field's own energy in the cells.
     local = (currents[..., :, None] & inertia(currents[..., None, :])) * (ring * areas)[..., None, None]
-    screening = penetration ** 2 * (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=-1).sum(axis=-1) + (
-        (~corners * (ring * areas / 3)).sum(axis=-1))                         # Scalar+[vertices <- vertices]
+    screening = penetration ** 2 * (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=-1).sum(axis=-1) + (
+        (corners.adjugate() * (ring * areas / 3)).sum(axis=-1))               # Scalar+[vertices <- vertices]
     on_rim = np.isin(np.arange(topology.n_vertices), rim)                     # [vertices]
     free = topology.reading(np.flatnonzero(~(in_hole | on_rim)), 0)           # Scalar+[free <- vertices]
     hole, edge = (mv.scalar(chosen[:, None] * 1.0).field() for chosen in (in_hole, on_rim))   # Scalar+[vertices] each
     # The fields of a unit field in the hole with none at the rim, and of a unit field at the rim with none in the hole.
     units = stack([hole, edge])                                               # [2] Scalar+[vertices]
-    screened = units + ~free * (free * screening * ~free * Scalar).solve(-(free * (screening * units)))
+    screened = units + free.adjugate() * (free * screening * free.adjugate() * Scalar).solve(-(free * (screening * units)))
     # Each one's fluxoid: its flux through the hole, and its current's circulation along the hole's edge, which is the
     # screening's reaction there.
     hole_area = (mv.scalar(hole_faces[:, None] * 1.0).field() * areas).sites.sum()   # [] Scalar+

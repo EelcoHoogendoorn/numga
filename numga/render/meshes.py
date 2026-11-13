@@ -12,15 +12,13 @@ from typing import NamedTuple
 
 import numpy as np
 
-from examples.util import topology
-from examples.util.wgsl import Shader
-from examples.util.wgsl import solids
-from examples.util.wgsl.library import samples_per_side
-from examples.util.wgsl.camera import placing
-from examples.util.wgsl.solids import (Line, Plane, Point, View, flip, ga, lamp_shading, lighting, mv, origin, steps,
-                                       tangent_seen)
+from numga.topology import Topology
+from numga.wgsl import Shader, samples_per_side
 
-Topology = topology.Topology
+from . import solids
+from .camera import placing
+from .solids import (Line, Plane, Point, View, ga, lamp_shading, lighting, steps,
+                     tangent_seen)
 
 
 class Colour(NamedTuple):
@@ -143,7 +141,7 @@ def smooth(points: Point, topology: Topology) -> dict:
     corners = incidence * points.field()                                    # [3] Point-[faces]
     joined = corners[0] & corners[1] & corners[2]                            # Patch-[faces]
     # Read incidence backwards to sum each vertex's neighbouring tangents, then forwards to its face corners.
-    tangents = ~incidence.sum(axis=0) * joined                               # Patch-[vertices]
+    tangents = incidence.sum(axis=0).adjugate() * joined                     # Patch-[vertices]
     corners = (incidence * tangents).batch()                                 # [3, faces] Patch-
     return dict(a=corners[0], b=corners[1], c=corners[2])
 
@@ -166,11 +164,10 @@ def samples(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict,
     def padded(entries: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
         entries = np.broadcast_to(entries, shape + (np.shape(entries)[-1],))
         return np.concatenate([entries, np.zeros(shape + (4 - entries.shape[-1],))], axis=-1)
-    from examples.util.wgsl.simplices import view_camera
     return Samples(shader(colour), 3 * len(faces),
                    dict(points=points, faces=faces, values=padded(values, (len(faces), 3)).reshape(-1, 4),
                         face_values=padded(face_values, (len(faces),)), normals=normals,
-                        **view_camera(view).uniforms(8 * view.half.max()), **lighting(gloss), **steps(view)))
+                        **view.to_camera().uniforms(8 * view.half.max()), **lighting(gloss), **steps(view)))
 
 
 def layer(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, view: View,

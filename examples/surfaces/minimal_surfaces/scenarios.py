@@ -150,9 +150,9 @@ def main() -> None:
     np.testing.assert_allclose((turned_sides - 2 * areas * corner_gradients.dual()).kernel, 0.0, atol=1e-13)
 
     local_laplacian = (corner_gradients[:, None] & turned_sides[None, :]) / 2   # [corners, corners] Scalar+[faces]
-    laplacian = (~corners[:, None] * spdiag(local_laplacian) * corners[None, :]).sum(axis=0).sum(axis=0)  # Scalar+[vertices <- vertices]
-    area_pull = (~corners * turned_sides).sum(axis=0) / 2                                                         # Point-[vertices]
-    area_gradient = (~corners * (areas * corner_gradients)).sum(axis=0)      # Plane+[vertices]
+    laplacian = (corners[:, None].adjugate() * spdiag(local_laplacian) * corners[None, :]).sum(axis=0).sum(axis=0)  # Scalar+[vertices <- vertices]
+    area_pull = (corners.adjugate() * turned_sides).sum(axis=0) / 2                                               # Point-[vertices]
+    area_gradient = (corners.adjugate() * (areas * corner_gradients)).sum(axis=0)  # Plane+[vertices]
     np.testing.assert_allclose((area_pull - area_gradient.dual()).kernel, 0.0, atol=1e-13)
     np.testing.assert_allclose((area_pull - laplacian * initial_vertices).kernel, 0.0, atol=1e-12)
 

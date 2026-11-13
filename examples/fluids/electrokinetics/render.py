@@ -19,12 +19,12 @@ from matplotlib.colors import to_rgb
 from numga import concatenate
 from numga.extensor import Extensor
 from examples.util.charts import style, subplots
-from examples.util.wgsl import contours, flow, image_figure, simplices
-from examples.util.wgsl.camera import Camera
+from numga.topology import Topology
+from numga.render import Camera, contours, flow, simplices
+from examples.util.panels import image_figure
 from examples.fluids.electrokinetics import core
 
 mv = core.mv
-Topology = simplices.Topology
 wall_colour = np.array(to_rgb("#3b4a57"))
 # The liquid in a picture of the channels themselves.
 liquid_colour = np.array(to_rgb("#eef1f4"))

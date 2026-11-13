@@ -12,7 +12,7 @@ pytest.importorskip("wgpu")
 
 from numga import Algebra, GATypeError, NumpyContext, Orientation, stack
 
-from examples.util.wgsl import Shader
+from numga.wgsl import Shader
 
 ga = Algebra("x+y+z+w+")
 mv = NumpyContext(ga).multivector

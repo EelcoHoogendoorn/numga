@@ -10,8 +10,8 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.electromagnetism.magnetic_bottle import core
-from examples.util.wgsl import meshes, simplices, solids
-from examples.util.wgsl.scene import Scene
+from numga.topology import Topology
+from numga.render import Scene, meshes, simplices, solids
 
 mv = core.mv
 sm = solids.mv
@@ -74,7 +74,7 @@ def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.A
     rims = solids.origin + (to_scene >> solids.context.include_from_algebra(space_slice(coil_places)))   # [coils] Point-
     bottle_axis = to_scene >> solids.context.include_from_algebra(mv.xy)      # [] Line+
     rings = meshes.circles(rims, bottle_axis, n_around_coil)                  # [coils, around] Point-
-    wire = simplices.tubes(rings.reshape(-1), simplices.Topology.loops([n_around_coil] * len(heights)),
+    wire = simplices.tubes(rings.reshape(-1), Topology.loops([n_around_coil] * len(heights)),
                            to_rgb(wire_colour), wire_width, view, gloss=solids.gloss)
     scene = Scene(view, np.ones(3), [], [(sheet(points, strength, view), sheet_opacity), (wire, 1.0)], inks=[],
                   translucent=[])
@@ -83,7 +83,7 @@ def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.A
         trail = tracks[max(0, end - n_trail):end]                             # [trail, particles] Point-
         # Each particle's trail a chain of edges down the steps, through the trail's points numbered as they lie.
         numbered = np.arange(np.prod(trail.shape)).reshape(trail.shape)       # [trail, particles]
-        chains = simplices.Topology(numbered.size, np.stack([numbered[:-1], numbered[1:]], axis=-1).reshape(-1, 2))
+        chains = Topology(numbered.size, np.stack([numbered[:-1], numbered[1:]], axis=-1).reshape(-1, 2))
         trails = simplices.tubes(trail.reshape(-1), chains, np.tile(colours, (len(trail) - 1, 1)), track_width, view,
                                  gloss=solids.gloss)
         particles = solids.ball(tracks[end - 1], particle_radius * view.pixel)[:, None]

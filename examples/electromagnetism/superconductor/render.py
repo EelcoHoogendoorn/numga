@@ -17,10 +17,10 @@ from matplotlib.figure import Figure
 
 from numga.extensor import Extensor
 from examples.util.charts import style, subplots
-from examples.util.wgsl import contours, image_figure, simplices
-from examples.util.wgsl.camera import Camera
+from numga.topology import Topology
+from numga.render import Camera, contours, simplices
+from examples.util.panels import image_figure
 
-Topology = simplices.Topology
 mesh_colour = np.array(to_rgb("#9aa5ae"))
 rod_colour = np.array(to_rgb("#e3e0da"))
 edge_colour = np.array(to_rgb("#7d7466"))

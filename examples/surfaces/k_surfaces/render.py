@@ -15,8 +15,10 @@ import numpy as np
 
 from numga import concatenate
 from examples.surfaces.k_surfaces import core
-from examples.util.topology import Topology
-from examples.util.wgsl import compose, image_figure, meshes, solids
+from numga.topology import Topology
+from numga.wgsl import compose
+from numga.render import meshes, solids
+from examples.util.panels import image_figure
 
 # The pictures' pixels across and up; the bending saddle's at a share of them per side, its widths in pixels scaled
 # with it, and drawn with every so many of the grid's lines.

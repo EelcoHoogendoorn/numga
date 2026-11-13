@@ -11,8 +11,9 @@ from numga import Extensor, concatenate, stack
 from numga.algebras import PGA2D as ga
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import Camera, panel
+from numga.topology import Topology
+from numga.render import Camera, simplices
+from examples.util.panels import overlay, panel
 
 Point = ga.gatype.antivector()  # Antivector-
 
@@ -44,10 +45,10 @@ def rgb(colours) -> np.ndarray:
     return np.array([to_rgb(colour) for colour in np.ravel(colours)]).reshape(np.shape(colours) + (3,))
 
 
-def bodies_topology(n_bodies: int, n_vertices: int, edges: np.ndarray) -> simplices.Topology:
+def bodies_topology(n_bodies: int, n_vertices: int, edges: np.ndarray) -> Topology:
     """The bars of bodies alike, their vertices numbered body by body, as one mesh of edges."""
     offsets = n_vertices * np.arange(n_bodies)
-    return simplices.Topology(n_bodies * n_vertices, (edges[None] + offsets[:, None, None]).reshape(-1, 2))
+    return Topology(n_bodies * n_vertices, (edges[None] + offsets[:, None, None]).reshape(-1, 2))
 
 
 def mode_shapes(rest: Point, deformed: Point, edges: np.ndarray) -> plt.Figure:
@@ -65,11 +66,11 @@ def mode_shapes(rest: Point, deformed: Point, edges: np.ndarray) -> plt.Figure:
                  aspect="equal")
         axes.set_axis_off()
         panels.append(axes)
-    girder = simplices.Topology(rest.batch().shape[0], edges)
+    girder = Topology(rest.batch().shape[0], edges)
     mv = rest.context.multivector
     for i, (axes, shape) in enumerate(zip(panels, shapes)):
         camera = panel(axes, mv.x, mv.y, mv.w)
-        simplices.overlay(axes, [simplices.strokes(rest.batch(), girder, rgb(REST_COLOUR), REST_WIDTH, camera),
+        overlay(axes, [simplices.strokes(rest.batch(), girder, rgb(REST_COLOUR), REST_WIDTH, camera),
                                  simplices.strokes(shape, girder, rgb(COLOURS[i % len(COLOURS)]), MODE_WIDTH,
                                                    camera)])
     return figure
@@ -131,7 +132,7 @@ def swinging_chain(frames: Iterable[Point], edges: np.ndarray, reference: Point)
     lower = pivot - (mv.x.dual() + mv.y.dual()) * extent
     upper = pivot + (mv.x.dual() + mv.y.dual() * CHAIN_ABOVE) * extent
     figure, axes, camera = chain_scene(edges, reference, lower, upper)
-    image = simplices.overlay(axes, [chain_drawn(first, edges, reference, camera)])
+    image = overlay(axes, [chain_drawn(first, edges, reference, camera)])
     for points in chain([first], frames):
         image.set_data(chain_drawn(points, edges, reference, camera))
         yield capture(figure)
@@ -151,7 +152,7 @@ def draw_chain(points: Point, edges: np.ndarray) -> plt.Figure:
     lower = mv.w.dual() + (frame.dual() * (low - margin)).sum()
     upper = mv.w.dual() + (frame.dual() * (high + margin)).sum()
     figure, axes, camera = chain_scene(edges, points, lower, upper)
-    simplices.overlay(axes, [chain_drawn(points, edges, points, camera)])
+    overlay(axes, [chain_drawn(points, edges, points, camera)])
     return figure
 
 
@@ -177,7 +178,7 @@ def beam(frames: Iterable[Point], edges: np.ndarray) -> Iterator[np.ndarray]:
     axes.set_aspect("equal")
     axes.set_axis_off()
     camera = panel(axes, mv.x, mv.y, mv.w)
-    image = simplices.overlay(axes, [np.zeros(camera.shape + (4,))])
+    image = overlay(axes, [np.zeros(camera.shape + (4,))])
     for points in chain([first], frames):
         image.set_data(simplices.composited([
             simplices.strokes(points[0].batch().reshape(-1), girders, np.repeat(colours, len(edges), axis=0),

@@ -1253,6 +1253,8 @@ class Compiler:
                 return self.operation("sum", lambda *values: sum(values[1:], values[0]), base.constant, line)
             return self.gathered([self.method(line, value, name, nodes, scope) for value in base.constant])
         if name == "cast":
+            if len(nodes) != 1 or not isinstance(nodes[0], Name) or nodes[0].id not in self.types:
+                raise self.error(line, "cast takes the name of a type of the algebra")
             target = self.types[nodes[0].id]
             if base.text is None:
                 return self.constant(self.cast(base.constant, target))
@@ -1265,6 +1267,8 @@ class Compiler:
                 return self.binary(line, "/", Value("1.0", _ABSTRACT, 1.0), base)
         if name == "norm":
             return self.method(line, self.method(line, base, "symmetric_reverse_product", [], scope), "square_root", [], scope)
+        if name == "antinorm":
+            return self.method(line, self.operation("antidot", lambda x: x.dot(x), [base], line), "square_root", [], scope)
         if name == "normalized":
             return self.binary(line, "/", base, self.method(line, base, "norm", [], scope))
         if name == "inverse":
@@ -1439,7 +1443,8 @@ class Compiler:
         if isinstance(kind, str) and kind in ("type", _MV):
             raise self.error(node.line, f"{node.name} names no value")
         scope[-1][node.name] = Value(node.name, kind)
-        initial = f" = {self.coerce(value, kind, node.line)}" if value is not None else ""
+        initial = (f" = {self.coerce(value, kind, node.line)}" if value is not None else
+                   f" = {self.wgsl(kind)}()" if node.kind == "var" else "")
         keyword = "let" if node.kind == "const" else node.kind
         # WGSL infers what the shader left to inference; a written type is kept.
         annotation = f": {self.wgsl(kind)}" if node.type is not None else ""

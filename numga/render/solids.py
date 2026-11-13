@@ -17,13 +17,13 @@ import numpy as np
 
 from numga import NumpyContext, concatenate, stack, where
 from numga.algebras import PGA3D as ga
-from examples.util.topology import Topology
-from examples.util.wgsl import Shader, supersampled
-from examples.util.wgsl.library import samples_per_side
-from examples.util.wgsl.runner import Resident
+from numga.topology import Topology
+from numga.wgsl import Resident, Shader, samples_per_side, supersampled
+
+from .camera import Camera, preimage, read
 
 if TYPE_CHECKING:
-    from examples.util.wgsl.meshes import Samples
+    from .meshes import Samples
 
 context = NumpyContext(ga)
 mv = context.multivector
@@ -834,6 +834,11 @@ class View(NamedTuple):
         seen = self.camera << points
         return ((axes[:2] & seen[..., None]) / (mv.w & seen)[..., None]).to_array()
 
+    def to_camera(self) -> Camera:
+        """A view's camera: its frame's planes turned into the scene, weighing points by the plane at infinity."""
+        across, up, toward = self.camera >> axes
+        return Camera(across, up, toward, mv.w, 0.0, np.zeros(2), self.half, self.pixels)
+
 
 def view(points: list[Point], reach: float, elevation: float, azimuth: float, margin: float, pixels: int) -> View:
     """A view framing batches of points, of any weight, and `reach` around each, from an elevation and azimuth, in
@@ -869,18 +874,14 @@ def lighting(glint: float) -> dict:
 
 def seen_lamp(view: View, lamp: Point) -> np.ndarray:
     """A lamp's direction in the scene, as the view's picture sees it: across, up and toward the viewer, a unit."""
-    from examples.util.wgsl.camera import read
-    from examples.util.wgsl.simplices import view_camera
-    camera = view_camera(view)
+    camera = view.to_camera()
     seen = np.array([float(read(plane, lamp).to_array()) for plane in (camera.across, camera.up, camera.toward)])
     return seen / np.linalg.norm(seen)
 
 
 def steps(view: View) -> dict:
     """The uniforms of `tangent_seen` for a view: the steps its camera reads as one across, up and toward the viewer."""
-    from examples.util.wgsl.camera import preimage
-    from examples.util.wgsl.simplices import view_camera
-    _, across, up, toward = preimage(view_camera(view), Point)
+    _, across, up, toward = preimage(view.to_camera(), Point)
     return dict(step_across=across, step_up=up, step_toward=toward)
 
 
@@ -913,15 +914,13 @@ def trace(tracer: Shader, encoder: Any, view: View, solids: tuple, buffers: Mesh
           opacities: list[float], background: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """The solids, as `scene` lays them out, traced among the meshes whose samples the buffers hold, each with its
     opacity, over the background, on the encoder: the picture's colour and depth."""
-    from examples.util.wgsl.camera import preimage
-    from examples.util.wgsl.simplices import view_camera
     quadrics, solids, looks, inked, holding = solids
     # A mesh that shows nothing stands for none, so that the opacities are never empty.
     outputs = tracer.encode(encoder, view.shape, (), dict(
         quadrics=quadrics, solids=solids, looks=looks, **inked,
         mesh_colours=Resident(buffers.colours, buffers.size), mesh_depths=Resident(buffers.depths, buffers.size),
         mesh_row=buffers.row_bytes // 4, mesh_opacities=np.array(opacities or [0.0], dtype=np.float32),
-        n_meshes=len(opacities), **tiles(*holding, view), pixel=view.pixel, middle=preimage(view_camera(view), Point)[0],
+        n_meshes=len(opacities), **tiles(*holding, view), pixel=view.pixel, middle=preimage(view.to_camera(), Point)[0],
         back=4 * view.half.max(), half_height=view.half[1], background=background, **lighting(gloss), **steps(view)))
     image = tracer.read(encoder, outputs, view.shape)["image"]
     return image["colour"], image["depth"][..., 0]

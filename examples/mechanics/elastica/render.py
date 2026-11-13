@@ -13,8 +13,9 @@ from matplotlib.colors import to_rgb
 from numga import stack
 from examples.util.animation import capture
 from examples.mechanics.elastica import core
-from examples.util.wgsl import image_figure, meshes, simplices, solids
-from examples.util.wgsl.camera import Camera, panel
+from numga.topology import Topology
+from numga.render import Camera, meshes, simplices, solids
+from examples.util.panels import image_figure, overlay, panel
 
 mv = core.mv
 # The colours of the rods by case, of the line of thrust and the pins, and of the ribbon; the margin around
@@ -73,10 +74,10 @@ def draw_curls(centres: core.Point) -> plt.Figure:
     camera = frame_plane(ax, *extent(centres))
     # The clamp across the whole panel, along the plane z = 0 where the strip is held.
     clamp = mv.point([[0, height, 0] for height in ax.get_ylim()])           # [ends] Point-
-    simplices.overlay(ax, [
-        simplices.strokes(centres.reshape(-1), simplices.Topology.chains([n_points] * n_curls),
+    overlay(ax, [
+        simplices.strokes(centres.reshape(-1), Topology.chains([n_points] * n_curls),
                           np.repeat(colours, n_points - 1, axis=0), PLANE_ROD_WIDTH, camera),
-        simplices.strokes(clamp, simplices.Topology.chains([2]), PIN, PLANE_CLAMP_WIDTH, camera, cap=simplices.Cap.BUTT)])
+        simplices.strokes(clamp, Topology.chains([2]), PIN, PLANE_CLAMP_WIDTH, camera, cap=simplices.Cap.BUTT)])
     return figure
 
 
@@ -84,8 +85,8 @@ def rod_pictures(curve: core.Point, ax: plt.Axes, camera: Camera) -> list[np.nda
     """One of Euler's elastica `[pieces + 1]`: the line of thrust across the panel, the rod, and its pins at its two
     ends."""
     thrust = mv.point([[0, 0, along] for along in ax.get_xlim()])            # [ends] Point-
-    return [simplices.strokes(thrust, simplices.Topology.chains([2]), THRUST, THRUST_WIDTH, camera),
-            simplices.strokes(curve, simplices.Topology.chains([len(curve)]), ROD, PLANE_ROD_WIDTH, camera),
+    return [simplices.strokes(thrust, Topology.chains([2]), THRUST, THRUST_WIDTH, camera),
+            simplices.strokes(curve, Topology.chains([len(curve)]), ROD, PLANE_ROD_WIDTH, camera),
             simplices.markers(curve[[0, -1]], PIN, PIN_RADIUS, camera)]
 
 
@@ -97,7 +98,7 @@ def animate_sweep(centres: core.Point) -> Iterator[np.ndarray]:
                               dpi=60)
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
     camera = frame_plane(ax, low, high)
-    rod = simplices.overlay(ax, rod_pictures(centres[0], ax, camera))
+    rod = overlay(ax, rod_pictures(centres[0], ax, camera))
     for curve in centres:
         rod.set_data(simplices.composited(rod_pictures(curve, ax, camera)))
         yield capture(figure)
@@ -166,9 +167,9 @@ def wires(curves: core.Point, ribbons: core.Point, view: solids.View) -> list[tu
     corners = np.stack([index[:, :-1, 0], index[:, 1:, 0], index[:, 1:, 1], index[:, :-1, 1]], axis=-1)
     faces = corners[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
     edges = ribbons.reshape(-1)                                              # [vertices] Point-
-    strips = meshes.samples(edges, faces, RIBBON, meshes.smooth(edges, meshes.Topology(len(edges), faces)), view, face_values=np.zeros(4),
+    strips = meshes.samples(edges, faces, RIBBON, meshes.smooth(edges, Topology(len(edges), faces)), view, face_values=np.zeros(4),
                             colour=meshes.plain, gloss=solids.gloss)
-    rods = simplices.tubes(curves.reshape(-1), simplices.Topology.chains([curves.shape[1]] * curves.shape[0]), ROD,
+    rods = simplices.tubes(curves.reshape(-1), Topology.chains([curves.shape[1]] * curves.shape[0]), ROD,
                            ROD_WIDTH, view, gloss=solids.gloss)
     return [(strips, 1.0), (rods, 1.0)]
 

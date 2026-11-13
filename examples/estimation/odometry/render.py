@@ -12,9 +12,9 @@ from numga import concatenate, stack
 from numga.algebras import PGA2D
 from examples import instantiate
 from examples.util.animation import capture
-from examples.util.wgsl import quadrics, simplices
-from examples.util.wgsl.camera import Camera, panel
-from examples.util.wgsl.simplices import Cap, Topology
+from numga.topology import Topology
+from numga.render import Camera, Cap, quadrics, simplices
+from examples.util.panels import overlay, panel
 
 # The drawings are of the lap in PGA2D.
 core = instantiate("examples.estimation.odometry.core", PGA2D)
@@ -95,7 +95,7 @@ def draw_lap(truth: core.Motor, dead: core.Motor, reckoned_ellipsoids, linked_po
     """Render the true lap, the dead-reckoned trajectory with its uncertainty ellipsoids, and the loop-closing link."""
     figure, ax, camera = framed(extent(truth, dead))
     linked_positions = linked_poses >> origin                                   # [endpoints] Point-
-    simplices.overlay(ax, base_pictures(truth, dead, reckoned_ellipsoids, camera) + [
+    overlay(ax, base_pictures(truth, dead, reckoned_ellipsoids, camera) + [
         path(linked_positions, CLOSING_WIDTH, CLOSING_RGB, camera),
         disc(linked_positions, CLOSING_MARK, CLOSING_RGB, camera),
         disc(truth[:1] >> origin, START_MARK, START_RGB, camera),
@@ -107,7 +107,7 @@ def draw(truth: core.Motor, dead: core.Motor, reckoned_ellipsoids, poses: core.M
          ellipsoids) -> plt.Figure:
     """Render the true path, the dead-reckoned trajectory with its uncertainty ellipsoids, and the estimated poses with theirs."""
     figure, ax, camera = framed(extent(truth, dead))
-    simplices.overlay(ax, base_pictures(truth, dead, reckoned_ellipsoids, camera)
+    overlay(ax, base_pictures(truth, dead, reckoned_ellipsoids, camera)
                       + likely_pictures(truth, poses, ellipsoids, camera))
     return figure
 
@@ -116,7 +116,7 @@ def animate(truth: core.Motor, dead: core.Motor, reckoned_ellipsoids, closing_st
     """Yield one frame per damped Gauss-Newton iteration over the true path and dead reckoning."""
     figure, ax, camera = framed(extent(truth, dead))
     background = base_pictures(truth, dead, reckoned_ellipsoids, camera)
-    image = simplices.overlay(ax, background)
+    image = overlay(ax, background)
     for poses, ellipsoids in closing_steps:
         image.set_data(simplices.composited(background + likely_pictures(truth, poses, ellipsoids, camera)))
         yield capture(figure)

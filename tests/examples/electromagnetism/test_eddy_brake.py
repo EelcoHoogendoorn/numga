@@ -62,7 +62,7 @@ def test_localized_field_conserves_charge_and_turns_mechanical_power_into_heat()
     conductivity = core.fibre_conductivity(disc, principal, 0, radius, conductance)
     response = core.solve(disc, magnetic, spin, conductivity)
 
-    charge_balance = ~disc.topology.d[0] * response.flux
+    charge_balance = disc.topology.d[0].adjugate() * response.flux
     heat = response.heating.sites.sum()
     # The moment paired with the spin: minus the power it takes out of the turning.
     mechanical_loss = -(spin & response.torque)
@@ -151,8 +151,8 @@ def test_isotropic_material_recovers_the_cotangent_stiffness():
     tails, heads = disc.topology.corners[2, 1]
     after, before = disc.triangle_edges[tails], disc.triangle_edges[heads]
     cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()
-    weights = (~disc.topology.incidence[2, 1] * (cotangents / 2)).sum(axis=0)
-    cotangent = (~disc.topology.d[0] * core.spdiag(conductance * weights) * disc.topology.d[0]) * core.Scalar
+    weights = (disc.topology.incidence[2, 1].adjugate() * (cotangents / 2)).sum(axis=0)
+    cotangent = (disc.topology.d[0].adjugate() * core.spdiag(conductance * weights) * disc.topology.d[0]) * core.Scalar
     potentials = core.as_scalar(np.random.default_rng(3).normal(size=disc.topology.n_vertices)).field()
     # The face gradient is constant, so integrating its material pairing at the centroid is exact.
     np.testing.assert_allclose(balance(potentials).kernel, cotangent(potentials).kernel, atol=1e-10)

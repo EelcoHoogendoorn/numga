@@ -50,14 +50,14 @@ def qem():
     # A unit plane measures a point's signed distance from it as `plane & point`; its dyad, a map from points to
     # planes, gives the squared distance. Each vertex's error quadric sums the dyads of its triangles' planes.
     dyads = face_planes * (face_planes & Point)                                 # (Plane+ <- Point-)[faces]
-    quadrics = ~ridge.incidence[2, 0].sum(axis=0) * dyads                       # (Plane+ <- Point-)[vertices]
+    quadrics = ridge.incidence[2, 0].sum(axis=0).adjugate() * dyads             # (Plane+ <- Point-)[vertices]
     ends = ridge.reading(RIDGE_EDGE, 0)                                         # Scalar+[ends <- vertices]
     quadric_a, quadric_b = (ends * quadrics).batch()                            # [] Plane+ <- Point-, Plane+ <- Point-
     # Contracting the edge adds the endpoints' quadrics; the best vertex is its unit-weight minimum.
     edge_quadric = quadric_a + quadric_b                                        # [] Plane+ <- Point-
     optimum = collapse_position(edge_quadric, (ends * vertices).batch().mean(axis=0))   # [] Point-
     # The collapsed mesh: the surviving faces contract their a and b vertices to the optimum.
-    collapsed_vertices = vertices + ~ends * (optimum - ends * vertices)         # Point-[vertices]
+    collapsed_vertices = vertices + ends.adjugate() * (optimum - ends * vertices)  # Point-[vertices]
     return ridge, vertices, INCIDENT_A, INCIDENT_B, quadric_a, quadric_b, edge_quadric, optimum, collapsed_vertices, SURVIVING_FACES
 
 

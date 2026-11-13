@@ -10,7 +10,9 @@ import numpy as np
 from numga import concatenate, stack
 from numga.sparse import SparseExtensor, spdiag
 from examples.surfaces.minimal_surfaces import core
-from examples.util.wgsl import image_figure, meshes, simplices, solids
+from numga.topology import Topology
+from numga.render import meshes, simplices, solids
+from examples.util.panels import image_figure
 
 mv = core.mv
 background = np.ones(3)
@@ -101,10 +103,10 @@ def surface_with_curves(
     curves = solids.origin + solids.context.include_from_algebra((lift * surface).batch())    # [curves, samples] Point-
     n_curves, n_samples = curves.shape
     # Each ring a closed loop of edges in teal, each spoke a chain of edges in its own colour.
-    ring_strokes = simplices.tubes(curves[:n_rings].reshape(-1), simplices.Topology.loops([n_samples] * n_rings),
+    ring_strokes = simplices.tubes(curves[:n_rings].reshape(-1), Topology.loops([n_samples] * n_rings),
                                    teal, 2.0, view, solids.gloss)
     spoke_strokes = simplices.tubes(curves[n_rings:].reshape(-1),
-                                    simplices.Topology.chains([n_samples] * (n_curves - n_rings)),
+                                    Topology.chains([n_samples] * (n_curves - n_rings)),
                                     np.repeat(meridian_colours, n_samples - 1, axis=0), 2.0, view, solids.gloss)
     # The surface's projective embedding, once for the sheet and its wire.
     points = solids.origin + solids.context.include_from_algebra(surface.batch())               # [vertices] Point-
@@ -182,7 +184,7 @@ def animate_bonnet(
         colours = np.repeat(np.stack((teal, coral)),
                             [len(ring_curves) * (n_azimuths - 1), len(meridian_curves) * (n_heights - 1)], axis=0)
         curve_strokes = simplices.tubes(concatenate((ring_curves.reshape(-1), meridian_curves.reshape(-1))),
-                                        simplices.Topology.chains(lengths), colours, 2.0, view, solids.gloss)
+                                        Topology.chains(lengths), colours, 2.0, view, solids.gloss)
         # The surface's projective embedding, once for the sheet and its wire.
         points = solids.origin + solids.context.include_from_algebra(surface.batch())           # [vertices] Point-
         base = sheet(topology, points, surface_colour, view)
@@ -193,7 +195,7 @@ def animate_bonnet(
         normal_directions = (pin_reading * normals * unit_volume).dual()     # Point-[pins]
         roots = solids.origin + solids.context.include_from_algebra((pin_points - pin_depth * normal_directions).batch())   # [pins] Point-
         tips = solids.origin + solids.context.include_from_algebra((pin_points + pin_reach * normal_directions).batch())    # [pins] Point-
-        stems = simplices.tubes(stack((roots, tips), axis=-1).reshape(-1), simplices.Topology.chains([2] * len(roots)),
+        stems = simplices.tubes(stack((roots, tips), axis=-1).reshape(-1), Topology.chains([2] * len(roots)),
                                 gold, 2.2, view, solids.gloss)
         heads = solids.ball(tips, pin_head_radius)[:, None]
         yield solids.draw([(heads, gold)], view, background, inks=[], translucent=[],

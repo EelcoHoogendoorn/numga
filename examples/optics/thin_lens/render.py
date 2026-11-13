@@ -15,8 +15,9 @@ from matplotlib.colors import to_rgb
 from numga import concatenate, stack
 
 from examples.util.animation import capture
-from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import Camera, panel
+from numga.topology import Topology
+from numga.render import Camera, simplices
+from examples.util.panels import overlay, panel
 from examples.optics.thin_lens.core import Crossing, Line, LineMap, Plane, Point
 
 # The colours of a bundle's legs before, between and after the lenses; where parallel rays start ahead of the
@@ -34,12 +35,12 @@ plane_colour = to_rgb("gray")
 
 
 # --- plumbing -------------------------------------------------------------------------
-def segments(starts: Crossing, stops: Crossing) -> tuple[Crossing, simplices.Topology]:
+def segments(starts: Crossing, stops: Crossing) -> tuple[Crossing, Topology]:
     """Segments between matching starts and stops `[segments]`: their ends, and an edge from each start to its
     stop."""
     n_segments = len(starts)
     edges = np.stack([np.arange(n_segments), n_segments + np.arange(n_segments)], axis=-1)
-    return concatenate([starts, stops]), simplices.Topology(2 * n_segments, edges)
+    return concatenate([starts, stops]), Topology(2 * n_segments, edges)
 
 
 def plane_ends(planes: Plane, half_height: float) -> tuple[Crossing, Crossing]:
@@ -84,7 +85,7 @@ def draw_lenses(subject: Point, imaging: Line, image: Crossing, focusing: Line, 
         ax.autoscale_view()
     for ax, (legs, elements) in zip(axes, drawn):
         camera = panel(ax, mv.x, mv.y, mv.w)
-        simplices.overlay(ax, [simplices.strokes(*leg, to_rgb(colour), ray_width, camera) for leg, colour in legs]
+        overlay(ax, [simplices.strokes(*leg, to_rgb(colour), ray_width, camera) for leg, colour in legs]
                           + [simplices.strokes(*element, plane_colour, plane_width, camera) for element in elements])
     return fig
 
@@ -139,7 +140,7 @@ def animate_train(states) -> Iterator[np.ndarray]:
     first = next(states)
     mv = first[0].context.multivector
     camera = panel(ax, mv.x, mv.y, mv.w)
-    image = simplices.overlay(ax, [scene(camera, *first)])
+    image = overlay(ax, [scene(camera, *first)])
     yield capture(fig)
     for state in states:
         image.set_data(scene(camera, *state))

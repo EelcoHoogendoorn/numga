@@ -14,7 +14,9 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.fluids.floating import core
-from examples.util.wgsl import image_figure, meshes, simplices, solids
+from numga.topology import Topology
+from numga.render import meshes, simplices, solids
+from examples.util.panels import image_figure
 
 mv = core.mv
 # The colours of the hull, of its wet surface by depth, of the water, of the weight and of the buoyancy;
@@ -109,7 +111,7 @@ def forces_end_on(view: solids.View, placed: core.Motor, push: core.Forque, cent
     # The buoyancy up and the weight down from their starts.
     starts = stack((buoyant, gravity))                                         # [forces] Point-
     tips = starts + core.up * (np.array([1.0, -1.0]) * force * 0.6)            # [forces] Point-
-    arrows = simplices.tubes(stack((starts, tips), axis=-1).reshape(-1), simplices.Topology.chains([2, 2]),
+    arrows = simplices.tubes(stack((starts, tips), axis=-1).reshape(-1), Topology.chains([2, 2]),
                              np.array([to_rgb(buoyancy_colour), to_rgb(weight_colour)]), arrow_width, view,
                              gloss=solids.gloss, chevrons=np.ones(2), chevron=arrow_chevron)
     # The arm reaches from the centre of gravity across to the buoyancy's vertical, at the centre's height.

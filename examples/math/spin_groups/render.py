@@ -10,8 +10,9 @@ import numpy as np
 from matplotlib.colors import hsv_to_rgb
 
 from examples.math.spin_groups import core
-from examples.util.wgsl import fitted, meshes, show, simplices, solids
-from examples.util.wgsl.scene import Scene
+from numga.topology import Topology
+from numga.render import Scene, meshes, simplices, solids
+from examples.util.panels import fitted, show
 
 background = np.ones(3)
 # One view for all three families: the elevation and azimuth in radians, azimuth zero looking along +y, the margin
@@ -43,7 +44,7 @@ def orbit_samples(orbits: solids.Point, width: float, view: solids.View) -> mesh
     every sample."""
     n_orbits, n_points = int(np.prod(orbits.shape[:-1])), orbits.shape[-1]
     # Each orbit a chain of edges through its points, each edge in its orbit's colour.
-    chains = simplices.Topology.chains([n_points] * n_orbits)
+    chains = Topology.chains([n_points] * n_orbits)
     shades = np.repeat(colours(orbits.shape[:2]).reshape(-1, 3), n_points - 1, axis=0)   # [edges, 3]
     return simplices.tubes(orbits.reshape(-1), chains, shades, width, view, gloss=solids.gloss)
 

@@ -13,8 +13,8 @@ from numga import concatenate, stack
 from examples.electromagnetism.lie_advection import core
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import contours, flow, simplices
-from examples.util.wgsl.camera import Camera, offset_panel
+from numga.render import Camera, contours, flow, simplices
+from examples.util.panels import offset_panel, overlay
 
 Topology = core.Topology
 
@@ -72,7 +72,7 @@ def plain_axes(ax: plt.Axes) -> None:
 def vertex_averages(topology: core.Topology, areas: core.Scalar, face_field: core.Scalar) -> np.ndarray:
     """Area-weighted vertex average of a scalar face field for smooth Gouraud shading."""
     corner_mean = topology.incidence[2, 0].mean(axis=0)
-    vertex_field = (~corner_mean * (areas * face_field)) / (~corner_mean * areas)
+    vertex_field = (corner_mean.adjugate() * (areas * face_field)) / (corner_mean.adjugate() * areas)
     return np.asarray(vertex_field.batch().to_array())
 
 
@@ -119,7 +119,7 @@ def draw_cartan_ribbon(corners: core.Point, corner_forms: core.Plane,
         contours.picture(ribbons[index], ribbon, np.zeros(4), ribbon_colours[index], camera, opacity=ribbon_opacity),
         simplices.strokes(ribbons[index], ribbon.border, rgb(wall_colour), charts.FRAME_PX, camera, dashes=ribbon_dots,
                           cap=simplices.Cap.BUTT, opacity=ribbon_opacity))]
-    simplices.overlay(geom_ax, [
+    overlay(geom_ax, [
         *ribbon_pictures,
         contours.picture(corners, core.triangle, np.zeros(3), triangle_colour, camera, opacity=triangle_opacity),
         simplices.strokes(corners, core.triangle.border, rgb(wall_colour), charts.LINE_PX, camera,
@@ -197,7 +197,7 @@ def draw_advection_comparison(topology: core.Topology, vertices: core.Point,
     for ax, vertex_flux in zip((left_ax, mid_ax), vertex_fluxes):
         camera = offset_panel(ax, core.mv.x, core.mv.y)
         colours = flux_colours(flux_scale(vertex_flux))[:, :3]
-        simplices.overlay(ax, [contours.picture(points, topology, vertex_flux, colours, camera,
+        overlay(ax, [contours.picture(points, topology, vertex_flux, colours, camera,
                                                 levels=flux_levels(flux_limit)),
                                *disk_lines(topology, points, camera)])
     return figure
@@ -227,7 +227,7 @@ def animate_advection(topology: core.Topology, vertices: core.Point,
             frame_panel(ax, vertices, 0.06)
         views = [offset_panel(ax, core.mv.x, core.mv.y) for ax in axes]
         lines = [disk_lines(topology, points, view) for view in views]
-        textures = [simplices.overlay(ax, panel_lines) for ax, panel_lines in zip(axes, lines)]
+        textures = [overlay(ax, panel_lines) for ax, panel_lines in zip(axes, lines)]
     for flux_density in chain((first,), frames):
         vertex_fluxes = vertex_averages(topology, areas, flux_density)
         for texture, view, panel_lines, vertex_flux in zip(textures, views, lines, vertex_fluxes):

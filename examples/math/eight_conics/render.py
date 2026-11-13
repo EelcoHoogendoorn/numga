@@ -13,10 +13,10 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.util.animation import capture
-from examples.util.wgsl import simplices
-from examples.util.wgsl.quadrics import curves
-from examples.util.wgsl.camera import Camera, panel
-from examples.util.wgsl.simplices import Cap, Topology
+from numga.topology import Topology
+from numga.render import Camera, Cap, simplices
+from examples.util.panels import overlay, panel
+from numga.render.quadrics import curves
 from examples.math.eight_conics import core
 
 # The eighth quadric, its three neighbours, and the other four; the contact points of a single pair.
@@ -96,7 +96,7 @@ def draw_double_contact(base: core.Quadric, touching: core.Quadric, contact_plan
     bounds = framing(stack((base, touching)))
     figure, axes, camera = canvas(bounds)
     reach = 2 * np.ptp(bounds, axis=0).max()
-    simplices.overlay(axes, [contact_strokes(plane_strokes(contacts, reach), contact_colour, contact_opacity, camera),
+    overlay(axes, [contact_strokes(plane_strokes(contacts, reach), contact_colour, contact_opacity, camera),
                              curves(base[None], base_width, neighbour_colours[0], camera),
                              curves(touching[None], touching_width, completion_colour, camera),
                              *marks(contacts, contact_colour, camera)])
@@ -115,7 +115,7 @@ def animate_eighth(quadrics: core.Quadric, contact_planes: core.Plane, contacts:
     figure, axes, camera = canvas(bounds)
     reach = 2 * np.ptp(bounds, axis=0).max()
     planes = plane_strokes(contacts[:, closing_edges], reach)                  # [frames, closing edges, ends] Point-
-    image = simplices.overlay(axes, [np.zeros(camera.shape + (4,))])
+    image = overlay(axes, [np.zeros(camera.shape + (4,))])
     for frame in range(n_frames):
         pictures = [curves(quadrics[frame, others], context_width, context_colour, camera)]
         for side, vertex in enumerate(neighbours):

@@ -13,11 +13,11 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.shapes import delaunay
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import panel
+from numga.topology import Topology
+from numga.render import contours, simplices
+from examples.util.panels import overlay, panel
 from examples.fluids.kirchhoff import core
 
-Topology = simplices.Topology
 
 mv = core.mv
 # The colours of the three coefficients: shifting along the axis of symmetry, shifting across it, and
@@ -101,7 +101,7 @@ def animate_gliding(impulse: core.Forque,
     camera = panel(ax, mv.x, mv.y, mv.w)
     impulses = simplices.strokes(lines, Topology.chains([2] * count), rgb(impulse_colour), impulse_width, camera,
                                  dashes=impulse_dashes, cap=simplices.Cap.BUTT)
-    image = simplices.overlay(ax, [impulses])
+    image = overlay(ax, [impulses])
     for index in range(len(frames)):
         path_ink = np.repeat([rgb(colour) for colour in path_colours], index, axis=0)   # [cases * index, 3]
         bodies = [picture for case in range(count) for picture in (

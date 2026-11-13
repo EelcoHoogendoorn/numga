@@ -8,8 +8,8 @@ from __future__ import annotations
 import numpy as np
 
 from numga import Algebra, NumpyContext
-from numga.sparse import SparseExtensor, spdiag
-from examples.util.topology import Topology
+from numga.sparse import Sparse, spdiag
+from numga.topology import Topology
 
 ga = Algebra("x+t-")
 mv = NumpyContext(ga).multivector
@@ -66,7 +66,7 @@ class Operators:
         self.wave_operator = self.gradient.adjugate()(medium(self.gradient))   # (Amount- <- Scalar+)[vertices <- vertices]
 
         # Area-weighted averaging from faces to vertices reconstructs smooth nodal fields for slicing.
-        self.to_vertices = ~topology.incidence[2, 0].sum(axis=0)             # Scalar+[vertices <- faces]
+        self.to_vertices = topology.incidence[2, 0].sum(axis=0).adjugate()   # Scalar+[vertices <- faces]
 
 
 def causal_wake(operators: Operators, n_space: int, n_time: int,
@@ -80,8 +80,8 @@ def causal_wake(operators: Operators, n_space: int, n_time: int,
     source = (profile * operators.areas.sites.mean()).field().dual()         # Amount-[vertices]
 
     grid = np.arange(n_time * n_space).reshape(n_time, n_space)
-    interior = ~operators.topology.reading(grid[1:-1, 1:-1].ravel(), 0) * Scalar  # (Scalar+ <- Scalar+)[vertices <- interior]
-    future = ~operators.topology.reading(grid[2:, 1:-1].ravel(), 0) * Scalar    # (Scalar+ <- Scalar+)[vertices <- future]
+    interior = operators.topology.reading(grid[1:-1, 1:-1].ravel(), 0).adjugate() * Scalar  # (Scalar+ <- Scalar+)[vertices <- interior]
+    future = operators.topology.reading(grid[2:, 1:-1].ravel(), 0).adjugate() * Scalar  # (Scalar+ <- Scalar+)[vertices <- future]
     # The first two rows and the walls stay zero; each interior equation fixes the next time row.
     return future(interior.adjugate()(operators.wave_operator(future)).solve(interior.adjugate()(source)))   # Scalar+[vertices]
 
@@ -98,10 +98,10 @@ def moving_mirror_wave(operators: Operators, n_space: int, n_time: int, dt: floa
 
     grid = np.arange(n_time * n_space).reshape(n_time, n_space)
     seed = topology.reading(grid[:2, 1:-1].ravel(), 0)                       # Scalar+[seed <- vertices]
-    initial = ~seed * (seed * (envelope * carrier).field())                                                  # Scalar+[vertices]
+    initial = seed.adjugate() * (seed * (envelope * carrier).field())                                        # Scalar+[vertices]
 
-    interior = ~topology.reading(grid[1:-1, 1:-1].ravel(), 0) * Scalar       # (Scalar+ <- Scalar+)[vertices <- interior]
-    future = ~topology.reading(grid[2:, 1:-1].ravel(), 0) * Scalar           # (Scalar+ <- Scalar+)[vertices <- future]
+    interior = topology.reading(grid[1:-1, 1:-1].ravel(), 0).adjugate() * Scalar  # (Scalar+ <- Scalar+)[vertices <- interior]
+    future = topology.reading(grid[2:, 1:-1].ravel(), 0).adjugate() * Scalar  # (Scalar+ <- Scalar+)[vertices <- future]
     rhs = -interior.adjugate()(operators.wave_operator(initial))             # Amount-[interior]
     potential = initial + future(interior.adjugate()(operators.wave_operator(future)).solve(rhs))            # Scalar+[vertices]
 
@@ -115,6 +115,6 @@ def moving_mirror_wave(operators: Operators, n_space: int, n_time: int, dt: floa
     # Each face lies in the time slab of its earliest corner; the reverse of reading each
     # face's slab sums the faces into the slabs.
     slab_indices = topology.elements[2].min(axis=-1) // n_space              # [faces]
-    to_slabs = ~SparseExtensor.selection(mv.context, slab_indices, n_time - 1)   # Scalar+[layers <- faces]
+    to_slabs = Sparse.selection(slab_indices, n_time - 1).adjugate()  # Scalar+[layers <- faces]
     slice_energies = (to_slabs * (operators.areas * energy_density)).batch() / dt   # [layers] Scalar+
     return potential, field, wave_rate, slice_energies

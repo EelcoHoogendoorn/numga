@@ -19,8 +19,9 @@ from numga import Extensor, stack
 from examples.quantum.two_spins import core
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import fitted, labels, meshes, show, simplices, solids
-from examples.util.wgsl.scene import Scene
+from numga.topology import Topology
+from numga.render import Scene, meshes, simplices, solids
+from examples.util.panels import fitted, labels, show
 
 sm = solids.mv
 FIRST, SECOND, TOGETHER = "#c0392b", "#2e86c1", "#7d3c98"
@@ -118,7 +119,7 @@ def on_sphere(parts: list[tuple[solids.Quadric, np.ndarray]], view: solids.View,
 def arrow(tip: solids.Point, colour: str, view: solids.View) -> meshes.Samples:
     """An arrow from the centre to a tip, in a colour: a tube ending in a chevron, at every sample of the view."""
     width = ARROW_WIDTH / view.pixel
-    return simplices.tubes(stack((solids.origin, tip)), simplices.Topology.chains([2]), np.array(to_rgb(colour)), width,
+    return simplices.tubes(stack((solids.origin, tip)), Topology.chains([2]), np.array(to_rgb(colour)), width,
                            view, gloss=solids.gloss, chevrons=np.ones(1), chevron=CHEVRON_LENGTH * width)
 
 
@@ -246,7 +247,7 @@ def draw_qubit(across: Extensor, turned: Extensor, balance: Extensor, times: np.
     view = ball(ax)
     # One chain of edges a rate, each edge in its rate's colour.
     n_rates, n_times = paths.shape
-    tracks = simplices.tubes(paths.reshape(-1), simplices.Topology.chains([n_times] * n_rates),
+    tracks = simplices.tubes(paths.reshape(-1), Topology.chains([n_times] * n_rates),
                              np.repeat([to_rgb(colour) for colour in shades[:n_rates]], n_times - 1, axis=0),
                              PATH_WIDTH / view.pixel, view, solids.gloss)
     start = [(solids.ball(paths[0, 0], START_RADIUS)[None, None], START_COLOUR)]

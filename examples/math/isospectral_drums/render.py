@@ -12,8 +12,9 @@ from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 from numga import stack
 from examples.math.isospectral_drums.core import Point, Scalar, ga, mv
 from examples.math.isospectral_drums.numerics import Topology
-from examples.util.wgsl import Shader, contours, simplices
-from examples.util.wgsl.camera import offset_panel
+from numga.wgsl import Shader
+from numga.render import contours, simplices
+from examples.util.panels import offset_panel, overlay
 
 pixels = 260
 # Displacement one way blue, the other orange, and rest a light neutral; the tiles' outlines.
@@ -61,7 +62,7 @@ def draw_tiles(tiles: Point) -> plt.Figure:
     """The two polygonal drums, with matching colours for their seven constituent triangles."""
     n_tiles = tiles.shape[1]
     # Each tile its own three corners, so that it takes its own colour.
-    pieces = simplices.Topology(3 * n_tiles, np.arange(3 * n_tiles).reshape(n_tiles, 3))
+    pieces = Topology(3 * n_tiles, np.arange(3 * n_tiles).reshape(n_tiles, 3))
     figure, axes = plt.subplots(1, len(tiles), figsize=(8, 3.7), facecolor="white")
     figure.subplots_adjust(0, 0, 1, 1, wspace=0.07)
     # Each drum framed about its middle, every one as wide as the widest drum is along x or y, with a margin.
@@ -74,7 +75,7 @@ def draw_tiles(tiles: Point) -> plt.Figure:
         ax.set_axis_off()
         camera = offset_panel(ax, mv.x, mv.y)
         topology, welds = welded(drum)
-        simplices.overlay(ax, [
+        overlay(ax, [
             contours.picture(drum.reshape(-1), pieces, np.zeros(3 * n_tiles), np.repeat(tile_colours, 3, axis=0),
                              camera),
             simplices.strokes(drum.reshape(-1), pieces, np.ones(3), seam_width, camera),
@@ -213,6 +214,6 @@ def draw_pieces(vertices: Point, topology: Topology, pieces: Scalar, exposure: f
         camera = offset_panel(ax, mv.x, mv.y)
         shades = colours(Normalize(-exposure, exposure)(field))[:, :3]
         nodal_lines = contours.Level(0.0, nodal_ink, nodal_width)
-        simplices.overlay(ax, [contours.picture(places, topology, field, shades, camera, levels=(nodal_lines,)),
+        overlay(ax, [contours.picture(places, topology, field, shades, camera, levels=(nodal_lines,)),
                                simplices.strokes(places, rim, outline, piece_rim_width, camera)])
     return figure

@@ -14,7 +14,8 @@ from matplotlib.figure import Figure
 
 from examples.fluids.eigen_fluids import core
 from examples.util import charts
-from examples.util.wgsl import flow, image_figure, meshes, solids
+from numga.render import flow, meshes, solids
+from examples.util.panels import image_figure
 
 # Surface and diverging field palette, contour colour, curve colours, camera elevation and azimuth in degrees
 # from x, the reach framed around each vertex, viewport margin and pixel dimensions, and contour density and width.
@@ -154,7 +155,7 @@ def animate_flow(topology: core.Topology, vertices: core.Point, states: Iterable
     sides = topology.boundary[2, 1] * (topology.d[0] * vertices)
     patches = (sides[0] & sides[1]) / 2                                         # Patch-[faces]
     areas = patches.norm()                                                     # Scalar+[faces]
-    corners = ~topology.incidence[2, 0].mean(axis=0)
+    corners = topology.incidence[2, 0].mean(axis=0).adjugate()
     dual_areas = corners * areas                                                # Scalar+[vertices]
     normals = (corners * patches).normalized()                                  # Patch-[vertices]
     at_vertices = core.spdiag(1 / dual_areas) * corners * core.spdiag(areas)

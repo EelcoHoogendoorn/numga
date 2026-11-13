@@ -18,12 +18,12 @@ from matplotlib.figure import Figure
 
 from numga.extensor import Extensor
 from examples.util.charts import FRAME_WIDTH, points, style, subplots
-from examples.util.wgsl import contours, image_figure, simplices
-from examples.util.wgsl.camera import Camera
+from numga.topology import Topology
+from numga.render import Camera, contours, simplices
+from examples.util.panels import image_figure
 from examples.fluids.convection import core
 
 mv = core.mv
-Topology = simplices.Topology
 mesh_colour = np.array(to_rgb("#9aa5ae"))
 stream_colour = np.array(to_rgb("#2b2f33"))
 growth_colour, axis_colour = np.array(to_rgb("#1d4ed8")), np.array(to_rgb("#6b7280"))

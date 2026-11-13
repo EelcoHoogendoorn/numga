@@ -19,12 +19,11 @@ from matplotlib.figure import Figure
 from numga import concatenate
 from numga.extensor import Extensor
 from examples.util.charts import style, subplots
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera
+from numga.topology import Topology
+from numga.render import Camera, contours, simplices
 from examples.electromagnetism.josephson import core
 
 mv = core.mv
-Topology = simplices.Topology
 current_map = colormaps["RdBu_r"]
 measured_colour, lorentz_colour = np.array(to_rgb("#1d4ed8")), np.array(to_rgb("#c2410c"))
 # A junction's picture: the pixels across its longer side; the share of the colour map used at full current.

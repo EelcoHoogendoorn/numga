@@ -16,12 +16,12 @@ from matplotlib.figure import Figure
 
 from numga.extensor import Extensor
 from examples.util import charts
-from examples.util.wgsl import contours, image_figure, simplices
-from examples.util.wgsl.camera import Camera
+from numga.topology import Topology
+from numga.render import Camera, contours, simplices
+from examples.util.panels import image_figure
 from examples.thermodynamics.snowflake import core
 
 mv = core.mv
-Topology = simplices.Topology
 # The water's tint from cold to the melting temperature, the ice's fill and its edge.
 water_map = LinearSegmentedColormap.from_list("water", ["#0b1a2e", "#1d3a5f", "#4f7cab"])
 ice_colour, edge_colour = np.array(to_rgba("#dcefff")), np.array(to_rgba("#ffffff"))

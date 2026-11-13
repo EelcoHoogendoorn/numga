@@ -13,8 +13,9 @@ from numga import stack
 from examples.util.animation import capture
 from examples.quantum.kane_mele import core
 from examples.util import charts
-from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import offset_panel
+from numga.topology import Topology
+from numga.render import simplices
+from examples.util.panels import offset_panel, overlay
 
 # The bonds' shade and width in pixels, the sublattices' shades, and the largest dot's radius, at the densest atom, as
 # a share of the panel's width.
@@ -40,7 +41,7 @@ def draw_bonds(ax, flake: core.Flake) -> np.ndarray:
     ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
     ax.axis("off")
     camera = offset_panel(ax, core.mv.x, core.mv.y)
-    return simplices.strokes(positions, simplices.Topology(len(positions), flake.first), BONDS, BOND_WIDTH, camera)
+    return simplices.strokes(positions, Topology(len(positions), flake.first), BONDS, BOND_WIDTH, camera)
 
 
 def draw_flake(flake: core.Flake) -> plt.Figure:
@@ -52,7 +53,7 @@ def draw_flake(flake: core.Flake) -> plt.Figure:
     # The atoms' dots, the area of a twelfth of the densest's.
     camera = offset_panel(ax, core.mv.x, core.mv.y)
     atoms = simplices.markers(positions, shades, DOT * camera.pixels * np.sqrt(1 / 12), camera)
-    simplices.overlay(ax, [bonds, atoms])
+    overlay(ax, [bonds, atoms])
     return figure
 
 
@@ -85,7 +86,7 @@ def draw_states(flake: core.Flake, densities: core.Scalar) -> plt.Figure:
         # Each dot's area in proportion to its density.
         dots = simplices.markers(positions, plt.get_cmap("magma_r")(scaled)[:, :3],
                                  DOT * camera.pixels * np.sqrt(scaled), camera)
-        simplices.overlay(ax, [bonds, dots])
+        overlay(ax, [bonds, dots])
     return figure
 
 
@@ -105,7 +106,7 @@ def animate_spin(flake: core.Flake, spins: core.Spin, pixels: int) -> Iterator[n
     bonds = draw_bonds(ax, flake)
     positions = flake.positions.batch()                                       # [atoms] Point-
     camera = offset_panel(ax, core.mv.x, core.mv.y)
-    shown = simplices.overlay(ax, [bonds])
+    shown = overlay(ax, [bonds])
     for spin in spins:
         areas, shades = spin_dots(spin)
         dots = simplices.markers(positions, plt.get_cmap("RdBu_r")((shades + 1) / 2)[:, :3],

@@ -21,12 +21,12 @@ from matplotlib.colors import to_rgb
 from matplotlib.figure import Figure
 
 from numga.extensor import Extensor
-from examples.util.wgsl import contours, image_figure, simplices
-from examples.util.wgsl.camera import Camera
+from numga.topology import Topology
+from numga.render import Camera, contours, simplices
+from examples.util.panels import image_figure
 from examples.thermodynamics.flame import core
 
 mv = core.mv
-Topology = simplices.Topology
 unburnt_colour, burnt_colour = np.array(to_rgb("#f4efe4")), np.array(to_rgb("#1c0a06"))
 ember_colour = np.array(to_rgb("#9a2a0c"))
 glow_map, energy_map = colormaps["afmhot"], colormaps["RdBu_r"]

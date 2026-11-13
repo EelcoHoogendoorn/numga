@@ -10,8 +10,9 @@ from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 
 from numga import concatenate, stack
 from examples.util.animation import capture
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import offset_panel
+from numga.topology import Topology
+from numga.render import contours, simplices
+from examples.util.panels import offset_panel, overlay
 from examples.mechanics.odd_elasticity import core
 
 BACKGROUND = "#fbfaf7"
@@ -39,10 +40,10 @@ def _scene(figure: plt.Figure, bounds: tuple[np.ndarray, np.ndarray], position: 
     return ax
 
 
-def _arrows(n_arrows: int) -> simplices.Topology:
+def _arrows(n_arrows: int) -> Topology:
     """Arrows from tails to tips listed after them: an edge from each of the first `n_arrows` points to the one
     `n_arrows` after it."""
-    return simplices.Topology(2 * n_arrows, np.stack([np.arange(n_arrows), n_arrows + np.arange(n_arrows)], axis=-1))
+    return Topology(2 * n_arrows, np.stack([np.arange(n_arrows), n_arrows + np.arange(n_arrows)], axis=-1))
 
 
 def bond_frames(
@@ -63,25 +64,25 @@ def bond_frames(
     swept_corners = concatenate([reference[None], positions])                # [steps + 1] Displacement-
     n_steps = len(positions)
     fan = np.stack([np.zeros(n_steps - 1, dtype=int), np.arange(1, n_steps), np.arange(2, n_steps + 1)], axis=-1)
-    guides = [simplices.strokes(concatenate([anchor[None], reference[None]]), simplices.Topology.chains([2]), REFERENCE,
+    guides = [simplices.strokes(concatenate([anchor[None], reference[None]]), Topology.chains([2]), REFERENCE,
                                 1.5, camera, dashes=(5.0, 3.0), cap=simplices.Cap.BUTT),
-              simplices.strokes(path, simplices.Topology.chains([len(path)]), REFERENCE, 1.0, camera),
+              simplices.strokes(path, Topology.chains([len(path)]), REFERENCE, 1.0, camera),
               simplices.markers(anchor[None], ANCHOR, 3.0, camera),
               # The rest position a ring: a dot of the background over a larger one.
               simplices.markers(reference[None], ANCHOR, 2.5, camera),
               simplices.markers(reference[None], to_rgb(BACKGROUND), 1.5, camera)]
-    image = simplices.overlay(ax, guides)
+    image = overlay(ax, guides)
 
     for step, (position, arrow) in enumerate(zip(positions, arrows)):
         bond = concatenate([anchor[None], position[None]])                   # [2] Displacement-
         force = concatenate([position[None], (position + arrow)[None]])      # [2] Displacement-
         image.set_data(simplices.composited([
-            contours.picture(swept_corners, simplices.Topology(n_steps + 1, fan[:step]), np.zeros(n_steps + 1), SWEPT,
+            contours.picture(swept_corners, Topology(n_steps + 1, fan[:step]), np.zeros(n_steps + 1), SWEPT,
                              camera),
             *guides,
-            simplices.strokes(positions[:step + 1], simplices.Topology.chains([step + 1]), BOND, 1.0, camera,
+            simplices.strokes(positions[:step + 1], Topology.chains([step + 1]), BOND, 1.0, camera,
                               opacity=0.55),
-            simplices.strokes(bond, simplices.Topology.chains([2]), BOND, 3.0, camera),
+            simplices.strokes(bond, Topology.chains([2]), BOND, 3.0, camera),
             simplices.markers(position[None], BOND, 3.0, camera),
             # The force's arrow, a stroke ending in a chevron.
             simplices.strokes(force, _arrows(1), FORCE, 3.0, camera, chevrons=np.ones(1), chevron=12.0)]))
@@ -105,7 +106,7 @@ def patch_frames(
     camera = offset_panel(ax, core.mv.x, core.mv.y)
     rest = simplices.strokes(reference, topology, REFERENCE, 1.0, camera)
     forces_topology = _arrows(len(boundary))
-    image = simplices.overlay(ax, [rest])
+    image = overlay(ax, [rest])
 
     for position, arrow in zip(places, arrows):
         tails = position[boundary]                                           # [boundary] Displacement-
@@ -131,7 +132,7 @@ def wave_frames(
     camera = offset_panel(ax, core.mv.x, core.mv.y)
     rest = simplices.strokes(reference, topology, REFERENCE, 1.0, camera)
     strain = Normalize(-extension_scale, extension_scale)
-    image = simplices.overlay(ax, [rest])
+    image = overlay(ax, [rest])
 
     n_trail_frames = 33
     history = []
@@ -145,7 +146,7 @@ def wave_frames(
             rest,
             simplices.strokes(position, topology, STRAIN(strain(extensions.batch().to_array()))[:, :3], 1.2, camera),
             simplices.markers(position, ANCHOR, 1.2, camera),
-            simplices.strokes(trajectory, simplices.Topology.chains([len(trajectory)]), TRACK, 2.5, camera),
+            simplices.strokes(trajectory, Topology.chains([len(trajectory)]), TRACK, 2.5, camera),
             simplices.markers(tracked, ANCHOR, 4.0, camera),
             simplices.markers(tracked, TRACK, 3.3, camera)]))
         yield capture(figure)

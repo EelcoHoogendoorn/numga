@@ -13,8 +13,8 @@ import numpy as np
 
 from numga import stack
 from examples.quadrics.csg_raytracer import core
-from examples.util.wgsl import Shader, supersampled
-from examples.util.wgsl.solids import quadric_regions
+from numga.wgsl import Shader, supersampled
+from numga.render.solids import quadric_regions
 
 types = dict(Point=core.Point, Plane=core.Plane, Motor=core.Motor, Quadric=core.Quadric)
 

@@ -11,9 +11,9 @@ import numpy as np
 from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import quadrics, simplices
-from examples.util.wgsl.camera import Camera, panel
-from examples.util.wgsl.simplices import Cap, Topology
+from numga.topology import Topology
+from numga.render import Camera, Cap, quadrics, simplices
+from examples.util.panels import overlay, panel
 from examples.estimation.pose_diffusion.core import Covariance, Motor, Plane, Point, Spread, Twist, ga, mv, origin
 
 ELLIPSOID_RGB = np.array(mcolors.to_rgb("#c0392b"))
@@ -70,7 +70,7 @@ def draw_cloud(ax, poses: Motor, predicted: Covariance, limit: Covariance, exten
     ax.set_aspect("equal")
     ax.set_axis_off()
     camera = panel(ax, mv.x, mv.y, mv.w)
-    image = simplices.overlay(ax, pictures(poses, predicted, limit, extent, camera))
+    image = overlay(ax, pictures(poses, predicted, limit, extent, camera))
     ax.text(extent, 0, "forward", ha="right", va="top", color="0.4")
     ax.text(0, extent, "sideways ", ha="right", va="bottom", color="0.4", rotation=90, rotation_mode="anchor")
     return image, camera

@@ -16,12 +16,12 @@ from matplotlib.figure import Figure
 
 from numga.extensor import Extensor
 from examples.util.charts import style, subplots
-from examples.util.wgsl import contours, image_figure, simplices
-from examples.util.wgsl.camera import Camera
+from numga.topology import Topology
+from numga.render import Camera, contours, simplices
+from examples.util.panels import image_figure
 from examples.fluids.superfluid import core
 
 mv = core.mv
-Topology = simplices.Topology
 wall_colour = np.array(to_rgb("#3b4a57"))
 mesh_colour = np.array(to_rgb("#9aa5ae"))
 powder_colour = np.array(to_rgb("#e8d9b5"))

@@ -16,12 +16,11 @@ from matplotlib.figure import Figure
 
 from numga.extensor import Extensor
 from examples.util.charts import style, subplots
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera
+from numga.topology import Topology
+from numga.render import Camera, contours, simplices
 from examples.quantum.condensate import core
 
 mv = core.mv
-Topology = simplices.Topology
 density_map = colormaps["Blues"]
 counted_colour, feynman_colour = np.array(to_rgb("#1d4ed8")), np.array(to_rgb("#c2410c"))
 # The picture's pixels across and the radius it frames, in oscillator lengths; the share of the colour map at the

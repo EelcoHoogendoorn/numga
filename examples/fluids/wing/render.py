@@ -12,9 +12,9 @@ from numga import stack
 
 from examples.util import shapes
 from examples.util.animation import capture
-from examples.util.topology import Topology
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, offset_panel
+from numga.topology import Topology
+from numga.render import Camera, contours, simplices
+from examples.util.panels import offset_panel, overlay
 from examples.fluids.wing import core
 
 window = (-3.2, 3.2, -1.8, 1.8)
@@ -84,7 +84,7 @@ def draw(ax, points: core.Point, velocity: core.Point, stream: core.Bivector, li
     # share along x; a stroke ending in a chevron.
     push = lift * lift_scale                                                 # [] Force+
     forces = offset_panel(ax, core.mv.x.dual(), core.mv.y.dual())
-    simplices.overlay(ax, [
+    overlay(ax, [
         contours.picture(outline, hull, np.zeros(len(outline)), rgb(wing_colour), camera),
         contours.picture(places, topology, pressure.reshape(-1), colours.reshape(-1, 3), camera, bands=bands),
         contours.picture(places, topology, stream_values.reshape(-1), np.ones(3), camera, lines=(streamlines,),
@@ -147,7 +147,7 @@ def bipolar(grid: core.Point, grid_images: core.Point, circle: core.Point, circl
         camera = offset_panel(ax, core.mv.x, core.mv.y)
         n_curves, n_samples = curves.shape
         # The marks and their reflections through the origin.
-        simplices.overlay(ax, [
+        overlay(ax, [
             simplices.strokes(curves.reshape(-1), Topology.loops([n_samples] * n_curves), rgb("#94a3b8"), grid_width,
                               camera),
             simplices.strokes(outline, Topology.loops([len(outline)]), rgb(wing_colour), outline_width, camera),

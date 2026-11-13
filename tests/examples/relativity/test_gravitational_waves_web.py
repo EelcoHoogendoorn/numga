@@ -11,7 +11,7 @@ import pytest
 pytest.importorskip("wgpu")
 
 from examples.relativity.gravitational_waves import core, gpu, render, scenarios, web
-from examples.util.wgsl import Shader
+from numga.wgsl import Shader
 
 mv = core.mv
 # The storage buffers WebGPU guarantees a shader stage; the uniform block is one of them.

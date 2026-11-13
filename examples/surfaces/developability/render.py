@@ -15,8 +15,7 @@ import numpy as np
 from numga import stack
 
 from examples.surfaces.developability import core
-from examples.util.wgsl import Shader
-from examples.util.wgsl.library import samples_per_side
+from numga.wgsl import Shader, samples_per_side
 
 # The surface's colour; the direction toward the light, up and off to one side, a sum of the directions along the
 # axes, and the share of light that falls everywhere; the camera's elevation and azimuth, its distance and half its

@@ -14,8 +14,9 @@ from matplotlib.colors import to_rgb
 
 from numga import Extensor, concatenate, stack
 from examples.util.animation import capture
-from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import offset_panel
+from numga.topology import Topology
+from numga.render import simplices
+from examples.util.panels import offset_panel, overlay
 from examples.optics.black_sandwich import core
 
 mv = core.mv
@@ -32,12 +33,12 @@ field_radius = 0.38
 axis_width, beam_width, outline_width, glyph_width, circle_width = 1.0, 4.0, 1.0, 2.2, 0.8
 
 # --- plumbing -------------------------------------------------------------------------
-def _across(centres: Extensor, halves: Extensor) -> tuple[Extensor, simplices.Topology]:
+def _across(centres: Extensor, halves: Extensor) -> tuple[Extensor, Topology]:
     """Strokes across glyphs `[glyphs]`, either way from each centre by its half `[glyphs]`: their ends, and an
     edge from each glyph's first end to its second."""
     n_glyphs = len(centres)
     ends = concatenate([centres - halves, centres + halves])                 # [2 * glyphs]
-    return ends, simplices.Topology(2 * n_glyphs, np.stack([np.arange(n_glyphs), n_glyphs + np.arange(n_glyphs)], axis=-1))
+    return ends, Topology(2 * n_glyphs, np.stack([np.arange(n_glyphs), n_glyphs + np.arange(n_glyphs)], axis=-1))
 
 
 class Diagram:
@@ -68,7 +69,7 @@ class Diagram:
         # The components' discs, in the background's colour within their outlines, and the fields' circles alike:
         # each a dot over a larger dot.
         radius, field_ring = component_radius / self.camera.pixel, field_radius / self.camera.pixel
-        self.under = [simplices.strokes(self.boundaries, simplices.Topology.chains([len(self.boundaries)]), faint_colour,
+        self.under = [simplices.strokes(self.boundaries, Topology.chains([len(self.boundaries)]), faint_colour,
                                         axis_width * self.points, self.camera, cap=simplices.Cap.BUTT)]
         self.over = [
             simplices.markers(self.components, outline_colour, radius, self.camera),
@@ -78,7 +79,7 @@ class Diagram:
             simplices.markers(self.field_places, faint_colour, field_ring, self.field_camera),
             simplices.markers(self.field_places, to_rgb(background_colour), field_ring - circle_width * self.points,
                               self.field_camera)]
-        self.image = simplices.overlay(ax, self.under + self.over)
+        self.image = overlay(ax, self.under + self.over)
 
     def picture(self, fields: core.Field, plate_axis: core.Direction) -> np.ndarray:
         """The diagram with the fields between components `[stages]` and the plates' axis."""
@@ -86,7 +87,7 @@ class Diagram:
         # transverse directions sweep in time: each stretch of the beam as strong.
         readings = fields[..., None] & self.swept_planes                      # [stages, 2] Scalar+
         strengths = np.clip((readings * readings).sum(axis=-1).to_array(), 0, 1)
-        beam = [simplices.strokes(self.boundaries[stage:stage + 2], simplices.Topology.chains([2]), beam_colour,
+        beam = [simplices.strokes(self.boundaries[stage:stage + 2], Topology.chains([2]), beam_colour,
                                   beam_width * self.points, self.camera, cap=simplices.Cap.BUTT, opacity=strength)
                 for stage, strength in enumerate(strengths)]
         # The field drawn either way across its glyph's middle, above the beam, as it is, read by the planes the

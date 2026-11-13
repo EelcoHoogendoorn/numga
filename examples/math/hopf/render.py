@@ -14,8 +14,9 @@ from matplotlib.image import AxesImage
 from numga import concatenate, stack
 from examples.util.animation import capture
 from examples.math.hopf import core
-from examples.util.wgsl import fitted, meshes, show, simplices, solids
-from examples.util.wgsl.scene import Scene
+from numga.topology import Topology
+from numga.render import Scene, meshes, simplices, solids
+from examples.util.panels import fitted, show
 
 sm = solids.mv
 # Projected fibres are drawn out to this distance from the origin; the fibres near the projection
@@ -117,11 +118,11 @@ def dots(points: core.Antivector, colours: np.ndarray, radius: float,
     return solids.ball(solids.origin + solids.context.include_from_algebra(points), radius * view.pixel)[:, None], colours
 
 
-def chained(runs: list[tuple[solids.Point, np.ndarray]]) -> tuple[solids.Point, simplices.Topology, np.ndarray]:
+def chained(runs: list[tuple[solids.Point, np.ndarray]]) -> tuple[solids.Point, Topology, np.ndarray]:
     """Polylines, each with its colour, as one batch of their points `[points]`, the chains of edges through them,
     and the edges' colours `[edges, 3]`, none for no polylines."""
     none = sm.point(np.zeros((0, 3)))                                          # [0] Point-
-    return (concatenate([none] + [run for run, _ in runs]), simplices.Topology.chains([0] + [len(run) for run, _ in runs]),
+    return (concatenate([none] + [run for run, _ in runs]), Topology.chains([0] + [len(run) for run, _ in runs]),
             np.concatenate([np.zeros((0, 3))] + [np.broadcast_to(rgb, (len(run) - 1, 3)) for run, rgb in runs]))
 
 

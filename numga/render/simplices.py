@@ -1,6 +1,6 @@
 """Strokes and markers: the edges and vertices of a mesh drawn on the GPU, in the mesh's own algebra.
 
-A stroke is a 1-simplex and a marker a 0-simplex, drawn as a triangle is: the camera of `examples.util.wgsl.camera`
+A stroke is a 1-simplex and a marker a 0-simplex, drawn as a triangle is: the camera of `numga.render.camera`
 reads each vertex, and the vertex stage covers a box on the picture padded around the projected edge or point by its
 half width; the fragment stage then measures, in pixels, how far each sample lies from the edge's segment or the
 point, and keeps the samples within the half width. Round caps and round joins follow from that distance alone, and
@@ -21,16 +21,16 @@ from typing import Any
 from functools import cache
 
 import numpy as np
-from matplotlib.axes import Axes
 
 from numga.extensor import Extensor
 from numga.gatype import GAType
-from examples.util.wgsl import Shader, meshes, pinned
-from examples.util.wgsl.runner import device
-from examples.util.wgsl.camera import Camera, placing, read, reading
-from examples.util.wgsl.library import samples_per_side
+from numga.topology import Topology
+from numga.wgsl import Shader, device, samples_per_side
 
-Topology = meshes.Topology
+from . import solids
+from .camera import Camera, placing, read, reading
+from .meshes import Samples
+
 
 
 class Cap(IntEnum):
@@ -290,7 +290,6 @@ def stroke_shader(Point: GAType, Plane: GAType) -> Shader:
 def tube_shader() -> Shader:
     """The strokes of a lit 3D scene as tubes, in the solids' algebra, whose lamp lights them: the colour a byte a
     channel and the depth alone at full precision, as the meshes write them."""
-    from examples.util.wgsl import solids
     return Shader(solids.lamp_shading() + placing(solids.Plane) + stroke_source + tube_stroke, solids.ga,
                   dict(Point=solids.Point, Plane=solids.Plane), {}, targets=("rgba8unorm", "r32float"))
 
@@ -356,10 +355,7 @@ def strokes(points: Extensor, topology: Topology, colours: np.ndarray, width: fl
 def view_camera(view) -> Camera:
     """The camera of a solids view, its planes the view's camera turning the solids' planes x, y and z, its middle the
     view's own middle."""
-    from examples.util.wgsl import solids
-    mv = solids.mv
-    return Camera(view.camera >> mv.x, view.camera >> mv.y, view.camera >> mv.z, mv.w, 0.0, np.zeros(2), view.half,
-                  view.pixels)
+    return view.to_camera()
 
 
 def tubes(points: Extensor, topology: Topology, colours: np.ndarray, width: float, view, gloss: float = 0.0,
@@ -368,9 +364,7 @@ def tubes(points: Extensor, topology: Topology, colours: np.ndarray, width: floa
     solids' algebra, each edge in its colour `[edges, 3]`, at every sample of the view's pixels, for `solids.draw` and
     `Scene` to compose as they compose meshes; chevrons and dashes as `strokes` draws them, a chevron on the
     picture, facing the viewer."""
-    from examples.util.wgsl import solids
-    from examples.util.wgsl.meshes import Samples
-    camera = view_camera(view)
+    camera = view.to_camera()
     side = samples_per_side()
     rows, columns = camera.shape
     edges = np.asarray(topology.elements[1], dtype=np.uint32)
@@ -455,7 +449,6 @@ class Compositor:
     drawn in every frame."""
 
     def __init__(self) -> None:
-        import wgpu
         self.device = device()
         laid_over = {"color": {"src_factor": "one", "dst_factor": "one-minus-src-alpha", "operation": "add"},
                      "alpha": {"src_factor": "one", "dst_factor": "one-minus-src-alpha", "operation": "add"}}
@@ -571,8 +564,3 @@ def composited(pictures: list) -> np.ndarray:
     laid over the ones before, sample by sample: colour and coverage `[rows, columns, 4]`."""
     return compositor().composite(pictures, tuple(pictures[0].shape[:2]))
 
-
-def overlay(ax: Axes, pictures: list[np.ndarray]):
-    """Pictures of a panel, as its camera draws them, laid over each other in order and pinned into the panel at its
-    own pixels, clear where none covers; the image, for an animation to set its data."""
-    return pinned(ax, composited(pictures), (*ax.get_xlim(), *ax.get_ylim()))

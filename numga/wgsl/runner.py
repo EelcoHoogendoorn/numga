@@ -21,7 +21,7 @@ from numga import NumpyContext
 from numga.extensor import Extensor
 from numga.gatype import GAType
 
-from examples.util.wgsl.dialect import Binding, Program, compile, template
+from .dialect import Binding, Program, compile, template
 
 _device = None
 
@@ -208,10 +208,10 @@ FORMATS = {"rgba32float": (16, 4, np.float32), "r32float": (4, 1, np.float32), "
 
 
 class Shader:
-    """A compiled shader in the numga dialect, ready to run over images, with constants given from Python by name, as
-    `compile` declares them; where it draws, the formats of the targets its fragment stage writes, one per target, and
-    whether each fragment is laid `over` what is drawn before it, its colour premultiplied by its coverage, rather than
-    hidden where something nearer is drawn."""
+    """A compiled shader in the numga dialect, ready to run over images or compute grids, with constants given from
+    Python by name, as `compile` declares them; where it draws, the formats of the targets its fragment stage writes,
+    one per target, and whether each fragment is laid `over` what is drawn before it, its colour premultiplied by its
+    coverage, rather than hidden where something nearer is drawn."""
 
     def __init__(self, source: str, algebra: Any, types: Mapping[str, GAType], constants: Mapping[str, Any],
                  targets: tuple[str, ...] = (), over: bool = False) -> None:
@@ -262,27 +262,29 @@ class Shader:
     def code(self) -> str:
         return self.program.code
 
-    def __call__(self, shape: tuple[int, int], **values: Any) -> dict[str, Any]:
+    def __call__(self, shape: tuple[int, ...], **values: Any) -> dict[str, Any]:
         """Every written storage array, after each compute entry point in turn, in the order the shader
-        declares them, with one invocation per pixel of an image of `shape`, rows first; the shader reads
-        its pixel as `id.xy`, column then row, and the image's size, columns then rows, from a uniform
-        `pixels` where it declares one. Written arrays start at zero."""
+        declares them, with one invocation per element of a grid of `shape`, of up to three axes, the last along
+        `id.x`: a shader over an image, rows first, reads its pixel as `id.xy`, column then row, and the image's size,
+        columns then rows, from a uniform `pixels` where it declares one. Written arrays start at zero."""
         encoder = self.device.create_command_encoder()
         outputs = self.encode(encoder, shape, (), values)
         return self.read(encoder, outputs, shape)
 
-    def encode(self, encoder: Any, shape: tuple[int, int], key: tuple, values: Mapping[str, Any]) -> dict:
-        """Each compute entry point in turn over an image of `shape`, recorded on an encoder, as a call runs them, with
-        the values bound in the buffers kept under `key`: the arrays the shader writes, for `read`."""
+    def encode(self, encoder: Any, shape: tuple[int, ...], key: tuple, values: Mapping[str, Any]) -> dict:
+        """Each compute entry point in turn over a grid or image of `shape`, recorded on an encoder, as a call runs
+        them, with the values bound in the buffers kept under `key`: the arrays the shader writes, for `read`."""
         group, outputs = self.bind(shape, values, key)
         # The written arrays start at zero, whatever the last call left in them.
         for buffer, _, element_size in outputs.values():
             encoder.clear_buffer(buffer, 0, int(np.prod(shape)) * element_size)
+        # One invocation for each element of the grid, its last axis along the workgroups' first: an image's columns.
+        threads = (*shape[::-1], *(1,) * (3 - len(shape)))
         for pipeline, size in self.pipelines:
             compute = encoder.begin_compute_pass()
             compute.set_pipeline(pipeline)
             compute.set_bind_group(0, group)
-            compute.dispatch_workgroups(-(-shape[1] // size[0]), -(-shape[0] // size[1]), 1)
+            compute.dispatch_workgroups(-(-threads[0] // size[0]), -(-threads[1] // size[1]), -(-threads[2] // size[2]))
             compute.end()
         return outputs
 
@@ -387,9 +389,9 @@ class Shader:
         drawing.end()
         return targets
 
-    def bind(self, shape: tuple[int, int], values: Mapping[str, Any], key: tuple) -> tuple[Any, dict]:
+    def bind(self, shape: tuple[int, ...], values: Mapping[str, Any], key: tuple) -> tuple[Any, dict]:
         """The bind group of the values the shader declares, each written into the buffer kept for it under `key`, a
-        `Resident` buffer bound as it is, and the arrays it writes, one element per pixel, in the buffers kept for
+        `Resident` buffer bound as it is, and the arrays it writes, one element per invocation, in the buffers kept for
         them. Draws recorded on one encoder take keys of their own: values are written before the encoder runs."""
         import wgpu
 
@@ -439,7 +441,7 @@ class Shader:
         group = self.device.create_bind_group(layout=self.bind_layout, entries=entries)
         return group, outputs
 
-    def read(self, encoder: Any, outputs: dict, shape: tuple[int, int]) -> dict[str, Any]:
+    def read(self, encoder: Any, outputs: dict, shape: tuple[int, ...]) -> dict[str, Any]:
         """The written arrays, once the encoded work is done."""
         import wgpu
 

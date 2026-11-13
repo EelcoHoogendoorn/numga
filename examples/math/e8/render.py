@@ -9,8 +9,9 @@ from matplotlib.colors import to_rgb
 from numga.extensor import stack
 
 from examples.util.animation import capture
-from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import offset_panel
+from numga.topology import Topology
+from numga.render import simplices
+from examples.util.panels import offset_panel, overlay
 from examples.math.e8.core import Vector
 
 background = "#101219"
@@ -53,8 +54,8 @@ def draw_roots(roots: Vector, horizontal: Vector, vertical: Vector) -> plt.Figur
     # The camera reads roots, vectors, as they are, along the drawing plane's two directions: `root & horizontal.dual()`
     # is `horizontal | root`.
     camera = offset_panel(ax, horizontal.dual(), vertical.dual())
-    neighbours = simplices.Topology(len(flat), np.stack([first, second], axis=-1))
-    simplices.overlay(ax, [
+    neighbours = Topology(len(flat), np.stack([first, second], axis=-1))
+    overlay(ax, [
         simplices.strokes(flat, neighbours, edge_colours, edge_width, camera, opacity=edge_opacity),
         simplices.markers(flat, colours, root_radius, camera)])
     plt.close(figure)
@@ -78,9 +79,9 @@ def animate_planes(turning_roots: Iterable[Vector], roots: Vector, horizontal: V
     fade = np.linspace(0.12, 0.85, n_trail)[:, None]                           # [trail, 1]
     background_colour = np.array(to_rgb(background))
     trail_colours = (background_colour + fade * (orbit_colours[:, None] - background_colour)).reshape(-1, 3)
-    trail_chains = simplices.Topology.chains([n_trail + 1] * n_orbits)
+    trail_chains = Topology.chains([n_trail + 1] * n_orbits)
     # A full turn of each plane in small steps, which carries every root's part in it round its circle.
-    orbit_loops = simplices.Topology.loops([n_around] * n_orbits)
+    orbit_loops = Topology.loops([n_around] * n_orbits)
     seeds = turning[:, 0]                                                      # [orbits] Vector+
 
     figure, axes = plt.subplots(1, n_planes, figsize=(4.4, 1.14), facecolor=background)
@@ -103,7 +104,7 @@ def animate_planes(turning_roots: Iterable[Vector], roots: Vector, horizontal: V
                               orbit_width, camera, opacity=orbit_opacity),
             simplices.markers(roots.reshape(-1), np.tile(orbit_colours, (roots.shape[0], 1)),
                               faint_root_radius, camera, opacity=faint_root_opacity)])
-    images = [simplices.overlay(ax, backdrop) for ax, backdrop in zip(axes, backdrops)]
+    images = [overlay(ax, backdrop) for ax, backdrop in zip(axes, backdrops)]
 
     for frame in range(n_frames):
         trails = turning[:, (frame + history) % n_frames]                     # [orbits, trail + 1] Vector+

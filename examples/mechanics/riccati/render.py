@@ -13,8 +13,9 @@ import numpy as np
 from numga import concatenate, stack
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, panel
+from numga.topology import Topology
+from numga.render import Camera, contours, simplices
+from examples.util.panels import overlay, panel
 from examples.mechanics.riccati import core
 
 BODY_COLOUR = "#3275a8"
@@ -60,18 +61,18 @@ def _axes(axes: plt.Axes, limits: np.ndarray, title: str) -> None:
     axes.set_axis_off()
 
 
-def _hulls(n_hulls: int, n_corners: int) -> tuple[simplices.Topology, simplices.Topology]:
+def _hulls(n_hulls: int, n_corners: int) -> tuple[Topology, Topology]:
     """Convex hulls of `n_corners` corners each, numbered hull after hull: triangles fanning out from each hull's
     first corner, and their outlines, the fans' boundary edges."""
     corners = np.arange(n_corners)
     fan = np.stack([np.zeros(n_corners - 2, dtype=int), corners[1:-1], corners[2:]], axis=-1)   # [triangles, 3] int
-    surface = simplices.Topology(n_hulls * n_corners, (fan + n_corners * np.arange(n_hulls)[:, None, None]).reshape(-1, 3))
+    surface = Topology(n_hulls * n_corners, (fan + n_corners * np.arange(n_hulls)[:, None, None]).reshape(-1, 3))
     return surface, surface.border
 
 
-def _arrows(n_arrows: int) -> simplices.Topology:
+def _arrows(n_arrows: int) -> Topology:
     """Arrows from tails to tips listed after them: an edge from each tail to its tip."""
-    return simplices.Topology(2 * n_arrows, np.stack([np.arange(n_arrows), n_arrows + np.arange(n_arrows)], axis=-1))
+    return Topology(2 * n_arrows, np.stack([np.arange(n_arrows), n_arrows + np.arange(n_arrows)], axis=-1))
 
 
 def _target(camera: Camera, hull: core.Point) -> np.ndarray:
@@ -100,7 +101,7 @@ def draw_setup(
     axes.legend(handles=handles, loc="upper right", frameon=False)
     camera = panel(axes, core.mv.x, core.mv.y, core.mv.w)
     surface, _ = _hulls(1, len(hull))
-    simplices.overlay(axes, [
+    overlay(axes, [
         contours.picture(hull, surface, np.zeros(len(hull)), to_rgb(BODY_COLOUR), camera, opacity=0.16),
         simplices.strokes(stack([mounts, tips]).reshape(-1), _arrows(len(mounts)), to_rgb(FORCE_COLOUR), ARROW_WIDTH,
                           camera, chevrons=np.ones(len(mounts)), chevron=ARROW_CHEVRON),
@@ -129,12 +130,12 @@ def draw_approaches(hull: core.Point, poses: core.Motor, labels: tuple[str, ...]
         selected = np.unique(np.searchsorted(distance, np.linspace(0, distance[-1], GHOST_COUNT)))  # [ghosts] int
         _, ghost_outlines = _hulls(len(selected), len(hull))
         ghosts = carried[selected, case].reshape(-1)                     # [ghosts * vertices] Point-
-        simplices.overlay(axes, [
+        overlay(axes, [
             _target(camera, hull),
             contours.picture(carried[-1, case], final, np.zeros(len(hull)), to_rgb(BODY_COLOUR), camera,
                              opacity=0.25),
             simplices.strokes(ghosts, ghost_outlines, to_rgb(BODY_COLOUR), LINE_WIDTH, camera, opacity=0.35),
-            simplices.strokes(centers[:, case], simplices.Topology.chains([len(centers)]), to_rgb(BODY_COLOUR),
+            simplices.strokes(centers[:, case], Topology.chains([len(centers)]), to_rgb(BODY_COLOUR),
                               LINE_WIDTH, camera),
             simplices.markers(centers[0, case][None], to_rgb(BODY_COLOUR), MARK_RADIUS, camera)])
     return figure
@@ -149,7 +150,7 @@ def draw_costs(values: core.StateCost, labels: tuple[str, ...]) -> plt.Figure:
     costs = values[remaining - 1, :, None, None](samples, samples)        # [remaining, cases, samples_y, samples_x] Scalar+
     points = (samples * -0.5).exp() >> origin                             # [samples_y, samples_x] Point-
     drawn = readings([points])                                           # [2, samples_y * samples_x] Scalar+
-    grid = simplices.Topology.grid(COST_GRID_COUNT, COST_GRID_COUNT)
+    grid = Topology.grid(COST_GRID_COUNT, COST_GRID_COUNT)
     colours = plt.get_cmap("viridis")(np.linspace(0.15, 0.8, len(remaining)))  # [remaining, 4] float
     limits = stack([drawn.min(axis=-1), drawn.max(axis=-1)]).to_array()   # [corners, 2] float
     # A panel a case as large as the docking geometry's, under its title, over one legend.
@@ -162,7 +163,7 @@ def draw_costs(values: core.StateCost, labels: tuple[str, ...]) -> plt.Figure:
     for case, axes in enumerate(panels[0]):
         camera = panel(axes, core.mv.x, core.mv.y, core.mv.w)
         # The same contour value makes the accumulated cost comparable at different horizons.
-        simplices.overlay(axes, [
+        overlay(axes, [
             contours.picture(points.reshape(-1), grid, costs[index, case].to_array().reshape(-1), np.zeros(3), camera,
                              levels=(contours.Level(COST_LEVEL, colour, LINE_WIDTH),), opacity=0.0)
             for index, colour in enumerate(colours)])
@@ -210,10 +211,10 @@ def animate(
         figure.set_layout_engine("none")
     cameras = [panel(axes, core.mv.x, core.mv.y, core.mv.w) for axes in panels[0]]
     guides = [[_target(camera, hull),
-               simplices.strokes(trajectories[:, case], simplices.Topology.chains([len(trajectories)]), to_rgb(BODY_COLOUR),
+               simplices.strokes(trajectories[:, case], Topology.chains([len(trajectories)]), to_rgb(BODY_COLOUR),
                                  LINE_WIDTH, camera, opacity=0.3)]
               for case, camera in enumerate(cameras)]
-    images = [simplices.overlay(axes, layers) for axes, layers in zip(panels[0], guides)]
+    images = [overlay(axes, layers) for axes, layers in zip(panels[0], guides)]
     for index in range(len(poses)):
         for case, (image, camera) in enumerate(zip(images, cameras)):
             image.set_data(simplices.composited([

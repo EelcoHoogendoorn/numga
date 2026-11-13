@@ -8,7 +8,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.mechanics.freeform.geometry import Antivector, Topology
-from examples.util.wgsl import image_figure, meshes, solids
+from numga.render import meshes, solids
+from examples.util.panels import image_figure
 
 n_pixels = 230
 elevation, azimuth = np.radians(24.0), np.radians(54.0)

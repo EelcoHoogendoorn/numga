@@ -12,7 +12,8 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate
 from examples.surfaces.koebe import core
-from examples.util.wgsl import show, solids
+from numga.render import solids
+from examples.util.panels import show
 
 sm = solids.mv
 PRIMAL_COLOUR = np.array(to_rgb("#287fa0"))

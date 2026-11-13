@@ -12,7 +12,9 @@ import numpy as np
 
 from examples.fluids.smoke_rings import core
 from examples.util import charts
-from examples.util.wgsl import image_figure, meshes, simplices, solids
+from numga.topology import Topology
+from numga.render import meshes, simplices, solids
+from examples.util.panels import image_figure
 
 # The surface's colour from the first time to the last, and the colours of the rings' swept tubes, one per ring; the
 # curves' colours by speed, from blue at rest to green at the fastest, the stretch of the map light enough to show its
@@ -61,11 +63,11 @@ def framed(points: solids.Point, pixels: int) -> tuple[solids.View, solids.Point
 def sheet(points: solids.Point, faces: np.ndarray, colours: np.ndarray,
           view: solids.View) -> meshes.Samples:
     """Triangles over vertices, coloured at each corner `[faces, 3, 3]`, smoothly lit, at every sample of the view."""
-    return meshes.samples(points, faces, colours, meshes.smooth(points, meshes.Topology(len(points), faces)), view, face_values=np.zeros(4),
+    return meshes.samples(points, faces, colours, meshes.smooth(points, Topology(len(points), faces)), view, face_values=np.zeros(4),
                           colour=meshes.plain, gloss=surface_gloss)
 
 
-def curve_strokes(points: solids.Point, curves: simplices.Topology, speeds: core.Scalar, fastest: float,
+def curve_strokes(points: solids.Point, curves: Topology, speeds: core.Scalar, fastest: float,
                   view: solids.View) -> meshes.Samples:
     """The edges of curves through points `[vertices]` as strokes, each edge coloured by the mean speed at its ends,
     from the speeds at the vertices `[vertices]`, against the fastest, at every sample of the view."""
@@ -79,7 +81,7 @@ def draw_surface(curves: core.Point) -> plt.Figure:
     points = solids.origin + solids.context.include_from_algebra(curves)                        # [times, n] Point-
     n_times, n_vertices = points.shape
     # The curve, a loop of edges, swept from each time to the next.
-    faces = simplices.Topology.loops([n_vertices]).product(simplices.Topology.chains([n_times])).elements[2]
+    faces = Topology.loops([n_vertices]).product(Topology.chains([n_times])).elements[2]
     share = np.linspace(0, 1, n_times)[:, None, None] * np.ones((n_times, n_vertices, 1))
     colours = ((1 - share) * early + share * late).reshape(-1, 3)[faces]       # [faces, 3, 3]
     view, _ = framed(points, n_picture_pixels)
@@ -94,7 +96,7 @@ def draw_swept(curves: core.Point) -> plt.Figure:
     n_times, n_rings, n_vertices = points.shape
     view, toward = framed(points, n_picture_pixels)
     # Each ring a loop of edges, the rings swept from each time to the next.
-    surface = simplices.Topology.loops([n_vertices] * n_rings).product(simplices.Topology.chains([n_times]))
+    surface = Topology.loops([n_vertices] * n_rings).product(Topology.chains([n_times]))
     places = points.reshape(-1)                                                # [times * rings * n] Point-
     # The middle of each quad, an edge at one time and at the next: the mean of the middles of its two triangles,
     # which the product lists one after the other.
@@ -115,7 +117,7 @@ def animate_curves(curves: core.Point, speeds: core.Scalar) -> Iterator[np.ndarr
     points, rates = solids.origin + solids.context.include_from_algebra(curves), speeds.to_array()   # [times, ..., n] Point-, [times, ..., n]
     view, _ = framed(points, n_frame_pixels)
     # Every curve a loop of edges through its vertices.
-    loops = simplices.Topology.loops([points.shape[-1]] * int(np.prod(points.shape[1:-1])))
+    loops = Topology.loops([points.shape[-1]] * int(np.prod(points.shape[1:-1])))
     for time in range(len(rates)):
         flowing = curve_strokes(points[time].reshape(-1), loops, speeds[time].reshape(-1), rates.max(), view)
         yield solids.draw([], view, background, inks=[], translucent=[], meshes=[(flowing, 1.0)])
@@ -149,7 +151,7 @@ def animate_trail(curves: core.Point, speeds: core.Scalar) -> Iterator[np.ndarra
     colours = ((1 - share) * early + share * late).reshape(-1, 3)
     for time in range(n_times):
         swept = faces[:time][kept[:time]]                                      # [faces, 3]
-        shown = [(curve_strokes(points[time][inside[time]], simplices.Topology.chains([inside[time].sum()]),
+        shown = [(curve_strokes(points[time][inside[time]], Topology.chains([inside[time].sum()]),
                                 speeds[time][inside[time]], rates.max(), view), 1.0)]
         if len(swept):
             shown.append((sheet(points.reshape(-1), swept, colours[swept], view), trail_opacity))

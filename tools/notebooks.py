@@ -5,7 +5,7 @@ work on what those notebooks use.
 
     python -m tools.notebooks                                         # every notebook
     python -m tools.notebooks wing fluids/vortices                    # those whose paths hold any of the strings
-    python -m tools.notebooks --touching examples.util.topology numga.sparse
+    python -m tools.notebooks --touching numga.topology numga.sparse
     python -m tools.notebooks --changed main                          # their folder or a module they use changed
     python -m tools.notebooks --list --touching jax                   # the selection, without running it
 
@@ -188,7 +188,7 @@ def main(arguments: list[str]) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("patterns", nargs="*", help="select the notebooks whose paths hold any of these strings")
     parser.add_argument("--touching", nargs="+", default=[], metavar="MODULE",
-                        help="select the notebooks that use any of these modules, such as examples.util.topology")
+                        help="select the notebooks that use any of these modules, such as numga.topology")
     parser.add_argument("--changed", metavar="REF",
                         help="select the notebooks whose folder or a module they use changed since this git ref")
     parser.add_argument("--list", action="store_true", help="print the selection without running it")

@@ -19,10 +19,10 @@ import numpy as np
 from numga import NumpyContext
 from numga.extensor import Extensor
 from numga.gatype import GAType
-from examples.util.wgsl import Shader
-from examples.util.wgsl.camera import Camera, extrinsic_first, placing, preimage, whole
-from examples.util.wgsl.library import level_lines, samples_per_side
-from examples.util.wgsl.simplices import Layer
+from numga.wgsl import Shader, level_lines, samples_per_side
+
+from .camera import Camera, extrinsic_first, placing, preimage, whole
+from .simplices import Layer
 
 
 class Kind(IntEnum):

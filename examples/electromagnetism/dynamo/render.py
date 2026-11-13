@@ -16,9 +16,10 @@ from numga import Algebra, concatenate, stack
 from numga.extensor import Extensor
 from examples.electromagnetism.dynamo import core
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 from examples.util import charts
-from examples.util.wgsl import flow, image_figure, meshes, simplices, solids
+from numga.render import flow, meshes, simplices, solids
+from examples.util.panels import image_figure
 
 mv = core.mv
 # The cut face's colours from no field to the strongest, the planet's surface, the field lines, and the background.

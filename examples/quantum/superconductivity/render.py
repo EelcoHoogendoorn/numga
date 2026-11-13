@@ -14,8 +14,9 @@ from numga import stack
 from examples.util.animation import capture
 from examples.quantum.superconductivity import core
 from examples.util import charts
-from examples.util.wgsl import fitted, labels, meshes, show, simplices, solids
-from examples.util.wgsl.scene import Scene
+from numga.topology import Topology
+from numga.render import Scene, meshes, simplices, solids
+from examples.util.panels import fitted, labels, show
 
 sm = solids.mv
 # The patches a field's planes xy and yz are read across: the joins of the two directions in each plane.
@@ -101,7 +102,7 @@ def chart(energies: np.ndarray, axis: plt.Axes) -> tuple[solids.View, meshes.Sam
     view = fitted(solids.view([circles, energy_start, ends], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS), axis)
     # Each axis an edge from the start of the energy axis to its end.
     starts = energy_start[None].broadcast_to(ends.shape)                                    # [3] Point-
-    axes = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Topology.chains([2] * 3), AXIS_COLOUR,
+    axes = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), Topology.chains([2] * 3), AXIS_COLOUR,
                            AXIS_WIDTH, view, solids.gloss, chevrons=np.ones(3), chevron=CHEVRON_LENGTH * AXIS_WIDTH)
     return view, axes, circles
 
@@ -134,7 +135,7 @@ def animate_quench(
         curve = figure.add_axes((0.68, 0.22, 0.29, 0.64))
         view, axes, circles = chart(energies, axis)
         # Each circle a loop of edges through its points.
-        rings = (simplices.tubes(circles.reshape(-1), simplices.Topology.loops([circles.shape[1]] * len(circles)),
+        rings = (simplices.tubes(circles.reshape(-1), Topology.loops([circles.shape[1]] * len(circles)),
                                  CIRCLE_COLOUR, CIRCLE_WIDTH, view, solids.gloss), CIRCLE_OPACITY)
         scene = Scene(view, np.ones(3), [], [rings, (axes, 1.0)], inks=[], translucent=[])
 
@@ -143,10 +144,10 @@ def animate_quench(
             path through the tips."""
             # The pair coherence in yz up the chart's y, and in zx along its z.
             tips = origins + sm.y.dual() * coherence[:, 0] + sm.z.dual() * coherence[:, 1]  # [levels] Point-
-            stems = simplices.tubes(stack((origins, tips), axis=-1).reshape(-1), simplices.Topology.chains([2] * len(tips)),
+            stems = simplices.tubes(stack((origins, tips), axis=-1).reshape(-1), Topology.chains([2] * len(tips)),
                                     colours, STEM_WIDTH, view, solids.gloss, chevrons=np.ones(len(tips)),
                                     chevron=CHEVRON_LENGTH * STEM_WIDTH)
-            path = simplices.tubes(tips, simplices.Topology.chains([len(tips)]), np.array(to_rgb(INK)), PATH_WIDTH, view,
+            path = simplices.tubes(tips, Topology.chains([len(tips)]), np.array(to_rgb(INK)), PATH_WIDTH, view,
                                    solids.gloss)
             return scene.draw([], inks=[], translucent=[], meshes=[(stems, 1.0), (path, PATH_OPACITY)])
 

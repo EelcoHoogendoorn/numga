@@ -16,9 +16,9 @@ from numga.algebras import VGA2D
 from examples.util import charts
 from examples.util.animation import capture
 from examples.electromagnetism.second_harmonic import core
-from examples.util.wgsl import fitted, labels, show, simplices, solids
-from examples.util.wgsl.camera import Camera, offset_panel
-from examples.util.wgsl.scene import Scene
+from numga.topology import Topology
+from numga.render import Camera, Scene, simplices, solids
+from examples.util.panels import fitted, labels, offset_panel, overlay, show
 
 # The observer sees the point where its time line meets the spatial slice.
 space_slice = core.mv.t ^ (core.Direction & core.time)
@@ -106,20 +106,20 @@ def cross(camera: Camera, limit: float) -> np.ndarray:
     camera reads as one across and one up, the duals of its planes over their own readings: its picture."""
     along, rise = (plane.dual() / (plane & plane.dual()) for plane in (camera.across, camera.up))
     ends = limit * stack((-along, along, -rise, rise))                       # [4]
-    return simplices.strokes(ends, simplices.Topology.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
+    return simplices.strokes(ends, Topology.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
                              cap=simplices.Cap.BUTT)
 
 
 def curve(values: Extensor, colour: str, camera: Camera, **style) -> np.ndarray:
     """A curve through fields or polarizations across the beam `[samples]`, in order, as a stroke."""
-    return simplices.strokes(values, simplices.Topology.chains([len(values)]), np.array(to_rgb(colour)), curve_width,
+    return simplices.strokes(values, Topology.chains([len(values)]), np.array(to_rgb(colour)), curve_width,
                              camera, **style)
 
 
 def arrow(value: Extensor, colour, width: float, chevron: float, camera: Camera, opacity: float = 1.0) -> np.ndarray:
     """An arrow from the origin to a field or a polarization across the beam `[]`: a stroke with a chevron of strokes
     `chevron` pixels long at its tip, covering as much as `opacity`."""
-    return simplices.strokes(stack((0 * value, value)), simplices.Topology.chains([2]), np.array(to_rgb(colour)), width,
+    return simplices.strokes(stack((0 * value, value)), Topology.chains([2]), np.array(to_rgb(colour)), width,
                              camera, chevrons=np.ones(1), chevron=chevron, opacity=opacity)
 
 
@@ -140,7 +140,7 @@ def space_scene(view: solids.View) -> Scene:
     parts = [(solids.rods(solids.origin, tips, shaft_radius), axis_colour),
              (solids.ball(tips, tip_radius)[:, None], axis_colour),
              (solids.ball(solids.origin, centre_radius * view.pixel)[None, None], centre_colour)]
-    beam_arrow = simplices.tubes(stack((solids.origin - reach, solids.origin + reach)), simplices.Topology.chains([2]),
+    beam_arrow = simplices.tubes(stack((solids.origin - reach, solids.origin + reach)), Topology.chains([2]),
                                  beam_colour, arrow_width, view, gloss=solids.gloss, chevrons=np.ones(1),
                                  chevron=beam_chevron)
     return Scene(view, np.ones(3), parts, [(beam_arrow, 1.0)], inks=[], translucent=[])
@@ -196,7 +196,7 @@ class ResponseView:
         fields, self.polarizations = screens(response_axes)
         self.pumps = [cross(fields, response_limit), curve(pumps, pump_colour, fields, opacity=0.3),
                       arrow(pumps[0], pump_colour, arrow_shaft, arrow_chevron, fields)]
-        self.response = simplices.overlay(response_axes, self.pumps)
+        self.response = overlay(response_axes, self.pumps)
         # The crystal's image, blank until the bonds are drawn, as many pixels across as its room holds, with each
         # axis named just past its arrow's tip.
         self.view = fitted(solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, half_width), 1),
@@ -266,7 +266,7 @@ def draw_mixing(pumps: core.Field, probes: core.Field, generated: core.Polarizat
                   loc="outside lower center", ncol=3, frameon=False)
     for axes, pump, response in zip(grid[0], pump_arrows, generated):
         fields, polarizations = screens(axes)
-        simplices.overlay(axes, [cross(fields, limit),
+        overlay(axes, [cross(fields, limit),
                                  arrow(pump, "0.55", pale_shaft, pale_chevron, fields, pale_opacity),
                                  curve(response, generated_colour, polarizations),
                                  curve(probes, pump_colour, fields, dashes=probe_dashes, cap=simplices.Cap.BUTT)])
@@ -295,11 +295,11 @@ def draw_growth(depths: np.ndarray, amplitude: core.Polarization) -> plt.Figure:
     paths = phase_plane.x.dual() * components[..., 0] + phase_plane.y.dual() * components[..., 1]   # [cases, slices] Antivector-
     ends = stack((phase_plane.x.dual() * extents[0], phase_plane.y.dual() * extents[1])).reshape(-1)  # [4] Antivector-
     camera = offset_panel(quadrature_axes, phase_plane.x, phase_plane.y)
-    traced = [simplices.strokes(path, simplices.Topology.chains([len(path)]), np.array(to_rgb(colour)), curve_width,
+    traced = [simplices.strokes(path, Topology.chains([len(path)]), np.array(to_rgb(colour)), curve_width,
                                 camera) for path, colour in zip(paths, case_colours)]
     reached = simplices.markers(paths[:, -1], np.array([to_rgb(colour) for colour in case_colours]),
                                 charts.MARKER_PX / 2, camera)
-    simplices.overlay(quadrature_axes, [simplices.strokes(ends, simplices.Topology.chains([2, 2]), cross_colour,
+    overlay(quadrature_axes, [simplices.strokes(ends, Topology.chains([2, 2]), cross_colour,
                                                           charts.FRAME_PX, camera, cap=simplices.Cap.BUTT),
                                         *traced, reached])
     power_axes.set(xlabel="depth in the crystal", ylabel="generated power", xlim=(0, 1), xticks=[], yticks=[])

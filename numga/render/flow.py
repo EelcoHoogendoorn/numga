@@ -10,16 +10,14 @@ from functools import cache
 
 import numpy as np
 
-from matplotlib.axes import Axes
-
 from numga.extensor import Extensor
 from numga.gatype import GAType
-from examples.util.wgsl import Shader, meshes, solids
-from examples.util.wgsl.simplices import view_camera
-from examples.util.wgsl.camera import Camera, extrinsic_first, placing, reading, whole
-from examples.util.wgsl.library import pinned, samples_per_side
+from numga.topology import Topology
+from numga.wgsl import Shader, samples_per_side
 
-Topology = meshes.Topology
+from . import meshes, solids
+from .camera import Camera, extrinsic_first, placing, reading, whole
+
 
 n_trace_steps = 64
 length_pixels = 102.4
@@ -241,7 +239,7 @@ def texture(points: solids.Point, topology: Topology, field: solids.Point, view:
     surface, projected, grains = seed_shader(grain).draw_averaged(
         view.shape, samples_per_side(), 3 * topology.n_elements[2], points=points, faces=topology.elements[2], field=field,
         normals=meshes.smooth(points, topology), noise_scale=view.pixel * grain_pixels,
-        colours=np.broadcast_to(colours, points.shape + (3,)), **view_camera(view).uniforms(8 * view.half.max()),
+        colours=np.broadcast_to(colours, points.shape + (3,)), **view.to_camera().uniforms(8 * view.half.max()),
         **solids.lighting(0.06), **solids.steps(view))
     return trace_shader()(view.shape, surface=surface, flow=projected, grains=grains,
                           background=background, step_pixels=length / n_trace_steps,
@@ -279,13 +277,4 @@ def layer(points: Extensor, topology: Topology, field: Extensor, camera: Camera,
     rgba[..., 3] = result["coverage"][..., 0]
     return rgba
 
-
-def overlay(ax: Axes, points: Extensor, topology: Topology, field: Extensor, camera: Camera,
-            reference_speed: float, colour: np.ndarray):
-    """Draw a flat field as a transparent layer over a panel, read by the panel's camera, keeping the panel's existing
-    geometric annotations."""
-    rgba = layer(points, topology, field, camera, reference_speed, colour)
-    shown = pinned(ax, rgba, (*ax.get_xlim(), *ax.get_ylim()))
-    shown.set_zorder(3.5)
-    return shown
 

@@ -11,8 +11,8 @@ from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 from numga import concatenate, stack
 from examples.electromagnetism.piezoelectric import core
 from examples.util.animation import capture
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, offset_panel
+from numga.render import Camera, contours, simplices
+from examples.util.panels import offset_panel, overlay
 
 Topology = core.Topology
 
@@ -87,7 +87,7 @@ class DeviceView:
         self.voltage_norm = Normalize(-voltage_scale / 2, voltage_scale / 2)
         self.strain_norm = Normalize(-strain_scale, strain_scale)
         # Each face's area shared among its corners, for area-weighted readings of face values at the vertices.
-        self.corner_shares = ~topology.incidence[2, 0].mean(axis=0)             # Scalar+[vertices <- faces]
+        self.corner_shares = topology.incidence[2, 0].mean(axis=0).adjugate()             # Scalar+[vertices <- faces]
         self.areas, self.vertex_areas = areas, self.corner_shares * areas
         length, self.thickness = high - low                                     # [] Scalar+, [] Scalar+
         middle = (low[1] + high[1]) / 2                                         # [] Scalar+
@@ -117,7 +117,7 @@ class DeviceView:
                       *clamp(low, high, core.axis * (0.025 * length), self.view)]
         self.face = chain(stack((low, high)), interface_colour, rest_width, self.view)
         # The strained body, a picture of the deformed mesh shaded anew at each state.
-        self.image = simplices.overlay(ax, self.under)
+        self.image = overlay(ax, self.under)
 
     def update(self, displacement: core.Point, potential: core.Scalar,
                axial_strain: core.Scalar) -> plt.Figure:
@@ -177,7 +177,7 @@ def draw_mesh(topology: core.Strip, vertices: core.Point) -> plt.Figure:
     foot, head = (topology.reading(topology.clamped[[0, -1]], 0) * vertices).batch()   # [] Point-, [] Point-
     margin = 0.12 * (head - foot)                                               # [] Point-
     # The electrodes and the interface run in order along the strip.
-    simplices.overlay(ax, [
+    overlay(ax, [
         *clamp(foot - margin, head + margin, core.axis * (0.12 * thickness), camera),
         simplices.strokes(places, topology, rgb(rest_colour), mesh_width, camera),
         *[chain((topology.reading(nodes, 0) * vertices).batch(), colour, width, camera, cap=simplices.Cap.BUTT)

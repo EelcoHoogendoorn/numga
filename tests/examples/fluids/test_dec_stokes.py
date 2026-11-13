@@ -10,7 +10,7 @@ def flow(topology, vertices, inlet, outlet):
     ordinate = core.mv.y & vertices
     streamfunction = 1.5 * (ordinate - 4 * ordinate.squared() * ordinate / (3 * scenarios.HEIGHT**2))
     ends = topology.reading(np.concatenate((inlet, outlet)), 1)
-    prescribed = ~ends * (ends * (topology.d[0] * streamfunction))
+    prescribed = ends.adjugate() * (ends * (topology.d[0] * streamfunction))
     boundary_circulation = operators.dual_patches * 0
     result = core.stokes(operators, scenarios.VISCOSITY, prescribed, topology.exterior[1], boundary_circulation)
     return operators, prescribed, result
@@ -120,7 +120,7 @@ def test_obstacle_flow_balances_every_cell_and_preserves_boundary_flux():
 
     # Summing oriented face boundaries cancels every interior edge and reads the net throughflow.
     one = core.mv.scalar(np.ones((topology.n_elements[2], 1))).field()
-    boundary = ~topology.d[1] * one
+    boundary = topology.d[1].adjugate() * one
     outgoing = boundary * flux
     on_inlet = topology.reading(inlet, 1)
     on_outlet = topology.reading(outlet, 1)

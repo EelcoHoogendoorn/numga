@@ -13,8 +13,9 @@ from matplotlib.colors import to_rgb
 import numpy as np
 
 from examples.util.animation import capture
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, panel
+from numga.topology import Topology
+from numga.render import Camera, contours, simplices
+from examples.util.panels import overlay, panel
 from numga import concatenate, stack
 from examples.mechanics.modes.core import ModeCase, Point, mv
 
@@ -53,11 +54,11 @@ def spring_paths(starts: Point, ends: Point) -> Point:
     return starts[:, None] + along[:, None] * coil_along + across[:, None] * coil_across
 
 
-def plate(n_corners: int) -> tuple[simplices.Topology, simplices.Topology]:
+def plate(n_corners: int) -> tuple[Topology, Topology]:
     """A convex plate of `n_corners` corners as triangles fanning out from its first corner, and its rim, the fan's
     boundary edges."""
     corners = np.arange(n_corners)
-    surface = simplices.Topology(n_corners, np.stack([np.zeros(n_corners - 2, dtype=int), corners[1:-1], corners[2:]], -1))
+    surface = Topology(n_corners, np.stack([np.zeros(n_corners - 2, dtype=int), corners[1:-1], corners[2:]], -1))
     return surface, surface.border
 
 
@@ -66,7 +67,7 @@ def suspension(camera: Camera, body: Point, anchors: Point, attachments: Point) 
     attachments on the plate."""
     surface, rim = plate(len(body))
     paths = spring_paths(anchors, attachments).reshape(-1)                   # [springs * coil] Point-
-    coils = simplices.Topology.chains([len(coil_along)] * len(anchors))
+    coils = Topology.chains([len(coil_along)] * len(anchors))
     return [contours.picture(body, surface, np.zeros(len(body)), PLATE, camera),
             simplices.strokes(body, rim, BODY, BODY_WIDTH, camera),
             simplices.markers(anchors, SUPPORT, SUPPORT_RADIUS, camera),
@@ -109,7 +110,7 @@ def _draw_mode(ax: plt.Axes, case: ModeCase, mode: int):
         current_attachments = case.attachments + case.attachment_offsets[mode] * s
         return simplices.composited([reference, *suspension(camera, current_body, case.anchors, current_attachments)])
 
-    image = simplices.overlay(ax, [picture(1.0)])
+    image = overlay(ax, [picture(1.0)])
 
     def update(phase: float):
         image.set_data(picture(phase))
@@ -157,5 +158,5 @@ def render_setup(
     ax.set_aspect("equal")
     ax.set_axis_off()
     fig.tight_layout()
-    simplices.overlay(ax, suspension(panel(ax, mv.x, mv.y, mv.w), body, anchors, attachments))
+    overlay(ax, suspension(panel(ax, mv.x, mv.y, mv.w), body, anchors, attachments))
     return fig

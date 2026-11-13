@@ -16,12 +16,12 @@ import numpy as np
 from matplotlib.colors import LinearSegmentedColormap, to_rgb
 
 from numga import stack
-from examples.util.wgsl import contours, image_figure, simplices
-from examples.util.wgsl.camera import Camera
+from numga.topology import Topology
+from numga.render import Camera, contours, simplices
+from examples.util.panels import image_figure
 from examples.thermodynamics.rubber_band import core
 
 mv = core.mv
-Topology = simplices.Topology
 # The bands' colours, from cooler than the room through the room's grey to warmer, by orange to red; the outline's,
 # the support's and the weight's.
 temperature_colours = LinearSegmentedColormap.from_list(

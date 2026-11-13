@@ -32,11 +32,11 @@ from matplotlib.ticker import MultipleLocator
 from numga import concatenate, stack
 from numga.extensor import Extensor
 from examples.util import charts
-from examples.util.wgsl import contours, flow, image_figure, simplices
-from examples.util.wgsl.camera import Camera, offset_panel
+from numga.topology import Topology
+from numga.render import Camera, contours, flow, simplices
+from examples.util.panels import image_figure, offset_panel, overlay
 from examples.thermodynamics.magnetotransport import core
 
-Topology = simplices.Topology
 mv = core.mv
 State = tuple[np.ndarray, core.Potential, core.Spatial, core.Potential, core.Spatial]
 # A frame: the magnetic field, and the bar's state and the ring's in it; and one drive's part of a state, the densities
@@ -324,7 +324,7 @@ def draw_turns(drive: core.Drive, fluxes: core.Flux) -> Figure:
     for ax, planes in zip(axes, ((mv.xt, mv.yt), (mv.xs, mv.ys))):
         field_view = offset_panel(ax, core.axis & core.time, core.across & core.time)
         flux_view = offset_panel(ax, *planes)
-        simplices.overlay(ax, [
+        overlay(ax, [
             simplices.strokes(stack((0 * drive, drive)), Topology.chains([2]), electric_colour, arrow_width,
                               field_view, chevrons=np.ones(1), chevron=arrow_chevron),
             simplices.strokes(fluxes, Topology.chains([2]), np.zeros(3), charts.LINE_PX, flux_view, dashes=sweep_dots,

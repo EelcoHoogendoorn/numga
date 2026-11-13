@@ -17,7 +17,7 @@ import numpy as np
 from numga import NumpyContext
 from numga.algebras import VGA2D as ga
 from numga.sparse import spdiag
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                      # Scalar+
@@ -68,7 +68,7 @@ class Operators:
 
         # Each affine corner hat owns one third of its triangle's mass.
         corner_mean = topology.incidence[2, 0].mean(axis=0)     # Scalar+[faces <- vertices]
-        self.masses = ~corner_mean * (density * self.areas)     # [...] Scalar+[vertices]
+        self.masses = corner_mean.adjugate() * (density * self.areas)  # [...] Scalar+[vertices]
         inverse_inertia = (1 / self.masses) * Force.dual()
         self.acceleration = -inverse_inertia(self.stiffness)    # [...] (Point- <- Point-)[vertices <- vertices]
         self.drag = -inverse_inertia(self.damping)              # [...] (Point- <- Point-)[vertices <- vertices]
@@ -86,7 +86,7 @@ class Operators:
         corners = self.topology.incidence[2, 0]                 # [corners] Scalar+[faces <- vertices]
         # The pullback: each test corner's incidence run back, the triangles' blocks, each trial corner's incidence,
         # summed over both corners of the pair.
-        return (~corners[:, None] * spdiag(local.field()) * corners[None, :]).sum(axis=0).sum(axis=0)
+        return (corners[:, None].adjugate() * spdiag(local.field()) * corners[None, :]).sum(axis=0).sum(axis=0)
 
 
 def evolve(operators: Operators, displacement: Point, velocity: Point, damping_time: float,

@@ -28,10 +28,9 @@ the reverse of a map cell, which reverses its output. The stored cells have shap
 eigenproblems use map cells and multivector-valued fields, through SciPy on the NumPy backend. Every
 field taken or returned is typed as one. See docs/fields.md for examples.
 
-Cells may also be plain numbers, an array `[..., couplings]`, as the incidences of a mesh are: such a
-map belongs to no algebra. Where it meets one, a field, a type, or a map of typed cells, its numbers
-become scalars of that algebra, as an untyped array does beside an extensor; between maps of numbers,
-products, sums and the reverse stay numbers.
+A map of plain numbers, a `Sparse`, as the incidences of a mesh are, belongs to no algebra. Where it meets one, a
+field, a type, or a map of typed cells, its numbers become scalars of that algebra, as an untyped array does beside
+an extensor.
 """
 
 from __future__ import annotations
@@ -47,16 +46,18 @@ from numga.extension import ExtensionMethod
 from numga.extensor import Extensor, concatenate, operands
 from numga.gatype import GAType
 
+from .numeric import Sparse, chain, summed_runs, typed
 
-class SparseExtensor:
-    """Cells coupling `shape[1]` input sites to `shape[0]` output sites.
+
+class SparseExtensor(Sparse):
+    """Extensor cells coupling `shape[1]` input sites to `shape[0]` output sites.
 
     `cells[..., coupling]` couples `columns[coupling]` to `rows[coupling]`; duplicate couplings add
     at construction. `gatype` describes the cells, not the whole field map, and leading cell batch
-    axes hold separate maps of the same pattern.
+    axes hold separate maps of the same pattern. The couplings are kept as a map of numbers keeps them.
     """
 
-    __slots__ = ("cells", "rows", "columns", "shape", "factors")
+    __slots__ = ("factors",)
     apply = ExtensionMethod("apply", takes="a sparse map")
     reverse = ExtensionMethod("reverse", takes="a sparse extensor")
     clifford_conjugate = ExtensionMethod("clifford_conjugate", takes="a sparse extensor")
@@ -66,40 +67,13 @@ class SparseExtensor:
     lstsq = ExtensionMethod("lstsq", takes="a sparse map")
     eigh = ExtensionMethod("eigh", takes="a sparse map whose cells map a space to itself, or to its dual")
 
-    def __init__(self, cells: Extensor | np.ndarray, rows: np.ndarray, columns: np.ndarray, shape: tuple[int, int]) -> None:
-        if cells.ndim == 0 or not cells.shape[-1] == len(rows) == len(columns):
-            raise ValueError("a sparse extensor needs one row and one column per cell")
-        pairs, axes = np.unique(np.asarray(rows) * shape[1] + np.asarray(columns), return_inverse=True)
-        self.cells = _scatter(cells, axes, len(pairs))
-        self.rows, self.columns = np.divmod(pairs, shape[1])
-        self.shape = tuple(shape)
+    def __init__(self, cells: Extensor, rows: np.ndarray, columns: np.ndarray, shape: tuple[int, int]) -> None:
+        super().__init__(cells, rows, columns, shape)
         # The factorization of each of its maps, made by the first solve against it and kept, as a map does not change.
         self.factors = {}
 
-    @classmethod
-    def from_columns(cls, columns: np.ndarray, cells: Extensor, size: int) -> SparseExtensor:
-        """The map from a field of `size` elements coupling output element r to the input elements
-        `columns[r]` names, `[R, k]`, through `cells[..., r, :]` of the same shape."""
-        rows = np.repeat(np.arange(len(columns)), columns.shape[1])
-        return cls(cells.reshape(cells.shape[:-2] + (-1,)), rows, columns.reshape(-1), (len(columns), size))
-
-    @classmethod
-    def from_indices(cls, cells: Extensor, rows: np.ndarray, columns: np.ndarray, shape: tuple[int, int]) -> SparseExtensor:
-        """Cells `[..., *indices]`, each coupling the row and the column given at its place in `rows` and
-        `columns`, which broadcast against each other to the cells' trailing axes."""
-        rows, columns = np.broadcast_arrays(rows, columns)
-        return cls(cells.reshape(cells.shape[:cells.ndim - rows.ndim] + (rows.size,)), rows.reshape(-1), columns.reshape(-1), shape)
-
-    @classmethod
-    def selection(cls, context, index: np.ndarray, size: int) -> SparseExtensor:
-        """The map that reads, at each of its output sites, the input site of `size` an index names,
-        `index[..., output]`: applied to a field, the elements at those sites. Leading axes of the index
-        give one map each, all of one pattern, each map's cells one where it reads and zero elsewhere."""
-        leading, count = index.shape[:-1], index.shape[-1]
-        cases = int(np.prod(leading, dtype=int))
-        reads = np.broadcast_to(np.eye(cases)[:, None, :], (cases, count, cases)).reshape(leading + (count, cases))
-        return cls.from_indices(context.multivector.scalar(reads[..., None]), np.arange(count)[:, None],
-                                index.reshape(cases, count).T, (count, size))
+    def _scattered(self, cells: Extensor, index: np.ndarray, size: int) -> Extensor:
+        return _scatter(cells, index, size)
 
     @classmethod
     def from_diagonal(cls, field: Extensor) -> SparseExtensor:
@@ -110,14 +84,12 @@ class SparseExtensor:
 
     def diagonal(self) -> Extensor:
         """The cells on the diagonal as a field, each at its row; zero where a row has none."""
-        on = self.rows == self.columns
-        return _scatter(self.cells[..., on], self.rows[on], self.shape[0]).field()
+        return super().diagonal().field()
 
     def to_dense(self) -> Extensor:
         """The field map the cells make, `X[rows] <- Y[columns]`, each coupling at its pair of sites and zero where
         none couples: the dense counterpart, for what only a dense field map does, such as `eigh` without a metric,
-        `eig`, `pinv`, or `solve` and `lstsq` with maps on the right. Its cells are maps, of a type; a map of plain
-        numbers takes one first, `map * Scalar`."""
+        `eig`, `pinv`, or `solve` and `lstsq` with maps on the right."""
         cell_type, cells = self.gatype, self.cells
         context = cells.context
         # Set functionally on the backend's own arrays, so that a traced map, as under JAX's jit, densifies too.
@@ -127,15 +99,12 @@ class SparseExtensor:
 
     @property
     def gatype(self) -> GAType:
-        """The coupling cells' type, by which the operations dispatch; the sites are `shape`. Plain numbers have
-        none until they meet an algebra."""
-        if _numbers(self):
-            raise TypeError("a map of plain numbers has no type until it meets an algebra: give it one, `map * Scalar`")
+        """The coupling cells' type, by which the operations dispatch; the sites are `shape`."""
         return self.cells.gatype
 
     # --- products: the cells' own, summed over the shared sites ----------------------------------
     @overload
-    def __mul__(self, other: SparseExtensor) -> SparseExtensor: ...
+    def __mul__(self, other: SparseExtensor | Sparse) -> SparseExtensor: ...
     @overload
     def __mul__(self, other: Extensor) -> Extensor: ...
     @overload
@@ -149,9 +118,6 @@ class SparseExtensor:
 
     def __rmul__(self, other):
         return _left(other, self, expression.geometric_product)
-
-    def __truediv__(self, number: Number) -> SparseExtensor:
-        return _scaled(self, 1 / number)
 
     def __xor__(self, other):
         return _right(other, self, expression.wedge)
@@ -173,8 +139,7 @@ class SparseExtensor:
 
     # --- operations that keep the order of products, cell by cell ---------------------------
     def __invert__(self) -> SparseExtensor:
-        # A number is its own reverse: the couplings alone run back.
-        return _transposed(self, self.cells) if _numbers(self) else self.reverse()
+        return self.reverse()
 
     def involute(self) -> SparseExtensor:
         return _cellwise(self, self.cells.involute())
@@ -193,7 +158,7 @@ class SparseExtensor:
 
     # --- unary coupling cells: application --------------------------------------------------
     @overload
-    def __call__(self, operand: SparseExtensor) -> SparseExtensor: ...
+    def __call__(self, operand: SparseExtensor | Sparse) -> SparseExtensor: ...
     @overload
     def __call__(self, operand: Extensor) -> Extensor: ...
 
@@ -205,52 +170,42 @@ class SparseExtensor:
         the cells at its sites, site by site, and a map without sites is the same at every site."""
         return _diagonal(value, self.shape[0], _context(value))(self)
 
-    def __getitem__(self, index) -> SparseExtensor:
-        """The maps at an index of the leading axes, which hold separate maps of one pattern:
-        `S[..., None]` gives the maps an axis to broadcast against the batch of a field."""
-        index = index if isinstance(index, tuple) else (index,)
-        within = (slice(None),) if any(item is Ellipsis for item in index) else (Ellipsis,)
-        return SparseExtensor(self.cells[index + within], self.rows, self.columns, self.shape)
-
     # --- sums ----------------------------------------------------------------------------------
-    def __add__(self, other: SparseExtensor | Extensor | GAType) -> SparseExtensor:
+    def __add__(self, other: SparseExtensor | Sparse | Extensor | GAType) -> SparseExtensor:
         """The sum of two maps of the same sites; a field over the sites is on the diagonal, each element
         at its own site, and a map or value without sites the same at every site, as each applies:
         `(F + S)(f) == F(f) + S(f)` and `(Vector + S)(f) == f + S(f)`."""
-        if not isinstance(other, SparseExtensor):
-            other = _on_diagonal(_meeting(self, other), other)
+        other = _summand(other, self)
         if self.shape != other.shape:
             raise ValueError(f"sparse shapes {self.shape} and {other.shape} differ")
-        left, right = _alike(self, other)
-        batch = np.broadcast_shapes(left.cells.shape[:-1], right.cells.shape[:-1])
-        joined = np.concatenate if _numbers(left) else concatenate
+        batch = np.broadcast_shapes(self.cells.shape[:-1], other.cells.shape[:-1])
         return SparseExtensor(
-            joined([_broadcast(left.cells, batch + left.cells.shape[-1:]),
-                    _broadcast(right.cells, batch + right.cells.shape[-1:])], axis=-1),
+            concatenate([self.cells.broadcast_to(batch + self.cells.shape[-1:]),
+                         other.cells.broadcast_to(batch + other.cells.shape[-1:])], axis=-1),
             np.concatenate([self.rows, other.rows]),
             np.concatenate([self.columns, other.columns]),
             self.shape,
         )
 
-    def sum(self, axis: int) -> SparseExtensor:
-        """The sum of the separate maps along one of the leading axes: a map of the same pattern."""
-        return SparseExtensor(self.cells.sum(axis=axis - 1 if axis < 0 else axis), self.rows, self.columns, self.shape)
-
-    def mean(self, axis: int) -> SparseExtensor:
-        """The mean of the separate maps along one of the leading axes: a map of the same pattern."""
-        return self.sum(axis) / self.cells.shape[axis - 1 if axis < 0 else axis]
-
-    def __neg__(self) -> SparseExtensor:
-        return SparseExtensor(-self.cells, self.rows, self.columns, self.shape)
-
-    def __radd__(self, other: Extensor | GAType) -> SparseExtensor:
+    def __radd__(self, other: Sparse | Extensor | GAType) -> SparseExtensor:
+        # Its own, so that beside a map of numbers on the left the sum is this map's.
         return self + other
 
-    def __sub__(self, other: SparseExtensor | Extensor | GAType) -> SparseExtensor:
-        return self + (-other)
 
-    def __rsub__(self, other: Extensor | GAType) -> SparseExtensor:
-        return -self + other
+@singledispatch
+def _summand(other: Extensor | GAType, value: SparseExtensor) -> SparseExtensor:
+    """What is added to a sparse map, as a sparse map of its sites: a field or a value on its diagonal."""
+    return _on_diagonal(value, other)
+
+
+@_summand.register
+def _summand_sparse(other: SparseExtensor, value: SparseExtensor) -> SparseExtensor:
+    return other
+
+
+@_summand.register
+def _summand_numbers(other: Sparse, value: SparseExtensor) -> SparseExtensor:
+    return typed(value, other)
 
 
 def _on_diagonal(value: SparseExtensor, other: Extensor | GAType) -> SparseExtensor:
@@ -276,45 +231,32 @@ def _diagonal(value: Extensor, sites: int, context) -> SparseExtensor:
 spdiag = SparseExtensor.from_diagonal
 
 
-# --- plain numbers, typed where they meet an algebra ------------------------------------------
-def _numbers(value: SparseExtensor) -> bool:
-    """Whether a map's cells are plain numbers, of no algebra."""
-    return isinstance(value.cells, np.ndarray)
-
-
-def _typed(value: SparseExtensor, context) -> SparseExtensor:
-    """A map of plain numbers with its numbers made scalars of an algebra, as an untyped array beside an extensor
-    becomes a batch of its scalars; a map of typed cells as it is."""
-    return _cellwise(value, operands.batch(context, value.cells)) if _numbers(value) else value
-
-
-def _context(other: object):
-    """The context of what a map of plain numbers meets: a field's or a typed map's own, or for a type or a value held
-    exactly, its algebra's on NumPy."""
-    if isinstance(other, SparseExtensor):
-        return other.cells.context
+# --- maps of plain numbers, typed where they meet an algebra --------------------------------------
+def _context(other: Extensor | GAType):
+    """The context of what a map of plain numbers meets: a field's own, or for a type or a value held exactly, its
+    algebra's on NumPy."""
     if isinstance(other, GAType) or other.context.is_exact:
         from numga.backend.numpy import NumpyContext
         return NumpyContext(other.algebra)
     return other.context
 
 
-def _meeting(value: SparseExtensor, other: object) -> SparseExtensor:
-    """A map as it meets another value: typed in the other's algebra where its cells are plain numbers and the
-    other has one."""
-    kind = operands.kind(other)
-    if _numbers(value) and (isinstance(other, SparseExtensor) and not _numbers(other) or kind in (operands.Kind.VALUE, operands.Kind.TYPE)):
-        return _typed(value, _context(other))
-    return value
+def _scalars(value: Sparse, context) -> SparseExtensor:
+    """A map of plain numbers with its numbers made scalars of an algebra, as an untyped array beside an extensor
+    becomes a batch of its scalars."""
+    return SparseExtensor(operands.batch(context, value.cells), value.rows, value.columns, value.shape)
 
 
-def _alike(left: SparseExtensor, right: SparseExtensor) -> tuple[SparseExtensor, SparseExtensor]:
-    """Two maps with cells of one kind: both plain numbers, or both typed, the numbers in the other's algebra."""
-    return _meeting(left, right), _meeting(right, left)
+@typed.register(Extensor)
+@typed.register(GAType)
+def _typed_beside_value(operand: Extensor | GAType, value: Sparse) -> SparseExtensor:
+    return _scalars(value, _context(operand))
 
 
-def _broadcast(cells: Extensor | np.ndarray, shape: tuple[int, ...]) -> Extensor | np.ndarray:
-    return np.broadcast_to(cells, shape) if isinstance(cells, np.ndarray) else cells.broadcast_to(shape)
+@typed.register
+def _typed_beside_sparse(operand: SparseExtensor, value: Sparse) -> SparseExtensor:
+    return _scalars(value, operand.cells.context)
+
 
 # --- products and applications, by cells and by operand ----------------------------------------
 def _operand(value: SparseExtensor, other: object) -> object:
@@ -329,10 +271,7 @@ def _scaled(value: SparseExtensor, number: Number) -> SparseExtensor:
 @singledispatch
 def _right(other: GAType, value: SparseExtensor, product) -> SparseExtensor:
     """A GAType, or an array read as a batch of scalars: each cell's product with it, a map cell
-    with the type's axis. Plain numbers times an array stay numbers."""
-    if _numbers(value) and operands.kind(other) is operands.Kind.ARRAY:
-        return _cellwise(value, _numbers_product(product, value.cells, np.asarray(other)))
-    value = _meeting(value, other)
+    with the type's axis."""
     return _cellwise(value, product(value.cells, _operand(value, other)))
 
 
@@ -345,7 +284,6 @@ def _right_number(other: Number, value: SparseExtensor, product) -> SparseExtens
 @_right.register
 def _right_field(other: Extensor, value: SparseExtensor, product) -> Extensor:
     reads = _reads(value) if product is expression.geometric_product else None
-    value = _meeting(value, other)
     if reads is not None:
         # A map that only reads indexes the field: its elements at the sites read, each kept with its type.
         sites = _sites(other)
@@ -362,15 +300,12 @@ def _reads(value: SparseExtensor) -> np.ndarray | None:
     and an incidence's batches are. A product with such a map is an indexing of the field, and keeps the field's
     type, which a product with scalar cells would widen, on every backend. None for any other map, and for cells traced
     by JAX, whose values cannot be read: such a map multiplies."""
-    if _numbers(value):
-        kernel = value.cells[..., None]
-    elif not value.cells.gatype.is_scalar:
+    if not value.cells.gatype.is_scalar:
         return None
-    else:
-        try:
-            kernel = np.asarray(value.cells.kernel)
-        except TypeError:
-            return None
+    try:
+        kernel = np.asarray(value.cells.kernel)
+    except TypeError:
+        return None
     ones = kernel[..., 0] == 1                                                # [..., couplings]
     if not np.all(ones | (kernel[..., 0] == 0)):
         return None
@@ -387,20 +322,21 @@ def _reads(value: SparseExtensor) -> np.ndarray | None:
 
 @_right.register
 def _right_sparse(other: SparseExtensor, value: SparseExtensor, product) -> SparseExtensor:
-    value, other = _alike(value, other)
-    left, right = _chain(value, other)
-    cells = (_numbers_product(product, value.cells[..., left], other.cells[..., right]) if _numbers(value) else
-             _cell_product(product, value.cells[..., left], other.cells[..., right]))
+    left, right = chain(value, other)
+    cells = _cell_product(product, value.cells[..., left], other.cells[..., right])
     return SparseExtensor(cells, value.rows[left], other.columns[right], (value.shape[0], other.shape[1]))
+
+
+@_right.register
+def _right_numbers(other: Sparse, value: SparseExtensor, product) -> SparseExtensor:
+    """A map of plain numbers: its numbers scalars of the cells' algebra."""
+    return _right_sparse(typed(value, other), value, product)
 
 
 @singledispatch
 def _left(other: GAType, value: SparseExtensor, product) -> SparseExtensor:
     """A GAType on the left: each cell's product with it, the couplings read from the output
     sites."""
-    if _numbers(value) and operands.kind(other) is operands.Kind.ARRAY:
-        return _transposed(value, _numbers_product(product, np.asarray(other), value.cells))
-    value = _meeting(value, other)
     return _transposed(value, product(_operand(value, other), value.cells))
 
 
@@ -410,8 +346,13 @@ def _left_number(other: Number, value: SparseExtensor, product) -> SparseExtenso
 
 
 @_left.register
+def _left_numbers(other: Sparse, value: SparseExtensor, product) -> SparseExtensor:
+    """A map of plain numbers on the left: its numbers scalars of the cells' algebra."""
+    return _right_sparse(value, typed(value, other), product)
+
+
+@_left.register
 def _left_field(other: Extensor, value: SparseExtensor, product) -> Extensor:
-    value = _meeting(value, other)
     return _scatter(_cell_product(product, _sites(other)[..., value.rows], value.cells), value.columns, value.shape[1]).field()
 
 
@@ -424,15 +365,26 @@ def apply(value: SparseExtensor, operand: object):
 
 
 @singledispatch
-def _application(operand: Extensor, value: SparseExtensor) -> Extensor:
+def _application(operand: object, value: SparseExtensor) -> Extensor:
+    """An array `[..., sites]`: a map called on it reads it as a field of scalars over its input sites."""
+    return _application_field(operands.batch(value.cells.context, operand).field(), value)
+
+
+@_application.register
+def _application_field(operand: Extensor, value: SparseExtensor) -> Extensor:
     return _scatter(value.cells(_sites(operand)[..., value.columns]), value.rows, value.shape[0]).field()
 
 
 @_application.register
 def _application_sparse(operand: SparseExtensor, value: SparseExtensor) -> SparseExtensor:
-    operand = _meeting(operand, value)
-    left, right = _chain(value, operand)
+    left, right = chain(value, operand)
     return SparseExtensor(value.cells[..., left](operand.cells[..., right]), value.rows[left], operand.columns[right], (value.shape[0], operand.shape[1]))
+
+
+@_application.register
+def _application_numbers(operand: Sparse, value: SparseExtensor) -> SparseExtensor:
+    """A map of plain numbers composes as it multiplies: each cell scaled along the paths through shared sites."""
+    return value * operand
 
 
 # --- operations that reverse the order of the cells' products run the couplings back ---------
@@ -585,30 +537,6 @@ def _field(value: SparseExtensor, coefficients: np.ndarray) -> Extensor:
     ).field()
 
 
-def _chain(first: SparseExtensor, second: SparseExtensor) -> tuple[np.ndarray, np.ndarray]:
-    """The pairs of cells a composition joins: where the first's column is the second's row."""
-    if first.shape[1] != second.shape[0]:
-        raise ValueError(f"sparse shapes {first.shape} and {second.shape} do not chain")
-    return _matching_pairs(first.columns, second.rows)
-
-
-def _matching_pairs(left: np.ndarray, right: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Every pair of positions (i, j) with left[i] == right[j]."""
-    order = np.argsort(right, kind="stable")
-    ordered = right[order]
-    start = np.searchsorted(ordered, left, side="left")
-    counts = np.searchsorted(ordered, left, side="right") - start
-    first = np.cumsum(counts) - counts
-    return np.repeat(np.arange(len(left)), counts), order[np.repeat(start - first, counts) + np.arange(counts.sum())]
-
-
-def _numbers_product(product, left: np.ndarray, right: np.ndarray) -> np.ndarray:
-    """Plain numbers' geometric product, pair by pair; the other products need an algebra to say what they are."""
-    if product is not expression.geometric_product:
-        raise TypeError("plain numbers multiply by the geometric product alone; give them an algebra for the others")
-    return left * right
-
-
 def _cell_product(product, left: Extensor, right: Extensor) -> Extensor:
     """The cells' product, pair by pair. A geometric product with scalar cells on either side scales the other's
     cells, with no contraction, into the type the product gives one pair."""
@@ -622,29 +550,15 @@ def _cell_product(product, left: Extensor, right: Extensor) -> Extensor:
     return product(left, right)
 
 
-def _scatter(cells: Extensor | np.ndarray, index: np.ndarray, size: int) -> Extensor | np.ndarray:
+def _scatter(cells: Extensor, index: np.ndarray, size: int) -> Extensor:
     """Cells `[..., n]` summed by their index into `[..., size]`, as a sum's type, without the traits a sum need not
     keep, as an indexed add gives it. On NumPy the cells are sorted by index and each run summed by `reduceat`,
-    pairwise and so accurate on long runs; another backend adds them in place by index. Plain numbers sum as numbers."""
-    if isinstance(cells, np.ndarray):
-        summed = np.zeros(cells.shape[:-1] + (size,), dtype=float)
-        if len(index):
-            order = np.argsort(index, kind="stable")
-            ordered = index[order]
-            starts = np.flatnonzero(np.concatenate(([True], ordered[1:] != ordered[:-1])))
-            summed[..., ordered[starts]] = np.add.reduceat(cells[..., order], starts, axis=-1)
-        return summed
+    pairwise and so accurate on long runs; another backend adds them in place by index."""
     kernel = cells.kernel
-    if not isinstance(kernel, np.ndarray) or len(index) == 0:
+    if not isinstance(kernel, np.ndarray):
         zeros = cells.context.xp.zeros(cells.shape[:-1] + (size,) + cells.structural_shape, dtype=cells.dtype)
         return cells.context.extensor(cells.gatype, zeros).at[..., index].add(cells)
-    axis = cells.ndim - 1
-    order = np.argsort(index, kind="stable")
-    ordered = index[order]
-    starts = np.flatnonzero(np.concatenate(([True], ordered[1:] != ordered[:-1])))
-    summed = np.zeros(kernel.shape[:axis] + (size,) + kernel.shape[axis + 1:], dtype=kernel.dtype)
-    summed[(slice(None),) * axis + (ordered[starts],)] = np.add.reduceat(np.take(kernel, order, axis=axis), starts, axis=axis)
-    return cells.context.extensor(cells.gatype.derive.structural, summed)
+    return cells.context.extensor(cells.gatype.derive.structural, summed_runs(kernel, index, size, cells.ndim - 1))
 
 
 def _sites(field: Extensor) -> Extensor:

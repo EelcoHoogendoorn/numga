@@ -57,10 +57,10 @@ import numpy as np
 from numga import stack
 
 from examples.relativity.gravitational_waves import core, gpu, render, scenarios
-from examples.util.topology import Topology
-from examples.util.wgsl import Shader
-from examples.util.wgsl.dialect import template
-from examples.util.wgsl.page import encoded, packed, write_page
+from numga.topology import Topology
+from numga.wgsl import Shader
+from numga.wgsl.dialect import template
+from numga.wgsl.page import encoded, packed, write_page
 
 mv = core.mv
 
@@ -545,7 +545,7 @@ def aberration() -> None:
     """The view at rest beside the view moving along it at `aberration_speed` of the light's: the sky ahead drawn in
     and the rails beside swung forward, the light's aberration."""
     from examples.util.animation import save_figure
-    from examples.util.wgsl import image_figure
+    from examples.util.panels import image_figure
 
     held = dict(dt=0.0, roll=0.0, yaw=0.0, pitch=0.0, braking=0.0)
     at_rest, moving = [image for image, _, _ in flight(iter([held | dict(thrust=0.0), held | dict(thrust=aberration_speed)]),
@@ -565,7 +565,7 @@ def close_ups() -> None:
     """The drifting and the spinning crystal from a bond's length behind each, as the page draws them: each run's
     animation, and the last frames side by side."""
     from examples.util.animation import save_animation, save_figure
-    from examples.util.wgsl import image_figure
+    from examples.util.panels import image_figure
 
     frames = scenarios.crystal_places()                                         # [crystals] Motor+
     bonds, atoms = scenarios.crystals(frames)
