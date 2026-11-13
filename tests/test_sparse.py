@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from numga import Algebra, NumpyContext
-from numga.sparse import SparseExtensor, spdiag
+from numga.sparse import Sparse, SparseExtensor, spdiag
 
 
 @pytest.fixture(params=["numpy", "jax"])
@@ -158,7 +158,7 @@ def test_a_selection_reads_the_sites_an_index_names():
     rng = np.random.default_rng(6)
     values = context.multivector.vector(rng.normal(size=(2, 5, 3))).field()   # [2] Vector[5]
     index = rng.integers(0, 5, size=(3, 4))                                     # [corners, sites]
-    selected = SparseExtensor.selection(context, index, 5)                      # [3] [4, 5] Scalar
+    selected = Sparse.selection(index, 5)                      # [3] [4, 5] Scalar
     np.testing.assert_allclose((selected * values[:, None]).batch().kernel, values.batch()[:, index].kernel, atol=0.0)
     np.testing.assert_allclose((selected.sum(axis=0) * values).batch().kernel, values.batch()[:, index].sum(axis=1).kernel, atol=1e-12)
     np.testing.assert_allclose((selected.mean(axis=0) * values).batch().kernel, values.batch()[:, index].mean(axis=1).kernel, atol=1e-12)
@@ -203,7 +203,7 @@ def test_a_pencil_of_forms_has_the_eigenpairs_of_its_numbers():
 def test_reading_a_field_indexes_it_and_keeps_its_type(context):
     # A selection only reads: the elements at the chosen sites, unit rotors still unit rotors.
     rotors = (context.multivector.xy * np.linspace(0.1, 1.0, 5)).exp().field()            # Rotor+[sites]
-    reading = SparseExtensor.selection(context, np.array([[3, 0], [1, 1]]), 5)          # [2] Scalar+[2 <- sites]
+    reading = Sparse.selection(np.array([[3, 0], [1, 1]]), 5)          # [2] Scalar+[2 <- sites]
     read = reading * rotors
     assert read.gatype.traits == rotors.gatype.traits
     np.testing.assert_array_equal(read.batch().kernel, rotors.batch()[np.array([[3, 0], [1, 1]])].kernel)
@@ -220,10 +220,10 @@ def test_the_dense_field_map_acts_as_the_sparse_one():
 
 def test_plain_numbers_take_the_algebra_they_meet(context):
     """A map of plain numbers belongs to no algebra: on a field it acts as its numbers made that field's scalars, in
-    any algebra; between such maps its products and reverse stay numbers; beside a type or a typed map it becomes
+    any algebra; between such maps its products and adjugate stay numbers; beside a type or a typed map it becomes
     typed."""
     # The signed incidence of a path of three vertices: two edges, each its head less its tail.
-    difference = SparseExtensor(np.array([-1.0, 1.0, -1.0, 1.0]), np.array([0, 0, 1, 1]), np.array([0, 1, 1, 2]), (2, 3))
+    difference = Sparse(np.array([-1.0, 1.0, -1.0, 1.0]), np.array([0, 0, 1, 1]), np.array([0, 1, 1, 2]), (2, 3))
     rng = np.random.default_rng(3)
     for algebra in (Algebra("x+y+"), Algebra("x+y+z+w0")):
         mv = type(context)(algebra).multivector
@@ -231,16 +231,15 @@ def test_plain_numbers_take_the_algebra_they_meet(context):
         edges = difference * points                                           # Antivector-[2]
         assert edges.gatype.derive.output == points.gatype.derive.output
         np.testing.assert_allclose(np.asarray(edges.batch().kernel), np.asarray((points.batch()[1:] - points.batch()[:-1]).kernel), atol=1e-6)
-    # Between maps of numbers: the reverse runs the couplings back, and a composition multiplies the numbers.
-    laplacian = ~difference * difference
-    assert isinstance(laplacian.cells, np.ndarray)
+    # Between maps of numbers: the adjugate runs the couplings back, and a composition multiplies the numbers.
+    laplacian = difference.adjugate() * difference
     np.testing.assert_allclose(laplacian.cells, [1.0, -1.0, -1.0, 2.0, -1.0, -1.0, 1.0])
     # Beside a type, the numbers become its scalars, as an untyped array does.
     mv = context.multivector
     typed = difference * context.algebra.gatype.scalar()
     assert typed.gatype.arity == 1
     weights = SparseExtensor.from_diagonal(mv.scalar([[2.0], [3.0]]).field())
-    assert not isinstance((weights * difference).cells, np.ndarray)
+    assert (weights * difference).gatype.is_scalar
 
 
 def strip(context):
@@ -275,9 +274,10 @@ def test_a_field_of_maps_acts_as_its_diagonal_where_it_is_the_map_that_acts(cont
     assert_same_map(conductance + capacity, conductance + spdiag(capacity))
     assert_same_map(capacity - conductance, spdiag(capacity) - conductance)
     # So does a field of values, beside a map of plain numbers.
-    difference = SparseExtensor(np.array([-1.0, 1.0, -1.0, 1.0]), np.array([0, 0, 1, 1]), np.array([0, 1, 1, 2]), (2, 3))
+    difference = Sparse(np.array([-1.0, 1.0, -1.0, 1.0]), np.array([0, 0, 1, 1]), np.array([0, 1, 1, 2]), (2, 3))
     weights = mv.scalar([[2.0], [3.0], [4.0]]).field()                        # Scalar+[vertices]
-    assert_same_map(~difference * difference + weights, ~difference * difference + spdiag(weights))
+    laplacian = difference.adjugate() * difference
+    assert_same_map(laplacian + weights, laplacian + spdiag(weights))
     # The site counts are checked: the conductivity lives on the faces, not on the vertices.
     with pytest.raises(ValueError):
         conductance + conductivity
@@ -297,3 +297,63 @@ def test_the_diagonal_of_a_field_of_maps_is_solved_where_it_is_asked_for():
     assert not capacity.lstsq(capacity(temperatures)).gatype.fields
     np.testing.assert_allclose(spdiag(capacity).solve(capacity(temperatures)).kernel, temperatures.kernel, atol=1e-12)
     np.testing.assert_allclose(capacity.on_diagonal().solve(capacity(temperatures)).kernel, temperatures.kernel, atol=1e-12)
+
+
+def test_a_map_of_numbers_is_a_map_on_every_type(context):
+    """A number scales whatever it meets, so a map of plain numbers applies as it multiplies, to an array without any
+    algebra and to a field of any type, and its adjugate and its adjoint carry the pairing and the scalar product
+    over in every algebra, as a typed map's do."""
+    mv, Antivector = context.multivector, context.algebra.gatype.antivector()
+    rng = np.random.default_rng(11)
+    difference = Sparse(np.array([-1.0, 1.0, -1.0, 1.0]), np.array([0, 0, 1, 1]), np.array([0, 1, 1, 2]), (2, 3))
+    # Without an algebra: an array is a field of numbers over the input sites, whatever its leading axes.
+    values = rng.normal(size=(4, 3))                                           # [cases, vertices]
+    np.testing.assert_allclose(difference(values), values[:, 1:] - values[:, :-1], atol=1e-12)
+    slopes = rng.normal(size=2)                                                # [edges]
+    np.testing.assert_allclose(slopes @ difference(values[0]), difference.adjugate()(slopes) @ values[0], atol=1e-12)
+    np.testing.assert_allclose(slopes @ difference(values[0]), difference.adjoint()(slopes) @ values[0], atol=1e-12)
+    # In an algebra: the same on a field, and the pairing carried over.
+    points = mv.vector(rng.normal(size=(3, 3))).dual().field()                # Antivector-[vertices]
+    planes = mv.vector(rng.normal(size=(2, 3))).field()                       # Vector+[edges]
+    np.testing.assert_allclose(np.asarray(difference(points).kernel), np.asarray((difference * points).kernel), atol=0.0)
+    np.testing.assert_allclose(
+        np.asarray((planes & difference(points)).batch().sum(axis=-1).kernel),
+        np.asarray((difference.adjugate()(planes) & points).batch().sum(axis=-1).kernel), atol=1e-5)
+    steps = mv.vector(rng.normal(size=(2, 3))).dual().field()                 # Antivector-[edges]
+    np.testing.assert_allclose(
+        np.asarray(steps.scalar_product(difference(points)).batch().sum(axis=-1).kernel),
+        np.asarray(difference.adjoint()(steps).scalar_product(points).batch().sum(axis=-1).kernel), atol=1e-5)
+    # Typed, its adjugate is the same map: the numbers pass through the pairing.
+    np.testing.assert_allclose(
+        np.asarray((difference * Antivector).adjugate()(planes).kernel),
+        np.asarray(difference.adjugate()(planes).kernel), atol=1e-6)
+    # Beside a map of typed cells, on either side, it composes and adds as that map's scalars would.
+    turns = spdiag((mv.bivector(rng.normal(size=(2, 3))) * 0.4).exp().field() >> Antivector)   # (Antivector- <- Antivector-)[edges <- edges]
+    assert_same_map(turns(difference), turns * difference)
+    assert_same_map(difference.adjugate() * turns, (difference.adjugate() * Antivector)(turns))
+    weights = spdiag(mv.scalar([[2.0], [3.0], [4.0]]).field())                 # Scalar+[vertices <- vertices]
+    laplacian = difference.adjugate() * difference
+    assert_same_map(laplacian + weights, weights + laplacian)
+    np.testing.assert_allclose(
+        np.asarray(turns(difference)(points).kernel), np.asarray(turns(difference(points)).kernel), atol=1e-5)
+
+
+def test_a_number_scales_a_sparse_map_alike_on_either_side(context):
+    """A number commutes with every cell, whether it comes as a Python number, an array with no axes or the
+    backend's own scalar, as a traced step size does: the same couplings and the same cells from either side."""
+    sparse = random_sparse(context, (4, 5), 9, 14)                            # Vector+[4 <- 5]
+    for number in (2.0, np.asarray(2.0), context.xp.asarray(2.0)):
+        left, right = number * sparse, sparse * number
+        assert left.shape == right.shape == sparse.shape
+        np.testing.assert_array_equal(left.rows, right.rows)
+        np.testing.assert_array_equal(left.columns, right.columns)
+        np.testing.assert_allclose(np.asarray(left.cells.kernel), np.asarray(right.cells.kernel), atol=1e-12)
+
+
+def test_an_array_given_to_a_map_is_a_field_of_scalars(context):
+    """A map between sites reads what it is called on as a field over its sites: an array, as a field of scalars."""
+    gradient, _, _ = strip(context)                                            # (Vector+ <- Scalar+)[faces <- vertices]
+    mv = context.multivector
+    heights = np.random.default_rng(12).normal(size=(3, 4))                    # [cases, vertices]
+    as_field = mv.scalar(heights[..., None]).field()                           # [cases] Scalar+[vertices]
+    np.testing.assert_allclose(np.asarray(gradient(heights).kernel), np.asarray(gradient(as_field).kernel), atol=0.0)

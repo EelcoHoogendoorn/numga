@@ -21,12 +21,12 @@ from matplotlib.colors import to_rgb
 from matplotlib.figure import Figure
 
 from numga.extensor import Extensor
-from examples.util.wgsl import contours, image_figure, simplices
-from examples.util.wgsl.camera import Camera
+from numga.topology import Topology
+from numga.render import Camera, contours, drawing
+from examples.util.panels import image_figure
 from examples.thermodynamics.flame import core
 
 mv = core.mv
-Topology = simplices.Topology
 unburnt_colour, burnt_colour = np.array(to_rgb("#f4efe4")), np.array(to_rgb("#1c0a06"))
 ember_colour = np.array(to_rgb("#9a2a0c"))
 glow_map, energy_map = colormaps["afmhot"], colormaps["RdBu_r"]
@@ -70,7 +70,7 @@ def burning_paper(points: Extensor, topology: Topology, camera: Camera, heat: np
     base = (1 - charred) * unburnt_colour + charred * ((1 - smouldering) * burnt_colour + smouldering * ember_colour)
     flame = glow_map(glow_start + (glow_end - glow_start) * glow[:, 0])[:, :3]
     colours = (1 - glow) * base + glow * flame
-    return on_white(simplices.composited([contours.picture(points, topology, charred[:, 0], colours, camera)]))
+    return on_white(drawing.composited([contours.picture(points, topology, charred[:, 0], colours, camera)]))
 
 
 # --- drawing --------------------------------------------------------------------------
@@ -78,7 +78,7 @@ def energy_picture(points: Extensor, topology: Topology, camera: Camera, held: n
     """The energy the mixture's parcels hold beyond the mean unburnt mixture's `[vertices]`, red where more and blue
     where less, as bytes `[rows, columns, 3]`."""
     colours = energy_map(np.clip(0.5 + span / 2 * held / energy_span, 0, 1))[:, :3]
-    return on_white(simplices.composited([contours.picture(points, topology, held, colours, camera)]))
+    return on_white(drawing.composited([contours.picture(points, topology, held, colours, camera)]))
 
 
 def draw_start(topology: Topology, vertices: Extensor, radius: float, energy: Extensor, parcels: Extensor) -> Figure:

@@ -15,7 +15,7 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.quadrics.cga_spherical_quadrics.core import Plane, Point, Quadric, ga, mv
-from examples.util.wgsl import Shader, supersampled
+from numga.wgsl import Shader, supersampled
 
 # The colours of the background, of the disk and of its rim; where the rim begins: the squared distance from the
 # disk's centre, in its radii, past which a pixel is rim.

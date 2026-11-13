@@ -18,7 +18,7 @@ import numpy as np
 
 from numga import Algebra
 from numga.backend.jax import JaxContext, derivative
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 ga = Algebra("s0v0")
 mv = JaxContext(ga, np.float64).multivector

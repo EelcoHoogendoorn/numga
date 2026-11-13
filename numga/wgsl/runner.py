@@ -21,7 +21,7 @@ from numga import NumpyContext
 from numga.extensor import Extensor
 from numga.gatype import GAType
 
-from examples.util.wgsl.dialect import Binding, Program, compile, template
+from .dialect import Binding, Program, compile, template
 
 _device = None
 
@@ -45,29 +45,6 @@ def device() -> Any:
         largest = {name: adapter.limits[name] for name in ("max-buffer-size", "max-storage-buffer-binding-size")}
         _device = adapter.request_device_sync(required_features=wanted, required_limits=largest)
     return _device
-
-
-# Each pixel's average over its block of samples, `size.z` to a side, of a texture drawn that much finer than the image
-# of `size.x` columns and `size.y` rows.
-AVERAGE = """
-@group(0) @binding(0) var samples: texture_2d<f32>;
-@group(0) @binding(1) var<storage, read_write> pixels: array<vec4<f32>>;
-@group(0) @binding(2) var<storage, read> size: vec4<u32>;
-
-@compute @workgroup_size(8, 8)
-fn average(@builtin(global_invocation_id) id: vec3<u32>) {
-    if (id.x >= size.x || id.y >= size.y) {
-        return;
-    }
-    var sum = vec4<f32>(0.0);
-    for (var down = 0u; down < size.z; down++) {
-        for (var across = 0u; across < size.z; across++) {
-            sum += textureLoad(samples, vec2<u32>(id.x * size.z + across, id.y * size.z + down), 0);
-        }
-    }
-    pixels[id.y * size.x + id.x] = sum / f32(size.z * size.z);
-}
-"""
 
 
 class Resident(NamedTuple):
@@ -203,43 +180,23 @@ def coefficients(value: Extensor, kind: GAType) -> bytes:
     return np.asarray(value.kernel, dtype=np.float32).tobytes()
 
 
-# The texture formats the raster stage may draw into: their bytes and channels a pixel, and how their numbers are kept.
-FORMATS = {"rgba32float": (16, 4, np.float32), "r32float": (4, 1, np.float32), "rgba8unorm": (4, 4, np.uint8)}
-
-
 class Shader:
-    """A compiled shader in the numga dialect, ready to run over images, with constants given from Python by name, as
-    `compile` declares them; where it draws, the formats of the targets its fragment stage writes, one per target, and
-    whether each fragment is laid `over` what is drawn before it, its colour premultiplied by its coverage, rather than
-    hidden where something nearer is drawn."""
+    """A compiled shader in the numga dialect, with constants given from Python by name, as `compile` declares them: its
+    values laid out and bound by name, its compute entry points run over grids, and its vertex and fragment stages, where
+    it has them, for `numga.render.drawing` to draw."""
 
-    def __init__(self, source: str, algebra: Any, types: Mapping[str, GAType], constants: Mapping[str, Any],
-                 targets: tuple[str, ...] = (), over: bool = False) -> None:
-        self.targets = targets
+    def __init__(self, source: str, algebra: Any, types: Mapping[str, GAType], constants: Mapping[str, Any]) -> None:
         self.program = compile(source, algebra, types, constants)
         self.context = NumpyContext(algebra)
         self.layout = Layout(self.program, algebra.gatype.scalar())
         self.device = device()
-        module = self.device.create_shader_module(code=self.program.code)
+        self.module = self.device.create_shader_module(code=self.program.code)
         # Float textures filter where the device allows it, and store at half precision where it does not.
         self.filterable = "float32-filterable" in self.device.features
         self.bind_layout = self.device.create_bind_group_layout(entries=[self.layout_entry(binding) for binding in self.program.bindings])
-        pipeline_layout = self.device.create_pipeline_layout(bind_group_layouts=[self.bind_layout])
-        self.pipelines = [(self.device.create_compute_pipeline(layout=pipeline_layout, compute={"module": module, "entry_point": name}), size)
+        self.pipeline_layout = self.device.create_pipeline_layout(bind_group_layouts=[self.bind_layout])
+        self.pipelines = [(self.device.create_compute_pipeline(layout=self.pipeline_layout, compute={"module": self.module, "entry_point": name}), size)
                           for name, size in self.program.entry_points]
-        # Triangles drawn one sample a pixel into the targets' formats: hidden by depth, or each laid over the last.
-        laid_over = {"color": {"src_factor": "one", "dst_factor": "one-minus-src-alpha", "operation": "add"},
-                     "alpha": {"src_factor": "one", "dst_factor": "one-minus-src-alpha", "operation": "add"}}
-        if self.program.vertex is not None:
-            self.raster = self.device.create_render_pipeline(
-                layout=pipeline_layout,
-                vertex={"module": module, "entry_point": self.program.vertex, "buffers": []},
-                fragment={"module": module, "entry_point": self.program.fragment,
-                          "targets": [{"format": target} | ({"blend": laid_over} if over else {})
-                                      for target in targets]},
-                primitive={"topology": "triangle-list", "cull_mode": "none"},
-                depth_stencil={"format": "depth32float", "depth_write_enabled": not over,
-                               "depth_compare": "always" if over else "less"})
         self.sampler = self.device.create_sampler(mag_filter="linear", min_filter="linear",
                                                   address_mode_u="repeat", address_mode_v="clamp-to-edge")
         # The buffers and textures kept between calls, by their role.
@@ -262,135 +219,37 @@ class Shader:
     def code(self) -> str:
         return self.program.code
 
-    def __call__(self, shape: tuple[int, int], **values: Any) -> dict[str, Any]:
+    def __call__(self, shape: tuple[int, ...], **values: Any) -> dict[str, Any]:
         """Every written storage array, after each compute entry point in turn, in the order the shader
-        declares them, with one invocation per pixel of an image of `shape`, rows first; the shader reads
-        its pixel as `id.xy`, column then row, and the image's size, columns then rows, from a uniform
-        `pixels` where it declares one. Written arrays start at zero."""
+        declares them, with one invocation per element of a grid of `shape`, of up to three axes, the last along
+        `id.x`: a shader over an image, rows first, reads its pixel as `id.xy`, column then row, and the image's size,
+        columns then rows, from a uniform `pixels` where it declares one. Written arrays start at zero."""
         encoder = self.device.create_command_encoder()
         outputs = self.encode(encoder, shape, (), values)
         return self.read(encoder, outputs, shape)
 
-    def encode(self, encoder: Any, shape: tuple[int, int], key: tuple, values: Mapping[str, Any]) -> dict:
-        """Each compute entry point in turn over an image of `shape`, recorded on an encoder, as a call runs them, with
-        the values bound in the buffers kept under `key`: the arrays the shader writes, for `read`."""
+    def encode(self, encoder: Any, shape: tuple[int, ...], key: tuple, values: Mapping[str, Any]) -> dict:
+        """Each compute entry point in turn over a grid or image of `shape`, recorded on an encoder, as a call runs
+        them, with the values bound in the buffers kept under `key`: the arrays the shader writes, for `read`."""
         group, outputs = self.bind(shape, values, key)
         # The written arrays start at zero, whatever the last call left in them.
         for buffer, _, element_size in outputs.values():
             encoder.clear_buffer(buffer, 0, int(np.prod(shape)) * element_size)
+        # One invocation for each element of the grid, its last axis along the workgroups' first: an image's columns.
+        threads = (*shape[::-1], *(1,) * (3 - len(shape)))
         for pipeline, size in self.pipelines:
             compute = encoder.begin_compute_pass()
             compute.set_pipeline(pipeline)
             compute.set_bind_group(0, group)
-            compute.dispatch_workgroups(-(-shape[1] // size[0]), -(-shape[0] // size[1]), 1)
+            compute.dispatch_workgroups(-(-threads[0] // size[0]), -(-threads[1] // size[1]), -(-threads[2] // size[2]))
             compute.end()
         return outputs
 
-    def draw(self, shape: tuple[int, int], n_vertices: int, **values: Any) -> list[np.ndarray]:
-        """The images the shader's vertex and fragment stages draw, one per target the fragment stage writes,
-        `[rows, columns, channels]` each in its format's numbers, zero where no triangle covers a pixel: `n_vertices`
-        invocations of the vertex stage, three to a triangle, which read the vertices they place from storage, with the
-        nearest surface kept by depth, one sample at each pixel's centre."""
-        import wgpu
-
-        rows, columns = shape
-        encoder = self.device.create_command_encoder()
-        targets = self.encode_draw(encoder, shape, n_vertices, (), values)
-        readbacks = []
-        for index, (target, format) in enumerate(zip(targets, self.targets)):
-            # Rows of a texture copy start at multiples of 256 bytes.
-            row_bytes = -(-columns * FORMATS[format][0] // 256) * 256
-            readback = self.buffer_kept(("readback", index), row_bytes * rows, wgpu.BufferUsage.COPY_DST | wgpu.BufferUsage.MAP_READ)
-            encoder.copy_texture_to_buffer({"texture": target}, {"buffer": readback, "bytes_per_row": row_bytes, "rows_per_image": rows},
-                                           (columns, rows, 1))
-            readbacks.append((readback, row_bytes))
-        self.device.queue.submit([encoder.finish()])
-        images = []
-        for (readback, row_bytes), format in zip(readbacks, self.targets):
-            size, channels, kind = FORMATS[format]
-            readback.map_sync(wgpu.MapMode.READ, 0, row_bytes * rows)
-            data = np.frombuffer(readback.read_mapped(0, row_bytes * rows), dtype=np.uint8).reshape(rows, row_bytes)[:, :columns * size]
-            images.append(data.copy().view(kind).reshape(rows, columns, channels))
-            readback.unmap()
-        return images
-
-    def draw_averaged(self, shape: tuple[int, int], samples_per_side: int, n_vertices: int, **values: Any) -> list[np.ndarray]:
-        """The images `draw` draws, drawn `samples_per_side` times finer across and up and each pixel's block of samples
-        averaged on the GPU: `[rows, columns, 4]` each, in the targets' numbers, only the pixels read back."""
-        import wgpu
-
-        rows, columns = shape
-        encoder = self.device.create_command_encoder()
-        targets = self.encode_draw(encoder, (samples_per_side * rows, samples_per_side * columns), n_vertices, (), values)
-        pipeline = self.averaging()
-        size = self.buffer(("average", "size"), np.array([columns, rows, samples_per_side, 0], dtype=np.uint32).tobytes())
-        usage = wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC
-        n_bytes = rows * columns * 16
-        readbacks = []
-        for index, target in enumerate(targets):
-            pixels = self.buffer_kept(("average", index), n_bytes, usage)
-            group = self.device.create_bind_group(layout=pipeline.get_bind_group_layout(0), entries=[
-                {"binding": 0, "resource": target.create_view()},
-                {"binding": 1, "resource": {"buffer": pixels, "offset": 0, "size": n_bytes}},
-                {"binding": 2, "resource": size}])
-            compute = encoder.begin_compute_pass()
-            compute.set_pipeline(pipeline)
-            compute.set_bind_group(0, group)
-            compute.dispatch_workgroups(-(-columns // 8), -(-rows // 8), 1)
-            compute.end()
-            readback = self.buffer_kept(("readback", "average", index), n_bytes, wgpu.BufferUsage.COPY_DST | wgpu.BufferUsage.MAP_READ)
-            encoder.copy_buffer_to_buffer(pixels, 0, readback, 0, n_bytes)
-            readbacks.append(readback)
-        self.device.queue.submit([encoder.finish()])
-        images = []
-        for readback in readbacks:
-            readback.map_sync(wgpu.MapMode.READ, 0, n_bytes)
-            images.append(np.frombuffer(readback.read_mapped(0, n_bytes), dtype=np.float32).reshape(rows, columns, 4).copy())
-            readback.unmap()
-        return images
-
-    def averaging(self) -> Any:
-        """The compute pipeline averaging each pixel's samples, made once for the shader: it reads the samples without a
-        sampler, as any float texture binds, filterable or not."""
-        import wgpu
-        if ("pipeline", "average") not in self.kept:
-            module = self.device.create_shader_module(code=AVERAGE)
-            entries = [{"binding": 0, "visibility": wgpu.ShaderStage.COMPUTE,
-                        "texture": {"sample_type": "unfilterable-float", "view_dimension": "2d"}},
-                       {"binding": 1, "visibility": wgpu.ShaderStage.COMPUTE, "buffer": {"type": "storage"}},
-                       {"binding": 2, "visibility": wgpu.ShaderStage.COMPUTE, "buffer": {"type": "read-only-storage"}}]
-            layout = self.device.create_pipeline_layout(bind_group_layouts=[self.device.create_bind_group_layout(entries=entries)])
-            self.kept[("pipeline", "average")] = self.device.create_compute_pipeline(
-                layout=layout, compute={"module": module, "entry_point": "average"})
-        return self.kept[("pipeline", "average")]
-
-    def encode_draw(self, encoder: Any, shape: tuple[int, int], n_vertices: int, key: tuple,
-                    values: Mapping[str, Any]) -> list[Any]:
-        """The triangles drawn into the targets, as `draw` draws them, recorded on an encoder, with the values bound in
-        the buffers kept under `key`: the targets, textures of `shape` the encoder's later work may copy from. The
-        targets are kept by shape, so a later draw of the same shape on the encoder draws over them."""
-        import wgpu
-
-        group, _ = self.bind(shape, values, key)
-        depth = self.surface(("depth", shape), shape, "depth32float", wgpu.TextureUsage.RENDER_ATTACHMENT)
-        targets = [self.surface(("target", index, shape), shape, target,
-                                wgpu.TextureUsage.RENDER_ATTACHMENT | wgpu.TextureUsage.COPY_SRC | wgpu.TextureUsage.TEXTURE_BINDING)
-                   for index, target in enumerate(self.targets)]
-        drawing = encoder.begin_render_pass(
-            color_attachments=[{"view": target.create_view(), "clear_value": (0, 0, 0, 0), "load_op": "clear",
-                                "store_op": "store"} for target in targets],
-            depth_stencil_attachment={"view": depth.create_view(), "depth_clear_value": 1.0,
-                                      "depth_load_op": "clear", "depth_store_op": "discard"})
-        drawing.set_pipeline(self.raster)
-        drawing.set_bind_group(0, group)
-        drawing.draw(n_vertices)
-        drawing.end()
-        return targets
-
-    def bind(self, shape: tuple[int, int], values: Mapping[str, Any], key: tuple) -> tuple[Any, dict]:
+    def bind(self, shape: tuple[int, ...], values: Mapping[str, Any], key: tuple) -> tuple[Any, dict]:
         """The bind group of the values the shader declares, each written into the buffer kept for it under `key`, a
-        `Resident` buffer bound as it is, and the arrays it writes, one element per pixel, in the buffers kept for
-        them. Draws recorded on one encoder take keys of their own: values are written before the encoder runs."""
+        `Resident` buffer bound as it is, and the arrays it writes, one element per invocation of a grid of `shape`, in
+        the buffers kept for them. Work recorded on one encoder takes keys of its own: values are written before the
+        encoder runs."""
         import wgpu
 
         count = int(np.prod(shape))
@@ -439,7 +298,7 @@ class Shader:
         group = self.device.create_bind_group(layout=self.bind_layout, entries=entries)
         return group, outputs
 
-    def read(self, encoder: Any, outputs: dict, shape: tuple[int, int]) -> dict[str, Any]:
+    def read(self, encoder: Any, outputs: dict, shape: tuple[int, ...]) -> dict[str, Any]:
         """The written arrays, once the encoded work is done."""
         import wgpu
 

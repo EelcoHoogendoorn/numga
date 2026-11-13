@@ -95,9 +95,9 @@ def sphere_demo() -> None:
     normals = patches / areas                                                    # Patch-[faces]
     corner_gradients = (sides | patches.inverse()) / 2                           # [corners] Plane+[faces]
     gradient = (core.spdiag(corner_gradients * core.Scalar) * topology.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
-    # Each face's mean over its corners; its reverse hands each corner a third of every face around it.
+    # Each face's mean over its corners; its adjugate hands each corner a third of every face around it.
     corner_mean = topology.incidence[2, 0].mean(axis=0)                          # Scalar+[faces <- vertices]
-    dual_areas = ~corner_mean * areas                                                                         # Scalar+[vertices]
+    dual_areas = corner_mean.adjugate() * areas                                                               # Scalar+[vertices]
 
     # The stiffness and vertex mass determine the surface's spatial modes.
     medium = areas * core.Plane.dual()                                           # (Point- <- Plane+)[faces]
@@ -131,9 +131,9 @@ def main() -> None:
     normals = patches / areas                                                    # Patch-[faces]
     corner_gradients = (sides | patches.inverse()) / 2                           # [corners] Plane+[faces]
     gradient = (core.spdiag(corner_gradients * core.Scalar) * topology.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
-    # Each face's mean over its corners; its reverse hands each corner a third of every face around it.
+    # Each face's mean over its corners; its adjugate hands each corner a third of every face around it.
     corner_mean = topology.incidence[2, 0].mean(axis=0)                          # Scalar+[faces <- vertices]
-    dual_areas = ~corner_mean * areas                                                                         # Scalar+[vertices]
+    dual_areas = corner_mean.adjugate() * areas                                                               # Scalar+[vertices]
 
     # The stiffness and vertex mass determine the surface's spatial modes.
     medium = areas * core.Plane.dual()                                           # (Point- <- Plane+)[faces]
@@ -217,7 +217,7 @@ def pinned() -> None:
     corner_gradients = (sides | patches.inverse()) / 2                           # [corners] Plane+[faces]
     gradient = (core.spdiag(corner_gradients * core.Scalar) * topology.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
     corner_mean = topology.incidence[2, 0].mean(axis=0)                          # Scalar+[faces <- vertices]
-    dual_areas = ~corner_mean * areas                                            # Scalar+[vertices]
+    dual_areas = corner_mean.adjugate() * areas                                  # Scalar+[vertices]
     medium = areas * core.Plane.dual()                                           # (Point- <- Plane+)[faces]
     stiffness = gradient.adjugate()(medium(gradient))                            # (Amount- <- Scalar+)[vertices <- vertices]
     mass = core.spdiag(dual_areas * core.Scalar.dual())                                 # (Amount- <- Scalar+)[vertices <- vertices]

@@ -33,7 +33,7 @@ import numpy as np
 from numga import Algebra, NumpyContext
 from numga.sparse import SparseExtensor, spdiag
 
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 # The trap's plane, and the condensate's own plane.
 ga = Algebra("x+y+") * Algebra("a+b+")
@@ -58,7 +58,7 @@ def assembled(topology: Topology, local: Scalar) -> SparseExtensor:
     """A form on each triangle's corners `[3, 3] [F]` gathered onto the vertices it joins,
     `[V <- V]`."""
     corners = topology.incidence[2, 0]                                        # [3] Scalar+[F <- V]
-    return (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=-1).sum(axis=-1)
+    return (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=-1).sum(axis=-1)
 
 
 # --- math -----------------------------------------------------------------------------
@@ -73,7 +73,7 @@ def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Plane, Scala
     # A corner's hat gradient: the plane through the facing side and the condensate's own plane, over twice the
     # area, so that it reads one from the side to the corner and nothing in the wave's plane.
     gradients = (wave_plane & sides) / double_areas[..., None]                # [3] Plane+[F]
-    return areas, gradients, (~topology.incidence[2, 0] * (areas / 3)).sum(axis=-1)
+    return areas, gradients, (topology.incidence[2, 0].adjugate() * (areas / 3)).sum(axis=-1)
 
 
 def settling(topology: Topology, vertices: Point, areas: Scalar, gradients: Plane, cells: Scalar, trap: Scalar,

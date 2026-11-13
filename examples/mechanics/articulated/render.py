@@ -10,7 +10,8 @@ import numpy as np
 
 from examples.mechanics.articulated import core
 from examples.util import charts
-from examples.util.wgsl import image_figure, solids
+from numga.render import solids
+from examples.util.panels import image_figure
 
 mv, origin = solids.mv, solids.origin
 part_colour = np.array([0.30, 0.45, 0.72])

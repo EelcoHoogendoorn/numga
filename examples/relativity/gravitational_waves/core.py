@@ -35,7 +35,7 @@ import numpy as np
 
 from numga import Algebra, NumpyContext, stack
 from numga.sparse import SparseExtensor, spdiag
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 # The algebra of the round three-sphere: four directions squaring to one, `w` the origin's own.
 ga = Algebra("x+y+z+w+")
@@ -137,7 +137,7 @@ class Space:
         off_edges = cone_pairings[off_tails, off_heads]                         # [cell_edges] Scalar+[cells]
         sides = cone_pairings[off_tails, off_tails] * cone_pairings[off_heads, off_heads]   # [cell_edges] Scalar+[cells]
         angles = (-off_edges / sides.square_root()).arccos()                    # [cell_edges] Scalar+[cells]
-        deficits = 2 * np.pi - (~mesh.incidence[3, 1] * angles).sum(axis=-1)    # Scalar+[edges]
+        deficits = 2 * np.pi - (mesh.incidence[3, 1].adjugate() * angles).sum(axis=-1)    # Scalar+[edges]
         # By Schlafli a spherical tetrahedron's volume changes by half its arcs times its angles' changes, so four
         # times it cancels the angles' part of the action's change, and the slope is the deficits' alone, times the
         # arc's change with the squared chord: a half over the chord and the cosine of half the arc. The action is
@@ -152,7 +152,7 @@ class Space:
         local = volumes / 4 * (pairings[tails[:, None], tails[None, :]] * pairings[heads[:, None], heads[None, :]]
                                + pairings[tails[:, None], heads[None, :]] * pairings[heads[:, None], tails[None, :]])   # [cell_edges, cell_edges] Scalar+[cells]
         edges = mesh.incidence[3, 1]                                            # [cell_edges] numbers[cells <- edges]
-        masses = (~edges[:, None] * spdiag(local * Scalar.dual()) * edges[None, :]).sum(axis=0).sum(axis=0)   # (Amount- <- Scalar+)[edges <- edges]
+        masses = (edges[:, None].adjugate() * spdiag(local * Scalar.dual()) * edges[None, :]).sum(axis=0).sum(axis=0)   # (Amount- <- Scalar+)[edges <- edges]
         return deficits, slopes, masses
 
     def stiffness(self, rest: Scalar) -> SparseExtensor:
@@ -180,7 +180,7 @@ class Space:
         edges = mesh.incidence[3, 1]                                            # [cell_edges] numbers[cells <- edges]
         roots = edges * (rest * (1 - rest / 4)).square_root()                  # [cell_edges] Scalar+[cells]
         local = angle_changes / roots[:, None]                                  # [cell_edges, cell_edges] Scalar+[cells]
-        return (~edges[:, None] * spdiag(local * Scalar.dual()) * edges[None, :]).sum(axis=0).sum(axis=0)
+        return (edges[:, None].adjugate() * spdiag(local * Scalar.dual()) * edges[None, :]).sum(axis=0).sum(axis=0)
 
     def volumes(self, squared_lengths: Scalar) -> Scalar:
         """Each flat tetrahedron's volume from the squared lengths: the root of the determinant of its metric over the
@@ -269,7 +269,7 @@ def strain_field(mesh: Topology, space: Space, ramps: Plane, frames: Motor, chan
     frame_steps = frames >> Step                                                # (Point- <- Point-)[tets]
     # The strain read in the frames: what reads nothing on the steps, along the origin itself, cast away.
     strains = (frames.inverse() >> (space.cone_map * changes)(frame_steps)).cast(Strain)   # (Plane+ <- Point-)[tets]
-    shares = ~mesh.incidence[3, 0]                                              # [corners] numbers[vertices <- tets]
+    shares = mesh.incidence[3, 0].adjugate()                                              # [corners] numbers[vertices <- tets]
     counts = (shares * mv.scalar(np.ones((mesh.n_elements[3], 1))).field()).sum(axis=0)   # Scalar+[vertices]
     at_vertices = (shares * strains).sum(axis=0) / counts                       # (Plane+ <- Point-)[vertices]
     # Each corner's ramp read on the carried steps, and the strain at each corner: their wedge, summed over the
@@ -362,7 +362,7 @@ def massive(pick: Callable[[Point], np.ndarray], waves: Waves, bonds: Topology, 
             previous_lengths, lengths = lengths, proper.dot(proper).square_root()   # Scalar+[bonds], Scalar+[bonds]
             # Springs and dashpots along the proper separations, pulling a stretched bond's ends together.
             pulls = (stiffness * (lengths - rest) + damping * (lengths - previous_lengths) / step) / lengths   # Scalar+[bonds]
-            forces = -(~bonds.d[0] * (pulls * proper)).batch()                  # [particles] Point-
+            forces = -(bonds.d[0].adjugate() * (pulls * proper)).batch()                  # [particles] Point-
             # Each particle pulled toward its home, a free particle at rest where it started, and its motion damped.
             home_steps = (frame(positions).inverse() >> homes).cast(Step)      # [particles] Point-
             forces = forces + holding * home_steps - 2 * np.sqrt(holding) * velocities

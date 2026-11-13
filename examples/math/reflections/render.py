@@ -9,7 +9,8 @@ from collections.abc import Iterator
 import numpy as np
 
 from numga import stack
-from examples.util.wgsl import simplices, solids
+from numga.topology import Topology
+from numga.render import simplices, solids
 
 background = np.array([0.06, 0.07, 0.09])
 # The two tiles of a reflection: one colour for an even number of reflections, one for an odd number.
@@ -170,7 +171,7 @@ def polytope(spinors) -> np.ndarray:
     view = solids.View((solids.mv.yz * (tilt / 2)).exp(), np.full(2, half_width), n_pixels)
     places = solids.origin + solids.context.include_from_algebra(patches)                # [vertices] Point-
     # The nearest neighbours' pairs, as a mesh of edges over the vertices.
-    neighbours = simplices.Topology(len(places), np.stack([first, second], axis=-1))
+    neighbours = Topology(len(places), np.stack([first, second], axis=-1))
     edges = simplices.tubes(places, neighbours, even, edge_width, view, gloss=solids.gloss)
     balls = solids.ball(places, vertex_radius * view.pixel)[:, None]           # [vertices, 1] Plane+ <- Point-
     return solids.draw([(balls, vertex_colour)], view, background, inks=[], translucent=[], meshes=[(edges, 1.0)])

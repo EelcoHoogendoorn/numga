@@ -37,7 +37,7 @@ from numga import Algebra, stack
 from numga.backend.jax import JaxContext
 from numga.sparse import spdiag
 
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 jax.config.update("jax_enable_x64", True)
 
@@ -77,7 +77,7 @@ def triangles(topology: Topology, vertices: Point) -> tuple[Amount, Plane, Amoun
     double_areas = (((sides[0] & sides[1]) & volume) & fuel) & heat           # Scalar-[faces]
     areas = double_areas / 2                                                  # Scalar-[faces]
     gradients = (volume & fuel & heat & sides) / double_areas                 # [corners] Plane+[faces]
-    return areas, gradients, (~topology.incidence[2, 0] * (areas / 3)).sum(axis=0)
+    return areas, gradients, (topology.incidence[2, 0].adjugate() * (areas / 3)).sum(axis=0)
 
 
 def burning(topology: Topology, areas: Amount, gradients: Plane, cells: Amount, fuel_diffusivity: float,
@@ -99,9 +99,9 @@ def burning(topology: Topology, areas: Amount, gradients: Plane, cells: Amount, 
     # What a flux carries out of each corner's cell: its hat gradient wedged with the flux, read for its heat or its
     # fuel, gathered onto the vertices.
     local = areas * (mv.h & (gradients[:, None] ^ conductivity(heat_drives[None, :])))   # [corners, corners] Scalar-[faces]
-    conduction = (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Scalar-[vertices <- vertices]
+    conduction = (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)  # Scalar-[vertices <- vertices]
     local = areas * (mv.f & (gradients[:, None] ^ diffusivity(fuel_drives[None, :])))   # [corners, corners] Scalar-[faces]
-    diffusion = (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Scalar-[vertices <- vertices]
+    diffusion = (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)  # Scalar-[vertices <- vertices]
 
     def burnt(parcels: Point) -> Scalar:
         """The fuel each parcel burns over a step `Scalar+[vertices]`: its temperature, the unburnt mixture's raised by

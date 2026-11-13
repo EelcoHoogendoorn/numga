@@ -12,7 +12,7 @@ import numpy as np
 from numga import Algebra, NumpyContext
 from numga.algebras import STA2D as ga
 from numga.sparse import spdiag
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
@@ -82,7 +82,7 @@ class Operators:
 
         # Averaging adjacent face fields onto each edge preserves exactness of uniform 2-forms and
         # makes the ideal Lie advection rate skew-symmetric in the 2-form magnetic energy.
-        face_to_edge = ~topology.incidence[2, 1].sum(axis=0)                 # Scalar+[edges <- faces]
+        face_to_edge = topology.incidence[2, 1].sum(axis=0).adjugate()       # Scalar+[edges <- faces]
         edge_counts = face_to_edge * mv.scalar(np.ones(topology.n_elements[2])[..., None]).field()  # Scalar+[edges]
         to_edges = spdiag(1 / edge_counts) * face_to_edge                    # Scalar+[edges <- faces]
         self.edge_velocity_map = to_edges * Point                            # (Point- <- Point-)[edges <- faces]
@@ -95,7 +95,7 @@ class Operators:
         # A unit resistance on each interior edge turns its current into the resistive electric field, a plane
         # through time, read on the edge's world sheet: a rate of its reading. Restricting the response to
         # interior edges keeps boundary circulation fixed under resistivity.
-        interior = ~topology.reading(topology.interior[1], 1) * Scalar       # (Scalar+ <- Scalar+)[edges <- interior]
+        interior = topology.reading(topology.interior[1], 1).adjugate() * Scalar  # (Scalar+ <- Scalar+)[edges <- interior]
         unit_resistance = Amount.dual_inverse()                              # [] Scalar+ <- Amount-
         self.curl_laplacian = interior(unit_resistance(interior.adjugate()(self.curl_stiffness)))  # (Scalar+ <- Scalar+)[edges <- edges]
 

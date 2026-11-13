@@ -19,8 +19,10 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack, where
 from examples.surfaces.connections import core
-from examples.util.wgsl import fitted, flow, meshes, show, simplices, solids
-from examples.util.wgsl.scene import Scene
+from numga.topology import Topology
+from numga.render.drawing import Draw
+from numga.render import Scene, flow, meshes, simplices, solids
+from examples.util.panels import fitted, show
 
 # Surface colours, the ring palette, and views as elevation and azimuth in degrees from x.
 surface_colour = np.array([0.92, 0.91, 0.88])
@@ -69,18 +71,18 @@ def square_view(view_degrees: np.ndarray, vertices: core.Point, spare: float) ->
 
 
 def needles(origins: core.Point, directions: core.Point, colours: np.ndarray, width: float,
-            frame: solids.View) -> meshes.Samples:
+            frame: solids.View) -> Draw:
     """Needles along the directions from their origins `[needles]`, each in its colour `[needles, 3]`: tubes `width`
     pixels across, each ending in a chevron."""
     tips = origins + directions                                                 # [needles] Point-
     ends = solids.origin + solids.context.include_from_algebra(stack((origins, tips), axis=-1))   # [needles, 2] Point-
     n_needles = ends.shape[0]
-    return simplices.tubes(ends.reshape(-1), simplices.Topology.chains([2] * n_needles), colours, width, frame,
+    return simplices.tubes(ends.reshape(-1), Topology.chains([2] * n_needles), colours, width, frame,
                            solids.gloss, chevrons=np.ones(n_needles), chevron=needle_chevron * width)
 
 
 def surface(topology: core.Topology, vertices: core.Point, colours: np.ndarray, frame: solids.View, face_values: np.ndarray,
-            colour: meshes.Colour) -> meshes.Samples:
+            colour: meshes.Colour) -> Draw:
     """A mesh at its vertices, smooth shaded, at every sample, as `meshes.samples`."""
     points = solids.origin + solids.context.include_from_algebra(vertices.batch())               # [vertices] Point-
     return meshes.samples(points, topology.elements[2], colours, meshes.smooth(points, topology), frame, face_values=face_values,
@@ -102,7 +104,7 @@ def animate_holonomy(sphere: core.Topology, vertices: core.Point, rings: core.Ve
     # The circles and the needles are strokes; the sphere is traced. The sphere and the circles stay put, each circle a
     # chain of edges in its ring's colour, the rings one after another.
     circles = simplices.tubes(concatenate([ring_paths[:, ring] for ring in range(n_rings)]),
-                              simplices.Topology.chains([n_points] * n_rings),
+                              Topology.chains([n_points] * n_rings),
                               np.repeat(colours, n_points - 1, axis=0), 4 * line_width, frame, solids.gloss)
     scene = Scene(frame, background, [], [(circles, 1.0)], inks=[], translucent=ball)
     normals, carried = [], []
@@ -299,7 +301,7 @@ def lines_image(topology: core.Topology, vertices: core.Point, pattern: tuple[co
                                       stack([corners[turns[:, family] == 0, corner, family] for corner in range(3)]) / (2 * np.pi)).reshape(2, -1)
                             for family in range(corners.shape[-1])], axis=1)   # [2, segments] Point-
     drawn = solids.origin + solids.context.include_from_algebra(segments[:, (segments[1] - segments[0]).norm() > 0])  # [2, segments] Point-
-    lines = simplices.tubes(stack((drawn[0], drawn[1]), axis=-1).reshape(-1), simplices.Topology.chains([2] * drawn.shape[1]),
+    lines = simplices.tubes(stack((drawn[0], drawn[1]), axis=-1).reshape(-1), Topology.chains([2] * drawn.shape[1]),
                             dark, line_width * frame.pixels / (panel_inches * panel_dpi), frame, solids.gloss)
     return solids.draw([], frame, background, inks=[], translucent=[],
                        meshes=[(surface(topology, vertices, light, frame, face_values=np.zeros(4), colour=meshes.plain), 1.0),

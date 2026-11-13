@@ -12,8 +12,9 @@ from matplotlib.colors import to_rgba
 from numga import concatenate, stack
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import contours, pinned, simplices
-from examples.util.wgsl.camera import Camera, panel
+from numga.topology import Topology
+from numga.render import Camera, contours, drawing, simplices
+from examples.util.panels import panel, pinned
 from examples.quadrics.quadric_collision.core import (
     Plane, Point, Polarity, Quadric, Scalar, infinity, mv, origin, tangent_plane,
 )
@@ -111,7 +112,7 @@ def animate_collision(
     up = across * aspect
     # The grid's points numbered row by row, one row for each step up.
     grid = (middle + mv.x.dual() * across[None, :] + mv.y.dual() * up[:, None]).reshape(-1)   # [points] Point-
-    topology = contours.Topology.grid(resolution, resolution)
+    topology = Topology.grid(resolution, resolution)
     places = grid                                                                             # [points] Point-
     # The panel's limits, at the grid's first and last corners.
     xlim, ylim = np.stack((xy(grid[0]), xy(grid[-1])), axis=-1)
@@ -159,7 +160,7 @@ def animate_collision(
         first_centre = dots(first_ellipsoid(infinity)[None], first_colours[1], centre_radius, camera)
         near_point = dots(near[None], first_colours[1], charts.MARKER_PX / 2, camera)
         # The tangent planes thin guides, a frame's width, under the midplane.
-        tangent_strokes = simplices.Topology.chains([2])
+        tangent_strokes = Topology.chains([2])
         first_guide = simplices.strokes(plane_ends(first_tangent, reach), tangent_strokes, first_ink[:3],
                                         charts.FRAME_PX, camera, dashes=tangent_dashes, cap=simplices.Cap.BUTT)
 
@@ -186,7 +187,7 @@ def animate_collision(
             far = placed_second(second_tangent)                                # [] Point-
             witness = simplices.strokes(stack((near, far)), tangent_strokes, np.zeros(3), charts.LINE_PX, camera,
                                         dashes=witness_dots)
-            pair.set_data(simplices.composited([
+            pair.set_data(drawing.composited([
                 first_fill, second_fill, blend_fill, first_outline, second_outline, blend_edge,
                 first_guide, second_guide, separator,
                 first_centre, dots(placed_second(infinity)[None], second_colours[1], centre_radius, camera), witness,

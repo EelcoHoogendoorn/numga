@@ -68,7 +68,7 @@ import numpy as np
 from numga import Algebra, NumpyContext, stack
 from numga.sparse import SparseExtensor, spdiag
 
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 # Planar projective spacetime, its degenerate w weighing a place, and the entropy a parcel holds, a direction of its
 # own with no metric.
@@ -161,7 +161,7 @@ def outflow(topology: Topology, areas: Scalar, gradients: Plane, response: Respo
     corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
     driving = -(gradients ^ Potential)                                        # [corners] (Drive+ <- Potential+)[faces]
     local = areas * (gradients[:, None] ^ response(driving)[None, :])        # [corners, corners] (Parcel- <- Potential+)[faces]
-    return (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)
+    return (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)
 
 
 def steady(topology: Topology, areas: Scalar, gradients: Plane, response: Response, high: np.ndarray, low: np.ndarray,
@@ -179,8 +179,8 @@ def steady(topology: Topology, areas: Scalar, gradients: Plane, response: Respon
     held = towards_high * stack((mv.t, mv.s)) / 2                             # [drives] Potential+[vertices]
     free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), np.concatenate([high, low])), 0)
     losing = outflow(topology, areas, gradients, response)                    # (Parcel- <- Potential+)[vertices <- vertices]
-    loose = free * losing * ~free                                             # (Parcel- <- Potential+)[free <- free]
-    potentials = held + ~free * loose.solve(-(free * losing(held)))           # [drives] Potential+[vertices]
+    loose = free * losing * free.adjugate()                                   # (Parcel- <- Potential+)[free <- free]
+    potentials = held + free.adjugate() * loose.solve(-(free * losing(held)))  # [drives] Potential+[vertices]
     # The charge entering the conductor at the high contact, what the contact's cells lose to the rest.
     currents = mv.t & (topology.reading(high, 0) * losing(potentials)).sites.sum()   # [drives] Scalar+
     # Driven by a current: the fall of the potential scaled to pass it. Driven by heat: the fall of temperature, less

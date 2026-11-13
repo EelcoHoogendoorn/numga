@@ -40,18 +40,10 @@ from operator import mul
 
 import numpy as np
 
-from numga.sparse import SparseExtensor
+from numga.sparse.numeric import Sparse
 
 
 # --- plumbing -------------------------------------------------------------------------
-def selection(index: np.ndarray, size: int) -> SparseExtensor:
-    """`[..., output <- size]`: the map of plain numbers that reads, at each of its output sites, the input site of
-    `size` an index names, `index[..., output]`; leading axes of the index give one map each, all of one pattern, each
-    map's numbers one where it reads and zero elsewhere."""
-    leading, count = index.shape[:-1], index.shape[-1]
-    cases = int(np.prod(leading, dtype=int))
-    reads = np.broadcast_to(np.eye(cases)[:, None, :], (cases, count, cases)).reshape(leading + (count, cases))
-    return SparseExtensor.from_indices(reads, np.arange(count)[:, None], index.reshape(cases, count).T, (count, size))
 
 
 def generate_simplex_boundary(simplices: np.ndarray) -> np.ndarray:
@@ -140,10 +132,10 @@ class ByDimensions:
     dimension. Each entry is built by `build(n, m)` the first time it is asked for and kept, since a topology does
     not change."""
 
-    def __init__(self, n_dim: int, build: Callable[[int, int], SparseExtensor | np.ndarray]) -> None:
+    def __init__(self, n_dim: int, build: Callable[[int, int], Sparse | np.ndarray]) -> None:
         self.n_dim, self.build = n_dim, cache(build)
 
-    def __getitem__(self, dimensions: tuple[int, int]) -> SparseExtensor | np.ndarray:
+    def __getitem__(self, dimensions: tuple[int, int]) -> Sparse | np.ndarray:
         return self.build(*(dimension % (self.n_dim + 1) for dimension in dimensions))
 
 
@@ -155,7 +147,7 @@ class Topology:
     orientations in it. A topology does not change, so each map derived from it is computed once."""
 
     # A topology that was not subdivided has no Loop steps behind it.
-    steps: tuple[SparseExtensor, ...] = ()
+    steps: tuple[Sparse, ...] = ()
 
     def __init__(self, n_vertices: int, simplices: np.ndarray) -> None:
         simplices = np.asarray(simplices)
@@ -191,7 +183,7 @@ class Topology:
         (0, 2), (0, 3), (1, 2), (1, 3), (2, 3). Applied to a field, `topology.incidence[2, 0] * vertices` is each face's
         corners, `[3] Point-[faces]`; summed over the batch, `topology.incidence[2, 0].mean(axis=0) * vertices` is its
         centroid. Each map is built on first use."""
-        return ByDimensions(self.n_dim, lambda n, m: selection(self._local(n, m).T, self.n_elements[m]))
+        return ByDimensions(self.n_dim, lambda n, m: Sparse.selection(self._local(n, m).T, self.n_elements[m]))
 
     @cached_property
     def boundary(self) -> ByDimensions:
@@ -200,7 +192,7 @@ class Topology:
         edge's tail -1 and head +1, a face's edges +1 where the face's winding runs along them, a tet's faces +1
         where they face outward. Only adjacent dimensions have a boundary; summed over the batch, it is the exterior
         derivative `d[k]`. Each map is built on first use."""
-        def signed_facets(n: int, m: int) -> SparseExtensor:
+        def signed_facets(n: int, m: int) -> Sparse:
             if m != n - 1:
                 raise ValueError(f"only adjacent dimensions have a boundary, not {n} and {m}")
             return self._signed(n, m, self.orientation[m])
@@ -217,7 +209,7 @@ class Topology:
         return ByDimensions(self.n_dim, lambda n, m: self._signed(n, m, simplex_parity(self.elements[n][:, self.corners[n, m].T])))
 
     @cached_property
-    def d(self) -> tuple[SparseExtensor, ...]:
+    def d(self) -> tuple[Sparse, ...]:
         """`d[k]`, `numbers[(k + 1)-simplices <- k-simplices]` for each k below the top: the exterior derivative, the
         signed sum `boundary[k + 1, k].sum(axis=0)` over the facets of each simplex. `d[0] * vertices` is the edges,
         each its head less its tail, and `d[k + 1] * d[k]` vanishes."""
@@ -252,9 +244,9 @@ class Topology:
         off each of its m-simplices, every Whitney form is one quotient, the complement over its join with the
         m-simplex, `complements / (complements & spans)`, with `spans = reduce(and_, topology.on[n, m] * vertices)`;
         the m-simplex's own sense is the only one it keeps. Each map is built on first use."""
-        def stored(n: int, m: int) -> SparseExtensor:
+        def stored(n: int, m: int) -> Sparse:
             corners = np.sort(self.elements[n][:, local_corners(n, m)], axis=1)   # [N, m + 1, k]
-            return selection(corners.transpose(1, 2, 0), self.n_vertices)
+            return Sparse.selection(corners.transpose(1, 2, 0), self.n_vertices)
         return ByDimensions(self.n_dim, stored)
 
     @cached_property
@@ -264,7 +256,7 @@ class Topology:
         Whitney form's numerator and its denominator alike, `complements / (complements & spans)` with
         `complements = reduce(and_, topology.off[n, m] * vertices, outside)`, so their order cancels; whatever the
         forms read nothing along off the simplex, `outside`, starts the join. Each map is built on first use."""
-        return ByDimensions(self.n_dim, lambda n, m: selection(
+        return ByDimensions(self.n_dim, lambda n, m: Sparse.selection(
             self.elements[n][:, local_complements(n, m)].transpose(1, 2, 0), self.n_vertices))
 
     def _local(self, n: int, m: int) -> np.ndarray:
@@ -276,12 +268,12 @@ class Topology:
             return self.boundary_indices[m]
         return lookup_simplices(self.elements[m], np.sort(self.elements[n][:, self.corners[n, m].T], axis=-1))
 
-    def _signed(self, n: int, m: int, signs: np.ndarray) -> SparseExtensor:
+    def _signed(self, n: int, m: int, signs: np.ndarray) -> Sparse:
         """`[k] numbers[n-simplices <- m-simplices]`: the batches of `incidence[n, m]`, each entry signed by
         `signs` `[N, k]`."""
         local = self._local(n, m)                                                  # [N, k]
         cells = np.eye(local.shape[-1])[:, None, :] * signs[None, :, :]            # [k, N, k]
-        return SparseExtensor.from_indices(cells, np.arange(self.n_elements[n])[:, None], local,
+        return Sparse.from_indices(cells, np.arange(self.n_elements[n])[:, None], local,
                                            (self.n_elements[n], self.n_elements[m]))
 
     @cached_property
@@ -465,13 +457,13 @@ class Topology:
         cells = np.stack((vertices[:-1, :-1], vertices[:-1, 1:], vertices[1:, 1:], vertices[1:, :-1]), axis=-1)
         return cls(n_rows * n_columns, cells[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3))
 
-    def reading(self, indices: np.ndarray, k: int) -> SparseExtensor:
+    def reading(self, indices: np.ndarray, k: int) -> Sparse:
         """`numbers[..., n <- k-simplices]`: the map reading a field on the k-simplices at each of the given ones
-        `[..., n]`; its reverse adds values at them back onto the simplices. At the border's vertices,
+        `[..., n]`; its adjugate adds values at them back onto the simplices. At the border's vertices,
         `topology.reading(topology.exterior[0], 0)`; on the interior edges, `topology.reading(topology.interior[1], 1)`."""
-        return selection(indices, self.n_elements[k])
+        return Sparse.selection(indices, self.n_elements[k])
 
-    def loop(self, pinned: np.ndarray) -> SparseExtensor:
+    def loop(self, pinned: np.ndarray) -> Sparse:
         """numbers[V + E <- V]: one Loop step, from the vertices to those of the finer topology, its vertices
         followed by one per edge, with the vertices pinned `[V]` staying where they are.
 
@@ -490,15 +482,15 @@ class Topology:
         valence = np.bincount(edges.reshape(-1), minlength=vertex_count)         # [V]
         beta = (5 / 8 - (3 / 8 + np.cos(2 * np.pi / valence) / 4) ** 2) / valence
         own = np.where(pinned, 1.0, np.where(on_rim, 3 / 4, 1 - valence * beta)) # [V]
-        keep = SparseExtensor.from_indices(own, everyone, everyone, shape)
+        keep = Sparse.from_indices(own, everyone, everyone, shape)
         # each end's share in the other end, by the end's own rule
         along = np.where(pinned[edges], 0.0,
                          np.where(on_rim[edges], np.where(rim[:, None], 1 / 8, 0.0), beta[edges]))   # [E, 2]
-        neighbours = SparseExtensor.from_indices(along, edges, edges[:, ::-1], shape)
+        neighbours = Sparse.from_indices(along, edges, edges[:, ::-1], shape)
         # each face's share in the vertex of the edge facing each corner, from each of its corners
         facing_rim = rim[face_edges][:, :, None]                                 # [F, 3, 1]
         shares = np.where(np.eye(3, dtype=bool), np.where(facing_rim, 0.0, 1 / 8), np.where(facing_rim, 1 / 2, 3 / 16))
-        split = SparseExtensor.from_indices(shares, vertex_count + face_edges[:, :, None], faces[:, None, :], shape)
+        split = Sparse.from_indices(shares, vertex_count + face_edges[:, :, None], faces[:, None, :], shape)
         return keep + neighbours + split
 
     @cached_property
@@ -571,7 +563,7 @@ class Topology:
         low, high = np.minimum(children, parents[children]), np.maximum(children, parents[children])
         return children, np.searchsorted(edges[:, 0] * self.n_vertices + edges[:, 1], low * self.n_vertices + high)
 
-    def circulation(self, loops: list[np.ndarray]) -> SparseExtensor:
+    def circulation(self, loops: list[np.ndarray]) -> Sparse:
         """`numbers[F + L <- E]`: the circulation of edge values around each face, counter-clockwise, the signed
         face-edge incidence, then around each given closed loop of vertices `[steps]`, in its own order."""
         lengths = np.array(list(map(len, loops)), dtype=int)                      # [loops]
@@ -585,7 +577,7 @@ class Topology:
         rows = np.concatenate([np.repeat(np.arange(n_faces), 3), n_faces + np.repeat(np.arange(len(loops)), lengths)])
         columns = np.concatenate([self.boundary_indices[1].reshape(-1), np.searchsorted(keys, low * self.n_vertices + high)])
         signs = np.concatenate([self.orientation[1].reshape(-1), np.where(tails < heads, 1.0, -1.0)])
-        return SparseExtensor.from_indices(signs, rows, columns, (n_faces + len(loops), len(edges)))
+        return Sparse.from_indices(signs, rows, columns, (n_faces + len(loops), len(edges)))
 
     def _facet_sides(self, per_facet: np.ndarray) -> np.ndarray:
         """`[interior facets, 2]`: a value per facet of each top simplex `[N, n_dim + 1]`, in the order of
@@ -600,7 +592,7 @@ class Topology:
 
 class DualTopology:
     """The dual of a simplicial topology: a k-cell for each (n_dim - k)-simplex, so that its counts run the other way
-    and its derivatives are the primal's transposed, `dual.d[k] = ~topology.d[n_dim - 1 - k]`. A dual vertex stands for
+    and its derivatives are the primal's adjugates, `dual.d[k] = topology.d[n_dim - 1 - k].adjugate()`. A dual vertex stands for
     each top simplex, a dual edge crosses each facet, and so on up to a dual top cell around each vertex, each numbered
     as the simplex it stands for. Its derivatives follow each other to nothing, as the primal's do; a dual edge across
     a border facet has one end, the simplex the facet bounds, and the dual is closed only where the primal is.
@@ -613,10 +605,10 @@ class DualTopology:
         self.n_elements = primal.n_elements[::-1]
 
     @cached_property
-    def d(self) -> tuple[SparseExtensor, ...]:
-        """`d[k]`, `numbers[dual (k + 1)-cells <- dual k-cells]`: the dual exterior derivative, the primal's transposed,
-        `~topology.d[n_dim - 1 - k]`."""
-        return tuple(~derivative for derivative in self.primal.d[::-1])
+    def d(self) -> tuple[Sparse, ...]:
+        """`d[k]`, `numbers[dual (k + 1)-cells <- dual k-cells]`: the dual exterior derivative, the primal's adjugate,
+        `topology.d[n_dim - 1 - k].adjugate()`."""
+        return tuple(derivative.adjugate() for derivative in self.primal.d[::-1])
 
     @cached_property
     def incidence(self) -> ByDimensions:
@@ -624,20 +616,20 @@ class DualTopology:
         its head, where `d[0]` reads it -1 and +1, so that their difference is `d[0]`: the simplices that run the facet
         against and along its stored order. A dual edge across a border facet has its head or its tail alone. The
         dual's cells above its edges have no fixed count of faces, so the edges' ends are all its incidence holds."""
-        def ends(n: int, m: int) -> SparseExtensor:
+        def ends(n: int, m: int) -> Sparse:
             if (n, m) != (1, 0):
                 raise ValueError(f"the dual holds the ends of its edges alone, not its {n}-cells' {m}-cells")
             facets, signs = self.primal.boundary_indices[-1], self.primal.orientation[-1]   # [N, n_dim + 1], [N, n_dim + 1]
             owners = np.broadcast_to(np.arange(len(facets))[:, None], facets.shape)        # [N, n_dim + 1]
             # Each top simplex is the tail of the dual edges across the facets it runs against, the head of the others.
             cells = np.stack([signs < 0, signs > 0]).astype(float).reshape(2, -1)      # [2, N (n_dim + 1)]
-            return SparseExtensor.from_indices(cells, facets.ravel(), owners.ravel(), (self.n_elements[1], self.n_elements[0]))
+            return Sparse.from_indices(cells, facets.ravel(), owners.ravel(), (self.n_elements[1], self.n_elements[0]))
         return ByDimensions(self.n_dim, ends)
 
-    def reading(self, indices: np.ndarray, k: int) -> SparseExtensor:
+    def reading(self, indices: np.ndarray, k: int) -> Sparse:
         """`numbers[..., n <- dual k-cells]`: the map reading a field on the dual k-cells at each of the given ones
         `[..., n]`; on the dual edges across the interior facets, `topology.dual.reading(topology.interior[-2], 1)`."""
-        return selection(indices, self.n_elements[k])
+        return Sparse.selection(indices, self.n_elements[k])
 
 
 class SubdividedTopology(Topology):
@@ -652,11 +644,11 @@ class SubdividedTopology(Topology):
         super().__init__(self.from_coarser.shape[0], coarser.split_faces)
 
     @property
-    def steps(self) -> tuple[SparseExtensor, ...]:
+    def steps(self) -> tuple[Sparse, ...]:
         """The Loop steps from the first topology to this one, coarsest first."""
         return self.coarser.steps + (self.from_coarser,)
 
     @cached_property
-    def subdivision(self) -> SparseExtensor:
+    def subdivision(self) -> Sparse:
         """The map from the first topology's vertices to this one's: its Loop steps composed, the finest acting last."""
         return reduce(mul, reversed(self.steps))

@@ -16,8 +16,10 @@ from matplotlib.image import AxesImage
 from numga import stack
 
 from examples.util.animation import capture
-from examples.util.wgsl import Shader, contours, pinned, simplices, supersampled
-from examples.util.wgsl.camera import Camera, offset_panel
+from numga.wgsl import Shader, supersampled
+from numga.topology import Topology
+from numga.render import Camera, contours, drawing, simplices
+from examples.util.panels import offset_panel, pinned
 from examples.electromagnetism.moving_charge import core
 
 # The lab's slice of space, which carries the events into the renderer's space.
@@ -103,7 +105,7 @@ def panel(ax: Axes, events: core.Antivector, values: np.ndarray, colours: Colorm
     return image
 
 
-def outlined(places: core.Antivector, topology: contours.Topology, field: core.Bivector, current: core.Antivector,
+def outlined(places: core.Antivector, topology: Topology, field: core.Bivector, current: core.Antivector,
              view: Camera) -> np.ndarray:
     """The electric field's strength over the grid of events at their places in the lab's space, `[rows, columns]`
     numbered row by row, with the charge's outline, where its density is high, seen by the view of its panel:
@@ -147,10 +149,10 @@ def animate(frames: Iterable[tuple[core.Antivector, core.Bivector, core.Antivect
     strength = pinned(left, np.zeros(view.shape + (4,)), (*corners[:, 0], *corners[:, 1]))
     left.set_autoscale_on(False)
     places = events.reshape(-1)                                              # [rows * columns] Antivector-
-    topology = contours.Topology.grid(*events.shape[-2:])
+    topology = Topology.grid(*events.shape[-2:])
     magnetic = panel(right, events, magnetic_across(field), signed_colours, magnetic_norm)
     for _, field, current in chain([(events, field, current)], states):
-        strength.set_data(simplices.composited([outlined(places, topology, field, current, view)]))
+        strength.set_data(drawing.composited([outlined(places, topology, field, current, view)]))
         magnetic.set_data(coloured(magnetic_across(field), signed_colours, magnetic_norm))
         yield capture(figure)
     plt.close(figure)
@@ -231,7 +233,7 @@ def marked(colours: np.ndarray, charge: core.Antivector, view: Camera) -> np.nda
     the picture: its bytes `[rows, columns, 3]`."""
     places = charge.reshape(-1)                                                 # [1] Antivector-
     rim_radius, dot_radius = (charge_size + charge_rim) / 2 * view.pixels, (charge_size - charge_rim) / 2 * view.pixels
-    shown = simplices.composited([np.concatenate((colours, np.ones(colours.shape[:-1] + (1,))), axis=-1),
+    shown = drawing.composited([np.concatenate((colours, np.ones(colours.shape[:-1] + (1,))), axis=-1),
                                   simplices.markers(places, np.array(to_rgb(charge_rim_colour)), rim_radius, view),
                                   simplices.markers(places, np.array(to_rgb(charge_colour)), dot_radius, view)])
     return np.round(np.clip(shown[..., :3], 0, 1) * 255).astype(np.uint8)

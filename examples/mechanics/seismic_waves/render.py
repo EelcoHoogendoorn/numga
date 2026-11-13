@@ -10,7 +10,10 @@ import numpy as np
 
 from numga import stack
 from examples.mechanics.seismic_waves import core
-from examples.util.wgsl import image_figure, meshes, simplices, solids
+from numga.topology import Topology
+from numga.render.drawing import Draw
+from numga.render import meshes, simplices, solids
+from examples.util.panels import image_figure
 
 n_pixels = 300
 n_markers = 12
@@ -89,12 +92,12 @@ class DiskDrawing:
         nearest = (surface_points[:, None] - targets[None]).norm_squared().argmin(axis=0)
         self.markers = surface_vertices[nearest]
         self.corner_mean = topology.incidence[2, 0].mean(axis=0)                  # Scalar+[faces <- vertices]
-        self.vertex_shares = ~self.corner_mean * core.as_scalar(np.ones(topology.n_elements[2])).field()  # Scalar+[vertices]
+        self.vertex_shares = self.corner_mean.adjugate() * core.as_scalar(np.ones(topology.n_elements[2])).field()  # Scalar+[vertices]
         # The motion stays in the plane, so the top keeps the normals of its reference.
         self.top_normals = meshes.flat(top_middle + solids.context.include_from_algebra(vertices.batch()), topology.elements[2])
 
     def draw(self, places: core.Point, panels: list[tuple[np.ndarray, meshes.Colour]],
-             motion: list[meshes.Samples], markers: list[tuple[solids.Quadric, np.ndarray]]) -> list[np.ndarray]:
+             motion: list[Draw], markers: list[tuple[solids.Quadric, np.ndarray]]) -> list[np.ndarray]:
         """One image per panel of values and colouring on the same deformed section: the top carries the field
         readings; the shallow side wall only gives the section a visible edge."""
         points = top_middle + solids.context.include_from_algebra(places.batch())           # [vertices] Point-
@@ -104,7 +107,7 @@ class DiskDrawing:
         wall_faces = (np.array([[0, 2, 1], [1, 2, 3]])[None]
                       + 4 * np.arange(self.outline.n_elements[1])[:, None, None]).reshape(-1, 3)
         wall = meshes.samples(wall_points, wall_faces, wall_colour,
-                              meshes.smooth(wall_points, meshes.Topology(len(wall_points), wall_faces)), self.view,
+                              meshes.smooth(wall_points, Topology(len(wall_points), wall_faces)), self.view,
                               face_values=np.zeros(1), colour=meshes.plain, gloss=0.06)
         rim = simplices.tubes(points, self.outline, outline_colour, 1.0, self.view, gloss=solids.gloss)
         tops = [meshes.samples(points, self.topology.elements[2], values[self.topology.elements[2]], self.top_normals, self.view,
@@ -116,7 +119,7 @@ class DiskDrawing:
 
     def vertex_values(self, readings: core.Scalar) -> np.ndarray:
         """Face readings `Scalar+[faces]` averaged at each vertex, only for smooth colour interpolation in the drawing."""
-        return ((~self.corner_mean * readings) / self.vertex_shares).batch().to_array()[:, None]
+        return ((self.corner_mean.adjugate() * readings) / self.vertex_shares).batch().to_array()[:, None]
 
 
 def draw_materials(topology: core.Topology, vertices: core.Point, regions: np.ndarray) -> plt.Figure:
@@ -140,7 +143,7 @@ def animate_waves(topology: core.Topology, vertices: core.Point, regions: np.nda
         trail_places = solids.context.include_from_algebra(stack(list(history), axis=1))   # [markers, trail] Point-
         trajectory = top_middle + up * 0.009 + trail_places                                # [markers, trail] Point-
         # Each marker's tail a chain of edges through its trail, each edge greyer the older it is.
-        tail_chains = simplices.Topology.chains([len(history)] * n_markers)
+        tail_chains = Topology.chains([len(history)] * n_markers)
         age = np.tile(np.linspace(0.72, 0.12, len(history) - 1), n_markers)       # [edges]
         tails = simplices.tubes(trajectory.reshape(-1), tail_chains, np.repeat(age[:, None], 3, axis=-1), 1.0,
                                 drawing.view, gloss=solids.gloss)

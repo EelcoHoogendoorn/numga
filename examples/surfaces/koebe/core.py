@@ -18,9 +18,9 @@ from __future__ import annotations
 import numpy as np
 
 from numga import Algebra, NumpyContext, stack
-from numga.sparse import SparseExtensor, spdiag
+from numga.sparse import Sparse, spdiag
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 ga = Algebra("x+y+z+w-")
 mv = NumpyContext(ga).multivector
@@ -60,8 +60,8 @@ def koebe(topology: Topology, start: Vector, n_steps: int) -> Vector:
     where they were."""
     n_vertices, n_edges = topology.n_vertices, topology.n_elements[1]
     # The residuals are the vertices' followed by the edges'.
-    vertex_rows = ~SparseExtensor.selection(mv.context, np.arange(n_vertices), n_vertices + n_edges)            # Scalar+[vertices + edges <- vertices]
-    edge_rows = ~SparseExtensor.selection(mv.context, n_vertices + np.arange(n_edges), n_vertices + n_edges)   # Scalar+[vertices + edges <- edges]
+    vertex_rows = Sparse.selection(np.arange(n_vertices), n_vertices + n_edges).adjugate()  # Scalar+[vertices + edges <- vertices]
+    edge_rows = Sparse.selection(n_vertices + np.arange(n_edges), n_vertices + n_edges).adjugate()  # Scalar+[vertices + edges <- edges]
     circles = start                                                            # Vector+[vertices]
     for _ in range(n_steps):
         tails, heads = topology.incidence[1, 0] * circles                      # Vector+[edges], Vector+[edges]

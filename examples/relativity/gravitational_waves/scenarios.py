@@ -14,7 +14,7 @@ from numga import stack
 from examples import instantiate
 from examples.relativity.gravitational_waves import core
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = core.mv
 # Round meshes of the three-sphere relaxed under the binary icosahedral group, in the same algebra.
