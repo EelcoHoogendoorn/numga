@@ -9,8 +9,9 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.util.animation import capture
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, offset_panel
+from numga.topology import Topology
+from numga.render import Camera, contours, drawing, simplices
+from examples.util.panels import offset_panel, overlay
 from examples.math.penrose import core
 
 # The colours of thick and thin tiles, and of their edges.
@@ -41,10 +42,10 @@ def tiles(corners: core.Antivector, colours: np.ndarray, margins: core.Scalar, c
     n_tiles = np.count_nonzero(chosen)
     # Each tile's four corners its own, two triangles of them, and the loop of its sides, their border.
     own = np.arange(4 * n_tiles).reshape(n_tiles, 4)
-    halves = simplices.Topology(4 * n_tiles, own[:, [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3))
+    halves = Topology(4 * n_tiles, own[:, [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3))
     sides = halves.border
     places = corners[chosen].reshape(-1)                                     # [tiles * 4] Antivector-
-    return simplices.composited([
+    return drawing.composited([
         contours.picture(places, halves, np.zeros(4 * n_tiles), np.repeat(colours[np.nonzero(chosen)[1]], 4, axis=0),
                          camera),
         simplices.strokes(places, sides, edge_colour, width, camera)])
@@ -55,7 +56,7 @@ def draw_tiling(reading: core.Plane, corners: core.Antivector, areas: core.Scala
     """The tiles the cut selects among the faces with these corners `[points, faces, 4]`."""
     colours = np.where((areas > areas.mean())[:, None], thick_colour, thin_colour)   # [faces, 3]
     figure, ax, camera = canvas(reading, extent, still_side)
-    simplices.overlay(ax, [tiles(corners, colours, margins, camera, still_edge_width)])
+    overlay(ax, [tiles(corners, colours, margins, camera, still_edge_width)])
     return figure
 
 
@@ -64,7 +65,7 @@ def animate_flips(reading: core.Plane, corners: core.Antivector, areas: core.Sca
     """The tiles each frame's margins select, on a canvas laid out once."""
     colours = np.where((areas > areas.mean())[:, None], thick_colour, thin_colour)   # [faces, 3]
     figure, ax, camera = canvas(reading, extent, animation_side)
-    shown = simplices.overlay(ax, [np.zeros(camera.shape + (4,))])
+    shown = overlay(ax, [np.zeros(camera.shape + (4,))])
     for margins in frames:
         shown.set_data(tiles(corners, colours, margins, camera, animation_edge_width))
         yield capture(figure)

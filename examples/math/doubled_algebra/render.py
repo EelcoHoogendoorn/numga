@@ -9,8 +9,9 @@ from matplotlib.colors import to_rgb
 from numga import concatenate, stack
 
 from examples.math.doubled_algebra import core
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import offset_panel
+from numga.topology import Topology
+from numga.render import contours, simplices
+from examples.util.panels import offset_panel, overlay
 
 mv = core.mv
 reference_colour, grid_colour, boundary_colour, fill_colour, dot_colour = (
@@ -54,18 +55,18 @@ def draw_shear(
     # The camera reads this algebra's places, vectors, as they are, by the planes that read their x and y.
     camera = offset_panel(ax, *readers)
     n_lines = np.prod(grid.shape[:-1])
-    lines = simplices.Topology.chains([grid.shape[-1]] * n_lines)
-    square = simplices.Topology(len(boundary), np.array([[0, 1, 2], [0, 2, 3]]))
+    lines = Topology.chains([grid.shape[-1]] * n_lines)
+    square = Topology(len(boundary), np.array([[0, 1, 2], [0, 2, 3]]))
     # Each basis vector's image an arrow from the origin: a stroke ending in a chevron.
     arrow_ends = stack((origin.broadcast_to(arrows.shape), arrows), axis=-1).reshape(-1)   # [arrows * ends] Vector+
-    simplices.overlay(ax, [
+    overlay(ax, [
         contours.picture(boundary, square, np.zeros(len(boundary)), fill_colour, camera),
         simplices.strokes(reference_grid.reshape(-1), lines, reference_colour, grid_width, camera),
-        simplices.strokes(reference_boundary, simplices.Topology.loops([len(reference_boundary)]), reference_colour,
+        simplices.strokes(reference_boundary, Topology.loops([len(reference_boundary)]), reference_colour,
                           reference_width, camera, dashes=reference_dashes),
         simplices.strokes(grid.reshape(-1), lines, grid_colour, grid_width, camera),
-        simplices.strokes(boundary, simplices.Topology.loops([len(boundary)]), boundary_colour, boundary_width, camera),
-        simplices.strokes(arrow_ends, simplices.Topology.chains([2] * len(arrows)), basis_colours, arrow_width,
+        simplices.strokes(boundary, Topology.loops([len(boundary)]), boundary_colour, boundary_width, camera),
+        simplices.strokes(arrow_ends, Topology.chains([2] * len(arrows)), basis_colours, arrow_width,
                           camera, chevrons=np.ones(len(arrows)), chevron=arrow_chevron),
         simplices.markers(origin[None], dot_colour, dot_radius, camera)])
     return figure

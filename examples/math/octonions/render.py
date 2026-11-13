@@ -10,8 +10,9 @@ from numga import NumpyContext, stack
 from numga.algebras import VGA2D
 from examples.math.octonions import core
 from examples.util import charts
-from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import offset_panel
+from numga.topology import Topology
+from numga.render import simplices
+from examples.util.panels import offset_panel, overlay
 
 line_colour = "#287fa0"
 point_colour = "0.15"
@@ -72,7 +73,7 @@ def draw_fano(cycles: core.Trivector) -> plt.Figure:
     circle = (page.xy * (-angles / 2)).exp() >> (radius * page.y.dual())       # [around] Antivector-
     sides, arrows = [], []
     # Each triple a cycle, from each point to the next in the order of the product, the last back to the first.
-    cycle = simplices.Topology.loops([3])
+    cycle = Topology.loops([3])
     for triple in triples(cycles):
         places = stack([places_by_name[name] for name in triple])              # [3] Antivector-
         starts, ends = (cycle.incidence[1, 0] * places.field()).batch()        # [3] Antivector-, Antivector-
@@ -96,12 +97,12 @@ def draw_fano(cycles: core.Trivector) -> plt.Figure:
     arrow_ends = stack(arrows)                                                 # [arrows, ends] Antivector-
     camera = offset_panel(ax, page.x, page.y)
     ink, dark = np.array(to_rgb(line_colour)), np.array(to_rgb(point_colour))
-    simplices.overlay(ax, [
-        simplices.strokes(circle, simplices.Topology.loops([n_around]), ink, charts.LINE_PX, camera),
-        simplices.strokes(stack(sides).reshape(-1), simplices.Topology.chains([2] * len(sides)), ink, charts.LINE_PX,
+    overlay(ax, [
+        simplices.strokes(circle, Topology.loops([n_around]), ink, charts.LINE_PX, camera),
+        simplices.strokes(stack(sides).reshape(-1), Topology.chains([2] * len(sides)), ink, charts.LINE_PX,
                           camera),
         # Each arrow a stroke along its line, as wide as the line, and a chevron at its tip.
-        simplices.strokes(arrow_ends.reshape(-1), simplices.Topology.chains([2] * len(arrows)), ink, charts.LINE_PX,
+        simplices.strokes(arrow_ends.reshape(-1), Topology.chains([2] * len(arrows)), ink, charts.LINE_PX,
                           camera, chevrons=np.ones(len(arrows)), chevron=chevron_length),
         # Each point white within a dark ring: a dot over a larger dot.
         simplices.markers(points, dark, (point_side + charts.LINE_PX) / 2, camera),

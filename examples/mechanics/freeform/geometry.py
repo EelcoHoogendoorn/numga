@@ -10,7 +10,7 @@ from scipy.stats import qmc
 from numga import NumpyContext, stack
 from numga.algebras import VGA3D
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(VGA3D).multivector
 # Points are antivectors.

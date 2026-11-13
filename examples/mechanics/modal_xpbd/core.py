@@ -31,7 +31,7 @@ from numga.backend.context import Context
 from numga.sparse import SparseExtensor, spdiag
 from examples.mechanics import lie_integrators as lie
 # A girder's bars and the constraints joining bodies are bond graphs, one-dimensional meshes.
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 
 # Supplied by examples.instantiate: the algebra, PGA2D, and the context to compute in.
@@ -193,7 +193,7 @@ def coupling(bodies: Bodies, constraints: Constraints) -> tuple[SparseExtensor, 
     # The load on each mode of each body for forces at the constraints, one map per mode: each force paired with
     # the mode's displacement at its anchor, `force & displacement`, the work it does per unit of amplitude, carried
     # back to the body at each side by the incidence run back.
-    modal_load = (~constraints.ends * spdiag(Force & anchor_modes)).sum(axis=-1)   # [..., modes] (Scalar+ <- Force+)[bodies <- constraints]
+    modal_load = (constraints.ends.adjugate() * spdiag(Force & anchor_modes)).sum(axis=-1)  # [..., modes] (Scalar+ <- Force+)[bodies <- constraints]
     return rigid, modal, modal_load, gap
 
 

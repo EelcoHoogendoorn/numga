@@ -18,7 +18,7 @@ import numpy as np
 
 from numga import NumpyContext
 from numga.algebras import VGA3D as ga
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                         # Scalar+
@@ -55,7 +55,7 @@ def stresses(topology: Topology, points: Point, heights: Scalar) -> Scalar:
     inner = topology.reading(topology.interior[1], 1)                          # Scalar+[inner <- edges]
     # The faces' planes summed back onto their edges, each signed as its face runs along the edge: the plane of
     # the face on the left less that of the face on the right.
-    jump = (inner * (~topology.d[1] * slopes(topology, points, heights))).batch()  # [..., inner] Plane+
+    jump = (inner * (topology.d[1].adjugate() * slopes(topology, points, heights))).batch()  # [..., inner] Plane+
     # Each bar from its tail to its head.
     tails, heads = (inner * (topology.incidence[1, 0] * points)).batch()       # [inner] Point-, [inner] Point-
     bars = heads - tails                                                       # [inner] Point-
@@ -72,6 +72,6 @@ def folds(topology: Topology, points: Point, heights: Scalar) -> Scalar:
     fold, positive where the terrain bends convex."""
     # The plane of the face on the right passes through that corner at its height, so the fold is the jump from
     # the plane on the left to it, read at the corner lifted to unit height.
-    jump = (topology.reading(topology.interior[1], 1) * (~topology.d[1] * slopes(topology, points, heights))).batch()  # [..., inner] Plane+
+    jump = (topology.reading(topology.interior[1], 1) * (topology.d[1].adjugate() * slopes(topology, points, heights))).batch()  # [..., inner] Plane+
     lifted = (topology.reading(topology.facet_opposites[:, 1], 0) * (points + up)).batch()  # [inner] Point-
     return -(jump & lifted)                                                    # [..., inner] Scalar+

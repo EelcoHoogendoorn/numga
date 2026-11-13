@@ -10,8 +10,9 @@ from matplotlib.colors import to_rgb
 
 from examples.quantum.hubbard_dimer import core
 from examples.util import charts
-from examples.util.wgsl import planar, simplices
-from examples.util.wgsl.camera import panel
+from numga.topology import Topology
+from numga.render import drawing, planar, simplices
+from examples.util.panels import overlay, panel
 from numga import stack
 
 COLOURS = ("#7d3c98", "#2e86c1", "#c0392b")
@@ -157,14 +158,14 @@ def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitud
         ax.set(xlim=(0, columns * span), ylim=(0, count * span), aspect="equal")
         camera = panel(ax, planar.mv.x, planar.mv.y, planar.mv.w)
         # The dials' rims and the traced paths faint, as thin as the frames.
-        faces = simplices.composited([
-            simplices.strokes(rims.reshape(-1), simplices.Topology.loops([n_rim_samples] * n_dials), RIM,
+        faces = drawing.composited([
+            simplices.strokes(rims.reshape(-1), Topology.loops([n_rim_samples] * n_dials), RIM,
                               charts.FRAME_PX, camera),
-            simplices.strokes(ends.reshape(-1), simplices.Topology.chains([n_times] * n_dials), colour, charts.FRAME_PX,
+            simplices.strokes(ends.reshape(-1), Topology.chains([n_times] * n_dials), colour, charts.FRAME_PX,
                               camera, opacity=TRACE_OPACITY)])
-        simplices.overlay(ax, [faces])
+        overlay(ax, [faces])
         # The arrows and their tips over the faces, drawn anew each frame.
-        arrows_shown = simplices.overlay(ax, [np.zeros(camera.shape + (4,))])
+        arrows_shown = overlay(ax, [np.zeros(camera.shape + (4,))])
         arrows_shown.set_animated(True)
         # Each case's name left of its row, each configuration's under its column.
         for height_at, row_label in zip(up, rows):
@@ -175,13 +176,13 @@ def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitud
         # The labels are drawn once; each frame draws only the dials over them, the arrows on their faces.
         figure.canvas.draw()
         background = figure.canvas.copy_from_bbox(figure.bbox)
-        arrows = simplices.Topology.chains([3] * n_dials)
+        arrows = Topology.chains([3] * n_dials)
         shares = np.tile(np.stack((TRIPLET, colour)), (n_dials, 1))
         for index in range(n_times):
             figure.canvas.restore_region(background)
             tips = ends[..., index]                                             # [cases, dials] Point-
             shafts = stack((centres, starts[..., index], tips), axis=-1)       # [cases, dials, 3] Point-
-            arrows_shown.set_data(simplices.composited([
+            arrows_shown.set_data(drawing.composited([
                 simplices.strokes(shafts.reshape(-1), arrows, shares, charts.LINE_PX, camera),
                 simplices.markers(tips.reshape(-1), TIP, charts.MARKER_PX / 2, camera)]))
             ax.draw_artist(arrows_shown)

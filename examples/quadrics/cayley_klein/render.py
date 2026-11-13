@@ -9,8 +9,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.util import charts
-from examples.util.wgsl import quadrics, simplices
-from examples.util.wgsl.camera import Camera, panel, read
+from numga.topology import Topology
+from numga.render import Camera, quadrics, read, simplices
+from examples.util.panels import overlay, panel
 from numga import stack
 from examples.quadrics.cayley_klein.core import Line, Plane, Point, Polarity, Scalar, mv
 
@@ -56,7 +57,7 @@ def squares(points: Point, colour: str, area: float, turn: float, camera: Camera
     turns = (mv.xy * (-(turn + np.pi / 2 * np.arange(4)) / 2)).exp()        # [corners] Rotor+
     corners = (turns >> along) * (np.sqrt(2 * area) / 2 * POINT * camera.pixel)   # [corners] Point-
     places = (points / (mv.w & points))[:, None] + corners                   # [points, corners] Point-
-    return simplices.strokes(places.reshape(-1), simplices.Topology.loops([4] * len(points)), rgb(colour),
+    return simplices.strokes(places.reshape(-1), Topology.loops([4] * len(points)), rgb(colour),
                              FRAME * POINT, camera)
 
 
@@ -79,7 +80,7 @@ def draw_hyperbolic_space(
         ax.set_axis_off()
     fig.tight_layout()
     planes, lines = cameras(left)
-    simplices.overlay(left, [level_sets(absolute[None], "black", 1.2, planes),
+    overlay(left, [level_sets(absolute[None], "black", 1.2, planes),
                              quadrics.flats(sides, 1.2 * POINT, rgb("#2563eb"), planes),
                              quadrics.flats(normal[None], 1.0 * POINT, rgb("#dc2626"), lines),
                              marks(vertices, "#1d4ed8", 14, planes),
@@ -91,7 +92,7 @@ def draw_hyperbolic_space(
         left.annotate(f"{np.degrees(theta):.1f}°", xy, textcoords="offset points", xytext=(3, 3))
 
     planes, _ = cameras(right)
-    simplices.overlay(right, [level_sets(absolute[None], "black", 1.2, planes)]
+    overlay(right, [level_sets(absolute[None], "black", 1.2, planes)]
                       + [level_sets(family, colour, 0.8, planes)
                          for family, colour in zip(spheres, ("#3b82f6", "#f97316"))]
                       + [marks(centres, "#111827", 13, planes)])

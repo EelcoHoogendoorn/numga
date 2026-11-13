@@ -16,9 +16,11 @@ from numga import Algebra, concatenate, stack
 from numga.extensor import Extensor
 from examples.electromagnetism.dynamo import core
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 from examples.util import charts
-from examples.util.wgsl import flow, image_figure, meshes, simplices, solids
+from numga.render.drawing import Draw
+from numga.render import flow, meshes, simplices, solids
+from examples.util.panels import image_figure
 
 mv = core.mv
 # The cut face's colours from no field to the strongest, the planet's surface, the field lines, and the background.
@@ -90,7 +92,7 @@ def camera_view(points: solids.Point, pixels: int, degrees: np.ndarray) -> solid
 
 
 def line_tubes(lines: core.Point, inside: np.ndarray, colour: np.ndarray, frame: solids.View,
-               chevron: float) -> meshes.Samples:
+               chevron: float) -> Draw:
     """Lines `[lines, steps] Point-` as tubes where both ends of a step lie inside `[lines * steps]`, a chevron
     `chevron` pixels long ending every so many steps, pointing on along the line."""
     n_lines, n_points = lines.shape
@@ -168,13 +170,13 @@ class Cutaway:
         self.frame = camera_view(drawn(self.surface_points), pixels, view_degrees)
         self.radius = radius
 
-    def tubes(self, lines: core.Point, colour: np.ndarray) -> meshes.Samples:
+    def tubes(self, lines: core.Point, colour: np.ndarray) -> Draw:
         """Lines `[lines, steps] Point-` as tubes, kept within the removed half of the planet, in front of the cut."""
         places = lines.reshape(-1)                                                # [lines * steps] Point-
         inside = (places.antinorm() < self.radius) & ((cut & places) > 0)         # [lines * steps]
         return line_tubes(lines, inside, colour, self.frame, 0.0)
 
-    def face(self, fields: core.Point) -> meshes.Samples:
+    def face(self, fields: core.Point) -> Draw:
         """The cut face coloured by the strength of a field of directions `Point-[tets]`, as a share of its strongest
         across the face, and the back half of the planet's surface behind it."""
         strength = smoothed(self.disk_points, self.centres, fields).antinorm().to_array()   # [disk vertices]
@@ -183,13 +185,13 @@ class Cutaway:
                               meshes.flat(drawn(self.disk_points), self.disk.elements[2]), self.frame,
                               face_values=np.zeros(1), colour=strength_shader, gloss=0.0)
 
-    def bare_face(self) -> meshes.Samples:
+    def bare_face(self) -> Draw:
         """The cut face in one colour."""
         return meshes.samples(drawn(self.disk_points), self.disk.elements[2], weak_colour,
                               meshes.flat(drawn(self.disk_points), self.disk.elements[2]), self.frame,
                               face_values=np.zeros(1), colour=meshes.plain, gloss=0.0)
 
-    def shell(self) -> meshes.Samples:
+    def shell(self) -> Draw:
         """The back half of the planet's surface."""
         return meshes.samples(drawn(self.surface_points), self.surface.elements[2], surface_colour,
                               meshes.smooth(drawn(self.surface_points), self.surface), self.frame,

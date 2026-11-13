@@ -11,7 +11,8 @@ from contourpy import contour_generator
 from matplotlib.colors import to_rgb
 
 from examples.mechanics.composite_strip import core
-from examples.util.wgsl import meshes, simplices, solids
+from numga.topology import Topology
+from numga.render import meshes, simplices, solids
 
 # The pixels across the frames; the view's elevation and azimuth in radians, azimuth zero looking along +y, and
 # the margin around the strips as a share of the larger side; the strip's colour and its fibres', and the fibres'
@@ -62,7 +63,7 @@ def animate_strips(rest: core.Direction, frames: core.Direction, across_fibres: 
     along, across = (positions - first).T                              # [fibre vertices], [fibre vertices]
     rows, columns = first.T
     # The fibre lines as chains of edges through their vertices.
-    fibre_chains = simplices.Topology.chains([len(line) for _, line in lines])
+    fibre_chains = Topology.chains([len(line) for _, line in lines])
 
     for grids in placed:
         points = grids.reshape(-1)                                     # [vertices] Point-

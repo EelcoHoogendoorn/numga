@@ -28,6 +28,9 @@ dependencies = [
 linalg = [
     "scipy>=1.10",
 ]
+wgpu = [
+    "wgpu>=0.32",
+]
 jax = [
     "jax>=0.4",
 ]

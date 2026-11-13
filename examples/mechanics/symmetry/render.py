@@ -16,7 +16,10 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.mechanics.symmetry.core import Conductivity, Direction, Field, Gyration, Point, Rotor, ga, mv
-from examples.util.wgsl import Shader, fitted, meshes, show, simplices, solids, supersampled
+from numga.wgsl import Shader, supersampled
+from numga.topology import Topology
+from numga.render import meshes, simplices, solids
+from examples.util.panels import fitted, show
 
 driving_rgb, flow_rgb = np.array(to_rgb("#262b32")), np.array(to_rgb("#d44e1a"))
 surface_colour = np.array([0.36, 0.60, 0.80])
@@ -124,7 +127,7 @@ def draw_conduction(conductivities: Conductivity, driving: Field, fluxes: Direct
     for ax, (ellipsoid, _), flow in zip(axes, ellipsoids, flows):
         # Both arrows from the centre, the flow's within the ellipsoid, seen through its surface: each a tube ending
         # in a chevron.
-        arrows = [(simplices.tubes(stack([solids.origin, tip]), simplices.Topology.chains([2]), colour, width, view,
+        arrows = [(simplices.tubes(stack([solids.origin, tip]), Topology.chains([2]), colour, width, view,
                                    gloss=solids.gloss, chevrons=np.ones(1), chevron=chevron), 1.0)
                   for tip, colour, (width, chevron) in
                   ((driving_tip, driving_rgb, driving_arrow), (flow, flow_rgb, flow_arrow))]
@@ -171,7 +174,7 @@ def draw_crystal(centre: Point, axial: Point, diagonal: Point, corners: Point, c
     show(axes[0], solids.draw(parts, lattice_view, background, inks=[], translucent=[], meshes=[]), lattice_view)
     show(axes[1], solids.draw([(ellipsoid[None, None], surface_colour)], conduction_view, background, inks=[],
                               translucent=[], meshes=[]), conduction_view)
-    show(axes[2], meshes.draw(points, faces, stiffness_colour, meshes.smooth(points, meshes.Topology(len(points), faces)), stiffness_view, background,
+    show(axes[2], meshes.draw(points, faces, stiffness_colour, meshes.smooth(points, Topology(len(points), faces)), stiffness_view, background,
                               face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss),
          stiffness_view)
     return fig

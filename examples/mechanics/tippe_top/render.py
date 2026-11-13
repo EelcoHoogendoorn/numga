@@ -10,7 +10,8 @@ import numpy as np
 from numga import stack
 from examples.mechanics.tippe_top import core
 from examples.util import charts
-from examples.util.wgsl import image_figure, solids
+from numga.render import solids
+from examples.util.panels import image_figure
 
 mv, origin = solids.mv, solids.origin
 up = mv.z.dual()
