@@ -234,7 +234,7 @@ def animate_crystal(topology: Topology, vertices: Extensor, sites: np.ndarray, b
                     frames: Iterable[tuple[core.State, core.Potential, core.Magnetic, core.Scalar]],
                     washed: bool = True, filled: bool = False) -> Iterator[np.ndarray]:
     """The crystal at its vertices `Point-[vertices]` at each frame as it comes, its states `State-[vertices]`, its
-    potentials `Potential+[vertices]`, the magnet's field `[] Bivector+` and the links `Scalar+[vertices]`: the slab
+    potentials `Potential+[vertices]`, the magnet's field `[] Magnetic+` and the links `Scalar+[vertices]`: the slab
     tinted by its temperatures, the magnet's gap around it, washed where `washed`, the reservoirs' bars at its ends, the
     bath's and the load's tinted by their temperatures and touching it while linked, and the magnetization's patches at
     its sites `[sites]`, filled where `filled`; and under it the temperature along its middle."""

@@ -62,14 +62,14 @@ def corners() -> tuple[core.Scalar, core.Scalar]:
     temperature in the lowest field. Between them the salt gives the bath heat, cools isolated, takes heat from the
     load, and warms isolated."""
     temperatures = mv.scalar([[bath_temperature], [load_temperature]])       # [2] Scalar+
-    fields = stack((highest_field * core.magnet_plane, lowest_field * core.magnet_plane))   # [2] Bivector+
+    fields = stack((highest_field * core.magnet_plane, lowest_field * core.magnet_plane))   # [2] Magnetic+
     magnetized, demagnetized = mv.s & core.state_at(fields, temperatures, moment, heat_capacity, reference)
     return (stack((demagnetized, magnetized, magnetized, demagnetized)),
             mv.scalar([[bath_temperature], [bath_temperature], [load_temperature], [load_temperature]]))
 
 
 def corner_fields() -> core.Magnetic:
-    """The fields at the ideal cycle's corners `[corners] Bivector+`."""
+    """The fields at the ideal cycle's corners `[corners] Magnetic+`."""
     return core.corner_fields(bath_temperature, load_temperature, highest_field, lowest_field, moment, heat_capacity,
                               reference, n_halvings)
 
@@ -77,7 +77,7 @@ def corner_fields() -> core.Magnetic:
 def lines() -> tuple[core.State, core.Potential]:
     """The lines of equal field on the chart: the salt's states held at the highest field and at the lowest across the
     chart's temperatures `[lines, samples] State-`, and their potentials."""
-    fields = stack((highest_field * core.magnet_plane, lowest_field * core.magnet_plane))[:, None]   # [lines, 1] Bivector+
+    fields = stack((highest_field * core.magnet_plane, lowest_field * core.magnet_plane))[:, None]   # [lines, 1] Magnetic+
     states = core.state_at(fields, mv.scalar(line_temperatures[..., None]), moment, heat_capacity, reference)
     return states, core.potentials(states, moment, heat_capacity, reference)
 
@@ -138,9 +138,10 @@ def crystal(n_along: int = n_along, n_across: int = n_across) -> tuple[Topology,
                                                                       SparseExtensor, np.ndarray]:
     """The crystal of these many vertices along and across: its triangles, its vertices, places of weight one
     `Point-[vertices]`, each vertex's cell, a third of each triangle about it `Scalar+[vertices]`, the heat each cell
-    loses to the conduction `(Heat- <- Scalar+)[vertices <- vertices]`, and its vertices' places `[vertices, 2]`."""
+    loses to the conduction `(Antiscalar- <- Scalar+)[vertices <- vertices]`, and its vertices' places
+    `[vertices, 2]`."""
     topology, coordinates = slab(n_along, n_across)
-    vertices = (mv(core.Upright, coordinates) + mv.w).dual().field()         # Point-[vertices]
+    vertices = (mv(core.Plane, coordinates) + mv.w).dual().field()           # Point-[vertices]
     areas, gradients = core.triangles(topology, vertices)
     cells = topology.incidence[2, 0].mean(axis=0).adjugate() * areas         # Scalar+[vertices]
     return topology, vertices, cells, core.conduction(topology, areas, gradients, conductivity), coordinates
@@ -155,7 +156,7 @@ def refrigerator(n_along: int = n_along, n_across: int = n_across
     first corner."""
     topology, vertices, cells, conducting, coordinates = crystal(n_along, n_across)
     starts, ends, within, conductances, durations, n_steps = timeline(coordinates)
-    fields = core.magnet(corner_fields(), starts, ends, within)               # [steps] Bivector+
+    fields = core.magnet(corner_fields(), starts, ends, within)               # [steps] Magnetic+
     links = mv.scalar(conductances[..., None]).field()                       # [steps] Scalar+[vertices]
     held = mv.scalar(reservoirs(coordinates)[:, None]).field()               # Scalar+[vertices]
     # The crystal at the bath's temperature at every vertex, in the field of the cycle's first corner.

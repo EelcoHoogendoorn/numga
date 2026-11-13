@@ -67,7 +67,7 @@ mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 Point = ga.gatype.antivector()                                                # Antivector-
 # The planes reading a place's run along the crystal and across it.
-Upright = ga.gatype.vector().derive.within(space)                             # Vector+
+Plane = ga.gatype.vector().derive.within(space)                               # Vector+
 # The magnetic field, a plane of space, and a magnetization, the patch of the plane its spins turn in.
 Magnetic = ga.gatype.bivector().derive.within(space)                          # Bivector+
 Spin = Magnetic.derive.dual                                                   # Antibivector-
@@ -81,11 +81,11 @@ Potential = ga.gatype(Magnetic + Thermal)                                     # 
 Stiffness = ga.gatype((Potential, State))                                     # Potential+ <- State-
 # The plane the magnet's field turns the spins in, a unit of magnetization along it, and a unit of entropy; a direction
 # along time, and a unit of heat.
-magnet_plane = mv.xy                                                          # [] Bivector+
+magnet_plane = mv.xy                                                          # [] Magnetic+
 spin = magnet_plane.dual()                                                    # [] Spin-
 entropy = mv.s.dual()                                                         # [] Amount-
 time = mv.t.dual()                                                            # [] Point-
-heat = mv.scalar([1.0]).dual()                                                # [] Heat-
+heat = mv.scalar([1.0]).dual()                                                # [] Antiscalar-
 # The crystal's two axes, along it and across it, along which its lattice conducts alike.
 axes = stack((mv.x.dual(), mv.y.dual()))                                      # [axes] Point-
 
@@ -109,7 +109,7 @@ def potentials(state: State, moment: float, heat_capacity: float, reference: flo
     lattice_entropy = (mv.s & state) - spin_entropy(shares)                   # [...] Scalar+
     temperature = reference * (lattice_entropy / heat_capacity).exp()         # [...] Scalar+
     # The spins' entropy's slope over the state, a reading of its changes: the spins lose entropy as they line up.
-    spin_slope = -(shares.arctanh() / moment) * magnet_plane                  # [...] Bivector+
+    spin_slope = -(shares.arctanh() / moment) * magnet_plane                  # [...] Magnetic+
     return temperature * (mv.s - spin_slope)
 
 
@@ -127,7 +127,7 @@ def stiffness(state: State, moment: float, heat_capacity: float, reference: floa
 
 
 def state_at(field: Magnetic, temperature: Scalar, moment: float, heat_capacity: float, reference: float) -> State:
-    """The state `[...] State-` of the salt held at this field `[...] Bivector+` and temperature `[...] Scalar+`: its
+    """The state `[...] State-` of the salt held at this field `[...] Magnetic+` and temperature `[...] Scalar+`: its
     spins' share of saturation the tanh of the moment times the field over the temperature, and its entropy the spins'
     and the lattice's."""
     shares = (moment * (field & spin) / temperature).tanh()                   # [...] Scalar+
@@ -137,11 +137,11 @@ def state_at(field: Magnetic, temperature: Scalar, moment: float, heat_capacity:
 
 def corner_fields(bath_temperature: float, load_temperature: float, highest_field: float, lowest_field: float,
                   moment: float, heat_capacity: float, reference: float, n_halvings: int) -> Magnetic:
-    """The fields at the ideal cycle's corners `[corners] Bivector+`, of a salt in perfect contact with its reservoirs:
+    """The fields at the ideal cycle's corners `[corners] Magnetic+`, of a salt in perfect contact with its reservoirs:
     where it reaches the bath's temperature, magnetized isolated from the load's corner; the highest field, at the
     bath's temperature; where it reaches the load's temperature, demagnetized isolated from the bath's corner; and the
     lowest field, at the load's temperature."""
-    held_fields = stack((highest_field * magnet_plane, lowest_field * magnet_plane))   # [2] Bivector+
+    held_fields = stack((highest_field * magnet_plane, lowest_field * magnet_plane))   # [2] Magnetic+
     held_entropies = mv.s & state_at(held_fields, mv.scalar([[bath_temperature], [load_temperature]]), moment,
                                      heat_capacity, reference)                # [2] Scalar+
     # Isolated, the salt keeps its entropy, and at the other reservoir's temperature its spins hold what the lattice
@@ -149,19 +149,19 @@ def corner_fields(bath_temperature: float, load_temperature: float, highest_fiel
     others = mv.scalar([[load_temperature], [bath_temperature]])              # [2] Scalar+
     shares = shares_holding(held_entropies - heat_capacity * (others / reference).log(), n_halvings)   # [2] Scalar+
     reached = potentials(moment * shares * spin + held_entropies * entropy, moment, heat_capacity, reference)   # [2] Potential+
-    cooled, warmed = (reached & spin) * magnet_plane                          # [] Bivector+, Bivector+
+    cooled, warmed = (reached & spin) * magnet_plane                          # [] Magnetic+, Magnetic+
     return stack((warmed, held_fields[0], cooled, held_fields[1]))
 
 
 def magnet(corners: Magnetic, starts: np.ndarray, ends: np.ndarray, fractions: np.ndarray) -> Magnetic:
-    """The magnet's field at each step `[steps] Bivector+`, these fractions `[steps]` of the way from the corner each
-    step's phase starts at to the one it ends at `[steps]`, of these corners' fields `[corners] Bivector+`: evenly in
+    """The magnet's field at each step `[steps] Magnetic+`, these fractions `[steps]` of the way from the corner each
+    step's phase starts at to the one it ends at `[steps]`, of these corners' fields `[corners] Magnetic+`: evenly in
     the logarithm of its strength, so that a salt at a fixed entropy cools evenly in the logarithm of its temperature."""
     strengths = (corners & spin).log()                                       # [corners] Scalar+
     return (strengths[starts] * (1 - fractions) + strengths[ends] * fractions).exp() * magnet_plane
 
 
-def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Upright]:
+def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Plane]:
     """Each triangle's area `Scalar+[faces]`, and each corner's hat gradient `[corners] Plane+[faces]`, at these
     vertices, points of weight one: what the corner's ramp reads across space, the ramp reading one at the corner and
     nothing along the facing side."""
@@ -172,27 +172,27 @@ def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Upright]:
     sides = facing[0] & facing[1]                                             # [corners] Antibivector-[faces]
     ramps = (sides & time & entropy) / (sides & time & entropy & corners)     # [corners] Plane+[faces]
     # Twice a triangle's area: its corners joined, along time and entropy.
-    double_areas = corners[0] & corners[1] & corners[2] & time & entropy      # Scalar-[faces]
+    double_areas = corners[0] & corners[1] & corners[2] & time & entropy      # Antiscalar-[faces]
     # A ramp's gradient, what it reads across space, its value at the origin, read along w, dropped.
-    return double_areas.norm() / 2, ramps.cast(Upright)
+    return double_areas.norm() / 2, ramps.cast(Plane)
 
 
-def conduction(topology: Topology, areas: Scalar, gradients: Upright, conductivity: float) -> SparseExtensor:
-    """The heat each vertex's cell loses as the temperature rises at each vertex `(Heat- <- Scalar+)[vertices <-
+def conduction(topology: Topology, areas: Scalar, gradients: Plane, conductivity: float) -> SparseExtensor:
+    """The heat each vertex's cell loses as the temperature rises at each vertex `(Antiscalar- <- Scalar+)[vertices <-
     vertices]`, through a lattice of this conductivity on the triangles of these areas `Scalar+[faces]` and hat
     gradients `[corners] Plane+[faces]`: the temperature's gradient drives a flux down it, the same along both of the
     crystal's axes, which the gradient's adjugate gathers into what each cell gives up."""
     gradient = (spdiag(gradients) * topology.incidence[2, 0]).sum(axis=0) * Scalar   # (Plane+ <- Scalar+)[faces <- vertices]
-    medium = areas * conductivity * (axes * (Upright & axes)).sum(axis=0)     # (Point- <- Plane+)[faces]
+    medium = areas * conductivity * (axes * (Plane & axes)).sum(axis=0)       # (Point- <- Plane+)[faces]
     return gradient.adjugate()(medium(gradient))
 
 
 def step(cells: Scalar, conducting: SparseExtensor, states: State, field: Magnetic, links: Scalar, reservoirs: Scalar,
          moment: float, heat_capacity: float, reference: float, dt: float) -> State:
     """The crystal's states `State-[vertices]` a step of `dt` on from these, the magnet's field moved to this one `[]
-    Bivector+` and each vertex's cell `Scalar+[vertices]` tied by these links' conductances `Scalar+[vertices]` to its
-    reservoir's temperature `Scalar+[vertices]`, the cells conducting heat to each other as `conducting` has it `(Heat-
-    <- Scalar+)[vertices <- vertices]`: implicit in the temperatures' change."""
+    Magnetic+` and each vertex's cell `Scalar+[vertices]` tied by these links' conductances `Scalar+[vertices]` to its
+    reservoir's temperature `Scalar+[vertices]`, the cells conducting heat to each other as `conducting` has it
+    `(Antiscalar- <- Scalar+)[vertices <- vertices]`: implicit in the temperatures' change."""
     salt_potentials = potentials(states, moment, heat_capacity, reference)    # Potential+[vertices]
     temperatures = salt_potentials & entropy                                  # Scalar+[vertices]
     # The compliance, the stiffness inverted vertex by vertex: the change of state per unit of field at a held
@@ -207,9 +207,9 @@ def step(cells: Scalar, conducting: SparseExtensor, states: State, field: Magnet
     taken = cells * temperatures * (mv.s & along_field) * shortfall           # Scalar+[vertices]
     # The heat balance over the step, implicit in the temperatures' change: what warms the cells is what the links and
     # the conduction bring in, less what the change of field takes.
-    linking = spdiag(links * heat * Scalar)                                   # (Heat- <- Scalar+)[vertices <- vertices]
-    balance = spdiag(capacities * heat * Scalar) + dt * (conducting + linking)   # (Heat- <- Scalar+)[vertices <- vertices]
-    brought = dt * (linking(reservoirs - temperatures) - conducting(temperatures)) - taken * heat   # Heat-[vertices]
+    linking = spdiag(links * heat * Scalar)                                   # (Antiscalar- <- Scalar+)[vertices <- vertices]
+    balance = spdiag(capacities * heat * Scalar) + dt * (conducting + linking)   # (Antiscalar- <- Scalar+)[vertices <- vertices]
+    brought = dt * (linking(reservoirs - temperatures) - conducting(temperatures)) - taken * heat   # Antiscalar-[vertices]
     warming = balance.solve(brought)                                          # Scalar+[vertices]
     return states + shortfall * along_field + warming * along_temperature
 
@@ -217,9 +217,9 @@ def step(cells: Scalar, conducting: SparseExtensor, states: State, field: Magnet
 def run(cells: Scalar, conducting: SparseExtensor, states: State, fields: Magnetic, links: Scalar,
         reservoirs: Scalar, durations: np.ndarray, n_steps: np.ndarray, moment: float, heat_capacity: float,
         reference: float) -> Iterator[tuple[State, Potential, Magnetic, Scalar]]:
-    """The crystal's states `State-[vertices]` and potentials `Potential+[vertices]`, the magnet's field `[] Bivector+`
+    """The crystal's states `State-[vertices]` and potentials `Potential+[vertices]`, the magnet's field `[] Magnetic+`
     and the links' conductances `Scalar+[vertices]`, at the start and after each frame's steps, these many to each frame
-    `[frames]`: one step for each of the magnet's fields `[steps] Bivector+`, links `[steps] Scalar+[vertices]` and
+    `[frames]`: one step for each of the magnet's fields `[steps] Magnetic+`, links `[steps] Scalar+[vertices]` and
     durations `[steps]`, from these states; the cells, the conduction and the reservoirs as `step` takes them."""
     yield states, potentials(states, moment, heat_capacity, reference), fields[0], links[0]
     ends = np.cumsum(n_steps)
