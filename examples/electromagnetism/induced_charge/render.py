@@ -23,7 +23,7 @@ line_ink = np.array([.88, .72, .36, .72])
 edge_ink = np.array([.55, .61, .68, .55])
 field_ink = np.array([.64, .79, .87])
 texture_length, texture_grain, texture_speck = 64., 12., .7
-texture_opacity, texture_floor = .55, .2
+texture_opacity, texture_reference, texture_fade = .55, 1., .2
 
 
 def animate(topology, vertices, metal, states, *, draw_fields=True):
@@ -59,14 +59,20 @@ def animate(topology, vertices, metal, states, *, draw_fields=True):
         field = (hat_fields * (corners * potential)).sum(axis=0)
         layers = [contours.picture(points, topology, fraction, colours, camera)]
         if draw_fields:
-            # The texture shows direction. Its length fades near a vanishing field.
+            # Streak length retains field magnitude on one scale throughout the animation.
             force = field.commutator(core.time)
-            direction = force / (force.antinorm().squared() + texture_floor ** 2).square_root()
-            corner_direction = concatenate([direction.batch()] * n_corners)
-            layers.append(flow.layer(face_points, split, corner_direction, camera, 1., field_ink,
+            corner_force = concatenate([force.batch()] * n_corners)
+            field_layer = flow.layer(face_points, split, corner_force, camera, texture_reference, field_ink,
                                      length=texture_length, grain_pixels=texture_grain,
                                      speck_pixels=texture_speck, ink_opacity=texture_opacity,
-                                     downstream_fraction=.5))
+                                     downstream_fraction=.5)
+            # Fade the seed ink with the local field too, so a vanishing field leaves no specks.
+            magnitude = force.antinorm()
+            fade = concatenate([(magnitude / (magnitude + texture_fade)).batch()] * n_corners).to_array()
+            coverage = simplices.composited([contours.picture(
+                face_points, split, fade, np.repeat(fade[:, None], 3, axis=1), camera)])
+            field_layer[..., 3] *= coverage[..., 0]
+            layers.append(field_layer)
             layers.append(contours.picture(points, topology, voltage, np.zeros(3), camera,
                                            lines=(lines,), opacity=0.))
         layers.append(contours.picture(points, topology, fraction, np.zeros(3), camera,
