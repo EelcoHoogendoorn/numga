@@ -64,24 +64,30 @@ def run(across: int, up: int, frames: int, name: str):
     from examples.electromagnetism.magnetic_materials import render
     from examples.util.animation import save_animation, save_figure
     topology, vertices, fractions, permeability, conductivity, remanence, coils, drive = scene(across, up, frames)
-    areas, cells, hats, response, stiffness, source, mass, extension = core.medium(
+    areas, cells, gradients, response, stiffness, source, mass, extension = core.medium(
         topology, vertices, permeability, conductivity, remanence)
     coil_shape = coils / (cells * coils).sites.sum()
     coil = cells * (coil_shape * coil_signs).sum(axis=0)
     corners = topology.incidence[2, 0]
+    hat_fields = gradients ^ core.mv.z
+    pole_readings = gradients | core.mv.xyz
+    permanent = corners.mean(axis=0) * remanence
     potentials = []
     def observed():
         previous = None
         for index, potential in enumerate(core.evolution(stiffness, source, mass, extension, coil, drive, frame_step)):
             rate = 0 * potential if previous is None else (potential - previous) / frame_step
-            field = (hats * (corners * potential)).sum(axis=0)
-            magnetization = core.magnetic_response(field) - response(field)
+            field = (hat_fields * (corners * potential)).sum(axis=0)
+            magnetization = permanent + core.magnetic_response(field) - response(field)
+            # Moment flux through each cell's boundary gives its equivalent magnetic pole charge.
+            pole_charge = (~corners * (areas * (pole_readings & magnetization))).sum(axis=0)
+            pole_density = pole_charge / cells
             mean_rate = (mass * rate).sites.sum() / mass.sites.sum()
             electric = -(rate - mean_rate) * core.mv.zt
             current = conductivity * core.electric_response(electric)
             potentials.append(potential)
             previous = potential
-            yield potential, magnetization, current, drive[index]
+            yield potential, pole_density, current, drive[index]
     movie = save_animation(render.animate(topology, vertices, fractions, coils, coil_current, observed()), name, 40, colors=128)
     history = stack(potentials)
     save_figure(render.relaxation(history, mass, frame_step, pulse_fall), name + "_relaxation")

@@ -46,7 +46,7 @@ def medium(topology, vertices: Point, permeability: Scalar, conductivity: Scalar
     source = (~corners * (areas * (hat_fields & (mean * remanence)))).sum(axis=0)
     mass = cells * conductivity
     extension = ~topology.reading(topology.interior[0], 0)
-    return areas, cells, hat_fields, response, stiffness, source, mass, extension
+    return areas, cells, gradients, response, stiffness, source, mass, extension
 
 
 def evolution(stiffness, source: Scalar, mass: Scalar, extension, coil: Scalar,
