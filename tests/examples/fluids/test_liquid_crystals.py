@@ -23,5 +23,7 @@ def test_one_step_runs_and_draws():
                                        scenarios.rotation_step, 2, 1))
     driven = list(core.evolution(topology, areas, gradients, cells, stiffness, scenarios.elastic, scenarios.bulk,
                                  scenarios.activities[:1], disordered[None], scenarios.time_step, 2, 1))
-    next(render.animate(topology, vertices, render.turn_camera, turned[-1:]))
-    next(render.animate(topology, vertices, render.dense_camera, driven[-1:]))
+    next(render.animate(topology, vertices, render.turn_camera,
+                        core.with_defects(topology, vertices, turned[-1:], mv.x.dual())))
+    next(render.animate(topology, vertices, render.dense_camera,
+                        core.with_defects(topology, vertices, driven[-1:], mv.x.dual())))

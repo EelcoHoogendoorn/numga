@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from functools import cache
 
 import numpy as np
@@ -100,26 +100,13 @@ def texture(topology: Topology, points: core.Point, camera: Camera, order: core.
     return rgba
 
 
-def defect_positions(topology: Topology, vertices: core.Point, order: core.Order) -> tuple[core.Point, core.Scalar]:
-    """Defect positions are the zeros of the linearly interpolated alignment inside charged triangles."""
-    mv = vertices.context.multivector
-    winding = core.windings(topology, order, mv.x.dual()).scalar_product(~mv.xy)
-    charged = np.flatnonzero(winding.norm() > 0.25)
-    tails, heads = topology.incidence[1, 0] * order(mv.x.dual())
-    # The opposite sides of the triangle of field values give the barycentric weights of its zero.
-    weights = (topology.boundary[2, 1] * (tails & heads)).batch()[:, charged]
-    hats = weights / weights.sum(axis=0)
-    corners = (topology.incidence[2, 0] * vertices).batch()[:, charged]
-    return (corners * hats).sum(axis=0), winding.batch()[charged]
-
-
 def frame(topology: Topology, vertices: core.Point, camera: Camera, order: core.Order,
-          marker_radius: float = defect_radius) -> np.ndarray:
-    """The molecular axes and degree of order, with one tightly cropped row per case."""
+          defects: Sequence[tuple[core.Point, core.Scalar]], marker_radius: float = defect_radius) -> np.ndarray:
+    """The molecular axes and degree of order, with one tightly cropped row per case, each marked at its defects by
+    the sign of their charges."""
     points = vertices.batch()
     panels = []
-    for state in order:
-        zeros, charges = defect_positions(topology, vertices, state)
+    for state, (zeros, charges) in zip(order, defects):
         state = state.batch()
         strength = (2 * state(state).trace()).square_root()
         amount = np.clip(strength.to_array(), 0, 1)
@@ -139,20 +126,23 @@ def frame(topology: Topology, vertices: core.Point, camera: Camera, order: core.
 
 
 def animate(topology: Topology, vertices: core.Point, camera: Camera,
-            states: Iterable[core.Order], marker_radius: float = defect_radius) -> Iterator[np.ndarray]:
-    """The film's molecular axes at each state, streamed in the order computed."""
-    for order in states:
-        yield frame(topology, vertices, camera, order, marker_radius)
+            states: Iterable[tuple[core.Order, Sequence[tuple[core.Point, core.Scalar]]]],
+            marker_radius: float = defect_radius) -> Iterator[np.ndarray]:
+    """The film's molecular axes and its defects at each state, streamed in the order computed."""
+    for order, defects in states:
+        yield frame(topology, vertices, camera, order, defects, marker_radius)
 
 
-def draw_setup(topology: Topology, vertices: core.Point, order: core.Order) -> Figure:
+def draw_setup(topology: Topology, vertices: core.Point, order: core.Order,
+               defects: tuple[core.Point, core.Scalar]) -> Figure:
     """The film's starting alignment."""
-    return image_figure(frame(topology, vertices, setup_camera, order[None]))
+    return image_figure(frame(topology, vertices, setup_camera, order[None], [defects]))
 
 
-def draw_dense_setup(topology: Topology, vertices: core.Point, order: core.Order) -> Figure:
+def draw_dense_setup(topology: Topology, vertices: core.Point, order: core.Order,
+                     defects: tuple[core.Point, core.Scalar]) -> Figure:
     """The crowded initial alignment, with both signs of half-charge defect."""
-    return image_figure(frame(topology, vertices, dense_camera, order[None]))
+    return image_figure(frame(topology, vertices, dense_camera, order[None], [defects]))
 
 
 @charts.style()

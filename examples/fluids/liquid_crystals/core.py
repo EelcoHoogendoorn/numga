@@ -14,7 +14,7 @@ film descends its Landau–de Gennes free energy.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 import jax
 import numpy as np
@@ -116,6 +116,27 @@ def windings(topology: Topology, order: Order, reference: Point) -> Turn:
     return (topology.d[1] * turns) / (4 * np.pi)
 
 
+def defects(topology: Topology, vertices: Point, order: Order, reference: Point) -> tuple[Point, Scalar]:
+    """One film's half-charge defects: the zeros of its alignment, interpolated across each triangle it winds
+    around, and their charges in whole turns."""
+    charges = windings(topology, order, reference).scalar_product(~mv.xy)   # Scalar+[faces]
+    charged = np.flatnonzero(charges.norm() > 0.25)
+    tails, heads = topology.incidence[1, 0] * order(reference)   # Point-[edges]
+    # The triangle of alignment values holds the origin at the weights its opposite sides span with it;
+    # the same weights on the triangle's corners place the zero.
+    weights = (topology.boundary[2, 1] * (tails & heads)).batch()[:, charged]   # [corners, defects] Scalar-
+    hats = weights / weights.sum(axis=0)                         # [corners, defects] Scalar+
+    corners = (topology.incidence[2, 0] * vertices).batch()[:, charged]   # [corners, defects] Point-
+    return (corners * hats).sum(axis=0), charges.batch()[charged]
+
+
+def with_defects(topology: Topology, vertices: Point, states: Iterable[Order],
+                 reference: Point) -> Iterator[tuple[Order, list[tuple[Point, Scalar]]]]:
+    """Each state of a run beside the defects of each of its films."""
+    for order in states:
+        yield order, [defects(topology, vertices, film, reference) for film in order]
+
+
 def turn_relaxation(topology: Topology, stiffness: SparseExtensor, cells: Scalar, elastic: float, bulk: float,
                     initial: Order, time_step: float, n_frames: int, n_substeps: int) -> Iterator[Order]:
     """The alignment rotating down its energy slope, with its degree of order fixed at every site."""
@@ -166,9 +187,9 @@ def rate(topology: Topology, areas: Scalar, gradients: Plane, cells: Scalar, sti
     advection = (local_order * (gradients & face_velocity[..., None])).sum(axis=-1)
     velocity_gradient = (local_velocity * (gradients & Point)).sum(axis=-1)
     # Half the curl is the plane and rate of the fluid's rotation.
-    spin = Point.reverse().commutator(velocity_gradient(Point)).batch().contract(1, 2).field() / 2
+    rotation_rate = Point.reverse().commutator(velocity_gradient(Point)).batch().contract(1, 2).field() / 2
     face_order = local_order.mean(axis=-1)
-    corotation = face_order.commutator(spin) - face_order(Point.commutator(spin))
+    corotation = face_order.commutator(rotation_rate) - face_order(Point.commutator(rotation_rate))
     transported = (corners.adjugate() * (areas * (corotation - advection) / 3)[..., None]).sum(axis=-1) / cells
     changing = molecular + transported
     boundary = topology.reading(topology.exterior[0], 0)

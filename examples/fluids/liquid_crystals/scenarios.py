@@ -45,7 +45,8 @@ def dense() -> None:
     directors = (-bearings / 2).exp() >> mv.x.dual()
     amplitudes = core.alignment(directors, 1 / np.sqrt(n_waves))
     initial = core.disordered_alignment(vertices, wavevectors, phases, amplitudes, softness)
-    save_figure(render.draw_dense_setup(topology, vertices, initial), "liquid_crystals_dense_setup")
+    defects = core.defects(topology, vertices, initial, mv.x.dual())
+    save_figure(render.draw_dense_setup(topology, vertices, initial, defects), "liquid_crystals_dense_setup")
     areas, gradients, cells = core.triangles(topology, vertices)
     stiffness = core.elasticity(topology, areas, gradients)
     start = initial[None].broadcast_to((len(dense_activities),))
@@ -57,9 +58,11 @@ def dense() -> None:
             states.append(state)
             yield state
 
-    save_animation(render.animate(topology, vertices, render.dense_camera, passing()),
+    save_animation(render.animate(topology, vertices, render.dense_camera,
+                                  core.with_defects(topology, vertices, passing(), mv.x.dual())),
                    "liquid_crystals_dense", frame_duration_ms, render.n_colours)
-    save_animation(render.animate(topology, vertices, render.dense_camera, states, marker_radius=0),
+    save_animation(render.animate(topology, vertices, render.dense_camera,
+                                  core.with_defects(topology, vertices, states, mv.x.dual()), marker_radius=0),
                    "liquid_crystals_dense_texture", frame_duration_ms, render.n_colours)
     energies = stack([core.free_energy(stiffness, cells, elastic, bulk, state) for state in states])
     save_figure(render.draw_energy(np.arange(n_frames) * time_step * n_dense_substeps, energies),
@@ -80,7 +83,8 @@ def main() -> None:
     initial = core.defect_pair(vertices, centres, core_radius, mv.xy * 0)
     areas, gradients, cells = core.triangles(topology, vertices)
     stiffness = core.elasticity(topology, areas, gradients)
-    save_figure(render.draw_setup(topology, vertices, initial), "liquid_crystals_setup")
+    defects = core.defects(topology, vertices, initial, mv.x.dual())
+    save_figure(render.draw_setup(topology, vertices, initial, defects), "liquid_crystals_setup")
     # A smooth turn near one defect supplies a state with an orientational restoring torque.
     offset = vertices - (centres[0] + mv.y.dual() * probe_width)
     probe = mv.xy * (-offset.scalar_norm_squared() / (2 * probe_width ** 2)).exp()
@@ -96,7 +100,8 @@ def main() -> None:
             turn_states.append(state)
             yield state[None]
 
-    save_animation(render.animate(topology, vertices, render.turn_camera, virtual_turns()),
+    save_animation(render.animate(topology, vertices, render.turn_camera,
+                                  core.with_defects(topology, vertices, virtual_turns(), mv.x.dual())),
                    "liquid_crystals_turn", frame_duration_ms, render.n_colours)
     turn_energies = stack([core.free_energy(stiffness, cells, elastic, bulk, state) for state in turn_states])
     molecular = core.molecular_field(stiffness, cells, elastic, bulk, strained)
@@ -111,7 +116,8 @@ def main() -> None:
             rotation_states.append(state)
             yield state
 
-    save_animation(render.animate(topology, vertices, render.turn_camera, rotating()),
+    save_animation(render.animate(topology, vertices, render.turn_camera,
+                                  core.with_defects(topology, vertices, rotating(), mv.x.dual())),
                    "liquid_crystals_torque", frame_duration_ms, render.n_colours)
     rotation_energies = stack([core.free_energy(stiffness, cells, elastic, bulk, state) for state in rotation_states])
     save_figure(render.draw_release(np.arange(n_relaxation_frames) * rotation_step * n_relaxation_substeps,
@@ -125,7 +131,8 @@ def main() -> None:
             states.append(state)
             yield state
 
-    save_animation(render.animate(topology, vertices, render.defect_camera, passing()),
+    save_animation(render.animate(topology, vertices, render.defect_camera,
+                                  core.with_defects(topology, vertices, passing(), mv.x.dual())),
                    "liquid_crystals_defects", frame_duration_ms, render.n_colours)
     energies = stack([core.free_energy(stiffness, cells, elastic, bulk, state) for state in states])
     save_figure(render.draw_energy(np.arange(n_frames) * time_step * n_substeps, energies), "liquid_crystals_energy")
@@ -156,7 +163,8 @@ def pinned() -> None:
     stiffness = core.elasticity(topology, areas, gradients)
     states = core.evolution(topology, areas, gradients, cells, stiffness, elastic, bulk, dense_activities,
                             initial[None], time_step, n_frames, n_dense_substeps)
-    pin_animation(render.animate(topology, vertices, render.dense_camera, states),
+    pin_animation(render.animate(topology, vertices, render.dense_camera,
+                                 core.with_defects(topology, vertices, states, mv.x.dual())),
                   "liquid_crystals", frame_duration_ms, render.n_colours)
 
 
