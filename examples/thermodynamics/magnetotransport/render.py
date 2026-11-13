@@ -4,7 +4,7 @@ driven by the current or both by heat, the magnetic field between them, as the c
 and the bar's voltages against the balance as a chart.
 
 The conductors' points are read by the planes x and y, turned a quarter turn for the bar standing up, and weighed by
-`mv.s & point`, the algebra's own projective weight. A conductor is tinted by its temperature, interpolated across the
+`mv.w & point`, their weight as places. A conductor is tinted by its temperature, interpolated across the
 triangles by their corners' hats, on one palette: grey in equilibrium, towards red where it is warmer and towards blue
 where it is cooler, red and blue reached at the electric reach where it is driven by a current, and at its contacts'
 temperatures where it is driven by heat.
@@ -93,8 +93,12 @@ sweep_dots = (1.5, 3.0)
 # The readings' chart, three panels stacked over one axis of the balance: its pixels, the curves' colours, and the
 # balances named on its axis.
 chart_size = (430, 460)
+spin_chart_size = (430, 170)
 along_colour, across_colour, heat_colour = "#4f5966", "#c2410c", "#1d4ed8"
-balance_ticks, balance_names = [-1, 0, 1], ["electrons", "compensated", "holes"]
+# The balances named on its axis, the carriers' or the magnetization's.
+balance_ticks = [-1, 0, 1]
+balance_names = ["electrons", "compensated", "holes"]
+magnetization_names = ["spin down", "unmagnetized", "spin up"]
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -123,20 +127,20 @@ def tinted(temperatures: np.ndarray, reach: float) -> np.ndarray:
 
 def framing(vertices: core.Point, across: core.Plane, up: core.Plane, resolution: float) -> Camera:
     """The camera looking down on a conductor, its points read across the picture by the plane `across` and up it by
-    the plane `up` and weighed by their weight along s, with the margin around it, at this resolution in pixels to the
+    the plane `up` and weighed by their weight along w, with the margin around it, at this resolution in pixels to the
     conductor's unit."""
     shown = np.stack([readings(across, vertices), readings(up, vertices)], axis=-1)   # [vertices, 2]
     low, high = shown.min(axis=0) - margin, shown.max(axis=0) + margin
-    return Camera(across, up, 0 * mv.x, mv.s, 0.0, (low + high) / 2, (high - low) / 2,
+    return Camera(across, up, 0 * mv.x, mv.w, 0.0, (low + high) / 2, (high - low) / 2,
                   round((high - low)[0] * resolution))
 
 
 def patch_framing(height: int, resolution: float) -> Camera:
     """The camera on the magnetic field's patch about the origin, its points read by the planes x and y and weighed by
-    their weight along s: as wide as the patch's arc at the reference field with the margin either side of it, and
+    their weight along w: as wide as the patch's arc at the reference field with the margin either side of it, and
     `height` pixels tall, at this resolution in pixels to the bar's width."""
     pixels = round(2 * (arc_reach * patch_reach + margin) * resolution)
-    return Camera(mv.x, mv.y, 0 * mv.x, mv.s, 0.0, np.zeros(2), np.array([pixels, height]) / (2 * resolution), pixels)
+    return Camera(mv.x, mv.y, 0 * mv.x, mv.w, 0.0, np.zeros(2), np.array([pixels, height]) / (2 * resolution), pixels)
 
 
 def outline(topology: Topology, vertices: core.Point, contacts: tuple[np.ndarray, np.ndarray], camera: Camera) -> list:
@@ -176,9 +180,11 @@ def face_corners(topology: Topology, vertices: core.Point) -> tuple[core.Point, 
 
 
 def speeds(velocities: core.Spatial) -> np.ndarray:
-    """The speed of each kind of carrier in each triangle `[kinds, faces]`, from its velocity `[kinds] Spatial-[faces]`
-    read along and across."""
-    return np.hypot(readings(mv.x, velocities), readings(mv.y, velocities))
+    """The speed of each kind of carrier in each triangle `[kinds, faces]`, the size of its velocity `[kinds]
+    Spatial-[faces]`, a direction through the space the camera's planes read."""
+    # A direction through space is measured through its dual, a vector of space: its antinorm.
+    sizes = velocities.batch().antinorm()                                     # [kinds, faces] Scalar+
+    return sizes.to_array()
 
 
 def voltage(potentials: core.Potential, contacts: tuple[np.ndarray, np.ndarray]) -> float:
@@ -248,8 +254,8 @@ def side_by_side(bar_topology: Topology, bar_vertices: core.Point, bar_contacts:
                 layers(topology, vertices, contacts, potentials, velocities, shares, reach, spacing, reference_speed,
                        streak_length, camera))))
         bar, ring = pictures
-        patch = on_white(drawing.composited(field_patch(core.entropy, magnetic, reference, patch_reach,
-                                                          patch_camera)))
+        patch = on_white(drawing.composited(field_patch(core.origin, magnetic, reference, patch_reach,
+                                                        patch_camera)))
         yield row([bar, patch, ring])
 
 
@@ -338,11 +344,11 @@ def draw_turns(drive: core.Drive, fluxes: core.Flux) -> Figure:
 
 @charts.style()
 def draw_readings(balances: np.ndarray, resistance: core.Scalar, hall: core.Scalar, seebeck: core.Scalar,
-                  nernst: core.Scalar, righi_leduc: core.Scalar) -> Figure:
+                  nernst: core.Scalar, righi_leduc: core.Scalar, names: list[str]) -> Figure:
     """The bar's readings against the balance of its carriers `[frames] Scalar+` each, in panels stacked over one axis
-    of the balance: driven by a current, its resistance along it and its Hall resistance, at the top; driven by heat,
-    its Seebeck and its Nernst signal, in the middle, and its Righi-Leduc signal, at the bottom; each curve named at
-    its end."""
+    of the balance, its ends and middle named by these names: driven by a current, its resistance along it and its Hall
+    resistance, at the top; driven by heat, its Seebeck and its Nernst signal, in the middle, and its Righi-Leduc
+    signal, at the bottom; each curve named at its end."""
     figure, axes = charts.subplots(*chart_size, nrows=3, sharex=True)
     for ax, curves, label, spacing in zip(axes, (((resistance, along_colour, "along"), (hall, across_colour, "Hall")),
                                                  ((seebeck, along_colour, "Seebeck"), (nernst, across_colour, "Nernst")),
@@ -357,6 +363,25 @@ def draw_readings(balances: np.ndarray, resistance: core.Scalar, hall: core.Scal
         ax.spines[["top", "right", "bottom"]].set_visible(False)
         ax.set(xlim=(balances[0], balances[-1]), ylabel=label)
         ax.yaxis.set_major_locator(MultipleLocator(spacing))
-    axes[-1].set(xticks=balance_ticks, xticklabels=balance_names)
+    axes[-1].set(xticks=balance_ticks, xticklabels=names)
+    figure.tight_layout(pad=0.4)
+    return figure
+
+
+@charts.style()
+def draw_spin_readings(magnetizations: np.ndarray, resistance: core.Scalar, hall: core.Scalar) -> Figure:
+    """The magnetized bar's readings driven by a current, with no field, against its magnetization `[frames] Scalar+`
+    each: its resistance along it and its Hall resistance, each curve named at its end."""
+    figure, ax = charts.subplots(*spin_chart_size)
+    for values, colour, name in ((resistance, along_colour, "along"), (hall, across_colour, "Hall")):
+        shown = values.to_array().reshape(-1)
+        ax.plot(magnetizations, shown, color=colour)
+        ax.annotate(name, (magnetizations[-1], shown[-1]), xytext=(4, 0), textcoords="offset points", va="center",
+                    color=colour)
+    ax.axhline(0.0, color="#555555", linewidth=charts.FRAME_WIDTH)
+    ax.spines[["top", "right", "bottom"]].set_visible(False)
+    ax.set(xlim=(magnetizations[0], magnetizations[-1]), ylabel="resistance", xticks=balance_ticks,
+           xticklabels=magnetization_names)
+    ax.yaxis.set_major_locator(MultipleLocator(1))
     figure.tight_layout(pad=0.4)
     return figure
