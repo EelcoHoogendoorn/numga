@@ -16,6 +16,7 @@ from numga import stack
 
 from examples.surfaces.developability import core
 from numga.wgsl import Shader, samples_per_side
+from numga.render.drawing import Draw, Target, drawn
 
 # The surface's colour; the direction toward the light, up and off to one side, a sum of the directions along the
 # axes, and the share of light that falls everywhere; the camera's elevation and azimuth, its distance and half its
@@ -77,7 +78,7 @@ fn shade(corner: Corner) -> @location(0) vec4<f32> {
 # --- plumbing -------------------------------------------------------------------------
 @cache
 def shader() -> Shader:
-    return Shader(source, core.ga, dict(Point=core.Point, Rotor=core.ga.gatype.rotor()), {}, targets=("rgba32float",))
+    return Shader(source, core.ga, dict(Point=core.Point, Rotor=core.ga.gatype.rotor()), {})
 
 
 def coordinates(points: core.Point) -> np.ndarray:
@@ -97,11 +98,10 @@ def draw(topology: core.Topology, vertices: core.Point) -> np.ndarray:
     turn, eye = camera()
     # Drawn at every sample of each pixel, as many to a side as the traced pictures take, and averaged on the GPU: the
     # colour premultiplied by each pixel's coverage, the background showing through the rest.
-    drawn, = shader().draw_averaged(frame_shape, samples_per_side(), 3 * topology.n_elements[2],
-                                    points=vertices.batch(), faces=topology.elements[2], turn=turn, eye=eye,
-                                    lamp=light_direction.normalized(), half_view=half_view, colour=surface_colour,
-                                    ambient=ambient)
-    shown = drawn[..., :3] + (1 - drawn[..., 3:]) * background
+    surface, = drawn([Draw(shader(), frame_shape, 3 * topology.n_elements[2], dict(
+        points=vertices.batch(), faces=topology.elements[2], turn=turn, eye=eye, lamp=light_direction.normalized(),
+        half_view=half_view, colour=surface_colour, ambient=ambient))], Target(("rgba32float",), False), samples_per_side())
+    shown = surface[..., :3] + (1 - surface[..., 3:]) * background
     return np.round(np.clip(shown, 0, 1) * 255).astype(np.uint8)
 
 

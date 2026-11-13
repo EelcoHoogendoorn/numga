@@ -14,7 +14,7 @@ from examples.util import charts
 from examples.util.animation import capture
 from examples.util.shapes import delaunay
 from numga.topology import Topology
-from numga.render import contours, simplices
+from numga.render import contours, drawing, simplices
 from examples.util.panels import overlay, panel
 from examples.fluids.kirchhoff import core
 
@@ -108,7 +108,7 @@ def animate_gliding(impulse: core.Forque,
             contours.picture(shapes[index, case], body, np.zeros(body.n_vertices), rgb(body_colours[case]),
                              camera),
             simplices.strokes(shapes[index, case], rim, rgb(edge_colours[case]), outline_width, camera))]
-        image.set_data(simplices.composited([
+        image.set_data(drawing.composited([
             impulses,
             simplices.strokes(tracks[:, :index + 1].reshape(-1), Topology.chains([index + 1] * count), path_ink,
                               path_width, camera),

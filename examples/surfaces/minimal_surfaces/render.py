@@ -11,6 +11,7 @@ from numga import concatenate, stack
 from numga.sparse import SparseExtensor, spdiag
 from examples.surfaces.minimal_surfaces import core
 from numga.topology import Topology
+from numga.render.drawing import Draw
 from numga.render import meshes, simplices, solids
 from examples.util.panels import image_figure
 
@@ -47,13 +48,13 @@ def square_view(view_degrees: np.ndarray, surfaces: list[core.Point], spare: flo
     return solids.view(places, spare, elevation, azimuth, 0.06, pixels).squared()
 
 
-def sheet(topology: core.Topology, points: solids.Point, corner_colours: np.ndarray, view: solids.View) -> meshes.Samples:
+def sheet(topology: core.Topology, points: solids.Point, corner_colours: np.ndarray, view: solids.View) -> Draw:
     """A lit sheet carries its colours at the corners of its faces at the image's own pixel size."""
     return meshes.samples(points, topology.elements[2], corner_colours, meshes.smooth(points, topology), view,
                           face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
 
 
-def boundary_lines(topology: core.Topology, points: solids.Point, width: float, view: solids.View) -> meshes.Samples:
+def boundary_lines(topology: core.Topology, points: solids.Point, width: float, view: solids.View) -> Draw:
     """Crisp outlines mark the boundary wire of a surface."""
     # The wire: the mesh of the boundary's edges.
     wire = topology.border

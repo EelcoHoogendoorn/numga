@@ -13,7 +13,7 @@ from examples.util.animation import capture
 from examples.geometry.sundial import core
 from numga import concatenate, stack
 from numga.topology import Topology
-from numga.render import Camera, simplices, solids
+from numga.render import Camera, drawing, simplices, solids
 from examples.util.panels import fitted, offset_panel, overlay, show
 
 # The part of the dial drawn, east and north of the point below the nodus.
@@ -200,6 +200,6 @@ def animate_year(declinations: np.ndarray, rays: core.Point, days: core.Point, n
         beams, inks = sunlight(nodus, foot, rays[index], days[index], view)
         sky.set_data(solids.draw(dial + beams, view, np.ones(3), inks, translucent=[], meshes=[]))
         day = shadow_strokes(nodus, days[index], np.array(to_rgb(day_colour)), day_width, camera)
-        path.set_data(simplices.composited(pictures + [day]))
+        path.set_data(drawing.composited(pictures + [day]))
         yield capture(figure)
     plt.close(figure)

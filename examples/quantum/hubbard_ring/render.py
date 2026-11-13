@@ -11,7 +11,7 @@ from matplotlib.colors import to_rgb
 from examples.quantum.hubbard_ring import core
 from examples.util import charts
 from numga.topology import Topology
-from numga.render import planar, simplices
+from numga.render import drawing, planar, simplices
 from examples.util.panels import overlay, panel
 from numga import stack
 
@@ -82,7 +82,7 @@ def animate_ring(ratios: np.ndarray, occupation: core.Scalar) -> Iterator[np.nda
                 # The spin counts as bars about as wide as the sites' dots, under the sites.
                 spins = simplices.strokes(case_bars.reshape(-1), Topology.chains([2] * n_bars), bar_colours,
                                           spin_pixels, camera, cap=simplices.Cap.BUTT)
-                shown.set_data(simplices.composited([outline, spins, sites]))
+                shown.set_data(drawing.composited([outline, spins, sites]))
             figure.canvas.draw()
             yield np.asarray(figure.canvas.buffer_rgba())[..., :3].copy()
         plt.close(figure)

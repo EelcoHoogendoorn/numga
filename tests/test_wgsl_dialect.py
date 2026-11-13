@@ -12,6 +12,7 @@ pytest.importorskip("wgpu")
 
 from numga import Algebra, GATypeError, NumpyContext, Orientation, stack
 
+from numga.render.drawing import Draw, Target, drawn
 from numga.wgsl import Shader
 
 ga = Algebra("x+y+z+w+")
@@ -121,8 +122,8 @@ def test_a_value_of_seven_coefficients_crosses_between_stages():
     first, second = mv.vector(random.normal(size=(2, 4)))                      # [] Plane+, Plane+
     place = mv.vector(random.normal(size=4)).dual()                             # [] Point-
     turn = first * second                                                       # [] Even+
-    shader = Shader(crossing_source, ga, types | dict(Turn=turn.gatype), {}, targets=("rgba32float",))
-    image, = shader.draw((4, 4), 3, first=first, second=second, place=place)
+    shader = Shader(crossing_source, ga, types | dict(Turn=turn.gatype), {})
+    image, = drawn([Draw(shader, (4, 4), 3, dict(first=first, second=second, place=place))], Target(("rgba32float",), False), 1)
     expected = (stack((mv.x, mv.y, mv.z, mv.w)) & (turn >> place)).to_array()   # [4]
     assert np.abs(image - expected).max() <= SINGLE_PRECISION * np.abs(expected).max()
 

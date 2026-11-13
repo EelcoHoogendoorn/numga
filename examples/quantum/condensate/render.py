@@ -17,7 +17,7 @@ from matplotlib.figure import Figure
 from numga.extensor import Extensor
 from examples.util.charts import style, subplots
 from numga.topology import Topology
-from numga.render import Camera, contours, simplices
+from numga.render import Camera, contours, drawing
 from examples.quantum.condensate import core
 
 mv = core.mv
@@ -45,7 +45,7 @@ def animate(topology: Topology, vertices: Extensor, densities: Iterable[Extensor
     for density in densities:
         values = density.to_array()
         colours = density_map(deepest * values / values.max())[:, :3]
-        yield on_white(simplices.composited([contours.picture(points, topology, values, colours, camera)]))
+        yield on_white(drawing.composited([contours.picture(points, topology, values, colours, camera)]))
 
 
 @style()

@@ -12,7 +12,7 @@ from matplotlib.colors import LinearSegmentedColormap, PowerNorm
 from numga import concatenate
 from numga.extensor import Extensor
 from examples.util.animation import capture
-from numga.render import Camera, contours, simplices
+from numga.render import Camera, contours, drawing, simplices
 from examples.util.panels import offset_panel, overlay
 from examples.electromagnetism.eddy_brake import core
 
@@ -259,7 +259,7 @@ def currents(topology: Topology, points: core.Point, areas: core.Scalar, states:
             colours = current_colours(current_scale(speed[i]))[:, :3]
             ink = np.append(path_ink[:3], alpha[i])
             paths = contours.Lines(spacings[i], spacings[i] / 2, ink, 1.0)
-            texture.set_data(simplices.composited([
+            texture.set_data(drawing.composited([
                 contours.picture(places[i], topology, stream[i], colours, view, lines=(paths,)),
                 fibre_strokes(threads[i], shown_curves[i], view),
                 simplices.strokes(places[i], outline, rim_colour, rim_width, view),
@@ -294,7 +294,7 @@ def animate_heat(topology: Topology, points: core.Point, areas: core.Scalar, fra
         for i, (view, texture) in enumerate(zip(views, textures)):
             # The display mesh moves with the material; its colours interpolate face heat, with no level lines.
             colours = heat_colours(heat_scale(densities[i]))[:, :3]
-            texture.set_data(simplices.composited([
+            texture.set_data(drawing.composited([
                 contours.picture(places[i], topology, densities[i], colours, view),
                 fibre_strokes(threads[i], shown_curves[i], view),
                 simplices.strokes(places[i], outline, rim_colour, rim_width, view),

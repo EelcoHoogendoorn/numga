@@ -17,7 +17,8 @@ from examples.util import charts
 from examples.util.animation import capture
 from examples.electromagnetism.fresnel import core
 from numga.topology import Topology
-from numga.render import Camera, Scene, meshes, read, simplices, solids
+from numga.render.drawing import Draw
+from numga.render import Camera, drawing, meshes, read, Scene, simplices, solids
 from examples.util.panels import fitted, labels, offset_panel, overlay, show
 
 sheet_colours = ("#2563eb", "#ea580c")
@@ -93,7 +94,7 @@ def k_space(ax: Axes) -> solids.View:
     return fitted(solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, half_width), 1), ax)
 
 
-def sheet_sides(sheets: core.Vector, view: solids.View) -> list[tuple[meshes.Samples, float]]:
+def sheet_sides(sheets: core.Vector, view: solids.View) -> list[tuple[Draw, float]]:
     """Both sheets, translucent, with grid lines along every few latitudes and longitudes."""
     n_latitudes, n_longitudes, n_sheets = sheets.shape
     faces = sheet_faces(n_latitudes, n_longitudes)
@@ -144,7 +145,7 @@ def trace_sections(sections: core.Vector, camera: Camera) -> np.ndarray:
     along, rise = (axis.dual() / read(axis, axis.dual()) for axis in (camera.across, camera.up))
     ends = view_limit * stack((-along, along, -rise, rise))                     # [4] Vector+
     loop = Topology.loops([sections.shape[0]])
-    return simplices.composited([
+    return drawing.composited([
         simplices.strokes(ends, Topology.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
                           cap=simplices.Cap.BUTT),
         simplices.strokes(sections[:, 0], loop, np.array(to_rgb(sheet_colours[0])), charts.LINE_PX, camera),

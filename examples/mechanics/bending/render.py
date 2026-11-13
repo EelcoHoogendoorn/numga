@@ -22,7 +22,8 @@ from numga import concatenate, stack
 from examples.util.animation import capture
 from examples.mechanics.bending import core
 from numga.topology import Topology
-from numga.render import Camera, contours, meshes, simplices, solids
+from numga.render.drawing import Draw
+from numga.render import Camera, contours, drawing, meshes, simplices, solids
 from examples.util.panels import fitted, overlay, panel, show
 
 mv = core.mv
@@ -220,7 +221,7 @@ def view(bent: list[core.Point], tips: list[core.Point], elevation: float, azimu
     return solids.view([drawing_turn >> batch for batch in points], 0.0, elevation, azimuth, MARGIN, PIXELS)
 
 
-def swept(bent: core.Point, colour: str, view: solids.View) -> meshes.Samples:
+def swept(bent: core.Point, colour: str, view: solids.View) -> Draw:
     """Each wall of a bent beam `[pieces + 1, walls, ends]` swept along it as lit strips, as `meshes.samples`."""
     # Each wall between two cross-sections a quad, two triangles, by the indices of its corners.
     index = np.arange(np.prod(bent.shape)).reshape(bent.shape)               # [pieces + 1, walls, ends]
@@ -240,7 +241,7 @@ def ghost(bent: core.Point, view: solids.View) -> solids.Plane:
 
 
 def clamped(through: core.Point, load: core.Point, length: float, clamp_radius: float, shaft_width: float,
-            view: solids.View) -> tuple[list[tuple[solids.Quadric, np.ndarray]], meshes.Samples]:
+            view: solids.View) -> tuple[list[tuple[solids.Quadric, np.ndarray]], Draw]:
     """The clamp, its rods `clamp_radius` pixels in radius, and the tip load where it acts, drawn a length long, a
     tube `shaft_width` pixels across for `solids.draw` to compose among the solids."""
     clamp = drawing_turn >> core.point(SQUARE)                                # [corners] Point-
@@ -332,7 +333,7 @@ def sized_loads(section: tuple[core.Topology, core.Point, core.Scalar], centre: 
     section = overlay(section_ax, [np.zeros(camera.shape + (4,))])
     for frame in range(count):
         image.set_data(draw_beam(bent[frame], frames[frame] >> shear, moved[frame], loads[frame], seen))
-        section.set_data(simplices.composited(section_drawn(
+        section.set_data(drawing.composited(section_drawn(
             walls, stress[frame], principal, centre, shear, moved[frame], loads[frame],
             bent[frame, -1], strains[frame, 0], largest, limit, scale, camera)))
         yield capture(figure)

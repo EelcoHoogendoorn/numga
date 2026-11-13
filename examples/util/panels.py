@@ -8,7 +8,7 @@ from matplotlib.axes import Axes
 
 from numga.extensor import Extensor
 from numga.render.camera import Camera
-from numga.render.simplices import composited
+from numga.render.drawing import composited
 
 
 def pinned(ax, image: np.ndarray, extent: tuple[float, float, float, float]):

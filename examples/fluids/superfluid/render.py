@@ -17,7 +17,7 @@ from matplotlib.figure import Figure
 from numga.extensor import Extensor
 from examples.util.charts import style, subplots
 from numga.topology import Topology
-from numga.render import Camera, contours, simplices
+from numga.render import Camera, contours, drawing, simplices
 from examples.util.panels import image_figure
 from examples.fluids.superfluid import core
 
@@ -104,7 +104,7 @@ def draw_cavity(topology: Topology, vertices: Extensor, in_powder: np.ndarray) -
                                camera),
               simplices.strokes(points, topology, mesh_colour, mesh_width, camera),
               walls(vertices, topology, camera)]
-    return image_figure(on_white(simplices.composited(layers)))
+    return image_figure(on_white(drawing.composited(layers)))
 
 
 # The flat bands each rise is drawn in, from falling fully to rising fully: an odd count, so that one band holds no rise.
@@ -127,7 +127,7 @@ def animate(topology: Topology, vertices: Extensor, in_powder: np.ndarray, frame
         for field, scale, shades in ((warmth, warmest, temperature_map), (pressure, highest, pressure_map)):
             shares = np.clip(field.batch().to_array() / scale, -1, 1)
             bands = contours.Bands(-1 - band_spacing / 2, band_spacing, shades(0.5 + band_middles / 2))
-            pictures.append(on_white(simplices.composited(
+            pictures.append(on_white(drawing.composited(
                 [contours.picture(points, topology, shares, shades(0.5 + shares / 2)[:, :3], camera,
                                   bands=(bands,))] + over)))
         yield np.concatenate([pictures[0], gap, pictures[1]])

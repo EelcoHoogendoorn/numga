@@ -13,7 +13,7 @@ from numga import stack
 from examples.util.animation import capture
 from examples.surfaces.reciprocal import core
 from numga.topology import Topology
-from numga.render import meshes, simplices, solids
+from numga.render import drawing, meshes, simplices, solids
 from examples.util.panels import fitted, offset_panel, overlay, show
 
 TERRAIN_COLOUR = np.array(to_rgb("#9fb7c4"))
@@ -108,7 +108,7 @@ def panels(topology: core.Topology, points: core.Point, framing: solids.View
         picture.set_data(terrain(topology, points, heights, shades[:, :3], framing))
         corners = duals.batch()                                                # [faces] Plane+
         tails, heads = (across_bars * duals).batch()                           # [inner] Plane+, [inner] Plane+
-        truss.set_data(simplices.composited([
+        truss.set_data(drawing.composited([
             simplices.strokes(places, bars, shades[:, :3], BAR_WIDTH, camera), boundary,
             simplices.strokes(stack((tails, heads), axis=-1).reshape(-1), joins, RECIPROCAL_COLOUR, LINE_WIDTH, slope_camera),
             simplices.markers(corners, RECIPROCAL_COLOUR, CORNER_RADIUS, slope_camera)]))

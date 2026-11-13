@@ -14,7 +14,7 @@ import numpy as np
 
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Camera, contours, simplices
+from numga.render import Camera, contours, drawing, simplices
 from examples.util.panels import overlay, panel
 from numga import concatenate, stack
 from examples.mechanics.modes.core import ModeCase, Point, mv
@@ -108,7 +108,7 @@ def _draw_mode(ax: plt.Axes, case: ModeCase, mode: int):
         s = phase * scale
         current_body = case.body + case.body_offsets[mode] * s
         current_attachments = case.attachments + case.attachment_offsets[mode] * s
-        return simplices.composited([reference, *suspension(camera, current_body, case.anchors, current_attachments)])
+        return drawing.composited([reference, *suspension(camera, current_body, case.anchors, current_attachments)])
 
     image = overlay(ax, [picture(1.0)])
 

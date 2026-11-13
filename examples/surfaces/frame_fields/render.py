@@ -11,6 +11,7 @@ from numga import concatenate, stack
 from numga.sparse import SparseExtensor, spdiag
 from examples.surfaces.frame_fields import core
 from numga.topology import Topology
+from numga.render.drawing import Draw
 from numga.render import meshes, simplices, solids
 from examples.util.panels import image_figure
 
@@ -46,13 +47,13 @@ def square_view(view_degrees: np.ndarray, vertices: core.Point, spare: float) ->
 
 
 def sheet(points: solids.Point, faces: np.ndarray, colours: np.ndarray,
-          view: solids.View) -> meshes.Samples:
+          view: solids.View) -> Draw:
     """A lit sheet carries its vertex colours at the image's own pixel size."""
     return meshes.samples(points, faces, colours, meshes.smooth(points, Topology(len(points), faces)), view,
                           face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
 
 
-def boundary_lines(topology: core.Topology, points: solids.Point, view: solids.View) -> meshes.Samples:
+def boundary_lines(topology: core.Topology, points: solids.Point, view: solids.View) -> Draw:
     """Thin outlines keep the reference geometry visible beneath the field."""
     # The rim: the mesh of the boundary's edges.
     rim = topology.border
@@ -67,7 +68,7 @@ def panels(images: list[np.ndarray]) -> plt.Figure:
 
 
 def frame_patches(starts: core.Point, rotors: core.Rotor, size: float,
-                  view: solids.View) -> tuple[meshes.Samples, meshes.Samples]:
+                  view: solids.View) -> tuple[Draw, Draw]:
     """Coloured rigid patches expose a frame's plane and its in-plane orientation."""
     mv = rotors.context.multivector
     # A square in the frame's own x and y about its middle, the middle raised a little along its z: a shallow ridge

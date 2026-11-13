@@ -17,7 +17,7 @@ from matplotlib.figure import Figure
 from numga.extensor import Extensor
 from examples.util import charts
 from numga.topology import Topology
-from numga.render import Camera, contours, simplices
+from numga.render import Camera, contours, drawing, simplices
 from examples.util.panels import image_figure
 from examples.thermodynamics.snowflake import core
 
@@ -76,7 +76,7 @@ def animate(topology: Topology, vertices: Extensor,
     points = vertices.batch()
     camera = dish_camera(vertices)
     for parcels, _ in states:
-        shown = on_white(simplices.composited(layers(topology, points, parcels, camera)))
+        shown = on_white(drawing.composited(layers(topology, points, parcels, camera)))
         yield shown
     for _ in range(n_hold):
         yield shown
@@ -86,7 +86,7 @@ def draw_grown(topology: Topology, vertices: Extensor, parcels: Extensor) -> Fig
     """The grown crystal in these parcels `Point-[vertices]`, the ice over the water's tint, as the animation shows
     it."""
     camera = dish_camera(vertices)
-    return image_figure(on_white(simplices.composited(layers(topology, vertices.batch(), parcels, camera))))
+    return image_figure(on_white(drawing.composited(layers(topology, vertices.batch(), parcels, camera))))
 
 
 def draw_seed(topology: Topology, vertices: Extensor, parcels: Extensor) -> Figure:
@@ -95,7 +95,7 @@ def draw_seed(topology: Topology, vertices: Extensor, parcels: Extensor) -> Figu
     points = vertices.batch()
     camera = framed(seed_half)
     strokes = simplices.strokes(points, topology, mesh_colour, mesh_width, camera, opacity=mesh_opacity)
-    return image_figure(on_white(simplices.composited(layers(topology, points, parcels, camera) + [strokes])))
+    return image_figure(on_white(drawing.composited(layers(topology, points, parcels, camera) + [strokes])))
 
 
 def side_by_side(left: list[np.ndarray], right: list[np.ndarray]) -> Iterator[np.ndarray]:

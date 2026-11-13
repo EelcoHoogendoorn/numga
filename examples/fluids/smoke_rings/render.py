@@ -13,6 +13,7 @@ import numpy as np
 from examples.fluids.smoke_rings import core
 from examples.util import charts
 from numga.topology import Topology
+from numga.render.drawing import Draw
 from numga.render import meshes, simplices, solids
 from examples.util.panels import image_figure
 
@@ -61,14 +62,14 @@ def framed(points: solids.Point, pixels: int) -> tuple[solids.View, solids.Point
 
 
 def sheet(points: solids.Point, faces: np.ndarray, colours: np.ndarray,
-          view: solids.View) -> meshes.Samples:
+          view: solids.View) -> Draw:
     """Triangles over vertices, coloured at each corner `[faces, 3, 3]`, smoothly lit, at every sample of the view."""
     return meshes.samples(points, faces, colours, meshes.smooth(points, Topology(len(points), faces)), view, face_values=np.zeros(4),
                           colour=meshes.plain, gloss=surface_gloss)
 
 
 def curve_strokes(points: solids.Point, curves: Topology, speeds: core.Scalar, fastest: float,
-                  view: solids.View) -> meshes.Samples:
+                  view: solids.View) -> Draw:
     """The edges of curves through points `[vertices]` as strokes, each edge coloured by the mean speed at its ends,
     from the speeds at the vertices `[vertices]`, against the fastest, at every sample of the view."""
     middles = (curves.incidence[1, 0].mean(axis=0) * speeds.field()).batch().to_array()   # [edges]

@@ -20,7 +20,7 @@ from numga.topology import Topology
 from numga.wgsl import Shader, level_lines, samples_per_side
 
 from .camera import Camera, placing, reading
-from .simplices import Layer
+from .drawing import Draw
 
 
 
@@ -117,13 +117,12 @@ no_bands = Bands(0.0, 1.0, np.zeros((1, 4)))
 @cache
 def shader(Point: GAType, Plane: GAType) -> Shader:
     """The shader for meshes whose points are of the type `Point`, read by a camera's planes of the type `Plane`."""
-    return Shader(level_lines() + placing(Plane) + source, Point.algebra, dict(Point=Point, Plane=Plane), {},
-                  targets=("rgba8unorm",), over=True)
+    return Shader(level_lines() + placing(Plane) + source, Point.algebra, dict(Point=Point, Plane=Plane), {})
 
 
 def picture(points: Extensor, topology: Topology, values: np.ndarray, colours: np.ndarray, camera: Camera,
             lines: tuple[Lines, ...] = (), levels: tuple[Level, ...] = (), bands: tuple[Bands, ...] = (),
-            opacity: float = 1.0) -> Layer:
+            opacity: float = 1.0) -> Draw:
     """The field `[vertices]` in its colours `[vertices, 3]`, covering by `opacity`, over the mesh at its points, its
     bands filled and its lines and levels drawn over them, in that order: a layer of colour and coverage, transparent
     where no triangle lies."""
@@ -133,7 +132,7 @@ def picture(points: Extensor, topology: Topology, values: np.ndarray, colours: n
         return np.zeros(camera.shape + (4,))
     lines, levels, bands = lines or (no_lines,), levels or (no_level,), bands or (no_bands,)
     starts = np.cumsum([0] + [len(band.colours) for band in bands[:-1]])
-    return Layer(shader(**reading(points, camera)), camera.shape, 3 * topology.n_elements[2], dict(
+    return Draw(shader(**reading(points, camera)), camera.shape, 3 * topology.n_elements[2], dict(
         points=points, faces=topology.elements[2],
         values=np.asarray(values, dtype=np.float32), colours=np.broadcast_to(colours, (len(values), 3)),
         opacity=opacity, **camera.uniforms(1.0),

@@ -14,7 +14,7 @@ from examples.relativity.moving_mirror import core
 from examples.util import charts
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Camera, contours, simplices
+from numga.render import Camera, contours, drawing, simplices
 from examples.util.panels import offset_panel, overlay
 
 mv = core.mv
@@ -375,7 +375,7 @@ def animate_moving_mirror(topology: core.Topology, vertices: core.Point,
                      xlabel="space $x$", ylabel="time $t$")
         plain_axes(world_ax)
         camera = offset_panel(world_ax, mv.x, mv.t)
-        sheet = simplices.composited([worldsheet(vertices.batch(), topology, wave_rate_vals, field_limit, camera)]
+        sheet = drawing.composited([worldsheet(vertices.batch(), topology, wave_rate_vals, field_limit, camera)]
                                      + world_lines(grid, 0.1, camera))
         world = diagram(world_ax, [sheet])
 
@@ -397,7 +397,7 @@ def animate_moving_mirror(topology: core.Topology, vertices: core.Point,
         for row in frame_rows:
             x_slice, waveform = places[row], normalized_grid[row]
             wall_x = float(x_slice[-1])
-            world.set_data(simplices.composited([
+            world.set_data(drawing.composited([
                 sheet, simplices.strokes(grid[row], Topology.chains([n_space]), ink(accent_colour),
                                          charts.LINE_PX, camera),
                 *ringed(grid[row, -1:], accent_colour, charts.MARKER_PX / 2, camera)]))

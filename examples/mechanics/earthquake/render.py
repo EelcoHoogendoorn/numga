@@ -14,7 +14,7 @@ from matplotlib.image import AxesImage
 from numga import concatenate, stack, where
 from examples.util.animation import capture
 from examples.mechanics.earthquake import core
-from numga.wgsl import compose
+from numga.render.drawing import compose, composited
 from numga.topology import Topology
 from numga.render import Camera, contours, meshes, simplices, solids
 from examples.util.panels import fitted, offset_panel, overlay, show
@@ -205,6 +205,6 @@ def animate_sweep(hemisphere: core.Point, frames: Iterable[tuple[core.Point, cor
     shading, ball_view = pin_ball(ax, places, grid, frames[0][3], frames[0][2])
     for normal, slip, axes, ball, sphere, push in frames:
         image.set_data(draw_fault(sphere, push, normal, slip, seen))
-        shading.set_data(simplices.composited(ball_pictures(places, grid, ball, axes, ball_view)))
+        shading.set_data(composited(ball_pictures(places, grid, ball, axes, ball_view)))
         yield capture(figure)
     plt.close(figure)

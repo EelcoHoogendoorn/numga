@@ -14,6 +14,7 @@ from examples.math.isospectral_drums.core import Point, Scalar, ga, mv
 from examples.math.isospectral_drums.numerics import Topology
 from numga.wgsl import Shader
 from numga.render import contours, simplices
+from numga.render.drawing import Draw, Target, drawn
 from examples.util.panels import offset_panel, overlay
 
 pixels = 260
@@ -148,7 +149,7 @@ fn shade(corner: Corner) -> @location(0) vec4<f32> {
 
 @cache
 def membrane_shader() -> Shader:
-    return Shader(membrane_source, ga, dict(Point=Point), dict(outline=outline), targets=("rgba32float",))
+    return Shader(membrane_source, ga, dict(Point=Point), dict(outline=outline))
 
 
 class Membrane:
@@ -174,11 +175,11 @@ class Membrane:
     def draw(self, field: np.ndarray, exposure: float) -> np.ndarray:
         """Signed displacement with dark zero curves and the tiles' outlines, on white."""
         tiles = dict(a=self.corners[:, 0], b=self.corners[:, 1], c=self.corners[:, 2], rim=self.rims)
-        drawn, = membrane_shader().draw((pixels, pixels), 3 * len(self.triangles), points=self.vertices,
-                                       faces=self.triangles, values=field, tiles=tiles, owners=self.owners,
-                                       centre=self.centre, scale=2 * self.scale / pixels, exposure=exposure,
-                                       colours=colours(np.linspace(0, 1, 256))[None, :, :3])
-        shown = drawn[..., :3] + (1 - drawn[..., 3:])
+        membrane, = drawn([Draw(membrane_shader(), (pixels, pixels), 3 * len(self.triangles), dict(
+            points=self.vertices, faces=self.triangles, values=field, tiles=tiles, owners=self.owners,
+            centre=self.centre, scale=2 * self.scale / pixels, exposure=exposure,
+            colours=colours(np.linspace(0, 1, 256))[None, :, :3]))], Target(("rgba32float",), False), 1)
+        shown = membrane[..., :3] + (1 - membrane[..., 3:])
         return np.rint(255 * np.clip(shown, 0, 1)).astype(np.uint8)
 
 

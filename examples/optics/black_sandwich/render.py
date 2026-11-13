@@ -15,7 +15,7 @@ from matplotlib.colors import to_rgb
 from numga import Extensor, concatenate, stack
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import simplices
+from numga.render import drawing, simplices
 from examples.util.panels import offset_panel, overlay
 from examples.optics.black_sandwich import core
 
@@ -95,7 +95,7 @@ class Diagram:
         # on each plate.
         field_glyphs = _across(self.field_places, fields * 0.34)
         plates = _across(self.components[[1, 4]], stack((plate_axis, plate_axis)) * (0.8 * component_radius))
-        return simplices.composited(self.under + beam + self.over + [
+        return drawing.composited(self.under + beam + self.over + [
             simplices.strokes(*plates, plate_colour, glyph_width * self.points, self.camera),
             simplices.strokes(*field_glyphs, beam_colour, glyph_width * self.points, self.field_camera,
                               cap=simplices.Cap.BUTT)])

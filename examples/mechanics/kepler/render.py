@@ -15,7 +15,7 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Camera, simplices
+from numga.render import Camera, drawing, simplices
 from examples.util.panels import offset_panel, overlay, room
 from examples.mechanics.kepler import core
 
@@ -215,7 +215,7 @@ def animate_lift(positions: core.Point, spinors: core.Spinor) -> Iterator[np.nda
     for index in range(len(positions)):
         for image, backdrop, path, camera in zip(images, backdrops, paths, cameras):
             body = path[index][None]                                           # [1] Point-
-            image.set_data(simplices.composited(backdrop + [
+            image.set_data(drawing.composited(backdrop + [
                 simplices.markers(body, np.ones(3), BODY_RADIUS + RIM, camera),
                 simplices.markers(body, np.array(to_rgb(BODY_COLOUR)), BODY_RADIUS, camera)]))
         yield capture(figure)

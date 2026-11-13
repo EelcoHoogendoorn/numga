@@ -16,6 +16,7 @@ from examples.util.animation import capture
 from examples.quantum.process_tomography import core
 from examples.util import charts
 from numga.topology import Topology
+from numga.render.drawing import Draw
 from numga.render import Scene, meshes, simplices, solids
 from examples.util.panels import fitted, labels, show
 
@@ -106,7 +107,7 @@ def grid_lines(points: solids.Point) -> tuple[solids.Point, solids.Point]:
     return points[LATITUDE_STEP:-1:LATITUDE_STEP], points[rows[None, :], columns[:, None]]
 
 
-def grid(points: solids.Point, colour: np.ndarray, width: float, view: solids.View) -> list[meshes.Samples]:
+def grid(points: solids.Point, colour: np.ndarray, width: float, view: solids.View) -> list[Draw]:
     """The grid lines of a grid of points `[latitudes + 1, longitudes]`, as strokes `width` across in a colour, at
     every sample: the latitudes closed loops of edges through their points, the longitudes chains from pole to pole."""
     latitudes, longitudes = grid_lines(points)   # [lines, longitudes] Point-, [lines, latitudes + 1] Point-

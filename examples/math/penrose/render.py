@@ -10,7 +10,7 @@ from matplotlib.colors import to_rgb
 
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Camera, contours, simplices
+from numga.render import Camera, contours, drawing, simplices
 from examples.util.panels import offset_panel, overlay
 from examples.math.penrose import core
 
@@ -45,7 +45,7 @@ def tiles(corners: core.Antivector, colours: np.ndarray, margins: core.Scalar, c
     halves = Topology(4 * n_tiles, own[:, [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3))
     sides = halves.border
     places = corners[chosen].reshape(-1)                                     # [tiles * 4] Antivector-
-    return simplices.composited([
+    return drawing.composited([
         contours.picture(places, halves, np.zeros(4 * n_tiles), np.repeat(colours[np.nonzero(chosen)[1]], 4, axis=0),
                          camera),
         simplices.strokes(places, sides, edge_colour, width, camera)])

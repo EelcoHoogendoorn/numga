@@ -20,6 +20,7 @@ from matplotlib.colors import to_rgb
 from numga import concatenate, stack, where
 from examples.surfaces.connections import core
 from numga.topology import Topology
+from numga.render.drawing import Draw
 from numga.render import Scene, flow, meshes, simplices, solids
 from examples.util.panels import fitted, show
 
@@ -70,7 +71,7 @@ def square_view(view_degrees: np.ndarray, vertices: core.Point, spare: float) ->
 
 
 def needles(origins: core.Point, directions: core.Point, colours: np.ndarray, width: float,
-            frame: solids.View) -> meshes.Samples:
+            frame: solids.View) -> Draw:
     """Needles along the directions from their origins `[needles]`, each in its colour `[needles, 3]`: tubes `width`
     pixels across, each ending in a chevron."""
     tips = origins + directions                                                 # [needles] Point-
@@ -81,7 +82,7 @@ def needles(origins: core.Point, directions: core.Point, colours: np.ndarray, wi
 
 
 def surface(topology: core.Topology, vertices: core.Point, colours: np.ndarray, frame: solids.View, face_values: np.ndarray,
-            colour: meshes.Colour) -> meshes.Samples:
+            colour: meshes.Colour) -> Draw:
     """A mesh at its vertices, smooth shaded, at every sample, as `meshes.samples`."""
     points = solids.origin + solids.context.include_from_algebra(vertices.batch())               # [vertices] Point-
     return meshes.samples(points, topology.elements[2], colours, meshes.smooth(points, topology), frame, face_values=face_values,

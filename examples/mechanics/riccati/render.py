@@ -14,7 +14,7 @@ from numga import concatenate, stack
 from examples.util import charts
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Camera, contours, simplices
+from numga.render import Camera, contours, drawing, simplices
 from examples.util.panels import overlay, panel
 from examples.mechanics.riccati import core
 
@@ -217,7 +217,7 @@ def animate(
     images = [overlay(axes, layers) for axes, layers in zip(panels[0], guides)]
     for index in range(len(poses)):
         for case, (image, camera) in enumerate(zip(images, cameras)):
-            image.set_data(simplices.composited([
+            image.set_data(drawing.composited([
                 *guides[case],
                 contours.picture(carried[index, case], surface, np.zeros(len(hull)), to_rgb(BODY_COLOUR), camera,
                                  opacity=0.25),

@@ -16,7 +16,7 @@ from examples.util.animation import capture
 from examples.quantum.magnetic_resonance import core
 from examples.util import charts
 from numga.topology import Topology
-from numga.render import simplices, solids
+from numga.render import drawing, simplices, solids
 from examples.util.panels import labels, offset_panel, overlay, show
 
 COLOURS = ("#c0392b", "#7d3c98", "#2e86c1")
@@ -214,7 +214,7 @@ def animate_echo(detunings: np.ndarray, states: Iterable[core.State], dt: float,
             times.append(index * dt)
             strength.append(signal(rho))
             if index % every == 0:
-                spins.set_data(simplices.composited([
+                spins.set_data(drawing.composited([
                     rim, simplices.markers(rho.select.antibivector(), shades, charts.MARKER_PX / 2, camera)]))
                 so_far.set_data(times, strength)
                 yield capture(figure)

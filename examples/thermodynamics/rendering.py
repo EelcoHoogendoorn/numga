@@ -25,7 +25,7 @@ from numga import Extensor, NumpyContext, concatenate, stack
 from numga.algebras import PGA2D
 from examples.util import charts
 from numga.topology import Topology
-from numga.render import Camera, Cap, contours, read, simplices, solids
+from numga.render import Camera, Cap, contours, drawing, read, simplices, solids
 from examples.util.panels import image_figure
 
 context = NumpyContext(PGA2D)
@@ -244,7 +244,7 @@ def level_lines(diagram: Diagram, levels: Levels, colour: np.ndarray, width: flo
     triangles, cut to the plot."""
     topology, values = known(levels)
     inks = tuple(contours.Level(level, np.append(colour, 1.0), width) for level in levels.levels)
-    return [plotted(diagram, simplices.composited([
+    return [plotted(diagram, drawing.composited([
         contours.picture(on_numpy(levels.grid).reshape(-1), topology, values, np.zeros(3), diagram.camera,
                          levels=inks, opacity=0.0)]))]
 
@@ -260,7 +260,7 @@ def sides(diagram: Diagram, levels: Levels, inks: np.ndarray) -> np.ndarray:
     topology, values = known(levels)
     level, = levels.levels
     bands = contours.Bands(level - 1.0, 1.0, inks)
-    return plotted(diagram, simplices.composited([
+    return plotted(diagram, drawing.composited([
         contours.picture(on_numpy(levels.grid).reshape(-1), topology, values, np.zeros(3), diagram.camera,
                          bands=(bands,), opacity=0.0)]))
 
@@ -363,7 +363,7 @@ def ticks(diagram: Diagram, across: np.ndarray, up: np.ndarray) -> tuple[list, l
 def picture(diagram: Diagram, pictures: list[np.ndarray], labels: list[Label]) -> np.ndarray:
     """The diagram's axes under the pictures, laid over each other in order over white, with the quantities' names at
     the ends of the axes and the labels written over them: RGB bytes `[rows, columns, 3]`."""
-    laid = simplices.composited(axes(diagram) + pictures)
+    laid = drawing.composited(axes(diagram) + pictures)
     seen = white * (1 - laid[..., 3:]) + laid[..., :3] * laid[..., 3:]
     image = np.round(np.clip(seen, 0, 1) * 255).astype(np.uint8)
     x0, y0 = diagram.crossing

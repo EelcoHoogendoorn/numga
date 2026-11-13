@@ -12,7 +12,7 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Camera, contours, simplices
+from numga.render import Camera, contours, drawing, simplices
 from examples.util.panels import offset_panel, overlay
 from examples.relativity.spinors import core
 
@@ -99,10 +99,10 @@ def animate_rotation(
         lit = overlay(ports, faces)
         for direction, intensities in zip(spin, np.clip(stack((bright, dark), axis=-1).to_array(), 0, 1)):
             arrow = stack((0 * direction, direction))                         # [2] Antivector-
-            shown.set_data(simplices.composited(beneath + [
+            shown.set_data(drawing.composited(beneath + [
                 simplices.strokes(arrow, Topology.chains([2]), ink(INK), SPIN_WIDTH, camera,
                                   chevrons=np.ones(1), chevron=CHEVRON_LENGTH * SPIN_WIDTH, cap=simplices.Cap.BUTT)]))
-            lit.set_data(simplices.composited(faces + [
+            lit.set_data(drawing.composited(faces + [
                 simplices.markers(centres[port][None], ink(PORT_COLOUR), PORT_RADIUS / lamps.pixel, lamps,
                                   opacity=intensity) for port, intensity in enumerate(intensities)]))
             yield capture(figure)

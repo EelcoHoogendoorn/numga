@@ -11,6 +11,7 @@ import numpy as np
 from numga import stack
 from examples.mechanics.seismic_waves import core
 from numga.topology import Topology
+from numga.render.drawing import Draw
 from numga.render import meshes, simplices, solids
 from examples.util.panels import image_figure
 
@@ -96,7 +97,7 @@ class DiskDrawing:
         self.top_normals = meshes.flat(top_middle + solids.context.include_from_algebra(vertices.batch()), topology.elements[2])
 
     def draw(self, places: core.Point, panels: list[tuple[np.ndarray, meshes.Colour]],
-             motion: list[meshes.Samples], markers: list[tuple[solids.Quadric, np.ndarray]]) -> list[np.ndarray]:
+             motion: list[Draw], markers: list[tuple[solids.Quadric, np.ndarray]]) -> list[np.ndarray]:
         """One image per panel of values and colouring on the same deformed section: the top carries the field
         readings; the shallow side wall only gives the section a visible edge."""
         points = top_middle + solids.context.include_from_algebra(places.batch())           # [vertices] Point-

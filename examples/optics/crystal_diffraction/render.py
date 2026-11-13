@@ -19,7 +19,7 @@ from numga import Extensor, stack
 from examples.util import charts
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Camera, read, simplices
+from numga.render import Camera, drawing, read, simplices
 from examples.util.panels import offset_panel, overlay, pinned
 
 position_limit = 7.8
@@ -67,7 +67,7 @@ def atoms(positions: Extensor, radius: float, camera: Camera) -> np.ndarray:
     their picture."""
     along, rise = (plane.dual() / (plane & plane.dual()) for plane in (camera.across, camera.up))
     ends = position_limit * stack((-along, along, -rise, rise))         # [4] Antivector-
-    return simplices.composited([
+    return drawing.composited([
         simplices.strokes(ends, Topology.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
                           cap=simplices.Cap.BUTT),
         simplices.markers(positions, atom_colour, radius, camera)])
@@ -133,6 +133,6 @@ def animate(frames: Iterable[tuple[Extensor, Extensor, Extensor]], transfers: Ex
         for positions, reciprocal, brightness in frames:
             atoms_seen.set_data(atoms(positions, movie_scale * atom_radius, atom_camera))
             image.set_data(brightness.to_array()[::-1])
-            rings_seen.set_data(simplices.composited([rings(reciprocal, movie_scale, ring_camera)]))
+            rings_seen.set_data(drawing.composited([rings(reciprocal, movie_scale, ring_camera)]))
             yield capture(figure)
         plt.close(figure)

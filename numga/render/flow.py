@@ -16,6 +16,7 @@ from numga.topology import Topology
 from numga.wgsl import Shader, samples_per_side
 
 from . import meshes, solids
+from .drawing import Draw, Target, drawn
 from .camera import Camera, extrinsic_first, placing, reading, whole
 
 
@@ -205,11 +206,14 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 """
 
 
+# The seed pass's pictures: the shaded surface, the field projected onto the picture, and the grains, the nearest kept.
+seeding = Target(("rgba8unorm", "rgba32float", "rgba32float"), False)
+
+
 @cache
 def seed_shader(grain: str) -> Shader:
     return Shader(solids.lamp_shading() + solids.tangent_seen() + placing(solids.Plane) + surface_source + grain,
-                  solids.ga, dict(Point=solids.Point, Plane=solids.Plane, Tangent=solids.Patch), dict(axes=solids.axes, origin=solids.origin),
-                  targets=("rgba8unorm", "rgba32float", "rgba32float"))
+                  solids.ga, dict(Point=solids.Point, Plane=solids.Plane, Tangent=solids.Patch), dict(axes=solids.axes, origin=solids.origin))
 
 
 @cache
@@ -224,7 +228,7 @@ fn field_paired(plane: Plane, field: Field) -> f32 {{
 }}
 """
     return Shader(placing(Plane) + field_pairing + planar_source, Point.algebra,
-                  dict(Point=Point, Plane=Plane, Field=Field), {}, targets=("rgba8unorm", "rgba32float", "rgba32float"))
+                  dict(Point=Point, Plane=Plane, Field=Field), {})
 
 
 @cache
@@ -236,11 +240,11 @@ def texture(points: solids.Point, topology: Topology, field: solids.Point, view:
             colours: np.ndarray, reference_speed: float, grain: str, grain_pixels: float,
             downstream_fraction: float, length: float, background: np.ndarray) -> dict:
     """The shaded surface and ink coverage share one projected field and one feathering pass."""
-    surface, projected, grains = seed_shader(grain).draw_averaged(
-        view.shape, samples_per_side(), 3 * topology.n_elements[2], points=points, faces=topology.elements[2], field=field,
-        normals=meshes.smooth(points, topology), noise_scale=view.pixel * grain_pixels,
-        colours=np.broadcast_to(colours, points.shape + (3,)), **view.to_camera().uniforms(8 * view.half.max()),
-        **solids.lighting(0.06), **solids.steps(view))
+    surface, projected, grains = drawn([Draw(seed_shader(grain), view.shape, 3 * topology.n_elements[2], dict(
+        points=points, faces=topology.elements[2], field=field, normals=meshes.smooth(points, topology),
+        noise_scale=view.pixel * grain_pixels, colours=np.broadcast_to(colours, points.shape + (3,)),
+        **view.to_camera().uniforms(8 * view.half.max()), **solids.lighting(0.06), **solids.steps(view)))],
+        seeding, samples_per_side())
     return trace_shader()(view.shape, surface=surface, flow=projected, grains=grains,
                           background=background, step_pixels=length / n_trace_steps,
                           reference_speed=max(reference_speed, np.finfo(np.float32).tiny),
@@ -264,9 +268,10 @@ def layer(points: Extensor, topology: Topology, field: Extensor, camera: Camera,
     """A transparent ink layer, at the camera's own pixels, for a flat field over a panel, the points and the field in
     their own algebra, read by its camera; its seeds one to a cell `grain_pixels` across, each a speck `speck_pixels`
     in radius, and its ink covering by `ink_opacity`."""
-    surface, projected, grains = planar_shader(**reading(points, camera), Field=whole(field, points.algebra)).draw_averaged(
-        camera.shape, samples_per_side(), 3 * topology.n_elements[2], points=points, faces=topology.elements[2], field=field,
-        noise_scale=camera.pixel * grain_pixels, speck=speck_pixels / grain_pixels, **camera.uniforms(1.0))
+    seeds = planar_shader(**reading(points, camera), Field=whole(field, points.algebra))
+    surface, projected, grains = drawn([Draw(seeds, camera.shape, 3 * topology.n_elements[2], dict(
+        points=points, faces=topology.elements[2], field=field, noise_scale=camera.pixel * grain_pixels,
+        speck=speck_pixels / grain_pixels, **camera.uniforms(1.0)))], seeding, samples_per_side())
     result = trace_shader()(camera.shape, surface=surface, flow=projected, grains=grains, background=np.ones(3),
                             step_pixels=length / n_trace_steps,
                             reference_speed=max(reference_speed, np.finfo(np.float32).tiny),

@@ -11,6 +11,7 @@ from matplotlib.colors import to_rgb
 
 from examples.electromagnetism.magnetic_bottle import core
 from numga.topology import Topology
+from numga.render.drawing import Draw
 from numga.render import Scene, meshes, simplices, solids
 
 mv = core.mv
@@ -37,7 +38,7 @@ n_around_coil = 96
 
 
 # --- plumbing -------------------------------------------------------------------------
-def sheet(points: core.Antivector, strength: core.Scalar, view: solids.View) -> meshes.Samples:
+def sheet(points: core.Antivector, strength: core.Scalar, view: solids.View) -> Draw:
     """The field's strength over its grid in the plane through the axis `[across, along]`, coloured by its logarithm,
     as a mesh of the grid's squares, as `meshes.samples`."""
     logarithm = np.log(strength.to_array())

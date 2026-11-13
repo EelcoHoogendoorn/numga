@@ -14,7 +14,7 @@ from matplotlib.colors import to_rgb
 from numga import stack
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Camera, Cap, simplices
+from numga.render import Camera, Cap, drawing, simplices
 from examples.util.panels import overlay, panel
 from numga.render.quadrics import curves
 from examples.math.eight_conics import core
@@ -124,6 +124,6 @@ def animate_eighth(quadrics: core.Quadric, contact_planes: core.Plane, contacts:
         pictures += [curves(quadrics[frame, n_quadrics - 1][None], eighth_width, completion_colour, camera),
                      *marks(contacts[frame, closing_edges].reshape(-1), np.repeat(neighbour_colours, 2, axis=0),
                             camera)]
-        image.set_data(simplices.composited(pictures))
+        image.set_data(drawing.composited(pictures))
         yield capture(figure)
     plt.close(figure)

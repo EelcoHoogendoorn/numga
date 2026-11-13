@@ -11,7 +11,7 @@ from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 from numga import concatenate, stack
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import contours, simplices
+from numga.render import contours, drawing, simplices
 from examples.util.panels import offset_panel, overlay
 from examples.mechanics.odd_elasticity import core
 
@@ -76,7 +76,7 @@ def bond_frames(
     for step, (position, arrow) in enumerate(zip(positions, arrows)):
         bond = concatenate([anchor[None], position[None]])                   # [2] Displacement-
         force = concatenate([position[None], (position + arrow)[None]])      # [2] Displacement-
-        image.set_data(simplices.composited([
+        image.set_data(drawing.composited([
             contours.picture(swept_corners, Topology(n_steps + 1, fan[:step]), np.zeros(n_steps + 1), SWEPT,
                              camera),
             *guides,
@@ -111,7 +111,7 @@ def patch_frames(
     for position, arrow in zip(places, arrows):
         tails = position[boundary]                                           # [boundary] Displacement-
         # The forces' arrows, strokes ending in chevrons.
-        image.set_data(simplices.composited([
+        image.set_data(drawing.composited([
             rest,
             simplices.strokes(position, topology, BOND, 1.5, camera),
             simplices.markers(position, ANCHOR, 2.0, camera),
@@ -142,7 +142,7 @@ def wave_frames(
         tracked = position[tracked_index][None]                              # [1] Displacement-
         history.append(tracked)
         trajectory = concatenate(history[-n_trail_frames:])                  # [trail] Displacement-
-        image.set_data(simplices.composited([
+        image.set_data(drawing.composited([
             rest,
             simplices.strokes(position, topology, STRAIN(strain(extensions.batch().to_array()))[:, :3], 1.2, camera),
             simplices.markers(position, ANCHOR, 1.2, camera),

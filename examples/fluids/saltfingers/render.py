@@ -16,7 +16,7 @@ from matplotlib.figure import Figure
 
 from numga.extensor import Extensor
 from numga.topology import Topology
-from numga.render import Camera, contours, simplices
+from numga.render import Camera, contours, drawing, simplices
 from examples.util.panels import image_figure
 from examples.fluids.saltfingers import core
 
@@ -59,7 +59,7 @@ def field(topology: Topology, points: Extensor, camera: Camera, values: np.ndarr
     spacing = 1 / (n_bands - 1)
     middles = np.linspace(-0.5, 0.5, n_bands)
     bands = contours.Bands(-0.5 - spacing / 2, spacing, colour_map(0.5 + span * middles))
-    return on_white(simplices.composited([contours.picture(points, topology, values, np.ones(3), camera, bands=(bands,)),
+    return on_white(drawing.composited([contours.picture(points, topology, values, np.ones(3), camera, bands=(bands,)),
                                           walls]))
 
 

@@ -10,7 +10,7 @@ from numga.extensor import stack
 
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import simplices
+from numga.render import drawing, simplices
 from examples.util.panels import offset_panel, overlay
 from examples.math.e8.core import Vector
 
@@ -109,7 +109,7 @@ def animate_planes(turning_roots: Iterable[Vector], roots: Vector, horizontal: V
     for frame in range(n_frames):
         trails = turning[:, (frame + history) % n_frames]                     # [orbits, trail + 1] Vector+
         for image, camera, backdrop in zip(images, cameras, backdrops):
-            image.set_data(simplices.composited(backdrop + [
+            image.set_data(drawing.composited(backdrop + [
                 simplices.strokes(trails.reshape(-1), trail_chains, trail_colours, trail_width, camera),
                 simplices.markers(turning[:, frame], orbit_colours, rider_radius, camera)]))
         yield capture(figure)

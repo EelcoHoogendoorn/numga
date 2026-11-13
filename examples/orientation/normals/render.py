@@ -12,7 +12,7 @@ from examples.orientation.normals.core import Axis, Plane, Point, Spear, Surface
 from numga.topology import Topology
 from numga.render import simplices, solids
 from examples.util.panels import show
-from numga.render.meshes import Samples
+from numga.render.drawing import Draw
 
 side_colour = np.array(to_rgb("#218c9d"))
 winding_colour = np.array(to_rgb("#ce713f"))
@@ -41,7 +41,7 @@ line_thickness, pair_thickness = 0.67, 0.79
 
 # --- plumbing -------------------------------------------------------------------------
 def chevron_arrows(starts: Point, ends: Point, colour: np.ndarray, width: float, view: solids.View,
-                   thickness: float) -> Samples:
+                   thickness: float) -> Draw:
     """Arrows between points `[arrows]`: tubes `thickness` times `width` pixels across, each ending in a chevron, for
     `solids.draw` to compose among the solids."""
     n_arrows = starts.shape[0]

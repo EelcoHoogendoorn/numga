@@ -15,6 +15,7 @@ from examples.util import charts
 from examples.util.animation import capture
 from examples.fluids.floating import core
 from numga.topology import Topology
+from numga.render.drawing import Draw
 from numga.render import meshes, simplices, solids
 from examples.util.panels import image_figure
 
@@ -89,7 +90,7 @@ def front_projection(points: core.Point, view: solids.View) -> Projection:
 
 
 def forces_end_on(view: solids.View, placed: core.Motor, push: core.Forque, centre: core.Point,
-                  onto_front: Projection) -> tuple[list[tuple[solids.Quadric, np.ndarray]], meshes.Samples]:
+                  onto_front: Projection) -> tuple[list[tuple[solids.Quadric, np.ndarray]], Draw]:
     """The weight from the centre of gravity and the buoyancy from the water surface, as arrows on their dashed
     vertical lines across an end view, and the righting arm between them at the centre's height; in front of the
     body, as `onto_front` places them: the lines, the arm and the centre as solids, and the arrows as tubes, each
@@ -122,7 +123,7 @@ def forces_end_on(view: solids.View, placed: core.Motor, push: core.Forque, cent
 
 
 def end_on(topology: core.Topology, points: core.Point, view: solids.View, parts: list[tuple[solids.Quadric, np.ndarray]],
-           arrows: list[tuple[meshes.Samples, float]]) -> np.ndarray:
+           arrows: list[tuple[Draw, float]]) -> np.ndarray:
     """A body seen along its axis of heel: the triangles of its points of unit weight, the water over its lower part
     with its waterline, and parts and arrows in front of it, `[rows, columns, 3]` bytes."""
     triangles = topology.elements[2]

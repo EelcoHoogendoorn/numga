@@ -17,7 +17,7 @@ from numga import concatenate, stack
 from examples.util.animation import capture
 from examples.geometry.scenegraph.core import Motor, Plane, Point, ga, mv, unit_box_topology
 from numga.topology import Topology
-from numga.render import Scene, meshes, simplices, solids
+from numga.render import drawing, meshes, Scene, simplices, solids
 from examples.util.panels import fitted, image_figure, show
 
 
@@ -187,7 +187,7 @@ def framed_photograph(world_vertices: Point, projected_pixels: Point, camera_pos
     corners = mv.point([[0, 0, 0], [width_px, 0, 0], [width_px, -height_px, 0], [0, -height_px, 0]])   # [corners] Point-
     border = simplices.strokes(corners, Topology.loops([4]), np.array(mcolors.to_rgb(border_colour)), width,
                                simplices.view_camera(view))
-    return simplices.composited([np.concatenate([photograph, np.ones(photograph.shape[:2] + (1,))], axis=-1), border])
+    return drawing.composited([np.concatenate([photograph, np.ones(photograph.shape[:2] + (1,))], axis=-1), border])
 
 
 def plot_camera_image(ax: plt.Axes, world_vertices: Point, projected_pixels: Point, camera_pose: Motor,

@@ -12,7 +12,7 @@ from numga import concatenate, stack
 
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Camera, contours, simplices
+from numga.render import Camera, contours, drawing, simplices
 from examples.util.panels import offset_panel, overlay
 from examples.relativity.kerr import core
 
@@ -53,7 +53,7 @@ def rays_and_horizon(paths: core.Antivector, outline: core.Antivector, camera: C
     n_sides = outline.shape[0]
     fan = Topology.loops([n_sides]).cone()
     disc = concatenate((outline, 0 * outline[:1]))                           # [sides + 1] Antivector-
-    return simplices.composited([
+    return drawing.composited([
         simplices.strokes(by_ray, Topology.chains([n_steps] * n_rays), np.repeat(colours, n_steps - 1, axis=0),
                           ray_width, camera, opacity=ray_opacity),
         contours.picture(disc, fan, np.zeros(n_sides + 1), horizon_shade, camera)])

@@ -13,7 +13,7 @@ from numga import concatenate, stack, where
 from numga.multivector.factory import MultivectorFactory
 from examples.relativity.radar.core import Event, Scalar, Slice, mv
 from numga.topology import Topology
-from numga.render import Camera, contours, simplices
+from numga.render import Camera, contours, drawing, simplices
 
 BLUE, ORANGE, GREY, INK, GREEN = (
     np.array(to_rgb(colour)) for colour in ("#3196b4", "#de9439", "#aab9c1", "#485961", "#458875"))
@@ -80,7 +80,7 @@ def written(camera: Camera, layers: list[np.ndarray], labels: list, mv: Multivec
     """Composite the geometry over white and attach labels, each beside its event, in the same native pixel grid."""
     starts, ends = axis_ends(camera, mv)
     axes = strokes(stack((starts, ends), axis=1), 1, FAINT, 1, SOLID, camera)
-    picture = simplices.composited([axes] + layers)
+    picture = drawing.composited([axes] + layers)
     seen = WHITE * (1 - picture[..., 3:]) + picture[..., :3] * picture[..., 3:]
     canvas = Image.fromarray(np.round(np.clip(seen, 0, 1) * 255).astype(np.uint8))
     pen = ImageDraw.Draw(canvas)

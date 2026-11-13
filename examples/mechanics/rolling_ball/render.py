@@ -18,7 +18,7 @@ from numga import NumpyContext, stack
 from numga.algebras import VGA3D
 from numga.wgsl import Shader, supersampled
 from numga.topology import Topology
-from numga.render import Camera, simplices
+from numga.render import Camera, drawing, simplices
 
 mv = NumpyContext(VGA3D).multivector
 
@@ -107,7 +107,7 @@ def table(path, half_width: float) -> np.ndarray:
     once, for every frame to lay the ball over."""
     # The table's places, offsets of weight one, read by the planes x and y.
     camera = Camera(mv.x, mv.y, 0 * mv.x, 0 * mv.x, 1.0, np.zeros(2), np.full(2, half_width), N_PIXELS)
-    loop = simplices.composited([simplices.strokes(path, Topology.chains([len(path)]), LOOP, LOOP_WIDTH,
+    loop = drawing.composited([simplices.strokes(path, Topology.chains([len(path)]), LOOP, LOOP_WIDTH,
                                                    camera)])
     return TABLE * (1 - loop[..., 3:]) + loop[..., :3] * loop[..., 3:]
 

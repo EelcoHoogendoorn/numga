@@ -15,7 +15,7 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Camera, contours, simplices
+from numga.render import Camera, contours, drawing, simplices
 from examples.util.panels import offset_panel, overlay
 from examples.relativity.thomas_precession import core
 
@@ -122,7 +122,7 @@ def animate_two_boosts(frames: Iterable[tuple[core.Antivector, core.Antivector, 
         n_samples = outline_points.shape[0]
         fan = Topology(n_samples, np.stack((np.zeros(n_samples - 2, dtype=int), np.arange(1, n_samples - 1),
                                                  np.arange(2, n_samples)), axis=-1))
-        shown.set_data(simplices.composited([
+        shown.set_data(drawing.composited([
             edge,
             contours.picture(outline_points, fan, np.zeros(n_samples), ink(FILL), camera),
             outline(outline_points, INK, LINE, camera),
@@ -151,7 +151,7 @@ def animate_orbits(loops: core.Antivector, states: Iterable[tuple[core.Antivecto
     shown = overlay(ax, beneath)
     for velocities, spins in chain([first], states):
         points = disk(velocities)                                              # [orbits] Antivector-
-        shown.set_data(simplices.composited(beneath + [
+        shown.set_data(drawing.composited(beneath + [
             arrows(points, spin_arrows(ORBIT_ARROW * unit_spins(spins)), colours, camera), dots(points, DOT, camera)]))
         yield capture(figure)
     plt.close(figure)
@@ -172,7 +172,7 @@ def animate_box(half_width: float, walls: core.Antivector, states: Iterable[tupl
                simplices.strokes(corners, square, ink(INK), BOLD, camera)]
     shown = overlay(ax, beneath)
     for position, spin in states:
-        shown.set_data(simplices.composited(beneath + [
+        shown.set_data(drawing.composited(beneath + [
             arrows(position[None], spin_arrows(SCENE_ARROW * half_width * unit_spins(spin))[None], ink(SPIN), camera),
             dots(position[None], PARTICLE, camera)]))
         yield capture(figure)
@@ -190,7 +190,7 @@ def animate_ring(ring: core.Antivector, states: Iterable[tuple[core.Antivector, 
     beneath = [outline(ring, FAINT, BOLD, camera)]
     shown = overlay(ax, beneath)
     for position, velocity, spin in states:
-        shown.set_data(simplices.composited(beneath + [
+        shown.set_data(drawing.composited(beneath + [
             arrows(position[None], (SCENE_ARROW * radius * unit(velocity))[None], ink(line_colours[0]), camera),
             arrows(position[None], spin_arrows(SCENE_ARROW * radius * unit_spins(spin))[None], ink(SPIN), camera),
             dots(position[None], PARTICLE, camera)]))

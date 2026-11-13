@@ -11,9 +11,9 @@ from matplotlib.colors import to_rgb
 
 from examples.math.invariant_decomposition import core
 from examples.util.animation import capture
-from numga.wgsl import compose
+from numga.render.drawing import compose
 from numga.topology import Topology
-from numga.render import Camera, simplices, solids
+from numga.render import Camera, drawing, simplices, solids
 from examples.util.panels import fitted, offset_panel, overlay, show
 
 # The planes that read a point along a direction of space.
@@ -47,7 +47,7 @@ def plane_axes(circles: core.Antivector, parts: core.Bivector) -> tuple[Vector, 
 
 def plane_image(circle: core.Antivector, colour: np.ndarray, index: int, camera: Camera) -> np.ndarray:
     """A plane's circle, grey, its trace up to one moment in the plane's colour, and the point at that moment."""
-    return simplices.composited([
+    return drawing.composited([
         simplices.strokes(circle, Topology.chains([len(circle)]), orbit_colour, circle_width, camera),
         simplices.strokes(circle[:index + 1], Topology.chains([index + 1]), colour, trace_width, camera),
         simplices.markers(circle[index][None], colour, point_radius, camera)])

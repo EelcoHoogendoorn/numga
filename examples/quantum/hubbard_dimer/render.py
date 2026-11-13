@@ -11,7 +11,7 @@ from matplotlib.colors import to_rgb
 from examples.quantum.hubbard_dimer import core
 from examples.util import charts
 from numga.topology import Topology
-from numga.render import planar, simplices
+from numga.render import drawing, planar, simplices
 from examples.util.panels import overlay, panel
 from numga import stack
 
@@ -158,7 +158,7 @@ def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitud
         ax.set(xlim=(0, columns * span), ylim=(0, count * span), aspect="equal")
         camera = panel(ax, planar.mv.x, planar.mv.y, planar.mv.w)
         # The dials' rims and the traced paths faint, as thin as the frames.
-        faces = simplices.composited([
+        faces = drawing.composited([
             simplices.strokes(rims.reshape(-1), Topology.loops([n_rim_samples] * n_dials), RIM,
                               charts.FRAME_PX, camera),
             simplices.strokes(ends.reshape(-1), Topology.chains([n_times] * n_dials), colour, charts.FRAME_PX,
@@ -182,7 +182,7 @@ def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitud
             figure.canvas.restore_region(background)
             tips = ends[..., index]                                             # [cases, dials] Point-
             shafts = stack((centres, starts[..., index], tips), axis=-1)       # [cases, dials, 3] Point-
-            arrows_shown.set_data(simplices.composited([
+            arrows_shown.set_data(drawing.composited([
                 simplices.strokes(shafts.reshape(-1), arrows, shares, charts.LINE_PX, camera),
                 simplices.markers(tips.reshape(-1), TIP, charts.MARKER_PX / 2, camera)]))
             ax.draw_artist(arrows_shown)

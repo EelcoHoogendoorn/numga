@@ -17,7 +17,7 @@ from examples.util import charts
 from examples.util.animation import capture
 from examples.electromagnetism.second_harmonic import core
 from numga.topology import Topology
-from numga.render import Camera, Scene, simplices, solids
+from numga.render import Camera, drawing, Scene, simplices, solids
 from examples.util.panels import fitted, labels, offset_panel, overlay, show
 
 # The observer sees the point where its time line meets the spatial slice.
@@ -213,7 +213,7 @@ class ResponseView:
         # The doubled light's power, the squared size of its polarization across the beam.
         intensity = harmonic.norm_squared().to_array()                                # [angles]
         self.crystal.set_data(crystal_image(bonds, self.scene))
-        self.response.set_data(simplices.composited(self.pumps + [
+        self.response.set_data(drawing.composited(self.pumps + [
             curve(harmonic, generated_colour, self.polarizations, opacity=0.65),
             arrow(harmonic[0], generated_colour, arrow_shaft, arrow_chevron, self.polarizations)]))
         self.intensity_curve.set_data(self.angles, intensity)

@@ -12,7 +12,7 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Camera, Cap, quadrics, simplices
+from numga.render import Camera, Cap, drawing, quadrics, simplices
 from examples.util.panels import overlay, panel
 from examples.estimation.pose_diffusion.core import Covariance, Motor, Plane, Point, Spread, Twist, ga, mv, origin
 
@@ -102,7 +102,7 @@ def animate_clouds(runs: dict, extent: float) -> Iterator[np.ndarray]:
     figure.set_layout_engine("none")
     for states in steps:
         for (image, camera), (poses, predicted, limit) in zip(artists, states):
-            image.set_data(simplices.composited(pictures(poses, predicted, limit, extent, camera)))
+            image.set_data(drawing.composited(pictures(poses, predicted, limit, extent, camera)))
         yield capture(figure)
     plt.close(figure)
 

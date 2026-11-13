@@ -16,7 +16,7 @@ from numga import stack
 from examples.fluids.vortices import core
 from numga.wgsl import Shader, supersampled
 from numga.topology import Topology
-from numga.render import Camera, simplices, solids
+from numga.render import Camera, drawing, simplices, solids
 from examples.util.panels import fitted, pinned, show
 
 # Fields: the figures' resolution, and the pixels between two panels side by side.
@@ -211,7 +211,7 @@ def window(frames: Iterable[core.Vortices], middle: core.Point, half_height: flo
         # Each vortex's path so far, from where it started, which is the whole path on the first frame.
         paths = stack([travelled[0]] + travelled, axis=1)                      # [vortices, frames + 1] Point-
         n_vortices, n_points = paths.shape
-        trails = simplices.composited([
+        trails = drawing.composited([
             simplices.strokes(paths.reshape(-1), Topology.chains([n_points] * n_vortices), trail_colour,
                               trail_width, camera, opacity=trail_opacity)])
         image = vorticity_image(vortices, middle, half_height, shape, scale)

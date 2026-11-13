@@ -14,7 +14,7 @@ from examples.util.animation import capture
 from examples.quantum.kane_mele import core
 from examples.util import charts
 from numga.topology import Topology
-from numga.render import simplices
+from numga.render import drawing, simplices
 from examples.util.panels import offset_panel, overlay
 
 # The bonds' shade and width in pixels, the sublattices' shades, and the largest dot's radius, at the densest atom, as
@@ -111,6 +111,6 @@ def animate_spin(flake: core.Flake, spins: core.Spin, pixels: int) -> Iterator[n
         areas, shades = spin_dots(spin)
         dots = simplices.markers(positions, plt.get_cmap("RdBu_r")((shades + 1) / 2)[:, :3],
                                  DOT * camera.pixels * np.sqrt(areas), camera)
-        shown.set_data(simplices.composited([bonds, dots]))
+        shown.set_data(drawing.composited([bonds, dots]))
         yield capture(figure)
     plt.close(figure)

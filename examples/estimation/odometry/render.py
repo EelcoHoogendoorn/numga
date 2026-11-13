@@ -13,7 +13,7 @@ from numga.algebras import PGA2D
 from examples import instantiate
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Camera, Cap, quadrics, simplices
+from numga.render import Camera, Cap, drawing, quadrics, simplices
 from examples.util.panels import overlay, panel
 
 # The drawings are of the lap in PGA2D.
@@ -118,6 +118,6 @@ def animate(truth: core.Motor, dead: core.Motor, reckoned_ellipsoids, closing_st
     background = base_pictures(truth, dead, reckoned_ellipsoids, camera)
     image = overlay(ax, background)
     for poses, ellipsoids in closing_steps:
-        image.set_data(simplices.composited(background + likely_pictures(truth, poses, ellipsoids, camera)))
+        image.set_data(drawing.composited(background + likely_pictures(truth, poses, ellipsoids, camera)))
         yield capture(figure)
     plt.close(figure)

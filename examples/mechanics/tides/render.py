@@ -12,7 +12,7 @@ from matplotlib.colors import LogNorm, to_rgb, to_rgba
 from numga import stack
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Camera, contours, simplices
+from numga.render import Camera, contours, drawing, simplices
 from examples.util.panels import offset_panel, overlay, pinned
 from examples.mechanics.tides import core
 
@@ -78,7 +78,7 @@ def animate(points: core.Point, mass_density: core.Scalar,
     near.set_axis_on()
     rim_grid = Topology.grid(RIM_PIXELS, RIM_PIXELS)
     for stars, centre, rim in states:
-        stars_seen.set_data(simplices.composited([
+        stars_seen.set_data(drawing.composited([
             background, simplices.markers(stars.positions, STARS, WIDE_STAR_RADIUS, whole_camera)]))
         # Around the cluster, scaled to its extent: the stars' largest offset from the centre across or up.
         planes = stack((core.mv.x, core.mv.y))                               # [2] Vector+
@@ -89,7 +89,7 @@ def animate(points: core.Point, mass_density: core.Scalar,
         rims.set_extent(window)
         near.set(xlim=window[:2], ylim=window[2:])
         near_camera = offset_panel(near, core.mv.x, core.mv.y)
-        rims.set_data(simplices.composited([
+        rims.set_data(drawing.composited([
             rim_at(centre, rim, half_size, rim_grid, near_camera),
             simplices.markers(stars.positions, STARS, NEAR_STAR_RADIUS, near_camera)]))
         yield capture(figure)

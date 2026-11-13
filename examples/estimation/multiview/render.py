@@ -22,7 +22,7 @@ from numga.algebras import PGA2D
 from examples import instantiate
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Camera, Cap, contours, quadrics, simplices
+from numga.render import Camera, Cap, contours, drawing, quadrics, simplices
 from examples.util.panels import overlay, panel
 
 # The figures draw PGA2D geometry, from above.
@@ -210,7 +210,7 @@ def animate_convergence(
     figure, ax, camera = canvas((low[0] - margin, high[0] + margin), (low[1] - margin, high[1] + margin))
     image = overlay(ax, [np.zeros(camera.shape + (4,))])
     for motors, world_cones, fused_splats, points in chain([first], states):
-        image.set_data(simplices.composited(cones(motors, world_cones, camera)
+        image.set_data(drawing.composited(cones(motors, world_cones, camera)
                                             + splats(motors, fused_splats, points, camera) + cameras(motors, camera)))
         yield capture(figure)
     plt.close(figure)

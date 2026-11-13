@@ -18,7 +18,7 @@ from examples.util import charts
 from numga.topology import Topology
 from numga.render import Scene, simplices, solids
 from examples.util.panels import fitted, show
-from numga.render.meshes import Samples
+from numga.render.drawing import Draw
 
 mv = core.mv
 # The intrinsic unit volume: an isospin, the patch of the plane it turns in, times it is that plane, extrinsic, and
@@ -93,7 +93,7 @@ def inked(circles: list, n_opaque: int) -> list[solids.Ink]:
                        colour, width, opacity) for planes, colour, width, opacity in circles]
 
 
-def path_marks(path: core.Isospin, view: solids.View) -> tuple[Samples, tuple[solids.Quadric, np.ndarray]]:
+def path_marks(path: core.Isospin, view: solids.View) -> tuple[Draw, tuple[solids.Quadric, np.ndarray]]:
     """A path of isospins over the sphere `[steps]` as a stroke, and its ends as balls, its start green and its end
     orange."""
     # The directions the isospins point along, embedded in the drawing's projective space about its origin.

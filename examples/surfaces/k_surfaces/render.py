@@ -16,7 +16,8 @@ import numpy as np
 from numga import concatenate
 from examples.surfaces.k_surfaces import core
 from numga.topology import Topology
-from numga.wgsl import compose
+from numga.render.drawing import Draw
+from numga.render.drawing import compose
 from numga.render import meshes, solids
 from examples.util.panels import image_figure
 
@@ -102,7 +103,7 @@ def viewport(points: core.Point, view_elevation: float, view_azimuth: float, n_p
 
 
 def sheet(points: core.Point, topology: Topology, ink: np.ndarray, colour: meshes.Colour,
-          view: solids.View) -> meshes.Samples:
+          view: solids.View) -> Draw:
     """One sheet `[rows, columns] Point-`, lit on both sides, at every sample, as `meshes.samples`."""
     places = solids.origin + solids.context.include_from_algebra(points.reshape(-1))      # [vertices] Point-
     return meshes.samples(places, topology.elements[2], np.zeros(3), meshes.smooth(places, topology), view, face_values=ink,

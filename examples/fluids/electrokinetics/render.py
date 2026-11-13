@@ -20,7 +20,7 @@ from numga import concatenate
 from numga.extensor import Extensor
 from examples.util.charts import style, subplots
 from numga.topology import Topology
-from numga.render import Camera, contours, flow, simplices
+from numga.render import Camera, contours, drawing, flow, simplices
 from examples.util.panels import image_figure
 from examples.fluids.electrokinetics import core
 
@@ -144,7 +144,7 @@ def draw_channels(topology: Topology, vertices: Extensor, n_across: int, period:
     camera = strip_camera(vertices, period, n_pixels)
     n_points = points.shape[0]
     liquid = shaded(points, faces, np.zeros(n_points), np.tile(liquid_colour, (n_points, 1)), camera)
-    return stacked([on_white(simplices.composited([liquid, wall_strokes(points, n_across, wall_charge, camera)]))
+    return stacked([on_white(drawing.composited([liquid, wall_strokes(points, n_across, wall_charge, camera)]))
                     for wall_charge in wall_charges])
 
 
@@ -178,7 +178,7 @@ def draw_flow(topology: Topology, vertices: Extensor, n_across: int, period: flo
     their charge `[strips, columns]`."""
     points, faces = unrolled(topology, vertices, n_across, period)
     camera = strip_camera(vertices, period, n_pixels)
-    return stacked([on_white(simplices.composited(layers + [wall_strokes(points, n_across, wall_charge, camera)]))
+    return stacked([on_white(drawing.composited(layers + [wall_strokes(points, n_across, wall_charge, camera)]))
                     for layers, wall_charge in zip(liquids(points, faces, n_across, charge, speeds, potentials, falls,
                                                            camera), wall_charges)])
 
@@ -191,7 +191,7 @@ def animate_pumping(topology: Topology, vertices: Extensor, n_across: int, perio
     colour, between walls coloured by their charge `[strips, columns]`."""
     points, faces = unrolled(topology, vertices, n_across, period)
     camera = strip_camera(vertices, period, n_pixels)
-    backgrounds = [on_white(simplices.composited(layers)) / 255
+    backgrounds = [on_white(drawing.composited(layers)) / 255
                    for layers in liquids(points, faces, n_across, charge, speeds, potentials, falls, camera)]
     walls = [wall_strokes(points, n_across, wall_charge, camera) for wall_charge in wall_charges]
     gap = np.full((gap_pixels, camera.shape[1], 3), 255, dtype=np.uint8)
@@ -200,11 +200,11 @@ def animate_pumping(topology: Topology, vertices: Extensor, n_across: int, perio
         pictures = []
         for share, background, wall in zip(shares, backgrounds, walls):
             # The dye takes away from the light what its colour lacks, by its share.
-            filtering = simplices.composited([
+            filtering = drawing.composited([
                 shaded(points, faces, np.zeros(len(share)), 1 - share[:, None] * (1 - pumped_colour), camera)])
             seen = background * (filtering[..., :3] + (1 - filtering[..., 3:]))   # [rows, columns, 3]
             opaque = np.concatenate([seen, np.ones(seen.shape[:-1] + (1,))], axis=-1)
-            pictures += [on_white(simplices.composited([opaque, wall])), gap]
+            pictures += [on_white(drawing.composited([opaque, wall])), gap]
         yield np.concatenate(pictures[:-1])
 
 
@@ -218,7 +218,7 @@ def draw_heat(topology: Topology, vertices: Extensor, n_across: int, period: flo
     camera = strip_camera(vertices, period, n_pixels)
     values = closing(heat.batch().to_array(), n_across)
     hottest = values.max()
-    return stacked([on_white(simplices.composited([
+    return stacked([on_white(drawing.composited([
         shaded(points, faces, value, heat_map(value / hottest)[:, :3], camera),
         lines, wall_strokes(points, n_across, wall_charge, camera)]))
         for value, lines, wall_charge in zip(values, equipotential_lines(points, faces, potentials, falls, n_across, camera),
@@ -303,7 +303,7 @@ def animate_dyes(topology: Topology, vertices: Extensor, n_across: int, period: 
     closed = concatenate([velocities, velocities[:, :n_across]], axis=-1)      # [strips, vertices + across] Point-
     # Each strip's liquid, its charge's glow under its flow's streaks and its potential's level lines, laid over white
     # once.
-    liquids = [on_white(simplices.composited([
+    liquids = [on_white(drawing.composited([
         shaded(points, faces, density, glow, camera),
         flow.layer(points, faces, velocity, camera, fastest, streak_colour) * np.array([1, 1, 1, streak_ink]),
         lines])) / 255
@@ -315,8 +315,8 @@ def animate_dyes(topology: Topology, vertices: Extensor, n_across: int, period: 
         for runs, liquid in zip(panels, liquids):
             # Each dye takes away from the light what its colour lacks, by its share.
             passing = np.clip(1 - (shares[runs, :, None] * (1 - colours[runs, None, :])).sum(axis=0), 0, 1)
-            filtering = simplices.composited([shaded(points, faces, np.zeros(len(passing)), passing, camera)])
+            filtering = drawing.composited([shaded(points, faces, np.zeros(len(passing)), passing, camera)])
             seen = liquid * (filtering[..., :3] + (1 - filtering[..., 3:]))     # [rows, columns, 3]
             opaque = np.concatenate([seen, np.ones(seen.shape[:-1] + (1,))], axis=-1)
-            pictures += [on_white(simplices.composited([opaque, walls])), gap]
+            pictures += [on_white(drawing.composited([opaque, walls])), gap]
         yield np.concatenate(pictures[:-1])

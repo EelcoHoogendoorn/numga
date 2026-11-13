@@ -11,7 +11,7 @@ from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 from numga import concatenate, stack
 from examples.electromagnetism.piezoelectric import core
 from examples.util.animation import capture
-from numga.render import Camera, contours, simplices
+from numga.render import Camera, contours, drawing, simplices
 from examples.util.panels import offset_panel, overlay
 
 Topology = core.Topology
@@ -148,7 +148,7 @@ class DeviceView:
                                           chevrons=np.ones(2 * len(self.poles)), chevron=poling_chevron,
                                           opacity=poling_opacity)
 
-        self.image.set_data(simplices.composited(self.under + [
+        self.image.set_data(drawing.composited(self.under + [
             body,
             chain((self.topology.reading(self.topology.interface, 0) * deformed).batch(), interface_colour, bond_width,
                   self.view),

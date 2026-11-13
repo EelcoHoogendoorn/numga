@@ -11,7 +11,8 @@ from matplotlib.colors import hsv_to_rgb
 
 from examples.math.spin_groups import core
 from numga.topology import Topology
-from numga.render import Scene, meshes, simplices, solids
+from numga.render.drawing import Draw
+from numga.render import Scene, simplices, solids
 from examples.util.panels import fitted, show
 
 background = np.ones(3)
@@ -39,7 +40,7 @@ def view(pixels: int, drawn: list[solids.Point]) -> solids.View:
     return solids.view(drawn, 0.0, elevation, azimuth, margin, pixels)
 
 
-def orbit_samples(orbits: solids.Point, width: float, view: solids.View) -> meshes.Samples:
+def orbit_samples(orbits: solids.Point, width: float, view: solids.View) -> Draw:
     """Each orbit `[heights, azimuths, steps + 1]` as a stroke of a width in pixels, in the colour of its start, at
     every sample."""
     n_orbits, n_points = int(np.prod(orbits.shape[:-1])), orbits.shape[-1]

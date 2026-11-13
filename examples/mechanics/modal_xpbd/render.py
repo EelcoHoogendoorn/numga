@@ -12,7 +12,7 @@ from numga.algebras import PGA2D as ga
 from examples.util import charts
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Camera, simplices
+from numga.render import Camera, drawing, simplices
 from examples.util.panels import overlay, panel
 
 Point = ga.gatype.antivector()  # Antivector-
@@ -114,7 +114,7 @@ def chain_drawn(points: Point, edges: np.ndarray, reference: Point, camera: Came
     n_bodies, n_vertices = bodies.shape
     pivot = reference[0, 1:].batch()[0, 1]                                   # [] Point-
     body_colours = rgb(np.asarray(COLOURS)[np.arange(n_bodies) % len(COLOURS)])
-    return simplices.composited([
+    return drawing.composited([
         simplices.strokes(bodies.reshape(-1), bodies_topology(n_bodies, n_vertices, edges),
                           np.repeat(body_colours, len(edges), axis=0), CHAIN_WIDTH, camera),
         simplices.markers(pivot[None], rgb(PIVOT_COLOUR), PIVOT_RADIUS, camera)])
@@ -180,7 +180,7 @@ def beam(frames: Iterable[Point], edges: np.ndarray) -> Iterator[np.ndarray]:
     camera = panel(axes, mv.x, mv.y, mv.w)
     image = overlay(axes, [np.zeros(camera.shape + (4,))])
     for points in chain([first], frames):
-        image.set_data(simplices.composited([
+        image.set_data(drawing.composited([
             simplices.strokes(points[0].batch().reshape(-1), girders, np.repeat(colours, len(edges), axis=0),
                               BEAM_WIDTH, camera)]))
         yield capture(figure)

@@ -17,7 +17,7 @@ from matplotlib.colors import LinearSegmentedColormap, to_rgb
 
 from numga import stack
 from numga.topology import Topology
-from numga.render import Camera, contours, simplices
+from numga.render import Camera, contours, drawing, simplices
 from examples.util.panels import image_figure
 from examples.thermodynamics.rubber_band import core
 
@@ -92,7 +92,7 @@ def draw_band(topology: Topology, in_weight: np.ndarray, places: core.Point):
     over it, hanging from the support."""
     support = scenery(0.0)
     camera = framing([places, support], pixels_per_width, margin)
-    return image_figure(on_white(simplices.composited([
+    return image_figure(on_white(drawing.composited([
         contours.picture(places, topology.subset(~in_weight, -1), np.zeros(topology.n_vertices),
                          temperature_colours(0.5)[:3], camera),
         contours.picture(places, topology.subset(in_weight, -1), np.zeros(topology.n_vertices), weight_colour, camera),
@@ -116,7 +116,7 @@ def animate(topology: Topology, in_weight: np.ndarray, lamp: core.Point, room_te
     fixed = simplices.strokes(support, Topology.chains([2]), support_colour, support_width, camera)
     for places, temperatures, lit in chain([first], states):
         bulb = bulb_colours[0] + lit * (bulb_colours[1] - bulb_colours[0])
-        yield on_white(simplices.composited([
+        yield on_white(drawing.composited([
             simplices.markers(stack([lamp] * n_glow), glow_colour, radii, camera, opacity=lit * glow_opacity),
             *hanging(places, topology, band, weight, tinted(temperatures, room_temperature, hottest - room_temperature),
                      camera),
@@ -137,7 +137,7 @@ def animate_pulled(topology: Topology, in_weight: np.ndarray, room_temperature: 
     camera = framing([first[0], first[0] - drop * mv.y.dual(), support], pixels_per_width, margin)
     fixed = simplices.strokes(support, Topology.chains([2]), support_colour, support_width, camera)
     for places, temperatures, _ in chain([first], states):
-        yield on_white(simplices.composited([
+        yield on_white(drawing.composited([
             *hanging(places, topology, band, weight, tinted(temperatures, room_temperature, swing), camera),
             fixed]))
 
@@ -165,7 +165,7 @@ def animate_together(topology: Topology, in_weight: np.ndarray, lamp: core.Point
     fixed = simplices.strokes(support, Topology.chains([2]), support_colour, support_width, camera)
     for (places, temperatures, lit), (pulled_places, pulled_temperatures, _) in chain([first], states):
         bulb = bulb_colours[0] + lit * (bulb_colours[1] - bulb_colours[0])
-        yield on_white(simplices.composited([
+        yield on_white(drawing.composited([
             simplices.markers(stack([lamp] * n_glow), glow_colour, radii, camera, opacity=lit * glow_opacity),
             *hanging(places, topology, band, weight, tinted(temperatures, room_temperature, hottest - room_temperature),
                      camera),

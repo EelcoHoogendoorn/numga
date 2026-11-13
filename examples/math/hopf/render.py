@@ -15,7 +15,8 @@ from numga import concatenate, stack
 from examples.util.animation import capture
 from examples.math.hopf import core
 from numga.topology import Topology
-from numga.render import Scene, meshes, simplices, solids
+from numga.render.drawing import Draw
+from numga.render import Scene, simplices, solids
 from examples.util.panels import fitted, show
 
 sm = solids.mv
@@ -104,7 +105,7 @@ def sphere_surface(n_parts: int,
     return [circles], ball
 
 
-def sphere_image(parts: list[tuple[solids.Quadric, np.ndarray]], lines: list[tuple[meshes.Samples, float]],
+def sphere_image(parts: list[tuple[solids.Quadric, np.ndarray]], lines: list[tuple[Draw, float]],
                  view: solids.View) -> np.ndarray:
     """The sphere of spins, as `sphere_surface`, among opaque parts and lines, each its samples and opacity,
     `[rows, columns, 3]`."""

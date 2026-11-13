@@ -11,7 +11,7 @@ import numpy as np
 from numga import concatenate, stack
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Cap, contours, quadrics, simplices
+from numga.render import Cap, contours, drawing, quadrics, simplices
 from examples.util.panels import overlay, panel
 from examples.estimation.kalman.core import Motor, Point, mv
 
@@ -78,6 +78,6 @@ def animate_tracking(truth: Motor, dead: Motor, estimates: Motor, positions: Poi
                     simplices.markers(readings_so_far, rgb(READING_COLOUR), READING_RADIUS, camera),
                     *[contours.picture(shape[step], vehicle, np.zeros(3), rgb(colour), camera, opacity=VEHICLE_OPACITY)
                       for colour, shape in outlines.items()]]
-        image.set_data(simplices.composited(pictures))
+        image.set_data(drawing.composited(pictures))
         yield capture(fig)
     plt.close(fig)

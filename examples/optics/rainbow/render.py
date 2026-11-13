@@ -14,7 +14,7 @@ from examples.util import charts
 from examples.util import shapes
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import contours, simplices
+from numga.render import contours, drawing, simplices
 from examples.util.panels import offset_panel, overlay, pinned, room
 from examples.optics.rainbow import core
 
@@ -118,7 +118,7 @@ def draw_sky(sight_cosines: core.Scalar, flux: core.Scalar, wavelengths: np.ndar
     camera = offset_panel(ax, mv.x, mv.y)._replace(pixels=len(across))
     ground = (mv.x.dual() * np.array(extent[:2])[None, :]
               + mv.y.dual() * np.array([extent[2], sun_elevation])[:, None]).reshape(-1)   # [corners] Direction-
-    seen = simplices.composited([
+    seen = drawing.composited([
         contours.picture(ground, Topology.grid(2, 2), np.zeros(len(ground)), to_rgb(ground_colour), camera)])
     sky = np.clip(sky_colour + image ** tone_exponent, 0, 1)
     pinned(ax, sky * (1 - seen[..., 3:]) + seen[..., :3] * seen[..., 3:], extent)
@@ -192,7 +192,7 @@ def animate_sweep(swept_light: tuple[core.Direction, core.Direction, core.Direct
             # The swept light's paths after two reflections and after one, and the sunlight reaching the drop.
             lights = [(swept_rays[1][1:, frame], secondary_colour), (swept_rays[0][1:, frame], primary_colour),
                       (swept_rays[0][:2, frame], sunlight_colour)]
-            drop_seen.set_data(simplices.composited(still + [
+            drop_seen.set_data(drawing.composited(still + [
                 simplices.strokes(path, Topology.chains([len(path)]), to_rgb(colour), light_width, camera)
                 for path, colour in lights]))
             for order, marker in enumerate(markers):

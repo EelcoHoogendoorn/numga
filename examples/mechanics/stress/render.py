@@ -18,9 +18,9 @@ from examples.util import charts
 from examples.util.animation import capture
 from examples.mechanics.stress import core
 from numga.topology import Topology
-from numga.render import Camera, Scene, simplices, solids
+from numga.render import Camera, drawing, Scene, simplices, solids
 from examples.util.panels import fitted, offset_panel, overlay, show
-from numga.render.meshes import Samples
+from numga.render.drawing import Draw
 
 # The cube's edges and faces, by the corners' indices: corner 4 i + 2 j + k sits at the i-th, j-th and
 # k-th of -0.5 and 0.5 along x, y and z.
@@ -70,7 +70,7 @@ def view(corners: core.Point, centres: core.Point, normal: core.Point, shear: co
 
 
 def arrows(starts: core.Point, offsets: core.Point, colour: np.ndarray, view: solids.View,
-           thickness: float) -> Samples:
+           thickness: float) -> Draw:
     """Arrows from points along offsets `[arrows]`, tubes ending in chevrons for `solids.draw` to compose among the
     solids, their sizes a share `thickness` of the ones set above; those shorter than a pixel, a traction that
     vanishes, left out."""
@@ -94,7 +94,7 @@ def ghost(view: solids.View, thickness: float) -> list[tuple[solids.Quadric, np.
 def cube(corners: core.Point, centres: core.Point, normal: core.Point, shear: core.Point, principal: core.Point,
          view: solids.View, thickness: float) -> tuple[list[tuple[solids.Quadric, np.ndarray]],
                                                        list[tuple[solids.Quadric, np.ndarray, float]],
-                                                       list[tuple[Samples, float]]]:
+                                                       list[tuple[Draw, float]]]:
     """The deformed cube seen from one frame, its edges solid and its faces translucent, the normal traction on each
     face in blue and the shear in red, and the principal directions in green; the radii and widths a share
     `thickness` of those set above."""
@@ -233,6 +233,6 @@ def animate_turning(values: core.Scalar, frames: Iterable[tuple[core.Point, core
     for corners, centres, normal, shear, principal in chain([first], frames):
         parts, translucent, tractions = cube(corners, centres, normal, shear, principal, seen, turning_thickness)
         picture.set_data(scene.draw(parts, inks=[], translucent=translucent, meshes=tractions))
-        diagram.set_data(simplices.composited(backdrop + diameter_drawn(diameter(normal, shear), COLOURS[0], camera)))
+        diagram.set_data(drawing.composited(backdrop + diameter_drawn(diameter(normal, shear), COLOURS[0], camera)))
         yield capture(figure)
     plt.close(figure)

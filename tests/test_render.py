@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from examples.util import shapes
-from numga.render import Scene, meshes, simplices, solids
+from numga.render import drawing, meshes, Scene, simplices, solids
 
 
 def test_view_to_camera_and_solids_scene_draw():
@@ -32,6 +32,6 @@ def test_meshes_and_simplices_without_matplotlib():
 
     cam2d = cam_view.to_camera()
     dots = simplices.markers(solids.origin[None], np.array([[0.1, 0.2, 0.8]]), np.array([6.0]), cam2d)
-    comp = simplices.composited([dots])
+    comp = drawing.composited([dots])
     assert comp.shape == (64, 64, 4)
     assert comp[32, 32, 3] > 0.5

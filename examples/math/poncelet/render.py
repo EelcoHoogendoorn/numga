@@ -12,7 +12,7 @@ import numpy as np
 
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Camera, Cap, quadrics, simplices
+from numga.render import Camera, Cap, drawing, quadrics, simplices
 from examples.util.panels import overlay, panel
 from examples.math.poncelet import core
 
@@ -84,6 +84,6 @@ def animate(scenes: list[tuple[core.Quadric, core.Envelope, core.Point]]) -> Ite
               for index, (ax, planes, lines) in enumerate(panels)]
     for outer, inner, vertices in scenes:
         for index, (image, (ax, planes, lines)) in enumerate(zip(images, panels)):
-            image.set_data(simplices.composited(panel_pictures(planes, lines, outer, inner[index], vertices[:, index])))
+            image.set_data(drawing.composited(panel_pictures(planes, lines, outer, inner[index], vertices[:, index])))
         yield capture(figure)
     plt.close(figure)

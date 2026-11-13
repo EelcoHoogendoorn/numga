@@ -17,7 +17,6 @@ chain of edges and a surface's wireframe its own edges.
 from __future__ import annotations
 
 from enum import IntEnum
-from typing import Any
 from functools import cache
 
 import numpy as np
@@ -25,11 +24,11 @@ import numpy as np
 from numga.extensor import Extensor
 from numga.gatype import GAType
 from numga.topology import Topology
-from numga.wgsl import Shader, device, samples_per_side
+from numga.wgsl import Shader, samples_per_side
 
 from . import solids
 from .camera import Camera, placing, read, reading
-from .meshes import Samples
+from .drawing import Draw
 
 
 
@@ -282,8 +281,7 @@ fn shade(corner: Corner) -> @location(0) vec4<f32> {
 @cache
 def stroke_shader(Point: GAType, Plane: GAType) -> Shader:
     """The strokes of edges whose points are of the type `Point`, placed by a camera's planes of the type `Plane`."""
-    return Shader(placing(Plane) + stroke_source + flat_stroke, Point.algebra, dict(Point=Point, Plane=Plane), {},
-                  targets=("rgba8unorm",), over=True)
+    return Shader(placing(Plane) + stroke_source + flat_stroke, Point.algebra, dict(Point=Point, Plane=Plane), {})
 
 
 @cache
@@ -291,14 +289,13 @@ def tube_shader() -> Shader:
     """The strokes of a lit 3D scene as tubes, in the solids' algebra, whose lamp lights them: the colour a byte a
     channel and the depth alone at full precision, as the meshes write them."""
     return Shader(solids.lamp_shading() + placing(solids.Plane) + stroke_source + tube_stroke, solids.ga,
-                  dict(Point=solids.Point, Plane=solids.Plane), {}, targets=("rgba8unorm", "r32float"))
+                  dict(Point=solids.Point, Plane=solids.Plane), {})
 
 
 @cache
 def marker_shader(Point: GAType, Plane: GAType) -> Shader:
     """The dots of points of the type `Point`, placed by a camera's planes of the type `Plane`."""
-    return Shader(placing(Plane) + marker_source, Point.algebra, dict(Point=Point, Plane=Plane), {},
-                  targets=("rgba8unorm",), over=True)
+    return Shader(placing(Plane) + marker_source, Point.algebra, dict(Point=Point, Plane=Plane), {})
 
 
 def chevron_reach(length: float) -> np.ndarray:
@@ -329,7 +326,7 @@ def travelled(points: Extensor, edges: np.ndarray, camera: Camera) -> np.ndarray
 
 def strokes(points: Extensor, topology: Topology, colours: np.ndarray, width: float, camera: Camera,
             chevrons: np.ndarray = np.zeros(1), chevron: float = 0.0, dashes: tuple[float, float] = (1.0, 0.0),
-            cap: Cap = Cap.ROUND, opacity: float = 1.0) -> Layer:
+            cap: Cap = Cap.ROUND, opacity: float = 1.0) -> Draw:
     """The mesh's edges as strokes `width` pixels wide over its points, each in its colour `[edges, 3]`, read by the
     camera: a layer of colour and coverage, clear where no stroke lies. The edges where `chevrons` `[edges]`
     is one end in a chevron, two strokes `chevron` pixels long back from the end, a third of a right angle to either
@@ -341,7 +338,7 @@ def strokes(points: Extensor, topology: Topology, colours: np.ndarray, width: fl
     # No edges, such as a trail not yet begun, draw nothing: a clear picture.
     if len(edges) == 0:
         return np.zeros(camera.shape + (4,))
-    return Layer(stroke_shader(**reading(points, camera)), camera.shape, 6 * len(edges), dict(
+    return Draw(stroke_shader(**reading(points, camera)), camera.shape, 6 * len(edges), dict(
         points=points, edges=edges,
         colours=np.broadcast_to(colours, (len(edges), 3)),
         travelled=travelled(points, edges, camera) * side, chevrons=np.broadcast_to(chevrons, len(edges)).astype(float),
@@ -368,7 +365,7 @@ def tubes(points: Extensor, topology: Topology, colours: np.ndarray, width: floa
     side = samples_per_side()
     rows, columns = camera.shape
     edges = np.asarray(topology.elements[1], dtype=np.uint32)
-    return Samples(tube_shader(), 6 * len(edges), dict(
+    return Draw(tube_shader(), camera.shape, 6 * len(edges), dict(
         points=points, edges=edges, colours=np.broadcast_to(colours, (len(edges), 3)),
         travelled=travelled(points, edges, camera) * side, chevrons=np.broadcast_to(chevrons, len(edges)).astype(float),
         samples=np.array([columns * side, rows * side], dtype=float), radius=width * side / 2,
@@ -379,7 +376,7 @@ def tubes(points: Extensor, topology: Topology, colours: np.ndarray, width: floa
         **camera.uniforms(8 * view.half.max()), **solids.lighting(gloss)))
 
 
-def markers(points: Extensor, colours: np.ndarray, radii: np.ndarray, camera: Camera, opacity: float = 1.0) -> Layer:
+def markers(points: Extensor, colours: np.ndarray, radii: np.ndarray, camera: Camera, opacity: float = 1.0) -> Draw:
     """Dots about the points `[points]`, each in its colour `[points, 3]` and its radius in pixels, one for all or one
     each `[points]`, read by the camera: a layer of colour and coverage, clear where no dot lies."""
     side = samples_per_side()
@@ -387,180 +384,7 @@ def markers(points: Extensor, colours: np.ndarray, radii: np.ndarray, camera: Ca
     # No points draw nothing: a clear picture.
     if len(points) == 0:
         return np.zeros(camera.shape + (4,))
-    return Layer(marker_shader(**reading(points, camera)), camera.shape, 6 * len(points), dict(
+    return Draw(marker_shader(**reading(points, camera)), camera.shape, 6 * len(points), dict(
         points=points, colours=np.broadcast_to(colours, (len(points), 3)),
         radii=np.broadcast_to(radii, len(points)).astype(float) * side,
         samples=np.array([columns * side, rows * side], dtype=float), opacity=opacity, **camera.uniforms(1.0)))
-
-
-# --- compositing ---------------------------------------------------------------------
-# A picture made on the host, its colour weighted by its coverage, laid over the panel's samples: each sample takes its
-# pixel's colour.
-image_source = """
-@group(0) @binding(0) var image: texture_2d<f32>;
-@group(0) @binding(1) var<uniform> side: vec4<u32>;
-
-struct Corner {
-    @builtin(position) position: vec4<f32>,
-}
-
-// One triangle over the whole picture.
-@vertex
-fn place(@builtin(vertex_index) index: u32) -> Corner {
-    let corner = array<vec2<f32>, 3>(vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0))[index];
-    return Corner(vec4<f32>(corner, 0.5, 1.0));
-}
-
-@fragment
-fn shade(corner: Corner) -> @location(0) vec4<f32> {
-    return textureLoad(image, vec2<u32>(corner.position.xy) / side.x, 0);
-}
-"""
-
-# Each pixel's samples averaged, colour weighted by coverage, and the colour divided back by the coverage where anything
-# covers, both within the unit their rounding may overshoot.
-average_source = """
-@group(0) @binding(0) var samples: texture_2d<f32>;
-@group(0) @binding(1) var<storage, read_write> pixels: array<vec4<f32>>;
-@group(0) @binding(2) var<storage, read> size: vec4<u32>;
-
-@compute @workgroup_size(8, 8)
-fn average(@builtin(global_invocation_id) id: vec3<u32>) {
-    if (id.x >= size.x || id.y >= size.y) {
-        return;
-    }
-    var sum = vec4<f32>(0.0);
-    for (var down = 0u; down < size.z; down++) {
-        for (var across = 0u; across < size.z; across++) {
-            sum += textureLoad(samples, vec2<u32>(id.x * size.z + across, id.y * size.z + down), 0);
-        }
-    }
-    let weighted = sum / f32(size.z * size.z);
-    let colour = select(weighted.xyz, weighted.xyz / weighted.w, weighted.w > 0.0);
-    pixels[id.y * size.x + id.x] = min(vec4<f32>(colour, weighted.w), vec4<f32>(1.0));
-}
-"""
-
-
-class Compositor:
-    """The pictures of a panel drawn on the GPU into one picture of its samples, each laid over the ones before in
-    order, colour weighted by coverage, sample by sample; then each pixel's samples averaged once and the panel read
-    back. A layer's draw is recorded when the panel is composited, so a layer laid in every frame of an animation is
-    drawn in every frame."""
-
-    def __init__(self) -> None:
-        self.device = device()
-        laid_over = {"color": {"src_factor": "one", "dst_factor": "one-minus-src-alpha", "operation": "add"},
-                     "alpha": {"src_factor": "one", "dst_factor": "one-minus-src-alpha", "operation": "add"}}
-        module = self.device.create_shader_module(code=image_source)
-        self.images = self.device.create_render_pipeline(
-            layout="auto", vertex={"module": module, "entry_point": "place", "buffers": []},
-            fragment={"module": module, "entry_point": "shade", "targets": [{"format": "rgba8unorm", "blend": laid_over}]},
-            primitive={"topology": "triangle-list", "cull_mode": "none"},
-            depth_stencil={"format": "depth32float", "depth_write_enabled": False, "depth_compare": "always"})
-        module = self.device.create_shader_module(code=average_source)
-        self.averaging = self.device.create_compute_pipeline(layout="auto", compute={"module": module, "entry_point": "average"})
-        self.kept = {}                                                         # dict[tuple, Any]
-
-    def kept_buffer(self, role: tuple, n_bytes: int, usage: int) -> Any:
-        """The buffer kept for a role, made again only when a call needs it larger."""
-        buffer = self.kept.get(role)
-        if buffer is None or buffer.size < n_bytes:
-            buffer = self.device.create_buffer(size=n_bytes, usage=usage)
-            self.kept[role] = buffer
-        return buffer
-
-    def surface(self, role: tuple, shape: tuple[int, int], format: str, usage: int) -> Any:
-        """The texture kept for a role and a picture's shape, rows and columns, made on the first call that needs it."""
-        key = role + (shape,)
-        if key not in self.kept:
-            self.kept[key] = self.device.create_texture(size=(shape[1], shape[0], 1), format=format, usage=usage)
-        return self.kept[key]
-
-    def image_group(self, image: np.ndarray, side: int, index: int) -> Any:
-        """A picture made on the host, its colour weighted by its coverage, bound for the image pipeline."""
-        import wgpu
-        coverage = image[..., 3:]
-        weighted = np.ascontiguousarray(np.concatenate((image[..., :3] * coverage, coverage), axis=-1), dtype=np.float32)
-        rows, columns = weighted.shape[:2]
-        texture = self.surface(("image", index), (rows, columns), "rgba32float",
-                               wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST)
-        self.device.queue.write_texture({"texture": texture}, weighted.tobytes(),
-                                        {"bytes_per_row": columns * 16, "rows_per_image": rows}, (columns, rows, 1))
-        sides = self.kept_buffer(("side", index), 16, wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST)
-        self.device.queue.write_buffer(sides, 0, np.array([side, 0, 0, 0], dtype=np.uint32).tobytes())
-        return self.device.create_bind_group(layout=self.images.get_bind_group_layout(0), entries=[
-            {"binding": 0, "resource": texture.create_view()},
-            {"binding": 1, "resource": {"buffer": sides, "offset": 0, "size": 16}}])
-
-    def composite(self, pictures: list, size: tuple[int, int]) -> np.ndarray:
-        """Pictures of a panel `rows, columns`, layers and pictures made on the host, laid over each other sample by
-        sample, averaged once and read back: colour and coverage `[rows, columns, 4]`."""
-        import wgpu
-        rows, columns = size
-        side = samples_per_side()
-        shape = (rows * side, columns * side)
-        # Each picture's pipeline and values, bound before the drawing is recorded, each under a key of its own.
-        draws = [(picture.shader.raster, picture.shader.bind(shape, picture.values, ("layer", index))[0],
-                  picture.n_vertices) if isinstance(picture, Layer) else
-                 (self.images, self.image_group(np.asarray(picture), side, index), 3)
-                 for index, picture in enumerate(pictures)]
-        canvas = self.surface(("canvas",), shape, "rgba8unorm",
-                              wgpu.TextureUsage.RENDER_ATTACHMENT | wgpu.TextureUsage.TEXTURE_BINDING)
-        depth = self.surface(("depth",), shape, "depth32float", wgpu.TextureUsage.RENDER_ATTACHMENT)
-        encoder = self.device.create_command_encoder()
-        drawing = encoder.begin_render_pass(
-            color_attachments=[{"view": canvas.create_view(), "clear_value": (0, 0, 0, 0), "load_op": "clear",
-                                "store_op": "store"}],
-            depth_stencil_attachment={"view": depth.create_view(), "depth_clear_value": 1.0,
-                                      "depth_load_op": "clear", "depth_store_op": "discard"})
-        for pipeline, group, n_vertices in draws:
-            drawing.set_pipeline(pipeline)
-            drawing.set_bind_group(0, group)
-            drawing.draw(n_vertices)
-        drawing.end()
-        n_bytes = rows * columns * 16
-        pixels = self.kept_buffer(("pixels",), n_bytes, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC)
-        counts = self.kept_buffer(("size",), 16, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
-        self.device.queue.write_buffer(counts, 0, np.array([columns, rows, side, 0], dtype=np.uint32).tobytes())
-        group = self.device.create_bind_group(layout=self.averaging.get_bind_group_layout(0), entries=[
-            {"binding": 0, "resource": canvas.create_view()},
-            {"binding": 1, "resource": {"buffer": pixels, "offset": 0, "size": n_bytes}},
-            {"binding": 2, "resource": {"buffer": counts, "offset": 0, "size": 16}}])
-        compute = encoder.begin_compute_pass()
-        compute.set_pipeline(self.averaging)
-        compute.set_bind_group(0, group)
-        compute.dispatch_workgroups(-(-columns // 8), -(-rows // 8), 1)
-        compute.end()
-        readback = self.kept_buffer(("readback",), n_bytes, wgpu.BufferUsage.COPY_DST | wgpu.BufferUsage.MAP_READ)
-        encoder.copy_buffer_to_buffer(pixels, 0, readback, 0, n_bytes)
-        self.device.queue.submit([encoder.finish()])
-        readback.map_sync(wgpu.MapMode.READ, 0, n_bytes)
-        image = np.frombuffer(readback.read_mapped(0, n_bytes), dtype=np.float32).reshape(rows, columns, 4).copy()
-        readback.unmap()
-        return image
-
-
-@cache
-def compositor() -> Compositor:
-    return Compositor()
-
-
-class Layer:
-    """A picture of a panel to be drawn on the GPU: a shader's triangles over the camera's pixels, `rows, columns`,
-    drawn when the panel's pictures are composited, sample by sample over the ones before it. Its own colour and
-    coverage `[rows, columns, 4]` are its picture composited alone, `composited([layer])`."""
-
-    def __init__(self, shader: Shader, size: tuple[int, int], n_vertices: int, values: dict) -> None:
-        self.shader, self.size, self.n_vertices, self.values = shader, size, n_vertices, values
-
-    @property
-    def shape(self) -> tuple[int, int, int]:
-        return self.size + (4,)
-
-
-def composited(pictures: list) -> np.ndarray:
-    """Pictures of a panel, layers drawn on the GPU or colour and coverage `[rows, columns, 4]` made on the host, each
-    laid over the ones before, sample by sample: colour and coverage `[rows, columns, 4]`."""
-    return compositor().composite(pictures, tuple(pictures[0].shape[:2]))
-

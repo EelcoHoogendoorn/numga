@@ -15,6 +15,7 @@ from examples.util.animation import capture
 from examples.quantum.superconductivity import core
 from examples.util import charts
 from numga.topology import Topology
+from numga.render.drawing import Draw
 from numga.render import Scene, meshes, simplices, solids
 from examples.util.panels import fitted, labels, show
 
@@ -91,7 +92,7 @@ def draw_equilibrium(dispersion: core.Field, spins: core.Spin) -> Figure:
     return figure
 
 
-def chart(energies: np.ndarray, axis: plt.Axes) -> tuple[solids.View, meshes.Samples, solids.Point]:
+def chart(energies: np.ndarray, axis: plt.Axes) -> tuple[solids.View, Draw, solids.Point]:
     """The view of the chart, fitted to the matplotlib axes it is shown in, its axes as arrows from the start of the
     energy axis, tubes each ending in a chevron, the energy along +x and the pair coherence in yz and zx along +y and
     +z, and the circles of the largest coherence about the energy axis at every few levels `[circles, circle]`."""

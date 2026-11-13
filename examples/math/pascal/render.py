@@ -12,7 +12,7 @@ import numpy as np
 
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Camera, quadrics, simplices
+from numga.render import Camera, drawing, quadrics, simplices
 from examples.util.panels import overlay, panel
 from examples.math.pascal import core
 
@@ -82,6 +82,6 @@ def animate(scenes: list[tuple[core.Quadric, core.Point, core.Line, core.Crossin
     figure, ax, planes, lines = canvas()
     image = overlay(ax, pictures(planes, lines, *scenes[0]))
     for scene in scenes:
-        image.set_data(simplices.composited(pictures(planes, lines, *scene)))
+        image.set_data(drawing.composited(pictures(planes, lines, *scene)))
         yield capture(figure)
     plt.close(figure)

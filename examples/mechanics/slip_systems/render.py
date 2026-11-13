@@ -14,7 +14,7 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Camera, simplices
+from numga.render import Camera, drawing, simplices
 from examples.util.panels import overlay, panel, pinned, room
 from examples.mechanics.slip_systems import core
 
@@ -223,7 +223,7 @@ def animate_paths_sized(factors: Callable[[core.Direction], core.Scalar], axes: 
     camera = disk_camera(ax)
     image = overlay(ax, triangle_and_goals)
     for count in reached:
-        image.set_data(simplices.composited(triangle_and_goals[:1] + paths(camera, axes, amounts, count)
+        image.set_data(drawing.composited(triangle_and_goals[:1] + paths(camera, axes, amounts, count)
                                             + triangle_and_goals[1:]))
         yield capture(figure)
     plt.close(figure)

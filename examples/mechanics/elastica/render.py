@@ -14,7 +14,8 @@ from numga import stack
 from examples.util.animation import capture
 from examples.mechanics.elastica import core
 from numga.topology import Topology
-from numga.render import Camera, meshes, simplices, solids
+from numga.render.drawing import Draw
+from numga.render import Camera, drawing, meshes, simplices, solids
 from examples.util.panels import image_figure, overlay, panel
 
 mv = core.mv
@@ -100,7 +101,7 @@ def animate_sweep(centres: core.Point) -> Iterator[np.ndarray]:
     camera = frame_plane(ax, low, high)
     rod = overlay(ax, rod_pictures(centres[0], ax, camera))
     for curve in centres:
-        rod.set_data(simplices.composited(rod_pictures(curve, ax, camera)))
+        rod.set_data(drawing.composited(rod_pictures(curve, ax, camera)))
         yield capture(figure)
     plt.close(figure)
 
@@ -160,7 +161,7 @@ def sized_cord(centres: core.Point, edges: core.Point, pixels: int) -> Iterator[
                           meshes=wires(curve[None], ribbon[None], view))
 
 
-def wires(curves: core.Point, ribbons: core.Point, view: solids.View) -> list[tuple[meshes.Samples, float]]:
+def wires(curves: core.Point, ribbons: core.Point, view: solids.View) -> list[tuple[Draw, float]]:
     """Rods along curves `[rods, n]` as strokes, through their ribbons `[rods, n, 2]`: strips between the edges, two
     triangles to each piece of rod; each opaque, sample by sample."""
     index = np.arange(np.prod(ribbons.shape)).reshape(ribbons.shape)         # [rods, n, 2]

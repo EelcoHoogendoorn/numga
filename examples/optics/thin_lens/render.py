@@ -16,7 +16,7 @@ from numga import concatenate, stack
 
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Camera, simplices
+from numga.render import Camera, drawing, simplices
 from examples.util.panels import overlay, panel
 from examples.optics.thin_lens.core import Crossing, Line, LineMap, Plane, Point
 
@@ -126,7 +126,7 @@ def scene(camera: Camera, subject: Point, planes: Plane, legs: Line, train: Line
         if stage < count:
             layers.append(simplices.strokes(*segments(tops[stage][None], bottoms[stage][None]), plane_colour,
                                             plane_width, camera))
-    return simplices.composited(layers + [simplices.markers(subject[None], to_rgb("C0"), dot_radius, camera),
+    return drawing.composited(layers + [simplices.markers(subject[None], to_rgb("C0"), dot_radius, camera),
                                           simplices.markers(picture[None], to_rgb(f"C{count}"), dot_radius, camera)])
 
 

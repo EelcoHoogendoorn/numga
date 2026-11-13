@@ -23,9 +23,9 @@ from examples.util.animation import capture
 from examples.relativity.curvature import core
 from examples.relativity.curvature.core import Antivector, Curvature, Scalar, mv
 from numga.topology import Topology
-from numga.render import simplices, solids
+from numga.render import drawing, simplices, solids
 from examples.util.panels import labels, offset_panel, overlay, show
-from numga.render.meshes import Samples
+from numga.render.drawing import Draw
 
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
 light_colour = "#c3ccd4"
@@ -96,7 +96,7 @@ def patch(first: Antivector, second: Antivector) -> Antivector:
             + second * (0.6 * np.array([-1, -1, 1, 1])))                           # [corners] Antivector-
 
 
-def arrows(ends: solids.Point, colour: np.ndarray, width: float, view: solids.View) -> tuple[Samples, float]:
+def arrows(ends: solids.Point, colour: np.ndarray, width: float, view: solids.View) -> tuple[Draw, float]:
     """Arrows from the origin to the diagram's points `[arrows]`, drawn with t up, tubes `width` pixels across, each
     ending in a chevron, in one colour: a mesh for `solids.draw` to compose among the solids, and its opacity."""
     n_arrows = ends.shape[0]
@@ -280,7 +280,7 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
         first = max(0, frame - n_trail)
         trails = data.positions[np.arange(first, frame + 1)[None, :], polarization, selected[:, None]]   # [tracked, n_trail] Antivector-
         arrows = stack((positions[arrows_at], data.tips[frame, polarization, arrows_at]), axis=-1)   # [arrows, 2] Antivector-
-        shown.set_data(simplices.composited(beneath + [
+        shown.set_data(drawing.composited(beneath + [
             simplices.strokes(positions, Topology.loops([n_beads]), BLUE_RGB, charts.LINE_PX, camera,
                               opacity=0.42),
             simplices.strokes(trails.reshape(-1), Topology.chains([frame + 1 - first] * len(selected)),

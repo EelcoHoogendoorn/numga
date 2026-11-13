@@ -13,7 +13,7 @@ from matplotlib.colors import to_rgb
 from numga import concatenate, stack
 from examples.util import charts
 from numga.topology import Topology
-from numga.render import Camera, flow as ink, simplices
+from numga.render import Camera, drawing, flow as ink, simplices
 from examples.util.panels import overlay, panel
 from examples.util.animation import capture
 from examples.fluids.stokes_swimmer import core
@@ -175,7 +175,7 @@ def animate_swimmers(
         step_end = frame * every + 1
         for swimmer, (texture, view, field, colour) in enumerate(
                 zip(textures, views, directions, (purcell_colour, scallop_colour))):
-            texture.set_data(simplices.composited([
+            texture.set_data(drawing.composited([
                 ink.layer(points, topology, field, view, reference_speed, rgb(flow_colour)),
                 _trail(paths[swimmer, :step_end], animation_trail_width * dpi / 72, view),
                 *_swimmer(beads[frame, swimmer], colour, view, dpi / 72)]))

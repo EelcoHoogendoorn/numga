@@ -12,7 +12,7 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import simplices
+from numga.render import drawing, simplices
 from examples.util.panels import offset_panel, overlay
 from examples.electromagnetism.electrostriction.core import Field, Point, Scalar, field_along
 
@@ -89,7 +89,7 @@ class LatticeView:
         # The applied field drawn along the direction whose field it is.
         applied_arrow = field_along.solve(applied) * self.field_scale                   # [] Point-
         applied_ends = stack((self.anchor - applied_arrow / 2, self.anchor + applied_arrow / 2))
-        self.image.set_data(simplices.composited(self.reference + [
+        self.image.set_data(drawing.composited(self.reference + [
             simplices.strokes(sites, self.bonds, bond_colour, bond_width, self.camera),
             simplices.markers(sites, bond_colour, particle_radius, self.camera),
             simplices.strokes(dipole_ends, self.arrows, dipole_colour, dipole_width, self.camera,

@@ -17,6 +17,7 @@ from numga.wgsl import Shader, samples_per_side
 
 from . import solids
 from .camera import placing
+from .drawing import Draw
 from .solids import (Line, Plane, Point, View, ga, lamp_shading, lighting, steps,
                      tangent_seen)
 
@@ -119,10 +120,9 @@ shaders = {}                                                                    
 def shader(colour: Colour) -> Shader:
     key = (colour.source, tuple((name, np.asarray(value).tobytes()) for name, value in colour.constants.items()))
     if key not in shaders:
-        # The colour a byte a channel, premultiplied by how much it hides, and the depth alone at full precision.
+        # It writes its colour, premultiplied by how much it hides, and its depth, as `drawing.NEAREST` keeps them.
         shaders[key] = Shader(lamp_shading() + tangent_seen() + placing(Plane) + source(colour.source), ga,
-                              dict(Point=Point, Plane=Plane, Tangent=solids.Patch), dict(oversampling=float(samples_per_side())) | colour.constants,
-                              targets=("rgba8unorm", "r32float"))
+                              dict(Point=Point, Plane=Plane, Tangent=solids.Patch), dict(oversampling=float(samples_per_side())) | colour.constants)
     return shaders[key]
 
 
@@ -146,17 +146,8 @@ def smooth(points: Point, topology: Topology) -> dict:
     return dict(a=corners[0], b=corners[1], c=corners[2])
 
 
-class Samples(NamedTuple):
-    """A mesh at every sample of a view's pixels, `oversampling` to a side, drawn on the GPU by the picture that
-    composes it, where its samples stay: the shader drawing it, the vertices of its triangles, three to a face, and the
-    values the shader reads."""
-    shader: Shader
-    n_vertices: int
-    values: dict
-
-
 def samples(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, view: View,
-            face_values: np.ndarray, colour: Colour, gloss: float) -> Samples:
+            face_values: np.ndarray, colour: Colour, gloss: float) -> Draw:
     """The mesh at every sample of the view's pixels, for `solids.layer` to compose: its colour, premultiplied by how
     much it hides, and its depth along the view, both zero where it shows nothing; from up to four values at each
     corner of each face, `[faces, 3, values]` or one row for all, and at each face, coloured by `colour`, with a glint
@@ -164,7 +155,7 @@ def samples(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict,
     def padded(entries: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
         entries = np.broadcast_to(entries, shape + (np.shape(entries)[-1],))
         return np.concatenate([entries, np.zeros(shape + (4 - entries.shape[-1],))], axis=-1)
-    return Samples(shader(colour), 3 * len(faces),
+    return Draw(shader(colour), view.shape, 3 * len(faces),
                    dict(points=points, faces=faces, values=padded(values, (len(faces), 3)).reshape(-1, 4),
                         face_values=padded(face_values, (len(faces),)), normals=normals,
                         **view.to_camera().uniforms(8 * view.half.max()), **lighting(gloss), **steps(view)))

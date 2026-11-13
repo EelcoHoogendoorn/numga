@@ -11,7 +11,7 @@ from matplotlib.colors import to_rgb
 from numga import concatenate, stack
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import simplices
+from numga.render import drawing, simplices
 from examples.util.panels import overlay, panel
 from examples.orientation.mechanical_work.core import Point
 
@@ -85,7 +85,7 @@ class WorkView:
             tips = tails + directions * arrow_scale                             # [cranks] Point-
             arrows.append(simplices.strokes(concatenate([tails, tips]), pairs(n_cranks), colour, arrow_width,
                                             self.camera, chevrons=np.ones(n_cranks), chevron=arrow_chevron))
-        self.image.set_data(simplices.composited(self.guides + [
+        self.image.set_data(drawing.composited(self.guides + [
             simplices.strokes(concatenate([self.pivots, handles]), pairs(n_cranks), crank_colour, crank_width,
                               self.camera),
             *self.pivot_marks,

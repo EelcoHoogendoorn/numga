@@ -20,7 +20,8 @@ from examples.quantum.two_spins import core
 from examples.util import charts
 from examples.util.animation import capture
 from numga.topology import Topology
-from numga.render import Scene, meshes, simplices, solids
+from numga.render.drawing import Draw
+from numga.render import Scene, simplices, solids
 from examples.util.panels import fitted, labels, show
 
 sm = solids.mv
@@ -111,12 +112,12 @@ def sphere_scene(view: solids.View, n_parts: int) -> Scene:
 
 
 def on_sphere(parts: list[tuple[solids.Quadric, np.ndarray]], view: solids.View,
-              lines: list[tuple[meshes.Samples, float]] = ()) -> np.ndarray:
+              lines: list[tuple[Draw, float]] = ()) -> np.ndarray:
     """Solids and lines among the unit sphere, as `sphere_scene` sets it up."""
     return sphere_scene(view, len(parts)).draw(parts, inks=[], translucent=[], meshes=lines)
 
 
-def arrow(tip: solids.Point, colour: str, view: solids.View) -> meshes.Samples:
+def arrow(tip: solids.Point, colour: str, view: solids.View) -> Draw:
     """An arrow from the centre to a tip, in a colour: a tube ending in a chevron, at every sample of the view."""
     width = ARROW_WIDTH / view.pixel
     return simplices.tubes(stack((solids.origin, tip)), Topology.chains([2]), np.array(to_rgb(colour)), width,

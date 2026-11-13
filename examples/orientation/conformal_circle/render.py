@@ -15,9 +15,9 @@ from examples.util.animation import capture
 from numga import concatenate, stack
 from examples.orientation.conformal_circle.core import Point, Sphere, mv
 from numga.topology import Topology
-from numga.render import Camera, contours, simplices, solids
+from numga.render import Camera, contours, drawing, simplices, solids
 from examples.util.panels import overlay, panel as panel_camera, show
-from numga.render.meshes import Samples
+from numga.render.drawing import Draw
 
 sm = solids.mv
 plane_ink, sphere_ink, curve_ink = "#218c9d", "#ce713f", "#3d354a"
@@ -82,7 +82,7 @@ def downhill(surface: Sphere, anchor: Point, length: float) -> Point:
 
 
 def arrows(starts: Point, ends: Point, colour: np.ndarray, width: float, chevron: float,
-           view: solids.View) -> Samples:
+           view: solids.View) -> Draw:
     """Arrows between points `[arrows]`, tubes `width` pixels across ending in chevrons of strokes `chevron` pixels
     long, for `solids.draw` to compose among the solids."""
     n_arrows = starts.shape[0]
@@ -202,6 +202,6 @@ def animate_circle_motions(frames: Iterable[Point], fixed_points: Point) -> Iter
               for ax, disk, camera, fixed in zip(axes, first, cameras, marks)]
     for pair in chain([first], frames):
         for image, disk, camera, fixed in zip(images, pair, cameras, marks):
-            image.set_data(simplices.composited(pictures(disk, camera, fixed)))
+            image.set_data(drawing.composited(pictures(disk, camera, fixed)))
         yield capture(figure)
     plt.close(figure)

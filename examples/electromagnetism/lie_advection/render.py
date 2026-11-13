@@ -13,7 +13,7 @@ from numga import concatenate, stack
 from examples.electromagnetism.lie_advection import core
 from examples.util import charts
 from examples.util.animation import capture
-from numga.render import Camera, contours, flow, simplices
+from numga.render import Camera, contours, drawing, flow, simplices
 from examples.util.panels import offset_panel, overlay
 
 Topology = core.Topology
@@ -232,7 +232,7 @@ def animate_advection(topology: core.Topology, vertices: core.Point,
         vertex_fluxes = vertex_averages(topology, areas, flux_density)
         for texture, view, panel_lines, vertex_flux in zip(textures, views, lines, vertex_fluxes):
             colours = flux_colours(flux_scale(vertex_flux))[:, :3]
-            texture.set_data(simplices.composited(
+            texture.set_data(drawing.composited(
                 [contours.picture(points, topology, vertex_flux, colours, view, levels=levels), *panel_lines]))
         with charts.style():
             image = capture(figure)
