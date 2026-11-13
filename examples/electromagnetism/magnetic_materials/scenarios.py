@@ -70,26 +70,24 @@ def run(across: int, up: int, frames: int, name: str):
     coil = cells * (coil_shape * coil_signs).sum(axis=0)
     corners = topology.incidence[2, 0]
     hat_fields = gradients ^ core.mv.z
-    pole_readings = gradients | core.mv.xyz
     permanent = corners.mean(axis=0) * remanence
-    potentials = []
+    states = list(core.evolution(stiffness, source, mass, extension, coil, drive, frame_step))
     def observed():
-        previous = None
-        for index, potential in enumerate(core.evolution(stiffness, source, mass, extension, coil, drive, frame_step)):
-            rate = 0 * potential if previous is None else (potential - previous) / frame_step
+        for previous, potential, applied in zip([states[0], *states[:-1]], states, drive):
+            rate = (potential - previous) / frame_step
             field = (hat_fields * (corners * potential)).sum(axis=0)
             magnetization = permanent + core.magnetic_response(field) - response(field)
-            # Moment flux through each cell's boundary gives its equivalent magnetic pole charge.
-            pole_charge = (corners.adjugate() * (areas * (pole_readings & magnetization))).sum(axis=0)
+            # The field this magnetization alone would be is not closed: its exterior derivative,
+            # read by the volume of space, is the equivalent magnetic pole charge.
+            magnet_field = core.moment_field(magnetization)
+            pole_charge = (corners.adjugate() * (areas * ((gradients ^ magnet_field) & core.volume))).sum(axis=0)
             pole_density = pole_charge / cells
             mean_rate = (mass * rate).sites.sum() / mass.sites.sum()
             electric = -(rate - mean_rate) * core.mv.zt
             current = conductivity * core.electric_response(electric)
-            potentials.append(potential)
-            previous = potential
-            yield potential, pole_density, current, drive[index]
+            yield potential, pole_density, current, applied
     movie = save_animation(render.animate(topology, vertices, fractions, coils, coil_current, observed()), name, 40, colors=128)
-    history = stack(potentials)
+    history = stack(states)
     save_figure(render.relaxation(history, mass, frame_step, pulse_fall), name + "_relaxation")
     print(movie, flush=True)
     # checks

@@ -19,11 +19,13 @@ Field = ga.gatype.bivector()                      # Bivector+
 Moment = ga.gatype.antibivector()                 # Antibivector-
 origin = mv.w.dual()
 time = -mv.t.dual()
-unread = mv.z.dual() & time
+sweep = mv.z.dual() & time
 patches = stack((mv.xz.dual(), mv.yz.dual()))
 magnetic_response = (patches * (Field & patches)).sum(axis=0)
-sweep = mv.z.dual() & time
 electric_response = sweep * (Field & sweep)
+planes = stack((mv.xz, mv.yz))
+moment_field = (planes * (planes & Moment)).sum(axis=0)
+volume = mv.xyz.dual()                            # Antitrivector-
 
 
 def medium(topology, vertices: Point, permeability: Scalar, conductivity: Scalar,
@@ -31,11 +33,11 @@ def medium(topology, vertices: Point, permeability: Scalar, conductivity: Scalar
     """Assemble magnetic storage, conduction and remanent magnetization on one mesh."""
     corners = topology.incidence[2, 0]
     mean = corners.mean(axis=0)
-    spans = reduce(and_, corners * vertices, unread)
+    spans = reduce(and_, corners * vertices, sweep)
     areas = spans.norm() / 2
     cells = mean.adjugate() * areas
     facing = topology.off[2, 0] * vertices
-    complements = facing[0] & facing[1] & unread
+    complements = facing[0] & facing[1] & sweep
     hats = complements / (complements & (corners * vertices))
     gradients = hats - (hats & origin) * mv.w
     # A spatial potential along z gives the magnetic field within this cross-section.
