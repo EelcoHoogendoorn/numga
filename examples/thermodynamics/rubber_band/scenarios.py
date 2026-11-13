@@ -63,11 +63,11 @@ def lattice(n_across: int, n_rows: int) -> np.ndarray:
 def hanging_band() -> tuple[Topology, core.Point, np.ndarray, core.Band]:
     """Triangulated strip, unloaded rest positions, boolean face mask for the hanging weight, and assembled band."""
     topology, coordinates = shapes.delaunay(lattice(n_across, n_band_rows + n_weight_rows))
-    rest = mv(core.Upright, coordinates).dual().field()                       # Point-[vertices]
+    rest = mv(core.Upright, coordinates).dual().field()                       # Point-[V]
     # Mark the bottom rows as the denser, stiffer weight and clamp the top row at y == 0.
     band_length = n_band_rows * np.sqrt(3) / 2 / (n_across - 1)
-    in_weight = coordinates[topology.elements[2]][..., 1].max(axis=-1) < -band_length + 1e-9   # [faces]
-    held = np.flatnonzero(coordinates[:, 1] == 0)                            # [held]
+    in_weight = coordinates[topology.elements[2]][..., 1].max(axis=-1) < -band_length + 1e-9   # [F]
+    held = np.flatnonzero(coordinates[:, 1] == 0)                            # [V_held]
     band = core.band(topology, rest, held, core.constitutive(lame_lambda, lame_mu),
                      mv.scalar(np.where(in_weight, weight_stiffening, 1.0)[:, None]).field(),
                      mv.scalar(np.where(in_weight, weight_density, density)[:, None]).field(),

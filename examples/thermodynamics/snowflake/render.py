@@ -38,7 +38,7 @@ entropy_size, entropy_colour, axis_colour = (300, 180), "#1d3a5f", "#555555"
 
 
 def on_white(picture: np.ndarray) -> np.ndarray:
-    """RGBA colour and coverage `[rows, columns, 4]` composited over white as uint8 RGB `[rows, columns, 3]`."""
+    """RGBA colour and coverage composited over white as uint8 RGB."""
     shown = picture[..., :3] + (1 - picture[..., 3:])
     return np.round(np.clip(shown, 0, 1) * 255).astype(np.uint8)
 

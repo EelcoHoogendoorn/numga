@@ -1,37 +1,39 @@
-"""Equal heat taken in by a cylinder latched at fixed volume and by one under a weight at fixed pressure."""
+"""Two cylinders take in equal slices of heat, one latched at fixed volume and one loaded under a weight at fixed
+pressure."""
 from __future__ import annotations
 
 from collections.abc import Iterator
 
-import numpy as np
-
 from examples.thermodynamics.state_space import core
 
 thermal_capacity = 1.5
+n_cylinders = 2
 
 
 # --- math -----------------------------------------------------------------------------
 def temperature_of(states: core.State) -> core.Scalar:
+    """Temperatures of the gas states."""
     return core.response(states, thermal_capacity)[0]
 
 
 def pressure_of(states: core.State) -> core.Scalar:
+    """Pressures of the gas states."""
     return core.response(states, thermal_capacity)[1]
 
 
 def initial() -> core.State:
-    """Both cylinders at the reference state: unit volume and temperature, entropy measured from there."""
-    return (core.mv.s.dual() * 0 + core.mv.v.dual())[None].broadcast_to((2,))
+    """Initial states of both cylinders at unit volume, unit temperature, and zero reference entropy."""
+    return (core.mv.s.dual() * 0 + core.mv.v.dual())[None].broadcast_to((n_cylinders,))   # [n_cylinders] State-
 
 
 def equal_heating(total_heat: float, n_steps: int) -> Iterator[tuple[core.State, core.State, float]]:
-    """The two cylinders' states `[cylinders]`, latched then loaded, their heating directions, and the heat each has
-    taken in, as equal slices of heat come in."""
+    """Yields the latched and loaded cylinders' states, their heating directions, and the cumulative heat added at each
+    step."""
     states = initial()
     for step in range(n_steps + 1):
-        directions, _ = core.heating_direction(states, core.held(states, thermal_capacity), thermal_capacity)
+        directions, _ = core.heating_direction(states, core.constraints(states, thermal_capacity), thermal_capacity)
         yield states, directions, step * total_heat / n_steps
-        states = core.heated(states, total_heat / n_steps, thermal_capacity)
+        states = core.heating_step(states, total_heat / n_steps, thermal_capacity)
 
 
 if __name__ == "__main__":

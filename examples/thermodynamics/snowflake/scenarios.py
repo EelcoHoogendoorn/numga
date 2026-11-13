@@ -41,14 +41,14 @@ def dish(n_divisions: int) -> tuple[Topology, np.ndarray, core.Point]:
 
 def seed_phase(coordinates: np.ndarray) -> core.Scalar:
     """Initial phase field on the dish, equal to one inside the seed radius with a smooth hyperbolic-tangent rim."""
-    phase = (1 + np.tanh((seed_radius - np.hypot(*coordinates.T)) / seed_edge)) / 2   # [vertices]
+    phase = (1 + np.tanh((seed_radius - np.hypot(*coordinates.T)) / seed_edge)) / 2   # [V]
     return mv.scalar(phase[:, None]).field()
 
 
 def seeded(coordinates: np.ndarray) -> tuple[core.Point, core.Scalar]:
     """Initial parcel and phase fields for the cold water and central ice seed."""
-    phase = seed_phase(coordinates)                                           # Scalar+[vertices]
-    return core.volume + core.ice * core.held_ice(phase) + 0 * core.heat, phase
+    phase = seed_phase(coordinates)                                           # Scalar+[V]
+    return core.volume + core.ice * core.ice_content(phase) + 0 * core.heat, phase
 
 
 def frozen(topology: Topology, vertices: core.Point, parcels: core.Point, phase: core.Scalar, anisotropy: float,

@@ -52,10 +52,10 @@ Drive = ga.gatype.bivector().derive.touching(space, quantities)               # 
 # Unit spatial directions across and up the plane, and a unit of entropy.
 across = mv.x.dual()                                                          # [] Point-
 up = mv.y.dual()                                                              # [] Point-
-directions = stack((across, up))                                              # [directions] Point-
+directions = stack((across, up))                                              # [2] Point-
 entropy = mv.s.dual()                                                         # [] Point-
 # Isotropic unit thermal conductivity: each spatial direction joined with entropy pairs with a drive to carry entropy.
-sweeps = directions & entropy                                                 # [directions] Antibivector-
+sweeps = directions & entropy                                                 # [2] Antibivector-
 spreading = (sweeps * (sweeps & Drive)).sum(axis=0)                           # [] Antibivector- <- Bivector+
 # Isotropic plane-elastic tractions: dilation and rotation-free shear on displacement gradients.
 dilation_traction = Plane * (Plane & Point)                                   # [] Plane+ <- (Plane+, Plane+, Point-)
@@ -67,10 +67,10 @@ shear_traction = 2 * direct_shear - (Plane | (Plane ^ Point.dual_inverse()))  # 
 def triangles(topology: Topology, places: Point) -> tuple[Scalar, Plane]:
     """Triangle areas and corner simplex gradients for the unloaded vertices; each corner gradient reads one from the
     facing side to its corner and zero along entropy."""
-    sides = topology.boundary[2, 1] * (topology.d[0] * places)                # [corners] Point-[faces]
+    sides = topology.boundary[2, 1] * (topology.d[0] * places)                # [3] Point-[F]
     # Joining two sides with a unit of entropy gives twice the triangle's signed area.
-    double_areas = (sides[0] & sides[1]) & entropy                            # Scalar-[faces]
-    gradients = (entropy & sides) / double_areas                              # [corners] Plane+[faces]
+    double_areas = (sides[0] & sides[1]) & entropy                            # Scalar-[F]
+    gradients = (entropy & sides) / double_areas                              # [3] Plane+[F]
     return double_areas.norm() / 2, gradients
 
 
@@ -82,21 +82,21 @@ def constitutive(lame_lambda: float, lame_mu: float) -> Elastic:
 
 class Band(NamedTuple):
     """Geometry, operators and parameters of the unloaded band at rest and its surrounding room."""
-    corners: SparseExtensor                                                   # [corners] Scalar+[faces <- vertices]
-    corner_mean: SparseExtensor                                               # Scalar+[faces <- vertices]
-    rest: Point                                                               # Point-[vertices]
-    freeing: SparseExtensor                                                   # Scalar+[vertices <- vertices]
-    masses: Scalar                                                            # Scalar+[vertices]
-    cells: Scalar                                                             # Scalar+[vertices]
-    areas: Scalar                                                             # Scalar+[faces]
-    elastic: Extensor                                                         # [corners, corners] (Plane+ <- Point-)[faces]
-    conduction: SparseExtensor                                                # Scalar+[vertices <- vertices]
+    corners: SparseExtensor                                                   # [3] Scalar+[F <- V]
+    corner_mean: SparseExtensor                                               # Scalar+[F <- V]
+    rest: Point                                                               # Point-[V]
+    freeing: SparseExtensor                                                   # Scalar+[V <- V]
+    masses: Scalar                                                            # Scalar+[V]
+    cells: Scalar                                                             # Scalar+[V]
+    areas: Scalar                                                             # Scalar+[F]
+    elastic: Extensor                                                         # [3, 3] (Plane+ <- Point-)[F]
+    conduction: SparseExtensor                                                # Scalar+[V <- V]
     heat_capacity: float
     cooling: float
     room_temperature: float
     pull: Plane                                                               # [] Plane+
     drag: float
-    hand: Plane                                                               # Plane+[vertices]
+    hand: Plane                                                               # Plane+[V]
 
 
 def band(topology: Topology, rest: Point, held: np.ndarray, material: Elastic, stiffening: Scalar, densities: Scalar,
@@ -105,22 +105,22 @@ def band(topology: Topology, rest: Point, held: np.ndarray, material: Elastic, s
     """Assembled stiffness, conduction and vertex properties of the hanging band and its weight on the unloaded rest
     triangulation, with the top row clamped."""
     areas, gradients = triangles(topology, rest)
-    corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
-    corner_mean = corners.mean(axis=0)                                        # Scalar+[faces <- vertices]
+    corners = topology.incidence[2, 0]                                        # [3] Scalar+[F <- V]
+    corner_mean = corners.mean(axis=0)                                        # Scalar+[F <- V]
     free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), held), 0)
     # Each vertex cell receives one third of the area and mass of its incident triangles.
-    cells = ~corner_mean * areas                                              # Scalar+[vertices]
-    masses = ~corner_mean * (densities * areas)                               # Scalar+[vertices]
+    cells = ~corner_mean * areas                                              # Scalar+[V]
+    masses = ~corner_mean * (densities * areas)                               # Scalar+[V]
     pull = -gravity * mv.y                                                    # [] Plane+
-    hand = hand_pull * (~corner_mean * (weighting * densities * areas)) * pull   # Plane+[vertices]
+    hand = hand_pull * (~corner_mean * (weighting * densities * areas)) * pull   # Plane+[V]
     # Evaluating the work form on each triangle's corner gradients gives its room-temperature stiffness map.
-    bound = gradients.batch()                                                 # [corners, faces] Plane+
-    work = material(bound[:, None], bound[None, :], Point, Point)             # [corners, corners, faces] Scalar+ <- (Point-, Point-)
-    elastic = ((Plane & Point).solve(work) * (stiffening * areas).batch()).field()   # [corners, corners] (Plane+ <- Point-)[faces]
+    bound = gradients.batch()                                                 # [3, F] Plane+
+    work = material(bound[:, None], bound[None, :], Point, Point)             # [3, 3, F] Scalar+ <- (Point-, Point-)
+    elastic = ((Plane & Point).solve(work) * (stiffening * areas).batch()).field()   # [3, 3] (Plane+ <- Point-)[F]
     # Pulling the unit conductivity back through the corner gradients assembles the vertex conduction map.
-    drives = -gradients ^ mv.s                                                # [corners] Bivector+[faces]
-    local = areas * (mv.s & (gradients[:, None] ^ spreading(drives[None, :])))   # [corners, corners] Scalar+[faces]
-    conduction = conductivity * (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Scalar+[vertices <- vertices]
+    drives = -gradients ^ mv.s                                                # [3] Bivector+[F]
+    local = areas * (mv.s & (gradients[:, None] ^ spreading(drives[None, :])))   # [3, 3] Scalar+[F]
+    conduction = conductivity * (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Scalar+[V <- V]
     return Band(corners, corner_mean, rest, ~free * free, masses, cells, areas, elastic, conduction, heat_capacity,
                 cooling, room_temperature, pull, drag, hand)
 
@@ -131,17 +131,17 @@ def potentials(band: Band, points: Point) -> Plane:
     room-temperature elastic energy divided by room temperature, stretching at fixed entropy raises its temperature and
     scales its restoring forces in proportion."""
     # Separate each vertex's entropy from its spatial shift relative to rest.
-    held_entropy = mv.s & points                                              # Scalar+[vertices]
-    shifts = band.corners * ((points - held_entropy * entropy) - band.rest)   # [corners] Point-[faces]
+    held_entropy = mv.s & points                                              # Scalar+[V]
+    shifts = band.corners * ((points - held_entropy * entropy) - band.rest)   # [3] Point-[F]
     # Room-temperature elastic forces on the corners and the corresponding elastic energy on each triangle.
-    springs = -band.elastic(shifts[None, :]).sum(axis=1)                      # [corners] Plane+[faces]
-    stretch = -(springs & shifts).sum(axis=0) / 2                             # Scalar+[faces]
+    springs = -band.elastic(shifts[None, :]).sum(axis=1)                      # [3] Plane+[F]
+    stretch = -(springs & shifts).sum(axis=0) / 2                             # Scalar+[F]
     # Mean vertex entropy density and stretch determine each triangle's temperature ratio relative to the room.
-    entropy_densities = band.corner_mean * (held_entropy / band.cells)        # Scalar+[faces]
-    warmth = ((entropy_densities + stretch / (band.areas * band.room_temperature)) / band.heat_capacity).exp()   # Scalar+[faces]
+    entropy_densities = band.corner_mean * (held_entropy / band.cells)        # Scalar+[F]
+    warmth = ((entropy_densities + stretch / (band.areas * band.room_temperature)) / band.heat_capacity).exp()   # Scalar+[F]
     # Area-average the triangle temperatures onto the vertex cells and scale the corner forces by `warmth`.
-    temperatures = band.room_temperature * (~band.corner_mean * (band.areas * warmth)) / band.cells   # Scalar+[vertices]
-    forces = (~band.corners * (warmth * springs)).sum(axis=0)                 # Plane+[vertices]
+    temperatures = band.room_temperature * (~band.corner_mean * (band.areas * warmth)) / band.cells   # Scalar+[V]
+    forces = (~band.corners * (warmth * springs)).sum(axis=0)                 # Plane+[V]
     return temperatures * mv.s - forces
 
 
@@ -149,9 +149,9 @@ def move(band: Band, points: Point, velocities: Point, forces: Plane, pulled: fl
     """Vertex state and velocities after a mechanical step at fixed entropy under midpoint elastic forces, gravity, air
     drag and the downward hand pull, with the clamped top row held still."""
     # Implicit midpoint air drag updates the free velocities before advancing the positions by the mean velocity.
-    loads = forces + band.masses * band.pull + pulled * band.hand             # Plane+[vertices]
+    loads = forces + band.masses * band.pull + pulled * band.hand             # Plane+[V]
     kicked = band.freeing * (((1 - band.drag * dt / 2) * velocities + dt * (loads / band.masses).dual())
-                             / (1 + band.drag * dt / 2))                      # Point-[vertices]
+                             / (1 + band.drag * dt / 2))                      # Point-[V]
     return points + dt * (velocities + kicked) / 2, kicked
 
 
@@ -160,13 +160,13 @@ def exchange(band: Band, points: Point, temperatures: Scalar, lamp: Point, lamp_
     """Entropy gained by each vertex cell over one step from lamp heating, Newton cooling to the room, and heat
     conduction across the band."""
     # Lamp intensity falls off with squared spatial distance after stripping the entropy component from `points`.
-    offsets = points - (mv.s & points) * entropy - lamp                       # Point-[vertices]
-    exposures = 1 / (1 + (offsets.dual_inverse() & offsets) / reach ** 2)     # Scalar+[vertices]
+    offsets = points - (mv.s & points) * entropy - lamp                       # Point-[V]
+    exposures = 1 / (1 + (offsets.dual_inverse() & offsets) / reach ** 2)     # Scalar+[V]
     exchanged = dt * band.cells * (lit * lamp_heat * exposures
-                                   - band.cooling * (temperatures - band.room_temperature))   # Scalar+[vertices]
-    conducted = -dt * (band.conduction * temperatures)                        # Scalar+[vertices]
+                                   - band.cooling * (temperatures - band.room_temperature))   # Scalar+[V]
+    conducted = -dt * (band.conduction * temperatures)                        # Scalar+[V]
     # Adding heat to a cell of constant heat capacity raises its entropy logarithmically with the temperature ratio.
-    capacities = band.heat_capacity * band.cells                              # Scalar+[vertices]
+    capacities = band.heat_capacity * band.cells                              # Scalar+[V]
     return capacities * (1 + (exchanged + conducted) / (capacities * temperatures)).log()
 
 
@@ -175,19 +175,19 @@ def step(band: Band, points: Point, velocities: Point, lamp: Point, lamp_heat: f
     """Vertex state and velocities after one step, combining a reversible mechanical step at fixed entropy with an
     irreversible entropy shift from the lamp, the room and heat conduction."""
     # Evaluate the potentials at the midpoint to split out the temperatures and the elastic forces.
-    middle = points + dt / 2 * velocities                                     # Point-[vertices]
-    middle_potentials = potentials(band, middle)                              # Plane+[vertices]
-    temperatures = middle_potentials & entropy                                # Scalar+[vertices]
-    forces = temperatures * mv.s - middle_potentials                          # Plane+[vertices]
+    middle = points + dt / 2 * velocities                                     # Point-[V]
+    middle_potentials = potentials(band, middle)                              # Plane+[V]
+    temperatures = middle_potentials & entropy                                # Scalar+[V]
+    forces = temperatures * mv.s - middle_potentials                          # Plane+[V]
     points, velocities = move(band, points, velocities, forces, pulled, dt)
-    gained = exchange(band, middle, temperatures, lamp, lamp_heat, reach, lit, dt)   # Scalar+[vertices]
+    gained = exchange(band, middle, temperatures, lamp, lamp_heat, reach, lit, dt)   # Scalar+[V]
     return points + gained * entropy, velocities
 
 
 def run(band: Band, points: Point, lamp: Point, lamp_heat: float, reach: float, exposure: np.ndarray,
         pulling: np.ndarray, dt: float, n_stride: int) -> Iterator[tuple[Point, Scalar, float]]:
     """Yield the band's vertex state, vertex temperatures and lamp state at the start and after each frame stride."""
-    velocities = 0 * points                                                   # Point-[vertices]
+    velocities = 0 * points                                                   # Point-[V]
     yield points, potentials(band, points) & entropy, exposure[0]
     for exposures, pulls in zip(exposure.reshape(-1, n_stride), pulling.reshape(-1, n_stride)):
         for lit, pulled in zip(exposures, pulls):

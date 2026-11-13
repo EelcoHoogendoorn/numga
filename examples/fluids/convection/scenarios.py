@@ -28,21 +28,21 @@ n_animation_colours = 24
 
 
 def conducting(heights: core.Scalar, size: float) -> core.Scalar:
-    """Linear conductive temperature profile `Scalar+[vertices]` running from +0.5 at the floor to -0.5 at the ceiling,
+    """Linear conductive temperature profile running from +0.5 at the floor to -0.5 at the ceiling,
     perturbed in the interior by random noise."""
     rng = np.random.default_rng(seed)
-    noise = mv.scalar(rng.standard_normal((len(heights.batch()), 1))).field()   # Scalar+[vertices]
+    noise = mv.scalar(rng.standard_normal((len(heights.batch()), 1))).field()   # Scalar+[V]
     return 0.5 - heights + size * heights * (1 - heights) * noise
 
 
 def turning_over(n_along: int, n_across: int):
-    """The opened strip, the map reading closed-strip fields onto it, its spatial vertex offsets
-    `Antivector-[vertices]`, the assembled operators, and the yielded stream function, temperature and energy budget
+    """The opened strip, the map reading closed-strip fields onto it, its spatial vertex offsets,
+    the assembled operators, and the yielded stream function, temperature and energy budget
     over time from the perturbed conductive start."""
     closed, opened, closing, opening, places = core.layer(n_along, n_across, period)
-    vertices = mv(core.Upright, places).dual().field()                          # Antivector-[opened_vertices]
+    vertices = mv(core.Upright, places).dual().field()                          # Antivector-[V_opened]
     liquid = core.forms(closed, opened, vertices, density, prandtl)
-    temperature = conducting(closing * (mv.y & vertices), disturbance)          # Scalar+[vertices]
+    temperature = conducting(closing * (mv.y & vertices), disturbance)          # Scalar+[V]
     return opened, opening, vertices, liquid, core.convecting(
         liquid, closed.reading(closed.interior[0], 0), closing * vertices, density, expansion,
         np.array(rayleigh * prandtl / expansion), reference_temperature, heat_capacity, temperature, dt, n_steps,
@@ -63,11 +63,11 @@ def main() -> None:
     streams, _, budgets = zip(*kept_states)
     times = np.arange(0, n_steps + 1, n_stride) * dt
     # Integrated squared stream function over the layer at each frame.
-    sizes = stack(tuple((liquid.cells * stream.squared()).sites.sum() for stream in streams))   # [frames] Scalar+
+    sizes = stack(tuple((liquid.cells * stream.squared()).sites.sum() for stream in streams))   # [n_frames] Scalar+
     save_figure(render.draw_turnover(times, sizes), "convection_turnover")
     # Energy budget terms and normalized conservation residual relative to the initial state.
-    kinetic, potential, dissipated, conducted, produced = map(stack, zip(*budgets))   # [frames] Scalar+, Scalar+, Scalar+, Scalar+, Scalar+
-    accounted = kinetic + potential + dissipated - conducted                  # [frames] Scalar+
+    kinetic, potential, dissipated, conducted, produced = map(stack, zip(*budgets))   # [n_frames] Scalar+, Scalar+, Scalar+, Scalar+, Scalar+
+    accounted = kinetic + potential + dissipated - conducted                  # [n_frames] Scalar+
     save_figure(render.draw_budget(times, kinetic - kinetic[0], potential - potential[0], dissipated, conducted,
                                    (accounted - accounted[0]) / dissipated[-1], produced), "convection_budget")
 

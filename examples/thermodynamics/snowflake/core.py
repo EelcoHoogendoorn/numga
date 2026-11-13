@@ -70,7 +70,7 @@ Flux = ga.gatype.antibivector().derive.touching(space, Algebra("i0h0"))       # 
 Spreading = ga.gatype((Flux, Drive))
 across = mv.x.dual()                                                          # [] Point-
 up = mv.y.dual()                                                              # [] Point-
-directions = stack((across, up))                                              # [directions] Point-
+directions = stack((across, up))                                              # [2] Point-
 volume = mv.v.dual()                                                          # [] Point-
 ice = mv.i.dual()                                                             # [] Point-
 heat = mv.h.dual()                                                            # [] Point-
@@ -79,16 +79,16 @@ heat = mv.h.dual()                                                            # 
 # --- math -----------------------------------------------------------------------------
 def triangles(topology: Topology, vertices: Point) -> tuple[Antiscalar, Plane, Antiscalar]:
     """Triangle areas, corner simplex gradients, and vertex cell areas across the triangulated dish."""
-    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)              # [corners] Point-[faces]
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)              # [3] Point-[F]
     # Joining two sides with unit volume, ice and heat gives twice the oriented triangle area.
-    double_areas = (((sides[0] & sides[1]) & volume) & ice) & heat            # Antiscalar-[faces]
-    areas = double_areas / 2                                                  # Antiscalar-[faces]
+    double_areas = (((sides[0] & sides[1]) & volume) & ice) & heat            # Antiscalar-[F]
+    areas = double_areas / 2                                                  # Antiscalar-[F]
     # Joining the facing side with volume, ice and heat over twice the area gives each corner's simplex gradient.
-    gradients = (volume & ice & heat & sides) / double_areas                  # [corners] Plane+[faces]
+    gradients = (volume & ice & heat & sides) / double_areas                  # [3] Plane+[F]
     return areas, gradients, (~topology.incidence[2, 0] * (areas / 3)).sum(axis=0)
 
 
-def held_ice(phase: Scalar) -> Scalar:
+def ice_content(phase: Scalar) -> Scalar:
     """A parcel's ice fraction as a smooth quintic step between zero in water and one in ice, with vanishing slope at both."""
     return phase ** 3 * (10 - 15 * phase + 6 * phase ** 2)
 
@@ -98,14 +98,14 @@ def edge_free_energy(areas: Antiscalar, cells: Antiscalar, gradient: SparseExten
                      well_height: float, phase: Scalar) -> Antiscalar:
     """The free energy of the ice's edge, summing the anisotropic gradient energy over the triangles and the double
     well over the vertex cells."""
-    steepness = gradient(phase)                                               # Plane+[faces]
-    drive = -steepness ^ mv.i                                                 # Drive+[faces]
-    squared_steepness = drive & spreading(drive)                              # Scalar+[faces]
-    third_power = (steepness * crystal_axis) ** 3                             # Even+[faces]
-    six_fold = third_power.scalar_product(third_power)                        # Scalar+[faces]
-    reach = squared_steepness + regularization ** 2                           # Scalar+[faces]
-    widths = mean_width * (1 + anisotropy * six_fold / reach ** 3)            # Scalar+[faces]
-    well = well_height * phase ** 2 * (1 - phase) ** 2                        # Scalar+[vertices]
+    steepness = gradient(phase)                                               # Plane+[F]
+    drive = -steepness ^ mv.i                                                 # Drive+[F]
+    squared_steepness = drive & spreading(drive)                              # Scalar+[F]
+    third_power = (steepness * crystal_axis) ** 3                             # Even+[F]
+    six_fold = third_power.scalar_product(third_power)                        # Scalar+[F]
+    reach = squared_steepness + regularization ** 2                           # Scalar+[F]
+    widths = mean_width * (1 + anisotropy * six_fold / reach ** 3)            # Scalar+[F]
+    well = well_height * phase ** 2 * (1 - phase) ** 2                        # Scalar+[V]
     return (areas * widths ** 2 * squared_steepness / 2).sites.sum() + (cells * well).sites.sum()
 
 
@@ -114,27 +114,27 @@ def edge_slope(topology: Topology, areas: Antiscalar, gradients: Plane, cells: A
                well_height: float, phase: Scalar) -> Antiscalar:
     """The derivative of the edge's free energy with respect to the vertex phases, combining the anisotropic gradient
     energy's pull across the triangles with the double well's slope on the cells."""
-    steepness = gradient(phase)                                               # Plane+[faces]
+    steepness = gradient(phase)                                               # Plane+[F]
     # Pairing the phase's drive with its flux gives the squared steepness, whose derivative is twice that flux.
-    drive = -steepness ^ mv.i                                                 # Drive+[faces]
-    flux = spreading(drive)                                                   # Flux-[faces]
-    squared_steepness = drive & flux                                          # Scalar+[faces]
+    drive = -steepness ^ mv.i                                                 # Drive+[F]
+    flux = spreading(drive)                                                   # Flux-[F]
+    squared_steepness = drive & flux                                          # Scalar+[F]
     # The sixth power of `steepness * crystal_axis` has scalar part `|steepness| ** 6 * cos(6 angle)`.
-    turn = steepness * crystal_axis                                           # Even+[faces]
-    third_power = turn ** 3                                                   # Even+[faces]
-    six_fold = third_power.scalar_product(third_power)                        # Scalar+[faces]
-    reach = squared_steepness + regularization ** 2                           # Scalar+[faces]
-    widths = mean_width * (1 + anisotropy * six_fold / reach ** 3)            # Scalar+[faces]
+    turn = steepness * crystal_axis                                           # Even+[F]
+    third_power = turn ** 3                                                   # Even+[F]
+    six_fold = third_power.scalar_product(third_power)                        # Scalar+[F]
+    reach = squared_steepness + regularization ** 2                           # Scalar+[F]
+    widths = mean_width * (1 + anisotropy * six_fold / reach ** 3)            # Scalar+[F]
     # Differentiating the six-fold term gives `6 * crystal_axis * turn ** 5`, mapped to a flux by `spreading`.
-    slope = 6 * crystal_axis * turn ** 5                                      # Plane+[faces]
-    slope_flux = spreading(-slope ^ mv.i)                                     # Flux-[faces]
+    slope = 6 * crystal_axis * turn ** 5                                      # Plane+[F]
+    slope_flux = spreading(-slope ^ mv.i)                                     # Flux-[F]
     # Combine the width's angular variation with the isotropic flux to form the total flux pull on each triangle.
-    turning = mean_width * anisotropy * (slope_flux / reach ** 3 - 6 * six_fold * flux / reach ** 4)   # Flux-[faces]
-    pull = widths ** 2 * flux + squared_steepness * widths * turning          # Flux-[faces]
+    turning = mean_width * anisotropy * (slope_flux / reach ** 3 - 6 * six_fold * flux / reach ** 4)   # Flux-[F]
+    pull = widths ** 2 * flux + squared_steepness * widths * turning          # Flux-[F]
     # Pair each corner's simplex drive with the triangle's flux pull to gather the vertex derivatives.
-    corner_drives = -gradients ^ mv.i                                         # [corners] Drive+[faces]
-    shares = (~topology.incidence[2, 0] * (areas * (corner_drives & pull))).sum(axis=0)   # Antiscalar-[vertices]
-    well_slope = 2 * well_height * phase * (1 - phase) * (1 - 2 * phase)      # Scalar+[vertices]
+    corner_drives = -gradients ^ mv.i                                         # [3] Drive+[F]
+    shares = (~topology.incidence[2, 0] * (areas * (corner_drives & pull))).sum(axis=0)   # Antiscalar-[V]
+    well_slope = 2 * well_height * phase * (1 - phase) * (1 - 2 * phase)      # Scalar+[V]
     return shares + cells * well_slope
 
 
@@ -145,7 +145,7 @@ def total_entropy(areas: Antiscalar, cells: Antiscalar, gradient: SparseExtensor
     """The total entropy of the dish, summing the parcels' thermal and latent entropy over the cells and subtracting
     the edge's free energy over the absolute melting temperature."""
     absolute_melting = melting_temperature - absolute_zero
-    parcel_entropies = ((mv.h & parcels) - absolute_zero).log() - latent_heat / absolute_melting * (mv.i & parcels)   # Scalar+[vertices]
+    parcel_entropies = ((mv.h & parcels) - absolute_zero).log() - latent_heat / absolute_melting * (mv.i & parcels)   # Scalar+[V]
     edge = edge_free_energy(areas, cells, gradient, spreading, crystal_axis, mean_width, anisotropy, regularization,
                             well_height, phase)                               # [] Antiscalar-
     return (cells * parcel_entropies).sites.sum() - edge / absolute_melting
@@ -155,13 +155,13 @@ def operators(topology: Topology, areas: Antiscalar,
               gradients: Plane) -> tuple[SparseExtensor, Spreading, SparseExtensor]:
     """The simplex gradient operator from vertex scalars to triangle planes, the isotropic material map for heat and
     ice, and the assembled heat conduction operator across the vertex cells."""
-    corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
-    gradient = (spdiag(gradients) * corners).sum(axis=0) * Scalar             # (Plane+ <- Scalar+)[faces <- vertices]
-    sweeps = stack((directions & heat, directions & ice))                     # [quantities, directions] Flux-
+    corners = topology.incidence[2, 0]                                        # [3] Scalar+[F <- V]
+    gradient = (spdiag(gradients) * corners).sum(axis=0) * Scalar             # (Plane+ <- Scalar+)[F <- V]
+    sweeps = stack((directions & heat, directions & ice))                     # [2, 2] Flux-
     spreading = (sweeps * (sweeps & Drive)).sum(axis=-1).sum(axis=0)          # [] Flux- <- Drive+
-    heat_drives = -gradients ^ mv.h                                           # [corners] Drive+[faces]
-    local = areas * (mv.h & (gradients[:, None] ^ spreading(heat_drives[None, :])))   # [corners, corners] Antiscalar-[faces]
-    conduction = (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Antiscalar-[vertices <- vertices]
+    heat_drives = -gradients ^ mv.h                                           # [3] Drive+[F]
+    local = areas * (mv.h & (gradients[:, None] ^ spreading(heat_drives[None, :])))   # [3, 3] Antiscalar-[F]
+    conduction = (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Antiscalar-[V <- V]
     return gradient, spreading, conduction
 
 
@@ -173,11 +173,11 @@ def phase_drive(topology: Topology, areas: Antiscalar, gradients: Plane, cells: 
     temperature: the thermodynamic push to freeze minus the edge's free-energy derivative."""
     absolute_melting = melting_temperature - absolute_zero
     # Heat raises entropy by `1 / T`, while ice carries `latent_heat / T_m` less entropy than liquid water.
-    absolute_temperatures = (mv.h & parcels) - absolute_zero                  # Scalar+[vertices]
-    entropy_slope = mv.h / absolute_temperatures - latent_heat / absolute_melting * mv.i   # Plane+[vertices]
+    absolute_temperatures = (mv.h & parcels) - absolute_zero                  # Scalar+[V]
+    entropy_slope = mv.h / absolute_temperatures - latent_heat / absolute_melting * mv.i   # Plane+[V]
     # Pairing `entropy_slope` with `freezing` gives the entropy produced per unit of ice; `held_slope` vanishes in bulk phases.
-    held_slope = 30 * phase ** 2 * (1 - phase) ** 2                           # Scalar+[vertices]
-    push = absolute_melting * cells * (entropy_slope & freezing) * held_slope   # Antiscalar-[vertices]
+    held_slope = 30 * phase ** 2 * (1 - phase) ** 2                           # Scalar+[V]
+    push = absolute_melting * cells * (entropy_slope & freezing) * held_slope   # Antiscalar-[V]
     return push - edge_slope(topology, areas, gradients, cells, gradient, spreading, crystal_axis, mean_width,
                              anisotropy, regularization, well_height, phase)
 
@@ -196,17 +196,17 @@ def growth(topology: Topology, areas: Antiscalar, gradients: Plane, cells: Antis
         parcels, phase = state
         drive = phase_drive(topology, areas, gradients, cells, gradient, spreading, crystal_axis, mean_width,
                             anisotropy, regularization, well_height, latent_heat, melting_temperature, absolute_zero,
-                            freezing, parcels, phase)                         # Antiscalar-[vertices]
-        next_phase = phase + dt * drive / (relaxation_time * cells)           # Scalar+[vertices]
-        ice_gained = held_ice(next_phase) - (mv.i & parcels)                  # Scalar+[vertices]
-        conducted = -(conduction * (mv.h & parcels)) / cells                  # Scalar+[vertices]
+                            freezing, parcels, phase)                         # Antiscalar-[V]
+        next_phase = phase + dt * drive / (relaxation_time * cells)           # Scalar+[V]
+        ice_gained = ice_content(next_phase) - (mv.i & parcels)                  # Scalar+[V]
+        conducted = -(conduction * (mv.h & parcels)) / cells                  # Scalar+[V]
         return (parcels + ice_gained * freezing + dt * conducted * heat, next_phase), None
 
     @jax.jit
-    def strided(state: tuple[Point, Scalar]) -> tuple[Point, Scalar]:
+    def advance(state: tuple[Point, Scalar]) -> tuple[Point, Scalar]:
         return jax.lax.scan(step, state, None, length=stride)[0]
 
     state = (parcels, phase)
     for _ in range(n_frames):
         yield state
-        state = strided(state)
+        state = advance(state)

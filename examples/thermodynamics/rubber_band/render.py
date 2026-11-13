@@ -48,7 +48,7 @@ def on_white(picture: np.ndarray) -> np.ndarray:
 
 def tinted(temperatures: core.Scalar, room_temperature: float, reach: float) -> np.ndarray:
     """Vertex RGB colours for the vertex temperatures: grey at room temperature, red above it and blue below."""
-    change = (temperatures.to_array() - room_temperature) / reach            # [vertices]
+    change = (temperatures.to_array() - room_temperature) / reach            # [V]
     return temperature_colours(np.clip(0.5 + change / 2, 0, 1))[:, :3]
 
 
@@ -102,9 +102,9 @@ def animate(topology: Topology, in_weight: np.ndarray, lamp: core.Point, room_te
     first = next(states)
     support = scenery(0.0)
     band, weight = topology.subset(~in_weight, -1), topology.subset(in_weight, -1)
-    glow = lamp + glow_reach * stack((mv.x.dual(), -mv.x.dual(), mv.y.dual(), -mv.y.dual()))   # [directions] Point-
+    glow = lamp + glow_reach * stack((mv.x.dual(), -mv.x.dual(), mv.y.dual(), -mv.y.dual()))   # [4] Point-
     camera = framing([first[0], support, glow], pixels_per_width, margin)
-    radii = glow_reach / camera.pixel * np.linspace(1 / n_glow, 1, n_glow)[::-1]   # [glow]
+    radii = glow_reach / camera.pixel * np.linspace(1 / n_glow, 1, n_glow)[::-1]   # [n_glow]
     fixed = simplices.strokes(support, Topology.chains([2]), support_colour, support_width, camera)
     for places, temperatures, lit in chain([first], states):
         bulb = bulb_colours[0] + lit * (bulb_colours[1] - bulb_colours[0])
@@ -144,11 +144,11 @@ def animate_together(topology: Topology, in_weight: np.ndarray, lamp: core.Point
     beside = pulled_across * mv.x.dual()                                      # [] Point-
     support = scenery(pulled_across)
     band, weight = topology.subset(~in_weight, -1), topology.subset(in_weight, -1)
-    glow = lamp + glow_reach * stack((mv.x.dual(), -mv.x.dual(), mv.y.dual(), -mv.y.dual()))   # [directions] Point-
-    pulled_start = first[1][0] + beside                                       # Point-[vertices]
+    glow = lamp + glow_reach * stack((mv.x.dual(), -mv.x.dual(), mv.y.dual(), -mv.y.dual()))   # [4] Point-
+    pulled_start = first[1][0] + beside                                       # Point-[V]
     camera = framing([first[0][0], pulled_start, pulled_start - drop * mv.y.dual(), support, glow],
                      pair_pixels_per_width, pair_margin)
-    radii = glow_reach / camera.pixel * np.linspace(1 / n_glow, 1, n_glow)[::-1]   # [glow]
+    radii = glow_reach / camera.pixel * np.linspace(1 / n_glow, 1, n_glow)[::-1]   # [n_glow]
     fixed = simplices.strokes(support, Topology.chains([2]), support_colour, support_width, camera)
     for (places, temperatures, lit), (pulled_places, pulled_temperatures, _) in chain([first], states):
         bulb = bulb_colours[0] + lit * (bulb_colours[1] - bulb_colours[0])

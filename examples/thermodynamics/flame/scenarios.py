@@ -1,5 +1,4 @@
-"""A cellular flame: sparks in a lean mixture whose fuel spreads faster than heat, the flames spreading from
-them merging into one front that breaks into cells as it grows."""
+"""Three sparks in a lean fuel-air mixture spread and merge into a cellular flame front on a triangulated disc."""
 
 from __future__ import annotations
 
@@ -13,56 +12,48 @@ from examples.util import shapes
 
 mv = core.mv
 
-# The disk of mixture, in flame thicknesses: its radius and the rings of triangles across it.
+# Disc radius in flame thicknesses and radial ring count of the triangulation.
 radius, n_rings = 28.0, 187
-# The mixture: its Lewis number, heat's diffusivity over fuel's, about lean hydrogen's in air; its Zeldovich number,
-# how steeply burning grows with temperature near the burnt mixture's; and the unburnt mixture's temperature, in units
-# of the rise burning brings.
+# Lewis number (thermal over fuel diffusivity, near lean hydrogen in air), Zeldovich number, and unburnt temperature in
+# units of the adiabatic temperature rise.
 lewis, zeldovich, unburnt_temperature = 0.3, 12.0, 0.25
-# Arrhenius's law in those units: the activation temperature, and the prefactor that makes a flat flame's speed one
-# where burning grows steeply.
+# Activation temperature and prefactor normalizing the flat-flame speed to unity in the high-activation-energy limit.
 burnt_temperature = unburnt_temperature + 1
 activation = zeldovich * burnt_temperature ** 2
 prefactor = zeldovich ** 2 / (2 * lewis) * np.exp(activation / burnt_temperature)
-# The sparks: their places across and up and their radii, a spark lit earlier grown larger; the width of their edges,
-# the noise roughening those edges, and the noise's seed.
+# Initial spark centres, radii, smooth rim width, radial noise amplitude, and random seed.
 spark_places = np.array([[-5.5, -2.5], [4.0, -4.5], [1.5, 5.5]])
 spark_radii = np.array([3.0, 2.2, 1.5])
 kernel_edge, roughness, seed = 0.5, 1.0, 0
-# The time step, short enough that each step burns only a share of a hot parcel's fuel, and inside the limit the fuel's
-# explicit spreading sets on triangles this small; the frames, until the cells near the rim, the steps between them,
-# and the frames while the noise on the sparks' edges smooths out, run but not shown; the frames' duration in
-# milliseconds.
+# Time step within the explicit fuel-diffusion limit, total frames, steps per frame, initial smoothing frames omitted,
+# and frame duration in milliseconds.
 dt, n_frames, n_stride, n_unshown = 0.001, 101, 83, 2
 frame_duration_ms = 40
 
 
-def disk(n_rings: int = n_rings) -> tuple[core.Topology, np.ndarray]:
-    """The disk of mixture, triangles in these many staggered rings: its topology and its vertices' places across and
-    up `[vertices, 2]`."""
+def disc(n_rings: int) -> tuple[core.Topology, np.ndarray]:
+    """Triangulated disc of staggered rings and its planar vertex coordinates."""
     return shapes.concentric_disk(np.array([radius]), n_rings)
 
 
 def hot_spot(coordinates: np.ndarray) -> core.Scalar:
-    """The share of the mixture burnt at the start at each place `Scalar+[vertices]`: all of it within any of the
-    sparks, their edges roughened by noise, and none around them."""
+    """Initial burnt fraction on the vertices, equal to one inside the noise-roughened sparks and zero outside."""
     rng = np.random.default_rng(seed)
-    edges = spark_radii + roughness * rng.standard_normal((len(coordinates), 1))   # [vertices, sparks]
-    reaches = np.linalg.norm(coordinates[:, None] - spark_places, axis=-1)    # [vertices, sparks]
-    burnt = (0.5 * (1 - np.tanh((reaches - edges) / kernel_edge))).max(axis=-1)   # [vertices]
-    return mv.scalar(burnt[:, None]).field()
+    edges = spark_radii + roughness * rng.standard_normal((len(coordinates), 1))   # [V, 3]
+    reaches = np.linalg.norm(coordinates[:, None] - spark_places, axis=-1)    # [V, 3]
+    burnt_fraction = (0.5 * (1 - np.tanh((reaches - edges) / kernel_edge))).max(axis=-1)   # [V]
+    return mv.scalar(burnt_fraction[:, None]).field()
 
 
-def spreading(n_rings: int = n_rings, n_frames: int = n_frames, n_stride: int = n_stride
-              ) -> tuple[core.Topology, core.Point, Iterator[tuple[core.Point, core.Scalar]]]:
-    """The disk's topology and vertices `Point-[vertices]`, in these many rings, and the mixture's parcels
-    `Point-[vertices]` and the rate their fuel burns at `Scalar+[vertices]` at each of these many frames, these many
-    steps apart, as the flame spreads from the sparks, once the noise on their edges has smoothed out."""
-    topology, coordinates = disk(n_rings)
-    vertices = (core.volume + mv(core.Upright, coordinates).dual()).field()  # Point-[vertices]
+def flame_states(n_rings: int, n_frames: int,
+                 n_stride: int) -> tuple[core.Topology, core.Point, Iterator[tuple[core.Point, core.Scalar]]]:
+    """The triangulated disc, its spatial vertex offsets, and the parcel and reaction-rate fields across the rendered
+    frames after the initial spark-edge noise smooths out."""
+    topology, coordinates = disc(n_rings)
+    vertices = mv(core.Upright, coordinates).dual().field()                   # Antivector-[V]
     areas, gradients, cells = core.triangles(topology, vertices)
-    burnt = hot_spot(coordinates)                                             # Scalar+[vertices]
-    parcels = core.volume + core.heat * burnt + core.fuel * (1 - burnt)      # Point-[vertices]
+    burnt_fraction = hot_spot(coordinates)                                    # Scalar+[V]
+    parcels = core.volume + core.heat * burnt_fraction + core.fuel * (1 - burnt_fraction)   # Antivector-[V]
     frames = core.burning(topology, areas, gradients, cells, 1 / lewis, prefactor, activation, unburnt_temperature,
                           parcels, dt, n_frames, n_stride)
     return topology, vertices, islice(frames, n_unshown, None)
@@ -72,7 +63,7 @@ def main() -> None:
     from examples.util.animation import save_animation
     from examples.thermodynamics.flame import render
 
-    topology, vertices, frames = spreading()
+    topology, vertices, frames = flame_states(n_rings, n_frames, n_stride)
     save_animation(render.animate(topology, vertices, radius, core.energy, frames), "flame", frame_duration_ms)
 
 

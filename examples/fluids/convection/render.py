@@ -46,7 +46,7 @@ residual_dot = 4
 
 # --- plumbing -------------------------------------------------------------------------
 def on_white(picture: np.ndarray) -> np.ndarray:
-    """RGBA coverage `[rows, columns, 4]` composited over a white background as RGB bytes `[rows, columns, 3]`."""
+    """RGBA coverage composited over a white background as RGB bytes."""
     shown = picture[..., :3] + (1 - picture[..., 3:])
     return np.round(np.clip(shown, 0, 1) * 255).astype(np.uint8)
 
@@ -60,10 +60,10 @@ def layer_camera(period: float) -> Camera:
 def walls(topology: Topology, points: Extensor, camera: Camera):
     """Horizontal border edges at the floor and ceiling, coloured warm at the floor and cool at the ceiling."""
     border = topology.border
-    tails, heads = border.incidence[1, 0] * points                              # Antivector-[border], Antivector-[border]
-    heights = (mv.y & tails).to_array()                                         # [border]
-    level = np.isclose(heights, (mv.y & heads).to_array())                      # [border]
-    colours = temperature_map(1 - heights[level])[:, :3]                       # [walls, 3]
+    tails, heads = border.incidence[1, 0] * points                              # Antivector-[E_border], Antivector-[E_border]
+    heights = (mv.y & tails).to_array()                                         # [E_border]
+    level = np.isclose(heights, (mv.y & heads).to_array())                      # [E_border]
+    colours = temperature_map(1 - heights[level])[:, :3]                       # [E_walls, 3]
     return simplices.strokes(points, border.subset(level, 1), colours, wall_width, camera)
 
 
@@ -77,7 +77,7 @@ def draw_layer(topology: Topology, vertices: Extensor, period: float) -> Figure:
 
 def animate(topology: Topology, vertices: Extensor, opening: Extensor, period: float,
             frames: Iterable[tuple[Extensor, Extensor, object]]) -> Iterator[np.ndarray]:
-    """Frames of the opened strip mapped from the closed strip's stream function and temperature `Scalar+[vertices]`:
+    """Frames of the opened strip mapped from the closed strip's stream function and temperature:
     banded temperature from cool blue to warm red with fixed-spacing streamlines between floor and ceiling."""
     camera = layer_camera(period)
     boundaries = [walls(topology, vertices, camera)]
@@ -96,7 +96,7 @@ def animate(topology: Topology, vertices: Extensor, opening: Extensor, period: f
 
 @style()
 def draw_turnover(times: np.ndarray, sizes: Extensor) -> Figure:
-    """Integrated squared stream function `[frames] Scalar+` against time on a logarithmic scale."""
+    """Integrated squared stream function against time on a logarithmic scale."""
     figure, ax = subplots(chart_width, chart_height)
     ax.semilogy(times, sizes.to_array(), color=growth_colour)
     ax.set_xlim(times[0], times[-1])
@@ -110,7 +110,7 @@ def draw_turnover(times: np.ndarray, sizes: Extensor) -> Figure:
 @style()
 def draw_budget(times: np.ndarray, kinetic: Extensor, potential: Extensor, dissipated: Extensor, conducted: Extensor,
                 residual: Extensor, produced: Extensor) -> Figure:
-    """Three-panel energy and entropy budget `[frames] Scalar+` against time: changes in kinetic and potential energy
+    """Three-panel energy and entropy budget against time: changes in kinetic and potential energy
     with viscous dissipation and minus conductive potential-energy transfer above, the normalized conservation residual
     on a logarithmic scale in the middle, and cumulative entropy production below."""
     figure, (energies, unaccounted, entropy) = subplots(chart_width, budget_height, nrows=3, sharex=True,
