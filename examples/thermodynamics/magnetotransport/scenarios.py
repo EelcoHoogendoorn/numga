@@ -59,10 +59,11 @@ magnetic = np.full(n_frames, strength) * mv.xy                               # [
 # palette, the colours its frames share.
 reversal = strength * np.cos(np.linspace(0, np.pi, n_frames)) * mv.xy        # [frames] Bivector+
 compensation = np.full_like(densities, 0.5)                                  # [frames, kinds]
+n_gallery_colours = 64
 # The magnetized conductor's carriers, spin-up and spin-down electrons, alike in charge, entropy per charge and
 # mobility, their scattering turning them opposite ways in their spins' plane by an angle of this tangent, of order one
-# as the field's strength is; its magnetization, the spin-up electrons' share less the spin-down's, swept from all up to all down in
-# a cosine with no field, and each spin's density.
+# as the field's strength is; its magnetization, the spin-up electrons' share less the spin-down's, swept from all up
+# to all down in a cosine with no field, and each spin's density.
 spin_valences = np.array([-1, -1])
 spin_entropies_per_charge = np.array([-1.0, -1.0])
 spin_mobilities = np.array([1.0, 1.0])
@@ -71,7 +72,6 @@ spin_carriers = (spin_valences, spin_entropies_per_charge, spin_mobilities, spin
 magnetizations = np.cos(np.linspace(0, np.pi, n_frames))                     # [frames]
 spin_densities = np.stack([(1 + magnetizations) / 2, (1 - magnetizations) / 2], axis=-1)   # [frames, kinds]
 no_field = np.zeros(n_frames) * mv.xy                                         # [frames] Bivector+
-n_gallery_colours = 64
 # The bar: its length in widths, its rows of triangles across, an even count so that the bar mirrors in its middle
 # line, and its columns of places along, so that the triangles are nearly equilateral and a column falls at every
 # tenth of a width.
@@ -164,7 +164,7 @@ def bar_readings(topology: Topology, plus: np.ndarray, minus: np.ndarray, states
     electric = stack([potentials for _, potentials, _, _, _ in states])      # [frames] Potential+[vertices]
     thermal = stack([potentials for _, _, _, potentials, _ in states])       # [frames] Potential+[vertices]
     # A voltmeter across each pair of the bar's probes: the potential at its plus probe less that at its minus probe.
-    voltmeters = topology.reading(plus, 0) - topology.reading(minus, 0)            # Scalar+[pairs <- vertices]
+    voltmeters = topology.reading(plus, 0) - topology.reading(minus, 0)      # Scalar+[pairs <- vertices]
     electric_voltages = (voltmeters * (electric & core.time)).batch() / current   # [frames, pairs] Scalar+
     thermal_voltages = (voltmeters * (thermal & core.time)).batch()         # [frames, pairs] Scalar+
     # Driven by heat, the differences of temperature between the probes, along the bar the upstream one the warmer.
@@ -178,7 +178,7 @@ def ring_resistances(topology: Topology, high: np.ndarray, low: np.ndarray, stat
     """The ring's resistance at each of its states `[frames] Scalar+`: driven by the current, the voltage between its
     contacts per current."""
     electric = stack([potentials for _, potentials, _, _, _ in states])      # [frames] Potential+[vertices]
-    voltmeter = topology.reading(high[:1], 0) - topology.reading(low[:1], 0)       # Scalar+[1 <- vertices]
+    voltmeter = topology.reading(high[:1], 0) - topology.reading(low[:1], 0)  # Scalar+[1 <- vertices]
     return (voltmeter * (electric & core.time)).batch()[:, 0] / current
 
 

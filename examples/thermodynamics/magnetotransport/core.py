@@ -34,15 +34,15 @@ than anything else here happens.
 
 The algebra is planar projective spacetime, x+y+t-w0, its degenerate w weighing a place, joined with one degenerate
 direction for entropy: x+y+t-w0s0. A unit of charge is a direction along time, `-mv.t.dual()`, and a unit of entropy
-`mv.s.dual()`; a carrier's parcel holds both, `valence * (time + entropy_per_charge * entropy)`. The potentials are one vector, the
-electrochemical potential along t and the temperature along s, and their drive is minus their gradient wedged with
-them. The magnetic field is a plane of space, `strength * mv.xy`, and with the drive it pushes a moving carrier by one
-commutator, `(magnetic + drive).commutator(parcel + valence * velocity)`: through space the drive's push on the parcel
-at rest and the field's turning of the drift, with no cross product and no magnetic term of its own, and along time
-the power spent on the carrier, none of it the magnetic field's. For a drift through space the field's commutator is
-their geometric product, so that Drude's steady state, the drag balancing the push, is solved by inverting one element,
-`1 - valence * mobility * magnetic`, a scalar plus a bivector: a rotor scaled by the secant of the kind's Hall angle,
-the angle opposite for opposite charges.
+`mv.s.dual()`; a carrier's parcel holds both, `valence * (time + entropy_per_charge * entropy)`. The potentials are one
+vector, the electrochemical potential along t and the temperature along s, and their drive is minus their gradient
+wedged with them. The magnetic field is a plane of space, `strength * mv.xy`, and with the drive it pushes a moving
+carrier by one commutator, `(magnetic + drive).commutator(parcel + valence * velocity)`: through space the drive's push
+on the parcel at rest and the field's turning of the drift, with no cross product and no magnetic term of its own, and
+along time the power spent on the carrier, none of it the magnetic field's. For a drift through space the field's
+commutator is their geometric product, so that Drude's steady state, the drag balancing the push, is solved by inverting
+one element, `1 - valence * mobility * magnetic`, a scalar plus a bivector: a rotor scaled by the secant of the kind's
+Hall angle, the angle opposite for opposite charges.
 A carrier carries what it holds as the flux `velocity.regressive(parcel)`, and the response, the map from a drive to the
 flux it drives, is the sum over the kinds of their drifts per drive joined with their parcels, with the lattice's
 conduction of entropy. One sum of turned drives is read two ways: through the planes that read charge, the kinds' turns
