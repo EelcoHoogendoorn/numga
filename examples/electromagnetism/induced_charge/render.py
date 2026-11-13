@@ -7,9 +7,10 @@ from operator import and_
 from numga import concatenate, stack
 from examples.electromagnetism.induced_charge import core
 from examples.util import charts
-from examples.util.topology import Topology
-from examples.util.wgsl import contours, flow, image_figure, simplices
-from examples.util.wgsl.camera import Camera
+from examples.util.panels import image_figure
+from numga.render import contours, drawing, flow
+from numga.render.camera import Camera
+from numga.topology import Topology
 
 mv = core.mv
 n_pixels = 320
@@ -33,7 +34,7 @@ def animate(topology, vertices, metal, states, *, draw_fields=True):
     fraction = np.asarray(metal.batch().to_array())
     corners = topology.incidence[2, 0]
     areas = reduce(and_, corners * vertices, core.time).norm() / 2
-    cells = ~corners.mean(axis=0) * areas
+    cells = corners.mean(axis=0).adjugate() * areas
     facing = topology.off[2, 0] * vertices
     complements = facing[0] & facing[1] & core.time
     hats = complements / (complements & (corners * vertices))
@@ -69,7 +70,7 @@ def animate(topology, vertices, metal, states, *, draw_fields=True):
             # Fade the seed ink with the local field too, so a vanishing field leaves no specks.
             magnitude = force.antinorm()
             fade = concatenate([(magnitude / (magnitude + texture_fade)).batch()] * n_corners).to_array()
-            coverage = simplices.composited([contours.picture(
+            coverage = drawing.composited([contours.picture(
                 face_points, split, fade, np.repeat(fade[:, None], 3, axis=1), camera)])
             field_layer[..., 3] *= coverage[..., 0]
             layers.append(field_layer)
@@ -77,7 +78,7 @@ def animate(topology, vertices, metal, states, *, draw_fields=True):
                                            lines=(lines,), opacity=0.))
         layers.append(contours.picture(points, topology, fraction, np.zeros(3), camera,
                                        levels=(edge,), opacity=0.))
-        image = simplices.composited(layers)
+        image = drawing.composited(layers)
         rgb = image[..., :3] * image[..., 3:] + background * (1 - image[..., 3:])
         yield np.round(np.clip(rgb, 0, 1) * 255).astype(np.uint8)
 
@@ -108,7 +109,7 @@ def corner_density(topology, vertices, charge, centre, turn, half_lengths, layer
     """The rod's peak layer density is shown along its length, with its corner positions marked."""
     corners = topology.incidence[2, 0]
     areas = reduce(and_, corners * vertices, core.time).norm() / 2
-    cells = ~corners.mean(axis=0) * areas
+    cells = corners.mean(axis=0).adjugate() * areas
     axes = turn >> stack((mv.x, mv.y))
     readings = axes & (vertices - centre)
     margin = 2 * layer_width

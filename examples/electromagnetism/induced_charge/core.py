@@ -12,7 +12,7 @@ from operator import and_
 
 from numga import Algebra, NumpyContext, stack
 from numga.sparse import spdiag
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 ga = Algebra("x+y+t-w0")
 mv = NumpyContext(ga).multivector
@@ -34,7 +34,7 @@ def relaxation(topology: Topology, vertices: Point, fractions: Scalar, boundary:
     mean = corners.mean(axis=0)
     spans = reduce(and_, corners * vertices, time)
     areas = spans.norm() / 2                       # Scalar+[faces]
-    cells = ~mean * areas                         # Scalar+[vertices]
+    cells = mean.adjugate() * areas                # Scalar+[vertices]
     facing = topology.off[2, 0] * vertices
     complements = facing[0] & facing[1] & time
     hats = complements / (complements & (corners * vertices))
@@ -44,18 +44,18 @@ def relaxation(topology: Topology, vertices: Point, fractions: Scalar, boundary:
     # Displacement stores electric energy; conduction dissipates it through the same pairing.
     local = areas * (hat_fields[:, None] & electric_response(hat_fields[None, :]))
     conductivity = (conductivities * (mean * fractions)).sum(axis=0)
-    charge_from_voltage = (~corners[:, None] * spdiag(permittivity * local)
+    charge_from_voltage = (corners[:, None].adjugate() * spdiag(permittivity * local)
                            * corners[None, :]).sum(axis=0).sum(axis=0)
-    outflow_from_voltage = (~corners[:, None] * spdiag(conductivity * local)
+    outflow_from_voltage = (corners[:, None].adjugate() * spdiag(conductivity * local)
                             * corners[None, :]).sum(axis=0).sum(axis=0)
 
     # Only the remote boundary voltage is held; every interior voltage remains independent.
-    extension = ~topology.reading(topology.interior[0], 0)
-    poisson = (~extension * charge_from_voltage * extension) * Scalar
+    extension = topology.reading(topology.interior[0], 0).adjugate()
+    poisson = (extension.adjugate() * charge_from_voltage * extension) * Scalar
     parcels = cells * fractions
     charge = (body_charges * parcels / parcels.sites.sum()).sum(axis=0)
     held = boundary[0]
-    potential = held + extension * poisson.solve(~extension * (charge - charge_from_voltage * held))
+    potential = held + extension * poisson.solve(extension.adjugate() * (charge - charge_from_voltage * held))
     yield potential, charge
 
     step = frame_step / n_substeps
@@ -65,5 +65,5 @@ def relaxation(topology: Topology, vertices: Point, fractions: Scalar, boundary:
             # Equal and opposite transfers conserve each isolated body's initial charge.
             charge = charge - step * (outflow_from_voltage * potential)
             held = previous + ((substep + 1) / n_substeps) * (target - previous)
-            potential = held + extension * poisson.solve(~extension * (charge - charge_from_voltage * held))
+            potential = held + extension * poisson.solve(extension.adjugate() * (charge - charge_from_voltage * held))
         yield potential, charge

@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 from numga import stack, where
 from examples.electromagnetism.induced_charge import core
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = core.mv
 n_across, n_frames = 129, 100
@@ -43,13 +43,13 @@ def scene(n_across: int, n_frames: int):
     # This is a readout region: all vertices touched by each body's conducting triangles.
     mean = topology.incidence[2, 0].mean(axis=0)
     active = mv.scalar(((mean * fractions) > 0)[..., None]).field()
-    memberships = mv.scalar(((~mean * active) > 0)[..., None]).field()
+    memberships = mv.scalar(((mean.adjugate() * active) > 0)[..., None]).field()
     outer = topology.reading(topology.exterior[0], 0)
     progress = np.linspace(0, 1, n_frames)
     angles = turn_angle * np.clip((progress - turn_start) / (turn_end - turn_start), 0, 1)
     turns = (mv.xy * (-angles / 2)).exp()
     slopes = turns >> (-field_strength * mv.x)
-    boundary = ~outer * (outer * (slopes & vertices))
+    boundary = outer.adjugate() * (outer * (slopes & vertices))
     return topology, vertices, fractions, memberships, boundary
 
 
