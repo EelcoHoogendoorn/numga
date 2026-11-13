@@ -73,7 +73,7 @@ def main() -> None:
     net = (charges[:, None] * memberships).sites.sum()
     negative = (where(charges < 0, -charges, 0)[:, None] * memberships).sites.sum()
     save_figure(render.balance(net, negative, frame_step), "opposite_charge_relaxation_balance")
-    save_figure(render.corner_density(topology, vertices, charges[-1], rod_centre, rod_turn,
+    save_figure(render.corner_density(vertices, states[-1][2], rod_centre, rod_turn,
                                       rod_lengths, interface_width), "rod_corner_charge_density")
 
     # checks

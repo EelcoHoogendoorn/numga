@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import numpy as np
-from functools import reduce
-from operator import and_
 from numga import concatenate, stack
 from examples.electromagnetism.induced_charge import core
 from examples.util import charts
@@ -33,13 +31,6 @@ def animate(topology, vertices, metal, states, *, draw_fields=True):
     points = vertices.batch()
     fraction = np.asarray(metal.batch().to_array())
     corners = topology.incidence[2, 0]
-    areas = reduce(and_, corners * vertices, core.time).norm() / 2
-    cells = corners.mean(axis=0).adjugate() * areas
-    facing = topology.off[2, 0] * vertices
-    complements = facing[0] & facing[1] & core.time
-    hats = complements / (complements & (corners * vertices))
-    gradients = hats - (hats & core.origin) * mv.w
-    hat_fields = -(gradients ^ mv.t)
     n_faces = topology.n_elements[2]
     n_corners = topology.n_dim + 1
     face_points = (corners * vertices).batch().reshape(-1)
@@ -47,8 +38,8 @@ def animate(topology, vertices, metal, states, *, draw_fields=True):
     base = background + fraction[:, None] * (metal_colour - background)
     edge = contours.Level(.5, edge_ink, 1.2)
     lines = contours.Lines(line_spacing, line_spacing / 2, line_ink, line_width)
-    for potential, charge in states:
-        signed = np.asarray((charge / cells).batch().to_array())
+    for potential, charge, density, force in states:
+        signed = np.asarray(density.batch().to_array())
         strength = np.arcsinh(np.abs(signed) / charge_scale)
         amount = strength / (1 + strength)
         ink = np.where(signed[:, None] >= 0, positive, negative)
@@ -57,11 +48,9 @@ def animate(topology, vertices, metal, states, *, draw_fields=True):
         highlight = signed ** 2 / (signed ** 2 + peak_scale ** 2)
         colours += (1 - colours) * highlight[:, None]
         voltage = np.asarray(potential.batch().to_array())
-        field = (hat_fields * (corners * potential)).sum(axis=0)
         layers = [contours.picture(points, topology, fraction, colours, camera)]
         if draw_fields:
             # Streak length retains field magnitude on one scale throughout the animation.
-            force = field.commutator(core.time)
             corner_force = concatenate([force.batch()] * n_corners)
             field_layer = flow.layer(face_points, split, corner_force, camera, texture_reference, field_ink,
                                      length=texture_length, grain_pixels=texture_grain,
@@ -86,7 +75,7 @@ def animate(topology, vertices, metal, states, *, draw_fields=True):
 def setup(topology, vertices, metal):
     """Draw the conducting material and its transition into insulation."""
     zero = 0 * metal
-    return image_figure(next(animate(topology, vertices, metal, [(zero, zero)], draw_fields=False)))
+    return image_figure(next(animate(topology, vertices, metal, [(zero, zero, zero, zero)], draw_fields=False)))
 
 
 @charts.style()
@@ -105,23 +94,20 @@ def balance(net, negative, frame_step):
 
 
 @charts.style()
-def corner_density(topology, vertices, charge, centre, turn, half_lengths, layer_width):
+def corner_density(vertices, density, centre, turn, half_lengths, layer_width):
     """The rod's peak layer density is shown along its length, with its corner positions marked."""
-    corners = topology.incidence[2, 0]
-    areas = reduce(and_, corners * vertices, core.time).norm() / 2
-    cells = corners.mean(axis=0).adjugate() * areas
     axes = turn >> stack((mv.x, mv.y))
     readings = axes & (vertices - centre)
     margin = 2 * layer_width
     selected = (readings[0].abs() - half_lengths[0]).abs() < margin
     selected &= readings[1].abs() < half_lengths[1] + margin
     along = readings[1].batch()[selected].to_array()
-    density = (charge / cells).batch()[selected].abs().to_array()
+    peak_candidates = density.batch()[selected].abs().to_array()
     n_bins = 35
     edges = np.linspace(-half_lengths[1] - margin, half_lengths[1] + margin, n_bins + 1)
     bins = np.clip(np.digitize(along, edges) - 1, 0, n_bins - 1)
     peaks = np.zeros(n_bins)
-    np.maximum.at(peaks, bins, density)
+    np.maximum.at(peaks, bins, peak_candidates)
     figure, ax = charts.subplots(340, 210, layout="constrained")
     ax.plot((edges[:-1] + edges[1:]) / 2, peaks, color="#cb593b")
     for end in (-half_lengths[1], half_lengths[1]):

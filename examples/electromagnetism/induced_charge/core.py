@@ -28,8 +28,11 @@ electric_response = (sweeps * (Field & sweeps)).sum(axis=0)  # [] Excitation- <-
 
 def relaxation(topology: Topology, vertices: Point, fractions: Scalar, boundary: Scalar,
                permittivity: float, conductivities, body_charges, frame_step: float,
-               n_substeps: int) -> Iterator[tuple[Scalar, Scalar]]:
-    """The evolving potential and integrated charge occupy the same mesh vertices."""
+               n_substeps: int) -> Iterator[tuple[Scalar, Scalar, Scalar, Point]]:
+    """The evolving potential and integrated charge occupy the same mesh vertices.
+
+    Each state also carries the charge density at the vertices and the force on a unit charge at rest in each face.
+    """
     corners = topology.incidence[2, 0]
     mean = corners.mean(axis=0)
     spans = reduce(and_, corners * vertices, time)
@@ -56,7 +59,8 @@ def relaxation(topology: Topology, vertices: Point, fractions: Scalar, boundary:
     charge = (body_charges * parcels / parcels.sites.sum()).sum(axis=0)
     held = boundary[0]
     potential = held + extension * poisson.solve(extension.adjugate() * (charge - charge_from_voltage * held))
-    yield potential, charge
+    field = (hat_fields * (corners * potential)).sum(axis=0)  # Field+[faces]
+    yield potential, charge, charge / cells, field.commutator(time)
 
     step = frame_step / n_substeps
     for target in boundary[1:]:
@@ -66,4 +70,5 @@ def relaxation(topology: Topology, vertices: Point, fractions: Scalar, boundary:
             charge = charge - step * (outflow_from_voltage * potential)
             held = previous + ((substep + 1) / n_substeps) * (target - previous)
             potential = held + extension * poisson.solve(extension.adjugate() * (charge - charge_from_voltage * held))
-        yield potential, charge
+        field = (hat_fields * (corners * potential)).sum(axis=0)
+        yield potential, charge, charge / cells, field.commutator(time)
