@@ -17,8 +17,9 @@ import numpy as np
 
 from numga import concatenate
 from examples.mechanics.xpbd.core import Motor
-from examples.util.wgsl import Shader, solids, supersampled
-from examples.util.wgsl.solids import (Plane, Point, Quadric, axes, ga, lamp_shading, mv, origin, quadric_crossings,
+from numga.wgsl import Shader, supersampled
+from numga.render import solids
+from numga.render.solids import (Plane, Point, Quadric, axes, ga, lamp_shading, mv, origin, quadric_crossings,
                                        seen_lamp, steps, tangent_seen)
 
 # Two alternating link colours, the pin's colour, the floor's two tiles and the background.

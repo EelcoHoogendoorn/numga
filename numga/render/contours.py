@@ -4,7 +4,7 @@ The field and its colours at the vertices are interpolated across each triangle 
 bands between levels and draws level lines where the field crosses a level, `level_line` and `level_mark` from the
 library, one width in pixels however steep the field: no line is extracted as geometry. The colours may be translucent,
 down to none, and each band, line and level lays its ink over them with its own opacity, so that pictures stack. The
-mesh's points are read by a camera of their own algebra, `examples.util.wgsl.camera`: the shader compiles per algebra,
+mesh's points are read by a camera of their own algebra, `numga.render.camera`: the shader compiles per algebra,
 and the points are never carried into another to be drawn.
 """
 from __future__ import annotations
@@ -13,16 +13,15 @@ from functools import cache
 from typing import NamedTuple
 
 import numpy as np
-from matplotlib.axes import Axes
 
 from numga.extensor import Extensor
 from numga.gatype import GAType
-from examples.util.wgsl import Shader, meshes, pinned
-from examples.util.wgsl.camera import Camera, placing, reading
-from examples.util.wgsl.library import level_lines, samples_per_side
-from examples.util.wgsl.simplices import Layer, composited
+from numga.topology import Topology
+from numga.wgsl import Shader, level_lines, samples_per_side
 
-Topology = meshes.Topology
+from .camera import Camera, placing, reading
+from .drawing import Draw
+
 
 
 class Lines(NamedTuple):
@@ -118,13 +117,12 @@ no_bands = Bands(0.0, 1.0, np.zeros((1, 4)))
 @cache
 def shader(Point: GAType, Plane: GAType) -> Shader:
     """The shader for meshes whose points are of the type `Point`, read by a camera's planes of the type `Plane`."""
-    return Shader(level_lines() + placing(Plane) + source, Point.algebra, dict(Point=Point, Plane=Plane), {},
-                  targets=("rgba8unorm",), over=True)
+    return Shader(level_lines() + placing(Plane) + source, Point.algebra, dict(Point=Point, Plane=Plane), {})
 
 
 def picture(points: Extensor, topology: Topology, values: np.ndarray, colours: np.ndarray, camera: Camera,
             lines: tuple[Lines, ...] = (), levels: tuple[Level, ...] = (), bands: tuple[Bands, ...] = (),
-            opacity: float = 1.0) -> Layer:
+            opacity: float = 1.0) -> Draw:
     """The field `[vertices]` in its colours `[vertices, 3]`, covering by `opacity`, over the mesh at its points, its
     bands filled and its lines and levels drawn over them, in that order: a layer of colour and coverage, transparent
     where no triangle lies."""
@@ -134,7 +132,7 @@ def picture(points: Extensor, topology: Topology, values: np.ndarray, colours: n
         return np.zeros(camera.shape + (4,))
     lines, levels, bands = lines or (no_lines,), levels or (no_level,), bands or (no_bands,)
     starts = np.cumsum([0] + [len(band.colours) for band in bands[:-1]])
-    return Layer(shader(**reading(points, camera)), camera.shape, 3 * topology.n_elements[2], dict(
+    return Draw(shader(**reading(points, camera)), camera.shape, 3 * topology.n_elements[2], dict(
         points=points, faces=topology.elements[2],
         values=np.asarray(values, dtype=np.float32), colours=np.broadcast_to(colours, (len(values), 3)),
         opacity=opacity, **camera.uniforms(1.0),
@@ -145,11 +143,3 @@ def picture(points: Extensor, topology: Topology, values: np.ndarray, colours: n
         bands=np.array([[band.start, band.spacing, start, len(band.colours)] for band, start in zip(bands, starts)]),
         band_colours=np.concatenate([band.colours for band in bands])))
 
-
-def overlay(ax: Axes, points: Extensor, topology: Topology, values: np.ndarray, colours: np.ndarray, camera: Camera,
-            lines: tuple[Lines, ...] = (), levels: tuple[Level, ...] = (), bands: tuple[Bands, ...] = (),
-            opacity: float = 1.0):
-    """The field drawn into a panel at its own pixels, as `picture` draws it, read by the panel's camera; the image,
-    for an animation to set its data."""
-    image = composited([picture(points, topology, values, colours, camera, lines, levels, bands, opacity)])
-    return pinned(ax, image, (*ax.get_xlim(), *ax.get_ylim()))

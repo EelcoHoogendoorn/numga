@@ -19,10 +19,10 @@ import numpy as np
 from numga import NumpyContext
 from numga.extensor import Extensor
 from numga.gatype import GAType
-from examples.util.wgsl import Shader
-from examples.util.wgsl.camera import Camera, extrinsic_first, placing, preimage, whole
-from examples.util.wgsl.library import level_lines, samples_per_side
-from examples.util.wgsl.simplices import Layer
+from numga.wgsl import Shader, level_lines, samples_per_side
+
+from .camera import Camera, extrinsic_first, placing, preimage, whole
+from .drawing import Draw
 
 
 class Kind(IntEnum):
@@ -95,12 +95,11 @@ fn form_paired(plane: Form, point: Point) -> f32 {{
 }}
 """
     return Shader(level_lines() + placing(Plane) + form_pairing + source, Point.algebra,
-                  dict(Point=Point, Plane=Plane, Form=Form, Quadric=Point.algebra.gatype((Form, Point))), {},
-                  targets=("rgba8unorm",), over=True)
+                  dict(Point=Point, Plane=Plane, Form=Form, Quadric=Point.algebra.gatype((Form, Point))), {})
 
 
 def layer(quadrics: Extensor, flats: Extensor, kind: Kind, width: float, colours: np.ndarray, camera: Camera,
-          opacity: float) -> Layer:
+          opacity: float) -> Draw:
     """Quadrics `[n, bounds]`, maps from points to planes, with their linear parts, planes `[n, bounds]`, covering what
     `kind` says, read by the camera: a layer of colour and coverage."""
     algebra = quadrics.algebra
@@ -109,7 +108,7 @@ def layer(quadrics: Extensor, flats: Extensor, kind: Kind, width: float, colours
     origin, step_across, step_up, _ = preimage(camera, Point)
     side = samples_per_side()
     rows, columns = camera.shape
-    return Layer(shader(Point, Plane, whole(flats, algebra)), camera.shape, 6 * len(quadrics), dict(
+    return Draw(shader(Point, Plane, whole(flats, algebra)), camera.shape, 6 * len(quadrics), dict(
         quadrics=quadrics.reshape(-1), flats=flats.reshape(-1),
         bounds=quadrics.shape[1], colours=np.broadcast_to(colours, (len(quadrics), 3)), opacity=opacity, kind=float(kind),
         width=width * side, samples=np.array([columns * side, rows * side], dtype=float), origin=origin,
@@ -136,13 +135,13 @@ def form_of(quadrics: Extensor) -> GAType:
     return quadrics.algebra.gatype.from_grades([grade]).derive.with_orientations(output.orientations)
 
 
-def regions(quadrics: Extensor, colours: np.ndarray, camera: Camera, opacity: float = 1.0) -> Layer:
+def regions(quadrics: Extensor, colours: np.ndarray, camera: Camera, opacity: float = 1.0) -> Draw:
     """Regions `[n]`, each where its quadrics `[n, bounds]`, maps from points to planes of either orientation, are all
     negative, each in its colour `[n, 3]` or all in one `[3]`: their picture."""
     return layer(quadrics, nothing(form_of(quadrics), quadrics.shape), Kind.REGION, 0.0, colours, camera, opacity)
 
 
-def curves(quadrics: Extensor, width: float, colours: np.ndarray, camera: Camera, opacity: float = 1.0) -> Layer:
+def curves(quadrics: Extensor, width: float, colours: np.ndarray, camera: Camera, opacity: float = 1.0) -> Draw:
     """The curves where quadrics `[n]`, maps from points to planes of either orientation, vanish, `width` pixels across,
     each in its colour `[n, 3]` or all in one `[3]`: their picture. A curve is a zero set, the same whatever the form's
     sign, so a quadric of a join draws its curve as it is."""
@@ -150,7 +149,7 @@ def curves(quadrics: Extensor, width: float, colours: np.ndarray, camera: Camera
                  camera, opacity)
 
 
-def flats(planes: Extensor, width: float, colours: np.ndarray, camera: Camera, opacity: float = 1.0) -> Layer:
+def flats(planes: Extensor, width: float, colours: np.ndarray, camera: Camera, opacity: float = 1.0) -> Draw:
     """Flats `[n]`, planes or lines of either orientation, where a plane's pairing with a point vanishes, across the
     whole picture, `width` pixels across, each in its colour `[n, 3]` or all in one `[3]`: their picture."""
     Form = whole(planes, planes.algebra)

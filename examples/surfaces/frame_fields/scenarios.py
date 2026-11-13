@@ -7,7 +7,7 @@ import numpy as np
 from numga import Algebra, NumpyContext, stack
 from numga.algebras import VGA3D as ga
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Rotor = ga.gatype.rotor()                                                    # Rotor+
@@ -160,7 +160,7 @@ def main() -> None:
 
     _, rotor_laplacian, _, _, _ = rotor_laplacian_operators(saddle_topology, saddle_vertices)
     free_vertices = saddle_topology.interior[0]
-    free = ~saddle_topology.reading(free_vertices, 0) * Rotor
+    free = saddle_topology.reading(free_vertices, 0).adjugate() * Rotor
     np.testing.assert_allclose(free.adjoint()(rotor_laplacian(harmonic_chords)).kernel, 0.0, atol=1e-11)
 
     relaxation_energies = stack([

@@ -9,21 +9,17 @@ The regressive product needs no metric, so the reading is the same in every sign
 algebra, reads points of a projective plane or space, a vector space or spacetime alike, and the scene is never carried
 into another algebra to be drawn. Whoever draws names the planes, the one that weighs a point included, since neither
 an algebra's names nor its signature say which plane does what: the one degenerate generator of a joint algebra may
-carry an amount, such as entropy, rather than weigh points. A picture of a projective plane reads by
-`panel(ax, mv.x, mv.y, mv.w)`; a spacetime diagram, its events offsets of weight one, by `offset_panel(ax, mv.x, mv.t)`;
-a view of space by planes a motor turns.
+carry an amount, such as entropy, rather than weigh points.
 """
 from __future__ import annotations
 
 from typing import NamedTuple
 
 import numpy as np
-from matplotlib.axes import Axes
 
 from numga import NumpyContext
 from numga.extensor import Extensor
 from numga.gatype import GAType, Orientation
-from examples.util.wgsl.library import fitted
 
 
 class Camera(NamedTuple):
@@ -102,28 +98,6 @@ def preimage(camera: Camera, Point: GAType) -> tuple[Extensor, Extensor, Extenso
     return origin, across, up, toward
 
 
-def limits(ax: Axes) -> tuple[np.ndarray, np.ndarray]:
-    """The readings across and up at the middle of a matplotlib panel's limits, and half its width and height in
-    them."""
-    left, right = ax.get_xlim()
-    bottom, top = ax.get_ylim()
-    return np.array([left + right, bottom + top]) / 2, np.array([right - left, top - bottom]) / 2
-
-
-def panel(ax: Axes, across: Extensor, up: Extensor, weight: Extensor) -> Camera:
-    """The camera of a matplotlib panel reading its points by the planes `across` and `up` over their weight, their
-    pairing with the plane `weight`, such as a projective algebra's plane at infinity; its limits the readings it spans,
-    as many pixels across as the panel's room holds."""
-    return fitted(Camera(across, up, 0 * across, weight, 0.0, *limits(ax), 300), ax)
-
-
-def offset_panel(ax: Axes, across: Extensor, up: Extensor) -> Camera:
-    """The camera of a matplotlib panel reading its points by the planes `across` and `up`, each point an offset from
-    the origin of weight one, as a vector algebra's points are; its limits the readings it spans, as many pixels across
-    as the panel's room holds."""
-    return fitted(Camera(across, up, 0 * across, 0 * across, 1.0, *limits(ax), 300), ax)
-
-
 def extrinsic_first(Plane: GAType) -> bool:
     """Whether a camera's planes of the type `Plane` come first in their pairing with what they read: a reading pairs the
     extrinsic with the intrinsic, the extrinsic first, `mv.x & point` as `wavevector & direction`."""
@@ -173,3 +147,4 @@ fn screen_of(direction: Point) -> vec2<f32> {
     return vec2<f32>(paired(screen_across, direction), paired(screen_up, direction));
 }
 """
+

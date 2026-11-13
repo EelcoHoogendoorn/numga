@@ -6,8 +6,8 @@ import numpy as np
 
 from numga import NumpyContext, concatenate
 from numga.algebras import STA as ga
-from numga.sparse import SparseExtensor, spdiag
-from examples.util.topology import Topology, turned
+from numga.sparse import Sparse, spdiag
+from numga.topology import Topology, turned
 
 ctx = NumpyContext(ga)
 mv = ctx.multivector
@@ -63,9 +63,9 @@ def flux_preserving(topology: Topology, n_minor: int) -> Embedding:
     pol_weights = d_pol[d_pol != 0].astype(float) / np.sqrt(np.sum(d_pol != 0))
     n_int = len(topology.interior[1])
     # The free values are one per interior edge, then the poloidal form's amplitude.
-    first_values = SparseExtensor.selection(ctx, np.arange(n_int), n_int + 1)           # Scalar+[interior <- free]
-    last_value = SparseExtensor.selection(ctx, np.full(len(pol_edges), n_int), n_int + 1)   # Scalar+[poloidal <- free]
-    interior = ~topology.reading(topology.interior[1], 1) * first_values     # Scalar+[edges <- free]
+    first_values = Sparse.selection(np.arange(n_int), n_int + 1)           # Scalar+[interior <- free]
+    last_value = Sparse.selection(np.full(len(pol_edges), n_int), n_int + 1)   # Scalar+[poloidal <- free]
+    interior = topology.reading(topology.interior[1], 1).adjugate() * first_values  # Scalar+[edges <- free]
     # The amplitude is weighted onto each boundary edge that steps around the tube.
-    poloidal = ~topology.reading(pol_edges, 1) * spdiag(as_scalar(pol_weights).field()) * last_value  # Scalar+[edges <- free]
+    poloidal = topology.reading(pol_edges, 1).adjugate() * spdiag(as_scalar(pol_weights).field()) * last_value  # Scalar+[edges <- free]
     return (interior + poloidal) * Scalar                                    # (Scalar+ <- Scalar+)[edges <- free]

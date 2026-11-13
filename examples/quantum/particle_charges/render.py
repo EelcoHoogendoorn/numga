@@ -9,8 +9,9 @@ from matplotlib.colors import to_rgb
 from numga import NumpyContext, stack
 from numga.algebras import VGA2D
 from examples.quantum.particle_charges.core import Scalar
-from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import offset_panel
+from numga.topology import Topology
+from numga.render import simplices
+from examples.util.panels import offset_panel, overlay
 
 background = "#fbfaf7"
 particle_colours = np.array([to_rgb(colour) for colour in ("#d6453d", "#3a9a5b", "#2f6fc0", "#d9a227")])
@@ -67,8 +68,8 @@ def draw_connections(
         response = responses[panel]
         connected = np.stack(np.nonzero(np.triu(response > 1e-10, k=1)), axis=-1)   # [connections, 2]
         camera = offset_panel(ax, diagram.x, diagram.y)
-        simplices.overlay(ax, [
-            simplices.strokes(places, simplices.Topology(len(places), connected), connection_colours[panel],
+        overlay(ax, [
+            simplices.strokes(places, Topology(len(places), connected), connection_colours[panel],
                               connection_width, camera, opacity=connection_opacity),
             # Each sector's dot, hollow where it is no doublet: its rim, under its face.
             simplices.markers(places, colours, dot_radius, camera),

@@ -12,7 +12,9 @@ from matplotlib.colors import hsv_to_rgb, to_rgb
 from numga import concatenate, stack
 from examples.util.animation import capture
 from examples.relativity.twistors import core
-from examples.util.wgsl import fitted, image_figure, labels, show, simplices, solids
+from numga.topology import Topology
+from numga.render import simplices, solids
+from examples.util.panels import fitted, image_figure, labels, show
 
 mv = core.mv
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
@@ -61,7 +63,7 @@ def draw_curves(curves: core.Event, width: float, view: solids.View) -> np.ndarr
     points = solids.origin + solids.context.include_from_algebra(space_slice(curves))
     n_curves, n_samples = int(np.prod(points.shape[:-1])), points.shape[-1]
     # Each curve a closed loop of edges, each edge in its curve's colour.
-    lines = simplices.tubes(points.reshape(-1), simplices.Topology.loops([n_samples] * n_curves),
+    lines = simplices.tubes(points.reshape(-1), Topology.loops([n_samples] * n_curves),
                             np.repeat(colours(n_curves), n_samples, axis=0), width, view, solids.gloss)
     return solids.draw([], view, BACKGROUND, inks=[], translucent=[], meshes=[(lines, 1.0)])
 

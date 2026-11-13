@@ -9,8 +9,8 @@ from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 from numga import concatenate, stack
 from examples.fluids.dec_stokes import core
 from examples.util import shapes
-from examples.util.wgsl import contours, flow, simplices
-from examples.util.wgsl.camera import Camera, offset_panel
+from numga.render import Camera, contours, flow, simplices
+from examples.util.panels import offset_panel, overlay
 
 
 primal_colour = "#286580"
@@ -79,7 +79,7 @@ def draw_mesh(topology: core.Topology, vertices: core.Point) -> plt.Figure:
     """The channel and its obstacle, with the triangles resolving their boundaries."""
     figure, panels = channel_panels(topology, vertices, 1)
     camera = offset_panel(panels[0], mv.x, mv.y)
-    simplices.overlay(panels[0], [simplices.strokes(vertices.batch(), topology, rgb(mesh_colour), mesh_width, camera),
+    overlay(panels[0], [simplices.strokes(vertices.batch(), topology, rgb(mesh_colour), mesh_width, camera),
                                   walls(topology, vertices, camera)])
     return figure
 
@@ -95,13 +95,13 @@ def draw_complex(topology: core.Topology, vertices: core.Point, circumcentres: c
     interior_points = (topology.reading(interior, 0) * vertices).batch()   # [interior] Point-
     vertex = interior[(interior_points - target).norm().argmin()]
     centre = (topology.reading(np.array([vertex]), 0) * vertices).batch()[0]    # [] Point-
-    # The faces at the vertex, and their corners: what the corner incidence and its reverse reach from a field that
+    # The faces at the vertex, and their corners: what the corner incidence and its adjugate reach from a field that
     # is one at the vertex alone.
     corners = topology.incidence[2, 0].sum(axis=0)                               # Scalar+[faces <- vertices]
-    marked = ~topology.reading(np.array([vertex]), 0) * mv.scalar([[1]]).field()    # Scalar+[vertices]
+    marked = topology.reading(np.array([vertex]), 0).adjugate() * mv.scalar([[1]]).field()    # Scalar+[vertices]
     at_vertex = corners * marked                                                 # Scalar+[faces]
     star = np.flatnonzero(at_vertex.batch() > 0)
-    neighbours = np.flatnonzero((~corners * at_vertex).batch() > 0)
+    neighbours = np.flatnonzero((corners.adjugate() * at_vertex).batch() > 0)
     reach = ((topology.reading(neighbours, 0) * vertices).batch() - centre).norm() # [neighbours] Scalar+
     radius = 1.8 * reach.max()
     visible = (vertices.batch() - centre).norm() < 1.6 * radius
@@ -114,10 +114,10 @@ def draw_complex(topology: core.Topology, vertices: core.Point, circumcentres: c
     # the circumcentres give a boundary edge its one face's.
     inside, rim = topology.reading(topology.interior[1], 1), topology.reading(topology.exterior[1], 1)
     on_tail, on_head = inside * (topology.dual.incidence[1, 0] * circumcentres)  # Point-[interior edges], Point-[interior edges]
-    beside = (~topology.incidence[2, 1] * circumcentres).sum(axis=0)            # Point-[edges]
+    beside = (topology.incidence[2, 1].adjugate() * circumcentres).sum(axis=0)            # Point-[edges]
     midpoints = topology.incidence[1, 0].mean(axis=0) * vertices                # Point-[edges]
-    dual_starts = ~inside * on_tail + ~rim * (rim * beside)                     # Point-[edges]
-    dual_ends = ~inside * on_head + ~rim * (rim * midpoints)                    # Point-[edges]
+    dual_starts = inside.adjugate() * on_tail + rim.adjugate() * (rim * beside)                     # Point-[edges]
+    dual_ends = inside.adjugate() * on_head + rim.adjugate() * (rim * midpoints)                    # Point-[edges]
 
     figure, ax = plt.subplots(figsize=(3.1, 3.1), dpi=dpi)
     figure.subplots_adjust(0.02, 0.02, 0.98, 0.98)
@@ -163,7 +163,7 @@ def draw_complex(topology: core.Topology, vertices: core.Point, circumcentres: c
                                arrow_colours, arrow_width, camera, chevrons=np.ones(2), chevron=arrow_chevron)
     # The dual cell filled by the triangles of its centres, read across and up.
     cell_triangles, _ = shapes.delaunay((stack((mv.x, mv.y)) & star_centres.batch()[..., None]).to_array())
-    simplices.overlay(ax, [
+    overlay(ax, [
         simplices.strokes(primal_ends, pairs, rgb(primal_colour), primal_width, camera, opacity=0.6),
         simplices.strokes(dual_ends_shown, pairs, rgb(dual_colour), dual_width, camera, opacity=0.75),
         contours.picture(star_centres, cell_triangles, np.zeros(len(star)), rgb(dual_colour), camera, opacity=0.17),
@@ -199,10 +199,10 @@ def draw_fields(topology: core.Topology, vertices: core.Point, pressure: core.Sc
     pressure_colours_at = np.tile(pressure_colours(Normalize(values.min(), values.max())(values))[:, :3], (3, 1))
     places = vertices.batch()                                                 # [vertices] Point-
     cameras = [offset_panel(ax, mv.x, mv.y) for ax in panels]
-    simplices.overlay(panels[0], [contours.picture(face_places, split, corner_potential, pressure_colours_at, cameras[0],
+    overlay(panels[0], [contours.picture(face_places, split, corner_potential, pressure_colours_at, cameras[0],
                                                    levels=paths),
                                   walls(topology, vertices, cameras[0])])
-    simplices.overlay(panels[1], [contours.picture(places, topology, potential,
+    overlay(panels[1], [contours.picture(places, topology, potential,
                                                    vorticity_colours(Normalize(-extent, extent)(rotation))[:, :3],
                                                    cameras[1], levels=paths),
                                   walls(topology, vertices, cameras[1])])
@@ -220,7 +220,7 @@ def draw_flow(topology: core.Topology, vertices: core.Point, pressure: core.Scal
     face_velocity = velocity.batch()                                           # [faces] Point-
     corner_velocity = concatenate((face_velocity, face_velocity, face_velocity))  # [corners * faces] Point-
     reference_speed = float(face_velocity.norm().max().to_array())
-    simplices.overlay(panels[0], [contours.picture(face_places, split, np.zeros(len(shades)), shades, camera),
+    overlay(panels[0], [contours.picture(face_places, split, np.zeros(len(shades)), shades, camera),
                                   flow.layer(face_places, split, corner_velocity, camera, reference_speed,
                                              rgb(flow_colour)),
                                   walls(topology, vertices, camera)])

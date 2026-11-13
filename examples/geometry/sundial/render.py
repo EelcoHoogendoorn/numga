@@ -12,8 +12,9 @@ from examples.util import charts
 from examples.util.animation import capture
 from examples.geometry.sundial import core
 from numga import concatenate, stack
-from examples.util.wgsl import fitted, show, simplices, solids
-from examples.util.wgsl.camera import Camera, offset_panel
+from numga.topology import Topology
+from numga.render import Camera, drawing, simplices, solids
+from examples.util.panels import fitted, offset_panel, overlay, show
 
 # The part of the dial drawn, east and north of the point below the nodus.
 east_range = (-4.5, 4.5)
@@ -58,11 +59,11 @@ def on_face(nodus: core.Point, suns: core.Point) -> np.ndarray:
         & (north > north_range[0]) & (north < north_range[1])
 
 
-def sunlit_chains(suns: core.Point) -> simplices.Topology:
+def sunlit_chains(suns: core.Point) -> Topology:
     """The shadow paths of a batch of suns as chains of edges along its last axis, an edge kept where the sun is up at
     both its ends; the face's camera cuts them at the dial's edges."""
     n_samples = suns.shape[-1]
-    chains = simplices.Topology.chains([n_samples] * (np.prod(suns.shape) // n_samples))
+    chains = Topology.chains([n_samples] * (np.prod(suns.shape) // n_samples))
     # The dial's reading of the sun at both ends of each edge, positive where it is up.
     readings = core.dial & (chains.incidence[1, 0] * suns.reshape(-1).field())   # [ends] Scalar+[edges]
     return chains.subset((readings > 0).all(axis=0), 1)
@@ -104,7 +105,7 @@ def draw_face(ax: plt.Axes, nodus: core.Point, foot: core.Point, seasons: np.nda
     # The gnomon's edge seen from above, bold and square at its ends: from the foot of the style to the point of the
     # dial below the nodus.
     below_nodus = nodus - core.up * (core.dial & nodus)                        # [] Point-
-    base = simplices.strokes(stack([foot, below_nodus]), simplices.Topology.chains([2]), np.array(to_rgb(gnomon_colour)),
+    base = simplices.strokes(stack([foot, below_nodus]), Topology.chains([2]), np.array(to_rgb(gnomon_colour)),
                              base_width, camera, cap=simplices.Cap.BUTT)
     return camera, [lines, paths, base]
 
@@ -116,7 +117,7 @@ def draw_dial(nodus: core.Point, foot: core.Point, seasons: np.ndarray, days: co
     # Over half the column: the hour lines, their numerals and the seasons' paths across the dial.
     figure, ax = charts.subplots(460, 345, layout="constrained")
     _, pictures = draw_face(ax, nodus, foot, seasons, days, suns, hours, faint=False)
-    simplices.overlay(ax, pictures)
+    overlay(ax, pictures)
     return figure
 
 
@@ -192,13 +193,13 @@ def animate_year(declinations: np.ndarray, rays: core.Point, days: core.Point, n
         face = figure.add_axes((0.52, 0.04, 0.46, 0.92))
         camera, pictures = draw_face(face, nodus, foot, seasons, season_days, suns, hours, faint=True)
     # The day's shadow path, bold, laid over the face each frame.
-    path = simplices.overlay(face, pictures)
+    path = overlay(face, pictures)
     view = sky_view(sky_axes, nodus, rays)
     sky = show(sky_axes, np.ones((*view.shape, 3)), view)
     for index in range(len(declinations)):
         beams, inks = sunlight(nodus, foot, rays[index], days[index], view)
         sky.set_data(solids.draw(dial + beams, view, np.ones(3), inks, translucent=[], meshes=[]))
         day = shadow_strokes(nodus, days[index], np.array(to_rgb(day_colour)), day_width, camera)
-        path.set_data(simplices.composited(pictures + [day]))
+        path.set_data(drawing.composited(pictures + [day]))
         yield capture(figure)
     plt.close(figure)

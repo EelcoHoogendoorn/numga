@@ -16,8 +16,8 @@ import numpy as np
 
 from numga import NumpyContext, stack
 from numga.algebras import VGA2D
-from numga.sparse import SparseExtensor
-from examples.util.topology import Topology
+from numga.sparse import Sparse, SparseExtensor
+from numga.topology import Topology
 
 ga = VGA2D
 ctx = NumpyContext(ga)
@@ -78,7 +78,7 @@ def integrate_cycle(response: Response, cycle: Displacement) -> Iterator[tuple[D
         yield end, response(end), work
 
 
-def evolution(incidence: SparseExtensor, response: Response, drags: Scalar) -> SparseExtensor:
+def evolution(incidence: Sparse, response: Response, drags: Scalar) -> SparseExtensor:
     """The particles' velocities from their displacements, overdamped: no inertia, every force met by drag."""
     gradient = incidence * Displacement                                      # (Displacement- <- Displacement-)[bonds <- sites]
     # Drag turns each particle's force into its velocity, along the force's metric direction.

@@ -22,9 +22,10 @@ from examples.util import charts
 from examples.util.animation import capture
 from examples.relativity.curvature import core
 from examples.relativity.curvature.core import Antivector, Curvature, Scalar, mv
-from examples.util.wgsl import labels, show, simplices, solids
-from examples.util.wgsl.camera import offset_panel
-from examples.util.wgsl.meshes import Samples
+from numga.topology import Topology
+from numga.render import drawing, simplices, solids
+from examples.util.panels import labels, offset_panel, overlay, show
+from numga.render.drawing import Draw
 
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
 light_colour = "#c3ccd4"
@@ -95,12 +96,12 @@ def patch(first: Antivector, second: Antivector) -> Antivector:
             + second * (0.6 * np.array([-1, -1, 1, 1])))                           # [corners] Antivector-
 
 
-def arrows(ends: solids.Point, colour: np.ndarray, width: float, view: solids.View) -> tuple[Samples, float]:
+def arrows(ends: solids.Point, colour: np.ndarray, width: float, view: solids.View) -> tuple[Draw, float]:
     """Arrows from the origin to the diagram's points `[arrows]`, drawn with t up, tubes `width` pixels across, each
     ending in a chevron, in one colour: a mesh for `solids.draw` to compose among the solids, and its opacity."""
     n_arrows = ends.shape[0]
     shafts = stack((solids.origin.broadcast_to(ends.shape), ends), axis=-1).reshape(-1)   # [arrows * 2] Point-
-    return (simplices.tubes(shafts, simplices.Topology.chains([2] * n_arrows), colour, width, view, gloss=solids.gloss,
+    return (simplices.tubes(shafts, Topology.chains([2] * n_arrows), colour, width, view, gloss=solids.gloss,
                             chevrons=np.ones(n_arrows), chevron=CHEVRON * width), 1.0)
 
 
@@ -110,7 +111,7 @@ def panel(ax: plt.Axes, corners: Antivector, ends: list[tuple[Antivector, np.nda
     the area element `[4]` as a translucent plate a pixel thick with its outline, rods joined round at the
     corners, and arrows to directions `[arrows]` each with its colour and width in pixels."""
     places = diagram_points(corners)                                           # [corners] Point-
-    tails, heads = (simplices.Topology.loops([4]).incidence[1, 0] * places.field()).batch()   # [corners] Point-, Point-
+    tails, heads = (Topology.loops([4]).incidence[1, 0] * places.field()).batch()   # [corners] Point-, Point-
     rims, joints = solids.edges(tails, heads, OUTLINE_WIDTH / 2 * view.pixel)
     shown = ([arrows(solids.origin + solids.axes.dual() * (extent * AXIS_LENGTH), LIGHT, AXIS_WIDTH, view)]
              + [arrows(diagram_points(tips), colour, width, view) for tips, colour, width in ends])
@@ -154,7 +155,7 @@ def draw_curvature_map(
     across.set_axis_off()
     ends = (page.x.dual() * (width * np.array([PANEL_WIDTH - 0.01, 1 - PANEL_WIDTH + 0.01]))
             + page.y.dual() * (height / 2))                                    # [2] Antivector-
-    simplices.overlay(across, [simplices.strokes(ends, simplices.Topology.chains([2]), np.array(to_rgb(INK)),
+    overlay(across, [simplices.strokes(ends, Topology.chains([2]), np.array(to_rgb(INK)),
                                                  MAP_ARROW_WIDTH, offset_panel(across, page.x, page.y),
                                                  chevrons=np.ones(1), chevron=CHEVRON * MAP_ARROW_WIDTH,
                                                  cap=simplices.Cap.BUTT)])
@@ -258,20 +259,20 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
     turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_rest_samples, endpoint=False) / 2)).exp()   # [n_rest_samples] Rotor+
     rest = turns >> mv.x.dual()                                          # [n_rest_samples] Antivector-
     beneath = [
-        simplices.strokes(cross_ends, simplices.Topology.chains([2, 2]), CROSS, charts.FRAME_PX, camera,
+        simplices.strokes(cross_ends, Topology.chains([2, 2]), CROSS, charts.FRAME_PX, camera,
                           cap=simplices.Cap.BUTT),
-        simplices.strokes(rest, simplices.Topology.loops([n_rest_samples]), LIGHT, charts.LINE_PX, camera,
+        simplices.strokes(rest, Topology.loops([n_rest_samples]), LIGHT, charts.LINE_PX, camera,
                           dashes=REST_DOTS)]
     if static:
         tracks = data.positions[:, polarization, selected].reshape(-1)     # [n_time * tracked] Antivector-
         n_time = len(data.time)
         beneath.append(simplices.strokes(
-            tracks, simplices.Topology(len(tracks), np.stack((np.arange(len(tracks) - len(selected)),
+            tracks, Topology(len(tracks), np.stack((np.arange(len(tracks) - len(selected)),
                                                            np.arange(len(selected), len(tracks))), axis=-1)),
             np.tile(trail_colours, (n_time - 1, 1)), charts.FRAME_PX, camera, opacity=0.22))
     centre = 0 * mv.x.dual()                                            # [] Antivector-
     above = [simplices.markers(centre[None], ORANGE_RGB, charts.MARKER_PX / 2, camera)]
-    shown = simplices.overlay(ax, beneath + above)
+    shown = overlay(ax, beneath + above)
     n_trail = max(2, len(data.time) // 7)
 
     def update(frame: int) -> None:
@@ -279,15 +280,15 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
         first = max(0, frame - n_trail)
         trails = data.positions[np.arange(first, frame + 1)[None, :], polarization, selected[:, None]]   # [tracked, n_trail] Antivector-
         arrows = stack((positions[arrows_at], data.tips[frame, polarization, arrows_at]), axis=-1)   # [arrows, 2] Antivector-
-        shown.set_data(simplices.composited(beneath + [
-            simplices.strokes(positions, simplices.Topology.loops([n_beads]), BLUE_RGB, charts.LINE_PX, camera,
+        shown.set_data(drawing.composited(beneath + [
+            simplices.strokes(positions, Topology.loops([n_beads]), BLUE_RGB, charts.LINE_PX, camera,
                               opacity=0.42),
-            simplices.strokes(trails.reshape(-1), simplices.Topology.chains([frame + 1 - first] * len(selected)),
+            simplices.strokes(trails.reshape(-1), Topology.chains([frame + 1 - first] * len(selected)),
                               np.repeat(trail_colours, frame - first, axis=0), charts.LINE_PX, camera, opacity=0.60),
             # Each bead ringed in white.
             simplices.markers(positions, np.ones(3), charts.MARKER_PX / 2 + charts.FRAME_PX, camera),
             simplices.markers(positions, BLUE_RGB, charts.MARKER_PX / 2, camera),
-            simplices.strokes(arrows.reshape(-1), simplices.Topology.chains([2] * len(arrows_at)), BLUE_RGB,
+            simplices.strokes(arrows.reshape(-1), Topology.chains([2] * len(arrows_at)), BLUE_RGB,
                               ARROW_WIDTH, camera, chevrons=np.ones(len(arrows_at)), chevron=CHEVRON * ARROW_WIDTH,
                               opacity=0.85, cap=simplices.Cap.BUTT),
             simplices.markers(positions[selected], np.ones(3), TRACKED_SCALE * charts.MARKER_PX / 2 + charts.FRAME_PX,

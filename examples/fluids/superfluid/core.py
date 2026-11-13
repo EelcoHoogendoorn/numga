@@ -34,7 +34,7 @@ import numpy as np
 
 from numga import Algebra, NumpyContext
 from numga.extensor import Extensor
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 # The plane, and the mass and the entropy a parcel holds, each a direction of its own with no metric.
 space = Algebra("x+y+")
@@ -97,7 +97,7 @@ def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Plane, Scala
     double_areas = ((sides[..., 0] & sides[..., 1]) & entropy) & mass         # Scalar-[faces]
     areas = double_areas.norm() / 2                                           # Scalar+[faces]
     corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
-    return areas, (entropy & mass & sides) / double_areas[..., None], (~corners * (areas / 3)).sum(axis=-1)
+    return areas, (entropy & mass & sides) / double_areas[..., None], (corners.adjugate() * (areas / 3)).sum(axis=-1)
 
 
 def stepped(topology: Topology, vertices: Point, stiffness: Extensor, parcels: Point, masses: np.ndarray, held: Scalar,
@@ -120,4 +120,4 @@ def stepped(topology: Topology, vertices: Point, stiffness: Extensor, parcels: P
         velocities = velocities + dt * freedom * drive.commutator(parcels)    # [components] Point-[faces]
         flux = velocities.regressive(parcels).sum(axis=-1)                    # Flux-[faces]
         # What the flux carries out of each corner's cell, and what the supply adds to it.
-        amounts = amounts + dt * (supply - (~corners * (areas * (gradients ^ flux[..., None]))).sum(axis=-1) / cells)
+        amounts = amounts + dt * (supply - (corners.adjugate() * (areas * (gradients ^ flux[..., None]))).sum(axis=-1) / cells)

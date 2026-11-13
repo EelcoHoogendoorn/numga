@@ -9,10 +9,10 @@ from functools import partial
 import numpy as np
 
 from numga import stack
-from numga.sparse import SparseExtensor
+from numga.sparse import Sparse
 from examples.mechanics.articulated import core
 from examples.mechanics.articulated.core import Motor, Point, Rate, Scalar, mv
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 # Brax's humanoid, its bodies first: each by its parent, before it, and its origin in its parent's frame, in metres. The
 # torso is the root; then the lower waist and the pelvis, each leg's thigh, shin and foot, and each arm's upper and
@@ -145,7 +145,7 @@ def home_pose() -> tuple[Rate, Point, np.ndarray, Point, np.ndarray]:
     return axes, samples, masses[:, None] / 6, centres, np.concatenate([radii[:capsules], radii])
 
 
-def humanoid_tree() -> tuple[core.Tree, SparseExtensor]:
+def humanoid_tree() -> tuple[core.Tree, Sparse]:
     """The humanoid's tree, the balls the ground can meet carried by their links, and the link that carries each part,
     `numbers[parts <- links]`."""
     topology, carriers, _, n_generations = humanoid()
@@ -160,8 +160,8 @@ def robot() -> tuple[core.Tree, core.Robot]:
     # Each part's inertia, the map from its rate to its momentum: every sample joined with its velocity, weighted; a
     # link's, the sum of its parts', none for a massless link between two hinges.
     part_inertias = samples.regressive(samples.commutator(Rate) * masses).sum(axis=-1)   # [parts] Forque- <- Rate+
-    inertias = ~parts * part_inertias.field()                                  # (Forque- <- Rate+)[links]
-    mass_points = ~parts * (samples * masses).sum(axis=-1).field()             # Point-[links]
+    inertias = parts.adjugate() * part_inertias.field()                        # (Forque- <- Rate+)[links]
+    mass_points = parts.adjugate() * (samples * masses).sum(axis=-1).field()   # Point-[links]
     return tree, core.Robot(axes, inertias, mass_points)
 
 

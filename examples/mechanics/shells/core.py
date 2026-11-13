@@ -38,7 +38,7 @@ from numga import NumpyContext, stack
 from numga.algebras import PGA3D as ga
 from numga.sparse import SparseExtensor
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                      # Scalar+
@@ -110,8 +110,8 @@ def forces(sheet: Sheet, points: Point) -> Direction:
 
     # The incidence's reverse sums every edge's pull at its two ends, and each reading map's reverse sums
     # the hinges' pushes at their corners.
-    return (-(~sheet.topology.d[0] * pull) + (~sheet.hinge_ends * stack([at_ends, at_tips])).sum(axis=0)
-            + (~sheet.hinge_corners * stack(pushes)).sum(axis=0))
+    return (-(sheet.topology.d[0].adjugate() * pull) + (sheet.hinge_ends.adjugate() * stack([at_ends, at_tips])).sum(axis=0)
+            + (sheet.hinge_corners.adjugate() * stack(pushes)).sum(axis=0))
 
 
 def relax(sheet: Sheet, points: Point, step: float, damping: float, n_frames: int, n_steps_per_frame: int
@@ -160,7 +160,7 @@ def sheet(topology: Topology, points: Point, lengths: Scalar, curvature: Curvatu
     facing = (planes | top).sites.sum()                                                   # [] Scalar+
     # Each vertex carries a third of the mass of every face at it.
     double_areas = planes.norm()                                                 # Scalar+[faces]
-    masses = ~topology.incidence[2, 0].sum(axis=0) * double_areas * (thickness / 6)
+    masses = topology.incidence[2, 0].sum(axis=0).adjugate() * double_areas * (thickness / 6)
     return Sheet(
         topology=topology,
         hinge_ends=hinge_ends,

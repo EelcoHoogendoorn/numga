@@ -81,7 +81,7 @@ import numpy as np
 
 from numga import NumpyContext, concatenate, stack
 from numga.algebras import VGA3D as ga
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                      # Scalar+
@@ -108,7 +108,7 @@ def velocity(points: Point, circulation: Circulation) -> Point:
     the turn's Cayley parameter, twice, times the circulation, over the mean edge length."""
     outgoing = edges(points)                                                     # [..., n] Point-
     # The edge arriving at each vertex: each edge carried to its head.
-    arriving = ~Topology.loops([points.shape[-1]]).incidence[1, 0][1]            # Scalar+[vertices <- edges]
+    arriving = Topology.loops([points.shape[-1]]).incidence[1, 0][1].adjugate()  # Scalar+[vertices <- edges]
     incoming = (arriving * outgoing.field()).batch()                             # [..., n] Point-
     lengths = outgoing.norm() * incoming.norm()                                  # [..., n] Scalar+
     # The commutator of the two edges is the bivector of the turn; over the lengths plus the edges paired,

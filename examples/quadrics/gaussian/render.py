@@ -10,8 +10,9 @@ from collections.abc import Callable
 
 from examples.quadrics.gaussian.core import Point, Polarity, Scalar, mv
 from examples.util import charts
-from examples.util.wgsl import contours, room, simplices
-from examples.util.wgsl.camera import Camera, panel
+from numga.topology import Topology
+from numga.render import Camera, contours, simplices
+from examples.util.panels import overlay, panel, room
 
 # The box the fit is shown over, along x and y, and the figure's width in pixels, for one cloud and one ellipse.
 BOX = np.array([[-5.0, -5.0], [6.0, 4.0]])
@@ -43,7 +44,7 @@ def draw_gaussian(points: Point, density: Callable[[Point], Scalar], ellipsoid: 
     shades = plt.get_cmap("Blues")(np.clip(density(corners).to_array(), 0, 1))[..., :3]
     form = (ellipsoid(corners) & corners).to_array()                            # [rows + 1, columns + 1]
     places = corners.reshape(-1)                                                # [(rows + 1) * (columns + 1)] Point-
-    grid = contours.Topology.grid(*form.shape)
+    grid = Topology.grid(*form.shape)
     camera = panel(ax, mv.x, mv.y, mv.w)
     shaded = contours.picture(places, grid, form.reshape(-1), shades.reshape(-1, 3), camera)
     cloud = simplices.markers(points, SAMPLE_INK, SAMPLE_SIDE / 2, camera, opacity=SAMPLE_OPACITY)
@@ -51,7 +52,7 @@ def draw_gaussian(points: Point, density: Callable[[Point], Scalar], ellipsoid: 
     outline = contours.Level(0.0, ELLIPSOID_INK, ELLIPSOID_WIDTH)
     ellipse = contours.picture(places, grid, form.reshape(-1), shades.reshape(-1, 3), camera, levels=(outline,),
                                opacity=0.0)
-    simplices.overlay(ax, [shaded, cloud, cross(ax, camera, "x", "y"), ellipse])
+    overlay(ax, [shaded, cloud, cross(ax, camera, "x", "y"), ellipse])
     return fig
 
 
@@ -65,5 +66,5 @@ def cross(ax, camera: Camera, across: str, up: str) -> np.ndarray:
     ax.annotate(up, (0, 1), xycoords=("data", "axes fraction"), xytext=(4, -4), textcoords="offset points",
                 ha="left", va="top", color="0.4")
     ax.set_axis_off()
-    return simplices.strokes(ends, simplices.Topology.chains([2, 2]), CROSS_INK, charts.FRAME_PX, camera,
+    return simplices.strokes(ends, Topology.chains([2, 2]), CROSS_INK, charts.FRAME_PX, camera,
                              cap=simplices.Cap.BUTT)

@@ -10,7 +10,8 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import stack
-from examples.util.wgsl import simplices, solids
+from numga.topology import Topology
+from numga.render import simplices, solids
 
 LINK_COLOURS = np.array([to_rgb(colour) for colour in ("tab:blue", "tab:cyan", "tab:purple")])
 TARGET_COLOUR = np.array(to_rgb("tab:red"))
@@ -42,7 +43,7 @@ def animate_tracking(states: Iterable, room: float = VIEW_ROOM) -> Iterator[np.n
     for boxes, target, tip in chain([first], states):
         # The tip's path up to this frame's tip.
         path.append(tip)
-        trail = simplices.tubes(stack(path), simplices.Topology.chains([len(path)]), TARGET_COLOUR, TRAIL_WIDTH, view,
+        trail = simplices.tubes(stack(path), Topology.chains([len(path)]), TARGET_COLOUR, TRAIL_WIDTH, view,
                                 gloss=solids.gloss)
         ball = solids.ball(target, TARGET_RADIUS * view.pixel)[None, None]      # [1, 1] Plane+ <- Point-
         # Each link a solid bounded by the planes of its box's faces, through its corners.

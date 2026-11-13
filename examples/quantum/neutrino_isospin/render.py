@@ -15,9 +15,10 @@ from numga import stack
 from examples.util.animation import capture
 from examples.quantum.neutrino_isospin import core
 from examples.util import charts
-from examples.util.wgsl import fitted, meshes, show, simplices, solids
-from examples.util.wgsl.meshes import Samples
-from examples.util.wgsl.scene import Scene
+from numga.topology import Topology
+from numga.render import Scene, simplices, solids
+from examples.util.panels import fitted, show
+from numga.render.drawing import Draw
 
 mv = core.mv
 # The intrinsic unit volume: an isospin, the patch of the plane it turns in, times it is that plane, extrinsic, and
@@ -92,12 +93,12 @@ def inked(circles: list, n_opaque: int) -> list[solids.Ink]:
                        colour, width, opacity) for planes, colour, width, opacity in circles]
 
 
-def path_marks(path: core.Isospin, view: solids.View) -> tuple[Samples, tuple[solids.Quadric, np.ndarray]]:
+def path_marks(path: core.Isospin, view: solids.View) -> tuple[Draw, tuple[solids.Quadric, np.ndarray]]:
     """A path of isospins over the sphere `[steps]` as a stroke, and its ends as balls, its start green and its end
     orange."""
     # The directions the isospins point along, embedded in the drawing's projective space about its origin.
     places = solids.origin + solids.context.include_from_algebra(direction_of_isospin(path))     # [steps] Point-
-    stroke = simplices.tubes(places, simplices.Topology.chains([len(places)]), path_colour, PATH_WIDTH / view.pixel, view,
+    stroke = simplices.tubes(places, Topology.chains([len(places)]), path_colour, PATH_WIDTH / view.pixel, view,
                              gloss=solids.gloss)
     ends = (solids.ball(places[np.array([0, -1])], END_RADIUS)[:, None], np.stack([start_colour, end_colour]))
     return stroke, ends

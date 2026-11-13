@@ -12,8 +12,9 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack
 from examples.util import charts
-from examples.util.wgsl import flow as ink, simplices
-from examples.util.wgsl.camera import Camera, panel
+from numga.topology import Topology
+from numga.render import Camera, drawing, flow as ink, simplices
+from examples.util.panels import overlay, panel
 from examples.util.animation import capture
 from examples.fluids.stokes_swimmer import core
 
@@ -77,7 +78,7 @@ def _swimmer(beads: core.Point, colour: str, camera: Camera, pixels: float) -> l
     """The three-link body and its nine hydrodynamic beads `[9] Point-`: the chain, the beads in white rims and the
     hinges, white in coloured rims, at `pixels` a point."""
     chain, hinges = _links(beads)
-    return [simplices.strokes(chain, simplices.Topology.chains([len(chain)]), rgb(colour), chain_width * pixels, camera),
+    return [simplices.strokes(chain, Topology.chains([len(chain)]), rgb(colour), chain_width * pixels, camera),
             simplices.markers(beads, np.ones(3), (bead_radius + bead_rim / 2) * pixels, camera),
             simplices.markers(beads, rgb(colour), (bead_radius - bead_rim / 2) * pixels, camera),
             simplices.markers(hinges, rgb(colour), (hinge_radius + hinge_rim / 2) * pixels, camera),
@@ -86,7 +87,7 @@ def _swimmer(beads: core.Point, colour: str, camera: Camera, pixels: float) -> l
 
 def _trail(track: core.Point, width: float, camera: Camera) -> np.ndarray:
     """A swimmer's centre's trail through its places `[steps] Point-`, `width` pixels wide."""
-    return simplices.strokes(track, simplices.Topology.chains([len(track)]), rgb(trail_colour), width, camera)
+    return simplices.strokes(track, Topology.chains([len(track)]), rgb(trail_colour), width, camera)
 
 
 @charts.style()
@@ -126,11 +127,11 @@ def draw_summary(
     _cross(ax_hinge, "left hinge", "right hinge")
 
     figure.tight_layout()
-    topology = ink.Topology.grid(*grid.shape)
+    topology = Topology.grid(*grid.shape)
     points, directions = grid.reshape(-1), flow[0].reshape(-1)
     reference_speed = float(directions.dual().norm().max().to_array())
     camera = panel(ax_flow, core.mv.x, core.mv.y, core.mv.w)
-    simplices.overlay(ax_flow, [
+    overlay(ax_flow, [
         ink.layer(points, topology, directions, camera, reference_speed, rgb(flow_colour)),
         _trail(positions[:, 0], summary_trail_width * charts.DPI / 72, camera),
         *_swimmer(beads[0, 0], purcell_colour, camera, charts.DPI / 72)])
@@ -148,7 +149,7 @@ def animate_swimmers(
     beads = world_sites.batch()[::every]                                        # [frames, swimmers, beads] Point-
     # Each swimmer's centre's places, swimmer by swimmer.
     paths = stack([positions[:, swimmer] for swimmer in range(positions.shape[1])])   # [swimmers, steps + 1] Point-
-    topology = ink.Topology.grid(*grid.shape)
+    topology = Topology.grid(*grid.shape)
     points = grid.reshape(-1)                                                  # [samples] Point-
     flows = iter(flows)
     first = next(flows)
@@ -168,13 +169,13 @@ def animate_swimmers(
         ax.set(xlim=(left, right), ylim=(-water_half_height, water_half_height), aspect="equal")
         ax.set_axis_off()
     views = [panel(ax, core.mv.x, core.mv.y, core.mv.w) for ax in axes]
-    textures = [simplices.overlay(ax, [np.zeros(view.shape + (4,))]) for ax, view in zip(axes, views)]
+    textures = [overlay(ax, [np.zeros(view.shape + (4,))]) for ax, view in zip(axes, views)]
     for frame, fields in enumerate(chain((first,), flows)):
         directions = fields.reshape(fields.shape[0], -1)
         step_end = frame * every + 1
         for swimmer, (texture, view, field, colour) in enumerate(
                 zip(textures, views, directions, (purcell_colour, scallop_colour))):
-            texture.set_data(simplices.composited([
+            texture.set_data(drawing.composited([
                 ink.layer(points, topology, field, view, reference_speed, rgb(flow_colour)),
                 _trail(paths[swimmer, :step_end], animation_trail_width * dpi / 72, view),
                 *_swimmer(beads[frame, swimmer], colour, view, dpi / 72)]))
