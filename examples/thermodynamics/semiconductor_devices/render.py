@@ -26,7 +26,7 @@ from matplotlib.collections import PolyCollection
 from matplotlib.colors import to_rgb
 from matplotlib.figure import Figure
 
-from numga import concatenate
+from numga import concatenate, stack
 from numga.extensor import Extensor
 from numga.render import contours, drawing, flow, simplices
 from numga.render.camera import Camera
@@ -394,7 +394,12 @@ def compressed(flow: Extensor, reference_flow: float) -> Extensor:
     long: the holes' flow along the thin top layer, which gathers the flow of the base beneath it, and in the base
     alike. The size is read by the camera's planes x and y."""
     mv = flow.context.multivector
-    sizes = np.hypot((mv.x & flow.batch()).to_array(), (mv.y & flow.batch()).to_array()).reshape(-1)   # [vertices]
+    planes = stack((mv.x, mv.y))                                              # [planes] Plane+
+    # The flow's part in space: what each plane reads of it, along the direction that plane reads as one. The flow
+    # also runs along time and the carriers' counts, which no plane of the camera reads.
+    readings = planes & flow.batch()[..., None]                               # [vertices, planes] Scalar+
+    spatial = (readings * planes.dual()).sum(axis=-1)                         # [vertices] Point-
+    sizes = spatial.antinorm().to_array().reshape(-1)                         # [vertices]
     scales = np.sqrt(reference_flow / np.maximum(sizes, 1e-12 * reference_flow))   # [vertices]
     return mv.scalar(scales[:, None]).field() * flow
 
