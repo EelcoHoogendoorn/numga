@@ -1,4 +1,4 @@
-"""Readout of weighted representatives, their dual, and diffusion on a fixed sphere or affine plane."""
+"""Readout of the vertex representatives, their dual, and the temperature on a fixed sphere or affine plane."""
 
 from __future__ import annotations
 
@@ -36,9 +36,9 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 
 
 # --- plumbing -------------------------------------------------------------------------
-def draw_mesh(topology: core.Topology, vertices: core.Point) -> plt.Figure:
-    """The physical spherical mesh before any choice of lifted representatives."""
-    points = solids.origin + solids.context.include_from_algebra(vertices.batch())             # [vertices] Point-
+def draw_triangulation(topology: core.Topology, vertices: core.Point) -> plt.Figure:
+    """The triangulated physical sphere, before any choice of vertex representatives."""
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())             # [V] Point-
     frame = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, 1.15), n_pixels)
     triangles = topology.elements[2]
     colours = np.broadcast_to(cream, triangles.shape + (3,))
@@ -51,32 +51,32 @@ def draw_mesh(topology: core.Topology, vertices: core.Point) -> plt.Figure:
 
 def animate_sphere(topology: core.Topology, display: core.Topology,
                    frames: Iterable[tuple[core.Point, core.Point, core.Point, core.Scalar]]) -> Iterator[np.ndarray]:
-    """The moving representatives and dual beside the physical solution on its fixed spherical domain."""
+    """The moving representatives and their dual beside the temperature on the fixed unit sphere."""
     space_view = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, 1.85), n_pixels)
     sphere_view = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, 1.15), n_pixels)
     # Points along each great-circle arc, as shares of its chord.
     fractions = np.linspace(0, 1, n_arc_segments + 1)
-    for lifted, duals, samples, values in frames:
+    for representatives, duals, samples, values in frames:
         # The display samples of every face, sample after sample, and the display triangles of each face among them.
         n_faces = topology.n_elements[2]
         faces = (n_faces * display.elements[2][None] + np.arange(n_faces)[:, None, None]).reshape(-1, 3)
-        points = solids.origin + solids.context.include_from_algebra(samples.batch().reshape(-1))   # [samples] Point-
+        points = solids.origin + solids.context.include_from_algebra(samples.batch().reshape(-1))   # [...] Point-
         field = values.to_array().reshape(-1)
         normals = meshes.smooth(points, meshes.Topology(len(points), faces))
         surface = meshes.samples(points, faces, field[faces, None], normals, sphere_view,
                                  face_values=np.zeros(4), colour=field_shader, gloss=solids.gloss)
         sphere = solids.draw([], sphere_view, background, inks=[], translucent=[], meshes=[(surface, 1.0)])
 
-        vertices = solids.origin + solids.context.include_from_algebra(lifted.batch())         # [vertices] Point-
-        mesh_lines = simplices.tubes(vertices, topology, blue, 1.25, space_view, gloss=solids.gloss)
+        vertices = solids.origin + solids.context.include_from_algebra(representatives.batch())  # [V] Point-
+        edge_lines = simplices.tubes(vertices, topology, blue, 1.25, space_view, gloss=solids.gloss)
         # Great-circle arcs draw the projected dual on the same unit sphere: the chord between the poles of the faces
         # either side of each edge, pushed out onto it.
-        dual_tails, dual_heads = (topology.dual.incidence[1, 0] * duals).batch()  # [edges] Point-, [edges] Point-
-        arcs = (dual_tails[:, None] * (1 - fractions) + dual_heads[:, None] * fractions).normalized()   # [edges, arc points] Point-
-        arc_places = solids.origin + solids.context.include_from_algebra(arcs)               # [edges, arc points] Point-
+        dual_tails, dual_heads = (topology.dual.incidence[1, 0] * duals).batch()  # [E] Point-, [E] Point-
+        arcs = (dual_tails[:, None] * (1 - fractions) + dual_heads[:, None] * fractions).normalized()   # [E, n_arc_segments + 1] Point-
+        arc_places = solids.origin + solids.context.include_from_algebra(arcs)               # [E, n_arc_segments + 1] Point-
         dual_lines = simplices.tubes(arc_places.reshape(-1), simplices.Topology.chains([n_arc_segments + 1] * len(arcs)),
                                      orange, 1.1, space_view, gloss=solids.gloss)
-        on_sphere = solids.origin + solids.context.include_from_algebra(lifted.normalized().batch())  # [vertices] Point-
+        on_sphere = solids.origin + solids.context.include_from_algebra(representatives.normalized().batch())  # [V] Point-
         # Each ray an edge from its vertex's place on the sphere out to the vertex.
         rays = simplices.tubes(stack([on_sphere, vertices], axis=-1).reshape(-1),
                                simplices.Topology.chains([2] * len(vertices)), np.full(3, 0.45), 1.0, space_view,
@@ -85,7 +85,7 @@ def animate_sphere(topology: core.Topology, display: core.Topology,
         markers = solids.ball(vertices, 2.0 * space_view.pixel)[:, None]
         space = solids.draw([(markers, blue)], space_view, background, inks=[],
                             translucent=[(shell, cream, 0.35)],
-                            meshes=[(mesh_lines, 1.0), (dual_lines, 1.0), (rays, 1.0)])
+                            meshes=[(edge_lines, 1.0), (dual_lines, 1.0), (rays, 1.0)])
         yield np.concatenate((space, sphere), axis=1)
 
 
@@ -96,7 +96,7 @@ def draw_planar(points: Extensor, display: core.Topology, potential: Extensor, c
     figure, axis = charts.subplots(300, 300)
     # The panel framed about the samples with matplotlib's margins: their lowest and highest readings across x and y,
     # at unit weight.
-    readings = stack((mv.x, mv.y))[:, None] & points.normalized().batch()     # [2, samples] Scalar+
+    readings = stack((mv.x, mv.y))[:, None] & points.normalized().batch()     # [2, ...] Scalar+
     low, high = readings.min(axis=-1), readings.max(axis=-1)                   # [2] Scalar+, [2] Scalar+
     margins = (high - low) * np.array(axis.margins())                          # [2] Scalar+
     limits = stack((low - margins, high + margins), axis=-1).to_array()        # [2, 2]

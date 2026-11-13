@@ -1,10 +1,8 @@
-"""Vortices in three settings: two pairs leapfrogging, a shear layer rolling up, and a gas of vortices
-of both senses; and the worldlines of a ring of equal vortices and of the leapfrogging pairs, traced
-through time."""
+"""Planar vortex scenes: leapfrogging pairs, a rolling shear layer, a vortex gas, a walkabout lap,
+and worldline braids."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from dataclasses import dataclass
 
 import numpy as np
@@ -12,62 +10,61 @@ import numpy as np
 from numga import stack
 from examples.fluids.vortices import core
 
-# Two pairs on one axis, each pair turning in opposite senses so that it travels along x; the inner
-# pair is wider than 0.38 of the outer, so the two take turns passing, and keep doing so.
-LEAPFROG_SPANS = np.array([1.0, -1.0, 0.55, -0.55])
-LEAPFROG_CIRCULATIONS = np.array([1.0, -1.0, 1.0, -1.0])
-LEAPFROG_CORE = 0.15
+# Two coaxial counter-rotating pairs travelling along x; with the inner span exceeding 0.38 of the
+# outer span, the two pairs take turns passing through each other stably.
+leapfrog_spans = np.array([1.0, -1.0, 0.55, -0.55])
+leapfrog_strengths = np.array([1.0, -1.0, 1.0, -1.0])
+leapfrog_core = 0.15
 
-# A shear layer: a row of equal vortices, repeating along x, displaced by a wave of two rolls per
-# period and a weaker wave of one, which seeds the rolls' pairing.
-LAYER_PERIOD = 1.0
-N_LAYER_VORTICES = 64
-N_LAYER_COPIES = 4
-LAYER_JUMP = 1.0
-LAYER_CORE = 0.05
-LAYER_AMPLITUDE = 0.01
-LAYER_SEED = 0.5
+# Periodic shear layer: a row of equal vortices repeating along x with a two-roll perturbation and a
+# weaker single-roll perturbation that seeds vortex pairing.
+layer_period = 1.0
+n_layer_vortices = 64
+n_layer_copies = 4
+layer_jump = 1.0
+layer_core = 0.05
+layer_amplitude = 0.01
+layer_seed = 0.5
 
-# A gas of vortices scattered over a disc, most turning one way: the excess keeps the gas together,
-# and the few turning the other way pair up with neighbours and shoot through it.
-N_GAS_TURNING = 32
-N_GAS_COUNTER = 8
-GAS_RADIUS = 1.5
-GAS_CORE = 0.08
-GAS_SEED = 3
+# Vortex gas scattered over a disc with net circulation of one sign keeping the cloud together while
+# minority counter-rotating vortices pair with neighbours and shoot across.
+n_gas_turning = 32
+n_gas_counter = 8
+gas_radius = 1.5
+gas_core = 0.08
+gas_seed = 3
 
-# A walkabout: the inner pair at 0.35 of the outer, where leapfrogging is unstable, and one inner
-# vortex nudged along x to break the mirror symmetry. One lap, and back to leapfrogging, on a strip
-# around the whole trip.
-WALKABOUT_SPANS = np.array([1.0, -1.0, 0.35, -0.35])
-WALKABOUT_NUDGES = np.array([0.0, 0.0, 0.015, 0.0])
-WALKABOUT_DT = 1 / 6
-N_WALKABOUT_FRAMES, N_WALKABOUT_SUBSTEPS = 203, 4
-WALKABOUT_ALONG, WALKABOUT_ACROSS = 10.0, 1.4
-WALKABOUT_HALF_WIDTH, WALKABOUT_HALF_HEIGHT = 10.6, 2.9
-WALKABOUT_PIXELS_PER_UNIT = 20
-WALKABOUT_VORTICITY_SCALE = 14.0
+# Walkabout: inner span at 0.35 of the outer span (below the Behring-Goodman stability threshold)
+# with one inner vortex nudged along x to break mirror symmetry.
+walkabout_spans = np.array([1.0, -1.0, 0.35, -0.35])
+walkabout_nudges = np.array([0.0, 0.0, 0.015, 0.0])
+walkabout_dt = 1 / 6
+n_walkabout_frames, n_walkabout_substeps = 203, 4
+walkabout_x, walkabout_y = 10.0, 1.4
+walkabout_half_width, walkabout_half_height = 10.6, 2.9
+walkabout_pixels_per_unit = 20
+walkabout_vorticity_scale = 14.0
 
-# Worldlines: five equal vortices evenly spaced on a ring around the origin, turning rigidly, and the
-# leapfrogging pairs, traced for one and a half turns of the ring and three periods of the leapfrog;
-# the step, the steps of each, and the height of each braid's drawn time against its width.
-N_RING = 5
-RING_CIRCULATIONS = np.ones(N_RING)
-RING_RADIUS = 1.0
-RING_CORE = 0.05
-WORLDLINE_DT = 0.2
-N_RING_STEPS, N_LEAPFROG_STEPS = 150, 75
-BRAID_HEIGHT = 2.5
+# Worldlines: five equal vortices on a regular ring and the leapfrogging pairs traced over time.
+n_ring = 5
+ring_strengths = np.ones(n_ring)
+ring_radius = 1.0
+ring_core = 0.05
+worldline_dt = 0.2
+n_ring_steps, n_leapfrog_steps = 150, 75
+braid_height = 2.5
 
-# The walkabout's frame duration, and the animations' palette, enough colours for the fields' smooth depths.
-DURATION_MS = 40
-N_COLOURS = 64
+frame_duration_ms = 40
+n_colours = 64
 
 
 @dataclass(frozen=True)
 class Scene:
     name: str
-    vortices: core.Vortices
+    centres: core.Point
+    circulations: core.Circulation
+    core_radius: float
+    copies: core.Point
     half_width: float
     half_height: float
     n_columns: int
@@ -80,120 +77,206 @@ class Scene:
 
 
 # --- math -----------------------------------------------------------------------------
-def frames(vortices: core.Vortices, n_frames: int, n_substeps: int, dt: float) -> Iterator[core.Vortices]:
-    """The vortices at every frame, a few steps apart."""
-    for _ in range(n_frames):
-        yield vortices
-        for _ in range(n_substeps):
-            vortices = core.step(vortices, dt)
+def single_copy() -> core.Point:
+    """Single zero-offset periodic copy for an isolated vortex group."""
+    return core.mv.vector([[0, 0]]).dual()                                  # [1] Point-
 
 
-def worldlines(vortices: core.Vortices, dt: float, n_steps: int) -> core.Point:
-    """The centres of the vortices at every step: one curve through the plane and time per vortex."""
-    def stepped() -> Iterator[core.Point]:
-        current = vortices
-        yield current.centres
-        for _ in range(n_steps):
-            current = core.step(current, dt)
-            yield current.centres
-
-    return stack(list(stepped()))                                            # [steps + 1, vortices] Point-
-
-
-def braids(n_ring_steps: int = N_RING_STEPS, n_leapfrog_steps: int = N_LEAPFROG_STEPS) -> list[core.Point]:
-    """The worldlines `[steps + 1, vortices] Point` of a ring of equal vortices, turning rigidly about its
-    centre, over `n_ring_steps` steps, and of the leapfrogging pairs, over `n_leapfrog_steps`."""
-    turns = (core.mv.xy * (-np.pi * np.arange(N_RING) / N_RING)).exp()       # [vortices] Rotor+
-    ring = core.Vortices(turns >> (core.mv.x.dual() * RING_RADIUS), core.mv.xy * RING_CIRCULATIONS, RING_CORE, core.mv.vector([[0.0, 0.0]]).dual())
-    pairs = leapfrog().vortices
-    turning = worldlines(ring, WORLDLINE_DT, n_ring_steps)                   # [steps + 1, vortices] Point-
-    passing = worldlines(pairs, WORLDLINE_DT, n_leapfrog_steps)              # [steps + 1, vortices] Point-
-
-    return [turning, passing]
+def worldlines(
+    centres: core.Point,
+    circulations: core.Circulation,
+    core_radius: float,
+    copies: core.Point,
+    dt: float,
+    n_steps: int,
+) -> core.Point:
+    """Worldline positions across `n_steps + 1` instants for each vortex."""
+    return stack(
+        list(core.trajectory(centres, circulations, core_radius, copies, n_steps + 1, 1, dt))
+    )                                                                       # [n_steps + 1, ...] Point-
 
 
-def walkabout() -> core.Vortices:
-    """The nudged pairs."""
-    centres = (core.mv.y * WALKABOUT_SPANS + core.mv.x * WALKABOUT_NUDGES).dual()   # [vortices] Point-
-    return core.Vortices(centres, core.mv.xy * LEAPFROG_CIRCULATIONS, LEAPFROG_CORE, core.mv.vector([[0.0, 0.0]]).dual())
+def braid_worldlines(n_ring_steps: int, n_leapfrog_steps: int) -> list[core.Point]:
+    """Worldline arrays for the rigidly rotating 5-vortex ring and the leapfrogging pairs."""
+    rotors = (core.mv.xy * (-np.pi * np.arange(n_ring) / n_ring)).exp()     # [n_ring] Even+
+    ring_centres = rotors >> (core.mv.x.dual() * ring_radius)               # [n_ring] Point-
+    ring_circulations = core.mv.xy * ring_strengths                         # [n_ring] Circulation+
+    isolated = single_copy()                                                # [1] Point-
+    pair_scene = leapfrog()
+    ring_paths = worldlines(
+        ring_centres, ring_circulations, ring_core, isolated, worldline_dt, n_ring_steps
+    )                                                                       # [n_ring_steps + 1, n_ring] Point-
+    pair_paths = worldlines(
+        pair_scene.centres,
+        pair_scene.circulations,
+        pair_scene.core_radius,
+        pair_scene.copies,
+        worldline_dt,
+        n_leapfrog_steps,
+    )                                                                       # [n_leapfrog_steps + 1, 4] Point-
+    return [ring_paths, pair_paths]
+
+
+def walkabout_centres() -> core.Point:
+    """Initial vortex centres for the symmetry-broken walkabout pairs."""
+    return (core.mv.y * walkabout_spans + core.mv.x * walkabout_nudges).dual()   # [4] Point-
 
 
 def leapfrog() -> Scene:
-    centres = (core.mv.y * LEAPFROG_SPANS).dual().cast(core.Point)           # [vortices] Point-
-    vortices = core.Vortices(centres, core.mv.xy * LEAPFROG_CIRCULATIONS, LEAPFROG_CORE, core.mv.vector([[0.0, 0.0]]).dual())
-    return Scene(name="vortices_leapfrog", vortices=vortices, half_width=2.4, half_height=1.6, n_columns=300, n_rows=200,
-                 dt=1 / 15, n_substeps=2, n_frames=150, duration_ms=40, vorticity_scale=14.0)
+    """Scene parameters for two coaxial leapfrogging vortex pairs."""
+    centres = (core.mv.y * leapfrog_spans).dual().cast(core.Point)          # [4] Point-
+    circulations = core.mv.xy * leapfrog_strengths                          # [4] Circulation+
+    return Scene(
+        name="vortices_leapfrog",
+        centres=centres,
+        circulations=circulations,
+        core_radius=leapfrog_core,
+        copies=single_copy(),
+        half_width=2.4,
+        half_height=1.6,
+        n_columns=300,
+        n_rows=200,
+        dt=1 / 15,
+        n_substeps=2,
+        n_frames=150,
+        duration_ms=frame_duration_ms,
+        vorticity_scale=14.0,
+    )
 
 
 def shear_layer() -> Scene:
-    along = (np.arange(N_LAYER_VORTICES) + 0.5) / N_LAYER_VORTICES * LAYER_PERIOD
-    phase = 2 * np.pi * along / LAYER_PERIOD
-    across = LAYER_AMPLITUDE * (np.sin(2 * phase) + LAYER_SEED * np.sin(phase))
-    centres = (core.mv.x * (along - LAYER_PERIOD / 2) + core.mv.y * across).dual()   # [vortices] Point-
-    # The layer's circulation per period is the jump in velocity across it times the period.
-    circulations = np.full(N_LAYER_VORTICES, -LAYER_JUMP * LAYER_PERIOD / N_LAYER_VORTICES)
-    copies = core.mv.x.dual() * (np.arange(-N_LAYER_COPIES, N_LAYER_COPIES + 1) * LAYER_PERIOD)   # [copies] Point-
-    vortices = core.Vortices(centres, core.mv.xy * circulations, LAYER_CORE, copies)
-    return Scene(name="vortices_shear_layer", vortices=vortices, half_width=LAYER_PERIOD, half_height=0.4, n_columns=300,
-                 n_rows=120, dt=1 / 60, n_substeps=2, n_frames=240, duration_ms=40, vorticity_scale=10.0)
+    """Scene parameters for a periodic Kelvin-Helmholtz shear layer with subharmonic pairing seed."""
+    x_positions = (np.arange(n_layer_vortices) + 0.5) / n_layer_vortices * layer_period
+    phases = 2 * np.pi * x_positions / layer_period
+    y_offsets = layer_amplitude * (np.sin(2 * phases) + layer_seed * np.sin(phases))
+    centres = (core.mv.x * (x_positions - layer_period / 2) + core.mv.y * y_offsets).dual()   # [n_layer_vortices] Point-
+    strengths = np.full(n_layer_vortices, -layer_jump * layer_period / n_layer_vortices)
+    copies = core.mv.x.dual() * (np.arange(-n_layer_copies, n_layer_copies + 1) * layer_period)   # [2 * n_layer_copies + 1] Point-
+    return Scene(
+        name="vortices_shear_layer",
+        centres=centres,
+        circulations=core.mv.xy * strengths,
+        core_radius=layer_core,
+        copies=copies,
+        half_width=layer_period,
+        half_height=0.4,
+        n_columns=300,
+        n_rows=120,
+        dt=1 / 60,
+        n_substeps=2,
+        n_frames=240,
+        duration_ms=frame_duration_ms,
+        vorticity_scale=10.0,
+    )
 
 
 def gas() -> Scene:
-    rng = np.random.default_rng(GAS_SEED)
-    n_gas = N_GAS_TURNING + N_GAS_COUNTER
-    # Uniform over the disc: a radius growing as the square root, turned by a rotor to a random angle.
-    radii = GAS_RADIUS * np.sqrt(rng.uniform(size=n_gas))
-    turns = (core.mv.xy * (-np.pi * rng.uniform(size=n_gas))).exp()          # [vortices] Rotor+
-    centres = turns >> (core.mv.x.dual() * radii)                            # [vortices] Point-
-    circulations = rng.permutation(np.repeat([1.0, -1.0], [N_GAS_TURNING, N_GAS_COUNTER]))
-    vortices = core.Vortices(centres, core.mv.xy * circulations, GAS_CORE, core.mv.vector([[0.0, 0.0]]).dual())
-    return Scene(name="vortices_gas", vortices=vortices, half_width=3.6, half_height=3.0, n_columns=300, n_rows=250,
-                 dt=1 / 120, n_substeps=8, n_frames=225, duration_ms=40, vorticity_scale=50.0)
+    """Scene parameters for a bounded planar gas of vortices of both senses."""
+    rng = np.random.default_rng(gas_seed)
+    n_gas = n_gas_turning + n_gas_counter
+    radii = gas_radius * np.sqrt(rng.uniform(size=n_gas))
+    rotors = (core.mv.xy * (-np.pi * rng.uniform(size=n_gas))).exp()        # [n_gas] Even+
+    centres = rotors >> (core.mv.x.dual() * radii)                          # [n_gas] Point-
+    strengths = rng.permutation(np.repeat([1.0, -1.0], [n_gas_turning, n_gas_counter]))
+    return Scene(
+        name="vortices_gas",
+        centres=centres,
+        circulations=core.mv.xy * strengths,
+        core_radius=gas_core,
+        copies=single_copy(),
+        half_width=3.6,
+        half_height=3.0,
+        n_columns=300,
+        n_rows=250,
+        dt=1 / 120,
+        n_substeps=8,
+        n_frames=225,
+        duration_ms=frame_duration_ms,
+        vorticity_scale=50.0,
+    )
 
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
     from examples.fluids.vortices import render
+    from examples.util.animation import save_animation, save_figure
 
     scenes = (leapfrog(), shear_layer(), gas())
-    last = []
+    final_centres: list[core.Point] = []
     for scene in scenes:
-        states = list(frames(scene.vortices, scene.n_frames, scene.n_substeps, scene.dt))
-        save_animation(render.animate(states, scene.half_height, (scene.n_rows, scene.n_columns), scene.vorticity_scale),
-                       scene.name, scene.duration_ms, N_COLOURS)
-        last.append(states[-1])
+        states: list[core.Point] = []
 
-    # The walkabout on one strip around its whole trip.
-    walk_centre = (core.mv.x * WALKABOUT_ALONG + core.mv.y * WALKABOUT_ACROSS).dual()   # [] Point-
-    walk_shape = (round(2 * WALKABOUT_HALF_HEIGHT * WALKABOUT_PIXELS_PER_UNIT), round(2 * WALKABOUT_HALF_WIDTH * WALKABOUT_PIXELS_PER_UNIT))
-    walk = frames(walkabout(), N_WALKABOUT_FRAMES, N_WALKABOUT_SUBSTEPS, WALKABOUT_DT)
-    save_animation(render.window(walk, walk_centre, WALKABOUT_HALF_HEIGHT, walk_shape, WALKABOUT_VORTICITY_SCALE),
-                   "vortices_walkabout", DURATION_MS, N_COLOURS)
+        def recorded_frames(scene: Scene = scene, states: list[core.Point] = states):
+            for state in core.trajectory(
+                scene.centres, scene.circulations, scene.core_radius, scene.copies, scene.n_frames, scene.n_substeps, scene.dt
+            ):
+                states.append(state)
+                yield state
 
-    turning, passing = braids()
-    save_figure(render.braids([turning, passing], BRAID_HEIGHT), "vortices_worldlines")
+        save_animation(
+            render.animate(
+                scene.circulations,
+                scene.core_radius,
+                scene.copies,
+                scene.half_height,
+                (scene.n_rows, scene.n_columns),
+                scene.vorticity_scale,
+                recorded_frames(),
+            ),
+            scene.name,
+            scene.duration_ms,
+            n_colours,
+        )
+        final_centres.append(states[-1])
+
+    walk_centre = (core.mv.x * walkabout_x + core.mv.y * walkabout_y).dual()   # [] Point-
+    walk_shape = (
+        round(2 * walkabout_half_height * walkabout_pixels_per_unit),
+        round(2 * walkabout_half_width * walkabout_pixels_per_unit),
+    )
+    walk_circulations = core.mv.xy * leapfrog_strengths                     # [4] Circulation+
+    isolated = single_copy()                                                # [1] Point-
+    walk_frames = core.trajectory(
+        walkabout_centres(), walk_circulations, leapfrog_core, isolated, n_walkabout_frames, n_walkabout_substeps, walkabout_dt
+    )
+    save_animation(
+        render.window(
+            walk_circulations,
+            leapfrog_core,
+            isolated,
+            walk_centre,
+            walkabout_half_height,
+            walk_shape,
+            walkabout_vorticity_scale,
+            walk_frames,
+        ),
+        "vortices_walkabout",
+        frame_duration_ms,
+        n_colours,
+    )
+
+    ring_paths, pair_paths = braid_worldlines(n_ring_steps, n_leapfrog_steps)
+    save_figure(render.braids([ring_paths, pair_paths], braid_height), "vortices_worldlines")
 
     # checks
-    # The derivative of the flow has no divergence, and its bivector is the blobs' vorticity, the closed form the
-    # pictures draw.
-    for scene, vortices in zip(scenes, last):
-        points = vortices.centres.mean(axis=-1) + core.grid(scene.half_width, scene.half_height, 12, 8)
-        derivative = core.derivative(core.gradient(vortices, points))
-        separations = points[..., None, None] - (vortices.centres[..., None] + vortices.copies)
-        blob = separations.dot(separations) + vortices.core_radius**2
-        vorticity = (vortices.circulations[:, None] * vortices.core_radius**2 / np.pi / (blob * blob)).sum(axis=-1).sum(axis=-1)
-        np.testing.assert_allclose((derivative - vorticity).kernel, 0.0, atol=1e-9)
-    for circulations, centres in ((RING_CIRCULATIONS, turning), (LEAPFROG_CIRCULATIONS, passing)):
-        # Runge–Kutta keeps the linear impulse, the circulation-weighted sum of the centres, to
-        # round-off; the angular impulse to the method's accuracy.
-        linear = (circulations * centres).sum(axis=-1)                       # [steps + 1] Point-
-        angular = (circulations * (centres | centres)).sum(axis=-1)          # [steps + 1] Scalar+
-        np.testing.assert_allclose((linear - linear[0]).kernel, 0.0, atol=1e-12)
-        np.testing.assert_allclose((angular - angular[0]).kernel, 0.0, atol=1e-5)
-    # The ring turns rigidly: each vortex's place times its first place is the same for every vortex.
-    turned = turning * turning[0]                                            # [steps + 1, vortices] Even+
-    np.testing.assert_allclose((turned - turned[:, :1]).kernel, 0.0, atol=1e-12)
+    for scene, centres in zip(scenes, final_centres):
+        points = centres.mean(axis=-1) + core.grid(scene.half_width, scene.half_height, 12, 8)
+        flow_derivative = core.derivative(
+            core.gradient(centres, scene.circulations, scene.core_radius, scene.copies, points)
+        )
+        offsets = core.separations(centres, scene.copies, points)
+        blob = (offsets | offsets) + scene.core_radius**2
+        vorticity = (scene.circulations[:, None] * scene.core_radius**2 / np.pi / (blob * blob)).sum(axis=-1).sum(axis=-1)
+        assert ((flow_derivative - vorticity).norm() < 1e-9).all()
+    ring_circulations = core.mv.xy * ring_strengths                         # [n_ring] Circulation+
+    for circulations, paths in ((ring_circulations, ring_paths), (scenes[0].circulations, pair_paths)):
+        linear_impulse = (paths * circulations).sum(axis=-1)                # [...] Point-
+        angular_impulse = (circulations * (paths | paths)).sum(axis=-1)     # [...] Circulation+
+        assert ((linear_impulse - linear_impulse[0]).norm() < 1e-9).all()
+        assert ((angular_impulse - angular_impulse[0]).norm() < 1e-5).all()
+    relative_rotors = ring_paths * ring_paths[0]                            # [n_ring_steps + 1, n_ring] Even+
+    assert ((relative_rotors - relative_rotors[:, :1]).norm() < 1e-9).all()
+
 
 if __name__ == "__main__":
     main()

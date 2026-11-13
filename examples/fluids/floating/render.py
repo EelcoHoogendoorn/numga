@@ -1,6 +1,6 @@
-"""Drawing for hydrostatic stability: the heeled hull in space with its wet surface by depth and its two
-forces; the righting arm curves; the floating cube's map over density and heel, with cubes at rest; and the
-released hull rolling back upright or capsizing, beside its righting arm curve."""
+"""Drawing for hydrostatic stability: the heeled hull in space with its wet surface coloured by depth and its
+force lines; the righting arm curves; the floating cube stability map over density and heel with resting cubes
+above; and the released hull rolling upright or capsizing beside its righting arm curve."""
 
 from __future__ import annotations
 
@@ -11,194 +11,191 @@ import numpy as np
 from matplotlib.colors import to_rgb
 from numga import stack
 
+from examples.fluids.floating import core
 from examples.util import charts
 from examples.util.animation import capture
-from examples.fluids.floating import core
 from examples.util.wgsl import image_figure, meshes, simplices, solids
 
-mv = core.mv
-# The colours of the hull, of its wet surface by depth, of the water, of the weight and of the buoyancy;
-# the colour maps of the loads and of the cube's map.
+scene_mv = solids.mv
+include = solids.context.include_from_algebra
+Projection = solids.ga.gatype((solids.Point, solids.Point))             # Point- <- Point-
+
+# Colours of the hull, water, weight and buoyancy, and colour maps of depth, load height and righting couple.
 hull_colour, deck_colour, water_colour, weight_colour, buoyancy_colour = (
-    "#e7e2d6", "#c9bfa8", "#5aa9c9", "#d06c36", "#1f6f99")
+    "#e7e2d6", "#c9bfa8", "#5aa9c9", "#d06c36", "#1f6f99",
+)
 wet_map, load_map, arm_map = "Blues", "viridis", "RdBu"
-# The depth at which the hull's wet surface is darkest, the half length and half breadth of the water drawn around
-# it, the drawn length of the forces, and the heels over which each curve's tangent is drawn.
-deepest = 0.6
-sea = (3.0, 1.8)
-force = 0.9
-tangent = 25.0
-# The view in space, elevation and azimuth in radians, azimuth zero looking along +y, its margin as a share of
-# its larger side, the pixels across its picture, and how much of what lies behind it each face of the water hides,
-# so the wet hull shows through it.
+max_shade_depth = 0.6
+sea_half_extents = (3.0, 1.8)
+force_arrow_scale = 0.9
+tangent_span_degrees = 25.0
 elevation, azimuth = np.radians([18.0, 35.0])
 margin = 0.04
 n_pixels = 700
 water_opacity = 0.13
-# The glint on the hull, faint, so its facets do not glitter.
 hull_gloss = 0.1
 background = np.ones(3)
-# The windows of the end views of the rolling hull and of the hull drawn whole, across and up, and the size
-# of the cube drawn above the map.
 end_window = ((-1.6, 1.6), (-1.0, 1.6))
 ship_window = ((-1.1, 1.1), (-0.8, 1.0))
 cube_window = 0.95
-# The end views: seen along the axis of heel from its +x side, y across and z up, as an azimuth; the pixels across
-# the rolling hull's views and the cubes'; how much of what lies behind it the water's near face hides; and in pixels,
-# the length of the force lines' dashes, the radii of the force lines, the arm, the waterline, the centre of gravity
-# and the marker of each load, and the arrows' width and the length of the strokes of the chevrons at their tips.
 end_on_azimuth = np.radians(90.0)
 n_end_pixels, n_cube_pixels = 200, 130
 end_water_opacity = 0.3
-dash = 3.0
+dash_pixels = 3.0
 line_radius, arm_radius, waterline_radius, centre_radius, marker_radius = 0.4, 0.8, 0.4, 2.0, 2.5
 arrow_width, arrow_chevron = 1.6, 6.4
-# The direction along the axis of heel, which an end view looks along, a unit apart across the plane x = 0; and a
-# projection of points onto points.
-along_heel = mv.x.dual()                                                    # [] Point-
-Projection = core.ga.gatype((core.Point, core.Point))
+heel_direction = scene_mv.x.dual()                                      # [] Point-
+scene_water = include(core.water)                                       # [] Plane+
+scene_up = include(core.up)                                             # [] Point-
+scene_unit = scene_water | scene_water                                  # [] Scalar+
 
 
 # --- plumbing -------------------------------------------------------------------------
-def degrees(rolls: core.Twist) -> np.ndarray:
-    """The angle of turns about the axis of heel, in degrees: their pairing with the axis's dual."""
+def heel_degrees(rolls: core.Twist) -> np.ndarray:
+    """Heel angles in degrees read by pairing roll twists with the dual of the heel axis."""
     return np.degrees((rolls & core.heel_axis.dual()).to_array())
 
 
-def arms(couples: core.Forque, weight: core.Scalar) -> np.ndarray:
-    """The righting arm of each couple: its turn back about the axis of heel, over the weight."""
+def righting_arms(couples: core.Forque, weight: core.Scalar) -> np.ndarray:
+    """Righting arms in metres read from righting couples about the heel axis divided by weight."""
     return (-(couples & core.heel_axis) / weight).to_array()
 
 
-def end_view(window: tuple[tuple[float, float], tuple[float, float]], pixels: int) -> solids.View:
-    """The view along the axis of heel of a window across and up, `pixels` across."""
+def end_view(window: tuple[tuple[float, float], tuple[float, float]], n_view_pixels: int) -> solids.View:
+    """Camera view along the heel axis framing a horizontal and vertical window."""
     (left, right), (bottom, top) = window
-    middle = mv.point([0.0, (left + right) / 2, (bottom + top) / 2])
-    return solids.View(solids.aim(middle, 0.0, end_on_azimuth), np.array([right - left, top - bottom]) / 2, pixels)
+    middle = scene_mv.point([0.0, (left + right) / 2, (bottom + top) / 2])
+    return solids.View(solids.aim(middle, 0.0, end_on_azimuth), np.array([right - left, top - bottom]) / 2, n_view_pixels)
 
 
-def front_projection(points: core.Point, view: solids.View) -> Projection:
-    """The projection along the axis of heel onto a plane square to it, in front of a body, its points of unit weight,
-    and of the water around it: a point moved along the axis by how far it lies behind that plane."""
-    depths = (mv.x & points).abs().reshape(-1)
+def front_projection(points: solids.Point, view: solids.View) -> Projection:
+    """Orthographic projection along the heel axis onto a plane in front of the hull and water box."""
+    depths = (scene_mv.x & points).abs().reshape(-1)
     reach = depths.max() + 2 * view.pixel
-    front = mv.x - mv.w * reach                                                # [] Plane+
-    return core.Point - along_heel * (front & core.Point)                     # [] Point- <- Point-
+    front = scene_mv.x - scene_mv.w * reach                             # [] Plane+
+    return solids.Point - heel_direction * (front & solids.Point)       # [] Point- <- Point-
 
 
-def forces_end_on(view: solids.View, placed: core.Motor, push: core.Forque, centre: core.Point,
+def forces_end_on(view: solids.View, placement: core.Motor, push: core.Forque, centre: core.Point,
                   onto_front: Projection) -> tuple[list[tuple[solids.Quadric, np.ndarray]], meshes.Samples]:
-    """The weight from the centre of gravity and the buoyancy from the water surface, as arrows on their dashed
-    vertical lines across an end view, and the righting arm between them at the centre's height; in front of the
-    body, as `onto_front` places them: the lines, the arm and the centre as solids, and the arrows as tubes, each
-    ending in a chevron."""
-    gravity = onto_front(placed >> centre)                                  # [] Point-
-    # The buoyancy's line meets the water surface in a point of positive weight.
-    buoyant = onto_front(((placed >> push) ^ core.water).normalized())      # [] Point-
-    # The heights of the view's bottom and top, about the middle where its camera stands.
-    bottom = (core.water & (view.camera >> solids.origin)) - view.half[1]
-    # Each force line's dashes, up the whole view.
-    n_dashes = int(np.ceil(view.half[1] / (dash * view.pixel)))
-    marks = bottom + np.arange(n_dashes) * (2 * dash * view.pixel)            # [dashes] Scalar+
+    """Dashed action lines, upward buoyancy and downward weight arrows, centre of gravity marker, and horizontal
+    righting arm projected in front of an end view."""
+    placed = include(placement)                                         # [] Motor+
+    gravity_point = onto_front(placed >> include(centre))               # [] Point-
+    buoyancy_point = onto_front(((placed >> include(push)) ^ scene_water).normalized())  # [] Point-
+    bottom = (scene_water & (view.camera >> solids.origin)) - view.half[1]
+    n_dashes = int(np.ceil(view.half[1] / (dash_pixels * view.pixel)))
+    marks = bottom + np.arange(n_dashes) * (2 * dash_pixels * view.pixel)  # [n_dashes] Scalar+
     parts = []
-    for start, colour in ((buoyant, buoyancy_colour), (gravity, weight_colour)):
-        # The start dropped onto the water surface, and raised to each mark.
-        dashes = start - core.up * (core.water & start) + core.up * marks     # [dashes] Point-
-        lines = solids.rods(dashes, dashes + core.up * (dash * view.pixel), line_radius * view.pixel)
+    for start, colour in ((buoyancy_point, buoyancy_colour), (gravity_point, weight_colour)):
+        dashes = start - scene_up * (scene_water & start) + scene_up * marks  # [n_dashes] Point-
+        lines = solids.rods(dashes, dashes + scene_up * (dash_pixels * view.pixel), line_radius * view.pixel)
         parts += [(lines, to_rgb(colour))]
-    # The buoyancy up and the weight down from their starts.
-    starts = stack((buoyant, gravity))                                         # [forces] Point-
-    tips = starts + core.up * (np.array([1.0, -1.0]) * force * 0.6)            # [forces] Point-
-    arrows = simplices.tubes(stack((starts, tips), axis=-1).reshape(-1), simplices.Topology.chains([2, 2]),
-                             np.array([to_rgb(buoyancy_colour), to_rgb(weight_colour)]), arrow_width, view,
-                             gloss=solids.gloss, chevrons=np.ones(2), chevron=arrow_chevron)
-    # The arm reaches from the centre of gravity across to the buoyancy's vertical, at the centre's height.
-    level = core.water - mv.w * (core.water & gravity)                         # [] Plane+
-    arm = solids.rods(gravity, (buoyant & core.up) ^ level, arm_radius * view.pixel)
-    centre_ball = solids.ball(gravity, centre_radius * view.pixel)
+    starts = stack((buoyancy_point, gravity_point))                     # [2] Point-
+    tips = starts + scene_up * (np.array([1.0, -1.0]) * force_arrow_scale * 0.6)  # [2] Point-
+    arrows = simplices.tubes(
+        stack((starts, tips), axis=-1).reshape(-1),
+        simplices.Topology.chains([2, 2]),
+        np.array([to_rgb(buoyancy_colour), to_rgb(weight_colour)]),
+        arrow_width,
+        view,
+        gloss=solids.gloss,
+        chevrons=np.ones(2),
+        chevron=arrow_chevron,
+    )
+    level = scene_water - scene_mv.w * (scene_water & gravity_point)    # [] Plane+
+    arm = solids.rods(gravity_point, (buoyancy_point & scene_up) ^ level, arm_radius * view.pixel)
+    centre_ball = solids.ball(gravity_point, centre_radius * view.pixel)
     return parts + [(arm[None], (0.1, 0.1, 0.1)), (centre_ball[None, None], to_rgb(weight_colour))], arrows
 
 
-def end_on(topology: core.Topology, points: core.Point, view: solids.View, parts: list[tuple[solids.Quadric, np.ndarray]],
+def end_on(topology: core.Topology, points: solids.Point, view: solids.View,
+           parts: list[tuple[solids.Quadric, np.ndarray]],
            arrows: list[tuple[meshes.Samples, float]]) -> np.ndarray:
-    """A body seen along its axis of heel: the triangles of its points of unit weight, the water over its lower part
-    with its waterline, and parts and arrows in front of it, `[rows, columns, 3]` bytes."""
+    """End-on RGB image of a triangulated body, translucent water box, waterline rod, and overlaid force geometry."""
     triangles = topology.elements[2]
-    body = meshes.samples(points, triangles, np.array(to_rgb(hull_colour)), meshes.flat(points, triangles), view,
-                          face_values=np.zeros(4), colour=meshes.plain, gloss=hull_gloss)
-    # The water: a box up to the surface, past the view's sides and bottom, and as long along the axis as the body,
-    # centred below the view's middle, where its camera stands.
-    across, up = view.half + view.pixel
-    middle = view.camera >> solids.origin                                   # [] Point-
-    height = core.water & middle
-    depth = up - height
-    depths = (mv.x & points).abs().reshape(-1)
+    body = meshes.samples(
+        points, triangles, np.array(to_rgb(hull_colour)), meshes.flat(points, triangles), view,
+        face_values=np.zeros(4), colour=meshes.plain, gloss=hull_gloss,
+    )
+    across, up_span = view.half + view.pixel
+    middle = view.camera >> solids.origin                               # [] Point-
+    height = scene_water & middle
+    depth = up_span - height
+    depths = (scene_mv.x & points).abs().reshape(-1)
     half_length = depths.max() + view.pixel
-    water = solids.boxes(solids.translator(middle - core.up * (height + depth / 2) - solids.origin),
-                         stack((half_length, mv.scalar([across]), depth / 2)))
-    # The waterline runs across the view, along the camera's own x, through the middle dropped onto the surface.
-    surface_middle = middle - core.up * height                              # [] Point-
-    sideways = view.camera >> mv.x.dual()                                   # [] Point-
-    onto_front = front_projection(points, view)                               # [] Point- <- Point-
-    waterline = solids.rods(onto_front(surface_middle - sideways * across), onto_front(surface_middle + sideways * across),
-                            waterline_radius * view.pixel)
-    return solids.draw(parts + [(waterline[None], to_rgb(water_colour))], view, background,
-                       inks=[], translucent=[(water[None], np.array(to_rgb(water_colour)), end_water_opacity)],
-                       meshes=[(body, 1.0)] + arrows)
+    water_box = solids.boxes(
+        solids.translator(middle - scene_up * (height + depth / 2) - solids.origin),
+        stack((half_length, scene_unit * across, depth / 2)),
+    )
+    surface_middle = middle - scene_up * height                         # [] Point-
+    sideways = view.camera >> scene_mv.x.dual()                         # [] Point-
+    onto_front = front_projection(points, view)                         # [] Point- <- Point-
+    waterline = solids.rods(
+        onto_front(surface_middle - sideways * across),
+        onto_front(surface_middle + sideways * across),
+        waterline_radius * view.pixel,
+    )
+    return solids.draw(
+        parts + [(waterline[None], to_rgb(water_colour))],
+        view,
+        background,
+        inks=[],
+        translucent=[(water_box[None], np.array(to_rgb(water_colour)), end_water_opacity)],
+        meshes=[(body, 1.0)] + arrows,
+    )
 
 
 def side_by_side(images: list[np.ndarray]) -> np.ndarray:
-    """Pictures `[rows, columns, 3]` bytes in a row, the shorter ones padded below with the background."""
+    """Horizontal concatenation of RGB images, bottom-padded with white where heights differ."""
     rows = max(image.shape[0] for image in images)
-    return np.concatenate([np.pad(image, ((0, rows - image.shape[0]), (0, 0), (0, 0)), constant_values=255)
-                           for image in images], axis=1)
+    return np.concatenate(
+        [np.pad(image, ((0, rows - image.shape[0]), (0, 0), (0, 0)), constant_values=255) for image in images],
+        axis=1,
+    )
 
 
-def in_water(topology: core.Topology, points: core.Point) -> np.ndarray:
-    """The hull's triangles in space, of its points of unit weight, flat, the dry ones pale and the wet ones darker
-    with depth, under a translucent plate of the water's surface, framed on the plate."""
-    # Each triangle's depth, at its centroid, below the water surface.
-    centroids = topology.incidence[2, 0].mean(axis=0) * points.field()        # Point-[triangles]
-    depth = np.clip(-(core.water & centroids).batch().to_array() / deepest, 0, 1)   # [triangles]
-    wet = plt.get_cmap(wet_map)(0.35 + 0.6 * depth)[:, :3]
-    colours = np.where((depth > 0)[:, None], wet, to_rgb(hull_colour))       # [triangles, 3]
-    half_length, half_breadth = sea
-    surface = mv.point([[-half_length, -half_breadth, 0], [half_length, -half_breadth, 0],
-                        [half_length, half_breadth, 0], [-half_length, half_breadth, 0]])   # [corners] Point-
+def in_water(topology: core.Topology, points: solids.Point) -> np.ndarray:
+    """Perspective RGB view of the hull in space with submerged triangles shaded by depth under a translucent water plate."""
+    centroids = topology.incidence[2, 0].mean(axis=0) * points.field()  # Point-[F]
+    depth = np.clip(-(scene_water & centroids).batch().to_array() / max_shade_depth, 0, 1)
+    wet_colours = plt.get_cmap(wet_map)(0.35 + 0.6 * depth)[:, :3]
+    colours = np.where((depth > 0)[:, None], wet_colours, to_rgb(hull_colour))
+    half_length, half_breadth = sea_half_extents
+    surface = scene_mv.point([
+        [-half_length, -half_breadth, 0],
+        [half_length, -half_breadth, 0],
+        [half_length, half_breadth, 0],
+        [-half_length, half_breadth, 0],
+    ])                                                                  # [4] Point-
     view = solids.view([surface, points], 0.0, elevation, azimuth, margin, n_pixels)
     triangles = topology.elements[2]
     normals = meshes.flat(points, triangles)
-    hull = meshes.samples(points, triangles, np.zeros(3), normals, view, face_values=colours, colour=meshes.by_face,
-                          gloss=hull_gloss)
-    # The water's surface, a plate a pixel thick.
-    water = solids.plates(surface[None], view.pixel)                          # [1, 6] Plane+
-    return solids.draw([], view, background, inks=[], translucent=[(water, np.array(to_rgb(water_colour)), water_opacity)],
-                       meshes=[(hull, 1.0)])
+    hull = meshes.samples(points, triangles, np.zeros(3), normals, view, face_values=colours, colour=meshes.by_face, gloss=hull_gloss)
+    water_plate = solids.plates(surface[None], view.pixel)              # [1, 6] Plane+
+    return solids.draw([], view, background, inks=[], translucent=[(water_plate, np.array(to_rgb(water_colour)), water_opacity)], meshes=[(hull, 1.0)])
 
 
-def draw_ship(topology: core.Topology, vertices: core.Point, placed: core.Motor, push: core.Forque,
+def draw_ship(topology: core.Topology, vertices: core.Point, placement: core.Motor, push: core.Forque,
               centre: core.Point) -> plt.Figure:
-    """The heeled hull: in space, its dry surface pale and its wet surface darker with depth, in the water;
-    and seen along its axis of heel, with its weight, its buoyancy and the righting arm between them."""
-    points = placed >> vertices.batch()                                      # [vertices] Point-
+    """Side-by-side 3D perspective and end-on cross-section of the heeled hull with its hydrostatic force lines."""
+    points = include(placement >> vertices.batch())                     # [...] Point-
     in_space = in_water(topology, points)
     (left, right), (bottom, top) = ship_window
     view = end_view(ship_window, round(in_space.shape[0] * (right - left) / (top - bottom)))
-    forces, arrows = forces_end_on(view, placed, push, centre, front_projection(points, view))
-    return image_figure(side_by_side([in_space, end_on(topology, points, view, forces, [(arrows, 1.0)])]))
+    force_solids, arrows = forces_end_on(view, placement, push, centre, front_projection(points, view))
+    return image_figure(side_by_side([in_space, end_on(topology, points, view, force_solids, [(arrows, 1.0)])]))
 
 
 @charts.style()
 def draw_curves(heels: np.ndarray, couples: core.Forque, weight: core.Scalar, stiffness: core.Stiffness) -> plt.Figure:
-    """The righting arm of each load over the heels `[heels, loads]`, with the tangent at upright that the
-    stiffness gives, and the line of no righting."""
-    righting = arms(couples, weight)                                         # [heels, loads]
-    slopes = (stiffness(mv.yz, mv.yz) / weight).to_array()                       # [loads]
+    """Righting arm curves across heel angles for each load height, with dashed upright metacentric tangents."""
+    righting = righting_arms(couples, weight)
+    slopes = (stiffness(core.heel_axis, core.heel_axis) / weight).to_array()
     colours = plt.get_cmap(load_map)(np.linspace(0.05, 0.85, righting.shape[1]))
-    # Half the column: a few smooth curves and their tangents at upright.
     figure, ax = charts.subplots(420, 260)
     ax.axhline(0, color="0.6", linewidth=charts.FRAME_WIDTH)
-    near = heels[heels <= tangent]
+    near = heels[heels <= tangent_span_degrees]
     for curve, slope, colour in zip(righting.T, slopes, colours):
         ax.plot(heels, curve, color=colour)
         ax.plot(near, slope * np.radians(near), color=colour, linestyle=(0, (4, 3)))
@@ -212,26 +209,23 @@ def draw_curves(heels: np.ndarray, couples: core.Forque, weight: core.Scalar, st
 
 
 @charts.style()
-def draw_cubes(densities: np.ndarray, heels: np.ndarray, couples: core.Forque, fluid_weight: float, topology: core.Topology,
-               vertices: core.Point, shown: core.Motor, shown_densities: list[float], rests: np.ndarray) -> plt.Figure:
-    """Above, cubes of a few densities at rest; below, the cube's righting couple over density and heel, blue
-    turning it back upright and red over, its rests where it turns from over to back drawn thick, its
-    balances the other way thin, and the cubes above marked on them."""
-    moments = (-(couples & core.heel_axis) / fluid_weight).to_array()            # [densities, heels]
-    # A rest is stable where the couple turns from pushing over to pushing back as the heel grows.
+def draw_cubes(densities: np.ndarray, heels: np.ndarray, couples: core.Forque, fluid_weight: float,
+               topology: core.Topology, vertices: core.Point, placements: core.Motor,
+               shown_densities: list[float], rest_heels: core.Scalar) -> plt.Figure:
+    """Equilibrium floating cubes above a contour map of the cube's righting couple over relative density and heel."""
+    moments = (-(couples & core.heel_axis) / fluid_weight).to_array()
     rising = np.gradient(moments, heels, axis=1) > 0
     cube_view = end_view(((-cube_window, cube_window), (-cube_window, cube_window)), n_cube_pixels)
-    cubes = side_by_side([end_on(topology, placed >> vertices.batch(), cube_view, [], [])
-                          for placed in shown])
-    # The map as wide as the cubes above it.
+    cubes = side_by_side([
+        end_on(topology, include(placement >> vertices.batch()), cube_view, [], [])
+        for placement in placements
+    ])
     figure, ax = charts.subplots(cubes.shape[1], round(0.6 * cubes.shape[1]))
     largest = np.abs(moments).max()
     ax.contourf(densities, heels, moments.T, levels=np.linspace(-largest, largest, 41), cmap=arm_map)
-    # The stable rests twice as wide as a curve, the balances the other way as thin as the frame.
     for stable, width in ((True, charts.points(2 * charts.LINE_PX)), (False, charts.FRAME_WIDTH)):
-        ax.contour(densities, heels, np.where(rising == stable, moments, np.nan).T, levels=[0], colors="0.1",
-                   linewidths=width)
-    ax.plot(shown_densities, rests, "o", color="white", markeredgecolor="0.1")
+        ax.contour(densities, heels, np.where(rising == stable, moments, np.nan).T, levels=[0], colors="0.1", linewidths=width)
+    ax.plot(shown_densities, rest_heels.to_array(), "o", color="white", markeredgecolor="0.1")
     ax.set(xlim=(densities[0], densities[-1]), ylim=(-3, 93), yticks=[0, 45, 90])
     ax.set(xlabel="density over the water's", ylabel="heel (degrees)")
     figure.subplots_adjust(left=0.1, right=0.98, bottom=0.12, top=0.98)
@@ -240,53 +234,45 @@ def draw_cubes(densities: np.ndarray, heels: np.ndarray, couples: core.Forque, f
     return image_figure(np.concatenate([cubes, plot[:, :cubes.shape[1]]], axis=0))
 
 
-def animate_release(topology: core.Topology, vertices: core.Point, centres: core.Point,
-                    frames: Iterable[tuple[core.Twist, core.Motor, core.Forque, core.Forque]], heels: np.ndarray,
-                    couples: core.Forque, weight: core.Scalar) -> Iterator[np.ndarray]:
-    """Each frame: the released hull with each load seen along its axis of heel, its weight from its centre of
-    gravity and its buoyancy from the water surface, as arrows on their lines, beside the righting arm curves
-    of the loads, each with the hull's heel so far."""
-    curves = arms(couples, weight)                                           # [heels, loads]
-    # Past half a turn the righting arm repeats reversed: heeled the other way round, it pushes the other way.
+def animate_release(topology: core.Topology, vertices: core.Point, centres: core.Point, heels: np.ndarray,
+                    couples: core.Forque, weight: core.Scalar,
+                    frames: Iterable[tuple[core.Twist, core.Motor, core.Forque, core.Forque]]) -> Iterator[np.ndarray]:
+    """Yield side-by-side end views of the rolling hulls and their trajectories along the righting arm curves."""
+    curves = righting_arms(couples, weight)
     beyond = 360 - heels[::-1][1:]
     extended, extended_curves = np.concatenate([heels, beyond]), np.concatenate([curves, -curves[::-1][1:]])
     colours = plt.get_cmap(load_map)(np.array([0.3, 0.85]))
     view = end_view(end_window, n_end_pixels)
     rows = view.shape[0]
-    # Where each load's marker sits in the corner of its view.
-    marker = mv.point([0.0, 0.9 * end_window[0][0], 0.85 * end_window[1][1]])  # [] Point-
-    # The curves set up once, as tall as the end views beside them, under the charts' style; each load's heel so far
-    # and its heel now move.
+    marker = scene_mv.point([0.0, 0.9 * end_window[0][0], 0.85 * end_window[1][1]])  # [] Point-
     with charts.style():
         figure, ax = charts.subplots(round(1.6 * rows), rows, layout="constrained")
         ax.axhline(0, color="0.6", linewidth=charts.FRAME_WIDTH)
-        so_far, now = [], []
+        trail_lines, current_dots = [], []
         for case, colour in enumerate(colours):
             ax.plot(extended, extended_curves[:, case], color=colour, alpha=0.5)
-            so_far += ax.plot([], [], color=colour)
-            now += ax.plot([], [], "o", color=colour)
+            trail_lines += ax.plot([], [], color=colour)
+            current_dots += ax.plot([], [], "o", color=colour)
         ax.set_xticks([0, 90, 180])
         ax.set_xlim(-30, 215)
         ax.set_xlabel("heel (degrees)")
         ax.set_ylabel("righting arm (m)")
         for side in ("top", "right"):
             ax.spines[side].set_visible(False)
-        # Laid out once; only the heels move between frames.
         figure.canvas.draw()
         figure.set_layout_engine("none")
-    states = []
-    for roll, placed, push, weighing in frames:
-        states.append([degrees(roll), arms(push + weighing, weight)])
-        trail = np.array(states)                                             # [frames, 2, loads]
+    history = []
+    for roll, placement, push, weighing in frames:
+        history.append([heel_degrees(roll), righting_arms(push + weighing, weight)])
+        trail = np.array(history)
         views = []
         for case, colour in enumerate(colours):
-            points = placed[case] >> vertices.batch()                        # [vertices] Point-
-            onto_front = front_projection(points, view)                       # [] Point- <- Point-
-            # Which load this is, a dot in the corner in its curve's colour.
+            points = include(placement[case] >> vertices.batch())       # [...] Point-
+            onto_front = front_projection(points, view)                 # [] Point- <- Point-
             dot = solids.ball(onto_front(marker), marker_radius * view.pixel)
-            forces, arrows = forces_end_on(view, placed[case], push[case], centres[case], onto_front)
-            views.append(end_on(topology, points, view, forces + [(dot[None, None], colour[:3])], [(arrows, 1.0)]))
-            so_far[case].set_data(*trail[:, :, case].T)
-            now[case].set_data(*trail[-1, :, case, None])
+            force_solids, arrows = forces_end_on(view, placement[case], push[case], centres[case], onto_front)
+            views.append(end_on(topology, points, view, force_solids + [(dot[None, None], colour[:3])], [(arrows, 1.0)]))
+            trail_lines[case].set_data(*trail[:, :, case].T)
+            current_dots[case].set_data(*trail[-1, :, case, None])
         yield side_by_side(views + [capture(figure)])
     plt.close(figure)

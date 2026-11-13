@@ -1,9 +1,9 @@
-"""Scenes for Kirchhoff's equations: the added mass of spheroids from a disc to a rod, and an
-elongated body given a blow nearly end-on, nearly broadside, and the same body without the fluid."""
+"""Scenes for Kirchhoff's equations: the added-mass ratios of spheroids from a flat disc to a slender rod, and an elongated ellipsoid given an impulsive blow without the fluid, nearly end-on, and nearly broadside."""
 
 from __future__ import annotations
 
 from collections.abc import Iterator
+from itertools import islice
 
 import numpy as np
 
@@ -11,75 +11,60 @@ from numga import stack
 from examples.fluids.kirchhoff import core
 
 mv = core.mv
-# The planes square to the body's axes.
 x, y, z = core.axes                                                           # [] Plane+, Plane+, Plane+
-long_axis, across = core.directions[0], core.directions[1]
-# Spheroids from a disc to a rod: the semi-axis along the axis of symmetry over the other two.
-ASPECTS = np.geomspace(0.1, 10, 41)
-# The samples of the confocal family.
-N_WIDENINGS = 48
-# The gliding body: its semi-axes, its density and the fluid's, the blow it is given along the first
-# axis of space, and its long axis's angle from the blow at the start, in each case: without the fluid,
-# nearly end-on and nearly broadside.
-SEMI_AXES = np.array([3, 1, 1])
-DENSITY = 1
-FLUID_DENSITIES = np.array([0, 1, 1])
-BLOW = 12
-HEADINGS = np.array([0.1, 0.1, np.pi / 2 - 0.1])
-# The time step, the steps, the steps per frame, the samples around the body's outline, and the
-# duration of a frame.
-DT = 0.16
-N_STEPS = 250
-N_STEPS_PER_FRAME = 2
-N_OUTLINE = 48
-DURATION_MS = 40
+long_axis, across_axis = core.directions[0], core.directions[1]               # [] Direction-, Direction-
+# Spheroid aspect ratios from a disc to a rod, and quadrature node count for the confocal pencil.
+n_aspects = 41
+aspects = np.geomspace(0.1, 10, n_aspects)
+n_widenings = 48
+# Gliding ellipsoid parameters across three cases: in vacuum, nearly end-on in fluid, and nearly broadside in fluid.
+semi_axes = np.array([3, 1, 1])
+density = 1
+fluid_densities = np.array([0, 1, 1])
+n_cases = len(fluid_densities)
+blow = 12
+headings = np.array([0.1, 0.1, np.pi / 2 - 0.1])
+# Time step, total step count, frame stride, outline sample count, and frame duration.
+dt = 0.16
+n_steps = 250
+n_steps_per_frame = 2
+n_outline = 48
+frame_duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------
-def coefficients() -> core.Scalar:
-    """The fluid's kinetic energy over the solid's, at equal densities, for spheroids of each aspect
-    `[aspects, 3]`: shifting along the axis of symmetry, shifting across it, and turning it."""
-    semi_axes = np.stack([ASPECTS, np.ones_like(ASPECTS), np.ones_like(ASPECTS)], axis=-1)   # [aspects, 3]
-    stretches = core.stretch(semi_axes)                                       # [aspects] Direction- <- Direction-
-    shapes = stretches(stretches)                                             # [aspects] Direction- <- Direction-
-    solid = core.inertia(shapes, 1, 0, N_WIDENINGS)[:, None]                  # [aspects, 1] Forque- <- Twist+
-    fluid = core.inertia(shapes, 0, 1, N_WIDENINGS)[:, None]                  # [aspects, 1] Forque- <- Twist+
+def energy_ratios() -> core.Scalar:
+    """Fluid-to-solid kinetic energy ratios at equal density across spheroid aspect ratios for axial shift, transverse shift, and transverse turn."""
+    spheroid_axes = np.stack([aspects, np.ones_like(aspects), np.ones_like(aspects)], axis=-1)   # [n_aspects, 3]
+    stretches = core.ellipsoid_stretch(spheroid_axes)                         # [n_aspects] Direction- <- Direction-
+    shapes = stretches(stretches)                                             # [n_aspects] Direction- <- Direction-
+    solid_inertia = core.total_inertia(shapes, 1, 0, n_widenings)[:, None]    # [n_aspects, 1] Forque- <- Twist+
+    fluid_inertia = core.total_inertia(shapes, 0, 1, n_widenings)[:, None]    # [n_aspects, 1] Forque- <- Twist+
     rates = stack([mv.wx, mv.wy, mv.zx])                                      # [3] Twist+
-    return (rates & fluid(rates)) / (rates & solid(rates))                    # [aspects, 3] Scalar+
+    return (rates & fluid_inertia(rates)) / (rates & solid_inertia(rates))    # [n_aspects, 3] Scalar+
 
 
-def launch() -> tuple[core.Inertia, core.Forque, core.Motor]:
-    """Each case's inertia `[cases]`, the impulse of the blow along the first axis of space through the
-    body's centre, and the body's placement at the start, its long axis turned from the blow."""
-    stretch = core.stretch(SEMI_AXES)                                         # [] Direction- <- Direction-
-    inertia = core.inertia(stretch(stretch), DENSITY, FLUID_DENSITIES, N_WIDENINGS)   # [cases] Forque- <- Twist+
-    impulse = BLOW * (core.centre & long_axis)                                # [] Forque-
-    starts = (mv.xy * (-HEADINGS / 2)).exp()                                  # [cases] Motor+
-    return inertia, impulse, starts
+def launch_setup() -> tuple[core.Inertia, core.Forque, core.Motor]:
+    """Total inertia per case, impulsive blow along the first spatial axis, and initial motor placements."""
+    body_stretch = core.ellipsoid_stretch(semi_axes)                          # [] Direction- <- Direction-
+    inertias = core.total_inertia(body_stretch(body_stretch), density, fluid_densities, n_widenings)   # [n_cases] Forque- <- Twist+
+    impulse = blow * (core.centre & long_axis)                                # [] Forque-
+    initial_motors = (mv.xy * (-headings / 2)).exp()                          # [n_cases] Motor+
+    return inertias, impulse, initial_motors
 
 
-def gliding(n_steps: int = N_STEPS) -> core.Motor:
-    """Each case's placement over `n_steps` steps of the time span `[steps + 1, cases]`."""
-    inertia, impulse, starts = launch()
-    return stack(list(core.glide(starts, impulse, inertia, DT, n_steps)))     # [steps + 1, cases] Motor+
+def body_geometry() -> tuple[core.Point, core.Point]:
+    """Planar cross-section outline and nose point of the gliding ellipsoid in its own frame."""
+    angles = np.linspace(0, 2 * np.pi, n_outline, endpoint=False)
+    circle = (mv.xy * (-angles / 2)).exp() >> long_axis                       # [n_outline] Direction-
+    body_stretch = core.ellipsoid_stretch(semi_axes)                          # [] Direction- <- Direction-
+    return core.centre + body_stretch(circle), core.centre + body_stretch(long_axis)   # [n_outline] Point-, [] Point-
 
 
-def outline() -> core.Point:
-    """The body's outline in the plane of its first two axes, in its own frame `[outline]`: the unit
-    circle turned out by rotors, stretched onto the body."""
-    angles = np.linspace(0, 2 * np.pi, N_OUTLINE, endpoint=False)
-    circle = (mv.xy * (-angles / 2)).exp() >> long_axis                       # [outline] Direction-
-    return core.centre + core.stretch(SEMI_AXES)(circle)                      # [outline] Point-
-
-
-def frames(motors: core.Motor) -> Iterator[tuple[core.Point, core.Point, core.Point]]:
-    """Per frame, every case's outline `[cases, outline]`, centre `[cases]` and nose, the tip of
-    its long axis `[cases]`."""
-    shape = outline()                                                         # [outline] Point-
-    nose = core.centre + core.stretch(SEMI_AXES)(long_axis)                   # [] Point-
-    for index in range(0, motors.shape[0], N_STEPS_PER_FRAME):
-        placed = motors[index]                                                # [cases] Motor+
-        yield placed[:, None] >> shape, placed >> core.centre, placed >> nose
+def gliding_frames(n_run_steps: int) -> Iterator[core.Motor]:
+    """Yield subsampled motor placements across all gliding cases over the requested step count."""
+    inertias, impulse, initial_motors = launch_setup()
+    return islice(core.trajectory(initial_motors, impulse, inertias, dt, n_run_steps), 0, None, n_steps_per_frame)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -87,30 +72,37 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.fluids.kirchhoff import render
 
-    ratios = coefficients()                                                   # [aspects, 3] Scalar+
-    save_figure(render.draw_coefficients(ASPECTS, ratios), "kirchhoff_added_mass")
-    motors = gliding()                                                        # [steps + 1, cases] Motor+
-    inertia, impulse, _ = launch()
-    save_animation(render.animate_gliding(impulse, frames(motors)), "kirchhoff_gliding", DURATION_MS)
+    ratios = energy_ratios()                                                  # [n_aspects, 3] Scalar+
+    save_figure(render.draw_coefficients(aspects, ratios), "kirchhoff_added_mass")
+
+    inertias, impulse, _ = launch_setup()
+    body_outline, nose = body_geometry()                                      # [n_outline] Point-, [] Point-
+    recorded_frames: list[core.Motor] = []
+
+    def recording() -> Iterator[core.Motor]:
+        for state in gliding_frames(n_steps):
+            recorded_frames.append(state)
+            yield state
+
+    save_animation(render.animate_gliding(impulse, body_outline, nose, recording()), "kirchhoff_gliding", frame_duration_ms)
+    motors = stack(recorded_frames)                                           # [..., n_cases] Motor+
 
     # checks
-    # A sphere's added mass is half the mass of the fluid it displaces, whichever way it moves, and a turn
-    # moves no fluid.
-    ball = core.stretch(np.array([1, 1, 1]))                                  # [] Direction- <- Direction-
-    sphere = core.inertia(ball(ball), 0, 1, N_WIDENINGS)                      # [] Forque- <- Twist+
+    # A sphere's added mass equals half the displaced fluid mass in every direction, and pure rotation moves no fluid.
+    unit_stretch = core.ellipsoid_stretch(np.array([1, 1, 1]))                # [] Direction- <- Direction-
+    sphere_fluid = core.total_inertia(unit_stretch(unit_stretch), 0, 1, n_widenings)   # [] Forque- <- Twist+
     rates = stack([mv.wx, mv.wy, mv.zx])                                      # [3] Twist+
-    np.testing.assert_allclose((rates & sphere(rates)).to_array(), [2 * np.pi / 3, 2 * np.pi / 3, 0], atol=1e-12)
-    # The kinetic energy of body and fluid is kept to within the step's error.
-    seen = motors << impulse                                                  # [steps + 1, cases] Forque-
-    energies = (seen & inertia.inverse()(seen)).to_array()                    # [steps + 1, cases]
+    np.testing.assert_allclose((rates & sphere_fluid(rates)).to_array(), [2 * np.pi / 3, 2 * np.pi / 3, 0], atol=1e-12)
+    # Total kinetic energy of body and fluid is conserved across the trajectory within midpoint-integrator accuracy.
+    body_impulses = motors << impulse                                         # [..., n_cases] Forque-
+    energies = (body_impulses & inertias.inverse()(body_impulses)).to_array()
     np.testing.assert_allclose(energies / energies[0], 1, rtol=1e-2)
-    # Without the fluid the body keeps its heading; given the blow nearly broadside it stays so; nearly
-    # end-on it turns past broadside.
-    pointing = motors >> long_axis                                            # [steps + 1, cases] Direction-
-    headings = np.arctan2((y & pointing).to_array(), (x & pointing).to_array())
-    np.testing.assert_allclose(headings[:, 0], HEADINGS[0], atol=1e-12)
-    assert np.abs(headings[:, 2] - np.pi / 2).max() < 2 * (np.pi / 2 - HEADINGS[2])
-    assert headings[:, 1].max() > np.pi / 2
+    # Without fluid the heading stays constant; nearly broadside rocks about broadside; nearly end-on swings past broadside.
+    long_axes = motors >> long_axis                                           # [..., n_cases] Direction-
+    headings_over_time = np.arctan2((y & long_axes).to_array(), (x & long_axes).to_array())
+    np.testing.assert_allclose(headings_over_time[:, 0], headings[0], atol=1e-12)
+    assert np.abs(headings_over_time[:, 2] - np.pi / 2).max() < 2 * (np.pi / 2 - headings[2])
+    assert headings_over_time[:, 1].max() > np.pi / 2
 
 
 if __name__ == "__main__":

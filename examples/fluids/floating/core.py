@@ -1,22 +1,24 @@
-"""This example computes the hydrostatic stability of floating bodies, from small tilts to capsizing, in the
-projective geometric algebra of three-dimensional space.
+r"""Hydrostatic stability of floating bodies, from small tilts to capsizing, in the projective geometric
+algebra of three-dimensional space.
 
-A floating body is a closed surface of triangles, fixed in its own frame. Still water pushes on each wet
-patch of the surface, square to it and in proportion to its depth: a force along a line through the patch.
-The buoyancy is the sum of those lines over the wet surface, a single line of force, upward and through the
-centre of the displaced water; for a closed surface it holds the displaced weight, Archimedes' principle,
-with no volume integral. The body floats at the height where the buoyancy balances its weight. Tilted, the
-buoyancy line and the weight line no longer coincide, and their sum is a couple: the righting couple,
-which turns the body back upright, or further over.
+A floating body is modelled as a closed triangulated surface, fixed in its own frame. Still water pushes on
+every wet triangle, square to it and in proportion to its depth, as a line of force through the surface.
+Summing those lines over the wet surface gives the buoyancy as a single line of force upward through the
+centre of the displaced water, holding the displaced weight with no volume integral. At equilibrium draft the
+buoyancy balances the weight, while at a tilt the two parallel lines separate into a righting couple.
 
-The water surface is a plane, the centres are points, forces are forques and turns are twists. Over `Tilt`,
-the space of all small tilts, the same sum is a map from tilts to the change of the net force, and paired
-with the tilt it is the body's stiffness against tilting: its eigenvalues over the weight are the
-metacentric heights.
+The water surface is modelled as a plane, centres of gravity as points, forces as forques and turns as twists.
+The pressure push on a wet triangle is the interior product `samples | planes`, summed into the buoyancy
+forque and added directly to the weight line `weight * (centre & (turns << -up))`. Differentiating that sum
+over `Tilt` and pairing back with `Tilt` forms the tilt stiffness `Tilt & (pushing + weighing)`, whose
+eigenvalues divided by the weight are the roll and pitch metacentric heights.
 
-In the notation of naval architecture the righting arm is $GZ(\\phi)$, the horizontal distance between the
-centre of gravity and the line of buoyancy, its slope at upright the metacentric height
-$GM = KB + I_{\\mathrm{wp}}/V - KG$, and the stiffness against a small heel $\\Delta \\cdot GM$.
+In the Newton-Euler notation of naval architecture and hydrostatics, vertical equilibrium integrates pressure
+into the heave force $\rho g V_{\mathrm{disp}}(z_0, \phi, \theta) = W$, while rotational stability tracks the
+shift of the centre of buoyancy $\mathbf r_B(\phi) = V_{\mathrm{disp}}^{-1} \int_{V_{\mathrm{disp}}} \mathbf r \, \mathrm dV$
+relative to the centre of gravity $\mathbf r_G$ to form the righting arm $GZ(\phi) = (y_B(\phi) - y_G)\cos\phi + (z_B(\phi) - z_G)\sin\phi$
+and the upright metacentric height $GM = I_w / V_{\mathrm{disp}} - BG$ from the waterplane second moment $I_w$
+and vertical separation $BG = z_G - z_B$.
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ from itertools import product
 
 import numpy as np
 
-from numga import Algebra, NumpyContext
+from numga import Algebra, NumpyContext, stack, where
 from numga.algebras import PGA3D as ga
 from examples.mechanics.simplex import simplex_inertia_weights
 from examples.util.topology import Topology
@@ -42,165 +44,165 @@ Tilt = Twist.derive.nondegenerate.derive.touching(Algebra("z+"))        # Bivect
 # The energy of a small tilt.
 Stiffness = ga.gatype((Scalar, Tilt, Tilt))                             # Scalar+ <- (Tilt+, Tilt+)
 
-# The still water surface, the point at infinity upward, the vertical shift, and the axis of heel through
-# the origin, along the body: the meet of the planes y = 0 and z = 0.
+# Unit scalar, still water surface, upward direction, vertical shift, heel axis, and origin.
+unit = mv.z | mv.z                                                      # [] Scalar+
 water = mv.z                                                            # [] Plane+
 up = water.dual()                                                       # [] Point-
 heave = mv.w ^ water                                                    # [] Twist+
 heel_axis = mv.yz                                                       # [] Twist+
-# The origin, from which the hull's enclosed volume is summed.
-origin = mv.point([0.0, 0.0, 0.0])                                      # [] Point-
-# Per triangle, the points halfway between each corner and the centroid: they integrate anything quadratic
-# over the triangle exactly, each standing for a third of its area.
-RULE = 3 * simplex_inertia_weights(3)
+origin = mv.point([0, 0, 0])                                            # [] Point-
+# Per triangle, the points halfway between each corner and the centroid, each standing for a third of its area.
+quadrature_rule = 3 * simplex_inertia_weights(3)
 
 
 # --- math -----------------------------------------------------------------------------
-def pressing(triangles: Point, surface: Plane) -> tuple[Point, Forque]:
-    """Sample points of the wet part of each triangle, its corners `[3] Point-[triangles]`, under each water
-    surface, and the water's push at each per unit of pressure `[..., triangles, parts, samples]`: a line through
-    the point, square to the triangle, against its outward normal, with a third of the part's area."""
-    parts = wet(triangles, surface)                                     # [..., triangles, parts, 3] Point-
-    samples = (parts[..., None, :] * RULE).sum(axis=-1)                 # [..., triangles, parts, samples] Point-
-    # The plane through a part's corners, wound as its triangle, has twice the part's area as its weight.
-    # The hull's enclosed volume, signed by the same winding, is positive exactly when those planes face
-    # outward: times its sign, every plane faces outward, whichever way the hull is wound.
-    volume = (origin & triangles[0] & triangles[1] & triangles[2]).sites.sum()  # [] Scalar+
-    planes = (parts[..., 0] & parts[..., 1] & parts[..., 2]) * (volume / volume.norm())   # [..., triangles, parts] Plane+
-    return samples, -(samples | planes[..., None]) / 6
+def wet_triangles(triangles: Point, surface: Plane) -> Point:
+    """The submerged part of each surface triangle below each water plane, split into two oriented triangles
+    by fanning the deepest corner to the waterline crossings."""
+    depths = -(surface[..., None] & triangles)                          # [..., 3] Scalar+[F]
+    first_depth, second_depth, third_depth = depths[..., 0], depths[..., 1], depths[..., 2]
+    deep, middle, high = triangles[0], triangles[1], triangles[2]
+
+    def ordered_pair(swap: np.ndarray, left, right):
+        return where(swap, right, left), where(swap, left, right)
+
+    # Sort the three corners from deepest to highest and record whether the swaps flip the triangle winding.
+    first_swap = first_depth < second_depth
+    first_depth, second_depth = ordered_pair(first_swap, first_depth, second_depth)
+    deep, middle = ordered_pair(first_swap, deep, middle)
+    second_swap = second_depth < third_depth
+    second_depth, third_depth = ordered_pair(second_swap, second_depth, third_depth)
+    middle, high = ordered_pair(second_swap, middle, high)
+    third_swap = first_depth < second_depth
+    first_depth, second_depth = ordered_pair(third_swap, first_depth, second_depth)
+    deep, middle = ordered_pair(third_swap, deep, middle)
+    winding_flip = first_swap ^ second_swap ^ third_swap
+
+    def water_crossing(start: Point, end: Point, start_depth: Scalar, end_depth: Scalar) -> Point:
+        """The point along an edge where depth passes through zero, clamped to the segment."""
+        drop = start_depth - end_depth
+        share = (start_depth / where(drop.abs() > 0, drop, mv.w & start)).clip(0, 1)
+        return start + share * (end - start)
+
+    first_cut = where(second_depth < 0, water_crossing(deep, middle, first_depth, second_depth), middle)
+    second_cut = where(
+        second_depth < 0,
+        first_cut,
+        where(third_depth < 0, water_crossing(middle, high, second_depth, third_depth), high),
+    )
+    third_cut = where(third_depth < 0, water_crossing(deep, high, first_depth, third_depth), high)
+    first_part = stack((deep, where(winding_flip, second_cut, first_cut), where(winding_flip, first_cut, second_cut)), axis=-1)
+    second_part = stack((deep, where(winding_flip, third_cut, second_cut), where(winding_flip, second_cut, third_cut)), axis=-1)
+    return stack((first_part, second_part), axis=-2)                    # [..., 2, 3] Point-[F]
+
+
+def pressure_lines(triangles: Point, surface: Plane) -> tuple[Point, Forque]:
+    """Quadrature sample points on the wet parts of each triangle and their inward normal lines per unit
+    pressure, each weighted by one third of its wet triangle's area."""
+    parts = wet_triangles(triangles, surface)                           # [..., 2, 3] Point-[F]
+    samples = (parts[..., None, :] * quadrature_rule).sum(axis=-1)      # [..., 2, 3] Point-[F]
+    # A part's corner join has weight equal to twice its area; multiplying by the sign of the enclosed volume
+    # makes every plane face outward regardless of winding.
+    volume = (origin & triangles[0] & triangles[1] & triangles[2]).sites.sum()  # [] Scalar-
+    planes = (parts[..., 0] & parts[..., 1] & parts[..., 2]) * (volume / volume.norm())  # [..., 2] Plane+[F]
+    return samples, -(samples | planes[..., None]) / 6                  # [..., 2, 3] Point-[F], Forque-[F]
 
 
 def buoyancy(triangles: Point, surface: Plane, fluid_weight: float) -> tuple[Forque, Forque]:
-    """The water's push on the body below each water surface, the sum of the pressure lines over its wet
-    surface, each pressure the fluid's weight times the depth; and how the push grows as the surface rises."""
-    samples, lines = pressing(triangles, surface)                       # [..., triangles, parts, samples]
-    depths = -(surface[..., None, None, None] & samples)                # [..., triangles, parts, samples] Scalar+
-    push = (fluid_weight * depths * lines).sum(axis=(-3, -2, -1))       # [...] Forque-
-    growth = (fluid_weight * lines).sum(axis=(-3, -2, -1))              # [...] Forque-
+    """The net hydrostatic push on the wet hull below each water surface, and its rate of growth with draft."""
+    samples, lines = pressure_lines(triangles, surface)                 # [..., 2, 3] Point-[F], Forque-[F]
+    depths = -(surface[..., None, None] & samples)                      # [..., 2, 3] Scalar+[F]
+    push = (fluid_weight * depths * lines).sites.sum().sum(axis=(-2, -1))    # [...] Forque-
+    growth = (fluid_weight * lines).sites.sum().sum(axis=(-2, -1))           # [...] Forque-
     return push, growth
 
 
-def afloat(triangles: Point, turns: Motor, weight: Scalar, heights: Scalar, fluid_weight: float,
-           steps: int) -> Scalar:
-    """The height of the water surface over the body's origin at which the body, turned by each motor,
-    floats: its buoyancy balancing its weight, by Newton's method from the given heights."""
-    for _ in range(steps):
+def equilibrium_heights(triangles: Point, turns: Motor, weight: Scalar, heights: Scalar, fluid_weight: float,
+                        n_steps: int) -> Scalar:
+    """The water-surface height over the body's origin at which buoyancy balances weight under each turn,
+    refined from initial heights by Newton steps."""
+    for _ in range(n_steps):
         push, growth = buoyancy(triangles, turns << (water - heights * mv.w), fluid_weight)
-        lifting = turns << heave                                        # [...] Twist+
-        heights = heights + (weight - (push & lifting)) / (growth & lifting)
+        upward_shift = turns << heave                                   # [...] Twist+
+        heights = heights + (weight - (push & upward_shift)) / (growth & upward_shift)
     return heights                                                      # [...] Scalar+
 
 
-def placement(turns: Motor, heights: Scalar) -> Motor:
-    """The motion taking the body's frame to the world's, the water surface at the world's `water`: the
-    turn, then down by the height of the water surface over the body's origin."""
+def world_placement(turns: Motor, heights: Scalar) -> Motor:
+    """The motor placing the body in the world frame with the water surface at `z = 0`."""
     return (heave * (heights / 2)).exp() * turns                        # [...] Motor+
 
 
-def forces(triangles: Point, turns: Motor, heights: Scalar, weight: Scalar, centre: Point,
-           fluid_weight: float) -> tuple[Forque, Forque]:
-    """The forces on the body, turned by each motor and floating at each height, in the body's frame: its
-    buoyancy, and its weight, a line straight down through its centre of gravity. Their sum is the righting
+def body_forces(triangles: Point, turns: Motor, heights: Scalar, weight: Scalar, centre: Point,
+                fluid_weight: float) -> tuple[Forque, Forque]:
+    """The buoyancy and gravity lines acting on the floating body in its own frame, whose sum is the righting
     couple."""
     push, _ = buoyancy(triangles, turns << (water - heights * mv.w), fluid_weight)
-    return push, weight * (centre & (turns << -up))                     # [...] Forque-
+    return push, weight * (centre & (turns << -up))                     # [...] Forque-, Forque-
 
 
-def stiffness(triangles: Point, heights: Scalar, weight: Scalar, centre: Point, fluid_weight: float) -> Stiffness:
-    """The energy of a small tilt of the upright body floating at each height: the change of the net force
-    under the tilt, the water surface turning against the body and the weight turning with it, paired with
-    the tilt."""
+def tilt_stiffness(triangles: Point, heights: Scalar, weight: Scalar, centre: Point, fluid_weight: float) -> Stiffness:
+    """The quadratic tilt stiffness of the upright body floating at each height, pairing small tilts with the
+    induced change in buoyancy and weight lines."""
     surface = water - heights * mv.w                                    # [...] Plane+
-    samples, lines = pressing(triangles, surface)                       # [..., triangles, parts, samples]
-    # In the body's frame a small tilt turns the water surface, deepening each wet point by its height above
-    # the change of the surface, and turns the direction of the weight with it.
-    tilted = surface[..., None, None, None].commutator(Tilt)            # [..., 1, 1, 1] Plane+ <- Tilt+
-    pushing = (fluid_weight * -(tilted & samples) * lines).sum(axis=(-3, -2, -1))   # [...] Forque- <- Tilt+
-    weighing = weight * centre.regressive((-up).commutator(Tilt))                   # [...] Forque- <- Tilt+
-    return Tilt & (pushing + weighing)                                  # [...] Scalar+ <- (Tilt+, Tilt+)
-
-
-# --- the step outside the algebra ---------------------------------------------------------
-def wet(triangles: Point, surface: Plane) -> Point:
-    """The wet part of each triangle, its corners `[3] Point-[triangles]`, below each water surface, as two
-    triangles wound as the triangle, either or both of no area `[..., triangles, parts, 3]`: with the corners
-    ordered from deepest to highest, the deepest corner fanned to the points where the edges leave the water."""
-    depths = -(surface[..., None] & triangles)                          # [..., 3] Scalar+[triangles]
-    # Each triangle's corners last.
-    head = np.moveaxis(depths.cast(ga.subspace.scalar()).kernel[..., 0], -2, -1)   # [..., triangles, 3]
-    corners = np.broadcast_to(np.moveaxis(triangles.cast(ga.subspace.antivector()).kernel, 0, -2), head.shape + (4,))
-    order = np.argsort(-head, axis=-1)
-    head = np.take_along_axis(head, order, axis=-1)
-    deep, middle, high = np.moveaxis(np.take_along_axis(corners, order[..., None], axis=-2), -2, 0)
-    first, second, third = np.moveaxis(head, -1, 0)
-
-    def leaving(start: np.ndarray, end: np.ndarray, start_head: np.ndarray, end_head: np.ndarray) -> np.ndarray:
-        """The point of an edge where it leaves the water, kept within the edge."""
-        drop = start_head - end_head
-        share = np.clip(start_head / np.where(drop == 0, 1, drop), 0, 1)[..., None]
-        return start + share * (end - start)
-
-    turning = np.where((second < 0)[..., None], leaving(deep, middle, first, second), middle)
-    rising = np.where((second < 0)[..., None], turning,
-                      np.where((third < 0)[..., None], leaving(middle, high, second, third), high))
-    closing = np.where((third < 0)[..., None], leaving(deep, high, first, third), high)
-    parts = np.stack([np.stack([deep, turning, rising], axis=-2), np.stack([deep, rising, closing], axis=-2)], axis=-3)
-    # An ordering that is not a rotation of the corners reverses the winding; reversing the parts restores it.
-    reversed_order = (order[..., 1] != (order[..., 0] + 1) % 3)[..., None, None, None]
-    return mv.antivector(np.where(reversed_order, parts[..., ::-1, :], parts))
+    samples, lines = pressure_lines(triangles, surface)                 # [..., 2, 3] Point-[F], Forque-[F]
+    # In the body's frame a small tilt turns the water plane against the hull, changing each sample's depth,
+    # and turns the downward weight line with it.
+    surface_rate = surface[..., None, None].commutator(Tilt)            # [..., 1, 1] Plane+ <- Tilt+
+    buoyancy_change = (fluid_weight * -(surface_rate & samples) * lines).sites.sum().sum(axis=(-2, -1))  # [...] Forque- <- Tilt+
+    weight_change = weight * centre.regressive((-up).commutator(Tilt))  # [...] Forque- <- Tilt+
+    return Tilt & (buoyancy_change + weight_change)                     # [...] Scalar+ <- (Tilt+, Tilt+)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def patch(grid: np.ndarray) -> np.ndarray:
-    """The triangles of a grid of vertices `[u, v]`, two per cell, wound from u towards v
-    `[2 * (u - 1) * (v - 1), 3]`."""
-    corner, along_u, across, along_v = grid[:-1, :-1], grid[1:, :-1], grid[1:, 1:], grid[:-1, 1:]
-    return np.concatenate([np.stack([corner, along_u, across], axis=-1).reshape(-1, 3),
-                           np.stack([corner, across, along_v], axis=-1).reshape(-1, 3)])
+def grid_triangles(grid: np.ndarray) -> np.ndarray:
+    """Two consistently wound triangles per cell of a two-dimensional vertex-index grid."""
+    corner, u_step, diagonal, v_step = grid[:-1, :-1], grid[1:, :-1], grid[1:, 1:], grid[:-1, 1:]
+    return np.concatenate([
+        np.stack([corner, u_step, diagonal], axis=-1).reshape(-1, 3),
+        np.stack([corner, diagonal, v_step], axis=-1).reshape(-1, 3),
+    ])
 
 
-def box(sizes: np.ndarray) -> tuple[Topology, Point]:
-    """A box of the given sizes along x, y and z, centred on the origin: its eight corners `Point-[vertices]`, and
-    two triangles on each face, wound outward."""
-    # Each corner is a choice of side along x, y and z, its index the choices read as a binary number.
-    sides = np.array(list(product([0, 1], repeat=3)))                  # [vertices, 3]
+def box_surface(sizes: np.ndarray) -> tuple[Topology, Point]:
+    """A closed triangulated box of the given edge lengths along `x`, `y` and `z`, centred on the origin."""
+    # Each corner chooses 0 or 1 along x, y and z, indexed by the three bits read in binary.
+    sides = np.array(list(product([0, 1], repeat=3)))                   # [8, 3]
     u, v = np.meshgrid([0, 1], [0, 1], indexing="ij")
     faces = []
     for axis in range(3):
         for side in (0, 1):
             grid = np.zeros(u.shape + (3,), dtype=int)
-            # The face's u and v run along the next two axes, swapped on the negative side, so that every
-            # face winds outward.
-            first, second = (axis + 1) % 3, (axis + 2) % 3
+            # Order the two face axes so that every face winds outward.
+            first_axis, second_axis = (axis + 1) % 3, (axis + 2) % 3
             grid[..., axis] = side
-            grid[..., first], grid[..., second] = (u, v) if side else (v, u)
-            faces.append(patch(grid @ np.array([4, 2, 1])))
+            grid[..., first_axis], grid[..., second_axis] = (u, v) if side else (v, u)
+            faces.append(grid_triangles(grid @ np.array([4, 2, 1])))
     return Topology(len(sides), np.concatenate(faces)), mv.point((sides - 0.5) * sizes).field()
 
 
-def wigley(length: float, beam: float, draft: float, freeboard: float, cells: int) -> tuple[Topology, Point]:
-    """A Wigley hull: below the waterline its half breadth is `beam / 2 * (1 - (2 x / length)**2) *
-    (1 - (z / draft)**2)`, above it the sides rise straight to a flat deck. Its vertices `Point-[vertices]` lie on
-    grids along the hull and up each side, and along the hull and across the deck, and its triangles close them."""
-    along = np.linspace(-length / 2, length / 2, 2 * cells + 1)
-    height = np.concatenate([np.linspace(-draft, 0, cells + 1), np.linspace(0, freeboard, cells // 2 + 1)[1:]])
-    x, z = np.meshgrid(along, height, indexing="ij")                    # [along, height]
-    half = beam / 2 * (1 - (2 * x / length) ** 2) * (1 - (np.minimum(z, 0) / draft) ** 2)
-    across = np.linspace(-1, 1, cells + 1)
-    deck_x, share = np.meshgrid(along, across, indexing="ij")           # [along, across]
-    deck_half = share * beam / 2 * (1 - (2 * deck_x / length) ** 2)
-    # The port side shares the keel and the stems with the starboard side, where the half breadth vanishes; the deck
-    # shares its edges with the sides' tops, and closes to the top of each stem. The corner of the keel and the
-    # stern's stem is no vertex: the grid's triangles there form a fin of no thickness, one on each side, which the
-    # closed hull leaves out.
+def wigley_hull(length: float, beam: float, draft: float, freeboard: float, n_cells: int) -> tuple[Topology, Point]:
+    """A closed triangulated Wigley hull with parabolic underwater sections, vertical topsides and a flat deck."""
+    x_stations = np.linspace(-length / 2, length / 2, 2 * n_cells + 1)
+    z_levels = np.concatenate([np.linspace(-draft, 0, n_cells + 1), np.linspace(0, freeboard, n_cells // 2 + 1)[1:]])
+    x, z = np.meshgrid(x_stations, z_levels, indexing="ij")
+    half_breadth = beam / 2 * (1 - (2 * x / length) ** 2) * (1 - (np.minimum(z, 0) / draft) ** 2)
+    deck_span = np.linspace(-1, 1, n_cells + 1)
+    deck_x, share = np.meshgrid(x_stations, deck_span, indexing="ij")
+    deck_y = share * beam / 2 * (1 - (2 * deck_x / length) ** 2)
+    # Port and starboard share the keel and stems where half-breadth vanishes; the stern-keel grid corner has
+    # zero-area fin triangles that the closed surface omits.
     own_starboard = np.ones(x.shape, dtype=bool)
     own_starboard[-1, 0] = False
     own_port = np.zeros(x.shape, dtype=bool)
     own_port[1:-1, 1:] = True
     own_deck = np.zeros(deck_x.shape, dtype=bool)
     own_deck[1:-1, 1:-1] = True
-    places = np.concatenate([np.stack([x, half, z], axis=-1)[own_starboard], np.stack([x, -half, z], axis=-1)[own_port],
-                             np.stack([deck_x, deck_half, np.full_like(deck_x, freeboard)], axis=-1)[own_deck]])
+    places = np.concatenate([
+        np.stack([x, half_breadth, z], axis=-1)[own_starboard],
+        np.stack([x, -half_breadth, z], axis=-1)[own_port],
+        np.stack([deck_x, deck_y, np.full_like(deck_x, freeboard)], axis=-1)[own_deck],
+    ])
     counts = np.cumsum([0, own_starboard.sum(), own_port.sum()])
     starboard = np.full(x.shape, -1)
     starboard[own_starboard] = counts[0] + np.arange(own_starboard.sum())
@@ -210,8 +212,6 @@ def wigley(length: float, beam: float, draft: float, freeboard: float, cells: in
     deck[:, 0], deck[:, -1] = port[:, -1], starboard[:, -1]
     deck[[0, -1]] = starboard[[0, -1], -1:]
     deck[own_deck] = counts[2] + np.arange(own_deck.sum())
-    faces = np.concatenate([patch(starboard.T), patch(port), patch(deck)])
-    # The triangles of the closed hull: those not on the fin, and not collapsed into the top of a stem, where two of
-    # their corners meet.
-    closing = (faces >= 0).all(axis=-1) & (faces != np.roll(faces, 1, axis=-1)).all(axis=-1)
-    return Topology(len(places), faces[closing]), mv.point(places).field()
+    faces = np.concatenate([grid_triangles(starboard.T), grid_triangles(port), grid_triangles(deck)])
+    nondegenerate = (faces >= 0).all(axis=-1) & (faces != np.roll(faces, 1, axis=-1)).all(axis=-1)
+    return Topology(len(places), faces[nondegenerate]), mv.point(places).field()

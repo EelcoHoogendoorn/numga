@@ -7,12 +7,9 @@ from examples.fluids.dec_stokes import core, scenarios
 
 def flow(topology, vertices, inlet, outlet):
     operators = core.Operators(topology, vertices)
-    ordinate = core.mv.y & vertices
-    streamfunction = 1.5 * (ordinate - 4 * ordinate.squared() * ordinate / (3 * scenarios.HEIGHT**2))
-    ends = topology.reading(np.concatenate((inlet, outlet)), 1)
-    prescribed = ~ends * (ends * (topology.d[0] * streamfunction))
+    prescribed = scenarios.boundary_flux(topology, vertices, inlet, outlet)
     boundary_circulation = operators.dual_patches * 0
-    result = core.stokes(operators, scenarios.VISCOSITY, prescribed, topology.exterior[1], boundary_circulation)
+    result = core.stokes_flow(operators, scenarios.viscosity, prescribed, topology.exterior[1], boundary_circulation)
     return operators, prescribed, result
 
 
@@ -75,7 +72,7 @@ def test_incidence_is_topological_and_hodges_supply_geometry_and_duality():
     np.testing.assert_allclose(vertex_work.kernel, dual_edge_work.kernel, atol=1e-11)
     np.testing.assert_allclose(dual_edge_work.kernel, primal_edge_work.kernel, atol=1e-11)
 
-    # Reflecting the mesh transforms the vorticity bivector by the reflection and leaves the viscous map unchanged.
+    # Reflecting the vertices transforms the vorticity bivector by the reflection and leaves the viscous map unchanged.
     mirror = core.mv.y
     mirrored = core.Operators(topology, mirror >> vertices)
     np.testing.assert_allclose(mirrored.curl(edge_values).kernel,
@@ -91,10 +88,10 @@ def test_straight_channel_converges_to_poiseuille_velocity_pressure_and_vorticit
         topology, vertices, inlet, outlet, _ = scenarios.plain_channel(n_divisions)
         operators, _, (_, pressure, vorticity, velocity) = flow(topology, vertices, inlet, outlet)
         ordinate = core.mv.y & operators.face_centres
-        exact_velocity = core.mv.x.dual() * 1.5 * (1 - 4 * ordinate.squared() / scenarios.HEIGHT**2)
-        exact_pressure = -12 * scenarios.VISCOSITY * (core.mv.x & operators.circumcentres) / scenarios.HEIGHT**2
+        exact_velocity = core.mv.x.dual() * 1.5 * (1 - 4 * ordinate.squared() / scenarios.height**2)
+        exact_pressure = -12 * scenarios.viscosity * (core.mv.x & operators.circumcentres) / scenarios.height**2
         exact_pressure -= (exact_pressure * operators.areas).sites.sum() / operators.areas.sites.sum()
-        exact_vorticity = core.mv.xy * (12 * (core.mv.y & vertices) / scenarios.HEIGHT**2)
+        exact_vorticity = core.mv.xy * (12 * (core.mv.y & vertices) / scenarios.height**2)
 
         velocity_error = (((velocity - exact_velocity).norm_squared() * operators.areas).sites.sum()
                           / operators.areas.sites.sum()).square_root()
@@ -124,17 +121,17 @@ def test_obstacle_flow_balances_every_cell_and_preserves_boundary_flux():
     outgoing = boundary * flux
     on_inlet = topology.reading(inlet, 1)
     on_outlet = topology.reading(outlet, 1)
-    np.testing.assert_allclose((on_inlet * outgoing).sites.sum().to_array(), -scenarios.HEIGHT, atol=1e-11)
-    np.testing.assert_allclose((on_outlet * outgoing).sites.sum().to_array(), scenarios.HEIGHT, atol=1e-11)
+    np.testing.assert_allclose((on_inlet * outgoing).sites.sum().to_array(), -scenarios.height, atol=1e-11)
+    np.testing.assert_allclose((on_outlet * outgoing).sites.sum().to_array(), scenarios.height, atol=1e-11)
 
     abscissa = (core.mv.x & operators.face_centres).to_array()
     pressure_values = pressure.to_array()
-    assert pressure_values[abscissa < 0.5].mean() > pressure_values[abscissa > scenarios.LENGTH - 0.5].mean()
+    assert pressure_values[abscissa < 0.5].mean() > pressure_values[abscissa > scenarios.length - 0.5].mean()
     assert (vorticity.norm_squared() * operators.dual_areas).sites.sum().to_array() > 0
     assert np.isfinite(velocity.kernel).all()
 
 
-def test_reversing_mesh_edges_changes_readings_and_preserves_physical_flow():
+def test_reversing_edges_changes_readings_and_preserves_physical_flow():
     topology, vertices, inlet, outlet, _ = scenarios.channel(12)
     _, _, result = flow(topology, vertices, inlet, outlet)
     reversed_topology = core.Topology(topology.n_vertices, topology.elements[2].copy())

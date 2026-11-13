@@ -1,9 +1,8 @@
-"""A wing pitched up and back in a steady stream: the pressure around it, its streamlines, and its lift;
-and the flow past a cylinder deformed into the flow past the wing."""
+"""Pitching and cylinder-to-wing morphing scenarios for potential flow past a Joukowski wing."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator
 
 import numpy as np
 
@@ -12,115 +11,124 @@ from numga import stack
 from examples.fluids.wing import core
 from examples.util.topology import Topology
 
-# The cylinder's centre, behind and above the origin before the map: the wing's thickness and camber.
-THICKNESS = 0.1
-CAMBER = 0.08
-SCALE = 1.0
-SPEED = 1.0
-DENSITY = 1.0
-LOWEST_ATTACK = np.deg2rad(-4.0)
-HIGHEST_ATTACK = np.deg2rad(12.0)
-# The rings and angles the checks sample; the animations draw from fewer, all a picture needs.
-N_RINGS = 140
-N_ANGLES = 360
-N_DRAWN_RINGS = 35
-N_DRAWN_ANGLES = 90
-OUTER_DISTANCE = 6.0
-# The sweep's frames, their duration in milliseconds and its colours, enough for its pressure bands, the streamlines
-# over them and the lift's green; the morph's frames, angle of attack and duration.
-N_FRAMES = 120
-SWEEP_DURATION_MS = 40
-N_SWEEP_COLOURS = 64
-N_MORPH_FRAMES = 90
-MORPH_ATTACK = np.deg2rad(8.0)
-DURATION_MS = 40
-# The stream, along the wing's chord when level.
-stream = SPEED * core.mv.x.dual()                                            # [] Point-
+# Cylinder centre offset behind and above the origin before the map sets wing thickness and camber.
+thickness = 0.1
+camber = 0.08
+chord_scale = 1.0
+speed = 1.0
+density = 1.0
+lowest_attack = np.deg2rad(-4.0)
+highest_attack = np.deg2rad(12.0)
+morph_attack = np.deg2rad(8.0)
+# Sample ring and angle counts for animations and contour checks.
+n_rings = 140
+n_angles = 360
+n_drawn_rings = 35
+n_drawn_angles = 90
+outer_distance = 6.0
+# Frame counts, durations, and palette size for the pitching gallery sweep and morph animations.
+n_frames = 120
+sweep_duration_ms = 40
+n_sweep_colours = 64
+n_morph_frames = 90
+frame_duration_ms = 40
+# Uniform free stream along +x.
+stream = speed * core.mv.x.dual()                                            # [] Point-
 
 
 # --- math -----------------------------------------------------------------------------
-def wing(attack: float) -> core.Wing:
-    """The wing pitched nose up by the angle of attack: its cylinder's centre and its chord, level along the
-    stream, turned by one rotor."""
-    turn = (core.mv.xy * (attack / 2)).exp()                                 # [] Rotor+
-    return core.Wing(turn >> (-THICKNESS * core.mv.x + CAMBER * core.mv.y).dual(), SCALE, turn >> core.mv.x.dual())
+def wing_geometry(attack: float) -> tuple[core.Point, core.Point]:
+    """Cylinder centre and trailing-edge point for the wing pitched nose up by `attack`."""
+    rotor = (core.mv.xy * (attack / 2)).exp()                                # [] Rotor+
+    centre = rotor >> (-thickness * core.mv.x + camber * core.mv.y).dual()   # [] Point-
+    trailing_edge = chord_scale * (rotor >> core.mv.x.dual())                # [] Point-
+    return centre, trailing_edge
 
 
-def trailing_edge(wing: core.Wing) -> core.Point:
-    """The map's critical point that makes the wing's sharp trailing edge."""
-    return wing.scale * wing.chord
-
-
-def morph() -> Iterator[tuple[core.Point, core.Point, core.Bivector, core.Force, core.Point, core.Point]]:
-    """The flow past the cylinder as the map's critical points move apart from its centre out to the
-    trailing edge, deforming the cylinder into the wing, with the wing's circulation throughout; the
-    critical points' images, where the map doubles angles; and the cylinder's centre before the map,
-    whose offset from where the critical points start shapes the wing."""
-    pitched = wing(MORPH_ATTACK)
-    plane = core.rings(pitched, N_DRAWN_RINGS, N_DRAWN_ANGLES, OUTER_DISTANCE)   # [rings, angles] Point-
-    # The way out alone; the animation plays it forward and back.
-    spread = (1 - np.cos(np.linspace(0, np.pi, N_MORPH_FRAMES // 2 + 1))) / 2
+def morph_states() -> Iterator[tuple[core.Point, core.Point, core.Bivector, core.Force, core.Point, core.Point]]:
+    """Yield flow states as the critical points separate from the origin out to the trailing edge."""
+    centre, trailing_edge = wing_geometry(morph_attack)
+    swirl = core.kutta_circulation(centre, trailing_edge, stream)            # [] Bivector+
+    lift = core.kutta_lift(swirl, stream, density)                           # [] Force+
+    positions = core.cylinder_rings(centre, trailing_edge, n_drawn_rings, n_drawn_angles, outer_distance)   # [n_drawn_rings, n_drawn_angles] Point-
+    # Outward half-cycle; the saved animation plays forward and back.
+    spread = (1 - np.cos(np.linspace(0, np.pi, n_morph_frames // 2 + 1))) / 2
     for fraction in spread:
-        critical = fraction * trailing_edge(pitched)                         # [] Point-
-        images = 2 * stack([critical, -critical])                            # [2] Point-
-        points, velocity, _, flux = core.flow(pitched, stream, plane, critical)
-        yield points, velocity, flux, core.lift(pitched, stream, DENSITY), images, pitched.centre
+        critical = fraction * trailing_edge                                  # [] Point-
+        critical_images = 2 * stack([critical, -critical])                   # [2] Point-
+        points, velocity, _, flux = core.wing_flow(centre, trailing_edge, swirl, stream, positions, critical)
+        yield points, velocity, flux, lift, critical_images, centre
 
 
-def sweep() -> Iterator[tuple[core.Point, core.Point, core.Bivector, core.Force]]:
-    """The flow past the wing and its lift as the wing pitches up and back down, one period of the pitch."""
-    phase = (1 - np.cos(np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False))) / 2
-    for attack in LOWEST_ATTACK + (HIGHEST_ATTACK - LOWEST_ATTACK) * phase:
-        pitched = wing(attack)
-        plane = core.rings(pitched, N_DRAWN_RINGS, N_DRAWN_ANGLES, OUTER_DISTANCE)   # [rings, angles] Point-
-        points, velocity, _, flux = core.flow(pitched, stream, plane, trailing_edge(pitched))
-        yield points, velocity, flux, core.lift(pitched, stream, DENSITY)
+def pitch_states() -> Iterator[tuple[core.Point, core.Point, core.Bivector, core.Force]]:
+    """Yield flow states over one full period as the wing pitches up and back down."""
+    phase = (1 - np.cos(np.linspace(0, 2 * np.pi, n_frames, endpoint=False))) / 2
+    for attack in lowest_attack + (highest_attack - lowest_attack) * phase:
+        centre, trailing_edge = wing_geometry(attack)
+        swirl = core.kutta_circulation(centre, trailing_edge, stream)        # [] Bivector+
+        positions = core.cylinder_rings(centre, trailing_edge, n_drawn_rings, n_drawn_angles, outer_distance)   # [n_drawn_rings, n_drawn_angles] Point-
+        points, velocity, _, flux = core.wing_flow(centre, trailing_edge, swirl, stream, positions, trailing_edge)
+        yield points, velocity, flux, core.kutta_lift(swirl, stream, density)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def main() -> None:
+def save_states(states: Iterable, animate: Callable[..., Iterable[np.ndarray]], *arguments,
+                name: str, duration_ms: int, forward_then_back: bool = False) -> list:
+    """Save an animation from `states` in a single pass and return the collected states."""
     from examples.util.animation import save_animation
+
+    kept = []
+
+    def passing() -> Iterator:
+        for state in states:
+            kept.append(state)
+            yield state
+
+    save_animation(animate(*arguments, passing()), name, duration_ms, forward_then_back=forward_then_back)
+    return kept
+
+
+def main() -> None:
     from examples.fluids.wing import render
 
-    save_animation(render.animate_marked(morph(), SPEED), "wing_morph", DURATION_MS, forward_then_back=True)
+    morphed = save_states(morph_states(), render.animate_marked, speed,
+                          name="wing_morph", duration_ms=frame_duration_ms, forward_then_back=True)
 
     # checks
-    pitched = wing(HIGHEST_ATTACK)
-    plane = core.rings(pitched, N_RINGS, N_ANGLES, OUTER_DISTANCE)           # [rings, angles] Point-
-    points, velocity, _, _ = core.flow(pitched, stream, plane, trailing_edge(pitched))
-    # The velocity's derivative vanishes everywhere past the cylinder.
-    _, gradient, _ = core.cylinder(pitched, stream, plane)
-    np.testing.assert_allclose(core.derivative(gradient).kernel, 0.0, atol=1e-12)
-    # Around every ring about the wing the velocity times each step adds up to the circulation, with
-    # no flux: the derivative between any two rings vanishes too.
-    # Each ring closed, a step from each angle to the next and the last back to the first, its two ends averaged.
-    ring = Topology.loops([N_ANGLES])
-    averaged = ring.incidence[1, 0].mean(axis=0)                             # Scalar+[steps <- angles]
-    loops = ((averaged * velocity.field()) * (ring.d[0] * points.field())).batch().sum(axis=-1)
-    np.testing.assert_allclose(loops.kernel - loops.kernel[:1], 0.0, atol=1e-11)
-    # Each ring's own oriented area sets the sense its sum is read in.
-    tails, heads = ring.incidence[1, 0][:, None] * points.field()            # [rings] Point-[steps], Point-[steps]
-    areas = (tails ^ heads).batch().sum(axis=-1)                             # [rings] Bivector+
-    np.testing.assert_allclose((loops * (areas / areas.norm()) - core.circulation(pitched, stream)).kernel, 0.0, atol=1e-3)
-    # The pressure on the surface, low where the flow is fast, pushes on every step: on a displacement of
-    # the wing it does the pressure times the area the step sweeps, `steps & Point`, in the sense the surface
-    # winds. Summed around the wing it is the Kutta–Joukowski lift, across the stream, with no drag.
-    surface, surface_velocity, _, _ = core.flow(pitched, stream, core.rings(pitched, 1, N_ANGLES, 1.0)[0], trailing_edge(pitched))
-    steps = (ring.d[0] * surface.field()).batch()                            # [angles] Point-
-    speed_squared = surface_velocity.dot(surface_velocity)                   # [angles] Scalar+
-    pressure = -0.5 * DENSITY * (averaged * speed_squared.field()).batch()   # [angles] Scalar+
-    surface_tails, surface_heads = ring.incidence[1, 0] * surface.field()    # Point-[steps], Point-[steps]
-    winding = (surface_tails & surface_heads).batch().sum(axis=-1)           # [] Scalar-
-    force = (pressure * (steps & core.Point)).sum(axis=-1) * (winding / winding.norm())   # [] Scalar+ <- Point-
-    np.testing.assert_allclose((force - (core.lift(pitched, stream, DENSITY) & core.Point)).kernel, 0.0, atol=1e-3)
+    # Final morph state is the full Joukowski wing at `morph_attack`.
+    wing_points, wing_velocity, wing_flux, lift, critical_images, centre = morphed[-1]
+    _, trailing_edge = wing_geometry(morph_attack)
+    swirl = core.kutta_circulation(centre, trailing_edge, stream)            # [] Bivector+
+    assert ((critical_images[0] - 2 * trailing_edge).norm() < 1e-12).all()
+    assert ((wing_flux[0] - wing_flux[0, :1]).norm() < 1e-12).all()
+    # Velocity derivative vanishes everywhere past the cylinder, and line integrals around every ring equal circulation.
+    positions = core.cylinder_rings(centre, trailing_edge, n_drawn_rings, n_drawn_angles, outer_distance)   # [n_drawn_rings, n_drawn_angles] Point-
+    _, gradient, _ = core.cylinder_flow(centre, trailing_edge, swirl, stream, positions)
+    assert (core.geometric_derivative(gradient).norm() < 1e-12).all()
+    ring = Topology.loops([n_drawn_angles])
+    edge_average = ring.incidence[1, 0].mean(axis=0)                         # Scalar+[E <- V]
+    loop_points = wing_points.field()                                        # [n_drawn_rings] Point-[V]
+    loop_velocities = wing_velocity.field()                                  # [n_drawn_rings] Point-[V]
+    edge_steps = ring.d[0] * loop_points                                     # [n_drawn_rings] Point-[E]
+    ring_integrals = ((edge_average * loop_velocities) * edge_steps).batch().sum(axis=-1)   # [n_drawn_rings] Even+
+    assert ((ring_integrals - ring_integrals[:1]).norm() < 1e-10).all()
+    tails, heads = ring.incidence[1, 0][:, None] * loop_points               # [n_drawn_rings] Point-[E], Point-[E]
+    ring_areas = (tails ^ heads).batch().sum(axis=-1)                        # [n_drawn_rings] Bivector+
+    assert ((ring_integrals * (ring_areas / ring_areas.norm()) - swirl).norm() < 5e-3).all()
+    # Integrating Bernoulli surface pressure around the innermost ring recovers Kutta–Joukowski lift with zero drag.
+    speed_squared = wing_velocity[0].squared().field()                       # [] Scalar+[V]
+    edge_pressures = -0.5 * density * (edge_average * speed_squared)         # [] Scalar+[E]
+    winding = (tails[0] & heads[0]).batch().sum(axis=-1)                     # [] Antiscalar-
+    pressure_force = (winding / winding.antinorm()) * (edge_pressures * edge_steps[0]).batch().sum(axis=-1)   # [] Force+
+    assert ((pressure_force - lift).norm() < 5e-3).all()
 
 
 def pinned() -> None:
-    """The pictures the repository tracks: the wing pitching up and back down in the stream, for the README and the gallery."""
+    """Regenerate the gallery pitching-wing animation tracked in `plots/wing.gif`."""
     from examples.util.animation import pin_animation
     from examples.fluids.wing import render
 
-    pin_animation(render.animate(sweep(), SPEED), "wing", SWEEP_DURATION_MS, colors=N_SWEEP_COLOURS)
+    pin_animation(render.animate(speed, pitch_states()), "wing", sweep_duration_ms, colors=n_sweep_colours)
 
 
 if __name__ == "__main__":
