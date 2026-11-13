@@ -102,6 +102,7 @@
 - [Joukowski wing](fluids/wing/) — A potential flow bends around a wing with vanishing divergence and curl outside it.
 - [Leapfrogging vortices](fluids/vortices/) — Planar vortices move one another through the velocity fields they induce.
 - [Jeffery orbits](fluids/jeffery/) — Rigid ellipsoids tumble in a shear flow according to their shape and orientation.
+- [Nematic liquid crystals](fluids/liquid_crystals/) — A bivector derivative reads orientational torque; half-charge defects relax and move under active stress.
 - [Hydrostatic stability](fluids/floating/) — Water pressure determines restoring loads on floating bodies from small tilts to capsizing.
 - [Kirchhoff's equations](fluids/kirchhoff/) — Added fluid inertia changes the motion of an ellipsoid through still ideal fluid.
 - [Smoke rings](fluids/smoke_rings/) — Vortex filaments evolve under their own curvature and the flow induced by neighbouring rings.
@@ -141,6 +142,7 @@
 
 - [Magnetic resonance](quantum/magnetic_resonance/) — Driven and relaxing spins produce nutation, resonance line shapes and spin echoes.
 - [A rotating Bose–Einstein condensate](quantum/condensate/) — The condensate as a vector in a plane of its own joined to the trap's plane, the trap's turning and the wave's two bivectors kept apart: descending its energy in a rotating trap, it settles into a lattice of quantized vortices as dense as Feynman's rule asks.
+- [Magnetic skyrmions](quantum/skyrmions/) — Exchange carried across each bond by a rotor twisted about it is the Dzyaloshinskii–Moriya interaction: on a triangular lattice the spins crystallize into a lattice of skyrmions, vanish into a ferromagnet and give way to a spiral as the field is swept, and drift at the skyrmion Hall angle under a current.
 - [Graphene](quantum/graphene/) — Electron hopping produces Dirac cones, pseudospin textures and a Berry phase around each cone.
 - [Graphene edge states](quantum/kane_mele/) — Spin-orbit coupling produces boundary states in a finite graphene flake.
 - [Two spins](quantum/two_spins/) — Exchange interactions entangle a pair of spins and change their Bell correlations.
