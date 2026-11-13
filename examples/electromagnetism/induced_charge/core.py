@@ -6,7 +6,7 @@ initial charge; the conducting interior relaxes towards a constant potential.
 """
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from functools import reduce
 from operator import and_
 
@@ -26,13 +26,8 @@ sweeps = axes & time                              # [axes] Excitation-
 electric_response = (sweeps * (Field & sweeps)).sum(axis=0)  # [] Excitation- <- Field+
 
 
-def relaxation(topology: Topology, vertices: Point, fractions: Scalar, boundary: Scalar,
-               permittivity: float, conductivities, body_charges, frame_step: float,
-               n_substeps: int) -> Iterator[tuple[Scalar, Scalar, Scalar, Point]]:
-    """The evolving potential and integrated charge occupy the same mesh vertices.
-
-    Each state also carries the charge density at the vertices and the force on a unit charge at rest in each face.
-    """
+def simplices(topology: Topology, vertices: Point) -> tuple[Scalar, Scalar, Field]:
+    """Each face's area, each vertex's cell, and the field of each corner's unit potential in its face."""
     corners = topology.incidence[2, 0]
     mean = corners.mean(axis=0)
     spans = reduce(and_, corners * vertices, time)
@@ -43,6 +38,16 @@ def relaxation(topology: Topology, vertices: Point, fractions: Scalar, boundary:
     hats = complements / (complements & (corners * vertices))
     gradients = hats - (hats & origin) * mv.w      # [corners] Plane+[faces]
     hat_fields = -(gradients ^ mv.t)              # [corners] Field+[faces]
+    return areas, cells, hat_fields
+
+
+def relaxation(topology: Topology, vertices: Point, fractions: Scalar, boundary: Scalar,
+               permittivity: float, conductivities, body_charges, frame_step: float,
+               n_substeps: int) -> Iterator[tuple[Scalar, Scalar]]:
+    """The evolving potential and integrated charge occupy the same mesh vertices."""
+    corners = topology.incidence[2, 0]
+    mean = corners.mean(axis=0)
+    areas, cells, hat_fields = simplices(topology, vertices)
 
     # Displacement stores electric energy; conduction dissipates it through the same pairing.
     local = areas * (hat_fields[:, None] & electric_response(hat_fields[None, :]))
@@ -59,8 +64,7 @@ def relaxation(topology: Topology, vertices: Point, fractions: Scalar, boundary:
     charge = (body_charges * parcels / parcels.sites.sum()).sum(axis=0)
     held = boundary[0]
     potential = held + extension * poisson.solve(extension.adjugate() * (charge - charge_from_voltage * held))
-    field = (hat_fields * (corners * potential)).sum(axis=0)  # Field+[faces]
-    yield potential, charge, charge / cells, field.commutator(time)
+    yield potential, charge
 
     step = frame_step / n_substeps
     for target in boundary[1:]:
@@ -70,5 +74,14 @@ def relaxation(topology: Topology, vertices: Point, fractions: Scalar, boundary:
             charge = charge - step * (outflow_from_voltage * potential)
             held = previous + ((substep + 1) / n_substeps) * (target - previous)
             potential = held + extension * poisson.solve(extension.adjugate() * (charge - charge_from_voltage * held))
-        field = (hat_fields * (corners * potential)).sum(axis=0)
-        yield potential, charge, charge / cells, field.commutator(time)
+        yield potential, charge
+
+
+def densities_and_forces(topology: Topology, vertices: Point,
+                         states: Iterable[tuple[Scalar, Scalar]]) -> Iterator[tuple[Scalar, Scalar, Point]]:
+    """Each state's potential, with its charge density at the vertices and the force on a unit charge at rest in each face."""
+    corners = topology.incidence[2, 0]
+    areas, cells, hat_fields = simplices(topology, vertices)
+    for potential, charge in states:
+        field = (hat_fields * (corners * potential)).sum(axis=0)  # Field+[faces]
+        yield potential, charge / cells, field.commutator(time)

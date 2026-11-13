@@ -68,12 +68,14 @@ def main() -> None:
             states.append(state)
             yield state
 
-    save_animation(render.animate(topology, vertices, metal, recorded()), "opposite_charge_potential", frame_duration_ms)
+    save_animation(render.animate(
+        topology, vertices, metal, core.densities_and_forces(topology, vertices, recorded())), "opposite_charge_potential", frame_duration_ms)
     charges = stack([state[1] for state in states])
     net = (charges[:, None] * memberships).sites.sum()
     negative = (where(charges < 0, -charges, 0)[:, None] * memberships).sites.sum()
     save_figure(render.balance(net, negative, frame_step), "opposite_charge_relaxation_balance")
-    save_figure(render.corner_density(vertices, states[-1][2], rod_centre, rod_turn,
+    _, final_density, _ = next(core.densities_and_forces(topology, vertices, states[-1:]))
+    save_figure(render.corner_density(vertices, final_density, rod_centre, rod_turn,
                                       rod_lengths, interface_width), "rod_corner_charge_density")
 
     # checks

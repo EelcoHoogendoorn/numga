@@ -25,9 +25,19 @@ texture_length, texture_grain, texture_speck = 64., 12., .7
 texture_opacity, texture_reference, texture_fade = .55, 1., .2
 
 
-def animate(topology, vertices, metal, states, *, draw_fields=True):
+camera = Camera(mv.x, mv.y, 0 * mv.x, mv.w, 0., np.zeros(2), np.full(2, 1.02), n_pixels)
+edge = contours.Level(.5, edge_ink, 1.2)
+
+
+def frame(layers):
+    """Composite the layers over the background into one picture's pixels."""
+    image = drawing.composited(layers)
+    rgb = image[..., :3] * image[..., 3:] + background * (1 - image[..., 3:])
+    return np.round(np.clip(rgb, 0, 1) * 255).astype(np.uint8)
+
+
+def animate(topology, vertices, metal, states):
     """Draw charge density, gold equipotentials and an ice-blue electric-field texture."""
-    camera = Camera(mv.x, mv.y, 0 * mv.x, mv.w, 0., np.zeros(2), np.full(2, 1.02), n_pixels)
     points = vertices.batch()
     fraction = np.asarray(metal.batch().to_array())
     corners = topology.incidence[2, 0]
@@ -36,9 +46,8 @@ def animate(topology, vertices, metal, states, *, draw_fields=True):
     face_points = (corners * vertices).batch().reshape(-1)
     split = Topology(n_corners * n_faces, np.arange(n_corners * n_faces).reshape(n_corners, n_faces).T)
     base = background + fraction[:, None] * (metal_colour - background)
-    edge = contours.Level(.5, edge_ink, 1.2)
     lines = contours.Lines(line_spacing, line_spacing / 2, line_ink, line_width)
-    for potential, charge, density, force in states:
+    for potential, density, force in states:
         signed = np.asarray(density.batch().to_array())
         strength = np.arcsinh(np.abs(signed) / charge_scale)
         amount = strength / (1 + strength)
@@ -49,33 +58,34 @@ def animate(topology, vertices, metal, states, *, draw_fields=True):
         colours += (1 - colours) * highlight[:, None]
         voltage = np.asarray(potential.batch().to_array())
         layers = [contours.picture(points, topology, fraction, colours, camera)]
-        if draw_fields:
-            # Streak length retains field magnitude on one scale throughout the animation.
-            corner_force = concatenate([force.batch()] * n_corners)
-            field_layer = flow.layer(face_points, split, corner_force, camera, texture_reference, field_ink,
-                                     length=texture_length, grain_pixels=texture_grain,
-                                     speck_pixels=texture_speck, ink_opacity=texture_opacity,
-                                     downstream_fraction=.5)
-            # Fade the seed ink with the local field too, so a vanishing field leaves no specks.
-            magnitude = force.antinorm()
-            fade = concatenate([(magnitude / (magnitude + texture_fade)).batch()] * n_corners).to_array()
-            coverage = drawing.composited([contours.picture(
-                face_points, split, fade, np.repeat(fade[:, None], 3, axis=1), camera)])
-            field_layer[..., 3] *= coverage[..., 0]
-            layers.append(field_layer)
-            layers.append(contours.picture(points, topology, voltage, np.zeros(3), camera,
-                                           lines=(lines,), opacity=0.))
+        # Streak length retains field magnitude on one scale throughout the animation.
+        corner_force = concatenate([force.batch()] * n_corners)
+        field_layer = flow.layer(face_points, split, corner_force, camera, texture_reference, field_ink,
+                                 length=texture_length, grain_pixels=texture_grain,
+                                 speck_pixels=texture_speck, ink_opacity=texture_opacity,
+                                 downstream_fraction=.5)
+        # Fade the seed ink with the local field too, so a vanishing field leaves no specks.
+        magnitude = force.antinorm()
+        fade = concatenate([(magnitude / (magnitude + texture_fade)).batch()] * n_corners).to_array()
+        coverage = drawing.composited([contours.picture(
+            face_points, split, fade, np.repeat(fade[:, None], 3, axis=1), camera)])
+        field_layer[..., 3] *= coverage[..., 0]
+        layers.append(field_layer)
+        layers.append(contours.picture(points, topology, voltage, np.zeros(3), camera,
+                                       lines=(lines,), opacity=0.))
         layers.append(contours.picture(points, topology, fraction, np.zeros(3), camera,
                                        levels=(edge,), opacity=0.))
-        image = drawing.composited(layers)
-        rgb = image[..., :3] * image[..., 3:] + background * (1 - image[..., 3:])
-        yield np.round(np.clip(rgb, 0, 1) * 255).astype(np.uint8)
+        yield frame(layers)
 
 
 def setup(topology, vertices, metal):
     """Draw the conducting material and its transition into insulation."""
-    zero = 0 * metal
-    return image_figure(next(animate(topology, vertices, metal, [(zero, zero, zero, zero)], draw_fields=False)))
+    points = vertices.batch()
+    fraction = np.asarray(metal.batch().to_array())
+    base = background + fraction[:, None] * (metal_colour - background)
+    layers = [contours.picture(points, topology, fraction, base, camera),
+              contours.picture(points, topology, fraction, np.zeros(3), camera, levels=(edge,), opacity=0.)]
+    return image_figure(frame(layers))
 
 
 @charts.style()
