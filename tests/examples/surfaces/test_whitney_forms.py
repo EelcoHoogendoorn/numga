@@ -55,7 +55,7 @@ def test_barycentric_hats_and_edge_whitney_forms_on_single_triangle_and_diamond(
     # The forms of the shared edge on each face, signed by the sense in which the face runs along it.
     seam_forms = (seam_points[:, None] - diamond.corners[None, :]) / (2 * diamond.patches)
     seam_whitney1 = (spdiag(seam_forms) * topology.boundary[2, 1]).sum(axis=1) * core.Scalar
-    shared_circulation = ~shared * core.mv.scalar([[1.0]]).field()            # Scalar+[edges]
+    shared_circulation = shared.adjugate() * core.mv.scalar([[1.0]]).field()  # Scalar+[edges]
     seams = seam_whitney1(shared_circulation)
     np.testing.assert_allclose((seams & shared_edge).kernel, 1.0, atol=1e-14)
     left_seam, right_seam = seams.batch()[:, 0], seams.batch()[:, 1]
@@ -174,7 +174,7 @@ def test_cochain_complex_and_exact_midpoint_quadrature_including_obtuse_triangle
     next_sides, prev_sides = obtuse_ops.sides[tails], obtuse_ops.sides[heads]
     cotangents = -next_sides.dot(prev_sides) / (2 * obtuse_ops.areas)
     unit_amount = core.mv.scalar(np.ones(obtuse_topology.n_elements[2])[..., None]).field().dual()
-    cotangent_weights = (~obtuse_topology.incidence[2, 1] * ((cotangents / 2) * unit_amount)).sum(axis=0)
+    cotangent_weights = (obtuse_topology.incidence[2, 1].adjugate() * ((cotangents / 2) * unit_amount)).sum(axis=0)
     assert (cotangent_weights.batch()[0] & core.mv.scalar([1.0])).to_array() < -1.0
 
     obtuse_edge_conductance = core.edge_conductance(obtuse_ops, core.Plane.dual())
@@ -197,7 +197,7 @@ def test_isotropic_and_anisotropic_conduction_patch_test_and_flux_balance():
     applied_field = 1.25 * core.mv.x - 0.6 * core.mv.y
     exact_potential = applied_field & vertices
     rim = topology.reading(boundary, 0)
-    prescribed_rim = ~rim * (rim * exact_potential)
+    prescribed_rim = rim.adjugate() * (rim * exact_potential)
     potential, current, _ = core.conduction(operators, conductivity, boundary, prescribed_rim)
     np.testing.assert_allclose(potential.batch()[0].kernel, exact_potential.kernel, atol=1e-13)
     np.testing.assert_allclose(potential.batch()[1].kernel, exact_potential.kernel, atol=1e-13)
@@ -209,12 +209,12 @@ def test_isotropic_and_anisotropic_conduction_patch_test_and_flux_balance():
     abscissa = (core.mv.x & vertices).batch()
     electrodes = boundary[abscissa[boundary].norm() > scenarios.electrode_threshold]
     pinned = topology.reading(electrodes, 0)
-    prescribed = ~pinned * (pinned * (core.mv.x & vertices))
+    prescribed = pinned.adjugate() * (pinned * (core.mv.x & vertices))
     potential, current, streamfunction = core.conduction(operators, conductivity, electrodes, prescribed)
 
     conductance = operators.gradient.adjugate()((operators.areas * conductivity)(operators.gradient))
     free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
-    free = ~topology.reading(free_vertices, 0) * core.Scalar
+    free = topology.reading(free_vertices, 0).adjugate() * core.Scalar
     nodal_source = conductance(potential)
     np.testing.assert_allclose(free.adjugate()(nodal_source).kernel, 0.0, atol=1e-11)
     np.testing.assert_allclose(nodal_source.sites.sum().kernel, 0.0, atol=1e-11)

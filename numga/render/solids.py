@@ -11,19 +11,17 @@ one solid's quadric that lies inside all its others.
 from __future__ import annotations
 
 from functools import cache
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import Any, NamedTuple
 
 import numpy as np
 
 from numga import NumpyContext, concatenate, stack, where
 from numga.algebras import PGA3D as ga
-from examples.util.topology import Topology
-from examples.util.wgsl import Shader, supersampled
-from examples.util.wgsl.library import samples_per_side
-from examples.util.wgsl.runner import Resident
+from numga.topology import Topology
+from numga.wgsl import Resident, Shader, supersampled
 
-if TYPE_CHECKING:
-    from examples.util.wgsl.meshes import Samples
+from .camera import Camera, preimage, read
+from .drawing import Draw, Slots, sampled, slots
 
 context = NumpyContext(ga)
 mv = context.multivector
@@ -834,6 +832,11 @@ class View(NamedTuple):
         seen = self.camera << points
         return ((axes[:2] & seen[..., None]) / (mv.w & seen)[..., None]).to_array()
 
+    def to_camera(self) -> Camera:
+        """A view's camera: its frame's planes turned into the scene, weighing points by the plane at infinity."""
+        across, up, toward = self.camera >> axes
+        return Camera(across, up, toward, mv.w, 0.0, np.zeros(2), self.half, self.pixels)
+
 
 def view(points: list[Point], reach: float, elevation: float, azimuth: float, margin: float, pixels: int) -> View:
     """A view framing batches of points, of any weight, and `reach` around each, from an elevation and azimuth, in
@@ -869,24 +872,20 @@ def lighting(glint: float) -> dict:
 
 def seen_lamp(view: View, lamp: Point) -> np.ndarray:
     """A lamp's direction in the scene, as the view's picture sees it: across, up and toward the viewer, a unit."""
-    from examples.util.wgsl.camera import read
-    from examples.util.wgsl.simplices import view_camera
-    camera = view_camera(view)
+    camera = view.to_camera()
     seen = np.array([float(read(plane, lamp).to_array()) for plane in (camera.across, camera.up, camera.toward)])
     return seen / np.linalg.norm(seen)
 
 
 def steps(view: View) -> dict:
     """The uniforms of `tangent_seen` for a view: the steps its camera reads as one across, up and toward the viewer."""
-    from examples.util.wgsl.camera import preimage
-    from examples.util.wgsl.simplices import view_camera
-    _, across, up, toward = preimage(view_camera(view), Point)
+    _, across, up, toward = preimage(view.to_camera(), Point)
     return dict(step_across=across, step_up=up, step_toward=toward)
 
 
 def layer(parts: list[tuple[Quadric, np.ndarray]], view: View, inks: list[Ink],
           translucent: list[tuple[Quadric, np.ndarray, float]],
-          meshes: list[tuple[Samples, float]]) -> tuple[np.ndarray, np.ndarray]:
+          meshes: list[tuple[Draw, float]]) -> tuple[np.ndarray, np.ndarray]:
     """The solids as the view sees them, with the lines inked on them, the translucent solids over and among them,
     each with its opacity, and the meshes among them, each its samples, as `meshes.samples` gives them, and its
     opacity, sample by sample: their colour, `[rows, columns, 4]`, and their depth along the view, `[rows, columns]`,
@@ -896,81 +895,37 @@ def layer(parts: list[tuple[Quadric, np.ndarray]], view: View, inks: list[Ink],
 
 
 def traced(parts: list[tuple[Quadric, np.ndarray]], view: View, inks: list[Ink],
-           translucent: list[tuple[Quadric, np.ndarray, float]], meshes: list[tuple[Samples, float]],
+           translucent: list[tuple[Quadric, np.ndarray, float]], meshes: list[tuple[Draw, float]],
            background: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """The picture `layer` makes, over a background, which shows through each sample as much as its surfaces let
     light pass: over black, the layer itself."""
     tracer = shader()
     encoder = tracer.device.create_command_encoder()
-    # The meshes' samples in the buffers the tracer keeps for any one picture.
-    buffers = mesh_buffers(view, len(meshes), lambda name, size, usage: tracer.buffer_kept(("meshes", name), size, usage))
-    sampled(encoder, [topology for topology, _ in meshes], view, 0, buffers)
-    return trace(tracer, encoder, view, scene(parts, translucent, inks), buffers,
+    # The meshes' samples in the slots the tracer keeps for any one picture.
+    held = slots(view.shape, len(meshes), lambda name, size, usage: tracer.buffer_kept(("meshes", name), size, usage))
+    sampled(encoder, [mesh for mesh, _ in meshes], 0, held)
+    return trace(tracer, encoder, view, scene(parts, translucent, inks), held,
                  [opacity for _, opacity in meshes], background)
 
 
-def trace(tracer: Shader, encoder: Any, view: View, solids: tuple, buffers: MeshBuffers,
+def trace(tracer: Shader, encoder: Any, view: View, solids: tuple, held: Slots,
           opacities: list[float], background: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """The solids, as `scene` lays them out, traced among the meshes whose samples the buffers hold, each with its
+    """The solids, as `scene` lays them out, traced among the meshes whose samples the slots hold, each with its
     opacity, over the background, on the encoder: the picture's colour and depth."""
-    from examples.util.wgsl.camera import preimage
-    from examples.util.wgsl.simplices import view_camera
     quadrics, solids, looks, inked, holding = solids
     # A mesh that shows nothing stands for none, so that the opacities are never empty.
     outputs = tracer.encode(encoder, view.shape, (), dict(
         quadrics=quadrics, solids=solids, looks=looks, **inked,
-        mesh_colours=Resident(buffers.colours, buffers.size), mesh_depths=Resident(buffers.depths, buffers.size),
-        mesh_row=buffers.row_bytes // 4, mesh_opacities=np.array(opacities or [0.0], dtype=np.float32),
-        n_meshes=len(opacities), **tiles(*holding, view), pixel=view.pixel, middle=preimage(view_camera(view), Point)[0],
+        mesh_colours=Resident(held.colours, held.size), mesh_depths=Resident(held.depths, held.size),
+        mesh_row=held.row_bytes // 4, mesh_opacities=np.array(opacities or [0.0], dtype=np.float32),
+        n_meshes=len(opacities), **tiles(*holding, view), pixel=view.pixel, middle=preimage(view.to_camera(), Point)[0],
         back=4 * view.half.max(), half_height=view.half[1], background=background, **lighting(gloss), **steps(view)))
     image = tracer.read(encoder, outputs, view.shape)["image"]
     return image["colour"], image["depth"][..., 0]
 
 
-class MeshBuffers(NamedTuple):
-    """The GPU buffers meshes' samples are copied into, slot after slot: their colours and their depths, the bytes
-    they hold, and the bytes a row of samples takes, padded as a copy pads it."""
-    colours: Any
-    depths: Any
-    size: int
-    row_bytes: int
-
-
-def mesh_buffers(view: View, n_slots: int, made: Any) -> MeshBuffers:
-    """Buffers for the samples of `n_slots` meshes over the view's pixels, each from `made(name, size, usage)`."""
-    import wgpu
-
-    rows, columns = view.shape
-    # A copy's rows start at multiples of 256 bytes; a sample's colour and its depth are four bytes each.
-    row_bytes = -(-samples_per_side() * columns * 4 // 256) * 256
-    size = max(n_slots * samples_per_side() * rows * row_bytes, 16)
-    usage = wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST
-    return MeshBuffers(made("colours", size, usage), made("depths", size, usage), size, row_bytes)
-
-
-def sampled(encoder: Any, drawings: list[Samples], view: View, first: int, buffers: MeshBuffers) -> None:
-    """The meshes drawn at every sample of the view's pixels, recorded on an encoder, and copied there, on the GPU,
-    mesh after mesh, into the buffers' slots from `first` on, the slots before it left as they are."""
-    rows, columns = view.shape
-    shape = (samples_per_side() * rows, samples_per_side() * columns)
-    for index, drawing in enumerate(drawings, start=first):
-        # A mesh with nothing to draw, such as a trail not yet begun, shows nothing: its slot cleared.
-        if drawing.n_vertices == 0:
-            for buffer in (buffers.colours, buffers.depths):
-                encoder.clear_buffer(buffer, index * shape[0] * buffers.row_bytes, shape[0] * buffers.row_bytes)
-            continue
-        # Each mesh's values in buffers of its own: all are written before the encoder runs.
-        targets = drawing.shader.encode_draw(encoder, shape, drawing.n_vertices, ("mesh", index), drawing.values)
-        for target, buffer in zip(targets, (buffers.colours, buffers.depths)):
-            encoder.copy_texture_to_buffer(
-                {"texture": target},
-                {"buffer": buffer, "offset": index * shape[0] * buffers.row_bytes, "bytes_per_row": buffers.row_bytes,
-                 "rows_per_image": shape[0]},
-                (shape[1], shape[0], 1))
-
-
 def draw(parts: list[tuple[Quadric, np.ndarray]], view: View, background: np.ndarray, inks: list[Ink],
-         translucent: list[tuple[Quadric, np.ndarray, float]], meshes: list[tuple[Samples, float]]) -> np.ndarray:
+         translucent: list[tuple[Quadric, np.ndarray, float]], meshes: list[tuple[Draw, float]]) -> np.ndarray:
     """The solids as the view sees them on the background, with the lines inked on them, the translucent solids over
     and among them, and the meshes among them, as `layer`, `[rows, columns, 3]`: the background blended in on the GPU,
     sample by sample."""

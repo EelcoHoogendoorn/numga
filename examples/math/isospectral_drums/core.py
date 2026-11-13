@@ -13,7 +13,7 @@ import numpy as np
 
 from numga import NumpyContext
 from numga.algebras import VGA2D
-from numga.sparse import SparseExtensor
+from numga.sparse import Sparse, SparseExtensor
 
 ga = VGA2D
 context = NumpyContext(ga)
@@ -29,7 +29,7 @@ def tile_mixing(contributors: np.ndarray, signs: np.ndarray,
     """Signed sums of triangle fields in their common local coordinates."""
     n_tiles = len(contributors)
     tile_indices = np.arange(n_tiles * n_samples).reshape(n_tiles, n_samples)
-    read_tile = SparseExtensor.selection(context, tile_indices, n_tiles * n_samples) * Scalar  # [tiles] (Scalar+ <- Scalar+)[samples <- tile samples]
+    read_tile = Sparse.selection(tile_indices, n_tiles * n_samples) * Scalar  # [tiles] (Scalar+ <- Scalar+)[samples <- tile samples]
     # A read selects one triangle; its adjoint inserts a triangle into that position.
     signed_tiles = read_tile[contributors] * signs[..., None]        # [tiles, terms] (Scalar+ <- Scalar+)[samples <- tile samples]
     return read_tile[:, None].adjoint()(signed_tiles).sum(axis=1).sum(axis=0)

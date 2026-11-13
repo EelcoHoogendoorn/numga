@@ -21,7 +21,7 @@ import numpy as np
 from numga import Extensor, stack
 from numga.backend.jax import derivative
 from examples.thermodynamics import rendering as art
-from examples.util.wgsl import solids
+from numga.render import solids
 from examples.thermodynamics.entropy_production import core
 
 mv = core.mv

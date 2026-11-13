@@ -28,7 +28,7 @@ import numpy as np
 
 from numga import Algebra, NumpyContext, concatenate
 from numga.extensor import Extensor
-from examples.util.topology import Topology, coherent, turned
+from numga.topology import Topology, coherent, turned
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -187,7 +187,7 @@ def triangular_disk(radius: float, divisions: int) -> tuple[Topology, np.ndarray
     for _ in range(relaxation_steps):
         edges = topology.d[0] * vertices                                         # Point-[E]
         force = edges * (1 - target / edges.antinorm())                          # Point-[E]
-        positions = (vertices - relaxation_rate * (~topology.d[0] * force)).batch()   # [V] Point-
+        positions = (vertices - relaxation_rate * (topology.d[0].adjugate() * force)).batch()  # [V] Point-
         positions = positions.at[boundary].set(radius * positions[boundary] / positions[boundary].antinorm())
         vertices = positions.field()
         topology, _ = delaunay(read(positions, planes(2)))

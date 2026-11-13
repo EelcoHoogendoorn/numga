@@ -144,7 +144,9 @@ import examples.thermodynamics.magnetotransport.core
 import examples.thermodynamics.magnetotransport.scenarios
 import examples.surfaces.connections.core
 import examples.surfaces.connections.scenarios
-import examples.util.topology
+import numga.topology
+import numga.wgsl
+import numga.render
 instantiate('examples.geometry.registration.core', PGA3D)
 instantiate('examples.estimation.odometry.core', PGA2D)
 instantiate('examples.estimation.multiview.core', PGA2D)

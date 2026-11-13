@@ -16,7 +16,7 @@ import numpy as np
 from numga import NumpyContext
 from numga.algebras import VGA3D as ga
 from numga.sparse import spdiag
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
@@ -48,16 +48,16 @@ def relax_plateau(
         # The cotangent Laplacian: each corner's hat gradient reads the area gradient at every other corner, half its
         # turned facing side, pulled back to the vertices through both corners of each pair.
         local_laplacian = (corner_gradients[:, None] & turned_sides[None, :]) / 2  # [corners, corners] Scalar+[faces]
-        laplacian = (~corners[:, None] * spdiag(local_laplacian) * corners[None, :]).sum(axis=0).sum(axis=0)  # Scalar+[vertices <- vertices]
-        area_pull = interior * (~corners * turned_sides).sum(axis=0) / 2     # Point-[interior]
+        laplacian = (corners[:, None].adjugate() * spdiag(local_laplacian) * corners[None, :]).sum(axis=0).sum(axis=0)  # Scalar+[vertices <- vertices]
+        area_pull = interior * (corners.adjugate() * turned_sides).sum(axis=0) / 2  # Point-[interior]
         # A vertex's area pull is twice its mean curvature times its third of the patches around it.
-        vertex_patches = interior * (~corners.mean(axis=0) * patches)        # Patch-[interior]
+        vertex_patches = interior * (corners.mean(axis=0).adjugate() * patches)  # Patch-[interior]
         mean_curvature = (area_pull & vertex_patches.inverse()) / 2          # Curvature-[interior]
-        yield vertices, areas.sites.sum(), ~interior * mean_curvature
+        yield vertices, areas.sites.sum(), interior.adjugate() * mean_curvature
         # The harmonic surface of this step's triangles: the interior where their pull vanishes, the wire held.
-        wire_pull = (interior * laplacian * ~exterior) * wire                # Point-[interior]
-        harmonic_interior = ((interior * laplacian * ~interior) * Point).solve(-wire_pull)  # Point-[interior]
-        harmonic = ~interior * harmonic_interior + ~exterior * wire          # Point-[vertices]
+        wire_pull = (interior * laplacian * exterior.adjugate()) * wire      # Point-[interior]
+        harmonic_interior = ((interior * laplacian * interior.adjugate()) * Point).solve(-wire_pull)  # Point-[interior]
+        harmonic = interior.adjugate() * harmonic_interior + exterior.adjugate() * wire  # Point-[vertices]
         # Moving part of the way keeps the triangles, and with them the Laplacian, from changing too fast.
         vertices = (1 - step_size) * vertices + step_size * harmonic         # Point-[vertices]
 
@@ -73,10 +73,10 @@ def conjugate_minimal_surface(topology: Topology, vertices: Point) -> tuple[Poin
     corner_gradients = (sides | patches.inverse()) / 2                       # [corners] Plane+[faces]
     turned_sides = sides.commutator(normals.dual())                          # [corners] Point-[faces]
     local_laplacian = (corner_gradients[:, None] & turned_sides[None, :]) / 2   # [corners, corners] Scalar+[faces]
-    laplacian = (~corners[:, None] * spdiag(local_laplacian) * corners[None, :]).sum(axis=0).sum(axis=0)      # Scalar+[vertices <- vertices]
+    laplacian = (corners[:, None].adjugate() * spdiag(local_laplacian) * corners[None, :]).sum(axis=0).sum(axis=0)  # Scalar+[vertices <- vertices]
     # The corner gradients read the quarter-turned differential over each triangle as half the bare facing side:
     # the triangle's area and its normal cancel.
-    boundary_flux = (~corners * sides).sum(axis=0) / 2                       # Point-[vertices]
+    boundary_flux = (corners.adjugate() * sides).sum(axis=0) / 2             # Point-[vertices]
     # The Laplacian leaves translations free, and the least-squares solve picks one conjugate among them.
     conjugate = (laplacian * Point).lstsq(boundary_flux)                     # Point-[vertices]
     return conjugate, boundary_flux
@@ -91,5 +91,5 @@ def bonnet_family(
     for angle in angles:
         surface = vertices * np.cos(angle) + conjugate * np.sin(angle)       # Point-[vertices]
         sides = topology.boundary[2, 1] * (topology.d[0] * surface)          # [corners] Point-[faces]
-        normals = (~corners * (sides[0] & sides[1])).sum(axis=0).normalized()   # Patch-[vertices]
+        normals = (corners.adjugate() * (sides[0] & sides[1])).sum(axis=0).normalized()  # Patch-[vertices]
         yield surface, normals

@@ -11,7 +11,7 @@ import numpy as np
 
 from numga import NumpyContext
 from numga.algebras import PGA3D as ga
-from examples.util.topology import Topology, SubdividedTopology
+from numga.topology import Topology, SubdividedTopology
 
 ctx = NumpyContext(ga)
 mv = ctx.multivector

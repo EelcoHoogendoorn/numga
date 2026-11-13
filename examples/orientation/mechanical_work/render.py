@@ -10,8 +10,9 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack
 from examples.util.animation import capture
-from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import panel
+from numga.topology import Topology
+from numga.render import drawing, simplices
+from examples.util.panels import overlay, panel
 from examples.orientation.mechanical_work.core import Point
 
 velocity_colour, force_colour, crank_colour, guide_colour, mirror_colour = (
@@ -27,9 +28,9 @@ pivot_radius, rim_width, handle_radius = 4.0, 1.3, 2.7
 
 
 # --- plumbing -------------------------------------------------------------------------
-def pairs(n_pairs: int) -> simplices.Topology:
+def pairs(n_pairs: int) -> Topology:
     """An edge from each of the first `n_pairs` points to the one `n_pairs` after it."""
-    return simplices.Topology(2 * n_pairs, np.stack([np.arange(n_pairs), n_pairs + np.arange(n_pairs)], axis=-1))
+    return Topology(2 * n_pairs, np.stack([np.arange(n_pairs), n_pairs + np.arange(n_pairs)], axis=-1))
 
 
 class WorkView:
@@ -56,13 +57,13 @@ class WorkView:
         # Each handle's path, closed: its places in turn, a loop of them.
         n_steps, n_cranks = paths.shape
         trails = paths[np.arange(n_steps), np.arange(n_cranks)[:, None]].reshape(-1)   # [cranks * steps] Point-
-        self.guides = [simplices.strokes(mirror, simplices.Topology.chains([2]), mirror_colour, mirror_width, self.camera,
+        self.guides = [simplices.strokes(mirror, Topology.chains([2]), mirror_colour, mirror_width, self.camera,
                                          dashes=mirror_dashes, cap=simplices.Cap.BUTT),
-                       simplices.strokes(trails, simplices.Topology.loops([n_steps] * n_cranks), guide_colour,
+                       simplices.strokes(trails, Topology.loops([n_steps] * n_cranks), guide_colour,
                                          guide_width, self.camera)]
         self.pivot_marks = [simplices.markers(self.pivots, np.ones(3), pivot_radius + rim_width, self.camera),
                             simplices.markers(self.pivots, crank_colour, pivot_radius, self.camera)]
-        self.image = simplices.overlay(ax, self.guides + self.pivot_marks)
+        self.image = overlay(ax, self.guides + self.pivot_marks)
 
     def update(self, handles: Point, velocities: Point, forces: Point) -> plt.Figure:
         handles = handles.normalized()                                          # [cranks] Point-
@@ -84,7 +85,7 @@ class WorkView:
             tips = tails + directions * arrow_scale                             # [cranks] Point-
             arrows.append(simplices.strokes(concatenate([tails, tips]), pairs(n_cranks), colour, arrow_width,
                                             self.camera, chevrons=np.ones(n_cranks), chevron=arrow_chevron))
-        self.image.set_data(simplices.composited(self.guides + [
+        self.image.set_data(drawing.composited(self.guides + [
             simplices.strokes(concatenate([self.pivots, handles]), pairs(n_cranks), crank_colour, crank_width,
                               self.camera),
             *self.pivot_marks,

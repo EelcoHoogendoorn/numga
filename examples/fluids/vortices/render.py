@@ -14,8 +14,10 @@ from matplotlib.image import AxesImage
 from numga import stack
 
 from examples.fluids.vortices import core
-from examples.util.wgsl import Shader, fitted, pinned, show, simplices, solids, supersampled
-from examples.util.wgsl.camera import Camera
+from numga.wgsl import Shader, supersampled
+from numga.topology import Topology
+from numga.render import Camera, drawing, simplices, solids
+from examples.util.panels import fitted, pinned, show
 
 # Fields: the figures' resolution, and the pixels between two panels side by side.
 dpi = 100
@@ -123,7 +125,7 @@ def braids(worldlines: list[core.Point], height: float) -> plt.Figure:
         # vortex's colour.
         n_times, n_vortices = drawn.shape
         numbered = np.arange(n_times * n_vortices).reshape(n_times, n_vortices)
-        strands = simplices.Topology(numbered.size, np.stack([numbered[:-1], numbered[1:]], axis=-1).reshape(-1, 2))
+        strands = Topology(numbered.size, np.stack([numbered[:-1], numbered[1:]], axis=-1).reshape(-1, 2))
         lines = simplices.tubes(drawn.reshape(-1), strands, np.tile(strand_colours[:n_vortices], (n_times - 1, 1)),
                                 strand_width, view, gloss=solids.gloss)
         show(ax, solids.draw([], view, background, inks=[], translucent=[], meshes=[(lines, 1.0)]), view)
@@ -209,8 +211,8 @@ def window(frames: Iterable[core.Vortices], middle: core.Point, half_height: flo
         # Each vortex's path so far, from where it started, which is the whole path on the first frame.
         paths = stack([travelled[0]] + travelled, axis=1)                      # [vortices, frames + 1] Point-
         n_vortices, n_points = paths.shape
-        trails = simplices.composited([
-            simplices.strokes(paths.reshape(-1), simplices.Topology.chains([n_points] * n_vortices), trail_colour,
+        trails = drawing.composited([
+            simplices.strokes(paths.reshape(-1), Topology.chains([n_points] * n_vortices), trail_colour,
                               trail_width, camera, opacity=trail_opacity)])
         image = vorticity_image(vortices, middle, half_height, shape, scale)
         yield as_bytes(image * (1 - trails[..., 3:]) + trails[..., :3] * trails[..., 3:])

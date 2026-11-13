@@ -117,7 +117,7 @@ def test_repeated_collapses_preserve_closed_mesh_and_original_plane_error():
         assert len(np.unique(np.sort(new_faces, axis=1), axis=0)) == len(new_faces)
         assert np.all(np.diff(np.sort(new_faces, axis=1), axis=1) > 0)
         # Every edge lies between two faces, and the surface is a sphere.
-        faces_at_edges = ~new_topology.incidence[2, 1].sum(axis=0) * mv.scalar(np.ones(len(new_faces))[..., None]).field()
+        faces_at_edges = new_topology.incidence[2, 1].sum(axis=0).adjugate() * mv.scalar(np.ones(len(new_faces))[..., None]).field()
         np.testing.assert_array_equal(faces_at_edges.to_array(), 2)
         assert new_topology.n_vertices - new_topology.n_elements[1] + len(new_faces) == 2
 

@@ -12,8 +12,9 @@ from matplotlib.image import AxesImage
 
 from numga import stack
 from examples.util.animation import capture
-from examples.util.wgsl import pinned, room, simplices
-from examples.util.wgsl.camera import offset_panel
+from numga.topology import Topology
+from numga.render import simplices
+from examples.util.panels import offset_panel, overlay, pinned, room
 from examples.relativity.gravitational_lensing import core
 
 CRITICAL = np.array(to_rgb("#55cbd3"))
@@ -93,11 +94,11 @@ def figure_at(directions: core.Point, area: core.Scalar, lens: Callable[[core.Po
     # The critical curve's straight pieces, each from its tail to its head, over the sky, with the masses' dots; the
     # caustic, the same pieces carried by the lens, over the source.
     ends = stack(critical_curve(directions, area), axis=-1).reshape(-1)        # [pieces * 2] Point-
-    pieces = simplices.Topology.chains([2] * (ends.shape[0] // 2))
+    pieces = Topology.chains([2] * (ends.shape[0] // 2))
     sky = offset_panel(sky_ax, core.mv.x, core.mv.y)
-    simplices.overlay(sky_ax, [simplices.strokes(ends, pieces, CRITICAL, CURVE_WIDTH, sky),
+    overlay(sky_ax, [simplices.strokes(ends, pieces, CRITICAL, CURVE_WIDTH, sky),
                                simplices.markers(positions, MASS, MASS_RADIUS, sky)])
-    simplices.overlay(source_ax, [simplices.strokes(lens(ends), pieces, CAUSTIC, CURVE_WIDTH,
+    overlay(source_ax, [simplices.strokes(lens(ends), pieces, CAUSTIC, CURVE_WIDTH,
                                                     offset_panel(source_ax, core.mv.x, core.mv.y))])
     return figure, shown, images
 

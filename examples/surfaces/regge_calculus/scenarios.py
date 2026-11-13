@@ -86,7 +86,7 @@ def main() -> None:
     abscissa = (mv.x & vertices).batch()                                     # [vertices] Scalar+
     electrodes = boundary[abscissa[boundary].norm() > electrode_threshold]
     pinned = topology.reading(electrodes, 0)
-    prescribed = ~pinned * (pinned * (mv.x & vertices))                      # Scalar+[vertices]
+    prescribed = pinned.adjugate() * (pinned * (mv.x & vertices))            # Scalar+[vertices]
     potential, current, streamfunction = intrinsic_conduction(
         topology, vertices, conductivities, electrodes, prescribed,
     )
@@ -125,7 +125,7 @@ def main() -> None:
     gradient = (spdiag(face_sides / (2 * face_patches)) * topology.incidence[2, 0]).sum(axis=0) * Scalar
     conductance = gradient.adjugate()(conductivities(gradient))
     free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
-    free = ~topology.reading(free_vertices, 0) * Scalar
+    free = topology.reading(free_vertices, 0).adjugate() * Scalar
     np.testing.assert_allclose(free.adjugate()(conductance(potential)).kernel, 0.0, atol=1e-11)
 
 

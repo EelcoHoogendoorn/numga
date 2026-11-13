@@ -104,8 +104,8 @@ import numpy as np
 
 from numga import NumpyContext, concatenate, stack
 from numga.algebras import VGA3D as ga
-from numga.sparse import SparseExtensor, spdiag
-from examples.util.topology import Topology
+from numga.sparse import Sparse, SparseExtensor, spdiag
+from numga.topology import Topology
 
 context = NumpyContext(ga)
 mv = context.multivector
@@ -122,7 +122,7 @@ def vertex_normals(topology: Topology, vertices: Point) -> Vector:
     """The unit normal at each vertex, `Vector-[vertices]`, is the sum of its faces' normals, each the join of two
     of the face's edges, twice the face's area large."""
     edges = topology.boundary[2, 1] * (topology.d[0] * vertices)                # [3] Point-[faces]
-    return (~topology.incidence[2, 0].sum(axis=0) * (edges[0] & edges[1])).normalized()
+    return (topology.incidence[2, 0].sum(axis=0).adjugate() * (edges[0] & edges[1])).normalized()
 
 
 def vertex_areas(topology: Topology, vertices: Point) -> Scalar:
@@ -130,7 +130,7 @@ def vertex_areas(topology: Topology, vertices: Point) -> Scalar:
     size of its plane."""
     edges = topology.boundary[2, 1] * (topology.d[0] * vertices)                # [3] Point-[faces]
     corner_mean = topology.incidence[2, 0].mean(axis=0)                         # Scalar+[faces <- vertices]
-    return ~corner_mean * (edges[1].commutator(edges[0]).norm() / 2)
+    return corner_mean.adjugate() * (edges[1].commutator(edges[0]).norm() / 2)
 
 
 def cotangent_weights(topology: Topology, vertices: Point, face_weights: Scalar) -> Scalar:
@@ -141,7 +141,7 @@ def cotangent_weights(topology: Topology, vertices: Point, face_weights: Scalar)
     tails, heads = topology.corners[2, 1]
     after, before = edges[tails], edges[heads]                                  # [3] Point-[faces], Point-[faces]
     cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()   # [3] Scalar+[faces]
-    return (~topology.incidence[2, 1] * (face_weights * cotangents / 2)).sum(axis=0)
+    return (topology.incidence[2, 1].adjugate() * (face_weights * cotangents / 2)).sum(axis=0)
 
 
 def transported(normals: Vector, start: Point) -> Iterator[Point]:
@@ -236,13 +236,13 @@ def carried_out(topology: Topology, vertices: Point, normals: Vector, angles: Sc
     covariant = (spdiag(turns >> Point) * topology.boundary[1, 0]).sum(axis=0)    # (Point- <- Point-)[edges <- vertices]
     # Each tree edge's covariant derivative, in the row of the vertex it reaches.
     tree_edges = topology.reading(tree, 1)                                      # Scalar+[vertices - 1 <- edges]
-    along_tree = ~topology.reading(children, 0) * (tree_edges * covariant)      # (Point- <- Point-)[vertices <- vertices]
+    along_tree = topology.reading(children, 0).adjugate() * (tree_edges * covariant)  # (Point- <- Point-)[vertices <- vertices]
     first = topology.reading(np.array([0]), 0)                                   # Scalar+[1 <- vertices]
     first_edge = topology.reading(np.array([0]), 1)                              # Scalar+[1 <- edges]
     # The direction across the first edge, in the tangent plane: the plane through the normal and the edge's
     # direction, which is that direction as an antivector.
     seed = ((first * normals) ^ (first_edge * (topology.d[0] * vertices)).dual_inverse()).normalized()  # Point-[1]
-    return (along_tree + ~first * first * Point).solve(~first * seed)
+    return (along_tree + first.adjugate() * first * Point).solve(first.adjugate() * seed)
 
 
 def cross_stripes(topology: Topology, vertices: Point, normals: Vector, areas: Scalar, angles: Scalar, cross: Point,
@@ -276,17 +276,17 @@ def cross_stripes(topology: Topology, vertices: Point, normals: Vector, areas: S
     landed = match * match * moved + (match - match * match) * (along * along.dot(moved))   # [2, 2] (Point- <- Point-)[edges]
     # The doubled field holds the two lines of every vertex as sites of their own, line a of vertex v at 2 v + a,
     # and the doubled edges likewise; these read line a at every vertex and at every edge.
-    vertex_lines = SparseExtensor.selection(context, np.arange(2 * count).reshape(count, 2).T, 2 * count)   # [2] Scalar+[vertices <- vertices * 2]
-    edge_lines = SparseExtensor.selection(context, np.arange(2 * n_edges).reshape(n_edges, 2).T, 2 * n_edges)   # [2] Scalar+[edges <- edges * 2]
+    vertex_lines = Sparse.selection(np.arange(2 * count).reshape(count, 2).T, 2 * count)   # [2] Scalar+[vertices <- vertices * 2]
+    edge_lines = Sparse.selection(np.arange(2 * n_edges).reshape(n_edges, 2).T, 2 * n_edges)   # [2] Scalar+[edges <- edges * 2]
     # The head's stripe field turned back by the target, against the tail's carried and mirrored.
     on_lines = (spdiag(turn.reverse() >> Point) * heads * vertex_lines
                 - (spdiag(landed) * tails * vertex_lines[None]).sum(axis=1))     # [2] (Point- <- Point-)[edges <- vertices * 2]
-    covariant = (~edge_lines * on_lines).sum(axis=0)                             # (Point- <- Point-)[edges * 2 <- vertices * 2]
+    covariant = (edge_lines.adjugate() * on_lines).sum(axis=0)                   # (Point- <- Point-)[edges * 2 <- vertices * 2]
     # Each line's site takes its edge's weight, and its vertex's normal and area.
-    weights = (~edge_lines * cotangent_weights(topology, vertices, regular)).sum(axis=0)  # Scalar+[edges * 2]
+    weights = (edge_lines.adjugate() * cotangent_weights(topology, vertices, regular)).sum(axis=0)  # Scalar+[edges * 2]
     laplacian = covariant.adjugate()((weights * Point.dual())(covariant))        # (Plane+ <- Point-)[vertices * 2 <- vertices * 2]
-    _, stripe_fields = low_modes(laplacian, (~vertex_lines * normals).sum(axis=0),
-                                 (~vertex_lines * areas).sum(axis=0), normal_stiffness, 1)
+    _, stripe_fields = low_modes(laplacian, (vertex_lines.adjugate() * normals).sum(axis=0),
+                                 (vertex_lines.adjugate() * areas).sum(axis=0), normal_stiffness, 1)
     stripe = vertex_lines * stripe_fields[0]                                     # [2] Point-[vertices]
     return lines, stripe / stripe.norm(), advance
 

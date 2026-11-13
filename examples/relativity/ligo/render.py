@@ -14,8 +14,9 @@ from matplotlib.projections.geo import MollweideAxes
 from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import contours, planar, simplices
-from examples.util.wgsl.camera import Camera, offset_panel, panel
+from numga.topology import Topology
+from numga.render import Camera, contours, planar, simplices
+from examples.util.panels import offset_panel, overlay, panel
 from examples.relativity.ligo import core
 
 # Colour maps for signed responses, for sensitivities and for likeness; the colours of the sites, the
@@ -60,7 +61,7 @@ def projected(longitudes_latitudes: np.ndarray) -> np.ndarray:
     return mollweide.transform(longitudes_latitudes.reshape(-1, 2)).reshape(shape)
 
 
-def graticule() -> tuple[planar.Point, simplices.Topology]:
+def graticule() -> tuple[planar.Point, Topology]:
     """The map's meridians, between the parallels at 75 degrees, and its parallels, straight across the map: their
     points on the map, one line after another, and the chains of edges along them."""
     cap = PARALLELS[-1]
@@ -69,7 +70,7 @@ def graticule() -> tuple[planar.Point, simplices.Topology]:
     parallels = np.stack(np.broadcast_arrays(np.array([-np.pi, np.pi])[None, :], PARALLELS[:, None]), axis=-1)   # [parallels, 2, 2]
     places = np.concatenate([meridians.reshape(-1, 2), parallels.reshape(-1, 2)])
     return (planar.mv.point(projected(places)),
-            simplices.Topology.chains([N_MERIDIAN_SAMPLES] * len(MERIDIANS) + [2] * len(PARALLELS)))
+            Topology.chains([N_MERIDIAN_SAMPLES] * len(MERIDIANS) + [2] * len(PARALLELS)))
 
 
 def outline() -> planar.Point:
@@ -101,11 +102,11 @@ def sky_map(ax: plt.Axes, directions: core.Point, values: core.Scalar, cmap: str
     lines, chains = graticule()
     sites = projected(lonlat(zeniths))                                       # [sites, 2]
     camera = map_camera(ax)
-    simplices.overlay(ax, [
-        contours.picture(sky, simplices.Topology.grid(n_latitudes, n_longitudes), values, colours, camera,
+    overlay(ax, [
+        contours.picture(sky, Topology.grid(n_latitudes, n_longitudes), values, colours, camera,
                          bands=bands),
         simplices.strokes(lines, chains, np.ones(3), charts.FRAME_PX, camera, opacity=GRATICULE_OPACITY),
-        simplices.strokes(outline(), simplices.Topology.loops([2 * N_OUTLINE_SAMPLES]), np.zeros(3),
+        simplices.strokes(outline(), Topology.loops([2 * N_OUTLINE_SAMPLES]), np.zeros(3),
                           charts.FRAME_PX, camera),
         simplices.markers(planar.mv.point(sites), ink(LABEL), SITE_RADIUS + charts.FRAME_PX, camera),
         simplices.markers(planar.mv.point(sites), ink(SITE), SITE_RADIUS, camera)])
@@ -160,10 +161,10 @@ def draw_ring(ax: plt.Axes, site: core.Rotor, arms: core.Point, ring: core.Point
     # Each arm from the site out to its drawn reach.
     reaches = stack((0 * arms, ARM_REACH * arms), axis=-1).reshape(-1)       # [arms * 2] Point-
     n_masses = ring.shape[0]
-    simplices.overlay(ax, [
-        simplices.strokes(rest, simplices.Topology.loops([REST_SAMPLES]), ink(REST), charts.LINE_PX, camera),
-        simplices.strokes(reaches, simplices.Topology.chains([2] * arms.shape[0]), ink(ARM), ARM_WIDTH, camera),
-        simplices.strokes(ring, simplices.Topology.loops([n_masses]), ink(RING), charts.LINE_PX, camera, opacity=0.6),
+    overlay(ax, [
+        simplices.strokes(rest, Topology.loops([REST_SAMPLES]), ink(REST), charts.LINE_PX, camera),
+        simplices.strokes(reaches, Topology.chains([2] * arms.shape[0]), ink(ARM), ARM_WIDTH, camera),
+        simplices.strokes(ring, Topology.loops([n_masses]), ink(RING), charts.LINE_PX, camera, opacity=0.6),
         simplices.markers(ring, ink(RING), charts.MARKER_PX / 2, camera)])
 
 

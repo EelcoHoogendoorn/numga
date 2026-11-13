@@ -65,19 +65,19 @@ def main() -> None:
     bars = (inner * (topology.d[0] * points)).batch()                          # [inner] Point-
     # The jump in slope, the faces' planes summed back onto their edges as each face runs along it, pairs to
     # nothing with its bar: both planes agree along it.
-    assert np.abs(((inner * (~topology.d[1] * duals)).batch() & bars).to_array()).max() < 1e-10
+    assert np.abs(((inner * (topology.d[1].adjugate() * duals)).batch() & bars).to_array()).max() < 1e-10
     # The bars meeting at a vertex each pull it along themselves by their stress, summed back onto their ends
     # against the way each bar runs.
     pulls = (bars * core.stresses(topology, points, breaths)).field()          # [frames] Point-[inner]
     bar_ends = inner * topology.d[0]                                           # Scalar+[inner <- vertices]
-    net = -(~bar_ends * pulls)                                                 # [frames] Point-[vertices]
+    net = -(bar_ends.adjugate() * pulls)                                       # [frames] Point-[vertices]
     assert ((topology.reading(topology.interior[0], 0) * net).norm() < 1e-10).all()
     # On the paraboloid the stresses are the cotangent weights and the reciprocal vertices the circumcentres.
     edges = topology.boundary[2, 1] * (topology.d[0] * points)                 # [3] Point-[faces]
     tails, heads = topology.corners[2, 1]
     after, before = edges[tails], edges[heads]                                 # [3] Point-[faces], Point-[faces]
     cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()   # [3] Scalar+[faces]
-    weights = (~topology.incidence[2, 1] * (cotangents / 2)).sum(axis=0)       # Scalar+[edges]
+    weights = (topology.incidence[2, 1].adjugate() * (cotangents / 2)).sum(axis=0)  # Scalar+[edges]
     assert np.abs(core.stresses(topology, points, heights).to_array() - (inner * weights).to_array()).max() < 1e-10
     centres = (core.slopes(topology, points, heights) ^ core.mv.z) * core.mv.z                       # Plane+[faces]
     corners = topology.incidence[2, 0] * points                                # [3] Point-[faces]

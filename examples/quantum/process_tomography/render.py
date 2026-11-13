@@ -15,8 +15,10 @@ from numga import Extensor, concatenate
 from examples.util.animation import capture
 from examples.quantum.process_tomography import core
 from examples.util import charts
-from examples.util.wgsl import fitted, labels, meshes, show, simplices, solids
-from examples.util.wgsl.scene import Scene
+from numga.topology import Topology
+from numga.render.drawing import Draw
+from numga.render import Scene, meshes, simplices, solids
+from examples.util.panels import fitted, labels, show
 
 CHANNEL_COLOURS = ("#3275a8", "#d16a30", "#7b62a3")
 PROBE_COLOURS = ("#3275a8", "#d16a30", "#438e65", "#7b62a3")
@@ -105,12 +107,12 @@ def grid_lines(points: solids.Point) -> tuple[solids.Point, solids.Point]:
     return points[LATITUDE_STEP:-1:LATITUDE_STEP], points[rows[None, :], columns[:, None]]
 
 
-def grid(points: solids.Point, colour: np.ndarray, width: float, view: solids.View) -> list[meshes.Samples]:
+def grid(points: solids.Point, colour: np.ndarray, width: float, view: solids.View) -> list[Draw]:
     """The grid lines of a grid of points `[latitudes + 1, longitudes]`, as strokes `width` across in a colour, at
     every sample: the latitudes closed loops of edges through their points, the longitudes chains from pole to pole."""
     latitudes, longitudes = grid_lines(points)   # [lines, longitudes] Point-, [lines, latitudes + 1] Point-
-    loops = simplices.Topology.loops([latitudes.shape[1]] * latitudes.shape[0])
-    chains = simplices.Topology.chains([longitudes.shape[1]] * longitudes.shape[0])
+    loops = Topology.loops([latitudes.shape[1]] * latitudes.shape[0])
+    chains = Topology.chains([longitudes.shape[1]] * longitudes.shape[0])
     return [simplices.tubes(latitudes.reshape(-1), loops, colour, width / view.pixel, view, gloss=solids.gloss),
             simplices.tubes(longitudes.reshape(-1), chains, colour, width / view.pixel, view, gloss=solids.gloss)]
 
