@@ -2,7 +2,6 @@
 import numpy as np
 from numga import stack
 from examples.electromagnetism.magnetic_materials import core, scenarios, render
-from examples.util.animation import save_animation
 
 
 def test_material_field_and_pulse_step():
@@ -15,23 +14,19 @@ def test_material_field_and_pulse_step():
     states = list(core.evolution(stiffness, source, mass, extension, coil, drive, scenarios.frame_step))
     corners = topology.incidence[2, 0]
     hat_fields = gradients ^ core.mv.z
-    permanent = corners.mean(axis=0) * remanence
+    bound = core.sweep * (source / cells)
+    prescribed = core.sweep * (coil / cells)
     frames = []
     for previous, potential, applied in zip([states[0], *states[:-1]], states, drive):
         rate = (potential - previous) / scenarios.frame_step
         field = (hat_fields * (corners * potential)).sum(axis=0)
-        magnetization = permanent + core.magnetic_response(field) - response(field)
-        magnet_field = core.moment_field(magnetization)
-        pole_charge = (corners.adjugate() * (areas * ((gradients ^ magnet_field) & core.volume))).sum(axis=0)
-        pole_density = pole_charge / cells
         mean_rate = (mass * rate).sites.sum() / mass.sites.sum()
         current = conductivity * core.electric_response(-(rate - mean_rate) * core.mv.zt)
-        frames.append((potential, pole_density, current, applied))
-    save_animation(render.animate(topology, vertices, fractions, coils, scenarios.coil_current, frames),
-                   "magnetic_materials_test", 40)
+        frames.append((potential, bound + applied * prescribed + current))
+    list(render.animate(topology, vertices, fractions, coils, frames))
     render.relaxation(stack(states), mass, scenarios.frame_step, scenarios.pulse_fall)
-    render.setup(topology, vertices, fractions, coils, scenarios.coil_current)
+    render.setup(topology, vertices, fractions, coils)
     assert np.all(potential.isfinite())
     assert np.all((field & response(field)) >= 0)
     assert np.all((cells * (core.mv.zt & current)).sites.sum().abs() < .01)
-    assert np.all(pole_charge.sites.sum().abs() < .01)
+    assert np.all(source.sites.sum().abs() < .01)

@@ -23,9 +23,6 @@ sweep = mv.z.dual() & time
 patches = stack((mv.xz.dual(), mv.yz.dual()))
 magnetic_response = (patches * (Field & patches)).sum(axis=0)
 electric_response = sweep * (Field & sweep)
-planes = stack((mv.xz, mv.yz))
-moment_field = (planes * (planes & Moment)).sum(axis=0)
-volume = mv.xyz.dual()                            # Antitrivector-
 
 
 def medium(topology, vertices: Point, permeability: Scalar, conductivity: Scalar,
