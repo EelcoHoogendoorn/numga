@@ -1,7 +1,7 @@
 """A pool of cores and memory that every heavy run on the machine shares: each test file, each notebook, each module of
 the examples run as a program, and any command run through it, is one job of the pool.
 
-The pool's budget is three eighths of the machine's cores and a third of its memory, so that the machine stays
+The pool's budget is three quarters of the machine's cores and two thirds of its memory, so that the machine stays
 usable beside it. A job reserves cores and memory before it starts, and waits while an earlier job is still waiting
 or while the budget, less what the other jobs have reserved, does not fit it; what the jobs actually use plays no
 part. A watchdog holds each job to its reservation: it polls the memory of the job's whole process tree, and kills
@@ -59,9 +59,9 @@ CORES_BUDGETED, MEMORY_BUDGETED = "NUMGA_POOL_BUDGET_CORES", "NUMGA_POOL_BUDGET_
 DIRECTORY = Path.home() / ".cache" / "numga" / "pool"
 
 GB = 2 ** 30
-# The budget: three eighths of the machine's cores; its memory, a third of the machine's, is `budget_memory()`,
+# The budget: three quarters of the machine's cores; its memory, two thirds of the machine's, is `budget_memory()`,
 # and is also the most one job reserves.
-CORES = int(os.environ.get(CORES_BUDGETED, max(1, 3 * (os.cpu_count() or 1) // 8)))
+CORES = int(os.environ.get(CORES_BUDGETED, max(1, 3 * (os.cpu_count() or 1) // 4)))
 # How often a waiting job asks again, how often a watchdog reads its job's memory and, less often, its tree, and how
 # often a batch looks whether its last job has been admitted.
 WAIT_SECONDS, WATCH_SECONDS, TREE_SECONDS, BATCH_SECONDS = 0.5, 0.1, 1.0, 0.1
@@ -85,9 +85,9 @@ _libraries: list = []
 
 
 def budget_memory() -> float:
-    """The budget's memory in GB, a third of the machine's, which is also the most one job reserves."""
+    """The budget's memory in GB, two thirds of the machine's, which is also the most one job reserves."""
     import psutil
-    return float(os.environ.get(MEMORY_BUDGETED, psutil.virtual_memory().total / 3 / GB))
+    return float(os.environ.get(MEMORY_BUDGETED, 2 * psutil.virtual_memory().total / 3 / GB))
 
 
 def active() -> bool:
