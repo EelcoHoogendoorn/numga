@@ -28,11 +28,12 @@ from matplotlib.figure import Figure
 
 from numga import concatenate
 from numga.extensor import Extensor
+from numga.render import contours, drawing, flow, simplices
+from numga.render.camera import Camera
+from numga.topology import Topology
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.topology import Topology
-from examples.util.wgsl import contours, flow, pinned, simplices
-from examples.util.wgsl.camera import Camera, panel
+from examples.util.panels import panel, pinned
 
 # The band edges' colour, the electrons' and the holes', the faint junction's, and the curves traced in the dark and
 # under light; the bands' tints where they hold carriers at the doping's density, fading to white at the intrinsic one.
@@ -279,7 +280,7 @@ def draw_section(topology: Topology, vertices: Extensor, semiconductor: Extensor
     camera = section_axes(axis, vertices)
     layers = silicon_layers(topology, vertices, semiconductor, np.maximum(doping, 0), np.maximum(-doping, 0), full,
                             camera) + device_layers(topology, vertices, semiconductor, contacts, camera)
-    pinned(axis, on_white(simplices.composited(layers)), (*axis.get_xlim(), *axis.get_ylim()))
+    pinned(axis, on_white(drawing.composited(layers)), (*axis.get_xlim(), *axis.get_ylim()))
     return figure
 
 
@@ -322,7 +323,7 @@ def animate_switching(topology: Topology, vertices: Extensor, semiconductor: Ext
         for state in states:
             electrons, holes = densities_of(state).batch().to_array().reshape(2, -1)
             silicon = silicon_layers(topology, vertices, semiconductor, electrons, holes, full, camera)
-            shown.set_data(on_white(simplices.composited(silicon + device)))
+            shown.set_data(on_white(drawing.composited(silicon + device)))
             readings.append([float(reading.to_array()) for reading in terminal_of(state)])
             # Each curve traced through the frames on it so far.
             traced = np.array(readings)                                       # [frames so far, 2]
@@ -382,7 +383,7 @@ def framed(axis: plt.Axes, vertices: Extensor, left: float, right: float) -> Cam
 def at_vertices(topology: Topology, values: Extensor) -> Extensor:
     """Values in the simplices `[simplices]` at the vertices `[vertices]`: the mean over the simplices around each."""
     mv = values.context.multivector
-    around = ~topology.incidence[-1, 0].sum(axis=0)                            # Scalar+[vertices <- simplices]
+    around = topology.incidence[-1, 0].sum(axis=0).adjugate()                 # Scalar+[vertices <- simplices]
     counts = around * mv.scalar(np.ones((topology.n_elements[-1], 1))).field()   # Scalar+[vertices]
     return (around * values) / counts
 
@@ -451,7 +452,7 @@ def window_picture(topology: Topology, vertices: Extensor, dopants: Extensor, co
                                                              camera)]
     flows = [streaks(topology, tile, holes, reference_flow, camera) for tile in tiles]
     metal = [layer for tile in tiles for layer in cell_metal(topology, tile, contacts, camera)]
-    return on_white(simplices.composited(tints + flows + metal))
+    return on_white(drawing.composited(tints + flows + metal))
 
 
 @charts.style()
@@ -470,7 +471,7 @@ def draw_cell(topology: Topology, vertices: Extensor, dopants: Extensor, contact
     tiles = copies(vertices, finger_spacing, finger_spacing / 2, window_half_width)
     layers = [layer for tile in tiles for layer in cell_tints(topology, tile, dopants, generation, full_generation,
                                                               camera) + cell_metal(topology, tile, contacts, camera)]
-    pinned(axis, on_white(simplices.composited(layers)), (*axis.get_xlim(), *axis.get_ylim()))
+    pinned(axis, on_white(drawing.composited(layers)), (*axis.get_xlim(), *axis.get_ylim()))
     return figure
 
 
@@ -489,7 +490,7 @@ def draw_period(topology: Topology, vertices: Extensor, dopants: Extensor, conta
     camera = framed(axis, vertices, -half, half)
     full_generation = float(generation.batch().to_array().max())
     tiles = copies(vertices, finger_spacing, 0.0, half)
-    picture = simplices.composited(
+    picture = drawing.composited(
         [layer for tile in tiles for layer in cell_tints(topology, tile, dopants, generation, full_generation, camera)]
         + [streaks(topology, tile, holes, reference_flow, camera) for tile in tiles]
         + [layer for tile in tiles for layer in cell_metal(topology, tile, contacts, camera)])

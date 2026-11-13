@@ -65,7 +65,7 @@ from numga.gatype import GAType
 from numga.backend.context import Context
 from numga.sparse import SparseExtensor, spdiag
 
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 # Supplied by examples.instantiate: space and time, with a degenerate w that weighs a place, joined with the electrons,
 # the holes, the heat and the light a cell holds or trades, each a direction of its own with no metric; and the context
@@ -185,7 +185,7 @@ def run(topology: Topology, volumes: Scalar, driving: SparseExtensor, outflow: S
     corner_mean = topology.incidence[-1, 0].mean(axis=0)                      # Scalar+[simplices <- vertices]
     # Each vertex's cell of the semiconductor, which holds the carriers: a share of each simplex around it, one over the
     # simplex's count of corners.
-    cells = ~corner_mean * (volumes * semiconductor)                          # Scalar+[vertices]
+    cells = corner_mean.adjugate() * (volumes * semiconductor)                # Scalar+[vertices]
     # The drives the map makes, a slope in space wedged with what each potential acts on. A carrier drifts along the
     # force a drive puts on it, and its flux is the carrier swept along that drift, the same in every direction: each
     # carrier's conductance per unit of its density, where a simplex is semiconductor. A unit of charge swept so is the
@@ -198,7 +198,7 @@ def run(topology: Topology, volumes: Scalar, driving: SparseExtensor, outflow: S
     for contact, generation in zip(contacts, generations):
         previous_parcels = (carrier_densities(potentials, intrinsic) * carriers).sum(axis=0)   # Point-[vertices]
         # The contacts take their potentials; the rest start from where they were.
-        potentials = ~free * (free * potentials) + ~holding * contact         # Potentials+[vertices]
+        potentials = free.adjugate() * (free * potentials) + holding.adjugate() * contact  # Potentials+[vertices]
         while True:
             densities = carrier_densities(potentials, intrinsic)              # [carriers] Scalar+[vertices]
             parcels = (densities * carriers).sum(axis=0)                      # Point-[vertices]
@@ -227,8 +227,8 @@ def run(topology: Topology, volumes: Scalar, driving: SparseExtensor, outflow: S
             # Each carrier's balance taken per carrier, over its density, the charge's as it is: a carrier far scarcer
             # than the other, by many powers of e, still weighs alike in the solve.
             per_carrier = time * (mv.t & Point) + (counts * (counting & Point) / densities).sum(axis=0)
-            solving = free * per_carrier(newton) * ~free                      # (Point- <- Potentials+)[free <- free]
-            change = -(~free * solving.solve(free * per_carrier(residual)))   # Potentials+[vertices]
+            solving = free * per_carrier(newton) * free.adjugate()            # (Point- <- Potentials+)[free <- free]
+            change = -(free.adjugate() * solving.solve(free * per_carrier(residual)))  # Potentials+[vertices]
             # Newton's step scaled down at each vertex where it would change the chemical potentials there by much
             # more than the limit: the densities follow them exponentially, and a full step from far off overshoots by
             # powers of e. The residual is linear in the electric potential, whose change needs no holding back.
@@ -261,7 +261,7 @@ def entropy_production(topology: Topology, volumes: Scalar, driving: SparseExten
     `Scalar+[vertices]` and by the light's absorption in each cell `Scalar+[vertices]`, each process's rate times the
     entropy's slope read on it; the light making this generation of pairs per volume and time, its energy arriving at
     the sun's temperature `sun`, in the lattice's."""
-    cells = ~topology.incidence[-1, 0].mean(axis=0) * (volumes * semiconductor)   # Scalar+[vertices]
+    cells = topology.incidence[-1, 0].mean(axis=0).adjugate() * (volumes * semiconductor)  # Scalar+[vertices]
     densities = carrier_densities(potentials, intrinsic)                      # [carriers] Scalar+[vertices]
     conductance = conductances(topology, driving, semiconductor, potentials, intrinsic, mobilities)
     drive = driving(potentials)                                               # Drive+[simplices]

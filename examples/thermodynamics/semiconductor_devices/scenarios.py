@@ -17,7 +17,7 @@ import numpy as np
 from numga import Algebra, stack
 from numga.sparse import SparseExtensor
 from examples import instantiate
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 # The bar's line in spacetime, and the cross-section's plane, each with a degenerate w that weighs a place, joined with
 # the electrons, the holes, the heat and the light; the solar cell's cross-section lies in the MOSFET's plane, and so
@@ -497,7 +497,7 @@ def solar_animations() -> None:
     maps = solar_cell.simplices(topology, vertices, Upright)
     lit = list(solar_steady(topology, dopants, neutral, contacts, *maps, neutral, biases, shares * generation))
     # The current's scale, the pairs the light makes in the period each time, which the junction gathers nearly all of.
-    cells = ~topology.incidence[-1, 0].mean(axis=0) * maps[0]                 # Scalar+[vertices]
+    cells = topology.incidence[-1, 0].mean(axis=0).adjugate() * maps[0]       # Scalar+[vertices]
     made = (cells * generation).sites.sum()                                   # [] Scalar+
     terminal_of = partial(cell_terminal, topology, contacts, *maps)
     save_animation(render.animate_lighting(topology, vertices, dopants, contacts, generation,

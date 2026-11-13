@@ -58,7 +58,7 @@ def test_solar_cell():
     biases, shares = scenarios.lighting_biases()
     states = scenarios.solar_steady(topology, dopants, neutral, contacts, *maps, neutral, biases[:1],
                                     shares[:1] * generation)
-    cells = ~topology.incidence[-1, 0].mean(axis=0) * maps[0]
+    cells = topology.incidence[-1, 0].mean(axis=0).adjugate() * maps[0]
 
     def holes(potentials):
         return solar_cell.flows(topology, maps[1], filled, potentials, scenarios.intrinsic, scenarios.mobilities)[1]
