@@ -1,4 +1,5 @@
-"""Stable states of a van der Waals fluid approaching its critical point, and their fluctuations."""
+"""Cools a van der Waals fluid along its critical isochore toward the critical point and tracks its fluctuation metric
+and scalar curvature."""
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -7,7 +8,6 @@ import numpy as np
 
 from examples.thermodynamics.ruppeiner import core
 
-# The fluid: the strength of its molecules' attraction, the volume they exclude, and its heat capacity at fixed volume.
 attraction, exclusion, capacity = 9 / 8, 1 / 3, 1.5
 
 
@@ -24,23 +24,33 @@ def pressure_of(states: core.State) -> core.Scalar:
     return core.pressure(states, attraction, exclusion)
 
 
-def approach(temperatures: np.ndarray) -> Iterator[core.State]:
-    """States at the critical volume cooling through the temperatures toward the critical one."""
+def cooling_path(temperatures: np.ndarray) -> Iterator[core.State]:
+    """Generates states along the critical volume cooling steadily through the given temperatures."""
     for frame in range(len(temperatures)):
         yield core.mv.t.dual() * temperatures[frame] + core.mv.v.dual()
 
 
-if __name__ == "__main__":
+def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.thermodynamics.ruppeiner import render
 
     n_frames, frame_duration_ms, n_samples = 96, 40, 100
-    warm = core.mv.t.dual() * 1.8 + core.mv.v.dual()                                  # [] State-
+    warm_state = core.mv.t.dual() * 1.8 + core.mv.v.dual()                            # [] State-
     temperatures = np.linspace(1.8, 1.02, n_frames)
-    # Distances above the critical temperature, along the critical volume.
     offsets = np.geomspace(0.002, 0.8, n_samples)
-    above_critical = core.mv.t.dual() * (1 + offsets) + core.mv.v.dual()              # [samples] State-
-    save_figure(render.draw_landscape(metric_of, curvature_of, pressure_of, warm), "ruppeiner_landscape")
-    save_animation(render.fluctuations(metric_of, curvature_of, pressure_of, approach(temperatures)),
+    supercritical_states = core.mv.t.dual() * (1 + offsets) + core.mv.v.dual()        # [n_samples] State-
+    save_figure(render.draw_landscape(metric_of, curvature_of, pressure_of, warm_state), "ruppeiner_landscape")
+    save_animation(render.fluctuations(metric_of, curvature_of, pressure_of, cooling_path(temperatures)),
                    "ruppeiner_fluctuations", frame_duration_ms)
-    save_figure(render.scaling(above_critical, curvature_of), "ruppeiner_scaling")
+    save_figure(render.draw_scaling(supercritical_states, curvature_of), "ruppeiner_scaling")
+
+    # checks
+    path_states = core.mv.t.dual() * temperatures + core.mv.v.dual()                  # [n_frames] State-
+    assert (((metric_of(path_states)(core.mv.t.dual()) & core.mv.t.dual())
+             - capacity / temperatures ** 2).abs() < 1e-12).all()
+    assert ((metric_of(path_states)(core.mv.t.dual()) & core.mv.v.dual()).abs() < 1e-12).all()
+    assert (curvature_of(supercritical_states[0]) * (3 * offsets[0] ** 2) - 1).abs() < 0.01
+
+
+if __name__ == "__main__":
+    main()

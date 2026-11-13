@@ -1,31 +1,29 @@
-"""The fluctuation metric of a van der Waals fluid and its curvature near the critical point.
+"""Near the critical point of a van der Waals fluid, volume fluctuations grow cheap and the scalar curvature of the
+Ruppeiner fluctuation metric diverges.
 
-A state of the fluid is modelled as an antivector of the plane spanned by temperature, `mv.t.dual()`, and volume,
-`mv.v.dual()`. The metric is a map from a variation of the state to the gradient of half its cost, which pairs with the
-variation to the variation's cost: how improbable a fluctuation that large is. It is built from the Helmholtz energy's
-second derivative in its own variables, temperature and volume, the thermal part with its sign turned, both over the
-temperature; near the critical point the pressure hardly changes with the volume, the mechanical part of the cost
-vanishes, and fluctuations of the volume become cheap. The scalar curvature of the metric grows without bound as the
-critical point is approached.
+Two degenerate directions `t0 v0` form an exterior state space in which a fluid state is modelled as an antivector
+combining temperature `t.dual()` and volume `v.dual()`. The fluctuation metric maps each state variation to a conjugate
+potential `Potential <- State`, whose regressive pairing with the variation gives the fluctuation cost. Maxwell's
+relation cancels the cross term between temperature and volume variations, leaving a thermal entry from the heat
+capacity and a mechanical entry from the isothermal volume slope of pressure. Approaching the critical point flattens
+the isotherms, drives the mechanical entry toward zero, and sends the scalar curvature of the metric to infinity.
 
-Temperature and volume are in their critical values, pressure in R T_c / V_c, energy in R T_c.
+For a fixed quantity of fluid, temperature and volume are measured in units of their critical values, energy in units
+of the gas constant times the critical temperature, and pressure in that energy per critical volume.
 """
-
 from __future__ import annotations
 
-import jax
 import numpy as np
 
-from numga import Algebra
-from numga.backend.jax import JaxContext, derivative
+from numga import Algebra, NumpyContext
 
 ga = Algebra("t0v0")
-mv = JaxContext(ga, np.float64).multivector
+mv = NumpyContext(ga, np.float64).multivector
 
 Scalar = ga.gatype.scalar()                                   # Scalar+
 State = ga.gatype.antivector()                                # Antivector-
-Gradient = ga.gatype.vector()                                 # Vector+
-Metric = ga.gatype((Gradient, State))                         # Gradient+ <- State-
+Potential = ga.gatype.vector()                                # Vector+
+Metric = ga.gatype((Potential, State))                        # Potential+ <- State-
 
 # Regressive pairings read coordinates without assuming a metric.
 temperature = mv.t & State                                    # [] Scalar+ <- State-
@@ -33,42 +31,29 @@ volume = mv.v & State                                         # [] Scalar+ <- St
 
 
 # --- math -----------------------------------------------------------------------------
-@jax.jit
-def pressure(state: State, attraction: float, volume_exclusion: float) -> Scalar:
-    """The van der Waals equation of state."""
-    return temperature(state) / (volume(state) - volume_exclusion) - attraction / volume(state).squared()
+def pressure(state: State, attraction: float, exclusion: float) -> Scalar:
+    """The van der Waals equation of state balances thermal pressure in the free volume against molecular attraction."""
+    return temperature(state) / (volume(state) - exclusion) - attraction / volume(state).squared()
 
 
-def helmholtz_energy(state: State, attraction: float,
-                     volume_exclusion: float, heat_capacity: float) -> Scalar:
+def metric(state: State, attraction: float, exclusion: float, capacity: float) -> Metric:
+    """The Ruppeiner metric maps each state variation to the potential that reads its fluctuation cost."""
     t, v = temperature(state), volume(state)                  # [...] Scalar+, Scalar+
-    return -heat_capacity * t * t.log() - t * (v - volume_exclusion).log() - attraction / v
+    # Maxwell's relation cancels the cross term between temperature and volume fluctuations.
+    thermal = capacity / t.squared()                          # [...] Scalar+
+    mechanical = 1 / (v - exclusion).squared() - 2 * attraction / (t * v ** 3)   # [...] Scalar+
+    return mv.t * thermal * temperature + mv.v * mechanical * volume             # [...] Potential+ <- State-
 
 
-@jax.jit
-def metric(state: State, attraction: float,
-           volume_exclusion: float, heat_capacity: float) -> Metric:
-    """The cost of variations about a state, as a map from a variation to a gradient."""
-    potential = lambda point: helmholtz_energy(point, attraction, volume_exclusion, heat_capacity)
-    hessian = derivative(derivative(potential))(state)        # [...] Scalar+ <- (State-, State-)
-    # The Helmholtz energy's second derivative in temperature and volume, its thermal part with the sign turned: in
-    # these variables the cost has no cross term between the two.
-    thermal = -hessian(mv.t.dual(), mv.t.dual()) / temperature(state)        # [...] Scalar+
-    mechanical = hessian(mv.v.dual(), mv.v.dual()) / temperature(state)      # [...] Scalar+
-    return mv.t * thermal * temperature + mv.v * mechanical * volume
-
-
-@jax.jit
-def thermodynamic_curvature(state: State, attraction: float,
-                            volume_exclusion: float, heat_capacity: float) -> Scalar:
-    """The metric's scalar curvature, twice its Gaussian curvature, positive on a sphere."""
-    form = lambda point: metric(point, attraction, volume_exclusion, heat_capacity)
-    thermal = lambda point: form(point)(mv.t.dual()) & mv.t.dual()
-    mechanical = lambda point: form(point)(mv.v.dual()) & mv.v.dual()
-    area_squared = lambda point: thermal(point) * mechanical(point)
-    # The metric has no cross term and its thermal entry does not change with the volume: the curvature needs only the
-    # mechanical entry's changes along the temperature and the change of the squared area the two entries span.
-    slope = derivative(mechanical)(state)(mv.t.dual())                                    # [...] Scalar+
-    slope_change = derivative(derivative(mechanical))(state)(mv.t.dual(), mv.t.dual())   # [...] Scalar+
-    area_change = derivative(area_squared)(state)(mv.t.dual())                           # [...] Scalar+
-    return -slope_change / area_squared(state) + slope * area_change / (2 * area_squared(state).squared())
+def thermodynamic_curvature(state: State, attraction: float, exclusion: float, capacity: float) -> Scalar:
+    """Scalar curvature of the fluctuation metric equals twice its Gaussian curvature, which is positive on a sphere."""
+    t, v = temperature(state), volume(state)                  # [...] Scalar+, Scalar+
+    thermal = capacity / t.squared()                          # [...] Scalar+
+    mechanical = 1 / (v - exclusion).squared() - 2 * attraction / (t * v ** 3)   # [...] Scalar+
+    area_squared = thermal * mechanical                       # [...] Scalar+
+    # Because the metric is diagonal and its thermal entry depends on temperature alone, scalar curvature
+    # follows from temperature derivatives of the mechanical entry and of the squared area element.
+    slope = 2 * attraction / (t.squared() * v ** 3)                              # [...] Scalar+
+    slope_change = -4 * attraction / (t ** 3 * v ** 3)                           # [...] Scalar+
+    area_change = -2 * thermal / t * mechanical + thermal * slope                # [...] Scalar+
+    return -slope_change / area_squared + slope * area_change / (2 * area_squared.squared())

@@ -1,6 +1,5 @@
-"""Drawing for Laplacian eigenfunction fluids on the Stanford bunny: GPU-shaded Laplace–Beltrami streamfunction
-modes and evolving vorticity fields with feathered velocity streaks,
-alongside kinetic energy and enstrophy conservation curves."""
+"""Rendering for Laplacian eigenfunction fluids draws GPU-shaded Laplace–Beltrami streamfunction modes, animated
+vorticity fields with feathered velocity streaks, and kinetic energy and enstrophy curves."""
 
 from __future__ import annotations
 
@@ -17,7 +16,7 @@ from examples.util import charts
 from examples.util.wgsl import flow, image_figure, meshes, solids
 
 # Surface and diverging field palette, contour colour, curve colours, camera elevation and azimuth in degrees
-# from x, the reach framed around each vertex, viewport margin and pixel dimensions, and contour density and width.
+# from x, radial framing reach around each vertex, viewport margin and pixel widths, and contour spacing and width.
 surface_colour = np.array([0.94, 0.92, 0.88])
 positive_colour = np.array(to_rgb("#c84b31"))
 negative_colour = np.array(to_rgb("#2d6a9f"))
@@ -37,9 +36,8 @@ vorticity_exposure = 95.5
 stream_exposure = 98.5
 background = np.ones(3)
 
-# WGSL fragment colouring that shades the surface by the first interpolated vertex channel (`values.x`,
-# vorticity or mode amplitude) and draws uniform-width streamline contours by dividing the contour phase
-# residual of the second vertex channel (`values.y`, streamfunction) by the face speed (`face_values.x`).
+# WGSL fragment shader colouring the surface by the first interpolated vertex channel (`values.x`) and drawing
+# uniform-width streamline contours by dividing the second channel's phase residual (`values.y`) by face speed.
 streamline_shader = meshes.Colour("""
 fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {
     let level = clamp(values.x, -1.0, 1.0);
@@ -58,36 +56,36 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 
 # --- plumbing -------------------------------------------------------------------------
 def plain_axes(axis: plt.Axes) -> None:
-    """A quantity plot with faint left and bottom spines only."""
+    """The chart axis keeps only faint left and bottom spines."""
     axis.spines[["top", "right"]].set_visible(False)
     axis.spines[["left", "bottom"]].set_color("0.8")
     axis.tick_params(color="0.8")
 
 
 def camera_view(points: solids.Point, n_pixels: int) -> solids.View:
-    """A square camera view framing the surface vertices at `n_pixels` across."""
+    """A square camera view frames the surface points from the shared elevation and azimuth."""
     elevation, azimuth = np.radians(view_degrees[0]), np.radians(view_degrees[1] + 90.0)
     return solids.view([points], surface_reach, elevation, azimuth, margin, n_pixels).squared()
 
 
 def surface_panel(topology: core.Topology, points: solids.Point, smooth_normals: dict, frame: solids.View,
-                field: core.Scalar, stream: core.Scalar, velocity: core.Point,
-                field_scale: float, stream_scale: float, n_contours: float) -> np.ndarray:
-    """One GPU-rendered panel of the surface coloured by `field` with uniform-width streamline contours of `stream`."""
-    channels = (field / field_scale, stream * (n_contours / stream_scale))       # Scalar+[vertices], Scalar+[vertices]
-    face_speed = ((velocity.norm().to_array() / stream_scale) * n_contours)[:, None]   # [faces, 1]
+                  field: core.Scalar, stream: core.Scalar, velocity: core.Point,
+                  field_scale: float, stream_scale: float, n_contours: float) -> np.ndarray:
+    """A GPU pass shades the triangulated surface by a scalar field overlaid with uniform-width streamlines."""
+    channels = (field / field_scale, stream * (n_contours / stream_scale))       # Scalar+[V], Scalar+[V]
+    face_speed = ((velocity.norm().to_array() / stream_scale) * n_contours)[:, None]   # [F, 1]
     triangles = topology.elements[2]
-    # Each channel at the corners of each face, faces first, for the shader.
+    # Gather both channels onto the three corners of each triangle, ordered faces first for the shader.
     corner_values = np.stack([(topology.incidence[2, 0] * channel).batch().to_array() for channel in channels],
-                             axis=-1).transpose(1, 0, 2)                          # [faces, 3, 2]
+                             axis=-1).transpose(1, 0, 2)                         # [F, 3, 2]
     surface = meshes.samples(points, triangles, corner_values, smooth_normals, frame,
                              face_values=face_speed, colour=streamline_shader, gloss=solids.gloss)
     return solids.draw([], frame, background, inks=[], translucent=[], meshes=[(surface, 1.0)])
 
 
 def draw_surface(topology: core.Topology, vertices: core.Point) -> Figure:
-    """The bare surface, plainly lit, from the camera of the modes."""
-    points = solids.origin + solids.context.include_from_algebra(vertices.batch())       # [vertices] Point-
+    """A plainly lit view shows the bare triangulated surface from the mode camera."""
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())   # [V] Point-
     frame = camera_view(points, n_mode_pixels)
     surface = meshes.samples(points, topology.elements[2], surface_colour, meshes.smooth(points, topology), frame,
                              face_values=np.zeros(1), colour=meshes.plain, gloss=solids.gloss)
@@ -96,8 +94,8 @@ def draw_surface(topology: core.Topology, vertices: core.Point) -> Figure:
 
 def draw_modes(topology: core.Topology, vertices: core.Point, modes: core.Scalar,
                mode_velocities: core.Point) -> Figure:
-    """The Stanford bunny side by side for each selected Laplace–Beltrami streamfunction mode and its streamlines."""
-    points = solids.origin + solids.context.include_from_algebra(vertices.batch())       # [vertices] Point-
+    """Side-by-side panels show the selected Laplace–Beltrami streamfunction modes and their streamline contours."""
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())   # [V] Point-
     smooth_normals = meshes.smooth(points, topology)
     frame = camera_view(points, n_mode_pixels)
     panels = []
@@ -106,16 +104,17 @@ def draw_modes(topology: core.Topology, vertices: core.Point, modes: core.Scalar
         field_scale = float(np.percentile(values, vorticity_exposure))
         stream_scale = float(np.percentile(values, stream_exposure))
         panels.append(surface_panel(topology, points, smooth_normals, frame, mode, mode, velocity,
-                                  field_scale, stream_scale, n_mode_contours))
+                                    field_scale, stream_scale, n_mode_contours))
     return image_figure(np.concatenate(panels, axis=1))
 
 
 @charts.style()
 def draw_conservation(times: np.ndarray, inviscid_energy: core.Scalar, viscous_energy: core.Scalar,
                       inviscid_enstrophy: core.Scalar, viscous_enstrophy: core.Scalar,
-                      initial_vorticity: core.Scalar, inviscid_vorticity: core.Scalar, viscous_vorticity: core.Scalar) -> Figure:
-    """Normalized kinetic energy and enstrophy over time for inviscid and viscous flow, beside the cumulative
-    modal enstrophy distribution across the Laplace–Beltrami spectrum."""
+                      initial_vorticity: core.Scalar, inviscid_vorticity: core.Scalar,
+                      viscous_vorticity: core.Scalar) -> Figure:
+    """Two panels show normalized kinetic energy and enstrophy over time beside the cumulative modal enstrophy
+    spectrum."""
     energy_inv = inviscid_energy.to_array()
     energy_vis = viscous_energy.to_array()
     enstrophy_inv = inviscid_enstrophy.to_array()
@@ -125,14 +124,13 @@ def draw_conservation(times: np.ndarray, inviscid_energy: core.Scalar, viscous_e
     final_vis_modes = viscous_vorticity.squared().to_array() / (2 * enstrophy_inv[0])
     mode_indices = np.arange(1, len(initial_modes) + 1)
 
-    # Three quarters of the column: two sparse panels side by side, each with its own axis labels.
     figure, (history, spectrum) = charts.subplots(600, 250, ncols=2, layout="constrained")
     history.plot(times, energy_inv / energy_inv[0], color=ink_colour)
     history.plot(times, enstrophy_inv / enstrophy_inv[0], color=ink_colour, linestyle="--")
     history.plot(times, energy_vis / energy_inv[0], color=energy_colour)
     history.plot(times, enstrophy_vis / enstrophy_inv[0], color=enstrophy_colour)
     history.set(xlim=(times[0], times[-1]), ylim=(0, 1.08), xticks=[0, times[-1]], yticks=[0, 1],
-                xlabel="time", ylabel=r"relative $E(t),\, Z(t)$")
+                xlabel="time", ylabel="relative energy, enstrophy")
     plain_axes(history)
 
     spectrum.plot(mode_indices, np.cumsum(initial_modes), color="0.65", linestyle="--")
@@ -144,30 +142,32 @@ def draw_conservation(times: np.ndarray, inviscid_energy: core.Scalar, viscous_e
     return figure
 
 
-def animate_flow(topology: core.Topology, vertices: core.Point, states: Iterable[tuple[core.Scalar, core.Scalar, core.Point]],
+def animate_flow(topology: core.Topology, vertices: core.Point,
+                 states: Iterable[tuple[core.Scalar, core.Scalar, core.Point]],
                  n_pixels: int = n_flow_pixels) -> Iterator[np.ndarray]:
-    """Vorticity colours and velocity streaks use fixed scales from the initial state."""
+    """Each state renders to an RGB frame of surface vorticity and velocity streaks at fixed scales set by the initial
+    frame."""
     states = iter(states)
     first = next(states)
     field_scale = float(np.percentile(np.abs(first[0].to_array()), vorticity_exposure))
-    # The face velocities reach vertices by an area-weighted mean, then lose their normal part.
-    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)
-    patches = (sides[0] & sides[1]) / 2                                         # Patch-[faces]
-    areas = patches.norm()                                                     # Scalar+[faces]
-    corners = ~topology.incidence[2, 0].mean(axis=0)
-    dual_areas = corners * areas                                                # Scalar+[vertices]
-    normals = (corners * patches).normalized()                                  # Patch-[vertices]
-    at_vertices = core.spdiag(1 / dual_areas) * corners * core.spdiag(areas)
-    tangential = core.Point - normals.dual() * (normals & core.Point)            # (Point- <- Point-)[vertices]
-    initial_velocity = tangential(at_vertices * first[2])                       # Point-[vertices]
+    # Average face velocities onto vertices weighted by face area, then project onto each vertex's tangent plane.
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)                 # [3] Point-[F]
+    patches = (sides[0] & sides[1]) / 2                                          # Patch-[F]
+    areas = patches.norm()                                                       # Scalar+[F]
+    corners = ~topology.incidence[2, 0].mean(axis=0)                             # Scalar+[V <- F]
+    dual_areas = corners * areas                                                 # Scalar+[V]
+    normals = (corners * patches).normalized()                                   # Patch-[V]
+    at_vertices = core.spdiag(1 / dual_areas) * corners * core.spdiag(areas)     # Scalar+[V <- F]
+    tangential = core.Point - normals.dual() * (normals & core.Point)            # (Point- <- Point-)[V]
+    initial_velocity = tangential(at_vertices * first[2])                        # Point-[V]
     reference_speed = float(np.percentile(initial_velocity.norm().batch().to_array(), 95))
-    points = solids.origin + solids.context.include_from_algebra(vertices.batch())       # [vertices] Point-
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())   # [V] Point-
     frame = camera_view(points, n_pixels)
     for vorticity, stream, velocity in chain((first,), states):
-        tangent = tangential(at_vertices * velocity)                            # Point-[vertices]
-        directions = solids.context.include_from_algebra(tangent.batch())                # [vertices] Point-
+        tangent = tangential(at_vertices * velocity)                             # Point-[V]
+        directions = solids.context.include_from_algebra(tangent.batch())        # [V] Point-
         level = np.clip(vorticity.to_array() / field_scale, -1, 1)
         tone = np.where(level[:, None] >= 0, positive_colour, negative_colour)
-        weight = (np.abs(level)**0.72 * 0.88)[:, None]
+        weight = (np.abs(level) ** 0.72 * 0.88)[:, None]
         colours = surface_colour * (1 - weight) + tone * weight
         yield flow.draw(points, topology, directions, frame, colours, reference_speed)
