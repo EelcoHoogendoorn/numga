@@ -215,8 +215,9 @@ def main(arguments: list[str]) -> None:
     commit = subprocess.run(["git", "-C", str(ROOT), "describe", "--always", "--dirty", "--exclude=*"],
                             capture_output=True, text=True, check=True).stdout.strip()
     key = f"{ROOT.name} {commit} {datetime.datetime.now().isoformat(timespec='seconds')}"
-    # No window for any figure.
+    # No window for any figure, and no copy of any picture in a dump: these runs check that the notebooks run.
     os.environ["MPLBACKEND"] = "Agg"
+    os.environ.pop("NUMGA_PLOTS_DUMP", None)
     jupyter = str(Path(sys.executable).parent / "jupyter")
     jobs = [{"command": [jupyter, "execute", notebook.name], "cwd": ROOT / notebook.parent, "cores": options.cores,
              "memory": options.memory, "what": f"notebook {notebook.name} in {ROOT.name}", "key": str(notebook),
