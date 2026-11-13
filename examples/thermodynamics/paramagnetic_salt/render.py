@@ -25,9 +25,10 @@ from numga import stack
 from numga.extensor import Extensor
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.topology import Topology
-from examples.util.wgsl import contours, image_figure, simplices
-from examples.util.wgsl.camera import Camera
+from numga.topology import Topology
+from numga.render import contours, drawing, simplices
+from numga.render.camera import Camera
+from examples.util.panels import image_figure
 from examples.thermodynamics.paramagnetic_salt import core
 
 mv = core.mv
@@ -220,7 +221,7 @@ def draw_crystal(topology: Topology, vertices: Extensor, sites: np.ndarray, bath
     points = vertices.batch()                                                 # [vertices] Point-
     _, end_edges = ends(topology, points)
     camera = scene_camera()
-    return image_figure(on_white(simplices.composited([
+    return image_figure(on_white(drawing.composited([
         contours.picture(points, topology, np.zeros(topology.n_vertices), np.full(3, 0.88), camera),
         simplices.strokes(points, topology, outline_colour, edge_width, camera),
         *bars(points, end_edges, np.zeros(2, dtype=bool), tinted(np.array([bath_temperature, load_temperature])),
@@ -252,7 +253,7 @@ def animate_crystal(topology: Topology, vertices: Extensor, sites: np.ndarray, b
             temperatures = (salt_potentials & core.entropy).batch().to_array().ravel()   # [vertices]
             shares = ((core.magnet_plane & states) / moment).batch().to_array().ravel()  # [vertices]
             linked = links.batch().to_array().ravel() > 0                     # [vertices]
-            scene = on_white(simplices.composited([
+            scene = on_white(drawing.composited([
                 *gap(float(((field & core.spin) / highest_field).to_array()), washed, camera),
                 contours.picture(points, topology, unmarked, tinted(temperatures), camera),
                 simplices.strokes(points, topology.border, outline_colour, outline_width, camera),

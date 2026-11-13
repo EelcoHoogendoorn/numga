@@ -15,7 +15,7 @@ from numga import stack
 from numga.sparse import SparseExtensor
 from examples.thermodynamics.paramagnetic_salt import core
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = core.mv
 
@@ -142,7 +142,7 @@ def crystal(n_along: int = n_along, n_across: int = n_across) -> tuple[Topology,
     topology, coordinates = slab(n_along, n_across)
     vertices = (mv(core.Upright, coordinates) + mv.w).dual().field()         # Point-[vertices]
     areas, gradients = core.triangles(topology, vertices)
-    cells = ~topology.incidence[2, 0].mean(axis=0) * areas                    # Scalar+[vertices]
+    cells = topology.incidence[2, 0].mean(axis=0).adjugate() * areas         # Scalar+[vertices]
     return topology, vertices, cells, core.conduction(topology, areas, gradients, conductivity), coordinates
 
 

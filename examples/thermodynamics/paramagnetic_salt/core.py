@@ -57,7 +57,7 @@ import numpy as np
 from numga import Algebra, NumpyContext, stack, where
 from numga.sparse import SparseExtensor, spdiag
 
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 # Planar projective spacetime, its degenerate w weighing a place, and the entropy the salt holds, a direction of its
 # own with no metric.
