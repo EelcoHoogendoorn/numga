@@ -24,7 +24,7 @@ import numpy as np
 from numga import Algebra, NumpyContext, stack
 from numga.algebras import STA2D
 from numga.sparse import SparseExtensor, spdiag
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 # The spacetime of the disc's plane, space positive.
 ga = STA2D
@@ -200,7 +200,7 @@ def closed_currents(disc: Disc) -> tuple[SparseExtensor, SparseExtensor]:
     interior edge.
     """
     interior = disc.topology.interior[0]
-    embedder = ~disc.topology.reading(interior, 0) * Scalar  # Scalar+[vertices <- interior]
+    embedder = disc.topology.reading(interior, 0).adjugate() * Scalar  # Scalar+[vertices <- interior]
     edges = disc.triangle_edges.cast(Current)                              # [3] Current-[faces]
     current = (spdiag(edges / (2 * disc.triangle_areas) * Scalar) * disc.topology.incidence[2, 0]).sum(axis=0)(embedder)  # (Current- <- Scalar+)[faces <- interior]
     return embedder, current

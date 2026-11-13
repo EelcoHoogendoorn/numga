@@ -12,7 +12,7 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.relativity.terrell import core
-from examples.util.wgsl import Shader, supersampled
+from numga.wgsl import Shader, supersampled
 
 mv = core.mv
 Vector = core.ga.gatype.vector()

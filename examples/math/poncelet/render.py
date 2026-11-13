@@ -11,9 +11,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.util.animation import capture
-from examples.util.wgsl import quadrics, simplices
-from examples.util.wgsl.camera import Camera, panel
-from examples.util.wgsl.simplices import Cap, Topology
+from numga.topology import Topology
+from numga.render import Camera, Cap, drawing, quadrics, simplices
+from examples.util.panels import overlay, panel
 from examples.math.poncelet import core
 
 mv = core.mv
@@ -72,7 +72,7 @@ def draw(outer: core.Quadric, inner: core.Envelope, vertices: core.Point) -> plt
     start, the start orange and the last vertex ringed."""
     figure, panels = canvas()
     for index, (ax, planes, lines) in enumerate(panels):
-        simplices.overlay(ax, panel_pictures(planes, lines, outer, inner[index], vertices[:, index]))
+        overlay(ax, panel_pictures(planes, lines, outer, inner[index], vertices[:, index]))
     return figure
 
 
@@ -80,10 +80,10 @@ def animate(scenes: list[tuple[core.Quadric, core.Envelope, core.Point]]) -> Ite
     """One frame per scene."""
     figure, panels = canvas()
     outer, inner, vertices = scenes[0]
-    images = [simplices.overlay(ax, panel_pictures(planes, lines, outer, inner[index], vertices[:, index]))
+    images = [overlay(ax, panel_pictures(planes, lines, outer, inner[index], vertices[:, index]))
               for index, (ax, planes, lines) in enumerate(panels)]
     for outer, inner, vertices in scenes:
         for index, (image, (ax, planes, lines)) in enumerate(zip(images, panels)):
-            image.set_data(simplices.composited(panel_pictures(planes, lines, outer, inner[index], vertices[:, index])))
+            image.set_data(drawing.composited(panel_pictures(planes, lines, outer, inner[index], vertices[:, index])))
         yield capture(figure)
     plt.close(figure)

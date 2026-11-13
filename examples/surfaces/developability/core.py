@@ -40,7 +40,7 @@ from collections.abc import Iterator
 from numga import NumpyContext
 from numga.algebras import VGA3D as ga
 from numga.sparse import spdiag
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 
@@ -56,7 +56,7 @@ def spread(topology: Topology, edges: Point, angles: Scalar) -> tuple[Vector, Po
     at each vertex."""
     # Two edges meet in the face's normal.
     normals = (edges[0] & edges[1]).normalized()                                # Vector-[faces]
-    around = (~topology.incidence[2, 0] * spdiag(angles)).sum(axis=0)           # Scalar+[vertices <- faces]
+    around = (topology.incidence[2, 0].adjugate() * spdiag(angles)).sum(axis=0)  # Scalar+[vertices <- faces]
     return normals, around * (normals.dual() * (normals & Point))              # Vector-[faces], (Point- <- Point-)[vertices]
 
 
@@ -80,7 +80,7 @@ def gradient(topology: Topology, edges: Point, angles: Scalar, normals: Vector, 
     # the other's at the same rate, weighted by the difference of their squared normal components.
     tails, heads = topology.corners[2, 1]
     opening = (edges | normals) / edges.scalar_norm_squared() * (along[heads].squared() - along[tails].squared())  # [3] Vector+[faces]
-    return (~topology.incidence[2, 0] * turning + ~(topology.oriented[2, 1] * topology.d[0]) * opening).sum(axis=0)  # Vector+[vertices]
+    return (topology.incidence[2, 0].adjugate() * turning + (topology.oriented[2, 1] * topology.d[0]).adjugate() * opening).sum(axis=0)  # Vector+[vertices]
 
 
 def stiffness(topology: Topology, edges: Point, angles: Scalar) -> Scalar:
@@ -88,7 +88,7 @@ def stiffness(topology: Topology, edges: Point, angles: Scalar) -> Scalar:
     the step over the corner's height above the opposite edge, so each face around the vertex adds its
     angle there over that height squared, `(edge | edge) / double_areas**2`."""
     double_areas = (edges[0] & edges[1]).norm()                                 # Scalar+[faces]
-    return (~topology.incidence[2, 0] * (angles * edges.scalar_norm_squared() / double_areas.squared())).sum(axis=0)
+    return (topology.incidence[2, 0].adjugate() * (angles * edges.scalar_norm_squared() / double_areas.squared())).sum(axis=0)
 
 
 def flow(topology: Topology, vertices: Point, step: float) -> Iterator[tuple[Point, Scalar]]:

@@ -9,7 +9,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.surfaces.projective_loop import core
-from examples.util.wgsl import image_figure, meshes, solids
+from numga.render import meshes, solids
+from examples.util.panels import image_figure
 
 SURFACE_COLOUR = np.array([0.16, 0.5, 0.63])
 GAP_COLOUR = np.array([0.82, 0.42, 0.21])

@@ -100,7 +100,7 @@ def operators(topology: core.Topology, edges: core.Point):
     velocities = sides / (2 * areas[..., None])                                                       # [..., corners] Point-[faces]
     circulation = core.assembled(topology, (core.circulating(velocities[..., :, None]) & velocities[..., None, :])
                                  * areas[..., None, None])
-    cells = ~topology.incidence[2, 0].sum(axis=0) * (areas / 3)                                       # [...] Scalar+[vertices]
+    cells = topology.incidence[2, 0].sum(axis=0).adjugate() * (areas / 3)                             # [...] Scalar+[vertices]
     return areas, sides, gradients, outflow, circulation, cells
 
 
@@ -156,7 +156,7 @@ def dyed(swing: float):
     velocities, field = velocities / speeds, field / speeds                  # [experiments] Point-[faces], Drive+[faces]
     density = (valences * bulk * (-valences * potentials[..., None]).exp()).sum(axis=-1)   # Scalar+[vertices]
     # Each vertex's velocity, its triangles' weighed by their areas.
-    flows = (~topology.incidence[2, 0].sum(axis=0) * (velocities * (areas / 3))) / cells   # [experiments] Point-[vertices]
+    flows = (topology.incidence[2, 0].sum(axis=0).adjugate() * (velocities * (areas / 3))) / cells  # [experiments] Point-[vertices]
     # The potential each drive sets up, the applied one falling steadily along the channel and the one the liquid adds,
     # and how far it falls over the channel's length.
     along = mv.x & experiments.commutator(core.time)                         # [experiments] Scalar+
@@ -186,7 +186,7 @@ def channel_flows(n_stations: int = n_stations, n_across: int = n_across):
         np.array(wavelength), lower, upper, drives)
     viscous, joule = core.entropy_production(topology, areas, circulation, cells, viscosity, stream, field, conductivity)
     # Each vertex's velocity, its triangles' weighed by their areas.
-    speeds = (~topology.incidence[2, 0].sum(axis=0) * (velocities * (areas / 3))) / cells             # [channels] Point-[vertices]
+    speeds = (topology.incidence[2, 0].sum(axis=0).adjugate() * (velocities * (areas / 3))) / cells   # [channels] Point-[vertices]
     osmotic, electric = core.equilibrium_pushes(topology, areas, gradients, cells, potentials[0], valences, bulk)
     # The potential the battery sets up, its steady fall along the channel and what the liquid adds, and its fall over
     # a wavelength.

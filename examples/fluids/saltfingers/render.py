@@ -15,12 +15,12 @@ from matplotlib import colormaps
 from matplotlib.figure import Figure
 
 from numga.extensor import Extensor
-from examples.util.wgsl import contours, image_figure, simplices
-from examples.util.wgsl.camera import Camera
+from numga.topology import Topology
+from numga.render import Camera, contours, drawing, simplices
+from examples.util.panels import image_figure
 from examples.fluids.saltfingers import core
 
 mv = core.mv
-Topology = simplices.Topology
 temperature_map, salinity_map = colormaps["RdBu_r"], colormaps["BrBG_r"]
 # The tank's picture: pixels across, the room around it in depths, the rows between the two fields, and the walls'
 # width; the share of each colour map the fields span, short of its darkest ends, and the bands each field is drawn in,
@@ -59,7 +59,7 @@ def field(topology: Topology, points: Extensor, camera: Camera, values: np.ndarr
     spacing = 1 / (n_bands - 1)
     middles = np.linspace(-0.5, 0.5, n_bands)
     bands = contours.Bands(-0.5 - spacing / 2, spacing, colour_map(0.5 + span * middles))
-    return on_white(simplices.composited([contours.picture(points, topology, values, np.ones(3), camera, bands=(bands,)),
+    return on_white(drawing.composited([contours.picture(points, topology, values, np.ones(3), camera, bands=(bands,)),
                                           walls]))
 
 

@@ -7,8 +7,8 @@ from collections.abc import Iterator
 import numpy as np
 
 from numga import concatenate, stack
-from numga.sparse import SparseExtensor
-from examples.math.isospectral_drums.core import Point, Scalar, context, mv, tile_mixing
+from numga.sparse import Sparse, SparseExtensor
+from examples.math.isospectral_drums.core import Point, Scalar, mv, tile_mixing
 from examples.math.isospectral_drums.numerics import Topology, drum, triangle
 
 n_lattice = 4
@@ -100,7 +100,7 @@ def main() -> None:
     n_tiles = len(source_indices)
     n_samples = source_restriction.shape[0] // n_tiles
     tile_indices = np.arange(n_tiles * n_samples).reshape(n_tiles, n_samples)
-    read_tile = SparseExtensor.selection(context, tile_indices, n_tiles * n_samples) * Scalar  # [tiles] (Scalar+ <- Scalar+)[samples <- tile samples]
+    read_tile = Sparse.selection(tile_indices, n_tiles * n_samples) * Scalar  # [tiles] (Scalar+ <- Scalar+)[samples <- tile samples]
     source_pieces = read_tile(source_restriction(modes[mixed_modes[-1]] * mix_amplitudes[-1]))   # [tiles] Scalar+[samples]
     contributions = source_pieces[contributors[target_tile]] * signs[target_tile]  # [terms] Scalar+[samples]
     pieces = concatenate((contributions, contributions.sum(axis=0)[None]), axis=0)  # [terms + 1] Scalar+[samples]

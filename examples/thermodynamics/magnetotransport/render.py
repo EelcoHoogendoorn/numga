@@ -32,11 +32,11 @@ from matplotlib.ticker import MultipleLocator
 from numga import concatenate, stack
 from numga.extensor import Extensor
 from examples.util import charts
-from examples.util.wgsl import contours, flow, image_figure, simplices
-from examples.util.wgsl.camera import Camera, offset_panel
+from numga.topology import Topology
+from numga.render import Camera, contours, drawing, flow, simplices
+from examples.util.panels import image_figure, offset_panel, overlay
 from examples.thermodynamics.magnetotransport import core
 
-Topology = simplices.Topology
 mv = core.mv
 State = tuple[np.ndarray, core.Potential, core.Spatial, core.Potential, core.Spatial]
 # A frame: the magnetic field, and the bar's state and the ring's in it; and one drive's part of a state, the densities
@@ -244,11 +244,11 @@ def side_by_side(bar_topology: Topology, bar_vertices: core.Point, bar_contacts:
         for view, (reach, spacing, reference_speed), (densities, potentials, velocities) in zip(views, scales, driven):
             topology, vertices, contacts, camera, streak_length = view
             shares = densities / densities.max()
-            pictures.append(on_white(simplices.composited(
+            pictures.append(on_white(drawing.composited(
                 layers(topology, vertices, contacts, potentials, velocities, shares, reach, spacing, reference_speed,
                        streak_length, camera))))
         bar, ring = pictures
-        patch = on_white(simplices.composited(field_patch(core.entropy, magnetic, reference, patch_reach,
+        patch = on_white(drawing.composited(field_patch(core.entropy, magnetic, reference, patch_reach,
                                                           patch_camera)))
         yield row([bar, patch, ring])
 
@@ -264,7 +264,7 @@ def draw_conductors(bar_topology: Topology, bar_vertices: core.Point, bar_contac
                                                      (ring_topology, ring_vertices, ring_contacts, ring_resolution)):
         camera = framing(vertices, mv.x, mv.y, resolution)
         fill = contours.picture(vertices.batch(), topology, np.zeros(topology.n_vertices), rest_colour, camera)
-        pictures.append(on_white(simplices.composited([fill, *outline(topology, vertices, contacts, camera)])))
+        pictures.append(on_white(drawing.composited([fill, *outline(topology, vertices, contacts, camera)])))
     bar, ring = pictures
     return image_figure(row([bar, np.full((1, gap, 3), 255, dtype=np.uint8), ring]))
 
@@ -324,7 +324,7 @@ def draw_turns(drive: core.Drive, fluxes: core.Flux) -> Figure:
     for ax, planes in zip(axes, ((mv.xt, mv.yt), (mv.xs, mv.ys))):
         field_view = offset_panel(ax, core.axis & core.time, core.across & core.time)
         flux_view = offset_panel(ax, *planes)
-        simplices.overlay(ax, [
+        overlay(ax, [
             simplices.strokes(stack((0 * drive, drive)), Topology.chains([2]), electric_colour, arrow_width,
                               field_view, chevrons=np.ones(1), chevron=arrow_chevron),
             simplices.strokes(fluxes, Topology.chains([2]), np.zeros(3), charts.LINE_PX, flux_view, dashes=sweep_dots,

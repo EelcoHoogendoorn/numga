@@ -11,8 +11,10 @@ from matplotlib.colors import to_rgb
 
 from examples.math.invariant_decomposition import core
 from examples.util.animation import capture
-from examples.util.wgsl import compose, fitted, show, simplices, solids
-from examples.util.wgsl.camera import Camera, offset_panel
+from numga.render.drawing import compose
+from numga.topology import Topology
+from numga.render import Camera, drawing, simplices, solids
+from examples.util.panels import fitted, offset_panel, overlay, show
 
 # The planes that read a point along a direction of space.
 Vector = core.ga.gatype.vector()                                               # Vector+
@@ -45,9 +47,9 @@ def plane_axes(circles: core.Antivector, parts: core.Bivector) -> tuple[Vector, 
 
 def plane_image(circle: core.Antivector, colour: np.ndarray, index: int, camera: Camera) -> np.ndarray:
     """A plane's circle, grey, its trace up to one moment in the plane's colour, and the point at that moment."""
-    return simplices.composited([
-        simplices.strokes(circle, simplices.Topology.chains([len(circle)]), orbit_colour, circle_width, camera),
-        simplices.strokes(circle[:index + 1], simplices.Topology.chains([index + 1]), colour, trace_width, camera),
+    return drawing.composited([
+        simplices.strokes(circle, Topology.chains([len(circle)]), orbit_colour, circle_width, camera),
+        simplices.strokes(circle[:index + 1], Topology.chains([index + 1]), colour, trace_width, camera),
         simplices.markers(circle[index][None], colour, point_radius, camera)])
 
 
@@ -57,7 +59,7 @@ def tangle_image(places: solids.Point, index: int, view: solids.View) -> np.ndar
     # Each segment runs from one time of the orbit to the next: purple up to the moment, grey after it.
     passed = np.arange(1, len(places)) <= index                                # [times - 1]
     colours = np.where(passed[:, None], trail_colour, orbit_colour)            # [times - 1, 3]
-    tube = simplices.tubes(places, simplices.Topology.chains([len(places)]), colours, 2 * tube_radius, view,
+    tube = simplices.tubes(places, Topology.chains([len(places)]), colours, 2 * tube_radius, view,
                            gloss=solids.gloss)
     orbit = solids.layer([], view, inks=[], translucent=[], meshes=[(tube, 1.0)])
     moment = solids.layer([(solids.ball(places[index], marker_radius * view.pixel)[None, None], trail_colour)], view,
@@ -90,7 +92,7 @@ def layout(points: core.Antivector, circles: core.Antivector, parts: core.Bivect
         ax.set_axis_off()
         # The plane's camera reads the circle by the planes along its two directions.
         cameras.append(offset_panel(ax, across[plane], along[plane]))
-        images.append(simplices.overlay(ax, [plane_image(circles[plane], colour, index, cameras[plane])]))
+        images.append(overlay(ax, [plane_image(circles[plane], colour, index, cameras[plane])]))
 
     def move(moment: int) -> None:
         shown.set_data(tangle_image(places, moment, view))

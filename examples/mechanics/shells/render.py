@@ -10,7 +10,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.mechanics.shells import core
-from examples.util.wgsl import meshes, show_pixels, solids
+from numga.render import meshes, solids
+from examples.util.panels import show_pixels
 
 # The sheet's colour and its slight sheen, the view, elevation and azimuth in radians, azimuth zero looking along
 # +y, the margin around a sheet, the room an animation's view leaves around the sheet's first shape for it to spread

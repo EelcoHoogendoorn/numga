@@ -11,7 +11,7 @@ from numga import NumpyContext, stack
 from numga.algebras import VGA2D as ga
 from numga.sparse import spdiag
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 from examples.surfaces.whitney_forms.core import SpacePoint, space_mv
 
 mv = NumpyContext(ga).multivector
@@ -163,7 +163,7 @@ def main() -> None:
     abscissa = (mv.x & vertices).batch()                                     # [vertices] Scalar+
     electrodes = boundary[abscissa[boundary].norm() > electrode_threshold]
     pinned = topology.reading(electrodes, 0)
-    prescribed = ~pinned * (pinned * (mv.x & vertices))                      # Scalar+[vertices]
+    prescribed = pinned.adjugate() * (pinned * (mv.x & vertices))            # Scalar+[vertices]
     potential, current, streamfunction = conduction(
         operators, conductivity, electrodes, prescribed,
     )
@@ -247,7 +247,7 @@ def main() -> None:
     assert (obtuse_edge_conductance(shared_cochain) & shared_cochain).sites.sum() > 0
 
     free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
-    free = ~topology.reading(free_vertices, 0) * Scalar
+    free = topology.reading(free_vertices, 0).adjugate() * Scalar
     np.testing.assert_allclose(free.adjugate()(conductance(potential)).kernel, 0.0, atol=1e-11)
 
 

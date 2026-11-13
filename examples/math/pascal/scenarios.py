@@ -11,7 +11,7 @@ import numpy as np
 
 from numga import stack
 from examples.math.pascal import core
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 # The ellipsoid the five points lie on: its semi-axes along x and y, and its centre.
 semi_axes = np.array([1.6, 1.0])

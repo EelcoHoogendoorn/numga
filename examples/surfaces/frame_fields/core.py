@@ -12,7 +12,7 @@ import numpy as np
 from numga import NumpyContext
 from numga.algebras import VGA3D as ga
 from numga.sparse import SparseExtensor, spdiag
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
@@ -105,7 +105,7 @@ def rotor_laplacian_operators(
     tails, heads = topology.corners[2, 1]
     dots = -sides[tails].dot(sides[heads])                                   # [corners] Scalar+[faces]
     cotangents = dots / (2 * areas)                                          # [corners] Scalar+[faces]
-    edge_weights = (~topology.incidence[2, 1] * (cotangents / 2)).sum(axis=0)  # Scalar+[edges]
+    edge_weights = (topology.incidence[2, 1].adjugate() * (cotangents / 2)).sum(axis=0)  # Scalar+[edges]
     rotor_d0 = topology.d[0] * Rotor                                         # (Even+ <- Even+)[edges <- vertices]
     rotor_laplacian = rotor_d0.adjoint()(spdiag(edge_weights) * rotor_d0)    # (Even+ <- Even+)[vertices <- vertices]
     return rotor_d0, rotor_laplacian, edge_weights, areas, sides
@@ -117,8 +117,8 @@ def harmonic_rotor_frames(
     """Pinned boundary rotors determine a linear harmonic chord field in the 4D even subalgebra, and its normalized unit rotor field."""
     _, rotor_laplacian, _, _, _ = rotor_laplacian_operators(topology, vertices)
     free_vertices = topology.interior[0]
-    free = ~topology.reading(free_vertices, 0) * Rotor                       # (Even+ <- Even+)[vertices <- free]
-    pinned = ~topology.reading(boundary, 0) * Rotor                          # (Even+ <- Even+)[vertices <- boundary]
+    free = topology.reading(free_vertices, 0).adjugate() * Rotor             # (Even+ <- Even+)[vertices <- free]
+    pinned = topology.reading(boundary, 0).adjugate() * Rotor                # (Even+ <- Even+)[vertices <- boundary]
 
     # The chord field minimizes edge energy in the even subalgebra.
     # Normalization gives unit frames, changing the variational problem in the process.
@@ -136,7 +136,7 @@ def relax_rotor_frames(
     """Projected cotangent steps smooth a frame field with fixed boundary frames and unit rotors at every vertex."""
     rotor_d0, rotor_laplacian, edge_weights, _, _ = rotor_laplacian_operators(topology, vertices)
     free_vertices = topology.interior[0]
-    free = ~topology.reading(free_vertices, 0) * Rotor                       # (Even+ <- Even+)[vertices <- free]
+    free = topology.reading(free_vertices, 0).adjugate() * Rotor             # (Even+ <- Even+)[vertices <- free]
     current = initial_rotors                                                 # Rotor+[vertices]
     for _ in range(n_steps + 1):
         edge_differences = rotor_d0(current)                                 # Even+[edges]

@@ -16,8 +16,8 @@ from numga import Algebra, NumpyContext, stack
 from numga.algebras import STA
 
 from examples.relativity.gravitational_waves import core, render, scenarios
-from examples.util.topology import Topology
-from examples.util.wgsl import Shader, sampled
+from numga.topology import Topology
+from numga.wgsl import Shader, sampled
 
 # The spacetime algebra at the eye, in which the camera's sightlines are boosted.
 spacetime = NumpyContext(STA).multivector

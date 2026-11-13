@@ -19,12 +19,11 @@ from matplotlib.figure import Figure
 from numga import concatenate
 from numga.extensor import Extensor
 from examples.util.charts import style, subplots
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera
+from numga.topology import Topology
+from numga.render import Camera, contours, drawing, simplices
 from examples.electromagnetism.josephson import core
 
 mv = core.mv
-Topology = simplices.Topology
 current_map = colormaps["RdBu_r"]
 measured_colour, lorentz_colour = np.array(to_rgb("#1d4ed8")), np.array(to_rgb("#c2410c"))
 # A junction's picture: the pixels across its longer side; the share of the colour map used at full current.
@@ -60,7 +59,7 @@ def animate(topology: Topology, vertices: Extensor, currents: Iterable[Extensor]
     for current in currents:
         values = np.asarray(current.batch().kernel)[..., 0]
         colours = current_map(0.5 + current_share * np.clip(values, -1, 1) / 2)[:, :3]
-        yield on_white(simplices.composited([contours.picture(points, topology, values, colours, camera)]))
+        yield on_white(drawing.composited([contours.picture(points, topology, values, colours, camera)]))
 
 
 @style()
@@ -95,5 +94,5 @@ def animate_pendula(pivots: Extensor, frames: Iterable[Extensor]) -> Iterator[np
         tips = pivots + pendulum_length * phases.dual()                       # [pendula] Point-
         currents = np.asarray((mv.a ^ phases).kernel)[..., 0]
         colours = 0.15 + 0.85 * current_map(0.5 + current_share * np.clip(currents, -1, 1) / 2)[:, :3]
-        yield on_white(simplices.composited([
+        yield on_white(drawing.composited([
             simplices.strokes(concatenate([pivots, tips]), rods, colours * 0.85, pendulum_width, camera), axis]))

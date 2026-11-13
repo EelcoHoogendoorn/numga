@@ -26,7 +26,7 @@ from scipy.spatial import cKDTree
 from numga import Algebra, concatenate, stack
 from numga.backend.context import Context
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 # Supplied by examples.instantiate: the algebra of the space around the sphere, three or four dimensions, every
 # generator squaring to one.
@@ -105,7 +105,7 @@ def optimal_delaunay_step(mesh: Topology, points: Point, turns: Rotor, anchors: 
     # Each simplex's share of the whole, the join of its corners over the sum of all of them.
     cones = reduce(and_, mesh.incidence[-1, 0] * points)                        # Scalar-[simplices]
     shares = cones / cones.sites.sum()                                          # Scalar+[simplices]
-    averages = (~mesh.incidence[-1, 0] * (shares * poles)).sum(axis=0).normalized()   # Point-[points]
+    averages = (mesh.incidence[-1, 0].adjugate() * (shares * poles)).sum(axis=0).normalized()  # Point-[points]
     # The seeds themselves, the first of each of their orbits.
     seed_sites = anchors.shape[0] + turns.shape[0] * np.arange(seeds.shape[0])  # [seeds]
     seed_averages = (mesh.reading(seed_sites, 0) * averages).batch()            # [seeds] Point-
@@ -136,7 +136,7 @@ def facet_cosines(mesh: Topology, points: Point) -> Scalar:
 def valences(mesh: Topology) -> Scalar:
     """How many simplices meet at each point, `Scalar+[points]`: one for each simplex, summed back to its corners."""
     simplices = mv.scalar(np.ones((mesh.n_elements[-1], 1))).field()            # Scalar+[simplices]
-    return (~mesh.incidence[-1, 0] * simplices).sum(axis=0)
+    return (mesh.incidence[-1, 0].adjugate() * simplices).sum(axis=0)
 
 
 # --- plumbing -------------------------------------------------------------------------

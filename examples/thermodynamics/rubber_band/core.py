@@ -40,7 +40,7 @@ from numga import Algebra, NumpyContext, stack
 from numga.extensor import Extensor
 from numga.sparse import SparseExtensor, spdiag
 
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 # The plane, and the entropy the band holds, a direction of its own with no metric.
 space = Algebra("x+y+")
@@ -124,10 +124,10 @@ def band(topology: Topology, rest: Point, held: np.ndarray, material: Elastic, s
     corner_mean = corners.mean(axis=0)                                        # Scalar+[faces <- vertices]
     free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), held), 0)
     # Each corner's hat owns a third of its triangle: its cell and its mass.
-    cells = ~corner_mean * areas                                              # Scalar+[vertices]
-    masses = ~corner_mean * (densities * areas)                               # Scalar+[vertices]
+    cells = corner_mean.adjugate() * areas                                    # Scalar+[vertices]
+    masses = corner_mean.adjugate() * (densities * areas)                     # Scalar+[vertices]
     pull = -gravity * mv.y                                                    # [] Plane+
-    hand = hand_pull * (~corner_mean * (weighting * densities * areas)) * pull   # Force+[vertices]
+    hand = hand_pull * (corner_mean.adjugate() * (weighting * densities * areas)) * pull  # Force+[vertices]
     # The work form bound to each triangle's test and trial corner gradients: a form on the corners' displacements, as
     # a map to the forces on them, over the triangle's area.
     bound = gradients.batch()                                                 # [corners, faces] Plane+
@@ -137,8 +137,8 @@ def band(topology: Topology, rest: Point, held: np.ndarray, material: Elastic, s
     # entropy, over the triangle, gathered onto the vertices.
     drives = -(gradients ^ mv.s)                                              # [corners] Drive+[faces]
     local = areas * (mv.s & (gradients[:, None] ^ spreading(drives[None, :])))   # [corners, corners] Scalar+[faces]
-    conduction = conductivity * (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)
-    return Band(corners, corner_mean, rest, ~free * free, masses, cells, areas, elastic, conduction, heat_capacity,
+    conduction = conductivity * (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)
+    return Band(corners, corner_mean, rest, free.adjugate() * free, masses, cells, areas, elastic, conduction, heat_capacity,
                 cooling, room_temperature, pull, drag, hand)
 
 
@@ -160,8 +160,8 @@ def potentials(band: Band, points: Point) -> Plane:
     densities = band.corner_mean * (held / band.cells)                        # Scalar+[faces]
     warmth = ((densities + stretch / (band.areas * band.room_temperature)) / band.heat_capacity).exp()   # Scalar+[faces]
     # Each vertex's temperature, its triangles' around it by their areas, its cell's share, and the forces on it.
-    temperatures = band.room_temperature * (~band.corner_mean * (band.areas * warmth)) / band.cells   # Scalar+[vertices]
-    forces = (~band.corners * (warmth * springs)).sum(axis=0)                 # Force+[vertices]
+    temperatures = band.room_temperature * (band.corner_mean.adjugate() * (band.areas * warmth)) / band.cells  # Scalar+[vertices]
+    forces = (band.corners.adjugate() * (warmth * springs)).sum(axis=0)       # Force+[vertices]
     return temperatures * mv.s - forces
 
 

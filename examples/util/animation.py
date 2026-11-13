@@ -1,7 +1,8 @@
 """Figure and animation output shared by the examples: the one place they write files.
 
-Figures and animations go to PLOT_DIR under a new, incrementing name, so a run never
-overwrites an earlier result. Each save prints the path it wrote and returns it.
+Figures and animations go to PLOT_DIR under their own names, each over the one of that name before it, so that the
+folder holds the latest of every picture; each is copied as well into the dumps, DUMP_DIRS, under a new numbered name,
+where a session of development keeps the record of its work. Each save prints the path it wrote and returns it.
 
 The pictures the repository tracks, for its README and its docs, are made by `pin_figure` and `pin_animation` alone:
 each saves as the others do and copies the result over the checkout's own `plots/<name>`, under its fixed name. Every
@@ -30,7 +31,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
 
-from examples import PINNED_DIR, PLOT_DIR, auto_increment_path
+from examples import DUMP_DIRS, PINNED_DIR, PLOT_DIR, auto_increment_path
 from examples.util.charts import DESIGN_WIDTH
 
 # How a figure is cropped to what it draws, saved and shown alike.
@@ -150,12 +151,21 @@ def save_gif(frames: Iterable[np.ndarray], path: str, duration_ms: int, colors: 
     return path
 
 
-def save_figure(figure: plt.Figure, name: str) -> Path:
-    """Save a figure as PLOT_DIR/<name>.png, or the next free <name>_NN.png."""
-    path = auto_increment_path(PLOT_DIR / f"{name}.png")
-    figure.savefig(path, **CROP)
+def kept(path: Path) -> Path:
+    """A picture just written, copied into each dump under a new numbered name, `<name>_NN` after the first; the
+    picture's own path."""
+    for dump in DUMP_DIRS:
+        dump.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, auto_increment_path(dump / path.name))
     print(f"Saved {path}")
     return path
+
+
+def save_figure(figure: plt.Figure, name: str) -> Path:
+    """Save a figure as PLOT_DIR/<name>.png, over the one before, with a numbered copy in each dump."""
+    path = PLOT_DIR / f"{name}.png"
+    figure.savefig(path, **CROP)
+    return kept(path)
 
 
 def pin_figure(figure: plt.Figure, name: str) -> Path:
@@ -181,16 +191,15 @@ def forward_and_back(frames: list) -> list:
 
 def save_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, colors: int = 256,
                    forward_then_back: bool = False, stepped: bool = False) -> Path:
-    """Save RGB frames as PLOT_DIR/<name>.gif, or the next free <name>_NN.gif, in a palette of `colors`, at their own
-    pixels; with `forward_then_back`, looping forward and then back. A smooth process is shown at
+    """Save RGB frames as PLOT_DIR/<name>.gif, over the one before, with a numbered copy in each dump, in a palette of
+    `colors`, at their own pixels; with `forward_then_back`, looping forward and then back. A smooth process is shown at
     SMOOTH_DURATION_MS a frame; `stepped` declares the frames a sequence of discrete steps (solver iterations, edge
     collapses, accumulating measurements), which may each be shown longer."""
     check_frame_duration(duration_ms, stepped)
-    path = auto_increment_path(PLOT_DIR / f"{name}.gif")
+    path = PLOT_DIR / f"{name}.gif"
     frames = list(frames)
     save_gif(forward_and_back(frames) if forward_then_back else frames, str(path), duration_ms, colors)
-    print(f"Saved {path}")
-    return path
+    return kept(path)
 
 
 def pin_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, colors: int = 256,
@@ -206,8 +215,8 @@ def pin_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, col
 def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, n_frames: int = 0,
                    forward_then_back: bool = False, stepped: bool = False) -> None:
     """Show RGB frames in a notebook as they come, each in place of the one before with how many have come, then the
-    whole animation looping, as the GIF it is saved as: PLOT_DIR/<name>.gif, or the next free <name>_NN.gif, as
-    `save_animation` writes it, at their own pixels. The count under each frame says how many are
+    whole animation looping, as the GIF it is saved as: PLOT_DIR/<name>.gif, as `save_animation` writes it, at their
+    own pixels. The count under each frame says how many are
     expected where `n_frames` is given. With `forward_then_back`, the loop plays the frames forward and then back.
     A smooth process is shown at SMOOTH_DURATION_MS a frame; `stepped` declares the frames a sequence of discrete
     steps, which may each be shown longer."""
@@ -234,10 +243,9 @@ def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, n_
         shown.update(embedded(images[-1], "PNG", count, compress_level=1))
     if forward_then_back:
         images = forward_and_back(images)
-    path = auto_increment_path(PLOT_DIR / f"{name}.gif")
+    path = PLOT_DIR / f"{name}.gif"
     save_gif([np.asarray(image) for image in images], str(path), duration_ms, 256)
-    shown.update(HTML(scaled_image(path.read_bytes(), "gif", images[0].width)))
-    print(f"Saved {path}")
+    shown.update(HTML(scaled_image(kept(path).read_bytes(), "gif", images[0].width)))
 
 
 def show_states(states: Iterable, animate: Callable[..., Iterable[np.ndarray]], *arguments, name: str, duration_ms: int,

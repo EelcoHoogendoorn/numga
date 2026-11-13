@@ -9,7 +9,7 @@ import numpy as np
 from numga import NumpyContext, stack
 from numga.algebras import VGA2D as ga
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Even = ga.gatype.even()                                                      # Even+

@@ -23,7 +23,7 @@ from numga import Algebra
 from numga.algebras import STA as ga
 from numga.backend.jax import JaxContext, derivative
 from numga.sparse import SparseExtensor
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = JaxContext(ga).multivector
 Scalar = ga.gatype.scalar()                                # Scalar+

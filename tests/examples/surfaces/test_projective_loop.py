@@ -27,5 +27,5 @@ def test_a_loop_step_keeps_unit_weights_and_splits_every_face_in_four():
     assert topology.n_elements[2] == 4 * len(scenarios.FACES)
     # Every edge of the refined mesh lies between two of its faces, once in each direction.
     face_ones = core.mv.scalar(np.ones((topology.n_elements[2], 1))).field()
-    np.testing.assert_array_equal((~topology.incidence[2, 1].sum(axis=0) * face_ones).to_array(), 2)
-    np.testing.assert_array_equal((~topology.d[1] * face_ones).to_array(), 0)
+    np.testing.assert_array_equal((topology.incidence[2, 1].sum(axis=0).adjugate() * face_ones).to_array(), 2)
+    np.testing.assert_array_equal((topology.d[1].adjugate() * face_ones).to_array(), 0)

@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quadrics.conformal_elliptical.core import Plane, Point, mv
-from examples.util.wgsl import image_figure
+from examples.util.panels import image_figure
 
 # Samples across the hemisphere, `samples_per_side` by `samples_per_side` of them averaged into each pixel of the
 # picture.

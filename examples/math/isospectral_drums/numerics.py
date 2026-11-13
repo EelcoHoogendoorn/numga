@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from numga.sparse import SparseExtensor, spdiag
-from examples.util.topology import Topology
+from numga.topology import Topology
 from examples.math.isospectral_drums.core import Point, Scalar, mv
 
 
@@ -70,13 +70,13 @@ def drum(tile_vertices: np.ndarray, n_lattice: int, n_subdivisions: int) -> tupl
     topology = Topology(n_vertices, faces)
     interior = topology.interior[0]
     read_interior = topology.reading(interior, 0)                          # Scalar+[interior <- vertices]
-    lift = ~read_interior * Scalar                                         # (Scalar+ <- Scalar+)[vertices <- interior]
+    lift = read_interior.adjugate() * Scalar                               # (Scalar+ <- Scalar+)[vertices <- interior]
 
     # Each tile's samples read the field at their vertices, zero on the fixed boundary; welding the tiles back
     # averages the samples on each interior vertex, as many as the tiles meeting there.
-    restriction = topology.reading(tile_nodes.reshape(-1), 0) * ~read_interior  # Scalar+[tile samples <- interior]
-    multiplicity = ~restriction * mv.scalar(np.ones((restriction.shape[0], 1))).field()   # Scalar+[interior]
-    assembly = spdiag(multiplicity.inverse()) * ~restriction * Scalar      # (Scalar+ <- Scalar+)[interior <- tile samples]
+    restriction = topology.reading(tile_nodes.reshape(-1), 0) * read_interior.adjugate()  # Scalar+[tile samples <- interior]
+    multiplicity = restriction.adjugate() * mv.scalar(np.ones((restriction.shape[0], 1))).field()  # Scalar+[interior]
+    assembly = spdiag(multiplicity.inverse()) * restriction.adjugate() * Scalar  # (Scalar+ <- Scalar+)[interior <- tile samples]
     restriction = restriction * Scalar                                     # (Scalar+ <- Scalar+)[tile samples <- interior]
 
     # Lattice neighbours are one step along a row or a column: every edge of the triangulation but the squares'
@@ -84,6 +84,6 @@ def drum(tile_vertices: np.ndarray, n_lattice: int, n_subdivisions: int) -> tupl
     # sites they couple both ways.
     diagonals = topology.boundary_indices[1][np.arange(len(faces)), right_corners]
     lattice = topology.subset(np.setdiff1d(np.arange(topology.n_elements[1]), diagonals), 1)
-    tails, heads = (ends * ~read_interior for ends in lattice.incidence[1, 0])   # Scalar+[steps <- interior], Scalar+[steps <- interior]
-    neighbors = (~tails * heads + ~heads * tails) * Scalar                 # (Scalar+ <- Scalar+)[interior <- interior]
+    tails, heads = (ends * read_interior.adjugate() for ends in lattice.incidence[1, 0])  # Scalar+[steps <- interior], Scalar+[steps <- interior]
+    neighbors = (tails.adjugate() * heads + heads.adjugate() * tails) * Scalar  # (Scalar+ <- Scalar+)[interior <- interior]
     return vertices, topology, neighbors, restriction, assembly, lift
