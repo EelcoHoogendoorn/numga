@@ -26,7 +26,7 @@ def ramp(topology: core.Topology, vertices: core.Point, high: np.ndarray, low: n
 
 def test_each_kind_turns_by_its_own_rotor():
     magnetic = scenarios.strength * mv.xy                                     # [] Bivector+
-    hall = 1 - scenarios.valences * scenarios.mobilities * magnetic          # [kinds] Even+
+    hall = 1 - scenarios.valences * scenarios.mobilities * magnetic          # [kinds] Rotor+
     # Each kind's Hall angle, the angle of its rotor, is the angle whose tangent is the mobility times the field, the
     # electrons' and the holes' opposite.
     angles = hall.normalized().log().scalar_product(~mv.xy).to_array()      # [kinds]

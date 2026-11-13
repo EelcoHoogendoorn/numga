@@ -180,9 +180,11 @@ def face_corners(topology: Topology, vertices: core.Point) -> tuple[core.Point, 
 
 
 def speeds(velocities: core.Spatial) -> np.ndarray:
-    """The speed of each kind of carrier in each triangle `[kinds, faces]`, from its velocity `[kinds] Spatial-[faces]`
-    read along and across."""
-    return np.hypot(readings(mv.x, velocities), readings(mv.y, velocities))
+    """The speed of each kind of carrier in each triangle `[kinds, faces]`, the size of its velocity `[kinds]
+    Spatial-[faces]`, a direction through the space the camera's planes read."""
+    # A direction through space is measured through its dual, a vector of space: its antinorm.
+    sizes = velocities.batch().antinorm()                                     # [kinds, faces] Scalar+
+    return sizes.to_array()
 
 
 def voltage(potentials: core.Potential, contacts: tuple[np.ndarray, np.ndarray]) -> float:

@@ -137,7 +137,7 @@ def drifts(magnetic: Magnetic, valences: np.ndarray, entropies_per_charge: np.nd
     # plus a bivector, a rotor scaled by the secant of the Hall angle, times the velocity is the mobility times the push.
     # Scattering by the carrier's spin turns its drift too, in the spins' plane, by the tangent its skew gives,
     # whatever its mobility: a plane of its own for each kind, beside the field.
-    hall = 1 - valences * mobilities * magnetic[..., None] - skews * spin_plane   # [..., kinds] Even+
+    hall = 1 - valences * mobilities * magnetic[..., None] - skews * spin_plane   # [..., kinds] Rotor+
     return hall.inverse() * (mobilities * push)
 
 
