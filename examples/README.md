@@ -160,6 +160,7 @@
 - [Moving charges](electromagnetism/moving_charge/) — Derivatives of a moving charge's potential determine its electromagnetic field.
 - [Fresnel wave surfaces](electromagnetism/fresnel/) — A crystal's constitutive map determines the directions and speeds of light propagation.
 - [Induced dipoles](electromagnetism/induced_dipoles/) — Atoms polarize in response to an applied field and to one another's dipoles.
+- [Induced surface charge](electromagnetism/induced_charge/) — Finite conductivity moves charge towards the surfaces of oppositely charged conductors; each keeps its initial total as the applied field turns.
 - [Electrostriction](electromagnetism/electrostriction/) — An elastic lattice deforms while its induced dipoles reach electrical and mechanical equilibrium.
 - [Eddy-current braking](electromagnetism/eddy_brake/) — Directional conductivity determines currents and braking torque in a rotating disc.
 - [The Meissner effect](electromagnetism/superconductor/) — A superconductor's canonical momentum is the spacetime gradient of one phase, so its exterior derivative vanishes: London's two equations in one, which expel a field from a rod cooled in it where a perfect conductor freezes the field in, and integrate around a ring to whole flux quanta.
