@@ -17,12 +17,12 @@ from matplotlib.colors import LinearSegmentedColormap, to_rgb
 from matplotlib.figure import Figure
 
 from numga.extensor import Extensor
+from numga.render import Camera, contours, drawing, simplices
+from numga.topology import Topology
 from examples.util import charts
-from examples.util.wgsl import contours, image_figure, simplices
-from examples.util.wgsl.camera import Camera
+from examples.util.panels import image_figure
 from examples.thermodynamics.thermocouple import core
 
-Topology = simplices.Topology
 mv = core.mv
 # The hairpin's colours, from cooler than equilibrium through its grey to warmer, by orange to red; its outline's
 # colour and width, its feet's colour and width and its junction's width, in pixels.
@@ -79,8 +79,8 @@ def outline(topology: Topology, vertices: core.Point, metals: np.ndarray, contac
     on_contacts = np.isin(topology.elements[1], np.concatenate(contacts)).all(axis=-1)   # [edges]
     # An edge lies on the junction where it bounds a triangle of each metal: of its two triangles, one is of the
     # second metal.
-    second = mv.scalar(np.stack([metals, np.ones_like(metals)])[..., None]).field()   # [2] Scalar+[faces]
-    of_second, bounded = (~topology.incidence[2, 1] * second[:, None]).sum(axis=1).batch().to_array()   # [edges] each
+    second = np.stack([metals, np.ones_like(metals)])                          # [2, faces]
+    of_second, bounded = topology.incidence[2, 1].adjugate()(second[:, None]).sum(axis=1)   # [edges] each
     on_junction = (of_second == 1) & (bounded == 2)                           # [edges]
     return [simplices.strokes(points, topology.border, outline_colour, outline_width, camera),
             simplices.strokes(points, topology.subset(on_junction, 1), outline_colour, junction_width, camera),
@@ -110,7 +110,7 @@ def draw_hairpin(topology: Topology, vertices: core.Point, metals: np.ndarray, c
     at this resolution in pixels to a width."""
     camera = framing(vertices, resolution)
     fill = contours.picture(vertices.batch(), topology, np.zeros(topology.n_vertices), rest_colour, camera)
-    return image_figure(on_white(simplices.composited([fill, *outline(topology, vertices, metals, contacts, camera)])))
+    return image_figure(on_white(drawing.composited([fill, *outline(topology, vertices, metals, contacts, camera)])))
 
 
 def animate(topology: Topology, vertices: core.Point, metals: np.ndarray, contacts: tuple[np.ndarray, np.ndarray],
@@ -124,7 +124,7 @@ def animate(topology: Topology, vertices: core.Point, metals: np.ndarray, contac
               for state in scale_frame]
     blank = np.full((camera.shape[0], gap, 3), 255, dtype=np.uint8)
     for states in frames:
-        heated, driven = (on_white(simplices.composited(
+        heated, driven = (on_white(drawing.composited(
             layers(topology, vertices, metals, contacts, state, reach, spacing, camera)))
             for state, (reach, spacing) in zip(states, scales))
         yield np.concatenate([heated, blank, driven], axis=1)

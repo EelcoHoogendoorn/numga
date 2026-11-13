@@ -28,8 +28,8 @@ entropy as the potentials rise at each vertex, is the response between the gradi
 heat a second put in at the junction raises the voltage between the open ends by as much as a unit of current lowers
 the junction's temperature, at every moment. A cell stores entropy as its temperature rises and no charge, so the
 temperature takes time to spread and the electrochemical potential follows it at once. The model is the linear
-response, the entropy the drives produce left out. Potentials are measured from their values in
-equilibrium, lengths in the wire's length and charges in an electron's charge.
+response, the entropy the drives produce left out. Potentials are measured from their values in equilibrium, lengths
+in the wire's length and charges in an electron's charge.
 """
 
 from __future__ import annotations
@@ -41,10 +41,10 @@ from operator import and_
 
 import numpy as np
 
-from numga import Algebra, NumpyContext, stack
+from numga import Algebra, NumpyContext
 from numga.sparse import SparseExtensor, spdiag
 
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 # Planar spacetime, its degenerate w weighing a place, and the entropy a parcel holds, a direction of its own
 # with no metric.
@@ -76,9 +76,9 @@ entropy = mv.s.dual()                                                         # 
 
 
 # --- math -----------------------------------------------------------------------------
-def simplex_gradients(topology: Topology, vertices: Point) -> tuple[Scalar, Plane]:
+def simplex_gradients(topology: Topology, vertices: Point) -> tuple[Scalar, Force]:
     """Each simplex's size `Scalar+[simplices]`, a triangle's area, and each corner's simplex gradient `[corners]
-    Plane+[simplices]`, at these vertices, points of weight one: the slope across space of the function that is one at
+    Force+[simplices]`, at these vertices, points of weight one: the slope across space of the function that is one at
     the corner and nothing on the facet across."""
     corners = topology.incidence[-1, 0] * vertices                            # [corners] Point-[simplices]
     # The facet across from each corner, joined with time and entropy, along which the potentials do not vary off the
@@ -103,7 +103,7 @@ def response(charges: np.ndarray, entropies: np.ndarray, mobilities: np.ndarray)
     return advection(mobility(advection.adjugate())).sum(axis=-1)
 
 
-def conductance(topology: Topology, sizes: Scalar, gradients: Plane, responses: Response) -> SparseExtensor:
+def conductance(topology: Topology, sizes: Scalar, gradients: Force, responses: Response) -> SparseExtensor:
     """What each vertex's cell loses, charge and entropy, as the potentials rise at each vertex, `(Parcel- <-
     Potential+)[vertices <- vertices]`, each simplex responding by its own response `(Flux- <- Drive+)[simplices]`."""
     corners = topology.incidence[-1, 0]                                       # [corners] Scalar+[simplices <- vertices]
@@ -117,7 +117,7 @@ def storage(topology: Topology, sizes: Scalar, capacities: np.ndarray) -> Sparse
     vertices]`: its share of the simplices around it, a part of each for each of its corners, times its capacity for
     each unit of size `[vertices]`; a cell takes up no charge."""
     n_corners = topology.n_dim + 1
-    cells = (~topology.incidence[-1, 0] * (sizes / n_corners)).sum(axis=0)    # Scalar+[vertices]
+    cells = (topology.incidence[-1, 0].adjugate() * (sizes / n_corners)).sum(axis=0)   # Scalar+[vertices]
     # A temperature read off the potentials, as that much entropy.
     warmed = entropy * (Potential & entropy)                                  # [] Parcel- <- Potential+
     return spdiag(cells * mv.scalar(capacities[:, None]).field() * warmed)
@@ -131,11 +131,11 @@ def settling(topology: Topology, losing: SparseExtensor, storing: SparseExtensor
     <- vertices]`, the vertices `held` kept at their potentials in equilibrium. A cell stores no charge, so the
     electrochemical potential follows the temperature at once; each step is solved at its end."""
     free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), held), 0)   # Scalar+[free <- vertices]
-    stepping = free * (losing + storing / time_step) * ~free                  # (Parcel- <- Potential+)[free <- free]
+    stepping = free * (losing + storing / time_step) * free.adjugate()        # (Parcel- <- Potential+)[free <- free]
     # What is put in, and the potentials, in their full types: charge and entropy, and both potentials.
     nothing = 0 * ((mv.t + mv.s) & sources)                                   # Scalar+[vertices]
     sources = sources + nothing * (time + entropy)                            # Parcel-[vertices]
     potentials = nothing * (mv.t + mv.s)                                      # Potential+[vertices]
     for _ in range(n_frames):
         yield potentials
-        potentials = ~free * stepping.solve(free * (sources + storing(potentials) / time_step))
+        potentials = free.adjugate() * stepping.solve(free * (sources + storing(potentials) / time_step))

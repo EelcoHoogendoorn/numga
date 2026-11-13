@@ -17,10 +17,10 @@ from collections.abc import Iterator
 import numpy as np
 
 from numga import stack
+from numga.topology import Topology
 
 from examples.thermodynamics.thermocouple import core
 from examples.util import shapes
-from examples.util.topology import Topology
 
 mv = core.mv
 
