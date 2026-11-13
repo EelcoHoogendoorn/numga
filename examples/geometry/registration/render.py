@@ -7,7 +7,8 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import Extensor
-from examples.util.wgsl import image_figure, solids
+from numga.render import solids
+from examples.util.panels import image_figure
 
 source_colour, target_colour, aligned_colour = (np.array(to_rgb(colour)) for colour in ("#94a3b8", "#0284c7", "#f43f5e"))
 background = np.ones(3)

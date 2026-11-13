@@ -17,10 +17,10 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.mechanics.stress import core
-from examples.util.wgsl import fitted, show, simplices, solids
-from examples.util.wgsl.camera import Camera, offset_panel
-from examples.util.wgsl.meshes import Samples
-from examples.util.wgsl.scene import Scene
+from numga.topology import Topology
+from numga.render import Camera, drawing, Scene, simplices, solids
+from examples.util.panels import fitted, offset_panel, overlay, show
+from numga.render.drawing import Draw
 
 # The cube's edges and faces, by the corners' indices: corner 4 i + 2 j + k sits at the i-th, j-th and
 # k-th of -0.5 and 0.5 along x, y and z.
@@ -70,7 +70,7 @@ def view(corners: core.Point, centres: core.Point, normal: core.Point, shear: co
 
 
 def arrows(starts: core.Point, offsets: core.Point, colour: np.ndarray, view: solids.View,
-           thickness: float) -> Samples:
+           thickness: float) -> Draw:
     """Arrows from points along offsets `[arrows]`, tubes ending in chevrons for `solids.draw` to compose among the
     solids, their sizes a share `thickness` of the ones set above; those shorter than a pixel, a traction that
     vanishes, left out."""
@@ -79,7 +79,7 @@ def arrows(starts: core.Point, offsets: core.Point, colour: np.ndarray, view: so
     tails = solids.origin + solids.context.include_from_algebra(starts[shown])         # [shown] Point-
     tips = tails + solids.context.include_from_algebra(offsets[shown])                 # [shown] Point-
     n_shown = tails.shape[0]
-    return simplices.tubes(stack((tails, tips), axis=-1).reshape(-1), simplices.Topology.chains([2] * n_shown), colour,
+    return simplices.tubes(stack((tails, tips), axis=-1).reshape(-1), Topology.chains([2] * n_shown), colour,
                            thickness * arrow_width, view, gloss=solids.gloss, chevrons=np.ones(n_shown),
                            chevron=thickness * chevron_length)
 
@@ -94,7 +94,7 @@ def ghost(view: solids.View, thickness: float) -> list[tuple[solids.Quadric, np.
 def cube(corners: core.Point, centres: core.Point, normal: core.Point, shear: core.Point, principal: core.Point,
          view: solids.View, thickness: float) -> tuple[list[tuple[solids.Quadric, np.ndarray]],
                                                        list[tuple[solids.Quadric, np.ndarray, float]],
-                                                       list[tuple[Samples, float]]]:
+                                                       list[tuple[Draw, float]]]:
     """The deformed cube seen from one frame, its edges solid and its faces translucent, the normal traction on each
     face in blue and the shear in red, and the principal directions in green; the radii and widths a share
     `thickness` of those set above."""
@@ -156,10 +156,10 @@ def circles_drawn(ax, values: core.Scalar, camera: Camera) -> list[np.ndarray]:
     rims = x.dual() * ((lows + highs) / 2)[:, None] + (turns >> x.dual() * ((highs - lows) / 2)[:, None])   # [circles, samples] Point-
     (left, right), (bottom, top) = ax.get_xlim(), ax.get_ylim()
     cross = mohr_place(np.array([left, right, 0, 0]), np.array([0, 0, bottom, top]))   # [4] Point-
-    return [simplices.strokes(rims[0], simplices.Topology.loops([n_circle]), outer_colour, charts.LINE_PX, camera),
-            simplices.strokes(rims[1:].reshape(-1), simplices.Topology.loops([n_circle] * 2), inner_colour,
+    return [simplices.strokes(rims[0], Topology.loops([n_circle]), outer_colour, charts.LINE_PX, camera),
+            simplices.strokes(rims[1:].reshape(-1), Topology.loops([n_circle] * 2), inner_colour,
                               charts.FRAME_PX, camera, dashes=circle_dots, cap=simplices.Cap.BUTT),
-            simplices.strokes(cross, simplices.Topology.chains([2, 2]), inner_colour, charts.FRAME_PX, camera,
+            simplices.strokes(cross, Topology.chains([2, 2]), inner_colour, charts.FRAME_PX, camera,
                               cap=simplices.Cap.BUTT),
             simplices.markers(x.dual() * stresses, outer_colour, charts.MARKER_PX / 2, camera)]
 
@@ -179,7 +179,7 @@ def diameter_drawn(ends: core.Point, colour: str, camera: Camera) -> list[np.nda
     ink = np.array(to_rgb(colour))
     rim = charts.LINE_PX / 2
     # The ring a white dot over a larger one in the diameter's colour.
-    return [simplices.strokes(ends, simplices.Topology.chains([2]), ink, charts.LINE_PX, camera),
+    return [simplices.strokes(ends, Topology.chains([2]), ink, charts.LINE_PX, camera),
             simplices.markers(ends[:1], ink, charts.MARKER_PX / 2, camera),
             simplices.markers(ends[1:], ink, charts.MARKER_PX / 2 + rim, camera),
             simplices.markers(ends[1:], np.ones(3), charts.MARKER_PX / 2 - rim, camera)]
@@ -207,7 +207,7 @@ def draw_frames(views: tuple[core.Point, core.Point, core.Point, core.Point, cor
         show(ax, draw_cube(corners[frame], centres[frame], normal[frame], shear[frame], principal[frame], seen), seen)
     # Mohr's circles, and each frame's diameter in its colour.
     camera = offset_panel(circles, core.mv.x, core.mv.y)
-    simplices.overlay(circles, circles_drawn(circles, values, camera) + [
+    overlay(circles, circles_drawn(circles, values, camera) + [
         picture for frame, colour in zip(range(count), COLOURS * count)
         for picture in diameter_drawn(diameter(normal[frame], shear[frame]), colour, camera)])
     return figure
@@ -229,10 +229,10 @@ def animate_turning(values: core.Scalar, frames: Iterable[tuple[core.Point, core
         draw_circles(circles, values)
         camera = offset_panel(circles, core.mv.x, core.mv.y)
         backdrop = circles_drawn(circles, values, camera)
-        diagram = simplices.overlay(circles, backdrop)
+        diagram = overlay(circles, backdrop)
     for corners, centres, normal, shear, principal in chain([first], frames):
         parts, translucent, tractions = cube(corners, centres, normal, shear, principal, seen, turning_thickness)
         picture.set_data(scene.draw(parts, inks=[], translucent=translucent, meshes=tractions))
-        diagram.set_data(simplices.composited(backdrop + diameter_drawn(diameter(normal, shear), COLOURS[0], camera)))
+        diagram.set_data(drawing.composited(backdrop + diameter_drawn(diameter(normal, shear), COLOURS[0], camera)))
         yield capture(figure)
     plt.close(figure)

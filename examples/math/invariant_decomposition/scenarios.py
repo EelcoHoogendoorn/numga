@@ -21,7 +21,7 @@ def samples(seed: int) -> tuple[core.Bivector, core.Antivector, core.ProjectiveB
     bivector."""
     rng = np.random.default_rng(seed)
     bivector = core.mv(core.Bivector, rng.normal(size=15))                     # [] Bivector+
-    start = core.mv(core.Antivector, rng.normal(size=6)).normalized()          # [] Antivector-
+    start = core.mv.vector(rng.normal(size=6)).dual().normalized()             # [] Antivector-
     motion = core.pmv(core.ProjectiveBivector, rng.normal(size=21))            # [] Bivector+
     return bivector, start, motion
 

@@ -31,7 +31,7 @@ across = core.projection(2)                                                  # [
 cut = along(axes[0]) & along(axes[1])                                        # [] Join-
 
 
-def faces(along: core.Projection) -> tuple[core.Antivector, core.Antivector]:
+def faces(along: core.Projection, lattice_radius: int = lattice_radius) -> tuple[core.Antivector, core.Antivector]:
     """Every square face of the lattice within its radius, by its lattice point and its pair of axes: its
     centre `[points, faces]`, and its corners laid flat onto the cut `[points, faces, 4]`."""
     sides = axes[core.sides_index]                                            # [faces, 2] Antivector-
@@ -53,7 +53,7 @@ def view(along: core.Projection) -> core.Plane:
     return stack([right, up]).dual()                                          # [2] Plane+
 
 
-def phasons(across: core.Projection) -> core.Antivector:
+def phasons(across: core.Projection, n_frames: int = n_frames) -> core.Antivector:
     """The points the cut passes through around its loop `[frames]`: the starting point shifted around a
     circle among the directions square to the cut and to the diagonal."""
     start = across(axes[0])                                                   # [] Antivector-

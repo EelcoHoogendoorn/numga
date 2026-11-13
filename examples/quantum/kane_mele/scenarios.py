@@ -54,11 +54,11 @@ def nearest(flake: core.Flake, masses: np.ndarray) -> core.Scalar:
     return densities
 
 
-def helical(flake: core.Flake) -> tuple[core.Scalar, core.Even, core.Spin]:
+def helical(flake: core.Flake, n_frames: int = N_FRAMES) -> tuple[core.Scalar, core.Even, core.Spin]:
     """The levels inside the gap without a mass and their states, and an electron started at the middle of the
     edge facing x, spin along x, keeping its part in those states: its spin density at each frame over one lap."""
     energies, states = core.levels(core.hamiltonian(flake, SPIN_ORBIT, 0.0), core.Even, N_IN_GAP)   # [states] Scalar+, [states] Even+[atoms]
-    times = np.linspace(0.0, LAP, N_FRAMES + 1)
+    times = np.linspace(0.0, LAP, n_frames + 1)
     spins = stack(list(core.spread(states, energies, flake.start, spinor, times)))   # [frames + 1] Spin-[atoms]
     return energies, states, spins
 

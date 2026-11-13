@@ -40,7 +40,7 @@ def test_sparse_inertia_construction_and_dense_numeric_map_application(backend):
     outputs = []
     for execution in ("dense", "sparse"):
         mv = context_type(PGA3D, execution=execution).multivector
-        points = mv.antivector([[1, 0, 0, 1], [-1, 0, 0, 1]])
+        points = mv.vector([[1, 0, 0, 1], [-1, 0, 0, 1]]).dual()
         rate = mv.bivector([1, 2, 3, 4, 5, 6])
 
         def evaluate(points, rate):

@@ -66,34 +66,34 @@ def turned(degrees: np.ndarray) -> core.Motor:
     return (mv.yz * (-np.radians(degrees) / 2)).exp()
 
 
-def curling() -> core.Motor:
+def curling(n_pieces: int = N_PIECES) -> core.Motor:
     """The strip's frames under a couple about the axis across it, by each number of turns of its end
     `[curls, pieces + 1]`: the couple whose rigidity over it is the strip's length over the turns."""
     couples = mv.yz.dual() * (2 * np.pi / (TURNING[0] * LENGTH) * np.array(CURLS))   # [curls] Forque-
-    return core.rod(couples, core.compliance(TURNING, SHIFTING), mv.rotor(), LENGTH, N_PIECES)
+    return core.rod(couples, core.compliance(TURNING, SHIFTING), mv.rotor(), LENGTH, n_pieces)
 
 
-def euler(degrees: np.ndarray) -> core.Motor:
+def euler(degrees: np.ndarray, n_pieces: int = N_PIECES) -> core.Motor:
     """The frames of rods leaving their first pin at each angle to the line of thrust through both pins
     `[angles, pieces + 1]`, under the thrust that brings them back to the line at their full length."""
     thrust = (core.centre & mv.z.dual()) * thrusts(np.radians(degrees))     # [angles] Forque-
-    return core.rod(thrust, core.compliance(TURNING, SHIFTING), turned(degrees), LENGTH, N_PIECES)
+    return core.rod(thrust, core.compliance(TURNING, SHIFTING), turned(degrees), LENGTH, n_pieces)
 
 
-def kirchhoff() -> core.Motor:
+def kirchhoff(n_pieces: int = N_PIECES) -> core.Motor:
     """The frames of rods started at each tilt from an upward couple `[tilts, pieces + 1]`, the couple coiling
     them through whole turns."""
     couple = mv.xy.dual() * (2 * np.pi * N_TURNS / (TURNING[0] * LENGTH))           # [] Forque-
-    return core.rod(couple, core.compliance(TURNING, SHIFTING), turned(np.array(TILTS)), LENGTH, N_PIECES)
+    return core.rod(couple, core.compliance(TURNING, SHIFTING), turned(np.array(TILTS)), LENGTH, n_pieces)
 
 
-def uncoiling() -> core.Motor:
+def uncoiling(n_frames: int = N_UNCOIL_FRAMES, n_pieces: int = N_PIECES) -> core.Motor:
     """The frames of a wire under a fixed upward couple, its start tilted from the couple by an angle swept
     from square to along it and back `[frames, pieces + 1]`: the couple bending it into a ring, coiling it,
     and twisting it straight."""
-    tilts = 45 * (1 + np.cos(np.linspace(0, 2 * np.pi, N_UNCOIL_FRAMES, endpoint=False)))   # [frames] degrees
+    tilts = 45 * (1 + np.cos(np.linspace(0, 2 * np.pi, n_frames, endpoint=False)))   # [frames] degrees
     couple = mv.xy.dual() * (2 * np.pi * UNCOIL_TURNS / (TURNING[0] * LENGTH))    # [] Forque-
-    return core.rod(couple, core.compliance(TURNING, SHIFTING), turned(tilts), LENGTH, N_PIECES)
+    return core.rod(couple, core.compliance(TURNING, SHIFTING), turned(tilts), LENGTH, n_pieces)
 
 
 def cord_tilt() -> core.Motor:
@@ -111,10 +111,11 @@ def coil(n_pieces: int) -> tuple[core.Twist, core.Motor]:
     return rest, (rest * (np.arange(-1, n_pieces + 1) * step / 2)).exp()   # [pieces + 2] Motor+
 
 
-def pulled() -> Iterator[core.Motor]:
-    """The cord's frames at every frame of the scene: hanging from its base under its weight, its handset
-    pulled out along the coil's axis, held, and let back, the cord following by its dynamics. A frame's steps run
-    under `jax.lax.scan`: each is many small operations on a short cord, which the compiled loop does at once."""
+def pulled(n_frames: int = N_CORD_FRAMES, n_steps_per_frame: int = N_STEPS_PER_FRAME) -> Iterator[core.Motor]:
+    """The cord's frames at every one of n_frames frames of the scene, n_steps_per_frame steps apart: hanging from its
+    base under its weight, its handset pulled out along the coil's axis, held, and let back, the cord following by its
+    dynamics. A frame's steps run under `jax.lax.scan`: each is many small operations on a short cord, which the
+    compiled loop does at once."""
     import jax
     from numga.backend.jax import JaxContext
 
@@ -140,7 +141,7 @@ def pulled() -> Iterator[core.Motor]:
     # A frame's steps compiled into one loop over how far the handset is out at each, carrying the cord's segments as
     # plain motors and their rates as twists.
     frame = jax.jit(lambda state, outs: jax.lax.scan(tick, state, outs)[0])
-    outs = handset_distance(np.arange(N_CORD_FRAMES * N_STEPS_PER_FRAME) * TIME_STEP).reshape(N_CORD_FRAMES, N_STEPS_PER_FRAME)
+    outs = handset_distance(np.arange(n_frames * n_steps_per_frame) * TIME_STEP).reshape(n_frames, n_steps_per_frame)
     state = (frames.retyped(core.Motor).materialize(JaxContext(core.ga)),
              mv.bivector(np.zeros((n_pieces, 6))).retyped(core.Twist).materialize(JaxContext(core.ga)))
     for frame_outs in outs:

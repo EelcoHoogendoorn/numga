@@ -29,8 +29,8 @@ n_animation_colours = 32
 
 
 # --- plumbing -------------------------------------------------------------------------
-def sphere() -> tuple[core.Topology, core.Point]:
-    """The unit sphere, its vertices directions of space."""
+def sphere(n_levels: int = n_levels) -> tuple[core.Topology, core.Point]:
+    """The unit sphere, subdivided `n_levels` times, its vertices directions of space."""
     topology, coordinates = shapes.sphere(n_levels)
     return topology, mv(core.Plane, coordinates).dual().field()
 

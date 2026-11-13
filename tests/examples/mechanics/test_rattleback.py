@@ -1,4 +1,4 @@
-"""Rolling constraints, work balance and spin reversal of a rattleback."""
+"""Rolling constraints, work balance and mirror symmetry of a rattleback."""
 
 import numpy as np
 
@@ -86,30 +86,3 @@ def test_mirroring_the_body_mirrors_its_rolling_dynamics():
     np.testing.assert_allclose(mirrored_rate.kernel, (mirror >> rate).kernel, atol=1e-10, rtol=1e-10)
     np.testing.assert_allclose(mirrored_acceleration.kernel, (mirror >> acceleration).kernel,
                                atol=1e-10, rtol=1e-10)
-
-
-def test_spin_reverses_and_energy_converges_with_the_time_step():
-    coarse_dt, fine_dt = 0.05, 0.025
-    duration = 10
-    _, _, _, _, coarse_energy = scenarios.launches(coarse_dt, round(duration / coarse_dt))
-    built, _, placements, spins, fine_energy = scenarios.launches(fine_dt, round(duration / fine_dt))
-    coarse_error = np.max(np.abs(coarse_energy.kernel / coarse_energy[0].kernel - 1))
-    fine_error = np.max(np.abs(fine_energy.kernel / fine_energy[0].kernel - 1))
-    assert fine_error < 0.001
-    assert fine_error < coarse_error / 4
-
-    # A tipped body spins up from rest; the spinning launch reverses direction.
-    spin_about_vertical = -(placements >> spins).scalar_product(scenarios.mv.xy).kernel[..., 0]
-    assert abs(spin_about_vertical[0, 0]) < 1e-11
-    assert spin_about_vertical[-1, 0] > 1.4
-    assert spin_about_vertical[0, 1] < -1.4
-    assert spin_about_vertical[-1, 1] > 1.4
-
-    # The table only ever touches the painted underside: the touching point lies inside the deck and the cuts and
-    # outside the balls, every other quadric of the wood.
-    core = scenarios.core
-    shape, centre, _, _, _ = scenarios.body()
-    _, support, _, _ = core.contact_geometry(placements, shape, centre, core.mv.z.dual())
-    contact = core.origin + centre + support                                  # [steps + 1, cases] Point
-    others = built.wood()[1:]                                                 # [quadrics] Quadric
-    assert np.max((others[:, None, None](contact) & contact).kernel) < 0

@@ -7,8 +7,9 @@ from numga import stack
 
 from examples.math.e8.render import background, orbit_colours, draw_roots
 from examples.quantum.affine_toda.core import Root
-from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import offset_panel
+from numga.topology import Topology
+from numga.render import simplices
+from examples.util.panels import offset_panel, overlay
 
 # The samples around each orbit's ring.
 n_ring_samples = 120
@@ -49,18 +50,18 @@ def draw_triangles(paths: Root, roots: Root, species: np.ndarray,
         orbits = roots[:, particles].reshape(-1)                                # [steps * particles] Root+
         n_steps = roots.shape[0]
         corners = paths[index]                                                  # [corners] Root+
-        simplices.overlay(ax, [
-            simplices.strokes(rings, simplices.Topology.loops([n_ring_samples] * len(particles)),
+        overlay(ax, [
+            simplices.strokes(rings, Topology.loops([n_ring_samples] * len(particles)),
                               np.repeat(orbit_colours[particles], n_ring_samples, axis=0), ring_width, camera,
                               opacity=ring_opacity),
             simplices.markers(orbits, np.tile(orbit_colours[particles], (n_steps, 1)), orbit_dot, camera,
                               opacity=orbit_opacity),
             # Each root an arrow from the corner before it: a stroke, and a chevron at its tip.
-            simplices.strokes(corners, simplices.Topology.chains([n_corners]), orbit_colours[species[index]],
+            simplices.strokes(corners, Topology.chains([n_corners]), orbit_colours[species[index]],
                               arrow_width, camera, chevrons=np.ones(n_corners - 1), chevron=chevron_length,
                               cap=simplices.Cap.BUTT),
             # A closed path has a zero-length dashed segment.
-            simplices.strokes(corners[[0, -1]], simplices.Topology.chains([2]), white, gap_width, camera,
+            simplices.strokes(corners[[0, -1]], Topology.chains([2]), white, gap_width, camera,
                               dashes=gap_dashes, cap=simplices.Cap.BUTT),
             simplices.markers(corners[:1], white, start_dot, camera),
         ])

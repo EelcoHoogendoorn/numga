@@ -42,12 +42,12 @@ def setting() -> tuple[core.Masses, core.Stars, core.Shape]:
     return masses, stars, shape
 
 
-def flyby(n_frames: int) -> Iterator[tuple[core.Stars, core.Shape]]:
-    """The stars, and the cluster's shape as the tidal map deforms it, frame by frame."""
+def flyby(n_frames: int, n_substeps: int = N_SUBSTEPS) -> Iterator[tuple[core.Stars, core.Shape]]:
+    """The stars, and the cluster's shape as the tidal map deforms it, frame by frame, n_substeps steps apart."""
     masses, stars, shape = setting()
     for _ in range(n_frames):
         yield stars, shape
-        for _ in range(N_SUBSTEPS):
+        for _ in range(n_substeps):
             stars, shape = stars.fall(masses, DT), shape.deform(masses, DT)
 
 
@@ -57,10 +57,11 @@ def outline(stars: core.Stars, shape: core.Shape) -> tuple[core.Point, core.Form
     return stars.centre(), shape.rim(CLUSTER_RADIUS)
 
 
-def field() -> tuple[core.Point, core.Even, core.Scalar]:
-    """The geometric derivative of gravity on the plane z = 0, and the density it gives by Poisson's equation."""
+def field(n_columns: int = N_COLUMNS, n_rows: int = N_ROWS) -> tuple[core.Point, core.Even, core.Scalar]:
+    """The geometric derivative of gravity on the plane z = 0, sampled n_columns by n_rows, and the density it gives by
+    Poisson's equation."""
     masses, _, _ = setting()
-    points = core.grid(HALF_WIDTH, HALF_HEIGHT, N_COLUMNS, N_ROWS)              # [rows, columns] Point-
+    points = core.grid(HALF_WIDTH, HALF_HEIGHT, n_columns, n_rows)              # [rows, columns] Point-
     derivative = core.derivative(masses.tidal(points))                      # [rows, columns] Even+
     return points, derivative, -derivative.select[0] / (4 * np.pi)
 

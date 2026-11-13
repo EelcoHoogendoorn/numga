@@ -1,8 +1,7 @@
-"""Station keeping under white-noise gusts solves the steady-state Lyapunov equation and renders the fleet clouds."""
+"""Station keeping under white-noise gusts solves the steady-state Lyapunov equation."""
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.estimation.pose_diffusion import core, render, scenarios
@@ -18,9 +17,7 @@ def test_settled_covariance_zeroes_the_growth():
         np.testing.assert_allclose(growth.kernel, 0.0, atol=1e-10)
 
 
-def test_clouds_render():
-    """A short simulation run converges toward the steady-state covariance and draws."""
-    runs = {name: list(scenarios.diffuse(rate, scenarios.gusts, 8.0, 0.02, 800, 100, 1)) for name, rate in scenarios.rates.items()}
-    figure = render.draw_settled({name: states[-1] for name, states in runs.items()}, 1.6)
-    assert isinstance(figure, plt.Figure)
-    plt.close(figure)
+def test_one_step_of_the_fleets_draws():
+    runs = {name: list(scenarios.diffuse(rate, scenarios.gusts, scenarios.DT, scenarios.DT, 4, 1, scenarios.SEED))
+            for name, rate in scenarios.rates.items()}
+    next(render.animate_clouds(runs, scenarios.EXTENT))

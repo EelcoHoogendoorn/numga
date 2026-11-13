@@ -50,7 +50,7 @@ def test_inner_operator_works_on_gatypes_and_open_extensors():
 def test_inner_keeps_the_grade_difference_only():
     ga = PGA3D
     mv = NumpyContext(ga).multivector
-    point = mv.antivector(np.array([1.0, 2.0, 3.0, 1.0]))
+    point = mv.vector(np.array([1.0, 2.0, 3.0, 1.0])).dual()
     plane = mv.vector(np.array([0.0, 0.0, 1.0, -3.0]))
     line = point | plane                          # grade |3 - 1| = 2: the line through the point normal to the plane
     assert line.gatype.output_subspace == ga.subspace.bivector()

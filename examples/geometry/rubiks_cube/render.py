@@ -10,7 +10,7 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate
 from examples.geometry.rubiks_cube import core
-from examples.util.wgsl import meshes, solids
+from numga.render import meshes, solids
 
 # The six face colours by side and axis (+x red, +y blue, +z white, -x orange, -y green, -z yellow),
 # together with the inner cut colour and the background colour.

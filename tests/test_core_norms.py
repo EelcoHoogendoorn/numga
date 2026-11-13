@@ -243,7 +243,7 @@ def test_in_a_spacetime_the_two_readings_differ_by_the_antiscalar_reverse_produc
     coefficients = np.random.default_rng(grade).normal(size=(2, 4, len(KVector.output_subspace)))
     a, b = mv(KVector, coefficients)
     flipped_a, flipped_b = mv(Flipped, coefficients)
-    antiscalar = mv.antiscalar([1])
+    antiscalar = mv.scalar([1]).dual()
 
     np.testing.assert_allclose(antiscalar.scalar_norm_squared().to_array(), -1)
     np.testing.assert_allclose(

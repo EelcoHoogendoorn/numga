@@ -7,7 +7,7 @@ import numpy as np
 from numga import NumpyContext, concatenate, stack
 from numga.algebras import VGA2D as ga
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
@@ -107,7 +107,7 @@ def main() -> None:
     ordinate = mv.y & vertices                                               # Scalar+[vertices]
     streamfunction = 1.5 * MEAN_SPEED * (ordinate - 4 * ordinate.squared() * ordinate / (3 * HEIGHT**2))  # Scalar+[vertices]
     ends = topology.reading(np.concatenate((inlet, outlet)), 1)
-    prescribed_flux = ~ends * (ends * (topology.d[0] * streamfunction))      # Scalar+[edges]
+    prescribed_flux = ends.adjugate() * (ends * (topology.d[0] * streamfunction))  # Scalar+[edges]
     boundary_circulation = operators.dual_patches * 0                        # Patch-[vertices]
     flux, pressure, vorticity, velocity = stokes(operators, VISCOSITY, prescribed_flux,
                                                  topology.exterior[1], boundary_circulation)

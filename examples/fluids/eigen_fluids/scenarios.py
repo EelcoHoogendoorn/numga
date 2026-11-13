@@ -19,7 +19,7 @@ n_modes = 128
 shown_modes = np.array([0, 7, 31, 119])
 # Opposing vortex dipoles distributed across the bunny's shoulder, chest, flank, haunch, neck, and back,
 # spectrally tapered so they collide, exchange partners, and swirl across the whole surface without Gibbs ringing.
-vortex_centres = mv.antivector([
+vortex_centres = mv.vector([
     [0.35, -0.54, -0.03],
     [0.40, -0.69, -0.29],
     [-0.08, -0.52, 0.03],
@@ -32,7 +32,7 @@ vortex_centres = mv.antivector([
     [-0.14, 0.28, -0.08],
     [-0.48, 0.26, -0.14],
     [0.06, 0.47, -0.30],
-])                                                  # [vortices] Point-
+]).dual()                                           # [vortices] Point-
 vortex_strengths = np.array([75, -75, -75, 75, 70, -70, -65, 65, 72, -72, 68, -68])
 vortex_radius = 0.12
 eigenvalue_cutoff = 140.0
@@ -95,9 +95,9 @@ def sphere_demo() -> None:
     normals = patches / areas                                                    # Patch-[faces]
     corner_gradients = (sides | patches.inverse()) / 2                           # [corners] Plane+[faces]
     gradient = (core.spdiag(corner_gradients * core.Scalar) * topology.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
-    # Each face's mean over its corners; its reverse hands each corner a third of every face around it.
+    # Each face's mean over its corners; its adjugate hands each corner a third of every face around it.
     corner_mean = topology.incidence[2, 0].mean(axis=0)                          # Scalar+[faces <- vertices]
-    dual_areas = ~corner_mean * areas                                                                         # Scalar+[vertices]
+    dual_areas = corner_mean.adjugate() * areas                                                               # Scalar+[vertices]
 
     # The stiffness and vertex mass determine the surface's spatial modes.
     medium = areas * core.Plane.dual()                                           # (Point- <- Plane+)[faces]
@@ -131,9 +131,9 @@ def main() -> None:
     normals = patches / areas                                                    # Patch-[faces]
     corner_gradients = (sides | patches.inverse()) / 2                           # [corners] Plane+[faces]
     gradient = (core.spdiag(corner_gradients * core.Scalar) * topology.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
-    # Each face's mean over its corners; its reverse hands each corner a third of every face around it.
+    # Each face's mean over its corners; its adjugate hands each corner a third of every face around it.
     corner_mean = topology.incidence[2, 0].mean(axis=0)                          # Scalar+[faces <- vertices]
-    dual_areas = ~corner_mean * areas                                                                         # Scalar+[vertices]
+    dual_areas = corner_mean.adjugate() * areas                                                               # Scalar+[vertices]
 
     # The stiffness and vertex mass determine the surface's spatial modes.
     medium = areas * core.Plane.dual()                                           # (Point- <- Plane+)[faces]
@@ -217,7 +217,7 @@ def pinned() -> None:
     corner_gradients = (sides | patches.inverse()) / 2                           # [corners] Plane+[faces]
     gradient = (core.spdiag(corner_gradients * core.Scalar) * topology.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
     corner_mean = topology.incidence[2, 0].mean(axis=0)                          # Scalar+[faces <- vertices]
-    dual_areas = ~corner_mean * areas                                            # Scalar+[vertices]
+    dual_areas = corner_mean.adjugate() * areas                                  # Scalar+[vertices]
     medium = areas * core.Plane.dual()                                           # (Point- <- Plane+)[faces]
     stiffness = gradient.adjugate()(medium(gradient))                            # (Amount- <- Scalar+)[vertices <- vertices]
     mass = core.spdiag(dual_areas * core.Scalar.dual())                                 # (Amount- <- Scalar+)[vertices <- vertices]

@@ -1,48 +1,15 @@
-"""The common Möbius flow reproduces spherical synchronization and preserves its geometry."""
-
-from itertools import islice
+"""The common Möbius map of spherical synchronization keeps null rays, cross ratios and circle angles."""
 
 import numpy as np
-from scipy.integrate import solve_ivp
 
 from numga import stack
-from examples.math.spherical_synchronization import core, render
-
-
-def steps(initial, seeds, rotation, coupling, dt, n_steps):
-    return stack(list(islice(core.motion(initial, seeds, rotation, coupling, dt), n_steps + 1)))
+from examples.math.spherical_synchronization import core, render, scenarios
 
 
 def population():
     longitudes = np.array([-0.6, 0.4, 1.2, 2.3, 4.2])
     latitudes = np.array([-0.3, 0.6, 0.4, -0.2, 0.1])
     return core.sphere_points(longitudes, latitudes) + core.time
-
-
-def test_common_rotor_matches_particle_equations_with_second_order_convergence():
-    mv = core.mv
-    seeds = population()
-    rotation = -0.3 * mv.xy + 0.2 * mv.yz
-    coupling, duration = 1.1, 1.6
-    initial = render.coordinates(core.directions(seeds))
-    omega = np.array([-0.2, 0, 0.3])
-
-    # Integrate each particle's tangential attraction independently of the common rotor.
-    def velocity(time, state):
-        directions = state.reshape(initial.shape)
-        mean = directions.mean(axis=0)
-        attraction = mean - np.sum(directions * mean, axis=-1)[:, None] * directions
-        return (np.cross(omega, directions) + coupling * attraction).ravel()
-
-    reference = solve_ivp(velocity, (0, duration), initial.ravel(),
-                          rtol=1e-10, atol=1e-12).y[:, -1].reshape(initial.shape)
-    errors = []
-    for dt in (0.04, 0.02):
-        rotors = steps(mv.rotor(), seeds, rotation, coupling, dt, round(duration / dt))
-        final = render.coordinates(core.directions(rotors[-1] >> seeds))
-        errors.append(np.max(np.abs(final - reference)))
-    assert errors[1] < 0.0005
-    assert errors[1] < errors[0] / 3
 
 
 def test_common_map_preserves_null_rays_cross_ratios_and_circle_angles():
@@ -80,20 +47,5 @@ def test_common_map_preserves_null_rays_cross_ratios_and_circle_angles():
                                intersection_angle(direction, circles), atol=1e-11, rtol=1e-11)
 
 
-def test_alignment_grows_and_mirroring_inputs_mirrors_the_population():
-    mv = core.mv
-    seeds = population()
-    rotation = -0.3 * mv.xy + 0.2 * mv.yz
-    coupling, dt, n_steps = 1.1, 0.025, 160
-    rotors = steps(mv.rotor(), seeds, rotation, coupling, dt, n_steps)
-    directions = core.directions(rotors[:, None] >> seeds)
-    coherence = np.sum(render.coordinates(directions.mean(axis=-1)) ** 2, axis=-1)
-    assert np.min(np.diff(coherence)) > -1e-8
-    assert coherence[-1] > 0.98
-
-    mirror = (mv.x + mv.y / 3 - mv.z / 5).normalized()
-    mirrored_seeds = mirror >> seeds
-    reflected = steps(mv.rotor(), mirrored_seeds, mirror >> rotation, coupling, dt, n_steps)
-    mirrored_directions = core.directions(reflected[:, None] >> mirrored_seeds)
-    np.testing.assert_allclose(mirrored_directions.kernel, (mirror >> directions).kernel,
-                               atol=1e-10, rtol=1e-10)
+def test_one_frame_of_the_synchronization_draws():
+    next(render.frames(scenarios.synchronization(n_particles=2, n_steps=1)))

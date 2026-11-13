@@ -11,8 +11,8 @@ import numpy as np
 
 from numga import stack
 from examples.mechanics.foucault import core
-from examples.util.topology import Topology
-from examples.util.wgsl import solids
+from numga.topology import Topology
+from numga.render import solids
 
 SWING_COLOUR = "#d06c36"
 GLOBE_COLOUR = "0.85"

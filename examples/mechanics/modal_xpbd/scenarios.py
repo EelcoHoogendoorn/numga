@@ -12,7 +12,7 @@ import numpy as np
 
 from numga.algebras import PGA2D
 from examples import instantiate
-from numga.sparse import SparseExtensor
+from numga.sparse import Sparse
 
 # The chain's girder: its cells, length and height, its bars' stiffness, its density, and the
 # vibration modes it keeps.
@@ -65,7 +65,7 @@ def constrained(core: ModuleType, shape, bodies: int, body_idx: np.ndarray, corn
     """Constraints between the given bodies, of so many, at the given vertices."""
     compliance = core.mv.scalar([SPLICE]).broadcast_to(body_idx.shape[-1:]).field()  # Scalar+[constraints]
     ends = core.Topology(bodies, body_idx.T).incidence[1, 0]                 # [sides] Scalar+[constraints <- bodies]
-    corners = SparseExtensor.selection(core.ctx, corner_idx, len(shape.rest.batch()))   # [sides] Scalar+[constraints <- vertices]
+    corners = Sparse.selection(corner_idx, len(shape.rest.batch()))   # [sides] Scalar+[constraints <- vertices]
     return core.Constraints(ends, corners * shape.rest, corners * shape.modes[:, None], compliance)
 
 

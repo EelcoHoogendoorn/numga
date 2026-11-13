@@ -474,7 +474,8 @@ class OperatorFactory:
         ``m * x.involute() * m.inverse()``, and an intrinsic one to its negative. A product of k
         vectors applies k reflections, so the grade involution and the intrinsic sign each enter k
         times, and cancel for an even versor. The operator uses the versor's reverse in place of its
-        inverse, which is the same for a unit versor.
+        inverse, which is the same for a unit versor. A type that holds both parities does not say
+        whether k is even or odd, and is refused.
 
         The two versor axes remain distinct. Passing the same nullary Extensor into axes 0 and 2 is
         an atomic diagonal bind at runtime. Exact symmetrization removes terms that cancel for
@@ -485,6 +486,11 @@ class OperatorFactory:
 
     @lru_cache(maxsize=None)
     def _transform(self, versor: GAType, passenger: GAType) -> Extensor:
+        parities = set(self.algebra.grade(np.asarray(versor.output_subspace.masks, dtype=self.algebra.blade_dtype)) % 2)
+        if len(parities) > 1:
+            raise GATypeError(f"a sandwich needs an operand of one parity, even or odd, and {versor} holds both: "
+                              "cast it to the parity it has, or write the product out")
+        parity = int(1 in parities)
         result = self.full_sandwich(versor.derive.structural, passenger.derive.structural)
         kernel = result.kernel
         # The two versor axes hold the same versor: symmetrize them. For basis blades the two
@@ -493,8 +499,6 @@ class OperatorFactory:
         result = self.build(result.axes, result.gatype.orientations, kernel).squeeze_output()
         # Each reflection takes the passenger's grade involution, negated for an intrinsic passenger;
         # a versor of odd parity applies an odd number of them.
-        parity = int(bool(versor.output_subspace.masks)
-                     and bool(np.all(self.algebra.grade(np.asarray(versor.output_subspace.masks)) % 2)))
         intrinsic = -1 if passenger.orientation is Orientation.intrinsic else 1
         involutes = grade_transform_signs(self.algebra, "involute", passenger.output_subspace.masks)
         signs = SymbolicKernel(np.diag((involutes * intrinsic) ** parity).astype(np.int8))

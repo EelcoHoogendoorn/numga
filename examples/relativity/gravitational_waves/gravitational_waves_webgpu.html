@@ -18,15 +18,33 @@
   #fallback { display: block; }
   #fallback[hidden] { display: none; }
   a, kbd { font: inherit; color: #c9c9cf; }
+  /* The buttons for what the keys do, on screens worked by touch only. */
+  #buttons { display: none; flex-wrap: wrap; justify-content: center; gap: 6px; max-width: 480px; }
+  #buttons button { font: inherit; color: #c9c9cf; background: #1c1c21; border: 1px solid #3a3a42; border-radius: 6px;
+                    padding: 8px 12px; min-width: 44px; touch-action: manipulation; user-select: none;
+                    -webkit-user-select: none; }
+  #buttons button:active, #buttons button.on { background: #34343c; }
+  #touch-help { display: none; }
+  @media (pointer: coarse) {
+    #buttons { display: flex; }
+    #touch-help { display: block; }
+    #key-help { display: none; }
+  }
 </style>
 </head>
 <body>
 <p id="about">A flight through a closed universe, a space that curves back on itself, as a gravitational wave stretches and squeezes it around three small crystals.</p>
 <canvas id="view"></canvas>
 <img id="fallback" hidden alt="The closed universe's slowest wave seen from inside, traced ahead of time" src="../../../plots/gravitational_waves_inside.gif" width="400" height="300">
-<div id="help">Arrows or drag turn · <kbd>a</kbd> <kbd>d</kbd> roll · <kbd>w</kbd> <kbd>s</kbd> faster, slower · scroll speed ·
-  <kbd>space</kbd> stop · <kbd>p</kbd> hold time · <kbd>r</kbd> start again · <kbd>[</kbd> <kbd>]</kbd> leg ·
-  <kbd>-</kbd> <kbd>=</kbd> wave · <kbd>c</kbd> crystals</div>
+<div id="buttons">
+  <button data-key="p">hold time</button><button data-hold=" ">stop</button><button data-key="r">start again</button>
+  <button data-key="-">wave −</button><button data-key="=">wave +</button><button data-key="c">crystals</button>
+  <button data-key="[">finer</button><button data-key="]">coarser</button>
+</div>
+<div id="help"><span id="key-help">Arrows or drag turn · <kbd>a</kbd> <kbd>d</kbd> roll · <kbd>w</kbd> <kbd>s</kbd> faster, slower ·
+  scroll or pinch speed · <kbd>space</kbd> stop · <kbd>p</kbd> hold time · <kbd>r</kbd> start again ·
+  <kbd>[</kbd> <kbd>]</kbd> leg · <kbd>-</kbd> <kbd>=</kbd> wave · <kbd>c</kbd> crystals</span>
+  <span id="touch-help">Drag to turn · pinch for speed · twist two fingers to roll</span></div>
 <div id="status">Starting WebGPU…</div>
 <div id="note">The shaders are written in <a href="https://github.com/EelcoHoogendoorn/numga">numga</a>:
   run <a href="https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/relativity/gravitational_waves/waves.ipynb">the waves notebook</a> or
@@ -223,33 +241,72 @@ async function start() {
   const waveStep = 0.1, mostWave = 4;
   const held = new Set();
   const state = { leg: C.start.leg, holding: false, wave: 1, crystals: true, dragged: [0, 0], scrolled: 0,
-                  speed: 0 };
-  let dragging = null;
-  canvas.addEventListener("pointerdown", event => { dragging = [event.clientX, event.clientY]; canvas.setPointerCapture(event.pointerId); });
-  canvas.addEventListener("pointerup", () => { dragging = null; });
+                  twisted: 0, speed: 0 };
+  // The pointers down on the canvas, by id: one drags the view round; two pinch for speed, their spread changing as
+  // a scroll does, and twist to roll, by the angle the line between them turns.
+  const pointers = new Map();
+  const pair = () => {
+    const [a, b] = [...pointers.values()];
+    return { spread: Math.hypot(b[0] - a[0], b[1] - a[1]), angle: Math.atan2(b[1] - a[1], b[0] - a[0]) };
+  };
+  let pinch = null;
+  canvas.addEventListener("pointerdown", event => {
+    pointers.set(event.pointerId, [event.clientX, event.clientY]);
+    canvas.setPointerCapture(event.pointerId);
+    pinch = pointers.size === 2 ? pair() : null;
+  });
+  const lift = event => { pointers.delete(event.pointerId); pinch = pointers.size === 2 ? pair() : null; };
+  canvas.addEventListener("pointerup", lift);
+  canvas.addEventListener("pointercancel", lift);
   canvas.addEventListener("pointermove", event => {
-    if (!dragging) return;
-    state.dragged[0] += event.clientX - dragging[0];
-    state.dragged[1] += event.clientY - dragging[1];
-    dragging = [event.clientX, event.clientY];
+    const before = pointers.get(event.pointerId);
+    if (!before) return;
+    pointers.set(event.pointerId, [event.clientX, event.clientY]);
+    if (pointers.size === 1) {
+      state.dragged[0] += event.clientX - before[0];
+      state.dragged[1] += event.clientY - before[1];
+    } else if (pointers.size === 2 && pinch) {
+      const now = pair();
+      state.scrolled += now.spread - pinch.spread;
+      // The turn of the line between the fingers, taken the short way round.
+      state.twisted += Math.atan2(Math.sin(now.angle - pinch.angle), Math.cos(now.angle - pinch.angle));
+      pinch = now;
+    }
   });
   canvas.addEventListener("wheel", event => { event.preventDefault(); state.scrolled -= event.deltaY; }, { passive: false });
   const restart = () => {
     for (const [name, part] of Object.entries(C.state)) device.queue.writeBuffer(buffers[name], 0, tiled(part));
   };
+  // What a key pressed once does; any other key is held, for as long as it is down.
+  const press = key => {
+    if (key === "[") state.leg = Math.max(state.leg / 2, C.limits.finest);
+    else if (key === "]") state.leg = Math.min(state.leg * 2, C.limits.coarsest);
+    else if (key === "p") state.holding = !state.holding;
+    else if (key === "r") restart();
+    else if (key === "-") state.wave = Math.max(Math.round(state.wave / waveStep) - 1, 0) * waveStep;
+    else if (key === "=" || key === "+") state.wave = Math.min(Math.round(state.wave / waveStep) + 1, mostWave / waveStep) * waveStep;
+    else if (key === "c") state.crystals = !state.crystals;
+    else return false;
+    return true;
+  };
   window.addEventListener("keydown", event => {
-    if (event.key === "[") state.leg = Math.max(state.leg / 2, C.limits.finest);
-    else if (event.key === "]") state.leg = Math.min(state.leg * 2, C.limits.coarsest);
-    else if (event.key === "p") state.holding = !state.holding;
-    else if (event.key === "r") restart();
-    else if (event.key === "-") state.wave = Math.max(Math.round(state.wave / waveStep) - 1, 0) * waveStep;
-    else if (event.key === "=" || event.key === "+") state.wave = Math.min(Math.round(state.wave / waveStep) + 1, mostWave / waveStep) * waveStep;
-    else if (event.key === "c") state.crystals = !state.crystals;
-    else held.add(event.key);
+    if (!press(event.key)) held.add(event.key);
     if (event.key === " " || event.key.startsWith("Arrow")) event.preventDefault();
   });
   window.addEventListener("keyup", event => { held.delete(event.key); });
   window.addEventListener("blur", () => { held.clear(); });
+  // The buttons press their key once, or hold it while they are pressed; the time button shows whether time is held.
+  for (const button of document.querySelectorAll("#buttons button")) {
+    if (button.dataset.key) button.addEventListener("click", () => {
+      press(button.dataset.key);
+      if (button.dataset.key === "p") button.classList.toggle("on", state.holding);
+    });
+    else {
+      const key = button.dataset.hold;
+      button.addEventListener("pointerdown", event => { held.add(key); button.setPointerCapture(event.pointerId); });
+      for (const end of ["pointerup", "pointercancel"]) button.addEventListener(end, () => { held.delete(key); });
+    }
+  }
 
   const setNumber = (name, uniform, number) => programs[name].view.setFloat32(programs[name].program.offsets[uniform], number, true);
   let last = performance.now(), drawn = 0;
@@ -274,12 +331,13 @@ async function start() {
     const thrusting = sign("w", "s"), braking = held.has(" ");
     setNumber("advance", "dt", dt);
     setNumber("advance", "thrust", C.limits.thrust * seconds * thrusting + C.limits.scroll * state.scrolled);
-    setNumber("advance", "roll", C.limits.turn_per_second * seconds * sign("d", "a"));
+    setNumber("advance", "roll", C.limits.turn_per_second * seconds * sign("d", "a") + state.twisted);
     setNumber("advance", "yaw", C.limits.turn_per_second * seconds * sign("ArrowRight", "ArrowLeft") + C.limits.turn_per_point * state.dragged[0]);
     setNumber("advance", "pitch", C.limits.turn_per_second * seconds * sign("ArrowUp", "ArrowDown") - C.limits.turn_per_point * state.dragged[1]);
     setNumber("advance", "braking", braking ? 1 : 0);
     state.dragged = [0, 0];
     state.scrolled = 0;
+    state.twisted = 0;
     // The sightlines and the tracer at their own pixels, the tracer with its legs.
     setNumber("tracer", "step", state.leg);
     // The wave's swing, scaled, in both passes that feel it; the crystals drawn or not, stepped either way.

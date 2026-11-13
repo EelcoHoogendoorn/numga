@@ -12,8 +12,9 @@ import numpy as np
 from numga import stack
 from examples.util.animation import capture
 from examples.surfaces.reciprocal import core
-from examples.util.wgsl import fitted, meshes, show, simplices, solids
-from examples.util.wgsl.camera import offset_panel
+from numga.topology import Topology
+from numga.render import drawing, meshes, simplices, solids
+from examples.util.panels import fitted, offset_panel, overlay, show
 
 TERRAIN_COLOUR = np.array(to_rgb("#9fb7c4"))
 BOUNDARY_COLOUR = np.full(3, 0.65)
@@ -87,7 +88,7 @@ def panels(topology: core.Topology, points: core.Point, framing: solids.View
     # The reciprocal diagram: a reciprocal vertex for each face, joined across every bar to the one on its other side
     # along the bar's dual edge, each join drawn as a chain of its two ends.
     across_bars = topology.dual.reading(topology.interior[1], 1) * topology.dual.incidence[1, 0]   # [ends] Scalar+[inner <- faces]
-    joins = simplices.Topology.chains([2] * len(topology.interior[1]))
+    joins = Topology.chains([2] * len(topology.interior[1]))
     figure = plt.figure(figsize=(6.0, 3.0))
     terrain_axes = figure.add_axes((0.0, 0.0, 0.5, 1.0))
     framing = fitted(framing, terrain_axes)
@@ -100,14 +101,14 @@ def panels(topology: core.Topology, points: core.Point, framing: solids.View
     # rises along each, its place in the diagram.
     slope_camera = offset_panel(plane, core.mv.x.dual(), core.mv.y.dual())
     boundary = simplices.strokes(places, rim, RIM_COLOUR, LINE_WIDTH, camera)
-    truss = simplices.overlay(plane, [boundary])
+    truss = overlay(plane, [boundary])
 
     def drawn(heights: core.Scalar, stresses: core.Scalar, duals: core.Plane) -> None:
         shades = colours(stresses.batch().to_array())                          # [inner, 4]
         picture.set_data(terrain(topology, points, heights, shades[:, :3], framing))
         corners = duals.batch()                                                # [faces] Plane+
         tails, heads = (across_bars * duals).batch()                           # [inner] Plane+, [inner] Plane+
-        truss.set_data(simplices.composited([
+        truss.set_data(drawing.composited([
             simplices.strokes(places, bars, shades[:, :3], BAR_WIDTH, camera), boundary,
             simplices.strokes(stack((tails, heads), axis=-1).reshape(-1), joins, RECIPROCAL_COLOUR, LINE_WIDTH, slope_camera),
             simplices.markers(corners, RECIPROCAL_COLOUR, CORNER_RADIUS, slope_camera)]))

@@ -25,10 +25,10 @@ DURATION_MS = 40
 
 
 # --- math -----------------------------------------------------------------------------
-def flowed() -> tuple[core.Topology, list[tuple[core.Point, core.Scalar]]]:
+def flowed(n_steps: int = N_STEPS) -> tuple[core.Topology, list[tuple[core.Point, core.Scalar]]]:
     """The bunny with the states of its flow: the vertices and each vertex's smallest eigenvalue."""
     topology, vertices = bunny()
-    return topology, list(islice(core.flow(topology, vertices, STEP), 0, N_STEPS + 1, STRIDE))
+    return topology, list(islice(core.flow(topology, vertices, STEP), 0, n_steps + 1, STRIDE))
 
 
 # --- plumbing -------------------------------------------------------------------------

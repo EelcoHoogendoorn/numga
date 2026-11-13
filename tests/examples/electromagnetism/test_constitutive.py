@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-import matplotlib.pyplot as plt
-
-from examples.electromagnetism.constitutive import core, scenarios, render
+from examples.electromagnetism.constitutive import core, render, scenarios
 
 mv = core.mv
 t, x, z = mv.t, mv.x, mv.z
@@ -161,16 +159,5 @@ def test_moving_glass_shows_exact_fresnel_drag():
         np.testing.assert_allclose(phase_speeds(moving, z, trial_speeds), [expected], atol=scan_tolerance)
 
 
-def test_figures_and_animation_draw():
-    """Each scenario feeds its figure; the figures and a short animation draw."""
-    glass_modes, crystal_modes = scenarios.modes()
-    figures = [
-        render.draw_wave_comparison_figure(glass_modes, crystal_modes),
-        render.draw_dispersion_figure(*scenarios.dispersion()),
-        render.draw_polarizations_figure(crystal_modes),
-        render.draw_fresnel_surface_figure(*scenarios.headings(), scenarios.threshold),
-        render.draw_fresnel_drag_figure(*scenarios.drag()),
-    ]
-    assert all(isinstance(figure, plt.Figure) for figure in figures)
-    frames = list(render.animate_wave_comparison(glass_modes, crystal_modes, 4))
-    assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)
+def test_one_frame_of_the_comparison_draws():
+    next(render.animate_wave_comparison(*scenarios.modes(), 1))

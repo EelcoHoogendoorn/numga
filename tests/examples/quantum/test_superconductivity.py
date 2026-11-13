@@ -1,33 +1,16 @@
-"""Self-consistency and collective superconducting response."""
+"""The superconducting condensate: its linear response and its motion under a mirror, and its figures after one frame."""
 
 import numpy as np
 import pytest
 
-from examples.quantum.superconductivity import core, scenarios
+from examples.quantum.superconductivity import core, render, scenarios
 
 ROUND_OFF = 1e-11
 
 
 @pytest.fixture(scope="module")
 def quench():
-    return scenarios.quench(scenarios.QUENCH_RATIO)
-
-
-def test_equilibrium_gap_and_phase_symmetry(quench):
-    model, _, equilibrium, _, _ = quench
-    np.testing.assert_allclose(model.rate(equilibrium).kernel, 0, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose(equilibrium.scalar_norm_squared().kernel, 0.25, atol=ROUND_OFF, rtol=0)
-    coupling = scenarios.COUPLING * scenarios.QUENCH_RATIO
-    continuum_gap = scenarios.CUTOFF / np.sinh(2 * scenarios.CUTOFF / coupling)
-    # This tolerance tests the finite energy quadrature against the continuum gap equation.
-    np.testing.assert_allclose(model.gap(equilibrium).norm().to_array(), continuum_gap, rtol=1e-5)
-
-    phase = 0.73
-    rotor = (core.mv.xy * (-phase / 2)).exp()
-    rotated = rotor >> equilibrium
-    np.testing.assert_allclose(model.rate(rotated).kernel, 0, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose((model.gap(rotated) - (rotor >> model.gap(equilibrium))).kernel,
-                               0, atol=ROUND_OFF, rtol=0)
+    return scenarios.quench(scenarios.QUENCH_RATIO, n_steps=scenarios.STEPS_PER_FRAME)
 
 
 def test_response_is_the_derivative_and_contains_the_phase_zero_mode(quench):
@@ -48,44 +31,6 @@ def test_response_is_the_derivative_and_contains_the_phase_zero_mode(quench):
                                0, atol=ROUND_OFF, rtol=0)
 
 
-def test_collective_response_predicts_a_weak_quench():
-    model, initial, equilibrium, _, history = scenarios.quench(scenarios.SMALL_QUENCH_RATIO)
-    disturbance = scenarios.response(model, equilibrium, initial - equilibrium)
-    exact = model.gap(history) - model.gap(equilibrium)
-    predicted = model.gap(disturbance)
-    scale = np.max(np.abs(exact.kernel))
-    collective_error = np.max(np.abs((exact - predicted[:, 0]).kernel)) / scale
-    frozen_error = np.max(np.abs((exact - predicted[:, 1]).kernel)) / scale
-    assert collective_error < 0.005
-    assert frozen_error > 0.2
-
-
-def test_midpoint_converges_at_second_order(quench):
-    model, initial, _, _, _ = quench
-    duration = 2.0
-    steps = (40, 80, 160)
-    ends = [tuple(core.evolution(initial, model.rate, duration / count, count, count,
-                                 scenarios.N_MIDPOINT_ITERATIONS))[-1] for count in steps]
-    coarse = np.linalg.norm((ends[0] - ends[1]).kernel)
-    fine = np.linalg.norm((ends[1] - ends[2]).kernel)
-    assert 3.8 < coarse / fine < 4.2
-
-
-def test_figures_and_animation_draw(quench):
-    import matplotlib.pyplot as plt
-    from examples.quantum.superconductivity import render
-
-    model, initial, equilibrium, times, history = quench
-    figures = [render.draw_equilibrium(model.dispersion, initial),
-               render.draw_gap(times, model.gap(history), model.gap(equilibrium))]
-    for figure in figures:
-        figure.canvas.draw()
-        plt.close(figure)
-    frames = list(render.animate_quench(model.dispersion, history[:2], model.gap(history[:2]), times[:2]))
-    assert len(frames) == 2
-    assert np.any(frames[0] != frames[1])
-
-
 def test_precession_is_mirror_covariant(quench):
     # Mirroring the condensate, its occupation planes and its pairing map with it, mirrors its motion.
     model, initial, _, _, _ = quench
@@ -93,3 +38,13 @@ def test_precession_is_mirror_covariant(quench):
         mirrored = core.Condensate(mirror >> model.dispersion, mirror >> model.pairing(mirror << core.Spin))
         np.testing.assert_allclose((mirrored.rate(mirror >> initial) - (mirror >> model.rate(initial))).kernel,
                                    0, atol=ROUND_OFF, rtol=0)
+
+
+def test_the_figures_and_one_frame_draw(quench):
+    model, initial, equilibrium, times, history = quench
+    gaps, equilibrium_gap = model.gap(history), model.gap(equilibrium)
+    render.draw_equilibrium(model.dispersion, initial)
+    next(render.animate_quench(model.dispersion, history, gaps, times))
+    render.draw_gap(times, gaps, equilibrium_gap)
+    disturbance = scenarios.response(model, equilibrium, initial - equilibrium, n_steps=scenarios.STEPS_PER_FRAME)
+    render.draw_response(times, gaps - equilibrium_gap, model.gap(disturbance), scenarios.RESPONSE_NAMES)

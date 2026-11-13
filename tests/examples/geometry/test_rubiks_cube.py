@@ -1,4 +1,4 @@
-"""Tests for the Rubik's cube verify that quarter turns are exact and cycle in fours, the batched layer turn reaches every child state, and the scene solves its scramble and renders."""
+"""Tests for the Rubik's cube verify that quarter turns are exact and cycle in fours, the batched layer turn reaches every child state, and a one-turn scramble solves and its first frame draws."""
 
 from __future__ import annotations
 
@@ -28,8 +28,7 @@ def test_the_frontier_is_every_turn_of_every_state():
         np.testing.assert_array_equal(children[direction, side, axis, parent].kernel, expected.kernel)
 
 
-def test_the_scene_solves_and_draws():
-    _, solution, _ = scenarios.scramble_and_solution()
+def test_a_one_turn_scramble_solves_and_draws():
+    _, solution, _ = scenarios.scramble_and_solution(n_scramble=1, depth=1)
     solved_stickers, solved_corners, colours = core.solved_cube()
-    images = list(render.animate(core.animate(solved_stickers, solved_corners, solution[:1], 2), colours))
-    assert len(images) == 3
+    next(render.animate(core.animate(solved_stickers, solved_corners, solution, 1), colours))

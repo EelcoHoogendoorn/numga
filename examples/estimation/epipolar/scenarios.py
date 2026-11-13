@@ -48,7 +48,7 @@ def house() -> Point:
 
 
 # --- math ------------------------------------------------------------------
-def epipolar(noise: float) -> tuple[Point, Point, Point, Line, Point, Motor, Motor]:
+def epipolar(noise: float, n_iterations: int = N_ITERATIONS) -> tuple[Point, Point, Point, Line, Point, Motor, Motor]:
     """Two cameras image the house with sensor noise of standard deviation `noise`, and Gauss-Newton steps recover
     the relative pose and the 3D landmarks. Returns the landmarks, the noise-free and noisy image points in both
     views, the measured sight rays, the reconstructed landmarks across the iterations, camera 2's true pose, and
@@ -77,7 +77,7 @@ def epipolar(noise: float) -> tuple[Point, Point, Point, Line, Point, Motor, Mot
     # Measured sight rays, each in its own camera's frame. Jointly solve for the relative pose and the
     # world points, starting from the right baseline without any rotation.
     rays = (origin & measured_images).normalized()                            # [views, landmarks] Line-
-    iterates = islice(reconstruction(rays[0], rays[1], true_shift.exp().normalized()), N_ITERATIONS + 1)
+    iterates = islice(reconstruction(rays[0], rays[1], true_shift.exp().normalized()), n_iterations + 1)
     estimated_motors, reconstructed_landmarks = (stack(path) for path in zip(*iterates))  # [iterations] Motor+, [iterations, landmarks] Point-
 
     return landmarks, images, measured_images, rays, reconstructed_landmarks, true_motor, estimated_motors

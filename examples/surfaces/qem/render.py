@@ -15,7 +15,8 @@ from matplotlib.colors import to_rgb
 
 from numga import Extensor, stack
 from examples.surfaces.qem.core import Topology, Point, mv
-from examples.util.wgsl import image_figure, meshes, solids
+from numga.render import meshes, solids
+from examples.util.panels import image_figure
 
 # Blue: shared flanking ridge triangles (faces 0, 1)
 # Red/Rose: steep corner triangles at vertex a (faces 2, 3)

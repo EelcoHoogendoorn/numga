@@ -11,11 +11,11 @@ from numga import stack
 
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import offset_panel
+from numga.topology import Topology
+from numga.render import drawing, simplices
+from examples.util.panels import offset_panel, overlay
 from examples.electromagnetism.electrostriction.core import Field, Point, Scalar, field_along
 
-Topology = simplices.Topology
 
 rest_colour = np.array([0xc4, 0xcb, 0xd0]) / 255
 bond_colour = np.array([0x28, 0x65, 0x80]) / 255
@@ -56,7 +56,7 @@ def draw_rest(rest: Point, bonds: np.ndarray) -> plt.Figure:
     mv = rest.context.multivector
     camera = offset_panel(ax, mv.x, mv.y)
     sites = rest.batch()
-    simplices.overlay(ax, [simplices.strokes(sites, Topology(len(sites), bonds), bond_colour, bond_width, camera),
+    overlay(ax, [simplices.strokes(sites, Topology(len(sites), bonds), bond_colour, bond_width, camera),
                            simplices.markers(sites, bond_colour, particle_radius, camera)])
     return figure
 
@@ -80,7 +80,7 @@ class LatticeView:
         self.reference = [simplices.strokes(sites, self.bonds, rest_colour, rest_width, self.camera,
                                             dashes=rest_dashes),
                           simplices.markers(sites, rest_colour, rest_radius, self.camera)]
-        self.image = simplices.overlay(ax, self.reference)
+        self.image = overlay(ax, self.reference)
 
     def update(self, positions: Point, dipoles: Point, applied: Field) -> plt.Figure:
         sites, arrows = positions.batch(), dipoles.batch() * self.dipole_scale
@@ -89,7 +89,7 @@ class LatticeView:
         # The applied field drawn along the direction whose field it is.
         applied_arrow = field_along.solve(applied) * self.field_scale                   # [] Point-
         applied_ends = stack((self.anchor - applied_arrow / 2, self.anchor + applied_arrow / 2))
-        self.image.set_data(simplices.composited(self.reference + [
+        self.image.set_data(drawing.composited(self.reference + [
             simplices.strokes(sites, self.bonds, bond_colour, bond_width, self.camera),
             simplices.markers(sites, bond_colour, particle_radius, self.camera),
             simplices.strokes(dipole_ends, self.arrows, dipole_colour, dipole_width, self.camera,

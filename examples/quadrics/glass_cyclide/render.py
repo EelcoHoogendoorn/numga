@@ -17,7 +17,7 @@ import numpy as np
 
 from numga import stack
 from examples.quadrics.glass_cyclide import core
-from examples.util.wgsl import Shader, supersampled
+from numga.wgsl import Shader, supersampled
 
 mv = core.mv
 types = dict(Sphere=core.Sphere, OriginPlane=core.OriginPlane, Point=core.Point, Direction=core.Direction,

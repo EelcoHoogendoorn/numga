@@ -30,12 +30,13 @@ def random_turns(rng: np.random.Generator) -> Iterator[np.ndarray]:
             yield move
 
 
-def scramble_and_solution() -> tuple[np.ndarray, np.ndarray, core.Point]:
-    """A random scramble of quarter turns, the sequence of turns that solves it, and the scrambled sticker points."""
+def scramble_and_solution(n_scramble: int = N_SCRAMBLE, depth: int = DEPTH) -> tuple[np.ndarray, np.ndarray, core.Point]:
+    """A random scramble of `n_scramble` quarter turns, the sequence of turns that solves it, found up to `depth` turns
+    from each end, and the scrambled sticker points."""
     solved_stickers, _, _ = core.solved_cube()                              # [stickers] Point-
-    moves = np.array(list(islice(random_turns(np.random.default_rng(SEED)), N_SCRAMBLE)))
+    moves = np.array(list(islice(random_turns(np.random.default_rng(SEED)), n_scramble)))
     scrambled_stickers = core.scramble(solved_stickers, moves)              # [stickers] Point-
-    return moves, core.solve(scrambled_stickers, solved_stickers, DEPTH), scrambled_stickers
+    return moves, core.solve(scrambled_stickers, solved_stickers, depth), scrambled_stickers
 
 
 # --- plumbing -------------------------------------------------------------------------

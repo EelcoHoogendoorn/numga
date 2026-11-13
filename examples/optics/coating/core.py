@@ -22,7 +22,7 @@ import numpy as np
 from numga import Algebra, NumpyContext, Orientation, stack
 from numga.algebras import STA as ga
 from numga.sparse import SparseExtensor
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga, dtype=np.complex128).multivector
 # Real fields along z at normal incidence, stepped in time: no phases, so no complex numbers.
@@ -254,6 +254,6 @@ class Line:
             excitation = self.between(magnetic)
             # The reverse runs each difference back, from the magnetic planes to the electric planes
             # between them: the adjoint pair under which the leapfrog keeps its energy.
-            displacement = (real.t.inverse() | (real.z ^ (~self.difference * excitation.field()).batch())) * rate
+            displacement = (real.t.inverse() | (real.z ^ (self.difference.adjugate() * excitation.field()).batch())) * rate
             electric = electric + self.inverse(displacement)
             yield electric, magnetic

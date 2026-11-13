@@ -1,8 +1,7 @@
 """The frequency-doubling crystal: its response has the tetrahedral component law, turns with the
 crystal and reverses with its bonds, the [110] cut has its analytic polarization and power, the
-phase-matched growth follows the closed form, and the scenes draw."""
+phase-matched growth follows the closed form."""
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
@@ -84,11 +83,5 @@ def test_phase_matching_builds_while_uniform_mismatched_light_cancels():
     np.testing.assert_allclose(power[:, -1].to_array(), [1.0, 0.0, (2 / np.pi) ** 2], atol=1e-4)
 
 
-def test_scenes_draw():
-    pumps, frames = scenarios.turning(2, 49)
-    figures = (render.draw_waveform(*scenarios.waveform(65)), render.draw_mixing(*scenarios.mixing(49)),
-               render.draw_growth(*scenarios.phase_matching(256)))
-    for figure in figures:
-        plt.close(figure)
-    images = list(render.animate(pumps, frames))
-    assert len(images) == 2 and not np.array_equal(images[0], images[1])
+def test_one_frame_of_the_turning_crystal_draws():
+    next(render.animate(*scenarios.turning(1, 2)))

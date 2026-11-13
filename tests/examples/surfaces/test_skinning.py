@@ -1,4 +1,4 @@
-"""Blended bone motors keep a twisted cylinder at unit radius about its axis, whereas blended point maps collapse it toward the chord."""
+"""Blended bone motors keep a twisted cylinder at unit radius about its axis, whereas blended point maps collapse it toward the chord; the figure draws."""
 
 from __future__ import annotations
 
@@ -19,6 +19,4 @@ def test_motor_blends_keep_the_radius_and_the_map_blend_collapses_it():
 
 
 def test_figure_renders():
-    figure = render.draw_skinning(*scenarios.skinning(), scenarios.N_RINGS, scenarios.N_AROUND)
-    assert isinstance(figure, plt.Figure)
-    plt.close(figure)
+    plt.close(render.draw_skinning(*scenarios.skinning(), scenarios.N_RINGS, scenarios.N_AROUND))

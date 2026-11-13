@@ -19,7 +19,7 @@ import numpy as np
 from numga import NumpyContext, stack
 from numga.algebras import VGA3D as ga
 from examples.mechanics.freeform.weights import kernels
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 tetrahedron = Topology(4, [[0, 1, 2, 3]])

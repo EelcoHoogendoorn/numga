@@ -13,7 +13,7 @@ from numga import stack
 
 from examples.thermodynamics.snowflake import core
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = core.mv
 
@@ -36,9 +36,9 @@ n_snowflake_frames, n_isotropic_frames = 75, 111
 frame_duration_ms = 40
 
 
-def dish() -> tuple[Topology, np.ndarray, core.Point]:
-    """The dish of water: its topology, its vertices' places across and up `[vertices, 2]`, and its vertices, places of
-    unit volume `Point-[vertices]`."""
+def dish(n_divisions: int = n_divisions) -> tuple[Topology, np.ndarray, core.Point]:
+    """The dish of water, its mesh of these many radial intervals: its topology, its vertices' places across and up
+    `[vertices, 2]`, and its vertices, places of unit volume `Point-[vertices]`."""
     topology, coordinates = shapes.concentric_disk(np.array([dish_radius]), n_divisions)
     vertices = (core.volume + core.across * coordinates[:, 0] + core.up * coordinates[:, 1]).field()
     return topology, coordinates, vertices
@@ -133,7 +133,7 @@ def symmetry_preview(settings: dict[str, dict], name: str) -> None:
     the dish's radius, saved as an animation each, and the grown crystals side by side under this name."""
     import time
     from examples.util.animation import save_animation, save_figure
-    from examples.util.wgsl import image_figure
+    from examples.util.panels import image_figure
     from examples.thermodynamics.snowflake import render
 
     topology, coordinates, vertices = dish()

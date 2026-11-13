@@ -10,7 +10,7 @@ import numpy as np
 from numga import Algebra
 from numga.backend.context import Context
 from numga.sparse import spdiag
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 # Instantiated in spherical or degenerate planar geometry.
 ga: Algebra

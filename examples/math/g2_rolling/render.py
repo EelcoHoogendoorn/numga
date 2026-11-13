@@ -14,7 +14,7 @@ from functools import cache
 
 import numpy as np
 
-from examples.util.wgsl import Shader, supersampled
+from numga.wgsl import Shader, supersampled
 from numga import concatenate, stack
 
 from .core import Point, Rotor, ga, mv

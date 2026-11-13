@@ -11,8 +11,9 @@ from matplotlib.colors import to_rgb
 from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, offset_panel
+from numga.topology import Topology
+from numga.render import Camera, contours, drawing, simplices
+from examples.util.panels import offset_panel, overlay
 from examples.relativity.spinors import core
 
 RIGHT_COLOUR, LEFT_COLOUR, INK = "#267fa9", "#d17c24", "#263b51"
@@ -54,7 +55,7 @@ def cross(ax: plt.Axes, camera: Camera, across: str, up: str) -> np.ndarray:
     ax.annotate(up, (0, 1), xycoords=("data", "axes fraction"), xytext=(0, 4), textcoords="offset points",
                 ha="center", va="bottom", color=LABEL_COLOUR)
     ax.set_axis_off()
-    return simplices.strokes(ends, simplices.Topology.chains([2, 2]), ink(CROSS_COLOUR), charts.FRAME_PX, camera,
+    return simplices.strokes(ends, Topology.chains([2, 2]), ink(CROSS_COLOUR), charts.FRAME_PX, camera,
                              cap=simplices.Cap.BUTT)
 
 
@@ -86,22 +87,22 @@ def animate_rotation(
         turns = (mv.zx * (-np.linspace(0, 2 * np.pi, N_RIM_SAMPLES, endpoint=False) / 2)).exp()
         circle = turns >> along                                               # [rim samples] Antivector-
         beneath = [cross(axis, camera, "x", "z"),
-                   simplices.strokes(circle, simplices.Topology.loops([N_RIM_SAMPLES]), ink(RIM_COLOUR), charts.FRAME_PX,
+                   simplices.strokes(circle, Topology.loops([N_RIM_SAMPLES]), ink(RIM_COLOUR), charts.FRAME_PX,
                                      camera)]
-        shown = simplices.overlay(axis, beneath)
+        shown = overlay(axis, beneath)
         # The ports as lamps, each lit as bright as its output, over its face within its rim.
         lamps = offset_panel(ports, mv.x, mv.z)
         centres = stack([place * along for place in PORT_PLACES])             # [ports] Antivector-
         rim = RIM_RADIUS / lamps.pixel
         faces = [simplices.markers(centres, ink(PORT_RIM), rim, lamps),
                  simplices.markers(centres, ink(PORT_FACE), rim - charts.FRAME_PX, lamps)]
-        lit = simplices.overlay(ports, faces)
+        lit = overlay(ports, faces)
         for direction, intensities in zip(spin, np.clip(stack((bright, dark), axis=-1).to_array(), 0, 1)):
             arrow = stack((0 * direction, direction))                         # [2] Antivector-
-            shown.set_data(simplices.composited(beneath + [
-                simplices.strokes(arrow, simplices.Topology.chains([2]), ink(INK), SPIN_WIDTH, camera,
+            shown.set_data(drawing.composited(beneath + [
+                simplices.strokes(arrow, Topology.chains([2]), ink(INK), SPIN_WIDTH, camera,
                                   chevrons=np.ones(1), chevron=CHEVRON_LENGTH * SPIN_WIDTH, cap=simplices.Cap.BUTT)]))
-            lit.set_data(simplices.composited(faces + [
+            lit.set_data(drawing.composited(faces + [
                 simplices.markers(centres[port][None], ink(PORT_COLOUR), PORT_RADIUS / lamps.pixel, lamps,
                                   opacity=intensity) for port, intensity in enumerate(intensities)]))
             yield capture(figure)
@@ -130,11 +131,11 @@ def draw_chirality(
     # The currents bold, twice a curve's width, each from the origin, ending in a chevron.
     arrows = stack((0 * tips, tips), axis=-1).reshape(-1)                      # [currents * 2] Antivector-
     colours = np.stack([ink(colour) for colour in (LEFT_COLOUR, RIGHT_COLOUR, INK)])
-    simplices.overlay(ax, [
-        contours.picture(cone, simplices.Topology(3, np.array([[0, 1, 2]])), np.zeros(3), ink(CONE_FILL), camera),
+    overlay(ax, [
+        contours.picture(cone, Topology(3, np.array([[0, 1, 2]])), np.zeros(3), ink(CONE_FILL), camera),
         lines,
-        simplices.strokes(cone, simplices.Topology.chains([3]), ink(RIM_COLOUR), charts.FRAME_PX, camera),
-        simplices.strokes(arrows, simplices.Topology.chains([2] * 3), colours, CURRENT_WIDTH, camera,
+        simplices.strokes(cone, Topology.chains([3]), ink(RIM_COLOUR), charts.FRAME_PX, camera),
+        simplices.strokes(arrows, Topology.chains([2] * 3), colours, CURRENT_WIDTH, camera,
                           chevrons=np.ones(3), chevron=CHEVRON_LENGTH * CURRENT_WIDTH, cap=simplices.Cap.BUTT)])
     return figure
 

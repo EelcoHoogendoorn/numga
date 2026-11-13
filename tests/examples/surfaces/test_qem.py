@@ -1,12 +1,13 @@
-"""Test Garland–Heckbert quadric error metrics in PGA3D."""
+"""Test Garland–Heckbert quadric error metrics in PGA3D; the ridge scene and one pass over the bunny draw."""
 
 from __future__ import annotations
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
 from numga import stack
-from examples.surfaces.qem import core
+from examples.surfaces.qem import core, render, scenarios
 from examples.surfaces.qem.core import Point, mv
 
 
@@ -116,7 +117,7 @@ def test_repeated_collapses_preserve_closed_mesh_and_original_plane_error():
         assert len(np.unique(np.sort(new_faces, axis=1), axis=0)) == len(new_faces)
         assert np.all(np.diff(np.sort(new_faces, axis=1), axis=1) > 0)
         # Every edge lies between two faces, and the surface is a sphere.
-        faces_at_edges = ~new_topology.incidence[2, 1].sum(axis=0) * mv.scalar(np.ones(len(new_faces))[..., None]).field()
+        faces_at_edges = new_topology.incidence[2, 1].sum(axis=0).adjugate() * mv.scalar(np.ones(len(new_faces))[..., None]).field()
         np.testing.assert_array_equal(faces_at_edges.to_array(), 2)
         assert new_topology.n_vertices - new_topology.n_elements[1] + len(new_faces) == 2
 
@@ -158,10 +159,8 @@ def test_repeated_collapses_preserve_closed_mesh_and_original_plane_error():
         clusters = next_clusters
 
 
-def test_scenario_renders():
-    """Verify that the scenario's geometry renders as a figure."""
-    import matplotlib.pyplot as plt
-    from examples.surfaces.qem import render, scenarios
-
-    figure = render.draw_qem(*scenarios.qem())
-    assert isinstance(figure, plt.Figure)
+def test_the_scenes_run_and_draw():
+    plt.close(render.draw_qem(*scenarios.qem()))
+    topology, vertices = scenarios.bunny()
+    one_pass = np.array([topology.n_elements[2] - 2])
+    assert len(list(render.animate_mesh(core.simplify(topology, vertices, one_pass), vertices))) == 2

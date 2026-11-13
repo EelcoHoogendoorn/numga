@@ -42,7 +42,7 @@ def anisotropic_scale(scale_x: float, scale_y: float, scale_z: float) -> PointMa
     # The coordinate planes read a point's coordinates, mv.x & point being its x; each
     # coordinate is sent to its scaled axis direction, and the weight to the origin.
     coordinate_planes = mv.vector(np.eye(4))                                   # [coordinates] Plane+
-    scaled_axes = mv.antivector(np.diag([scale_x, scale_y, scale_z, 1.0]))     # [coordinates] Point-
+    scaled_axes = mv.vector(np.diag([scale_x, scale_y, scale_z, 1.0])).dual()   # [coordinates] Point-
     return (scaled_axes * (coordinate_planes & Point)).sum(axis=0)             # [] Point- <- Point-
 
 

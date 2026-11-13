@@ -1,4 +1,5 @@
-"""Motor estimation from point correspondences in flat space and on the three-sphere."""
+"""Motor estimation from point correspondences in flat space and on the three-sphere, and the flat registration's
+figure drawn."""
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -69,9 +70,5 @@ def test_translation_is_recovered_by_the_same_fit(core):
     np.testing.assert_allclose(coordinates(estimate >> source), coordinates(target), atol=1e-10)
 
 
-def test_scenarios_render():
-    """The registration scenario renders as a figure."""
-    source, target, aligned = scenarios.registration(scenarios.SCENES["euclidean"])
-    figure = render.draw_registration(source, target, aligned)
-    assert isinstance(figure, plt.Figure)
-    plt.close(figure)
+def test_the_flat_registration_draws():
+    plt.close(render.draw_registration(*scenarios.registration(scenarios.SCENES["euclidean"])))

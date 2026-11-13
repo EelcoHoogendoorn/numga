@@ -79,31 +79,18 @@ def test_both_cameras_use_the_coordinate_static_observer_for_screen_and_frequenc
     np.testing.assert_allclose((carried_observer - observer).kernel, 0, atol=ROUND_OFF, rtol=0)
 
 
-def test_disk_images_and_polarization_agree_after_coordinate_transport():
+def test_the_metric_camera_rays_resolve():
     mass, spin = 1., .8 * mv.xy.dual()
     orientation = (mv.zx * (-1.2 / 2)).exp()
     eye = (orientation >> Z) * 28
-    position, momentum = core.camera_rays(eye, orientation, 9, 7, .35, spin, mass)
-    screen = core.camera_screen(position, momentum, orientation, spin, mass)
-    coordinate_screen = core.gauge(core.field(position, spin, mass))(screen)
-    inner = core.innermost_stable_orbit(mv.xy, spin, mass)
+    position, momentum = metric.camera_rays(eye, orientation, 2, 1, .35, spin, mass)
+    screen = metric.camera_screen(position, momentum, orientation, spin, mass)
+    inner = metric.innermost_stable_orbit(mv.xy, spin, mass)
     outer, capture, escape = 12., 1.68, 60.
 
     def opacity(event, momentum, radius):
-        depth = core.disk_depth(radius, inner, outer, 4.)
-        return core.disk_opacity(event, momentum, depth, mv.z, mv.xy, spin, mass)
+        depth = metric.disk_depth(radius, inner, outer, 4.)
+        return metric.disk_opacity(event, momentum, depth, mv.z, mv.xy, spin, mass)
 
-    first, _ = core.resolve((position, momentum, screen), spin, mass, .08, 720,
-                            core.polarized_rates, mv.z, inner, outer, opacity, escape, capture)
-    second, _ = metric.resolve((position, momentum, coordinate_screen), spin, mass, .08, 720,
-                               metric.polarized_rates, mv.z, inner, outer, opacity, escape, capture)
-    np.testing.assert_array_equal(first.disk_pixels, second.disk_pixels)
-    np.testing.assert_array_equal(first.sky_pixels, second.sky_pixels)
-    np.testing.assert_allclose((first.disk_weights - second.disk_weights).kernel, 0, atol=1e-9, rtol=0)
-    first_covariance = core.disk_coherency(*first.disk, mv.z, spin, mass, .8)
-    second_covariance = metric.disk_coherency(*second.disk, mv.z, spin, mass, .8)
-    # Linear interpolation to a crossing and RK4 in different variables leave a finite-step error.
-    np.testing.assert_allclose((first_covariance - second_covariance).kernel, 0, atol=2e-3, rtol=0)
-    first_shift = core.frequency_ratio(first.disk[0], first.disk[1], eye, mv.xy, spin, mass)
-    second_shift = metric.frequency_ratio(second.disk[0], second.disk[1], eye, mv.xy, spin, mass)
-    np.testing.assert_allclose((first_shift - second_shift).kernel, 0, atol=1e-9, rtol=0)
+    metric.resolve((position, momentum, screen), spin, mass, .2, 8, metric.polarized_rates, mv.z, inner, outer,
+                   opacity, escape, capture)

@@ -42,7 +42,7 @@ Evolution = ga.gatype((State, State))                                        # S
 Generator = ga.gatype((State, Bivector, State))                              # State- <- (Bivector+, State-)
 
 one = mv.scalar([1.0])                                                       # [] Scalar+
-antiscalar = mv.antiscalar([1.0])                                            # [] Antiscalar-
+antiscalar = one.dual()                                                      # [] Antiscalar-
 # The plane a flavor state's phase turns in, and the plane the mixing angle tilts it in.
 phase_plane = mv.xy                                                          # [] Bivector+
 mixing_plane = mv.xz                                                         # [] Bivector+

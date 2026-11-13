@@ -43,14 +43,14 @@ pull = 1.0
 
 
 # --- plumbing -------------------------------------------------------------------------
-def ball() -> tuple[core.Topology, np.ndarray, core.Point]:
+def ball(n_levels: int = n_levels, n_shells: int = n_shells) -> tuple[core.Topology, np.ndarray, core.Point]:
     """The ball of core and mantle: its topology, its vertices' coordinates and the vertices, directions of space."""
     topology, coordinates = shapes.ball(n_levels, n_shells)
     coordinates = mantle_radius * coordinates
     return topology, coordinates, mv(core.Plane, coordinates).dual().field()
 
 
-def outer_core(topology: core.Topology, vertices: core.Point) -> tuple[core.Topology, core.Point, core.SparseExtensor]:
+def outer_core(topology: core.Topology, vertices: core.Point) -> tuple[core.Topology, core.Point, core.Sparse]:
     """The fluid outer core, between the inner core and the mantle: its tetrahedra as a topology on its own vertices,
     which run without a gap among the ball's, shell after shell, those vertices, and the map placing a field on its
     tetrahedra among the ball's."""
@@ -60,7 +60,7 @@ def outer_core(topology: core.Topology, vertices: core.Point) -> tuple[core.Topo
     simplices = topology.elements[3][fluid]                                      # [fluid, 4]
     first, last = simplices.min(), simplices.max()
     fluid_vertices = topology.reading(np.arange(first, last + 1), 0) * vertices  # Point-[fluid vertices]
-    return core.Topology(last + 1 - first, simplices - first), fluid_vertices, ~topology.reading(np.flatnonzero(fluid), 3)
+    return core.Topology(last + 1 - first, simplices - first), fluid_vertices, topology.reading(np.flatnonzero(fluid), 3).adjugate()
 
 
 # --- math -----------------------------------------------------------------------------

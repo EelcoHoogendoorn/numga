@@ -37,10 +37,10 @@ def conducting(heights: core.Scalar, size: float) -> core.Scalar:
     return 0.5 - heights + size * heights * (1 - heights) * noise
 
 
-def turning_over():
-    """The open layer with the map reading the closed layer's fields on it, its vertices `Point-[vertices]`, the
-    liquid's maps, and the layer's stream function and temperature over time `Scalar+[vertices]` each, with its budget,
-    from the still layer disturbed."""
+def turning_over(n_along: int = n_along, n_across: int = n_across):
+    """The open layer, `n_along` vertices along and `n_across` up, with the map reading the closed layer's fields on
+    it, its vertices `Point-[vertices]`, the liquid's maps, and the layer's stream function and temperature over time
+    `Scalar+[vertices]` each, with its budget, from the still layer disturbed."""
     closed, opened, closing, opening, places = core.layer(n_along, n_across, period)
     vertices = (core.volume + mv(core.Upright, places).dual()).field()          # Point-[opened vertices]
     liquid = core.forms(closed, opened, vertices, density, prandtl)

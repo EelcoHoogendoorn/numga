@@ -30,7 +30,7 @@ import numpy as np
 from numga import NumpyContext, stack
 from numga.algebras import VGA3D as ga
 from numga.sparse import SparseExtensor, spdiag
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                         # Scalar+
@@ -49,7 +49,7 @@ def spread(topology: Topology, points: Point, start: Even, interval: float) -> I
     # of the area of each face at it.
     triangle_areas = edges[1].commutator(edges[0]).norm() / 2              # Scalar+[faces]
     corner_mean = topology.incidence[2, 0].mean(axis=0)                    # Scalar+[faces <- vertices]
-    dual_areas = ~corner_mean * triangle_areas                             # Scalar+[vertices]
+    dual_areas = corner_mean.adjugate() * triangle_areas                   # Scalar+[vertices]
 
     face_areas = spdiag(triangle_areas)                                    # Scalar+[faces <- faces]
     inverse_face_areas = spdiag(1 / triangle_areas)                        # Scalar+[faces <- faces]
@@ -73,7 +73,7 @@ def modes(topology: Topology, points: Point, sizes: np.ndarray, probe: Even, fre
     edges = topology.boundary[2, 1] * (topology.d[0] * points)             # [3] Point-[faces]
     triangle_areas = edges[1].commutator(edges[0]).norm() / 2              # Scalar+[faces]
     corner_mean = topology.incidence[2, 0].mean(axis=0)                    # Scalar+[faces <- vertices]
-    dual_areas = ~corner_mean * triangle_areas                             # Scalar+[vertices]
+    dual_areas = corner_mean.adjugate() * triangle_areas                   # Scalar+[vertices]
 
     face_areas = spdiag(triangle_areas)                                    # Scalar+[faces <- faces]
     inverse_face_areas = spdiag(1 / triangle_areas)                        # Scalar+[faces <- faces]

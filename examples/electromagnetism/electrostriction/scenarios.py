@@ -23,7 +23,7 @@ field_scale = 0.65 / field_strength
 
 
 # --- math -----------------------------------------------------------------------------
-def lattice() -> core.Lattice:
+def lattice(n_rings: int = n_rings) -> core.Lattice:
     indices, bonds = core.hexagonal_indices(n_rings)
     # The points one spacing along the two lattice directions, which meet at sixty degrees.
     first_axis = core.mv.x.dual()                                                  # [] Point-
@@ -32,7 +32,8 @@ def lattice() -> core.Lattice:
     return core.Lattice(rest, bonds, polarizability, stiffness, tether)
 
 
-def loading(model: core.Lattice) -> tuple[np.ndarray, core.Field, core.Point, core.Point]:
+def loading(model: core.Lattice, n_load_samples: int = n_load_samples,
+            n_newton_steps: int = n_newton_steps) -> tuple[np.ndarray, core.Field, core.Point, core.Point]:
     strengths = np.linspace(0, field_strength, n_load_samples)
     applied = core.field_along(core.mv.x.dual()) * strengths
     positions = model.equilibrium(applied, n_newton_steps)

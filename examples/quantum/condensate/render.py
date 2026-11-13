@@ -16,12 +16,11 @@ from matplotlib.figure import Figure
 
 from numga.extensor import Extensor
 from examples.util.charts import style, subplots
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera
+from numga.topology import Topology
+from numga.render import Camera, contours, drawing
 from examples.quantum.condensate import core
 
 mv = core.mv
-Topology = simplices.Topology
 density_map = colormaps["Blues"]
 counted_colour, feynman_colour = np.array(to_rgb("#1d4ed8")), np.array(to_rgb("#c2410c"))
 # The picture's pixels across and the radius it frames, in oscillator lengths; the share of the colour map at the
@@ -46,7 +45,7 @@ def animate(topology: Topology, vertices: Extensor, densities: Iterable[Extensor
     for density in densities:
         values = density.to_array()
         colours = density_map(deepest * values / values.max())[:, :3]
-        yield on_white(simplices.composited([contours.picture(points, topology, values, colours, camera)]))
+        yield on_white(drawing.composited([contours.picture(points, topology, values, colours, camera)]))
 
 
 @style()

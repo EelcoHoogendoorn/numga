@@ -21,8 +21,8 @@ from pathlib import Path
 import numpy as np
 
 from examples.relativity.kerr import core, gpu, render, scenarios, viewer
-from examples.util.wgsl.page import encoded, packed, write_page
-from examples.util.wgsl.runner import coefficients
+from numga.wgsl.page import encoded, packed, write_page
+from numga.wgsl.runner import coefficients
 
 mv = core.mv
 # The page's image, in points, traced at the screen's pixels behind them, or fewer when frames come slowly; and the

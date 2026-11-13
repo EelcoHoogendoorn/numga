@@ -10,7 +10,7 @@ from matplotlib.colors import LinearSegmentedColormap, PowerNorm
 from matplotlib.figure import Figure
 
 from examples.util.animation import capture
-from examples.util.wgsl import pinned
+from examples.util.panels import pinned
 from examples.quantum.kitaev_wire import core
 from examples.util import charts
 
