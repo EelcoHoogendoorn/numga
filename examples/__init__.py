@@ -31,12 +31,17 @@ if TYPE_CHECKING:
     from numga import Algebra
     from numga.backend.context import Context
 
-# Pictures go to the folder NUMGA_PLOTS names, where several checkouts share one; else to the repository's plots, or,
-# where the examples are installed rather than checked out, as in Colab, to plots beside the notebook. The meshes the
-# examples load ship with them.
+# A picture is written under its own name, over the one of that name before it, so that the folder holds the latest of
+# each: the folder NUMGA_PLOTS names, where several checkouts share one; else `latest` in the repository's plots, apart
+# from the pictures it tracks, or, where the examples are installed rather than checked out, as in Colab, plots beside
+# the notebook. The meshes the examples load ship with them.
 ROOT = Path(__file__).resolve().parents[1]
-PLOT_DIR = Path(os.environ.get("NUMGA_PLOTS", (ROOT if (ROOT / "pyproject.toml").exists() else Path.cwd()) / "plots"))
+PLOT_DIR = Path(os.environ.get("NUMGA_PLOTS", ROOT / "plots" / "latest" if (ROOT / "pyproject.toml").exists() else Path.cwd() / "plots"))
 PLOT_DIR.mkdir(parents=True, exist_ok=True)
+# The dumps: folders that take a copy of every picture under a new numbered name, a record of a piece of work that only
+# grows and may be emptied at any time. NUMGA_PLOTS_DUMP names them, as a session of development does; a run that only
+# checks that code runs names none.
+DUMP_DIRS = tuple(Path(folder) for folder in os.environ.get("NUMGA_PLOTS_DUMP", "").split(os.pathsep) if folder)
 # The pictures the repository tracks, under their fixed names in the checkout's own plots.
 PINNED_DIR = ROOT / "plots"
 MODEL_DIR = Path(__file__).resolve().parent / "util" / "models"
