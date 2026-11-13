@@ -338,6 +338,18 @@ def test_a_map_of_numbers_is_a_map_on_every_type(context):
         np.asarray(turns(difference)(points).kernel), np.asarray(turns(difference(points)).kernel), atol=1e-5)
 
 
+def test_a_number_scales_a_sparse_map_alike_on_either_side(context):
+    """A number commutes with every cell, whether it comes as a Python number, an array with no axes or the
+    backend's own scalar, as a traced step size does: the same couplings and the same cells from either side."""
+    sparse = random_sparse(context, (4, 5), 9, 14)                            # Vector+[4 <- 5]
+    for number in (2.0, np.asarray(2.0), context.xp.asarray(2.0)):
+        left, right = number * sparse, sparse * number
+        assert left.shape == right.shape == sparse.shape
+        np.testing.assert_array_equal(left.rows, right.rows)
+        np.testing.assert_array_equal(left.columns, right.columns)
+        np.testing.assert_allclose(np.asarray(left.cells.kernel), np.asarray(right.cells.kernel), atol=1e-12)
+
+
 def test_an_array_given_to_a_map_is_a_field_of_scalars(context):
     """A map between sites reads what it is called on as a field over its sites: an array, as a field of scalars."""
     gradient, _, _ = strip(context)                                            # (Vector+ <- Scalar+)[faces <- vertices]

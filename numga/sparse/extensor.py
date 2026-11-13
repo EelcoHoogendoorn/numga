@@ -336,8 +336,10 @@ def _right_numbers(other: Sparse, value: SparseExtensor, product) -> SparseExten
 @singledispatch
 def _left(other: GAType, value: SparseExtensor, product) -> SparseExtensor:
     """A GAType on the left: each cell's product with it, the couplings read from the output
-    sites."""
-    return _transposed(value, product(_operand(value, other), value.cells))
+    sites. An array is a batch of scalars, which scale the cells where they are, as a number does."""
+    if operands.kind(other) is operands.Kind.ARRAY:
+        return _cellwise(value, product(_operand(value, other), value.cells))
+    return _transposed(value, product(other, value.cells))
 
 
 @_left.register
