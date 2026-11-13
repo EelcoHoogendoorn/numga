@@ -156,9 +156,11 @@ class Operators:
         self.areas = self.patches.norm()                                     # Scalar+[faces]
         self.centres = self.corners.sum(axis=0) / 3                          # Point-[faces]
 
-        # Each corner hat's gradient is constant across its face; assembling by corner maps
-        # vertex potentials to piecewise-constant face gradients without any metric.
-        self.corner_gradients = self.sides / (2 * self.patches)              # [corners] Plane+[faces]
+        # The simplex gradient reads every step between two corners as the difference of the potential at its ends.
+        # For the potential that is one at a corner and nothing at the others, the steps' correlation solves for it.
+        steps = self.corners[:, None] - self.corners[None, :]                # [corners, corners] Point-[faces]
+        frame = (steps * (Plane & steps)).sum(axis=(0, 1))                   # (Point- <- Plane+)[faces]
+        self.corner_gradients = frame.on_diagonal().solve(2 * steps.sum(axis=1))  # [corners] Plane+[faces]
         self.gradient = (spdiag(self.corner_gradients) * topology.incidence[2, 0]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- vertices]
 
         # At each face centroid the three barycentric hats equal 1/3, so the edge 1-form
