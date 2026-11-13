@@ -19,7 +19,7 @@ def test_a_coarse_sphere_steps_once_and_draws():
     normals = patches / areas                                                    # Patch-[faces]
     corner_gradients = (sides | patches.inverse()) / 2                           # [corners] Plane+[faces]
     gradient = (core.spdiag(corner_gradients * core.Scalar) * topology.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
-    dual_areas = ~topology.incidence[2, 0].mean(axis=0) * areas                 # Scalar+[vertices]
+    dual_areas = topology.incidence[2, 0].mean(axis=0).adjugate() * areas       # Scalar+[vertices]
 
     # The stiffness and vertex mass determine the surface's spatial modes.
     stiffness = gradient.adjugate()((areas * core.Plane.dual())(gradient))       # (Amount- <- Scalar+)[vertices <- vertices]

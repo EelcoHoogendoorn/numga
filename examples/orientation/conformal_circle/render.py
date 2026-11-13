@@ -14,9 +14,10 @@ from matplotlib.colors import to_rgb
 from examples.util.animation import capture
 from numga import concatenate, stack
 from examples.orientation.conformal_circle.core import Point, Sphere, mv
-from examples.util.wgsl import contours, show, simplices, solids
-from examples.util.wgsl.camera import Camera, panel as panel_camera
-from examples.util.wgsl.meshes import Samples
+from numga.topology import Topology
+from numga.render import Camera, contours, drawing, simplices, solids
+from examples.util.panels import overlay, panel as panel_camera, show
+from numga.render.drawing import Draw
 
 sm = solids.mv
 plane_ink, sphere_ink, curve_ink = "#218c9d", "#ce713f", "#3d354a"
@@ -81,12 +82,12 @@ def downhill(surface: Sphere, anchor: Point, length: float) -> Point:
 
 
 def arrows(starts: Point, ends: Point, colour: np.ndarray, width: float, chevron: float,
-           view: solids.View) -> Samples:
+           view: solids.View) -> Draw:
     """Arrows between points `[arrows]`, tubes `width` pixels across ending in chevrons of strokes `chevron` pixels
     long, for `solids.draw` to compose among the solids."""
     n_arrows = starts.shape[0]
     return simplices.tubes(gpu_points(stack((starts, ends), axis=-1).reshape(-1)),
-                           simplices.Topology.chains([2] * n_arrows), colour, width, view, gloss=solids.gloss,
+                           Topology.chains([2] * n_arrows), colour, width, view, gloss=solids.gloss,
                            chevrons=np.ones(n_arrows), chevron=chevron)
 
 
@@ -120,7 +121,7 @@ def panel(vertices: Point, circle: Point, globe: Point, plane: Sphere, sphere: S
     count = len(circle)
     chevrons = np.zeros(count)
     chevrons[np.arange(3) * count // 3 + count // 12 + count // 18 - 1] = 1
-    curve = simplices.tubes(gpu_points(circle), simplices.Topology.loops([count]), curve_colour, circle_width, view,
+    curve = simplices.tubes(gpu_points(circle), Topology.loops([count]), curve_colour, circle_width, view,
                             gloss=solids.gloss, chevrons=chevrons, chevron=chevron_length)
 
     # The arrows point down the surfaces' pairings with points: below the plane and into the sphere.
@@ -165,10 +166,10 @@ def animate_circle_motions(frames: Iterable[Point], fixed_points: Point) -> Iter
     spoke_indices = np.linspace(0, n_angles, 12, endpoint=False, dtype=int)
     colours = plt.get_cmap("twilight_shifted")(np.linspace(0, 1, len(spoke_indices), endpoint=False))[:, :3]
     # The disk's faces: a closed loop round the angles, swept out along the radii.
-    topology = simplices.Topology.loops([n_angles]).product(simplices.Topology.chains([n_radii]))
-    rim_loop = simplices.Topology.loops([n_angles])
-    ring_loops = simplices.Topology.loops([n_angles] * len(ring_indices))
-    spoke_chains = simplices.Topology.chains([n_radii] * len(spoke_indices))
+    topology = Topology.loops([n_angles]).product(Topology.chains([n_radii]))
+    rim_loop = Topology.loops([n_angles])
+    ring_loops = Topology.loops([n_angles] * len(ring_indices))
+    spoke_chains = Topology.chains([n_radii] * len(spoke_indices))
 
     figure, axes = plt.subplots(1, 2, figsize=(2 * motion_pixels / motion_dpi, motion_pixels / motion_dpi),
                                 dpi=motion_dpi)
@@ -197,10 +198,10 @@ def animate_circle_motions(frames: Iterable[Point], fixed_points: Point) -> Iter
     # spokes' ends.
     marks = ([], [simplices.markers(fixed_points, to_rgb(curve_ink), 3.0, cameras[1]),
                   simplices.markers(fixed_points, background, 2.0, cameras[1])])
-    images = [simplices.overlay(ax, pictures(disk, camera, fixed))
+    images = [overlay(ax, pictures(disk, camera, fixed))
               for ax, disk, camera, fixed in zip(axes, first, cameras, marks)]
     for pair in chain([first], frames):
         for image, disk, camera, fixed in zip(images, pair, cameras, marks):
-            image.set_data(simplices.composited(pictures(disk, camera, fixed)))
+            image.set_data(drawing.composited(pictures(disk, camera, fixed)))
         yield capture(figure)
     plt.close(figure)

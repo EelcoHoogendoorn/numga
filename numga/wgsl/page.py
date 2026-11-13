@@ -12,7 +12,7 @@ import base64
 import json
 from pathlib import Path
 
-from examples.util.wgsl.runner import Shader
+from .runner import Shader
 
 
 def packed(shader: Shader, values: dict) -> tuple[bytes, dict]:

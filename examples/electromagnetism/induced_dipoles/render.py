@@ -7,8 +7,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
-from examples.util.wgsl import simplices
-from examples.util.wgsl.camera import offset_panel
+from numga.topology import Topology
+from numga.render import simplices
+from examples.util.panels import offset_panel, overlay
 
 atom_colour = np.array([0.15, 0.15, 0.18])
 dipole_colour = np.array([0.80, 0.25, 0.20])
@@ -36,7 +37,7 @@ def clusters(positions, dipoles, isolated) -> plt.Figure:
     reference = isolated * scale                                                # [] Dipole-
     n_cases, n_atoms = positions.shape
     # Each arrow a chain of two points, its tail and its tip, about its atom, with a chevron at its tip.
-    shafts = simplices.Topology.chains([2] * n_atoms)
+    shafts = Topology.chains([2] * n_atoms)
     half_width = float(((stack((mv.x, mv.y)) & positions[..., None]).abs().max() + margin).to_array())
     figure, axes = plt.subplots(1, n_cases, figsize=(panel_size * n_cases, panel_size), dpi=figure_dpi)
     figure.subplots_adjust(0, 0, 1, 1, wspace=0.02)
@@ -46,7 +47,7 @@ def clusters(positions, dipoles, isolated) -> plt.Figure:
         camera = offset_panel(ax, mv.x, mv.y)
         isolated_ends = stack((site - reference / 2, site + reference / 2), axis=-1).reshape(-1)
         dipole_ends = stack((site - arrow / 2, site + arrow / 2), axis=-1).reshape(-1)
-        simplices.overlay(ax, [
+        overlay(ax, [
             simplices.strokes(isolated_ends, shafts, isolated_colour, isolated_width, camera,
                               chevrons=np.ones(n_atoms), chevron=isolated_chevron),
             simplices.strokes(dipole_ends, shafts, dipole_colour, dipole_width, camera,

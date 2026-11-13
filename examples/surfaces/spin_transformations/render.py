@@ -13,7 +13,8 @@ from numga import stack
 
 from examples.surfaces.spin_transformations.core import Topology, Point, Scalar
 from examples.util import charts
-from examples.util.wgsl import fitted, meshes, show, solids
+from numga.render import meshes, solids
+from examples.util.panels import fitted, show
 
 # The camera's elevation and azimuth, its margin as a share of the larger side, and the image's side in pixels, until
 # a figure's view is fitted to its axes.

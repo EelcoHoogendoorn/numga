@@ -10,7 +10,8 @@ import numpy as np
 
 from numga import stack
 from examples.surfaces.dirac_waves import core
-from examples.util.wgsl import meshes, show_pixels, solids
+from numga.render import meshes, solids
+from examples.util.panels import show_pixels
 
 Topology = core.Topology
 

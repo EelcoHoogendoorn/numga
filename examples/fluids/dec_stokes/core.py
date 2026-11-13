@@ -20,7 +20,7 @@ from numga.algebras import VGA2D as ga
 from numga.sparse import spdiag
 
 from examples.fluids.dec_stokes.numerical import solve_stokes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
@@ -54,16 +54,16 @@ class Operators:
 
         one_face = mv.scalar(np.ones((topology.n_elements[2], 1))).field()   # Scalar+[faces]
         midpoints = topology.incidence[1, 0].mean(axis=0) * vertices         # Point-[edges]
-        boundary = ~topology.d[1] * one_face                                 # Scalar+[edges]
+        boundary = topology.d[1].adjugate() * one_face                       # Scalar+[edges]
         # Interior dual edges join adjacent circumcentres. At the boundary they
         # finish at the primal edge's midpoint, closing the truncated dual cells.
         # The dual edge crosses to the primal edge's right, matching positive flux.
-        self.dual_edges = boundary * midpoints - ~topology.d[1] * self.circumcentres  # Point-[edges]
+        self.dual_edges = boundary * midpoints - topology.d[1].adjugate() * self.circumcentres  # Point-[edges]
 
         # Oriented dual/primal edge ratios and dual cell patches from the quarter-kites
         # incident to each vertex.
         self.edge_ratios = (self.dual_edges & self.edges) / self.edges.norm_squared()  # Patch-[edges]
-        self.dual_patches = ~topology.incidence[1, 0].sum(axis=0) * ((self.dual_edges & self.edges) / 4)  # Patch-[vertices]
+        self.dual_patches = topology.incidence[1, 0].sum(axis=0).adjugate() * ((self.dual_edges & self.edges) / 4)  # Patch-[vertices]
         self.dual_areas = self.dual_patches.norm()                           # Scalar+[vertices]
 
         # Each Hodge map scales by the oriented patch of the complementary dual cell
@@ -94,7 +94,7 @@ def stokes(operators: Operators, viscosity: float, prescribed_flux: Scalar,
     boundary_resistance = viscosity * operators.star1.adjugate()(operators.d0_vorticity(boundary_vorticity))  # Amount-[edges]
 
     free_edges = np.setdiff1d(np.arange(topology.n_elements[1]), fixed_edges)
-    embedding = ~topology.reading(free_edges, 1) * Scalar                    # (Scalar+ <- Scalar+)[edges <- free_edges]
+    embedding = topology.reading(free_edges, 1).adjugate() * Scalar          # (Scalar+ <- Scalar+)[edges <- free_edges]
     stiffness = embedding.adjugate()(viscous(embedding))                     # (Amount- <- Scalar+)[free_edges <- free_edges]
     divergence = operators.d1(embedding)                                     # (Scalar+ <- Scalar+)[faces <- free_edges]
     force = -embedding.adjugate()(viscous(prescribed_flux) + boundary_resistance)  # Amount-[free_edges]

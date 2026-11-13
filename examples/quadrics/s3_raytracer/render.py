@@ -16,7 +16,8 @@ import numpy as np
 
 from numga import stack
 from examples.quadrics.s3_raytracer.core import Motor, Plane, Point, Quadric, ga, mv, origin
-from examples.util.wgsl import Shader, image_figure, supersampled
+from numga.wgsl import Shader, supersampled
+from examples.util.panels import image_figure
 
 background = 0.02
 

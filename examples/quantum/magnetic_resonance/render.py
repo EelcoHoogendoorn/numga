@@ -15,8 +15,9 @@ from numga import stack
 from examples.util.animation import capture
 from examples.quantum.magnetic_resonance import core
 from examples.util import charts
-from examples.util.wgsl import labels, show, simplices, solids
-from examples.util.wgsl.camera import offset_panel
+from numga.topology import Topology
+from numga.render import drawing, simplices, solids
+from examples.util.panels import labels, offset_panel, overlay, show
 
 COLOURS = ("#c0392b", "#7d3c98", "#2e86c1")
 SPHERE_COLOUR, SPHERE_OPACITY = np.array([0.70, 0.76, 0.86]), 0.09
@@ -74,7 +75,7 @@ def draw_nutation(states: Iterable[core.State], steady_states: core.State) -> pl
     view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, REACH), N_PIXELS)
     # Each spin's path a chain of edges, each edge in its spin's colour.
     n_paths, n_times = paths.shape
-    tracks = simplices.tubes(paths.reshape(-1), simplices.Topology.chains([n_times] * n_paths),
+    tracks = simplices.tubes(paths.reshape(-1), Topology.chains([n_times] * n_paths),
                              np.repeat(colours, n_times - 1, axis=0), PATH_WIDTH, view, gloss=solids.gloss)
     # The frame of the axes: rods from the centre along x, y and z, each with a ball at its tip.
     axis_tips = solids.origin + solids.axes.dual() * AXIS_LENGTH              # [3] Point-
@@ -205,15 +206,15 @@ def animate_echo(detunings: np.ndarray, states: Iterable[core.State], dt: float,
         trace.spines[["top", "right"]].set_visible(False)
         figure.tight_layout()
         camera = offset_panel(top, across, up)
-        rim = simplices.strokes(equator, simplices.Topology.loops([N_RIM_SAMPLES]), EQUATOR_COLOUR, charts.LINE_PX,
+        rim = simplices.strokes(equator, Topology.loops([N_RIM_SAMPLES]), EQUATOR_COLOUR, charts.LINE_PX,
                                 camera)
-        spins = simplices.overlay(top, [rim])
+        spins = overlay(top, [rim])
         times, strength = [], []
         for index, rho in enumerate(chain((first,), states)):
             times.append(index * dt)
             strength.append(signal(rho))
             if index % every == 0:
-                spins.set_data(simplices.composited([
+                spins.set_data(drawing.composited([
                     rim, simplices.markers(rho.select.antibivector(), shades, charts.MARKER_PX / 2, camera)]))
                 so_far.set_data(times, strength)
                 yield capture(figure)

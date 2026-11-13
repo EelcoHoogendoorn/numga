@@ -10,7 +10,10 @@ import numpy as np
 from numga import concatenate, stack
 from numga.sparse import SparseExtensor, spdiag
 from examples.surfaces.frame_fields import core
-from examples.util.wgsl import image_figure, meshes, simplices, solids
+from numga.topology import Topology
+from numga.render.drawing import Draw
+from numga.render import meshes, simplices, solids
+from examples.util.panels import image_figure
 
 background = np.ones(3)
 surface_colour = np.array([0.91, 0.93, 0.95])
@@ -44,13 +47,13 @@ def square_view(view_degrees: np.ndarray, vertices: core.Point, spare: float) ->
 
 
 def sheet(points: solids.Point, faces: np.ndarray, colours: np.ndarray,
-          view: solids.View) -> meshes.Samples:
+          view: solids.View) -> Draw:
     """A lit sheet carries its vertex colours at the image's own pixel size."""
-    return meshes.samples(points, faces, colours, meshes.smooth(points, meshes.Topology(len(points), faces)), view,
+    return meshes.samples(points, faces, colours, meshes.smooth(points, Topology(len(points), faces)), view,
                           face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
 
 
-def boundary_lines(topology: core.Topology, points: solids.Point, view: solids.View) -> meshes.Samples:
+def boundary_lines(topology: core.Topology, points: solids.Point, view: solids.View) -> Draw:
     """Thin outlines keep the reference geometry visible beneath the field."""
     # The rim: the mesh of the boundary's edges.
     rim = topology.border
@@ -65,7 +68,7 @@ def panels(images: list[np.ndarray]) -> plt.Figure:
 
 
 def frame_patches(starts: core.Point, rotors: core.Rotor, size: float,
-                  view: solids.View) -> tuple[meshes.Samples, meshes.Samples]:
+                  view: solids.View) -> tuple[Draw, Draw]:
     """Coloured rigid patches expose a frame's plane and its in-plane orientation."""
     mv = rotors.context.multivector
     # A square in the frame's own x and y about its middle, the middle raised a little along its z: a shallow ridge
@@ -81,7 +84,7 @@ def frame_patches(starts: core.Point, rotors: core.Rotor, size: float,
     colours = np.broadcast_to(np.stack((coral, gold, teal, blue))[None, :, None, :], (n_patches, 4, 3, 3)).reshape(-1, 3, 3)
     patches = sheet(embedded.reshape(-1), faces, colours, view)
     perimeters = embedded[:, :4]                                              # [patches, corners] Point-
-    seams = simplices.tubes(perimeters.reshape(-1), simplices.Topology.loops([4] * n_patches), ink, 1.0, view, solids.gloss)
+    seams = simplices.tubes(perimeters.reshape(-1), Topology.loops([4] * n_patches), ink, 1.0, view, solids.gloss)
     return patches, seams
 
 
@@ -121,13 +124,13 @@ def draw_darboux_whitney(
     arc_colours = np.broadcast_to(progression, (len(selected), n_curve_samples - 1, 3))
     arc_places = solids.origin + solids.context.include_from_algebra(arc_points)  # [selected, samples] Point-
     # Each arc a chain of edges, each edge in its own colour along the arc.
-    arcs = simplices.tubes(arc_places.reshape(-1), simplices.Topology.chains([n_curve_samples] * len(selected)),
+    arcs = simplices.tubes(arc_places.reshape(-1), Topology.chains([n_curve_samples] * len(selected)),
                            arc_colours.reshape(-1, 3), 3.0, view, solids.gloss)
     probe_starts = points[selected] + lift * 0.025 - probe * 0.08             # [selected] Point-
     probe_ends = probe_starts + probe * 0.18                                  # [selected] Point-
     probe_tips = solids.origin + solids.context.include_from_algebra(probe_ends)  # [selected] Point-
     probe_segments = stack((solids.origin + solids.context.include_from_algebra(probe_starts), probe_tips), axis=-1)   # [selected, 2] Point-
-    probes = simplices.tubes(probe_segments.reshape(-1), simplices.Topology.chains([2] * len(selected)), blue, 2.0, view,
+    probes = simplices.tubes(probe_segments.reshape(-1), Topology.chains([2] * len(selected)), blue, 2.0, view,
                              solids.gloss)
     probe_ends_mark = solids.ball(probe_tips, 0.018)[:, None]
     arc_ends = solids.ball(arc_places[:, -1], 0.018)[:, None]
@@ -200,7 +203,7 @@ def draw_skyrmion(topology: core.Topology, vertices: core.Point, directors: core
     sphere_paths = solids.origin + solids.context.include_from_algebra(sphere_points)  # [paths, samples] Point-
     colours = np.concatenate((np.broadcast_to([0.56, 0.64, 0.72], (rings.shape[0], 3)), path_colours))
     # Each path a chain of edges, each edge in its path's colour.
-    chains = simplices.Topology.chains([n_curve_samples] * len(paths))
+    chains = Topology.chains([n_curve_samples] * len(paths))
     chain_colours = np.repeat(colours, n_curve_samples - 1, axis=0)
 
     disk = sheet(solids.origin + solids.context.include_from_algebra(vertices.batch()), topology.elements[2], surface_colour,
@@ -241,7 +244,7 @@ def ribbon_panel(topology: core.Topology, vertices: core.Point, rotors: core.Rot
     for ribbon in range(ribbons.shape[0]):
         layers.append((sheet(ribbon_places[ribbon].reshape(-1), faces, colours[faces], view), 1.0))
         edges = ribbon_places[ribbon][:, [0, -1]]                             # [samples, 2] Point-
-        seam = simplices.tubes(concatenate((edges[:, 0], edges[:, 1])), simplices.Topology.chains([n_curve_samples] * 2),
+        seam = simplices.tubes(concatenate((edges[:, 0], edges[:, 1])), Topology.chains([n_curve_samples] * 2),
                                np.repeat(np.stack((gold, teal)), n_curve_samples - 1, axis=0), 1.3, view, solids.gloss)
         layers.append((seam, 1.0))
     return solids.draw([], view, background, inks=[], translucent=[], meshes=layers)

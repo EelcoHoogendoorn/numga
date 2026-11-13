@@ -15,7 +15,8 @@ import numpy as np
 
 from numga import stack
 from examples.mechanics.manipulability import core
-from examples.util.wgsl import room, show_pixels, solids
+from numga.render import solids
+from examples.util.panels import room, show_pixels
 
 mv, w = core.mv, core.w
 box_colours = np.array([[0.45, 0.47, 0.52], [0.62, 0.64, 0.70], [0.78, 0.60, 0.30], [0.30, 0.55, 0.62], [0.55, 0.40, 0.60]])

@@ -32,7 +32,7 @@ from numga.algebras import PGA3D as ga
 from numga.backend.jax import JaxContext
 from numga.sparse import SparseExtensor, spdiag
 from examples.mechanics.spinning_top import core as contact
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 jax.config.update("jax_enable_x64", True)
 mv = JaxContext(ga, dtype=np.float64).multivector
@@ -114,14 +114,14 @@ def tree(topology: Topology, carriers: np.ndarray, n_generations: int) -> Tree:
     edge's head, and the links that carry the balls, `[balls]`.
 
     A link's rate is its parent's plus its own joint's, so the path to each link is its own joint, then its parent's
-    path: the series `~heads + parents * ~heads + ...`, which ends after as many generations as the tree has."""
+    path: the series `heads.adjugate() + parents * heads.adjugate() + ...`, which ends after as many generations as the tree has."""
     # Each joint's two ends, tail then head, each read on its own, so that every map keeps only the couplings it has.
     tails, heads = (topology.reading(ends, 0) for ends in topology.elements[1].T)
     # The value of each link's parent, at the link: zero at the root, which has none.
-    parents = ~heads * tails                                                 # numbers[links <- links]
-    paths = ~heads
+    parents = heads.adjugate() * tails                                       # numbers[links <- links]
+    paths = heads.adjugate()
     for _ in range(n_generations - 1):
-        paths = ~heads + parents * paths
+        paths = heads.adjugate() + parents * paths
     root = np.setdiff1d(np.arange(topology.n_vertices), topology.elements[1][:, 1])
     return Tree(topology.reading(root, 0), tails, heads, paths, topology.reading(carriers, 0), n_generations)
 
@@ -131,10 +131,10 @@ def forward_kinematics(tree: Tree, robot: Robot, motor: Motor, angles: Scalar) -
     """Each link's motor, `Motor[links]`, with the body placed by its motor and the joints at their angles: its parent's
     motor followed by its own joint's turn about its axis in the home pose, one generation of the tree a sweep."""
     turns = (robot.axes * (angles / 2)).exp()                                # Motor+[joints]
-    placed = ~tree.body * motor[..., None].field()                          # Motor+[links]
+    placed = tree.body.adjugate() * motor[..., None].field()                # Motor+[links]
     motors = placed
     for _ in range(tree.n_generations):
-        motors = placed + ~tree.heads * ((tree.tails * motors) * turns)
+        motors = placed + tree.heads.adjugate() * ((tree.tails * motors) * turns)
     return motors
 
 
@@ -244,7 +244,7 @@ def ground_contact(tree: Tree, ground: Ground, motors: Motor, rates: Rate, dt: f
     damping = lowest.regressive(dampers(lowest.commutator(Rate)))            # (Forque- <- Rate+)[balls]
     stiffness = lowest.regressive(springs(lowest.commutator(Rate)))          # (Forque- <- Rate+)[balls]
     forques = (forces & lowest) - stiffness(ball_rates) * dt                 # Forque-[balls]
-    return ~tree.balls * forques, ~tree.balls * (damping * dt + stiffness * dt**2)
+    return tree.balls.adjugate() * forques, tree.balls.adjugate() * (damping * dt + stiffness * dt**2)
 
 
 def stop_loads(stops: Stops, angles: Scalar, speeds: Scalar, dt: float) -> tuple[Amount, Hinge]:

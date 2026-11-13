@@ -11,8 +11,9 @@ from numga import Extensor, stack
 from examples import instantiate
 from examples.util import charts
 from numga.algebras import VGA3D
-from examples.util.wgsl import contours, flow, image_figure, meshes, simplices, solids
-from examples.util.wgsl.camera import panel
+from numga.topology import Topology
+from numga.render import contours, flow, meshes, simplices, solids
+from examples.util.panels import image_figure, overlay, panel
 
 core = instantiate("examples.fluids.projective_sphere_flow.core", VGA3D)
 
@@ -62,7 +63,7 @@ def animate_sphere(topology: core.Topology, display: core.Topology,
         faces = (n_faces * display.elements[2][None] + np.arange(n_faces)[:, None, None]).reshape(-1, 3)
         points = solids.origin + solids.context.include_from_algebra(samples.batch().reshape(-1))   # [samples] Point-
         field = values.to_array().reshape(-1)
-        normals = meshes.smooth(points, meshes.Topology(len(points), faces))
+        normals = meshes.smooth(points, Topology(len(points), faces))
         surface = meshes.samples(points, faces, field[faces, None], normals, sphere_view,
                                  face_values=np.zeros(4), colour=field_shader, gloss=solids.gloss)
         sphere = solids.draw([], sphere_view, background, inks=[], translucent=[], meshes=[(surface, 1.0)])
@@ -74,12 +75,12 @@ def animate_sphere(topology: core.Topology, display: core.Topology,
         dual_tails, dual_heads = (topology.dual.incidence[1, 0] * duals).batch()  # [edges] Point-, [edges] Point-
         arcs = (dual_tails[:, None] * (1 - fractions) + dual_heads[:, None] * fractions).normalized()   # [edges, arc points] Point-
         arc_places = solids.origin + solids.context.include_from_algebra(arcs)               # [edges, arc points] Point-
-        dual_lines = simplices.tubes(arc_places.reshape(-1), simplices.Topology.chains([n_arc_segments + 1] * len(arcs)),
+        dual_lines = simplices.tubes(arc_places.reshape(-1), Topology.chains([n_arc_segments + 1] * len(arcs)),
                                      orange, 1.1, space_view, gloss=solids.gloss)
         on_sphere = solids.origin + solids.context.include_from_algebra(lifted.normalized().batch())  # [vertices] Point-
         # Each ray an edge from its vertex's place on the sphere out to the vertex.
         rays = simplices.tubes(stack([on_sphere, vertices], axis=-1).reshape(-1),
-                               simplices.Topology.chains([2] * len(vertices)), np.full(3, 0.45), 1.0, space_view,
+                               Topology.chains([2] * len(vertices)), np.full(3, 0.45), 1.0, space_view,
                                gloss=solids.gloss)
         shell = solids.ball(solids.origin, 1.0)[None, None]
         markers = solids.ball(vertices, 2.0 * space_view.pixel)[:, None]
@@ -108,8 +109,10 @@ def draw_planar(points: Extensor, display: core.Topology, potential: Extensor, c
     # pairing with the plane at infinity, and the current's directions as directions.
     camera = panel(axis, mv.x, mv.y, mv.w)
     values = potential.to_array()
-    contours.overlay(axis, points, display, values, plt.get_cmap("viridis")(values)[:, :3], camera).set_zorder(1)
     # The streaks' lengths measured against the strongest current.
     fastest = float(current.dual().norm().max().to_array())
-    flow.overlay(axis, points, display, current, camera, fastest, np.ones(3))
+    overlay(axis, [
+        contours.picture(points, display, values, plt.get_cmap("viridis")(values)[:, :3], camera),
+        flow.layer(points, display, current, camera, fastest, np.ones(3)),
+    ])
     return figure

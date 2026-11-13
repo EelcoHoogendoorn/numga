@@ -60,7 +60,7 @@ from numga.backend.jax import JaxContext
 from numga.extensor import Extensor
 from numga.sparse import spdiag
 
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 jax.config.update("jax_enable_x64", True)
 
@@ -95,7 +95,7 @@ def triangles(topology: Topology, vertices: Point) -> tuple[Amount, Plane, Amoun
     double_areas = (((sides[0] & sides[1]) & volume) & ice) & heat            # Scalar-[faces]
     areas = double_areas / 2                                                  # Scalar-[faces]
     gradients = (volume & ice & heat & sides) / double_areas                  # [corners] Plane+[faces]
-    return areas, gradients, (~topology.incidence[2, 0] * (areas / 3)).sum(axis=0)
+    return areas, gradients, (topology.incidence[2, 0].adjugate() * (areas / 3)).sum(axis=0)
 
 
 def held_ice(phase: Scalar) -> Scalar:
@@ -150,7 +150,7 @@ def edge_slope(topology: Topology, areas: Amount, gradients: Plane, cells: Amoun
     pull = widths ** 2 * flux + squared_steepness * widths * turning          # Flux-[faces]
     # Each vertex's share of the gradient energy's change: its hat's drive paired with the energy's slope.
     hat_drives = -(gradients ^ mv.i)                                          # [corners] Drive+[faces]
-    shares = (~topology.incidence[2, 0] * (areas * (hat_drives & pull))).sum(axis=0)   # Scalar-[vertices]
+    shares = (topology.incidence[2, 0].adjugate() * (areas * (hat_drives & pull))).sum(axis=0)  # Scalar-[vertices]
     well_slope = 2 * well_height * phase * (1 - phase) * (1 - 2 * phase)      # Scalar+[vertices]
     return shares + cells * well_slope
 
@@ -181,7 +181,7 @@ def operators(topology: Topology, areas: Amount, gradients: Plane) -> tuple[Exte
     spreading = (sweeps * (sweeps & Drive)).sum(axis=-1).sum(axis=0)          # [] Flux- <- Drive+
     heat_drives = -(gradients ^ mv.h)                                         # [corners] Drive+[faces]
     local = areas * (mv.h & (gradients[:, None] ^ spreading(heat_drives[None, :])))   # [corners, corners] Scalar-[faces]
-    conduction = (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)
+    conduction = (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)
     return gradient, spreading, conduction
 
 

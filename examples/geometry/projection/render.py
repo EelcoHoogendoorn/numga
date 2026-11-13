@@ -17,8 +17,9 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack
 from examples.geometry.projection.core import Line, Motor, Point, mv
-from examples.util.wgsl import fitted, show, simplices, solids
-from examples.util.wgsl.camera import panel
+from numga.topology import Topology
+from numga.render import simplices, solids
+from examples.util.panels import fitted, overlay, panel, show
 
 # The image panels' margin around both images, as a fraction of their larger side; the colours of the subject's edges
 # and of the epipolar lines and corners; the widths of the edges and of the epipolar lines, and the corners' radius,
@@ -60,7 +61,7 @@ def render_shadow_scene(
     view = fitted(solids.view([body, light_corners, sun_corners, trail, point_light, sun_arrow_start, arrow_end],
                               0.0, elevation, azimuth, scene_margin, 1), ax)
     pixel = view.pixel
-    arrow = simplices.tubes(stack((sun_arrow_start, arrow_end)), simplices.Topology.chains([2]), sun_colour, arrow_width,
+    arrow = simplices.tubes(stack((sun_arrow_start, arrow_end)), Topology.chains([2]), sun_colour, arrow_width,
                             view, gloss=solids.gloss, chevrons=np.ones(1), chevron=arrow_chevron)
     rods, joints = solids.edges(body[ends[:, 0]], body[ends[:, 1]], body_radius * pixel)
     parts = [(rods, body_colour), (joints, body_colour),
@@ -97,16 +98,16 @@ def render_stereo_scene(
     for ax in (ax_1, ax_2):
         ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
         ax.set_axis_off()
-    subject = simplices.Topology(len(image_1), np.array(edges))
+    subject = Topology(len(image_1), np.array(edges))
     # Each rig's camera reads image points by the rig's own planes x and y, over their weight, so the screen is seen as
     # the rig sees it.
     camera_1 = panel(ax_1, rig_1 >> mv.x, rig_1 >> mv.y, mv.w)
     camera_2 = panel(ax_2, rig_2 >> mv.x, rig_2 >> mv.y, mv.w)
-    simplices.overlay(ax_1, [simplices.strokes(image_1, subject, subject_colour, subject_width, camera_1)])
+    overlay(ax_1, [simplices.strokes(image_1, subject, subject_colour, subject_width, camera_1)])
     epipolar_ends = screen_line_ends(rig_2, epipolar_lines_2, widths.max())   # [corners, ends] Point-
-    simplices.overlay(ax_2, [
+    overlay(ax_2, [
         simplices.strokes(image_2, subject, subject_colour, subject_width, camera_2),
-        simplices.strokes(epipolar_ends.reshape(-1), simplices.Topology.chains([2] * len(image_2)), epipolar_colour,
+        simplices.strokes(epipolar_ends.reshape(-1), Topology.chains([2] * len(image_2)), epipolar_colour,
                           epipolar_width, camera_2, opacity=epipolar_opacity),
         simplices.markers(image_2, epipolar_colour, corner_radius, camera_2)])
 

@@ -13,7 +13,8 @@ import numpy as np
 
 from numga import stack
 from examples.geometry.origami import core
-from examples.util.wgsl import fitted, meshes, show, solids
+from numga.render import meshes, solids
+from examples.util.panels import fitted, show
 
 front_colour = np.array([0.90, 0.46, 0.30])
 back_colour = np.array([0.98, 0.88, 0.65])

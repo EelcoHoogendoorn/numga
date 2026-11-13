@@ -16,7 +16,7 @@ import numpy as np
 from numga import NumpyContext, concatenate, stack
 from numga.algebras import VGA3D as ga
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                         # Scalar+
@@ -56,7 +56,7 @@ def dual_lengths(topology: Topology, points: Point) -> Scalar:
     toward = wall & (topology.reading(topology.facet_opposites[:, 1], 0) * points).batch()  # [inner] Scalar-
     # The poles summed back onto their faces' edges, each signed as its face runs along the edge, are the pole on
     # the left less the pole on the right: the step across each edge from left to right is their negative.
-    crossing = -(inner * (~topology.d[1] * poles(topology, points))).batch()   # [inner] Point-
+    crossing = -(inner * (topology.d[1].adjugate() * poles(topology, points))).batch()  # [inner] Point-
     return (wall & crossing) * toward / toward.norm()                          # [inner] Scalar+
 
 

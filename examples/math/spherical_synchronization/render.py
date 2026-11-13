@@ -16,7 +16,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
-from examples.util.wgsl import Shader, image_figure, supersampled
+from numga.wgsl import Shader, supersampled
+from examples.util.panels import image_figure
 from examples.math.spherical_synchronization.core import Cut, Point, Rotor, ga, mv
 
 size = 300

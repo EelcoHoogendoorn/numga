@@ -13,7 +13,7 @@ import numpy as np
 
 from numga import NumpyContext
 from numga.algebras import PGA3D, VGA3D
-from examples.util.topology import Topology
+from numga.topology import Topology
 from examples.surfaces.qem import plumbing
 
 ga = PGA3D
@@ -49,7 +49,7 @@ def simplify(topology: Topology, vertices: Point, targets: np.ndarray) -> Iterat
     planes = (corners[0] & corners[1] & corners[2]).normalized()                # Plane-[faces]
     face_quadrics = planes * (planes & Point)                                   # (Plane+ <- Point-)[faces]
     # Each vertex's quadric sums those of the faces at it.
-    quadrics = ~topology.incidence[2, 0].sum(axis=0) * face_quadrics            # (Plane+ <- Point-)[vertices]
+    quadrics = topology.incidence[2, 0].sum(axis=0).adjugate() * face_quadrics  # (Plane+ <- Point-)[vertices]
     yield topology, vertices
 
     for target in targets:
@@ -71,7 +71,7 @@ def simplify(topology: Topology, vertices: Point, targets: np.ndarray) -> Iterat
             old_planes = at_corners.sum(axis=0) * (corners[0] & corners[1] & corners[2])    # Plane-[trials]
             new_planes = (at_corners * facing_sides).sum(axis=0) & (at_edges * optima)      # Plane-[trials]
             valid_trials = (old_planes.scalar_product(new_planes) > 0) & (new_planes.squared() > old_planes.squared() * 1e-12)
-            failures = ~at_edges * mv.scalar((~valid_trials)[..., None]).field()  # Scalar+[edges]
+            failures = at_edges.adjugate() * mv.scalar((~valid_trials)[..., None]).field()  # Scalar+[edges]
             chosen_edges = plumbing.select_edges(topology, errors, failures <= 0, max(1, (topology.n_elements[2] - target) // 2))
             if not len(chosen_edges):
                 raise ValueError(f"No legal contraction remains at {topology.n_elements[2]} faces before target {target}.")

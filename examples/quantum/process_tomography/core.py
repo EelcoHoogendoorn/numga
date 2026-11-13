@@ -20,7 +20,7 @@ import numpy as np
 
 from numga import NumpyContext
 from numga.algebras import PGA3D as ga
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+

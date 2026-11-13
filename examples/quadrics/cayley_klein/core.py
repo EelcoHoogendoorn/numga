@@ -14,7 +14,7 @@ import numpy as np
 
 from numga import Extensor, NumpyContext
 from numga.algebras import PGA2D
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 ga = PGA2D
 ctx = NumpyContext(ga)
@@ -55,7 +55,7 @@ def triangle(absolute: Polarity, vertices: Point) -> tuple[Plane, Scalar, Scalar
     outline = Topology.loops([3])
     tails, heads = outline.incidence[1, 0] * vertices.field()              # Point-[sides], Point-[sides]
     # Each vertex is the tail of the side leaving it and the head of the side arriving at it.
-    leaving, arriving = ~outline.incidence[1, 0]                           # Scalar+[vertices <- sides], Scalar+[vertices <- sides]
+    leaving, arriving = outline.incidence[1, 0].adjugate()                 # Scalar+[vertices <- sides], Scalar+[vertices <- sides]
     # The triangle's winding, an intrinsic scalar: the joins leaving each vertex, times it, are planes, which the
     # absolute reads, and one factor on both planes of an angle leaves the angle as it is.
     winding = vertices[0] & vertices[1] & vertices[2]                      # [] Scalar-

@@ -10,10 +10,12 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import Algebra, concatenate, stack
-from examples.util import charts, shapes
+from examples.util import charts
+from examples.util import shapes
 from examples.util.animation import capture
-from examples.util.wgsl import contours, pinned, room, simplices
-from examples.util.wgsl.camera import offset_panel
+from numga.topology import Topology
+from numga.render import contours, drawing, simplices
+from examples.util.panels import offset_panel, overlay, pinned, room
 from examples.optics.rainbow import core
 
 mv = core.mv
@@ -116,8 +118,8 @@ def draw_sky(sight_cosines: core.Scalar, flux: core.Scalar, wavelengths: np.ndar
     camera = offset_panel(ax, mv.x, mv.y)._replace(pixels=len(across))
     ground = (mv.x.dual() * np.array(extent[:2])[None, :]
               + mv.y.dual() * np.array([extent[2], sun_elevation])[:, None]).reshape(-1)   # [corners] Direction-
-    seen = simplices.composited([
-        contours.picture(ground, simplices.Topology.grid(2, 2), np.zeros(len(ground)), to_rgb(ground_colour), camera)])
+    seen = drawing.composited([
+        contours.picture(ground, Topology.grid(2, 2), np.zeros(len(ground)), to_rgb(ground_colour), camera)])
     sky = np.clip(sky_colour + image ** tone_exponent, 0, 1)
     pinned(ax, sky * (1 - seen[..., 3:]) + seen[..., :3] * seen[..., 3:], extent)
     return figure
@@ -135,12 +137,12 @@ def animate_sweep(swept_light: tuple[core.Direction, core.Direction, core.Direct
         return [concatenate([stack([sunward, entry]), vertices[:order + 1], ahead[order][None]])
                 for order in (1, 2)]                                          # [orders][points, rays] Direction-
 
-    def exits(paths: core.Direction) -> tuple[core.Direction, simplices.Topology]:
+    def exits(paths: core.Direction) -> tuple[core.Direction, Topology]:
         """The light leaving the drop along each path `[points, rays]`: the ends of its last stretch, and an edge
         between them."""
         n_rays = paths.shape[1]
         ends = concatenate([paths[-2], paths[-1]])                            # [2 * rays] Direction-
-        return ends, simplices.Topology(2 * n_rays, np.stack([np.arange(n_rays), n_rays + np.arange(n_rays)], axis=-1))
+        return ends, Topology(2 * n_rays, np.stack([np.arange(n_rays), n_rays + np.arange(n_rays)], axis=-1))
 
     swept_rays, bundle_rays = rays(*swept_light[:3]), rays(*bundle[:3])
     heights = (mv.y & offsets).to_array()                                     # [rays]
@@ -167,7 +169,7 @@ def animate_sweep(swept_light: tuple[core.Direction, core.Direction, core.Direct
         still += [simplices.strokes(*exits(paths), bundle_share * np.array(to_rgb(colour))
                                     + (1 - bundle_share) * np.array(to_rgb(background)), bundle_width, camera)
                   for paths, colour in zip(bundle_rays, (primary_colour, secondary_colour))]
-        drop_seen = simplices.overlay(drop, still)
+        drop_seen = overlay(drop, still)
         angles = figure.add_axes((0.57, 0.1, 0.4, 0.85))
         angles.set_facecolor(background)
         markers = []
@@ -190,8 +192,8 @@ def animate_sweep(swept_light: tuple[core.Direction, core.Direction, core.Direct
             # The swept light's paths after two reflections and after one, and the sunlight reaching the drop.
             lights = [(swept_rays[1][1:, frame], secondary_colour), (swept_rays[0][1:, frame], primary_colour),
                       (swept_rays[0][:2, frame], sunlight_colour)]
-            drop_seen.set_data(simplices.composited(still + [
-                simplices.strokes(path, simplices.Topology.chains([len(path)]), to_rgb(colour), light_width, camera)
+            drop_seen.set_data(drawing.composited(still + [
+                simplices.strokes(path, Topology.chains([len(path)]), to_rgb(colour), light_width, camera)
                 for path, colour in lights]))
             for order, marker in enumerate(markers):
                 marker.set_data([swept_heights[frame]], [marks[order + 1, frame]])

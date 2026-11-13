@@ -33,7 +33,7 @@ import numpy as np
 from numga import Algebra, NumpyContext
 from numga.sparse import SparseExtensor, spdiag
 
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 # The junction's spacetime and the plane of the phase, which no measure of length or time reaches.
 ga = Algebra("x+y+t-") * Algebra("a+b+")
@@ -66,7 +66,7 @@ def assembled(topology: Topology, local: Scalar) -> SparseExtensor:
     """A form on each triangle's corners `[corners, corners] Scalar+[faces]` gathered onto the vertices it joins,
     `Scalar+[places <- places]`."""
     corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- places]
-    return (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=-1).sum(axis=-1)
+    return (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=-1).sum(axis=-1)
 
 
 # --- math -----------------------------------------------------------------------------
@@ -77,7 +77,7 @@ def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Plane, Scala
     patches = (sides[..., 0] & sides[..., 1]) / 2                             # [] Antibivector-[faces]
     areas = patches.squared().square_root()                                   # Scalar+[faces]
     gradients = (sides | patches[..., None].inverse()) / 2                    # [corners] Plane+[faces]
-    return areas, gradients, (~topology.incidence[2, 0] * (areas / 3)).sum(axis=-1)
+    return areas, gradients, (topology.incidence[2, 0].adjugate() * (areas / 3)).sum(axis=-1)
 
 
 def fluxon(events: Point, rapidity: np.ndarray, sense: float) -> Turn:

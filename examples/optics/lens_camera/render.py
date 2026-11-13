@@ -16,8 +16,9 @@ import numpy as np
 from numga import stack
 
 from examples.optics.lens_camera.core import Motor, Plane, Point, Quadric, ga, home, mv, origin, point, unit
-from examples.util.wgsl import Shader, image_figure, solids, supersampled
-from examples.util.wgsl.scene import Scene
+from numga.wgsl import Shader, supersampled
+from numga.render import Scene, solids
+from examples.util.panels import image_figure
 
 # Sensor pixels, rows by columns.
 resolution = (168, 216)

@@ -20,7 +20,7 @@ import numpy as np
 from numga import Algebra, NumpyContext, stack
 from numga.algebras import STA as ga
 from numga.sparse import SparseExtensor, spdiag
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                         # Scalar+
@@ -64,8 +64,8 @@ def surface(topology: Topology, vertices: Point) -> Surface:
     velocity = (Plane ^ (patches / areas))(gradient)                           # (Point- <- Scalar+)[faces <- vertices]
     # Each corner's share of the faces around it, and the map handing each vertex its share of a face integral.
     corner_mean = topology.incidence[2, 0].mean(axis=0)                          # Scalar+[faces <- vertices]
-    dual_areas = ~corner_mean * areas                                            # Scalar+[vertices]
-    lumped = spdiag(1 / dual_areas) * ~corner_mean                               # Scalar+[vertices <- faces]
+    dual_areas = corner_mean.adjugate() * areas                                  # Scalar+[vertices]
+    lumped = spdiag(1 / dual_areas) * corner_mean.adjugate()                     # Scalar+[vertices <- faces]
     momentum = areas * Point.dual()                                          # (Plane+ <- Point-)[faces]
     stiffness = velocity.adjugate()(momentum(velocity))                          # (Amount- <- Scalar+)[vertices <- vertices]
     mass = spdiag(dual_areas * Scalar.dual())                                    # (Amount- <- Scalar+)[vertices <- vertices]
