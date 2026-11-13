@@ -1,10 +1,10 @@
-"""Drawing for a snowflake growing: the ice, where the ice a parcel holds passes a half, in a pale icy blue with a crisp
-edge, over the water tinted by its temperature, from the cold water's deep blue to a lighter blue where the latent heat
-has warmed it, the whole dish in view; the finished crystal held a moment before the loop starts over. The seed is
-also drawn close up in the mesh's triangles, and the total entropy gained over the growth is drawn as a chart.
+"""Rendering for snowflake growth draws pale icy blue where a parcel's ice fraction passes one half, with a crisp white
+edge, over liquid water tinted by its temperature from deep blue in the cold water to lighter blue where latent heat has
+warmed it, and holds the final crystal briefly before the loop repeats. A close-up shows the seed inside the
+triangulated disc, and a chart plots the total entropy gained over time.
 
-The dish's points are read by the planes x and y and weighed by `mv.v & point`, the algebra's own projective weight; a
-parcel's ice and heat are read by `mv.i` and `mv.h`.
+The dish's vertex positions are plain offsets read by pairing with `x` and `y` at unit spatial weight in `Camera`, while
+a parcel's ice and heat are read by pairing with `i` and `h`.
 """
 from __future__ import annotations
 
@@ -22,33 +22,30 @@ from examples.thermodynamics.snowflake import core
 
 mv = core.mv
 Topology = simplices.Topology
-# The water's tint from cold to the melting temperature, the ice's fill and its edge.
+# Water colour palette from cold water up to the melting temperature, plus ice fill and contour colours.
 water_map = LinearSegmentedColormap.from_list("water", ["#0b1a2e", "#1d3a5f", "#4f7cab"])
 ice_colour, edge_colour = np.array(to_rgba("#dcefff")), np.array(to_rgba("#ffffff"))
-# The temperature at which the water's tint is lightest, the melting temperature's.
+# Melting temperature at which the water palette reaches its lightest tint.
 warmest = 1.0
-# The picture's pixels across; the share of the dish's radius it spans either way from the middle, the whole dish and
-# a little white around its rim; the edge's width, and the white gap between pictures set side by side, in pixels.
+# Image width in pixels, viewport padding factor over the dish radius, contour width, and side-by-side gap in pixels.
 n_pixels, view_share, edge_width, gap = 300, 1.04, 1.0, 8
-# The frames the finished crystal is held for before the loop starts over.
+# Number of trailing frames holding the grown crystal before the loop restarts.
 n_hold = 15
-# The close-up of the seed: its half width in the dish's lengths, and the mesh's strokes, their colour, width in
-# pixels and opacity.
-seed_half, mesh_colour, mesh_width, mesh_opacity = 0.3, np.array(to_rgb("#8fa8c8")), 1.0, 0.6
-# The entropy chart: its size in pixels, the curve's colour and the axes' colour.
+# Seed close-up half-width and triangle stroke styling.
+seed_half, stroke_colour, stroke_width, stroke_opacity = 0.3, np.array(to_rgb("#8fa8c8")), 1.0, 0.6
+# Entropy chart dimensions and colours.
 entropy_size, entropy_colour, axis_colour = (300, 180), "#1d3a5f", "#555555"
 
 
 def on_white(picture: np.ndarray) -> np.ndarray:
-    """Colour and coverage `[rows, columns, 4]` laid over white, as bytes `[rows, columns, 3]`."""
+    """RGBA colour and coverage `[rows, columns, 4]` composited over white as uint8 RGB `[rows, columns, 3]`."""
     shown = picture[..., :3] + (1 - picture[..., 3:])
     return np.round(np.clip(shown, 0, 1) * 255).astype(np.uint8)
 
 
 def layers(topology: Topology, points: Extensor, parcels: Extensor, camera: Camera) -> list:
-    """The ice of these parcels `Point-[vertices]` over the water's tint, at the dish's points `[vertices] Point-`: the
-    layers of the picture."""
-    # The ice where its fraction passes a half, the water below clear, and the edge where it does.
+    """Compositing layers for the water temperature tint and the ice contour and fill across the dish."""
+    # Fill pale blue above ice fraction 0.5 and draw a crisp contour line along 0.5.
     ice_band = contours.Bands(-0.5, 1.0, np.array([np.zeros(4), ice_colour]))
     edge = contours.Level(0.5, edge_colour, edge_width)
     tint = water_map(np.clip(np.asarray((mv.h & parcels).to_array()) / warmest, 0, 1))[:, :3]
@@ -58,21 +55,19 @@ def layers(topology: Topology, points: Extensor, parcels: Extensor, camera: Came
 
 
 def framed(half: float) -> Camera:
-    """The camera looking down on the dish by the planes x and y, weighed by `mv.v`, this half width either way from
-    the middle."""
-    return Camera(mv.x, mv.y, 0 * mv.x, mv.v, 0.0, np.zeros(2), np.array([half, half]), n_pixels)
+    """Orthographic camera reading `x` and `y` on offset points of unit spatial weight around the origin."""
+    return Camera(mv.x, mv.y, 0 * mv.x, 0 * mv.x, 1.0, np.zeros(2), np.array([half, half]), n_pixels)
 
 
 def dish_camera(vertices: Extensor) -> Camera:
-    """The camera on the dish at its vertices `Point-[vertices]`, spanning its share of the dish's radius."""
+    """Camera framing the full dish with a thin white margin around the rim."""
     points = vertices.batch()
     return framed(view_share * np.abs((mv.x & points).to_array()).max())
 
 
 def animate(topology: Topology, vertices: Extensor,
             states: Iterable[tuple[Extensor, Extensor]]) -> Iterator[np.ndarray]:
-    """The dish at its vertices `Point-[vertices]` at every state of its parcels `Point-[vertices]` and phase as they
-    come, the parcels' ice and their heat, the temperature: the ice over the water's tint; the last frame held."""
+    """Yield RGB frames for each recorded parcel and phase state, holding the final frame briefly at the end."""
     points = vertices.batch()
     camera = dish_camera(vertices)
     for parcels, _ in states:
@@ -83,24 +78,21 @@ def animate(topology: Topology, vertices: Extensor,
 
 
 def draw_grown(topology: Topology, vertices: Extensor, parcels: Extensor) -> Figure:
-    """The grown crystal in these parcels `Point-[vertices]`, the ice over the water's tint, as the animation shows
-    it."""
+    """Still figure of the grown crystal across the full dish."""
     camera = dish_camera(vertices)
     return image_figure(on_white(simplices.composited(layers(topology, vertices.batch(), parcels, camera))))
 
 
 def draw_seed(topology: Topology, vertices: Extensor, parcels: Extensor) -> Figure:
-    """The seed of ice in these parcels `Point-[vertices]` close up, in the dish's triangles at its vertices
-    `Point-[vertices]`."""
+    """Close-up figure of the initial ice seed and surrounding triangle edges."""
     points = vertices.batch()
     camera = framed(seed_half)
-    strokes = simplices.strokes(points, topology, mesh_colour, mesh_width, camera, opacity=mesh_opacity)
+    strokes = simplices.strokes(points, topology, stroke_colour, stroke_width, camera, opacity=stroke_opacity)
     return image_figure(on_white(simplices.composited(layers(topology, points, parcels, camera) + [strokes])))
 
 
 def side_by_side(left: list[np.ndarray], right: list[np.ndarray]) -> Iterator[np.ndarray]:
-    """Two animations' frames `[rows, columns, 3]` side by side, a white gap between them, the shorter one holding its
-    last frame until the longer one ends."""
+    """Yield side-by-side frame pairs separated by a white gap, holding the shorter sequence on its final frame."""
     spacer = np.full((left[0].shape[0], gap, 3), 255, dtype=np.uint8)
     for index in range(max(len(left), len(right))):
         yield np.concatenate([left[min(index, len(left) - 1)], spacer, right[min(index, len(right) - 1)]], axis=1)
@@ -108,7 +100,7 @@ def side_by_side(left: list[np.ndarray], right: list[np.ndarray]) -> Iterator[np
 
 @charts.style()
 def draw_entropy(times: np.ndarray, entropies: Extensor) -> Figure:
-    """The total entropy at these times `[frames] Scalar-`, as the entropy gained since the start, against time."""
+    """Chart of the total entropy gained since the start against time."""
     figure, axis = charts.subplots(*entropy_size, layout="constrained")
     axis.plot(times, (entropies - entropies[0]).to_array(), color=entropy_colour)
     axis.axhline(0.0, color=axis_colour, linewidth=charts.FRAME_WIDTH)

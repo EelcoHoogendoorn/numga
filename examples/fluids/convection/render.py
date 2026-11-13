@@ -1,11 +1,10 @@
-"""Drawing for Rayleigh-Bénard convection: the layer of triangles, the layer's temperature and streamlines over time,
-and as charts the flow's growth and the layer's energy budget.
+"""Rendering for Rayleigh-Bénard convection draws the triangulated layer, its temperature and streamlines over time, and
+charts of the flow's growth and energy budget.
 
-A layer closed on itself along its length is drawn opened at its seam, its first column again a period further along.
-Its points are read by the planes x and y and weighed by their volume, `mv.v & point`, the algebra's own projective
-weight. The temperature is red above the middle's and blue
-below, the streamlines are the stream function's level lines, and the floor and the ceiling are strokes in the colours
-of their temperatures.
+A periodic layer closed along its length is drawn opened at its seam one period further along. Its vertices are spatial
+offsets from the origin, read by pairing with `x` and `y` at unit spatial weight in `Camera`. Temperature is red above
+the mean and blue below, streamlines are level lines of the stream function, and the floor and ceiling are drawn in the
+colours of their temperatures.
 """
 from __future__ import annotations
 
@@ -24,51 +23,44 @@ from examples.fluids.convection import core
 
 mv = core.mv
 Topology = simplices.Topology
-mesh_colour = np.array(to_rgb("#9aa5ae"))
+edge_colour = np.array(to_rgb("#9aa5ae"))
 stream_colour = np.array(to_rgb("#2b2f33"))
 growth_colour, axis_colour = np.array(to_rgb("#1d4ed8")), np.array(to_rgb("#6b7280"))
-# The budget's terms: the kinetic and the potential energy, the energy dissipated, the potential energy the heat moved,
-# and the entropy produced.
+# Budget curve colours: kinetic energy, potential energy, viscous dissipation, conductive potential-energy transfer,
+# entropy production, and conservation residual.
 kinetic_colour, potential_colour = np.array(to_rgb("#1d4ed8")), np.array(to_rgb("#b91c1c"))
 dissipated_colour, conducted_colour = np.array(to_rgb("#6b7280")), np.array(to_rgb("#d97706"))
 entropy_colour, residual_colour = np.array(to_rgb("#15803d")), np.array(to_rgb("#2b2f33"))
 temperature_map = colormaps["RdBu_r"]
-# The temperature's bands, centred on evenly spaced levels from the ceiling's to the floor's, an odd count so that the
-# well-mixed middle is one band, white.
+# Odd number of evenly spaced temperature bands between ceiling and floor so the well-mixed interior sits in the white band.
 n_bands = 7
-# The layer's picture: pixels across and the room around it in depths; the widths of the walls, the mesh's edges and the
-# streamlines; the streamlines' spacing in units of the stream function, the same in every frame, so that how close
-# they lie shows how strongly the liquid flows.
+# Layer image width in pixels, margin in layer depths, stroke widths in pixels, and streamline contour spacing.
 n_pixels, margin = 320, 0.04
-wall_width, mesh_width, stream_width = 2.5, 1.0, 1.0
+wall_width, edge_width, stream_width = 2.5, 1.0, 1.0
 stream_spacing = 3.0
-# The charts' pixels, and the range of the budget's residual as a share of the energy dissipated, from below round-off
-# to well above it, marked at a part in a trillion and at its top.
+# Chart pixel sizes and logarithmic range and tick marks for the normalized budget residual.
 chart_width, chart_height, budget_height = 300, 220, 376
 residual_range, residual_marks = (1e-15, 1e-10), (1e-12, 1e-10)
-# The residual's dots, in pixels across.
 residual_dot = 4
 
 
 # --- plumbing -------------------------------------------------------------------------
 def on_white(picture: np.ndarray) -> np.ndarray:
-    """Colour and coverage `[rows, columns, 4]` laid over white, as bytes `[rows, columns, 3]`."""
+    """RGBA coverage `[rows, columns, 4]` composited over a white background as RGB bytes `[rows, columns, 3]`."""
     shown = picture[..., :3] + (1 - picture[..., 3:])
     return np.round(np.clip(shown, 0, 1) * 255).astype(np.uint8)
 
 
 def layer_camera(period: float) -> Camera:
-    """The camera looking at the layer side on, `n_pixels` across: points read by the planes x and y, weighed by their
-    volume."""
-    return Camera(mv.x, mv.y, 0 * mv.x, mv.v, 0.0, np.array([period / 2, 0.5]),
+    """Side-on camera across the layer: spatial offsets are read by pairing with `x` and `y` at unit weight."""
+    return Camera(mv.x, mv.y, 0 * mv.x, 0 * mv.x, 1.0, np.array([period / 2, 0.5]),
                   np.array([period / 2 + margin, 0.5 + margin]), n_pixels)
 
 
 def walls(topology: Topology, points: Extensor, camera: Camera):
-    """The floor and the ceiling, the edges of the open layer's border that run along it, each in the colour of its
-    temperature, warm at the floor and cool at the ceiling."""
+    """Horizontal border edges at the floor and ceiling, coloured warm at the floor and cool at the ceiling."""
     border = topology.border
-    tails, heads = border.incidence[1, 0] * points                              # Point-[border], Point-[border]
+    tails, heads = border.incidence[1, 0] * points                              # Antivector-[border], Antivector-[border]
     heights = (mv.y & tails).to_array()                                         # [border]
     level = np.isclose(heights, (mv.y & heads).to_array())                      # [border]
     colours = temperature_map(1 - heights[level])[:, :3]                       # [walls, 3]
@@ -77,23 +69,20 @@ def walls(topology: Topology, points: Extensor, camera: Camera):
 
 # --- drawing --------------------------------------------------------------------------
 def draw_layer(topology: Topology, vertices: Extensor, period: float) -> Figure:
-    """The open layer's triangles as strokes of their edges, between its warm floor and cool ceiling."""
+    """Triangle edges of the opened strip between its warm floor and cool ceiling."""
     camera = layer_camera(period)
-    layers = [simplices.strokes(vertices, topology, mesh_colour, mesh_width, camera), walls(topology, vertices, camera)]
+    layers = [simplices.strokes(vertices, topology, edge_colour, edge_width, camera), walls(topology, vertices, camera)]
     return image_figure(on_white(simplices.composited(layers)))
 
 
 def animate(topology: Topology, vertices: Extensor, opening: Extensor, period: float,
             frames: Iterable[tuple[Extensor, Extensor, object]]) -> Iterator[np.ndarray]:
-    """The open layer at every frame of the closed layer's stream function and temperature `Scalar+[vertices]` as it
-    comes, with the budget it leaves undrawn, read on the open layer by `opening`: coloured by its temperature in
-    bands, red above the middle's and blue below, with streamlines at a fixed spacing of the stream function, between
-    its floor and ceiling."""
+    """Frames of the opened strip mapped from the closed strip's stream function and temperature `Scalar+[vertices]`:
+    banded temperature from cool blue to warm red with fixed-spacing streamlines between floor and ceiling."""
     camera = layer_camera(period)
     boundaries = [walls(topology, vertices, camera)]
     lines = contours.Lines(stream_spacing, stream_spacing / 2, np.append(stream_colour, 1.0), stream_width)
-    # Each band in the colour of the temperature at its middle, flat across it, so that a frame changes only where
-    # the bands' edges and the streamlines move.
+    # Flat colour within each band so pixels change only where band edges and streamlines move.
     spacing = 1 / (n_bands - 1)
     middles = np.linspace(-0.5, 0.5, n_bands)
     bands = contours.Bands(-0.5 - spacing / 2, spacing, temperature_map(0.5 + middles))
@@ -107,8 +96,7 @@ def animate(topology: Topology, vertices: Extensor, opening: Extensor, period: f
 
 @style()
 def draw_turnover(times: np.ndarray, sizes: Extensor) -> Figure:
-    """The flow's squared size over the layer `[frames] Scalar+` against time on a logarithmic scale: a straight rise
-    while the rolls grow, then the swings as they overshoot and settle."""
+    """Integrated squared stream function `[frames] Scalar+` against time on a logarithmic scale."""
     figure, ax = subplots(chart_width, chart_height)
     ax.semilogy(times, sizes.to_array(), color=growth_colour)
     ax.set_xlim(times[0], times[-1])
@@ -122,10 +110,9 @@ def draw_turnover(times: np.ndarray, sizes: Extensor) -> Figure:
 @style()
 def draw_budget(times: np.ndarray, kinetic: Extensor, potential: Extensor, dissipated: Extensor, conducted: Extensor,
                 residual: Extensor, produced: Extensor) -> Figure:
-    """The layer's energy budget against time `[frames] Scalar+` each, in three charts kept in step: above, the
-    changes of the kinetic and the potential energy since the start, the energy dissipated, and minus the potential
-    energy the heat moved, which add up to nothing; in the middle, what they leave unaccounted as a share of the energy
-    dissipated, on a logarithmic scale; below, the entropy produced."""
+    """Three-panel energy and entropy budget `[frames] Scalar+` against time: changes in kinetic and potential energy
+    with viscous dissipation and minus conductive potential-energy transfer above, the normalized conservation residual
+    on a logarithmic scale in the middle, and cumulative entropy production below."""
     figure, (energies, unaccounted, entropy) = subplots(chart_width, budget_height, nrows=3, sharex=True,
                                                          gridspec_kw=dict(height_ratios=(2, 1, 1)))
     for values, colour, label in ((kinetic, kinetic_colour, "kinetic"), (potential, potential_colour, "potential"),
