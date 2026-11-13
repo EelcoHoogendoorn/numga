@@ -14,8 +14,9 @@ from numga import stack
 
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import room, simplices
-from examples.util.wgsl.camera import Camera, offset_panel
+from numga.topology import Topology
+from numga.render import Camera, drawing, simplices
+from examples.util.panels import offset_panel, overlay, room
 from examples.mechanics.kepler import core
 
 EXACT_COLOUR = "#626c76"
@@ -94,7 +95,7 @@ def cross_drawn(box: tuple[float, float, float, float], camera: Camera) -> np.nd
     chart's frame, which it stands in for: its picture."""
     left, right, bottom, top = box
     ends = place(np.array([left, right, 0, 0]), np.array([0, 0, bottom, top]))   # [4] Point-
-    return simplices.strokes(ends, simplices.Topology.chains([2, 2]), np.array(to_rgb(CROSS_COLOUR)), charts.FRAME_PX,
+    return simplices.strokes(ends, Topology.chains([2, 2]), np.array(to_rgb(CROSS_COLOUR)), charts.FRAME_PX,
                              camera, cap=simplices.Cap.BUTT)
 
 
@@ -102,13 +103,13 @@ def frame_drawn(box: tuple[float, float, float, float], camera: Camera) -> np.nd
     """A frame round a box, left, right, bottom and top, in the cross's colour and width: its picture."""
     left, right, bottom, top = box
     corners = place(np.array([left, right, right, left]), np.array([bottom, bottom, top, top]))   # [4] Point-
-    return simplices.strokes(corners, simplices.Topology.loops([4]), np.array(to_rgb(CROSS_COLOUR)), charts.FRAME_PX,
+    return simplices.strokes(corners, Topology.loops([4]), np.array(to_rgb(CROSS_COLOUR)), charts.FRAME_PX,
                              camera)
 
 
 def path_drawn(path: core.Point, colour: str, width: float, camera: Camera, opacity: float = 1.0) -> np.ndarray:
     """A path `[samples]` as a stroke."""
-    return simplices.strokes(path, simplices.Topology.chains([len(path)]), np.array(to_rgb(colour)), width, camera,
+    return simplices.strokes(path, Topology.chains([len(path)]), np.array(to_rgb(colour)), width, camera,
                              opacity=opacity)
 
 
@@ -123,7 +124,7 @@ def draw_lift(positions: core.Point, spinors: core.Spinor) -> plt.Figure:
         cross(ax, across, up)
         samples = plt.get_cmap("viridis")(np.linspace(0, 1, len(path)))[:, :3]
         # The centre of attraction twice the size of the samples.
-        simplices.overlay(ax, [cross_drawn(camera.extent, camera),
+        overlay(ax, [cross_drawn(camera.extent, camera),
                                path_drawn(path, REGULARIZED_COLOUR, charts.LINE_PX, camera),
                                simplices.markers(path, samples, charts.MARKER_PX / 2, camera),
                                *centre_drawn(CENTRE_RADIUS, camera)])
@@ -170,7 +171,7 @@ def draw_comparison(reference: core.State, physical: core.State, regularized: co
             camera = offset_panel(ax, core.mv.x, core.mv.y)
             # The periapsis detail framed, so that it reads as a close-up rather than as the path running on.
             frame = [frame_drawn(boxes[row, case], camera)] if row == 1 else []
-            simplices.overlay(ax, [cross_drawn(boxes[row, case], camera)]
+            overlay(ax, [cross_drawn(boxes[row, case], camera)]
                               + [path_drawn(position[:, case], colour, width, camera, opacity)
                                  for position, colour, width, opacity, _ in styles]
                               + centre_drawn(CENTRE_RADIUS, camera) + frame)
@@ -210,11 +211,11 @@ def animate_lift(positions: core.Point, spinors: core.Spinor) -> Iterator[np.nda
     figure.set_layout_engine("none")
     backdrops = [[path_drawn(path, REGULARIZED_COLOUR, ANIMATION_WIDTH, camera),
                   *centre_drawn(ANIMATION_CENTRE, camera)] for path, camera in zip(paths, cameras)]
-    images = [simplices.overlay(ax, backdrop) for ax, backdrop in zip(panels, backdrops)]
+    images = [overlay(ax, backdrop) for ax, backdrop in zip(panels, backdrops)]
     for index in range(len(positions)):
         for image, backdrop, path, camera in zip(images, backdrops, paths, cameras):
             body = path[index][None]                                           # [1] Point-
-            image.set_data(simplices.composited(backdrop + [
+            image.set_data(drawing.composited(backdrop + [
                 simplices.markers(body, np.ones(3), BODY_RADIUS + RIM, camera),
                 simplices.markers(body, np.array(to_rgb(BODY_COLOUR)), BODY_RADIUS, camera)]))
         yield capture(figure)

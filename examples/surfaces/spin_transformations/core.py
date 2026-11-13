@@ -24,7 +24,7 @@ from numga.extensor import Extensor
 from numga.algebras import VGA3D as ga
 from examples import MODEL_DIR
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 Scalar, Point = ga.gatype.scalar(), ga.gatype.antivector()
 Vector, Bivector = ga.gatype.vector(), ga.gatype.bivector()
@@ -47,7 +47,7 @@ def cotangent_weights(topology: Topology, sides: Point) -> Scalar:
     tails, heads = topology.corners[2, 1]
     after, before = sides[tails], sides[heads]                                 # [3] Point-[faces], Point-[faces]
     cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()   # [3] Scalar+[faces]
-    return (~topology.incidence[2, 1] * (cotangents / 2)).sum(axis=0)
+    return (topology.incidence[2, 1].adjugate() * (cotangents / 2)).sum(axis=0)
 
 
 def corner_cosines(topology: Topology, vertices: Point) -> Scalar:
@@ -68,15 +68,15 @@ def spin_transform_deform(topology: Topology, vertices: Point, curvature_change:
     edges = topology.d[0] * vertices                                           # Point-[edges]
     sides = topology.boundary[2, 1] * edges                                    # [3] Point-[faces]
     areas = sides[1].commutator(sides[0]).norm() / 2                           # Scalar+[faces]
-    face_areas, vertex_areas = spdiag(areas), spdiag(~face_means * areas)      # Scalar+[faces <- faces], Scalar+[vertices <- vertices]
+    face_areas, vertex_areas = spdiag(areas), spdiag(face_means.adjugate() * areas)  # Scalar+[faces <- faces], Scalar+[vertices <- vertices]
     edge_weights = spdiag(cotangent_weights(topology, sides))                  # Scalar+[edges <- edges]
-    laplacian = ~topology.d[0] * edge_weights * topology.d[0]                  # Scalar+[vertices <- vertices]
+    laplacian = topology.d[0].adjugate() * edge_weights * topology.d[0]        # Scalar+[vertices <- vertices]
 
     residual = (spdiag(sides / (2 * areas) - curvature_change * unit_volume / 3) * topology.incidence[2, 0]).sum(axis=0)  # Even-[faces <- vertices]
     _, (field,) = ((~residual * face_areas * residual) * Even).eigh(vertex_areas * Even, 1)   # Even+[vertices]
     rotors = field / ((vertex_areas * field).sites.sum() / areas.sites.sum())                 # Even+[vertices]
     turned_edges = ((edge_means * (rotors << Point))(edges) + 2 * ((edge_means * rotors) << edges)) / 3  # Point-[edges]
-    return (laplacian * Point).lstsq(~topology.d[0] * edge_weights * turned_edges)
+    return (laplacian * Point).lstsq(topology.d[0].adjugate() * edge_weights * turned_edges)
 
 
 def dirac_spheres(topology: Topology, vertices: Point, eigenvalues: np.ndarray, count: int) -> tuple[Scalar, Point]:
@@ -93,15 +93,15 @@ def dirac_spheres(topology: Topology, vertices: Point, eigenvalues: np.ndarray, 
     edges = topology.d[0] * vertices                                           # Point-[edges]
     sides = topology.boundary[2, 1] * edges                                    # [3] Point-[faces]
     areas = sides[1].commutator(sides[0]).norm() / 2                           # Scalar+[faces]
-    face_areas, vertex_areas = spdiag(areas), spdiag(~face_means * areas)      # Scalar+[faces <- faces], Scalar+[vertices <- vertices]
+    face_areas, vertex_areas = spdiag(areas), spdiag(face_means.adjugate() * areas)  # Scalar+[faces <- faces], Scalar+[vertices <- vertices]
     edge_weights = spdiag(cotangent_weights(topology, sides))                  # Scalar+[edges <- edges]
-    laplacian = ~topology.d[0] * edge_weights * topology.d[0]                  # Scalar+[vertices <- vertices]
+    laplacian = topology.d[0].adjugate() * edge_weights * topology.d[0]        # Scalar+[vertices <- vertices]
 
     constant = eigenvalues[:, None] * unit_volume / 3              # [eigenvalues, 1] Scalar-
     residual = (spdiag(sides / (2 * areas) - constant) * topology.incidence[2, 0]).sum(axis=-1)  # [eigenvalues] Even-[faces <- vertices]
     energies, eigenfields = ((~residual * face_areas * residual) * Even).eigh(vertex_areas * Even, count)   # [eigenvalues, count] Even+[vertices]
     turned_edges = ((edge_means * (eigenfields << Point))(edges) + 2 * ((edge_means * eigenfields) << edges)) / 3   # [eigenvalues, count] Point-[edges]
-    return energies, (laplacian * Point).lstsq(~topology.d[0] * edge_weights * turned_edges)
+    return energies, (laplacian * Point).lstsq(topology.d[0].adjugate() * edge_weights * turned_edges)
 
 
 def geometric_derivative(topology: Topology, vertices: Point) -> SparseExtensor:
@@ -120,13 +120,13 @@ def mean_curvature(topology: Topology, vertices: Point) -> Scalar:
     face_means = topology.incidence[2, 0].mean(axis=0)                         # Scalar+[faces <- vertices]
     sides = topology.boundary[2, 1] * (topology.d[0] * vertices)               # [3] Point-[faces]
     areas = sides[1].commutator(sides[0]).norm() / 2                           # Scalar+[faces]
-    laplacian = ~topology.d[0] * spdiag(cotangent_weights(topology, sides)) * topology.d[0]  # Scalar+[vertices <- vertices]
+    laplacian = topology.d[0].adjugate() * spdiag(cotangent_weights(topology, sides)) * topology.d[0]  # Scalar+[vertices <- vertices]
     # Each vertex's normal: its faces' normals, each twice the face's area long, summed and made unit.
-    normals = (~face_means * (sides[0] & sides[1])).normalized()               # Vector-[vertices]
+    normals = (face_means.adjugate() * (sides[0] & sides[1])).normalized()     # Vector-[vertices]
     # The integrated mean-curvature normal, a displacement at each vertex, met with the vertex's normal: its
     # signed size, an intrinsic scalar, read as an ordinary one in the unit of volume.
     integrated_curvature = ((laplacian * vertices) & normals) * unit_volume    # Scalar+[vertices]
-    return face_means * (integrated_curvature / (2 * (~face_means * areas)))   # Scalar+[faces]
+    return face_means * (integrated_curvature / (2 * (face_means.adjugate() * areas)))  # Scalar+[faces]
 
 
 def recentred(vertices: Point) -> Point:

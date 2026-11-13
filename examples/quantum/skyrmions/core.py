@@ -43,7 +43,7 @@ import numpy as np
 from numga import stack, where
 from numga.algebras import VGA3D as ga
 from numga.backend.jax import JaxContext
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 jax.config.update("jax_enable_x64", True)
 
@@ -76,7 +76,7 @@ def triangles(topology: Topology, bonds: Point) -> tuple[Scalar, Plane, Scalar]:
     double_areas = (sides[0] & sides[1]) & off_film                           # Scalar-[faces]
     gradients = (off_film & sides) / double_areas                             # [corners] Plane+[faces]
     areas = double_areas / 2                                                  # Scalar-[faces]
-    return areas, gradients, (~topology.incidence[2, 0] * (areas / 3)).sum(axis=0)
+    return areas, gradients, (topology.incidence[2, 0].adjugate() * (areas / 3)).sum(axis=0)
 
 
 def energy(topology: Topology, carriers: Rotor, applied: Field, spins: Spin) -> Scalar:
@@ -97,7 +97,7 @@ def effective_field(topology: Topology, carriers: Rotor, applied: Field, spins: 
     # sandwich that undoes the carrying.
     to_tails = exchange(carriers << heads)                                    # Field+[edges]
     to_heads = exchange(carriers >> tails)                                    # Field+[edges]
-    return (~topology.incidence[1, 0] * stack((to_tails, to_heads))).sum(axis=0) + applied
+    return (topology.incidence[1, 0].adjugate() * stack((to_tails, to_heads))).sum(axis=0) + applied
 
 
 def dynamics(topology: Topology, carriers: Rotor, areas: Scalar, gradients: Plane, cells: Scalar, spins: Spin,
@@ -119,7 +119,7 @@ def dynamics(topology: Topology, carriers: Rotor, areas: Scalar, gradients: Plan
         thermal = (2 * damping * temperature / time_step) ** 0.5 * mv(Field, kicks).field()   # Field+[vertices]
         # Each spin's change along the drift, on each triangle from its corners' hats, shared out to the corners' cells.
         along_faces = ((gradients & drift) * (corners * spins)).sum(axis=0)   # Spin-[faces]
-        along = (~corners * (areas / 3 * along_faces)).sum(axis=0) / cells    # Spin-[vertices]
+        along = (corners.adjugate() * (areas / 3 * along_faces)).sum(axis=0) / cells   # Spin-[vertices]
         # Undamped, each spin turns in its fields' planes, and the current turns it back along its change, in the plane
         # through the spin and that change.
         undamped = field + thermal - (spins ^ along)                          # Field+[vertices]

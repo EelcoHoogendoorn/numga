@@ -8,7 +8,7 @@ from matplotlib import cm, colors
 
 from numga import stack
 from examples.surfaces.surface_curvature import core
-from examples.util.wgsl import image_figure
+from examples.util.panels import image_figure
 
 family_colors = (np.array([0.10, 0.10, 0.10]), np.array([0.55, 0.08, 0.08]))
 n_levels = 14

@@ -3,7 +3,7 @@
 import numpy as np
 
 from examples.fluids.wing import core, scenarios
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 
 def test_the_velocity_has_no_derivative_and_the_wing_lifts_by_its_circulation():

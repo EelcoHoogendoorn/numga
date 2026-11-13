@@ -22,9 +22,11 @@ from matplotlib.figure import Figure
 from numga import stack
 from numga.extensor import Extensor
 from examples.util import charts
-from examples.util.topology import Topology
-from examples.util.wgsl import contours, flow, image_figure, simplices
-from examples.util.wgsl.camera import Camera
+from examples.util.panels import image_figure
+from numga.render import contours, flow, simplices
+from numga.render.camera import Camera
+from numga.render.drawing import composited
+from numga.topology import Topology
 
 # The colours of a spin's part along the field, from against it through lying in the film to along it, in bands of
 # flat colour, which keep the animations' files small.
@@ -116,7 +118,7 @@ def draw_lattice(topology: Topology, vertices: Extensor, bonds: Extensor, period
     # The lattice's periods through the corner, from a period back to a period on along each.
     wraps = stack((-periods, periods), axis=-1).reshape(-1)                   # [sides ends] Point-
     n_strokes, n_wraps = strokes.shape[0] // 2, wraps.shape[0] // 2
-    return image_figure(on_white(simplices.composited([
+    return image_figure(on_white(composited([
         simplices.strokes(strokes, Topology.chains([2] * n_strokes), bond_colour, bond_width, view),
         simplices.markers(sites, bond_colour, site_radius, view),
         simplices.strokes(wraps, Topology.chains([2] * n_wraps), wrap_colour, wrap_width, view, dashes=wrap_dashes)])))
@@ -128,7 +130,7 @@ def animate(topology: Topology, vertices: Extensor, bonds: Extensor, periods: Ex
     places, soup = tiled(topology, vertices, bonds, periods)
     view = camera(periods, np.zeros(2), rectangle(periods), n_pixels)
     for spins in states:
-        yield on_white(simplices.composited(layers(topology, spins, places, soup, view)))
+        yield on_white(composited(layers(topology, spins, places, soup, view)))
 
 
 def animate_together(topology: Topology, vertices: Extensor, bonds: Extensor, periods: Extensor,
@@ -138,7 +140,7 @@ def animate_together(topology: Topology, vertices: Extensor, bonds: Extensor, pe
     places, soup = tiled(topology, vertices, bonds, periods)
     view = camera(periods, np.zeros(2), rectangle(periods), n_panel_pixels)
     for cases in states:
-        panels = [on_white(simplices.composited(layers(topology, spins, places, soup, view))) for spins in cases]
+        panels = [on_white(composited(layers(topology, spins, places, soup, view))) for spins in cases]
         spacer = np.full((panels[0].shape[0], gap, 3), 255, dtype=np.uint8)
         yield np.concatenate([part for panel in panels for part in (spacer, panel)][1:], axis=1)
 

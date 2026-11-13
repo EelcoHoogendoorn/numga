@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 from functools import cache
-from pathlib import Path
 
 import numpy as np
 from matplotlib.figure import Figure
@@ -12,10 +11,12 @@ from PIL import Image
 
 from examples.fluids.liquid_crystals import core
 from examples.util import charts
-from examples.util.topology import Topology
-from examples.util.wgsl import Shader, contours, flow, image_figure, simplices
-from examples.util.wgsl.camera import Camera, placing
-from examples.util.wgsl.library import samples_per_side
+from examples.util.panels import image_figure
+from numga.render import contours, flow, simplices
+from numga.render.camera import Camera, placing
+from numga.render.drawing import Draw, composited, drawn
+from numga.topology import Topology
+from numga.wgsl import Shader, samples_per_side
 
 gap, defect_radius = 8, 4.0
 # A fixed palette reserves both defect colours while limiting the texture's shades.
@@ -80,16 +81,15 @@ fn shade(corner: Corner) -> Shade {
 @cache
 def alignment_shader() -> Shader:
     return Shader(placing(core.Plane) + flow.planar_grain + alignment_source, core.ga,
-                  dict(Point=core.Point, Plane=core.Plane, Order=core.Order), {},
-                  targets=("rgba8unorm", "rgba32float", "rgba32float"))
+                  dict(Point=core.Point, Plane=core.Plane, Order=core.Order), {})
 
 
 def texture(topology: Topology, points: core.Point, camera: Camera, order: core.Order) -> np.ndarray:
     """Fixed grain feathered symmetrically along the alignment, without a signed director field."""
-    surface, projected, grains = alignment_shader().draw_averaged(
-        camera.shape, samples_per_side(), 3 * topology.n_elements[2], points=points,
-        faces=topology.elements[2], alignment=order, across_direction=camera.across.dual(),
-        noise_scale=camera.pixel * grain_pixels, speck=speck_pixels / grain_pixels, **camera.uniforms(1.0))
+    surface, projected, grains = drawn([Draw(alignment_shader(), camera.shape, 3 * topology.n_elements[2], dict(
+        points=points, faces=topology.elements[2], alignment=order, across_direction=camera.across.dual(),
+        noise_scale=camera.pixel * grain_pixels, speck=speck_pixels / grain_pixels, **camera.uniforms(1.0)))],
+        flow.seeding, samples_per_side())
     result = flow.trace_shader(True)(
         camera.shape, surface=surface, flow=projected, grains=grains, background=np.ones(3),
         step_pixels=streak_pixels / flow.n_trace_steps, reference_speed=1.0,
@@ -130,7 +130,7 @@ def frame(topology: Topology, vertices: core.Point, camera: Camera, order: core.
                   texture(topology, points, camera, state)]
         if marker_radius > 0 and len(zeros):
             layers.append(simplices.markers(zeros, defect_colours, marker_radius, camera))
-        picture = simplices.composited(layers)
+        picture = composited(layers)
         panels.append(np.round(255 * np.clip(picture[..., :3] + 1 - picture[..., 3:], 0, 1)).astype(np.uint8))
     spacer = np.full((gap, camera.shape[1], 3), 255, dtype=np.uint8)
     picture = np.concatenate([part for index, panel in enumerate(panels)
@@ -190,14 +190,3 @@ def draw_release(times: np.ndarray, energies: core.Scalar) -> Figure:
     axis.spines[["top", "right", "bottom"]].set_visible(False)
     return figure
 
-
-def inspect_animation(path: Path, destination: Path) -> None:
-    """Write sampled frames to a private inspection strip without resampling them."""
-    with Image.open(path) as animation:
-        indices = np.linspace(0, animation.n_frames - 1, 5, dtype=int)
-        strip = Image.new("RGB", (animation.width, animation.height * len(indices)))
-        for row, index in enumerate(indices):
-            animation.seek(int(index))
-            strip.paste(animation.convert("RGB"), (0, row * animation.height))
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        strip.save(destination)

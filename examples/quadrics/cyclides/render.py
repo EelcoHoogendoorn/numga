@@ -7,7 +7,7 @@ from collections.abc import Iterable, Iterator
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.util.wgsl import image_figure
+from examples.util.panels import image_figure
 
 BACKGROUND = np.array([0.013, 0.02, 0.036])
 TEAL = np.array([0.055, 0.42, 0.39])

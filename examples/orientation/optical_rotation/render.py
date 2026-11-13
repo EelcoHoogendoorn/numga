@@ -8,7 +8,8 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack
 from examples.orientation.optical_rotation.core import Direction, Field, mv
-from examples.util.wgsl import show, solids
+from numga.render import solids
+from examples.util.panels import show
 
 # The observer sees the point where its time line meets the spatial slice.
 space_slice = mv.t ^ (Direction & -mv.t.dual())

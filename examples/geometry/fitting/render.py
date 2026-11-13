@@ -7,8 +7,9 @@ import numpy as np
 
 from numga import stack
 from examples.geometry.fitting.core import Point, mv
-from examples.util.topology import Topology
-from examples.util.wgsl import image_figure, solids
+from numga.topology import Topology
+from numga.render import solids
+from examples.util.panels import image_figure
 
 sample_colour, true_colour, fit_colour = np.array([0.42, 0.58, 0.74]), np.array([0.55, 0.56, 0.60]), np.array([0.90, 0.28, 0.30])
 background = np.array([1.0, 1.0, 1.0])

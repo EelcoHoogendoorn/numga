@@ -15,7 +15,8 @@ from examples import instantiate
 from examples.quadrics.s3_raytracer import core as raytracer
 from examples.quadrics.s3_raytracer.render import picture as trace
 from examples.util import charts
-from examples.util.wgsl import Shader, image_figure, show_pixels, supersampled
+from numga.wgsl import Shader, supersampled
+from examples.util.panels import image_figure, show_pixels
 
 S2 = instantiate("examples.quadrics.elliptic_physics.core", Spherical3D)
 S3 = instantiate("examples.quadrics.elliptic_physics.core", raytracer.ga)

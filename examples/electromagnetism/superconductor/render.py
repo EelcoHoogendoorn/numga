@@ -17,10 +17,10 @@ from matplotlib.figure import Figure
 
 from numga.extensor import Extensor
 from examples.util.charts import style, subplots
-from examples.util.wgsl import contours, image_figure, simplices
-from examples.util.wgsl.camera import Camera
+from numga.topology import Topology
+from numga.render import Camera, contours, drawing, simplices
+from examples.util.panels import image_figure
 
-Topology = simplices.Topology
 mesh_colour = np.array(to_rgb("#9aa5ae"))
 rod_colour = np.array(to_rgb("#e3e0da"))
 edge_colour = np.array(to_rgb("#7d7466"))
@@ -71,7 +71,7 @@ def draw_rod(topology: Topology, vertices: Extensor, in_rod: np.ndarray) -> Figu
     layers = [contours.picture(points, topology.subset(whole, -1), np.zeros(topology.n_vertices), rod_colour, camera),
               simplices.strokes(points, topology, mesh_colour, mesh_width, camera),
               rod_edge(vertices, topology, in_rod, camera)]
-    return image_figure(on_white(simplices.composited(layers)))
+    return image_figure(on_white(drawing.composited(layers)))
 
 
 def animate(topology: Topology, vertices: Extensor, in_rod: np.ndarray, penetration: float,
@@ -89,7 +89,7 @@ def animate(topology: Topology, vertices: Extensor, in_rod: np.ndarray, penetrat
         for potential, current in zip(potentials.batch().to_array().reshape(2, -1),
                                       currents.batch().to_array().reshape(2, -1)):
             colours = current_map(0.5 + np.clip(current * penetration / current_share, -1, 1) / 2)[:, :3]
-            panels.append(on_white(simplices.composited([
+            panels.append(on_white(drawing.composited([
                 contours.picture(points, topology, current, colours, camera),
                 contours.picture(points, topology, potential, colours, camera, lines=(lines,), opacity=0.0),
                 edge])))
@@ -126,7 +126,7 @@ def draw_trapped(topology: Topology, vertices: Extensor, in_hole: np.ndarray, fi
     panels = []
     for field in fields.batch().to_array().reshape(len(fields.batch()), -1):
         colours = strength_map(np.clip(field / strongest, 0, 1) * 0.85)[:, :3]
-        panels.append(on_white(simplices.composited([
+        panels.append(on_white(drawing.composited([
             contours.picture(points, topology, field, colours, camera),
             contours.picture(points, topology, field, colours, camera, lines=(lines,), opacity=0.0), hole_edge])))
     return image_figure(np.concatenate([part for panel in panels for part in (panel, gap)][:-1], axis=1))

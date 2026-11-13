@@ -3,7 +3,7 @@
 import numpy as np
 
 from examples.relativity.twistors import core
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 
 TOLERANCE = 1e-11

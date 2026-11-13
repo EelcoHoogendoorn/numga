@@ -11,7 +11,7 @@ import numpy as np
 
 from examples.quantum.skyrmions import core
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = core.mv
 Upright = core.ga.gatype.from_blades("x y")                                   # Vector+
@@ -49,7 +49,7 @@ def noise(topology: Topology, n_smoothing: int, seed: int) -> core.Spin:
     rng = np.random.default_rng(seed)
     spins = mv.bivector(rng.normal(size=(topology.n_vertices, 3))).dual().field()   # Spin-[vertices]
     for _ in range(n_smoothing):
-        spins = spins - (~topology.d[0] * (topology.d[0] * spins)) / 12
+        spins = spins - (topology.d[0].adjugate() * (topology.d[0] * spins)) / 12
     return spins.normalized()
 
 

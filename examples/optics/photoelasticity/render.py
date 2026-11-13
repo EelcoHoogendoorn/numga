@@ -9,8 +9,8 @@ import numpy as np
 
 from numga import NumpyContext, stack
 from examples.util.animation import capture
-from examples.util.wgsl import pinned, simplices
-from examples.util.wgsl.camera import offset_panel
+from numga.render import simplices
+from examples.util.panels import offset_panel, overlay, pinned
 from examples.optics.photoelasticity import core
 
 figure_dpi = 100
@@ -54,7 +54,7 @@ def plate(ax: plt.Axes, values: np.ndarray, extent: tuple[float, float, float, f
     camera = offset_panel(ax, real.x, real.y)
     middle = (0 * real.x.dual())[None]                                          # [1] Planar-
     radius = hole_radius / camera.pixel
-    simplices.overlay(ax, [simplices.markers(middle, rim_colour, radius + rim_width / 2, camera),
+    overlay(ax, [simplices.markers(middle, rim_colour, radius + rim_width / 2, camera),
                            simplices.markers(middle, np.ones(3), radius - rim_width / 2, camera)])
     return image
 

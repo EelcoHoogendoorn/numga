@@ -12,7 +12,7 @@ import numpy as np
 
 from numga import NumpyContext, stack
 from numga.algebras import PGA3D
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 ga = PGA3D
 mv = NumpyContext(ga).multivector

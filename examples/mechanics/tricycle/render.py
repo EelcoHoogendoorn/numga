@@ -16,8 +16,9 @@ from matplotlib.colors import to_rgb
 
 from numga import Extensor, concatenate, stack
 from examples.util.animation import capture
-from examples.util.wgsl import meshes, simplices, solids
-from examples.util.wgsl.camera import panel
+from numga.topology import Topology
+from numga.render import meshes, simplices, solids
+from examples.util.panels import overlay, panel
 
 FRAME = "#2c3e50"
 WHEEL = "#222222"
@@ -68,9 +69,9 @@ def wheel_steps(contacts: Extensor, forward: Extensor) -> Extensor:
     return (forward - contacts) * (WHEEL_RADIUS / (contacts & forward).norm())
 
 
-def pairs(n_pairs: int) -> simplices.Topology:
+def pairs(n_pairs: int) -> Topology:
     """An edge from each of the first `n_pairs` points to the one `n_pairs` after it."""
-    return simplices.Topology(2 * n_pairs, np.stack([np.arange(n_pairs), n_pairs + np.arange(n_pairs)], axis=-1))
+    return Topology(2 * n_pairs, np.stack([np.arange(n_pairs), n_pairs + np.arange(n_pairs)], axis=-1))
 
 
 def plane(contacts: Extensor, forward: Extensor, centre: Extensor, middle: Extensor) -> np.ndarray:
@@ -87,10 +88,10 @@ def plane(contacts: Extensor, forward: Extensor, centre: Extensor, middle: Exten
     camera = panel(ax, mv.x, mv.y, mv.w)
     # Each axle on to the turning centre, the last of the points.
     froms = axles(contacts, centre)                                          # [axles] Point-
-    spokes = simplices.Topology(len(froms) + 1, np.stack([np.arange(len(froms)), np.full(len(froms), len(froms))], -1))
+    spokes = Topology(len(froms) + 1, np.stack([np.arange(len(froms)), np.full(len(froms), len(froms))], -1))
     starts, ends = frame(contacts)                                           # [bars] Point-, Point-
-    simplices.overlay(ax, [
-        simplices.strokes(middle, simplices.Topology.chains([len(middle)]), to_rgb(TRAIL), PLANE_TRAIL_WIDTH, camera),
+    overlay(ax, [
+        simplices.strokes(middle, Topology.chains([len(middle)]), to_rgb(TRAIL), PLANE_TRAIL_WIDTH, camera),
         simplices.strokes(concatenate([froms, centre[None]]), spokes, to_rgb(AXLE), AXLE_WIDTH, camera,
                           dashes=AXLE_DASHES, cap=simplices.Cap.BUTT),
         simplices.markers(centre[None], to_rgb(CENTRE), CENTRE_RADIUS, camera),
@@ -130,9 +131,9 @@ def space(contacts: solids.Point, forward: solids.Point, centre: solids.Line, mi
     steps = wheel_steps(contacts, forward)                                                # [wheels] Point-
     sideways = steps.commutator(mv.xy)                                                    # [wheels] Point-
     rims = meshes.circles(hubs + steps, (hubs & sideways) * solids.flip, N_RIM)          # [wheels, rim] Point-
-    tyres = simplices.tubes(rims.reshape(-1), simplices.Topology.loops([rims.shape[1]] * rims.shape[0]), to_rgb(WHEEL),
+    tyres = simplices.tubes(rims.reshape(-1), Topology.loops([rims.shape[1]] * rims.shape[0]), to_rgb(WHEEL),
                             RIM_WIDTH, view, gloss=solids.gloss)
-    trail = simplices.tubes(middle, simplices.Topology.chains([len(middle)]), to_rgb(TRAIL), TRAIL_WIDTH, view,
+    trail = simplices.tubes(middle, Topology.chains([len(middle)]), to_rgb(TRAIL), TRAIL_WIDTH, view,
                             gloss=solids.gloss)
     return solids.draw(parts, view, BACKGROUND, inks=[], translucent=[], meshes=[(tyres, 1.0), (trail, 1.0)])
 

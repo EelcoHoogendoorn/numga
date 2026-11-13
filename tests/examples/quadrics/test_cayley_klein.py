@@ -7,7 +7,7 @@ import numpy as np
 
 from examples.quadrics.cayley_klein import render, scenarios
 from examples.quadrics.cayley_klein.core import Point, Polarity, Pole, mv
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 HYPERBOLIC = mv.x * mv.x.regressive(Point) + mv.y * mv.y.regressive(Point) - mv.w * mv.w.regressive(Point)
 ELLIPTIC = mv.x * mv.x.regressive(Point) + mv.y * mv.y.regressive(Point) + mv.w * mv.w.regressive(Point)
@@ -61,7 +61,7 @@ def test_triangle_angle_sum_is_below_pi_hyperbolic_and_above_pi_elliptic():
     winding = vertices[0].regressive(vertices[1]).regressive(vertices[2])
     outline = Topology.loops([3])
     tails, heads = outline.incidence[1, 0] * vertices.field()
-    leaving, arriving = ~outline.incidence[1, 0]
+    leaving, arriving = outline.incidence[1, 0].adjugate()
     to_next = (leaving * (tails.regressive(heads) * winding)).batch()
     to_prev = (arriving * (heads.regressive(tails) * winding)).batch()
     sums = {}

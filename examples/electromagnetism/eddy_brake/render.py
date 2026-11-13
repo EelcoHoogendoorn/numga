@@ -12,8 +12,8 @@ from matplotlib.colors import LinearSegmentedColormap, PowerNorm
 from numga import concatenate
 from numga.extensor import Extensor
 from examples.util.animation import capture
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, offset_panel
+from numga.render import Camera, contours, drawing, simplices
+from examples.util.panels import offset_panel, overlay
 from examples.electromagnetism.eddy_brake import core
 
 Topology, as_scalar = core.Topology, core.as_scalar
@@ -125,7 +125,7 @@ def at_vertices(topology: Topology, areas: core.Scalar, field: Extensor) -> Exte
     """Face fields averaged at each vertex, weighted by the faces' areas `Scalar+[faces]`, for drawing `[...] X[faces]`
     as `[...] X[vertices]`."""
     third = topology.incidence[2, 0].mean(axis=0)
-    return (~third * (areas * field)) / (~third * areas)
+    return (third.adjugate() * (areas * field)) / (third.adjugate() * areas)
 
 
 def fibre_strokes(threads: core.Point, shown: np.ndarray, camera: Camera) -> np.ndarray:
@@ -168,7 +168,7 @@ def draw(topology: Topology, points: core.Point, areas: core.Scalar, response: c
         # The paths halfway between the multiples of the step, so that none runs along the rim, where the
         # streamfunction vanishes.
         paths = contours.Lines(spacing, spacing / 2, path_ink, 1.0)
-        simplices.overlay(ax, [contours.picture(places, topology, stream, colours, camera, lines=(paths,)),
+        overlay(ax, [contours.picture(places, topology, stream, colours, camera, lines=(paths,)),
                                simplices.strokes(places, outline, rim_colour, rim_width, camera),
                                *magnet(centre, width, field, camera)])
     return figure
@@ -193,7 +193,7 @@ def draw_modes(topology: Topology, points: core.Point, streamfunctions: core.Sca
             # Levels at equal steps between the extremes, one of them through zero.
             colours = mode_colours((stream / largest + 1) / 2)[:, :3]
             levels = contours.Lines(2 * largest / (mode_levels + 1), 0.0, mode_ink, 1.0)
-            simplices.overlay(ax, [contours.picture(places, topology, stream, colours, camera, lines=(levels,)),
+            overlay(ax, [contours.picture(places, topology, stream, colours, camera, lines=(levels,)),
                                    simplices.strokes(places, outline, rim_colour, rim_width, camera)])
     return figure
 
@@ -238,7 +238,7 @@ def currents(topology: Topology, points: core.Point, areas: core.Scalar, states:
     panels = [disc_panel(figure, i, len(shown), extent) for i in range(len(shown))]
     views = [offset_panel(ax, core.mv.x, core.mv.y) for ax in panels]
     magnets = [magnet(centre, width, field, view) for view in views]
-    textures = [simplices.overlay(ax, [np.zeros(view.shape + (4,))]) for ax, view in zip(panels, views)]
+    textures = [overlay(ax, [np.zeros(view.shape + (4,))]) for ax, view in zip(panels, views)]
     for state in states:
         # The current belongs to material faces; turning it into the laboratory frame keeps its strength.
         strength = state.current.squared().square_root()                      # [cases] Scalar+[faces]
@@ -259,7 +259,7 @@ def currents(topology: Topology, points: core.Point, areas: core.Scalar, states:
             colours = current_colours(current_scale(speed[i]))[:, :3]
             ink = np.append(path_ink[:3], alpha[i])
             paths = contours.Lines(spacings[i], spacings[i] / 2, ink, 1.0)
-            texture.set_data(simplices.composited([
+            texture.set_data(drawing.composited([
                 contours.picture(places[i], topology, stream[i], colours, view, lines=(paths,)),
                 fibre_strokes(threads[i], shown_curves[i], view),
                 simplices.strokes(places[i], outline, rim_colour, rim_width, view),
@@ -284,7 +284,7 @@ def animate_heat(topology: Topology, points: core.Point, areas: core.Scalar, fra
     panels = [disc_panel(figure, i, len(shown), extent) for i in range(len(shown))]
     views = [offset_panel(ax, core.mv.x, core.mv.y) for ax in panels]
     magnets = [magnet(centre, width, field, view) for view in views]
-    textures = [simplices.overlay(ax, [np.zeros(view.shape + (4,))]) for ax, view in zip(panels, views)]
+    textures = [overlay(ax, [np.zeros(view.shape + (4,))]) for ax, view in zip(panels, views)]
     for state in frames:
         # Face heat is energy. Dividing by each material face's area gives the density to colour.
         densities = scalars(at_vertices(topology, areas, state.heat / areas))  # [cases, vertices]
@@ -294,7 +294,7 @@ def animate_heat(topology: Topology, points: core.Point, areas: core.Scalar, fra
         for i, (view, texture) in enumerate(zip(views, textures)):
             # The display mesh moves with the material; its colours interpolate face heat, with no level lines.
             colours = heat_colours(heat_scale(densities[i]))[:, :3]
-            texture.set_data(simplices.composited([
+            texture.set_data(drawing.composited([
                 contours.picture(places[i], topology, densities[i], colours, view),
                 fibre_strokes(threads[i], shown_curves[i], view),
                 simplices.strokes(places[i], outline, rim_colour, rim_width, view),

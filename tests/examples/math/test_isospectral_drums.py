@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from numga.sparse import SparseExtensor
+from numga.sparse import Sparse
 from examples.math.isospectral_drums import core, numerics, scenarios
 
 
@@ -47,7 +47,7 @@ def test_independent_eigensolves_and_transplanted_modes_have_the_same_frequencie
     source_laplacian = (4 * core.Scalar - source_neighbors) * n_subdivisions ** 2
     target_laplacian = (4 * core.Scalar - target_neighbors) * n_subdivisions ** 2
     n_interior = source_laplacian.shape[0]
-    identity = SparseExtensor.selection(core.context, np.arange(n_interior), n_interior) * core.Scalar
+    identity = Sparse.selection(np.arange(n_interior), n_interior) * core.Scalar
     source_values, source_modes = source_laplacian.eigh(identity, n_modes)
     target_values, _ = target_laplacian.eigh(identity, n_modes)
     target_modes = transplant(source_modes)

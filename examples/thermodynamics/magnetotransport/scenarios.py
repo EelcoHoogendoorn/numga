@@ -22,7 +22,7 @@ from numga import stack
 
 from examples.thermodynamics.magnetotransport import core
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = core.mv
 States = Iterator[tuple[np.ndarray, core.Potential, core.Spatial, core.Potential, core.Spatial]]

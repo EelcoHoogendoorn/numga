@@ -6,7 +6,7 @@ import numpy as np
 
 from examples.fluids.liquid_crystals import core
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = core.mv
 half_width, n_side = 6.0, 49

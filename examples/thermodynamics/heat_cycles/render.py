@@ -17,7 +17,7 @@ import numpy as np
 
 from numga import Extensor
 from examples.thermodynamics import rendering as art
-from examples.util.wgsl import simplices, solids
+from numga.render import simplices, solids
 from examples.thermodynamics.heat_cycles import core
 
 mv = core.mv

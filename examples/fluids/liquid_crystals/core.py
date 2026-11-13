@@ -22,8 +22,7 @@ import numpy as np
 from numga import Algebra
 from numga.backend.jax import JaxContext
 from numga.sparse import SparseExtensor, spdiag
-
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 ga = Algebra("x+y+")
 mv = JaxContext(ga).multivector
@@ -73,7 +72,7 @@ def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Plane, Scala
     volume = sides[0] & sides[1]                                # Scalar-[faces]
     gradients = sides / volume                                 # [corners] Plane+[faces]
     areas = volume.norm() / 2                                   # Scalar+[faces]
-    cells = (~topology.incidence[2, 0] * (areas / 3)).sum(axis=0) # Scalar+[vertices]
+    cells = (topology.incidence[2, 0].adjugate() * (areas / 3)).sum(axis=0) # Scalar+[vertices]
     return areas, gradients, cells
 
 
@@ -81,7 +80,7 @@ def elasticity(topology: Topology, areas: Scalar, gradients: Plane) -> SparseExt
     """The Dirichlet form on vertex fields, assembled from the triangles' corner gradients."""
     corners = topology.incidence[2, 0]                           # [corners] Scalar+[faces <- vertices]
     local = areas * (gradients[:, None] & gradients[None, :].dual())
-    return (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)
+    return (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)
 
 
 def free_energy(stiffness: SparseExtensor, cells: Scalar, elastic: float, bulk: float, order: Order) -> Scalar:
@@ -128,7 +127,7 @@ def turn_relaxation(topology: Topology, stiffness: SparseExtensor, cells: Scalar
     def step(order: Order, _) -> tuple[Order, None]:
         molecular = molecular_field(stiffness, cells, elastic, bulk, order)
         angular_velocity = friction.solve(-turn_slope(order, molecular))
-        angular_velocity = angular_velocity - ~boundary * (boundary * angular_velocity)
+        angular_velocity = angular_velocity - boundary.adjugate() * (boundary * angular_velocity)
         rotor = (-angular_velocity * time_step / 2).exp()
         return rotor >> order(rotor << Point), None
 
@@ -150,9 +149,9 @@ def active_velocity(topology: Topology, areas: Scalar, gradients: Plane, cells: 
     face_order = corners * order[..., None]                     # [..., corners] (Point- <- Point-)[faces]
     # Isotropic substrate drag turns the stress divergence into a velocity along its force.
     divergence = face_order(gradients.dual()).sum(axis=-1)       # [...] Point-[faces]
-    velocity = -activity * ((~corners * (areas * divergence / 3)[..., None]).sum(axis=-1)) / cells
+    velocity = -activity * ((corners.adjugate() * (areas * divergence / 3)[..., None]).sum(axis=-1)) / cells
     boundary = topology.reading(topology.exterior[0], 0)
-    return velocity - ~boundary * (boundary * velocity)
+    return velocity - boundary.adjugate() * (boundary * velocity)
 
 
 def rate(topology: Topology, areas: Scalar, gradients: Plane, cells: Scalar, stiffness: SparseExtensor,
@@ -170,10 +169,10 @@ def rate(topology: Topology, areas: Scalar, gradients: Plane, cells: Scalar, sti
     spin = Point.reverse().commutator(velocity_gradient(Point)).batch().contract(1, 2).field() / 2
     face_order = local_order.mean(axis=-1)
     corotation = face_order.commutator(spin) - face_order(Point.commutator(spin))
-    transported = (~corners * (areas * (corotation - advection) / 3)[..., None]).sum(axis=-1) / cells
+    transported = (corners.adjugate() * (areas * (corotation - advection) / 3)[..., None]).sum(axis=-1) / cells
     changing = molecular + transported
     boundary = topology.reading(topology.exterior[0], 0)
-    return changing - ~boundary * (boundary * changing)
+    return changing - boundary.adjugate() * (boundary * changing)
 
 
 def evolution(topology: Topology, areas: Scalar, gradients: Plane, cells: Scalar, stiffness: SparseExtensor,

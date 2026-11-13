@@ -7,9 +7,11 @@ import numpy as np
 from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 
 from numga import stack
-from examples.util import charts, shapes
-from examples.util.wgsl import contours, flow, simplices
-from examples.util.wgsl.camera import Camera, offset_panel
+from examples.util import charts
+from examples.util import shapes
+from numga.topology import Topology
+from numga.render import Camera, contours, flow, simplices
+from examples.util.panels import offset_panel, overlay
 from examples.surfaces.regge_calculus import core
 
 primal_colour = "#286580"
@@ -110,10 +112,10 @@ def draw_metric_basis(corners: core.Point, points: core.Point,
         camera = offset_panel(ax, core.mv.x, core.mv.y)
         values = basis_forms[index]
         colours = diverging_colours(Normalize(-basis_bound, basis_bound)(values))[:, :3]
-        simplices.overlay(ax, [
+        overlay(ax, [
             contours.picture(places, topology, values, colours, camera, lines=(nonzero_levels,), levels=(null_lines,)),
             simplices.strokes(corners, core.triangle, ink(wall_colour), thin_width, camera),
-            simplices.strokes(corners[[tails[index], heads[index]]], simplices.Topology.chains([2]),
+            simplices.strokes(corners[[tails[index], heads[index]]], Topology.chains([2]),
                               ink(accent_colour), edge_width, camera),
             simplices.markers(corners, ink(wall_colour), small_dot, camera),
             *ringed(corners[index][None], primal_colour, highlight_dot, camera)])
@@ -126,7 +128,7 @@ def draw_metric_basis(corners: core.Point, points: core.Point,
     ellipses = tuple(contours.Level(level, np.append(to_rgb(accent_colour), 1.0), 1.9) for level in ellipse_levels)
     # The reference circles, the same levels of a second field over the same samples, a clear picture over the first.
     circles = tuple(contours.Level(level, np.append(to_rgb(wall_colour), 0.65), 0.9) for level in ellipse_levels)
-    simplices.overlay(ax, [
+    overlay(ax, [
         contours.picture(places, topology, metric_form, hat_colours(Normalize(0.0, max_metric)(metric_form))[:, :3],
                          camera, levels=ellipses),
         contours.picture(places, topology, reference_form, np.zeros(3), camera, levels=circles, opacity=0.0),
@@ -142,7 +144,7 @@ def draw_curvature_defects(topology: core.Topology, vertices: core.Point, centre
     mv = vertices.context.multivector
     # The curvature at the interior vertices, and nothing on the boundary, where the disk is cut off.
     interior = topology.reading(topology.interior[0], 0)                      # Scalar+[interior <- vertices]
-    curvature_values = np.asarray(((~interior * (interior * curvatures)).batch() & mv.xy.dual()).to_array())
+    curvature_values = np.asarray(((interior.adjugate() * (interior * curvatures)).batch() & mv.xy.dual()).to_array())
     points = vertices.batch()                                                 # [vertices] Point-
     bound = np.abs(curvature_values).max()
 
@@ -162,8 +164,8 @@ def draw_curvature_defects(topology: core.Topology, vertices: core.Point, centre
     n_samples = len(ellipse_faces)
     grid_points = (sampled_centres[:, None, None] + grid_offsets
                    ).reshape(n_samples, -1)                                   # [samples, grid * grid] Point-
-    grid = contours.Topology.grid(n_ellipse_grid, n_ellipse_grid)
-    grids = contours.Topology(n_samples * grid.n_vertices,
+    grid = Topology.grid(n_ellipse_grid, n_ellipse_grid)
+    grids = Topology(n_samples * grid.n_vertices,
                           (grid.elements[2] + grid.n_vertices * np.arange(n_samples)[:, None, None]).reshape(-1, 3))
     reference_circles = contours.Level(radius**2, np.append(to_rgb(wall_colour), 0.65), 0.75)
 
@@ -195,7 +197,7 @@ def draw_curvature_defects(topology: core.Topology, vertices: core.Point, centre
             outline = contours.Level(radius**2, colour, 1.5)
             outlines.append(contours.picture(places_at, grid, quadric.reshape(-1), np.zeros(3), camera,
                                              levels=(outline,), opacity=0.0))
-        simplices.overlay(ax, [
+        overlay(ax, [
             contours.picture(points, topology, field, diverging_colours(Normalize(-bound, bound)(field))[:, :3], camera),
             simplices.strokes(points, topology, ink(mesh_colour), mesh_width, camera, opacity=mesh_opacity),
             *fills,
@@ -216,7 +218,7 @@ def draw_intrinsic_flow(topology: core.Topology, vertices: core.Point,
     # Area-weighted vertex currents give a continuous drawing of the facewise solution.
     sides = topology.boundary[2, 1] * (topology.d[0] * vertices)
     areas = ((sides[0] & sides[1]) / 2).norm()                              # Scalar+[faces]
-    corners = ~topology.incidence[2, 0].mean(axis=0)
+    corners = topology.incidence[2, 0].mean(axis=0).adjugate()
     vertex_current = (corners * (areas * current)) / (corners * areas)       # [cases] Point-[vertices]
     reference_speed = float(np.percentile(vertex_current.norm().batch().to_array(), 95))
     points = vertices.batch()                                                 # [vertices] Point-
@@ -229,7 +231,7 @@ def draw_intrinsic_flow(topology: core.Topology, vertices: core.Point,
         frame_panel(ax, vertices, 0.08)
         camera = offset_panel(ax, core.mv.x, core.mv.y)
         colours = diverging_colours(Normalize(-1.0, 1.0)(potentials[index]))[:, :3]
-        simplices.overlay(ax, [
+        overlay(ax, [
             contours.picture(points, topology, potentials[index], colours, camera, levels=potential_levels),
             simplices.strokes(points, topology, ink(mesh_colour), mesh_width, camera, opacity=0.45),
             flow.layer(points, topology, directions[index], camera, reference_speed, ink(flow_colour)),
