@@ -12,13 +12,6 @@ The pressure push on a wet triangle is the interior product `samples | planes`, 
 forque and added directly to the weight line `weight * (centre & (turns << -up))`. Differentiating that sum
 over `Tilt` and pairing back with `Tilt` forms the tilt stiffness `Tilt & (pushing + weighing)`, whose
 eigenvalues divided by the weight are the roll and pitch metacentric heights.
-
-In the Newton-Euler notation of naval architecture and hydrostatics, vertical equilibrium integrates pressure
-into the heave force $\rho g V_{\mathrm{disp}}(z_0, \phi, \theta) = W$, while rotational stability tracks the
-shift of the centre of buoyancy $\mathbf r_B(\phi) = V_{\mathrm{disp}}^{-1} \int_{V_{\mathrm{disp}}} \mathbf r \, \mathrm dV$
-relative to the centre of gravity $\mathbf r_G$ to form the righting arm $GZ(\phi) = (y_B(\phi) - y_G)\cos\phi + (z_B(\phi) - z_G)\sin\phi$
-and the upright metacentric height $GM = I_w / V_{\mathrm{disp}} - BG$ from the waterplane second moment $I_w$
-and vertical separation $BG = z_G - z_B$.
 """
 
 from __future__ import annotations

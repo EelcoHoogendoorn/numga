@@ -7,8 +7,6 @@ Each particle is modelled as an ellipsoid whose dual quadric `Shape = Point <- P
     Point.commutator(spin)(shape) + shape(Plane.commutator(spin)) == gradient(shape) - shape(gradient.adjugate())
 
 On the left is the dual quadric's rate of change as the body turns at `spin`; on the right is the flow gradient acting on the shape's offsets less its adjugate acting on the planes. Because both maps are antisymmetric, joining their output with their plane's free offset via `(Point & map(Plane)).trace(1, 2)` captures all three independent components without a metric, reducing torque balance at any orientation to a single linear solve. A sphere spins at half the curl of the gradient, a rod traces a closed Jeffery orbit on the sphere of directions, and a triaxial ellipsoid precesses quasiperiodically.
-
-In Gibbs dyadic suspension mechanics, the unit director of an axisymmetric spheroid obeys $\\dot{\\mathbf{p}} = \\boldsymbol{\\Omega}\\times\\mathbf{p} + \\lambda(\\mathbf{E}\\cdot\\mathbf{p} - (\\mathbf{p}\\cdot\\mathbf{E}\\cdot\\mathbf{p})\\mathbf{p})$ with Bretherton shape factor $\\lambda = (r^2 - 1)/(r^2 + 1)$, subtracting the radial projection $(\\mathbf{p}\\cdot\\mathbf{E}\\cdot\\mathbf{p})\\mathbf{p}$ to keep $|\\mathbf{p}| = 1$, while a general triaxial ellipsoid requires resolving $\\omega_{ij} - \\Omega_{ij} = \\frac{a_i^2 - a_j^2}{a_i^2 + a_j^2}\\,E_{ij}$ in the co-rotating principal frame.
 """
 
 from __future__ import annotations

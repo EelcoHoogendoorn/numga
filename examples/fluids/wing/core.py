@@ -18,13 +18,6 @@ scales steps everywhere except at `critical` and `-critical`, where it vanishes 
 folding the cylinder through `critical` into a sharp trailing edge. Carrying the velocity potential and stream
 function along the map pulls the cylinder's potential gradient back through `jacobian.inverse()` and contracts
 it with `Point` to yield the flow past the wing.
-
-In complex-variable potential-flow notation, the plane is identified with $z = x + iy$ in a chosen coordinate
-frame, the cylinder potential $W(\zeta) = U e^{-i\alpha}(\zeta - \zeta_0) + U e^{i\alpha} R^2/(\zeta - \zeta_0)
-+ \frac{i\Gamma}{2\pi}\ln(\zeta - \zeta_0)$ with clockwise circulation $\Gamma = 4\pi U R \sin(\alpha + \beta)$
-is mapped by $z = \zeta + c^2/\zeta$, the velocity components $(u, v)$ are recovered from the conjugate
-derivative $u - iv = (dW/d\zeta)/(1 - c^2/\zeta^2)$, and the Kutta–Joukowski force is written as
-$F_x + i F_y = i\rho U e^{i\alpha}\Gamma$.
 """
 
 from __future__ import annotations

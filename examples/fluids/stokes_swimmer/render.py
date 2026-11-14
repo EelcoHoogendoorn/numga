@@ -116,7 +116,7 @@ def draw_summary(
     times = np.linspace(0.0, 1.0, len(x_readings))
     ax_path.plot(times, x_readings[:, 0], color=purcell_colour)
     ax_path.plot(times, x_readings[:, 1], color=scallop_colour, linestyle="--")
-    _zero_axes(ax_path, "time", "$x$")
+    _zero_axes(ax_path, "time", "x")
 
     ax_hinge.plot(angles[:, 0, 0], angles[:, 0, 1], color=purcell_colour)
     ax_hinge.plot(angles[:, 1, 0], angles[:, 1, 1], color=scallop_colour, linestyle="--")

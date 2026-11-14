@@ -127,7 +127,7 @@ def draw_budget(times: np.ndarray, kinetic: Extensor, potential: Extensor, dissi
     unaccounted.semilogy(times, np.abs(residual.to_array()), "o", color=residual_colour,
                          markersize=points(residual_dot), markeredgewidth=0)
     unaccounted.set_ylim(*residual_range)
-    unaccounted.set_yticks(residual_marks, [f"$10^{{{np.log10(mark):.0f}}}$" for mark in residual_marks])
+    unaccounted.set_yticks(residual_marks, [f"1e{int(np.log10(mark))}" for mark in residual_marks])
     unaccounted.minorticks_off()
     unaccounted.set_ylabel("residual")
     entropy.plot(times, produced.to_array(), color=entropy_colour)

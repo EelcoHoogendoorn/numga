@@ -63,8 +63,8 @@ def band_panel(axis: plt.Axes, places: np.ndarray, window: tuple[float, float],
     electrons, = axis.plot([], [], color=electron_colour, linestyle=electron_dashes)
     holes, = axis.plot([], [], color=hole_colour, linestyle=hole_dashes)
     labels = [axis.text(0, 0, name, color=colour, va="center", ha=align)
-              for name, colour, align in ((r"$E_c$", edge_colour, "left"), (r"$E_v$", edge_colour, "left"),
-                                          (r"$E_{Fn}$", electron_colour, "left"), (r"$E_{Fp}$", hole_colour, "right"))]
+              for name, colour, align in (("conduction", edge_colour, "left"), ("valence", edge_colour, "left"),
+                                          ("electrons", electron_colour, "left"), ("holes", hole_colour, "right"))]
 
     def update(energies: np.ndarray, densities: np.ndarray) -> None:
         for band, edge, end, density, tint in zip(bands, energies[:2], window[::-1], densities,
@@ -256,9 +256,9 @@ def outputs_axes(axis: plt.Axes, largest_drain: float, current_window: tuple[flo
     axis.set_xticks(ticks * volt, [f"{tick:.1f}" for tick in ticks])
     axis.spines[["top", "right"]].set_visible(False)
     axis.spines["bottom"].set_position(("data", 0.0))
-    axis.annotate(r"$V_D$", (1, 0), xycoords=("axes fraction", "data"), xytext=(0, 4), textcoords="offset pixels",
+    axis.annotate("drain V", (1, 0), xycoords=("axes fraction", "data"), xytext=(0, 4), textcoords="offset pixels",
                   ha="right", va="bottom")
-    axis.annotate(r"$I_D$", (0, 1), xycoords=("data", "axes fraction"), xytext=(5, 0), textcoords="offset pixels",
+    axis.annotate("drain I", (0, 1), xycoords=("data", "axes fraction"), xytext=(5, 0), textcoords="offset pixels",
                   ha="left", va="top")
 
 
