@@ -1,46 +1,41 @@
-"""The scenes are a matching film, a twisted birefringent reflector with a pulse stepped through it, and an
-axion interface."""
+"""Scenario parameters and verification runs compute quarter-wave antireflection spectra, cholesteric Bragg reflection, internal wave patterns, time-domain pulse splitting, and axion-jump cross-polarization."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from itertools import islice
 
 import numpy as np
 
 from numga import stack
+from numga.topology import Topology
 from examples.optics.coating import core
 
-# Lengths are in nm throughout.
+# Wavelengths and thicknesses in nanometres.
 design_wavelength = 550.0
-n_spectrum = 401
-spectrum = np.linspace(450, 850, n_spectrum)
+n_wavelengths = 401
+wavelengths = np.linspace(450, 850, n_wavelengths)
 incident_index = 1.0
 substrate_index = 1.5
-coating_names = ("Bare glass", "Ideal matching layer", "MgF₂ layer")
 coating_indices = np.array([substrate_index, np.sqrt(incident_index * substrate_index), 1.38])
 optical_thicknesses = np.array([0.0, design_wavelength / 4, design_wavelength / 4])
 coating_thicknesses = optical_thicknesses / coating_indices
 ordinary_index = 1.5
 extraordinary_index = 1.8
 surrounding_index = (ordinary_index + extraordinary_index) / 2
-# The length of one full turn of the optic axis.
+# Pitch of one full turn of the crystal optic axis.
 pitch = 400.0
 n_turns = 6
 n_slices_per_turn = 16
 n_layers = n_turns * n_slices_per_turn
 slice_thickness = pitch / n_slices_per_turn
-# The depths of the slices' centres.
 slice_depths = (np.arange(n_layers) + 0.5) * slice_thickness
 crystal_permittivity = np.array([extraordinary_index ** 2, ordinary_index ** 2, ordinary_index ** 2])
 twist_signs = np.array([1.0, -1.0])
 polarization_signs = np.array([1.0, -1.0])
-# The circular inputs by the sense their field turns in along the beam, from `xt` towards `yt` or back.
-polarization_names = ("x to y", "y to x")
-# The reflection band's centre.
 band_wavelength = pitch * surrounding_index
-# The time domain: the band's pulse sent along a line of nodes through the same helix, light speed one. The
-# spacing between nodes, their count, the time step per node spacing, where the slab starts, the pulse's
-# centre and its envelope's standard deviation, and the distance light travels in the run.
+
+# Time-domain pulse parameters on a 1D periodic loop of nodes.
 node_spacing = 40.0
 n_nodes = 1000
 courant = 1.0
@@ -48,188 +43,220 @@ slab_start = 18000.0
 pulse_start = 10000.0
 pulse_width = 1000.0
 light_travel = 27000.0
-# The steps of the run, light crossing a node spacing over the Courant number in each, and the frames kept.
 n_steps = round(light_travel / (courant * node_spacing))
 n_frames = 168
-# The pulse's carriers turning with and against the helix.
 hand_signs = np.array([1.0, -1.0])
-# Field samples across each slice, and an animation frame's duration.
 n_samples_per_layer = 5
 frame_duration_ms = 40
 n_axion_jumps = 241
 axion_jumps = np.linspace(-3, 3, n_axion_jumps)
-axion_names = ("Parallel to incident", "Perpendicular to incident", "Total reflection")
 n_angles = 41
 incidence_angles = np.linspace(0, np.deg2rad(70), n_angles)
 n_map_wavelengths = 121
 map_wavelengths = np.linspace(450, 850, n_map_wavelengths)
 
+# Circular inputs turning from xt toward yt along +z and in the opposite sense.
+circular_polarizations = (core.mv.xt + core.mv.yt * (1j * polarization_signs)) / np.sqrt(2)  # [2] Polarization+
+
 
 # --- math -----------------------------------------------------------------------------
-def helix(depths: np.ndarray) -> tuple[core.Direction, core.Constitutive]:
-    """The optic axis and the crystal's map at the given depths, for both senses of twist: [depths, helices]."""
-    # Both helices use the same crystal; only the rotor transporting chi changes.
+def helix_media(depths: np.ndarray) -> tuple[core.Direction, core.Constitutive]:
+    """Transporting a uniaxial dielectric across `depths` (`[n_depths]`) by opposite spatial rotors yields the crystal optic axes (`[n_depths, 2] Direction-`) and constitutive maps (`[n_depths, 2] Excitation- <- Field+`)."""
     angles = 2 * np.pi * depths[:, None] / pitch * twist_signs
-    rotors = (core.mv.xy * (-angles / 2)).exp()                 # [layers, helices] Rotor+
-    crystal = core.dielectric(crystal_permittivity, 1.0)
-    return rotors >> core.mv.x.dual(), rotors >> crystal(rotors << core.Bivector)
+    rotors = (core.mv.xy * (-angles / 2)).exp()                                   # [..., 2] Rotor+
+    crystal = core.dielectric_response(crystal_permittivity, 1.0)                 # [] Excitation- <- Field+
+    return rotors >> core.mv.x.dual(), rotors >> crystal(rotors << core.Field)
 
 
-# The two circular inputs, their fields turning from `xt` towards `yt` along the beam and back.
-circular_polarizations = (core.mv.xt + core.mv.yt * (1j * polarization_signs)) / np.sqrt(2)   # [polarizations] Polarization+
+def antireflection_spectra() -> tuple[core.Scalar, core.Scalar]:
+    """Normal-incidence scattering across bare glass, an ideal quarter-wave matching film, and magnesium fluoride returns reflectance and transmittance (`[3, n_wavelengths] Scalar+`)."""
+    incident_response = core.dielectric_response(np.full(3, incident_index ** 2), 1.0)
+    substrate_response = core.dielectric_response(np.full(3, substrate_index ** 2), 1.0)
+    incident_wave = core.exterior_wave(incident_index, core.unit_frequency)
+    substrate_wave = core.exterior_wave(substrate_index, core.unit_frequency)
+    substrate_outgoing = (core.field_boundary + core.excitation_boundary(substrate_response))(substrate_wave)
+    film_response = core.dielectric_response(coating_indices[:, None] ** 2 * np.ones(3), 1.0)
+    _, generator = core.layer_operators(film_response, core.unit_frequency)
+    distance = 2 * np.pi * coating_thicknesses[:, None] / wavelengths
+    coating = core.layer_propagation(generator[:, None], distance)                # [3, n_wavelengths] Boundary+ <- Boundary+
+    reflection, transmission = core.interface_scattering(
+        coating(substrate_outgoing), incident_response, incident_index, core.unit_frequency
+    )
+    return core.scattering_powers(
+        reflection, transmission, core.mv.xt, incident_wave, incident_response, substrate_wave, substrate_response
+    )
 
 
-def antireflection() -> tuple[core.Scalar, core.Scalar]:
-    """The reflected and transmitted power of x-polarized light at normal incidence on bare glass and on
-    glass under each quarter-wave coating, over the wavelengths: `[coatings, wavelengths]`."""
-    incident = core.Ports.isotropic(incident_index, core.unit_frequency)
-    substrate = core.Ports.isotropic(substrate_index, core.unit_frequency)
-    chi = core.dielectric(coating_indices[:, None] ** 2 * np.ones(3), 1.0)
-    medium = core.Medium.from_chi(chi, core.unit_frequency)
-    distance = 2 * np.pi * coating_thicknesses[:, None] / spectrum
-    coating = core.propagate(medium.generator[:, None], distance)
-    result = core.scatter(coating(substrate.outgoing), incident)
-    return result.powers(core.mv.xt, incident, substrate)
+def twisted_spectra() -> tuple[core.Scalar, core.Scalar]:
+    """Normal-incidence Bragg reflection across opposite cholesteric helices returns circular reflectance and transmittance (`[2, 2, n_wavelengths] Scalar+`)."""
+    _, response = helix_media(slice_depths)
+    _, generator = core.layer_operators(response, core.unit_frequency)
+    distance = 2 * np.pi * slice_thickness / wavelengths
+    layers = core.layer_propagation(generator[..., None], distance)               # [n_layers, 2, n_wavelengths] Boundary+ <- Boundary+
+    propagation = core.stack_propagation(layers)                                  # [2, n_wavelengths] Boundary+ <- Boundary+
+    surrounding_response = core.dielectric_response(np.full(3, surrounding_index ** 2), 1.0)
+    surrounding_wave = core.exterior_wave(surrounding_index, core.unit_frequency)
+    surrounding_outgoing = (core.field_boundary + core.excitation_boundary(surrounding_response))(surrounding_wave)
+    reflection, transmission = core.interface_scattering(
+        propagation(surrounding_outgoing), surrounding_response, surrounding_index, core.unit_frequency
+    )
+    return core.scattering_powers(
+        reflection, transmission, circular_polarizations[:, None, None],
+        surrounding_wave, surrounding_response, surrounding_wave, surrounding_response,
+    )
 
 
-def twisted() -> tuple[core.Scalar, core.Scalar]:
-    """The twisted reflector at normal incidence: the reflected and transmitted power of both circular polarizations
-    through both helices, over the wavelengths."""
-    _, chi = helix(slice_depths)
-    medium = core.Medium.from_chi(chi, core.unit_frequency)
-    distance = 2 * np.pi * slice_thickness / spectrum
-    layers = core.propagate(medium.generator[..., None], distance)
-    propagation = core.compose(layers)                        # [helices, wavelengths] Boundary+ <- Boundary+
-    ports = core.Ports.isotropic(surrounding_index, core.unit_frequency)
-    result = core.scatter(propagation(ports.outgoing), ports)
-    reflected, transmitted = result.powers(circular_polarizations[:, None, None], ports, ports)   # [polarizations, helices, wavelengths] Scalar+, Scalar+
-    return reflected, transmitted
+def axion_reflectance() -> core.Scalar:
+    """Scattering x-polarized light off an axion-coupling jump between matched dielectrics returns co-polarized, cross-polarized, and total reflectance (`[3, n_axion_jumps] Scalar+`)."""
+    surrounding_response = core.dielectric_response(np.full(3, surrounding_index ** 2), 1.0)
+    surrounding_wave = core.exterior_wave(surrounding_index, core.unit_frequency)
+    axion_response = surrounding_response + core.mv.antipseudoscalar(axion_jumps[:, None]) * core.Field
+    axion_outgoing = (core.field_boundary + core.excitation_boundary(axion_response))(surrounding_wave)
+    reflection, _ = core.interface_scattering(axion_outgoing, surrounding_response, surrounding_index, core.unit_frequency)
+    reflected_field = reflection(core.mv.xt)                                      # [n_axion_jumps] Polarization+
+    along_incident = core.mv.x.dual() & core.time                                 # Excitation-
+    across_incident = core.mv.y.dual() & core.time                                # Excitation-
+    parallel_part = core.mv.xt * (reflected_field & along_incident)               # [n_axion_jumps] Polarization+
+    perpendicular_part = core.mv.yt * (reflected_field & across_incident)         # [n_axion_jumps] Polarization+
+    incident_power = core.wave_power(surrounding_wave(core.mv.xt), surrounding_response)
+    return stack([
+        core.wave_power(surrounding_wave(parallel_part), surrounding_response),
+        core.wave_power(surrounding_wave(perpendicular_part), surrounding_response),
+        core.wave_power(surrounding_wave(reflected_field), surrounding_response),
+    ]) / incident_power
 
 
-def axion() -> core.Scalar:
-    """The power reflected off a jump in the axion coupling alone, for x-polarized light at normal
-    incidence: along x, across it, and in all, for each jump."""
-    # Identical ordinary dielectric responses: all reflection comes from the axion jump.
-    chi = core.dielectric(np.full(3, surrounding_index ** 2), 1.0)
-    incident = core.Ports.isotropic(surrounding_index, core.unit_frequency)
-    axion_chi = chi + core.mv(core.AxionCoupling, axion_jumps[:, None]) * core.Bivector
-    substrate_medium = core.Medium.from_chi(axion_chi, core.unit_frequency)
-    substrate = core.Ports.from_medium(substrate_medium, surrounding_index, core.unit_frequency)
-    result = core.scatter(substrate.outgoing, incident)
-    reflected = result.reflection(core.mv.xt)                  # [jumps] Polarization+
-    # The planes x and y sweep through time read the reflected field along and across the incident one.
-    along_incident = core.mv.x.dual() & core.time              # [] Antibivector-
-    across_incident = core.mv.y.dual() & core.time             # [] Antibivector-
-    parallel = core.mv.xt * (reflected & along_incident)      # [jumps] Polarization+
-    perpendicular = core.mv.yt * (reflected & across_incident)   # [jumps] Polarization+
-    return stack([incident.power(parallel), incident.power(perpendicular), incident.power(reflected)]) / incident.power(core.mv.xt)
-
-
-def angular() -> core.Scalar:
-    """The positive helix's reflection of both circular polarizations over the angles of incidence and
-    the wavelengths."""
-    _, chi = helix(slice_depths)
+def angular_reflectance() -> core.Scalar:
+    """Oblique illumination of the positive cholesteric helix across `incidence_angles` and `map_wavelengths` returns circular reflectance (`[2, n_angles, n_map_wavelengths] Scalar+`)."""
+    _, response = helix_media(slice_depths)
     parallel = core.unit_frequency + core.mv.x * (surrounding_index * np.sin(incidence_angles))
-    medium = core.Medium.from_chi(chi[:, 0, None], parallel)
+    _, generator = core.layer_operators(response[:, 0, None], parallel)
     distance = 2 * np.pi * slice_thickness / map_wavelengths
-    # One layer at a time, each batched over angles and wavelengths.
-    layers = (core.propagate(generator[:, None], distance) for generator in medium.generator)
-    propagation = core.compose(layers)                        # [angles, wavelengths] Boundary+ <- Boundary+
-    ports = core.Ports.isotropic(surrounding_index, parallel[:, None])
-    scattering = core.scatter(propagation(ports.outgoing), ports)
-    tilt = (core.mv.zx * (incidence_angles / 2)).exp()        # [angles] Rotor+
-    beam_fields = tilt[None, :] >> circular_polarizations[:, None]   # [polarizations, angles] Bivector+
-    # The field's planes across the normal: its rejection by z.
-    tangential = core.mv.z.inverse() | (core.mv.z ^ beam_fields)
-    return scattering.powers(tangential[..., None], ports, ports)[0]
+    layers = (core.layer_propagation(layer_generator[:, None], distance) for layer_generator in generator)
+    propagation = core.stack_propagation(layers)                                  # [n_angles, n_map_wavelengths] Boundary+ <- Boundary+
+    surrounding_response = core.dielectric_response(np.full(3, surrounding_index ** 2), 1.0)
+    surrounding_wave = core.exterior_wave(surrounding_index, parallel[:, None])
+    surrounding_outgoing = (core.field_boundary + core.excitation_boundary(surrounding_response))(surrounding_wave)
+    reflection, transmission = core.interface_scattering(
+        propagation(surrounding_outgoing), surrounding_response, surrounding_index, parallel[:, None]
+    )
+    tilt = (core.mv.zx * (incidence_angles / 2)).exp()                            # [n_angles] Rotor+
+    beam_fields = tilt[None, :] >> circular_polarizations[:, None]                # [2, n_angles] Field+
+    tangential = core.mv.z.inverse() | (core.mv.z ^ beam_fields)                  # [2, n_angles] Polarization+
+    return core.scattering_powers(
+        reflection, transmission, tangential[..., None],
+        surrounding_wave, surrounding_response, surrounding_wave, surrounding_response,
+    )[0]
 
 
-def penetration() -> tuple[np.ndarray, core.Bivector]:
-    """The field at the band's centre through the positive helix, `[cases, layers, samples]`, at the
-    depths `[layers, samples]`."""
-    wavelength = band_wavelength
+def internal_fields() -> tuple[np.ndarray, core.Field]:
+    """Reconstructing the wave inside the positive helix at `band_wavelength` returns sample depths (`[n_layers, n_samples_per_layer]`) and field bivectors (`[2, n_layers, n_samples_per_layer] Field+`)."""
     fractions = np.linspace(0, 1, n_samples_per_layer)
     depths = (np.arange(n_layers)[:, None] + fractions) * slice_thickness
-    _, chi = helix(slice_depths)
-    medium = core.Medium.from_chi(chi[:, 0], core.unit_frequency)
-    ports = core.Ports.isotropic(surrounding_index, core.unit_frequency)
-    layers = core.propagate(medium.generator, np.full(n_layers, 2 * np.pi * slice_thickness / wavelength))
-    scattering = core.scatter(core.compose(layers)(ports.outgoing), ports)
-    exit_state = ports.outgoing(scattering.transmission(circular_polarizations))
-    fields = medium.interior(np.full(n_layers, slice_thickness), wavelength, exit_state, fractions)   # [cases, layers, samples] Bivector+
+    _, response = helix_media(slice_depths)
+    reconstruction, generator = core.layer_operators(response[:, 0], core.unit_frequency)
+    surrounding_response = core.dielectric_response(np.full(3, surrounding_index ** 2), 1.0)
+    surrounding_wave = core.exterior_wave(surrounding_index, core.unit_frequency)
+    surrounding_outgoing = (core.field_boundary + core.excitation_boundary(surrounding_response))(surrounding_wave)
+    layers = core.layer_propagation(generator, np.full(n_layers, 2 * np.pi * slice_thickness / band_wavelength))
+    _, transmission = core.interface_scattering(
+        core.stack_propagation(layers)(surrounding_outgoing), surrounding_response, surrounding_index, core.unit_frequency
+    )
+    exit_state = surrounding_outgoing(transmission(circular_polarizations))       # [2] Boundary+
+    fields = core.interior_fields(
+        reconstruction, generator, np.full(n_layers, slice_thickness), band_wavelength, exit_state, fractions
+    )
     return depths, fields
 
 
-def pulse(at: np.ndarray) -> core.Bivector:
-    """The incoming pulse's electric planes at the given positions, [cases, positions]: the band's
-    carrier turning with the helix, against it, and their average, which does not turn."""
-    envelope = np.exp(-((at - pulse_start) / pulse_width) ** 2 / 2)
-    phases = 2 * np.pi * surrounding_index * at / band_wavelength
-    carriers = (core.real.xy * (-hand_signs[:, None] * phases / 2)).exp() >> core.real.xt   # [hands, positions] Bivector+
-    cases = stack([carriers[0], carriers[1], carriers.sum(axis=0) / 2])              # [cases, positions] Bivector+
-    return envelope * cases
+def initial_pulse(positions: np.ndarray) -> core.Field:
+    """Gaussian wavepackets at `positions` (`[V]`) build co-rotating, counter-rotating, and linearly polarized electric fields (`[3, V] Field+`)."""
+    envelope = np.exp(-((positions - pulse_start) / pulse_width) ** 2 / 2)
+    phases = 2 * np.pi * surrounding_index * positions / band_wavelength
+    rotors = (core.real.xy * (-hand_signs[:, None] * phases / 2)).exp()           # [2, ...] Rotor+
+    carriers = rotors >> core.real.xt                                             # [2, ...] Field+
+    return envelope * stack([carriers[0], carriers[1], carriers.sum(axis=0) / 2])
 
 
-def time_domain(n_steps: int = n_steps, n_frames: int = n_frames) -> tuple[
-        core.Direction, core.Direction, core.Direction, core.Bivector, core.Scalar, core.Scalar, core.Scalar]:
-    """The pulse through the positively twisted helix, stepped in time.
-
-    The result holds the nodes, as displacements along the line from its start, the slab's nodes and optic
-    axes, the electric planes at each frame [frames, cases, nodes], and per case the energy before, reflected
-    out of the front and transmitted out of the back.
-    """
+def pulse_setup(n_run_steps: int, n_run_frames: int) -> tuple[
+    Topology,
+    np.ndarray,
+    core.Direction,
+    core.Direction,
+    core.Direction,
+    core.Constitutive,
+    core.Constitutive,
+    core.Scalar,
+    Iterator[tuple[core.Field, core.Field]],
+]:
+    """Preparing the 1D periodic loop and initial forward wavepacket returns the loop topology, node positions, display geometry, medium fields, initial total energy, and strided leapfrog state stream."""
+    topology = Topology.loops([n_nodes])
     positions = np.arange(n_nodes) * node_spacing
     inside = ((positions >= slab_start) & (positions < slab_start + n_turns * pitch)).astype(float)
-    directors, chi = helix(positions - slab_start)
-    surrounding_chi = core.dielectric(np.full(3, surrounding_index ** 2), 1.0)
-    media = (inside * chi[:, 0] + (1 - inside) * surrounding_chi).real()            # [nodes] Antibivector- <- Bivector+
-    line = core.Line.from_chi(media, surrounding_chi.real(), node_spacing)
+    directors, response = helix_media(positions - slab_start)
+    surrounding = core.dielectric_response(np.full(3, surrounding_index ** 2), 1.0)
+    media = (inside * response[:, 0] + (1 - inside) * surrounding).real()         # [n_nodes] Excitation- <- Field+
+    node_response = media.field()                                                 # (Excitation- <- Field+)[V]
+    node_inverse = media.inverse().field()                                        # (Field+ <- Excitation-)[V]
+    edge_response = surrounding.real()                                            # [] Excitation- <- Field+
 
-    # A pulse already travelling towards +z: its magnetic planes are its electric planes contracted
-    # through z and t, times the index, half a node ahead and half a step earlier.
     interval = courant * node_spacing
-    electric = pulse(positions)
-    magnetic = surrounding_index * (core.real.t.inverse() | (core.real.z ^ pulse(positions + node_spacing / 2 + interval / (2 * surrounding_index))))
-    before = line.energy(electric, magnetic).sum(axis=-1)
-    stride = n_steps // n_frames
-    states = list(islice(line.evolve(electric, magnetic, interval, n_steps), stride - 1, None, stride))
-    electric, magnetic = stack([e for e, _ in states]), stack([m for _, m in states])  # [frames, cases, nodes] Bivector+, Bivector+
-
-    energy = line.energy(electric[-1], magnetic[-1])                                  # [cases, nodes] Scalar+
-    reflected = (energy * (positions < slab_start)).sum(axis=-1)
-    transmitted = (energy * (positions >= slab_start + n_turns * pitch)).sum(axis=-1)
-    slab = np.flatnonzero(inside)
-    nodes = positions * core.real.z.dual()                                           # [nodes] Direction-
-    return nodes, nodes[slab], directors[slab, 0].real(), electric, before, reflected, transmitted
+    electric = initial_pulse(positions).field()                                   # [3] Field+[V]
+    shifted = initial_pulse(positions + node_spacing / 2 + interval / (2 * surrounding_index))
+    magnetic = (surrounding_index * (core.real.t.inverse() | (core.real.z ^ shifted))).field()  # [3] Field+[E]
+    initial_energy = core.electromagnetic_energy(
+        electric, magnetic, node_response, edge_response, node_spacing
+    ).sites.sum()                                                                 # [3] Scalar+
+    stride = n_run_steps // n_run_frames
+    states = islice(
+        core.leapfrog_states(topology.d[0], node_inverse, edge_response, electric, magnetic, node_spacing, interval, n_run_steps),
+        stride - 1,
+        None,
+        stride,
+    )
+    slab_indices = np.flatnonzero(inside)
+    nodes = positions * core.real.z.dual()                                        # [n_nodes] Direction-
+    return topology, positions, nodes, nodes[slab_indices], directors[slab_indices, 0].real(), node_response, edge_response, initial_energy, states
 
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
+    """Saves the five optical-coating figures and the 3D pulse-splitting animation, then checks energy conservation and handedness selectivity."""
     from examples.util.animation import save_animation, save_figure
     from examples.optics.coating import render
 
-    reflection, transmission = antireflection()
-    twisted_reflection, twisted_transmission = twisted()
-    axion_reflection = axion()
-    angle_reflection = angular()
-    depths, fields = penetration()
-    save_figure(render.spectra(spectrum, reflection, coating_names), "coating_chi_matching")
-    save_figure(render.handedness(spectrum, twisted_reflection, polarization_names), "coating_handedness")
-    save_figure(render.axion(axion_jumps, axion_reflection, axion_names), "coating_axion")
-    save_figure(render.angular(map_wavelengths, incidence_angles, angle_reflection), "coating_polarization_map")
-    save_figure(render.field(depths, fields), "coating_internal_field")
-    nodes, slab, directors, pulses, before, pulse_reflected, pulse_transmitted = time_domain()
-    # The pulse that does not turn: one handedness comes back, the other passes.
-    save_animation(render.pulse(nodes, slab, directors, pulses[:, 2]), "coating_pulse", frame_duration_ms)
+    reflection, transmission = antireflection_spectra()
+    twisted_reflection, twisted_transmission = twisted_spectra()
+    axion_reflection = axion_reflectance()
+    angle_reflection = angular_reflectance()
+    depths, fields = internal_fields()
+    save_figure(render.spectra_figure(wavelengths, reflection), "coating_chi_matching")
+    save_figure(render.handedness_figure(wavelengths, twisted_reflection), "coating_handedness")
+    save_figure(render.axion_figure(axion_jumps, axion_reflection), "coating_axion")
+    save_figure(render.angular_figure(map_wavelengths, incidence_angles, angle_reflection), "coating_polarization_map")
+    save_figure(render.internal_field_figure(depths, fields), "coating_internal_field")
+
+    topology, positions, nodes, slab_nodes, optic_axes, node_response, edge_response, initial_energy, state_stream = pulse_setup(n_steps, n_frames)
+    kept_states = []
+
+    def recorded_states() -> Iterator[tuple[core.Field, core.Field]]:
+        """Yields each state from `state_stream` while recording it for post-run energy checks."""
+        for state in state_stream:
+            kept_states.append(state)
+            yield state
+
+    save_animation(render.pulse_animation(nodes, slab_nodes, optic_axes, 2, recorded_states()), "coating_pulse", frame_duration_ms)
+    final_energy = core.electromagnetic_energy(*kept_states[-1], node_response, edge_response, node_spacing)  # [3] Scalar+[V]
+    front = topology.reading(np.flatnonzero(positions < slab_start), 0)
+    back = topology.reading(np.flatnonzero(positions >= slab_start + n_turns * pitch), 0)
+    pulse_reflectance = (front * final_energy).sites.sum() / initial_energy       # [3] Scalar+
+    pulse_transmittance = (back * final_energy).sites.sum() / initial_energy      # [3] Scalar+
 
     # checks
-    # Lossless layers conserve power: what is not reflected is transmitted.
-    np.testing.assert_allclose((reflection + transmission).kernel, 1, atol=1e-10)
-    np.testing.assert_allclose((twisted_reflection + twisted_transmission).kernel, 1, atol=1e-10)
-    # The leapfrog keeps the pulse's energy, to its grid's dispersion of a pulse this short, and the helix returns
-    # the hand that turns with it, all but the part of the pulse's spectrum outside the reflectance band.
-    np.testing.assert_allclose(((pulse_reflected + pulse_transmitted) / before).kernel, 1, atol=5e-3)
-    assert (pulse_reflected / before)[0] > 0.95 and (pulse_reflected / before)[1] < 0.01
+    assert ((reflection + transmission - 1).abs() < 1e-10).all()
+    assert ((twisted_reflection + twisted_transmission - 1).abs() < 1e-10).all()
+    assert ((pulse_reflectance + pulse_transmittance - 1).abs() < 5e-3).all()
+    assert (pulse_reflectance[0] > 0.95).all() and (pulse_reflectance[1] < 0.01).all()
 
 
 if __name__ == "__main__":

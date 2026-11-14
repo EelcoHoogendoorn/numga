@@ -1,88 +1,95 @@
-"""Scenes for the rainbow: light swept across a raindrop, leaving it after one and two reflections, and
-the double bow it paints on the sky opposite the sun."""
+"""Scene setup and verification run for the primary and secondary rainbows."""
 
 from __future__ import annotations
+
+from collections.abc import Callable, Iterable, Iterator
 
 import numpy as np
 
 from numga import stack
 from examples.optics.rainbow import core
 
-mv = core.mv
-# The direction sunlight travels, and the direction up, square to it.
-forward, up = mv.x.dual(), mv.y.dual()                                        # [] Direction-, Direction-
-# The wavelengths of the sunlight, in nanometres, and the refractive index of water for each: Cauchy's
-# fit, a constant and a term falling with the wavelength squared, its coefficient in square nanometres.
-wavelengths = np.linspace(400, 700, 31)
+forward, up = core.forward, core.up                                           # [] Direction-, Direction-
+# Cauchy dispersion model across the visible spectrum in nanometres, and yellow index for the drop sweep.
+n_colours = 31
+wavelengths = np.linspace(400, 700, n_colours)
 index_constant = 1.3238
 index_dispersion = 3140.0
-indices = (index_constant + index_dispersion / wavelengths**2)[:, None]       # [colours, 1]
-# The refractive index the swept light is drawn for, that of yellow light.
-drawn_index = 1.333
-# Offsets of the light from the drop's centre, as fractions of its radius: for the sky, for the light
-# swept across the drop, and for the bundle drawn behind it; the duration of a frame of the sweep.
+indices = (index_constant + index_dispersion / wavelengths**2)[:, None]       # [n_colours, 1]
+drawn_index = np.array(1.333)
+# Sample counts across the drop radius for sky integration, animated sweep, and background ray fan.
 n_rays = 4000
 n_frames = 144
 n_bundle = 48
-duration_ms = 40
-# Reflections inside the drop: once for the primary bow, twice for the secondary.
+frame_duration_ms = 40
 n_reflections = 2
-# The sun's height above the horizon, and the width of its disc, in degrees.
+# Solar elevation and angular diameter in degrees.
 sun_elevation = 12.0
 sun_width = 0.53
 
 
-# --- math -----------------------------------------------------------------------------
-def sky(offsets: core.Direction) -> tuple[core.Scalar, core.Scalar]:
-    """Per number of reflections, from one, and per colour, for light at each offset `[orders, colours,
-    rays]`: the cosine of the angle from the point opposite the sun at which it is seen, and the sunlight
-    it carries there, from the ring of offsets of its size."""
-    _, *bows = core.paths(forward, offsets, indices, n_reflections)
-    # Light leaving along `exit` is seen looking back against it; the point opposite the sun lies along
-    # the sunlight.
-    sight_cosines = stack([(-exit).dot(forward) for _, exit, _ in bows])      # [orders, colours, rays] Scalar+
-    # The rings of offsets grow with their size.
-    ring_sizes = offsets.norm()                                               # [rays] Scalar+
-    return sight_cosines, stack([passed * ring_sizes for _, _, passed in bows])   # [orders, colours, rays] Scalar+
-
-
-def sweep(offsets: core.Direction) -> tuple[core.Direction, core.Direction, core.Direction, core.Scalar]:
-    """For light at each offset `[...]`: where it enters the drop; and after each number of
-    reflections `[orders + 1, ...]`, the point where it leaves, the direction it leaves in, and the
-    cosine of the angle from the point opposite the sun at which it is seen."""
-    vertices, exits, _ = zip(*core.paths(forward, offsets, drawn_index, n_reflections))
-    exits = stack(list(exits))                                                # [orders + 1, ...] Direction-
-    return core.entry(forward, offsets), stack(list(vertices)), exits, (-exits).dot(forward)
-
-
 # --- plumbing -------------------------------------------------------------------------
-def main() -> None:
-    from examples.util.animation import save_animation, save_figure
-    from examples.optics.rainbow import render
+def save_states(
+    states: Iterable,
+    animate: Callable[..., Iterable[np.ndarray]],
+    *arguments,
+    name: str,
+    duration_ms: int,
+) -> list:
+    """Streams `states` once through `animate(*arguments, states)` into `save_animation` and returns
+    the collected states."""
+    from examples.util.animation import save_animation
 
-    # Offsets at the middle of equal steps across the drop's radius.
-    offsets = up * ((np.arange(n_rays) + 0.5) / n_rays)                       # [rays] Direction-
-    sight_cosines, flux = sky(offsets)                                        # [orders, colours, rays] Scalar+, Scalar+
-    save_figure(render.draw_sky(sight_cosines, flux, wavelengths, sun_elevation, sun_width), "rainbow_sky")
-    swept_light = sweep(up * ((np.arange(n_frames) + 0.5) / n_frames))
-    bundle = sweep(up * ((np.arange(n_bundle) + 0.5) / n_bundle))
-    images = render.animate_sweep(swept_light, bundle, offsets, sight_cosines, wavelengths)
-    save_animation(images, "rainbow_sweep", duration_ms)
+    recorded = []
+
+    def passing() -> Iterator:
+        for state in states:
+            recorded.append(state)
+            yield state
+
+    save_animation(animate(*arguments, passing()), name, duration_ms)
+    return recorded
+
+
+def main() -> None:
+    import matplotlib.pyplot as plt
+
+    from examples.optics.rainbow import render
+    from examples.util.animation import save_figure
+
+    offsets = up * ((np.arange(n_rays) + 0.5) / n_rays)                       # [n_rays] Direction-
+    sight_cosines, flux = core.sky_bows(offsets, indices, n_reflections)      # [n_reflections, n_colours, n_rays] Scalar+, Scalar+
+    sky = render.sky_figure(sight_cosines, flux, wavelengths, sun_elevation, sun_width)
+    save_figure(sky, "rainbow_sky")
+    plt.close(sky)
+
+    sweep_offsets = up * ((np.arange(n_frames) + 0.5) / n_frames)             # [n_frames] Direction-
+    bundle_offsets = up * ((np.arange(n_bundle) + 0.5) / n_bundle)            # [n_bundle] Direction-
+    bundle = core.ray_bundle(bundle_offsets, drawn_index, n_reflections)
+    swept_states = save_states(
+        core.swept_ray_states(sweep_offsets, drawn_index, n_reflections),
+        render.sweep_animation,
+        bundle,
+        offsets,
+        sight_cosines,
+        wavelengths,
+        name="rainbow_sweep",
+        duration_ms=frame_duration_ms,
+    )
 
     # checks
-    # Each bow lies where the angle of the light leaving is stationary, Descartes's angle: after one
-    # reflection the largest from the point opposite the sun, after two the smallest.
+    # Stationary deflection occurs at Descartes's incidence angle, largest at one bounce and smallest at two.
     index = indices[:, 0]
-    reflections = np.arange(1, n_reflections + 1)[:, None]                    # [orders, 1]
+    reflections = np.arange(1, n_reflections + 1)[:, None]
     incidence = np.arccos(np.sqrt((index**2 - 1) / (reflections * (reflections + 2))))
     refraction = np.arcsin(np.sin(incidence) / index)
     deflection = 2 * (incidence - refraction) + reflections * (np.pi - 2 * refraction)
-    cosines = sight_cosines.to_array()                                        # [orders, colours, rays]
-    np.testing.assert_allclose([cosines[0].min(axis=-1), cosines[1].max(axis=-1)], -np.cos(deflection), atol=1e-6)
-    # The light leaving is a unit direction, and each fraction of sunlight is less after more reflections.
-    _, _, exits, _ = swept_light
-    np.testing.assert_allclose(exits.scalar_norm_squared().to_array(), 1, atol=1e-6)
-    np.testing.assert_array_less(flux.to_array()[1], flux.to_array()[0])
+    assert (sight_cosines[0].min(axis=-1) + np.cos(deflection[0])).abs().max() < 1e-6
+    assert (sight_cosines[1].max(axis=-1) + np.cos(deflection[1])).abs().max() < 1e-6
+    # Every exited ray has unit spatial length, and secondary flux stays below primary flux at every offset.
+    exits = stack([state[2] for state in swept_states])                       # [n_frames, 3] Direction-
+    assert (exits.antinorm() - 1).abs().max() < 1e-6
+    assert (flux[1] < flux[0]).all()
 
 
 if __name__ == "__main__":
