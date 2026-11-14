@@ -85,6 +85,7 @@ def animate_gliding(impulse: core.Forque, body_outline: core.Point, nose: core.P
     tips = noses + lanes                                                      # [n_frames, n_cases] Point-
     # Triangulate the reference ellipse once from its planar readout and form its closed boundary loop.
     body_triangles, _ = delaunay((stack((mv.x, mv.y)) & lane_outlines[0, 0].batch()[..., None]).to_array())
+    V, E, F = body_triangles.n_elements
     rim = Topology.loops([n_outline])
     height = lane * n_cases                                                   # [] Scalar+
     aspect = float((height / (extent[1] - extent[0])).to_array())
@@ -101,7 +102,7 @@ def animate_gliding(impulse: core.Forque, body_outline: core.Point, nose: core.P
     for index in range(n_frames):
         path_ink = np.repeat([rgb(colour) for colour in path_colours], index, axis=0)
         bodies = [picture for case in range(n_cases) for picture in (
-            contours.picture(lane_outlines[index, case], body_triangles, np.zeros(body_triangles.n_vertices),
+            contours.picture(lane_outlines[index, case], body_triangles, np.zeros(V),
                              rgb(body_colours[case]), camera),
             simplices.strokes(lane_outlines[index, case], rim, rgb(edge_colours[case]), outline_width, camera))]
         image.set_data(drawing.composited([

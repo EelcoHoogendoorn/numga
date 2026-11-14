@@ -33,7 +33,7 @@ def triangle_grid(n_divisions: int) -> tuple[core.Topology, np.ndarray]:
     first, second = np.meshgrid(steps, steps, indexing="ij")
     inside = first + second <= n_divisions
     barycentric = np.stack((n_divisions - first - second, first, second))[:, inside] / n_divisions
-    # The index of each lattice node among the samples, and the lattice cells' upward and downward triangles.
+    # The index of each lattice node among the samples, and each lattice square's upward and downward triangles.
     lookup = np.cumsum(inside).reshape(inside.shape) - 1
     corner, along_first, along_second, opposite = lookup[:-1, :-1], lookup[1:, :-1], lookup[:-1, 1:], lookup[1:, 1:]
     layers = first[:-1, :-1] + second[:-1, :-1]
@@ -69,16 +69,17 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.fluids.projective_sphere_flow import render
 
-    topology, coordinates = shapes.sphere(n_levels)
+    topology, coordinates = shapes.sphere(n_levels)                             # [V, 3]
+    V, E, F = topology.n_elements
     vertices = mv.vector(coordinates).dual().field()                            # Point-[V]
     quadrature_grid, quadrature_weights = triangle_grid(n_quadrature_divisions)
     # Each small triangle's centroid samples its share of the face, at the mean of its corners' weights.
-    corner_mean = quadrature_grid.incidence[2, 0].mean(axis=0)            # Scalar+[F <- V]
-    quadrature = (corner_mean * mv.scalar(quadrature_weights[..., None]).field()).batch()  # [3, ...] Scalar+
-    display_grid, display = triangle_grid(n_display_divisions)
+    corner_mean = quadrature_grid.incidence[2, 0].mean(axis=0)                  # Scalar+[F_quadrature <- V_quadrature]
+    quadrature = (corner_mean * mv.scalar(quadrature_weights[..., None]).field()).batch()  # [3, F_quadrature] Scalar+
+    display_grid, display = triangle_grid(n_display_divisions)                  # [3, V_display]
     moving_vertex = int((mv.x & vertices.batch()).argmax())
     phases = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)
-    radii = np.exp(log_radius_amplitude * np.sin(phases[:, None]) * (np.arange(topology.n_vertices) == moving_vertex))
+    radii = np.exp(log_radius_amplitude * np.sin(phases[:, None]) * (np.arange(V) == moving_vertex))
     frames = spherical_frames(topology, vertices, radii, quadrature, display)
     save_animation(render.animate_sphere(topology, display_grid, frames), "projective_sphere_weights", frame_duration_ms)
 

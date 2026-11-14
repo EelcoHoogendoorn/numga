@@ -83,7 +83,7 @@ def triangles(topology: Topology, vertices: Point) -> tuple[Antiscalar, Upright,
     return areas, gradients, (topology.incidence[2, 0].adjugate() * (areas / 3)).sum(axis=0)
 
 
-def burning(topology: Topology, areas: Antiscalar, gradients: Upright, cells: Antiscalar, fuel_diffusivity: float,
+def burning(topology: Topology, areas: Antiscalar, gradients: Upright, dual_areas: Antiscalar, fuel_diffusivity: float,
             prefactor: float, activation: float, unburnt_temperature: float, parcels: Point, dt: float, n_frames: int,
             n_stride: int) -> Iterator[tuple[Point, Scalar]]:
     """Yield the mixture's parcel field and volumetric reaction rate across frames as fuel burns along the reaction
@@ -109,8 +109,8 @@ def burning(topology: Topology, areas: Antiscalar, gradients: Upright, cells: An
 
     def step(parcels: Point, _) -> tuple[Point, None]:
         """Parcel field after one step of chemical reaction and explicit heat and fuel diffusion."""
-        heat_rate = -(conduction * (mv.h & parcels)) / cells                  # Scalar+[V]
-        fuel_rate = -(diffusion * (mv.f & parcels)) / cells                   # Scalar+[V]
+        heat_rate = -(conduction * (mv.h & parcels)) / dual_areas             # Scalar+[V]
+        fuel_rate = -(diffusion * (mv.f & parcels)) / dual_areas              # Scalar+[V]
         return parcels + fuel_loss(parcels) * reaction + dt * (heat_rate * heat + fuel_rate * fuel), None
 
     @jax.jit

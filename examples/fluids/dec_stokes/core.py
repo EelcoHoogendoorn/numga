@@ -31,7 +31,8 @@ class Operators:
 
     def __init__(self, topology: Topology, vertices: Point):
         self.topology, self.vertices = topology, vertices
-        # Integrated fields carry one value per cell. These derivatives contain
+        V, E, F = topology.n_elements
+        # Integrated fields carry one reading per simplex. These derivatives contain
         # only the incidence signs; their composition is zero before any geometry.
         self.d0 = topology.d[0] * Scalar                                     # (Scalar+ <- Scalar+)[E <- V]
         self.d1 = topology.d[1] * Scalar                                     # (Scalar+ <- Scalar+)[F <- E]
@@ -47,9 +48,9 @@ class Operators:
         gradients = sides / (2 * self.face_patches)                          # [3] Vector+[F]
         self.circumcentres = (gradients * (self.corners.norm_squared() / 2)).sum(axis=0).dual()  # Point-[F]
 
-        ones = mv.scalar(np.ones((topology.n_elements[2], 1))).field()       # Scalar+[F]
+        ones = mv.scalar(np.ones((F, 1))).field()                            # Scalar+[F]
         midpoints = topology.incidence[1, 0].mean(axis=0) * vertices         # Point-[E]
-        boundary = topology.d[1].adjugate() * ones                                     # Scalar+[E]
+        boundary = topology.d[1].adjugate() * ones                           # Scalar+[E]
         # Interior dual edges join adjacent circumcentres. At the boundary they
         # finish at the primal edge's midpoint, closing the truncated dual cells.
         # The dual edge crosses to the primal edge's right, matching positive flux.
@@ -61,15 +62,15 @@ class Operators:
         self.dual_patches = topology.incidence[1, 0].adjugate().sum(axis=0) * ((self.dual_edges & self.edges) / 4)  # Patch-[V]
         self.dual_areas = self.dual_patches.norm()                           # Scalar+[V]
 
-        # Each Hodge map scales by the oriented patch of the complementary dual cell
-        # divided by that of its primal cell.
+        # Each Hodge map scales by the dual cell's patch, the dual-to-primal edge ratio,
+        # or the inverse face patch.
         self.star0 = spdiag(self.dual_patches * Scalar)                      # (Patch- <- Scalar+)[V <- V]
         self.star1 = spdiag(self.edge_ratios * Scalar)                       # (Patch- <- Scalar+)[E <- E]
         self.star2 = spdiag(self.face_patches.inverse() * Scalar)            # (Patch- <- Scalar+)[F <- F]
         self.inverse_star0 = Patch.dual_inverse() / self.dual_areas          # (Bivector+ <- Patch-)[V]
 
         # The adjugate sums dual-edge circulation around each dual cell.
-        # Dividing by that cell's area gives the vertex vorticity bivector directly.
+        # Dividing by that dual cell's area gives the vertex vorticity bivector directly.
         self.curl = self.inverse_star0(self.d0_vorticity.adjugate()(self.star1))  # (Bivector+ <- Scalar+)[V <- E]
 
 
@@ -82,13 +83,14 @@ def stokes_flow(operators: Operators, viscosity: float, prescribed_flux: Scalar,
     up to a constant, fixed here by a zero area-weighted mean.
     """
     topology = operators.topology
+    V, E, F = topology.n_elements
     # Vorticity differences across primal edges drive the paired edge response
     # through the adjugate of the dual-edge Hodge map.
     viscous = viscosity * operators.star1.adjugate()(operators.d0_vorticity(operators.curl))  # (Antiscalar- <- Scalar+)[E <- E]
     boundary_vorticity = operators.inverse_star0(boundary_circulation)       # Bivector+[V]
     boundary_resistance = viscosity * operators.star1.adjugate()(operators.d0_vorticity(boundary_vorticity))  # Antiscalar-[E]
 
-    free_edges = np.setdiff1d(np.arange(topology.n_elements[1]), fixed_edges)
+    free_edges = np.setdiff1d(np.arange(E), fixed_edges)
     embedding = topology.reading(free_edges, 1).adjugate() * Scalar                    # (Scalar+ <- Scalar+)[E <- E_free]
     stiffness = embedding.adjugate()(viscous(embedding))                     # (Antiscalar- <- Scalar+)[E_free <- E_free]
     divergence = operators.d1(embedding)                                     # (Scalar+ <- Scalar+)[F <- E_free]

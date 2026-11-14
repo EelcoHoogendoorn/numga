@@ -5,9 +5,11 @@ the hull released from a heel with a low load and a high load."""
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
+from itertools import product
 
 import numpy as np
 from numga import where
+from numga.topology import Topology
 
 from examples.fluids.floating import core
 
@@ -15,9 +17,9 @@ mv = core.mv
 # Fresh water's weight per cubic metre, in newtons, and gravity.
 fluid_weight = 9810.0
 gravity = 9.81
-# Hull length, beam, draft and freeboard, in metres, and panel count below the waterline.
+# Hull length, beam, draft and freeboard, in metres, and vertical division count below the waterline.
 length, beam, draft, freeboard = 4.0, 1.2, 0.5, 0.4
-n_cells = 8
+n_divisions = 8
 # Centre-of-gravity heights over the waterline, and the load index and heel of the 3D hull figure.
 centre_heights = [-0.2, -0.1, 0.0, 0.1, 0.2]
 n_loads = len(centre_heights)
@@ -48,15 +50,79 @@ frame_duration_ms = 40
 n_colours = 64
 
 
+# --- shapes ---------------------------------------------------------------------------
+def grid_triangles(grid: np.ndarray) -> np.ndarray:
+    """Two consistently wound triangles per quad of a two-dimensional vertex-index grid."""
+    corner, u_step, diagonal, v_step = grid[:-1, :-1], grid[1:, :-1], grid[1:, 1:], grid[:-1, 1:]
+    return np.concatenate([
+        np.stack([corner, u_step, diagonal], axis=-1).reshape(-1, 3),
+        np.stack([corner, diagonal, v_step], axis=-1).reshape(-1, 3),
+    ])
+
+
+def box_surface(sizes: np.ndarray) -> tuple[Topology, core.Point]:
+    """A closed triangulated box of the given edge lengths along `x`, `y` and `z`, centred on the origin."""
+    # Each corner chooses 0 or 1 along x, y and z, indexed by the three bits read in binary.
+    sides = np.array(list(product([0, 1], repeat=3)))                   # [8, 3]
+    u, v = np.meshgrid([0, 1], [0, 1], indexing="ij")
+    faces = []
+    for axis in range(3):
+        for side in (0, 1):
+            grid = np.zeros(u.shape + (3,), dtype=int)
+            # Order the two face axes so that every face winds outward.
+            first_axis, second_axis = (axis + 1) % 3, (axis + 2) % 3
+            grid[..., axis] = side
+            grid[..., first_axis], grid[..., second_axis] = (u, v) if side else (v, u)
+            faces.append(grid_triangles(grid @ np.array([4, 2, 1])))
+    return Topology(len(sides), np.concatenate(faces)), mv.point((sides - 0.5) * sizes).field()
+
+
+def wigley_hull(length: float, beam: float, draft: float, freeboard: float,
+                n_divisions: int) -> tuple[Topology, core.Point]:
+    """A closed triangulated Wigley hull with parabolic underwater sections, vertical topsides and a flat deck."""
+    x_stations = np.linspace(-length / 2, length / 2, 2 * n_divisions + 1)
+    z_levels = np.concatenate([np.linspace(-draft, 0, n_divisions + 1), np.linspace(0, freeboard, n_divisions // 2 + 1)[1:]])
+    x, z = np.meshgrid(x_stations, z_levels, indexing="ij")
+    half_breadth = beam / 2 * (1 - (2 * x / length) ** 2) * (1 - (np.minimum(z, 0) / draft) ** 2)
+    deck_span = np.linspace(-1, 1, n_divisions + 1)
+    deck_x, share = np.meshgrid(x_stations, deck_span, indexing="ij")
+    deck_y = share * beam / 2 * (1 - (2 * deck_x / length) ** 2)
+    # Port and starboard share the keel and stems where half-breadth vanishes; the stern-keel grid corner has
+    # zero-area fin triangles that the closed surface omits.
+    own_starboard = np.ones(x.shape, dtype=bool)
+    own_starboard[-1, 0] = False
+    own_port = np.zeros(x.shape, dtype=bool)
+    own_port[1:-1, 1:] = True
+    own_deck = np.zeros(deck_x.shape, dtype=bool)
+    own_deck[1:-1, 1:-1] = True
+    places = np.concatenate([
+        np.stack([x, half_breadth, z], axis=-1)[own_starboard],
+        np.stack([x, -half_breadth, z], axis=-1)[own_port],
+        np.stack([deck_x, deck_y, np.full_like(deck_x, freeboard)], axis=-1)[own_deck],
+    ])
+    counts = np.cumsum([0, own_starboard.sum(), own_port.sum()])
+    starboard = np.full(x.shape, -1)
+    starboard[own_starboard] = counts[0] + np.arange(own_starboard.sum())
+    port = starboard.copy()
+    port[own_port] = counts[1] + np.arange(own_port.sum())
+    deck = np.empty(deck_x.shape, dtype=int)
+    deck[:, 0], deck[:, -1] = port[:, -1], starboard[:, -1]
+    deck[[0, -1]] = starboard[[0, -1], -1:]
+    deck[own_deck] = counts[2] + np.arange(own_deck.sum())
+    faces = np.concatenate([grid_triangles(starboard.T), grid_triangles(port), grid_triangles(deck)])
+    nondegenerate = (faces >= 0).all(axis=-1) & (faces != np.roll(faces, 1, axis=-1)).all(axis=-1)
+    return Topology(len(places), faces[nondegenerate]), mv.point(places).field()
+
+
 # --- math -----------------------------------------------------------------------------
 def heel_motors(angles: np.ndarray | core.Scalar) -> core.Motor:
     """Motors heeling a body about the longitudinal heel axis by angles given in degrees."""
     return (core.heel_axis * (-angles * (np.pi / 180) / 2)).exp()
 
 
-def ship_scene(n_hull_cells: int) -> tuple[core.Topology, core.Point, core.Scalar, core.Point]:
+def ship_scene(n_hull_divisions: int) -> tuple[Topology, core.Point, core.Scalar, core.Point]:
     """The triangulated Wigley hull, its upright displaced weight, and its centres of gravity across loads."""
-    topology, vertices = core.wigley_hull(length, beam, draft, freeboard, n_hull_cells)  # Point-[V]
+    topology, vertices = wigley_hull(length, beam, draft, freeboard, n_hull_divisions)  # Point-[V]
     hull = topology.incidence[2, 0] * vertices                          # [3] Point-[F]
     upright_push, _ = core.buoyancy(hull, core.water, fluid_weight)     # [] Forque-
     centres = mv.point([[0, 0, height] for height in centre_heights])   # [n_loads] Point-
@@ -80,9 +146,9 @@ def righting_curves(hull: core.Point, weight: core.Scalar, centres: core.Point) 
     return push + weighing, core.tilt_stiffness(hull, 0 * weight, weight, centres, fluid_weight)
 
 
-def cube_stability_map() -> tuple[core.Topology, core.Point, core.Scalar, core.Forque]:
+def cube_stability_map() -> tuple[Topology, core.Point, core.Scalar, core.Forque]:
     """The unit cube surface, its weights across densities, and its righting couples over density and heel."""
-    topology, vertices = core.box_surface(np.ones(3))                   # Point-[V]
+    topology, vertices = box_surface(np.ones(3))                        # Point-[V]
     cube = topology.incidence[2, 0] * vertices                          # [3] Point-[F]
     weights = core.unit * (fluid_weight * densities)[:, None]           # [n_densities, 1] Scalar+
     turns = heel_motors(cube_heels)                                     # [n_cube_heels] Motor+
@@ -156,7 +222,7 @@ def main() -> None:
     from examples.fluids.floating import render
     from examples.util.animation import save_figure
 
-    topology, vertices, weight, centres = ship_scene(n_cells)
+    topology, vertices, weight, centres = ship_scene(n_divisions)
     hull = topology.incidence[2, 0] * vertices                          # [3] Point-[F]
     couples, stiffnesses = righting_curves(hull, weight, centres)
     ship_placement, ship_push = heeled_ship(hull, weight)

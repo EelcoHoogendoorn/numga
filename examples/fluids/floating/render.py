@@ -116,7 +116,7 @@ def end_on(topology: core.Topology, points: solids.Point, view: solids.View,
            parts: list[tuple[solids.Quadric, np.ndarray]],
            arrows: list[tuple[Draw, float]]) -> np.ndarray:
     """End-on RGB image of a triangulated body, translucent water box, waterline rod, and overlaid force geometry."""
-    triangles = topology.elements[2]
+    triangles = topology.elements[2]                                    # [F, 3]
     body = meshes.samples(
         points, triangles, np.array(to_rgb(hull_colour)), meshes.flat(points, triangles), view,
         face_values=np.zeros(4), colour=meshes.plain, gloss=hull_gloss,
@@ -172,7 +172,7 @@ def in_water(topology: core.Topology, points: solids.Point) -> np.ndarray:
         [-half_length, half_breadth, 0],
     ])                                                                  # [4] Point-
     view = solids.view([surface, points], 0.0, elevation, azimuth, margin, n_pixels)
-    triangles = topology.elements[2]
+    triangles = topology.elements[2]                                    # [F, 3]
     normals = meshes.flat(points, triangles)
     hull = meshes.samples(points, triangles, np.zeros(3), normals, view, face_values=colours, colour=meshes.by_face, gloss=hull_gloss)
     water_plate = solids.plates(surface[None], view.pixel)              # [1, 6] Plane+
@@ -182,7 +182,7 @@ def in_water(topology: core.Topology, points: solids.Point) -> np.ndarray:
 def draw_ship(topology: core.Topology, vertices: core.Point, placement: core.Motor, push: core.Forque,
               centre: core.Point) -> plt.Figure:
     """Side-by-side 3D perspective and end-on cross-section of the heeled hull with its hydrostatic force lines."""
-    points = include(placement >> vertices.batch())                     # [...] Point-
+    points = include(placement >> vertices.batch())                     # [V] Point-
     in_space = in_water(topology, points)
     (left, right), (bottom, top) = ship_window
     view = end_view(ship_window, round(in_space.shape[0] * (right - left) / (top - bottom)))
@@ -270,7 +270,7 @@ def animate_release(topology: core.Topology, vertices: core.Point, centres: core
         trail = np.array(history)
         views = []
         for case, colour in enumerate(colours):
-            points = include(placement[case] >> vertices.batch())       # [...] Point-
+            points = include(placement[case] >> vertices.batch())       # [V] Point-
             onto_front = front_projection(points, view)                 # [] Point- <- Point-
             dot = solids.ball(onto_front(marker), marker_radius * view.pixel)
             force_solids, arrows = forces_end_on(view, placement[case], push[case], centres[case], onto_front)

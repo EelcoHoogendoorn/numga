@@ -8,6 +8,8 @@ from itertools import islice, tee
 import numpy as np
 
 from numga import stack
+from numga.sparse import Sparse
+from numga.topology import Topology
 from examples.fluids.convection import core
 
 mv = core.mv
@@ -27,6 +29,22 @@ frame_duration_ms = 40
 n_animation_colours = 24
 
 
+def layer(n_along: int, n_across: int, period: float) -> tuple[Topology, Topology, Sparse, Sparse,
+                                                                np.ndarray]:
+    """A periodic strip of triangles of unit depth closed along its length, together with the same strip opened at its
+    seam one period further along: their topologies with matching triangle order, the vertex-reading maps between the
+    closed and opened strips, and the opened strip's vertex coordinates."""
+    closed = Topology.chains([n_across]).product(Topology.loops([n_along]))
+    opened = Topology.chains([n_across]).product(Topology.chains([n_along + 1]))
+    V, E, F = closed.n_elements
+    V_opened, E_opened, F_opened = opened.n_elements
+    places = np.stack(np.meshgrid(np.arange(n_along + 1) / n_along * period, np.linspace(0, 1, n_across),
+                                  indexing="ij"), axis=-1).reshape(-1, 2)     # [V_opened, 2]
+    closing = opened.reading(np.arange(V), 0)                                 # Scalar+[V <- V_opened]
+    opening = closed.reading(np.arange(V_opened) % V, 0)                      # Scalar+[V_opened <- V]
+    return closed, opened, closing, opening, places
+
+
 def conducting(heights: core.Scalar, size: float) -> core.Scalar:
     """Linear conductive temperature profile running from +0.5 at the floor to -0.5 at the ceiling,
     perturbed in the interior by random noise."""
@@ -39,7 +57,7 @@ def turning_over(n_along: int, n_across: int):
     """The opened strip, the map reading closed-strip fields onto it, its vertex points,
     the assembled operators, and the yielded stream function, temperature and energy budget
     over time from the perturbed conductive start."""
-    closed, opened, closing, opening, places = core.layer(n_along, n_across, period)
+    closed, opened, closing, opening, places = layer(n_along, n_across, period)
     vertices = (mv(core.Upright, places) + mv.w).dual().field()                # Antivector-[V_opened]
     liquid = core.forms(closed, opened, vertices, density, prandtl)
     temperature = conducting(closing * (mv.y & vertices), disturbance)          # Scalar+[V]
@@ -63,7 +81,7 @@ def main() -> None:
     streams, _, budgets = zip(*kept_states)
     times = np.arange(0, n_steps + 1, n_stride) * dt
     # Integrated squared stream function over the layer at each frame.
-    sizes = stack(tuple((liquid.cells * stream.squared()).sites.sum() for stream in streams))   # [n_frames] Scalar+
+    sizes = stack(tuple((liquid.dual_areas * stream.squared()).sites.sum() for stream in streams))   # [n_frames] Scalar+
     save_figure(render.draw_turnover(times, sizes), "convection_turnover")
     # Energy budget terms and normalized conservation residual relative to the initial state.
     kinetic, potential, dissipated, conducted, produced = map(stack, zip(*budgets))   # [n_frames] Scalar+, Scalar+, Scalar+, Scalar+, Scalar+

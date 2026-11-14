@@ -41,7 +41,7 @@ def draw_triangulation(topology: core.Topology, vertices: core.Point) -> plt.Fig
     """The triangulated physical sphere, before any choice of vertex representatives."""
     points = solids.origin + solids.context.include_from_algebra(vertices.batch())             # [V] Point-
     frame = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, 1.15), n_pixels)
-    triangles = topology.elements[2]
+    triangles = topology.elements[2]                                                           # [F, 3]
     colours = np.broadcast_to(cream, triangles.shape + (3,))
     surface = meshes.samples(points, triangles, colours, meshes.smooth(points, topology), frame,
                              face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
@@ -53,17 +53,18 @@ def draw_triangulation(topology: core.Topology, vertices: core.Point) -> plt.Fig
 def animate_sphere(topology: core.Topology, display: core.Topology,
                    frames: Iterable[tuple[core.Point, core.Point, core.Point, core.Scalar]]) -> Iterator[np.ndarray]:
     """The moving representatives and their dual beside the temperature on the fixed unit sphere."""
+    V, E, F = topology.n_elements
+    V_display, E_display, F_display = display.n_elements
     space_view = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, 1.85), n_pixels)
     sphere_view = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, 1.15), n_pixels)
     # Points along each great-circle arc, as shares of its chord.
     fractions = np.linspace(0, 1, n_arc_segments + 1)
     for representatives, duals, samples, values in frames:
         # The display samples of every face, sample after sample, and the display triangles of each face among them.
-        n_faces = topology.n_elements[2]
-        faces = (n_faces * display.elements[2][None] + np.arange(n_faces)[:, None, None]).reshape(-1, 3)
-        points = solids.origin + solids.context.include_from_algebra(samples.batch().reshape(-1))   # [...] Point-
-        field = values.to_array().reshape(-1)
-        normals = meshes.smooth(points, Topology(len(points), faces))
+        faces = (F * display.elements[2][None] + np.arange(F)[:, None, None]).reshape(-1, 3)  # [F * F_display, 3]
+        points = solids.origin + solids.context.include_from_algebra(samples.batch().reshape(-1))   # [V_display * F] Point-
+        field = values.to_array().reshape(-1)                                   # [V_display * F]
+        normals = meshes.smooth(points, Topology(V_display * F, faces))
         surface = meshes.samples(points, faces, field[faces, None], normals, sphere_view,
                                  face_values=np.zeros(4), colour=field_shader, gloss=solids.gloss)
         sphere = solids.draw([], sphere_view, background, inks=[], translucent=[], meshes=[(surface, 1.0)])
@@ -75,12 +76,12 @@ def animate_sphere(topology: core.Topology, display: core.Topology,
         dual_tails, dual_heads = (topology.dual.incidence[1, 0] * duals).batch()  # [E] Point-, [E] Point-
         arcs = (dual_tails[:, None] * (1 - fractions) + dual_heads[:, None] * fractions).normalized()   # [E, n_arc_segments + 1] Point-
         arc_places = solids.origin + solids.context.include_from_algebra(arcs)               # [E, n_arc_segments + 1] Point-
-        dual_lines = simplices.tubes(arc_places.reshape(-1), Topology.chains([n_arc_segments + 1] * len(arcs)),
+        dual_lines = simplices.tubes(arc_places.reshape(-1), Topology.chains([n_arc_segments + 1] * E),
                                      orange, 1.1, space_view, gloss=solids.gloss)
         on_sphere = solids.origin + solids.context.include_from_algebra(representatives.normalized().batch())  # [V] Point-
         # Each ray an edge from its vertex's place on the sphere out to the vertex.
         rays = simplices.tubes(stack([on_sphere, vertices], axis=-1).reshape(-1),
-                               Topology.chains([2] * len(vertices)), np.full(3, 0.45), 1.0, space_view,
+                               Topology.chains([2] * V), np.full(3, 0.45), 1.0, space_view,
                                gloss=solids.gloss)
         shell = solids.ball(solids.origin, 1.0)[None, None]
         markers = solids.ball(vertices, 2.0 * space_view.pixel)[:, None]

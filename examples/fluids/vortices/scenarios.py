@@ -197,6 +197,13 @@ def gas() -> Scene:
 
 
 # --- plumbing -------------------------------------------------------------------------
+def grid(half_width: float, half_height: float, n_columns: int, n_rows: int) -> core.Point:
+    """Sample points on a rectangular grid centred on the origin."""
+    x_offsets = (np.arange(n_columns) + 0.5) / n_columns * 2 * half_width - half_width
+    y_offsets = (np.arange(n_rows) + 0.5) / n_rows * 2 * half_height - half_height
+    return (core.mv.x * x_offsets[None, :] + core.mv.y * y_offsets[:, None]).dual()   # [n_rows, n_columns] Point-
+
+
 def main() -> None:
     from examples.fluids.vortices import render
     from examples.util.animation import save_animation, save_figure
@@ -260,7 +267,7 @@ def main() -> None:
 
     # checks
     for scene, centres in zip(scenes, final_centres):
-        points = centres.mean(axis=-1) + core.grid(scene.half_width, scene.half_height, 12, 8)
+        points = centres.mean(axis=-1) + grid(scene.half_width, scene.half_height, 12, 8)
         flow_derivative = core.derivative(
             core.gradient(centres, scene.circulations, scene.core_radius, scene.copies, points)
         )

@@ -54,18 +54,18 @@ def seeded(vertices: core.Point) -> tuple[core.Point, core.Scalar]:
 def frozen(topology: Topology, vertices: core.Point, parcels: core.Point, phase: core.Scalar, anisotropy: float,
            n_frames: int, stride: int) -> Iterator[tuple[core.Point, core.Scalar]]:
     """Yield parcel and phase fields across frames on the triangulated dish for a given six-fold anisotropy."""
-    areas, gradients, cells = core.triangles(topology, vertices)
-    return core.growth(topology, areas, gradients, cells, parcels, phase, crystal_axis, relaxation_time, mean_width,
-                       anisotropy, regularization, well_height, latent_heat, melting_temperature, absolute_zero, dt,
-                       n_frames, stride)
+    areas, gradients, dual_areas = core.triangles(topology, vertices)
+    return core.growth(topology, areas, gradients, dual_areas, parcels, phase, crystal_axis, relaxation_time,
+                       mean_width, anisotropy, regularization, well_height, latent_heat, melting_temperature,
+                       absolute_zero, dt, n_frames, stride)
 
 
 def entropies(topology: Topology, vertices: core.Point,
               states: list[tuple[core.Point, core.Scalar]]) -> core.Antiscalar:
     """Total entropy across a sequence of recorded parcel and phase states."""
-    areas, gradients, cells = core.triangles(topology, vertices)
+    areas, gradients, dual_areas = core.triangles(topology, vertices)
     gradient, spreading, _ = core.operators(topology, areas, gradients)
-    return stack([core.total_entropy(areas, cells, gradient, spreading, crystal_axis, mean_width, anisotropy,
+    return stack([core.total_entropy(areas, dual_areas, gradient, spreading, crystal_axis, mean_width, anisotropy,
                                      regularization, well_height, latent_heat, melting_temperature, absolute_zero,
                                      parcels, phase)
                   for parcels, phase in states])
@@ -127,7 +127,7 @@ def symmetry_preview(settings: dict[str, dict], name: str) -> None:
 
     topology, vertices = dish(n_divisions)
     parcels, phase = seeded(vertices)
-    areas, gradients, cells = core.triangles(topology, vertices)
+    areas, gradients, dual_areas = core.triangles(topology, vertices)
     # Stop each run once the ice front crosses `preview_reach` of the dish radius.
     radii = ((mv.x & vertices) * mv.x + (mv.y & vertices) * mv.y).norm()        # Scalar+[V]
     outer = radii > preview_reach * dish_radius
@@ -138,7 +138,7 @@ def symmetry_preview(settings: dict[str, dict], name: str) -> None:
         setting = scenario | changes
         started = time.monotonic()
         states = []
-        for state in core.growth(topology, areas, gradients, cells, parcels, phase, crystal_axis,
+        for state in core.growth(topology, areas, gradients, dual_areas, parcels, phase, crystal_axis,
                                  setting["relaxation_time"], setting["mean_width"], setting["anisotropy"],
                                  regularization, setting["well_height"], setting["latent_heat"], melting_temperature,
                                  setting["absolute_zero"], dt, n_preview_frames, stride):

@@ -99,7 +99,7 @@ def ice_content(phase: Scalar) -> Scalar:
     return phase ** 3 * (10 - 15 * phase + 6 * phase ** 2)
 
 
-def edge_free_energy(areas: Antiscalar, cells: Antiscalar, gradient: SparseExtensor, spreading: Spreading,
+def edge_free_energy(areas: Antiscalar, dual_areas: Antiscalar, gradient: SparseExtensor, spreading: Spreading,
                      crystal_axis: Upright, mean_width: float, anisotropy: float, regularization: float,
                      well_height: float, phase: Scalar) -> Antiscalar:
     """The free energy of the ice's edge, summing the anisotropic gradient energy over the triangles and the double
@@ -112,12 +112,12 @@ def edge_free_energy(areas: Antiscalar, cells: Antiscalar, gradient: SparseExten
     reach = squared_steepness + regularization ** 2                           # Scalar+[F]
     widths = mean_width * (1 + anisotropy * six_fold / reach ** 3)            # Scalar+[F]
     well = well_height * phase ** 2 * (1 - phase) ** 2                        # Scalar+[V]
-    return (areas * widths ** 2 * squared_steepness / 2).sites.sum() + (cells * well).sites.sum()
+    return (areas * widths ** 2 * squared_steepness / 2).sites.sum() + (dual_areas * well).sites.sum()
 
 
-def edge_slope(topology: Topology, areas: Antiscalar, gradients: Upright, cells: Antiscalar, gradient: SparseExtensor,
-               spreading: Spreading, crystal_axis: Upright, mean_width: float, anisotropy: float, regularization: float,
-               well_height: float, phase: Scalar) -> Antiscalar:
+def edge_slope(topology: Topology, areas: Antiscalar, gradients: Upright, dual_areas: Antiscalar,
+               gradient: SparseExtensor, spreading: Spreading, crystal_axis: Upright, mean_width: float,
+               anisotropy: float, regularization: float, well_height: float, phase: Scalar) -> Antiscalar:
     """The derivative of the edge's free energy with respect to the vertex phases, combining the anisotropic gradient
     energy's pull across the triangles with the double well's slope on the cells."""
     steepness = gradient(phase)                                               # Upright+[F]
@@ -141,10 +141,10 @@ def edge_slope(topology: Topology, areas: Antiscalar, gradients: Upright, cells:
     corner_drives = -gradients ^ mv.i                                         # [3] Drive+[F]
     shares = (topology.incidence[2, 0].adjugate() * (areas * (corner_drives & pull))).sum(axis=0)   # Antiscalar-[V]
     well_slope = 2 * well_height * phase * (1 - phase) * (1 - 2 * phase)      # Scalar+[V]
-    return shares + cells * well_slope
+    return shares + dual_areas * well_slope
 
 
-def total_entropy(areas: Antiscalar, cells: Antiscalar, gradient: SparseExtensor, spreading: Spreading,
+def total_entropy(areas: Antiscalar, dual_areas: Antiscalar, gradient: SparseExtensor, spreading: Spreading,
                   crystal_axis: Upright, mean_width: float, anisotropy: float, regularization: float, well_height: float,
                   latent_heat: float, melting_temperature: float, absolute_zero: float, parcels: Point,
                   phase: Scalar) -> Antiscalar:
@@ -152,9 +152,9 @@ def total_entropy(areas: Antiscalar, cells: Antiscalar, gradient: SparseExtensor
     the edge's free energy over the absolute melting temperature."""
     absolute_melting = melting_temperature - absolute_zero
     parcel_entropies = ((mv.h & parcels) - absolute_zero).log() - latent_heat / absolute_melting * (mv.i & parcels)   # Scalar+[V]
-    edge = edge_free_energy(areas, cells, gradient, spreading, crystal_axis, mean_width, anisotropy, regularization,
+    edge = edge_free_energy(areas, dual_areas, gradient, spreading, crystal_axis, mean_width, anisotropy, regularization,
                             well_height, phase)                               # [] Antiscalar-
-    return (cells * parcel_entropies).sites.sum() - edge / absolute_melting
+    return (dual_areas * parcel_entropies).sites.sum() - edge / absolute_melting
 
 
 def operators(topology: Topology, areas: Antiscalar,
@@ -171,10 +171,11 @@ def operators(topology: Topology, areas: Antiscalar,
     return gradient, spreading, conduction
 
 
-def phase_drive(topology: Topology, areas: Antiscalar, gradients: Upright, cells: Antiscalar, gradient: SparseExtensor,
-                spreading: Spreading, crystal_axis: Upright, mean_width: float, anisotropy: float, regularization: float,
-                well_height: float, latent_heat: float, melting_temperature: float, absolute_zero: float,
-                freezing: Point, parcels: Point, phase: Scalar) -> Antiscalar:
+def phase_drive(topology: Topology, areas: Antiscalar, gradients: Upright, dual_areas: Antiscalar,
+                gradient: SparseExtensor, spreading: Spreading, crystal_axis: Upright, mean_width: float,
+                anisotropy: float, regularization: float, well_height: float, latent_heat: float,
+                melting_temperature: float, absolute_zero: float, freezing: Point, parcels: Point,
+                phase: Scalar) -> Antiscalar:
     """The entropy derivative with respect to the vertex phases at fixed energy, scaled by the absolute melting
     temperature: the thermodynamic push to freeze minus the edge's free-energy derivative."""
     absolute_melting = melting_temperature - absolute_zero
@@ -183,15 +184,15 @@ def phase_drive(topology: Topology, areas: Antiscalar, gradients: Upright, cells
     entropy_slope = mv.h / absolute_temperatures - latent_heat / absolute_melting * mv.i   # Plane+[V]
     # Pairing `entropy_slope` with `freezing` gives the entropy produced per unit of ice; `held_slope` vanishes in bulk phases.
     held_slope = 30 * phase ** 2 * (1 - phase) ** 2                           # Scalar+[V]
-    push = absolute_melting * cells * (entropy_slope & freezing) * held_slope   # Antiscalar-[V]
-    return push - edge_slope(topology, areas, gradients, cells, gradient, spreading, crystal_axis, mean_width,
+    push = absolute_melting * dual_areas * (entropy_slope & freezing) * held_slope   # Antiscalar-[V]
+    return push - edge_slope(topology, areas, gradients, dual_areas, gradient, spreading, crystal_axis, mean_width,
                              anisotropy, regularization, well_height, phase)
 
 
-def growth(topology: Topology, areas: Antiscalar, gradients: Upright, cells: Antiscalar, parcels: Point, phase: Scalar,
-           crystal_axis: Upright, relaxation_time: float, mean_width: float, anisotropy: float, regularization: float,
-           well_height: float, latent_heat: float, melting_temperature: float, absolute_zero: float, dt: float,
-           n_frames: int, stride: int) -> Iterator[tuple[Point, Scalar]]:
+def growth(topology: Topology, areas: Antiscalar, gradients: Upright, dual_areas: Antiscalar, parcels: Point,
+           phase: Scalar, crystal_axis: Upright, relaxation_time: float, mean_width: float, anisotropy: float,
+           regularization: float, well_height: float, latent_heat: float, melting_temperature: float,
+           absolute_zero: float, dt: float, n_frames: int, stride: int) -> Iterator[tuple[Point, Scalar]]:
     """Yield parcel and phase fields across frames separated by fixed-energy phase relaxation, latent heat release
     along the freezing direction, and heat conduction across the cells."""
     gradient, spreading, conduction = operators(topology, areas, gradients)
@@ -200,12 +201,12 @@ def growth(topology: Topology, areas: Antiscalar, gradients: Upright, cells: Ant
     def step(state: tuple[Point, Scalar], _) -> tuple[tuple[Point, Scalar], None]:
         """One time step of phase relaxation, latent heat release, and heat conduction."""
         parcels, phase = state
-        drive = phase_drive(topology, areas, gradients, cells, gradient, spreading, crystal_axis, mean_width,
+        drive = phase_drive(topology, areas, gradients, dual_areas, gradient, spreading, crystal_axis, mean_width,
                             anisotropy, regularization, well_height, latent_heat, melting_temperature, absolute_zero,
                             freezing, parcels, phase)                         # Antiscalar-[V]
-        next_phase = phase + dt * drive / (relaxation_time * cells)           # Scalar+[V]
-        ice_gained = ice_content(next_phase) - (mv.i & parcels)                  # Scalar+[V]
-        conducted = -(conduction * (mv.h & parcels)) / cells                  # Scalar+[V]
+        next_phase = phase + dt * drive / (relaxation_time * dual_areas)      # Scalar+[V]
+        ice_gained = ice_content(next_phase) - (mv.i & parcels)               # Scalar+[V]
+        conducted = -(conduction * (mv.h & parcels)) / dual_areas             # Scalar+[V]
         return (parcels + ice_gained * freezing + dt * conducted * heat, next_phase), None
 
     @jax.jit

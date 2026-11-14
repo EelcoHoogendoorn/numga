@@ -33,6 +33,7 @@ def diffusion(topology: Topology, vertices: Point, samples: Point, measures: Sca
 
     Samples and positive quadrature measures belong to the physical surface; only the interpolation depends on the vertex representatives.
     """
+    V, E, F = topology.n_elements
     corners = topology.incidence[2, 0] * vertices                    # [3] Point-[F]
     tails, heads = topology.incidence[1, 0] * vertices               # Point-[E], Point-[E]
     reciprocals = (topology.boundary[2, 1] * (tails & heads)) / (corners[0] & corners[1] & corners[2])  # [3] Plane+[F]
@@ -51,7 +52,7 @@ def diffusion(topology: Topology, vertices: Point, samples: Point, measures: Sca
     mass = interpolation.adjugate()(measures.dual()).sum(axis=0)             # Antiscalar-[V]
     # A closed surface admits a solution only for balanced sources; remove the quadrature mean.
     load = load - mass * (load.dual_inverse().sites.sum() / mass.dual_inverse().sites.sum())
-    pin = mv.scalar((np.arange(topology.n_vertices) == 0)[..., None]).field() * Scalar.dual()  # (Antiscalar- <- Scalar+)[V]
+    pin = mv.scalar((np.arange(V) == 0)[..., None]).field() * Scalar.dual()  # (Antiscalar- <- Scalar+)[V]
     potential = (stiffness + pin).solve(load)                        # Scalar+[V]
     potential = potential - (potential & mass).sites.sum() / mass.dual_inverse().sites.sum()
     numerator = (reciprocals * (topology.incidence[2, 0] * potential)).sum(axis=0)  # Plane+[F]

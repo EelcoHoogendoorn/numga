@@ -75,7 +75,7 @@ def surface_panel(topology: core.Topology, points: solids.Point, smooth_normals:
     """A GPU pass shades the triangulated surface by a scalar field overlaid with uniform-width streamlines."""
     channels = (field / field_scale, stream * (n_contours / stream_scale))       # Scalar+[V], Scalar+[V]
     face_speed = ((velocity.norm().to_array() / stream_scale) * n_contours)[:, None]   # [F, 1]
-    triangles = topology.elements[2]
+    triangles = topology.elements[2]                                             # [F, 3]
     # Gather both channels onto the three corners of each triangle, ordered faces first for the shader.
     corner_values = np.stack([(topology.incidence[2, 0] * channel).batch().to_array() for channel in channels],
                              axis=-1).transpose(1, 0, 2)                         # [F, 3, 2]

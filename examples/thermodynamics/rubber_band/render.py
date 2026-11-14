@@ -49,7 +49,7 @@ def on_white(picture: np.ndarray) -> np.ndarray:
 def tinted(temperatures: core.Scalar, room_temperature: float, reach: float) -> np.ndarray:
     """Vertex RGB colours for the vertex temperatures: grey at room temperature, red above it and blue below."""
     change = (temperatures.to_array() - room_temperature) / reach            # [V]
-    return temperature_colours(np.clip(0.5 + change / 2, 0, 1))[:, :3]
+    return temperature_colours(np.clip(0.5 + change / 2, 0, 1))[:, :3]        # [V, 3]
 
 
 def scenery(beside: float) -> core.Point:
@@ -73,8 +73,9 @@ def hanging(places: core.Point, topology: Topology, band: Topology, weight: Topo
             camera: Camera) -> list:
     """GPU layers for the hanging band: temperature-shaded band triangles, dark weight triangles, and outer and weight
     border strokes."""
+    V, E, F = topology.n_elements
     # Pass a constant scalar field so triangles show vertex colours without contour lines.
-    unmarked = np.zeros(topology.n_vertices)
+    unmarked = np.zeros(V)                                                    # [V]
     return [contours.picture(places, band, unmarked, colours, camera),
             contours.picture(places, weight, unmarked, weight_colour, camera),
             simplices.strokes(places, topology.border, outline_colour, outline_width, camera),
@@ -84,12 +85,13 @@ def hanging(places: core.Point, topology: Topology, band: Topology, weight: Topo
 # --- drawing --------------------------------------------------------------------------
 def draw_band(topology: Topology, in_weight: np.ndarray, places: core.Point):
     """Draw the unloaded band hanging from its support bar, with triangle edges overlaid and the weight shaded dark."""
+    V, E, F = topology.n_elements
+    unmarked = np.zeros(V)                                                    # [V]
     support = scenery(0.0)
     camera = framing([places, support], pixels_per_width, margin)
     return image_figure(on_white(drawing.composited([
-        contours.picture(places, topology.subset(~in_weight, -1), np.zeros(topology.n_vertices),
-                         temperature_colours(0.5)[:3], camera),
-        contours.picture(places, topology.subset(in_weight, -1), np.zeros(topology.n_vertices), weight_colour, camera),
+        contours.picture(places, topology.subset(~in_weight, -1), unmarked, temperature_colours(0.5)[:3], camera),
+        contours.picture(places, topology.subset(in_weight, -1), unmarked, weight_colour, camera),
         simplices.strokes(places, topology, outline_colour, edge_width, camera),
         simplices.strokes(support, Topology.chains([2]), support_colour, support_width, camera)])))
 

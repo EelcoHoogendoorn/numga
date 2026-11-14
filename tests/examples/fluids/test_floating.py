@@ -13,7 +13,7 @@ gravity_height = 0.3
 
 
 def test_box_buoyancy_metacentric_heights_and_righting_arm_match_closed_forms():
-    topology, vertices = core.box_surface(box_sizes)
+    topology, vertices = scenarios.box_surface(box_sizes)
     box = topology.incidence[2, 0] * vertices
     length, beam, depth = box_sizes
     surface = core.water - (box_draft - depth / 2) * mv.w
@@ -38,7 +38,7 @@ def test_box_buoyancy_metacentric_heights_and_righting_arm_match_closed_forms():
 
 
 def test_cube_floats_face_up_outside_the_unstable_density_band():
-    topology, vertices = core.box_surface(np.ones(3))
+    topology, vertices = scenarios.box_surface(np.ones(3))
     cube = topology.incidence[2, 0] * vertices
     bounds = np.array([(3 - np.sqrt(3)) / 6, (3 + np.sqrt(3)) / 6])
     test_densities = (bounds[:, None] + np.array([-1e-3, 1e-3])).reshape(-1)

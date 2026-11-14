@@ -51,9 +51,9 @@ def band_panel(topology: Topology, points: Extensor, camera: Camera, values: np.
     """Banded contour image of a vertex scalar field between floor and ceiling wall strokes."""
     border = topology.border
     tails, heads = border.incidence[1, 0] * points                            # Point-[E_border], Point-[E_border]
-    heights = (mv.y & tails).to_array()
-    level = np.isclose(heights, (mv.y & heads).to_array())
-    wall_colours = colour_map(0.5 + span * (heights[level] - 0.5))[:, :3]
+    heights = (mv.y & tails).to_array()                                       # [E_border]
+    level = np.isclose(heights, (mv.y & heads).to_array())                    # [E_border]
+    wall_colours = colour_map(0.5 + span * (heights[level] - 0.5))[:, :3]     # [E_walls, 3]
     walls = simplices.strokes(points, border.subset(level, 1), wall_colours, wall_width, camera)
     # Evenly spaced flat colour bands with a white central band around zero.
     spacing = 1 / (n_bands - 1)

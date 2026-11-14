@@ -57,6 +57,7 @@ def test_projective_readings_and_quotient_derivative(ga):
 def test_fixed_sphere_diffusion_with_unequal_vertex_scales():
     core = scenarios.core
     topology, coordinates = shapes.sphere(scenarios.n_levels)
+    V, E, F = topology.n_elements
     vertices = scenarios.mv.vector(coordinates).dual().field()                  # Point-[V]
     grid, barycentric = scenarios.triangle_grid(scenarios.n_quadrature_divisions)
     quadrature = (grid.incidence[2, 0].mean(axis=0) * core.mv.scalar(barycentric[..., None]).field()).batch()
@@ -70,7 +71,7 @@ def test_fixed_sphere_diffusion_with_unequal_vertex_scales():
     np.testing.assert_allclose((common_scale - reference).to_array(), 0, atol=1e-11)
 
     for radius in [0.4, 2.5]:
-        scales = np.ones(topology.n_vertices)
+        scales = np.ones(V)
         scales[0] = radius
         representatives = vertices * core.mv.scalar(scales[..., None]).field()
         potential, _, _ = core.diffusion(topology, representatives, samples, measures, source, core.Plane.dual())
@@ -84,12 +85,13 @@ def test_fixed_sphere_diffusion_with_unequal_vertex_scales():
 
 def test_render_draws_sphere_and_planar():
     topology, coordinates = shapes.sphere(1)
+    V, E, F = topology.n_elements
     vertices = scenarios.mv.vector(coordinates).dual().field()
     plt.close(render.draw_triangulation(topology, vertices))
     quadrature_grid, quadrature_weights = scenarios.triangle_grid(2)
     quadrature = (quadrature_grid.incidence[2, 0].mean(axis=0) * scenarios.mv.scalar(quadrature_weights[..., None]).field()).batch()
     display_grid, display = scenarios.triangle_grid(2)
-    frames = scenarios.spherical_frames(topology, vertices, [np.ones(topology.n_vertices)], quadrature, display)
+    frames = scenarios.spherical_frames(topology, vertices, [np.ones(V)], quadrature, display)
     next(render.animate_sphere(topology, display_grid, frames))
 
     points = (scenarios.planar_corners[:, None] * display).sum(axis=0)

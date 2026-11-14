@@ -57,16 +57,17 @@ def equilibrium_states(entropies: Scalar, temperatures: Scalar, capacity: float)
 def stroke_samples(fractions: Scalar, around: Topology, corner_entropy: Scalar, corner_temperature: Scalar,
                    capacity: float, n_steps: int) -> tuple[State, State]:
     """States and stroke tangents at the given step fractions around the closed loop of corners."""
-    by_stroke = around.reading(np.repeat(np.arange(around.n_vertices), n_steps), 1)       # Scalar+[V_samples <- E]
-    entropy_starts = by_stroke * (around.incidence[1, 0][0] * corner_entropy)             # Scalar+[V_samples]
-    entropy_steps = by_stroke * (around.d[0] * corner_entropy)                            # Scalar+[V_samples]
-    temperature_starts = by_stroke * (around.incidence[1, 0][0] * corner_temperature)     # Scalar+[V_samples]
-    temperature_steps = by_stroke * (around.d[0] * corner_temperature)                    # Scalar+[V_samples]
-    entropies = entropy_starts + entropy_steps * fractions                                # Scalar+[V_samples]
-    temperatures = temperature_starts + temperature_steps * fractions                     # Scalar+[V_samples]
-    states = equilibrium_states(entropies, temperatures, capacity)                        # State-[V_samples]
+    V, E = around.n_elements
+    by_stroke = around.reading(np.repeat(np.arange(E), n_steps), 1)                       # Scalar+[E * n_steps <- E]
+    entropy_starts = by_stroke * (around.incidence[1, 0][0] * corner_entropy)             # Scalar+[E * n_steps]
+    entropy_steps = by_stroke * (around.d[0] * corner_entropy)                            # Scalar+[E * n_steps]
+    temperature_starts = by_stroke * (around.incidence[1, 0][0] * corner_temperature)     # Scalar+[E * n_steps]
+    temperature_steps = by_stroke * (around.d[0] * corner_temperature)                    # Scalar+[E * n_steps]
+    entropies = entropy_starts + entropy_steps * fractions                                # Scalar+[E * n_steps]
+    temperatures = temperature_starts + temperature_steps * fractions                     # Scalar+[E * n_steps]
+    states = equilibrium_states(entropies, temperatures, capacity)                        # State-[E * n_steps]
     # Differentiating V = exp(S - c ln T) along the linear (S, T) stroke gives dV = V * (dS - c dT / T).
-    volumes = mv.v & states                                                               # Scalar+[V_samples]
+    volumes = mv.v & states                                                               # Scalar+[E * n_steps]
     tangents = entropy * entropy_steps + volume * volumes * (entropy_steps - capacity * temperature_steps / temperatures)
     return states, tangents
 

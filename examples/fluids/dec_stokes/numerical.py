@@ -12,7 +12,7 @@ from numga.sparse import SparseExtensor
 
 def stokes_solution(stiffness: SparseExtensor, divergence: SparseExtensor,
                     force: Extensor, balance: Extensor) -> tuple[Extensor, Extensor]:
-    """The free fluxes and the face pressures balancing viscous resistance under exact cellwise flux balance."""
+    """The free fluxes and the face pressures balancing viscous resistance under exact facewise flux balance."""
     context = stiffness.cells.context
     Scalar = context.algebra.gatype.scalar()
     one = context.multivector.scalar([1])
@@ -22,7 +22,7 @@ def stokes_solution(stiffness: SparseExtensor, divergence: SparseExtensor,
                    shape=stiffness.shape).tocsc()
     divergence_matrix = coo_matrix((np.asarray(divergence.cells.kernel).reshape(-1),
                     (divergence.rows, divergence.columns)), shape=divergence.shape).tocsc()
-    # One pressure is the gauge; the omitted cell balance is implied by all the others
+    # One pressure is the gauge; the omitted face balance is implied by all the others
     # and the prescribed total boundary flux.
     balance_rows = divergence_matrix[1:]
     system = bmat([[stiffness_matrix, -balance_rows.T], [-balance_rows, None]], format="csc")

@@ -24,12 +24,12 @@ def corners() -> tuple[Topology, core.Scalar, core.Scalar]:
 def cycle(n_steps: int) -> tuple[core.State, core.Scalar, core.Scalar]:
     """Closed loop of states across all strokes, with midpoint heat absorbed and work done along each step."""
     around, corner_entropy, corner_temperature = corners()
-    n_corners = around.n_vertices
-    starts = core.mv.scalar(np.tile(np.arange(n_steps) / n_steps, n_corners)[:, None]).field()            # Scalar+[V_samples]
-    middles = core.mv.scalar(np.tile((np.arange(n_steps) + 0.5) / n_steps, n_corners)[:, None]).field()   # Scalar+[V_samples]
+    V, E = around.n_elements
+    starts = core.mv.scalar(np.tile(np.arange(n_steps) / n_steps, E)[:, None]).field()            # Scalar+[E * n_steps]
+    middles = core.mv.scalar(np.tile((np.arange(n_steps) + 0.5) / n_steps, E)[:, None]).field()   # Scalar+[E * n_steps]
     states, _ = core.stroke_samples(starts, around, corner_entropy, corner_temperature, capacity, n_steps)
     mid_states, tangents = core.stroke_samples(middles, around, corner_entropy, corner_temperature, capacity, n_steps)
-    heat_rate, work_rate = core.exchanges(mid_states, tangents, capacity)                 # Scalar+[V_samples], Scalar+[V_samples]
+    heat_rate, work_rate = core.exchanges(mid_states, tangents, capacity)                 # Scalar+[E * n_steps], Scalar+[E * n_steps]
     return states, heat_rate / n_steps, work_rate / n_steps
 
 

@@ -162,9 +162,9 @@ def draw_turns(turns: core.Rotor) -> plt.Figure:
     darkness."""
     # The angle of each turn is the size of its logarithm.
     angles = turns.log().norm().to_array()                                     # [...]
-    # Half the column, a field of cells with two names and no numbers.
+    # Half the column, a grid of patches with two names and no numbers.
     figure, ax = charts.subplots(400, 270, layout="constrained")
-    # Each vertex and time a cell of its own, drawn as the cell it is.
+    # Each vertex and time a patch of its own.
     ax.pcolormesh(np.arange(angles.shape[1] + 1) + 0.5, np.arange(angles.shape[0] + 1) - 0.5, angles, cmap="Greys")
     ax.invert_yaxis()
     ax.set(xlabel="vertex", ylabel="time", xticks=[], yticks=[])

@@ -67,7 +67,6 @@ def gliding_frames(n_run_steps: int) -> Iterator[core.Motor]:
     return islice(core.trajectory(initial_motors, impulse, inertias, dt, n_run_steps), 0, None, n_steps_per_frame)
 
 
-# --- plumbing -------------------------------------------------------------------------
 def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.fluids.kirchhoff import render

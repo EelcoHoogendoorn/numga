@@ -2,7 +2,7 @@
 
 Warm water is light and salty water heavy, and with enough warmth on top the tank is stably stratified, lighter water over heavier. Even so, the interface breaks into narrow fingers: a salty parcel pushed down loses its warmth sideways to its cooler neighbours far faster than it loses its salt, becomes heavier than they are and keeps sinking, while a fresh parcel pushed up warms and keeps rising. Where the tank is stably stratified, the density ratio of thermal buoyancy to haline buoyancy exceeds one, and fingers grow whenever that ratio stays below the diffusivity ratio of heat to salt.
 
-The projective plane places vertices at unit projective weight, while four degenerate directions record the volume, mass, entropy and salt a parcel carries. A unit-volume parcel carries slightly less mass when warmer and slightly more when saltier. Each thermodynamic drive is minus the spatial gradient of a potential wedged with the quantity it acts on, pairing directly with the flux of that quantity: gravity's drive wedges the geopotential gradient with mass and pulls on mass alone, whereas the thermal and haline drives map to entropy and salt fluxes at their own conductivities. Advection carries whole parcels `velocity & parcels`, and pairing the cell outflow with `s` and `n` reads out the advected entropy and salt from one flux. A vertex stream function represents the incompressible flow, resisted by fluid inertia and viscous vorticity dissipation while pressure drops out.
+The projective plane places vertices at unit projective weight, while four degenerate directions record the volume, mass, entropy and salt a parcel carries. A unit-volume parcel carries slightly less mass when warmer and slightly more when saltier. Each thermodynamic drive is minus the spatial gradient of a potential wedged with the quantity it acts on, pairing directly with the flux of that quantity: gravity's drive wedges the geopotential gradient with mass and pulls on mass alone, whereas the thermal and haline drives map to entropy and salt fluxes at their own conductivities. Advection carries whole parcels `velocity & parcels`, and pairing the dual-cell outflow with `s` and `n` reads out the advected entropy and salt from one flux. A vertex stream function represents the incompressible flow, resisted by fluid inertia and viscous vorticity dissipation while pressure drops out.
 
 Lengths are measured in tank depths, times in thermal diffusion times across the depth, and temperature and salinity in their top-to-bottom differences, at unit reference density and unit volumetric heat capacity.
 """
@@ -58,7 +58,7 @@ class TankOperators(NamedTuple):
     flows: Point                                                              # [3] Point-[F]
     stream_velocity: SparseExtensor                                           # (Point- <- Scalar+)[F <- V]
     cell_outflow: SparseExtensor                                              # (Point- <- Flux-)[V <- F]
-    cells: Scalar                                                             # Scalar+[V]
+    dual_areas: Scalar                                                        # Scalar+[V]
     kinetic: SparseExtensor                                                   # Scalar+[V <- V]
     viscous: SparseExtensor                                                   # Scalar+[V <- V]
     conduction: SparseExtensor                                                # Scalar+[V <- V]
@@ -83,13 +83,13 @@ def tank_operators(
     # Pure spatial simplex gradients: each plane vanishes along the facing side and rises to one at its corner.
     gradients = ((sides & unread) / (sides & unread & opened_corners)).cast(Upright)  # [3] Plane+[F]
     corners = closed.incidence[2, 0]                                          # [3] Scalar+[F <- V]
-    cells = (corners.adjugate() * (areas / 3)).sum(axis=0)                    # Scalar+[V]
+    dual_areas = (corners.adjugate() * (areas / 3)).sum(axis=0)               # Scalar+[V]
     corner_mean = corners.mean(axis=0)                                        # Scalar+[F <- V]
     # Unit stream function at a corner drives flow along the oriented edge facing it, carrying half that edge displacement across the triangle.
     edges = opened.boundary[2, 1] * (opened.d[0] * vertices)                  # [3] Point-[F]
     flows = edges / 2                                                         # [3] Point-[F]
     velocities = flows / areas                                                # [3] Point-[F]
-    # Triangle velocity from vertex stream values, and vertex outflow integrated against each corner's simplex gradient.
+    # Triangle velocity from vertex stream values, and dual-cell outflow integrated against each corner's simplex gradient.
     stream_velocity = (spdiag(velocities * Scalar) * corners).sum(axis=0)     # (Point- <- Scalar+)[F <- V]
     cell_outflow = (corners.adjugate() * spdiag(areas * (gradients ^ Flux))).sum(axis=0)  # (Point- <- Flux-)[V <- F]
     # Kinetic energy form of the stream function, pulled back from triangle velocities to vertices.
@@ -97,7 +97,7 @@ def tank_operators(
     local = areas * (inertia(velocities[:, None]) & velocities[None, :])      # [3, 3] Scalar+[F]
     kinetic = (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)  # Scalar+[V <- V]
     # Lumped vertex vorticity and its squared viscous dissipation form across the tank.
-    vorticity = spdiag(1 / (density * cells)) * kinetic                       # Scalar+[V <- V]
+    vorticity = spdiag(1 / (density * dual_areas)) * kinetic                  # Scalar+[V <- V]
     viscous = (viscosity / density) * kinetic * vorticity                     # Scalar+[V <- V]
     # Thermal and haline drives on each corner's simplex gradient, mapped to entropy and salt fluxes along the tank directions.
     heat_drives, salt_drives = -(gradients ^ mv.s), -(gradients ^ mv.n)       # [3] Drive+[F], [3] Drive+[F]
@@ -107,7 +107,7 @@ def tank_operators(
     conduction = (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)  # Scalar+[V <- V]
     local = areas * (mv.n & (gradients[:, None] ^ diffusivity(salt_drives[None, :])))  # [3, 3] Scalar+[F]
     diffusion = (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)  # Scalar+[V <- V]
-    return TankOperators(corners, corner_mean, flows, stream_velocity, cell_outflow, cells, kinetic, viscous, conduction, diffusion)
+    return TankOperators(corners, corner_mean, flows, stream_velocity, cell_outflow, dual_areas, kinetic, viscous, conduction, diffusion)
 
 
 def fingering(
@@ -125,8 +125,8 @@ def fingering(
 ) -> Iterator[tuple[Scalar, Scalar, Scalar]]:
     """Yield the stream function, temperature and salinity fields every `n_stride` steps as salt fingers grow across the interface."""
     flow_step = wall_solver(operators.kinetic / dt + operators.viscous, interior)
-    heat_step = wall_solver(operators.cells / dt + operators.conduction, interior)
-    salt_step = wall_solver(operators.cells / dt + operators.diffusion, interior)
+    heat_step = wall_solver(operators.dual_areas / dt + operators.conduction, interior)
+    salt_step = wall_solver(operators.dual_areas / dt + operators.diffusion, interior)
     wall_temperature = temperature - interior.adjugate() * (interior * temperature)  # [...] Scalar+[V]
     wall_salinity = salinity - interior.adjugate() * (interior * salinity)    # [...] Scalar+[V]
     pull = -(gravity * mv.ym)                                                 # [] Drive+
@@ -152,5 +152,5 @@ def fingering(
         velocity = operators.stream_velocity(stream)                          # [...] Point-[F]
         flux = velocity & parcels                                             # [...] Flux-[F]
         outflow = operators.cell_outflow(flux)                                # [...] Point-[V]
-        temperature = heat_step(operators.cells / dt * temperature - (mv.s & outflow), wall_temperature)
-        salinity = salt_step(operators.cells / dt * salinity - (mv.n & outflow), wall_salinity)
+        temperature = heat_step(operators.dual_areas / dt * temperature - (mv.s & outflow), wall_temperature)
+        salinity = salt_step(operators.dual_areas / dt * salinity - (mv.n & outflow), wall_salinity)

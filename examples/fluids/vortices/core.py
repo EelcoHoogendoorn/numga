@@ -107,11 +107,3 @@ def blob_profile(circulations: Circulation, core_radius: float, offsets: Point) 
     blob = (offsets | offsets) + core_radius**2                             # [...] Scalar+
     rates = circulations[:, None] / (2 * np.pi) / blob                      # [...] Rate+
     return rates, -rates / blob
-
-
-# --- plumbing -------------------------------------------------------------------------
-def grid(half_width: float, half_height: float, n_columns: int, n_rows: int) -> Point:
-    """Cell-centre sample points on a rectangular grid centred on the origin."""
-    x_offsets = (np.arange(n_columns) + 0.5) / n_columns * 2 * half_width - half_width
-    y_offsets = (np.arange(n_rows) + 0.5) / n_rows * 2 * half_height - half_height
-    return (mv.x * x_offsets[None, :] + mv.y * y_offsets[:, None]).dual()   # [n_rows, n_columns] Point-

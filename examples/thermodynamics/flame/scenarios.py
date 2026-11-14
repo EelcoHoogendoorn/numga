@@ -51,10 +51,10 @@ def flame_states(n_rings: int, n_frames: int,
     after the initial spark-edge noise smooths out."""
     topology, coordinates = disc(n_rings)
     vertices = (mv(core.Upright, coordinates) + mv.w).dual().field()            # Antivector-[V]
-    areas, gradients, cells = core.triangles(topology, vertices)
+    areas, gradients, dual_areas = core.triangles(topology, vertices)
     burnt_fraction = hot_spot(coordinates)                                    # Scalar+[V]
     parcels = core.volume + core.heat * burnt_fraction + core.fuel * (1 - burnt_fraction)   # Antivector-[V]
-    frames = core.burning(topology, areas, gradients, cells, 1 / lewis, prefactor, activation, unburnt_temperature,
+    frames = core.burning(topology, areas, gradients, dual_areas, 1 / lewis, prefactor, activation, unburnt_temperature,
                           parcels, dt, n_frames, n_stride)
     return topology, vertices, islice(frames, n_unshown, None)
 

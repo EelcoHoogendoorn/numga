@@ -63,9 +63,9 @@ def triangulation(vertices: Point, hole: np.ndarray, inlet: np.ndarray, outlet: 
     delaunay, _ = shapes.delaunay((stack((mv.x, mv.y)) & vertices.batch()[..., None]).to_array())
     # The obstacle's boundary edges are present in the triangulation; its interior consists
     # exactly of triangles with all three corners on that boundary.
-    triangles = delaunay.elements[2]
+    triangles = delaunay.elements[2]                                         # [F_delaunay, 3]
     topology = delaunay.subset(~np.isin(triangles, hole).all(axis=1), -1)
-    edges, boundary = topology.elements[1], topology.exterior[1]
+    edges, boundary = topology.elements[1], topology.exterior[1]             # [E, 2], [E_exterior]
     inlet_edges = boundary[np.isin(edges[boundary], inlet).all(axis=1)]
     outlet_edges = boundary[np.isin(edges[boundary], outlet).all(axis=1)]
     wall_edges = np.setdiff1d(boundary, np.concatenate((inlet_edges, outlet_edges)))
@@ -81,7 +81,7 @@ def channel(n_divisions: int) -> tuple[Topology, Point, np.ndarray, np.ndarray, 
     angles = np.arange(n_obstacle) * (2 * np.pi / n_obstacle)
     obstacle = centre + ((mv.xy * (-angles / 2)).exp() >> mv.x.dual()) * obstacle_radius
     # The surrounding ring leaves each obstacle chord's diameter circle empty, so Delaunay
-    # triangulation includes every obstacle segment. A varying radius avoids cocircular cells.
+    # triangulation includes every obstacle segment. A varying radius avoids cocircular vertices.
     ring_radii = obstacle_radius + spacing * (0.85 + 0.06 * np.sin(3 * angles + 0.3))
     ring = centre + ((mv.xy * (-(angles + np.pi / n_obstacle) / 2)).exp() >> mv.x.dual()) * ring_radii
     interior = interior[(interior - centre).norm() > obstacle_radius + 1.55 * spacing]
@@ -103,7 +103,7 @@ def boundary_flux(topology: Topology, vertices: Point, inlet: np.ndarray, outlet
     ordinate = mv.y & vertices                                               # Scalar+[V]
     streamfunction = 1.5 * mean_speed * (ordinate - 4 * ordinate.squared() * ordinate / (3 * height**2))  # Scalar+[V]
     ends = topology.reading(np.concatenate((inlet, outlet)), 1)              # Scalar+[E_ends <- E]
-    return ends.adjugate() * (ends * (topology.d[0] * streamfunction))
+    return ends.adjugate() * (ends * (topology.d[0] * streamfunction))       # Scalar+[E]
 
 
 def main() -> None:

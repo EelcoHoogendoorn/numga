@@ -23,14 +23,11 @@ and vertical separation $BG = z_G - z_B$.
 
 from __future__ import annotations
 
-from itertools import product
-
 import numpy as np
 
 from numga import Algebra, NumpyContext, stack, where
 from numga.algebras import PGA3D as ga
 from examples.mechanics.simplex import simplex_inertia_weights
-from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                             # Scalar+
@@ -152,66 +149,3 @@ def tilt_stiffness(triangles: Point, heights: Scalar, weight: Scalar, centre: Po
     buoyancy_change = (fluid_weight * -(surface_rate & samples) * lines).sites.sum().sum(axis=(-2, -1))  # [...] Forque- <- Tilt+
     weight_change = weight * centre.regressive((-up).commutator(Tilt))  # [...] Forque- <- Tilt+
     return Tilt & (buoyancy_change + weight_change)                     # [...] Scalar+ <- (Tilt+, Tilt+)
-
-
-# --- plumbing -------------------------------------------------------------------------
-def grid_triangles(grid: np.ndarray) -> np.ndarray:
-    """Two consistently wound triangles per cell of a two-dimensional vertex-index grid."""
-    corner, u_step, diagonal, v_step = grid[:-1, :-1], grid[1:, :-1], grid[1:, 1:], grid[:-1, 1:]
-    return np.concatenate([
-        np.stack([corner, u_step, diagonal], axis=-1).reshape(-1, 3),
-        np.stack([corner, diagonal, v_step], axis=-1).reshape(-1, 3),
-    ])
-
-
-def box_surface(sizes: np.ndarray) -> tuple[Topology, Point]:
-    """A closed triangulated box of the given edge lengths along `x`, `y` and `z`, centred on the origin."""
-    # Each corner chooses 0 or 1 along x, y and z, indexed by the three bits read in binary.
-    sides = np.array(list(product([0, 1], repeat=3)))                   # [8, 3]
-    u, v = np.meshgrid([0, 1], [0, 1], indexing="ij")
-    faces = []
-    for axis in range(3):
-        for side in (0, 1):
-            grid = np.zeros(u.shape + (3,), dtype=int)
-            # Order the two face axes so that every face winds outward.
-            first_axis, second_axis = (axis + 1) % 3, (axis + 2) % 3
-            grid[..., axis] = side
-            grid[..., first_axis], grid[..., second_axis] = (u, v) if side else (v, u)
-            faces.append(grid_triangles(grid @ np.array([4, 2, 1])))
-    return Topology(len(sides), np.concatenate(faces)), mv.point((sides - 0.5) * sizes).field()
-
-
-def wigley_hull(length: float, beam: float, draft: float, freeboard: float, n_cells: int) -> tuple[Topology, Point]:
-    """A closed triangulated Wigley hull with parabolic underwater sections, vertical topsides and a flat deck."""
-    x_stations = np.linspace(-length / 2, length / 2, 2 * n_cells + 1)
-    z_levels = np.concatenate([np.linspace(-draft, 0, n_cells + 1), np.linspace(0, freeboard, n_cells // 2 + 1)[1:]])
-    x, z = np.meshgrid(x_stations, z_levels, indexing="ij")
-    half_breadth = beam / 2 * (1 - (2 * x / length) ** 2) * (1 - (np.minimum(z, 0) / draft) ** 2)
-    deck_span = np.linspace(-1, 1, n_cells + 1)
-    deck_x, share = np.meshgrid(x_stations, deck_span, indexing="ij")
-    deck_y = share * beam / 2 * (1 - (2 * deck_x / length) ** 2)
-    # Port and starboard share the keel and stems where half-breadth vanishes; the stern-keel grid corner has
-    # zero-area fin triangles that the closed surface omits.
-    own_starboard = np.ones(x.shape, dtype=bool)
-    own_starboard[-1, 0] = False
-    own_port = np.zeros(x.shape, dtype=bool)
-    own_port[1:-1, 1:] = True
-    own_deck = np.zeros(deck_x.shape, dtype=bool)
-    own_deck[1:-1, 1:-1] = True
-    places = np.concatenate([
-        np.stack([x, half_breadth, z], axis=-1)[own_starboard],
-        np.stack([x, -half_breadth, z], axis=-1)[own_port],
-        np.stack([deck_x, deck_y, np.full_like(deck_x, freeboard)], axis=-1)[own_deck],
-    ])
-    counts = np.cumsum([0, own_starboard.sum(), own_port.sum()])
-    starboard = np.full(x.shape, -1)
-    starboard[own_starboard] = counts[0] + np.arange(own_starboard.sum())
-    port = starboard.copy()
-    port[own_port] = counts[1] + np.arange(own_port.sum())
-    deck = np.empty(deck_x.shape, dtype=int)
-    deck[:, 0], deck[:, -1] = port[:, -1], starboard[:, -1]
-    deck[[0, -1]] = starboard[[0, -1], -1:]
-    deck[own_deck] = counts[2] + np.arange(own_deck.sum())
-    faces = np.concatenate([grid_triangles(starboard.T), grid_triangles(port), grid_triangles(deck)])
-    nondegenerate = (faces >= 0).all(axis=-1) & (faces != np.roll(faces, 1, axis=-1)).all(axis=-1)
-    return Topology(len(places), faces[nondegenerate]), mv.point(places).field()

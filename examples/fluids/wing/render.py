@@ -70,7 +70,7 @@ def draw(ax, points: core.Point, velocity: core.Point, stream: core.Bivector, li
     ax.set_aspect("equal")
     n_rings, n_angles = points.shape
     topology = Topology.loops([n_angles]).product(Topology.chains([n_rings]))
-    places = points.reshape(-1)                                              # [n_rings * n_angles] Point-
+    places = points.reshape(-1)                                              # [V] Point-
     streamlines = contours.Lines(stream_spacing, 0.0, stream_ink, stream_width)
     camera = offset_panel(ax, core.mv.x, core.mv.y)
     # Fill the wing interior with the Delaunay triangulation of its surface loop beneath the outer flow rings.
