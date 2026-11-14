@@ -1,12 +1,11 @@
 """A hollow ellipsoid and its rounded stem form one rigid top with two contact surfaces.
 
-The cavity turns the mass distribution relative to the outer shell. Sliding friction at the shell or the tip couples spinning to rocking; reversing the spin need not produce the same motion. The same Boolean solid supplies the visible surfaces and the mass samples.
+An offset, turned cavity rotates the mass distribution relative to the outer shell, so sliding friction at the shell and the tip couples spinning to rocking differently for opposite spins. The same carved quadrics supply both the visible surfaces and the mass samples.
 """
 from __future__ import annotations
 
 from collections.abc import Iterator
 from functools import partial
-from typing import NamedTuple
 
 import jax
 import numpy as np
@@ -20,94 +19,79 @@ from examples.mechanics.spinning_top import core as contact
 jax.config.update("jax_enable_x64", True)
 mv = JaxContext(ga, dtype=np.float64).multivector
 Point = ga.gatype.antivector()                                               # Antivector-
-Plane = ga.gatype.vector()                                                  # Vector+
-Rate = ga.gatype.bivector()                                                 # Bivector+
-Forque = ga.gatype.antibivector()                                           # Antibivector-
-Motor = ga.gatype.rotor()                                                   # Rotor+
-Scalar = ga.gatype.scalar()                                                 # Scalar+
-Quadric = ga.gatype((Plane, Point))
-Inertia = ga.gatype((Forque, Rate))
-InverseInertia = ga.gatype((Rate, Forque))
-origin = mv.w.dual()                                                        # [] Point-
-up = mv.z.dual()                                                            # [] Point-
-axes = stack((mv.x, mv.y, mv.z))                                           # [axes] Plane+
-ground = (mv.z * (mv.w & Point) + mv.w * (mv.z & Point)) / 2                # [] Plane+ <- Point-
+Plane = ga.gatype.vector()                                                   # Vector+
+Rate = ga.gatype.bivector()                                                  # Bivector+
+Forque = ga.gatype.antibivector()                                            # Antibivector-
+Motor = ga.gatype.rotor()                                                    # Rotor+
+Quadric = ga.gatype((Plane, Point))                                          # Plane+ <- Point-
+Inertia = ga.gatype((Forque, Rate))                                          # Forque- <- Rate+
+origin = mv.w.dual()                                                         # [] Point-
+up = mv.z.dual()                                                             # [] Point-
+axes = stack((mv.x, mv.y, mv.z))                                             # [3] Plane+
+ground = (mv.z * (mv.w & Point) + mv.w * (mv.z & Point)) / 2                 # [] Plane+ <- Point-
 
 
-class Body(NamedTuple):
-    shell: Quadric
-    cavity: Quadric
-    stem: Quadric
-    tip: Quadric
-    mass: Point
-    inertia: Inertia
-    inverse_inertia: InverseInertia
-
-    @property
-    def contacts(self) -> Quadric:
-        """The two surfaces that meet the table: the shell and the tip."""
-        return stack((self.shell, self.tip))
-
-
-# --- math -----------------------------------------------------------------------------
 def ellipsoid(centre: Point, frame: Plane, semiaxes: np.ndarray) -> Quadric:
-    """The ellipsoid about a point with its axes square to a frame's planes `[axes]`, as the quadric of its surface."""
-    through = frame - mv.w * (frame & centre)                                # [axes] Plane+
-    return (through * (through & Point) / semiaxes**2).sum(axis=-1) - mv.w * (mv.w & Point)
+    """Planes through `centre` along `frame` (`[3] Plane+`) scaled by `semiaxes` form the ellipsoid's surface quadric (`[] Plane+ <- Point-`)."""
+    axial_planes = frame - mv.w * (frame & centre)                           # [3] Plane+
+    return (axial_planes * (axial_planes & Point) / semiaxes**2).sum(axis=-1) - mv.w * (mv.w & Point)
 
 
 @jax.jit
-def build(shell: Quadric, cavity: Quadric, stem: Quadric, tip: Quadric,
-          samples: Point, sample_volume: float) -> Body:
-    """The shell carved by the cavity, joined to the stem and the tip: one solid of uniform density, its pieces
-    counted once where they overlap."""
-    parts = stack((shell, cavity, stem, tip))                                # [parts] Plane+ <- Point-
-    in_shell, in_cavity, in_stem, in_tip = (parts[:, None](samples) & samples) <= 0
-    material = (in_shell & ~in_cavity) | in_stem | in_tip                    # [samples]
-    masses = material * sample_volume
-    mass = (samples * masses).sum(axis=-1)                                  # [] Point-
-    # Each mass sample joins its velocity to its position, contributing to the body's momentum.
-    inertia = samples.regressive(samples.commutator(Rate) * masses).sum(axis=-1)
-    return Body(shell, cavity, stem, tip, mass, inertia, inertia.inverse())
+def mass_distribution(parts: Quadric, samples: Point, sample_volume: float) -> tuple[Point, Inertia]:
+    """Uniform material inside the carved shell, stem, and tip (`[4] Plane+ <- Point-`) determines the mass point (`[] Point-`) and inertia map (`[] Forque- <- Rate+`)."""
+    shell_mask, cavity_mask, stem_mask, tip_mask = (parts[:, None](samples) & samples) <= 0
+    material_mask = (shell_mask & ~cavity_mask) | stem_mask | tip_mask       # [...]
+    masses = material_mask * sample_volume                                   # [...]
+    mass = (samples * masses).sum(axis=-1)                                   # [] Point-
+    # Each mass sample joins its velocity under a rate to its position, contributing to the body's momentum.
+    inertia = (masses * samples).regressive(samples.commutator(Rate)).sum(axis=-1)  # [] Forque- <- Rate+
+    return mass, inertia
 
 
-def launch(body: Body, spins: np.ndarray, lean: float) -> tuple[Motor, Rate]:
-    """Opposite spins about the mass centre, with the same lean and no initial penetration."""
+def release_states(contacts: Quadric, mass: Point, spins: np.ndarray, lean: float) -> tuple[Motor, Rate]:
+    """Tilts the body by `lean` without table penetration and assigns `spins` (`[...]`) about the vertical line through `mass`."""
     tilt = (mv.xz * (lean / 2)).exp()                                        # [] Motor+
-    normal = tilt << up                                                      # [] Point-
-    supports = contact.lowest_point(body.contacts, normal)                   # [contacts] Point-
-    height = (mv.z & (tilt >> supports)).min(axis=0)                         # [] Scalar+
+    body_up = tilt << up                                                     # [] Point-
+    supports = contact.lowest_point(contacts, body_up)                       # [2] Point-
+    placed_supports = tilt >> supports                                       # [2] Point-
+    height = (mv.z & placed_supports).min(axis=0)                            # [] Scalar+
     lift = (-up * origin.inverse() * height / 2).exp()                       # [] Motor+
-    motor = (lift * tilt).broadcast_to(spins.shape)
-    centre = body.mass.normalized()                                         # [] Point-
-    spin_axis = (mv.x - mv.w * (mv.x & centre)) ^ (mv.y - mv.w * (mv.y & centre))
-    return motor.retyped(Motor), (spin_axis * spins).cast(Rate).retyped(Rate)
+    motor = (lift * tilt).broadcast_to(spins.shape)                          # [...] Motor+
+    centre = mass.normalized()                                               # [] Point-
+    spin_axis = (mv.x - mv.w * (mv.x & centre)) ^ (mv.y - mv.w * (mv.y & centre))  # [] Rate+
+    return motor.retyped(Motor), (spin_axis * spins).retyped(Rate)
 
 
 @partial(jax.jit, static_argnames=("n_steps",))
-def advance(body: Body, motor: Motor, rate: Rate, gravity: float,
-            static: float, dynamic: float, dt: float, n_steps: int) -> tuple[Motor, Rate]:
-    """Free rigid motion and XPBD contact corrections advance the top to the next frame."""
+def frame_step(contacts: Quadric, mass: Point, inertia: Inertia, motor: Motor, rate: Rate,
+               gravity: float, static_friction: float, dynamic_friction: float,
+               dt: float, n_steps: int) -> tuple[Motor, Rate]:
+    """Advances `motor` (`[...] Motor+`) and `rate` (`[...] Rate+`) across `n_steps` free-motion and contact substeps."""
+    inverse_inertia = inertia.inverse()                                      # [] Rate+ <- Forque-
 
-    def load(placement: Motor, velocity: Rate) -> Forque:
-        return body.mass & (placement << (-up * gravity))
+    def gravity_forque(placement: Motor, velocity: Rate) -> Forque:
+        gravity_force = placement << (-up * gravity)                         # [...] Point-
+        return mass & gravity_force
 
-    def substep(index: int, state: tuple[Motor, Rate]) -> tuple[Motor, Rate]:
-        before, velocity = state
-        predicted, _ = lie.explicit_rk4(before, velocity, body.inertia, body.inverse_inertia, dt, load)
-        placement, velocity = contact.project_contacts(before, predicted.normalized(), body.inverse_inertia,
-                                                       body.contacts, ground, static, dynamic, dt)
-        return placement.retyped(Motor), velocity.retyped(Rate)
+    def substep(step_index: int, state: tuple[Motor, Rate]) -> tuple[Motor, Rate]:
+        prior_motor, velocity = state
+        predicted_motor, _ = lie.explicit_rk4(prior_motor, velocity, inertia, inverse_inertia, dt, gravity_forque)
+        next_motor, next_rate = contact.project_contacts(
+            prior_motor, predicted_motor.normalized(), inverse_inertia,
+            contacts, ground, static_friction, dynamic_friction, dt,
+        )
+        return next_motor.retyped(Motor), next_rate.retyped(Rate)
 
     return jax.lax.fori_loop(0, n_steps, substep, (motor, rate))
 
 
-# --- plumbing -------------------------------------------------------------------------
-def evolve(body: Body, motor: Motor, rate: Rate, gravity: float,
-           static: float, dynamic: float, dt: float, n_frames: int,
-           stride: int) -> Iterator[tuple[Motor, Rate]]:
-    """Yield each launch's placement and rate as the experiment advances."""
+def motion(contacts: Quadric, mass: Point, inertia: Inertia, motor: Motor, rate: Rate,
+           gravity: float, static_friction: float, dynamic_friction: float,
+           dt: float, n_states: int, n_steps_per_frame: int) -> Iterator[tuple[Motor, Rate]]:
+    """Yields `n_states` pairs of placement (`[...] Motor+`) and rate (`[...] Rate+`) separated by `n_steps_per_frame` substeps."""
     yield motor, rate
-    for _ in range(n_frames - 1):
-        motor, rate = advance(body, motor, rate, gravity, static, dynamic, dt, stride)
+    for _ in range(n_states - 1):
+        motor, rate = frame_step(contacts, mass, inertia, motor, rate, gravity,
+                                 static_friction, dynamic_friction, dt, n_steps_per_frame)
         yield motor, rate

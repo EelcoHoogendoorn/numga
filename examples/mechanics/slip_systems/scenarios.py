@@ -1,9 +1,7 @@
-"""Which slip system a pull along any direction makes yield first in a face-centred cubic crystal, and the paths
-the pull's axis takes through the crystal as it slips."""
+"""Scene parameters configure face-centred cubic slip systems and generate the chart and trajectory animations."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from functools import partial
 
 import numpy as np
@@ -11,106 +9,83 @@ import numpy as np
 from numga import stack
 from examples.mechanics.slip_systems import core
 
-# Four mutually neighbouring atoms of the crystal, each across from the slip plane of the same place.
-ATOMS = [[0, 0, 0], [0, 1, 1], [1, 1, 0], [1, 0, 1]]
-# The samples across the stereographic disk of pull directions.
-N_SAMPLES = 1000
-# The axes the pulls start along, spread over the standard triangle between [001], [011] and [111] away from
-# [001], where eight systems nearly tie; the slip of a step on the leading system, and how steeply a system's
-# slip falls off below the leading factor, so steeply that the leading system takes almost all of it and two
-# systems with equal factors share it alike; the steps taken; and the frames drawn, the duration of each.
-STARTS = [[0.05, 0.3, 1], [0.15, 0.32, 1], [0.03, 0.5, 1], [0.2, 0.5, 1], [0.05, 0.75, 1],
-          [0.3, 0.6, 1], [0.12, 0.62, 1], [0.4, 0.55, 1]]
-AMOUNT = 0.01
-STEEPNESS = 30
-N_STEPS = 500
-N_FRAMES = 88
-DURATION_MS = 40
-# The gallery's paths: their figure's pixels across.
-GALLERY_PIXELS = 420
-
-
-# --- math -----------------------------------------------------------------------------
-def chart(n_samples: int = N_SAMPLES) -> tuple[core.Direction, core.Scalar, core.Plane, core.Direction]:
-    """Pull directions over the upper half of the sphere, n_samples across, laid out on the stereographic disk
-    `[rows, columns]`, each system's Schmid factor for each `[rows, columns, planes, directions]`, and the slip planes
-    and slip directions."""
-    # Each point of the chart, the plane across [001], lifts to the direction that projects onto it: [001]
-    # reflected in the mirror through [001] plus the point.
-    across = np.linspace(-1, 1, n_samples)
-    offsets = core.mv.x * across + core.mv.y * across[:, None]                 # [rows, columns] Vector+
-    directions = (core.mv.z + offsets).normalized() >> core.mv.z.dual()       # [rows, columns] Direction-
-    atoms = core.mv.vector(ATOMS).dual()                                      # [atoms] Direction-
-    slips = core.slip_directions(atoms)                                       # [planes, directions] Direction-
-    planes = core.slip_planes(atoms, slips)                                   # [planes] Plane+
-    return directions, core.schmid(directions, planes, slips), planes, slips
-
-
-def rotation(axis: core.Direction, planes: core.Plane, slips: core.Direction,
-             n_steps: int = N_STEPS) -> Iterator[tuple[core.Direction, core.Scalar]]:
-    """Each pull's axis after every one of n_steps slip steps, and how much each system slipped in the step: every
-    system slips in the sense the pull drives it, at a rate rising steeply with its Schmid factor."""
-    for _ in range(n_steps):
-        amounts = power_law(core.schmid(axis, planes, slips))                  # [starts, planes, directions] Scalar-
-        axis = core.slipped(axis, planes, slips, amounts)
-        yield axis, amounts                                                   # [starts] Direction-
-
-
-def paths(n_steps: int = N_STEPS) -> tuple[core.Direction, core.Scalar]:
-    """The pulls' axes at every one of n_steps steps `[steps + 1, starts]`, and how much each system slipped in each
-    step `[steps, starts, planes, directions]`."""
-    atoms = core.mv.vector(ATOMS).dual()                                      # [atoms] Direction-
-    slips = core.slip_directions(atoms)                                       # [planes, directions] Direction-
-    starts = core.mv.vector(STARTS).normalized().dual()                       # [starts] Direction-
-    axes, amounts = zip(*rotation(starts, core.slip_planes(atoms, slips), slips, n_steps))
-    return stack([starts, *axes]), stack(amounts)
-
-
-# --- the step outside the algebra ---------------------------------------------------------
-def power_law(factors: core.Scalar) -> core.Scalar:
-    """How much each system slips in a step `[..., planes, directions]`: the step's slip, in the sign of the
-    Schmid factor, scaled by the factor's size over the leading one raised to the steepness, a power law of
-    the resolved shear stress."""
-    values = factors.cast(core.ga.subspace.scalar()).kernel[..., 0]
-    leading = np.abs(values).max(axis=(-2, -1), keepdims=True)
-    return factors * (AMOUNT * np.abs(values) ** (STEEPNESS - 1) / leading ** STEEPNESS)
+# Four mutually neighbouring lattice sites of a face-centred cubic crystal, each opposite its slip plane.
+atom_positions = [[0, 0, 0], [0, 1, 1], [1, 1, 0], [1, 0, 1]]
+n_samples = 1000
+# Initial tensile axes spread across the standard triangle between [001], [011], and [111].
+start_directions = [
+    [0.05, 0.3, 1], [0.15, 0.32, 1], [0.03, 0.5, 1], [0.2, 0.5, 1],
+    [0.05, 0.75, 1], [0.3, 0.6, 1], [0.12, 0.62, 1], [0.4, 0.55, 1],
+]
+n_starts = len(start_directions)
+step_slip = 0.01
+steepness = 30
+n_steps = 500
+n_frames = 88
+frame_duration_ms = 40
+gallery_pixels = 420
 
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
+    """Streams the tensile-axis trajectory animation, saves the two-panel stereographic chart, and checks the invariants."""
     from examples.mechanics.slip_systems import render
+    from examples.util.animation import save_animation, save_figure
 
-    directions, factors, planes, slips = chart()
-    axes, amounts = paths()
-    schmid = partial(core.schmid, planes=planes, directions=slips)
+    atoms = core.mv.vector(atom_positions).dual()                             # [4] Direction-
+    slips = core.slip_directions(atoms)                                       # [4, 3] Direction-
+    planes = core.slip_planes(atoms, slips)                                   # [4] Plane+
+    directions = core.disk_directions(n_samples)                              # [n_samples, n_samples] Direction-
+    factors = core.schmid_factors(directions, planes, slips)                  # [n_samples, n_samples, 4, 3] Scalar+
+    cube_factors = core.schmid_factors(core.mv.z.dual(), planes, slips).abs()   # [4, 3] Scalar+
+
+    start_axes = core.mv.vector(start_directions).normalized().dual()         # [n_starts] Direction-
+    schmid = partial(core.schmid_factors, planes=planes, directions=slips)
+    states = []
+    stream = (states.append(state) or state for state in core.slip_steps(
+        start_axes, planes, slips, step_slip, steepness, n_steps,
+    ))
+    save_animation(
+        render.animate_paths(schmid, start_axes, n_steps, n_frames, stream),
+        "slip_systems_paths",
+        frame_duration_ms,
+    )
+    stepped_axes, step_amounts = zip(*states)
+    axes = stack([start_axes, *stepped_axes])                                 # [n_steps + 1, n_starts] Direction-
+    amounts = stack(step_amounts)                                             # [n_steps, n_starts, 4, 3] Scalar+
     save_figure(render.draw_chart(schmid, planes, slips, axes, amounts), "slip_systems")
-    save_animation(render.animate_paths(schmid, axes, amounts, N_FRAMES), "slip_systems_paths", DURATION_MS)
 
     # checks
-    values = factors.to_array()                                          # [rows, columns, planes, directions]
-    # No Schmid factor exceeds a half, and along [001] eight systems share the largest, one over the root of six.
-    assert np.abs(values).max() <= 0.5 + 1e-12
-    along = np.abs(core.schmid(core.mv.z.dual(), planes, slips).to_array())   # [planes, directions]
-    assert np.isclose(along.max(), 1 / np.sqrt(6)) and np.isclose(along, along.max()).sum() == 8
-    # Every pull's axis ends at [112], two systems carrying nearly all of its slip on the way.
-    ends = (stack([core.mv.x, core.mv.y, core.mv.z]) & axes[-1][:, None]).to_array()   # [starts, 3]
-    target = np.array([1, 1, 2]) / np.sqrt(6)
-    assert (np.sort(ends, axis=-1) @ target > 0.999).all()
-    carried = np.sort(np.abs(amounts.to_array()).sum(axis=0).reshape(len(STARTS), -1), axis=-1)   # [starts, systems]
-    assert (carried[:, -2:].sum(axis=-1) / carried.sum(axis=-1) > 0.95).all()
+    goal = core.mv.vector([1, 1, 2]).normalized().dual()                      # Direction-
+    system_slip = amounts.abs().sum(axis=0).reshape(n_starts, 12)             # [n_starts, 12] Scalar+
+    order = system_slip.argsort(axis=-1)                                      # [n_starts, 12]
+    two_system_share = (
+        system_slip[np.arange(n_starts)[:, None], order[:, -2:]].sum(axis=-1) / system_slip.sum(axis=-1)
+    )                                                                         # [n_starts] Scalar+
+    assert ((planes[:, None] & slips).abs() < 1e-12).all()
+    assert (factors.abs() <= 0.5 + 1e-12).all()
+    assert (cube_factors.max() - 1 / np.sqrt(6)).abs() < 1e-12
+    assert ((cube_factors - cube_factors.max()).abs() < 1e-12).sum() == 8
+    assert ((axes[-1] - goal).norm() < 0.02).all()
+    assert (two_system_share > 0.95).all()
 
 
 def pinned() -> None:
-    """The pictures the repository tracks: the pulls' axes slipping through the standard triangle, for the gallery."""
-    from examples.util.animation import pin_animation
+    """Writes the gallery animation of tensile axes rotating through the standard triangle."""
     from examples.mechanics.slip_systems import render
+    from examples.util.animation import pin_animation
 
-    directions, factors, planes, slips = chart()
-    axes, amounts = paths()
-    schmid = partial(core.schmid, planes=planes, directions=slips)
-    pin_animation(render.animate_paths_sized(schmid, axes, amounts, N_FRAMES, GALLERY_PIXELS), "slip_systems",
-                  DURATION_MS)
+    atoms = core.mv.vector(atom_positions).dual()                             # [4] Direction-
+    slips = core.slip_directions(atoms)                                       # [4, 3] Direction-
+    planes = core.slip_planes(atoms, slips)                                   # [4] Plane+
+    start_axes = core.mv.vector(start_directions).normalized().dual()         # [n_starts] Direction-
+    schmid = partial(core.schmid_factors, planes=planes, directions=slips)
+    states = core.slip_steps(start_axes, planes, slips, step_slip, steepness, n_steps)
+    pin_animation(
+        render.animate_paths_sized(schmid, start_axes, n_steps, n_frames, gallery_pixels, states),
+        "slip_systems",
+        frame_duration_ms,
+    )
 
 
 if __name__ == "__main__":

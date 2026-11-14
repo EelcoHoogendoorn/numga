@@ -1,9 +1,9 @@
-"""Scenes for the stressed cube: seen from the lab, from the principal frame and from the frame of
-greatest shear, and from a frame turning half a turn in the shear plane, with Mohr's circle."""
+"""Scenarios for the stressed cube compare the lab, principal, and maximum-shear frames and sweep a
+half-turn rotation through the shear plane."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 import numpy as np
 
@@ -12,74 +12,81 @@ from examples.mechanics.stress import core
 
 mv, Point = core.mv, core.Point
 x, y, z = core.axes
-# The material: the first Lamé parameter and the shear modulus.
-LAME = 2.0
-SHEAR_MODULUS = 1.0
-# The strain: stretches along x, y and z, and a shear in the xy plane.
-STRETCHES = np.array([0.05, -0.05, 0.08])
-SHEAR = 0.30
-# The frames of the turning view, over half a turn, and the duration of each.
-N_FRAMES = 75
-DURATION_MS = 40
+# Isotropic Lamé parameters and imposed triaxial stretches plus in-plane xy shear.
+lame = 2.0
+shear_modulus = 1.0
+stretches = np.array([0.05, -0.05, 0.08])
+shear_strain = 0.30
+# Frame count over half a turn and smooth 25 fps frame duration.
+n_frames = 75
+frame_duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------
-def material():
-    """The strain, the stress it causes, and the principal stresses, directions and frame."""
-    strain = (core.axes * STRETCHES * (core.axes & Point)).sum(axis=0) + SHEAR * (x * (y & Point) + y * (x & Point))   # [] Strain
-    stress = core.cauchy_stress(strain, LAME, SHEAR_MODULUS)                  # [] Stress
+def elastic_state() -> tuple[core.Strain, core.Stress, core.Scalar, core.Point, core.Rotor]:
+    """Imposed triaxial stretch and shear define the cube's strain (`[] Plane+ <- Point-`), Cauchy
+    stress (`[] Point- <- Plane+`), and ordered principal stresses, directions, and frame rotor."""
+    strain = (core.axes * stretches * (core.axes & Point)).sum(axis=0) + shear_strain * (x * (y & Point) + y * (x & Point))   # [] Plane+ <- Point-
+    stress = core.cauchy_stress(strain, lame, shear_modulus)                   # [] Point- <- Plane+
     return strain, stress, *core.principal_frame(stress)
 
 
-def frames() -> tuple[tuple[core.Point, core.Point, core.Point, core.Point, core.Point], core.Scalar]:
-    """The cube seen from the lab, from the principal frame, and from the frame an eighth of a turn
-    on, where the shear is greatest `[3]`; with the principal stresses."""
-    strain, stress, values, directions, principal = material()
-    rotors = stack([mv.rotor(), principal, ((x ^ y) * (-np.pi / 8)).exp() * principal])   # [3] Rotor+
-    return core.views(strain, stress, directions, rotors), values
+def three_frames() -> tuple[tuple[core.Point, core.Point, core.Point, core.Point, core.Point], core.Scalar]:
+    """Lab, principal, and eighth-turn maximum-shear rotors (`[3] Rotor+`) place the cube in three
+    reference frames alongside the ordered principal stresses."""
+    strain, stress, stresses, directions, principal = elastic_state()
+    eighth_turn = (mv.xy * (-np.pi / 8)).exp() * principal                     # [] Rotor+
+    rotors = stack([mv.rotor(), principal, eighth_turn])                       # [3] Rotor+
+    return core.frame_views(strain, stress, directions, rotors), stresses
 
 
-def turns(n_frames: int = N_FRAMES) -> core.Rotor:
-    """The n_frames frames turning half a turn in the shear plane from the principal frame `[frames]`."""
-    _, _, _, _, principal = material()
-    angles = np.linspace(0.0, np.pi, n_frames, endpoint=False)
-    return ((x ^ y) * (-angles / 2)).exp() * principal                        # [frames] Rotor+
+def turning_stream(n_steps: int) -> Iterator[tuple[core.Point, core.Point, core.Point, core.Point, core.Point]]:
+    """Yields `n_steps` cube views turning half a turn in the `xy` shear plane from the principal
+    frame."""
+    strain, stress, _, directions, principal = elastic_state()
+    return core.turning_views(strain, stress, directions, principal, mv.xy, n_steps)
 
 
-def turning(n_frames: int = N_FRAMES) -> Iterator[tuple[core.Point, core.Point, core.Point, core.Point, core.Point]]:
-    """Per frame of n_frames, the cube seen from a frame turning in the shear plane."""
-    strain, stress, _, directions, _ = material()
-    rotors = turns(n_frames)                                                  # [frames] Rotor+
-    for frame in range(n_frames):
-        yield core.views(strain, stress, directions, rotors[frame])
+def recorded_states(states: Iterable, out: list) -> Iterator:
+    """Yields each item from `states` while appending it to `out` so one streaming pass feeds both
+    the saved animation and `# checks`."""
+    for state in states:
+        out.append(state)
+        yield state
 
 
 def main() -> None:
+    import matplotlib.pyplot as plt
+
     from examples.util.animation import save_animation, save_figure
     from examples.mechanics.stress import render
 
-    seen, values = frames()
-    save_figure(render.draw_frames(seen, values), "stress_frames")
-    save_animation(render.animate_turning(values, turning()), "stress_rotation", DURATION_MS)
+    views, stresses = three_frames()
+    figure = render.frames_figure(views, stresses)
+    save_figure(figure, "stress_frames")
+    plt.close(figure)
+    swept = []
+    save_animation(render.turning_frames(stresses, recorded_states(turning_stream(n_frames), swept)),
+                   "stress_rotation", frame_duration_ms)
 
     # checks
-    # In the principal frame no face is sheared, and the tractions across the faces facing x, y and z
-    # are the principal stresses, the turned planes' directions the principal directions.
-    _, stress, _, directions, principal = material()
-    _, _, normal, shear, _ = seen
-    np.testing.assert_allclose(shear[1].norm().to_array(), 0.0, atol=1e-14)
-    np.testing.assert_allclose(np.sort((core.axes & normal[1, :3]).to_array()), values.to_array(), rtol=1e-12)
-    turned = principal >> core.axes                                            # [3] Plane+
-    # Two parallel directions join to nothing.
-    np.testing.assert_allclose((turned.dual() & stress(turned)).norm().to_array(), 0.0, atol=1e-14)
-    # An eighth of a turn on, the face facing x feels the largest shear, the radius of Mohr's circle.
-    centre, radius = core.mohr_circle(values)
-    np.testing.assert_allclose(shear[2, 0].norm().to_array(), radius.to_array(), rtol=1e-8)
-    # Turning, the normal and shear traction on the face facing x go around Mohr's circle.
-    strain, _, _, _, _ = material()
-    _, _, turning_normal, turning_shear, _ = core.views(strain, stress, directions, turns())   # [frames, 6] Point-
-    along, across = x & turning_normal[:, 0], y & turning_shear[:, 0]          # [frames] Scalar+
-    np.testing.assert_allclose(((along - centre).squared() + across.squared()).to_array(), radius.squared().to_array(), rtol=1e-8)
+    # In the principal frame no face is sheared, the normal tractions match the principal stresses, and stress acts purely along the principal normals.
+    _, stress, _, _, principal = elastic_state()
+    _, _, seen_normal, seen_shear, _ = views
+    assert (seen_shear[1].norm() < 1e-12).all()
+    principal_normals = core.axes & seen_normal[1, :3]                         # [3] Scalar+
+    assert ((principal_normals[principal_normals.argsort()] - stresses).abs() < 1e-12).all()
+    principal_planes = principal >> core.axes                                  # [3] Plane+
+    assert ((principal_planes.dual() & stress(principal_planes)).norm() < 1e-12).all()
+    # Turning an eighth of a turn from the principal frame reaches the outer Mohr circle's maximum-shear radius on the +x face.
+    centre, radius = core.mohr_circle(stresses)
+    assert ((seen_shear[2, 0].norm() - radius).abs() < 1e-8).all()
+    # Across the streamed rotation, the +x face's normal and shear tractions lie on Mohr's circle.
+    swept_normal = stack([state[2][0] for state in swept])                     # [n_frames] Point-
+    swept_shear = stack([state[3][0] for state in swept])                      # [n_frames] Point-
+    normal_component, shear_component = x & swept_normal, y & swept_shear      # [n_frames] Scalar+, [n_frames] Scalar+
+    circle_residual = (normal_component - centre).squared() + shear_component.squared() - radius.squared()   # [n_frames] Scalar+
+    assert (circle_residual.abs() < 1e-8).all()
 
 
 if __name__ == "__main__":

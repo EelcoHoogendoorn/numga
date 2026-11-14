@@ -1,5 +1,4 @@
-"""Drawing for the hanging chain: every Newton iterate of the chain between its pins, over the catenary;
-and the largest unbalanced force on a bead at each iterate."""
+"""The hanging-chain renderer plots every Newton iterate over the inextensible catenary beside the unbalanced force residual."""
 
 from __future__ import annotations
 
@@ -7,71 +6,92 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import Extensor, concatenate, stack
-
-from examples.util import charts
-from numga.topology import Topology
 from numga.render import simplices
+from numga.topology import Topology
+from examples.util import charts
 from examples.util.panels import offset_panel, overlay
 
-EARLY = np.array([0.80, 0.80, 0.82])
-LATE = np.array([0.15, 0.15, 0.18])
-CHAIN = np.array([0.20, 0.40, 0.70])
-CATENARY = np.array([0.85, 0.30, 0.20])
-PIN = np.array([0.15, 0.15, 0.18])
-# The catenary's dashes and gaps, in pixels; the radius of the last iterate's beads and of the pins' dots, a chart's
-# marker across.
-CATENARY_DASHES = (11.0, 5.0)
-BEAD_RADIUS = charts.MARKER_PX / 2
-# The margin around the chains, as a share of their extent either way.
-MARGIN = 0.05
+early_shade = np.array([0.80, 0.80, 0.82])                                      # [3]
+late_shade = np.array([0.15, 0.15, 0.18])                                       # [3]
+chain_color = np.array([0.20, 0.40, 0.70])                                      # [3]
+catenary_color = np.array([0.85, 0.30, 0.20])                                   # [3]
+pin_color = np.array([0.15, 0.15, 0.18])                                        # [3]
+catenary_dashes = (11.0, 5.0)
+bead_radius = charts.MARKER_PX / 2
+frame_margin = 0.05
 
 
-def readings(points: Extensor) -> Extensor:
-    """Points of the plane read across and up `[2, points]`: their pairings with the lines x = 0 and y = 0."""
-    lines = points.context.multivector
-    return stack((lines.x, lines.y))[:, None] & points.reshape(-1)
+def point_coordinates(points: Extensor) -> Extensor:
+    """Pairing planar points with the coordinate lines reads their horizontal and vertical coordinates (`[2, ...] Scalar+`)."""
+    mv = points.context.multivector
+    return stack((mv.x, mv.y))[:, None] & points.reshape(-1)                    # [2, ...] Scalar+
 
 
 @charts.style()
-def iterates(chains, residual, catenary, pins) -> plt.Figure:
-    """Two panels. Left: each iterate of the chain as the polyline from pin to pin through its beads,
-    earlier ones lighter, the last with its beads marked, over the catenary dashed. Right: the largest
-    unbalanced force on a bead at each iterate, in bead weights, on a log scale."""
-    beads = chains.batch()                                                    # [iterates, beads] Point-
-    n_iterates, n_beads = beads.shape
-    ends = pins.batch()                                                       # [pins] Point-
-    # Each iterate from pin to pin through its beads.
-    lines = concatenate([ends[0].broadcast_to((n_iterates, 1)), beads, ends[1].broadcast_to((n_iterates, 1))],
-                        axis=1)                                               # [iterates, beads + 2] Point-
-    largest = np.asarray(residual.batch().to_array()).max(axis=-1)
+def iterates(chains: Extensor, residual: Extensor, catenary: Extensor, pins: Extensor) -> plt.Figure:
+    """A two-panel figure plots the Newton iterates over the dashed catenary beside the maximum unbalanced force per step."""
+    n_iterates, n_beads = chains.batch().shape
+    n_samples = len(catenary)
+    n_points = n_beads + 2
+    beads = chains.batch()                                                      # [n_iterates, n_beads] Point-
+    ends = pins.batch()                                                         # [2] Point-
+    # Extend each iterate from the left pin through its beads to the right pin.
+    polylines = concatenate(
+        [ends[0].broadcast_to((n_iterates, 1)), beads, ends[1].broadcast_to((n_iterates, 1))],
+        axis=1,
+    )                                                                           # [n_iterates, n_beads + 2] Point-
+    max_residual = np.asarray(residual.batch().max(axis=-1).to_array())         # [n_iterates]
 
-    # Four fifths of the column: the chain's iterates, wide and shallow, beside a short convergence curve.
-    figure, (shape, convergence) = charts.subplots(640, 280, ncols=2, gridspec_kw={"width_ratios": [1.3, 1]})
-    convergence.semilogy(np.arange(len(largest)), largest, color=CHAIN, marker="o")
-    convergence.set_xlabel("Newton step")
-    convergence.set_ylabel("unbalanced force, in weights")
-    convergence.grid(True, which="major", alpha=0.3)
-    # The chains' panel framed about every iterate and the catenary.
-    drawn = concatenate([readings(lines), readings(catenary)], axis=-1)       # [2, points] Scalar+
-    low, high = drawn.min(axis=-1).to_array(), drawn.max(axis=-1).to_array()
-    padding = MARGIN * (high - low)
-    shape.set(xlim=(low[0] - padding[0], high[0] + padding[0]), ylim=(low[1] - padding[1], high[1] + padding[1]),
-              aspect="equal")
-    shape.axis("off")
+    figure, (shape_panel, convergence_panel) = charts.subplots(
+        640, 280, ncols=2, gridspec_kw={"width_ratios": [1.3, 1]}
+    )
+    convergence_panel.semilogy(np.arange(n_iterates), max_residual, color=chain_color, marker="o")
+    convergence_panel.set_xlabel("Newton step")
+    convergence_panel.set_ylabel("unbalanced force, in weights")
+    convergence_panel.grid(True, which="major", alpha=0.3)
+
+    # Frame the geometry panel around every iterate and the catenary.
+    extent_coords = concatenate(
+        [point_coordinates(polylines), point_coordinates(catenary)],
+        axis=-1,
+    )                                                                           # [2, n_iterates * n_points + n_samples] Scalar+
+    low_bounds = extent_coords.min(axis=-1).to_array()                          # [2]
+    high_bounds = extent_coords.max(axis=-1).to_array()                         # [2]
+    padding = frame_margin * (high_bounds - low_bounds)                         # [2]
+    shape_panel.set(
+        xlim=(low_bounds[0] - padding[0], high_bounds[0] + padding[0]),
+        ylim=(low_bounds[1] - padding[1], high_bounds[1] + padding[1]),
+        aspect="equal",
+    )
+    shape_panel.axis("off")
     figure.tight_layout()
 
     mv = chains.context.multivector
-    camera = offset_panel(shape, mv.x, mv.y)
-    n_points = n_beads + 2
-    # Earlier iterates lighter, each in its shade along its edges.
-    shades = EARLY + np.linspace(0, 1, n_iterates)[:-1, None] * (LATE - EARLY)   # [iterates - 1, 3]
-    overlay(shape, [
-        simplices.strokes(lines[:-1].reshape(-1), Topology.chains([n_points] * (n_iterates - 1)),
-                          np.repeat(shades, n_points - 1, axis=0), charts.LINE_PX, camera),
-        # The catenary dashed and twice as wide as the chains, so that it shows under the last.
-        simplices.strokes(catenary, Topology.chains([len(catenary)]), CATENARY, 2 * charts.LINE_PX, camera,
-                          dashes=CATENARY_DASHES, cap=simplices.Cap.BUTT),
-        simplices.strokes(lines[-1], Topology.chains([n_points]), CHAIN, charts.LINE_PX, camera),
-        simplices.markers(lines[-1], CHAIN, BEAD_RADIUS, camera),
-        simplices.markers(ends, PIN, BEAD_RADIUS, camera)])
+    camera = offset_panel(shape_panel, mv.x, mv.y)
+    shades = early_shade + np.linspace(0, 1, n_iterates)[:-1, None] * (late_shade - early_shade)    # [n_iterates - 1, 3]
+    overlay(
+        shape_panel,
+        [
+            simplices.strokes(
+                polylines[:-1].reshape(-1),
+                Topology.chains([n_points] * (n_iterates - 1)),
+                np.repeat(shades, n_points - 1, axis=0),
+                charts.LINE_PX,
+                camera,
+            ),
+            # Draw the catenary dashed and twice as wide so it remains visible beneath the final iterate.
+            simplices.strokes(
+                catenary,
+                Topology.chains([n_samples]),
+                catenary_color,
+                2 * charts.LINE_PX,
+                camera,
+                dashes=catenary_dashes,
+                cap=simplices.Cap.BUTT,
+            ),
+            simplices.strokes(polylines[-1], Topology.chains([n_points]), chain_color, charts.LINE_PX, camera),
+            simplices.markers(polylines[-1], chain_color, bead_radius, camera),
+            simplices.markers(ends, pin_color, bead_radius, camera),
+        ],
+    )
     return figure

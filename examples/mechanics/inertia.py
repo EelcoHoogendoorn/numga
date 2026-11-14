@@ -1,11 +1,8 @@
-"""A principal frame and its motor, recovered with two eigenproblems.
+"""Principal frames and diagonalizing motors induce two eigenproblems on an inertia map.
 
-Both constructions start from the supplied inertia: an arbitrary mass cloud,
-and a moved diagonal tensor. The reference is just the canonical coordinate
-planes, not a known body pose. The same solve covers spherical and Euclidean
-PGA models in algebra dimensions four and five.
+Both constructions recover a principal frame from a supplied inertia map alone, first on an arbitrary mass cloud and then on a moved diagonal inertia. Canonical coordinate planes serve as the reference frame without a known initial pose, across spherical and Euclidean projective models in four and five dimensions.
 
-Run from the repository root with python -m examples.mechanics.inertia.
+Run from the repository root with `python -m examples.mechanics.inertia`.
 """
 
 import numpy as np
@@ -15,113 +12,103 @@ from numga import Algebra, Extensor, NumpyContext
 
 # --- plumbing -------------------------------------------------------------------------
 def cloud(context: NumpyContext, seed: int) -> tuple[Extensor, np.ndarray]:
-    """Random unit points placed by a random motor, and their masses."""
+    """Random unit points placed by a random motor come paired with random positive masses (`[80] Point-`, `[80]`)."""
     ga, mv = context.algebra, context.multivector
     rng = np.random.default_rng(seed)
     n_points = 80
-    points = mv.vector(rng.normal(size=(n_points, ga.dimension))).dual().normalized()
-    placement = mv.bivector(rng.normal(size=len(ga.subspace.bivector())) * 0.3).exp()
-    return placement >> points, rng.uniform(0.5, 1.5, size=n_points)
+    rest_points = mv.vector(rng.normal(size=(n_points, ga.dimension))).dual().normalized()   # [n_points] Point-
+    placement = mv.bivector(rng.normal(size=len(ga.subspace.bivector())) * 0.3).exp()        # [] Rotor+
+    points = placement >> rest_points                                                        # [n_points] Point-
+    masses = rng.uniform(0.5, 1.5, size=n_points)                                            # [n_points]
+    return points, masses
 
 
 # --- math -----------------------------------------------------------------------------
 def second_moment(inertia: Extensor) -> Extensor:
-    """The point cloud's second-moment map, recovered from its inertia.
+    """Linear least squares recovers the exact `Point- <- Plane+` second-moment map from an `Antibivector- <- Bivector+` inertia map.
 
-    The inertia is a single physical inertia map, AntiBivector <- Bivector, mapping
-    rigid-body velocity to momentum in its current frame. The result is a Point <- Plane
-    map: pairing its output with another plane gives the scalar form
-    `(masses * (a & points) * (b & points)).sum()` for planes a and b.
+    Pairing the recovered map's output with a second plane reproduces the scalar second-moment form `(masses * (first_plane & points) * (second_plane & points)).sum()`.
     """
     ga = inertia.algebra
     Point = ga.gatype.antivector()
     Plane = ga.gatype.vector()
-    Bivector = ga.gatype.bivector()
-    # This construction has type (AntiBivector <- Point, Plane, Bivector).
-    # Duality turns the second input into a point while keeping its plane input.
-    construction = Point.regressive(Plane.dual().commutator(Bivector))
-    # The supplied inertia matches AntiBivector <- Bivector, leaving Point <- Plane
-    # as the unknown second-moment map: lstsq unbinds both unmatched inputs at once,
-    # inferring them from the types. The inertia has more entries than the second
-    # moment, but the construction loses none of it: the system is overdetermined yet
-    # consistent, and lstsq solves it exactly rather than fitting it.
-    return construction.lstsq(inertia)
+    Rate = ga.gatype.bivector()
+    # Duality turns the plane input into a point so the linear map matches `Antibivector- <- (Point-, Plane+, Bivector+)`.
+    moment_to_inertia = Point.regressive(Plane.dual().commutator(Rate))              # [] Antibivector- <- (Point-, Plane+, Bivector+)
+    # Unbinding the matched `Antibivector- <- Bivector+` inertia solves an overdetermined consistent system for `Point- <- Plane+`.
+    return moment_to_inertia.lstsq(inertia)                                          # [] Point- <- Plane+
 
 
 def diagonalizing_motor(moment: Extensor, reference: Extensor) -> Extensor:
-    """The motor fitted to take the moment's principal planes onto a reference frame.
+    """Two eigenproblems fit a normalized motor (`Rotor+`) mapping the moment's principal planes onto `reference`.
 
-    The moment is the Point <- Plane second-moment map recovered from inertia. The
-    reference is a batch of orthogonal unit target planes, with PGA's null plane last;
-    their batch order specifies the target correspondence. The result is a normalized
-    motor mapping the principal planes onto the reference, up to orientation signs.
-    Coordinate reference planes diagonalize inertia.
+    The `moment` map has type `Point- <- Plane+`, and `reference` holds orthogonal unit target planes with any null plane last. Coordinate reference planes bring the inertia map to diagonal form.
     """
     ga = moment.algebra
     Plane = ga.gatype.vector()
     Rotor = ga.gatype.rotor()
 
-    # Pairing with another plane gives the scalar second-moment form: Plane & moment.
-    # For mass points, this form is `(masses * (a & points) * (b & points)).sum()` for planes a and b.
-    # Recover principal planes as the generalized eigenvectors of the metric `Plane | Plane`
-    # against the moment form `Plane & moment`.
-    # This order gives PGA's plane at infinity a zero eigenvalue, rather than an infinite one.
-    _, planes = (Plane | Plane).eigh(Plane & moment)
-    # Keep the full frame, with PGA's null plane last, matching the reference.
-    source = planes[planes.norm().argsort()[::-1]]
+    # Generalized eigenvectors of the metric `Plane | Plane` against `Plane & moment` give any null plane at infinity eigenvalue zero.
+    _, principal_planes = (Plane | Plane).eigh(Plane & moment)                       # [...] Plane+
+    # Sorting by descending norm places any null plane last, matching `reference`.
+    source_planes = principal_planes[principal_planes.norm().argsort()[::-1]]        # [...] Plane+
 
-    # Descending norms and powers of two give distinct eigenvalues for the nonnull sign choices.
-    # The paired null planes contribute zero on the rotor space.
-    weights = 2.0 ** np.arange(source.shape[0])[::-1]
-    # Build a map from rotors to even grade elements
-    # A matching motor is an eigenvector of each term: the product returns the motor
-    # times the source plane's norm, with either sign for its orientation.
-    # The plane maps commute, so this weighted sum finds their common
-    # eigenvectors in one solve. The weights keep distinct sign choices apart.
-    _, motors = (reference * Rotor * source * weights).sum(axis=0).eig()
-    # Scalar overlap selects a motor; the pure ideal PGA candidates have none.
-    choice = motors.select[0].norm().argmax()
-    return motors[choice].normalized()
+    # Powers of two separate the eigenvalues of distinct nonnull orientation-sign choices while paired null planes contribute zero on rotors.
+    n_planes = source_planes.shape[0]
+    plane_weights = 2 ** np.arange(n_planes)[::-1]                                   # [n_planes]
+    # Because the orthogonal plane reflections commute, one eigensolve of their weighted sum finds the common motor eigenvectors.
+    alignment_map = (reference * Rotor * source_planes * plane_weights).sum(axis=0)  # [] Even+ <- Rotor+
+    _, candidate_motors = alignment_map.eig()                                        # [...] Rotor+
+    # Selecting the largest scalar part picks a proper motor over pure ideal candidates.
+    best_index = candidate_motors.select[0].norm().argmax()
+    return candidate_motors[best_index].normalized()                                 # [] Rotor+
 
 
 def main(signature: str, seed: int) -> tuple[Extensor, Extensor]:
+    """Both a random mass cloud and a moved diagonal inertia diagonalize under their recovered motors."""
     # --- plumbing: inputs for the two independent constructions.
     ga = Algebra(signature)
-    ctx = NumpyContext(ga, dtype=np.complex128)
-    mv = ctx.multivector
-    Bivector = ga.gatype.bivector()
-    points, masses = cloud(ctx, seed)
-    reference = mv.vector(np.eye(ga.dimension))
-    reference = reference[reference.norm().argsort()[::-1]]
-    point_basis = mv.vector(np.eye(ga.dimension)).dual()
-    second_moments = 2.0 ** np.arange(ga.dimension)
+    context = NumpyContext(ga, dtype=np.complex128)
+    mv = context.multivector
+    Rate = ga.gatype.bivector()
+    n_planes = ga.dimension
+    n_rates = len(Rate.output_subspace)
+
+    points, masses = cloud(context, seed)                                            # [80] Point-, [80]
+    basis_planes = mv.vector(np.eye(n_planes, dtype=int))                            # [n_planes] Plane+
+    reference = basis_planes[basis_planes.norm().argsort()[::-1]]                    # [n_planes] Plane+
+    point_basis = basis_planes.dual()                                                # [n_planes] Point-
+    second_moments = 2 ** np.arange(n_planes)                                        # [n_planes]
     rng = np.random.default_rng(seed + 1)
-    placement = mv.bivector(rng.normal(size=len(Bivector.output_subspace)) * 0.2).exp()
+    placement = mv.bivector(rng.normal(size=n_rates) * 0.2).exp()                    # [] Rotor+
 
     # --- math: 1. Construct and diagonalize inertia from arbitrary mass points.
-    cloud_inertia = points.regressive(points.commutator(Bivector) * masses).sum(axis=0)
-    cloud_moment = second_moment(cloud_inertia)
-    cloud_motor = diagonalizing_motor(cloud_moment, reference)
-    cloud_diagonal = cloud_motor >> cloud_inertia(cloud_motor << Bivector)
+    cloud_inertia = (masses * points).regressive(points.commutator(Rate)).sum(axis=0)  # [] Antibivector- <- Bivector+
+    cloud_moment = second_moment(cloud_inertia)                                      # [] Point- <- Plane+
+    cloud_motor = diagonalizing_motor(cloud_moment, reference)                       # [] Rotor+
+    cloud_diagonal = cloud_motor >> cloud_inertia(cloud_motor << Rate)               # [] Antibivector- <- Bivector+
 
-    # 2. Diagonal second moments induce a diagonal energy form on bivectors.
-    # Move that inertia, then find a diagonalizing motor from the moved tensor.
-    diagonal = point_basis.regressive(point_basis.commutator(Bivector) * second_moments).sum(axis=0)
-    placed_inertia = placement >> diagonal(placement << Bivector)
-    moment = second_moment(placed_inertia)
-    motor = diagonalizing_motor(moment, reference)
-    recovered_inertia = motor >> placed_inertia(motor << Bivector)
+    # 2. Diagonal second moments induce a diagonal energy form on bivectors; move it and recover a diagonalizing motor.
+    diagonal_inertia = (second_moments * point_basis).regressive(point_basis.commutator(Rate)).sum(axis=0)  # [] Antibivector- <- Bivector+
+    placed_inertia = placement >> diagonal_inertia(placement << Rate)                # [] Antibivector- <- Bivector+
+    moment = second_moment(placed_inertia)                                           # [] Point- <- Plane+
+    motor = diagonalizing_motor(moment, reference)                                   # [] Rotor+
+    recovered_inertia = motor >> placed_inertia(motor << Rate)                       # [] Antibivector- <- Bivector+
 
-    # --- checks
-    # Both aligned inertias have a diagonal energy form on the bivector blades. The round
-    # trip recovers the diagonal it started from, up to a permutation of the axes.
-    blades = mv.bivector(np.eye(len(Bivector.output_subspace)))
-    energies = [(blades[:, None] & aligned(blades[None, :])).to_array().real
-                for aligned in (cloud_diagonal, recovered_inertia, diagonal)]
-    for energy in energies[:2]:
-        off_diagonal = energy - np.diag(np.diag(energy))
-        assert np.abs(off_diagonal).max() < 1e-12 * np.abs(energy).max()
-    np.testing.assert_allclose(np.sort(np.diag(energies[1])), np.sort(np.diag(energies[2])), rtol=1e-8)
+    # checks
+    # Both aligned inertias have a diagonal energy form on the bivector blades, and the round trip preserves the spectrum.
+    rate_blades = mv.bivector(np.eye(n_rates, dtype=int))                            # [n_rates] Bivector+
+    off_diagonal_mask = ~np.eye(n_rates, dtype=bool)                                 # [n_rates, n_rates]
+    for aligned_inertia in (cloud_diagonal, recovered_inertia):
+        energy_form = rate_blades[:, None] & aligned_inertia(rate_blades[None, :])   # [n_rates, n_rates] Scalar+
+        scale = energy_form.abs().max()                                              # [] Scalar+
+        assert (energy_form[off_diagonal_mask].abs() < 1e-10 * scale).all()
+
+    recovered_diagonal = rate_blades & recovered_inertia(rate_blades)                # [n_rates] Scalar+
+    target_diagonal = rate_blades & diagonal_inertia(rate_blades)                    # [n_rates] Scalar+
+    recovered_sorted = recovered_diagonal.abs()[recovered_diagonal.abs().argsort()]  # [n_rates] Scalar+
+    target_sorted = target_diagonal.abs()[target_diagonal.abs().argsort()]           # [n_rates] Scalar+
+    assert ((recovered_sorted - target_sorted).abs() < 1e-8 * target_sorted.max()).all()
     return cloud_motor, motor
 
 

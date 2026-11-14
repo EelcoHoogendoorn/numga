@@ -1,219 +1,201 @@
-"""The stereographic chart of pull directions, coloured by the slip system that yields first, and the paths a pull's
-axis takes through the crystal."""
+"""Stereographic views display slip-system regions and tensile-axis trajectories in a face-centred cubic crystal."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import to_rgb
 import numpy as np
 
 from numga import stack
+from numga.render import Camera, drawing, simplices
+from numga.topology import Topology
 
+from examples.mechanics.slip_systems import core
 from examples.util import charts
 from examples.util.animation import capture
-from numga.topology import Topology
-from numga.render import Camera, drawing, simplices
 from examples.util.panels import overlay, panel, pinned, room
-from examples.mechanics.slip_systems import core
 
-SYSTEM_MAP = "tab20"
-# The Schmid factor at which a region is drawn white, and the one at which it is drawn in full colour.
-FAINT, FULL = 0.25, 0.5
-PATH_COLOUR = "0.1"
-NORMAL_COLOUR = "0.15"
-EDGE_COLOUR = "0.3"
-# The corners of the standard triangle and their names.
-NAMES = ("[001]", "[011]", "[111]")
-corners = core.mv.vector([[0, 0, 1], [0, 1, 1], [1, 1, 1]]).normalized().dual()   # [corners] Direction-
-# The directions a pull's axis heads for: the leading slip direction, and the corner where two systems share.
-goals = core.mv.vector([[1, 0, 1], [1, 1, 2]]).normalized().dual()              # [goals] Direction-
-GOAL_NAMES = ("[101]", "[112]")
-# How much darker than its systems' colours a path is drawn.
-PATH_SHADE = 0.55
-# How far each corner's name sits above its corner, in points: [001] below, the others above.
-LIFTS = (-10, 8, 8)
-EDGE_SAMPLES = 59
-RIM_SAMPLES = 180
-# The windows of the stereographic disk the whole disk and the close-up show, left to right and bottom to top alike.
-DISK = (-1.02, 1.02)
-WINDOW = (-0.04, 0.46)
-# The animation's side in pixels.
-PIXELS = 300
-# The marks drawn as squares of four strokes, in pixels from their middles to their corners: the planes' normals,
-# squares along the picture's rows and columns, and the directions the axes head for, squares turned an eighth of a
-# turn, diamonds.
-NORMAL_REACH = 0.75 * charts.MARKER_PX * np.sqrt(2)
-GOAL_REACH = charts.MARKER_PX
+system_cmap = "tab20"
+# Leading Schmid factors mapped to white and to full system saturation.
+faint_factor, full_factor = 0.25, 0.5
+path_colour = "0.1"
+normal_colour = "0.15"
+edge_colour = "0.3"
+corner_names = ("[001]", "[011]", "[111]")
+triangle_corners = core.mv.vector([[0, 0, 1], [0, 1, 1], [1, 1, 1]]).normalized().dual().field()   # Direction-[3]
+goal_directions = core.mv.vector([[1, 0, 1], [1, 1, 2]]).normalized().dual()                       # [2] Direction-
+goal_names = ("[101]", "[112]")
+path_shade = 0.55
+corner_lifts = (-10, 8, 8)
+n_edge_samples = 59
+n_rim_samples = 180
+disk_window = (-1.02, 1.02)
+triangle_window = (-0.04, 0.46)
+panel_pixels = 300
+normal_reach = 0.75 * charts.MARKER_PX * np.sqrt(2)
+goal_reach = charts.MARKER_PX
 
 
 # --- plumbing -------------------------------------------------------------------------
-def scalars(values: core.Scalar) -> np.ndarray:
-    """The values of a batch of scalars, for drawing and checks."""
-    return values.to_array()
-
-
-def stereographic(directions: core.Direction) -> core.Direction:
-    """Directions as the stereographic disk of the upper half of the sphere draws them: a direction and its opposite
-    are the same pull, so each is taken on its upper side; its bisector with [001], read across [001] at unit
-    reading along it by `disk_camera`, is the point of the plane across [001] that `lifted` lifts to it."""
+def stereographic_bisectors(directions: core.Direction) -> core.Direction:
+    """Upper-hemisphere bisectors with `[001]` (`[...] Direction-`) project to the stereographic disk."""
     unit = directions.normalized()                                            # [...] Direction-
     upper = unit * np.where((core.mv.z & unit) < 0, -1, 1)                    # [...] Direction-
     return core.mv.z.dual() + upper                                           # [...] Direction-
 
 
-def on_disk(directions: core.Direction) -> np.ndarray:
-    """Where directions lie on the stereographic disk `[..., 2]`, for the names placed at them: their bisectors with
-    [001] read across [001] at unit reading along it."""
-    bisector = stereographic(directions)                                      # [...] Direction-
-    return ((stack((core.mv.x, core.mv.y)) & bisector[..., None]) / (core.mv.z & bisector)[..., None]).to_array()
+def disk_coordinates(directions: core.Direction) -> np.ndarray:
+    """Central projection of upper-hemisphere bisectors gives 2D disk coordinates (`[..., 2]`) for text labels."""
+    bisectors = stereographic_bisectors(directions)                           # [...] Direction-
+    return ((stack((core.mv.x, core.mv.y)) & bisectors[..., None]) / (core.mv.z & bisectors)[..., None]).to_array()
 
 
-def squares(directions: core.Direction, reach: float, turn: float, camera: Camera) -> core.Direction:
-    """Squares about where directions lie on the stereographic disk, their corners in turn, `[marks, corners]`:
-    `reach` pixels from each direction's bisector with [001] at unit reading along it, the first corner turned `turn`
-    from x in the plane across [001]."""
-    angles = turn + np.pi / 2 * np.arange(4)                                  # [corners]
-    corners = (core.mv.xy * (-angles / 2)).exp() >> core.mv.x.dual()         # [corners] Direction-
-    bisector = stereographic(directions)                                      # [marks] Direction-
-    places = bisector / (core.mv.z & bisector)                                # [marks] Direction-
-    return places[:, None] + corners * (reach * camera.pixel)
+def marker_squares(directions: core.Direction, reach: float, turn: float, camera: Camera) -> core.Direction:
+    """Rotated offsets around projected directions form four-cornered marker polygons (`[..., 4] Direction-`)."""
+    angles = turn + np.pi / 2 * np.arange(4)                                  # [4]
+    rotors = (core.mv.xy * (-angles / 2)).exp()                               # [4] Rotor+
+    square_offsets = rotors >> core.mv.x.dual()                               # [4] Direction-
+    bisectors = stereographic_bisectors(directions)                           # [...] Direction-
+    places = bisectors / (core.mv.z & bisectors)                              # [...] Direction-
+    return places[:, None] + square_offsets * (reach * camera.pixel)          # [..., 4] Direction-
 
 
 def disk_camera(ax: plt.Axes) -> Camera:
-    """The camera of a panel of the stereographic disk: a direction read across and up by the planes x and y, over
-    its reading along [001], a central projection from the origin onto the plane across [001]."""
+    """Central projection from the origin pairs directions with `x`, `y`, and weight plane `z` across `[001]`."""
     return panel(ax, core.mv.x, core.mv.y, core.mv.z)
 
 
-def lifted(window: tuple[float, float], pixels: int) -> core.Direction:
-    """Pull directions on the middles of the pixels of a square window of the stereographic disk, rows down from
-    the top `[rows, columns]`: each point of the plane across [001] lifts to the direction that projects onto it,
-    [001] reflected in the mirror through [001] plus the point."""
-    edges = np.linspace(*window, pixels + 1)
-    across = (edges[:-1] + edges[1:]) / 2
-    offsets = core.mv.x * across + core.mv.y * across[::-1, None]             # [rows, columns] Vector+
-    return (core.mv.z + offsets).normalized() >> core.mv.z.dual()            # [rows, columns] Direction-
+def window_directions(window: tuple[float, float], n_pixels: int) -> core.Direction:
+    """Stereographic reflection lifts pixel centres of `window` to pull directions (`[n_pixels, n_pixels] Direction-`)."""
+    edges = np.linspace(*window, n_pixels + 1)                                # [n_pixels + 1]
+    across = (edges[:-1] + edges[1:]) / 2                                     # [n_pixels]
+    offsets = core.mv.x * across + core.mv.y * across[::-1, None]             # [n_pixels, n_pixels] Plane+
+    mirrors = (core.mv.z + offsets).normalized()                              # [n_pixels, n_pixels] Plane+
+    return mirrors >> core.mv.z.dual()                                        # [n_pixels, n_pixels] Direction-
 
 
-def system_colours(count: int) -> np.ndarray:
-    """The colour of each slip system, `[systems, 3]`."""
-    return plt.get_cmap(SYSTEM_MAP)(np.arange(count) % 20)[:, :3]
+def system_colours(n_systems: int) -> np.ndarray:
+    """Tabulated colormap entries assign RGB colours (`[n_systems, 3]`) to the slip systems."""
+    return plt.get_cmap(system_cmap)(np.arange(n_systems) % 20)[:, :3]        # [n_systems, 3]
 
 
-def shades(factors: core.Scalar) -> np.ndarray:
-    """A colour per pull direction: the hue of the system that yields first, lightened where its Schmid factor
-    is small."""
-    values = np.abs(scalars(factors)).reshape(factors.shape[:2] + (-1,))      # [rows, columns, systems]
-    hue = system_colours(values.shape[-1])[values.argmax(axis=-1)]
-    strength = np.clip((values.max(axis=-1) - FAINT) / (FULL - FAINT), 0, 1)[..., None]
-    return 1 - strength * (1 - hue)
+def region_shades(factors: core.Scalar) -> np.ndarray:
+    """Leading slip-system hues (`[..., 3]`) lighten toward white where the largest Schmid factor falls toward `faint_factor`."""
+    values = factors.abs().to_array().reshape(*factors.shape[:2], -1)         # [..., 12]
+    hue = system_colours(values.shape[-1])[values.argmax(axis=-1)]            # [..., 3]
+    strength = np.clip((values.max(axis=-1) - faint_factor) / (full_factor - faint_factor), 0, 1)[..., None]
+    return 1 - strength * (1 - hue)                                           # [..., 3]
 
 
-def picture(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], window: tuple[float, float]):
-    """The colours of the systems over a square window of the disk, one pull direction per pixel of the room the
-    axes get, held pixel for pixel, white beyond the rim; the image."""
-    directions = lifted(window, min(room(ax)))                               # [rows, columns] Direction-
-    # The reflection lifts a pixel inside the rim to a direction of the lower half, the opposite of its pull, and a
-    # pixel beyond the rim to one of the upper half: there the disk ends.
-    beyond = ((core.mv.z & directions) > 0)[..., None]
-    return pinned(ax, np.where(beyond, 1.0, shades(factors(directions))), (*window, *window))
+def region_image(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], window: tuple[float, float]):
+    """Pixel-aligned region shading colours `window` by the leading slip system and masks outside the unit disk in white."""
+    n_pixels = min(room(ax))
+    directions = window_directions(window, n_pixels)                          # [n_pixels, n_pixels] Direction-
+    # Reflection sends pixels inside the unit disk into the lower hemisphere and pixels outside the rim into the upper hemisphere.
+    beyond = ((core.mv.z & directions) > 0)[..., None]                        # [n_pixels, n_pixels, 1]
+    return pinned(ax, np.where(beyond, 1.0, region_shades(factors(directions))), (*window, *window))
 
 
-def triangle(camera: Camera) -> np.ndarray:
-    """The standard triangle, between [001], [011] and [111], its edges arcs of great circles."""
-    shares = np.linspace(0, 1, EDGE_SAMPLES, endpoint=False)
-    # Each edge from a corner towards the next, by shares of the turn between them.
-    tails, heads = (Topology.loops([len(corners)]).incidence[1, 0] * corners.field()).batch()   # [edges] Direction-, Direction-
-    turns = ((heads * tails.inverse()).log()[:, None] * (shares / 2)).exp()  # [edges, samples] Rotor+
-    arcs = stereographic(turns >> tails[:, None]).reshape(-1)                 # [edges * samples] Direction-
-    return simplices.strokes(arcs, Topology.loops([EDGE_SAMPLES * len(corners)]), to_rgb(EDGE_COLOUR),
+def standard_triangle(camera: Camera) -> np.ndarray:
+    """Rotor interpolation along the loop edges renders the `[001]`, `[011]`, `[111]` standard triangle onto `camera`."""
+    shares = np.linspace(0, 1, n_edge_samples, endpoint=False)                # [n_edge_samples]
+    tails, heads = Topology.loops([3]).incidence[1, 0] * triangle_corners     # [] Direction-[3], Direction-[3]
+    turns = ((heads * tails.inverse()).log() * (shares / 2)).exp()            # [n_edge_samples] Rotor+[3]
+    points = (turns >> tails).batch()                                         # [n_edge_samples, 3] Direction-
+    edge_points = points[np.arange(n_edge_samples), np.arange(3)[:, None]]    # [3, n_edge_samples] Direction-
+    arcs = stereographic_bisectors(edge_points).reshape(-1)                   # [3 * n_edge_samples] Direction-
+    return simplices.strokes(arcs, Topology.loops([3 * n_edge_samples]), to_rgb(edge_colour),
                              charts.LINE_PX, camera)
 
 
 def draw_disk(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], planes: core.Plane,
               slips: core.Direction) -> None:
-    """The whole disk: each region in the colour of its first system, white outside the rim, the slip planes'
-    normals as squares and the slip directions as dots, and the standard triangle."""
-    ax.set(xlim=DISK, ylim=DISK)
-    picture(ax, factors, DISK)
+    """Draws the full stereographic hemisphere with slip-system regions, plane-normal squares, slip-direction dots, and standard triangle."""
+    ax.set(xlim=disk_window, ylim=disk_window)
+    region_image(ax, factors, disk_window)
     camera = disk_camera(ax)
-    # The rim, where the disk meets the directions square to [001], turned about it.
-    angles = np.linspace(0, 2 * np.pi, RIM_SAMPLES, endpoint=False)
-    rim = stereographic((core.mv.xy * (-angles / 2)).exp() >> core.mv.x.dual())   # [samples] Direction-
-    # The planes' normals a little larger than the directions, so that the two kinds of mark read apart.
-    # A plane's normal, the direction square to it, is its dual.
-    normals = squares(planes.dual(), NORMAL_REACH, np.pi / 4, camera)         # [planes, corners] Direction-
+    angles = np.linspace(0, 2 * np.pi, n_rim_samples, endpoint=False)         # [n_rim_samples]
+    rim_rotors = (core.mv.xy * (-angles / 2)).exp()                           # [n_rim_samples] Rotor+
+    rim = stereographic_bisectors(rim_rotors >> core.mv.x.dual())             # [n_rim_samples] Direction-
+    normals = marker_squares(planes.dual(), normal_reach, np.pi / 4, camera)  # [4, 4] Direction-
     overlay(ax, [
-        simplices.strokes(rim, Topology.loops([RIM_SAMPLES]), to_rgb(EDGE_COLOUR), charts.LINE_PX, camera),
-        simplices.strokes(normals.reshape(-1), Topology.loops([normals.shape[1]] * normals.shape[0]),
-                          to_rgb(NORMAL_COLOUR), charts.LINE_PX, camera),
-        simplices.markers(stereographic(slips.reshape(-1)), to_rgb(NORMAL_COLOUR), charts.MARKER_PX / 2, camera),
-        triangle(camera)])
+        simplices.strokes(rim, Topology.loops([n_rim_samples]), to_rgb(edge_colour), charts.LINE_PX, camera),
+        simplices.strokes(normals.reshape(-1), Topology.loops([4] * 4),
+                          to_rgb(normal_colour), charts.LINE_PX, camera),
+        simplices.markers(stereographic_bisectors(slips.reshape(-1)), to_rgb(normal_colour), charts.MARKER_PX / 2, camera),
+        standard_triangle(camera),
+    ])
 
 
 def draw_close(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar]) -> list[np.ndarray]:
-    """The standard triangle close up, in the colours of its systems, with the names of its corners and of the
-    directions the axes head for; the pictures of the triangle and of the directions the axes head for."""
-    ax.set(xlim=WINDOW, ylim=WINDOW)
-    picture(ax, factors, WINDOW)
-    for corner, name, lift in zip(on_disk(corners), NAMES, LIFTS):
+    """Draws the enlarged standard-triangle background and corner labels, returning triangle and goal-diamond layers."""
+    ax.set(xlim=triangle_window, ylim=triangle_window)
+    region_image(ax, factors, triangle_window)
+    for corner, name, lift in zip(disk_coordinates(triangle_corners.batch()), corner_names, corner_lifts):
         ax.annotate(name, corner, xytext=(0, lift), textcoords="offset points", ha="center", va="center",
-                    color=EDGE_COLOUR)
-    for goal, name in zip(on_disk(goals), GOAL_NAMES):
+                    color=edge_colour)
+    for goal, name in zip(disk_coordinates(goal_directions), goal_names):
         ax.annotate(name, goal, xytext=(0, 9), textcoords="offset points", ha="center", va="center",
-                    color=EDGE_COLOUR)
+                    color=edge_colour)
     camera = disk_camera(ax)
-    diamonds = squares(goals, GOAL_REACH, 0.0, camera)                        # [goals, corners] Direction-
-    return [triangle(camera), simplices.strokes(diamonds.reshape(-1),
-                                                Topology.loops([diamonds.shape[1]] * diamonds.shape[0]),
-                                                to_rgb(EDGE_COLOUR), charts.LINE_PX, camera)]
+    diamonds = marker_squares(goal_directions, goal_reach, 0.0, camera)       # [2, 4] Direction-
+    return [
+        standard_triangle(camera),
+        simplices.strokes(diamonds.reshape(-1), Topology.loops([4] * 2), to_rgb(edge_colour), charts.LINE_PX, camera),
+    ]
 
 
-def paths(camera: Camera, axes: core.Direction, amounts: core.Scalar, count: int) -> list[np.ndarray]:
-    """Each pull's axis's path over its first `count` places on the disk, each step in the colours of the systems
-    that slipped in it, mixed by how much, darkened; and its place there."""
-    weights = np.abs(scalars(amounts[:count - 1])).reshape((count - 1, amounts.shape[1], -1))   # [steps, starts, systems]
-    mixed = weights @ system_colours(weights.shape[-1]) / weights.sum(axis=-1, keepdims=True)   # [steps, starts, 3]
-    n_starts = axes.shape[1]
-    # Each start's places in turn, a chain of them.
-    tracks = stereographic(axes[np.arange(count), np.arange(n_starts)[:, None]])   # [starts, steps + 1] Direction-
-    return [simplices.strokes(tracks.reshape(-1), Topology.chains([count] * n_starts),
-                              np.moveaxis(mixed, 1, 0).reshape(-1, 3) * PATH_SHADE, charts.LINE_PX, camera),
-            simplices.markers(tracks[:, count - 1], to_rgb(PATH_COLOUR), charts.MARKER_PX / 2, camera)]
+def trail_layers(camera: Camera, axes: core.Direction, amounts: core.Scalar) -> list[np.ndarray]:
+    """Blends active slip-system colours along each trajectory chain and marks each trajectory's current endpoint."""
+    n_points, n_starts = axes.shape
+    weights = amounts.abs().to_array().reshape(n_points - 1, n_starts, 12)    # [n_points - 1, n_starts, 12]
+    colour_mix = weights @ system_colours(12) / weights.sum(axis=-1, keepdims=True)   # [n_points - 1, n_starts, 3]
+    tracks = stereographic_bisectors(
+        axes[np.arange(n_points), np.arange(n_starts)[:, None]],
+    )                                                                         # [n_starts, n_points] Direction-
+    return [
+        simplices.strokes(tracks.reshape(-1), Topology.chains([n_points] * n_starts),
+                          np.moveaxis(colour_mix, 1, 0).reshape(-1, 3) * path_shade, charts.LINE_PX, camera),
+        simplices.markers(tracks[:, -1], to_rgb(path_colour), charts.MARKER_PX / 2, camera),
+    ]
 
 
 @charts.style()
 def draw_chart(factors: Callable[[core.Direction], core.Scalar], planes: core.Plane, slips: core.Direction,
                axes: core.Direction, amounts: core.Scalar) -> plt.Figure:
-    """The whole disk, and the standard triangle with the paths, coloured by each system's Schmid factors for a
-    pull direction, `factors`: each pull's axis's path so far and its current place, each step in the colours of the
-    systems that slipped in it, mixed by how much, and the directions the axes head for."""
-    # Nearly the whole column: two square panels, each an image of fine regions, one with the names of its corners.
+    """Draws the full stereographic disk beside the enlarged standard triangle with completed tensile-axis trajectories."""
     figure, (disk, close) = charts.subplots(760, 380, ncols=2, layout="constrained")
-    # Both panels without axes before either takes its room.
     disk.set_axis_off()
     close.set_axis_off()
     draw_disk(disk, factors, planes, slips)
     triangle_and_goals = draw_close(close, factors)
-    overlay(close, triangle_and_goals[:1] + paths(disk_camera(close), axes, amounts, axes.shape[0])
-                      + triangle_and_goals[1:])
+    overlay(close, triangle_and_goals[:1] + trail_layers(disk_camera(close), axes, amounts) + triangle_and_goals[1:])
     return figure
 
 
-def animate_paths(factors: Callable[[core.Direction], core.Scalar], axes: core.Direction, amounts: core.Scalar,
-                  frames: int) -> Iterator[np.ndarray]:
-    """The paths through the standard triangle growing, over so many frames, the triangle drawn once."""
-    return animate_paths_sized(factors, axes, amounts, frames, PIXELS)
+def animate_paths(
+    factors: Callable[[core.Direction], core.Scalar],
+    start_axes: core.Direction,
+    n_steps: int,
+    n_frames: int,
+    states: Iterable[tuple[core.Direction, core.Scalar]],
+) -> Iterator[np.ndarray]:
+    """Yields `n_frames` RGB frames of tensile-axis trajectories growing across the standard triangle at `panel_pixels` width."""
+    return animate_paths_sized(factors, start_axes, n_steps, n_frames, panel_pixels, states)
 
 
-def animate_paths_sized(factors: Callable[[core.Direction], core.Scalar], axes: core.Direction,
-                        amounts: core.Scalar, frames: int, pixels: int) -> Iterator[np.ndarray]:
-    """The paths through the standard triangle growing, over so many frames, the triangle drawn once, the figure
-    so many pixels across."""
-    reached = np.linspace(2, axes.shape[0], frames).round().astype(int)
-    # Laid out once under the charts' style; only the paths and the places move between frames.
+def animate_paths_sized(
+    factors: Callable[[core.Direction], core.Scalar],
+    start_axes: core.Direction,
+    n_steps: int,
+    n_frames: int,
+    pixels: int,
+    states: Iterable[tuple[core.Direction, core.Scalar]],
+) -> Iterator[np.ndarray]:
+    """Yields `n_frames` RGB frames (`[pixels, pixels, 3]`) streamed from `states` over a static standard-triangle background."""
+    frame_steps = set(np.linspace(1, n_steps, n_frames).round().astype(int))
     with charts.style():
         figure, ax = charts.subplots(pixels, pixels, layout="constrained")
         ax.set_axis_off()
@@ -222,8 +204,18 @@ def animate_paths_sized(factors: Callable[[core.Direction], core.Scalar], axes: 
         figure.set_layout_engine("none")
     camera = disk_camera(ax)
     image = overlay(ax, triangle_and_goals)
-    for count in reached:
-        image.set_data(drawing.composited(triangle_and_goals[:1] + paths(camera, axes, amounts, count)
-                                            + triangle_and_goals[1:]))
-        yield capture(figure)
-    plt.close(figure)
+    axis_history = [start_axes]
+    amount_history = []
+    try:
+        for step, (axis, step_amounts) in enumerate(states, start=1):
+            axis_history.append(axis)
+            amount_history.append(step_amounts)
+            if step in frame_steps:
+                image.set_data(drawing.composited(
+                    triangle_and_goals[:1]
+                    + trail_layers(camera, stack(axis_history), stack(amount_history))
+                    + triangle_and_goals[1:]
+                ))
+                yield capture(figure)
+    finally:
+        plt.close(figure)

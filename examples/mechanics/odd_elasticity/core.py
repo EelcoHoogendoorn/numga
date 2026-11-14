@@ -1,110 +1,89 @@
-"""Odd elasticity from active bonds that push sideways when stretched.
+"""Active bonds that push sideways under extension give a planar lattice an odd elastic response.
 
-Positions and displacements are directions, antivectors; a force is a vector, extrinsic, read by its
-pairing with a displacement, the work `force & displacement`. A bond reads its extension with the unit
-force along it and answers with a force that has a sideways part, turned in the actuation plane, so its
-response, `Force <- Displacement`, does net work around a closed path. The adjugate of a map of
-displacements, `motion.adjugate()`, carries forces back through it with their work kept, from bonds to
-the deformations that move them and to the particles at their ends.
+Displacements are modelled as intrinsic antivectors and forces as extrinsic vectors paired with them
+by mechanical work `force & displacement`. Each stretched bond reads its longitudinal extension with
+the unit force along the bond and answers with both a restoring force and a transverse push turned in
+the actuation plane, so the linear map `Force <- Displacement` delivers net work around closed
+deformation loops. Pulling forces back through `motion.adjugate()` preserves work from single bonds
+to macroscopic shear strains and to overdamped lattice waves.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 
-import numpy as np
-
 from numga import NumpyContext, stack
 from numga.algebras import VGA2D
 from numga.sparse import Sparse, SparseExtensor
-from numga.topology import Topology
 
 ga = VGA2D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
-# Positions and displacements are antivectors; a force is a vector, read by its pairing with a displacement.
+# Displacements and shear amplitudes are intrinsic antivectors; forces are extrinsic vectors paired by work.
 Displacement = ga.gatype.antivector()                                        # Antivector-
 Force = ga.gatype.vector()                                                   # Vector+
 Bivector = ga.gatype.bivector()                                              # Bivector+
-# A response maps displacements to forces.
-Response = ga.gatype((Force, Displacement))
-# The two amplitudes of a shear, geometric like displacements.
+Response = ga.gatype((Force, Displacement))                                  # Force+ <- Displacement-
 Shear = ga.gatype.antivector()                                               # Antivector-
 
-# The unit displacements along the two axes, which the unit forces `mv.x` and `mv.y` read as one.
-directions = stack((mv.x, mv.y)).dual()                                      # [2] Displacement-
+# Unit displacements dual to the coordinate force planes.
+x, y = stack((mv.x, mv.y)).dual()                                            # [] Displacement-, Displacement-
+
+# Pure shear along the axes and at forty-five degrees, combined into a bilinear strain map.
+axial_shear = x * (mv.x & Displacement) - y * (mv.y & Displacement)          # Displacement- <- Displacement-
+diagonal_shear = x * (mv.y & Displacement) + y * (mv.x & Displacement)       # Displacement- <- Displacement-
+shear_strain = (mv.x & Shear) * axial_shear + (mv.y & Shear) * diagonal_shear  # Displacement- <- (Shear-, Displacement-)
 
 
-# --- plumbing -------------------------------------------------------------------------
-def triangular_patch(n_columns: int, n_rows: int, spacing: float) -> tuple[Topology, Displacement]:
-    """A triangular lattice with free edges: its triangles, whose edges are the bonds, and its positions."""
-    columns, rows = np.meshgrid(np.arange(n_columns), np.arange(n_rows))
-    positions = spacing * (
-        directions[0] * (columns + (rows % 2) / 2 - (n_columns - 1) / 2)
-        + directions[1] * ((rows - (n_rows - 1) / 2) * np.sqrt(3) / 2)
-    )                                                                        # [rows, columns] Displacement-
-    positions = positions.reshape(-1).field()                                # Displacement-[sites]
-
-    # Between two rows each cell holds two triangles, counter-clockwise; the rows alternate in being shifted half a
-    # spacing to the right, which decides the diagonal the two triangles share.
-    indices = np.arange(n_columns * n_rows).reshape(n_rows, n_columns)
-    lower_left, lower_right = indices[:-1, :-1], indices[:-1, 1:]
-    upper_left, upper_right = indices[1:, :-1], indices[1:, 1:]
-    over_shifted_row = np.stack((lower_left, upper_right, upper_left, lower_left, lower_right, upper_right), axis=-1)
-    over_plain_row = np.stack((lower_left, lower_right, upper_left, lower_right, upper_right, upper_left), axis=-1)
-    shifted = (np.arange(n_rows - 1) % 2 == 1)[:, None, None]
-    triangles = np.where(shifted, over_shifted_row, over_plain_row).reshape(-1, 3)
-    return Topology(n_columns * n_rows, triangles), positions
-
-
-# --- math -----------------------------------------------------------------------------
 def bond_response(direction: Displacement, actuation_plane: Bivector, stiffness: float, activity: float) -> Response:
-    """The restoring and sideways force caused by a bond's endpoint displacement."""
-    # The unit force along the bond, which reads a displacement's component along it.
-    unit_force = direction.dual_inverse()                                    # Force+
-    push = -stiffness * unit_force + activity * (unit_force | actuation_plane)  # Force+
-    return push * (unit_force & Displacement)                                # Force+ <- Displacement-
+    """Each stretched bond answers with a longitudinal restoring force and a transverse active push (`[...] Force+ <- Displacement-`)."""
+    # Unit force along the bond whose pairing reads longitudinal extension.
+    unit_force = direction.dual_inverse()                                    # [...] Force+
+    push = -stiffness * unit_force + activity * (unit_force | actuation_plane)  # [...] Force+
+    return push * (unit_force & Displacement)                                # [...] Force+ <- Displacement-
 
 
-def integrate_cycle(response: Response, cycle: Displacement) -> Iterator[tuple[Displacement, Force, Scalar]]:
-    """Displacement, force and work delivered along consecutive straight path segments."""
+def cycle_states(response: Response, cycle: Displacement) -> Iterator[tuple[Displacement, Force, Scalar]]:
+    """Yields `(displacement, force, work)` along consecutive straight segments of `cycle` (`[...] Displacement-`)."""
     work = mv.scalar([0])                                                    # Scalar+
     yield cycle[0], response(cycle[0]), work
     for start, end in zip(cycle[:-1], cycle[1:]):
-        # A linear force's work along a straight segment is its midpoint force
-        # paired with the segment's displacement.
+        # Midpoint evaluation integrates a linear force response without quadrature error on each segment.
         work = work + (response((start + end) / 2) & (end - start))          # Scalar+
         yield end, response(end), work
 
 
-def evolution(incidence: Sparse, response: Response, drags: Scalar) -> SparseExtensor:
-    """The particles' velocities from their displacements, overdamped: no inertia, every force met by drag."""
-    gradient = incidence * Displacement                                      # (Displacement- <- Displacement-)[bonds <- sites]
-    # Drag turns each particle's force into its velocity, along the force's metric direction.
-    mobility = Force.dual() / drags                                          # (Velocity- <- Force+)[sites]
-    # Relative endpoint motion goes to each bond; equal opposite forces return to its endpoints.
-    return mobility(gradient.adjugate()(response(gradient)))                 # (Velocity- <- Displacement-)[sites <- sites]
+def lattice_response(incidence: Sparse, response: Response) -> SparseExtensor:
+    """Adjugate pullback across `incidence` (`Scalar+[E <- V]`) maps bond responses (`(Force+ <- Displacement-)[E]`) to nodal forces (`(Force+ <- Displacement-)[V <- V]`)."""
+    bond_displacement = incidence * Displacement                             # (Displacement- <- Displacement-)[E <- V]
+    return bond_displacement.adjugate()(response(bond_displacement))         # (Force+ <- Displacement-)[V <- V]
 
 
-def rk4_step(generator: SparseExtensor, displacement: Displacement, dt: float) -> Displacement:
-    """One fourth-order Runge–Kutta step of an overdamped displacement field."""
-    first_rate = generator(displacement)                                     # Velocity-[sites]
-    second_rate = generator(displacement + first_rate * (dt / 2))            # Velocity-[sites]
-    third_rate = generator(displacement + second_rate * (dt / 2))            # Velocity-[sites]
-    fourth_rate = generator(displacement + third_rate * dt)                  # Velocity-[sites]
+def velocity_map(incidence: Sparse, response: Response, drags: Scalar) -> SparseExtensor:
+    """Metric mobility against `drags` maps nodal bond forces to overdamped velocities (`(Displacement- <- Displacement-)[V <- V]`)."""
+    # Viscous drag maps each nodal force to a velocity along its metric dual direction.
+    mobility = Force.dual() / drags                                          # (Displacement- <- Force+)[V]
+    return mobility(lattice_response(incidence, response))                   # (Displacement- <- Displacement-)[V <- V]
+
+
+def rk4_step(velocities: SparseExtensor, displacement: Displacement, dt: float) -> Displacement:
+    """Fourth-order Runge-Kutta integration advances `displacement` (`Displacement-[V]`) by one step of duration `dt`."""
+    first_rate = velocities(displacement)                                    # Displacement-[V]
+    second_rate = velocities(displacement + first_rate * (dt / 2))           # Displacement-[V]
+    third_rate = velocities(displacement + second_rate * (dt / 2))          # Displacement-[V]
+    fourth_rate = velocities(displacement + third_rate * dt)                 # Displacement-[V]
     return displacement + (first_rate + 2 * second_rate + 2 * third_rate + fourth_rate) * (dt / 6)
 
 
 def wave_states(
-    reference: Displacement, incidence: SparseExtensor, bond_directions: Displacement, generator: SparseExtensor,
+    reference: Displacement, incidence: Sparse, bond_directions: Displacement, velocities: SparseExtensor,
     initial: Displacement, n_frames: int, n_steps_per_frame: int, dt: float,
 ) -> Iterator[tuple[Displacement, Scalar]]:
-    """The moving lattice and bond extensions during its free overdamped response, `n_steps_per_frame` steps per
-    frame."""
-    displacement = initial                                                   # Displacement-[sites]
+    """Yields nodal positions (`Displacement-[V]`) and signed bond extensions (`Scalar+[E]`) over `n_frames` frames of `n_steps_per_frame` steps."""
+    displacement = initial                                                   # Displacement-[V]
     for _ in range(n_frames):
-        extensions = bond_directions.dual_inverse() & (incidence * displacement)   # Scalar+[bonds]
+        extensions = bond_directions.dual_inverse() & (incidence * displacement)  # Scalar+[E]
         yield reference + displacement, extensions
         for _ in range(n_steps_per_frame):
-            displacement = rk4_step(generator, displacement, dt)             # Displacement-[sites]
+            displacement = rk4_step(velocities, displacement, dt)            # Displacement-[V]

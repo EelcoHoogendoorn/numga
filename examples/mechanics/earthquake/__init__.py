@@ -1,1 +1,1 @@
-"""Earthquake focal mechanisms: the moment of a slip on a fault, its P waves, and its beachball."""
+"""Earthquake focal mechanisms compute the moment of a fault slip, its seismic radiation, and its beachball diagram."""

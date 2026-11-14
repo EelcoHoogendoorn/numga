@@ -1,78 +1,130 @@
-"""Spinor regularization of eccentric bound orbits: their spinor lift, and equal-step integration comparisons."""
+"""Three eccentric bound Kepler orbits compare physical-clock and spinor-clock Verlet integration against the exact spinor lift."""
+
+from collections.abc import Iterator
 
 import numpy as np
 
 from numga import stack
 from examples.mechanics.kepler import core
 
-GRAVITY = 1.0
-SEMIMAJOR_AXIS = 1.0
-ECCENTRICITIES = np.array([0.6, 0.9, 0.97])
-PERIOD = 2 * np.pi * np.sqrt(SEMIMAJOR_AXIS ** 3 / GRAVITY)
-FEATURED_CASE = 2
-N_STEPS = 128
-N_REFERENCE_SAMPLES = 1024
-N_LIFT_SAMPLES = 64
-STEP_COUNTS = np.array([64, 128, 256, 512])
-N_CLOCK_ITERATIONS = 44
-N_FRAMES = 180
-DURATION_MS = 40
+gravity = 1.0
+semimajor_axis = 1.0
+eccentricities = np.array([0.6, 0.9, 0.97])
+n_cases = len(eccentricities)
+period = 2 * np.pi * np.sqrt(semimajor_axis ** 3 / gravity)
+featured_case = 2
+n_steps = 128
+n_reference_samples = 1024
+n_lift_samples = 64
+step_counts = np.array([64, 128, 256, 512])
+n_step_counts = len(step_counts)
+n_clock_iterations = 44
+n_frames = 180
+n_revolutions = 2
+frame_duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------
-def initial_orbit() -> tuple[core.State, core.BoundOrbit]:
-    """Start three eccentricities at apoapsis at time zero, with a common semimajor axis and orbital period."""
-    apoapsis_radius = SEMIMAJOR_AXIS * (1 + ECCENTRICITIES)              # [cases]
-    speed = np.sqrt(GRAVITY / SEMIMAJOR_AXIS * (1 - ECCENTRICITIES) / (1 + ECCENTRICITIES))  # [cases]
-    spinor = core.mv.rotor() * np.sqrt(apoapsis_radius)                  # [cases] Spinor+
-    velocity = core.mv.y.dual() * speed                                  # [cases] Point-
-    time = core.mv.scalar() * np.zeros_like(apoapsis_radius)             # [cases] Scalar+
-    start = core.State(time, spinor >> core.mv.x.dual(), velocity)       # [cases] State
-    return start, core.BoundOrbit.lift(start, spinor, GRAVITY)
+def initial_orbits() -> tuple[core.Spinor, core.Spinor, core.Scalar, core.Scalar]:
+    """Apoapsis launch conditions initialize the three eccentric orbits as `(spinor, rate, energy, frequency)` across `[n_cases]`."""
+    apoapsis_radius = semimajor_axis * (1 + eccentricities)              # [n_cases]
+    apoapsis_speed = np.sqrt(gravity / semimajor_axis * (1 - eccentricities) / (1 + eccentricities))  # [n_cases]
+    spinor = core.mv.rotor() * np.sqrt(apoapsis_radius)                  # [n_cases] Spinor+
+    apoapsis_velocity = core.mv.y.dual() * apoapsis_speed                # [n_cases] Point-
+    energy = apoapsis_velocity.scalar_norm_squared() / 2 - gravity / spinor.scalar_norm_squared()  # [n_cases] Scalar+
+    rate = core.velocity_lift(apoapsis_velocity, spinor)                 # [n_cases] Spinor+
+    frequency = (-energy / 2).square_root()                              # [n_cases] Scalar+
+    return spinor, rate, energy, frequency
 
 
-def lift(n_samples: int, n_revolutions: int) -> tuple[core.Point, core.Spinor]:
-    _, orbit = initial_orbit()                                           # [cases] BoundOrbit
-    parameter = np.linspace(0, n_revolutions * np.pi, n_samples + 1)[:, None] / orbit.frequency  # [samples + 1, cases] Scalar+
-    spinors = orbit.spinor_at(parameter)                                 # [samples + 1, cases] Spinor+
-    return (spinors >> core.mv.x.dual())[:, FEATURED_CASE], spinors[:, FEATURED_CASE]
+def lift_curve(n_samples: int, revolutions: int) -> tuple[core.Point, core.Spinor]:
+    """Uniform regularized-clock sampling evaluates the featured eccentric orbit and its spinor across `n_samples + 1` steps."""
+    spinor, rate, energy, frequency = initial_orbits()                   # [n_cases] Spinor+, Spinor+, Scalar+, Scalar+
+    parameter = np.linspace(0, revolutions * np.pi, n_samples + 1)[:, None] / frequency  # [n_samples + 1, n_cases] Scalar+
+    spinors = core.oscillator_spinor(spinor, rate, frequency, parameter)  # [n_samples + 1, n_cases] Spinor+
+    return (spinors >> core.mv.x.dual())[:, featured_case], spinors[:, featured_case]
 
 
-def passage(n_steps: int = N_STEPS,
-            n_reference_samples: int = N_REFERENCE_SAMPLES) -> tuple[core.State, core.State, core.State]:
-    start, orbit = initial_orbit()                                       # [cases] State, BoundOrbit
-    parameter = np.linspace(0, np.pi, n_reference_samples + 1)[:, None] / orbit.frequency  # [reference_samples + 1, cases] Scalar+
-    reference = orbit.sample(parameter)                                  # [reference_samples + 1, cases] State
-    physical = core.State.collect(core.physical_verlet(start, GRAVITY, PERIOD / n_steps, n_steps))  # [steps + 1, cases] State
-    regularized = core.State.collect(core.regularized_verlet(
-        orbit, start.time, np.pi / orbit.frequency / n_steps, n_steps))      # [steps + 1, cases] State
-    return reference, physical, regularized
+def passage(n_orbit_steps: int, n_samples: int) -> tuple[core.Point, core.Point, core.Point]:
+    """Equal-step Verlet runs in both clocks integrate one orbital period alongside an `n_samples + 1` exact reference path."""
+    spinor, rate, energy, frequency = initial_orbits()                   # [n_cases] Spinor+, Spinor+, Scalar+, Scalar+
+    initial_time = 0 * spinor.scalar_norm_squared()                      # [n_cases] Scalar+
+    initial_positions, initial_velocities = core.physical_state(spinor, rate)  # [n_cases] Point-, Point-
+    parameter = np.linspace(0, np.pi, n_samples + 1)[:, None] / frequency  # [n_samples + 1, n_cases] Scalar+
+    reference_positions = core.exact_orbit(spinor, rate, frequency, parameter)[1]  # [n_samples + 1, n_cases] Point-
+    physical_samples = list(core.physical_verlet(
+        initial_positions, initial_velocities, initial_time, gravity, period / n_orbit_steps, n_orbit_steps))
+    regularized_samples = list(core.regularized_verlet(
+        spinor, rate, energy, initial_time, np.pi / frequency / n_orbit_steps, n_orbit_steps))
+    physical_positions = stack([sample[1] for sample in physical_samples])      # [n_orbit_steps + 1, n_cases] Point-
+    regularized_positions = stack([sample[1] for sample in regularized_samples])  # [n_orbit_steps + 1, n_cases] Point-
+    return reference_positions, physical_positions, regularized_positions
 
 
-def convergence(step_counts: np.ndarray = STEP_COUNTS,
-                n_clock_iterations: int = N_CLOCK_ITERATIONS) -> tuple[core.Scalar, core.Scalar]:
-    start, orbit = initial_orbit()                                       # [cases] State, BoundOrbit
-    # Every resolution advances both second-order methods through one nominal orbit.
-    physical = stack([orbit.position_error(core.State.collect(core.physical_verlet(
-        start, GRAVITY, PERIOD / count, count)), n_clock_iterations) for count in step_counts])  # [counts, cases] Scalar+
-    regularized = stack([orbit.position_error(core.State.collect(core.regularized_verlet(
-        orbit, start.time, np.pi / orbit.frequency / count, count)), n_clock_iterations) for count in step_counts])  # [counts, cases] Scalar+
-    return physical / SEMIMAJOR_AXIS, regularized / SEMIMAJOR_AXIS
+def convergence(counts: np.ndarray, n_iterations: int) -> tuple[core.Scalar, core.Scalar]:
+    """Step-count sweeps evaluate normalized position errors (`[n_counts, n_cases] Scalar+`) across `counts` steps per orbit in both clocks."""
+    n_counts = len(counts)
+    spinor, rate, energy, frequency = initial_orbits()                   # [n_cases] Spinor+, Spinor+, Scalar+, Scalar+
+    initial_time = 0 * spinor.scalar_norm_squared()                      # [n_cases] Scalar+
+    initial_positions, initial_velocities = core.physical_state(spinor, rate)  # [n_cases] Point-, Point-
+    # Every resolution advances both second-order integrators through one nominal orbital period.
+    physical_errors = stack([
+        core.position_error(
+            spinor, rate, frequency,
+            core.physical_verlet(initial_positions, initial_velocities, initial_time,
+                                 gravity, period / int(n_orbit_steps), int(n_orbit_steps)),
+            n_iterations)
+        for n_orbit_steps in counts
+    ])                                                                   # [n_counts, n_cases] Scalar+
+    regularized_errors = stack([
+        core.position_error(
+            spinor, rate, frequency,
+            core.regularized_verlet(spinor, rate, energy, initial_time,
+                                    np.pi / frequency / int(n_orbit_steps), int(n_orbit_steps)),
+            n_iterations)
+        for n_orbit_steps in counts
+    ])                                                                   # [n_counts, n_cases] Scalar+
+    return physical_errors / semimajor_axis, regularized_errors / semimajor_axis
+
+
+def featured_lift_states(n_orbit_frames: int, revolutions: int) -> Iterator[tuple[core.Point, core.Spinor]]:
+    """Yields `(position, spinor)` states for the featured eccentric orbit over `revolutions` orbital periods."""
+    spinor, rate, energy, frequency = initial_orbits()                   # [n_cases] Spinor+, Spinor+, Scalar+, Scalar+
+    return core.lift_states(spinor[featured_case], rate[featured_case], frequency[featured_case],
+                            revolutions, n_orbit_frames)
 
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
+    """Scenario execution writes all Kepler figures and the spinor-lift animation to `plots/` and verifies orbital invariants."""
     from examples.util.animation import save_animation, save_figure
     from examples.mechanics.kepler import render
 
-    positions, spinors = lift(N_LIFT_SAMPLES, 1)
-    save_figure(render.draw_lift(positions, spinors), "kepler_spinor_lift")
-    reference, physical, regularized = passage()
-    save_figure(render.draw_comparison(reference, physical, regularized), "kepler_passage")
-    physical_error, regularized_error = convergence()
-    save_figure(render.draw_errors(STEP_COUNTS, physical_error, regularized_error), "kepler_convergence")
-    positions, spinors = lift(N_FRAMES, 2)
-    save_animation(render.animate_lift(positions, spinors), "kepler_spinor_lift", DURATION_MS)
+    lift_positions, lift_spinors = lift_curve(n_lift_samples, 1)
+    save_figure(render.lift_figure(lift_positions, lift_spinors), "kepler_spinor_lift")
+    reference_positions, physical_positions, regularized_positions = passage(n_steps, n_reference_samples)
+    save_figure(render.passage_figure(reference_positions, physical_positions, regularized_positions), "kepler_passage")
+    physical_errors, regularized_errors = convergence(step_counts, n_clock_iterations)
+    save_figure(render.convergence_figure(step_counts, physical_errors, regularized_errors), "kepler_convergence")
+
+    revolving_states = []
+
+    def streamed_states() -> Iterator[tuple[core.Point, core.Spinor]]:
+        for state in featured_lift_states(n_frames, n_revolutions):
+            revolving_states.append(state)
+            yield state
+
+    save_animation(render.lift_frames(streamed_states()), "kepler_spinor_lift", frame_duration_ms)
+
+    # checks
+    assert ((lift_positions[-1] - lift_positions[0]).norm() < 1e-10).all()
+    assert ((lift_spinors[-1] + lift_spinors[0]).norm() < 1e-10).all()
+    assert ((reference_positions[-1] - reference_positions[0]).norm() < 1e-10).all()
+    assert (regularized_errors[-1] < regularized_errors[-2] / 3.5).all()
+    assert regularized_errors[-1, featured_case] < physical_errors[-1, featured_case] / 100
+    assert ((revolving_states[n_frames // 2][0] - revolving_states[0][0]).norm() < 1e-10).all()
+    assert ((revolving_states[n_frames // 2][1] + revolving_states[0][1]).norm() < 1e-10).all()
+    assert ((revolving_states[-1][1] - revolving_states[0][1]).norm() < 1e-10).all()
 
 
 if __name__ == "__main__":
