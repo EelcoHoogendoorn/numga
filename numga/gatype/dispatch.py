@@ -17,6 +17,8 @@ specialization registered after a more general pattern, while emitting
 `AmbiguousGATypeDispatchWarning` when incomparable patterns overlap. Resolved callables are cached
 by concrete operand `GAType` tuple, applying `staged=True` kernel specialization on static `GAType`s
 and any method-wide `input_orientation` or `output_orientation` rules once per signature.
+Declarative and predicate registrations are illustrated in `docs/internals.md` (section 7), and
+orientation checks on extension methods in `docs/orientation.md`.
 """
 
 from __future__ import annotations

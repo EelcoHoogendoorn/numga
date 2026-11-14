@@ -1,8 +1,20 @@
-"""Surface-fixed ink feathered along a field's visible projection.
+"""Screen-space feathered ink streaks visualize tangent and planar algebraic fields over triangulated
+complexes without advecting particles across frames. Seed density and `ink_opacity` stay fixed while
+projected field magnitude relative to `reference_speed` scales streak reach up to `length_pixels`.
+By default the longer tail fades downstream (`downstream_fraction = 0.9`), `downstream_fraction = 0.5`
+produces symmetric unoriented streaks, and a zero field leaves stationary specks.
 
-Magnitude controls streak length at fixed seed density and opacity. The longer end fades downstream;
-setting `downstream_fraction=0.5` makes an unoriented texture. A zero field leaves stationary specks.
-The image-space traces stop at silhouettes and depth jumps; they are not intrinsic surface streamlines.
+Rendering runs in two GPU passes. A supersampled raster pass projects vertex positions and field
+values through the camera's planes in their own algebra, writing shaded surface colour, screen-space
+flow components (plus view depth on 3D surfaces), and stationary seeds from 3D object-space value
+noise (`surface_grain`) or screen-reading jittered specks (`planar_grain`). A compute pass then
+integrates upstream and downstream by midpoint steps, taking the maximum cosine-feathered seed
+coverage along each stroke so plumes keep crisp contrast rather than washing out under averaging, and
+halting at silhouettes or depth jumps exceeding `depth_limit` (so traces follow visible projections
+rather than hidden surface sheets).
+
+`draw` shades lit 3D `PGA3D` surfaces onto an 8-bit RGB image `[rows, columns, 3]`, whereas `layer`
+produces a straight-RGBA ink overlay `[rows, columns, 4]` for flat panels in any algebra.
 """
 from __future__ import annotations
 
@@ -238,8 +250,8 @@ def seed_shader(grain: str) -> Shader:
 
 @cache
 def planar_shader(Point: GAType, Plane: GAType, Field: GAType) -> Shader:
-    """The seed pass of a flat field of the type `Field` over points of the type `Point`, both read by a camera's
-    planes of the type `Plane`, the extrinsic first."""
+    """Compile and cache the planar seed-pass shader pairing `Point` vertices and `Field` values
+    against `Plane` camera planes with the extrinsic factor first."""
     pairing = "plane & field" if extrinsic_first(Plane) else "field & plane"
     field_pairing = f"""
 // A camera plane's reading of the field, their regressive product, the extrinsic first.
@@ -253,7 +265,8 @@ fn field_paired(plane: Plane, field: Field) -> f32 {{
 
 @cache
 def trace_shader(line_field: bool) -> Shader:
-    """Feathering along vectors or unoriented axes, the latter stored as their doubled-angle image."""
+    """Compile and cache the screen-space stroke-feathering compute shader for directed vectors or
+    doubled-angle unoriented line fields (`line_field=True`)."""
     settings = f"const n_steps = {n_trace_steps}u;\nconst line_field = {str(line_field).lower()};\n"
     return Shader(settings + trace_source, solids.ga, {}, {})
 
@@ -261,7 +274,8 @@ def trace_shader(line_field: bool) -> Shader:
 def texture(points: solids.Point, topology: Topology, field: solids.Point, view: solids.View,
             colours: np.ndarray, reference_speed: float, grain: str, grain_pixels: float,
             downstream_fraction: float, length: float, background: np.ndarray) -> dict:
-    """The shaded surface and ink coverage share one projected field and one feathering pass."""
+    """Rasterize shaded surface colour, projected flow, and `grain` seeds for `topology`, then run
+    the stroke-feathering compute pass over `view.shape`."""
     surface, projected, grains = drawn([Draw(seed_shader(grain), view.shape, 3 * topology.n_elements[2], dict(
         points=points, faces=topology.elements[2], field=field, normals=meshes.smooth(points, topology),
         noise_scale=view.pixel * grain_pixels, colours=np.broadcast_to(colours, points.shape + (3,)),
@@ -277,7 +291,9 @@ def texture(points: solids.Point, topology: Topology, field: solids.Point, view:
 def draw(points: solids.Point, topology: Topology, field: solids.Point, view: solids.View,
          colours: np.ndarray, reference_speed: float, *, downstream_fraction: float = 0.9,
          length: float = length_pixels) -> np.ndarray:
-    """An opaque shaded surface with fixed seeds and magnitude-proportional feathered streaks."""
+    """Render a lit `PGA3D` triangulated surface (`points` `[V]`, `field` `[V]`, `colours`
+    `[V, 3]` or `[3]`) with object-space seeds and feathered flow streaks as `uint8` RGB
+    `[rows, columns, 3]`."""
     result = texture(points, topology, field, view, colours, reference_speed, surface_grain, 2.2,
                      downstream_fraction, length, np.ones(3))
     return np.round(np.clip(result["image"][..., :3], 0, 1) * 255).astype(np.uint8)
@@ -287,9 +303,9 @@ def layer(points: Extensor, topology: Topology, field: Extensor, camera: Camera,
           reference_speed: float, colour: np.ndarray, *, downstream_fraction: float = 0.9,
           length: float = length_pixels, grain_pixels: float = 6.0, speck_pixels: float = 0.96,
           ink_opacity: float = ink_opacity) -> np.ndarray:
-    """A transparent ink layer, at the camera's own pixels, for a flat field over a panel, the points and the field in
-    their own algebra, read by its camera; its seeds one to a cell `grain_pixels` across, each a speck `speck_pixels`
-    in radius, and its ink covering by `ink_opacity`."""
+    """Render a straight-RGBA flow-streak overlay `[rows, columns, 4]` in RGB `colour` over
+    `topology`'s triangles for `points` (`[V]`) and `field` (`[V]`) in their own algebra, seeding one
+    jittered speck of radius `speck_pixels` per `grain_pixels` cell."""
     seeds = planar_shader(**reading(points, camera), Field=whole(field, points.algebra))
     surface, projected, grains = drawn([Draw(seeds, camera.shape, 3 * topology.n_elements[2], dict(
         points=points, faces=topology.elements[2], field=field, noise_scale=camera.pixel * grain_pixels,

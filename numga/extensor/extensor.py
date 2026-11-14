@@ -31,7 +31,9 @@ extrinsic elements and through duals on intrinsic ones) while cross-orientation 
 `&`; and `>>` / `<<` compose reflections with the parity sign required by intrinsic versus
 extrinsic passengers. Domain-specific operations (`inverse`, `exp`, `log`, `solve`, `lstsq`, `eigh`,
 `svd`, and scalar functions) attach via `ExtensionMethod` descriptors and dispatch on the full
-`GAType` signature.
+`GAType` signature. The extensor model, operator syntax, sign and orientation conventions, and
+internal table execution are documented in `docs/extensors.md`, `docs/extensor_syntax.md`,
+`docs/conventions.md`, and `docs/internals.md`.
 """
 
 from __future__ import annotations

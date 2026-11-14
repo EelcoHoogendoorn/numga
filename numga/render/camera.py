@@ -1,15 +1,20 @@
-"""How a picture reads the points of a scene, in the scene's own algebra.
+"""A camera reads the points of a scene directly in the scene's own algebra through three planes: `across & point`,
+`up & point`, and `toward & point` measure horizontal position, vertical position, and depth toward the viewer, each
+divided by the affine weight `weight & point + unit`. In a projective algebra `weight` pairs with the plane at infinity;
+in a vector algebra or a chart whose generators are all degenerate, points are offsets from the origin with unit weight
+(`weight = 0`, `unit = 1`); choosing another plane gives a central projection, such as viewing the three-sphere along
+`w`.
 
-A camera is three planes of the scene's algebra: a point's regressive products with them, `across & point`,
-`up & point` and `toward & point`, are its place across and up the picture and its depth toward the viewer, divided by
-the point's weight, an affine reading of it, `weight & point + unit`. In a projective algebra the weight is the pairing
-with the plane at infinity; in a vector algebra, or a chart whose generators are all degenerate, a point is an offset
-from the origin, its weight one; another plane gives a central projection, such as a view of the three-sphere along w.
-The regressive product needs no metric, so the reading is the same in every signature: one shader source, compiled per
-algebra, reads points of a projective plane or space, a vector space or spacetime alike, and the scene is never carried
-into another algebra to be drawn. Whoever draws names the planes, the one that weighs a point included, since neither
-an algebra's names nor its signature say which plane does what: the one degenerate generator of a joint algebra may
-carry an amount, such as entropy, rather than weigh points.
+Because the regressive product requires no metric, the same shader source compiles for every signature and dimension,
+reading projective spaces, vector spaces, and spacetime diagrams alike without moving geometry into another algebra.
+Callers declare every camera plane explicitly, including `weight`, because neither generator names nor metric signature
+determine which plane weighs points when a degenerate generator instead carries an auxiliary quantity such as entropy.
+
+Orientation governs factor order in every camera pairing: the extrinsic factor stands on the left and the intrinsic
+factor on the right (`extrinsic_first`), matching `mv.x & point` and `wavevector & direction`. Reconstructing scene
+points from picture readings (`preimage`) inverts the four camera pairings on `Point`'s basis via least squares when a
+view leaves directions along the sightline unconstrained. Orientation rules for regressive pairings are detailed in
+`docs/orientation.md`.
 """
 from __future__ import annotations
 
@@ -17,15 +22,14 @@ from typing import NamedTuple
 
 import numpy as np
 
-from numga import NumpyContext
+from numga import Algebra, NumpyContext
 from numga.extensor import Extensor
 from numga.gatype import GAType, Orientation
 
 
 class Camera(NamedTuple):
-    """The planes of the scene's algebra that read a point across and up the picture and toward the viewer; its weight,
-    the plane and the constant whose affine reading divides them; the readings across and up at the picture's middle,
-    and half its width and height in them; and its pixels across."""
+    """Camera planes (`across`, `up`, `toward`), affine weight (`weight`, `unit`), picture centre and half-extents in
+    camera readings (`middle`, `half`), and horizontal resolution (`pixels`) determine a view in `across.algebra`."""
     across: Extensor
     up: Extensor
     toward: Extensor
@@ -36,60 +40,56 @@ class Camera(NamedTuple):
     pixels: int
 
     @property
-    def algebra(self):
+    def algebra(self) -> Algebra:
         return self.across.algebra
 
     @property
     def pixel(self) -> float:
-        """A pixel's size in the readings."""
+        """One horizontal pixel spans `2 * half[0] / pixels` in camera readings."""
         return 2 * self.half[0] / self.pixels
 
     @property
     def shape(self) -> tuple[int, int]:
-        """The picture's rows and columns."""
+        """Row and column counts preserve the aspect ratio of `half` at `pixels` columns across."""
         return round(self.pixels * self.half[1] / self.half[0]), self.pixels
 
     @property
     def extent(self) -> tuple[float, float, float, float]:
-        """Left, right, bottom and top, in the readings."""
+        """Horizontal and vertical bounds `(left, right, bottom, top)` span `middle - half` to `middle + half`."""
         left, bottom = self.middle - self.half
         right, top = self.middle + self.half
         return left, right, bottom, top
 
-    def uniforms(self, depth: float) -> dict:
-        """The camera as the shader's `placing` block binds it, its depth range `depth` readings either way."""
+    def uniforms(self, depth: float) -> dict[str, Extensor | np.ndarray | float]:
+        """Bind camera planes, framing readings, and symmetric depth range `depth` to the `placing` uniform names."""
         return dict(screen_across=self.across, screen_up=self.up, screen_toward=self.toward, screen_weight=self.weight,
                     screen_unit=self.unit, screen_middle=np.asarray(self.middle, dtype=float),
                     screen_half=np.asarray(self.half, dtype=float), screen_depth=depth)
 
 
-def whole(value: Extensor, algebra) -> GAType:
-    """The whole of a value's grades in an algebra, with the value's own orientation: the type a shader of that algebra
-    declares for it, so that values with fewer blades, a point of the plane or a single plane, fit it alike, and a
-    value of several grades, such as a product typed even, declares them all."""
-    # The grades of the value's blades, the generators each blade holds.
-    grades = sorted({bin(int(mask)).count("1") for mask in value.gatype.output_subspace.masks})
-    return algebra.gatype.from_grades(grades).derive.with_orientations(value.gatype.orientations)
+def whole(element: Extensor, algebra: Algebra) -> GAType:
+    """Expanding `element`'s support to all blades of its occupied grades in `algebra` while keeping its orientation
+    gives the full-grade shader type that fits narrower subspaces and multi-grade values alike."""
+    # Count set bits in each blade mask to collect every occupied grade.
+    grades = sorted({bin(int(mask)).count("1") for mask in element.gatype.output_subspace.masks})
+    return algebra.gatype.from_grades(grades).derive.with_orientations(element.gatype.orientations)
 
 
-def reading(points: Extensor, camera: Camera) -> dict:
-    """The types a shader reads points by, each as it is: `Point`, the points' own, a point, a direction, a spin's
-    patch or a vector alike; `Plane`, the camera's planes', whose regressive product with a point is a number."""
+def reading(points: Extensor, camera: Camera) -> dict[str, GAType]:
+    """Full-grade `Point` and `Plane` shader types pair `points` against `camera`'s planes in `points.algebra`."""
     return dict(Point=whole(points, points.algebra), Plane=whole(camera.across, points.algebra))
 
 
 def preimage(camera: Camera, Point: GAType) -> tuple[Extensor, Extensor, Extensor, Extensor]:
-    """The picture read back into the scene: the point of the type `Point` the camera reads at the origin of its
-    readings, at unit weight, and the steps it reads as one across, one up and one toward the viewer, at none, so that
-    the point read at readings `x`, `y`, `z` is `origin + x * across + y * up + z * toward`. Solved once from the
-    camera's readings of the type's basis, in the least squares where the readings leave a point free, as a picture
-    of a plane in space does."""
+    """Solving the camera's four pairings on `Point`'s basis in least squares yields `(origin, across, up, toward)` at
+    unit weight for `origin` and zero weight for the three steps, so readings `(x, y, z)` map back to
+    `origin + x * across + y * up + z * toward`."""
     context = NumpyContext(Point.algebra)
     n_coefficients = len(Point.output_subspace.masks)
     basis = context.extensor(Point, np.eye(n_coefficients))                     # [coefficients] Point
     readers = (camera.across, camera.up, camera.toward, camera.weight)
     readings = np.stack([read(reader, basis).to_array() for reader in readers])
-    # The readings, across, up, toward and weight, of the origin and of a step along each.
+    # Columns specify target (across, up, toward, weight) readings for origin and unit steps along each axis.
     wanted = np.zeros((4, 4))
     wanted[[0, 1, 2], [1, 2, 3]] = 1.0
     wanted[3, 0] = 1.0 - camera.unit
@@ -99,24 +99,21 @@ def preimage(camera: Camera, Point: GAType) -> tuple[Extensor, Extensor, Extenso
 
 
 def extrinsic_first(Plane: GAType) -> bool:
-    """Whether a camera's planes of the type `Plane` come first in their pairing with what they read: a reading pairs the
-    extrinsic with the intrinsic, the extrinsic first, `mv.x & point` as `wavevector & direction`."""
+    """Non-intrinsic camera planes stand on the left of `&` when paired against intrinsic scene elements."""
     return Plane.orientation is not Orientation.intrinsic
 
 
-def read(plane: Extensor, value: Extensor) -> Extensor:
-    """A camera plane's reading of a value, their regressive product, the extrinsic first."""
-    return plane & value if extrinsic_first(plane.gatype) else value & plane
+def read(plane: Extensor, point: Extensor) -> Extensor:
+    """Pairing `plane` with `point` via `&` places the extrinsic factor on the left."""
+    return plane & point if extrinsic_first(plane.gatype) else point & plane
 
 
 def placing(Plane: GAType) -> str:
-    """WGSL for a camera whose planes are of the type `Plane`, the same for every algebra: `paired(plane, point)`, the
-    pairing of a plane with a point, the extrinsic first; `clip(point)`, a point's place in the picture's clip space and
-    its depth, read by the camera's planes and divided by its weight; `screen_of(direction)`, a direction's change of
-    place."""
+    """The WGSL camera block defines `paired(plane, point)`, `weight_of(point)`, `clip(point)`, and
+    `screen_of(direction)` with factor order determined by `Plane`'s orientation."""
     pairing = "plane & point" if extrinsic_first(Plane) else "point & plane"
     return f"""
-// A camera plane's reading of a point, their regressive product, the extrinsic first.
+// Camera plane pairing with the extrinsic factor on the left.
 fn paired(plane: Plane, point: Point) -> f32 {{
     return {pairing};
 }}
@@ -130,19 +127,19 @@ var<uniform> screen_middle: vec2<f32>;
 var<uniform> screen_half: vec2<f32>;
 var<uniform> screen_depth: f32;
 
-// A point's weight: an affine reading of it, its pairing with the camera's weight plane and a constant.
+// Affine point weight from pairing with the weight plane plus the constant offset.
 fn weight_of(point: Point) -> f32 {
     return paired(screen_weight, point) + screen_unit;
 }
 
-// A point's place in the picture, across and up from its middle in half widths and heights, and its depth.
+// Clip-space position and normalized depth from weight-divided camera readings.
 fn clip(point: Point) -> vec4<f32> {
     let weight = weight_of(point);
     let framed = vec2<f32>(paired(screen_across, point), paired(screen_up, point)) / weight - screen_middle;
     return vec4<f32>(framed / screen_half, 0.5 - paired(screen_toward, point) / weight / screen_depth, 1.0);
 }
 
-// A direction's change of place in the picture, across and up, in the readings: no weight to divide by.
+// Unweighted horizontal and vertical camera readings of a displacement or direction.
 fn screen_of(direction: Point) -> vec2<f32> {
     return vec2<f32>(paired(screen_across, direction), paired(screen_up, direction));
 }

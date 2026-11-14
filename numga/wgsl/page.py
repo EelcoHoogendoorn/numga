@@ -1,22 +1,27 @@
-"""Shaders in numga's dialect run live in a web page, on the reader's own GPU: a shader's uniforms packed as the runner
-packs them, bytes as the page holds them, and the page written from its template.
+"""Standalone HTML pages run shaders compiled from the `numga` WGSL dialect directly on a browser's
+WebGPU device. Each page embeds its compiled WGSL sources, base64-encoded storage tables, and aligned
+initial uniform buffer in place of the `/*CONTENTS*/null` placeholder in an HTML template.
 
-A page is one HTML file beside its example, its template with the compiled shaders and everything they read in place
-of `/*CONTENTS*/null`. GitHub Pages serves it from the repository's tracked files, so an example writes it only when
-asked, in its `web.page()`.
+Because interactive JavaScript updates individual uniforms in place inside that single buffer, `packed`
+returns each uniform's byte offset alongside the padded initial bytes laid out by `Shader.layout`.
+Static pages are served directly from tracked files, so examples regenerate them on demand from their
+`web` modules.
 """
 
 from __future__ import annotations
 
 import base64
+from collections.abc import Mapping
 import json
 from pathlib import Path
+from typing import Any
 
 from .runner import Shader
 
 
-def packed(shader: Shader, values: dict) -> tuple[bytes, dict]:
-    """The uniform block as the runner packs it, and where each uniform begins in it."""
+def packed(shader: Shader, values: Mapping[str, Any]) -> tuple[bytes, dict]:
+    """Pack `values` into a 16-byte-aligned uniform buffer in declaration order, paired with a map
+    of each uniform's starting byte offset."""
     data, offsets = bytearray(), {}
     for name, kind in shader.program.uniforms:
         alignment, _ = shader.layout.size(kind)
@@ -27,11 +32,12 @@ def packed(shader: Shader, values: dict) -> tuple[bytes, dict]:
 
 
 def encoded(data: bytes) -> str:
-    """Bytes as the page holds them, in base64."""
+    """Encode raw buffer bytes as an ASCII base64 string for embedding in page JSON."""
     return base64.b64encode(data).decode("ascii")
 
 
-def write_page(template: Path, path: Path, contents: dict) -> None:
-    """Write the page at `path`: the template with `contents` in place of `/*CONTENTS*/null`."""
+def write_page(template: Path, path: Path, contents: Mapping[str, Any]) -> None:
+    """Substituting JSON-serialized `contents` for the `/*CONTENTS*/null` marker in `template` writes
+    a self-contained HTML page to `path`."""
     path.write_text(template.read_text().replace("/*CONTENTS*/null", json.dumps(contents)))
     print(f"Wrote {path}, {path.stat().st_size / 1e3:.0f} kB")

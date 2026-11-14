@@ -1,23 +1,35 @@
-"""Run a shader in the numga dialect over an image, headless: values of the algebra in, arrays out.
+"""Headless WebGPU execution compiles shaders written in the `numga` WGSL dialect once against an
+`Algebra` and dispatches compute pipelines over grids of up to three axes, while exposing vertex and
+fragment entry points for rasterization passes. Calling a `Shader` with a grid shape and named
+Python inputs binds uniform values, storage arrays, `Resident` GPU buffers, and 2D float textures in
+declaration order, clears unprovided `read_write` storage buffers to zero, runs each `@compute` entry
+point in sequence, and reads back every unprovided storage output.
 
-A `Shader` compiles once. Calling it with an image shape and the values its declarations name binds
-each one where the compiled shader expects it, runs one invocation per pixel, and returns every
-storage array the shader writes and was not given, by name: arrays of the algebra's types come back as
-batches of that type, other arrays as arrays of the image's shape. A shader keeps the buffers and textures it
-runs with from one call to the next, each made again only when a call needs it larger, so that a frame of an
-animation only writes its values into them.
+`Layout` maps between `numga` `Extensor` batches, Python dicts of struct columns, NumPy arrays, and
+WGSL storage-buffer byte layouts. Non-scalar nullary and unary `GAType` elements are packed as
+contiguous `float32` blade coefficients cast to the shader's declared `GAType` and unpacked back into
+`float64` `Extensor` batches on readback, while composite structs, vectors, matrices, and fixed-length
+arrays follow WGSL alignment and stride padding rules.
+
+`device` opens the shared high-performance WebGPU adapter once at its maximum buffer size limits,
+enabling `float32-filterable` textures where supported and falling back to `rgba16float` storage
+otherwise (after installing Mesa's software Vulkan driver on headless Colab runtimes). Each `Shader`
+caches its GPU buffers and textures across calls by role key, reallocating buffers only when a larger
+byte capacity is needed and skipping texture uploads when passed the identical NumPy array object
+across frames.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Mapping, NamedTuple
+from typing import Any, NamedTuple
 
 import numpy as np
 
-from numga import NumpyContext
+from numga import Algebra, NumpyContext
 from numga.extensor import Extensor
 from numga.gatype import GAType
 
@@ -27,15 +39,14 @@ _device = None
 
 
 def software_driver() -> None:
-    """In a Colab runtime, Mesa's software Vulkan driver, installed once: the GPU of a runtime without one, and
-    harmless beside a real one, which the adapter request prefers."""
+    """Colab runtimes without a Vulkan ICD install Mesa's `lvp` software driver once before adapter discovery."""
     if "google.colab" in sys.modules and not any(Path("/usr/share/vulkan/icd.d").glob("lvp_icd*.json")):
         subprocess.run("apt-get -qq update && apt-get -qq install -y mesa-vulkan-drivers", shell=True, check=True)
 
 
 def device() -> Any:
-    """The default GPU, opened once, with filtering of float textures where the adapter has it, and buffers as large
-    as the adapter allows: a picture's samples, sixteen to a pixel, outgrow the default limits."""
+    """Opening the shared high-performance WebGPU device once requests `float32-filterable` when
+    available and raises buffer size limits to the adapter's maximums."""
     global _device
     if _device is None:
         import wgpu
@@ -48,23 +59,25 @@ def device() -> Any:
 
 
 class Resident(NamedTuple):
-    """A buffer already on the GPU, bound to its first `size` bytes as a storage array a shader reads: data another
-    pass wrote, which never visits the host."""
+    """Passing a `Resident` handle binds the first `size` bytes of an existing GPU `buffer` directly
+    to a storage array without copying through host memory."""
     buffer: Any
     size: int
 
 
 class Layout:
-    """Where values lie in a storage buffer, by WGSL's rules for its types."""
+    """Byte alignments, strides, member offsets, and binary packing follow WGSL storage-buffer layout
+    rules across algebraic structs, composite structs, and numeric types."""
 
     def __init__(self, program: Program, scalar: GAType) -> None:
         self.program = program
         self.scalar = scalar
-        # Each type by its struct's own name, the first the program gives it.
+        # Reversing `program.gatypes` keeps each `GAType`'s primary struct name ahead of later aliases.
         self.gatypes = {kind: name for name, kind in reversed(program.gatypes.items())}
 
-    def shape(self, kind: Any) -> tuple[str, Any]:
-        """A type as one of: scalar, numeric WGSL, algebra, struct or array."""
+    def shape(self, kind: GAType | str) -> tuple[str, Any]:
+        """Classifying a type distinguishes scalar numbers, multi-blade algebraic `GAType` structs,
+        composite WGSL structs, fixed-length arrays, and native WGSL primitives."""
         if kind == self.scalar or kind == "f32":
             return "number", "f32"
         if isinstance(kind, GAType):
@@ -76,8 +89,9 @@ class Layout:
             return "array", arguments
         return "number", kind
 
-    def size(self, kind: Any) -> tuple[int, int]:
-        """A type's alignment and size in bytes."""
+    def size(self, kind: GAType | str) -> tuple[int, int]:
+        """Alignment and byte size follow 4-byte `f32` blade packing for `GAType` structs and WGSL
+        member-alignment rules for vectors, matrices, arrays, and structs."""
         form, detail = self.shape(kind)
         if form == "algebra":
             return 4, 4 * int(np.prod([len(subspace) for subspace in detail.subspaces]))
@@ -102,37 +116,40 @@ class Layout:
             return alignment, columns * alignment
         return 4, 4
 
-    def stride(self, kind: Any) -> int:
-        """The bytes between an array's elements: the element's size, rounded up to its alignment."""
+    def stride(self, kind: GAType | str) -> int:
+        """Element byte size rounds up to the element alignment to give the byte stride between
+        consecutive array entries."""
         alignment, size = self.size(kind)
         return -(-size // alignment) * alignment
 
-    def offsets(self, kind: str) -> list[int]:
-        """Where each member of a struct begins."""
+    def offsets(self, struct_name: str) -> list[int]:
+        """Struct members align sequentially to their respective byte alignments, yielding each
+        member's starting byte offset."""
         found, offset = [], 0
-        for _, member in self.program.structs[kind]:
+        for _, member in self.program.structs[struct_name]:
             alignment, size = self.size(member)
             offset = -(-offset // alignment) * alignment
             found.append(offset)
             offset += size
         return found
 
-    def resolve(self, text: str) -> Any:
+    def resolve(self, text: str) -> GAType | str:
         if text in self.program.gatypes:
             return self.program.gatypes[text]
         return self.scalar if text == "f32" else text
 
-    def dtype(self, kind: Any) -> type:
+    def dtype(self, kind: GAType | str) -> type:
         name, arguments = template(kind if isinstance(kind, str) else "f32")
         scalar = arguments[0] if arguments else name
         return {"u32": np.uint32, "i32": np.int32}.get(scalar, np.float32)
 
-    def pack(self, kind: Any, value: Any) -> bytes:
-        """A value's bytes, laid out as the type is in a storage buffer."""
+    def pack(self, kind: GAType | str, value: Any) -> bytes:
+        """Serialize a single value to padded storage-buffer bytes, casting `Extensor` inputs to the
+        declared `GAType` and aligning struct members in declaration order."""
         form, detail = self.shape(kind)
         alignment, size = self.size(kind)
         if form == "array":
-            # An array's entries in turn, a batch of the algebra's type value by value along its axis.
+            # Fixed-length arrays pack each entry sequentially along the leading axis.
             element = self.resolve(detail[0])
             data = b"".join(self.pack(element, entry) for entry in value)
         elif isinstance(value, Extensor):
@@ -147,15 +164,14 @@ class Layout:
             data = np.asarray(value, dtype=self.dtype(detail)).tobytes()
         return data + bytes(size - len(data)) if size > len(data) else data
 
-    def array(self, kind: Any, value: Any) -> bytes:
-        """A runtime-sized array's bytes: a batch of the algebra's type, or an array of numbers whose
-        last axis is the element's components. A member of a struct that is an array of a fixed length of the
-        algebra's type takes a batch whose last axis runs along that array."""
+    def array(self, kind: GAType | str, value: Any) -> bytes:
+        """Serialize a batched input to contiguous element strides for a runtime-sized storage array,
+        interleaving dict-of-batches columns across struct members."""
         if isinstance(value, Extensor):
             form, detail = self.shape(kind)
             return coefficients(value, self.resolve(detail[0]) if form == "array" else kind)
         if kind in self.program.structs:
-            # A struct's members by name, each a batch along the array, laid column by column at their offsets.
+            # Struct arrays pack each member batch as a byte column at its aligned struct offset.
             stride = self.stride(kind)
             columns = [np.frombuffer(self.array(member_type, value[member]), dtype=np.uint8)
                        for member, member_type in self.program.structs[kind]]
@@ -165,7 +181,7 @@ class Layout:
                 _, size = self.size(member_type)
                 data[:, offset:offset + size] = column.reshape(count, self.stride(member_type))[:, :size]
             return data.tobytes()
-        # The element's components, by its type, each padded to the array's stride.
+        # Numeric elements pad each row out to the aligned array stride.
         _, size = self.size(kind)
         values = np.asarray(value, dtype=self.dtype(kind)).reshape(-1, size // 4)
         padded = np.zeros((values.shape[0], self.stride(kind) // 4), dtype=values.dtype)
@@ -173,19 +189,19 @@ class Layout:
         return padded.tobytes()
 
 
-def coefficients(value: Extensor, kind: GAType) -> bytes:
-    """An Extensor's coefficients in the type the shader declares, flattened in kernel order."""
-    if value.gatype != kind:
-        value = value.cast(kind)
-    return np.asarray(value.kernel, dtype=np.float32).tobytes()
+def coefficients(extensor: Extensor, target: GAType) -> bytes:
+    """Casting `extensor` to `target` when needed flattens its blade coefficients into `float32`
+    bytes in kernel order."""
+    if extensor.gatype != target:
+        extensor = extensor.cast(target)
+    return np.asarray(extensor.kernel, dtype=np.float32).tobytes()
 
 
 class Shader:
-    """A compiled shader in the numga dialect, with constants given from Python by name, as `compile` declares them: its
-    values laid out and bound by name, its compute entry points run over grids, and its vertex and fragment stages, where
-    it has them, for `numga.render.drawing` to draw."""
+    """Compiled WGSL pipelines pair a dialect `Program` with its `Layout`, bind-group layout, and
+    cached GPU buffers and textures across dispatches."""
 
-    def __init__(self, source: str, algebra: Any, types: Mapping[str, GAType], constants: Mapping[str, Any]) -> None:
+    def __init__(self, source: str, algebra: Algebra, types: Mapping[str, GAType], constants: Mapping[str, Any]) -> None:
         self.program = compile(source, algebra, types, constants)
         self.context = NumpyContext(algebra)
         self.layout = Layout(self.program, algebra.gatype.scalar())
@@ -199,11 +215,11 @@ class Shader:
                           for name, size in self.program.entry_points]
         self.sampler = self.device.create_sampler(mag_filter="linear", min_filter="linear",
                                                   address_mode_u="repeat", address_mode_v="clamp-to-edge")
-        # The buffers and textures kept between calls, by their role.
-        self.kept = {}                                                          # dict[tuple, Any]
+        self.kept = {}
 
-    def layout_entry(self, binding: Binding) -> dict:
-        """How the shader sees a binding, for every entry point alike."""
+    def layout_entry(self, binding: Binding) -> dict[str, Any]:
+        """Bind-group layout entries expose resources across compute, fragment, and (when read-only)
+        vertex stages."""
         import wgpu
         writable = binding.kind == "storage" and binding.access == "read_write"
         # A vertex stage may not write to storage; every stage reads.
@@ -220,22 +236,21 @@ class Shader:
         return self.program.code
 
     def __call__(self, shape: tuple[int, ...], **values: Any) -> dict[str, Any]:
-        """Every written storage array, after each compute entry point in turn, in the order the shader
-        declares them, with one invocation per element of a grid of `shape`, of up to three axes, the last along
-        `id.x`: a shader over an image, rows first, reads its pixel as `id.xy`, column then row, and the image's size,
-        columns then rows, from a uniform `pixels` where it declares one. Written arrays start at zero."""
+        """Dispatching all `@compute` entry points over `shape` maps the last axis of `shape` to `id.x`
+        (so `(rows, columns)` addresses `(column, row)` in `id.xy` and populates `pixels` as
+        `(columns, rows)`), returning every unprovided storage array by name."""
         encoder = self.device.create_command_encoder()
         outputs = self.encode(encoder, shape, (), values)
         return self.read(encoder, outputs, shape)
 
-    def encode(self, encoder: Any, shape: tuple[int, ...], key: tuple, values: Mapping[str, Any]) -> dict:
-        """Each compute entry point in turn over a grid or image of `shape`, recorded on an encoder, as a call runs
-        them, with the values bound in the buffers kept under `key`: the arrays the shader writes, for `read`."""
+    def encode(self, encoder: Any, shape: tuple[int, ...], key: tuple, values: Mapping[str, Any]) -> dict[str, tuple]:
+        """Recording zero-clears and compute dispatches onto `encoder` binds inputs into buffers
+        cached under `key` and returns the output buffer descriptors for `read`."""
         group, outputs = self.bind(shape, values, key)
         # The written arrays start at zero, whatever the last call left in them.
         for buffer, _, element_size in outputs.values():
             encoder.clear_buffer(buffer, 0, int(np.prod(shape)) * element_size)
-        # One invocation for each element of the grid, its last axis along the workgroups' first: an image's columns.
+        # Reversing `shape` maps the last grid axis (image columns) to workgroup axis `x`.
         threads = (*shape[::-1], *(1,) * (3 - len(shape)))
         for pipeline, size in self.pipelines:
             compute = encoder.begin_compute_pass()
@@ -246,10 +261,10 @@ class Shader:
         return outputs
 
     def bind(self, shape: tuple[int, ...], values: Mapping[str, Any], key: tuple) -> tuple[Any, dict]:
-        """The bind group of the values the shader declares, each written into the buffer kept for it under `key`, a
-        `Resident` buffer bound as it is, and the arrays it writes, one element per invocation of a grid of `shape`, in
-        the buffers kept for them. Work recorded on one encoder takes keys of its own: values are written before the
-        encoder runs."""
+        """Uploading declared uniforms, storage arrays, and textures into buffers cached under `key`
+        builds the bind group alongside output storage buffers sized to `shape`. Distinct passes
+        recorded on the same command encoder require distinct `key` prefixes because queue writes
+        execute before the encoder submits."""
         import wgpu
 
         count = int(np.prod(shape))
@@ -298,8 +313,9 @@ class Shader:
         group = self.device.create_bind_group(layout=self.bind_layout, entries=entries)
         return group, outputs
 
-    def read(self, encoder: Any, outputs: dict, shape: tuple[int, ...]) -> dict[str, Any]:
-        """The written arrays, once the encoded work is done."""
+    def read(self, encoder: Any, outputs: Mapping[str, tuple], shape: tuple[int, ...]) -> dict[str, Any]:
+        """Submitting `encoder` copies each output storage buffer to a host-mappable staging buffer
+        and unpacks the results to `shape`."""
         import wgpu
 
         count = int(np.prod(shape))
@@ -319,9 +335,9 @@ class Shader:
             results[name] = self.unpack(element, raw, tuple(shape))
         return results
 
-    def unpack(self, kind: Any, raw: np.ndarray, shape: tuple[int, ...]) -> Any:
-        """Elements' bytes, `[elements, bytes]`, as the batch of a type of the algebra, a dict of a struct's
-        members, or an array of numbers whose last axis is the element's components."""
+    def unpack(self, kind: GAType | str, raw: np.ndarray, shape: tuple[int, ...]) -> Any:
+        """Decode raw `[n_elements, stride]` bytes into a `float64` `Extensor` batch for non-scalar
+        `GAType` outputs, a dict of unpacked fields for structs, or a shaped numeric array."""
         if kind in self.program.structs:
             return {member: self.unpack(member_type, raw[:, offset:offset + self.layout.size(member_type)[1]], shape)
                     for (member, member_type), offset in zip(self.program.structs[kind], self.layout.offsets(kind))}
@@ -334,32 +350,33 @@ class Shader:
         return data.reshape(shape + (size // 4,))
 
     def buffer_kept(self, role: tuple, size: int, usage: int) -> Any:
-        """The buffer kept for a role, at least `size` bytes: made on the first call that needs it, and again only when
-        a call needs it larger."""
+        """Return the cached GPU buffer for `role`, allocating on first use and reallocating only
+        when `size` exceeds the existing capacity."""
         buffer = self.kept.get(role)
         if buffer is None or buffer.size < size:
             buffer = self.device.create_buffer(size=max(size, 16), usage=usage)
             self.kept[role] = buffer
         return buffer
 
-    def buffer(self, role: tuple, data: bytes) -> dict:
-        """The storage buffer kept for a role, holding data, bound to just its length."""
+    def buffer(self, role: tuple, data: bytes) -> dict[str, Any]:
+        """Writing `data` into the storage buffer cached for `role` returns a binding descriptor
+        spanning `len(data)` bytes."""
         import wgpu
         buffer = self.buffer_kept(role, len(data), wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
         self.device.queue.write_buffer(buffer, 0, data)
         return {"buffer": buffer, "offset": 0, "size": len(data)}
 
-    def surface(self, role: tuple, shape: tuple[int, int], format: str, usage: int) -> Any:
-        """The texture kept for a role and an image's shape, rows and columns, made on the first call that needs it."""
+    def surface(self, role: tuple, shape: tuple[int, int], texture_format: str, usage: int) -> Any:
+        """Return the cached 2D GPU texture for `role` with width `shape[1]` and height `shape[0]`."""
         if role not in self.kept:
             rows, columns = shape
-            self.kept[role] = self.device.create_texture(size=(columns, rows, 1), format=format, usage=usage)
+            self.kept[role] = self.device.create_texture(size=(columns, rows, 1), format=texture_format, usage=usage)
         return self.kept[role]
 
     def texture(self, key: tuple, binding: Binding, image: np.ndarray) -> Any:
-        """A float texture holding an image, `[rows, columns, channels]`; channels pad to four, the last
-        with one. Given the same array as the call before, the texture keeps what that call wrote: a star map or
-        a colour table is written once, however many frames read it."""
+        """Upload an image array `[rows, columns, channels]` as `rgba32float` or `rgba16float`,
+        padding missing channels up to four (with alpha `1.0`) and reusing the GPU texture when
+        passed the identical `image` array object on subsequent calls."""
         import wgpu
         written = self.kept.get(key + ("written", binding.name))
         if written is not None and written[0] is image:

@@ -1,16 +1,23 @@
-"""The other operand of an operator, sorted by its Python class into the kind of operand it is.
+"""Binary and comparison operators on `Extensor` accept Python numbers, backend arrays, and
+`GAType` descriptors alongside `Extensor` instances. `kind` classifies each operand once per Python
+class into `Kind` and caches that lookup, keeping operand-class dispatch out of individual operator
+methods. Unoriented `SubSpace` instances classify separately so arithmetic operators raise
+`UnorientedSubspace` rather than guessing an orientation, while foreign types produce `None` so
+dunder operators return `NotImplemented` and allow reflected operators such as `Sparse.__rmul__` to
+run.
 
-Operator syntax takes more than Extensors: numbers, arrays, and types. Each kind of operand is
-promoted to an Extensor one way, here and nowhere else, and each family of operators reads its
-promotions from a table, so the policy is data: a linear operator reads a type as its identity map,
-and refuses an operand it does not know by returning NotImplemented.
+Each promotion maps its operand category to a canonical `Extensor`. Plain Python numbers become
+extrinsic `Scalar` values, backend arrays of any rank append a length-1 blade axis to form `Scalar`
+batches of the array's exact shape (switching a NumPy context to `JaxContext` when paired with a JAX
+array or tracer), and a nullary `GAType` promotes to its identity linear map under `LINEAR`
+operators while remaining invalid as a `DIVISOR`.
 """
 
 from __future__ import annotations
 
 from enum import Enum
 from numbers import Number
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import numga
 from numga.gatype import GAType, UnorientedSubspace
@@ -23,6 +30,8 @@ if TYPE_CHECKING:
 
 
 class Kind(Enum):
+    """Operand categories determine how operator families promote non-`Extensor` values."""
+
     VALUE = "value"
     TYPE = "type"
     NUMBER = "number"
@@ -31,19 +40,19 @@ class Kind(Enum):
     FOREIGN = "foreign"
 
 
-_KINDS: dict[type, Kind] = {}
+_KINDS = {}
 
 
-def kind(value: object) -> Kind:
-    """The kind of an operand, classified once per Python class."""
+def kind(operand: object) -> Kind:
+    """Operand classification caches one `Kind` entry per Python class."""
     try:
-        return _KINDS[value.__class__]
+        return _KINDS[operand.__class__]
     except KeyError:
-        return _classify(value)
+        return _classify(operand)
 
 
-def _classify(value: object) -> Kind:
-    cls = value.__class__
+def _classify(operand: object) -> Kind:
+    cls = operand.__class__
     if issubclass(cls, numga.extensor.Extensor):
         found = Kind.VALUE
     elif issubclass(cls, GAType):
@@ -53,7 +62,7 @@ def _classify(value: object) -> Kind:
     elif issubclass(cls, Number):
         found = Kind.NUMBER
     elif hasattr(cls, "shape") and hasattr(cls, "dtype"):
-        # An array of any rank, 0-d arrays and traced scalars included, is a batch of scalars.
+        # Zero-dimensional arrays and traced scalars carry shape and dtype, forming scalar batches.
         found = Kind.ARRAY
     else:
         found = Kind.FOREIGN
@@ -63,24 +72,23 @@ def _classify(value: object) -> Kind:
 
 # --- promotions ------------------------------------------------------------------------
 def scalar(context: Context, number: Number) -> Extensor:
-    """A plain number as a scalar. It is an ordinary number, unchanged by any mirror: extrinsic."""
+    """Plain Python numbers promote to extrinsic `Scalar` values."""
     return numga.extensor.Extensor._from_prepared_kernel(
         context, context.algebra.gatype.scalar(), context.scalar_kernel(context.prepare_scalar(number)),
     )
 
 
-def batch(context: Context, values: Any) -> Extensor:
-    """A raw array as a batch of scalars of exactly the array's shape: the structural axis is always
-    appended, so a trailing axis of length one is batch, never structural. A JAX array, traced or not, is a batch of
-    JAX scalars whatever it meets, so that NumPy operands are carried into JAX with it."""
-    if context.key[0] == "numpy" and type(values).__module__.split(".")[0] in ("jax", "jaxlib"):
+def batch(context: Context, array: Any) -> Extensor:
+    """Appending a length-one blade axis wraps a backend array as a `Scalar` batch of the array's
+    shape, switching a NumPy context to `JaxContext` when paired with a JAX array."""
+    if context.key[0] == "numpy" and type(array).__module__.split(".")[0] in ("jax", "jaxlib"):
         from numga.backend.jax import JaxContext
         context = JaxContext(context.algebra)
-    return context.multivector.scalar(values[..., None])
+    return context.multivector.scalar(array[..., None])
 
 
 def identity(gatype: GAType) -> Extensor:
-    """The identity map of a nullary type."""
+    """Nullary `GAType` descriptors promote to their identity linear maps."""
     return gatype._identity()
 
 
@@ -89,32 +97,30 @@ def no_orientation(*_: object) -> None:
 
 
 # --- operator families -----------------------------------------------------------------
-Promotion = Callable[["Context", Any], "Extensor | None"]
-
-# Linear operators: a number is a scalar, an array a batch of scalars, a type its identity map.
-LINEAR: dict[Kind, Promotion] = {
-    Kind.VALUE: lambda context, value: value,
+# Linear operators promote numbers to scalars, arrays to scalar batches, and types to identity maps.
+LINEAR = {
+    Kind.VALUE: lambda context, operand: operand,
     Kind.TYPE: lambda context, gatype: identity(gatype),
     Kind.NUMBER: scalar,
     Kind.ARRAY: batch,
     Kind.SUBSPACE: no_orientation,
-    Kind.FOREIGN: lambda context, value: None,
+    Kind.FOREIGN: lambda context, operand: None,
 }
 
-# Division: a type has no inverse to divide by.
-DIVISOR: dict[Kind, Promotion] = LINEAR | {Kind.TYPE: lambda context, gatype: None}
+# Division rejects GAType operands because a type descriptor carries no inverse.
+DIVISOR = LINEAR | {Kind.TYPE: lambda context, gatype: None}
 
 
-def compared(context: Context, value: object) -> Extensor:
-    """The operand of a comparison: an Extensor, or a number or array read as a batch of scalars."""
-    return value if kind(value) is Kind.VALUE else batch(context, context.xp.asarray(value))
+def compared(context: Context, operand: object) -> Extensor:
+    """Comparison operators leave `Extensor` operands unchanged and promote numbers or arrays to `Scalar` batches."""
+    return operand if kind(operand) is Kind.VALUE else batch(context, context.xp.asarray(operand))
 
 
-def linear(context: Context, value: object) -> Extensor | None:
-    """The operand of a linear operator as an Extensor, or None for an operand numga does not know."""
-    return LINEAR[kind(value)](context, value)
+def linear(context: Context, operand: object) -> Extensor | None:
+    """Linear operators promote numbers, arrays, and nullary `GAType` descriptors to `Extensor` instances and return `None` for foreign operands."""
+    return LINEAR[kind(operand)](context, operand)
 
 
-def divisor(context: Context, value: object) -> Extensor | None:
-    """The operand of a division as an Extensor, or None for an operand numga does not divide by."""
-    return DIVISOR[kind(value)](context, value)
+def divisor(context: Context, operand: object) -> Extensor | None:
+    """Division promotes numbers and arrays like linear operators while rejecting `GAType` divisors with `None`."""
+    return DIVISOR[kind(operand)](context, operand)

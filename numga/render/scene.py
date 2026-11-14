@@ -1,5 +1,6 @@
-"""A picture set up once and drawn again for every frame of an animation: the parts that stay put kept, on the GPU
-where they can be, and each frame's moving parts added to them."""
+"""`Scene` caches static rasterized surface sample slots on the GPU across animation frames while
+combining static and per-frame quadric solids, surface inks, translucent solids, and moving raster
+draws in a single ray-tracing pass per frame."""
 
 from __future__ import annotations
 
@@ -12,10 +13,12 @@ from .solids import Ink, Quadric, View, scene, shader, trace
 
 
 class Scene:
-    """A picture whose still parts are set up once, for frames that add what moves: the solids, lines inked on them
-    and translucent solids that stay put, traced again with every frame's, and the meshes that stay put, drawn into
-    their samples once, in buffers the scene keeps on the GPU, with every frame's meshes drawn into the slots after
-    theirs."""
+    """Reusable `PGA3D` animation scene holding a fixed `View`, RGB `background`, static quadric
+    `parts`, static `inks`, static `translucent` parts, and static rasterized `meshes`.
+
+    Static `meshes` rasterize once into leading GPU sample `Slots` (reallocated only if a later frame
+    supplies more moving draws), while each call to `frame` or `draw` rasterizes only the frame's
+    moving `meshes` into trailing slots before tracing all static and moving solids together."""
 
     def __init__(self, view: View, background: np.ndarray, parts: list[tuple[Quadric, np.ndarray]],
                  meshes: list[tuple[Draw, float]], inks: list[Ink],
@@ -27,14 +30,15 @@ class Scene:
         self.buffers, self.n_slots = None, 0
 
     def made(self, name: str, size: int, usage: int) -> Any:
-        """A buffer of the scene's own."""
+        """Allocate a dedicated GPU buffer of `size` bytes with `usage` on the scene's WebGPU device."""
         return self.tracer.device.create_buffer(size=size, usage=usage)
 
     def frame(self, parts: list[tuple[Quadric, np.ndarray]], inks: list[Ink],
               translucent: list[tuple[Quadric, np.ndarray, float]],
               meshes: list[tuple[Draw, float]]) -> tuple[np.ndarray, np.ndarray]:
-        """The picture with a frame's moving parts among the still ones, over the background: its colour,
-        `[rows, columns, 4]`, and its depth along the view, `[rows, columns]`, each weighted by coverage."""
+        """Composite a frame's moving `parts`, `inks`, `translucent` solids, and `meshes` alongside
+        the scene's static elements over `background`, returning coverage-weighted RGBA colour
+        `[rows, columns, 4]` and view depth `[rows, columns]`."""
         encoder = self.tracer.device.create_command_encoder()
         n_still, n_slots = len(self.meshes), len(self.meshes) + len(meshes)
         # Buffers too small for the frame's meshes are made again, and the still meshes drawn into them once.
@@ -48,6 +52,7 @@ class Scene:
 
     def draw(self, parts: list[tuple[Quadric, np.ndarray]], inks: list[Ink],
              translucent: list[tuple[Quadric, np.ndarray, float]], meshes: list[tuple[Draw, float]]) -> np.ndarray:
-        """The picture of a frame on the background, `[rows, columns, 3]`, as `frame`."""
+        """Render a frame's moving and static elements over `background` as `uint8` RGB
+        `[rows, columns, 3]`."""
         colour, _ = self.frame(parts, inks, translucent, meshes)
         return np.round(np.clip(colour[..., :3], 0, 1) * 255).astype(np.uint8)

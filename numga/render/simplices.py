@@ -1,23 +1,29 @@
-"""Strokes and markers: the edges and vertices of a mesh drawn on the GPU, in the mesh's own algebra.
+"""Edges and vertices of a simplicial `Topology` are rendered on the GPU directly in the scene's own
+algebra as screen-space strokes and markers or as lit 3D tubes.
 
-A stroke is a 1-simplex and a marker a 0-simplex, drawn as a triangle is: the camera of `numga.render.camera`
-reads each vertex, and the vertex stage covers a box on the picture padded around the projected edge or point by its
-half width; the fragment stage then measures, in pixels, how far each sample lies from the edge's segment or the
-point, and keeps the samples within the half width. Round caps and round joins follow from that distance alone, and
-the picture's samples, sixteen to a pixel on the GPU, smooth its edges. A chain of edges may be dashed, by the
-distance travelled along it from where the chain starts, and an edge may end in a chevron, two short strokes of its
-own width back from its end, laid out on the picture. Strokes and dots are the whole vocabulary: an arrow is a stroke
-with a chevron or a dot at its tip, a square four strokes. In a lit 3D scene the strokes are tubes among the solids and meshes: each sample's distance
-from the segment gives the tube's normal, from the camera's own planes, and how far its surface comes toward the
-viewer, so tubes cross the other surfaces where they truly do. Nothing of it depends on the scene's dimension or
-signature: the same program draws the edges of a polyline in the plane, of a graph in space or of a world line in a
-spacetime diagram. The topology is a `Topology`: its edges are the strokes, whatever its dimension, so a polyline is a
-chain of edges and a surface's wireframe its own edges.
+A stroke is a 1-simplex and a marker is a 0-simplex. `Camera` projects each vertex by regressive
+pairing against the camera's planes without metric assumptions, so the same shader source draws
+polylines in the plane, graphs in space, or world lines in spacetime. The vertex stage expands a
+screen-space quad around each projected segment or point padded by its half-width, and the fragment
+stage keeps supersampled subpixels within that Euclidean pixel distance of the segment or centre.
+Clamping along the segment rounds joins automatically, while open chain endpoints and dash breaks
+apply `Cap` geometry parameterized by cumulative screen-space arc length along contiguous edge
+chains. Translucent chains suppress duplicate coverage across shared vertices by yielding samples
+inside the preceding edge's segment. An edge may also carry a tip chevron formed by two angled
+screen-space barbs scaled down when the host segment is shorter than the barb reach.
+
+In lit 3D scenes (`tubes`), strokes share the `PGA3D` frame and directional lighting of `solids`
+and emit per-sample colour and view-ray depth into sample slots for `solids` and `Scene` to
+composite against quadrics and triangulated surfaces. Tube normals are orthogonalized against each
+edge's 3D camera-frame run along interior spans so foreshortened segments shade as true cylinders
+across joints, while open caps and chevrons shade spherically and advance their depth by their
+radius bulge so arrows sitting on a surface remain legible.
 """
 from __future__ import annotations
 
 from enum import IntEnum
 from functools import cache
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -30,11 +36,13 @@ from . import solids
 from .camera import Camera, placing, read, reading
 from .drawing import Draw
 
+if TYPE_CHECKING:
+    from .solids import View
 
 
 class Cap(IntEnum):
-    """How a stroke's dashes and its open ends end: square at their ends, square half the stroke's width past them, or
-    round. Joins are round."""
+    """Open chain endpoints and dash breaks terminate square at the endpoint, square half a
+    stroke width past it, or round, while interior joins remain round."""
     BUTT = 0
     PROJECTING = 1
     ROUND = 2
@@ -193,8 +201,8 @@ fn shade(corner: Corner) -> @location(0) vec4<f32> {
 }
 """
 
-# A stroke in a lit 3D scene: a tube, its colour lit through its normal, its depth along the view where it shows, as
-# the meshes write theirs for the tracer to compose.
+# In a lit 3D scene each stroke shades as a cylinder through its normal and writes view-ray depth
+# alongside colour for the solids ray tracer to composite.
 tube_stroke = """
 // A pixel's width in the scene's units, at the picture's own pixels; the samples a pixel; whether each edge's start and
 // end are open, ends of the strokes rather than joins, one or zero.
@@ -280,41 +288,43 @@ fn shade(corner: Corner) -> @location(0) vec4<f32> {
 
 @cache
 def stroke_shader(Point: GAType, Plane: GAType) -> Shader:
-    """The strokes of edges whose points are of the type `Point`, placed by a camera's planes of the type `Plane`."""
+    """The screen-space stroke shader binds `Point` vertices against `Plane` camera planes in
+    `Point.algebra`."""
     return Shader(placing(Plane) + stroke_source + flat_stroke, Point.algebra, dict(Point=Point, Plane=Plane), {})
 
 
 @cache
 def tube_shader() -> Shader:
-    """The strokes of a lit 3D scene as tubes, in the solids' algebra, whose lamp lights them: the colour a byte a
-    channel and the depth alone at full precision, as the meshes write them."""
+    """The lit `PGA3D` tube shader writes premultiplied RGBA colour and full-precision view depth
+    under `solids` lamp shading."""
     return Shader(solids.lamp_shading() + placing(solids.Plane) + stroke_source + tube_stroke, solids.ga,
                   dict(Point=solids.Point, Plane=solids.Plane), {})
 
 
 @cache
 def marker_shader(Point: GAType, Plane: GAType) -> Shader:
-    """The dots of points of the type `Point`, placed by a camera's planes of the type `Plane`."""
+    """The screen-space circular marker shader binds `Point` vertices against `Plane` camera planes
+    in `Point.algebra`."""
     return Shader(placing(Plane) + marker_source, Point.algebra, dict(Point=Point, Plane=Plane), {})
 
 
 def chevron_reach(length: float) -> np.ndarray:
-    """A chevron's stroke `length` long, a third of a right angle off its edge: how far it reaches back along the edge
-    and out to its side."""
+    """A chevron barb of pixel `length` angled thirty degrees off its edge projects onto axial and
+    transverse components `(sqrt(3) / 2, 1 / 2) * length`."""
     return length * np.array([np.sqrt(3) / 2, 1 / 2])
 
 
 def following(edges: np.ndarray) -> np.ndarray:
-    """Whether each edge `[edges]` starts where the edge before it ends, one or zero: a join of a chain."""
+    """Each edge whose start vertex matches the end vertex of the immediately preceding edge carries
+    `1.0` so translucent chains cover shared joints only once."""
     follows = np.zeros(len(edges))
     follows[1:] = edges[1:, 0] == edges[:-1, 1]
     return follows
 
 
 def travelled(points: Extensor, edges: np.ndarray, camera: Camera) -> np.ndarray:
-    """Each edge's distance along its chain from where the chain starts, in pixels `[edges]`: the edges in their order,
-    a chain starting again wherever an edge does not start where the one before it ends. Read at the hand-off to the
-    picture, by the camera's planes, as the shader reads them."""
+    """Cumulative projected pixel distance precedes each edge along contiguous chains and resets
+    wherever consecutive edges do not share an endpoint."""
     readings = (np.stack([read(camera.across, points).to_array(), read(camera.up, points).to_array()], axis=-1)
                 / (read(camera.weight, points).to_array() + camera.unit)[..., None]).reshape(-1, 2) / camera.pixel
     lengths = np.linalg.norm(readings[edges[:, 1]] - readings[edges[:, 0]], axis=-1)
@@ -326,16 +336,15 @@ def travelled(points: Extensor, edges: np.ndarray, camera: Camera) -> np.ndarray
 
 def strokes(points: Extensor, topology: Topology, colours: np.ndarray, width: float, camera: Camera,
             chevrons: np.ndarray = np.zeros(1), chevron: float = 0.0, dashes: tuple[float, float] = (1.0, 0.0),
-            cap: Cap = Cap.ROUND, opacity: float = 1.0) -> Draw:
-    """The mesh's edges as strokes `width` pixels wide over its points, each in its colour `[edges, 3]`, read by the
-    camera: a layer of colour and coverage, clear where no stroke lies. The edges where `chevrons` `[edges]`
-    is one end in a chevron, two strokes `chevron` pixels long back from the end, a third of a right angle to either
-    side; `dashes`, a dash's length and a gap's in pixels, breaks each chain of edges into dashes where the gap is not
-    zero, each dash and each open end ended by the cap; `opacity` how much the strokes cover."""
+            cap: Cap = Cap.ROUND, opacity: float = 1.0) -> Draw | np.ndarray:
+    """Project the 1-simplices of `topology` over `points` (`[V]`) through `camera` as a 2D stroke
+    `Draw` pass (or a transparent `[rows, columns, 4]` array when `topology` has no edges) `width`
+    pixels wide in `colours` (`[E, 3]` or `[3]`), with optional tip chevrons and periodic dash-gap
+    patterns along contiguous edge chains."""
     side = samples_per_side()
     rows, columns = camera.shape
     edges = np.asarray(topology.elements[1], dtype=np.uint32)
-    # No edges, such as a trail not yet begun, draw nothing: a clear picture.
+    # An empty edge set (such as a trajectory not yet begun) produces a transparent RGBA layer.
     if len(edges) == 0:
         return np.zeros(camera.shape + (4,))
     return Draw(stroke_shader(**reading(points, camera)), camera.shape, 6 * len(edges), dict(
@@ -349,18 +358,16 @@ def strokes(points: Extensor, topology: Topology, colours: np.ndarray, width: fl
         **camera.uniforms(1.0)))
 
 
-def view_camera(view) -> Camera:
-    """The camera of a solids view, its planes the view's camera turning the solids' planes x, y and z, its middle the
-    view's own middle."""
+def view_camera(view: View) -> Camera:
+    """`view.to_camera()` converts an orthographic `PGA3D` view into its `Camera`."""
     return view.to_camera()
 
 
-def tubes(points: Extensor, topology: Topology, colours: np.ndarray, width: float, view, gloss: float = 0.0,
-          chevrons: np.ndarray = np.zeros(1), chevron: float = 0.0, dashes: tuple[float, float] = (1.0, 0.0)):
-    """The mesh's edges as tubes `width` pixels across among the solids and meshes of a lit 3D scene, its points of the
-    solids' algebra, each edge in its colour `[edges, 3]`, at every sample of the view's pixels, for `solids.draw` and
-    `Scene` to compose as they compose meshes; chevrons and dashes as `strokes` draws them, a chevron on the
-    picture, facing the viewer."""
+def tubes(points: Extensor, topology: Topology, colours: np.ndarray, width: float, view: View, gloss: float = 0.0,
+          chevrons: np.ndarray = np.zeros(1), chevron: float = 0.0, dashes: tuple[float, float] = (1.0, 0.0)) -> Draw:
+    """Render the 1-simplices of `topology` over `points` (`[V]`) in `PGA3D` as supersampled 3D
+    tubes `width` pixels wide in `colours` (`[E, 3]` or `[3]`) for depth-ordered compositing
+    alongside quadric solids and triangulated surfaces."""
     camera = view.to_camera()
     side = samples_per_side()
     rows, columns = camera.shape
@@ -376,12 +383,14 @@ def tubes(points: Extensor, topology: Topology, colours: np.ndarray, width: floa
         **camera.uniforms(8 * view.half.max()), **solids.lighting(gloss)))
 
 
-def markers(points: Extensor, colours: np.ndarray, radii: np.ndarray, camera: Camera, opacity: float = 1.0) -> Draw:
-    """Dots about the points `[points]`, each in its colour `[points, 3]` and its radius in pixels, one for all or one
-    each `[points]`, read by the camera: a layer of colour and coverage, clear where no dot lies."""
+def markers(points: Extensor, colours: np.ndarray, radii: np.ndarray | float, camera: Camera,
+            opacity: float = 1.0) -> Draw | np.ndarray:
+    """Project circular dots of pixel `radii` around `points` (`[N]`) in `colours` (`[N, 3]` or
+    `[3]`) through `camera` into a 2D `Draw` pass (or a transparent `[rows, columns, 4]` array when
+    `points` is empty)."""
     side = samples_per_side()
     rows, columns = camera.shape
-    # No points draw nothing: a clear picture.
+    # An empty point batch produces a transparent RGBA layer.
     if len(points) == 0:
         return np.zeros(camera.shape + (4,))
     return Draw(marker_shader(**reading(points, camera)), camera.shape, 6 * len(points), dict(

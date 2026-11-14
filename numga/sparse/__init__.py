@@ -1,5 +1,5 @@
-"""Field maps stored sparsely: `Sparse` maps of plain numbers, which belong to no algebra, and `SparseExtensor` maps of
-typed cells."""
+"""Sparse field maps couple discrete sites either through algebra-free numbers in `Sparse` or
+through typed algebraic cells in `SparseExtensor` and `spdiag`."""
 
 from .numeric import Sparse
 from .extensor import SparseExtensor, spdiag

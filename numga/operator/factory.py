@@ -1,19 +1,52 @@
-"""Small native factory for exact output-first operation Extensors."""
+"""Every primitive algebraic operation in `numga` (identities, grade involutions, layout casts,
+Hodge duals, bilinear products, and versor sandwiches) originates as an exact, unbatched `Extensor`
+in `algebra.exact` backed by an integer `SymbolicKernel`. Axis `0` holds the output `SubSpace` and
+axes `1..arity` hold the operand `SubSpace` layouts in argument order, with relative blade signs
+from both input and output layouts folded directly into the integer kernel entries. Caching each
+operator by `GAType` signature on the `Algebra` lets backends lower or stage each exact tensor once
+without recomputing basis-blade sign tables.
+
+Bilinear products retain only the output basis blades with non-zero table entries for the given
+input supports, keeping exact operators sparse in support before runtime values exist. Each builder
+pairs its subspaces with an `OperationRule` from `numga.gatype.rules` (or explicit traits such as
+`Identity` and `BladeProduct`) so orientation propagation, grade parity, versor closure, and
+self-product identities stay attached to the operator's `GAType`. Operators act on each operand's
+output blade layout while stripping field markers, so maps compose through their output axes and
+field operands broadcast site by site during binding.
+
+Metric products consult the Clifford signature, whereas `wedge` and `regressive` depend only on
+basis-blade incidence and ordering. `regressive` measures volume completion against the intrinsic
+unit pseudoscalar without any metric sign, flipping orientation once so an extrinsic covector and
+an intrinsic vector pair to an extrinsic scalar. Conversely, `dot` extends the metric across grades
+within a single orientation. On extrinsic operands `dot` takes the scalar part of
+`left * right.reverse()`, while on intrinsic operands (points, directions, and their joins) it
+composes that pairing through `dual` (`left.dual().dot(right.dual())`) into one kernel on the
+operands' native layouts, rejecting mixed orientations with `GATypeError`.
+
+Self-products (`squared`, `scalar_norm_squared`, `study_norm_squared`, and symmetric involution
+products) symmetrize cross-blade cancellations in `int8` before runtime so off-diagonal blades that
+cancel identically under `x * f(x)` never enter the output support. Similarly, `transform` builds a
+ternary operator over `(versor, passenger, versor)`, symmetrizes the two versor slots with exact
+integer halving, and applies the passenger's grade-involution and intrinsic reflection sign raised
+to the versor's grade parity, rejecting mixed-parity versor types whose reflection count is
+indeterminate. Sign, product, dual, and norm conventions are set out in `docs/conventions.md`, and
+exact table construction in `docs/internals.md` (sections 2 and 4).
+"""
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Callable, Iterable
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from numga.algebra.self_product import grade_transform_signs, symmetric_product_table
 from numga.binding import AxisTransform
-from numga.gatype import rules
-from numga.gatype.rules import OperationRule
 from numga.extensor import Extensor
-from numga.gatype import GAType, Orientation, UnorientedSubspace
+from numga.gatype import GAType, Orientation, UnorientedSubspace, rules
 from numga.gatype.errors import GATypeError
+from numga.gatype.rules import OperationRule
 from numga.gatype.traits import EMPTY_TRAITS, BladeProduct, Identity, TraitSet
 from numga.operator.kernel import SymbolicKernel
 from numga.subspace import SubSpace
@@ -22,12 +55,9 @@ if TYPE_CHECKING:
     from numga.algebra import Algebra
 
 
-GradeRule = Callable[[int, int, int], bool]
-BasisRule = Callable[[int, int], tuple[int, int]]
-
-
 class OperatorFactory:
-    """Construct and cache exact operation Extensors for one algebra."""
+    """Cached builders construct exact output-first operation extensors in one `Algebra`'s symbolic
+    context."""
 
     __slots__ = ("algebra", "subspaces")
 
@@ -36,9 +66,11 @@ class OperatorFactory:
         self.subspaces = algebra.subspace
 
     def build(
-        self, axes: Iterable[SubSpace], orientations: Iterable[Orientation], coefficients: Any,
+        self, axes: Iterable[SubSpace], orientations: Iterable[Orientation], coefficients: object,
         traits: TraitSet = EMPTY_TRAITS,
     ) -> Extensor:
+        """Constructing from output-first `SubSpace` axes, orientations, and exact coefficients
+        produces an unbatched symbolic `Extensor`."""
         axes = tuple(axes)
         if not axes:
             raise ValueError("an Extensor requires at least an output axis")
@@ -52,13 +84,14 @@ class OperatorFactory:
 
     @lru_cache(maxsize=None)
     def unit(self, gatype: GAType) -> Extensor:
-        """The exact scalar identity in a nullary type's layout."""
-
+        """Projecting the multiplicative unit `1` onto `gatype` produces an exact multivector in
+        `gatype`'s blade layout."""
         return self.algebra.exact.multivector(gatype)
 
     @lru_cache(maxsize=None)
     def identity(self, gatype: GAType) -> Extensor:
-        """The identity map of a nullary type, keeping its orientation."""
+        """An identity map on `gatype`'s subspace preserves both blade layout and orientation while
+        carrying the `Identity` trait."""
         gatype = self._nullary(gatype)
         space = gatype.output_subspace
         orientations = (gatype.orientation, gatype.orientation)
@@ -72,28 +105,32 @@ class OperatorFactory:
         return self.build((space, space), (gatype.orientation, gatype.orientation), coefficients)
 
     def reverse(self, gatype: GAType) -> Extensor:
+        """Blade reversal negates grades `2` and `3` modulo `4` by reversing generator order in
+        each blade."""
         return self._grade_transform(gatype, "reverse")
 
     def clifford_conjugate(self, gatype: GAType) -> Extensor:
-        """Reverse blades and negate odd grades, without conjugating scalars."""
-
+        """Clifford conjugation composes blade reversal with grade involution, negating grades `1`
+        and `2` modulo `4` without conjugating scalars."""
         return self._grade_transform(gatype, "clifford_conjugate")
 
     def involute(self, gatype: GAType) -> Extensor:
+        """Grade involution negates odd-grade blades and leaves even-grade blades unchanged."""
         return self._grade_transform(gatype, "involute")
 
     def scalar_negation(self, gatype: GAType) -> Extensor:
+        """Study conjugation preserves scalar blades and negates every non-scalar blade."""
         return self._grade_transform(gatype, "scalar_negation")
 
     def pseudoscalar_negation(self, gatype: GAType) -> Extensor:
+        """Scalar-pseudoscalar conjugation preserves scalar and pseudoscalar blades while negating
+        every intermediate grade."""
         return self._grade_transform(gatype, "pseudoscalar_negation")
 
     @lru_cache(maxsize=None)
     def _symmetric_product(
         self, gatype: GAType, transform: str, *, scalar_only: bool = False,
     ) -> Extensor:
-        """Combine symmetric terms on the result carrier proved by the GAType."""
-
         space = gatype.output_subspace
         output = (
             self.subspaces.scalar() if scalar_only
@@ -101,7 +138,7 @@ class OperatorFactory:
         )
         blades, table = symmetric_product_table(space, transform)
         # Every pair's coefficient goes to the row of its output blade, in both layouts' blade orientations;
-        # a blade the output does not hold, as the non-scalar ones of a scalar part, is left out.
+        # a blade the output does not hold, such as non-scalar terms of a scalar part, is left out.
         rows = np.full(1 << self.algebra.dimension, -1)
         rows[list(output.masks)] = np.arange(len(output))
         left, right = np.nonzero((rows[blades] >= 0) & (table != 0))
@@ -109,45 +146,56 @@ class OperatorFactory:
         row = rows[blades[left, right]]
         coefficients = np.zeros((len(output), len(space), len(space)), dtype=np.int8)
         coefficients[row, left, right] = table[left, right] * signs[left] * signs[right] * output_signs[row]
-        # A value against itself: equal orientations on both sides, so the product is extrinsic.
+        # Pairing a value against itself supplies equal orientations on both sides, giving an extrinsic output.
         orientations = (Orientation.extrinsic, gatype.orientation, gatype.orientation)
         return self.build((output, space, space), orientations, coefficients)
 
     def squared(self, operand: GAType) -> Extensor:
+        """Symmetrized self-multiplication `x * x` cancels anticommuting cross-blade pairs in the
+        static support."""
         return self._symmetric_product(self._operand_gatype(operand), "identity")
 
     def symmetric_reverse_product(self, operand: GAType) -> Extensor:
+        """Symmetrized reverse multiplication `x * x.reverse()` retains only the grades certified
+        by `operand`'s traits and blade support."""
         return self._symmetric_product(self._operand_gatype(operand), "reverse")
 
     def scalar_norm_squared(self, operand: GAType) -> Extensor:
-        """The scalar part of ``x * reverse(x)``, with only that part built."""
-
+        """Building only the grade-zero row of `x * x.reverse()` yields the extrinsic scalar
+        norm-squared form."""
         return self._symmetric_product(self._operand_gatype(operand), "reverse", scalar_only=True)
 
     def symmetric_conjugate_product(self, operand: GAType) -> Extensor:
+        """Symmetrized Clifford-conjugate multiplication `x * x.clifford_conjugate()` cancels
+        vanishing cross-blade pairs in the static support."""
         return self._symmetric_product(self._operand_gatype(operand), "clifford_conjugate")
 
     def symmetric_scalar_negation_product(self, operand: GAType) -> Extensor:
+        """Symmetrized Study-conjugate multiplication `x * x.scalar_negation()` cancels vanishing
+        cross-blade pairs in the static support."""
         return self._symmetric_product(self._operand_gatype(operand), "scalar_negation")
 
     def study_norm_squared(self, operand: GAType) -> Extensor:
-        """Scalar self-product for the generalized Study norm."""
-
+        """Building only the grade-zero row of `x * x.scalar_negation()` yields the generalized
+        Study norm-squared form."""
         return self._symmetric_product(
             self._operand_gatype(operand), "scalar_negation", scalar_only=True,
         )
 
     def symmetric_pseudoscalar_negation_product(self, operand: GAType) -> Extensor:
+        """Symmetrized multiplication `x * x.pseudoscalar_negation()` cancels vanishing cross-blade
+        pairs in the static support."""
         return self._symmetric_product(self._operand_gatype(operand), "pseudoscalar_negation")
 
     def symmetric_involute_product(self, operand: GAType) -> Extensor:
+        """Symmetrized grade-involution multiplication `x * x.involute()` cancels vanishing
+        cross-blade pairs in the static support."""
         return self._symmetric_product(self._operand_gatype(operand), "involute")
 
     @lru_cache(maxsize=None)
     def cast(self, source: GAType, target: SubSpace) -> Extensor:
-        """Explicit signed coordinate conversion, including projection and zero fill: a change of
-        layout, which keeps the orientation."""
-
+        """Signed coordinate conversion reorders, projects, or zero-pads `source` into `target`
+        while preserving orientation, attaching `Identity` whenever the conversion is lossless."""
         source = self._nullary(source)
         source_space = source.output_subspace
         self._require_space(target)
@@ -164,14 +212,14 @@ class OperatorFactory:
 
     @lru_cache(maxsize=None)
     def restrict(self, source: GAType, target: SubSpace) -> Extensor:
-        """Project onto the intersection of the two static blade supports."""
-
+        """Intersecting `source`'s support with `target` projects away absent blades without
+        zero-padding missing target blades."""
         source = self._nullary(source)
         return self.select(source, source.output_subspace.intersection(target))
 
     def geometric_product(self, left: GAType, right: GAType) -> Extensor:
-        """Build a product selected from the operands' complete GATypes."""
-
+        """Full Clifford multiplication retains every non-zero output blade of `left` and `right`
+        and propagates traits through `rules.GEOMETRIC`."""
         return self._geometric_product(
             self._operand_gatype(left),
             self._operand_gatype(right),
@@ -183,26 +231,30 @@ class OperatorFactory:
             rules.GEOMETRIC,
             left,
             right,
-            lambda _left, _right, _output: True,
+            lambda _left_grade, _right_grade, _output_grade: True,
         )
 
     product = geometric_product
 
     def scalar_product(self, left: GAType, right: GAType) -> Extensor:
+        """Grade-zero projection builds only the scalar row of the geometric product of `left` and
+        `right`."""
         return self._grade_product(self._operand_gatype(left), self._operand_gatype(right), 0)
 
     def dot(self, left: GAType, right: GAType) -> Extensor:
-        """The dot product, the metric extended to every grade, read as the operands' orientation reads them. Of two
-        extrinsic operands it is the scalar part of ``left * reverse(right)``: on blades of one grade the determinant of
-        the dot products of their vector factors, in a Euclidean signature positive on every blade, zero between
-        grades, and on a value with itself its ``scalar_norm_squared``. Of two intrinsic operands, points, directions
-        and their joins, it is that of their duals, ``left.dual().dot(right.dual())``, with the metric dual of a
-        non-degenerate algebra and the complement of a degenerate one. In a non-degenerate algebra the two readings
-        differ by one sign, the antiscalar's own reverse product: they agree in the algebra of space and are opposite
-        in a spacetime, where a spatial direction's dot with itself is its length squared as in space. In a projective
-        algebra they are complementary: of a point the reverse product measures the weight and the dot the bulk, the
-        weight times the distance from the origin, and of a direction the dot is its length squared. An intrinsic
-        operand and an extrinsic one have no metric between them; they pair by the regressive product."""
+        """Metric pairing extends across every grade according to the operands' shared orientation.
+        On two extrinsic operands it takes the scalar part of `left * right.reverse()`, giving the
+        determinant of vector-factor dot products within a grade (positive on every blade in a
+        Euclidean signature, zero between distinct grades, and equal to `scalar_norm_squared` on a
+        value with itself). On two intrinsic operands (points, directions, and their joins) it
+        evaluates `left.dual().dot(right.dual())` using the metric dual in a non-degenerate algebra
+        and the complement in a degenerate one. In a non-degenerate algebra the two readings differ
+        by the sign of the antiscalar's own reverse product, agreeing in space and opposing in
+        spacetime so a spatial direction's dot with itself equals its squared length. In a
+        projective algebra the reverse product of a point measures weight whereas `dot` measures
+        bulk (weight times distance from the origin), and on a direction `dot` gives its squared
+        length. Intrinsic and extrinsic operands carry no metric between them and pair instead
+        through the regressive product."""
         left, right = self._operand_gatype(left), self._operand_gatype(right)
         if left.orientation is not right.orientation:
             raise GATypeError(
@@ -216,17 +268,15 @@ class OperatorFactory:
     @lru_cache(maxsize=None)
     def _dot(self, left: GAType, right: GAType) -> Extensor:
         product = self._grade_product(left, right, 0)
-        # The scalar product with every blade of the right operand reversed: its slices by their reverse signs.
+        # Reversing every blade of the right operand multiplies the scalar-product columns by their reverse signs.
         reverses = grade_transform_signs(self.algebra, "reverse", right.output_subspace.masks)
         return Extensor(self.algebra.exact, product.gatype, SymbolicKernel(product._kernel._values * reverses))
 
     @lru_cache(maxsize=None)
     def _dual_dot(self, left: GAType, right: GAType) -> Extensor:
-        """The dot of two intrinsic operands: the dot of their duals, as one operator on their own layouts. A map's
-        output is read through its dual, as a value is, and its inputs carry over as the product's do."""
         left_dual, right_dual = self.dual(left.derive.output), self.dual(right.derive.output)
-        # The duals are signed permutations of blades, so the dot composed with them is the dot's own kernel,
-        # its slices permuted and signed: one operator of the dot's size on the operands' own layouts.
+        # Because duals are signed blade permutations, composing dot with both duals yields a single
+        # kernel on the operands' native layouts while preserving any map input axes.
         composed = self._dot(left_dual.gatype.derive.output, right_dual.gatype.derive.output).bind(
             {0: left_dual, 1: right_dual},
         )
@@ -234,46 +284,60 @@ class OperatorFactory:
         return Extensor(self.algebra.exact, gatype, composed.kernel)
 
     def bivector_product(self, left: GAType, right: GAType) -> Extensor:
+        """Grade-two projection builds only the bivector rows of the geometric product of `left`
+        and `right`."""
         return self._grade_product(self._operand_gatype(left), self._operand_gatype(right), 2)
 
     def trivector_product(self, left: GAType, right: GAType) -> Extensor:
+        """Grade-three projection builds only the trivector rows of the geometric product of `left`
+        and `right`."""
         return self._grade_product(self._operand_gatype(left), self._operand_gatype(right), 3)
 
     def inner(self, left: GAType, right: GAType) -> Extensor:
-        """The inner product: the grade |r - s| part of the product of grades r and s."""
+        """Symmetric inner multiplication retains only the grade-`|r - s|` terms of blades of
+        grades `r` and `s`."""
         return self._inner(self._operand_gatype(left), self._operand_gatype(right))
 
     @lru_cache(maxsize=None)
     def _inner(self, left: GAType, right: GAType) -> Extensor:
         return self._product(
             rules.MULTIPLIED, left, right,
-            lambda l, r, output: output == abs(np.subtract(l, r, dtype=np.int16)),
+            lambda left_grade, right_grade, output_grade: (
+                output_grade == abs(np.subtract(left_grade, right_grade, dtype=np.int16))
+            ),
         )
 
     def left_contraction(self, left: GAType, right: GAType) -> Extensor:
-        """The left contraction: the grade s - r part of the product of grades r and s."""
+        """Left contraction retains only the grade-`s - r` terms of blades of grades `r` and `s`,
+        vanishing whenever `r > s`."""
         return self._left_contraction(self._operand_gatype(left), self._operand_gatype(right))
 
     @lru_cache(maxsize=None)
     def _left_contraction(self, left: GAType, right: GAType) -> Extensor:
         return self._product(
             rules.MULTIPLIED, left, right,
-            lambda l, r, output: output == np.subtract(r, l, dtype=np.int16),
+            lambda left_grade, right_grade, output_grade: (
+                output_grade == np.subtract(right_grade, left_grade, dtype=np.int16)
+            ),
         )
 
     def right_contraction(self, left: GAType, right: GAType) -> Extensor:
-        """The right contraction: the grade r - s part of the product of grades r and s."""
+        """Right contraction retains only the grade-`r - s` terms of blades of grades `r` and `s`,
+        vanishing whenever `s > r`."""
         return self._right_contraction(self._operand_gatype(left), self._operand_gatype(right))
 
     @lru_cache(maxsize=None)
     def _right_contraction(self, left: GAType, right: GAType) -> Extensor:
         return self._product(
             rules.MULTIPLIED, left, right,
-            lambda l, r, output: output == np.subtract(l, r, dtype=np.int16),
+            lambda left_grade, right_grade, output_grade: (
+                output_grade == np.subtract(left_grade, right_grade, dtype=np.int16)
+            ),
         )
 
     def left_interior(self, left: GAType, right: GAType) -> Extensor:
-        """The left interior product: the anti-wedge of the left complement of left with right."""
+        """Left interior multiplication takes the anti-wedge of the metric left complement of
+        `left` with `right`."""
         return self._left_interior(self._operand_gatype(left), self._operand_gatype(right))
 
     @lru_cache(maxsize=None)
@@ -286,7 +350,8 @@ class OperatorFactory:
         return self._bilinear(rules.MULTIPLIED, left, right, basis_rule)
 
     def right_interior(self, left: GAType, right: GAType) -> Extensor:
-        """The right interior product: the anti-wedge of left with the right complement of right."""
+        """Right interior multiplication takes the anti-wedge of `left` with the metric right
+        complement of `right`."""
         return self._right_interior(self._operand_gatype(left), self._operand_gatype(right))
 
     @lru_cache(maxsize=None)
@@ -299,7 +364,6 @@ class OperatorFactory:
         return self._bilinear(rules.MULTIPLIED, left, right, basis_rule)
 
     def _swap_sign(self, left_mask: int, right_mask: int) -> int:
-        """The sign of reordering the generators of left_mask * right_mask, ignoring the metric."""
         swaps = sum((left_mask >> (bit + 1)).bit_count() for bit in range(right_mask.bit_length()) if right_mask >> bit & 1)
         return -1 if swaps % 2 else 1
 
@@ -307,31 +371,26 @@ class OperatorFactory:
         return -1 if (mask & self.algebra.negative_mask).bit_count() % 2 else 1
 
     def _right_complement(self, mask: int) -> tuple[int, int]:
-        """The right complement with the metric's negative signs: the blade that follows mask, signed as mask times the
-        blade of all generators."""
+        # Right complement including negative metric signs, ordered as mask followed by the pseudoscalar.
         pseudoscalar = self.algebra.pseudoscalar_mask
         return mask ^ pseudoscalar, self._swap_sign(mask, pseudoscalar) * self._negative_sign(mask)
 
     def _left_complement(self, mask: int) -> tuple[int, int]:
-        """The left complement with the metric's negative signs: the blade that precedes mask, signed as the blade of all
-        generators times mask."""
+        # Left complement including negative metric signs, ordered as the pseudoscalar followed by mask.
         pseudoscalar = self.algebra.pseudoscalar_mask
         return mask ^ pseudoscalar, self._swap_sign(pseudoscalar, mask) * self._negative_sign(mask)
 
     def _volume_complement(self, mask: int) -> tuple[int, int]:
-        """The blade that completes mask to the unit volume, on its right: mask ^ complement is the blade of all
-        generators in signature order."""
+        # Metric-free right volume complement satisfying mask ^ complement == pseudoscalar.
         pseudoscalar = self.algebra.pseudoscalar_mask
         return mask ^ pseudoscalar, self._swap_sign(mask, mask ^ pseudoscalar)
 
     def _volume_complement_inverse(self, mask: int) -> tuple[int, int]:
-        """The blade that mask completes to the unit volume, on its left: complement ^ mask is the blade of all
-        generators in signature order."""
+        # Metric-free left volume complement satisfying complement ^ mask == pseudoscalar.
         pseudoscalar = self.algebra.pseudoscalar_mask
         return mask ^ pseudoscalar, self._swap_sign(mask ^ pseudoscalar, mask)
 
     def _anti_wedge_rule(self, left_mask: int, right_mask: int) -> tuple[int, int]:
-        """The anti-wedge of two basis blades: the left complement of the wedge of right complements."""
         left_complement, left_sign = self._right_complement(left_mask)
         right_complement, right_sign = self._right_complement(right_mask)
         if left_complement & right_complement:
@@ -342,14 +401,14 @@ class OperatorFactory:
 
     @lru_cache(maxsize=None)
     def _grade_product(self, left: GAType, right: GAType, grade: int) -> Extensor:
-        """Construct only the requested output grade, retaining sparse support."""
-
         return self._product(
             rules.MULTIPLIED, left, right,
-            lambda _left, _right, output: output == grade,
+            lambda _left_grade, _right_grade, output_grade: output_grade == grade,
         )
 
     def wedge(self, left: GAType, right: GAType) -> Extensor:
+        """Exterior multiplication retains only the grade-`r + s` terms of blades of grades `r` and
+        `s` without consulting the metric."""
         return self._wedge(
             self._operand_gatype(left),
             self._operand_gatype(right),
@@ -369,8 +428,8 @@ class OperatorFactory:
     exterior_product = wedge
 
     def commutator(self, left: GAType, right: GAType) -> Extensor:
-        """Build ``(left * right - right * left) / 2`` exactly."""
-
+        """Exact integer halving of `left * right - right * left` retains only anticommuting
+        basis-blade pairs."""
         return self._commutator(
             self._operand_gatype(left),
             self._operand_gatype(right),
@@ -383,14 +442,14 @@ class OperatorFactory:
             reverse = self.algebra.geometric_product(right_mask, left_mask)
             if forward.blade != reverse.blade:
                 raise AssertionError("basis products must have the same XOR blade")
-            # Basis blades commute or anticommute: the half difference is 0 or the product itself.
+            # Basis blades either commute or anticommute, so half their difference is zero or the product itself.
             return forward.blade, (forward.coefficient - reverse.coefficient) // 2
 
         return self._bilinear(rules.MULTIPLIED, left, right, basis_rule)
 
     def anticommutator(self, left: GAType, right: GAType) -> Extensor:
-        """Build ``(left * right + right * left) / 2`` exactly."""
-
+        """Exact integer halving of `left * right + right * left` retains only commuting
+        basis-blade pairs."""
         return self._anticommutator(
             self._operand_gatype(left),
             self._operand_gatype(right),
@@ -403,20 +462,17 @@ class OperatorFactory:
             reverse = self.algebra.geometric_product(right_mask, left_mask)
             if forward.blade != reverse.blade:
                 raise AssertionError("basis products must have the same XOR blade")
-            # Basis blades commute or anticommute: the half sum is the product itself or 0.
+            # Basis blades either commute or anticommute, so half their sum is the product itself or zero.
             return forward.blade, (forward.coefficient + reverse.coefficient) // 2
 
         return self._bilinear(rules.MULTIPLIED, left, right, basis_rule)
 
     def regressive(self, left: GAType, right: GAType) -> Extensor:
-        """The regressive product, measured against the unit volume and nothing else.
-
-        Two blades of complementary grade span a volume, `left ^ right == (left & right) * antiscalar`,
-        and their regressive product is that volume in units of the intrinsic unit volume `antiscalar`;
-        for other grades it is the blade the two share, scaled by the volume they span together. No
-        metric enters, and measuring against the intrinsic unit volume flips the orientation once.
-        """
-
+        """Complementary blades satisfy `left ^ right == (left & right) * antiscalar`, measuring
+        their spanned volume in units of the intrinsic unit pseudoscalar `antiscalar`; at general
+        grades the regressive product extracts the subspace shared by `left` and `right` scaled by
+        the volume they span together. No metric enters, and dividing out the intrinsic unit volume
+        flips orientation once."""
         return self._regressive(
             self._operand_gatype(left),
             self._operand_gatype(right),
@@ -425,8 +481,8 @@ class OperatorFactory:
     @lru_cache(maxsize=None)
     def _regressive(self, left: GAType, right: GAType) -> Extensor:
         def basis_rule(left_mask: int, right_mask: int) -> tuple[int, int]:
-            # The blades' complements are what each lacks of the volume; the complement of their outer
-            # product is what the two share.
+            # Each blade's volume complement holds the generators it lacks, so wedging those complements
+            # and taking the inverse complement isolates the generators the two blades share.
             left_complement, left_sign = self._volume_complement(left_mask)
             right_complement, right_sign = self._volume_complement(right_mask)
             if left_complement & right_complement:
@@ -438,13 +494,13 @@ class OperatorFactory:
         return self._bilinear(rules.REGRESSIVE, left, right, basis_rule)
 
     @lru_cache(maxsize=None)
-    def cross(self, vector: SubSpace) -> Extensor:
-        """The oriented Euclidean 3-vector cross product."""
-
-        self._require_space(vector)
+    def cross(self, vector_space: SubSpace) -> Extensor:
+        """In Euclidean 3-space, the Hodge dual of the wedge of two extrinsic vectors produces an
+        intrinsic vector."""
+        self._require_space(vector_space)
         if self.algebra.dimension != 3 or self.algebra.signature != (1, 1, 1):
             raise ValueError("cross is defined here only for Euclidean 3-space")
-        if not vector.same_support(self.subspaces.vector()):
+        if not vector_space.same_support(self.subspaces.vector()):
             raise ValueError("cross requires the algebra's full vector SubSpace")
 
         coefficients = np.zeros((3, 3, 3), dtype=np.int8)
@@ -453,7 +509,7 @@ class OperatorFactory:
                 for right in range(3):
                     if len({output, left, right}) != 3:
                         continue
-                    masks = (vector.masks[output], vector.masks[left], vector.masks[right])
+                    masks = (vector_space.masks[output], vector_space.masks[left], vector_space.masks[right])
                     inversions = sum(
                         first > second
                         for position, first in enumerate(masks)
@@ -461,27 +517,22 @@ class OperatorFactory:
                     )
                     coefficients[output, left, right] = (
                         (-1 if inversions % 2 else 1)
-                        * vector.signs[output] * vector.signs[left] * vector.signs[right]
+                        * vector_space.signs[output] * vector_space.signs[left] * vector_space.signs[right]
                     )
-        # The dual of a wedge of two vectors: a product of equal orientations, flipped by the dual.
-        return self.build((vector, vector, vector), (Orientation.intrinsic, Orientation.extrinsic, Orientation.extrinsic), coefficients)
+        # Taking the dual of an extrinsic wedge flips the output orientation to intrinsic.
+        return self.build(
+            (vector_space, vector_space, vector_space),
+            (Orientation.intrinsic, Orientation.extrinsic, Orientation.extrinsic),
+            coefficients,
+        )
 
     def transform(self, versor: GAType, passenger: GAType) -> Extensor:
-        """The action of a versor on a passenger, as one operator: the composition of the
-        reflections in the versor's vector factors.
-
-        A reflection in a unit vector ``m`` takes an extrinsic passenger ``x`` to
-        ``m * x.involute() * m.inverse()``, and an intrinsic one to its negative. A product of k
-        vectors applies k reflections, so the grade involution and the intrinsic sign each enter k
-        times, and cancel for an even versor. The operator uses the versor's reverse in place of its
-        inverse, which is the same for a unit versor. A type that holds both parities does not say
-        whether k is even or odd, and is refused.
-
-        The two versor axes remain distinct. Passing the same nullary Extensor into axes 0 and 2 is
-        an atomic diagonal bind at runtime. Exact symmetrization removes terms that cancel for
-        repeated versors.
-        """
-
+        """Reflecting an extrinsic passenger `x` in a unit vector `m` gives
+        `m * x.involute() * m.inverse()` and negates that image when `x` is intrinsic; a versor
+        factored into `k` vectors composes `k` reflections, so both grade involution and the
+        intrinsic sign enter `k` times and cancel for even versors. Replacing the inverse with
+        `versor.reverse()` matches the inverse on unit versors while keeping the ternary operator
+        polynomial, and mixed-parity versor types are rejected because `k mod 2` is indeterminate."""
         return self._transform(self._operand_gatype(versor), self._operand_gatype(passenger))
 
     @lru_cache(maxsize=None)
@@ -493,12 +544,10 @@ class OperatorFactory:
         parity = int(1 in parities)
         result = self.full_sandwich(versor.derive.structural, passenger.derive.structural)
         kernel = result.kernel
-        # The two versor axes hold the same versor: symmetrize them. For basis blades the two
-        # orders are equal or opposite, so the average is exact.
+        # Because axes 1 and 3 receive the same versor, averaging the two axis orders is exact on basis blades.
         kernel = (kernel + kernel.transpose((0, 3, 2, 1))).halved()
         result = self.build(result.axes, result.gatype.orientations, kernel).squeeze_output()
-        # Each reflection takes the passenger's grade involution, negated for an intrinsic passenger;
-        # a versor of odd parity applies an odd number of them.
+        # Odd-parity versors apply an odd number of reflections, multiplying by grade involution and the intrinsic sign.
         intrinsic = -1 if passenger.orientation is Orientation.intrinsic else 1
         involutes = grade_transform_signs(self.algebra, "involute", passenger.output_subspace.masks)
         signs = SymbolicKernel(np.diag((involutes * intrinsic) ** parity).astype(np.int8))
@@ -511,25 +560,23 @@ class OperatorFactory:
         return Extensor(result.context, gatype, result.kernel)
 
     def reverse_transform(self, versor: GAType, passenger: GAType) -> Extensor:
-        """The action of the versor's reverse as one operator: the transform with the carrier's
-        reverse folded into both versor axes; for a unit versor, the inverse transform."""
-
+        """Folding `versor.reverse()` into both outer axes of `transform` gives the action of the
+        reversed versor, which inverts `transform` on unit versors."""
         return self._reverse_transform(self._operand_gatype(versor), self._operand_gatype(passenger))
 
     @lru_cache(maxsize=None)
     def _reverse_transform(self, versor: GAType, passenger: GAType) -> Extensor:
         forward = self._transform(versor, passenger)
         reverse = self.reverse(versor.derive.structural)
-        # The reverse is diagonal on the carrier: folding it into both axes keeps every axis, the
-        # grade cancellations and the transform's type. A versor's reverse is a versor, so the
-        # transform's laws hold for it too.
+        # Because reversal is diagonal on the space, folding it into both versor axes preserves grade
+        # cancellations and versor traits.
         folded = forward.bind({0: reverse, 2: reverse})
         return Extensor(folded.context, forward.gatype, folded.kernel)
 
     @lru_cache(maxsize=None)
     def full_sandwich(self, sandwicher: GAType, passenger: GAType) -> Extensor:
-        """Unrestricted sandwich tensor."""
-
+        """Ternary multiplication `left * passenger * right.reverse()` builds the unsymmetrized
+        sandwich tensor before parity or diagonal reductions."""
         left_product = self.geometric_product(sandwicher, passenger)
         right_product = self.geometric_product(left_product.gatype.derive.output, sandwicher)
         return right_product.bind({0: left_product, 1: self.reverse(sandwicher)})
@@ -539,7 +586,7 @@ class OperatorFactory:
         rule: OperationRule,
         left_type: GAType,
         right_type: GAType,
-        grade_rule: GradeRule,
+        grade_rule: Callable,
     ) -> Extensor:
         left = left_type.output_subspace
         right = right_type.output_subspace
@@ -547,33 +594,33 @@ class OperatorFactory:
         self._require_space(right)
         table = self.algebra.geometric_product_table(left.masks, right.masks)
 
-        l_grades = self.algebra.grade(np.asarray(left.masks, dtype=self.algebra.blade_dtype))[:, None]
-        r_grades = self.algebra.grade(np.asarray(right.masks, dtype=self.algebra.blade_dtype))[None, :]
-        o_grades = self.algebra.grade(table.blades)
+        left_grades = self.algebra.grade(np.asarray(left.masks, dtype=self.algebra.blade_dtype))[:, None]
+        right_grades = self.algebra.grade(np.asarray(right.masks, dtype=self.algebra.blade_dtype))[None, :]
+        output_grades = self.algebra.grade(table.blades)
         coeffs = table.coefficients
 
         try:
-            valid = (coeffs != 0) & np.asarray(grade_rule(l_grades, r_grades, o_grades), dtype=bool)
+            valid = (coeffs != 0) & np.asarray(grade_rule(left_grades, right_grades, output_grades), dtype=bool)
         except TypeError:
             valid = np.zeros(coeffs.shape, dtype=bool)
-            for i, lm in enumerate(left.masks):
-                for j, rm in enumerate(right.masks):
+            for i in range(len(left.masks)):
+                for j in range(len(right.masks)):
                     if coeffs[i, j]:
                         valid[i, j] = grade_rule(
-                            int(l_grades[i, 0]), int(r_grades[0, j]), int(o_grades[i, j])
+                            int(left_grades[i, 0]), int(right_grades[0, j]), int(output_grades[i, j])
                         )
 
         output_masks = np.unique(table.blades[valid])
         output = self.subspaces.from_masks(output_masks)
         output_signs = np.asarray(output.signs, dtype=np.int8)
-        l_signs = np.asarray(left.signs, dtype=np.int8)
-        r_signs = np.asarray(right.signs, dtype=np.int8)
+        left_signs = np.asarray(left.signs, dtype=np.int8)
+        right_signs = np.asarray(right.signs, dtype=np.int8)
 
-        signed_coeffs = coeffs * l_signs[:, None] * r_signs[None, :]
+        signed_coeffs = coeffs * left_signs[:, None] * right_signs[None, :]
         coefficients = np.zeros((len(output), len(left), len(right)), dtype=np.int8)
-        for k, mask in enumerate(output.masks):
+        for row, mask in enumerate(output.masks):
             match = valid & (table.blades == mask)
-            coefficients[k, match] = signed_coeffs[match] * output_signs[k]
+            coefficients[row, match] = signed_coeffs[match] * output_signs[row]
 
         gatype = rule.result((left_type, right_type), (output, left, right))
         return Extensor(self.algebra.exact, gatype, SymbolicKernel(coefficients))
@@ -583,17 +630,15 @@ class OperatorFactory:
         rule: OperationRule,
         left_type: GAType,
         right_type: GAType,
-        basis_rule: BasisRule,
+        basis_rule: Callable,
     ) -> Extensor:
-        """Build a sparse-by-construction exact bilinear operation."""
-
         left = left_type.output_subspace
         right = right_type.output_subspace
         self._require_space(left)
         self._require_space(right)
 
-        terms: list[tuple[int, int, int, int]] = []
-        output_masks: set[int] = set()
+        terms = []
+        output_masks = set()
         for left_index, left_mask in enumerate(left.masks):
             for right_index, right_mask in enumerate(right.masks):
                 output_mask, coefficient = basis_rule(left_mask, right_mask)
@@ -619,12 +664,14 @@ class OperatorFactory:
 
     @lru_cache(maxsize=None)
     def dual(self, gatype: GAType) -> Extensor:
-        """Right-Hodge dual, expressed on the algebra's default output layout: it flips the orientation."""
-
+        """Right-Hodge duality maps each blade to its signed complement in the algebra's canonical
+        output layout and flips orientation between intrinsic and extrinsic."""
         return self._dual(gatype, inverse=False)
 
     @lru_cache(maxsize=None)
     def dual_inverse(self, gatype: GAType) -> Extensor:
+        """Inverting `dual` restores each complement blade with the forward sign of its preimage so
+        `dual_inverse(dual(x)) == x` holds in every signature, flipping orientation back."""
         return self._dual(gatype, inverse=True)
 
     def _dual(self, gatype: GAType, *, inverse: bool) -> Extensor:
@@ -643,8 +690,6 @@ class OperatorFactory:
                           TraitSet((BladeProduct((0,)),)))
 
     def _right_hodge(self, mask: int) -> tuple[int, int]:
-        """Return the complement mask and right-Hodge orientation sign."""
-
         complement = self.algebra.complement(mask)
         orientation = self.algebra.geometric_product(mask, complement).coefficient
         negative_sign = (
@@ -655,8 +700,6 @@ class OperatorFactory:
         return complement, orientation * negative_sign
 
     def _right_hodge_inverse(self, mask: int) -> tuple[int, int]:
-        """Return the inverse image of one right-Hodge basis blade."""
-
         complement = self.algebra.complement(mask)
         _, sign = self._right_hodge(complement)
         return complement, sign
@@ -666,11 +709,10 @@ class OperatorFactory:
             raise UnorientedSubspace()
         if not isinstance(operand, GAType) or operand.algebra is not self.algebra:
             raise ValueError("operation operand type belongs to another algebra")
-        # An operator acts on blades; over the sites of a field it acts site by site when bound.
+        # Operators act on blades; field operands broadcast site by site when bound.
         return operand.derive.plain
 
     def _nullary(self, gatype: GAType) -> GAType:
-        """A nullary GAType of this algebra."""
         if isinstance(gatype, SubSpace):
             raise UnorientedSubspace()
         if not isinstance(gatype, GAType) or gatype.algebra is not self.algebra or gatype.arity:

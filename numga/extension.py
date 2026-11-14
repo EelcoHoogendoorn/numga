@@ -15,7 +15,8 @@ Single-signature methods fix their operand count on first registration from eith
 declarative patterns or a predicate's positional parameters. Methods that accept optional trailing
 operands, such as `eigh(form)` versus generalized `eigh(form, metric)` or `lstsq(operator, rhs)`
 versus `lstsq(form, rhs, metric)`, declare `overloads` up front and route each call length to its
-own independent `ExtensionMethod` table.
+own independent `ExtensionMethod` table. Dispatch and specialization across types are described in
+`docs/internals.md` (section 7), with orientation constraints in `docs/orientation.md`.
 """
 
 from __future__ import annotations

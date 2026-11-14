@@ -1,13 +1,17 @@
-"""Quadrics drawn under a camera, in the scene's own algebra: regions where they are negative, curves where they vanish.
+"""Implicit quadric regions, conics, and linear flats are evaluated directly on the GPU in the
+scene's own algebra without introducing a metric.
 
-Every sample of the picture is read back into the scene by the camera's preimage, the point the camera reads there, and
-each quadric, a map from points to planes, is evaluated there by its form `quadric(point) & point`, plus a linear part
-`plane & point`, so that a flat is the curve of a linear form. A region, like a solid of `solids`, is the intersection of
-a few quadrics, and covers the samples where all their forms are negative; a curve covers those within half its width
-of where its form vanishes, the form's distance to zero over its change
-across one sample, as `contours` draws a level line. No metric enters: the camera's readings measure the picture, so a
-conic of a projective plane, of a vector plane or of a spacetime diagram is drawn alike, and the picture's samples, sixteen
-to a pixel, smooth its edges.
+Each subpixel sample maps back into the scene through `camera`'s least-squares `preimage`, yielding
+`point = origin + x * step_across + y * step_up` in the complementary grade and opposite orientation
+of `camera`'s planes. Every quadric (`Form <- Point`, of either output orientation) and optional
+linear flat (`Form`) evaluates `(quadric(point) & point) + (flat & point)` with the extrinsic factor
+placed first, so conics and lines render identically across projective planes, vector planes, and
+spacetime diagrams.
+
+A `REGION` layer covers samples where all `bounds` forms of a region are negative, whereas a `CURVE`
+layer (`curves` and `flats`) anti-aliases the zero set to a constant thickness of `width` pixels by
+dividing the form's value by its screen-space variation `fwidth`, making curve width independent of
+overall form sign or scale.
 """
 from __future__ import annotations
 
@@ -26,7 +30,7 @@ from .drawing import Draw
 
 
 class Kind(IntEnum):
-    """What a layer of quadrics covers."""
+    """Coverage mode selecting negative-interior filling (`REGION`) or zero-set stroking (`CURVE`)."""
     REGION = 0
     CURVE = 1
 
@@ -85,8 +89,8 @@ fn shade(corner: Corner) -> @location(0) vec4<f32> {
 
 @cache
 def shader(Point: GAType, Plane: GAType, Form: GAType) -> Shader:
-    """The quadrics that map points of the type `Point`, read by a camera of planes of the type `Plane`, to planes of
-    the type `Form`, of either orientation: their form a plane's pairing with a point, the extrinsic first."""
+    """Compile and cache the implicit-quadric shader for scene points `Point`, camera planes `Plane`,
+    and quadric output planes `Form` (of either orientation, paired extrinsic first)."""
     pairing = "plane & point" if extrinsic_first(Form) else "point & plane"
     form_pairing = f"""
 // A plane of the forms paired with a point: a form's value there, the extrinsic first.
@@ -100,8 +104,9 @@ fn form_paired(plane: Form, point: Point) -> f32 {{
 
 def layer(quadrics: Extensor, flats: Extensor, kind: Kind, width: float, colours: np.ndarray, camera: Camera,
           opacity: float) -> Draw:
-    """Quadrics `[n, bounds]`, maps from points to planes, with their linear parts, planes `[n, bounds]`, covering what
-    `kind` says, read by the camera: a layer of colour and coverage."""
+    """Build a full-screen `Draw` pass evaluating `quadrics` (`[n, bounds]`) plus linear `flats`
+    (`[n, bounds]`) over `camera` according to `kind`, with RGB `colours` (`[n, 3]` or `[3]`) and
+    stroke `width` in pixels."""
     algebra = quadrics.algebra
     Plane = whole(camera.across, algebra)
     Point = points_read_by(Plane)
@@ -116,7 +121,8 @@ def layer(quadrics: Extensor, flats: Extensor, kind: Kind, width: float, colours
 
 
 def points_read_by(Plane: GAType) -> GAType:
-    """The points that planes of the type `Plane` read: the complementary grade, of the other orientation."""
+    """Return the full-grade `GAType` of complementary grade and opposite orientation paired by
+    `Plane`."""
     algebra = Plane.algebra
     grade = bin(int(Plane.output_subspace.masks[0])).count("1")
     return algebra.gatype.from_grades([len(algebra.signature) - grade]).derive.with_orientations(
@@ -124,34 +130,33 @@ def points_read_by(Plane: GAType) -> GAType:
 
 
 def nothing(kind: GAType, shape: tuple[int, ...]) -> Extensor:
-    """Zero of a type, `shape` of them: the part a layer's quadrics or flats lack."""
+    """Return a zero-filled `Extensor` of `kind` with batch `shape`."""
     return NumpyContext(kind.algebra).extensor(kind, np.zeros(shape + kind.structural_shape))
 
 
 def form_of(quadrics: Extensor) -> GAType:
-    """The planes quadrics map points to: the whole of their grade, at their own orientation."""
+    """Return the full-grade output `GAType` of `quadrics` with its orientation preserved."""
     output = quadrics.gatype.derive.output
     grade = bin(int(output.output_subspace.masks[0])).count("1")
     return quadrics.algebra.gatype.from_grades([grade]).derive.with_orientations(output.orientations)
 
 
 def regions(quadrics: Extensor, colours: np.ndarray, camera: Camera, opacity: float = 1.0) -> Draw:
-    """Regions `[n]`, each where its quadrics `[n, bounds]`, maps from points to planes of either orientation, are all
-    negative, each in its colour `[n, 3]` or all in one `[3]`: their picture."""
+    """Draw `n` filled regions where all `bounds` forms in `quadrics` (`[n, bounds]`, mapping points
+    to planes of either orientation) are negative, coloured by `colours` (`[n, 3]` or `[3]`)."""
     return layer(quadrics, nothing(form_of(quadrics), quadrics.shape), Kind.REGION, 0.0, colours, camera, opacity)
 
 
 def curves(quadrics: Extensor, width: float, colours: np.ndarray, camera: Camera, opacity: float = 1.0) -> Draw:
-    """The curves where quadrics `[n]`, maps from points to planes of either orientation, vanish, `width` pixels across,
-    each in its colour `[n, 3]` or all in one `[3]`: their picture. A curve is a zero set, the same whatever the form's
-    sign, so a quadric of a join draws its curve as it is."""
+    """Draw the zero-set curves of `quadrics` (`[n]`, mapping points to planes of either orientation)
+    at `width` pixels wide in `colours` (`[n, 3]` or `[3]`), independent of overall form sign."""
     return layer(quadrics[:, None], nothing(form_of(quadrics), quadrics.shape + (1,)), Kind.CURVE, width, colours,
                  camera, opacity)
 
 
 def flats(planes: Extensor, width: float, colours: np.ndarray, camera: Camera, opacity: float = 1.0) -> Draw:
-    """Flats `[n]`, planes or lines of either orientation, where a plane's pairing with a point vanishes, across the
-    whole picture, `width` pixels across, each in its colour `[n, 3]` or all in one `[3]`: their picture."""
+    """Draw the zero-set lines of linear `planes` (`[n]`, of either orientation) across `camera` at
+    `width` pixels wide in `colours` (`[n, 3]` or `[3]`)."""
     Form = whole(planes, planes.algebra)
     Point = points_read_by(whole(camera.across, planes.algebra))
     return layer(nothing(planes.algebra.gatype((Form, Point)), planes.shape + (1,)), planes[:, None], Kind.CURVE, width,

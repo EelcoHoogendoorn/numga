@@ -1,14 +1,18 @@
-"""Exp and log by scaling and squaring, with whole-GAType dispatch.
+"""Exponentials, logarithms, and differential exponential maps evaluate by scaling and squaring with
+whole-`GAType` dispatch across arbitrary dimensions, signatures, and array backends.
 
-exp takes the eighth-order Taylor step of the generator scaled down by 2**n and squares it n
-times; log takes n square roots and the eighth-order series of the logarithm around the identity,
-the inverse step, scaled back up by 2**n. With n = 8 the truncation stays below round-off for
-generators up to a size of about ten, and more steps only add round-off. n is the caller's.
+`exp` scales its generator down by `2**n`, evaluates an eighth-order Horner Taylor polynomial, and
+squares `n` times; `log` extracts `n` principal square roots to bring an element near `1`, evaluates
+the matching eighth-order series of `log(1 + y)` in `y = rotor - 1`, and scales back up by `2**n`. At
+the default `n = 8`, series truncation stays below double-precision round-off for generators up to
+magnitude ten, and `log` inverts `exp` step for step.
 
-These are the reference implementations, kept conceptually simple: built from sums and products
-only, they hold for every signature and every backend, and the log undoes the exp step for step.
-Closed forms, special cases and backend-specific versions belong in opt-in modules with their own
-register(), such as `invariant_decomposition` and `optimized`.
+Because every step relies strictly on sums, geometric products, and principal square roots, these
+implementations hold uniformly across degenerate, Lorentzian, and higher-dimensional Clifford
+algebras. Nilpotent generators (`bivector.squared() == 0`, such as pure translations) short-circuit
+statically to `1 + bivector`, while dimension-specific closed forms register ahead of these general
+fallbacks through opt-in modules such as `numga.extensions.invariant_decomposition` and
+`numga.extensions.optimized`.
 """
 
 from __future__ import annotations
@@ -20,62 +24,70 @@ from ._scalar_functions import register_scalar_function
 
 
 @Extensor.exp_linear.register(lambda t: t.is_bivector)
-def exp_linear(b: Extensor) -> Extensor:
-    """First-order exponential; the result is not normalized."""
-    return 1 + b
+def exp_linear(bivector: Extensor) -> Extensor:
+    """The first-order exponential `1 + bivector` leaves the result unnormalized."""
+    return 1 + bivector
 
 
 @Extensor.exp_linear_normalized.register(lambda t: t.is_bivector)
-def exp_linear_normalized(b: Extensor) -> Extensor:
-    return (1 + b).normalized()
+def exp_linear_normalized(bivector: Extensor) -> Extensor:
+    """The normalized first-order exponential projects `1 + bivector` back onto the rotor manifold."""
+    return (1 + bivector).normalized()
 
 
 @Extensor.exp_cayley.register(lambda t: t.is_bivector)
 @Extensor.exp_quadratic.register(lambda t: t.is_bivector)
-def exp_quadratic(b: Extensor) -> Extensor:
-    """Cayley exponential approximation, inverse of log_quadratic."""
-    r = 1 + b / 2
-    return (r.squared() / r.symmetric_reverse_product()).with_traits(*r.gatype.normalized_traits)
+def exp_quadratic(bivector: Extensor) -> Extensor:
+    """The Cayley map `(1 + bivector / 2) / (1 - bivector / 2)` sends bivectors onto unit rotors as
+    the exact algebraic inverse of `log_quadratic`."""
+    half_step = 1 + bivector / 2
+    return (half_step.squared() / half_step.symmetric_reverse_product()).with_traits(*half_step.gatype.normalized_traits)
 
 
 @Extensor.log_linear.register(lambda t: t.is_even)
-def log_linear(m: Extensor) -> Extensor:
-    return m.restrict[2]
+def log_linear(even: Extensor) -> Extensor:
+    """The first-order logarithm restricts an even multivector to its grade-two bivector part."""
+    return even.restrict[2]
 
 
 @Extensor.log_linear_normalized.register(lambda t: t.is_rotor)
-def log_linear_normalized(m: Extensor) -> Extensor:
-    denominator = m.restrict_subspace(m.gatype.derive.reverse_fixed_subspace)
-    return m.bivector_product(denominator.inverse())
+def log_linear_normalized(rotor: Extensor) -> Extensor:
+    """The projective first-order logarithm divides `rotor`'s grade-two part by its reversal-fixed
+    part, inverting `exp_linear_normalized` up to scalar scale."""
+    denominator = rotor.restrict_subspace(rotor.gatype.derive.reverse_fixed_subspace)
+    return rotor.bivector_product(denominator.inverse())
 
 
 @Extensor.log_quadratic.register(lambda t: t.is_rotor)
-def log_quadratic(m: Extensor) -> Extensor:
-    return m.square_root().log_linear_normalized() * 2
+def log_quadratic(rotor: Extensor) -> Extensor:
+    """The Cayley inverse logarithm `2 * rotor.square_root().log_linear_normalized()` inverts
+    `exp_quadratic`."""
+    return rotor.square_root().log_linear_normalized() * 2
 
 
-# TODO: review this port. It sums the series 2 artanh((m-1)/(m+1)), not a Pade approximant, and
-#  dispatches on rotors where the legacy motor_log_pade took any even multivector.
+# TODO: review this port. It sums the series 2 artanh((rotor - 1) / (rotor + 1)), rather than a
+# Pade approximant, and dispatches on rotors where legacy motor_log_pade accepted any even element.
 @Extensor.log_pade.register(lambda t: t.is_rotor)
-def log_pade(m: Extensor, *, n: int = 25) -> Extensor:
-    """Odd series in `(m - 1) / (m + 1)`; converges near identity."""
-    f = (m - 1) / (m + 1)
-    square = f.squared()
-    power, result = f, f * 2
-    for k in range(1, n):
+def log_pade(rotor: Extensor, *, n: int = 25) -> Extensor:
+    """Truncating `2 * arctanh((rotor - 1) / (rotor + 1))` to `n` odd powers approximates the bivector
+    logarithm near the identity."""
+    cayley = (rotor - 1) / (rotor + 1)
+    square = cayley.squared()
+    power, result = cayley, cayley * 2
+    for step in range(1, n):
         power = power * square
-        result = result + power * 2 / (2*k + 1)
+        result = result + power * 2 / (2 * step + 1)
     return result.restrict[2]
 
 
 @Extensor.exp.register(lambda t: t.is_empty)
-def empty_exp(z: Extensor) -> Extensor:
-    return (z + 1).with_traits(ReverseProductOne, Versor)
+def empty_exp(empty: Extensor) -> Extensor:
+    return (empty + 1).with_traits(ReverseProductOne, Versor)
 
 
 @Extensor.log.register(lambda t: t.is_empty)
-def empty_log(z: Extensor) -> Extensor:
-    return (z + 0).log()
+def empty_log(empty: Extensor) -> Extensor:
+    return (empty + 0).log()
 
 
 register_scalar_function(Extensor.exp, lambda context, kernel: context.xp.exp(kernel))
@@ -83,54 +95,50 @@ register_scalar_function(Extensor.log, lambda context, kernel: context.xp.log(ke
 
 
 @Extensor.exp.register(lambda t: t.is_bivector and t.is_nilpotent)
-def nilpotent_bivector_exp(b: Extensor, *, n: int = 8) -> Extensor:
-    """`b.exp() == 1 + b` when `b` squares to zero by its type, as for a translation."""
-
-    return (b + 1).with_traits(ReverseProductOne, Versor)
+def nilpotent_bivector_exp(bivector: Extensor, *, n: int = 8) -> Extensor:
+    """When a bivector's `GAType` is statically nilpotent (such as a pure translation), its
+    exponential equals `1 + bivector` identically."""
+    return (bivector + 1).with_traits(ReverseProductOne, Versor)
 
 
 @Extensor.exp.register(lambda t: t.is_nilpotent)
-def nilpotent_exp(x: Extensor) -> Extensor:
-    """`x.exp() == 1 + x` when `x` squares to zero by its type, as the pseudoscalar of PGA does."""
-
-    return x + 1
+def nilpotent_exp(element: Extensor) -> Extensor:
+    """When an element squares statically to zero (such as the PGA pseudoscalar), its exponential
+    truncates exactly at `1 + element`."""
+    return element + 1
 
 
 @Extensor.exp_bisect.register(lambda t: t.is_bivector)
 @Extensor.exp.register(lambda t: t.is_bivector)
-def bivector_exp(b: Extensor, *, n: int = 8) -> Extensor:
-    """The Taylor step of the generator scaled down by 2**n, followed by n squarings, the step and
-    the result each normalized. Within the step's range the normalizations change nothing above
-    round-off; beyond it the result stays a rotor, at the wrong angle, where the bare series and
-    its squarings grow without bound."""
-
-    m = _taylor_exp(b / 2**n).normalized()
+def bivector_exp(bivector: Extensor, *, n: int = 8) -> Extensor:
+    """Scaling `bivector` by `2**-n`, normalizing the eighth-order Taylor step, and squaring `n`
+    times produces a normalized rotor that stays bounded on the Spin group even far outside the
+    base series radius."""
+    rotor = _taylor_exp(bivector / 2**n).normalized()
     for _ in range(n):
-        m = m.squared()
-    return m.normalized().with_traits(ReverseProductOne, Versor)
+        rotor = rotor.squared()
+    return rotor.normalized().with_traits(ReverseProductOne, Versor)
 
 
 @Extensor.exp_derivative.register(lambda t: t.is_bivector)
-def exp_derivative(b: Extensor, *, n: int = 8) -> Extensor:
-    """The derivative of exp at `b`, carried back to the identity: the map `Bivector <- Bivector`
-    with `(b + db * h).exp() == b.exp() * (1 + b.exp_derivative()(db) * h)` to first order in `h`.
+def exp_derivative(bivector: Extensor, *, n: int = 8) -> Extensor:
+    """The right-trivialized differential of `exp` at `bivector` returns the operator
+    `Bivector <- Bivector` satisfying
+    `(bivector + delta * h).exp() == bivector.exp() * (1 + bivector.exp_derivative()(delta) * h)`
+    to first order in `h`.
 
-    It is the mean of the turns `(b * s).exp() << Bivector` over `s` from 0 to 1. Halving `b`
-    splits that mean in two, the second half the first turned by `(b / 2).exp()`, so the mean at
-    `b` is `((b / 2).exp() << Bivector + Bivector)(mean at b / 2) / 2`. n halvings bring `b` down
-    to where the mean is its series in the commutator map `ad`,
-    `Bivector - ad / 2 + ad(ad) / 6 - ...` to the order of exp's step; the turns of the halved
-    generators are the squarings of its exponential, as in exp itself. A boost's turns grow like
-    the exponential of twice its size, and the round-off with them."""
-
-    Bivector = b.algebra.gatype.bivector()
-    small = b / 2**n
-    # the commutator product with the generator, small * X - X * small
+    Because the operator equals the integral of `(bivector * s).exp() << Bivector` over `s` in
+    `[0, 1]`, halving `bivector` splits that integral into two halves related by the half-turn
+    `(bivector / 2).exp()`, evaluated by `n` halvings from the eighth-order series in `ad` followed
+    by `n` doubling recurrences."""
+    Bivector = bivector.algebra.gatype.bivector()
+    small = bivector / 2**n
+    # Commutator operator X -> small * X - X * small on Bivector.
     ad = small.commutator(Bivector) * 2                                # [...] Bivector <- Bivector
-    # the series 1 - ad / 2! + ad(ad) / 3! - ..., by Horner: 1 - ad / 2 (1 - ad / 3 (1 - ...))
+    # Horner evaluation of 1 - ad / 2! + ad^2 / 3! - ... up to _ORDER.
     mean = Bivector
-    for k in range(_ORDER, 1, -1):
-        mean = Bivector - ad(mean) / k                                 # [...] Bivector <- Bivector
+    for order in range(_ORDER, 1, -1):
+        mean = Bivector - ad(mean) / order                             # [...] Bivector <- Bivector
     turn = _exp_series(small)
     for _ in range(n):
         mean = ((turn << Bivector) + Bivector)(mean) / 2
@@ -138,93 +146,85 @@ def exp_derivative(b: Extensor, *, n: int = 8) -> Extensor:
     return mean
 
 
-# The order of the series steps of exp and log.
 _ORDER = 8
 
 
-def _exp_series(x: Extensor) -> Extensor:
-    """exp of a small bivector by its Taylor series, a rotor."""
-    return _taylor_exp(x).with_traits(ReverseProductOne, Versor)
+def _exp_series(bivector: Extensor) -> Extensor:
+    return _taylor_exp(bivector).with_traits(ReverseProductOne, Versor)
 
 
-def _log_series(m: Extensor) -> Extensor:
-    """The reversal-antisymmetric log of a unit even element near the identity."""
-    logarithm = _taylor_log(m)
+def _log_series(rotor: Extensor) -> Extensor:
+    logarithm = _taylor_log(rotor)
     return logarithm.restrict_subspace(
         logarithm.subspace.difference(logarithm.gatype.derive.reverse_fixed_subspace),
     )
 
 
-def _taylor_exp(x: Extensor) -> Extensor:
-    """exp of a small multivector by its Taylor series, by Horner: 1 + x (1 + x / 2 (1 + x / 3 (...)))."""
-    result = 1 + x / _ORDER
-    for k in range(_ORDER - 1, 0, -1):
-        result = 1 + x * result / k
+def _taylor_exp(element: Extensor) -> Extensor:
+    result = 1 + element / _ORDER
+    for order in range(_ORDER - 1, 0, -1):
+        result = 1 + element * result / order
     return result
 
 
-def _taylor_log(m: Extensor) -> Extensor:
-    """log of a multivector near one by the series of log(1 + y) in y = m - 1, by Horner:
-    y (1 - y (1 / 2 - y (1 / 3 - ...)))."""
-    y = m - 1
-    result = y / _ORDER
-    for k in range(_ORDER - 1, 0, -1):
-        result = y * (1 / k - result)
+def _taylor_log(element: Extensor) -> Extensor:
+    offset = element - 1
+    result = offset / _ORDER
+    for order in range(_ORDER - 1, 0, -1):
+        result = offset * (1 / order - result)
     return result
 
 
 @Extensor.log.register(
     lambda t: t.is_rotor and t.is_scalar_bivector and t.derive.nonscalar.is_nilpotent
 )
-def translator_log(m: Extensor, *, n: int = 8) -> Extensor:
-    return m.restrict[2]
+def translator_log(translator: Extensor, *, n: int = 8) -> Extensor:
+    """When a rotor's bivector part is statically nilpotent, its logarithm is simply `translator.restrict[2]`."""
+    return translator.restrict[2]
 
 
 @Extensor.log.register(
     lambda t: t <= t.algebra.subspace.even() and t.entails(ReverseProductOne)
 )
-def unit_versor_log(m: Extensor, *, n: int = 8) -> Extensor:
-    """Unit even-element log: n square roots, then the logarithm series scaled back.
+def unit_versor_log(rotor: Extensor, *, n: int = 8) -> Extensor:
+    """Extracting `n` principal square roots brings a unit even versor near `1`, where the
+    reversal-antisymmetric part of the eighth-order Taylor logarithm scaled by `2**n` recovers its
+    generator.
 
-    Each root normalizes m + 1; the input is not normalized. The logarithm is antisymmetric
-    under reversal: below six dimensions it is a bivector, but higher grades such as six
-    can occur on this Clifford-log branch. Choosing a bivector logarithm there requires a
-    different branch. The roots must exist; exactly -1 needs a separate branch.
-    """
-
+    Below six dimensions the reversal-antisymmetric subspace is purely grade two, whereas in six or
+    more dimensions the principal Clifford logarithm can also carry grade-six components when plane
+    angles cross `pi`."""
     for _ in range(n):
-        m = m.square_root()
-    return _log_series(m) * 2**n
+        rotor = rotor.square_root()
+    return _log_series(rotor) * 2**n
 
 
 @Extensor.log.register(
     lambda t: t <= t.algebra.subspace.even() and t.entails(Versor)
 )
-def versor_log(m: Extensor, *, n: int = 8) -> Extensor:
-    """Retain log-scale; requires a positive scalar reverse product."""
-
-    scale = m.norm()
-    unit = (m / scale).with_traits(ReverseProductOne, Versor)
+def versor_log(versor: Extensor, *, n: int = 8) -> Extensor:
+    """Separating `scale = versor.norm()` from `unit = versor / scale` returns `scale.log() + unit.log(n=n)`
+    for even versors with positive scalar reverse product."""
+    scale = versor.norm()
+    unit = (versor / scale).with_traits(ReverseProductOne, Versor)
     return scale.log() + unit.log(n=n)
 
 
 @Extensor.exp.register(GATypePattern(arity=0))
-def general_exp(x: Extensor, *, n: int = 8) -> Extensor:
-    """Any multivector: the Taylor step of `x` scaled down by 2**n, followed by n squarings. Its
-    powers stay in the subalgebra it generates, so the result's type closes on its own. Tried
-    after every closed form and special case."""
-
-    m = _taylor_exp(x / 2**n)
+def general_exp(value: Extensor, *, n: int = 8) -> Extensor:
+    """The general multivector exponential scales `value` down by `2**n`, evaluates the Taylor
+    series, and squares `n` times inside the subalgebra generated by `value`."""
+    result = _taylor_exp(value / 2**n)
     for _ in range(n):
-        m = m.squared()
-    return m
+        result = result.squared()
+    return result
 
 
 @Extensor.log.register(GATypePattern(arity=0))
-def general_log(m: Extensor, *, n: int = 8) -> Extensor:
-    """Any multivector with a principal square root: n square roots bring it near one, then the
-    series of the logarithm, scaled back up by 2**n, the inverse of `general_exp` step for step."""
-
+def general_log(value: Extensor, *, n: int = 8) -> Extensor:
+    """The general multivector logarithm takes `n` principal square roots and scales the eighth-order
+    Taylor logarithm around `1` by `2**n`, inverting `general_exp` step for step wherever the
+    principal roots exist."""
     for _ in range(n):
-        m = m.square_root()
-    return _taylor_log(m) * 2**n
+        value = value.square_root()
+    return _taylor_log(value) * 2**n

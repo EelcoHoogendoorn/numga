@@ -1,9 +1,15 @@
-"""Triangle meshes in PGA3D, rasterized on the GPU: lit by the lamp of `solids`, seen by its camera along
-parallel rays, on a plain background.
+"""Triangle surfaces in `PGA3D` rasterize on the GPU under `solids`'s directional lamp along parallel
+orthographic rays, writing premultiplied RGBA colour and view-ray depth at every subpixel sample so
+`solids` and `Scene` composite triangulated surfaces sample-by-sample with analytic quadrics and 3D
+tubes.
 
-Each corner of a face reads its point, its colour and the face's shading normal there, and places itself on
-the image by its pairings with the camera's own planes; the normals are flat, the face's own, or smooth, the
-faces around each vertex averaged, as the caller builds them.
+Each face corner pairs its `Point` directly with the camera's planes and carries an intrinsic tangent
+plane (`solids.Patch`) whose slopes against the camera's preimage steps determine surface lighting.
+`flat` assigns each triangle's three-point join `a & b & c` to all three corners, whereas `smooth`
+sums those area-weighted face joins onto shared vertices through topological incidence and its
+adjugate. Surface appearance is parameterized by `Colour`, which bundles a WGSL `colour(...)`
+function (`plain` for interpolated corner colours, `by_face` for per-face colours, or custom shaders
+using barycentric coordinates `corner` and `oversampling`) with its Python constants.
 """
 
 from __future__ import annotations
@@ -23,19 +29,18 @@ from .solids import (Line, Plane, Point, View, ga, lamp_shading, lighting, steps
 
 
 class Colour(NamedTuple):
-    """How a mesh is coloured: WGSL defining `fn colour(values: vec4<f32>, face_values: vec4<f32>, corner:
-    vec3<f32>, front: bool) -> vec4<f32>`, the colour and how much of what lies behind it it hides, from each pixel's
-    values, the corners' blended across the face, the face's own, how near the pixel lies to each corner, and whether
-    the camera sees the side the face's normal points to; and the constants it names, numbers and vectors of two to
-    four numbers given from Python by name, beside the mesh shader's own `oversampling`."""
+    """Surface colour specification pairing WGSL `source` defining
+    `fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32>`
+    (returning straight RGBA from interpolated corner `values`, flat `face_values`, barycentric
+    weights `corner`, and front-facing flag `front`) with compile-time Python `constants` bound
+    alongside `oversampling`."""
     source: str
     constants: dict
 
 
 def source(colour: str) -> str:
-    """WGSL drawing a mesh, coloured by `colour`, the WGSL of a `Colour`. It writes the colour and the depth, each
-    weighted by how much of a pixel the mesh covers and by how much it hides; a pixel that hides nothing is not drawn,
-    and leaves what lies behind it to be seen."""
+    """Return the WGSL vertex and fragment stages shading a triangle surface with `colour`,
+    discarding zero-alpha samples and writing premultiplied RGBA colour alongside view depth."""
     return colour + """
 var<storage, read> points: array<Point>;
 var<storage, read> faces: array<vec3<u32>>;
@@ -127,16 +132,18 @@ def shader(colour: Colour) -> Shader:
 
 
 def flat(points: Point, faces: np.ndarray) -> dict:
-    """Each face's tangent plane at all three corners: the join of its corners, as it is."""
+    """Assign each triangle's joined tangent plane (`[faces] Patch-`) identically to all three of its
+    corners `a`, `b`, and `c`."""
     corners = points[faces]
     joined = corners[:, 0] & corners[:, 1] & corners[:, 2]                    # [faces] Patch-
     return dict(a=joined, b=joined, c=joined)
 
 
 def smooth(points: Point, topology: Topology) -> dict:
-    """At each corner, the tangent planes of the faces around its vertex summed: each face's the join of its corners,
-    so that a larger face counts for more, as the picture's lighting reads only their slopes."""
-    # The mesh's incidence holds plain numbers, which take the scene's algebra where they meet its points.
+    """Sum the joined tangent planes of incident triangles around each vertex of `topology` (so
+    larger triangles carry proportionally greater weight) and gather the resulting smooth `Patch-`
+    planes onto face corners `a`, `b`, and `c`."""
+    # Topological incidence holds plain numbers, which take the scene's algebra where they meet its points.
     incidence = topology.incidence[2, 0]
     corners = incidence * points.field()                                    # [3] Point-[faces]
     joined = corners[0] & corners[1] & corners[2]                            # Patch-[faces]
@@ -148,10 +155,10 @@ def smooth(points: Point, topology: Topology) -> dict:
 
 def samples(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, view: View,
             face_values: np.ndarray, colour: Colour, gloss: float) -> Draw:
-    """The mesh at every sample of the view's pixels, for `solids.layer` to compose: its colour, premultiplied by how
-    much it hides, and its depth along the view, both zero where it shows nothing; from up to four values at each
-    corner of each face, `[faces, 3, values]` or one row for all, and at each face, coloured by `colour`, with a glint
-    of `gloss`."""
+    """Build a supersampled `Draw` pass for `faces` (`[F, 3]`) over `points` (`[V]`) with corner
+    `values` (`[F, 3, C]` or broadcastable, `C <= 4`), per-face `face_values` (`[F, C]` or
+    broadcastable), corner `normals`, surface `colour`, and specular `gloss` for depth-ordered
+    compositing in `solids.layer` or `Scene`."""
     def padded(entries: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
         entries = np.broadcast_to(entries, shape + (np.shape(entries)[-1],))
         return np.concatenate([entries, np.zeros(shape + (4 - entries.shape[-1],))], axis=-1)
@@ -163,15 +170,15 @@ def samples(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict,
 
 def layer(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, view: View,
           face_values: np.ndarray, colour: Colour, gloss: float) -> tuple[np.ndarray, np.ndarray]:
-    """The mesh as the view sees it: its colour, `[rows, columns, 4]`, and its depth along the view, `[rows, columns]`,
-    each weighted by coverage; its samples, as `samples`, averaged over each pixel on the GPU."""
+    """Rasterize and supersample a triangle surface in `view`, returning coverage-weighted RGBA
+    colour `[rows, columns, 4]` and view depth `[rows, columns]`."""
     return solids.layer([], view, inks=[], translucent=[],
                         meshes=[(samples(points, faces, values, normals, view, face_values, colour, gloss), 1.0)])
 
 
 def circles(rims: Point, pivots: Line, n_points: int) -> Point:
-    """Closed circles, as the points of loops `[..., n_points]`: each point of a rim `[...]` turned about its pivot
-    `[...]`, the line through the circle's centre square to it, in even steps around a full turn."""
+    """Generate closed circle loops `[..., n_points] Point` by rotating each rim point in `rims`
+    (`[...]`) in `n_points` equal steps around its corresponding axis line in `pivots` (`[...]`)."""
     angles = np.linspace(0, 2 * np.pi, n_points, endpoint=False)                       # [n]
     turns = (pivots.normalized()[..., None] * (angles / 2)).exp()                       # [..., n] Motor
     return turns >> rims[..., None]
@@ -179,6 +186,6 @@ def circles(rims: Point, pivots: Line, n_points: int) -> Point:
 
 def draw(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, view: View, background: np.ndarray,
          face_values: np.ndarray, colour: Colour, gloss: float) -> np.ndarray:
-    """The mesh as the view sees it on the background, `[rows, columns, 3]`; as `layer`."""
+    """Render a lit triangle surface over RGB `background` as `uint8` RGB `[rows, columns, 3]`."""
     return solids.draw([], view, background, inks=[], translucent=[],
                        meshes=[(samples(points, faces, values, normals, view, face_values, colour, gloss), 1.0)])

@@ -1,43 +1,41 @@
-"""Field maps stored sparsely: couplings between the sites of fields.
+"""`SparseExtensor` couples discrete field sites through typed `Extensor` cells. A field is an
+`Extensor` whose output axis ranges over sites (`Vector[vertices]`), created from a trailing batch
+axis via `.field()`, while any leading batch axes hold independent fields. In a `SparseExtensor`,
+`cells[..., coupling]` couples input site `columns[coupling]` to output site `rows[coupling]`, and
+leading axes of `cells` hold separate maps sharing one sparsity pattern.
 
-A field is an Extensor whose output ranges over sites, `Vector[vertices]`, read from a batch axis
-with `.field()`; its elements may be multivectors or multilinear maps. Leading
-batch axes hold separate fields.
+Algebraic products and map evaluations act through the stored cells and sum across shared sites.
+Multiplying `S` on the right by a field (`S * f`, `S ^ f`, `S | f`, `S & f`) evaluates that product
+between each cell and the field element at its input site and sums into each output site, whereas
+multiplying on the left (`f * S`) pairs field elements with output sites and sums into input sites.
+Multiplying two sparse maps chains cell products across shared intermediate sites, multiplying by a
+`GAType` (`S * Even`) converts multivector cells into linear map cells, and calling a map-celled
+`SparseExtensor` (`S(field)` or `S(T)`) applies or composes cells while preserving any input axes
+carried by a map-valued field.
 
-A SparseExtensor holds cells, each coupling an input site (a column) to an output site (a row).
-It has no action of its own: an operation on it is its cells' operation, lifted to the couplings.
-A product with a field takes each cell's product with the element at its input site, by whichever
-product the expression names, `S * f`, `S ^ f`, `S | f` or `S & f`, and sums the contributions at
-each output site. Multiplication by an identity map, `S * Even`, makes each cell a map on Even. A
-field on the left pairs with the output sites instead, `f * S`. A product of two sparse extensors
-multiplies their cells along the paths through shared sites. A map cell is applied, `S(field)`, and
-composes, `S(T)`. These operations preserve the arguments of maps carried by the field.
+Operations that reverse multiplication or composition order also transpose `(rows, columns)`:
+`reverse` and `clifford_conjugate` transpose multivector-celled maps so `~(S * f) == ~f * ~S`, while
+`adjugate` and `adjoint` transpose unary map-celled operators across regressive pairings and metric
+scalar products. Operations that act on cell outputs alone (`involute`, grade and subspace
+projections, and `reverse` or `clifford_conjugate` on map cells) preserve the coupling direction.
 
-A field of maps acts as its diagonal where it is the map that acts. Called on a sparse map, it composes with the cells
-at its sites, site by site, as it acts on a field: `F(S) == spdiag(F)(S)`. Added to a square sparse map, a field of maps
-or of values sits on the diagonal, as it applies: `(S + F)(f) == S(f) + F(f)`. A map or value without sites is the same
-at every site. In a product, and as what a sparse map is called on, a field of maps is a field like any other, its
-elements gathered and summed by the couplings; its diagonal there, and in a solve or an inverse, is asked for,
-`spdiag(F)` or `F.on_diagonal()`.
-
-An operation that reverses the order of the cells' products runs the couplings the other way: the
-reverse and the Clifford conjugate of multivector cells, so that `~(S * f) == ~f * ~S`, and the
-adjoint and adjugate of map cells. The others act cell by cell: the involute, grade selection, and
-the reverse of a map cell, which reverses its output. The stored cells have shape
-`[..., couplings]`; leading axes hold separate maps sharing one pattern of couplings. Solves and
-eigenproblems use map cells and multivector-valued fields, through SciPy on the NumPy backend. Every
-field taken or returned is typed as one. See docs/fields.md for examples.
-
-A map of plain numbers, a `Sparse`, as the incidences of a mesh are, belongs to no algebra. Where it meets one, a
-field, a type, or a map of typed cells, its numbers become scalars of that algebra, as an untyped array does beside
-an extensor.
+Diagonal promotion mirrors dense field algebra where a map acts as an operator. Calling a field of
+maps `F` on a sparse map (`F(S) == spdiag(F)(S)`) composes site by site across output rows, and
+adding a field or site-free value or map to a square sparse map places it on the site diagonal so
+`(S + F)(f) == S(f) + F(f)`. In products, as operands passed into `S(...)`, and in linear solvers
+(`solve`, `lstsq`, `eigh`, assembled over element blocks via SciPy on the NumPy backend), diagonal
+embedding is requested explicitly through `spdiag(F)`. Whenever an algebra-free `Sparse` map meets
+an `Extensor`, `GAType`, or `SparseExtensor`, `typed` promotes its numeric weights to extrinsic
+`Scalar` cells of that algebra. Sparse field maps, `spdiag`, and sparse solvers are developed in
+`docs/fields.md` ("Sparse storage").
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import singledispatch
 from numbers import Number
-from typing import overload
+from typing import TYPE_CHECKING, Any, overload
 
 import numpy as np
 
@@ -48,14 +46,14 @@ from numga.gatype import GAType
 
 from .numeric import Sparse, chain, summed_runs, typed
 
+if TYPE_CHECKING:
+    from numga.backend.context import Context
+    from numga.subspace import SubSpace
+
 
 class SparseExtensor(Sparse):
-    """Extensor cells coupling `shape[1]` input sites to `shape[0]` output sites.
-
-    `cells[..., coupling]` couples `columns[coupling]` to `rows[coupling]`; duplicate couplings add
-    at construction. `gatype` describes the cells, not the whole field map, and leading cell batch
-    axes hold separate maps of the same pattern. The couplings are kept as a map of numbers keeps them.
-    """
+    """Typed `Extensor` cells couple `shape[1]` input sites to `shape[0]` output sites, caching
+    per-batch LU factorizations in `factors` on the first `solve`."""
 
     __slots__ = ("factors",)
     apply = ExtensionMethod("apply", takes="a sparse map")
@@ -69,7 +67,6 @@ class SparseExtensor(Sparse):
 
     def __init__(self, cells: Extensor, rows: np.ndarray, columns: np.ndarray, shape: tuple[int, int]) -> None:
         super().__init__(cells, rows, columns, shape)
-        # The factorization of each of its maps, made by the first solve against it and kept, as a map does not change.
         self.factors = {}
 
     def _scattered(self, cells: Extensor, index: np.ndarray, size: int) -> Extensor:
@@ -77,32 +74,31 @@ class SparseExtensor(Sparse):
 
     @classmethod
     def from_diagonal(cls, field: Extensor) -> SparseExtensor:
-        """A field map with the element at each site as the coupling cell of that site to itself."""
+        """Each site element of `field` forms the `(i, i)` coupling cell of a square diagonal map."""
         cells = _sites(field)
         index = np.arange(cells.shape[-1])
         return cls(cells, index, index, (len(index), len(index)))
 
     def diagonal(self) -> Extensor:
-        """The cells on the diagonal as a field, each at its row; zero where a row has none."""
+        """Entries with `rows == columns` form a field over `shape[0]` sites, with zeros on uncoupled rows."""
         return super().diagonal().field()
 
     def to_dense(self) -> Extensor:
-        """The field map the cells make, `X[rows] <- Y[columns]`, each coupling at its pair of sites and zero where
-        none couples: the dense counterpart, for what only a dense field map does, such as `eigh` without a metric,
-        `eig`, `pinv`, or `solve` and `lstsq` with maps on the right."""
+        """Scattering `cells` into a zero array of shape `[..., *shape, *structural_shape]` builds
+        the dense two-field `Extensor` `(Out[rows] <- In[columns])`."""
         cell_type, cells = self.gatype, self.cells
         context = cells.context
-        # Set functionally on the backend's own arrays, so that a traced map, as under JAX's jit, densifies too.
+        # Functional `.at[...].set` updates work on traced JAX arrays as well as NumPy arrays.
         zeros = context.xp.zeros(cells.shape[:-1] + self.shape + cells.structural_shape, dtype=cells.dtype)
         dense = context.extensor(cell_type, zeros).at[..., self.rows, self.columns].set(cells)
         return context.extensor(cell_type, dense.kernel).field(0, 1)
 
     @property
     def gatype(self) -> GAType:
-        """The coupling cells' type, by which the operations dispatch; the sites are `shape`."""
+        """Extension dispatch inspects the `GAType` of `cells`, while `shape` tracks the output and input site counts."""
         return self.cells.gatype
 
-    # --- products: the cells' own, summed over the shared sites ----------------------------------
+    # --- products --------------------------------------------------------------------------
     @overload
     def __mul__(self, other: SparseExtensor | Sparse) -> SparseExtensor: ...
     @overload
@@ -112,69 +108,74 @@ class SparseExtensor(Sparse):
     @overload
     def __mul__(self, other: float) -> SparseExtensor: ...
 
-    def __mul__(self, other):
-        """Times a number, every cell; otherwise the cells' geometric product."""
+    def __mul__(self, other: Any) -> SparseExtensor | Extensor:
+        """Numbers scale every cell, fields contract against input sites into an output field, and
+        sparse maps chain cell geometric products across shared sites."""
         return _right(other, self, expression.geometric_product)
 
-    def __rmul__(self, other):
+    def __rmul__(self, other: Any) -> SparseExtensor | Extensor:
         return _left(other, self, expression.geometric_product)
 
-    def __xor__(self, other):
+    def __xor__(self, other: Any) -> SparseExtensor | Extensor:
         return _right(other, self, expression.wedge)
 
-    def __rxor__(self, other):
+    def __rxor__(self, other: Any) -> SparseExtensor | Extensor:
         return _left(other, self, expression.wedge)
 
-    def __or__(self, other):
+    def __or__(self, other: Any) -> SparseExtensor | Extensor:
         return _right(other, self, expression.inner)
 
-    def __ror__(self, other):
+    def __ror__(self, other: Any) -> SparseExtensor | Extensor:
         return _left(other, self, expression.inner)
 
-    def __and__(self, other):
+    def __and__(self, other: Any) -> SparseExtensor | Extensor:
         return _right(other, self, expression.regressive)
 
-    def __rand__(self, other):
+    def __rand__(self, other: Any) -> SparseExtensor | Extensor:
         return _left(other, self, expression.regressive)
 
-    # --- operations that keep the order of products, cell by cell ---------------------------
+    # --- cellwise operations preserving coupling direction ---------------------------------
     def __invert__(self) -> SparseExtensor:
         return self.reverse()
 
     def involute(self) -> SparseExtensor:
+        """Applying grade involution to each cell preserves the site couplings."""
         return _cellwise(self, self.cells.involute())
 
     def select_grade(self, grade: int) -> SparseExtensor:
+        """Selecting `grade` on each cell zero-pads absent blades of that grade while preserving site couplings."""
         return _cellwise(self, self.cells.select_grade(grade))
 
     def restrict_grade(self, grade: int) -> SparseExtensor:
+        """Restricting each cell to `grade` intersects with existing cell support while preserving site couplings."""
         return _cellwise(self, self.cells.restrict_grade(grade))
 
-    def select_subspace(self, subspace) -> SparseExtensor:
+    def select_subspace(self, subspace: SubSpace) -> SparseExtensor:
+        """Projecting each cell onto `subspace` zero-pads absent target blades while preserving site couplings."""
         return _cellwise(self, self.cells.select_subspace(subspace))
 
-    def restrict_subspace(self, subspace) -> SparseExtensor:
+    def restrict_subspace(self, subspace: SubSpace) -> SparseExtensor:
+        """Intersecting each cell with `subspace` keeps only supported target blades while preserving site couplings."""
         return _cellwise(self, self.cells.restrict_subspace(subspace))
 
-    # --- unary coupling cells: application --------------------------------------------------
+    # --- unary map evaluation --------------------------------------------------------------
     @overload
     def __call__(self, operand: SparseExtensor | Sparse) -> SparseExtensor: ...
     @overload
     def __call__(self, operand: Extensor) -> Extensor: ...
 
-    def __call__(self, operand):
+    def __call__(self, operand: Any) -> SparseExtensor | Extensor:
+        """Evaluating unary map cells applies them to input field elements or composes them with
+        another sparse map across shared sites."""
         return self.apply(operand)
 
-    def _applied_by(self, value: Extensor) -> SparseExtensor:
-        """A map called on this one, acting as it acts on a field: a field of maps over the output sites composes with
-        the cells at its sites, site by site, and a map without sites is the same at every site."""
-        return _diagonal(value, self.shape[0], _context(value))(self)
+    def _applied_by(self, operator: Extensor) -> SparseExtensor:
+        return _diagonal(operator, self.shape[0], _context(operator))(self)
 
-    # --- sums ----------------------------------------------------------------------------------
+    # --- sums ------------------------------------------------------------------------------
     def __add__(self, other: SparseExtensor | Sparse | Extensor | GAType) -> SparseExtensor:
-        """The sum of two maps of the same sites; a field over the sites is on the diagonal, each element
-        at its own site, and a map or value without sites the same at every site, as each applies:
-        `(F + S)(f) == F(f) + S(f)` and `(Vector + S)(f) == f + S(f)`."""
+        """Adding sparse maps of equal `shape` merges their couplings, while fields and site-free
+        values or maps add along the diagonal of a square map so `(S + F)(f) == S(f) + F(f)`."""
         other = _summand(other, self)
         if self.shape != other.shape:
             raise ValueError(f"sparse shapes {self.shape} and {other.shape} differ")
@@ -188,374 +189,338 @@ class SparseExtensor(Sparse):
         )
 
     def __radd__(self, other: Sparse | Extensor | GAType) -> SparseExtensor:
-        # Its own, so that beside a map of numbers on the left the sum is this map's.
+        # Delegate reflected addition here so `Sparse + SparseExtensor` promotes the numeric map.
         return self + other
 
 
 @singledispatch
-def _summand(other: Extensor | GAType, value: SparseExtensor) -> SparseExtensor:
-    """What is added to a sparse map, as a sparse map of its sites: a field or a value on its diagonal."""
-    return _on_diagonal(value, other)
+def _summand(other: Extensor | GAType, sparse_map: SparseExtensor) -> SparseExtensor:
+    return _on_diagonal(sparse_map, other)
 
 
 @_summand.register
-def _summand_sparse(other: SparseExtensor, value: SparseExtensor) -> SparseExtensor:
+def _summand_sparse(other: SparseExtensor, sparse_map: SparseExtensor) -> SparseExtensor:
     return other
 
 
 @_summand.register
-def _summand_numbers(other: Sparse, value: SparseExtensor) -> SparseExtensor:
-    return typed(value, other)
+def _summand_numbers(other: Sparse, sparse_map: SparseExtensor) -> SparseExtensor:
+    return typed(sparse_map, other)
 
 
-def _on_diagonal(value: SparseExtensor, other: Extensor | GAType) -> SparseExtensor:
-    """A field or a value added to a square sparse map, on its diagonal."""
-    if value.shape[0] != value.shape[1]:
-        raise TypeError(f"a value has no diagonal in a sparse map of shape {value.shape}")
-    promoted = operands.linear(value.cells.context, other)
+def _on_diagonal(sparse_map: SparseExtensor, other: Extensor | GAType) -> SparseExtensor:
+    if sparse_map.shape[0] != sparse_map.shape[1]:
+        raise TypeError(f"a value has no diagonal in a sparse map of shape {sparse_map.shape}")
+    promoted = operands.linear(sparse_map.cells.context, other)
     if promoted is None:
         raise TypeError(f"cannot add {type(other).__name__} to a sparse extensor")
-    return _diagonal(promoted, value.shape[0], value.cells.context)
+    return _diagonal(promoted, sparse_map.shape[0], sparse_map.cells.context)
 
 
-def _diagonal(value: Extensor, sites: int, context) -> SparseExtensor:
-    """A value on the site diagonal: a field each element at its own site, and a value without sites, lowered into the
-    context, the same at every one of the sites."""
-    if not value.gatype.fields:
-        value = context.lower(value)
-        value = value[..., None].broadcast_to(value.shape + (sites,)).field()
-    return SparseExtensor.from_diagonal(value)
+def _diagonal(extensor: Extensor, n_sites: int, context: Context) -> SparseExtensor:
+    if not extensor.gatype.fields:
+        extensor = context.lower(extensor)
+        extensor = extensor[..., None].broadcast_to(extensor.shape + (n_sites,)).field()
+    return SparseExtensor.from_diagonal(extensor)
 
 
-# A sparse extensor with a field on its diagonal, each element its own cell.
+# Construct a square diagonal SparseExtensor whose `(i, i)` cell holds site `i` of a field.
 spdiag = SparseExtensor.from_diagonal
 
 
-# --- maps of plain numbers, typed where they meet an algebra --------------------------------------
-def _context(other: Extensor | GAType):
-    """The context of what a map of plain numbers meets: a field's own, or for a type or a value held exactly, its
-    algebra's on NumPy."""
+# --- promotion of numeric Sparse maps ------------------------------------------------------
+def _context(other: Extensor | GAType) -> Context:
     if isinstance(other, GAType) or other.context.is_exact:
         from numga.backend.numpy import NumpyContext
         return NumpyContext(other.algebra)
     return other.context
 
 
-def _scalars(value: Sparse, context) -> SparseExtensor:
-    """A map of plain numbers with its numbers made scalars of an algebra, as an untyped array beside an extensor
-    becomes a batch of its scalars."""
-    return SparseExtensor(operands.batch(context, value.cells), value.rows, value.columns, value.shape)
+def _scalars(numeric_map: Sparse, context: Context) -> SparseExtensor:
+    return SparseExtensor(operands.batch(context, numeric_map.cells), numeric_map.rows, numeric_map.columns, numeric_map.shape)
 
 
 @typed.register(Extensor)
 @typed.register(GAType)
-def _typed_beside_value(operand: Extensor | GAType, value: Sparse) -> SparseExtensor:
-    return _scalars(value, _context(operand))
+def _typed_beside_value(operand: Extensor | GAType, numeric_map: Sparse) -> SparseExtensor:
+    return _scalars(numeric_map, _context(operand))
 
 
 @typed.register
-def _typed_beside_sparse(operand: SparseExtensor, value: Sparse) -> SparseExtensor:
-    return _scalars(value, operand.cells.context)
+def _typed_beside_sparse(operand: SparseExtensor, numeric_map: Sparse) -> SparseExtensor:
+    return _scalars(numeric_map, operand.cells.context)
 
 
-# --- products and applications, by cells and by operand ----------------------------------------
-def _operand(value: SparseExtensor, other: object) -> object:
-    """Convert arrays to scalar batches; types and extensors retain their algebraic meanings."""
-    return operands.batch(value.cells.context, other) if operands.kind(other) is operands.Kind.ARRAY else other
+# --- products and applications, by operand -------------------------------------------------
+def _operand(sparse_map: SparseExtensor, other: object) -> object:
+    return operands.batch(sparse_map.cells.context, other) if operands.kind(other) is operands.Kind.ARRAY else other
 
 
-def _scaled(value: SparseExtensor, number: Number) -> SparseExtensor:
-    return _cellwise(value, value.cells * number)
+def _scaled(sparse_map: SparseExtensor, number: Number) -> SparseExtensor:
+    return _cellwise(sparse_map, sparse_map.cells * number)
 
 
 @singledispatch
-def _right(other: GAType, value: SparseExtensor, product) -> SparseExtensor:
-    """A GAType, or an array read as a batch of scalars: each cell's product with it, a map cell
-    with the type's axis."""
-    return _cellwise(value, product(value.cells, _operand(value, other)))
+def _right(other: Any, sparse_map: SparseExtensor, product: Callable) -> SparseExtensor | Extensor:
+    return _cellwise(sparse_map, product(sparse_map.cells, _operand(sparse_map, other)))
 
 
 @_right.register
-def _right_number(other: Number, value: SparseExtensor, product) -> SparseExtensor:
-    """A number scales every cell."""
-    return _scaled(value, other)
+def _right_number(other: Number, sparse_map: SparseExtensor, product: Callable) -> SparseExtensor:
+    return _scaled(sparse_map, other)
 
 
 @_right.register
-def _right_field(other: Extensor, value: SparseExtensor, product) -> Extensor:
-    reads = _reads(value) if product is expression.geometric_product else None
+def _right_field(other: Extensor, sparse_map: SparseExtensor, product: Callable) -> Extensor:
+    reads = _reads(sparse_map) if product is expression.geometric_product else None
     if reads is not None:
-        # A map that only reads indexes the field: its elements at the sites read, each kept with its type.
+        # Pure 0/1 selection maps index the field directly so unit-versor and subtype traits survive.
         sites = _sites(other)
         batch = np.broadcast_shapes(reads.shape[:-1], sites.shape[:-1])
         reads = np.broadcast_to(reads, batch + reads.shape[-1:])
         sites = sites.broadcast_to(batch + sites.shape[-1:])
         return sites[np.indices(reads.shape, sparse=True)[:-1] + (reads,)].field()
-    return _scatter(_cell_product(product, value.cells, _sites(other)[..., value.columns]), value.rows, value.shape[0]).field()
+    return _scatter(_cell_product(product, sparse_map.cells, _sites(other)[..., sparse_map.columns]), sparse_map.rows, sparse_map.shape[0]).field()
 
 
-def _reads(value: SparseExtensor) -> np.ndarray | None:
-    """The input site each output site of each map reads, `[..., rows]`, where the map only reads: scalar cells, each
-    zero or exactly one, every output site of every map coupled by a one to exactly one input site, as a selection
-    and an incidence's batches are. A product with such a map is an indexing of the field, and keeps the field's
-    type, which a product with scalar cells would widen, on every backend. None for any other map, and for cells traced
-    by JAX, whose values cannot be read: such a map multiplies."""
-    if not value.cells.gatype.is_scalar:
+def _reads(sparse_map: SparseExtensor) -> np.ndarray | None:
+    # Scalar 0/1 maps with a single 1 per output row act as pure index gathers; JAX tracers fall back to multiplication.
+    if not sparse_map.cells.gatype.is_scalar:
         return None
     try:
-        kernel = np.asarray(value.cells.kernel)
+        kernel = np.asarray(sparse_map.cells.kernel)
     except TypeError:
         return None
     ones = kernel[..., 0] == 1                                                # [..., couplings]
     if not np.all(ones | (kernel[..., 0] == 0)):
         return None
     *maps, couplings = np.nonzero(ones)
-    rows = value.rows[couplings]
-    counts = np.zeros(ones.shape[:-1] + (value.shape[0],), dtype=int)
+    rows = sparse_map.rows[couplings]
+    counts = np.zeros(ones.shape[:-1] + (sparse_map.shape[0],), dtype=int)
     np.add.at(counts, (*maps, rows), 1)
     if not np.all(counts == 1):
         return None
     reads = np.empty(counts.shape, dtype=int)
-    reads[(*maps, rows)] = value.columns[couplings]
+    reads[(*maps, rows)] = sparse_map.columns[couplings]
     return reads
 
 
 @_right.register
-def _right_sparse(other: SparseExtensor, value: SparseExtensor, product) -> SparseExtensor:
-    left, right = chain(value, other)
-    cells = _cell_product(product, value.cells[..., left], other.cells[..., right])
-    return SparseExtensor(cells, value.rows[left], other.columns[right], (value.shape[0], other.shape[1]))
+def _right_sparse(other: SparseExtensor, sparse_map: SparseExtensor, product: Callable) -> SparseExtensor:
+    left, right = chain(sparse_map, other)
+    cells = _cell_product(product, sparse_map.cells[..., left], other.cells[..., right])
+    return SparseExtensor(cells, sparse_map.rows[left], other.columns[right], (sparse_map.shape[0], other.shape[1]))
 
 
 @_right.register
-def _right_numbers(other: Sparse, value: SparseExtensor, product) -> SparseExtensor:
-    """A map of plain numbers: its numbers scalars of the cells' algebra."""
-    return _right_sparse(typed(value, other), value, product)
+def _right_numbers(other: Sparse, sparse_map: SparseExtensor, product: Callable) -> SparseExtensor:
+    return _right_sparse(typed(sparse_map, other), sparse_map, product)
 
 
 @singledispatch
-def _left(other: GAType, value: SparseExtensor, product) -> SparseExtensor:
-    """A GAType on the left: each cell's product with it, the couplings read from the output
-    sites. An array is a batch of scalars, which scale the cells where they are, as a number does."""
+def _left(other: Any, sparse_map: SparseExtensor, product: Callable) -> SparseExtensor | Extensor:
     if operands.kind(other) is operands.Kind.ARRAY:
-        return _cellwise(value, product(_operand(value, other), value.cells))
-    return _transposed(value, product(other, value.cells))
+        return _cellwise(sparse_map, product(_operand(sparse_map, other), sparse_map.cells))
+    return _transposed(sparse_map, product(other, sparse_map.cells))
 
 
 @_left.register
-def _left_number(other: Number, value: SparseExtensor, product) -> SparseExtensor:
-    return _scaled(value, other)
+def _left_number(other: Number, sparse_map: SparseExtensor, product: Callable) -> SparseExtensor:
+    return _scaled(sparse_map, other)
 
 
 @_left.register
-def _left_numbers(other: Sparse, value: SparseExtensor, product) -> SparseExtensor:
-    """A map of plain numbers on the left: its numbers scalars of the cells' algebra."""
-    return _right_sparse(value, typed(value, other), product)
+def _left_numbers(other: Sparse, sparse_map: SparseExtensor, product: Callable) -> SparseExtensor:
+    return _right_sparse(sparse_map, typed(sparse_map, other), product)
 
 
 @_left.register
-def _left_field(other: Extensor, value: SparseExtensor, product) -> Extensor:
-    return _scatter(_cell_product(product, _sites(other)[..., value.rows], value.cells), value.columns, value.shape[1]).field()
+def _left_field(other: Extensor, sparse_map: SparseExtensor, product: Callable) -> Extensor:
+    return _scatter(_cell_product(product, _sites(other)[..., sparse_map.rows], sparse_map.cells), sparse_map.columns, sparse_map.shape[1]).field()
 
 
 @SparseExtensor.apply.register(lambda cell_type: cell_type.arity == 1)
-def apply(value: SparseExtensor, operand: object):
-    """Unary coupling cells applied to field elements, summed by output site. A map-valued field element
-    composes into its coupling cell, producing a map of the same inputs; a sparse operand
-    composes the field maps through their shared sites."""
-    return _application(operand, value)
+def apply(operator: SparseExtensor, operand: object) -> SparseExtensor | Extensor:
+    """Unary map cells evaluate on input-site field elements and sum by output site, or compose
+    across shared sites when `operand` is sparse."""
+    return _application(operand, operator)
 
 
 @singledispatch
-def _application(operand: object, value: SparseExtensor) -> Extensor:
-    """An array `[..., sites]`: a map called on it reads it as a field of scalars over its input sites."""
-    return _application_field(operands.batch(value.cells.context, operand).field(), value)
+def _application(operand: object, operator: SparseExtensor) -> SparseExtensor | Extensor:
+    return _application_field(operands.batch(operator.cells.context, operand).field(), operator)
 
 
 @_application.register
-def _application_field(operand: Extensor, value: SparseExtensor) -> Extensor:
-    return _scatter(value.cells(_sites(operand)[..., value.columns]), value.rows, value.shape[0]).field()
+def _application_field(operand: Extensor, operator: SparseExtensor) -> Extensor:
+    return _scatter(operator.cells(_sites(operand)[..., operator.columns]), operator.rows, operator.shape[0]).field()
 
 
 @_application.register
-def _application_sparse(operand: SparseExtensor, value: SparseExtensor) -> SparseExtensor:
-    left, right = chain(value, operand)
-    return SparseExtensor(value.cells[..., left](operand.cells[..., right]), value.rows[left], operand.columns[right], (value.shape[0], operand.shape[1]))
+def _application_sparse(operand: SparseExtensor, operator: SparseExtensor) -> SparseExtensor:
+    left, right = chain(operator, operand)
+    return SparseExtensor(
+        operator.cells[..., left](operand.cells[..., right]),
+        operator.rows[left], operand.columns[right], (operator.shape[0], operand.shape[1]),
+    )
 
 
 @_application.register
-def _application_numbers(operand: Sparse, value: SparseExtensor) -> SparseExtensor:
-    """A map of plain numbers composes as it multiplies: each cell scaled along the paths through shared sites."""
-    return value * operand
+def _application_numbers(operand: Sparse, operator: SparseExtensor) -> SparseExtensor:
+    return operator * operand
 
 
-# --- operations that reverse the order of the cells' products run the couplings back ---------
-def _cellwise(value: SparseExtensor, cells: Extensor) -> SparseExtensor:
-    return SparseExtensor(cells, value.rows, value.columns, value.shape)
+# --- order-reversing involutions and transposes --------------------------------------------
+def _cellwise(sparse_map: SparseExtensor, cells: Extensor) -> SparseExtensor:
+    return SparseExtensor(cells, sparse_map.rows, sparse_map.columns, sparse_map.shape)
 
 
-def _transposed(value: SparseExtensor, cells: Extensor) -> SparseExtensor:
-    return SparseExtensor(cells, value.columns, value.rows, value.shape[::-1])
+def _transposed(sparse_map: SparseExtensor, cells: Extensor) -> SparseExtensor:
+    return SparseExtensor(cells, sparse_map.columns, sparse_map.rows, sparse_map.shape[::-1])
 
 
 @SparseExtensor.reverse.register(lambda cell_type: cell_type.arity == 0)
-def reverse(value: SparseExtensor) -> SparseExtensor:
-    """Every multivector cell reversed, the couplings run back: the reverse of a product is the
-    product of the reverses in turn, `~(S * T) == ~T * ~S`, and composing couplings in turn is
-    running them back."""
-    return _transposed(value, value.cells.reverse())
+def reverse(sparse_map: SparseExtensor) -> SparseExtensor:
+    """Reversing multivector cells also transposes `(rows, columns)` so `~(S * T) == ~T * ~S` holds across site couplings."""
+    return _transposed(sparse_map, sparse_map.cells.reverse())
 
 
 @SparseExtensor.reverse.register(lambda cell_type: cell_type.arity > 0)
-def reverse_maps(value: SparseExtensor) -> SparseExtensor:
-    """Every map cell's output reversed, the couplings kept: `(~S)(f) == ~(S(f))`."""
-    return _cellwise(value, value.cells.reverse())
+def reverse_maps(operator: SparseExtensor) -> SparseExtensor:
+    """Reversing map cells reverses each cell's output without transposing site couplings, so `(~S)(f) == ~(S(f))`."""
+    return _cellwise(operator, operator.cells.reverse())
 
 
 @SparseExtensor.clifford_conjugate.register(lambda cell_type: cell_type.arity == 0)
-def clifford_conjugate(value: SparseExtensor) -> SparseExtensor:
-    """Every multivector cell conjugated, the couplings run back, as for the reverse."""
-    return _transposed(value, value.cells.clifford_conjugate())
+def clifford_conjugate(sparse_map: SparseExtensor) -> SparseExtensor:
+    """Clifford-conjugating multivector cells also transposes `(rows, columns)` so conjugation reverses product order across site couplings."""
+    return _transposed(sparse_map, sparse_map.cells.clifford_conjugate())
 
 
 @SparseExtensor.clifford_conjugate.register(lambda cell_type: cell_type.arity > 0)
-def clifford_conjugate_maps(value: SparseExtensor) -> SparseExtensor:
-    """Every map cell's output conjugated, the couplings kept."""
-    return _cellwise(value, value.cells.clifford_conjugate())
+def clifford_conjugate_maps(operator: SparseExtensor) -> SparseExtensor:
+    """Clifford-conjugating map cells conjugates each cell's output while keeping site couplings in place."""
+    return _cellwise(operator, operator.cells.clifford_conjugate())
 
 
 @SparseExtensor.adjugate.register(lambda cell_type: cell_type.arity == 1)
-def adjugate(value: SparseExtensor) -> SparseExtensor:
-    """Every map cell's adjugate, the couplings run back: summed over the elements, each pairing read
-    with its extrinsic factor first carries over as for one map, `S.adjugate()(c) & x` summed equal
-    to `c & S(x)` summed between intrinsic spaces."""
-    return _transposed(value, value.cells.adjugate())
+def adjugate(operator: SparseExtensor) -> SparseExtensor:
+    """Taking each map cell's metric-free `adjugate` and transposing `(rows, columns)` preserves
+    regressive pairings summed over sites: `(S.adjugate()(c) & x).sites.sum() == (c & S(x)).sites.sum()`
+    between intrinsic spaces."""
+    return _transposed(operator, operator.cells.adjugate())
 
 
 @SparseExtensor.adjoint.register(lambda cell_type: cell_type.arity == 1)
-def adjoint(value: SparseExtensor) -> SparseExtensor:
-    """Every map cell's adjoint, the couplings run back: `S.adjoint()(b).scalar_product(x)` summed
-    over the elements equals `b.scalar_product(S(x))` summed."""
-    return _transposed(value, value.cells.adjoint())
+def adjoint(operator: SparseExtensor) -> SparseExtensor:
+    """Taking each map cell's metric `adjoint` and transposing `(rows, columns)` preserves scalar
+    products summed over sites: `S.adjoint()(b).scalar_product(x).sites.sum() == b.scalar_product(S(x)).sites.sum()`."""
+    return _transposed(operator, operator.cells.adjoint())
 
 
-# --- linear algebra of map cells, on the NumPy backend --------------------------------------
-@SparseExtensor.solve.register(lambda cell_type, other: cell_type.maps_equal_dimensions, fields=True)
-def solve(value: SparseExtensor, rhs: Extensor) -> Extensor:
-    """The fields x with value(x) == rhs: one factorization for each of the map's leading indices,
-    the leading axes of rhs that the map lacks as further right sides of it. A map is factorized by
-    the first solve against it and the factors kept with it, so that every later solve only
-    substitutes."""
+# --- linear algebra of map cells on the NumPy backend --------------------------------------
+@SparseExtensor.solve.register(lambda cell_type, rhs: cell_type.maps_equal_dimensions, fields=True)
+def solve(operator: SparseExtensor, rhs: Extensor) -> Extensor:
+    """Sparse LU factorization solves `operator(x) == rhs` for each leading batch index of `operator`,
+    caching the SciPy `splu` factors on `operator.factors` so subsequent solves only substitute."""
     from scipy.sparse.linalg import splu
 
     def substituted(case: tuple[int, ...], blocks: np.ndarray, right: np.ndarray) -> np.ndarray:
-        if case not in value.factors:
-            value.factors[case] = splu(_matrix(value, blocks))
-        return value.factors[case].solve(np.ascontiguousarray(right.T)).reshape(-1, len(right)).T
+        if case not in operator.factors:
+            operator.factors[case] = splu(_matrix(operator, blocks))
+        return operator.factors[case].solve(np.ascontiguousarray(right.T)).reshape(-1, len(right)).T
 
-    return _per_map(value, rhs, substituted)
+    return _per_map(operator, rhs, substituted)
 
 
-@SparseExtensor.lstsq.register(lambda cell_type, other: cell_type.arity == 1, fields=True)
-def lstsq(value: SparseExtensor, rhs: Extensor) -> Extensor:
-    """The smallest fields x, in the sum of their squared coefficients, minimizing that of
-    value(x) - rhs, for each of the map's leading indices and each right side: a singular system's
-    gauge, such as a translation, is left at zero."""
+@SparseExtensor.lstsq.register(lambda cell_type, rhs: cell_type.arity == 1, fields=True)
+def lstsq(operator: SparseExtensor, rhs: Extensor) -> Extensor:
+    """Iterative `lsqr` computes the minimum-coordinate-norm field `x` minimizing `operator(x) - rhs`
+    in blade coefficients, leaving null-space gauges such as pure translations at zero."""
     from scipy.sparse.linalg import lsqr
 
     def least(case: tuple[int, ...], blocks: np.ndarray, right: np.ndarray) -> np.ndarray:
-        system = _matrix(value, blocks)
+        system = _matrix(operator, blocks)
         return np.stack([lsqr(system, column, atol=0.0, btol=0.0,
-                              iter_lim=10 * value.shape[1] * len(value.cells.axes[1]))[0] for column in right])
+                              iter_lim=10 * operator.shape[1] * len(operator.cells.axes[1]))[0] for column in right])
 
-    return _per_map(value, rhs, least)
+    return _per_map(operator, rhs, least)
 
 
-@SparseExtensor.eigh.register(lambda cell_type, other: cell_type.is_endomorphism or cell_type.is_correlation)
-def eigh(value: SparseExtensor, metric: SparseExtensor, count: int) -> tuple[Extensor, Extensor]:
-    """The count eigenpairs nearest zero of value(x) == eigenvalue * metric(x), for a symmetric
-    value and a positive-definite metric, both maps of a space to itself or both forms, maps of a
-    space to its dual, for each of their leading indices: values `[..., count]
-    Scalar`, fields `[..., count]` over the elements, orthonormal in the metric. The spectrum is inverted
-    about a point below zero by the square root of the precision, relative to the pencil's scale, so
-    a semidefinite value with a null space still factorizes, to half the precision's digits."""
+@SparseExtensor.eigh.register(lambda cell_type, metric: cell_type.is_endomorphism or cell_type.is_correlation)
+def eigh(operator: SparseExtensor, metric: SparseExtensor, n_modes: int) -> tuple[Extensor, Extensor]:
+    """Shift-invert `eigsh` near zero computes the `n_modes` smallest-magnitude generalized
+    eigenpairs of `operator(x) == eigenvalue * metric(x)` with `metric`-orthonormal eigenfields,
+    shifting slightly below zero relative to the pencil scale so positive-semidefinite operators
+    with null spaces still factorize."""
     from scipy.sparse.linalg import eigsh
 
-    batch = np.broadcast_shapes(value.cells.shape[:-1], metric.cells.shape[:-1])
+    batch = np.broadcast_shapes(operator.cells.shape[:-1], metric.cells.shape[:-1])
     values, vectors = [], []
     for case in np.ndindex(batch):
-        matrix, mass = _matrix(value, _blocks(value, batch)[case]), _matrix(metric, _blocks(metric, batch)[case])
+        matrix, mass = _matrix(operator, _blocks(operator, batch)[case]), _matrix(metric, _blocks(metric, batch)[case])
         scale = np.abs(matrix.diagonal()).max() / np.abs(mass.diagonal()).max()
-        found, modes = eigsh(matrix, k=count, M=mass, sigma=-np.sqrt(np.finfo(matrix.dtype).eps) * scale)
+        found, modes = eigsh(matrix, k=n_modes, M=mass, sigma=-np.sqrt(np.finfo(matrix.dtype).eps) * scale)
         values.append(found)
         vectors.append(modes.T)
-    fields = _field(value, np.reshape(vectors, batch + (count, -1)))
-    return fields.context.multivector.scalar(np.reshape(values, batch + (count, 1))), fields
+    fields = _field(operator, np.reshape(vectors, batch + (n_modes, -1)))
+    return fields.context.multivector.scalar(np.reshape(values, batch + (n_modes, 1))), fields
 
 
-def _per_map(value: SparseExtensor, rhs: Extensor, solver) -> Extensor:
-    """The solver's fields for each of the map's leading indices, given that index among the map's own,
-    the map's cell coefficients there and its right sides `[sides, elements * blades]`: those of rhs at
-    that index, along every leading axis the map lacks or holds once."""
+def _per_map(operator: SparseExtensor, rhs: Extensor, solver: Callable) -> Extensor:
     rhs = _sites(rhs)
-    batch = np.broadcast_shapes(value.cells.shape[:-1], rhs.shape[:-1])
-    maps = (1,) * (len(batch) - (value.cells.ndim - 1)) + value.cells.shape[:-1]
+    batch = np.broadcast_shapes(operator.cells.shape[:-1], rhs.shape[:-1])
+    maps = (1,) * (len(batch) - (operator.cells.ndim - 1)) + operator.cells.shape[:-1]
     right = np.broadcast_to(np.asarray(rhs.kernel), batch + rhs.kernel.shape[rhs.ndim - 1:])
     right = right.reshape(batch + (-1,))
-    solved = np.empty(batch + (value.shape[1] * len(value.cells.axes[1]),), dtype=right.dtype)
-    blocks = _blocks(value, maps)
+    solved = np.empty(batch + (operator.shape[1] * len(operator.cells.axes[1]),), dtype=right.dtype)
+    blocks = _blocks(operator, maps)
     for case in np.ndindex(maps):
         sides = tuple(slice(None) if size == 1 else index for index, size in zip(case, maps))
         block = right[sides]
         right_sides = block.reshape(int(np.prod(block.shape[:-1])), block.shape[-1])
-        own = case[len(maps) - (value.cells.ndim - 1):]
+        own = case[len(maps) - (operator.cells.ndim - 1):]
         solved[sides] = solver(own, blocks[case], right_sides).reshape(block.shape[:-1] + (-1,))
-    return _field(value, solved)
+    return _field(operator, solved)
 
 
-def _blocks(value: SparseExtensor, batch: tuple[int, ...]) -> np.ndarray:
-    """The map cells' coefficients `[..., n, out blades, in blades]`, broadcast to the batch."""
-    blocks = np.asarray(value.cells.kernel)
+def _blocks(operator: SparseExtensor, batch: tuple[int, ...]) -> np.ndarray:
+    blocks = np.asarray(operator.cells.kernel)
     return np.broadcast_to(blocks, batch + blocks.shape[-3:])
 
 
-def _matrix(value: SparseExtensor, blocks: np.ndarray):
-    """One map's cell coefficients `[n, out blades, in blades]` as a SciPy matrix of element blocks."""
+def _matrix(operator: SparseExtensor, blocks: np.ndarray) -> Any:
     from scipy.sparse import coo_matrix
 
     _, height, width = blocks.shape
-    rows = (value.rows[:, None, None] * height + np.arange(height)[:, None]).repeat(width, axis=2)
-    columns = (value.columns[:, None, None] * width + np.arange(width)[None, :]).repeat(height, axis=1)
+    rows = (operator.rows[:, None, None] * height + np.arange(height)[:, None]).repeat(width, axis=2)
+    columns = (operator.columns[:, None, None] * width + np.arange(width)[None, :]).repeat(height, axis=1)
     return coo_matrix(
-        (blocks.ravel(), (rows.ravel(), columns.ravel())), shape=(value.shape[0] * height, value.shape[1] * width),
+        (blocks.ravel(), (rows.ravel(), columns.ravel())), shape=(operator.shape[0] * height, operator.shape[1] * width),
     ).tocsc()
 
 
-def _field(value: SparseExtensor, coefficients: np.ndarray) -> Extensor:
-    """Coefficients `[..., elements * blades]` as a field of the map cells' input type."""
-    subspace = value.cells.axes[1]
-    return value.cells.context.extensor(
-        value.cells.gatype.derive.axis(1), coefficients.reshape(coefficients.shape[:-1] + (-1, len(subspace))),
+def _field(operator: SparseExtensor, coefficients: np.ndarray) -> Extensor:
+    subspace = operator.cells.axes[1]
+    return operator.cells.context.extensor(
+        operator.cells.gatype.derive.axis(1), coefficients.reshape(coefficients.shape[:-1] + (-1, len(subspace))),
     ).field()
 
 
-def _cell_product(product, left: Extensor, right: Extensor) -> Extensor:
-    """The cells' product, pair by pair. A geometric product with scalar cells on either side scales the other's
-    cells, with no contraction, into the type the product gives one pair."""
+def _cell_product(product: Callable, left: Extensor, right: Extensor) -> Extensor:
+    # Scalar geometric products scale cell kernels directly when the output subspaces already match.
     for scalars, cells in ((left, right), (right, left)):
         if product is expression.geometric_product and scalars.gatype.is_scalar and cells.shape[-1]:
-            typed = product(left[..., :1], right[..., :1])
-            if typed.gatype.subspaces == cells.gatype.subspaces:
+            typed_pair = product(left[..., :1], right[..., :1])
+            if typed_pair.gatype.subspaces == cells.gatype.subspaces:
                 factors = scalars.kernel[..., 0]
                 factors = factors.reshape(factors.shape + (1,) * len(cells.structural_shape))
-                return cells.context.extensor(typed.gatype, cells.kernel * factors)
+                return cells.context.extensor(typed_pair.gatype, cells.kernel * factors)
     return product(left, right)
 
 
 def _scatter(cells: Extensor, index: np.ndarray, size: int) -> Extensor:
-    """Cells `[..., n]` summed by their index into `[..., size]`, as a sum's type, without the traits a sum need not
-    keep, as an indexed add gives it. On NumPy the cells are sorted by index and each run summed by `reduceat`,
-    pairwise and so accurate on long runs; another backend adds them in place by index."""
+    # NumPy uses sorted pairwise `reduceat` for long-run accuracy; other backends use functional `.at[...].add`.
     kernel = cells.kernel
     if not isinstance(kernel, np.ndarray):
         zeros = cells.context.xp.zeros(cells.shape[:-1] + (size,) + cells.structural_shape, dtype=cells.dtype)
@@ -564,7 +529,6 @@ def _scatter(cells: Extensor, index: np.ndarray, size: int) -> Extensor:
 
 
 def _sites(field: Extensor) -> Extensor:
-    """A field's elements along its last batch axis, where the couplings index them."""
     if [axis for axis, _ in field.gatype.fields] != [0]:
         raise TypeError(f"a sparse field map acts on fields over its output's sites; {field.gatype.signature} is not one")
     return field.batch()
