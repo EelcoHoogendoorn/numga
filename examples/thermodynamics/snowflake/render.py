@@ -3,8 +3,8 @@ edge, over liquid water tinted by its temperature from deep blue in the cold wat
 warmed it, and holds the final crystal briefly before the loop repeats. A close-up shows the seed inside the
 triangulated disc, and a chart plots the total entropy gained over time.
 
-The dish's vertex positions are plain offsets read by pairing with `x` and `y` at unit spatial weight in `Camera`, while
-a parcel's ice and heat are read by pairing with `i` and `h`.
+The dish's vertex positions are unit-weight places read by pairing with `x` and `y` against weight `w` in `Camera`,
+while a parcel's ice and heat are read by pairing with `i` and `h`.
 """
 from __future__ import annotations
 
@@ -55,8 +55,8 @@ def layers(topology: Topology, points: Extensor, parcels: Extensor, camera: Came
 
 
 def framed(half: float) -> Camera:
-    """Orthographic camera reading `x` and `y` on offset points of unit spatial weight around the origin."""
-    return Camera(mv.x, mv.y, 0 * mv.x, 0 * mv.x, 1.0, np.zeros(2), np.array([half, half]), n_pixels)
+    """Orthographic camera reading `x` and `y` on unit-weight places around the origin."""
+    return Camera(mv.x, mv.y, 0 * mv.x, mv.w, 0.0, np.zeros(2), np.array([half, half]), n_pixels)
 
 
 def dish_camera(vertices: Extensor) -> Camera:

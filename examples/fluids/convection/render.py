@@ -1,10 +1,10 @@
 """Rendering for Rayleigh-Bénard convection draws the triangulated layer, its temperature and streamlines over time, and
 charts of the flow's growth and energy budget.
 
-A periodic layer closed along its length is drawn opened at its seam one period further along. Its vertices are spatial
-offsets from the origin, read by pairing with `x` and `y` at unit spatial weight in `Camera`. Temperature is red above
-the mean and blue below, streamlines are level lines of the stream function, and the floor and ceiling are drawn in the
-colours of their temperatures.
+A periodic layer closed along its length is drawn opened at its seam one period further along. Its vertices are points
+of unit `w` weight, read by pairing with `x` and `y` at `w` weight in `Camera`. Temperature is red above the mean and
+blue below, streamlines are level lines of the stream function, and the floor and ceiling are drawn in the colours of
+their temperatures.
 """
 from __future__ import annotations
 
@@ -52,8 +52,8 @@ def on_white(picture: np.ndarray) -> np.ndarray:
 
 
 def layer_camera(period: float) -> Camera:
-    """Side-on camera across the layer: spatial offsets are read by pairing with `x` and `y` at unit weight."""
-    return Camera(mv.x, mv.y, 0 * mv.x, 0 * mv.x, 1.0, np.array([period / 2, 0.5]),
+    """Side-on camera across the layer: points are read by pairing with `x` and `y` at `w` weight."""
+    return Camera(mv.x, mv.y, 0 * mv.x, mv.w, 0.0, np.array([period / 2, 0.5]),
                   np.array([period / 2 + margin, 0.5 + margin]), n_pixels)
 
 

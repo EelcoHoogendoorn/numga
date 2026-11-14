@@ -32,7 +32,7 @@ n_grid = 160
 grid_energies = np.linspace(0.04, 4.3, n_grid)
 n_line_samples = 240
 tangent_half_length = 0.8
-# Pixel width of the 3D block view, logarithmic span of the colour ramp, and ranges of the temperature chart.
+# Pixel width of the 3D block view, logarithmic span of the colour scale, and ranges of the temperature chart.
 n_block_pixels = 240
 colour_decades = 2.5
 time_range, temperature_range = (0.0, 5.8), (0.0, 3.0)

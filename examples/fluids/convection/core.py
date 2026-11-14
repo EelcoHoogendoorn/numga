@@ -1,18 +1,18 @@
-"""A layer of liquid heated from below turns over in Rayleigh-Bénard convection on a triangulated strip, in the plane
-joined with three degenerate directions for volume, mass and entropy.
+"""A layer of liquid heated from below turns over in Rayleigh-Bénard convection on a triangulated strip, in the
+projective plane joined with three degenerate directions for volume, mass and entropy.
 
 A layer of liquid between a warm floor and a cool ceiling carries heat up by conduction while it stays still. Warm
 liquid is lighter, so the still layer is top-heavy; once buoyancy beats viscosity and conduction, as the Rayleigh number
 measures, the layer turns over in rolls that carry heat up with the flow.
 
-The algebra is the plane `x+ y+` joined with three degenerate directions for the quantities (`x+ y+ v0 m0 s0`), namely
-volume, mass and entropy. A carrier's contents are modelled as its parcel, `volume + (density - expansion * warmth) *
-mass + warmth * entropy`: a unit of volume `v.dual()` has less mass when it is warmer and has more entropy. A drive
-`-gradient ^ potentials` is the fall of the potentials, minus their gradient wedged with them, and pairs with the flux
-of each quantity. Gravity's drive, minus the geopotential's gradient wedged with mass, pulls on the advected mass, while
-the temperature's drive, wedged with entropy, drives the conductive entropy flux through a conductivity. The liquid's
-flow is modelled by a stream function on the vertices; its inertia resists changes in the flow and its viscosity resists
-turning, while pressure keeps each cell incompressible and drops out of the work.
+The algebra is the projective plane `x+ y+ w0` joined with three degenerate directions for the quantities (`x+ y+ w0 v0
+m0 s0`), namely volume, mass and entropy. A carrier's contents are modelled as its parcel, `volume + (density -
+expansion * warmth) * mass + warmth * entropy`: a unit of volume `v.dual()` has less mass when it is warmer and has
+more entropy. A drive `-gradient ^ potentials` is the fall of the potentials, minus their gradient wedged with them,
+and pairs with the flux of each quantity. Gravity's drive, minus the geopotential's gradient wedged with mass, pulls on
+the advected mass, while the temperature's drive, wedged with entropy, drives the conductive entropy flux through a
+conductivity. The liquid's flow is modelled by a stream function on the vertices; its inertia resists changes in the
+flow and its viscosity resists turning, while pressure keeps each cell incompressible and drops out of the work.
 
 Gravity's drive pairs with a flux of parcels, `flows & parcels`, to give the work done on the flow, and pairs with the
 parcels joined to their places, `places & parcels`, to give minus their potential energy. Because one pairing reads
@@ -37,18 +37,20 @@ from numga.sparse import Sparse, SparseExtensor, spdiag
 
 from numga.topology import Topology
 
-# The plane x+ y+ joined with three degenerate directions for the quantities: volume, mass and entropy.
-space = Algebra("x+y+")
+# The projective plane x+ y+ w0 joined with three degenerate directions for volume, mass and entropy.
+plane = Algebra("x+y+")
+space = Algebra("x+y+w0")
 quantities = Algebra("v0m0s0")
 ga = space * quantities
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 Point = ga.gatype.antivector()                                                # Antivector-
-# Planes in the spatial sector that read horizontal and vertical offsets.
-Upright = ga.gatype.vector().derive.within(space)                             # Vector+
-Drive = ga.gatype.bivector().derive.touching(space, quantities)               # Bivector+
+# Planes in the spatial sector that read horizontal and vertical offsets without w.
+Upright = ga.gatype.vector().derive.within(plane)                             # Vector+
+Drive = ga.gatype.bivector().derive.touching(plane, quantities)               # Bivector+
 Flux = ga.gatype.antibivector()                                               # Antibivector-
-# Horizontal and vertical directions, and the spatial planes that read them.
+# Reference origin at unit w weight, horizontal and vertical directions, and the spatial planes that read them.
+origin = mv.w.dual()                                                          # [] Antivector-
 length = mv.x.dual()                                                          # [] Antivector-
 height = mv.y.dual()                                                          # [] Antivector-
 directions = stack((length, height))                                          # [2] Antivector-
@@ -77,7 +79,7 @@ def layer(n_along: int, n_across: int, period: float) -> tuple[Topology, Topolog
 def holding(form: SparseExtensor, interior: Sparse) -> Callable[[Scalar, Scalar], Scalar]:
     """A vertex operator solved with fixed wall values: for a right-hand side and wall values,
     it solves on the free vertices and leaves the wall values unchanged."""
-    free = (interior * form * interior.adjugate()) * Scalar                             # (Scalar+ <- Scalar+)[V_free <- V_free]
+    free = (interior * form * interior.adjugate()) * Scalar                   # (Scalar+ <- Scalar+)[V_free <- V_free]
     return lambda rhs, walls: walls + interior.adjugate() * free.solve(interior * (rhs - form * walls))
 
 
@@ -99,17 +101,21 @@ class Forms(NamedTuple):
 def forms(closed: Topology, opened: Topology, vertices: Point, density: float, viscosity: float) -> Forms:
     """Operators assembled once from the opened strip's triangle geometry onto the closed strip's vertices: corner
     flows, stream-function velocity, cell outflow, and the kinetic, viscous and conductive forms."""
-    sides = opened.boundary[2, 1] * (opened.d[0] * vertices)                  # [3] Antivector-[F]
-    # Twice each triangle's signed area: two sides joined with unit volume, mass and entropy.
-    double_areas = (((sides[0] & sides[1]) & volume) & mass) & entropy        # Scalar-[F]
+    corners_open = opened.incidence[2, 0] * vertices                          # [3] Antivector-[F]
+    facing = opened.off[2, 0] * vertices                                      # [2, 3] Antivector-[F]
+    facing_lines = facing[0] & facing[1]                                      # [3] Antibivector-[F]
+    unread = volume & mass & entropy                                          # [] Antitrivector-
+    # Twice each triangle's signed area: three corners joined with unit volume, mass and entropy.
+    double_areas = corners_open[0] & corners_open[1] & corners_open[2] & unread   # Scalar-[F]
     areas = double_areas.norm() / 2                                           # Scalar+[F]
-    # Corner gradients: the plane through the facing side and the quantity directions, divided by twice the area.
-    gradients = (volume & mass & entropy & sides) / double_areas              # [3] Vector+[F]
+    # Spatial corner gradients: the plane through the facing line and the quantity directions, normalized at the corner.
+    gradients = ((facing_lines & unread) / (facing_lines & unread & corners_open)).cast(Upright)   # [3] Vector+[F]
     corners = closed.incidence[2, 0]                                          # [3] Scalar+[F <- V]
     # Each vertex's dual cell area, a third of each incident triangle, and the corner-averaging map onto faces.
-    cells = (corners.adjugate() * (areas / 3)).sum(axis=0)                              # Scalar+[V]
+    cells = (corners.adjugate() * (areas / 3)).sum(axis=0)                    # Scalar+[V]
     corner_mean = corners.mean(axis=0)                                        # Scalar+[F <- V]
     # A unit stream function at a corner drives flow along the facing side, giving each corner's integrated flow and velocity.
+    sides = opened.boundary[2, 1] * (opened.d[0] * vertices)                  # [3] Antivector-[F]
     flows = sides / 2                                                         # [3] Antivector-[F]
     velocities = flows / areas                                                # [3] Antivector-[F]
     # Stream-function velocity on each face, and the outflow from each vertex cell gathered by wedging the corner gradients with a flux.
@@ -124,7 +130,7 @@ def forms(closed: Topology, opened: Topology, vertices: Point, density: float, v
     viscous = viscosity * ~vorticity * spdiag(cells) * vorticity              # Scalar+[V <- V]
     # Thermal drives at the corners, minus each simplex gradient wedged with entropy, and isotropic entropy conductivity.
     drives = -gradients ^ mv.s                                                # [3] Bivector+[F]
-    conductivity = ((directions & entropy) * ((directions & entropy) & Drive)).sum(axis=0)   # [] Antibivector- <- Bivector+
+    conductivity = ((directions & entropy) * (Drive & (directions & entropy))).sum(axis=0)   # [] Antibivector- <- Bivector+
     # Conductive entropy outflow: corner gradients wedged with the conductive flux and gathered onto the vertices.
     local = areas * (mv.s & (gradients[:, None] ^ conductivity(drives[None, :])))   # [3, 3] Scalar+[F]
     conduction = (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Scalar+[V <- V]
@@ -146,13 +152,13 @@ def convecting(liquid: Forms, interior: Sparse, places: Point, density: float, e
                gravity: np.ndarray, reference_temperature: float, heat_capacity: float, temperature: Scalar, dt: float,
                n_steps: int, n_stride: int) -> Iterator[tuple[Scalar, Scalar, Budget]]:
     """Stream function and temperature with the energy budget at regular intervals, starting
-    from rest with spatial vertex offsets, zero stream function on the walls, and fixed wall
+    from rest at the given vertex places, zero stream function on the walls, and fixed wall
     temperatures."""
     # Implicit midpoint solvers for vorticity-stream momentum and heat conduction with held walls.
     flow_step = holding(liquid.kinetic / (dt / 2) + liquid.viscous, interior)
     heat_step = holding(liquid.cells / (dt / 2) + liquid.conduction, interior)
     # Mask zeroing wall vertices, and the fixed wall temperature profile.
-    held = interior.adjugate() * interior                                               # Scalar+[V <- V]
+    held = interior.adjugate() * interior                                     # Scalar+[V <- V]
     wall_temperature = temperature - held * temperature                       # [...] Scalar+[V]
     pull = -gravity * mv.ym                                                   # [...] Bivector+
     # Gravitational potential energy change per unit warmth at each vertex, from thermal expansion of its mass.

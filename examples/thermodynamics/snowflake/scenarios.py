@@ -21,7 +21,7 @@ dish_radius, n_divisions = 4.5, 150
 # Initial ice seed radius and smooth interface width.
 seed_radius, seed_edge = 0.1, 0.02
 # Reference plane for the crystal's six-fold axis, whose normal points upward.
-crystal_axis = mv.y                                                           # [] Plane+
+crystal_axis = mv.y                                                           # [] Upright+
 # Relaxation time, mean interface width, six-fold width anisotropy, steepness regularization, and double-well height.
 relaxation_time, mean_width, anisotropy, regularization, well_height = 3e-4, 0.0082, 0.025, 1.0, 1 / 6
 # Latent heat per unit ice, melting temperature above the initial water temperature, and absolute zero on that scale.
@@ -32,22 +32,22 @@ n_snowflake_frames, n_isotropic_frames = 75, 111
 frame_duration_ms = 40
 
 
-def dish(n_divisions: int) -> tuple[Topology, np.ndarray, core.Point]:
-    """The triangulated disc of staggered rings, its vertex coordinates, and its spatial vertex offsets."""
+def dish(n_divisions: int) -> tuple[Topology, core.Point]:
+    """The triangulated disc of staggered rings and its unit-weight vertex places."""
     topology, coordinates = shapes.concentric_disk(np.array([dish_radius]), n_divisions)
-    vertices = (core.across * coordinates[:, 0] + core.up * coordinates[:, 1]).field()
-    return topology, coordinates, vertices
+    vertices = (mv(core.Upright, coordinates) + mv.w).dual().field()          # Point-[V]
+    return topology, vertices
 
 
-def seed_phase(coordinates: np.ndarray) -> core.Scalar:
+def seed_phase(vertices: core.Point) -> core.Scalar:
     """Initial phase field on the dish, equal to one inside the seed radius with a smooth hyperbolic-tangent rim."""
-    phase = (1 + np.tanh((seed_radius - np.hypot(*coordinates.T)) / seed_edge)) / 2   # [V]
-    return mv.scalar(phase[:, None]).field()
+    radii = ((mv.x & vertices) * mv.x + (mv.y & vertices) * mv.y).norm()        # Scalar+[V]
+    return (1 + ((seed_radius - radii) / seed_edge).tanh()) / 2
 
 
-def seeded(coordinates: np.ndarray) -> tuple[core.Point, core.Scalar]:
+def seeded(vertices: core.Point) -> tuple[core.Point, core.Scalar]:
     """Initial parcel and phase fields for the cold water and central ice seed."""
-    phase = seed_phase(coordinates)                                           # Scalar+[V]
+    phase = seed_phase(vertices)                                              # Scalar+[V]
     return core.volume + core.ice * core.ice_content(phase) + 0 * core.heat, phase
 
 
@@ -75,8 +75,8 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.thermodynamics.snowflake import render
 
-    topology, coordinates, vertices = dish(n_divisions)
-    parcels, phase = seeded(coordinates)
+    topology, vertices = dish(n_divisions)
+    parcels, phase = seeded(vertices)
     save_figure(render.draw_seed(topology, vertices, parcels), "snowflake_seed")
     snowflake = list(frozen(topology, vertices, parcels, phase, anisotropy, n_snowflake_frames, stride))
     isotropic = list(frozen(topology, vertices, parcels, phase, 0.0, n_isotropic_frames, stride))
@@ -94,8 +94,8 @@ def pinned() -> None:
     from examples.util.animation import pin_animation
     from examples.thermodynamics.snowflake import render
 
-    topology, coordinates, vertices = dish(n_divisions)
-    parcels, phase = seeded(coordinates)
+    topology, vertices = dish(n_divisions)
+    parcels, phase = seeded(vertices)
     snowflake = frozen(topology, vertices, parcels, phase, anisotropy, n_snowflake_frames, stride)
     pin_animation(render.animate(topology, vertices, snowflake), "snowflake", frame_duration_ms)
 
@@ -125,11 +125,12 @@ def symmetry_preview(settings: dict[str, dict], name: str) -> None:
     from examples.util.panels import image_figure
     from examples.thermodynamics.snowflake import render
 
-    topology, coordinates, vertices = dish(n_divisions)
-    parcels, phase = seeded(coordinates)
+    topology, vertices = dish(n_divisions)
+    parcels, phase = seeded(vertices)
     areas, gradients, cells = core.triangles(topology, vertices)
     # Stop each run once the ice front crosses `preview_reach` of the dish radius.
-    outer = np.hypot(*coordinates.T) > preview_reach * dish_radius
+    radii = ((mv.x & vertices) * mv.x + (mv.y & vertices) * mv.y).norm()        # Scalar+[V]
+    outer = radii > preview_reach * dish_radius
     scenario = dict(relaxation_time=relaxation_time, mean_width=mean_width, anisotropy=anisotropy,
                     well_height=well_height, latent_heat=latent_heat, absolute_zero=absolute_zero)
     grown = []

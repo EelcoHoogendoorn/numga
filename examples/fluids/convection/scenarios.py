@@ -36,11 +36,11 @@ def conducting(heights: core.Scalar, size: float) -> core.Scalar:
 
 
 def turning_over(n_along: int, n_across: int):
-    """The opened strip, the map reading closed-strip fields onto it, its spatial vertex offsets,
+    """The opened strip, the map reading closed-strip fields onto it, its vertex points,
     the assembled operators, and the yielded stream function, temperature and energy budget
     over time from the perturbed conductive start."""
     closed, opened, closing, opening, places = core.layer(n_along, n_across, period)
-    vertices = mv(core.Upright, places).dual().field()                          # Antivector-[V_opened]
+    vertices = (mv(core.Upright, places) + mv.w).dual().field()                # Antivector-[V_opened]
     liquid = core.forms(closed, opened, vertices, density, prandtl)
     temperature = conducting(closing * (mv.y & vertices), disturbance)          # Scalar+[V]
     return opened, opening, vertices, liquid, core.convecting(

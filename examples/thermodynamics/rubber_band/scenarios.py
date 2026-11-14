@@ -34,16 +34,16 @@ lamp = lamp_across * core.across + lamp_up * core.up                          # 
 dt = 0.025
 n_settling, n_lit, n_dark, n_stride = 3000, 2000, 2000, 40
 frame_duration_ms = 40
-# Downward hand-pull schedule on the lamp's timeline: a quick ramp up, a hold while heat leaks to the room, a quick
+# Downward hand-pull schedule on the lamp's timeline: a quick rise, a hold while heat leaks to the room, a quick
 # release, and a final hold, together with the colour range and framing drop for the pulled band.
 hand_pull = 1.0
-n_ramp = 160
-n_hold = n_lit - n_ramp
+n_rise = 160
+n_hold = n_lit - n_rise
 pull_swing, pull_drop = 6e-4, 0.9
 # Per-step schedules for lamp exposure and downward hand pull.
 exposure = np.concatenate([np.ones(n_lit), np.zeros(n_dark)])
-ramp = (1 - np.cos(np.pi * np.arange(n_ramp) / n_ramp)) / 2
-pulling = np.concatenate([ramp, np.ones(n_hold), ramp[::-1], np.zeros(n_hold)])
+rise = (1 - np.cos(np.pi * np.arange(n_rise) / n_rise)) / 2
+pulling = np.concatenate([rise, np.ones(n_hold), rise[::-1], np.zeros(n_hold)])
 
 
 # --- plumbing -------------------------------------------------------------------------

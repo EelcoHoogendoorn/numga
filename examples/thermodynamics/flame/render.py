@@ -6,8 +6,8 @@ red where sensible heat exceeds the adiabatic rise, and glowing from deep red th
 volumetric reaction rate so that cellular bulges shine and extinguished creases leave dark trails. The right panel
 colours enthalpy red above the unburnt mixture's value and blue below it.
 
-Vertex positions are plain spatial offsets read by pairing with `x` and `y` at unit spatial weight in `Camera`, while
-parcels are read by pairing with `h` for sensible heat and with the enthalpy plane for total energy.
+Vertex places are read by pairing with `x` and `y` at projective weight `w` in `Camera`, while parcels are read by
+pairing with `h` for sensible heat and with the enthalpy plane for total energy.
 """
 from __future__ import annotations
 
@@ -50,8 +50,8 @@ def side_by_side(left: np.ndarray, right: np.ndarray) -> np.ndarray:
 
 
 def disc_camera(radius: float) -> Camera:
-    """Top-down camera framing the disc, reading spatial offsets by pairing with `x` and `y` at unit weight."""
-    return Camera(mv.x, mv.y, 0 * mv.x, 0 * mv.x, 1.0, np.zeros(2), np.full(2, radius * (1 + margin)), n_pixels)
+    """Top-down camera framing the disc, reading spatial places by pairing with `x`, `y` and `w`."""
+    return Camera(mv.x, mv.y, 0 * mv.x, mv.w, 0.0, np.zeros(2), np.full(2, radius * (1 + margin)), n_pixels)
 
 
 def burning_paper(points: Extensor, topology: Topology, camera: Camera, heat: np.ndarray,

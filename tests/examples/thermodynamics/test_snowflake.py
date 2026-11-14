@@ -15,7 +15,7 @@ def test_freezing_keeps_the_energy():
 
 
 def test_growth_runs_and_draws():
-    topology, coordinates, vertices = scenarios.dish(4)
-    parcels, phase = scenarios.seeded(coordinates)
+    topology, vertices = scenarios.dish(4)
+    parcels, phase = scenarios.seeded(vertices)
     states = list(scenarios.frozen(topology, vertices, parcels, phase, scenarios.anisotropy, 2, 1))
     next(render.animate(topology, vertices, states))

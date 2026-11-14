@@ -1,6 +1,8 @@
 """Potential flow past a Joukowski wing."""
 
-from examples.fluids.wing import core, scenarios
+import matplotlib.pyplot as plt
+
+from examples.fluids.wing import core, render, scenarios
 from numga.topology import Topology
 
 
@@ -38,3 +40,15 @@ def test_wing_flow_has_vanishing_derivative_and_kutta_joukowski_lift():
     winding = (tails & heads).batch().sum(axis=-1)
     pressure_force = (winding / winding.antinorm()) * (edge_pressures * edge_steps).batch().sum(axis=-1)
     assert ((pressure_force - core.kutta_lift(swirl, stream, scenarios.density)).norm() < 5e-3).all()
+
+
+def test_render_draws_wing_flow():
+    centre, trailing_edge = scenarios.wing_geometry(scenarios.highest_attack)
+    stream = scenarios.stream
+    swirl = core.kutta_circulation(centre, trailing_edge, stream)
+    positions = core.cylinder_rings(centre, trailing_edge, 2, 24, scenarios.outer_distance)
+    wing_points, wing_velocity, _, wing_flux = core.wing_flow(
+        centre, trailing_edge, swirl, stream, positions, trailing_edge,
+    )
+    lift = core.kutta_lift(swirl, stream, scenarios.density)
+    plt.close(render.figure(wing_points, wing_velocity, wing_flux, lift, scenarios.speed))

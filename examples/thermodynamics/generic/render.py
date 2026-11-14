@@ -34,7 +34,7 @@ entropy_levels = np.array([0.0, 1.0, 1.8, 2.3, 2.7, 3.0, 3.15])
 n_grid = 121
 grid_positions, grid_momenta = np.linspace(-2.6, 2.6, n_grid), np.linspace(-4.6, 4.6, n_grid)
 n_coil_points, n_curve_samples = 160, 200
-# Pixel width of the 3D oscillator view and logarithmic span of the damper colour ramp.
+# Pixel width of the 3D oscillator view and logarithmic span of the damper colour scale.
 n_apparatus_pixels = 230
 colour_decades = 2.0
 

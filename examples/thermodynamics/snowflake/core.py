@@ -9,24 +9,25 @@ ice, and steers the fastest tips along six directions, the six arms of a snowfla
 ice, with a smooth edge between, far wider than real ice's so that the triangles resolve it; temperatures are measured
 from the cold water's in units of its undercooling, so ice melts at one.
 
-The algebra joins the plane `x+ y+` with three degenerate directions `v0 i0 h0` for the quantities volume, ice and
-heat. A parcel of water is modelled as a sum of those units, one unit of volume plus its ice and its heat, read off by
-`i & parcel` and `h & parcel`. Freezing is one fixed direction among the quantities, `freezing = ice + latent_heat * heat`:
-ice gained, and its latent heat released. Ice is taken at water's density, so freezing leaves the volume alone,
-`v & freezing == 0`, and ice and water share one heat capacity and one conductivity. Two planes read the effect of
-freezing. The energy plane `h - latent_heat * i` reads a parcel's energy, its heat less the latent heat given up by its
-ice, and pairs with freezing to zero: freezing only moves energy from the water's latent store into its heat. The
-entropy's slope across the quantities pairs with freezing to the entropy produced when a unit of ice freezes, positive
-in undercooled water and zero at the melting temperature, because heat raises entropy inversely with absolute
-temperature while ice carries less entropy than liquid water by the latent heat over the melting temperature.
-Multiplied by the melting temperature, that pairing pushes the phase to freeze, so the push comes from the same latent
-heat that warms the water.
+The algebra joins the projective plane `x+ y+ w0` with three degenerate directions `v0 i0 h0` for the quantities volume,
+ice and heat. A parcel of water is modelled as a sum of those units, one unit of volume plus its ice and its heat,
+read off by `i & parcel` and `h & parcel`. Freezing is one fixed direction among the quantities,
+`freezing = ice + latent_heat * heat`: ice gained, and its latent heat released. Ice is taken at water's density, so
+freezing leaves the volume alone, `v & freezing == 0`, and ice and water share one heat capacity and one conductivity.
+Two planes read the effect of freezing. The energy plane `h - latent_heat * i` reads a parcel's energy, its heat less
+the latent heat given up by its ice, and pairs with freezing to zero: freezing only moves energy from the water's
+latent store into its heat. The entropy's slope across the quantities pairs with freezing to the entropy produced when
+a unit of ice freezes, positive in undercooled water and zero at the melting temperature, because heat raises entropy
+inversely with absolute temperature while ice carries less entropy than liquid water by the latent heat over the melting
+temperature. Multiplied by the melting temperature, that pairing pushes the phase to freeze, so the push comes from the
+same latent heat that warms the water.
 
-The phase is an order parameter, not a quantity, and carries the edge's free energy. A parcel's ice follows the phase
-as a smooth quintic step that is flat in bulk water and bulk ice. Because its slope vanishes in liquid water, the push
-to freeze vanishes there too, and the cold water stays a local minimum of the free energy at any undercooling,
-metastable until the ice's edge reaches it. Relaxing the phase up the total entropy at fixed energy while stepping each
-parcel along the freezing direction conserves total energy across the cells and raises total entropy.
+The phase is a non-conserved order parameter that carries the edge's free energy and relaxes smoothly across the
+interface. A parcel's ice follows the phase as a smooth quintic step that is flat in bulk water and bulk ice. Because
+its slope vanishes in liquid water, the push to freeze vanishes there too, and the cold water stays a local minimum of
+the free energy at any undercooling, metastable until the ice's edge reaches it. Relaxing the phase up the total entropy
+at fixed energy while stepping each parcel along the freezing direction conserves total energy across the cells and
+raises total entropy.
 
 A drive is minus a field's simplex gradient wedged with its quantity direction, and an isotropic material map written
 as dyads over the plane's directions maps drives to fluxes. Heat conduction carries the thermal drive `-gradients ^ h`
@@ -55,8 +56,8 @@ from numga.topology import Topology
 
 jax.config.update("jax_enable_x64", True)
 
-# The plane `x+ y+` and three degenerate directions `v0 i0 h0` for the quantities volume, ice and heat.
-space = Algebra("x+y+")
+# The projective plane `x+ y+ w0` and three degenerate directions `v0 i0 h0` for volume, ice and heat.
+space = Algebra("x+y+w0")
 quantities = Algebra("v0i0h0")
 ga = space * quantities
 mv = JaxContext(ga).multivector
@@ -65,9 +66,11 @@ Scalar = ga.gatype.scalar()                                                   # 
 Antiscalar = ga.gatype.antipseudoscalar()                                     # Antipseudoscalar-
 Point = ga.gatype.antivector()                                                # Antivector-
 Plane = ga.gatype.vector()                                                    # Vector+
-Drive = ga.gatype.bivector().derive.touching(space, Algebra("i0h0"))          # Bivector+
-Flux = ga.gatype.antibivector().derive.touching(space, Algebra("i0h0"))       # Antibivector-
+Upright = Plane.derive.within(Algebra("x+y+"))                                # Vector+
+Drive = ga.gatype.bivector().derive.touching(Algebra("x+y+"), Algebra("i0h0"))   # Bivector+
+Flux = ga.gatype.antibivector().derive.touching(Algebra("x+y+"), Algebra("i0h0"))   # Antibivector-
 Spreading = ga.gatype((Flux, Drive))
+origin = mv.w.dual()                                                          # [] Point-
 across = mv.x.dual()                                                          # [] Point-
 up = mv.y.dual()                                                              # [] Point-
 directions = stack((across, up))                                              # [2] Point-
@@ -77,14 +80,17 @@ heat = mv.h.dual()                                                            # 
 
 
 # --- math -----------------------------------------------------------------------------
-def triangles(topology: Topology, vertices: Point) -> tuple[Antiscalar, Plane, Antiscalar]:
+def triangles(topology: Topology, vertices: Point) -> tuple[Antiscalar, Upright, Antiscalar]:
     """Triangle areas, corner simplex gradients, and vertex cell areas across the triangulated dish."""
-    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)              # [3] Point-[F]
-    # Joining two sides with unit volume, ice and heat gives twice the oriented triangle area.
-    double_areas = (((sides[0] & sides[1]) & volume) & ice) & heat            # Antiscalar-[F]
+    corners = topology.incidence[2, 0] * vertices                             # [3] Point-[F]
+    facing = topology.off[2, 0] * vertices                                    # [2, 3] Point-[F]
+    sides = facing[0] & facing[1]                                             # [3] Antibivector-[F]
+    unread = volume & ice & heat                                              # [] Antitrivector-
+    # Joining all three corners with unit volume, ice and heat gives twice the oriented triangle area.
+    double_areas = corners[0] & corners[1] & corners[2] & unread              # Antiscalar-[F]
     areas = double_areas / 2                                                  # Antiscalar-[F]
-    # Joining the facing side with volume, ice and heat over twice the area gives each corner's simplex gradient.
-    gradients = (volume & ice & heat & sides) / double_areas                  # [3] Plane+[F]
+    # Joining the facing side with volume, ice and heat over the corner's join gives each corner's spatial simplex gradient.
+    gradients = ((sides & unread) / (sides & unread & corners)).cast(Upright)   # [3] Upright+[F]
     return areas, gradients, (topology.incidence[2, 0].adjugate() * (areas / 3)).sum(axis=0)
 
 
@@ -94,11 +100,11 @@ def ice_content(phase: Scalar) -> Scalar:
 
 
 def edge_free_energy(areas: Antiscalar, cells: Antiscalar, gradient: SparseExtensor, spreading: Spreading,
-                     crystal_axis: Plane, mean_width: float, anisotropy: float, regularization: float,
+                     crystal_axis: Upright, mean_width: float, anisotropy: float, regularization: float,
                      well_height: float, phase: Scalar) -> Antiscalar:
     """The free energy of the ice's edge, summing the anisotropic gradient energy over the triangles and the double
     well over the vertex cells."""
-    steepness = gradient(phase)                                               # Plane+[F]
+    steepness = gradient(phase)                                               # Upright+[F]
     drive = -steepness ^ mv.i                                                 # Drive+[F]
     squared_steepness = drive & spreading(drive)                              # Scalar+[F]
     third_power = (steepness * crystal_axis) ** 3                             # Even+[F]
@@ -109,12 +115,12 @@ def edge_free_energy(areas: Antiscalar, cells: Antiscalar, gradient: SparseExten
     return (areas * widths ** 2 * squared_steepness / 2).sites.sum() + (cells * well).sites.sum()
 
 
-def edge_slope(topology: Topology, areas: Antiscalar, gradients: Plane, cells: Antiscalar, gradient: SparseExtensor,
-               spreading: Spreading, crystal_axis: Plane, mean_width: float, anisotropy: float, regularization: float,
+def edge_slope(topology: Topology, areas: Antiscalar, gradients: Upright, cells: Antiscalar, gradient: SparseExtensor,
+               spreading: Spreading, crystal_axis: Upright, mean_width: float, anisotropy: float, regularization: float,
                well_height: float, phase: Scalar) -> Antiscalar:
     """The derivative of the edge's free energy with respect to the vertex phases, combining the anisotropic gradient
     energy's pull across the triangles with the double well's slope on the cells."""
-    steepness = gradient(phase)                                               # Plane+[F]
+    steepness = gradient(phase)                                               # Upright+[F]
     # Pairing the phase's drive with its flux gives the squared steepness, whose derivative is twice that flux.
     drive = -steepness ^ mv.i                                                 # Drive+[F]
     flux = spreading(drive)                                                   # Flux-[F]
@@ -126,7 +132,7 @@ def edge_slope(topology: Topology, areas: Antiscalar, gradients: Plane, cells: A
     reach = squared_steepness + regularization ** 2                           # Scalar+[F]
     widths = mean_width * (1 + anisotropy * six_fold / reach ** 3)            # Scalar+[F]
     # Differentiating the six-fold term gives `6 * crystal_axis * turn ** 5`, mapped to a flux by `spreading`.
-    slope = 6 * crystal_axis * turn ** 5                                      # Plane+[F]
+    slope = 6 * crystal_axis * turn ** 5                                      # Upright+[F]
     slope_flux = spreading(-slope ^ mv.i)                                     # Flux-[F]
     # Combine the width's angular variation with the isotropic flux to form the total flux pull on each triangle.
     turning = mean_width * anisotropy * (slope_flux / reach ** 3 - 6 * six_fold * flux / reach ** 4)   # Flux-[F]
@@ -139,7 +145,7 @@ def edge_slope(topology: Topology, areas: Antiscalar, gradients: Plane, cells: A
 
 
 def total_entropy(areas: Antiscalar, cells: Antiscalar, gradient: SparseExtensor, spreading: Spreading,
-                  crystal_axis: Plane, mean_width: float, anisotropy: float, regularization: float, well_height: float,
+                  crystal_axis: Upright, mean_width: float, anisotropy: float, regularization: float, well_height: float,
                   latent_heat: float, melting_temperature: float, absolute_zero: float, parcels: Point,
                   phase: Scalar) -> Antiscalar:
     """The total entropy of the dish, summing the parcels' thermal and latent entropy over the cells and subtracting
@@ -152,11 +158,11 @@ def total_entropy(areas: Antiscalar, cells: Antiscalar, gradient: SparseExtensor
 
 
 def operators(topology: Topology, areas: Antiscalar,
-              gradients: Plane) -> tuple[SparseExtensor, Spreading, SparseExtensor]:
+              gradients: Upright) -> tuple[SparseExtensor, Spreading, SparseExtensor]:
     """The simplex gradient operator from vertex scalars to triangle planes, the isotropic material map for heat and
     ice, and the assembled heat conduction operator across the vertex cells."""
     corners = topology.incidence[2, 0]                                        # [3] Scalar+[F <- V]
-    gradient = (spdiag(gradients) * corners).sum(axis=0) * Scalar             # (Plane+ <- Scalar+)[F <- V]
+    gradient = (spdiag(gradients) * corners).sum(axis=0) * Scalar             # (Upright+ <- Scalar+)[F <- V]
     sweeps = stack((directions & heat, directions & ice))                     # [2, 2] Flux-
     spreading = (sweeps * (sweeps & Drive)).sum(axis=-1).sum(axis=0)          # [] Flux- <- Drive+
     heat_drives = -gradients ^ mv.h                                           # [3] Drive+[F]
@@ -165,8 +171,8 @@ def operators(topology: Topology, areas: Antiscalar,
     return gradient, spreading, conduction
 
 
-def phase_drive(topology: Topology, areas: Antiscalar, gradients: Plane, cells: Antiscalar, gradient: SparseExtensor,
-                spreading: Spreading, crystal_axis: Plane, mean_width: float, anisotropy: float, regularization: float,
+def phase_drive(topology: Topology, areas: Antiscalar, gradients: Upright, cells: Antiscalar, gradient: SparseExtensor,
+                spreading: Spreading, crystal_axis: Upright, mean_width: float, anisotropy: float, regularization: float,
                 well_height: float, latent_heat: float, melting_temperature: float, absolute_zero: float,
                 freezing: Point, parcels: Point, phase: Scalar) -> Antiscalar:
     """The entropy derivative with respect to the vertex phases at fixed energy, scaled by the absolute melting
@@ -182,8 +188,8 @@ def phase_drive(topology: Topology, areas: Antiscalar, gradients: Plane, cells: 
                              anisotropy, regularization, well_height, phase)
 
 
-def growth(topology: Topology, areas: Antiscalar, gradients: Plane, cells: Antiscalar, parcels: Point, phase: Scalar,
-           crystal_axis: Plane, relaxation_time: float, mean_width: float, anisotropy: float, regularization: float,
+def growth(topology: Topology, areas: Antiscalar, gradients: Upright, cells: Antiscalar, parcels: Point, phase: Scalar,
+           crystal_axis: Upright, relaxation_time: float, mean_width: float, anisotropy: float, regularization: float,
            well_height: float, latent_heat: float, melting_temperature: float, absolute_zero: float, dt: float,
            n_frames: int, stride: int) -> Iterator[tuple[Point, Scalar]]:
     """Yield parcel and phase fields across frames separated by fixed-energy phase relaxation, latent heat release

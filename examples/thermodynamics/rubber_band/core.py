@@ -109,8 +109,8 @@ def band(topology: Topology, rest: Point, held: np.ndarray, material: Elastic, s
     corner_mean = corners.mean(axis=0)                                        # Scalar+[F <- V]
     free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), held), 0)
     # Each vertex cell receives one third of the area and mass of its incident triangles.
-    cells = corner_mean.adjugate() * areas                                              # Scalar+[V]
-    masses = corner_mean.adjugate() * (densities * areas)                               # Scalar+[V]
+    cells = corner_mean.adjugate() * areas                                    # Scalar+[V]
+    masses = corner_mean.adjugate() * (densities * areas)                     # Scalar+[V]
     pull = -gravity * mv.y                                                    # [] Plane+
     hand = hand_pull * (corner_mean.adjugate() * (weighting * densities * areas)) * pull   # Plane+[V]
     # Evaluating the work form on each triangle's corner gradients gives its room-temperature stiffness map.
@@ -141,7 +141,7 @@ def potentials(band: Band, points: Point) -> Plane:
     warmth = ((entropy_densities + stretch / (band.areas * band.room_temperature)) / band.heat_capacity).exp()   # Scalar+[F]
     # Area-average the triangle temperatures onto the vertex cells and scale the corner forces by `warmth`.
     temperatures = band.room_temperature * (band.corner_mean.adjugate() * (band.areas * warmth)) / band.cells   # Scalar+[V]
-    forces = (band.corners.adjugate() * (warmth * springs)).sum(axis=0)                 # Plane+[V]
+    forces = (band.corners.adjugate() * (warmth * springs)).sum(axis=0)       # Plane+[V]
     return temperatures * mv.s - forces
 
 

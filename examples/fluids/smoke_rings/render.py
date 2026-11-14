@@ -105,7 +105,7 @@ def draw_swept(curves: core.Point) -> plt.Figure:
     # The upright plane through the axis facing the viewer cuts each tube, and the far half is kept, quad by quad.
     level_direction = viewer_direction - sm.z.dual() * (sm.z & viewer_direction)   # [] Point-
     cut = -level_direction.dual()                                              # [] Plane+
-    faces = surface.subset(np.repeat((cut & middles) < 0, 2), -1).elements[2]  # [faces, 3]
+    faces = surface.subset(np.repeat((cut & middles) < 0, 2), -1).elements[2]  # [F, 3]
     # Each vertex in its ring's colour.
     colours = np.broadcast_to(tubes[None, :, None, :], (n_times, n_rings, n_vertices, 3)).reshape(-1, 3)[faces]
     swept = sheet(places, faces, colours, view)

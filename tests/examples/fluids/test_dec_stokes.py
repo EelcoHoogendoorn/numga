@@ -1,8 +1,9 @@
 """Typed discrete derivatives, viscous channel flow and independence of edge directions."""
 
+import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.fluids.dec_stokes import core, scenarios
+from examples.fluids.dec_stokes import core, render, scenarios
 
 
 def flow(topology, vertices, inlet, outlet):
@@ -145,3 +146,16 @@ def test_reversing_edges_changes_readings_and_preserves_physical_flow():
     np.testing.assert_allclose(changed[0].kernel, (result[0] * signs).kernel, atol=1e-10)
     for before, after in zip(result[1:], changed[1:]):
         np.testing.assert_allclose(after.kernel, before.kernel, atol=1e-9)
+
+
+def test_render_draws_triangulation_complex_fields_and_flow():
+    topology, vertices, inlet, outlet, _ = scenarios.channel(8)
+    operators, _, (flux, pressure, vorticity, velocity) = flow(topology, vertices, inlet, outlet)
+    streamfunction = (topology.d[0] * core.Scalar).lstsq(flux)
+    for fig in (
+        render.draw_triangulation(topology, vertices),
+        render.draw_complex(topology, vertices, operators.circumcentres, operators.dual_edges),
+        render.draw_fields(topology, vertices, pressure, vorticity, streamfunction),
+        render.draw_flow(topology, vertices, pressure, velocity),
+    ):
+        plt.close(fig)

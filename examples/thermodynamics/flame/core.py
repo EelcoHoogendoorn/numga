@@ -1,5 +1,5 @@
 """A premixed flame spreads from sparks through a lean mixture of fuel and air and breaks into cells on a triangulated
-disc, in the plane joined with three degenerate directions for volume, fuel and heat.
+disc, in the projective plane joined with three degenerate directions for volume, fuel and heat.
 
 A premixed flame is a thin front where fuel burns, advancing into the unburnt mixture as the heat conducted ahead
 ignites the fuel there. Because the reaction rate grows steeply with temperature under Arrhenius's law, the front's
@@ -10,18 +10,18 @@ fuel replaces, cool down and nearly extinguish. The Lewis number, thermal diffus
 governs this balance, and below one a smooth front is unstable. Constant density leaves out the gas's thermal expansion
 flow across the front.
 
-The algebra joins the plane `x+ y+` with three degenerate directions `v0 f0 h0` for the quantities volume, fuel and
-heat. A parcel of the mixture is modelled as a sum of those units, one unit of volume `v.dual()` plus its fuel and its
-heat, read off by `f & parcel` and `h & parcel`. Burning is one fixed direction among the quantities,
-`reaction = heat - fuel`, moving each parcel from fuel towards heat while leaving its volume unchanged. The plane
-`energy = h + f` reads a parcel's enthalpy, the sum of its sensible heat and the chemical heat stored in its fuel, and
-pairs with the reaction to zero, `energy & reaction == 0`, so burning converts chemical energy into sensible heat
-without creating energy. A drive `-gradient ^ potentials` wedges minus a simplex gradient with a quantity's direction,
-giving `-gradients ^ h` for heat and `-gradients ^ f` for fuel, and separate isotropic material maps take each drive to
-its flux. Diagonal drives leave out Soret and Dufour cross-diffusion between temperature and concentration gradients.
-Because reaction leaves `energy & parcels` unchanged, enthalpy varies only because fuel and heat diffuse at different
-rates, concentrating behind the bulges and depleting along the creases. Triangle areas and cell integrals carry
-intrinsic orientation, and dividing a cell outflow by the cell's area gives a local rate.
+The algebra joins the projective plane with three degenerate directions for volume, fuel and heat. A vertex is placed
+at unit weight on `w.dual()`, and a parcel of the mixture is modelled as a sum of quantity units, one unit of volume
+`v.dual()` plus its fuel and its heat, read off by `f & parcel` and `h & parcel`. Burning is one fixed direction among
+the quantities, `reaction = heat - fuel`, moving each parcel from fuel towards heat while leaving its volume unchanged.
+The plane `energy = h + f` reads a parcel's enthalpy, the sum of its sensible heat and the chemical heat stored in its
+fuel, and pairs with the reaction to zero, `energy & reaction == 0`, so burning converts chemical energy into sensible
+heat without creating energy. A drive `-gradient ^ potentials` wedges minus a simplex gradient with a quantity's
+direction, giving `-gradients ^ h` for heat and `-gradients ^ f` for fuel, and separate isotropic material maps take
+each drive to its flux. Diagonal drives leave out Soret and Dufour cross-diffusion between temperature and concentration
+gradients. Because reaction leaves `energy & parcels` unchanged, enthalpy varies only because fuel and heat diffuse at
+different rates, concentrating behind the bulges and depleting along the creases. Triangle areas and cell integrals
+carry intrinsic orientation, and dividing a cell outflow by the cell's area gives a local rate.
 
 Lengths are measured in flame thicknesses (thermal diffusivity divided by the flat-flame speed), times in flame transit
 times across one thickness, and temperatures in units of the adiabatic temperature rise, so burning one unit of fuel
@@ -42,20 +42,21 @@ from numga.topology import Topology
 
 jax.config.update("jax_enable_x64", True)
 
-# The plane `x+ y+` joined with three degenerate directions `v0 f0 h0` for the quantities volume, fuel and heat.
-space = Algebra("x+y+")
+# The projective plane `x+ y+ w0` joined with three degenerate directions `v0 f0 h0` for volume, fuel and heat.
+space = Algebra("x+y+w0")
 quantities = Algebra("v0f0h0")
 ga = space * quantities
 mv = JaxContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
-# Cell-integrated areas and quantities carry the intrinsic orientation of the five-way join.
+# Cell-integrated areas and quantities carry the intrinsic orientation of the six-way join.
 Antiscalar = ga.gatype.antipseudoscalar()                                     # Antipseudoscalar-
 Point = ga.gatype.antivector()                                                # Antivector-
 Plane = ga.gatype.vector()                                                    # Vector+
-# Spatial planes reading horizontal and vertical offsets.
-Upright = Plane.derive.within(space)                                          # Vector+
-Drive = ga.gatype.bivector().derive.touching(space, Algebra("f0h0"))          # Bivector+
-# Horizontal and vertical directions in the plane.
+# Spatial planes reading horizontal and vertical offsets without the projective weight.
+Upright = Plane.derive.within(Algebra("x+y+"))                                # Vector+
+Drive = ga.gatype.bivector().derive.touching(Algebra("x+y+"), Algebra("f0h0"))   # Bivector+
+# Projective origin and horizontal and vertical directions in the plane.
+origin = mv.w.dual()                                                          # [] Antivector-
 directions = stack((mv.x.dual(), mv.y.dual()))                                # [2] Antivector-
 # Units of the three quantities: volume, fuel and heat.
 volume = mv.v.dual()                                                          # [] Antivector-
@@ -68,18 +69,21 @@ energy = mv.h + mv.f                                                          # 
 
 
 # --- math -----------------------------------------------------------------------------
-def triangles(topology: Topology, vertices: Point) -> tuple[Antiscalar, Plane, Antiscalar]:
+def triangles(topology: Topology, vertices: Point) -> tuple[Antiscalar, Upright, Antiscalar]:
     """Triangle areas, corner simplex gradients, and dual vertex cell areas across the triangulated disc."""
-    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)              # [3] Antivector-[F]
-    # Joining two sides with unit volume, fuel and heat gives twice the oriented triangle area.
-    double_areas = (((sides[0] & sides[1]) & volume) & fuel) & heat           # Antipseudoscalar-[F]
+    corners = topology.incidence[2, 0] * vertices                             # [3] Antivector-[F]
+    facing = topology.off[2, 0] * vertices                                    # [2, 3] Antivector-[F]
+    sides = facing[0] & facing[1]                                             # [3] Antibivector-[F]
+    unread = volume & fuel & heat                                             # [] Antitrivector-
+    # Joining all three corners with unit volume, fuel and heat gives twice the oriented triangle area.
+    double_areas = corners[0] & corners[1] & corners[2] & unread              # Antipseudoscalar-[F]
     areas = double_areas / 2                                                  # Antipseudoscalar-[F]
-    # Joining the facing side with volume, fuel and heat over twice the area gives each corner's simplex gradient.
-    gradients = (volume & fuel & heat & sides) / double_areas                 # [3] Vector+[F]
+    # Joining the facing side with volume, fuel and heat over the corner join gives each corner's simplex gradient.
+    gradients = ((sides & unread) / (sides & unread & corners)).cast(Upright)   # [3] Vector+[F]
     return areas, gradients, (topology.incidence[2, 0].adjugate() * (areas / 3)).sum(axis=0)
 
 
-def burning(topology: Topology, areas: Antiscalar, gradients: Plane, cells: Antiscalar, fuel_diffusivity: float,
+def burning(topology: Topology, areas: Antiscalar, gradients: Upright, cells: Antiscalar, fuel_diffusivity: float,
             prefactor: float, activation: float, unburnt_temperature: float, parcels: Point, dt: float, n_frames: int,
             n_stride: int) -> Iterator[tuple[Point, Scalar]]:
     """Yield the mixture's parcel field and volumetric reaction rate across frames as fuel burns along the reaction

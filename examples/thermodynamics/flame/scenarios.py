@@ -47,10 +47,10 @@ def hot_spot(coordinates: np.ndarray) -> core.Scalar:
 
 def flame_states(n_rings: int, n_frames: int,
                  n_stride: int) -> tuple[core.Topology, core.Point, Iterator[tuple[core.Point, core.Scalar]]]:
-    """The triangulated disc, its spatial vertex offsets, and the parcel and reaction-rate fields across the rendered
-    frames after the initial spark-edge noise smooths out."""
+    """The triangulated disc, its vertex places, and the parcel and reaction-rate fields across the rendered frames
+    after the initial spark-edge noise smooths out."""
     topology, coordinates = disc(n_rings)
-    vertices = mv(core.Upright, coordinates).dual().field()                   # Antivector-[V]
+    vertices = (mv(core.Upright, coordinates) + mv.w).dual().field()            # Antivector-[V]
     areas, gradients, cells = core.triangles(topology, vertices)
     burnt_fraction = hot_spot(coordinates)                                    # Scalar+[V]
     parcels = core.volume + core.heat * burnt_fraction + core.fuel * (1 - burnt_fraction)   # Antivector-[V]

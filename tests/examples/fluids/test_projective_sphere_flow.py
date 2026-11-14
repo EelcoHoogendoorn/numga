@@ -1,11 +1,12 @@
 """Projective readings in two signatures, and one physical diffusion problem under different lifts."""
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
 from numga import NumpyContext
 from numga.algebras import VGA3D, PGA2D
-from examples.fluids.projective_sphere_flow import scenarios
+from examples.fluids.projective_sphere_flow import render, scenarios
 from examples.util import shapes
 from numga.topology import Topology
 
@@ -79,3 +80,19 @@ def test_fixed_sphere_diffusion_with_unequal_vertex_scales():
     zero_source = source * 0
     equilibrium, _, _ = core.diffusion(topology, vertices, samples, measures, zero_source, core.Plane.dual())
     np.testing.assert_allclose(equilibrium.to_array(), 0, atol=1e-12)
+
+
+def test_render_draws_sphere_and_planar():
+    topology, coordinates = shapes.sphere(1)
+    vertices = scenarios.mv.vector(coordinates).dual().field()
+    plt.close(render.draw_triangulation(topology, vertices))
+    quadrature_grid, quadrature_weights = scenarios.triangle_grid(2)
+    quadrature = (quadrature_grid.incidence[2, 0].mean(axis=0) * scenarios.mv.scalar(quadrature_weights[..., None]).field()).batch()
+    display_grid, display = scenarios.triangle_grid(2)
+    frames = scenarios.spherical_frames(topology, vertices, [np.ones(topology.n_vertices)], quadrature, display)
+    next(render.animate_sphere(topology, display_grid, frames))
+
+    points = (scenarios.planar_corners[:, None] * display).sum(axis=0)
+    potential = scenarios.planar.mv.x & points.normalized()
+    current = scenarios.planar.mv.x.dual() * np.ones(len(points))
+    plt.close(render.draw_planar(points, display_grid, potential, current))
