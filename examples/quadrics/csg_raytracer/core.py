@@ -1,12 +1,12 @@
-"""Solids bounded by quadrics in PGA3D, and the motors that place them and the camera.
+"""Solids bounded by quadrics in projective 3D space, and the motors that place the solids and camera.
 
-A solid quadric is a map from points to planes, `Plane <- Point`, whose pairing with a point,
-`quadric(point) & point`, is zero on its surface and negative inside; at a point on the surface the
-plane it gives is the tangent plane. A solid is the intersection of a few such quadrics: an ellipsoid,
-a ruled hyperboloid between two half-spaces, a bowl that is an ellipsoid less a smaller one, cut by a
-plane. A half-space is a quadric too, the product of its plane's pairing with the plane at infinity's,
-so the planes that cut and the floor are traced as every other quadric is. Negating a quadric swaps
-inside and outside, and subtracts its solid.
+Each solid quadric is modeled as a symmetric duality map from points to planes (`Plane+ <- Point-`)
+whose regressive pairing `quadric(point) & point` vanishes on the surface and is negative inside,
+with `quadric(point)` giving the outward tangent plane on the boundary. Intersecting quadrics cuts
+out composite solids such as a ruled hyperboloid between two end planes or a hollow bowl formed by
+subtracting an inner ellipsoid and slicing off the top with a half-space. Because a half-space is
+itself the symmetrized product of its bounding plane with the plane at infinity, cutting planes and
+the floor trace identically to curved quadrics, while negating a quadric swaps inside and outside.
 """
 
 from __future__ import annotations
@@ -22,50 +22,51 @@ Scalar = ga.gatype.scalar()                                  # Scalar+
 Point = ga.gatype.antivector()                               # Antivector-
 Plane = ga.gatype.vector()                                   # Vector+
 Motor = ga.gatype.rotor()                                    # Rotor+
-Quadric = ga.gatype((Plane, Point))
+Quadric = ga.gatype((Plane, Point))                          # Plane+ <- Point-
 origin = mv.point([0, 0, 0])                                 # [] Point-
-# The planes through the origin square to each axis, and the plane at infinity.
+# Coordinate planes through the origin orthogonal to the three spatial axes.
 axes = stack((mv.x, mv.y, mv.z))                             # [3] Plane+
 
 
 # --- math -----------------------------------------------------------------------------
 def ellipsoid(semi_axes: np.ndarray) -> Quadric:
-    """A solid ellipsoid about the origin: each axis's squared pairing over its semi-axis squared, less
-    the plane at infinity's."""
+    """An origin-centred solid ellipsoid scales each coordinate-plane pairing inversely by the
+    squared `semi_axes` (`[3]`) and subtracts the ideal-plane pairing (`[] Plane+ <- Point-`)."""
     return (axes * (axes & Point) / semi_axes**2).sum(axis=-1) - mv.w * (mv.w & Point)
 
 
 def hyperboloid(semi_axes: np.ndarray) -> Quadric:
-    """A solid ruled hyperboloid of one sheet about the origin, its waist around z: as an ellipsoid, with
-    the pairing along z subtracted."""
+    """An origin-centred ruled hyperboloid of one sheet around the vertical axis subtracts the axial
+    pairing from the transverse coordinate-plane pairings (`[] Plane+ <- Point-`)."""
     signs = np.array([1, 1, -1])
     return (axes * (axes & Point) * signs / semi_axes**2).sum(axis=-1) - mv.w * (mv.w & Point)
 
 
 def half_space(plane: Plane) -> Quadric:
-    """The points on a plane's negative side, as the quadric that pairs them with the plane and with the
-    plane at infinity, symmetrized."""
+    """Symmetrizing `plane` with the plane at infinity embeds `plane`'s negative half-space as a
+    rank-two solid quadric (`[] Plane+ <- Point-`)."""
     return (plane * (mv.w & Point) + mv.w * (plane & Point)) / 2
 
 
-def orbit(target: Point, distance: float, elevation: float, azimuth: np.ndarray) -> Motor:
-    """A camera's motor, from one at the origin looking along its own -z with y up: backed off by
-    `distance`, tilted down to look from `elevation` above the horizon, turned to `azimuth` about the
-    vertical, and carried to the target."""
-    back_off = (mv.zw * (distance / 2)).exp()                                        # [] Motor+
-    pitch = (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()                          # [] Motor+
-    turn = (mv.xy * (-azimuth / 2)).exp()                                            # [...] Motor+
-    # The translation along the direction from the origin to the target, a point at infinity.
-    carry = ((mv.w ^ (target - origin).dual()) / 2).exp()                           # [] Motor+
-    return carry * turn * pitch * back_off
-
-
 def ruling_lines(semi_axes: np.ndarray, n_rulings: int) -> tuple[Point, Point, Point]:
-    """Points around the waist of a circular hyperboloid, and the directions of the two straight lines
-    through each that lie in its surface: the point and its directions turned about z together."""
+    """Rotating one waist point and its two surface-tangent directions evenly around the vertical
+    axis generates both straight-line ruling families (`[n_rulings] Point-`) of a circular
+    hyperboloid."""
     radius, _, height = semi_axes
-    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_rulings, endpoint=False) / 2)).exp()   # [rulings] Motor+
-    waist = turns >> mv.point([radius, 0, 0])                                         # [rulings] Point-
-    rising = turns >> mv.direction([0, radius, height])                               # [rulings] Point-
-    falling = turns >> mv.direction([0, radius, -height])                             # [rulings] Point-
+    angles = np.linspace(0, 2 * np.pi, n_rulings, endpoint=False)
+    turns = (mv.xy * (-angles / 2)).exp()                                             # [n_rulings] Motor+
+    waist = turns >> mv.point([radius, 0, 0])                                         # [n_rulings] Point-
+    rising = turns >> mv.direction([0, radius, height])                               # [n_rulings] Point-
+    falling = turns >> mv.direction([0, radius, -height])                             # [n_rulings] Point-
     return waist, rising, falling
+
+
+def camera_orbit(target: Point, distance: float, elevation: float, azimuth: np.ndarray) -> Motor:
+    """Backing a camera off along its viewing axis by `distance`, pitching to `elevation`, turning
+    by `azimuth`, and translating to `target` forms its pose motor (`[...] Motor+`)."""
+    back_off = (mv.zw * (distance / 2)).exp()                                         # [] Motor+
+    pitch = (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()                            # [] Motor+
+    turn = (mv.xy * (-azimuth / 2)).exp()                                             # [...] Motor+
+    # Translate from the origin to `target` along the ideal point joining their difference.
+    translation = ((mv.w ^ (target - origin).dual()) / 2).exp()                       # [] Motor+
+    return translation * turn * pitch * back_off

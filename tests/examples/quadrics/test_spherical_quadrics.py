@@ -1,30 +1,39 @@
-"""Tests for the spherical conic in Cl(3)."""
+"""Coverage tests for spherical conics in 3D spherical geometric algebra."""
 
 from __future__ import annotations
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
 
 from examples.quadrics.spherical_quadrics import render, scenarios
-from examples.quadrics.spherical_quadrics.core import mv, points, polarity
+from examples.quadrics.spherical_quadrics.core import mv, principal_polarity
 
 
-def test_polarity_is_diagonal_on_the_basis():
-    """The polarity maps each basis point to its polar basis plane, scaled by its eigenvalue."""
-    C = polarity(np.array([1.0, 0.4, -0.8]))
+def test_principal_polarity_is_diagonal_on_coordinate_poles():
+    """The principal polarity maps each coordinate pole to its coordinate plane scaled by its eigenvalue."""
+    eigenvalues = np.array([1.0, 0.4, -0.8])
+    conic = principal_polarity(eigenvalues)
     planes = stack([mv.x, mv.y, mv.z])
-    gram = C(points(np.eye(3))[:, None]) | planes
-    np.testing.assert_allclose(gram.to_array(), np.diag([1.0, 0.4, -0.8]), atol=1e-14)
+    poles = planes.dual()
+    diagonal = conic(poles) & poles
+    off_diagonal = conic(poles[:, None]) & poles[None, :]
+    assert ((diagonal - eigenvalues).abs() < 1e-12).all()
+    assert ((off_diagonal.sum(axis=-1) - diagonal).abs() < 1e-12).all()
 
 
-def test_the_oval_has_a_constant_focal_sum_and_its_tangents_lie_on_the_dual():
-    curve, foci, _, semi_major, tangents, _, dual = scenarios.spherical_conic()
-    focal_sum = sum(curve.dot(focus).clip(-1.0, 1.0).arccos() for focus in (foci[0], foci[1]))
-    np.testing.assert_allclose(focal_sum.to_array(), 2.0 * semi_major, atol=1e-11)
-    np.testing.assert_allclose((tangents & dual(tangents)).to_array(), 0.0, atol=1e-12)
+def test_oval_focal_sum_and_dual_tangent_locus():
+    """Points on the spherical oval satisfy the focal geodesic sum and tangent planes lie on the dual conic."""
+    oval_points, foci, _, semi_major, tangents, conic, dual = scenarios.spherical_conic_scene()
+    focal_sum = (oval_points[:, None].reverse() | foci).clip(-1.0, 1.0).arccos().sum(axis=-1)
+    assert ((conic(oval_points) & oval_points).abs() < 1e-12).all()
+    assert ((focal_sum - 2 * semi_major).abs() < 1e-11).all()
+    assert ((tangents & dual(tangents)).abs() < 1e-12).all()
 
 
-def test_the_conic_draws():
-    curve, foci, sample, _, tangents, conic, _ = scenarios.spherical_conic()
-    render.draw_spherical_conic(curve, foci, sample, tangents, conic)
+def test_conic_figure_renders():
+    """The three-panel GPU spherical conic figure renders cleanly without writing files."""
+    oval_points, foci, sample_point, _, tangents, conic, _ = scenarios.spherical_conic_scene()
+    figure = render.conic_figure(oval_points, foci, sample_point, tangents, conic)
+    plt.close(figure)

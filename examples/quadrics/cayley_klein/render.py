@@ -1,6 +1,4 @@
-"""Drawing for the Cayley-Klein example, on the GPU under two cameras of the plane: the level sets of polarities, the
-curves where they vanish, and planes, whole across the view, read by planes; lines, whole across the view, read by
-lines, joins of points; and points, as marks. The angles' labels over it in matplotlib."""
+"""GPU rendering of Cayley-Klein level curves, planes, lines, and vertex angle labels."""
 
 from __future__ import annotations
 
@@ -8,92 +6,111 @@ import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 
+from examples.quadrics.cayley_klein.core import Line, Plane, Point, Polarity, Scalar, mv
 from examples.util import charts
-from numga.topology import Topology
-from numga.render import Camera, quadrics, read, simplices
 from examples.util.panels import overlay, panel
 from numga import stack
-from examples.quadrics.cayley_klein.core import Line, Plane, Point, Polarity, Scalar, mv
+from numga.render import Camera, quadrics, read, simplices
+from numga.render.drawing import Draw
+from numga.topology import Topology
 
-BOX = (-1.2, 1.9, -1.2, 1.6)
-# The pixels of a point the marks' areas and the strokes' widths below are given in, a point at 120 dots per inch;
-# the width of the marks' outlines, and of the strokes of the square and the diamond.
-POINT = 120 / 72
-OUTLINE = 1.0
-FRAME = 1.2
-
-
-def euclidean(points: Point) -> np.ndarray:
-    """Chart coordinates of points, `[..., 2]`: their pairings with the planes x = 0 and y = 0, over their weights."""
-    return ((stack((mv.x, mv.y)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
+view_box = (-1.2, 1.9, -1.2, 1.6)
+# Convert point sizes at 120 dpi to screen pixels for marker areas and stroke widths.
+pixels_per_point = 120 / 72
+outline_width = 1.0
+frame_width = 1.2
 
 
-def rgb(colour: str) -> np.ndarray:
+def chart_coordinates(points: Point) -> np.ndarray:
+    """Euclidean chart coordinates (`[..., 2]`) read by pairing unit-weighted `points` with `x` and `y`."""
+    flat_points = points.batch()                                           # [...] Point-
+    return ((stack((mv.x, mv.y)) & flat_points[..., None]) / (mv.w & flat_points)[..., None]).to_array()
+
+
+def rgb_colour(colour: str) -> np.ndarray:
+    """Linear RGB triple (`[3]`) parsed from a matplotlib colour string."""
     return np.array(mcolors.to_rgb(colour))
 
 
-def cameras(ax: plt.Axes) -> tuple[Camera, Camera]:
-    """The panel on the view and its two cameras: planes reading points, and lines, joins of points, reading meets of
-    planes, each pairing with what it reads."""
-    ax.set(xlim=BOX[:2], ylim=BOX[2:])
-    origin = mv.w.dual()                                                       # [] Point-
-    # The lines through the origin along y and along x, which read a meet's place across and up, and the line at
-    # infinity, which reads its weight.
-    lines = panel(ax, mv.y.dual() & origin, origin & mv.x.dual(), mv.x.dual() & mv.y.dual())
-    return panel(ax, mv.x, mv.y, mv.w), lines
+def panel_cameras(ax: plt.Axes) -> tuple[Camera, Camera]:
+    """Point-reading plane camera and meet-reading line camera sharing `ax`'s view box."""
+    ax.set(xlim=view_box[:2], ylim=view_box[2:])
+    origin = mv.w.dual()                                                   # [] Point-
+    # Coordinate lines through the origin and the line at infinity pair with meets of planes.
+    line_camera = panel(ax, mv.y.dual() & origin, origin & mv.x.dual(), mv.x.dual() & mv.y.dual())
+    return panel(ax, mv.x, mv.y, mv.w), line_camera
 
 
-def marks(points: Point, colour: str, area: float, camera: Camera) -> np.ndarray:
-    """Points as dots of the area, in square points, with an outline in their colour."""
-    return simplices.markers(points.reshape(-1), rgb(colour), (np.sqrt(area) / 2 + OUTLINE / 2) * POINT, camera)
+def disc_marks(points: Point, colour: str, area: float, camera: Camera) -> Draw:
+    """Filled circular markers of `area` square points drawn in `colour`."""
+    radius = (np.sqrt(area) / 2 + outline_width / 2) * pixels_per_point
+    return simplices.markers(points.batch().reshape(-1), rgb_colour(colour), radius, camera)
 
 
-def squares(points: Point, colour: str, area: float, turn: float, camera: Camera) -> np.ndarray:
-    """Points as squares of the area, in square points, each four strokes in their colour, the first corner turned
-    `turn` from the direction the camera reads as one across: an eighth of a turn for a square along the picture's
-    rows and columns, none for a diamond."""
-    # The direction read as one across, turned to each of the four corners, half a diagonal long.
-    along = camera.across.dual() / read(camera.across, camera.across.dual())   # [] Point-
-    turns = (mv.xy * (-(turn + np.pi / 2 * np.arange(4)) / 2)).exp()        # [corners] Rotor+
-    corners = (turns >> along) * (np.sqrt(2 * area) / 2 * POINT * camera.pixel)   # [corners] Point-
-    places = (points / (mv.w & points))[:, None] + corners                   # [points, corners] Point-
-    return simplices.strokes(places.reshape(-1), Topology.loops([4] * len(points)), rgb(colour),
-                             FRAME * POINT, camera)
+def square_marks(points: Point, colour: str, area: float, turn_angle: float, camera: Camera) -> Draw:
+    """Outlined four-corner markers of `area` square points turned by `turn_angle` from screen horizontal."""
+    screen_step = camera.across.dual() / read(camera.across, camera.across.dual())  # [] Point-
+    turns = (mv.xy * (-(turn_angle + np.pi / 2 * np.arange(4)) / 2)).exp()          # [4] Even+
+    half_diagonal = np.sqrt(2 * area) / 2 * pixels_per_point * camera.pixel
+    corner_offsets = (turns >> screen_step) * half_diagonal                         # [4] Point-
+    flat_points = points.batch().reshape(-1)                                        # [n_points] Point-
+    n_points = len(flat_points)
+    places = (flat_points / (mv.w & flat_points))[:, None] + corner_offsets         # [n_points, 4] Point-
+    return simplices.strokes(
+        places.reshape(-1), Topology.loops([4] * n_points), rgb_colour(colour), frame_width * pixels_per_point, camera,
+    )
 
 
-def level_sets(polarities: Polarity, colour: str, width: float, camera: Camera) -> np.ndarray:
-    """Each locus P & polarity(P) == 0, `width` points across."""
-    return quadrics.curves(polarities.reshape(-1), width * POINT, rgb(colour), camera)
+def polarity_curves(polarities: Polarity, colour: str, width: float, camera: Camera) -> Draw:
+    """Implicit null curves `polarity(P) & P == 0` drawn `width` points wide."""
+    return quadrics.curves(polarities.batch().reshape(-1), width * pixels_per_point, rgb_colour(colour), camera)
 
 
 @charts.style()
-def draw_hyperbolic_space(
-    absolute: Polarity, vertices: Point, sides: Plane, angles: Scalar, probe: Point, foot: Point,
-    normal: Line, reflected: Point, pole: Point, spheres: Polarity, centres: Point,
+def hyperbolic_figure(
+    absolute: Polarity,
+    vertices: Point,
+    sides: Plane,
+    angles: Scalar,
+    probe: Point,
+    foot: Point,
+    normal: Line,
+    reflected_point: Point,
+    pole: Point,
+    sphere_quadrics: Polarity,
+    centres: Point,
 ) -> plt.Figure:
-    """Left, inside the absolute, black: the triangle, blue, with its angles, the perpendicular, red, from
-    the point, red, to its foot, dark red square, the point's reflection, orange, and the side's pole,
-    purple diamond. Right, the spheres about the two centres, blue and orange."""
-    # Two panels, each the room of its picture, and the angles' labels over the first.
+    """Two-panel Beltrami-Klein figure showing the hyperbolic triangle, perpendicular, and reflection on
+    the left and two families of concentric hyperbolic spheres on the right."""
     fig, (left, right) = charts.subplots(780, 360, ncols=2)
     for ax in (left, right):
         ax.set_axis_off()
     fig.tight_layout()
-    planes, lines = cameras(left)
-    overlay(left, [level_sets(absolute[None], "black", 1.2, planes),
-                             quadrics.flats(sides, 1.2 * POINT, rgb("#2563eb"), planes),
-                             quadrics.flats(normal[None], 1.0 * POINT, rgb("#dc2626"), lines),
-                             marks(vertices, "#1d4ed8", 14, planes),
-                             marks(probe[None], "#dc2626", 18, planes),
-                             squares(foot[None], "#b91c1c", 14, np.pi / 4, planes),
-                             marks(reflected[None], "#f97316", 16, planes),
-                             squares(pole[None], "#a855f7", 16, 0.0, planes)])
-    for xy, theta in zip(euclidean(vertices), angles.to_array()):
+    plane_camera, line_camera = panel_cameras(left)
+    overlay(
+        left,
+        [
+            polarity_curves(absolute[None], "black", 1.2, plane_camera),
+            quadrics.flats(sides.batch().reshape(-1), 1.2 * pixels_per_point, rgb_colour("#2563eb"), plane_camera),
+            quadrics.flats(normal.batch().reshape(-1), 1.0 * pixels_per_point, rgb_colour("#dc2626"), line_camera),
+            disc_marks(vertices, "#1d4ed8", 14, plane_camera),
+            disc_marks(probe[None], "#dc2626", 18, plane_camera),
+            square_marks(foot, "#b91c1c", 14, np.pi / 4, plane_camera),
+            disc_marks(reflected_point, "#f97316", 16, plane_camera),
+            square_marks(pole, "#a855f7", 16, 0.0, plane_camera),
+        ],
+    )
+    for xy, theta in zip(chart_coordinates(vertices), angles.batch().reshape(-1).to_array()):
         left.annotate(f"{np.degrees(theta):.1f}°", xy, textcoords="offset points", xytext=(3, 3))
 
-    planes, _ = cameras(right)
-    overlay(right, [level_sets(absolute[None], "black", 1.2, planes)]
-                      + [level_sets(family, colour, 0.8, planes)
-                         for family, colour in zip(spheres, ("#3b82f6", "#f97316"))]
-                      + [marks(centres, "#111827", 13, planes)])
+    plane_camera, _ = panel_cameras(right)
+    overlay(
+        right,
+        [polarity_curves(absolute[None], "black", 1.2, plane_camera)]
+        + [
+            polarity_curves(family, colour, 0.8, plane_camera)
+            for family, colour in zip(sphere_quadrics, ("#3b82f6", "#f97316"))
+        ]
+        + [disc_marks(centres, "#111827", 13, plane_camera)],
+    )
     return fig

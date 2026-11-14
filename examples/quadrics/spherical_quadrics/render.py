@@ -1,12 +1,10 @@
-"""Three views of the spherical conic on the unit sphere: its foci, its tangent great circles, its cone and polhodes,
-drawn on the GPU by evaluating the conic at the points of the sphere each pixel shows.
+"""Three GPU views of a spherical conic showing its foci, its tangent great circles, its cone, and its polhodes.
 
-A view looks at the sphere along parallel rays, and the ray through a place on the screen crosses it at a point of its
-far side and one of its near side. The shader evaluates the polarity's form `point & conic(point)` at both: its sign
-colours the sphere, and where it vanishes on the oval's side of the centre the oval is inked, the form over how fast it
-changes across the view being the distance across the view from the curve. Great circles are inked where their planes
-pair to nothing with the point, the polhodes where the form equals each level, and the cone is where the form vanishes
-along the ray itself. The far side shows through the near side.
+An orthographic view looks at the sphere along parallel rays, and the ray through each pixel crosses the far and near
+sides of the sphere. The shader evaluates the polarity's quadratic form `conic(point) & point` at both crossings: its
+sign colours the sphere, and where it vanishes on the oval's side of the centre the oval is inked by dividing the form
+by its screen-space gradient magnitude. Great circles are inked where their planes pair to zero with the point, the
+polhodes where the form matches each level, and the quadratic cone where the form vanishes along the ray itself.
 """
 
 from __future__ import annotations
@@ -19,68 +17,55 @@ from matplotlib.colors import to_rgb
 import numpy as np
 
 from numga import concatenate, stack
-from examples.quadrics.spherical_quadrics.core import Plane, Point, Polarity, Scalar, ga, mv, sphere
+from examples.quadrics.spherical_quadrics.core import Plane, Point, Polarity, ga, mv, sphere_grid
 from numga.wgsl import Shader, supersampled
 from examples.util.panels import image_figure
 
-# The sphere's grid the polarity's form is sampled on, for the range of its shading.
-GRID = (119, 60)
+# Sphere sampling counts for the shading range of the polarity's quadratic form.
+n_grid_longitudes, n_grid_latitudes = 119, 60
 
-# The view's elevation and azimuth in radians, azimuth zero looking along +y; half the image's height in the sphere's
-# radii, and the pixels across and up each view.
-ELEVATION, AZIMUTH = np.radians(30.0), np.radians(30.0)
-HALF_HEIGHT, N_PIXELS = 1.45, 300
-PIXEL = 2 * HALF_HEIGHT / N_PIXELS
-# The turn from the view's own frame, x right, y up and z toward the viewer, to the sphere's.
-camera = (mv.xy * (-AZIMUTH / 2)).exp() * (mv.yz * (-(np.pi / 2 - ELEVATION) / 2)).exp()     # [] Rotor+
-# The points of the sphere right and up across the view and toward the viewer; the planes through the centre whose
-# pairings with a point are how far right and up it lies, and how far toward the viewer; and the lamp, up and to the
-# right of the viewer and in front, a plane through the centre: its pairing with a point is how squarely the point
-# faces it.
-right, up, toward = camera >> stack((mv.x, mv.y, mv.z)).dual()               # [3] Point-
-across_axes, depth_axis = camera >> stack((mv.x, mv.y)), camera >> mv.z      # [2] Plane, [] Plane
-lamp = (camera >> (mv.x * 0.35 + mv.y * 0.5 + mv.z * 0.8)).normalized()     # [] Plane+
-# The turn by a third of a right angle in the plane of the screen, which lays the strokes of a chevron out to either
-# side of its arrow.
-chevron_turn = ((camera >> mv.xy) * (-np.pi / 12)).exp()                      # [] Rotor+
-# The background; the form's colours below zero, at zero and above, and the polhodes' below and above; the oval, the
-# foci, the point the geodesics run to and the geodesics; the faint sphere and its great circles, the dual conic, the
-# pale sheet under the polhodes, the cone, and the rims of the marks.
-BACKGROUND = np.ones(3)
-BELOW, NEUTRAL, ABOVE = (np.array(cm.coolwarm(share)[:3]) for share in (0.0, 0.5, 1.0))
-POLHODE_INKS = np.array([to_rgb("salmon"), to_rgb("deepskyblue")])
-OVAL, FOCUS, SAMPLE = np.array(to_rgb("gold")), np.array(to_rgb("red")), np.ones(3)
-GEODESICS = np.array([to_rgb("lime"), to_rgb("cyan")])
-SPHERE, DUAL, SHEET = np.array(to_rgb("slategray")), np.array(to_rgb("magenta")), np.full(3, 0.93)
-CONE, RIM = np.array(to_rgb("khaki")), np.full(3, 0.2)
-# Opacities: the form on the near side of the sphere, the antipodal loop, each side of the faint sphere, its great
-# circles and the tangent great circles, each side of the pale sheet, and each crossing of the cone.
-FORM_OPACITY, ANTIPODE_OPACITY, BALL_OPACITY, MERIDIAN_OPACITY, CIRCLE_OPACITY = 0.7, 0.7, 0.05, 0.35, 0.6
-SHEET_OPACITY, CONE_OPACITY = 0.55, 0.23
-# The lighting's floor, the dashes of the antipodal loop around the oval's centre, the cone's reach from the centre,
-# the tangent great circles drawn, and every how many tangents a dot of the dual conic.
-AMBIENT, N_DASHES, REACH, N_TOUCHING, DOT_EVERY = 0.7, 12, 1.25, 16, 3
-# The arrows toward the poles: their length along the sphere.
-POLE_LENGTH = 0.35
-# The polhodes: the levels drawn, as fractions of the form's least and greatest values on the sphere.
-FRACTIONS = np.linspace(0.0, 0.7, 4)[1:]
-# Widths, lengths and radii in pixels: the oval, the antipodal loop, the geodesics, the great circles, the polhodes,
-# the arrows' strokes and the length of the strokes of the chevrons at their tips; the foci, the sample point, their
-# rims, and the dots of the dual conic.
-OVAL_WIDTH, ANTIPODE_WIDTH, GEODESIC_WIDTH, CIRCLE_WIDTH, POLHODE_WIDTH = 2.5, 1.75, 1.75, 1.5, 1.5
-SHAFT_WIDTH, CHEVRON_LENGTH = 1.5, 6.0
-FOCUS_RADIUS, SAMPLE_RADIUS, RIM_WIDTH, DOT_RADIUS = 3.5, 4.0, 0.75, 1.5
+# Camera elevation and azimuth in radians, half-height in sphere radii, and image resolution in pixels.
+elevation, azimuth = np.radians(30.0), np.radians(30.0)
+half_height, n_pixels = 1.45, 300
+pixel = 2 * half_height / n_pixels
+# The turn from the screen frame (x right, y up, z toward the viewer) into the sphere's frame.
+camera = (mv.xy * (-azimuth / 2)).exp() * (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()  # [] Rotor+
+# Screen-frame poles on the sphere, screen-frame coordinate planes, and the lamp plane.
+right, up, toward = camera >> stack((mv.x, mv.y, mv.z)).dual()                 # [] Point-, [] Point-, [] Point-
+across_axes, depth_axis = camera >> stack((mv.x, mv.y)), camera >> mv.z        # [2] Plane+, [] Plane+
+lamp_plane = camera >> (mv.x * 0.35 + mv.y * 0.5 + mv.z * 0.8)                 # [] Plane+
+lamp = lamp_plane.normalized()                                                 # [] Plane+
+# A screen-plane turn of 15 degrees lays the two strokes of an arrow chevron to either side of its shaft.
+chevron_bivector = camera >> mv.xy                                             # [] Bivector+
+chevron_turn = (chevron_bivector * (-np.pi / 12)).exp()                        # [] Rotor+
+
+background_colour = np.ones(3)
+below_colour, neutral_colour, above_colour = (np.array(cm.coolwarm(share)[:3]) for share in (0.0, 0.5, 1.0))
+polhode_inks = np.array([to_rgb("salmon"), to_rgb("deepskyblue")])
+oval_colour, focus_colour, sample_colour = np.array(to_rgb("gold")), np.array(to_rgb("red")), np.ones(3)
+geodesic_colours = np.array([to_rgb("lime"), to_rgb("cyan")])
+sphere_colour, dual_colour, sheet_colour = np.array(to_rgb("slategray")), np.array(to_rgb("magenta")), np.full(3, 0.93)
+cone_colour, rim_colour = np.array(to_rgb("khaki")), np.full(3, 0.2)
+
+form_opacity, antipode_opacity, ball_opacity, meridian_opacity, circle_opacity = 0.7, 0.7, 0.05, 0.35, 0.6
+sheet_opacity, cone_opacity = 0.55, 0.23
+ambient_floor, n_dashes, cone_reach, n_touching, dot_stride = 0.7, 12, 1.25, 16, 3
+pole_arrow_length = 0.35
+level_fractions = np.linspace(0.0, 0.7, 4)[1:]
+
+oval_width, antipode_width, geodesic_width, circle_width, polhode_width = 2.5, 1.75, 1.75, 1.5, 1.5
+shaft_width, chevron_length = 1.5, 6.0
+focus_radius, sample_radius, rim_width, dot_radius = 3.5, 4.0, 0.75, 1.5
 
 
 common = """
 alias Sample = vec3<f32>;
 
-// The polarity, and the oval's centre, which tells the oval from its antipodal twin.
+// The polarity and the oval's centre, which distinguishes the oval from its antipodal twin.
 var<uniform> conic: Polarity;
 var<uniform> centre: Point;
 
-// A point of the sphere at a place across the view and a depth toward the viewer, and how it moves as the place moves
-// right and up across the view, keeping to the sphere.
+// A sphere point at a screen position and depth, together with its screen-space tangent derivatives.
 struct Seen {
     point: Point,
     rightward: Point,
@@ -92,39 +77,29 @@ fn on_sphere(across: vec2<f32>, depth: f32) -> Seen {
                 up - toward * (across.y / depth));
 }
 
-// The share of a pixel inside an edge, the pixel's centre `distance` inside it, in the sphere's radii.
 fn cover(distance: f32) -> f32 {
     return clamp(0.5 + distance / pixel, 0.0, 1.0);
 }
 
-// The share of a pixel a line `width` across the view covers about where a value vanishes, from the value at a point
-// and the size of its change as the point steps right and up across the view: the value over that size is how far
-// across the view the point lies from the line.
 fn ink(value: f32, change: f32, width: f32) -> f32 {
     return cover(width / 2 - abs(value) / change);
 }
 
-// The oval's ink at a seen point: where the form `point & conic(point)` vanishes, its gradient twice the polar, on
-// the oval's side of the centre.
 fn oval(seen: Seen) -> f32 {
     let polar = conic(seen.point);
     let change = 2 * (right.dual_inverse() * (polar & seen.rightward) + up.dual_inverse() * (polar & seen.upward));
-    return select(0.0, ink(seen.point & polar, change.norm(), oval_width), seen.point.dot(centre) > 0);
+    return select(0.0, ink(polar & seen.point, change.norm(), oval_width), (seen.point.reverse() | centre) > 0);
 }
 
-// The share of a pixel a disc about a place covers at a point of the sphere, round on the screen: by their offset
-// across the view, where both lie on the same side of the plane of the screen through the centre.
 fn disc(place: Point, point: Point, radius: f32) -> f32 {
     let near = (depth_axis & place) * (depth_axis & point) > 0;
     return select(0.0, cover(radius - screen_plane(place - point).norm()), near);
 }
 
-// How brightly the lamp lights a point of the sphere: how squarely the point faces it, over an ambient floor.
 fn lit(point: Point) -> f32 {
     return ambient + (1 - ambient) * max(lamp & point, 0.0);
 }
 
-// The colour at a place on the screen: within the sphere's outline, its far side seen through its near side.
 fn sphere(across: vec2<f32>) -> vec3<f32> {
     let foot = (across_axes.dual() * across).sum();
     let depth = sqrt(1 - foot.scalar_norm_squared());
@@ -133,17 +108,14 @@ fn sphere(across: vec2<f32>) -> vec3<f32> {
 """
 
 primal_source = """
-// The form's largest size on the sphere, which its colours span.
 var<uniform> extent: f32;
 
-// A disc about a point of the sphere, in its colour and of its radius.
 struct Mark {
     place: Point,
     colour: vec3<f32>,
     radius: f32,
 }
 
-// A geodesic from one point to another, in its colour.
 struct Arc {
     start: Point,
     end: Point,
@@ -156,13 +128,10 @@ var<storage, read> arcs: array<Arc>;
 fn side(beneath: vec3<f32>, seen: Seen) -> vec3<f32> {
     let point = seen.point;
     let polar = conic(point);
-    let form = point & polar;
+    let form = polar & point;
     let change = 2 * (right.dual_inverse() * (polar & seen.rightward) + up.dual_inverse() * (polar & seen.upward));
-    // The form's sign colours the sphere's near side, from the neutral colour at zero toward `below` or `above`.
     let shade = mix(neutral, select(below, above, form > 0), abs(form) / extent) * lit(point);
     var colour = mix(beneath, shade, select(0.0, form_opacity, (depth_axis & point) > 0));
-    // A geodesic lies on the great circle through its ends, their join; a point between the ends joins each of them
-    // in the sense the ends join each other.
     for (var index = 0u; index < arrayLength(&arcs); index++) {
         let arc = arcs[index];
         let circle = arc.start & arc.end;
@@ -170,14 +139,11 @@ fn side(beneath: vec3<f32>, seen: Seen) -> vec3<f32> {
         let line = ink((circle & point).norm(), (right.dual_inverse() * (circle & seen.rightward) + up.dual_inverse() * (circle & seen.upward)).norm(), geodesic_width);
         colour = mix(colour, arc.colour, select(0.0, line, between));
     }
-    // Where the form vanishes: the oval on the centre's side, and across it the antipodal loop in dashes, by the
-    // point's turn about the centre from the great circle through the centre and the viewer.
     let spoke = centre & point;
     let reference = centre & toward;
     let dash = fract(atan2((spoke ^ reference) | centre, spoke | reference) * dashes_per_turn) < 0.5;
     let twin = select(0.0, antipode_opacity * ink(form, change.norm(), antipode_width), dash);
-    colour = mix(colour, oval_colour, select(twin, ink(form, change.norm(), oval_width), point.dot(centre) > 0));
-    // The marks, each over a darker rim.
+    colour = mix(colour, oval_colour, select(twin, ink(form, change.norm(), oval_width), (point.reverse() | centre) > 0));
     for (var index = 0u; index < arrayLength(&marks); index++) {
         let mark = marks[index];
         colour = mix(colour, rim_colour, disc(mark.place, point, mark.radius));
@@ -192,15 +158,12 @@ fn sample(place: vec2<f32>) -> Sample {
 """
 
 envelope_source = """
-// A great circle by the plane through the centre it lies on, in its colour and opacity.
 struct Circle {
     plane: Plane,
     colour: vec3<f32>,
     opacity: f32,
 }
 
-// An arrow painted on the sphere from a point of the oval toward the pole of its tangent great circle, a quarter turn
-// away, in its colour: a stroke along the great circle through them, ending at its tip in a chevron on the picture.
 struct Arrow {
     start: Point,
     pole: Point,
@@ -210,29 +173,20 @@ struct Arrow {
 
 var<storage, read> circles: array<Circle>;
 var<storage, read> arrows: array<Arrow>;
-// The poles of tangent great circles, dots along the dual conic.
 var<storage, read> poles: array<Point>;
 
-// The share of a pixel a stroke on the picture covers at a point of the sphere, the stroke from a place `length` along
-// a direction across the view: by the point's offset across the view from it, where both lie on the same side of the
-// plane of the screen through the centre.
 fn barb(place: Point, direction: Point, length: f32, point: Point) -> f32 {
     let near = (depth_axis & place) * (depth_axis & point) > 0;
     let offset = screen_plane(point - place);
-    let nearest = direction * clamp(offset.dot(direction), 0.0, length);
+    let nearest = direction * clamp(offset.reverse() | direction, 0.0, length);
     return select(0.0, cover(shaft_width / 2 - (offset - nearest).norm()), near);
 }
 
-// The share of a pixel an arrow covers at a point of the sphere: the point's turn from the start toward the pole,
-// read by its pairings with the two, and its distance off the great circle through them, their join, for its stroke;
-// and the chevron at its tip.
 fn arrow_share(arrow: Arrow, point: Point) -> f32 {
-    let along = atan2(-(point | arrow.pole), -(point | arrow.start));
+    let sweep_arc = atan2(point.reverse() | arrow.pole, point.reverse() | arrow.start);
     let off = ((arrow.start & arrow.pole) & point).norm();
-    let stroke = select(0.0, cover(shaft_width / 2 - off), along > 0 && along < arrow_length);
-    // The chevron's two strokes run back from the tip against the arrow's heading across the view, the great circle's
-    // tangent at the tip toward the pole, turned out to either side; on an arrow short across the view, shorter.
-    let back = -screen_plane(arrow.pole - arrow.tip * arrow.tip.dot(arrow.pole)).normalized();
+    let stroke = select(0.0, cover(shaft_width / 2 - off), sweep_arc > 0 && sweep_arc < arrow_length);
+    let back = -screen_plane(arrow.pole - arrow.tip * (arrow.tip.reverse() | arrow.pole)).normalized();
     let length = min(chevron_length, screen_plane(arrow.tip - arrow.start).norm());
     let barbs = max(barb(arrow.tip, chevron_turn >> back, length, point), barb(arrow.tip, chevron_turn << back, length, point));
     return max(stroke, barbs);
@@ -241,7 +195,6 @@ fn arrow_share(arrow: Arrow, point: Point) -> f32 {
 fn side(beneath: vec3<f32>, seen: Seen) -> vec3<f32> {
     let point = seen.point;
     var colour = mix(beneath, sphere_colour, ball_opacity);
-    // Each great circle where its plane pairs to nothing with the point; then the oval, the arrows and the dots.
     for (var index = 0u; index < arrayLength(&circles); index++) {
         let circle = circles[index];
         let change = right.dual_inverse() * (circle.plane & seen.rightward) + up.dual_inverse() * (circle.plane & seen.upward);
@@ -263,7 +216,6 @@ fn sample(place: vec2<f32>) -> Sample {
 """
 
 polhode_source = """
-// A polhode: where the form equals its level, in its colour.
 struct Level {
     value: f32,
     colour: vec3<f32>,
@@ -278,40 +230,33 @@ fn side(beneath: vec3<f32>, seen: Seen) -> vec3<f32> {
     var colour = mix(beneath, sheet_colour * lit(point), sheet_opacity);
     for (var index = 0u; index < arrayLength(&levels); index++) {
         let level = levels[index];
-        colour = mix(colour, level.colour, ink((point & polar) - level.value, change.norm(), polhode_width));
+        colour = mix(colour, level.colour, ink((polar & point) - level.value, change.norm(), polhode_width));
     }
     return mix(colour, oval_colour, oval(seen));
 }
 
-// The cone's sheet where the ray through a place on the screen crosses it between two depths toward the viewer, on
-// the oval's side of the centre and within `reach` of it. Along the ray, from its point on the plane of the screen
-// through the centre, the form is a quadratic in the depth, `a * depth**2 + 2 * b * depth + c`, whose roots are the
-// crossings.
 fn cone(beneath: vec3<f32>, across: vec2<f32>, low: f32, high: f32) -> vec3<f32> {
     let start = right * across.x + up * across.y;
     let polar = conic(toward);
-    let a = toward & polar;
-    let b = start & polar;
-    let c = start & conic(start);
-    let root = sqrt(b * b - a * c);
+    let quadratic_a = polar & toward;
+    let quadratic_b = polar & start;
+    let quadratic_c = conic(start) & start;
+    let root = sqrt(quadratic_b * quadratic_b - quadratic_a * quadratic_c);
     var colour = beneath;
     for (var which = -1.0; which <= 1.0; which += 2.0) {
-        let depth = (which * root - b) / a;
+        let depth = (which * root - quadratic_b) / quadratic_a;
         let point = start + toward * depth;
-        let crossed = b * b > a * c && depth > low && depth <= high && point.dot(centre) > 0 && point.norm() < reach;
+        let crossed = quadratic_b * quadratic_b > quadratic_a * quadratic_c && depth > low && depth <= high && (point.reverse() | centre) > 0 && point.norm() < reach;
         colour = mix(colour, cone_colour, select(0.0, cone_opacity, crossed));
     }
     return colour;
 }
 
-// From the far end of the ray to the near: the cone behind the sphere, the sphere's far side, the cone within it, the
-// sphere's near side, and the cone in front of it.
 fn sample(place: vec2<f32>) -> Sample {
     let across = screen(place) * half_height;
     let foot = (across_axes.dual() * across).sum();
     let depth = sqrt(max(1 - foot.scalar_norm_squared(), 0.0));
-    // The sphere's parts are kept by selection rather than a branch: Mesa's software Vulkan driver crashes on a loop
-    // of runtime length, like the one over the levels, within a branch.
+    // Mesa's software Vulkan driver crashes on a runtime-length loop inside a branch, so sphere sides use `select`.
     let inside = depth > 0;
     var colour = cone(background, across, -reach, -depth);
     colour = select(colour, side(colour, on_sphere(across, -depth)), inside);
@@ -324,62 +269,92 @@ fn sample(place: vec2<f32>) -> Sample {
 
 # --- plumbing -------------------------------------------------------------------------
 constants = dict(
-    directions=stack((right, up, toward)), screen_plane=Point - toward * (depth_axis & Point),
-    right=right, up=up, toward=toward, across_axes=across_axes, depth_axis=depth_axis, lamp=lamp,
-    half_height=HALF_HEIGHT, pixel=PIXEL, ambient=AMBIENT, background=BACKGROUND, below=BELOW, neutral=NEUTRAL,
-    above=ABOVE, oval_colour=OVAL, rim_colour=RIM, sphere_colour=SPHERE, dual_colour=DUAL, sheet_colour=SHEET, cone_colour=CONE, form_opacity=FORM_OPACITY,
-    antipode_opacity=ANTIPODE_OPACITY, ball_opacity=BALL_OPACITY, sheet_opacity=SHEET_OPACITY,
-    cone_opacity=CONE_OPACITY, dashes_per_turn=N_DASHES / (2 * np.pi), reach=REACH,
-    arrow_length=POLE_LENGTH, oval_width=OVAL_WIDTH * PIXEL,
-    antipode_width=ANTIPODE_WIDTH * PIXEL, geodesic_width=GEODESIC_WIDTH * PIXEL, circle_width=CIRCLE_WIDTH * PIXEL,
-    polhode_width=POLHODE_WIDTH * PIXEL, shaft_width=SHAFT_WIDTH * PIXEL, chevron_length=CHEVRON_LENGTH * PIXEL,
+    directions=stack((right, up, toward)),
+    screen_plane=Point - toward * (depth_axis & Point),
+    right=right,
+    up=up,
+    toward=toward,
+    across_axes=across_axes,
+    depth_axis=depth_axis,
+    lamp=lamp,
+    half_height=half_height,
+    pixel=pixel,
+    ambient=ambient_floor,
+    background=background_colour,
+    below=below_colour,
+    neutral=neutral_colour,
+    above=above_colour,
+    oval_colour=oval_colour,
+    rim_colour=rim_colour,
+    sphere_colour=sphere_colour,
+    dual_colour=dual_colour,
+    sheet_colour=sheet_colour,
+    cone_colour=cone_colour,
+    form_opacity=form_opacity,
+    antipode_opacity=antipode_opacity,
+    ball_opacity=ball_opacity,
+    sheet_opacity=sheet_opacity,
+    cone_opacity=cone_opacity,
+    dashes_per_turn=n_dashes / (2 * np.pi),
+    reach=cone_reach,
+    arrow_length=pole_arrow_length,
+    oval_width=oval_width * pixel,
+    antipode_width=antipode_width * pixel,
+    geodesic_width=geodesic_width * pixel,
+    circle_width=circle_width * pixel,
+    polhode_width=polhode_width * pixel,
+    shaft_width=shaft_width * pixel,
+    chevron_length=chevron_length * pixel,
     chevron_turn=chevron_turn,
-    rim_width=RIM_WIDTH * PIXEL, dot_radius=DOT_RADIUS * PIXEL,
+    rim_width=rim_width * pixel,
+    dot_radius=dot_radius * pixel,
 )
 
 
 @cache
-def shader(source: str) -> Shader:
-    """The shader of one view, its source after what the views share."""
+def view_shader(source: str) -> Shader:
+    """Compiles the supersampled WGSL shader for one spherical-conic panel."""
     return Shader(supersampled() + common + source, ga, dict(Point=Point, Plane=Plane, Polarity=Polarity), constants)
 
 
-def picture(source: str, **values) -> np.ndarray:
-    """One view, `[rows, columns, 3]` bytes."""
-    image = shader(source)((N_PIXELS, N_PIXELS), **values)["image"]
+def panel_image(source: str, **values) -> np.ndarray:
+    """Renders one `[n_pixels, n_pixels, 3]` RGB byte image on the GPU."""
+    image = view_shader(source)((n_pixels, n_pixels), **values)["image"]
     return np.round(np.clip(image, 0, 1) * 255).astype(np.uint8)
 
 
-def draw_spherical_conic(curve: Point, foci: Point, sample: Point, tangents: Plane, conic: Polarity) -> plt.Figure:
-    """The oval with its foci and the geodesics from them to one point, over the polarity's form; the oval as the
-    envelope of its tangent great circles, with arrows toward their poles and the dual conic the poles trace, dotted;
-    and the cone through it, with the level sets of the form, the polhodes."""
-    # The oval's centre, the unit point its points sum toward; the form's least and greatest values on the sphere.
-    shared = dict(conic=conic, centre=curve.sum(axis=0).normalized())
-    grid = sphere(*GRID)                                                        # [latitudes, longitudes] Point-
-    potential = grid & conic(grid)                                              # [latitudes, longitudes] Scalar+
-    least, greatest = potential.to_array().min(), potential.to_array().max()
-    marks = dict(place=concatenate([foci, sample[None]]), colour=np.stack([FOCUS, FOCUS, SAMPLE]),
-                 radius=np.array([FOCUS_RADIUS, FOCUS_RADIUS, SAMPLE_RADIUS]) * PIXEL)
-    arcs = dict(start=foci, end=sample[None].broadcast_to(foci.shape), colour=GEODESICS)
-    primal = picture(primal_source, extent=max(-least, greatest), marks=marks, arcs=arcs, **shared)
+def conic_figure(oval_points: Point, foci: Point, sample_point: Point, tangents: Plane, conic: Polarity) -> plt.Figure:
+    """Renders the three-panel figure of the spherical oval, its tangent envelope and dual conic, and its cone with polhodes."""
+    shared = dict(conic=conic, centre=oval_points.sum(axis=0).normalized())
+    grid = sphere_grid(n_grid_longitudes, n_grid_latitudes)                     # [n_grid_latitudes, n_grid_longitudes] Point-
+    form_values = conic(grid) & grid                                            # [n_grid_latitudes, n_grid_longitudes] Scalar+
+    least, greatest = float(form_values.min().to_array()), float(form_values.max().to_array())
+    marks = dict(
+        place=concatenate([foci, sample_point[None]]),
+        colour=np.stack([focus_colour, focus_colour, sample_colour]),
+        radius=np.array([focus_radius, focus_radius, sample_radius]) * pixel,
+    )
+    arcs = dict(start=foci, end=sample_point[None].broadcast_to(foci.shape), colour=geodesic_colours)
+    primal = panel_image(primal_source, extent=max(-least, greatest), marks=marks, arcs=arcs, **shared)
 
-    # The great circles of the planes x, y and z, and some tangent great circles, each with an arrow from its point
-    # of the oval toward its pole.
-    touching = np.linspace(0, curve.shape[0] - 1, N_TOUCHING, dtype=int)
-    colours = cm.plasma(np.linspace(0.1, 0.9, N_TOUCHING))[:, :3]
-    circles = dict(plane=concatenate([stack((mv.x, mv.y, mv.z)).cast(Plane), tangents[touching]]),
-                   colour=np.concatenate([np.broadcast_to(SPHERE, (3, 3)), colours]),
-                   opacity=np.repeat([MERIDIAN_OPACITY, CIRCLE_OPACITY], [3, N_TOUCHING]))
-    # Each arrow's tip: the turn carrying its start onto its pole, a quarter turn, taken the arrow's share of the way.
-    starts, poles = curve[touching], tangents[touching].dual()                 # [touching] Point-, Point-
-    turns = (1 + poles * starts.inverse()).normalized()                         # [touching] Rotor+
-    tips = (turns.log() * (POLE_LENGTH / (np.pi / 2))).exp() >> starts        # [touching] Point-
+    touching_indices = np.linspace(0, oval_points.shape[0] - 1, n_touching, dtype=int)
+    colours = cm.plasma(np.linspace(0.1, 0.9, n_touching))[:, :3]
+    circles = dict(
+        plane=concatenate([stack((mv.x, mv.y, mv.z)).cast(Plane), tangents[touching_indices]]),
+        colour=np.concatenate([np.broadcast_to(sphere_colour, (3, 3)), colours]),
+        opacity=np.repeat([meridian_opacity, circle_opacity], [3, n_touching]),
+    )
+    # Each arrow turns its starting point on the oval partway toward the tangent great circle's pole a quarter turn away.
+    starts, poles = oval_points[touching_indices], tangents[touching_indices].dual()  # [n_touching] Point-, [n_touching] Point-
+    quarter_turns = (1 + poles * starts.inverse()).normalized()                 # [n_touching] Rotor+
+    arrow_turns = (quarter_turns.log() * (pole_arrow_length / (np.pi / 2))).exp()  # [n_touching] Rotor+
+    tips = arrow_turns >> starts                                                # [n_touching] Point-
     arrows = dict(start=starts, pole=poles, tip=tips, colour=colours)
-    envelope = picture(envelope_source, circles=circles, arrows=arrows, poles=tangents[::DOT_EVERY].dual(), **shared)
+    envelope = panel_image(envelope_source, circles=circles, arrows=arrows, poles=tangents[::dot_stride].dual(), **shared)
 
-    # The polhodes, below zero and above.
-    levels = dict(value=np.concatenate([least * FRACTIONS[::-1], greatest * FRACTIONS]),
-                  colour=np.repeat(POLHODE_INKS, len(FRACTIONS), axis=0))
-    polhodes = picture(polhode_source, levels=levels, **shared)
+    levels = dict(
+        value=np.concatenate([least * level_fractions[::-1], greatest * level_fractions]),
+        colour=np.repeat(polhode_inks, len(level_fractions), axis=0),
+    )
+    polhodes = panel_image(polhode_source, levels=levels, **shared)
     return image_figure(np.concatenate([primal, envelope, polhodes], axis=1))

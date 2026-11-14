@@ -1,4 +1,4 @@
-"""Rasterise the great circles of a set of planes on the front hemisphere."""
+"""Orthographic hemisphere samples pair with central planes to shade the spherical regions between their great circles."""
 
 from __future__ import annotations
 
@@ -8,37 +8,35 @@ import numpy as np
 from examples.quadrics.conformal_elliptical.core import Plane, Point, mv
 from examples.util.panels import image_figure
 
-# Samples across the hemisphere, `samples_per_side` by `samples_per_side` of them averaged into each pixel of the
-# picture.
 n_samples = 512
-# The tanh gain, which sets the antialiased width of a circle.
+n_subsamples = 2
 sharpness = 512.0
-samples_per_side = 2
-# The direction toward the viewer, who looks along -z.
-toward_viewer = mv.z.dual()                                                  # [] Point-
+# Viewing axis pointing from the sphere centre toward the camera.
+toward_viewer = mv.z.dual()                                                     # [] Point-
 
 
 # --- plumbing -------------------------------------------------------------------------
-def hemisphere(n: int) -> tuple[Point, np.ndarray]:
-    """The points of the front hemisphere under an n by n grid of samples across the unit disk seen along z, and which
-    of the samples lie inside the disk: each sample's place across the disk lifted toward the viewer onto the
-    sphere."""
-    steps = np.linspace(-1.0, +1.0, n)
-    across = mv.x.dual() * steps[:, None] + mv.y.dual() * steps[None, :]     # [rows, columns] Point-
-    inside = across.norm() <= 1.0                                            # [rows, columns]
-    disk = across[inside]                                                    # [samples] Point-
-    return disk + toward_viewer * (1 - disk.scalar_norm_squared()).square_root(), inside
+def hemisphere_samples(n_samples: int) -> tuple[Point, np.ndarray]:
+    """Orthographic grid samples inside the unit disc lift along the viewing axis onto the front hemisphere (`[...] Point-`), paired with the `[n_samples, n_samples]` disc mask."""
+    coordinates = np.linspace(-1, 1, n_samples)                                 # [n_samples]
+    disc_grid = (
+        mv.x.dual() * coordinates[:, None] + mv.y.dual() * coordinates[None, :]
+    )                                                                           # [n_samples, n_samples] Point-
+    disc_mask = disc_grid.antinorm() <= 1                                       # [n_samples, n_samples]
+    disc_points = disc_grid[disc_mask]                                          # [...] Point-
+    front_depths = (1 - disc_points.scalar_norm_squared()).square_root()        # [...] Scalar+
+    return disc_points + toward_viewer * front_depths, disc_mask
 
 
-def draw_planes(planes: Plane) -> plt.Figure:
-    """The planes' great circles on the front hemisphere, the cells between them in two shades by the
-    parity of the planes a point lies above."""
-    points, inside = hemisphere(n_samples)
-    # Each point's height above each plane, by their pairing.
-    heights = (planes & points[:, None]).to_array()                          # [samples, planes]
-    image = np.zeros(inside.shape)
-    image[inside] = (np.prod(np.tanh(heights * sharpness), axis=-1) + 1.0) / 2.0 + 1.0
-    size = n_samples // samples_per_side
-    frame = image.reshape(size, samples_per_side, size, samples_per_side).mean(axis=(1, 3))
+def planes_figure(planes: Plane) -> plt.Figure:
+    """Pairings between `planes` (`[n_planes] Plane+`) and front-hemisphere points shade the spherical regions between great circles in two alternating tones."""
+    n_planes = len(planes)
+    points, disc_mask = hemisphere_samples(n_samples)
+    # Signed height of each hemisphere point above each central plane.
+    heights = (planes & points[:, None]).to_array()                             # [..., n_planes]
+    image = np.zeros(disc_mask.shape)
+    image[disc_mask] = (np.prod(np.tanh(heights * sharpness), axis=-1) + 1) / 2 + 1
+    n_pixels = n_samples // n_subsamples
+    frame = image.reshape(n_pixels, n_subsamples, n_pixels, n_subsamples).mean(axis=(1, 3))
     grey = plt.get_cmap("gray")((frame - frame.min()) / (frame.max() - frame.min()))
     return image_figure(np.round(grey[..., :3] * 255).astype(np.uint8))

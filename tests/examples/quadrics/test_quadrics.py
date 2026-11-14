@@ -1,22 +1,36 @@
-"""Tests for ellipsoids as plane-to-point maps in PGA3D."""
+"""Coverage tests for projective ellipsoids as plane-to-point maps."""
 
 from __future__ import annotations
 
+import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
 from examples.quadrics.quadrics import render, scenarios
 from examples.quadrics.quadrics.core import mv, support_plane
 
 
 def test_support_planes_are_tangent_and_face_their_normal():
-    """Every support plane contains its own contact point and keeps the requested orientation."""
-    dual = scenarios.body()
-    normals = mv.x * np.array([1.0, 0.0, -1.0, 0.3]) + mv.y * np.array([0.0, 1.0, 2.0, -0.4]) + mv.z * np.array([0.0, 0.0, 0.5, 2.0])
-    tangents = support_plane(dual, normals, mv.w)
-    np.testing.assert_allclose((tangents & dual(tangents)).to_array(), 0.0, atol=1e-12)
-    np.testing.assert_allclose((tangents | normals.normalized()).to_array(), (normals.normalized() | normals.normalized()).to_array(), atol=1e-12)
+    """Every support plane contains its contact point, faces the requested direction, and solves back from its point."""
+    dual = scenarios.rest_ellipsoid()                                              # [] Point- <- Plane+
+    normals = (
+        mv.x * np.array([1.0, 0.0, -1.0, 0.3])
+        + mv.y * np.array([0.0, 1.0, 2.0, -0.4])
+        + mv.z * np.array([0.0, 0.0, 0.5, 2.0])
+    )                                                                              # [4] Plane+
+    unit_normals = normals.normalized()                                            # [4] Plane+
+    tangents = support_plane(dual, normals)                                        # [4] Plane+
+    contacts = dual(tangents)                                                      # [4] Point-
+    recovered = dual.solve(contacts)                                               # [4] Plane+
+    basis_points = stack((mv.x, mv.y, mv.z, mv.w)).dual()                          # [4] Point-
+    assert ((tangents & contacts).abs() < 1e-12).all()
+    assert (((tangents | unit_normals) - 1.0).abs() < 1e-12).all()
+    assert (((recovered[:, None] - tangents[:, None]) & basis_points).abs() < 1e-12).all()
 
 
 def test_the_scenes_draw():
-    render.draw_polar_reciprocity(*scenarios.polar_reciprocity())
-    render.draw_motor_transport(*scenarios.motor_transport())
+    dual, tangent, contact, _ = scenarios.polar_reciprocity()
+    fig_reciprocity = render.draw_polar_reciprocity(dual, tangent, contact)
+    fig_transport = render.draw_motor_transport(*scenarios.motor_transport())
+    plt.close(fig_reciprocity)
+    plt.close(fig_transport)

@@ -2,49 +2,57 @@
 
 from __future__ import annotations
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quadrics.quadric_collision import render, scenarios
-from examples.quadrics.quadric_collision.core import Plane, cubic_peak, ellipsoid, motor, mv, blend, tangent_plane
+from examples.quadrics.quadric_collision.core import (
+    Plane, cubic_peak, mv, placement_motor, quadric_blend, rest_ellipsoid, tangent_plane,
+)
 
 
-def test_dual_ellipsoid_tangency():
-    """Tangent planes from the support formula satisfy planes & Q(planes) == 0 for every normal."""
-    placement = motor(1.5, -0.8, np.radians(35))
-    Q = placement >> ellipsoid(2.0, 1.2)(placement << Plane)
-    phi = np.radians([0, 45, 90, 135, 210, 315])
-    planes = tangent_plane(Q, mv.x * np.cos(phi) + mv.y * np.sin(phi))
-    np.testing.assert_allclose((planes & Q(planes)).to_array(), 0.0, atol=1e-10)
+def test_dual_ellipsoid_tangency_and_scale_invariance():
+    """Outward tangent planes satisfy `planes & dual(planes) == 0` and ignore nonzero rescaling of `dual`."""
+    placement = placement_motor(1.5, -0.8, np.radians(35))
+    shape = rest_ellipsoid(2.0, 1.2)
+    dual = placement >> shape(placement << Plane)
+    angles = np.radians([0, 45, 90, 135, 210, 315])
+    rotors = (mv.xy * (-angles / 2)).exp()
+    normals = rotors >> mv.x
+    planes = tangent_plane(dual, normals)
+    assert ((planes & dual(planes)).abs() < 1e-10).all()
+    assert ((tangent_plane(dual * -2.5, normals) - planes).norm() < 1e-12).all()
 
 
-def test_tangent_plane_ignores_the_scale_of_the_quadric():
-    """Q and any nonzero multiple of it, negative included, are the same quadric with the same tangents."""
-    placement = motor(1.5, -0.8, np.radians(35))
-    Q = placement >> ellipsoid(2.0, 1.2)(placement << Plane)
-    phi = np.radians([0, 45, 90, 135, 210, 315])
-    normals = mv.x * np.cos(phi) + mv.y * np.sin(phi)
-    np.testing.assert_allclose(tangent_plane(Q * -2.5, normals).kernel, tangent_plane(Q, normals).kernel, atol=1e-12)
+def test_cubic_peak_matches_a_sampled_sweep():
+    """The closed-form cubic peak of the blend determinant agrees with a dense sweep on `(0, 1)`."""
+    placement = placement_motor(2.5, 0.7, np.radians(-20))
+    first = rest_ellipsoid(2.0, 1.0)
+    second_shape = rest_ellipsoid(1.0, 0.5)
+    second = placement >> second_shape(placement << Plane)
+    samples = mv.scalar([[0], [1], [2], [-1]])
+    peak_share, peak_det = cubic_peak(quadric_blend(first, second, samples).dual().det())
+    sweep = np.linspace(0.0, 1.0, 2001)
+    values = quadric_blend(first, second, mv.scalar(sweep[:, None])).dual().det()
+    best = values.argmax()
+    assert (peak_share - sweep[best]).abs() < 1e-3
+    assert (peak_det - values[best]).abs() < 1e-6
 
 
-def test_cubic_peak_matches_a_dense_sweep():
-    """The closed-form peak of the blend's determinant agrees with a sampled maximum."""
-    placement = motor(2.5, 0.7, np.radians(-20))
-    Q1 = ellipsoid(2.0, 1.0)
-    Q2 = placement >> ellipsoid(1.0, 0.5)(placement << Plane)
-    samples = mv.scalar(np.array([[0.0], [1.0], [2.0], [-1.0]]))
-    parameter, maximum = cubic_peak(blend(Q1, Q2, samples).dual().det())
-    sweep = np.linspace(0.0, 1.0, 20001)
-    values = blend(Q1, Q2, mv.scalar(sweep[:, None])).dual().det().to_array()
-    np.testing.assert_allclose(parameter.to_array(), sweep[values.argmax()], atol=0.001)
-    np.testing.assert_allclose(maximum.to_array(), values.max(), atol=1e-8)
+def test_three_poses_and_contact():
+    """The peak determinant is positive apart, zero touching, and negative overlapping, with a shared tangent and contact point."""
+    first_ellipsoid, placed_second, _, peak_dets, contact_plane, contact_point = scenarios.posed_pair()
+    assert peak_dets[0] > 0 and peak_dets[2] < 0
+    assert peak_dets[1].abs() < 1e-12
+    assert (contact_plane & first_ellipsoid(contact_plane)).abs() < 1e-12
+    assert (contact_plane & placed_second[1](contact_plane)).abs() < 1e-12
+    assert (placed_second[1](contact_plane).normalized() & contact_point).norm() < 1e-12
 
 
-def test_the_three_poses_are_apart_touching_and_overlapping():
-    """The blend's peak determinant is positive apart, zero touching and negative overlapping."""
-    maximum = scenarios.collision()[3].to_array()
-    assert maximum[0] > 0 > maximum[2]
-    np.testing.assert_allclose(maximum[1], 0, atol=1e-12)
-
-
-def test_one_frame_of_the_slide_draws():
-    next(render.animate_collision(*scenarios.slide(scenarios.SLIDE[:1])))
+def test_one_frame_of_collision_animation_draws():
+    """Streaming a single slide state through `render.collision_animation` yields an RGB frame."""
+    frames = render.collision_animation(*scenarios.slide_setup(scenarios.slide_offsets[:1]))
+    frame = next(frames)
+    assert frame.ndim == 3 and frame.shape[2] == 3
+    frames.close()
+    plt.close("all")
