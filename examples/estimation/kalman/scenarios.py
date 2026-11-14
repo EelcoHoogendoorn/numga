@@ -1,88 +1,126 @@
-"""The tracking scene for the Kalman filter simulates a meandering drive in space with sparse pose readings."""
+"""Tracking scene for the planar Kalman filter: a meandering drive with dead-reckoned motion noise and sparse pose readings."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator
+from functools import partial
 
 import numpy as np
 
+from examples.estimation.kalman.core import (
+    Covariance,
+    Line,
+    Motor,
+    Twist,
+    body_covariance,
+    filter_update,
+    mv,
+    origin,
+    position_ellipsoid,
+    twist_samples,
+)
 from numga import stack
-from examples.estimation.kalman.core import Covariance, Line, Motor, Twist, covariance, mv, position_ellipsoid, sample, update
 
-# The time step, the pose readings and the commanded steps between them, and the seed of the noise.
-DT = 0.1
-N_READINGS = 12
-N_STEPS_PER_READING = 25
-SEED = 2
-# The commanded turn rate wanders as a sine of this amplitude and angular frequency.
-TURN_AMPLITUDE = 0.9
-TURN_FREQUENCY = 0.2
-# Standard deviations of translation and rotation: of the motion noise per square root of time, and of a
-# pose reading.
-MOTION_NOISE = (0.05, 0.12)
-MEASUREMENT_NOISE = (0.3, 0.1)
-# The duration of an animation frame in milliseconds, and the standard-deviation level of the ellipsoid.
-FRAME_DURATION = 40
-SIGMAS = 2.0
+# Timestep in seconds, reading count, commanded steps between readings, and random seed.
+dt = 0.1
+n_readings = 12
+n_steps_per_reading = 25
+seed = 2
+# Sinusoidal commanded turn-rate amplitude (rad/s) and angular frequency (rad/s).
+turn_amplitude = 0.9
+turn_frequency = 0.2
+# Translation and rotation standard deviations: per square-root second for motion noise, and per pose reading.
+motion_std = (0.05, 0.12)
+measurement_std = (0.3, 0.1)
+# Animation frame duration in milliseconds and confidence-ellipse standard-deviation level.
+frame_duration_ms = 40
+sigmas = 2.0
 
 
 # --- math -----------------------------------------------------------------------------
-def drive(initial: Motor, increments: Twist, motion_noise: Covariance, measurement_noise: Covariance,
-          rng: np.random.Generator) -> Iterator[tuple[Motor, Motor, Motor, Covariance, Motor]]:
-    """The drive yields, at every commanded step and after every reading, the true pose, the dead-reckoned pose,
-    the filter's estimate and covariance, and the latest reading."""
+def commanded_increments(n_readings: int, n_steps_per_reading: int) -> Twist:
+    """Unit forward speed along `+x` with a sinusoidal turn rate forms the commanded body twists
+    (`[n_readings, n_steps_per_reading] Twist+`)."""
+    times = np.arange(n_readings * n_steps_per_reading) * dt
+    # The generator -mv.wx translates along +x while mv.xy turns about the body origin.
+    turn = turn_amplitude * np.sin(turn_frequency * times)
+    return ((mv.xy * turn - mv.wx) * dt).reshape(n_readings, n_steps_per_reading)   # [n_readings, n_steps_per_reading] Twist+
+
+
+def drive_states(
+    initial: Motor,
+    increments: Twist,
+    motion_noise: Covariance,
+    measurement_noise: Covariance,
+    rng: np.random.Generator,
+) -> Iterator[tuple[Motor, Motor, Motor, Covariance, Motor]]:
+    """Yields `(truth, dead, estimate, sigma, reading)` after each commanded step in `increments`
+    (`[n_readings, n_steps_per_reading] Twist+`) and after each pose reading."""
     truth = dead = estimate = reading = initial
-    sigma = covariance(0.0, 0.0)
+    sigma = body_covariance(0.0, 0.0)                                               # [] Twist+ <- Line-
     for segment in increments:
         for increment in segment:
             step = (increment * 0.5).exp()                                          # [] Motor+
-            noisy_step = ((increment + sample(motion_noise, rng.normal(size=3))) * 0.5).exp()  # [] Motor+
+            noisy_step = ((increment + twist_samples(motion_noise, rng.normal(size=3))) * 0.5).exp()   # [] Motor+
             truth = truth * noisy_step
             dead = dead * step
-            # Carry the readout through the step and push the correlated twist back.
+            # Pull the readout line through the step and push the expected twist back.
             estimate, sigma = estimate * step, (step << sigma(step >> Line)) + motion_noise
             yield truth, dead, estimate, sigma, reading
-        measurement_error = (sample(measurement_noise, rng.normal(size=3)) * 0.5).exp()  # [] Motor+
+        measurement_error = (twist_samples(measurement_noise, rng.normal(size=3)) * 0.5).exp()   # [] Motor+
         reading = truth * measurement_error
-        estimate, sigma = update(estimate, sigma, reading, measurement_noise)
+        estimate, sigma = filter_update(estimate, sigma, reading, measurement_noise)
         yield truth, dead, estimate, sigma, reading
 
 
-def tracking(n_readings: int = N_READINGS,
-             n_steps_per_reading: int = N_STEPS_PER_READING) -> tuple[Motor, Motor, Motor, Covariance, Motor]:
-    """The meandering drive's states are the true, dead-reckoned, estimated and read poses, with the filter's covariance."""
-    times = np.arange(n_readings * n_steps_per_reading) * DT
-    # Body-frame command: drive 1 m/s along +x (the generator -mv.wx moves along +x) while the turn rate
-    # wanders, so the path meanders instead of retracing itself.
-    turn = TURN_AMPLITUDE * np.sin(TURN_FREQUENCY * times)
-    increments = ((mv.xy * turn - mv.wx) * DT).reshape(n_readings, n_steps_per_reading)  # [readings, steps] Twist+
-    motion_noise = covariance(*(np.array(MOTION_NOISE) * np.sqrt(DT)))          # [] Twist+ <- Line-
-    measurement_noise = covariance(*MEASUREMENT_NOISE)                          # [] Twist+ <- Line-
-    states = drive(mv.rotor(), increments, motion_noise, measurement_noise, np.random.default_rng(SEED))
-    # [states] Motor+, Motor+, Motor+, Twist+ <- Line-, Motor+
-    return tuple(stack(path) for path in zip(*states))
-
-
 # --- plumbing -------------------------------------------------------------------------
-def main() -> None:
+def save_states(states: Iterable, animate: Callable, *arguments, name: str, duration_ms: int) -> list:
+    """Streams `states` once through `animate(*arguments, states)` into `save_animation` and returns the collected states."""
     from examples.util.animation import save_animation
+
+    kept = []
+
+    def passing() -> Iterator:
+        for state in states:
+            kept.append(state)
+            yield state
+
+    save_animation(animate(*arguments, passing()), name, duration_ms)
+    return kept
+
+
+def main() -> None:
+    """Streams the meandering Kalman filter drive once to `plots/kalman.gif` and checks tracking accuracy and symmetry."""
     from examples.estimation.kalman import render
 
-    origin = mv.w.dual()                                                        # [] Point-
-    truth, dead, estimates, covariances, readings = tracking()
-    positions = estimates >> origin                                             # [states] Point-
-    ellipsoids = position_ellipsoid(estimates, covariances, positions, SIGMAS)  # [states] Plane+ <- Point-
-    save_animation(render.animate_tracking(truth, dead, estimates, positions, ellipsoids, readings), "kalman", FRAME_DURATION)
+    increments = commanded_increments(n_readings, n_steps_per_reading)              # [n_readings, n_steps_per_reading] Twist+
+    motion_noise = body_covariance(*(np.array(motion_std) * np.sqrt(dt)))           # [] Twist+ <- Line-
+    measurement_noise = body_covariance(*measurement_std)                           # [] Twist+ <- Line-
+    ellipsoid_of = partial(position_ellipsoid, sigmas=sigmas)
+    recorded = save_states(
+        drive_states(mv.rotor(), increments, motion_noise, measurement_noise, np.random.default_rng(seed)),
+        render.tracking_animation,
+        increments,
+        ellipsoid_of,
+        name="kalman",
+        duration_ms=frame_duration_ms,
+    )
+    truth, dead, estimates, covariances, _ = (stack(part) for part in zip(*recorded))   # [...] Motor+, Motor+, Motor+, Twist+ <- Line-, Motor+
 
     # checks
-    # Sparse noisy pose readings keep the filtered path far closer to the truth than the dead-reckoned one,
-    # and the covariance stays its own adjugate through the filter.
-    true_positions = truth >> origin                                            # [states] Point-
-    dead_error = (true_positions & (dead >> origin)).norm()                     # [states] Scalar+
-    filtered_error = (true_positions & positions).norm()                        # [states] Scalar+
-    assert filtered_error.mean(axis=0) < 0.25 * dead_error.mean(axis=0)
-    np.testing.assert_allclose(covariances.adjugate().kernel, covariances.kernel, atol=1e-12)
+    # Sparse noisy pose readings keep the filtered trajectory far closer to the truth than dead reckoning,
+    # while every covariance map stays symmetric under `.adjugate()` across all three twist-line pairings.
+    true_positions = truth >> origin                                                # [...] Point-
+    positions = estimates >> origin                                                 # [...] Point-
+    dead_error = (true_positions & (dead >> origin)).norm()                         # [...] Scalar+
+    filtered_error = (true_positions & positions).norm()                            # [...] Scalar+
+    assert bool(filtered_error.mean(axis=0) < 0.25 * dead_error.mean(axis=0))
+    frame = mv.bivector(np.eye(3)).dual()                                           # [3] Line-
+    skew = covariances.adjugate() - covariances                                     # [...] Twist+ <- Line-
+    symmetry_residual = (frame[:, None] & skew[..., None, None](frame[None, :])).abs().max()   # [] Scalar+
+    assert bool(symmetry_residual < 1e-12)
 
 
 if __name__ == "__main__":
     main()
+

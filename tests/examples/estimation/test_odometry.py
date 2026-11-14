@@ -1,29 +1,37 @@
-"""Pose-graph odometry: a short lap in space that pitches and rolls reaches its most likely poses, with twists of six
-coefficients, and a short lap in the plane closes by one step and draws."""
+"""Pose-graph odometry reaches the most likely trajectory in three dimensions with six-component twists and renders planar recovery cleanly."""
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
-import numpy as np
+from functools import partial
 
-from numga.algebras import PGA2D
+import matplotlib.pyplot as plt
+
 from examples import instantiate
 from examples.estimation.odometry import render, scenarios
+from numga.algebras import PGA2D
 
 
-def test_the_same_core_in_space():
-    # A short lap in space that pitches and rolls reaches its most likely poses, where the gradient falls
-    # a millionfold. Its twists have six coefficients, where the plane's have three.
-    steps = scenarios.lap_in_space()
-    *_, poses, _ = scenarios.closing(steps, 3, 0)
-    dead_gradient, optimum_gradient = scenarios.gradients(steps, poses, 0)
-    np.testing.assert_allclose(optimum_gradient.kernel, 0.0, atol=1e-6 * np.abs(dead_gradient.kernel).max())
-    assert len(instantiate(scenarios.CORE, steps.algebra).Twist.output_subspace) == 6
+def test_spatial_lap_reaches_optimum():
+    """Six-step spatial odometry with pitch and roll drives the covariance-weighted squared gradient below `1e-12` of dead reckoning."""
+    steps = scenarios.spatial_lap_steps(scenarios.n_space_steps)
+    space = instantiate(scenarios.core_module, steps.algebra)
+    *_, poses, uncertainty = scenarios.closed_lap_solution(steps, scenarios.n_full_steps, 0)
+    dead_gradient, optimum_gradient = scenarios.endpoint_gradients(steps, poses, 0)
+    assert bool((uncertainty(optimum_gradient) & optimum_gradient).max() < 1e-12 * (uncertainty(dead_gradient) & dead_gradient).max())
+    assert space.n_twist_modes == 6
 
 
-def test_a_short_lap_closes_and_draws():
-    steps = scenarios.lap_in_plane(n_steps=4)
-    truth, dead_reckoning, reckoned_uncertainty, poses, uncertainty = scenarios.closing(steps, 1, scenarios.SEED)
-    plane = instantiate(scenarios.CORE, PGA2D)
-    plt.close(render.draw(truth, dead_reckoning, plane.ellipsoids(dead_reckoning, reckoned_uncertainty, scenarios.SIGMAS),
-                          poses, plane.ellipsoids(poses, uncertainty, scenarios.SIGMAS)))
+def test_short_planar_lap_draws_and_animates():
+    """A four-step planar lap closes in one step and renders its figures and one damped animation frame."""
+    steps = scenarios.planar_lap_steps(4)
+    plane = instantiate(scenarios.core_module, PGA2D)
+    truth, dead_reckoning, reckoned_uncertainty, poses, uncertainty = scenarios.closed_lap_solution(steps, 1, scenarios.seed)
+    reckoned_ellipsoids = plane.position_ellipsoids(dead_reckoning, reckoned_uncertainty, scenarios.sigmas)
+    plt.close(render.dead_reckoning_figure(truth, dead_reckoning, reckoned_ellipsoids, dead_reckoning[[0, -1]]))
+    plt.close(
+        render.trajectory_figure(
+            truth, dead_reckoning, reckoned_ellipsoids, poses, plane.position_ellipsoids(poses, uncertainty, scenarios.sigmas),
+        )
+    )
+    _, _, _, states = scenarios.damped_closing_states(steps, scenarios.damping, 1, scenarios.seed)
+    next(render.closing_animation(truth, dead_reckoning, reckoned_ellipsoids, partial(plane.position_ellipsoids, sigmas=scenarios.sigmas), states))

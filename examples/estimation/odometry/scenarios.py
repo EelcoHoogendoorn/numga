@@ -1,148 +1,227 @@
-"""Scenes for pose-graph odometry recover the most likely trajectory around a closed lap by Gauss-Newton from dead reckoning, in the plane and in space.
+"""Scenes for pose-graph odometry recover the most likely trajectory around a closed lap by Gauss-Newton from dead reckoning in both planar and three-dimensional projective space.
 
-The core module is instantiated for the algebra of the true steps, so the same functions run on a planar lap in `PGA2D` and on a spatial lap in `PGA3D`.
+Instantiating the core module for the algebra of the true step motors runs identical estimation functions on a planar lap in two dimensions and on a pitching, rolling lap in three dimensions.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable, Iterator
+from functools import partial
 from types import ModuleType
 
 import numpy as np
 
+from examples import instantiate
 from numga import concatenate
 from numga.algebras import PGA2D, PGA3D
-from examples import instantiate
+from numga.topology import Topology
 
-CORE = "examples.estimation.odometry.core"
-# The steps of a lap in the plane, and of a short one in space, and the length of every step in metres.
-N_PLANE_STEPS = 36
-N_SPACE_STEPS = 6
-STEP_LENGTH = 0.7
-# How much the turn rate varies in the plane, and how far a step slips sideways, sways out of the plane and
-# rises or falls.
-TURN_VARIATION = 0.4
-SLIP = 0.1
-SWAY = 0.1
-RISE = 0.05
-# How far a step reading and the closing reading, recognising the start, are trusted, how well the first
-# pose is known, and how vaguely the others are known before any reading, as translation and rotation
-# standard deviations.
-READING_STD = (0.03, 0.01)
-CLOSING_STD = (0.001, 0.0003)
-KNOWN_STD = (0.01, 0.01)
-VAGUE_STD = (100.0, 30.0)
-# The full Gauss-Newton steps, the share of each correction a damped step takes and their count, the seed of
-# the readings' errors, and the duration of a frame in milliseconds.
-N_FULL_STEPS = 3
-DAMPING = 0.3
-N_DAMPED_STEPS = 10
-SEED = 9
-FRAME_DURATION = 333
-# How far out the uncertainty ellipsoids lie, in standard deviations.
-SIGMAS = 2.0
+core_module = "examples.estimation.odometry.core"
+# Step counts around the planar lap and the spatial test lap, and step length in metres.
+n_plane_steps = 36
+n_space_steps = 6
+step_length = 0.7
+# Planar turn-rate modulation and amplitudes of lateral slip, out-of-plane sway, and vertical rise.
+turn_variation = 0.4
+slip_amplitude = 0.1
+sway_amplitude = 0.1
+rise_amplitude = 0.05
+# Translation and rotation standard deviations for step readings, loop closure, the known start, and vague priors.
+reading_std = (0.03, 0.01)
+closing_std = (0.001, 0.0003)
+known_std = (0.01, 0.01)
+vague_std = (100.0, 30.0)
+# Full and damped Gauss-Newton iteration counts, damping fraction, random seed, frame duration (ms), and sigma level.
+n_full_steps = 3
+damping = 0.3
+n_damped_steps = 10
+seed = 9
+frame_duration_ms = 333
+sigmas = 2.0
 
 
 # --- math -----------------------------------------------------------------------------
-def damped(steps, damping: float, n_iterations: int, seed: int):
-    """Damped Gauss-Newton from dead reckoning yields the poses with each pose's covariance across the iterations."""
-    core = instantiate(CORE, steps.algebra)
-    truth, dead_reckoning, readings, noises, tails, heads, anchors, priors = survey(core, steps, seed)
-    weights, anchor_weights = noises.inverse(), priors.inverse()               # [readings] Forque- <- Twist+, [poses] Forque- <- Twist+
-    reckoned_uncertainty = core.reckon(dead_reckoning, noises, priors)         # [poses] Twist+ <- Forque-
-    poses = core.gauss_newton(dead_reckoning, readings, weights, tails, heads, anchors, anchor_weights, damping, n_iterations)
-    iterates = core.uncertainties(poses, reckoned_uncertainty, damping, noises, tails, heads, priors, weights, anchor_weights)
-    return truth, dead_reckoning, reckoned_uncertainty, iterates
+def damped_closing_states(steps, damping: float, n_iterations: int, seed: int):
+    """Damped Gauss-Newton from dead reckoning yields `(poses, uncertainty)` across `n_iterations` steps alongside the survey baselines."""
+    core = instantiate(core_module, steps.algebra)
+    truth, dead_reckoning, readings, noises, topology, anchors, priors = lap_survey(core, steps, seed)
+    V, E = topology.n_elements
+    weights, anchor_weights = noises.inverse(), priors.inverse()                # [E] Forque- <- Twist+, [V] Forque- <- Twist+
+    reckoned_uncertainty = core.dead_reckoning_covariances(dead_reckoning, noises, priors)  # [V] Twist+ <- Forque-
+    iterates = core.gauss_newton_iterates(
+        dead_reckoning, readings, weights, topology, anchors, anchor_weights, damping, n_iterations,
+    )
+    states = core.relaxation_states(
+        iterates, reckoned_uncertainty, damping, noises, topology, priors, weights, anchor_weights,
+    )
+    return truth, dead_reckoning, reckoned_uncertainty, states
 
 
-def closing(steps, n_iterations: int, seed: int):
-    """Full Gauss-Newton steps from dead reckoning reach the most likely poses, with their marginal covariances."""
-    core = instantiate(CORE, steps.algebra)
-    truth, dead_reckoning, readings, noises, tails, heads, anchors, priors = survey(core, steps, seed)
-    weights, anchor_weights = noises.inverse(), priors.inverse()               # [readings] Forque- <- Twist+, [poses] Forque- <- Twist+
-    reckoned_uncertainty = core.reckon(dead_reckoning, noises, priors)         # [poses] Twist+ <- Forque-
-    *_, poses = core.gauss_newton(dead_reckoning, readings, weights, tails, heads, anchors, anchor_weights, 1.0, n_iterations)  # [poses] Motor+
-    uncertainty = core.marginals(poses, noises, tails, heads, priors, weights, anchor_weights)  # [poses] Twist+ <- Forque-
+def closed_lap_solution(steps, n_iterations: int, seed: int):
+    """Full Gauss-Newton steps from dead reckoning recover the most likely poses and their marginal covariances."""
+    core = instantiate(core_module, steps.algebra)
+    truth, dead_reckoning, readings, noises, topology, anchors, priors = lap_survey(core, steps, seed)
+    V, E = topology.n_elements
+    weights, anchor_weights = noises.inverse(), priors.inverse()                # [E] Forque- <- Twist+, [V] Forque- <- Twist+
+    reckoned_uncertainty = core.dead_reckoning_covariances(dead_reckoning, noises, priors)  # [V] Twist+ <- Forque-
+    *_, poses = core.gauss_newton_iterates(
+        dead_reckoning, readings, weights, topology, anchors, anchor_weights, 1.0, n_iterations,
+    )                                                                           # [V] Rotor+
+    uncertainty = core.marginal_covariances(poses, noises, topology, priors, weights, anchor_weights)  # [V] Twist+ <- Forque-
     return truth, dead_reckoning, reckoned_uncertainty, poses, uncertainty
 
 
-def gradients(steps, poses, seed: int):
-    """The pose-graph gradient at the dead-reckoned poses and at the given poses."""
-    core = instantiate(CORE, steps.algebra)
-    truth, dead_reckoning, readings, noises, tails, heads, anchors, priors = survey(core, steps, seed)
-    weights, anchor_weights = noises.inverse(), priors.inverse()               # [readings] Forque- <- Twist+, [poses] Forque- <- Twist+
-    return (core.gradient(dead_reckoning, readings, weights, tails, heads, anchors, anchor_weights),
-            core.gradient(poses, readings, weights, tails, heads, anchors, anchor_weights))
+def endpoint_gradients(steps, poses, seed: int):
+    """The pose-graph objective gradient at the dead-reckoned trajectory pairs with the gradient at `poses`."""
+    core = instantiate(core_module, steps.algebra)
+    _, dead_reckoning, readings, noises, topology, anchors, priors = lap_survey(core, steps, seed)
+    V, E = topology.n_elements
+    weights, anchor_weights = noises.inverse(), priors.inverse()                # [E] Forque- <- Twist+, [V] Forque- <- Twist+
+    return (
+        core.objective_gradient(dead_reckoning, readings, weights, topology, anchors, anchor_weights),
+        core.objective_gradient(poses, readings, weights, topology, anchors, anchor_weights),
+    )
 
 
 # --- plumbing -------------------------------------------------------------------------
-def survey(core: ModuleType, steps, seed: int):
-    """A simulated lap along the true steps gives the true and dead-reckoned poses, the noisy step and loop-closing readings with their covariances and endpoint indices, and every pose's anchor and prior covariance."""
+def lap_survey(core: ModuleType, steps, seed: int):
+    """Simulating noisy readings along `steps` produces the true and dead-reckoned poses, the pose-graph `Topology`, and all reading and prior covariances."""
     rng = np.random.default_rng(seed)
-    # Each step composes on the right in the robot's own frame; a running right product equals the
-    # reverse of the running left product of the reverses.
-    truth = concatenate([core.mv.rotor()[None], steps.reverse().cumprod(axis=0).reverse()])  # [poses] Motor+
-    tails = np.append(np.arange(len(steps)), 0)                                # [readings]
-    heads = np.append(np.arange(1, len(steps) + 1), len(steps))                # [readings]
-    noises = concatenate([core.isotropic(*READING_STD) * np.ones(len(steps)), core.isotropic(*CLOSING_STD)[None]])  # [readings] Twist+ <- Forque-
-    noise_modes = core.modes(noises)                                           # [readings, modes] Twist+
-    errors = (noise_modes * rng.normal(size=noise_modes.shape)).sum(axis=-1)   # [readings] Twist+
-    readings = (truth[tails].inverse() * truth[heads]) * (errors * 0.5).exp()  # [readings] Motor+
-    dead_reckoning = concatenate([truth[:1], truth[0] * readings[:len(steps)].reverse().cumprod(axis=0).reverse()])  # [poses] Motor+
-    anchors = concatenate([truth[:1], dead_reckoning[1:]])                     # [poses] Motor+
-    priors = concatenate([core.isotropic(*KNOWN_STD)[None], core.isotropic(*VAGUE_STD) * np.ones(len(steps))])  # [poses] Twist+ <- Forque-
-    return truth, dead_reckoning, readings, noises, tails, heads, anchors, priors
+    n_steps = len(steps)
+    edges = np.stack([np.append(np.arange(n_steps), 0), np.append(np.arange(1, n_steps + 1), n_steps)], axis=-1)
+    topology = Topology(n_steps + 1, edges)
+    V, E = topology.n_elements
+    tails, heads = topology.elements[1].T                                       # [E], [E]
+    # Body-frame steps compose on the right; reversing the cumulative left product of reverses gives the cumulative right product.
+    truth = concatenate([core.mv.rotor()[None], steps.reverse().cumprod(axis=0).reverse()])  # [V] Rotor+
+    noises = concatenate([
+        core.body_covariance(*reading_std) * np.ones(n_steps),
+        core.body_covariance(*closing_std)[None],
+    ])                                                                          # [E] Twist+ <- Forque-
+    noise_modes = core.covariance_modes(noises)                                 # [E, ...] Twist+
+    errors = (noise_modes * rng.normal(size=noise_modes.shape)).sum(axis=-1)    # [E] Twist+
+    error_motors = (errors * 0.5).exp()                                         # [E] Rotor+
+    readings = (truth[tails].inverse() * truth[heads]) * error_motors           # [E] Rotor+
+    dead_reckoning = concatenate([
+        truth[:1], truth[0] * readings[:n_steps].reverse().cumprod(axis=0).reverse(),
+    ])                                                                          # [V] Rotor+
+    anchors = concatenate([truth[:1], dead_reckoning[1:]])                      # [V] Rotor+
+    priors = concatenate([
+        core.body_covariance(*known_std)[None],
+        core.body_covariance(*vague_std) * np.ones(n_steps),
+    ])                                                                          # [V] Twist+ <- Forque-
+    return truth, dead_reckoning, readings, noises, topology, anchors, priors
 
 
-def lap_in_plane(n_steps: int = N_PLANE_STEPS):
-    """The true step motors of a closed lap of `n_steps` steps in the plane."""
-    mv = instantiate(CORE, PGA2D).mv
+def planar_lap_steps(n_steps: int):
+    """Sinusoidal turn modulation and lateral slip form `n_steps` true step motors (`[n_steps] Rotor+`) around a closed planar lap."""
+    mv = instantiate(core_module, PGA2D).mv
     phase = 2 * np.pi * np.arange(n_steps) / n_steps
-    turn = mv.xy * (1 + TURN_VARIATION * np.sin(2 * phase)) * 2 * np.pi / n_steps  # [steps] Twist+
-    slip = mv.yw * SLIP * np.cos(2 * phase)                                    # [steps] Twist+
-    return ((turn + slip + mv.xw * STEP_LENGTH) * 0.5).exp()                   # [steps] Motor+
+    turn = mv.xy * (1 + turn_variation * np.sin(2 * phase)) * 2 * np.pi / n_steps  # [n_steps] Twist+
+    slip = mv.yw * slip_amplitude * np.cos(2 * phase)                           # [n_steps] Twist+
+    return ((turn + slip + mv.xw * step_length) * 0.5).exp()                    # [n_steps] Rotor+
 
 
-def lap_in_space():
-    """The true step motors of a closed lap of `N_SPACE_STEPS` steps in space."""
-    mv = instantiate(CORE, PGA3D).mv
-    phase = 2 * np.pi * np.arange(N_SPACE_STEPS) / N_SPACE_STEPS
-    turn = mv.xy * 2 * np.pi / N_SPACE_STEPS                                   # [] Twist+
-    sway = (mv.zx * np.cos(phase) + mv.yz * np.sin(phase)) * SWAY              # [steps] Twist+
-    slip = mv.yw * SLIP * np.cos(2 * phase) + mv.zw * RISE * np.sin(2 * phase)  # [steps] Twist+
-    return ((turn + sway + slip + mv.xw * STEP_LENGTH) * 0.5).exp()            # [steps] Motor+
+def spatial_lap_steps(n_steps: int):
+    """Pitch, roll, lateral slip, and vertical rise form `n_steps` true step motors (`[n_steps] Rotor+`) around a closed spatial lap."""
+    mv = instantiate(core_module, PGA3D).mv
+    phase = 2 * np.pi * np.arange(n_steps) / n_steps
+    turn = mv.xy * 2 * np.pi / n_steps                                          # [] Twist+
+    sway = (mv.zx * np.cos(phase) + mv.yz * np.sin(phase)) * sway_amplitude     # [n_steps] Twist+
+    slip = mv.yw * slip_amplitude * np.cos(2 * phase) + mv.zw * rise_amplitude * np.sin(2 * phase)  # [n_steps] Twist+
+    return ((turn + sway + slip + mv.xw * step_length) * 0.5).exp()             # [n_steps] Rotor+
+
+
+def save_states(
+    states: Iterable,
+    animate: Callable[..., Iterable[np.ndarray]],
+    *arguments,
+    name: str,
+    duration_ms: int,
+    stepped: bool = False,
+) -> list:
+    """Streams `states` once through `animate(*arguments, states)` into `save_animation` and returns the collected states."""
+    from examples.util.animation import save_animation
+
+    kept = []
+
+    def passing() -> Iterator:
+        for state in states:
+            kept.append(state)
+            yield state
+
+    save_animation(animate(*arguments, passing()), name, duration_ms, stepped=stepped)
+    return kept
 
 
 def main() -> None:
-    from examples.util.animation import save_figure
+    """Saves the static pose-graph recovery figure and damped loop-closing animation, then checks planar and spatial convergence."""
     from examples.estimation.odometry import render
+    from examples.util.animation import save_figure
 
-    # Dead reckoning drifts half a metre over the lap.
-    plane = instantiate(CORE, PGA2D)
-    truth, dead_reckoning, reckoned_uncertainty, poses, uncertainty = closing(lap_in_plane(), N_FULL_STEPS, SEED)
-    reckoned_ellipsoids = plane.ellipsoids(dead_reckoning, reckoned_uncertainty, SIGMAS)  # [poses] Plane+ <- Point-
-    save_figure(render.draw(truth, dead_reckoning, reckoned_ellipsoids, poses, plane.ellipsoids(poses, uncertainty, SIGMAS)), "odometry")
+    plane = instantiate(core_module, PGA2D)
+    plane_steps = planar_lap_steps(n_plane_steps)
+    truth, dead_reckoning, reckoned_uncertainty, poses, uncertainty = closed_lap_solution(
+        plane_steps, n_full_steps, seed,
+    )
+    reckoned_ellipsoids = plane.position_ellipsoids(dead_reckoning, reckoned_uncertainty, sigmas)  # [...] Plane+ <- Point-
+    save_figure(
+        render.trajectory_figure(
+            truth, dead_reckoning, reckoned_ellipsoids, poses, plane.position_ellipsoids(poses, uncertainty, sigmas),
+        ),
+        "odometry",
+    )
+
+    _, _, _, closing_states = damped_closing_states(plane_steps, damping, n_damped_steps, seed)
+    ellipsoids_of = partial(plane.position_ellipsoids, sigmas=sigmas)
+    recorded = save_states(
+        closing_states,
+        render.closing_animation,
+        truth,
+        dead_reckoning,
+        reckoned_ellipsoids,
+        ellipsoids_of,
+        name="odometry",
+        duration_ms=frame_duration_ms,
+        stepped=True,
+    )
 
     # checks
-    # The gradient falls a millionfold from dead reckoning to the most likely poses, in the plane and, with
-    # the same core, in space.
-    *_, poses_in_space, _ = closing(lap_in_space(), N_FULL_STEPS, SEED)
-    for steps, most_likely in ((lap_in_plane(), poses), (lap_in_space(), poses_in_space)):
-        dead_gradient, optimum_gradient = gradients(steps, most_likely, SEED)
-        np.testing.assert_allclose(optimum_gradient.kernel, 0.0, atol=1e-6 * np.abs(dead_gradient.kernel).max())
+    # Full Gauss-Newton drives the covariance-weighted squared gradient down more than twelve orders of magnitude
+    # in both 2D and 3D, while damped relaxation contracts end-of-lap uncertainty far below dead reckoning.
+    space_steps = spatial_lap_steps(n_space_steps)
+    *_, poses_in_space, space_uncertainty = closed_lap_solution(space_steps, n_full_steps, seed)
+    for steps, most_likely, posterior in (
+        (plane_steps, poses, uncertainty),
+        (space_steps, poses_in_space, space_uncertainty),
+    ):
+        dead_gradient, optimum_gradient = endpoint_gradients(steps, most_likely, seed)
+        dead_scale = (posterior(dead_gradient) & dead_gradient).max()           # [] Scalar+
+        optimum_scale = (posterior(optimum_gradient) & optimum_gradient).max()  # [] Scalar+
+        assert bool(optimum_scale < 1e-12 * dead_scale)
+
+    unit_info = plane.body_covariance(1.0, 1.0).inverse()                       # [] Forque- <- Twist+
+    _, final_damped_uncertainty = recorded[-1]
+    assert bool(final_damped_uncertainty[-1](unit_info).trace(0, 1) < 0.01 * reckoned_uncertainty[-1](unit_info).trace(0, 1))
 
 
 def pinned() -> None:
-    """The pictures the repository tracks: the lap closing from dead reckoning by damped steps, for the gallery."""
-    from examples.util.animation import pin_animation
+    """Pins the gallery GIF of damped Gauss-Newton steps closing the planar lap from dead reckoning."""
     from examples.estimation.odometry import render
+    from examples.util.animation import pin_animation
 
-    plane = instantiate(CORE, PGA2D)
-    # Closing the lap three tenths of the way at a time.
-    truth, dead_reckoning, reckoned_uncertainty, iterates = damped(lap_in_plane(), DAMPING, N_DAMPED_STEPS, SEED)
-    reckoned_ellipsoids = plane.ellipsoids(dead_reckoning, reckoned_uncertainty, SIGMAS)  # [poses] Plane+ <- Point-
-    pin_animation(render.animate(truth, dead_reckoning, reckoned_ellipsoids,
-                                 ((poses, plane.ellipsoids(poses, uncertainty, SIGMAS)) for poses, uncertainty in iterates)),
-                  "odometry", FRAME_DURATION, stepped=True)
+    plane = instantiate(core_module, PGA2D)
+    truth, dead_reckoning, reckoned_uncertainty, states = damped_closing_states(
+        planar_lap_steps(n_plane_steps), damping, n_damped_steps, seed,
+    )
+    reckoned_ellipsoids = plane.position_ellipsoids(dead_reckoning, reckoned_uncertainty, sigmas)  # [...] Plane+ <- Point-
+    ellipsoids_of = partial(plane.position_ellipsoids, sigmas=sigmas)
+    pin_animation(
+        render.closing_animation(truth, dead_reckoning, reckoned_ellipsoids, ellipsoids_of, states),
+        "odometry",
+        frame_duration_ms,
+        stepped=True,
+    )
 
 
 if __name__ == "__main__":
