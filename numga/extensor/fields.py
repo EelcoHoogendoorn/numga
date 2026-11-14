@@ -302,12 +302,12 @@ def _on_diagonal_of(value: Extensor, other: Extensor) -> Extensor:
     return value.on_diagonal()
 
 
-def site_by_site(implementation, operand_count: int):
+def site_by_site(implementation, n_operands: int):
     """An implementation over blades, run at every site of fields of values: each field's sites read
     as one trailing batch axis, shared by all of them, and a result whose last batch axis holds them
     read as a field again."""
     def run(*arguments, **kwargs):
-        operands = arguments[:operand_count]
+        operands = arguments[:n_operands]
         counts = {sites for operand in operands for _, sites in operand.gatype.fields}
         if len(counts) != 1:
             raise ValueError(f"fields acted on site by site need one number of sites; got {sorted(counts)}")
@@ -321,6 +321,6 @@ def site_by_site(implementation, operand_count: int):
                 return result.field()
             return result
 
-        return refield(implementation(*lowered, *arguments[operand_count:], **kwargs))
+        return refield(implementation(*lowered, *arguments[n_operands:], **kwargs))
 
     return run

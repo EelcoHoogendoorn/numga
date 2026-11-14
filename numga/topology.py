@@ -1,35 +1,29 @@
-"""The topology of oriented simplicial meshes: their simplices, the incidence and boundary operators between them,
-their border, and the Loop step. A mesh is a topology with the geometry of its vertices; this module holds the topology
-alone.
+"""An oriented simplicial complex is determined by its vertex count and top simplices (edges,
+triangles, tetrahedra, or higher-dimensional simplices). Top simplices keep the caller's vertex
+order to fix their orientation, while every lower simplex is deduplicated in sorted vertex order
+with induced `+1` and `-1` facet signs. Because `Topology` stores integer connectivity alone and
+belongs to no geometric algebra, its `Sparse` operators act linearly on fields in any algebra while
+preserving their `GAType`.
 
-A topology is its top simplices, edges of a graph, triangles of a surface or tetrahedra of a solid, and every simplex
-below them; it holds no positions. Its vertices, `Point[V]`, are the example's own, placed in its own algebra, and so
-is every reading of them. Quantities on a mesh are fields over the topology's simplices, `Point[V]` or `Scalar[F]`; a
-quantity per corner of each face is a `[3]` batch of face fields, one per corner, and a face's corners read off its
-vertices by `topology.incidence[2, 0] * vertices`. The edges are `topology.d[0] * vertices`, and the edge facing each
-corner is one of them, picked out and signed as the face runs along it, `topology.boundary[2, 1] * edges`.
+`incidence` selects the sub-simplices of each simplex, `boundary` weights facets by their induced
+orientation, summing over facets gives the discrete exterior derivative `d` (`d[k + 1] * d[k] == 0`),
+and `reading` restricts or scatters fields on chosen subsets via `.adjugate()`. Negative dimension
+indices count down from `n_dim` so `[-1, 0]` couples top simplices to vertices in any dimension,
+and above dimension one facet `i` stands opposite corner `i` so corner values and opposite-facet
+simplex gradients align along the local batch axis.
 
-`topology.incidence[n, m]` reads the m-simplices of each n-simplex, unsigned, a `[k]` batch of maps, one per m-simplex
-of an n-simplex; `topology.boundary[k + 1, k]` reads the facets of each (k + 1)-simplex, signed by their orientation in
-it; and `topology.d[k]`, their sum, is the exterior derivative from k-simplices to (k + 1)-simplices, so that
-`topology.d[k + 1] * topology.d[k]` vanishes. Their batches line up: entry `i` of the corners is corner `i`, and from
-triangles up entry `i` of the facets is the facet facing corner `i`, so that a quantity per corner reaches the facet
-facing it. An edge's corners are its facets, its tail and its head, in that order. `topology.border` is the facets
-bounding a single top simplex, a topology one dimension lower, wound outward.
+`dual` reverses the simplex grading by codimension so top simplices become dual vertices, facets
+become dual edges, codimension-two ridges or hinges become dual faces, and primal vertices become
+dual cells. Because dual elements above edges are general polytopes with variable face counts rather
+than simplices, `DualTopology` carries coboundary operators directly as the adjugates of the
+complementary primal coboundaries (`dual.d[k] == primal.d[n_dim - 1 - k].adjugate()`).
 
-No geometry belongs here, by design: no edge vectors, midpoints, centroids, areas, normals, angles, cotangent weights,
-Whitney maps or anything else that reads the vertices, however many examples compute the same thing. The notebooks
-promise to be self-contained expressions of their geometry, so each example writes those few lines itself, in view,
-in the algebra; shared helpers would hide exactly the part an example exists to show. Repetition of geometry across
-examples is intended and is not to be factored back into this module. What belongs here is what knows only the
-simplex arrays: incidences, the maps that index by them, and subdivision of the connectivity. A topology never takes
-coordinates, extensors or an algebra: placing vertices is not the topology's, and neither is making a mesh from them.
-`examples.util.shapes` meshes points by their coordinates, a Delaunay mesh, the boundary of a convex hull, a bounded
-domain or a subdivision, and gives stock shapes, a sphere, a torus, disks, for an example to place.
-
-A topology belongs to no algebra. Its maps hold plain numbers, which become scalars of whatever algebra they meet, as an
-untyped array does beside an extensor: `topology.incidence[2, 0] * vertices` reads the corners of the faces of points
-in the plane, in space or in spacetime alike, each in the points' own type."""
+Topological queries and constructions operate purely on simplex incidences: `border`, `exterior`,
+and `interior` separate facets belonging to a single top simplex from shared interior facets,
+`orient_coherently` aligns connected orientable components across a two-sheeted orientation cover,
+`cone` and `product` extend complexes in dimension, and `loop_subdivided` composes coarse-to-fine
+Loop refinement maps on triangulated surfaces.
+"""
 
 from __future__ import annotations
 
@@ -47,92 +41,80 @@ from numga.sparse.numeric import Sparse
 
 
 def generate_simplex_boundary(simplices: np.ndarray) -> np.ndarray:
-    """The facets of simplices `[N, k + 1]`, `[N, k + 1, k]`: facet `i` is the simplex without its vertex `i`, the
-    facet facing corner `i`, its vertices in the simplex's order."""
-    # Row i of the table is the corners but corner i: column j is corner j, shifted past i once j reaches it.
-    kept = np.arange(simplices.shape[-1] - 1)                                   # [k]
-    table = kept[None, :] + (kept[None, :] >= np.arange(simplices.shape[-1])[:, None])   # [k + 1, k]
+    """Facet `i` omits corner `i`, giving the facet opposite corner `i` in the simplex's vertex order."""
+    n_corners = simplices.shape[-1]
+    # Row i keeps every corner except corner i by shifting indices at or above i up by one.
+    kept = np.arange(n_corners - 1)                                              # [n_corners - 1]
+    table = kept[None, :] + (kept[None, :] >= np.arange(n_corners)[:, None])     # [n_corners, n_corners - 1]
     return simplices[..., table]
 
 
 def simplex_parity(simplices: np.ndarray) -> np.ndarray:
-    """`[...]`: +1 where the vertices of each simplex `[..., k]` are in an even order, -1 where odd, counting the
-    pairs out of increasing order."""
+    """Even vertex-order permutations relative to increasing order carry `+1.0` and odd ones `-1.0`."""
     inversions = np.triu(simplices[..., :, None] > simplices[..., None, :], 1).sum(axis=(-2, -1))   # [...]
     return np.where(inversions % 2 == 0, 1.0, -1.0)
 
 
-def turned(simplices: np.ndarray) -> np.ndarray:
-    """`[N, k + 1]`: the simplices run in the other sense, their first two vertices swapped; a lone vertex has no sense
-    to turn."""
+def reverse_orientation(simplices: np.ndarray) -> np.ndarray:
+    """Swapping the first two corners reverses orientation on every simplex above dimension zero."""
     order = np.arange(simplices.shape[-1])
     order[:2] = order[:2][::-1]
     return simplices[:, order]
 
 
-def coherent(simplices: np.ndarray) -> np.ndarray:
-    """`[N, k + 1]`: the top simplices of a manifold, some turned, so that the two simplices sharing a facet run it in
-    opposite senses, as the simplices of an oriented manifold do; each connected piece keeps the sense of its first
-    simplex."""
+def orient_coherently(simplices: np.ndarray) -> np.ndarray:
+    """Reorienting connected components of an orientable manifold gives shared facets opposite
+    induced orientations across their two incident top simplices."""
     from scipy.sparse import coo_matrix
     from scipy.sparse.csgraph import connected_components
     topology = Topology(int(simplices.max()) + 1, simplices)
-    n_simplices = len(simplices)
-    neighbours, entries = topology.neighbours                                       # [N, k + 1], [N, k + 1]
-    signs = topology.orientation[topology.n_dim - 1]                               # [N, k + 1]
-    owners = np.broadcast_to(np.arange(n_simplices)[:, None], neighbours.shape)    # [N, k + 1]
-    shared = neighbours != owners                                                  # [N, k + 1]
-    # Each simplex has two senses, two sheets of copies: simplex s and s + N. Two simplices running their shared facet
-    # in opposite senses agree and join on the same sheets; running it in the same sense, they join across. On an
-    # orientable piece the sheets fall apart into two components, and a simplex is turned where it lies off the
-    # component of its piece's first simplex.
-    across = n_simplices * (signs == signs[neighbours, entries])[shared]       # [shared]
-    tails, heads = owners[shared], neighbours[shared] + across                  # [shared], [shared]
-    links = (np.concatenate([tails, tails + n_simplices]), np.concatenate([heads, (heads + n_simplices) % (2 * n_simplices)]))
-    sheets = coo_matrix((np.ones(len(links[0])), links), shape=(2 * n_simplices,) * 2)
-    _, components = connected_components(sheets, directed=False)                # [2 N]
-    pieces = np.minimum(components[:n_simplices], components[n_simplices:])     # [N]
+    N = topology.n_elements
+    n_dim = topology.n_dim
+    neighbours, entries = topology.neighbours                                    # [N[-1], n_dim + 1], [N[-1], n_dim + 1]
+    signs = topology.orientation[n_dim - 1]                                      # [N[-1], n_dim + 1]
+    owners = np.broadcast_to(np.arange(N[-1])[:, None], neighbours.shape)        # [N[-1], n_dim + 1]
+    shared = neighbours != owners                                                # [N[-1], n_dim + 1]
+    # Build a two-sheeted orientation cover (s and s + N[-1]): neighbours inducing opposite facet
+    # orientations connect on the same sheet, whereas matching facet orientations cross sheets.
+    across = N[-1] * (signs == signs[neighbours, entries])[shared]
+    tails, heads = owners[shared], neighbours[shared] + across
+    links = (np.concatenate([tails, tails + N[-1]]), np.concatenate([heads, (heads + N[-1]) % (2 * N[-1])]))
+    sheets = coo_matrix((np.ones(len(links[0])), links), shape=(2 * N[-1],) * 2)
+    _, components = connected_components(sheets, directed=False)                 # [2 * N[-1]]
+    pieces = np.minimum(components[:N[-1]], components[N[-1]:])                  # [N[-1]]
     _, firsts, of_piece = np.unique(pieces, return_index=True, return_inverse=True)
-    flips = components[:n_simplices] != components[firsts[of_piece]]            # [N]
-    return np.where(flips[:, None], turned(simplices), simplices)
+    flips = components[:N[-1]] != components[firsts[of_piece]]                   # [N[-1]]
+    return np.where(flips[:, None], reverse_orientation(simplices), simplices)
 
 
 def lookup_simplices(table: np.ndarray, query: np.ndarray) -> np.ndarray:
-    """`[...]`: the row of `table` `[n, k]`, unique and sorted, holding each sorted simplex of `query` `[..., k]`."""
     _, rows = np.unique(np.concatenate([table, query.reshape(-1, table.shape[-1])]), axis=0, return_inverse=True)
     return rows.reshape(-1)[len(table):].reshape(query.shape[:-1])
 
 
-def local_complements(n: int, m: int) -> np.ndarray:
-    """`[n - m, k]`: the local corners of an n-simplex off each of its m-simplices, in the order of `incidence[n, m]`,
-    increasing: on a tet's edges, the two corners of the edge across from each."""
-    # Whether each corner is on each m-simplex: sorted stably, the corners off it come first, in increasing order.
-    on = (np.arange(n + 1)[:, None, None] == local_corners(n, m)[None]).any(axis=1)   # [corners, k]
-    return np.argsort(on, axis=0, kind="stable")[:n - m]
+def local_complements(simplex_dim: int, sub_dim: int) -> np.ndarray:
+    # Sort each column stably by membership so corners absent from the sub-simplex come first.
+    on = (np.arange(simplex_dim + 1)[:, None, None] == local_corners(simplex_dim, sub_dim)[None]).any(axis=1)
+    return np.argsort(on, axis=0, kind="stable")[:simplex_dim - sub_dim]
 
 
-def local_corners(n: int, m: int) -> np.ndarray:
-    """`[m + 1, k]`: the local corners of each m-simplex of an n-simplex, in the order of `incidence[n, m]`: its
-    corners themselves, the facets facing them, or between the two, the m-simplices in the order of their corners."""
-    if m >= n:
-        raise ValueError(f"sub-simplex dimension m={m} must be strictly less than simplex dimension n={n}")
-    if m == 0:
-        return np.arange(n + 1)[None, :]
-    if m == n - 1:
-        return generate_simplex_boundary(np.arange(n + 1)).T
-    return np.array(list(combinations(range(n + 1), m + 1))).T
+def local_corners(simplex_dim: int, sub_dim: int) -> np.ndarray:
+    if sub_dim >= simplex_dim:
+        raise ValueError(
+            f"sub-simplex dimension m={sub_dim} must be strictly less than simplex dimension n={simplex_dim}"
+        )
+    if sub_dim == 0:
+        return np.arange(simplex_dim + 1)[None, :]
+    if sub_dim == simplex_dim - 1:
+        return generate_simplex_boundary(np.arange(simplex_dim + 1)).T
+    return np.array(list(combinations(range(simplex_dim + 1), sub_dim + 1))).T
 
 
 class ByDimensions:
-    """What a topology holds for each pair of dimensions `[n, m]`, its n-simplices against its m-simplices: the maps between
-    them, `topology.incidence[n, m]`, `topology.boundary[n, m]` and `topology.oriented[n, m]`, each a sparse map from fields on
-    the m-simplices to fields on the n-simplices, `[n-simplices <- m-simplices]`, a `[k]` batch of maps, one per
-    m-simplex of an n-simplex, with plain numbers for cells; or the local corners, `topology.corners[n, m]`. Negative
-    dimensions count from the top, so `[-1, 0]` couples the top simplices to the vertices whatever the topology's
-    dimension. Each entry is built by `build(n, m)` the first time it is asked for and kept, since a topology does
-    not change."""
+    """Negative dimension indices count down from `n_dim`, so `[-1, 0]` couples top simplices to
+    vertices in any dimension."""
 
-    def __init__(self, n_dim: int, build: Callable[[int, int], Sparse | np.ndarray]) -> None:
+    def __init__(self, n_dim: int, build: Callable) -> None:
         self.n_dim, self.build = n_dim, cache(build)
 
     def __getitem__(self, dimensions: tuple[int, int]) -> Sparse | np.ndarray:
@@ -140,25 +122,21 @@ class ByDimensions:
 
 
 class Topology:
-    """An oriented simplicial topology: `n_vertices` vertices and top simplices `[N, n_dim + 1]`, kept in
-    their own order, which orients them, faces counter-clockwise from outside. Every simplex below the top is
-    stored once, its vertices sorted, in `elements[k]` `[n_elements[k], k + 1]`; `boundary_indices[k]` and
-    `orientation[k]` `[n_elements[k + 1], k + 2]` give the facets of each (k + 1)-simplex in `elements[k]` and their
-    orientations in it. A topology does not change, so each map derived from it is computed once."""
+    """Top simplices keep the caller's vertex order to fix their orientation, while lower simplices
+    are deduplicated in sorted vertex order with induced `+1` and `-1` facet signs."""
 
-    # A topology that was not subdivided has no Loop steps behind it.
-    steps: tuple[Sparse, ...] = ()
+    steps = ()
 
     def __init__(self, n_vertices: int, simplices: np.ndarray) -> None:
         simplices = np.asarray(simplices)
         self.n_vertices, self.n_dim = n_vertices, simplices.shape[-1] - 1
         elements, boundary_indices, orientation = {self.n_dim: simplices}, {}, {}
         for k in range(self.n_dim, 0, -1):
-            facets = generate_simplex_boundary(elements[k])                        # [N, k + 1, k]
-            # Facet i of a simplex is signed (-1)**i, times the parity of its vertices' order in the simplex.
-            signs = (-1.0) ** np.arange(k + 1) * simplex_parity(facets)            # [N, k + 1]
+            facets = generate_simplex_boundary(elements[k])
+            # Facet i carries boundary sign (-1)**i times the parity of its vertex order.
+            signs = (-1.0) ** np.arange(k + 1) * simplex_parity(facets)
             if k == 1:
-                # An edge's facets are its ends, read in its own order, tail then head.
+                # Order an edge's two boundary vertices as tail (-1) then head (+1).
                 elements[0] = np.arange(n_vertices)[:, None]
                 boundary_indices[0], orientation[0] = facets[..., ::-1, 0], signs[..., ::-1]
             else:
@@ -172,26 +150,18 @@ class Topology:
 
     @cached_property
     def incidence(self) -> ByDimensions:
-        """`incidence[n, m]`, `[k] numbers[n-simplices <- m-simplices]`: the m-simplices of each n-simplex, unsigned,
-        a batch of k selection maps, one per m-simplex of an n-simplex, for any `0 <= m < n <= n_dim`; negative
-        dimensions count from the top, `incidence[-1, 0]`.
-
-        Entry `i` of the corners, `incidence[n, 0]`, is corner `i` in the simplex's own order: an edge's tail then
-        its head, a face's corners in its winding. From triangles up, entry `i` of the facets, `incidence[n, n - 1]`,
-        is the facet facing corner `i`, so that a quantity per corner reaches the facet across from it. Between the
-        two, as a tet's six edges in `incidence[3, 1]`, the m-simplices come in the order of their corners, (0, 1),
-        (0, 2), (0, 3), (1, 2), (1, 3), (2, 3). Applied to a field, `topology.incidence[2, 0] * vertices` is each face's
-        corners, `[3] Point-[faces]`; summed over the batch, `topology.incidence[2, 0].mean(axis=0) * vertices` is its
-        centroid. Each map is built on first use."""
-        return ByDimensions(self.n_dim, lambda n, m: Sparse.selection(self._local(n, m).T, self.n_elements[m]))
+        """Unsigned incidence operators read the `m`-simplices of each `n`-simplex, so
+        `incidence[2, 0] * vertices` gathers the three corner values onto every triangle. Corners
+        follow the simplex's vertex order at `m == 0`, facets stand opposite corner `i` at
+        `m == n - 1`, and intermediate dimensions follow lexicographic corner combinations."""
+        N = self.n_elements
+        return ByDimensions(self.n_dim, lambda n, m: Sparse.selection(self._local(n, m).T, N[m]))
 
     @cached_property
     def boundary(self) -> ByDimensions:
-        """`boundary[k + 1, k]`, `[k + 2] numbers[(k + 1)-simplices <- k-simplices]`: the facets of each (k + 1)-simplex,
-        the batches of `incidence[k + 1, k]`, each signed +1 or -1 by the facet's orientation in the simplex: an
-        edge's tail -1 and head +1, a face's edges +1 where the face's winding runs along them, a tet's faces +1
-        where they face outward. Only adjacent dimensions have a boundary; summed over the batch, it is the exterior
-        derivative `d[k]`. Each map is built on first use."""
+        """Signed facet operators weight each facet of a `(k + 1)`-simplex by its induced boundary
+        orientation: `-1` at an edge's tail and `+1` at its head, `+1` along a triangle's winding
+        and `-1` against it, and `+1` on outward-oriented tetrahedron faces."""
         def signed_facets(n: int, m: int) -> Sparse:
             if m != n - 1:
                 raise ValueError(f"only adjacent dimensions have a boundary, not {n} and {m}")
@@ -200,205 +170,198 @@ class Topology:
 
     @cached_property
     def oriented(self) -> ByDimensions:
-        """`oriented[n, m]`, `[k] numbers[n-simplices <- m-simplices]`: the m-simplices of each n-simplex, the batches
-        of `incidence[n, m]`, each signed +1 where the m-simplex as stored, its vertices in increasing order, runs the
-        way the n-simplex's own vertex order runs it, and -1 where it runs the other way. A local formula written in
-        a simplex's own vertex order, such as a Whitney form on a tet's edge from its local tail to its local head,
-        reaches the stored m-simplices through these signs. A facet's sign here differs from its sign in `boundary`
-        by `(-1)**i` for the facet facing corner `i`. Each map is built on first use."""
+        """Sub-simplex incidence operators carry `+1` where the local sub-simplex agrees in
+        orientation with its stored global simplex, and `-1` where opposite."""
         return ByDimensions(self.n_dim, lambda n, m: self._signed(n, m, simplex_parity(self.elements[n][:, self.corners[n, m].T])))
 
     @cached_property
     def d(self) -> tuple[Sparse, ...]:
-        """`d[k]`, `numbers[(k + 1)-simplices <- k-simplices]` for each k below the top: the exterior derivative, the
-        signed sum `boundary[k + 1, k].sum(axis=0)` over the facets of each simplex. `d[0] * vertices` is the edges,
-        each its head less its tail, and `d[k + 1] * d[k]` vanishes."""
+        """The discrete exterior derivative (coboundary) evaluates a `k`-simplex quantity around the
+        oriented boundary of each `(k + 1)`-simplex: differences from tail to head along edges at
+        `d[0]`, circulation around triangles at `d[1]`, and net outward flux from tetrahedra at
+        `d[2]`. Because every shared ridge cancels around the boundary of a boundary,
+        `d[k + 1] * d[k] == 0`."""
         return tuple(self.boundary[k + 1, k].sum(axis=0) for k in range(self.n_dim))
 
     @cached_property
     def corners(self) -> ByDimensions:
-        """`corners[n, m]`, `[m + 1, k]`: the local corners of each m-simplex of an n-simplex, in the order of
-        `incidence[n, m]`. Unpacks directly along axis 0: on edges, `tails, heads = topology.corners[n, 1]`, and on a tet's
-        faces, `first, second, third = topology.corners[3, 2]`."""
+        """Each column gives the local corner numbers of one `m`-simplex inside an `n`-simplex,
+        ordered to match `incidence[n, m]` (`tails, heads = topology.corners[n, 1]`)."""
         return ByDimensions(self.n_dim, local_corners)
 
     @cached_property
     def incidence_indices(self) -> ByDimensions:
-        """`incidence_indices[n, m]`, `[N, k]`: the index in `elements[m]` of each m-simplex of each n-simplex, in the
-        order of `incidence[n, m]`, the numbers that map reads by: a tet's six edges, `topology.incidence_indices[3, 1]`.
-        Each table is built on first use."""
+        """Row `s` lists the global indices in `elements[m]` of the `m`-simplices belonging to
+        `n`-simplex `s`, in the order of `incidence[n, m]`."""
         return ByDimensions(self.n_dim, self._local)
 
     @cached_property
     def complements(self) -> ByDimensions:
-        """`complements[n, m]`, `[n - m, k]`: the local corners of each n-simplex off each of its m-simplices, in the
-        order of `incidence[n, m]`. Unpacks along axis 0: on a tet's edges, the corners of the edge across from each,
-        `off_tails, off_heads = topology.complements[3, 1]`; on a triangle's corners, the side facing each."""
+        """Each column lists the local corners of an `n`-simplex that lie off the corresponding
+        `m`-simplex in `incidence[n, m]`."""
         return ByDimensions(self.n_dim, local_complements)
 
     @cached_property
     def on(self) -> ByDimensions:
-        """`on[n, m]`, `[m + 1, k] numbers[n-simplices <- vertices]`: the corners of each m-simplex of each n-simplex, in
-        the order of `incidence[n, m]`, each m-simplex's corners in the order it is stored, increasing, so that their
-        join runs the m-simplex the way a value on it in `elements[m]` is read. With `off`, the corners of a simplex
-        off each of its m-simplices, every Whitney form is one quotient, the complement over its join with the
-        m-simplex, `complements / (complements & spans)`, with `spans = reduce(and_, topology.on[n, m] * vertices)`;
-        the m-simplex's own sense is the only one it keeps. Each map is built on first use."""
+        """The maps in `on[n, m]` read the vertices of each sub-simplex in increasing global index
+        order, matching its stored orientation in `elements[m]`."""
+        N = self.n_elements
+
         def stored(n: int, m: int) -> Sparse:
-            corners = np.sort(self.elements[n][:, local_corners(n, m)], axis=1)   # [N, m + 1, k]
-            return Sparse.selection(corners.transpose(1, 2, 0), self.n_vertices)
+            corners = np.sort(self.elements[n][:, local_corners(n, m)], axis=1)
+            return Sparse.selection(corners.transpose(1, 2, 0), N[0])
         return ByDimensions(self.n_dim, stored)
 
     @cached_property
     def off(self) -> ByDimensions:
-        """`off[n, m]`, `[n - m, k] numbers[n-simplices <- vertices]`: the corners of each n-simplex off each of its
-        m-simplices, in the order of `incidence[n, m]`, the corners of `complements[n, m]`. Their join stands in a
-        Whitney form's numerator and its denominator alike, `complements / (complements & spans)` with
-        `complements = reduce(and_, topology.off[n, m] * vertices, outside)`, so their order cancels; whatever the
-        forms read nothing along off the simplex, `outside`, starts the join. Each map is built on first use."""
+        """The maps in `off[n, m]` read the vertices of each `n`-simplex that lie off each of its
+        `m`-simplices (at `m == 0`, the vertices of the facet opposite each corner)."""
+        N = self.n_elements
         return ByDimensions(self.n_dim, lambda n, m: Sparse.selection(
-            self.elements[n][:, local_complements(n, m)].transpose(1, 2, 0), self.n_vertices))
+            self.elements[n][:, local_complements(n, m)].transpose(1, 2, 0), N[0]))
 
-    def _local(self, n: int, m: int) -> np.ndarray:
-        """`[N, k]`: the index in `elements[m]` of each m-simplex of each n-simplex, in the order of
-        `incidence[n, m]`."""
-        if m == 0:
-            return self.elements[n]
-        if m == n - 1:
-            return self.boundary_indices[m]
-        return lookup_simplices(self.elements[m], np.sort(self.elements[n][:, self.corners[n, m].T], axis=-1))
+    def _local(self, simplex_dim: int, sub_dim: int) -> np.ndarray:
+        if sub_dim == 0:
+            return self.elements[simplex_dim]
+        if sub_dim == simplex_dim - 1:
+            return self.boundary_indices[sub_dim]
+        return lookup_simplices(
+            self.elements[sub_dim],
+            np.sort(self.elements[simplex_dim][:, self.corners[simplex_dim, sub_dim].T], axis=-1),
+        )
 
-    def _signed(self, n: int, m: int, signs: np.ndarray) -> Sparse:
-        """`[k] numbers[n-simplices <- m-simplices]`: the batches of `incidence[n, m]`, each entry signed by
-        `signs` `[N, k]`."""
-        local = self._local(n, m)                                                  # [N, k]
-        cells = np.eye(local.shape[-1])[:, None, :] * signs[None, :, :]            # [k, N, k]
-        return Sparse.from_indices(cells, np.arange(self.n_elements[n])[:, None], local,
-                                           (self.n_elements[n], self.n_elements[m]))
+    def _signed(self, simplex_dim: int, sub_dim: int, signs: np.ndarray) -> Sparse:
+        N = self.n_elements
+        local = self._local(simplex_dim, sub_dim)
+        entries = np.eye(local.shape[-1])[:, None, :] * signs[None, :, :]
+        return Sparse.from_indices(entries, np.arange(N[simplex_dim])[:, None], local, (N[simplex_dim], N[sub_dim]))
 
     @cached_property
     def exterior(self) -> tuple[np.ndarray, ...]:
-        """`exterior[k]`: indices of the k-simplices on the border, for each dimension: the facets that bound a single top
-        simplex, and every simplex of theirs; no top simplex lies on it."""
+        """Border facets are those belonging to a single top simplex, and lower border simplices are
+        all simplices in their closure."""
+        N = self.n_elements
         top = self.n_dim - 1
-        on_border = [np.flatnonzero(np.bincount(self.boundary_indices[top].ravel(), minlength=self.n_elements[top]) == 1)]
+        on_border = [np.flatnonzero(np.bincount(self.boundary_indices[top].ravel(), minlength=N[-2]) == 1)]
         for k in range(top, 0, -1):
             on_border.insert(0, np.unique(self.boundary_indices[k - 1][on_border[0]]))
         return (*on_border, np.zeros(0, dtype=int))
 
     @cached_property
     def interior(self) -> tuple[np.ndarray, ...]:
-        """`interior[k]`: indices of the k-simplices off the border, for each dimension: all but those of `exterior[k]`."""
+        """Interior simplices at each dimension are those strictly off the topological border."""
         return tuple(np.setdiff1d(np.arange(count), on_border) for count, on_border in zip(self.n_elements, self.exterior))
 
-    def subset(self, chosen: np.ndarray, k: int) -> Topology:
-        """The topology of the chosen k-simplices, a boolean mask over them or their indices, on the same vertices, so
-        that every field on this topology's vertices reads on it unchanged: the interior edges of a surface as a truss,
-        `topology.subset(topology.interior[1], 1)`, or a region of its top simplices, `topology.subset(region, -1)`."""
-        return Topology(self.n_vertices, self.elements[k][chosen])
+    def subset(self, selection: np.ndarray, dimension: int) -> Topology:
+        """Selected simplices at `dimension` (by index or boolean mask) form a sub-complex that
+        preserves the parent vertex numbering."""
+        N = self.n_elements
+        return Topology(N[0], self.elements[dimension][selection])
 
     def cone(self) -> Topology:
-        """This topology joined to one new vertex, its apex, numbered after the others: each top simplex with the apex
-        before its corners, one dimension up. A sphere's cone is a ball, a polygon's a fan."""
-        apex = np.full((len(self.elements[-1]), 1), self.n_vertices)
-        return Topology(self.n_vertices + 1, np.concatenate([apex, self.elements[-1]], axis=-1))
+        """Joining every top simplex to a single added apex vertex forms an `(n_dim + 1)`-dimensional
+        cone over this complex."""
+        N = self.n_elements
+        apex = np.full((N[-1], 1), N[0])                                             # [N[-1], 1]
+        return Topology(N[0] + 1, np.concatenate([apex, self.elements[-1]], axis=-1))
 
     def product(self, path: Topology) -> Topology:
-        """This topology swept along a path, a topology of edges: a copy of the vertices at each of the path's vertices,
-        numbered copy after copy, and each top simplex times each edge of the path cut into simplices one dimension up,
-        the staircase its sorted vertices climb from the edge's tail to its head, so that neighbouring prisms share
-        their sides. Each step is wound as the product of the simplex's own winding with the edge's, so that the
-        product of two coherently wound topologies is coherently wound. A disk swept around a closed loop is a solid
-        torus, a sphere along a path a thick shell, a loop along a path a cylinder."""
-        simplices = np.sort(self.elements[-1], axis=-1)                         # [N, k + 1]
-        width = simplices.shape[-1]
-        # Step j of the staircase keeps corners 0 to j on the tail's copy and takes corners j to k on the head's.
-        places, steps = np.arange(width + 1), np.arange(width)[:, None]
-        on_head = places > steps                                                # [steps, k + 2]
-        corners = places - on_head                                              # [steps, k + 2]
-        tails, heads = path.elements[1].T                                       # [E], [E]
-        copies = np.where(on_head, heads[:, None, None], tails[:, None, None])  # [E, steps, k + 2]
-        cells = simplices[:, None, corners] + self.n_vertices * copies[None]   # [N, E, steps, k + 2]
-        # The prism's boundary-compatible winding: step j signed (-1)**j, times the simplex's own winding against its
-        # sorted order.
-        signs = simplex_parity(self.elements[-1])[:, None, None] * (-1.0) ** np.arange(width)   # [N, 1, steps]
-        wound = np.broadcast_to(signs, cells.shape[:-1]).reshape(-1) > 0      # [N E steps]
-        cells = cells.reshape(-1, width + 1)
-        return Topology(self.n_vertices * path.n_vertices, np.where(wound[:, None], cells, turned(cells)))
+        """Extruding along a one-dimensional path subdivides each prism by the sorted-vertex
+        staircase so adjacent prisms share triangulated side facets and coherent orientations
+        compose."""
+        N = self.n_elements
+        V_path, E_path = path.n_elements
+        n_corners = self.n_dim + 1
+        simplices = np.sort(self.elements[-1], axis=-1)                              # [N[-1], n_dim + 1]
+        # Staircase step j keeps corners 0..j on the tail copy and advances corners j..n_dim to the head copy.
+        places, steps = np.arange(n_corners + 1), np.arange(n_corners)[:, None]
+        on_head = places > steps                                                     # [n_dim + 1, n_dim + 2]
+        corners = places - on_head                                                   # [n_dim + 1, n_dim + 2]
+        tails, heads = path.elements[1].T                                            # [E_path], [E_path]
+        copies = np.where(on_head, heads[:, None, None], tails[:, None, None])       # [E_path, n_dim + 1, n_dim + 2]
+        extruded = simplices[:, None, corners] + N[0] * copies[None]                 # [N[-1], E_path, n_dim + 1, n_dim + 2]
+        # Alternate signs (-1)**j across staircase steps times each base simplex's parity relative to sorted order.
+        signs = simplex_parity(self.elements[-1])[:, None, None] * (-1.0) ** np.arange(n_corners)   # [N[-1], 1, n_dim + 1]
+        wound = np.broadcast_to(signs, extruded.shape[:-1]).reshape(-1) > 0          # [N[-1] * E_path * (n_dim + 1)]
+        extruded = extruded.reshape(-1, n_corners + 1)                               # [N[-1] * E_path * (n_dim + 1), n_dim + 2]
+        return Topology(N[0] * V_path, np.where(wound[:, None], extruded, reverse_orientation(extruded)))
 
     @cached_property
     def border(self) -> Topology:
-        """The facets that bound a single top simplex, as a topology one dimension lower on the same vertices, each
-        wound outward, as the simplex it bounds runs it: a solid's border is its closed surface, facing out, and a
-        disk's its rim. Empty where the topology is closed, so that a border's own border is always empty."""
+        """Facets incident to a single top simplex form an outward-oriented `(n_dim - 1)`-dimensional
+        topology over the same vertex set."""
+        N = self.n_elements
         top = self.n_dim - 1
-        facets, signs = self.boundary_indices[top], self.orientation[top]        # [N, n_dim + 1], [N, n_dim + 1]
-        lone = np.bincount(facets.ravel(), minlength=self.n_elements[top])[facets] == 1   # [N, n_dim + 1]
-        # A stored facet's vertices are sorted: it runs outward where its simplex runs it that way, and is turned where
-        # the simplex runs it the other way.
-        sides = self.elements[top][facets[lone]]                                 # [border, n_dim]
-        return Topology(self.n_vertices, np.where((signs[lone] > 0)[:, None], sides, turned(sides)))
+        facets, signs = self.boundary_indices[top], self.orientation[top]            # [N[-1], n_dim + 1], [N[-1], n_dim + 1]
+        lone = np.bincount(facets.ravel(), minlength=N[-2])[facets] == 1             # [N[-1], n_dim + 1]
+        # Stored facet vertices are sorted; flip any border facet whose parent simplex induces -1 on it.
+        sides = self.elements[top][facets[lone]]
+        return Topology(N[0], np.where((signs[lone] > 0)[:, None], sides, reverse_orientation(sides)))
 
     @cached_property
     def is_closed(self) -> bool:
-        """Whether the border is empty: every facet bounds two top simplices, as on a sphere or a torus."""
-        return len(self.border.elements[-1]) == 0
+        """A complex is closed when its topological border is empty (such as a loop, sphere, or torus)."""
+        return self.border.n_elements[-1] == 0
 
     @cached_property
     def is_oriented(self) -> bool:
-        """Whether every facet two top simplices share is run in opposite senses by them, as on an oriented manifold."""
-        neighbours, entries = self.neighbours                                    # [N, n_dim + 1], [N, n_dim + 1]
-        signs = self.orientation[self.n_dim - 1]                                 # [N, n_dim + 1]
-        shared = neighbours != np.arange(len(neighbours))[:, None]               # [N, n_dim + 1]
+        """A complex is coherently oriented when every shared interior facet receives opposite
+        boundary orientations from its two incident top simplices."""
+        N = self.n_elements
+        neighbours, entries = self.neighbours                                        # [N[-1], n_dim + 1], [N[-1], n_dim + 1]
+        signs = self.orientation[self.n_dim - 1]                                     # [N[-1], n_dim + 1]
+        shared = neighbours != np.arange(N[-1])[:, None]                             # [N[-1], n_dim + 1]
         return bool(np.all(signs[shared] != signs[neighbours, entries][shared]))
 
     @cached_property
     def is_manifold(self) -> bool:
-        """Whether every facet bounds at most two top simplices, and the top simplices around every vertex hang
-        together through the facets they share at it: no facet where three meet, and no vertex where two pieces only
-        touch."""
+        """Every facet bounds at most two top simplices and every vertex has a single
+        facet-connected star of top simplices."""
         from scipy.sparse import coo_matrix
         from scipy.sparse.csgraph import connected_components
+        N = self.n_elements
         top = self.n_dim - 1
-        simplices, width = self.elements[-1], self.n_dim + 1                     # [N, n_dim + 1]
-        thin = np.bincount(self.boundary_indices[top].ravel(), minlength=self.n_elements[top]).max(initial=0) <= 2
-        # Each corner of each top simplex is a node; two simplices sharing a facet join their corners at each of its
-        # vertices, so that the corners at a vertex fall into one piece where its star hangs together.
-        neighbours, entries = self.neighbours                                    # [N, n_dim + 1], [N, n_dim + 1]
-        owners = np.broadcast_to(np.arange(len(simplices))[:, None], neighbours.shape)
-        shared = neighbours != owners                                            # [N, n_dim + 1]
-        on_facet = local_corners(self.n_dim, top).T[np.nonzero(shared)[1]]       # [pairs, n_dim] corners of the owner
-        owner, other = owners[shared], neighbours[shared]                        # [pairs], [pairs]
-        at = simplices[owner[:, None], on_facet]                                 # [pairs, n_dim] the facet's vertices
-        matching = (simplices[other][:, None, :] == at[:, :, None]).argmax(axis=-1)   # [pairs, n_dim] corners of the other
+        simplices, width = self.elements[-1], self.n_dim + 1                         # [N[-1], n_dim + 1]
+        thin = np.bincount(self.boundary_indices[top].ravel(), minlength=N[-2]).max(initial=0) <= 2
+        # Treat each corner of each top simplex as a graph node and link matching corners across shared facets;
+        # the complex is manifold at vertices iff every vertex's corners lie in at most one connected component.
+        neighbours, entries = self.neighbours                                        # [N[-1], n_dim + 1], [N[-1], n_dim + 1]
+        owners = np.broadcast_to(np.arange(N[-1])[:, None], neighbours.shape)        # [N[-1], n_dim + 1]
+        shared = neighbours != owners                                                # [N[-1], n_dim + 1]
+        on_facet = local_corners(self.n_dim, top).T[np.nonzero(shared)[1]]
+        owner, other = owners[shared], neighbours[shared]
+        at = simplices[owner[:, None], on_facet]
+        matching = (simplices[other][:, None, :] == at[:, :, None]).argmax(axis=-1)
         links = ((owner[:, None] * width + on_facet).ravel(), (other[:, None] * width + matching).ravel())
         graph = coo_matrix((np.ones(len(links[0])), links), shape=(simplices.size,) * 2)
-        _, pieces = connected_components(graph, directed=False)                  # [N (n_dim + 1)]
-        stars = np.unique(np.stack([simplices.ravel(), pieces], axis=-1), axis=0)[:, 0]   # a vertex per piece of its star
+        _, pieces = connected_components(graph, directed=False)                      # [N[-1] * (n_dim + 1)]
+        stars = np.unique(np.stack([simplices.ravel(), pieces], axis=-1), axis=0)[:, 0]
         return bool(thin and np.all(np.bincount(stars) <= 1))
 
     @cached_property
     def n_components(self) -> int:
-        """How many connected pieces the top simplices fall into, joined through the facets they share."""
+        """Connected components are counted across shared facets between top simplices, so simplices
+        meeting only at a vertex or ridge lie in separate components."""
         from scipy.sparse import coo_matrix
         from scipy.sparse.csgraph import connected_components
-        neighbours = self.neighbours[0]                                          # [N, n_dim + 1]
-        owners = np.broadcast_to(np.arange(len(neighbours))[:, None], neighbours.shape)
-        graph = coo_matrix((np.ones(neighbours.size), (owners.ravel(), neighbours.ravel())), shape=(len(neighbours),) * 2)
+        N = self.n_elements
+        neighbours = self.neighbours[0]                                              # [N[-1], n_dim + 1]
+        owners = np.broadcast_to(np.arange(N[-1])[:, None], neighbours.shape)        # [N[-1], n_dim + 1]
+        graph = coo_matrix((np.ones(neighbours.size), (owners.ravel(), neighbours.ravel())), shape=(N[-1],) * 2)
         return int(connected_components(graph, directed=False)[0])
 
     @cached_property
     def euler_characteristic(self) -> int:
-        """The alternating sum of the counts of the simplices, the vertices of the top simplices less the edges, plus the
-        faces and so on: 2 for a sphere's surface, 0 for a torus's or a closed loop, 1 for a disk or a ball."""
+        """The alternating sum of active simplex counts (`V - E + F - ...`, ignoring isolated
+        vertices) is a topological invariant equal to `2` on a sphere, `0` on a loop or torus, and
+        `1` on a disc or ball."""
         counts = np.array([len(np.unique(self.elements[-1])), *self.n_elements[1:]])
         return int(np.sum((-1) ** np.arange(self.n_dim + 1) * counts))
 
     @classmethod
     def rings(cls, n_rings: int, n_sectors: int) -> Topology:
-        """A disk of rings: a centre vertex, then `n_rings` rings of `n_sectors` vertices each, numbered ring by ring;
-        a fan of triangles about the centre, and two triangles to each cell between neighbouring rings, all wound
-        alike, from each ring's vertex toward the next."""
+        """Vertex `0` at the centre surrounded by `n_rings` concentric rings triangulates a
+        topological disc."""
         indices = np.arange(n_rings * n_sectors).reshape(n_rings, n_sectors) + 1
         following = np.roll(indices, -1, axis=1)
         fan = np.stack([np.zeros(n_sectors, dtype=int), indices[0], following[0]], axis=-1)
@@ -410,8 +373,8 @@ class Topology:
 
     @classmethod
     def torus(cls, n_major: int, n_minor: int) -> Topology:
-        """A closed torus of `n_major` rings of `n_minor` vertices each, numbered ring by ring, two triangles to each
-        cell, wound alike."""
+        """A doubly periodic `n_major`-by-`n_minor` grid triangulates into a closed, coherently
+        oriented torus."""
         u, v = np.meshgrid(np.arange(n_major), np.arange(n_minor), indexing="ij")
         v00 = u * n_minor + v
         v10 = ((u + 1) % n_major) * n_minor + v
@@ -423,118 +386,107 @@ class Topology:
 
     @classmethod
     def chains(cls, lengths: list[int]) -> Topology:
-        """Chains of edges through runs of vertices numbered one run after another, each run `lengths` long: a set of
-        polylines as a topology of edges, each edge from a vertex to the next in its run."""
+        """Consecutive runs of vertices form disjoint open polygonal chains."""
         lengths = np.asarray(lengths, dtype=int)
-        n_vertices = int(lengths.sum())
-        # An edge from each vertex to the next, but where the next starts a run of its own.
-        starts = np.zeros(n_vertices + 1, dtype=bool)
+        V = int(lengths.sum())
+        # Connect each vertex to the next except across run boundaries.
+        starts = np.zeros(V + 1, dtype=bool)
         starts[np.cumsum(lengths) - lengths] = True
-        tails = np.flatnonzero(~starts[1:n_vertices])                             # [edges]
-        return cls(n_vertices, np.stack([tails, tails + 1], axis=-1))
+        tails = np.flatnonzero(~starts[1:V])
+        return cls(V, np.stack([tails, tails + 1], axis=-1))
 
     @classmethod
     def loops(cls, lengths: list[int]) -> Topology:
-        """Closed loops of edges through runs of vertices numbered one run after another, each run `lengths` long: a set
-        of polygons as a topology of edges, each edge from a vertex to the next in its run and the last back to the
-        first. A topology does not change, so the loops of each set of lengths are built once and kept, with every
-        operator derived from them."""
+        """Consecutive runs of vertices form disjoint closed polygonal loops."""
         return cls._loops(tuple(lengths))
 
     @classmethod
     @cache
     def _loops(cls, lengths: tuple[int, ...]) -> Topology:
         lengths = np.asarray(lengths, dtype=int)
-        n_vertices = int(lengths.sum())
-        tails = np.arange(n_vertices)                                            # [edges]
-        firsts, sizes = np.repeat(np.cumsum(lengths) - lengths, lengths), np.repeat(lengths, lengths)   # [edges], [edges]
-        return cls(n_vertices, np.stack([tails, firsts + (tails - firsts + 1) % sizes], axis=-1))
+        V = int(lengths.sum())
+        tails = np.arange(V)                                                         # [V]
+        firsts, sizes = np.repeat(np.cumsum(lengths) - lengths, lengths), np.repeat(lengths, lengths)   # [V], [V]
+        return cls(V, np.stack([tails, firsts + (tails - firsts + 1) % sizes], axis=-1))
 
     @classmethod
     def grid(cls, n_rows: int, n_columns: int) -> Topology:
-        """Two triangles to each cell of a rectangular grid of vertices numbered row by row, wound alike."""
-        vertices = np.arange(n_rows * n_columns).reshape(n_rows, n_columns)
-        cells = np.stack((vertices[:-1, :-1], vertices[:-1, 1:], vertices[1:, 1:], vertices[1:, :-1]), axis=-1)
-        return cls(n_rows * n_columns, cells[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3))
+        """A rectangular `n_rows`-by-`n_columns` vertex grid triangulates into a coherently oriented
+        planar sheet."""
+        vertices = np.arange(n_rows * n_columns).reshape(n_rows, n_columns)          # [n_rows, n_columns]
+        quads = np.stack((vertices[:-1, :-1], vertices[:-1, 1:], vertices[1:, 1:], vertices[1:, :-1]), axis=-1)
+        return cls(n_rows * n_columns, quads[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3))
 
-    def reading(self, indices: np.ndarray, k: int) -> Sparse:
-        """`numbers[..., n <- k-simplices]`: the map reading a field on the k-simplices at each of the given ones
-        `[..., n]`; its adjugate adds values at them back onto the simplices. At the border's vertices,
-        `topology.reading(topology.exterior[0], 0)`; on the interior edges, `topology.reading(topology.interior[1], 1)`."""
-        return Sparse.selection(indices, self.n_elements[k])
+    def reading(self, indices: np.ndarray, dimension: int) -> Sparse:
+        """Selecting a field on simplices of `dimension` at `indices` pairs with `.adjugate()`,
+        which scatters values at those sites back onto the full complex."""
+        N = self.n_elements
+        return Sparse.selection(indices, N[dimension])
 
-    def loop(self, pinned: np.ndarray) -> Sparse:
-        """numbers[V + E <- V]: one Loop step, from the vertices to those of the finer topology, its vertices
-        followed by one per edge, with the vertices pinned `[V]` staying where they are.
-
-        An interior vertex of valence n keeps `1 - n * beta` of itself and takes `beta` of each neighbour,
-        with `beta = (5/8 - (3/8 + cos(2 pi / n) / 4)**2) / n`. An interior edge's vertex takes 3/8 of each
-        end and 1/8 of each vertex across the edge: each face beside the edge gives 1/8 of the corner the
-        edge faces and 3/16 of each of the other two. The boundary follows itself alone: a boundary vertex
-        keeps 3/4 of itself and takes 1/8 of each neighbour along the boundary, and a boundary edge's vertex
-        is the midpoint of its ends."""
-        vertex_count = len(pinned)
+    def loop(self, is_pinned: np.ndarray) -> Sparse:
+        """One Loop subdivision step refines coarse vertices followed by coarse edge midpoints,
+        holding vertices marked by `is_pinned` fixed and keeping border stencils strictly on the
+        border."""
+        V, E, F = self.n_elements
         edges, faces, face_edges = self.elements[1], self.elements[2], self.boundary_indices[1]   # [E, 2], [F, 3], [F, 3]
-        shape = (vertex_count + len(edges), vertex_count)
-        everyone = np.arange(vertex_count)
-        rim = np.isin(np.arange(len(edges)), self.exterior[1])                   # [E]
-        on_rim = np.isin(everyone, edges[rim])                                   # [V]
-        valence = np.bincount(edges.reshape(-1), minlength=vertex_count)         # [V]
-        beta = (5 / 8 - (3 / 8 + np.cos(2 * np.pi / valence) / 4) ** 2) / valence
-        own = np.where(pinned, 1.0, np.where(on_rim, 3 / 4, 1 - valence * beta)) # [V]
+        shape = (V + E, V)
+        everyone = np.arange(V)                                                      # [V]
+        rim = np.isin(np.arange(E), self.exterior[1])                                # [E]
+        on_rim = np.isin(everyone, edges[rim])                                       # [V]
+        valence = np.bincount(edges.reshape(-1), minlength=V)                        # [V]
+        beta = (5 / 8 - (3 / 8 + np.cos(2 * np.pi / valence) / 4) ** 2) / valence    # [V]
+        own = np.where(is_pinned, 1.0, np.where(on_rim, 3 / 4, 1 - valence * beta))  # [V]
         keep = Sparse.from_indices(own, everyone, everyone, shape)
-        # each end's share in the other end, by the end's own rule
-        along = np.where(pinned[edges], 0.0,
+        # Off-diagonal coarse-vertex neighbour weights along each edge.
+        along = np.where(is_pinned[edges], 0.0,
                          np.where(on_rim[edges], np.where(rim[:, None], 1 / 8, 0.0), beta[edges]))   # [E, 2]
         neighbours = Sparse.from_indices(along, edges, edges[:, ::-1], shape)
-        # each face's share in the vertex of the edge facing each corner, from each of its corners
-        facing_rim = rim[face_edges][:, :, None]                                 # [F, 3, 1]
+        # Contributions from each triangle's three corners to its three midpoint edge vertices.
+        facing_rim = rim[face_edges][:, :, None]                                     # [F, 3, 1]
         shares = np.where(np.eye(3, dtype=bool), np.where(facing_rim, 0.0, 1 / 8), np.where(facing_rim, 1 / 2, 3 / 16))
-        split = Sparse.from_indices(shares, vertex_count + face_edges[:, :, None], faces[:, None, :], shape)
+        split = Sparse.from_indices(shares, V + face_edges[:, :, None], faces[:, None, :], shape)
         return keep + neighbours + split
 
     @cached_property
     def split_faces(self) -> np.ndarray:
-        """[4 F, 3]: every face split in four at the vertices of its edges, the vertices of the finer topology: a
-        middle face through them, and a face at each of its corners."""
-        middle = self.n_vertices + self.boundary_indices[1]                     # [F, 3]
+        """Edge-midpoint refinement splits every triangle into four coherently wound sub-triangles
+        (the central midpoint triangle followed by the three corner triangles)."""
+        V, E, F = self.n_elements
+        middle = V + self.boundary_indices[1]                                        # [F, 3]
         corners = np.stack([self.elements[2], np.roll(middle, 1, axis=1), np.roll(middle, -1, axis=1)], axis=-1)   # [F, 3, 3]
-        return np.concatenate([middle, corners.reshape(-1, 3)])
+        return np.concatenate([middle, corners.reshape(-1, 3)])                      # [4 * F, 3]
 
-    def loop_subdivided(self, pinned: np.ndarray, n_steps: int) -> SubdividedTopology:
-        """The topology after `n_steps` Loop steps of this one, the vertices pinned `[V]` staying where they are.
-        Each finer topology holds the one before it and the map from its vertices, so the steps compose."""
-        topology = SubdividedTopology(self, pinned)
+    def loop_subdivided(self, is_pinned: np.ndarray, n_steps: int) -> SubdividedTopology:
+        """Repeated Loop subdivision produces a finer surface topology carrying the composed
+        coarse-to-fine vertex refinement operator."""
+        topology = SubdividedTopology(self, is_pinned)
         for _ in range(n_steps - 1):
             topology = SubdividedTopology(topology, topology.pinned)
         return topology
 
     @cached_property
     def dual(self) -> DualTopology:
-        """The dual topology: a vertex for each top simplex, an edge across each interior facet, and above them a cell
-        around each simplex of lower dimension. `topology.dual.incidence[1, 0] * centres` reads a field on the top
-        simplices at both sides of each interior facet."""
+        """The combinatorial dual complex places a dual vertex on each top simplex, a dual edge
+        across each facet, a dual face around each codimension-two ridge, and a dual cell around
+        each primal vertex."""
         return DualTopology(self)
 
     @cached_property
     def facet_opposites(self) -> np.ndarray:
-        """`[interior facets, 2]`: the vertex facing each interior facet in each of the two top simplices its
-        `dual` edge joins: on a surface, the corners across each interior edge, which with the edge's ends
-        make the hinge it is."""
-        # The corner facing each facet of a simplex: of all its corners, the one the facet lacks.
-        corners = local_corners(self.n_dim, self.n_dim - 1)                      # [n_dim, n_dim + 1]
-        facing = self.n_dim * (self.n_dim + 1) // 2 - corners.sum(axis=0)        # [n_dim + 1]
+        """Interior facets carry the opposite corner vertex from the `+1`-oriented incident simplex
+        first and the `-1`-oriented simplex second."""
+        # Sum of 0..n_dim minus the n_dim corners on a facet leaves the single corner opposite that facet.
+        corners = local_corners(self.n_dim, self.n_dim - 1)                          # [n_dim, n_dim + 1]
+        facing = self.n_dim * (self.n_dim + 1) // 2 - corners.sum(axis=0)            # [n_dim + 1]
         return self._facet_sides(self.elements[-1][:, facing])
 
     @cached_property
     def neighbours(self) -> tuple[np.ndarray, np.ndarray]:
-        """For each top simplex and each of its facets, the simplex on the other side of that facet, and the corner of
-        that simplex which faces the same facet: two index arrays `[N, n_dim + 1]`, the facet named by the corner
-        facing it, as everywhere in the topology. A walk leaving a simplex through a facet reads from them the simplex it
-        enters and the facet it enters through. A facet on the boundary has no other side, and names the simplex
-        itself."""
+        """Across local facet `i` of top simplex `s`, the two tables give the adjacent top simplex
+        and its local corner opposite the shared facet, pointing back to `(s, i)` on the border."""
+        N = self.n_elements
         width = self.n_dim + 1
-        facets = self.boundary_indices[self.n_dim - 1].reshape(-1)               # [N (n_dim + 1)]
+        facets = self.boundary_indices[self.n_dim - 1].reshape(-1)                   # [N[-1] * (n_dim + 1)]
         order = np.argsort(facets, kind="stable")
         shared = facets[order][1:] == facets[order][:-1]
         first, second = order[:-1][shared], order[1:][shared]
@@ -544,61 +496,61 @@ class Topology:
 
     @cached_property
     def vertex_simplices(self) -> np.ndarray:
-        """`[V]`: the first top simplex at each vertex, of those with the vertex as a corner."""
-        simplices = self.elements[-1]
-        first = np.full(self.n_vertices, len(simplices))
-        np.minimum.at(first, simplices.reshape(-1), np.repeat(np.arange(len(simplices)), simplices.shape[-1]))
+        """Each vertex maps to its lowest-numbered incident top simplex (or `n_elements[-1]` when
+        isolated)."""
+        N = self.n_elements
+        simplices = self.elements[-1]                                                # [N[-1], n_dim + 1]
+        first = np.full(N[0], N[-1])                                                 # [N[0]]
+        np.minimum.at(first, simplices.reshape(-1), np.repeat(np.arange(N[-1]), simplices.shape[-1]))
         return first
 
     @cached_property
     def spanning_tree(self) -> tuple[np.ndarray, np.ndarray]:
-        """Every vertex but the first `[V - 1]`, and the edge joining each to its parent `[V - 1]`, in a
-        breadth-first tree from the first vertex."""
+        """A breadth-first spanning tree rooted at vertex `0` pairs each remaining vertex with the
+        edge from its parent, giving a loop-free path for integrating edge differences into vertex
+        potentials."""
         from scipy.sparse import coo_matrix
         from scipy.sparse.csgraph import breadth_first_order
-        edges = self.elements[1]                                                 # [E, 2]
-        graph = coo_matrix((np.ones(len(edges)), (edges[:, 0], edges[:, 1])), shape=(self.n_vertices,) * 2)
+        N = self.n_elements
+        edges = self.elements[1]                                                     # [N[1], 2]
+        graph = coo_matrix((np.ones(N[1]), (edges[:, 0], edges[:, 1])), shape=(N[0],) * 2)
         order, parents = breadth_first_order(graph.tocsr(), 0, directed=False)
         children = order[1:]
         low, high = np.minimum(children, parents[children]), np.maximum(children, parents[children])
-        return children, np.searchsorted(edges[:, 0] * self.n_vertices + edges[:, 1], low * self.n_vertices + high)
+        return children, np.searchsorted(edges[:, 0] * N[0] + edges[:, 1], low * N[0] + high)
 
     def circulation(self, loops: list[np.ndarray]) -> Sparse:
-        """`numbers[F + L <- E]`: the circulation of edge values around each face, counter-clockwise, the signed
-        face-edge incidence, then around each given closed loop of vertices `[steps]`, in its own order."""
-        lengths = np.array(list(map(len, loops)), dtype=int)                      # [loops]
-        tails = np.concatenate(loops + [np.zeros(0, dtype=int)])                  # [steps]
-        # Each step's head: the next vertex of its loop, the first again after the last.
-        firsts = np.repeat(np.cumsum(lengths) - lengths, lengths)                 # [steps]
+        """Edge values sum around every triangle in its winding order, followed by each closed
+        vertex sequence in `loops`."""
+        V, E, F = self.n_elements
+        n_loops = len(loops)
+        lengths = np.array(list(map(len, loops)), dtype=int)                         # [n_loops]
+        tails = np.concatenate(loops + [np.zeros(0, dtype=int)])
+        # Advance each loop vertex cyclically to the next vertex in its own loop.
+        firsts = np.repeat(np.cumsum(lengths) - lengths, lengths)
         heads = tails[firsts + (np.arange(len(tails)) - firsts + 1) % np.repeat(lengths, lengths)]
-        edges, n_faces = self.elements[1], self.n_elements[2]                   # [E, 2]
-        keys = edges[:, 0] * self.n_vertices + edges[:, 1]                       # [E], sorted
+        edges = self.elements[1]                                                     # [E, 2]
+        keys = edges[:, 0] * V + edges[:, 1]                                         # [E]
         low, high = np.minimum(tails, heads), np.maximum(tails, heads)
-        rows = np.concatenate([np.repeat(np.arange(n_faces), 3), n_faces + np.repeat(np.arange(len(loops)), lengths)])
-        columns = np.concatenate([self.boundary_indices[1].reshape(-1), np.searchsorted(keys, low * self.n_vertices + high)])
+        rows = np.concatenate([np.repeat(np.arange(F), 3), F + np.repeat(np.arange(n_loops), lengths)])
+        columns = np.concatenate([self.boundary_indices[1].reshape(-1), np.searchsorted(keys, low * V + high)])
         signs = np.concatenate([self.orientation[1].reshape(-1), np.where(tails < heads, 1.0, -1.0)])
-        return Sparse.from_indices(signs, rows, columns, (n_faces + len(loops), len(edges)))
+        return Sparse.from_indices(signs, rows, columns, (F + n_loops, E))
 
     def _facet_sides(self, per_facet: np.ndarray) -> np.ndarray:
-        """`[interior facets, 2]`: a value per facet of each top simplex `[N, n_dim + 1]`, in the order of
-        `boundary_indices[-1]`, gathered onto the facet, first where the simplex runs it along its stored order and then
-        where it runs it against."""
+        N = self.n_elements
         top = self.n_dim - 1
-        facets, along = self.boundary_indices[top], self.orientation[top] > 0   # [N, n_dim + 1], [N, n_dim + 1]
-        first, second = np.empty((2, self.n_elements[top]), dtype=per_facet.dtype)
+        facets, along = self.boundary_indices[top], self.orientation[top] > 0        # [N[-1], n_dim + 1], [N[-1], n_dim + 1]
+        first, second = np.empty((2, N[-2]), dtype=per_facet.dtype)
         first[facets[along]], second[facets[~along]] = per_facet[along], per_facet[~along]
         return np.stack([first, second], axis=-1)[self.interior[top]]
 
 
 class DualTopology:
-    """The dual of a simplicial topology: a k-cell for each (n_dim - k)-simplex, so that its counts run the other way
-    and its derivatives are the primal's adjugates, `dual.d[k] = topology.d[n_dim - 1 - k].adjugate()`. A dual vertex stands for
-    each top simplex, a dual edge crosses each facet, and so on up to a dual top cell around each vertex, each numbered
-    as the simplex it stands for. Its derivatives follow each other to nothing, as the primal's do; a dual edge across
-    a border facet has one end, the simplex the facet bounds, and the dual is closed only where the primal is.
-
-    The dual holds operators alone: no positions, and no simplices, since its cells above the edges are not simplices.
-    Where its vertices lie is geometry, the example's to say."""
+    """Dual grade `k` corresponds to primal codimension `k`, so dual coboundaries are the adjugates
+    of the complementary primal coboundaries (`dual.d[k] == primal.d[n_dim - 1 - k].adjugate()`).
+    Dual elements above edges are general polytopes rather than simplices, so `DualTopology` carries
+    operators without vertex tables."""
 
     def __init__(self, primal: Topology) -> None:
         self.primal, self.n_dim = primal, primal.n_dim
@@ -606,49 +558,55 @@ class DualTopology:
 
     @cached_property
     def d(self) -> tuple[Sparse, ...]:
-        """`d[k]`, `numbers[dual (k + 1)-cells <- dual k-cells]`: the dual exterior derivative, the primal's adjugate,
-        `topology.d[n_dim - 1 - k].adjugate()`."""
+        """The dual discrete exterior derivative sums dual `k`-quantities around the boundary of
+        each dual `(k + 1)`-element (`dual.d[k] == primal.d[n_dim - 1 - k].adjugate()`), so
+        `dual.d[0]` takes differences across dual edges and `dual.d[-1]` accumulates net flux out of
+        each primal vertex's dual cell."""
         return tuple(derivative.adjugate() for derivative in self.primal.d[::-1])
 
     @cached_property
     def incidence(self) -> ByDimensions:
-        """`incidence[1, 0]`, `[2] numbers[dual edges <- dual vertices]`: the two ends of each dual edge, its tail and
-        its head, where `d[0]` reads it -1 and +1, so that their difference is `d[0]`: the simplices that run the facet
-        against and along its stored order. A dual edge across a border facet has its head or its tail alone. The
-        dual's cells above its edges have no fixed count of faces, so the edges' ends are all its incidence holds."""
+        """At `[1, 0]`, each dual edge selects its tail and head dual vertices (leaving one end
+        empty on border facets); higher dual polytopes have variable face counts and use `d`
+        instead."""
+        N = self.primal.n_elements
+
         def ends(n: int, m: int) -> Sparse:
             if (n, m) != (1, 0):
                 raise ValueError(f"the dual holds the ends of its edges alone, not its {n}-cells' {m}-cells")
-            facets, signs = self.primal.boundary_indices[-1], self.primal.orientation[-1]   # [N, n_dim + 1], [N, n_dim + 1]
-            owners = np.broadcast_to(np.arange(len(facets))[:, None], facets.shape)        # [N, n_dim + 1]
-            # Each top simplex is the tail of the dual edges across the facets it runs against, the head of the others.
-            cells = np.stack([signs < 0, signs > 0]).astype(float).reshape(2, -1)      # [2, N (n_dim + 1)]
-            return Sparse.from_indices(cells, facets.ravel(), owners.ravel(), (self.n_elements[1], self.n_elements[0]))
+            facets, signs = self.primal.boundary_indices[-1], self.primal.orientation[-1]   # [N[-1], n_dim + 1], [N[-1], n_dim + 1]
+            owners = np.broadcast_to(np.arange(N[-1])[:, None], facets.shape)               # [N[-1], n_dim + 1]
+            # A primal top simplex is the tail of dual edges where its facet sign is -1 and the head where +1.
+            entries = np.stack([signs < 0, signs > 0]).astype(float).reshape(2, -1)         # [2, N[-1] * (n_dim + 1)]
+            return Sparse.from_indices(entries, facets.ravel(), owners.ravel(), (self.n_elements[1], self.n_elements[0]))
         return ByDimensions(self.n_dim, ends)
 
-    def reading(self, indices: np.ndarray, k: int) -> Sparse:
-        """`numbers[..., n <- dual k-cells]`: the map reading a field on the dual k-cells at each of the given ones
-        `[..., n]`; on the dual edges across the interior facets, `topology.dual.reading(topology.interior[-2], 1)`."""
-        return Sparse.selection(indices, self.n_elements[k])
+    def reading(self, indices: np.ndarray, dimension: int) -> Sparse:
+        """Selecting a field on dual elements of `dimension` at `indices` pairs with `.adjugate()`
+        to scatter values back onto the dual complex."""
+        N = self.n_elements
+        return Sparse.selection(indices, N[dimension])
 
 
 class SubdividedTopology(Topology):
-    """The finer topology of one Loop step of a coarser one, every face split in four. It holds the coarser topology, the
-    map from the coarser topology's vertices to its own, `from_coarser`, and its pinned vertices, the coarser one's pinned
-    vertices followed by the free vertices of its edges, so that it can be subdivided again."""
+    """A Loop-refined surface topology retains the coarse-to-fine operator chain so multi-step
+    subdivision maps compose."""
 
-    def __init__(self, coarser: Topology, pinned: np.ndarray) -> None:
+    def __init__(self, coarser: Topology, is_pinned: np.ndarray) -> None:
+        V, E, F = coarser.n_elements
         self.coarser = coarser
-        self.from_coarser = coarser.loop(pinned)                                  # numbers[V + E <- V]
-        self.pinned = np.concatenate([pinned, np.zeros(coarser.n_elements[1], dtype=bool)])   # [V + E]
-        super().__init__(self.from_coarser.shape[0], coarser.split_faces)
+        self.from_coarser = coarser.loop(is_pinned)                                  # [V + E, V]
+        self.pinned = np.concatenate([is_pinned, np.zeros(E, dtype=bool)])           # [V + E]
+        super().__init__(V + E, coarser.split_faces)
 
     @property
     def steps(self) -> tuple[Sparse, ...]:
-        """The Loop steps from the first topology to this one, coarsest first."""
+        """Each entry refines vertex fields across one Loop subdivision level from the coarsest
+        topology to `self`."""
         return self.coarser.steps + (self.from_coarser,)
 
     @cached_property
     def subdivision(self) -> Sparse:
-        """The map from the first topology's vertices to this one's: its Loop steps composed, the finest acting last."""
+        """Composing `.steps` maps vertex fields on the coarsest topology directly to this refined
+        surface."""
         return reduce(mul, reversed(self.steps))

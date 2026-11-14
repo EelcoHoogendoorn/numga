@@ -7,7 +7,7 @@ import numpy as np
 from numga import NumpyContext, concatenate
 from numga.algebras import STA as ga
 from numga.sparse import Sparse, spdiag
-from numga.topology import Topology, turned
+from numga.topology import Topology, reverse_orientation
 
 ctx = NumpyContext(ga)
 mv = ctx.multivector
@@ -39,7 +39,7 @@ def solid_torus(major_radius: float, minor_radius: float, n_major: int, n_minor:
     # tail of its edge, and the steps' edges run alternately backwards, so that the prisms are cut from alternate ends
     # and the solid is its own mirror image.
     around = Topology.loops([n_major]).elements[1]                          # [major, 2]
-    alternating = Topology(n_major, np.where(np.arange(n_major)[:, None] % 2 == 0, around, turned(around)))
+    alternating = Topology(n_major, np.where(np.arange(n_major)[:, None] % 2 == 0, around, reverse_orientation(around)))
     topology = Topology.rings(1, n_minor).product(alternating)
     raw_tets = topology.elements[-1]
     # Each tetrahedron's three edges from its first corner, joined, span six times its signed volume; where that

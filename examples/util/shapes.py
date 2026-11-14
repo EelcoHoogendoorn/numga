@@ -28,7 +28,7 @@ import numpy as np
 
 from numga import Algebra, NumpyContext, concatenate
 from numga.extensor import Extensor
-from numga.topology import Topology, coherent, turned
+from numga.topology import Topology, orient_coherently, reverse_orientation
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -64,7 +64,7 @@ def outward(simplices: np.ndarray, coordinates: np.ndarray) -> Topology:
     """The topology of top simplices `[N, n + 1]` filling the space of their vertices at the coordinates `[V, n]`, each
     wound to positive volume: its edges from its first corner a right-handed frame, counter-clockwise in the plane."""
     edges = coordinates[simplices[:, 1:]] - coordinates[simplices[:, :1]]       # [N, n, n]
-    return Topology(len(coordinates), np.where((np.linalg.det(edges) > 0)[:, None], simplices, turned(simplices)))
+    return Topology(len(coordinates), np.where((np.linalg.det(edges) > 0)[:, None], simplices, reverse_orientation(simplices)))
 
 
 # --- meshing --------------------------------------------------------------------------
@@ -80,10 +80,10 @@ def closed(simplices: np.ndarray, coordinates: np.ndarray) -> tuple[Topology, np
     """A closed surface of the top simplices `[N, k + 1]` on vertices at the coordinates `[V, k + 1]`, whatever sense
     the simplices come in, wound coherently and to face out, so that the volume it encloses is positive. Its topology
     and the coordinates."""
-    wound = coherent(simplices)
+    wound = orient_coherently(simplices)
     # The enclosed volume: the cone each simplex spans from the origin, its corners' determinant, summed.
     volume = np.linalg.det(coordinates[wound]).sum()
-    return Topology(len(coordinates), np.where(volume < 0, turned(wound), wound)), coordinates
+    return Topology(len(coordinates), np.where(volume < 0, reverse_orientation(wound), wound)), coordinates
 
 
 def convex_boundary(coordinates: np.ndarray) -> tuple[Topology, np.ndarray]:
