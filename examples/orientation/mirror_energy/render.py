@@ -1,6 +1,5 @@
-"""A mass distribution and its mirror, with tangent velocities on the unit sphere, drawn on the GPU: the sphere
-translucent with three great circles inked on it, each mass's path a faint stroke, the masses as balls joined into
-their shape, and their velocities as arrows."""
+"""GPU rendering draws a spherical mass distribution and its mirror image on translucent unit spheres with great
+circles, closed orbital paths, connecting rods, and tangent velocity arrows."""
 
 from __future__ import annotations
 
@@ -19,12 +18,8 @@ from examples.util.panels import image_figure
 
 mass_colours = np.array([to_rgb(colour) for colour in ("#df7246", "#238c9b", "#7662a1")])
 sphere_colour, circle_colour, shape_colour = (np.array(to_rgb(colour)) for colour in ("#e6ebf0", "#aab4bf", "#75808a"))
-# The view, elevation and azimuth in radians, azimuth zero looking along +y, within the mirror plane x, so that the
-# reflection shows as the picture flipped left for right; its margin as a share of its larger
-# side, and the pixels across each case; how much of what lies behind them the sphere's surfaces and the paths hide;
-# in pixels, the widths of the great circles and the paths, the radius of the shape's edges, a unit mass's radius,
-# and the arrows' width with the length of the strokes of the chevrons at their tips; and the drawn length of a unit
-# velocity.
+# Viewing angles in radians (azimuth zero looks along +y within the mirror plane x = 0 so reflection flips left-right),
+# panel margin, per-case pixel size, opacities, stroke/rod/ball sizes in pixels, and velocity arrow scale.
 elevation, azimuth = np.radians([23.0, 0.0])
 margin, n_pixels = 0.04, 300
 sphere_opacity, path_opacity = 0.12, 0.8
@@ -35,62 +30,60 @@ velocity_length = 0.35
 
 # --- plumbing -------------------------------------------------------------------------
 def scenes(paths: solids.Point) -> list[Scene]:
-    """Each case's unit sphere with its great circles, and the paths of its masses `[times, cases, masses]`, closed,
-    as faint strokes, set up once for the masses to be drawn among, all in one view."""
-    corners = np.stack(np.meshgrid(*[[-1.0, 1.0]] * 3, indexing="ij"), axis=-1).reshape(-1, 3)
+    """Static GPU scenes for each case (`[n_frames, n_cases, n_masses] Point-`) hold the translucent unit sphere, three
+    great circles, and closed orbital path tubes."""
+    n_frames, n_cases, n_masses = paths.shape
+    corners = np.stack(np.meshgrid(*[[-1, 1]] * 3, indexing="ij"), axis=-1).reshape(-1, 3)
     view = solids.view([solids.mv.point(corners)], 0.0, elevation, azimuth, margin, n_pixels)
     sphere = solids.ball(solids.origin, 1.0)[None, None]
-    # The great circles where the planes x, y and z through the centre cut the sphere, the first translucent part,
-    # after the shape and each mass's ball.
-    circles = solids.Ink(paths.shape[2] + 1, solids.half_space(solids.axes), solids.everywhere[None],
+    # Coordinate planes cut three great circles on the translucent sphere behind the rods and mass balls.
+    circles = solids.Ink(n_masses + 1, solids.half_space(solids.axes), solids.everywhere[None],
                          circle_colour, circle_width, 1.0)
-    # Each mass's closed path a loop of edges, each edge in its mass's colour.
-    n_times, n_masses = len(paths), paths.shape[2]
-    path_loops = Topology.loops([n_times] * n_masses)
-    path_colours = np.repeat(mass_colours, n_times, axis=0)                                 # [edges, 3]
+    path_loops = Topology.loops([n_frames] * n_masses)
+    path_colours = np.repeat(mass_colours, n_frames, axis=0)                    # [n_masses * n_frames, 3]
     return [Scene(view, np.ones(3), [],
                   [(simplices.tubes(concatenate([paths[:, case, mass] for mass in range(n_masses)]), path_loops,
                                     path_colours, path_width, view, gloss=solids.gloss), path_opacity)],
                   inks=[circles], translucent=[(sphere, sphere_colour, sphere_opacity)])
-            for case in range(paths.shape[1])]
+            for case in range(n_cases)]
 
 
 def case_image(scene: Scene, places: solids.Point, velocities: solids.Point, masses: np.ndarray) -> np.ndarray:
-    """One case at one moment: the masses at their places `[masses]`, joined into their shape, with their
-    velocities `[masses]`, among the scene's sphere and paths."""
+    """Renders one case at one instant (`[n_masses] Point-`), drawing the mass balls, connecting rods, and tangent
+    velocity arrows inside `scene`."""
     view = scene.view
-    # Joining the masses makes the reflected shape visible throughout the turn.
-    tails, heads = (Topology.loops([len(places)]).incidence[1, 0] * places.field()).batch()   # [masses] Point-, Point-
-    shape = solids.rods(tails, heads, shape_radius * view.pixel)
-    # Each mass a ball whose area goes with its mass.
-    balls = [solids.ball(places[mass:mass + 1], mass_radius * np.sqrt(masses[mass]) * view.pixel)
-             for mass in range(len(places))]
-    # Each velocity an arrow, a tube ending in a chevron.
-    tips = places + velocity_length * velocities                                # [masses] Point-
     n_masses = len(places)
+    # Connecting rods between consecutive masses make the reflected handedness visible throughout the turn.
+    next_places = places[(np.arange(n_masses) + 1) % n_masses]                  # [n_masses] Point-
+    shape_rods = solids.rods(places, next_places, shape_radius * view.pixel)
+    # Each mass is drawn as a ball whose projected area scales with its mass.
+    balls = [solids.ball(places[mass:mass + 1], mass_radius * np.sqrt(masses[mass]) * view.pixel)
+             for mass in range(n_masses)]
+    tips = places + velocity_length * velocities                                # [n_masses] Point-
     arrows = simplices.tubes(stack((places, tips), axis=-1).reshape(-1), Topology.chains([2] * n_masses),
                              mass_colours, arrow_width, view, gloss=solids.gloss, chevrons=np.ones(n_masses),
                              chevron=chevron_length)
-    parts = [(shape, shape_colour)] + [(ball[:, None], colour) for ball, colour in zip(balls, mass_colours)]
-    return scene.draw(parts, inks=[], translucent=[], meshes=[(arrows, 1.0)])
+    parts = [(shape_rods, shape_colour)] + [(ball[:, None], colour) for ball, colour in zip(balls, mass_colours)]
+    return scene.draw(parts, [], [], [(arrows, 1.0)])
 
 
 def frames(positions: Point, velocities: Point, masses: np.ndarray, moments: range) -> Iterator[np.ndarray]:
-    """The motion and its mirror side by side, at each of the moments."""
-    # The projective embedding of the masses' positions and of their velocities, directions at infinity.
-    places = solids.origin + solids.context.include_from_algebra(positions)    # [times, cases, masses] Point-
-    reaches = solids.context.include_from_algebra(velocities)                  # [times, cases, masses] Point-
-    cases = scenes(places)
+    """Yields side-by-side RGB frames of the body and its mirror image (`[n_frames, n_cases, n_masses] Point-`) at
+    `moments`."""
+    # Embed the spherical positions at unit weight and the tangent velocities as ideal directions in PGA3D.
+    places = solids.origin + solids.context.include_from_algebra(positions)     # [...] Point-
+    reaches = solids.context.include_from_algebra(velocities)                   # [...] Point-
+    case_scenes = scenes(places)
     for time in moments:
         yield np.concatenate([case_image(scene, places[time, case], reaches[time, case], masses)
-                              for case, scene in enumerate(cases)], axis=1)
+                              for case, scene in enumerate(case_scenes)], axis=1)
 
 
-def draw_motion(positions: Point, velocities: Point, masses: np.ndarray) -> plt.Figure:
-    """The motion and its mirror at the first moment."""
+def motion_figure(positions: Point, velocities: Point, masses: np.ndarray) -> plt.Figure:
+    """Renders the initial still figure of the turning masses and their mirror image."""
     return image_figure(next(frames(positions, velocities, masses, range(1))))
 
 
-def animate_motion(positions: Point, velocities: Point, masses: np.ndarray) -> Iterator[np.ndarray]:
-    """The motion and its mirror at every moment."""
+def motion_animation(positions: Point, velocities: Point, masses: np.ndarray) -> Iterator[np.ndarray]:
+    """Yields RGB frames across every sampled instant of the spherical motion and its mirror image."""
     return frames(positions, velocities, masses, range(positions.shape[0]))

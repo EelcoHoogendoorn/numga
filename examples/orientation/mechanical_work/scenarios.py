@@ -1,4 +1,4 @@
-"""A tangential push drives a crank beside its reflected counterpart."""
+"""A tangential force drives a turning crank beside its mirror reflection."""
 
 from __future__ import annotations
 
@@ -8,14 +8,15 @@ from numga import stack
 from examples.orientation.mechanical_work import core
 from examples.orientation.mechanical_work.core import Point, Scalar, mv
 
-# The frame drawn as the still figure.
+# Frame index rendered as the static preview figure.
 still_frame = 8
-# The duration of each animation frame in milliseconds.
+# Duration of each animation frame in milliseconds.
 duration_ms = 40
 
 
 def mirrored_cranks() -> tuple[Point, Point, Point, Point, Scalar]:
-    """Two reflected cranks turn with the same positive mechanical power."""
+    """A crank driven by a tangential force and its reflection across the plane `x = 0` turn over `72` steps with equal
+    mechanical power (`[72, 2] Scalar+`)."""
     separation = 1.65
     radius = 0.9
     speed = 1
@@ -24,26 +25,38 @@ def mirrored_cranks() -> tuple[Point, Point, Point, Point, Scalar]:
     times = np.linspace(0, 2 * np.pi / speed, n_steps, endpoint=False)
     mirror = mv.x                                                               # [] Plane+
     pivot = mv.point([-separation, 0])                                          # [] Point-
-    handle = mv.point([-separation + radius, 0])                                # [] Point-
-    force = mv.direction([0, force_strength])                                   # [] Direction-
-    # These two planes meet at the pivot and generate its rotation.
+    initial_handle = mv.point([-separation + radius, 0])                        # [] Point-
+    initial_force = mv.direction([0, force_strength])                           # [] Point-
+    # Two orthogonal planes through the pivot meet along its rotation axis.
     rate = ((mv.x + separation * mv.w) ^ mv.y) * speed                          # [] Rate+
 
-    pivots = stack([pivot, mirror >> pivot])                                    # [cranks] Point-
-    handles = stack([handle, mirror >> handle])                                 # [cranks] Point-
-    forces = stack([force, mirror >> force])                                    # [cranks] Direction-
-    rates = stack([rate, mirror >> rate])                                       # [cranks] Rate+
-    return pivots, *core.turn(handles, forces, rates, times)
+    pivots = stack([pivot, mirror >> pivot])                                    # [2] Point-
+    initial_handles = stack([initial_handle, mirror >> initial_handle])         # [2] Point-
+    initial_forces = stack([initial_force, mirror >> initial_force])            # [2] Point-
+    rates = stack([rate, mirror >> rate])                                       # [2] Rate+
+    return pivots, *core.crank_motion(initial_handles, initial_forces, rates, times)
 
 
 def main() -> None:
+    import matplotlib.pyplot as plt
     from examples.util.animation import save_animation, save_figure
     from examples.orientation.mechanical_work import render
 
     pivots, handles, velocities, forces, powers = mirrored_cranks()
-    save_figure(render.draw_work(pivots, handles[still_frame], velocities[still_frame], forces[still_frame], handles),
-                "mechanical_work")
-    save_animation(render.animate(pivots, handles, velocities, forces), "mechanical_work", duration_ms)
+    figure = render.work_figure(pivots, handles[still_frame], velocities[still_frame], forces[still_frame], handles)
+    save_figure(figure, "mechanical_work")
+    plt.close(figure)
+    save_animation(render.work_animation(pivots, handles, velocities, forces), "mechanical_work", duration_ms)
+
+    # checks
+    mirror = mv.x                                                               # [] Plane+
+    forques = handles & forces                                                  # [72, 2] Forque-
+    forque_difference = forques[:, 1] - (mirror >> forques[:, 0])               # [72] Forque-
+    assert (forque_difference.norm() + forque_difference.antinorm() < 1e-12).all()
+    assert ((velocities[:, 1] - (mirror >> velocities[:, 0])).antinorm() < 1e-12).all()
+    assert ((powers[:, 0] - powers[:, 1]).abs() < 1e-12).all()
+    assert (((mirror >> powers[:, 0]) - powers[:, 1]).abs() < 1e-12).all()
+    assert (powers > 0).all()
 
 
 if __name__ == "__main__":

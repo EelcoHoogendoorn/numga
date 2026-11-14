@@ -1,4 +1,4 @@
-"""The Wu experiment, its mirror image, and the mirrored apparatus as nature runs it."""
+"""Polarized cobalt-60 beta-emission scenarios compare the Wu apparatus, its mirror image, and the mirrored coil."""
 
 from __future__ import annotations
 
@@ -6,44 +6,31 @@ import numpy as np
 
 from numga import stack
 from examples.orientation.wu_experiment import core
-from examples.orientation.wu_experiment.core import Direction, Mirror, Scalar, Spin, mv
+from examples.orientation.wu_experiment.core import Asymmetry, Direction, Plane, Scalar, Spin, mv
 
-# The decay's asymmetry: minus one for cobalt-60, times the electrons' speed over light's, taken as 0.6.
+# Effective beta-decay asymmetry `-v/c` for cobalt-60 (`A = -1` with electron speed `v/c = 0.6`).
 decay_asymmetry = -0.6
-# The directions all the way around the plane holding the spin's axis.
+# Angular sample count around the vertical plane containing the coil axis.
 n_directions = 180
 
 
 # --- math -----------------------------------------------------------------------------
-def experiment() -> tuple[Spin, Direction, Scalar, core.Asymmetry, Mirror]:
-    """The emission around the apparatus `[cases, directions]`, the coil's spin for each case, and the
-    directions: the apparatus; its mirror image, coil and emission alike; and the mirrored apparatus
-    under the decay law as it is. Also the decay's asymmetry and the mirror.
-
-    The current circulates counterclockwise seen from above, and the electrons leave mostly downward,
-    against the spin. In the mirror, held upright beside the apparatus, the current circulates the other
-    way and the electrons still leave mostly downward: in the mirror image they leave along the spin.
-    Built for real, the mirrored apparatus sends them upward, against its spin, as the original does.
-    """
-    # Measured against the lab's handedness, the basis volume x ^ y ^ z.
-    asymmetry = mv(core.Asymmetry, [decay_asymmetry])                             # [] Asymmetry-
-    # The patch the coil's current circulates around, counterclockwise seen from above.
+def wu_comparison() -> tuple[Spin, Direction, Scalar, Asymmetry, Plane]:
+    """Evaluating cobalt-60 beta emission around `n_directions` meridian directions for the original
+    coil, its mirror image across `x = 0`, and the physically mirrored coil yields `[3] Spin-`,
+    `[n_directions] Direction-`, `[3, n_directions] Scalar+`, `[] Asymmetry-`, and `[] Plane+`."""
+    # Chiral weak-decay constant measured against the basis volume orientation.
+    asymmetry = mv(Asymmetry, [decay_asymmetry])                                  # [] Asymmetry-
+    # Horizontal circulation patch of a coil wound counterclockwise as viewed from above.
     spin = mv.xy.dual()                                                           # [] Spin-
-    # The plane x = 0, holding the coil's axis.
-    mirror = mv.x                                                                 # [] Mirror+
+    # Vertical mirror plane `x = 0` containing the coil symmetry axis.
+    mirror = mv.x                                                                 # [] Plane+
     angles = np.linspace(0, 2 * np.pi, n_directions, endpoint=False)
-    # Directions turned from z toward x, around the plane that holds the spin's axis.
-    directions = (mv.zx * (-angles / 2)).exp() >> mv.z.dual()                     # [directions] Direction-
+    meridian_rotors = (mv.zx * (-angles / 2)).exp()                               # [n_directions] Rotor+
+    directions = meridian_rotors >> mv.z.dual()                                   # [n_directions] Direction-
 
-    # The rate along each direction departs from that of unpolarized nuclei by the asymmetry times the spin's
-    # pairing with the direction.
-    original = 1 + asymmetry * (spin & directions)                                # [directions] Scalar+
-    # The mirror image: what the mirror shows along each direction is what the apparatus sends along its image.
-    image = 1 + asymmetry * (spin & (mirror >> directions))                       # [directions] Scalar+
-    # The mirrored apparatus, built for real: its coil is the mirror image, the decay law the same.
-    built = 1 + asymmetry * ((mirror >> spin) & directions)                       # [directions] Scalar+
-    spins = stack([spin, mirror >> spin, mirror >> spin])                         # [cases] Spin-
-    return spins, directions, stack([original, image, built]), asymmetry, mirror
+    spins, rates = core.parity_cases(spin, directions, asymmetry, mirror)         # [3] Spin-, [3, n_directions] Scalar+
+    return spins, directions, rates, asymmetry, mirror
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -51,22 +38,22 @@ def main() -> None:
     from examples.util.animation import save_figure
     from examples.orientation.wu_experiment import render
 
-    spins, directions, rates, asymmetry, mirror = experiment()
-    save_figure(render.draw_experiment(spins, directions, rates), "wu_experiment")
+    spins, directions, rates, asymmetry, mirror = wu_comparison()
+    save_figure(render.experiment_figure(spins, directions, rates), "wu_experiment")
 
     # checks
-    spin = spins[0]
-    _, image, built = rates
-    # With the asymmetry mirrored along, the mirrored apparatus would give the mirror image.
-    mirrored_law_rates = 1 + (mirror >> asymmetry) * ((mirror >> spin) & directions)  # [directions] Scalar+
-    np.testing.assert_allclose((mirrored_law_rates - image).to_array(), 0, atol=1e-12)
-    # As it is, the mirrored apparatus sends electrons where the mirror image does not.
-    np.testing.assert_allclose((built + image - 2).to_array(), 0, atol=1e-12)
-    # The original sends them mostly against its spin, downward; the mirrored apparatus upward.
-    down_and_up = stack([-mv.z.dual(), mv.z.dual()])                              # [2] Direction-
-    original_down, original_up = (1 + asymmetry * (spin & down_and_up)).to_array()
-    built_down, built_up = (1 + asymmetry * ((mirror >> spin) & down_and_up)).to_array()
-    assert original_down > original_up and built_up > built_down
+    spin = spins[0]                                                               # [] Spin-
+    _, mirror_image_rates, mirrored_apparatus_rates = rates                       # [n_directions] Scalar+
+    # Hypothetically reflecting the weak constant alongside the coil would reproduce the optical mirror image.
+    mirrored_law_rates = core.emission_rates(mirror >> spin, directions, mirror >> asymmetry)  # [n_directions] Scalar+
+    assert ((mirrored_law_rates - mirror_image_rates).abs() < 1e-12).all()
+    # Keeping the physical weak constant makes the mirrored coil emit into the opposite hemisphere from the mirror image.
+    assert ((mirrored_apparatus_rates + mirror_image_rates - 2).abs() < 1e-12).all()
+    # Both real coils emit preferentially against their own nuclear spin (downward for the original, upward for the mirrored coil).
+    vertical_directions = stack([-mv.z.dual(), mv.z.dual()])                      # [2] Direction-
+    original_down, original_up = core.emission_rates(spin, vertical_directions, asymmetry)
+    mirrored_down, mirrored_up = core.emission_rates(mirror >> spin, vertical_directions, asymmetry)
+    assert bool(original_down > original_up) and bool(mirrored_up > mirrored_down)
 
 
 if __name__ == "__main__":

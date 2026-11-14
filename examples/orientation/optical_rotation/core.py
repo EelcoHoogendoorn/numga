@@ -1,16 +1,6 @@
-"""Light's polarization turned by an optically active medium and by a magnetic field, out and back.
+"""Round-trip polarization rotation separates natural optical activity in a chiral medium from the Faraday effect in a magnetic field.
 
-Light travels along a unit direction in spacetime, an antivector, intrinsic like all geometry. Its electric
-field is a bivector of spacetime, extrinsic: the field along its polarization, `field_along(polarization)`,
-the dual of the plane the polarization sweeps through time. A polarizer reads the field by pairing it with
-the plane its axis sweeps, `field & (axis & time)`. An optically active medium, such as quartz or a sugar
-solution, turns the field across the path by its rotary power per distance, in the plane the light sweeps
-through time, `direction & time`. The turn takes its sense from the direction of travel, so the rotary power
-is an intrinsic scalar: the mirror image of the medium turns light the other way. A magnetic field, a plane
-of space, turns the light too, the Faraday effect, by the Verdet constant per distance and field, in
-proportion to the field's flux through the beam's cross-section, `magnetic_field & cross_section`, the patch
-the two directions across the path span; the flux and the cross-section are the same whichever way the light
-goes.
+Spacetime geometric algebra models the propagation direction and polarizer axis as intrinsic antivectors, while electric and magnetic fields are extrinsic bivectors. Pairing the electric field with the spacetime plane swept out by a polarizer axis, `field & (axis & time)`, reads the transmitted amplitude. An optically active medium turns the polarization in the spacetime plane `direction & time` swept out by the propagation direction, scaled by an intrinsic rotary power whose sense reverses under reflection, so the return trip unwinds the outgoing turn. A magnetic field turns the polarization in proportion to the magnetic flux `magnetic_field & cross_section` through the beam cross-section, accumulating the same turn on both legs.
 """
 
 from __future__ import annotations
@@ -23,42 +13,46 @@ from numga.algebras import STA
 ga = STA
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                       # Scalar+
-# Directions, of travel and of a polarizer's axis, are antivectors, intrinsic.
+# Propagation directions and polarizer axes are intrinsic spacetime antivectors.
 Direction = ga.gatype.antivector()                                                # Antivector-
-# Electric and magnetic fields alike are bivectors, extrinsic.
+# Mirror planes are extrinsic vectors.
+Plane = ga.gatype.vector()                                                        # Vector+
+# Electric fields, magnetic fields, and spatial turn rates are extrinsic bivectors.
 Field = ga.gatype.bivector()                                                      # Bivector+
 TurnRate = ga.gatype.bivector()                                                   # Bivector+
-# The beam's cross-section: the patch two directions across the path span, intrinsic.
+# The beam cross-section is the intrinsic patch spanned by two transverse directions.
 CrossSection = ga.gatype.antibivector()                                           # Antibivector-
-# A turn per distance with a sense of its own: measured against a handedness.
-RotaryPower = ga.gatype.antipseudoscalar()                                   # Antipseudoscalar-
+# Chiral rotary power per unit path length is an intrinsic scalar.
+RotaryPower = ga.gatype.antipseudoscalar()                                        # Antipseudoscalar-
 
-# The direction of time of an observer at rest with the media, which pairs to one with `mv.t`; the dual
-# carries the minus of t's square.
+# Unit timelike direction of the medium rest frame, pairing to +1 with the time 1-form; `-` compensates `t^2 = -1`.
 time = -mv.t.dual()                                                               # [] Direction-
-# The field along a direction, the dual of the plane the direction sweeps in time: the vacuum's
-# identification of a direction with the field along it, pairing to one with that plane for a unit direction.
-field_along = (Direction & time).dual()                                           # [] Field+ <- Direction-
+# Unit electric field polarized along a spatial direction, dual to the spacetime plane swept out in time.
+polarization_field = (Direction & time).dual()                                    # [] Field+ <- Direction-
 
 
 # --- math -----------------------------------------------------------------------------
-def out_and_back(out_rate: TurnRate, back_rate: TurnRate, entering: Field, depths: np.ndarray) -> Field:
-    """The light's field at each depth on the way out, and on the way back after a reflection at the far
-    end, `[legs, depths]`: the light leaves the medium where it entered."""
-    out = (out_rate * (-depths / 2)).exp() >> entering                            # [depths] Field+
-    back = (back_rate * (-depths / 2)).exp() >> out[-1]                           # [depths] Field+
-    return stack([out, back])                                                     # [legs, depths] Field+
+def round_trip_fields(outgoing_rate: TurnRate, returning_rate: TurnRate, incident_field: Field,
+                      depths: np.ndarray) -> Field:
+    """Propagating `incident_field` over `depths` (`[n_depths]`) at `outgoing_rate` to a far-end reflector
+    and back at `returning_rate` traces the outgoing and returning electric fields (`[2, n_depths] Field+`)."""
+    outgoing_rotors = (outgoing_rate * (-depths / 2)).exp()                       # [n_depths] Rotor+
+    outgoing = outgoing_rotors >> incident_field                                  # [n_depths] Field+
+    returning_rotors = (returning_rate * (-depths / 2)).exp()                     # [n_depths] Rotor+
+    returning = returning_rotors >> outgoing[-1]                                  # [n_depths] Field+
+    return stack([outgoing, returning])                                           # [2, n_depths] Field+
 
 
-def through_media(direction: Direction, cross_section: CrossSection, rotary_power: RotaryPower,
-                  magnetic_field: Field, verdet: float, entering: Field, depths: np.ndarray) -> Field:
-    """Light out and back through an optically active medium and through a magnetic field,
-    `[media, legs, depths]`: the medium turns it by the direction it travels in, the field by the
-    cross-section it crosses, the same out and back."""
-    # The plane the light sweeps through time, an intrinsic bivector oriented by the travel, lies across the
-    # path as a turn; the rotary power's own sense makes the product extrinsic, a rate that exponentiates.
-    active = out_and_back((direction & time) * rotary_power, (-direction & time) * rotary_power, entering, depths)
-    # The magnetic field's flux through the cross-section, turning the light in the cross-section's plane.
-    faraday_rate = cross_section.dual_inverse() * (magnetic_field & cross_section) * verdet   # [] TurnRate+
-    faraday = out_and_back(faraday_rate, faraday_rate, entering, depths)
-    return stack([active, faraday])                                               # [media, legs, depths] Field+
+def media_round_trips(direction: Direction, cross_section: CrossSection, rotary_power: RotaryPower,
+                      magnetic_field: Field, verdet_constant: float, incident_field: Field,
+                      depths: np.ndarray) -> Field:
+    """Propagating `incident_field` out and back across `depths` (`[n_depths]`) through a chiral medium
+    and a Faraday rotator yields both media's outgoing and returning fields (`[2, 2, n_depths] Field+`)."""
+    # Multiplying the intrinsic travel-time plane by the intrinsic rotary power yields an extrinsic spatial turn rate.
+    outgoing_sweep, returning_sweep = direction & time, -direction & time         # [] Antibivector-, Antibivector-
+    chiral_legs = round_trip_fields(outgoing_sweep * rotary_power, returning_sweep * rotary_power,
+                                    incident_field, depths)                       # [2, n_depths] Field+
+    # Magnetic flux through the transverse cross-section drives the same spatial turn rate on both legs.
+    faraday_rate = cross_section.dual_inverse() * (magnetic_field & cross_section) * verdet_constant  # [] TurnRate+
+    faraday_legs = round_trip_fields(faraday_rate, faraday_rate, incident_field, depths)  # [2, n_depths] Field+
+    return stack([chiral_legs, faraday_legs])                                     # [2, 2, n_depths] Field+
