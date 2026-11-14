@@ -7,7 +7,7 @@ from numga import NumpyContext
 from numga.algebras import VGA3D, PGA2D
 from examples.fluids.projective_sphere_flow import scenarios
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 
 @pytest.mark.parametrize("ga", [VGA3D, PGA2D])

@@ -12,11 +12,11 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.shapes import delaunay
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import panel
+from numga.topology import Topology
+from numga.render import contours, drawing, simplices
+from examples.util.panels import overlay, panel
 from examples.fluids.kirchhoff import core
 
-Topology = simplices.Topology
 
 mv = core.mv
 # Curve colours for shifting along the symmetry axis, shifting across it, and turning it; lane colours for bodies, outlines, paths, and impulse lines.
@@ -97,14 +97,14 @@ def animate_gliding(impulse: core.Forque, body_outline: core.Point, nose: core.P
     camera = panel(ax, mv.x, mv.y, mv.w)
     impulses = simplices.strokes(impulse_segments, Topology.chains([2] * n_cases), rgb(impulse_colour), impulse_width,
                                  camera, dashes=impulse_dashes, cap=simplices.Cap.BUTT)
-    image = simplices.overlay(ax, [impulses])
+    image = overlay(ax, [impulses])
     for index in range(n_frames):
         path_ink = np.repeat([rgb(colour) for colour in path_colours], index, axis=0)
         bodies = [picture for case in range(n_cases) for picture in (
             contours.picture(lane_outlines[index, case], body_triangles, np.zeros(body_triangles.n_vertices),
                              rgb(body_colours[case]), camera),
             simplices.strokes(lane_outlines[index, case], rim, rgb(edge_colours[case]), outline_width, camera))]
-        image.set_data(simplices.composited([
+        image.set_data(drawing.composited([
             impulses,
             simplices.strokes(tracks[:, :index + 1].reshape(-1), Topology.chains([index + 1] * n_cases), path_ink,
                               path_width, camera),

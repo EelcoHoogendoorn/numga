@@ -9,7 +9,7 @@ import numpy as np
 
 from examples.thermodynamics.rubber_band import core
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = core.mv
 

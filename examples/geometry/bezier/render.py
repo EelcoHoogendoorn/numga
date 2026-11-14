@@ -9,7 +9,8 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack, where
 from examples.geometry.bezier import core
-from examples.util.wgsl import meshes, simplices, solids
+from numga.topology import Topology
+from numga.render import meshes, simplices, solids
 
 sm = solids.mv
 curve_colour = np.array(to_rgb("#287fa0"))
@@ -60,7 +61,7 @@ def draw_rays(controls: core.Point, curve: core.Point, complement: core.Point, s
     on_sphere_places = [solids.origin + solids.context.include_from_algebra(arc.normalized()) for arc in arcs]  # [samples] Point- each
     # Both curves, chains of edges one after the other, each edge in its curve's colour.
     lengths = [len(arc) for arc in arcs]
-    chains = simplices.Topology.chains(lengths)
+    chains = Topology.chains(lengths)
     edge_colours = np.repeat(colours, np.array(lengths) - 1, axis=0)          # [edges, 3]
     arc_strokes = simplices.tubes(concatenate(places), chains, edge_colours, line_width, view, gloss=solids.gloss)
     on_sphere = simplices.tubes(concatenate(on_sphere_places), chains, edge_colours, sphere_curve_width, view,

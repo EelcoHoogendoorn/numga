@@ -14,7 +14,10 @@ from numga import stack
 from examples.fluids.floating import core
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import image_figure, meshes, simplices, solids
+from numga.topology import Topology
+from numga.render.drawing import Draw
+from numga.render import meshes, simplices, solids
+from examples.util.panels import image_figure
 
 scene_mv = solids.mv
 include = solids.context.include_from_algebra
@@ -77,7 +80,7 @@ def front_projection(points: solids.Point, view: solids.View) -> Projection:
 
 
 def forces_end_on(view: solids.View, placement: core.Motor, push: core.Forque, centre: core.Point,
-                  onto_front: Projection) -> tuple[list[tuple[solids.Quadric, np.ndarray]], meshes.Samples]:
+                  onto_front: Projection) -> tuple[list[tuple[solids.Quadric, np.ndarray]], Draw]:
     """Dashed action lines, upward buoyancy and downward weight arrows, centre of gravity marker, and horizontal
     righting arm projected in front of an end view."""
     placed = include(placement)                                         # [] Motor+
@@ -95,7 +98,7 @@ def forces_end_on(view: solids.View, placement: core.Motor, push: core.Forque, c
     tips = starts + scene_up * (np.array([1.0, -1.0]) * force_arrow_scale * 0.6)  # [2] Point-
     arrows = simplices.tubes(
         stack((starts, tips), axis=-1).reshape(-1),
-        simplices.Topology.chains([2, 2]),
+        Topology.chains([2, 2]),
         np.array([to_rgb(buoyancy_colour), to_rgb(weight_colour)]),
         arrow_width,
         view,
@@ -111,7 +114,7 @@ def forces_end_on(view: solids.View, placement: core.Motor, push: core.Forque, c
 
 def end_on(topology: core.Topology, points: solids.Point, view: solids.View,
            parts: list[tuple[solids.Quadric, np.ndarray]],
-           arrows: list[tuple[meshes.Samples, float]]) -> np.ndarray:
+           arrows: list[tuple[Draw, float]]) -> np.ndarray:
     """End-on RGB image of a triangulated body, translucent water box, waterline rod, and overlaid force geometry."""
     triangles = topology.elements[2]
     body = meshes.samples(

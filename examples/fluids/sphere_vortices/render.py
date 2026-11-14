@@ -10,8 +10,8 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate
 from examples.fluids.sphere_vortices import core
-from examples.util.wgsl import simplices, solids
-from examples.util.wgsl.scene import Scene
+from numga.topology import Topology
+from numga.render import Scene, simplices, solids
 
 sm = solids.mv
 # One colour per vortex, repeating, and the sphere's colour; the trail's length in steps; the trails' width and the
@@ -54,7 +54,7 @@ def animate(histories: list[core.Pivot], view: tuple[float, float], stride: int)
         # Each vortex's trail a chain of edges down the steps, through the trails' points numbered as they lie.
         trails = places[first:last + 1]                                       # [n_segments + 1, ...] Point-
         indices = np.arange(np.prod(trails.shape)).reshape(trails.shape)
-        chains = simplices.Topology(indices.size, np.stack([indices[:-1], indices[1:]], axis=-1).reshape(-1, 2))
+        chains = Topology(indices.size, np.stack([indices[:-1], indices[1:]], axis=-1).reshape(-1, 2))
         tubes = simplices.tubes(trails.reshape(-1), chains, shades.reshape(-1, 3), trail_width, screen,
                                 gloss=solids.gloss)
         dots = solids.ball(places[step], dot_radius * screen.pixel)[:, None]

@@ -16,7 +16,7 @@ import numpy as np
 
 from examples.thermodynamics import rendering as art
 from examples.thermodynamics.heat_cycles import core
-from examples.util.wgsl import simplices, solids
+from numga.render import simplices, solids
 
 mv = core.mv
 StateFunction = Callable[[core.State], core.Scalar]

@@ -16,7 +16,7 @@ from collections.abc import Iterator
 import numpy as np
 
 from examples.relativity.kerr import core, render, scenarios
-from examples.util.wgsl import Shader, sampled, supersampled
+from numga.wgsl import Shader, sampled, supersampled
 
 types = dict(Vector=core.Vector, Bivector=core.Bivector, Antivector=core.Antivector, Spin=core.Spin,
              Rotor=core.Rotor, Screen=core.Screen, ScreenSlice=core.ScreenSlice, ScreenFrame=core.ScreenFrame,

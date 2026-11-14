@@ -20,7 +20,8 @@ import numpy as np
 
 from numga import concatenate, stack
 from examples.quadrics.spherical_quadrics.core import Plane, Point, Polarity, Scalar, ga, mv, sphere
-from examples.util.wgsl import Shader, image_figure, supersampled
+from numga.wgsl import Shader, supersampled
+from examples.util.panels import image_figure
 
 # The sphere's grid the polarity's form is sampled on, for the range of its shading.
 GRID = (119, 60)

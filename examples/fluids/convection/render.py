@@ -17,12 +17,12 @@ from matplotlib.figure import Figure
 
 from numga.extensor import Extensor
 from examples.util.charts import FRAME_WIDTH, points, style, subplots
-from examples.util.wgsl import contours, image_figure, simplices
-from examples.util.wgsl.camera import Camera
+from numga.topology import Topology
+from numga.render import Camera, contours, drawing, simplices
+from examples.util.panels import image_figure
 from examples.fluids.convection import core
 
 mv = core.mv
-Topology = simplices.Topology
 edge_colour = np.array(to_rgb("#9aa5ae"))
 stream_colour = np.array(to_rgb("#2b2f33"))
 growth_colour, axis_colour = np.array(to_rgb("#1d4ed8")), np.array(to_rgb("#6b7280"))
@@ -72,7 +72,7 @@ def draw_layer(topology: Topology, vertices: Extensor, period: float) -> Figure:
     """Triangle edges of the opened strip between its warm floor and cool ceiling."""
     camera = layer_camera(period)
     layers = [simplices.strokes(vertices, topology, edge_colour, edge_width, camera), walls(topology, vertices, camera)]
-    return image_figure(on_white(simplices.composited(layers)))
+    return image_figure(on_white(drawing.composited(layers)))
 
 
 def animate(topology: Topology, vertices: Extensor, opening: Extensor, period: float,
@@ -89,7 +89,7 @@ def animate(topology: Topology, vertices: Extensor, opening: Extensor, period: f
     for stream, temperature, _ in frames:
         values = (opening * temperature).to_array()
         levels = (opening * stream).to_array()
-        yield on_white(simplices.composited([
+        yield on_white(drawing.composited([
             contours.picture(vertices, topology, values, np.ones(3), camera, bands=(bands,)),
             contours.picture(vertices, topology, levels, np.ones(3), camera, lines=(lines,), opacity=0.0)] + boundaries))
 

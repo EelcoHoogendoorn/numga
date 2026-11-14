@@ -20,7 +20,7 @@ import numpy as np
 
 from numga import stack
 from examples.thermodynamics import rendering as art
-from examples.util.wgsl import solids
+from numga.render import solids
 from examples.thermodynamics.property_charts import core
 
 mv = core.mv

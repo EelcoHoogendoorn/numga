@@ -11,8 +11,9 @@ from matplotlib.colors import LinearSegmentedColormap, to_rgb
 from scipy.ndimage import gaussian_filter
 
 from numga import concatenate, stack
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import offset_panel
+from numga.topology import Topology
+from numga.render import contours, simplices
+from examples.util.panels import offset_panel, overlay
 from examples.optics.specular_caustics import core
 
 dpi = 100
@@ -103,8 +104,8 @@ def draw_critical(
     # receiver, a chain of their places each.
     source_curves = contour_generator(z=areas).lines(0)
     receiver_curves = concatenate([between_samples(chart_landings, curve[:, ::-1]) for curve in source_curves])
-    chains = simplices.Topology.chains([len(curve) for curve in source_curves])
-    simplices.overlay(axes, [simplices.strokes(receiver_curves, chains, to_rgb(fold_colour), fold_width,
+    chains = Topology.chains([len(curve) for curve in source_curves])
+    overlay(axes, [simplices.strokes(receiver_curves, chains, to_rgb(fold_colour), fold_width,
                                                offset_panel(axes, core.mv.x, core.mv.y))])
     return figure
 
@@ -147,15 +148,15 @@ def draw_paths(
     feet = surface - core.up * ((core.mv.z & surface) - lower)                                   # [samples] Direction-
     water = stack((feet, surface)).reshape(-1)                                                   # [2 * samples] Direction-
     n_rays, n_paths, n_stages = fan_paths.shape[0], solved_paths.shape[0], fan_paths.shape[1]
-    simplices.overlay(axes, [
-        contours.picture(water, simplices.Topology.grid(2, len(surface)), np.zeros(len(water)), to_rgb(water_colour),
+    overlay(axes, [
+        contours.picture(water, Topology.grid(2, len(surface)), np.zeros(len(water)), to_rgb(water_colour),
                          camera),
-        simplices.strokes(fan_paths.reshape(-1), simplices.Topology.chains([n_stages] * n_rays), to_rgb(fan_colour),
+        simplices.strokes(fan_paths.reshape(-1), Topology.chains([n_stages] * n_rays), to_rgb(fan_colour),
                           fan_width, camera, opacity=0.35),
-        simplices.strokes(surface, simplices.Topology.chains([len(surface)]), to_rgb(surface_colour), surface_width,
+        simplices.strokes(surface, Topology.chains([len(surface)]), to_rgb(surface_colour), surface_width,
                           camera),
-        simplices.strokes(solved_paths.reshape(-1), simplices.Topology.chains([n_stages] * n_paths), to_rgb(solved_colour),
+        simplices.strokes(solved_paths.reshape(-1), Topology.chains([n_stages] * n_paths), to_rgb(solved_colour),
                           solved_width, camera),
-        simplices.strokes(feet[[0, -1]], simplices.Topology.chains([2]), to_rgb(receiver_colour), surface_width, camera),
+        simplices.strokes(feet[[0, -1]], Topology.chains([2]), to_rgb(receiver_colour), surface_width, camera),
         simplices.markers(target[None], to_rgb(target_colour), target_radius, camera)])
     return figure

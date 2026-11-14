@@ -33,9 +33,9 @@ import numpy as np
 
 from numga import Algebra, NumpyContext, stack
 from numga.extensor import Extensor
-from numga.sparse import SparseExtensor, spdiag
+from numga.sparse import Sparse, SparseExtensor, spdiag
 
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 # The plane `x+ y+` joined with one degenerate quantity direction `s0` for entropy.
 space = Algebra("x+y+")
@@ -82,8 +82,8 @@ def constitutive(lame_lambda: float, lame_mu: float) -> Elastic:
 
 class Band(NamedTuple):
     """Geometry, operators and parameters of the unloaded band at rest and its surrounding room."""
-    corners: SparseExtensor                                                   # [3] Scalar+[F <- V]
-    corner_mean: SparseExtensor                                               # Scalar+[F <- V]
+    corners: Sparse                                                           # [3] Scalar+[F <- V]
+    corner_mean: Sparse                                                       # Scalar+[F <- V]
     rest: Point                                                               # Point-[V]
     freeing: SparseExtensor                                                   # Scalar+[V <- V]
     masses: Scalar                                                            # Scalar+[V]
@@ -109,10 +109,10 @@ def band(topology: Topology, rest: Point, held: np.ndarray, material: Elastic, s
     corner_mean = corners.mean(axis=0)                                        # Scalar+[F <- V]
     free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), held), 0)
     # Each vertex cell receives one third of the area and mass of its incident triangles.
-    cells = ~corner_mean * areas                                              # Scalar+[V]
-    masses = ~corner_mean * (densities * areas)                               # Scalar+[V]
+    cells = corner_mean.adjugate() * areas                                              # Scalar+[V]
+    masses = corner_mean.adjugate() * (densities * areas)                               # Scalar+[V]
     pull = -gravity * mv.y                                                    # [] Plane+
-    hand = hand_pull * (~corner_mean * (weighting * densities * areas)) * pull   # Plane+[V]
+    hand = hand_pull * (corner_mean.adjugate() * (weighting * densities * areas)) * pull   # Plane+[V]
     # Evaluating the work form on each triangle's corner gradients gives its room-temperature stiffness map.
     bound = gradients.batch()                                                 # [3, F] Plane+
     work = material(bound[:, None], bound[None, :], Point, Point)             # [3, 3, F] Scalar+ <- (Point-, Point-)
@@ -120,8 +120,8 @@ def band(topology: Topology, rest: Point, held: np.ndarray, material: Elastic, s
     # Pulling the unit conductivity back through the corner gradients assembles the vertex conduction map.
     drives = -gradients ^ mv.s                                                # [3] Bivector+[F]
     local = areas * (mv.s & (gradients[:, None] ^ spreading(drives[None, :])))   # [3, 3] Scalar+[F]
-    conduction = conductivity * (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Scalar+[V <- V]
-    return Band(corners, corner_mean, rest, ~free * free, masses, cells, areas, elastic, conduction, heat_capacity,
+    conduction = conductivity * (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Scalar+[V <- V]
+    return Band(corners, corner_mean, rest, free.adjugate() * free, masses, cells, areas, elastic, conduction, heat_capacity,
                 cooling, room_temperature, pull, drag, hand)
 
 
@@ -140,8 +140,8 @@ def potentials(band: Band, points: Point) -> Plane:
     entropy_densities = band.corner_mean * (held_entropy / band.cells)        # Scalar+[F]
     warmth = ((entropy_densities + stretch / (band.areas * band.room_temperature)) / band.heat_capacity).exp()   # Scalar+[F]
     # Area-average the triangle temperatures onto the vertex cells and scale the corner forces by `warmth`.
-    temperatures = band.room_temperature * (~band.corner_mean * (band.areas * warmth)) / band.cells   # Scalar+[V]
-    forces = (~band.corners * (warmth * springs)).sum(axis=0)                 # Plane+[V]
+    temperatures = band.room_temperature * (band.corner_mean.adjugate() * (band.areas * warmth)) / band.cells   # Scalar+[V]
+    forces = (band.corners.adjugate() * (warmth * springs)).sum(axis=0)                 # Plane+[V]
     return temperatures * mv.s - forces
 
 

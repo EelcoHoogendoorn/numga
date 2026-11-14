@@ -18,7 +18,7 @@ import numpy as np
 
 from numga import Extensor, stack
 from examples.thermodynamics import rendering as art
-from examples.util.wgsl import solids
+from numga.render import solids
 from examples.thermodynamics.state_space import core
 
 mv = core.mv

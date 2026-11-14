@@ -19,7 +19,7 @@ from __future__ import annotations
 import numpy as np
 
 from numga import Algebra, NumpyContext
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 ga = Algebra("s0v0")
 mv = NumpyContext(ga).multivector

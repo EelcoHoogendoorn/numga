@@ -38,7 +38,7 @@ from numga import Algebra, stack
 from numga.backend.jax import JaxContext
 from numga.sparse import spdiag
 
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 jax.config.update("jax_enable_x64", True)
 
@@ -76,7 +76,7 @@ def triangles(topology: Topology, vertices: Point) -> tuple[Antiscalar, Plane, A
     areas = double_areas / 2                                                  # Antipseudoscalar-[F]
     # Joining the facing side with volume, fuel and heat over twice the area gives each corner's simplex gradient.
     gradients = (volume & fuel & heat & sides) / double_areas                 # [3] Vector+[F]
-    return areas, gradients, (~topology.incidence[2, 0] * (areas / 3)).sum(axis=0)
+    return areas, gradients, (topology.incidence[2, 0].adjugate() * (areas / 3)).sum(axis=0)
 
 
 def burning(topology: Topology, areas: Antiscalar, gradients: Plane, cells: Antiscalar, fuel_diffusivity: float,
@@ -93,9 +93,9 @@ def burning(topology: Topology, areas: Antiscalar, gradients: Plane, cells: Anti
     diffusivity = fuel_diffusivity * (fuel_sweeps * (fuel_sweeps & Drive)).sum(axis=0)   # [] Antibivector- <- Bivector+
     # Cell heat and fuel outflow operators assembled by wedging the corner simplex gradients with the diffusive fluxes.
     local = areas * (mv.h & (gradients[:, None] ^ conductivity(heat_drives[None, :])))   # [3, 3] Antipseudoscalar-[F]
-    conduction = (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Antipseudoscalar-[V <- V]
+    conduction = (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Antipseudoscalar-[V <- V]
     local = areas * (mv.f & (gradients[:, None] ^ diffusivity(fuel_drives[None, :])))   # [3, 3] Antipseudoscalar-[F]
-    diffusion = (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Antipseudoscalar-[V <- V]
+    diffusion = (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Antipseudoscalar-[V <- V]
 
     def fuel_loss(parcels: Point) -> Scalar:
         """Fuel consumed in each parcel over one time step under Arrhenius decay at the parcel's temperature."""

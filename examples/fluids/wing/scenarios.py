@@ -9,7 +9,7 @@ import numpy as np
 from numga import stack
 
 from examples.fluids.wing import core
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 # Cylinder centre offset behind and above the origin before the map sets wing thickness and camber.
 thickness = 0.1

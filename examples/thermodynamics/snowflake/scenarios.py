@@ -12,7 +12,7 @@ from numga import stack
 
 from examples.thermodynamics.snowflake import core
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = core.mv
 
@@ -122,7 +122,7 @@ def symmetry_preview(settings: dict[str, dict], name: str) -> None:
     figure of the final crystals."""
     import time
     from examples.util.animation import save_animation, save_figure
-    from examples.util.wgsl import image_figure
+    from examples.util.panels import image_figure
     from examples.thermodynamics.snowflake import render
 
     topology, coordinates, vertices = dish(n_divisions)

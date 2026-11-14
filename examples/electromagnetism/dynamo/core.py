@@ -20,8 +20,8 @@ import numpy as np
 
 from numga import Algebra, NumpyContext, stack
 from numga.algebras import STA as ga
-from numga.sparse import SparseExtensor, spdiag
-from examples.util.topology import Topology
+from numga.sparse import Sparse, SparseExtensor, spdiag
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 # Space, within spacetime: the directions x, y and z.
@@ -107,18 +107,18 @@ class Flow:
     that carries its inflow; among the flows these span, the modes are those of least enstrophy for their kinetic
     energy, and the ratio of the two is each mode's rate of viscous decay at unit viscosity."""
 
-    def __init__(self, fluid: Ball, embedding: SparseExtensor, n_scalar_modes: int, n_modes: int):
+    def __init__(self, fluid: Ball, embedding: Sparse, n_scalar_modes: int, n_modes: int):
         topology, volumes = fluid.topology, fluid.prisms.norm()                 # Scalar+[fluid]
         circulating = Plane.dual()(fluid.whitney)                                # (Point- <- Scalar+)[fluid <- edges]
         momentum = volumes * Point.dual()                                        # (Plane+ <- Point-)[fluid]
         kinetic = circulating.adjugate()(momentum(circulating))                  # (Amount- <- Scalar+)[edges <- edges]
         # The fluid flowing into each vertex's share of the fluid, and the stiffness of a pressure pushing it down its
         # gradient, with the pressure's free constant pinned at the first vertex.
-        inflow = ~topology.d[0] * kinetic                                        # (Amount- <- Scalar+)[vertices <- edges]
+        inflow = topology.d[0].adjugate() * kinetic                              # (Amount- <- Scalar+)[vertices <- edges]
         pressure = inflow * topology.d[0]                                        # (Amount- <- Scalar+)[vertices <- vertices]
         reference = mv.scalar((np.arange(topology.n_vertices) == 0)[:, None]).field()   # Scalar+[vertices]
         pinned = pressure + pressure.diagonal() * reference                      # (Amount- <- Scalar+)[vertices <- vertices]
-        shares = spdiag((~topology.incidence[3, 0].mean(axis=0) * volumes) * Scalar.dual())   # (Amount- <- Scalar+)[vertices <- vertices]
+        shares = spdiag((topology.incidence[3, 0].mean(axis=0).adjugate() * volumes) * Scalar.dual())  # (Amount- <- Scalar+)[vertices <- vertices]
         _, scalar_modes = pressure.eigh(shares, n_scalar_modes + 1)              # [scalar + 1] Scalar+[vertices]
         # Each scalar mode but the constant, at the edges' midpoints, times each edge's reach along each axis.
         means = topology.incidence[1, 0].mean(axis=0) * scalar_modes[1:]         # [scalar] Scalar+[edges]

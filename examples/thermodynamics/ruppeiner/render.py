@@ -19,7 +19,7 @@ import numpy as np
 
 from numga import Extensor, stack
 from examples.thermodynamics import rendering as art
-from examples.util.wgsl import quadrics
+from numga.render import quadrics
 from examples.thermodynamics.ruppeiner import core
 
 mv = core.mv

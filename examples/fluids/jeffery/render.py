@@ -16,8 +16,9 @@ from matplotlib.colors import to_rgb
 from numga import concatenate, stack
 from examples.fluids.jeffery import core
 from examples.util import charts
-from examples.util.wgsl import labels, show, simplices, solids
-from examples.util.wgsl.scene import Scene
+from numga.topology import Topology
+from numga.render import Scene, simplices, solids
+from examples.util.panels import labels, show
 
 # Start-tilt colours, body octant colours, tip trail colour, flow arrow colour, and axis label colour.
 start_colours = cm.viridis(np.linspace(0.1, 0.9, 5))
@@ -68,7 +69,7 @@ def draw_orbits(trails: core.Point) -> plt.Figure:
     ends = solids.origin + scene_offsets                                                # [2, ...] Point-
     n_ends, n_points, n_bodies, n_starts = ends.shape
     vertex_indices = np.arange(n_ends * n_points * n_starts).reshape(n_ends, n_points, n_starts)
-    paths = simplices.Topology(vertex_indices.size,
+    paths = Topology(vertex_indices.size,
                                np.stack([vertex_indices[:, :-1], vertex_indices[:, 1:]], axis=-1).reshape(-1, 2))
     path_colours = np.broadcast_to(start_colours[:, :3], vertex_indices[:, 1:].shape + (3,)).reshape(-1, 3)
     view = solids.View(solids.aim(solids.origin, np.radians(view_angles[0]), np.radians(view_angles[1] + 90)),
@@ -115,7 +116,7 @@ def animate_tumbling(stretches: core.Stretch, heights: core.Point, velocities: c
     )                                                                                   # [n_bodies, ...] Point-, Point-
     n_arrows = int(np.prod(arrow_starts.shape))
     flow = simplices.tubes(stack((arrow_starts, arrow_ends), axis=-1).reshape(-1),
-                           simplices.Topology.chains([2] * n_arrows), flow_rgb,
+                           Topology.chains([2] * n_arrows), flow_rgb,
                            arrow_width, view, gloss=solids.gloss, chevrons=np.ones(n_arrows), chevron=arrow_chevron)
     tip_ends = tips * np.array([1, -1])[:, None, None]                                  # [2, n_frames, n_bodies] Point-
     tip_offsets = scene_turn >> solids.context.include_from_algebra(tip_ends)           # [2, n_frames, n_bodies] Point-
@@ -123,11 +124,11 @@ def animate_tumbling(stretches: core.Stretch, heights: core.Point, velocities: c
     mark_ends = panel_motors >> (solids.origin + tip_offsets * mark_end)                # [2, n_frames, n_bodies] Point-
     vertex_indices = np.arange(np.prod(axis_ends.shape)).reshape(axis_ends.shape)
     edge_pairs = np.stack([vertex_indices[:, :-1], vertex_indices[:, 1:]], axis=-1)
-    mark_chains = simplices.Topology.chains([2] * (2 * n_bodies))
+    mark_chains = Topology.chains([2] * (2 * n_bodies))
     scene = Scene(view, np.ones(3), [], [(flow, 1.0)], inks=[], translucent=[])
     for frame_index in range(n_frames):
         paths = simplices.tubes(axis_ends.reshape(-1),
-                                simplices.Topology(vertex_indices.size, edge_pairs[:, :frame_index].reshape(-1, 2)),
+                                Topology(vertex_indices.size, edge_pairs[:, :frame_index].reshape(-1, 2)),
                                 tip_rgb, path_width, view, gloss=solids.gloss)
         marks = simplices.tubes(stack([axis_ends[:, frame_index], mark_ends[:, frame_index]], axis=-1).reshape(-1),
                                 mark_chains, tip_rgb, mark_width, view, gloss=solids.gloss)

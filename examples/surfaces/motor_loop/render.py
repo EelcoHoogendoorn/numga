@@ -8,7 +8,7 @@ import numpy as np
 
 from examples.surfaces.motor_loop import core
 from examples.surfaces.projective_loop.render import SURFACE_COLOUR
-from examples.util.wgsl import meshes, solids
+from numga.render import meshes, solids
 
 AXIS_COLOURS = np.array([[0.85, 0.15, 0.15], [0.2, 0.65, 0.2], [0.15, 0.3, 0.85]])
 CONTROL_COLOUR = np.full(3, 0.15)

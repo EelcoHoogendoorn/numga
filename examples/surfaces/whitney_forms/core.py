@@ -16,7 +16,7 @@ from numga import NumpyContext, stack
 from numga.algebras import VGA2D as ga, PGA3D as space
 from numga.extensor import Extensor
 from numga.sparse import SparseExtensor, spdiag
-from examples.util.topology import Topology, simplex_parity
+from numga.topology import Topology, simplex_parity
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
@@ -156,9 +156,11 @@ class Operators:
         self.areas = self.patches.norm()                                     # Scalar+[faces]
         self.centres = self.corners.sum(axis=0) / 3                          # Point-[faces]
 
-        # Each corner hat's gradient is constant across its face; assembling by corner maps
-        # vertex potentials to piecewise-constant face gradients without any metric.
-        self.corner_gradients = self.sides / (2 * self.patches)              # [corners] Plane+[faces]
+        # The simplex gradient reads every step between two corners as the difference of the potential at its ends.
+        # For the potential that is one at a corner and nothing at the others, the steps' correlation solves for it.
+        steps = self.corners[:, None] - self.corners[None, :]                # [corners, corners] Point-[faces]
+        frame = (steps * (Plane & steps)).sum(axis=(0, 1))                   # (Point- <- Plane+)[faces]
+        self.corner_gradients = frame.on_diagonal().solve(2 * steps.sum(axis=1))  # [corners] Plane+[faces]
         self.gradient = (spdiag(self.corner_gradients) * topology.incidence[2, 0]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- vertices]
 
         # At each face centroid the three barycentric hats equal 1/3, so the edge 1-form
@@ -197,7 +199,7 @@ def conduction(operators: Operators, conductivity: Conductivity,
     medium = operators.areas * conductivity                                  # [cases] (Point- <- Plane+)[faces]
     conductance = operators.gradient.adjugate()(medium(operators.gradient))  # [cases] (Amount- <- Scalar+)[vertices <- vertices]
     free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
-    free = ~topology.reading(free_vertices, 0) * Scalar                      # (Scalar+ <- Scalar+)[vertices <- free]
+    free = topology.reading(free_vertices, 0).adjugate() * Scalar            # (Scalar+ <- Scalar+)[vertices <- free]
     rhs = -free.adjugate()(conductance(prescribed))                          # [cases] Amount-[free]
     potential = prescribed + free(free.adjugate()(conductance(free)).solve(rhs))  # [cases] Scalar+[vertices]
     current = -conductivity(operators.gradient(potential))                   # [cases] Point-[faces]
@@ -207,7 +209,7 @@ def conduction(operators: Operators, conductivity: Conductivity,
     quarter_turn = (mv.xy * (-np.pi / 4)).exp()                              # [] Rotor+
     isotropic_medium = operators.areas * Plane.dual()                        # (Point- <- Plane+)[faces]
     laplacian = operators.gradient.adjugate()(isotropic_medium(operators.gradient))  # (Amount- <- Scalar+)[vertices <- vertices]
-    unpinned = ~topology.reading(np.arange(1, topology.n_vertices), 0) * Scalar # (Scalar+ <- Scalar+)[vertices <- unpinned]
+    unpinned = topology.reading(np.arange(1, topology.n_vertices), 0).adjugate() * Scalar # (Scalar+ <- Scalar+)[vertices <- unpinned]
     stream_rhs = unpinned.adjugate()(operators.gradient.adjugate()(operators.areas * (quarter_turn >> current)))  # [cases] Amount-[unpinned]
     streamfunction = unpinned(unpinned.adjugate()(laplacian(unpinned)).solve(stream_rhs))  # [cases] Scalar+[vertices]
     return potential, current, streamfunction

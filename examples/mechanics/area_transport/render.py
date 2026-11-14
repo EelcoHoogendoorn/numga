@@ -17,7 +17,9 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.mechanics.area_transport import core
-from examples.util.wgsl import fitted, show, simplices, solids
+from numga.topology import Topology
+from numga.render import simplices, solids
+from examples.util.panels import fitted, show
 
 FACES = np.array([(4, 5, 7, 6), (2, 3, 7, 6), (1, 3, 7, 5),
                   (0, 2, 3, 1), (0, 1, 5, 4), (0, 4, 6, 2)])
@@ -73,7 +75,7 @@ def picture(vertices: core.Point, centres: core.Point, patches: core.Patch, view
     ends = starts + solids.context.include_from_algebra(offsets[shown])                  # [shown] Point-
     # Each arrow a tube ending in a chevron.
     n_shown = starts.shape[0]
-    arrows = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Topology.chains([2] * n_shown),
+    arrows = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), Topology.chains([2] * n_shown),
                              colours[shown], arrow_width, view, gloss=solids.gloss, chevrons=np.ones(n_shown),
                              chevron=chevron_length)
     edges, joints = solids.edges(places[EDGES[:, 0]], places[EDGES[:, 1]], edge_radius * view.pixel)

@@ -100,7 +100,7 @@ def sphere_demo() -> None:
     gradient = (core.spdiag(corner_gradients * core.Scalar) * topology.incidence[2, 0]).sum(axis=0)   # (Plane+ <- Scalar+)[F <- V]
     # Face-to-corner averaging and lumped dual vertex areas (one third of each incident triangle).
     corner_mean = topology.incidence[2, 0].mean(axis=0)                          # Scalar+[F <- V]
-    dual_areas = ~corner_mean * areas                                            # Scalar+[V]
+    dual_areas = corner_mean.adjugate() * areas                                            # Scalar+[V]
 
     # Dirichlet stiffness and lumped vertex mass define the generalized Laplace–Beltrami eigenproblem.
     medium = areas * core.Plane.dual()                                           # (Point- <- Plane+)[F]
@@ -137,7 +137,7 @@ def main() -> None:
     gradient = (core.spdiag(corner_gradients * core.Scalar) * topology.incidence[2, 0]).sum(axis=0)   # (Plane+ <- Scalar+)[F <- V]
     # Face-to-corner averaging and lumped dual vertex areas (one third of each incident triangle).
     corner_mean = topology.incidence[2, 0].mean(axis=0)                          # Scalar+[F <- V]
-    dual_areas = ~corner_mean * areas                                            # Scalar+[V]
+    dual_areas = corner_mean.adjugate() * areas                                            # Scalar+[V]
 
     # Dirichlet stiffness and lumped vertex mass define the generalized Laplace–Beltrami eigenproblem.
     medium = areas * core.Plane.dual()                                           # (Point- <- Plane+)[F]
@@ -224,7 +224,7 @@ def pinned() -> None:
     corner_gradients = (sides | patches.inverse()) / 2                           # [3] Plane+[F]
     gradient = (core.spdiag(corner_gradients * core.Scalar) * topology.incidence[2, 0]).sum(axis=0)   # (Plane+ <- Scalar+)[F <- V]
     corner_mean = topology.incidence[2, 0].mean(axis=0)                          # Scalar+[F <- V]
-    dual_areas = ~corner_mean * areas                                            # Scalar+[V]
+    dual_areas = corner_mean.adjugate() * areas                                            # Scalar+[V]
     medium = areas * core.Plane.dual()                                           # (Point- <- Plane+)[F]
     stiffness = gradient.adjugate()(medium(gradient))                            # (Antiscalar- <- Scalar+)[V <- V]
     mass = core.spdiag(dual_areas * core.Scalar.dual())                          # (Antiscalar- <- Scalar+)[V <- V]

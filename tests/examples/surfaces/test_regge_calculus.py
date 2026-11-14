@@ -126,7 +126,7 @@ def test_intrinsic_laplace_beltrami_cotangent_equivalence_and_flow():
     dots = -(metrics[:, None](sides[tails]) & sides[heads])
     cotangents = dots / (2 * intrinsic_areas[:, None])
     unit_faces = core.mv.scalar(np.ones(topology.n_elements[2])[..., None]).field().dual()
-    edge_cotangents = (~topology.incidence[2, 1] * ((cotangents / 2) * unit_faces)).sum(axis=-1)
+    edge_cotangents = (topology.incidence[2, 1].adjugate() * ((cotangents / 2) * unit_faces)).sum(axis=-1)
     cotangent_laplacian = d0.adjugate()((edge_cotangents * core.Scalar)(d0))
     quadratic = (core.mv.x & vertices).squared() - 0.35 * (core.mv.y & vertices).squared()
     np.testing.assert_allclose(
@@ -139,13 +139,13 @@ def test_intrinsic_laplace_beltrami_cotangent_equivalence_and_flow():
     abscissa = (core.mv.x & vertices).batch()
     electrodes = boundary[abscissa[boundary].norm() > scenarios.electrode_threshold]
     pinned = topology.reading(electrodes, 0)
-    prescribed = ~pinned * (pinned * (core.mv.x & vertices))
+    prescribed = pinned.adjugate() * (pinned * (core.mv.x & vertices))
     potential, current, streamfunction = core.intrinsic_conduction(
         topology, vertices, conductivities, electrodes, prescribed,
     )
 
     free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
-    free = ~topology.reading(free_vertices, 0) * core.Scalar
+    free = topology.reading(free_vertices, 0).adjugate() * core.Scalar
     nodal_source = conductance(potential)
     np.testing.assert_allclose(free.adjugate()(nodal_source).kernel, 0.0, atol=1e-11)
     np.testing.assert_allclose(nodal_source.sites.sum().kernel, 0.0, atol=1e-11)

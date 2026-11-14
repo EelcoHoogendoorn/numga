@@ -18,7 +18,7 @@ from numga.algebras import VGA3D as ga
 from numga.sparse import spdiag
 from examples import MODEL_DIR
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                         # Scalar+

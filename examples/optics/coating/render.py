@@ -12,8 +12,8 @@ from matplotlib.colors import hsv_to_rgb, to_rgb
 from numga import stack
 from examples.optics.coating import core
 from examples.util import charts
-from examples.util.wgsl import simplices, solids
-from examples.util.wgsl.scene import Scene
+from numga.topology import Topology
+from numga.render import Scene, simplices, solids
 
 # The observer sees the point where its time line meets the spatial slice.
 space_slice = core.real.t ^ (core.Direction & -core.real.t.dual())
@@ -198,10 +198,10 @@ def pulse(nodes: core.Direction, slab: core.Direction, directors: core.Direction
         # Every other node's spoke, where the field shows.
         spoked = np.flatnonzero(strength > spoke_floor)[::2]
         spoke_ends = stack((stations[spoked], tips[spoked]), axis=1).reshape(-1)       # [spokes * 2] Point-
-        spokes = simplices.tubes(spoke_ends, simplices.Topology.chains([2] * len(spoked)),
+        spokes = simplices.tubes(spoke_ends, Topology.chains([2] * len(spoked)),
                                  faded(colours, spoke_opacity * strength)[spoked], spoke_width, view, gloss=solids.gloss)
         # Each piece of the path in the colour and strength halfway along it.
         shades = faded(colours, strength)
-        path = simplices.tubes(tips, simplices.Topology.chains([len(tips)]), (shades[:-1] + shades[1:]) / 2, path_width,
+        path = simplices.tubes(tips, Topology.chains([len(tips)]), (shades[:-1] + shades[1:]) / 2, path_width,
                                view, gloss=solids.gloss)
         yield picture.draw([], inks=[], translucent=[], meshes=[(spokes, 1.0), (path, 1.0)])

@@ -10,7 +10,8 @@ import numpy as np
 
 from numga import stack
 from examples.surfaces.arap import core
-from examples.util.wgsl import image_figure, meshes, solids
+from numga.render import meshes, solids
+from examples.util.panels import image_figure
 
 # Checkerboard colours, camera elevation and azimuth in radians (azimuth zero looking along +y),
 # bounding-box limits, viewport margin as a fraction of the largest box dimension, and panel width in pixels.

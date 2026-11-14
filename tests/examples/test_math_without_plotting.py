@@ -106,6 +106,8 @@ import examples.quantum.kitaev_wire.core
 import examples.quantum.kitaev_wire.scenarios
 import examples.quantum.magnetic_resonance.core
 import examples.quantum.magnetic_resonance.scenarios
+import examples.quantum.skyrmions.core
+import examples.quantum.skyrmions.scenarios
 import examples.quantum.process_tomography.core
 import examples.quantum.process_tomography.scenarios
 import examples.quantum.superconductivity.core
@@ -142,9 +144,13 @@ import examples.fluids.saltfingers.core
 import examples.fluids.saltfingers.scenarios
 import examples.thermodynamics.magnetotransport.core
 import examples.thermodynamics.magnetotransport.scenarios
+import examples.thermodynamics.thermocouple.core
+import examples.thermodynamics.thermocouple.scenarios
 import examples.surfaces.connections.core
 import examples.surfaces.connections.scenarios
-import examples.util.topology
+import numga.topology
+import numga.wgsl
+import numga.render
 instantiate('examples.geometry.registration.core', PGA3D)
 instantiate('examples.estimation.odometry.core', PGA2D)
 instantiate('examples.estimation.multiview.core', PGA2D)

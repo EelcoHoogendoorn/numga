@@ -117,7 +117,7 @@ def test_obstacle_flow_balances_every_cell_and_preserves_boundary_flux():
 
     # Summing oriented face boundaries cancels every interior edge and reads the net throughflow.
     one = core.mv.scalar(np.ones((topology.n_elements[2], 1))).field()
-    boundary = ~topology.d[1] * one
+    boundary = topology.d[1].adjugate() * one
     outgoing = boundary * flux
     on_inlet = topology.reading(inlet, 1)
     on_outlet = topology.reading(outlet, 1)

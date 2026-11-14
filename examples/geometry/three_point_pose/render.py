@@ -10,8 +10,9 @@ import numpy as np
 
 from numga import concatenate
 from examples.geometry.three_point_pose import core
-from examples.util.topology import Topology
-from examples.util.wgsl import image_figure, solids
+from numga.topology import Topology
+from numga.render import solids
+from examples.util.panels import image_figure
 
 colour = np.array(to_rgb("#218c9d"))
 target_colour = np.array(to_rgb("#ce713f"))

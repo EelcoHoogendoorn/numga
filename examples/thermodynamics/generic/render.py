@@ -20,7 +20,8 @@ import numpy as np
 from numga import Extensor, stack
 from examples.thermodynamics import rendering as art
 from examples.thermodynamics.generic import core
-from examples.util.wgsl import simplices, solids
+from numga.topology import Topology
+from numga.render import simplices, solids
 
 mv = core.mv
 # Pixel dimensions and axis ranges for the phase-portrait, entropy-time and entropy-energy diagrams.
@@ -54,7 +55,7 @@ def oscillator(position: solids.Scalar, warmth: float) -> np.ndarray:
     coil = centres + ((solid_mv.yz * (coil_angles / 2)).exp() >> solid_mv.direction([0, 0, 0.13]))  # [n_coil_points] Point-
     corners = solid_mv.point([[x, y, z] for x in (-2.95, 2.5) for y in (-0.65, 0.65) for z in (0.1, 1.4)])
     view = solids.view([corners], 0.0, np.radians(18), np.radians(-12), 0.04, n_apparatus_pixels)
-    spring = simplices.tubes(coil, simplices.Topology.chains([n_coil_points]), art.ink, 1.6, view, solids.gloss)
+    spring = simplices.tubes(coil, Topology.chains([n_coil_points]), art.ink, 1.6, view, solids.gloss)
     return solids.draw(
         [(floor, art.grey), (wall, art.grey), (body, art.blue), (rod, art.grey), (damper, art.thermal_colour(warmth))],
         view,

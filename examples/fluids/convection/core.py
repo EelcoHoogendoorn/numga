@@ -33,9 +33,9 @@ from typing import NamedTuple
 import numpy as np
 
 from numga import Algebra, NumpyContext, stack
-from numga.sparse import SparseExtensor, spdiag
+from numga.sparse import Sparse, SparseExtensor, spdiag
 
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 # The plane x+ y+ joined with three degenerate directions for the quantities: volume, mass and entropy.
 space = Algebra("x+y+")
@@ -60,7 +60,7 @@ entropy = mv.s.dual()                                                         # 
 
 
 # --- plumbing -------------------------------------------------------------------------
-def layer(n_along: int, n_across: int, period: float) -> tuple[Topology, Topology, SparseExtensor, SparseExtensor,
+def layer(n_along: int, n_across: int, period: float) -> tuple[Topology, Topology, Sparse, Sparse,
                                                                 np.ndarray]:
     """A periodic strip of triangles of unit depth closed along its length, together with the same strip opened at its
     seam one period further along: their topologies with matching triangle order, the vertex-reading maps between the
@@ -74,19 +74,19 @@ def layer(n_along: int, n_across: int, period: float) -> tuple[Topology, Topolog
     return closed, opened, closing, opening, places.reshape(-1, 2)
 
 
-def holding(form: SparseExtensor, interior: SparseExtensor) -> Callable[[Scalar, Scalar], Scalar]:
+def holding(form: SparseExtensor, interior: Sparse) -> Callable[[Scalar, Scalar], Scalar]:
     """A vertex operator solved with fixed wall values: for a right-hand side and wall values,
     it solves on the free vertices and leaves the wall values unchanged."""
-    free = (interior * form * ~interior) * Scalar                             # (Scalar+ <- Scalar+)[V_free <- V_free]
-    return lambda rhs, walls: walls + ~interior * free.solve(interior * (rhs - form * walls))
+    free = (interior * form * interior.adjugate()) * Scalar                             # (Scalar+ <- Scalar+)[V_free <- V_free]
+    return lambda rhs, walls: walls + interior.adjugate() * free.solve(interior * (rhs - form * walls))
 
 
 # --- math -----------------------------------------------------------------------------
 class Forms(NamedTuple):
     """Discrete operators on the triangulated layer: face-vertex incidences, corner flows, stream-function velocity,
     cell flux divergence, vertex cell areas, and the kinetic, viscous and conductive forms."""
-    corners: SparseExtensor                                                   # [3] Scalar+[F <- V]
-    corner_mean: SparseExtensor                                               # Scalar+[F <- V]
+    corners: Sparse                                                           # [3] Scalar+[F <- V]
+    corner_mean: Sparse                                                       # Scalar+[F <- V]
     flows: Point                                                              # [3] Antivector-[F]
     stream_velocity: SparseExtensor                                           # (Antivector- <- Scalar+)[F <- V]
     cell_outflow: SparseExtensor                                              # (Antivector- <- Antibivector-)[V <- F]
@@ -107,18 +107,18 @@ def forms(closed: Topology, opened: Topology, vertices: Point, density: float, v
     gradients = (volume & mass & entropy & sides) / double_areas              # [3] Vector+[F]
     corners = closed.incidence[2, 0]                                          # [3] Scalar+[F <- V]
     # Each vertex's dual cell area, a third of each incident triangle, and the corner-averaging map onto faces.
-    cells = (~corners * (areas / 3)).sum(axis=0)                              # Scalar+[V]
+    cells = (corners.adjugate() * (areas / 3)).sum(axis=0)                              # Scalar+[V]
     corner_mean = corners.mean(axis=0)                                        # Scalar+[F <- V]
     # A unit stream function at a corner drives flow along the facing side, giving each corner's integrated flow and velocity.
     flows = sides / 2                                                         # [3] Antivector-[F]
     velocities = flows / areas                                                # [3] Antivector-[F]
     # Stream-function velocity on each face, and the outflow from each vertex cell gathered by wedging the corner gradients with a flux.
     stream_velocity = (spdiag(velocities * Scalar) * corners).sum(axis=0)     # (Antivector- <- Scalar+)[F <- V]
-    cell_outflow = (~corners * spdiag(areas * (gradients ^ Flux))).sum(axis=0)   # (Antivector- <- Antibivector-)[V <- F]
+    cell_outflow = (corners.adjugate() * spdiag(areas * (gradients ^ Flux))).sum(axis=0)   # (Antivector- <- Antibivector-)[V <- F]
     # Kinetic form: inertia pairs corner velocities across each triangle and gathers onto the vertices.
     inertia = density * (readings * (readings & Point)).sum(axis=0)           # [] Vector+ <- Antivector-
     local = areas * (inertia(velocities[:, None]) & velocities[None, :])      # [3, 3] Scalar+[F]
-    kinetic = (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Scalar+[V <- V]
+    kinetic = (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Scalar+[V <- V]
     # Mass-lumped vorticity on vertex cells, and the viscous form from its cell-weighted square.
     vorticity = spdiag(1 / (density * cells)) * kinetic                       # Scalar+[V <- V]
     viscous = viscosity * ~vorticity * spdiag(cells) * vorticity              # Scalar+[V <- V]
@@ -127,7 +127,7 @@ def forms(closed: Topology, opened: Topology, vertices: Point, density: float, v
     conductivity = ((directions & entropy) * ((directions & entropy) & Drive)).sum(axis=0)   # [] Antibivector- <- Bivector+
     # Conductive entropy outflow: corner gradients wedged with the conductive flux and gathered onto the vertices.
     local = areas * (mv.s & (gradients[:, None] ^ conductivity(drives[None, :])))   # [3, 3] Scalar+[F]
-    conduction = (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Scalar+[V <- V]
+    conduction = (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Scalar+[V <- V]
     return Forms(corners, corner_mean, flows, stream_velocity, cell_outflow, cells, kinetic, viscous, conduction)
 
 
@@ -142,7 +142,7 @@ class Budget(NamedTuple):
     produced: Scalar
 
 
-def convecting(liquid: Forms, interior: SparseExtensor, places: Point, density: float, expansion: float,
+def convecting(liquid: Forms, interior: Sparse, places: Point, density: float, expansion: float,
                gravity: np.ndarray, reference_temperature: float, heat_capacity: float, temperature: Scalar, dt: float,
                n_steps: int, n_stride: int) -> Iterator[tuple[Scalar, Scalar, Budget]]:
     """Stream function and temperature with the energy budget at regular intervals, starting
@@ -152,7 +152,7 @@ def convecting(liquid: Forms, interior: SparseExtensor, places: Point, density: 
     flow_step = holding(liquid.kinetic / (dt / 2) + liquid.viscous, interior)
     heat_step = holding(liquid.cells / (dt / 2) + liquid.conduction, interior)
     # Mask zeroing wall vertices, and the fixed wall temperature profile.
-    held = ~interior * interior                                               # Scalar+[V <- V]
+    held = interior.adjugate() * interior                                               # Scalar+[V <- V]
     wall_temperature = temperature - held * temperature                       # [...] Scalar+[V]
     pull = -gravity * mv.ym                                                   # [...] Bivector+
     # Gravitational potential energy change per unit warmth at each vertex, from thermal expansion of its mass.
@@ -175,7 +175,7 @@ def convecting(liquid: Forms, interior: SparseExtensor, places: Point, density: 
         warmth = liquid.corner_mean * middle_temperature                      # [...] Scalar+[F]
         parcels = volume + (density - expansion * warmth) * mass + warmth * entropy   # [...] Antivector-[F]
         # Buoyant work on each corner's flow drives the stream function to the step's midpoint.
-        load = (~liquid.corners * (pull[..., None] & (liquid.flows & parcels[..., None]))).sum(axis=-1)   # [...] Scalar+[V]
+        load = (liquid.corners.adjugate() * (pull[..., None] & (liquid.flows & parcels[..., None]))).sum(axis=-1)   # [...] Scalar+[V]
         middle_stream = flow_step(liquid.kinetic / (dt / 2) * stream + load, 0 * stream)   # [...] Scalar+[V]
         # Midpoint flow advects face entropy; cell outflow and thermal conduction advance temperature to the midpoint.
         velocity = liquid.stream_velocity(middle_stream)                      # [...] Antivector-[F]

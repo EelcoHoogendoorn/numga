@@ -12,7 +12,9 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.surfaces.weighted_dual import core
-from examples.util.wgsl import image_figure, simplices, solids
+from numga.topology import Topology
+from numga.render import simplices, solids
+from examples.util.panels import image_figure
 
 sm = solids.mv
 PRIMAL_COLOUR = np.array(to_rgb("#287fa0"))
@@ -88,7 +90,7 @@ def picture(topology: core.Topology, points: core.Point, duals: core.Point) -> n
     # A stretch of each ray about the sphere, an edge from inside it to outside.
     ray_spans = stack((solids.origin + ray_offsets * (1 - RAY_SPAN), solids.origin + ray_offsets * (1 + RAY_SPAN)),
                       axis=-1)                                                 # [points, 2] Point-
-    ray_strokes = simplices.tubes(ray_spans.reshape(-1), simplices.Topology.chains([2] * len(ray_offsets)), RAY_COLOUR,
+    ray_strokes = simplices.tubes(ray_spans.reshape(-1), Topology.chains([2] * len(ray_offsets)), RAY_COLOUR,
                                   RAY_WIDTH, view, solids.gloss)
     parts = [(hull, HULL_COLOUR), (primal_rods, PRIMAL_COLOUR), (primal_joints, PRIMAL_COLOUR),
              (dual_rods, DUAL_COLOUR), (dual_joints, DUAL_COLOUR),

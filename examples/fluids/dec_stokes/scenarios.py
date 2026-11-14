@@ -10,7 +10,7 @@ from examples.fluids.dec_stokes import render
 from examples.fluids.dec_stokes.core import Operators, stokes_flow
 from examples.util import shapes
 from examples.util.animation import save_figure
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
@@ -103,7 +103,7 @@ def boundary_flux(topology: Topology, vertices: Point, inlet: np.ndarray, outlet
     ordinate = mv.y & vertices                                               # Scalar+[V]
     streamfunction = 1.5 * mean_speed * (ordinate - 4 * ordinate.squared() * ordinate / (3 * height**2))  # Scalar+[V]
     ends = topology.reading(np.concatenate((inlet, outlet)), 1)              # Scalar+[E_ends <- E]
-    return ~ends * (ends * (topology.d[0] * streamfunction))
+    return ends.adjugate() * (ends * (topology.d[0] * streamfunction))
 
 
 def main() -> None:

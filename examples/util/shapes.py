@@ -28,7 +28,7 @@ import numpy as np
 
 from numga import Algebra, NumpyContext, concatenate
 from numga.extensor import Extensor
-from examples.util.topology import Topology, coherent, turned
+from numga.topology import Topology, coherent, turned
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -187,7 +187,7 @@ def triangular_disk(radius: float, divisions: int) -> tuple[Topology, np.ndarray
     for _ in range(relaxation_steps):
         edges = topology.d[0] * vertices                                         # Point-[E]
         force = edges * (1 - target / edges.antinorm())                          # Point-[E]
-        positions = (vertices - relaxation_rate * (~topology.d[0] * force)).batch()   # [V] Point-
+        positions = (vertices - relaxation_rate * (topology.d[0].adjugate() * force)).batch()  # [V] Point-
         positions = positions.at[boundary].set(radius * positions[boundary] / positions[boundary].antinorm())
         vertices = positions.field()
         topology, _ = delaunay(read(positions, planes(2)))
@@ -244,6 +244,29 @@ def torus(major_radius: float, minor_radius: float, n_major: int, n_minor: int) 
     unit = directions(3)[0]                                                      # [] Point-
     tube = unit * major_radius + (around_tube >> (unit * minor_radius))         # [minor] Point-
     return Topology.torus(n_major, n_minor), read((around_axis[:, None] >> tube[None, :]).reshape(-1), planes(3))
+
+
+def flat_torus(n_rings: int, n_sites: int) -> tuple[Topology, np.ndarray, np.ndarray, np.ndarray]:
+    """The plane's triangular lattice wrapped into a torus, `n_rings` rings of `n_sites` sites each, every triangle
+    equilateral with unit sides: each ring a unit step along from the last, each site a unit step around from the last,
+    a third of a turn from along, so that each cell's diagonal is a unit step too. The lattice repeats over the rhombus
+    its two periods span, `n_rings` steps along and `n_sites` steps around. Where an edge crosses the wrap no placement
+    gives its step as the difference of its ends' places, so the edges' steps come beside the places. Its topology, the
+    sites' coordinates `[V, 2]` in the rhombus, each edge's step from its tail to its head `[E, 2]`, one of the
+    lattice's three unit steps, and the two periods `[2, 2]`."""
+    across, up = planes(2)
+    along = directions(2)[0]                                                     # [] Point-
+    around = ((across ^ up) * (-np.pi / 3)).exp() >> along                       # [] Point-
+    topology = Topology.torus(n_rings, n_sites)
+    rings, sites = np.divmod(np.arange(topology.n_vertices), n_sites)           # [V], [V]
+    # Each edge's count of steps along and around, the short way across the wrap.
+    tails, heads = topology.elements[1].T
+    ring_steps = (rings[heads] - rings[tails] + 1) % n_rings - 1               # [E]
+    site_steps = (sites[heads] - sites[tails] + 1) % n_sites - 1               # [E]
+    coordinates = read(along * rings + around * sites, planes(2))              # [V, 2]
+    steps = read(along * ring_steps + around * site_steps, planes(2))          # [E, 2]
+    periods = concatenate((along[None] * n_rings, around[None] * n_sites))      # [2] Point-
+    return topology, coordinates, steps, read(periods, planes(2))
 
 
 def surface(path: Path, size: float) -> tuple[Topology, np.ndarray]:

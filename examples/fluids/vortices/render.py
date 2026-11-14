@@ -14,8 +14,10 @@ from matplotlib.image import AxesImage
 from numga import stack
 
 from examples.fluids.vortices import core
-from examples.util.wgsl import Shader, fitted, pinned, show, simplices, solids, supersampled
-from examples.util.wgsl.camera import Camera
+from numga.wgsl import Shader, supersampled
+from numga.topology import Topology
+from numga.render import Camera, drawing, simplices, solids
+from examples.util.panels import fitted, pinned, show
 
 # Fields: the figures' resolution, and the pixels between two panels side by side.
 dpi = 100
@@ -144,7 +146,7 @@ def braids(worldlines: list[core.Point], height: float) -> plt.Figure:
         strand_points = solids.origin + plane_offsets + solids.mv.z.dual() * times                      # [n_times, n_vortices] Point-
         view = fitted(solids.view([strand_points], 0.0, elevation, azimuth, margin, 1), ax)
         indices = np.arange(n_times * n_vortices).reshape(n_times, n_vortices)
-        strand_topology = simplices.Topology(indices.size, np.stack([indices[:-1], indices[1:]], axis=-1).reshape(-1, 2))
+        strand_topology = Topology(indices.size, np.stack([indices[:-1], indices[1:]], axis=-1).reshape(-1, 2))
         tubes = simplices.tubes(
             strand_points.reshape(-1),
             strand_topology,
@@ -279,10 +281,10 @@ def window(
         n_points = len(history) + 1
         n_vortices = centres.shape[0]
         paths = stack([history[0]] + history, axis=1)                           # [n_vortices, n_points] Point-
-        trails = simplices.composited([
+        trails = drawing.composited([
             simplices.strokes(
                 paths.reshape(-1),
-                simplices.Topology.chains([n_points] * n_vortices),
+                Topology.chains([n_points] * n_vortices),
                 trail_colour,
                 trail_width,
                 camera,

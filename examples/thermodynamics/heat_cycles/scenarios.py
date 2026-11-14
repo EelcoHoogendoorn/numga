@@ -6,7 +6,7 @@ from collections.abc import Iterator
 import numpy as np
 
 from examples.thermodynamics.heat_cycles import core
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 capacity = 1.5
 hot, cold, entropy_span = 1.5, 1.0, 1.0

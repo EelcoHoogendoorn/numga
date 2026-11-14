@@ -1,7 +1,7 @@
 """Potential flow past a Joukowski wing."""
 
 from examples.fluids.wing import core, scenarios
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 
 def test_wing_flow_has_vanishing_derivative_and_kutta_joukowski_lift():

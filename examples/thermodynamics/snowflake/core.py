@@ -51,7 +51,7 @@ from numga import Algebra, stack
 from numga.backend.jax import JaxContext
 from numga.sparse import SparseExtensor, spdiag
 
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 jax.config.update("jax_enable_x64", True)
 
@@ -85,7 +85,7 @@ def triangles(topology: Topology, vertices: Point) -> tuple[Antiscalar, Plane, A
     areas = double_areas / 2                                                  # Antiscalar-[F]
     # Joining the facing side with volume, ice and heat over twice the area gives each corner's simplex gradient.
     gradients = (volume & ice & heat & sides) / double_areas                  # [3] Plane+[F]
-    return areas, gradients, (~topology.incidence[2, 0] * (areas / 3)).sum(axis=0)
+    return areas, gradients, (topology.incidence[2, 0].adjugate() * (areas / 3)).sum(axis=0)
 
 
 def ice_content(phase: Scalar) -> Scalar:
@@ -133,7 +133,7 @@ def edge_slope(topology: Topology, areas: Antiscalar, gradients: Plane, cells: A
     pull = widths ** 2 * flux + squared_steepness * widths * turning          # Flux-[F]
     # Pair each corner's simplex drive with the triangle's flux pull to gather the vertex derivatives.
     corner_drives = -gradients ^ mv.i                                         # [3] Drive+[F]
-    shares = (~topology.incidence[2, 0] * (areas * (corner_drives & pull))).sum(axis=0)   # Antiscalar-[V]
+    shares = (topology.incidence[2, 0].adjugate() * (areas * (corner_drives & pull))).sum(axis=0)   # Antiscalar-[V]
     well_slope = 2 * well_height * phase * (1 - phase) * (1 - 2 * phase)      # Scalar+[V]
     return shares + cells * well_slope
 
@@ -161,7 +161,7 @@ def operators(topology: Topology, areas: Antiscalar,
     spreading = (sweeps * (sweeps & Drive)).sum(axis=-1).sum(axis=0)          # [] Flux- <- Drive+
     heat_drives = -gradients ^ mv.h                                           # [3] Drive+[F]
     local = areas * (mv.h & (gradients[:, None] ^ spreading(heat_drives[None, :])))   # [3, 3] Antiscalar-[F]
-    conduction = (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Antiscalar-[V <- V]
+    conduction = (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)   # Antiscalar-[V <- V]
     return gradient, spreading, conduction
 
 

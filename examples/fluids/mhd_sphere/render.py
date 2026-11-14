@@ -12,7 +12,7 @@ from matplotlib.figure import Figure
 
 from examples.fluids.mhd_sphere import core
 from examples.util import charts
-from examples.util.wgsl import meshes, solids
+from numga.render import meshes, solids
 
 # The surface's colour where no current flows, the colours of the two senses of current, and the field lines' colour.
 surface_colour = np.array(to_rgb("#f6e7c8"))

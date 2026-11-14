@@ -16,9 +16,10 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.electromagnetism.fresnel import core
-from examples.util.wgsl import fitted, labels, meshes, show, simplices, solids
-from examples.util.wgsl.camera import Camera, offset_panel, read
-from examples.util.wgsl.scene import Scene
+from numga.topology import Topology
+from numga.render.drawing import Draw
+from numga.render import Camera, drawing, meshes, read, Scene, simplices, solids
+from examples.util.panels import fitted, labels, offset_panel, overlay, show
 
 sheet_colours = ("#2563eb", "#ea580c")
 view_limit = 2.4
@@ -93,7 +94,7 @@ def k_space(ax: Axes) -> solids.View:
     return fitted(solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, half_width), 1), ax)
 
 
-def sheet_sides(sheets: core.Vector, view: solids.View) -> list[tuple[meshes.Samples, float]]:
+def sheet_sides(sheets: core.Vector, view: solids.View) -> list[tuple[Draw, float]]:
     """Both sheets, translucent, with grid lines along every few latitudes and longitudes."""
     n_latitudes, n_longitudes, n_sheets = sheets.shape
     faces = sheet_faces(n_latitudes, n_longitudes)
@@ -105,7 +106,7 @@ def sheet_sides(sheets: core.Vector, view: solids.View) -> list[tuple[meshes.Sam
     for index, colour in zip(range(n_sheets), map(to_rgb, sheet_colours)):
         # The sheet's tips embedded in the drawing's projective space about its origin.
         places = (solids.origin + solids.context.include_from_algebra(space_tip(sheets[:, :, index].reshape(-1))))                     # [vertices] Point-
-        normals = meshes.smooth(places, meshes.Topology(len(places), faces))
+        normals = meshes.smooth(places, Topology(len(places), faces))
         sides += [(meshes.samples(places, faces, grid, normals, view, face_values=np.zeros(4),
                                   colour=side_colour(np.array(colour), n_latitudes, near),
                                    gloss=0.2), 1.0) for near in (True, False)]
@@ -143,9 +144,9 @@ def trace_sections(sections: core.Vector, camera: Camera) -> np.ndarray:
     its curve, the second dashed: their picture."""
     along, rise = (axis.dual() / read(axis, axis.dual()) for axis in (camera.across, camera.up))
     ends = view_limit * stack((-along, along, -rise, rise))                     # [4] Vector+
-    loop = simplices.Topology.loops([sections.shape[0]])
-    return simplices.composited([
-        simplices.strokes(ends, simplices.Topology.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
+    loop = Topology.loops([sections.shape[0]])
+    return drawing.composited([
+        simplices.strokes(ends, Topology.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
                           cap=simplices.Cap.BUTT),
         simplices.strokes(sections[:, 0], loop, np.array(to_rgb(sheet_colours[0])), charts.LINE_PX, camera),
         simplices.strokes(sections[:, 1], loop, np.array(to_rgb(sheet_colours[1])), charts.LINE_PX, camera,
@@ -168,7 +169,7 @@ def comparison(sheets: core.Vector, sections: core.Vector) -> plt.Figure:
         surface(ax, solids.draw(k_axes(view), view, np.ones(3), inks=[], translucent=[],
                                 meshes=sheet_sides(sheets[i], view)), view)
     for i, ax in enumerate(sections_axes):
-        simplices.overlay(ax, [trace_sections(sections[i], section_camera(ax))])
+        overlay(ax, [trace_sections(sections[i], section_camera(ax))])
     return figure
 
 
@@ -187,7 +188,7 @@ def animate(frames: Iterable[tuple[core.Vector, core.Vector]]) -> Iterator[np.nd
         figure.canvas.draw()
         figure.set_layout_engine("none")
         camera = section_camera(sections_axes)
-        traced = simplices.overlay(sections_axes, [np.zeros(camera.shape + (4,))])
+        traced = overlay(sections_axes, [np.zeros(camera.shape + (4,))])
         for sheets, sections in frames:
             image.set_data(scene.draw([], inks=[], translucent=[], meshes=sheet_sides(sheets, view)))
             traced.set_data(trace_sections(sections, camera))

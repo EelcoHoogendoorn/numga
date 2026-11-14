@@ -32,7 +32,7 @@ import numpy as np
 from numga import Algebra, NumpyContext, stack
 from numga.sparse import SparseExtensor, spdiag
 
-from examples.util.topology import Topology
+from numga.topology import Topology
 from examples.fluids.electrokinetics.numerical import solve_coupled
 
 # Planar spacetime, and the volume a flow carries, a direction of its own with no metric.
@@ -118,7 +118,7 @@ def assembled(topology: Topology, local: Scalar) -> SparseExtensor:
     """A form on each triangle's corners `[..., corners, corners] Scalar+[faces]` gathered onto the vertices it joins,
     `Scalar+[..., vertices <- vertices]`."""
     corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
-    return (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=-1).sum(axis=-1)
+    return (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=-1).sum(axis=-1)
 
 
 def double_layer(outflow: SparseExtensor, cells: Scalar, wall_charge: Scalar, valences: np.ndarray,
@@ -163,9 +163,9 @@ def transport(topology: Topology, areas: Scalar, sides: Point, gradients: Plane,
     carried = flows & parcels[..., None]                                      # [..., corners] Flux-[faces]
     coupling = assembled(topology, carried[..., :, None] & pushes[..., None, :])
     conduction = assembled(topology, (pushes[..., :, None] & conducts[..., None, :]) * (conductivity * areas)[..., None, None])
-    flow_load = (~corners * (drives[..., None] & carried)).sum(axis=-1)      # [...] Scalar+[vertices]
+    flow_load = (corners.adjugate() * (drives[..., None] & carried)).sum(axis=-1)  # [...] Scalar+[vertices]
     applied_current = conductivity * drives.commutator(time).regressive(time)   # [...] Flux-[faces]
-    current_load = (~corners * ((pushes & applied_current[..., None]) * areas[..., None])).sum(axis=-1)
+    current_load = (corners.adjugate() * ((pushes & applied_current[..., None]) * areas[..., None])).sum(axis=-1)
     stream, added = solve_coupled(viscous, coupling, conduction, flow_load, current_load, topology.interior[0], upper,
                                   int(lower[0]))
     # The channel's flux per length: the parcels with the flow, the ions with their drift under the whole drive.
@@ -187,7 +187,7 @@ def entropy_production(topology: Topology, areas: Scalar, circulation: SparseExt
     rotation = mv.xy * ((circulation * stream) / cells)                       # [...] Bivector+[vertices]
     viscous = rotation & (viscosity * resisting(rotation))                    # [...] Scalar+[vertices]
     joule = field & (conductivity * field.commutator(time).regressive(time))  # [...] Scalar+[faces]
-    return viscous, (~corners.sum(axis=0) * (joule * areas / 3)) / cells
+    return viscous, (corners.sum(axis=0).adjugate() * (joule * areas / 3)) / cells
 
 
 def equilibrium_pushes(topology: Topology, areas: Scalar, gradients: Plane, cells: Scalar, potential: Scalar,
@@ -203,7 +203,7 @@ def equilibrium_pushes(topology: Topology, areas: Scalar, gradients: Plane, cell
     pushes = []
     for pressure, label in ((osmotic, mv.v), (potential, mv.t)):
         drive = -(((corners * pressure[..., None]) * gradients).sum(axis=-1) ^ label)   # [...] Bivector+[faces]
-        pushes.append((~corners.sum(axis=0) * (drive.commutator(parcels) * (areas / 3))) / cells)
+        pushes.append((corners.sum(axis=0).adjugate() * (drive.commutator(parcels) * (areas / 3))) / cells)
     return pushes[0], pushes[1]
 
 

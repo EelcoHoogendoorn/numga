@@ -102,6 +102,7 @@
 - [Joukowski wing](fluids/wing/) — A potential flow bends around a wing with vanishing divergence and curl outside it.
 - [Leapfrogging vortices](fluids/vortices/) — Planar vortices move one another through the velocity fields they induce.
 - [Jeffery orbits](fluids/jeffery/) — Rigid ellipsoids tumble in a shear flow according to their shape and orientation.
+- [Nematic liquid crystals](fluids/liquid_crystals/) — A bivector derivative reads orientational torque; half-charge defects relax and move under active stress.
 - [Hydrostatic stability](fluids/floating/) — Water pressure determines restoring loads on floating bodies from small tilts to capsizing.
 - [Kirchhoff's equations](fluids/kirchhoff/) — Added fluid inertia changes the motion of an ellipsoid through still ideal fluid.
 - [Smoke rings](fluids/smoke_rings/) — Vortex filaments evolve under their own curvature and the flow induced by neighbouring rings.
@@ -141,6 +142,7 @@
 
 - [Magnetic resonance](quantum/magnetic_resonance/) — Driven and relaxing spins produce nutation, resonance line shapes and spin echoes.
 - [A rotating Bose–Einstein condensate](quantum/condensate/) — The condensate as a vector in a plane of its own joined to the trap's plane, the trap's turning and the wave's two bivectors kept apart: descending its energy in a rotating trap, it settles into a lattice of quantized vortices as dense as Feynman's rule asks.
+- [Magnetic skyrmions](quantum/skyrmions/) — Exchange carried across each bond by a rotor twisted about it is the Dzyaloshinskii–Moriya interaction: on a triangular lattice the spins crystallize into a lattice of skyrmions, vanish into a ferromagnet and give way to a spiral as the field is swept, and drift at the skyrmion Hall angle under a current.
 - [Graphene](quantum/graphene/) — Electron hopping produces Dirac cones, pseudospin textures and a Berry phase around each cone.
 - [Graphene edge states](quantum/kane_mele/) — Spin-orbit coupling produces boundary states in a finite graphene flake.
 - [Two spins](quantum/two_spins/) — Exchange interactions entangle a pair of spins and change their Bell correlations.
@@ -160,8 +162,10 @@
 - [Moving charges](electromagnetism/moving_charge/) — Derivatives of a moving charge's potential determine its electromagnetic field.
 - [Fresnel wave surfaces](electromagnetism/fresnel/) — A crystal's constitutive map determines the directions and speeds of light propagation.
 - [Induced dipoles](electromagnetism/induced_dipoles/) — Atoms polarize in response to an applied field and to one another's dipoles.
+- [Induced surface charge](electromagnetism/induced_charge/) — Finite conductivity moves charge towards the surfaces of oppositely charged conductors; each keeps its initial total as the applied field turns.
 - [Electrostriction](electromagnetism/electrostriction/) — An elastic lattice deforms while its induced dipoles reach electrical and mechanical equilibrium.
 - [Eddy-current braking](electromagnetism/eddy_brake/) — Directional conductivity determines currents and braking torque in a rotating disc.
+- [Magnetic materials](electromagnetism/magnetic_materials/) — A permanent magnet, soft iron and a conductor share one field; a coil pulse changes the induced magnetization and drives eddy currents.
 - [The Meissner effect](electromagnetism/superconductor/) — A superconductor's canonical momentum is the spacetime gradient of one phase, so its exterior derivative vanishes: London's two equations in one, which expel a field from a rod cooled in it where a perfect conductor freezes the field in, and integrate around a ring to whole flux quanta.
 - [Fluxons in a Josephson junction](electromagnetism/josephson/) — The phase difference as a direction in a plane joined to the junction's spacetime: one wedge is the tunnelling torque and the field's tension, a boost makes a moving fluxon from a resting one, and lines of flux contract as Lorentz says, collapse as rings and reflect from the junction's edge as antifluxons.
 - [Second-harmonic generation](electromagnetism/second_harmonic/) — A crystal's quadratic field response generates light at twice the driving frequency.
@@ -194,7 +198,10 @@
 - [Snowflake](thermodynamics/snowflake/) — A phase field with a six-fold surface energy grows a seed of ice in undercooled water into a six-armed dendrite.
 - [Cellular flame](thermodynamics/flame/) — Flames spreading from sparks through a lean mixture merge and break into cells where the fuel spreads faster than the heat.
 - [Rubber band heat engine](thermodynamics/rubber_band/) — A rubber band warmed by a lamp pulls harder and lifts a weight, its pull and the heat its motion moves read off one pairing.
-- [Galvanomagnetic and thermomagnetic effects](thermodynamics/magnetotransport/) — Electrons and holes drift through a conductor in a magnetic field each turned by its own rotor, the inverse of one less the mobility times the field: one sum of turned drifts, read for charge and for entropy, gives a Hall voltage that vanishes at compensation exactly where the Nernst voltage peaks, along a bar and around a Corbino ring, as the balance of the carriers runs from electrons only to holes only.
+- [Thermocouple](thermodynamics/thermocouple/) — Heat at the junction of two metals gives a voltage and a current through it cools it, both read off one response, `advection(mobility(advection.adjugate()))`, and tied over the whole hairpin because its conductance, `gradient.adjugate()(response(gradient))`, is its own adjugate.
+- [Adiabatic demagnetization](thermodynamics/paramagnetic_salt/) — The rubber band's magnetic twin: a paramagnetic salt's energy is its lattice's heat alone, so the field it holds its magnetization against comes from its entropy, and a crystal of it taken around the magnetic refrigerator's cycle cools from a kelvin to millikelvins, warmth and cold running in fronts from the end in contact.
+- [Galvanomagnetic and thermomagnetic effects](thermodynamics/magnetotransport/) — Electrons and holes drift through a conductor in a magnetic field each turned by its own rotor, the inverse of one less the mobility times the field: one sum of turned drifts, read for charge and for entropy, gives a Hall voltage that vanishes at compensation exactly where the Nernst voltage peaks, along a bar and around a Corbino ring, as the balance of the carriers runs from electrons only to holes only; with no field, spin-up and spin-down electrons turned opposite ways by their spins' scattering give a magnetized conductor's anomalous Hall voltage and an unmagnetized one's spin Hall effect.
+- [Semiconductor devices](thermodynamics/semiconductor_devices/) — Electrons and holes drift and diffuse under one drive, on a mesh of simplices of any dimension: a p–n junction forms, follows Shockley's diode law under a bias and runs recombination backward under light as a solar cell; a MOSFET's gate gathers a channel whose current saturates as it pinches off near the drain; and a solar cell's holes rise to its junction and run along its thin top layer to the nearest finger, its power peaking at the fingers' spacing that balances their shade against the top layer's resistance.
 
 ## Symmetry
 
@@ -237,4 +244,4 @@
 
 Run an example from the repository root with `python -m examples.<topic>.<name>.scenarios`.
 
-Notebooks sit next to their examples. Open one in Jupyter from inside the repository, or use the Open in Colab badge at its top. `python -m tools.notebooks` runs them as many at once as the machine's pool for heavy runs admits (`tools/pool.py`), all of them or those whose paths hold a string, that use a module (`--touching examples.util.topology`) or that a change touched (`--changed main`); `--list` shows the selection without running it.
+Notebooks sit next to their examples. Open one in Jupyter from inside the repository, or use the Open in Colab badge at its top. `python -m tools.notebooks` runs them as many at once as the machine's pool for heavy runs admits (`tools/pool.py`), all of them or those whose paths hold a string, that use a module (`--touching numga.topology`) or that a change touched (`--changed main`); `--list` shows the selection without running it.

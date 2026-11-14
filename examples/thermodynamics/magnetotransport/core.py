@@ -19,17 +19,30 @@ own Seebeck voltage, and where the kinds are unbalanced the heat they carry is t
 Righi-Leduc effect. A Corbino ring, its contacts on its rims, has no sides for anything to pile up on: its carriers
 spiral, and a fall of temperature between its rims drives a current around it.
 
-The algebra is planar spacetime, x+y+t-, joined with one degenerate direction for entropy: x+y+t-s0. A unit of charge
-is a direction along time, `-mv.t.dual()`, and a unit of entropy `mv.s.dual()`, which is also the weight of a place; a
-carrier's parcel holds both, `valence * (time + entropy_per_charge * entropy)`. The potentials are one vector, the
-electrochemical potential along t and the temperature along s, and their drive is minus their gradient wedged with
-them. The magnetic field is a plane of space, `strength * mv.xy`, and with the drive it pushes a moving carrier by one
-commutator, `(magnetic + drive).commutator(parcel + valence * velocity)`: through space the drive's push on the parcel
-at rest and the field's turning of the drift, with no cross product and no magnetic term of its own, and along time
-the power spent on the carrier, none of it the magnetic field's. For a drift through space the field's commutator is
-their geometric product, so that Drude's steady state, the drag balancing the push, is solved by inverting one element,
-`1 - valence * mobility * magnetic`, a scalar plus a bivector: a rotor scaled by the secant of the kind's Hall angle,
-the angle opposite for opposite charges.
+A carrier's spin turns its drift too. In a conductor whose spins lie along its axis, every spin turns in the
+conductor's plane, the plane the magnetic field lies in, and scattering turns a moving carrier sideways by its spin,
+skew scattering, the opposite way for the opposite spin: each kind meets a plane of its own beside the field.
+Spin-up and spin-down electrons are then two kinds of carrier, alike in charge and entropy and turned opposite ways.
+Unmagnetized, the two are equal in number, their turns cancel in the current, and a current along the bar carries a
+current of spin across it with no Hall voltage, the spin Hall effect. Magnetized, one spin outnumbers the other, the
+turns no longer cancel, and a Hall voltage builds up with no field at all, the anomalous Hall effect, growing with the
+magnetization. A fall of temperature turns nothing here: both spins carry the same entropy per charge, so their own
+Seebeck voltage holds both still, and the anomalous and spin Nernst effects wait for scattering that depends on a
+carrier's energy, which Drude's model leaves out. The spins are counted by state, up or down, which describes them while
+they stay along the axis; the two share one electrochemical potential, the limit in which spins relax to balance faster
+than anything else here happens.
+
+The algebra is planar projective spacetime, x+y+t-w0, its degenerate w weighing a place, joined with one degenerate
+direction for entropy: x+y+t-w0s0. A unit of charge is a direction along time, `-mv.t.dual()`, and a unit of entropy
+`mv.s.dual()`; a carrier's parcel holds both, `valence * (time + entropy_per_charge * entropy)`. The potentials are one
+vector, the electrochemical potential along t and the temperature along s, and their drive is minus their gradient
+wedged with them. The magnetic field is a plane of space, `strength * mv.xy`, and with the drive it pushes a moving
+carrier by one commutator, `(magnetic + drive).commutator(parcel + valence * velocity)`: through space the drive's push
+on the parcel at rest and the field's turning of the drift, with no cross product and no magnetic term of its own, and
+along time the power spent on the carrier, none of it the magnetic field's. For a drift through space the field's
+commutator is their geometric product, so that Drude's steady state, the drag balancing the push, is solved by inverting
+one element, `1 - valence * mobility * magnetic`, a scalar plus a bivector: a rotor scaled by the secant of the kind's
+Hall angle, the angle opposite for opposite charges.
 A carrier carries what it holds as the flux `velocity.regressive(parcel)`, and the response, the map from a drive to the
 flux it drives, is the sum over the kinds of their drifts per drive joined with their parcels, with the lattice's
 conduction of entropy. One sum of turned drives is read two ways: through the planes that read charge, the kinds' turns
@@ -55,10 +68,11 @@ import numpy as np
 from numga import Algebra, NumpyContext, stack
 from numga.sparse import SparseExtensor, spdiag
 
-from examples.util.topology import Topology
+from numga.topology import Topology
 
-# Planar spacetime, and the entropy a parcel holds, a direction of its own with no metric.
-ga = Algebra("x+y+t-") * Algebra("s0")
+# Planar projective spacetime, its degenerate w weighing a place, and the entropy a parcel holds, a direction of its
+# own with no metric.
+ga = Algebra("x+y+t-w0") * Algebra("s0")
 # The plane of space, and what a parcel holds, charge along time and entropy.
 space = Algebra("x+y+")
 amounts = Algebra("t-s0")
@@ -81,29 +95,38 @@ Drifting = ga.gatype((Spatial, Drive))                                        # 
 Response = ga.gatype((Flux, Drive))                                           # Antibivector- <- Bivector+
 axis = mv.x.dual()                                                            # [] Point-
 across = mv.y.dual()                                                          # [] Point-
-# A unit of charge, a direction along time, and a unit of entropy, the weight of a place.
+# A unit of charge, a direction along time, and a unit of entropy; and the origin, a place of weight one.
 time = -mv.t.dual()                                                           # [] Parcel-
 entropy = mv.s.dual()                                                         # [] Parcel-
+origin = mv.w.dual()                                                          # [] Point-
+# The plane the carriers' spins turn in, the conductor's own, for spins along its axis.
+spin_plane = mv.xy                                                            # [] Bivector+
 
 
 # --- math -----------------------------------------------------------------------------
 def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Plane]:
-    """Each triangle's area `Scalar+[faces]`, and each corner's hat gradient `[corners] Plane+[faces]`, the plane
-    through the facing side, along time and at unit entropy, over twice the area, so that it reads one from the side to
-    the corner."""
-    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)              # [corners] Point-[faces]
-    # Twice a triangle's area: two of its sides joined, read through time at unit entropy.
-    double_areas = ((sides[0] & sides[1]) & time) & entropy                   # Scalar-[faces]
-    return double_areas.norm() / 2, (time & entropy & sides) / double_areas
+    """Each triangle's area `Scalar+[faces]`, and each corner's hat gradient `[corners] Plane+[faces]`, at these
+    vertices, points of weight one: what the corner's ramp reads across space, the ramp reading one at the corner and
+    nothing along the facing side."""
+    corners = topology.incidence[2, 0] * vertices                             # [corners] Point-[faces]
+    facing = topology.off[2, 0] * vertices                                    # [2, corners] Point-[faces]
+    # Each corner's ramp: the facing side, joined with time and entropy, along which the potentials do not vary off the
+    # mesh, over that join closed by the corner.
+    sides = facing[0] & facing[1]                                             # [corners] Antibivector-[faces]
+    ramps = (sides & time & entropy) / (sides & time & entropy & corners)     # [corners] Plane+[faces]
+    # Twice a triangle's area: its corners joined, along time and entropy.
+    double_areas = corners[0] & corners[1] & corners[2] & time & entropy      # Scalar-[faces]
+    # A ramp's gradient, what it reads across space, its value at the origin, read along w, dropped.
+    return double_areas.norm() / 2, ramps.cast(Upright)
 
 
-def drifts(magnetic: Magnetic, valences: np.ndarray, entropies_per_charge: np.ndarray, mobilities: np.ndarray
-           ) -> Drifting:
+def drifts(magnetic: Magnetic, valences: np.ndarray, entropies_per_charge: np.ndarray, mobilities: np.ndarray,
+           skews: np.ndarray) -> Drifting:
     """Each kind of carrier's velocity per drive `[..., kinds] Spatial- <- Drive+` in each magnetic field `[...]
-    Bivector+`, a plane of space: the kind's charge, the entropy it carries per charge and its mobility, the velocity a
-    unit push gives it. The velocity is the drive's push on the kind's parcel at rest, turned through the kind's Hall
-    angle and shortened by its cosine: Drude's steady state, in which the drag balances the push and the field's
-    turning of the drift."""
+    Bivector+`, a plane of space: the kind's charge, the entropy it carries per charge, its mobility, the velocity a
+    unit push gives it, and its skew, the tangent of the angle its spin's scattering turns its drift by, signed by its
+    spin. The velocity is the drive's push on the kind's parcel at rest, turned through the kind's Hall angle and
+    shortened by its cosine: Drude's steady state, in which the drag balances the push and the turning of the drift."""
     parcels = valences * (time + entropies_per_charge * entropy)             # [kinds] Parcel-
     # The whole push on a moving carrier is one commutator, `(magnetic + drive).commutator(parcel + valence *
     # velocity)`. Through space it is the drive's push on the parcel at rest, its charge down the fall of the
@@ -112,17 +135,19 @@ def drifts(magnetic: Magnetic, valences: np.ndarray, entropies_per_charge: np.nd
     # The field turns a drift through space by their geometric product, by the parcel's charge, so the drift balances
     # `velocity == mobility * (push + valence * magnetic * velocity)`: one less the mobility times the field, a scalar
     # plus a bivector, a rotor scaled by the secant of the Hall angle, times the velocity is the mobility times the push.
-    hall = 1 - valences * mobilities * magnetic[..., None]                   # [..., kinds] Even+
+    # Scattering by the carrier's spin turns its drift too, in the spins' plane, by the tangent its skew gives,
+    # whatever its mobility: a plane of its own for each kind, beside the field.
+    hall = 1 - valences * mobilities * magnetic[..., None] - skews * spin_plane   # [..., kinds] Rotor+
     return hall.inverse() * (mobilities * push)
 
 
 def response(magnetic: Magnetic, valences: np.ndarray, entropies_per_charge: np.ndarray, mobilities: np.ndarray,
-             densities: np.ndarray, conductivity: float) -> Response:
+             skews: np.ndarray, densities: np.ndarray, conductivity: float) -> Response:
     """The conductor's response `[...] Flux- <- Drive+`, the flux a drive drives, in each magnetic field `[...]
     Bivector+`: each kind of carrier, at its density per area `[..., kinds]`, drifting as `drifts` has it and carrying
     what it holds; and the lattice, conducting entropy down a fall of temperature at this conductivity."""
     parcels = valences * (time + entropies_per_charge * entropy)             # [kinds] Parcel-
-    drifting = drifts(magnetic, valences, entropies_per_charge, mobilities)  # [..., kinds] Spatial- <- Drive+
+    drifting = drifts(magnetic, valences, entropies_per_charge, mobilities, skews)   # [..., kinds] Spatial- <- Drive+
     carrying = (densities * drifting.regressive(parcels)).sum(axis=-1)       # [...] Flux- <- Drive+
     conducting = conductivity * Drive.commutator(entropy).regressive(entropy)   # [] Flux- <- Drive+
     return carrying + conducting
@@ -136,7 +161,7 @@ def outflow(topology: Topology, areas: Scalar, gradients: Plane, response: Respo
     corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
     driving = -(gradients ^ Potential)                                        # [corners] (Drive+ <- Potential+)[faces]
     local = areas * (gradients[:, None] ^ response(driving)[None, :])        # [corners, corners] (Parcel- <- Potential+)[faces]
-    return (~corners[:, None] * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)
+    return (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=0).sum(axis=0)
 
 
 def steady(topology: Topology, areas: Scalar, gradients: Plane, response: Response, high: np.ndarray, low: np.ndarray,
@@ -154,8 +179,8 @@ def steady(topology: Topology, areas: Scalar, gradients: Plane, response: Respon
     held = towards_high * stack((mv.t, mv.s)) / 2                             # [drives] Potential+[vertices]
     free = topology.reading(np.setdiff1d(np.arange(topology.n_vertices), np.concatenate([high, low])), 0)
     losing = outflow(topology, areas, gradients, response)                    # (Parcel- <- Potential+)[vertices <- vertices]
-    loose = free * losing * ~free                                             # (Parcel- <- Potential+)[free <- free]
-    potentials = held + ~free * loose.solve(-(free * losing(held)))           # [drives] Potential+[vertices]
+    loose = free * losing * free.adjugate()                                   # (Parcel- <- Potential+)[free <- free]
+    potentials = held + free.adjugate() * loose.solve(-(free * losing(held)))  # [drives] Potential+[vertices]
     # The charge entering the conductor at the high contact, what the contact's cells lose to the rest.
     currents = mv.t & (topology.reading(high, 0) * losing(potentials)).sites.sum()   # [drives] Scalar+
     # Driven by a current: the fall of the potential scaled to pass it. Driven by heat: the fall of temperature, less
@@ -168,7 +193,7 @@ def steady(topology: Topology, areas: Scalar, gradients: Plane, response: Respon
 
 def sweep(topology: Topology, areas: Scalar, gradients: Plane, high: np.ndarray, low: np.ndarray, current: float,
           temperature_difference: float, magnetic: Magnetic, valences: np.ndarray, entropies_per_charge: np.ndarray,
-          mobilities: np.ndarray, densities: np.ndarray, conductivity: float
+          mobilities: np.ndarray, skews: np.ndarray, densities: np.ndarray, conductivity: float
           ) -> Iterator[tuple[np.ndarray, Potential, Spatial, Potential, Spatial]]:
     """The conductor's two steady states, as `steady` finds them at this current and this difference of temperature,
     at each frame's magnetic field `[frames] Bivector+` and densities of the carriers `[frames, kinds]` in turn: the
@@ -176,8 +201,8 @@ def sweep(topology: Topology, areas: Scalar, gradients: Plane, high: np.ndarray,
     of carrier's velocity `[kinds] Spatial-[faces]`."""
     corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
     for frame, frame_densities in enumerate(densities):
-        drifting = drifts(magnetic[frame], valences, entropies_per_charge, mobilities)   # [kinds] Spatial- <- Drive+
-        conducting = response(magnetic[frame], valences, entropies_per_charge, mobilities, frame_densities,
+        drifting = drifts(magnetic[frame], valences, entropies_per_charge, mobilities, skews)  # [kinds] Spatial- <- Drive+
+        conducting = response(magnetic[frame], valences, entropies_per_charge, mobilities, skews, frame_densities,
                               conductivity)                                   # [] Flux- <- Drive+
         electric, thermal = steady(topology, areas, gradients, conducting, high, low, current, temperature_difference)
         # Each triangle's drive: its corners' potentials on their hats' gradients.

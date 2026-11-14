@@ -16,12 +16,12 @@ from matplotlib.figure import Figure
 
 from numga.extensor import Extensor
 from examples.util import charts
-from examples.util.wgsl import contours, image_figure, simplices
-from examples.util.wgsl.camera import Camera
+from numga.topology import Topology
+from numga.render import Camera, contours, drawing, simplices
+from examples.util.panels import image_figure
 from examples.thermodynamics.snowflake import core
 
 mv = core.mv
-Topology = simplices.Topology
 # Water colour palette from cold water up to the melting temperature, plus ice fill and contour colours.
 water_map = LinearSegmentedColormap.from_list("water", ["#0b1a2e", "#1d3a5f", "#4f7cab"])
 ice_colour, edge_colour = np.array(to_rgba("#dcefff")), np.array(to_rgba("#ffffff"))
@@ -71,7 +71,7 @@ def animate(topology: Topology, vertices: Extensor,
     points = vertices.batch()
     camera = dish_camera(vertices)
     for parcels, _ in states:
-        shown = on_white(simplices.composited(layers(topology, points, parcels, camera)))
+        shown = on_white(drawing.composited(layers(topology, points, parcels, camera)))
         yield shown
     for _ in range(n_hold):
         yield shown
@@ -80,7 +80,7 @@ def animate(topology: Topology, vertices: Extensor,
 def draw_grown(topology: Topology, vertices: Extensor, parcels: Extensor) -> Figure:
     """Still figure of the grown crystal across the full dish."""
     camera = dish_camera(vertices)
-    return image_figure(on_white(simplices.composited(layers(topology, vertices.batch(), parcels, camera))))
+    return image_figure(on_white(drawing.composited(layers(topology, vertices.batch(), parcels, camera))))
 
 
 def draw_seed(topology: Topology, vertices: Extensor, parcels: Extensor) -> Figure:
@@ -88,7 +88,7 @@ def draw_seed(topology: Topology, vertices: Extensor, parcels: Extensor) -> Figu
     points = vertices.batch()
     camera = framed(seed_half)
     strokes = simplices.strokes(points, topology, stroke_colour, stroke_width, camera, opacity=stroke_opacity)
-    return image_figure(on_white(simplices.composited(layers(topology, points, parcels, camera) + [strokes])))
+    return image_figure(on_white(drawing.composited(layers(topology, points, parcels, camera) + [strokes])))
 
 
 def side_by_side(left: list[np.ndarray], right: list[np.ndarray]) -> Iterator[np.ndarray]:

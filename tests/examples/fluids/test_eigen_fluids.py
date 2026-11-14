@@ -19,7 +19,7 @@ def test_a_coarse_sphere_steps_once_and_draws():
     normals = patches / areas                                                    # Patch-[F]
     corner_gradients = (sides | patches.inverse()) / 2                           # [3] Plane+[F]
     gradient = (core.spdiag(corner_gradients * core.Scalar) * topology.incidence[2, 0]).sum(axis=0)   # (Plane+ <- Scalar+)[F <- V]
-    dual_areas = ~topology.incidence[2, 0].mean(axis=0) * areas                  # Scalar+[V]
+    dual_areas = topology.incidence[2, 0].mean(axis=0).adjugate() * areas                  # Scalar+[V]
 
     # Dirichlet stiffness and lumped vertex mass define the generalized Laplace–Beltrami eigenproblem.
     stiffness = gradient.adjugate()((areas * core.Plane.dual())(gradient))       # (Antiscalar- <- Scalar+)[V <- V]

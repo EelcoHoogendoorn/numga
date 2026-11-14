@@ -18,7 +18,7 @@ import numpy as np
 from numga import concatenate, stack
 from examples.thermodynamics import rendering as art
 from examples.thermodynamics.phase_change import core
-from examples.util.wgsl import solids
+from numga.render import solids
 
 mv = core.mv
 PressureAt = Callable[[core.Scalar, np.ndarray | float], core.Scalar]

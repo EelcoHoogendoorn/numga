@@ -30,7 +30,7 @@ import numpy as np
 from numga import Algebra, NumpyContext, stack, where
 from numga.algebras import PGA3D as ga
 from examples.mechanics.simplex import simplex_inertia_weights
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                             # Scalar+

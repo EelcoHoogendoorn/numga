@@ -19,7 +19,7 @@ import numpy as np
 from numga import Extensor, stack
 from examples.thermodynamics import rendering as art
 from examples.thermodynamics.entropy_production import core
-from examples.util.wgsl import solids
+from numga.render import solids
 
 mv = core.mv
 # Pixel dimensions and axis ranges for the state-space and entropy diagrams.

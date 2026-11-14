@@ -64,7 +64,7 @@ def frames(worldlines: Event, emitted: Event, reflected: Event, received: Event,
 def main() -> None:
     from examples.relativity.radar import render
     from examples.util.animation import save_animation, save_figure
-    from examples.util.wgsl import image_figure
+    from examples.util.panels import image_figure
 
     worldlines, emitted, reflected, received = exchange()
     geometry = worldlines, emitted, reflected, received

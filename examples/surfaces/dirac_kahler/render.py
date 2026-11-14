@@ -13,8 +13,8 @@ from numga import stack
 from numga.extensor import Extensor
 from examples.surfaces.dirac_kahler import core
 from examples.util import charts
-from examples.util.wgsl import contours, flow, meshes, simplices, solids
-from examples.util.wgsl.camera import Camera, offset_panel
+from numga.render import Camera, contours, flow, meshes, simplices, solids
+from examples.util.panels import offset_panel, overlay
 
 sm = solids.mv
 
@@ -64,7 +64,7 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 # --- plumbing -------------------------------------------------------------------------
 def at_vertices(topology: core.Topology, field: Extensor) -> Extensor:
     """Face fields averaged at each vertex over the faces at it, for drawing `X[faces]` as `X[vertices]`."""
-    corners = ~topology.incidence[2, 0].sum(axis=0)                            # Scalar+[vertices <- faces]
+    corners = topology.incidence[2, 0].sum(axis=0).adjugate()                            # Scalar+[vertices <- faces]
     ones = field.context.multivector.scalar(np.ones((topology.n_elements[2], 1))).field()  # Scalar+[faces]
     return (corners * field) / (corners * ones)
 
@@ -123,7 +123,7 @@ def field_panels(topology: core.Topology, vertices: core.Point, fields: core.Poi
         frame_panel(ax, vertices)
         camera = offset_panel(ax, core.mv.x, core.mv.y)
         levels = [level_curves(topology, vertices, potential, camera)] if index == contoured else []
-        simplices.overlay(ax, [contours.picture(points, topology, np.zeros(len(points)), np.array(to_rgb(domain_colour)),
+        overlay(ax, [contours.picture(points, topology, np.zeros(len(points)), np.array(to_rgb(domain_colour)),
                                                 camera)]
                           + levels
                           + [flow.layer(points, topology, field, camera, reference_speed, np.array(to_rgb(colour))),

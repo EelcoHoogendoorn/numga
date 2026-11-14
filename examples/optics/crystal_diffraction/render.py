@@ -18,8 +18,9 @@ from matplotlib.image import AxesImage
 from numga import Extensor, stack
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import pinned, simplices
-from examples.util.wgsl.camera import Camera, offset_panel, read
+from numga.topology import Topology
+from numga.render import Camera, drawing, read, simplices
+from examples.util.panels import offset_panel, overlay, pinned
 
 position_limit = 7.8
 brightness_floor = 1e-4
@@ -66,8 +67,8 @@ def atoms(positions: Extensor, radius: float, camera: Camera) -> np.ndarray:
     their picture."""
     along, rise = (plane.dual() / (plane & plane.dual()) for plane in (camera.across, camera.up))
     ends = position_limit * stack((-along, along, -rise, rise))         # [4] Antivector-
-    return simplices.composited([
-        simplices.strokes(ends, simplices.Topology.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
+    return drawing.composited([
+        simplices.strokes(ends, Topology.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
                           cap=simplices.Cap.BUTT),
         simplices.markers(positions, atom_colour, radius, camera)])
 
@@ -81,7 +82,7 @@ def rings(reciprocal: Extensor, scale: float, camera: Camera) -> np.ndarray:
     turns = ((along ^ rise) * (-np.linspace(0, 2 * np.pi, n_around, endpoint=False) / 2)).exp()   # [around] Rotor+
     circle = (turns >> along) * (scale * ring_radius * camera.pixel)                              # [around] Vector+
     ends = (reciprocal[:, None] + circle).reshape(-1)                                             # [reflections * around] Vector+
-    return simplices.strokes(ends, simplices.Topology.loops([n_around] * len(reciprocal)), ring_colour,
+    return simplices.strokes(ends, Topology.loops([n_around] * len(reciprocal)), ring_colour,
                              scale * ring_width, camera)
 
 
@@ -102,7 +103,7 @@ def diffraction(ax: Axes, reciprocal: Extensor, transfers: Extensor, brightness:
     ax.set(xlim=extent[:2], ylim=extent[2:])
     # The wavevectors read by the points one along x and along y, as the brightness's samples are.
     camera = offset_panel(ax, mv.x.dual(), mv.y.dual())
-    return image, simplices.overlay(ax, [rings(reciprocal, scale, camera)]), camera
+    return image, overlay(ax, [rings(reciprocal, scale, camera)]), camera
 
 
 @charts.style()
@@ -112,7 +113,7 @@ def comparison(positions: Extensor, reciprocal: Extensor, transfers: Extensor, b
     n_cases = positions.shape[0]
     figure, (top, bottom) = panels(2, n_cases, transfers.shape[-1])
     for i in range(n_cases):
-        simplices.overlay(top[i], [atoms(positions[i], atom_radius, framing(top[i], positions[i]))])
+        overlay(top[i], [atoms(positions[i], atom_radius, framing(top[i], positions[i]))])
         diffraction(bottom[i], reciprocal[i], transfers, brightness[i], 1.0)
     return figure
 
@@ -126,12 +127,12 @@ def animate(frames: Iterable[tuple[Extensor, Extensor, Extensor]], transfers: Ex
         figure, ((left, right),) = panels(1, 2, transfers.shape[-1])
         positions, reciprocal, brightness = next(frames)
         atom_camera = framing(left, positions)
-        atoms_seen = simplices.overlay(left, [atoms(positions, movie_scale * atom_radius, atom_camera)])
+        atoms_seen = overlay(left, [atoms(positions, movie_scale * atom_radius, atom_camera)])
         image, rings_seen, ring_camera = diffraction(right, reciprocal, transfers, brightness, movie_scale)
         yield capture(figure)
         for positions, reciprocal, brightness in frames:
             atoms_seen.set_data(atoms(positions, movie_scale * atom_radius, atom_camera))
             image.set_data(brightness.to_array()[::-1])
-            rings_seen.set_data(simplices.composited([rings(reciprocal, movie_scale, ring_camera)]))
+            rings_seen.set_data(drawing.composited([rings(reciprocal, movie_scale, ring_camera)]))
             yield capture(figure)
         plt.close(figure)

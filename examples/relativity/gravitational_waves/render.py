@@ -14,8 +14,8 @@ from numga import stack
 
 from examples.relativity.gravitational_waves import core
 from examples.util import charts
-from examples.util.topology import Topology, lookup_simplices
-from examples.util.wgsl import meshes, simplices, solids
+from numga.topology import Topology, lookup_simplices
+from numga.render import meshes, simplices, solids
 
 
 # --- the view from inside a three-sphere, traced on the GPU ------------------------------------------------------------
@@ -468,7 +468,7 @@ def inside(walk: str, walk_values: dict, mesh: Topology, vertices: core.Point, c
     rest of `walk_values`; the edges are lit struts, each in its colour and squared radius `styles`, `[edges, 4]`; the
     vertices are lit beads, each in its colour and squared radius `beads`, `[vertices, 4]`, none where that is nothing;
     and at each frame the atoms and bonds of `crystals`, each as it was when a leg's light passed it."""
-    from examples.util.wgsl import Shader, supersampled
+    from numga.wgsl import Shader, supersampled
 
     mv = core.mv
     shader = Shader(supersampled() + walk + inside_source + rest_sight_source + crystals_kept_source, core.ga,

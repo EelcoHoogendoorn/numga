@@ -15,9 +15,9 @@ from numga import concatenate, stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.electromagnetism.constitutive import core
-from examples.util.wgsl import fitted, show, simplices, solids
-from examples.util.wgsl.camera import Camera, offset_panel
-from examples.util.wgsl.scene import Scene
+from numga.topology import Topology
+from numga.render import Camera, Scene, simplices, solids
+from examples.util.panels import fitted, offset_panel, overlay, show
 
 Modes = tuple[np.ndarray, core.Bivector]
 mv, sm = core.mv, solids.mv
@@ -87,7 +87,7 @@ def _cross(ax: plt.Axes, camera: Camera, across: str, up: str) -> np.ndarray:
     (left, right), (bottom, top) = ax.get_xlim(), ax.get_ylim()
     along, rise = (plane.dual() / (plane & plane.dual()) for plane in (camera.across, camera.up))
     ends = stack((left * along, right * along, bottom * rise, top * rise))   # [4]
-    return simplices.strokes(ends, simplices.Topology.chains([2, 2]), np.array(to_rgb(cross_colour)), charts.FRAME_PX,
+    return simplices.strokes(ends, Topology.chains([2, 2]), np.array(to_rgb(cross_colour)), charts.FRAME_PX,
                              camera, cap=simplices.Cap.BUTT)
 
 
@@ -156,7 +156,7 @@ def wave_image(scene: Scene, modes: Modes, tau: float) -> np.ndarray:
     station_idx = np.linspace(0, n_samples - 1, n_stations, dtype=int)
     stations = axis[station_idx]                                                # [stations] Point-
     tips = stations + electric[station_idx]                                     # [stations] Point-
-    arrows = simplices.tubes(stack((stations, tips), axis=-1).reshape(-1), simplices.Topology.chains([2] * n_stations),
+    arrows = simplices.tubes(stack((stations, tips), axis=-1).reshape(-1), Topology.chains([2] * n_stations),
                              electric_colour, arrow_width, view, gloss=solids.gloss, chevrons=np.ones(n_stations),
                              chevron=arrow_chevron)
     discs, arcs = magnetic_discs(stations[::2], field[station_idx[::2]])
@@ -165,7 +165,7 @@ def wave_image(scene: Scene, modes: Modes, tau: float) -> np.ndarray:
     # its curve's colour, each arc's last edge ending in a chevron, which shrinks with its disc.
     n_discs = arcs.shape[0]
     curve_points = concatenate([axis + electric, arcs.reshape(-1)])            # [samples + discs * arc] Point-
-    chains = simplices.Topology.chains([n_samples] + [n_arc] * n_discs)
+    chains = Topology.chains([n_samples] + [n_arc] * n_discs)
     colours = np.repeat([electric_colour, magnetic_colour], [n_samples - 1, n_discs * (n_arc - 1)], axis=0)
     arc_ends = np.zeros((n_discs, n_arc - 1))
     arc_ends[:, -1] = 1.0
@@ -236,7 +236,7 @@ def draw_polarizations(
     units = fields / (fields & core.time).norm()                                # [modes] Bivector+
     n_modes = len(units)
     colours = np.stack((electric_colour, magnetic_colour))                      # [modes, 3]
-    pairs = simplices.Topology.chains([2] * n_modes)
+    pairs = Topology.chains([2] * n_modes)
 
     ax.set_xlim([-1.3, 1.3])
     ax.set_ylim([-1.3, 1.3])
@@ -248,7 +248,7 @@ def draw_polarizations(
     # field along each.
     plane = offset_panel(ax, *core.swept_planes[:2])
     # Each mode's line through the origin, dotted, under its arrow from the origin, a stroke with a chevron at its tip.
-    simplices.overlay(ax, [
+    overlay(ax, [
         _cross(ax, plane, "$x$", "$y$"),
         simplices.strokes(stack((-units, units), axis=-1).reshape(-1), pairs, colours, charts.LINE_PX, plane,
                           dashes=polarization_dots, cap=simplices.Cap.ROUND, opacity=polarization_opacity),
