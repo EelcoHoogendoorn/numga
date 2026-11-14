@@ -1,26 +1,10 @@
-"""Electrokinetic transport through a charged channel, on a mesh of triangles, in planar spacetime joined with a
-direction for volume.
+"""Electrokinetic transport through triangulated charged channels in planar projective spacetime joined with volume.
 
-A charged wall draws a cloud of counter-ions into the liquid beside it, the double layer. A pressure drop along the
-channel pushes the liquid and carries the cloud with it, a streaming current; a field along it pushes the cloud, which
-drags the liquid along, electro-osmosis; and each ion drifts through the liquid under the field, conduction. Where the
-walls change along the channel, the liquid finds its own way between them, and the potential it adds keeps the current
-the same through every cross-section.
+A charged channel wall draws counter-ions into a screening cloud called the electric double layer. An axial pressure drop pushes the liquid and convects that charged cloud as a streaming current, while an axial electric field pulls the cloud and drags the liquid as electro-osmosis alongside ionic conduction. Where channel width or wall charge varies along the strip, the induced electric potential keeps total current uniform across every station while the liquid forms recirculation cells.
 
-The algebra is planar spacetime, x+y+t-, joined with one degenerate direction for the volume a flow carries:
-x+y+t-v0. A parcel of the solution is a point whose weight is its volume, `mv.v.dual()`, offset along time by the
-charge it holds; an ion, charge without volume, is a point at infinity along time. A drive is a field of bivectors:
-minus the gradient of the potentials, each wedged with the direction of what it acts on, the pressure with volume and
-the electric potential with time, `-(gradient ^ (pressure * mv.v + potential * mv.t))`. A drive's commutator with a
-parcel is the force on it, `drive.commutator(parcel)`, and a drive reads a flux by the regressive product, `drive &
-flux`, the power it spends. The liquid's flow is a stream function on the vertices, whose rise along an edge is the
-volume crossing it: a stream function rising by one at a corner of a triangle carries the liquid along the side facing
-that corner. Viscosity resists the flow by its vorticity; the drives do work on it by reading what it carries; and the
-potential the liquid adds is the one that every potential's drive reads the channel's flux as nothing, so that no
-charge piles up anywhere. The ions stay in their local equilibrium, the Boltzmann distribution of the double layer.
+Planar projective spacetime places vertices at unit projective weight along `origin` (`w.dual()`), while a degenerate quantity direction `v` records transported fluid volume without mixing length and volume metrics. A unit-volume liquid parcel carries `volume` (`v.dual()`) together with ionic charge along `time`, whereas an ion or dye molecule is a material parcel carrying charge without volume. Thermodynamic drives take minus each spatial potential gradient wedged with its conjugate direction, `-(gradient ^ (pressure * v + potential * t))`, acting on parcels via `drive.commutator(parcel)` and spending power `drive & flux` on fluxes. Vertex stream values advance volume across triangle sides without accumulation, vorticity around dual cells resists the flow, and the induced potential enforces zero net current divergence against every corner's simplex gradient.
 
-Lengths are in Debye lengths, potentials in thermal volts and charges per area in units that make the permittivity
-one; the viscosity is one.
+Lengths are measured in bulk Debye lengths, electric potentials in thermal volts, surface charges in permittivity times thermal volts per Debye length, and dynamic viscosity in unit reference viscosity.
 """
 
 from __future__ import annotations
@@ -31,206 +15,253 @@ import numpy as np
 
 from numga import Algebra, NumpyContext, stack
 from numga.sparse import SparseExtensor, spdiag
-
 from numga.topology import Topology
-from examples.fluids.electrokinetics.numerical import solve_coupled
+from examples.fluids.electrokinetics.numerical import coupled_solution
 
-# Planar spacetime, and the volume a flow carries, a direction of its own with no metric.
-spacetime = Algebra("x+y+t-")
-ga = spacetime * Algebra("v0")
-# The plane of the channel.
-space = Algebra("x+y+")
+# Planar projective spacetime for channel geometry and electrodynamics, joined with volume as a transported quantity.
+spacetime = Algebra("x+y+t-w0")
+quantities = Algebra("v0")
+ga = spacetime * quantities
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
+Antiscalar = ga.gatype.antiscalar()                                           # Antiscalar-
 Point = ga.gatype.antivector()                                                # Antivector-
 Plane = ga.gatype.vector()                                                    # Vector+
-# A drive: the field, the electric potential's gradient wedged with time, and the pressure's, wedged with volume.
-Drive = ga.gatype.bivector().derive.touching(space, Algebra("t-v0"))          # Bivector+
+Upright = Plane.derive.within("x y")                                          # Vector+
+Drive = ga.gatype.bivector().derive.touching("x y", "t v")                    # Bivector+
+Rotation = ga.gatype.bivector().derive.within("x y")                          # Bivector+
 Flux = ga.gatype.antibivector()                                               # Antibivector-
+origin = mv.w.dual()                                                          # [] Point-
 axis = mv.x.dual()                                                            # [] Point-
 across = mv.y.dual()                                                          # [] Point-
 time = -mv.t.dual()                                                           # [] Point-
-# A unit of volume, the weight of a point.
 volume = mv.v.dual()                                                          # [] Point-
-# The patch the plane of the flow spans, and the liquid's local turning in it read back as the moment that resists it,
-# per unit of viscosity.
-patch = axis & across                                                         # [] Patch-
-Rotation = ga.gatype.bivector().derive.within(space)                          # Bivector+
-resisting = patch * (Rotation & patch)                                        # [] Patch- <- Bivector+
-# A velocity read as the plane that takes its circulation along a path: its run along and across, read back.
-circulating = (stack((mv.x, mv.y)) * (stack((mv.x, mv.y)) & Point)).sum(axis=0)   # [] Plane+ <- Point-
-# A gradient read along and across as the flux it drives down itself at a unit diffusivity: Fick's law.
-spreading = (stack((axis, across)) * (Plane & stack((axis, across)))).sum(axis=0)  # [] Point- <- Plane+
+unread = origin & time & volume                                               # [] Antitrivector-
+# Spatial turning patch and viscous duality map from vorticity rate to resisting moment per unit viscosity.
+patch = axis & across                                                         # [] Flux-
+viscous_moment = patch * (Rotation & patch)                                   # [] Flux- <- Rotation+
+# Euclidean velocity-to-circulation plane map and unit-diffusivity Fick gradient-to-flux map.
+circulation_plane = (stack((mv.x, mv.y)) * (stack((mv.x, mv.y)) & Point)).sum(axis=0)  # [] Plane+ <- Point-
+fick_flux = (stack((axis, across)) * (Plane & stack((axis, across)))).sum(axis=0)      # [] Point- <- Plane+
 
 
 # --- plumbing -------------------------------------------------------------------------
-def strip(n_along: int, n_across: int, periods: np.ndarray, half_widths: np.ndarray
-          ) -> tuple[Topology, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Strips of triangles closed on themselves along their length, `periods` long `[...]`: a chain across swept
-    around a loop along, the walls at the half widths of the columns `[..., along]`. Their topology; their vertices'
-    places, along and across `[..., vertices, 2]`; how much further along each edge reaches than its ends' places, a
-    period back where it crosses from the last column to the first, `[..., edges]`; and the vertices of the lower and of
-    the upper wall `[along]`."""
+def strip(
+    n_along: int,
+    n_across: int,
+    periods: np.ndarray,
+    half_widths: np.ndarray,
+) -> tuple[Topology, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Sweeping a transverse chain of `n_across` vertices around a periodic loop of `n_along` stations forms a closed triangulated strip with vertex coordinates (`[..., V, 2]`), periodic seam shifts (`[..., E]`), and lower and upper wall vertex indices (`[n_along]`)."""
     topology = Topology.chains([n_across]).product(Topology.loops([n_along]))
-    places = np.multiply.outer(periods, np.arange(n_along) / n_along)        # [..., along]
-    heights = np.multiply.outer(half_widths, np.linspace(-1, 1, n_across))   # [..., along, across]
-    coordinates = np.stack(np.broadcast_arrays(places[..., None], heights), axis=-1)
+    stations = np.multiply.outer(periods, np.arange(n_along) / n_along)       # [..., n_along]
+    heights = np.multiply.outer(half_widths, np.linspace(-1, 1, n_across))    # [..., n_along, n_across]
+    coordinates = np.stack(np.broadcast_arrays(stations[..., None], heights), axis=-1)
     tails, heads = topology.elements[1].T
-    steps = heads // n_across - tails // n_across
-    wraps = np.where(np.abs(steps) > 1, -np.sign(steps), 0)
-    lower = np.arange(n_along) * n_across
-    return (topology, coordinates.reshape(heights.shape[:-2] + (-1, 2)), np.multiply.outer(periods, wraps), lower,
-            lower + n_across - 1)
+    column_steps = heads // n_across - tails // n_across
+    seam_wraps = np.where(np.abs(column_steps) > 1, -np.sign(column_steps), 0)
+    lower_wall = np.arange(n_along) * n_across
+    return (
+        topology,
+        coordinates.reshape(heights.shape[:-2] + (-1, 2)),
+        np.multiply.outer(periods, seam_wraps),
+        lower_wall,
+        lower_wall + n_across - 1,
+    )
 
 
-def wall_charge(n_across: int, periods: np.ndarray, half_widths: np.ndarray, surface_charges: np.ndarray
-                ) -> np.ndarray:
-    """The charge the walls put on each vertex `[..., vertices]`: each wall vertex holds its column's charge per area
-    `[..., along]` over half of each wall edge beside it, the strips `periods` long `[...]` and their walls the columns'
-    half widths `[..., along]` from the middle."""
+def wall_charge(
+    n_across: int,
+    periods: np.ndarray,
+    half_widths: np.ndarray,
+    surface_charges: np.ndarray,
+) -> np.ndarray:
+    """Integrating `surface_charges` (`[..., n_along]`) over half of each adjacent wall segment assigns wall charge (`[..., V]`) to the boundary vertices and zero to interior vertices."""
     n_along = half_widths.shape[-1]
-    # Each wall edge's length, from a column to the next around the strip.
-    lengths = np.hypot(periods[..., None] / n_along, np.roll(half_widths, -1, axis=-1) - half_widths)   # [..., along]
-    shares = surface_charges * (lengths + np.roll(lengths, 1, axis=-1)) / 2                  # [..., along]
-    on_walls = np.zeros(shares.shape + (n_across,))
-    on_walls[..., 0] = on_walls[..., -1] = shares
-    return on_walls.reshape(shares.shape[:-1] + (-1,))
+    # Segment length along the curved wall from each station to the next around the periodic loop.
+    segment_lengths = np.hypot(periods[..., None] / n_along, np.roll(half_widths, -1, axis=-1) - half_widths)  # [..., n_along]
+    vertex_shares = surface_charges * (segment_lengths + np.roll(segment_lengths, 1, axis=-1)) / 2             # [..., n_along]
+    charges = np.zeros(vertex_shares.shape + (n_across,))
+    charges[..., 0] = charges[..., -1] = vertex_shares
+    return charges.reshape(vertex_shares.shape[:-1] + (-1,))
 
 
-def placed(topology: Topology, coordinates: np.ndarray, shifts: np.ndarray) -> tuple[Point, Point]:
-    """A strip's vertices, places of unit volume `[...] Point-[vertices]`, and its edges `[...] Point-[edges]`."""
-    vertices = (volume + axis * coordinates[..., 0] + across * coordinates[..., 1]).field()
-    return vertices, topology.d[0] * vertices + (axis * shifts).field()
+def strip_placement(topology: Topology, coordinates: np.ndarray, edge_shifts: np.ndarray) -> tuple[Point, Point]:
+    """Channel `coordinates` (`[..., V, 2]`) and periodic `edge_shifts` (`[..., E]`) place vertices (`[...] Point-[V]`) at `origin` and form spatial edge displacements (`[...] Point-[E]`)."""
+    vertices = (origin + axis * coordinates[..., 0] + across * coordinates[..., 1]).field()  # [...] Point-[V]
+    edges = topology.d[0] * vertices + (axis * edge_shifts).field()                          # [...] Point-[E]
+    return vertices, edges
 
 
 # --- math -----------------------------------------------------------------------------
-def triangles(topology: Topology, edges: Point) -> tuple[Scalar, Point, Plane]:
-    """Twice each triangle's area `[...] Scalar-[faces]`, the side facing each of its corners `[..., corners]
-    Point-[faces]`, and each corner's hat gradient `[..., corners] Plane+[faces]`: the plane through the facing side,
-    along time and at unit volume, over twice the area, so that it reads one from the side to the corner."""
-    sides = topology.boundary[2, 1] * edges[..., None]                       # [..., corners] Point-[faces]
-    # Twice a triangle's area: two of its sides joined, read through time at unit volume.
-    double_areas = ((sides[..., 0] & sides[..., 1]) & time) & volume         # [...] Scalar-[faces]
-    return double_areas, sides, (time & volume & sides) / double_areas[..., None]
+def triangle_geometry(topology: Topology, edges: Point) -> tuple[Scalar, Point, Upright]:
+    """Oriented `edges` (`[...] Point-[E]`) determine each triangle's area (`[...] Scalar+[F]`), facing sides (`[..., 3] Point-[F]`), and spatial simplex gradients (`[..., 3] Upright+[F]`)."""
+    sides = topology.boundary[2, 1] * edges[..., None]                        # [..., 3] Point-[F]
+    # Joining two triangle sides past origin, time and volume gives twice the signed spatial area.
+    double_areas = sides[..., 0] & sides[..., 1] & unread                     # [...] Antiscalar-[F]
+    gradients = (unread & sides) / double_areas[..., None]                    # [..., 3] Upright+[F]
+    return double_areas.norm() / 2, sides, gradients
 
 
-def assembled(topology: Topology, local: Scalar) -> SparseExtensor:
-    """A form on each triangle's corners `[..., corners, corners] Scalar+[faces]` gathered onto the vertices it joins,
-    `Scalar+[..., vertices <- vertices]`."""
-    corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
-    return (corners[:, None].adjugate() * spdiag(local) * corners[None, :]).sum(axis=-1).sum(axis=-1)
+def vertex_form(topology: Topology, corner_form: Scalar) -> SparseExtensor:
+    """Pullback by triangle-corner incidence assembles a local `[..., 3, 3]` form (`Scalar+[F]`) into a vertex operator (`[...] Scalar+[V <- V]`)."""
+    corners = topology.incidence[2, 0]                                        # [3] Scalar+[F <- V]
+    return (corners[:, None].adjugate() * spdiag(corner_form) * corners[None, :]).sum(axis=-1).sum(axis=-1)
 
 
-def double_layer(outflow: SparseExtensor, cells: Scalar, wall_charge: Scalar, valences: np.ndarray,
-                 bulk: np.ndarray, n_steps: int) -> Scalar:
-    """The potential over the channel `[...] Scalar+[vertices]`, where the field's outflow from each vertex's cell,
-    `outflow`, balances the cell's charge, that of its ions in their Boltzmann distribution and, on the walls, the
-    walls' own: Gauss's law, solved by a damped Newton's method from the bulk's potential."""
-    potential = 0 * wall_charge                                               # [...] Scalar+[vertices]
+def channel_operators(
+    topology: Topology,
+    edges: Point,
+) -> tuple[Scalar, Point, Upright, SparseExtensor, SparseExtensor, Scalar]:
+    """Triangle geometry on `edges` (`[...] Point-[E]`) determines areas (`[...] Scalar+[F]`), sides (`[..., 3] Point-[F]`), simplex gradients (`[..., 3] Upright+[F]`), dielectric outflow and stream circulation operators (`[...] Scalar+[V <- V]`), and lumped dual-cell areas (`[...] Scalar+[V]`)."""
+    areas, sides, gradients = triangle_geometry(topology, edges)
+    # Unit corner potentials drive electric fields -(gradients ^ t) whose vacuum excitations pair into cell outflow.
+    corner_drives = -(gradients ^ mv.t)                                       # [..., 3] Drive+[F]
+    excitations = corner_drives.commutator(time) & time                       # [..., 3] Flux-[F]
+    outflow = vertex_form(topology, (corner_drives[..., :, None] & excitations[..., None, :]) * areas[..., None, None])
+    # Unit corner stream values drive flow along facing sides whose Euclidean circulation pairs around dual cells.
+    corner_velocities = sides / (2 * areas[..., None])                        # [..., 3] Point-[F]
+    circulation = vertex_form(
+        topology,
+        (circulation_plane(corner_velocities[..., :, None]) & corner_velocities[..., None, :]) * areas[..., None, None],
+    )
+    corners = topology.incidence[2, 0]                                        # [3] Scalar+[F <- V]
+    dual_areas = corners.sum(axis=0).adjugate() * (areas / 3)                 # [...] Scalar+[V]
+    return areas, sides, gradients, outflow, circulation, dual_areas
+
+
+def double_layer(
+    outflow: SparseExtensor,
+    dual_areas: Scalar,
+    wall_charges: Scalar,
+    valences: np.ndarray,
+    bulk: np.ndarray,
+    n_steps: int,
+) -> Scalar:
+    """Damped Newton iteration solves the Poisson-Boltzmann balance between dielectric `outflow` and ionic plus `wall_charges` for the equilibrium potential (`[...] Scalar+[V]`)."""
+    potential = 0 * wall_charges                                              # [...] Scalar+[V]
     for _ in range(n_steps):
-        concentrations = bulk * (-valences * potential[..., None]).exp()      # [..., species] Scalar+[vertices]
-        residual = outflow * potential - cells * (valences * concentrations).sum(axis=-1) - wall_charge
-        # The charge a cell loses as its potential rises, by its ions' squared valences.
-        susceptibility = (valences ** 2 * concentrations).sum(axis=-1)        # [...] Scalar+[vertices]
-        step = ((outflow + cells * susceptibility) * Scalar).solve(residual)             # [...] Scalar+[vertices]
-        # Newton's step, held below a thermal volt so that no Boltzmann factor changes by much more than e at once.
+        concentrations = bulk * (-valences * potential[..., None]).exp()      # [...] Scalar+[V]
+        residual = outflow * potential - dual_areas * (valences * concentrations).sum(axis=-1) - wall_charges
+        # Differential charge capacitance per unit volume from Boltzmann ion screening.
+        susceptibility = (valences ** 2 * concentrations).sum(axis=-1)        # [...] Scalar+[V]
+        step = ((outflow + dual_areas * susceptibility) * Scalar).solve(residual)  # [...] Scalar+[V]
+        # Hyperbolic tangent damping caps each update below one thermal volt so exponentials stay bounded.
         potential = potential - step.tanh()
     return potential
 
 
-def transport(topology: Topology, areas: Scalar, sides: Point, gradients: Plane, circulation: SparseExtensor,
-              cells: Scalar, potential: Scalar, valences: np.ndarray, bulk: np.ndarray, viscosity: float,
-              mobilities: np.ndarray, periods: np.ndarray, lower: np.ndarray, upper: np.ndarray, drives: Drive
-              ) -> tuple[Scalar, Scalar, Flux, Point, Drive, Scalar]:
-    """For each drive applied along the channel `[...]`, broadcast against the channels: the stream function
-    `[...] Scalar+[vertices]`, the potential the liquid adds `[...] Scalar+[vertices]`, what the channel carries along
-    per length `[...] Flux-`, and in each triangle the liquid's velocity `[...] Point-[faces]`, the whole drive
-    `[...] Drive+[faces]` and the conductivity `[...] Scalar+[faces]`."""
-    corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
-    # The ions in each triangle, the mean of its corners'.
-    concentrations = corners.mean(axis=0) * (bulk * (-valences * potential[..., None]).exp())   # [..., species] Scalar+[faces]
-    parcels = volume + (time * valences * concentrations).sum(axis=-1)       # [...] Point-[faces]
-    # An ion of valence z conducts as z squared times the flux of a unit charge drifting under a drive.
-    conductivity = (mobilities * valences ** 2 * concentrations).sum(axis=-1)   # [...] Scalar+[faces]
-    # A stream function rising by one at a corner carries the liquid along the facing side, half the side's worth
-    # over the triangle; a potential rising by one there drives the field down its hat's gradient, through time.
-    flows = sides / 2                                                         # [..., corners] Point-[faces]
-    pushes = -(gradients ^ mv.t)                                              # [..., corners] Bivector+[faces]
-    conducts = pushes.commutator(time).regressive(time)                       # [..., corners] Flux-[faces]
-    # Viscosity resists a flow by its vorticity, its circulation around each vertex's cell over the cell's area.
-    viscous = viscosity * circulation * spdiag(1 / cells) * circulation       # Scalar+[..., vertices <- vertices]
-    # A potential's drive reads what a flow carries, and what the ions conduct under another potential's drive.
-    carried = flows & parcels[..., None]                                      # [..., corners] Flux-[faces]
-    coupling = assembled(topology, carried[..., :, None] & pushes[..., None, :])
-    conduction = assembled(topology, (pushes[..., :, None] & conducts[..., None, :]) * (conductivity * areas)[..., None, None])
-    flow_load = (corners.adjugate() * (drives[..., None] & carried)).sum(axis=-1)  # [...] Scalar+[vertices]
-    applied_current = conductivity * drives.commutator(time).regressive(time)   # [...] Flux-[faces]
-    current_load = (corners.adjugate() * ((pushes & applied_current[..., None]) * areas[..., None])).sum(axis=-1)
-    stream, added = solve_coupled(viscous, coupling, conduction, flow_load, current_load, topology.interior[0], upper,
-                                  int(lower[0]))
-    # The channel's flux per length: the parcels with the flow, the ions with their drift under the whole drive.
-    velocities = ((corners * stream[..., None]) * sides).sum(axis=-1) / (2 * areas)   # [...] Point-[faces]
-    field = drives + ((corners * added[..., None]) * pushes).sum(axis=-1)    # [...] Drive+[faces]
-    flux = velocities.regressive(parcels) + conductivity * field.commutator(time).regressive(time)   # [...] Flux-[faces]
-    return stream, added, (flux * areas).sites.sum() / periods, velocities, field, conductivity
+def transport(
+    topology: Topology,
+    areas: Scalar,
+    sides: Point,
+    gradients: Upright,
+    circulation: SparseExtensor,
+    dual_areas: Scalar,
+    potential: Scalar,
+    valences: np.ndarray,
+    bulk: np.ndarray,
+    viscosity: float,
+    mobilities: np.ndarray,
+    periods: np.ndarray,
+    lower_wall: np.ndarray,
+    upper_wall: np.ndarray,
+    drives: Drive,
+) -> tuple[Scalar, Scalar, Flux, Point, Drive, Scalar]:
+    """Under applied `drives` (`[...] Drive+`), coupled Stokes vorticity balance and charge conservation determine the stream function and induced potential (`[...] Scalar+[V]`), period-averaged channel flux (`[...] Flux-`), triangle velocity (`[...] Point-[F]`), total drive (`[...] Drive+[F]`), and ionic conductivity (`[...] Scalar+[F]`)."""
+    corners = topology.incidence[2, 0]                                        # [3] Scalar+[F <- V]
+    # Triangle ion concentrations interpolate from corner Boltzmann values to form charged fluid parcels.
+    concentrations = corners.mean(axis=0) * (bulk * (-valences * potential[..., None]).exp())  # [...] Scalar+[F]
+    parcels = volume + (time * valences * concentrations).sum(axis=-1)        # [...] Point-[F]
+    conductivity = (mobilities * valences ** 2 * concentrations).sum(axis=-1) # [...] Scalar+[F]
+    flows = sides / 2                                                         # [..., 3] Point-[F]
+    corner_drives = -(gradients ^ mv.t)                                       # [..., 3] Drive+[F]
+    corner_currents = corner_drives.commutator(time) & time                   # [..., 3] Flux-[F]
+    # Viscous resistance penalizes dual-cell vorticity, while electro-hydrodynamic coupling pairs corner drives with advected parcels.
+    viscous = viscosity * circulation * spdiag(1 / dual_areas) * circulation  # [...] Scalar+[V <- V]
+    advected_fluxes = flows & parcels[..., None]                              # [..., 3] Flux-[F]
+    coupling = vertex_form(topology, corner_drives[..., None, :] & advected_fluxes[..., :, None])
+    conduction = vertex_form(
+        topology, (corner_drives[..., :, None] & corner_currents[..., None, :]) * (conductivity * areas)[..., None, None])
+    flow_load = (corners.adjugate() * (drives[..., None] & advected_fluxes)).sum(axis=-1)       # [...] Scalar+[V]
+    applied_current = conductivity * (drives.commutator(time) & time)         # [...] Flux-[F]
+    current_load = (corners.adjugate() * ((corner_drives & applied_current[..., None]) * areas[..., None])).sum(axis=-1)
+    stream, induced_potential = coupled_solution(
+        viscous, coupling, conduction, flow_load, current_load, topology.interior[0], upper_wall, int(lower_wall[0]))
+    # Total channel flux sums advected fluid parcels and conductive ion drift under the combined applied and induced drives.
+    velocities = ((corners * stream[..., None]) * sides).sum(axis=-1) / (2 * areas)             # [...] Point-[F]
+    field = drives + ((corners * induced_potential[..., None]) * corner_drives).sum(axis=-1)    # [...] Drive+[F]
+    flux = (velocities & parcels) + conductivity * (field.commutator(time) & time)              # [...] Flux-[F]
+    return stream, induced_potential, (flux * areas).sites.sum() / periods, velocities, field, conductivity
 
 
-def entropy_production(topology: Topology, areas: Scalar, circulation: SparseExtensor, cells: Scalar, viscosity: float,
-                       stream: Scalar, field: Drive, conductivity: Scalar) -> tuple[Scalar, Scalar]:
-    """The heat the liquid makes per volume at each vertex, the temperature times the entropy it produces, under the
-    flow `[...] Scalar+[vertices]` and the whole drive in each triangle `[...] Drive+[faces]`: by its turning, the
-    rate read by the viscous moment that resists it, and by its ions' drift, the drive read by the current it conducts;
-    `[...] Scalar+[vertices]` each."""
-    corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
-    # The liquid's turning: its circulation around each vertex's cell over the cell's area, a rate in the plane of the
-    # flow.
-    rotation = mv.xy * ((circulation * stream) / cells)                       # [...] Bivector+[vertices]
-    viscous = rotation & (viscosity * resisting(rotation))                    # [...] Scalar+[vertices]
-    joule = field & (conductivity * field.commutator(time).regressive(time))  # [...] Scalar+[faces]
-    return viscous, (corners.sum(axis=0).adjugate() * (joule * areas / 3)) / cells
+def entropy_production(
+    topology: Topology,
+    areas: Scalar,
+    circulation: SparseExtensor,
+    dual_areas: Scalar,
+    viscosity: float,
+    stream: Scalar,
+    field: Drive,
+    conductivity: Scalar,
+) -> tuple[Scalar, Scalar]:
+    """Viscous vorticity dissipation and ionic Joule heating give the vertex entropy-production rates times temperature (`[...] Scalar+[V]`) under `stream` and `field`."""
+    corners = topology.incidence[2, 0]                                        # [3] Scalar+[F <- V]
+    rotation = mv.xy * ((circulation * stream) / dual_areas)                  # [...] Rotation+[V]
+    viscous_heat = rotation & (viscosity * viscous_moment(rotation))          # [...] Scalar+[V]
+    joule_density = field & (conductivity * (field.commutator(time) & time))  # [...] Scalar+[F]
+    joule_heat = (corners.sum(axis=0).adjugate() * (joule_density * areas / 3)) / dual_areas  # [...] Scalar+[V]
+    return viscous_heat, joule_heat
 
 
-def equilibrium_pushes(topology: Topology, areas: Scalar, gradients: Plane, cells: Scalar, potential: Scalar,
-                       valences: np.ndarray, bulk: np.ndarray) -> tuple[Point, Point]:
-    """The double layer's own pushes on the liquid at each vertex, its triangles' weighed by their areas, `[...]
-    Point-[vertices]` each: its osmotic pressure's drive, the pressure's gradient wedged with volume, on the parcels'
-    volume, and its own field's drive, the potential's gradient wedged with time, on their charge."""
-    corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
-    concentrations = bulk * (-valences * potential[..., None]).exp()          # [..., species] Scalar+[vertices]
-    # The osmotic pressure: the ions' excess over the bulk's, each pushing as hard as a molecule of gas.
-    osmotic = (concentrations - bulk).sum(axis=-1)                            # [...] Scalar+[vertices]
-    parcels = volume + (time * valences * (corners.mean(axis=0) * concentrations)).sum(axis=-1)   # [...] Point-[faces]
-    pushes = []
-    for pressure, label in ((osmotic, mv.v), (potential, mv.t)):
-        drive = -(((corners * pressure[..., None]) * gradients).sum(axis=-1) ^ label)   # [...] Bivector+[faces]
-        pushes.append((corners.sum(axis=0).adjugate() * (drive.commutator(parcels) * (areas / 3))) / cells)
-    return pushes[0], pushes[1]
+def equilibrium_forces(
+    topology: Topology,
+    areas: Scalar,
+    gradients: Upright,
+    dual_areas: Scalar,
+    potential: Scalar,
+    valences: np.ndarray,
+    bulk: np.ndarray,
+) -> tuple[Point, Point]:
+    """Double-layer osmotic pressure and electrostatic potential gradients exert opposing body forces (`[...] Point-[V]`) on charged fluid parcels across the channel."""
+    corners = topology.incidence[2, 0]                                        # [3] Scalar+[F <- V]
+    concentrations = bulk * (-valences * potential[..., None]).exp()          # [...] Scalar+[V]
+    osmotic_pressure = (concentrations - bulk).sum(axis=-1)                   # [...] Scalar+[V]
+    parcels = volume + (time * valences * (corners.mean(axis=0) * concentrations)).sum(axis=-1) # [...] Point-[F]
+    forces = []
+    for scalar_potential, direction in ((osmotic_pressure, mv.v), (potential, mv.t)):
+        drive = -(((corners * scalar_potential[..., None]) * gradients).sum(axis=-1) ^ direction)  # [...] Drive+[F]
+        forces.append((corners.sum(axis=0).adjugate() * (drive.commutator(parcels) * (areas / 3))) / dual_areas)
+    return forces[0], forces[1]
 
 
-def dyeing(topology: Topology, areas: Scalar, gradients: Plane, velocities: Point, field: Drive, charges: np.ndarray,
-           mobility: float, diffusivity: float, dye: Scalar, dt: float, n_frames: int, stride: int) -> Iterator[Scalar]:
-    """The dye over the channel `[...] Scalar+[vertices]`, this dye and then `n_frames` frames every `stride` steps of
-    `dt`, in each run `[...]`: carried by the liquid at its velocity `[...] Point-[faces]` and drifting under the whole
-    drive `[...] Drive+[faces]` by the charge it holds `[...]`, at this mobility, while it spreads at this diffusivity;
-    each step halfway implicit, so that the dye moves at its own pace."""
-    # A dye molecule is a parcel of charge without volume, a point at infinity along time: the drive pushes it by the
-    # charge it holds, and it drifts at its mobility through the liquid that carries it.
-    drifts = velocities + mobility * field.commutator(charges * time)        # [...] Point-[faces]
-    # How much of a triangle's dye each corner's cell gains per unit time, the drift read by the corner's hat gradient,
-    # from each corner's share of the triangle's dye.
-    towards = areas[..., None] * (gradients & drifts[..., None])             # [..., corners] Scalar+[faces]
-    carrying = assembled(topology, towards[..., :, None] * np.full(3, 1 / 3))   # Scalar+[..., vertices <- vertices]
-    # The overlaps of the corners' hats over each triangle, whose sum over a vertex's triangles is its cell.
-    overlaps = assembled(topology, areas[..., None, None] * (np.ones((3, 3)) + np.eye(3)) / 12)
-    # How much each cell loses to its neighbours as the dye spreads: each hat's gradient reading the flux another's
-    # drives down itself.
-    diffusion = assembled(topology, areas[..., None, None] * (gradients[..., :, None] & spreading(gradients[..., None, :])))
-    changing = diffusivity * diffusion - carrying                            # Scalar+[..., vertices <- vertices]
-    # Each step halfway implicit: half a step forward from the dye before it, and half a step back from the dye after it.
-    forward = overlaps / dt - changing / 2                                   # Scalar+[..., vertices <- vertices]
-    backward = (overlaps / dt + changing / 2) * Scalar                       # (Scalar+ <- Scalar+)[..., vertices <- vertices]
+def dye_transport(
+    topology: Topology,
+    areas: Scalar,
+    gradients: Upright,
+    velocities: Point,
+    field: Drive,
+    charges: np.ndarray,
+    mobility: float,
+    diffusivity: float,
+    dye: Scalar,
+    dt: float,
+    n_frames: int,
+    stride: int,
+) -> Iterator[Scalar]:
+    """Yields the initial `dye` concentration (`[...] Scalar+[V]`) followed by `n_frames` Crank-Nicolson states every `stride` steps of `dt` under fluid `velocities`, electrophoretic drift in `field`, and Fickian diffusion."""
+    # Charged dye molecules carry charge without volume, so only the electric part of the drive adds electrophoretic drift.
+    drifts = velocities + mobility * field.commutator(charges * time)         # [...] Point-[F]
+    corner_inflows = areas[..., None] * (gradients & drifts[..., None])       # [..., 3] Scalar+[F]
+    advection = vertex_form(topology, corner_inflows[..., :, None] * np.full(3, 1 / 3))         # [...] Scalar+[V <- V]
+    overlap_form = vertex_form(topology, areas[..., None, None] * (np.ones((3, 3)) + np.eye(3)) / 12)
+    diffusion = vertex_form(
+        topology, areas[..., None, None] * (gradients[..., :, None] & fick_flux(gradients[..., None, :])))
+    transport_rate = diffusivity * diffusion - advection                      # [...] Scalar+[V <- V]
+    forward_step = overlap_form / dt - transport_rate / 2                     # [...] Scalar+[V <- V]
+    backward_step = (overlap_form / dt + transport_rate / 2) * Scalar         # [...] (Scalar+ <- Scalar+)[V <- V]
     yield dye
     for _ in range(n_frames):
         for _ in range(stride):
-            dye = backward.solve(forward * dye)
+            dye = backward_step.solve(forward_step * dye)
         yield dye

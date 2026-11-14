@@ -1,29 +1,8 @@
-"""Superfluid helium's two fluids, on a mesh of triangles, in the plane joined with two directions, for the mass and the
-entropy a parcel of liquid holds.
+"""Below the lambda point, liquid helium flows through a triangulated planar cavity as two interpenetrating components. An inviscid superfluid component carries mass with zero entropy, while a normal fluid component carries the remaining mass and all of the entropy. Local heating drives normal fluid outward and draws superfluid inward as an undamped temperature wave called second sound. Clamping the normal fluid inside a porous wall leaves only the superfluid mobile, converting thermal driving into a coupled pressure-temperature wave called fourth sound that travels roughly ten times faster. Viscosity, thermal conduction, and mutual friction are omitted so the coupled dynamics remain conservative.
 
-Below the lambda point liquid helium flows as two fluids through each other: a superfluid, which carries mass but no
-entropy and has no viscosity, and a normal fluid, which carries the rest of the mass and all of the entropy. Heat
-cannot spread through it by diffusing: a warm place pushes its normal fluid out and draws superfluid in, and the
-counterflow runs on as a wave of temperature, second sound. Where a fine powder holds the normal fluid still, only
-the superfluid moves, and the same heat drives it through the powder as a wave of pressure and temperature together,
-fourth sound, ten times faster. The normal fluid's viscosity, its conduction of heat and the mutual friction between the
-two fluids are left out, so nothing damps the motion.
+The algebra joins the projective plane with two degenerate material directions for mass and entropy. Cavity vertices sit at unit projective weight, while each component's parcel combines its mass and entropy per unit volume along the two material directions. Thermodynamic potentials combine chemical potential per unit mass and temperature in the conjugate material plane, and minus their spatial gradient wedged with the potentials forms a bivector drive whose commutator accelerates each parcel according to the mass and entropy it holds. Joining each component's velocity with its parcel gives the material flux, and wedging each corner's simplex gradient with that flux integrates the mass and entropy leaving each vertex's dual cell. The thermodynamic stiffness maps vertex states to potentials as a sum of compression and heating dyads that satisfies Maxwell symmetry automatically.
 
-The algebra is the plane, x+y+, joined with two degenerate directions, one for mass and one for entropy: x+y+m0s0. A
-parcel is a point weighed by both, `mass * mv.m.dual() + entropy * mv.s.dual()`, and a superfluid parcel's entropy is
-zero. The liquid's potentials are one vector, the chemical potential per mass along m and the temperature along s,
-`chemical_potential * mv.m + temperature * mv.s`. Their drive is minus their gradient wedged with them, a field of
-bivectors each pairing a direction of the plane with one of the two degenerate directions; as a translation's
-generator moves a point by its weight alone, a drive's commutator with a parcel pushes it by what it holds:
-`drive.commutator(parcel)` is the force on it, its mass times the fall of the chemical potential and its entropy times
-the fall of the temperature, the two-fluid model's forces on its two components. A parcel moving at a velocity
-carries what it holds along the line it moves on, the flux `velocity.regressive(parcel)`, and a hat gradient wedged
-with a flux, `gradient ^ flux`, is what the flux carries out of the corner's cell. The thermodynamic stiffness, the map
-from the amounts a cell holds to its potentials, is a sum of two dyads, compression and heating, symmetric as
-Maxwell's relations require.
-
-Lengths are in millimetres and times in milliseconds, so that speeds read in metres per second; amounts are per unit
-volume, their changes small against the liquid's own.
+Lengths are measured in millimetres, times in milliseconds, speeds in metres per second, and extensive state perturbations per unit volume.
 """
 
 from __future__ import annotations
@@ -36,88 +15,95 @@ from numga import Algebra, NumpyContext
 from numga.extensor import Extensor
 from numga.topology import Topology
 
-# The plane, and the mass and the entropy a parcel holds, each a direction of its own with no metric.
-space = Algebra("x+y+")
-amounts = Algebra("m0s0")
-ga = space * amounts
+# The projective plane for spatial placement, joined with degenerate directions for mass and entropy.
+space = Algebra("x+y+w0")
+quantities = Algebra("m0s0")
+ga = space * quantities
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 Point = ga.gatype.antivector()                                                # Antivector-
 Plane = ga.gatype.vector()                                                    # Vector+
-# What a parcel holds, the points that span the plane; the potentials that read it.
-Amount = Plane.derive.within(amounts).derive.dual                             # Antivector-
-Potential = Plane.derive.within(amounts)                                      # Vector+
-Drive = ga.gatype.bivector().derive.touching(space, amounts)                  # Bivector+
-Flux = ga.gatype.antibivector()                                               # Antibivector-
-axis = mv.x.dual()                                                            # [] Point-
-across = mv.y.dual()                                                          # [] Point-
-# A unit of mass, the weight of a place, and a unit of entropy.
-mass = mv.m.dual()                                                            # [] Amount-
-entropy = mv.s.dual()                                                         # [] Amount-
+# Spatial coordinate planes, extensive mass-entropy states, and their conjugate thermodynamic potentials.
+Upright = Plane.derive.within("x y")                                          # Vector+
+State = Plane.derive.within(quantities).derive.dual                           # Antivector-
+Potential = Plane.derive.within(quantities)                                   # Vector+
+# Reference origin at unit projective weight, unit material quantities, and their joint complement for spatial areas.
+origin = mv.w.dual()                                                          # [] Point-
+mass = mv.m.dual()                                                            # [] State-
+entropy = mv.s.dual()                                                         # [] State-
+unread = mass & entropy                                                       # [] Antibivector-
 
 
 # --- plumbing -------------------------------------------------------------------------
 def cavity(n_columns: int, n_rows: int, width: float, height: float) -> tuple[Topology, np.ndarray]:
-    """A rectangle of triangles `width` across and `height` up, its vertices in rows: its topology, and its vertices'
-    places across and up `[vertices, 2]`."""
-    places = np.meshgrid(np.linspace(0, width, n_columns), np.linspace(0, height, n_rows))
-    return Topology.grid(n_rows, n_columns), np.stack([place.ravel() for place in places], axis=-1)
+    """The cavity triangulation spans a `width` by `height` rectangle on an `n_rows` by `n_columns` grid of vertex coordinates (`[V, 2]`)."""
+    grid_axes = np.meshgrid(np.linspace(0, width, n_columns), np.linspace(0, height, n_rows))
+    return Topology.grid(n_rows, n_columns), np.stack([grid_axis.ravel() for grid_axis in grid_axes], axis=-1)
 
 
 # --- math -----------------------------------------------------------------------------
-def stiffness_of(density: np.ndarray, first_sound: np.ndarray, temperature: np.ndarray, entropy_per_mass: np.ndarray,
-                 heat_capacity: np.ndarray) -> Extensor:
-    """The liquid's thermodynamic stiffness `[...] Potential+ <- Amount-`, the changes of its potentials under changes
-    of the mass and entropy per volume it holds: compression raises the chemical potential by the squared first sound
-    over the density per unit of mass, and heating, a change of the entropy per mass, raises the temperature by the
-    temperature over the heat capacity and lowers the chemical potential by the entropy per mass times that rise."""
-    # A unit rise of the entropy per mass, read as the change of entropy beyond what the mass carries in.
+def thermodynamic_stiffness(
+    density: np.ndarray,
+    first_sound: np.ndarray,
+    temperature: np.ndarray,
+    entropy_per_mass: np.ndarray,
+    heat_capacity: np.ndarray,
+) -> Extensor:
+    """Compression at fixed specific entropy and heating at fixed density form the symmetric thermodynamic stiffness (`[...] Potential+ <- State-`) mapping mass and entropy per unit volume to chemical potential and temperature."""
+    # Unit rise in entropy per unit mass measures entropy added beyond what incoming mass carries at fixed specific entropy.
     heating = mv.s - entropy_per_mass * mv.m                                  # [...] Potential+
-    return (first_sound ** 2 / density) * (mv.m * (mv.m & Amount)) + (
-        temperature / (heat_capacity * density)) * (heating * (heating & Amount))
+    return (first_sound ** 2 / density) * (mv.m * (mv.m & State)) + (
+        temperature / (heat_capacity * density)
+    ) * (heating * (heating & State))
 
 
-def sound_speeds(stiffness: Extensor, parcels: Point, masses: np.ndarray) -> Scalar:
-    """The squared speeds of sound `[..., 2] Scalar+`, slowest first, of the liquid with this stiffness `[...]
-    Potential+ <- Amount-` whose components move as these parcels per volume `[..., components] Amount-` of these
-    masses `[..., components]`: the pencil of the components' kinetic form on potentials, each parcel read by the
-    potentials and weighed by its inverse mass, against the liquid's compliance."""
-    yielding = (parcels * (Potential & parcels) / masses).sum(axis=-1)       # [...] Amount- <- Potential+
-    compliance = stiffness.inverse()                                          # [...] Amount- <- Potential+
-    speeds_squared, _ = (Potential & yielding(Potential)).eigh(Potential & compliance(Potential))
+def sound_speeds(stiffness: Extensor, parcels: State, masses: np.ndarray) -> Scalar:
+    """Generalized eigenvalues of the parcel mobility form against the thermodynamic compliance give the squared sound speeds (`[..., 2] Scalar+`) in ascending order."""
+    mobility_form = (parcels * (Potential & parcels) / masses).sum(axis=-1)   # [...] State- <- Potential+
+    compliance = stiffness.inverse()                                          # [...] State- <- Potential+
+    speeds_squared, modes = (Potential & mobility_form(Potential)).eigh(Potential & compliance(Potential))
     return speeds_squared
 
 
-def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Plane, Scalar]:
-    """Each triangle's area `Scalar+[faces]`, each corner's hat gradient `[corners] Plane+[faces]`, the plane through the
-    facing side at unit mass and entropy over twice the area, reading one from the side to the corner, and each
-    vertex's share of the area around it `Scalar+[vertices]`."""
-    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)[..., None]  # [corners] Point-[faces]
-    # Twice a triangle's area: two of its sides joined, read at unit entropy and mass.
-    double_areas = ((sides[..., 0] & sides[..., 1]) & entropy) & mass         # Scalar-[faces]
-    areas = double_areas.norm() / 2                                           # Scalar+[faces]
-    corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
-    return areas, (entropy & mass & sides) / double_areas[..., None], (corners.adjugate() * (areas / 3)).sum(axis=-1)
+def triangle_geometry(topology: Topology, vertices: Point) -> tuple[Scalar, Plane, Scalar]:
+    """Projective vertex joins determine each triangle's area (`Scalar+[F]`), pure spatial simplex gradients (`[3] Plane+[F]`), and lumped vertex dual areas (`Scalar+[V]`)."""
+    corners = topology.incidence[2, 0] * vertices                             # [3] Point-[F]
+    facing = topology.off[2, 0] * vertices                                    # [2, 3] Point-[F]
+    sides = facing[0] & facing[1]                                             # [3] Antibivector-[F]
+    # Joining all three corners with the material complement gives twice each triangle's signed spatial area.
+    double_areas = corners[0] & corners[1] & corners[2] & unread              # Antiscalar-[F]
+    areas = double_areas.norm() / 2                                           # Scalar+[F]
+    gradients = ((sides & unread) / (sides & unread & corners)).cast(Upright)  # [3] Plane+[F]
+    dual_areas = (topology.incidence[2, 0].adjugate() * (areas / 3)).sum(axis=0)  # Scalar+[V]
+    return areas, gradients, dual_areas
 
 
-def stepped(topology: Topology, vertices: Point, stiffness: Extensor, parcels: Point, masses: np.ndarray, held: Scalar,
-            amounts: Point, supply: Point, dt: float, n_steps: int, stride: int) -> Iterator[Point]:
-    """The mass and entropy per volume over the cavity `Point-[vertices]`, from these at rest, every `stride` steps of
-    `dt`, with this supply of them per volume and time `Point-[vertices]`, its components moving as these parcels
-    `[components] Amount-` of these masses `[components]` with the normal fluid held still where `held` `Scalar+[faces]`
-    is one: each step the potentials' drive pushes each component's parcels, and the flux they carry empties the cells
-    it runs out of into those it runs into."""
-    corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
-    areas, gradients, cells = triangles(topology, vertices)
-    # How freely each component moves in each triangle: the superfluid everywhere, the normal fluid but where held.
-    freedom = (1 - held[..., None] * np.array([0.0, 1.0])) / masses           # [components] Scalar+[faces]
-    velocities = 0 * (axis * freedom)                                         # [components] Point-[faces]
+def cavity_states(
+    topology: Topology,
+    vertices: Point,
+    stiffness: Extensor,
+    parcels: State,
+    masses: np.ndarray,
+    normal_clamp: Scalar,
+    state: State,
+    supply: State,
+    dt: float,
+    n_steps: int,
+    stride: int,
+) -> Iterator[State]:
+    """Yields the mass and entropy perturbations per unit volume (`State-[V]`) every `stride` steps of `dt` as potential drives accelerate the two fluid components and their flux redistributes state across dual cells."""
+    incidence = topology.incidence[2, 0]                                      # [3] Scalar+[F <- V]
+    areas, gradients, dual_areas = triangle_geometry(topology, vertices)
+    # Superfluid moves freely everywhere while the normal fluid is immobilized where normal_clamp equals one.
+    mobility = (1 - normal_clamp * np.array([0, 1])) / masses                 # [2] Scalar+[F]
+    velocities = 0 * ((mv.x + mv.y).dual() * mobility)                        # [2] Point-[F]
     for step in range(n_steps + 1):
         if step % stride == 0:
-            yield amounts
-        potentials = stiffness(amounts)                                       # Potential+[vertices]
-        drive = -(gradients ^ (corners * potentials[..., None])).sum(axis=-1)   # Drive+[faces]
-        velocities = velocities + dt * freedom * drive.commutator(parcels)    # [components] Point-[faces]
-        flux = velocities.regressive(parcels).sum(axis=-1)                    # Flux-[faces]
-        # What the flux carries out of each corner's cell, and what the supply adds to it.
-        amounts = amounts + dt * (supply - (corners.adjugate() * (areas * (gradients ^ flux[..., None]))).sum(axis=-1) / cells)
+            yield state
+        potentials = stiffness(state)                                         # Potential+[V]
+        drive = -(gradients ^ (incidence * potentials)).sum(axis=0)           # Bivector+[F]
+        velocities = velocities + dt * mobility * drive.commutator(parcels)   # [2] Point-[F]
+        flux = (velocities & parcels).sum(axis=0)                             # Antibivector-[F]
+        # Dual-cell outflow through each corner's simplex gradient balances external entropy supply.
+        outflow = (incidence.adjugate() * (areas * (gradients ^ flux))).sum(axis=0) / dual_areas  # State-[V]
+        state = state + dt * (supply - outflow)

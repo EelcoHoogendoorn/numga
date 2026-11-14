@@ -1,1 +1,1 @@
-"""A thermocouple: the Seebeck and Peltier effects of a hairpin of two metals, on a mesh of triangles."""
+"""Coupled charge and entropy transport drives the Seebeck and Peltier effects in a triangulated two-metal hairpin."""

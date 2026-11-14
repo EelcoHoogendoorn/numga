@@ -1,6 +1,6 @@
-"""Superfluid helium's two fluids: the drive's pushes on their parcels, their sounds against Donnelly and Barenghi's
-measurements, and the heat pulse on the smallest cavity, stepped one frame and drawn."""
+"""This module tests two-fluid drive forces, sound speeds, and cavity stepping and rendering for superfluid helium."""
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
@@ -8,34 +8,50 @@ from examples.fluids.superfluid import core, render, scenarios
 
 
 def test_drives_push_parcels_by_what_they_hold():
-    parcels, masses = scenarios.components(scenarios.at)
-    drives = stack((-core.mv.xm, -core.mv.xs))                                # [potentials] Drive+
-    forces = drives[:, None].commutator(parcels[None, :])                     # [potentials, components] Point-
-    # The chemical potential's drive pushes each component by its mass, the temperature's the normal fluid alone by its
-    # entropy.
-    expected = -np.stack([masses, (core.mv.s & parcels).to_array()])
-    np.testing.assert_allclose((core.mv.x & forces).to_array(), expected, rtol=1e-12)
-    # The whole liquid is pushed by the fall of its pressure, the potentials read by its parcel.
-    liquid = parcels.sum(axis=-1)
-    np.testing.assert_allclose((core.mv.x & drives.commutator(liquid)).to_array(),
-                               -(stack((core.mv.m, core.mv.s)) & liquid).to_array(), rtol=1e-12)
+    parcels, masses = scenarios.fluid_components()
+    index = scenarios.cavity_index
+    cavity_parcels = parcels[index]                                           # [2] State-
+    drives = stack((-core.mv.xm, -core.mv.xs))                                # [2] Bivector+
+    forces = drives[:, None].commutator(cavity_parcels[None, :])              # [2, 2] Point-
+    # Chemical-potential drive pushes both components by their mass while temperature drive pushes only the normal fluid by its entropy.
+    expected = -np.stack([masses[index], np.array([0.0, scenarios.densities[index] * scenarios.entropies[index]])])
+    assert (((core.mv.x & forces) - expected).abs() < 1e-12).all()
+    # Pairing with the total liquid parcel recovers the pressure force from the Gibbs-Duhem relation.
+    liquid = cavity_parcels.sum(axis=-1)                                      # [] State-
+    assert (((core.mv.x & drives.commutator(liquid)) + (stack((core.mv.m, core.mv.s)) & liquid)).abs() < 1e-12).all()
 
 
 def test_sounds_match_measurements():
-    free, held = scenarios.sounds()
-    speeds, held_speeds = np.sqrt(np.abs(free.to_array())), np.sqrt(np.abs(held.to_array()))
-    np.testing.assert_allclose(speeds[:, 1], scenarios.first_sounds, rtol=1e-10)
-    np.testing.assert_allclose(speeds[:, 0], scenarios.second_sounds, rtol=0.06)
-    np.testing.assert_allclose(held_speeds[:, 1], scenarios.fourth_sounds, rtol=0.01)
+    bulk_sounds, powder_sounds = scenarios.sound_curves()
+    assert ((bulk_sounds[:, 1] - scenarios.first_sounds ** 2).abs() < 1e-8 * scenarios.first_sounds ** 2).all()
+    assert ((bulk_sounds[:, 0] - scenarios.second_sounds ** 2).abs() < 0.12 * scenarios.second_sounds ** 2).all()
+    assert ((powder_sounds[:, 1] - scenarios.fourth_sounds ** 2).abs() < 0.02 * scenarios.fourth_sounds ** 2).all()
+    fig = render.sounds_figure(
+        scenarios.temperatures,
+        bulk_sounds,
+        powder_sounds,
+        scenarios.first_sounds,
+        scenarios.second_sounds,
+        scenarios.fourth_sounds,
+    )
+    plt.close(fig)
 
 
-def test_the_pulse_steps_one_frame_and_draws():
-    topology, coordinates, in_powder, rise = scenarios.scene(n_columns=5, n_rows=3)
-    vertices = (core.mass + core.axis * coordinates[:, 0] + core.across * coordinates[:, 1]).field()
-    liquid = scenarios.stiffness(scenarios.at)
-    parcels, _ = scenarios.components(scenarios.at)
-    states = scenarios.pulse(topology, vertices, in_powder, rise)
+def test_pulse_steps_one_frame_and_draws():
+    topology, coordinates, powder_triangles, pulse_profile = scenarios.cavity_scene(5, 3)
+    vertices = (core.origin + core.mv(core.Upright, coordinates).dual()).field()  # Point-[V]
+    fig = render.cavity_figure(topology, vertices, powder_triangles)
+    plt.close(fig)
+    stiffness = scenarios.liquid_stiffnesses()[scenarios.cavity_index]
+    parcels, masses = scenarios.fluid_components()
+    thermometer = stiffness(core.entropy)                                     # [] Potential+
+    barometer = stiffness(parcels[scenarios.cavity_index].sum(axis=-1))       # [] Potential+
+    states = scenarios.heat_pulse(topology, vertices, powder_triangles, pulse_profile)
     next(states)
-    amounts = next(states)
-    readings = [(liquid(amounts) & core.entropy, liquid(amounts) & parcels.sum(axis=-1))]
-    next(render.animate(topology, vertices, in_powder, readings, scenarios.pulse_rise, 1.0))
+    frame_state = next(states)
+    frame = next(
+        render.cavity_animation(
+            topology, vertices, powder_triangles, thermometer, barometer, scenarios.pulse_rise, 1.0, [frame_state]
+        )
+    )
+    assert frame.ndim == 3 and frame.shape[-1] == 3

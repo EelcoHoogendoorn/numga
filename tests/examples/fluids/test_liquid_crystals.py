@@ -1,5 +1,4 @@
-"""Nematic liquid crystals: a defect pair and a disordered film on the smallest square film, one step of their turning
-and of their active motion, their energy, windings and defects read off, and a frame of each drawn."""
+"""One-step defect-pair rotation and disordered active flow run on a tiny square film and render through both cameras."""
 
 import numpy as np
 
@@ -10,20 +9,24 @@ mv = core.mv
 
 def test_one_step_runs_and_draws():
     topology, vertices = scenarios.film(3, scenarios.half_width)
-    centres = mv.vector([[-scenarios.separation / 2, 0], [scenarios.separation / 2, 0]]).dual()   # [2] Point-
-    pair = core.defect_pair(vertices, centres, scenarios.core_radius, mv.xy * 0)
-    wavevectors = mv.vector([[scenarios.wave_number, 0]])                     # [waves] Plane+
-    amplitudes = core.alignment(mv.x.dual()[None], 1.0)                       # [waves] Point- <- Point-
-    disordered = core.disordered_alignment(vertices, wavevectors, np.zeros(1), amplitudes, scenarios.softness)
-    areas, gradients, cells = core.triangles(topology, vertices)
+    centres = mv.vector([[-scenarios.separation / 2 + 0.03, 0.07],
+                         [scenarios.separation / 2 + 0.03, 0.07]]).dual()     # [2] Point-
+    pair_order = core.defect_pair(vertices, centres, scenarios.core_radius, mv.xy * 0)
+    wavevectors = mv.vector([[scenarios.wave_number, 0]])                     # [1] Plane+
+    amplitudes = core.alignment(mv.x.dual()[None], 1.0)                       # [1] Point- <- Point-
+    disordered_order = core.disordered_alignment(vertices, wavevectors, np.zeros(1), amplitudes, scenarios.softness)
+    areas, gradients, dual_areas = core.triangles(topology, vertices)
     stiffness = core.elasticity(topology, areas, gradients)
-    core.free_energy(stiffness, cells, scenarios.elastic, scenarios.bulk, pair)
-    core.windings(topology, pair, mv.x.dual())
-    turned = list(core.turn_relaxation(topology, stiffness, cells, scenarios.elastic, scenarios.bulk, pair[None],
-                                       scenarios.rotation_step, 2, 1))
-    driven = list(core.evolution(topology, areas, gradients, cells, stiffness, scenarios.elastic, scenarios.bulk,
-                                 scenarios.activities[:1], disordered[None], scenarios.time_step, 2, 1))
-    next(render.animate(topology, vertices, render.turn_camera,
-                        core.with_defects(topology, vertices, turned[-1:], mv.x.dual())))
-    next(render.animate(topology, vertices, render.dense_camera,
-                        core.with_defects(topology, vertices, driven[-1:], mv.x.dual())))
+    energy = core.free_energy(stiffness, dual_areas, scenarios.elastic, scenarios.bulk, pair_order)
+    core.windings(topology, pair_order, mv.x.dual())
+    turned_states = list(core.turn_relaxation(topology, stiffness, dual_areas, scenarios.elastic, scenarios.bulk,
+                                              pair_order[None], scenarios.rotation_step, 2, 1))
+    driven_states = list(core.evolution(topology, areas, gradients, dual_areas, stiffness, scenarios.elastic,
+                                        scenarios.bulk, scenarios.activities[:1], disordered_order[None],
+                                        scenarios.time_step, 2, 1))
+    turn_frame = next(render.animate(topology, vertices, render.turn_camera,
+                                     core.with_defects(topology, vertices, turned_states[-1:], mv.x.dual())))
+    dense_frame = next(render.animate(topology, vertices, render.dense_camera,
+                                      core.with_defects(topology, vertices, driven_states[-1:], mv.x.dual())))
+    assert bool(energy.isfinite().all())
+    assert turn_frame.shape[2] == 3 and dense_frame.shape[2] == 3

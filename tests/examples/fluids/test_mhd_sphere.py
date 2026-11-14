@@ -1,15 +1,21 @@
-"""Magnetohydrodynamics on a sphere: the winding start on a coarse sphere, stepped once, its energies and its two frames
-drawn."""
+"""Coarse-sphere coverage exercises one magnetohydrodynamic step, energy evaluation, sphere shading, and the energy chart."""
 
 from __future__ import annotations
 
+import matplotlib.pyplot as plt
+import numpy as np
+
+from numga import stack
 from examples.fluids.mhd_sphere import core, render, scenarios
 
 
-def test_a_coarse_sphere_steps_once_and_draws():
-    topology, vertices = scenarios.sphere(n_levels=1)
+def test_coarse_sphere_step_and_rendering():
+    topology, vertices = scenarios.sphere(1)
     surface = core.surface(topology, vertices)
-    start = scenarios.winding(surface, vertices)
-    states = list(core.evolve(surface, start, scenarios.viscosity, scenarios.resistivity, scenarios.dt, 1))
-    scenarios.energies(surface, states[-1])
-    list(render.animate(topology, vertices, scenarios.frames(surface, states)))
+    initial = scenarios.initial_state(surface, vertices)
+    states = stack(tuple(core.evolution(surface, initial, scenarios.viscosity, scenarios.resistivity, scenarios.dt, 1)))
+    kinetic, magnetic = scenarios.energies(surface, states)
+    frames = list(render.animation(topology, vertices, scenarios.frame_channels(surface, states[:1])))
+    figure = render.energy_figure(np.array([0.0, scenarios.dt]), kinetic, magnetic)
+    plt.close(figure)
+    assert len(frames) == 1

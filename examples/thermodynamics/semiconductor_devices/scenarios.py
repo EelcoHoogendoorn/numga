@@ -1,10 +1,5 @@
-"""A silicon p-n junction forming from two neutral slabs joined, a wire closing between their ends as they touch; its
-current traced as a bias sweeps it forward and back into reverse; and the same sweep under light, once the light has
-come on at no bias, the junction a solar cell. A MOSFET's cross-section, its gate ramping until a channel joins
-source to drain, and its drain sweeping at a few gate voltages, its current saturating as the channel pinches off. And
-a solar cell's cross-section between the fingers of its front contact: the light coming on and the bias rising to
-open circuit, and the fingers spreading, the cell at its maximum power at each spacing, its power peaking where the
-fingers' shade and the resistance of the thin top layer the holes run along to them balance."""
+"""Device geometries, doping profiles, voltage schedules, and animation drivers configure the silicon p-n junction, the
+planar MOSFET, and the front-contact solar cell."""
 
 from __future__ import annotations
 
@@ -14,191 +9,141 @@ from itertools import islice
 
 import numpy as np
 
+from examples import instantiate
 from numga import Algebra, stack
 from numga.sparse import SparseExtensor
-from examples import instantiate
 from numga.topology import Topology
 
-# The bar's line in spacetime, and the cross-section's plane, each with a degenerate w that weighs a place, joined with
-# the electrons, the holes, the heat and the light; the solar cell's cross-section lies in the MOSFET's plane, and so
-# shares its copy of the core.
+# One-dimensional bar spacetime and two-dimensional cross-section spacetime, each weighed by w0 and joined with null
+# quantity directions for electrons, holes, heat, and light.
 diode = instantiate("examples.thermodynamics.semiconductor_devices.core", Algebra("x+t-w0") * Algebra("n0p0q0l0"))
-mosfet = instantiate("examples.thermodynamics.semiconductor_devices.core", Algebra("x+y+t-w0") * Algebra("n0p0q0l0"))
-solar_cell = instantiate("examples.thermodynamics.semiconductor_devices.core",
-                         Algebra("x+y+t-w0") * Algebra("n0p0q0l0"))
-# The planes that read a place along the bar, and across and up the cross-section.
-Along = diode.Plane.derive.within(Algebra("x+"))                              # Vector+
-Upright = mosfet.Plane.derive.within(Algebra("x+y+"))                         # Vector+
+planar = instantiate("examples.thermodynamics.semiconductor_devices.core", Algebra("x+y+t-w0") * Algebra("n0p0q0l0"))
+Spatial = diode.Plane.derive.within(Algebra("x+"))                            # Vector+
+Upright = planar.Plane.derive.within(Algebra("x+y+"))                         # Vector+
 
-# Silicon at room temperature: its intrinsic density, a millionth of the doping, the band gap in thermal units, 1.12 eV
-# at 300 K, the electrons' and the holes' mobilities, and the permittivity.
+# Room-temperature silicon parameters in Debye-length and thermal-voltage units (300 K, 1.12 eV band gap).
 intrinsic, gap = 1e-6, 43.6
 mobilities = np.array([1.0, 1 / 3])
 permittivity = 1.0
-# The minority carriers' lifetime, one over the doping times the rate constant of recombination.
 lifetime = 2.0
 rate_constant = 1 / lifetime
-# The bar: each side's length in Debye lengths, and its vertices' spacing.
 side_length, spacing = 10.0, 0.25
-# How far a Newton's step may change a chemical potential, in thermal units, and how little the last changes them.
 limit, tolerance = 6.0, 0.1
-# The junction forming: the time between frames and the frames.
 forming_dt, n_forming_frames = 0.7, 100
-# The sweeps: the forward and the reverse bias, in thermal units, and the frames of the sweep from nothing forward,
-# back into reverse and back to nothing, each frame a steady state.
 forward_bias, reverse_bias, n_sweep_frames = 17.5, -8.0, 100
-# The light: the pairs it makes per length and time, the frames over which it comes on, at no bias, and the sun's
-# temperature, in units of the lattice's, 5800 K against 300 K.
 generation_rate, n_lighting_frames = 1e-5, 15
 sun = 5800 / 300
 frame_duration_ms = 40
-# The volt in thermal units, at 300 K; the band diagram's window of energy, in thermal units, and the current's, in
-# units of the doping's charge times an electron's diffusion across a Debye length.
 volt = 1 / 0.02585
 energy_window, current_window = (-26.0, 60.0), (-1.35e-4, 1.35e-4)
 
-# The MOSFET's cross-section, in Debye lengths of the substrate's doping: its half width and its depth below the oxide;
-# the wells' inner edges' distance from the middle, their depth, and how far their edges spread; the oxide's thickness,
-# and the gate's half length, reaching a little over the wells, the contacts on the wells beyond it.
+# Planar MOSFET dimensions, well doping, oxide permittivity, grid grading, and gate/drain voltage schedule.
 half_width, depth = 20.0, 20.0
 well_edge, well_depth, well_spread = 12.0, 4.0, 0.5
 oxide_thickness, gate_edge = 1.0, 13.0
-# The wells' donors, in units of the substrate's acceptors, and the oxide's permittivity, in silicon's.
 well_doping, oxide_permittivity = 20.0, 1 / 3
-# The mesh's spacing beneath the oxide, across the wells' edges and at the wells' bottoms; how fast it grows away from
-# them, as a share of the distance, and how coarse it grows at most, across and down.
 surface_spacing, edge_spacing, growth, coarsest_across, coarsest_down = 0.1, 0.8, 0.6, 4.0, 5.0
-# The voltages, in thermal units: the drain's while the gate ramps, the gate's for each output curve, and the drain's
-# at the sweeps' far end; the frames of the gate's ramp, of each sweep of the drain, and of each step of the gate.
 small_drain, gate_voltages, largest_drain = 2.0, np.array([70.0, 85.0, 100.0]), 60.0
-n_ramp_frames, n_drain_frames, n_step_frames = 30, 25, 6
-# The cross-section's tints full at the wells' electrons and the substrate's holes; and the output curves' window of
-# current, in units of the doping's charge times an electron's diffusion across a Debye length, per Debye length of the
-# device's width.
+n_rise_frames, n_drain_frames, n_step_frames = 30, 25, 6
 full_densities, drain_current_window = np.array([well_doping, 1.0]), (-0.8, 17.0)
 
-# The solar cell, in Debye lengths of its base's donors: the base's depth below the surface, the top layer's depth and
-# how far its edge spreads, and a finger's width; the top layer's acceptors, in units of the base's donors.
+# Solar-cell period dimensions, emitter and back-surface doping, carrier lifetime, optical absorption, and finger sweep.
 cell_depth, top_depth, top_spread, finger_width = 160.0, 8.0, 0.5, 16.0
 top_doping = 6.0
-# The back's layer of more donors, which turns the holes back from the back contact: its depth above the back, and its
-# donors, in units of the base's, so many that the holes in it are far fewer than in the base above it.
 back_depth, back_doping = 4.0, 1000.0
-# The holes' lifetime in the base, long enough for them to diffuse further than the base is deep.
 cell_lifetime = 2e5
 cell_rate_constant = 1 / cell_lifetime
-# The light: the pairs it makes per volume and time just beneath the surface, and the depth over which that falls by a
-# factor e.
 surface_generation, absorption_length = 1.5e-4, 50.0
-# The mesh: its spacing through the top layer and the junction beneath it, down to `junction_reach` below the surface,
-# and at the fingers' edges; how coarse it grows at most down the base and under a finger; and the columns across each
-# gap between two fingers, as many at every spacing of the fingers.
 junction_spacing, junction_reach, finger_edge_spacing = 0.8, 12.0, 0.8
 coarsest_cell_down, coarsest_finger = 12.0, 2.5
 n_gap_columns = 16
-# The fingers' spacings swept, from a few fingers' widths to three bases' depths, each the same share apart; at the
-# first spacing, the frames over which the light comes on, the bias at open circuit, in thermal units, and the frames
-# over which the bias rises to it; and how far apart the biases about each spacing's last maximum of power lie.
 finger_spacings = np.geomspace(40.0, 480.0, 50)
 n_light_frames, highest_bias, n_bias_frames, bias_step = 12, 26.15, 40, 1.5
 
 
 # --- plumbing -------------------------------------------------------------------------
 def bar() -> tuple[Topology, diode.Point, np.ndarray, np.ndarray]:
-    """The bar: its chain of edges, its vertices `Point-[vertices]`, points of weight one, the doping at each
-    `[vertices]`, the acceptors' negative charge on the p side, left, and the donors' positive one on the n side, right,
-    in units of the doping, and its two ends, the p end and the n end `[ends]`."""
+    """Uniform spacing along the bar defines the one-dimensional edge chain, unit-weight vertex points (`Point-[V]`),
+    step doping profile (`[V]`), and p-end and n-end vertex indices (`[2]`)."""
     n_vertices = int(round(2 * side_length / spacing))
-    # The junction midway between two vertices.
     places = (np.arange(n_vertices) - (n_vertices - 1) / 2) * spacing
-    # Each vertex the dual of its place along the bar and a unit along w, a point of weight one.
-    vertices = (diode.mv(Along, places[:, None]) + diode.mv.w).dual().field()   # Point-[vertices]
+    vertices = (diode.mv(Spatial, places[:, None]) + diode.mv.w).dual().field()   # Point-[V]
     return Topology.chains([n_vertices]), vertices, np.sign(places), np.array([0, n_vertices - 1])
 
 
-def slabs(doping: np.ndarray) -> np.ndarray:
-    """The chemical potentials of the electrons and the holes in neutral semiconductor `[carriers, ...]` of this doping
-    `[...]`, its majority carriers balancing its dopants and its minority carriers in equilibrium with them: the
-    logarithm of each density over the intrinsic one."""
-    # In equilibrium the electrons and the holes are the intrinsic density times the exponentials of opposite chemical
-    # potentials, and neutral, their difference, twice the intrinsic density times the sinh of the electrons', is the
-    # doping.
+def neutral_potentials(doping: np.ndarray) -> np.ndarray:
+    """Charge neutrality determines the equilibrium electron and hole chemical potentials (`[2, ...]`) at net `doping`
+    (`[...]`)."""
+    # Charge neutrality `n - p = 2 * intrinsic * sinh(mu_n) = doping` inverts via arcsinh.
     chemical = np.arcsinh(doping / (2 * intrinsic))                           # [...]
     return np.stack([chemical, -chemical])
 
 
-def sweep() -> np.ndarray:
-    """The bias at each frame of a sweep `[frames]`: from nothing forward, back through nothing into reverse, and back
-    to nothing, at one speed."""
+def bias_sweep() -> np.ndarray:
+    """Piecewise-linear interpolation sets a uniform-speed bias schedule (`[n_sweep_frames]`) from zero to forward
+    bias, into reverse bias, and back to zero."""
     turns = np.array([0.0, forward_bias, reverse_bias, 0.0])
     reach = np.concatenate([[0.0], np.cumsum(np.abs(np.diff(turns)))])
     return np.interp(np.linspace(0, reach[-1], n_sweep_frames), reach, turns)
 
 
-def lit_sweep() -> tuple[np.ndarray, np.ndarray]:
-    """The bias `[frames]` and the share of the light's full generation `[frames]` at each frame of the sweep under
-    light: the light coming on at no bias, and then the bias sweeping as `sweep` has it."""
-    lighting = np.linspace(1 / n_lighting_frames, 1, n_lighting_frames)       # [lighting]
-    return np.concatenate([0 * lighting, sweep()]), np.concatenate([lighting, np.ones(n_sweep_frames)])
+def lit_bias_sweep() -> tuple[np.ndarray, np.ndarray]:
+    """Short-circuit illumination turn-on followed by `bias_sweep` gives the bias and illumination schedules
+    (`[n_lighting_frames + n_sweep_frames]` each)."""
+    lit_fractions = np.linspace(1 / n_lighting_frames, 1, n_lighting_frames)  # [n_lighting_frames]
+    return np.concatenate([0 * lit_fractions, bias_sweep()]), np.concatenate([lit_fractions, np.ones(n_sweep_frames)])
 
 
 def bar_voltages(voltages: np.ndarray) -> np.ndarray:
-    """The voltage at the bar's two ends `[..., ends]`, raising the electric potential there: these voltages `[...]`
-    at the p end, and nothing at the n end."""
+    """Contact bias `voltages` (`[...]`) raise the p contact while the n contact stays grounded (`[..., 2]`)."""
     return np.stack([voltages, np.zeros_like(voltages)], axis=-1)
 
 
-def graded(stop: float, fine_places: np.ndarray, finest: np.ndarray, coarsest: float) -> np.ndarray:
-    """Places from nothing to `stop` `[places]`, as close as `finest` `[fine]` at each of the places `fine_places`
-    `[fine]`, further apart away from them by `growth` of the distance, and never further than `coarsest`."""
+def graded_places(stop: float, fine_places: np.ndarray, finest: np.ndarray, coarsest: float) -> np.ndarray:
+    """Distance-proportional step growth places coordinates monotonically from zero to `stop` with spacing `finest`
+    near `fine_places` and at most `coarsest` far from them."""
     places = [0.0]
     while places[-1] < stop:
-        here = places[-1]
-        places.append(here + min(coarsest, (finest + growth * np.abs(here - fine_places)).min()))
-    # Stretched to end on the stop.
+        position = places[-1]
+        places.append(position + min(coarsest, (finest + growth * np.abs(position - fine_places)).min()))
     return np.array(places) * stop / places[-1]
 
 
 def section() -> tuple[Topology, np.ndarray, np.ndarray, np.ndarray, list[np.ndarray]]:
-    """The MOSFET's cross-section: a grid of triangles finest beneath the oxide and across the wells' edges, its
-    columns mirrored about the middle, the silicon's rows below and the oxide's one row above; its vertices' places
-    across and up `[vertices, 2]`; whether each triangle is oxide `[simplices]`; the net doping at each vertex
-    `[vertices]`, the wells' donors less the substrate's acceptors, in the oxide the doping of the surface beneath; and
-    the vertices of its contacts, the source, the drain, the body and the gate, `[contacts][held]`."""
-    across = graded(half_width, np.array([well_edge, gate_edge]), np.array([edge_spacing, edge_spacing]),
-                    coarsest_across)
-    columns = np.concatenate([-across[:0:-1], across])                        # [columns]
-    down = graded(depth, np.array([0.0, well_depth]), np.array([surface_spacing, edge_spacing]), coarsest_down)
-    rows = np.concatenate([-down[::-1], [oxide_thickness]])                   # [rows]
+    """Graded rows and mirrored columns form the triangulated MOSFET cross-section, vertex coordinates (`[V, 2]`),
+    oxide triangle mask (`[F]`), smooth net doping profile (`[V]`), and contact vertex index arrays."""
+    half_columns = graded_places(half_width, np.array([well_edge, gate_edge]), np.array([edge_spacing, edge_spacing]),
+                                 coarsest_across)
+    columns = np.concatenate([-half_columns[:0:-1], half_columns])
+    silicon_depths = graded_places(depth, np.array([0.0, well_depth]), np.array([surface_spacing, edge_spacing]),
+                                   coarsest_down)
+    rows = np.concatenate([-silicon_depths[::-1], [oxide_thickness]])
     topology = Topology.grid(len(rows), len(columns))
-    coordinates = np.stack(np.meshgrid(columns, rows), axis=-1).reshape(-1, 2)   # [vertices, 2]
-    x, y = coordinates.T
-    oxide = (y[topology.elements[-1]] > 0).any(axis=-1)                       # [simplices]
-    # The wells, each a box with smooth edges reaching in from a side and down from the surface.
-    lateral = (1 + np.tanh((np.abs(x) - well_edge) / well_spread)) / 2        # [vertices]
-    vertical = (1 + np.tanh((np.minimum(y, 0) + well_depth) / well_spread)) / 2   # [vertices]
-    doping = well_doping * lateral * vertical - 1                             # [vertices]
-    # The source and the drain hold the surface and the oxide's row over the wells beyond the gate, the metal of their
-    # contacts reaching down through the oxide; the body holds the bottom, and the gate the oxide's top between them.
-    contacts = [np.flatnonzero((x <= -gate_edge) & (y >= 0)), np.flatnonzero((x >= gate_edge) & (y >= 0)),
-                np.flatnonzero(y == -depth), np.flatnonzero((np.abs(x) < gate_edge) & (y > 0))]
+    V, E, F = topology.n_elements
+    coordinates = np.stack(np.meshgrid(columns, rows), axis=-1).reshape(V, 2)   # [V, 2]
+    x_coords, y_coords = coordinates.T
+    oxide = (y_coords[topology.elements[-1]] > 0).any(axis=-1)                # [F]
+    lateral = (1 + np.tanh((np.abs(x_coords) - well_edge) / well_spread)) / 2   # [V]
+    vertical = (1 + np.tanh((np.minimum(y_coords, 0) + well_depth) / well_spread)) / 2   # [V]
+    doping = well_doping * lateral * vertical - 1                             # [V]
+    contacts = [np.flatnonzero((x_coords <= -gate_edge) & (y_coords >= 0)),
+                np.flatnonzero((x_coords >= gate_edge) & (y_coords >= 0)),
+                np.flatnonzero(y_coords == -depth),
+                np.flatnonzero((np.abs(x_coords) < gate_edge) & (y_coords > 0))]
     return topology, coordinates, oxide, doping, contacts
 
 
-def schedule() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """The gate's and the drain's voltage at each frame `[frames]` each, in thermal units, and the output curve each
-    frame lies on `[frames]`, minus one where it lies on none: the gate ramps to its first voltage at a small drain
-    voltage; then the drain sweeps up, the gate steps to its next voltage, the drain sweeps back down, and so on."""
-    # Each curve's gate ramps or steps from the one before, the first from nothing, while the drain waits at the end
-    # of the sweep before, the first at the small voltage; then the drain sweeps to the other end.
-    starts = np.concatenate([[0.0], gate_voltages[:-1]])                      # [curves]
-    n_gate_frames = np.concatenate([[n_ramp_frames], np.full(len(gate_voltages) - 1, n_step_frames)])   # [curves]
+def gate_drain_schedule() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Alternating gate steps and drain sweeps define the per-frame gate voltages, drain voltages, and output-curve
+    indices (`[n_frames]` each, `-1` during gate transitions)."""
+    n_curves = len(gate_voltages)
+    starts = np.concatenate([[0.0], gate_voltages[:-1]])                      # [n_curves]
+    n_gate_steps = np.concatenate([[n_rise_frames], np.full(n_curves - 1, n_step_frames)])   # [n_curves]
     ends = np.array([small_drain, largest_drain])
     gates, drains, curves = [], [], []
-    for curve, (start, gate, n_frames) in enumerate(zip(starts, gate_voltages, n_gate_frames)):
+    for curve, (start, gate, n_frames) in enumerate(zip(starts, gate_voltages, n_gate_steps)):
         near, far = ends[curve % 2], ends[1 - curve % 2]
-        # The gate's last frame, at the curve's voltage, is the curve's first.
-        on_curve = np.arange(n_frames) == n_frames - 1                        # [gate frames]
+        on_curve = np.arange(n_frames) == n_frames - 1                        # [n_frames]
         gates += [np.linspace(start, gate, n_frames + 1)[1:], np.full(n_drain_frames, gate)]
         drains += [np.full(n_frames, near), np.linspace(near, far, n_drain_frames + 1)[1:]]
         curves += [np.where(on_curve, curve, -1), np.full(n_drain_frames, curve)]
@@ -206,378 +151,380 @@ def schedule() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 
 def transistor_voltages(contacts: list[np.ndarray], gates: np.ndarray, drains: np.ndarray) -> np.ndarray:
-    """The voltage at each vertex the MOSFET's contacts hold, at each frame `[frames, held]`, raising the electric
-    potential there, the vertices of the source, the drain, the body and the gate `[contacts][held]` in turn: each
-    frame's drain voltage `[frames]` at the drain's and its gate voltage `[frames]` at the gate's, and nothing at the
-    source's and the body's."""
+    """Gate and drain schedules (`[n_frames]` each) populate the held contact voltages (`[n_frames, V_held]`) across
+    grounded source, biased drain, grounded body, and biased gate vertices."""
+    n_frames = len(gates)
     source, drain, body, gate = contacts
-    return np.concatenate([np.zeros((len(gates), len(source))), np.repeat(drains[:, None], len(drain), 1),
-                           np.zeros((len(gates), len(body))), np.repeat(gates[:, None], len(gate), 1)], axis=-1)
+    return np.concatenate([np.zeros((n_frames, len(source))), np.repeat(drains[:, None], len(drain), 1),
+                           np.zeros((n_frames, len(body))), np.repeat(gates[:, None], len(gate), 1)], axis=-1)
 
 
 def cell_places(finger_spacing: float) -> np.ndarray:
-    """The places across and up `[vertices, 2]` of one period of the solar cell, its fingers this far apart, from the
-    middle of one finger to the middle of the next and from the back up to the surface, row by row: the rows as close as
-    the junction's spacing through the top layer and the junction beneath it and further apart down the base, the same
-    at every spacing; the columns closer towards each finger's edge beneath it, and as many across the gap at every
-    spacing, closest at the fingers' edges, as a cosine's steps are."""
-    # Fine through the top layer and the junction, and across the back layer's edge.
-    fine = np.concatenate([np.arange(0.0, junction_reach, junction_spacing), [cell_depth - back_depth]])   # [fine]
-    rows = -graded(cell_depth, fine, np.full(len(fine), junction_spacing), coarsest_cell_down)[::-1]
+    """Graded junction rows and cosine-clustered gap columns position the vertex coordinates (`[V, 2]`) across one
+    solar-cell period of width `finger_spacing`."""
+    fine_depths = np.concatenate([np.arange(0.0, junction_reach, junction_spacing), [cell_depth - back_depth]])
+    rows = -graded_places(cell_depth, fine_depths, np.full(len(fine_depths), junction_spacing),
+                          coarsest_cell_down)[::-1]
     half = finger_width / 2
-    under = half - graded(half, np.array([0.0]), np.array([finger_edge_spacing]), coarsest_finger)[::-1]
-    steps = (1 - np.cos(np.pi * np.linspace(0, 1, n_gap_columns + 1))) / 2   # [gap columns + 1]
-    gap = half + (finger_spacing - finger_width) * steps                      # [gap columns + 1]
-    columns = np.concatenate([under, gap[1:-1], finger_spacing - under[::-1]])   # [columns]
+    finger_columns = half - graded_places(half, np.array([0.0]), np.array([finger_edge_spacing]),
+                                          coarsest_finger)[::-1]
+    steps = (1 - np.cos(np.pi * np.linspace(0, 1, n_gap_columns + 1))) / 2   # [n_gap_columns + 1]
+    gap_columns = half + (finger_spacing - finger_width) * steps              # [n_gap_columns + 1]
+    columns = np.concatenate([finger_columns, gap_columns[1:-1], finger_spacing - finger_columns[::-1]])
     return np.stack(np.meshgrid(columns, rows), axis=-1).reshape(-1, 2)
 
 
 def period_grid(finger_spacing: float) -> tuple[Topology, np.ndarray, np.ndarray, np.ndarray, list[np.ndarray]]:
-    """One period of the solar cell, its fingers this far apart: a grid of triangles, the same at every spacing; its
-    vertices' places across and up `[vertices, 2]`; the net doping at each vertex `[vertices]`, the donors of the base
-    and of its back layer less the top layer's acceptors; whether each vertex lies in a finger's shadow `[vertices]`;
-    and the vertices of its contacts, the fingers and the back, `[contacts][held]`."""
-    coordinates = cell_places(finger_spacing)                                 # [vertices, 2]
-    x, y = coordinates.T
-    n_rows, n_columns = len(np.unique(y)), len(np.unique(x))
+    """One repeating solar-cell period at `finger_spacing` defines the grid topology, vertex coordinates (`[V, 2]`),
+    net doping (`[V]`), finger-shadow mask (`[V]`), and front-finger and back-contact vertex indices."""
+    coordinates = cell_places(finger_spacing)
+    x_coords, y_coords = coordinates.T
+    n_rows, n_columns = len(np.unique(y_coords)), len(np.unique(x_coords))
     topology = Topology.grid(n_rows, n_columns)
-    # The top layer's acceptors reach down from the surface, and the back's donors up from the back, with smooth edges.
-    top = (1 + np.tanh((y + top_depth) / top_spread)) / 2                      # [vertices]
-    back = (1 - np.tanh((y + cell_depth - back_depth) / top_spread)) / 2       # [vertices]
-    doping = 1 + back_doping * back - top_doping * top                        # [vertices]
-    # The light comes straight down, and each finger shades the columns beneath it, from its middle to its edge.
-    shaded = (x <= finger_width / 2) | (x >= finger_spacing - finger_width / 2)   # [vertices]
-    contacts = [np.flatnonzero(shaded & (y == 0)), np.flatnonzero(y == -cell_depth)]
-    return topology, coordinates, doping, shaded, contacts
+    V, E, F = topology.n_elements
+    top = (1 + np.tanh((y_coords + top_depth) / top_spread)) / 2              # [V]
+    back = (1 - np.tanh((y_coords + cell_depth - back_depth) / top_spread)) / 2   # [V]
+    doping = 1 + back_doping * back - top_doping * top                        # [V]
+    shadow_mask = (x_coords <= finger_width / 2) | (x_coords >= finger_spacing - finger_width / 2)   # [V]
+    contacts = [np.flatnonzero(shadow_mask & (y_coords == 0)), np.flatnonzero(y_coords == -cell_depth)]
+    return topology, coordinates, doping, shadow_mask, contacts
 
 
 def lighting_biases() -> tuple[np.ndarray, np.ndarray]:
-    """The bias `[frames]` and the share of the light's full generation `[frames]` at each frame as the light comes on
-    and the bias then rises: in the dark at no bias, the light coming on at no bias, and the bias rising to open
-    circuit."""
-    lit = np.linspace(1 / n_light_frames, 1, n_light_frames)                  # [lighting]
-    # The bias rises ever more slowly towards the highest, where the current falls away fastest.
-    rising = highest_bias * np.sin(np.pi / 2 * np.linspace(0, 1, n_bias_frames + 1)[1:])   # [bias frames]
-    biases = np.concatenate([[0.0], 0 * lit, rising])                         # [frames]
-    return biases, np.concatenate([[0.0], lit, np.ones(n_bias_frames)])
+    """Short-circuit illumination turn-on followed by a sine-eased voltage rise gives the bias and illumination
+    schedules (`[1 + n_light_frames + n_bias_frames]` each) up to open circuit."""
+    lit_fractions = np.linspace(1 / n_light_frames, 1, n_light_frames)        # [n_light_frames]
+    bias_rise = highest_bias * np.sin(np.pi / 2 * np.linspace(0, 1, n_bias_frames + 1)[1:])   # [n_bias_frames]
+    biases = np.concatenate([[0.0], 0 * lit_fractions, bias_rise])
+    return biases, np.concatenate([[0.0], lit_fractions, np.ones(n_bias_frames)])
 
 
-def cell_voltages(contacts: list[np.ndarray], biases: np.ndarray) -> np.ndarray:
-    """The voltage at each vertex the solar cell's contacts hold, at each of these biases `[frames]`, `[frames, held]`,
-    raising the electric potential there, the vertices of the fingers and the back `[contacts][held]` in turn: the
-    bias at the fingers', and nothing at the back's."""
+def cell_voltages(contacts: list[np.ndarray], biases: planar.Scalar) -> planar.Scalar:
+    """Front-finger `biases` (`[n_frames] Scalar+`) pair with a grounded back contact into held contact voltages."""
     fingers, back = contacts
-    return np.concatenate([np.repeat(biases[:, None], len(fingers), 1), np.zeros((len(biases), len(back)))], axis=-1)
+    finger_mask = np.concatenate([np.ones(len(fingers)), np.zeros(len(back))])
+    return biases[:, None] * finger_mask
 
 
-def held_and_free(contacts: list[np.ndarray], n_vertices: int) -> tuple[np.ndarray, np.ndarray]:
-    """The vertices these contacts hold, each contact's in turn `[held]`, and the rest of the `n_vertices`, free
-    `[free]`."""
-    held = np.concatenate(contacts)                                           # [held]
-    return held, np.setdiff1d(np.arange(n_vertices), held)
+def contact_partition(contacts: list[np.ndarray], n_vertices: int) -> tuple[np.ndarray, np.ndarray]:
+    """Contact index arrays partition `n_vertices` into held contact vertices and complementary free vertices."""
+    held_indices = np.concatenate(contacts)
+    return held_indices, np.setdiff1d(np.arange(n_vertices), held_indices)
 
 
-def peak(biases: np.ndarray, powers: solar_cell.Scalar) -> tuple[int, float]:
-    """The frame of the highest of these powers `[frames] Scalar+` but the first and the last, one at each bias
-    `[frames]`, and the bias of the peak of the parabola through it and its neighbours, the maximum power's, no further
-    than a step beyond them: the power is concave in the bias, but nearly straight below its maximum, where a
-    parabola's peak lies far off."""
-    numbers = powers.to_array().reshape(-1)                                   # [frames]
-    best = int(numbers[1:-1].argmax()) + 1
-    low, middle, high = numbers[best - 1:best + 2]
+def power_peak(biases: planar.Scalar, powers: planar.Scalar) -> tuple[int, planar.Scalar]:
+    """Three-point parabolic interpolation around the highest interior sample of `powers` (`[n_frames] Scalar+`)
+    locates the maximum-power sample index and peak bias (`[] Scalar+`)."""
+    best = int(powers[1:-1].argmax()) + 1
+    low, middle, high = powers[best - 1], powers[best], powers[best + 1]
     step = (biases[best + 1] - biases[best - 1]) / 2
-    return best, biases[best] + step * np.clip((low - high) / (2 * (low - 2 * middle + high)), -1.5, 1.5)
+    return best, biases[best] + step * ((low - high) / (2 * (low - 2 * middle + high))).clip(-1.5, 1.5)
 
 
 # --- scenes ---------------------------------------------------------------------------
 def junction() -> tuple[Topology, diode.Point, diode.Point, np.ndarray, diode.Potentials, diode.Potentials]:
-    """The bar's chain, its vertices, its dopants `Point-[vertices]`, its two ends, the p end and the n end, the slabs'
-    potentials at no electric potential `Potentials+[vertices]`, and the potentials at its ends once the wire has
-    closed `Potentials+[ends]`."""
+    """Neutral p-type and n-type halves define the bar topology, vertex points (`Point-[V]`), dopant charges
+    (`Point-[V]`), end indices (`[2]`), initial slab potentials (`Potentials+[V]`), and wired end potentials
+    (`Potentials+[2]`)."""
     mv = diode.mv
     topology, vertices, doping, ends = bar()
-    chemical = slabs(doping)                                                  # [carriers, vertices]
-    # The slabs at no electric potential, of the potentials' whole type as they start a run.
-    slab = (mv.n * chemical[0] + mv.p * chemical[1]).retyped(diode.Potentials).field()   # Potentials+[vertices]
-    # The wire brings the p end to the n end's Fermi level: its electric potential falls by the built-in voltage, the
-    # sum of the majority carriers' chemical potentials at the two ends.
+    V, E = topology.n_elements
+    chemical = neutral_potentials(doping)                                     # [2, V]
+    slab = (mv.n * chemical[0] + mv.p * chemical[1]).retyped(diode.Potentials).field()   # Potentials+[V]
     built_in = chemical[1, 0] + chemical[0, -1]
-    wired = topology.reading(ends, 0) * slab + (mv.t * bar_voltages(-built_in)).field()   # Potentials+[ends]
-    return topology, vertices, (diode.time * doping).field(), ends, slab, wired
+    wired_contacts = topology.reading(ends, 0) * slab + (mv.t * bar_voltages(-built_in)).field()   # Potentials+[2]
+    return topology, vertices, (diode.time * doping).field(), ends, slab, wired_contacts
 
 
 def silicon(topology: Topology) -> tuple[diode.Scalar, diode.Scalar]:
-    """The bar's simplices, all silicon: their permittivity, and their share of semiconductor, one each,
-    `Scalar+[simplices]` each."""
-    filled = diode.mv.scalar(np.ones((topology.n_elements[-1], 1))).field()   # Scalar+[simplices]
-    return permittivity * filled, filled
+    """Uniform silicon fills every edge of `topology` with constant permittivity and unit semiconductor weight
+    (`Scalar+[E]` each)."""
+    V, E = topology.n_elements
+    all_silicon = diode.mv.scalar(np.ones((E, 1))).field()                    # Scalar+[E]
+    return permittivity * all_silicon, all_silicon
 
 
-def forming(topology: Topology, vertices: diode.Point, dopants: diode.Point, ends: np.ndarray,
-            slab: diode.Potentials, wired: diode.Potentials) -> Iterator[diode.Potentials]:
-    """The potentials at each frame as the junction forms, from the slabs as they touch, in the dark."""
-    volumes, driving, outflow = diode.simplices(topology, vertices, Along)
+def junction_formation(topology: Topology, vertices: diode.Point, dopants: diode.Point, ends: np.ndarray,
+                       slab: diode.Potentials, wired_contacts: diode.Potentials) -> Iterator[diode.Potentials]:
+    """Yields the potential field (`Potentials+[V]`) as two neutral slabs relax into p-n junction equilibrium."""
+    V, E = topology.n_elements
+    volumes, gradient = diode.simplex_maps(topology, vertices, Spatial)
     permittivities, semiconductor = silicon(topology)
-    held, free = held_and_free([ends], topology.n_vertices)                   # [held], [free]
-    dark = np.zeros(n_forming_frames) * diode.mv.scalar(np.ones((topology.n_vertices, 1))).field()
-    return diode.run(topology, volumes, driving, outflow, permittivities, semiconductor, dopants, slab,
-                     topology.reading(held, 0), topology.reading(free, 0), np.ones(n_forming_frames) * wired, dark,
-                     intrinsic, mobilities, rate_constant, forming_dt, limit, tolerance)
+    held_indices, free_indices = contact_partition([ends], V)
+    zero_generation = np.zeros(n_forming_frames) * diode.mv.scalar(np.ones((V, 1))).field()
+    return diode.potential_frames(
+        topology, volumes, gradient, permittivities, semiconductor, dopants, slab,
+        topology.reading(held_indices, 0), topology.reading(free_indices, 0),
+        np.ones(n_forming_frames) * wired_contacts, zero_generation, intrinsic, mobilities, rate_constant, forming_dt,
+        limit, tolerance)
 
 
-def biased(topology: Topology, vertices: diode.Point, dopants: diode.Point, ends: np.ndarray, wired: diode.Potentials,
-           settled: diode.Potentials, biases: np.ndarray, generations: np.ndarray) -> Iterator[diode.Potentials]:
-    """The steady potentials at each frame, from these settled ones, under each frame's bias `[frames]`, raising the p
-    end's electric potential, and its light's generation `[frames]`, the same along the bar."""
+def biased_states(topology: Topology, vertices: diode.Point, dopants: diode.Point, ends: np.ndarray,
+                  wired_contacts: diode.Potentials, equilibrium_state: diode.Potentials, biases: np.ndarray,
+                  generations: np.ndarray) -> Iterator[diode.Potentials]:
+    """Yields steady-state potential fields (`Potentials+[V]`) across `biases` (`[n_frames]`) and uniform optical
+    `generations` (`[n_frames]`)."""
+    V, E = topology.n_elements
     mv = diode.mv
-    volumes, driving, outflow = diode.simplices(topology, vertices, Along)
+    n_frames = len(biases)
+    volumes, gradient = diode.simplex_maps(topology, vertices, Spatial)
     permittivities, semiconductor = silicon(topology)
-    held, free = held_and_free([ends], topology.n_vertices)                   # [held], [free]
-    contacts = wired + (mv.t * bar_voltages(biases)).field()                  # [frames] Potentials+[ends]
-    lit = generations * mv.scalar(np.ones((topology.n_vertices, 1))).field()     # [frames] Scalar+[vertices]
-    return diode.run(topology, volumes, driving, outflow, permittivities, semiconductor, dopants, settled,
-                     topology.reading(held, 0), topology.reading(free, 0), contacts, lit, intrinsic, mobilities,
-                     rate_constant, np.inf, limit, tolerance)
+    held_indices, free_indices = contact_partition([ends], V)
+    contacts = wired_contacts + (mv.t * bar_voltages(biases)).field()         # [n_frames] Potentials+[2]
+    generation_field = generations * mv.scalar(np.ones((V, 1))).field()       # [n_frames] Scalar+[V]
+    return diode.potential_frames(
+        topology, volumes, gradient, permittivities, semiconductor, dopants, equilibrium_state,
+        topology.reading(held_indices, 0), topology.reading(free_indices, 0), contacts, generation_field, intrinsic,
+        mobilities, rate_constant, np.inf, limit, tolerance)
 
 
-def transistor() -> tuple[Topology, mosfet.Point, mosfet.Scalar, mosfet.Scalar, mosfet.Point, mosfet.Potentials,
+def transistor() -> tuple[Topology, planar.Point, planar.Scalar, planar.Scalar, planar.Point, planar.Potentials,
                           list[np.ndarray]]:
-    """The MOSFET: its mesh, its vertices `Point-[vertices]`, its simplices' permittivities and share of
-    semiconductor, one in the silicon and nothing in the oxide, `Scalar+[simplices]` each, its dopants
-    `Point-[vertices]`, the potentials of neutral silicon at its doping with the Fermi level at nothing, the gate's
-    vertices at the substrate's electric potential, `Potentials+[vertices]`, and the vertices of its contacts, the
-    source, the drain, the body and the gate."""
-    mv = mosfet.mv
+    """Substrate and donor-well doping on `section` define the MOSFET triangulation, vertex points (`Point-[V]`),
+    triangle permittivities and silicon mask (`Scalar+[F]` each), dopant charges (`Point-[V]`), flat-band reference
+    potentials (`Potentials+[V]`), and contact index arrays."""
+    mv = planar.mv
     topology, coordinates, oxide, doping, contacts = section()
-    # Each vertex the dual of its place across and up and a unit along w, a point of weight one.
-    vertices = (mv(Upright, coordinates) + mv.w).dual().field()              # Point-[vertices]
-    permittivities = mv.scalar(np.where(oxide, oxide_permittivity, permittivity)[:, None]).field()
-    semiconductor = mv.scalar(np.where(oxide, 0.0, 1.0)[:, None]).field()     # Scalar+[simplices]
-    # With the Fermi level at nothing, each carrier's electrochemical potential is nothing, so that the electric
-    # potential is the electrons' chemical potential. The gate's work function is the substrate's, its electric
-    # potential the substrate's at no gate voltage, so that the bands lie flat; the carriers' potentials at its vertices
-    # are idle.
-    chemical = slabs(doping)                                                  # [carriers, vertices]
-    substrate = slabs(np.array(-1.0))[0]
-    gate = np.isin(np.arange(topology.n_vertices), contacts[3])               # [vertices]
-    electric = np.where(gate, substrate, chemical[0])                         # [vertices]
-    neutral = (mv.t * electric + mv.n * np.where(gate, 0.0, chemical[0])
-               + mv.p * np.where(gate, 0.0, chemical[1])).field()            # Potentials+[vertices]
-    return topology, vertices, permittivities, semiconductor, (mosfet.time * doping).field(), neutral, contacts
+    V, E, F = topology.n_elements
+    vertices = (mv(Upright, coordinates) + mv.w).dual().field()               # Point-[V]
+    permittivities = mv.scalar(np.where(oxide, oxide_permittivity, permittivity)[:, None]).field()   # Scalar+[F]
+    semiconductor = mv.scalar(np.where(oxide, 0.0, 1.0)[:, None]).field()     # Scalar+[F]
+    chemical = neutral_potentials(doping)                                     # [2, V]
+    substrate = neutral_potentials(np.array(-1.0))[0]
+    on_gate = np.isin(np.arange(V), contacts[3])                              # [V]
+    electric = np.where(on_gate, substrate, chemical[0])                      # [V]
+    neutral = (mv.t * electric + mv.n * np.where(on_gate, 0.0, chemical[0])
+               + mv.p * np.where(on_gate, 0.0, chemical[1])).field()          # Potentials+[V]
+    return topology, vertices, permittivities, semiconductor, (planar.time * doping).field(), neutral, contacts
 
 
-def switching(topology: Topology, vertices: mosfet.Point, permittivities: mosfet.Scalar, semiconductor: mosfet.Scalar,
-              dopants: mosfet.Point, neutral: mosfet.Potentials, contacts: list[np.ndarray], gates: np.ndarray,
-              drains: np.ndarray) -> Iterator[mosfet.Potentials]:
-    """The steady potentials at each frame `Potentials+[vertices]`, the first found from neutral silicon, under each
-    frame's gate and drain voltage `[frames]` each, raising the electric potential of the gate and of the drain, the
-    source and the body at nothing."""
-    mv = mosfet.mv
-    volumes, driving, outflow = mosfet.simplices(topology, vertices, Upright)
-    held, free = held_and_free(contacts, topology.n_vertices)                 # [held], [free]
-    holding = topology.reading(held, 0)                                       # Scalar+[held <- vertices]
-    # The contacts hold their potentials at no voltage, the drain's voltage and the gate's raising their electric
-    # potential.
-    voltages = transistor_voltages(contacts, gates, drains)                   # [frames, held]
-    wired = holding * neutral + (mv.t * voltages).field()                     # [frames] Potentials+[held]
-    dark = np.zeros(len(gates)) * mv.scalar(np.ones((topology.n_vertices, 1))).field()   # [frames] Scalar+[vertices]
-    states = mosfet.run(topology, volumes, driving, outflow, permittivities, semiconductor, dopants, neutral, holding,
-                        topology.reading(free, 0), wired, dark, intrinsic, mobilities, rate_constant, np.inf, limit,
-                        tolerance)
-    # The neutral silicon the run starts from is no steady state.
+def transistor_states(topology: Topology, vertices: planar.Point, permittivities: planar.Scalar,
+                      semiconductor: planar.Scalar, dopants: planar.Point, neutral: planar.Potentials,
+                      contacts: list[np.ndarray], gates: np.ndarray, drains: np.ndarray) -> Iterator[planar.Potentials]:
+    """Yields steady-state MOSFET potential fields (`Potentials+[V]`) across per-frame `gates` and `drains` voltages
+    (`[n_frames]` each)."""
+    V, E, F = topology.n_elements
+    mv = planar.mv
+    n_frames = len(gates)
+    areas, gradient = planar.simplex_maps(topology, vertices, Upright)
+    held_indices, free_indices = contact_partition(contacts, V)
+    held_reading = topology.reading(held_indices, 0)                          # Scalar+[V_held <- V]
+    voltages = transistor_voltages(contacts, gates, drains)                   # [n_frames, V_held]
+    contact_potentials = held_reading * neutral + (mv.t * voltages).field()   # [n_frames] Potentials+[V_held]
+    zero_generation = np.zeros(n_frames) * mv.scalar(np.ones((V, 1))).field()   # [n_frames] Scalar+[V]
+    states = planar.potential_frames(
+        topology, areas, gradient, permittivities, semiconductor, dopants, neutral, held_reading,
+        topology.reading(free_indices, 0), contact_potentials, zero_generation, intrinsic, mobilities, rate_constant,
+        np.inf, limit, tolerance)
     return islice(states, 1, None)
 
 
-def solar_period(finger_spacing: float) -> tuple[Topology, solar_cell.Point, solar_cell.Point, solar_cell.Potentials,
-                                          list[np.ndarray], solar_cell.Scalar]:
-    """The solar cell's period, its fingers this far apart: its mesh, its vertices `Point-[vertices]`, its dopants
-    `Point-[vertices]`, the potentials of neutral silicon at its doping with the Fermi level at nothing
-    `Potentials+[vertices]`, the vertices of its contacts, the fingers and the back, and the light's generation of
-    pairs per volume and time at each vertex `Scalar+[vertices]`, fading with depth from the surface's and none in the
-    fingers' shadow."""
-    mv = solar_cell.mv
-    topology, coordinates, doping, shaded, contacts = period_grid(finger_spacing)
-    # Each vertex the dual of its place across and up and a unit along w, a point of weight one.
-    vertices = (mv(Upright, coordinates) + mv.w).dual().field()              # Point-[vertices]
-    chemical = slabs(doping)                                                  # [carriers, vertices]
-    neutral = (mv.t * chemical[0] + mv.n * chemical[0] + mv.p * chemical[1]).field()   # Potentials+[vertices]
-    # The light falls by a factor e over each absorption length below the surface, where the plane y reads nothing.
-    falling = surface_generation * ((mv.y & vertices) / absorption_length).exp()   # Scalar+[vertices]
-    generation = mv.scalar(np.where(shaded, 0.0, 1.0)[:, None]).field() * falling   # Scalar+[vertices]
-    return topology, vertices, (solar_cell.time * doping).field(), neutral, contacts, generation
+def solar_period(finger_spacing: float) -> tuple[Topology, planar.Point, planar.Point, planar.Potentials,
+                                                 list[np.ndarray], planar.Scalar]:
+    """Emitter, base, and back-surface doping on `period_grid` define one solar-cell period at `finger_spacing`
+    together with vertex points (`Point-[V]`), dopants (`Point-[V]`), neutral reference potentials (`Potentials+[V]`),
+    contacts, and depth-attenuated optical pair generation (`Scalar+[V]`)."""
+    mv = planar.mv
+    topology, coordinates, doping, shadow_mask, contacts = period_grid(finger_spacing)
+    V, E, F = topology.n_elements
+    vertices = (mv(Upright, coordinates) + mv.w).dual().field()               # Point-[V]
+    chemical = neutral_potentials(doping)                                     # [2, V]
+    neutral = (mv.t * chemical[0] + mv.n * chemical[0] + mv.p * chemical[1]).field()   # Potentials+[V]
+    depth_profile = surface_generation * ((mv.y & vertices) / absorption_length).exp()   # Scalar+[V]
+    generation = mv.scalar(np.where(shadow_mask, 0.0, 1.0)[:, None]).field() * depth_profile   # Scalar+[V]
+    return topology, vertices, (planar.time * doping).field(), neutral, contacts, generation
 
 
-def solar_steady(topology: Topology, dopants: solar_cell.Point, neutral: solar_cell.Potentials,
-                 contacts: list[np.ndarray], volumes: solar_cell.Scalar, driving: SparseExtensor,
-                 outflow: SparseExtensor, potentials: solar_cell.Potentials, biases: np.ndarray,
-                 generations: solar_cell.Scalar) -> Iterator[solar_cell.Potentials]:
-    """The solar cell's steady potentials at each frame `Potentials+[vertices]`, from these, with these volumes of its
-    simplices, drives and outflows, under each frame's bias `[frames]` and its light's generation
-    `[frames] Scalar+[vertices]`, its contacts holding neutral silicon's potentials at their doping, the fingers'
-    electric potential raised by the bias."""
-    mv = solar_cell.mv
-    filled = mv.scalar(np.ones((topology.n_elements[-1], 1))).field()        # Scalar+[simplices]
-    held, free = held_and_free(contacts, topology.n_vertices)                 # [held], [free]
-    holding = topology.reading(held, 0)                                       # Scalar+[held <- vertices]
-    voltages = cell_voltages(contacts, biases)                                # [frames, held]
-    held_potentials = holding * neutral + (mv.t * voltages).field()           # [frames] Potentials+[held]
-    states = solar_cell.run(topology, volumes, driving, outflow, permittivity * filled, filled, dopants, potentials,
-                            holding, topology.reading(free, 0), held_potentials, generations, intrinsic, mobilities,
-                            cell_rate_constant, np.inf, limit, tolerance)
+def solar_steady(topology: Topology, dopants: planar.Point, neutral: planar.Potentials, contacts: list[np.ndarray],
+                 areas: planar.Scalar, gradient: SparseExtensor, potentials: planar.Potentials, biases: planar.Scalar,
+                 generations: planar.Scalar) -> Iterator[planar.Potentials]:
+    """Yields steady-state solar-cell potential fields (`Potentials+[V]`) across `biases` (`[n_frames] Scalar+`) and
+    `generations` (`[n_frames] Scalar+[V]`)."""
+    V, E, F = topology.n_elements
+    mv = planar.mv
+    all_silicon = mv.scalar(np.ones((F, 1))).field()                          # Scalar+[F]
+    held_indices, free_indices = contact_partition(contacts, V)
+    held_reading = topology.reading(held_indices, 0)                          # Scalar+[V_held <- V]
+    voltages = cell_voltages(contacts, biases)                                # [n_frames, V_held] Scalar+
+    held_potentials = held_reading * neutral + (mv.t * voltages).field()      # [n_frames] Potentials+[V_held]
+    states = planar.potential_frames(
+        topology, areas, gradient, permittivity * all_silicon, all_silicon, dopants, potentials, held_reading,
+        topology.reading(free_indices, 0), held_potentials, generations, intrinsic, mobilities, cell_rate_constant,
+        np.inf, limit, tolerance)
     return islice(states, 1, None)
 
 
-def cell_terminal(topology: Topology, contacts: list[np.ndarray], volumes: solar_cell.Scalar,
-                  driving: SparseExtensor, outflow: SparseExtensor,
-                  potentials: solar_cell.Potentials) -> tuple[solar_cell.Scalar, solar_cell.Scalar]:
-    """The solar cell's voltage at these potentials `[] Scalar+`, the rise of the electrons' quasi-Fermi level from the
-    fingers to the back, and the current it delivers `[] Scalar+`, the charge its carriers' fluxes take out of the
-    back's cells, with these volumes of its simplices, drives and outflows."""
-    mv = solar_cell.mv
-    filled = mv.scalar(np.ones((topology.n_elements[-1], 1))).field()        # Scalar+[simplices]
-    voltage, current = solar_cell.terminal(topology, volumes, driving, outflow, filled, contacts[0], contacts[1],
-                                           potentials, intrinsic, mobilities)
+def cell_terminal(topology: Topology, contacts: list[np.ndarray], areas: planar.Scalar, gradient: SparseExtensor,
+                  potentials: planar.Potentials) -> tuple[planar.Scalar, planar.Scalar]:
+    """Front-finger and back-contact readings give the solar cell's terminal voltage and delivered current
+    (`[] Scalar+` each)."""
+    V, E, F = topology.n_elements
+    all_silicon = planar.mv.scalar(np.ones((F, 1))).field()                   # Scalar+[F]
+    voltage, current = planar.terminal_readings(topology, areas, gradient, all_silicon, contacts[0], contacts[1],
+                                                potentials, intrinsic, mobilities)
     return voltage, -current
 
 
-def solar_power(topology: Topology, contacts: list[np.ndarray], volumes: solar_cell.Scalar, driving: SparseExtensor,
-                outflow: SparseExtensor, finger_spacing: float,
-                potentials: solar_cell.Potentials) -> solar_cell.Scalar:
-    """The power the solar cell delivers per length of its surface at these potentials `[] Scalar+`, its fingers this
-    far apart, with these volumes of its simplices, drives and outflows: its voltage times the current it delivers,
-    over the period."""
-    voltage, current = cell_terminal(topology, contacts, volumes, driving, outflow, potentials)
+def solar_power(topology: Topology, contacts: list[np.ndarray], areas: planar.Scalar, gradient: SparseExtensor,
+                finger_spacing: float, potentials: planar.Potentials) -> planar.Scalar:
+    """Terminal voltage times delivered current per period width `finger_spacing` gives the delivered power per unit
+    front-surface length (`[] Scalar+`)."""
+    voltage, current = cell_terminal(topology, contacts, areas, gradient, potentials)
     return voltage * current / finger_spacing
 
 
-def spreading(topology: Topology, dopants: solar_cell.Point, neutral: solar_cell.Potentials,
-              contacts: list[np.ndarray], generation: solar_cell.Scalar, potentials: solar_cell.Potentials,
-              bias: float, finger_spacings: np.ndarray) -> Iterator[tuple[solar_cell.Point, solar_cell.Potentials]]:
-    """The solar cell at its maximum power at each of these spacings of its fingers in turn, its vertices and its
-    steady potentials `Point-[vertices]`, `Potentials+[vertices]`, from these near the first spacing's maximum at this
-    bias: at each spacing its steady states at the last maximum's bias and a step either side of it, the middle one
-    the spacing's own, and the peak of the parabola through their powers the next spacing's bias."""
-    mv = solar_cell.mv
-    for finger_spacing in finger_spacings:
-        vertices = (mv(Upright, cell_places(finger_spacing)) + mv.w).dual().field()   # Point-[vertices]
-        maps = solar_cell.simplices(topology, vertices, Upright)
-        biases = bias + bias_step * np.array([-1.0, 0.0, 1.0])               # [trials]
-        lower, potentials, upper = solar_steady(topology, dopants, neutral, contacts, *maps, potentials, biases,
-                                                np.ones(len(biases)) * generation)
-        powers = stack([solar_power(topology, contacts, *maps, finger_spacing, state)
-                        for state in (lower, potentials, upper)])             # [trials] Scalar+
-        _, bias = peak(biases, powers)
+def finger_sweep(topology: Topology, dopants: planar.Point, neutral: planar.Potentials, contacts: list[np.ndarray],
+                 generation: planar.Scalar, potentials: planar.Potentials, bias: planar.Scalar,
+                 spacings: np.ndarray) -> Iterator[tuple[planar.Point, planar.Potentials]]:
+    """Yields `(vertices, potentials)` (`Point-[V]`, `Potentials+[V]`) near the maximum-power point at each entry of
+    `spacings` (`[n_spacings]`) by tracking the three-point parabolic power peak."""
+    mv = planar.mv
+    for finger_spacing in spacings:
+        vertices = (mv(Upright, cell_places(finger_spacing)) + mv.w).dual().field()   # Point-[V]
+        areas, gradient = planar.simplex_maps(topology, vertices, Upright)
+        trial_biases = bias + bias_step * np.array([-1.0, 0.0, 1.0])          # [3] Scalar+
+        lower, potentials, upper = solar_steady(topology, dopants, neutral, contacts, areas, gradient, potentials,
+                                                trial_biases, np.ones(3) * generation)
+        powers = stack([solar_power(topology, contacts, areas, gradient, finger_spacing, state)
+                        for state in (lower, potentials, upper)])             # [3] Scalar+
+        _, bias = power_peak(trial_biases, powers)
         yield vertices, potentials
 
 
-def solar_animations() -> None:
-    """The solar cell: its window of periods at the first spacing of its fingers; the light coming on and the bias
-    rising to open circuit there; its fingers spreading from there, each spacing at its maximum power; its power
-    against the spacing; and its period at the spacing of the most power."""
-    from examples.util.animation import save_animation, save_figure
+def diode_animations() -> tuple[list[diode.Potentials], list[diode.Potentials], list[diode.Potentials]]:
+    """Saves the p-n junction formation, dark I-V sweep, and illuminated I-V sweep animations and returns their states."""
     from examples.thermodynamics.semiconductor_devices import render
-
-    mv = solar_cell.mv
-    topology, vertices, dopants, neutral, contacts, generation = solar_period(finger_spacings[0])
-    filled = mv.scalar(np.ones((topology.n_elements[-1], 1))).field()        # Scalar+[simplices]
-    save_figure(render.draw_cell(topology, vertices, dopants, contacts, generation, finger_spacings[0]), "solar_cell")
-    # The streaks' scale, the holes' flow beneath a surface where the light makes all its pairs above.
-    reference_flow = surface_generation * absorption_length
-
-    def holes_of(vertices: solar_cell.Point, potentials: solar_cell.Potentials) -> solar_cell.Point:
-        return solar_cell.flows(topology, solar_cell.simplices(topology, vertices, Upright)[1], filled, potentials,
-                                intrinsic, mobilities)[1]
-
-    def power_of(finger_spacing: float, vertices: solar_cell.Point,
-                 potentials: solar_cell.Potentials) -> solar_cell.Scalar:
-        return solar_power(topology, contacts, *solar_cell.simplices(topology, vertices, Upright), finger_spacing,
-                           potentials)
-
-    biases, shares = lighting_biases()
-    maps = solar_cell.simplices(topology, vertices, Upright)
-    lit = list(solar_steady(topology, dopants, neutral, contacts, *maps, neutral, biases, shares * generation))
-    # The current's scale, the pairs the light makes in the period each time, which the junction gathers nearly all of.
-    cells = topology.incidence[-1, 0].mean(axis=0).adjugate() * maps[0]       # Scalar+[vertices]
-    made = (cells * generation).sites.sum()                                   # [] Scalar+
-    terminal_of = partial(cell_terminal, topology, contacts, *maps)
-    save_animation(render.animate_lighting(topology, vertices, dopants, contacts, generation,
-                                           partial(holes_of, vertices), terminal_of, reference_flow,
-                                           finger_spacings[0], biases.max(), made, volt, shares, lit),
-                   "solar_cell_lighting", frame_duration_ms)
-    powers = stack([solar_power(topology, contacts, *maps, finger_spacings[0], state) for state in lit])
-    best, bias = peak(biases, powers)
-    # The most the first spacing's surface would deliver unshaded, its power per length of the surface the light falls
-    # on, which the power chart reaches a little past.
-    unshaded = powers[best] * finger_spacings[0] / (finger_spacings[0] - finger_width)   # [] Scalar+
-    spread = list(spreading(topology, dopants, neutral, contacts, generation, lit[best], bias, finger_spacings))
-    save_animation(render.animate_spreading(topology, dopants, contacts, generation, holes_of, power_of, reference_flow,
-                                            finger_spacings, unshaded, spread),
-                   "solar_cell_spacing", frame_duration_ms)
-    spread_powers = stack([power_of(finger_spacing, *state) for finger_spacing, state in zip(finger_spacings, spread)])
-    save_figure(render.draw_power(finger_spacings, spread_powers), "solar_cell_power")
-    optimum = spread_powers.argmax()
-    vertices, potentials = spread[optimum]
-    save_figure(render.draw_period(topology, vertices, dopants, contacts, generation, holes_of(vertices, potentials),
-                                   reference_flow, finger_spacings[optimum]), "solar_cell_period")
-
-
-def diode_animations() -> None:
-    """The bar's three animations: the junction forming, and the bias's sweep in the dark and under light."""
     from examples.util.animation import save_animation
-    from examples.thermodynamics.semiconductor_devices import render
 
-    topology, vertices, dopants, ends, slab, wired = junction()
-    volumes, driving, outflow = diode.simplices(topology, vertices, Along)
+    topology, vertices, dopants, ends, slab, wired_contacts = junction()
+    volumes, gradient = diode.simplex_maps(topology, vertices, Spatial)
     _, semiconductor = silicon(topology)
-    # The band diagram's energies, the carriers' densities, and the voltage and current across the bar, as functions
-    # of the potentials.
-    bands_of = partial(diode.bands, gap=gap)
+    bands_of = partial(diode.band_energies, gap=gap)
     densities_of = partial(diode.carrier_densities, intrinsic=intrinsic)
-    terminal_of = partial(diode.terminal, topology, volumes, driving, outflow, semiconductor, ends[:1], ends[1:],
+    terminal_of = partial(diode.terminal_readings, topology, volumes, gradient, semiconductor, ends[:1], ends[1:],
                           intrinsic=intrinsic, mobilities=mobilities)
-    formed = list(forming(topology, vertices, dopants, ends, slab, wired))
-    save_animation(render.animate_forming(vertices, bands_of, densities_of, intrinsic, energy_window, formed),
-                   "diode_forming", frame_duration_ms)
-    biases = sweep()
-    dark = list(biased(topology, vertices, dopants, ends, wired, formed[-1], biases, np.zeros(n_sweep_frames)))
+    formation_states = list(junction_formation(topology, vertices, dopants, ends, slab, wired_contacts))
+    save_animation(render.formation_animation(vertices, bands_of, densities_of, intrinsic, energy_window,
+                                            formation_states), "diode_forming", frame_duration_ms)
+    biases = bias_sweep()
+    dark_states = list(biased_states(topology, vertices, dopants, ends, wired_contacts, formation_states[-1], biases,
+                                     np.zeros(n_sweep_frames)))
     voltage_window = (reverse_bias, forward_bias)
-    save_animation(render.animate_sweep(vertices, bands_of, densities_of, intrinsic, terminal_of, energy_window,
-                                        voltage_window, current_window, volt, render.dark_colour, [], dark),
+    save_animation(render.sweep_animation(vertices, bands_of, densities_of, intrinsic, terminal_of, energy_window,
+                                        voltage_window, current_window, volt, render.dark_colour, [], dark_states),
                    "diode_dark", frame_duration_ms)
-    # The light comes on at no bias, and the bias sweeps again under it.
-    lit_biases, shares = lit_sweep()
-    lit = biased(topology, vertices, dopants, ends, wired, dark[-1], lit_biases, generation_rate * shares)
-    save_animation(render.animate_sweep(vertices, bands_of, densities_of, intrinsic, terminal_of, energy_window,
-                                        voltage_window, current_window, volt, render.lit_colour, [dark], lit),
-                   "diode_lit", frame_duration_ms)
+    lit_biases, shares = lit_bias_sweep()
+    lit_states = list(biased_states(topology, vertices, dopants, ends, wired_contacts, dark_states[-1], lit_biases,
+                                    generation_rate * shares))
+    save_animation(render.sweep_animation(vertices, bands_of, densities_of, intrinsic, terminal_of, energy_window,
+                                        voltage_window, current_window, volt, render.lit_colour, [dark_states],
+                                        lit_states), "diode_lit", frame_duration_ms)
+    return formation_states, dark_states, lit_states
 
 
-def mosfet_animations() -> None:
-    """The MOSFET's cross-section, and its animation: the gate ramping and the drain sweeping, the output curves
-    traced beside it."""
-    from examples.util.animation import save_animation, save_figure
+def mosfet_animations() -> list[planar.Potentials]:
+    """Saves the MOSFET cross-section still and switching animation and returns the solved steady states."""
     from examples.thermodynamics.semiconductor_devices import render
+    from examples.util.animation import save_animation, save_figure
 
     topology, vertices, permittivities, semiconductor, dopants, neutral, contacts = transistor()
-    save_figure(render.draw_section(topology, vertices, semiconductor, dopants, contacts, full_densities),
+    save_figure(render.section_figure(topology, vertices, semiconductor, dopants, contacts, full_densities),
                 "mosfet_section")
-    gates, drains, curves = schedule()
-    volumes, driving, outflow = mosfet.simplices(topology, vertices, Upright)
-    # The carriers' densities, and the drain's voltage and current, as functions of the potentials.
-    densities_of = partial(mosfet.carrier_densities, intrinsic=intrinsic)
+    gates, drains, curves = gate_drain_schedule()
+    areas, gradient = planar.simplex_maps(topology, vertices, Upright)
+    densities_of = partial(planar.carrier_densities, intrinsic=intrinsic)
     source, drain, _, _ = contacts
-    terminal_of = partial(mosfet.terminal, topology, volumes, driving, outflow, semiconductor, drain, source,
+    terminal_of = partial(planar.terminal_readings, topology, areas, gradient, semiconductor, drain, source,
                           intrinsic=intrinsic, mobilities=mobilities)
-    states = switching(topology, vertices, permittivities, semiconductor, dopants, neutral, contacts, gates, drains)
-    save_animation(render.animate_switching(topology, vertices, semiconductor, contacts, densities_of, terminal_of,
-                                            full_densities, curves, largest_drain, drain_current_window, volt, states),
+    states = list(transistor_states(topology, vertices, permittivities, semiconductor, dopants, neutral, contacts,
+                                    gates, drains))
+    save_animation(render.transistor_animation(topology, vertices, semiconductor, contacts, densities_of, terminal_of,
+                                             full_densities, curves, largest_drain, drain_current_window, volt, states),
                    "mosfet", frame_duration_ms)
+    return states
+
+
+def solar_animations() -> tuple[list[planar.Potentials], planar.Scalar]:
+    """Saves the solar-cell geometry, lighting sweep, finger-spacing sweep, power curve, and optimal-period figures and
+    returns the illuminated sweep states and spacing powers."""
+    from examples.thermodynamics.semiconductor_devices import render
+    from examples.util.animation import save_animation, save_figure
+
+    mv = planar.mv
+    topology, vertices, dopants, neutral, contacts, generation = solar_period(finger_spacings[0])
+    V, E, F = topology.n_elements
+    all_silicon = mv.scalar(np.ones((F, 1))).field()                          # Scalar+[F]
+    save_figure(render.cell_figure(topology, vertices, dopants, contacts, generation, finger_spacings[0]), "solar_cell")
+    reference_flow = surface_generation * absorption_length
+
+    def holes_of(current_vertices: planar.Point, potentials: planar.Potentials) -> planar.Point:
+        _, gradient = planar.simplex_maps(topology, current_vertices, Upright)
+        return planar.carrier_flows(topology, gradient, all_silicon, potentials, intrinsic, mobilities)[1]
+
+    def power_of(finger_spacing: float, current_vertices: planar.Point,
+                 potentials: planar.Potentials) -> planar.Scalar:
+        areas, gradient = planar.simplex_maps(topology, current_vertices, Upright)
+        return solar_power(topology, contacts, areas, gradient, finger_spacing, potentials)
+
+    biases, shares = lighting_biases()
+    bias_extensor = mv.scalar(biases[:, None])                                # [n_frames] Scalar+
+    areas, gradient = planar.simplex_maps(topology, vertices, Upright)
+    lit_states = list(solar_steady(topology, dopants, neutral, contacts, areas, gradient, neutral, bias_extensor,
+                                   shares * generation))
+    dual_areas = topology.incidence[-1, 0].mean(axis=0).adjugate() * areas    # Scalar+[V]
+    generated_current = (dual_areas * generation).sites.sum()                 # [] Scalar+
+    terminal_of = partial(cell_terminal, topology, contacts, areas, gradient)
+    save_animation(render.lighting_animation(topology, vertices, dopants, contacts, generation,
+                                           partial(holes_of, vertices), terminal_of, reference_flow,
+                                           finger_spacings[0], biases.max(), generated_current, volt, shares,
+                                           lit_states), "solar_cell_lighting", frame_duration_ms)
+    powers = stack([solar_power(topology, contacts, areas, gradient, finger_spacings[0], state)
+                    for state in lit_states])
+    best, best_bias = power_peak(bias_extensor, powers)
+    unshaded_power = powers[best] * finger_spacings[0] / (finger_spacings[0] - finger_width)   # [] Scalar+
+    spacing_states = list(finger_sweep(topology, dopants, neutral, contacts, generation, lit_states[best], best_bias,
+                                       finger_spacings))
+    save_animation(render.finger_sweep_animation(topology, dopants, contacts, generation, holes_of, power_of,
+                                               reference_flow, finger_spacings, unshaded_power, spacing_states),
+                   "solar_cell_spacing", frame_duration_ms)
+    spacing_powers = stack([power_of(finger_spacing, *state)
+                            for finger_spacing, state in zip(finger_spacings, spacing_states)])
+    save_figure(render.power_figure(finger_spacings, spacing_powers), "solar_cell_power")
+    optimum = int(spacing_powers.argmax())
+    optimal_vertices, optimal_potentials = spacing_states[optimum]
+    save_figure(render.period_figure(topology, optimal_vertices, dopants, contacts, generation,
+                                   holes_of(optimal_vertices, optimal_potentials), reference_flow,
+                                   finger_spacings[optimum]), "solar_cell_period")
+    return lit_states, spacing_powers
 
 
 def main() -> None:
-    diode_animations()
-    mosfet_animations()
-    solar_animations()
+    """Runs all three semiconductor device demonstrations, saves every animation and figure, and verifies physical
+    invariants."""
+    formation_states, dark_states, lit_states = diode_animations()
+    mosfet_states = mosfet_animations()
+    solar_lit_states, spacing_powers = solar_animations()
+
+    # checks
+    topology, vertices, _, ends, _, _ = junction()
+    V, E = topology.n_elements
+    volumes, gradient = diode.simplex_maps(topology, vertices, Spatial)
+    _, semiconductor = silicon(topology)
+    zero_field = diode.mv.scalar(np.zeros((V, 1))).field()                    # Scalar+[V]
+    transport_s, recomb_s, _ = diode.entropy_production(
+        topology, volumes, gradient, semiconductor, dark_states[len(dark_states) // 2], zero_field, intrinsic,
+        mobilities, rate_constant, gap, sun)
+    assert bool((transport_s.batch() >= -1e-12).all()) and bool((recomb_s.batch() >= -1e-12).all())
+    lit_field = generation_rate * diode.mv.scalar(np.ones((V, 1))).field()    # Scalar+[V]
+    _, _, absorb_s = diode.entropy_production(
+        topology, volumes, gradient, semiconductor, lit_states[-1], lit_field, intrinsic, mobilities, rate_constant,
+        gap, sun)
+    assert bool((absorb_s.batch() >= -1e-12).all())
+    assert len(mosfet_states) > 0 and len(solar_lit_states) > 0
+    best = int(spacing_powers.argmax())
+    assert 0 < best < len(finger_spacings) - 1
+    assert bool(spacing_powers[0] < 0.9 * spacing_powers[best])
+    assert bool(spacing_powers[-1] < 0.9 * spacing_powers[best])
 
 
 if __name__ == "__main__":

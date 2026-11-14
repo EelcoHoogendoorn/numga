@@ -1,4 +1,4 @@
-"""The nematic film as symmetric grain along its molecular axes, shortening where order vanishes."""
+"""Symmetric grain along the molecular axes renders the nematic alignment, shortening where order vanishes."""
 
 from __future__ import annotations
 
@@ -80,18 +80,21 @@ fn shade(corner: Corner) -> Shade {
 
 @cache
 def alignment_shader() -> Shader:
+    """Compiles and caches the doubled-angle alignment grain shader."""
     return Shader(placing(core.Plane) + flow.planar_grain + alignment_source, core.ga,
                   dict(Point=core.Point, Plane=core.Plane, Order=core.Order), {})
 
 
 def texture(topology: Topology, points: core.Point, camera: Camera, order: core.Order) -> np.ndarray:
-    """Fixed grain feathered symmetrically along the alignment, without a signed director field."""
-    surface, projected, grains = drawn([Draw(alignment_shader(), camera.shape, 3 * topology.n_elements[2], dict(
+    """Symmetric line-integral convolution traces fixed grain along `order` into an RGBA overlay
+    (`[rows, columns, 4]`)."""
+    V, E, F = topology.n_elements
+    surface, flow_field, grains = drawn([Draw(alignment_shader(), camera.shape, 3 * F, dict(
         points=points, faces=topology.elements[2], alignment=order, across_direction=camera.across.dual(),
         noise_scale=camera.pixel * grain_pixels, speck=speck_pixels / grain_pixels, **camera.uniforms(1.0)))],
         flow.seeding, samples_per_side())
     result = flow.trace_shader(True)(
-        camera.shape, surface=surface, flow=projected, grains=grains, background=np.ones(3),
+        camera.shape, surface=surface, flow=flow_field, grains=grains, background=np.ones(3),
         step_pixels=streak_pixels / flow.n_trace_steps, reference_speed=1.0,
         downstream_fraction=0.5, depth_limit=6 * camera.pixel, ink_opacity=0.92)
     rgba = np.empty(camera.shape + (4,))
@@ -102,18 +105,18 @@ def texture(topology: Topology, points: core.Point, camera: Camera, order: core.
 
 def frame(topology: Topology, vertices: core.Point, camera: Camera, order: core.Order,
           defects: Sequence[tuple[core.Point, core.Scalar]], marker_radius: float = defect_radius) -> np.ndarray:
-    """The molecular axes and degree of order, with one tightly cropped row per case, each marked at its defects by
-    the sign of their charges."""
+    """Order tint, alignment grain, and signed defect markers composite into a quantized RGB frame
+    (`[rows, columns, 3]`) stacking one row per film."""
     points = vertices.batch()
     panels = []
     for state, (zeros, charges) in zip(order, defects):
         state = state.batch()
         strength = (2 * state(state).trace()).square_root()
-        amount = np.clip(strength.to_array(), 0, 1)
-        tint = 1 - (1 - amount[:, None]) * np.array([0.40, 0.24, 0.06])
+        order_strength = np.clip(strength.to_array(), 0, 1)
+        tint = 1 - (1 - order_strength[:, None]) * np.array([0.40, 0.24, 0.06])
         defect_colours = np.where((charges > 0)[:, None], np.array([0.80, 0.30, 0.12]),
-                                 np.array([0.12, 0.36, 0.72]))
-        layers = [contours.picture(points, topology, amount, tint, camera),
+                                  np.array([0.12, 0.36, 0.72]))
+        layers = [contours.picture(points, topology, order_strength, tint, camera),
                   texture(topology, points, camera, state)]
         if marker_radius > 0 and len(zeros):
             layers.append(simplices.markers(zeros, defect_colours, marker_radius, camera))
@@ -128,26 +131,28 @@ def frame(topology: Topology, vertices: core.Point, camera: Camera, order: core.
 def animate(topology: Topology, vertices: core.Point, camera: Camera,
             states: Iterable[tuple[core.Order, Sequence[tuple[core.Point, core.Scalar]]]],
             marker_radius: float = defect_radius) -> Iterator[np.ndarray]:
-    """The film's molecular axes and its defects at each state, streamed in the order computed."""
+    """Yields quantized RGB frames (`[rows, columns, 3]`) along a stream of alignment states and their
+    defect readouts."""
     for order, defects in states:
         yield frame(topology, vertices, camera, order, defects, marker_radius)
 
 
 def draw_setup(topology: Topology, vertices: core.Point, order: core.Order,
                defects: tuple[core.Point, core.Scalar]) -> Figure:
-    """The film's starting alignment."""
+    """The setup camera frames the initial defect-pair alignment and its half-charge markers."""
     return image_figure(frame(topology, vertices, setup_camera, order[None], [defects]))
 
 
 def draw_dense_setup(topology: Topology, vertices: core.Point, order: core.Order,
                      defects: tuple[core.Point, core.Scalar]) -> Figure:
-    """The crowded initial alignment, with both signs of half-charge defect."""
+    """The wide camera frames the initial disordered alignment and both signs of half-charge defect."""
     return image_figure(frame(topology, vertices, dense_camera, order[None], [defects]))
 
 
 @charts.style()
 def draw_energy(times: np.ndarray, energies: core.Scalar) -> Figure:
-    """The free energy of each film over time."""
+    """Free-energy trajectories (`[n_frames, n_films] Scalar+`) trace passive relaxation and active
+    driving over `times` (`[n_frames]`)."""
     figure, axis = charts.subplots(360, 190, layout="constrained")
     for values, colour in zip(energies.to_array().T, colours):
         axis.plot(times, values, color=colour)
@@ -159,7 +164,8 @@ def draw_energy(times: np.ndarray, energies: core.Scalar) -> Figure:
 
 @charts.style()
 def draw_derivative(angles: np.ndarray, energies: core.Scalar, baseline: core.Scalar, slope: core.Scalar) -> Figure:
-    """The energy change under a local turn and the tangent predicted by its bivector derivative."""
+    """Energy change (`[n_turn_frames] Scalar+`) across virtual `angles` (`[n_turn_frames]`) compares
+    against the tangent line of `slope` (`[] Scalar+`)."""
     figure, axis = charts.subplots(300, 190, layout="constrained")
     axis.plot(angles, (energies - baseline).to_array(), color=colours[0])
     axis.plot(angles, (angles * slope).to_array(), color=colours[1], linestyle="--")
@@ -172,11 +178,11 @@ def draw_derivative(angles: np.ndarray, energies: core.Scalar, baseline: core.Sc
 
 @charts.style()
 def draw_release(times: np.ndarray, energies: core.Scalar) -> Figure:
-    """The free energy released by orientational relaxation, measured from its initial state."""
+    """Orientational relaxation traces the cumulative free energy released (`[n_frames] Scalar+`) from
+    the initial state over `times` (`[n_frames]`)."""
     figure, axis = charts.subplots(300, 180, layout="constrained")
     axis.plot(times, (energies[0] - energies).to_array(), color=colours[0])
     axis.axhline(0, color="0.55", linewidth=charts.FRAME_WIDTH)
     axis.set(xlim=(times[0], times[-1]), ylim=(0, None), xticks=[], yticks=[], xlabel="time", ylabel="energy released")
     axis.spines[["top", "right", "bottom"]].set_visible(False)
     return figure
-
