@@ -1,87 +1,90 @@
 """Finite conductivity moves conserved charge through an electric potential field.
 
-Electric displacement determines charge, while conduction determines its rate of loss.
-Both responses pair with the same spacetime field. Insulating gaps isolate each body's
-initial charge; the conducting interior relaxes towards a constant potential.
+Electric displacement determines the charge present, while conduction determines its rate
+of loss. Both responses pair with the same spacetime field. Insulating gaps isolate each
+body's initial charge as the conducting interior relaxes towards a constant potential.
 """
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
-from functools import reduce
-from operator import and_
+from collections.abc import Iterator
+import numpy as np
 
 from numga import Algebra, NumpyContext, stack
-from numga.sparse import spdiag
+from numga.sparse import Sparse, spdiag
 from numga.topology import Topology
 
 ga = Algebra("x+y+t-w0")
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()                         # Scalar+
-Point = ga.gatype.antivector()                      # Antivector-
-Field = ga.gatype.bivector()                        # Bivector+
-origin = mv.w.dual()                               # [] Point-
-time = -mv.t.dual()                                # [] Point-
-axes = stack((mv.x.dual(), mv.y.dual()))            # [axes] Point-
-sweeps = axes & time                              # [axes] Excitation-
-electric_response = (sweeps * (Field & sweeps)).sum(axis=0)  # [] Excitation- <- Field+
+Scalar = ga.gatype.scalar()                                     # Scalar+
+Upright = ga.gatype.from_blades(("x", "y"))                     # Vector+
+Point = ga.gatype.antivector()                                  # Antivector-
+Field = ga.gatype.bivector()                                    # Bivector+
+Excitation = ga.gatype.antibivector()                           # Antibivector-
+origin = mv.w.dual()                                            # Point-
+time = -mv.t.dual()                                             # Point-
+axes = stack((mv.x.dual(), mv.y.dual()))                        # [2] Point-
+sweeps = axes & time                                            # [2] Excitation-
+electric_response = (sweeps * (Field & sweeps)).sum(axis=0)     # [] Excitation- <- Field+
 
 
-def simplices(topology: Topology, vertices: Point) -> tuple[Scalar, Scalar, Field]:
-    """Each face's area, each vertex's cell, and the field of each corner's unit potential in its face."""
-    corners = topology.incidence[2, 0]
-    mean = corners.mean(axis=0)
-    spans = reduce(and_, corners * vertices, time)
-    areas = spans.norm() / 2                       # Scalar+[faces]
-    cells = mean.adjugate() * areas                # Scalar+[vertices]
-    facing = topology.off[2, 0] * vertices
-    complements = facing[0] & facing[1] & time
-    hats = complements / (complements & (corners * vertices))
-    gradients = hats - (hats & origin) * mv.w      # [corners] Plane+[faces]
-    hat_fields = -(gradients ^ mv.t)              # [corners] Field+[faces]
-    return areas, cells, hat_fields
+def triangle_geometry(topology: Topology, vertices: Point) -> tuple[Scalar, Scalar, Field]:
+    """Triangle areas (`Scalar+[F]`), vertex dual areas (`Scalar+[V]`), and simplex-gradient electric fields (`[3] Field+[F]`) come from the vertex positions."""
+    corners = topology.incidence[2, 0]                          # [3] Scalar+[F <- V]
+    corner_mean = corners.mean(axis=0)                          # Scalar+[F <- V]
+    corner_vertices = corners * vertices                        # [3] Point-[F]
+    double_areas = (corner_vertices[0] & corner_vertices[1] & corner_vertices[2] & time).norm()  # Scalar+[F]
+    areas = double_areas / 2                                    # Scalar+[F]
+    dual_areas = corner_mean.adjugate() * areas                 # Scalar+[V]
+    facing = topology.off[2, 0] * vertices                      # [2, 3] Point-[F]
+    sides = facing[0] & facing[1]                               # [3] Excitation-[F]
+    gradients = ((sides & time) / (sides & time & corner_vertices)).cast(Upright)  # [3] Upright+[F]
+    corner_fields = -(gradients ^ mv.t)                         # [3] Field+[F]
+    return areas, dual_areas, corner_fields
 
 
-def relaxation(topology: Topology, vertices: Point, fractions: Scalar, boundary: Scalar,
-               permittivity: float, conductivities, body_charges, frame_step: float,
-               n_substeps: int) -> Iterator[tuple[Scalar, Scalar]]:
-    """The evolving potential and integrated charge occupy the same mesh vertices."""
-    corners = topology.incidence[2, 0]
-    mean = corners.mean(axis=0)
-    areas, cells, hat_fields = simplices(topology, vertices)
+def surface_operators(topology: Topology, areas: Scalar, corner_fields: Field, fractions: Scalar,
+                      permittivity: float, conductivities: np.ndarray) -> tuple[Sparse, Sparse, Sparse, Scalar]:
+    """Permittivity and conductivity weight the same electric-field pairing to form the vertex charge and outflow maps, with interior Poisson operator `(Scalar+ <- Scalar+)[V_interior <- V_interior]`."""
+    corners = topology.incidence[2, 0]                          # [3] Scalar+[F <- V]
+    corner_mean = corners.mean(axis=0)                          # Scalar+[F <- V]
+    # Displacement stores electric energy while conduction dissipates it through the same field pairing.
+    local_energy = areas * (corner_fields[:, None] & electric_response(corner_fields[None, :]))  # [3, 3] Scalar+[F]
+    conductivity = (conductivities * (corner_mean * fractions)).sum(axis=0)  # Scalar+[F]
+    charge_map = (corners[:, None].adjugate() * spdiag(permittivity * local_energy)
+                  * corners[None, :]).sum(axis=0).sum(axis=0)   # Scalar+[V <- V]
+    outflow_map = (corners[:, None].adjugate() * spdiag(conductivity * local_energy)
+                   * corners[None, :]).sum(axis=0).sum(axis=0)  # Scalar+[V <- V]
+    extension = topology.reading(topology.interior[0], 0).adjugate()  # Scalar+[V <- V_interior]
+    poisson = (extension.adjugate() * charge_map * extension) * Scalar  # (Scalar+ <- Scalar+)[V_interior <- V_interior]
+    return charge_map, outflow_map, extension, poisson
 
-    # Displacement stores electric energy; conduction dissipates it through the same pairing.
-    local = areas * (hat_fields[:, None] & electric_response(hat_fields[None, :]))
-    conductivity = (conductivities * (mean * fractions)).sum(axis=0)
-    charge_from_voltage = (corners[:, None].adjugate() * spdiag(permittivity * local)
-                           * corners[None, :]).sum(axis=0).sum(axis=0)
-    outflow_from_voltage = (corners[:, None].adjugate() * spdiag(conductivity * local)
-                            * corners[None, :]).sum(axis=0).sum(axis=0)
 
-    # Only the remote boundary voltage is held; every interior voltage remains independent.
-    extension = topology.reading(topology.interior[0], 0).adjugate()
-    poisson = (extension.adjugate() * charge_from_voltage * extension) * Scalar
-    parcels = cells * fractions
-    charge = (body_charges * parcels / parcels.sites.sum()).sum(axis=0)
-    held = boundary[0]
-    potential = held + extension * poisson.solve(extension.adjugate() * (charge - charge_from_voltage * held))
-    yield potential, charge
+def relaxation_states(topology: Topology, vertices: Point, fractions: Scalar, boundary: Scalar,
+                      permittivity: float, conductivities: np.ndarray, body_charges: np.ndarray,
+                      frame_step: float, n_substeps: int) -> Iterator[tuple[Scalar, Scalar, Scalar, Point]]:
+    """Yields the potential (`Scalar+[V]`), integrated vertex charge (`Scalar+[V]`), charge density (`Scalar+[V]`), and rest-charge force (`Point-[F]`) across the relaxation."""
+    corners = topology.incidence[2, 0]                          # [3] Scalar+[F <- V]
+    areas, dual_areas, corner_fields = triangle_geometry(topology, vertices)
+    charge_map, outflow_map, extension, poisson = surface_operators(
+        topology, areas, corner_fields, fractions, permittivity, conductivities)
 
-    step = frame_step / n_substeps
-    for target in boundary[1:]:
-        previous = held
+    # Only the outer boundary voltage is held; every interior vertex voltage solves Gauss's law.
+    parcels = dual_areas * fractions                            # [2] Scalar+[V]
+    charge = (body_charges * parcels / parcels.sites.sum()).sum(axis=0)  # Scalar+[V]
+    boundary_voltage = boundary[0]                              # Scalar+[V]
+    potential = boundary_voltage + extension * poisson.solve(
+        extension.adjugate() * (charge - charge_map * boundary_voltage))  # Scalar+[V]
+    field = (corner_fields * (corners * potential)).sum(axis=0)  # Field+[F]
+    yield potential, charge, charge / dual_areas, field.commutator(time)
+
+    substep_dt = frame_step / n_substeps
+    for target_voltage in boundary[1:]:
+        previous_voltage = boundary_voltage
         for substep in range(n_substeps):
-            # Equal and opposite transfers conserve each isolated body's initial charge.
-            charge = charge - step * (outflow_from_voltage * potential)
-            held = previous + ((substep + 1) / n_substeps) * (target - previous)
-            potential = held + extension * poisson.solve(extension.adjugate() * (charge - charge_from_voltage * held))
-        yield potential, charge
-
-
-def densities_and_forces(topology: Topology, vertices: Point,
-                         states: Iterable[tuple[Scalar, Scalar]]) -> Iterator[tuple[Scalar, Scalar, Point]]:
-    """Each state's potential, with its charge density at the vertices and the force on a unit charge at rest in each face."""
-    corners = topology.incidence[2, 0]
-    areas, cells, hat_fields = simplices(topology, vertices)
-    for potential, charge in states:
-        field = (hat_fields * (corners * potential)).sum(axis=0)  # Field+[faces]
-        yield potential, charge / cells, field.commutator(time)
+            # Equal and opposite conduction transfers conserve each isolated body's initial charge.
+            charge = charge - substep_dt * (outflow_map * potential)  # Scalar+[V]
+            boundary_voltage = previous_voltage + ((substep + 1) / n_substeps) * (target_voltage - previous_voltage)  # Scalar+[V]
+            potential = boundary_voltage + extension * poisson.solve(
+                extension.adjugate() * (charge - charge_map * boundary_voltage))  # Scalar+[V]
+        field = (corner_fields * (corners * potential)).sum(axis=0)  # Field+[F]
+        yield potential, charge, charge / dual_areas, field.commutator(time)

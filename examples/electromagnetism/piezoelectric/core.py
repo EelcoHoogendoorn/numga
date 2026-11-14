@@ -1,195 +1,142 @@
-"""Piezoelectric continuum elasticity: a laminated strip as actuator and sensor.
+"""Electromechanical equilibrium of a laminated piezoelectric strip in planar spacetime.
 
-Displacements are intrinsic directions; electric fields are planes through time. A material's
-elastic, piezoelectric and dielectric maps give one electric enthalpy. Pulling their work back
-through the finite-element readings gives equilibrium and charge balance. Metal electrodes
-have a common potential; a floating electrode fixes total charge while its voltage responds.
+Displacements are intrinsic spatial directions, electric fields are extrinsic planes through
+time, and polarization and electric displacement are intrinsic excitations swept through time.
+A material's elastic, piezoelectric and dielectric maps define its electric enthalpy on each
+triangle through the corner simplex gradients, and pulling their work pairings back to the
+vertices gives mechanical equilibrium and charge balance for grounded, driven or floating
+electrodes.
 """
 
 from __future__ import annotations
+
+from collections.abc import Iterator
 
 import numpy as np
 
 from numga import Algebra, NumpyContext
 from numga.algebras import STA2D as ga
 from numga.sparse import Sparse, SparseExtensor, spdiag
-
 from numga.topology import Topology
 from examples.electromagnetism.piezoelectric.numerical import solve_coupled
 
-# The spacetime of the strip's plane, x+y+t-: two positive spatial directions, one negative time direction.
+# Planar spacetime x+y+t-: two positive spatial axes and one negative time axis.
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 Scalar = ga.gatype.scalar()
-# Spatial planes read positions, displacements and polarization, their intrinsic complements.
 Plane = ga.gatype.vector().derive.within(Algebra("x+y+"))
 Point = Plane.derive.dual
-# Electric fields are extrinsic planes through time; charge is an intrinsic amount.
 Field = ga.gatype.bivector().derive.touching(Algebra("t-"))
-Amount = ga.gatype.antiscalar()
+Excitation = Field.derive.dual
 Strain = ga.gatype((Plane, Point))
 Elastic = ga.gatype((Scalar, Point, Plane, Point, Plane))
-Polarization = ga.gatype((Point, Point, Plane))
-Permittivity = ga.gatype((Point, Field))
-time = -mv.t.dual()
-axis = mv.x.dual()
-pole = mv.y.dual()
+Polarization = ga.gatype((Excitation, Point, Plane))
+Permittivity = ga.gatype((Excitation, Field))
+
+time = -mv.t.dual()                                                               # Antivector-
+axis = mv.x.dual()                                                                # Point-
+pole = mv.y.dual()                                                                # Point-
 
 
-# --- math -----------------------------------------------------------------------------
 def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Plane]:
-    """Each triangle's area, `Scalar+[faces]`, and each of its corners' shape-function gradients,
-    `[corners] Plane+[faces]`."""
-    # The side facing each corner, signed as the triangle's winding runs along it.
-    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)                 # [corners] Point-[faces]
-    # Twice a triangle's signed area: its two sides joined, read against time, intrinsic as a winding is.
-    double_area = (sides[0] & sides[1]) & time                                    # Scalar-[faces]
-    # A corner's shape function rises from zero along the facing side to one at the corner: its gradient is the
-    # plane through that side and time, over twice the signed area.
-    gradients = (time & sides) / double_area                                      # [corners] Plane+[faces]
-    # The integrals weight by the area's size, an ordinary number.
-    return double_area.norm() / 2, gradients
+    """Opposite edge vectors joined against time give each triangle's area (`Scalar+[F]`) and corner simplex gradients (`[3] Plane+[F]`)."""
+    # Each corner's opposite edge vector, oriented along the triangle's boundary cycle.
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)                  # [3] Point-[F]
+    double_areas = (sides[0] & sides[1]) & time                                   # Antiscalar-[F]
+    # Sweeping each opposite side through time and dividing by twice the signed area gives the corner's simplex gradient.
+    gradients = (time & sides) / double_areas                                     # [3] Plane+[F]
+    return double_areas.norm() / 2, gradients
 
 
 def strain(topology: Topology, displacement: Point, gradients: Plane) -> Strain:
-    """The symmetric displacement gradient on each triangle, `[faces]`, as a map from directions to stretch readings:
-    a map per triangle, so read on the batch of triangles, where the adjugate acts on each map."""
-    movement = (topology.incidence[2, 0] * displacement).batch()                  # [..., corners, faces] Point-
-    gradient = (movement.dual_inverse() * (gradients.batch() & Point)).sum(axis=-2)
+    """Corner displacements paired with the simplex gradients form the symmetric strain map (`[F] Plane+ <- Point-`) on each triangle."""
+    # Evaluate on the batch of triangles so the adjugate acts on each triangle's local map.
+    corner_displacements = (topology.incidence[2, 0] * displacement).batch()      # [..., 3, F] Point-
+    gradient = (corner_displacements.dual_inverse() * (gradients.batch() & Point)).sum(axis=-2)  # [..., F] Plane+ <- Point-
     return (gradient + gradient.adjugate()) / 2
 
 
-def constitutive(directions: Plane, stretch_stiffness: np.ndarray, cross_stiffness: float,
-                 shear_stiffness: float, stretch_polarization: np.ndarray,
+def constitutive(directions: Plane, stretch_stiffnesses: np.ndarray, cross_stiffness: float,
+                 shear_stiffness: float, stretch_polarizations: np.ndarray,
                  shear_polarization: float, permittivities: np.ndarray
                  ) -> tuple[Elastic, Polarization, Permittivity]:
-    """Constitutive extensors from orthonormal material planes, transverse then parallel to poling.
-
-    A displacement and its gradient direction describe a change of shape. The elastic form
-    pairs two such changes; the piezoelectric map sends one to a polarization direction.
-    """
-    transverse, poled = directions[..., 0], directions[..., 1]
-    # Each material plane reads extension along its own direction, the shape gradient read by the plane's direction;
-    # the mixed reading is shear.
-    stretches = (directions & Point) * (Plane & directions.dual())
-    shear = (transverse & Point) * (Plane & poled.dual()) + (poled & Point) * (Plane & transverse.dual())
-    elastic = ((stretches * stretches * stretch_stiffness).sum(axis=-1)
-               + cross_stiffness * (stretches[..., 0] * stretches[..., 1]
-                                    + stretches[..., 1] * stretches[..., 0])
-               + shear_stiffness * shear * shear)
-    # Extension polarizes along the poling direction; shear polarizes across it.
-    polarization = (poled.dual() * (stretches * stretch_polarization).sum(axis=-1)
-                    + transverse.dual() * shear_polarization * shear)
-    # The electric field is read on each material direction swept through time.
-    permittivity = (directions.dual() * (Field & (directions.dual() & time)) * permittivities).sum(axis=-1)
+    """Two orthogonal material planes (`[...] Plane+`) determine the elastic, piezoelectric and permittivity maps."""
+    transverse_plane, poling_plane = directions[..., 0], directions[..., 1]       # [...] Plane+, [...] Plane+
+    sheets = directions.dual() & time                                             # [..., 2] Excitation-
+    transverse_sheet, poling_sheet = sheets[..., 0], sheets[..., 1]               # [...] Excitation-, [...] Excitation-
+    # Each material plane reads extension along its own normal direction; their symmetric cross reading is shear.
+    stretches = (directions & Point) * (Plane & directions.dual())                # [..., 2] Scalar+ <- (Point-, Plane+)
+    shear = (
+        (transverse_plane & Point) * (Plane & poling_plane.dual())
+        + (poling_plane & Point) * (Plane & transverse_plane.dual())
+    )                                                                             # [...] Scalar+ <- (Point-, Plane+)
+    elastic = (
+        (stretches * stretches * stretch_stiffnesses).sum(axis=-1)
+        + cross_stiffness * (stretches[..., 0] * stretches[..., 1] + stretches[..., 1] * stretches[..., 0])
+        + shear_stiffness * shear * shear
+    )
+    # Extension excites polarization along the poling world-sheet; shear excites it across the transverse world-sheet.
+    polarization = (
+        poling_sheet * (stretches * stretch_polarizations).sum(axis=-1)
+        + transverse_sheet * shear_polarization * shear
+    )
+    permittivity = (sheets * (Field & sheets) * permittivities).sum(axis=-1)
     return elastic, polarization, permittivity
 
 
-def enthalpy(strain: Strain, electric: Field, elastic: Elastic, polarization: Polarization,
+def enthalpy(local_strain: Strain, electric_field: Field, elastic: Elastic, polarization: Polarization,
              permittivity: Permittivity, poling: Scalar) -> Scalar:
-    """Electric enthalpy density, contracting the constitutive maps with the local strain."""
-    deformation = strain.dual()
-    field = electric
-    # Each trace supplies a whole deformation map to its displacement–gradient pair.
-    stored = elastic(deformation, Plane, deformation, Plane).trace(1, 2).trace(1, 2) / 2
-    polarized = polarization(deformation, Plane).trace(1, 2) * poling
-    induced = permittivity(field)
-    return stored - (field & (polarized & time)) - (field & (induced & time)) / 2
+    """Local strain (`[...] Plane+ <- Point-`) and electric field (`[...] Field+`) contract with the material maps into the electric enthalpy density (`[...] Scalar+`)."""
+    deformation = local_strain.dual()                                             # [...] Point- <- Point-
+    # Each trace contracts one displacement-gradient pair of the constitutive map with the local deformation.
+    elastic_density = elastic(deformation, Plane, deformation, Plane).trace(1, 2).trace(1, 2) / 2  # [...] Scalar+
+    piezo_excitation = polarization(deformation, Plane).trace(1, 2) * poling      # [...] Excitation-
+    dielectric_excitation = permittivity(electric_field)                          # [...] Excitation-
+    return elastic_density - (electric_field & piezo_excitation) - (electric_field & dielectric_excitation) / 2
 
 
 def assemble(topology: Topology, areas: Scalar, gradients: Plane, elastic: Elastic, polarization: Polarization,
              permittivity: Permittivity, poling: Scalar, width: float
              ) -> tuple[SparseExtensor, SparseExtensor, SparseExtensor]:
-    """The three blocks of electric enthalpy, as maps to the work-duals of the nodal fields."""
-    # Binding each shape gradient turns the continuum laws into nodal work and polarization maps, test corners
-    # first and trial corners second.
-    gradients = gradients.batch()                                                 # [corners, faces] Plane+
-    work = elastic(Point, gradients[None], Point, gradients[:, None])
-    polarized = polarization(Point, gradients) * poling.batch()
-    electric = -(gradients ^ mv.t) * Scalar
+    """Pullback through the corner incidences sums the triangle enthalpy blocks into vertex maps (`[V, V]`)."""
+    # Bind each corner's simplex gradient to form triangle-level work and excitation maps (test corner first, trial corner second).
+    corner_gradients = gradients.batch()                                          # [3, F] Plane+
+    work = elastic(Point, corner_gradients[None], Point, corner_gradients[:, None])  # [3, 3, F] Scalar+ <- (Point-, Point-)
+    piezo_map = polarization(Point, corner_gradients) * poling.batch()            # [3, F] Excitation- <- Point-
+    field_map = corner_gradients ^ (-mv.t * Scalar)                               # [3, F] Field+ <- Scalar+
 
-    # Read the work form as the force paired with a test displacement.
-    elastic_cells = (Plane & Point).solve(work)
-    # Polarization sweeps a plane through time, the electric field's work-dual.
-    # Reading this map backwards supplies the converse effect from the same coupling.
-    mixed_cells = -(polarized[:, None] & time).adjugate()(electric[None])
-    electric_cells = -electric[:, None].adjugate()(permittivity(electric[None]) & time)
+    # Convert the bilinear work form into a linear map from trial displacement to test force.
+    elastic_blocks = (Plane & Point).solve(work)                                  # [3, 3, F] Plane+ <- Point-
+    # Pulling excitation back across the electric field pairs trial voltage with test force;
+    # its adjugate supplies induced charge from displacement without a second coupling law.
+    mixed_blocks = -piezo_map[:, None].adjugate()(field_map[None])                # [3, 3, F] Plane+ <- Scalar+
+    electric_blocks = -field_map[:, None].adjugate()(permittivity(field_map[None]))  # [3, 3, F] Antiscalar- <- Scalar+
 
-    weights = width * areas.batch()
-    corners = topology.incidence[2, 0]                                            # [corners] Scalar+[faces <- vertices]
-    # The pullback onto the nodes: each test corner's incidence run back, the triangles' blocks, each trial corner's
-    # incidence, summed over both corners of the pair.
-    return tuple((corners[:, None].adjugate() * spdiag((cells * weights).field()) * corners[None, :]).sum(axis=0).sum(axis=0)
-                 for cells in (elastic_cells, mixed_cells, electric_cells))
+    volumes = width * areas.batch()                                               # [F] Scalar+
+    corners = topology.incidence[2, 0]                                            # [3] Scalar+[F <- V]
+    return tuple(
+        (corners[:, None].adjugate() * spdiag((local_blocks * volumes).field()) * corners[None, :]).sum(axis=0).sum(axis=0)
+        for local_blocks in (elastic_blocks, mixed_blocks, electric_blocks)
+    )
 
 
 def equilibrium(mechanical: SparseExtensor, coupling: SparseExtensor, dielectric: SparseExtensor,
-                movement: SparseExtensor, voltage: SparseExtensor,
-                prescribed: Scalar, force: Plane) -> tuple[Point, Scalar]:
-    """Equilibrium with grounded or prescribed electrodes and zero free charge on floating ones."""
-    # The same mixed map supplies forces from voltage and, read backwards, charge from motion.
-    elastic = movement.adjugate()(mechanical(movement))
-    mixed = movement.adjugate()(coupling(voltage))
-    capacitance = voltage.adjugate()(dielectric(voltage))
-    load = movement.adjugate()(force - coupling(prescribed))
-    charge = -voltage.adjugate()(dielectric(prescribed))
+                free_motion: Sparse, free_voltage: Sparse,
+                electrode_potential: Scalar, mechanical_load: Plane) -> tuple[Point, Scalar]:
+    """Mechanical equilibrium and charge balance determine the vertex displacements (`Point-[V]`) and potentials (`Scalar+[V]`)."""
+    # Restrict the enthalpy blocks to unconstrained displacements and independent potential groups.
+    elastic = free_motion.adjugate() * mechanical * free_motion
+    mixed = free_motion.adjugate() * coupling * free_voltage
+    capacitance = free_voltage.adjugate() * dielectric * free_voltage
+    load = free_motion.adjugate() * (mechanical_load - coupling(electrode_potential))
+    charge = -(free_voltage.adjugate() * dielectric(electrode_potential))
     displacement, potential = solve_coupled(elastic, mixed, capacitance, load, charge)
-    return movement(displacement), prescribed + voltage(potential)
+    return free_motion * displacement, electrode_potential + free_voltage * potential
 
 
-# --- plumbing -------------------------------------------------------------------------
-class Strip(Topology):
-    """A triangulated strip's mesh, with the vertices of its clamped edge, its tip, its bottom and top electrodes and
-    its bonded interface."""
-
-    def __init__(self, n_vertices: int, faces: np.ndarray, clamped: np.ndarray, tip: np.ndarray,
-                 bottom: np.ndarray, top: np.ndarray, interface: np.ndarray) -> None:
-        super().__init__(n_vertices, faces)
-        self.clamped, self.tip = clamped, tip
-        self.bottom, self.top, self.interface = bottom, top, interface
-
-
-def strip(length: float, thickness: float, n_length: int, n_thickness: int) -> tuple[Strip, Point, Scalar]:
-    """A rectangular grid split into alternating triangles, with a material interface halfway up: its mesh, its
-    vertices, and each triangle's poling sign, `Scalar+[faces]`."""
-    horizontal = np.linspace(0, length, n_length + 1)
-    vertical = np.linspace(-thickness / 2, thickness / 2, n_thickness + 1)
-    vertices = (axis * horizontal[:, None] + pole * vertical[None, :]).reshape(-1).field()
-    nodes = np.arange((n_length + 1) * (n_thickness + 1)).reshape(n_length + 1, n_thickness + 1)
-    lower_left, lower_right = nodes[:-1, :-1], nodes[1:, :-1]
-    upper_left, upper_right = nodes[:-1, 1:], nodes[1:, 1:]
-    parity = np.indices(lower_left.shape).sum(axis=0) % 2
-    first = np.stack((lower_left, lower_right, np.where(parity, upper_left, upper_right)), axis=-1)
-    second = np.stack((np.where(parity, lower_right, lower_left), upper_right, upper_left), axis=-1)
-    faces = np.stack((first, second), axis=-2).reshape(-1, 3)
-    layer = np.broadcast_to(np.where(np.arange(n_thickness) < n_thickness // 2, -1, 1), lower_left.shape)
-    poling = mv.scalar(np.repeat(layer.reshape(-1), 2)[:, None]).field()
-    topology = Strip(nodes.size, faces, nodes[0], nodes[-1], nodes[:, 0], nodes[:, -1], nodes[:, n_thickness // 2])
-    return topology, vertices, poling
-
-
-def boundary_maps(topology: Strip, floating: np.ndarray) -> tuple[SparseExtensor, SparseExtensor]:
-    """Free displacement nodes and potential groups; the named electrode shares one free voltage."""
-    free_movement = np.setdiff1d(np.arange(topology.n_vertices), topology.clamped)
-    # Each free displacement is put back at its vertex.
-    movement = topology.reading(free_movement, 0).adjugate() * Point
-    interior = np.setdiff1d(np.arange(topology.n_vertices), np.concatenate((topology.top, topology.bottom)))
-    potential_nodes = np.concatenate((interior, floating))
-    # Each interior node reads a voltage of its own, and the floating electrode's nodes all read the one after them.
-    groups = np.concatenate((np.arange(len(interior)), np.full(len(floating), len(interior))))
-    n_voltages = len(interior) + int(len(floating) > 0)
-    voltage = topology.reading(potential_nodes, 0).adjugate() * Sparse.selection(groups, n_voltages) * Scalar
-    return movement, voltage
-
-
-def electrode_potential(topology: Strip, voltage: float) -> Scalar:
-    values = np.zeros(topology.n_vertices)
-    values[topology.top] = voltage
-    return mv.scalar(values[:, None]).field()
-
-
-def tip_load(topology: Strip, force: float) -> Plane:
-    weights = np.zeros(topology.n_vertices)
-    weights[topology.tip] = 1
-    weights[topology.tip[[0, -1]]] = 0.5
-    return (mv.y * (force * weights / weights.sum())).field()
+def load_cycle(displacement: Point, potential: Scalar, axial_strain: Scalar,
+               n_frames: int) -> Iterator[tuple[Point, Scalar, Scalar]]:
+    """Yields sinusoidal equilibrium states (`Point-[V], Scalar+[V], Scalar+[F]`) across one drive period."""
+    for phase in np.linspace(0, 2 * np.pi, n_frames, endpoint=False):
+        amplitude = float(np.sin(phase))
+        yield displacement * amplitude, potential * amplitude, axial_strain * amplitude

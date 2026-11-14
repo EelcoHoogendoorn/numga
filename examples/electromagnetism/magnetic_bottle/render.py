@@ -1,35 +1,32 @@
-"""Drawing for the magnetic bottle, on the GPU: the particles' tracks in space, trailing behind them, through a sheet
-of the field's strength in the plane through the axis, between the coils' wire."""
+"""GPU rendering draws relativistic particle trails between the two current coils across a meridional
+sheet coloured by magnetic field strength."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections import deque
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.electromagnetism.magnetic_bottle import core
-from numga.topology import Topology
-from numga.render.drawing import Draw
+from numga import stack
 from numga.render import Scene, meshes, simplices, solids
+from numga.render.drawing import Draw
+from numga.topology import Topology
 
 mv = core.mv
 sm = solids.mv
-# The observer sees the point where its time line meets the spatial slice.
-space_slice = mv.t ^ (core.Antivector & core.time)
-# A third turn cycles z to x, x to y and y to z in the drawing.
-to_scene = (-(sm.xy + sm.yz + sm.zx) * (np.pi / (3 * np.sqrt(3)))).exp()
-# The colours of the field's strength, the coils' wire, and the particles by their angle to the axis.
+# Intersecting each event's laboratory worldline with the constant-time hyperplane reads its spatial offset.
+space_slice = mv.t ^ (core.Antivector & core.time)                            # [] Antivector- <- Antivector-
+# A one-third spatial turn cycles z to x, x to y, and y to z so the bottle axis lies horizontally.
+scene_turn = (-(sm.xy + sm.yz + sm.zx) * (np.pi / (3 * np.sqrt(3)))).exp()    # [] Rotor+
+
 strength_colours = plt.get_cmap("Blues")
 wire_colour = "#f59e0b"
 particle_colours = plt.get_cmap("plasma")
-# The steps of each track drawn behind its particle.
 n_trail = 60
-# The view, elevation and azimuth in radians, azimuth zero looking along +y, with the bottle's axis along x; its margin
-# as a share of its larger side and its pixels across; how much of what lies behind it the sheet of the field's
-# strength hides; in pixels, the widths of the tracks and of the wire and the radius of the particles; and the points
-# around a coil.
 elevation, azimuth = np.radians([22.0, -28.0])
 margin, n_pixels = 0.03, 320
 sheet_opacity = 0.55
@@ -39,53 +36,71 @@ n_around_coil = 96
 
 # --- plumbing -------------------------------------------------------------------------
 def sheet(points: core.Antivector, strength: core.Scalar, view: solids.View) -> Draw:
-    """The field's strength over its grid in the plane through the axis `[across, along]`, coloured by its logarithm,
-    as a mesh of the grid's squares, as `meshes.samples`."""
-    logarithm = np.log(strength.to_array())
-    shades = strength_colours(0.15 + 0.75 * (logarithm - logarithm.min()) / np.ptp(logarithm))[..., :3]
-    # The grid's squares, each two triangles, by the indices of its points in rows.
-    index = np.arange(points.shape[0] * points.shape[1]).reshape(points.shape[:2])
-    quads = np.stack([index[:-1, :-1], index[:-1, 1:], index[1:, 1:], index[1:, :-1]], axis=-1)
+    """Logarithmic field `strength` (`[...] Scalar+`) colours a triangulated surface over the meridional
+    grid `points` (`[...] Antivector-`)."""
+    log_strength = strength.log()                                             # [...] Scalar+
+    span = log_strength.max() - log_strength.min()                            # [] Scalar+
+    normalized_strength = (log_strength - log_strength.min()) / span          # [...] Scalar+
+    shades = strength_colours(0.15 + 0.75 * normalized_strength.to_array())[..., :3]
+    # Split each grid quad into two triangles indexed row by row.
+    indices = np.arange(points.shape[0] * points.shape[1]).reshape(points.shape[:2])
+    quads = np.stack([indices[:-1, :-1], indices[:-1, 1:], indices[1:, 1:], indices[1:, :-1]], axis=-1)
     triangles = quads[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
-    places = to_scene >> (solids.origin + solids.context.include_from_algebra(space_slice(points.reshape(-1))))
-    return meshes.samples(places, triangles, shades.reshape(-1, 3)[triangles], meshes.flat(places, triangles), view,
-                          face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
+    offsets = scene_turn >> solids.context.include_from_algebra(space_slice(points.reshape(-1)))
+    places = solids.origin + offsets                                          # [...] Point-
+    return meshes.samples(
+        places, triangles, shades.reshape(-1, 3)[triangles], meshes.flat(places, triangles), view,
+        face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss,
+    )
 
 
-def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.Antivector, strength: core.Scalar,
-                    radius: float, heights: np.ndarray, n_steps_per_frame: int) -> Iterator[np.ndarray]:
-    """The particles' tracks `[steps, particles]`, coloured by their angle to the axis, each trailing behind its
-    particle, through the field's strength at the points of a grid in the plane through the axis `[across, along]`,
-    between the coils of a radius at their heights."""
-    # The tracks' events, sliced by the observer, embedded in the drawing's projective space about its origin.
-    tracks = to_scene >> (solids.origin + solids.context.include_from_algebra(space_slice(events)))
+def animate_flights(
+    pitches: np.ndarray,
+    points: core.Antivector,
+    strength: core.Scalar,
+    radius: float,
+    heights: np.ndarray,
+    n_steps_per_frame: int,
+    states: Iterable[tuple[core.Antivector, core.Antivector]],
+) -> Iterator[np.ndarray]:
+    """Yields RGB frames of the `n_particles` particles and their trailing tracks across the meridional
+    field sheet as `states` streams in."""
+    n_coils = len(heights)
+    n_particles = len(pitches)
     colours = particle_colours(0.15 + 0.7 * (pitches - pitches.min()) / np.ptp(pitches))[:, :3]
-    # The box of the grid, as deep across the axis as it is wide: the grid's corners, each moved either way along the
-    # depth by its offset from the axis, turned a quarter about the axis.
-    corners = points[[0, -1]][:, [0, -1]]                                     # [across, along] Antivector-
-    offsets = corners - corners.mean(axis=0)                                  # [across, along] Antivector-
-    depths = (mv.xy * (-np.pi / 4)).exp() >> offsets                          # [across, along] Antivector-
-    box = corners[..., None] + depths[..., None] * np.array([1, -1])          # [across, along, sides] Antivector-
-    scene_box = solids.origin + (to_scene >> solids.context.include_from_algebra(space_slice(box)))
+    # Frame a bounding box as deep across the bottle axis as the meridional grid is wide.
+    corners = points[[0, -1]][:, [0, -1]]                                     # [2, 2] Antivector-
+    offsets = corners - corners.mean(axis=0)                                  # [2, 2] Antivector-
+    quarter_turn = (mv.xy * (-np.pi / 4)).exp()                               # [] Rotor+
+    depths = quarter_turn >> offsets                                          # [2, 2] Antivector-
+    box = corners[..., None] + depths[..., None] * np.array([1, -1])          # [2, 2, 2] Antivector-
+    scene_box = solids.origin + (scene_turn >> solids.context.include_from_algebra(space_slice(box)))
     view = solids.view([scene_box], 0.0, elevation, azimuth, margin, n_pixels)
-    # What stays put, set up once: the sheet and the coils' wire, each coil a ring about the axis through the point
-    # a radius out from the axis at its height, embedded alike; the plane across the axis, embedded, is the line the
-    # rings turn about.
-    coil_places = core.axis * heights + core.sideways * radius                # [coils] Antivector-
-    rims = solids.origin + (to_scene >> solids.context.include_from_algebra(space_slice(coil_places)))   # [coils] Point-
-    bottle_axis = to_scene >> solids.context.include_from_algebra(mv.xy)      # [] Line+
-    rings = meshes.circles(rims, bottle_axis, n_around_coil)                  # [coils, around] Point-
-    wire = simplices.tubes(rings.reshape(-1), Topology.loops([n_around_coil] * len(heights)),
-                           to_rgb(wire_colour), wire_width, view, gloss=solids.gloss)
-    scene = Scene(view, np.ones(3), [], [(sheet(points, strength, view), sheet_opacity), (wire, 1.0)], inks=[],
-                  translucent=[])
-    # What moves, frame by frame: the particles and their trails.
-    for end in range(n_steps_per_frame, len(tracks) + 1, n_steps_per_frame):
-        trail = tracks[max(0, end - n_trail):end]                             # [trail, particles] Point-
-        # Each particle's trail a chain of edges down the steps, through the trail's points numbered as they lie.
-        numbered = np.arange(np.prod(trail.shape)).reshape(trail.shape)       # [trail, particles]
-        chains = Topology(numbered.size, np.stack([numbered[:-1], numbered[1:]], axis=-1).reshape(-1, 2))
-        trails = simplices.tubes(trail.reshape(-1), chains, np.tile(colours, (len(trail) - 1, 1)), track_width, view,
-                                 gloss=solids.gloss)
-        particles = solids.ball(tracks[end - 1], particle_radius * view.pixel)[:, None]
-        yield scene.draw([(particles, colours)], inks=[], translucent=[], meshes=[(trails, 1.0)])
+    # Build the static meridional sheet and circular coil tubes once before streaming particle steps.
+    coil_points = core.z_axis * heights + core.y_axis * radius                # [n_coils] Antivector-
+    rims = solids.origin + (scene_turn >> solids.context.include_from_algebra(space_slice(coil_points)))   # [n_coils] Point-
+    bottle_axis = scene_turn >> solids.context.include_from_algebra(mv.xy)    # [] Line+
+    rings = meshes.circles(rims, bottle_axis, n_around_coil)                  # [n_coils, n_around_coil] Point-
+    wire = simplices.tubes(
+        rings.reshape(-1), Topology.loops([n_around_coil] * n_coils),
+        to_rgb(wire_colour), wire_width, view, gloss=solids.gloss,
+    )
+    scene = Scene(
+        view, np.ones(3), [], [(sheet(points, strength, view), sheet_opacity), (wire, 1.0)],
+        inks=[], translucent=[],
+    )
+    trail_window: deque = deque(maxlen=n_trail)
+    for step_index, (event, _) in enumerate(states, start=1):
+        point = solids.origin + (scene_turn >> solids.context.include_from_algebra(space_slice(event)))   # [n_particles] Point-
+        trail_window.append(point)
+        if step_index % n_steps_per_frame == 0:
+            trail = stack(list(trail_window))                                 # [..., n_particles] Point-
+            node_indices = np.arange(trail.shape[0] * n_particles).reshape(trail.shape)
+            edges = np.stack([node_indices[:-1], node_indices[1:]], axis=-1).reshape(-1, 2)
+            chains = Topology(node_indices.size, edges)
+            trails = simplices.tubes(
+                trail.reshape(-1), chains, np.tile(colours, (len(trail) - 1, 1)), track_width, view,
+                gloss=solids.gloss,
+            )
+            particles = solids.ball(point, particle_radius * view.pixel)[:, None]
+            yield scene.draw([(particles, colours)], inks=[], translucent=[], meshes=[(trails, 1.0)])

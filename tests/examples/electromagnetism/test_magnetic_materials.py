@@ -1,32 +1,48 @@
-"""One magnetic-material step exercises the common solve and its drawing paths."""
+"""A minimal coil-pulse step exercises magnetic storage, axial 4-currents and rendering."""
+import matplotlib.pyplot as plt
 import numpy as np
 from numga import stack
-from examples.electromagnetism.magnetic_materials import core, scenarios, render
+from examples.electromagnetism.magnetic_materials import core, render, scenarios
 
 
 def test_material_field_and_pulse_step():
-    topology, vertices, fractions, permeability, conductivity, remanence, coils, _ = scenarios.scene(9, 7, 2)
-    areas, cells, gradients, response, stiffness, source, mass, extension = core.medium(
-        topology, vertices, permeability, conductivity, remanence)
-    coil_shape = coils / (cells * coils).sites.sum()
-    coil = cells * (coil_shape * scenarios.coil_signs).sum(axis=0)
-    drive = np.array([0., scenarios.coil_current])
-    states = list(core.evolution(stiffness, source, mass, extension, coil, drive, scenarios.frame_step))
-    corners = topology.incidence[2, 0]
-    hat_fields = gradients ^ core.mv.z
-    bound = core.sweep * (source / cells)
-    prescribed = core.sweep * (coil / cells)
-    frames = []
-    for previous, potential, applied in zip([states[0], *states[:-1]], states, drive):
-        rate = (potential - previous) / scenarios.frame_step
-        field = (hat_fields * (corners * potential)).sum(axis=0)
-        mean_rate = (mass * rate).sites.sum() / mass.sites.sum()
-        current = conductivity * core.electric_response(-(rate - mean_rate) * core.mv.zt)
-        frames.append((potential, bound + applied * prescribed + current))
-    list(render.animate(topology, vertices, fractions, coils, frames))
-    render.relaxation(stack(states), mass, scenarios.frame_step, scenarios.pulse_fall)
-    render.setup(topology, vertices, fractions, coils)
-    assert np.all(potential.isfinite())
-    assert np.all((field & response(field)) >= 0)
-    assert np.all((cells * (core.mv.zt & current)).sites.sum().abs() < .01)
-    assert np.all(source.sites.sum().abs() < .01)
+    """One coarse pulse step preserves zero net axial current and non-negative Joule heating."""
+    n_across, n_up, n_frames = 9, 7, 2
+    topology, vertices, fractions, permeability, conductivity, remanence, coils, _ = scenarios.material_scene(
+        n_across, n_up, n_frames,
+    )
+    areas = core.triangle_areas(topology, vertices)               # Scalar+[F]
+    dual_areas = topology.incidence[2, 0].mean(axis=0).adjugate() * areas  # Scalar+[V]
+    gradients = core.simplex_gradients(topology, vertices)        # [3] Upright+[F]
+    stiffness = core.magnetic_stiffness(topology, areas, gradients, permeability)  # Scalar+[V <- V]
+    source = core.remanent_source(topology, areas, gradients, remanence)  # Scalar+[V]
+    extension = topology.reading(topology.interior[0], 0).adjugate()  # Scalar+[V <- V_interior]
+    coil_load = dual_areas * (coils / (dual_areas * coils).sites.sum() * scenarios.coil_signs).sum(axis=0)  # Scalar+[V]
+    drive = np.array([0.0, scenarios.peak_coil_current])
+
+    states = []
+
+    def recorded_states():
+        for state in core.evolution(stiffness, source, dual_areas, conductivity, extension, coil_load, drive, scenarios.frame_step):
+            states.append(state)
+            yield state
+
+    frames = list(render.field_animation(topology, vertices, fractions, coils, recorded_states()))
+    potentials = stack([potential for potential, _ in states])    # [n_frames] Scalar+[V]
+    currents = stack([current for _, current in states])          # [n_frames] Current-[V]
+    heating = core.joule_heating(potentials, dual_areas, conductivity, scenarios.frame_step)  # [n_frames - 1] Scalar+
+    relaxation_plot = render.relaxation_figure(heating, scenarios.frame_step, scenarios.pulse_fall)
+    setup_plot = render.setup_figure(topology, vertices, fractions, coils)
+    plt.close(relaxation_plot)
+    plt.close(setup_plot)
+
+    corners = topology.incidence[2, 0]                            # [3] Scalar+[F <- V]
+    reluctance = core.magnetic_response / (corners.mean(axis=0) * permeability)  # (Excitation- <- Field+)[F]
+    final_field = ((gradients ^ core.mv.z) * (corners * potentials[-1])).sum(axis=0)  # Field+[F]
+
+    assert len(frames) == n_frames
+    assert potentials.isfinite().all()
+    assert ((final_field & reluctance(final_field)) >= 0).all()
+    assert source.sites.sum().abs() < 1e-8
+    assert ((dual_areas * (core.mv.z & currents)).sites.sum().abs() < 1e-8).all()
+    assert (heating >= 0).all()

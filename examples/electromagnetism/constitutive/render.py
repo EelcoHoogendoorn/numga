@@ -3,7 +3,7 @@ speeds by heading, and the drag of moving glass."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,160 +11,124 @@ from matplotlib.colors import to_rgb
 from matplotlib.image import AxesImage
 
 from numga import concatenate, stack
+from numga.render import Camera, Scene, simplices, solids
+from numga.topology import Topology
 
+from examples.electromagnetism.constitutive import core
 from examples.util import charts
 from examples.util.animation import capture
-from examples.electromagnetism.constitutive import core
-from numga.topology import Topology
-from numga.render import Camera, Scene, simplices, solids
 from examples.util.panels import fitted, offset_panel, overlay, show
 
-Modes = tuple[np.ndarray, core.Bivector]
+Modes = tuple[np.ndarray, core.Field]
 mv, sm = core.mv, solids.mv
 # The observer sees the point where its time line meets the spatial slice.
-space_slice = mv.t ^ (core.Antivector & core.time)
+space_slice = core.t ^ (core.Direction & core.time)
 # Electric planes meet the spatial slice in their direction; magnetic planes lie within it.
-electric_direction = core.Bivector.dual_inverse() ^ mv.t
-magnetic_field = (core.Bivector ^ mv.t) * mv.t.inverse()
+electric_direction = core.Field.dual_inverse() ^ core.t
+magnetic_field = (core.Field ^ core.t) * core.t.inverse()
 # A third turn cycles z to x, x to y and y to z in the drawing.
 to_scene = (-(sm.xy + sm.yz + sm.zx) * (np.pi / (3 * np.sqrt(3)))).exp()
 # The direction of the waves' travel, drawn along the first axis, z.
-travel = mv.z.dual()                                                            # [] Antivector-
+travel = core.z.dual()                                                          # [] Antivector-
 electric_colour, magnetic_colour = np.array(to_rgb("crimson")), np.array(to_rgb("dodgerblue"))
 axis_colour = np.full(3, 0.5)
-# How much of what lies behind it each surface of the axis hides, its near side and its far side.
+# Opacity of each surface of the axis rod.
 axis_opacity = 0.37
-# The plots' faint cross through the origin, and the names of its lines and axes.
+# Faint cross through the origin, and axis label colour.
 cross_colour, label_colour = "0.85", "0.4"
-# The reach of the cross on polar axes, as a share of the fastest wave's.
+# Polar cross radius as a multiple of the fastest wave speed.
 cross_reach = 1.1
-# The samples along the axis, the stations with arrows and discs, and the times of a period that the camera frames.
+# Samples along the propagation axis, arrow stations, and framing times across one period.
 n_samples, n_stations, n_framing = 200, 21, 16
-# The length of the axis drawn, and the waves' angular frequency.
-z_max, omega = 4.0 * np.pi, 1.0
-# The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin, a share of the larger side,
-# and the figure's size in inches at its dots per inch.
+# Length of the propagation axis drawn.
+z_max = 4.0 * np.pi
+# View elevation and azimuth in radians (azimuth zero looks along +y), margin, and figure dimensions.
 elevation, azimuth = np.radians(20.0), np.radians(-35.0)
 margin, figure_size, figure_dpi = 0.06, (18.3, 3.8), 43
-# The widths of the field curves, the axis and the arrows, and the length of the strokes of the chevron at an arrow's
-# tip, in pixels.
+# Pixel widths of field curves, axis rod, and arrows, plus arrow chevron length.
 curve_width, axis_width, arrow_width, arrow_chevron = 1.44, 1.08, 1.08, 4.3
-# The magnetic discs, at every other station: their radius at a unit of field, in the drawing's units, their area
-# growing with the field's strength as a patch's does; their thickness, as a share of their radius; and how much of
-# what lies behind them they hide.
+# Magnetic discs at every other station: unit-field radius, thickness-to-radius ratio, and opacity.
 disc_scale, disc_flatness, disc_opacity = 0.41, 0.1, 0.55
-# The arcs of the discs' sense of turning, just outside the rim, as a share of the disc's radius: where they start
-# around it from the direction of travel and how far they run, as angles around it; and the samples along each, the
-# last edge of each ending in a chevron, shrunk to fit it.
+# Rim sense arcs just outside each magnetic disc.
 arc_reach = 1.2
 arc_start, arc_span = np.radians(30.0), np.radians(240.0)
 n_arc = 16
-# The polarizations' arrows, their width and the length of the strokes of the chevrons at their tips in pixels, and
-# their dotted lines' width, dots and opacity.
+# Polarization arrow stroke widths, chevron length, and dotted guide parameters.
 polarization_width, polarization_chevron = 3.5, 14.0
 polarization_dots, polarization_opacity = (1.5, 2.5), 0.6
 
 
 # --- plumbing -------------------------------------------------------------------------
-def _zero_axes(ax: plt.Axes, across: str, up: str) -> None:
-    """Axes of a quantity without tick marks or numbers: the quantity from its zero, the axis across at that zero,
-    both named by what runs along them."""
+def zero_axes(ax: plt.Axes, horizontal_label: str, vertical_label: str) -> None:
+    """Quantity axes run from zero without tick marks or numbers, labelled by `horizontal_label` and `vertical_label`."""
     ax.set_ylim(bottom=0)
     ax.set_xticks([])
     ax.set_yticks([])
     ax.spines[["top", "right"]].set_visible(False)
-    ax.set_xlabel(across, color=label_colour)
-    ax.set_ylabel(up, color=label_colour)
+    ax.set_xlabel(horizontal_label, color=label_colour)
+    ax.set_ylabel(vertical_label, color=label_colour)
 
 
-def _cross(ax: plt.Axes, camera: Camera, across: str, up: str) -> np.ndarray:
-    """A plane without scales: a faint cross through the origin, across the whole panel along the directions the
-    camera reads as one across and one up, the duals of its planes over their own readings, its lines named at their
-    ends; the cross's picture."""
-    ax.text(1, 0, across, transform=ax.get_yaxis_transform(), ha="right", va="top", color=label_colour)
-    ax.text(0, 1, f" {up}", transform=ax.get_xaxis_transform(), ha="left", va="top", color=label_colour)
+def origin_cross(ax: plt.Axes, camera: Camera, horizontal_label: str, vertical_label: str) -> np.ndarray:
+    """A faint reference cross through the origin spans the panel along `camera`'s readout directions (`[rows, columns, 4]`)."""
+    ax.text(1, 0, horizontal_label, transform=ax.get_yaxis_transform(), ha="right", va="top", color=label_colour)
+    ax.text(0, 1, f" {vertical_label}", transform=ax.get_xaxis_transform(), ha="left", va="top", color=label_colour)
     ax.set_axis_off()
     (left, right), (bottom, top) = ax.get_xlim(), ax.get_ylim()
-    along, rise = (plane.dual() / (plane & plane.dual()) for plane in (camera.across, camera.up))
-    ends = stack((left * along, right * along, bottom * rise, top * rise))   # [4]
+    horizontal, vertical = (plane.dual() / (plane & plane.dual()) for plane in (camera.across, camera.up))
+    ends = stack((left * horizontal, right * horizontal, bottom * vertical, top * vertical))  # [4] Bivector+
     return simplices.strokes(ends, Topology.chains([2, 2]), np.array(to_rgb(cross_colour)), charts.FRAME_PX,
                              camera, cap=simplices.Cap.BUTT)
 
 
-def waves(modes: Modes, taus: np.ndarray, distance: np.ndarray) -> core.Bivector:
-    """The field of the modes' travelling waves at each distance along z and each time, `[..., samples] Bivector+`,
-    for times `[...]`, each mode's electric field of unit strength."""
+def wave_scene(ax: plt.Axes, modes: Modes, distances: np.ndarray) -> Scene:
+    """A camera fitted across `n_framing` snapshots of one period frames the propagation axis inside `ax`."""
     speeds, fields = modes
-    # Each mode scaled to unit strength of the electric field an observer at rest reads, the field met with its time.
-    units = fields / (fields & core.time).norm()                                # [modes] Bivector+
-    phases = np.cos(omega * (distance[:, None] / speeds - taus[..., None, None]))  # [..., samples, modes]
-    return (units * phases).sum(axis=-1)
-
-
-def wave_scene(ax: plt.Axes, modes: Modes) -> Scene:
-    """The axis, seen by a camera that frames every time of a period alike, as many pixels across as the axes' room
-    holds, for the fields at any time to be drawn along it."""
-    distance = np.linspace(0, z_max, n_samples)
-    # The axis's events, sliced by the observer, embedded in the drawing's projective space about its origin.
-    axis = solids.origin + (to_scene >> solids.context.include_from_algebra(space_slice(travel * distance)))
-    taus = np.linspace(0, 2 * np.pi / omega, n_framing, endpoint=False)
-    framed = waves(modes, taus, distance)                                       # [framing, samples] Bivector+
-    electric = to_scene >> solids.context.include_from_algebra(electric_direction(framed))      # [framing, samples] Point-
+    axis = solids.origin + (to_scene >> solids.context.include_from_algebra(space_slice(travel * distances)))
+    framing_fields = stack(tuple(core.travelling_fields(speeds, fields, distances, n_framing)))  # [n_framing, n_samples] Bivector+
+    electric = to_scene >> solids.context.include_from_algebra(electric_direction(framing_fields))  # [n_framing, n_samples] Point-
     view = fitted(solids.view([axis + electric], 0.0, elevation, azimuth, margin, 1), ax)
     radius = axis_width / 2 * view.pixel
     line = solids.rods(axis[0], axis[-1], radius)[None]                         # [1, 3] Plane+ <- Point-
     return Scene(view, np.ones(3), [], [], inks=[], translucent=[(line, axis_colour, axis_opacity)])
 
 
-def magnetic_discs(stations: solids.Point, fields: core.Bivector) -> tuple[solids.Quadric, solids.Point]:
-    """The magnetic fields `[stations] Bivector+` at stations `[stations] Point-`, each as a flat disc in its own
-    plane, its area growing with the field's strength, `[stations, 1]`; and the sense it turns in, as an arc around
-    the rim `[stations, arc]`."""
-    # The field embedded in the drawing is the line through the origin it turns about, its size the field's strength.
-    magnetic = to_scene >> solids.context.include_from_algebra(magnetic_field(fields))        # [stations] Line+
-    radii = disc_scale * magnetic.norm().square_root()                          # [stations] Scalar+
-    centres = solids.translator(stations - solids.origin)                       # [stations] Motor+
-    # The line about which each rim turns in the field's sense, and the field's own plane through the origin,
-    # square to it.
-    pivots = magnetic.normalized()                                                            # [stations] Line+
-    planes = pivots | solids.origin                                             # [stations] Plane-
-    # A ball flattened across each plane, scaled by its radius squared, so that a field of no strength is a point.
-    flattening = (1 / disc_flatness**2 - 1) * planes * (planes & solids.Point)  # [stations] Plane+ <- Point-
-    rounded = (solids.axes * (solids.axes & solids.Point)).sum(axis=-1)          # [] Plane+ <- Point-
-    lenses = rounded + flattening - radii**2 * sm.w * (sm.w & solids.Point)     # [stations] Plane+ <- Point-
-    angles = arc_start + np.linspace(0, arc_span, n_arc)                        # [arc]
-    turns = (pivots[:, None] * (-angles / 2)).exp()                             # [stations, arc] Motor+
-    # Each arc from where the plane holds the direction of travel, as every magnetic plane of the wave does.
-    heading = to_scene >> solids.context.include_from_algebra(space_slice(travel))             # [] Point-
-    rim_starts = solids.origin + heading * (arc_reach * radii)                  # [stations] Point-
-    rims = (centres[:, None] * turns) >> rim_starts[:, None]                    # [stations, arc] Point-
+def magnetic_discs(stations: solids.Point, fields: core.Field) -> tuple[solids.Quadric, solids.Point]:
+    """Magnetic fields (`[...] Bivector+`) at `stations` (`[...] Point-`) form flat quadric discs (`[..., 1] Plane+ <- Point-`) with sense arcs (`[..., n_arc] Point-`)."""
+    # Embedding the magnetic field gives the line through the origin it turns about, weighted by field strength.
+    magnetic = to_scene >> solids.context.include_from_algebra(magnetic_field(fields))  # [...] Line+
+    radii = disc_scale * magnetic.norm().square_root()                          # [...] Scalar+
+    centres = solids.translator(stations - solids.origin)                       # [...] Motor+
+    pivots = magnetic.normalized()                                              # [...] Line+
+    planes = pivots | solids.origin                                             # [...] Plane+
+    # Flatten a unit ball across each plane and scale by radius squared so zero field collapses to a point.
+    flattening = (1 / disc_flatness**2 - 1) * planes * (planes & solids.Point)  # [...] Plane+ <- Point-
+    rounded = (solids.axes * (solids.axes & solids.Point)).sum(axis=-1)         # [] Plane+ <- Point-
+    lenses = rounded + flattening - radii**2 * sm.w * (sm.w & solids.Point)     # [...] Plane+ <- Point-
+    angles = arc_start + np.linspace(0, arc_span, n_arc)                        # [n_arc]
+    turns = (pivots[:, None] * (-angles / 2)).exp()                             # [..., n_arc] Motor+
+    heading = to_scene >> solids.context.include_from_algebra(space_slice(travel))  # [] Point-
+    rim_starts = solids.origin + heading * (arc_reach * radii)                  # [...] Point-
+    rims = (centres[:, None] * turns) >> rim_starts[:, None]                    # [..., n_arc] Point-
     return solids.placed(lenses, centres)[:, None], rims
 
 
-def wave_image(scene: Scene, modes: Modes, tau: float) -> np.ndarray:
-    """The travelling electric and magnetic fields at one time, along the scene's axis: the curve the electric
-    arrows' tips trace and the arrows at stations along it, and at each station the magnetic field as a disc in its
-    own plane, with an arc around its rim for the sense it turns in."""
+def wave_image(scene: Scene, field: core.Field, distances: np.ndarray) -> np.ndarray:
+    """Renders one snapshot (`[rows, columns, 3]`) of `field` (`[n_samples] Bivector+`) along `distances`."""
     view = scene.view
-    distance = np.linspace(0, z_max, n_samples)
-    axis = solids.origin + (to_scene >> solids.context.include_from_algebra(space_slice(travel * distance)))
-    field = waves(modes, np.array(tau), distance)                               # [samples] Bivector+
-    electric = to_scene >> solids.context.include_from_algebra(electric_direction(field))       # [samples] Point-
+    axis = solids.origin + (to_scene >> solids.context.include_from_algebra(space_slice(travel * distances)))
+    electric = to_scene >> solids.context.include_from_algebra(electric_direction(field))  # [n_samples] Point-
 
-    # Arrows from the axis at evenly spaced stations, each a tube with a chevron at its tip, the chevron shrinking to
-    # fit a weak field's short arrow.
     station_idx = np.linspace(0, n_samples - 1, n_stations, dtype=int)
-    stations = axis[station_idx]                                                # [stations] Point-
-    tips = stations + electric[station_idx]                                     # [stations] Point-
+    stations = axis[station_idx]                                                # [n_stations] Point-
+    tips = stations + electric[station_idx]                                     # [n_stations] Point-
     arrows = simplices.tubes(stack((stations, tips), axis=-1).reshape(-1), Topology.chains([2] * n_stations),
                              electric_colour, arrow_width, view, gloss=solids.gloss, chevrons=np.ones(n_stations),
                              chevron=arrow_chevron)
     discs, arcs = magnetic_discs(stations[::2], field[station_idx[::2]])
 
-    # The curve the electric arrows' tips trace and the discs' arcs, chains of edges one after another, each edge in
-    # its curve's colour, each arc's last edge ending in a chevron, which shrinks with its disc.
     n_discs = arcs.shape[0]
-    curve_points = concatenate([axis + electric, arcs.reshape(-1)])            # [samples + discs * arc] Point-
+    curve_points = concatenate([axis + electric, arcs.reshape(-1)])             # [n_samples + n_discs * n_arc] Point-
     chains = Topology.chains([n_samples] + [n_arc] * n_discs)
     colours = np.repeat([electric_colour, magnetic_colour], [n_samples - 1, n_discs * (n_arc - 1)], axis=0)
     arc_ends = np.zeros((n_discs, n_arc - 1))
@@ -176,178 +140,166 @@ def wave_image(scene: Scene, modes: Modes, tau: float) -> np.ndarray:
                       meshes=[(curves, 1.0), (arrows, 1.0)])
 
 
-def draw_wave_propagation(ax: plt.Axes, modes: Modes) -> AxesImage:
-    """Draw the travelling electric and magnetic fields in a medium along the propagation axis z, at the start of a
-    period; the image shown."""
-    scene = wave_scene(ax, modes)
-    return show(ax, wave_image(scene, modes, 0.0), scene.view)
+def wave_propagation_panel(ax: plt.Axes, modes: Modes, distances: np.ndarray) -> AxesImage:
+    """Displays the initial wave field (`tau = 0`) of `modes` along `distances` inside `ax`."""
+    speeds, fields = modes
+    scene = wave_scene(ax, modes, distances)
+    initial_field = next(core.travelling_fields(speeds, fields, distances, 1))  # [n_samples] Bivector+
+    return show(ax, wave_image(scene, initial_field, distances), scene.view)
 
 
-def draw_wave_comparison_figure(glass_modes: Modes, crystal_modes: Modes) -> plt.Figure:
-    """The waves in isotropic glass, on the left, beside those in the birefringent crystal."""
+def wave_comparison_figure(glass_modes: Modes, crystal_modes: Modes, distances: np.ndarray) -> plt.Figure:
+    """Side-by-side 3D comparison places isotropic glass on the left beside the birefringent crystal on the right."""
     fig = plt.figure(figsize=figure_size, dpi=figure_dpi)
     fig.subplots_adjust(left=0.0, right=1.0, bottom=0.0, top=1.0, wspace=0.0)
-    draw_wave_propagation(fig.add_subplot(1, 2, 1), glass_modes)
-    draw_wave_propagation(fig.add_subplot(1, 2, 2), crystal_modes)
+    wave_propagation_panel(fig.add_subplot(1, 2, 1), glass_modes, distances)
+    wave_propagation_panel(fig.add_subplot(1, 2, 2), crystal_modes, distances)
     return fig
 
 
-def animate_wave_comparison(glass_modes: Modes, crystal_modes: Modes, n_frames: int) -> Iterator[np.ndarray]:
-    """Frames of the travelling electric and magnetic fields through one period, in isotropic glass beside the
-    birefringent crystal."""
+def wave_comparison_frames(
+    glass_modes: Modes,
+    crystal_modes: Modes,
+    distances: np.ndarray,
+    state_pairs: Iterable[tuple[core.Field, core.Field]],
+) -> Iterator[np.ndarray]:
+    """Yields side-by-side RGB frames (`[rows, columns, 3]`) for each `(glass_field, crystal_field)` snapshot in `state_pairs`."""
     fig = plt.figure(figsize=figure_size, dpi=figure_dpi)
     glass_axes = fig.add_subplot(1, 2, 1)
     crystal_axes = fig.add_subplot(1, 2, 2)
-    # One layout for every frame, so the axes stay put while the waves move.
     fig.subplots_adjust(left=0.0, right=1.0, bottom=0.0, top=1.0, wspace=0.0)
-    # Each medium's axis and camera set up once, and its image, for every frame to set.
-    panels = []
-    for ax, modes in ((glass_axes, glass_modes), (crystal_axes, crystal_modes)):
-        scene = wave_scene(ax, modes)
-        panels.append((show(ax, np.full((*scene.view.shape, 3), 255, dtype=np.uint8), scene.view), scene, modes))
 
-    for tau in np.linspace(0, 2.0 * np.pi / omega, n_frames, endpoint=False):
-        for shown, scene, modes in panels:
-            shown.set_data(wave_image(scene, modes, float(tau)))
+    glass_scene = wave_scene(glass_axes, glass_modes, distances)
+    crystal_scene = wave_scene(crystal_axes, crystal_modes, distances)
+    glass_shown = show(glass_axes, np.full((*glass_scene.view.shape, 3), 255, dtype=np.uint8), glass_scene.view)
+    crystal_shown = show(crystal_axes, np.full((*crystal_scene.view.shape, 3), 255, dtype=np.uint8), crystal_scene.view)
+
+    for glass_field, crystal_field in state_pairs:
+        glass_shown.set_data(wave_image(glass_scene, glass_field, distances))
+        crystal_shown.set_data(wave_image(crystal_scene, crystal_field, distances))
         yield capture(fig)
 
     plt.close(fig)
 
 
-def draw_dispersion(ax: plt.Axes, speeds: np.ndarray, residual: core.Scalar, expected: np.ndarray) -> None:
-    """Each medium's residual against the trial speeds `[speeds, media]`, falling to zero at its expected
-    speeds `[media, 2]`, marked in its colour."""
+def dispersion_panel(ax: plt.Axes, speeds: np.ndarray, residual: core.Scalar, expected: np.ndarray) -> None:
+    """Plots each medium's wave residual (`[n_speeds, n_media] Scalar+`) against trial `speeds` with dotted expected speeds."""
     lines = ax.plot(speeds, residual.to_array())
     for line, marks in zip(lines, expected):
         for speed in marks:
             ax.axvline(speed, color=line.get_color(), linestyle=":", alpha=0.8)
 
-    _zero_axes(ax, "speed along $z$", "residual")
+    zero_axes(ax, "speed along z", "residual")
 
 
-def draw_polarizations(
-    ax: plt.Axes,
-    modes: Modes,
-) -> None:
-    """Draw the electric field of the slow and the fast mode of the birefringent crystal as arrows in the xy plane,
-    each of unit length."""
+def polarizations_panel(ax: plt.Axes, modes: Modes) -> None:
+    """Draws the unit electric-field polarizations of the crystal's two modes in the xy plane."""
     _, fields = modes
-    # Each mode's field at unit strength of its electric field.
-    units = fields / (fields & core.time).norm()                                # [modes] Bivector+
+    units = fields / (fields & core.time).norm()                                # [2] Bivector+
     n_modes = len(units)
-    colours = np.stack((electric_colour, magnetic_colour))                      # [modes, 3]
+    colours = np.stack((electric_colour, magnetic_colour))                      # [n_modes, 3]
     pairs = Topology.chains([2] * n_modes)
 
     ax.set_xlim([-1.3, 1.3])
     ax.set_ylim([-1.3, 1.3])
     ax.set_aspect("equal")
     ax.set_axis_off()
-    # The figure laid out before the picture takes the panel's pixels.
     ax.figure.tight_layout()
-    # The fields read as they are, by the planes x and y sweep through time: `swept_plane & field`, the electric
-    # field along each.
+    # Pair the field bivectors directly against the swept x-t and y-t planes.
     plane = offset_panel(ax, *core.swept_planes[:2])
-    # Each mode's line through the origin, dotted, under its arrow from the origin, a stroke with a chevron at its tip.
     overlay(ax, [
-        _cross(ax, plane, "$x$", "$y$"),
+        origin_cross(ax, plane, "x", "y"),
         simplices.strokes(stack((-units, units), axis=-1).reshape(-1), pairs, colours, charts.LINE_PX, plane,
                           dashes=polarization_dots, cap=simplices.Cap.ROUND, opacity=polarization_opacity),
         simplices.strokes(stack((0 * units, units), axis=-1).reshape(-1), pairs, colours, polarization_width, plane,
                           chevrons=np.ones(n_modes), chevron=polarization_chevron)])
 
 
-def draw_fresnel_surface_polar(
+def fresnel_surface_panel(
     ax: plt.Axes,
     angles: np.ndarray,
     residual: core.Scalar,
     speeds: np.ndarray,
     threshold: float,
 ) -> None:
-    """The speeds of the waves against their heading in the xz plane, one colour per medium: the dips of
-    each medium's residual along speed `[speeds, headings, media]`, the n-th dip at each heading on the
-    n-th sheet."""
-    for dips, color in zip(np.moveaxis(core.dips(residual, threshold), -1, 0), plt.rcParams["axes.prop_cycle"].by_key()["color"]):
-        # Each dip's place among the dips at its heading, counting from the slowest.
-        sheets = np.cumsum(dips, axis=0) * dips                                # [speeds - 2, headings]
+    """Plots the wave-speed sheets in the xz plane from local minima of `residual` (`[n_speeds, n_headings, n_cases] Scalar+`)."""
+    for minima, color in zip(np.moveaxis(core.local_minima(residual, threshold), -1, 0), plt.rcParams["axes.prop_cycle"].by_key()["color"]):
+        sheets = np.cumsum(minima, axis=0) * minima                             # [..., ...]
         for sheet in range(1, sheets.max() + 1):
             heading_idx, speed_idx = np.nonzero((sheets == sheet).T)
             ax.plot(angles[heading_idx], speeds[1:-1][speed_idx], color=color)
 
-    # Zero radians along +z (North), angles clockwise: +x along East.
     ax.set_theta_zero_location("N")
     ax.set_theta_direction(-1)
     ax.set_xticks([])
     ax.set_yticks([])
     ax.spines["polar"].set_visible(False)
-    # A faint cross through the origin, past the fastest wave, its lines named at their ends by the directions
-    # they run along.
     radius = cross_reach * ax.get_rmax()
     for heading in np.arange(4) * np.pi / 2:
         ax.plot([heading, heading], [0, radius], color=cross_colour, linewidth=charts.FRAME_WIDTH, zorder=0)
     ax.set_rmax(radius)
-    ax.text(0, radius, "$z$", ha="left", va="top", color=label_colour)
-    ax.text(np.pi / 2, radius, "$x$", ha="right", va="bottom", color=label_colour)
+    ax.text(0, radius, "z", ha="left", va="top", color=label_colour)
+    ax.text(np.pi / 2, radius, "x", ha="right", va="bottom", color=label_colour)
 
 
-def draw_fresnel_drag_curves(
+def fresnel_drag_panel(
     ax: plt.Axes,
     fractions: np.ndarray,
-    found: np.ndarray,
+    found_speeds: np.ndarray,
     curve: np.ndarray,
     relativistic: np.ndarray,
     first_order: np.ndarray,
 ) -> None:
-    """The speeds of light found in the moving glass, with it in red and against it in blue `[2, drags]`,
-    over the relativistic sum, solid, and Fresnel's first-order drag, dashed `[2, curve]`."""
-    for speeds, exact, approximate, color, marker in zip(found, relativistic, first_order, "rb", "os"):
+    """Plots co-propagating (red) and counter-propagating (blue) light speeds over exact relativistic and first-order Fresnel curves."""
+    for speeds, exact, approximate, color, marker in zip(found_speeds, relativistic, first_order, "rb", "os"):
         ax.plot(fractions, speeds, color=color, marker=marker, linestyle="none")
         ax.plot(curve, exact, color=color)
         ax.plot(curve, approximate, color=color, linestyle="--", alpha=0.7)
 
-    _zero_axes(ax, "speed of the glass", "speed of light")
+    zero_axes(ax, "speed of the glass", "speed of light")
 
 
 @charts.style()
-def draw_dispersion_figure(speeds: np.ndarray, residual: core.Scalar, expected: np.ndarray) -> plt.Figure:
-    """Each medium's residual against the trial speeds."""
-    # Half the column: a few smooth curves, named axes and no numbers.
+def dispersion_figure(speeds: np.ndarray, residual: core.Scalar, expected: np.ndarray) -> plt.Figure:
+    """Wave-map residuals across trial speeds along z fall to zero at each medium's phase speeds."""
     fig, ax = charts.subplots(400, 280)
-    draw_dispersion(ax, speeds, residual, expected)
+    dispersion_panel(ax, speeds, residual, expected)
     fig.tight_layout()
     return fig
 
 
 @charts.style()
-def draw_polarizations_figure(modes: Modes) -> plt.Figure:
-    """The electric fields of the crystal's two modes, as arrows in the xy plane."""
-    # Two arrows on a cross: a third of the column.
+def polarizations_figure(modes: Modes) -> plt.Figure:
+    """Unit electric-field arrows show the orthogonal polarizations of the crystal's two modes."""
     fig, ax = charts.subplots(260, 260)
-    draw_polarizations(ax, modes)
+    polarizations_panel(ax, modes)
     return fig
 
 
 @charts.style()
-def draw_fresnel_surface_figure(angles: np.ndarray, residual: core.Scalar, speeds: np.ndarray,
-                                threshold: float) -> plt.Figure:
-    """The speeds of the waves against their heading, on polar axes."""
-    # A few closed sheets on a cross: a third of the column.
+def fresnel_surface_figure(
+    angles: np.ndarray,
+    residual: core.Scalar,
+    speeds: np.ndarray,
+    threshold: float,
+) -> plt.Figure:
+    """Polar phase-speed sheets trace how propagation speed varies with heading across the xz plane."""
     fig, ax = charts.subplots(300, 300, subplot_kw={"projection": "polar"})
-    draw_fresnel_surface_polar(ax, angles, residual, speeds, threshold)
+    fresnel_surface_panel(ax, angles, residual, speeds, threshold)
     fig.tight_layout()
     return fig
 
 
 @charts.style()
-def draw_fresnel_drag_figure(
+def fresnel_drag_figure(
     fractions: np.ndarray,
-    found: np.ndarray,
+    found_speeds: np.ndarray,
     curve: np.ndarray,
     relativistic: np.ndarray,
     first_order: np.ndarray,
 ) -> plt.Figure:
-    """The speeds of light in the moving glass, against the speed of the glass."""
-    # Half the column: two curve pairs with their samples, named axes and no numbers.
+    """Sampled light speeds in moving glass follow relativistic velocity addition past first-order Fresnel drag."""
     fig, ax = charts.subplots(400, 280)
-    draw_fresnel_drag_curves(ax, fractions, found, curve, relativistic, first_order)
+    fresnel_drag_panel(ax, fractions, found_speeds, curve, relativistic, first_order)
     fig.tight_layout()
     return fig

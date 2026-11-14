@@ -1,4 +1,4 @@
-"""The two Fresnel sheets and their meridian sections."""
+"""Ray-traced 3D views and 2D meridian strokes display the two Fresnel wave-surface sheets."""
 
 from __future__ import annotations
 
@@ -7,190 +7,197 @@ from collections.abc import Iterable, Iterator
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
+from matplotlib.colors import to_rgb
 from matplotlib.image import AxesImage
 
-from matplotlib.colors import to_rgb
-
 from numga import stack
+from numga.render import Camera, Scene, drawing, meshes, read, simplices, solids
+from numga.render.drawing import Draw
+from numga.topology import Topology
 
+from examples.electromagnetism.fresnel import core
 from examples.util import charts
 from examples.util.animation import capture
-from examples.electromagnetism.fresnel import core
-from numga.topology import Topology
-from numga.render.drawing import Draw
-from numga.render import Camera, drawing, meshes, read, Scene, simplices, solids
 from examples.util.panels import fitted, labels, offset_panel, overlay, show
 
 sheet_colours = ("#2563eb", "#ea580c")
 view_limit = 2.4
 latitude_stride = 4
 longitude_stride = 8
-# Each spatial wavevector is drawn at its tip in the observer's k-space.
+# Project each spacetime wavevector onto its spatial tip in the rest observer's k-space.
 space_tip = core.mv.t ^ (core.Vector.dual() & core.time)
-# How much of what lies behind them each side of a sheet and its grid lines hide, and the axes' colour.
 sheet_opacity, grid_opacity = 0.12, 0.4
 axis_colour = np.array([0.45, 0.47, 0.52])
-# The view's elevation and azimuth in radians, azimuth zero looking along +y, and the half width of the square view
-# about the origin, the same for every medium so their sizes compare.
 elevation, azimuth = np.radians(22.0), np.radians(37.0)
 half_width = 2.3
-# The widths of the grid lines and the axes' arrows, and the radius of the ball at an arrow's tip, in pixels; how far
-# the axes reach and their names lie, in units of k.
 grid_width, arrow_width, tip_radius = 1.0, 1.0, 2.0
 axis_length, label_distance = 1.95, 2.12
-# The figures' sizes in pixels: the comparison, each medium's sheets above their sections, three quarters of the
-# column; the animation, the sheets beside their sections, about two thirds of it.
 comparison_size, animation_size = (600, 400), (520, 260)
-# The sections' faint cross through the origin, and the second sheet's dashes, a dash and a gap in pixels.
 cross_colour = np.array(to_rgb("#cbd5e1"))
 section_dashes = (5.5, 2.4)
 
+grid_shader = """
+fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {
+    let nearest = round(values.xy / strides) * strides;
+    let steps = oversampling * fwidth(values.xy);
+    var ink = clamp(grid_width / 2 + 0.5 - abs(values.xy - nearest) / steps, vec2<f32>(0.0), vec2<f32>(1.0));
+    // Suppress parallel strokes at both poles where latitudes collapse to points.
+    ink.x *= select(0.0, 1.0, nearest.x > 0 && nearest.x < f32(n_latitudes - 1));
+    let visibility = select(back_shown, front_shown, front);
+    return vec4<f32>(sheet_colour, visibility * mix(sheet_opacity, grid_opacity, max(ink.x, ink.y)));
+}
+"""
 
-# --- plumbing -------------------------------------------------------------------------
+
 def sheet_faces(n_latitudes: int, n_longitudes: int) -> np.ndarray:
-    """Triangles over a grid of points from pole to pole, `[latitudes, longitudes]`: two to each cell, but one in the
-    cells at either pole, whose two corners on the pole coincide."""
+    """Interior quads of a `[n_latitudes, n_longitudes]` latitude-longitude grid split into triangle pairs while polar quads form single triangles (`[F, 3]`)."""
     index = np.arange(n_latitudes * n_longitudes).reshape(n_latitudes, n_longitudes)
     corners = np.stack([index[:-1, :-1], index[1:, :-1], index[1:, 1:], index[:-1, 1:]], axis=-1)
     return np.concatenate([corners[:-1, :, [0, 1, 2]].reshape(-1, 3), corners[1:, :, [0, 2, 3]].reshape(-1, 3)])
 
 
-# WGSL colouring a sheet, translucent, inked more opaquely along every few parallels short of the poles and every few
-# meridians: by how many pixels the corners' grid indices, `values.x` and `values.y`, lie from the nearest line, their
-# change across a pixel the measure; and showing as much of each side, the side the camera sees the front of and the
-# far side, as the constants `front_shown` and `back_shown` say.
-gridded = """
-fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {
-    let nearest = round(values.xy / strides) * strides;
-    let steps = oversampling * fwidth(values.xy);
-    var ink = clamp(grid_width / 2 + 0.5 - abs(values.xy - nearest) / steps, vec2<f32>(0.0), vec2<f32>(1.0));
-    // No parallel on the poles, where they shrink to points.
-    ink.x *= select(0.0, 1.0, nearest.x > 0 && nearest.x < f32(n_latitudes - 1));
-    let shown = select(back_shown, front_shown, front);
-    return vec4<f32>(sheet_colour, shown * mix(sheet_opacity, grid_opacity, max(ink.x, ink.y)));
-}
-"""
-
-
 def side_colour(colour: np.ndarray, n_latitudes: int, near: bool) -> meshes.Colour:
-    """One side of a sheet in its colour, gridded, the side the camera sees the front of or the far side; the other
-    side hides nothing, and is left for the other mesh."""
-    return meshes.Colour(gridded, dict(sheet_colour=colour, strides=np.array([latitude_stride, longitude_stride]),
-                                       grid_width=grid_width, n_latitudes=n_latitudes, sheet_opacity=sheet_opacity,
-                                       grid_opacity=grid_opacity, front_shown=float(near), back_shown=float(not near)))
+    """The gridded WGSL shader colours either the camera-facing (`near=True`) or far (`near=False`) pass of a translucent sheet."""
+    return meshes.Colour(
+        grid_shader,
+        dict(
+            sheet_colour=colour,
+            strides=np.array([latitude_stride, longitude_stride]),
+            grid_width=grid_width,
+            n_latitudes=n_latitudes,
+            sheet_opacity=sheet_opacity,
+            grid_opacity=grid_opacity,
+            front_shown=float(near),
+            back_shown=float(not near),
+        ),
+    )
 
 
-def k_axes(view: solids.View) -> list[tuple[solids.Quadric, np.ndarray]]:
-    """The frame of k-space, its axes arrows from the origin: rods with balls at their tips."""
-    # Each axis's tip along the direction square to the plane across it.
-    tips = solids.origin + axis_length * solids.normal_direction(solids.axes)   # [axes] Point-
-    return [(solids.rods(solids.origin, tips, arrow_width / 2 * view.pixel), axis_colour),
-            (solids.ball(tips, tip_radius * view.pixel)[:, None], axis_colour)]
+def wavevector_axes(view: solids.View) -> list[tuple[solids.Quadric, np.ndarray]]:
+    """Rods from the origin to ball-tipped endpoints form the three spatial wavevector axes."""
+    tips = solids.origin + axis_length * solids.normal_direction(solids.axes)       # [3] Point-
+    return [
+        (solids.rods(solids.origin, tips, arrow_width / 2 * view.pixel), axis_colour),
+        (solids.ball(tips, tip_radius * view.pixel)[:, None], axis_colour),
+    ]
 
 
-def k_space(ax: Axes) -> solids.View:
-    """The square view of k-space about the origin, the same for every medium, as many pixels across as the axes'
-    room holds."""
+def wavevector_view(ax: Axes) -> solids.View:
+    """A fixed-width square camera view frames wavevector space around the origin inside `ax`."""
     return fitted(solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, half_width), 1), ax)
 
 
 def sheet_sides(sheets: core.Vector, view: solids.View) -> list[tuple[Draw, float]]:
-    """Both sheets, translucent, with grid lines along every few latitudes and longitudes."""
+    """Near and far passes render both translucent sheets (`[n_latitudes, n_longitudes, 2] Vector+`) with latitude and longitude grid lines."""
     n_latitudes, n_longitudes, n_sheets = sheets.shape
     faces = sheet_faces(n_latitudes, n_longitudes)
-    # Each vertex's place on the grid, latitude and longitude, for the grid lines inked on the sheet.
+    topology = Topology(n_latitudes * n_longitudes, faces)
+    V, E, F = topology.n_elements
     indices = np.stack(np.meshgrid(np.arange(n_latitudes), np.arange(n_longitudes), indexing="ij"), axis=-1)
-    grid = indices.reshape(-1, 2)[faces]                                         # [faces, 3, 2]
-    # Each sheet's near side and far side a mesh of its own, so that the far side shows through the near.
+    grid = indices.reshape(V, 2)[faces]                                             # [F, 3, 2]
+    # Separate near and far passes allow the far side of each translucent sheet to show through the near side.
     sides = []
     for index, colour in zip(range(n_sheets), map(to_rgb, sheet_colours)):
-        # The sheet's tips embedded in the drawing's projective space about its origin.
-        places = (solids.origin + solids.context.include_from_algebra(space_tip(sheets[:, :, index].reshape(-1))))                     # [vertices] Point-
-        normals = meshes.smooth(places, Topology(len(places), faces))
-        sides += [(meshes.samples(places, faces, grid, normals, view, face_values=np.zeros(4),
-                                  colour=side_colour(np.array(colour), n_latitudes, near),
-                                   gloss=0.2), 1.0) for near in (True, False)]
+        places = solids.origin + solids.context.include_from_algebra(space_tip(sheets[:, :, index].reshape(V)))  # [V] Point-
+        normals = meshes.smooth(places, topology)
+        sides += [
+            (
+                meshes.samples(
+                    places,
+                    faces,
+                    grid,
+                    normals,
+                    view,
+                    face_values=np.zeros(4),
+                    colour=side_colour(np.array(colour), n_latitudes, near),
+                    gloss=0.2,
+                ),
+                1.0,
+            )
+            for near in (True, False)
+        ]
     return sides
 
 
-def surface(ax: Axes, picture: np.ndarray, view: solids.View) -> AxesImage:
-    """A picture of k-space, its axes named at their tips; the image, for an animation to set its data."""
-    shown = show(ax, picture, view)
-    # Each axis named past its tip, along the direction square to the plane across it.
-    label_places = solids.origin + label_distance * solids.normal_direction(solids.axes)  # [axes] Point-
-    labels(ax, view, label_places, ["$k_x$", "$k_y$", "$k_z$"], ha="center", va="center", color=axis_colour)
-    return shown
+def surface_panel(ax: Axes, picture: np.ndarray, view: solids.View) -> AxesImage:
+    """Axis labels beyond the three arrow tips annotate the rendered wavevector-space image on `ax`."""
+    panel_image = show(ax, picture, view)
+    label_places = solids.origin + label_distance * solids.normal_direction(solids.axes)  # [3] Point-
+    labels(ax, view, label_places, ["kx", "ky", "kz"], ha="center", va="center", color=axis_colour)
+    return panel_image
 
 
 def section_axes(ax: Axes) -> None:
-    """The plane of the sheets' sections, xz, its cross's lines named at their ends, without scales: the sheets' shapes
-    against each other are the point."""
-    ax.text(view_limit, 0, "$k_x$", ha="right", va="bottom", color=axis_colour)
-    ax.text(0, view_limit, "$k_z$", ha="left", va="top", color=axis_colour)
+    """Equal-aspect limits and endpoint labels frame the xz meridian section panel without tick scales."""
+    ax.text(view_limit, 0, "kx", ha="right", va="bottom", color=axis_colour)
+    ax.text(0, view_limit, "kz", ha="left", va="top", color=axis_colour)
     ax.set(xlim=(-view_limit, view_limit), ylim=(-view_limit, view_limit))
     ax.set_aspect("equal")
     ax.set_axis_off()
 
 
 def section_camera(ax: Axes) -> Camera:
-    """The camera of the sections' plane, reading the wavevectors by the directions of space x across and z up,
-    `wavevector & axis`."""
+    """An offset-panel camera pairs spacetime wavevectors against the spatial x and z directions."""
     return offset_panel(ax, core.axes[0], core.axes[2])
 
 
-def trace_sections(sections: core.Vector, camera: Camera) -> np.ndarray:
-    """A faint cross through the origin, along the wavevectors the camera reads as one across and one up, the duals of
-    its directions over their own readings, and each sheet's section `[section_samples, sheets]` in the xz plane along
-    its curve, the second dashed: their picture."""
-    along, rise = (axis.dual() / read(axis, axis.dual()) for axis in (camera.across, camera.up))
-    ends = view_limit * stack((-along, along, -rise, rise))                     # [4] Vector+
+def section_strokes(sections: core.Vector, camera: Camera) -> np.ndarray:
+    """Solid inner and dashed outer meridian strokes (`[n_section_samples, 2] Vector+`) composite over faint origin crosshairs."""
+    across_unit, up_unit = (axis.dual() / read(axis, axis.dual()) for axis in (camera.across, camera.up))
+    ends = view_limit * stack((-across_unit, across_unit, -up_unit, up_unit))       # [4] Vector+
     loop = Topology.loops([sections.shape[0]])
     return drawing.composited([
-        simplices.strokes(ends, Topology.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
-                          cap=simplices.Cap.BUTT),
+        simplices.strokes(ends, Topology.chains([2, 2]), cross_colour, charts.FRAME_PX, camera, cap=simplices.Cap.BUTT),
         simplices.strokes(sections[:, 0], loop, np.array(to_rgb(sheet_colours[0])), charts.LINE_PX, camera),
-        simplices.strokes(sections[:, 1], loop, np.array(to_rgb(sheet_colours[1])), charts.LINE_PX, camera,
-                          dashes=section_dashes, cap=simplices.Cap.BUTT)])
+        simplices.strokes(
+            sections[:, 1],
+            loop,
+            np.array(to_rgb(sheet_colours[1])),
+            charts.LINE_PX,
+            camera,
+            dashes=section_dashes,
+            cap=simplices.Cap.BUTT,
+        ),
+    ])
 
 
 @charts.style()
-def comparison(sheets: core.Vector, sections: core.Vector) -> plt.Figure:
-    """Each medium's sheets above their sections, one medium to a column."""
-    count = len(sheets)
-    figure, (surface_axes, sections_axes) = charts.subplots(*comparison_size, nrows=2, ncols=count, squeeze=False,
-                                                            layout="constrained")
-    for i, ax in enumerate(sections_axes):
-        surface_axes[i].set_axis_off()
+def comparison_figure(sheets: core.Vector, sections: core.Vector) -> plt.Figure:
+    """One column per medium places the 3D wave surface above its xz meridian section."""
+    n_columns = len(sheets)
+    figure, (surface_axes, sections_axes) = charts.subplots(
+        *comparison_size, nrows=2, ncols=n_columns, squeeze=False, layout="constrained"
+    )
+    for column, ax in enumerate(sections_axes):
+        surface_axes[column].set_axis_off()
         section_axes(ax)
-    # The sheets and their sections traced once every axes is laid out, the sheets' as bare as their pictures leave
-    # them, each at the size of its room.
-    for i, ax in enumerate(surface_axes):
-        view = k_space(ax)
-        surface(ax, solids.draw(k_axes(view), view, np.ones(3), inks=[], translucent=[],
-                                meshes=sheet_sides(sheets[i], view)), view)
-    for i, ax in enumerate(sections_axes):
-        overlay(ax, [trace_sections(sections[i], section_camera(ax))])
+    for column, ax in enumerate(surface_axes):
+        view = wavevector_view(ax)
+        picture = solids.draw(
+            wavevector_axes(view), view, np.ones(3), inks=[], translucent=[], meshes=sheet_sides(sheets[column], view)
+        )
+        surface_panel(ax, picture, view)
+    for column, ax in enumerate(sections_axes):
+        overlay(ax, [section_strokes(sections[column], section_camera(ax))])
     return figure
 
 
-def animate(frames: Iterable[tuple[core.Vector, core.Vector]]) -> Iterator[np.ndarray]:
-    """The sheets beside their sections, frame by frame, the frame of k-space and the sections' axes set up once."""
-    # The charts' style held while the frames are drawn, for the artists that drawing makes.
+def sheet_animation(frames: Iterable[tuple[core.Vector, core.Vector]]) -> Iterator[np.ndarray]:
+    """Yields RGB frames showing the 3D wave surface beside its xz meridian section for each `(sheets, sections)` state."""
     with charts.style():
         figure, (surface_axes, sections_axes) = charts.subplots(*animation_size, ncols=2, layout="constrained")
-        # The sheets' axes as bare as their picture leaves them, for the layout to give them their room.
         surface_axes.set_axis_off()
         section_axes(sections_axes)
-        view = k_space(surface_axes)
-        scene = Scene(view, np.ones(3), k_axes(view), [], inks=[], translucent=[])
-        image = surface(surface_axes, np.full((*view.shape, 3), 255, dtype=np.uint8), view)
-        # Laid out once, so that nothing moves between frames.
+        view = wavevector_view(surface_axes)
+        scene = Scene(view, np.ones(3), wavevector_axes(view), [], inks=[], translucent=[])
+        image = surface_panel(surface_axes, np.full((*view.shape, 3), 255, dtype=np.uint8), view)
+        # Freeze the constrained layout after the initial draw so panel positions stay fixed across frames.
         figure.canvas.draw()
         figure.set_layout_engine("none")
         camera = section_camera(sections_axes)
-        traced = overlay(sections_axes, [np.zeros(camera.shape + (4,))])
+        section_image = overlay(sections_axes, [np.zeros(camera.shape + (4,))])
         for sheets, sections in frames:
             image.set_data(scene.draw([], inks=[], translucent=[], meshes=sheet_sides(sheets, view)))
-            traced.set_data(trace_sections(sections, camera))
+            section_image.set_data(section_strokes(sections, camera))
             yield capture(figure)
         plt.close(figure)

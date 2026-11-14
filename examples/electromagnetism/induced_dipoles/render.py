@@ -1,5 +1,4 @@
-"""Drawing for the induced dipoles: each cluster in the plane z = 0, its atoms with their dipoles as
-arrows, over the dipole an isolated atom would carry in the same field."""
+"""Draws the planar atom clusters with their induced dipole arrows overlaid on the isolated-atom reference dipole."""
 
 from __future__ import annotations
 
@@ -27,16 +26,15 @@ dipole_width, dipole_chevron = 2.0, 6.0
 atom_radius = 2.5
 
 
-def clusters(positions, dipoles, isolated) -> plt.Figure:
-    """One panel per cluster, all to one scale: each atom with its dipole as an arrow centred on it,
-    over the dipole of an isolated atom in light grey."""
+def clusters(positions, dipoles, reference_dipole) -> plt.Figure:
+    """Draws one equal-scale panel per cluster (`[n_cases, n_atoms] Direction-`), overlaying each atom's induced dipole (`[n_cases] Dipole-[n_atoms]`) on the isolated-atom reference (`[] Dipole-`)."""
     mv = positions.context.multivector
-    # Every dipole to the scale that draws the isolated atom's at the arrow's length.
-    scale = arrow_length / isolated.squared().square_root()
-    arrows = dipoles.batch() * scale                                            # [cases, atoms] Dipole-
-    reference = isolated * scale                                                # [] Dipole-
     n_cases, n_atoms = positions.shape
-    # Each arrow a chain of two points, its tail and its tip, about its atom, with a chevron at its tip.
+    # Every dipole to the scale that draws the isolated atom's at the arrow's length.
+    scale = arrow_length / reference_dipole.antinorm()                          # [] Scalar+
+    arrows = dipoles.batch() * scale                                            # [n_cases, n_atoms] Dipole-
+    reference_arrow = reference_dipole * scale                                  # [] Dipole-
+    # Each arrow is a chain of two points, its tail and its tip, about its atom, with a chevron at its tip.
     shafts = Topology.chains([2] * n_atoms)
     half_width = float(((stack((mv.x, mv.y)) & positions[..., None]).abs().max() + margin).to_array())
     figure, axes = plt.subplots(1, n_cases, figsize=(panel_size * n_cases, panel_size), dpi=figure_dpi)
@@ -45,7 +43,7 @@ def clusters(positions, dipoles, isolated) -> plt.Figure:
         ax.set(xlim=(-half_width, half_width), ylim=(-half_width, half_width), aspect="equal")
         ax.axis("off")
         camera = offset_panel(ax, mv.x, mv.y)
-        isolated_ends = stack((site - reference / 2, site + reference / 2), axis=-1).reshape(-1)
+        isolated_ends = stack((site - reference_arrow / 2, site + reference_arrow / 2), axis=-1).reshape(-1)
         dipole_ends = stack((site - arrow / 2, site + arrow / 2), axis=-1).reshape(-1)
         overlay(ax, [
             simplices.strokes(isolated_ends, shafts, isolated_colour, isolated_width, camera,

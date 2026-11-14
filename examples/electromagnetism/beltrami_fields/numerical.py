@@ -3,24 +3,25 @@
 import numpy as np
 from scipy.linalg import eigh
 
-from examples.electromagnetism.beltrami_fields.core import Energy, Scalar, as_scalar
+from examples.electromagnetism.beltrami_fields.core import Form, Scalar, mv
 
 
-def coexact_helicity_eigh(stiffness: Energy, helicity: Energy) -> tuple[Scalar, Scalar, int]:
-    """The inverse Beltrami eigenvalues `mu = 1 / lambda`, the energy-orthonormal coexact eigenmodes, and the gradient nullity."""
+def coexact_helicity_eigh(stiffness: Form, helicity: Form) -> tuple[Scalar, Scalar, int]:
+    """Diagonalizing `helicity` in the positive-energy subspace of `stiffness` gives inverse eigenvalues, modes, and nullity."""
     n_dofs = stiffness.shape[0]
-    s_mat = np.zeros((n_dofs, n_dofs))
-    s_mat[stiffness.rows, stiffness.columns] = stiffness.cells.kernel[:, 0, 0]
-    h_mat = np.zeros((n_dofs, n_dofs))
-    h_mat[helicity.rows, helicity.columns] = helicity.cells.kernel[:, 0, 0]
+    stiffness_matrix = np.zeros((n_dofs, n_dofs))
+    stiffness_matrix[stiffness.rows, stiffness.columns] = stiffness.cells.kernel[:, 0, 0]
+    helicity_matrix = np.zeros((n_dofs, n_dofs))
+    helicity_matrix[helicity.rows, helicity.columns] = helicity.cells.kernel[:, 0, 0]
 
-    evals_s, evecs_s = eigh(s_mat)
-    scale = float(evals_s.max())
-    coexact = evals_s > 1e-10 * scale
+    energy_values, energy_vectors = eigh(stiffness_matrix)
+    energy_scale = float(energy_values.max())
+    coexact = energy_values > 1e-10 * energy_scale
     n_null = int(np.sum(~coexact))
-    basis = evecs_s[:, coexact] / np.sqrt(evals_s[coexact])[None, :]
-    h_reduced = basis.T @ h_mat @ basis
-    mu, vectors = eigh(h_reduced)
-    chiral = np.abs(mu) > 1e-8 * float(np.abs(mu).max())
-    free_modes = as_scalar((basis @ vectors[:, chiral]).T).field()           # [modes] Scalar+[free]
-    return as_scalar(mu[chiral]), free_modes, n_null
+    orthonormal_basis = energy_vectors[:, coexact] / np.sqrt(energy_values[coexact])[None, :]
+    reduced_helicity = np.swapaxes(orthonormal_basis, 0, 1) @ helicity_matrix @ orthonormal_basis
+    inverse_values, vectors = eigh(reduced_helicity)
+    chiral = np.abs(inverse_values) > 1e-8 * float(np.abs(inverse_values).max())
+    mode_table = np.swapaxes(orthonormal_basis @ vectors[:, chiral], 0, 1)
+    free_modes = mv.scalar(mode_table[..., None]).field()                       # [...] Scalar+[E_free]
+    return mv.scalar(inverse_values[chiral, None]), free_modes, n_null
