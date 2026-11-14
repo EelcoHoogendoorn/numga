@@ -1,27 +1,24 @@
-"""Magnetic resonance: a spin in a magnetic field, driven by a radio-frequency field and relaxing, in the algebra of
-spacetime.
+"""Magnetic resonance models a spin in a magnetic field, driven by a radio-frequency field and
+relaxing, in the algebra of spacetime.
 
-The state of a spin, or of an ensemble of spins, is modelled as half the antiscalar, its trace, plus the spin. The
-spin is intrinsic, as every angular momentum: the patch of the plane it turns in, that plane's dual, so that a spin
-turning in the magnet's plane xy is `mv.xy.dual()`, in spacetime the patch zt through the lab's time. Its length is
-one for a single pure spin and less for a mixture. The fields that turn it are extrinsic planes of turning, the
-magnet's plane weighted by the detuning and the drive's plane by the drive strength, in the frame that turns with
-the drive, and they turn the state by their commutator, `State.commutator(field)`.
+A spin state, or the state of an ensemble of spins, is modelled as half the antiscalar trace plus
+the spin. Every angular momentum is intrinsic, represented by the patch of the plane it turns in,
+that plane's dual, so a spin turning in the magnet's plane `xy` is `magnet_plane.dual()`, in
+spacetime the patch `zt` through the lab's time. Its length is one for a pure spin and less for a
+mixture. The fields that turn the spin are extrinsic planes of turning, weighted by the detuning in
+the magnet's plane and by the drive strength in the drive's plane inside the rotating frame, and
+they turn the state by their commutator `State.commutator(field)`.
 
-Relaxation turns the part of the spin along the magnet's patch back toward that patch at the rate `1 / t1`, and lets
-every other part the lab reads as spin decay at `1 / t2`. Which parts of a state are read as spin is the lab's to
-say: those its reflection, `observer >> State`, leaves unchanged. Where the generator vanishes the state is steady;
-since the generator keeps the trace and keeps the parts the lab cannot read, that state is a single solve with both
-pinned.
+Relaxation pulls the part of the spin along the magnet's patch back toward equilibrium at rate
+`1 / t1` and decays every other readable spin component at rate `1 / t2`. The observer's reflection
+`observer >> State` picks out the parts of a state that the lab reads as spin by leaving them
+unchanged. Because the generator preserves both the trace and the unreadable parts, pinning both
+turns the steady state where the generator vanishes into a single linear solve.
 
-The evolution over a short time is a map as well, the exponential of the generator to fourth order. Composed with
-itself it spans two steps, then four; composed with the pulses, rotors in the drive's plane whose sandwiches are
-maps too, it gives a whole pulse sequence as one map.
-
-In the vector notation of the Bloch equations the spin reads as the Bloch vector, the field as the vector of
-angular frequencies about which the Bloch vector turns by their cross product, and the relaxation as the decay of
-the Bloch vector's transverse components at the rate one over T2 and of its component along the field toward one at
-the rate one over T1.
+Short-time evolution is the fourth-order exponential series of the generator, a linear map on
+states. Composing that map with itself doubles the waiting span at each step, and composing those
+spans with rotor sandwiches for the radio-frequency pulses builds a whole pulse sequence as one map
+from state to state.
 """
 
 from __future__ import annotations
@@ -34,6 +31,7 @@ from numga import NumpyContext
 from numga.algebras import STA as ga
 
 mv = NumpyContext(ga).multivector
+Vector = ga.gatype.vector()                                         # Vector+
 Bivector = ga.gatype.bivector()                                     # Bivector+
 # A spin: the patch of the plane it turns in, intrinsic.
 Spin = ga.gatype.antibivector()                                     # Antibivector-
@@ -43,94 +41,85 @@ Rates = ga.gatype((State, State))                                   # State- <- 
 # What becomes of each state over a stretch of time.
 Evolution = ga.gatype((State, State))                               # State- <- State-
 Rotor = ga.gatype.rotor()                                           # Rotor+
-one = mv.scalar([1.0])                                              # [] Scalar+
+one = mv.scalar([1])                                                # [] Scalar+
 antiscalar = one.dual()                                             # [] Antiscalar-
+# The spin part of a state: the state less its trace, which pairing with one reads.
+planes = State - antiscalar * (one & State)                         # [] State- <- State-
 # The lab at rest: its slice of space, the plane the magnet's field turns spins in, and the plane the drive turns
 # them in.
 observer = mv.t                                                     # [] Vector+
 magnet_plane = mv.xy                                                # [] Bivector+
 drive_plane = mv.yz                                                 # [] Bivector+
-# The spin part of a state: the state less its trace, which pairing with one reads.
-planes = State - antiscalar * (one & State)                         # [] State- <- State-
-# The parts the lab reads as spin, the patches through its time: those its reflection leaves unchanged, the
-# observer's sandwich over its square being that reflection; and the parts it cannot read.
-readable = (planes + (observer >> planes) / observer.squared()) / 2           # [] State- <- State-
-unreadable = planes - readable                                                # [] State- <- State-
-# The readable part along the magnet's patch: the part a half turn in the magnet's plane leaves unchanged.
-along_magnet = (readable + (magnet_plane >> readable) / magnet_plane.scalar_norm_squared()) / 2   # [] State- <- State-
-# What relaxes at the rate `1 / t1`: the part along the magnet's patch less the patch itself, scaled by the trace,
-# where it relaxes to; and what decays at the rate `1 / t2`, every other readable part.
-longitudinal = along_magnet - magnet_plane.dual() * (one & State)            # [] State- <- State-
-transverse = readable - along_magnet                                          # [] State- <- State-
 
 
 # --- math -----------------------------------------------------------------------------
-def state(spin: Spin) -> State:
-    """The state of the given spin."""
+def spin_state(spin: Spin) -> State:
+    """Forms the spin state `0.5 * (antiscalar + spin)` (`[...] State-`) of `spin`."""
     return 0.5 * (antiscalar + spin)                                            # [...] State-
 
 
-def generator(detuning: np.ndarray, drive: np.ndarray, t1: float, t2: float) -> Rates:
-    """The rate of change of a state, in the frame that turns with the drive.
-
-    The field turns the state in the magnet's plane at the detuning and in the drive's plane at the drive strength;
-    the part along the magnet's patch relaxes toward equilibrium at the rate `1 / t1`, and the transverse part
-    decays at the rate `1 / t2`.
-    """
+def rate_map(detuning: np.ndarray, drive: np.ndarray, magnet_plane: Bivector, drive_plane: Bivector,
+             observer: Vector, t1: float, t2: float) -> Rates:
+    """Combines rotating-frame precession in `magnet_plane` and `drive_plane` with longitudinal `1 / t1`
+    and transverse `1 / t2` relaxation seen by `observer` into one generator (`[...] State- <- State-`)."""
     field = magnet_plane * detuning + drive_plane * drive                       # [...] Bivector+
-    # The field turns the state as the rotor `(field * (-dt / 2)).exp()` does, as the pulses turn it.
+    # Precession under `field` acts as the infinitesimal rotor `(field * (-dt / 2)).exp()`.
     turning = State.commutator(field)                                           # [...] State- <- State-
-    relaxing = -longitudinal / t1 - transverse / t2                             # [] State- <- State-
+    # Reflection across `observer` keeps the timelike patches that `observer` reads as spin.
+    readable = (planes + (observer >> planes) / observer.squared()) / 2         # [] State- <- State-
+    # A half turn in `magnet_plane` keeps the readable component along the magnet's patch.
+    along_magnet = (readable + (magnet_plane >> readable) / magnet_plane.scalar_norm_squared()) / 2   # [] State- <- State-
+    # Longitudinal spin relaxes toward `magnet_plane.dual()` scaled by the trace; transverse spin decays to zero.
+    relaxing = -(along_magnet - magnet_plane.dual() * (one & State)) / t1 - (readable - along_magnet) / t2   # [] State- <- State-
     return turning + relaxing                                                   # [...] State- <- State-
 
 
-def steady(rates: Rates) -> State:
-    """The state that does not change.
-
-    The generator keeps the trace and keeps the parts the lab cannot read among themselves, so it is singular.
-    Adding the trace as a dyad on the antiscalar, and the unreadable parts as they are, pins both: the sum sends a
-    state to its trace and unreadable parts plus its change, and solving that against half the antiscalar gives the
-    state with trace one half, nothing unreadable, and no change.
-    """
+def steady_state(rates: Rates, observer: Vector) -> State:
+    """Solves for the stationary state (`[...] State-`) of `rates` by pinning the trace to one half and
+    the spacelike planes unreadable to `observer` to zero."""
+    unreadable = (planes - (observer >> planes) / observer.squared()) / 2       # [] State- <- State-
     return (rates + antiscalar * (one & State) + unreadable).solve(antiscalar * 0.5)   # [...] State-
 
 
-def evolution(rates: Rates, dt: float) -> Evolution:
-    """What becomes of each state over a time dt: the exponential of the generator times dt, to
-    fourth order in dt, the powers of the generator by composition."""
+def step_evolution(rates: Rates, dt: float) -> Evolution:
+    """Approximates the short-time propagator over `dt` as the fourth-order composition series of
+    `rates * dt` (`[...] State- <- State-`)."""
     exponent = rates * dt                                                       # [...] State- <- State-
     term = total = State
     for order in range(1, 5):
-        # The next term of the exponential series: the last one composed with the exponent, over the order.
+        # Each power in the exponential series composes the previous map with `exponent`.
         term = exponent(term) / order                                           # [...] State- <- State-
         total = total + term
     return total                                                                # [...] State- <- State-
 
 
-def evolve(each_step: Evolution, rho: State, n_steps: int) -> Generator[State, None, State]:
-    """The state before each of the given number of steps; returns the state after the last."""
+def trajectory(step_map: Evolution, state: State, n_steps: int) -> Generator[State, None, State]:
+    """Yields `state` (`[...] State-`) before each of `n_steps` applications of `step_map` and returns
+    the state after the last step."""
     for _ in range(n_steps):
-        yield rho                                                               # [...] State-
-        rho = each_step(rho)
-    return rho
+        yield state                                                             # [...] State-
+        state = step_map(state)
+    return state
 
 
-def pulse(angle: float) -> Rotor:
-    """A short strong pulse, as a rotor: it turns the spin in the drive's plane by the angle, in the same sense as
-    the drive. It acts on a state by its sandwich."""
+def drive_pulse(drive_plane: Bivector, angle: float) -> Rotor:
+    """Forms the rotor (`[] Rotor+`) of a resonant pulse turning spins in `drive_plane` by `angle`."""
     return (drive_plane * (-angle / 2)).exp()                                   # [] Rotor+
 
 
-def echo(each_step: Evolution, rho: State, n_before: int, n_after: int) -> Iterator[State]:
-    """The states through a spin echo: tipped a quarter turn, left for the given number of steps, turned
-    half a turn, and left again."""
-    rho = yield from evolve(each_step, pulse(np.pi / 2) >> rho, n_before)
-    yield from evolve(each_step, pulse(np.pi) >> rho, n_after)
+def echo_trajectory(step_map: Evolution, drive_plane: Bivector, state: State, n_before: int,
+                    n_after: int) -> Iterator[State]:
+    """Yields states (`[...] State-`) through a Hahn spin echo: a quarter-turn pulse in `drive_plane`,
+    `n_before` free steps, a half-turn refocusing pulse, and `n_after` free steps."""
+    tipped = drive_pulse(drive_plane, np.pi / 2) >> state                       # [...] State-
+    state = yield from trajectory(step_map, tipped, n_before)
+    turned = drive_pulse(drive_plane, np.pi) >> state                           # [...] State-
+    yield from trajectory(step_map, turned, n_after)
 
 
-def doublings(span: Evolution, n_doublings: int) -> Iterator[Evolution]:
-    """The evolution over its own span, then over twice and four times that span, and so on: each
-    composed with itself for the next."""
+def doubled_spans(span: Evolution, n_doublings: int) -> Iterator[Evolution]:
+    """Yields `n_doublings` evolution maps (`[...] State- <- State-`), composing each span with itself
+    to double the elapsed time."""
     for _ in range(n_doublings):
-        yield span
+        yield span                                                              # [...] State- <- State-
         span = span(span)

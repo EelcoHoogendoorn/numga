@@ -1,36 +1,8 @@
-"""Magnetic skyrmions in a thin chiral magnet: spins on a triangular lattice, their exchange carried across each bond by
-a rotor, settle from noise into a lattice of skyrmions, vanish into a ferromagnet and give way to a spiral as the field
-changes, and drift with a current; in the algebra of space.
+"""Magnetic skyrmions in a thin chiral magnet evolve on a periodic triangular lattice in three-dimensional Euclidean space.
 
-A chiral magnet is a crystal without a mirror symmetry, in which neighbouring spins prefer to stand a little turned
-against each other, always in the same sense, while the exchange prefers them parallel. The compromise is a spiral, and
-in a field a lattice of skyrmions: small whirls in which the spin turns over once, from along the field at the rim to
-against it at the core. A skyrmion is a knot in the spin texture: its spins point every way once, so that no smooth
-change of the texture undoes it, and the texture's winding counts the skyrmions.
+Chiral crystals lack mirror symmetry, so neighbouring magnetic moments favour a slight relative twist of fixed handedness alongside ferromagnetic exchange. Without an external field that competition forms a helical spiral, whereas a moderate perpendicular field stabilizes a hexagonal lattice of skyrmions whose spins turn smoothly from aligned with the field at the rim to opposed at the core. Wrapping the unit sphere once around each core gives every skyrmion an integer topological charge, and a spin-polarized current drives the lattice sideways at the skyrmion Hall angle.
 
-The algebra is the algebra of space, VGA3D. A spin is modelled as the patch of the plane its moment turns in, `Spin`,
-intrinsic, and a field as the plane it turns spins in, `Field`, extrinsic; their pairing, `field & spin`, is minus the
-energy of the one in the other. The exchange pairs a spin with the field its neighbour exerts on it, `exchange =
-Spin.dual()`, after the neighbour's spin has been carried across the bond by a rotor. The bonds' rotors are a
-connection: a rotor turning about its own bond, `twist * bonds` with the twist per unit length an intrinsic scalar whose
-sense is the crystal's handedness, makes the exchange exactly the Dzyaloshinskii-Moriya interaction, with an exchange
-anisotropy of second order beside it. Carried around a triangle, the rotors turn a spin in the film's plane, by about
-the twist squared times the triangle's area: the connection is curved, so no turning of the spins removes the twist, and
-the texture is left its whirls.
-
-The effective field on a spin is written out: the applied field, plus on every bond at the site the field the spin at
-the bond's other end exerts, once carried across the bond, a tail's spin to the head by `carriers >> tails` and a head's
-back to the tail by `carriers << heads`, the sandwich that undoes it. The energy is bilinear in the spins, so that sum
-is the energy's derivative with respect to each spin, paired back through `pairing = Field & Spin`, the Zeeman energy's
-own pairing. Each spin precesses in its field's plane; Gilbert's damping
-adds that plane's quarter turn about the spin, `turning.commutator(spins.dual())`, which turns the spin toward its
-field; a current carries the texture along, turning each spin in the plane through it and its change along the drift;
-and a thermal field kicks it. Every step turns every spin by a rotor, so the spins stay unit by construction. A
-triangle's topological charge is the solid angle its three spins enclose: the shortest turns from spin to spin around it
-compose to a turn about the first spin by that angle, as parallel transport around a triangle of the sphere does. The
-stepping is jitted and scanned by JAX.
-
-Energies are in units of the exchange, lengths in lattice spacings and times in the exchange's precession time.
+Each spin `Spin` is modelled as an intrinsic turning-plane patch and each magnetic field `Field` as an extrinsic turning plane, so the Zeeman energy pairs them directly as `-(applied_field & spins)`. Chiral exchange transports a neighbour's spin across each bond by a rotor `carriers` generated from `twist * bonds` for an intrinsic scalar `twist`, maps the transported spin to its exchange field via `exchange = Spin.dual()`, and pairs that field with the spin at the opposite end. Parallel transport of bond rotors around each triangle yields a curvature holonomy in the film plane, while parallel transport of shortest-arc spin rotors yields each triangle's solid-angle topological charge. Each time step turns every spin by a rotor built from its effective field, thermal kicks, current advection via simplex gradients averaged onto dual areas, and the Gilbert damping quarter turn `undamped_field.commutator(spins.dual())`.
 """
 
 from __future__ import annotations
@@ -49,115 +21,101 @@ jax.config.update("jax_enable_x64", True)
 
 mv = JaxContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
-# A place in the film, a step from its origin, and a bond, a step from site to site.
 Point = ga.gatype.antivector()                                                # Antivector-
-Plane = ga.gatype.vector()                                                    # Vector+
-# A spin: the patch of the plane its moment turns in. A field: the plane it turns spins in.
 Spin = ga.gatype.antibivector()                                               # Antibivector-
 Field = ga.gatype.bivector()                                                  # Bivector+
 Rotor = ga.gatype.rotor()                                                     # Rotor+
-# The film's plane, which the applied field turns spins in, and the step off the film.
+# Perpendicular applied fields turn spins in the film plane.
 film = mv.xy                                                                  # [] Field+
-off_film = mv.z.dual()                                                        # [] Point-
-# The exchange, in units of its strength: the field a spin exerts on a neighbour, turning it in the spin's own plane.
+# Isotropic exchange maps a neighbour's spin patch to the field plane it exerts.
 exchange = Spin.dual()                                                        # [] Field+ <- Spin-
-# A field's pairing with a spin, minus the energy of the one in the other.
-pairing = Field & Spin                                                        # [] Scalar+ <- (Field+, Spin-)
 
 
-# --- math -----------------------------------------------------------------------------
-def triangles(topology: Topology, bonds: Point) -> tuple[Scalar, Plane, Scalar]:
-    """Each triangle's area `Scalar-[faces]`; each corner's hat gradient `[corners] Plane+[faces]`, the plane through
-    the facing side and the step off the film over twice the area, which reads one from the side to the corner; and each
-    site's share of the area around it `Scalar-[vertices]`; for the bonds `Point-[edges]`, each the step from its tail to
-    its head."""
-    sides = topology.boundary[2, 1] * bonds                                   # [corners] Point-[faces]
-    # Twice a triangle's area: two of its sides joined with the step off the film.
-    double_areas = (sides[0] & sides[1]) & off_film                           # Scalar-[faces]
-    gradients = (off_film & sides) / double_areas                             # [corners] Plane+[faces]
-    areas = double_areas / 2                                                  # Scalar-[faces]
-    return areas, gradients, (topology.incidence[2, 0].adjugate() * (areas / 3)).sum(axis=0)
-
-
-def energy(topology: Topology, carriers: Rotor, applied: Field, spins: Spin) -> Scalar:
-    """The energy `[] Scalar+` of the spins `Spin-[vertices]` in the applied field: on every bond, the field its tail's
-    spin exerts on its head's spin, the tail's spin carried across the bond by the bond's rotor `Rotor+[edges]`, paired
-    with the head's spin; and the applied field paired with every spin; each taken negative."""
-    tails, heads = topology.incidence[1, 0] * spins                           # Spin-[edges], Spin-[edges]
-    exchange_fields = exchange(carriers >> tails)                             # Field+[edges]
-    return -(exchange_fields & heads).sites.sum() - (applied & spins).sites.sum()
-
-
-def effective_field(topology: Topology, carriers: Rotor, applied: Field, spins: Spin) -> Field:
-    """The effective field on each spin `Field+[vertices]`, for the spins `Spin-[vertices]` in the applied field: the
-    applied field, plus on every bond at the site the field the spin at the bond's other end exerts, carried across the
-    bond by its rotor `Rotor+[edges]`; the energy, bilinear in the spins, falls along it."""
-    tails, heads = topology.incidence[1, 0] * spins                           # Spin-[edges], Spin-[edges]
-    # The field each bond brings to its ends: the other end's spin, carried across the bond, back to the tail by the
-    # sandwich that undoes the carrying.
-    to_tails = exchange(carriers << heads)                                    # Field+[edges]
-    to_heads = exchange(carriers >> tails)                                    # Field+[edges]
-    return (topology.incidence[1, 0].adjugate() * stack((to_tails, to_heads))).sum(axis=0) + applied
-
-
-def dynamics(topology: Topology, carriers: Rotor, areas: Scalar, gradients: Plane, cells: Scalar, spins: Spin,
-             applied: Field, drifts: Point, time_steps: np.ndarray, damping: float, temperature: float, stride: int,
-             seed: int) -> Iterator[Spin]:
-    """The spins `Spin-[vertices]` at each frame, `stride` steps apart, from these, with the bonds' rotors
-    `Rotor+[edges]` carrying the exchange: each spin precesses in its effective field and the thermal field at the
-    `temperature`, the latter drawn from the `seed`, damped by Gilbert's `damping`, while in each frame the field
-    `[frames] Field+` is applied, a current's spins drift at the velocity `[frames] Point-`, and every step lasts the
-    frame's time step `[frames]`; the triangles have these areas `Scalar-[faces]`, hat gradients `[corners]
-    Plane+[faces]` and cells `Scalar-[vertices]`."""
-    corners = topology.incidence[2, 0]                                        # [corners] Scalar+[faces <- vertices]
-
-    def step(spins: Spin, kicks: jax.Array, applied: Field, drift: Point, time_step: float) -> Spin:
-        """One step: every spin turned by a rotor, at the rate its effective field, the thermal field and the current
-        turn it, damped."""
-        field = effective_field(topology, carriers, applied, spins)           # Field+[vertices]
-        # The thermal field, its spread in each plane the one at which the damping holds the spins at the temperature.
-        thermal = (2 * damping * temperature / time_step) ** 0.5 * mv(Field, kicks).field()   # Field+[vertices]
-        # Each spin's change along the drift, on each triangle from its corners' hats, shared out to the corners' cells.
-        along_faces = ((gradients & drift) * (corners * spins)).sum(axis=0)   # Spin-[faces]
-        along = (corners.adjugate() * (areas / 3 * along_faces)).sum(axis=0) / cells   # Spin-[vertices]
-        # Undamped, each spin turns in its fields' planes, and the current turns it back along its change, in the plane
-        # through the spin and that change.
-        undamped = field + thermal - (spins ^ along)                          # Field+[vertices]
-        # Gilbert's damping adds the turning's quarter turn about the spin, which turns the spin toward its field.
-        turning = (undamped + damping * undamped.commutator(spins.dual())) / (1 + damping ** 2)   # Field+[vertices]
-        rotors = (turning * (-time_step / 2)).exp()                           # Rotor+[vertices]
-        return rotors >> spins
-
-    @jax.jit
-    def strided(spins: Spin, key: jax.Array, applied: Field, drift: Point, time_step: float) -> Spin:
-        kicks = jax.random.normal(key, (stride, topology.n_vertices, 3))
-        return jax.lax.scan(lambda spins, kick: (step(spins, kick, applied, drift, time_step), None), spins, kicks)[0]
-
-    keys = jax.random.split(jax.random.PRNGKey(seed), len(applied))
-    for frame in range(len(applied)):
-        yield spins
-        spins = strided(spins, keys[frame], applied[frame], drifts[frame], time_steps[frame])
+def energy(topology: Topology, carriers: Rotor, applied_field: Field, spins: Spin) -> Scalar:
+    """Chiral bond exchange across `carriers` (`Rotor+[E]`) and Zeeman pairing with `applied_field` (`[] Field+`) sum to the total energy (`[] Scalar+`) of `spins` (`Spin-[V]`)."""
+    tail_spins, head_spins = topology.incidence[1, 0] * spins                 # Spin-[E], Spin-[E]
+    exchange_fields = exchange(carriers >> tail_spins)                        # Field+[E]
+    return -(exchange_fields & head_spins).sites.sum() - (applied_field & spins).sites.sum()
 
 
 def holonomies(topology: Topology, rotors: Rotor) -> Rotor:
-    """Each face's holonomy `Rotor+[faces]`: the rotors on the edges `Rotor+[edges]`, each carrying its edge's tail to
-    its head, multiplied around the face, a rotor's reverse where the face runs against its edge; it carries a spin at
-    the face's second corner around the face and back."""
-    sides = topology.incidence[2, 1] * rotors                                 # [corners] Rotor+[faces]
-    sides = where(topology.orientation[1].T > 0, sides, ~sides)               # [corners] Rotor+[faces]
-    # Around the face, each side carries on from where the one before it arrived, multiplying from the left.
-    return sides.cumprod(axis=0)[-1]
+    """Parallel transport around each triangle composes the oriented edge `rotors` (`Rotor+[E]`) into a face holonomy (`Rotor+[F]`)."""
+    side_rotors = topology.incidence[2, 1] * rotors                           # [3] Rotor+[F]
+    edge_signs = topology.boundary[2, 1] * rotors.norm()                      # [3] Scalar+[F]
+    oriented_sides = where(edge_signs > 0, side_rotors, ~side_rotors)         # [3] Rotor+[F]
+    # Left-multiplying around the boundary composes each edge transport onto the arriving spin.
+    return oriented_sides.cumprod(axis=0)[-1]
+
+
+def effective_field(topology: Topology, carriers: Rotor, applied_field: Field, spins: Spin) -> Field:
+    """Parallel transport of neighbour `spins` (`Spin-[V]`) across `carriers` (`Rotor+[E]`) combines with `applied_field` (`[] Field+`) into the site effective field (`Field+[V]`)."""
+    tail_spins, head_spins = topology.incidence[1, 0] * spins                 # Spin-[E], Spin-[E]
+    # Reversing the rotor sandwich transports a head spin back across its bond to the tail site.
+    tail_fields = exchange(carriers << head_spins)                            # Field+[E]
+    head_fields = exchange(carriers >> tail_spins)                            # Field+[E]
+    return (topology.incidence[1, 0].adjugate() * stack((tail_fields, head_fields))).sum(axis=0) + applied_field
+
+
+def dynamics(
+    topology: Topology,
+    bonds: Point,
+    carriers: Rotor,
+    spins: Spin,
+    applied_fields: Field,
+    drifts: Point,
+    time_steps: np.ndarray,
+    damping: float,
+    temperature: float,
+    n_substeps: int,
+    seed: int,
+) -> Iterator[Spin]:
+    """Yields the lattice `spins` (`Spin-[V]`) across frames, advancing `n_substeps` damped rotor steps per frame under `applied_fields`, current `drifts`, and thermal kicks."""
+    V, E, F = topology.n_elements
+    corners = topology.incidence[2, 0]                                        # [3] Scalar+[F <- V]
+    sides = topology.boundary[2, 1] * bonds                                   # [3] Point-[F]
+    patches = (sides[0] & sides[1]) / 2                                       # Spin-[F]
+    gradients = (sides | patches.inverse()) / 2                               # [3] Plane+[F]
+    areas = patches.norm()                                                    # Scalar+[F]
+    dual_areas = (corners.adjugate() * (areas / 3)).sum(axis=0)               # Scalar+[V]
+
+    def substep(spins: Spin, thermal_noise: jax.Array, applied_field: Field, drift: Point, time_step: float) -> Spin:
+        """One damped rotor step of duration `time_step` updates `spins` (`Spin-[V]`) under its effective field, thermal kick, and drift advection."""
+        field = effective_field(topology, carriers, applied_field, spins)     # Field+[V]
+        # Fluctuation-dissipation sets the thermal field spread that holds damped spins at the bath temperature.
+        thermal_scale = (2 * damping * temperature / time_step) ** 0.5
+        thermal_field = thermal_scale * mv(Field, thermal_noise).field()      # Field+[V]
+        # Simplex gradients evaluate the directional derivative along the drift on each triangle before dual-area averaging.
+        face_derivatives = ((gradients & drift) * (corners * spins)).sum(axis=0)   # Spin-[F]
+        drift_derivatives = (corners.adjugate() * (areas / 3 * face_derivatives)).sum(axis=0) / dual_areas   # Spin-[V]
+        undamped_field = field + thermal_field - (spins ^ drift_derivatives)  # Field+[V]
+        # Gilbert damping adds a quarter turn about each spin, turning the spin toward its field.
+        turning_rate = (undamped_field + damping * undamped_field.commutator(spins.dual())) / (1 + damping ** 2)   # Field+[V]
+        step_rotors = (turning_rate * (-time_step / 2)).exp()                 # Rotor+[V]
+        return step_rotors >> spins
+
+    @jax.jit
+    def frame_step(spins: Spin, key: jax.Array, applied_field: Field, drift: Point, time_step: float) -> Spin:
+        """A compiled scan of `n_substeps` rotor steps advances `spins` (`Spin-[V]`) across one frame."""
+        noise_samples = jax.random.normal(key, (n_substeps, V, 3))
+        return jax.lax.scan(
+            lambda spins, sample: (substep(spins, sample, applied_field, drift, time_step), None),
+            spins,
+            noise_samples,
+        )[0]
+
+    n_frames = len(time_steps)
+    frame_keys = jax.random.split(jax.random.PRNGKey(seed), n_frames)
+    for frame in range(n_frames):
+        yield spins
+        spins = frame_step(spins, frame_keys[frame], applied_fields[frame], drifts[frame], time_steps[frame])
 
 
 def charges(topology: Topology, spins: Spin) -> Scalar:
-    """Each face's topological charge `Scalar+[faces]`, in whole spheres: the solid angle its corners' spins
-    `Spin-[vertices]` enclose, over the sphere's. The shortest turns from spin to spin along the face's edges carry the
-    spin at its second corner around it and back, turned about itself by that angle, as parallel transport around a
-    triangle of the sphere turns by its area."""
-    tails, heads = topology.incidence[1, 0] * spins                           # Spin-[edges], Spin-[edges]
-    # The shortest turn from each edge's tail spin to its head's: half the turn of their product.
-    shortest = (1 + heads * tails).normalized()                               # Rotor+[edges]
-    # The holonomy's logarithm, a half turn in the second corner's own plane.
-    halves = holonomies(topology, shortest).log()                             # Field+[faces]
-    second = topology.incidence[2, 0][1] * spins                              # Spin-[faces]
-    return -2 * (halves & second) / (4 * np.pi)
+    """Spherical solid angles enclosed by each triangle's three `spins` (`Spin-[V]`) give the topological charge per face (`Scalar+[F]`)."""
+    tail_spins, head_spins = topology.incidence[1, 0] * spins                 # Spin-[E], Spin-[E]
+    # Half the turn of the spin product transports each edge's tail spin along the shortest arc to its head spin.
+    shortest_turns = (1 + head_spins * tail_spins).normalized()               # Rotor+[E]
+    # The face holonomy logarithm lies in the second corner spin's plane at half the enclosed solid angle.
+    half_turns = holonomies(topology, shortest_turns).log()                   # Field+[F]
+    corner_spins = topology.incidence[2, 0][1] * spins                        # Spin-[F]
+    return -2 * (half_turns & corner_spins) / (4 * np.pi)

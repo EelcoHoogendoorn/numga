@@ -1,9 +1,9 @@
-"""Drawing for the flake: the levels against the mass, a state's density on the flake, and the spin
-running around the edge."""
+"""Figures and animation frames for the Kane–Mele graphene flake: sublattice geometry, energy
+spectrum across staggered mass, eigenstate densities, and helical spin transport along the rim."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,106 +11,103 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.util.animation import capture
-from examples.quantum.kane_mele import core
+from examples.quantum.kane_mele import core, scenarios
 from examples.util import charts
-from numga.topology import Topology
 from numga.render import drawing, simplices
 from examples.util.panels import offset_panel, overlay
 
-# The bonds' shade and width in pixels, the sublattices' shades, and the largest dot's radius, at the densest atom, as
-# a share of the panel's width.
-BONDS, BOND_WIDTH = np.array(to_rgb("#d5d8dc")), 1.0
-SUBLATTICES = ("#4a6fa5", "#c8553d")
-DOT = 0.0225
-# The pixels across a picture of the flake, and the inches the flake is drawn at; the room past the flake on either
-# side, as a share of its reach.
-PIXELS = 300
-INCHES = 6.0
-MARGIN = 0.05
+# Bond colour and stroke width in pixels, sublattice marker colours, and peak marker radius as a panel fraction.
+bond_colour, bond_width = np.array(to_rgb("#d5d8dc")), 1.0
+sublattice_colours = ("#4a6fa5", "#c8553d")
+dot_radius = 0.0225
+# Native pixel width, figure size in inches, and fractional margin around the flake.
+flake_pixels = 300
+flake_inches = 6.0
+panel_margin = 0.05
 
 
-def draw_bonds(ax, flake: core.Flake) -> np.ndarray:
-    """The axes fitted to the flake, and its bonds, faint: their picture, for the atoms to be laid over."""
-    positions = flake.positions.batch()                                       # [atoms] Point-
+def bond_layer(ax, flake: scenarios.Flake) -> np.ndarray:
+    """Fits `ax` to `flake` and renders its nearest-neighbour bond strokes as an RGBA layer."""
+    V, E = flake.bonds.n_elements
+    positions = flake.positions.batch()                                        # [V] Point-
     mv = positions.context.multivector
-    # The flake's reach across and up, read by pairing with the planes x and y, and a margin past it either side.
-    readings = stack((mv.x, mv.y))[:, None] & positions                       # [2, atoms] Scalar+
-    low, high = readings.min(axis=-1), readings.max(axis=-1)                  # [2] Scalar+, Scalar+
-    spare = (high - low) * MARGIN
-    limits = stack((low - spare, high + spare), axis=-1).to_array()
+    # Read horizontal and vertical extents by pairing atom points against the x and y coordinate planes.
+    readings = stack((mv.x, mv.y))[:, None] & positions                        # [2, V] Scalar+
+    low, high = readings.min(axis=-1), readings.max(axis=-1)                   # [2] Scalar+, [2] Scalar+
+    spare = (high - low) * panel_margin                                        # [2] Scalar+
+    limits = stack((low - spare, high + spare), axis=-1).to_array()            # [2, 2]
     ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
     ax.axis("off")
     camera = offset_panel(ax, core.mv.x, core.mv.y)
-    return simplices.strokes(positions, Topology(len(positions), flake.first), BONDS, BOND_WIDTH, camera)
+    return simplices.strokes(positions, flake.bonds, bond_colour, bond_width, camera)
 
 
-def draw_flake(flake: core.Flake) -> plt.Figure:
-    """The flake's bonds, and its atoms shaded by sublattice."""
-    figure, ax = plt.subplots(figsize=(INCHES, INCHES), dpi=PIXELS / INCHES)
-    bonds = draw_bonds(ax, flake)
-    shades = np.array([to_rgb(shade) for shade in SUBLATTICES])[(flake.sublattice < 0).astype(int)]
-    positions = flake.positions.batch()                                       # [atoms] Point-
-    # The atoms' dots, the area of a twelfth of the densest's.
+def flake_figure(flake: scenarios.Flake) -> plt.Figure:
+    """Draws the armchair honeycomb flake with bonds and sublattice-coloured atom markers."""
+    V, E = flake.bonds.n_elements
+    figure, ax = plt.subplots(figsize=(flake_inches, flake_inches), dpi=flake_pixels / flake_inches)
+    bonds = bond_layer(ax, flake)
+    palette = np.array([to_rgb(shade) for shade in sublattice_colours])
+    shades = palette[(flake.sublattice.batch() < 0).astype(int)]               # [V, 3]
+    positions = flake.positions.batch()                                        # [V] Point-
     camera = offset_panel(ax, core.mv.x, core.mv.y)
-    atoms = simplices.markers(positions, shades, DOT * camera.pixels * np.sqrt(1 / 12), camera)
+    atoms = simplices.markers(positions, shades, dot_radius * camera.pixels * np.sqrt(1 / 12), camera)
     overlay(ax, [bonds, atoms])
     return figure
 
 
 @charts.style()
-def draw_levels(masses: np.ndarray, energies: core.Scalar, shares: core.Scalar, transition: float) -> plt.Figure:
-    """The levels nearest zero against the mass, shaded by how much of each lies on the rim, with the
-    mass where the bulk gap closes."""
-    values, rims = energies.to_array(), shares.to_array()       # [masses, levels]
-    # Half the column: the levels as rows of dots over the masses, tall enough for them to stand apart.
+def levels_figure(masses: np.ndarray, energies: core.Scalar, shares: core.Scalar, transition: float) -> plt.Figure:
+    """Plots the energy levels nearest zero against staggered mass, coloured by rim localization."""
+    values, rims = energies.to_array(), shares.to_array()                      # [..., ...]
     figure, ax = charts.subplots(420, 340, layout="constrained")
     ax.scatter(np.repeat(masses, values.shape[1]), values.ravel(), c=rims.ravel(), cmap="plasma", vmin=0, vmax=1,
                clip_on=False)
     ax.axvline(transition, color="0.4", linestyle="--")
-    # The energy's zero, which the levels on the rim cross until the gap reopens.
     ax.axhline(0, color="black", linewidth=charts.FRAME_WIDTH, zorder=0)
     ax.set(xlim=(masses[0], masses[-1]), xticks=[], yticks=[], xlabel="mass / hop", ylabel="energy / hop")
     ax.spines[["top", "right"]].set_visible(False)
     return figure
 
 
-def draw_states(flake: core.Flake, densities: core.Scalar) -> plt.Figure:
-    """Each density on the flake, as dots sized and shaded by it."""
-    positions, values = flake.positions.batch(), densities.to_array()         # [atoms] Point-, [cases, atoms]
-    figure, axes = plt.subplots(1, len(values), figsize=(INCHES * len(values), INCHES), dpi=PIXELS / INCHES,
-                                squeeze=False)
+def states_figure(flake: scenarios.Flake, densities: core.Scalar) -> plt.Figure:
+    """Draws side-by-side flake panels with atom markers sized and shaded by state density."""
+    V, E = flake.bonds.n_elements
+    positions, values = flake.positions.batch(), densities.to_array()          # [V] Point-, [..., V]
+    n_panels = len(values)
+    figure, axes = plt.subplots(1, n_panels, figsize=(flake_inches * n_panels, flake_inches),
+                                dpi=flake_pixels / flake_inches, squeeze=False)
     for ax, value in zip(axes[0], values):
-        bonds = draw_bonds(ax, flake)
+        bonds = bond_layer(ax, flake)
         scaled = value / value.max()
         camera = offset_panel(ax, core.mv.x, core.mv.y)
-        # Each dot's area in proportion to its density.
         dots = simplices.markers(positions, plt.get_cmap("magma_r")(scaled)[:, :3],
-                                 DOT * camera.pixels * np.sqrt(scaled), camera)
+                                 dot_radius * camera.pixels * np.sqrt(scaled), camera)
         overlay(ax, [bonds, dots])
     return figure
 
 
-def spin_dots(spin: core.Spin) -> tuple[np.ndarray, np.ndarray]:
-    """A spin density's dots: their areas over the largest's, in proportion to the density, and their shades, the spin
-    up over the largest density."""
+def spin_marker_scales(spin: core.Spin) -> tuple[np.ndarray, np.ndarray]:
+    """Relative marker areas and normalized z-spin components read by pairing `spin` with `xy`."""
     mv = spin.context.multivector
-    density = spin.batch().norm()                                            # [atoms] Scalar+
-    largest = density.max()
-    return (density / largest).to_array(), ((mv.xy & spin.batch()) / largest).to_array()
+    batches = spin.batch()                                                     # [...] Spin-
+    density = batches.norm()                                                   # [...] Scalar+
+    largest = density.max()                                                    # [] Scalar+
+    return (density / largest).to_array(), ((mv.xy & batches) / largest).to_array()
 
 
-def animate_spin(flake: core.Flake, spins: core.Spin, pixels: int) -> Iterator[np.ndarray]:
-    """Each frame of the spin density on the flake, so many pixels across: dots sized by the density, red where the
-    spin is up and blue where it is down, over the flake's bonds, drawn once."""
-    figure, ax = plt.subplots(figsize=(INCHES, INCHES), dpi=pixels / INCHES)
-    bonds = draw_bonds(ax, flake)
-    positions = flake.positions.batch()                                       # [atoms] Point-
+def spin_animation(flake: scenarios.Flake, pixels: int, spins: Iterable[core.Spin]) -> Iterator[np.ndarray]:
+    """Yields RGB frames of `spins` over `flake`, sizing markers by density and colouring spin-up red and spin-down blue."""
+    V, E = flake.bonds.n_elements
+    figure, ax = plt.subplots(figsize=(flake_inches, flake_inches), dpi=pixels / flake_inches)
+    bonds = bond_layer(ax, flake)
+    positions = flake.positions.batch()                                        # [V] Point-
     camera = offset_panel(ax, core.mv.x, core.mv.y)
     shown = overlay(ax, [bonds])
     for spin in spins:
-        areas, shades = spin_dots(spin)
+        areas, shades = spin_marker_scales(spin)
         dots = simplices.markers(positions, plt.get_cmap("RdBu_r")((shades + 1) / 2)[:, :3],
-                                 DOT * camera.pixels * np.sqrt(areas), camera)
+                                 dot_radius * camera.pixels * np.sqrt(areas), camera)
         shown.set_data(drawing.composited([bonds, dots]))
         yield capture(figure)
     plt.close(figure)

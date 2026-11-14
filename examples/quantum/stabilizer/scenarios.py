@@ -1,57 +1,42 @@
-"""Two logical qubits stored in four, every single error caught, and the code under noise."""
+"""Default logical angles and depolarizing error rates exercise syndrome detection and post-selected fidelity for the four-qubit stabilizer code."""
 
 from __future__ import annotations
 
 import numpy as np
 
-from numga import stack
 from examples.quantum.stabilizer import core
 
-# The angles of the two stored logical qubits, and the chances of an error on each qubit.
-ANGLES = np.array([0.7, 1.9])
-RATES = np.linspace(0.0, 0.5, 51)
+angles = np.array([0.7, 1.9])                                                  # [2]
+n_rates = 51
+rates = np.linspace(0.0, 0.5, n_rates)                                         # [n_rates]
 
 
-# --- math -----------------------------------------------------------------------------
-def stored() -> tuple[core.Operator, core.Scalar, core.Scalar]:
-    """The stored state, both checks' expectations in it, and those of each logical qubit's flip and phase flip."""
-    state = core.encoded(ANGLES)                                               # [] Operator+
-    checks = core.n_amplitudes * core.checks.scalar_product(state)             # [checks] Scalar+
-    logical = stack([core.logical_flips, core.logical_phase_flips], axis=-1)   # [logical, 2] Operator+
-    return state, checks, core.n_amplitudes * logical.scalar_product(state)    # [logical, 2] Scalar+
-
-
-def single_errors(state: core.Operator) -> core.Scalar:
-    """Both checks' expectations after each kind of error on each qubit."""
-    corrupted = core.errors * state * core.errors.inverse()                    # [qubits, kinds] Operator+
-    return core.n_amplitudes * core.checks.scalar_product(corrupted[..., None])   # [qubits, kinds, checks] Scalar+
-
-
-def noisy(state: core.Operator) -> tuple[core.Scalar, core.Scalar, core.Scalar]:
-    """At each rate: acceptance, conditional infidelity of kept runs, and bare-qubit infidelity."""
-    kept, fidelity = core.detected(state, RATES)                               # [rates] Scalar+, Scalar+
-    return kept, 1 - fidelity / kept, 1 - core.unprotected(ANGLES, RATES)      # [rates] Scalar+, Scalar+, Scalar+
-
-
-# --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_figure
+    """Runs syndrome detection and saves the depolarizing-noise infidelity chart."""
     from examples.quantum.stabilizer import render
+    from examples.util.animation import save_figure
 
-    state, checks, logical = stored()
-    readings = single_errors(state)
-    kept, encoded_errors, bare_errors = noisy(state)
-    render.print_readings(readings)
-    save_figure(render.draw_noise(RATES, kept, encoded_errors, bare_errors), "stabilizer_noise")
+    stored_state = core.encoded_state(angles)                                  # [] Operator+
+    check_readings = core.n_amplitudes * core.checks.scalar_product(stored_state)  # [2] Scalar+
+    logical_readings = core.n_amplitudes * core.logical_operators.scalar_product(stored_state)  # [2, 2] Scalar+
+    readings = core.single_error_readings(stored_state)                        # [4, 4, 2] Scalar+
+    kept_fraction, encoded_errors = core.code_performance(stored_state, rates)  # [n_rates] Scalar+, Scalar+
+    bare_errors = core.bare_infidelity(angles, rates)                          # [n_rates] Scalar+
+
+    print(render.syndrome_table(readings))
+    save_figure(render.noise_figure(rates, kept_fraction, encoded_errors, bare_errors), "stabilizer_noise")
 
     # checks
-    np.testing.assert_allclose(checks.kernel, 1, atol=1e-12)
-    np.testing.assert_allclose(logical.kernel[..., 0], np.stack([np.sin(ANGLES), np.cos(ANGLES)], axis=-1), atol=1e-12)
-    # Every error but none changes the outcome of at least one check.
-    assert (readings.kernel[:, 1:].min(axis=-2) < 0).all()
-    # Doubling a small rate quadruples the conditional infidelity, and doubles the bare infidelity.
-    np.testing.assert_allclose(encoded_errors.kernel[2] / encoded_errors.kernel[1], 4, rtol=0.05)
-    np.testing.assert_allclose(bare_errors.kernel[2] / bare_errors.kernel[1], 2, rtol=0.05)
+    assert (core.projectors.sum(axis=0) - 1).scalar_norm_squared() < 1e-20
+    assert ((check_readings - 1).abs() < 1e-12).all()
+    expected_logical = np.stack([np.sin(angles), np.cos(angles)], axis=-1)
+    assert ((logical_readings - expected_logical).abs() < 1e-12).all()
+    # Every non-trivial single-qubit error flips at least one check expectation to -1.
+    assert ((readings[:, 0] - 1).abs() < 1e-12).all()
+    assert (readings[:, 1:] < 0).any(axis=-1).all()
+    # Doubling a small error rate quadruples conditional infidelity and doubles bare-qubit infidelity.
+    assert (encoded_errors[2] / encoded_errors[1] - 4).abs() < 0.2
+    assert (bare_errors[2] / bare_errors[1] - 2).abs() < 0.1
 
 
 if __name__ == "__main__":

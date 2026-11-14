@@ -4,26 +4,23 @@ three-dimensional space.
 
 An electron in graphene hops between neighbouring carbon atoms. Its state has two parts, one on
 each of the honeycomb's two sublattices, and the hopping mixes them through a field that depends
-on the momentum, the pseudospin field `pseudospin_field(momentum, gap)`, an extrinsic bivector like
-everything that turns a spin. Each of the three bonds contributes the plane yz turned in the plane xy
-by the phase `momentum & bonds` across that bond, the pairing of the momentum, a wavevector and so a
-plane, with the bond, a displacement and so an antivector; a difference between the sublattices, as in
-boron nitride, adds a gap in the plane xy. The Hamiltonian is a map on spinors, the even multivectors,
-`hamiltonian(field)` taking psi to `-(field * psi * mv.xy)`. Its eigenvalues are plus and minus the
-length of the field. The pseudospin of a state, intrinsic like every spin, is its sandwich of the
-pseudospin wholly on the first sublattice, `psi >> first_sublattice`, the patch of the plane xy; it
-lies along the field, `field.dual()`, for the upper band and against it for the lower. At the corners
-of the Brillouin zone the field vanishes and the two bands meet in cones.
+on the momentum, `pseudospin_field(momentum, gap)`, an extrinsic bivector like everything that
+turns a spin. Each of the three bonds contributes the plane `yz` turned in the plane `xy` by the
+phase `momentum & bonds` across that bond, the pairing of the momentum, a wavevector and so a
+plane, with the bond, a displacement and so an antivector; a difference between the sublattices,
+as in boron nitride, adds a gap in the plane `xy`. The Hamiltonian maps spinors, the even
+multivectors, by `hamiltonian = -(Field * Spinor * xy)`. Its eigenvalues are plus and minus the
+length of the field. A state's pseudospin, intrinsic like every spin, sandwiches the pseudospin
+wholly on the first sublattice (`first_sublattice`, the patch of the plane `xy`) and divides by
+the state's norm squared; it points along `field.dual()` for the upper band and against it for
+the lower. At the corners of the Brillouin zone the field vanishes and the two bands meet in
+cones.
 
-Around a closed loop in momentum the pseudospin direction traces a closed curve on the unit sphere.
-Carrying a frame along it, by the smallest rotation from each direction to the next, brings it
-back turned about its starting direction. That holonomy is a rotor with scalar part
-`np.cos(gamma)`: the frame has turned by `2 * gamma`, the solid angle the curve encloses, and
-gamma is the Berry phase. Around a gapless cone it is pi, and the rotor is -1.
-
-In matrix notation the state reads as a column of two complex amplitudes, the Hamiltonian as the
-2x2 matrix that contracts the pseudospin field with the Pauli matrices, and the Berry phase as the
-phase of the product of the overlaps of neighbouring eigenvectors around the loop.
+Around a closed loop in momentum the pseudospin direction traces a closed curve on the unit
+sphere. Carrying a frame along it by the smallest rotation from each direction to the next brings
+the frame back turned about its starting direction. That holonomy is a rotor whose scalar part is
+the cosine of the Berry phase, half the solid angle the curve encloses; around a gapless cone the
+Berry phase is pi and the rotor is `-1`.
 """
 
 from __future__ import annotations
@@ -37,20 +34,22 @@ mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                     # Scalar+
 # A momentum, read by pairing with a displacement, is a wavevector.
 Wavevector = ga.gatype.vector()                                                 # Vector+
+Displacement = ga.gatype.antivector()                                           # Antivector-
 # The field that turns a pseudospin, extrinsic, and a pseudospin, intrinsic.
 Field = ga.gatype.bivector()                                                    # Bivector+
 Pseudospin = ga.gatype.antibivector()                                           # Antibivector-
 Spinor = ga.gatype.even()                                                       # Even+
 Rotor = ga.gatype.rotor()                                                       # Rotor+
 # The energy of a hop between neighbouring atoms, in eV.
-HOPPING = 2.8
+hopping = 2.8
 # The bonds from an atom to its three neighbours, a third of a turn apart, in carbon-carbon distances of 0.142 nm:
 # displacements, antivectors with intrinsic orientation.
-BOND_ANGLES = np.array([1, 3, 5]) * np.pi / 3
-bonds = (mv.xy * (-BOND_ANGLES / 2)).exp() >> mv.x.dual()                      # [bonds] Displacement-
+bond_angles = np.array([1, 3, 5]) * np.pi / 3
+bond_turns = (mv.xy * (-bond_angles / 2)).exp()                                 # [3] Rotor+
+bonds = bond_turns >> mv.x.dual()                                               # [3] Displacement-
 # The two inequivalent corners of the Brillouin zone, where the cones sit.
 valleys = mv.vector([[2 * np.pi / 3, 2 * np.pi / (3 * np.sqrt(3)), 0],
-                     [2 * np.pi / 3, -2 * np.pi / (3 * np.sqrt(3)), 0]])        # [valleys] Wavevector+
+                     [2 * np.pi / 3, -2 * np.pi / (3 * np.sqrt(3)), 0]])        # [2] Wavevector+
 # The pseudospin of a state wholly on the first sublattice: the patch of the plane xy.
 first_sublattice = mv.xy.dual()                                                 # [] Pseudospin-
 # The Hamiltonian, for a given field a map on spinors: minus the field on the left, the plane xy on the right.
@@ -59,22 +58,29 @@ hamiltonian = -(Field * Spinor * mv.xy)                                         
 
 # --- math -----------------------------------------------------------------------------
 def pseudospin_field(momentum: Wavevector, gap: np.ndarray) -> Field:
-    """The pseudospin field: minus the hopping times the sum over the bonds of the plane yz turned in the
-    plane xy by the phase `momentum & bonds` across each bond, plus the gap in the plane xy."""
-    phases = momentum[..., None] & bonds                                        # [..., bonds] Scalar+
-    return -HOPPING * ((mv.xy * phases).exp() * mv.yz).sum(axis=-1) + gap * mv.xy   # [...] Field+
+    """Hopping across the three bonds turns the plane `yz` in `xy` by each bond phase and adds the sublattice gap in `xy` (`[...] Field+`)."""
+    phases = momentum[..., None] & bonds                                        # [..., 3] Scalar+
+    return -hopping * ((mv.xy * phases).exp() * mv.yz).sum(axis=-1) + gap * mv.xy   # [...] Field+
+
+
+def upper_pseudospins(offsets: Wavevector, gap: np.ndarray) -> Pseudospin:
+    """Diagonalizing the Hamiltonian near both valleys gives the upper band's unit pseudospin (`[2, ...] Pseudospin-`)."""
+    valley_field = pseudospin_field(valleys[:, None, None] + offsets, gap)      # [2, ...] Field+
+    _, states = hamiltonian(valley_field).eigh()                                # [2, ..., 4] Spinor+
+    upper_states = states[..., -1]                                              # [2, ...] Spinor+
+    # The pseudospin of a state: its sandwich of the first sublattice's pseudospin, over its norm squared.
+    return (upper_states >> first_sublattice) / upper_states.symmetric_reverse_product()   # [2, ...] Pseudospin-
 
 
 def transport(directions: Pseudospin) -> Rotor:
-    """The rotors that carry a frame along a curve of unit directions, by the smallest rotation from
-    each direction to the next: from the first direction to each of the others. Around a closed
-    curve the last of them is the holonomy."""
-    steps = (1 + directions[1:] * directions[:-1]).normalized()                 # [steps, ...] Rotor+
-    return steps.cumprod(axis=0)                                                # [steps, ...] Rotor+
+    """Minimal step rotations along a curve of unit pseudospins accumulate into the frame transport rotors (`[...] Rotor+`), ending at the loop holonomy."""
+    step_rotors = (1 + directions[1:] * directions[:-1]).normalized()           # [...] Rotor+
+    return step_rotors.cumprod(axis=0)                                          # [...] Rotor+
 
 
 # --- plumbing -------------------------------------------------------------------------
-def circle(n_steps: int) -> Wavevector:
-    """Unit wavevectors around the circle in the plane, in n_steps steps, the last equal to the first."""
-    angle = np.linspace(0.0, 2 * np.pi, n_steps + 1)
-    return (mv.xy * (-angle / 2)).exp() >> mv.x                                 # [steps + 1] Wavevector+
+def momentum_circle(n_steps: int) -> Wavevector:
+    """Steps a unit wavevector around the momentum circle in `n_steps` intervals (`[n_steps + 1] Wavevector+`), closing at the start."""
+    angles = np.linspace(0.0, 2 * np.pi, n_steps + 1)
+    turns = (mv.xy * (-angles / 2)).exp()                                       # [n_steps + 1] Rotor+
+    return turns >> mv.x                                                        # [n_steps + 1] Wavevector+

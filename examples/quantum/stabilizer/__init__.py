@@ -1,1 +1,1 @@
-"""A four-qubit stabilizer code: the smallest that catches bit flips and phase flips alike, keeping two qubits in four."""
+"""Four physical qubits encode two logical qubits so that two commuting checks catch any single-qubit bit or phase error."""

@@ -1,11 +1,21 @@
-"""A rotating Bose-Einstein condensate: its descent toward the lattice of vortices, counted and drawn, on the smallest trap."""
+"""Coverage test for the rotating Bose-Einstein condensate relaxation, vortex counting, and rendering."""
 
-from examples.quantum.condensate import render, scenarios
+import matplotlib.pyplot as plt
+
+from examples.quantum.condensate import core, render, scenarios
 
 
-def test_one_step_of_the_descent_is_counted_and_drawn():
-    topology, vertices, frames = scenarios.settled(n_rings=2, n_steps=1, stride=1)
-    wave = list(frames)[-1]
-    counted = scenarios.counted(topology, vertices, wave)
-    next(render.animate(topology, vertices, [wave.scalar_norm_squared()]))
-    render.draw_count(scenarios.counting_radii, counted, scenarios.rotation * scenarios.counting_radii ** 2)
+def test_condensate_step_and_rendering():
+    topology, vertices, dual_areas, states = scenarios.trap_relaxation(2, 1, 1)
+    settled_states = list(states)
+    settled_wave = settled_states[-1]                                         # Wave+[V]
+    atom_count = (dual_areas * settled_wave.scalar_norm_squared()).sites.sum()   # [] Scalar+
+    assert (atom_count - 1).abs() < 1e-10
+
+    frames = list(render.density_animation(topology, vertices, settled_states))
+    assert len(frames) == 2
+    assert frames[-1].shape == (render.n_pixels, render.n_pixels, 3)
+
+    counts = core.vortex_counts(topology, vertices, settled_wave, scenarios.counting_radii, scenarios.vortex_threshold)
+    figure = render.count_figure(scenarios.counting_radii, counts, scenarios.rotation * scenarios.counting_radii ** 2)
+    plt.close(figure)

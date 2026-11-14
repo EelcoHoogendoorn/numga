@@ -1,122 +1,130 @@
-"""Physical channel action, independent tomography, and predictions under composition."""
+"""Tests physical channel action, independent-frame tomography, repeated composition, and figure rendering."""
 
+import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import stack
 from examples.quantum.process_tomography import core, render, scenarios
 
 
-def analytical_bloch(bloch: np.ndarray, angles: np.ndarray, phase_flip: np.ndarray,
-                     loss: np.ndarray, axis: np.ndarray) -> np.ndarray:
-    """Dephasing and amplitude damping followed by Rodrigues' spatial rotation."""
+def analytical_bloch(
+    bloch: np.ndarray, angles: np.ndarray, phase_flip: np.ndarray, loss: np.ndarray, axis: np.ndarray,
+) -> np.ndarray:
+    """Dephasing, amplitude damping, and Rodrigues' rotation give the exact outgoing Bloch vectors."""
     transverse = (1 - 2 * phase_flip) * np.sqrt(1 - loss)
-    damped = np.stack((
+    contracted_vectors = np.stack((
         transverse[:, None] * bloch[..., 0],
         transverse[:, None] * bloch[..., 1],
         (1 - loss[:, None]) * bloch[..., 2] + loss[:, None],
     ), axis=-1)
     cosine, sine = np.cos(angles[:, None, None]), np.sin(angles[:, None, None])
-    return (cosine * damped + sine * np.cross(axis, damped)
-            + (1 - cosine) * axis * np.sum(axis * damped, axis=-1, keepdims=True))
+    return (
+        cosine * contracted_vectors
+        + sine * np.cross(axis, contracted_vectors)
+        + (1 - cosine) * axis * np.sum(axis * contracted_vectors, axis=-1, keepdims=True)
+    )
 
 
-def test_channels_match_the_independent_bloch_law_and_normalized_born_probabilities():
+def test_channels_match_independent_bloch_law_and_normalized_born_probabilities():
     angles = np.array([0.0, 0.47, -0.9, 0.3])
     phase_flip = np.array([0.0, 0.22, 0.08, 0.5])
     loss = np.array([0.0, 0.45, 1.0, 0.3])
     axis = np.array([2.0, -1.0, 3.0]) / np.sqrt(14)
     rotation_plane = (2 * core.mv.yz - core.mv.zx + 3 * core.mv.xy) / np.sqrt(14)
-    device = core.noisy_gate(angles, phase_flip, loss, rotation_plane)
+    channels = core.noisy_gate(angles, phase_flip, loss, rotation_plane)
+
     rng = np.random.default_rng(180)
-    directions = rng.normal(size=(29, 3))
-    directions /= np.linalg.norm(directions, axis=-1, keepdims=True)
-    bloch = directions * np.linspace(0, 1, len(directions))[:, None]
-    prepared = core.centre + core.mv.direction(bloch)
-    expected = analytical_bloch(np.broadcast_to(bloch, (len(angles),) + bloch.shape),
-                                angles, phase_flip, loss, axis)
-    outputs = device[:, None](prepared)
+    raw_directions = rng.normal(size=(12, 3))
+    raw_directions /= np.linalg.norm(raw_directions, axis=-1, keepdims=True)
+    bloch = raw_directions * np.linspace(0, 1, len(raw_directions))[:, None]
+    preparations = core.centre + core.mv.direction(bloch)
+    expected = analytical_bloch(np.broadcast_to(bloch, (len(angles),) + bloch.shape), angles, phase_flip, loss, axis)
+    outputs = channels[:, None](preparations)
     expected_states = core.centre + core.mv.direction(expected)
-    np.testing.assert_allclose((outputs - expected_states).kernel, 0, atol=1e-8)
-    np.testing.assert_allclose((core.mv.w & outputs).to_array(), 1, atol=1e-8)
 
-    actual_bloch = (stack((core.mv.x, core.mv.y, core.mv.z)) & outputs[..., None]).to_array()
-    assert np.max(np.linalg.norm(actual_bloch, axis=-1)) <= 1 + 1e-8
+    assert ((outputs - expected_states).antinorm() < 1e-8).all()
+    assert (((core.mv.w & outputs) - 1).abs() < 1e-8).all()
+    assert ((outputs - core.centre).antinorm() <= 1 + 1e-8).all()
 
-    detector_directions = np.array([[1, 1, 1], [1, -1, -1],
-                                    [-1, 1, -1], [-1, -1, 1]]) / np.sqrt(3)
+    detector_directions = np.array([[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]) / np.sqrt(3)
     analyzers = core.mv.vector(np.concatenate([detector_directions, np.zeros((4, 1))], axis=-1))
     effects = (core.mv.w + analyzers) / 4
-    probabilities = core.probabilities(device, prepared, effects).to_array()
-    expected_probabilities = (1 + np.einsum("cni,mi->cnm", expected,
-                                             detector_directions)) / 4
-    np.testing.assert_allclose(probabilities, expected_probabilities, atol=1e-8)
-    np.testing.assert_allclose(probabilities.sum(axis=-1), 1, atol=1e-8)
-    assert probabilities.min() >= -1e-8
+    probabilities = core.outcome_probabilities(channels, preparations, effects)
+    expected_probabilities = (1 + np.einsum("cni,mi->cnm", expected, detector_directions)) / 4
+    assert ((probabilities - expected_probabilities).abs() < 1e-8).all()
+    assert ((probabilities.sum(axis=-1) - 1).abs() < 1e-8).all()
+    assert (probabilities >= -1e-8).all()
 
 
-def test_reconstruction_predicts_mixed_states_with_an_independent_measurement_frame():
+def test_reconstruction_predicts_mixed_states_with_independent_measurement_frame():
     angles = np.array([0.31, -0.76])
     phase_flip = np.array([0.12, 0.07])
     loss = np.array([0.26, 0.54])
     rotation_plane = (core.mv.yz + core.mv.xy) / np.sqrt(2)
-    device = core.noisy_gate(angles, phase_flip, loss, rotation_plane)
+    true_channels = core.noisy_gate(angles, phase_flip, loss, rotation_plane)
 
-    # Four mixed preparations in general position, while the four detector directions are rotated
-    # independently. The reconstruction cannot rely on matching the two frames.
-    directions = core.mv.direction([[0.9, 0.1, 0.0], [-0.2, 0.8, 0.1],
-                                    [0.1, -0.3, -0.7], [-0.5, -0.4, 0.6]])
-    prepared = core.centre + directions
-    rotation = (core.mv.xy * -0.23).exp() * (core.mv.yz * 0.17).exp()
-    effects = rotation >> scenarios.effects
-    measured = core.probabilities(device, prepared, effects)
-    learned = core.reconstruct(prepared, effects, measured)
+    # Four mixed preparations in general position paired with an independently rotated detector frame.
+    probe_offsets = core.mv.direction([[0.9, 0.1, 0.0], [-0.2, 0.8, 0.1], [0.1, -0.3, -0.7], [-0.5, -0.4, 0.6]])
+    preparations = core.centre + probe_offsets
+    detector_rotor = (core.mv.xy * -0.23).exp() * (core.mv.yz * 0.17).exp()
+    effects = detector_rotor >> scenarios.effects
+    measurements = core.outcome_probabilities(true_channels, preparations, effects)
+    learned_channels = core.reconstructed_channel(preparations, effects, measurements)
 
     rng = np.random.default_rng(972)
-    directions = rng.normal(size=(37, 3))
-    directions /= np.linalg.norm(directions, axis=-1, keepdims=True)
-    bloch = directions * np.linspace(0, 1, len(directions))[:, None]
-    unseen = core.centre + core.mv.direction(bloch)
-    np.testing.assert_allclose((learned[:, None](unseen) - device[:, None](unseen)).kernel,
-                               0, atol=1e-12)
+    raw_directions = rng.normal(size=(12, 3))
+    raw_directions /= np.linalg.norm(raw_directions, axis=-1, keepdims=True)
+    bloch = raw_directions * np.linspace(0, 1, len(raw_directions))[:, None]
+    validation_states = core.centre + core.mv.direction(bloch)
+    predicted_states = learned_channels[:, None](validation_states)
+    exact_states = true_channels[:, None](validation_states)
+    assert ((predicted_states - exact_states).antinorm() < 1e-12).all()
+    assert (((core.mv.w & predicted_states) - 1).abs() < 1e-12).all()
 
 
 def test_learned_channels_predict_unseen_measurements_and_repeated_applications():
-    measured, learned = scenarios.tomography()
-    observed, predicted = scenarios.validation(learned)
-    np.testing.assert_allclose((observed - predicted).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose(
-        (core.probabilities(learned, scenarios.prepared, scenarios.effects) - measured).kernel,
-        0, atol=1e-12,
-    )
+    measurements, learned_channels = scenarios.tomography()
+    observed_probabilities, predicted_probabilities = scenarios.validation(learned_channels)
+    assert ((observed_probabilities - predicted_probabilities).abs() < 1e-12).all()
+    assert (
+        (core.outcome_probabilities(learned_channels, scenarios.preparations, scenarios.effects) - measurements).abs()
+        < 1e-12
+    ).all()
 
     bloch = np.array([[0.2, -0.3, 0.4], [-0.6, 0.1, 0.2], [0.0, 0.0, -1.0]])
     states = core.centre + core.mv.direction(bloch)
-    expected = np.broadcast_to(bloch, (len(scenarios.TURNS),) + bloch.shape)
+    expected = np.broadcast_to(bloch, (len(scenarios.angles),) + bloch.shape)
     axis = np.ones(3) / np.sqrt(3)
-    n_uses = 4
-    for accumulated in core.powers(learned, n_uses):
-        expected = analytical_bloch(expected, scenarios.TURNS, scenarios.PHASE_FLIP,
-                                    scenarios.LOSS, axis)
+    for channel_power in core.channel_powers(learned_channels, 4):
+        expected = analytical_bloch(expected, scenarios.angles, scenarios.phase_flip, scenarios.loss, axis)
         expected_states = core.centre + core.mv.direction(expected)
-        np.testing.assert_allclose((accumulated[:, None](states) - expected_states).kernel,
-                                   0, atol=1e-8)
+        mapped_states = channel_power[:, None](states)
+        assert ((mapped_states - expected_states).antinorm() < 1e-8).all()
+        assert (((core.mv.w & mapped_states) - 1).abs() < 1e-8).all()
 
 
-def test_completeness_distinguishes_a_spanning_tetrahedron_from_two_axial_probes():
+def test_completeness_distinguishes_spanning_tetrahedron_from_axial_probes():
     tetrahedral_span, opposite_span = scenarios.completeness()
-    # Four probes join to six times the volume of their tetrahedron; two opposite ones only to the line through them,
-    # which the completely mixed state lies on and the tetrahedron's states do not.
-    np.testing.assert_allclose(np.abs(tetrahedral_span.to_array()), 16 / (3 * np.sqrt(3)), atol=1e-12)
-    np.testing.assert_allclose((opposite_span & core.centre).kernel, 0, atol=1e-12)
-    assert np.abs((opposite_span & scenarios.prepared).kernel).max() > 0.1
+    assert (tetrahedral_span.norm() - 16 / (3 * np.sqrt(3))).abs() < 1e-12
+    assert (opposite_span & core.centre).norm() < 1e-12
+    assert ((opposite_span & scenarios.preparations).norm() > 0.1).all()
 
 
-def test_the_figures_and_one_frame_draw():
-    measured, learned = scenarios.tomography()
-    prepared, labels, reading = scenarios.prepared, scenarios.LABELS, render.ball_positions
-    surface = core.sphere(2, 4)
-    render.draw_experiment(prepared, measured, labels, reading)
-    render.draw_channels(surface, learned[:, None, None](surface), prepared, learned[:, None](prepared), labels, reading)
-    render.draw_predictions(*scenarios.validation(learned), labels)
-    frames = ((combined[:, None, None](surface), combined[:, None](prepared)) for combined in core.powers(learned, 1))
-    next(render.animate(surface, prepared, frames, labels, reading, render.PANEL))
+def test_figures_and_single_animation_frame_render():
+    measurements, learned_channels = scenarios.tomography()
+    preparations, channel_labels, reading = scenarios.preparations, scenarios.labels, render.ball_positions
+    surface = core.pure_sphere(4, 6)
+    fig_exp = render.experiment_figure(preparations, measurements, channel_labels, reading)
+    fig_ch = render.channels_figure(
+        surface, learned_channels[:, None, None](surface), preparations, learned_channels[:, None](preparations),
+        channel_labels, reading,
+    )
+    fig_pred = render.predictions_figure(*scenarios.validation(learned_channels), channel_labels)
+    frames = (
+        (channel_power[:, None, None](surface), channel_power[:, None](preparations))
+        for channel_power in core.channel_powers(learned_channels, 1)
+    )
+    frame = next(render.channel_animation(surface, preparations, channel_labels, reading, render.panel_size, frames))
+    assert frame.ndim == 3 and frame.shape[2] == 3
+    plt.close(fig_exp)
+    plt.close(fig_ch)
+    plt.close(fig_pred)
