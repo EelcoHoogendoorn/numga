@@ -1,99 +1,32 @@
-"""Connections on curved surfaces, in the geometric algebra of three-dimensional space: parallel transport
-and its holonomy, the connection Laplacian, trivial connections that design vector fields with chosen
-singularities, and stripe patterns along those fields.
+"""Connections on curved surfaces in Euclidean three-dimensional geometric algebra.
 
 Parallel transport carries a tangent vector along a surface while keeping it tangent and turning it
-no more than the surface itself bends. Between two neighbouring points with unit normals `n_tail`
-and `n_head`, the shortest turn that carries the first normal onto the second is the square root of
-their geometric product, `turn = (n_head * n_tail).square_root()`. That rotor turns in the plane of
-the two normals and leaves the hinge line where their tangent planes meet untouched. Tangent vectors are
-directions, antivectors, intrinsic like all geometry, and the rotor's action on them, `turn >> Point`, is the
-parallel transport map from the tail's tangent plane to the head's. The normals are the unit patches of the
-tangent planes, joins of edges, and a normal's dual is the plane a tangent vector turns in.
-Chaining those turns around a closed loop of normals carries a tangent vector around the loop, and
-when the loop closes the vector has turned in the starting tangent plane by the solid angle the
-normals sweep out on the unit sphere. On the equator of a sphere the normal sweeps a flat great
-circle of solid angle `2 * np.pi`, so the vector returns unchanged; on the latitude circle sixty
-degrees from the pole the cap has solid angle `np.pi`, so the vector returns pointing the opposite way.
+no more than the surface itself bends. Between two neighbouring vertices with unit surface patches
+`tail_patch` and `head_patch`, the shortest turn carrying the tail patch onto the head patch is the
+square root of their geometric product, `turn = (head_patch * tail_patch).square_root()`, which
+rotates in the plane of the two normals and leaves the hinge line between their tangent planes fixed.
+Tangent vectors are intrinsic directions (`Point-`), surface normals are unit intrinsic area patches
+(`Patch-`) formed by joining triangle edges, and `Patch.dual()` gives the extrinsic turning bivector
+in each tangent plane. Chained around a closed curve of normals, those rotors turn a tangent vector
+by the solid angle swept out on the unit sphere.
 
-A connection on a triangle mesh is a rotor from each end of each edge to its head. Those rotors give
-the covariant derivative, a sparse map of ambient direction fields `(Point- <- Point-)[edges <- vertices]`
-that turns each edge's tail vector into its head's tangent plane and subtracts it from the head's
-vector. Reading each edge's difference by the plane across it, `Point.dual()`, weighted by the edge's cotangent
-ratio `H1`, and pulling that back to the vertices by the adjugate gives the connection Laplacian
-`L = covariant.adjugate()((H1 * Point.dual())(covariant))`, the energy's gradient: a form that takes a
-tangent field to the force that smooths it. Because each edge's rotor carries
-the tail's normal onto the head's normal, `covariant` and `L` never mix tangent vectors with normal
-vectors: any tangent field stays perpendicular to the vertex normals everywhere, with no local
-two-dimensional coordinate charts or reference edges chosen at the vertices. With the surface's own
-transport, one backward-Euler step `(M0 + time * L).solve(M0(source))`, with the vertex areas a form too,
-`M0 = areas * Point.dual()`, diffuses a single
-tangent vector across the surface along all paths at once, the vector heat method, and normalizing
-the diffused vectors recovers parallel transport from the source to every vertex. Adding a stiff
-weight along the normals lifts the normal bundle out of the low spectrum, so the lowest eigenfields of
-`L` against the vertex areas `M0` are the smoothest global tangent vector fields on the
-surface. Turning every vector a quarter turn in its own tangent plane, its commutator with the plane,
-`vector.commutator(normals.dual())`, commutes with every edge transport, so every tangent eigenvalue comes in an equal pair.
+On a triangulated surface, assigning a rotor from each end of every edge to its head defines a
+sparse covariant derivative `(Point- <- Point-)[E <- V]` directly on ambient three-dimensional
+direction fields, without local two-dimensional coordinate charts or per-vertex reference edges.
+Pairing each edge difference against its dual plane `Point.dual()` with cotangent weights and pulling
+back via `.adjugate()` builds the connection Laplacian `(Plane+ <- Point-)[V <- V]`. Because every
+edge rotor maps the tail patch onto the head patch, neither the covariant derivative nor the
+connection Laplacian mixes tangent and normal components. Backward-Euler vector heat steps diffuse a
+localized tangent impulse across the surface along all paths at once, while penalizing the normal
+direction lifts the normal bundle out of the low spectrum so the generalized eigenproblem against
+the vertex area form yields the smoothest global tangent fields in equal-energy quarter-turn pairs.
 
-In the complex line-bundle notation of discrete differential geometry, each vertex chooses a local
-orthonormal basis of its tangent plane, each edge rotor reads as a unit complex transition factor
-$e^{i\\theta_{ij}}$ between the two frames' reference directions, and the connection Laplacian reads
-as a Hermitian matrix of complex numbers coupled by those phases.
-
-A tangent vector field on a closed surface must vanish or spin somewhere, unless the surface is a
-torus: the indices of its singularities, how often the field turns as one goes once around each,
-add up to the surface's Euler characteristic. Choosing where the singularities sit and how they turn,
-and finding the smoothest field that has exactly those, is the design problem of Crane, Desbrun and
-Schröder, "Trivial connections on discrete surfaces" (2010). Carried around the three edges of a
-face, a tangent vector comes back turned in its tangent plane: the product of the three rotors turns
-about the normal by the face's holonomy, the curvature inside the face, and the holonomies of all
-faces add up to `2 pi` times the Euler characteristic. A whole turn of a rotor is minus one, so a
-loop's angle is read from the rotor's square, the turn itself, by the plane of its logarithm:
-`(loop * loop).log() | normal.dual()`, an angle in (-pi, pi].
-
-A connection is trivial when transport around every loop returns every vector unchanged; then
-carrying one vector out from anywhere gives a field with no turning at all along the surface. The
-surface's own transport is not trivial, because the surface is curved. Each edge gets an extra turn
-`angle` in the head's tangent plane, `(n_head.dual() * (-angle / 2)).exp()`, and since every turn in a
-tangent plane commutes with the transport into that plane, a loop's holonomy grows by exactly the sum
-of the extra turns along it, signed by direction: around the faces, the circulation `topology.d[1] * angles`.
-Asking every face to turn by `2 pi` times its chosen index and every non-contractible loop, a
-generator of the surface's handles, by nothing is a linear system for the edge turns, solved with the
-smallest turns, which also turn the field the least. The system can be met only when the indices
-add up to the Euler characteristic: around every face the circulation of the extra turns adds up to
-nothing, so Gauss–Bonnet and Poincaré–Hopf become the condition for a solution. The field itself is
-the null space of the connection Laplacian of the adjusted transport: two fields, one a quarter turn
-of the other in every tangent plane, with energy zero, unit length everywhere, and every edge's
-adjusted transport carrying one end onto the other.
-
-In the notation of discrete exterior calculus, the extra turns are a dual 1-form or a primal 1-form
-$\\theta$ on edges, the constraints read $d\\theta = 2\\pi k - K$ on faces and $\\oint_\\gamma \\theta =
--\\Omega_\\gamma$ around the generators $\\gamma$, with $K$ the Gaussian curvature and $\\Omega_\\gamma$ the
-holonomy of the Levi-Civita connection, and the smallest solution is $\\theta = d^{+}(2\\pi k - K)$.
-
-A stripe pattern is a field of evenly spaced stripes running across a surface at right angles to a
-chosen direction field: the stripes' phase advances along the field at a chosen frequency. Where the
-field has a singularity, or where the surface's curvature leaves no room for evenly spaced stripes,
-the stripes fork. Knöppel, Crane, Pinkall and Schröder, "Stripe patterns on surfaces" (2015), find
-the phase as the smoothest section of a connection that advances by the frequency along the field.
-Across each edge, the phase should advance by the frequency times the field's component along the
-edge: the edge's target. The phase is carried by a tangent vector at every vertex, measured as its
-angle from the direction field. A direction field designed by a trivial connection is parallel for that
-connection: carrying it across an edge with the connection's transport lands it exactly on the field
-at the head. So a tangent vector carried by the same transport, turned further by the edge's target in
-the head's tangent plane, keeps its angle from the field plus the target: its angle from the field
-advances by exactly the target. The stripe field is the smoothest tangent field of that connection,
-the trivial connection's turns with the targets added: the lowest eigenfield of its connection
-Laplacian, with one more turn on every edge. It comes as a pair, a field and its quarter turn, two
-stripe patterns shifted by a quarter of a stripe; the stripes are the sine of the angle from the stripe
-field to the direction field. Where the targets around a face add up to more than the face's
-singularity allows, no phase can follow them all, and the lowest eigenfield gives up there: the
-stripes fork.
-
-In the complex notation of the paper, the phase is a section $\\psi$ of the trivial line bundle, the
-connection is $e^{i \\omega_{ij}}$ with $\\omega_{ij} = \\nu \\langle X, e_{ij} \\rangle$ the target of
-the edge $e_{ij}$ for the field $X$ and frequency $\\nu$, and the stripes are the smallest eigenvector of
-$\\sum_{ij} w_{ij} |\\psi_j - e^{i \\omega_{ij}} \\psi_i|^2$ against the vertex areas.
+Following Crane, Desbrun, and Schröder (2010), adding an extra tangent-plane turn on each edge shifts
+every triangle's holonomy and every handle loop's holonomy linearly by the edge circulation, solving
+for trivial connections whose parallel fields have prescribed singularity indices summing to the
+Euler characteristic. Following Knöppel, Crane, Pinkall, and Schröder (2015), adding a directional
+phase advance on every edge of a trivial connection yields globally smooth stripe and cross-stripe
+fields that fork automatically where curvature or singularities prevent uniform spacing.
 """
 
 from __future__ import annotations
@@ -109,201 +42,218 @@ from numga.topology import Topology
 
 context = NumpyContext(ga)
 mv = context.multivector
-Scalar = ga.gatype.scalar()                         # Scalar+
-# Positions and tangent vectors are points and directions, antivectors.
-Point = ga.gatype.antivector()                      # Antivector-
-# The unit normals: the patches of the tangent planes, joins of two edges.
-Vector = ga.gatype.vector()                         # Vector-
-Rotor = ga.gatype.rotor()                           # Rotor+
+Scalar = ga.gatype.scalar()                                  # Scalar+
+# Surface positions and tangent directions are intrinsic antivectors.
+Point = ga.gatype.antivector()                               # Antivector-
+Plane = ga.gatype.vector()                                   # Vector+
+# Unit surface normals are intrinsic tangent-plane patches formed by joining two edge directions.
+Patch = Plane.derive.flipped_orientation                     # Vector-
+Rotor = ga.gatype.rotor()                                    # Rotor+
 
 
 # --- math -----------------------------------------------------------------------------
-def vertex_normals(topology: Topology, vertices: Point) -> Vector:
-    """The unit normal at each vertex, `Vector-[vertices]`, is the sum of its faces' normals, each the join of two
-    of the face's edges, twice the face's area large."""
-    edges = topology.boundary[2, 1] * (topology.d[0] * vertices)                # [3] Point-[faces]
+def latitude_rings(colatitudes: np.ndarray, n_ring_steps: int) -> tuple[Patch, Point]:
+    """Rotating a north-pole patch and meridian tangent to `colatitudes` (`[n_rings]`) and sweeping
+    around the vertical axis over `n_ring_steps` segments forms closed latitude loops of unit
+    surface patches (`[n_ring_steps + 1, n_rings] Patch-`) and initial meridian directions
+    (`[n_rings] Point-`)."""
+    longitudes = np.linspace(0, 2 * np.pi, n_ring_steps + 1)
+    tilt_rotors = (mv.zx * (-colatitudes / 2)).exp()                                      # [n_rings] Rotor+
+    spin_rotors = (mv.xy * (-longitudes[:, None] / 2)).exp()                              # [n_ring_steps + 1, 1] Rotor+
+    tilted_patches = tilt_rotors >> mv.xy.dual()                                          # [n_rings] Patch-
+    patches = spin_rotors >> tilted_patches                                               # [n_ring_steps + 1, n_rings] Patch-
+    starts = tilt_rotors >> mv.x.dual()                                                   # [n_rings] Point-
+    return patches, starts
+
+
+def parallel_transport(patches: Patch, start: Point) -> Iterator[Point]:
+    """Yields `start` (`[...] Point-`) carried step by step along `patches` (`[n_steps + 1, ...] Patch-`)
+    by the shortest dihedral rotor between consecutive unit surface patches."""
+    yield start
+    for tail, head in zip(patches[:-1], patches[1:]):
+        turn = (head * tail).square_root()                                                # [...] Rotor+
+        start = turn >> start                                                             # [...] Point-
+        yield start
+
+
+def vertex_patches(topology: Topology, vertices: Point) -> Patch:
+    """Joining two boundary edges on each triangle and pulling their area-weighted patches back to
+    incident vertices gives the normalized vertex surface patches (`Patch-[V]`)."""
+    edges = topology.boundary[2, 1] * (topology.d[0] * vertices)                          # [3] Point-[F]
     return (topology.incidence[2, 0].sum(axis=0).adjugate() * (edges[0] & edges[1])).normalized()
 
 
 def vertex_areas(topology: Topology, vertices: Point) -> Scalar:
-    """Each vertex's area, `Scalar+[vertices]`, is a third of the area of each face at it, a face's area half the
-    size of its plane."""
-    edges = topology.boundary[2, 1] * (topology.d[0] * vertices)                # [3] Point-[faces]
-    corner_mean = topology.incidence[2, 0].mean(axis=0)                         # Scalar+[faces <- vertices]
-    return corner_mean.adjugate() * (edges[1].commutator(edges[0]).norm() / 2)
+    """Distributing one third of each triangle's area (`(edges[0] & edges[1]).norm() / 2`) to its
+    three corners gives the lumped vertex areas (`Scalar+[V]`)."""
+    edges = topology.boundary[2, 1] * (topology.d[0] * vertices)                          # [3] Point-[F]
+    corner_mean = topology.incidence[2, 0].mean(axis=0)                                   # Scalar+[F <- V]
+    return corner_mean.adjugate() * ((edges[0] & edges[1]).norm() / 2)
 
 
 def cotangent_weights(topology: Topology, vertices: Point, face_weights: Scalar) -> Scalar:
-    """Each edge's weight, `Scalar+[edges]`, is half the cotangents of the angles facing it, each face's share
-    weighted by `Scalar+[faces]`: the cotangent at a corner is one edge's slice read along the other, over the size
-    of the plane they span; head to tail, the corner's own edges point the other way."""
-    edges = topology.boundary[2, 1] * (topology.d[0] * vertices)                # [3] Point-[faces]
+    """Half-cotangents of opposite corner angles weighted by `face_weights` (`Scalar+[F]`) sum into
+    the symmetric edge weights (`Scalar+[E]`)."""
+    edges = topology.boundary[2, 1] * (topology.d[0] * vertices)                          # [3] Point-[F]
     tails, heads = topology.corners[2, 1]
-    after, before = edges[tails], edges[heads]                                  # [3] Point-[faces], Point-[faces]
-    cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()   # [3] Scalar+[faces]
+    tail_edges, head_edges = edges[tails], edges[heads]                                   # [3] Point-[F], [3] Point-[F]
+    cotangents = (tail_edges | head_edges) / (tail_edges & head_edges).norm()             # [3] Scalar+[F]
     return (topology.incidence[2, 1].adjugate() * (face_weights * cotangents / 2)).sum(axis=0)
 
 
-def transported(normals: Vector, start: Point) -> Iterator[Point]:
-    """Parallel transport carries a tangent vector `start` along a sequence of unit normals `[steps + 1, ...]`,
-    and yields it at each of them."""
-    yield start
-    for tail, head in zip(normals[:-1], normals[1:]):
-        start = (head * tail).square_root() >> start                            # [...] Point-
-        yield start
-
-
-def loop_turn(normals: Vector) -> Scalar:
-    """The holonomy of transport around closed loops of unit normals `[steps, ...]` is the turn of the running
-    product of the transport rotors, each later step multiplying from the left, read from the rotor's square so
-    that whole turns read as nothing."""
-    following = concatenate([normals[1:], normals[:1]])                         # [steps, ...] Vector-
-    steps = (following * normals).square_root()                                  # [steps, ...] Rotor+
-    around = steps.cumprod(axis=0)[-1]                                           # [...] Rotor+
-    return (around * around).log() | normals[0].dual()                           # [...] Scalar+
-
-
-def adjusted_transport(topology: Topology, normals: Vector, angles: Scalar) -> Rotor:
-    """The rotors from each end of each edge to its head, `[2] Rotor+[edges]`, are the surface's own transport from
-    the tail followed by the edge's extra turn, `Scalar+[edges]`, in the head's tangent plane, and none at the head.
-    With no extra turns, this is the surface's own parallel transport."""
-    tails, heads = (topology.incidence[1, 0] * normals)  # Vector-[edges], Vector-[edges]
-    extra = (heads.dual() * (-angles / 2)).exp()                                # Rotor+[edges]
-    forward = extra * (heads * tails).square_root()                             # Rotor+[edges]
-    return stack([forward, mv.rotor().broadcast_to(forward.batch().shape).field()])
-
-
-def connection(topology: Topology, transports: Rotor, weights: Scalar) -> tuple[SparseExtensor, SparseExtensor]:
-    """The sparse covariant derivative of the rotors `[2] Rotor+[edges]` from each end of each edge to its head comes
-    with its connection Laplacian on vertex fields of tangent vectors, each edge weighted by `Scalar+[edges]`."""
-    # Each end's vector carried to the head, signed by the edge's boundary: the head's less the tail's.
-    covariant = (spdiag(transports >> Point) * topology.boundary[1, 0]).sum(axis=0)  # (Point- <- Point-)[edges <- vertices]
-    # Each edge's difference read by the plane across it, weighted, and pulled back to the vertices by the adjugate.
-    laplacian = covariant.adjugate()((weights * Point.dual())(covariant))        # (Plane+ <- Point-)[vertices <- vertices]
+def connection_operators(topology: Topology, transports: Rotor,
+                         weights: Scalar) -> tuple[SparseExtensor, SparseExtensor]:
+    """Edge endpoint rotors `transports` (`[2] Rotor+[E]`) and edge `weights` (`Scalar+[E]`) assemble
+    the sparse covariant derivative (`(Point- <- Point-)[E <- V]`) and connection Laplacian
+    (`(Plane+ <- Point-)[V <- V]`)."""
+    # Carry both endpoints' vectors into the head tangent plane and take their oriented difference.
+    covariant = (spdiag(transports >> Point) * topology.boundary[1, 0]).sum(axis=0)       # (Point- <- Point-)[E <- V]
+    # Pair each edge difference with its dual plane, weight by `weights`, and pull back via `.adjugate()`.
+    laplacian = covariant.adjugate()((weights * Point.dual())(covariant))                 # (Plane+ <- Point-)[V <- V]
     return covariant, laplacian
 
 
-def low_modes(laplacian: SparseExtensor, normals: Vector, areas: Scalar, normal_stiffness: float, count: int
-              ) -> tuple[Scalar, Point]:
-    """The `count` smoothest tangent fields of a connection Laplacian against the vertex areas, `Scalar+[vertices]`,
-    come with their Dirichlet energies per unit area, the normal bundle along the unit normals,
-    `Vector-[vertices]`, lifted out of the low spectrum by `normal_stiffness`."""
-    unit_normals = normals.batch()                                               # [vertices] Vector-
-    # A direction's part along the normal: the normal's direction, its dual, times the direction's pairing with
-    # the normal's patch.
-    normal_part = (unit_normals.dual() * (unit_normals & Point)).field()        # (Point- <- Point-)[vertices]
-    # Its energy, the part read by the plane across it, stiffly weighted.
-    normal_penalty = normal_stiffness * Point.dual()(normal_part)               # (Plane+ <- Point-)[vertices]
-    return (laplacian + normal_penalty).eigh(spdiag(areas * Point.dual()), count)   # [count] Scalar+, [count] Point-[vertices]
+def heat_diffusion(laplacian: SparseExtensor, areas: Scalar, source: Point,
+                   step_time: float, n_steps: int) -> Iterator[Point]:
+    """Yields the diffused tangent vector field (`Point-[V]`) after each of `n_steps` backward-Euler
+    vector heat steps of duration `step_time` from `source`."""
+    mass = areas * Point.dual()                                                           # (Plane+ <- Point-)[V]
+    step_operator = mass + step_time * laplacian                                          # (Plane+ <- Point-)[V <- V]
+    field = source                                                                        # Point-[V]
+    for _ in range(n_steps):
+        field = step_operator.solve(mass(field))                                          # Point-[V]
+        yield field
 
 
-def heat_transport(laplacian: SparseExtensor, areas: Scalar, source: Point, step_time: float, steps: int
-                   ) -> Iterator[tuple[Point, Point]]:
-    """Repeated backward-Euler vector heat steps of duration `step_time`, with the connection Laplacian of the
-    surface's own transport and the vertex areas `Scalar+[vertices]`, carry a tangent field `source` across the
-    mesh; they yield the diffused field and the unit field at each step."""
-    # The vertex areas as a form, each field's direction read by the plane across it.
-    mass = areas * Point.dual()                                                 # (Plane+ <- Point-)[vertices]
-    step_operator = mass + step_time * laplacian                                # (Plane+ <- Point-)[vertices <- vertices]
-    field = source                                                              # Point-[vertices]
-    for _ in range(steps):
-        field = step_operator.solve(mass(field))                                # Point-[vertices]
-        yield field, field / field.norm()                                       # Point-[vertices], Point-[vertices]
+def low_modes(laplacian: SparseExtensor, patches: Patch, areas: Scalar,
+              normal_stiffness: float, n_modes: int) -> tuple[Scalar, Point]:
+    """Penalizing normal components by `normal_stiffness` lifts the normal bundle out of the low
+    spectrum and solves for the `n_modes` smoothest tangent eigenfields (`[n_modes] Point-[V]`) and
+    their Dirichlet energies (`[n_modes] Scalar+`) against vertex `areas`."""
+    unit_patches = patches.batch()                                                        # [V] Patch-
+    # Project each direction onto the surface normal direction and pair with its dual plane.
+    normal_part = (unit_patches.dual() * (unit_patches & Point)).field()                  # (Point- <- Point-)[V]
+    normal_penalty = normal_stiffness * Point.dual()(normal_part)                         # (Plane+ <- Point-)[V]
+    return (laplacian + normal_penalty).eigh(spdiag(areas * Point.dual()), n_modes)
 
 
-def trivial_connection(topology: Topology, normals: Vector, indices: np.ndarray, generators: list[np.ndarray]) -> tuple[Scalar, SparseExtensor, Scalar]:
-    """The smallest extra turns on the edges, `Scalar+[edges]`, make every face turn by `2 pi` times its index
-    `[faces]` and every generator, a closed loop of vertices, by nothing; they come with the circulation of edge
-    turns around the faces and generators and its target."""
-    corner_normals = (topology.incidence[2, 0] * normals).batch()  # [corners, faces] Vector-
-    loop_normals = [(topology.reading(loop[:, None], 0) * normals).batch() for loop in generators]  # [generators] list of [steps, 1] Vector-
-    curvature = loop_turn(corner_normals)                                         # [faces] Scalar+
-    # Around each generator, the extra turns undo the surface's own holonomy.
-    undone = [-loop_turn(along) for along in loop_normals]                        # [generators] list of [1] Scalar+
-    circulation = topology.circulation(generators) * Scalar                          # (Scalar+ <- Scalar+)[faces + generators <- edges]
-    target = concatenate([2 * np.pi * indices - curvature, *undone]).field()              # Scalar+[faces + generators]
+def loop_holonomy(patches: Patch) -> Scalar:
+    """Chaining dihedral transport rotors around closed loops of unit `patches` (`[n_steps, ...] Patch-`)
+    reads each loop's signed holonomy angle (`[...] Scalar+`) in `(-pi, pi]` from the squared loop rotor."""
+    next_patches = concatenate([patches[1:], patches[:1]])                                # [n_steps, ...] Patch-
+    step_rotors = (next_patches * patches).square_root()                                  # [n_steps, ...] Rotor+
+    loop_rotor = step_rotors.cumprod(axis=0)[-1]                                          # [...] Rotor+
+    return (loop_rotor * loop_rotor).log() | patches[0].dual()                            # [...] Scalar+
+
+
+def adjusted_transport(topology: Topology, patches: Patch, angles: Scalar) -> Rotor:
+    """Composing each edge's dihedral rotor from tail to head with an extra tangent-plane rotation by
+    `angles` (`Scalar+[E]`) forms the adjusted edge endpoint rotors (`[2] Rotor+[E]`)."""
+    tails, heads = topology.incidence[1, 0] * patches                                     # Patch-[E], Patch-[E]
+    extra_turns = (heads.dual() * (-angles / 2)).exp()                                    # Rotor+[E]
+    edge_rotors = extra_turns * (heads * tails).square_root()                             # Rotor+[E]
+    return stack([edge_rotors, mv.rotor().broadcast_to(edge_rotors.batch().shape).field()])  # [2] Rotor+[E]
+
+
+def trivial_connection(topology: Topology, patches: Patch, indices: np.ndarray,
+                       generators: list[np.ndarray]) -> tuple[Scalar, SparseExtensor, Scalar]:
+    """Least-squares edge turns (`Scalar+[E]`) cancel face curvature up to `2 * pi * indices` on
+    triangles and cancel handle holonomy around `generators`, returning the turns alongside the
+    sparse circulation operator and target holonomy field."""
+    corner_patches = (topology.incidence[2, 0] * patches).batch()                         # [3, F] Patch-
+    loop_patches = [(topology.reading(loop[:, None], 0) * patches).batch() for loop in generators]
+    curvature = loop_holonomy(corner_patches)                                             # [F] Scalar+
+    handle_targets = [-loop_holonomy(handle_patches) for handle_patches in loop_patches]
+    circulation = topology.circulation(generators) * Scalar                               # (Scalar+ <- Scalar+)[F_loops <- E]
+    target = concatenate([2 * np.pi * indices - curvature, *handle_targets]).field()      # Scalar+[F_loops]
     return circulation.lstsq(target), circulation, target
 
 
-def carried_out(topology: Topology, vertices: Point, normals: Vector, angles: Scalar) -> Point:
-    """A unit tangent vector at every vertex, `Point-[vertices]`, is carried out from the first vertex by the
-    transport of the given turns along a breadth-first tree: one sparse solve, each tree edge asking its head to
-    be its tail carried across it, and the first vertex asking to point across its first edge. Where the turns
-    make a trivial connection whose faces turn by quarter turns, this is a cross field: carried across any edge,
-    the tail's vector lands on the head's turned by a whole number of quarter turns."""
+def parallel_field(topology: Topology, patches: Patch, areas: Scalar, weights: Scalar,
+                   angles: Scalar, normal_stiffness: float) -> tuple[Scalar, Point]:
+    """Extracting the two lowest eigenmodes of the adjusted connection with edge turns `angles`
+    returns their energies (`[2] Scalar+`) and the unit parallel tangent field (`Point-[V]`)."""
+    _, laplacian = connection_operators(topology, adjusted_transport(topology, patches, angles), weights)
+    energies, fields = low_modes(laplacian, patches, areas, normal_stiffness, 2)
+    field = fields.batch()[0]                                                             # [V] Point-
+    return energies, (field / field.norm()).field()
+
+
+def stripe_family(topology: Topology, vertices: Point, patches: Patch, areas: Scalar,
+                  angles: Scalar, field: Point, regular_faces: Scalar, frequency: float,
+                  normal_stiffness: float) -> tuple[Point, Point, Scalar, Scalar]:
+    """Adding directional phase advances of `frequency` along `field` (`Point-[V]`) on regular faces
+    (`regular_faces`, `Scalar+[F]`) solves for the smoothest unit stripe field (`Point-[V]`), its edge
+    advances (`Scalar+[E]`), and the lowest two stripe energies (`[2] Scalar+`)."""
+    edge_means = topology.incidence[1, 0].mean(axis=0)                                    # Scalar+[E <- V]
+    advance = (-((edge_means * field) | (topology.d[0] * vertices))) * frequency          # Scalar+[E]
+    _, laplacian = connection_operators(
+        topology, adjusted_transport(topology, patches, angles + advance),
+        cotangent_weights(topology, vertices, regular_faces),
+    )
+    energies, stripe_fields = low_modes(laplacian, patches, areas, normal_stiffness, 2)
+    stripe = stripe_fields.batch()[0]                                                     # [V] Point-
+    return field, (stripe / stripe.norm()).field(), advance, energies
+
+
+def spanning_tree_field(topology: Topology, vertices: Point, patches: Patch, angles: Scalar) -> Point:
+    """Propagating a unit tangent seed from the first vertex across `topology.spanning_tree` under
+    `angles` (`Scalar+[E]`) in one sparse linear solve produces a unit cross-field representative
+    (`Point-[V]`) parallel up to quarter turns across non-tree edges."""
     children, tree = topology.spanning_tree
-    turns = adjusted_transport(topology, normals, angles)                        # [2] Rotor+[edges]
-    covariant = (spdiag(turns >> Point) * topology.boundary[1, 0]).sum(axis=0)    # (Point- <- Point-)[edges <- vertices]
-    # Each tree edge's covariant derivative, in the row of the vertex it reaches.
-    tree_edges = topology.reading(tree, 1)                                      # Scalar+[vertices - 1 <- edges]
-    along_tree = topology.reading(children, 0).adjugate() * (tree_edges * covariant)  # (Point- <- Point-)[vertices <- vertices]
-    first = topology.reading(np.array([0]), 0)                                   # Scalar+[1 <- vertices]
-    first_edge = topology.reading(np.array([0]), 1)                              # Scalar+[1 <- edges]
-    # The direction across the first edge, in the tangent plane: the plane through the normal and the edge's
-    # direction, which is that direction as an antivector.
-    seed = ((first * normals) ^ (first_edge * (topology.d[0] * vertices)).dual_inverse()).normalized()  # Point-[1]
-    return (along_tree + first.adjugate() * first * Point).solve(first.adjugate() * seed)
+    turns = adjusted_transport(topology, patches, angles)                                 # [2] Rotor+[E]
+    covariant = (spdiag(turns >> Point) * topology.boundary[1, 0]).sum(axis=0)            # (Point- <- Point-)[E <- V]
+    tree_edges = topology.reading(tree, 1)                                                # Scalar+[V_tree <- E]
+    tree_covariant = topology.reading(children, 0).adjugate() * (tree_edges * covariant)  # (Point- <- Point-)[V <- V]
+    root_vertex = topology.reading(np.array([0]), 0)                                      # Scalar+[1 <- V]
+    first_edge = topology.reading(np.array([0]), 1)                                       # Scalar+[1 <- E]
+    # Turn the first edge vector in the root vertex's tangent plane to obtain an initial unit tangent seed.
+    seed = (-(first_edge * (topology.d[0] * vertices)).commutator((root_vertex * patches).dual())).normalized()  # Point-[1]
+    return (tree_covariant + root_vertex.adjugate() * root_vertex * Point).solve(root_vertex.adjugate() * seed)
 
 
-def cross_stripes(topology: Topology, vertices: Point, normals: Vector, areas: Scalar, angles: Scalar, cross: Point,
-                  regular: Scalar, frequency: float, normal_stiffness: float) -> tuple[Point, Point, Scalar]:
-    """Two families of stripes run across the two lines of a cross field, `Point-[vertices]`, parallel up to
-    quarter turns for the connection of the given turns: the lines `[2] Point-[vertices]`, the stripe field of
-    each `[2] Point-[vertices]`, and the targets across every edge for each line at its head `[2] Scalar+[edges]`.
-
-    Carried across an edge, each of the tail's lines lands on one of the head's lines, pointing along it
-    or against it. A stripe phase along a line reads backwards along the line reversed, so the stripe
-    field carried onto a line it lands against is mirrored: its component along that line reversed, the
-    stripes' angle from the line negated. The two families are one field over the cross's two lines at
-    every vertex, coupled across the edges where the lines trade places, around the cross's singularities.
-    Each face adds its half-cotangents to its edges' weights only where it is regular, `Scalar+[faces]`."""
-    count, n_edges = topology.n_vertices, topology.n_elements[1]
-    forward = adjusted_transport(topology, normals, angles)[0]                  # Rotor+[edges]
-    # The cross's second line: the first turned a quarter turn by its commutator with the tangent plane.
-    lines = stack([cross, cross.commutator(normals.dual())])                     # [2] Point-[vertices]
-    tails, heads = topology.incidence[1, 0]                                      # Scalar+[edges <- vertices], Scalar+[edges <- vertices]
-    at_tails, ahead = tails * lines, heads * lines                               # [2] Point-[edges], [2] Point-[edges]
-    # One where the tail's line b lands along the head's line a, minus one where it lands against it, and
-    # zero where it lands across it.
-    match = ahead[:, None].dot((forward >> at_tails)[None, :])                   # [2, 2] Scalar+[edges]
-    behind = (match * at_tails[None, :]).sum(axis=1)                             # [2] Point-[edges]
-    # The field read along each edge, by the metric: the paper's inner product of the field with the edge.
-    advance = ((ahead + behind) / 2).dot(topology.d[0] * vertices) * frequency   # [2] Scalar+[edges]
-    turn = ((heads * normals).dual() * (-advance / 2)).exp()                     # [2] Rotor+[edges]
-    # Carried, then mirrored onto the head's line where it lands against it.
-    moved = forward >> Point                                                     # (Point- <- Point-)[edges]
-    along = ahead[:, None]                                                       # [2, 1] Point-[edges]
-    landed = match * match * moved + (match - match * match) * (along * along.dot(moved))   # [2, 2] (Point- <- Point-)[edges]
-    # The doubled field holds the two lines of every vertex as sites of their own, line a of vertex v at 2 v + a,
-    # and the doubled edges likewise; these read line a at every vertex and at every edge.
-    vertex_lines = Sparse.selection(np.arange(2 * count).reshape(count, 2).T, 2 * count)   # [2] Scalar+[vertices <- vertices * 2]
-    edge_lines = Sparse.selection(np.arange(2 * n_edges).reshape(n_edges, 2).T, 2 * n_edges)   # [2] Scalar+[edges <- edges * 2]
-    # The head's stripe field turned back by the target, against the tail's carried and mirrored.
-    on_lines = (spdiag(turn.reverse() >> Point) * heads * vertex_lines
-                - (spdiag(landed) * tails * vertex_lines[None]).sum(axis=1))     # [2] (Point- <- Point-)[edges <- vertices * 2]
-    covariant = (edge_lines.adjugate() * on_lines).sum(axis=0)                   # (Point- <- Point-)[edges * 2 <- vertices * 2]
-    # Each line's site takes its edge's weight, and its vertex's normal and area.
-    weights = (edge_lines.adjugate() * cotangent_weights(topology, vertices, regular)).sum(axis=0)  # Scalar+[edges * 2]
-    laplacian = covariant.adjugate()((weights * Point.dual())(covariant))        # (Plane+ <- Point-)[vertices * 2 <- vertices * 2]
-    _, stripe_fields = low_modes(laplacian, (vertex_lines.adjugate() * normals).sum(axis=0),
-                                 (vertex_lines.adjugate() * areas).sum(axis=0), normal_stiffness, 1)
-    stripe = vertex_lines * stripe_fields[0]                                     # [2] Point-[vertices]
+def cross_stripes(topology: Topology, vertices: Point, patches: Patch, areas: Scalar,
+                  angles: Scalar, cross: Point, regular_faces: Scalar, frequency: float,
+                  normal_stiffness: float) -> tuple[Point, Point, Scalar]:
+    """Coupling the two orthogonal cross-field lines (`[2] Point-[V]`) across edges where quarter or
+    half turns swap or reverse them solves for both coupled unit stripe families (`[2] Point-[V]`)
+    and their edge phase advances (`[2] Scalar+[E]`)."""
+    V, E, F = topology.n_elements
+    edge_rotors = adjusted_transport(topology, patches, angles)[0]                        # Rotor+[E]
+    # Turn each cross line by a quarter turn in its tangent plane via commutator with the dual patch.
+    lines = stack([cross, cross.commutator(patches.dual())])                              # [2] Point-[V]
+    tails, heads = topology.incidence[1, 0]                                               # Scalar+[E <- V], Scalar+[E <- V]
+    tail_lines, head_lines = tails * lines, heads * lines                                 # [2] Point-[E], [2] Point-[E]
+    transported_lines = edge_rotors >> tail_lines                                         # [2] Point-[E]
+    # Signed alignment (+1, -1, or 0) matching each transported tail line onto each head line.
+    alignment = -(head_lines[:, None] | transported_lines[None, :])                       # [2, 2] Scalar+[E]
+    matched_tails = (alignment * tail_lines[None, :]).sum(axis=1)                         # [2] Point-[E]
+    advance = (-((head_lines + matched_tails) / 2 | (topology.d[0] * vertices))) * frequency  # [2] Scalar+[E]
+    target_turn = ((heads * patches).dual() * (-advance / 2)).exp()                       # [2] Rotor+[E]
+    # Mirror the carried stripe vector along the head line whenever transport lands against that line.
+    transport_map = edge_rotors >> Point                                                  # (Point- <- Point-)[E]
+    head_axis = head_lines[:, None]                                                       # [2, 1] Point-[E]
+    coupled_transport = (alignment * alignment * transport_map
+                         + (alignment - alignment * alignment) * (head_axis * -(head_axis | transport_map)))  # [2, 2] (Point- <- Point-)[E]
+    vertex_lines = Sparse.selection(np.arange(2 * V).reshape(V, 2).T, 2 * V)              # [2] Scalar+[V <- 2 * V]
+    edge_lines = Sparse.selection(np.arange(2 * E).reshape(E, 2).T, 2 * E)                # [2] Scalar+[E <- 2 * E]
+    line_differences = (spdiag(target_turn.reverse() >> Point) * heads * vertex_lines
+                        - (spdiag(coupled_transport) * tails * vertex_lines[None]).sum(axis=1))  # [2] (Point- <- Point-)[E <- 2 * V]
+    covariant = (edge_lines.adjugate() * line_differences).sum(axis=0)                    # (Point- <- Point-)[2 * E <- 2 * V]
+    weights = (edge_lines.adjugate() * cotangent_weights(topology, vertices, regular_faces)).sum(axis=0)  # Scalar+[2 * E]
+    laplacian = covariant.adjugate()((weights * Point.dual())(covariant))                 # (Plane+ <- Point-)[2 * V <- 2 * V]
+    _, stripe_fields = low_modes(
+        laplacian, (vertex_lines.adjugate() * patches).sum(axis=0),
+        (vertex_lines.adjugate() * areas).sum(axis=0), normal_stiffness, 1,
+    )
+    stripe = vertex_lines * stripe_fields[0]                                              # [2] Point-[V]
     return lines, stripe / stripe.norm(), advance
 
 
-# --- plumbing -------------------------------------------------------------------------
-def as_scalar(values: np.ndarray) -> Scalar:
-    """Numbers `[...]` as scalars, one per entry."""
-    return mv.scalar(np.asarray(values)[..., None])
-
-
-def latitude_rings(colatitudes: np.ndarray, steps: int) -> tuple[Vector, Point]:
-    """Closed latitude circles on the unit sphere at the given colatitudes `[rings]`, over `steps` segments, come
-    as their unit normals, the patches of the sphere's tangent planes, with the unit meridian tangent vector at the
-    start of each ring."""
-    longitudes = np.linspace(0.0, 2 * np.pi, steps + 1)
-    tilt = (mv.zx * (-colatitudes / 2)).exp()                                   # [rings] Rotor+
-    spin = (mv.xy * (-longitudes[:, None] / 2)).exp()                           # [steps + 1, 1] Rotor+
-    normals = spin >> (tilt >> mv.xy.dual())                                    # [steps + 1, rings] Vector-
-    starts = tilt >> mv.x.dual()                                                # [rings] Point-
-    return normals, starts
+def turned_fields(patches: Patch, fields: Point, n_frames: int) -> Iterator[Point]:
+    """Yields `fields` (`[...] Point-[V]`) rotated about every vertex normal by `n_frames` evenly
+    spaced angles over one full turn."""
+    planes = patches.dual()                                                               # Bivector+[V]
+    for angle in np.linspace(0, 2 * np.pi, n_frames, endpoint=False):
+        turn = (planes * (-angle / 2)).exp()                                              # Rotor+[V]
+        yield turn >> fields                                                              # [...] Point-[V]

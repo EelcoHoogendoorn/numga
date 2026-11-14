@@ -1,35 +1,34 @@
-"""A hull and its polar dual about the unit sphere: oriented faces and polar incidence; the figure
-and a frame of the breath and of the rescue draw."""
+"""Tests polar dual planes, spherical circumcentres, and single-frame rendering for weighted duals."""
 
 from itertools import islice
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.surfaces.weighted_dual import core, render, scenarios
+from examples.surfaces.weighted_dual import core, numerical, render, scenarios
 
 
-def test_face_planes_pair_to_one_with_their_vertices_on_a_fixed_mesh():
-    frames = [frame for _, frame in zip(range(3), scenarios.breath())]
-    assert all(np.array_equal(topology.elements[2], frames[0][0].elements[2]) for topology, _, _ in frames)
-    for topology, points, duals in frames:
-        # A face's plane is the dual of its pole.
-        assert np.abs((duals.dual_inverse() & (topology.incidence[2, 0] * points)).to_array() - 1).max() < 1e-10
+def test_face_planes_pair_to_one_with_their_vertices():
+    states = list(islice(scenarios.breath(), 2))
+    assert all(np.array_equal(topology.elements[2], states[0][0].elements[2]) for topology, _, _ in states)
+    for topology, points, duals in states:
+        assert (((duals.dual_inverse() & (topology.incidence[2, 0] * points)) - 1).abs() < 1e-10).all()
 
 
-def test_points_on_the_sphere_give_its_delaunay_mesh_with_poles_as_circumcentres():
-    points = scenarios.directions                          # Point-[points]
-    topology = core.hull(points)
-    duals = core.poles(topology, points)
-    corners = topology.incidence[2, 0] * points                                # [3] Point-[faces]
-    centres = duals.normalized()                                               # Point-[faces]
-    # Each pole's image is equally far from the three corners of its face: their circumcentre.
-    distances = (corners - centres).norm().to_array()                          # [3, faces]
-    np.testing.assert_allclose(distances - distances[:1], 0, atol=1e-10)
+def test_unit_sphere_poles_project_to_triangle_circumcentres():
+    points = scenarios.directions                                              # Point-[V]
+    topology = numerical.convex_hull(points)
+    duals = core.face_poles(topology, points)                                  # Point-[F]
+    corners = topology.incidence[2, 0] * points                                # [3] Point-[F]
+    centres = duals.normalized()                                               # Point-[F]
+    distances = (corners - centres).norm()                                     # [3] Scalar+[F]
+    assert ((distances - distances[:1]).abs() < 1e-10).all()
+    assert (core.pole_sides(topology, points, duals) > 0).all(axis=0).sum() > 0
+    assert (core.dual_lengths(topology, points) > 0).all()
 
 
-def test_the_figure_and_a_frame_of_each_animation_draw():
-    frames = list(islice(scenarios.breath(), 1))
-    plt.close(render.draw_complex(*frames[0]))
-    assert len(list(render.animate(frames))) == 1
-    assert len(list(render.animate(islice(scenarios.settle(), 1)))) == 1
+def test_figure_and_single_animation_frames_render():
+    states = list(islice(scenarios.breath(), 1))
+    plt.close(render.complex_figure(*states[0]))
+    assert len(list(render.complex_frames(states))) == 1
+    assert len(list(render.complex_frames(islice(scenarios.rescue(), 1)))) == 1

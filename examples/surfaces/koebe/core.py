@@ -1,108 +1,95 @@
-"""Koebe polyhedra: every triangulation of the sphere as a polyhedron whose edges all touch the unit sphere.
+"""Every triangulation of the sphere is the incidence pattern of a Koebe polyhedron whose edges all touch the unit sphere.
 
-The algebra has the unit sphere as its metric: x, y and z square to one and w to minus one. A circle on the
-sphere, where the plane `n | x == s` cuts it, is the vector `n + s * w`, scaled to square to one. A point is an
-antivector, and the points of the sphere are its null antivectors: a point lies on a circle exactly when
-`circle & point` is zero. A circle's dual is a point, the apex of the cone that touches the sphere along it:
-polarity in the sphere is the dual. Two circles touch from outside exactly when their inner product is minus
-one, and then the sum of their poles is the point where they touch, the null point on the line between the
-apexes. So circles touching along every edge of a triangulation have the vertices of a polyhedron whose edges
-all touch the sphere as their duals. The circle through the three touching points of a face is orthogonal to
-its vertices' circles, the dual of their wedge, and its apex is a vertex of the dual polyhedron, which touches
-the sphere at the same points. The equations fix the circles up to the maps that keep the sphere, the rotors of
-the algebra; the centred one has the touching points balanced about the centre of the sphere.
+In the algebra whose metric is the unit sphere, spatial planes square to one and the ideal plane squares to minus one. Each circle where a plane cuts the sphere is a unit vector, and each point is an antivector that lies on the sphere when it is null and on a circle when `circle & point == 0`. Dualizing a circle gives its pole, the apex of the cone tangent to the sphere along that circle. Two circles touch externally when `circle | other == -1`, and the sum of their poles `circle.dual() + other.dual()` is the null tangency point on the edge between their apexes. Dualizing the wedge of three vertex circles around a face `(a ^ b ^ c).dual()` gives the orthogonal face circle through those three tangency points, whose apex is a vertex of the polar dual polyhedron touching the sphere at the same points. Rotors preserve every inner product and carry any Koebe polyhedron through a six-parameter family of shapes while keeping every edge tangent to the sphere; centring places the tangency points' balance centre at the centre of the sphere.
 """
 
 from __future__ import annotations
+
+from collections.abc import Iterator
 
 import numpy as np
 
 from numga import Algebra, NumpyContext, stack
 from numga.sparse import Sparse, spdiag
-from examples.util import shapes
 from numga.topology import Topology
 
 ga = Algebra("x+y+z+w-")
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()                         # Scalar+
-# Circles on the sphere, the planes that cut it, are vectors.
-Vector = ga.gatype.vector()                         # Vector+
-# A point, of space or of the sphere, is an antivector, the pole of its plane; so is a direction, a point at infinity.
-Point = ga.gatype.antivector()                      # Antivector-
-# The centre of the sphere is the pole of the plane at infinity, w, which pairs with a point to give its weight.
-origin = mv.w.dual()                                # [] Point-
+Scalar = ga.gatype.scalar()                                                 # Scalar+
+# Extrinsic planes cutting the unit sphere along oriented circles.
+Plane = ga.gatype.vector()                                                  # Vector+
+# Intrinsic face circles dual to three wedged vertex planes.
+Patch = Plane.derive.flipped_orientation                                    # Vector-
+# Points of space and null points of the sphere, dual to polar planes.
+Point = ga.gatype.antivector()                                              # Antivector-
+Rotor = ga.gatype.rotor()                                                   # Rotor+
+# Centre of the unit sphere, dual to the weight plane w.
+origin = mv.w.dual()                                                        # [] Point-
 
 
-# --- math -----------------------------------------------------------------------------
-def touching(topology: Topology, circles: Vector) -> Point:
-    """The point where the circles at the ends of each edge touch is the sum of their poles, the null point on
-    the line between the apexes."""
-    return topology.incidence[1, 0].sum(axis=0) * circles.dual()               # [...] Point-[edges]
+def cap_circles(topology: Topology, directions: Point) -> Plane:
+    """Spherical caps around `directions` (`Point-[V]`) of radius half the mean edge angle initialize the circle planes (`Plane+[V]`)."""
+    tails, heads = topology.incidence[1, 0] * directions                    # Point-[E], Point-[E]
+    angles = (heads * tails).log().norm()                                   # Scalar+[E]
+    radius = angles.sites.mean() / 2                                        # [] Scalar+
+    # Place each cone apex along its direction at reciprocal cosine distance so its dual circle plane squares to one.
+    apexes = (directions + origin * radius.cos()) / radius.sin()            # Point-[V]
+    return apexes.dual()                                                    # Plane+[V]
 
 
-def face_circles(topology: Topology, circles: Vector) -> Vector:
-    """The circle of each face, through the points where its vertices' circles touch, is orthogonal to all three:
-    the dual of their wedge."""
-    # The circles at each face's corners, on the last axis.
-    corners = topology.incidence[2, 0] * circles[..., None]                    # [..., corners] Vector+[faces]
-    return (corners[..., 0] ^ corners[..., 1] ^ corners[..., 2]).dual()       # [...] Vector+[faces]
-
-
-def apexes(circles: Vector) -> Point:
-    """The apex of the cone touching the sphere along each circle is the circle's dual, at unit weight along w."""
-    poles = circles.dual()                                                     # [...] Point-
-    return poles / (mv.w & poles)                                              # [...] Point-
-
-
-def koebe(topology: Topology, start: Vector, n_steps: int) -> Vector:
-    """The circles that square to one and touch from outside along every edge, inner product minus one, follow
-    by Gauss-Newton from the start; the steps leave the maps that keep the sphere, along which nothing changes,
-    where they were."""
-    n_vertices, n_edges = topology.n_vertices, topology.n_elements[1]
-    # The residuals are the vertices' followed by the edges'.
-    vertex_rows = Sparse.selection(np.arange(n_vertices), n_vertices + n_edges).adjugate()  # Scalar+[vertices + edges <- vertices]
-    edge_rows = Sparse.selection(n_vertices + np.arange(n_edges), n_vertices + n_edges).adjugate()  # Scalar+[vertices + edges <- edges]
-    circles = start                                                            # Vector+[vertices]
+def koebe_circles(topology: Topology, start: Plane, n_steps: int) -> Plane:
+    """Gauss-Newton iterations from `start` (`Plane+[V]`) solve for unit circles touching externally along every edge (`Plane+[V]`)."""
+    V, E, F = topology.n_elements
+    vertex_rows = Sparse.selection(np.arange(V), V + E).adjugate()          # Scalar+[V + E <- V]
+    edge_rows = Sparse.selection(V + np.arange(E), V + E).adjugate()        # Scalar+[V + E <- E]
+    circles = start                                                         # Plane+[V]
     for _ in range(n_steps):
-        tails, heads = topology.incidence[1, 0] * circles                      # Vector+[edges], Vector+[edges]
-        residual = vertex_rows * (circles.squared() - 1) + edge_rows * ((tails | heads) + 1)   # Scalar+[vertices + edges]
-        # Each vertex's residual depends on its own circle, each edge's on the circle at either end, as the circle at
-        # the other end reads it.
-        own = spdiag(2 * circles | Vector)                                     # (Scalar+ <- Vector+)[vertices <- vertices]
-        across = (spdiag(stack([heads, tails]) | Vector) * topology.incidence[1, 0]).sum(axis=0)  # (Scalar+ <- Vector+)[edges <- vertices]
-        jacobian = vertex_rows * own + edge_rows * across                      # (Scalar+ <- Vector+)[vertices + edges <- vertices]
-        # The change that zeroes the linearised residuals, along the circles' own metric: the step commutes with
-        # the maps that keep the sphere, so a boosted start gives the boosted circles.
+        tails, heads = topology.incidence[1, 0] * circles                   # Plane+[E], Plane+[E]
+        residual = vertex_rows * (circles.squared() - 1) + edge_rows * ((tails | heads) + 1)  # Scalar+[V + E]
+        # Linearize unit-square residuals on vertices and tangency inner products across incident edge endpoints.
+        vertex_part = spdiag(2 * circles | Plane)                           # (Scalar+ <- Plane+)[V <- V]
+        edge_part = (spdiag(stack([heads, tails]) | Plane) * topology.incidence[1, 0]).sum(axis=0)  # (Scalar+ <- Plane+)[E <- V]
+        jacobian = vertex_rows * vertex_part + edge_rows * edge_part        # (Scalar+ <- Plane+)[V + E <- V]
+        # Minimum-norm steps in the circle metric commute with sphere-preserving rotors and leave their six null directions untouched.
         circles = circles - jacobian.adjoint()(jacobian(jacobian.adjoint()).solve(residual))
     return circles
 
 
-def centre(points: Point, n_iterations: int) -> Point:
-    """The centre from which points of the sphere balance is the point inside it, squaring to minus one, that
-    minimises the summed logarithms of minus its inner products with them."""
-    # There the points, each weighted by minus the reciprocal of its inner product with the centre, sum along
-    # the centre itself: the centre is the fixed point of that weighted sum, normalized.
-    centre = origin                                 # [] Point-
+def tangency_points(topology: Topology, circles: Plane) -> Point:
+    """Summing the poles at each edge's endpoints locates the null tangency points on the sphere (`[...] Point-[E]`)."""
+    return topology.incidence[1, 0].sum(axis=0) * circles.dual()            # [...] Point-[E]
+
+
+def cone_apexes(circles: Plane | Patch) -> Point:
+    """Dualizing `circles` and normalizing by `w` places the tangent-cone apexes at unit weight (`[...] Point-`)."""
+    poles = circles.dual()                                                  # [...] Antivector+-
+    return poles / (mv.w & poles)                                           # [...] Point-
+
+
+def face_circles(topology: Topology, circles: Plane) -> Patch:
+    """Dualizing the wedge of each triangle's three vertex circles gives the orthogonal face circles (`[...] Patch-[F]`)."""
+    corners = topology.incidence[2, 0] * circles[..., None]                 # [..., 3] Plane+[F]
+    return (corners[..., 0] ^ corners[..., 1] ^ corners[..., 2]).dual()     # [...] Patch-[F]
+
+
+def balance_centre(points: Point, n_iterations: int) -> Point:
+    """Fixed-point iteration inside the sphere finds the unit-timelike point (`[] Point-`) minimizing summed log inner products with `points`."""
+    # At the stationary point, weighting each null point by minus the reciprocal of its inner product sums parallel to the centre.
+    centre = origin                                                         # [] Point-
     for _ in range(n_iterations):
-        weighted_sum = (points * (-1 / (centre | points))).sites.sum()  # [] Point-
+        weighted_sum = (points * (-1 / (centre | points))).sites.sum()      # [] Point-
         centre = weighted_sum.normalized()
     return centre
 
 
-# --- plumbing -------------------------------------------------------------------------
-def spiral(n_points: int) -> Point:
-    """The directions are spread evenly over the sphere along a Fibonacci spiral: the direction z tilted towards x
-    by each polar angle, then turned about z by each azimuth."""
-    turns = np.arange(n_points) + 0.5
-    polar, azimuth = np.arccos(1 - 2 * turns / n_points), np.pi * (1 + 5**0.5) * turns
-    tilts = (mv.zx * (-polar / 2)).exp()                               # [points] Rotor+
-    return (mv.xy * (-azimuth / 2)).exp() >> (tilts >> mv.z.dual())            # [points] Point-
+def boost_rotors(rapidity: float, tilt: float, n_frames: int) -> Rotor:
+    """Boost rotors (`[n_frames] Rotor+`) sweep a plane through `w` tilted by `tilt` once around the `z`-axis up to `rapidity`."""
+    turn_angles = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)       # [n_frames]
+    tilted_plane = (mv.zx * (tilt / 2)).exp() >> mv.xw                      # [] Bivector+
+    boost_planes = (mv.xy * (-turn_angles / 2)).exp() >> tilted_plane       # [n_frames] Bivector+
+    return (boost_planes * (rapidity * np.sin(turn_angles) ** 2 / 2)).exp()  # [n_frames] Rotor+
 
 
-# --- the step outside the algebra -------------------------------------------------------
-def hull(offsets: Point) -> Topology:
-    """The convex hull of points at offsets from the centre has triangle faces, counter-clockwise seen from
-    outside, found from the offsets' pairings with the planes x, y and z."""
-    coordinates = (stack((mv.x, mv.y, mv.z)) & offsets.batch()[..., None]).to_array()   # [points, 3]
-    topology, _ = shapes.convex_boundary(coordinates)
-    return topology
+def boost_states(circles: Plane, rapidity: float, tilt: float, n_frames: int) -> Iterator[Plane]:
+    """Yields `circles` (`Plane+[V]`) carried across `n_frames` by `boost_rotors(rapidity, tilt, n_frames)`."""
+    yield from boost_rotors(rapidity, tilt, n_frames) >> circles            # [n_frames] Plane+[V]

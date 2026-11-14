@@ -1,55 +1,63 @@
-"""Scenes for developability: the Stanford bunny flowed towards developable patches, as it creases."""
+"""Scenes for developability flow crease the triangulated Stanford bunny into piecewise developable panels."""
 
 from __future__ import annotations
 
-from itertools import islice
+from collections.abc import Iterator
 
 import numpy as np
 
 from examples import MODEL_DIR
-from examples.util import shapes
 from examples.surfaces.developability import core
+from examples.util import shapes
+from numga import stack
+from numga.topology import Topology
 
 mv = core.mv
-# The Stanford bunny, from the shared models, its size, and the quarter turn that stands it up: its y axis,
-# up in the file, turned onto z.
-BUNNY = MODEL_DIR / "bunny.obj"
-SIZE = 2.0
-upright = (mv.yz * (-np.pi / 4)).exp()
-# The flow's step, as a share of what each vertex's faces can take, its number of steps, the steps between
-# kept states, and the duration of a frame.
-STEP = 0.3
-N_STEPS = 600
-STRIDE = 5
-DURATION_MS = 40
+# Stanford bunny asset path, bounding-box scale, and quarter turn bringing the file's y-up axis onto z.
+bunny_path = MODEL_DIR / "bunny.obj"
+box_size = 2.0
+upright_turn = (mv.yz * (-np.pi / 4)).exp()                                     # [] Rotor+
+# Stiffness-scaled step fraction, total gradient steps, steps per recorded frame, and GIF frame duration.
+step_scale = 0.3
+n_steps = 600
+n_stride = 5
+n_states = n_steps // n_stride + 1
+frame_duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------
-def flowed(n_steps: int = N_STEPS) -> tuple[core.Topology, list[tuple[core.Point, core.Scalar]]]:
-    """The bunny with the states of its flow: the vertices and each vertex's smallest eigenvalue."""
-    topology, vertices = bunny()
-    return topology, list(islice(core.flow(topology, vertices, STEP), 0, n_steps + 1, STRIDE))
+def bunny_flow(n_kept: int, n_step_stride: int) -> tuple[Topology, Iterator[tuple[core.Point, core.Scalar]]]:
+    """Streams `n_kept` states of the upright Stanford bunny (`Point-[V]`, `Scalar+[V]`) every `n_step_stride` developability steps."""
+    topology, vertices = bunny_surface()
+    return topology, core.developability_flow(topology, vertices, step_scale, n_kept, n_step_stride)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def bunny() -> tuple[core.Topology, core.Point]:
-    """The bunny's mesh, and its vertices upright, centred in a box of the given size."""
-    topology, coordinates = shapes.surface(BUNNY, SIZE)
-    vertices = mv.vector(coordinates).dual().field()                            # Point-[vertices]
-    return topology, upright >> vertices
+def bunny_surface() -> tuple[Topology, core.Point]:
+    """Loads the triangulated Stanford bunny centred in a box of width `box_size` with its upright vertex field (`Point-[V]`)."""
+    topology, coordinates = shapes.surface(bunny_path, box_size)
+    raw_vertices = mv.vector(coordinates).dual().field()                        # Point-[V]
+    return topology, upright_turn >> raw_vertices
 
 
 def main() -> None:
-    from examples.util.animation import save_animation
+    """Streams the bunny developability flow animation to disk and checks monotone energy decay."""
     from examples.surfaces.developability import render
+    from examples.util.animation import save_animation
 
-    topology, states = flowed()
-    save_animation(render.animate_flow(topology, states), "developability_flow", DURATION_MS)
+    topology, state_stream = bunny_flow(n_states, n_stride)
+    states: list[tuple[core.Point, core.Scalar]] = []
+
+    def recorded() -> Iterator[tuple[core.Point, core.Scalar]]:
+        for state in state_stream:
+            states.append(state)
+            yield state
+
+    save_animation(render.flow_animation(topology, recorded()), "developability_flow", frame_duration_ms)
 
     # checks
-    # Every kept state has less energy than the one before, and the flow takes away nearly all of it.
-    energies = np.array([values.sum(axis=0).to_array() for _, values in states])
-    assert np.all(np.diff(energies) < 0)
+    energies = stack([eigenvalues.batch().sum(axis=0) for _, eigenvalues in states])  # [n_states] Scalar+
+    assert (energies[1:] < energies[:-1]).all()
     assert energies[-1] < 0.1 * energies[0]
 
 

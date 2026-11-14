@@ -1,5 +1,4 @@
-"""Points breathing in and out along their rays on a fixed mesh, with the poles of its faces; a mesh
-rescued by the nearest weights that keep every dual edge positive."""
+"""Scenario parameters and streaming generators run the radial breathing polyhedron and the weight-rescued triangulation."""
 
 from __future__ import annotations
 
@@ -7,128 +6,96 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from scipy.optimize import LinearConstraint, linprog, minimize
+from examples.surfaces.weighted_dual import core, numerical
+from numga.topology import Topology
 
-from numga import concatenate
-from examples.surfaces.weighted_dual import core
+n_points = 32
+jitter = 0.03
+direction_seed, phase_seed = 0, 3
+amplitude = 0.06
+n_frames = 96
+duration_ms = 40
+radius_spread, radius_seed = 0.06, 57
+weight_bounds = (0.5, 2.0)
+margin_share = 0.3
+n_rescue_frames = 96
 
-# The number of points, how far their directions are nudged off an even spread, the seeds of the nudges
-# and of their phases, their spread in distance from the centre, and the frames of one breath and the
-# duration of each.
-N_POINTS = 32
-JITTER = 0.03
-DIRECTION_SEED, PHASE_SEED = 0, 3
-AMPLITUDE = 0.06
-N_FRAMES = 96
-DURATION_MS = 40
-# The spread and seed of the random distances whose hull gives the mesh the rescue starts from, every point
-# on the hull; the bounds on the weights, the share of the widest margin of its conditions the rescue keeps, and the
-# frames from the start to the rescue.
-MESH_SPREAD, MESH_SEED = 0.06, 57
-WEIGHT_BOUNDS = (0.5, 2.0)
-MARGIN_SHARE = 0.3
-N_SETTLE_FRAMES = 96
+directions = core.spiral_directions(n_points, jitter, direction_seed)          # Point-[V]
 
 
-# --- math -----------------------------------------------------------------------------
-def spiral_directions(count: int) -> core.Point:
-    """The directions are spread evenly over the sphere along a Fibonacci spiral, each nudged a little at random."""
-    turns = np.arange(count) + 0.5
-    polar = np.arccos(1 - 2 * turns / count)
-    azimuth = np.pi * (1 + 5**0.5) * turns
-    # The pole turned down towards x by its polar angle, then around the pole by its azimuth.
-    down = (core.mv.zx * (-polar / 2)).exp()                                   # [points] Rotor+
-    around = (core.mv.xy * (-azimuth / 2)).exp()                               # [points] Rotor+
-    spiral = (around * down) >> core.mv.z.dual()                               # [points] Point-
-    nudges = core.mv.vector(np.random.default_rng(DIRECTION_SEED).normal(size=(count, 3))).dual()  # [points] Point-
-    return (spiral + JITTER * nudges).normalized().field()                     # Point-[points]
+def closing_schedule(n_steps: int) -> np.ndarray:
+    """Interpolation progress (`[n_steps]`) advances linearly for three quarters of the run and settles exponentially over the final quarter."""
+    closing_start, e_folds = 3 / 4, 3
+    rate = e_folds / (1 - closing_start)
+    # Match the linear and exponential slopes at closing_start so velocity stays continuous.
+    tail_share = 1 / (1 + closing_start * rate)
+    progress = np.linspace(0, 1, n_steps)                                      # [n_steps]
+    return np.where(
+        progress < closing_start,
+        progress * tail_share * rate,
+        1 - tail_share * np.exp(-(progress - closing_start) * rate),
+    )
 
 
-directions = spiral_directions(N_POINTS)
+def breath() -> Iterator[tuple[Topology, core.Point, core.Point]]:
+    """Yields `(topology, points, duals)` frames as vertices oscillate radially on the fixed unit-sphere convex hull."""
+    topology = numerical.convex_hull(directions)
+    phases = np.random.default_rng(phase_seed).uniform(0, 2 * np.pi, n_points)  # [n_points]
+    yield from core.breath_states(topology, directions, amplitude, phases, n_frames)
 
 
-def breath() -> Iterator[tuple[core.Topology, core.Point, core.Point]]:
-    """The breath yields, at each frame, the mesh the points had on the sphere, held throughout, the points along
-    their fixed directions at their own distances, and the poles of the mesh's faces."""
-    topology = core.hull(directions)
-    phases = np.random.default_rng(PHASE_SEED).uniform(0, 2 * np.pi, N_POINTS)
-    radii = 1 + AMPLITUDE * np.sin(np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)[:, None] + phases)   # [frames, points]
-    for points in (directions.batch() * radii).field():                        # Point-[points]
-        yield topology, points, core.poles(topology, points)
+def rescue() -> Iterator[tuple[Topology, core.Point, core.Point]]:
+    """Yields `(topology, points, duals)` frames along the weight line from a tangled unit-sphere complex to its nearest positive-dual rescue."""
+    random_radii = core.mv.scalar(
+        np.exp(radius_spread * np.random.default_rng(radius_seed).normal(size=(n_points, 1)))
+    ).field()                                                                  # Scalar+[V]
+    topology = numerical.convex_hull(directions * random_radii)
+    even_weights = core.mv.scalar(np.ones((n_points, 1))).field()              # Scalar+[V]
+    unit_weights = core.mv.scalar(np.eye(n_points)[..., None]).field()         # [n_points] Scalar+[V]
+    fold_columns = core.edge_folds(topology, directions, unit_weights)         # [n_points] Scalar+[E_interior]
+    inside_columns = core.pole_insides(topology, directions, unit_weights)     # [n_points, 3] Scalar+[F]
+    _, max_margin = numerical.widest_margin(fold_columns, inside_columns, weight_bounds)  # Scalar+[V], Scalar+
+    rescued_weights = numerical.nearest_weights(
+        fold_columns, inside_columns, margin_share * max_margin, even_weights, weight_bounds
+    )                                                                          # Scalar+[V]
+    schedule = closing_schedule(n_rescue_frames)                               # [n_rescue_frames]
+    yield from core.rescue_states(topology, directions, even_weights, rescued_weights, schedule)
 
 
-def widest(conditions: core.Scalar) -> tuple[np.ndarray, float]:
-    """The widest margin is the largest smallest condition, each scaled to unit size, over the weights within
-    their bounds and summing to their count; it is negative when no weights meet every condition. A linear
-    program finds it, with its weights, outside the algebra."""
-    # The conditions as numbers for the solver, one row per condition and one column per point.
-    matrix = conditions.to_array().T                                           # [conditions, points]
-    scaled = matrix / np.linalg.norm(matrix, axis=-1, keepdims=True)
-    count = matrix.shape[-1]
-    # The weights, then the smallest condition, which is maximised.
-    largest = np.concatenate([np.zeros(count), [-1.0]])
-    total = np.concatenate([np.ones(count), [0.0]])[None]
-    result = linprog(largest, A_ub=np.hstack([-scaled, np.ones((len(scaled), 1))]), b_ub=np.zeros(len(scaled)),
-                     A_eq=total, b_eq=[count], bounds=[WEIGHT_BOUNDS] * count + [(None, None)])
-    return result.x[:-1], result.x[-1]
-
-
-def nearest(conditions: core.Scalar, margin: float, start: np.ndarray) -> np.ndarray:
-    """The nearest weights to the start, by the summed squares of the changes, leave every condition, scaled to
-    unit size, at least the given margin, which shares the change among many points rather than a few. A
-    quadratic program finds them outside the algebra."""
-    # The conditions as numbers for the solver, one row per condition and one column per point.
-    matrix = conditions.to_array().T                                           # [conditions, points]
-    scaled = matrix / np.linalg.norm(matrix, axis=-1, keepdims=True)
-    result = minimize(lambda weights: ((weights - start) ** 2).sum(), start, jac=lambda weights: 2 * (weights - start),
-                      method="SLSQP", constraints=[LinearConstraint(scaled, margin, np.inf)], bounds=[WEIGHT_BOUNDS] * len(start))
-    return result.x
-
-
-def settle() -> Iterator[tuple[core.Topology, core.Point, core.Point]]:
-    """The settling yields, at every frame, the mesh, points and poles on the straight line in the weights from
-    the hull of points at random distances along their rays, held with the points back on the sphere, where
-    some of its dual edges cross over, to the nearest weights that unfold it with every pole inside its face,
-    closing in on them at the end."""
-    radii = np.exp(MESH_SPREAD * np.random.default_rng(MESH_SEED).normal(size=N_POINTS))   # [points]
-    topology = core.hull((directions.batch() * radii).field())
-    start = np.ones(N_POINTS)                                                              # [points]
-    # Every fold outward and every pole inside its face, each linear in the weights: at one unit weighting per
-    # point, all as one batch, they give the columns of the map from weights to conditions.
-    unit_weights = core.mv.scalar(np.eye(N_POINTS)[..., None]).field()         # [points] Scalar+[points]
-    conditions = concatenate([core.folds(topology, directions, unit_weights),
-                              core.insides(topology, directions, unit_weights).batch().reshape(N_POINTS, -1)], axis=-1)  # [points, conditions] Scalar+
-    rescue = nearest(conditions, MARGIN_SHARE * widest(conditions)[1], start)              # [points]
-    paths = start + core.timing(N_SETTLE_FRAMES)[:, None] * (rescue - start)                                # [frames, points]
-    for points in (directions.batch() / paths).field():                        # Point-[points]
-        yield topology, points, core.poles(topology, points)
-
-
-# --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
+    """Saves the static complex figure and both radial-weight animations before verifying incidence and untangling."""
     from examples.surfaces.weighted_dual import render
+    from examples.util.animation import save_animation, save_figure
 
-    frames = list(breath())
-    save_figure(render.draw_complex(*frames[0]), "weighted_dual")
-    save_animation(render.animate(frames), "weighted_dual_breath", DURATION_MS)
-    settled = list(settle())
-    save_animation(render.animate(settled), "weighted_dual_rescue", DURATION_MS)
+    breath_history = []
+    save_animation(
+        render.complex_frames(breath_history.append(state) or state for state in breath()),
+        "weighted_dual_breath",
+        duration_ms,
+    )
+    save_figure(render.complex_figure(*breath_history[0]), "weighted_dual")
+
+    rescued_history = []
+    save_animation(
+        render.complex_frames(rescued_history.append(state) or state for state in rescue()),
+        "weighted_dual_rescue",
+        duration_ms,
+    )
 
     # checks
-    for topology, points, duals in frames:
-        # Every face's plane, the dual of its pole, pairs to one with each of the face's vertices.
-        assert np.abs((duals.dual_inverse() & (topology.incidence[2, 0] * points)).to_array() - 1).max() < 1e-10
+    for topology, points, duals in breath_history:
+        # Every face plane is the inverse dual of its pole and pairs to one with all three corners.
+        assert (((duals.dual_inverse() & (topology.incidence[2, 0] * points)) - 1).abs() < 1e-10).all()
 
-    # On the sphere some dual edges cross over, exactly where the polyhedron folds; along the straight line
-    # to the rescue they only ever uncross, and at the rescue none is left.
-    topology = settled[0][0]
-    even_weights = core.mv.scalar(np.ones((N_POINTS, 1))).field()              # Scalar+[points]
-    crossed = [(core.dual_lengths(topology, points) < 0).sum() for _, points, _ in settled]
-    assert np.array_equal(core.dual_lengths(topology, settled[0][1]) < 0, core.folds(topology, directions, even_weights) < 0)
-    assert crossed[0] > 0 and crossed[-1] == 0 and (np.diff(crossed) <= 0).all()
-    # At the rescue every pole lies inside its face.
-    assert (core.sides(*settled[-1]) > 0).all()
+    tangled_topology = rescued_history[0][0]
+    even_weights = core.mv.scalar(np.ones((n_points, 1))).field()              # Scalar+[V]
+    crossed_counts = [(core.dual_lengths(tangled_topology, points) < 0).sum() for _, points, _ in rescued_history]
+    assert np.array_equal(
+        core.dual_lengths(tangled_topology, rescued_history[0][1]) < 0,
+        core.edge_folds(tangled_topology, directions, even_weights) < 0,
+    )
+    assert crossed_counts[0] > 0 and crossed_counts[-1] == 0 and (np.diff(crossed_counts) <= 0).all()
+    assert (core.pole_sides(*rescued_history[-1]) > 0).all()
 
 
 if __name__ == "__main__":

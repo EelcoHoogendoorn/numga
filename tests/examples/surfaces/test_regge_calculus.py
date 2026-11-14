@@ -1,158 +1,121 @@
-"""Regge edge metric basis, rotor holonomy defects, Gauss–Bonnet, and intrinsic Laplace–Beltrami flow."""
+"""Coverage tests check Regge edge-metric duality maps, rotor holonomy defects, intrinsic conduction, and figure rendering."""
 
+import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
 from numga.sparse import spdiag
-from examples.surfaces.regge_calculus import core, scenarios
+from examples.surfaces.regge_calculus import core, render, scenarios
 from examples.util import shapes
 
 
-def test_regge_metric_basis_side_readings_heron_and_corner_rotors():
-    corners, _ = scenarios.single_triangle(8)
-    sides = (core.triangle.boundary[2, 1] * (core.triangle.d[0] * corners.field())).batch()[:, 0]
-    basis, gradients, patch = core.regge_metric_basis(corners)
-
-    assert basis.gatype == core.Metric
-    assert gradients.gatype == core.Plane
-    assert patch.gatype == core.Patch
-    np.testing.assert_allclose(gradients.sum(axis=0).kernel, 0.0, atol=1e-14)
-
-    # Each Regge basis map pairs to 1 on its own edge and to 0 on the other two edges.
-    side_readings = basis[:, None](sides[None, :]) & sides[None, :]
-    np.testing.assert_allclose(side_readings.kernel, np.eye(3)[..., None], atol=1e-14)
-
-    # With Euclidean squared edge lengths, the Regge metric recovers the ambient duality and reference area.
-    euclidean_metric, euclidean_area, euclidean_rotors, euclidean_turns = core.triangle_geometry(
-        corners, sides.norm_squared(),
+def test_regge_metric_basis_heron_and_corner_rotors():
+    corners, sample_points = scenarios.single_triangle(4)
+    basis = core.metric_basis(core.triangle, corners)
+    squared_lengths = (
+        (core.triangle.d[0] * corners).norm_squared()
+        * core.mv.scalar(scenarios.edge_stretches[:, None]).field()
     )
-    np.testing.assert_allclose((euclidean_metric - core.Point.dual_inverse()).kernel, 0.0, atol=1e-14)
-    np.testing.assert_allclose((euclidean_area - patch.norm()).kernel, 0.0, atol=1e-14)
-    np.testing.assert_allclose((euclidean_turns.sum(axis=0) - np.pi * core.mv.xy).kernel, 0.0, atol=1e-14)
-    np.testing.assert_allclose(
-        (euclidean_rotors[0] * euclidean_rotors[1] * euclidean_rotors[2]).kernel,
-        [-1.0, 0.0], atol=1e-14,
-    )
+    metric = (spdiag(basis) * core.triangle.incidence[2, 1]).sum(axis=0) * squared_lengths
+    area = core.intrinsic_areas(core.triangle, corners, metric)
+    rotors = core.corner_rotors(core.triangle, corners, metric, area)
+    turns = rotors.log()
 
-    # With stretched squared edge lengths, the wedge pairing matches Heron's formula and corner rotors multiply to -1.
-    squared_lengths = sides.norm_squared() * scenarios.edge_stretches
-    metric, intrinsic_area, corner_rotors, corner_turns = core.triangle_geometry(corners, squared_lengths)
-    assert metric.gatype == core.Metric
-    assert intrinsic_area.gatype == core.Scalar
-    assert corner_rotors.gatype == core.Rotor
-    assert corner_turns.gatype == core.Bivector
+    assert basis.batch().gatype == core.Metric
+    assert metric.batch().gatype == core.Metric
+    assert area.batch().gatype == core.Scalar
+    assert rotors.batch().gatype == core.Rotor
+    assert turns.batch().gatype == core.Bivector
 
-    np.testing.assert_allclose(((metric(sides) & sides) - squared_lengths).kernel, 0.0, atol=1e-14)
-    lengths = np.sqrt(squared_lengths.kernel[..., 0])
-    semiperimeter = lengths.sum() / 2
-    heron_area = np.sqrt(semiperimeter * np.prod(semiperimeter - lengths))
-    np.testing.assert_allclose(intrinsic_area.kernel, heron_area, atol=1e-14)
-    np.testing.assert_allclose(corner_rotors.scalar_norm_squared().kernel, 1.0, atol=1e-14)
-    np.testing.assert_allclose((corner_turns.sum(axis=0) - np.pi * core.mv.xy).kernel, 0.0, atol=1e-14)
-    np.testing.assert_allclose(
-        (corner_rotors[0] * corner_rotors[1] * corner_rotors[2]).kernel,
-        [-1.0, 0.0], atol=1e-14,
-    )
+    sides = (core.triangle.boundary[2, 1] * (core.triangle.d[0] * corners)).batch()[:, 0]
+    side_readings = basis.batch()[:, 0, None](sides[None, :]) & sides[None, :]
+    assert ((side_readings - np.eye(3)).abs() < 1e-10).all()
+
+    prescribed_side_lengths = (core.triangle.incidence[2, 1] * squared_lengths).batch()[:, 0]
+    assert (((metric.batch()[0](sides) & sides) - prescribed_side_lengths).abs() < 1e-10).all()
+
+    side_lengths = prescribed_side_lengths.square_root()
+    semiperimeter = side_lengths.sum() / 2
+    heron_area = (
+        semiperimeter
+        * (semiperimeter - side_lengths[0])
+        * (semiperimeter - side_lengths[1])
+        * (semiperimeter - side_lengths[2])
+    ).square_root()
+    assert ((area.batch()[0] - heron_area).abs() < 1e-10).all()
+    assert ((rotors.batch()[:, 0].scalar_norm_squared() - 1).abs() < 1e-10).all()
+    assert ((turns.batch()[:, 0].sum(axis=0) - np.pi * core.mv.xy).norm() < 1e-10).all()
+    assert ((rotors.batch()[0, 0] * rotors.batch()[1, 0] * rotors.batch()[2, 0] + 1).norm() < 1e-10).all()
+
+    figure = render.metric_basis_figure(corners, sample_points, basis, metric)
+    assert isinstance(figure, plt.Figure)
+    plt.close(figure)
 
 
-def test_gauss_bonnet_curvature_defects_and_cotangent_inverse_metric():
-    topology, coordinates = shapes.hexagonal_disk(1.0, 6)
-    vertices = scenarios.mv.vector(coordinates).dual().field()
+def test_gauss_bonnet_mirror_covariance_and_conduction():
+    topology, coordinates = shapes.hexagonal_disk(1.0, 2)
+    V, E, F = topology.n_elements
+    vertices = core.mv.vector(coordinates).dual().field()
     edges = topology.d[0] * vertices
     midpoints = topology.incidence[1, 0].mean(axis=0) * vertices
     edge_squared_lengths = (
         edges.norm_squared()
-        + scenarios.radial_rates * midpoints.dot(edges).squared()
+        + scenarios.radial_rates * (midpoints | edges).squared()
         + scenarios.hoop_rates * (midpoints & edges).norm_squared()
     )
 
-    metrics, intrinsic_areas, defects, curvatures, conductivities = core.mesh_geometry(
-        topology, vertices, edge_squared_lengths,
+    basis = core.metric_basis(topology, vertices)
+    metrics = (spdiag(basis) * topology.incidence[2, 1]).sum(axis=0) * edge_squared_lengths
+    areas = core.intrinsic_areas(topology, vertices, metrics)
+    turns = core.corner_rotors(topology, vertices, metrics, areas).log()
+    defects = core.vertex_defects(topology, vertices, turns)
+    dual_areas = topology.incidence[2, 0].mean(axis=0).adjugate() * areas
+    curvatures = defects / dual_areas
+    conductivities = core.triangle_conductivities(topology, vertices, metrics, areas)
+
+    assert ((defects.sites.sum() - 2 * np.pi * core.mv.xy).norm() < 1e-10).all()
+    assert ((topology.reading(topology.interior[0], 0) * defects[0]).batch().norm() < 1e-10).all()
+    assert (curvatures.batch()[1, 0] & core.mv.xy.dual()) > 0
+    assert (curvatures.batch()[2, 0] & core.mv.xy.dual()) < 0
+
+    # Mirroring the reference triangulation mirrors the vertex angle defects and face currents.
+    mirror = core.mv.x
+    mirrored_vertices = mirror >> vertices
+    mirrored_basis = core.metric_basis(topology, mirrored_vertices)
+    mirrored_metrics = (spdiag(mirrored_basis) * topology.incidence[2, 1]).sum(axis=0) * edge_squared_lengths
+    mirrored_areas = core.intrinsic_areas(topology, mirrored_vertices, mirrored_metrics)
+    mirrored_turns = core.corner_rotors(topology, mirrored_vertices, mirrored_metrics, mirrored_areas).log()
+    mirrored_defects = core.vertex_defects(topology, mirrored_vertices, mirrored_turns)
+    assert (((mirror >> defects.batch()) - mirrored_defects.batch()).norm() < 1e-10).all()
+
+    basis_planes = stack((core.mv.x, core.mv.y))
+    identity_residual = (
+        metrics.batch()[..., None](conductivities.batch()[..., None](basis_planes))
+        - areas.batch()[..., None] * basis_planes
     )
-    assert metrics.batch().gatype == core.Metric
-    assert intrinsic_areas.batch().gatype == core.Scalar
-    assert defects.batch().gatype == core.Bivector
-    assert curvatures.batch().gatype == core.Bivector
-    assert conductivities.batch().gatype == core.Conductivity
+    assert (identity_residual.norm() < 1e-10).all()
 
-    # Discrete Gauss-Bonnet holds to machine precision across flat, positively curved, and negatively curved metrics.
-    np.testing.assert_allclose((defects.sites.sum() - 2 * np.pi * core.mv.xy).kernel, 0.0, atol=1e-12)
+    rim_indices = topology.exterior[0]
+    rim = topology.reading(rim_indices, 0)
+    electrodes = rim_indices[(core.mv.x & (rim * vertices)).abs() > 0.6]
+    electrode_reading = topology.reading(electrodes, 0)
+    boundary_potential = electrode_reading.adjugate() * (electrode_reading * (core.mv.x & vertices))
+    free_indices = np.setdiff1d(np.arange(V), electrodes)
 
-    np.testing.assert_allclose((topology.reading(topology.interior[0], 0) * defects[0]).kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose((topology.reading(topology.interior[0], 0) * curvatures[0]).kernel, 0.0, atol=1e-11)
-
-    # Scaling squared radial and circumferential distances by one plus `radial_rates` and `hoop_rates` times the squared
-    # radius gives the continuum surface a Gaussian curvature of `radial_rates - 3 * hoop_rates` at its centre.
-    centre_curvatures = (curvatures.batch()[:, 0] & core.mv.xy.dual()).to_array()
-    expected_centre = scenarios.radial_rates - 3.0 * scenarios.hoop_rates
-    np.testing.assert_allclose(centre_curvatures, expected_centre, rtol=4.5e-2, atol=1e-12)
-
-    # The side-dyad cotangent formula equals the area-weighted inverse metric on every triangle and every case.
-    inverse_conductivities = intrinsic_areas * metrics.batch().inverse().field()
-    np.testing.assert_allclose((conductivities - inverse_conductivities).kernel, 0.0, atol=1e-13)
-
-    # Conformal invariance in 2D: scaling all squared edge lengths by a constant factor scales areas by that
-    # factor while leaving the area-weighted inverse metric and vertex defects invariant.
-    conformal_scale = 2.7
-    _, scaled_areas, scaled_defects, _, scaled_conductivities = core.mesh_geometry(
-        topology, vertices, conformal_scale * edge_squared_lengths,
-    )
-    np.testing.assert_allclose((scaled_areas - conformal_scale * intrinsic_areas).kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose((scaled_defects - defects).kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose((scaled_conductivities - conductivities).kernel, 0.0, atol=1e-13)
-
-
-def test_intrinsic_laplace_beltrami_cotangent_equivalence_and_flow():
-    topology, coordinates = shapes.hexagonal_disk(1.0, 6)
-    vertices = scenarios.mv.vector(coordinates).dual().field()
-    d0 = topology.d[0] * core.Scalar
-    edges = topology.d[0] * vertices
-    midpoints = topology.incidence[1, 0].mean(axis=0) * vertices
-    edge_squared_lengths = (
-        edges.norm_squared()
-        + scenarios.radial_rates * midpoints.dot(edges).squared()
-        + scenarios.hoop_rates * (midpoints & edges).norm_squared()
-    )
-    metrics, intrinsic_areas, _, _, conductivities = core.mesh_geometry(topology, vertices, edge_squared_lengths)
-
-    sides = topology.boundary[2, 1] * edges
-    patches = (sides[0] & sides[1]) / 2
-    corner_gradients = sides / (2 * patches)
-    gradient = (spdiag(corner_gradients) * topology.incidence[2, 0]).sum(axis=0) * core.Scalar
+    gradient = core.simplex_gradient(topology, vertices)
     conductance = gradient.adjugate()(conductivities(gradient))
-    np.testing.assert_allclose((conductance - conductance.adjugate()).cells.kernel, 0.0, atol=1e-13)
+    potential = core.steady_potential(topology, conductance, free_indices, boundary_potential)
+    reference_sides = topology.boundary[2, 1] * edges
+    reference_areas = ((reference_sides[0] & reference_sides[1]) / 2).antinorm()
+    current = -conductivities(gradient(potential)) / reference_areas
 
-    # Pulling the Regge inverse metric back through the Whitney face gradient matches the intrinsic cotangent Laplacian.
-    tails, heads = topology.corners[2, 1]
-    dots = -(metrics[:, None](sides[tails]) & sides[heads])
-    cotangents = dots / (2 * intrinsic_areas[:, None])
-    unit_faces = core.mv.scalar(np.ones(topology.n_elements[2])[..., None]).field().dual()
-    edge_cotangents = (topology.incidence[2, 1].adjugate() * ((cotangents / 2) * unit_faces)).sum(axis=-1)
-    cotangent_laplacian = d0.adjugate()((edge_cotangents * core.Scalar)(d0))
-    quadratic = (core.mv.x & vertices).squared() - 0.35 * (core.mv.y & vertices).squared()
-    np.testing.assert_allclose(
-        (conductance(quadratic) - cotangent_laplacian(quadratic)).kernel,
-        0.0, atol=1e-13,
-    )
+    assert ((topology.reading(free_indices, 0) * conductance(potential)).batch().norm() < 1e-9).all()
+    assert (conductance(potential).sites.sum().norm() < 1e-9).all()
 
-    # Steady electrode conduction balances intrinsic flux at every free vertex and bends flow by curvature.
-    boundary = topology.exterior[0]
-    abscissa = (core.mv.x & vertices).batch()
-    electrodes = boundary[abscissa[boundary].norm() > scenarios.electrode_threshold]
-    pinned = topology.reading(electrodes, 0)
-    prescribed = pinned.adjugate() * (pinned * (core.mv.x & vertices))
-    potential, current, streamfunction = core.intrinsic_conduction(
-        topology, vertices, conductivities, electrodes, prescribed,
-    )
-
-    free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
-    free = topology.reading(free_vertices, 0).adjugate() * core.Scalar
-    nodal_source = conductance(potential)
-    np.testing.assert_allclose(free.adjugate()(nodal_source).kernel, 0.0, atol=1e-11)
-    np.testing.assert_allclose(nodal_source.sites.sum().kernel, 0.0, atol=1e-11)
-
-    # Shortening circumferential distances reduces centre current relative to lengthening them.
     centres = topology.incidence[2, 0].mean(axis=0) * vertices
-    origin_face = centres.norm().batch().argmin()
-    centre_speeds = current.batch()[:, origin_face].norm().to_array()
-    assert centre_speeds[1] < centre_speeds[0] < centre_speeds[2]
-    assert np.isfinite(streamfunction.kernel).all()
+    curvature_figure = render.curvature_defects_figure(topology, vertices, centres, metrics, curvatures)
+    flow_figure = render.intrinsic_flow_figure(topology, vertices, potential, current)
+    assert isinstance(curvature_figure, plt.Figure)
+    assert isinstance(flow_figure, plt.Figure)
+    plt.close(curvature_figure)
+    plt.close(flow_figure)

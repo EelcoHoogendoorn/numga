@@ -1,1 +1,1 @@
-"""Smooth frame fields from interpolated rotors: their Darboux decomposition, Skyrmion curvature, and harmonic frame fields in VGA3D."""
+"""Smooth rotor frame fields across triangulated surfaces: Darboux–Whitney decomposition, skyrmion winding, and harmonic rotor relaxation."""

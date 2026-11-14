@@ -1,101 +1,127 @@
-"""Drawing for spinor waves on a surface: each tile the surface over time, lit from above, coloured red,
-green and blue by the planes yz, zx and xy of the vertex field together with those of the face field."""
+"""GPU surface rendering for spinor fields on a triangulated surface, mapping yz, zx, and xy amplitudes to RGB."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
-from examples.surfaces.dirac_waves import core
 from numga.render import meshes, solids
+from numga.topology import Topology
+from examples.surfaces.dirac_waves import core
 from examples.util.panels import show_pixels
 
-Topology = core.Topology
-
-# Each tile's exposure, the percentile of its first frame's amplitudes that shows at full brightness, and how many
-# times that the pulse and the standing waves show at full brightness, room for the pulse as it gathers again; the
-# surface's own grey under the field; the view; and each tile's pixels across.
-exposure = 99.3
-pulse_room, mode_room = 1.9, 1.0
-base = 0.12
+# First-frame exposure percentile, headroom multipliers for the focusing pulse and standing modes, surface grey, camera angles, and tile width.
+exposure_percentile = 99.3
+pulse_headroom, mode_headroom = 1.9, 1.0
+surface_grey = 0.12
 elevation, azimuth = np.radians(8.0), np.radians(35.0)
 margin = 0.06
-pixels = 192
+n_pixels = 192
 background = np.zeros(3)
 
-# A pixel's colour: the surface's grey, and the vertices' field blended across the face joined with the face's own.
-colour = meshes.Colour("""
+surface_colour = meshes.Colour(
+    """
 fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {
     return vec4<f32>(base + sqrt(values.rgb * values.rgb + face_values.rgb * face_values.rgb), 1.0);
 }
-""", dict(base=base))
+""",
+    dict(base=surface_grey),
+)
 
 
-# --- plumbing -------------------------------------------------------------------------
-def planes(fields: core.Even) -> np.ndarray:
-    """The absolute amplitudes of fields' planes yz, zx and xy `[..., sites, 3]`: their pairings with the planes x, y
-    and z, which meet the scalar part in nothing."""
+def bivector_channels(fields: core.Even) -> np.ndarray:
+    """Reads the absolute yz, zx, and xy plane amplitudes (`[..., 3]`) by pairing `fields` against `x`, `y`, and `z`."""
     mv = core.mv
     return np.abs((stack((mv.x, mv.y, mv.z)) & fields.batch()[..., None]).to_array())
 
 
-def image(topology: Topology, seen: tuple, corners: np.ndarray, sides: np.ndarray) -> np.ndarray:
-    """The surface as an RGB image, `[pixels, pixels, 3]`: its vertices' colours at the corners of each face,
-    `[corners, faces, 3]`, spread over the faces between them, joined with each face's own, and lit."""
-    points, normals, frame = seen
-    return meshes.draw(points, topology.elements[2], corners.transpose(1, 0, 2), normals, frame, background, face_values=sides,
-                       colour=colour, gloss=solids.gloss) / 255
+def tile_image(topology: Topology, camera_scene: tuple, corner_rgb: np.ndarray, face_rgb: np.ndarray) -> np.ndarray:
+    """Renders one lit surface tile (`[n_pixels, n_pixels, 3]`) blending corner vertex colours (`[3, F, 3]`) with triangle colours (`[F, 3]`)."""
+    points, normals, frame = camera_scene
+    return (
+        meshes.draw(
+            points,
+            topology.elements[2],
+            corner_rgb.transpose(1, 0, 2),
+            normals,
+            frame,
+            background,
+            face_values=face_rgb,
+            colour=surface_colour,
+            gloss=solids.gloss,
+        )
+        / 255
+    )
 
 
-def view(topology: Topology, positions: core.Point) -> tuple:
-    """The surface at the positions of its vertices as the camera sees it, the same for every field on it: its
-    points carried into projective space, their smooth normals, and the camera framing them."""
-    points = solids.origin + solids.context.include_from_algebra(positions.batch())       # [vertices] Point-
-    frame = solids.view([points], 0.0, elevation, azimuth, margin, pixels)
+def surface_camera(topology: Topology, vertices: core.Point) -> tuple:
+    """Builds the projective vertex points (`[V] Point-`), smooth normals, and camera framing for `vertices`."""
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())   # [V] Point-
+    frame = solids.view([points], 0.0, elevation, azimuth, margin, n_pixels)
     return points, meshes.smooth(points, topology), frame.squared()
 
 
-def animate(topology: Topology, positions: core.Point, vertices: core.Even, faces: core.Even, columns: int,
-            room: float = 1.0) -> Iterator[np.ndarray]:
-    """Frames of vertex and face fields `[tiles, frames] Even+[vertices]` and `[tiles, frames] Even-[faces]` on the mesh at the
-    positions `Point-[vertices]`, the tiles in rows of the given count, each exposed by its first frame, `room` times over."""
-    amplitudes, sides = planes(vertices), planes(faces)                       # [tiles, frames, V, 3], [tiles, frames, F, 3]
-    # The vertex field at the corners of each face, read through the mesh.
-    corners = planes(topology.incidence[2, 0] * vertices[..., None])          # [tiles, frames, corners, F, 3]
-    first = np.concatenate([amplitudes[:, :1], sides[:, :1]], axis=2)         # [tiles, 1, V + F, 3]
-    level = room * np.percentile(first, exposure, axis=(1, 2, 3), keepdims=True)
-    corners, sides = corners / level[..., None], sides / level
-    tiles, frames = corners.shape[:2]
-    seen = view(topology, positions)
-    for frame in range(frames):
-        pictures = np.stack([image(topology, seen, corners[tile, frame], sides[tile, frame]) for tile in range(tiles)])
-        pictures = np.concatenate([pictures, np.zeros((-tiles % columns,) + pictures.shape[1:])])
-        rows = pictures.reshape((-1, columns) + pictures.shape[1:])           # [rows, columns, P, P, 3]
-        layout = rows.transpose(0, 2, 1, 3, 4).reshape(rows.shape[0] * pixels, columns * pixels, 3)
-        yield np.round(255 * layout).astype(np.uint8)
+def tiled_animation(
+    topology: Topology,
+    vertices: core.Point,
+    n_columns: int,
+    headroom: float,
+    states: Iterable[core.SpinorPair],
+) -> Iterator[np.ndarray]:
+    """Streams `(vertex_spinor, face_spinor)` states into tiled RGB frames (`Iterator[np.ndarray]`), calibrating exposure from the first frame."""
+    state_iter = iter(states)
+    first_vertex, first_face = next(state_iter)
+    # Normalize single-tile fields (`Even+[V]`) and multi-tile batches (`[n_tiles] Even+[V]`) to leading `[n_tiles]`.
+    is_single = first_vertex.ndim == 0
+    if is_single:
+        first_vertex, first_face = first_vertex[None], first_face[None]
+
+    first_v_rgb = bivector_channels(first_vertex)                               # [..., V, 3]
+    first_f_rgb = bivector_channels(first_face)                                 # [..., F, 3]
+    combined = np.concatenate([first_v_rgb, first_f_rgb], axis=1)               # [..., V + F, 3]
+    scale = np.maximum(headroom * np.percentile(combined, exposure_percentile, axis=(1, 2), keepdims=True), 1e-12)
+    n_tiles = first_v_rgb.shape[0]
+    n_rows = (n_tiles + n_columns - 1) // n_columns
+    camera_scene = surface_camera(topology, vertices)
+
+    def render_frame(v_field: core.Even, f_field: core.Even) -> np.ndarray:
+        if is_single:
+            v_field, f_field = v_field[None], f_field[None]
+        corner_rgb = bivector_channels(topology.incidence[2, 0] * v_field[..., None]) / scale[..., None]   # [..., 3, F, 3]
+        face_rgb = bivector_channels(f_field) / scale                           # [..., F, 3]
+        pictures = np.stack([
+            tile_image(topology, camera_scene, corner_rgb[tile], face_rgb[tile]) for tile in range(n_tiles)
+        ])
+        padded = np.concatenate([pictures, np.zeros((-n_tiles % n_columns,) + pictures.shape[1:])])
+        grid = padded.reshape((n_rows, n_columns, n_pixels, n_pixels, 3))
+        canvas = grid.transpose(0, 2, 1, 3, 4).reshape(n_rows * n_pixels, n_columns * n_pixels, 3)
+        return np.round(255 * canvas).astype(np.uint8)
+
+    yield render_frame(first_vertex[0] if is_single else first_vertex, first_face[0] if is_single else first_face)
+    for vertex_spinor, face_spinor in state_iter:
+        yield render_frame(vertex_spinor, face_spinor)
 
 
-def animate_pulse(topology: Topology, positions: core.Point, vertices: core.Even, faces: core.Even,
-                  room: float = pulse_room) -> Iterator[np.ndarray]:
-    """Frames of a wave's vertex and face fields `[frames] Even+[vertices]` and `[frames] Even-[faces]`, exposed by its first frame,
-    `room` times over."""
-    return animate(topology, positions, vertices[None], faces[None], 1, room)
+def pulse_animation(
+    topology: Topology, vertices: core.Point, states: Iterable[core.SpinorPair],
+) -> Iterator[np.ndarray]:
+    """Streams a single-sphere spinor pulse (`Even+[V]`, `Even-[F]`) with `pulse_headroom` exposure."""
+    return tiled_animation(topology, vertices, 1, pulse_headroom, states)
 
 
-def animate_modes(topology: Topology, positions: core.Point, vertices: core.Even, faces: core.Even,
-                  room: float = mode_room) -> Iterator[np.ndarray]:
-    """Frames of standing waves' vertex and face fields `[waves, frames] Even+[vertices]` and `[waves, frames] Even-[faces]`, side
-    by side, each exposed by its first frame, `room` times over."""
-    return animate(topology, positions, vertices, faces, vertices.shape[0], room)
+def modes_animation(
+    topology: Topology, vertices: core.Point, n_columns: int, states: Iterable[core.SpinorPair],
+) -> Iterator[np.ndarray]:
+    """Streams `n_columns` standing-wave modes (`[n_columns] Even+[V]`, `[n_columns] Even-[F]`) side by side."""
+    return tiled_animation(topology, vertices, n_columns, mode_headroom, states)
 
 
-def still(topology: Topology, positions: core.Point, vertices: core.Even, faces: core.Even) -> plt.Figure:
-    """A vertex field `Even+[vertices]` and a face field `Even-[faces]` on the surface at the positions `Point-[vertices]`, exposed
-    together."""
-    picture, = animate(topology, positions, vertices[None, None], faces[None, None], 1)
+def spinor_figure(topology: Topology, vertices: core.Point, vertex_spinor: core.Even, face_spinor: core.Even) -> plt.Figure:
+    """Draws a static figure of `vertex_spinor` (`Even+[V]`) and `face_spinor` (`Even-[F]`) on the triangulated surface."""
+    (picture,) = tiled_animation(topology, vertices, 1, mode_headroom, [(vertex_spinor, face_spinor)])
     figure, ax = plt.subplots(figsize=(3, 3))
     show_pixels(ax, picture)
     return figure

@@ -1,1 +1,1 @@
-"""Regge calculus: intrinsic metric, rotor holonomy, and Laplace–Beltrami flow from edge lengths."""
+"""Prescribed edge lengths on a flat triangulation determine its intrinsic metric, vertex curvature defects, and steady conduction."""

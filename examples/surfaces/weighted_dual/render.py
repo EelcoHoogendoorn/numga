@@ -1,6 +1,4 @@
-"""The hull and its polar dual in space, and both projected onto the sphere, ray traced on the GPU: the hull an
-opaque solid, a cone from the centre over each face, its edges and the dual's edges rods, and the arcs on the sphere
-inked on its surface."""
+"""GPU ray tracing renders the polyhedron with its polar dual in space alongside their spherical projections."""
 
 from __future__ import annotations
 
@@ -10,103 +8,96 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import stack
 from examples.surfaces.weighted_dual import core
-from numga.topology import Topology
-from numga.render import simplices, solids
 from examples.util.panels import image_figure
+from numga import stack
+from numga.render import simplices, solids
+from numga.topology import Topology
 
 sm = solids.mv
-PRIMAL_COLOUR = np.array(to_rgb("#287fa0"))
-DUAL_COLOUR = np.array(to_rgb("#d06c36"))
-HULL_COLOUR = np.array(to_rgb("#b4d4e0"))
-RAY_COLOUR = np.full(3, 0.55)
-SPHERE_COLOUR = np.full(3, 0.97)
-background = np.ones(3)
-# Each cone from the centre over a face: the centre, then the face's three corners, and its four faces.
-CONE_FACES = np.array([[1, 2, 3], [0, 1, 2], [0, 2, 3], [0, 3, 1]])
-# The colours of a vertex's distance from the sphere, and the distance at either end of them.
-DISTANCE_MAP = "coolwarm"
-DISTANCE_RANGE = 0.1
-# How far each ray is drawn either side of the sphere.
-RAY_SPAN = 0.15
-# The view's elevation and azimuth in radians, azimuth zero looking along +y; half the width of the square view
-# about the centre, one framing for both panels so the sphere is the same size in each, and the pixels across each.
-ELEVATION, AZIMUTH = np.radians(20.0), np.radians(30.0)
-HALF, N_PIXELS = 1.3, 300
-# The widths of the edges, the rays and the arcs, and the vertices' radius, in pixels.
-EDGE_WIDTH, RAY_WIDTH, ARC_WIDTH, VERTEX_RADIUS = 1.3, 1.0, 1.4, 3.0
+primal_colour = np.array(to_rgb("#287fa0"))         # [3]
+dual_colour = np.array(to_rgb("#d06c36"))           # [3]
+hull_colour = np.array(to_rgb("#b4d4e0"))           # [3]
+ray_colour = np.full(3, 0.55)                       # [3]
+sphere_colour = np.full(3, 0.97)                    # [3]
+background_colour = np.ones(3)                      # [3]
+# Each tetrahedral cone joins vertex 0 at the centre to one triangle's three corners (1, 2, 3).
+cone_faces = np.array([[1, 2, 3], [0, 1, 2], [0, 2, 3], [0, 3, 1]])            # [4, 3]
+distance_cmap = "coolwarm"
+distance_range = 0.1
+ray_span = 0.15
+elevation, azimuth = np.radians(20.0), np.radians(30.0)
+half_width, n_pixels = 1.3, 300
+edge_width, ray_width, arc_width, vertex_radius = 1.3, 1.0, 1.4, 3.0
 
 
-# --- plumbing -------------------------------------------------------------------------
-def arcs(starts: solids.Point, ends: solids.Point) -> tuple[solids.Quadric, solids.Quadric]:
-    """The great arcs on the unit sphere between pairs of points on it of unit weight `[pairs]`, as lines to ink:
-    the plane through the centre and both ends, and, to bound it, the side of the plane across the chord away from
-    the centre, `[pairs]` each."""
-    # The direction from the centre to the chord's middle; the plane square to it through the start, facing the centre.
-    middle = (starts - solids.origin) + (ends - solids.origin)                # [pairs] Point-
-    across = middle.dual() - sm.w * (middle.dual() & starts)                  # [pairs] Plane+
-    return solids.half_space((solids.origin & starts & ends) * solids.flip), solids.half_space(across)
+def great_arcs(starts: solids.Point, ends: solids.Point) -> tuple[solids.Quadric, solids.Quadric]:
+    """Pairs of half-spaces (`[...] Plane+ <- Point-`) ink the shorter great-circle arcs between unit-sphere endpoints."""
+    # Form the chord midpoint direction and the plane orthogonal to it through the start point facing the centre.
+    midpoints = (starts - solids.origin) + (ends - solids.origin)              # [...] Point-
+    chord_planes = midpoints.dual() - sm.w * (midpoints.dual() & starts)       # [...] Plane+
+    return solids.half_space((solids.origin & starts & ends) * solids.flip), solids.half_space(chord_planes)
 
 
-def draw_complex(topology: core.Topology, points: core.Point, duals: core.Point) -> plt.Figure:
-    """In space, the polyhedron of the points and its polar dual; on the sphere, both projected from the
-    centre."""
-    return image_figure(picture(topology, points, duals))
+def complex_figure(topology: Topology, points: core.Point, duals: core.Point) -> plt.Figure:
+    """Wraps the side-by-side spatial and spherical ray-traced panels into a matplotlib `Figure`."""
+    return image_figure(complex_image(topology, points, duals))
 
 
-def picture(topology: core.Topology, points: core.Point, duals: core.Point) -> np.ndarray:
-    """The two panels side by side: in space, the hull, opaque, with its edges, the dual's edges between the poles
-    where a face of the dual bounding them faces the viewer, and each vertex on a stretch of its ray from the centre;
-    on the sphere, the arcs of both."""
-    view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, HALF), N_PIXELS)
+def complex_image(topology: Topology, points: core.Point, duals: core.Point) -> np.ndarray:
+    """Renders the spatial polyhedron and polar dual beside their great-circle projections (`[n_pixels, 2 * n_pixels, 3]`)."""
+    V, E, F = topology.n_elements
+    view = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, half_width), n_pixels)
     pixel = view.pixel
     sphere = solids.ball(solids.origin, 1.0)[None, None]                       # [1, 1] Plane+ <- Point-
-    vertices = solids.origin + solids.context.include_from_algebra(points.batch())             # [points] Point-
-    # The hull, folded or not, as one cone from the centre over each face, so that it is solid wherever its faces
-    # are: the centre, then the face's corners.
-    corners = solids.origin + solids.context.include_from_algebra((topology.incidence[2, 0] * points).batch())  # [corners, faces] Point-
-    cones = stack([solids.origin.broadcast_to(corners.shape[1:]), *corners], axis=-1)   # [faces, 4] Point-
-    hull = solids.polyhedra(cones, CONE_FACES)                                 # [faces, 4] Plane+
-    # Each vertex coloured by its distance from the sphere, blue inside, grey on it, red outside, on a stretch of
-    # the ray from the centre it moves along, the vertex moved onto the sphere.
-    distance = points.norm().batch().to_array()                                # [points]
-    rays = points.normalized()                                                 # Point-[points]
-    # Where the rays meet the sphere, at both ends of each edge, in the renderer's space.
-    ray_ends = solids.origin + solids.context.include_from_algebra((topology.incidence[1, 0] * rays).batch())  # [ends, edges] Point-
-    colours = plt.get_cmap(DISTANCE_MAP)((distance - 1 + DISTANCE_RANGE) / (2 * DISTANCE_RANGE))[:, :3]
-    # The face of the dual polar to a vertex faces along the vertex's ray; a dual edge, across a primal edge, is
-    # drawn where either of the two faces it bounds, those polar to the edge's ends, faces the viewer: where a ray's
-    # end lies on the viewer's side of the camera's plane z, through the centre the camera aims at.
-    facing = view.camera >> sm.z                                               # [] Plane+
-    front = ((facing & ray_ends) > 0).any(axis=0)                              # [edges]
-    tails, heads = solids.origin + solids.context.include_from_algebra((topology.incidence[1, 0] * points).batch())  # [edges] Point-, Point-
-    # The poles of the faces on either side of each edge, the ends of its dual edge.
-    beside = topology.dual.incidence[1, 0]                                     # [ends] Scalar+[edges <- faces]
-    dual_tails, dual_heads = solids.origin + solids.context.include_from_algebra((beside * duals).batch())                   # [edges] Point-, Point-
-    primal_rods, primal_joints = solids.edges(tails, heads, EDGE_WIDTH / 2 * pixel)
-    dual_rods, dual_joints = solids.edges(dual_tails[front], dual_heads[front], EDGE_WIDTH / 2 * pixel)
-    ray_offsets = solids.context.include_from_algebra(rays.batch())                            # [points] Point-
-    # A stretch of each ray about the sphere, an edge from inside it to outside.
-    ray_spans = stack((solids.origin + ray_offsets * (1 - RAY_SPAN), solids.origin + ray_offsets * (1 + RAY_SPAN)),
-                      axis=-1)                                                 # [points, 2] Point-
-    ray_strokes = simplices.tubes(ray_spans.reshape(-1), Topology.chains([2] * len(ray_offsets)), RAY_COLOUR,
-                                  RAY_WIDTH, view, solids.gloss)
-    parts = [(hull, HULL_COLOUR), (primal_rods, PRIMAL_COLOUR), (primal_joints, PRIMAL_COLOUR),
-             (dual_rods, DUAL_COLOUR), (dual_joints, DUAL_COLOUR),
-             (solids.ball(vertices, VERTEX_RADIUS * pixel)[:, None], colours)]
-    space = solids.draw(parts, view, background, inks=[], translucent=[], meshes=[(ray_strokes, 1.0)])
-    # On the sphere, the arcs of both, the hull's edges between the vertices' rays and the dual's between the poles
-    # moved onto the sphere, each coloured by its kind.
-    primal_arcs = arcs(*ray_ends)
-    dual_arcs = arcs(*(solids.origin + solids.context.include_from_algebra((beside * duals.normalized()).batch())))
-    inks = [solids.Ink(0, *primal_arcs, PRIMAL_COLOUR, ARC_WIDTH, 1.0),
-            solids.Ink(0, *dual_arcs, DUAL_COLOUR, ARC_WIDTH, 1.0)]
-    image = solids.draw([(sphere, SPHERE_COLOUR)], view, background, inks, translucent=[], meshes=[])
-    return np.concatenate([space, image], axis=1)
+    vertices = solids.origin + solids.context.include_from_algebra(points.batch())  # [V] Point-
+    # Assemble one tetrahedral cone from the centre over each triangle so folded and convex polyhedra alike render solid.
+    corners = solids.origin + solids.context.include_from_algebra((topology.incidence[2, 0] * points).batch())  # [3, F] Point-
+    cones = stack([solids.origin.broadcast_to((F,)), *corners], axis=-1)       # [F, 4] Point-
+    hull_cones = solids.polyhedra(cones, cone_faces)                           # [F, 4] Plane+
+    # Colour each vertex by its radial offset from the unit sphere, from blue inside to red outside.
+    distances = points.norm().batch().to_array()                               # [V]
+    rays = points.normalized()                                                 # Point-[V]
+    ray_ends = solids.origin + solids.context.include_from_algebra((topology.incidence[1, 0] * rays).batch())  # [2, E] Point-
+    colours = plt.get_cmap(distance_cmap)((distances - 1 + distance_range) / (2 * distance_range))[:, :3]  # [V, 3]
+    # Draw each dual edge when at least one of the two dual faces it bounds has its primal ray facing the camera.
+    camera_plane = view.camera >> sm.z                                         # [] Plane+
+    front_edges = ((camera_plane & ray_ends) > 0).any(axis=0)                  # [E]
+    tails, heads = solids.origin + solids.context.include_from_algebra((topology.incidence[1, 0] * points).batch())  # [E] Point-, [E] Point-
+    dual_ends = topology.dual.incidence[1, 0]                                  # [2] Scalar+[E <- F]
+    dual_tails, dual_heads = solids.origin + solids.context.include_from_algebra((dual_ends * duals).batch())  # [E] Point-, [E] Point-
+    primal_rods, primal_joints = solids.edges(tails, heads, edge_width / 2 * pixel)
+    dual_rods, dual_joints = solids.edges(dual_tails[front_edges], dual_heads[front_edges], edge_width / 2 * pixel)
+    ray_offsets = solids.context.include_from_algebra(rays.batch())            # [V] Point-
+    ray_spans = stack(
+        (solids.origin + ray_offsets * (1 - ray_span), solids.origin + ray_offsets * (1 + ray_span)),
+        axis=-1,
+    )                                                                          # [V, 2] Point-
+    ray_strokes = simplices.tubes(
+        ray_spans.reshape(-1), Topology.chains([2] * V), ray_colour, ray_width, view, solids.gloss
+    )
+    parts = [
+        (hull_cones, hull_colour),
+        (primal_rods, primal_colour),
+        (primal_joints, primal_colour),
+        (dual_rods, dual_colour),
+        (dual_joints, dual_colour),
+        (solids.ball(vertices, vertex_radius * pixel)[:, None], colours),
+    ]
+    space_panel = solids.draw(parts, view, background_colour, inks=[], translucent=[], meshes=[(ray_strokes, 1.0)])
+    # Ink both primal and normalized dual great-circle arcs directly onto the unit sphere in the right panel.
+    primal_arcs = great_arcs(*ray_ends)
+    dual_ray_ends = solids.origin + solids.context.include_from_algebra((dual_ends * duals.normalized()).batch())  # [2, E] Point-
+    dual_arcs = great_arcs(*dual_ray_ends)
+    inks = [
+        solids.Ink(0, *primal_arcs, primal_colour, arc_width, 1.0),
+        solids.Ink(0, *dual_arcs, dual_colour, arc_width, 1.0),
+    ]
+    sphere_panel = solids.draw([(sphere, sphere_colour)], view, background_colour, inks, translucent=[], meshes=[])
+    return np.concatenate([space_panel, sphere_panel], axis=1)                 # [n_pixels, 2 * n_pixels, 3]
 
 
-def animate(frames: Iterable[tuple[core.Topology, core.Point, core.Point]]) -> Iterator[np.ndarray]:
-    """The complex at every frame, from one view."""
-    for geometry in frames:
-        yield picture(*geometry)
+def complex_frames(states: Iterable[tuple[Topology, core.Point, core.Point]]) -> Iterator[np.ndarray]:
+    """Yields side-by-side rendered frames (`[n_pixels, 2 * n_pixels, 3]`) from a stream of `(topology, points, duals)` states."""
+    for geometry in states:
+        yield complex_image(*geometry)

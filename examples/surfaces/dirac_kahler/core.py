@@ -1,6 +1,11 @@
-"""A geometric derivative joins scalar and stream potentials into one field of waves.
+"""Mixed-grade Dirac–Kähler derivatives, Whitney cochain maps, Hodge decomposition, and boundary-coupled waves.
 
-The product `corner_gradients * Full` differentiates a vertex multivector by grade. Its restriction to `Even` pairs source-to-sink gradients with circulating stream gradients; the adjugate returns their face field to the vertices. Separately, the Whitney maps reconstruct cochains on vertices, edges and faces into a mixed-grade field at face centres. A velocity, an intrinsic antivector, splits into a potential part that the medium drives, `isotropic_medium(gradient(potential))`, a stream part that needs no metric, `gradient(stream) ^ patches`, and a harmonic part circulating around a hole.
+Multiplying a triangle's simplex gradients by `Full` differentiates a vertex multivector across grades in one
+product. Restricting that product to `Even` combines source-to-sink potential slopes with circulating stream
+slopes in one face 1-form, while its adjugate through the medium returns the divergence and circulation to the
+vertices. Separately, the Whitney maps reconstruct cochains on vertices, edges, and faces into a mixed-grade
+field at face centroids. On a perforated annulus, an intrinsic velocity field splits into a metric-driven
+potential flow, a metric-free stream flow along level curves, and a harmonic circulation around the hole.
 """
 
 from __future__ import annotations
@@ -11,6 +16,7 @@ import numpy as np
 
 from numga import NumpyContext
 from numga.algebras import VGA2D as ga
+from numga.extensor import Extensor
 from numga.sparse import spdiag
 from numga.topology import Topology
 
@@ -24,97 +30,119 @@ Point = ga.gatype.antivector()                                               # A
 
 
 # --- math -----------------------------------------------------------------------------
-class Operators:
-    """An oriented triangle mesh carries the Whitney reconstruction maps and the mixed-grade Dirac–Kähler operators."""
-
-    def __init__(self, topology: Topology, vertices: Point):
-        self.topology = topology
-        self.d1 = topology.d[1] * Scalar                                     # (Scalar+ <- Scalar+)[faces <- edges]
-        edges = topology.d[0] * vertices                                     # Point-[edges]
-        self.sides = topology.boundary[2, 1] * edges                         # [corners] Point-[faces]
-        self.patches = (self.sides[0] & self.sides[1]) / 2                   # Patch-[faces]
-        self.areas = self.patches.norm()                                     # Scalar+[faces]
-
-        # Dividing each opposite edge by twice the signed triangle patch gives the three constant corner gradients.
-        self.corner_gradients = self.sides / (2 * self.patches)              # [corners] Plane+[faces]
-        corner_mean = topology.incidence[2, 0].mean(axis=0)                  # Scalar+[faces <- vertices]
-        self.whitney0 = corner_mean * Scalar                                 # (Scalar+ <- Scalar+)[faces <- vertices]
-        self.gradient = (spdiag(self.corner_gradients) * topology.incidence[2, 0]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- vertices]
-
-        # At each face centroid the three barycentric hats equal 1/3, so each edge 1-form
-        # reduces to one third of the difference of its endpoints' corner gradients.
-        tails, heads = topology.corners[2, 1]
-        centroid_forms = (self.corner_gradients[heads] - self.corner_gradients[tails]) / 3  # [corners] Plane+[faces]
-        self.whitney1 = (spdiag(centroid_forms) * topology.oriented[2, 1]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- edges]
-        self.whitney2 = mv.xy / (mv.xy & self.patches) * Scalar              # (Bivector+ <- Scalar+)[faces]
-
-        # Multiplying the corner gradients by a full multivector unites divergence in grade 0,
-        # gradient plus rotated bivector gradient in grade 1, and exterior curl in grade 2.
-        self.dirac = (spdiag(self.corner_gradients) * topology.incidence[2, 0]).sum(axis=0) * Full  # (Full+ <- Full+)[faces <- vertices]
-
-        # An isotropic medium carries each face's gradient to the area-weighted velocity it drives, through the metric;
-        # its inverse reads a velocity as the gradient that drives it.
-        self.isotropic_medium = spdiag(self.areas * Plane.dual())            # (Point- <- Plane+)[faces <- faces]
-        self.isotropic_resistance = Plane.dual().inverse() / self.areas      # (Plane+ <- Point-)[faces]
-
-        # Restricting the right factor to the even subalgebra maps scalar potentials and stream bivectors
-        # together into a pure grade-1 face 1-form.
-        self.even_gradient = (spdiag(self.corner_gradients) * topology.incidence[2, 0]).sum(axis=0) * Even  # (Plane+ <- Even+)[faces <- vertices]
-        self.vertex_areas = corner_mean.adjugate() * self.areas              # Scalar+[vertices]
-        inverse_vertex_mass = (1 / self.vertex_areas) * Even.dual().inverse()  # (Even+ <- Even-)[vertices]
-        # The divergence is minus the even gradient's adjugate through the medium, as integrating by parts
-        # makes it: the skew-adjoint partner that conserves wave energy.
-        self.even_divergence = -inverse_vertex_mass(self.even_gradient.adjugate()(self.isotropic_medium))  # (Even+ <- Plane+)[vertices <- faces]
-
-        # A velocity is built from a potential through the medium, and from a stream function without a metric:
-        # meeting its gradient with the patch gives the area-weighted velocity along its level curves.
-        # Applying the medium to the even gradient produces both parts at once on `potential - stream * mv.xy`.
-        self.potential_velocity = self.isotropic_medium(self.gradient)       # (Point- <- Scalar+)[faces <- vertices]
-        self.stream_velocity = (Plane ^ self.patches)(self.gradient)         # (Point- <- Scalar+)[faces <- vertices]
-        self.even_velocity = self.isotropic_medium(self.even_gradient)       # (Point- <- Even+)[faces <- vertices]
-        self.stream_laplacian = self.stream_velocity.adjugate()(self.isotropic_resistance(self.stream_velocity))  # (Antiscalar- <- Scalar+)[vertices <- vertices]
-        self.even_laplacian = self.even_gradient.adjugate()(self.even_velocity)  # (Even- <- Even+)[vertices <- vertices]
+def simplex_geometry(topology: Topology, vertices: Point) -> tuple[Extensor, Extensor, Scalar, Plane]:
+    """Opposite triangle edges and signed patches determine the face areas and corner simplex gradients (`[3] Plane+[F]`)."""
+    edges = topology.d[0] * vertices                                         # Point-[E]
+    sides = topology.boundary[2, 1] * edges                                  # [3] Point-[F]
+    patches = (sides[0] & sides[1]) / 2                                      # Antibivector-[F]
+    areas = patches.norm()                                                   # Scalar+[F]
+    # Dividing each opposite edge by twice the signed triangle patch gives the three constant simplex gradients.
+    gradients = sides / (2 * patches)                                        # [3] Plane+[F]
+    return sides, patches, areas, gradients
 
 
-def harmonic_circulation(operators: Operators, inner_ring: np.ndarray,
-                         interior: np.ndarray) -> tuple[Scalar, Point]:
-    """The harmonic stream function is one on the inner rim and zero on the outer, and its velocity circulates around the hole."""
-    topology = operators.topology
-    pinned = topology.reading(inner_ring, 0)
-    boundary_stream = pinned.adjugate() * mv.scalar(np.ones(len(inner_ring))[..., None]).field()  # Scalar+[vertices]
-    free = topology.reading(interior, 0).adjugate() * Scalar                 # (Scalar+ <- Scalar+)[vertices <- interior]
-    rhs = -free.adjugate()(operators.stream_laplacian(boundary_stream))      # Antiscalar-[interior]
-    stream = boundary_stream + free(free.adjugate()(operators.stream_laplacian(free)).solve(rhs))  # Scalar+[vertices]
-    return stream, operators.stream_velocity(stream)
+def whitney_maps(
+    topology: Topology, patches: Extensor, gradients: Plane,
+) -> tuple[Extensor, Extensor, Extensor, Extensor]:
+    """Corner means and simplex-gradient differences embed 0-, 1-, and 2-cochains into face fields alongside the exterior coboundary."""
+    exterior_curl = topology.d[1] * Scalar                                   # (Scalar+ <- Scalar+)[F <- E]
+    corner_mean = topology.incidence[2, 0].mean(axis=0)                      # Scalar+[F <- V]
+    whitney0 = corner_mean * Scalar                                          # (Scalar+ <- Scalar+)[F <- V]
+    # At each triangle centroid the three corner weights equal 1/3, so each edge 1-form is one third of its endpoints' simplex-gradient difference.
+    tails, heads = topology.corners[2, 1]
+    centroid_forms = (gradients[heads] - gradients[tails]) / 3               # [3] Plane+[F]
+    whitney1 = (spdiag(centroid_forms) * topology.oriented[2, 1]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[F <- E]
+    whitney2 = mv.xy / (mv.xy & patches) * Scalar                            # (Bivector+ <- Scalar+)[F]
+    return exterior_curl, whitney0, whitney1, whitney2
 
 
-def hodge_decomposition(operators: Operators, flow: Point,
-                        interior: np.ndarray) -> tuple[Scalar, Scalar, Point, Point, Point]:
-    """One mixed-grade `Even` Poisson solve on the interior recovers both the scalar potential and the stream bivector that split `flow` into its orthogonal potential, stream and harmonic parts."""
-    topology = operators.topology
-    free = topology.reading(interior, 0).adjugate() * Even                   # (Even+ <- Even+)[vertices <- interior]
-    # On every interior vertex star the adjugate of the even gradient reads the flow's divergence in grade 0
-    # and its circulation in grade 2, so one solve on the even subalgebra recovers both potentials together.
-    readings = free.adjugate()(operators.even_gradient.adjugate()(flow))     # Even-[interior]
-    even_potential = free(free.adjugate()(operators.even_laplacian(free)).solve(readings))  # Even+[vertices]
-    potential = even_potential.select[0]                                     # Scalar+[vertices]
-    stream = -(even_potential.select[2] & mv.xy.dual())                      # Scalar+[vertices]
-    potential_flow = operators.even_velocity(potential)                      # Point-[faces]
-    stream_flow = operators.even_velocity(even_potential.select[2])          # Point-[faces]
-    harmonic_flow = flow - potential_flow - stream_flow                      # Point-[faces]
+def dirac_derivatives(topology: Topology, gradients: Plane) -> tuple[Extensor, Extensor, Extensor]:
+    """Summing the simplex gradients over each triangle's corners yields the scalar gradient, the mixed-grade Dirac–Kähler derivative, and its `Even` restriction."""
+    corners = topology.incidence[2, 0]                                       # [3] Scalar+[F <- V]
+    gradient = (spdiag(gradients) * corners).sum(axis=0) * Scalar            # (Plane+ <- Scalar+)[F <- V]
+    # Multiplying the simplex gradients by a full multivector unites divergence in grade 0, gradient plus stream slope in grade 1, and curl in grade 2.
+    dirac = (spdiag(gradients) * corners).sum(axis=0) * Full                 # (Full+ <- Full+)[F <- V]
+    even_gradient = (spdiag(gradients) * corners).sum(axis=0) * Even         # (Plane+ <- Even+)[F <- V]
+    return gradient, dirac, even_gradient
+
+
+def medium_operators(
+    topology: Topology, patches: Extensor, areas: Scalar, gradient: Extensor, even_gradient: Extensor,
+) -> tuple[Extensor, Extensor, Extensor, Extensor, Extensor, Extensor, Extensor]:
+    """The isotropic metric medium and metric-free patch wedge build the potential, stream, and `Even` velocity maps and their Laplacians."""
+    # An isotropic medium carries each face's slope through the metric to the area-weighted velocity it drives; its inverse reads back the driving slope.
+    isotropic_medium = spdiag(areas * Plane.dual())                          # (Point- <- Plane+)[F <- F]
+    isotropic_resistance = Plane.dual().inverse() / areas                    # (Plane+ <- Point-)[F]
+    potential_velocity = isotropic_medium(gradient)                          # (Point- <- Scalar+)[F <- V]
+    # Meeting a stream slope with the triangle patch gives the area-weighted velocity along level curves without a metric.
+    stream_velocity = (Plane ^ patches)(gradient)                            # (Point- <- Scalar+)[F <- V]
+    even_velocity = isotropic_medium(even_gradient)                          # (Point- <- Even+)[F <- V]
+    stream_laplacian = stream_velocity.adjugate()(isotropic_resistance(stream_velocity))  # (Antiscalar- <- Scalar+)[V <- V]
+    even_laplacian = even_gradient.adjugate()(even_velocity)                 # (Even- <- Even+)[V <- V]
+    return (
+        isotropic_medium, isotropic_resistance, potential_velocity,
+        stream_velocity, even_velocity, stream_laplacian, even_laplacian,
+    )
+
+
+def harmonic_circulation(
+    topology: Topology, stream_velocity: Extensor, stream_laplacian: Extensor,
+    inner_ring: np.ndarray, interior: np.ndarray,
+) -> tuple[Scalar, Point]:
+    """Pinning the stream function to one on the inner rim and zero on the outer rim yields the harmonic circulation velocity (`Point-[F]`)."""
+    pinned = topology.reading(inner_ring, 0)                                 # Scalar+[V_inner <- V]
+    boundary_stream = pinned.adjugate() * mv.scalar(np.ones(len(inner_ring))[..., None]).field()  # Scalar+[V]
+    free_scalar = topology.reading(interior, 0).adjugate() * Scalar          # (Scalar+ <- Scalar+)[V <- V_interior]
+    boundary_load = -free_scalar.adjugate()(stream_laplacian(boundary_stream))  # Antiscalar-[V_interior]
+    interior_laplacian = free_scalar.adjugate()(stream_laplacian(free_scalar))  # (Antiscalar- <- Scalar+)[V_interior <- V_interior]
+    harmonic_stream = boundary_stream + free_scalar(interior_laplacian.solve(boundary_load))  # Scalar+[V]
+    return harmonic_stream, stream_velocity(harmonic_stream)
+
+
+def hodge_decomposition(
+    topology: Topology, even_gradient: Extensor, even_velocity: Extensor, even_laplacian: Extensor,
+    total_flow: Point, interior: np.ndarray,
+) -> tuple[Scalar, Scalar, Point, Point, Point]:
+    """One interior `Even` Poisson solve recovers the scalar potential and stream function that split `total_flow` into potential, stream, and harmonic flows (`Point-[F]`)."""
+    free_even = topology.reading(interior, 0).adjugate() * Even              # (Even+ <- Even+)[V <- V_interior]
+    # On every interior vertex star, the adjugate of the even gradient reads divergence in grade 0 and circulation in grade 2 together.
+    readings = free_even.adjugate()(even_gradient.adjugate()(total_flow))    # Even-[V_interior]
+    interior_laplacian = free_even.adjugate()(even_laplacian(free_even))     # (Even- <- Even+)[V_interior <- V_interior]
+    even_potential = free_even(interior_laplacian.solve(readings))           # Even+[V]
+    potential = even_potential.select[0]                                     # Scalar+[V]
+    stream = -(mv.xy.dual() & even_potential.select[2])                      # Scalar+[V]
+    potential_flow = even_velocity(potential)                                # Point-[F]
+    stream_flow = even_velocity(even_potential.select[2])                    # Point-[F]
+    harmonic_flow = total_flow - potential_flow - stream_flow                # Point-[F]
     return potential, stream, potential_flow, stream_flow, harmonic_flow
 
 
-def propagate(operators: Operators, even_state: Even, face_field: Plane,
-              dt: float, n_steps: int) -> Iterator[tuple[Even, Plane]]:
-    """Yields the fourth-order Runge–Kutta trajectory of an even potential and a face 1-form under the Dirac–Kähler wave operators."""
-    div, grad = operators.even_divergence, operators.even_gradient
+def wave_divergence(
+    topology: Topology, areas: Scalar, even_gradient: Extensor, isotropic_medium: Extensor,
+) -> tuple[Scalar, Extensor]:
+    """Dual-cell vertex areas and the negative adjugate of `even_gradient` through `isotropic_medium` form the skew-adjoint `Even` divergence."""
+    dual_areas = topology.incidence[2, 0].mean(axis=0).adjugate() * areas    # Scalar+[V]
+    inverse_vertex_mass = (1 / dual_areas) * Even.dual().inverse()           # (Even+ <- Even-)[V]
+    # Minus the even gradient's adjugate through the medium makes divergence and gradient skew-adjoint partners in wave energy.
+    even_divergence = -inverse_vertex_mass(even_gradient.adjugate()(isotropic_medium))  # (Even+ <- Plane+)[V <- F]
+    return dual_areas, even_divergence
+
+
+def wave_states(
+    even_gradient: Extensor, even_divergence: Extensor, even_state: Even, face_field: Plane,
+    dt: float, n_steps: int, stride: int,
+) -> Iterator[tuple[Even, Plane]]:
+    """Yields every `stride`-th fourth-order Runge–Kutta state (`Even+[V]`, `Plane+[F]`) of the coupled Dirac–Kähler wave."""
     yield even_state, face_field
-    for _ in range(n_steps):
-        k1_even, k1_field = div(face_field), grad(even_state)                    # Even+[vertices], Plane+[faces]
-        k2_even, k2_field = div(face_field + 0.5 * dt * k1_field), grad(even_state + 0.5 * dt * k1_even)  # Even+[vertices], Plane+[faces]
-        k3_even, k3_field = div(face_field + 0.5 * dt * k2_field), grad(even_state + 0.5 * dt * k2_even)  # Even+[vertices], Plane+[faces]
-        k4_even, k4_field = div(face_field + dt * k3_field), grad(even_state + dt * k3_even)  # Even+[vertices], Plane+[faces]
-        even_state = even_state + (dt / 6) * (k1_even + 2 * k2_even + 2 * k3_even + k4_even)  # Even+[vertices]
-        face_field = face_field + (dt / 6) * (k1_field + 2 * k2_field + 2 * k3_field + k4_field)  # Plane+[faces]
-        yield even_state, face_field
+    for step in range(1, n_steps + 1):
+        first_even, first_field = even_divergence(face_field), even_gradient(even_state)  # Even+[V], Plane+[F]
+        second_even = even_divergence(face_field + 0.5 * dt * first_field)   # Even+[V]
+        second_field = even_gradient(even_state + 0.5 * dt * first_even)     # Plane+[F]
+        third_even = even_divergence(face_field + 0.5 * dt * second_field)   # Even+[V]
+        third_field = even_gradient(even_state + 0.5 * dt * second_even)     # Plane+[F]
+        fourth_even = even_divergence(face_field + dt * third_field)         # Even+[V]
+        fourth_field = even_gradient(even_state + dt * third_even)           # Plane+[F]
+        even_state = even_state + (dt / 6) * (first_even + 2 * second_even + 2 * third_even + fourth_even)  # Even+[V]
+        face_field = face_field + (dt / 6) * (first_field + 2 * second_field + 2 * third_field + fourth_field)  # Plane+[F]
+        if step % stride == 0:
+            yield even_state, face_field

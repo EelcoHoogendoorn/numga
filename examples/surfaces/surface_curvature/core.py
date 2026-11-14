@@ -1,8 +1,6 @@
-r"""The principal curvatures and lines of curvature of a quadric surface follow from its polarity and its confocal family.
+"""The principal curvatures and lines of curvature of a quadric surface follow from its polarity and its confocal family.
 
-A quadric is a polarity, a map `Plane <- Point` taking each point to its polar plane, and its surface is where a point lies on its own polar plane, `point & surface(point) == 0`, where that polar plane is the tangent plane. Read on directions, the ideal points, the same bilinear form `Point & surface(Point)` is the surface's Hessian; restricted to the tangent plane on both sides, it is the second fundamental form up to the gradient length, and its eigenvalues against the metric on directions are the principal curvatures. The lines of curvature of a central quadric are where it meets its confocal quadrics; the members of that family through a point are the eigenvalues of one form, the quadric's dual read on directions minus the point's own dyad, placing every pixel in the net of curvature lines with one eigensolve.
-
-In the notation of differential geometry the principal curvatures read as the roots of $\det(\mathrm{II} - \kappa\,\mathrm{I}) = 0$ for the first and second fundamental forms $\mathrm{I}$ and $\mathrm{II}$, and by Dupin's theorem the surfaces of a triply orthogonal confocal family $\sum_i x_i^2 / (a_i^2 - \lambda) = 1$ meet along their lines of curvature.
+A quadric surface is modelled as a polarity, a symmetric map from points to planes that sends each point to its polar plane, and its surface is where a point lies on its own polar plane, where that polar plane is the tangent plane. Evaluated on ideal directions, the bilinear form of the polarity acts as the surface's Hessian; restricted to the tangent plane on both sides, it gives the second fundamental form up to the gradient length, and its eigenvalues against the Euclidean metric on directions are the principal curvatures. For a central quadric, the lines of curvature are where the surface meets its confocal quadrics, whose parameters at each point are the eigenvalues of the dual quadric on directions minus the point's own offset dyad.
 """
 
 from __future__ import annotations
@@ -14,107 +12,81 @@ from numga.algebras import PGA3D
 
 ga = PGA3D
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()                         # Scalar+
+Scalar = ga.gatype.scalar()                                 # Scalar+
 # Finite points carry homogeneous weight, and directions are ideal points of weight zero.
-Point = ga.gatype.antivector()                      # Antivector-
-Plane = ga.gatype.vector()                          # Vector+
-Direction = Point.derive.degenerate                 # Antivector-
-# A polarity: each point to its polar plane.
-Quadric = ga.gatype((Plane, Point))
+Point = ga.gatype.antivector()                              # Antivector-
+Plane = ga.gatype.vector()                                  # Vector+
+Direction = Point.derive.degenerate                         # Antivector-
+# A polarity maps each point to its polar plane.
+Quadric = ga.gatype((Plane, Point))                         # Plane+ <- Point-
 
 # The three coordinate planes x = 0, y = 0, z = 0, and the plane at infinity.
-axes = mv(Plane.derive.nondegenerate, np.eye(3))    # [axes] Plane+
-w = mv.w                                            # [] Plane+
+axes = mv(Plane.derive.nondegenerate, [[1, 0, 0], [0, 1, 0], [0, 0, 1]])  # [3] Plane+
+w = mv.w                                                    # [] Plane+
 
-# A direction's dual is the plane through the origin it is normal to; the inner product of those
-# planes is the Euclidean metric on directions.
-metric = Direction.dual() | Direction.dual()        # [] Scalar+ <- (Direction-, Direction-)
+# A direction's dual is the plane through the origin normal to it; their inner product is the Euclidean metric.
+metric = Direction.dual() | Direction.dual()                # [] Scalar+ <- (Direction-, Direction-)
 
 
 # --- math -----------------------------------------------------------------------------
-def quadric(weights: np.ndarray) -> Quadric:
-    """A central quadric with one weight per coordinate axis, as a sum of plane dyads."""
+def central_quadric(weights: np.ndarray) -> Quadric:
+    """Coordinate plane dyads weighted by `weights` (`[3]`) minus the plane-at-infinity dyad form a central quadric (`[] Plane+ <- Point-`)."""
     return (axes * (axes & Point) * weights).sum() - w * (w & Point)                    # [] Plane+ <- Point-
 
 
-def hit(surface: Quadric, origins: Point, heading: Direction) -> tuple[Point, Scalar]:
-    """Where each ray first meets the surface, and the discriminant, negative where it misses.
-
-    The surface's bilinear form, evaluated on a ray in both inputs, is a quadratic in the distance along it.
-    """
-    form = Point & surface(Point)                                                       # [] Scalar+ <- (Point-, Point-)
-    a, b, c = form(heading, heading), form(heading, origins), form(origins, origins)    # [...] Scalar+, Scalar+, Scalar+
-    discriminant = b * b - a * c                                                        # [...] Scalar+
-    return (origins + heading * nearest_root(a, b, discriminant)).normalized(), discriminant
-
-
-def principal(surface: Quadric, points: Point) -> Scalar:
-    """The two principal curvatures at points on the surface, in order; convex surfaces curve positively.
-
-    The Hessian form `Point & surface(Point)` takes the projector onto the tangent plane in both inputs: the
-    second fundamental form, up to the length of the gradient. Against the metric, the first
-    fundamental form, its eigenvalues on directions are the principal curvatures and the normal's,
-    zero.
-    """
-    tangent = surface(points)                                                           # [...] Plane+
-    # The normal is the tangent plane's dual less its weight, and the projector removes the normal component.
-    normal = tangent.dual().cast(Direction)                                             # [...] Direction-
-    projector = Direction - normal * ((tangent & Direction) / (tangent & normal))       # [...] Direction- <- Direction-
-    second_form = -(Point & surface(Point))(projector, projector) / metric(normal, normal).square_root()  # [...] Scalar+ <- (Direction-, Direction-)
-    return pair(second_form.eigvalsh(metric))                                           # [..., curvatures] Scalar+
-
-
-def confocal(surface: Quadric, points: Point) -> Scalar:
-    """The parameters of the confocal quadrics through each point.
-
-    The dual quadric, taken between the planes dual to directions, is the quadric's shape; the
-    confocal family shifts it by multiples of the metric. A point lies on a member exactly where the
-    shape minus the point's own dyad is singular against the metric, so the members through it are
-    that form's eigenvalues: one is the surface itself, and the level sets of the other two are its
-    lines of curvature.
-    """
-    dual_surface = surface.inverse()                                                    # [] Point- <- Plane+
-    # The pole of the plane at infinity is the centre, normalised to unit weight.
-    pole = dual_surface(w)                                                              # [] Point-
-    centre = pole / (w & pole)                                                          # [] Point-
-    # Map each direction to the plane through the centre normal to it, and take the dual of its pole.
-    central_planes = Direction.dual() - w * (Direction.dual() & centre)                 # [] Plane+ <- Direction-
-    shape = dual_surface(central_planes).dual()                                         # [] Plane+ <- Direction-
-    # Each point's offset from the centre, dualised into the plane normal to that displacement.
-    offset_planes = (points - centre).dual()                                            # [...] Plane+
-    # Subtract the point's own dyad from the shape; the eigenvalues are the confocal members through the point.
-    confocal_form = Direction & (shape - offset_planes * (offset_planes & Direction))   # [...] Scalar+ <- (Direction-, Direction-)
-    return pair(confocal_form.eigvalsh(metric))                                         # [..., members] Scalar+
-
-
-# --- plumbing -------------------------------------------------------------------------
-def view_rays(elevation: float, azimuth: float, extent: float, n_pixels: int) -> tuple[Point, Direction]:
-    """An orthographic camera: one ray origin per pixel, far out along the view, and their heading.
-
-    The camera looks along -x with y to its right and z up, turned up toward z by the elevation and
-    then about z by the azimuth.
-    """
-    turn = (mv.xy * (-np.radians(azimuth) / 2)).exp() * (mv.xz * (-np.radians(elevation) / 2)).exp()  # [] Rotor+
-    span = np.linspace(-extent, extent, n_pixels)
-    # Place the screen behind the scene along x, across it along y, and up along z.
-    screen = np.stack(np.broadcast_arrays(10 * extent, span[None, :], span[::-1, None]), axis=-1)
-    return turn >> mv.point(screen), turn >> -mv.x.dual()                               # [pixels, pixels] Point-, [] Direction-
-
-
-def pair(values: Scalar) -> Scalar:
-    """Of three eigenvalues on directions, the two that are not the one nearest zero, in order."""
-    zero = values.abs().argmin(axis=-1)
-    lower = where(zero == 0, values[..., 1], values[..., 0])                            # [...] Scalar+
-    upper = where(zero == 2, values[..., 1], values[..., 2])                            # [...] Scalar+
-    return stack([lower, upper], axis=-1)                                               # [..., pair] Scalar+
-
-
-def nearest_root(a: Scalar, b: Scalar, discriminant: Scalar) -> Scalar:
-    """The smaller positive root of `a * t**2 + 2 * b * t + c`, or zero where there is none."""
+def nearest_root(quadratic: Scalar, linear: Scalar, discriminant: Scalar) -> Scalar:
+    """The smaller positive root of `quadratic * t**2 + 2 * linear * t + constant` gives the first ray step (`[...] Scalar+`), or zero."""
     zero = discriminant * 0                                                             # [...] Scalar+
     root = where(discriminant > 0, discriminant, zero).square_root()                    # [...] Scalar+
     with np.errstate(divide="ignore", invalid="ignore"):
-        first, second = (-b - root) / a, (-b + root) / a                                # [...] Scalar+, Scalar+
+        first, second = (-linear - root) / quadratic, (-linear + root) / quadratic      # [...] Scalar+, Scalar+
     positive = where(second > 0, second, zero)                                          # [...] Scalar+
     smaller = where((first > 0) & (~(second > 0) | (first < second)), first, positive)  # [...] Scalar+
     return where(smaller.isfinite(), smaller, zero)                                     # [...] Scalar+
+
+
+def ray_intersections(surface: Quadric, origins: Point, heading: Direction) -> tuple[Point, Scalar]:
+    """Each ray from `origins` along `heading` meets `surface` at its nearer positive root (`[...] Point-`) with quadratic discriminant (`[...] Scalar+`)."""
+    form = surface(Point) & Point                                                       # [] Scalar+ <- (Point-, Point-)
+    # Evaluating the bilinear form on a ray gives the coefficients of a quadratic in the distance along it.
+    quadratic = form(heading, heading)                                                  # [...] Scalar+
+    linear = form(heading, origins)                                                     # [...] Scalar+
+    constant = form(origins, origins)                                                   # [...] Scalar+
+    discriminant = linear * linear - quadratic * constant                               # [...] Scalar+
+    hits = (origins + heading * nearest_root(quadratic, linear, discriminant)).normalized()  # [...] Point-
+    return hits, discriminant
+
+
+def tangent_pair(values: Scalar) -> Scalar:
+    """Dropping the normal eigenvalue nearest zero from `values` (`[..., 3] Scalar+`) leaves the two ordered tangent eigenvalues (`[..., 2] Scalar+`)."""
+    zero_index = values.abs().argmin(axis=-1)
+    lower = where(zero_index == 0, values[..., 1], values[..., 0])                      # [...] Scalar+
+    upper = where(zero_index == 2, values[..., 1], values[..., 2])                      # [...] Scalar+
+    return stack([lower, upper], axis=-1)                                               # [..., 2] Scalar+
+
+
+def principal_curvatures(surface: Quadric, points: Point) -> Scalar:
+    """Ordered principal curvatures (`[..., 2] Scalar+`) come from the tangent-restricted Hessian against `metric`."""
+    tangent = surface(points)                                                           # [...] Plane+
+    # The normal direction drops the tangent plane's homogeneous weight, and the projector removes its component.
+    normal = tangent.dual().cast(Direction)                                             # [...] Direction-
+    projector = Direction - normal * ((tangent & Direction) / (tangent & normal))       # [...] Direction- <- Direction-
+    # Restricting the Hessian to the tangent plane on both sides and dividing by gradient length gives the second form.
+    second_form = (surface(Point) & Point)(projector, projector) / metric(normal, normal).square_root()  # [...] Scalar+ <- (Direction-, Direction-)
+    return tangent_pair(second_form.eigvalsh(metric))                                   # [..., 2] Scalar+
+
+
+def confocal_parameters(surface: Quadric, points: Point) -> Scalar:
+    """Ordered confocal family parameters (`[..., 2] Scalar+`) come from the dual shape minus each point's offset dyad."""
+    dual_surface = surface.inverse()                                                    # [] Point- <- Plane+
+    # The pole of the plane at infinity is the quadric's centre, normalized to unit weight.
+    pole = dual_surface(w)                                                              # [] Point-
+    centre = pole / (w & pole)                                                          # [] Point-
+    # Shift each direction's dual plane to pass through the centre, and dualize its pole under the dual quadric.
+    central_planes = Direction.dual() - w * (Direction.dual() & centre)                 # [] Plane+ <- Direction-
+    shape = dual_surface(central_planes).dual()                                         # [] Plane+ <- Direction-
+    # Each point's displacement from the centre dualizes to the plane through the origin normal to that offset.
+    offset_planes = (points - centre).dual()                                            # [...] Plane+
+    # Subtract the point's offset dyad from the shape so the eigenvalues give the confocal quadrics through the point.
+    confocal_form = -(shape - offset_planes * (offset_planes & Direction)) & Direction  # [...] Scalar+ <- (Direction-, Direction-)
+    return tangent_pair(confocal_form.eigvalsh(metric))                                 # [..., 2] Scalar+
