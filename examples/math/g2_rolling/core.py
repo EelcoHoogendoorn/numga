@@ -1,15 +1,9 @@
-"""Rolling a ball over a sphere three times its radius, planned by the product of split octonions, in
-the geometric algebra of space.
+"""Split-octonion multiplication in the geometric algebra of space plans the rolling of a ball over a sphere three times its radius.
 
-A configuration of the ball, its contact direction and its attitude, is modelled as a multivector of space
-without scalar part: its even part is the half turn in the plane through the centre square to the contact
-direction, and its odd part the attitude followed by the reflection in that plane. The split-octonion product
-`multiply` multiplies even parts by the geometric product and lets odd parts enter in swapped order, with
-reversal for conjugation. Two configurations are one roll apart when their product vanishes: the kernel of multiplication by a
-configuration holds every configuration one roll away, and maps preserving the product, split G2, carry routes
-to routes. The contact direction is intrinsic and the half turn extrinsic, so identifying the two takes a sense
-of turning, `handedness`; the other sense negates every odd part, which preserves the product.
+Each ball configuration combines its contact direction and attitude into one scalar-free multivector whose even part is the half turn in the plane perpendicular to the contact direction and whose odd part is the attitude followed by reflection in that plane. The split-octonion product multiplies even parts by the geometric product while reversing and swapping odd parts. Two configurations lie one great-circle roll apart whenever their split-octonion product vanishes, so the multiplication kernel of a starting configuration gives every configuration reachable in one roll, and product-preserving maps in split G2 carry whole routes to new routes. Identifying an intrinsic contact direction with an extrinsic turning plane uses a unit chiral scalar `handedness`; negating that choice negates every odd part and preserves the product.
 """
+
+from collections.abc import Iterator
 
 import numpy as np
 
@@ -17,93 +11,99 @@ from numga import NumpyContext
 from numga.algebras import VGA3D as ga
 
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()                                          # Scalar+
-# The sense of turning that identifies a direction with the plane square to it, as a plane to turn in.
-Handedness = ga.gatype.antipseudoscalar()                       # Antipseudoscalar-
+# Unit chiral scalar identifying an intrinsic contact direction with the extrinsic plane perpendicular to it.
+Handedness = ga.gatype.antipseudoscalar()                            # Antipseudoscalar-
 Plane = ga.gatype.vector()                                           # Vector+
-# Contact points are antivectors with intrinsic orientation.
 Point = ga.gatype.antivector()                                       # Antivector-
 Rotor = ga.gatype.rotor()                                            # Rotor+
 Octonion = ga.gatype.full()                                          # Full+
 State = ga.gatype.nonscalar()                                        # Nonscalar+
-StateMap = ga.gatype((State, State))
+StateMap = ga.gatype((State, State))                                 # State+ <- State+
 handedness = mv(Handedness, [1])                                     # [] Scalar-
-# The split norm's bilinear form: contact part minus attitude part.
+# Bilinear form of the split norm: even contact norm squared minus odd attitude norm squared.
 pairing = Octonion.clifford_conjugate().scalar_product(Octonion)     # [] Scalar+ <- (Octonion+, Octonion+)
 
 
 # --- math -----------------------------------------------------------------------------
-def multiply(first: Octonion, second: Octonion) -> Octonion:
-    """The split-octonion product of two multivectors of space, doubling the even part: the even parts multiply
-    by the geometric product, and the odd parts enter in swapped order, with reversal for conjugation."""
-    first_even, first_odd = first.restrict.even(), first.restrict.odd()   # Even+, Odd+
-    second_even, second_odd = second.restrict.even(), second.restrict.odd()   # Even+, Odd+
-    # The odd parts enter in the opposite order; reversal supplies their conjugation.
+def split_product(first: Octonion, second: Octonion) -> Octonion:
+    """Cayley-Dickson doubling across the even and odd grades multiplies two space multivectors (`[...] Octonion+`) as split octonions."""
+    first_even, first_odd = first.restrict.even(), first.restrict.odd()        # [...] Even+, Odd+
+    second_even, second_odd = second.restrict.even(), second.restrict.odd()    # [...] Even+, Odd+
+    # Odd parts multiply in swapped order, with reversal acting as quaternion conjugation.
     return (first_even * second_even + second_odd * first_odd.reverse()
             + first_even.reverse() * second_odd + second_even * first_odd)
 
 
-def encode(contact: Point, attitude: Rotor) -> State:
-    """A unit contact point and ball attitude as one null configuration."""
-    # The half turn in the plane square to the contact, a bivector of the attitude's own, extrinsic kind, so that
-    # the two multiply as quaternions; and the reflection in that plane, through the centre.
-    half_turn = handedness * contact                                 # Bivector+
-    mirror = contact.dual()                                          # Plane+
+def configuration(contact: Point, attitude: Rotor) -> State:
+    """A unit contact point (`[...] Point-`) and ball attitude (`[...] Rotor+`) combine into one null configuration (`[...] State+`)."""
+    # Convert the intrinsic contact point into an extrinsic half-turn bivector in its tangent plane,
+    # and form the central reflection plane dual to the contact point.
+    half_turn = handedness * contact                                 # [...] Bivector+
+    mirror = contact.dual()                                          # [...] Plane+
     return half_turn - mirror * attitude
 
 
-def normalize(state: State) -> State:
-    """The representative of a configuration whose contact direction has unit length."""
-    return state / state.restrict[2].norm()
+def contact_and_attitude(state: State) -> tuple[Point, Rotor]:
+    """Unit-contact normalization recovers the contact point (`[...] Point-`) and ball attitude (`[...] Rotor+`) from a configuration (`[...] State+`)."""
+    unit_state = state / state.restrict[2].norm()                    # [...] State+
+    contact = unit_state.restrict[2] / handedness                    # [...] Point-
+    mirror = contact.dual()                                          # [...] Plane+
+    return contact, -mirror.inverse() * unit_state.restrict.odd()
 
 
-def lift(state: State, hemisphere: Plane) -> State:
-    """The representative whose contact lies on the positive side of the plane `hemisphere`, through the
-    sphere's centre."""
-    contact = state.restrict[2] / handedness                         # Point-
-    return normalize(state * (hemisphere & contact))
+def hemisphere_lift(state: State, hemisphere: Plane) -> State:
+    """Projective sign selection chooses the unit-contact representative (`[...] State+`) whose contact lies on the positive side of `hemisphere`."""
+    contact = state.restrict[2] / handedness                         # [...] Point-
+    signed_state = state * (hemisphere & contact)                    # [...] State+
+    return signed_state / signed_state.restrict[2].norm()
 
 
-def decode(state: State) -> tuple[Point, Rotor]:
-    """The contact point and ball attitude of a configuration."""
-    state = normalize(state)                                         # State+
-    contact = state.restrict[2] / handedness                         # Point-
-    mirror = contact.dual()                                          # Plane+
-    return contact, -mirror.inverse() * state.restrict.odd()
+def contact_arcs(stops: State, n_samples: int) -> tuple[Point, ...]:
+    """Linear interpolation between consecutive `stops` samples `n_samples` contact points (`[n_samples] Point-`) along each great-circle roll."""
+    fractions = np.linspace(0, 1, n_samples)
+    states = stops[:-1, None] * (1 - fractions) + stops[1:, None] * fractions   # [..., n_samples] State+
+    contacts, _ = contact_and_attitude(states)                                  # [..., n_samples] Point-, Rotor+
+    return tuple(contacts)
+
+
+def route_motion(stops: State, n_steps: int, n_hold_frames: int) -> Iterator[tuple[Point, Rotor]]:
+    """Yields `(Point-, Rotor+)` ball placements across `n_steps` interpolation steps per roll of `stops`, holding each endpoint for `n_hold_frames` frames."""
+    fractions = np.linspace(0, 1, n_steps)
+    for _ in range(n_hold_frames):
+        yield contact_and_attitude(stops[0])
+    for first, second in zip(stops[:-1], stops[1:]):
+        for fraction in fractions:
+            yield contact_and_attitude(first * (1 - fraction) + second * fraction)
+    for _ in range(n_hold_frames):
+        yield contact_and_attitude(stops[-1])
 
 
 def annihilator(state: State) -> StateMap:
-    """The projection onto the configurations one roll away from this one."""
-    action = multiply(state, State)                                  # Octonion+ <- State+
-    return State - action.lstsq(action)
+    """Orthogonal projection onto the left-multiplication kernel isolates the configurations (`State+ <- State+`) one roll away from `state`."""
+    left_action = split_product(state, State)                        # [] Octonion+ <- State+
+    return State - left_action.lstsq(left_action)
 
 
-def three_rolls(start: State, finish: State, preferred_contact: Point) -> tuple[State, State]:
-    """Two intermediate configurations between endpoints that require three rolls, the first as near as the rolls
-    allow to a contact at `preferred_contact`."""
-    reachable = annihilator(start)                                   # State+ <- State+
-    # Orthogonality to the finish means it is at most two rolls away.
-    remaining = pairing(finish, reachable)                           # Scalar+ <- State+
-    preference = handedness * preferred_contact                      # Bivector+
-    first = reachable(preference - remaining.lstsq(remaining(preference)))   # State+
-    # Their product is the unique configuration joining this two-roll pair.
-    second = multiply(first, finish).cast(State)                     # State+
-    return normalize(first), normalize(second)
+def three_roll_waypoints(start: State, finish: State, preferred_contact: Point) -> tuple[State, State]:
+    """Kernel projection and one split-octonion product determine two intermediate waypoints (`State+`) between endpoints three rolls apart."""
+    first_roll_space = annihilator(start)                            # [] State+ <- State+
+    # Vanishing split pairing with the destination puts a first waypoint within two rolls of `finish`.
+    finish_pairing = pairing(finish, first_roll_space)               # [] Scalar+ <- State+
+    preference = handedness * preferred_contact                      # [] Bivector+
+    first = first_roll_space(preference - finish_pairing.lstsq(finish_pairing(preference)))   # [] State+
+    # The split-octonion product supplies the unique waypoint joining a two-roll pair.
+    second = split_product(first, finish).cast(State)                # [] State+
+    return first / first.restrict[2].norm(), second / second.restrict[2].norm()
 
 
 def derivation(first: Octonion, second: Octonion) -> StateMap:
-    """An infinitesimal product-preserving map, assembled from multiplication actions."""
-    left_first = multiply(first, Octonion)                           # Octonion+ <- Octonion+
-    left_second = multiply(second, Octonion)                         # Octonion+ <- Octonion+
-    right_first = multiply(Octonion, first)                          # Octonion+ <- Octonion+
-    right_second = multiply(Octonion, second)                        # Octonion+ <- Octonion+
-    action = (left_first(left_second) - left_second(left_first)
-              + left_first(right_second) - right_second(left_first)
-              + right_first(right_second) - right_second(right_first))
-    return action(State).cast(State)
-
-
-def roll(start: State, finish: State, fractions: np.ndarray) -> State:
-    """The configurations along the projective line between two configurations whose product vanishes: one
-    roll."""
-    return normalize(start * (1 - fractions) + finish * fractions)
+    """Commutators of left and right split-octonion multiplications form an infinitesimal automorphism (`State+ <- State+`) of the product."""
+    left_first = split_product(first, Octonion)                      # [] Octonion+ <- Octonion+
+    left_second = split_product(second, Octonion)                    # [] Octonion+ <- Octonion+
+    right_first = split_product(Octonion, first)                     # [] Octonion+ <- Octonion+
+    right_second = split_product(Octonion, second)                   # [] Octonion+ <- Octonion+
+    # Alternating left and right multiplication commutators cancel the non-associator on every product.
+    octonion_action = (left_first(left_second) - left_second(left_first)
+                       + left_first(right_second) - right_second(left_first)
+                       + right_first(right_second) - right_second(right_first))   # [] Octonion+ <- Octonion+
+    return octonion_action(State).cast(State)

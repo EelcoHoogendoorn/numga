@@ -1,6 +1,6 @@
-"""The four-line problem is drawn with every line as its chord of a ball about the origin: the lines
-on the hyperboloid faint, the three lines that fix it dark, the fourth orange, and the transversals
-red where they are real."""
+"""The four-line problem draws each real line as its chord across a ball about the origin: the hyperboloid
+rulings stay faint, the three lines fixing the surface are dark blue, the fourth line is orange, and the
+transversals and crossings are red wherever they are real."""
 
 from __future__ import annotations
 
@@ -16,90 +16,83 @@ from numga.topology import Topology
 from numga.render import simplices, solids
 from examples.util.panels import image_figure
 
-# Lines are drawn inside this ball about the origin, seen from this elevation and, at first, this azimuth, in
-# radians, azimuth zero looking along +y; the margin around the ball, as a share of its radius; the pixels across.
-# The lines on the hyperboloid are drawn inside a smaller ball, about its waist, so that a few of them show the surface.
+# Lines are clipped to a ball about the origin at fixed elevation and initial azimuth (radians, zero looking along +y).
+# Rulings on the hyperboloid are clipped to a tighter ball around its waist so a sparse set outlines the surface cleanly.
 ball_radius = 3.0
 hyperboloid_radius = 1.8
 elevation, azimuth = np.radians([18.0, 30.0])
 margin = 0.06
 n_pixels = 300
-# Radii in pixels: of the lines on the hyperboloid, of the four lines and the transversals, and of the crossings;
-# and how much of what lies behind them each surface of the lines on the hyperboloid hides, so that they stay faint.
+# Pixel radii of hyperboloid rulings, scene lines, and crossing balls, together with ruling opacity.
 ruling_radius, line_radius, crossing_radius = 0.8, 1.5, 3.2
 ruling_opacity = 0.3
 ruling_colours = [np.array(to_rgb(colour)) for colour in ("#9ecae1", "#c7c7c7")]
 line_colour, fourth_colour, transversal_colour = (np.array(to_rgb(colour)) for colour in ("#08306b", "#e67e22", "#c0392b"))
 background = np.ones(3)
-# The flat tones an animation's frames are put in: the background, and every colour laid over it by half and whole;
-# and how deep a shadow the lamp casts on a whole colour, which still counts as that colour. At these pixels shading
-# and soft edges hardly show, and with the view turning, every tone is paid for in every frame.
+# Animation frames quantize pixels onto flat tones (background, half-blends, full hues) so a turning camera keeps a compact palette.
 hues = np.stack([*ruling_colours, line_colour, fourth_colour, transversal_colour])
 tones = np.concatenate([background[None], (background + hues) / 2, hues]) * 255
 darkest = np.concatenate([np.ones(1 + len(hues)), np.full(len(hues), 0.3)])
 
 
 # --- plumbing -------------------------------------------------------------------------
-def real(points: core.Point) -> np.ndarray:
-    """Which points are real up to round-off: their coordinates, read by pairing with the coordinate planes, have no
-    imaginary part to speak of."""
+def real_mask(points: core.Point) -> np.ndarray:
+    """Homogeneous coordinate pairing identifies points (`[...]`) whose imaginary part is negligible."""
     mv = points.context.multivector
     coordinates = (stack((mv.x, mv.y, mv.z, mv.w)) & points[..., None]).to_array()   # [..., 4]
     return np.abs(coordinates.imag).max(axis=-1) <= 1e-6 * np.abs(coordinates).max(axis=-1)
 
 
-def chords(lines: core.Bivector, radius: float) -> core.Point:
-    """The two ends of each line's chord of a ball about the origin, `[chords, 2]`, as the renderer's real points: where
-    the line crosses the ball's quadric, the chords of lines that miss the ball, or are not real, left out, as their
-    crossings are not real."""
-    ends = core.crossings_of(solids.ball(solids.origin, radius), lines)       # [..., 2] Point-
-    return ends[real(ends).all(axis=-1)].real()                               # [chords, 2] Point-
+def ball_chords(lines: core.Bivector, radius: float) -> core.Point:
+    """Real lines crossing the ball of `radius` about the origin meet its boundary in real chord
+    endpoints (`[..., 2] Antivector-`), omitting complex lines and lines that miss the ball."""
+    ends = core.crossings_of(solids.ball(solids.origin, radius), lines)       # [..., 2] Antivector-
+    return ends[real_mask(ends).all(axis=-1)].real()                          # [..., 2] Antivector-
 
 
-def rods(lines: core.Bivector, radius: float, rod_radius: float) -> solids.Quadric:
-    """The lines as rods of a radius along their chords of a ball about the origin, `[chords]`."""
-    ends = chords(lines, radius)                                              # [chords, 2] Point-
+def ball_rods(lines: core.Bivector, radius: float, rod_radius: float) -> solids.Quadric:
+    """Real chords of `lines` across the ball of `radius` form cylinders of `rod_radius`."""
+    ends = ball_chords(lines, radius)                                         # [..., 2] Antivector-
     return solids.rods(ends[:, 0], ends[:, 1], rod_radius)
 
 
 def picture(lines: core.Bivector, rulings: core.Bivector, transversals: core.Bivector,
             crossings: core.Point, view_azimuth: float) -> np.ndarray:
-    """The scene ray traced from an azimuth, framed on the ball: `[pixels, pixels, 3]` bytes."""
+    """Ray-tracing from `view_azimuth` renders the four lines, hyperboloid rulings, real
+    transversals, and real crossings into an `[n_pixels, n_pixels, 3]` RGB image."""
     view = solids.View(solids.aim(solids.origin, elevation, view_azimuth), np.full(2, ball_radius * (1 + margin)),
                        n_pixels)
-    points = crossings[real(crossings)].real()                                # [crossings] Point-
-    # The hyperboloid's two families of lines, faint: strokes, which the tracer composites sample by sample, where
-    # traced rods would each be searched through every layer of the translucent crowd.
-    ruling_ends = [chords(family, hyperboloid_radius) for family in rulings]
+    points = crossings[real_mask(crossings)].real()                           # [...] Antivector-
+    # Tube meshes composite sample by sample without ray-tracing through every translucent cylinder layer.
+    ruling_ends = [ball_chords(family, hyperboloid_radius) for family in rulings]
     hyperboloid = [(simplices.tubes(ends.reshape(-1), Topology.chains([2] * len(ends)), colour, 2 * ruling_radius,
                                     view, gloss=solids.gloss),
-                    # A traced rod is crossed twice, a stroke once: its nearest surface hides what both would.
+                    # Matching two cylinder wall crossings with a single tube pass squares the transmission factor.
                     1 - (1 - ruling_opacity) ** 2) for ends, colour in zip(ruling_ends, ruling_colours)]
-    four = [(rods(lines[:3], ball_radius, line_radius * view.pixel), line_colour),
-            (rods(lines[3:], ball_radius, line_radius * view.pixel), fourth_colour),
-            (rods(transversals, ball_radius, line_radius * view.pixel), transversal_colour),
+    four = [(ball_rods(lines[:3], ball_radius, line_radius * view.pixel), line_colour),
+            (ball_rods(lines[3:], ball_radius, line_radius * view.pixel), fourth_colour),
+            (ball_rods(transversals, ball_radius, line_radius * view.pixel), transversal_colour),
             (solids.ball(points, crossing_radius * view.pixel)[:, None], transversal_colour)]
     return solids.draw(four, view, background, inks=[], translucent=[], meshes=hyperboloid)
 
 
-def flattened(image: np.ndarray) -> np.ndarray:
-    """An image, `[rows, columns, 3]` bytes, with every pixel put on the flat tone it is nearest in some light."""
-    # How brightly each tone would be lit to match each pixel best, within the shadows it may fall into.
-    light = np.clip((image @ tones.T) / (tones**2).sum(axis=-1), darkest, 1.0)   # [rows, columns, tones]
+def tone_quantized(image: np.ndarray) -> np.ndarray:
+    """Each RGB pixel of `image` snaps to its nearest lit palette tone as `uint8` RGB bytes."""
+    # Clamp best-fit illumination per tone within its allowed shadow range before choosing the closest hue.
+    light = np.clip((image @ tones.T) / (tones**2).sum(axis=-1), darkest, 1.0)   # [..., 11]
     nearest = ((image[..., None, :] - light[..., None] * tones) ** 2).sum(axis=-1).argmin(axis=-1)
     return np.round(tones[nearest]).astype(np.uint8)
 
 
-def draw(lines: core.Bivector, rulings: core.Bivector, transversals: core.Bivector,
-         crossings: core.Point) -> plt.Figure:
-    """The four lines, the hyperboloid of the first three as its two families of lines, and the
-    transversals through the points where the fourth line crosses it."""
+def scene_figure(lines: core.Bivector, rulings: core.Bivector, transversals: core.Bivector,
+                 crossings: core.Point) -> plt.Figure:
+    """A still figure shows the four lines, both ruling families of the hyperboloid, and any real
+    transversals and crossings."""
     return image_figure(picture(lines, rulings, transversals, crossings, azimuth))
 
 
-def animate(scenes: Iterator[tuple[core.Bivector, core.Bivector, core.Bivector, core.Point]],
-            n_frames: int) -> Iterator[np.ndarray]:
-    """One frame per scene in flat tones, the view turning once around the hyperboloid over the loop of `n_frames`
-    scenes."""
+def swing_frames(n_frames: int,
+                 scenes: Iterator[tuple[core.Bivector, core.Bivector, core.Bivector, core.Point]]) -> Iterator[np.ndarray]:
+    """Yields flat-toned RGB frames across `scenes` as the camera completes one turn over `n_frames`."""
     for frame, scene in enumerate(scenes):
-        yield flattened(picture(*scene, azimuth + 2 * np.pi * frame / n_frames))
+        yield tone_quantized(picture(*scene, azimuth + 2 * np.pi * frame / n_frames))

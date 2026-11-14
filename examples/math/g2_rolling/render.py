@@ -1,49 +1,40 @@
-"""A marked ball rolling over a sphere, with its contact route painted on the sphere, ray traced on the GPU.
+"""A supersampled GPU ray tracer renders a painted ball rolling over a fixed sphere with inked contact routes.
 
-Each ray meets the sphere and the ball, both found by where the ray's squared distance from their centres equals
-their squared radius. The ball's paint is fixed to its material: the direction from its centre to where the ray meets
-it, carried back by the attitude, `attitude << normal`, and read by its pairings with the planes of the ball's own
-frame, picks its octant. The routes are inked onto the sphere wherever a point of it
-lies, as the view sees it, within a line's half width of a segment of a route.
+Orthographic camera rays intersect both spheres where their squared distance from each centre equals the squared radius. Carrying the ball's surface normal back into the body frame via `attitude << normal` and pairing it with the three coordinate planes selects the octant colour and dark seam lines, while screen-space distances paint the sampled contact arcs and endpoint dots onto the facing hemisphere of the fixed sphere.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from functools import cache
 
 import numpy as np
 
-from numga.wgsl import Shader, supersampled
 from numga import concatenate, stack
+from numga.wgsl import Shader, supersampled
 
-from .core import Point, Rotor, ga, mv
+from .core import Plane, Point, Rotor, ga, mv
 
 route_colours = np.array([[27, 111, 152], [213, 99, 36], [113, 67, 151]]) / 255
-# The route lines' width and their end dots' radius, in pixels; the share of the view left around the scene.
 line_width = 3
 dot_radius = 4
 margin = 0.07
-# The planes whose pairings with a place are how far across and up the camera's own frame it lies; the place so far
-# along each is `(axes.dual() * across).sum()`.
-axes = stack((mv.x, mv.y))                                                    # [2] Plane+
-# The direction toward the lamp, in the camera's frame: up and to the left, and toward the camera.
-lamp = (mv.x * -0.40 + mv.y * 0.48 + mv.z * 0.78).dual()                      # [] Point-
+# Camera screen planes for horizontal and vertical readout, body octant planes, and camera-frame directions.
+screen_planes = stack((mv.x, mv.y))                                           # [2] Plane+
+octant_planes = stack((mv.x, mv.y, mv.z))                                     # [3] Plane+
+view_offset = mv.z.dual()                                                     # [] Point-
+lamp_direction = (mv.x * -0.40 + mv.y * 0.48 + mv.z * 0.78).dual()            # [] Point-
 
 source = """
-// A camera turned to look along its own -z at the middle of the view, its rays parallel, starting `back` behind
-// it; the image half as high as this; the lamp, toward it.
 var<uniform> camera: Rotor;
 var<uniform> middle: Point;
 var<uniform> back: f32;
 var<uniform> half_height: f32;
 var<uniform> lamp: Point;
-// The sphere about the origin, and the ball touching it along `contact`, turned by its attitude.
 var<uniform> sphere_radius: f32;
 var<uniform> ball_radius: f32;
 var<uniform> contact: Point;
 var<uniform> attitude: Rotor;
-// The routes' segments and their ends, and the width they are inked at, in the scene's lengths.
 var<storage, read> segments: array<Segment>;
 var<storage, read> ends: array<End>;
 var<uniform> line_half_width: f32;
@@ -75,38 +66,32 @@ const octants = array<vec3<f32>, 8>(
     vec3<f32>(0.61, 0.47, 0.69), vec3<f32>(0.91, 0.89, 0.76));
 const far = 1e30;
 
-// How far along a unit direction a ray first meets a ball, from its start's offset from the ball's centre, or far if
-// it misses: how far along the ray the offset lies is its pairing with the plane square to the direction,
-// `direction.dual()`.
-fn meet(offset: Point, direction: Point, radius: f32) -> f32 {
-    let along = direction.dual() & offset;
-    let discriminant = along * along - offset.scalar_norm_squared() + radius * radius;
-    return select(far, -along - sqrt(discriminant), discriminant >= 0);
+fn sphere_hit(offset: Point, direction: Point, radius: f32) -> f32 {
+    let depth = direction.dual() & offset;
+    let discriminant = depth * depth - offset.scalar_norm_squared() + radius * radius;
+    return select(far, -depth - sqrt(discriminant), discriminant >= 0);
 }
 
-// A difference of places as the view sees it: its part along the view taken away.
-fn across_view(offset: Point, direction: Point) -> Point {
+fn view_projection(offset: Point, direction: Point) -> Point {
     return offset - direction * (direction.dual() & offset);
 }
 
-// The sphere's paint at a point on it: the nearest route's colour within a line of it, the ends' dots over them,
-// all measured across the view, and only on the sphere's half facing it.
 fn route_paint(point: Point, direction: Point) -> vec3<f32> {
     var paint = surface;
     var nearest = line_half_width;
     for (var index = 0u; index < arrayLength(&segments); index++) {
         let segment = segments[index];
-        let span = across_view(segment.end - segment.start, direction);
-        let offset = across_view(point - segment.start, direction);
-        let along = clamp((span.dual() & offset) / (span.dual() & span), 0.0, 1.0);
-        let distance = (offset - span * along).norm();
+        let span = view_projection(segment.end - segment.start, direction);
+        let offset = view_projection(point - segment.start, direction);
+        let fraction = clamp((span.dual() & offset) / (span.dual() & span), 0.0, 1.0);
+        let distance = (offset - span * fraction).norm();
         if (distance < nearest && (direction.dual() & (segment.start + segment.end)) < 0) {
             nearest = distance;
             paint = segment.colour;
         }
     }
     for (var index = 0u; index < arrayLength(&ends); index++) {
-        let distance = across_view(point - ends[index].place, direction).norm();
+        let distance = view_projection(point - ends[index].place, direction).norm();
         if (distance < dot_radius && (direction.dual() & ends[index].place) < 0) {
             paint = select(rim, ends[index].colour, distance < dot_radius - rim_width);
         }
@@ -116,23 +101,22 @@ fn route_paint(point: Point, direction: Point) -> vec3<f32> {
 
 fn sample(place: vec2<f32>) -> Sample {
     let across = screen(place) * half_height;
-    let start = middle + (camera >> (mv.z.dual() * back + (axes.dual() * across).sum()));
-    let direction = camera >> -mv.z.dual();
+    let start = middle + (camera >> (view_offset * back + (screen_planes.dual() * across).sum()));
+    let direction = camera >> -view_offset;
     let centre = contact * (sphere_radius + ball_radius);
-    // The sphere is about the centre of space, the start's offset from it the start itself.
-    let to_sphere = meet(start, direction, sphere_radius);
-    let to_ball = meet(start - centre, direction, ball_radius);
+    let to_sphere = sphere_hit(start, direction, sphere_radius);
+    let to_ball = sphere_hit(start - centre, direction, ball_radius);
     if (to_ball < to_sphere) {
         let normal = (start + direction * to_ball - centre) / ball_radius;
-        // The normal in the ball's own frame, its pairings' signs picking the octant, and the seams where one is
-        // small.
         let body = attitude << normal;
-        let x = mv.x & body;
-        let y = mv.y & body;
-        let z = mv.z & body;
-        let octant = select(0u, 1u, x >= 0) + select(0u, 2u, y >= 0) + select(0u, 4u, z >= 0);
-        let seam = clamp(1 - min(abs(x), min(abs(y), abs(z))) / seam_width, 0.0, 1.0);
-        // Lit by the lamp: the tangent plane, square to the normal, paired with the lamp's direction.
+        let coordinates = vec3<f32>(octant_planes & body);
+        let octant = (select(0u, 1u, coordinates.x >= 0)
+                      + select(0u, 2u, coordinates.y >= 0)
+                      + select(0u, 4u, coordinates.z >= 0));
+        let seam = clamp(
+            1 - min(abs(coordinates.x), min(abs(coordinates.y), abs(coordinates.z))) / seam_width,
+            0.0, 1.0,
+        );
         return mix(octants[octant], seams, seam) * (0.47 + 0.53 * max(normal.dual() & lamp, 0.0));
     }
     if (to_sphere < far) {
@@ -146,71 +130,81 @@ fn sample(place: vec2<f32>) -> Sample {
 
 # --- plumbing -------------------------------------------------------------------------
 @cache
-def shader() -> Shader:
-    """The shader of the scene: the frame of the camera's screen given as its constant."""
-    return Shader(supersampled() + source, ga, dict(Point=Point, Rotor=Rotor), dict(axes=axes))
+def route_shader() -> Shader:
+    """The scene shader binds the camera screen planes, body octant planes, and view offset into the supersampled WGSL ray tracer."""
+    return Shader(
+        supersampled() + source,
+        ga,
+        dict(Plane=Plane, Point=Point, Rotor=Rotor),
+        dict(screen_planes=screen_planes, octant_planes=octant_planes, view_offset=view_offset),
+    )
 
 
-class SphereScene:
-    """The fixed sphere and routes, seen by one camera framing the sphere and the ball along all the fitted
-    routes; elevation and azimuth in degrees, the azimuth measured from x."""
+def scene_renderer(
+    arcs: tuple[Point, ...], fit_arcs: tuple[Point, ...],
+    sphere_radius: float, ball_radius: float,
+    elevation: float, azimuth: float, size: int,
+) -> Callable[[Point, Rotor], np.ndarray]:
+    """Camera framing across `fit_arcs` constructs a fixed-view image renderer enclosing both spheres."""
+    elevation_rad, azimuth_rad = np.radians(elevation), np.radians(azimuth + 90)
+    camera = (mv.xy * (-azimuth_rad / 2)).exp() * (mv.yz * (-(np.pi / 2 - elevation_rad) / 2)).exp()   # [] Rotor+
+    centres = concatenate(fit_arcs) * (sphere_radius + ball_radius)                                     # [...] Point-
+    screen_axes = camera >> screen_planes                                                               # [2] Plane+
+    readings = screen_axes[:, None] & centres                                                           # [2, ...] Scalar+
+    low = ((screen_axes & centres[readings.argmin(axis=-1)]) - ball_radius).clip(-np.inf, -sphere_radius)    # [2] Scalar+
+    high = ((screen_axes & centres[readings.argmax(axis=-1)]) + ball_radius).clip(sphere_radius, np.inf)     # [2] Scalar+
+    middle = (screen_axes.dual() * ((low + high) / 2)).sum()                                            # [] Point-
+    spans = high - low                                                                                  # [2] Scalar+
+    half_height = float((spans.max() / 2 * (1 + margin)).to_array())
+    arc_points = [arc * sphere_radius for arc in arcs]
+    segments = dict(
+        start=concatenate([points[:-1] for points in arc_points]),
+        end=concatenate([points[1:] for points in arc_points]),
+        colour=np.concatenate([
+            np.repeat(route_colours[[index]], len(points) - 1, axis=0)
+            for index, points in enumerate(arc_points)
+        ]),
+    )
+    ends = dict(
+        place=concatenate([points[[0, -1]] for points in arc_points]),
+        colour=np.repeat(route_colours[:len(arc_points)], 2, axis=0),
+    )
+    scene_lamp = camera >> lamp_direction                                                               # [] Point-
+    pixel = 2 * half_height / size
 
-    def __init__(self, paths: tuple[Point, ...], fit_paths: tuple[Point, ...],
-                 sphere_radius: float, ball_radius: float,
-                 elevation: float, azimuth: float, size: int) -> None:
-        elevation, azimuth = np.radians(elevation), np.radians(azimuth + 90)
-        self.camera = (mv.xy * (-azimuth / 2)).exp() * (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()   # [] Rotor+
-        # The ball's centres along every fitted route, across and up the view, and the sphere's outline about
-        # the middle.
-        centres = concatenate(fit_paths) * (sphere_radius + ball_radius)                      # [samples] Point-
-        screen_axes = self.camera >> axes
-        readings = screen_axes[:, None] & centres
-        low = ((screen_axes & centres[readings.argmin(axis=-1)]) - ball_radius).clip(-np.inf, -sphere_radius)
-        high = ((screen_axes & centres[readings.argmax(axis=-1)]) + ball_radius).clip(sphere_radius, np.inf)
-        self.middle = (screen_axes.dual() * ((low + high) / 2)).sum()              # [] Point-
-        spans = high - low
-        self.half = float((spans.max() / 2 * (1 + margin)).to_array())
-        self.size = size
-        self.sphere_radius, self.ball_radius = sphere_radius, ball_radius
-        # The routes on the sphere: each leg's samples joined in segments, their colours by leg.
-        places = [path * sphere_radius for path in paths]                                      # [legs][samples] Point-
-        self.segments = dict(start=concatenate([place[:-1] for place in places]),
-                             end=concatenate([place[1:] for place in places]),
-                             colour=np.concatenate([np.repeat(route_colours[[index]], len(place) - 1, axis=0)
-                                                    for index, place in enumerate(places)]))
-        self.ends = dict(place=concatenate([place[[0, -1]] for place in places]),
-                         colour=np.repeat(route_colours[:len(places)], 2, axis=0))
-        self.lamp = self.camera >> lamp                                                        # [] Point-
+    def frame_image(contact: Point, attitude: Rotor) -> np.ndarray:
+        """Orthographic ray tracing renders one `[size, size, 3]` RGB image for `contact` and `attitude`."""
+        image = route_shader()(
+            (size, size), camera=camera, middle=middle, back=4 * half_height,
+            half_height=half_height, lamp=scene_lamp, sphere_radius=sphere_radius,
+            ball_radius=ball_radius, contact=contact, attitude=attitude, segments=segments,
+            ends=ends, line_half_width=line_width / 2 * pixel, dot_radius=dot_radius * pixel,
+            rim_width=pixel,
+        )["image"]
+        return np.round(np.clip(image, 0, 1) * 255).astype(np.uint8)
 
-    def draw(self, contact: Point, attitude: Rotor) -> np.ndarray:
-        """The ball touching the sphere at a contact point, turned by its attitude."""
-        pixel = 2 * self.half / self.size
-        traced = shader()((self.size, self.size), camera=self.camera, middle=self.middle, back=4 * self.half,
-                          half_height=self.half, lamp=self.lamp, sphere_radius=self.sphere_radius,
-                          ball_radius=self.ball_radius, contact=contact, attitude=attitude, segments=self.segments,
-                          ends=self.ends, line_half_width=line_width / 2 * pixel, dot_radius=dot_radius * pixel,
-                          rim_width=pixel)["image"]
-        return np.round(np.clip(traced, 0, 1) * 255).astype(np.uint8)
-
-
-def frames(paths: tuple[Point, ...], rolling: Iterable[tuple[Point, Rotor]],
-           sphere_radius: float, ball_radius: float, elevation: float, azimuth: float,
-           size: int) -> Iterator[np.ndarray]:
-    """Frames of successive contact directions and ball attitudes, seen by one fixed camera."""
-    scene = SphereScene(paths, paths, sphere_radius, ball_radius, elevation, azimuth, size)
-    for contact, attitude in rolling:
-        yield scene.draw(contact, attitude)
+    return frame_image
 
 
-def comparison_frames(paths: tuple[Point, ...], transformed_paths: tuple[Point, ...],
-                      rolling: Iterable[tuple[Point, Rotor]],
-                      transformed_rolling: Iterable[tuple[Point, Rotor]],
-                      sphere_radius: float, ball_radius: float, elevation: float,
-                      azimuth: float, size: int) -> Iterator[np.ndarray]:
-    """Two rolling routes in identical camera frames, synchronized by their supplied states."""
-    fit_paths = paths + transformed_paths
-    scene = SphereScene(paths, fit_paths, sphere_radius, ball_radius, elevation, azimuth, size)
-    transformed_scene = SphereScene(transformed_paths, fit_paths, sphere_radius, ball_radius,
-                                    elevation, azimuth, size)
-    for state, transformed_state in zip(rolling, transformed_rolling):
-        yield np.concatenate([scene.draw(*state), transformed_scene.draw(*transformed_state)], axis=1)
+def route_frames(
+    arcs: tuple[Point, ...], sphere_radius: float, ball_radius: float,
+    elevation: float, azimuth: float, size: int,
+    placements: Iterable[tuple[Point, Rotor]],
+) -> Iterator[np.ndarray]:
+    """Yields `[size, size, 3]` RGB frames as the ball traverses `placements` along `arcs`."""
+    frame_image = scene_renderer(arcs, arcs, sphere_radius, ball_radius, elevation, azimuth, size)
+    for contact, attitude in placements:
+        yield frame_image(contact, attitude)
+
+
+def comparison_frames(
+    arcs: tuple[Point, ...], transformed_arcs: tuple[Point, ...],
+    sphere_radius: float, ball_radius: float, elevation: float, azimuth: float, size: int,
+    paired_placements: Iterable[tuple[tuple[Point, Rotor], tuple[Point, Rotor]]],
+) -> Iterator[np.ndarray]:
+    """Yields `[size, 2 * size, 3]` side-by-side RGB frames comparing a route with its symmetry image."""
+    fit_arcs = arcs + transformed_arcs
+    left_image = scene_renderer(arcs, fit_arcs, sphere_radius, ball_radius, elevation, azimuth, size)
+    right_image = scene_renderer(transformed_arcs, fit_arcs, sphere_radius, ball_radius, elevation, azimuth, size)
+    for placement, transformed_placement in paired_placements:
+        yield np.concatenate([left_image(*placement), right_image(*transformed_placement)], axis=1)

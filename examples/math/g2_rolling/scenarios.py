@@ -1,20 +1,12 @@
-"""Scenes for octonionic rolling: a route of two rolls through the product of its ends, a route of three
-rolls back to the same contact through the kernel of multiplication, and that route moved by a symmetry
-of the product."""
+"""Split-octonion multiplication, kernel projection, and split-G2 derivations generate three rolling-ball scenes."""
 
 from collections.abc import Iterator
-
-import numpy as np
 
 from numga import stack
 from examples.math.g2_rolling import core
 from examples.math.g2_rolling.core import Point, Rotor, State, mv
 
-# The ball's turn in the horizontal plane between the ends of each route, in radians.
 attitude_angle = -2.4
-# The samples along each drawn arc, the steps of each roll, the frames held at each end, the duration of a
-# frame; the radii of the sphere and the ball; the view's elevation and azimuth in degrees and the image
-# sizes; and how far the symmetry moves the route.
 n_samples = 120
 n_steps = 41
 n_hold_frames = 13
@@ -30,71 +22,90 @@ symmetry_amount = 0.12
 
 # --- math -----------------------------------------------------------------------------
 def two_roll_route() -> State:
-    """A product supplies the intermediate configuration between two chosen endpoints."""
-    start = core.encode(mv.z.dual(), mv.rotor())                       # State+
-    finish = core.encode(mv.x.dual(), (mv.xy * (-attitude_angle / 2)).exp())   # State+
-    waypoint = core.lift(core.multiply(start, finish).cast(State), mv.x)   # State+
-    return stack([start, waypoint, finish])                            # [stops] State+
+    """Split-octonion multiplication supplies the intermediate waypoint (`[3] State+`) between two orthogonal endpoints."""
+    start = core.configuration(mv.z.dual(), mv.rotor())                              # [] State+
+    finish = core.configuration(mv.x.dual(), (mv.xy * (-attitude_angle / 2)).exp())  # [] State+
+    waypoint = core.hemisphere_lift(core.split_product(start, finish).cast(State), mv.x)   # [] State+
+    return stack([start, waypoint, finish])                                          # [3] State+
 
 
 def three_roll_route() -> State:
-    """A route back to the same contact point with a prescribed change of attitude."""
-    start = core.encode(mv.z.dual(), mv.rotor())                       # State+
-    finish = core.encode(mv.z.dual(), (mv.xy * (-attitude_angle / 2)).exp())   # State+
-    # The plane through the centre on whose positive side the drawn contacts lie.
-    preferred_side = mv.x                                              # Plane+
-    first, second = core.three_rolls(start, finish, preferred_side.dual())   # State+, State+
-    # Select the representatives in the preferred contact hemisphere.
-    waypoints = core.lift(stack([first, second]), preferred_side)      # [waypoints] State+
-    return stack([start, *waypoints, finish])                          # [stops] State+
-
-
-def paths(stops: State, fractions: np.ndarray) -> tuple[Point, ...]:
-    """The contact points along each leg of a route, sampled for drawing it."""
-    states = core.roll(stops[:-1, None], stops[1:, None], fractions)   # [legs, samples] State+
-    contacts, _ = core.decode(states)                                  # [legs, samples] Point-, Rotor+
-    return tuple(contacts)
-
-
-def rolling(stops: State, fractions: np.ndarray, n_hold_frames: int) -> Iterator[tuple[Point, Rotor]]:
-    """The contact and attitude of each frame along the rolls of a route, with its ends held."""
-    for _ in range(n_hold_frames):
-        yield core.decode(stops[0])
-    for first, second in zip(stops[:-1], stops[1:]):
-        for fraction in fractions:
-            yield core.decode(first * (1 - fraction) + second * fraction)
-    for _ in range(n_hold_frames):
-        yield core.decode(stops[-1])
+    """Kernel projection and one product construct a closed-contact route (`[4] State+`) with a prescribed attitude change."""
+    start = core.configuration(mv.z.dual(), mv.rotor())                              # [] State+
+    finish = core.configuration(mv.z.dual(), (mv.xy * (-attitude_angle / 2)).exp())  # [] State+
+    preferred_side = mv.x                                                            # [] Plane+
+    first, second = core.three_roll_waypoints(start, finish, preferred_side.dual())  # [] State+, State+
+    waypoints = core.hemisphere_lift(stack([first, second]), preferred_side)         # [2] State+
+    return stack([start, *waypoints, finish])                                        # [4] State+
 
 
 # --- plumbing -------------------------------------------------------------------------
+def recorded_stream(stream: Iterator, history: list) -> Iterator:
+    """Yields every element of `stream` in one pass while appending each element to `history`."""
+    for item in stream:
+        history.append(item)
+        yield item
+
+
 def main() -> None:
     from examples.util.animation import save_animation
     from examples.math.g2_rolling import render
 
-    fractions = np.linspace(0, 1, n_steps)
-    samples = np.linspace(0, 1, n_samples)
-    two_rolls = two_roll_route()                                       # [stops] State+
-    three_rolls = three_roll_route()                                   # [stops] State+
-    for stops, name in ((two_rolls, "g2_two_rolls"), (three_rolls, "g2_three_rolls")):
-        images = render.frames(paths(stops, samples), rolling(stops, fractions, n_hold_frames),
-                               sphere_radius, ball_radius, elevation, azimuth, size)
-        save_animation(images, name, duration_ms)
+    two_roll_stops = two_roll_route()                                                # [3] State+
+    three_roll_stops = three_roll_route()                                            # [4] State+
+    two_roll_placements: list[tuple[Point, Rotor]] = []
+    three_roll_placements: list[tuple[Point, Rotor]] = []
 
-    # The generator's third power vanishes, so its exponential ends at the second.
-    generator = core.derivation(three_rolls[0], mv.x)                  # State+ <- State+
-    symmetry = State + symmetry_amount * generator + symmetry_amount**2 / 2 * generator(generator)   # State+ <- State+
-    transformed = symmetry(three_rolls)                                # [stops] State+
-    images = render.comparison_frames(
-        paths(three_rolls, samples), paths(transformed, samples),
-        rolling(three_rolls, fractions, n_hold_frames), rolling(transformed, fractions, n_hold_frames),
-        sphere_radius, ball_radius, elevation, azimuth, panel_size)
-    save_animation(images, "g2_route_symmetry", duration_ms)
+    for stops, history, name in (
+        (two_roll_stops, two_roll_placements, "g2_two_rolls"),
+        (three_roll_stops, three_roll_placements, "g2_three_rolls"),
+    ):
+        frames = render.route_frames(
+            core.contact_arcs(stops, n_samples),
+            sphere_radius, ball_radius, elevation, azimuth, size,
+            recorded_stream(core.route_motion(stops, n_steps, n_hold_frames), history),
+        )
+        save_animation(frames, name, duration_ms)
+
+    # The third composition of this derivation vanishes, so its exponential truncates at degree two.
+    generator = core.derivation(three_roll_stops[0], mv.x)                           # [] State+ <- State+
+    symmetry = State + symmetry_amount * generator + symmetry_amount**2 / 2 * generator(generator)   # [] State+ <- State+
+    transformed_stops = symmetry(three_roll_stops)                                   # [4] State+
+    paired_placements: list[tuple[tuple[Point, Rotor], tuple[Point, Rotor]]] = []
+    comparison = render.comparison_frames(
+        core.contact_arcs(three_roll_stops, n_samples),
+        core.contact_arcs(transformed_stops, n_samples),
+        sphere_radius, ball_radius, elevation, azimuth, panel_size,
+        recorded_stream(
+            zip(
+                core.route_motion(three_roll_stops, n_steps, n_hold_frames),
+                core.route_motion(transformed_stops, n_steps, n_hold_frames),
+            ),
+            paired_placements,
+        ),
+    )
+    save_animation(comparison, "g2_route_symmetry", duration_ms)
 
     # checks
-    # Neighbouring stops of every route multiply to zero: each pair is one roll apart.
-    for stops in (two_rolls, three_rolls, transformed):
-        np.testing.assert_allclose(core.multiply(stops[:-1], stops[1:]).kernel, 0, atol=1e-10)
+    # Every stop lies on the split-octonion null cone, and consecutive stops multiply to zero.
+    for stops in (two_roll_stops, three_roll_stops, transformed_stops):
+        assert (core.pairing(stops, stops).abs() < 1e-10).all()
+        assert (core.split_product(stops[:-1], stops[1:]).scalar_norm_squared() < 1e-10).all()
+
+    third_power = generator(generator(generator))                                    # [] State+ <- State+
+    assert (third_power.adjoint()(third_power).trace() < 1e-12).all()
+
+    for placements in (
+        two_roll_placements,
+        three_roll_placements,
+        [pair[0] for pair in paired_placements],
+        [pair[1] for pair in paired_placements],
+    ):
+        contacts = stack([contact for contact, _ in placements])                     # [...] Point-
+        attitudes = stack([attitude for _, attitude in placements])                  # [...] Rotor+
+        orbit_turn = (1 + contacts[1:].dual() * contacts[:-1].dual()).normalized()   # [...] Rotor+
+        ball_turn = orbit_turn * orbit_turn * orbit_turn * orbit_turn                # [...] Rotor+
+        assert (((ball_turn * attitudes[:-1]) - attitudes[1:]).scalar_norm_squared() < 1e-10).all()
 
 
 if __name__ == "__main__":

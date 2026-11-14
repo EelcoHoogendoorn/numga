@@ -1,29 +1,11 @@
-"""The Hopf fibration: the unit spinors of three-dimensional space, sorted by their spin.
+"""Hopf fibration of unit three-dimensional spinors grouped by their spin on the unit sphere.
 
-A unit spinor turns the north pole of the unit sphere into another point of that sphere, its spin. The spinor
-holds more than its spin: turning it in the xy plane before it acts changes the spinor and not the point it
-turns the pole into. The spinors with each spin therefore form a circle, the fibre over that spin; the fibres
-fill the three-sphere of unit spinors, and every two of them are linked once. Carried around a closed loop of
-spins, a spinor comes back onto its own fibre, turned along it by half the solid angle the loop encloses.
-
-Spinors are modelled as the even multivectors and spins as points of the unit sphere, antivectors like every
-position, and the sandwich `Even >> mv.z.dual()` of the pole is an antivector-valued form on pairs of spinors
-whose value on one spinor twice is that spinor's spin. Paired with a spin, `spin.dot(hopf)` is a scalar form on
-pairs of spinors, with eigenvalues minus one twice and plus one twice; its top eigenspace is the plane of the
-fibre over that spin. A turn on the right, `psi * (mv.xy * angle).exp()`, moves a spinor along its fibre, unseen
-by the spin, because a turn in the xy plane leaves the pole where it is. Stereographic projection takes a
-spinor to a point of space, its bivector part over one plus its scalar part, made a point by a handedness: an
-intrinsic scalar, the right-hand rule that takes a plane of turning to a point. The fibres' linking number is a
-sum of regressive products of points, an intrinsic scalar: its sign is the side the turns along the fibres act
-on, measured against that handedness.
-
-In quaternion notation a spinor reads as a unit quaternion q and its spin as q k q*; in complex coordinates,
-as in Hopf's 1931 paper, the map sends a pair (z1, z2) on the unit sphere of C^2 to the point z1 / z2 of the
-Riemann sphere; in bra-ket notation it sends the state of a spin one half to its Bloch vector, and the turn
-along the fibre is the Berry phase.
+Each unit spinor in `Even` turns the north `pole` of the unit sphere into its spin in `Antivector`, so sandwiching `pole` with `Even` forms the quadratic Hopf map `hopf = Even >> pole`. Taking the inner product `spin.dot(hopf)` produces a symmetric scalar form whose top eigenspace intersects the unit three-sphere in the circular fibre over `spin`, swept out by right-multiplying a fibre spinor by equatorial rotors. Stereographic projection maps each spinor's bivector grade to an intrinsic spatial point through `handedness`, sending latitude circles of spins to nested tori of once-linked circles, while minimal-angle rotor transport around a closed spin loop shifts a spinor along its fibre by half the enclosed solid angle.
 """
 
 from __future__ import annotations
+
+from collections.abc import Iterator
 
 import numpy as np
 
@@ -31,52 +13,63 @@ from numga import NumpyContext
 from numga.algebras import VGA3D as ga
 
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()                        # Scalar+
-# A spinor's spin, a point of the unit sphere, and a point of the space spinors project into.
 Antivector = ga.gatype.antivector()                # Antivector-
-# A number with a sense of its own: a handedness, or a number measured against one.
-HandedScalar = ga.gatype.antipseudoscalar()   # Antipseudoscalar-
+HandedScalar = ga.gatype.antipseudoscalar()        # Scalar-
 Even = ga.gatype.even()                            # Even+
 Rotor = ga.gatype.rotor()                          # Rotor+
-# The north pole of the unit sphere.
+
+# North pole of the unit spin sphere and quadratic Hopf map sending (psi, psi) to psi >> pole.
 pole = mv.z.dual()                                 # [] Antivector-
-# A spinor's spin, the pole it turns, as a form on pairs of spinors.
 hopf = Even >> pole                                # [] Antivector- <- (Even+, Even+)
-# The right-hand rule, measured against the basis volume x ^ y ^ z: it takes the bivector part of a spinor to a
-# point of space.
-handedness = mv(HandedScalar, [1.0])               # [] Scalar-
+# Intrinsic unit scalar fixing the right-hand rule from bivector planes to spatial points.
+handedness = mv(HandedScalar, [1])                 # [] Scalar-
 
 
-# --- math -----------------------------------------------------------------------------
 def fibre_start(spin: Antivector) -> Even:
-    """A unit spinor with each spin: the top eigenvector of the form `spin.dot(hopf)`, whose eigenvalues are
-    minus one twice and plus one twice."""
+    """The top eigenvector of `spin.dot(hopf)` selects a unit spinor (`[...] Even+`) on the fibre over each `spin`."""
     _, spinors = spin.dot(hopf).eigh()                                         # [..., 4] Even+
     return spinors[..., -1]                                                    # [...] Even+
 
 
-def stereographic(spinor: Even) -> Antivector:
-    """The stereographic projection of unit spinors from -1 into space: the bivector part over one plus the
-    scalar part, made a point by the handedness."""
+def sphere_spins(polar: np.ndarray, azimuth: np.ndarray) -> Antivector:
+    """Polar tilts in `zx` followed by azimuthal turns in `xy` carry `pole` to unit spins (`[...] Antivector-`) on the sphere."""
+    tilts = (mv.zx * (-polar / 2)).exp()                                       # [...] Rotor+
+    turns = (mv.xy * (-azimuth / 2)).exp()                                     # [...] Rotor+
+    return (turns * tilts) >> pole                                             # [...] Antivector-
+
+
+def stereographic_projection(spinor: Even) -> Antivector:
+    """Stereographic projection from `-1` maps unit spinors into three-dimensional spatial points (`[...] Antivector-`)."""
+    # Scale the bivector grade by 1 / (1 + scalar) and convert to an intrinsic point via handedness.
     return handedness * spinor.select[2] / (1 + spinor.select[0])              # [...] Antivector-
 
 
-def transport(spins: Antivector) -> Rotor:
-    """The rotors that carry a frame along a curve of unit spins, by the smallest rotation from each spin to
-    the next: from the first spin to each of the others."""
-    steps = (1 + spins[1:] * ~spins[:-1]).normalized()                         # [steps, ...] Rotor+
-    return steps.cumprod(axis=0)                                               # [steps, ...] Rotor+
+def linking_number(first: Antivector, second: Antivector) -> HandedScalar:
+    """The discrete Gauss sum over segment pairs gives the signed linking number (`[...] Scalar-`) between closed polygonal curves."""
+    step_first = first[..., 1:] - first[..., :-1]                              # [...] Antivector-
+    step_second = second[..., 1:] - second[..., :-1]                           # [...] Antivector-
+    middle_first = 0.5 * (first[..., 1:] + first[..., :-1])                    # [...] Antivector-
+    middle_second = 0.5 * (second[..., 1:] + second[..., :-1])                 # [...] Antivector-
+    separation = middle_first[..., :, None] - middle_second[..., None, :]      # [...] Antivector-
+    # Regressive product of separation and both segment displacements spans their signed volume.
+    volume = separation & step_first[..., :, None] & step_second[..., None, :] # [...] Scalar-
+    distance = separation.antinorm()                                           # [...] Scalar+
+    return (volume / distance ** 3).sum(axis=(-2, -1)) / (4 * np.pi)           # [...] Scalar-
 
 
-def linking(first: Antivector, second: Antivector) -> HandedScalar:
-    """Gauss's linking number of pairs of closed polygons, the vertices on the last axis: the regressive
-    product of each pair of segments with the line between them, over the cube of its length, summed and
-    divided by four pi: an intrinsic scalar, its sign measured against a handedness."""
-    step_first = first[..., 1:] - first[..., :-1]                                # [..., segments] Antivector-
-    step_second = second[..., 1:] - second[..., :-1]                             # [..., segments] Antivector-
-    middle_first = 0.5 * (first[..., 1:] + first[..., :-1])                      # [..., segments] Antivector-
-    middle_second = 0.5 * (second[..., 1:] + second[..., :-1])                   # [..., segments] Antivector-
-    separation = middle_first[..., :, None] - middle_second[..., None, :]        # [..., segments, segments] Antivector-
-    volume = separation & step_first[..., :, None] & step_second[..., None, :]   # [..., segments, segments] Scalar-
-    distance = separation.norm()                                                 # [..., segments, segments] Scalar+
-    return (volume / distance ** 3).sum(axis=(-2, -1)) / (4 * np.pi)             # [...] Scalar-
+def fibre_sweep(polars: np.ndarray, n_turns: int, n_frames: int,
+                n_samples: int) -> Iterator[tuple[Antivector, Antivector]]:
+    """Yields `(spin, projected_fibre)` pairs as `spin` spirals between `polars[0]` and `polars[1]`."""
+    fibre_turns = (mv.xy * np.linspace(0.0, 2 * np.pi, n_samples + 1)).exp()   # [n_samples + 1] Rotor+
+    for fraction in np.linspace(0.0, 1.0, n_frames):
+        polar = polars[0] + (polars[1] - polars[0]) * fraction
+        spiral_spin = sphere_spins(polar, 2 * np.pi * n_turns * fraction)      # [] Antivector-
+        fibre = fibre_start(spiral_spin) * fibre_turns                         # [n_samples + 1] Even+
+        yield spiral_spin, stereographic_projection(fibre)
+
+
+def transport_rotors(spins: Antivector) -> Rotor:
+    """Minimal-angle step rotors multiplied along `spins` carry a frame (`[...] Rotor+`) from `spins[0]` to each subsequent spin."""
+    # Adding 1 halves the double-angle rotor spins[1:] * ~spins[:-1] between consecutive unit spins.
+    step_rotors = (1 + spins[1:] * ~spins[:-1]).normalized()                   # [...] Rotor+
+    return step_rotors.cumprod(axis=0)                                         # [...] Rotor+

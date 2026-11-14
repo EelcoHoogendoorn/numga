@@ -24,13 +24,13 @@ chevron_length = 7.0
 n_around = 120
 # The page the diagram is drawn on, its points antivectors about the middle.
 page = NumpyContext(VGA2D).multivector
-Antivector = VGA2D.gatype.antivector()                                         # Antivector-
+Antivector = VGA2D.gatype.antivector()                                      # Antivector-
 # Where each basis vector is drawn: the corners of a triangle at b, d and g, the top turned by thirds of a turn, the
 # midpoints of its sides at f, c and e, and its centre at a, so that every triple lies on a side, a median, or the
 # circle through the midpoints.
 corner = 1.0
-thirds = (page.xy * (-np.array([0, 2, 4]) * np.pi / 3 / 2)).exp()                # [corners] Rotor+
-b, d, g = thirds >> (corner * page.y.dual())                                    # [] Antivector-, Antivector-, Antivector-
+thirds = (page.xy * (-np.array([0, 2, 4]) * np.pi / 3 / 2)).exp()           # [3] Rotor+
+b, d, g = thirds >> (corner * page.y.dual())                                # [] Antivector-, Antivector-, Antivector-
 places_by_name = {"a": 0 * b, "b": b, "d": d, "g": g, "f": (b + d) / 2, "e": (b + g) / 2, "c": (d + g) / 2}
 # How far along each segment, and along each arc of the circle, its arrow sits: off the middle, where the medians
 # cross the circle; and how far on its tip lies, and back its stroke starts, on the page.
@@ -39,74 +39,77 @@ tip_step, tail_step = 0.02, 0.06
 
 
 # --- plumbing -------------------------------------------------------------------------
-def xy(points: Antivector) -> np.ndarray:
-    """x and y of points of the page `[..., 2]`: their pairings with the planes x and y."""
+def page_coordinates(points: Antivector) -> np.ndarray:
+    """Page points pair with the basis planes `x` and `y` to give 2D coordinates (`[..., 2]`)."""
     return (stack((page.x, page.y)) & points[..., None]).to_array()
 
 
-def triples(cycles: core.Trivector) -> list[str]:
-    """The three basis vectors of each cycle, in the order its product runs: `a` times `b` is `c` for abc."""
+def cycle_triples(cycles: core.Trivector) -> list[str]:
+    """Each oriented cycle names its three basis vectors in product order, with `a` times `b` giving `c` for `abc`."""
     names = cycles.gatype.output_subspace.blade_names
-    blades = stack([getattr(core.mv, name) for name in names])                 # [blades] Trivector+
+    n_blades = len(names)
+    blades = stack([getattr(core.mv, name) for name in names])              # [n_blades] Trivector+
     # A cycle's coefficient on each basis trivector, by its scalar product with the blade's reverse.
     coefficients = (cycles[:, None].scalar_product(blades.reverse()) / blades.scalar_norm_squared()).to_array()
     blade = np.abs(coefficients).argmax(axis=-1)
-    return [names[k] if coefficients[row, k] > 0 else names[k][0] + names[k][2] + names[k][1]
-            for row, k in enumerate(blade)]
+    return [names[index] if coefficients[row, index] > 0 else names[index][0] + names[index][2] + names[index][1]
+            for row, index in enumerate(blade)]
 
 
-def arrow(place: Antivector, heading: Antivector) -> Antivector:
-    """The ends of a short arrow at a place, pointing along a heading `[ends]`: the end of its stroke and its tip."""
-    unit = heading.normalized()                                                # [] Antivector-
-    return stack([place - tail_step * unit, place + tip_step * unit])
+def arrow_segment(place: Antivector, heading: Antivector) -> Antivector:
+    """A short arrow at `place` along `heading` spans from the start of its stroke to its tip (`[2] Antivector-`)."""
+    unit = heading.normalized()                                             # [] Antivector-
+    return stack([place - tail_step * unit, place + tip_step * unit])       # [2] Antivector-
 
 
 @charts.style()
-def draw_fano(cycles: core.Trivector) -> plt.Figure:
-    """The Fano plane: each basis vector a point, each multiplication triple a line, the sides and medians
-    of the triangle and the circle through the midpoints, its arrows running in the order of the product."""
+def fano_figure(cycles: core.Trivector) -> plt.Figure:
+    """The Fano plane draws each basis vector as a point and each multiplication triple as an oriented line or circle."""
     figure, ax = charts.subplots(*figure_size, layout="constrained")
     ax.set(xlim=(-1.05, 1.05), ylim=(-0.75, 1.15), aspect="equal")
     ax.set_axis_off()
     radius = corner / 2
     angles = np.linspace(0, 2 * np.pi, n_around, endpoint=False)
-    circle = (page.xy * (-angles / 2)).exp() >> (radius * page.y.dual())       # [around] Antivector-
+    circle_rotors = (page.xy * (-angles / 2)).exp()                         # [n_around] Rotor+
+    circle = circle_rotors >> (radius * page.y.dual())                      # [n_around] Antivector-
     sides, arrows = [], []
-    # Each triple a cycle, from each point to the next in the order of the product, the last back to the first.
+    # Each triple is a cycle from each point to the next in product order, with the last returning to the first.
     cycle = Topology.loops([3])
-    for triple in triples(cycles):
-        places = stack([places_by_name[name] for name in triple])              # [3] Antivector-
-        starts, ends = (cycle.incidence[1, 0] * places.field()).batch()        # [3] Antivector-, Antivector-
-        if np.all((places.norm() - radius).abs() <= 1e-8 + 1e-5 * radius):
+    for triple in cycle_triples(cycles):
+        places = stack([places_by_name[name] for name in triple])           # [3] Antivector-
+        starts, ends = (cycle.incidence[1, 0] * places.field()).batch()     # [3] Antivector-, Antivector-
+        if ((places.norm() - radius).abs() <= 1e-8 + 1e-5 * radius).all():
             # On the circle: an arrow on each arc, part of the way along the shorter turn from each point to the
             # next, pointing the way the turn runs.
-            turns = (1 + ends * starts.inverse()).normalized()                 # [3] Rotor+
-            generators = turns.log()                                            # [3] Bivector+
-            heads = (generators * arc_fraction).exp() >> starts                # [3] Antivector-
-            arrows += [arrow(head, heading) for head, heading in zip(heads, generators.commutator(heads))]
+            turns = (1 + ends * starts.inverse()).normalized()              # [3] Rotor+
+            generators = turns.log()                                        # [3] Bivector+
+            arc_rotors = (generators * arc_fraction).exp()                  # [3] Rotor+
+            heads = arc_rotors >> starts                                    # [3] Antivector-
+            arrows += [arrow_segment(head, heading) for head, heading in zip(heads, generators.commutator(heads))]
             continue
         # On a straight line: the two points furthest apart are its ends.
-        spans = (places[:, None] - places[None, :]).norm()                    # [3, 3] Scalar+
+        spans = (places[:, None] - places[None, :]).norm()                  # [3, 3] Scalar+
         first, last = np.unravel_index(spans.reshape(-1).argmax(), (3, 3))
         sides.append(places[[first, last]])
         for start, end in zip(starts, ends):
             # Arrows on the segments the cycle runs along without passing through the third point.
             if (end - start).norm() < spans[first, last] - 1e-9:
-                arrows.append(arrow(start + segment_fraction * (end - start), end - start))
-    points = stack(list(places_by_name.values()))                              # [points] Antivector-
-    arrow_ends = stack(arrows)                                                 # [arrows, ends] Antivector-
+                arrows.append(arrow_segment(start + segment_fraction * (end - start), end - start))
+    points = stack(list(places_by_name.values()))                           # [7] Antivector-
+    n_arrows = len(arrows)
+    arrow_ends = stack(arrows)                                              # [n_arrows, 2] Antivector-
     camera = offset_panel(ax, page.x, page.y)
     ink, dark = np.array(to_rgb(line_colour)), np.array(to_rgb(point_colour))
     overlay(ax, [
         simplices.strokes(circle, Topology.loops([n_around]), ink, charts.LINE_PX, camera),
         simplices.strokes(stack(sides).reshape(-1), Topology.chains([2] * len(sides)), ink, charts.LINE_PX,
                           camera),
-        # Each arrow a stroke along its line, as wide as the line, and a chevron at its tip.
-        simplices.strokes(arrow_ends.reshape(-1), Topology.chains([2] * len(arrows)), ink, charts.LINE_PX,
-                          camera, chevrons=np.ones(len(arrows)), chevron=chevron_length),
-        # Each point white within a dark ring: a dot over a larger dot.
+        # Each arrow is a stroke along its line, as wide as the line, with a chevron at its tip.
+        simplices.strokes(arrow_ends.reshape(-1), Topology.chains([2] * n_arrows), ink, charts.LINE_PX,
+                          camera, chevrons=np.ones(n_arrows), chevron=chevron_length),
+        # Each point is white within a dark ring: a dot over a larger dot.
         simplices.markers(points, dark, (point_side + charts.LINE_PX) / 2, camera),
         simplices.markers(points, np.ones(3), (point_side - charts.LINE_PX) / 2, camera)])
     for name, place in places_by_name.items():
-        ax.text(*xy(place), name, ha="center", va="center", color=point_colour, zorder=4)
+        ax.text(*page_coordinates(place), name, ha="center", va="center", color=point_colour, zorder=4)
     return figure

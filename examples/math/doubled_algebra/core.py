@@ -1,16 +1,12 @@
-"""Wedge, contraction and all maps on planar multivectors as products in Cl(2,2).
+"""Products in the split algebra Cl(2, 2) represent wedge, contraction and every linear map on planar multivectors.
 
-Two pairs of null vectors add basis vectors to a state as factors and remove them. Their mixed
-products act as dyads on vectors and as derivations on blades. A four-component left ideal carries
-the sixteen independent maps, with composition given by the geometric product.
+Two pairs of null vectors add basis vectors to an exterior state as factors and remove them. Mixed products of an adding and a removing vector act as dyads on vectors and as derivations on higher-grade blades, while a four-component left ideal carries all sixteen linear maps on the exterior algebra under left multiplication.
 """
 
 from functools import reduce
 from operator import mul
 
-import numpy as np
-
-from numga import Algebra, NumpyContext, concatenate, stack
+from numga import Algebra, NumpyContext, stack
 
 ga = Algebra("x+y+u-v-")
 context = NumpyContext(ga)
@@ -21,36 +17,28 @@ Vector = ga.gatype.vector().derive.within(Algebra("x+y+"))  # Vector+
 StateMap = ga.gatype((State, State))                        # State+ <- State+
 n_state_components = len(State.output_subspace)
 
-
-# --- math -----------------------------------------------------------------------------
 basis = stack([mv.x, mv.y])                                 # [2] Vector+
-partners = stack([mv.u, mv.v])                              # [2] Vector+
-creators = (basis + partners) / 2                           # [2] Vector+
-removers = (basis - partners) / 2                           # [2] Vector+
+negative_basis = stack([mv.u, mv.v])                        # [2] Vector+
+creators = (basis + negative_basis) / 2                     # [2] Vector+
+removers = (basis - negative_basis) / 2                     # [2] Vector+
 
-# Removing either basis vector from this state gives zero. The two empty-state projectors commute.
+# Removing either basis vector from this state gives zero; the two empty-state projectors commute.
 projector = reduce(mul, removers * creators)                # [] Even+
 embedder = State * projector                                # [] Full+ <- State+
-# Keep the independent coefficients; the projector contributes a factor of one half per basis vector.
+# Each empty-state projector contributes a factor of one half that reading out rescales away.
 state_readout = (n_state_components * Full).cast(State)     # [] State+ <- Full+
-representations = state_readout(Full * embedder)           # [] State+ <- (Full+, State+)
-# Removing y and then adding x sends y to x; its exponential shears y towards x, and carries the
-# scalar, both vectors and their oriented area along.
+representations = state_readout(Full * embedder)            # [] State+ <- (Full+, State+)
+
+# Removing y and adding x sends y to x and extends to blades by the derivation product rule.
 shear_generator = creators[0] * removers[1]                 # [] Even+
+# Each diagonal product keeps the blades containing its basis vector, so their sum counts grade.
+grade_count = (creators * removers).sum(axis=0)             # [] Even+
+# Adding both basis vectors or removing them in reverse order swaps the scalar and area blades.
+exchange = creators[0] * creators[1] + removers[1] * removers[0]  # [] Even+
 
 
-def encode(state_map: StateMap) -> Full:
-    """The multivector whose left action is the given map on all four state components."""
-    # Tracing against every represented blade gives its scalar-product pairing with the answer.
+def map_multivector(state_map: StateMap) -> Full:
+    """Trace pairing against all sixteen represented blades recovers the multivector (`[] Full+`) whose left action equals `state_map`."""
     pairing = Full.scalar_product(Full)                     # [] Scalar+ <- (Full+, Full+)
-    return pairing.solve(representations(Full, state_map).trace(0, 2) / n_state_components)
-
-
-# --- plumbing -------------------------------------------------------------------------
-def grid_samples(basis: Vector, extent: float, n_lines: int) -> Vector:
-    """Horizontal and vertical grid segments, with axes [lines, endpoints]."""
-    offsets = np.linspace(-extent, extent, n_lines)
-    ends = np.array([-extent, extent])
-    horizontal = basis[0] * ends[None, :] + basis[1] * offsets[:, None]
-    vertical = basis[1] * ends[None, :] + basis[0] * offsets[:, None]
-    return concatenate([horizontal, vertical], axis=0)
+    trace_rhs = representations(Full, state_map).trace(0, 2) / n_state_components  # [] Full+
+    return pairing.solve(trace_rhs)
