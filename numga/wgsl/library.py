@@ -1,9 +1,15 @@
-"""Patterns shaders in the numga dialect share, as WGSL to append to a shader's own.
+"""Reusable WGSL snippets supply subpixel image sampling and screen-space contour evaluation for
+shaders written in the `numga` dialect. `sampled` and `supersampled` provide the `@compute` entry
+point, uniform `pixels` dimensions, output `image` buffer, and `screen(place)` view coordinates for
+any shader defining `fn sample(place: vec2<f32>) -> Sample` on an additive, scalable `Sample` type.
+Within each pixel, sample offsets sit on a rotated `n`-rooks grid so no two samples share a row or
+column, resolving near-horizontal and near-vertical edges at `n**2` abscissas while `samples_per_side`
+queries the WebGPU adapter lazily on first draw (`4` on hardware GPUs, `1` on CPU software drivers).
 
-`supersampled` makes the image: a shader that defines what one sample sees, `fn sample(place:
-vec2<f32>) -> Sample`, with `Sample` any type that adds and scales (a colour, `alias Sample =
-vec3<f32>;`, or a struct of several), gets an `image` of the average over a grid of samples in each pixel,
-and `screen(place)`, the place's direction across the view.
+`level_lines` provides screen-space anti-aliased contour helpers `level_line` and `level_mark`,
+dividing a scalar field's distance to a target level by its per-sample screen-space variation `rate`
+(such as `fwidth` evaluated in uniform control flow) so lines stay `width` samples wide regardless of
+field steepness and vanish where the field is flat.
 """
 
 from __future__ import annotations
@@ -12,29 +18,29 @@ from functools import cache
 
 
 def software() -> bool:
-    """Whether the adapter is the CPU itself, a software driver as in a runtime without a GPU."""
+    """A `"CPU"` adapter type indicates a software WebGPU driver in an environment without a hardware GPU."""
     from .runner import device
     return device().adapter.info["adapter_type"] == "CPU"
 
 
 @cache
 def samples_per_side() -> int:
-    """The samples a side of every pixel, for every picture: sixteen to a pixel on a GPU, one on the CPU, where more
-    cost too much. Asked of the device when a picture is first drawn, so that importing the drawing code needs none."""
+    """Hardware GPUs evaluate four samples per pixel side (sixteen per pixel), whereas CPU software
+    adapters fall back to one sample per pixel. Querying the adapter on first call avoids opening a
+    WebGPU device at import time."""
     return 1 if software() else 4
 
 
 def supersampled() -> str:
-    """WGSL for a picture of `samples_per_side` squared samples a pixel: `sampled` at the pictures' default."""
+    """Default supersampling expands `sampled` at the device's `samples_per_side()` resolution."""
     return sampled(samples_per_side())
 
 
 def level_lines() -> str:
-    """WGSL for lines where a field crosses its levels, each `width` samples wide however steep the field: its distance
-    to a level over `rate`, its change across one sample, `fwidth` of it taken where the control flow is uniform.
-    `level_line(level, rate, width)` covers the whole numbers of a field scaled so that its levels fall on them;
-    `level_mark(offset, rate, width)` covers the one level where an offset from it vanishes. A line is drawn only where
-    the field changes: where it is flat, even at a level, there is no line to draw."""
+    """Screen-space contour helpers divide a field's distance to a target level by its per-sample
+    variation `rate` so lines maintain a constant thickness of `width` samples and vanish where
+    `rate <= 0`. `level_line` marks every integer value of `level`, while `level_mark` marks the zero
+    crossing of `offset`."""
     return """
 fn level_line(level: f32, rate: f32, width: f32) -> f32 {
     // The distance to the nearest level, in samples: how far the field lies from it over its change across one sample.
@@ -49,14 +55,14 @@ fn level_mark(offset: f32, rate: f32, width: f32) -> f32 {
 """
 
 
-def sampled(side: int) -> str:
-    """WGSL for an image of `side` squared samples a pixel, on a grid turned so that no two share a row or a
-    column, which resolves near-horizontal and near-vertical edges as finely as a grid of that many to a side;
-    one, at each pixel's centre, for an image traced live."""
-    count = side**2
-    offsets = [((across * side + down + 0.5) / count - 0.5,
-                (down * side + side - 1 - across + 0.5) / count - 0.5)
-               for across in range(side) for down in range(side)]
+def sampled(n_samples_per_side: int) -> str:
+    """Rotated `n`-rooks subpixel offsets place `n_samples_per_side**2` samples per pixel with distinct
+    horizontal and vertical coordinates, reducing to a single pixel-centre sample when
+    `n_samples_per_side == 1`."""
+    count = n_samples_per_side**2
+    offsets = [((across * n_samples_per_side + down + 0.5) / count - 0.5,
+                (down * n_samples_per_side + n_samples_per_side - 1 - across + 0.5) / count - 0.5)
+               for across in range(n_samples_per_side) for down in range(n_samples_per_side)]
     entries = ", ".join(f"vec2<f32>({x!r}, {y!r})" for x, y in offsets)
     return f"""
 // The image's size, columns then rows, and each pixel's average of what its samples see.
@@ -64,7 +70,7 @@ var<uniform> pixels: vec2<u32>;
 var<storage, read_write> image: array<Sample>;
 
 // Where a pixel's samples lie, in pixel widths from its centre: one in each cell of a grid `samples_per_side` across.
-const samples_per_side = {side}u;
+const samples_per_side = {n_samples_per_side}u;
 const n_samples = {count}u;
 const samples = array<vec2<f32>, {count}>({entries});
 

@@ -1,12 +1,30 @@
-"""Array-namespace-parametric dense execution of a ``BindingPlan``."""
+"""Dense contraction executes a `BindingPlan` over any NumPy-compatible array namespace (`context.xp`).
+Every concrete `Extensor` stores leading batch axes ahead of trailing structural axes
+`(output, *inputs)`, so binding a subset of a map's input axes contracts each bound structural axis
+against the output axis of its operand and splices any remaining input axes of a higher-arity operand
+in place while broadcasting leading batch shapes on the left.
+
+Multi-operand bindings decompose into sequential pairwise contractions whose static axis wiring is
+cached per `(xp, plan, order)`. Rather than contracting axes in fixed positional order,
+`ordered_binding` sorts bound axes at call time from smallest operand batch product to largest
+(breaking ties from last bound axis to first), so small-batch operators such as per-camera motors
+contract into the kernel before high-volume point batches expand the intermediate tensor.
+
+Subspace embeddings, projections, and blade sign adjustments represented by non-exact `AxisTransform`
+matrices apply to an operand's output axis immediately before contraction. Binary matrix-matrix and
+matrix-vector contractions dispatch directly to `xp.matmul`, while general arities compile an
+ellipsis `einsum` expression (`optimize=True` on traced and GPU backends, direct path-free evaluation
+on `numpy` where path planning dominates small blade kernels). Kernel layout and dense contraction
+strings are described in `docs/internals.md` (sections 3 and 6).
+"""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from functools import lru_cache, partial
 from math import prod
 from string import ascii_letters
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -25,26 +43,18 @@ def execute_dense_bind(
     operands: Mapping[int, Extensor],
     plan: BindingPlan,
 ) -> Any:
-    """Execute one deterministic atomic bind with left batch broadcasting."""
-
+    """Lowering `target` into `context` contracts all bound `operands` with left batch broadcasting."""
     kernels = {axis: operand._kernel for axis, operand in operands.items()}
     return ordered_binding(context.xp, plan)(context.lower(target)._kernel, kernels)
 
 
 @lru_cache(maxsize=None)
-def ordered_binding(xp: Any, plan: BindingPlan) -> Callable[[Any, Mapping[int, Any]], Any]:
-    """Contract the operands, given by axis, smallest batch first.
-
-    The order of pairwise contractions is chosen per call from the operands' batch sizes: an
-    operand with a small batch, such as a motor per camera sandwiching a map per point and
-    camera, contracts into the kernel before the large one does, so the large contraction
-    meets a kernel that no longer carries the small operand's axes. Equal batches keep the
-    order of the axes from last to first.
-    """
-
+def ordered_binding(xp: Any, plan: BindingPlan) -> Callable:
+    """Pairwise contractions run from smallest operand batch product to largest, breaking ties from
+    last bound axis to first."""
     structural = {binding.axis: len(binding.operand_gatype.subspaces) for binding in plan.bindings}
     last_first = tuple(binding.axis for binding in reversed(plan.bindings))
-    orders: dict[tuple[int, ...], tuple] = {}
+    orders = {}
 
     def batch(kernel: Any, axis: int) -> int:
         return prod(kernel.shape[:kernel.ndim - structural[axis]])
@@ -63,11 +73,12 @@ def ordered_binding(xp: Any, plan: BindingPlan) -> Callable[[Any, Mapping[int, A
 @lru_cache(maxsize=None)
 def binding_steps(
     xp: Any, plan: BindingPlan, order: tuple[int, ...],
-) -> tuple[tuple[int, Callable[[Any, Any], Any]], ...]:
-    """Resolve contractions and necessary coordinate conversions once, binding axes in order."""
-
+) -> tuple:
+    """Each step in `order` pairs an operand axis with its compiled contractor, tracking how
+    higher-arity operands widen the intermediate structural axes."""
     bound = {binding.axis: binding for binding in plan.bindings}
-    widths = [1] * plan.target_gatype.arity                 # kernel axes each target axis spans so far
+    # Each target input axis initially spans one structural axis and widens to operand.arity when bound.
+    widths = [1] * plan.target_gatype.arity
     current_axes = (plan.result_subspaces[0],) + plan.target_gatype.input_subspaces
     steps = []
     for axis in order:
@@ -94,10 +105,10 @@ def binding_steps(
 
 def _with_output_transform(
     xp: Any,
-    apply: Callable[[Any, Any], Any],
+    apply: Callable,
     gatype: GAType,
     transform: AxisTransform,
-) -> Callable[[Any, Any], Any]:
+) -> Callable:
     def converted(target: Any, operand: Any) -> Any:
         return apply(target, transform_output(xp, operand, gatype, transform))
 
@@ -110,8 +121,8 @@ def transform_output(
     gatype: GAType,
     transform: AxisTransform,
 ) -> Any:
-    """Apply the planned output-axis coordinate map without mutation."""
-
+    """Non-identity `transform` matrices remap the operand's leading structural axis immediately after
+    its batch axes."""
     if transform.kind is AxisTransformKind.EXACT:
         return kernel
     batch_ndim = kernel.ndim - len(gatype.subspaces)
@@ -127,8 +138,8 @@ def transform_axis(
     axis: int,
     transform: AxisTransform,
 ) -> Any:
-    """Apply a coordinate transform to one trailing structural axis."""
-
+    """Non-identity `transform` matrices remap structural `axis` in place while preserving leading
+    batch axes."""
     if transform.kind is AxisTransformKind.EXACT:
         return kernel
     batch_ndim = kernel.ndim - structural_ndim
@@ -144,9 +155,7 @@ def _contractor(
     target_axes: tuple[SubSpace, ...],
     target_axis: int,
     operand_axes: tuple[SubSpace, ...],
-) -> Callable[[Any, Any], Any]:
-    """Select once from structural axes; batches belong to the array backend."""
-
+) -> Callable:
     if len(target_axes) == 2 and target_axis == 1:
         if len(operand_axes) == 2:
             return xp.matmul
@@ -169,6 +178,6 @@ def _contractor(
     if xp is not np:
         return partial(xp.einsum, expression, optimize=True)
 
-    # Two operands have one contraction order: NumPy's direct einsum skips the path machinery, which costs more than
-    # the contraction on the small arrays most calls see.
+    # Two operands admit a single contraction order, so NumPy's direct einsum avoids path-planning
+    # overhead that outweighs contracting small blade kernels.
     return partial(np.einsum, expression)

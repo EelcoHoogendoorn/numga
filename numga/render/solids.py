@@ -1,11 +1,27 @@
-"""Solids bounded by quadrics in PGA3D, ray traced on the GPU: balls, ellipsoids, rods and boxes, each lit by a
-lamp, on a plain background, seen along parallel rays.
+"""Solids bounded by intersections of quadrics in `PGA3D` are ray-traced directly on the GPU along
+parallel orthographic rays and composited sample-by-sample against rasterized surfaces and tubes.
 
-A solid is the intersection of a few quadrics, each a map from points to planes, `Plane <- Point`, whose
-pairing with a point, `quadric(point) & point`, is negative inside and zero on its surface, where the plane
-it gives is the tangent plane. A ball is one quadric, a rod a cylinder about its line between two half-spaces,
-a box six half-spaces. Every ray tests every quadric of every solid: the surface it sees first is a root of
-one solid's quadric that lies inside all its others.
+Each quadric is a symmetric linear map `Plane <- Point` whose regressive pairing
+`quadric(point) & point` is negative inside the solid and zero on its boundary, where `quadric(point)`
+is the outward tangent plane. Balls and ellipsoids require a single quadric, rods combine an
+infinite cylinder with two end half-spaces, and boxes, plates, and convex polyhedra are intersections
+of oriented planes alone (`arity == 0`), whose ray intervals evaluate in time linear in face count
+rather than quadratic. Curves inked onto solid surfaces (`Ink`) evaluate zero sets of extrinsic or
+intrinsic quadrics within regional bounds, normalizing algebraic values by their tangent-plane
+directional derivatives so screen-space line width stays uniform across curved geometry.
+
+Before tracing, spectral analysis of each quadric's directional growth form bounds ellipsoids by
+their centres and cylinders or cones by axial cuts from sibling quadrics, binning bounded solids
+into 16-pixel screen tiles while broadcasting unbounded half-space solids to all tiles. Along each
+supersampled ray, opaque and translucent quadric hits interleave in depth order (breaking sub-pixel
+ties deterministically by scene index) with pre-rasterized sample slots from triangulated surfaces
+and 3D tubes.
+
+Surface shading operates entirely in the camera's three-axis screen frame (`lamp_shading` and
+`tangent_seen`), pairing tangent planes against the camera's preimage steps across, up, and toward
+the viewer. Because illumination depends only on screen-space normal slopes, quadrics in `PGA3D` and
+surfaces projected from arbitrary algebras share identical key-lamp, sky-ground fill, headlight, and
+specular glint shading.
 """
 
 from __future__ import annotations
@@ -17,6 +33,7 @@ import numpy as np
 
 from numga import NumpyContext, concatenate, stack, where
 from numga.algebras import PGA3D as ga
+from numga.extensor import Extensor
 from numga.topology import Topology
 from numga.wgsl import Resident, Shader, supersampled
 
@@ -30,41 +47,32 @@ Scalar = ga.gatype.scalar()
 Plane = ga.gatype.vector()
 Motor = ga.gatype.rotor()
 Line = ga.gatype.bivector()
-# A face's tangent plane as the join of its corners.
+# Each face's tangent plane is the join of its corners.
 Patch = Plane.derive.flipped_orientation                                      # Vector-
 Quadric = ga.gatype((Plane, Point))                                          # Plane <- Point
 DualQuadric = ga.gatype((Point, Plane))                                      # Point <- Plane
-# A quadric whose form gives a join's plane, as an ink of a join is.
+# Intrinsic quadric form mapping points to joined planes, used for join-oriented surface inks.
 Joined = ga.gatype((Patch, Point))                                           # Patch- <- Point-
-# The planes of the frame, and of every camera's in its own: a point's pairings with them are how far it lies across
-# to the right, up, and toward the viewer, the camera looking along its own -z; a place so far along each is the
-# origin moved by their duals, `origin + (axes.dual() * place).sum()`.
+# Coordinate planes of the scene and camera frames (right, up, and toward the viewer as the camera
+# looks along -z).
 axes = stack((mv.x, mv.y, mv.z))                                             # [3] Plane
 origin = mv.w.dual()                                                         # [] Point
-# The intrinsic scalar one: the join of points, intrinsic, times it is the plane or line through them, extrinsic.
+# Multiplying an intrinsic point join by `flip` reorients it into the extrinsic plane or line through those points.
 flip = mv.antipseudoscalar([1.0])                                            # [] Antipseudoscalar-
-# The direction square to each plane through the origin: a form on directions read through it is measured as the
-# scene's lengths are.
+# Maps planes through the origin to their orthogonal ideal directions under the Euclidean metric.
 normal_direction = Plane.derive.nondegenerate.dual()                         # Point <- Plane
-# The light that falls everywhere, and the glint's share and sharpness.
 ambient, gloss, shininess = 0.22, 0.45, 32.0
-# How much brighter the light that falls everywhere is on faces turned up than on faces turned sideways, and dimmer
-# on faces turned down: a sky above and a ground below, so the form reads away from the lamp too.
+# Sky-ground vertical fill bias brightening upward-facing surfaces relative to downward-facing ones.
 fill_tilt = 0.5
-# The share of the light that comes from the viewer, so that every face the camera sees keeps its colour, by how
-# squarely it is turned to the viewer; the lamp gives the rest.
+# Fraction of illumination aligned with the viewing ray so visible faces retain their hue away from the key lamp.
 headlight = 0.25
-# The lamp's direction in the picture's frame, across, up and toward the viewer: up and to the right of the viewer, and
-# a little behind, so that strokes running up the image catch it as well as the faces turned up.
+# Key-lamp direction in screen coordinates (right, up, and toward the viewer).
 lamp = np.array([0.35, 0.5, 0.8]) / np.linalg.norm([0.35, 0.5, 0.8])
 
 
 def lamp_shading() -> str:
-    """WGSL lighting a surface in the picture's frame, for the solids, meshes, strokes and streaks alike: the lamp's
-    uniforms, as `lighting` gives them, and from a normal read in the picture's frame, across, up and toward the viewer,
-    `turned`, the unit normal facing the viewer, `brightness`, how brightly the lamp, the sky and the viewer light it,
-    `glint`, and `lit_seen`, a colour lit with its glint. The picture's frame is the metric the eye sees, so no metric
-    of the scene enters: a surface of any algebra the camera reads is lit alike."""
+    """WGSL source lights screen-space normals with key lamp, sky-ground fill, headlight, and
+    specular glint."""
     return """
 // The lamp's direction in the picture's frame, across, up and toward the viewer, a unit; the light that falls
 // everywhere, how much more of it falls on faces turned up the picture, the share of the light that comes from the
@@ -107,9 +115,8 @@ fn lit_seen(colour: vec3<f32>, seen: vec3<f32>) -> vec3<f32> {
 
 
 def tangent_seen() -> str:
-    """WGSL reading a tangent plane of the type `Tangent` in the picture's frame, a quadric's plane at its surface or
-    the join of a face's corners alike: `slopes(tangent)`, its pairings with the camera's steps across, up and toward
-    the viewer, as `steps` gives them, the plane's slope along each; and `lit(colour, tangent)`."""
+    """WGSL source pairs a `Tangent` plane against the camera's preimage steps to obtain its
+    screen-space normal slopes."""
     return """
 // The steps the camera reads as one across, one up and one toward the viewer.
 var<uniform> step_across: Point;
@@ -128,9 +135,8 @@ fn lit(colour: vec3<f32>, tangent: Tangent) -> vec3<f32> {
 
 
 def quadric_crossings() -> str:
-    """WGSL for where a ray crosses a quadric's surface, for the solids and strokes alike: `along_ray`, the quadric's
-    pairing with the ray's points as a quadratic in the distance along it, `crossings`, its roots, and `entry`, the
-    root where the ray enters the solid."""
+    """WGSL source evaluates a quadric along a ray as a scalar quadratic and solves for its surface
+    crossings without catastrophic cancellation."""
     return """
 const far = 1e30;
 
@@ -166,9 +172,8 @@ fn entry(along: Quadratic) -> f32 {
 
 
 def quadric_regions() -> str:
-    """WGSL intersecting a ray with an intersection of quadrics: its first surface between two distances,
-    and the test that a point lies inside all the other quadrics. Scene traversal and surface ordering stay with
-    the caller; both use the same crossings and containment test."""
+    """WGSL source intersects a ray with an intersection of quadrics by testing each root against
+    all sibling quadrics within a distance interval."""
     return quadric_crossings() + """
 var<storage, read> quadrics: array<Quadric>;
 
@@ -211,9 +216,8 @@ fn region_hit(first: u32, end: u32, start: Point, direction: Point, nearest: f32
 
 
 def quadric_tracing() -> str:
-    """WGSL tracing rays through solids bounded by quadrics, as `scene` and `tiles` lay them out: `first_hit`, the
-    first point a ray meets on a solid's surface after the last surface seen, by `crossings`, where it crosses each
-    quadric, and `inside_others`."""
+    """WGSL source finds the nearest quadric-solid hit per screen tile after the previously
+    composited surface, specializing plane-only solids to linear interval intersection."""
     return quadric_regions() + """
 // A solid: the intersection of its quadrics, `quadrics[first]` up to `quadrics[end]`, and whether they are all
 // half-spaces, bounded by planes alone.
@@ -342,8 +346,8 @@ fn first_hit(start: Point, direction: Point, last_distance: f32, last_order: u32
 
 
 def ink_pass(name: str) -> str:
-    """WGSL laying the inks of one array over a hit, `{name}_painted`: each ink on the hit's solid, within its region,
-    covering the hit where its distance to its zero set, in the camera's readings, is within half its width."""
+    """WGSL source paints surface curves from `{name}` where a hit lies within half the ink's pixel
+    width of its quadric zero set."""
     return f"""
 fn {name}_painted(hit: Hit, point: Point, slide_across: Point, slide_up: Point, painted: Painted) -> Painted {{
     var result = painted;
@@ -527,173 +531,165 @@ fn sample(place: vec2<f32>) -> Sample {
 
 
 # --- shapes ---------------------------------------------------------------------------
-def translator(offset: Point) -> Motor:
-    """The motor carrying every point along a direction, a point at infinity."""
+def translator(offset: Extensor) -> Extensor:
+    """Exponentiating `(mv.w ^ offset.dual()) / 2` translates every point along ideal point
+    `offset`."""
     return ((mv.w ^ offset.dual()) / 2).exp()
 
 
-def placed(quadric: Quadric, motor: Motor) -> Quadric:
-    """A quadric moved by a motor: each point moved back, measured, and its plane moved forward."""
+def placed(quadric: Extensor, motor: Extensor) -> Extensor:
+    """Sandwiching `quadric` by `motor` (`motor >> quadric(motor << Point)`) transforms a solid
+    rigidly in `PGA3D`."""
     return motor >> quadric(motor << Point)
 
 
-def ellipsoid(semi_axes: np.ndarray) -> Quadric:
-    """Solid ellipsoids about the origin, their semi-axes along x, y and z on the last axis."""
+def ellipsoid(semi_axes: np.ndarray) -> Extensor:
+    """Origin-centred ellipsoid quadrics scale each coordinate plane pairing inversely by the
+    squared `semi_axes` along `x`, `y`, and `z`."""
     return (axes * (axes & Point) / semi_axes**2).sum(axis=-1) - mv.w * (mv.w & Point)
 
 
-def solid_of_dual_quadric(shape: DualQuadric) -> Quadric:
-    """The solids about the origin whose dual quadrics are `shape`, each plane through the origin to the direction of
-    the point its tangent plane touches, as `context.include_from_algebra` carries the dual quadrics of the algebra of space:
-    with the origin's own dyad taken away, the dual quadric of a closed surface, inverted into the quadric that pairs
-    points to at most zero inside."""
+def solid_of_dual_quadric(shape: Extensor) -> Extensor:
+    """Subtracting the origin's rank-one dyad from an origin-centred dual quadric embedded from
+    Euclidean 3D space and inverting yields its primal solid quadric."""
     return (shape - origin * (Plane & origin)).inverse()
 
 
-def ball(centres: Point, radius: Scalar) -> Quadric:
-    """Solid balls about points, of any weight."""
+def ball(centres: Extensor, radius: Extensor | float) -> Extensor:
+    """Sphere quadrics of `radius` translate from the origin to arbitrary-weight `centres`."""
     round_form = (axes * (axes & Point)).sum(axis=-1) / radius**2 - mv.w * (mv.w & Point)
     return placed(round_form, translator(centres / (mv.w & centres) - origin))
 
 
-# All of space: the quadric pairing every point of unit weight to minus one.
+# Quadric pairing every unit-weight point to -1, enclosing all of space.
 everywhere = -mv.w * (mv.w & Point)
 
 
-def half_space(plane: Plane) -> Quadric:
-    """The points on a plane's negative side, as the quadric that pairs them with the plane and with the
-    plane at infinity, symmetrized."""
+def half_space(plane: Extensor) -> Extensor:
+    """Symmetrizing `plane` with the ideal plane `mv.w` embeds `plane`'s negative half-space as a
+    rank-two quadric."""
     return (plane * (mv.w & Point) + mv.w * (plane & Point)) / 2
 
 
-def aligned(starts: Point, ends: Point) -> tuple[Plane, np.ndarray, Motor]:
-    """For segments between points of unit weight: the unit plane through the origin square to each, how z lies
-    along it, `1` or `-1`, and the turn carrying z onto that, whichever way along the segment lies nearer z, so the
-    turn never reverses z."""
+def aligned(starts: Extensor, ends: Extensor) -> tuple[Extensor, np.ndarray, Extensor]:
+    """Each segment between unit-weight endpoints defines a unit normal plane through the origin,
+    its sign along `+z`, and the non-inverting rotor carrying `+z` onto that signed axis."""
     across = (-(ends - starts).dual()).normalized()                           # [...] Plane
     sense = np.where((across & mv.z.dual()) >= 0, 1.0, -1.0)
     return across, sense, (1 + across * sense * mv.z).normalized()
 
 
-def rods(starts: Point, ends: Point, radius: float) -> Quadric:
-    """Solid rods of one radius between points, `[..., 3]` quadrics each: a cylinder about the line through the
-    ends, and the half-spaces past each end, square to the line."""
+def rods(starts: Extensor, ends: Extensor, radius: Extensor | float) -> Extensor:
+    """Build capped cylindrical rods `[..., 3] Quadric` of `radius` between `starts` and `ends` by
+    combining one cylinder quadric with two orthogonal end-cap half-space quadrics."""
     starts, ends = starts / (mv.w & starts), ends / (mv.w & ends)
     across, _, turn = aligned(starts, ends)
-    # The cylinder about z, turned onto the rod and moved to its start.
+    # Transform the canonical z-axis cylinder onto each segment.
     cylinder = (mv.x * (mv.x & Point) + mv.y * (mv.y & Point)) / radius**2 - mv.w * (mv.w & Point)
     tube = placed(cylinder, translator(starts - origin) * turn)              # [...] Quadric
-    # Past each end: the plane square to the rod through the end, facing out.
+    # Cap both ends with outward-facing planes orthogonal to the segment.
     beyond_end = half_space(across - mv.w * (across & ends))
     before_start = half_space(-across + mv.w * (across & starts))
     return stack([tube, beyond_end, before_start], axis=-1)
 
 
-def boxes(motors: Motor, half_extents: np.ndarray) -> Plane:
-    """Solid boxes placed by motors, their half extents along their own x, y and z on the last axis, bounded by planes
-    alone, `[..., 6]` each: the planes of the faces, the box on their negative sides."""
+def boxes(motors: Extensor, half_extents: np.ndarray) -> Extensor:
+    """Build six outward-facing bounding planes `[..., 6] Plane` displaced by `half_extents`
+    (`[..., 3]`) and transformed by `motors`."""
     reach = mv.w * half_extents                                               # [..., 3] Plane
     faces = concatenate([axes - reach, -axes - reach], axis=-1)               # [..., 6] Plane
     return motors[..., None] >> faces
 
 
-def outward(planes: Plane, middles: Point) -> Plane:
-    """Planes turned so that points of unit weight lie on their negative sides."""
+def outward(planes: Extensor, middles: Extensor) -> Extensor:
+    """Flipping `planes` where needed places unit-weight interior points `middles` on their
+    negative sides."""
     side = planes & middles
     return planes * (np.asarray(side < 0, dtype=int) - np.asarray(side > 0, dtype=int))
 
 
-def plates(corners: Point, thickness: float) -> Plane:
-    """Flat convex polygons of a thickness, their corners `[..., corners]` in order around each, bounded by planes
-    alone, `[..., corners + 2]` each: the two half the thickness either side of the polygon's plane, and one along each
-    edge, facing away from the polygon's middle."""
+def plates(corners: Extensor, thickness: float) -> Extensor:
+    """Extrude ordered planar convex polygons `corners` (`[..., k] Point`) by `thickness` into
+    outward-facing top, bottom, and perimeter planes `[..., 2 + k] Plane`."""
     corners = corners / (mv.w & corners)
     middle = corners.mean(axis=-1)                                            # [...] Point
-    # The polygon's plane, the join of its first three corners, at unit weight, through its middle.
+    # Join the first three corners to obtain the unit polygon plane passing through the centroid.
     joined = ((corners[..., 0] & corners[..., 1] & corners[..., 2]) * flip).normalized()  # [...] Plane
     face = joined - mv.w * (joined & middle)
-    # Along each edge, the plane through the edge and the direction square to the polygon's plane.
+    # Span each perimeter plane from an edge step and the polygon's normal direction.
     square = (face - mv.w * (face & origin)).dual()                           # [...] Point
     steps = (Topology.loops([corners.shape[-1]]).d[0] * corners.field()).batch()   # [..., corners] Point
     sides = outward((corners & steps & square[..., None]) * flip, middle[..., None])   # [..., corners] Plane
     return concatenate([stack([face, -face], axis=-1) - mv.w * (thickness / 2), sides], axis=-1)
 
 
-def polyhedra(corners: Point, faces: np.ndarray) -> Plane:
-    """Convex polyhedra, their corners `[..., corners]` and three or more corners of each face `[faces, corners]`,
-    bounded by planes alone, `[..., faces]` each: the planes of the faces, the joins of their first three corners,
-    facing away from the middle."""
+def polyhedra(corners: Extensor, faces: np.ndarray) -> Extensor:
+    """Join the first three vertices of each row in `faces` (`[F, >=3]`) over `corners`
+    (`[..., V] Point`) and orient away from the vertex centroid, returning `[..., F] Plane`."""
     corners = corners / (mv.w & corners)
     joined = (corners[..., faces[:, 0]] & corners[..., faces[:, 1]] & corners[..., faces[:, 2]]) * flip   # [..., faces] Plane
     return outward(joined, corners.mean(axis=-1)[..., None])
 
 
-def edges(starts: Point, ends: Point, radius: float) -> tuple[Quadric, Quadric]:
-    """Edges between points: rods `[..., 3]` and balls of the same radius at both ends `[ends, 1]`, so that edges
-    meeting at a point join round."""
+def edges(starts: Extensor, ends: Extensor, radius: Extensor | float) -> tuple[Extensor, Extensor]:
+    """Cylindrical `rods` paired with spheres of equal `radius` at `starts` and `ends` join
+    smoothly across shared vertices."""
     return rods(starts, ends, radius), ball(stack([starts, ends], axis=-1).reshape(-1), radius)[:, None]
 
 
 # --- plumbing -------------------------------------------------------------------------
-# The side of a tile of the picture, in pixels, as the shader's `tile`.
+# Screen tile side length in pixels, matching `tile` in WGSL.
 TILE = 16
 
 
 @cache
 def shader() -> Shader:
+    """The supersampled `PGA3D` ray-tracing shader composites quadric solids alongside rasterized
+    surface slots."""
     return Shader(supersampled() + quadric_tracing() + lamp_shading() + tangent_seen() + source, ga,
                   dict(Point=Point, Plane=Plane, Tangent=Plane, Quadric=Quadric, Joined=Joined), {})
 
 
 class Ink(NamedTuple):
-    """Lines inked on the surfaces of a part's solids, where each quadric `[lines]` pairs to zero with the point, its
-    planes of either orientation, a join's as it is, within where each region `[lines]`, a side and so extrinsic,
-    pairs negatively with it (`everywhere` for no bound): their colours,
-    `[lines, 3]` or one for all, their width in pixels, `np.inf` to fill the region, and how much of what lies
-    behind them they hide. The parts count the opaque ones first, then the translucent."""
+    """Surface curves inked onto the solids of `part` (indexing opaque parts before translucent
+    parts) follow the zero sets of `quadrics` within the negative side of extrinsic `regions`
+    (`everywhere` when unbounded)."""
     part: int
-    quadrics: Quadric
-    regions: Quadric
+    quadrics: Extensor
+    regions: Extensor
     colours: np.ndarray
     width: float
     opacity: float
 
 
-def spheres(solids: Quadric) -> tuple[Point, Scalar]:
-    """A ball holding each of a batch of solids `[solids, quadrics]`: its centre `[solids]` and radius `[solids]`,
-    infinite where no quadric bounds it. How a quadric grows along the directions, its form on them, `quadric(direction)
-    & direction`, says what it bounds: one growing along all three, an ellipsoid, is held by a ball about its centre,
-    the pole of the plane at infinity; one growing along two, a cylinder or a cone, by its axis between where the
-    solid's quadrics that the axis runs straight through cut it; any other leaves the solid unbounded."""
-    # The form on directions: its rates of growth, slowest first, and the directions it grows along at those rates.
-    rates, normals = (solids(normal_direction) & normal_direction).eigh()   # [solids, quadrics, 3] Scalar, Plane
+def spheres(solid_quadrics: Extensor) -> tuple[Extensor, Extensor]:
+    """Each solid in `solid_quadrics` is enclosed by the tightest bounding sphere derived from its
+    quadrics' directional growth forms, with infinite radius when unbounded."""
+    # Diagonalize each quadric's directional growth form to classify ellipsoids, cylinders, and cones.
+    rates, normals = (solid_quadrics(normal_direction) & normal_direction).eigh()   # [solids, quadrics, 3] Scalar, Plane
     directions = normals.dual()                                               # [solids, quadrics, 3] Point
     zero, one, infinity = mv.scalar([0]), mv.scalar([1]), mv.scalar([np.inf])
-    # A rate is a growth where it exceeds round-off of the quadric's size, the largest gain of its map.
-    size = solids.svdvals()[..., 0]                                          # [solids, quadrics] Scalar+
+    size = solid_quadrics.svdvals()[..., 0]                                   # [solids, quadrics] Scalar+
     growing = rates > 1e-9 * size[..., None]
     positive_rates = where(growing, rates, infinity)
     slowest = positive_rates.min(axis=-1)
     count = growing.sum(axis=-1)
-    # The centre: the origin moved along each direction the quadric grows along, to where its pairing with the point
-    # stops changing along it; the pole of the plane at infinity, `quadric.solve(mv.w)`, of an ellipsoid.
-    slopes = ((solids(origin)[..., None] & directions) + (solids[..., None](directions) & origin)) / 2
+    # Displace the origin along every growing eigendirection to its stationary point (the pole of
+    # the ideal plane for an ellipsoid).
+    slopes = ((solid_quadrics(origin)[..., None] & directions) + (solid_quadrics[..., None](directions) & origin)) / 2
     steps = where(growing, -slopes / where(growing, rates, one), zero)       # [solids, quadrics, 3] Scalar+
     centres = origin + (directions * steps).sum(axis=-1)                      # [solids, quadrics] Point
 
-    def reach(points: Point) -> Scalar:
-        """How far a quadric's solid reaches from points of unit weight across its slowest growth: its pairing
-        with each, against that rate."""
-        return (-(solids(points) & points).clip(-np.inf, 0) / slowest).square_root()
+    def reach(points: Extensor) -> Extensor:
+        return (-(solid_quadrics(points) & points).clip(-np.inf, 0) / slowest).square_root()
 
-    # A cylinder's or a cone's axis, the direction it grows slowest along, through the centre, and where the other
-    # quadrics of its solid that the axis runs straight through, linearly along it, b t + c, cut it.
+    # Intersect each two-growth (cylinder or cone) axis with sibling quadrics that vary linearly along it.
     axis = directions[..., 0]                                                 # [solids, quadrics] Point
-    others = solids[..., None, :]                                             # [solids, 1, quadrics] Quadric
+    others = solid_quadrics[..., None, :]                                     # [solids, 1, quadrics] Quadric
     along = (others(centres[..., None]) & axis[..., None]) + (others(axis[..., None]) & centres[..., None])
     offset = others(centres[..., None]) & centres[..., None]                  # [solids, quadrics, quadrics] Scalar+
     straight = (others(axis[..., None]) & axis[..., None]).abs() <= 1e-9 * size[:, None, :]
-    cuts = straight & ((along > 0) | (along < 0)) & ~np.eye(solids.shape[-1], dtype=bool)
+    cuts = straight & ((along > 0) | (along < 0)) & ~np.eye(solid_quadrics.shape[-1], dtype=bool)
     crossing = -offset / where(cuts, along, one)
     upper_cuts = where(cuts & (along > 0), crossing, infinity)
     lower_cuts = where(cuts & (along < 0), crossing, -infinity)
@@ -701,31 +697,31 @@ def spheres(solids: Quadric) -> tuple[Point, Scalar]:
     lower = lower_cuts.max(axis=-1)
     cylinder = (count == 2) & upper.isfinite() & lower.isfinite()
     upper, lower = where(cylinder, upper, zero), where(cylinder, lower, zero)
-    # Held across the widest of its two ends, from the middle between them.
+    # Enclose a capped cylinder or cone from the midpoint between its axial cuts across its wider end.
     lower_reach, upper_reach = reach(centres + axis * lower), reach(centres + axis * upper)
     widest = where(lower_reach > upper_reach, lower_reach, upper_reach)
     capped_radius = (((upper - lower) / 2).squared() + widest.squared()).square_root()
     radius = where(count == 3, reach(centres), where(cylinder, capped_radius, infinity))
     centres = centres + axis * ((upper + lower) / 2)
-    # The smallest ball any of its quadrics gives.
-    chosen = radius.argmin(axis=-1)                                          # [solids]
-    picked = np.arange(len(chosen))
-    return centres[picked, chosen], radius[picked, chosen]
+    # Select the tightest bounding sphere yielded by any quadric of each solid.
+    tightest = radius.argmin(axis=-1)                                         # [solids]
+    picked = np.arange(len(tightest))
+    return centres[picked, tightest], radius[picked, tightest]
 
 
-def tiles(centres: Point, radii: Scalar, view: View) -> dict:
-    """The solids each tile of the picture may see, from the balls holding them, their centres and radii `[solids]`:
-    each tile's range in a list of solids, the list, and the tiles across; a solid without a ball in every tile."""
+def tiles(centres: Extensor, radii: Extensor, view: View) -> dict:
+    """Bin solids into `TILE`-pixel screen tiles from their bounding spheres `(centres, radii)`,
+    placing unbounded solids into every tile."""
     rows, columns = view.shape
     across, down = -(-columns // TILE), -(-rows // TILE)
     seen = view.across(centres)                                                # [solids, 2]
-    reach = (radii / view.pixel + 1).to_array()                                # [solids] pixels
+    reach = (radii / view.pixel + 1).to_array()                                # [solids]
     column = (seen[:, 0] + view.half[0]) / view.pixel
     row = (view.half[1] - seen[:, 1]) / view.pixel
     bounded = np.isfinite(reach)
     first = np.where(bounded, np.floor((np.stack([column, row]) - reach) / TILE), 0).clip(0, [[across], [down]])
     last = np.where(bounded, np.floor((np.stack([column, row]) + reach) / TILE), [[across - 1], [down - 1]]).clip(-1, [[across - 1], [down - 1]])
-    widths, heights = np.maximum(last - first + 1, 0).astype(int)              # [solids] each
+    widths, heights = np.maximum(last - first + 1, 0).astype(int)              # [solids], [solids]
     sizes = widths * heights
     solid = np.repeat(np.arange(len(radii)), sizes)
     within = np.arange(sizes.sum()) - np.repeat(np.cumsum(sizes) - sizes, sizes)
@@ -733,66 +729,62 @@ def tiles(centres: Point, radii: Scalar, view: View) -> dict:
             + within % np.maximum(widths[solid], 1)).astype(int)
     order = np.lexsort((solid, tile))
     starts = np.concatenate([[0], np.cumsum(np.bincount(tile, minlength=across * down))])
-    # A list never empty, for the shader's array.
+    # Pad `tile_solids` with a trailing entry so the shader storage buffer is never empty.
     return dict(tile_starts=starts.astype(np.uint32), tile_solids=np.append(solid[order], 0).astype(np.uint32),
                 tiles_across=across)
 
 
-def scene(parts: list[tuple[Quadric, np.ndarray]], translucent: list[tuple[Quadric, np.ndarray, float]],
-          inks: list[Ink]) -> tuple[Quadric, dict, dict, dict, tuple[Point, Scalar]]:
-    """Every solid's quadrics, solid after solid, each solid's range of them and whether they are all half-spaces, and
-    its colour and opacity, from parts: each a batch of solids, `[solids, quadrics]` Quadric, all of one kind, or
-    `[solids, planes]` Plane for solids bounded by planes alone, on their negative sides, their colours, `[solids, 3]`
-    or one for all, and for the translucent parts their opacity; and every ink's quadric, with its part's range of
-    solids, colour and width."""
-    parts = [(solids, colour, 1.0) for solids, colour in parts] + list(translucent)
+def scene(parts: list[tuple], translucent: list[tuple],
+          inks: list[Ink]) -> tuple:
+    """Pack opaque `parts`, `translucent` parts, and surface `inks` into flat GPU buffers, solid
+    ranges, material tables, and bounding spheres, promoting plane-only parts (`arity == 0`) to
+    half-space quadrics."""
+    all_parts = [(part_solids, colour, 1.0) for part_solids, colour in parts] + list(translucent)
     quadrics, counts, colours, opacities, flats, centres, radii = [], [], [], [], [], [], []
-    for solids, colour, opacity in parts:
-        # Planes, values rather than maps, bound their solids as half-spaces, solids no ball holds.
-        flat = solids.arity == 0
+    for part_solids, colour, opacity in all_parts:
+        # Nullary plane batches bound convex polyhedra directly as half-spaces with infinite sphere bounds.
+        flat = part_solids.arity == 0
         if flat:
-            centre = origin[None].broadcast_to(solids.shape[:1])
-            radius = mv.scalar(np.full((solids.shape[0], 1), np.inf))
-            solids = half_space(solids)
+            centre = origin[None].broadcast_to(part_solids.shape[:1])
+            radius = mv.scalar(np.full((part_solids.shape[0], 1), np.inf))
+            part_solids = half_space(part_solids)
         else:
-            centre, radius = spheres(solids)
-        quadrics.append(solids.reshape(-1))
+            centre, radius = spheres(part_solids)
+        quadrics.append(part_solids.reshape(-1))
         centres.append(centre)
         radii.append(radius)
-        counts.append(np.full(solids.shape[0], solids.shape[1]))
-        colours.append(np.broadcast_to(colour, (solids.shape[0], 3)))
-        opacities.append(np.full(solids.shape[0], opacity))
-        flats.append(np.full(solids.shape[0], flat))
-    # A solid of no quadrics, which no ray meets, and a quadric no solid holds, so that the arrays are never empty.
+        counts.append(np.full(part_solids.shape[0], part_solids.shape[1]))
+        colours.append(np.broadcast_to(colour, (part_solids.shape[0], 3)))
+        opacities.append(np.full(part_solids.shape[0], opacity))
+        flats.append(np.full(part_solids.shape[0], flat))
+    # Append a sentinel solid with zero quadrics and negative-infinity radius so GPU buffers stay non-empty.
     quadrics.append(everywhere[None])
     counts.append(np.zeros(1, dtype=int))
     colours.append(np.zeros((1, 3)))
     opacities.append(np.zeros(1))
     flats.append(np.zeros(1, dtype=bool))
-    # It lies in no tile: a ball of no size, out of every picture.
     centres.append(origin[None])
     radii.append(mv.scalar([[-np.inf]]))
     ends = np.cumsum(np.concatenate(counts))
-    # The solids each part spans, part after part.
-    part_ends = np.cumsum([solids.shape[0] for solids, _, _ in parts])
-    part_starts = part_ends - [solids.shape[0] for solids, _, _ in parts]
-    # The inks whose quadrics give planes and those whose quadrics give joins, each kind in arrays of its own; in each,
-    # an ink over no solids stands for none, so that no array is empty.
+    part_ends = np.cumsum([part_solids.shape[0] for part_solids, _, _ in all_parts])
+    part_starts = part_ends - [part_solids.shape[0] for part_solids, _, _ in all_parts]
+    # Partition extrinsic (`Quadric`) and intrinsic (`Joined`) inks into separate typed storage arrays,
+    # appending a zero-range sentinel to each so neither buffer is empty.
     inked = {}
     for name, kind in (("inks", Quadric), ("joined_inks", Joined)):
-        chosen = [ink for ink in inks if ink.quadrics.gatype.derive.output.orientation is kind.derive.output.orientation]
+        matching = [ink for ink in inks if ink.quadrics.gatype.derive.output.orientation is kind.derive.output.orientation]
         nothing = context.extensor(kind, np.zeros((1,) + kind.structural_shape))
-        chosen += [Ink(0, nothing, everywhere[None], np.zeros(3), 0.0, 0.0)]
-        sizes = [int(np.prod(ink.quadrics.shape)) for ink in chosen]
-        inked |= {name: dict(first=np.repeat([part_starts[ink.part] for ink in chosen[:-1]] + [0], sizes),
-                             end=np.repeat([part_ends[ink.part] for ink in chosen[:-1]] + [0], sizes),
+        matching += [Ink(0, nothing, everywhere[None], np.zeros(3), 0.0, 0.0)]
+        sizes = [int(np.prod(ink.quadrics.shape)) for ink in matching]
+        inked |= {name: dict(first=np.repeat([part_starts[ink.part] for ink in matching[:-1]] + [0], sizes),
+                             end=np.repeat([part_ends[ink.part] for ink in matching[:-1]] + [0], sizes),
                              colour=np.concatenate([np.broadcast_to(ink.colours, (size, 3))
-                                                    for ink, size in zip(chosen, sizes)]),
-                             width=np.repeat([ink.width for ink in chosen], sizes),
-                             opacity=np.repeat([ink.opacity for ink in chosen], sizes)),
-                  f"{name}_quadrics": concatenate([ink.quadrics.reshape(-1) for ink in chosen]),
+                                                    for ink, size in zip(matching, sizes)]),
+                             width=np.repeat([ink.width for ink in matching], sizes),
+                             opacity=np.repeat([ink.opacity for ink in matching], sizes)),
+                  f"{name}_quadrics": concatenate([ink.quadrics.reshape(-1) for ink in matching]),
                   f"{name}_regions": concatenate([ink.regions.broadcast_to(ink.quadrics.shape).reshape(-1)
-                                                  for ink in chosen])}
+                                                  for ink in matching])}
     return (concatenate(quadrics),
             dict(first=ends - np.concatenate(counts), end=ends, flat=np.concatenate(flats).astype(np.uint32)),
             dict(colour=np.concatenate(colours), opacity=np.concatenate(opacities)),
@@ -800,57 +792,54 @@ def scene(parts: list[tuple[Quadric, np.ndarray]], translucent: list[tuple[Quadr
 
 
 class View(NamedTuple):
-    """What a picture is seen from: a camera looking along its own -z with parallel rays, half the image's width and
-    height in the scene's units, and the pixels across it."""
-    camera: Motor
+    """An orthographic camera pose in `PGA3D` looks along its local `-z` axis with scene-unit
+    half-extents `half` and horizontal resolution `pixels`."""
+    camera: Extensor
     half: np.ndarray
     pixels: int
 
     @property
     def pixel(self) -> float:
-        """A pixel's size in the scene."""
+        """Each pixel spans `2 * half[0] / pixels` scene units."""
         return 2 * self.half[0] / self.pixels
 
     @property
     def shape(self) -> tuple[int, int]:
-        """The image's rows and columns."""
+        """Image dimensions `(rows, columns)` preserve the aspect ratio of `half`."""
         return round(self.pixels * self.half[1] / self.half[0]), self.pixels
 
     @property
     def extent(self) -> tuple[float, float, float, float]:
-        """The image's left, right, bottom and top about its middle, for showing it in matplotlib axes beside places
-        from `across`."""
+        """Symmetric `(left, right, bottom, top)` scene bounds align with `across` coordinates."""
         return -self.half[0], self.half[0], -self.half[1], self.half[1]
 
     def squared(self) -> View:
-        """The view widened to a square about its middle."""
+        """Widening the shorter half-extent makes both image axes match the larger side."""
         return self._replace(half=np.full(2, self.half.max()))
 
-    def across(self, points: Point) -> np.ndarray:
-        """Points, of any weight, across and up the image from its middle `[..., 2]`: read in the camera's own frame
-        by its planes x and y."""
+    def across(self, points: Extensor) -> np.ndarray:
+        """Pulling `points` back into the camera frame reads horizontal and vertical scene-unit
+        offsets from the view centre."""
         seen = self.camera << points
         return ((axes[:2] & seen[..., None]) / (mv.w & seen)[..., None]).to_array()
 
     def to_camera(self) -> Camera:
-        """A view's camera: its frame's planes turned into the scene, weighing points by the plane at infinity."""
+        """Pushing `axes` into the scene yields the equivalent `Camera` weighing points against the
+        ideal plane `mv.w`."""
         across, up, toward = self.camera >> axes
         return Camera(across, up, toward, mv.w, 0.0, np.zeros(2), self.half, self.pixels)
 
 
-def view(points: list[Point], reach: float, elevation: float, azimuth: float, margin: float, pixels: int) -> View:
-    """A view framing batches of points, of any weight, and `reach` around each, from an elevation and azimuth, in
-    radians, z up and azimuth zero looking along +y, with a margin as a share of the larger side, `pixels` across:
-    framed by the support planes square to the image's right and up, the planes that touch the points on either
-    side."""
+def view(points: list[Extensor], reach: float, elevation: float, azimuth: float, margin: float, pixels: int) -> View:
+    """Support planes along the rotated image axes frame `points` padded by `reach` and fractional
+    `margin` from spherical angles `(elevation, azimuth)` (`+z` up, zero azimuth looking along `+y`)."""
     turn = (mv.xy * (-azimuth / 2)).exp() * (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()     # [] Motor
-    # The planes through the origin square to the image's right and up, and the one across the view.
     screen = turn >> axes                                                    # [3] Plane
     seen = concatenate([(batch / (mv.w & batch)).reshape(-1) for batch in points])   # [points] Point
-    # The outermost points across and up the image, where each support plane touches them, on either side.
+    # Measure tight horizontal and vertical support planes across all normalized points.
     heights = screen[:2, None] & seen                                         # [2, points] Scalar
     low, high = heights.min(axis=-1), heights.max(axis=-1)                    # [2] Scalar+, Scalar+
-    # The planes halfway between the support planes, met with the plane across the view through the origin.
+    # Intersect the mid-planes between opposing support bounds with the origin depth plane.
     middles = screen[:2] - mv.w * (low + high) / 2                             # [2] Plane
     centre = (middles[0] ^ middles[1] ^ screen[2]) * flip                    # [] Point
     half = (high - low) / 2 + reach
@@ -858,76 +847,76 @@ def view(points: list[Point], reach: float, elevation: float, azimuth: float, ma
     return View(aim(centre, elevation, azimuth), half.to_array(), pixels)
 
 
-def aim(centre: Point, elevation: float, azimuth: float) -> Motor:
-    """A camera looking at a point, of any weight, from an elevation and azimuth, in radians, z up and azimuth zero
-    looking along +y."""
+def aim(centre: Extensor, elevation: float, azimuth: float) -> Extensor:
+    """Spherical angles `(elevation, azimuth)` (`+z` up, zero azimuth looking along `+y`) orient a
+    camera motor translated to `centre`."""
     turn = (mv.xy * (-azimuth / 2)).exp() * (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()     # [] Motor
     return translator(centre / (mv.w & centre) - origin) * turn
 
 
 def lighting(glint: float) -> dict:
-    """The uniforms of `lamp_shading`, with a glint of `glint`."""
+    """Uniform bindings for `lamp_shading` pair default lamp parameters with specular weight `glint`."""
     return dict(lamp=lamp, ambient=ambient, fill_tilt=fill_tilt, headlight=headlight, gloss=glint, shininess=shininess)
 
 
-def seen_lamp(view: View, lamp: Point) -> np.ndarray:
-    """A lamp's direction in the scene, as the view's picture sees it: across, up and toward the viewer, a unit."""
+def seen_lamp(view: View, lamp_direction: Extensor) -> np.ndarray:
+    """Pairing `lamp_direction` with `view`'s camera planes expresses a scene lamp as a unit vector
+    in the screen frame."""
     camera = view.to_camera()
-    seen = np.array([float(read(plane, lamp).to_array()) for plane in (camera.across, camera.up, camera.toward)])
+    seen = np.array([float(read(plane, lamp_direction).to_array()) for plane in (camera.across, camera.up, camera.toward)])
     return seen / np.linalg.norm(seen)
 
 
 def steps(view: View) -> dict:
-    """The uniforms of `tangent_seen` for a view: the steps its camera reads as one across, up and toward the viewer."""
+    """Uniform bindings for `tangent_seen` hold the camera's preimage unit steps across, up, and
+    toward the viewer."""
     _, across, up, toward = preimage(view.to_camera(), Point)
     return dict(step_across=across, step_up=up, step_toward=toward)
 
 
-def layer(parts: list[tuple[Quadric, np.ndarray]], view: View, inks: list[Ink],
-          translucent: list[tuple[Quadric, np.ndarray, float]],
-          meshes: list[tuple[Draw, float]]) -> tuple[np.ndarray, np.ndarray]:
-    """The solids as the view sees them, with the lines inked on them, the translucent solids over and among them,
-    each with its opacity, and the meshes among them, each its samples, as `meshes.samples` gives them, and its
-    opacity, sample by sample: their colour, `[rows, columns, 4]`, and their depth along the view, `[rows, columns]`,
-    each weighted by coverage. The meshes are drawn, traced among the solids and averaged over each pixel in one pass
-    of the GPU's work, and only the picture's pixels come back."""
+def layer(parts: list[tuple], view: View, inks: list[Ink],
+          translucent: list[tuple],
+          meshes: list[tuple]) -> tuple[np.ndarray, np.ndarray]:
+    """Trace `parts`, `inks`, and `translucent` solids interleaved with supersampled `meshes` over
+    transparent black, returning coverage-weighted RGBA colour `[rows, columns, 4]` and view depth
+    `[rows, columns]`."""
     return traced(parts, view, inks, translucent, meshes, np.zeros(3))
 
 
-def traced(parts: list[tuple[Quadric, np.ndarray]], view: View, inks: list[Ink],
-           translucent: list[tuple[Quadric, np.ndarray, float]], meshes: list[tuple[Draw, float]],
+def traced(parts: list[tuple], view: View, inks: list[Ink],
+           translucent: list[tuple], surface_draws: list[tuple],
            background: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """The picture `layer` makes, over a background, which shows through each sample as much as its surfaces let
-    light pass: over black, the layer itself."""
+    """Rasterize supersampled `surface_draws` into temporary sample slots and composite the combined
+    scene over `background` in a single GPU submission, returning `[rows, columns, 4]` colour and
+    `[rows, columns]` depth."""
     tracer = shader()
     encoder = tracer.device.create_command_encoder()
-    # The meshes' samples in the slots the tracer keeps for any one picture.
-    held = slots(view.shape, len(meshes), lambda name, size, usage: tracer.buffer_kept(("meshes", name), size, usage))
-    sampled(encoder, [mesh for mesh, _ in meshes], 0, held)
+    held = slots(view.shape, len(surface_draws), lambda name, size, usage: tracer.buffer_kept(("meshes", name), size, usage))
+    sampled(encoder, [surface for surface, _ in surface_draws], 0, held)
     return trace(tracer, encoder, view, scene(parts, translucent, inks), held,
-                 [opacity for _, opacity in meshes], background)
+                 [opacity for _, opacity in surface_draws], background)
 
 
-def trace(tracer: Shader, encoder: Any, view: View, solids: tuple, held: Slots,
+def trace(tracer: Shader, encoder: Any, view: View, packed_scene: tuple, held_slots: Slots,
           opacities: list[float], background: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """The solids, as `scene` lays them out, traced among the meshes whose samples the slots hold, each with its
-    opacity, over the background, on the encoder: the picture's colour and depth."""
-    quadrics, solids, looks, inked, holding = solids
-    # A mesh that shows nothing stands for none, so that the opacities are never empty.
+    """Encode `tracer` on `encoder` to composite `packed_scene` with pre-rasterized surface slots
+    `held_slots` over `background`, reading back `[rows, columns, 4]` colour and `[rows, columns]`
+    depth."""
+    quadrics, solid_ranges, looks, inked, holding = packed_scene
+    # Provide a dummy zero opacity when no rasterized surface slots are active so the storage buffer stays non-empty.
     outputs = tracer.encode(encoder, view.shape, (), dict(
-        quadrics=quadrics, solids=solids, looks=looks, **inked,
-        mesh_colours=Resident(held.colours, held.size), mesh_depths=Resident(held.depths, held.size),
-        mesh_row=held.row_bytes // 4, mesh_opacities=np.array(opacities or [0.0], dtype=np.float32),
+        quadrics=quadrics, solids=solid_ranges, looks=looks, **inked,
+        mesh_colours=Resident(held_slots.colours, held_slots.size), mesh_depths=Resident(held_slots.depths, held_slots.size),
+        mesh_row=held_slots.row_bytes // 4, mesh_opacities=np.array(opacities or [0.0], dtype=np.float32),
         n_meshes=len(opacities), **tiles(*holding, view), pixel=view.pixel, middle=preimage(view.to_camera(), Point)[0],
         back=4 * view.half.max(), half_height=view.half[1], background=background, **lighting(gloss), **steps(view)))
     image = tracer.read(encoder, outputs, view.shape)["image"]
     return image["colour"], image["depth"][..., 0]
 
 
-def draw(parts: list[tuple[Quadric, np.ndarray]], view: View, background: np.ndarray, inks: list[Ink],
-         translucent: list[tuple[Quadric, np.ndarray, float]], meshes: list[tuple[Draw, float]]) -> np.ndarray:
-    """The solids as the view sees them on the background, with the lines inked on them, the translucent solids over
-    and among them, and the meshes among them, as `layer`, `[rows, columns, 3]`: the background blended in on the GPU,
-    sample by sample."""
+def draw(parts: list[tuple], view: View, background: np.ndarray, inks: list[Ink],
+         translucent: list[tuple], meshes: list[tuple]) -> np.ndarray:
+    """Trace `parts`, `inks`, `translucent` solids, and `meshes` blended sample-by-sample over
+    `background`, returning `uint8` RGB `[rows, columns, 3]`."""
     colour, _ = traced(parts, view, inks, translucent, meshes, np.asarray(background, dtype=float))
     return np.round(np.clip(colour[..., :3], 0, 1) * 255).astype(np.uint8)

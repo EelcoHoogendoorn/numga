@@ -1,16 +1,32 @@
-"""Unroll the exact nonzero terms of a kernel into straight-line products.
+"""Sparse contraction (`execution="sparse"`) unrolls the nonzero entries of an exact `SymbolicKernel`
+into straight-line scalar-weighted products of operand slices, skipping the structural zeros
+pervasive in geometric, exterior, regressive, and sandwich product tables. Sparsity is determined
+strictly from static `ExactContext` kernels; concrete runtime operators delegate immediately to
+`execute_dense_bind` so numeric arrays are never inspected dynamically, keeping traced execution
+graphs static under `jax.jit` and `torch.compile`.
 
-Only symbolic kernels supply sparsity. Computed maps use the dense executor;
-numeric arrays are never inspected to decide which terms to execute.
+For each `(xp, dtype, kernel, plan)` signature, `compile_sparse_bind` enumerates the nonzero
+coordinates of `kernel`, resolves subspace row mappings and orientation signs from each
+`AxisTransform` once, and groups surviving `(coefficient, operand_rows)` terms by their retained
+structural coordinates. Input axes carried by higher-arity operands (`free_shape`) broadcast together
+before a single final transpose restores the canonical `(batch..., output, *remaining_inputs)` order.
+
+Term evaluation adapts to the target array namespace. On `numpy`, each multi-factor term evaluates
+through a contraction-free broadcast `einsum` into a preallocated output array, whereas traced and
+accelerator namespaces (`jax.numpy`, `TorchNamespace`) evaluate reshaped elementwise products and
+`stack` every output component in one expression so compilers such as XLA fuse independent blade
+polynomials without sequential buffer updates. Trade-offs between dense contraction and unrolled
+sparse execution are measured in `docs/internals.md` (section 6).
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable, Mapping
 from functools import lru_cache
 from math import prod
 from string import ascii_letters
-from typing import TYPE_CHECKING, Any, Callable, Mapping
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -28,6 +44,8 @@ def execute_sparse_bind(
     context: Context, target: Extensor,
     operands: Mapping[int, Extensor], plan: BindingPlan,
 ) -> Any:
+    """Exact operator kernels dispatch to cached straight-line term evaluators, while concrete targets
+    delegate to `execute_dense_bind`."""
     if not target.context.is_exact:
         return execute_dense_bind(context, target, operands, plan)
     execute = compile_sparse_bind(context.xp, context.dtype, target._kernel, plan)
@@ -37,9 +55,9 @@ def execute_sparse_bind(
 @lru_cache(maxsize=None)
 def compile_sparse_bind(
     xp: Any, dtype: np.dtype, kernel: SymbolicKernel, plan: BindingPlan,
-) -> Callable[[tuple[Extensor, ...]], Any]:
-    """Group sparse terms and resolve dimension/sign bookkeeping once."""
-
+) -> Callable:
+    """Enumerating the nonzero entries of `kernel` compiles a straight-line evaluator grouped by
+    retained structural coordinates."""
     retained = (0,) + tuple(
         axis + 1 for axis in range(plan.target_gatype.arity) if axis not in plan.axes
     )
@@ -92,36 +110,43 @@ def compile_sparse_bind(
 
     if xp is np:
         def term(
-            coefficient: Any, arrays: tuple[Any, ...], shapes: tuple[tuple[int, ...], ...],
+            coefficient: Any, arrays: tuple[Any, ...], shapes: tuple,
         ) -> Any:
-            # No contracted labels remain: this is a fused broadcast product.
+            # Repeating no labels across inputs turns np.einsum into a fused broadcast product.
             return np.einsum(expression, coefficient, *arrays)
 
-        def assemble(operands, shapes, component_shape):
+        def assemble(
+            operands: tuple[Extensor, ...], shapes: tuple, component_shape: tuple[int, ...],
+        ) -> Any:
             result = np.zeros(component_shape + retained_shape, dtype=dtype)
             for coordinate, terms in terms_by_output:
                 result[(Ellipsis,) + coordinate] = component(terms, operands, shapes)
             return result
     else:
         def term(
-            coefficient: Any, arrays: tuple[Any, ...], shapes: tuple[tuple[int, ...], ...],
+            coefficient: Any, arrays: tuple[Any, ...], shapes: tuple,
         ) -> Any:
             return prod((array.reshape(shape) for array, shape in zip(arrays, shapes)), start=coefficient)
 
-        # Stack independent components so XLA can fuse their evaluation instead
-        # of threading a partially written output through sequential updates.
+        # Stacking independent components lets XLA fuse their evaluation without sequential in-place updates.
         ordered_terms = tuple(groups.get(coordinate, ()) for coordinate in np.ndindex(retained_shape))
         if ordered_terms:
-            def assemble(operands, shapes, component_shape):
+            def assemble(
+                operands: tuple[Extensor, ...], shapes: tuple, component_shape: tuple[int, ...],
+            ) -> Any:
                 return xp.stack(tuple(
                     xp.broadcast_to(component(terms, operands, shapes), component_shape)
                     for terms in ordered_terms
                 ), axis=-1).reshape(component_shape + retained_shape)
         else:
-            def assemble(operands, shapes, component_shape):
+            def assemble(
+                operands: tuple[Extensor, ...], shapes: tuple, component_shape: tuple[int, ...],
+            ) -> Any:
                 return xp.zeros(component_shape + retained_shape, dtype=dtype)
 
-    def component(terms, operands, shapes):
+    def component(
+        terms: Any, operands: tuple[Extensor, ...], shapes: tuple,
+    ) -> Any:
         return sum((term(coefficient, tuple(
             operand._kernel[(Ellipsis, row) + indices]
             for operand, row, indices in zip(operands, rows, row_indices)

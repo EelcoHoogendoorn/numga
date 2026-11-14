@@ -1,24 +1,43 @@
-"""Immutable trait facts and logical implication for whole Extensor types."""
+"""Blade subspaces record which basis coordinates may be nonzero, whereas `Trait`s record algebraic
+identities and factorizations satisfied by those coordinates. In four dimensions and higher not
+every even element is a product of vectors and not every bivector is a blade, nor can blade support
+alone certify that a reverse product equals `1` or is nonzero. Attaching `Trait` facts to a `GAType`
+lets dispatch and operator construction rely on versor closure, blade factorization, invertible or
+unit self-products, and coefficient orthogonality without runtime numerical checks.
+
+Facts divide by arity. On nullary values (`arity == 0`), `Versor`, `Blade`, and `ProductFact` assert
+properties of the element itself, with `ProductResult` distinguishing scalar, identically zero,
+nonzero scalar, and unit scalar self-products across real or complex scalars without assuming
+positive definiteness. On maps and multilinear operators (`arity >= 1`), `ProductRelation` and
+`ClosureRelation` (`VersorProduct`, `BladeProduct`) express conditional laws over input axes, while
+`Sandwich` and `Identity` mark trilinear versor actions and subspace embeddings for specialization
+during binding.
+
+`TraitSet` represents an open-world conjunction of positive facts: absence means uncertified rather
+than false, and contradictory facts (such as `ZERO` alongside `NONZERO` or `ONE` in the same
+self-product family) fail at construction. Each `TraitSet` closes under logical implication and
+retains only maximal representatives so equivalent fact sets share one canonical key, while
+`normalize_explicit_traits` strips facts already guaranteed universally by the blade support
+(`structurally_implied_traits`), such as scalars and vectors always being blades and versors.
+Trusted trait assertions, equality groups, and propagation through binding plans are described in
+`docs/internals.md` (section 5).
+"""
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from enum import Enum
 from types import NotImplementedType
-from typing import TYPE_CHECKING, Callable, Tuple
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from numga.subspace import SubSpace
 
 
 class Trait:
-    """An immutable fact with local implication and compatibility rules.
-
-    Structured facts store their state in hashable parameters. The container
-    need not know their mathematics: subclasses provide implications and peer
-    validation. Subclasses with additional state supply their own pickling.
-    """
+    """Each trait represents an immutable compile-time fact with local implication rules, arity
+    constraints, and peer-compatibility checks."""
 
     __slots__ = ("_name", "_valid_arities", "_parameters", "_hash")
 
@@ -55,8 +74,8 @@ class Trait:
 
     @property
     def valid_arities(self) -> frozenset[int] | None:
-        """Finite arities usable for registration shorthand, if any."""
-
+        """Static arities carry a finite set of allowed non-negative integers, while dynamic-arity
+        relations return `None` and validate against a concrete arity."""
         return self._valid_arities
 
     def validate_arity(self, arity: int) -> None:
@@ -78,17 +97,18 @@ class Trait:
             )
 
     @property
-    def sort_key(self) -> tuple[str, str, str, tuple[int, ...], str]:
+    def sort_key(self) -> tuple:
         return (
             type(self).__module__, type(self).__qualname__, self.name,
             tuple(sorted(self.valid_arities or ())), repr(self._parameters),
         )
 
-    def implied_traits(self) -> tuple["Trait", ...]:
+    def implied_traits(self) -> tuple[Trait, ...]:
         return _DIRECT_IMPLICATIONS.get(self, ())
 
-    def validate_peers(self, traits: frozenset["Trait"]) -> None:
-        """Reject incompatible known facts; absence never means false."""
+    def validate_peers(self, traits: frozenset[Trait]) -> None:
+        """Subclasses override peer validation to reject contradictory positive facts within one
+        closure."""
 
     def __setattr__(self, _name: str, _value: object) -> None:
         raise AttributeError("Trait is immutable")
@@ -106,7 +126,7 @@ class Trait:
     def __hash__(self) -> int:
         return self._hash
 
-    def __reduce__(self) -> tuple[Callable[..., Trait], tuple[object, ...]]:
+    def __reduce__(self) -> tuple:
         assert self.valid_arities is not None
         return _restore_trait, (
             type(self), self.name, tuple(sorted(self.valid_arities)), self._parameters,
@@ -117,13 +137,9 @@ class Trait:
 
 
 class ProductResult(str, Enum):
-    """Category of a full self-product, not its scalar projection or magnitude.
-
-    These are compile-time facts, not stored coefficient values. ``SCALAR``
-    includes both zero and nonzero scalars; ``NONZERO`` does not imply ``ONE``.
-    Scalars need not be real or positive. These categories also work over C.
-    ``ONE`` means scalar 1, not an implicitly chosen identity for any product.
-    """
+    """Categories classify the full self-product `product(x, transform(x))` rather than its scalar
+    projection. `SCALAR` covers both zero and nonzero scalars, `NONZERO` does not imply `ONE`, and
+    `ONE` means the unit scalar `1` over real or complex coefficients without assuming positivity."""
 
     SCALAR = "scalar"
     ZERO = "zero"
@@ -133,12 +149,8 @@ class ProductResult(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class SelfProduct:
-    """Identify the full expression ``product(x, transform(x))``.
-
-    Operation names are mathematical identities, not executable callbacks.
-    Declaring a family grants no propagation law or numerical implementation.
-    In particular, reversion never means complex coefficient conjugation.
-    """
+    """A self-product family names the symbolic expression `product(x, transform(x))`; reversion and
+    grade transforms act purely on basis blades and never conjugate complex scalar coefficients."""
 
     transform: str
     product: str = "geometric_product"
@@ -218,18 +230,15 @@ class ProductFact(Trait):
             ):
                 raise ValueError(f"{self!r} contradicts {other!r}")
 
-    def __reduce__(self) -> tuple[type[ProductFact], tuple[SelfProduct, ProductResult]]:
+    def __reduce__(self) -> tuple:
         return type(self), (self.self_product, self.result)
 
 
 class ProductRelation(Trait):
-    """Conditional self-product monomial for a positive-arity Extensor.
-
-    If every referenced input has a scalar self-product in this family, the
-    output's category is ``factor`` times their categories. Repeated axes
-    are powers, not redundant requirements. Different families coexist.
-    ``nonzero_inputs`` strengthens the premise to nonzero self-products.
-    """
+    """On a positive-arity extensor, when every referenced input has a scalar self-product in the
+    given family, the output's self-product category equals `factor` multiplied across those input
+    categories (counting repeated axes with multiplicity); `nonzero_inputs` restricts the premise to
+    nonzero input self-products."""
 
     __slots__ = ()
 
@@ -311,9 +320,7 @@ class ProductRelation(Trait):
             if _results_conflict(self.factor, other.factor):
                 raise ValueError(f"{self!r} contradicts {other!r}")
 
-    def __reduce__(
-        self,
-    ) -> tuple[type[ProductRelation], tuple[SelfProduct, ProductResult, tuple[int, ...], bool]]:
+    def __reduce__(self) -> tuple:
         return type(self), (self.self_product, self.factor, self.axes, self.nonzero_inputs)
 
     def __repr__(self) -> str:
@@ -325,8 +332,8 @@ class ProductRelation(Trait):
 
 
 class ClosureRelation(Trait):
-    """The output has a fact whenever every referenced input has it: a family of values closed
-    under the operation. Subclasses name the family."""
+    """Subclasses declare that an operator's output belongs to a closed value family whenever every
+    referenced input belongs to that family."""
 
     __slots__ = ()
 
@@ -363,7 +370,7 @@ class ClosureRelation(Trait):
         if any(isinstance(t, type(self)) and t != self for t in traits):
             raise ValueError(f"a TraitSet may carry at most one {self.name} relation")
 
-    def __reduce__(self) -> tuple[type[ClosureRelation], tuple[tuple[int, ...]]]:
+    def __reduce__(self) -> tuple:
         return type(self), (self.axes,)
 
     def __repr__(self) -> str:
@@ -371,13 +378,13 @@ class ClosureRelation(Trait):
 
 
 class VersorProduct(ClosureRelation):
-    """The output is a versor, a product of vectors, when every referenced input is one."""
+    """The output is a versor whenever every referenced input is a versor."""
 
     __slots__ = ()
 
 
 class BladeProduct(ClosureRelation):
-    """The output is a blade, an outer product of vectors, when every referenced input is one."""
+    """The output is a blade whenever every referenced input is a blade."""
 
     __slots__ = ()
 
@@ -421,7 +428,7 @@ _DIRECT_IMPLICATIONS = {
 
 def _restore_trait(
     trait_type: type[Trait], name: str,
-    valid_arities: tuple[int, ...], parameters: tuple[object, ...],
+    valid_arities: tuple[int, ...], parameters: tuple,
 ) -> Trait:
     key = name, frozenset(valid_arities), parameters
     if trait_type is Trait and key in _BUILTIN_TRAITS:
@@ -446,7 +453,8 @@ def _trait_closure(traits: Iterable[Trait]) -> frozenset[Trait]:
 
 
 class TraitSet:
-    """An immutable canonical conjunction of certified trait facts."""
+    """An immutable conjunction of certified `Trait` facts stores only maximal irredundant
+    representatives in deterministic sort order."""
 
     __slots__ = ("_traits", "_hash")
 
@@ -489,7 +497,7 @@ class TraitSet:
         object.__setattr__(self, "_hash", hash((type(self), normalized)))
 
     @property
-    def traits(self) -> Tuple[Trait, ...]:
+    def traits(self) -> tuple[Trait, ...]:
         return self._traits
 
     def __len__(self) -> int:
@@ -502,14 +510,12 @@ class TraitSet:
         return trait in self.traits
 
     @property
-    def closure(self) -> Tuple[Trait, ...]:
-        """All known facts, including implications, in deterministic order."""
-
+    def closure(self) -> tuple[Trait, ...]:
+        """Closing under `implied_traits` yields all entailed facts in deterministic sort order."""
         return tuple(sorted(_trait_closure(self.traits), key=lambda trait: trait.sort_key))
 
-    def entails(self, required: Trait | "TraitSet" | Iterable[Trait]) -> bool:
-        """Whether these known facts prove every required fact."""
-
+    def entails(self, required: Trait | TraitSet | Iterable[Trait]) -> bool:
+        """Entailment holds when every required fact appears in `closure`."""
         if isinstance(required, Trait):
             requirements = (required,)
         elif isinstance(required, TraitSet):
@@ -519,14 +525,12 @@ class TraitSet:
         known = frozenset(self.closure)
         return all(trait in known for trait in requirements)
 
-    def refines(self, other: "TraitSet") -> bool:
-        """Whether this conjunction is at least as informative as ``other``."""
-
+    def refines(self, other: TraitSet) -> bool:
+        """Refinement holds when `self` entails every fact of `other`."""
         return isinstance(other, TraitSet) and self.entails(other)
 
-    def is_compatible_with(self, other: "TraitSet") -> bool:
-        """Whether both sets of positive facts can hold simultaneously."""
-
+    def is_compatible_with(self, other: TraitSet) -> bool:
+        """Two `TraitSet`s are compatible when their union triggers no peer-validation conflict."""
         if not isinstance(other, TraitSet):
             return False
         try:
@@ -549,7 +553,7 @@ class TraitSet:
     def __hash__(self) -> int:
         return self._hash
 
-    def __reduce__(self) -> tuple[type[TraitSet], tuple[tuple[Trait, ...]]]:
+    def __reduce__(self) -> tuple:
         return type(self), (self.traits,)
 
     def __repr__(self) -> str:
@@ -561,17 +565,16 @@ ROTOR_TRAITS = TraitSet((Versor, ReverseProductOne))
 
 
 def structurally_implied_traits(subspaces: Iterable[SubSpace]) -> TraitSet:
-    """Return value facts universally proved by the structural carrier."""
-
+    """Blade support alone proves `Versor` on grades `0` and `1`, `Blade` on grades `0, 1, n - 1, n`
+    or single basis blades, and `SCALAR` or `ZERO` self-products when symmetric cancellation leaves
+    at most grade `0`."""
     axes = tuple(subspaces)
     if len(axes) == 1:
         from numga.algebra.self_product import symmetric_product_support
 
-        # Support proves scalar-valuedness or identically zero, never nonzero
-        # or unit coefficients.
-        # Pairwise cancellation also captures vectors and small even carriers.
-        facts: list[Trait] = []
-        # A scalar or a vector is a product of (at most one) vector.
+        # Support proves scalar-valuedness or identically zero, never nonzero or unit coefficients.
+        facts = []
+        # A scalar or a vector is a product of at most one vector.
         algebra = axes[0].algebra
         grades = {algebra.grade(mask) for mask in axes[0].masks}
         if grades in ({0}, {1}):
@@ -592,8 +595,8 @@ def normalize_explicit_traits(
     subspaces: Iterable[SubSpace],
     traits: TraitSet | Iterable[Trait],
 ) -> TraitSet:
-    """Remove explicit facts already implied universally by the carrier."""
-
+    """Explicit traits already guaranteed universally by `subspaces` are stripped so equivalent
+    type definitions pool to the same `GAType`."""
     axes = tuple(subspaces)
     explicit = traits if isinstance(traits, TraitSet) else TraitSet(traits)
     structural = structurally_implied_traits(axes)
@@ -607,7 +610,7 @@ def validate_traits_for_subspaces(
     subspaces: Iterable[SubSpace],
     traits: TraitSet,
 ) -> None:
-    """Validate trait contracts that constrain structural axes."""
+    """Traits that constrain structural axis dimensions validate against `subspaces`."""
 
     axes = tuple(subspaces)
     if traits.entails(CoefficientOrthogonal) and len(axes[0]) != len(axes[1]):

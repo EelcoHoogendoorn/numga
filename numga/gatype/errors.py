@@ -1,17 +1,16 @@
-"""Errors of types: an operation given operands whose types it is not defined for."""
+"""Type errors raised from static `GAType` metadata before evaluating any blade coefficients."""
 
 from __future__ import annotations
 
 
 class GATypeError(TypeError):
-    """Operands whose GATypes an operation is not defined for: kinds that must match and do not, or a
-    method with no case for these types. The refusal follows from the types alone, before any
-    coefficient is computed."""
+    """Incompatible operand `GAType`s or missing dispatch specializations fail from static types
+    alone before any blade coefficient is evaluated."""
 
 
 class UnorientedSubspace(TypeError):
-    """A subspace given where a type is needed: a subspace names blades, and a type also says how they
-    are oriented."""
+    """A `SubSpace` names blade support and layout without orientation, so operations requiring a
+    `GAType` refuse bare subspaces until an orientation is supplied."""
 
     def __init__(self) -> None:
         super().__init__(

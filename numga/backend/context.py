@@ -1,4 +1,29 @@
-"""Coefficient storage, execution, and lowering policies for Extensors."""
+"""Every `Extensor` pairs a static `GAType` with an immutable `Context` that governs coefficient
+storage, contraction execution, and backend-specific linear algebra. Each `Algebra` owns a single
+`ExactContext` for value-free integer operator kernels such as product tables and basis maps,
+whereas array contexts (`NumpyContext`, `JaxContext`, `TorchContext`) hold batched floating or
+complex coefficients and contract operands either through dense tensor contractions
+(`execution="dense"`) or through straight-line unrolled exact terms (`execution="sparse"`).
+
+Context compatibility separates algebra ownership from storage policy. Two contexts are compatible
+when they share the same `Algebra` object by identity and carry equal `key` tuples (`backend`,
+`dtype`, optional device, and `execution`); keeping `algebra` out of `key` lets tracing runtimes
+such as JAX store `key` as static pytree metadata and reconstruct the context via `context_from_key`.
+When operands from distinct contexts meet in `binding_context` or `lower`, exact kernels materialize
+into the target array context, and NumPy extensors act as host constants that promote into a paired
+JAX or PyTorch context of the same algebra.
+
+Cross-algebra inclusion (`include_from_algebra`) embeds extensors from another algebra whose active
+generators match a subset of the target algebra's generators in name and metric square. Extrinsic
+axes keep their blade names while intrinsic axes keep their unit-volume complements, preserving
+joins of intrinsic elements, actions of extrinsic elements from the left, and linear map evaluation
+across included inputs.
+
+Kernel-level hooks (`prepare_kernel`, `prepare_scalar`, `functional_set`, `functional_add`, and
+matrix or pencil solvers) isolate array-namespace differences behind a uniform functional interface
+so `Extensor` methods and `numga.extensions` remain backend-agnostic. Stages, contexts, exact
+materialization, and cross-algebra inclusion are described in `docs/internals.md` (section 4).
+"""
 
 from __future__ import annotations
 
@@ -23,14 +48,7 @@ if TYPE_CHECKING:
 
 
 class Context(ABC):
-    """Immutable coefficient/execution policy used by ``Extensor``.
-
-    The algebra-owned exact context constructs expressions; array contexts
-    materialize and execute them. ``key`` identifies the storage/execution
-    policy only. Algebra ownership is checked separately by identity, which
-    keeps compatibility explicit while allowing tracing backends to reconstruct
-    contexts from static pytree metadata.
-    """
+    """Subclasses bind one `Algebra` to a coefficient storage representation and contraction executor."""
 
     __slots__ = ("_multivector_factory", "_execution", "_execute_bind", "_applications", "__weakref__")
 
@@ -53,23 +71,21 @@ class Context(ABC):
 
     @property
     @abstractmethod
-    def algebra(self) -> Algebra:
-        """The exact algebra object owned by this context."""
+    def algebra(self) -> Algebra: ...
 
     @property
     @abstractmethod
     def dtype(self) -> np.dtype:
-        """The effective backend coefficient dtype."""
+        """Coefficient precision is reported as a canonical `np.dtype` across every backend."""
 
     @property
     @abstractmethod
     def key(self) -> tuple[object, ...]:
-        """Hashable, immutable context identity (excluding algebra)."""
+        """Hashable policy metadata identifies the backend, `dtype`, device, and execution mode while excluding `algebra`."""
 
     @property
     def is_exact(self) -> bool:
-        """Whether this context stores exact, value-free coefficients."""
-
+        """Exact contexts hold value-free symbolic kernels without batch dimensions; array contexts return `False`."""
         return False
 
     @property
@@ -78,37 +94,31 @@ class Context(ABC):
 
     @property
     def multivector(self) -> MultivectorFactory:
-        """Nullary-Extensor construction namespace for this context."""
-
+        """Attribute and call access constructs nullary extensors directly in this context."""
         return self._multivector_factory
 
-    def include_from_algebra(self, value: Extensor) -> Extensor:
-        """A value of another algebra included in this context's algebra, by generator names: every generator the
-        value's type uses must be one of this algebra's, by name and with the same square, as the algebra of space
-        `x+y+z+` lies in its projective algebra `w0x+y+z+`. With `space` and `mv` the two algebras' value constructors,
-        and `context` this one:
+    def include_from_algebra(self, extensor: Extensor) -> Extensor:
+        """Generator-name inclusion embeds `extensor` into `self.algebra` whenever every generator active in
+        `extensor.gatype` appears in `self.algebra` with the same metric square, as Euclidean `x+y+z+` lies
+        inside projective `w0x+y+z+`. Unused ambient generators in the source algebra (such as time after
+        slicing a spacetime event via `mv.t ^ (Point & time)`) do not participate, while every active
+        component is preserved with signed coefficient reordering.
 
-        An extrinsic element keeps its blades: `context.include_from_algebra(space.x) == mv.x`, the plane through the
-        origin. The inclusion preserves the geometric product, so a rotor of space is the projective rotor about the
-        origin and keeps its facts. An intrinsic element keeps its complement, the element that completes it to the unit
-        volume: `context.include_from_algebra(space.x.dual()) == mv.x.dual()`. A point of space, an offset from its
-        origin, is therefore the projective point at infinity of that offset, `origin +
-        context.include_from_algebra(offset)` the point at it, and the unit volume of space the projective unit volume.
+        Extrinsic axes keep their blade names (`context.include_from_algebra(space.x) == mv.x`, the plane
+        through the origin) and preserve the geometric product, so a spatial rotor becomes the projective
+        rotor about the origin. Intrinsic axes keep their unit-volume complements
+        (`context.include_from_algebra(space.x.dual()) == mv.x.dual()`), mapping a spatial offset to the
+        projective point at infinity (`origin + context.include_from_algebra(offset)` gives the finite point)
+        and the spatial unit volume to the projective unit volume.
 
-        Joins of intrinsic elements carry over, and so do an extrinsic element's products and pairings with an element
-        on its right, `plane & point`, `rotor >> point`; with an intrinsic element on the left a product may differ in
-        sign, or vanish, as the product of two directions does where the degenerate generator meets itself.
-
-        A map carries each axis by its own kind, its inputs read back through the inclusion of theirs, so that
-        `context.include_from_algebra(f)(context.include_from_algebra(x)) == context.include_from_algebra(f(x))`; it
-        takes the included elements of its inputs' types. The coefficients are reordered and signed, in this context.
-
-        The source's ambient algebra may contain other generators. A spatial projection of a spacetime event carries
-        over once its type excludes time: `space_slice = mv.t ^ (Point & time)`. This inclusion never discards
-        components; every axis of the supplied value's type must fit the common subalgebra."""
+        Joins of intrinsic elements carry over unchanged, as do products and pairings with an extrinsic
+        element on the left (`plane & point`, `rotor >> point`), whereas products with an intrinsic element
+        on the left may change sign or vanish where a degenerate generator squares to zero. Linear maps and
+        forms transport each axis by its own orientation so
+        `context.include_from_algebra(f)(context.include_from_algebra(x)) == context.include_from_algebra(f(x))`."""
         from numga.multivector.subalgebra import include_from_algebra
 
-        return include_from_algebra(self, value)
+        return include_from_algebra(self, extensor)
 
     @property
     def gatype(self) -> GATypeFactory:
@@ -121,25 +131,23 @@ class Context(ABC):
     @property
     @abstractmethod
     def xp(self) -> Any:
-        """Array namespace used by the dense reference executor."""
+        """Dense and sparse executors dispatch array operations through this NumPy-compatible namespace."""
 
     @abstractmethod
-    def prepare_kernel(self, value: object) -> Any:
-        """Copy a public value into backend storage under this policy."""
+    def prepare_kernel(self, coefficients: object) -> Any:
+        """Public coefficient data is validated for numeric kind compatibility and copied into backend storage."""
 
     def materialize(self, kernel: SymbolicKernel) -> Any:
-        """Backend storage holding the coefficients of an exact kernel."""
-
+        """Materializing an exact `SymbolicKernel` converts its entries into backend storage of
+        `self.dtype`."""
         return self.xp.asarray(kernel.materialize(self.dtype))
 
     def with_dtype(self, dtype: object) -> Context:
-        """This storage policy with another coefficient dtype, as complex eigenpairs need."""
-
+        """Replacing `dtype` yields a sibling context on the same algebra, device, and execution mode."""
         return type(self)(self.algebra, dtype, execution=self.execution)
 
     def kernel_dtype(self, kernel: Any) -> np.dtype:
-        """The NumPy dtype of backend storage."""
-
+        """Backend storage reports its element type as the corresponding `np.dtype`."""
         return np.dtype(kernel.dtype)
 
     def reciprocal(self, kernel: Any) -> Any:
@@ -156,24 +164,22 @@ class Context(ABC):
         return self.xp.expand_dims(tr, axis=scalar_axis)
 
     def axes_trace(self, kernel: Any, axis1: int, axis2: int) -> Any:
-        """Sum the diagonal of two axes, dropping both."""
         return self.xp.trace(kernel, axis1=axis1, axis2=axis2)
 
     def solve(self, matrix: Any, rhs: Any) -> Any:
-        """Solve with a vector RHS, broadcasting its leading batch axes."""
-
+        """Broadcasting leading batch axes of `rhs` to match `matrix` solves the linear system along
+        the trailing vector axis."""
         rhs = self.xp.broadcast_to(rhs, matrix.shape[:-1])
         return self.xp.linalg.solve(matrix, rhs[..., None])[..., 0]
 
     def first_last_input(self, kernel: Any, batch_ndim: int) -> Any:
-        """A scalar-valued kernel with its output axis dropped and its last input moved first."""
-
+        """Dropping the length-1 scalar output axis and moving the final input axis first turns a scalar form
+        kernel into a matrix-like layout."""
         return self.xp.moveaxis(kernel[(slice(None),) * batch_ndim + (0,)], -1, batch_ndim)
 
     def generalized_eigh(self, matrix: Any, metric: Any) -> tuple[Any, Any]:
-        """Eigenpairs of a Hermitian pencil, reduced to a standard problem by the Cholesky
-        factor of the positive-definite metric; eigenvectors are orthonormal in the metric."""
-
+        """Cholesky factorization of the positive-definite `metric` reduces a Hermitian pencil
+        `matrix * v == lam * metric * v` to a standard problem with `metric`-orthonormal eigenvectors."""
         xp = self.xp
         inverse = xp.linalg.inv(xp.linalg.cholesky(metric))
         adjoint = xp.conj(xp.swapaxes(inverse, -1, -2))
@@ -184,9 +190,8 @@ class Context(ABC):
         return self.generalized_eigh(matrix, metric)[0]
 
     def generalized_eig(self, matrix: Any, metric: Any) -> tuple[Any, Any]:
-        """Eigenpairs of a pencil, reduced to a standard problem by solving with the metric,
-        which must be invertible."""
-
+        """Solving `metric` against `matrix` reduces a general pencil with invertible `metric` to a standard
+        eigenproblem."""
         return self.xp.linalg.eig(self.xp.linalg.solve(metric, matrix))
 
     def generalized_eigvals(self, matrix: Any, metric: Any) -> Any:
@@ -212,23 +217,23 @@ class Context(ABC):
             raise TypeError("extensor construction requires a GAType")
         return Extensor(self, gatype, coefficients)
 
-    def lower(self, value: Extensor) -> Extensor:
-        """Represent an Extensor in this coefficient/execution context."""
-
-        if value.context is self:
-            return value
+    def lower(self, extensor: Extensor) -> Extensor:
+        """Lowering an extensor into `self` materializes exact kernels directly and transfers
+        concrete arrays from other backends through host memory."""
+        if extensor.context is self:
+            return extensor
         from numga.extensor import Extensor
 
-        if value.algebra is not self.algebra:
+        if extensor.algebra is not self.algebra:
             raise ValueError("Extensor and Context belong to different algebras")
-        if value.context.is_compatible_with(self):
-            return Extensor._from_prepared_kernel(self, value.gatype, value._kernel)
-        if value.context.is_exact and not self.is_exact:
-            numeric = self.materialize(value._kernel)
-            return Extensor._from_prepared_kernel(self, value.gatype, numeric)
-        if not value.context.is_exact and not self.is_exact:
-            # Between numeric backends, NumPy and JAX, the coefficients pass through host memory.
-            return Extensor(self, value.gatype, np.asarray(value.kernel))
+        if extensor.context.is_compatible_with(self):
+            return Extensor._from_prepared_kernel(self, extensor.gatype, extensor._kernel)
+        if extensor.context.is_exact and not self.is_exact:
+            numeric = self.materialize(extensor._kernel)
+            return Extensor._from_prepared_kernel(self, extensor.gatype, numeric)
+        if not extensor.context.is_exact and not self.is_exact:
+            # Concrete array backends transfer coefficients through a host NumPy array.
+            return Extensor(self, extensor.gatype, np.asarray(extensor.kernel))
         raise ValueError("cannot lower an Extensor from an incompatible Context")
 
     def execute_bind(
@@ -257,23 +262,23 @@ class Context(ABC):
         )
 
     def prepare_scalar(self, scalar: object) -> Any:
-        """Coerce a scalar without silently changing its numeric kind."""
-
+        """Zero-dimensional scalars convert to backend storage while rejecting rank-nonzero arrays and
+        incompatible numeric kinds."""
         if not isinstance(scalar, Number) and getattr(scalar, "ndim", None) != 0:
             raise TypeError(f"expected a scalar, got {type(scalar).__name__}")
         return self.prepare_kernel(scalar)
 
     @abstractmethod
     def functional_set(self, kernel: Any, index: object, value: object) -> Any:
-        """Return storage with an indexed batch region replaced."""
+        """Out-of-place batch indexing returns a new storage buffer with `index` replaced by `value`."""
 
     def functional_add(self, kernel: Any, index: object, value: object) -> Any:
-        """Return storage with values added at an indexed batch region; repeated indices accumulate."""
+        """Out-of-place scatter-addition returns a new storage buffer where repeated entries in `index` accumulate."""
 
 
 def context_from_key(algebra: Algebra, key: tuple[object, ...]) -> Context:
-    """Reconstruct an immutable context from tracing/static metadata."""
-
+    """Static `key` metadata paired with `algebra` reconstructs the matching immutable `Context` across
+    tracing boundaries."""
     if not isinstance(key, tuple) or not key:
         raise ValueError(f"invalid Context key {key!r}")
     backend = key[0]
@@ -302,15 +307,14 @@ def context_from_key(algebra: Algebra, key: tuple[object, ...]) -> Context:
 def binding_context(
     target: Context,
     operands: tuple[Context, ...],
-) -> "Context":
-    """Resolve context compatibility once per static context signature."""
-
+) -> Context:
+    """All-exact bindings stay in `target`, whereas concrete bindings select the shared array context and
+    promote any paired NumPy or exact operands into it."""
     concrete = tuple(context for context in (target,) + operands if not context.is_exact)
     if not concrete:
         return target
 
-    # A NumPy operand meeting another backend's is a constant to it, as a NumPy array is to JAX: the operation runs in
-    # the other backend, and the NumPy operands are carried into it.
+    # NumPy operands act as host constants when paired with a JAX or PyTorch context of the same algebra.
     hosted = [context for context in concrete if context.key[0] != "numpy"]
     context = hosted[0] if hosted else concrete[0]
     if any(not other.is_compatible_with(context)

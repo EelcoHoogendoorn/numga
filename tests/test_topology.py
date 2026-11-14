@@ -5,7 +5,7 @@ import numpy as np
 
 from numga import NumpyContext
 from numga.algebras import VGA3D
-from numga.topology import Topology, coherent, turned
+from numga.topology import Topology, orient_coherently, reverse_orientation
 
 
 def test_boundaries_of_boundaries_vanish_across_dimensions():
@@ -24,7 +24,7 @@ def test_boundaries_of_boundaries_vanish_across_dimensions():
 
 def test_border_closedness_orientation_and_manifoldness():
     # A closed tetrahedron surface wound coherently has empty border, Euler characteristic 2, and one piece.
-    tet_faces = coherent(np.array([[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]]))
+    tet_faces = orient_coherently(np.array([[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]]))
     tet = Topology(4, tet_faces)
     assert tet.is_closed and tet.is_oriented and tet.is_manifold
     assert tet.n_components == 1 and tet.euler_characteristic == 2
@@ -52,7 +52,7 @@ def test_border_closedness_orientation_and_manifoldness():
 
 def test_the_dual_and_the_subdivision_act_on_fields():
     mv = NumpyContext(VGA3D).multivector
-    coarse = Topology(4, coherent(np.array([[1, 2, 3], [0, 3, 2], [0, 1, 3], [0, 2, 1]])))
+    coarse = Topology(4, orient_coherently(np.array([[1, 2, 3], [0, 3, 2], [0, 1, 3], [0, 2, 1]])))
     dual = coarse.dual
     rng = np.random.default_rng(0)
     values = mv.scalar(rng.normal(size=(dual.n_elements[0], 1))).field()      # Scalar+[dual vertices]
@@ -76,7 +76,7 @@ def test_cone_and_product_preserve_orientation_and_manifoldness():
     disk = loop.cone()
     assert disk.n_dim == 2 and disk.is_oriented and disk.is_manifold and not disk.is_closed
     assert disk.euler_characteristic == 1
-    np.testing.assert_array_equal(turned(turned(disk.elements[-1])), disk.elements[-1])
+    np.testing.assert_array_equal(reverse_orientation(reverse_orientation(disk.elements[-1])), disk.elements[-1])
 
     cylinder = loop.product(Topology.chains([3]))
     assert cylinder.n_dim == 2 and cylinder.is_oriented and cylinder.is_manifold and cylinder.euler_characteristic == 0

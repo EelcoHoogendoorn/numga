@@ -1,4 +1,5 @@
-"""numga in WGSL: shaders whose expressions are numga's, compiled to WGSL and run on WebGPU."""
+"""Shaders in the `numga` WGSL dialect write geometric algebra expressions with `numga` operators and
+types, lowering algebraic operations to polynomial WGSL functions at compile time and running on WebGPU."""
 
 from .dialect import Binding, Program, compile, template
 from .library import level_lines, sampled, samples_per_side, software, supersampled

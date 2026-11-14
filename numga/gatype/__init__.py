@@ -1,5 +1,6 @@
-"""Whole-extensor GAType and trait metadata."""
+"""Whole-extensor `GAType` metadata, orientation rules, trait inference, and signature dispatch."""
 
+from . import rules
 from .dispatch import AmbiguousGATypeDispatchWarning, GATypeDispatch
 from .errors import GATypeError, UnorientedSubspace
 from .factory import GATypeFactory
@@ -7,28 +8,27 @@ from .gatype import GAType
 from .metric import MetricKind
 from .orientation import Orientation
 from .pattern import GATypePattern
-from . import rules
 from .traits import (
+    EMPTY_TRAITS,
+    ROTOR_TRAITS,
     Blade,
     BladeProduct,
-    CoefficientOrthogonal,
-    EMPTY_TRAITS,
     CliffordConjugateProduct,
     CliffordConjugateProductNonzero,
     CliffordConjugateProductOne,
     CliffordConjugateProductScalar,
     CliffordConjugateProductZero,
+    CoefficientOrthogonal,
     GradeInvolutionProduct,
     ProductFact,
     ProductRelation,
     ProductResult,
-    SelfProduct,
     ReverseProduct,
-    ROTOR_TRAITS,
     ReverseProductNonzero,
     ReverseProductOne,
     ReverseProductScalar,
     ReverseProductZero,
+    SelfProduct,
     Trait,
     TraitSet,
     Versor,

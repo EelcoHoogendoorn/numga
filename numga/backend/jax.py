@@ -1,17 +1,37 @@
-"""JAX policy for the shared concrete Extensor runtime."""
+"""Array execution on JAX pairs `jax.Array` coefficient storage with either dense contractions or
+unrolled sparse-exact kernels, enabling 64-bit precision on import so CPU computations match
+`NumpyContext` precision. Host coefficients passed to `prepare_kernel` evaluate under
+`jax.ensure_compile_time_eval()`, allowing cached basis blades and constant operators to materialize
+inside active `jit` or `vmap` traces without leaking tracers.
+
+Registering `Extensor` as a JAX pytree node places `_kernel` as the sole dynamic child while storing
+`(gatype, context.key)` as static auxiliary metadata. Keeping `Algebra` out of `context.key` and
+recovering it from `gatype.algebra` on unflatten lets traced transformations (`jax.jit`, `jax.vmap`,
+`jax.lax.scan`, `jax.grad`) preserve static geometric types and orientations with zero runtime
+dispatch overhead.
+
+Automatic differentiation through `derivative` wraps forward-mode (`jvp`) and reverse-mode (`vjp`)
+differentiation directly in the geometric type system, appending the differentiated input's subspace
+and orientation as a trailing linear input axis (`S <- (I..., T)`). A scalar function therefore
+differentiates to the linear form `Scalar <- T` rather than an element of `T`, higher derivatives
+nest into multilinear forms such as `Scalar <- (T, T)`, and each call selects reverse pullbacks or
+forward pushforwards from the ratio of output to coupled input degrees of freedom. Tracing constant
+tables under `jit` is illustrated in `docs/internals.md` (sections 2 and 4), and differentiating
+functions of fields in `docs/fields.md` ("Derivatives with respect to a field").
+"""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from fractions import Fraction
 from numbers import Rational
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
-# Double precision, as on every other backend: the examples run on CPUs, where single precision buys little and
-# costs checks their round-off.
+# Enable 64-bit precision on import so CPU runs match NumPy round-off in numerical checks.
 jax.config.update("jax_enable_x64", True)
 
 from numga.extensor import Extensor
@@ -25,15 +45,16 @@ if TYPE_CHECKING:
     from numga.gatype import GAType
 
 
-def _dtype(value: object) -> np.dtype:
-    dtype = np.dtype(jax.dtypes.canonicalize_dtype(np.dtype(value)))
-    if dtype.kind not in "fc":
+def _dtype(dtype: object) -> np.dtype:
+    canonical = np.dtype(jax.dtypes.canonicalize_dtype(np.dtype(dtype)))
+    if canonical.kind not in "fc":
         raise TypeError("JaxContext currently requires a real or complex floating dtype")
-    return dtype
+    return canonical
 
 
 class JaxContext(Context):
-    """JAX storage with dense or sparse-exact execution, bound to one algebra."""
+    """Immutable policy stores coefficients as `jax.Array` buffers bound to one `Algebra` with dense
+    or sparse-exact execution."""
 
     __slots__ = ("_algebra", "_dtype")
 
@@ -75,22 +96,22 @@ class JaxContext(Context):
     def xp(self) -> ModuleType:
         return jnp
 
-    def prepare_kernel(self, value: object) -> jax.Array:
-        source_dtype = getattr(value, "dtype", None)
+    def prepare_kernel(self, coefficients: object) -> jax.Array:
+        source_dtype = getattr(coefficients, "dtype", None)
         if source_dtype is None:
-            source_dtype = np.asarray(value).dtype
+            source_dtype = np.asarray(coefficients).dtype
         source_dtype = np.dtype(source_dtype)
         if not np.can_cast(source_dtype, self.dtype, casting="same_kind"):
             raise TypeError(
                 f"cannot represent coefficients of dtype {source_dtype} in "
                 f"Context dtype {self.dtype} without changing numeric kind"
             )
-        if isinstance(value, jax.core.Tracer):
-            return jnp.asarray(value, dtype=self.dtype)
-        # Host data is a constant even inside a transformation: built concretely, it may be cached, as
-        # the factory caches basis blades, without a traced value escaping the trace.
+        if isinstance(coefficients, jax.core.Tracer):
+            return jnp.asarray(coefficients, dtype=self.dtype)
+        # Materializing non-tracer data under ensure_compile_time_eval lets cached basis blades build
+        # inside an active transformation without a tracer escaping its trace.
         with jax.ensure_compile_time_eval():
-            return jnp.asarray(value, dtype=self.dtype)
+            return jnp.asarray(coefficients, dtype=self.dtype)
 
     def prepare_scalar(self, scalar: object) -> jax.Array:
         if isinstance(scalar, Rational):
@@ -123,46 +144,37 @@ class JaxContext(Context):
         return f"JaxContext(algebra={self.algebra!r}, dtype={self.dtype}, execution={self.execution!r})"
 
 
-def derivative(function: Callable[[Any], Extensor]) -> Callable[[Any], Any]:
-    """The derivative of a function of a value: at each value, the linear map from a step to the change.
+def derivative(function: Callable) -> Callable:
+    """Differentiating `function` returns a callable that evaluates the linear tangent map `S <- (I..., T)`
+    at any nullary value of type `T`. Binding a step of type `T` into the returned map yields the
+    first-order change in `function(value)`; a scalar function produces the covector form `Scalar <- T`,
+    and nested `derivative(derivative(function))` calls append further step axes to form multilinear
+    maps such as `Scalar <- (T, T)`.
 
-    At a value of type `T`, the derivative of a function whose result has type `S <- (I...)` is an
-    extensor of type `S <- (I..., T)`: the result's own axes, then one more for the step. Binding a
-    step into it gives the first-order change of the result; for a scalar result it is the linear form
-    `Scalar <- T`, the gradient as the form it is, never as an element of `T`. Derivatives nest: the
-    derivative of a derivative takes one more axis again, so the second derivative of a scalar
-    function is the bilinear form `Scalar <- (T, T)`.
+    Leading batch dimensions whose sizes match between `value` and `function(value)` act as independent
+    copies, differentiating each output entry with respect to its corresponding input entry alone so
+    cross terms between batch entries sum onto the diagonal. Any trailing batch dimensions of `value`
+    beyond that shared prefix remain coupled and appear after the result's batch dimensions, giving a
+    reduction over a trailing batch axis a derivative with respect to every entry along that axis.
 
-    Leading batch axes hold independent cases. The result's leading batch axes, as far as they match the
-    value's in size, are copies: each element of the result is differentiated with respect to the
-    matching element of the value alone, and the dimension appears once. The value's remaining batch axes are
-    coupled: each element of the result is differentiated with respect to every element along them, and
-    they appear after the result's batch axes, so a function summing over a trailing dimension of its value
-    has a derivative for every element along it. Copies are taken to be independent; a function that
-    couples them has its cross terms summed into the diagonal.
-
-    A field's sites lie inside its axis, not in its batch: they are always coupled, and the step's
-    axis ranges over the same sites. The second derivative of a scalar function of a field `T[n]` is
-    the coupled bilinear form `Scalar <- (T[n], T[n])`, every site against every other, and solving it
-    against the gradient gives the coupled Newton step.
-
-    The value may be a record of extensors, any JAX pytree of them, such as a registered dataclass: the
-    derivative is the same record, of the derivatives with respect to each of its extensors, the others
-    held, as `jax.grad` takes the gradient of a pytree.
+    Field sites belong to `T`'s structural shape rather than its batch shape, so every site stays
+    coupled to every other site and the appended step axis ranges over the same sites (producing
+    `Scalar <- (T[n], T[n])` for the Hessian of a scalar energy on `T[n]`). Supplying any JAX pytree of
+    nullary extensors returns a matching pytree of partial derivatives with all sibling leaves held fixed.
     """
     def at(value: Any) -> Any:
         if isinstance(value, Extensor):
             return along(function, value)
         leaves, structure = jax.tree_util.tree_flatten(value, is_leaf=lambda leaf: isinstance(leaf, Extensor))
 
-        def holding(index: int) -> Callable[[Extensor], Extensor]:
+        def holding(index: int) -> Callable:
             def varied(leaf: Extensor) -> Extensor:
                 return function(jax.tree_util.tree_unflatten(structure, leaves[:index] + [leaf] + leaves[index + 1:]))
             return varied
 
         return jax.tree_util.tree_unflatten(structure, [along(holding(index), leaf) for index, leaf in enumerate(leaves)])
 
-    def along(function: Callable[[Extensor], Extensor], value: Extensor) -> Extensor:
+    def along(function: Callable, value: Extensor) -> Extensor:
         if value.arity:
             raise TypeError(f"derivatives are taken with respect to values, not to maps of type {value.gatype}")
 
@@ -171,11 +183,11 @@ def derivative(function: Callable[[Any], Extensor]) -> Callable[[Any], Any]:
 
         image = function(value)
         value_batch, result_batch = value.shape, image.shape
-        # The value's axis: its sites, if it is a field, and its blades.
+        # Structural axes of the input comprise any field site axes followed by its blade axis.
         axis = value.gatype.structural_shape
         sites = len(axis) - 1
         image_sites, image_blades = len(image.gatype.site_shape), len(image.gatype.subspaces)
-        # The leading axes the two share, as far as they match:
+        # Leading batch dimensions of equal size act as independent elementwise copies.
         shared_value = set()
         for dimension, (value_size, result_size) in enumerate(zip(value_batch, result_batch)):
             if value_size != result_size:
@@ -184,36 +196,33 @@ def derivative(function: Callable[[Any], Extensor]) -> Callable[[Any], Any]:
         coupled = [dimension for dimension in range(len(value_batch)) if dimension not in shared_value]
         coupled_shape = tuple(value_batch[dimension] for dimension in coupled)
 
-        # The shared axes lead both the value and the result; past them, each case has this many coefficients
-        # of the value to vary and of the result to vary.
+        # Past the shared leading batch prefix, compare coupled input and output coefficient counts per case.
         shared_shape = value_batch[:len(shared_value)]
         image_shape = image.kernel.shape[len(shared_value):]
         count = int(np.prod(coupled_shape + axis, dtype=int))
         image_count = int(np.prod(image_shape, dtype=int))
         if image_count < count:
-            # Fewer coefficients come out than go in, as for a scalar function: one cotangent per coefficient
-            # of the result, spread over every element of the shared axes at once, each pulled back to the
-            # whole value in one reverse pass.
+            # Narrower outputs use reverse mode, pulling back one unit cotangent per output coefficient
+            # broadcasted across the independent shared batch dimensions.
             basis = jnp.eye(image_count, dtype=value.kernel.dtype).reshape((image_count,) + image_shape)
             for dimension in range(len(shared_value)):
                 basis = jnp.expand_dims(basis, 1 + dimension)
             cotangents = jnp.broadcast_to(basis, (image_count,) + image.kernel.shape)
             _, pullback = jax.vjp(result, value.kernel)
             pulled = jax.vmap(lambda cotangent: pullback(cotangent)[0])(cotangents)
-            # [result coefficients, shared..., coupled..., value axis] to [coupled..., value axis, shared..., result coefficients]
+            # Permuting moves [coupled..., value_axis] ahead of [shared..., result_coeffs] to match forward mode.
             pulled = pulled.reshape(image_shape + value_batch + axis)
             r, s = len(image_shape), len(shared_shape)
             changes = jnp.transpose(pulled, tuple(range(r + s, pulled.ndim)) + tuple(range(r, r + s)) + tuple(range(r)))
         else:
-            # One tangent per coupled element and coefficient of the value, spread over every element of
-            # the shared axes at once, which is valid because those elements are independent:
+            # Wider outputs use forward mode, pushing forward one unit tangent per coupled input coefficient
+            # broadcasted across the independent shared batch dimensions.
             basis = jnp.eye(count, dtype=value.kernel.dtype).reshape((count,) + coupled_shape + axis)
             for dimension in sorted(shared_value):
                 basis = jnp.expand_dims(basis, 1 + dimension)
             tangents = jnp.broadcast_to(basis, (count,) + value_batch + axis)
             changes = jax.vmap(lambda tangent: jax.jvp(result, (value.kernel,), (tangent,))[1])(tangents)
-        # [coupled..., value sites, value blades, result batch..., result sites..., result blades...] to
-        # [result batch..., coupled..., result sites..., value sites, result blades..., value blades]
+        # Final transpose orders axes as [result_batch..., coupled..., result_sites..., value_sites, result_blades..., value_blades].
         changes = changes.reshape(coupled_shape + axis + image.kernel.shape)
         c, r = len(coupled_shape), len(result_batch)
         start = c + sites + 1 + r
@@ -236,18 +245,16 @@ def derivative(function: Callable[[Any], Extensor]) -> Callable[[Any], Any]:
     return at
 
 
-def _flatten_extensor(
-    value: Extensor,
-) -> tuple[tuple[jax.Array], tuple[GAType, tuple[object, ...]]]:
-    if not isinstance(value.context, JaxContext):
+def _flatten_extensor(extensor: Extensor) -> tuple:
+    if not isinstance(extensor.context, JaxContext):
         raise TypeError(
             "only Extensors in a JaxContext can cross a JAX transformation boundary"
         )
-    return (value._kernel,), (value.gatype, value.context.key)
+    return (extensor._kernel,), (extensor.gatype, extensor.context.key)
 
 
 def _unflatten_extensor(
-    metadata: tuple[GAType, tuple[object, ...]],
+    metadata: tuple,
     children: tuple[Any, ...],
 ) -> Extensor:
     gatype, context_key = metadata

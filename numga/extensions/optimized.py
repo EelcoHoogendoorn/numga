@@ -1,14 +1,28 @@
-"""Opt-in closed forms for `PGA3D` on the NumPy backend; call register() to prioritize them.
+"""Closed-form specializations accelerate common `PGA3D` motor and rigid-body inertia operations on
+the NumPy backend. Calling `register()` places the closed-form motor exponential and normalization
+kernels at the front of `Extensor.exp` and `Extensor.normalized` dispatch, while
+`principal_inertia_pga3` constructs compact principal-frame inertia maps directly.
 
-Each formula is written against one exact coefficient layout, the default one, and is
-dispatched only on that layout: the predicates compare subspaces, blade order and signs
-included. Other layouts fall through to the generic implementations; converting them here
-would cost what the formulas save. In the cyclic order yz zx xy, each rotation blade pairs
-with the translation blade wx wy wz at the same position, and no signs appear.
+Every specialization requires `PGA3D`'s default cyclic blade layout (`yz zx xy` paired position by
+position with `wx wy wz`), checking exact blade order and signs in its dispatch predicate. Inputs in
+other layouts fall through to the generic algebraic implementations because converting blade layouts
+at runtime would spend the work the closed forms save. In the cyclic order, each rotation blade sits
+opposite its conjugate translation blade without alternating signs, and near-zero screw angles switch
+from `(cos - sinc) / angle^2` to a truncated Taylor series to preserve precision.
 
-The bodies are NumPy-specific: they fill one preallocated output in place. A JAX version
-would be written separately, against what XLA fuses well.
+Each NumPy kernel writes directly into a single preallocated output array, whereas a JAX backend
+counterpart would target XLA fusion separately. `PrincipalInertiaPGA3` stores a rigid body's
+principal-frame map from extrinsic bivector rates to intrinsic bivector momenta as four scalars per
+body (mass on `wx wy wz` and three principal moments on `yz zx xy`), reducing evaluation and
+inversion to four multiplications or reciprocals and materializing the dense `6 x 6` kernel only when
+general `Extensor` operations request it. Predicate dispatch and `PrincipalInertiaPGA3` are described
+in `docs/internals.md`.
 """
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -16,25 +30,30 @@ from numga.algebras import PGA3D
 from numga.extensor import Extensor
 from numga.gatype import GAType, Orientation, ReverseProductOne, Versor
 
-def layout(names: str):
-    """A predicate matching exactly this blade layout of PGA3D, or of an algebra built with its
-    description."""
+if TYPE_CHECKING:
+    from numga.backend.context import Context
+
+
+def layout(names: str) -> Callable:
+    """Return a dispatch predicate matching algebras with `PGA3D`'s description and the exact signed
+    blade order in `names`."""
     return lambda t: t.algebra.description == PGA3D.description and t.subspaces == (t.algebra.subspace(names),)
 
 
-def exp_pga3(b: Extensor, *, n: int = 15) -> Extensor:
-    """Motor exp of a bivector in the layout yz zx xy wx wy wz."""
-    yz, zx, xy, wx, wy, wz = np.moveaxis(b._kernel, -1, 0)
+def exp_pga3(bivector: Extensor, *, n: int = 15) -> Extensor:
+    """Chasles's screw formula exponentiates a `PGA3D` bivector in layout `yz zx xy wx wy wz` into a
+    unit motor."""
+    yz, zx, xy, wx, wy, wz = np.moveaxis(bivector._kernel, -1, 0)
     length_squared = yz*yz + zx*zx + xy*xy
     angle = np.sqrt(length_squared)
     cosine = np.cos(angle)
     sinc = np.sinc(angle / np.pi)
     pitch = yz*wx + zx*wy + xy*wz
-    # (cosine - sinc) / length_squared loses precision near zero; its analytic series does not.
+    # Replace (cosine - sinc) / length_squared with its Taylor series near zero to avoid cancellation.
     small = length_squared < 1e-4
     screw = pitch * np.where(small, -1/3 + length_squared/30 - length_squared**2/840 + length_squared**3/45360,
                              (cosine - sinc) / np.where(small, 1, length_squared))
-    m = np.empty(b.shape + (8,))
+    m = np.empty(bivector.shape + (8,))
     m[..., 0] = cosine
     m[..., 1] = sinc*yz
     m[..., 2] = sinc*zx
@@ -43,32 +62,35 @@ def exp_pga3(b: Extensor, *, n: int = 15) -> Extensor:
     m[..., 5] = sinc*wy + screw*zx
     m[..., 6] = sinc*wz + screw*xy
     m[..., 7] = pitch*sinc
-    return Extensor._from_prepared_kernel(b.context, b.algebra.gatype.rotor(), m)
+    return Extensor._from_prepared_kernel(bivector.context, bivector.algebra.gatype.rotor(), m)
 
 
-def exp_rotation_pga3(b: Extensor, *, n: int = 15) -> Extensor:
-    """Rotor exp of a bivector in the layout yz zx xy."""
-    angle = np.sqrt((b._kernel**2).sum(axis=-1))
-    m = np.empty(b.shape + (4,))
+def exp_rotation_pga3(bivector: Extensor, *, n: int = 15) -> Extensor:
+    """Rodrigues's formula exponentiates a pure rotation bivector in layout `yz zx xy` into a unit
+    rotor."""
+    angle = np.sqrt((bivector._kernel**2).sum(axis=-1))
+    m = np.empty(bivector.shape + (4,))
     m[..., 0] = np.cos(angle)
-    m[..., 1:] = b._kernel * np.sinc(angle / np.pi)[..., None]
-    gatype = b.algebra.gatype.even().derive.nondegenerate.derive.with_traits(ReverseProductOne, Versor)
-    return Extensor._from_prepared_kernel(b.context, gatype, m)
+    m[..., 1:] = bivector._kernel * np.sinc(angle / np.pi)[..., None]
+    gatype = bivector.algebra.gatype.even().derive.nondegenerate.derive.with_traits(ReverseProductOne, Versor)
+    return Extensor._from_prepared_kernel(bivector.context, gatype, m)
 
 
-def exp_translation_pga3(b: Extensor, *, n: int = 15) -> Extensor:
-    """Translator exp of a bivector in the layout wx wy wz: one plus the bivector."""
-    m = np.empty(b.shape + (4,))
+def exp_translation_pga3(bivector: Extensor, *, n: int = 15) -> Extensor:
+    """Exponentiating an ideal translation bivector in layout `wx wy wz` adds `1` because ideal
+    squares vanish."""
+    m = np.empty(bivector.shape + (4,))
     m[..., 0] = 1
-    m[..., 1:] = b._kernel
-    gatype = b.algebra.gatype(b.algebra.subspace("1 wx wy wz"), orientation=Orientation.extrinsic).derive.with_traits(ReverseProductOne, Versor)
-    return Extensor._from_prepared_kernel(b.context, gatype, m)
+    m[..., 1:] = bivector._kernel
+    gatype = bivector.algebra.gatype(bivector.algebra.subspace("1 wx wy wz"), orientation=Orientation.extrinsic).derive.with_traits(ReverseProductOne, Versor)
+    return Extensor._from_prepared_kernel(bivector.context, gatype, m)
 
 
 def normalize_pga3(motor: Extensor) -> Extensor:
-    """Unit motor from an even element in the layout 1 yz zx xy wx wy wz wxyz."""
+    """Projecting an even `PGA3D` element in layout `1 yz zx xy wx wy wz wxyz` onto the Study quadric
+    produces a unit motor."""
     m = motor._kernel.copy()
-    # views onto the components of the copy; the in-place updates below write through them
+    # Views onto the copied components let the Study-quadric updates below modify m in place.
     e, yz, zx, xy, wx, wy, wz, volume = (m[..., i] for i in range(8))
     scale = (e*e + yz*yz + zx*zx + xy*xy)**(-0.5)
     correction = (e*volume - yz*wx - zx*wy - xy*wz) * scale**2
@@ -78,30 +100,20 @@ def normalize_pga3(motor: Extensor) -> Extensor:
 
 
 class PrincipalInertiaPGA3(Extensor):
-    """Inertia of a rigid body in its principal frame, a forque from a rate, stored as four numbers.
-
-    Rate and momentum share the bivectors yz zx xy wx wy wz: the rate oriented by what turns around
-    it (extrinsic), the momentum along itself (intrinsic). The map sends the translation block
-    to the momentum's first block and the rotation block to its second, each scaled blade-wise:
-    for the inertia, `upper` [..., 1] is the mass and `lower` [..., 3] the moments on yz zx xy.
-    The inverse has the same form with `1 / lower` as its `upper` and `1 / upper` as its `lower`,
-    so it is four reciprocals.
-
-    Applying and inverting use these numbers directly, and the batch shape is theirs. Every other
-    operation works on the dense 6x6 map, rebuilt from the four numbers whenever one needs it
-    rather than stored, and returns an ordinary Extensor.
-    """
+    """A principal-frame rigid-body inertia map (`Bivector- <- Bivector+`) stores mass in `upper`
+    (`[..., 1]`) and principal moments on `yz zx xy` in `lower` (`[..., 3]`), swapping and scaling
+    the translation and rotation blocks directly while rebuilding a dense `6 x 6` kernel on demand."""
     __slots__ = ("upper", "lower")
 
-    def __init__(self, context, upper: np.ndarray, lower: np.ndarray, gatype: GAType) -> None:
+    def __init__(self, context: Context, upper: np.ndarray, lower: np.ndarray, gatype: GAType) -> None:
         self._context = context
         self._gatype = gatype
         self.upper = upper
         self.lower = lower
 
     @classmethod
-    def _from_prepared_kernel(cls, context, gatype, kernel) -> Extensor:
-        # derived results are dense, ordinary extensors
+    def _from_prepared_kernel(cls, context: Context, gatype: GAType, kernel: Any) -> Extensor:
+        # Derived results return ordinary dense extensors.
         return Extensor._from_prepared_kernel(context, gatype, kernel)
 
     @property
@@ -110,13 +122,12 @@ class PrincipalInertiaPGA3(Extensor):
 
     @property
     def _kernel(self) -> np.ndarray:
-        """The dense 6x6 map, rebuilt from the four numbers on every access; it is not stored."""
         dense = np.zeros(self.shape + (6, 6))
         dense[..., (0, 1, 2), (3, 4, 5)] = self.upper
         dense[..., (3, 4, 5), (0, 1, 2)] = self.lower
         return dense
 
-    def __call__(self, *operands):
+    def __call__(self, *operands: Any) -> Extensor:
         rate = operands[0]
         if (len(operands) != 1 or not isinstance(rate, Extensor) or rate.gatype.output_subspace is not self.axes[1]
                 or rate.gatype.orientation is not self.gatype.input_orientations[0]):
@@ -127,12 +138,15 @@ class PrincipalInertiaPGA3(Extensor):
         momentum[..., 3:6] = r[..., 0:3] * self.lower
         return Extensor._from_prepared_kernel(rate.context, self.gatype.derive.output, momentum)
 
-    def inverse(self) -> "PrincipalInertiaPGA3":
+    def inverse(self) -> PrincipalInertiaPGA3:
+        """Inverting a principal-frame inertia map swaps `upper` and `lower` and takes four
+        elementwise reciprocals."""
         return PrincipalInertiaPGA3(self._context, 1 / self.lower, 1 / self.upper, self.gatype.derive.transposed)
 
 
 def principal_inertia_pga3(mass: Extensor, moments: Extensor) -> PrincipalInertiaPGA3:
-    """From a Scalar mass [...] and moments on the rotation blades yz zx xy [...]."""
+    """Constructing a principal-frame inertia map pairs a `Scalar` mass with principal moments selected
+    on the rotation blades `yz zx xy`."""
     bivector = mass.algebra.subspace.bivector()
     gatype = mass.algebra.gatype.oriented((bivector, bivector), (Orientation.intrinsic, Orientation.extrinsic))
     lower = moments.select_subspace(mass.algebra.subspace("yz zx xy"))._kernel
@@ -140,6 +154,8 @@ def principal_inertia_pga3(mass: Extensor, moments: Extensor) -> PrincipalInerti
 
 
 def register() -> None:
+    """Registering the closed-form `PGA3D` exponential and motor normalization kernels at position `0`
+    places them ahead of the generic `Extensor` implementations."""
     Extensor.exp.register(layout("yz zx xy wx wy wz"), position=0)(exp_pga3)
     Extensor.exp.register(layout("yz zx xy"), position=0)(exp_rotation_pga3)
     Extensor.exp.register(layout("wx wy wz"), position=0)(exp_translation_pga3)

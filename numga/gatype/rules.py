@@ -1,16 +1,25 @@
-"""Type rules of operations: how the type of an operation's result follows from its operands' types.
+"""Every algebraic operation on extensors owns an `OperationRule` determining the `GAType` of its
+result from its operand `GAType`s and output-first result `SubSpace`s. Because `SubSpace`s carry no
+orientation of their own, orientation is never inferred by default: an operation's rule computes the
+output-first `Orientation` tuple explicitly from operand orientations, and attaches any trait laws
+preserved or introduced by the operation via `propagation`.
 
-Each operation has one rule object. Its orientation rule gives the orientation of every axis of the
-result, output first, from the operands' orientations; orientation is never assumed, so an operation
-without a rule has no result type. Its laws are the traits the result inherits, from `propagation`.
-Results are cached per rule, operand types and result axes.
+Binary products multiply operand orientations like signs (`multiplied`), while the regressive
+product passes through the pseudoscalar once and flips that product orientation (`through_volume`).
+Versor sandwich actions preserve the passenger's orientation (`carries_passenger`), transposes
+reverse axis order together with orientations (`reversed_axes`), unary scalings and grade transforms
+keep operand orientations (`kept`), and coefficient-wise sums or stacks require identical
+orientations across all operands (`equal`). Resolved result `GAType`s are cached per rule, operand
+`GAType` tuple, and result `SubSpace` tuple. The orientation rules and refusals enforced here follow
+`docs/orientation.md` and `docs/conventions.md`.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from .errors import GATypeError
 from .orientation import Orientation
@@ -33,62 +42,62 @@ if TYPE_CHECKING:
 
     from .gatype import GAType
 
-Orientations = Callable[[tuple["GAType", ...]], tuple[Orientation, ...]]
-Laws = Callable[[tuple["GAType", ...], tuple["SubSpace", ...]], TraitSet]
+Orientations = Callable
+Laws = Callable
 
 
 @dataclass(frozen=True, eq=False)
 class OperationRule:
-    """The type rule of one operation: the orientations of its result's axes, and the laws its result
-    inherits. Rules compare and hash by identity."""
+    """One operation's static type rule pairs an axis-orientation rule with a trait-propagation law,
+    comparing and hashing by object identity."""
 
     name: str
     orientations: Orientations
     laws: Laws = no_laws
 
-    def result(self, operands: tuple["GAType", ...], axes: tuple["SubSpace", ...]) -> "GAType":
-        """The result type of this operation on operands of these types, with these result axes."""
+    def result(self, operands: tuple[GAType, ...], axes: tuple[SubSpace, ...]) -> GAType:
+        """Applying this rule's orientation and trait laws to output-first axes produces the cached
+        result `GAType`."""
         return _result(self, operands, axes)
 
 
 @lru_cache(maxsize=None)
-def _result(rule: OperationRule, operands: tuple["GAType", ...], axes: tuple["SubSpace", ...]) -> "GAType":
+def _result(rule: OperationRule, operands: tuple[GAType, ...], axes: tuple[SubSpace, ...]) -> GAType:
     algebra = (operands[0] if operands else axes[0]).algebra
     return algebra.gatype.oriented(axes, rule.orientations(operands), rule.laws(operands, axes))
 
 
 # --- orientation rules ----------------------------------------------------------------
-def multiplied(operands: tuple["GAType", ...]) -> tuple[Orientation, ...]:
-    """A product of two operands: the output's orientation is the product of theirs, as signs multiply."""
+def multiplied(operands: tuple[GAType, ...]) -> tuple[Orientation, ...]:
+    """Binary products give the output the product of the two operand orientations."""
     left, right = operands
     return (left.orientation * right.orientation, left.orientation, right.orientation)
 
 
-def through_volume(operands: tuple["GAType", ...]) -> tuple[Orientation, ...]:
-    """The regressive product passes through the volume form once: the product's orientation, flipped."""
+def through_volume(operands: tuple[GAType, ...]) -> tuple[Orientation, ...]:
+    """Passing once through the pseudoscalar flips the binary product's output orientation."""
     left, right = operands
     return ((left.orientation * right.orientation).flipped, left.orientation, right.orientation)
 
 
-def carries_passenger(operands: tuple["GAType", ...]) -> tuple[Orientation, ...]:
-    """A versor's action keeps the passenger's orientation."""
+def carries_passenger(operands: tuple[GAType, ...]) -> tuple[Orientation, ...]:
+    """Sandwich actions preserve the passenger's output orientation regardless of versor orientation."""
     versor, passenger, _ = operands
     return (passenger.orientation, versor.orientation, passenger.orientation, versor.orientation)
 
 
-def reversed_axes(operands: tuple["GAType", ...]) -> tuple[Orientation, ...]:
-    """A transpose reverses the axes, and their orientations with them."""
+def reversed_axes(operands: tuple[GAType, ...]) -> tuple[Orientation, ...]:
+    """Transposing a map reverses its axis order and per-axis orientations together."""
     return tuple(reversed(operands[0].orientations))
 
 
-def kept(operands: tuple["GAType", ...]) -> tuple[Orientation, ...]:
-    """Every axis keeps its operand's orientation."""
+def kept(operands: tuple[GAType, ...]) -> tuple[Orientation, ...]:
+    """Unary coefficient transforms preserve every axis orientation of their operand."""
     return operands[0].orientations
 
 
-def equal(operands: tuple["GAType", ...]) -> tuple[Orientation, ...]:
-    """Values combined coefficient by coefficient, as in a sum or a stack, need equal orientations on
-    every axis, and keep them."""
+def equal(operands: tuple[GAType, ...]) -> tuple[Orientation, ...]:
+    """Coefficient-wise sums and stacks require matching orientations on every axis and retain them."""
     first = operands[0]
     if any(gatype.orientations != first.orientations for gatype in operands[1:]):
         signatures = " and ".join(gatype.signature for gatype in operands)
@@ -117,7 +126,7 @@ SCALAR_NEGATION = OperationRule("scalar negation", kept, unless_identity("scalar
 PSEUDOSCALAR_NEGATION = OperationRule(
     "pseudoscalar negation", kept, unless_identity("pseudoscalar_negation", coefficient_orthogonality_laws),
 )
-# The grade transforms by the name the operator factory builds them under.
+# Grade transforms keyed by the names used on the operator factory.
 GRADE_TRANSFORMS = {
     "reverse": REVERSE,
     "clifford_conjugate": CLIFFORD_CONJUGATE,

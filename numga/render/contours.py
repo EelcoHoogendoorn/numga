@@ -1,11 +1,12 @@
-"""A scalar field on a planar mesh, coloured, banded and contoured on the GPU, in the mesh's own algebra.
+"""Scalar fields over planar triangulated complexes are shaded, banded, and contoured directly on the GPU in the
+vertices' own algebra. Vertex values and vertex colours interpolate linearly across each triangle by its hat functions,
+while fragment-stage screen derivatives (`fwidth`) evaluate constant-pixel-width level curves (`level_line` and
+`level_mark`) regardless of field gradient steepness without extracting contour polylines on the host.
 
-The field and its colours at the vertices are interpolated across each triangle by its hats. The fragment stage fills
-bands between levels and draws level lines where the field crosses a level, `level_line` and `level_mark` from the
-library, one width in pixels however steep the field: no line is extracted as geometry. The colours may be translucent,
-down to none, and each band, line and level lays its ink over them with its own opacity, so that pictures stack. The
-mesh's points are read by a camera of their own algebra, `numga.render.camera`: the shader compiles per algebra,
-and the points are never carried into another to be drawn.
+Vertex colours are scaled by `opacity` down to zero, and `Bands`, `Lines`, and `Level` specifications composite
+premultiplied ink over them in order so multiple contour and shading passes stack cleanly in `composited`. Vertex
+positions pair directly against a `Camera` of `points.algebra`, compiling one cached shader per `(Point, Plane)` pair
+without converting points into another algebra.
 """
 from __future__ import annotations
 
@@ -23,10 +24,9 @@ from .camera import Camera, placing, reading
 from .drawing import Draw
 
 
-
 class Lines(NamedTuple):
-    """Level lines every `spacing` of the field, through the level `through`, in `ink`, colour and opacity, `width`
-    pixels wide."""
+    """Periodic level curves repeat every `spacing` units of the scalar field passing through `through`, drawn `width`
+    pixels wide in RGBA `ink`."""
     spacing: float
     through: float
     ink: np.ndarray
@@ -34,15 +34,15 @@ class Lines(NamedTuple):
 
 
 class Level(NamedTuple):
-    """One level line, where the field takes `value`, in `ink`, colour and opacity, `width` pixels wide."""
+    """A single level curve follows `field == value`, drawn `width` pixels wide in RGBA `ink`."""
     value: float
     ink: np.ndarray
     width: float
 
 
 class Bands(NamedTuple):
-    """The field's range filled in bands `spacing` wide from `start`, each in its colour and opacity `[bands, 4]`, the
-    first and last reaching on below and above."""
+    """Piecewise-constant intervals of width `spacing` starting at `start` fill with RGBA `colours` (`[bands, 4]`),
+    clamping values below the first band and above the last."""
     start: float
     spacing: float
     colours: np.ndarray
@@ -51,18 +51,16 @@ class Bands(NamedTuple):
 source = """
 var<storage, read> points: array<Point>;
 var<storage, read> faces: array<vec3<u32>>;
-// The field at the vertices, and the colours there.
 var<storage, read> values: array<f32>;
 var<storage, read> colours: array<vec3<f32>>;
-// How much the colours at the vertices cover, under the bands and lines laid over them.
 var<uniform> opacity: f32;
-// Sets of lines: spacing, the level they pass through, and width in samples; and their inks.
+// Periodic line sets pack (spacing, through, sample_width, 0) beside RGBA line_inks.
 var<storage, read> lines: array<vec4<f32>>;
 var<storage, read> line_inks: array<vec4<f32>>;
-// Single levels: the field's value there, and width in samples; and their inks.
+// Single levels pack (value, sample_width, 0, 0) beside RGBA level_inks.
 var<storage, read> levels: array<vec4<f32>>;
 var<storage, read> level_inks: array<vec4<f32>>;
-// Bands: where they start, their spacing, their first colour and how many there are; and the colours.
+// Band specs pack (start, spacing, colour_offset, n_bands) indexing into RGBA band_colours.
 var<storage, read> bands: array<vec4<f32>>;
 var<storage, read> band_colours: array<vec4<f32>>;
 
@@ -81,10 +79,9 @@ fn place(@builtin(vertex_index) index: u32) -> Corner {
 
 @fragment
 fn shade(corner: Corner) -> @location(0) vec4<f32> {
-    // The field's change across one sample, taken once, where every sample of the triangle runs alike.
+    // Evaluate fwidth once in uniform control flow across the triangle's samples.
     let rate = fwidth(corner.value);
-    // Colour and coverage, the colour weighted by its coverage, so that samples average and layers stack as they
-    // should: each layer lays its ink over what lies beneath by its own coverage.
+    // Accumulate premultiplied RGBA so sample averaging and alpha compositing commute.
     var picture = vec4<f32>(corner.colour * opacity, opacity);
     for (var index = 0u; index < arrayLength(&bands); index++) {
         let band = bands[index];
@@ -108,7 +105,7 @@ fn shade(corner: Corner) -> @location(0) vec4<f32> {
 }
 """
 
-# Stand-ins for no lines, levels or bands, so that the shader's arrays are never empty: clear ink, and no colour.
+# Zero-alpha sentinels keep WGSL storage buffers non-empty when bands, lines, or levels are omitted.
 no_lines = Lines(1.0, 0.0, np.zeros(4), 0.0)
 no_level = Level(0.0, np.zeros(4), 0.0)
 no_bands = Bands(0.0, 1.0, np.zeros((1, 4)))
@@ -116,18 +113,17 @@ no_bands = Bands(0.0, 1.0, np.zeros((1, 4)))
 
 @cache
 def shader(Point: GAType, Plane: GAType) -> Shader:
-    """The shader for meshes whose points are of the type `Point`, read by a camera's planes of the type `Plane`."""
+    """Compile and cache the contour and band shader for vertex type `Point` and camera plane type `Plane`."""
     return Shader(level_lines() + placing(Plane) + source, Point.algebra, dict(Point=Point, Plane=Plane), {})
 
 
 def picture(points: Extensor, topology: Topology, values: np.ndarray, colours: np.ndarray, camera: Camera,
             lines: tuple[Lines, ...] = (), levels: tuple[Level, ...] = (), bands: tuple[Bands, ...] = (),
-            opacity: float = 1.0) -> Draw:
-    """The field `[vertices]` in its colours `[vertices, 3]`, covering by `opacity`, over the mesh at its points, its
-    bands filled and its lines and levels drawn over them, in that order: a layer of colour and coverage, transparent
-    where no triangle lies."""
+            opacity: float = 1.0) -> Draw | np.ndarray:
+    """Vertex `values` (`[V]`) and `colours` (`[V, 3]`) over `topology`'s triangles produce a `Draw` pass (or a
+    transparent `[rows, columns, 4]` array when `topology` has no triangles) with `bands`, `lines`, and `levels`
+    composited over the base shading."""
     side = samples_per_side()
-    # No faces cover nothing: a clear picture.
     if topology.n_elements[2] == 0:
         return np.zeros(camera.shape + (4,))
     lines, levels, bands = lines or (no_lines,), levels or (no_level,), bands or (no_bands,)

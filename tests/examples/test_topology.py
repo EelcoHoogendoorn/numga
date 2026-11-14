@@ -9,7 +9,7 @@ from numga import NumpyContext, stack
 
 from numga.algebras import VGA3D
 from examples.util import shapes
-from numga.topology import Topology, turned
+from numga.topology import Topology, reverse_orientation
 
 mv = NumpyContext(VGA3D).multivector
 # The planes that read a shape's coordinates: of x and of y for a disk, all three for a surface in space.
@@ -192,7 +192,7 @@ def test_a_disk_is_bordered_by_a_closed_loop():
 def test_a_solids_border_is_its_closed_surface_facing_out():
     # Each tetrahedron wound to positive volume, its edges from its first corner a right-handed frame.
     edges = cube_corners[cube_tets[:, 1:]] - cube_corners[cube_tets[:, :1]]     # [tets, 3, 3]
-    solid = Topology(8, np.where((np.linalg.det(edges) > 0)[:, None], cube_tets, turned(cube_tets)))
+    solid = Topology(8, np.where((np.linalg.det(edges) > 0)[:, None], cube_tets, reverse_orientation(cube_tets)))
     surface = solid.border
     assert solid.euler_characteristic == 1 and not solid.is_closed and solid.is_manifold
     assert surface.n_dim == 2 and surface.n_elements[2] == 12

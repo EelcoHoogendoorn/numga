@@ -1,15 +1,32 @@
-"""The products of the algebra, and the versor actions, on values and maps.
+"""Binary products and versor actions in `numga` accept runtime values (`arity == 0` extensors),
+positive-arity maps and forms, and nullary `GAType` placeholders through one uniform call
+interface. Because a nullary `GAType` stands for the identity map on its space, writing
+`mv.x ^ Vector` or `Rotor >> Point` partially binds the exact product or sandwich tensor from
+`OperatorFactory` and returns a typed linear or multilinear `Extensor` with its algebraic traits
+attached.
 
-Each product is one record: the operator factory method that builds it from its operands' types, and
-an extension method that evaluates it on values. On two values the method dispatches on their types,
-and its staged case builds the operator once per pair of types; each call applies the compiled
-operator. A GAType operand is its identity map. Products with these maps produce extensors,
-and the product's laws stay attached to them.
+Each `Product` pairs an `OperatorFactory` builder with a staged `ExtensionMethod` for pure value
+evaluation. When both operands are runtime values, the staged dispatcher compiles the exact
+operator once per pair of `GAType` signatures (and separately for field operands) and applies that
+compiled contraction on every subsequent call. When either operand is a `GAType` or a
+positive-arity `Extensor`, `Product.__call__` builds the exact operator on the operands' types and
+binds whichever operands are `Extensor` instances, promoting out of the algebra's exact context as
+soon as a backend tensor participates.
+
+`VersorAction` (`transform` for `>>` and `reverse_transform` for `<<`) builds a ternary sandwich
+operator with separate left and right versor slots flanking the passenger slot so contraction
+remains linear in each axis. Passing a nullary versor binds the identical `Extensor` into axes `0`
+and `2` simultaneously, forming an equality group on `BindingPlan` that preserves grade and versor
+traits; passing a map as the versor composes it into both outer slots, ordering result inputs as
+left-versor inputs, passenger inputs, and right-versor inputs. Products as maps, partial
+application, and staged table execution are developed in `docs/extensor_syntax.md`,
+`docs/tutorial/extensors/01-products-as-maps.md`, and `docs/internals.md`.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from numga.extension import ExtensionMethod
 from numga.extensor import operands
@@ -19,20 +36,21 @@ from numga.operator.factory import OperatorFactory
 if TYPE_CHECKING:
     from numga.extensor import Extensor
 
-Operand = "GAType | Extensor"
-
 
 _EXPRESSION_KINDS = frozenset((operands.Kind.VALUE, operands.Kind.TYPE, operands.Kind.SUBSPACE))
 
 
-def is_expression_operand(value: object) -> bool:
-    return operands.kind(value) in _EXPRESSION_KINDS
+def is_expression_operand(operand: object) -> bool:
+    """Nullary `GAType` placeholders, `Extensor` instances, and `SubSpace` objects (caught later to
+    report `UnorientedSubspace`) enter algebraic product dispatch."""
+    return operands.kind(operand) in _EXPRESSION_KINDS
 
 
 class Product:
-    """A product of two operands: values, GATypes or maps."""
+    """Binary algebraic products evaluate two values through a staged `ExtensionMethod` and compose
+    maps or nullary `GAType` placeholders by binding an exact `OperatorFactory` tensor."""
 
-    def __init__(self, name: str, build: Callable[[OperatorFactory, GAType, GAType], "Extensor"], doc: str) -> None:
+    def __init__(self, name: str, build: Callable, doc: str) -> None:
         self.name = name
         self.build = build
         self.values = ExtensionMethod(name, takes="two values")
@@ -40,11 +58,10 @@ class Product:
         self.values.register(lambda left, right: True, fields=True, staged=True)(self._operator)
         self.__doc__ = doc
 
-    def _operator(self, left: GAType, right: GAType) -> "Extensor":
-        """The operator for operands of these types, applied to every pair of values of them."""
+    def _operator(self, left: GAType, right: GAType) -> Extensor:
         return self.build(left.algebra.operator, left, right)
 
-    def __call__(self, left: Operand, right: Operand) -> "Extensor":
+    def __call__(self, left: Extensor | GAType, right: Extensor | GAType) -> Extensor:
         if operands.kind(left) is operands.Kind.VALUE and operands.kind(right) is operands.Kind.VALUE:
             return self.values(left, right)
         left_type, right_type = _operand_gatype(left), _operand_gatype(right)
@@ -59,15 +76,10 @@ class Product:
 
 
 class VersorAction:
-    """The action of a versor on a passenger: values, GATypes or maps.
+    """Sandwich actions bind a nullary versor into both outer slots of a ternary operator or
+    compose map operands across left-versor, passenger, and right-versor inputs."""
 
-    A typed versor declares distinct left and right arguments over one carrier. A nullary Extensor
-    binds the same value as both arguments atomically. A map composes with both arguments:
-    the result takes the left copy's inputs, then the passenger's, then the right copy's,
-    and retains the carrier's symmetrized type.
-    """
-
-    def __init__(self, name: str, build: Callable[[OperatorFactory, GAType, GAType], "Extensor"], doc: str) -> None:
+    def __init__(self, name: str, build: Callable, doc: str) -> None:
         self.name = name
         self.build = build
         self.values = ExtensionMethod(name, takes="two values")
@@ -75,24 +87,23 @@ class VersorAction:
         self.values.register(lambda versor, passenger: True, fields=True, staged=True)(self._action)
         self.__doc__ = doc
 
-    def _operator(self, versor: GAType, passenger: GAType) -> "Extensor":
-        # The carrier is what the versor produces; the traits of a map say nothing about the values it produces.
-        carrier = versor.derive.output if versor.arity else versor
-        return self.build(versor.algebra.operator, carrier, passenger)
+    def _operator(self, versor: GAType, passenger: GAType) -> Extensor:
+        # The sandwich acts from the versor's output type; a map's own traits say nothing about the values it returns.
+        output_type = versor.derive.output if versor.arity else versor
+        return self.build(versor.algebra.operator, output_type, passenger)
 
-    def _action(self, versor: GAType, passenger: GAType) -> Callable[["Extensor", "Extensor"], "Extensor"]:
-        """The operator for operands of these types, with the versor bound on both sides."""
+    def _action(self, versor: GAType, passenger: GAType) -> Callable:
         operator = self._operator(versor, passenger)
         return lambda versor, passenger: operator(versor, passenger, versor)
 
-    def __call__(self, versor: Operand, passenger: Operand) -> "Extensor":
+    def __call__(self, versor: Extensor | GAType, passenger: Extensor | GAType) -> Extensor:
         if operands.kind(versor) is operands.Kind.VALUE and operands.kind(passenger) is operands.Kind.VALUE:
             return self.values(versor, passenger)
         versor_type, passenger_type = _operand_gatype(versor), _operand_gatype(passenger)
         if versor_type.algebra is not passenger_type.algebra:
             raise ValueError("transform operands belong to different algebras")
         operation = self._operator(versor_type, passenger_type)
-        bindings: dict[int, Extensor] = {}
+        bindings = {}
         if not isinstance(versor, GAType):
             bindings[0] = versor
             bindings[2] = versor
@@ -106,35 +117,73 @@ class VersorAction:
 
 geometric_product = Product(
     "geometric_product", OperatorFactory.geometric_product,
-    "The geometric product. A nullary GAType is its identity map; Extensor operands compose with the product, "
-    "and the first backend value promotes the whole expression out of the algebra's exact context.",
+    "Clifford multiplication combines metric contraction and exterior spanning across all grades. "
+    "Nullary `GAType` operands act as identity maps, `Extensor` maps compose into the product, "
+    "and the first backend operand promotes the expression out of the exact context.",
 )
-wedge = Product("wedge", OperatorFactory.wedge, "The exterior product.")
-scalar_product = Product("scalar_product", OperatorFactory.scalar_product, "The scalar part of the geometric product.")
-dot = Product("dot", OperatorFactory.dot, "The dot product, the metric on every grade, of intrinsic operands read through their duals.")
-inner = Product("inner", OperatorFactory.inner, "The inner product, the grade |r - s| part of the product.")
-bivector_product = Product("bivector_product", OperatorFactory.bivector_product, "The bivector part of the geometric product.")
-trivector_product = Product("trivector_product", OperatorFactory.trivector_product, "The trivector part of the geometric product.")
-commutator = Product("commutator", OperatorFactory.commutator, "The geometric-product commutator.")
-anticommutator = Product("anticommutator", OperatorFactory.anticommutator, "The geometric-product anticommutator.")
-left_contraction = Product("left_contraction", OperatorFactory.left_contraction, "The left contraction, the grade s - r part of the product.")
-right_contraction = Product("right_contraction", OperatorFactory.right_contraction, "The right contraction, the grade r - s part of the product.")
+wedge = Product(
+    "wedge", OperatorFactory.wedge,
+    "Exterior multiplication spans the grade-`r + s` subspace of blades of grades `r` and `s` without consulting the metric.",
+)
+scalar_product = Product(
+    "scalar_product", OperatorFactory.scalar_product,
+    "Grade-zero projection of the geometric product retains only scalar terms.",
+)
+dot = Product(
+    "dot", OperatorFactory.dot,
+    "Metric pairing across every grade evaluates the scalar part of `left * right.reverse()` on extrinsic operands "
+    "and pairs the duals of intrinsic operands.",
+)
+inner = Product(
+    "inner", OperatorFactory.inner,
+    "Symmetric grade-difference projection retains the grade-`|r - s|` part of the geometric product of grades `r` and `s`.",
+)
+bivector_product = Product(
+    "bivector_product", OperatorFactory.bivector_product,
+    "Grade-two projection of the geometric product retains only bivector terms.",
+)
+trivector_product = Product(
+    "trivector_product", OperatorFactory.trivector_product,
+    "Grade-three projection of the geometric product retains only trivector terms.",
+)
+commutator = Product(
+    "commutator", OperatorFactory.commutator,
+    "Antisymmetric half-difference `(left * right - right * left) / 2` isolates the non-commuting part of the geometric product.",
+)
+anticommutator = Product(
+    "anticommutator", OperatorFactory.anticommutator,
+    "Symmetric half-sum `(left * right + right * left) / 2` isolates the commuting part of the geometric product.",
+)
+left_contraction = Product(
+    "left_contraction", OperatorFactory.left_contraction,
+    "Asymmetric contraction onto the right operand retains the grade-`s - r` part of the geometric product of grades `r` and `s`.",
+)
+right_contraction = Product(
+    "right_contraction", OperatorFactory.right_contraction,
+    "Asymmetric contraction onto the left operand retains the grade-`r - s` part of the geometric product of grades `r` and `s`.",
+)
 left_interior = Product(
-    "left_interior", OperatorFactory.left_interior, "The left interior product: the left complement of left, anti-wedged with right.",
+    "left_interior", OperatorFactory.left_interior,
+    "Anti-wedging the metric left complement of `left` with `right` contracts `left` into `right` through the Hodge complement.",
 )
 right_interior = Product(
-    "right_interior", OperatorFactory.right_interior, "The right interior product: left, anti-wedged with the right complement of right.",
+    "right_interior", OperatorFactory.right_interior,
+    "Anti-wedging `left` with the metric right complement of `right` contracts `right` into `left` through the Hodge complement.",
 )
-regressive = Product("regressive", OperatorFactory.regressive, "The regressive product, measured against the unit volume.")
+regressive = Product(
+    "regressive", OperatorFactory.regressive,
+    "Metric-free meet against the intrinsic unit volume extracts the subspace shared by two operands and flips orientation once.",
+)
 
 transform = VersorAction(
     "transform", OperatorFactory.transform,
-    "The action of a versor on a passenger, `versor >> passenger`: the composition of the reflections "
-    "in the versor's vector factors.",
+    "Sandwich action `versor >> passenger` composes the reflections in the versor's vector factors, keeping grade "
+    "involution and intrinsic reflection signs determined by the versor's parity.",
 )
 reverse_transform = VersorAction(
     "reverse_transform", OperatorFactory.reverse_transform,
-    "The action of the versor's reverse, `versor << passenger`: for a unit versor, the inverse of its transform.",
+    "Reverse sandwich action `versor << passenger` applies `versor.reverse()` on the left and `versor` on the right, "
+    "inverting `transform` for unit versors.",
 )
 
 PRODUCTS = (
@@ -143,19 +192,19 @@ PRODUCTS = (
 )
 
 
-def _operand_gatype(value: object) -> GAType:
-    found = operands.kind(value)
+def _operand_gatype(operand: object) -> GAType:
+    found = operands.kind(operand)
     if found is operands.Kind.SUBSPACE:
         raise UnorientedSubspace()
     if found is operands.Kind.TYPE:
-        if value.arity:
+        if operand.arity:
             raise ValueError(
                 "only a nullary GAType can be used as an expression hole"
             )
-        return value
+        return operand
     if found is operands.Kind.VALUE:
-        return value.gatype
+        return operand.gatype
     raise TypeError(
         "an expression operand must be a GAType or Extensor; "
-        f"got {type(value).__name__}"
+        f"got {type(operand).__name__}"
     )

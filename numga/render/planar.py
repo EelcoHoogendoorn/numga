@@ -1,4 +1,5 @@
-"""The projective plane PGA2D as the pictures of planar scenes share it: its context, its points and its origin."""
+"""`planar` holds the shared projective plane `PGA2D`, its `NumpyContext`, its antivector `Point` type, and its unit
+origin `mv.w.dual()` for planar rendering setups."""
 
 from __future__ import annotations
 

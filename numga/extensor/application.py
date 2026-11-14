@@ -1,9 +1,26 @@
-"""Compile full application once; warm calls only execute and wrap arrays."""
+"""Calling an arity-`k` `Extensor` on `k` operands resolves to a compiled contraction cached on the
+binding `Context` by static algebraic types, backend context keys, and shared-operand identity
+groups. Separating `BindingPlan` construction, output-subspace restriction, and contraction planning
+from per-call evaluation lets repeated calls contract raw backend kernels directly and wrap the
+prepared output without re-validating types. Unary map calls (`arity == 1`) use a flat cache key in
+`unary_application` on the concrete operand or target context to avoid constructing nested signature
+tuples on the hot path.
+
+Compilation branches statically on field axes, exactness, and execution mode. Any call involving
+field axes delegates to `bind_fields`, while purely symbolic exact calls preserve `target.bind`.
+When an exact `SymbolicKernel` target evaluates on a concrete context in `"sparse"` execution mode,
+`compile_sparse_bind` caches sparse index-and-sign plans per symbolic kernel; dense execution
+specializes target materialization, output-blade slicing, and exact-operand lowering at compile
+time, dispatching unary maps through `binding_steps` and higher-arity maps through `ordered_binding`.
+Compiled call closures and dense versus sparse execution are described in `docs/internals.md`
+(section 6).
+"""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from numga.backend.dense import binding_steps, ordered_binding
 from numga.backend.context import binding_context
@@ -19,25 +36,28 @@ if TYPE_CHECKING:
 
 
 def unary_application(
-    cls: type[Extensor], context: Context, gatype: GAType,
+    cls: type[Extensor], target_context: Context, target_type: GAType,
     operand_context: Context, operand_type: GAType,
-) -> Callable[[Extensor, Extensor], Extensor]:
-    # A flat key avoids constructing a nested signature on every unary call.
-    owner = operand_context if context.is_exact else context
-    key = (cls, gatype, context.key, operand_context.key, operand_type)
+) -> Callable:
+    """Caching unary map evaluation on a flat key owned by the concrete operand or target context
+    avoids building nested signature tuples on every call."""
+    owner = operand_context if target_context.is_exact else target_context
+    key = (cls, target_type, target_context.key, operand_context.key, operand_type)
     try:
         return owner._applications[key]
     except KeyError:
-        execute = application(cls, context, gatype, ((operand_context, operand_type),))
+        execute = application(cls, target_context, target_type, ((operand_context, operand_type),))
         owner._applications[key] = execute
         return execute
 
 
 def application(
     cls: type[Extensor], target_context: Context, target_type: GAType,
-    signature: tuple[tuple[Context, GAType], ...],
-    equality_groups: tuple[tuple[int, ...], ...] = (),
-) -> Callable[..., Extensor]:
+    signature: tuple,
+    equality_groups: tuple = (),
+) -> Callable:
+    """Compiling full evaluation once per signature caches the contraction closure on the resolved
+    binding context."""
     context = binding_context(target_context, tuple(c for c, _ in signature))
     key = (cls, target_type, target_context.key,
            tuple((c.key, t) for c, t in signature), equality_groups)
@@ -51,8 +71,9 @@ def application(
 
 def compile_application(
     cls: type[Extensor], context: Context, target_context: Context, target_type: GAType,
-    signature: tuple[tuple[Context, GAType], ...], equality_groups: tuple[tuple[int, ...], ...],
-) -> Callable[..., Extensor]:
+    signature: tuple, equality_groups: tuple,
+) -> Callable:
+    """Static target and operand types determine the contraction plan and kernel preparation once per signature."""
     if len(signature) != target_type.arity:
         raise ValueError(
             f"full application of arity-{target_type.arity} Extensor requires "
@@ -78,7 +99,7 @@ def compile_application(
         from numga.backend.sparse import compile_sparse_bind
 
         @lru_cache(maxsize=None)
-        def sparse_executor(kernel: SymbolicKernel) -> Callable[..., Any]:
+        def sparse_executor(kernel: SymbolicKernel) -> Callable:
             if restrict:
                 kernel = kernel.take(indices, axis=0)
             return compile_sparse_bind(xp, dtype, kernel, plan)
@@ -95,7 +116,7 @@ def compile_application(
                 return wrap(context, result_type, sparse_executor(target._kernel)(operands))
         return execute
 
-    # Preparation is selected statically, not through context.lower per call.
+    # Target slicing and exact-kernel materialization specialize statically at compile time.
     if target_context.is_exact:
         def prepare_target(kernel: SymbolicKernel) -> Any:
             if restrict:
@@ -124,7 +145,7 @@ def compile_application(
 
     ((_, contract),) = binding_steps(xp, plan, (0,))
     if exact_axes:
-        def lowered(left: Any, right: SymbolicKernel, contract: Callable[[Any, Any], Any] = contract) -> Any:
+        def lowered(left: Any, right: SymbolicKernel, contract: Callable = contract) -> Any:
             return contract(left, context.materialize(right))
         contract = lowered
     if prepare_target is None:

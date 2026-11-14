@@ -1,11 +1,48 @@
-"""The single immutable Extensor value at every stage and arity."""
+"""`Extensor` is the single immutable runtime type for multivectors (`arity == 0`), linear maps
+(`arity == 1`), and multilinear maps or forms (`arity >= 2`) across symbolic (`ExactContext`) and
+array (`NumPyContext`, `JaxContext`) backends. Every `Extensor` pairs a backend `Context`, a
+`GAType` carrying static output and input blade subspaces, intrinsic or extrinsic orientations,
+coupled field sites, and proven value traits, and a `kernel` of blade coefficients. Evaluating an
+algebraic expression on a nullary `GAType` or passing a `GAType` as a map argument supplies the
+identity map on that type, so linear and multilinear maps are constructed directly from algebraic
+expressions.
+
+On array backends, leading `shape` axes hold independent batch copies, while trailing
+`structural_shape` axes belong to the `GAType` (coupled field site axes first, followed by output
+and input blade axes). Indexing, iteration, `reshape`, `broadcast_to`, `sum`, `mean`, `stack`, and
+`concatenate` act exclusively on batch axes; on `ExactContext`, `kernel` holds unbatched symbolic
+expressions. `.field(*structural_axes)` promotes trailing batch axes into coupled site axes without
+moving coefficients, `.sites` reduces over site axes while preserving batch axes, and `.batch()`
+demotes site axes back to independent batch axes.
+
+Static blade support propagates through every operation. Selecting a subspace or grade (`select`,
+`select_subspace`, `select_grade`) projects onto the target blades and zero-fills missing ones so
+the output spans the full target subspace, whereas restricting (`restrict`, `restrict_subspace`,
+`restrict_grade`) intersects with existing support without adding zero-filled blades. `cast`
+projects or embeds output blade layout without transferring value traits or changing orientation,
+`with_traits` asserts traits trusted from the caller, and `retyped` widens blade support or forgets
+traits so a narrower initial value can enter a loop carry of wider type.
+
+Algebraic products and extensions follow orientation and metric rules encoded on `GAType`. The
+exterior product (`^`), regressive product (`&`), and interior products depend on subspace
+incidence and orientation alone without consulting the metric; `dual` and `dual_inverse` apply the
+right-Hodge complement while flipping orientation; `dot` pairs same-orientation values (directly on
+extrinsic elements and through duals on intrinsic ones) while cross-orientation pairings belong to
+`&`; and `>>` / `<<` compose reflections with the parity sign required by intrinsic versus
+extrinsic passengers. Domain-specific operations (`inverse`, `exp`, `log`, `solve`, `lstsq`, `eigh`,
+`svd`, and scalar functions) attach via `ExtensionMethod` descriptors and dispatch on the full
+`GAType` signature. The extensor model, operator syntax, sign and orientation conventions, and
+internal table execution are documented in `docs/extensors.md`, `docs/extensor_syntax.md`,
+`docs/conventions.md`, and `docs/internals.md`.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from functools import reduce
 from operator import index as integer_index
 from types import NotImplementedType
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Mapping, Sequence, SupportsIndex
+from typing import TYPE_CHECKING
 
 import numga
 from numga.backend.context import binding_context
@@ -28,12 +65,12 @@ if TYPE_CHECKING:
 
 
 class Extensor:
-    """Immutable exact or backend value representing every extensor arity."""
+    """Multivectors, linear maps, and multilinear forms share one immutable representation pairing a
+    backend `Context`, a `GAType`, and a coefficient `kernel`."""
 
     __slots__ = ("_context", "_gatype", "_kernel")
     __hash__ = None
-    # Arrays are coefficient storage, not operands implicitly converted into
-    # object arrays of Extensors by NumPy's reflected arithmetic.
+    # Disable NumPy ufunc coercion so array * extensor uses Extensor.__rmul__ instead of building an object array.
     __array_ufunc__ = None
     inverse = ExtensionMethod("inverse", takes="a value, or a map between spaces of equal dimension")
     norm_squared = ExtensionMethod("norm_squared", takes="a value", output_orientation=Orientation.extrinsic)
@@ -66,21 +103,21 @@ class Extensor:
     inverse_shirokov = ExtensionMethod("inverse_shirokov", takes="a value")
     inverse_factor = ExtensionMethod("inverse_factor", takes="a value")
     inverse_hitzer = ExtensionMethod("inverse_hitzer", takes="a value whose product with its reverse, times its Clifford conjugate, is a scalar")
-    trace = ExtensionMethod("trace", takes="an extensor with two axes that carry an index, or the two axes to pair", operand_counts=(1, 3))
-    contract = ExtensionMethod("contract", takes="an extensor with two inputs of one space, or the two axes to pair", operand_counts=(1, 3))
+    trace = ExtensionMethod("trace", takes="an extensor with two axes that carry an index, or the two axes to pair", overloads=(1, 3))
+    contract = ExtensionMethod("contract", takes="an extensor with two inputs of one space, or the two axes to pair", overloads=(1, 3))
     outermorphism = ExtensionMethod("outermorphism", takes="a map from vectors to vectors, or from antivectors to antivectors")
-    det = ExtensionMethod("det", takes="a map from a space to itself, or a square form, with an optional metric form on the same space", operand_counts=(1, 2))
+    det = ExtensionMethod("det", takes="a map from a space to itself, or a square form, with an optional metric form on the same space", overloads=(1, 2))
     real = ExtensionMethod("real", takes="an extensor")
     solve = ExtensionMethod("solve", takes="a map between spaces of equal dimension, or a form, with a right-hand side its output takes")
-    lstsq = ExtensionMethod("lstsq", takes="a map or a form, with a right-hand side its output takes and an optional metric form", operand_counts=(2, 3))
+    lstsq = ExtensionMethod("lstsq", takes="a map or a form, with a right-hand side its output takes and an optional metric form", overloads=(2, 3))
     pinv = ExtensionMethod("pinv", takes="a map")
     adjugate = ExtensionMethod("adjugate", takes="a map")
     adjoint = ExtensionMethod("adjoint", takes="a map")
     cholesky = ExtensionMethod("cholesky", takes="a map from a space to itself, or a square form")
-    eig = ExtensionMethod("eig", takes="a map from a space to itself, or a square form, with an optional metric form on the same space", operand_counts=(1, 2))
-    eigvals = ExtensionMethod("eigvals", takes="a map from a space to itself, or a square form, with an optional metric form on the same space", operand_counts=(1, 2))
-    eigh = ExtensionMethod("eigh", takes="a map from a space to itself, or a square form, with an optional metric form on the same space", operand_counts=(1, 2))
-    eigvalsh = ExtensionMethod("eigvalsh", takes="a map from a space to itself, or a square form, with an optional metric form on the same space", operand_counts=(1, 2))
+    eig = ExtensionMethod("eig", takes="a map from a space to itself, or a square form, with an optional metric form on the same space", overloads=(1, 2))
+    eigvals = ExtensionMethod("eigvals", takes="a map from a space to itself, or a square form, with an optional metric form on the same space", overloads=(1, 2))
+    eigh = ExtensionMethod("eigh", takes="a map from a space to itself, or a square form, with an optional metric form on the same space", overloads=(1, 2))
+    eigvalsh = ExtensionMethod("eigvalsh", takes="a map from a space to itself, or a square form, with an optional metric form on the same space", overloads=(1, 2))
     svd = ExtensionMethod("svd", takes="a map")
     svdvals = ExtensionMethod("svdvals", takes="a map")
     sin = ExtensionMethod("sin", takes="a scalar")
@@ -120,7 +157,7 @@ class Extensor:
     scalar_negation = ExtensionMethod("scalar_negation", takes="an extensor")
     pseudoscalar_negation = ExtensionMethod("pseudoscalar_negation", takes="an extensor")
 
-    def __init__(self, context: Context, gatype: GAType, kernel: Any) -> None:
+    def __init__(self, context: Context, gatype: GAType, kernel) -> None:
         kernel = context.prepare_kernel(kernel)
         if gatype.algebra is not context.algebra:
             raise ValueError("GAType and Context belong to different algebras")
@@ -137,12 +174,11 @@ class Extensor:
     @classmethod
     def _from_prepared_kernel(
         cls,
-        context: "Context",
+        context: Context,
         gatype: GAType,
-        kernel: Any,
-    ) -> "Extensor":
-        """Wrap an internal result without coercion, copies, or validation."""
-
+        kernel,
+    ) -> Extensor:
+        """Trusted internal results bypass kernel coercion and shape validation."""
         self = cls.__new__(cls)
         self._context = context
         self._gatype = gatype
@@ -150,7 +186,7 @@ class Extensor:
         return self
 
     @property
-    def context(self) -> "Context":
+    def context(self) -> Context:
         return self._context
 
     @property
@@ -158,7 +194,7 @@ class Extensor:
         return self._gatype
 
     @property
-    def kernel(self) -> Any:
+    def kernel(self):
         return self._kernel
 
     @property
@@ -179,8 +215,8 @@ class Extensor:
 
     @property
     def output_gatype(self) -> GAType:
-        """The nullary type of what this extensor produces, with its orientation: for an expression in
-        GATypes, the type its construction gives the result."""
+        """Stripping a map or form's input axes leaves the nullary `GAType` (blade subspace and
+        orientation) of the values it produces."""
         return self.gatype.derive.output
 
     @property
@@ -197,7 +233,8 @@ class Extensor:
 
     @property
     def shape(self) -> tuple[int, ...]:
-        """The batch axes, in front of the site axes of any field axes and the coefficient axes."""
+        """Batch dimensions precede any field site axes and blade coefficient axes, which belong to
+        `structural_shape`."""
         return self._kernel.shape[: -len(self.gatype.structural_shape)]
 
     @property
@@ -208,7 +245,7 @@ class Extensor:
     def dtype(self) -> np.dtype:
         return self.context.dtype
 
-    def __getitem__(self, index: object) -> "Extensor":
+    def __getitem__(self, index) -> Extensor:
         kernel_index = _batch_kernel_index(index, self.ndim, len(self.structural_shape))
         return type(self)._from_prepared_kernel(self.context, self.gatype, self._kernel[kernel_index])
 
@@ -216,7 +253,6 @@ class Extensor:
         return (self[index] for index in range(self.shape[0]))
 
     def __len__(self) -> int:
-        """The length of the first batch axis; an unbatched extensor has none."""
         if not self.shape:
             raise TypeError("len() of an unbatched Extensor")
         return self.shape[0]
@@ -225,41 +261,37 @@ class Extensor:
         return self.reverse()
 
     def formula(self) -> str:
-        """Expand an exact extensor into equations for its blade coefficients."""
+        """Symbolic extensors expand into human-readable coordinate expressions for each output
+        blade."""
         from numga.operator.format import formula
         return formula(self)
 
     def coefficient_table(self) -> str:
-        """Print-ready blade-labelled coefficients of an unbatched multivector or linear map."""
+        """Unbatched multivectors and linear maps format as a blade-labelled table of coefficients."""
         from numga.operator.format import coefficient_table
         return coefficient_table(self)
 
-    def to_python(self, name: str = "apply") -> str:
-        """Generate standalone Python for an exact extensor's coefficient map."""
+    def to_python(self, function_name: str = "apply") -> str:
+        """Symbolic extensors compile into standalone Python code operating on plain coefficient
+        arrays."""
         from numga.operator.format import python_code
-        return python_code(self, name)
+        return python_code(self, function_name)
 
     @property
-    def at(self) -> "_AtIndexer":
+    def at(self) -> _AtIndexer:
         return _AtIndexer(self)
 
     def map_kernel(
-        self, function: Callable[..., Any], *args: Any,
-        preserve_traits: bool = False, **kwargs: Any,
+        self, function: Callable, *args,
+        preserve_traits: bool = False, **kwargs,
     ) -> Extensor:
-        """Apply a storage operation and wrap its result without validation or copying.
-
-        The callable must not mutate the input and must return storage suitable
-        for this context, retaining the trailing structural axes and their
-        coordinate meaning. Batch axes may change. Explicit traits are dropped
-        unless the caller asserts that this operation preserves them.
-        """
-
+        """Explicit traits are dropped unless `preserve_traits=True`, because arbitrary array
+        operations over batch axes need not preserve whole-value invariants such as unit norm."""
         kernel = function(self._kernel, *args, **kwargs)
         gatype = self.gatype if preserve_traits else self.gatype.derive.structural
         return type(self)._from_prepared_kernel(self.context, gatype, kernel)
 
-    def reshape(self, *shape: SupportsIndex | Sequence[SupportsIndex]) -> Extensor:
+    def reshape(self, *shape: int | tuple[int, ...]) -> Extensor:
         batch_shape = _shape_arguments(shape)
         kernel = self.context.xp.reshape(
             self._kernel,
@@ -267,7 +299,7 @@ class Extensor:
         )
         return type(self)._from_prepared_kernel(self.context, self.gatype, kernel)
 
-    def broadcast_to(self, shape: SupportsIndex | Sequence[SupportsIndex]) -> Extensor:
+    def broadcast_to(self, shape: int | tuple[int, ...]) -> Extensor:
         batch_shape = _shape_arguments((shape,))
         kernel = self.context.xp.broadcast_to(
             self._kernel,
@@ -280,20 +312,20 @@ class Extensor:
         axis: int | tuple[int, ...] | None = None,
         *,
         keepdims: bool = False,
-    ) -> "Extensor":
+    ) -> Extensor:
         axes = _batch_axes(axis, self.ndim)
         kernel = self.context.xp.sum(self._kernel, axis=axes, keepdims=keepdims)
         return type(self)._from_prepared_kernel(self.context, self.gatype.derive.structural, kernel)
 
-    def cumsum(self, axis: int) -> "Extensor":
-        """Running sums along one batch axis."""
+    def cumsum(self, axis: int) -> Extensor:
+        """Running sums accumulate independently along a batch axis while dropping nonlinear traits
+        such as unit norm."""
         kernel = self.context.xp.cumsum(self._kernel, axis=_existing_axis(axis, self.ndim))
         return type(self)._from_prepared_kernel(self.context, self.gatype.derive.structural, kernel)
 
-    def cumprod(self, axis: int) -> "Extensor":
-        """Running geometric products along one batch axis, each later element multiplying from the
-        left: `x0`, `x1 * x0`, `x2 * x1 * x0`, so a running product of rotors applies them in turn.
-        The type must be closed under the product, so that every running product has it."""
+    def cumprod(self, axis: int) -> Extensor:
+        """Later elements multiply on the left (`x0`, `x1 * x0`, `x2 * x1 * x0`) so a sequence of
+        rotors composes in application order."""
         square = self.algebra.operator.geometric_product(self.gatype, self.gatype)
         if self.arity or not square.output_subspace.support_is_subset_of(self.output_subspace):
             raise GATypeError(f"cumprod needs a type closed under the geometric product; {self.gatype} is not")
@@ -308,7 +340,7 @@ class Extensor:
         axis: int | tuple[int, ...] | None = None,
         *,
         keepdims: bool = False,
-    ) -> "Extensor":
+    ) -> Extensor:
         axes = _batch_axes(axis, self.ndim)
         kernel = self.context.xp.mean(self._kernel, axis=axes, keepdims=keepdims)
         return type(self)._from_prepared_kernel(self.context, self.gatype.derive.structural, kernel)
@@ -318,7 +350,7 @@ class Extensor:
         cls,
         extensors: Iterable[Extensor],
         axis: int = 0,
-    ) -> "Extensor":
+    ) -> Extensor:
         values = _collection_values(extensors)
         first = values[0]
         gatype = _stacked_type(values)
@@ -334,7 +366,7 @@ class Extensor:
         cls,
         extensors: Iterable[Extensor],
         axis: int = 0,
-    ) -> "Extensor":
+    ) -> Extensor:
         values = _collection_values(extensors)
         first = values[0]
         gatype = _stacked_type(values)
@@ -345,25 +377,26 @@ class Extensor:
         )
         return cls._from_prepared_kernel(first.context, gatype, kernel)
 
-    def field(self, *axes: int) -> Extensor:
-        """The last batch axes read as the sites of axes, the output 0 and the inputs from 1, one axis
-        per axis in axis order: `values.field()` is a field over the last batch axis, and
-        `pair_maps.field(0, 1)` a field map from a batch of maps over pairs of an output and an input
-        site. A field is a collection whose elements are coupled, where a batch holds independent
-        copies. The coefficients are untouched, so axes that already range over sites must come after
-        these."""
-        axes = axes or (0,)
-        if self.context.is_exact or self.ndim < len(axes):
+    def field(self, *structural_axes: int) -> Extensor:
+        """Trailing batch axes become coupled site axes on `structural_axes` (`0` for output,
+        `1..arity` for inputs), distinguishing coupled field sites from independent batch copies
+        without moving coefficients."""
+        structural_axes = structural_axes or (0,)
+        if self.context.is_exact or self.ndim < len(structural_axes):
             raise TypeError("a field takes its sites from the last batch axes of a backend value")
-        if list(axes) != sorted(set(axes)) or any(field <= axes[-1] for field, _ in self.gatype.fields):
-            raise GATypeError(f"axes {axes} of {self.gatype.signature} are not in order before its field axes")
-        # Their site axes come first among the site axes, where the last batch axes already sit.
-        fields = tuple(zip(axes, self.shape[self.ndim - len(axes):])) + self.gatype.fields
+        if list(structural_axes) != sorted(set(structural_axes)) or any(
+            field <= structural_axes[-1] for field, _ in self.gatype.fields
+        ):
+            raise GATypeError(
+                f"axes {structural_axes} of {self.gatype.signature} are not in order before its field axes"
+            )
+        # Prepend the promoted batch axes ahead of any existing site axes so kernel layout stays unchanged.
+        fields = tuple(zip(structural_axes, self.shape[self.ndim - len(structural_axes):])) + self.gatype.fields
         return type(self)._from_prepared_kernel(self.context, self.gatype.derive.with_fields(fields), self._kernel)
 
     def on_diagonal(self) -> Extensor:
-        """A field of maps placed on the site diagonal: from `X[n] <- Y` the field map `X[n] <- Y[n]`
-        that acts on the element at each site by the map at that site, and on no other."""
+        """A field of per-site maps `X[n] <- Y` becomes the site-diagonal field map `X[n] <- Y[n]`
+        acting within each site alone."""
         if self.arity < 1 or [axis for axis, _ in self.gatype.fields] != [0]:
             raise GATypeError(f"on_diagonal places a field of maps, X[n] <- Y, on its sites; {self.gatype.signature} is not one")
         xp, sites = self.context.xp, self.gatype.site_shape[0]
@@ -373,10 +406,11 @@ class Extensor:
         return type(self)._from_prepared_kernel(self.context, self.gatype.derive.structural.derive.with_fields(fields), kernel)
 
     def batch(self) -> Extensor:
-        """Every site axis read as a batch axis again, the coefficients untouched."""
+        """Demoting coupled field site axes back to trailing batch axes treats every site as an
+        independent copy again without moving coefficients."""
         return type(self)._from_prepared_kernel(self.context, self.gatype.derive.plain, self._kernel)
 
-    def bind(self, *args: Extensor | Mapping[int, Extensor]) -> Extensor:
+    def bind(self, *args: Extensor | dict[int, Extensor]) -> Extensor:
         raw_operands = normalize_bind_arguments(self.arity, args)
         if not raw_operands:
             return self
@@ -384,15 +418,15 @@ class Extensor:
             return bind_fields(self, raw_operands)
 
         plan = BindingPlan.build(self.gatype, raw_operands)
-        operands: dict[int, Extensor] = {}
-        prepared_operands: dict[int, Extensor] = {}
+        operands = {}
+        prepared_operands = {}
         context = binding_context(
             self.context, tuple(raw_operands[axis].context for axis in plan.axes),
         )
         target = self
         output = plan.result_subspaces[0]
         if output is not self.output_subspace:
-            # Remove statically impossible rows before lowering or contraction.
+            # Slice away statically zero output blades before lowering or contracting.
             indices = plan.output_indices
             kernel = (
                 self._kernel.take(indices, axis=0)
@@ -406,8 +440,7 @@ class Extensor:
             concrete = prepared_operands.get(identity)
             if concrete is None:
                 concrete = context.lower(operand)
-                # Lower each distinct argument once per atomic bind. Besides
-                # avoiding duplicate work, this retains same-object evidence.
+                # Lower each distinct argument once per bind so repeated arguments keep object identity.
                 prepared_operands[identity] = concrete
             operands[axis] = concrete
 
@@ -416,9 +449,8 @@ class Extensor:
         return type(self)._from_prepared_kernel(context, result_gatype, result)
 
     def __call__(self, *operands: Extensor | GAType) -> Extensor:
-        """Apply to operands in argument order. A partial call binds the leading arguments. A GAType
-        is its identity map: form(Vector, v) is the linear form with second argument v, and a subtype
-        restricts the corresponding argument's domain. A subspace, which has no orientation, is refused."""
+        """Fewer than `arity` arguments bind leading inputs into a lower-arity map, and passing a
+        `GAType` supplies its identity map (or restricts that input to a subtype)."""
         if any(isinstance(operand, SubSpace) for operand in operands):
             raise UnorientedSubspace()
         if any(isinstance(operand, GAType) for operand in operands):
@@ -434,8 +466,7 @@ class Extensor:
         if len(operands) == 1:
             operand = operands[0]
             if not isinstance(operand, Extensor):
-                # An operand numga does not know, a sparse extensor among them, takes the map, as it takes the
-                # reflected operators.
+                # Delegate unary application to external operand types such as Sparse.
                 return operand._applied_by(self)
             execute = unary_application(
                 type(self), self._context, self._gatype,
@@ -449,9 +480,9 @@ class Extensor:
         )
         return execute(self, *operands)
 
-    def squeeze_output(self) -> "Extensor":
-        """Drop output coordinates proved zero by an exact kernel."""
-
+    def squeeze_output(self) -> Extensor:
+        """Dropping output blades whose symbolic expressions simplify to identically zero narrows an
+        exact extensor's static support."""
         if not self.context.is_exact:
             raise TypeError("output squeezing requires an exact Extensor")
         indices = self.kernel.output_nonzero_indices()
@@ -461,15 +492,12 @@ class Extensor:
         gatype = rules.SQUEEZE.result((self.gatype,), (output,) + self.input_subspaces)
         return type(self)._from_prepared_kernel(self.context, gatype, self.kernel.take(indices, axis=0))
 
-    def materialize(self, context: "Context") -> "Extensor":
+    def materialize(self, context: Context) -> Extensor:
         return context.lower(self)
 
-    def cast(self, target: SubSpace | GAType) -> "Extensor":
-        """Explicitly project or embed every output into a subspace, or into a type's output subspace.
-
-        A type's traits are not asserted: projecting onto rotor coefficients does not make a rotor.
-        """
-
+    def cast(self, target: SubSpace | GAType) -> Extensor:
+        """Output blades are projected or zero-embedded into `target` without transferring algebraic
+        traits, since matching a rotor's layout does not establish the rotor constraint."""
         target_subspace = target.output_subspace if isinstance(target, GAType) else target
         if isinstance(target, GAType) and target.orientation is not self.gatype.orientation:
             raise GATypeError(
@@ -483,54 +511,59 @@ class Extensor:
 
     @property
     def select(self) -> SelectNamespace:
-        """Select exact output support by grade or SubSpace constructor name."""
-
+        """Selecting a grade or named subspace (`x.select.bivector`, `x.select[2]`) projects onto
+        those output blades and zero-fills any missing ones so the output spans the full target
+        subspace (unlike `restrict`, which keeps only blades already in `self`)."""
         return SelectNamespace(self)
 
     @property
     def sites(self) -> SitesNamespace:
-        """Reductions over the sites of a field's output: `energy.sites.sum()`, `positions.sites.mean()`."""
-
+        """Reductions on `.sites` contract coupled field site axes (`energy.sites.sum()`) while
+        leaving batch axes intact."""
         return SitesNamespace(self)
 
     @property
     def restrict(self) -> RestrictNamespace:
-        """Intersect static output support by grade or constructor name."""
-
+        """Restricting to a grade or named subspace (`x.restrict.bivector`, `x.restrict[2]`)
+        intersects output support with the target, keeping only blades already present in `self`
+        without adding zero-filled blades (unlike `select`, which pads to the full target subspace)."""
         return RestrictNamespace(self)
 
-    def select_subspace(self, subspace: SubSpace) -> "Extensor":
-        """Select every requested output blade, filling missing blades with zero."""
-
+    def select_subspace(self, subspace: SubSpace) -> Extensor:
+        """Projecting onto `subspace` keeps matching output blades and zero-fills any missing ones
+        so the output subspace becomes all of `subspace` (unlike `restrict_subspace`, which keeps
+        only blades already in `self`)."""
         return self.cast(subspace)
 
-    def restrict_subspace(self, subspace: SubSpace) -> "Extensor":
-        """Keep only output blades present in both static SubSpaces."""
-
+    def restrict_subspace(self, subspace: SubSpace) -> Extensor:
+        """Intersecting output support with `subspace` keeps only blades already present in `self`
+        without zero-filling missing blades of `subspace` (unlike `select_subspace`, which pads to
+        all of `subspace`)."""
         return self.algebra.operator.restrict(
             self.gatype.derive.output, subspace,
         ).bind({0: self})
 
-    def select_grade(self, grade: int) -> "Extensor":
+    def select_grade(self, grade: int) -> Extensor:
+        """Grade selection projects onto grade `grade` and zero-fills missing blades so the output
+        spans the full grade subspace (unlike `restrict_grade`, which keeps only grade-`grade`
+        blades already in `self`)."""
         return self.select_subspace(self.algebra.subspace.k_vector(grade))
 
-    def restrict_grade(self, grade: int) -> "Extensor":
+    def restrict_grade(self, grade: int) -> Extensor:
+        """Grade restriction keeps only grade-`grade` blades already present in `self` without
+        adding zero-filled blades (unlike `select_grade`, which pads to the full grade subspace)."""
         return self.restrict_subspace(self.algebra.subspace.k_vector(grade))
 
     def with_traits(self, *traits: Trait) -> Extensor:
-        """Trust additional immutable facts without changing coefficients."""
-
+        """Caller-asserted traits are trusted without inspecting coefficients."""
         gatype = self.gatype.derive.with_traits(*traits)
         if gatype is self.gatype:
             return self
         return type(self)._from_prepared_kernel(self.context, gatype, self._kernel)
 
     def retyped(self, gatype: GAType) -> Extensor:
-        """The same value under exactly the given type: its layout embedded into the type's, and of its facts only
-        those the type states, each of which the value must already carry. It only forgets, which is always sound: a
-        value built with more facts than a loop's steps keep, a motor composed of two turns, can start a loop that
-        carries the steps' type."""
-
+        """Forgetting traits that `gatype` omits lets a more specific initial value (such as a
+        product of two reflections) enter a loop carry typed as a general motor."""
         if gatype.arity or self.gatype.arity:
             raise TypeError(f"retyped takes values, not maps; got {self.gatype} and {gatype}")
         embedded = self.cast(gatype)
@@ -541,64 +574,67 @@ class Extensor:
 
     def _symmetric_product(
         self, transform: str, *, scalar_only: bool = False,
-    ) -> "Extensor":
-        """Measure coefficients on the carrier proved by this whole-value type."""
-
+    ) -> Extensor:
         operator = self.algebra.operator._symmetric_product(
             self.gatype.derive.plain, transform, scalar_only=scalar_only,
         )
         return operator(self, self)
 
-    def squared(self) -> "Extensor":
-        """Evaluate this value's square with structural cancellations combined."""
-
+    def squared(self) -> Extensor:
+        """Squaring an extensor combines cross-blade cancellations from sharing one operand, giving
+        tighter static support than a general `x * y` product."""
         return self._symmetric_product("identity")
 
-    def symmetric_reverse_product(self) -> "Extensor":
-        """Measure ``x * reverse(x)``, never substituting one for coefficients."""
-
+    def symmetric_reverse_product(self) -> Extensor:
+        """Coefficients are multiplied out even when `self` carries a unit-norm trait, so numerical
+        drift from unity remains measurable."""
         return self._symmetric_product("reverse")
 
-    def scalar_norm_squared(self) -> "Extensor":
-        """The scalar part of ``x * reverse(x)``, with only that part built."""
-
+    def scalar_norm_squared(self) -> Extensor:
+        """Evaluating only the scalar part of `self * self.reverse()` measures Euclidean coefficient
+        magnitude squared without computing higher-grade blades."""
         return self._symmetric_product("reverse", scalar_only=True)
 
-    def symmetric_conjugate_product(self) -> "Extensor":
+    def symmetric_conjugate_product(self) -> Extensor:
         return self._symmetric_product("clifford_conjugate")
 
-    def symmetric_scalar_negation_product(self) -> "Extensor":
+    def symmetric_scalar_negation_product(self) -> Extensor:
         return self._symmetric_product("scalar_negation")
 
-    def symmetric_pseudoscalar_negation_product(self) -> "Extensor":
+    def symmetric_pseudoscalar_negation_product(self) -> Extensor:
         return self._symmetric_product("pseudoscalar_negation")
 
-    def symmetric_involute_product(self) -> "Extensor":
+    def symmetric_involute_product(self) -> Extensor:
         return self._symmetric_product("involute")
 
     def dual(self) -> Extensor:
+        """The right-Hodge complement maps each basis blade to its complement signed by its
+        negative-metric factors, flipping intrinsic and extrinsic orientation without degenerating
+        along null directions."""
         return self.algebra.operator.dual(self.gatype.derive.plain.derive.output)(self)
 
     def dual_inverse(self) -> Extensor:
+        """The inverse right-Hodge complement satisfies `x.dual().dual_inverse() == x`, undoing the
+        grade-dependent sign that applying `dual()` twice introduces."""
         return self.algebra.operator.dual_inverse(self.gatype.derive.plain.derive.output)(self)
 
-    def __pos__(self) -> "Extensor":
+    def __pos__(self) -> Extensor:
         return self
 
-    def __neg__(self) -> "Extensor":
+    def __neg__(self) -> Extensor:
         gatype = rules.NEGATE.result((self.gatype,), self.gatype.subspaces).derive.with_fields(self.gatype.fields)
         return type(self)._from_prepared_kernel(self.context, gatype, -self._kernel)
 
-    def __lt__(self, other: object) -> Any:
+    def __lt__(self, other: object):
         return self.less(operands.compared(self._context, other))
 
-    def __le__(self, other: object) -> Any:
+    def __le__(self, other: object):
         return self.less_equal(operands.compared(self._context, other))
 
-    def __gt__(self, other: object) -> Any:
+    def __gt__(self, other: object):
         return self.greater(operands.compared(self._context, other))
 
-    def __ge__(self, other: object) -> Any:
+    def __ge__(self, other: object):
         return self.greater_equal(operands.compared(self._context, other))
 
     def __add__(self, other: object) -> Extensor | NotImplementedType:
@@ -617,22 +653,22 @@ class Extensor:
         other = operands.linear(self._context, other)
         return NotImplemented if other is None else Extensor.subtract(other, self)
 
-    def __mul__(self, scalar: object) -> Extensor:
-        if numga.expression.is_expression_operand(scalar):
-            return numga.expression.geometric_product(self, scalar)
-        found = operands.kind(scalar)
+    def __mul__(self, other: object) -> Extensor | NotImplementedType:
+        if numga.expression.is_expression_operand(other):
+            return numga.expression.geometric_product(self, other)
+        found = operands.kind(other)
         if found is operands.Kind.ARRAY:
-            return numga.expression.geometric_product(self, operands.batch(self._context, scalar))
+            return numga.expression.geometric_product(self, operands.batch(self._context, other))
         if found is not operands.Kind.NUMBER:
             return NotImplemented
-        scalar = self.context.prepare_scalar(scalar)
+        scalar = self.context.prepare_scalar(other)
         gatype = rules.SCALE.result((self.gatype,), self.gatype.subspaces).derive.with_fields(self.gatype.fields)
         return type(self)._from_prepared_kernel(self.context, gatype, self._kernel * scalar)
 
-    def __rmul__(self, scalar: object) -> Extensor:
-        if numga.expression.is_expression_operand(scalar):
-            return numga.expression.geometric_product(scalar, self)
-        return self * scalar
+    def __rmul__(self, other: object) -> Extensor | NotImplementedType:
+        if numga.expression.is_expression_operand(other):
+            return numga.expression.geometric_product(other, self)
+        return self * other
 
     def __truediv__(self, other: object) -> Extensor | NotImplementedType:
         if operands.kind(other) is operands.Kind.NUMBER:
@@ -651,20 +687,25 @@ class Extensor:
         return self.power(exponent)
 
     def wedge(self, other: Extensor | GAType) -> Extensor:
+        """The exterior product (`self ^ other`) keeps grade `r + s` of the geometric product,
+        vanishing along shared directions."""
         return numga.expression.wedge(self, other)
 
     def scalar_product(self, other: Extensor | GAType) -> Extensor:
+        """The scalar product takes the grade-zero part of `self * other` without reversing either
+        factor (unlike `dot`)."""
         return numga.expression.scalar_product(self, other)
 
     def dot(self, other: Extensor | GAType) -> Extensor:
-        """The metric on every grade, read as the operands' orientation reads them: of extrinsic values the scalar part
-        of `self * other.reverse()`, positive on every blade of a Euclidean signature, and of intrinsic values, points,
-        directions and their joins, that of their duals, so that a direction's dot with itself is its length squared
-        in space, in a spacetime and in a projective algebra alike. An extrinsic value and an intrinsic one pair by
-        the regressive product instead, and their dot is refused."""
+        """Extrinsic values pair by the scalar part of `self * other.reverse()`, while intrinsic
+        values (points, directions, and their joins) pair through their duals so a direction dotted
+        with itself gives its squared length in space, spacetime, and projective algebras alike.
+        Cross-orientation pairings belong to the regressive product `&` rather than `dot`."""
         return numga.expression.dot(self, other)
 
     def inner(self, other: Extensor | GAType) -> Extensor:
+        """The symmetric metric inner product (`self | other`) keeps grade `|r - s|` of the
+        geometric product for grades `r` and `s`."""
         return numga.expression.inner(self, other)
 
     def bivector_product(self, other: Extensor | GAType) -> Extensor:
@@ -674,35 +715,49 @@ class Extensor:
         return numga.expression.trivector_product(self, other)
 
     def commutator(self, other: Extensor | GAType) -> Extensor:
+        """The half-difference `(self * other - other * self) / 2` gives the bivector Lie bracket
+        without an extra factor of two."""
         return numga.expression.commutator(self, other)
 
     def anticommutator(self, other: Extensor | GAType) -> Extensor:
+        """The half-sum `(self * other + other * self) / 2` keeps the commuting part of
+        `self * other`."""
         return numga.expression.anticommutator(self, other)
 
     def left_contraction(self, other: Extensor | GAType) -> Extensor:
+        """The left metric contraction keeps grade `s - r` of `self * other` for grades `r` and `s`,
+        vanishing when `r > s`."""
         return numga.expression.left_contraction(self, other)
 
     def right_contraction(self, other: Extensor | GAType) -> Extensor:
+        """The right metric contraction keeps grade `r - s` of `self * other` for grades `r` and
+        `s`, vanishing when `s > r`."""
         return numga.expression.right_contraction(self, other)
 
     def left_interior(self, other: Extensor | GAType) -> Extensor:
+        """The left interior product anti-wedges the left complement of `self` with `other`, staying
+        non-degenerate along null directions."""
         return numga.expression.left_interior(self, other)
 
     def right_interior(self, other: Extensor | GAType) -> Extensor:
+        """The right interior product anti-wedges `self` with the right complement of `other`,
+        staying non-degenerate along null directions."""
         return numga.expression.right_interior(self, other)
 
     def regressive(self, other: Extensor | GAType) -> Extensor:
+        """The metric-free regressive product (`self & other`) measures complementary blades against
+        the intrinsic unit volume (`left ^ right == (left & right) * antiscalar`), joining intrinsic
+        elements and pairing opposite orientations."""
         return numga.expression.regressive(self, other)
 
     def transform(self, passenger: Extensor | GAType) -> Extensor:
-        """The versor's action on the passenger, `self >> passenger`: the composition of the reflections
-        in its vector factors. A reflection in a unit vector `m` takes an extrinsic `x` to
-        `m * x.involute() * m.inverse()`, and an intrinsic `x` to its negative."""
+        """Versor action composes reflections in vector factors; reflecting in unit `m` sends
+        extrinsic `x` to `m * x.involute() * m.inverse()` and negates that result on intrinsic `x`."""
         return numga.expression.transform(self, passenger)
 
     def reverse_transform(self, passenger: Extensor | GAType) -> Extensor:
-        """The action of the versor's reverse, `self << passenger`: defined for every value, and for a
-        unit versor the inverse of `self >> passenger`."""
+        """Applying the reversed versor (`self << passenger`) inverts `self >> passenger` whenever
+        `self` has unit norm."""
         return numga.expression.reverse_transform(self, passenger)
 
     def __rshift__(self, other: Extensor | GAType) -> Extensor:
@@ -711,26 +766,26 @@ class Extensor:
     def __lshift__(self, other: Extensor | GAType) -> Extensor:
         return self.reverse_transform(other)
 
-    # Operands numga does not know, a sparse extensor among them, get their reflected operator.
-    def __xor__(self, other: Extensor | GAType) -> Extensor:
+    # Return NotImplemented for unknown operand types such as Sparse so their reflected operators run.
+    def __xor__(self, other: Extensor | GAType) -> Extensor | NotImplementedType:
         return self.wedge(other) if numga.expression.is_expression_operand(other) else NotImplemented
 
-    def __rxor__(self, other: Extensor | GAType) -> Extensor:
+    def __rxor__(self, other: Extensor | GAType) -> Extensor | NotImplementedType:
         return numga.expression.wedge(other, self) if numga.expression.is_expression_operand(other) else NotImplemented
 
-    def __and__(self, other: Extensor | GAType) -> Extensor:
+    def __and__(self, other: Extensor | GAType) -> Extensor | NotImplementedType:
         return self.regressive(other) if numga.expression.is_expression_operand(other) else NotImplemented
 
-    def __rand__(self, other: Extensor | GAType) -> Extensor:
+    def __rand__(self, other: Extensor | GAType) -> Extensor | NotImplementedType:
         return numga.expression.regressive(other, self) if numga.expression.is_expression_operand(other) else NotImplemented
 
-    def __or__(self, other: Extensor | GAType) -> Extensor:
+    def __or__(self, other: Extensor | GAType) -> Extensor | NotImplementedType:
         return self.inner(other) if numga.expression.is_expression_operand(other) else NotImplemented
 
-    def __ror__(self, other: Extensor | GAType) -> Extensor:
+    def __ror__(self, other: Extensor | GAType) -> Extensor | NotImplementedType:
         return numga.expression.inner(other, self) if numga.expression.is_expression_operand(other) else NotImplemented
 
-    def _require_compatible(self, other: "Extensor") -> None:
+    def _require_compatible(self, other: Extensor) -> None:
         if not self.context.is_compatible_with(other.context):
             raise ValueError("Extensor contexts are incompatible")
         if self.gatype != other.gatype:
@@ -746,17 +801,15 @@ class _AtIndexer:
     def __init__(self, extensor: Extensor) -> None:
         self._extensor = extensor
 
-    def __getitem__(self, index: object) -> "_AtUpdate":
+    def __getitem__(self, index: object) -> _AtUpdate:
         return _AtUpdate(self._extensor, index)
 
 
 def _embed_kernel(
-    context: "Context",
+    context: Context,
     value: Extensor,
     target_axes: tuple[SubSpace, ...],
-) -> Any:
-    """Zero-embed every structural axis into the addition result axes."""
-
+):
     kernel = value._kernel
     structural_ndim = len(value.axes)
     for axis, (source, target) in enumerate(zip(value.axes, target_axes)):
@@ -781,10 +834,9 @@ class _AtUpdate:
         return self._update(self._extensor.context.functional_set, value)
 
     def add(self, value: object) -> Extensor:
-        """Add the value at the index; where the index repeats, the additions accumulate."""
         return self._update(self._extensor.context.functional_add, value)
 
-    def _update(self, update: Callable[[Any, object, object], Any], value: object) -> Extensor:
+    def _update(self, update: Callable, value: object) -> Extensor:
         target = self._extensor
         kernel_index = _batch_kernel_index(
             self._index,
@@ -796,14 +848,12 @@ class _AtUpdate:
             replacement = value._kernel
         else:
             replacement = value
-        # The new elements need not share the target's traits.
+        # Drop explicit traits because elementwise updates need not preserve whole-value invariants.
         kernel = update(target._kernel, kernel_index, replacement)
         return type(target)._from_prepared_kernel(target.context, target.gatype.derive.structural, kernel)
 
 
 def _stacked_type(values: tuple[Extensor, ...]) -> GAType:
-    """The type of values set side by side along a batch axis: each structural output axis the union
-    of theirs, zero-embedded."""
     gatypes = tuple(value.gatype for value in values)
     first = gatypes[0]
     if all(gatype == first for gatype in gatypes[1:]):
@@ -825,25 +875,20 @@ def _collection_values(extensors: Iterable[Extensor]) -> tuple[Extensor, ...]:
     return values
 
 
-def _shape_arguments(
-    arguments: tuple[SupportsIndex | Sequence[SupportsIndex], ...],
-) -> tuple[int, ...]:
+def _shape_arguments(arguments: tuple) -> tuple[int, ...]:
     if len(arguments) == 1 and isinstance(arguments[0], (tuple, list)):
         arguments = tuple(arguments[0])
     return tuple(integer_index(size) for size in arguments)
 
 
-def _batch_axes(
-    axis: int | tuple[int, ...] | None,
-    ndim: int,
-) -> tuple[int, ...]:
+def _batch_axes(axis: int | tuple[int, ...] | None, ndim: int) -> tuple[int, ...]:
     if axis is None:
         return tuple(range(ndim))
     raw_axes = axis if isinstance(axis, tuple) else (axis,)
     return tuple(_existing_axis(item, ndim) for item in raw_axes)
 
 
-def _existing_axis(axis: SupportsIndex, ndim: int) -> int:
+def _existing_axis(axis: int, ndim: int) -> int:
     normalized = integer_index(axis)
     if normalized < 0:
         normalized += ndim
@@ -852,7 +897,7 @@ def _existing_axis(axis: SupportsIndex, ndim: int) -> int:
     return normalized
 
 
-def _insertion_axis(axis: SupportsIndex, ndim: int) -> int:
+def _insertion_axis(axis: int, ndim: int) -> int:
     normalized = integer_index(axis)
     if normalized < 0:
         normalized += ndim + 1
@@ -865,7 +910,7 @@ def _batch_kernel_index(
     index: object,
     batch_ndim: int,
     structural_ndim: int,
-) -> tuple[object, ...]:
+) -> tuple:
     items = list(index if isinstance(index, tuple) else (index,))
     ellipses = [position for position, item in enumerate(items) if item is Ellipsis]
     if len(ellipses) > 1:
@@ -906,7 +951,6 @@ def concatenate(extensors: Iterable[Extensor], axis: int = 0) -> Extensor:
 
 
 def _branch(value: Extensor | int, other: Extensor) -> Extensor:
-    """A branch of `where`: an extensor as it is, or a plain zero as the zero of the other branch's type."""
     if isinstance(value, Extensor):
         return value
     if value != 0:
@@ -914,21 +958,18 @@ def _branch(value: Extensor | int, other: Extensor) -> Extensor:
     return other.context.extensor(other.gatype.derive.structural, other.context.xp.zeros_like(other.kernel))
 
 
-def where(condition: Any, if_true: Extensor | int, if_false: Extensor | int) -> Extensor:
-    """Each element of `if_true` where the condition, an array over the batch axes, holds, and of `if_false` where it
-    does not, as `np.where`: a value not chosen never reaches the result, as it would through a blend by a mask, so
-    an element may hold anything, a 0/0 included, where it is not chosen. On fields the condition ranges over the batch
-    axes and then the sites, as a field's comparison gives it, `where(depths > 0, ...)`, choosing site by site; whole
-    fields are chosen by a condition over the batch axes with the sites' axes added, `where(mask[..., None], ...)`.
-    Either branch may be a plain zero, the other branch's type's zero, `where(depths > 0, stiffness, 0)`."""
+def where(condition, if_true: Extensor | int, if_false: Extensor | int) -> Extensor:
+    """Elementwise selection avoids mask multiplication so undefined values (`0 / 0`) in the
+    unchosen branch never propagate. On fields, `condition` ranges over batch axes followed by
+    output sites (`depths > 0` selects site by site; `mask[..., None]` selects whole fields), and
+    literal `0` stands for the zero of the other branch's type."""
     if_true, if_false = _branch(if_true, if_false), _branch(if_false, if_true)
     context = binding_context(if_true.context, (if_false.context,))
     values = (context.lower(if_true), context.lower(if_false))
     gatype = _stacked_type(values)
     kernels = tuple(_embed_kernel(context, value, gatype.subspaces) for value in values)
     mask = context.xp.asarray(condition)
-    # The sites of the values' output, which lead the structural shape: the condition's last axes, on a field, each of
-    # the sites' size or of one, broadcast across them.
+    # Output site axes lead structural_shape; trailing mask axes must broadcast against them.
     sites = tuple(size for axis, size in gatype.fields if axis == 0)
     if mask.ndim < len(sites) or not all(size in (1, site)
                                          for size, site in zip(mask.shape[mask.ndim - len(sites):], sites)):

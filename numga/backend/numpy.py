@@ -1,4 +1,15 @@
-"""NumPy policy for the shared concrete Extensor runtime."""
+"""Host-memory execution stores concrete coefficients in `np.ndarray` buffers, serving as the default
+runtime constructed by `Algebra` factories. Defensive copies on ingress (`prepare_kernel`) and
+out-of-place copies on indexed updates (`functional_set`, `functional_add`) keep `Extensor` instances
+immutable, and `binding_context` promotes NumPy operands as host constants whenever they meet a
+`JaxContext` or `TorchContext` operand of the same algebra.
+
+Generalized eigenvalue routines (`generalized_eig`, `generalized_eigh`, `generalized_eigvals`,
+`generalized_eigvalsh`) override the base Cholesky and linear-solve reductions on `Context` by
+broadcasting `scipy.linalg` QZ and Hermitian pencil solvers across leading batch axes, supporting
+singular metric pencils directly. Eager NumPy table evaluation and singular-metric QZ pencils are
+discussed in `docs/internals.md` (sections 1, 4, and 6).
+"""
 
 from __future__ import annotations
 
@@ -16,15 +27,16 @@ if TYPE_CHECKING:
     from numga.algebra import Algebra
 
 
-def _dtype(value: object) -> np.dtype:
-    dtype = np.dtype(value)
-    if dtype.kind not in "fc":
+def _dtype(dtype: object) -> np.dtype:
+    resolved = np.dtype(dtype)
+    if resolved.kind not in "fc":
         raise TypeError("NumpyContext currently requires a real or complex floating dtype")
-    return dtype
+    return resolved
 
 
 class NumpyContext(Context):
-    """NumPy storage with dense or sparse-exact execution, bound to one algebra."""
+    """Immutable host-memory policy stores coefficients as `np.ndarray` buffers with dense or
+    sparse-exact execution."""
 
     __slots__ = ("_algebra", "_dtype")
 
@@ -66,8 +78,8 @@ class NumpyContext(Context):
     def xp(self) -> ModuleType:
         return np
 
-    def prepare_kernel(self, value: object) -> np.ndarray:
-        source = np.asarray(value)
+    def prepare_kernel(self, coefficients: object) -> np.ndarray:
+        source = np.asarray(coefficients)
         if not np.can_cast(source.dtype, self.dtype, casting="same_kind"):
             raise TypeError(
                 f"cannot represent coefficients of dtype {source.dtype} in "
@@ -89,14 +101,16 @@ class NumpyContext(Context):
         return self.dtype.type(source)
 
     def generalized_eig(self, matrix: np.ndarray, metric: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Broadcast SciPy's generalized eigensolver, including singular pencils."""
+        """QZ iteration via `scipy.linalg.eig` solves general matrix pencils across batch axes, including
+        singular `metric` matrices."""
         from scipy.linalg import eig
 
         dtype = np.result_type(self.dtype, np.complex64)
         return np.vectorize(eig, signature="(n,n),(n,n)->(n),(n,n)", otypes=[dtype, dtype])(matrix, metric)
 
     def generalized_eigh(self, matrix: np.ndarray, metric: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Broadcast SciPy's Hermitian, positive-definite-metric eigensolver."""
+        """Hermitian pencil reduction via `scipy.linalg.eigh` broadcasts across batch axes for
+        positive-definite `metric` matrices."""
         from scipy.linalg import eigh
 
         return np.vectorize(eigh, signature="(n,n),(n,n)->(n),(n,n)", otypes=[self.dtype, self.dtype])(matrix, metric)
